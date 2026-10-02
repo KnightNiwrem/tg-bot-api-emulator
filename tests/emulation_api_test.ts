@@ -7633,6 +7633,44 @@ Deno.test('bots send files by URL, which Telegram downloads from registered web 
   }
 });
 
+Deno.test('sendDocument keeps every upload a document, whatever its content type detection', async () => {
+  const { api, botApiPath, createdAccount, sendText } = await createPrivateConversationFixture();
+  await sendText('/start');
+  const sentKinds = [];
+  for (
+    const file of [new File([gifImage(16, 16)], 'loop.gif'), new File(['ftyp'], 'clip.mp4')]
+  ) {
+    for (const disablesDetection of [undefined, 'false', 'true']) {
+      const { status, body } = await callBotApiWithFiles(api, `${botApiPath}/sendDocument`, {
+        chat_id: String(createdAccount.account.id),
+        ...(disablesDetection === undefined
+          ? {}
+          : { disable_content_type_detection: disablesDetection }),
+      }, { document: file });
+      const message = botApiResult(body);
+      const document = message?.document as Record<string, unknown> | undefined;
+      sentKinds.push(
+        status === 200 && message !== undefined &&
+          !['animation', 'video', 'audio'].some((kind) => kind in message)
+          ? document?.mime_type
+          : JSON.stringify(body),
+      );
+    }
+  }
+  if (
+    JSON.stringify(sentKinds) !== JSON.stringify([
+      'image/gif',
+      'image/gif',
+      'image/gif',
+      'video/mp4',
+      'video/mp4',
+      'video/mp4',
+    ])
+  ) {
+    throw new Error(`Expected documents only, received ${JSON.stringify(sentKinds)}`);
+  }
+});
+
 Deno.test('sendDocument keeps an uploaded thumbnail that bots and accounts see and download', async () => {
   const { api, sessionPath, botApiPath, createdBot, createdAccount, sendText } =
     await createPrivateConversationFixture();

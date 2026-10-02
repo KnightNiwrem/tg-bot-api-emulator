@@ -120,7 +120,7 @@ accepted upstream; low-level HTTP errors and size limits can still fail there.
 | Option or method                                   | Emulator behavior                            | Classification and details                                         |
 | -------------------------------------------------- | -------------------------------------------- | ------------------------------------------------------------------ |
 | `link_preview_options`, `disable_web_page_preview` | Validated; no preview or returned options    | [Intentional](#intentional-deviations)                             |
-| `disable_content_type_detection`                   | Documents always remain documents            | [Real gap](media-and-files.md#real-gaps)                           |
+| `disable_content_type_detection`                   | Documents always remain documents, as if set | [Real gap](media-and-files.md#document-classification)             |
 | Callback `cache_time`                              | Recorded; no cache reuse                     | [Intentional](keyboards-and-callbacks.md#intentional-deviations)   |
 | Ban `until_date`                                   | Normalized and reported; no automatic unban  | [Intentional](supergroups.md#intentional-deviations)               |
 | Ban `revoke_messages`                              | Validated; no separate effect in supergroups | [Upstream evidence limit](supergroups.md#administrator-operations) |
