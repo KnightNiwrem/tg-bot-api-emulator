@@ -36,7 +36,7 @@ import {
   type UnreadInputMessageContent,
 } from './inline_query_answer_parameters.ts';
 import { readInputFileParameter, readThumbnailParameter } from './input_file_parameter.ts';
-import { readInputMediaParameter } from './input_media_parameter.ts';
+import { readInputMediaGroupParameter, readInputMediaParameter } from './input_media_parameter.ts';
 import { linkPreviewOptionsParameter } from './link_preview_options_parameter.ts';
 import {
   replyParametersParameter,
@@ -56,6 +56,7 @@ import {
 } from './reply_markup_parameter.ts';
 import { recordBotApiCall } from './call_recording.ts';
 import {
+  albumMessageNotSentError,
   botApiError,
   type BotApiMethodAnswer,
   type BotApiMethodContext,
@@ -375,6 +376,10 @@ const sendOptionsParametersShape = {
   reply_parameters: replyParametersParameter().optional(),
   reply_to_message_id: integerParameter(z.int()).optional(),
   allow_sending_without_reply: booleanParameter().default(false),
+};
+
+/** The reply markup that every send method but `sendMediaGroup` attaches to its message. */
+const replyMarkupParametersShape = {
   reply_markup: messageReplyMarkupParameter().default({}),
 };
 
@@ -388,6 +393,7 @@ const captionParametersShape = {
 // Telegram treats a missing parameter as empty text.
 const sendMessageParametersSchema = z.strictObject({
   ...sendOptionsParametersShape,
+  ...replyMarkupParametersShape,
   text: z.string().default(''),
   parse_mode: z.string().optional(),
   entities: messageEntitiesParameter().optional(),
@@ -398,11 +404,13 @@ const sendMessageParametersSchema = z.strictObject({
 // ephemeral messages are not supported.
 const sendRichMessageParametersSchema = z.strictObject({
   ...sendOptionsParametersShape,
+  ...replyMarkupParametersShape,
   rich_message: z.string().optional(),
 });
 
 const sendPhotoParametersSchema = z.strictObject({
   ...sendOptionsParametersShape,
+  ...replyMarkupParametersShape,
   photo: z.string().optional(),
   ...captionParametersShape,
   show_caption_above_media: booleanParameter().default(false),
@@ -413,6 +421,7 @@ const sendPhotoParametersSchema = z.strictObject({
 // is validated and ignored.
 const sendDocumentParametersSchema = z.strictObject({
   ...sendOptionsParametersShape,
+  ...replyMarkupParametersShape,
   document: z.string().optional(),
   thumbnail: z.string().optional(),
   thumb: z.string().optional(),
@@ -435,12 +444,20 @@ const forwardMessageParametersSchema = z.strictObject({
 // and entities are ignored, as on Telegram.
 const copyMessageParametersSchema = z.strictObject({
   ...sendOptionsParametersShape,
+  ...replyMarkupParametersShape,
   from_chat_id: integerParameter(z.int()).optional(),
   message_id: integerParameter(z.int()).optional(),
   caption: z.string().optional(),
   parse_mode: z.string().optional(),
   caption_entities: messageEntitiesParameter().optional(),
   show_caption_above_media: booleanParameter().default(false),
+});
+
+// As for sendMessage, topics, business connections, paid broadcasts, and suggested posts are not
+// supported. The official server reads no reply markup for albums, so the emulator rejects one.
+const sendMediaGroupParametersSchema = z.strictObject({
+  ...sendOptionsParametersShape,
+  media: z.string().optional(),
 });
 
 // As for forwardMessage, topics, paid broadcasts, and suggested posts are not supported. Telegram
@@ -676,6 +693,19 @@ type MessageEditResult =
 
 type SendResult = ReturnType<EmulationSession['botApi']['sendMessage']>;
 
+type SendMediaGroupResult = ReturnType<EmulationSession['botApi']['sendMediaGroup']>;
+
+/** An album's photo or document as the service sends it, with its file resolved. */
+type MediaReplacementRequest = Parameters<
+  EmulationSession['botApi']['sendMediaGroup']
+>[1]['media'][number];
+
+/** An upload of an album's message that Telegram's servers refused once the album was sent. */
+type ServerRefusedUploadFailure = Extract<
+  SendMediaGroupResult,
+  { readonly reason: 'media_group_member_not_sent' }
+>['failure'];
+
 type SendFailure = Extract<SendResult, { readonly sent: false }>;
 
 /** The messages that `forwardMessages` or `copyMessages` repeats, and the chat they go to. */
@@ -751,7 +781,10 @@ type SendRequestOptions = OmitFromEach<
   'text' | 'entities'
 >;
 
-type SendOptionsParameters = z.infer<z.ZodObject<typeof sendOptionsParametersShape>>;
+/** The send options of a request, with the reply markup of a method that reads one. */
+type SendOptionsParameters =
+  & z.infer<z.ZodObject<typeof sendOptionsParametersShape>>
+  & Partial<z.infer<z.ZodObject<typeof replyMarkupParametersShape>>>;
 
 type MyCommandsTarget = Parameters<EmulationSession['botApi']['getMyCommands']>[1];
 
@@ -851,6 +884,7 @@ const BOT_API_METHODS: readonly BotApiMethod[] = [
   { name: 'leaveChat', handler: handleLeaveChat },
   { name: 'sendChatAction', handler: handleSendChatAction },
   { name: 'sendDocument', handler: handleSendDocument },
+  { name: 'sendMediaGroup', handler: handleSendMediaGroup },
   { name: 'sendMessage', handler: handleSendMessage },
   { name: 'sendPhoto', handler: handleSendPhoto },
   { name: 'sendRichMessage', handler: handleSendRichMessage },
@@ -1446,6 +1480,129 @@ async function handleSendDocument(
   }));
 }
 
+/**
+ * Sends an album, as `BotApiService.sendMediaGroup` does. As the official Bot API server reads
+ * them, the media and their captions are read before the chat; the files the media name by URL are
+ * then downloaded in order, as for `sendPhoto`.
+ */
+async function handleSendMediaGroup(
+  context: BotApiMethodContext,
+  parameters: BotApiRequestParameters,
+  uploadedFiles: BotApiUploadedFiles,
+): Promise<BotApiMethodAnswer> {
+  const invalidParametersDescription = 'Bad Request: invalid sendMediaGroup parameters';
+  const parsedParameters = sendMediaGroupParametersSchema.safeParse(parameters);
+  if (!parsedParameters.success) {
+    return botApiError(400, invalidParametersDescription);
+  }
+  const { data } = parsedParameters;
+  const mediaReading = readInputMediaGroupParameter(
+    data.media,
+    uploadedFiles,
+    invalidParametersDescription,
+  );
+  if (!mediaReading.read) {
+    return botApiError(400, mediaReading.description);
+  }
+  const captions: SpecifiedFormattedText[] = [];
+  for (const { caption } of mediaReading.media) {
+    const captionReading = readEmbeddedFormattedText(
+      context,
+      caption,
+      invalidParametersDescription,
+      INPUT_MEDIA_ERROR_PREFIX,
+    );
+    if (!captionReading.read) {
+      return botApiError(400, captionReading.description);
+    }
+    captions.push(captionReading.formattedText);
+  }
+  const optionsReading = readSendOptions(context, data, invalidParametersDescription);
+  if (!optionsReading.read) {
+    return optionsReading.errorAnswer;
+  }
+
+  const media: MediaReplacementRequest[] = [];
+  for (const [memberIndex, member] of mediaReading.media.entries()) {
+    const fileResolution = await resolveRequestedInputFile(
+      context,
+      member.kind === 'photo' ? member.photo : member.document,
+      member.kind,
+      memberIndex + 1,
+    );
+    if (!fileResolution.resolved) {
+      return fileResolution.errorAnswer;
+    }
+    const caption = captions[memberIndex];
+    media.push(
+      member.kind === 'photo'
+        ? { ...member, photo: fileResolution.value, caption }
+        : { ...member, document: fileResolution.value, caption },
+    );
+  }
+
+  const { chatId, replyTo, isContentProtected, isSilent, messageEffectId } = optionsReading.options;
+  return sendMediaGroupAnswer(context.session.botApi.sendMediaGroup(context.bot, {
+    chatId,
+    replyTo,
+    isContentProtected,
+    isSilent,
+    messageEffectId,
+    media,
+  }));
+}
+
+/**
+ * Telegram's answer to `sendMediaGroup`: the album's messages, or, for an album TDLib refuses, the
+ * description `fail_query_with_error` gives TDLib's error.
+ */
+function sendMediaGroupAnswer(result: SendMediaGroupResult): BotApiMethodAnswer {
+  if (result.sent) {
+    return botApiResult(result.messages);
+  }
+  switch (result.reason) {
+    case 'album_empty':
+      return botApiError(400, 'Bad Request: there are no messages to send');
+    case 'album_too_large':
+      return botApiError(400, 'Bad Request: too many messages to send as an album');
+    case 'album_caption_placement_mixed':
+      return botApiError(
+        400,
+        'Bad Request: parameter show_caption_above_media must be the same for all messages',
+      );
+    case 'album_documents_mixed':
+      return botApiError(400, "Bad Request: document can't be mixed with other media types");
+    case 'media_group_member_not_sent':
+      return albumMessageNotSentError(
+        result.memberPosition,
+        serverRefusedUploadError(result.failure),
+      );
+    default:
+      return sendMethodAnswer(result);
+  }
+}
+
+/**
+ * The error Telegram's servers give for an upload they refuse, as `albumMessageNotSentError`
+ * reports it. A local server's upload limit is enforced with an error that is not in the source;
+ * the emulator words it as TDLib's `check_full_local_location` words its own size checks.
+ */
+function serverRefusedUploadError(failure: ServerRefusedUploadFailure): string {
+  switch (failure.reason) {
+    case 'image_invalid':
+      return 'IMAGE_PROCESS_FAILED';
+    case 'photo_dimensions_invalid':
+      return 'PHOTO_INVALID_DIMENSIONS';
+    case 'bot_upload_too_big':
+      return `File of size ${failure.fileSizeBytes} bytes is too big; ` +
+        `the maximum size is ${failure.maxFileSizeBytes} bytes`;
+    default: {
+      const unhandledFailure: never = failure;
+      throw new Error(`Unhandled refused upload: ${JSON.stringify(unhandledFailure)}`);
+    }
+  }
+}
+
 function handleForwardMessage(
   context: BotApiMethodContext,
   parameters: BotApiRequestParameters,
@@ -1638,10 +1795,10 @@ function repeatMessagesAnswer(result: RepeatMessagesResult): BotApiMethodAnswer 
 }
 
 /**
- * Reads where and how a send method sends its message. As the official Bot API server's
- * `get_reply_parameters` does, the formatting of a quote is read before the chat; as its
- * `check_reply_parameters` does, a reply naming the chat the message is sent to replies in that
- * chat.
+ * Reads where and how a send method sends its message, with its reply markup, if the method reads
+ * one. As the official Bot API server's `get_reply_parameters` does, the formatting of a quote is
+ * read before the chat; as its `check_reply_parameters` does, a reply naming the chat the message
+ * is sent to replies in that chat.
  */
 function readSendOptions(
   context: BotApiMethodContext,
@@ -1670,7 +1827,7 @@ function readSendOptions(
   if (chatId === undefined) {
     return { read: false, errorAnswer: botApiError(400, CHAT_ID_EMPTY_DESCRIPTION) };
   }
-  const markupReading = readMessageReplyMarkupParameter(context, replyMarkup, chatId);
+  const markupReading = readMessageReplyMarkupParameter(context, replyMarkup ?? {}, chatId);
   if (!markupReading.read) {
     return markupReading;
   }

@@ -41,6 +41,11 @@ import {
   isForwardable,
   type PrivateForwardNameLookup,
 } from '../types/message_forward.ts';
+import {
+  type AlbumCompositionFailureReason,
+  checkAlbumComposition,
+  toAlbumMember,
+} from '../types/media_album.ts';
 import { createExternalReply, type ExternalReplyTarget } from '../types/message_reply.ts';
 import {
   type BotMessageReplyMarkup,
@@ -115,6 +120,11 @@ import type {
   TextInvalidFailure,
   TextMessageReplacement,
 } from './message_content.ts';
+import type { SendBotAlbumInput, SendBotAlbumResult } from './private_messaging.ts';
+import type {
+  SendSupergroupBotAlbumInput,
+  SendSupergroupBotAlbumResult,
+} from './supergroup_messaging.ts';
 
 /** The most UTF-8 bytes of text the Bot API reads before applying its formatting. */
 const MAX_FORMATTED_TEXT_BYTES = 1 << 15;
@@ -199,7 +209,10 @@ export interface ReplyTarget {
  * Where and how a send method sends its message, apart from what it replies to. The reply markup
  * is an inline keyboard or a change of the reply interface.
  */
-type SendDestinationOptions = BotMessageReplyMarkup & {
+type SendDestinationOptions = BotMessageReplyMarkup & SendDeliveryOptions;
+
+/** Where and how a send method sends its messages, apart from their reply and reply markup. */
+interface SendDeliveryOptions {
   /**
    * The Bot API `chat_id`: for a private chat, the other user's ID, which is positive; for a
    * supergroup, its negative chat ID.
@@ -214,7 +227,7 @@ type SendDestinationOptions = BotMessageReplyMarkup & {
    * for none. The emulator has no catalogue of Telegram's effects, so any identifier is accepted.
    */
   readonly messageEffectId?: string;
-};
+}
 
 /** Where and how every send method sends its message. */
 export type SendRequestOptions = SendDestinationOptions & {
@@ -481,6 +494,41 @@ export type MediaReplacementRequest =
     readonly thumbnail?: Uint8Array<ArrayBuffer>;
     /** Empty text for no caption. */
     readonly caption: SpecifiedFormattedText;
+  };
+
+/**
+ * The photos or documents that `sendMediaGroup` sends as an album, each specified as
+ * `editMessageMedia` specifies new media, in the order the chat shows them. Every message of the
+ * album is sent alike, and none has reply markup, which the Bot API does not read for albums.
+ */
+export type SendMediaGroupRequest = SendDeliveryOptions & {
+  /** Every message of the album replies to this message; omitted for an album that replies to none. */
+  readonly replyTo?: ReplyTarget;
+  readonly media: readonly MediaReplacementRequest[];
+};
+
+/**
+ * An upload of an album's message that Telegram's servers refuse once the album is sent: content
+ * they cannot process as a photo, or a file larger than a local Bot API server lets bots upload.
+ */
+export type ServerRefusedUploadFailure =
+  | { readonly reason: 'image_invalid' | 'photo_dimensions_invalid' }
+  | (BotUploadTooBigFailure & { readonly uploadProfile: 'local' });
+
+/**
+ * The Bot API answers `sendMediaGroup` with the album's messages in order. As the official server's
+ * `on_message_send_failed` does, an upload Telegram's servers refuse fails the album with the
+ * position of the first message whose upload they refuse, counted from 1.
+ */
+export type SendMediaGroupResult =
+  | { readonly sent: true; readonly messages: readonly BotApiMessage[] }
+  | Extract<SendResult, { readonly sent: false }>
+  | { readonly sent: false; readonly reason: AlbumCompositionFailureReason }
+  | {
+    readonly sent: false;
+    readonly reason: 'media_group_member_not_sent';
+    readonly memberPosition: number;
+    readonly failure: ServerRefusedUploadFailure;
   };
 
 export interface EditMessageMediaRequest extends MessageTarget {
@@ -1024,6 +1072,7 @@ interface BotMessaging {
       readonly messageEffectId?: string;
     },
   ): BotMessageSendingResult;
+  sendBotAlbum(input: SendBotAlbumInput): SendBotAlbumResult;
   editBotMessageText(
     input: PrivateMessageEditTarget & {
       readonly content: TextMessageReplacement;
@@ -1145,6 +1194,7 @@ interface SupergroupBotMessaging {
         | 'quote_invalid';
     }
     | ({ readonly sent: false } & ContentNormalizationFailure);
+  sendBotAlbum(input: SendSupergroupBotAlbumInput): SendSupergroupBotAlbumResult;
   editBotMessageText(
     input: SupergroupMessageEditTarget & {
       readonly content: TextMessageReplacement;
@@ -1856,6 +1906,61 @@ export class BotApiService {
   }
 
   /**
+   * Sends photos or documents to a private chat or a supergroup as an album, as TDLib's
+   * `send_message_group` does: each message's file is resolved as `sendPhoto` and `sendDocument`
+   * resolve theirs, in order, and the album is then checked as `checkAlbumComposition` does. An
+   * upload that only Telegram's servers refuse fails after those checks, as TDLib learns of it
+   * only when the album is sent. Every check passes before any message is sent; the messages are
+   * then sent in order, each as a reply to the same message, and share a new `media_group_id`
+   * unless there is just one.
+   *
+   * As for `sendPhoto`, files are resolved before the chat, while Telegram looks at the chat
+   * first; a request with both an unknown chat and an unusable file fails for its file.
+   */
+  sendMediaGroup(
+    authenticatedBot: VirtualBotProfile,
+    { media, replyTo, ...options }: SendMediaGroupRequest,
+  ): SendMediaGroupResult {
+    const contents: MediaContent[] = [];
+    let firstRefusedUpload:
+      | { readonly memberPosition: number; readonly failure: ServerRefusedUploadFailure }
+      | undefined;
+    for (const [memberIndex, member] of media.entries()) {
+      const resolution = this.#resolveMediaReplacement(authenticatedBot, member);
+      if (resolution.resolved) {
+        contents.push(resolution.file);
+      } else if (isRefusedByTelegramServers(resolution.failure)) {
+        firstRefusedUpload ??= { memberPosition: memberIndex + 1, failure: resolution.failure };
+      } else {
+        return { sent: false, ...resolution.failure };
+      }
+    }
+    const compositionFailure = checkAlbumComposition(media.map(toAlbumMember));
+    if (compositionFailure !== undefined) {
+      return { sent: false, reason: compositionFailure };
+    }
+    if (firstRefusedUpload !== undefined) {
+      return { sent: false, reason: 'media_group_member_not_sent', ...firstRefusedUpload };
+    }
+
+    const replyResolution = this.#resolveOutgoingReply(authenticatedBot, replyTo);
+    if (!replyResolution.resolved) {
+      return { sent: false, reason: replyResolution.reason };
+    }
+    const result = isUserId(options.chatId)
+      ? this.#sendPrivateAlbum(authenticatedBot, contents, options, replyResolution.reply)
+      : this.#sendSupergroupAlbum(authenticatedBot, contents, options, replyResolution.reply);
+    if (result.sent) {
+      // As for a single message, the album ends the bot's chat action.
+      this.#chatActions.endBotChatAction({
+        botId: authenticatedBot.id,
+        chat: getChatActionChat(authenticatedBot, options.chatId),
+      });
+    }
+    return result;
+  }
+
+  /**
    * Forwards a message of one of the bot's chats to a private chat or a supergroup, as TDLib does:
    * the forward repeats the message's content and shows who first sent it and when. As on Telegram,
    * a message whose sender protected it cannot be forwarded, nor can a service message.
@@ -2318,6 +2423,112 @@ export class BotApiService {
       default: {
         const unhandledFailure: never = result;
         throw new Error(`Unhandled bot message failure: ${JSON.stringify(unhandledFailure)}`);
+      }
+    }
+  }
+
+  #sendPrivateAlbum(
+    authenticatedBot: VirtualBotProfile,
+    contents: readonly MediaContent[],
+    { chatId, isContentProtected, isSilent, messageEffectId }: SendDeliveryOptions,
+    { replyTo, externalReply, quote }: OutgoingReply,
+  ): SendMediaGroupResult {
+    const result = this.#botMessages.sendBotAlbum({
+      fromBotId: authenticatedBot.id,
+      to: { type: 'private', accountId: chatId },
+      contents,
+      replyTo: replyTo === undefined ? undefined : {
+        botMessageId: replyTo.messageId,
+        allowSendingWithoutReply: replyTo.allowSendingWithoutReply,
+      },
+      externalReply,
+      quote,
+      isContentProtected,
+      isSilent,
+      messageEffectId,
+    });
+    if (result.sent) {
+      return {
+        sent: true,
+        messages: result.messages.map((message) =>
+          this.#botMessageViews.viewPrivateMessageForBot(message)
+        ),
+      };
+    }
+
+    switch (result.reason) {
+      case 'text_invalid':
+        return result;
+      case 'reply_message_not_found':
+      case 'message_text_too_long':
+      case 'caption_too_long':
+      case 'quote_invalid':
+      case 'bot_blocked':
+      case 'album_empty':
+      case 'album_too_large':
+      case 'album_caption_placement_mixed':
+      case 'album_documents_mixed':
+        return { sent: false, reason: result.reason };
+      // As for a single message, Telegram reports a user who has not started the bot as not found.
+      case 'account_not_found':
+      case 'conversation_not_started':
+        return { sent: false, reason: 'chat_not_found' };
+      case 'bot_not_found':
+        throw new Error(`Authenticated bot ${authenticatedBot.id} does not exist`);
+      default: {
+        const unhandledFailure: never = result;
+        throw new Error(`Unhandled bot album failure: ${JSON.stringify(unhandledFailure)}`);
+      }
+    }
+  }
+
+  #sendSupergroupAlbum(
+    authenticatedBot: VirtualBotProfile,
+    contents: readonly MediaContent[],
+    { chatId, isContentProtected, isSilent, messageEffectId }: SendDeliveryOptions,
+    { replyTo, externalReply, quote }: OutgoingReply,
+  ): SendMediaGroupResult {
+    const result = this.#supergroupBotMessages.sendBotAlbum({
+      fromBotId: authenticatedBot.id,
+      chatId,
+      contents,
+      replyTo,
+      externalReply,
+      quote,
+      isContentProtected,
+      isSilent,
+      messageEffectId,
+    });
+    if (result.sent) {
+      return {
+        sent: true,
+        messages: result.messages.map((message) =>
+          this.#botMessageViews.viewSupergroupMessage(message, authenticatedBot.id)
+        ),
+      };
+    }
+
+    switch (result.reason) {
+      case 'text_invalid':
+        return result;
+      case 'chat_not_found':
+      case 'bot_not_a_member':
+      case 'bot_kicked':
+      case 'reply_message_not_found':
+      case 'message_effect_not_allowed_in_chat':
+      case 'message_text_too_long':
+      case 'caption_too_long':
+      case 'quote_invalid':
+      case 'album_empty':
+      case 'album_too_large':
+      case 'album_caption_placement_mixed':
+      case 'album_documents_mixed':
+        return { sent: false, reason: result.reason };
+      case 'bot_not_found':
+        throw new Error(`Authenticated bot ${authenticatedBot.id} does not exist`);
+      default: {
+        const unhandledFailure: never = result;
+        throw new Error(`Unhandled bot album failure: ${JSON.stringify(unhandledFailure)}`);
       }
     }
   }
@@ -3702,6 +3913,27 @@ function uploadPreparationFailure(
     }
     default:
       return { reason: preparation.reason };
+  }
+}
+
+/**
+ * Whether only Telegram's servers refuse a file, once they receive the message that sends it,
+ * rather than TDLib as it reads the file: content they cannot process as a photo, or a file larger
+ * than a local Bot API server lets bots upload. `api.telegram.org` refuses an oversized upload
+ * with the whole request, and TDLib checks emptiness, the photo size limit, and `file_id` values
+ * itself.
+ */
+function isRefusedByTelegramServers(
+  failure: FileResolutionFailure,
+): failure is ServerRefusedUploadFailure {
+  switch (failure.reason) {
+    case 'image_invalid':
+    case 'photo_dimensions_invalid':
+      return true;
+    case 'bot_upload_too_big':
+      return failure.uploadProfile === 'local';
+    default:
+      return false;
   }
 }
 

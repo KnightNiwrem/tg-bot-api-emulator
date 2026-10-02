@@ -1,0 +1,44 @@
+description: Albums sent by one virtual account.
+parameters:
+  - $ref: ../components/parameters/SessionId.yaml
+  - $ref: ../components/parameters/AccountId.yaml
+post:
+  operationId: sendAccountMediaGroup
+  summary: Send an album as a virtual account
+  description: >-
+    Sends photos or documents as an album to the account's private chat with a bot, or to a
+    supergroup the account is a member of. Every item is uploaded and checked as by `POST
+    /sessions/{sessionId}/accounts/{accountId}/messages`, and the album is checked as Telegram
+    checks it, before any message is stored. The album's messages share a `media_group_id` and
+    are stored in order, each as a separate message that the chat's bots receive as a separate
+    update, as they would receive it alone.
+  requestBody:
+    required: true
+    content:
+      application/json:
+        schema:
+          $ref: ../components/schemas/SendAccountMediaGroupRequest.yaml
+  responses:
+    '201':
+      description: >-
+        The album's messages were stored and, unless a receiving bot's allowed_updates
+        subscription excludes message updates, an update was enqueued for each message each
+        bot receives.
+      content:
+        application/json:
+          schema:
+            oneOf:
+              - $ref: ../components/schemas/SentMediaGroup.yaml
+              - $ref: ../components/schemas/SentSupergroupMediaGroup.yaml
+    '400':
+      description: >-
+        The request or a caption is invalid, a photo is not an image Telegram accepts, a file is
+        empty, the album holds no item or more than 10, mixes documents with photos, or the
+        replied message is not a message of the chat.
+    '403':
+      description: The account is not a member of the supergroup.
+    '404':
+      description: >-
+        The session, sending account, or the bot or supergroup of the request does not exist.
+    '409':
+      description: The account blocks the target bot and must unblock it before writing to it.

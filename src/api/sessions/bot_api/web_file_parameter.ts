@@ -1,10 +1,16 @@
+import type { EmulationSession } from '../../../types/emulation_session.ts';
 import {
   convertRichMessageFiles,
   listRichMessageFiles,
   type RichMessage,
 } from '../../../types/rich_message.ts';
 import type { BotApiInputFile, RequestedInputFile } from './input_file_parameter.ts';
-import { botApiError, type BotApiMethodAnswer, type BotApiMethodContext } from './method_call.ts';
+import {
+  albumMessageNotSentError,
+  botApiError,
+  type BotApiMethodAnswer,
+  type BotApiMethodContext,
+} from './method_call.ts';
 
 /** A document of a rich message as a request names it, with the thumbnail uploaded for it. */
 interface RequestedRichMessageDocument {
@@ -31,9 +37,31 @@ export type WebFileResolution<Resolved> =
   | { readonly resolved: true; readonly value: Resolved }
   | { readonly resolved: false; readonly errorAnswer: BotApiMethodAnswer };
 
-/** Telegram's descriptions of a file it cannot download from the URL a bot sent. */
-const WEB_CONTENT_UNAVAILABLE_DESCRIPTION = 'Bad Request: failed to get HTTP URL content';
-const WEB_CONTENT_TYPE_INVALID_DESCRIPTION = 'Bad Request: wrong type of the web page content';
+type WebContentFailureReason = Exclude<
+  Extract<
+    Awaited<ReturnType<EmulationSession['mediaFiles']['downloadWebFile']>>,
+    { readonly downloaded: false }
+  >['reason'],
+  'file_url_invalid'
+>;
+
+/**
+ * Telegram's errors for a file it cannot download from the URL a bot sent, as its servers give
+ * them, and as the official Bot API server's `fail_query_with_error` describes them for a single
+ * message.
+ */
+const WEB_CONTENT_FAILURES: Readonly<
+  Record<WebContentFailureReason, { readonly telegramError: string; readonly description: string }>
+> = {
+  web_content_unavailable: {
+    telegramError: 'WEBPAGE_CURL_FAILED',
+    description: 'Bad Request: failed to get HTTP URL content',
+  },
+  web_content_type_invalid: {
+    telegramError: 'WEBPAGE_MEDIA_EMPTY',
+    description: 'Bad Request: wrong type of the web page content',
+  },
+};
 
 /**
  * Downloads a file that a request names by URL, as Telegram does before it sends the file, from
@@ -43,11 +71,16 @@ const WEB_CONTENT_TYPE_INVALID_DESCRIPTION = 'Bad Request: wrong type of the web
  * as it reads uploads, so a request with both an unknown chat ID and an unusable URL fails for its
  * URL. A chat named by `@username` is resolved before any method runs, so an unknown username
  * fails first.
+ *
+ * `albumMemberPosition` is the position, counted from 1, of the album's message that sends the
+ * file; as for an upload Telegram's servers refuse, content they cannot download fails the album
+ * with that position. A URL TDLib cannot read fails before anything is sent, as for one message.
  */
 export async function resolveRequestedInputFile(
   context: BotApiMethodContext,
   inputFile: RequestedInputFile,
   fileKind: 'photo' | 'document',
+  albumMemberPosition?: number,
 ): Promise<WebFileResolution<BotApiInputFile>> {
   if (inputFile.kind !== 'url') {
     return { resolved: true, value: inputFile };
@@ -70,15 +103,15 @@ export async function resolveRequestedInputFile(
         ),
       };
     case 'web_content_unavailable':
+    case 'web_content_type_invalid': {
+      const { telegramError, description } = WEB_CONTENT_FAILURES[download.reason];
       return {
         resolved: false,
-        errorAnswer: botApiError(400, WEB_CONTENT_UNAVAILABLE_DESCRIPTION),
+        errorAnswer: albumMemberPosition === undefined
+          ? botApiError(400, description)
+          : albumMessageNotSentError(albumMemberPosition, telegramError),
       };
-    case 'web_content_type_invalid':
-      return {
-        resolved: false,
-        errorAnswer: botApiError(400, WEB_CONTENT_TYPE_INVALID_DESCRIPTION),
-      };
+    }
     default: {
       const unhandledFailure: never = download;
       throw new Error(`Unhandled web file failure: ${JSON.stringify(unhandledFailure)}`);

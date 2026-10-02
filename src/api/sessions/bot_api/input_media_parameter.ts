@@ -32,6 +32,13 @@ export type InputMediaParameterReading =
   | { readonly read: true; readonly media: UnreadMediaReplacement }
   | { readonly read: false; readonly description: string };
 
+export type InputMediaGroupParameterReading =
+  | { readonly read: true; readonly media: readonly UnreadMediaReplacement[] }
+  | { readonly read: false; readonly description: string };
+
+/** How the official Bot API server describes a request without media. */
+const MEDIA_REQUIRED_DESCRIPTION = 'Bad Request: parameter "media" is required';
+
 /** How the official Bot API server prefixes its description of `InputMedia` it cannot read. */
 const INPUT_MEDIA_ERROR_PREFIX = "Bad Request: can't parse InputMedia: ";
 
@@ -72,17 +79,75 @@ const inputMediaDocumentSchema = z.strictObject({
 /**
  * Reads the `media` parameter of `editMessageMedia`, a JSON `InputMediaPhoto` or
  * `InputMediaDocument`, as the official Bot API server's `get_input_media` reads it, with its
- * descriptions of media it cannot read. `media` names the file as `readInputFileParameter` reads
- * a file parameter, except that an upload is named only by `attach://<name>`; a document's
- * thumbnail is read as `readThumbnailParameter` reads it.
+ * descriptions of media it cannot read, as `readInputMedia` reads it.
+ */
+export function readInputMediaParameter(
+  text: string | undefined,
+  uploadedFiles: BotApiUploadedFiles,
+  invalidParametersDescription: string,
+): InputMediaParameterReading {
+  if (text === undefined || text.length === 0) {
+    return { read: false, description: MEDIA_REQUIRED_DESCRIPTION };
+  }
+  let value: unknown;
+  try {
+    value = JSON.parse(text);
+  } catch {
+    return { read: false, description: "Bad Request: can't parse input media JSON object" };
+  }
+  return readInputMedia(value, uploadedFiles, invalidParametersDescription);
+}
+
+/**
+ * Reads the `media` parameter of `sendMediaGroup`, a JSON array of `InputMediaPhoto` and
+ * `InputMediaDocument`, as the official Bot API server's `get_input_message_contents` reads it:
+ * each as `readInputMedia` reads it, in order, until one cannot be read. As that server reads
+ * `null`, it holds no media. Whether the media can form an album is left to the service.
+ */
+export function readInputMediaGroupParameter(
+  text: string | undefined,
+  uploadedFiles: BotApiUploadedFiles,
+  invalidParametersDescription: string,
+): InputMediaGroupParameterReading {
+  if (text === undefined || text.length === 0) {
+    return { read: false, description: MEDIA_REQUIRED_DESCRIPTION };
+  }
+  let value: unknown;
+  try {
+    value = JSON.parse(text);
+  } catch {
+    return { read: false, description: "Bad Request: can't parse media JSON object" };
+  }
+  if (value === null) {
+    return { read: true, media: [] };
+  }
+  if (!Array.isArray(value)) {
+    return { read: false, description: 'Bad Request: expected an Array of InputMedia' };
+  }
+  const media: UnreadMediaReplacement[] = [];
+  for (const memberValue of value) {
+    const reading = readInputMedia(memberValue, uploadedFiles, invalidParametersDescription);
+    if (!reading.read) {
+      return reading;
+    }
+    media.push(reading.media);
+  }
+  return { read: true, media };
+}
+
+/**
+ * Reads one JSON `InputMediaPhoto` or `InputMediaDocument` as the official Bot API server's
+ * `get_input_media` reads it, with its descriptions of media it cannot read. `media` names the
+ * file as `readInputFileParameter` reads a file parameter, except that an upload is named only by
+ * `attach://<name>`; a document's thumbnail is read as `readThumbnailParameter` reads it.
  *
  * Telegram also reads animations, audio, live photos and videos, which the emulator lacks and
  * rejects with its own description. `invalidParametersDescription` answers fields the Bot API
  * does not document for the media's type, or of the wrong JSON type, which Telegram reads
  * leniently; rejecting them instead surfaces the bot's mistake in tests.
  */
-export function readInputMediaParameter(
-  text: string | undefined,
+function readInputMedia(
+  value: unknown,
   uploadedFiles: BotApiUploadedFiles,
   invalidParametersDescription: string,
 ): InputMediaParameterReading {
@@ -90,15 +155,6 @@ export function readInputMediaParameter(
     read: false,
     description,
   });
-  if (text === undefined || text.length === 0) {
-    return failure('Bad Request: parameter "media" is required');
-  }
-  let value: unknown;
-  try {
-    value = JSON.parse(text);
-  } catch {
-    return failure("Bad Request: can't parse input media JSON object");
-  }
   if (typeof value !== 'object' || value === null || Array.isArray(value)) {
     return failure(`${INPUT_MEDIA_ERROR_PREFIX}expected an Object`);
   }

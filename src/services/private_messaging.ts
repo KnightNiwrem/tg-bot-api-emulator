@@ -1,5 +1,6 @@
 import type { ChatDomainEvent } from '../types/chat_domain_event.ts';
 import type { InlineKeyboard } from '../types/inline_keyboard.ts';
+import { type AlbumCompositionFailureReason, formsAlbum } from '../types/media_album.ts';
 import type { ExternalReplyTarget } from '../types/message_reply.ts';
 import type { MessageForward } from '../types/message_forward.ts';
 import {
@@ -22,12 +23,14 @@ import {
   type ChatMessage,
   type ExternalReply,
   type InlineMessageId,
+  type MediaGroupId,
   type MessageContent,
   type MessageForwardInfo,
   type PrivateMessage,
   type TextQuote,
 } from '../types/virtual_message.ts';
 import {
+  type AccountMediaContent,
   type AccountMessageContent,
   type AccountMessageEdit,
   checkBotMessageEdit,
@@ -40,6 +43,7 @@ import {
   isUnchangedContent,
   type MediaContent,
   type NormalizedOutgoingContent,
+  normalizeOutgoingAlbum,
   normalizeOutgoingContent,
   type OutgoingContentNormalization,
   type OutgoingMessageContent,
@@ -55,6 +59,7 @@ import {
   type TextMessageReplacement,
   toContentOfStoredFile,
   toOutgoingAccountContent,
+  toOutgoingAccountMedia,
 } from './message_content.ts';
 
 export type PrivateConversationActivationFailureReason =
@@ -98,6 +103,33 @@ export type SendAccountMessageResult =
     & { readonly sent: false }
     & (
       | { readonly reason: SendAccountMessageFailureReason }
+      | ContentNormalizationFailure
+    )
+  );
+
+/** An album an account sends to its private chat with a bot. */
+export interface SendAccountAlbumInput {
+  readonly fromAccountId: number;
+  readonly to: {
+    readonly type: 'private';
+    readonly botId: number;
+  };
+  /** The album's media in the order the chat shows them, each with its caption. */
+  readonly contents: readonly AccountMediaContent[];
+  /** As `SendAccountMessageInput` describes it; every message of the album replies to it. */
+  readonly replyToBotMessageId?: number;
+}
+
+export type SendAccountAlbumResult =
+  | { readonly sent: true; readonly messages: readonly PrivateMessage[] }
+  | (
+    & { readonly sent: false }
+    & (
+      | {
+        readonly reason:
+          | Exclude<SendAccountMessageFailureReason, 'message_text_empty'>
+          | AlbumCompositionFailureReason;
+      }
       | ContentNormalizationFailure
     )
   );
@@ -194,6 +226,44 @@ export type SendBotMessageResult =
     & { readonly sent: false }
     & (
       | { readonly reason: SendBotMessageFailureReason }
+      | ContentNormalizationFailure
+    )
+  );
+
+/**
+ * An album a bot sends to one of its private chats. Every message of the album replies alike and
+ * shares the album's protection, notification, and message effect; an album carries no reply
+ * markup.
+ */
+export interface SendBotAlbumInput {
+  readonly fromBotId: number;
+  readonly to: BotPrivateChat;
+  /** The album's media in the order the chat shows them, each with its caption. */
+  readonly contents: readonly MediaContent[];
+  /** As `SendBotMessageInput` describes it. */
+  readonly replyTo?: BotMessageReplyTarget;
+  /** As `SendBotMessageInput` describes it. */
+  readonly externalReply?: ExternalReplyTarget;
+  /** As `SendBotMessageInput` describes it. */
+  readonly quote?: SpecifiedQuote;
+  /** As `SendBotMessageInput` describes it. */
+  readonly isContentProtected?: boolean;
+  /** As `SendBotMessageInput` describes it. */
+  readonly isSilent?: boolean;
+  /** As `SendBotMessageInput` describes it. */
+  readonly messageEffectId?: string;
+}
+
+export type SendBotAlbumResult =
+  | { readonly sent: true; readonly messages: readonly PrivateMessage[] }
+  | (
+    & { readonly sent: false }
+    & (
+      | {
+        readonly reason:
+          | Exclude<SendBotMessageFailureReason, 'message_text_empty' | 'callback_data_invalid'>
+          | AlbumCompositionFailureReason;
+      }
       | ContentNormalizationFailure
     )
   );
@@ -471,6 +541,7 @@ interface PrivateConversationStore {
 }
 
 interface PrivateMessageStore {
+  createMediaGroupId(): MediaGroupId;
   addPrivateMessage(input: {
     readonly conversation: PrivateConversationKey;
     readonly authorRole: PrivateConversationRole;
@@ -479,6 +550,7 @@ interface PrivateMessageStore {
     readonly replyToMessageId?: CanonicalMessageId;
     readonly externalReply?: ExternalReply;
     readonly quote?: TextQuote;
+    readonly mediaGroupId?: MediaGroupId;
     readonly inlineKeyboard?: InlineKeyboard;
     readonly replyInterfaceMarkup?: ReplyInterfaceMarkup;
     readonly viaBotId?: number;
@@ -526,10 +598,32 @@ interface PrivateMessagingServiceDependencies {
 }
 
 /**
- * Carries out exchanges of text, photos, and documents between an account and a bot in their
- * private conversation, including forwards by either and copies by the bot, and commits each
- * accepted message: its upload stored, the message stored, numbered for both participants, then
- * published. Bots can attach inline keyboards to their messages, edit them afterward, and delete
+ * A message of an existing private conversation to store, written by one of its participants,
+ * whose file the caller stored.
+ */
+interface NewPrivateMessage {
+  readonly account: VirtualAccount;
+  readonly bot: VirtualBot;
+  readonly authorRole: PrivateConversationRole;
+  readonly content: MessageContent;
+  readonly replyToMessageId?: CanonicalMessageId;
+  readonly externalReply?: ExternalReply;
+  readonly quote?: TextQuote;
+  readonly mediaGroupId?: MediaGroupId;
+  readonly inlineKeyboard?: InlineKeyboard;
+  readonly replyInterfaceMarkup?: ReplyInterfaceMarkup;
+  readonly viaBotId?: number;
+  readonly forwardInfo?: MessageForwardInfo;
+  readonly isContentProtected?: boolean;
+  readonly isSilent?: boolean;
+  readonly messageEffectId?: string;
+}
+
+/**
+ * Carries out exchanges of text, photos, documents, and albums of photos or documents between an
+ * account and a bot in their private conversation, including forwards by either and copies by the
+ * bot, and commits each accepted message: its upload stored, the message stored, numbered for both
+ * participants, then published. Bots can attach inline keyboards to their messages, edit them afterward, and delete
  * messages of their chats. A bot's message can also change the reply interface the account's
  * client shows, such as a reply keyboard whose buttons the account presses. An account edits the text or caption of its messages, and sends inline
  * query results through inline bots, which edit the messages sent through them.
@@ -646,6 +740,55 @@ export class PrivateMessagingService {
   }
 
   /**
+   * Sends an album of photos or documents from an account to its private chat with a bot, as
+   * `sendAccountMessage` sends one message. Every message of the album is checked before any is
+   * stored, as `normalizeOutgoingAlbum` checks them, and every message replies to the same message.
+   * The bot receives each message in the album's order.
+   */
+  sendAccountAlbum(input: SendAccountAlbumInput): SendAccountAlbumResult {
+    const account = this.#accounts.getById(input.fromAccountId);
+    if (account === undefined) {
+      return { sent: false, reason: 'account_not_found' };
+    }
+    const bot = this.#bots.getById(input.to.botId);
+    if (bot === undefined) {
+      return { sent: false, reason: 'bot_not_found' };
+    }
+    if (this.#blockedUsers.isBlocked(account.profile.id, bot.profile.id)) {
+      return { sent: false, reason: 'bot_blocked' };
+    }
+    const albumNormalization = normalizeOutgoingAlbum(
+      input.contents.map(toOutgoingAccountMedia),
+      'account',
+      this.#textFixingContext,
+    );
+    if (!albumNormalization.normalized) {
+      return { sent: false, ...albumNormalization.failure };
+    }
+    const conversation: PrivateConversationKey = {
+      accountId: account.profile.id,
+      botId: bot.profile.id,
+    };
+    const repliedMessage = input.replyToBotMessageId === undefined
+      ? undefined
+      : this.getPrivateMessageByBotMessageId(conversation, input.replyToBotMessageId);
+    if (input.replyToBotMessageId !== undefined && repliedMessage === undefined) {
+      return { sent: false, reason: 'reply_message_not_found' };
+    }
+
+    this.#privateConversations.getOrCreatePrivateConversation(conversation);
+    return {
+      sent: true,
+      messages: this.#storePrivateAlbum(albumNormalization.contents, {
+        account,
+        bot,
+        authorRole: 'account',
+        replyToMessageId: repliedMessage?.id,
+      }),
+    };
+  }
+
+  /**
    * Sends an inline query result from an account to its private chat with a bot, which receives
    * it as the account's message sent through the inline bot. As for any message, the account must
    * not block the chat's bot.
@@ -687,17 +830,11 @@ export class PrivateMessagingService {
     if (input.content.kind === 'text' && input.content.text.length === 0) {
       return { sent: false, reason: 'message_text_empty' };
     }
-    const account = this.#accounts.getById(input.to.accountId);
-    if (account === undefined) {
-      return { sent: false, reason: 'account_not_found' };
+    const recipient = this.#findBotRecipient(bot, input.to);
+    if (!recipient.found) {
+      return { sent: false, reason: recipient.reason };
     }
-    const conversation = this.#privateConversations.getPrivateConversation({
-      accountId: account.profile.id,
-      botId: bot.profile.id,
-    });
-    if (conversation === undefined) {
-      return { sent: false, reason: 'conversation_not_started' };
-    }
+    const { account, conversation } = recipient;
     const replyResolution = this.#resolveBotMessageReplyTarget(conversation, input.replyTo);
     if (!replyResolution.resolved) {
       return { sent: false, reason: 'reply_message_not_found' };
@@ -734,6 +871,62 @@ export class PrivateMessagingService {
         inlineKeyboard: input.inlineKeyboard,
         replyInterfaceMarkup: input.replyInterfaceMarkup,
         forwardInfo: input.forwardInfo,
+        isContentProtected: input.isContentProtected,
+        isSilent: input.isSilent,
+        messageEffectId: input.messageEffectId,
+      }),
+    };
+  }
+
+  /**
+   * Sends an album of photos or documents from a bot to an account, as `sendBotMessage` sends one
+   * message and in its order of checks, checking every message of the album before any is stored:
+   * each caption is normalized, and the album is checked, as `normalizeOutgoingAlbum` does. Every
+   * message replies to the same message, with the same quote.
+   */
+  sendBotAlbum(input: SendBotAlbumInput): SendBotAlbumResult {
+    const bot = this.#bots.getById(input.fromBotId);
+    if (bot === undefined) {
+      return { sent: false, reason: 'bot_not_found' };
+    }
+    const recipient = this.#findBotRecipient(bot, input.to);
+    if (!recipient.found) {
+      return { sent: false, reason: recipient.reason };
+    }
+    const { account, conversation } = recipient;
+    const replyResolution = this.#resolveBotMessageReplyTarget(conversation, input.replyTo);
+    if (!replyResolution.resolved) {
+      return { sent: false, reason: 'reply_message_not_found' };
+    }
+    const albumNormalization = normalizeOutgoingAlbum(
+      input.contents,
+      'bot',
+      this.#textFixingContext,
+    );
+    if (!albumNormalization.normalized) {
+      return { sent: false, ...albumNormalization.failure };
+    }
+    const quoteResolution = resolveReplyQuote(
+      getReplyQuoteSource(replyResolution.repliedMessage, input.externalReply),
+      input.quote,
+      this.#textFixingContext,
+    );
+    if (!quoteResolution.resolved) {
+      return { sent: false, reason: quoteResolution.reason };
+    }
+    if (this.#blockedUsers.isBlocked(account.profile.id, bot.profile.id)) {
+      return { sent: false, reason: 'bot_blocked' };
+    }
+
+    return {
+      sent: true,
+      messages: this.#storePrivateAlbum(albumNormalization.contents, {
+        account,
+        bot,
+        authorRole: 'bot',
+        replyToMessageId: replyResolution.repliedMessage?.id,
+        externalReply: input.externalReply?.externalReply,
+        quote: quoteResolution.quote,
         isContentProtected: input.isContentProtected,
         isSilent: input.isSilent,
         messageEffectId: input.messageEffectId,
@@ -1117,6 +1310,30 @@ export class PrivateMessagingService {
   }
 
   /**
+   * Finds the account a bot writes to and their conversation. As on Telegram, a bot cannot initiate
+   * a private conversation, so the account must have started one with the bot.
+   */
+  #findBotRecipient(bot: VirtualBot, to: BotPrivateChat):
+    | {
+      readonly found: true;
+      readonly account: VirtualAccount;
+      readonly conversation: PrivateConversation;
+    }
+    | { readonly found: false; readonly reason: 'account_not_found' | 'conversation_not_started' } {
+    const account = this.#accounts.getById(to.accountId);
+    if (account === undefined) {
+      return { found: false, reason: 'account_not_found' };
+    }
+    const conversation = this.#privateConversations.getPrivateConversation({
+      accountId: account.profile.id,
+      botId: bot.profile.id,
+    });
+    return conversation === undefined
+      ? { found: false, reason: 'conversation_not_started' }
+      : { found: true, account, conversation };
+  }
+
+  /**
    * Finds the message a bot's message replies to. As on Telegram, a target that is not found,
    * such as a deleted message, fails the send unless the bot allowed sending without a reply.
    */
@@ -1327,9 +1544,30 @@ export class PrivateMessagingService {
   }
 
   /**
-   * Stores content written by one participant of an existing private conversation, whose file the
-   * caller stored, numbers it in both participants' message boxes, applies its change of the
-   * account's reply interface, and publishes its creation.
+   * Stores the normalized contents of an album, with their uploads, as messages of an existing
+   * private conversation that `#storePrivateMessage` stores one by one in order, sharing a new
+   * album identifier unless the album holds a single message. Call it only once every message of
+   * the album passed its checks.
+   */
+  #storePrivateAlbum(
+    contents: readonly NormalizedOutgoingContent[],
+    message: Omit<NewPrivateMessage, 'content' | 'mediaGroupId'>,
+  ): readonly PrivateMessage[] {
+    const mediaGroupId = formsAlbum(contents.length)
+      ? this.#messages.createMediaGroupId()
+      : undefined;
+    return contents.map((content) =>
+      this.#storePrivateMessage({
+        ...message,
+        content: storeOutgoingContent(content, this.#files),
+        mediaGroupId,
+      })
+    );
+  }
+
+  /**
+   * Stores a message of an existing private conversation, numbers it in both participants' message
+   * boxes, applies its change of the account's reply interface, and publishes its creation.
    */
   #storePrivateMessage(
     {
@@ -1340,6 +1578,7 @@ export class PrivateMessagingService {
       replyToMessageId,
       externalReply,
       quote,
+      mediaGroupId,
       inlineKeyboard,
       replyInterfaceMarkup,
       viaBotId,
@@ -1347,22 +1586,7 @@ export class PrivateMessagingService {
       isContentProtected,
       isSilent,
       messageEffectId,
-    }: {
-      readonly account: VirtualAccount;
-      readonly bot: VirtualBot;
-      readonly authorRole: PrivateConversationRole;
-      readonly content: MessageContent;
-      readonly replyToMessageId?: CanonicalMessageId;
-      readonly externalReply?: ExternalReply;
-      readonly quote?: TextQuote;
-      readonly inlineKeyboard?: InlineKeyboard;
-      readonly replyInterfaceMarkup?: ReplyInterfaceMarkup;
-      readonly viaBotId?: number;
-      readonly forwardInfo?: MessageForwardInfo;
-      readonly isContentProtected?: boolean;
-      readonly isSilent?: boolean;
-      readonly messageEffectId?: string;
-    },
+    }: NewPrivateMessage,
   ): PrivateMessage {
     const conversation: PrivateConversationKey = {
       accountId: account.profile.id,
@@ -1376,6 +1600,7 @@ export class PrivateMessagingService {
       replyToMessageId,
       externalReply,
       quote,
+      mediaGroupId,
       inlineKeyboard,
       replyInterfaceMarkup,
       viaBotId,

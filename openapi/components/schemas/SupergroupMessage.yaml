@@ -73,6 +73,12 @@ properties:
     $ref: ./ExternalReplyInfo.yaml
   quote:
     $ref: ./TextQuote.yaml
+  media_group_id:
+    type: string
+    pattern: '^[1-9]\d*$'
+    description: >-
+      The identifier the messages of an album share, as the decimal text of a positive 64-bit
+      integer; omitted for a message outside albums. Each album sent gets a new one.
   text:
     type: string
   entities:

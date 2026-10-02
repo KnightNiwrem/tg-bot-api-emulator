@@ -1,0 +1,17 @@
+description: A file an account uploads as a document.
+type: object
+additionalProperties: false
+required:
+  - content_base64
+  - file_name
+properties:
+  content_base64:
+    type: string
+    contentEncoding: base64
+    description: >-
+      The file's content, which must not be empty. An account uploads through its own
+      client, so the session's upload profile, which limits bot uploads, does not apply.
+  file_name:
+    type: string
+    minLength: 1
+    description: The file's name, whose extension decides the document's MIME type.

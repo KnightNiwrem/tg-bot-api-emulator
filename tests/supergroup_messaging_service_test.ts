@@ -6,11 +6,17 @@ import { MessageBoxRepository } from '../src/repositories/message_box.ts';
 import { SharedChatRepository } from '../src/repositories/shared_chat.ts';
 import { TelegramIdentityRepository } from '../src/repositories/telegram_identity.ts';
 import { SharedChatAdministrationService } from '../src/services/shared_chat_administration.ts';
+import type { MediaContent } from '../src/services/message_content.ts';
 import { SupergroupMessagingService } from '../src/services/supergroup_messaging.ts';
 import { VirtualUserService } from '../src/services/virtual_user.ts';
 import type { ChatDomainEvent } from '../src/types/chat_domain_event.ts';
 import { grantSupergroupAdministratorRights } from '../src/types/chat_membership.ts';
-import { getContentText, type SupergroupMessage } from '../src/types/virtual_message.ts';
+import type { PhotoUpload } from '../src/types/stored_file.ts';
+import {
+  getContentText,
+  MAX_CAPTION_LENGTH,
+  type SupergroupMessage,
+} from '../src/types/virtual_message.ts';
 
 Deno.test('SupergroupMessagingService numbers messages once for the supergroup and publishes them', () => {
   const { supergroupMessaging, messageBoxes, publishedEvents, owner, bot, supergroup } =
@@ -59,6 +65,102 @@ Deno.test('SupergroupMessagingService numbers messages once for the supergroup a
       JSON.stringify(['message_created', 'message_created', 'message_created'])
   ) {
     throw new Error('Expected each committed message to be published');
+  }
+});
+
+Deno.test('SupergroupMessagingService sends albums whole, numbered in order for the supergroup', () => {
+  const {
+    supergroupMessaging,
+    messageBoxes,
+    publishedEvents,
+    virtualUsers,
+    owner,
+    bot,
+    supergroup,
+  } = createSupergroupMessagingFixture();
+  const photo = (caption: string): MediaContent => ({
+    kind: 'photo',
+    photo: { kind: 'upload', upload: photoUpload() },
+    caption,
+    hasSpoiler: false,
+    showsCaptionAboveMedia: false,
+  });
+
+  const accountAlbum = supergroupMessaging.sendAccountAlbum({
+    fromAccountId: owner.profile.id,
+    chatId: supergroup.id,
+    contents: [
+      { kind: 'media', upload: photoUpload(), caption: 'Before' },
+      { kind: 'media', upload: photoUpload(), caption: 'After' },
+    ],
+  });
+  if (!accountAlbum.sent) {
+    throw new Error(`Expected the account's album to be sent, received ${accountAlbum.reason}`);
+  }
+  const botAlbum = supergroupMessaging.sendBotAlbum({
+    fromBotId: bot.profile.id,
+    chatId: supergroup.id,
+    contents: [photo('Reply'), photo('')],
+    replyTo: { messageId: 3, allowSendingWithoutReply: false },
+    isContentProtected: true,
+  });
+  if (!botAlbum.sent) {
+    throw new Error(`Expected the bot's album to be sent, received ${botAlbum.reason}`);
+  }
+  const [firstPhoto, secondPhoto] = accountAlbum.messages;
+  const [firstReply, secondReply] = botAlbum.messages;
+  const messageIds = [...accountAlbum.messages, ...botAlbum.messages].map((message) =>
+    messageBoxes.getMessageId(supergroup.id, message.id)
+  );
+  if (
+    JSON.stringify(messageIds) !== JSON.stringify([2, 3, 4, 5]) ||
+    firstPhoto.mediaGroupId === undefined || secondPhoto.mediaGroupId !== firstPhoto.mediaGroupId ||
+    firstReply.mediaGroupId === undefined || firstReply.mediaGroupId === firstPhoto.mediaGroupId ||
+    secondReply.mediaGroupId !== firstReply.mediaGroupId ||
+    botAlbum.messages.some((message) =>
+      message.replyToMessageId !== secondPhoto.id || !message.isContentProtected
+    ) ||
+    publishedEvents.length !== 4
+  ) {
+    throw new Error('Expected two albums numbered in order, the second replying alike');
+  }
+
+  const stranger = createAccount(virtualUsers, 'Grace');
+  const failures = [
+    supergroupMessaging.sendAccountAlbum({
+      fromAccountId: stranger.profile.id,
+      chatId: supergroup.id,
+      contents: [{ kind: 'media', upload: photoUpload(), caption: '' }],
+    }),
+    supergroupMessaging.sendBotAlbum({
+      fromBotId: bot.profile.id,
+      chatId: supergroup.id,
+      contents: [photo(''), photo('')],
+      messageEffectId: '5104841245755180586',
+    }),
+    supergroupMessaging.sendBotAlbum({
+      fromBotId: bot.profile.id,
+      chatId: supergroup.id,
+      contents: [photo('Fits'), photo('x'.repeat(MAX_CAPTION_LENGTH + 1))],
+    }),
+    supergroupMessaging.sendBotAlbum({
+      fromBotId: bot.profile.id,
+      chatId: supergroup.id,
+      contents: Array.from({ length: 11 }, () => photo('')),
+    }),
+  ].map((result) => result.sent ? 'sent' : result.reason);
+  if (
+    JSON.stringify(failures) !==
+      JSON.stringify([
+        'not_a_member',
+        'message_effect_not_allowed_in_chat',
+        'caption_too_long',
+        'album_too_large',
+      ]) || publishedEvents.length !== 4
+  ) {
+    throw new Error(
+      `Expected refused albums to send nothing, received ${JSON.stringify(failures)}`,
+    );
   }
 });
 
@@ -564,6 +666,14 @@ function createSupergroupMessagingFixture() {
     bot,
     supergroup: creation.supergroup,
   };
+}
+
+/** A photo upload of a 4 by 3 GIF image, whose header is all the emulator reads. */
+function photoUpload(): PhotoUpload {
+  const content = new Uint8Array(13);
+  content.set(new TextEncoder().encode('GIF89a'));
+  content.set([4, 0, 3, 0], 6);
+  return { type: 'photo', content, imageFormat: 'gif', width: 4, height: 3 };
 }
 
 function expectSent(

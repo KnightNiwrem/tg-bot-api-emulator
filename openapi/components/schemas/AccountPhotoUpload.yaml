@@ -1,0 +1,14 @@
+description: A photo an account uploads.
+type: object
+additionalProperties: false
+required:
+  - content_base64
+properties:
+  content_base64:
+    type: string
+    contentEncoding: base64
+    description: >-
+      A JPEG, PNG, GIF, WebP, or BMP image of at most 10485760 bytes, which Telegram
+      accepts as a photo when its width and height add up to at most 10000 and neither
+      is more than 20 times the other. Telegram also accepts other image formats, such as TIFF, which the emulator
+      rejects.

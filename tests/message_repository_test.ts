@@ -147,6 +147,56 @@ Deno.test('MessageRepository keeps what an edit cannot change', () => {
   }
 });
 
+Deno.test('MessageRepository issues distinct album identifiers that messages keep through edits', () => {
+  const messages = new MessageRepository();
+  const mediaGroupIds = Array.from({ length: 100 }, () => messages.createMediaGroupId());
+  if (
+    new Set(mediaGroupIds).size !== mediaGroupIds.length ||
+    mediaGroupIds.some((mediaGroupId) =>
+      !/^[1-9]\d*$/.test(mediaGroupId) || BigInt(mediaGroupId) >= 1n << 63n
+    )
+  ) {
+    throw new Error(`Expected distinct positive 64-bit identifiers, received ${mediaGroupIds}`);
+  }
+
+  const [mediaGroupId] = mediaGroupIds;
+  const photo = { kind: 'photo' as const, fileId: 'file', hasSpoiler: false };
+  const privateMember = messages.addPrivateMessage({
+    conversation: { accountId: 1, botId: 2 },
+    authorRole: 'bot',
+    sentAtUnixSeconds: 1_700_000_000,
+    mediaGroupId,
+    content: { ...photo, caption: { text: '', entities: [] }, showsCaptionAboveMedia: false },
+  });
+  const supergroupMember = messages.addSupergroupMessage({
+    chatId: -1_000_000_000_001,
+    author: { kind: 'bot', botId: 2 },
+    sentAtUnixSeconds: 1_700_000_000,
+    mediaGroupId,
+    content: { ...photo, caption: { text: '', entities: [] }, showsCaptionAboveMedia: false },
+  });
+  const edit = {
+    inlineKeyboard: undefined,
+    contentEditedAtUnixSeconds: 1_700_000_005,
+    content: {
+      ...photo,
+      caption: { text: 'Edited', entities: [] },
+      showsCaptionAboveMedia: false,
+    },
+  };
+  const editedMembers = [
+    messages.editPrivateMessage(privateMember.id, edit),
+    messages.editSupergroupMessage(supergroupMember.id, edit),
+  ];
+  if (
+    privateMember.mediaGroupId !== mediaGroupId ||
+    supergroupMember.mediaGroupId !== mediaGroupId ||
+    editedMembers.some((member) => member.mediaGroupId !== mediaGroupId)
+  ) {
+    throw new Error('Expected messages to keep their album through an edit');
+  }
+});
+
 Deno.test('MessageRepository deletes a message from the store and its conversation history', () => {
   const messages = new MessageRepository();
   const conversation = { accountId: 1, botId: 2 };

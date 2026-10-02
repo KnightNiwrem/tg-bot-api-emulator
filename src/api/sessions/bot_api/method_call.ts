@@ -69,3 +69,19 @@ export function botApiRetryAfterError(retryAfterSeconds: number): BotApiMethodAn
     },
   };
 }
+
+/**
+ * Telegram's answer to an album whose message Telegram's servers refused once the album was sent,
+ * as the official Bot API server's `on_message_send_failed` writes it: the first such message's
+ * position in the album, counted from 1, and the error Telegram's servers gave, which, unlike the
+ * error of a single message, the server does not reword.
+ */
+export function albumMessageNotSentError(
+  memberPosition: number,
+  telegramError: string,
+): BotApiMethodAnswer {
+  return botApiError(
+    400,
+    `Bad Request: failed to send message #${memberPosition} with the error message "${telegramError}"`,
+  );
+}

@@ -91,6 +91,15 @@ try {
     console.log(content.length, photo.photo?.[0].width);
   }
 
+  // Send two photos as an album. The bot receives each as a message sharing a media_group_id.
+  const album = await account.sendMediaGroup({
+    to: { type: 'private', botId: bot.id },
+    media: [{ photo: await Deno.readFile('front.png'), caption: 'Both sides' }, {
+      photo: await Deno.readFile('back.png'),
+    }],
+  });
+  console.log(album.map(({ media_group_id }) => media_group_id));
+
   // Edit the account's first message, which sends the bot an edited_message update. Accounts
   // format text and captions with entities, as bots specify them.
   await account.editMessage({

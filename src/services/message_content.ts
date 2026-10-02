@@ -13,6 +13,11 @@ import {
   MAX_CALLBACK_DATA_BYTES,
 } from '../types/inline_keyboard.ts';
 import {
+  type AlbumCompositionFailureReason,
+  checkAlbumComposition,
+  toAlbumMember,
+} from '../types/media_album.ts';
+import {
   createAutomaticQuote,
   type ExternalReplyTarget,
   isQuoteEntity,
@@ -215,6 +220,39 @@ function normalizeMediaContent(
   };
 }
 
+export type OutgoingAlbumNormalization =
+  | { readonly normalized: true; readonly contents: readonly NormalizedOutgoingContent[] }
+  | {
+    readonly normalized: false;
+    readonly failure:
+      | CaptionNormalizationFailure
+      | { readonly reason: AlbumCompositionFailureReason };
+  };
+
+/**
+ * Normalizes the media of an album as `normalizeOutgoingContent` normalizes each, in order, then
+ * checks that they form an album as `checkAlbumComposition` does, as TDLib checks an album after
+ * reading every message's content.
+ */
+export function normalizeOutgoingAlbum(
+  contents: readonly MediaContent[],
+  sender: MessageSenderKind,
+  context: FormattedTextFixingContext,
+): OutgoingAlbumNormalization {
+  const normalizedContents: NormalizedOutgoingContent[] = [];
+  for (const content of contents) {
+    const normalization = normalizeMediaContent(content, sender, context);
+    if (!normalization.normalized) {
+      return normalization;
+    }
+    normalizedContents.push(normalization.content);
+  }
+  const compositionFailure = checkAlbumComposition(contents.map(toAlbumMember));
+  return compositionFailure === undefined
+    ? { normalized: true, contents: normalizedContents }
+    : { normalized: false, failure: { reason: compositionFailure } };
+}
+
 /**
  * Keeps the content of an existing message as it is, apart from a replaced caption of media, which
  * is normalized as a new caption is. Text and rich messages have no caption to replace.
@@ -363,20 +401,29 @@ export type AccountMessageContent =
     /** Formatting the account specified; omitted for none. */
     readonly entities?: readonly TextEntity[];
   }
-  | (SpecifiedCaption & {
-    readonly kind: 'media';
-    readonly upload: FileUpload;
-  });
+  | AccountMediaContent;
+
+/** Media an account sends, a photo or a document as its upload says, with its caption. */
+export type AccountMediaContent = SpecifiedCaption & {
+  readonly kind: 'media';
+  readonly upload: FileUpload;
+};
 
 /**
  * Turns what an account sends into outgoing content, which its client normalizes as Telegram
- * does. An account never covers a photo or moves its caption.
+ * does, as `toOutgoingAccountMedia` turns media.
  */
 export function toOutgoingAccountContent(content: AccountMessageContent): OutgoingMessageContent {
-  if (content.kind === 'text') {
-    return content;
-  }
-  const { upload, caption, captionEntities } = content;
+  return content.kind === 'text' ? content : toOutgoingAccountMedia(content);
+}
+
+/**
+ * Turns media an account sends into outgoing media. An account never covers a photo or moves its
+ * caption.
+ */
+export function toOutgoingAccountMedia(
+  { upload, caption, captionEntities }: AccountMediaContent,
+): MediaContent {
   return upload.type === 'photo'
     ? {
       kind: 'photo',

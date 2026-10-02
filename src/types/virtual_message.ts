@@ -21,6 +21,12 @@ export type CanonicalMessageId = string;
  */
 export type InlineMessageId = string;
 
+/**
+ * Telegram's `media_group_id`: the decimal text of the positive 64-bit identifier that the
+ * messages of one album share. Each album sent, forwarded, or copied as a whole gets a new one.
+ */
+export type MediaGroupId = string;
+
 /** The bot through whose inline mode an account sent a message, as Telegram's `via_bot` shows. */
 export interface ViaBot {
   readonly botId: number;
@@ -342,6 +348,8 @@ export interface PrivateMessage {
   readonly externalReply?: ExternalReply;
   /** The quoted part of the replied message; omitted for a reply without one, or no reply. */
   readonly quote?: TextQuote;
+  /** The album the message belongs to; omitted for a message outside albums. */
+  readonly mediaGroupId?: MediaGroupId;
   /**
    * Omitted when the message has no inline keyboard. Bots attach inline keyboards to their messages,
    * and inline bots to messages sent through them.
@@ -399,6 +407,8 @@ export interface SupergroupMessage {
   readonly externalReply?: ExternalReply;
   /** The quoted part of the replied message; omitted for a reply without one, or no reply. */
   readonly quote?: TextQuote;
+  /** The album the message belongs to; omitted for a message outside albums. */
+  readonly mediaGroupId?: MediaGroupId;
   /**
    * Omitted when the message has no inline keyboard. Bots attach inline keyboards to their messages,
    * and inline bots to messages sent through them.

@@ -6,6 +6,7 @@ import {
   type SupergroupMembershipLookup,
 } from '../types/chat_membership.ts';
 import type { InlineKeyboard } from '../types/inline_keyboard.ts';
+import { type AlbumCompositionFailureReason, formsAlbum } from '../types/media_album.ts';
 import type { ExternalReplyTarget } from '../types/message_reply.ts';
 import type { MessageForward } from '../types/message_forward.ts';
 import {
@@ -26,6 +27,7 @@ import {
   getMessageAuthorId,
   type InlineMessageId,
   isSupergroupContentMessage,
+  type MediaGroupId,
   mentionsUser,
   type MessageContent,
   type MessageForwardInfo,
@@ -37,6 +39,7 @@ import {
   type TextQuote,
 } from '../types/virtual_message.ts';
 import {
+  type AccountMediaContent,
   type AccountMessageContent,
   type AccountMessageEdit,
   checkBotMessageEdit,
@@ -50,6 +53,7 @@ import {
   isUnchangedContent,
   type MediaContent,
   type NormalizedOutgoingContent,
+  normalizeOutgoingAlbum,
   normalizeOutgoingContent,
   type OutgoingContentNormalization,
   type OutgoingMessageContent,
@@ -65,6 +69,7 @@ import {
   type TextMessageReplacement,
   toContentOfStoredFile,
   toOutgoingAccountContent,
+  toOutgoingAccountMedia,
 } from './message_content.ts';
 
 export interface SendSupergroupAccountMessageInput {
@@ -87,6 +92,30 @@ export type SendSupergroupAccountMessageResult =
   | (
     & { readonly sent: false }
     & ({ readonly reason: SendSupergroupAccountMessageFailureReason } | ContentNormalizationFailure)
+  );
+
+/** An album an account sends to a supergroup it is a member of. */
+export interface SendSupergroupAccountAlbumInput {
+  readonly fromAccountId: number;
+  readonly chatId: number;
+  /** The album's media in the order the supergroup shows them, each with its caption. */
+  readonly contents: readonly AccountMediaContent[];
+  /** As `SendSupergroupAccountMessageInput` describes it; every message of the album replies to it. */
+  readonly replyToMessageId?: number;
+}
+
+export type SendSupergroupAccountAlbumResult =
+  | { readonly sent: true; readonly messages: readonly SupergroupMessage[] }
+  | (
+    & { readonly sent: false }
+    & (
+      | {
+        readonly reason:
+          | Exclude<SendSupergroupAccountMessageFailureReason, 'message_text_empty'>
+          | AlbumCompositionFailureReason;
+      }
+      | ContentNormalizationFailure
+    )
   );
 
 /**
@@ -168,6 +197,46 @@ export type SendSupergroupBotMessageResult =
   | (
     & { readonly sent: false }
     & ({ readonly reason: SendSupergroupBotMessageFailureReason } | ContentNormalizationFailure)
+  );
+
+/**
+ * An album a bot sends to a supergroup it is a member of. Every message of the album replies alike
+ * and shares the album's protection and notification; an album carries no reply markup.
+ */
+export interface SendSupergroupBotAlbumInput {
+  readonly fromBotId: number;
+  readonly chatId: number;
+  /** The album's media in the order the supergroup shows them, each with its caption. */
+  readonly contents: readonly MediaContent[];
+  /** As `SendSupergroupBotMessageInput` describes it. */
+  readonly replyTo?: SupergroupBotMessageReplyTarget;
+  /** As `SendSupergroupBotMessageInput` describes it. */
+  readonly externalReply?: ExternalReplyTarget;
+  /** As `SendSupergroupBotMessageInput` describes it. */
+  readonly quote?: SpecifiedQuote;
+  /** As `SendSupergroupBotMessageInput` describes it. */
+  readonly isContentProtected?: boolean;
+  /** As `SendSupergroupBotMessageInput` describes it. */
+  readonly isSilent?: boolean;
+  /** As `SendSupergroupBotMessageInput` describes it: an album with one is not sent. */
+  readonly messageEffectId?: string;
+}
+
+export type SendSupergroupBotAlbumResult =
+  | { readonly sent: true; readonly messages: readonly SupergroupMessage[] }
+  | (
+    & { readonly sent: false }
+    & (
+      | {
+        readonly reason:
+          | Exclude<
+            SendSupergroupBotMessageFailureReason,
+            'message_text_empty' | 'callback_data_invalid' | 'button_type_invalid'
+          >
+          | AlbumCompositionFailureReason;
+      }
+      | ContentNormalizationFailure
+    )
   );
 
 /** The reply interface a member's client shows in a supergroup, with the message that set it. */
@@ -431,6 +500,7 @@ interface NewSupergroupMessage {
   readonly replyToMessageId?: CanonicalMessageId;
   readonly externalReply?: ExternalReply;
   readonly quote?: TextQuote;
+  readonly mediaGroupId?: MediaGroupId;
   readonly inlineKeyboard?: InlineKeyboard;
   readonly viaBotId?: number;
   readonly forwardInfo?: MessageForwardInfo;
@@ -454,6 +524,7 @@ interface SupergroupMemberStore extends SupergroupMembershipLookup {
 }
 
 interface SupergroupMessageStore {
+  createMediaGroupId(): MediaGroupId;
   addSupergroupMessage(input: NewSupergroupMessage): SupergroupMessage;
   getSupergroupMessage(messageId: CanonicalMessageId): SupergroupMessage | undefined;
   getMessageByInlineMessageId(inlineMessageId: InlineMessageId): ChatMessage | undefined;
@@ -488,10 +559,11 @@ interface SupergroupMessagingServiceDependencies {
 }
 
 /**
- * Carries out exchanges of text, photos, and documents among the members of a supergroup,
- * accounts and bots alike, including forwards by members and copies by bots, and commits each
- * accepted message: its upload stored, the message stored, numbered once in the supergroup's own
- * message box, then published. Only members write to a supergroup or read its messages.
+ * Carries out exchanges of text, photos, documents, and albums of photos or documents among the
+ * members of a supergroup, accounts and bots alike, including forwards by members and copies by
+ * bots, and commits each accepted message: its upload stored, the message stored, numbered once in
+ * the supergroup's own message box, then published. Only members write to a supergroup or read its
+ * messages.
  *
  * Bots attach inline keyboards, edit their own messages, and delete them; as on Telegram, only an
  * administrator bot with the right to delete messages deletes other members'. Bots also show reply
@@ -559,6 +631,42 @@ export class SupergroupMessagingService {
         content: contentNormalization.content,
         replyToMessageId: repliedMessage?.id,
       }),
+    };
+  }
+
+  /**
+   * Sends an album of photos or documents from an account to a supergroup it is a member of, as
+   * `sendAccountMessage` sends one message. Every message of the album is checked before any is
+   * stored, as `normalizeOutgoingAlbum` checks them, and every message replies to the same message.
+   * The supergroup's bots receive each message they would receive alone, in the album's order.
+   */
+  sendAccountAlbum(input: SendSupergroupAccountAlbumInput): SendSupergroupAccountAlbumResult {
+    const memberResolution = this.#resolveAccountMember(input.fromAccountId, input.chatId);
+    if (!memberResolution.resolved) {
+      return { sent: false, reason: memberResolution.reason };
+    }
+    const albumNormalization = normalizeOutgoingAlbum(
+      input.contents.map(toOutgoingAccountMedia),
+      'account',
+      this.#textFixingContext,
+    );
+    if (!albumNormalization.normalized) {
+      return { sent: false, ...albumNormalization.failure };
+    }
+    const repliedMessage = input.replyToMessageId === undefined
+      ? undefined
+      : this.getMessageByChatMessageId(input.chatId, input.replyToMessageId);
+    if (input.replyToMessageId !== undefined && repliedMessage === undefined) {
+      return { sent: false, reason: 'reply_message_not_found' };
+    }
+
+    return {
+      sent: true,
+      messages: this.#storeAlbum(albumNormalization.contents, {
+        chatId: input.chatId,
+        author: { kind: 'account', accountId: input.fromAccountId },
+        replyToMessageId: repliedMessage?.id,
+      }, repliedMessage),
     };
   }
 
@@ -672,6 +780,63 @@ export class SupergroupMessagingService {
         inlineKeyboard: input.inlineKeyboard,
         replyInterfaceMarkup: input.replyInterfaceMarkup,
         forwardInfo: input.forwardInfo,
+        isContentProtected: input.isContentProtected,
+        isSilent: input.isSilent,
+      }, repliedMessage),
+    };
+  }
+
+  /**
+   * Sends an album of photos or documents from a bot to a supergroup it is a member of, as
+   * `sendBotMessage` sends one message and in its order of checks, checking every message of the
+   * album before any is stored: each caption is normalized, and the album is checked, as
+   * `normalizeOutgoingAlbum` does. Every message replies to the same message, with the same quote.
+   */
+  sendBotAlbum(input: SendSupergroupBotAlbumInput): SendSupergroupBotAlbumResult {
+    if (this.#bots.getById(input.fromBotId) === undefined) {
+      return { sent: false, reason: 'bot_not_found' };
+    }
+    const accessFailure = this.#checkBotAccess(input.fromBotId, input.chatId);
+    if (accessFailure !== undefined) {
+      return { sent: false, reason: accessFailure };
+    }
+    const repliedMessage = input.replyTo === undefined
+      ? undefined
+      : this.getMessageByChatMessageId(input.chatId, input.replyTo.messageId);
+    if (
+      input.replyTo !== undefined && repliedMessage === undefined &&
+      !input.replyTo.allowSendingWithoutReply
+    ) {
+      return { sent: false, reason: 'reply_message_not_found' };
+    }
+    if (input.messageEffectId !== undefined) {
+      return { sent: false, reason: 'message_effect_not_allowed_in_chat' };
+    }
+    const albumNormalization = normalizeOutgoingAlbum(
+      input.contents,
+      'bot',
+      this.#textFixingContext,
+    );
+    if (!albumNormalization.normalized) {
+      return { sent: false, ...albumNormalization.failure };
+    }
+    const quoteResolution = resolveReplyQuote(
+      getReplyQuoteSource(repliedMessage, input.externalReply),
+      input.quote,
+      this.#textFixingContext,
+    );
+    if (!quoteResolution.resolved) {
+      return { sent: false, reason: quoteResolution.reason };
+    }
+
+    return {
+      sent: true,
+      messages: this.#storeAlbum(albumNormalization.contents, {
+        chatId: input.chatId,
+        author: { kind: 'bot', botId: input.fromBotId },
+        replyToMessageId: repliedMessage?.id,
+        externalReply: input.externalReply?.externalReply,
+        quote: quoteResolution.quote,
         isContentProtected: input.isContentProtected,
         isSilent: input.isSilent,
       }, repliedMessage),
@@ -1196,6 +1361,24 @@ export class SupergroupMessagingService {
       sentAtUnixSeconds: this.#currentUnixTimeSeconds(),
       content: storeOutgoingContent(content, this.#files),
     }, repliedMessage);
+  }
+
+  /**
+   * Stores the normalized contents of an album, with their uploads, as `#storeMessage` stores each
+   * in order, sharing a new album identifier unless the album holds a single message. Call it only
+   * once every message of the album passed its checks.
+   */
+  #storeAlbum(
+    contents: readonly NormalizedOutgoingContent[],
+    message: Omit<NewSupergroupMessage, 'sentAtUnixSeconds' | 'content' | 'mediaGroupId'>,
+    repliedMessage: SupergroupMessage | undefined,
+  ): readonly SupergroupMessage[] {
+    const mediaGroupId = formsAlbum(contents.length)
+      ? this.#messages.createMediaGroupId()
+      : undefined;
+    return contents.map((content) =>
+      this.#storeMessage({ ...message, content, mediaGroupId }, repliedMessage)
+    );
   }
 
   /**
