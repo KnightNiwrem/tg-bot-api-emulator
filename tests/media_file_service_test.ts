@@ -417,7 +417,8 @@ Deno.test('MediaFileService keeps the attributes a sender defines for a video', 
         ['download', 'video/mp4'],
       ]) ||
     uploads.some(({ durationSeconds, width, height, thumbnail }) =>
-      durationSeconds !== 12 || width !== 1920 || height !== 1080 || thumbnail?.width !== 320
+      durationSeconds !== 12 || width !== 1920 || height !== 1080 || thumbnail?.width !== 320 ||
+      thumbnail.height !== 180
     )
   ) {
     throw new Error(`Expected the sender's attributes, received ${JSON.stringify(summaries)}`);
