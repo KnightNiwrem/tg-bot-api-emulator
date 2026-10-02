@@ -36,12 +36,14 @@ import {
   checkBotMessageEdit,
   type ContentNormalizationFailure,
   type ContentReplacement,
+  type ContentTextNormalizationFailure,
   type FileUploadStore,
   getReplyQuoteSource,
   hasOnlyValidButtonCallbackData,
   isSameMessageContent,
   isUnchangedContent,
   type MediaContent,
+  type NewPollStore,
   type NormalizedOutgoingContent,
   normalizeOutgoingAlbum,
   normalizeOutgoingContent,
@@ -130,7 +132,7 @@ export type SendAccountAlbumResult =
           | Exclude<SendAccountMessageFailureReason, 'message_text_empty'>
           | AlbumCompositionFailureReason;
       }
-      | ContentNormalizationFailure
+      | ContentTextNormalizationFailure
     )
   );
 
@@ -269,7 +271,7 @@ export type SendBotAlbumResult =
           | Exclude<SendBotMessageFailureReason, 'message_text_empty' | 'callback_data_invalid'>
           | AlbumCompositionFailureReason;
       }
-      | ContentNormalizationFailure
+      | ContentTextNormalizationFailure
     )
   );
 
@@ -343,7 +345,8 @@ export type EditBotMessageMediaFailureReason =
   /** The message is a voice note, whose media TDLib does not let anyone edit. */
   | 'message_media_not_editable'
   | 'caption_too_long'
-  | 'album_media_kind_changed';
+  | 'album_media_kind_changed'
+  | 'message_media_not_editable';
 
 export type PrivateMessageEditResult<FailureReason extends string> =
   | {
@@ -599,6 +602,7 @@ interface PrivateMessagingServiceDependencies {
   readonly privateConversations: PrivateConversationStore;
   readonly messages: PrivateMessageStore;
   readonly files: FileUploadStore;
+  readonly polls: NewPollStore;
   readonly messageBoxes: MessageBoxStore;
   readonly blockedUsers: BlockedUserLookup;
   readonly events: ChatDomainEventSink;
@@ -648,6 +652,7 @@ export class PrivateMessagingService {
   readonly #privateConversations: PrivateConversationStore;
   readonly #messages: PrivateMessageStore;
   readonly #files: FileUploadStore;
+  readonly #polls: NewPollStore;
   readonly #messageBoxes: MessageBoxStore;
   readonly #blockedUsers: BlockedUserLookup;
   readonly #events: ChatDomainEventSink;
@@ -660,6 +665,7 @@ export class PrivateMessagingService {
       privateConversations,
       messages,
       files,
+      polls,
       messageBoxes,
       blockedUsers,
       events,
@@ -671,6 +677,7 @@ export class PrivateMessagingService {
     this.#privateConversations = privateConversations;
     this.#messages = messages;
     this.#files = files;
+    this.#polls = polls;
     this.#messageBoxes = messageBoxes;
     this.#blockedUsers = blockedUsers;
     this.#events = events;
@@ -741,7 +748,7 @@ export class PrivateMessagingService {
         account,
         bot,
         authorRole: 'account',
-        content: storeOutgoingContent(contentNormalization.content, this.#files),
+        content: storeOutgoingContent(contentNormalization.content, this.#files, this.#polls),
         replyToMessageId: repliedMessage?.id,
       }),
     };
@@ -872,7 +879,7 @@ export class PrivateMessagingService {
         account,
         bot,
         authorRole: 'bot',
-        content: storeOutgoingContent(contentNormalization.content, this.#files),
+        content: storeOutgoingContent(contentNormalization.content, this.#files, this.#polls),
         replyToMessageId: replyResolution.repliedMessage?.id,
         externalReply: input.externalReply?.externalReply,
         quote: quoteResolution.quote,
@@ -1480,7 +1487,7 @@ export class PrivateMessagingService {
 
     const editedMessage = this.#messages.editPrivateMessage(message.id, {
       ...edit,
-      content: storeOutgoingContent(content, this.#files),
+      content: storeOutgoingContent(content, this.#files, this.#polls),
     });
     this.#events.publish({ type: 'message_edited', message: editedMessage });
     return { edited: true, message: editedMessage };
@@ -1568,7 +1575,7 @@ export class PrivateMessagingService {
     return contents.map((content) =>
       this.#storePrivateMessage({
         ...message,
-        content: storeOutgoingContent(content, this.#files),
+        content: storeOutgoingContent(content, this.#files, this.#polls),
         mediaGroupId,
       })
     );

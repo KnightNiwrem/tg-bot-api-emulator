@@ -1,0 +1,63 @@
+type: object
+additionalProperties: false
+description: >-
+  A regular poll as the official Bot API server's `JsonPoll` shows it to bots, with its votes as
+  they are now. Every forward of a poll's message shows the same poll; a copy shows a new one.
+  The emulator's polls never restrict who may vote, so `members_only` is false and
+  `country_codes` is omitted; quizzes, descriptions, media, and closing times are not supported.
+required:
+  - id
+  - question
+  - options
+  - total_voter_count
+  - is_closed
+  - is_anonymous
+  - allows_multiple_answers
+  - allows_revoting
+  - members_only
+  - type
+properties:
+  id:
+    type: string
+    pattern: '^[1-9]\d*$'
+    maxLength: 19
+    description: The poll's identifier, the decimal text of a positive 64-bit integer.
+  question:
+    type: string
+    minLength: 1
+    description: The question, at most 300 characters as Telegram counts them.
+  question_entities:
+    type: array
+    minItems: 1
+    description: >-
+      The custom emoji of the question, the only entities Telegram keeps in questions; omitted
+      when there are none.
+    items:
+      $ref: ./MessageEntity.yaml
+  options:
+    type: array
+    minItems: 1
+    maxItems: 12
+    items:
+      $ref: ./PollOption.yaml
+  total_voter_count:
+    type: integer
+    minimum: 0
+    description: How many accounts chose any option, each counted once.
+  is_closed:
+    type: boolean
+    description: Whether the poll no longer accepts answers.
+  is_anonymous:
+    type: boolean
+    description: Whether the poll hides who voted for what.
+  allows_multiple_answers:
+    type: boolean
+  allows_revoting:
+    type: boolean
+    description: Whether a voter may change or retract its answer.
+  members_only:
+    type: boolean
+    const: false
+  type:
+    type: string
+    const: regular

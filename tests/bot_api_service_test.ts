@@ -12,6 +12,7 @@ import { BotWebhookRepository } from '../src/repositories/bot_webhook.ts';
 import { CallbackQueryRepository } from '../src/repositories/callback_query.ts';
 import { ChatActionRepository } from '../src/repositories/chat_action.ts';
 import { FileRepository } from '../src/repositories/file.ts';
+import { PollRepository } from '../src/repositories/poll.ts';
 import { InlineQueryRepository } from '../src/repositories/inline_query.ts';
 import { MessageRepository } from '../src/repositories/message.ts';
 import { PrivateConversationRepository } from '../src/repositories/private_conversation.ts';
@@ -163,6 +164,7 @@ function createBotApiFixture() {
   const messageBoxes = new MessageBoxRepository();
   const messages = new MessageRepository();
   const files = new FileRepository();
+  const polls = new PollRepository();
   const botUpdates = new BotUpdateRepository();
   const botActivity = new BotActivityService({ log: new BotActivityLogRepository() });
   const updateSubscriptions = new BotUpdateSubscriptionRepository();
@@ -174,6 +176,7 @@ function createBotApiFixture() {
     messageBoxes,
     messages,
     files,
+    polls,
   });
   const events = new BotUpdateDeliveryService({
     botMessageViews,
@@ -191,6 +194,7 @@ function createBotApiFixture() {
     privateConversations,
     messages,
     files,
+    polls,
     messageBoxes,
     blockedUsers,
     events,
@@ -202,6 +206,7 @@ function createBotApiFixture() {
     sharedChats,
     messages,
     files,
+    polls,
     messageBoxes,
     events,
     currentUnixTimeSeconds: () => 1_700_000_000,
@@ -267,6 +272,7 @@ function createBotApiFixture() {
     }),
     inlineMessages: messages,
     mediaGroups: messages,
+    polls,
     botCaptions: {
       normalizeBotCaption: (caption) =>
         normalizeCaption(caption, 'bot', {

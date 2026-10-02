@@ -8,6 +8,11 @@ import {
 import { MAX_CALLBACK_QUERY_ANSWER_TEXT_LENGTH } from '../../../types/callback_query.ts';
 import type { EmulationSession } from '../../../types/emulation_session.ts';
 import type { InlineKeyboard } from '../../../types/inline_keyboard.ts';
+import {
+  MAX_POLL_OPTION_COUNT,
+  MAX_POLL_OPTION_TEXT_LENGTH,
+  MAX_POLL_QUESTION_LENGTH,
+} from '../../../types/poll.ts';
 import type { BotMessageReplyMarkup } from '../../../types/reply_interface.ts';
 import type { RichMessage } from '../../../types/rich_message.ts';
 import {
@@ -47,6 +52,10 @@ import {
   readInputMediaParameter,
   toMediaReplacementRequest,
 } from './input_media_parameter.ts';
+import {
+  describeInputPollOptionTextError,
+  readInputPollOptionsParameter,
+} from './input_poll_option_parameter.ts';
 import { linkPreviewOptionsParameter } from './link_preview_options_parameter.ts';
 import {
   replyParametersParameter,
@@ -145,6 +154,15 @@ const BUTTON_TYPE_INVALID_DESCRIPTION = 'Bad Request: BUTTON_TYPE_INVALID';
 const QUOTE_TEXT_INVALID_DESCRIPTION = 'Bad Request: QUOTE_TEXT_INVALID';
 const URL_INVALID_DESCRIPTION = 'Bad Request: URL_INVALID';
 
+/** TDLib's descriptions for polls it refuses to create. */
+const POLL_QUESTION_TOO_LONG_DESCRIPTION =
+  `Bad Request: poll question length must not exceed ${MAX_POLL_QUESTION_LENGTH}`;
+const POLL_OPTIONS_MISSING_DESCRIPTION = 'Bad Request: poll must have at least one answer option';
+const POLL_HAS_TOO_MANY_OPTIONS_DESCRIPTION =
+  `Bad Request: poll can't have more than ${MAX_POLL_OPTION_COUNT} options`;
+const POLL_OPTION_TOO_LONG_DESCRIPTION =
+  `Bad Request: poll options length must not exceed ${MAX_POLL_OPTION_TEXT_LENGTH}`;
+
 /** TDLib's descriptions for message effects in chats or requests that cannot use them. */
 const MESSAGE_EFFECT_NOT_ALLOWED_IN_CHAT_DESCRIPTION =
   "Bad Request: can't use message effects in the chat";
@@ -197,7 +215,7 @@ const MESSAGE_HAS_NO_TEXT_DESCRIPTION = 'Bad Request: there is no text in the me
 const MESSAGE_HAS_NO_CAPTION_DESCRIPTION =
   'Bad Request: there is no caption in the message to edit';
 const MESSAGE_NOT_EDITABLE_DESCRIPTION = "Bad Request: message can't be edited";
-/** TDLib's `can_edit_message_media` refuses to edit a voice note's media. */
+/** TDLib's `can_edit_message_media` refuses to edit the media of a voice note or a poll. */
 const MESSAGE_MEDIA_NOT_EDITABLE_DESCRIPTION = "Bad Request: message media can't be edited";
 /** TDLib's `edit_message_media` keeps a message of an album to its kind of media. */
 const ALBUM_MEDIA_TYPE_UNCHANGEABLE_DESCRIPTION =
@@ -430,6 +448,22 @@ const sendRichMessageParametersSchema = z.strictObject({
   ...sendOptionsParametersShape,
   ...replyMarkupParametersShape,
   rich_message: z.string().optional(),
+});
+
+// Regular polls only. As for sendMessage, topics, business connections, paid broadcasts, and
+// suggested posts are not supported; nor are options added after creation, restrictions on who may
+// vote, shuffled options, hidden results, descriptions, and media.
+const sendPollParametersSchema = z.strictObject({
+  ...sendOptionsParametersShape,
+  ...replyMarkupParametersShape,
+  question: z.string().default(''),
+  question_parse_mode: z.string().optional(),
+  question_entities: messageEntitiesParameter().optional(),
+  options: z.string().optional(),
+  is_anonymous: booleanParameter().default(true),
+  type: z.string().default(''),
+  allows_multiple_answers: booleanParameter().default(false),
+  allows_revoting: booleanParameter().default(true),
 });
 
 const sendPhotoParametersSchema = z.strictObject({
@@ -949,6 +983,7 @@ const BOT_API_METHODS: readonly BotApiMethod[] = [
   { name: 'sendMediaGroup', handler: handleSendMediaGroup },
   { name: 'sendMessage', handler: handleSendMessage },
   { name: 'sendPhoto', handler: handleSendPhoto },
+  { name: 'sendPoll', handler: handleSendPoll },
   { name: 'sendRichMessage', handler: handleSendRichMessage },
   { name: 'sendVideo', handler: handleSendVideo },
   { name: 'sendVoice', handler: handleSendVoice },
@@ -1460,6 +1495,73 @@ function readSpecifiedRichMessage(
       detectsEntities: parameterReading.detectsEntities,
     },
   };
+}
+
+/**
+ * Sends a poll as the official Bot API server's `process_send_poll_query` reads it: the question
+ * and the options, each with its formatting, then the poll's type, before the chat. Only regular
+ * polls are supported.
+ */
+function handleSendPoll(
+  context: BotApiMethodContext,
+  parameters: BotApiRequestParameters,
+): BotApiMethodAnswer {
+  const invalidParametersDescription = 'Bad Request: invalid sendPoll parameters';
+  const parsedParameters = sendPollParametersSchema.safeParse(parameters);
+  if (!parsedParameters.success) {
+    return botApiError(400, invalidParametersDescription);
+  }
+  const { data } = parsedParameters;
+  const questionReading = readFormattedTextParameters(
+    context,
+    { text: data.question, parseMode: data.question_parse_mode, entities: data.question_entities },
+    invalidParametersDescription,
+  );
+  if (!questionReading.read) {
+    return botApiError(400, questionReading.description);
+  }
+  const optionsReading = readInputPollOptionsParameter(data.options, invalidParametersDescription);
+  if (!optionsReading.read) {
+    return botApiError(400, optionsReading.description);
+  }
+  const pollOptions: SpecifiedFormattedText[] = [];
+  for (const option of optionsReading.options) {
+    const optionReading = readFormattedTextParameters(
+      context,
+      { text: option.text, parseMode: option.parseMode, entities: option.entities },
+      invalidParametersDescription,
+    );
+    if (!optionReading.read) {
+      return botApiError(
+        400,
+        optionReading.description === invalidParametersDescription
+          ? invalidParametersDescription
+          : describeInputPollOptionTextError(optionReading.description),
+      );
+    }
+    pollOptions.push(optionReading.formattedText);
+  }
+  if (data.type !== '' && data.type !== 'regular') {
+    return botApiError(
+      400,
+      data.type === 'quiz'
+        ? 'Bad Request: quiz polls are not supported'
+        : 'Bad Request: unsupported poll type specified',
+    );
+  }
+  const sendOptionsReading = readSendOptions(context, data, invalidParametersDescription);
+  if (!sendOptionsReading.read) {
+    return sendOptionsReading.errorAnswer;
+  }
+
+  return sendMethodAnswer(context.session.botApi.sendPoll(context.bot, {
+    ...sendOptionsReading.options,
+    question: questionReading.formattedText,
+    pollOptions,
+    isAnonymous: data.is_anonymous,
+    allowsMultipleAnswers: data.allows_multiple_answers,
+    allowsRevoting: data.allows_revoting,
+  }));
 }
 
 async function handleSendPhoto(
@@ -2103,6 +2205,14 @@ function sendMethodAnswer(result: SendResult | SendFailure): BotApiMethodAnswer 
       return botApiError(400, BUTTON_TYPE_INVALID_DESCRIPTION);
     case 'quote_invalid':
       return botApiError(400, QUOTE_TEXT_INVALID_DESCRIPTION);
+    case 'poll_question_too_long':
+      return botApiError(400, POLL_QUESTION_TOO_LONG_DESCRIPTION);
+    case 'poll_options_missing':
+      return botApiError(400, POLL_OPTIONS_MISSING_DESCRIPTION);
+    case 'poll_has_too_many_options':
+      return botApiError(400, POLL_HAS_TOO_MANY_OPTIONS_DESCRIPTION);
+    case 'poll_option_too_long':
+      return botApiError(400, POLL_OPTION_TOO_LONG_DESCRIPTION);
     case 'bot_blocked':
       return botApiError(403, BOT_BLOCKED_DESCRIPTION);
     case 'file_empty':

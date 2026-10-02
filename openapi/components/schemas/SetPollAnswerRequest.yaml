@@ -1,0 +1,15 @@
+type: object
+additionalProperties: false
+required:
+  - option_ids
+properties:
+  option_ids:
+    type: array
+    minItems: 1
+    description: >-
+      The chosen options' positions, counted from 0, as `option_ids` of the Bot API's
+      `PollAnswer` numbers them; a repeated position counts once. Retracting an answer is a
+      `DELETE` of the same path.
+    items:
+      type: integer
+      minimum: 0

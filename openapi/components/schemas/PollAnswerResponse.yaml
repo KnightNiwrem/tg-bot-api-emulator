@@ -1,0 +1,13 @@
+type: object
+additionalProperties: false
+description: >-
+  An account's answer to a poll of its private chat with a bot, with the message showing the
+  poll as the conversation's bot sees it.
+required:
+  - poll_answer
+  - message
+properties:
+  poll_answer:
+    $ref: ./PollAnswer.yaml
+  message:
+    $ref: ./PrivateMessage.yaml

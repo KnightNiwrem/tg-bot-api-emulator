@@ -422,6 +422,37 @@ export interface PressCallbackButtonInput {
   readonly expired?: boolean;
 }
 
+/** A message showing a poll, in a chat of the account. */
+export interface AccountPollMessageInput<Target extends MessageTarget = MessageTarget> {
+  readonly chat: Target;
+  /** The ID of the message showing the poll, as message history shows it. */
+  readonly message_id: number;
+}
+
+export interface AnswerPollInput<Target extends MessageTarget = MessageTarget>
+  extends AccountPollMessageInput<Target> {
+  /**
+   * The chosen options' positions, counted from 0, as `option_ids` of the Bot API's `PollAnswer`
+   * numbers them; at least one, and a repeated position counts once.
+   */
+  readonly option_ids: readonly number[];
+}
+
+/** The options an account chose in a poll; both lists are empty while it has no answer. */
+export interface PollAnswer {
+  readonly poll_id: string;
+  /** The chosen options' positions, counted from 0, in increasing order. */
+  readonly option_ids: readonly number[];
+  /** The chosen options' `persistent_id`, in the same order. */
+  readonly option_persistent_ids: readonly string[];
+}
+
+/** An account's answer to a poll, with the message showing the poll as the chat's history does. */
+export interface AccountPollAnswer<Target extends MessageTarget = MessageTarget> {
+  readonly poll_answer: PollAnswer;
+  readonly message: MessageIn<Target>;
+}
+
 export interface PressButtonInput {
   readonly chat: MessageTarget;
   /** The ID of the message carrying the button, as message history shows it. */
@@ -864,6 +895,34 @@ export interface RichMessage {
   readonly is_rtl?: true;
 }
 
+/** An answer option of a poll, with how many accounts chose it. */
+export interface PollOption {
+  /** The option's identifier, which stays the same however options change. */
+  readonly persistent_id: string;
+  readonly text: string;
+  /** Present when the text has custom emoji, its only entities. */
+  readonly text_entities?: readonly MessageEntity[];
+  readonly voter_count: number;
+}
+
+/** A regular poll a bot sent, with its votes as they are now. */
+export interface Poll {
+  readonly id: string;
+  readonly question: string;
+  /** Present when the question has custom emoji, its only entities. */
+  readonly question_entities?: readonly MessageEntity[];
+  readonly options: readonly PollOption[];
+  /** How many accounts chose any option. */
+  readonly total_voter_count: number;
+  readonly is_closed: boolean;
+  readonly is_anonymous: boolean;
+  readonly allows_multiple_answers: boolean;
+  readonly allows_revoting: boolean;
+  /** The emulator's polls never restrict who may vote. */
+  readonly members_only: false;
+  readonly type: 'regular';
+}
+
 /**
  * Declares fields absent, so that reading them from a value that cannot have them is typed as
  * `undefined`.
@@ -928,12 +987,16 @@ interface MessageContentFields {
     /** A message a bot laid out in blocks, which only bots send. */
     readonly rich_message: RichMessage;
   };
+  readonly poll: {
+    /** A poll a bot sent, with its votes as they are now. */
+    readonly poll: Poll;
+  };
 }
 
 /**
- * The fields that show what a message is: text, a photo, a document, a video, a voice note, or a
- * rich message. Each kind declares the others' fields absent, so that any of them can be read from
- * a message of unknown kind.
+ * The fields that show what a message is: text, a photo, a document, a video, a voice note, a rich
+ * message, or a poll. Each kind declares the others' fields absent, so that any of them can be read
+ * from a message of unknown kind.
  */
 export type MessageContent = ExclusiveAlternatives<MessageContentFields>;
 
@@ -1009,6 +1072,7 @@ export type MessageOrigin = MessageOriginUser | MessageOriginHiddenUser;
  * The fields that show each kind of media of a message of another chat that a message replies to.
  */
 interface ExternalReplyMediaFields {
+  readonly poll: { readonly poll: Poll };
   readonly photo: {
     readonly photo: readonly PhotoSize[];
     /** Present when clients cover the photo until the user reveals it. */
@@ -1025,7 +1089,8 @@ interface ExternalReplyMediaFields {
 
 /**
  * A message of another chat that a message replies to: who first wrote it and when, the
- * supergroup message it is, and its media, if any, whose caption the reply's quote shows instead.
+ * supergroup message it is, and its media, if any, whose caption the reply's quote shows instead,
+ * or its poll as it is now.
  */
 export type ExternalReplyInfo =
   & {
@@ -1556,6 +1621,24 @@ export interface VirtualAccountClient extends VirtualAccountProfile {
   pressButton(input: PressButtonInput): Promise<CallbackQuery>;
   /** Returns a callback query this account created, with the bot's answer once given. */
   getCallbackQuery(callbackQueryId: string): Promise<CallbackQuery>;
+  /**
+   * Votes in the poll a message of a private chat or a supergroup shows, choosing options by
+   * position, or changes this account's answer, as the poll allows. Choosing the options already
+   * chosen changes nothing. A forward shows the same poll as the message it repeats, so a vote
+   * through either counts once.
+   */
+  answerPoll<Target extends MessageTarget>(
+    input: AnswerPollInput<Target>,
+  ): Promise<AccountPollAnswer<Target>>;
+  /** Returns this account's answer to the poll a message shows, with the message. */
+  getPollAnswer<Target extends MessageTarget>(
+    input: AccountPollMessageInput<Target>,
+  ): Promise<AccountPollAnswer<Target>>;
+  /**
+   * Retracts this account's answer to the poll a message shows, which only a poll that allows
+   * revoting accepts. Retracting without an answer changes nothing.
+   */
+  retractPollAnswer(input: AccountPollMessageInput): Promise<void>;
   /**
    * Types an inline query for a bot with inline mode turned on, in a chat this account can write
    * to, which sends the bot an `inline_query` update. The bot answers asynchronously; read the

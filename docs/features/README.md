@@ -30,6 +30,7 @@ thresholds, which tests replace with
 | [Messages](messages.md)                               | Sending, replies, edits, deletion, blocking, forwarding and copying        |
 | [Text formatting](text-formatting.md)                 | Parse modes, entities, normalization and limits                            |
 | [Rich messages](rich-messages.md)                     | Blocks, rich text, buttons, media and edits of rich messages               |
+| [Polls](polls.md)                                     | Regular polls, account votes, forwards and copies of polls                 |
 | [Keyboards and callbacks](keyboards-and-callbacks.md) | Inline buttons, reply interfaces and callback answers                      |
 | [Media and files](media-and-files.md)                 | Photos, documents, videos, voice notes, albums, file IDs and downloads     |
 | [Inline mode](inline-mode.md)                         | Queries, results, feedback and inline message editing                      |
@@ -52,6 +53,7 @@ The two legacy aliases below are also accepted.
 | Deletion         | `deleteMessage`, `deleteMessages`                                                                                                                  |
 | Files            | `getFile`, plus HTTP file downloads                                                                                                                |
 | Interaction      | `answerCallbackQuery`, `answerInlineQuery`                                                                                                         |
+| Polls            | `sendPoll`                                                                                                                                         |
 | Commands         | `setMyCommands`, `getMyCommands`, `deleteMyCommands`                                                                                               |
 | Bot profile      | `setMyDescription`, `getMyDescription`, `setMyShortDescription`, `getMyShortDescription`                                                           |
 | Bot settings     | `setChatMenuButton`, `getChatMenuButton`, `setMyDefaultAdministratorRights`, `getMyDefaultAdministratorRights`                                     |
@@ -74,9 +76,10 @@ above determines whether an individual method is available.
 
 - Basic groups, channels, forum topics, direct messages of channels, and chat migration. Supergroups
   are the only shared chat kind exposed by the HTTP server.
-- Media other than photos, documents, videos and voice notes, stickers and sticker sets, polls,
-  dice, locations, venues, contacts, games, checklists, ephemeral messages, drafts and stories. Rich
-  messages lack [drafts and some blocks](rich-messages.md#real-gaps).
+- Media other than photos, documents, videos and voice notes, stickers and sticker sets, dice,
+  locations, venues, contacts, games, checklists, ephemeral messages, drafts and stories. Rich
+  messages lack [drafts and some blocks](rich-messages.md#real-gaps), and polls lack
+  [quizzes, closing and updates](polls.md#real-gaps).
 - Reactions, pins, chat photos and other chat settings, invite links, join requests, member
   restrictions, and promotion through the Bot API. Tests can promote supergroup members through the
   emulation API.

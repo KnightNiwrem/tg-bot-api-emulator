@@ -30,6 +30,7 @@ import {
   getSupergroupNonMemberFailureReason,
 } from '../types/chat_membership.ts';
 import type { InlineQueryId, InlineQueryResultsButton } from '../types/inline_query.ts';
+import type { Poll, PollId } from '../types/poll.ts';
 import {
   allowsSomeInlineQueryChat,
   type InlineKeyboard,
@@ -125,8 +126,10 @@ import type {
 import type {
   CaptionNormalization,
   ContentNormalizationFailure,
+  ContentTextNormalizationFailure,
   MediaContent,
   OutgoingCaptionedMedia,
+  OutgoingContentOtherThanPoll,
   OutgoingDocument,
   OutgoingMessageContent,
   OutgoingPhoto,
@@ -138,6 +141,7 @@ import type {
   TextInvalidFailure,
   TextMessageReplacement,
 } from './message_content.ts';
+import type { PollLimitFailure } from './poll_normalization.ts';
 import type { SendBotAlbumInput, SendBotAlbumResult } from './private_messaging.ts';
 import type {
   SendSupergroupBotAlbumInput,
@@ -319,6 +323,22 @@ export interface SpecifiedRichMessage {
 
 export type SendRichMessageRequest = SendRequestOptions & SpecifiedRichMessage;
 
+/**
+ * A regular poll as `sendPoll` specifies it. Restrictions on who may vote, added options, media,
+ * descriptions, and shuffled or hidden results are not supported.
+ */
+export type SendPollRequest = SendRequestOptions & {
+  readonly question: SpecifiedFormattedText;
+  /** The answer options' texts, in the order clients show them. */
+  readonly pollOptions: readonly SpecifiedFormattedText[];
+  /** The Bot API `is_anonymous`. */
+  readonly isAnonymous: boolean;
+  /** The Bot API `allows_multiple_answers`. */
+  readonly allowsMultipleAnswers: boolean;
+  /** The Bot API `allows_revoting`. */
+  readonly allowsRevoting: boolean;
+};
+
 /** New content of a text or rich message: text with its formatting, or a rich message. */
 export type TextMessageReplacementRequest =
   | ({ readonly kind: 'text' } & SpecifiedFormattedText)
@@ -379,6 +399,7 @@ export type SendFailureReason =
   | 'callback_data_invalid'
   | 'button_type_invalid'
   | 'quote_invalid'
+  | PollLimitFailure['reason']
   | 'bot_blocked'
   | 'file_empty'
   | 'image_invalid'
@@ -511,7 +532,8 @@ export type RepeatMessagesResult =
 
 /** What a message sent by `forwardMessages` or `copyMessages` repeats of the original. */
 interface MessageRepetition {
-  readonly content: MessageContent;
+  /** The original's content, or, for a copy of a poll, a new poll like the original's. */
+  readonly content: OutgoingMessageContent;
   /** Omitted for a copy, which does not show where it came from. */
   readonly forwardInfo?: MessageForwardInfo;
   /** Omitted when the repetition shows no inline keyboard. */
@@ -638,7 +660,10 @@ export type EditMessageCaptionFailureReason =
 
 export type EditMessageMediaFailureReason =
   | EditMessageReplyMarkupFailureReason
-  /** The message is a voice note, whose media TDLib's `can_edit_message_media` refuses to edit. */
+  /**
+   * The message is a voice note or a poll, whose media TDLib's `can_edit_message_media` refuses to
+   * edit.
+   */
   | 'message_media_not_editable'
   | 'caption_too_long'
   /**
@@ -815,7 +840,7 @@ export type BotApiAnswerInlineQueryResult =
           | 'file_id_invalid'
           | 'inline_message_content_invalid';
       }
-      | ContentNormalizationFailure
+      | ContentTextNormalizationFailure
       | FileTypeMismatchFailure
     )
   );
@@ -1583,6 +1608,10 @@ interface MediaGroupIdIssuer {
   createMediaGroupId(): MediaGroupId;
 }
 
+interface PollLookup {
+  getPoll(pollId: PollId): Poll | undefined;
+}
+
 interface BotCaptionNormalizer {
   normalizeBotCaption(caption: SpecifiedCaption): CaptionNormalization;
 }
@@ -1617,6 +1646,8 @@ interface BotApiServiceDependencies {
   readonly inlineMessages: InlineMessageLookup;
   /** Issues the identifiers of the albums that forwards and copies of albums form. */
   readonly mediaGroups: MediaGroupIdIssuer;
+  /** Finds the polls that copies of poll messages repeat. */
+  readonly polls: PollLookup;
   /**
    * Normalizes the captions of an album, which are checked before the album is handed to the
    * messaging services, as they normalize the caption of a bot's media.
@@ -1657,6 +1688,7 @@ export class BotApiService {
   readonly #inlineQueries: InlineQueryAnswering;
   readonly #inlineMessages: InlineMessageLookup;
   readonly #mediaGroups: MediaGroupIdIssuer;
+  readonly #polls: PollLookup;
   readonly #botCaptions: BotCaptionNormalizer;
   readonly #botCommands: BotCommandLists;
   readonly #botDescriptions: BotDescriptions;
@@ -1680,6 +1712,7 @@ export class BotApiService {
       inlineQueries,
       inlineMessages,
       mediaGroups,
+      polls,
       botCaptions,
       botCommands,
       botDescriptions,
@@ -1702,6 +1735,7 @@ export class BotApiService {
     this.#inlineQueries = inlineQueries;
     this.#inlineMessages = inlineMessages;
     this.#mediaGroups = mediaGroups;
+    this.#polls = polls;
     this.#botCaptions = botCaptions;
     this.#botCommands = botCommands;
     this.#botDescriptions = botDescriptions;
@@ -2141,10 +2175,40 @@ export class BotApiService {
   }
 
   /**
+   * Sends a regular poll to a private chat or a supergroup, as `sendMessage` sends text. Its
+   * question and options are checked as `normalizeNewPoll` checks them, where `sendMessage` checks
+   * its text. The bot owns the poll; the accounts of the chat vote in it.
+   */
+  sendPoll(
+    authenticatedBot: VirtualBotProfile,
+    {
+      question,
+      pollOptions,
+      isAnonymous,
+      allowsMultipleAnswers,
+      allowsRevoting,
+      ...options
+    }: SendPollRequest,
+  ): SendResult {
+    return this.#send(authenticatedBot, {
+      kind: 'poll',
+      poll: {
+        creatorBotId: authenticatedBot.id,
+        question,
+        options: pollOptions,
+        isAnonymous,
+        allowsMultipleAnswers,
+        allowsRevoting,
+      },
+    }, options);
+  }
+
+  /**
    * Forwards a message of one of the bot's chats to a private chat or a supergroup, as TDLib does:
    * the forward repeats the message's content and shows who first sent it and when. As on Telegram,
    * a message whose sender protected it cannot be forwarded, nor can a service message. A request's
-   * video start timestamp replaces that of a forwarded video, as `withVideoStartTimestamp` does.
+   * video start timestamp replaces that of a forwarded video, as `withVideoStartTimestamp` does. A
+   * forward of a poll shows the same poll, whose votes it shares.
    *
    * The forwarded message is checked in full before the chat it goes to, while TDLib checks whether
    * it can be forwarded only after that chat; a request that fails both ways fails for the message.
@@ -2196,8 +2260,9 @@ export class BotApiService {
    * and reply markup of the request instead of the original's. A new caption replaces the caption
    * of copied media, while text and rich messages stay as they are, apart from the buttons of a
    * rich message, which change as for a forward, and a video takes the request's start timestamp,
-   * if any, as for a forward. As TDLib lets bots do, a bot may copy a message whose sender
-   * protected it; a service message cannot be copied.
+   * if any, as for a forward. A copy of a poll is a new poll, as `#createPollCopy` creates it, which
+   * ignores a new caption. As TDLib lets bots do, a bot may copy a message whose sender protected
+   * it; a service message cannot be copied.
    *
    * As for `forwardMessage`, the copied message is checked in full before the chat it goes to.
    */
@@ -2219,19 +2284,23 @@ export class BotApiService {
       return { sent: false, reason: 'message_not_copyable' };
     }
     const content = getRepeatedContent(lookup.message.content, 'copy');
-    const result = this.#send(authenticatedBot, {
-      kind: 'existing',
-      content: videoStartTimestampSeconds === undefined
-        ? content
-        : withVideoStartTimestamp(content, videoStartTimestampSeconds),
-      ...(caption === undefined ? {} : {
-        captionReplacement: {
-          caption: caption.text,
-          captionEntities: caption.entities,
-          showsCaptionAboveMedia,
-        },
-      }),
-    }, options);
+    const result = this.#send(
+      authenticatedBot,
+      content.kind === 'poll' ? this.#createPollCopy(authenticatedBot, content.pollId) : {
+        kind: 'existing',
+        content: videoStartTimestampSeconds === undefined
+          ? content
+          : withVideoStartTimestamp(content, videoStartTimestampSeconds),
+        ...(caption === undefined ? {} : {
+          captionReplacement: {
+            caption: caption.text,
+            captionEntities: caption.entities,
+            showsCaptionAboveMedia,
+          },
+        }),
+      },
+      options,
+    );
     return result.sent ? { sent: true, messageId: result.message.message_id } : result;
   }
 
@@ -2252,14 +2321,19 @@ export class BotApiService {
         message,
         this.#getPrivateForwardName,
       );
-      return { content, forwardInfo, ...(inlineKeyboard === undefined ? {} : { inlineKeyboard }) };
+      return {
+        content: { kind: 'existing', content },
+        forwardInfo,
+        ...(inlineKeyboard === undefined ? {} : { inlineKeyboard }),
+      };
     });
   }
 
   /**
    * Copies up to 100 messages of one of the bot's chats to a private chat or a supergroup, as
    * `forwardMessages` forwards them. As TDLib's `dup_reply_markup` does for copies, the copies keep
-   * no reply markup; `removesCaptions` sends media without their captions.
+   * no reply markup; `removesCaptions` sends media without their captions. As for `copyMessage`, a
+   * copy of a poll is a new poll.
    */
   copyMessages(
     authenticatedBot: VirtualBotProfile,
@@ -2273,7 +2347,15 @@ export class BotApiService {
           return undefined;
         }
         const content = getRepeatedContent(message.content, 'copy');
-        return { content: removesCaptions ? withoutCaption(content) : content };
+        if (content.kind === 'poll') {
+          return { content: this.#createPollCopy(authenticatedBot, content.pollId) };
+        }
+        return {
+          content: {
+            kind: 'existing',
+            content: removesCaptions ? withoutCaption(content) : content,
+          },
+        };
       },
     );
   }
@@ -2372,7 +2454,7 @@ export class BotApiService {
       const { content, forwardInfo, inlineKeyboard } = repetition;
       const result = this.#send(
         authenticatedBot,
-        { kind: 'existing', content },
+        content,
         {
           chatId,
           isContentProtected,
@@ -2394,6 +2476,28 @@ export class BotApiService {
       sentMessageIdsByRepeatedMessageId.set(message.id, result.message.message_id);
     }
     return { sent: true, messageIds: [...sentMessageIdsByRepeatedMessageId.values()] };
+  }
+
+  /**
+   * Creates the content of a copy of a poll, as TDLib's `dup_poll` does: a new poll that the copying
+   * bot owns, open and without votes, with the original's question, options, and settings.
+   */
+  #createPollCopy(authenticatedBot: VirtualBotProfile, pollId: PollId): OutgoingMessageContent {
+    const poll = this.#polls.getPoll(pollId);
+    if (poll === undefined) {
+      throw new Error(`Copied poll ${pollId} does not exist`);
+    }
+    return {
+      kind: 'poll',
+      poll: {
+        creatorBotId: authenticatedBot.id,
+        question: poll.question,
+        options: poll.options.map(({ text }) => text),
+        isAnonymous: poll.isAnonymous,
+        allowsMultipleAnswers: poll.allowsMultipleAnswers,
+        allowsRevoting: poll.allowsRevoting,
+      },
+    };
   }
 
   /**
@@ -2574,6 +2678,10 @@ export class BotApiService {
       case 'caption_too_long':
       case 'callback_data_invalid':
       case 'quote_invalid':
+      case 'poll_question_too_long':
+      case 'poll_options_missing':
+      case 'poll_has_too_many_options':
+      case 'poll_option_too_long':
       case 'bot_blocked':
         return { sent: false, reason: result.reason };
       // A bot can address a user only after the user has written to it. Telegram reports any
@@ -2633,6 +2741,10 @@ export class BotApiService {
       case 'callback_data_invalid':
       case 'button_type_invalid':
       case 'quote_invalid':
+      case 'poll_question_too_long':
+      case 'poll_options_missing':
+      case 'poll_has_too_many_options':
+      case 'poll_option_too_long':
         return { sent: false, reason: result.reason };
       case 'bot_not_found':
         throw new Error(`Authenticated bot ${authenticatedBot.id} does not exist`);
@@ -3804,7 +3916,7 @@ export class BotApiService {
       case 'album_media_kind_changed':
         throw new Error(`Inline message ${inlineMessageId} belongs to an album`);
       case 'message_media_not_editable':
-        throw new Error(`Inline message ${inlineMessageId} is a voice note`);
+        throw new Error(`Inline message ${inlineMessageId} is a voice note or shows a poll`);
       default:
         return {
           edited: false,
@@ -4103,7 +4215,7 @@ export class BotApiService {
     authenticatedBot: VirtualBotProfile,
     content: InlineResultMessageContentRequest,
   ):
-    | { readonly resolved: true; readonly content: OutgoingMessageContent }
+    | { readonly resolved: true; readonly content: OutgoingContentOtherThanPoll }
     | {
       readonly resolved: false;
       readonly failure:

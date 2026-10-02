@@ -28,6 +28,7 @@ import {
   type BotApiUser,
   toBotApiLocation,
 } from '../types/bot_api.ts';
+import type { BotApiPoll } from '../types/bot_api_poll.ts';
 import type { CallbackQuery } from '../types/callback_query.ts';
 import type {
   BotBlockChangedEvent,
@@ -36,6 +37,7 @@ import type {
 } from '../types/chat_domain_event.ts';
 import type { ChatMemberStatus, SupergroupAdministratorRights } from '../types/chat_membership.ts';
 import { getInlineQueryChatType, type InlineQuery } from '../types/inline_query.ts';
+import { countPollVoters, type Poll } from '../types/poll.ts';
 import type { StoredFileId } from '../types/stored_file.ts';
 import type { VirtualAccountProfile } from '../types/virtual_account.ts';
 import type { VirtualBotProfile } from '../types/virtual_bot.ts';
@@ -78,6 +80,8 @@ interface MessageProjectionContext {
    * messages.
    */
   readonly richMessageFiles?: ReadonlyMap<StoredFileId, ObservedFile>;
+  /** The poll a poll message shows, as it is now; omitted for other messages. */
+  readonly poll?: Poll;
   /**
    * The members that joined or left, in the order a service message names them; omitted for
    * other messages.
@@ -106,8 +110,10 @@ export interface ExternalReplyProjectionContext {
   readonly originSender?: BotApiUser;
   /** The replied message's supergroup; omitted for a message of a private chat. */
   readonly supergroup?: Supergroup;
-  /** The file of the replied media; omitted for a replied text or rich message. */
+  /** The file of the replied media; omitted for a replied text, rich message, or poll. */
   readonly mediaFile?: ObservedFile;
+  /** The replied poll, as it is now; omitted for other replied messages. */
+  readonly poll?: Poll;
 }
 
 export interface PrivateMessageForBotProjectionInput {
@@ -282,17 +288,19 @@ function projectExternalReply(
       chat: projectSupergroupChat(supergroup),
       message_id: supergroupMessage.messageId,
     }),
-    ...projectExternalReplyMedia(media, context.mediaFile),
+    ...projectExternalReplyMedia(media, context),
   };
 }
 
 function projectExternalReplyMedia(
   media: ExternalReply['media'],
-  mediaFile: ObservedFile | undefined,
+  { mediaFile, poll }: ExternalReplyProjectionContext,
 ): BotApiExternalReplyMedia {
   switch (media?.kind) {
     case undefined:
       return {};
+    case 'poll':
+      return { poll: projectPoll(requireShownPoll(poll, media.pollId)) };
     case 'photo':
       return {
         photo: [projectPhotoSize(mediaFile)],
@@ -366,7 +374,7 @@ function projectMembershipServiceContent(
 
 function projectMessageContent(
   content: MessageContent,
-  { mentionedUsers, contentFile, richMessageFiles }: MessageProjectionContext,
+  { mentionedUsers, contentFile, richMessageFiles, poll }: MessageProjectionContext,
 ): BotApiMessageContent {
   switch (content.kind) {
     case 'text':
@@ -415,11 +423,55 @@ function projectMessageContent(
           files: richMessageFiles ?? new Map(),
         }),
       };
+    case 'poll':
+      return { poll: projectPoll(requireShownPoll(poll, content.pollId)) };
     default: {
       const unhandledContent: never = content;
       throw new Error(`Unhandled message content: ${JSON.stringify(unhandledContent)}`);
     }
   }
+}
+
+/**
+ * Shows a poll as the official Bot API server's `JsonPoll` does for bots, which see every
+ * option's voter count. The question's and options' entities are only custom emoji, which name
+ * no user.
+ */
+export function projectPoll(poll: Poll): BotApiPoll {
+  const { optionVoterCounts, totalVoterCount } = countPollVoters(poll);
+  const noMentionedUsers = new Map<number, BotApiUser>();
+  return {
+    id: poll.id,
+    question: poll.question.text,
+    ...(poll.question.entities.length === 0 ? {} : {
+      question_entities: poll.question.entities.map((entity) =>
+        projectTextEntity(entity, noMentionedUsers)
+      ),
+    }),
+    options: poll.options.map(({ persistentId, text }, optionPosition) => ({
+      persistent_id: persistentId,
+      text: text.text,
+      ...(text.entities.length === 0 ? {} : {
+        text_entities: text.entities.map((entity) => projectTextEntity(entity, noMentionedUsers)),
+      }),
+      voter_count: optionVoterCounts[optionPosition],
+    })),
+    total_voter_count: totalVoterCount,
+    is_closed: poll.isClosed,
+    is_anonymous: poll.isAnonymous,
+    allows_multiple_answers: poll.allowsMultipleAnswers,
+    allows_revoting: poll.allowsRevoting,
+    members_only: false,
+    type: 'regular',
+  };
+}
+
+/** Returns the poll a message shows, which its view must have resolved. */
+function requireShownPoll(poll: Poll | undefined, pollId: string): Poll {
+  if (poll?.id !== pollId) {
+    throw new Error(`Expected poll ${pollId} of the message to be provided`);
+  }
+  return poll;
 }
 
 /** Telegram omits the caption fields of a media message without a caption. */

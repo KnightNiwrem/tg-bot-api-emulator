@@ -1,0 +1,13 @@
+type: object
+additionalProperties: false
+description: >-
+  An account's answer to a poll of a supergroup, with the message showing the poll as the
+  account sees it.
+required:
+  - poll_answer
+  - message
+properties:
+  poll_answer:
+    $ref: ./PollAnswer.yaml
+  message:
+    $ref: ./SupergroupMessage.yaml

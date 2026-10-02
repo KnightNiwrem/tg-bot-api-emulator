@@ -32,6 +32,7 @@ import {
   type RichMessage,
   type RichMessageButtonAction,
 } from '../types/rich_message.ts';
+import type { NewPoll, Poll } from '../types/poll.ts';
 import type {
   DocumentUpload,
   FileUpload,
@@ -59,6 +60,11 @@ import {
   type TextEntity,
   type TextQuote,
 } from '../types/virtual_message.ts';
+import {
+  normalizeNewPoll,
+  type PollLimitFailure,
+  type SpecifiedPoll,
+} from './poll_normalization.ts';
 import { normalizeRichMessage } from './rich_message_normalization.ts';
 
 // Telegram's rules for the content of messages, which apply alike in every chat type.
@@ -148,6 +154,11 @@ export type OutgoingMessageContent =
     readonly detectsEntities: boolean;
   }
   | {
+    /** A new poll, which only bots send. */
+    readonly kind: 'poll';
+    readonly poll: SpecifiedPoll;
+  }
+  | {
     /** The content of an existing message, which a forward or a copy repeats. */
     readonly kind: 'existing';
     /** The content as Telegram checked it when the existing message was sent. */
@@ -164,7 +175,9 @@ export type OutgoingMessageContent =
  */
 export type CaptionReplacement = SpecifiedCaption & { readonly showsCaptionAboveMedia: boolean };
 
-/** New message content that passed Telegram's checks, whose upload is not yet stored. */
+/**
+ * New message content that passed Telegram's checks, whose upload or new poll is not yet stored.
+ */
 export type NormalizedOutgoingContent =
   | Extract<MessageContent, { readonly kind: 'text' }>
   | {
@@ -193,21 +206,44 @@ export type NormalizedOutgoingContent =
     readonly caption: FormattedText;
   }
   | { readonly kind: 'rich_message'; readonly richMessage: OutgoingRichMessage }
+  | { readonly kind: 'poll'; readonly poll: NewPoll }
   | { readonly kind: 'existing'; readonly content: MessageContent };
 
-export type ContentNormalizationFailure =
+/** Why Telegram refuses the text or caption of new content: as for every content but a poll. */
+export type ContentTextNormalizationFailure =
   | TextInvalidFailure
   | { readonly reason: 'message_text_too_long' | 'caption_too_long' };
 
-export type OutgoingContentNormalization =
+export type ContentNormalizationFailure = ContentTextNormalizationFailure | PollLimitFailure;
+
+export type OutgoingContentNormalization<
+  Failure extends ContentNormalizationFailure = ContentNormalizationFailure,
+> =
   | { readonly normalized: true; readonly content: NormalizedOutgoingContent }
-  | { readonly normalized: false; readonly failure: ContentNormalizationFailure };
+  | { readonly normalized: false; readonly failure: Failure };
+
+/** New content other than a poll, which only `sendPoll` and copies of polls carry. */
+export type OutgoingContentOtherThanPoll = Exclude<
+  OutgoingMessageContent,
+  { readonly kind: 'poll' }
+>;
 
 /**
  * Normalizes the text or caption of new message content, with the entities its sender specified,
  * as Telegram does, which also marks bot commands; then checks that the result fits in a message.
- * A rich message is checked and has its entities marked as `normalizeRichMessage` does.
+ * A rich message is checked and has its entities marked as `normalizeRichMessage` does, and a poll
+ * is checked as `normalizeNewPoll` does.
  */
+export function normalizeOutgoingContent(
+  content: OutgoingContentOtherThanPoll,
+  sender: MessageSenderKind,
+  context: FormattedTextFixingContext,
+): OutgoingContentNormalization<ContentTextNormalizationFailure>;
+export function normalizeOutgoingContent(
+  content: OutgoingMessageContent,
+  sender: MessageSenderKind,
+  context: FormattedTextFixingContext,
+): OutgoingContentNormalization;
 export function normalizeOutgoingContent(
   content: OutgoingMessageContent,
   sender: MessageSenderKind,
@@ -221,6 +257,12 @@ export function normalizeOutgoingContent(
   }
   if (content.kind === 'existing') {
     return normalizeExistingContent(content.content, content.captionReplacement, sender, context);
+  }
+  if (content.kind === 'poll') {
+    const pollNormalization = normalizeNewPoll(content.poll, context);
+    return pollNormalization.normalized
+      ? { normalized: true, content: { kind: 'poll', poll: pollNormalization.poll } }
+      : pollNormalization;
   }
   return normalizeMediaContent(content, sender, context);
 }
@@ -598,9 +640,10 @@ export function replaceMessageCaption(
  * them, as TDLib's `edit_message_media` does: the old caption goes with the old content, so new
  * media without a caption has none. As TDLib's `can_edit_message_media` allows, the old content
  * may be a photo, a document, or a video, whose media is replaced, or text or a rich message,
- * which becomes media; a voice note's media cannot be edited, which that method checks before it
- * reads the new media. As that method checks once the new caption is read, a message of an album
- * changes its media only as `canChangeAlbumMediaKind` allows; only media is sent in albums.
+ * which becomes media; the media of a voice note or a poll cannot be edited, which that method
+ * checks before it reads the new media. As that method checks once the new caption is read, a
+ * message of an album changes its media only as `canChangeAlbumMediaKind` allows; only media is
+ * sent in albums.
  */
 export function replaceMessageMedia(
   { content, mediaGroupId }: Pick<ContentMessage, 'content' | 'mediaGroupId'>,
@@ -630,6 +673,8 @@ export function replaceMessageMedia(
         ? { replaced: false, failure: { reason: 'album_media_kind_changed' } }
         : { replaced: true, content: normalization.content };
     }
+    case 'poll':
+      return { replaced: false, failure: { reason: 'message_media_not_editable' } };
     default: {
       const unhandledContent: never = content;
       throw new Error(`Unhandled message content: ${JSON.stringify(unhandledContent)}`);
@@ -714,13 +759,19 @@ export interface FileUploadStore {
   addFile(upload: FileUpload): Pick<StoredFile, 'id'>;
 }
 
+/** Stores a new poll and returns the stored poll's identity. */
+export interface NewPollStore {
+  addPoll(newPoll: NewPoll): Pick<Poll, 'id'>;
+}
+
 /**
- * Stores the upload of normalized content, if it carries one, and returns the content as a
- * message holds it. Call it only once the message is certain to be stored.
+ * Stores the upload or the new poll of normalized content, if it carries one, and returns the
+ * content as a message holds it. Call it only once the message is certain to be stored.
  */
 export function storeOutgoingContent(
   content: NormalizedOutgoingContent,
   files: FileUploadStore,
+  polls: NewPollStore,
 ): MessageContent {
   switch (content.kind) {
     case 'text':
@@ -764,6 +815,8 @@ export function storeOutgoingContent(
           document: (document) => storeOutgoingFile(document, files),
         }),
       };
+    case 'poll':
+      return { kind: 'poll', pollId: polls.addPoll(content.poll).id };
     default: {
       const unhandledContent: never = content;
       throw new Error(`Unhandled message content: ${JSON.stringify(unhandledContent)}`);
@@ -777,8 +830,8 @@ function storeOutgoingFile(file: OutgoingMediaFile, files: FileUploadStore): Sto
 
 /**
  * Returns normalized content as a message holds it, for content whose file, if any, is already
- * stored, as when a bot reuses a file by its `file_id`. Content with an upload must be stored with
- * `storeOutgoingContent` instead.
+ * stored, as when a bot reuses a file by its `file_id`. Content with an upload or a new poll must be
+ * stored with `storeOutgoingContent` instead.
  */
 export function toContentOfStoredFile(content: NormalizedOutgoingContent): MessageContent {
   switch (content.kind) {
@@ -819,6 +872,8 @@ export function toContentOfStoredFile(content: NormalizedOutgoingContent): Messa
           document: getStoredFileId,
         }),
       };
+    case 'poll':
+      throw new Error('Expected content without a new poll, which only a message can store');
     default: {
       const unhandledContent: never = content;
       throw new Error(`Unhandled message content: ${JSON.stringify(unhandledContent)}`);
@@ -826,8 +881,11 @@ export function toContentOfStoredFile(content: NormalizedOutgoingContent): Messa
   }
 }
 
-/** Whether normalized content carries a file that is not yet stored. */
-function hasOutgoingUpload(content: NormalizedOutgoingContent): boolean {
+/**
+ * Whether normalized content carries something that is not yet stored: a file upload, or a new
+ * poll.
+ */
+function hasUnstoredContent(content: NormalizedOutgoingContent): boolean {
   switch (content.kind) {
     case 'text':
     case 'existing':
@@ -842,6 +900,8 @@ function hasOutgoingUpload(content: NormalizedOutgoingContent): boolean {
       return content.voice.kind === 'upload';
     case 'rich_message':
       return listRichMessageFiles(content.richMessage).some(({ file }) => file.kind === 'upload');
+    case 'poll':
+      return true;
     default: {
       const unhandledContent: never = content;
       throw new Error(`Unhandled message content: ${JSON.stringify(unhandledContent)}`);
@@ -851,13 +911,13 @@ function hasOutgoingUpload(content: NormalizedOutgoingContent): boolean {
 
 /**
  * Whether normalized content would leave a message's content as it is. Content with a new upload
- * always changes it.
+ * or a new poll always changes it.
  */
 export function isUnchangedContent(
   replacement: NormalizedOutgoingContent,
   content: MessageContent,
 ): boolean {
-  return !hasOutgoingUpload(replacement) &&
+  return !hasUnstoredContent(replacement) &&
     isSameMessageContent(toContentOfStoredFile(replacement), content);
 }
 
@@ -968,6 +1028,8 @@ export function isSameMessageContent(first: MessageContent, second: MessageConte
         isSameFormattedText(first.caption, second.caption);
     case 'rich_message':
       return second.kind === 'rich_message' && areRichMessagesEqual(first, second);
+    case 'poll':
+      return second.kind === 'poll' && first.pollId === second.pollId;
     default: {
       const unhandledContent: never = first;
       throw new Error(`Unhandled message content: ${JSON.stringify(unhandledContent)}`);

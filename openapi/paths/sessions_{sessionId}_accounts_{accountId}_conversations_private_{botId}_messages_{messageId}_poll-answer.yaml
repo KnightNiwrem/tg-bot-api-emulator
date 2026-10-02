@@ -1,0 +1,77 @@
+description: >-
+  The account's answer to the poll a message of its private chat with a bot shows, addressed by
+  the message's ID as the bot sees it. A forward shows the same poll as the message it repeats,
+  so the answer is the same through either.
+parameters:
+  - $ref: ../components/parameters/SessionId.yaml
+  - $ref: ../components/parameters/AccountId.yaml
+  - $ref: ../components/parameters/BotId.yaml
+  - $ref: ../components/parameters/MessageId.yaml
+get:
+  operationId: getAccountPollAnswer
+  summary: Read the account's answer to a poll of its private chat with a bot
+  responses:
+    '200':
+      description: >-
+        The account's answer, empty without one, with the message showing the poll and its
+        votes.
+      content:
+        application/json:
+          schema:
+            $ref: ../components/schemas/PollAnswerResponse.yaml
+    '400':
+      description: A path identifier is invalid.
+    '404':
+      description: >-
+        The session, account, bot, or message of their private chat does not exist, or the
+        message shows no poll.
+put:
+  operationId: answerAccountPoll
+  summary: Vote in a poll of the account's private chat with a bot, or change the vote
+  description: >-
+    Replaces the account's answer, as TDLib's `setPollAnswer` does for a user, after the poll's
+    checks in its order: the poll must be open; a poll without multiple answers accepts one
+    option; every option must exist; and a poll that disallows revoting accepts no answer from an
+    account that has answered. Choosing the options already chosen changes nothing.
+  requestBody:
+    required: true
+    content:
+      application/json:
+        schema:
+          $ref: ../components/schemas/SetPollAnswerRequest.yaml
+  responses:
+    '200':
+      description: The account's answer, with the message showing the poll and its votes.
+      content:
+        application/json:
+          schema:
+            $ref: ../components/schemas/PollAnswerResponse.yaml
+    '400':
+      description: >-
+        The request is invalid, chooses several options of a poll that allows one, or names an
+        option the poll lacks.
+    '404':
+      description: >-
+        The session, account, bot, or message of their private chat does not exist, or the
+        message shows no poll.
+    '409':
+      description: >-
+        The poll is closed, or disallows revoting and the account has answered.
+delete:
+  operationId: retractAccountPollAnswer
+  summary: Retract the account's answer to a poll of its private chat with a bot
+  description: >-
+    Retracts the account's answer, as TDLib's `setPollAnswer` does without options. As TDLib
+    checks it, a poll that disallows revoting refuses the retraction even without an answer;
+    otherwise retracting without an answer changes nothing.
+  responses:
+    '204':
+      description: The account has no answer to the poll.
+    '400':
+      description: A path identifier is invalid.
+    '404':
+      description: >-
+        The session, account, bot, or message of their private chat does not exist, or the
+        message shows no poll.
+    '409':
+      description: The poll is closed, or disallows revoting.

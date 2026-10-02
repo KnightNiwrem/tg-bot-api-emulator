@@ -16,6 +16,8 @@ import type {
   MessageEntity,
   MessageSenderBot,
   PlainMessageEntityType,
+  Poll,
+  PollAnswer,
   PrivateMessage,
   RateLimitResponses,
   ReplyInterface,
@@ -505,6 +507,25 @@ const videoContentShape = {
 
 const voiceContentShape = { voice: voiceSchema, ...captionShape };
 
+const pollSchema: z.ZodType<Poll> = z.strictObject({
+  id: z.string().regex(/^[1-9]\d*$/),
+  question: z.string().min(1),
+  question_entities: z.array(messageEntitySchema).min(1).optional(),
+  options: z.array(z.strictObject({
+    persistent_id: z.string().min(1),
+    text: z.string().min(1),
+    text_entities: z.array(messageEntitySchema).min(1).optional(),
+    voter_count: z.number().int().nonnegative(),
+  })).min(1),
+  total_voter_count: z.number().int().nonnegative(),
+  is_closed: z.boolean(),
+  is_anonymous: z.boolean(),
+  allows_multiple_answers: z.boolean(),
+  allows_revoting: z.boolean(),
+  members_only: z.literal(false),
+  type: z.literal('regular'),
+});
+
 const externalReplyShape = {
   origin: messageOriginSchema,
   chat: supergroupChatSchema.optional(),
@@ -513,9 +534,11 @@ const externalReplyShape = {
 
 /** How a message replies to a message of another chat, and what it quotes of a replied message. */
 const messageReplyInfoShape = {
-  // The replied message's media, which only a photo, document, video, or voice message has.
+  // The replied message's media, which only a photo, document, video, or voice message has, or its
+  // poll.
   external_reply: z.union([
     z.strictObject(externalReplyShape),
+    z.strictObject({ ...externalReplyShape, poll: pollSchema }),
     z.strictObject({
       ...externalReplyShape,
       photo: z.array(photoSizeSchema).min(1),
@@ -574,6 +597,7 @@ function contentMessageSchemas<Header extends z.ZodRawShape>(header: Header) {
     z.strictObject({ ...header, ...videoContentShape, ...messageTrailerShape }),
     z.strictObject({ ...header, ...voiceContentShape, ...messageTrailerShape }),
     z.strictObject({ ...header, rich_message: richMessageSchema, ...messageTrailerShape }),
+    z.strictObject({ ...header, poll: pollSchema, ...messageTrailerShape }),
   ] as const;
 }
 
@@ -640,6 +664,22 @@ export const sentSupergroupMediaGroupResponseSchema = z.strictObject({
 
 export const supergroupMessageHistoryResponseSchema = z.strictObject({
   messages: z.array(supergroupMessageSchema),
+});
+
+const pollAnswerSchema: z.ZodType<PollAnswer> = z.strictObject({
+  poll_id: z.string().regex(/^[1-9]\d*$/),
+  option_ids: z.array(z.number().int().nonnegative()),
+  option_persistent_ids: z.array(z.string().min(1)),
+});
+
+export const pollAnswerResponseSchema = z.strictObject({
+  poll_answer: pollAnswerSchema,
+  message: privateMessageSchema,
+});
+
+export const supergroupPollAnswerResponseSchema = z.strictObject({
+  poll_answer: pollAnswerSchema,
+  message: supergroupMessageSchema,
 });
 
 const supergroupSchema: z.ZodType<Supergroup> = z.strictObject({

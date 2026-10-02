@@ -3,6 +3,7 @@ import { BotRepository } from '../src/repositories/bot.ts';
 import { BotUpdateRepository } from '../src/repositories/bot_update.ts';
 import { BotUpdateSubscriptionRepository } from '../src/repositories/bot_update_subscription.ts';
 import { FileRepository } from '../src/repositories/file.ts';
+import { PollRepository } from '../src/repositories/poll.ts';
 import { MessageRepository } from '../src/repositories/message.ts';
 import { SharedChatRepository } from '../src/repositories/shared_chat.ts';
 import { TelegramIdentityRepository } from '../src/repositories/telegram_identity.ts';
@@ -1107,6 +1108,7 @@ function createDeliveryFixture() {
       messageBoxes,
       messages,
       files,
+      polls: new PollRepository(),
     }),
     botUpdates,
     updateSubscriptions,

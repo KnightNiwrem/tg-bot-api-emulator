@@ -1,0 +1,25 @@
+type: object
+additionalProperties: false
+description: >-
+  The options the requesting account chose in a poll, as the Bot API's `PollAnswer` names them;
+  both lists are empty while the account has no answer.
+required:
+  - poll_id
+  - option_ids
+  - option_persistent_ids
+properties:
+  poll_id:
+    type: string
+    pattern: '^[1-9]\d*$'
+  option_ids:
+    type: array
+    description: The chosen options' positions, counted from 0, in increasing order.
+    items:
+      type: integer
+      minimum: 0
+  option_persistent_ids:
+    type: array
+    description: The chosen options' `persistent_id`, in the same order.
+    items:
+      type: string
+      minLength: 1

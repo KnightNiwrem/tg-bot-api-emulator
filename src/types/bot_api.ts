@@ -1,3 +1,4 @@
+import type { BotApiPoll } from './bot_api_poll.ts';
 import type { BotApiRichMessage } from './bot_api_rich_message.ts';
 import type { ChatAdministratorRightName } from './bot_default_administrator_rights.ts';
 import type { ButtonStyle } from './button_appearance.ts';
@@ -291,7 +292,8 @@ export type BotApiMessageContent =
     readonly entities?: readonly BotApiMessageEntity[];
   }
   | BotApiCaptionedMediaContent
-  | { readonly rich_message: BotApiRichMessage };
+  | { readonly rich_message: BotApiRichMessage }
+  | { readonly poll: BotApiPoll };
 
 /**
  * The fields of a service message about a membership change, which take the place of content.
@@ -343,10 +345,11 @@ export type BotApiMessageOrigin = BotApiMessageOriginUser | BotApiMessageOriginH
 
 /**
  * The media of a message of another chat that a message replies to, whose caption shows as the
- * reply's quote instead: nothing for text.
+ * reply's quote instead, or its poll: nothing for text.
  */
 export type BotApiExternalReplyMedia =
   | Record<never, never>
+  | { readonly poll: BotApiPoll }
   | {
     readonly photo: readonly BotApiPhotoSize[];
     /** Present only for a photo that clients cover until the user reveals it. */

@@ -1,0 +1,83 @@
+type: object
+additionalProperties: false
+description: >-
+  A regular poll to send. Quizzes, options added after creation, restrictions on who may vote,
+  shuffled options, results hidden until the poll closes, closing times, descriptions, and media
+  are not supported, nor are topics, business connections, paid broadcasts, and suggested posts.
+required:
+  - chat_id
+  - question
+  - options
+properties:
+  chat_id:
+    $ref: ./ChatIdentifier.yaml
+    description: >-
+      Identifier of the chat, as for `sendMessage`: for a private chat, the account's user
+      ID; for a supergroup, its negative chat ID, or `@` followed by the username of a public
+      supergroup.
+  question:
+    type: string
+    description: >-
+      The question, normalized as message text is, which must keep 1–300 characters. As
+      Telegram keeps them, only custom emoji remain of its formatting.
+  question_parse_mode:
+    $ref: ./ParseMode.yaml
+  question_entities:
+    type: array
+    description: Entities marking the question; ignored when `question_parse_mode` formats it.
+    items:
+      $ref: ./MessageEntityParameter.yaml
+  options:
+    type: array
+    description: >-
+      The answer options, 1–12, in the order clients show them. `null` holds none, which
+      Telegram refuses.
+    items:
+      $ref: ./InputPollOption.yaml
+  is_anonymous:
+    type: boolean
+    default: true
+    description: >-
+      Whether the poll hides who voted for what. Bots never learn the voters of an anonymous
+      poll.
+  type:
+    type: string
+    enum:
+      - ''
+      - regular
+    description: The poll's type; only regular polls are supported.
+  allows_multiple_answers:
+    type: boolean
+    default: false
+  allows_revoting:
+    type: boolean
+    default: true
+    description: Whether voters may change or retract their answers.
+  disable_notification:
+    type: boolean
+    default: false
+    description: As for `sendMessage`.
+  protect_content:
+    type: boolean
+    default: false
+    description: As for `sendMessage`.
+  message_effect_id:
+    type: string
+    pattern: '^-?\d+$'
+    description: As for `sendMessage`.
+  reply_parameters:
+    $ref: ./ReplyParameters.yaml
+  reply_to_message_id:
+    type: integer
+    description: As for `sendMessage`.
+  allow_sending_without_reply:
+    type: boolean
+    default: false
+    description: As for `sendMessage`.
+  reply_markup:
+    description: As for `sendMessage`.
+    oneOf:
+      - $ref: ./InlineKeyboardMarkup.yaml
+      - $ref: ./ReplyKeyboardMarkup.yaml
+      - $ref: ./ReplyKeyboardRemove.yaml
+      - $ref: ./ForceReply.yaml

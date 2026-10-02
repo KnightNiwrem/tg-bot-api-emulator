@@ -1,0 +1,75 @@
+description: >-
+  The account's answer to the poll a message of a supergroup shows, addressed by the message's ID
+  in the supergroup, as for a private chat.
+parameters:
+  - $ref: ../components/parameters/SessionId.yaml
+  - $ref: ../components/parameters/AccountId.yaml
+  - $ref: ../components/parameters/SupergroupChatId.yaml
+  - $ref: ../components/parameters/SupergroupMessageId.yaml
+get:
+  operationId: getSupergroupAccountPollAnswer
+  summary: Read the account's answer to a poll of a supergroup
+  responses:
+    '200':
+      description: >-
+        The account's answer, empty without one, with the message showing the poll and its
+        votes.
+      content:
+        application/json:
+          schema:
+            $ref: ../components/schemas/SupergroupPollAnswerResponse.yaml
+    '400':
+      description: A path identifier is invalid.
+    '403':
+      description: The account is not a member of the supergroup.
+    '404':
+      description: >-
+        The session, account, supergroup, or message of the supergroup does not exist, or the
+        message shows no poll.
+put:
+  operationId: answerSupergroupAccountPoll
+  summary: Vote in a poll of a supergroup, or change the vote
+  description: As for a poll of a private chat.
+  requestBody:
+    required: true
+    content:
+      application/json:
+        schema:
+          $ref: ../components/schemas/SetPollAnswerRequest.yaml
+  responses:
+    '200':
+      description: The account's answer, with the message showing the poll and its votes.
+      content:
+        application/json:
+          schema:
+            $ref: ../components/schemas/SupergroupPollAnswerResponse.yaml
+    '400':
+      description: >-
+        The request is invalid, chooses several options of a poll that allows one, or names an
+        option the poll lacks.
+    '403':
+      description: The account is not a member of the supergroup.
+    '404':
+      description: >-
+        The session, account, supergroup, or message of the supergroup does not exist, or the
+        message shows no poll.
+    '409':
+      description: >-
+        The poll is closed, or disallows revoting and the account has answered.
+delete:
+  operationId: retractSupergroupAccountPollAnswer
+  summary: Retract the account's answer to a poll of a supergroup
+  description: As for a poll of a private chat.
+  responses:
+    '204':
+      description: The account has no answer to the poll.
+    '400':
+      description: A path identifier is invalid.
+    '403':
+      description: The account is not a member of the supergroup.
+    '404':
+      description: >-
+        The session, account, supergroup, or message of the supergroup does not exist, or the
+        message shows no poll.
+    '409':
+      description: The poll is closed, or disallows revoting.

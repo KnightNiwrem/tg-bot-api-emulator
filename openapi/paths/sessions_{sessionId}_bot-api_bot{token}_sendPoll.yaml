@@ -1,0 +1,95 @@
+description: >-
+  Telegram Bot API method for sending a regular poll, which the sending bot owns. Accounts of the
+  chat vote in it through the account routes; bots see each option's voter count in the message.
+  The question and options are read and normalized as message text is, and keep only their
+  custom emoji, as TDLib keeps them. A forward of the poll's message shows the same poll, whose
+  votes it shares, while a copy shows a new poll without votes. The other parameters work as for
+  `sendMessage`.
+parameters:
+  - $ref: ../components/parameters/SessionId.yaml
+  - $ref: ../components/parameters/BotToken.yaml
+post:
+  operationId: sendPoll
+  summary: Send a regular poll from the authenticated virtual bot to an account or a supergroup
+  requestBody:
+    required: true
+    content:
+      application/json:
+        schema:
+          $ref: ../components/schemas/SendPollRequest.yaml
+      application/x-www-form-urlencoded:
+        schema:
+          $ref: ../components/schemas/SendPollRequest.yaml
+        encoding:
+          question_entities:
+            contentType: application/json
+          options:
+            contentType: application/json
+          reply_parameters:
+            contentType: application/json
+          reply_markup:
+            contentType: application/json
+      multipart/form-data:
+        schema:
+          $ref: ../components/schemas/SendPollRequest.yaml
+        encoding:
+          question_entities:
+            contentType: application/json
+          options:
+            contentType: application/json
+          reply_parameters:
+            contentType: application/json
+          reply_markup:
+            contentType: application/json
+  responses:
+    '200':
+      description: >-
+        The poll was stored in the private conversation or supergroup. No bot receives an update
+        for a bot's message.
+      content:
+        application/json:
+          schema:
+            $ref: ../components/schemas/MessageResponse.yaml
+    '400':
+      description: >-
+        The request cannot be decoded or has unsupported parameters, or Telegram would reject
+        it, checking in this order: the question's formatting cannot be read, as for
+        `sendMessage`; `options` is missing or not JSON (`Bad Request: can't parse options JSON
+        object`), not an array (`Bad Request: expected an Array of InputPollOption`), or an
+        option cannot be read (`Bad Request: can't parse InputPollOption: …`, such as `Expected
+        InputPollOption to be an Object`, `Can't find field "text"`, or the description of its
+        formatting); an option has media (`Bad Request: media of poll options is not
+        supported`); `type` is `quiz` (`Bad Request: quiz polls are not supported`) or unknown
+        (`Bad Request: unsupported poll type specified`); `chat_id` is missing (`Bad Request:
+        chat_id is empty`); the reply markup, the chat, the reply, and the message effect fail
+        as for `sendMessage`; the question is empty after normalization (`Bad Request: text
+        must be non-empty`) or longer than 300 characters (`Bad Request: poll question length
+        must not exceed 300`); there are no options (`Bad Request: poll must have at least one
+        answer option`) or more than 12 (`Bad Request: poll can't have more than 12 options`);
+        an option is empty after normalization (`Bad Request: text must be non-empty`) or
+        longer than 100 characters (`Bad Request: poll options length must not exceed 100`); or
+        a button's callback data exceeds 64 bytes (`Bad Request: BUTTON_DATA_INVALID`). A
+        refused poll stores nothing.
+      content:
+        application/json:
+          schema:
+            $ref: ../components/schemas/BotApiErrorResponse.yaml
+    '401':
+      description: The token does not belong to a virtual bot in the addressed session.
+      content:
+        application/json:
+          schema:
+            $ref: ../components/schemas/BotApiErrorResponse.yaml
+    '403':
+      description: >-
+        The account blocks the bot (`Forbidden: bot was blocked by the user`), or the bot left
+        the supergroup (`Forbidden: bot is not a member of the supergroup chat`) or was removed
+        from it (`Forbidden: bot was kicked from the supergroup chat`).
+      content:
+        application/json:
+          schema:
+            $ref: ../components/schemas/BotApiErrorResponse.yaml
+    '404':
+      description: No active test session has the supplied identifier.
+    '429':
+      $ref: ../components/responses/BotApiRateLimited.yaml
