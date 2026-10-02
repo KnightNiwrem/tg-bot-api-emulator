@@ -103,8 +103,10 @@ an edit. A refused stop changes nothing.
 
 ## Poll updates
 
-As the Bot API documents for [`Update`][bot-api-update], only the bot that sent a poll receives its
-updates, wherever the poll is shown, including forwards in chats the bot is not in:
+The emulator delivers a poll's updates only to the bot that sent it, wherever the poll is shown,
+including forwards in chats the bot is not in. The Bot API documents for [`Update`][bot-api-update]
+that Telegram also sends other bots updates about polls stopped manually, which the emulator does
+not, as its [real gaps](#real-gaps) explain:
 
 | Event                                              | Updates the bot receives                                                     |
 | -------------------------------------------------- | ---------------------------------------------------------------------------- |
