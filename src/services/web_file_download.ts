@@ -36,8 +36,9 @@ const CONTENT_TOO_BIG: WebFileDownload = { downloaded: false, reason: 'content_t
  * budget, and reads at most the given number of bytes, stopping as soon as the content, or its
  * declared length, is larger. Content shorter than its declared length is truncated and fails.
  *
- * A failed download releases the response it was reading, whether it failed for its content, its
- * time budget, or the caller's signal.
+ * A failed download requests the cancellation of the response it was reading, whether it failed
+ * for its content, its time budget, or the caller's signal, without waiting for the cancellation
+ * to complete.
  */
 export class WebFileDownloader {
   readonly #fetchWebResource: WebResourceFetcher;
@@ -205,7 +206,10 @@ async function readBoundedContent(
   }
 }
 
-/** Releases a response's body without reading it, as `cancelUnawaited` cancels it. */
+/**
+ * Requests the cancellation of a response's unread body, as `cancelUnawaited` describes; the
+ * cancellation may never complete.
+ */
 function releaseBody(response: Response): void {
   if (response.body !== null) {
     cancelUnawaited(response.body.cancel());
@@ -213,8 +217,8 @@ function releaseBody(response: Response): void {
 }
 
 /**
- * Lets a stream's cancellation finish on its own. A download waits for it neither to succeed nor
- * to fail: a source whose cancellation never settles must not hold the download past its time
+ * Takes a stream's cancellation, already requested, without awaiting it and ignoring whether it
+ * fails. A source whose cancellation never settles must not hold the download past its time
  * budget, and the download's outcome is decided once the cancellation is requested.
  */
 function cancelUnawaited(cancellation: Promise<void>): void {

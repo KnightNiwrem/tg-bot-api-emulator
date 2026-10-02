@@ -192,50 +192,66 @@ Deno.test('WebFileDownloader stops when the caller aborts', async () => {
   }
 });
 
-Deno.test('WebFileDownloader does not wait for a body whose cancellation never settles', async () => {
-  // A source whose cancellation never settles, after an optional chunk of content.
-  const stuckBody = (chunk?: Uint8Array<ArrayBuffer>) =>
-    new ReadableStream<Uint8Array<ArrayBuffer>>({
-      start(controller) {
-        if (chunk !== undefined) {
-          controller.enqueue(chunk);
-        }
-      },
-      cancel: () => new Promise<void>(() => {}),
-    });
-  const cases: { respond: () => Response; expectedReason: string }[] = [
+Deno.test('WebFileDownloader requests cancellations without waiting for them to settle', async () => {
+  const cases: {
+    readonly respond: (body: StuckCancellationStream) => Promise<Response>;
+    readonly chunk?: Uint8Array<ArrayBuffer>;
+    readonly expectedReason: FailureReason;
+  }[] = [
     {
-      respond: () => new Response(stuckBody(), { status: 500 }),
+      respond: (body) => Promise.resolve(new Response(body.stream, { status: 500 })),
       expectedReason: 'content_unavailable',
     },
     {
-      respond: () => new Response(stuckBody(), { status: 302, headers: { Location: 'file:///x' } }),
+      respond: (body) =>
+        Promise.resolve(
+          new Response(body.stream, { status: 302, headers: { Location: 'file:///x' } }),
+        ),
       expectedReason: 'content_unavailable',
     },
     {
-      respond: () => new Response(stuckBody(), { headers: { 'Content-Length': '1001' } }),
+      respond: (body) =>
+        Promise.resolve(new Response(body.stream, { headers: { 'Content-Length': '1001' } })),
       expectedReason: 'content_too_big',
     },
     {
-      respond: () => new Response(stuckBody(new Uint8Array(1_001))),
+      respond: (body) => Promise.resolve(new Response(body.stream)),
+      chunk: new Uint8Array(1_001),
       expectedReason: 'content_too_big',
+    },
+    // The time budget runs out while the body stalls.
+    {
+      respond: (body) => Promise.resolve(new Response(body.stream)),
+      expectedReason: 'content_unavailable',
     },
   ];
-  for (const { respond, expectedReason } of cases) {
-    const downloader = createDownloader(() => Promise.resolve(respond()), {
-      timeoutMilliseconds: 50,
-    });
-    const guard = Promise.withResolvers<'still waiting'>();
-    const guardTimer = setTimeout(() => guard.resolve('still waiting'), 1_000);
-    const outcome = await Promise.race([
-      downloader.download('https://example.com/a', 1_000),
-      guard.promise,
-    ]);
-    clearTimeout(guardTimer);
-    if (outcome === 'still waiting') {
+  for (const { respond, chunk, expectedReason } of cases) {
+    const body = new StuckCancellationStream(chunk);
+    const downloader = createDownloader(() => respond(body), { timeoutMilliseconds: 50 });
+    const outcome = await settleWithin(downloader.download('https://example.com/a', 1_000));
+    if (outcome === undefined) {
       throw new Error(`Expected ${expectedReason} without waiting for the cancellation`);
     }
     assertFailure(outcome, expectedReason);
+    if (!body.cancelRequested) {
+      throw new Error(`Expected the body to be canceled for ${expectedReason}`);
+    }
+  }
+
+  // A response that arrives after the time budget ran out is canceled too.
+  const lateBody = new StuckCancellationStream();
+  const lateResponse = Promise.withResolvers<Response>();
+  const downloader = createDownloader(() => lateResponse.promise, { timeoutMilliseconds: 20 });
+  const outcome = await settleWithin(downloader.download('https://example.com/a', 1_000));
+  if (outcome === undefined) {
+    throw new Error('Expected the download to give up when its time budget ran out');
+  }
+  assertFailure(outcome, 'content_unavailable');
+  lateResponse.resolve(new Response(lateBody.stream));
+  await Promise.resolve();
+  await Promise.resolve();
+  if (!lateBody.cancelRequested) {
+    throw new Error('Expected a late response to be canceled');
   }
 });
 
@@ -259,7 +275,9 @@ function assertDownloaded(
   }
 }
 
-function assertFailure(download: WebFileDownload, expectedReason: string): void {
+type FailureReason = Extract<WebFileDownload, { readonly downloaded: false }>['reason'];
+
+function assertFailure(download: WebFileDownload, expectedReason: FailureReason): void {
   if (download.downloaded || download.reason !== expectedReason) {
     throw new Error(`Expected ${expectedReason}, received ${JSON.stringify(download)}`);
   }
@@ -295,5 +313,43 @@ class CountingStream {
         this.canceled = true;
       },
     }, { highWaterMark: 0 });
+  }
+}
+
+/** Resolves with a download's outcome, or with `undefined` if it takes longer than a second. */
+async function settleWithin(
+  download: Promise<WebFileDownload>,
+): Promise<WebFileDownload | undefined> {
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  const timeout = new Promise<undefined>((resolve) => {
+    timer = setTimeout(() => resolve(undefined), 1_000);
+  });
+  try {
+    return await Promise.race([download, timeout]);
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+/**
+ * A response body whose cancellation never settles, as a source stuck releasing its connection's
+ * resources would; it records whether cancellation was requested, and stalls after its chunk.
+ */
+class StuckCancellationStream {
+  readonly stream: ReadableStream<Uint8Array<ArrayBuffer>>;
+  cancelRequested = false;
+
+  constructor(chunk?: Uint8Array<ArrayBuffer>) {
+    this.stream = new ReadableStream<Uint8Array<ArrayBuffer>>({
+      start(controller) {
+        if (chunk !== undefined) {
+          controller.enqueue(chunk);
+        }
+      },
+      cancel: () => {
+        this.cancelRequested = true;
+        return new Promise<void>(() => {});
+      },
+    });
   }
 }
