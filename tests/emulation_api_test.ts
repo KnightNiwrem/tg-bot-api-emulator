@@ -35,6 +35,49 @@ Deno.test('POST /sessions creates a session and returns its API locations', asyn
   if (body.botApiRoot !== `${publicOrigin}${sessionPath}/bot-api`) {
     throw new Error('Expected botApiRoot to identify the session Bot API');
   }
+  if (body.uploadProfile !== 'cloud') {
+    throw new Error(`Expected the cloud upload profile by default, received ${body.uploadProfile}`);
+  }
+});
+
+Deno.test('POST /sessions creates a session with the upload profile it names', async () => {
+  const api = createEmulationApi({
+    sessionLifecycle: createSessionLifecycleService(),
+    publicOrigin: 'http://emulator.example:9000',
+  });
+
+  for (const uploadProfile of ['cloud', 'local']) {
+    const response = await api.request('/sessions', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ upload_profile: uploadProfile }),
+    });
+    const body: unknown = await response.json();
+    if (response.status !== 201 || !isSessionResponse(body)) {
+      throw new Error(`Expected a created ${uploadProfile} session, received ${response.status}`);
+    }
+    if (body.uploadProfile !== uploadProfile) {
+      throw new Error(`Expected upload profile ${uploadProfile}, received ${body.uploadProfile}`);
+    }
+  }
+});
+
+Deno.test('POST /sessions rejects unknown or invalid session settings', async () => {
+  const api = createEmulationApi({
+    sessionLifecycle: createSessionLifecycleService(),
+    publicOrigin: 'http://emulator.example:9000',
+  });
+
+  for (const body of ['{"upload_profile":"premium"}', '{"mode":"local"}', '[]', 'local']) {
+    const response = await api.request('/sessions', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body,
+    });
+    if (response.status !== 400) {
+      throw new Error(`Expected ${body} to be rejected, received ${response.status}`);
+    }
+  }
 });
 
 Deno.test('DELETE /sessions/:sessionId ends the session and answers its held long polls', async () => {
@@ -9940,13 +9983,16 @@ function jsonRequest(method: 'PATCH' | 'POST' | 'PUT', body: unknown): RequestIn
   return { method, headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) };
 }
 
-function isSessionResponse(value: unknown): value is { id: string; botApiRoot: string } {
+function isSessionResponse(
+  value: unknown,
+): value is { id: string; botApiRoot: string; uploadProfile: string } {
   if (typeof value !== 'object' || value === null) {
     return false;
   }
 
-  const { id, botApiRoot } = value as Record<string, unknown>;
-  return typeof id === 'string' && id.length > 0 && typeof botApiRoot === 'string';
+  const { id, botApiRoot, uploadProfile } = value as Record<string, unknown>;
+  return typeof id === 'string' && id.length > 0 && typeof botApiRoot === 'string' &&
+    typeof uploadProfile === 'string';
 }
 
 function isCreatedBotResponse(value: unknown): value is {

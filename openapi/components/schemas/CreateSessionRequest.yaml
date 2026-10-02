@@ -1,0 +1,7 @@
+type: object
+additionalProperties: false
+properties:
+  upload_profile:
+    allOf:
+      - $ref: ./UploadProfile.yaml
+    default: cloud

@@ -79,6 +79,7 @@ import type {
   Supergroup,
   SupergroupBotCommands,
   SupergroupMessage,
+  UploadProfile,
   VirtualAccountClient,
   VirtualAccountProfile,
   VirtualBotProfile,
@@ -126,6 +127,7 @@ export function createEmulationSessionClient(
 class HttpEmulationSessionClient implements EmulationSessionClient {
   readonly id: string;
   readonly botApiRoot: string;
+  readonly uploadProfile: UploadProfile;
   readonly #sessionUrl: string;
   readonly #botApiRoot: URL;
   readonly #fetch: typeof globalThis.fetch;
@@ -137,6 +139,7 @@ class HttpEmulationSessionClient implements EmulationSessionClient {
   ) {
     this.id = session.id;
     this.botApiRoot = session.botApiRoot;
+    this.uploadProfile = session.uploadProfile;
     this.#sessionUrl = new URL(`sessions/${encodeURIComponent(session.id)}`, serverRoot).href;
     this.#botApiRoot = normalizeUrlRoot(session.botApiRoot, 'botApiRoot');
     this.#fetch = fetchImplementation;

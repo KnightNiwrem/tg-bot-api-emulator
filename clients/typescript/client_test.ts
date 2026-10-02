@@ -38,6 +38,14 @@ Deno.test('TypeScript client manages all currently implemented session resources
   if (session.botApiRoot !== `${publicOrigin}/sessions/${session.id}/bot-api`) {
     throw new Error('Expected the session client to expose its Bot API root');
   }
+  if (session.uploadProfile !== 'cloud') {
+    throw new Error('Expected a session created without settings to use the cloud upload profile');
+  }
+  const localSession = await client.createSession({ upload_profile: 'local' });
+  if (localSession.uploadProfile !== 'local') {
+    throw new Error('Expected the session client to expose the upload profile it chose');
+  }
+  await localSession.end();
 
   const createdBot = await session.createBot({
     first_name: 'Test Bot',

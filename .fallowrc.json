@@ -21,6 +21,7 @@
           "src/types/message_forward.ts",
           "src/types/message_reply.ts",
           "src/types/stored_file.ts",
+          "src/types/upload_profile.ts",
           "src/types/chat_domain_event.ts",
           "src/types/callback_query.ts",
           "src/types/inline_query.ts",
@@ -412,6 +413,7 @@
         "from": "session",
         "allow": [],
         "allowTypeOnly": [
+          "domain",
           "domain-services",
           "bot-api-service",
           "bot-message-view",

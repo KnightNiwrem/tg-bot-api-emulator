@@ -1,7 +1,9 @@
-import { Hono } from 'hono';
+import { Hono, type HonoRequest } from 'hono';
 import { basePath } from 'hono/route';
+import { z } from 'zod';
 
-import type { EmulationSession } from '../../types/emulation_session.ts';
+import type { EmulationSession, EmulationSessionOptions } from '../../types/emulation_session.ts';
+import { DEFAULT_UPLOAD_PROFILE, UPLOAD_PROFILES } from '../../types/upload_profile.ts';
 import { createAccountRoutes } from './accounts/mod.ts';
 import { createBotActivityRoutes } from './bot_activity/mod.ts';
 import { createBotApiRoutes } from './bot_api/mod.ts';
@@ -18,8 +20,12 @@ const BOT_API_PATH = `${SESSION_PATH}/bot-api` as const;
 const BOT_ACTIVITY_PATH = `${SESSION_PATH}/bot-activity` as const;
 const FILE_COLLECTION_PATH = `${SESSION_PATH}/files` as const;
 
+const createSessionRequestSchema = z.strictObject({
+  upload_profile: z.enum(UPLOAD_PROFILES).default(DEFAULT_UPLOAD_PROFILE),
+});
+
 export interface SessionLifecycle {
-  createSession(): EmulationSession;
+  createSession(options: EmulationSessionOptions): EmulationSession;
   endSession(sessionId: string): boolean;
   getSessionById(sessionId: string): EmulationSession | undefined;
 }
@@ -34,14 +40,19 @@ export function createSessionRoutes(
 ): Hono<SessionRouteContextTypes> {
   const sessionRoutes = new Hono<SessionRouteContextTypes>();
 
-  sessionRoutes.post('/', (context) => {
-    const session = sessionLifecycle.createSession();
+  sessionRoutes.post('/', async (context) => {
+    const options = await readCreateSessionOptions(context.req);
+    if (options === undefined) {
+      return context.body(null, 400);
+    }
+    const session = sessionLifecycle.createSession(options);
     const sessionPath = `${basePath(context)}/${session.id}`;
 
     return context.json(
       {
         id: session.id,
         botApiRoot: new URL(`${sessionPath}/bot-api`, publicOrigin).href,
+        uploadProfile: session.uploadProfile,
       },
       201,
       { Location: sessionPath },
@@ -74,4 +85,27 @@ export function createSessionRoutes(
   sessionRoutes.route(FILE_COLLECTION_PATH, createFileRoutes());
 
   return sessionRoutes;
+}
+
+/**
+ * Reads the settings of a new session from its creation request, whose body is optional: without
+ * one, every setting has its default. Returns `undefined` for a body that is not JSON or that names
+ * unknown or invalid settings.
+ */
+async function readCreateSessionOptions(
+  request: HonoRequest,
+): Promise<EmulationSessionOptions | undefined> {
+  const body = await request.text();
+  let requestBody: unknown = {};
+  if (body.length > 0) {
+    try {
+      requestBody = JSON.parse(body);
+    } catch {
+      return undefined;
+    }
+  }
+  const parsedRequestBody = createSessionRequestSchema.safeParse(requestBody);
+  return parsedRequestBody.success
+    ? { uploadProfile: parsedRequestBody.data.upload_profile }
+    : undefined;
 }

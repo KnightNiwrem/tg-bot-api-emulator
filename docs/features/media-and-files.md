@@ -38,6 +38,14 @@ photo, fails. `getFile` returns a `file_path`; download the bytes at
 remains valid for the session. Tests can bypass bot downloads with
 `session.downloadFile(file_unique_id)`; that is an emulation API convenience, not a Telegram API.
 
+### Upload profiles
+
+A session's [upload profile](sessions-and-requests.md#supported-behavior) names the official Bot API
+server deployment whose upload limits its bots meet: `cloud` for `api.telegram.org`, the default, or
+`local` for a server started with `--local`. Both profiles currently apply the same upload checks,
+described above. The profile changes nothing else; see
+[the cloud server's other file handling](#the-cloud-servers-other-file-handling).
+
 ## Intentional deviations
 
 ### Lightweight photo validation and unchanged fixture bytes
@@ -63,19 +71,21 @@ is intentionally omitted; tests that need a preview upload a thumbnail. An uploa
 kept as sent, like a photo: Telegram asks for a JPEG of at most 320 pixels a side, and its server's
 handling of other thumbnails is not visible in the source.
 
-### The cloud server's file handling
+### The cloud server's other file handling
 
-The emulator models the official server as Telegram hosts it at `api.telegram.org`, without
-`--local`. As that server's [file handling][download-limit] does outside local mode, bots cannot
-download files larger than 20 × 1024 × 1024 bytes: `getFile` fails with
-`Bad Request: file is too big`, so there is no path to download them from.
+Apart from upload limits, every session behaves as the official server does without `--local`,
+whatever its upload profile. As that server's [file handling][download-limit] does outside local
+mode, bots cannot download files larger than 20 × 1024 × 1024 bytes: `getFile` fails with
+`Bad Request: file is too big`, so there is no path to download them from. `getFile` returns a
+relative `file_path` to download over HTTP, never a local filesystem path.
 [`Client::get_input_file`][file-input] reads local filesystem paths and `file://` URIs only in local
 mode, so the emulator does not read them either.
 
-[Local mode][local-mode] is a setting of a self-hosted server, not behavior of the bot under test,
-and it chiefly relaxes limits and gives the bot direct access to the server's filesystem, which an
-isolated test session has no use for. Tests of a bot deployed against a local server exercise its
-Bot API calls with the cloud limits; files the bot would read from disk are uploaded instead.
+[Local mode][local-mode] is a setting of a self-hosted server, not behavior of the bot under test.
+Beyond its upload limits, it chiefly gives the bot direct access to the server's filesystem, which
+an isolated test session has no use for: files the bot would read from disk are uploaded instead,
+and files it would read from a `getFile` path are downloaded. The webhook restrictions that local
+mode relaxes are relaxed in every session; see [webhooks](webhooks.md#intentional-deviations).
 
 ### Opaque session file identifiers
 

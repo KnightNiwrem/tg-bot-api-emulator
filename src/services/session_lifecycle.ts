@@ -1,4 +1,4 @@
-import type { EmulationSession } from '../types/emulation_session.ts';
+import type { EmulationSession, EmulationSessionOptions } from '../types/emulation_session.ts';
 
 const MAX_SESSION_ID_GENERATION_ATTEMPTS = 10;
 
@@ -10,13 +10,16 @@ interface SessionStore {
 
 interface SessionLifecycleServiceDependencies {
   readonly sessionRepository: SessionStore;
-  readonly createEmulationSession: (sessionId: string) => EmulationSession;
+  readonly createEmulationSession: (
+    sessionId: string,
+    options: EmulationSessionOptions,
+  ) => EmulationSession;
   readonly generateSessionId: () => string;
 }
 
 export class SessionLifecycleService {
   readonly #sessionRepository: SessionStore;
-  readonly #createEmulationSession: (sessionId: string) => EmulationSession;
+  readonly #createEmulationSession: SessionLifecycleServiceDependencies['createEmulationSession'];
   readonly #generateSessionId: () => string;
 
   constructor(
@@ -31,14 +34,14 @@ export class SessionLifecycleService {
     this.#generateSessionId = generateSessionId;
   }
 
-  createSession(): EmulationSession {
+  createSession(options: EmulationSessionOptions): EmulationSession {
     for (let attempt = 0; attempt < MAX_SESSION_ID_GENERATION_ATTEMPTS; attempt++) {
       const sessionId = this.#generateSessionId();
       if (this.#sessionRepository.getById(sessionId) !== undefined) {
         continue;
       }
 
-      const session = this.#createEmulationSession(sessionId);
+      const session = this.#createEmulationSession(sessionId, options);
       if (session.id !== sessionId) {
         throw new Error(
           `Session factory returned ID ${session.id} for requested ID ${sessionId}`,

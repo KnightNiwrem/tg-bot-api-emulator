@@ -1,5 +1,5 @@
 import { runWebhookReply } from '../api/sessions/bot_api/webhook_reply.ts';
-import type { EmulationSession } from '../types/emulation_session.ts';
+import type { EmulationSession, EmulationSessionOptions } from '../types/emulation_session.ts';
 import { getPrivateForwardName } from '../types/virtual_account.ts';
 import { AccountRepository } from '../repositories/account.ts';
 import { BlockedUserRepository } from '../repositories/blocked_user.ts';
@@ -48,7 +48,10 @@ import { SharedChatAdministrationService } from '../services/shared_chat_adminis
 import { SupergroupMessagingService } from '../services/supergroup_messaging.ts';
 import { VirtualUserService } from '../services/virtual_user.ts';
 
-export function createEmulationSession(id: string): EmulationSession {
+export function createEmulationSession(
+  id: string,
+  { uploadProfile }: EmulationSessionOptions,
+): EmulationSession {
   const identities = new TelegramIdentityRepository();
   const accounts = new AccountRepository();
   const bots = new BotRepository();
@@ -228,6 +231,7 @@ export function createEmulationSession(id: string): EmulationSession {
 
   const session: EmulationSession = {
     id,
+    uploadProfile,
     virtualUsers,
     sharedChatAdministration,
     privateMessaging,

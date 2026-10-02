@@ -2,6 +2,15 @@ description: Collection of isolated Telegram test sessions.
 post:
   operationId: createSession
   summary: Create an isolated test session
+  description: >-
+    The body is optional; without it, the session has the default settings. Settings stay fixed
+    for the session's lifetime.
+  requestBody:
+    required: false
+    content:
+      application/json:
+        schema:
+          $ref: ../components/schemas/CreateSessionRequest.yaml
   responses:
     '201':
       description: The test session was created.
@@ -16,3 +25,5 @@ post:
         application/json:
           schema:
             $ref: ../components/schemas/Session.yaml
+    '400':
+      description: The request body is malformed or does not match the session creation schema.
