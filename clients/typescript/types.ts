@@ -796,26 +796,35 @@ export interface RichMessage {
 }
 
 /**
- * The fields that show what a message is: text, a photo, a document, or a rich message. Each kind
- * declares the others' fields absent, so that any of them can be read from a message of unknown
- * kind.
+ * Declares fields absent, so that reading them from a value that cannot have them is typed as
+ * `undefined`.
  */
-export type MessageContent =
-  | {
+type AbsentFields<FieldName extends PropertyKey> = { readonly [Name in FieldName]?: never };
+
+/** The name of every field of every kind of a map from kinds to their fields. */
+type FieldNameOfAnyKind<FieldsByKind> = {
+  [Kind in keyof FieldsByKind]: keyof FieldsByKind[Kind];
+}[keyof FieldsByKind];
+
+/**
+ * One alternative for each kind of a map from kinds to their fields, which declares the fields
+ * of the other kinds absent, so that any of them can be read from a value of unknown kind.
+ */
+type ExclusiveAlternatives<FieldsByKind> = {
+  [Kind in keyof FieldsByKind]:
+    & FieldsByKind[Kind]
+    & AbsentFields<Exclude<FieldNameOfAnyKind<FieldsByKind>, keyof FieldsByKind[Kind]>>;
+}[keyof FieldsByKind];
+
+/** The fields that show each kind of message content. */
+interface MessageContentFields {
+  readonly text: {
     readonly text: string;
     readonly entities?: readonly MessageEntity[];
-    readonly photo?: never;
-    readonly document?: never;
-    readonly caption?: never;
-    readonly caption_entities?: never;
-    readonly rich_message?: never;
-  }
-  | {
-    readonly text?: never;
-    readonly entities?: never;
+  };
+  readonly photo: {
     /** The photo's sizes, smallest first. */
     readonly photo: readonly PhotoSize[];
-    readonly document?: never;
     /** Omitted for a photo without a caption. */
     readonly caption?: string;
     readonly caption_entities?: readonly MessageEntity[];
@@ -823,28 +832,25 @@ export type MessageContent =
     readonly show_caption_above_media?: true;
     /** Present when clients cover the photo until the user reveals it. */
     readonly has_media_spoiler?: true;
-    readonly rich_message?: never;
-  }
-  | {
-    readonly text?: never;
-    readonly entities?: never;
-    readonly photo?: never;
+  };
+  readonly document: {
     readonly document: Document;
     /** Omitted for a document without a caption. */
     readonly caption?: string;
     readonly caption_entities?: readonly MessageEntity[];
-    readonly rich_message?: never;
-  }
-  | {
-    readonly text?: never;
-    readonly entities?: never;
-    readonly photo?: never;
-    readonly document?: never;
-    readonly caption?: never;
-    readonly caption_entities?: never;
+  };
+  readonly rich_message: {
     /** A message a bot laid out in blocks, which only bots send. */
     readonly rich_message: RichMessage;
   };
+}
+
+/**
+ * The fields that show what a message is: text, a photo, a document, or a rich message. Each kind
+ * declares the others' fields absent, so that any of them can be read from a message of unknown
+ * kind.
+ */
+export type MessageContent = ExclusiveAlternatives<MessageContentFields>;
 
 /** The fields of a change of a supergroup's members or title, which content never has. */
 interface NoSupergroupChange {
@@ -857,15 +863,7 @@ interface NoSupergroupChange {
 }
 
 /** The fields of content, which a service message never has. */
-interface NoContent {
-  readonly text?: never;
-  readonly entities?: never;
-  readonly photo?: never;
-  readonly document?: never;
-  readonly caption?: never;
-  readonly caption_entities?: never;
-  readonly rich_message?: never;
-}
+type NoContent = AbsentFields<FieldNameOfAnyKind<MessageContentFields>>;
 
 /**
  * The fields of a service message about members joining or leaving a supergroup, which take the
@@ -923,8 +921,20 @@ export interface MessageOriginHiddenUser {
 export type MessageOrigin = MessageOriginUser | MessageOriginHiddenUser;
 
 /**
+ * The fields that show each kind of media of a message of another chat that a message replies to.
+ */
+interface ExternalReplyMediaFields {
+  readonly photo: {
+    readonly photo: readonly PhotoSize[];
+    /** Present when clients cover the photo until the user reveals it. */
+    readonly has_media_spoiler?: true;
+  };
+  readonly document: { readonly document: Document };
+}
+
+/**
  * A message of another chat that a message replies to: who first wrote it and when, the
- * supergroup message it is, and its media, whose caption the reply's quote shows instead.
+ * supergroup message it is, and its media, if any, whose caption the reply's quote shows instead.
  */
 export type ExternalReplyInfo =
   & {
@@ -935,9 +945,8 @@ export type ExternalReplyInfo =
     readonly message_id?: number;
   }
   & (
-    | { readonly photo?: never; readonly has_media_spoiler?: never; readonly document?: never }
-    | { readonly photo: readonly PhotoSize[]; readonly has_media_spoiler?: true }
-    | { readonly document: Document }
+    | AbsentFields<FieldNameOfAnyKind<ExternalReplyMediaFields>>
+    | ExclusiveAlternatives<ExternalReplyMediaFields>
   );
 
 /** The quoted part of the text or caption of a replied message. */
