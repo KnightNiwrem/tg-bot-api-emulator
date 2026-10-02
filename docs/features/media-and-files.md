@@ -190,13 +190,24 @@ long-lived Telegram storage are outside this model.
 
 ### Document classification
 
-Documents always remain documents, including GIFs, audio and video uploads.
-`disable_content_type_detection` is accepted but has no effect. Upstream chooses between document
-file types based on that flag in [`get_input_message_content`][document-input], and
-[`DocumentsManager`][documents] classifies returned media using its attributes. The emulator does
-not inspect document content or reproduce that classification.
+Documents always remain documents, including GIFs, audio and video uploads, whether or not
+`disable_content_type_detection` is set; `sendDocument`, `InputMediaDocument` and document blocks
+validate the flag. The emulator behaves as if every document set it.
 
-Tests need to exercise media classification and the flag's effect.
+Upstream, the flag's only effect visible in the source is a request to Telegram's server. The Bot
+API server passes it to TDLib's `inputDocument`, and sets it for every document of an album in
+[`get_input_media`][document-flag]. TDLib then uploads the file as `DocumentAsFile`
+([`get_input_message_content`][document-input]), which [`DocumentsManager`][documents-upload] sends
+as `inputMediaUploadedDocument.force_file`. It affects uploads only: a document sent by URL goes as
+`inputMediaDocumentExternal`, and one reused by `file_id` as `inputMediaDocument`, neither of which
+carries it. Without the flag, Telegram's server may give an uploaded file video, audio or animation
+attributes, by which [`DocumentsManager`][documents] classifies the returned media, and the Bot API
+returns the message as that media. Which files the server reclassifies, and how, is not in the
+source.
+
+Classifying documents needs the animation, audio and video media the emulator lacks, and rules for
+it would rest on observed rather than documented server behavior. Tests need media classification,
+through which the flag would take effect.
 
 ### Files sent by URL in inline query results
 
@@ -225,6 +236,8 @@ Media types other than photos/documents, albums, stickers and sticker sets are m
 [photos]: https://github.com/tdlib/td/blob/bc9c263e2bfee06aaab41e82db51a103376030bc/td/telegram/Photo.cpp#L45-L210
 [document-input]: https://github.com/tdlib/td/blob/bc9c263e2bfee06aaab41e82db51a103376030bc/td/telegram/MessageContent.cpp#L5201-L5213
 [documents]: https://github.com/tdlib/td/blob/bc9c263e2bfee06aaab41e82db51a103376030bc/td/telegram/DocumentsManager.cpp#L329-L605
+[documents-upload]: https://github.com/tdlib/td/blob/bc9c263e2bfee06aaab41e82db51a103376030bc/td/telegram/DocumentsManager.cpp#L689-L725
+[document-flag]: https://github.com/tdlib/telegram-bot-api/blob/e3e9dd8e5b3d7ab8537cd5a10dc31d5ffa8f82d1/telegram-bot-api/Client.cpp#L12849-L12854
 [download-limit]: https://github.com/tdlib/telegram-bot-api/blob/e3e9dd8e5b3d7ab8537cd5a10dc31d5ffa8f82d1/telegram-bot-api/Client.cpp#L9365-L9390
 [file-input]: https://github.com/tdlib/telegram-bot-api/blob/e3e9dd8e5b3d7ab8537cd5a10dc31d5ffa8f82d1/telegram-bot-api/Client.cpp#L10758-L10839
 [sending-files]: https://core.telegram.org/bots/api#sending-files

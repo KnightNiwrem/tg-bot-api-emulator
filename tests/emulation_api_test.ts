@@ -7633,6 +7633,51 @@ Deno.test('bots send files by URL, which Telegram downloads from registered web 
   }
 });
 
+Deno.test('sendDocument keeps every upload a document, whatever its content type detection', async () => {
+  const { api, botApiPath, createdAccount, sendText } = await createPrivateConversationFixture();
+  await sendText('/start');
+  // A complete 1x1 GIF image, and an MP4 file's leading `ftyp` box naming the ISO base media
+  // format, which content type detection would recognize as an animation and a video.
+  const gif = Uint8Array.fromBase64('R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7');
+  const mp4 = new Uint8Array([
+    ...[0, 0, 0, 24],
+    ...new TextEncoder().encode('ftypisom'),
+    ...[0, 0, 2, 0],
+    ...new TextEncoder().encode('isommp41'),
+  ]);
+  const sentKinds = [];
+  for (const file of [new File([gif], 'loop.gif'), new File([mp4], 'clip.mp4')]) {
+    for (const disablesDetection of [undefined, 'false', 'true']) {
+      const { status, body } = await callBotApiWithFiles(api, `${botApiPath}/sendDocument`, {
+        chat_id: String(createdAccount.account.id),
+        ...(disablesDetection === undefined
+          ? {}
+          : { disable_content_type_detection: disablesDetection }),
+      }, { document: file });
+      const message = botApiResult(body);
+      const document = message?.document as Record<string, unknown> | undefined;
+      sentKinds.push(
+        status === 200 && message !== undefined &&
+          !['animation', 'video', 'audio'].some((kind) => kind in message)
+          ? document?.mime_type
+          : JSON.stringify(body),
+      );
+    }
+  }
+  if (
+    JSON.stringify(sentKinds) !== JSON.stringify([
+      'image/gif',
+      'image/gif',
+      'image/gif',
+      'video/mp4',
+      'video/mp4',
+      'video/mp4',
+    ])
+  ) {
+    throw new Error(`Expected documents only, received ${JSON.stringify(sentKinds)}`);
+  }
+});
+
 Deno.test('sendDocument keeps an uploaded thumbnail that bots and accounts see and download', async () => {
   const { api, sessionPath, botApiPath, createdBot, createdAccount, sendText } =
     await createPrivateConversationFixture();
