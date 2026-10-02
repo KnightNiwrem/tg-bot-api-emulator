@@ -43,6 +43,7 @@ import { CallbackQueryService } from '../services/callback_query.ts';
 import { ChatActionService } from '../services/chat_action.ts';
 import { InlineQueryService } from '../services/inline_query.ts';
 import { MediaFileService } from '../services/media_file.ts';
+import { normalizeCaption } from '../services/message_content.ts';
 import { MessageForwardingService } from '../services/message_forwarding.ts';
 import { PrivateMessagingService } from '../services/private_messaging.ts';
 import { SharedChatAdministrationService } from '../services/shared_chat_administration.ts';
@@ -237,6 +238,14 @@ export function createEmulationSession(
     inlineQueries,
     inlineMessages: messages,
     mediaGroups: messages,
+    // As the messaging services decide it, a text mention may name any user of the session.
+    botCaptions: {
+      normalizeBotCaption: (caption) =>
+        normalizeCaption(caption, 'bot', {
+          isMentionableUser: (userId) =>
+            accounts.getById(userId) !== undefined || bots.getById(userId) !== undefined,
+        }),
+    },
     botCommands,
     botDescriptions,
     defaultAdministratorRights,

@@ -26,6 +26,7 @@ import { BotDescriptionService } from '../src/services/bot_description.ts';
 import { BotMenuButtonService } from '../src/services/bot_menu_button.ts';
 import { BotMessageViewService } from '../src/services/bot_message_view.ts';
 import { MediaFileService } from '../src/services/media_file.ts';
+import { normalizeCaption } from '../src/services/message_content.ts';
 import { SharedChatAdministrationService } from '../src/services/shared_chat_administration.ts';
 import { BotUpdateDeliveryService } from '../src/services/bot_update_delivery.ts';
 import { BotUpdatePollingService } from '../src/services/bot_update_polling.ts';
@@ -266,6 +267,13 @@ function createBotApiFixture() {
     }),
     inlineMessages: messages,
     mediaGroups: messages,
+    botCaptions: {
+      normalizeBotCaption: (caption) =>
+        normalizeCaption(caption, 'bot', {
+          isMentionableUser: (userId) =>
+            accounts.getById(userId) !== undefined || bots.getById(userId) !== undefined,
+        }),
+    },
     botCommands: new BotCommandService({
       accounts,
       bots,
