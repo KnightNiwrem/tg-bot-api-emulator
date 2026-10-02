@@ -830,9 +830,24 @@ Deno.test('TypeScript client sends videos and voice notes that bots receive and 
         file_id: voice.voice?.file_id,
         file_unique_id: voice.voice?.file_unique_id,
         file_size: 9,
-      }) || voice.caption !== 'Memo' || voice.reply_to_message?.video === undefined
+      }) || voice.caption !== 'Memo' || voice.reply_to_message?.message_id !== video.message_id
   ) {
     throw new Error(`Expected the client to send a voice note, received ${JSON.stringify(voice)}`);
+  }
+  const botVoiceReply = await api.request(`/sessions/${session.id}/bot-api/bot${token}/sendVoice`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ chat_id: account.id, voice: voice.voice?.file_id, caption: 'Noted' }),
+  });
+  const voiceReply = (await account.getMessages({ chat: to })).at(-1);
+  if (
+    botVoiceReply.status !== 200 ||
+    voiceReply?.voice?.file_unique_id !== voice.voice?.file_unique_id ||
+    voiceReply?.voice?.duration !== 5 || voiceReply.caption !== 'Noted'
+  ) {
+    throw new Error(
+      `Expected the bot to send the voice note back, received ${JSON.stringify(voiceReply)}`,
+    );
   }
 
   try {

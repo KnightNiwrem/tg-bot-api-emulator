@@ -640,7 +640,7 @@ export interface InlineKeyboardMarkup {
   readonly inline_keyboard: readonly (readonly InlineKeyboardButton[])[];
 }
 
-/** A file of a message: a photo size, a document, or a video. */
+/** A file of a message: a photo size, a document, a video, or a voice note. */
 interface MessageFile {
   /**
    * The identifier by which the message's observer knows the file. As on Telegram, each user
@@ -1439,8 +1439,8 @@ export interface VirtualAccountClient extends VirtualAccountProfile {
     input: AccountEditMessageInput<Target>,
   ): Promise<MessageIn<Target>>;
   /**
-   * Edits the caption of a photo, document, or video this account sent, as `editMessage` edits
-   * text.
+   * Edits the caption of a photo, document, video, or voice note this account sent, as
+   * `editMessage` edits text.
    */
   editMessageCaption<Target extends MessageTarget>(
     input: AccountEditMessageCaptionInput<Target>,

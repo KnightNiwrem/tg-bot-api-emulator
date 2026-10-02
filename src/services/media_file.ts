@@ -167,7 +167,10 @@ export interface VoiceUploadRequest {
    * for none. The voice note keeps no name.
    */
   readonly fileName?: string;
-  /** The voice note's MIME type; omitted for the one its file name decides. */
+  /**
+   * The voice note's MIME type, which must be `audio/ogg`, `audio/mpeg`, or `audio/mp4`, as a voice
+   * note sent by URL is served; omitted for the one its file name decides.
+   */
   readonly mimeType?: string;
   /** As its sender defines it, unchecked against the content. */
   readonly durationSeconds: number;

@@ -77,11 +77,11 @@ pagination or deleted entries; it is a test inspection API, not a Telegram histo
 Tests read the notifications an account's client shows through `account.getNotifications` for a
 private chat or a supergroup. Every message another participant sent to the chat notifies, in order,
 and the account's own messages do not. `disable_notification` on `sendMessage`, `sendPhoto`,
-`sendDocument`, `sendVideo`, `sendMediaGroup`, `forwardMessage(s)` and `copyMessage(s)` makes the
-notification silent. The official server passes the option to TDLib's send options. As TDLib's
-[`Message::disable_notification`][silent-message] carries it to the recipient, the notification
-reports it as `is_silent`, as TDLib's [`notification`][notification-object] object does. Bot API
-messages do not show it.
+`sendDocument`, `sendVideo`, `sendVoice`, `sendMediaGroup`, `forwardMessage(s)` and `copyMessage(s)`
+makes the notification silent. The official server passes the option to TDLib's send options. As
+TDLib's [`Message::disable_notification`][silent-message] carries it to the recipient, the
+notification reports it as `is_silent`, as TDLib's [`notification`][notification-object] object
+does. Bot API messages do not show it.
 
 Accounts have no notification settings, so no chat is muted, and reading a message keeps its
 notification; a deleted message has none.
