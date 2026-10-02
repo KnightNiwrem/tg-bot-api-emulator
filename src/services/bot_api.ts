@@ -112,12 +112,14 @@ import type {
   SpecifiedInlineQueryResult,
 } from './inline_query.ts';
 import type {
+  CaptionNormalization,
   ContentNormalizationFailure,
   MediaContent,
   OutgoingDocument,
   OutgoingMessageContent,
   OutgoingPhoto,
   OutgoingRichMessage,
+  SpecifiedCaption,
   SpecifiedQuote,
   TextInvalidFailure,
   TextMessageReplacement,
@@ -1509,6 +1511,10 @@ interface MediaGroupIdIssuer {
   createMediaGroupId(): MediaGroupId;
 }
 
+interface BotCaptionNormalizer {
+  normalizeBotCaption(caption: SpecifiedCaption): CaptionNormalization;
+}
+
 interface BotMessageViews {
   viewPrivateMessageForBot(message: PrivateMessage): BotApiPrivateMessage;
   viewSupergroupMessage(message: SupergroupMessage, observerId: number): BotApiSupergroupMessage;
@@ -1539,6 +1545,11 @@ interface BotApiServiceDependencies {
   readonly inlineMessages: InlineMessageLookup;
   /** Issues the identifiers of the albums that forwards and copies of albums form. */
   readonly mediaGroups: MediaGroupIdIssuer;
+  /**
+   * Normalizes the captions of an album, which are checked before the album is handed to the
+   * messaging services, as they normalize the caption of a bot's media.
+   */
+  readonly botCaptions: BotCaptionNormalizer;
   readonly botCommands: BotCommandLists;
   readonly botDescriptions: BotDescriptions;
   readonly defaultAdministratorRights: BotDefaultAdministratorRightsSettings;
@@ -1574,6 +1585,7 @@ export class BotApiService {
   readonly #inlineQueries: InlineQueryAnswering;
   readonly #inlineMessages: InlineMessageLookup;
   readonly #mediaGroups: MediaGroupIdIssuer;
+  readonly #botCaptions: BotCaptionNormalizer;
   readonly #botCommands: BotCommandLists;
   readonly #botDescriptions: BotDescriptions;
   readonly #defaultAdministratorRights: BotDefaultAdministratorRightsSettings;
@@ -1596,6 +1608,7 @@ export class BotApiService {
       inlineQueries,
       inlineMessages,
       mediaGroups,
+      botCaptions,
       botCommands,
       botDescriptions,
       defaultAdministratorRights,
@@ -1617,6 +1630,7 @@ export class BotApiService {
     this.#inlineQueries = inlineQueries;
     this.#inlineMessages = inlineMessages;
     this.#mediaGroups = mediaGroups;
+    this.#botCaptions = botCaptions;
     this.#botCommands = botCommands;
     this.#botDescriptions = botDescriptions;
     this.#defaultAdministratorRights = defaultAdministratorRights;
@@ -1957,12 +1971,23 @@ export class BotApiService {
       | undefined;
     for (const [memberIndex, member] of media.entries()) {
       const resolution = this.#resolveMediaReplacement(authenticatedBot, member);
+      if (!resolution.resolved && !isRefusedByTelegramServers(resolution.failure)) {
+        return { sent: false, ...resolution.failure };
+      }
+      // As TDLib's `get_input_message_content` does, each message's caption is checked once its
+      // file is read, before the next message; the messaging service checks it again when it
+      // stores the album.
+      const captionNormalization = this.#botCaptions.normalizeBotCaption({
+        caption: member.caption.text,
+        captionEntities: member.caption.entities,
+      });
+      if (!captionNormalization.normalized) {
+        return { sent: false, ...captionNormalization.failure };
+      }
       if (resolution.resolved) {
         contents.push(resolution.file);
       } else if (isRefusedByTelegramServers(resolution.failure)) {
         firstRefusedUpload ??= { memberPosition: memberIndex + 1, failure: resolution.failure };
-      } else {
-        return { sent: false, ...resolution.failure };
       }
     }
     const compositionFailure = checkAlbumComposition(media.map(toAlbumMember));

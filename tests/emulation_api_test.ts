@@ -7650,6 +7650,76 @@ Deno.test('sendMediaGroup follows Telegram checks and sends nothing it refuses',
   }
 });
 
+Deno.test('sendMediaGroup checks each caption with its file, as TDLib reads them', async () => {
+  const { api, sessionPath, botApiPath, createdBot, createdAccount, sendText } =
+    await createPrivateConversationFixture();
+  await sendText('/start');
+  const chatId = String(createdAccount.account.id);
+  const uploadedPhoto = await callBotApiWithFiles(api, `${botApiPath}/sendPhoto`, {
+    chat_id: chatId,
+  }, { photo: new File([gifImage(4, 3)], 'photo.gif') });
+  const photo = { type: 'photo', media: photoSizeOf(botApiResult(uploadedPhoto.body))?.file_id };
+  const longCaption = { ...photo, caption: 'x'.repeat(1_025) };
+  const unknownPhoto = { type: 'photo', media: 'AgACAgIAAxkBAAIBdGZ' };
+  const textAsImage = { text: new File(['not an image'], 'text.gif') };
+  const notes = { notes: new File(['notes'], 'notes.txt') };
+  const historyPath =
+    `${sessionPath}/accounts/${chatId}/conversations/private/${createdBot.bot.id}/messages`;
+  const historyBefore = await (await api.request(historyPath)).text();
+
+  const cases: { media: unknown[]; files: Record<string, File>; expected: string }[] = [
+    // A caption is refused before the album is checked as a whole.
+    {
+      media: [longCaption, { type: 'document', media: 'attach://notes' }],
+      files: notes,
+      expected: 'Bad Request: message caption is too long',
+    },
+    {
+      media: Array(11).fill(longCaption),
+      files: {},
+      expected: 'Bad Request: message caption is too long',
+    },
+    // A caption is refused before an upload that only Telegram's servers refuse.
+    {
+      media: [longCaption, { type: 'photo', media: 'attach://text' }],
+      files: textAsImage,
+      expected: 'Bad Request: message caption is too long',
+    },
+    {
+      media: [{ type: 'photo', media: 'attach://text' }, longCaption],
+      files: textAsImage,
+      expected: 'Bad Request: message caption is too long',
+    },
+    // Each message's file and caption are read before the next message's.
+    {
+      media: [longCaption, unknownPhoto],
+      files: {},
+      expected: 'Bad Request: message caption is too long',
+    },
+    {
+      media: [unknownPhoto, longCaption],
+      files: {},
+      expected: 'Bad Request: wrong file identifier/HTTP URL specified',
+    },
+  ];
+  const descriptions = [];
+  for (const { media, files } of cases) {
+    const { status, body } = await callBotApiWithFiles(api, `${botApiPath}/sendMediaGroup`, {
+      chat_id: chatId,
+      media: JSON.stringify(media),
+    }, files);
+    descriptions.push(status === 400 && isBadRequestResponse(body) ? body.description : status);
+  }
+  if (JSON.stringify(descriptions) !== JSON.stringify(cases.map(({ expected }) => expected))) {
+    throw new Error(
+      `Expected TDLib's precedence, received ${JSON.stringify(descriptions, null, 2)}`,
+    );
+  }
+  if ((await (await api.request(historyPath)).text()) !== historyBefore) {
+    throw new Error('Expected refused albums to leave the history as it was');
+  }
+});
+
 Deno.test('albums reach supergroup bots as their messages would alone', async () => {
   const { api, sessionPath, owner, bot, readerBot, supergroup, supergroupPath } =
     await createSupergroupFixture();

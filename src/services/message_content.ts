@@ -364,7 +364,7 @@ function normalizeTextMessageReplacement(
 
 type CaptionNormalizationFailure = TextInvalidFailure | { readonly reason: 'caption_too_long' };
 
-type CaptionNormalization =
+export type CaptionNormalization =
   | { readonly normalized: true; readonly caption: FormattedText }
   | { readonly normalized: false; readonly failure: CaptionNormalizationFailure };
 
@@ -373,7 +373,7 @@ type CaptionNormalization =
  * bot commands, then checks the caption's length. A caption may be empty; how one without visible
  * content is treated depends on its sender.
  */
-function normalizeCaption(
+export function normalizeCaption(
   { caption, captionEntities }: SpecifiedCaption,
   sender: MessageSenderKind,
   context: FormattedTextFixingContext,
