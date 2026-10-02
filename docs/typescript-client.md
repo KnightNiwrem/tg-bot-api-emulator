@@ -7,8 +7,9 @@ with its virtual token and `session.botApiRoot` configured as the API root.
 
 This walkthrough shows the available client operations. Run your bot alongside it. The session's
 [bot activity log](features/bot-activity.md) records the bot's calls, so a test can wait for the bot
-to act before inspecting a reply, callback answer, or inline result. The photo example also needs a
-local `receipt.png` file. The import below assumes the example is saved directly in `docs/`.
+to act before inspecting a reply, callback answer, or inline result. The photo and album examples
+also need a local `receipt.png` file. The import below assumes the example is saved directly in
+`docs/`.
 
 Tests can use the TypeScript client instead of constructing emulation server URLs directly:
 
@@ -91,12 +92,12 @@ try {
     console.log(content.length, photo.photo?.[0].width);
   }
 
-  // Send two photos as an album. The bot receives each as a message sharing a media_group_id.
+  // Send the receipt twice as an album. The bot receives each photo as a message, and both
+  // messages share a media_group_id.
+  const receipt = await Deno.readFile('receipt.png');
   const album = await account.sendMediaGroup({
     to: { type: 'private', botId: bot.id },
-    media: [{ photo: await Deno.readFile('front.png'), caption: 'Both sides' }, {
-      photo: await Deno.readFile('back.png'),
-    }],
+    media: [{ photo: receipt, caption: 'Both copies' }, { photo: receipt }],
   });
   console.log(album.map(({ media_group_id }) => media_group_id));
 
