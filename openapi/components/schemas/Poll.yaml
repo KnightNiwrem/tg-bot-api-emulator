@@ -1,10 +1,10 @@
 type: object
 additionalProperties: false
 description: >-
-  A regular poll as the official Bot API server's `JsonPoll` shows it to bots, with its votes as
-  they are now. Every forward of a poll's message shows the same poll; a copy shows a new one.
-  The emulator's polls never restrict who may vote, so `members_only` is false and
-  `country_codes` is omitted; quizzes, descriptions, media, and closing times are not supported.
+  A regular poll or a quiz as the official Bot API server's `JsonPoll` shows it to bots, with its
+  votes as they are now. Every forward of a poll's message shows the same poll; a copy shows a new
+  one. The emulator's polls never restrict who may vote, so `members_only` is false and
+  `country_codes` is omitted; descriptions and media are not supported.
 required:
   - id
   - question
@@ -50,6 +50,18 @@ properties:
     type: integer
     minimum: 0
     description: How many accounts chose any option, each counted once.
+  open_period:
+    type: integer
+    minimum: 5
+    maximum: 2628000
+    description: >-
+      How long the poll stays open after it was sent; present, with `close_date`, only while a
+      poll sent with `open_period` or `close_date` is open.
+  close_date:
+    type: integer
+    description: >-
+      When the poll closes by itself, as a Unix time; present only with `open_period`. The
+      emulator does not close polls as time passes; the poll expiry route closes it.
   is_closed:
     type: boolean
     description: Whether the poll no longer accepts answers.
@@ -66,4 +78,31 @@ properties:
     const: false
   type:
     type: string
-    const: regular
+    enum:
+      - regular
+      - quiz
+  correct_option_id:
+    type: integer
+    minimum: 0
+    description: >-
+      The correct option of a quiz with exactly one, shown to the bot that sent the quiz, to an
+      account that answered it, and to everyone once it is closed.
+  correct_option_ids:
+    type: array
+    minItems: 1
+    description: The correct options of a quiz, in increasing order, shown as `correct_option_id` is.
+    items:
+      type: integer
+      minimum: 0
+  explanation:
+    type: string
+    minLength: 1
+    maxLength: 200
+    description: A quiz's explanation, shown as `correct_option_id` is; omitted without one.
+  explanation_entities:
+    type: array
+    description: >-
+      Entities marked in the explanation, present with it even when empty, as the official server
+      writes them.
+    items:
+      $ref: ./MessageEntity.yaml

@@ -139,6 +139,8 @@ paths:
     $ref: paths/sessions_{sessionId}_files_{fileUniqueId}.yaml
   /sessions/{sessionId}/web-resources:
     $ref: paths/sessions_{sessionId}_web-resources.yaml
+  /sessions/{sessionId}/polls/{pollId}/expiry:
+    $ref: paths/sessions_{sessionId}_polls_{pollId}_expiry.yaml
   /sessions/{sessionId}/bot-api/bot{token}/sendPhoto:
     $ref: paths/sessions_{sessionId}_bot-api_bot{token}_sendPhoto.yaml
   /sessions/{sessionId}/bot-api/bot{token}/sendDocument:

@@ -71,6 +71,18 @@ export type GetAccountPollAnswerResult =
   | ({ readonly found: true } & AccountPollAnswer)
   | { readonly found: false; readonly reason: PollMessageLookupFailureReason };
 
+/**
+ * The result of a poll's closing time arriving: the closed poll, or why it cannot close that way:
+ * no such poll, a poll without a closing time, which stays open until it is stopped, or a poll
+ * that is already closed.
+ */
+export type ExpirePollResult =
+  | { readonly expired: true; readonly poll: Poll }
+  | {
+    readonly expired: false;
+    readonly reason: 'poll_not_found' | 'poll_without_closing_time' | 'poll_already_closed';
+  };
+
 export type SetAccountPollAnswerResult =
   | ({ readonly answered: true } & AccountPollAnswer)
   | {
@@ -106,9 +118,10 @@ interface SupergroupMessageLookup {
   getMessageByChatMessageId(chatId: number, messageId: number): SupergroupMessage | undefined;
 }
 
-interface PollAnswerStore {
+interface PollStore {
   getPoll(pollId: PollId): Poll | undefined;
   setVoterAnswer(pollId: PollId, voterId: number, chosenOptionPositions: readonly number[]): Poll;
+  closePoll(pollId: PollId): Poll;
 }
 
 interface ChatDomainEventSink {
@@ -122,7 +135,7 @@ interface PollServiceDependencies {
   readonly privateMessages: PrivateMessageLookup;
   readonly sharedChats: SupergroupLookup;
   readonly supergroupMessages: SupergroupMessageLookup;
-  readonly polls: PollAnswerStore;
+  readonly polls: PollStore;
   readonly events: ChatDomainEventSink;
 }
 
@@ -144,7 +157,7 @@ export class PollService {
   readonly #privateMessages: PrivateMessageLookup;
   readonly #sharedChats: SupergroupLookup;
   readonly #supergroupMessages: SupergroupMessageLookup;
-  readonly #polls: PollAnswerStore;
+  readonly #polls: PollStore;
   readonly #events: ChatDomainEventSink;
 
   constructor(
@@ -219,6 +232,27 @@ export class PollService {
       chosenOptionPositions,
     });
     return { answered: true, poll: answeredPoll, message, chosenOptionPositions };
+  }
+
+  /**
+   * Closes a poll as its `close_date` arriving does, which tests choose to happen now: the emulator
+   * does not close polls as time passes. The poll keeps its votes, and the bot that sent it
+   * observes its closure, as Telegram's servers report a poll that closed by itself.
+   */
+  expirePoll(pollId: PollId): ExpirePollResult {
+    const poll = this.#polls.getPoll(pollId);
+    if (poll === undefined) {
+      return { expired: false, reason: 'poll_not_found' };
+    }
+    if (poll.closingTime === undefined) {
+      return { expired: false, reason: 'poll_without_closing_time' };
+    }
+    if (poll.isClosed) {
+      return { expired: false, reason: 'poll_already_closed' };
+    }
+    const closedPoll = this.#polls.closePoll(pollId);
+    this.#events.publish({ type: 'poll_closed', poll: closedPoll });
+    return { expired: true, poll: closedPoll };
   }
 
   /**

@@ -1250,8 +1250,8 @@ export function createAccountRoutes(): Hono<SessionRouteContextTypes> {
       if (pollMessage === undefined) {
         return context.body(null, 400);
       }
-      const { pollAnswers, botMessageViews } = context.get('emulationSession');
-      const result = pollAnswers.getAccountPollAnswer(pollMessage);
+      const { polls, botMessageViews } = context.get('emulationSession');
+      const result = polls.getAccountPollAnswer(pollMessage);
       if (!result.found) {
         return context.body(null, pollAnswerFailureStatus(result.reason));
       }
@@ -1267,8 +1267,8 @@ export function createAccountRoutes(): Hono<SessionRouteContextTypes> {
       if (requestBody === undefined) {
         return context.body(null, 400);
       }
-      const { pollAnswers, botMessageViews } = context.get('emulationSession');
-      const result = pollAnswers.setAccountPollAnswer({
+      const { polls, botMessageViews } = context.get('emulationSession');
+      const result = polls.setAccountPollAnswer({
         ...pollMessage,
         optionPositions: requestBody.option_ids,
       });
@@ -1284,7 +1284,7 @@ export function createAccountRoutes(): Hono<SessionRouteContextTypes> {
       if (pollMessage === undefined) {
         return context.body(null, 400);
       }
-      const result = context.get('emulationSession').pollAnswers.setAccountPollAnswer({
+      const result = context.get('emulationSession').polls.setAccountPollAnswer({
         ...pollMessage,
         optionPositions: [],
       });
@@ -1817,12 +1817,12 @@ function presentReplyKeyboardButtonRequest(request: ReplyKeyboardButtonRequest) 
 }
 
 /** A message showing a poll, as an account addresses it. */
-type AccountPollMessageKey = Parameters<EmulationSession['pollAnswers']['getAccountPollAnswer']>[0];
+type AccountPollMessageKey = Parameters<EmulationSession['polls']['getAccountPollAnswer']>[0];
 
 /** A poll an account found, with its own answer. */
 type AccountPollAnswer = Omit<
   Extract<
-    ReturnType<EmulationSession['pollAnswers']['getAccountPollAnswer']>,
+    ReturnType<EmulationSession['polls']['getAccountPollAnswer']>,
     { readonly found: true }
   >,
   'found'
@@ -1886,7 +1886,7 @@ function presentPollAnswerForAccount(
  */
 function pollAnswerFailureStatus(
   reason: Extract<
-    ReturnType<EmulationSession['pollAnswers']['setAccountPollAnswer']>,
+    ReturnType<EmulationSession['polls']['setAccountPollAnswer']>,
     { readonly answered: false }
   >['reason'],
 ): 400 | 403 | 404 | 409 {

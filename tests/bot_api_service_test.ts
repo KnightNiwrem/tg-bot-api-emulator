@@ -309,6 +309,7 @@ function createBotApiFixture() {
     }),
     publicChats: sharedChatAdministration,
     getPrivateForwardName: () => undefined,
+    currentUnixTimeSeconds: () => 1_700_000_000,
   });
   return { virtualUsers, privateMessaging, botApi };
 }

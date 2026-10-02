@@ -9,9 +9,13 @@ import { MAX_CALLBACK_QUERY_ANSWER_TEXT_LENGTH } from '../../../types/callback_q
 import type { EmulationSession } from '../../../types/emulation_session.ts';
 import type { InlineKeyboard } from '../../../types/inline_keyboard.ts';
 import {
+  MAX_POLL_OPEN_PERIOD_SECONDS,
   MAX_POLL_OPTION_COUNT,
   MAX_POLL_OPTION_TEXT_LENGTH,
   MAX_POLL_QUESTION_LENGTH,
+  MAX_QUIZ_EXPLANATION_LENGTH,
+  MAX_QUIZ_EXPLANATION_LINE_FEEDS,
+  MIN_POLL_OPEN_PERIOD_SECONDS,
 } from '../../../types/poll.ts';
 import type { BotMessageReplyMarkup } from '../../../types/reply_interface.ts';
 import type { RichMessage } from '../../../types/rich_message.ts';
@@ -56,6 +60,7 @@ import {
   describeInputPollOptionTextError,
   readInputPollOptionsParameter,
 } from './input_poll_option_parameter.ts';
+import { readCorrectOptionIdsParameter } from './quiz_parameters.ts';
 import { linkPreviewOptionsParameter } from './link_preview_options_parameter.ts';
 import {
   replyParametersParameter,
@@ -162,6 +167,24 @@ const POLL_HAS_TOO_MANY_OPTIONS_DESCRIPTION =
   `Bad Request: poll can't have more than ${MAX_POLL_OPTION_COUNT} options`;
 const POLL_OPTION_TOO_LONG_DESCRIPTION =
   `Bad Request: poll options length must not exceed ${MAX_POLL_OPTION_TEXT_LENGTH}`;
+const QUIZ_CORRECT_OPTIONS_MISSING_DESCRIPTION =
+  'Bad Request: correct quiz option list must be non-empty';
+const QUIZ_CORRECT_OPTIONS_NOT_INCREASING_DESCRIPTION =
+  'Bad Request: correct quiz option list must be increasing';
+const QUIZ_CORRECT_OPTION_NOT_FOUND_DESCRIPTION = 'Bad Request: wrong quiz correct_option_id';
+
+/**
+ * The emulator's descriptions for limits the Bot API documents and Telegram's servers enforce, whose
+ * own descriptions are not in the open-source code.
+ */
+const QUIZ_EXPLANATION_TOO_LONG_DESCRIPTION =
+  `Bad Request: quiz explanation must have at most ${MAX_QUIZ_EXPLANATION_LENGTH} characters`;
+const QUIZ_EXPLANATION_HAS_TOO_MANY_LINE_FEEDS_DESCRIPTION =
+  `Bad Request: quiz explanation must have at most ${MAX_QUIZ_EXPLANATION_LINE_FEEDS} line feeds`;
+const POLL_OPEN_PERIOD_INVALID_DESCRIPTION =
+  `Bad Request: open_period must be from ${MIN_POLL_OPEN_PERIOD_SECONDS} to ${MAX_POLL_OPEN_PERIOD_SECONDS} seconds`;
+const POLL_CLOSE_DATE_INVALID_DESCRIPTION =
+  `Bad Request: close_date must be from ${MIN_POLL_OPEN_PERIOD_SECONDS} to ${MAX_POLL_OPEN_PERIOD_SECONDS} seconds in the future`;
 
 /** TDLib's descriptions for message effects in chats or requests that cannot use them. */
 const MESSAGE_EFFECT_NOT_ALLOWED_IN_CHAT_DESCRIPTION =
@@ -457,9 +480,9 @@ const sendRichMessageParametersSchema = z.strictObject({
   rich_message: z.string().optional(),
 });
 
-// Regular polls only. As for sendMessage, topics, business connections, paid broadcasts, and
-// suggested posts are not supported; nor are options added after creation, restrictions on who may
-// vote, shuffled options, hidden results, descriptions, and media.
+// As for sendMessage, topics, business connections, paid broadcasts, and suggested posts are not
+// supported; nor are options added after creation, restrictions on who may vote, shuffled options,
+// hidden results, descriptions, and media.
 const sendPollParametersSchema = z.strictObject({
   ...sendOptionsParametersShape,
   ...replyMarkupParametersShape,
@@ -470,7 +493,14 @@ const sendPollParametersSchema = z.strictObject({
   is_anonymous: booleanParameter().default(true),
   type: z.string().default(''),
   allows_multiple_answers: booleanParameter().default(false),
-  allows_revoting: booleanParameter().default(true),
+  allows_revoting: booleanParameter().optional(),
+  correct_option_ids: z.string().optional(),
+  correct_option_id: integerParameter(z.int()).optional(),
+  explanation: z.string().optional(),
+  explanation_parse_mode: z.string().optional(),
+  explanation_entities: messageEntitiesParameter().optional(),
+  open_period: integerParameter(z.int()).optional(),
+  close_date: integerParameter(z.int()).optional(),
   is_closed: booleanParameter().default(false),
 });
 
@@ -882,6 +912,9 @@ type SpecifiedFormattedText = Extract<
   FormattedTextReadingResult,
   { readonly read: true }
 >['formattedText'];
+
+/** A poll's type as `sendPoll` takes it. */
+type PollTypeRequest = Parameters<EmulationSession['botApi']['sendPoll']>[1]['type'];
 
 /** Removes properties from each member of a union, which keeps the union's alternatives apart. */
 type OmitFromEach<Type, Key extends PropertyKey> = Type extends unknown ? Omit<Type, Key> : never;
@@ -1514,9 +1547,12 @@ function readSpecifiedRichMessage(
 }
 
 /**
- * Sends a poll as the official Bot API server's `process_send_poll_query` reads it: the question
- * and the options, each with its formatting, then the poll's type, before the chat. Only regular
- * polls are supported.
+ * Sends a poll as the official Bot API server's `process_send_poll_query` reads it, before the
+ * chat: the question and the options, each with its formatting, then the poll's type with a quiz's
+ * explanation and correct options, then its closing time. `allows_revoting` defaults to true for a
+ * regular poll and to false for a quiz. Quiz parameters of a regular poll, which the server
+ * ignores, and both `open_period` and `close_date`, of which the server ignores `close_date`, are
+ * rejected to surface the bot's mistake.
  */
 function handleSendPoll(
   context: BotApiMethodContext,
@@ -1557,13 +1593,12 @@ function handleSendPoll(
     }
     pollOptions.push(optionReading.formattedText);
   }
-  if (data.type !== '' && data.type !== 'regular') {
-    return botApiError(
-      400,
-      data.type === 'quiz'
-        ? 'Bad Request: quiz polls are not supported'
-        : 'Bad Request: unsupported poll type specified',
-    );
+  const typeReading = readPollTypeParameters(context, data, invalidParametersDescription);
+  if (!typeReading.read) {
+    return typeReading.errorAnswer;
+  }
+  if (data.open_period !== undefined && data.close_date !== undefined) {
+    return botApiError(400, "Bad Request: open_period and close_date can't be used together");
   }
   const sendOptionsReading = readSendOptions(context, data, invalidParametersDescription);
   if (!sendOptionsReading.read) {
@@ -1576,9 +1611,85 @@ function handleSendPoll(
     pollOptions,
     isAnonymous: data.is_anonymous,
     allowsMultipleAnswers: data.allows_multiple_answers,
-    allowsRevoting: data.allows_revoting,
+    allowsRevoting: data.allows_revoting ?? typeReading.type.kind === 'regular',
+    type: typeReading.type,
     isClosed: data.is_closed,
+    ...(data.open_period === undefined
+      ? {}
+      : { closingTime: { kind: 'open_period', openPeriodSeconds: data.open_period } }),
+    ...(data.close_date === undefined
+      ? {}
+      : { closingTime: { kind: 'close_date', closeDateUnixSeconds: data.close_date } }),
   }));
+}
+
+/**
+ * Reads a poll's type as `process_send_poll_query` reads it: a regular poll, or a quiz, whose
+ * explanation is read with its formatting, then its correct options, as
+ * `readCorrectOptionIdsParameter` reads them. A regular poll with any quiz parameter answers
+ * `invalidParametersDescription`.
+ */
+function readPollTypeParameters(
+  context: BotApiMethodContext,
+  parameters: Pick<
+    z.infer<typeof sendPollParametersSchema>,
+    | 'type'
+    | 'correct_option_ids'
+    | 'correct_option_id'
+    | 'explanation'
+    | 'explanation_parse_mode'
+    | 'explanation_entities'
+  >,
+  invalidParametersDescription: string,
+):
+  | { readonly read: true; readonly type: PollTypeRequest }
+  | { readonly read: false; readonly errorAnswer: BotApiMethodAnswer } {
+  const {
+    type,
+    correct_option_ids: correctOptionIds,
+    correct_option_id: correctOptionId,
+    explanation,
+    explanation_parse_mode: explanationParseMode,
+    explanation_entities: explanationEntities,
+  } = parameters;
+  const specifiedQuizParameters = [
+    correctOptionIds,
+    correctOptionId,
+    explanation,
+    explanationParseMode,
+    explanationEntities,
+  ];
+  if (type === '' || type === 'regular') {
+    return specifiedQuizParameters.some((value) => value !== undefined)
+      ? { read: false, errorAnswer: botApiError(400, invalidParametersDescription) }
+      : { read: true, type: { kind: 'regular' } };
+  }
+  if (type !== 'quiz') {
+    return {
+      read: false,
+      errorAnswer: botApiError(400, 'Bad Request: unsupported poll type specified'),
+    };
+  }
+  const explanationReading = readFormattedTextParameters(
+    context,
+    { text: explanation ?? '', parseMode: explanationParseMode, entities: explanationEntities },
+    invalidParametersDescription,
+  );
+  if (!explanationReading.read) {
+    return { read: false, errorAnswer: botApiError(400, explanationReading.description) };
+  }
+  const correctOptionsReading = readCorrectOptionIdsParameter(correctOptionIds, correctOptionId);
+  if (!correctOptionsReading.read) {
+    return { read: false, errorAnswer: botApiError(400, correctOptionsReading.description) };
+  }
+  return {
+    read: true,
+    type: {
+      kind: 'quiz',
+      correctOptionPositions: correctOptionsReading.correctOptionPositions,
+      explanation: explanationReading.formattedText,
+    },
+  };
 }
 
 async function handleSendPhoto(
@@ -2230,6 +2341,20 @@ function sendMethodAnswer(result: SendResult | SendFailure): BotApiMethodAnswer 
       return botApiError(400, POLL_HAS_TOO_MANY_OPTIONS_DESCRIPTION);
     case 'poll_option_too_long':
       return botApiError(400, POLL_OPTION_TOO_LONG_DESCRIPTION);
+    case 'quiz_correct_options_missing':
+      return botApiError(400, QUIZ_CORRECT_OPTIONS_MISSING_DESCRIPTION);
+    case 'quiz_correct_options_not_increasing':
+      return botApiError(400, QUIZ_CORRECT_OPTIONS_NOT_INCREASING_DESCRIPTION);
+    case 'quiz_correct_option_not_found':
+      return botApiError(400, QUIZ_CORRECT_OPTION_NOT_FOUND_DESCRIPTION);
+    case 'quiz_explanation_too_long':
+      return botApiError(400, QUIZ_EXPLANATION_TOO_LONG_DESCRIPTION);
+    case 'quiz_explanation_has_too_many_line_feeds':
+      return botApiError(400, QUIZ_EXPLANATION_HAS_TOO_MANY_LINE_FEEDS_DESCRIPTION);
+    case 'poll_open_period_invalid':
+      return botApiError(400, POLL_OPEN_PERIOD_INVALID_DESCRIPTION);
+    case 'poll_close_date_invalid':
+      return botApiError(400, POLL_CLOSE_DATE_INVALID_DESCRIPTION);
     case 'bot_blocked':
       return botApiError(403, BOT_BLOCKED_DESCRIPTION);
     case 'file_empty':

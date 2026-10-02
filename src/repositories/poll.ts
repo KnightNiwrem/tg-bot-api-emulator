@@ -31,7 +31,13 @@ export class PollRepository {
       isAnonymous: newPoll.isAnonymous,
       allowsMultipleAnswers: newPoll.allowsMultipleAnswers,
       allowsRevoting: newPoll.allowsRevoting,
+      type: newPoll.type.kind === 'regular' ? { kind: 'regular' } : {
+        kind: 'quiz',
+        correctOptionPositions: [...newPoll.type.correctOptionPositions],
+        explanation: copyFormattedText(newPoll.type.explanation),
+      },
       isClosed: newPoll.isClosed,
+      ...(newPoll.closingTime === undefined ? {} : { closingTime: { ...newPoll.closingTime } }),
       answersByVoterId: new Map(),
     };
     this.#pollsById.set(poll.id, poll);
@@ -62,7 +68,10 @@ export class PollRepository {
     return answeredPoll;
   }
 
-  /** Closes a stored poll, which keeps its answers, and returns the closed poll. */
+  /**
+   * Closes a stored poll, which keeps its answers and its closing time, and returns the closed
+   * poll.
+   */
   closePoll(pollId: PollId): Poll {
     const poll = this.#pollsById.get(pollId);
     if (poll === undefined) {

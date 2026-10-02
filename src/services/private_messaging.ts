@@ -1104,7 +1104,7 @@ export class PrivateMessagingService {
       inlineKeyboard: input.inlineKeyboard,
       contentEditedAtUnixSeconds: lookup.message.contentEditedAtUnixSeconds,
     });
-    this.#events.publish({ type: 'poll_stopped', poll: stoppedPoll });
+    this.#events.publish({ type: 'poll_closed', poll: stoppedPoll });
     return { stopped: true, message, poll: stoppedPoll };
   }
 

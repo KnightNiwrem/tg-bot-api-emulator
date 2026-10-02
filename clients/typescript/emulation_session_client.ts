@@ -11,6 +11,7 @@ import {
   createdSupergroupResponseSchema,
   createdVirtualAccountSchema,
   createdVirtualBotSchema,
+  expiredPollResponseSchema,
   getMeResponseSchema,
   inlineQueryResponseSchema,
   menuButtonResponseSchema,
@@ -76,6 +77,7 @@ import type {
   MessageIn,
   MessageTarget,
   Notification,
+  Poll,
   PressButtonInput,
   PressCallbackButtonInput,
   PressReplyKeyboardButtonInput,
@@ -125,6 +127,12 @@ export interface EmulationSessionClient extends EmulationSession {
    * resources, and a URL without one is unreachable.
    */
   registerWebResource(input: RegisterWebResourceInput): Promise<WebResource>;
+  /**
+   * Closes a poll as its `close_date` arriving does, and returns it as the bot that sent it sees
+   * it. The emulator does not close polls as time passes, so tests choose when a poll sent with
+   * `open_period` or `close_date` closes; the bot receives a `poll` update with the closed poll.
+   */
+  expirePoll(pollId: string): Promise<Poll>;
   /**
    * A view of the session's bot activity log: the Bot API calls its bots make, with their answers,
    * and the updates delivered to and confirmed by them. `filter` applies to every read of the
@@ -240,6 +248,16 @@ class HttpEmulationSessionClient implements EmulationSessionClient {
       url: `${this.#sessionUrl}/files/${encodeURIComponent(fileUniqueId)}`,
       expectedStatus: HTTP_STATUS_OK,
     });
+  }
+
+  async expirePoll(pollId: string): Promise<Poll> {
+    const response = await requestJson(this.#fetch, {
+      method: 'POST',
+      url: `${this.#sessionUrl}/polls/${encodeURIComponent(pollId)}/expiry`,
+      expectedStatus: HTTP_STATUS_OK,
+      responseSchema: expiredPollResponseSchema,
+    });
+    return response.poll;
   }
 
   registerWebResource({ content, ...input }: RegisterWebResourceInput): Promise<WebResource> {

@@ -161,7 +161,7 @@ export function createEmulationSession(
     callbackQueries: new CallbackQueryRepository(),
     events: botUpdateDelivery,
   });
-  const pollAnswers = new PollService({
+  const pollService = new PollService({
     accounts,
     bots,
     privateConversations,
@@ -270,6 +270,7 @@ export function createEmulationSession(
     chatActions,
     publicChats: sharedChatAdministration,
     getPrivateForwardName: getAccountPrivateForwardName,
+    currentUnixTimeSeconds,
   });
 
   const session: EmulationSession = {
@@ -282,7 +283,7 @@ export function createEmulationSession(
     messageForwarding,
     botBlocking,
     callbackQueries,
-    pollAnswers,
+    polls: pollService,
     inlineQueries,
     botCommands,
     botMenuButtons,

@@ -36,10 +36,10 @@ export interface PollAnswerChangedEvent {
   readonly chosenOptionPositions: readonly number[];
 }
 
-/** The bot that owns a poll stopped it. */
-export interface PollStoppedEvent {
-  readonly type: 'poll_stopped';
-  /** The poll as stopping it left it: closed, with its votes. */
+/** A poll closed: the bot that owns it stopped it, or its closing time arrived. */
+export interface PollClosedEvent {
+  readonly type: 'poll_closed';
+  /** The poll as closing it left it: closed, with its votes. */
   readonly poll: Poll;
 }
 
@@ -94,7 +94,7 @@ export type ChatDomainEvent =
   | MessageEditedEvent
   | CallbackQueryCreatedEvent
   | PollAnswerChangedEvent
-  | PollStoppedEvent
+  | PollClosedEvent
   | InlineQueryCreatedEvent
   | InlineQueryResultChosenEvent
   | BotBlockChangedEvent

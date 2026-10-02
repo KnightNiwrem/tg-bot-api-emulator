@@ -151,7 +151,7 @@ export class BotUpdateDeliveryService {
       case 'poll_answer_changed':
         this.#deliverPollAnswerChange(event);
         return;
-      case 'poll_stopped':
+      case 'poll_closed':
         this.#deliverPollState(event.poll);
         return;
       case 'inline_query_created':

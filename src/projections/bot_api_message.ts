@@ -38,7 +38,7 @@ import type {
 } from '../types/chat_domain_event.ts';
 import type { ChatMemberStatus, SupergroupAdministratorRights } from '../types/chat_membership.ts';
 import { getInlineQueryChatType, type InlineQuery } from '../types/inline_query.ts';
-import { countPollVoters, type Poll } from '../types/poll.ts';
+import { countPollVoters, type Poll, type PollType } from '../types/poll.ts';
 import type { StoredFileId } from '../types/stored_file.ts';
 import type { VirtualAccountProfile } from '../types/virtual_account.ts';
 import type { VirtualBotProfile } from '../types/virtual_bot.ts';
@@ -82,7 +82,7 @@ interface MessageProjectionContext {
    */
   readonly richMessageFiles?: ReadonlyMap<StoredFileId, ObservedFile>;
   /** The poll a poll message shows, as it is now; omitted for other messages. */
-  readonly poll?: Poll;
+  readonly poll?: ObservedPoll;
   /**
    * The members that joined or left, in the order a service message names them; omitted for
    * other messages.
@@ -114,7 +114,16 @@ export interface ExternalReplyProjectionContext {
   /** The file of the replied media; omitted for a replied text, rich message, or poll. */
   readonly mediaFile?: ObservedFile;
   /** The replied poll, as it is now; omitted for other replied messages. */
-  readonly poll?: Poll;
+  readonly poll?: ObservedPoll;
+}
+
+/** A poll as an observer sees it. */
+export interface ObservedPoll {
+  readonly poll: Poll;
+  /** Whether the observer sees a quiz's correct options and explanation. */
+  readonly showsQuizSolution: boolean;
+  /** Every user a quiz's explanation mentions, by ID; empty for a poll without one. */
+  readonly explanationMentionedUsers: ReadonlyMap<number, BotApiUser>;
 }
 
 export interface PrivateMessageForBotProjectionInput {
@@ -301,7 +310,7 @@ function projectExternalReplyMedia(
     case undefined:
       return {};
     case 'poll':
-      return { poll: projectPoll(requireShownPoll(poll, media.pollId)) };
+      return { poll: projectPoll(requireObservedPoll(poll, media.pollId)) };
     case 'photo':
       return {
         photo: [projectPhotoSize(mediaFile)],
@@ -425,7 +434,7 @@ function projectMessageContent(
         }),
       };
     case 'poll':
-      return { poll: projectPoll(requireShownPoll(poll, content.pollId)) };
+      return { poll: projectPoll(requireObservedPoll(poll, content.pollId)) };
     default: {
       const unhandledContent: never = content;
       throw new Error(`Unhandled message content: ${JSON.stringify(unhandledContent)}`);
@@ -436,9 +445,13 @@ function projectMessageContent(
 /**
  * Shows a poll as the official Bot API server's `JsonPoll` does for bots, which see every
  * option's voter count. The question's and options' entities are only custom emoji, which name
- * no user.
+ * no user. An open poll that closes by itself shows its `open_period` and `close_date`, which TDLib
+ * clears once it closes; a quiz shows its correct options and explanation only to an observer that
+ * sees them, as TDLib's `get_poll_object` gives them.
  */
-export function projectPoll(poll: Poll): BotApiPoll {
+export function projectPoll(
+  { poll, showsQuizSolution, explanationMentionedUsers }: ObservedPoll,
+): BotApiPoll {
   const { optionVoterCounts, totalVoterCount } = countPollVoters(poll);
   const noMentionedUsers = new Map<number, BotApiUser>();
   return {
@@ -458,12 +471,52 @@ export function projectPoll(poll: Poll): BotApiPoll {
       voter_count: optionVoterCounts[optionPosition],
     })),
     total_voter_count: totalVoterCount,
+    ...(poll.closingTime === undefined || poll.isClosed ? {} : {
+      open_period: poll.closingTime.openPeriodSeconds,
+      close_date: poll.closingTime.closeDateUnixSeconds,
+    }),
     is_closed: poll.isClosed,
     is_anonymous: poll.isAnonymous,
     allows_multiple_answers: poll.allowsMultipleAnswers,
     allows_revoting: poll.allowsRevoting,
     members_only: false,
-    type: 'regular',
+    ...projectPollType(poll.type, showsQuizSolution, explanationMentionedUsers),
+  };
+}
+
+/**
+ * Shows a poll's type and, for an observer that sees it, a quiz's solution: `correct_option_id`
+ * only for a single correct option, and the explanation with its entities, even none, only when
+ * it has text, as the official server's `JsonPoll` writes them.
+ */
+function projectPollType(
+  type: PollType,
+  showsQuizSolution: boolean,
+  mentionedUsers: ReadonlyMap<number, BotApiUser>,
+): Pick<
+  BotApiPoll,
+  'type' | 'correct_option_id' | 'correct_option_ids' | 'explanation' | 'explanation_entities'
+> {
+  if (type.kind === 'regular') {
+    return { type: 'regular' };
+  }
+  if (!showsQuizSolution) {
+    return { type: 'quiz' };
+  }
+  const { correctOptionPositions, explanation } = type;
+  const [onlyCorrectOptionPosition] = correctOptionPositions;
+  return {
+    type: 'quiz',
+    ...(correctOptionPositions.length === 1
+      ? { correct_option_id: onlyCorrectOptionPosition }
+      : {}),
+    correct_option_ids: correctOptionPositions,
+    ...(explanation.text.length === 0 ? {} : {
+      explanation: explanation.text,
+      explanation_entities: explanation.entities.map((entity) =>
+        projectTextEntity(entity, mentionedUsers)
+      ),
+    }),
   };
 }
 
@@ -487,11 +540,11 @@ export function projectPollAnswerForBot(
 }
 
 /** Returns the poll a message shows, which its view must have resolved. */
-function requireShownPoll(poll: Poll | undefined, pollId: string): Poll {
-  if (poll?.id !== pollId) {
+function requireObservedPoll(observedPoll: ObservedPoll | undefined, pollId: string): ObservedPoll {
+  if (observedPoll?.poll.id !== pollId) {
     throw new Error(`Expected poll ${pollId} of the message to be provided`);
   }
-  return poll;
+  return observedPoll;
 }
 
 /** Telegram omits the caption fields of a media message without a caption. */

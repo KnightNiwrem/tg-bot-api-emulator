@@ -5,6 +5,7 @@ import {
 import type { ObservedFile } from '../projections/bot_api_file.ts';
 import {
   type ExternalReplyProjectionContext,
+  type ObservedPoll,
   projectBotAsUser,
   projectBotBlockChangeForBot,
   projectBotMembershipChangeForBot,
@@ -49,7 +50,7 @@ import type {
 } from '../types/chat_domain_event.ts';
 import type { ChatMemberStatus } from '../types/chat_membership.ts';
 import type { InlineQuery } from '../types/inline_query.ts';
-import type { Poll, PollId } from '../types/poll.ts';
+import { type Poll, type PollId, showsQuizSolution } from '../types/poll.ts';
 import {
   getRichMessageMentionedUserIds,
   listRichMessageFiles,
@@ -213,9 +214,12 @@ export class BotMessageViewService {
     });
   }
 
-  /** Returns a poll's state as the bot that sent it receives it in a `poll` update. */
+  /**
+   * Returns a poll's state as the bot that sent it receives it in a `poll` update, which shows a
+   * quiz's solution.
+   */
   viewPollForBot(poll: Poll): BotApiPoll {
-    return projectPoll(poll);
+    return projectPoll(this.#observePoll(poll, poll.creatorBotId));
   }
 
   /** Returns an account's changed answer to a poll as the bot that sent the poll receives it. */
@@ -431,7 +435,10 @@ export class BotMessageViewService {
           richMessageFiles: this.#observeRichMessageFiles(content, observerId, message.id),
         };
       case 'poll':
-        return { ...context, poll: this.#findPoll(content.pollId, message) };
+        return {
+          ...context,
+          poll: this.#observePoll(this.#findPoll(content.pollId, message), observerId),
+        };
       case 'members_joined':
         return { ...context, changedMembers: this.#findChangedMembers(content.memberIds, message) };
       case 'member_left':
@@ -492,7 +499,7 @@ export class BotMessageViewService {
       ...(media === undefined
         ? {}
         : media.kind === 'poll'
-        ? { poll: this.#findPoll(media.pollId, message) }
+        ? { poll: this.#observePoll(this.#findPoll(media.pollId, message), observerId) }
         : { mediaFile: this.#observeFile(media.fileId, observerId, message.id) }),
     };
   }
@@ -504,6 +511,28 @@ export class BotMessageViewService {
       throw new Error(`Poll ${pollId} of message ${message.id} does not exist`);
     }
     return poll;
+  }
+
+  /**
+   * Resolves what an observer sees of a poll: a quiz's solution, as `showsQuizSolution` decides,
+   * with the users its explanation mentions, which sending the quiz verified exist.
+   */
+  #observePoll(poll: Poll, observerId: number): ObservedPoll {
+    const showsSolution = showsQuizSolution(poll, observerId);
+    const explanationMentionedUsers = new Map<number, BotApiUser>();
+    if (showsSolution && poll.type.kind === 'quiz') {
+      for (const entity of poll.type.explanation.entities) {
+        if (entity.type !== 'text_mention') {
+          continue;
+        }
+        const user = this.#findUser(entity.userId);
+        if (user === undefined) {
+          throw new Error(`User ${entity.userId} mentioned in poll ${poll.id} does not exist`);
+        }
+        explanationMentionedUsers.set(entity.userId, user);
+      }
+    }
+    return { poll, showsQuizSolution: showsSolution, explanationMentionedUsers };
   }
 
   /** Looks up the inline bot a message was sent through, which exists as long as the session does. */

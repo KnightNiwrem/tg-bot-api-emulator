@@ -1031,7 +1031,7 @@ export class SupergroupMessagingService {
       inlineKeyboard,
       contentEditedAtUnixSeconds: message.contentEditedAtUnixSeconds,
     });
-    this.#events.publish({ type: 'poll_stopped', poll: stoppedPoll });
+    this.#events.publish({ type: 'poll_closed', poll: stoppedPoll });
     return { stopped: true, message: editedMessage, poll: stoppedPoll };
   }
 
