@@ -1,4 +1,4 @@
-import { getHttpUrlFileName, parseHttpUrl } from '../src/types/http_url.ts';
+import { formatHttpUrl, getHttpUrlFileName, parseHttpUrl } from '../src/types/http_url.ts';
 
 Deno.test('parseHttpUrl reads URLs into TDLib canonical form', () => {
   const cases = [
@@ -24,7 +24,7 @@ Deno.test('parseHttpUrl reads URLs into TDLib canonical form', () => {
   ];
   for (const [text, expectedUrl] of cases) {
     const parsing = parseHttpUrl(text);
-    if (!parsing.parsed || parsing.url !== expectedUrl) {
+    if (!parsing.parsed || formatHttpUrl(parsing.url) !== expectedUrl) {
       throw new Error(
         `Expected ${text} to read as ${expectedUrl}, received ${JSON.stringify(parsing)}`,
       );
@@ -57,14 +57,15 @@ Deno.test('parseHttpUrl refuses URLs with TDLib descriptions', () => {
 
 Deno.test('getHttpUrlFileName takes the last path segment without query or fragment', () => {
   const cases = [
-    ['/files/report.pdf?download=1', 'report.pdf'],
-    ['/files/archive.zip#part', 'archive.zip'],
-    ['/files/', ''],
-    ['/', ''],
+    ['https://example.com/files/report.pdf?download=1', 'report.pdf'],
+    ['https://example.com/files/archive.zip#part', 'archive.zip'],
+    ['https://example.com/files/', ''],
+    ['https://example.com', ''],
   ];
-  for (const [query, expectedFileName] of cases) {
-    if (getHttpUrlFileName(query) !== expectedFileName) {
-      throw new Error(`Expected ${query} to name ${expectedFileName}`);
+  for (const [text, expectedFileName] of cases) {
+    const parsing = parseHttpUrl(text);
+    if (!parsing.parsed || getHttpUrlFileName(parsing.url) !== expectedFileName) {
+      throw new Error(`Expected ${text} to name ${expectedFileName}`);
     }
   }
 });

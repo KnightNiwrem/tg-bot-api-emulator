@@ -53,12 +53,12 @@ document blocks of rich messages accept URLs.
 The URL is read as TDLib's [`parse_url`][parse-url] reads it, so a URL without a protocol is an HTTP
 one, and a resource answers every spelling that TDLib reads alike; a URL TDLib refuses fails with
 `Bad Request: invalid file HTTP URL specified: <reason>`, in TDLib's words. The download follows at
-most 5 redirects to HTTP or HTTPS URLs and must answer 2xx within 10 seconds. Telegram's
-[file sending reference][sending-files] limits URL photos to 5 MB and other files to 20 MB, read as
-5,242,880 and 20,971,520 bytes, whatever the upload profile, since Telegram's servers download them.
-A photo must be served as an image. As that reference says that only PDF and ZIP files can be sent
-as documents, a document must be served as `application/pdf` or `application/zip`; its content is
-not inspected.
+most 5 redirects to HTTP or HTTPS URLs and must answer 2xx and deliver its whole body within 10
+seconds. Telegram's [file sending reference][sending-files] limits URL photos to 5 MB and other
+files to 20 MB, read as 5,242,880 and 20,971,520 bytes, whatever the upload profile, since
+Telegram's servers download them. A photo must be served as an image. As that reference says that
+only PDF and ZIP files can be sent as documents, a document must be served as `application/pdf` or
+`application/zip`; its content is not inspected.
 
 | Download outcome                                                                         | Error                                             |
 | ---------------------------------------------------------------------------------------- | ------------------------------------------------- |

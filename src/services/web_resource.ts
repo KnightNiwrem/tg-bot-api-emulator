@@ -1,4 +1,4 @@
-import { parseHttpUrl } from '../types/http_url.ts';
+import { formatHttpUrl, parseHttpUrl } from '../types/http_url.ts';
 import type { WebResource } from '../types/web_resource.ts';
 
 /** The range of statuses a `Response` can carry, which the emulator serves. */
@@ -54,12 +54,13 @@ export class WebResourceService {
     if (!parsing.parsed) {
       return { registered: false, reason: 'url_invalid', urlError: parsing.error };
     }
-    const requestUrl = getRequestUrl(parsing.url);
+    const url = formatHttpUrl(parsing.url);
+    const requestUrl = getRequestUrl(url);
     if (requestUrl === undefined) {
       // TDLib reads the URL, but a `Request` cannot carry it, so nothing could download it.
       return { registered: false, reason: 'url_invalid', urlError: 'Host is invalid' };
     }
-    const resource = { ...registration, url: parsing.url };
+    const resource = { ...registration, url };
     if (createResponseHeaders(resource) === undefined) {
       return { registered: false, reason: 'header_invalid' };
     }

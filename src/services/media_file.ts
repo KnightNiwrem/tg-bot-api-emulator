@@ -1,6 +1,6 @@
 import { getDocumentMimeType, getFileNameExtension } from '../media/document_file.ts';
 import { readImageDimensions } from '../media/image_dimensions.ts';
-import { getHttpUrlFileName, parseHttpUrl } from '../types/http_url.ts';
+import { formatHttpUrl, getHttpUrlFileName, parseHttpUrl } from '../types/http_url.ts';
 import {
   type DocumentUpload,
   MAX_BOT_DOWNLOAD_FILE_BYTES,
@@ -175,7 +175,7 @@ export class MediaFileService {
       return { downloaded: false, reason: 'file_url_invalid', urlError: parsing.error };
     }
     const download = await this.#webFiles.download(
-      parsing.url,
+      formatHttpUrl(parsing.url),
       MAX_WEB_FILE_BYTES[fileKind],
       signal,
     );
@@ -192,7 +192,7 @@ export class MediaFileService {
     }
     return {
       downloaded: true,
-      webFile: { content, mediaType, fileName: getHttpUrlFileName(parsing.query) },
+      webFile: { content, mediaType, fileName: getHttpUrlFileName(parsing.url) },
     };
   }
 
