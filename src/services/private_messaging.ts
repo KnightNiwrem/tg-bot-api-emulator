@@ -203,6 +203,11 @@ export type SendBotMessageInput = BotMessageReplyMarkup & {
   readonly isSilent?: boolean;
   /** Where the content first appeared, for a forward; omitted for other messages. */
   readonly forwardInfo?: MessageForwardInfo;
+  /**
+   * The album the message belongs to, as a forward or copy of an album's message, which the
+   * caller issued; omitted outside albums.
+   */
+  readonly mediaGroupId?: MediaGroupId;
   /** The message effect clients play with the message; omitted for none. */
   readonly messageEffectId?: string;
 };
@@ -335,7 +340,8 @@ export type EditBotMessageCaptionFailureReason =
 
 export type EditBotMessageMediaFailureReason =
   | EditBotMessageInlineKeyboardFailureReason
-  | 'caption_too_long';
+  | 'caption_too_long'
+  | 'album_media_kind_changed';
 
 export type PrivateMessageEditResult<FailureReason extends string> =
   | {
@@ -871,6 +877,7 @@ export class PrivateMessagingService {
         inlineKeyboard: input.inlineKeyboard,
         replyInterfaceMarkup: input.replyInterfaceMarkup,
         forwardInfo: input.forwardInfo,
+        mediaGroupId: input.mediaGroupId,
         isContentProtected: input.isContentProtected,
         isSilent: input.isSilent,
         messageEffectId: input.messageEffectId,
@@ -1000,7 +1007,7 @@ export class PrivateMessagingService {
     const { message } = resolution;
     return this.#editBotMessageContent(
       message,
-      replaceMessageMedia(message.content, input.media, this.#textFixingContext),
+      replaceMessageMedia(message, input.media, this.#textFixingContext),
       input.inlineKeyboard,
     );
   }

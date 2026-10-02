@@ -51,7 +51,9 @@ post:
         missing (`Bad Request: parameter "media" is required`) or cannot be read as the
         `InputMedia` schema describes, the file cannot be sent as for `sendPhoto` and
         `sendDocument`, or Telegram would reject the edit for the reasons `editMessageCaption`
-        gives, apart from the message's kind: any message the bot can edit can take new media.
+        gives, apart from the message's kind: any message the bot can edit can take new media,
+        except that a photo of an album cannot become a document, nor a document a photo (`Bad
+        Request: can't change media type in the album`).
       content:
         application/json:
           schema:

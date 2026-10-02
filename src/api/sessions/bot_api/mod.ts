@@ -185,6 +185,9 @@ const MESSAGE_HAS_NO_TEXT_DESCRIPTION = 'Bad Request: there is no text in the me
 const MESSAGE_HAS_NO_CAPTION_DESCRIPTION =
   'Bad Request: there is no caption in the message to edit';
 const MESSAGE_NOT_EDITABLE_DESCRIPTION = "Bad Request: message can't be edited";
+/** TDLib's `edit_message_media` keeps a message of an album to its kind of media. */
+const ALBUM_MEDIA_TYPE_UNCHANGEABLE_DESCRIPTION =
+  "Bad Request: can't change media type in the album";
 const MESSAGE_NOT_MODIFIED_DESCRIPTION =
   'Bad Request: message is not modified: specified new message content and reply markup are exactly the same as a current content and reply markup of the message';
 
@@ -2403,6 +2406,8 @@ function editMessageAnswer(result: MessageEditResult): BotApiMethodAnswer {
       return botApiError(400, MESSAGE_TEXT_TOO_LONG_DESCRIPTION);
     case 'caption_too_long':
       return botApiError(400, CAPTION_TOO_LONG_DESCRIPTION);
+    case 'album_media_kind_changed':
+      return botApiError(400, ALBUM_MEDIA_TYPE_UNCHANGEABLE_DESCRIPTION);
     case 'callback_data_invalid':
       return botApiError(400, BUTTON_DATA_INVALID_DESCRIPTION);
     case 'button_type_invalid':

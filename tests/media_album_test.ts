@@ -2,9 +2,15 @@ import {
   type AlbumMember,
   checkAlbumComposition,
   formsAlbum,
+  groupRepeatedAlbums,
   MAX_ALBUM_MESSAGE_COUNT,
   toAlbumMember,
 } from '../src/types/media_album.ts';
+import type {
+  MessageContent,
+  MessageOriginSender,
+  PrivateMessage,
+} from '../src/types/virtual_message.ts';
 
 const photo: AlbumMember = { kind: 'photo', showsCaptionAboveMedia: false };
 const document: AlbumMember = { kind: 'document', showsCaptionAboveMedia: false };
@@ -74,3 +80,102 @@ Deno.test('formsAlbum groups two or more messages', () => {
     throw new Error('Expected a single message to be sent outside any album');
   }
 });
+
+Deno.test('groupRepeatedAlbums gives each album repeated twice or more a new album', () => {
+  const albumPhoto = (mediaGroupId: string) => privateMessage({ kind: 'photo', mediaGroupId });
+  const { albumCount, albumIndexes } = groupRepeatedAlbums([
+    albumPhoto('1'),
+    privateMessage({ kind: 'text' }),
+    albumPhoto('2'),
+    albumPhoto('1'),
+    albumPhoto('3'),
+    albumPhoto('2'),
+    albumPhoto('2'),
+  ]);
+  if (
+    albumCount !== 2 ||
+    JSON.stringify(albumIndexes) !==
+      JSON.stringify([0, undefined, 1, 0, undefined, 1, 1])
+  ) {
+    throw new Error(
+      `Expected albums 1 and 2 to be regrouped, received ${JSON.stringify(albumIndexes)}`,
+    );
+  }
+});
+
+Deno.test('groupRepeatedAlbums groups documents that one visible user first sent', () => {
+  const groupings = [
+    // Separate documents of one sender form an album, whatever albums they came from.
+    [
+      privateMessage({ kind: 'document' }),
+      privateMessage({ kind: 'document', mediaGroupId: '1' }),
+    ],
+    // A forward counts its original's sender.
+    [
+      privateMessage({ kind: 'document' }),
+      privateMessage({ kind: 'document', forwardedFromUserId: 10 }),
+    ],
+    [
+      privateMessage({ kind: 'document' }),
+      privateMessage({ kind: 'document', forwardedFromUserId: 11 }),
+    ],
+    [
+      privateMessage({ kind: 'document', hidesForwardSender: true }),
+      privateMessage({ kind: 'document', hidesForwardSender: true }),
+    ],
+    [privateMessage({ kind: 'document' }), privateMessage({ kind: 'photo' })],
+    Array.from({ length: MAX_ALBUM_MESSAGE_COUNT + 1 }, () => privateMessage({ kind: 'document' })),
+    [privateMessage({ kind: 'document' })],
+  ].map((messages) => groupRepeatedAlbums(messages).albumIndexes);
+  const expectedGroupings = [
+    [0, 0],
+    [0, 0],
+    [undefined, undefined],
+    [undefined, undefined],
+    [undefined, undefined],
+    Array.from({ length: MAX_ALBUM_MESSAGE_COUNT + 1 }, () => undefined),
+    [undefined],
+  ];
+  if (JSON.stringify(groupings) !== JSON.stringify(expectedGroupings)) {
+    throw new Error(`Expected TDLib's document albums, received ${JSON.stringify(groupings)}`);
+  }
+});
+
+/**
+ * A message of the private chat between account 10 and bot 20, written by the account, with the
+ * given kind of content, album, and forward origin.
+ */
+function privateMessage(
+  { kind, mediaGroupId, forwardedFromUserId, hidesForwardSender = false }: {
+    readonly kind: 'text' | 'photo' | 'document';
+    readonly mediaGroupId?: string;
+    readonly forwardedFromUserId?: number;
+    readonly hidesForwardSender?: boolean;
+  },
+): PrivateMessage {
+  const caption = { text: '', entities: [] };
+  const content: MessageContent = kind === 'text'
+    ? { kind, text: 'Hi', entities: [] }
+    : kind === 'photo'
+    ? { kind, fileId: 'file', caption, hasSpoiler: false, showsCaptionAboveMedia: false }
+    : { kind, fileId: 'file', caption };
+  const originalSender: MessageOriginSender | undefined = hidesForwardSender
+    ? { kind: 'hidden_user', name: 'Ada' }
+    : forwardedFromUserId === undefined
+    ? undefined
+    : { kind: 'user', userId: forwardedFromUserId };
+  return {
+    kind: 'private_message',
+    id: crypto.randomUUID(),
+    conversation: { accountId: 10, botId: 20 },
+    authorRole: 'account',
+    sentAtUnixSeconds: 1_700_000_000,
+    content,
+    ...(mediaGroupId === undefined ? {} : { mediaGroupId }),
+    ...(originalSender === undefined
+      ? {}
+      : { forwardInfo: { originalSender, originalSentAtUnixSeconds: 1_600_000_000 } }),
+    isContentProtected: false,
+    isSilent: false,
+  };
+}
