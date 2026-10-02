@@ -206,8 +206,8 @@ returns the message as that media. Which files the server reclassifies, and how,
 source.
 
 Classifying documents needs the animation, audio and video media the emulator lacks, and rules for
-it would rest on observed rather than documented server behavior. Tests need to exercise media
-classification and the flag's effect.
+it would rest on observed rather than documented server behavior. Tests need media classification,
+through which the flag would take effect.
 
 ### Files sent by URL in inline query results
 
