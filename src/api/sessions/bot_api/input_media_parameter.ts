@@ -42,13 +42,22 @@ const MEDIA_REQUIRED_DESCRIPTION = 'Bad Request: parameter "media" is required';
 /** How the official Bot API server prefixes its description of `InputMedia` it cannot read. */
 const INPUT_MEDIA_ERROR_PREFIX = "Bad Request: can't parse InputMedia: ";
 
-/** Media types the official server reads but the emulator lacks. */
+/**
+ * Media types the official server reads but the emulator lacks. In albums, Telegram sends live
+ * photos and videos among photos, and audio only with other audio, while it refuses animations.
+ */
 const UNSUPPORTED_MEDIA_TYPES: ReadonlySet<string> = new Set([
   'animation',
   'audio',
   'live_photo',
   'video',
 ]);
+
+/**
+ * What media is read for, which decides the types the official server accepts: new media of a
+ * message, or a message of an album, which cannot be an animation.
+ */
+type InputMediaUse = 'replacement' | 'album';
 
 const mediaTypeSchema = z.looseObject({ type: z.string() });
 
@@ -95,7 +104,7 @@ export function readInputMediaParameter(
   } catch {
     return { read: false, description: "Bad Request: can't parse input media JSON object" };
   }
-  return readInputMedia(value, uploadedFiles, invalidParametersDescription);
+  return readInputMedia(value, 'replacement', uploadedFiles, invalidParametersDescription);
 }
 
 /**
@@ -126,7 +135,12 @@ export function readInputMediaGroupParameter(
   }
   const media: UnreadMediaReplacement[] = [];
   for (const memberValue of value) {
-    const reading = readInputMedia(memberValue, uploadedFiles, invalidParametersDescription);
+    const reading = readInputMedia(
+      memberValue,
+      'album',
+      uploadedFiles,
+      invalidParametersDescription,
+    );
     if (!reading.read) {
       return reading;
     }
@@ -137,17 +151,19 @@ export function readInputMediaGroupParameter(
 
 /**
  * Reads one JSON `InputMediaPhoto` or `InputMediaDocument` as the official Bot API server's
- * `get_input_media` reads it, with its descriptions of media it cannot read. `media` names the
- * file as `readInputFileParameter` reads a file parameter, except that an upload is named only by
- * `attach://<name>`; a document's thumbnail is read as `readThumbnailParameter` reads it.
+ * `get_input_media` reads it for its use, with its descriptions of media it cannot read. `media`
+ * names the file as `readInputFileParameter` reads a file parameter, except that an upload is named
+ * only by `attach://<name>`; a document's thumbnail is read as `readThumbnailParameter` reads it.
  *
  * Telegram also reads animations, audio, live photos and videos, which the emulator lacks and
- * rejects with its own description. `invalidParametersDescription` answers fields the Bot API
- * does not document for the media's type, or of the wrong JSON type, which Telegram reads
- * leniently; rejecting them instead surfaces the bot's mistake in tests.
+ * rejects with its own description, apart from an animation of an album, which Telegram refuses
+ * itself. `invalidParametersDescription` answers fields the Bot API does not document for the
+ * media's type, or of the wrong JSON type, which Telegram reads leniently; rejecting them instead
+ * surfaces the bot's mistake in tests.
  */
 function readInputMedia(
   value: unknown,
+  use: InputMediaUse,
   uploadedFiles: BotApiUploadedFiles,
   invalidParametersDescription: string,
 ): InputMediaParameterReading {
@@ -166,6 +182,9 @@ function readInputMedia(
     return failure(invalidParametersDescription);
   }
   const { type } = typedValue.data;
+  if (use === 'album' && type === 'animation') {
+    return failure(`${INPUT_MEDIA_ERROR_PREFIX}type "${type}" can't be used in sendMediaGroup`);
+  }
   if (UNSUPPORTED_MEDIA_TYPES.has(type)) {
     return failure(`Bad Request: InputMedia of type "${type}" is not supported`);
   }

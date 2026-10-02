@@ -17,7 +17,9 @@ properties:
     description: >-
       The album's photos or documents, in the order the chat shows them, each as `InputMedia`
       describes it. Documents form an album only with documents, and every photo must place its
-      caption alike. A single item is sent as one message outside any album, as TDLib sends it.
+      caption alike. Telegram also sends videos and live photos among photos, and audio only
+      with other audio, which the emulator lacks and refuses by name. A single item is sent as one message
+      outside any album, as TDLib sends it.
     items:
       $ref: ./InputMedia.yaml
   disable_notification:
