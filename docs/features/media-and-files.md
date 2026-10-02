@@ -6,9 +6,10 @@
 
 Bots send photos and documents with `sendPhoto` and `sendDocument`, and in the blocks of
 [rich messages](rich-messages.md). Files can be multipart uploads, either in the part named for the
-parameter or referenced with `attach://<part-name>`, or an existing `file_id` known to that bot.
-Accounts upload base64 content through the emulation API; the TypeScript client accepts bytes and
-performs the encoding. Both sides can supply captions and caption entities.
+parameter or referenced with `attach://<part-name>`, an existing `file_id` known to that bot, or an
+HTTP URL that Telegram downloads, as described in [files sent by URL](#files-sent-by-url). Accounts
+upload base64 content through the emulation API; the TypeScript client accepts bytes and performs
+the encoding. Both sides can supply captions and caption entities.
 
 Photos expose dimensions, `has_media_spoiler` when requested and `show_caption_above_media` for a
 caption above the photo. Documents expose their cleaned filename and a MIME type derived from its
@@ -38,6 +39,37 @@ photo, fails. `getFile` returns a `file_path`; download the bytes at
 `<botApiRoot>/file/bot<token>/<file_path>`. A path is available after `getFile` assigns it, and
 remains valid for the session. Tests can bypass bot downloads with
 `session.downloadFile(file_unique_id)`; that is an emulation API convenience, not a Telegram API.
+
+### Files sent by URL
+
+As TDLib does, a file parameter or `media` that contains a dot is an HTTP URL, which Telegram
+downloads before it sends the file. The emulator downloads it from the session's emulated web: tests
+register what each URL serves with `POST /sessions/{sessionId}/web-resources` or the TypeScript
+client's `registerWebResource`, giving a status, `Content-Type`, body, or redirect `location`. A URL
+without a registered resource is unreachable, and the emulator never reaches the network.
+`sendPhoto`, `sendDocument`, `editMessageMedia`, including for inline messages, and the photo and
+document blocks of rich messages accept URLs.
+
+The URL is read as TDLib's [`parse_url`][parse-url] reads it, so a URL without a protocol is an HTTP
+one, and a resource answers every spelling that TDLib reads alike; a URL TDLib refuses fails with
+`Bad Request: invalid file HTTP URL specified: <reason>`, in TDLib's words. The download follows at
+most 5 redirects to HTTP or HTTPS URLs and must answer 2xx within 10 seconds. Telegram's
+[file sending reference][sending-files] limits URL photos to 5 MB and other files to 20 MB, read as
+5,242,880 and 20,971,520 bytes, whatever the upload profile, since Telegram's servers download them.
+A photo must be served as an image, and, as that reference says, a document only as a PDF or ZIP
+file, `application/pdf` or `application/zip`.
+
+| Download outcome                                                                         | Error                                             |
+| ---------------------------------------------------------------------------------------- | ------------------------------------------------- |
+| Unreachable, non-2xx, too many redirects, timed out, truncated, or larger than its limit | `Bad Request: failed to get HTTP URL content`     |
+| Empty, or served with another type                                                       | `Bad Request: wrong type of the web page content` |
+
+These are the server's descriptions of Telegram's `WEBPAGE_CURL_FAILED` and `WEBPAGE_MEDIA_EMPTY` in
+[`Client::fail_query_with_error`][error-rewriting]. A downloaded photo is then checked as an
+uploaded one, so content that is not a readable image fails with `IMAGE_PROCESS_FAILED`. A document
+is named after the URL's last path segment, cleaned as an upload's name, keeps the type it was
+served as, and takes no thumbnail, as TDLib sends it as `inputMediaDocumentExternal`. A file sent by
+URL is stored as a new file, like an upload.
 
 ### Upload profiles
 
@@ -121,6 +153,19 @@ For the cloud limit, the emulator gives the answer bots observe from `api.telegr
 local limit, which Telegram enforces after TDLib's checks with an error not visible in the source,
 it words the error as `check_full_local_location` words its own size checks.
 
+### An emulated web for files sent by URL
+
+Telegram's servers download files sent by URL, and which responses they accept, their time and
+redirect budgets, and their errors for each failure are not in the open-source server or TDLib. The
+emulator downloads from resources the test registers rather than from the network, so tests stay
+hermetic and bots keep the URLs they use in production; its budgets, the mapping of failures to the
+two documented error descriptions, and the media types it accepts are its own bounded model. It
+downloads the file after the caption and other parameters and before the chat, as it reads uploads,
+while Telegram downloads it after the server looks at the chat, so a request with both an unknown
+chat and an unusable URL fails for its URL. Telegram may also reuse a file it downloaded from the
+same URL before; the emulator downloads it again, as [independent uploads](#independent-uploads)
+describe.
+
 ### Opaque session file identifiers
 
 `file_id` and `file_unique_id` are opaque emulator identifiers. Tests should treat them as session
@@ -152,10 +197,11 @@ not inspect document content or reproduce that classification.
 
 Tests need to exercise media classification and the flag's effect.
 
-### Files sent by URL
+### Files sent by URL in inline query results
 
-HTTP URL file sources are rejected. [`Client::get_input_file`][file-input] and TDLib accept remote
-sources, which Telegram's servers download; tests need files sent by URL.
+A rich message that an inline query result sends must reuse its files by `file_id`: one naming a
+file by URL fails, as an upload does, with `Bad Request: invalid inline message content specified`.
+Telegram downloads such files; tests need inline query results that send files by URL.
 
 ### Additional media types and methods
 
@@ -167,6 +213,8 @@ Media types other than photos/documents, albums, stickers and sticker sets are m
 [Media service](../../src/services/media_file.ts),
 [image header reader](../../src/media/image_dimensions.ts),
 [file repository](../../src/repositories/file.ts),
+[URL downloads](../../src/services/web_file_download.ts),
+[web resources](../../src/services/web_resource.ts),
 [media tests](../../tests/media_file_service_test.ts) and
 [image tests](../../tests/image_dimensions_test.ts).
 
@@ -179,4 +227,6 @@ Media types other than photos/documents, albums, stickers and sticker sets are m
 [download-limit]: https://github.com/tdlib/telegram-bot-api/blob/e3e9dd8e5b3d7ab8537cd5a10dc31d5ffa8f82d1/telegram-bot-api/Client.cpp#L9365-L9390
 [file-input]: https://github.com/tdlib/telegram-bot-api/blob/e3e9dd8e5b3d7ab8537cd5a10dc31d5ffa8f82d1/telegram-bot-api/Client.cpp#L10758-L10839
 [sending-files]: https://core.telegram.org/bots/api#sending-files
+[parse-url]: https://github.com/tdlib/td/blob/bc9c263e2bfee06aaab41e82db51a103376030bc/tdutils/td/utils/HttpUrl.cpp#L47-L196
+[error-rewriting]: https://github.com/tdlib/telegram-bot-api/blob/e3e9dd8e5b3d7ab8537cd5a10dc31d5ffa8f82d1/telegram-bot-api/Client.cpp#L73-L206
 [local-mode]: https://github.com/tdlib/telegram-bot-api/blob/e3e9dd8e5b3d7ab8537cd5a10dc31d5ffa8f82d1/README.md#usage

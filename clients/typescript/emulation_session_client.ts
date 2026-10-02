@@ -23,6 +23,7 @@ import {
   sentSupergroupMessageResponseSchema,
   supergroupBotCommandsResponseSchema,
   supergroupMessageHistoryResponseSchema,
+  webResourceSchema,
 } from './schemas.ts';
 import type {
   AccountBotCommandsInput,
@@ -71,6 +72,7 @@ import type {
   PromoteChatMemberInput,
   QueueRateLimitResponsesInput,
   RateLimitResponses,
+  RegisterWebResourceInput,
   RemoveChatMemberInput,
   ReplyInterface,
   SendInlineQueryInput,
@@ -83,6 +85,7 @@ import type {
   VirtualAccountClient,
   VirtualAccountProfile,
   VirtualBotProfile,
+  WebResource,
 } from './types.ts';
 import { normalizeUrlRoot, requestBytes, requestEmptyResponse, requestJson } from './utils.ts';
 
@@ -105,6 +108,12 @@ export interface EmulationSessionClient extends EmulationSession {
    * `file_unique_id`, which, unlike `file_id`, is the same for every user.
    */
   downloadFile(fileUniqueId: string): Promise<Uint8Array>;
+  /**
+   * Registers what a URL of the session's emulated web serves, replacing what it served before.
+   * Telegram downloads the files bots send by URL; the emulator downloads them from these
+   * resources, and a URL without one is unreachable.
+   */
+  registerWebResource(input: RegisterWebResourceInput): Promise<WebResource>;
   /**
    * A view of the session's bot activity log: the Bot API calls its bots make, with their answers,
    * and the updates delivered to and confirmed by them. `filter` applies to every read of the
@@ -219,6 +228,16 @@ class HttpEmulationSessionClient implements EmulationSessionClient {
       method: 'GET',
       url: `${this.#sessionUrl}/files/${encodeURIComponent(fileUniqueId)}`,
       expectedStatus: HTTP_STATUS_OK,
+    });
+  }
+
+  registerWebResource({ content, ...input }: RegisterWebResourceInput): Promise<WebResource> {
+    return requestJson(this.#fetch, {
+      method: 'POST',
+      url: `${this.#sessionUrl}/web-resources`,
+      expectedStatus: HTTP_STATUS_CREATED,
+      responseSchema: webResourceSchema,
+      body: { ...input, ...(content === undefined ? {} : { content_base64: content.toBase64() }) },
     });
   }
 

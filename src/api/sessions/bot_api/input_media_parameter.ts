@@ -3,9 +3,9 @@ import { z } from 'zod';
 import type { EmulationSession } from '../../../types/emulation_session.ts';
 import type { UnreadFormattedText } from './inline_query_answer_parameters.ts';
 import {
-  FILE_URL_UNSUPPORTED_DESCRIPTION,
   readInputFileParameter,
   readThumbnailParameter,
+  type RequestedInputFile,
 } from './input_file_parameter.ts';
 import type { BotApiUploadedFiles } from './request_parameters.ts';
 
@@ -13,10 +13,20 @@ type MediaReplacementRequest = Parameters<
   EmulationSession['botApi']['editMessageMedia']
 >[1]['media'];
 
-/** New media as a request specifies it, with its caption not yet read. */
-export type UnreadMediaReplacement = OmitFromEach<MediaReplacementRequest, 'caption'> & {
-  readonly caption: UnreadFormattedText;
-};
+type PhotoReplacementRequest = Extract<MediaReplacementRequest, { readonly kind: 'photo' }>;
+type DocumentReplacementRequest = Extract<MediaReplacementRequest, { readonly kind: 'document' }>;
+
+/** New media as a request specifies it, with its file as named and its caption not yet read. */
+export type UnreadMediaReplacement =
+  & (
+    | (Omit<PhotoReplacementRequest, 'caption' | 'photo'> & {
+      readonly photo: RequestedInputFile;
+    })
+    | (Omit<DocumentReplacementRequest, 'caption' | 'document'> & {
+      readonly document: RequestedInputFile;
+    })
+  )
+  & { readonly caption: UnreadFormattedText };
 
 export type InputMediaParameterReading =
   | { readonly read: true; readonly media: UnreadMediaReplacement }
@@ -122,11 +132,7 @@ export function readInputMediaParameter(
   // names no uploaded part.
   const fileReading = readInputFileParameter('', data.media, uploadedFiles);
   if (!fileReading.read) {
-    return failure(
-      fileReading.reason === 'file_missing'
-        ? `${INPUT_MEDIA_ERROR_PREFIX}media not found`
-        : FILE_URL_UNSUPPORTED_DESCRIPTION,
-    );
+    return failure(`${INPUT_MEDIA_ERROR_PREFIX}media not found`);
   }
   const caption: UnreadFormattedText = {
     text: data.caption,
@@ -156,6 +162,3 @@ export function readInputMediaParameter(
     },
   };
 }
-
-/** Removes properties from each member of a union, which keeps the union's alternatives apart. */
-type OmitFromEach<Type, Key extends PropertyKey> = Type extends unknown ? Omit<Type, Key> : never;

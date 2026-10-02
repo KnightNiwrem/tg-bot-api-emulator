@@ -1005,3 +1005,48 @@ function createInProcessFetch(
 ): typeof globalThis.fetch {
   return async (input, init) => await handler(new Request(input, init));
 }
+
+Deno.test('TypeScript client registers web resources that bots send files from', async () => {
+  const publicOrigin = 'http://emulator.example:9000';
+  const api = createEmulationApi({
+    sessionLifecycle: createSessionLifecycleService(),
+    publicOrigin,
+  });
+  const fetch = createInProcessFetch(api.fetch);
+  const session = await new TelegramEmulationClient(publicOrigin, { fetch }).createSession();
+  const { token, bot } = await session.createBot({ first_name: 'Files', username: 'files_bot' });
+  const { account } = await session.createAccount({ first_name: 'Ada' });
+  await account.sendMessage({ to: { type: 'private', botId: bot.id }, text: '/start' });
+  const content = new TextEncoder().encode('PK\u0003\u0004');
+
+  const resource = await session.registerWebResource({
+    url: 'https://files.example.com/Archive.zip',
+    content_type: 'application/zip',
+    content,
+  });
+  if (
+    JSON.stringify(resource) !== JSON.stringify({
+      url: 'https://files.example.com/Archive.zip',
+      status: 200,
+      content_type: 'application/zip',
+      content_length: content.length,
+    })
+  ) {
+    throw new Error(`Expected the registered resource, received ${JSON.stringify(resource)}`);
+  }
+
+  const response = await fetch(`${session.botApiRoot}/bot${token}/sendDocument`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ chat_id: account.id, document: resource.url }),
+  });
+  const sent = await response.json();
+  const downloaded = await session.downloadFile(sent.result?.document?.file_unique_id);
+  if (
+    sent.result?.document?.file_name !== 'Archive.zip' ||
+    downloaded.toBase64() !== content.toBase64()
+  ) {
+    throw new Error(`Expected the document sent by URL, received ${JSON.stringify(sent)}`);
+  }
+  await session.end();
+});

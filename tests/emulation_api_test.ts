@@ -3316,7 +3316,7 @@ Deno.test('sendRichMessage refuses rich messages as Telegram does', async () => 
     ],
     [
       photoBlock({ type: 'photo', media: 'https://grammy.dev/logo.png' }),
-      'Bad Request: sending files by URL is not supported',
+      'Bad Request: failed to get HTTP URL content',
     ],
     [
       photoBlock({ type: 'document', media: 'attach://missing' }),
@@ -7351,7 +7351,7 @@ Deno.test('sendPhoto and sendDocument upload files, reuse file IDs, and follow T
     'Bad Request: there is no photo in the request',
     'Bad Request: there is no photo in the request',
     'Bad Request: there is no document in the request',
-    'Bad Request: sending files by URL is not supported',
+    'Bad Request: failed to get HTTP URL content',
     'Bad Request: IMAGE_PROCESS_FAILED',
     'Bad Request: PHOTO_INVALID_DIMENSIONS',
     'Bad Request: file must be non-empty',
@@ -7473,6 +7473,163 @@ Deno.test('a local session lets bots upload documents over 50 MB that getFile ca
     download.body.description !== 'Bad Request: file is too big'
   ) {
     throw new Error(`Expected getFile to refuse the file, received ${JSON.stringify(download)}`);
+  }
+});
+
+Deno.test('bots send files by URL, which Telegram downloads from registered web resources', async () => {
+  const { api, sessionPath, botApiPath, createdBot, createdAccount, sendText } =
+    await createPrivateConversationFixture();
+  await sendText('/start');
+  const chatId = createdAccount.account.id;
+  const pdfContent = new TextEncoder().encode('%PDF-1.7 quarterly report');
+  const registerWebResource = (body: Record<string, unknown>) =>
+    api.request(`${sessionPath}/web-resources`, jsonRequest('POST', body));
+
+  const pdfRegistration = await registerWebResource({
+    url: 'https://CDN.example.com/docs/report.pdf',
+    content_type: 'application/pdf',
+    content_base64: pdfContent.toBase64(),
+  });
+  const pdfResource = await pdfRegistration.json();
+  if (
+    pdfRegistration.status !== 201 || JSON.stringify(pdfResource) !== JSON.stringify({
+        url: 'https://cdn.example.com/docs/report.pdf',
+        status: 200,
+        content_type: 'application/pdf',
+        content_length: pdfContent.length,
+      })
+  ) {
+    throw new Error(
+      `Expected the resource to be registered, received ${JSON.stringify(pdfResource)}`,
+    );
+  }
+  for (
+    const body of [
+      {
+        url: 'https://cdn.example.com/chart.gif',
+        content_type: 'image/gif',
+        content_base64: gifImage(64, 32).toBase64(),
+      },
+      { url: 'https://cdn.example.com/latest.pdf', status: 302, location: '/docs/report.pdf' },
+      {
+        url: 'https://cdn.example.com/notes.txt',
+        content_type: 'text/plain',
+        content_base64: btoa('notes'),
+      },
+    ]
+  ) {
+    const response = await registerWebResource(body);
+    if (response.status !== 201) {
+      throw new Error(`Expected ${body.url} to be registered, received ${response.status}`);
+    }
+  }
+  for (
+    const body of [
+      { url: 'ftp://cdn.example.com/report.pdf' },
+      { url: 'https://cdn.example.com/a.pdf', status: 100 },
+      { url: 'https://cdn.example.com/a.pdf', content_base64: 'not base64!' },
+      { url: 'https://cdn.example.com/a.pdf', headers: {} },
+    ]
+  ) {
+    const response = await registerWebResource(body);
+    if (response.status !== 400) {
+      throw new Error(
+        `Expected ${JSON.stringify(body)} to be refused, received ${response.status}`,
+      );
+    }
+  }
+
+  const photo = await callBotApi(api, `${botApiPath}/sendPhoto`, {
+    chat_id: chatId,
+    photo: 'https://cdn.example.com/chart.gif',
+  });
+  const photoSize = (botApiResult(photo.body)?.photo as Record<string, unknown>[] | undefined)?.[0];
+  const document = await callBotApi(api, `${botApiPath}/sendDocument`, {
+    chat_id: chatId,
+    document: 'https://cdn.example.com/latest.pdf',
+  });
+  const documentMessage = botApiResult(document.body);
+  const sentDocument = documentMessage?.document as Record<string, unknown> | undefined;
+  if (
+    photo.status !== 200 || photoSize?.width !== 64 || photoSize.height !== 32 ||
+    document.status !== 200 || sentDocument?.file_name !== 'latest.pdf' ||
+    sentDocument.mime_type !== 'application/pdf' || sentDocument.file_size !== pdfContent.length
+  ) {
+    throw new Error(
+      `Expected files sent by URL, received ${JSON.stringify([photo.body, document.body])}`,
+    );
+  }
+  const fileResponse = await callBotApi(api, `${botApiPath}/getFile`, {
+    file_id: sentDocument.file_id,
+  });
+  const download = await api.request(
+    `${sessionPath}/bot-api/file/bot${createdBot.token}/${
+      botApiResult(fileResponse.body)?.file_path
+    }`,
+  );
+  if ((await download.bytes()).toBase64() !== pdfContent.toBase64()) {
+    throw new Error('Expected the bot to download the bytes Telegram fetched');
+  }
+
+  const edited = await callBotApi(api, `${botApiPath}/editMessageMedia`, {
+    chat_id: chatId,
+    message_id: documentMessage?.message_id,
+    media: { type: 'photo', media: 'https://cdn.example.com/chart.gif' },
+  });
+  const richMessage = await callBotApi(api, `${botApiPath}/sendRichMessage`, {
+    chat_id: chatId,
+    rich_message: {
+      blocks: [{
+        type: 'document',
+        document: { type: 'document', media: 'https://cdn.example.com/docs/report.pdf' },
+      }],
+    },
+  });
+  if (
+    edited.status !== 200 || !Array.isArray(botApiResult(edited.body)?.photo) ||
+    richMessage.status !== 200
+  ) {
+    throw new Error(
+      `Expected an edit and a rich message by URL, received ${
+        JSON.stringify([edited, richMessage])
+      }`,
+    );
+  }
+
+  const failures = [
+    await callBotApi(api, `${botApiPath}/sendDocument`, {
+      chat_id: chatId,
+      document: 'https://cdn.example.com/missing.pdf',
+    }),
+    await callBotApi(api, `${botApiPath}/sendDocument`, {
+      chat_id: chatId,
+      document: 'https://cdn.example.com/notes.txt',
+    }),
+    await callBotApi(api, `${botApiPath}/sendPhoto`, {
+      chat_id: chatId,
+      photo: 'ftp://cdn.example.com/chart.gif',
+    }),
+  ].map(({ status, body }) =>
+    status === 400 && isBadRequestResponse(body) ? body.description : status
+  );
+  if (
+    JSON.stringify(failures) !== JSON.stringify([
+      'Bad Request: failed to get HTTP URL content',
+      'Bad Request: wrong type of the web page content',
+      'Bad Request: invalid file HTTP URL specified: Unsupported URL protocol',
+    ])
+  ) {
+    throw new Error(`Expected Telegram's errors, received ${JSON.stringify(failures)}`);
+  }
+
+  const historyResponse = await api.request(
+    `${sessionPath}/accounts/${chatId}/conversations/private/${createdBot.bot.id}/messages`,
+  );
+  const history = await historyResponse.json() as { messages: unknown[] };
+  if (history.messages.length !== 4) {
+    throw new Error(
+      `Expected failed sends to leave no messages, received ${history.messages.length}`,
+    );
   }
 });
 
@@ -7829,7 +7986,7 @@ Deno.test('editMessageMedia replaces the media of a message', async () => {
     ],
     [
       { type: 'photo', media: 'https://grammy.dev/cat.gif' },
-      'Bad Request: sending files by URL is not supported',
+      'Bad Request: failed to get HTTP URL content',
     ],
     [
       { type: 'photo', media: photoFileId, caption: '<b>Bold', parse_mode: 'HTML' },
@@ -7915,6 +8072,19 @@ Deno.test('editMessageMedia replaces the media of a message', async () => {
     { cat: new File([gifImage(4, 4)], 'cat.gif') },
   );
   const inlineEdit = await editInline({ type: 'photo', media: photoSizeOf(inlinePhoto)?.file_id });
+  // A file sent by URL is not an upload, so it may replace an inline message's media.
+  await api.request(
+    `${sessionPath}/web-resources`,
+    jsonRequest('POST', {
+      url: 'https://cdn.example.com/cat.gif',
+      content_type: 'image/gif',
+      content_base64: gifImage(7, 5).toBase64(),
+    }),
+  );
+  const inlineUrlEdit = await editInline({
+    type: 'photo',
+    media: 'https://cdn.example.com/cat.gif',
+  });
   const history = await (await api.request(
     `${accountPath}/conversations/private/${createdBot.bot.id}/messages`,
   )).json() as { messages: Array<Record<string, unknown>> };
@@ -7925,11 +8095,12 @@ Deno.test('editMessageMedia replaces the media of a message', async () => {
     !isBadRequestResponse(inlineUpload.body) ||
     inlineUpload.body.description !== 'Bad Request: invalid message content specified' ||
     JSON.stringify(inlineEdit.body) !== JSON.stringify({ ok: true, result: true }) ||
-    photoSizeOf(editedInlineMessage)?.file_unique_id !== photoSizeOf(inlinePhoto)?.file_unique_id
+    JSON.stringify(inlineUrlEdit.body) !== JSON.stringify({ ok: true, result: true }) ||
+    (editedInlineMessage?.photo as { width: number }[] | undefined)?.[0]?.width !== 7
   ) {
     throw new Error(
-      `Expected an inline message's media to be replaced only by file_id, received ${
-        JSON.stringify([inlineUpload, inlineEdit, editedInlineMessage])
+      `Expected an inline message's media to be replaced by file_id or URL, received ${
+        JSON.stringify([inlineUpload, inlineEdit, inlineUrlEdit, editedInlineMessage])
       }`,
     );
   }
@@ -8746,6 +8917,9 @@ Deno.test('inline query results send rich messages that reuse files', async () =
     await answer(await sendQuery(), {
       blocks: [{ type: 'photo', photo: { type: 'photo', media: 'unknown' } }],
     }),
+    await answer(await sendQuery(), {
+      blocks: [{ type: 'photo', photo: { type: 'photo', media: 'https://example.com/cat.gif' } }],
+    }),
     await callBotApi(api, `${inlineBot.botApiPath}/answerInlineQuery`, {
       inline_query_id: await sendQuery(),
       results: [{
@@ -8764,6 +8938,7 @@ Deno.test('inline query results send rich messages that reuse files', async () =
       'Bad Request: invalid inline message content specified',
       'Bad Request: BUTTON_DATA_INVALID',
       "Bad Request: wrong remote file identifier specified: can't unserialize it",
+      'Bad Request: invalid inline message content specified',
       'Bad Request: invalid answerInlineQuery parameters',
     ])
   ) {

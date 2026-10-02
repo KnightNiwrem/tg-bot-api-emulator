@@ -79,6 +79,36 @@ export interface RateLimitResponses {
   readonly remaining_count: number;
 }
 
+/**
+ * What a URL of the session's emulated web serves. Telegram downloads the files bots send by URL;
+ * the emulator downloads them from these resources and never from the network.
+ */
+export interface RegisterWebResourceInput {
+  /** An HTTP or HTTPS URL, matched as Telegram reads the URL a bot sends. */
+  readonly url: string;
+  /** The HTTP status, from 200 to 599. Defaults to 200. */
+  readonly status?: number;
+  /**
+   * The `Content-Type` header. Telegram sends a URL photo served as an image, and a URL document
+   * served as `application/pdf` or `application/zip`.
+   */
+  readonly content_type?: string;
+  /** The `Location` header of a redirect, relative to `url` or absolute. */
+  readonly location?: string;
+  /** The response body. Defaults to none. */
+  readonly content?: Uint8Array;
+}
+
+/** A registered web resource, without the content the test supplied. */
+export interface WebResource {
+  /** The URL in the canonical form Telegram reads it in. */
+  readonly url: string;
+  readonly status: number;
+  readonly content_type?: string;
+  readonly location?: string;
+  readonly content_length: number;
+}
+
 export interface QueueRateLimitResponsesInput {
   readonly bot_id: number;
   /** An implemented Bot API method, by any name Telegram accepts; omit it for every method. */

@@ -4,7 +4,10 @@ description: >-
   name's extension decides the document's MIME type. Telegram sends some files, such as videos
   and GIF animations, as other media unless `disable_content_type_detection` is set; the
   emulator always sends a document. An uploaded `thumbnail` is kept as the document's
-  thumbnail, as described for that parameter.
+  thumbnail, as described for that parameter. A document sent by HTTP URL is downloaded as
+  `sendPhoto` downloads a photo; as Telegram documents, it must be a PDF or ZIP file, served as
+  `application/pdf` or `application/zip`, of at most 20 MB (20971520 bytes). It is named after
+  the URL's last path segment and keeps no thumbnail.
 parameters:
   - $ref: ../components/parameters/SessionId.yaml
   - $ref: ../components/parameters/BotToken.yaml
@@ -43,7 +46,8 @@ post:
         no file (`Bad Request: there is no document in the request`), the uploaded file is
         empty or, in a session with the `local` upload profile, larger than 2097152000 bytes
         (`Bad Request: file of size <size> bytes is too big; the maximum size is 2097152000
-        bytes`), or the `file_id` identifies no file the bot knows or identifies a photo (`Bad
+        bytes`), the document sent by URL fails as for `sendPhoto`, with its own limits, or the
+        `file_id` identifies no file the bot knows or identifies a photo (`Bad
         Request: can't use file of type Photo as Document`).
       content:
         application/json:

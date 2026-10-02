@@ -22,15 +22,14 @@ import { readInputFileParameter, readThumbnailParameter } from './input_file_par
 import { readDateTimeFormat } from './message_entities_parameter.ts';
 import { buttonSchema } from './reply_markup_parameter.ts';
 import type { BotApiUploadedFiles } from './request_parameters.ts';
+import type { RequestedRichMessageFileTypes } from './web_file_parameter.ts';
 
 /** A rich message as a bot specified it, with the files it names. */
-type SpecifiedRichMessage = Pick<
-  Parameters<EmulationSession['botApi']['sendRichMessage']>[1],
-  'richMessage' | 'detectsEntities'
->;
+type SpecifiedRichMessage =
+  & Pick<Parameters<EmulationSession['botApi']['sendRichMessage']>[1], 'detectsEntities'>
+  & { readonly richMessage: RichMessage<SpecifiedRichMessageFileTypes> };
 
-type SpecifiedRichMessageFileTypes = SpecifiedRichMessage['richMessage'] extends
-  RichMessage<infer Files> ? Files : never;
+type SpecifiedRichMessageFileTypes = RequestedRichMessageFileTypes;
 
 type SpecifiedRichBlock = RichBlock<SpecifiedRichMessageFileTypes>;
 
@@ -79,7 +78,6 @@ const MARKUP_RICH_MESSAGE_UNSUPPORTED_DESCRIPTION =
 const MEDIA_BLOCK_UNSUPPORTED_DESCRIPTION =
   'Bad Request: rich message blocks with an animation, audio, video, or voice note are not ' +
   'supported';
-const FILE_URL_UNSUPPORTED_DESCRIPTION = 'Bad Request: sending files by URL is not supported';
 
 /**
  * The emulator's descriptions for rich messages that break rules the Bot API documents and
@@ -719,17 +717,13 @@ class RichMessageReader {
 
   /**
    * Reads the file of a block's media as the Bot API server's `get_input_media` does: a part named
-   * by `attach://<name>`, or a `file_id`. Telegram downloads a file by URL itself; the emulator
-   * does not.
+   * by `attach://<name>`, a `file_id`, or an HTTP URL, which is downloaded once the message is
+   * read.
    */
   #readMediaFile(media: string) {
     const reading = readInputFileParameter('', media, this.#uploadedFiles);
     if (!reading.read) {
-      throw new RichMessageParameterError(
-        reading.reason === 'file_missing'
-          ? MEDIA_NOT_FOUND_DESCRIPTION
-          : FILE_URL_UNSUPPORTED_DESCRIPTION,
-      );
+      throw new RichMessageParameterError(MEDIA_NOT_FOUND_DESCRIPTION);
     }
     return reading.inputFile;
   }

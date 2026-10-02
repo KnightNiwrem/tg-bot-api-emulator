@@ -104,6 +104,7 @@ export type {
   PromoteChatMemberInput,
   QueueRateLimitResponsesInput,
   RateLimitResponses,
+  RegisterWebResourceInput,
   RemoveChatMemberInput,
   RepliedPrivateMessage,
   RepliedSupergroupMessage,
@@ -146,4 +147,5 @@ export type {
   VirtualBotProfile,
   WaitForBotActivityOptions,
   WebAppInlineKeyboardButton,
+  WebResource,
 } from './types.ts';

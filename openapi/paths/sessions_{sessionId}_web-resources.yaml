@@ -1,0 +1,29 @@
+description: >-
+  The session's emulated web. Telegram downloads the files that bots send by HTTP URL; the
+  emulator downloads them from the resources registered here and never from the network, so a
+  URL without a resource is unreachable (`Bad Request: failed to get HTTP URL content`). A
+  download follows at most 5 redirects and must finish within 10 seconds.
+parameters:
+  - $ref: ../components/parameters/SessionId.yaml
+post:
+  operationId: registerWebResource
+  summary: Register what a URL serves, replacing what it served before
+  requestBody:
+    required: true
+    content:
+      application/json:
+        schema:
+          $ref: ../components/schemas/RegisterWebResourceRequest.yaml
+  responses:
+    '201':
+      description: The resource was registered.
+      content:
+        application/json:
+          schema:
+            $ref: ../components/schemas/WebResource.yaml
+    '400':
+      description: >-
+        The request body is malformed or does not match the schema, or TDLib would not read
+        the URL.
+    '404':
+      description: No active test session has the supplied identifier.

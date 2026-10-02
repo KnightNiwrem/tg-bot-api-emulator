@@ -1,9 +1,13 @@
 import { FileRepository } from '../src/repositories/file.ts';
 import { MediaFileService, type UploadSource } from '../src/services/media_file.ts';
+import { WebFileDownloader, type WebResourceFetcher } from '../src/services/web_file_download.ts';
+import { WebResourceService } from '../src/services/web_resource.ts';
+import { WebResourceRepository } from '../src/repositories/web_resource.ts';
 import {
   MAX_BOT_DOWNLOAD_FILE_BYTES,
   MAX_PHOTO_UPLOAD_BYTES,
   MAX_THUMBNAIL_UPLOAD_BYTES,
+  MAX_WEB_FILE_BYTES,
 } from '../src/types/stored_file.ts';
 import { MAX_BOT_UPLOAD_BYTES, type UploadProfile } from '../src/types/upload_profile.ts';
 
@@ -203,6 +207,92 @@ Deno.test('MediaFileService keeps a usable thumbnail and leaves out others, as T
   }
 });
 
+Deno.test('MediaFileService downloads files sent by URL as Telegram accepts them', async () => {
+  const webResources = new WebResourceService({ webResources: new WebResourceRepository() });
+  const register = (url: string, contentType: string, content: Uint8Array<ArrayBuffer>) =>
+    webResources.registerWebResource({ url, status: 200, contentType, content });
+  const pdfContent = new TextEncoder().encode('%PDF-1.7');
+  register('https://example.com/files/report.pdf?v=2', 'application/pdf', pdfContent);
+  register('https://example.com/chart.gif', 'image/gif', gifImage(64, 32));
+  register('https://example.com/notes.txt', 'text/plain', new TextEncoder().encode('notes'));
+  register('https://example.com/empty.pdf', 'application/pdf', new Uint8Array());
+  register(
+    'https://example.com/large.gif',
+    'image/gif',
+    new Uint8Array(MAX_WEB_FILE_BYTES.photo + 1),
+  );
+  register(
+    'https://example.com/largest.gif',
+    'image/gif',
+    new Uint8Array(MAX_WEB_FILE_BYTES.photo),
+  );
+  webResources.registerWebResource({
+    url: 'https://example.com/latest.pdf',
+    status: 302,
+    location: '/files/report.pdf?v=2',
+    content: new Uint8Array(),
+  });
+  const { mediaFiles } = createMediaFileFixture(
+    'cloud',
+    createWebFileDownloader((request) => webResources.fetchWebResource(request)),
+  );
+  const download = (url: string, fileKind: 'photo' | 'document') =>
+    mediaFiles.downloadWebFile({ url, fileKind });
+
+  const document = await download('https://EXAMPLE.com/files/report.pdf?v=2', 'document');
+  const redirected = await download('https://example.com/latest.pdf', 'document');
+  const photo = await download('https://example.com/chart.gif', 'photo');
+  const largestPhoto = await download('https://example.com/largest.gif', 'photo');
+  if (
+    !document.downloaded || document.webFile.fileName !== 'report.pdf' ||
+    document.webFile.mediaType !== 'application/pdf' ||
+    document.webFile.content.toBase64() !== pdfContent.toBase64() ||
+    !redirected.downloaded || redirected.webFile.fileName !== 'latest.pdf' ||
+    !photo.downloaded || photo.webFile.mediaType !== 'image/gif' ||
+    !largestPhoto.downloaded
+  ) {
+    throw new Error(`Expected the files to be downloaded, received ${JSON.stringify(document)}`);
+  }
+
+  const failures = [
+    await download('https://example.com/chart.gif', 'document'),
+    await download('https://example.com/notes.txt', 'document'),
+    await download('https://example.com/empty.pdf', 'document'),
+    await download('https://example.com/report.pdf', 'photo'),
+    await download('https://example.com/large.gif', 'photo'),
+    await download('https://example.com/missing.pdf', 'document'),
+    await download('ftp://example.com/report.pdf', 'document'),
+  ].map((result) => result.downloaded ? 'downloaded' : JSON.stringify(result));
+  const expectedFailures = [
+    { downloaded: false, reason: 'web_content_type_invalid' },
+    { downloaded: false, reason: 'web_content_type_invalid' },
+    { downloaded: false, reason: 'web_content_type_invalid' },
+    { downloaded: false, reason: 'web_content_unavailable' },
+    { downloaded: false, reason: 'web_content_unavailable' },
+    { downloaded: false, reason: 'web_content_unavailable' },
+    { downloaded: false, reason: 'file_url_invalid', urlError: 'Unsupported URL protocol' },
+  ].map((failure) => JSON.stringify(failure));
+  if (JSON.stringify(failures) !== JSON.stringify(expectedFailures)) {
+    throw new Error(`Expected Telegram's refusals, received ${JSON.stringify(failures, null, 2)}`);
+  }
+});
+
+Deno.test('MediaFileService prepares a downloaded document with the type it was served as', () => {
+  const { mediaFiles } = createMediaFileFixture();
+  const document = mediaFiles.prepareDocumentUpload({
+    content: new Uint8Array([1]),
+    fileName: 'download',
+    mimeType: 'application/zip',
+    source: 'web_download',
+  });
+  if (
+    !document.prepared || document.upload.fileName !== 'download' ||
+    document.upload.mimeType !== 'application/zip'
+  ) {
+    throw new Error(`Expected the served type to be kept, received ${JSON.stringify(document)}`);
+  }
+});
+
 Deno.test('MediaFileService lets bots download a document thumbnail as a file of its own', () => {
   const { files, mediaFiles } = createMediaFileFixture();
   const document = files.addFile({
@@ -308,9 +398,18 @@ Deno.test('MediaFileService refuses downloads of files larger than 20 MB', () =>
   }
 });
 
-function createMediaFileFixture(uploadProfile: UploadProfile = 'cloud') {
+function createMediaFileFixture(
+  uploadProfile: UploadProfile = 'cloud',
+  webFiles: WebFileDownloader = createWebFileDownloader(() => {
+    throw new TypeError('No web resource is registered');
+  }),
+) {
   const files = new FileRepository();
-  return { files, mediaFiles: new MediaFileService({ files, uploadProfile }) };
+  return { files, mediaFiles: new MediaFileService({ files, uploadProfile, webFiles }) };
+}
+
+function createWebFileDownloader(fetchWebResource: WebResourceFetcher): WebFileDownloader {
+  return new WebFileDownloader({ fetchWebResource, timeoutMilliseconds: 1_000, maxRedirects: 5 });
 }
 
 /** The header of a GIF image, which is all the emulator reads of a photo. */

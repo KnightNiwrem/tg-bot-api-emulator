@@ -131,6 +131,8 @@ paths:
     $ref: paths/sessions_{sessionId}_bot-api_bot{token}_sendMessage.yaml
   /sessions/{sessionId}/files/{fileUniqueId}:
     $ref: paths/sessions_{sessionId}_files_{fileUniqueId}.yaml
+  /sessions/{sessionId}/web-resources:
+    $ref: paths/sessions_{sessionId}_web-resources.yaml
   /sessions/{sessionId}/bot-api/bot{token}/sendPhoto:
     $ref: paths/sessions_{sessionId}_bot-api_bot{token}_sendPhoto.yaml
   /sessions/{sessionId}/bot-api/bot{token}/sendDocument:

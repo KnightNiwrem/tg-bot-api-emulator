@@ -11,6 +11,7 @@ import { createBotRoutes } from './bots/mod.ts';
 import { createFileRoutes } from './files/mod.ts';
 import { readJsonRequestBody } from './json_request_body.ts';
 import type { SessionRouteContextTypes } from './session_route_context_types.ts';
+import { createWebResourceRoutes } from './web_resources/mod.ts';
 
 const SESSION_ID_PARAMETER = 'sessionId';
 const SESSION_PATH = `/:${SESSION_ID_PARAMETER}` as const;
@@ -20,6 +21,7 @@ const BOT_COLLECTION_PATH = `${SESSION_PATH}/bots` as const;
 const BOT_API_PATH = `${SESSION_PATH}/bot-api` as const;
 const BOT_ACTIVITY_PATH = `${SESSION_PATH}/bot-activity` as const;
 const FILE_COLLECTION_PATH = `${SESSION_PATH}/files` as const;
+const WEB_RESOURCE_COLLECTION_PATH = `${SESSION_PATH}/web-resources` as const;
 
 const createSessionRequestSchema = z.strictObject({
   upload_profile: z.enum(UPLOAD_PROFILES).default(DEFAULT_UPLOAD_PROFILE),
@@ -87,6 +89,7 @@ export function createSessionRoutes(
   sessionRoutes.route(BOT_API_PATH, createBotApiRoutes());
   sessionRoutes.route(BOT_ACTIVITY_PATH, createBotActivityRoutes());
   sessionRoutes.route(FILE_COLLECTION_PATH, createFileRoutes());
+  sessionRoutes.route(WEB_RESOURCE_COLLECTION_PATH, createWebResourceRoutes());
 
   return sessionRoutes;
 }

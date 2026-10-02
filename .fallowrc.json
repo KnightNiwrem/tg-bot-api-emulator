@@ -22,6 +22,8 @@
           "src/types/message_reply.ts",
           "src/types/stored_file.ts",
           "src/types/upload_profile.ts",
+          "src/types/http_url.ts",
+          "src/types/web_resource.ts",
           "src/types/chat_domain_event.ts",
           "src/types/callback_query.ts",
           "src/types/inline_query.ts",
@@ -169,6 +171,12 @@
         ]
       },
       {
+        "name": "web-resource-repository",
+        "patterns": [
+          "src/repositories/web_resource.ts"
+        ]
+      },
+      {
         "name": "session",
         "patterns": [
           "src/types/emulation_session.ts"
@@ -217,7 +225,9 @@
           "src/services/bot_menu_button.ts",
           "src/services/bot_blocking.ts",
           "src/services/chat_action.ts",
-          "src/services/bot_rate_limit.ts"
+          "src/services/bot_rate_limit.ts",
+          "src/services/web_resource.ts",
+          "src/services/web_file_download.ts"
         ]
       },
       {
@@ -410,6 +420,12 @@
         ]
       },
       {
+        "from": "web-resource-repository",
+        "allow": [
+          "domain"
+        ]
+      },
+      {
         "from": "session",
         "allow": [],
         "allowTypeOnly": [
@@ -535,6 +551,7 @@
           "blocked-user-repository",
           "chat-action-repository",
           "identity-repository",
+          "web-resource-repository",
           "session-repository",
           "bot-api-projection",
           "domain-services",

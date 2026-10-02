@@ -9,6 +9,7 @@ import { MAX_CALLBACK_QUERY_ANSWER_TEXT_LENGTH } from '../../../types/callback_q
 import type { EmulationSession } from '../../../types/emulation_session.ts';
 import type { InlineKeyboard } from '../../../types/inline_keyboard.ts';
 import type { BotMessageReplyMarkup } from '../../../types/reply_interface.ts';
+import type { RichMessage } from '../../../types/rich_message.ts';
 import { MAX_PHOTO_UPLOAD_BYTES, type StoredFile } from '../../../types/stored_file.ts';
 import type { BotUploadTooBigFailure } from '../../../types/upload_profile.ts';
 import { isUserId } from '../../../types/telegram_identity.ts';
@@ -34,11 +35,7 @@ import {
   type UnreadFormattedText,
   type UnreadInputMessageContent,
 } from './inline_query_answer_parameters.ts';
-import {
-  FILE_URL_UNSUPPORTED_DESCRIPTION,
-  readInputFileParameter,
-  readThumbnailParameter,
-} from './input_file_parameter.ts';
+import { readInputFileParameter, readThumbnailParameter } from './input_file_parameter.ts';
 import { readInputMediaParameter } from './input_media_parameter.ts';
 import { linkPreviewOptionsParameter } from './link_preview_options_parameter.ts';
 import {
@@ -46,6 +43,13 @@ import {
   selectSpecifiedReplyTarget,
 } from './reply_parameters_parameter.ts';
 import { readRichMessageParameter } from './rich_message_parameter.ts';
+import {
+  excludeRichMessageWebFiles,
+  type RequestedRichMessageFileTypes,
+  resolveRequestedInputFile,
+  resolveRichMessageWebFiles,
+  type WebFileResolution,
+} from './web_file_parameter.ts';
 import {
   inlineKeyboardMarkupParameter,
   messageReplyMarkupParameter,
@@ -694,16 +698,26 @@ type InlineQueryResultRequest = Parameters<
 /** What an inline query result's `input_message_content` sends, as the service reads it. */
 type InlineResultMessageContentRequest = NonNullable<InlineQueryResultRequest['messageContent']>;
 
-/** A rich message as a bot specified it. */
-type SpecifiedRichMessage = Pick<
+/** A rich message as the service sends it, with every file it names resolved. */
+type SendableRichMessage = Pick<
   Parameters<EmulationSession['botApi']['sendRichMessage']>[1],
   'richMessage' | 'detectsEntities'
 >;
 
-/** New content of a text or rich message, as `editMessageText` specifies it. */
-type TextMessageReplacementRequest = Parameters<
+/** A rich message as a bot specified it, with the files it names by URL not yet downloaded. */
+type SpecifiedRichMessage = Omit<SendableRichMessage, 'richMessage'> & {
+  readonly richMessage: RichMessage<RequestedRichMessageFileTypes>;
+};
+
+/** New content of a text or rich message, as the service edits a message with it. */
+type SendableTextMessageReplacement = Parameters<
   EmulationSession['botApi']['editMessageText']
 >[1]['content'];
+
+/** New content of a text or rich message, as `editMessageText` specifies it. */
+type TextMessageReplacementRequest =
+  | Extract<SendableTextMessageReplacement, { readonly kind: 'text' }>
+  | ({ readonly kind: 'rich_message' } & SpecifiedRichMessage);
 
 /** Why a file a request sends cannot be used: an upload Telegram refuses, or its `file_id`. */
 type FileResolutionFailure =
@@ -1260,11 +1274,11 @@ function handleSendMessage(
   }));
 }
 
-function handleSendRichMessage(
+async function handleSendRichMessage(
   context: BotApiMethodContext,
   parameters: BotApiRequestParameters,
   uploadedFiles: BotApiUploadedFiles,
-): BotApiMethodAnswer {
+): Promise<BotApiMethodAnswer> {
   const invalidParametersDescription = 'Bad Request: invalid sendRichMessage parameters';
   const parsedParameters = sendRichMessageParametersSchema.safeParse(parameters);
   if (!parsedParameters.success) {
@@ -1286,10 +1300,29 @@ function handleSendRichMessage(
     return optionsReading.errorAnswer;
   }
 
+  const richMessageResolution = await resolveSpecifiedRichMessage(
+    context,
+    richMessageReading.richMessage,
+  );
+  if (!richMessageResolution.resolved) {
+    return richMessageResolution.errorAnswer;
+  }
+
   return sendMethodAnswer(context.session.botApi.sendRichMessage(context.bot, {
     ...optionsReading.options,
-    ...richMessageReading.richMessage,
+    ...richMessageResolution.value,
   }));
+}
+
+/** Downloads the files a rich message names by URL, as `resolveRichMessageWebFiles` does. */
+async function resolveSpecifiedRichMessage(
+  context: BotApiMethodContext,
+  { richMessage, detectsEntities }: SpecifiedRichMessage,
+): Promise<WebFileResolution<SendableRichMessage>> {
+  const resolution = await resolveRichMessageWebFiles(context, richMessage);
+  return resolution.resolved
+    ? { resolved: true, value: { richMessage: resolution.value, detectsEntities } }
+    : resolution;
 }
 
 /**
@@ -1331,11 +1364,11 @@ function readSpecifiedRichMessage(
   };
 }
 
-function handleSendPhoto(
+async function handleSendPhoto(
   context: BotApiMethodContext,
   parameters: BotApiRequestParameters,
   uploadedFiles: BotApiUploadedFiles,
-): BotApiMethodAnswer {
+): Promise<BotApiMethodAnswer> {
   const invalidParametersDescription = 'Bad Request: invalid sendPhoto parameters';
   const parsedParameters = sendPhotoParametersSchema.safeParse(parameters);
   if (!parsedParameters.success) {
@@ -1345,7 +1378,7 @@ function handleSendPhoto(
   // Telegram reads the file, then the caption and its formatting, before it looks at the chat.
   const photoReading = readInputFileParameter('photo', data.photo, uploadedFiles);
   if (!photoReading.read) {
-    return inputFileError(photoReading.reason, 'photo');
+    return missingInputFileError('photo');
   }
   const captionReading = readSpecifiedCaption(context, data, invalidParametersDescription);
   if (!captionReading.read) {
@@ -1356,20 +1389,25 @@ function handleSendPhoto(
     return optionsReading.errorAnswer;
   }
 
+  const photoResolution = await resolveRequestedInputFile(context, photoReading.inputFile, 'photo');
+  if (!photoResolution.resolved) {
+    return photoResolution.errorAnswer;
+  }
+
   return sendMethodAnswer(context.session.botApi.sendPhoto(context.bot, {
     ...optionsReading.options,
-    photo: photoReading.inputFile,
+    photo: photoResolution.value,
     caption: captionReading.formattedText,
     hasSpoiler: data.has_spoiler,
     showsCaptionAboveMedia: data.show_caption_above_media,
   }));
 }
 
-function handleSendDocument(
+async function handleSendDocument(
   context: BotApiMethodContext,
   parameters: BotApiRequestParameters,
   uploadedFiles: BotApiUploadedFiles,
-): BotApiMethodAnswer {
+): Promise<BotApiMethodAnswer> {
   const invalidParametersDescription = 'Bad Request: invalid sendDocument parameters';
   const parsedParameters = sendDocumentParametersSchema.safeParse(parameters);
   if (!parsedParameters.success) {
@@ -1379,7 +1417,7 @@ function handleSendDocument(
   // Telegram reads the file, then the caption and its formatting, before it looks at the chat.
   const documentReading = readInputFileParameter('document', data.document, uploadedFiles);
   if (!documentReading.read) {
-    return inputFileError(documentReading.reason, 'document');
+    return missingInputFileError('document');
   }
   const captionReading = readSpecifiedCaption(context, data, invalidParametersDescription);
   if (!captionReading.read) {
@@ -1390,10 +1428,19 @@ function handleSendDocument(
     return optionsReading.errorAnswer;
   }
 
+  const documentResolution = await resolveRequestedInputFile(
+    context,
+    documentReading.inputFile,
+    'document',
+  );
+  if (!documentResolution.resolved) {
+    return documentResolution.errorAnswer;
+  }
+
   const thumbnail = readThumbnailParameter(data, uploadedFiles);
   return sendMethodAnswer(context.session.botApi.sendDocument(context.bot, {
     ...optionsReading.options,
-    document: documentReading.inputFile,
+    document: documentResolution.value,
     ...(thumbnail === undefined ? {} : { thumbnail }),
     caption: captionReading.formattedText,
   }));
@@ -1710,14 +1757,9 @@ function readInlineKeyboardParameter(
   };
 }
 
-/** The error for a file parameter that names no uploaded file or holds a URL. */
-function inputFileError(
-  reason: 'file_missing' | 'url_unsupported',
-  parameterName: 'photo' | 'document',
-): BotApiMethodAnswer {
-  return reason === 'file_missing'
-    ? botApiError(400, `Bad Request: there is no ${parameterName} in the request`)
-    : botApiError(400, FILE_URL_UNSUPPORTED_DESCRIPTION);
+/** The error for a file parameter that names no uploaded file. */
+function missingInputFileError(parameterName: 'photo' | 'document'): BotApiMethodAnswer {
+  return botApiError(400, `Bad Request: there is no ${parameterName} in the request`);
 }
 
 function sendMethodAnswer(result: SendResult | SendFailure): BotApiMethodAnswer {
@@ -1817,11 +1859,11 @@ function fileResolutionFailureAnswer(failure: FileResolutionFailure): BotApiMeth
   }
 }
 
-function handleEditMessageText(
+async function handleEditMessageText(
   context: BotApiMethodContext,
   parameters: BotApiRequestParameters,
   uploadedFiles: BotApiUploadedFiles,
-): BotApiMethodAnswer {
+): Promise<BotApiMethodAnswer> {
   const invalidParametersDescription = 'Bad Request: invalid editMessageText parameters';
   const parsedParameters = editMessageTextParametersSchema.safeParse(parameters);
   if (!parsedParameters.success) {
@@ -1847,12 +1889,31 @@ function handleEditMessageText(
     return keyboardReading.errorAnswer;
   }
 
+  const contentResolution = await resolveTextMessageReplacement(context, contentReading.content);
+  if (!contentResolution.resolved) {
+    return contentResolution.errorAnswer;
+  }
+
   const { target } = targetReading;
   const { botApi } = context.session;
-  const edit = { content: contentReading.content, inlineKeyboard: keyboardReading.inlineKeyboard };
+  const edit = { content: contentResolution.value, inlineKeyboard: keyboardReading.inlineKeyboard };
   return target.kind === 'inline_message'
     ? inlineMessageEditAnswer(botApi.editInlineMessageText(context.bot, { ...target, ...edit }))
     : editMessageAnswer(botApi.editMessageText(context.bot, { ...target, ...edit }));
+}
+
+/** Downloads the files that new rich message content names by URL; text has none. */
+async function resolveTextMessageReplacement(
+  context: BotApiMethodContext,
+  content: TextMessageReplacementRequest,
+): Promise<WebFileResolution<SendableTextMessageReplacement>> {
+  if (content.kind === 'text') {
+    return { resolved: true, value: content };
+  }
+  const resolution = await resolveSpecifiedRichMessage(context, content);
+  return resolution.resolved
+    ? { resolved: true, value: { kind: 'rich_message', ...resolution.value } }
+    : resolution;
 }
 
 /**
@@ -1934,11 +1995,11 @@ function handleEditMessageCaption(
  * does: the `media` parameter is read as `readInputMediaParameter` reads it, with its caption
  * reported as media Telegram cannot read, before the message is looked for.
  */
-function handleEditMessageMedia(
+async function handleEditMessageMedia(
   context: BotApiMethodContext,
   parameters: BotApiRequestParameters,
   uploadedFiles: BotApiUploadedFiles,
-): BotApiMethodAnswer {
+): Promise<BotApiMethodAnswer> {
   const invalidParametersDescription = 'Bad Request: invalid editMessageMedia parameters';
   const parsedParameters = editMessageMediaParametersSchema.safeParse(parameters);
   if (!parsedParameters.success) {
@@ -1971,10 +2032,23 @@ function handleEditMessageMedia(
     return keyboardReading.errorAnswer;
   }
 
+  const { media } = mediaReading;
+  const fileResolution = await resolveRequestedInputFile(
+    context,
+    media.kind === 'photo' ? media.photo : media.document,
+    media.kind,
+  );
+  if (!fileResolution.resolved) {
+    return fileResolution.errorAnswer;
+  }
+
   const { target } = targetReading;
   const { botApi } = context.session;
+  const caption = captionReading.formattedText;
   const edit = {
-    media: { ...mediaReading.media, caption: captionReading.formattedText },
+    media: media.kind === 'photo'
+      ? { ...media, photo: fileResolution.value, caption }
+      : { ...media, document: fileResolution.value, caption },
     inlineKeyboard: keyboardReading.inlineKeyboard,
   };
   return target.kind === 'inline_message'
@@ -3238,16 +3312,24 @@ function readInlineResultMessageContent(
   const buttonReading = context.session.botApi.readRichMessageButtons(
     richMessageReading.richMessage,
   );
-  return buttonReading.read
+  if (!buttonReading.read) {
+    return { read: false, description: badRequestDescription(buttonReading.keyboardError) };
+  }
+  // An inline query result's rich message must reuse files by `file_id`, as for uploads.
+  const richMessage = excludeRichMessageWebFiles(buttonReading.richMessage);
+  return richMessage === undefined
     ? {
+      read: false,
+      description: ANSWER_INLINE_QUERY_FAILURE_DESCRIPTIONS.inline_message_content_invalid,
+    }
+    : {
       read: true,
       content: {
         kind: 'rich_message',
-        richMessage: buttonReading.richMessage,
+        richMessage,
         detectsEntities: richMessageReading.detectsEntities,
       },
-    }
-    : { read: false, description: badRequestDescription(buttonReading.keyboardError) };
+    };
 }
 
 /**

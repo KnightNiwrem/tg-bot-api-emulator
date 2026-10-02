@@ -11,8 +11,9 @@ properties:
   photo:
     type: string
     description: >-
-      The `file_id` of a photo the bot knows, or `attach://<part name>` for a photo uploaded
-      in that part. Without it, the photo is the part named `photo`.
+      The `file_id` of a photo the bot knows, `attach://<part name>` for a photo uploaded in
+      that part, or an HTTP URL to download it from. Without it, the photo is the part named
+      `photo`.
   caption:
     $ref: ./Caption.yaml
   parse_mode:
