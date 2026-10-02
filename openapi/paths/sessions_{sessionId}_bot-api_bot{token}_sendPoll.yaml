@@ -29,6 +29,10 @@ post:
             contentType: application/json
           reply_markup:
             contentType: application/json
+          correct_option_ids:
+            contentType: application/json
+          explanation_entities:
+            contentType: application/json
       multipart/form-data:
         schema:
           $ref: ../components/schemas/SendPollRequest.yaml
@@ -40,6 +44,10 @@ post:
           reply_parameters:
             contentType: application/json
           reply_markup:
+            contentType: application/json
+          correct_option_ids:
+            contentType: application/json
+          explanation_entities:
             contentType: application/json
   responses:
     '200':
@@ -66,11 +74,11 @@ post:
         number (`Bad Request: correct option identifier must be of type Number`) or not a 32-bit
         integer (`Bad Request: invalid correct option identifier specified`); both `open_period`
         and `close_date` are given (`Bad Request: open_period and close_date can't be used
-        together`); `chat_id` is missing (`Bad Request: chat_id is empty`); `open_period` is
-        outside 5–2628000 (`Bad Request: open_period must be from 5 to 2628000 seconds`) or
-        `close_date` is not 5 to 2628000 seconds from now (`Bad Request: close_date must be from
-        5 to 2628000 seconds in the future`); the reply markup, the chat, the reply, and the
-        message effect fail as for `sendMessage`; the question is empty after normalization (`Bad Request: text
+        together`); `chat_id` is missing (`Bad Request: chat_id is empty`); a button of the reply
+        markup cannot be read, as for `sendMessage`; `open_period` is outside 5–2628000 (`Bad
+        Request: open_period must be from 5 to 2628000 seconds`) or `close_date` is not 5 to
+        2628000 seconds from now (`Bad Request: close_date must be from 5 to 2628000 seconds in
+        the future`); the chat, the reply, and the message effect fail as for `sendMessage`; the question is empty after normalization (`Bad Request: text
         must be non-empty`) or longer than 300 characters (`Bad Request: poll question length
         must not exceed 300`); there are no options (`Bad Request: poll must have at least one
         answer option`) or more than 12 (`Bad Request: poll can't have more than 12 options`);

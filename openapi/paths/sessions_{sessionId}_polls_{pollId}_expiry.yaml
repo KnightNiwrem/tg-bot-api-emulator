@@ -6,7 +6,7 @@ parameters:
   - $ref: ../components/parameters/PollId.yaml
 post:
   operationId: expirePoll
-  summary: Close a poll as its closing time arriving does
+  summary: Close a poll as the arrival of its closing time does
   description: >-
     Closes the poll, which keeps its votes and accepts no more answers, through every message
     showing it. The bot that sent the poll receives a `poll` update with the closed poll, as
