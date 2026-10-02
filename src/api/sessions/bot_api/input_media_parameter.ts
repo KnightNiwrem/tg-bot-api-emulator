@@ -44,7 +44,7 @@ const INPUT_MEDIA_ERROR_PREFIX = "Bad Request: can't parse InputMedia: ";
 
 /**
  * Media types the official server reads but the emulator lacks. In albums, Telegram sends live
- * photos and videos among photos, and audio among audio, while it refuses animations.
+ * photos and videos among photos, and audio only with other audio, while it refuses animations.
  */
 const UNSUPPORTED_MEDIA_TYPES: ReadonlySet<string> = new Set([
   'animation',

@@ -8077,9 +8077,11 @@ Deno.test('sendMediaGroup sends photos and documents and names each kind it refu
     }, files);
     if (status === 200) {
       const messages = (body as { result: Record<string, unknown>[] }).result;
-      return messages.map((message) => 'photo' in message ? 'photo' : 'document').join(',');
+      return messages.map((message) =>
+        'photo' in message ? 'photo' : 'document' in message ? 'document' : 'unexpected'
+      ).join(',');
     }
-    return isBadRequestResponse(body) ? body.description : status;
+    return status === 400 && isBadRequestResponse(body) ? body.description : status;
   };
 
   const outcomes = [];
@@ -8109,7 +8111,7 @@ Deno.test('sendMediaGroup sends photos and documents and names each kind it refu
   ];
   if (
     JSON.stringify(outcomes) !== JSON.stringify(expectedOutcomes) ||
-    !isBadRequestResponse(replacement.body) ||
+    replacement.status !== 400 || !isBadRequestResponse(replacement.body) ||
     replacement.body.description !== 'Bad Request: InputMedia of type "animation" is not supported'
   ) {
     throw new Error(
