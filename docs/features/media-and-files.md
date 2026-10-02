@@ -82,6 +82,21 @@ upload, a `file_id`, or a [URL](#files-sent-by-url). Accounts send albums with
 `sendMediaGroup`, uploading each file as they upload a single photo or document. Each item has its
 own caption.
 
+The emulator's albums hold photos or documents. Telegram also sends videos, live photos and audio in
+albums, which are [missing](#additional-media-types-and-methods) and refused by name, while it
+refuses other media itself, as the official server's [`get_input_media`][input-media-album] reads it
+for an album:
+
+| `InputMedia` type     | Telegram's albums                   | Emulator                                                                                             |
+| --------------------- | ----------------------------------- | ---------------------------------------------------------------------------------------------------- |
+| `photo`               | With photos, live photos and videos | With photos                                                                                          |
+| `document`            | With documents only                 | With documents only                                                                                  |
+| `video`, `live_photo` | With photos, live photos and videos | `Bad Request: InputMedia of type "<type>" is not supported`                                          |
+| `audio`               | With audio only                     | `Bad Request: InputMedia of type "audio" is not supported`                                           |
+| `animation`           | Refused                             | `Bad Request: can't parse InputMedia: type "animation" can't be used in sendMediaGroup`, as upstream |
+| `voice_note`          | Refused                             | `Bad Request: can't parse InputMedia: type "voice_note" is not allowed`, as upstream                 |
+| Any other type        | Refused                             | `Bad Request: can't parse InputMedia: type "<type>" is unsupported`, as upstream                     |
+
 An album is a sequence of ordinary messages that share a `media_group_id`, which is the decimal text
 of a positive 64-bit identifier and new for each album. The messages are stored in order, and each
 reaches the chat's bots as a separate update, as it would alone; in a supergroup, a bot in privacy
@@ -297,6 +312,7 @@ photos or only documents.
 [error-rewriting]: https://github.com/tdlib/telegram-bot-api/blob/e3e9dd8e5b3d7ab8537cd5a10dc31d5ffa8f82d1/telegram-bot-api/Client.cpp#L73-L206
 [local-mode]: https://github.com/tdlib/telegram-bot-api/blob/e3e9dd8e5b3d7ab8537cd5a10dc31d5ffa8f82d1/README.md#usage
 [send-media-group]: https://github.com/tdlib/telegram-bot-api/blob/e3e9dd8e5b3d7ab8537cd5a10dc31d5ffa8f82d1/telegram-bot-api/Client.cpp#L14505-L14565
+[input-media-album]: https://github.com/tdlib/telegram-bot-api/blob/e3e9dd8e5b3d7ab8537cd5a10dc31d5ffa8f82d1/telegram-bot-api/Client.cpp#L12815-L12865
 [album-failure]: https://github.com/tdlib/telegram-bot-api/blob/e3e9dd8e5b3d7ab8537cd5a10dc31d5ffa8f82d1/telegram-bot-api/Client.cpp#L13684-L13715
 [album-checks]: https://github.com/tdlib/td/blob/bc9c263e2bfee06aaab41e82db51a103376030bc/td/telegram/MessageContent.cpp#L5378-L5406
 [send-message-group]: https://github.com/tdlib/td/blob/bc9c263e2bfee06aaab41e82db51a103376030bc/td/telegram/MessagesManager.cpp#L21891-L21978

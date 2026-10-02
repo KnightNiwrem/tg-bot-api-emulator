@@ -42,7 +42,9 @@ post:
         it, checking in this order: `media` is missing (`Bad Request: parameter "media" is
         required`), is not JSON (`Bad Request: can't parse media JSON object`), or is not an
         array (`Bad Request: expected an Array of InputMedia`); an item cannot be read, as
-        `InputMedia` describes, and Telegram's `animation` is refused as for `editMessageMedia`;
+        `InputMedia` describes, which in an album also refuses an `animation` as Telegram does
+        (`Bad Request: can't parse InputMedia: type "animation" can't be used in
+        sendMediaGroup`);
         `chat_id` is missing (`Bad Request: chat_id is empty`); a file sent by URL cannot be
         downloaded, as for `sendPhoto`, which fails with Telegram's error for the item's
         position (`Bad Request: failed to send message #<position> with the error message

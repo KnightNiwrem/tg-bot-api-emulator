@@ -8061,6 +8061,65 @@ Deno.test("sendMediaGroup reuses files only by the bot's own file_id or a URL", 
   }
 });
 
+Deno.test('sendMediaGroup sends photos and documents and names each kind it refuses', async () => {
+  const { api, botApiPath, createdAccount, sendText } = await createPrivateConversationFixture();
+  await sendText('/start');
+  const chatId = String(createdAccount.account.id);
+  const files = {
+    image: new File([gifImage(4, 3)], 'image.gif'),
+    notes: new File(['notes'], 'notes.txt'),
+  };
+  const sendAlbumOf = async (type: string) => {
+    const media = type === 'document' ? 'attach://notes' : 'attach://image';
+    const { status, body } = await callBotApiWithFiles(api, `${botApiPath}/sendMediaGroup`, {
+      chat_id: chatId,
+      media: JSON.stringify([{ type, media }, { type, media }]),
+    }, files);
+    if (status === 200) {
+      const messages = (body as { result: Record<string, unknown>[] }).result;
+      return messages.map((message) => 'photo' in message ? 'photo' : 'document').join(',');
+    }
+    return isBadRequestResponse(body) ? body.description : status;
+  };
+
+  const outcomes = [];
+  for (
+    const type of ['photo', 'document', 'video', 'live_photo', 'audio', 'animation', 'voice_note']
+  ) {
+    outcomes.push([type, await sendAlbumOf(type)]);
+  }
+  const replacement = await callBotApi(api, `${botApiPath}/editMessageMedia`, {
+    chat_id: chatId,
+    message_id: 1,
+    media: { type: 'animation', media: 'attach://image' },
+  });
+  const expectedOutcomes = [
+    ['photo', 'photo,photo'],
+    ['document', 'document,document'],
+    // Telegram sends these in albums; the emulator lacks them.
+    ['video', 'Bad Request: InputMedia of type "video" is not supported'],
+    ['live_photo', 'Bad Request: InputMedia of type "live_photo" is not supported'],
+    ['audio', 'Bad Request: InputMedia of type "audio" is not supported'],
+    // Telegram refuses these in albums itself.
+    [
+      'animation',
+      'Bad Request: can\'t parse InputMedia: type "animation" can\'t be used in sendMediaGroup',
+    ],
+    ['voice_note', 'Bad Request: can\'t parse InputMedia: type "voice_note" is not allowed'],
+  ];
+  if (
+    JSON.stringify(outcomes) !== JSON.stringify(expectedOutcomes) ||
+    !isBadRequestResponse(replacement.body) ||
+    replacement.body.description !== 'Bad Request: InputMedia of type "animation" is not supported'
+  ) {
+    throw new Error(
+      `Expected each album kind's outcome, received ${
+        JSON.stringify({ outcomes, replacement: replacement.body }, null, 2)
+      }`,
+    );
+  }
+});
+
 Deno.test('a cloud session answers bot uploads over 50 MB with 413 and keeps no trace', async () => {
   const { api, sessionPath, botApiPath, createdBot, createdAccount, sendText } =
     await createPrivateConversationFixture();

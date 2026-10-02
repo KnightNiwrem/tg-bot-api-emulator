@@ -4,11 +4,12 @@ description: >-
   of a file of that type the bot knows, or `attach://<part name>` for a file uploaded in that part
   (`Bad Request: can't parse InputMedia: media not found` when no part has that name), or an HTTP
   or HTTPS URL, which is downloaded the same way as for `sendPhoto` and `sendDocument`. Telegram's
-  `animation`, `audio`, `live_photo`, and `video` media are not supported (`Bad Request:
-  InputMedia of type "…" is not supported`), and other types are refused as Telegram refuses them
-  (`Bad Request: can't parse InputMedia: type "…" is unsupported`). The caption is formatted and
-  normalized as by `sendPhoto`; a caption Telegram cannot read fails with its description prefixed
-  by `Bad Request: can't parse InputMedia: `.
+  `audio`, `live_photo`, and `video` media are not supported (`Bad Request: InputMedia of type "…"
+  is not supported`), nor is its `animation` outside an album, and other types are refused as
+  Telegram refuses them (`Bad Request: can't parse InputMedia: type "…" is unsupported`, `type
+  "voice_note" is not allowed`, or, in an album, `type "animation" can't be used in
+  sendMediaGroup`). The caption is formatted and normalized as by `sendPhoto`; a caption Telegram
+  cannot read fails with its description prefixed by `Bad Request: can't parse InputMedia: `.
 oneOf:
   - type: object
     additionalProperties: false
