@@ -1139,7 +1139,10 @@ Deno.test('TypeScript client votes in polls of private chats and supergroups', a
   const quizMessage = (await account.getMessages({ chat: privateChat })).find(({ message_id }) =>
     message_id === quizMessageId
   );
-  const pollId = quizMessage?.poll?.id ?? '';
+  const pollId = quizMessage?.poll?.id;
+  if (pollId === undefined) {
+    throw new Error('Expected the quiz message to show the poll');
+  }
   const expired = await session.expirePoll(pollId);
   if (
     quizMessage?.poll?.open_period !== 60 || quizMessage.poll.correct_option_id !== 0 ||

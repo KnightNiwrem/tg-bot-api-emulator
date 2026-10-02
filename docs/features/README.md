@@ -30,7 +30,7 @@ thresholds, which tests replace with
 | [Messages](messages.md)                               | Sending, replies, edits, deletion, blocking, forwarding and copying        |
 | [Text formatting](text-formatting.md)                 | Parse modes, entities, normalization and limits                            |
 | [Rich messages](rich-messages.md)                     | Blocks, rich text, buttons, media and edits of rich messages               |
-| [Polls](polls.md)                                     | Polls, quizzes, account votes, stopping, closing times and poll updates    |
+| [Polls](polls.md)                                     | Polls, quizzes, votes, stopping, closing times, updates, forwards, copies  |
 | [Keyboards and callbacks](keyboards-and-callbacks.md) | Inline buttons, reply interfaces and callback answers                      |
 | [Media and files](media-and-files.md)                 | Photos, documents, videos, voice notes, albums, file IDs and downloads     |
 | [Inline mode](inline-mode.md)                         | Queries, results, feedback and inline message editing                      |
