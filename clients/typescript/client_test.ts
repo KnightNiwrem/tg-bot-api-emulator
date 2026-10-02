@@ -1101,7 +1101,10 @@ Deno.test('TypeScript client votes in polls of private chats and supergroups', a
   }
   await account.retractPollAnswer({ chat: privateChat, message_id: privatePollId });
   const retracted = await account.getPollAnswer({ chat: privateChat, message_id: privatePollId });
-  if (retracted.poll_answer.option_ids.length !== 0 || retracted.message.poll?.total_voter_count) {
+  if (
+    retracted.poll_answer.option_ids.length !== 0 ||
+    retracted.message.poll?.total_voter_count !== 0
+  ) {
     throw new Error('Expected the client to retract the vote');
   }
 

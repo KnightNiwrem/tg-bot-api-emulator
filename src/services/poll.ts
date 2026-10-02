@@ -171,8 +171,9 @@ export class PollService {
 
   /**
    * Replaces an account's answer to the poll a message shows, after the poll's checks, which
-   * `checkPollAnswer` makes; no options retract the answer. An answer that chooses the options the
-   * account already chose leaves the poll as it is.
+   * `checkPollAnswer` makes; no options retract the answer. In a poll that allows revoting, an
+   * answer that chooses the options the account already chose leaves the poll as it is; a poll
+   * that disallows revoting refuses any answer from an account that has answered.
    */
   setAccountPollAnswer(input: SetAccountPollAnswerInput): SetAccountPollAnswerResult {
     const resolution = this.#resolvePollMessage(input);

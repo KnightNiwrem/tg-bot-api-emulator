@@ -116,7 +116,7 @@ try {
   // Vote in the latest poll the bot sent, if any. The answer comes back with the poll's message
   // as it is now, whose options show their voter counts.
   const pollMessage = (await account.getMessages({ chat: { type: 'private', botId: bot.id } }))
-    .findLast(({ poll }) => poll !== undefined);
+    .findLast(({ poll, from }) => poll !== undefined && from.id === bot.id);
   if (pollMessage !== undefined) {
     const { poll_answer, message } = await account.answerPoll({
       chat: { type: 'private', botId: bot.id },

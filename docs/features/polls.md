@@ -62,14 +62,14 @@ apart from `DELETE`, with the message showing the poll and its counts.
 
 As `setPollAnswer` does, repeated positions count once, and the poll's checks run in its order:
 
-| Answer                                                      | Result    |
-| ----------------------------------------------------------- | --------- |
-| Any answer to a closed poll                                 | `409`     |
-| Several options of a poll without multiple answers          | `400`     |
-| Retraction from a poll that disallows revoting              | `409`     |
-| A position the poll lacks                                   | `400`     |
-| A new answer from a voter of a poll that disallows revoting | `409`     |
-| The options the account already chose                       | No change |
+| Answer                                                           | Result    |
+| ---------------------------------------------------------------- | --------- |
+| Any answer to a closed poll                                      | `409`     |
+| Several options of a poll without multiple answers               | `400`     |
+| Retraction from a poll that disallows revoting                   | `409`     |
+| A position the poll lacks                                        | `400`     |
+| A new answer from a voter of a poll that disallows revoting      | `409`     |
+| The options the account already chose, where revoting is allowed | No change |
 
 A poll that disallows revoting refuses a retraction even from an account without an answer, as TDLib
 checks it before looking at the account's answer. A message without a poll, or one the account
