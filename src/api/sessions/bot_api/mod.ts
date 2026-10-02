@@ -342,6 +342,14 @@ const MEMBER_IS_ADMINISTRATOR_DESCRIPTION = 'Bad Request: user is an administrat
 /** Telegram caps how long a client may cache a callback query answer at 30 days. */
 const MAX_CALLBACK_QUERY_ANSWER_CACHE_TIME_SECONDS = 30 * 24 * 60 * 60;
 
+/**
+ * An integer parameter that the official Bot API server clamps to a range, as its
+ * `get_integer_arg` does.
+ */
+function clampedIntegerParameter(min: number, max: number) {
+  return integerParameter(z.int().transform((value) => Math.min(Math.max(value, min), max)));
+}
+
 const getMeParametersSchema = z.strictObject({});
 
 const deleteWebhookParametersSchema = z.strictObject({
@@ -352,10 +360,9 @@ const setWebhookParametersSchema = z.strictObject({
   url: z.string().default(''),
   certificate: z.string().optional(),
   ip_address: z.string().default(''),
-  max_connections: integerParameter(
-    z.int().transform((maxConnections) =>
-      Math.min(Math.max(maxConnections, MIN_WEBHOOK_MAX_CONNECTIONS), MAX_WEBHOOK_MAX_CONNECTIONS)
-    ),
+  max_connections: clampedIntegerParameter(
+    MIN_WEBHOOK_MAX_CONNECTIONS,
+    MAX_WEBHOOK_MAX_CONNECTIONS,
   ).default(DEFAULT_WEBHOOK_MAX_CONNECTIONS),
   // As for getUpdates, a malformed value is rejected rather than ignored.
   allowed_updates: jsonParameter(z.array(z.string())).optional(),
@@ -438,15 +445,6 @@ const sendDocumentParametersSchema = z.strictObject({
   disable_content_type_detection: booleanParameter().optional(),
 });
 
-/**
- * An integer parameter that the official Bot API server clamps to a range, as its
- * `get_integer_arg` does; a missing one is 0.
- */
-function clampedIntegerParameter(min: number, max: number) {
-  return integerParameter(z.int().transform((value) => Math.min(Math.max(value, min), max)))
-    .default(0);
-}
-
 // The emulator never inspects or transcodes a video, so `supports_streaming`, which TDLib passes to
 // Telegram's servers but the Bot API never shows, is validated and ignored. A cover is not
 // supported.
@@ -454,12 +452,12 @@ const sendVideoParametersSchema = z.strictObject({
   ...sendOptionsParametersShape,
   ...replyMarkupParametersShape,
   video: z.string().optional(),
-  duration: clampedIntegerParameter(0, MAX_MEDIA_DURATION_SECONDS),
-  width: clampedIntegerParameter(0, MAX_VIDEO_SIDE_LENGTH),
-  height: clampedIntegerParameter(0, MAX_VIDEO_SIDE_LENGTH),
+  duration: clampedIntegerParameter(0, MAX_MEDIA_DURATION_SECONDS).default(0),
+  width: clampedIntegerParameter(0, MAX_VIDEO_SIDE_LENGTH).default(0),
+  height: clampedIntegerParameter(0, MAX_VIDEO_SIDE_LENGTH).default(0),
   thumbnail: z.string().optional(),
   thumb: z.string().optional(),
-  start_timestamp: clampedIntegerParameter(0, MAX_MEDIA_DURATION_SECONDS),
+  start_timestamp: clampedIntegerParameter(0, MAX_MEDIA_DURATION_SECONDS).default(0),
   ...captionParametersShape,
   show_caption_above_media: booleanParameter().default(false),
   has_spoiler: booleanParameter().default(false),
