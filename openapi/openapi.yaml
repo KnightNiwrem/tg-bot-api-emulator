@@ -63,6 +63,8 @@ paths:
     $ref: paths/sessions_{sessionId}_accounts_{accountId}.yaml
   /sessions/{sessionId}/accounts/{accountId}/messages:
     $ref: paths/sessions_{sessionId}_accounts_{accountId}_messages.yaml
+  /sessions/{sessionId}/accounts/{accountId}/media-groups:
+    $ref: paths/sessions_{sessionId}_accounts_{accountId}_media-groups.yaml
   /sessions/{sessionId}/accounts/{accountId}/conversations/private/{botId}/messages:
     $ref: paths/sessions_{sessionId}_accounts_{accountId}_conversations_private_{botId}_messages.yaml
   /sessions/{sessionId}/accounts/{accountId}/conversations/private/{botId}/messages/{messageId}:
@@ -137,6 +139,8 @@ paths:
     $ref: paths/sessions_{sessionId}_bot-api_bot{token}_sendPhoto.yaml
   /sessions/{sessionId}/bot-api/bot{token}/sendDocument:
     $ref: paths/sessions_{sessionId}_bot-api_bot{token}_sendDocument.yaml
+  /sessions/{sessionId}/bot-api/bot{token}/sendMediaGroup:
+    $ref: paths/sessions_{sessionId}_bot-api_bot{token}_sendMediaGroup.yaml
   /sessions/{sessionId}/bot-api/bot{token}/sendRichMessage:
     $ref: paths/sessions_{sessionId}_bot-api_bot{token}_sendRichMessage.yaml
   /sessions/{sessionId}/bot-api/bot{token}/forwardMessage:

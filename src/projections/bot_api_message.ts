@@ -201,6 +201,7 @@ function projectMessageBody<Content extends BotApiSupergroupMessageContent, Repl
       ? {}
       : { external_reply: projectExternalReply(message.externalReply, externalReply, message) }),
     ...(message.quote === undefined ? {} : { quote: projectTextQuote(message.quote, context) }),
+    ...(message.mediaGroupId === undefined ? {} : { media_group_id: message.mediaGroupId }),
     ...content,
     ...(message.inlineKeyboard === undefined
       ? {}

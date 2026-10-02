@@ -743,6 +743,74 @@ Deno.test('TypeScript client sends, edits, and downloads photos and documents', 
   throw new Error('Expected content that is not an image to be refused as a photo');
 });
 
+Deno.test('TypeScript client sends albums to private chats and supergroups', async () => {
+  const publicOrigin = 'http://emulator.example:9000';
+  const api = createEmulationApi({
+    sessionLifecycle: createSessionLifecycleService(),
+    publicOrigin,
+  });
+  const client = new TelegramEmulationClient(publicOrigin, {
+    fetch: createInProcessFetch(api.fetch),
+  });
+  const session = await client.createSession();
+  const { bot } = await session.createBot({ first_name: 'Test Bot', username: 'test_bot' });
+  const { account } = await session.createAccount({ first_name: 'Ada' });
+  const image = new Uint8Array([0x47, 0x49, 0x46, 0x38, 0x39, 0x61, 2, 0, 1, 0, 0, 0, 0]);
+
+  const greeting = await account.sendMessage({
+    to: { type: 'private', botId: bot.id },
+    text: 'Hi',
+  });
+  const privateAlbum = await account.sendMediaGroup({
+    to: { type: 'private', botId: bot.id },
+    media: [
+      {
+        photo: image,
+        caption: 'Front',
+        caption_entities: [{ type: 'bold', offset: 0, length: 5 }],
+      },
+      { photo: image },
+    ],
+    reply_to_message_id: greeting.message_id,
+  });
+  const [front, back] = privateAlbum;
+  if (
+    privateAlbum.length !== 2 || front.media_group_id === undefined ||
+    back.media_group_id !== front.media_group_id || !('photo' in front) || !('photo' in back) ||
+    front.caption !== 'Front' || back.caption !== undefined ||
+    JSON.stringify(front.caption_entities) !==
+      JSON.stringify([{ type: 'bold', offset: 0, length: 5 }]) ||
+    back.reply_to_message?.message_id !== greeting.message_id
+  ) {
+    throw new Error(`Expected the private album, received ${JSON.stringify(privateAlbum)}`);
+  }
+
+  const supergroup = await account.createSupergroup({ title: 'Team' });
+  const supergroupAlbum = await account.sendMediaGroup({
+    to: { type: 'supergroup', chatId: supergroup.id },
+    media: [
+      { document: new TextEncoder().encode('plan'), file_name: 'plan.txt' },
+      { document: new TextEncoder().encode('notes'), file_name: 'notes.txt', caption: 'Notes' },
+    ],
+  });
+  const history = await account.getMessages({
+    chat: { type: 'supergroup', chatId: supergroup.id },
+  });
+  const [plan, notes] = supergroupAlbum;
+  if (
+    supergroupAlbum.length !== 2 || plan.chat.id !== supergroup.id ||
+    plan.media_group_id === undefined || notes.media_group_id !== plan.media_group_id ||
+    plan.media_group_id === front.media_group_id ||
+    plan.document?.file_name !== 'plan.txt' || notes.document?.file_name !== 'notes.txt' ||
+    plan.caption !== undefined ||
+    notes.caption !== 'Notes' ||
+    JSON.stringify(history.slice(-2)) !== JSON.stringify(supergroupAlbum)
+  ) {
+    throw new Error(`Expected the supergroup album, received ${JSON.stringify(supergroupAlbum)}`);
+  }
+  await session.end();
+});
+
 Deno.test('TypeScript client reads rich messages and presses their buttons', async () => {
   const publicOrigin = 'http://emulator.example:9000';
   const api = createEmulationApi({

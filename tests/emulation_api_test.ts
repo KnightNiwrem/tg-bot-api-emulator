@@ -7372,6 +7372,350 @@ Deno.test('sendPhoto and sendDocument upload files, reuse file IDs, and follow T
   }
 });
 
+Deno.test('an account and a bot exchange albums whose messages arrive in order', async () => {
+  const { api, sessionPath, botApiPath, createdBot, createdAccount } =
+    await createPrivateConversationFixture();
+  const chat = { type: 'private', botId: createdBot.bot.id };
+  const accountPath = `${sessionPath}/accounts/${createdAccount.account.id}`;
+
+  const accountAlbumResponse = await api.request(
+    `${accountPath}/media-groups`,
+    jsonRequest('POST', {
+      to: chat,
+      media: [
+        { photo: { content_base64: gifImage(640, 480).toBase64() }, caption: 'Front' },
+        { photo: { content_base64: gifImage(480, 640).toBase64() }, caption: 'Back' },
+      ],
+    }),
+  );
+  const accountAlbum = (await accountAlbumResponse.json()).messages as Record<string, unknown>[];
+  const updates = updateMessages((await callBotApi(api, `${botApiPath}/getUpdates`, {})).body);
+  const [front, back] = updates;
+  if (
+    accountAlbumResponse.status !== 201 || accountAlbum.length !== 2 || updates.length !== 2 ||
+    typeof front.media_group_id !== 'string' || back.media_group_id !== front.media_group_id ||
+    JSON.stringify(updates.map((message) => [message.message_id, message.caption])) !==
+      JSON.stringify([[1, 'Front'], [2, 'Back']]) ||
+    JSON.stringify(accountAlbum) !== JSON.stringify(updates)
+  ) {
+    throw new Error(
+      `Expected the bot to receive the album in order, received ${JSON.stringify(updates)}`,
+    );
+  }
+
+  const reply = await callBotApiWithFiles(api, `${botApiPath}/sendMediaGroup`, {
+    chat_id: String(createdAccount.account.id),
+    reply_parameters: JSON.stringify({ message_id: back.message_id }),
+    media: JSON.stringify([
+      {
+        type: 'document',
+        media: 'attach://summary',
+        caption: '*Summary*',
+        parse_mode: 'MarkdownV2',
+      },
+      { type: 'document', media: 'attach://details' },
+    ]),
+  }, {
+    summary: new File(['summary'], 'summary.txt'),
+    details: new File(['details'], 'details.csv'),
+  });
+  const replyMessages = (reply.body as { result?: Record<string, unknown>[] }).result ?? [];
+  const [summary, details] = replyMessages;
+  if (
+    reply.status !== 200 || replyMessages.length !== 2 ||
+    JSON.stringify(Object.keys(summary)) !== JSON.stringify([
+        'message_id',
+        'from',
+        'chat',
+        'date',
+        'reply_to_message',
+        'media_group_id',
+        'document',
+        'caption',
+        'caption_entities',
+      ]) ||
+    summary.message_id !== 3 || details.message_id !== 4 ||
+    typeof summary.media_group_id !== 'string' ||
+    summary.media_group_id === front.media_group_id ||
+    details.media_group_id !== summary.media_group_id ||
+    replyMessages.some((message) =>
+      (message.reply_to_message as Record<string, unknown>).message_id !== back.message_id
+    ) ||
+    summary.caption !== 'Summary' || 'caption' in details
+  ) {
+    throw new Error(`Expected the bot's album as a reply, received ${JSON.stringify(reply.body)}`);
+  }
+  const botUpdates = await callBotApi(api, `${botApiPath}/getUpdates`, { offset: 3 });
+  if (updateMessages(botUpdates.body).length !== 0) {
+    throw new Error('Expected the bot to receive no update for its own album');
+  }
+
+  const historyResponse = await api.request(
+    `${accountPath}/conversations/private/${createdBot.bot.id}/messages`,
+  );
+  const history = (await historyResponse.json()).messages as Record<string, unknown>[];
+  const downloads = await Promise.all(
+    history.slice(2).map(async (message) => {
+      const { file_unique_id } = message.document as { file_unique_id: string };
+      const download = await api.request(`${sessionPath}/files/${file_unique_id}`);
+      return new TextDecoder().decode(await download.arrayBuffer());
+    }),
+  );
+  if (
+    JSON.stringify(history.map((message) => [message.message_id, message.media_group_id])) !==
+      JSON.stringify([
+        [1, front.media_group_id],
+        [2, front.media_group_id],
+        [3, summary.media_group_id],
+        [4, summary.media_group_id],
+      ]) ||
+    JSON.stringify(downloads) !== JSON.stringify(['summary', 'details'])
+  ) {
+    throw new Error(
+      `Expected the history to hold both albums, received ${JSON.stringify(history)}`,
+    );
+  }
+});
+
+Deno.test('sendMediaGroup follows Telegram checks and sends nothing it refuses', async () => {
+  const { api, sessionPath, botApiPath, createdBot, createdAccount, sendText } =
+    await createPrivateConversationFixture();
+  await sendText('/start');
+  const chatId = String(createdAccount.account.id);
+  const uploadedPhoto = await callBotApiWithFiles(api, `${botApiPath}/sendPhoto`, {
+    chat_id: chatId,
+  }, { photo: new File([gifImage(4, 3)], 'photo.gif') });
+  const photoFileId = photoSizeOf(botApiResult(uploadedPhoto.body))?.file_id;
+  const uploadedDocument = await callBotApiWithFiles(api, `${botApiPath}/sendDocument`, {
+    chat_id: chatId,
+  }, { document: new File(['notes'], 'notes.txt') });
+  const documentFileId = (botApiResult(uploadedDocument.body)?.document as
+    | { file_id: string }
+    | undefined)?.file_id;
+  if (photoFileId === undefined || documentFileId === undefined) {
+    throw new Error('Expected a photo and a document to reuse');
+  }
+  const photo = { type: 'photo', media: photoFileId };
+  const document = { type: 'document', media: documentFileId };
+  const image = new File([gifImage(4, 3)], 'image.gif');
+  const historyPath =
+    `${sessionPath}/accounts/${chatId}/conversations/private/${createdBot.bot.id}/messages`;
+  const historyBefore = await (await api.request(historyPath)).text();
+
+  const failures: { parameters: Record<string, string>; files: Record<string, File> }[] = [
+    { parameters: { chat_id: chatId }, files: {} },
+    { parameters: { chat_id: chatId, media: '[' }, files: {} },
+    { parameters: { chat_id: chatId, media: '{}' }, files: {} },
+    { parameters: { chat_id: chatId, media: '[]' }, files: {} },
+    { parameters: { chat_id: chatId, media: 'null' }, files: {} },
+    { parameters: { chat_id: chatId, media: JSON.stringify(Array(11).fill(photo)) }, files: {} },
+    { parameters: { chat_id: chatId, media: JSON.stringify([photo, document]) }, files: {} },
+    {
+      parameters: {
+        chat_id: chatId,
+        media: JSON.stringify([photo, { ...photo, show_caption_above_media: true }]),
+      },
+      files: {},
+    },
+    {
+      parameters: {
+        chat_id: chatId,
+        media: JSON.stringify([photo, { type: 'photo', media: 'attach://missing' }]),
+      },
+      files: {},
+    },
+    {
+      parameters: {
+        chat_id: chatId,
+        media: JSON.stringify([photo, { type: 'video', media: 'x' }]),
+      },
+      files: {},
+    },
+    {
+      parameters: {
+        chat_id: chatId,
+        media: JSON.stringify([photo, { ...photo, caption: '*bold', parse_mode: 'MarkdownV2' }]),
+      },
+      files: {},
+    },
+    {
+      parameters: {
+        chat_id: chatId,
+        media: JSON.stringify([photo, { ...photo, caption: 'x'.repeat(1_025) }]),
+      },
+      files: {},
+    },
+    {
+      parameters: {
+        chat_id: chatId,
+        media: JSON.stringify([photo, { type: 'photo', media: 'attach://text' }]),
+      },
+      files: { text: new File(['not an image'], 'text.gif') },
+    },
+    // TDLib reads a file_id before Telegram's servers refuse an earlier upload.
+    {
+      parameters: {
+        chat_id: chatId,
+        media: JSON.stringify([{ type: 'photo', media: 'attach://text' }, {
+          type: 'photo',
+          media: 'AgACAgIAAxkBAAIBdGZ',
+        }]),
+      },
+      files: { text: new File(['not an image'], 'text.gif') },
+    },
+    {
+      parameters: {
+        chat_id: chatId,
+        media: JSON.stringify([photo, { type: 'photo', media: 'attach://empty' }]),
+      },
+      files: { empty: new File([], 'empty.gif') },
+    },
+    {
+      parameters: {
+        chat_id: chatId,
+        media: JSON.stringify([photo, { type: 'photo', media: 'https://example.com/a.gif' }]),
+      },
+      files: {},
+    },
+    {
+      parameters: {
+        chat_id: chatId,
+        media: JSON.stringify([photo, { type: 'photo', media: 'attach://image' }]),
+        reply_markup: JSON.stringify({ inline_keyboard: [] }),
+      },
+      files: { image },
+    },
+    {
+      parameters: {
+        chat_id: chatId,
+        media: JSON.stringify([photo, { type: 'photo', media: 'attach://image' }]),
+        reply_parameters: JSON.stringify({ message_id: 999 }),
+      },
+      files: { image },
+    },
+    {
+      parameters: { media: JSON.stringify([photo, { type: 'photo', media: 'attach://image' }]) },
+      files: { image },
+    },
+  ];
+  const descriptions = [];
+  for (const { parameters, files } of failures) {
+    const { status, body } = await callBotApiWithFiles(
+      api,
+      `${botApiPath}/sendMediaGroup`,
+      parameters,
+      files,
+    );
+    descriptions.push(status === 400 && isBadRequestResponse(body) ? body.description : status);
+  }
+  const expectedDescriptions = [
+    'Bad Request: parameter "media" is required',
+    "Bad Request: can't parse media JSON object",
+    'Bad Request: expected an Array of InputMedia',
+    'Bad Request: there are no messages to send',
+    'Bad Request: there are no messages to send',
+    'Bad Request: too many messages to send as an album',
+    "Bad Request: document can't be mixed with other media types",
+    'Bad Request: parameter show_caption_above_media must be the same for all messages',
+    "Bad Request: can't parse InputMedia: media not found",
+    'Bad Request: InputMedia of type "video" is not supported',
+    "Bad Request: can't parse InputMedia: Can't parse entities: Can't find end of Bold entity at byte offset 0",
+    'Bad Request: message caption is too long',
+    'Bad Request: failed to send message #2 with the error message "IMAGE_PROCESS_FAILED"',
+    'Bad Request: wrong file identifier/HTTP URL specified',
+    'Bad Request: file must be non-empty',
+    'Bad Request: failed to send message #2 with the error message "WEBPAGE_CURL_FAILED"',
+    'Bad Request: invalid sendMediaGroup parameters',
+    'Bad Request: message to be replied not found',
+    'Bad Request: chat_id is empty',
+  ];
+  if (JSON.stringify(descriptions) !== JSON.stringify(expectedDescriptions)) {
+    throw new Error(
+      `Expected Telegram's errors, received ${JSON.stringify(descriptions, null, 2)}`,
+    );
+  }
+  if ((await (await api.request(historyPath)).text()) !== historyBefore) {
+    throw new Error('Expected refused albums to leave the history as it was');
+  }
+
+  const single = await callBotApi(api, `${botApiPath}/sendMediaGroup`, {
+    chat_id: chatId,
+    media: [document],
+  });
+  const singleMessages = (single.body as { result?: Record<string, unknown>[] }).result;
+  if (
+    single.status !== 200 || singleMessages?.length !== 1 || 'media_group_id' in singleMessages[0]
+  ) {
+    throw new Error(`Expected one message outside any album, received ${JSON.stringify(single)}`);
+  }
+});
+
+Deno.test('albums reach supergroup bots as their messages would alone', async () => {
+  const { api, sessionPath, owner, bot, readerBot, supergroup, supergroupPath } =
+    await createSupergroupFixture();
+  const readUpdates = createUpdateReader(api);
+  const botApiPath = `${sessionPath}/bot-api/bot${bot.token}`;
+  const readerBotApiPath = `${sessionPath}/bot-api/bot${readerBot.token}`;
+  await readUpdates(botApiPath);
+  await readUpdates(readerBotApiPath);
+
+  const albumResponse = await api.request(
+    `${sessionPath}/accounts/${owner.id}/media-groups`,
+    jsonRequest('POST', {
+      to: { type: 'supergroup', chatId: supergroup.id },
+      media: [
+        { document: { content_base64: 'cGxhbg==', file_name: 'plan.txt' }, caption: '/start' },
+        { document: { content_base64: 'bm90ZXM=', file_name: 'notes.txt' }, caption: 'Notes' },
+      ],
+    }),
+  );
+  const album = (await albumResponse.json()).messages as Record<string, unknown>[];
+  const botMessages = (await readUpdates(botApiPath)).map((update) => update.message) as Record<
+    string,
+    unknown
+  >[];
+  const readerMessages = (await readUpdates(readerBotApiPath)).map((update) =>
+    update.message
+  ) as Record<string, unknown>[];
+  if (
+    albumResponse.status !== 201 || album.length !== 2 ||
+    album[1].media_group_id !== album[0].media_group_id ||
+    JSON.stringify(botMessages.map((message) => message.caption)) !== JSON.stringify(['/start']) ||
+    JSON.stringify(
+        readerMessages.map((message) => [message.message_id, message.media_group_id]),
+      ) !==
+      JSON.stringify(album.map((message) => [message.message_id, message.media_group_id]))
+  ) {
+    throw new Error(
+      `Expected a bot in privacy mode to receive only the command, received ${
+        JSON.stringify({ botMessages, readerMessages })
+      }`,
+    );
+  }
+
+  // Each bot reuses the files by the file_id it received them under.
+  const botAlbum = await callBotApi(api, `${readerBotApiPath}/sendMediaGroup`, {
+    chat_id: supergroup.id,
+    media: readerMessages.map((message) => ({
+      type: 'document',
+      media: (message.document as { file_id: string }).file_id,
+    })),
+    protect_content: true,
+  });
+  const botAlbumMessages = (botAlbum.body as { result?: Record<string, unknown>[] }).result ?? [];
+  const history = (await (await api.request(`${supergroupPath(owner.id)}/messages`)).json())
+    .messages as Record<string, unknown>[];
+  if (
+    botAlbum.status !== 200 || botAlbumMessages.length !== 2 ||
+    botAlbumMessages.some((message) => message.has_protected_content !== true) ||
+    JSON.stringify(history.slice(-2).map((message) => message.media_group_id)) !==
+      JSON.stringify(botAlbumMessages.map((message) => message.media_group_id)) ||
+    (await readUpdates(botApiPath)).length !== 0
+  ) {
+    throw new Error(`Expected the bot's album in the history, received ${JSON.stringify(history)}`);
+  }
+});
+
 Deno.test('a cloud session answers bot uploads over 50 MB with 413 and keeps no trace', async () => {
   const { api, sessionPath, botApiPath, createdBot, createdAccount, sendText } =
     await createPrivateConversationFixture();

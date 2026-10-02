@@ -504,6 +504,11 @@ const messageReplyInfoShape = {
   }).optional(),
 };
 
+/** The album a message belongs to, which follows its reply and precedes its content. */
+const messageAlbumInfoShape = {
+  media_group_id: z.string().regex(/^[1-9]\d*$/).optional(),
+};
+
 const messageTrailerShape = {
   reply_markup: inlineKeyboardMarkupSchema.optional(),
   via_bot: messageSenderBotSchema.optional(),
@@ -551,7 +556,11 @@ function serviceMessageSchemas<Header extends z.ZodRawShape>(header: Header) {
 
 // A reply, which shows no reply of its own, comes between a message's header and content, as does
 // a reply to another chat or a quote, which a replied message still shows.
-const privateMessageHeader = { ...messageHeaderShape(privateChatSchema), ...messageReplyInfoShape };
+const privateMessageHeader = {
+  ...messageHeaderShape(privateChatSchema),
+  ...messageReplyInfoShape,
+  ...messageAlbumInfoShape,
+};
 
 const privateMessageSchema: z.ZodType<PrivateMessage> = z.union(contentMessageSchemas({
   ...privateMessageHeader,
@@ -561,6 +570,7 @@ const privateMessageSchema: z.ZodType<PrivateMessage> = z.union(contentMessageSc
 const supergroupMessageHeader = {
   ...messageHeaderShape(supergroupChatSchema),
   ...messageReplyInfoShape,
+  ...messageAlbumInfoShape,
 };
 
 /** Supergroup messages, which service messages about changes of the supergroup are among. */
@@ -583,6 +593,14 @@ export const messageHistoryResponseSchema = z.strictObject({
 
 export const sentSupergroupMessageResponseSchema = z.strictObject({
   message: supergroupMessageSchema,
+});
+
+export const sentMediaGroupResponseSchema = z.strictObject({
+  messages: z.array(privateMessageSchema),
+});
+
+export const sentSupergroupMediaGroupResponseSchema = z.strictObject({
+  messages: z.array(supergroupMessageSchema),
 });
 
 export const supergroupMessageHistoryResponseSchema = z.strictObject({

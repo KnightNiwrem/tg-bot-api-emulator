@@ -18,12 +18,13 @@ import {
   PrivateMessagingService,
   type SendBotMessageResult,
 } from '../src/services/private_messaging.ts';
+import type { MediaContent } from '../src/services/message_content.ts';
 import { VirtualUserService } from '../src/services/virtual_user.ts';
 import type { BotApiMessage, BotApiUpdate } from '../src/types/bot_api.ts';
 import type { ChatDomainEvent } from '../src/types/chat_domain_event.ts';
 import type { InlineKeyboard } from '../src/types/inline_keyboard.ts';
 import type { BotMessageReplyMarkup, ReplyInterfaceMarkup } from '../src/types/reply_interface.ts';
-import type { FileUpload, PhotoUpload } from '../src/types/stored_file.ts';
+import type { DocumentUpload, FileUpload, PhotoUpload } from '../src/types/stored_file.ts';
 import {
   getContentText,
   MAX_CAPTION_LENGTH,
@@ -1406,6 +1407,176 @@ Deno.test('PrivateMessagingService limits captions and stores no upload of a ref
   });
   if (unknownChatPhoto.sent || storedUploads.length !== 1) {
     throw new Error('Expected only the accepted photo to be stored');
+  }
+});
+
+Deno.test('PrivateMessagingService sends albums as ordered messages that share an album', () => {
+  const { virtualUsers, messages, messageBoxes, botUpdates, privateMessaging } =
+    createPrivateMessagingFixture();
+  const account = createAccount(virtualUsers, 'Ada');
+  const bot = createBot(virtualUsers, 'Test Bot', 'test_bot');
+
+  const accountAlbum = privateMessaging.sendAccountAlbum({
+    fromAccountId: account.profile.id,
+    to: { type: 'private', botId: bot.profile.id },
+    contents: [
+      { kind: 'media', upload: photoUpload(), caption: 'First' },
+      { kind: 'media', upload: photoUpload(), caption: '  /second  ' },
+    ],
+  });
+  if (!accountAlbum.sent) {
+    throw new Error(`Expected the account's album to be sent, received ${accountAlbum.reason}`);
+  }
+  const [firstPhoto, secondPhoto] = accountAlbum.messages;
+  const updates = botUpdates.confirmAndReadPendingUpdates(bot.profile.id, { limit: 100 })
+    .map(messageFromUpdate);
+  if (
+    accountAlbum.messages.length !== 2 || firstPhoto.mediaGroupId === undefined ||
+    secondPhoto.mediaGroupId !== firstPhoto.mediaGroupId ||
+    getContentText(secondPhoto.content).text !== '/second' ||
+    JSON.stringify(updates.map((update) => update?.message_id)) !==
+      JSON.stringify([1, 2]) ||
+    updates.some((update) => update?.media_group_id !== firstPhoto.mediaGroupId)
+  ) {
+    throw new Error(
+      `Expected the bot to receive the album in order, received ${JSON.stringify(updates)}`,
+    );
+  }
+
+  const document = (fileName: string): MediaContent => ({
+    kind: 'document',
+    document: {
+      kind: 'upload',
+      upload: {
+        type: 'document',
+        content: new Uint8Array([1]),
+        fileName,
+        mimeType: 'text/plain',
+      },
+    },
+    caption: '',
+  });
+  const botAlbum = privateMessaging.sendBotAlbum({
+    fromBotId: bot.profile.id,
+    to: { type: 'private', accountId: account.profile.id },
+    contents: [document('a.txt'), document('b.txt')],
+    replyTo: {
+      botMessageId: expectBotMessageId(messageBoxes, bot, secondPhoto.id),
+      allowSendingWithoutReply: false,
+    },
+    isSilent: true,
+    messageEffectId: '5104841245755180586',
+  });
+  const singleAlbum = privateMessaging.sendBotAlbum({
+    fromBotId: bot.profile.id,
+    to: { type: 'private', accountId: account.profile.id },
+    contents: [document('c.txt')],
+  });
+  if (!botAlbum.sent || !singleAlbum.sent) {
+    throw new Error('Expected both bot albums to be sent');
+  }
+  const [firstDocument, secondDocument] = botAlbum.messages;
+  if (
+    firstDocument.mediaGroupId === undefined ||
+    firstDocument.mediaGroupId === firstPhoto.mediaGroupId ||
+    secondDocument.mediaGroupId !== firstDocument.mediaGroupId ||
+    botAlbum.messages.some((message) =>
+      message.replyToMessageId !== secondPhoto.id || !message.isSilent ||
+      message.messageEffectId !== '5104841245755180586'
+    ) ||
+    singleAlbum.messages.length !== 1 || 'mediaGroupId' in singleAlbum.messages[0]
+  ) {
+    throw new Error('Expected a new album replying alike, and a single message outside albums');
+  }
+  if (
+    JSON.stringify(
+      messages.getPrivateConversationMessages({
+        accountId: account.profile.id,
+        botId: bot.profile.id,
+      }).map((message) => message.id),
+    ) !==
+      JSON.stringify([...accountAlbum.messages, ...botAlbum.messages, ...singleAlbum.messages]
+        .map((message) => message.id))
+  ) {
+    throw new Error('Expected the history to hold the albums in order');
+  }
+});
+
+Deno.test('PrivateMessagingService checks every message of an album before storing any', () => {
+  const { virtualUsers, messages, storedUploads, publishedEvents, blockedUsers, privateMessaging } =
+    createPrivateMessagingFixture();
+  const account = createAccount(virtualUsers, 'Ada');
+  const bot = createBot(virtualUsers, 'Test Bot', 'test_bot');
+  sendPrivateText(privateMessaging, account.profile.id, bot);
+  const photo = (caption: string, showsCaptionAboveMedia = false): MediaContent => ({
+    kind: 'photo',
+    photo: { kind: 'upload', upload: photoUpload() },
+    caption,
+    hasSpoiler: false,
+    showsCaptionAboveMedia,
+  });
+  const documentUpload: DocumentUpload = {
+    type: 'document',
+    content: new Uint8Array([1]),
+    fileName: 'a.txt',
+    mimeType: 'text/plain',
+  };
+  const document: MediaContent = {
+    kind: 'document',
+    document: { kind: 'upload', upload: documentUpload },
+    caption: '',
+  };
+  const sendBotAlbum = (contents: readonly MediaContent[]) =>
+    privateMessaging.sendBotAlbum({
+      fromBotId: bot.profile.id,
+      to: { type: 'private', accountId: account.profile.id },
+      contents,
+    });
+  const storedState = () => ({
+    uploads: storedUploads.length,
+    events: publishedEvents.length,
+    history: messages.getPrivateConversationMessages({
+      accountId: account.profile.id,
+      botId: bot.profile.id,
+    }).length,
+  });
+  const stateBefore = storedState();
+
+  const failures = [
+    sendBotAlbum([photo('Fits'), photo('x'.repeat(MAX_CAPTION_LENGTH + 1))]),
+    sendBotAlbum([]),
+    sendBotAlbum(Array.from({ length: 11 }, () => photo(''))),
+    sendBotAlbum([photo('', true), photo('')]),
+    sendBotAlbum([photo(''), document]),
+    privateMessaging.sendAccountAlbum({
+      fromAccountId: account.profile.id,
+      to: { type: 'private', botId: bot.profile.id },
+      contents: [
+        { kind: 'media', upload: photoUpload(), caption: '' },
+        { kind: 'media', upload: documentUpload, caption: '' },
+      ],
+    }),
+  ].map((result) => result.sent ? 'sent' : result.reason);
+  blockedUsers.block(account.profile.id, bot.profile.id);
+  failures.push(
+    ...[sendBotAlbum([photo(''), photo('')])].map((result) => result.sent ? 'sent' : result.reason),
+  );
+  if (
+    JSON.stringify(failures) !==
+      JSON.stringify([
+        'caption_too_long',
+        'album_empty',
+        'album_too_large',
+        'album_caption_placement_mixed',
+        'album_documents_mixed',
+        'album_documents_mixed',
+        'bot_blocked',
+      ])
+  ) {
+    throw new Error(`Expected each album to be refused, received ${JSON.stringify(failures)}`);
+  }
+  if (JSON.stringify(storedState()) !== JSON.stringify(stateBefore)) {
+    throw new Error('Expected refused albums to store no message, upload, or event');
   }
 });
 

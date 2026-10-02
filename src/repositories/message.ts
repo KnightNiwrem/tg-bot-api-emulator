@@ -6,6 +6,7 @@ import type {
   ChatMessage,
   ExternalReply,
   InlineMessageId,
+  MediaGroupId,
   MessageContent,
   MessageForwardInfo,
   PrivateMessage,
@@ -19,6 +20,9 @@ import type {
 /** Telegram's inline message identifiers encode 24 bytes of TL data as base64url. */
 const INLINE_MESSAGE_ID_BYTE_COUNT = 24;
 
+/** Media group identifiers are positive signed 64-bit integers. */
+const MAX_MEDIA_GROUP_ID = (1n << 63n) - 1n;
+
 export interface AddPrivateMessageInput {
   readonly conversation: PrivateConversationKey;
   readonly authorRole: PrivateConversationRole;
@@ -30,6 +34,8 @@ export interface AddPrivateMessageInput {
   readonly externalReply?: ExternalReply;
   /** Omitted for a reply without a quote, or no reply. */
   readonly quote?: TextQuote;
+  /** The album the message belongs to, from `createMediaGroupId`; omitted outside albums. */
+  readonly mediaGroupId?: MediaGroupId;
   readonly inlineKeyboard?: InlineKeyboard;
   readonly replyInterfaceMarkup?: ReplyInterfaceMarkup;
   /**
@@ -58,6 +64,8 @@ export interface AddSupergroupMessageInput {
   readonly externalReply?: ExternalReply;
   /** As `AddPrivateMessageInput` describes it. */
   readonly quote?: TextQuote;
+  /** As `AddPrivateMessageInput` describes it. */
+  readonly mediaGroupId?: MediaGroupId;
   readonly inlineKeyboard?: InlineKeyboard;
   readonly replyInterfaceMarkup?: ReplyInterfaceMarkup;
   /** As `AddPrivateMessageInput` describes it. */
@@ -78,8 +86,9 @@ export interface MessageEdit {
 }
 
 /**
- * Stores canonical messages under opaque identities, independent of Telegram message IDs, and finds
- * messages sent through a bot's inline mode by their inline message identifiers.
+ * Stores canonical messages under opaque identities, independent of Telegram message IDs, finds
+ * messages sent through a bot's inline mode by their inline message identifiers, and issues the
+ * identifiers of albums.
  */
 export class MessageRepository {
   readonly #privateMessagesById = new Map<CanonicalMessageId, PrivateMessage>();
@@ -87,6 +96,21 @@ export class MessageRepository {
   readonly #supergroupMessagesById = new Map<CanonicalMessageId, SupergroupMessage>();
   readonly #supergroupMessageIdsByChatId = new Map<number, CanonicalMessageId[]>();
   readonly #messageIdsByInlineMessageId = new Map<InlineMessageId, CanonicalMessageId>();
+  readonly #issuedMediaGroupIds = new Set<MediaGroupId>();
+
+  /**
+   * Issues a new album identifier, which no album of the session had before, for the messages of
+   * an album to be stored with.
+   */
+  createMediaGroupId(): MediaGroupId {
+    let mediaGroupId: MediaGroupId;
+    do {
+      const [randomBits] = crypto.getRandomValues(new BigUint64Array(1));
+      mediaGroupId = String(randomBits & MAX_MEDIA_GROUP_ID);
+    } while (mediaGroupId === '0' || this.#issuedMediaGroupIds.has(mediaGroupId));
+    this.#issuedMediaGroupIds.add(mediaGroupId);
+    return mediaGroupId;
+  }
 
   addPrivateMessage(input: AddPrivateMessageInput): PrivateMessage {
     const message: PrivateMessage = {
@@ -98,6 +122,7 @@ export class MessageRepository {
       content: copyContent(input.content),
       ...(input.replyToMessageId === undefined ? {} : { replyToMessageId: input.replyToMessageId }),
       ...copyReply(input),
+      ...(input.mediaGroupId === undefined ? {} : { mediaGroupId: input.mediaGroupId }),
       ...(input.inlineKeyboard === undefined
         ? {}
         : { inlineKeyboard: copyInlineKeyboard(input.inlineKeyboard) }),
@@ -145,6 +170,7 @@ export class MessageRepository {
       authorRole,
       sentAtUnixSeconds,
       replyToMessageId,
+      mediaGroupId,
       viaBot,
       forwardInfo,
       replyInterfaceMarkup,
@@ -161,6 +187,7 @@ export class MessageRepository {
       content: copyContent(edit.content),
       ...(replyToMessageId === undefined ? {} : { replyToMessageId }),
       ...copyReply(storedMessage),
+      ...(mediaGroupId === undefined ? {} : { mediaGroupId }),
       ...(edit.inlineKeyboard === undefined
         ? {}
         : { inlineKeyboard: copyInlineKeyboard(edit.inlineKeyboard) }),
@@ -221,6 +248,7 @@ export class MessageRepository {
       content: copyContent(input.content),
       ...(input.replyToMessageId === undefined ? {} : { replyToMessageId: input.replyToMessageId }),
       ...copyReply(input),
+      ...(input.mediaGroupId === undefined ? {} : { mediaGroupId: input.mediaGroupId }),
       ...(input.inlineKeyboard === undefined
         ? {}
         : { inlineKeyboard: copyInlineKeyboard(input.inlineKeyboard) }),
@@ -263,6 +291,7 @@ export class MessageRepository {
       author,
       sentAtUnixSeconds,
       replyToMessageId,
+      mediaGroupId,
       viaBot,
       forwardInfo,
       replyInterfaceMarkup,
@@ -278,6 +307,7 @@ export class MessageRepository {
       content: copyContent(edit.content),
       ...(replyToMessageId === undefined ? {} : { replyToMessageId }),
       ...copyReply(storedMessage),
+      ...(mediaGroupId === undefined ? {} : { mediaGroupId }),
       ...(edit.inlineKeyboard === undefined
         ? {}
         : { inlineKeyboard: copyInlineKeyboard(edit.inlineKeyboard) }),

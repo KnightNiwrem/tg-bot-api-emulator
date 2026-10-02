@@ -5,11 +5,13 @@
 
 ## Sending, replying and inspecting history
 
-Accounts and bots exchange text, photos and documents in private chats and supergroups, and bots
-also send [rich messages](rich-messages.md). A private conversation must first be started by the
-account before the bot can send to it. `sendMessage`, `sendRichMessage`, `sendPhoto` and
-`sendDocument` accept `protect_content` and supported [reply markup](keyboards-and-callbacks.md).
-Bot messages appear in account history; bots receive no updates for their own sends or edits.
+Accounts and bots exchange text, photos, documents and [albums](media-and-files.md#albums) of photos
+or documents in private chats and supergroups, and bots also send [rich messages](rich-messages.md).
+A private conversation must first be started by the account before the bot can send to it.
+`sendMessage`, `sendRichMessage`, `sendPhoto` and `sendDocument` accept `protect_content` and
+supported [reply markup](keyboards-and-callbacks.md); `sendMediaGroup` accepts `protect_content` and
+no reply markup. Bot messages appear in account history; bots receive no updates for their own sends
+or edits.
 
 Both sides can reply to a message in the same chat. Bots use `reply_parameters` or the legacy
 `reply_to_message_id` and `allow_sending_without_reply` parameters. `reply_parameters` takes
@@ -18,8 +20,9 @@ precedence, and a missing/non-positive message ID means no reply. If a target is
 without recursively nesting the replied message's own reply.
 
 Bots can add a message effect with `message_effect_id` to `sendMessage`, `sendPhoto`,
-`sendDocument`, `forwardMessage` and `copyMessage`. The message then reports it as `effect_id`,
-including in account history. `0` means no effect. As in TDLib's
+`sendDocument`, `sendMediaGroup`, `forwardMessage` and `copyMessage`, which gives it to every
+message of an album, as TDLib's `send_message_group` does. The message then reports it as
+`effect_id`, including in account history. `0` means no effect. As in TDLib's
 [`MessageSendOptions::get_message_send_options`][effect-rules], effects are refused in supergroups,
 and `forwardMessages` or `copyMessages` accept one only when a single message is found. Telegram's
 servers decide which effect identifiers exist; that check is not in the open-source code, and the
@@ -71,8 +74,8 @@ pagination or deleted entries; it is a test inspection API, not a Telegram histo
 Tests read the notifications an account's client shows through `account.getNotifications` for a
 private chat or a supergroup. Every message another participant sent to the chat notifies, in order,
 and the account's own messages do not. `disable_notification` on `sendMessage`, `sendPhoto`,
-`sendDocument`, `forwardMessage(s)` and `copyMessage(s)` makes the notification silent. The official
-server passes the option to TDLib's send options. As TDLib's
+`sendDocument`, `sendMediaGroup`, `forwardMessage(s)` and `copyMessage(s)` makes the notification
+silent. The official server passes the option to TDLib's send options. As TDLib's
 [`Message::disable_notification`][silent-message] carries it to the recipient, the notification
 reports it as `is_silent`, as TDLib's [`notification`][notification-object] object does. Bot API
 messages do not show it.
@@ -178,7 +181,7 @@ chats. Telegram's servers supply the shown name; the emulator uses the account's
 name, joined as TDLib's `get_user_title` joins them. The official server serializes the origin in
 [`JsonMessageOrigin`][json-origin].
 
-Other origins are users. Channel and chat origins, video start timestamps and media albums are
+Other origins are users. Channel and chat origins, video start timestamps and forwarded albums are
 [real gaps](#real-gaps).
 
 ## Intentional deviations
@@ -212,7 +215,10 @@ Other origins are users. Channel and chat origins, video start timestamps and me
   the missing channels and anonymous administrators.
 - **Video start timestamps.** Forwarding and copying cannot specify a video start timestamp. This
   option is missing along with video message support.
-- **Additional content and albums.** Media albums and the other message kinds listed in the
+- **Forwarded and copied albums.** `forwardMessages` and `copyMessages` send each message of an
+  album outside any album. TDLib's [`get_forwarded_messages`][forwarded-albums] gives the repeated
+  messages of an album a new album of their own; tests need forwarded albums to stay together.
+- **Additional content.** The other message kinds listed in the
   [feature inventory](README.md#unimplemented-areas) are not implemented.
 
 ## Local evidence
@@ -248,6 +254,7 @@ Other origins are users. Channel and chat origins, video start timestamps and me
 [copy-forward-info]: https://github.com/tdlib/td/blob/bc9c263e2bfee06aaab41e82db51a103376030bc/td/telegram/MessageForwardInfo.cpp#L182-L192
 [json-origin]: https://github.com/tdlib/telegram-bot-api/blob/e3e9dd8e5b3d7ab8537cd5a10dc31d5ffa8f82d1/telegram-bot-api/Client.cpp#L2140-L2185
 [forward-messages]: https://github.com/tdlib/td/blob/bc9c263e2bfee06aaab41e82db51a103376030bc/td/telegram/MessagesManager.cpp#L24816-L24965
+[forwarded-albums]: https://github.com/tdlib/td/blob/bc9c263e2bfee06aaab41e82db51a103376030bc/td/telegram/MessagesManager.cpp#L24612-L24814
 [forward-buttons]: https://github.com/tdlib/td/blob/bc9c263e2bfee06aaab41e82db51a103376030bc/td/telegram/InlineKeyboardButton.cpp#L42-L81
 [effect-rules]: https://github.com/tdlib/td/blob/bc9c263e2bfee06aaab41e82db51a103376030bc/td/telegram/MessageSendOptions.cpp#L161-L170
 [message-effects]: https://github.com/tdlib/telegram-bot-api/blob/e3e9dd8e5b3d7ab8537cd5a10dc31d5ffa8f82d1/telegram-bot-api/Client.cpp#L17343-L17375

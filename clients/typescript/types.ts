@@ -193,6 +193,40 @@ export interface AccountSendDocumentInput<Target extends MessageTarget = Message
   readonly reply_to_message_id?: number;
 }
 
+/** A photo or document of an album an account sends, with an optional caption. */
+export type AccountMediaGroupItem =
+  | {
+    /** As `AccountSendPhotoInput` describes it. */
+    readonly photo: Uint8Array;
+    readonly document?: never;
+    readonly file_name?: never;
+    /** Omitted or empty for no caption. */
+    readonly caption?: string;
+    /** Formatting of the caption; entity types Telegram detects by itself are ignored. */
+    readonly caption_entities?: readonly MessageEntityInput[];
+  }
+  | {
+    readonly photo?: never;
+    readonly document: Uint8Array;
+    /** The file name, whose extension decides the document's MIME type. */
+    readonly file_name: string;
+    /** Omitted or empty for no caption. */
+    readonly caption?: string;
+    /** Formatting of the caption; entity types Telegram detects by itself are ignored. */
+    readonly caption_entities?: readonly MessageEntityInput[];
+  };
+
+export interface AccountSendMediaGroupInput<Target extends MessageTarget = MessageTarget> {
+  readonly to: Target;
+  /**
+   * The album's photos or documents, in the order the chat shows them: at most 10, and documents
+   * only among documents. A single item is sent as a message outside any album.
+   */
+  readonly media: readonly AccountMediaGroupItem[];
+  /** The ID of the chat's message that every message of the album replies to. */
+  readonly reply_to_message_id?: number;
+}
+
 export interface AccountForwardMessageInput<Target extends MessageTarget = MessageTarget> {
   /** The chat of the message to forward. */
   readonly from: MessageTarget;
@@ -924,6 +958,12 @@ interface MessageReplyInfo {
   readonly quote?: TextQuote;
 }
 
+/** The album a message belongs to, which follows its reply and precedes its content. */
+interface MessageAlbumInfo {
+  /** The identifier the messages of an album share; present only for a message of an album. */
+  readonly media_group_id?: string;
+}
+
 /** The fields that precede a message's reply and content. */
 interface MessageHeader<Chat> {
   readonly message_id: number;
@@ -958,6 +998,7 @@ interface MessageTrailer {
 export type RepliedPrivateMessage =
   & MessageHeader<PrivateChat>
   & MessageReplyInfo
+  & MessageAlbumInfo
   & MessageContent
   & MessageTrailer;
 
@@ -972,6 +1013,7 @@ export type PrivateMessage =
     readonly reply_to_message?: RepliedPrivateMessage;
   }
   & MessageReplyInfo
+  & MessageAlbumInfo
   & MessageContent
   & MessageTrailer;
 
@@ -979,6 +1021,7 @@ export type PrivateMessage =
 export type RepliedSupergroupMessage =
   & MessageHeader<SupergroupChat>
   & MessageReplyInfo
+  & MessageAlbumInfo
   & SupergroupMessageContent
   & MessageTrailer;
 
@@ -995,6 +1038,7 @@ export type SupergroupMessage =
     readonly reply_to_message?: RepliedSupergroupMessage;
   }
   & MessageReplyInfo
+  & MessageAlbumInfo
   & SupergroupMessageContent
   & MessageTrailer;
 
@@ -1256,6 +1300,14 @@ export interface VirtualAccountClient extends VirtualAccountProfile {
   sendDocument<Target extends MessageTarget>(
     input: AccountSendDocumentInput<Target>,
   ): Promise<MessageIn<Target>>;
+  /**
+   * Sends photos or documents as an album, as `sendPhoto` and `sendDocument` send one, and returns
+   * the album's messages in order, which share a `media_group_id`. The chat's bots receive each
+   * message as a separate update, in the album's order.
+   */
+  sendMediaGroup<Target extends MessageTarget>(
+    input: AccountSendMediaGroupInput<Target>,
+  ): Promise<readonly MessageIn<Target>[]>;
   /**
    * Forwards a message of one of this account's chats to a chat it can write to, as the account's
    * message, which shows who first sent it. The chat's bots receive it as `sendMessage` describes.

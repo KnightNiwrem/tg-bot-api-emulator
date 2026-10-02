@@ -46,6 +46,7 @@ import type { SessionRouteContextTypes } from '../session_route_context_types.ts
 const ACCOUNT_ID_PARAMETER = 'accountId';
 const BOT_ID_PARAMETER = 'botId';
 const ACCOUNT_MESSAGE_COLLECTION_PATH = `/:${ACCOUNT_ID_PARAMETER}/messages` as const;
+const ACCOUNT_MEDIA_GROUP_COLLECTION_PATH = `/:${ACCOUNT_ID_PARAMETER}/media-groups` as const;
 const PRIVATE_CONVERSATION_PATH =
   `/:${ACCOUNT_ID_PARAMETER}/conversations/private/:${BOT_ID_PARAMETER}` as const;
 const PRIVATE_MESSAGE_HISTORY_PATH = `${PRIVATE_CONVERSATION_PATH}/messages` as const;
@@ -172,6 +173,23 @@ const messageTextSchema = z.string().min(1).refine(
   { message: `Text must have at most ${MAX_TEXT_MESSAGE_LENGTH} characters` },
 );
 
+/** A photo the account uploads, with an optional caption. */
+const accountPhotoShape = {
+  photo: z.strictObject({ content_base64: base64ContentSchema }),
+  caption: captionSchema,
+  caption_entities: messageEntitiesSchema,
+};
+
+/** A document the account uploads under a file name, with an optional caption. */
+const accountDocumentShape = {
+  document: z.strictObject({
+    content_base64: base64ContentSchema,
+    file_name: z.string().min(1),
+  }),
+  caption: captionSchema,
+  caption_entities: messageEntitiesSchema,
+};
+
 /**
  * A text message, a photo, or a document, each with an optional caption; or a forward of a message
  * of one of the account's chats, which, as in Telegram's clients, replies to none.
@@ -190,22 +208,21 @@ const sendMessageRequestSchema = z.union([
     text: messageTextSchema,
     entities: messageEntitiesSchema,
   }),
-  z.strictObject({
-    ...sentMessageTargetShape,
-    photo: z.strictObject({ content_base64: base64ContentSchema }),
-    caption: captionSchema,
-    caption_entities: messageEntitiesSchema,
-  }),
-  z.strictObject({
-    ...sentMessageTargetShape,
-    document: z.strictObject({
-      content_base64: base64ContentSchema,
-      file_name: z.string().min(1),
-    }),
-    caption: captionSchema,
-    caption_entities: messageEntitiesSchema,
-  }),
+  z.strictObject({ ...sentMessageTargetShape, ...accountPhotoShape }),
+  z.strictObject({ ...sentMessageTargetShape, ...accountDocumentShape }),
 ]);
+
+/**
+ * The photos or documents of an album, in the order the chat shows them, each with an optional
+ * caption. Whether they can form an album is checked as Telegram checks it.
+ */
+const sendMediaGroupRequestSchema = z.strictObject({
+  ...sentMessageTargetShape,
+  media: z.array(z.union([
+    z.strictObject(accountPhotoShape),
+    z.strictObject(accountDocumentShape),
+  ])),
+});
 
 /** The rights an administrator holds, by the Bot API's names; an omitted right is not held. */
 const promoteChatMemberRequestSchema = z.partialRecord(
@@ -375,6 +392,69 @@ export function createAccountRoutes(): Hono<SessionRouteContextTypes> {
 
     return context.json(
       { message: botMessageViews.viewPrivateMessageForBot(result.message) },
+      201,
+    );
+  });
+
+  accountRoutes.post(ACCOUNT_MEDIA_GROUP_COLLECTION_PATH, async (context) => {
+    const accountPath = accountPathSchema.safeParse(context.req.param());
+    if (!accountPath.success) {
+      return context.body(null, 400);
+    }
+    const { accountId } = accountPath.data;
+
+    const requestBody = await readJsonRequestBody(context.req, sendMediaGroupRequestSchema);
+    if (requestBody === undefined) {
+      return context.body(null, 400);
+    }
+
+    const { privateMessaging, supergroupMessaging, botMessageViews, mediaFiles } = context.get(
+      'emulationSession',
+    );
+    const contents: AccountMediaContent[] = [];
+    for (const media of requestBody.media) {
+      const content = readAccountMediaContent(media, mediaFiles);
+      if (content === undefined) {
+        return context.body(null, 400);
+      }
+      contents.push(content);
+    }
+    const { to, reply_to_message_id: replyToMessageId } = requestBody;
+    if (to.type === 'supergroup') {
+      const result = supergroupMessaging.sendAccountAlbum({
+        fromAccountId: accountId,
+        chatId: to.chatId,
+        contents,
+        replyToMessageId,
+      });
+      if (!result.sent) {
+        return context.body(null, supergroupMemberFailureStatus(result.reason));
+      }
+      return context.json(
+        {
+          messages: result.messages.map((message) =>
+            botMessageViews.viewSupergroupMessage(message, accountId)
+          ),
+        },
+        201,
+      );
+    }
+
+    const result = privateMessaging.sendAccountAlbum({
+      fromAccountId: accountId,
+      to,
+      contents,
+      replyToBotMessageId: replyToMessageId,
+    });
+    if (!result.sent) {
+      return context.body(null, accountMessageFailureStatus(result.reason));
+    }
+    return context.json(
+      {
+        messages: result.messages.map((message) =>
+          botMessageViews.viewPrivateMessageForBot(message)
+        ),
+      },
       201,
     );
   });
@@ -1210,6 +1290,10 @@ type AccountMessageContent = Parameters<
   EmulationSession['privateMessaging']['sendAccountMessage']
 >[0]['content'];
 
+type AccountMediaContent = Parameters<
+  EmulationSession['privateMessaging']['sendAccountAlbum']
+>[0]['contents'][number];
+
 /**
  * Reads the content of an account's message, checking an uploaded photo as Telegram does; returns
  * `undefined` for a file Telegram would not send.
@@ -1218,9 +1302,21 @@ function readAccountMessageContent(
   request: Exclude<z.infer<typeof sendMessageRequestSchema>, { readonly forward: unknown }>,
   mediaFiles: EmulationSession['mediaFiles'],
 ): AccountMessageContent | undefined {
-  if ('text' in request) {
-    return { kind: 'text', text: request.text, entities: request.entities };
-  }
+  return 'text' in request
+    ? { kind: 'text', text: request.text, entities: request.entities }
+    : readAccountMediaContent(request, mediaFiles);
+}
+
+/**
+ * Reads a photo or document an account uploads, as its client prepares it; returns `undefined`
+ * for an upload Telegram refuses.
+ */
+function readAccountMediaContent(
+  request:
+    | z.infer<z.ZodObject<typeof accountPhotoShape>>
+    | z.infer<z.ZodObject<typeof accountDocumentShape>>,
+  mediaFiles: EmulationSession['mediaFiles'],
+): AccountMediaContent | undefined {
   const preparation = 'photo' in request
     ? mediaFiles.preparePhotoUpload({
       content: request.photo.content_base64,
@@ -1253,11 +1349,19 @@ function readAccountMessageEdit(
     : { kind: 'caption', caption: request.caption, captionEntities: request.caption_entities };
 }
 
-/** Why an account's message, sent directly or by pressing a reply keyboard button, failed. */
-type AccountMessageFailureReason = Extract<
-  ReturnType<EmulationSession['privateMessaging']['pressReplyKeyboardButton']>,
-  { readonly sent: false }
->['reason'];
+/**
+ * Why an account's message, sent directly or by pressing a reply keyboard button, or its album
+ * failed.
+ */
+type AccountMessageFailureReason =
+  | Extract<
+    ReturnType<EmulationSession['privateMessaging']['pressReplyKeyboardButton']>,
+    { readonly sent: false }
+  >['reason']
+  | Extract<
+    ReturnType<EmulationSession['privateMessaging']['sendAccountAlbum']>,
+    { readonly sent: false }
+  >['reason'];
 
 /** A missing participant is not found, and a block conflicts with writing to the bot. */
 function accountMessageFailureStatus(reason: AccountMessageFailureReason): 400 | 404 | 409 {
@@ -1274,9 +1378,10 @@ function accountMessageFailureStatus(reason: AccountMessageFailureReason): 400 |
 
 type SupergroupMessaging = EmulationSession['supergroupMessaging'];
 
-/** Why an account's message, edit, or history request in a supergroup failed. */
+/** Why an account's message, album, edit, or history request in a supergroup failed. */
 type SupergroupAccountFailureReason =
   | Extract<ReturnType<SupergroupMessaging['sendAccountMessage']>, { sent: false }>['reason']
+  | Extract<ReturnType<SupergroupMessaging['sendAccountAlbum']>, { sent: false }>['reason']
   | Extract<
     ReturnType<SupergroupMessaging['pressReplyKeyboardButton']>,
     { sent: false }

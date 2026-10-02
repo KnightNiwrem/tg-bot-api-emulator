@@ -19,7 +19,9 @@ import {
   rateLimitResponsesListSchema,
   rateLimitResponsesSchema,
   replyInterfaceResponseSchema,
+  sentMediaGroupResponseSchema,
   sentMessageResponseSchema,
+  sentSupergroupMediaGroupResponseSchema,
   sentSupergroupMessageResponseSchema,
   supergroupBotCommandsResponseSchema,
   supergroupMessageHistoryResponseSchema,
@@ -37,6 +39,7 @@ import type {
   AccountNotificationsInput,
   AccountReplyInterfaceInput,
   AccountSendDocumentInput,
+  AccountSendMediaGroupInput,
   AccountSendMessageInput,
   AccountSendPhotoInput,
   AccountSupergroupBotCommandsInput,
@@ -333,6 +336,34 @@ function createVirtualAccountClient(
         },
       });
       return response.message;
+    },
+    async sendMediaGroup<Target extends MessageTarget>(
+      { to, media, reply_to_message_id }: AccountSendMediaGroupInput<Target>,
+    ): Promise<readonly MessageIn<Target>[]> {
+      const response = await requestJson(fetchImplementation, {
+        method: 'POST',
+        url: `${accountUrl}/media-groups`,
+        expectedStatus: HTTP_STATUS_CREATED,
+        responseSchema: messageResponseSchemasFor(to).sentAlbum,
+        body: {
+          to,
+          media: media.map((item) =>
+            item.photo !== undefined
+              ? {
+                photo: { content_base64: item.photo.toBase64() },
+                caption: item.caption,
+                caption_entities: item.caption_entities,
+              }
+              : {
+                document: { content_base64: item.document.toBase64(), file_name: item.file_name },
+                caption: item.caption,
+                caption_entities: item.caption_entities,
+              }
+          ),
+          reply_to_message_id,
+        },
+      });
+      return response.messages;
     },
     async forwardMessage<Target extends MessageTarget>(
       { from, message_id, to }: AccountForwardMessageInput<Target>,
@@ -635,6 +666,7 @@ function conversationUrl(accountUrl: string, chat: MessageTarget): string {
 
 interface MessageResponseSchemas<Target extends MessageTarget> {
   readonly sent: z.ZodType<{ readonly message: MessageIn<Target> }>;
+  readonly sentAlbum: z.ZodType<{ readonly messages: readonly MessageIn<Target>[] }>;
   readonly history: z.ZodType<{ readonly messages: readonly MessageIn<Target>[] }>;
 }
 
@@ -647,8 +679,16 @@ function messageResponseSchemasFor<Target extends MessageTarget>(
   target: Target,
 ): MessageResponseSchemas<Target> {
   const schemas: MessageResponseSchemas<MessageTarget> = target.type === 'supergroup'
-    ? { sent: sentSupergroupMessageResponseSchema, history: supergroupMessageHistoryResponseSchema }
-    : { sent: sentMessageResponseSchema, history: messageHistoryResponseSchema };
+    ? {
+      sent: sentSupergroupMessageResponseSchema,
+      sentAlbum: sentSupergroupMediaGroupResponseSchema,
+      history: supergroupMessageHistoryResponseSchema,
+    }
+    : {
+      sent: sentMessageResponseSchema,
+      sentAlbum: sentMediaGroupResponseSchema,
+      history: messageHistoryResponseSchema,
+    };
   return schemas as MessageResponseSchemas<Target>;
 }
 

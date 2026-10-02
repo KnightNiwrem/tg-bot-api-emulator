@@ -4,12 +4,13 @@
 
 ## Supported behavior
 
-Bots send photos and documents with `sendPhoto` and `sendDocument`, and in the blocks of
-[rich messages](rich-messages.md). Files can be multipart uploads, either in the part named for the
-parameter or referenced with `attach://<part-name>`, an existing `file_id` known to that bot, or an
-HTTP URL that Telegram downloads, as described in [files sent by URL](#files-sent-by-url). Accounts
-upload base64 content through the emulation API; the TypeScript client accepts bytes and performs
-the encoding. Both sides can supply captions and caption entities.
+Bots send photos and documents with `sendPhoto` and `sendDocument`, as [albums](#albums) with
+`sendMediaGroup`, and in the blocks of [rich messages](rich-messages.md). Files can be multipart
+uploads, either in the part named for the parameter or referenced with `attach://<part-name>`, an
+existing `file_id` known to that bot, or an HTTP URL that Telegram downloads, as described in
+[files sent by URL](#files-sent-by-url). Accounts upload base64 content through the emulation API;
+the TypeScript client accepts bytes and performs the encoding. Both sides can supply captions and
+caption entities.
 
 Photos expose dimensions, `has_media_spoiler` when requested and `show_caption_above_media` for a
 caption above the photo. Documents expose their cleaned filename and a MIME type derived from its
@@ -71,6 +72,50 @@ uploaded one, so content that is not a readable image fails with `IMAGE_PROCESS_
 is named after the URL's last path segment, cleaned as an upload's name, keeps the type it was
 served as, and takes no thumbnail, as TDLib sends it as `inputMediaDocumentExternal`. A file sent by
 URL is stored as a new file, like an upload.
+
+### Albums
+
+Bots send photos or documents as an album with `sendMediaGroup`, whose `media` is a JSON array of
+`InputMediaPhoto` and `InputMediaDocument`. Each item names its file as `editMessageMedia` does: an
+upload, a `file_id`, or a [URL](#files-sent-by-url). Accounts send albums with
+`POST /sessions/{sessionId}/accounts/{accountId}/media-groups`, or the TypeScript client's
+`sendMediaGroup`, uploading each file as they upload a single photo or document. Each item has its
+own caption.
+
+An album is a sequence of ordinary messages that share a `media_group_id`, which is the decimal text
+of a positive 64-bit identifier and new for each album. The messages are stored in order, and each
+reaches the chat's bots as a separate update, as it would alone; in a supergroup, a bot in privacy
+mode receives only the items addressed to it. `sendMediaGroup` returns the messages in order. Every
+message replies to the same message, and `disable_notification`, `protect_content` and
+`message_effect_id` apply to each. As the official server's
+[`process_send_media_group_query`][send-media-group] does, the method reads no `reply_markup`; the
+emulator rejects one as an unknown parameter.
+
+As TDLib's [`check_message_group_message_contents`][album-checks] does, an album holds at most 10
+items, its photos place their captions alike, and documents are sent only with documents. As
+[`send_message_group`][send-message-group] does, a single item is sent as one message outside any
+album. A refused album sends and stores nothing.
+
+| Album                                                | Error                                                                               |
+| ---------------------------------------------------- | ----------------------------------------------------------------------------------- |
+| `media` is `[]` or `null`                            | `Bad Request: there are no messages to send`                                        |
+| More than 10 items                                   | `Bad Request: too many messages to send as an album`                                |
+| Photos with different `show_caption_above_media`     | `Bad Request: parameter show_caption_above_media must be the same for all messages` |
+| Documents with photos                                | `Bad Request: document can't be mixed with other media types`                       |
+| An item Telegram cannot read, such as a missing part | `Bad Request: can't parse InputMedia: media not found`, as for `editMessageMedia`   |
+| A file Telegram's servers refuse, at item _position_ | `Bad Request: failed to send message #position with the error message "<error>"`    |
+
+Telegram's servers, rather than TDLib, refuse content they cannot process as a photo
+(`IMAGE_PROCESS_FAILED`, `PHOTO_INVALID_DIMENSIONS`), a file they cannot download from a URL
+(`WEBPAGE_CURL_FAILED`, `WEBPAGE_MEDIA_EMPTY`), and, for the `local` upload profile, an upload
+larger than it allows. As the official server's [`on_message_send_failed`][album-failure] does, it
+reports the first such item with its position and Telegram's error, unchanged. Other file failures,
+such as an empty upload, a photo larger than 10 MB, or an unknown `file_id`, fail as they do for
+`sendPhoto` and `sendDocument`, before the album is checked, as TDLib reads every item's file first.
+As for `sendPhoto`, the emulator downloads files sent by URL, in the album's order, once the
+request's parameters are read and before it reads the other items' files, so an album with an
+unusable URL fails for its first such URL, whichever item holds it, rather than for an upload or
+`file_id` that fails.
 
 ### Upload profiles
 
@@ -192,7 +237,9 @@ long-lived Telegram storage are outside this model.
 
 Documents always remain documents, including GIFs, audio and video uploads, whether or not
 `disable_content_type_detection` is set; `sendDocument`, `InputMediaDocument` and document blocks
-validate the flag. The emulator behaves as if every document set it.
+validate the flag. The emulator behaves as if every document set it, which matches Telegram for
+documents uploaded in an album: the official server sets the flag for each of them, as described
+below.
 
 Upstream, the flag's only effect visible in the source is a request to Telegram's server. The Bot
 API server passes it to TDLib's `inputDocument`, and sets it for every document of an album in
@@ -217,8 +264,9 @@ Telegram downloads such files; tests need inline query results that send files b
 
 ### Additional media types and methods
 
-Media types other than photos/documents, albums, stickers and sticker sets are missing, including
-`sendMediaGroup`. `editMessageMedia` therefore replaces media only with photos and documents.
+Media types other than photos and documents, stickers and sticker sets are missing.
+`editMessageMedia` therefore replaces media only with photos and documents, and albums hold only
+photos or only documents.
 
 ## Local evidence
 
@@ -244,3 +292,7 @@ Media types other than photos/documents, albums, stickers and sticker sets are m
 [parse-url]: https://github.com/tdlib/td/blob/bc9c263e2bfee06aaab41e82db51a103376030bc/tdutils/td/utils/HttpUrl.cpp#L47-L196
 [error-rewriting]: https://github.com/tdlib/telegram-bot-api/blob/e3e9dd8e5b3d7ab8537cd5a10dc31d5ffa8f82d1/telegram-bot-api/Client.cpp#L73-L206
 [local-mode]: https://github.com/tdlib/telegram-bot-api/blob/e3e9dd8e5b3d7ab8537cd5a10dc31d5ffa8f82d1/README.md#usage
+[send-media-group]: https://github.com/tdlib/telegram-bot-api/blob/e3e9dd8e5b3d7ab8537cd5a10dc31d5ffa8f82d1/telegram-bot-api/Client.cpp#L14505-L14565
+[album-failure]: https://github.com/tdlib/telegram-bot-api/blob/e3e9dd8e5b3d7ab8537cd5a10dc31d5ffa8f82d1/telegram-bot-api/Client.cpp#L13684-L13715
+[album-checks]: https://github.com/tdlib/td/blob/bc9c263e2bfee06aaab41e82db51a103376030bc/td/telegram/MessageContent.cpp#L5378-L5406
+[send-message-group]: https://github.com/tdlib/td/blob/bc9c263e2bfee06aaab41e82db51a103376030bc/td/telegram/MessagesManager.cpp#L21891-L21978

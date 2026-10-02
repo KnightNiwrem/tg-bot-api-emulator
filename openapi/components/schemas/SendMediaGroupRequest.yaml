@@ -1,0 +1,44 @@
+type: object
+additionalProperties: false
+required:
+  - chat_id
+  - media
+properties:
+  chat_id:
+    $ref: ./ChatIdentifier.yaml
+    description: >-
+      Identifier of the chat, as for `sendMessage`: for a private chat, the account's user
+      ID; for a supergroup, its negative chat ID, or `@` followed by the username of a public
+      supergroup.
+  media:
+    type: array
+    minItems: 1
+    maxItems: 10
+    description: >-
+      The album's photos or documents, in the order the chat shows them, each as `InputMedia`
+      describes it. Documents form an album only with documents, and every photo must place its
+      caption alike. A single item is sent as one message outside any album, as TDLib sends it.
+    items:
+      $ref: ./InputMedia.yaml
+  disable_notification:
+    type: boolean
+    default: false
+    description: As for `sendMessage`, for every message of the album.
+  protect_content:
+    type: boolean
+    default: false
+    description: As for `sendMessage`, for every message of the album.
+  message_effect_id:
+    type: string
+    pattern: '^-?\d+$'
+    description: As for `sendMessage`; every message of the album carries the effect.
+  reply_parameters:
+    $ref: ./ReplyParameters.yaml
+    description: As for `sendMessage`; every message of the album replies to the same message.
+  reply_to_message_id:
+    type: integer
+    description: As for `sendMessage`.
+  allow_sending_without_reply:
+    type: boolean
+    default: false
+    description: As for `sendMessage`.

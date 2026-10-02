@@ -338,6 +338,12 @@ interface BotApiMessageReplyInfo {
   readonly quote?: BotApiTextQuote;
 }
 
+/** The album a message belongs to, which follows its reply and precedes its content. */
+interface BotApiMessageAlbumInfo {
+  /** Present only for a message of an album. */
+  readonly media_group_id?: string;
+}
+
 interface BotApiMessageHeader<Chat> {
   readonly message_id: number;
   readonly from: BotApiUser;
@@ -373,6 +379,7 @@ interface BotApiMessageTrailer {
 type BotApiRepliedMessageInChat<Chat, Content> =
   & BotApiMessageHeader<Chat>
   & BotApiMessageReplyInfo
+  & BotApiMessageAlbumInfo
   & Content
   & BotApiMessageTrailer;
 
@@ -387,6 +394,7 @@ type BotApiMessageInChat<Chat, Content> =
     readonly reply_to_message?: BotApiRepliedMessageInChat<Chat, Content>;
   }
   & BotApiMessageReplyInfo
+  & BotApiMessageAlbumInfo
   & Content
   & BotApiMessageTrailer;
 

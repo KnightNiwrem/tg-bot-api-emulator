@@ -1,0 +1,86 @@
+description: >-
+  Telegram Bot API method for sending photos or documents as an album. Each item's file is an
+  upload, a file the bot knows by its `file_id`, or an HTTP URL, as for `editMessageMedia`, and
+  is resolved as `sendPhoto` and `sendDocument` resolve theirs; its caption is read, formatted,
+  and normalized as theirs. The album's messages are sent in order, each replying to the same
+  message, and share a new `media_group_id`; the method returns them in that order. A single
+  item is sent as one message outside any album, as TDLib sends it. As the official server does,
+  the method reads no `reply_markup`; the emulator rejects one. As TDLib sends a document of an
+  album, it is never reclassified as other media, whatever `disable_content_type_detection` says.
+parameters:
+  - $ref: ../components/parameters/SessionId.yaml
+  - $ref: ../components/parameters/BotToken.yaml
+post:
+  operationId: sendMediaGroup
+  summary: Send an album from the authenticated virtual bot to an account or a supergroup
+  requestBody:
+    required: true
+    content:
+      multipart/form-data:
+        schema:
+          $ref: ../components/schemas/SendMediaGroupRequest.yaml
+        encoding:
+          media:
+            contentType: application/json
+          reply_parameters:
+            contentType: application/json
+      application/json:
+        schema:
+          $ref: ../components/schemas/SendMediaGroupRequest.yaml
+  responses:
+    '200':
+      description: >-
+        The album's messages were stored in the private conversation or supergroup. No bot
+        receives an update for a bot's message.
+      content:
+        application/json:
+          schema:
+            $ref: ../components/schemas/MessagesResponse.yaml
+    '400':
+      description: >-
+        The request cannot be decoded or has unsupported parameters, or Telegram would reject
+        it, checking in this order: `media` is missing (`Bad Request: parameter "media" is
+        required`), is not JSON (`Bad Request: can't parse media JSON object`), or is not an
+        array (`Bad Request: expected an Array of InputMedia`); an item cannot be read, as
+        `InputMedia` describes, and Telegram's `animation` is refused as for `editMessageMedia`;
+        `chat_id` is missing (`Bad Request: chat_id is empty`); a file sent by URL cannot be
+        downloaded, as for `sendPhoto`, which fails with Telegram's error for the item's
+        position (`Bad Request: failed to send message #<position> with the error message
+        "WEBPAGE_CURL_FAILED"`, or `"WEBPAGE_MEDIA_EMPTY"` for empty content or content of
+        another type); an item's file fails as for `sendPhoto` and `sendDocument`, apart from
+        content Telegram's servers refuse; the album holds more than 10 items (`Bad Request:
+        too many messages to send as an album`) or none (`Bad Request: there are no messages to
+        send`), its photos place their captions differently (`Bad Request: parameter
+        show_caption_above_media must be the same for all messages`), or it mixes documents
+        with photos (`Bad Request: document can't be mixed with other media types`); an upload
+        Telegram's servers refuse fails with their error for the first such item's position:
+        `IMAGE_PROCESS_FAILED`, `PHOTO_INVALID_DIMENSIONS`, or, for the `local` upload profile,
+        a file larger than it allows; then the checks of `sendMessage` from the chat on, with
+        a caption longer than 1024 characters rejected (`Bad Request: message caption is too
+        long`). No message is sent unless every check passes. Telegram checks the chat before
+        the files.
+      content:
+        application/json:
+          schema:
+            $ref: ../components/schemas/BotApiErrorResponse.yaml
+    '401':
+      description: The token does not belong to a virtual bot in the addressed session.
+      content:
+        application/json:
+          schema:
+            $ref: ../components/schemas/BotApiErrorResponse.yaml
+    '403':
+      description: >-
+        The account blocks the bot (`Forbidden: bot was blocked by the user`), or the bot left
+        the supergroup (`Forbidden: bot is not a member of the supergroup chat`) or was removed
+        from it (`Forbidden: bot was kicked from the supergroup chat`).
+      content:
+        application/json:
+          schema:
+            $ref: ../components/schemas/BotApiErrorResponse.yaml
+    '404':
+      description: No active test session has the supplied identifier.
+    '413':
+      $ref: ../components/responses/BotApiUploadTooLarge.yaml
+    '429':
+      $ref: ../components/responses/BotApiRateLimited.yaml

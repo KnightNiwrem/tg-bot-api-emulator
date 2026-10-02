@@ -20,6 +20,7 @@
           "src/types/rich_message.ts",
           "src/types/message_forward.ts",
           "src/types/message_reply.ts",
+          "src/types/media_album.ts",
           "src/types/stored_file.ts",
           "src/types/upload_profile.ts",
           "src/types/http_url.ts",
