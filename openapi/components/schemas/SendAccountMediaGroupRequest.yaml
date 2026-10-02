@@ -11,9 +11,9 @@ properties:
     minItems: 1
     maxItems: 10
     description: >-
-      The album's photos or documents, in the order the chat shows them, each uploaded as by
-      `POST /sessions/{sessionId}/accounts/{accountId}/messages`. Documents form an album only
-      with documents. A single item is sent as one message outside any album.
+      The album's photos and videos, or documents, in the order the chat shows them, each
+      uploaded as by `POST /sessions/{sessionId}/accounts/{accountId}/messages`. Documents form an
+      album only with documents. A single item is sent as one message outside any album.
     items:
       oneOf:
         - type: object
@@ -34,6 +34,17 @@ properties:
           properties:
             document:
               $ref: ./AccountDocumentUpload.yaml
+            caption:
+              $ref: ./AccountCaption.yaml
+            caption_entities:
+              $ref: ./AccountMessageEntities.yaml
+        - type: object
+          additionalProperties: false
+          required:
+            - video
+          properties:
+            video:
+              $ref: ./AccountVideoUpload.yaml
             caption:
               $ref: ./AccountCaption.yaml
             caption_entities:

@@ -21,11 +21,19 @@ export type AlbumCompositionFailureReason =
   | 'album_documents_mixed';
 
 /**
+ * Whether an album keeps a kind of media apart from every other kind, as TDLib's
+ * `is_homogenous_media_group_content` does for documents, while photos and videos mix.
+ */
+function isHomogeneousAlbumMediaKind(kind: AlbumMember['kind']): boolean {
+  return kind === 'document';
+}
+
+/**
  * Checks that messages can be sent as one album, as TDLib's `check_message_group_message_contents`
  * does, in its order: at most 10 and at least one message, each placing its caption as the first
- * does, and documents only among documents, since TDLib's `is_homogenous_media_group_content`
- * keeps documents apart. Photos and documents are the only media the emulator sends in albums, so
- * no other kind needs refusing here. Returns `undefined` for messages that can.
+ * does, and documents only among documents, since `isHomogeneousAlbumMediaKind` keeps them apart.
+ * Photos, videos and documents are the only media the emulator sends in albums, so no other kind
+ * needs refusing here. Returns `undefined` for messages that can.
  *
  * A single message passes: as TDLib's `send_message_group` does, it is sent outside any album.
  */
@@ -50,6 +58,20 @@ export function checkAlbumComposition(
   return hasDocument && members.some(({ kind }) => kind !== 'document')
     ? 'album_documents_mixed'
     : undefined;
+}
+
+/**
+ * Whether a message of an album may change its media from one kind to another, as TDLib's
+ * `edit_message_media` decides: a photo and a video replace each other, while a kind
+ * `isHomogeneousAlbumMediaKind` keeps apart, such as a document, neither becomes nor replaces
+ * another.
+ */
+export function canChangeAlbumMediaKind(
+  oldKind: AlbumMember['kind'],
+  newKind: AlbumMember['kind'],
+): boolean {
+  return oldKind === newKind ||
+    (!isHomogeneousAlbumMediaKind(oldKind) && !isHomogeneousAlbumMediaKind(newKind));
 }
 
 /**

@@ -1,5 +1,6 @@
 import {
   type AlbumMember,
+  canChangeAlbumMediaKind,
   checkAlbumComposition,
   formsAlbum,
   groupRepeatedAlbums,
@@ -15,12 +16,16 @@ import type {
 const photo: AlbumMember = { kind: 'photo', showsCaptionAboveMedia: false };
 const document: AlbumMember = { kind: 'document', showsCaptionAboveMedia: false };
 const abovePhoto: AlbumMember = { kind: 'photo', showsCaptionAboveMedia: true };
+const video: AlbumMember = { kind: 'video', showsCaptionAboveMedia: false };
+const aboveVideo: AlbumMember = { kind: 'video', showsCaptionAboveMedia: true };
 
-Deno.test('checkAlbumComposition accepts photos alone and documents alone, up to ten', () => {
+Deno.test('checkAlbumComposition accepts photos with videos and documents alone, up to ten', () => {
   const accepted = [
     [photo],
     [document],
     [photo, photo],
+    [video, photo, video],
+    [abovePhoto, aboveVideo],
     Array.from({ length: MAX_ALBUM_MESSAGE_COUNT }, () => abovePhoto),
     Array.from({ length: MAX_ALBUM_MESSAGE_COUNT }, () => document),
   ].map(checkAlbumComposition);
@@ -40,6 +45,8 @@ Deno.test('checkAlbumComposition refuses albums in the order TDLib checks them',
     [abovePhoto, document],
     [photo, document],
     [document, photo, photo],
+    [video, abovePhoto],
+    [document, video],
   ].map(checkAlbumComposition);
   const expectedFailures = [
     'album_empty',
@@ -49,16 +56,19 @@ Deno.test('checkAlbumComposition refuses albums in the order TDLib checks them',
     'album_caption_placement_mixed',
     'album_documents_mixed',
     'album_documents_mixed',
+    'album_caption_placement_mixed',
+    'album_documents_mixed',
   ];
   if (JSON.stringify(failures) !== JSON.stringify(expectedFailures)) {
     throw new Error(`Expected TDLib's failures, received ${JSON.stringify(failures)}`);
   }
 });
 
-Deno.test('toAlbumMember places only a photo caption above its media', () => {
+Deno.test('toAlbumMember places only a photo or video caption above its media', () => {
   const members = [
     toAlbumMember({ kind: 'photo', showsCaptionAboveMedia: true }),
     toAlbumMember({ kind: 'photo', showsCaptionAboveMedia: false }),
+    toAlbumMember({ kind: 'video', showsCaptionAboveMedia: true }),
     toAlbumMember({ kind: 'document' }),
   ];
   if (
@@ -66,12 +76,32 @@ Deno.test('toAlbumMember places only a photo caption above its media', () => {
       JSON.stringify([
         { kind: 'photo', showsCaptionAboveMedia: true },
         { kind: 'photo', showsCaptionAboveMedia: false },
+        { kind: 'video', showsCaptionAboveMedia: true },
         { kind: 'document', showsCaptionAboveMedia: false },
       ])
   ) {
     throw new Error(
       `Expected album members as TDLib reads them, received ${JSON.stringify(members)}`,
     );
+  }
+});
+
+Deno.test('canChangeAlbumMediaKind lets photos and videos replace each other only', () => {
+  const kinds = ['photo', 'video', 'document'] as const;
+  const allowedChanges = kinds.flatMap((oldKind) =>
+    kinds.filter((newKind) => canChangeAlbumMediaKind(oldKind, newKind)).map((newKind) =>
+      `${oldKind}->${newKind}`
+    )
+  );
+  const expectedChanges = [
+    'photo->photo',
+    'photo->video',
+    'video->photo',
+    'video->video',
+    'document->document',
+  ];
+  if (JSON.stringify(allowedChanges) !== JSON.stringify(expectedChanges)) {
+    throw new Error(`Expected TDLib's album media changes, received ${allowedChanges}`);
   }
 });
 

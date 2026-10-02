@@ -232,14 +232,15 @@ const sendMessageRequestSchema = z.union([
 ]);
 
 /**
- * The photos or documents of an album, in the order the chat shows them, each with an optional
- * caption. Whether they can form an album is checked as Telegram checks it.
+ * The photos, videos, or documents of an album, in the order the chat shows them, each with an
+ * optional caption. Whether they can form an album is checked as Telegram checks it.
  */
 const sendMediaGroupRequestSchema = z.strictObject({
   ...sentMessageTargetShape,
   media: z.array(z.union([
     z.strictObject(accountPhotoShape),
     z.strictObject(accountDocumentShape),
+    z.strictObject(accountVideoShape),
   ])),
 });
 

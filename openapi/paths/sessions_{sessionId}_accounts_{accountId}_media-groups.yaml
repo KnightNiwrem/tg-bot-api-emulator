@@ -6,8 +6,8 @@ post:
   operationId: sendAccountMediaGroup
   summary: Send an album as a virtual account
   description: >-
-    Sends photos or documents as an album to the account's private chat with a bot, or to a
-    supergroup the account is a member of. Every item is uploaded and checked as by `POST
+    Sends photos and videos, or documents, as an album to the account's private chat with a bot,
+    or to a supergroup the account is a member of. Every item is uploaded and checked as by `POST
     /sessions/{sessionId}/accounts/{accountId}/messages`, and the album is checked as Telegram
     checks it, before any message is stored. The messages are stored in order, each as a
     separate message that the chat's bots receive as a separate update, as they would receive it
@@ -34,7 +34,7 @@ post:
     '400':
       description: >-
         The request or a caption is invalid, a photo is not an image Telegram accepts, a file is
-        empty, the album holds no item or more than 10, mixes documents with photos, or the
+        empty, the album holds no item or more than 10, mixes documents with photos or videos, or the
         replied message is not a message of the chat.
     '403':
       description: The account is not a member of the supergroup.
