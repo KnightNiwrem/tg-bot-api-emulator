@@ -14,6 +14,7 @@ import {
 import {
   type BotUploadTooBigFailure,
   checkBotUploadSize,
+  IS_BOT_UPLOAD_LIMIT_CHECKED_BEFORE_TDLIB,
   type UploadProfile,
 } from '../types/upload_profile.ts';
 
@@ -122,20 +123,27 @@ export class MediaFileService {
   /**
    * Reads an uploaded image, which must be a JPEG, PNG, GIF, WebP, or BMP image, and checks its
    * dimensions as Telegram does for photos. Telegram also accepts other image formats, such as
-   * TIFF, which the emulator does not read. A bot's upload must first fit its session's upload
-   * profile. Then, as TDLib's `check_full_local_location` does for bots and accounts alike, the
-   * photo's size is checked, before Telegram's server reads the image.
+   * TIFF, which the emulator does not read. As TDLib's `check_full_local_location` does for bots
+   * and accounts alike, the photo's size is checked before Telegram's server reads the image. A
+   * bot's upload must also fit its session's upload profile, which the cloud server checks first
+   * and Telegram checks for a local server after TDLib's checks.
    */
   preparePhotoUpload({ content, source }: PhotoUploadRequest): PhotoUploadPreparation {
     if (content.length === 0) {
       return { prepared: false, reason: 'file_empty' };
     }
     const uploadSizeFailure = this.#checkUploadSize(content, source);
-    if (uploadSizeFailure !== undefined) {
+    if (
+      uploadSizeFailure !== undefined &&
+      IS_BOT_UPLOAD_LIMIT_CHECKED_BEFORE_TDLIB[uploadSizeFailure.uploadProfile]
+    ) {
       return { prepared: false, ...uploadSizeFailure };
     }
     if (content.length > MAX_PHOTO_UPLOAD_BYTES) {
       return { prepared: false, reason: 'photo_too_big', fileSizeBytes: content.length };
+    }
+    if (uploadSizeFailure !== undefined) {
+      return { prepared: false, ...uploadSizeFailure };
     }
     const dimensions = readImageDimensions(content);
     if (dimensions === undefined) {

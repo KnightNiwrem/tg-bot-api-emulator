@@ -45,7 +45,9 @@ A session's [upload profile](sessions-and-requests.md#supported-behavior) names 
 server deployment whose upload limits its bots meet: `cloud` for `api.telegram.org`, the default, or
 `local` for a server started with `--local`. Each photo or document a bot uploads with
 `multipart/form-data` must fit the profile's limit; a photo must also meet the 10 × 1024 × 1024 byte
-photo limit, whatever the profile.
+photo limit, whatever the profile. The cloud limit is checked first, as `api.telegram.org` refuses
+an oversized request outright, and the local limit after the photo limit, as Telegram enforces it
+after TDLib's checks.
 
 | Profile | Largest bot upload                       | Larger uploads fail with                                                                   |
 | ------- | ---------------------------------------- | ------------------------------------------------------------------------------------------ |
@@ -56,7 +58,7 @@ The limit is checked when the emulator reads the file, after the caption and oth
 before the chat, so a failed upload sends and stores nothing; `api.telegram.org` refuses an
 oversized request before reading any parameter, so a request with another fault fails differently
 there. Sending a file again by `file_id`, forwarding and copying are not uploads and meet no size
-limit. An uploaded thumbnail is checked only against TDLib's own thumbnail limit, described below.
+limit. An uploaded thumbnail is checked only against TDLib's own thumbnail limit, described above.
 Accounts upload through their own client, so no profile limits them: their photos meet the photo
 limit, and their documents no limit, since a user's client uploads files of up to 2000 MB, or 4000
 MB with Telegram Premium, which base64 fixtures in JSON requests are not meant to reach.

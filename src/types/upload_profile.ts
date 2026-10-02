@@ -25,6 +25,16 @@ export const MAX_BOT_UPLOAD_BYTES: Readonly<Record<UploadProfile, number>> = {
   local: 2000 * 1024 * 1024,
 };
 
+/**
+ * Whether a profile's upload limit refuses a file before TDLib checks it. `api.telegram.org`
+ * refuses an oversized request before its Bot API server reads it, while Telegram enforces a local
+ * server's limit after TDLib's own checks, such as its photo limit.
+ */
+export const IS_BOT_UPLOAD_LIMIT_CHECKED_BEFORE_TDLIB: Readonly<Record<UploadProfile, boolean>> = {
+  cloud: true,
+  local: false,
+};
+
 /** A file a bot uploaded is larger than its session's upload profile allows. */
 export interface BotUploadTooBigFailure {
   readonly reason: 'bot_upload_too_big';

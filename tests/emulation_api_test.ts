@@ -7401,6 +7401,12 @@ Deno.test('a cloud session answers bot uploads over 50 MB with 413 and keeps no 
       message_id: String(atLimitMessage?.message_id),
       media: JSON.stringify({ type: 'document', media: 'attach://replacement' }),
     }, { replacement: oversizedFile }),
+    await callBotApiWithFiles(api, `${botApiPath}/sendRichMessage`, {
+      chat_id: chatId,
+      rich_message: JSON.stringify({
+        blocks: [{ type: 'document', document: { type: 'document', media: 'attach://block' } }],
+      }),
+    }, { block: oversizedFile }),
   ];
   for (const { status, body } of oversizedAnswers) {
     if (
@@ -7438,6 +7444,7 @@ Deno.test('a cloud session answers bot uploads over 50 MB with 413 and keeps no 
       ['sendDocument', 413],
       ['sendPhoto', 413],
       ['editMessageMedia', 413],
+      ['sendRichMessage', 413],
     ])
   ) {
     throw new Error(`Expected the refused calls to be recorded, received ${recordedAnswers}`);
