@@ -130,12 +130,14 @@ Telegram's servers, rather than TDLib, refuse content they cannot process as a p
 larger than it allows. As the official server's [`on_message_send_failed`][album-failure] does, it
 reports the first such item with its position and Telegram's error, unchanged. Other file failures,
 such as an empty upload, a photo larger than 10 MB, or an unknown `file_id`, and captions that
-cannot be read or are longer than 1024 characters fail as they do for `sendPhoto` and
-`sendDocument`, before the album is checked. As TDLib's `get_input_message_content` does, each
-item's file is read, then its caption, before the next item's, so the first item with either fault
-fails the album. As for `sendPhoto`, the emulator downloads files sent by URL, in the album's order,
-once the request's parameters are read and before it reads the other items' files, so an album with
-an unusable URL fails for its first such URL, whichever item holds it, rather than for an upload or
+Telegram cannot normalize or that are longer than 1024 characters fail as they do for `sendPhoto`
+and `sendDocument`, before the album is checked. As the official server reads it, every item's
+caption formatting, such as its `parse_mode` and entities, is parsed with the request, before any
+file. Then, as TDLib's `get_input_message_content` does, each item's file is read and its caption
+normalized and measured before the next item's, so the first item with either fault fails the album.
+As for `sendPhoto`, the emulator downloads files sent by URL, in the album's order, once the
+request's parameters are read and before it reads the other items' files, so an album with an
+unusable URL fails for its first such URL, whichever item holds it, rather than for an upload or
 `file_id` that fails.
 
 ### Upload profiles

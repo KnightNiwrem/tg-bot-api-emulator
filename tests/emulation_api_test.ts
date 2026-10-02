@@ -7651,7 +7651,8 @@ Deno.test('sendMediaGroup follows Telegram checks and sends nothing it refuses',
 });
 
 Deno.test('sendMediaGroup checks each caption with its file, as TDLib reads them', async () => {
-  const { api, botApiPath, createdAccount, sendText } = await createPrivateConversationFixture();
+  const { api, sessionPath, botApiPath, createdBot, createdAccount, sendText } =
+    await createPrivateConversationFixture();
   await sendText('/start');
   const chatId = String(createdAccount.account.id);
   const uploadedPhoto = await callBotApiWithFiles(api, `${botApiPath}/sendPhoto`, {
@@ -7662,6 +7663,9 @@ Deno.test('sendMediaGroup checks each caption with its file, as TDLib reads them
   const unknownPhoto = { type: 'photo', media: 'AgACAgIAAxkBAAIBdGZ' };
   const textAsImage = { text: new File(['not an image'], 'text.gif') };
   const notes = { notes: new File(['notes'], 'notes.txt') };
+  const historyPath =
+    `${sessionPath}/accounts/${chatId}/conversations/private/${createdBot.bot.id}/messages`;
+  const historyBefore = await (await api.request(historyPath)).text();
 
   const cases: { media: unknown[]; files: Record<string, File>; expected: string }[] = [
     // A caption is refused before the album is checked as a whole.
@@ -7710,6 +7714,9 @@ Deno.test('sendMediaGroup checks each caption with its file, as TDLib reads them
     throw new Error(
       `Expected TDLib's precedence, received ${JSON.stringify(descriptions, null, 2)}`,
     );
+  }
+  if ((await (await api.request(historyPath)).text()) !== historyBefore) {
+    throw new Error('Expected refused albums to leave the history as it was');
   }
 });
 
