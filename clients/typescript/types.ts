@@ -1377,9 +1377,9 @@ export interface VirtualAccountClient extends VirtualAccountProfile {
   ): Promise<MessageIn<Target>>;
   /**
    * Sends photos and videos, or documents, as an album, as `sendPhoto`, `sendVideo` and
-   * `sendDocument` send one, and returns
-   * the album's messages in order, which share a `media_group_id`. The chat's bots receive each
-   * message as a separate update, in the album's order.
+   * `sendDocument` send one, and returns the album's messages in order, which share a
+   * `media_group_id`. The chat's bots receive each message as a separate update, in the album's
+   * order.
    */
   sendMediaGroup<Target extends MessageTarget>(
     input: AccountSendMediaGroupInput<Target>,

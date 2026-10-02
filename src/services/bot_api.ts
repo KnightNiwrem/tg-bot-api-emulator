@@ -2027,12 +2027,12 @@ export class BotApiService {
 
   /**
    * Sends photos and videos, or documents, to a private chat or a supergroup as an album, as
-   * TDLib's `send_message_group` does: each message's file is resolved as `sendPhoto`,
-   * `sendVideo` and `sendDocument` resolve theirs, in order, and the album is then checked as `checkAlbumComposition` does. An
-   * upload that only Telegram's servers refuse fails after those checks, as TDLib learns of it
-   * only when the album is sent. Every check passes before any message is sent; the messages are
-   * then sent in order, each as a reply to the same message, and share a new `media_group_id`
-   * unless there is just one.
+   * TDLib's `send_message_group` does: each message's file is resolved as `sendPhoto`, `sendVideo`
+   * and `sendDocument` resolve theirs, in order, and the album is then checked as
+   * `checkAlbumComposition` does. An upload that only Telegram's servers refuse fails after those
+   * checks, as TDLib learns of it only when the album is sent. Every check passes before any
+   * message is sent; the messages are then sent in order, each as a reply to the same message, and
+   * share a new `media_group_id` unless there is just one.
    *
    * As for `sendPhoto`, files are resolved before the chat, while Telegram looks at the chat
    * first; a request with both an unknown chat and an unusable file fails for its file.
