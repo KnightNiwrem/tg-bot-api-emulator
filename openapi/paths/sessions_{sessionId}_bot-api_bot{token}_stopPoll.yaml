@@ -1,0 +1,71 @@
+description: >-
+  Telegram Bot API method for stopping a poll the bot sent to a private chat or a supergroup. The
+  poll keeps its votes, accepts no more answers, and shows `is_closed`, through its message and
+  every forward of it. The message shows the new `reply_markup`; omitting it removes the
+  keyboard. The bot receives a `poll` update with the closed poll, and no `edited_message` update.
+parameters:
+  - $ref: ../components/parameters/SessionId.yaml
+  - $ref: ../components/parameters/BotToken.yaml
+post:
+  operationId: stopPoll
+  summary: Stop a poll the authenticated virtual bot sent
+  requestBody:
+    required: true
+    content:
+      application/json:
+        schema:
+          $ref: ../components/schemas/StopPollRequest.yaml
+      application/x-www-form-urlencoded:
+        schema:
+          $ref: ../components/schemas/StopPollRequest.yaml
+        encoding:
+          reply_markup:
+            contentType: application/json
+      multipart/form-data:
+        schema:
+          $ref: ../components/schemas/StopPollRequest.yaml
+        encoding:
+          reply_markup:
+            contentType: application/json
+  responses:
+    '200':
+      description: The poll was stopped; the result is the closed poll.
+      content:
+        application/json:
+          schema:
+            $ref: ../components/schemas/PollResponse.yaml
+    '400':
+      description: >-
+        The request cannot be decoded or has unsupported parameters, or Telegram would reject
+        it, checking in this order: a button of `reply_markup` cannot be read, as for
+        `editMessageReplyMarkup`; `chat_id` is missing (`Bad Request: chat_id is empty`); the
+        chat is not found (`Bad Request: chat not found`); the chat has no such message, or
+        `message_id` is not positive (`Bad Request: message with poll to stop not found`); the
+        message shows no poll (`Bad Request: message is not a poll`); the bot cannot edit the
+        message, such as another bot's poll or a forward (`Bad Request: poll can't be
+        stopped`); the poll is closed (`Bad Request: poll has already been closed`); or the
+        keyboard holds a Web App button in a supergroup (`Bad Request: BUTTON_TYPE_INVALID`) or
+        callback data over 64 bytes (`Bad Request: BUTTON_DATA_INVALID`). A refused stop changes
+        nothing.
+      content:
+        application/json:
+          schema:
+            $ref: ../components/schemas/BotApiErrorResponse.yaml
+    '401':
+      description: The token does not belong to a virtual bot in the addressed session.
+      content:
+        application/json:
+          schema:
+            $ref: ../components/schemas/BotApiErrorResponse.yaml
+    '403':
+      description: >-
+        The bot left the supergroup (`Forbidden: bot is not a member of the supergroup chat`) or
+        was removed from it (`Forbidden: bot was kicked from the supergroup chat`).
+      content:
+        application/json:
+          schema:
+            $ref: ../components/schemas/BotApiErrorResponse.yaml
+    '404':
+      description: No active test session has the supplied identifier.
+    '429':
+      $ref: ../components/responses/BotApiRateLimited.yaml

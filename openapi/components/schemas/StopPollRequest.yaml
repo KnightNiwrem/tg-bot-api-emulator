@@ -1,0 +1,18 @@
+type: object
+additionalProperties: false
+description: Addresses the message of a poll the bot sent. Business connections are not supported.
+required:
+  - chat_id
+  - message_id
+properties:
+  chat_id:
+    $ref: ./ChatIdentifier.yaml
+    description: >-
+      Identifier of the chat: for a private chat, the account's user ID; for a supergroup, its
+      negative chat ID, or `@` followed by the username of a public supergroup.
+  message_id:
+    type: integer
+    description: Identifier of the poll's message in the bot's chat.
+  reply_markup:
+    $ref: ./InlineKeyboardMarkup.yaml
+    description: Keyboard the message shows once the poll is stopped; omitting it removes the keyboard.

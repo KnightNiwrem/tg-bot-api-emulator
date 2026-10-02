@@ -1,4 +1,4 @@
-import type { BotApiPoll } from './bot_api_poll.ts';
+import type { BotApiPoll, BotApiPollAnswer } from './bot_api_poll.ts';
 import type { BotApiRichMessage } from './bot_api_rich_message.ts';
 import type { ChatAdministratorRightName } from './bot_default_administrator_rights.ts';
 import type { ButtonStyle } from './button_appearance.ts';
@@ -667,6 +667,18 @@ export interface BotApiChosenInlineResultUpdate {
   readonly chosen_inline_result: BotApiChosenInlineResult;
 }
 
+/** A new state of a poll the bot sent: new counts, or its closure. */
+export interface BotApiPollUpdate {
+  readonly update_id: number;
+  readonly poll: BotApiPoll;
+}
+
+/** A changed answer to a non-anonymous poll the bot sent. */
+export interface BotApiPollAnswerUpdate {
+  readonly update_id: number;
+  readonly poll_answer: BotApiPollAnswer;
+}
+
 export interface BotApiMyChatMemberUpdate {
   readonly update_id: number;
   readonly my_chat_member: BotApiMyChatMemberUpdated;
@@ -683,13 +695,15 @@ export type BotApiUpdate =
   | BotApiInlineQueryUpdate
   | BotApiChosenInlineResultUpdate
   | BotApiCallbackQueryUpdate
+  | BotApiPollUpdate
+  | BotApiPollAnswerUpdate
   | BotApiMyChatMemberUpdate
   | BotApiChatMemberUpdate;
 
 /**
  * The ID of the chat an update happened in, as grammY's `ctx.chat` finds it; `undefined` for an
- * inline query, a chosen inline result, or a press of a button on a message sent through inline
- * mode, which the bot knows no chat of.
+ * inline query, a chosen inline result, a press of a button on a message sent through inline mode,
+ * or a poll or poll answer, which the bot knows no chat of.
  */
 export function getBotApiUpdateChatId(update: BotApiUpdate): number | undefined {
   if ('message' in update) {
@@ -710,8 +724,11 @@ export function getBotApiUpdateChatId(update: BotApiUpdate): number | undefined 
   return undefined;
 }
 
-/** The ID of the user whose action caused an update, as grammY's `ctx.from` finds it. */
-export function getBotApiUpdateUserId(update: BotApiUpdate): number {
+/**
+ * The ID of the user whose action caused an update, as grammY's `ctx.from` finds it; `undefined`
+ * for a poll's new state, which names no user.
+ */
+export function getBotApiUpdateUserId(update: BotApiUpdate): number | undefined {
   if ('message' in update) {
     return update.message.from.id;
   }
@@ -726,6 +743,12 @@ export function getBotApiUpdateUserId(update: BotApiUpdate): number {
   }
   if ('chosen_inline_result' in update) {
     return update.chosen_inline_result.from.id;
+  }
+  if ('poll' in update) {
+    return undefined;
+  }
+  if ('poll_answer' in update) {
+    return update.poll_answer.user.id;
   }
   if ('my_chat_member' in update) {
     return update.my_chat_member.from.id;

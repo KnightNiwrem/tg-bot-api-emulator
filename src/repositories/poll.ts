@@ -12,7 +12,7 @@ const MAX_POLL_ID = (1n << 63n) - 1n;
 export class PollRepository {
   readonly #pollsById = new Map<PollId, Poll>();
 
-  /** Stores a new open poll without votes under an identifier that no poll of the session had. */
+  /** Stores a new poll without votes under an identifier that no poll of the session had. */
   addPoll(newPoll: NewPoll): Poll {
     let pollId: PollId;
     do {
@@ -31,7 +31,7 @@ export class PollRepository {
       isAnonymous: newPoll.isAnonymous,
       allowsMultipleAnswers: newPoll.allowsMultipleAnswers,
       allowsRevoting: newPoll.allowsRevoting,
-      isClosed: false,
+      isClosed: newPoll.isClosed,
       answersByVoterId: new Map(),
     };
     this.#pollsById.set(poll.id, poll);
@@ -60,6 +60,17 @@ export class PollRepository {
     const answeredPoll: Poll = { ...poll, answersByVoterId };
     this.#pollsById.set(pollId, answeredPoll);
     return answeredPoll;
+  }
+
+  /** Closes a stored poll, which keeps its answers, and returns the closed poll. */
+  closePoll(pollId: PollId): Poll {
+    const poll = this.#pollsById.get(pollId);
+    if (poll === undefined) {
+      throw new Error(`Poll ${pollId} does not exist`);
+    }
+    const closedPoll: Poll = { ...poll, isClosed: true };
+    this.#pollsById.set(pollId, closedPoll);
+    return closedPoll;
   }
 }
 

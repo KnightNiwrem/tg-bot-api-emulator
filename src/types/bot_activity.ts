@@ -84,8 +84,8 @@ export interface UpdateDeliveredEntry {
   readonly update: BotApiUpdate;
   /** The chat the update happened in; omitted for updates without one, such as inline queries. */
   readonly chatId?: number;
-  /** The user whose action caused the update. */
-  readonly userId: number;
+  /** The user whose action caused the update; omitted for a poll's new state, which names none. */
+  readonly userId?: number;
 }
 
 /**
@@ -99,7 +99,8 @@ export interface UpdateConfirmedEntry {
   readonly via: BotUpdateTransport;
   readonly updateId: number;
   readonly chatId?: number;
-  readonly userId: number;
+  /** As `UpdateDeliveredEntry` describes it. */
+  readonly userId?: number;
 }
 
 /** An entry as it is recorded, before the log assigns its position. */

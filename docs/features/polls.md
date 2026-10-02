@@ -18,7 +18,8 @@ that cannot be read fails with the server's prefix, such as
 `Bad Request: can't parse InputPollOption: Expected InputPollOption to be an Object`. `options` that
 is not JSON fails with `Bad Request: can't parse options JSON object`, and `null` holds no options.
 `is_anonymous` defaults to true, `allows_multiple_answers` to false, and `allows_revoting` to true,
-as for a regular poll.
+as for a regular poll. `is_closed` sends the poll already closed, as a preview, which TDLib allows
+only bots.
 
 Once the chat and the replied message are found, the poll is checked as TDLib's
 [`create_input_message_content`][create-poll-content] and [`PollOption`][poll-option] check it:
@@ -76,14 +77,60 @@ checks it before looking at the account's answer. A message without a poll, or o
 cannot find, is `404`; a supergroup the account is no member of is `403`. Accounts never learn who
 else voted: the routes show only the account's own answer.
 
+## Stopping polls
+
+The bot that sent a poll stops it with [`stopPoll`][bot-api-stop-poll], which answers with the
+closed poll, as the official server's [`process_stop_poll_query`][stop-poll-query] does. The poll
+keeps its votes, accepts no more answers (`409` for an account), and shows `is_closed` through its
+message and every forward. The message shows the new `reply_markup`, or none when it is omitted, as
+an edit does; its `edit_date` does not change, and no bot receives an `edited_message` update, as
+bots receive none for their own messages.
+
+The server's [`check_message`][check-message] finds the message, and TDLib's
+[`get_message_poll_id`][message-poll-id] and [`stop_poll`][stop-poll] check the poll:
+
+| Check                                                        | Error                                              |
+| ------------------------------------------------------------ | -------------------------------------------------- |
+| No such message, or `message_id` not positive                | `Bad Request: message with poll to stop not found` |
+| The message shows no poll                                    | `Bad Request: message is not a poll`               |
+| The bot cannot edit the message: another bot's, or a forward | `Bad Request: poll can't be stopped`               |
+| The poll is closed, so a second `stopPoll` fails too         | `Bad Request: poll has already been closed`        |
+| A Web App button in a supergroup                             | `Bad Request: BUTTON_TYPE_INVALID`                 |
+| Callback data longer than 64 bytes                           | `Bad Request: BUTTON_DATA_INVALID`                 |
+
+The keyboard is read before the chat, as for `editMessageReplyMarkup`, and the chat is found as for
+an edit. A refused stop changes nothing.
+
+## Poll updates
+
+As the Bot API documents for [`Update`][bot-api-update], only the bot that sent a poll receives its
+updates, wherever the poll is shown, including forwards in chats the bot is not in:
+
+| Event                                              | Updates the bot receives                                                     |
+| -------------------------------------------------- | ---------------------------------------------------------------------------- |
+| An account answers, changes or retracts its answer | `poll_answer`, for a poll that is not anonymous, then `poll` with new counts |
+| The bot stops the poll                             | `poll` with the closed poll                                                  |
+| An answer that changes nothing, or a refused one   | None                                                                         |
+| A refused or repeated `stopPoll`                   | None                                                                         |
+
+`poll_answer` shows the voter in `user`, the chosen `option_ids` and `option_persistent_ids`, both
+empty for a retraction, as the server's [`JsonPollAnswer`][json-poll-answer] does. Bots never learn
+who voted in an anonymous poll. TDLib sends the bot `updatePoll` when the poll changes and after it
+stops it, as [`on_get_poll`][on-get-poll] does, and `updatePollAnswer` for the votes Telegram's
+servers report, as [`on_get_poll_vote`][on-get-poll-vote] does. Each update needs the bot's
+subscription to its type; both are in the default subscription. They have no chat, and a `poll`
+update has no user, as the bot activity log records them. A webhook sends a poll's updates in one
+queue, as the server's [`add_update_poll`][add-update-poll] chooses it.
+
 ## Forwards, copies and replies
 
 A forward of a poll's message, by a bot or an account, shows the same poll: its votes count once,
 whichever message an account votes through, and every message showing it shows the same counts. As
 TDLib's [`dup_message_content`][dup-content] and [`dup_poll`][dup-poll] do, a copy by `copyMessage`
 or `copyMessages` shows a new poll that the copying bot owns, with the original's question, options
-and settings, open and without votes; a `caption` of `copyMessage` is ignored. A reply from another
-chat to a poll's message shows the poll in `external_reply.poll`, as it is now.
+and settings, open and without votes, even when the original is closed; a `caption` of `copyMessage`
+is ignored. A reply from another chat to a poll's message shows the poll in `external_reply.poll`,
+as it is now.
 
 ## Intentional deviations
 
@@ -97,9 +144,11 @@ chat to a poll's message shows the poll in `external_reply.poll`, as it is now.
 - **Quizzes.** `type` `quiz` fails with `Bad Request: quiz polls are not supported`, and the quiz
   parameters `correct_option_id`, `correct_option_ids`, `explanation` and their formatting are
   rejected as unknown parameters.
-- **Closing polls.** `stopPoll`, `is_closed`, `open_period` and `close_date` are missing, so polls
-  stay open.
-- **Poll updates.** Bots receive no `poll` or `poll_answer` updates yet.
+- **Closing times.** `open_period` and `close_date` are missing; polls close only when stopped or
+  sent closed.
+- **Other bots' stopped polls.** The Bot API documents that bots also receive updates about manually
+  stopped polls they did not send. Which bots Telegram's servers tell is not in the open-source
+  code, so a bot that has only a forward of a poll receives no update when it stops.
 - **Telegram 10.x poll features.** Options added after creation (`allow_adding_options`),
   restrictions on who may vote (`members_only`, `country_codes`), `shuffle_options`,
   `hide_results_until_closes`, descriptions (`description` and its formatting), and media (`media`,
@@ -112,19 +161,31 @@ chat to a poll's message shows the poll in `external_reply.poll`, as it is now.
 ## Comparison limits
 
 TDLib sends votes and polls to Telegram's servers, whose storage and checks the open-source code
-does not show, such as how they assign `persistent_id` and poll identifiers or whether they refuse
-an unchanged answer. The emulator keeps every account's answer itself and counts votes from them, so
-counts always agree with the answers.
+does not show, such as how they assign `persistent_id` and poll identifiers, whether they refuse an
+unchanged answer, and the order in which they send a vote's `poll_answer` and `poll` updates. The
+emulator keeps every account's answer itself and counts votes from them, so counts always agree with
+the answers, and sends `poll_answer` first.
 
 ## Local evidence
 
 [Parameter reading](../../src/api/sessions/bot_api/input_poll_option_parameter.ts),
 [domain model](../../src/types/poll.ts), [normalization](../../src/services/poll_normalization.ts),
-[voting](../../src/services/poll.ts), [storage](../../src/repositories/poll.ts),
+[voting and stopping](../../src/services/poll.ts), [storage](../../src/repositories/poll.ts),
+[update delivery](../../src/services/bot_update_delivery.ts),
 [projection](../../src/projections/bot_api_message.ts), [unit tests](../../tests/poll_test.ts) and
 [HTTP tests](../../tests/poll_api_test.ts).
 
 [bot-api-send-poll]: https://core.telegram.org/bots/api#sendpoll
+[bot-api-stop-poll]: https://core.telegram.org/bots/api#stoppoll
+[bot-api-update]: https://core.telegram.org/bots/api#update
+[stop-poll-query]: https://github.com/tdlib/telegram-bot-api/blob/e3e9dd8e5b3d7ab8537cd5a10dc31d5ffa8f82d1/telegram-bot-api/Client.cpp#L14326-L14357
+[check-message]: https://github.com/tdlib/telegram-bot-api/blob/e3e9dd8e5b3d7ab8537cd5a10dc31d5ffa8f82d1/telegram-bot-api/Client.cpp#L9084-L9104
+[json-poll-answer]: https://github.com/tdlib/telegram-bot-api/blob/e3e9dd8e5b3d7ab8537cd5a10dc31d5ffa8f82d1/telegram-bot-api/Client.cpp#L2843-L2861
+[add-update-poll]: https://github.com/tdlib/telegram-bot-api/blob/e3e9dd8e5b3d7ab8537cd5a10dc31d5ffa8f82d1/telegram-bot-api/Client.cpp#L18481-L18489
+[message-poll-id]: https://github.com/tdlib/td/blob/bc9c263e2bfee06aaab41e82db51a103376030bc/td/telegram/MessagesManager.cpp#L36619-L36638
+[stop-poll]: https://github.com/tdlib/td/blob/bc9c263e2bfee06aaab41e82db51a103376030bc/td/telegram/PollManager.cpp#L1717-L1746
+[on-get-poll]: https://github.com/tdlib/td/blob/bc9c263e2bfee06aaab41e82db51a103376030bc/td/telegram/PollManager.cpp#L2547-L2567
+[on-get-poll-vote]: https://github.com/tdlib/td/blob/bc9c263e2bfee06aaab41e82db51a103376030bc/td/telegram/PollManager.cpp#L2587-L2628
 [send-poll-query]: https://github.com/tdlib/telegram-bot-api/blob/e3e9dd8e5b3d7ab8537cd5a10dc31d5ffa8f82d1/telegram-bot-api/Client.cpp#L14254-L14324
 [input-poll-options]: https://github.com/tdlib/telegram-bot-api/blob/e3e9dd8e5b3d7ab8537cd5a10dc31d5ffa8f82d1/telegram-bot-api/Client.cpp#L13173-L13206
 [json-poll]: https://github.com/tdlib/telegram-bot-api/blob/e3e9dd8e5b3d7ab8537cd5a10dc31d5ffa8f82d1/telegram-bot-api/Client.cpp#L2742-L2841

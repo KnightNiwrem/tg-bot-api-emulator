@@ -217,6 +217,13 @@ const MESSAGE_HAS_NO_CAPTION_DESCRIPTION =
 const MESSAGE_NOT_EDITABLE_DESCRIPTION = "Bad Request: message can't be edited";
 /** TDLib's `can_edit_message_media` refuses to edit the media of a voice note or a poll. */
 const MESSAGE_MEDIA_NOT_EDITABLE_DESCRIPTION = "Bad Request: message media can't be edited";
+
+/** The descriptions of the Bot API server's `check_message` and TDLib's `stop_poll`. */
+const MESSAGE_WITH_POLL_TO_STOP_NOT_FOUND_DESCRIPTION =
+  'Bad Request: message with poll to stop not found';
+const MESSAGE_HAS_NO_POLL_DESCRIPTION = 'Bad Request: message is not a poll';
+const POLL_NOT_STOPPABLE_DESCRIPTION = "Bad Request: poll can't be stopped";
+const POLL_ALREADY_CLOSED_DESCRIPTION = 'Bad Request: poll has already been closed';
 /** TDLib's `edit_message_media` keeps a message of an album to its kind of media. */
 const ALBUM_MEDIA_TYPE_UNCHANGEABLE_DESCRIPTION =
   "Bad Request: can't change media type in the album";
@@ -464,6 +471,7 @@ const sendPollParametersSchema = z.strictObject({
   type: z.string().default(''),
   allows_multiple_answers: booleanParameter().default(false),
   allows_revoting: booleanParameter().default(true),
+  is_closed: booleanParameter().default(false),
 });
 
 const sendPhotoParametersSchema = z.strictObject({
@@ -607,6 +615,13 @@ const editMessageMediaParametersSchema = z.strictObject({
 
 const editMessageReplyMarkupParametersSchema = z.strictObject({
   ...editedMessageParametersShape,
+  reply_markup: inlineKeyboardMarkupParameter().optional(),
+});
+
+// Business connections are not supported.
+const stopPollParametersSchema = z.strictObject({
+  chat_id: integerParameter(z.int()).optional(),
+  message_id: integerParameter(z.int()).optional(),
   reply_markup: inlineKeyboardMarkupParameter().optional(),
 });
 
@@ -999,6 +1014,7 @@ const BOT_API_METHODS: readonly BotApiMethod[] = [
   { name: 'setMyDescription', handler: handleSetMyDescription },
   { name: 'setMyShortDescription', handler: handleSetMyShortDescription },
   { name: 'setWebhook', handler: handleSetWebhook },
+  { name: 'stopPoll', handler: handleStopPoll },
   { name: 'unbanChatMember', handler: handleUnbanChatMember },
 ];
 
@@ -1561,6 +1577,7 @@ function handleSendPoll(
     isAnonymous: data.is_anonymous,
     allowsMultipleAnswers: data.allows_multiple_answers,
     allowsRevoting: data.allows_revoting,
+    isClosed: data.is_closed,
   }));
 }
 
@@ -2504,6 +2521,62 @@ function handleEditMessageReplyMarkup(
     : editMessageAnswer(
       botApi.editMessageReplyMarkup(context.bot, { ...target, inlineKeyboard }),
     );
+}
+
+/**
+ * Stops a poll as the official Bot API server's `process_stop_poll_query` reads it: the new
+ * keyboard, then the chat and the message, which must be positive to be found.
+ */
+function handleStopPoll(
+  context: BotApiMethodContext,
+  parameters: BotApiRequestParameters,
+): BotApiMethodAnswer {
+  const parsedParameters = stopPollParametersSchema.safeParse(parameters);
+  if (!parsedParameters.success) {
+    return botApiError(400, 'Bad Request: invalid stopPoll parameters');
+  }
+  const { chat_id: chatId, message_id: messageId, reply_markup: replyMarkup } =
+    parsedParameters.data;
+  const keyboardReading = readInlineKeyboardParameter(context, replyMarkup);
+  if (!keyboardReading.read) {
+    return keyboardReading.errorAnswer;
+  }
+  if (chatId === undefined) {
+    return botApiError(400, CHAT_ID_EMPTY_DESCRIPTION);
+  }
+
+  const result = context.session.botApi.stopPoll(context.bot, {
+    chatId,
+    messageId: messageIdOrNone(messageId),
+    inlineKeyboard: keyboardReading.inlineKeyboard,
+  });
+  if (result.stopped) {
+    return botApiResult(result.poll);
+  }
+  switch (result.reason) {
+    case 'chat_not_found':
+      return botApiError(400, CHAT_NOT_FOUND_DESCRIPTION);
+    case 'bot_not_a_member':
+      return botApiError(403, BOT_NOT_SUPERGROUP_MEMBER_DESCRIPTION);
+    case 'bot_kicked':
+      return botApiError(403, BOT_KICKED_FROM_SUPERGROUP_DESCRIPTION);
+    case 'message_not_found':
+      return botApiError(400, MESSAGE_WITH_POLL_TO_STOP_NOT_FOUND_DESCRIPTION);
+    case 'message_has_no_poll':
+      return botApiError(400, MESSAGE_HAS_NO_POLL_DESCRIPTION);
+    case 'poll_not_stoppable':
+      return botApiError(400, POLL_NOT_STOPPABLE_DESCRIPTION);
+    case 'poll_already_closed':
+      return botApiError(400, POLL_ALREADY_CLOSED_DESCRIPTION);
+    case 'callback_data_invalid':
+      return botApiError(400, BUTTON_DATA_INVALID_DESCRIPTION);
+    case 'button_type_invalid':
+      return botApiError(400, BUTTON_TYPE_INVALID_DESCRIPTION);
+    default: {
+      const unhandledReason: never = result.reason;
+      throw new Error(`Unhandled poll stop failure: ${unhandledReason}`);
+    }
+  }
 }
 
 /**

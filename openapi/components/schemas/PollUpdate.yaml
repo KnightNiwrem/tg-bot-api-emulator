@@ -1,0 +1,14 @@
+type: object
+additionalProperties: false
+description: >-
+  A new state of a poll the bot sent, with its counts after an account's answer changed or after
+  the bot stopped it.
+required:
+  - update_id
+  - poll
+properties:
+  update_id:
+    type: integer
+    minimum: 1
+  poll:
+    $ref: ./Poll.yaml

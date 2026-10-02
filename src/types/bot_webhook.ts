@@ -51,8 +51,9 @@ export function hasOnlyWebhookSecretTokenCharacters(secretToken: string): boolea
 /**
  * Names the queue of a bot's webhook updates that an update joins, as the official Bot API
  * server's `Client::add_update` calls choose its webhook queue: messages and their edits by chat,
- * inline queries, chosen inline results, and callback queries by the user who sent them, and
- * membership changes by chat for the bot's own and by user for other members'. A queue's updates
+ * inline queries, chosen inline results, and callback queries by the user who sent them, a poll's
+ * new states and answers by the poll, and membership changes by chat for the bot's own and by user
+ * for other members'. A queue's updates
  * are delivered one at a time, in order, while different queues are delivered at once.
  */
 export function getWebhookUpdateQueueKey(update: BotApiUpdate): string {
@@ -70,6 +71,12 @@ export function getWebhookUpdateQueueKey(update: BotApiUpdate): string {
   }
   if ('callback_query' in update) {
     return `callback_query:${update.callback_query.from.id}`;
+  }
+  if ('poll' in update) {
+    return `poll:${update.poll.id}`;
+  }
+  if ('poll_answer' in update) {
+    return `poll:${update.poll_answer.poll_id}`;
   }
   if ('my_chat_member' in update) {
     return `my_chat_member:${update.my_chat_member.chat.id}`;

@@ -28,12 +28,13 @@ import {
   type BotApiUser,
   toBotApiLocation,
 } from '../types/bot_api.ts';
-import type { BotApiPoll } from '../types/bot_api_poll.ts';
+import type { BotApiPoll, BotApiPollAnswer } from '../types/bot_api_poll.ts';
 import type { CallbackQuery } from '../types/callback_query.ts';
 import type {
   BotBlockChangedEvent,
   ChatMemberStatusChangedEvent,
   InlineQueryResultChosenEvent,
+  PollAnswerChangedEvent,
 } from '../types/chat_domain_event.ts';
 import type { ChatMemberStatus, SupergroupAdministratorRights } from '../types/chat_membership.ts';
 import { getInlineQueryChatType, type InlineQuery } from '../types/inline_query.ts';
@@ -463,6 +464,25 @@ export function projectPoll(poll: Poll): BotApiPoll {
     allows_revoting: poll.allowsRevoting,
     members_only: false,
     type: 'regular',
+  };
+}
+
+/**
+ * Shows an account's changed answer to a poll as the official Bot API server's `JsonPollAnswer`
+ * does: the options it chose, by position and by persistent identifier, which are empty for a
+ * retraction.
+ */
+export function projectPollAnswerForBot(
+  { poll, chosenOptionPositions }: PollAnswerChangedEvent,
+  voter: VirtualAccountProfile,
+): BotApiPollAnswer {
+  return {
+    poll_id: poll.id,
+    user: voter,
+    option_ids: chosenOptionPositions,
+    option_persistent_ids: chosenOptionPositions.map((optionPosition) =>
+      poll.options[optionPosition].persistentId
+    ),
   };
 }
 

@@ -1,5 +1,6 @@
 import type { ChatDomainEvent } from '../types/chat_domain_event.ts';
 import type { InlineKeyboard } from '../types/inline_keyboard.ts';
+import type { Poll, PollId } from '../types/poll.ts';
 import { type AlbumCompositionFailureReason, formsAlbum } from '../types/media_album.ts';
 import type { ExternalReplyTarget } from '../types/message_reply.ts';
 import type { MessageForward } from '../types/message_forward.ts';
@@ -40,6 +41,7 @@ import {
   type FileUploadStore,
   getReplyQuoteSource,
   hasOnlyValidButtonCallbackData,
+  hasOnlyValidCallbackData,
   isSameMessageContent,
   isUnchangedContent,
   type MediaContent,
@@ -63,6 +65,7 @@ import {
   toOutgoingAccountContent,
   toOutgoingAccountMedia,
 } from './message_content.ts';
+import { findStoppablePoll, type PollStopFailureReason } from './poll.ts';
 
 export type PrivateConversationActivationFailureReason =
   | 'account_not_found'
@@ -329,6 +332,29 @@ export type EditBotMessageInlineKeyboardFailureReason =
   | 'callback_data_invalid'
   | 'message_not_modified';
 
+/** A poll a bot stops through its message in one of its private chats. */
+export interface StopBotPollInput {
+  readonly fromBotId: number;
+  readonly chat: BotPrivateChat;
+  /** The ID of the poll's message in the bot's message box. */
+  readonly botMessageId: number;
+  /** The keyboard the poll's message shows once stopped; omitting it removes the keyboard. */
+  readonly inlineKeyboard?: InlineKeyboard;
+}
+
+export type StopBotPollResult =
+  | { readonly stopped: true; readonly message: PrivateMessage; readonly poll: Poll }
+  | {
+    readonly stopped: false;
+    readonly reason:
+      | 'bot_not_found'
+      | 'account_not_found'
+      | 'conversation_not_started'
+      | 'message_not_found'
+      | PollStopFailureReason
+      | 'callback_data_invalid';
+  };
+
 export type EditBotMessageTextFailureReason =
   | EditBotMessageInlineKeyboardFailureReason
   | 'message_text_empty'
@@ -583,6 +609,12 @@ interface PrivateMessageStore {
   ): readonly PrivateMessage[];
 }
 
+/** Stores the polls bots send and closes the polls they stop. */
+interface PollStore extends NewPollStore {
+  getPoll(pollId: PollId): Poll | undefined;
+  closePoll(pollId: PollId): Poll;
+}
+
 interface MessageBoxStore {
   assignMessageId(ownerId: number, canonicalMessageId: CanonicalMessageId): number;
   getCanonicalMessageId(ownerId: number, messageId: number): CanonicalMessageId | undefined;
@@ -602,7 +634,7 @@ interface PrivateMessagingServiceDependencies {
   readonly privateConversations: PrivateConversationStore;
   readonly messages: PrivateMessageStore;
   readonly files: FileUploadStore;
-  readonly polls: NewPollStore;
+  readonly polls: PollStore;
   readonly messageBoxes: MessageBoxStore;
   readonly blockedUsers: BlockedUserLookup;
   readonly events: ChatDomainEventSink;
@@ -652,7 +684,7 @@ export class PrivateMessagingService {
   readonly #privateConversations: PrivateConversationStore;
   readonly #messages: PrivateMessageStore;
   readonly #files: FileUploadStore;
-  readonly #polls: NewPollStore;
+  readonly #polls: PollStore;
   readonly #messageBoxes: MessageBoxStore;
   readonly #blockedUsers: BlockedUserLookup;
   readonly #events: ChatDomainEventSink;
@@ -1042,6 +1074,38 @@ export class PrivateMessagingService {
       inlineKeyboard: input.inlineKeyboard,
       contentEditedAtUnixSeconds: message.contentEditedAtUnixSeconds,
     });
+  }
+
+  /**
+   * Stops a poll the bot sent to one of its private chats, as TDLib's `stop_poll` does: once the
+   * message is found, the poll is found as `findStoppablePoll` finds it, and the new keyboard's
+   * callback data must fit. The poll then accepts no more answers and keeps its votes, the message
+   * shows the new keyboard, and the bot that sent the poll learns of its closure.
+   */
+  stopBotPoll(input: StopBotPollInput): StopBotPollResult {
+    if (this.#bots.getById(input.fromBotId) === undefined) {
+      return { stopped: false, reason: 'bot_not_found' };
+    }
+    const lookup = this.#findBotEditTarget(input);
+    if (!lookup.resolved) {
+      return { stopped: false, reason: lookup.reason };
+    }
+    const pollLookup = findStoppablePoll(lookup.message, input.fromBotId, this.#polls);
+    if (!pollLookup.found) {
+      return { stopped: false, reason: pollLookup.reason };
+    }
+    if (input.inlineKeyboard !== undefined && !hasOnlyValidCallbackData(input.inlineKeyboard)) {
+      return { stopped: false, reason: 'callback_data_invalid' };
+    }
+
+    const stoppedPoll = this.#polls.closePoll(pollLookup.poll.id);
+    const message = this.#messages.editPrivateMessage(lookup.message.id, {
+      content: lookup.message.content,
+      inlineKeyboard: input.inlineKeyboard,
+      contentEditedAtUnixSeconds: lookup.message.contentEditedAtUnixSeconds,
+    });
+    this.#events.publish({ type: 'poll_stopped', poll: stoppedPoll });
+    return { stopped: true, message, poll: stoppedPoll };
   }
 
   /**

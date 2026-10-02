@@ -35,8 +35,8 @@ order, but calls from different chats can interleave.
 Parameters are recorded as text, as the Bot API reads them: `chat_id: 1` and `chat_id: "1"` are both
 `"1"`, and structured parameters such as `reply_markup` are JSON text. A `chat_id` naming a public
 username is recorded with the chat it names. An update's chat and user are found as grammY's
-`ctx.chat` and `ctx.from` find them. Inline queries, chosen inline results and presses of buttons on
-inline messages have no chat.
+`ctx.chat` and `ctx.from` find them. Inline queries, chosen inline results, presses of buttons on
+inline messages, polls and poll answers have no chat, and a poll's new state has no user.
 
 The log does not record:
 

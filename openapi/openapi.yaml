@@ -173,6 +173,8 @@ paths:
     $ref: paths/sessions_{sessionId}_bot-api_bot{token}_editMessageText.yaml
   /sessions/{sessionId}/bot-api/bot{token}/editMessageReplyMarkup:
     $ref: paths/sessions_{sessionId}_bot-api_bot{token}_editMessageReplyMarkup.yaml
+  /sessions/{sessionId}/bot-api/bot{token}/stopPoll:
+    $ref: paths/sessions_{sessionId}_bot-api_bot{token}_stopPoll.yaml
   /sessions/{sessionId}/bot-api/bot{token}/deleteMessage:
     $ref: paths/sessions_{sessionId}_bot-api_bot{token}_deleteMessage.yaml
   /sessions/{sessionId}/bot-api/bot{token}/deleteMessages:

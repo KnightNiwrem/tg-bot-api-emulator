@@ -46,6 +46,8 @@ export interface NewPoll {
   readonly allowsMultipleAnswers: boolean;
   /** Whether a voter may change or retract its answer, which TDLib calls revoting. */
   readonly allowsRevoting: boolean;
+  /** Whether the poll is created closed, as a bot's preview of a poll is. */
+  readonly isClosed: boolean;
 }
 
 /**
@@ -61,7 +63,7 @@ export interface Poll {
   readonly isAnonymous: boolean;
   readonly allowsMultipleAnswers: boolean;
   readonly allowsRevoting: boolean;
-  /** Whether the poll no longer accepts answers. */
+  /** Whether the poll no longer accepts answers: it was created closed, or its owner stopped it. */
   readonly isClosed: boolean;
   /**
    * Each voter's chosen options, by the voting account's ID, as option positions in increasing

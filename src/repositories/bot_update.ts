@@ -7,6 +7,7 @@ import type {
   BotApiMyChatMemberUpdated,
   BotApiUpdate,
 } from '../types/bot_api.ts';
+import type { BotApiPoll, BotApiPollAnswer } from '../types/bot_api_poll.ts';
 
 /**
  * How far beyond the ID of the next update an offset can be before Telegram ignores it. From the
@@ -70,6 +71,14 @@ export class BotUpdateRepository {
       botId,
       (update_id) => ({ update_id, callback_query: callbackQuery }),
     );
+  }
+
+  enqueuePollUpdate(botId: number, poll: BotApiPoll): BotApiUpdate {
+    return this.#enqueueUpdate(botId, (update_id) => ({ update_id, poll }));
+  }
+
+  enqueuePollAnswerUpdate(botId: number, pollAnswer: BotApiPollAnswer): BotApiUpdate {
+    return this.#enqueueUpdate(botId, (update_id) => ({ update_id, poll_answer: pollAnswer }));
   }
 
   enqueueMyChatMemberUpdate(botId: number, myChatMember: BotApiMyChatMemberUpdated): BotApiUpdate {

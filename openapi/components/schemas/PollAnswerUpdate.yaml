@@ -1,0 +1,38 @@
+type: object
+additionalProperties: false
+description: >-
+  An account's changed answer to a non-anonymous poll the bot sent, as the Bot API's
+  `PollAnswer` shows it. Only accounts vote, so the voter is always a `user`.
+required:
+  - update_id
+  - poll_answer
+properties:
+  update_id:
+    type: integer
+    minimum: 1
+  poll_answer:
+    type: object
+    additionalProperties: false
+    required:
+      - poll_id
+      - user
+      - option_ids
+      - option_persistent_ids
+    properties:
+      poll_id:
+        type: string
+        pattern: '^[1-9]\d*$'
+      user:
+        $ref: ./Account.yaml
+      option_ids:
+        type: array
+        description: The chosen options' positions, counted from 0; empty for a retracted answer.
+        items:
+          type: integer
+          minimum: 0
+      option_persistent_ids:
+        type: array
+        description: The chosen options' `persistent_id`, in the same order.
+        items:
+          type: string
+          minLength: 1

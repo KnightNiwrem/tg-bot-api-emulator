@@ -13,6 +13,7 @@ import type {
   BotApiSupergroupMessage,
   BotApiWebhookInfo,
 } from '../types/bot_api.ts';
+import type { BotApiPoll } from '../types/bot_api_poll.ts';
 import type { BotCommand, BotCommandScope } from '../types/bot_command.ts';
 import {
   type ChatAdministratorRightName,
@@ -141,11 +142,19 @@ import type {
   TextInvalidFailure,
   TextMessageReplacement,
 } from './message_content.ts';
+import type { PollStopFailureReason } from './poll.ts';
 import type { PollLimitFailure } from './poll_normalization.ts';
-import type { SendBotAlbumInput, SendBotAlbumResult } from './private_messaging.ts';
+import type {
+  SendBotAlbumInput,
+  SendBotAlbumResult,
+  StopBotPollInput,
+  StopBotPollResult,
+} from './private_messaging.ts';
 import type {
   SendSupergroupBotAlbumInput,
   SendSupergroupBotAlbumResult,
+  StopSupergroupBotPollInput,
+  StopSupergroupBotPollResult,
 } from './supergroup_messaging.ts';
 
 /** The most UTF-8 bytes of text the Bot API reads before applying its formatting. */
@@ -337,6 +346,8 @@ export type SendPollRequest = SendRequestOptions & {
   readonly allowsMultipleAnswers: boolean;
   /** The Bot API `allows_revoting`. */
   readonly allowsRevoting: boolean;
+  /** The Bot API `is_closed`, which sends the poll closed, as a preview. */
+  readonly isClosed: boolean;
 };
 
 /** New content of a text or rich message: text with its formatting, or a rich message. */
@@ -637,6 +648,25 @@ export interface EditMessageReplyMarkupRequest extends MessageTarget {
   /** Omitting the keyboard removes the message's keyboard, as on Telegram. */
   readonly inlineKeyboard?: InlineKeyboard;
 }
+
+/** The message of a poll the bot sent, which `stopPoll` stops. */
+export interface StopPollRequest extends MessageTarget {
+  /** The keyboard the message shows once stopped; omitting it removes the keyboard, as an edit does. */
+  readonly inlineKeyboard?: InlineKeyboard;
+}
+
+export type StopPollFailureReason =
+  | 'chat_not_found'
+  | FormerSupergroupMemberFailureReason
+  | 'message_not_found'
+  | PollStopFailureReason
+  | 'callback_data_invalid'
+  | 'button_type_invalid';
+
+/** The Bot API answers `stopPoll` with the stopped poll rather than its message. */
+export type StopPollResult =
+  | { readonly stopped: true; readonly poll: BotApiPoll }
+  | { readonly stopped: false; readonly reason: StopPollFailureReason };
 
 export type EditMessageReplyMarkupFailureReason =
   | 'chat_not_found'
@@ -1214,6 +1244,7 @@ interface BotMessaging {
   editBotMessageInlineKeyboard(
     input: PrivateMessageEditTarget & { readonly inlineKeyboard?: InlineKeyboard },
   ): BotMessageEditingResult<BotMessageEditFailureReason>;
+  stopBotPoll(input: StopBotPollInput): StopBotPollResult;
   sendBotChatAction(input: {
     readonly fromBotId: number;
     readonly to: BotPrivateChat;
@@ -1342,6 +1373,7 @@ interface SupergroupBotMessaging {
   editBotMessageInlineKeyboard(
     input: SupergroupMessageEditTarget & { readonly inlineKeyboard?: InlineKeyboard },
   ): SupergroupBotMessageEditingResult<SupergroupBotMessageEditFailureReason>;
+  stopBotPoll(input: StopSupergroupBotPollInput): StopSupergroupBotPollResult;
   sendBotChatAction(input: {
     readonly fromBotId: number;
     readonly chatId: number;
@@ -1617,6 +1649,7 @@ interface BotCaptionNormalizer {
 }
 
 interface BotMessageViews {
+  viewPollForBot(poll: Poll): BotApiPoll;
   viewPrivateMessageForBot(message: PrivateMessage): BotApiPrivateMessage;
   viewSupergroupMessage(message: SupergroupMessage, observerId: number): BotApiSupergroupMessage;
   viewChatMember(userId: number, status: ChatMemberStatus): BotApiChatMember | undefined;
@@ -2187,6 +2220,7 @@ export class BotApiService {
       isAnonymous,
       allowsMultipleAnswers,
       allowsRevoting,
+      isClosed,
       ...options
     }: SendPollRequest,
   ): SendResult {
@@ -2199,6 +2233,7 @@ export class BotApiService {
         isAnonymous,
         allowsMultipleAnswers,
         allowsRevoting,
+        isClosed,
       },
     }, options);
   }
@@ -2496,6 +2531,7 @@ export class BotApiService {
         isAnonymous: poll.isAnonymous,
         allowsMultipleAnswers: poll.allowsMultipleAnswers,
         allowsRevoting: poll.allowsRevoting,
+        isClosed: false,
       },
     };
   }
@@ -3693,6 +3729,56 @@ export class BotApiService {
       return result;
     }
     return { edited: false, reason: toEditMessageFailureReason(authenticatedBot, result.reason) };
+  }
+
+  /**
+   * Stops a poll the bot sent, as the official Bot API server's `process_stop_poll_query` and
+   * TDLib's `stop_poll` do, and answers with the closed poll. The message is found as an edit finds
+   * it, then the poll as the messaging services find it; stopping a closed poll fails. The message
+   * shows the new keyboard, or none; no bot receives an `edited_message` update for it.
+   */
+  stopPoll(
+    authenticatedBot: VirtualBotProfile,
+    { chatId, messageId, inlineKeyboard }: StopPollRequest,
+  ): StopPollResult {
+    const result = isUserId(chatId)
+      ? this.#botMessages.stopBotPoll({
+        fromBotId: authenticatedBot.id,
+        chat: { type: 'private', accountId: chatId },
+        botMessageId: messageId,
+        inlineKeyboard,
+      })
+      : this.#supergroupBotMessages.stopBotPoll({
+        fromBotId: authenticatedBot.id,
+        chatId,
+        messageId,
+        inlineKeyboard,
+      });
+    if (result.stopped) {
+      return { stopped: true, poll: this.#botMessageViews.viewPollForBot(result.poll) };
+    }
+    switch (result.reason) {
+      case 'chat_not_found':
+      case 'bot_not_a_member':
+      case 'bot_kicked':
+      case 'message_not_found':
+      case 'message_has_no_poll':
+      case 'poll_not_stoppable':
+      case 'poll_already_closed':
+      case 'callback_data_invalid':
+      case 'button_type_invalid':
+        return { stopped: false, reason: result.reason };
+      // As for sending, a chat the bot cannot address is not found.
+      case 'account_not_found':
+      case 'conversation_not_started':
+        return { stopped: false, reason: 'chat_not_found' };
+      case 'bot_not_found':
+        throw new Error(`Authenticated bot ${authenticatedBot.id} does not exist`);
+      default: {
+        const unhandledReason: never = result;
+        throw new Error(`Unhandled poll stop failure: ${JSON.stringify(unhandledReason)}`);
+      }
+    }
   }
 
   /**

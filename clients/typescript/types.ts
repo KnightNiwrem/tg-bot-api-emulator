@@ -1785,8 +1785,11 @@ export interface UpdateDeliveredEntry {
   readonly update: BotApiUpdate;
   /** The chat the update happened in, as grammY's `ctx.chat` finds it; omitted when it has none. */
   readonly chat_id?: number;
-  /** The user whose action caused the update, as grammY's `ctx.from` finds it. */
-  readonly user_id: number;
+  /**
+   * The user whose action caused the update, as grammY's `ctx.from` finds it; omitted for a
+   * poll's new state, which names no user.
+   */
+  readonly user_id?: number;
 }
 
 /**
@@ -1800,7 +1803,8 @@ export interface UpdateConfirmedEntry {
   readonly via: 'polling' | 'webhook';
   readonly update_id: number;
   readonly chat_id?: number;
-  readonly user_id: number;
+  /** As `UpdateDeliveredEntry` describes it. */
+  readonly user_id?: number;
 }
 
 /**
