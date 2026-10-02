@@ -8,7 +8,7 @@ description: >-
   uploads a video. An uploaded `thumbnail` is kept as for `sendDocument`. A video sent by
   `file_id` keeps its own attributes and thumbnail. A video sent by HTTP URL is downloaded as
   `sendPhoto` downloads a photo; the emulator requires it to be served as `video/mp4` and to be
-  at most 20 MB (20971520 bytes), names it after the URL's last path segment, keeps the
+  at most 20 MB (20971520 bytes), names it after the URL's last path segment, if any, keeps the
   attributes the bot specified, and gives it no thumbnail. A `cover` is not supported.
 parameters:
   - $ref: ../components/parameters/SessionId.yaml

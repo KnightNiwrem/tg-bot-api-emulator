@@ -2759,10 +2759,11 @@ export class BotApiService {
    * Resolves the video a request sends, as `#resolveDocument` resolves a document: an upload, whose
    * name the Bot API server cleans, with the duration, dimensions and thumbnail the bot specified;
    * a video the bot knows by `file_id`, which keeps its own; or a file downloaded from a URL, named
-   * after the URL and typed as it was served. As for a document, TDLib sends a URL video as
-   * `inputMediaDocumentExternal`, which takes no thumbnail, so an uploaded thumbnail is left out.
-   * That media carries none of the bot's attributes either, which Telegram's servers determine
-   * themselves; the emulator, which reads no video content, keeps the ones the bot specified.
+   * after the URL's last path segment, if it has one, and typed as it was served. As for a
+   * document, TDLib sends a URL video as `inputMediaDocumentExternal`, which takes no thumbnail, so
+   * an uploaded thumbnail is left out. That media carries none of the bot's attributes either,
+   * which Telegram's servers determine themselves; the emulator, which reads no video content,
+   * keeps the ones the bot specified.
    */
   #resolveVideo(
     authenticatedBot: VirtualBotProfile,
@@ -2788,7 +2789,9 @@ export class BotApiService {
         }
         : {
           content: input.webFile.content,
-          fileName: cleanUploadedFileName(input.webFile.fileName),
+          ...(input.webFile.fileName.length === 0
+            ? {}
+            : { fileName: cleanUploadedFileName(input.webFile.fileName) }),
           mimeType: input.webFile.mediaType,
           attributes,
           source: 'web_download',

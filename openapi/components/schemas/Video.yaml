@@ -33,7 +33,7 @@ properties:
     minLength: 1
     description: >-
       The file's name, cleaned as a document's for a bot's upload; omitted for a video an
-      account sent without one.
+      account sent without one, or one sent by a URL whose path ends without a name.
   mime_type:
     type: string
     pattern: '^video/'

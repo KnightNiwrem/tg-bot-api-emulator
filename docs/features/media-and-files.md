@@ -74,8 +74,8 @@ These are the server's descriptions of Telegram's `WEBPAGE_CURL_FAILED` and `WEB
 uploaded one, so content that is not a readable image fails with `IMAGE_PROCESS_FAILED`. A document
 is named after the URL's last path segment, cleaned as an upload's name, keeps the type it was
 served as, and takes no thumbnail, as TDLib sends it as `inputMediaDocumentExternal`; a video sent
-by URL is named and typed alike and takes no thumbnail either. A file sent by URL is stored as a new
-file, like an upload.
+by URL is named and typed alike, without a name when the URL's path ends in `/`, and takes no
+thumbnail either. A file sent by URL is stored as a new file, like an upload.
 
 ### Videos
 

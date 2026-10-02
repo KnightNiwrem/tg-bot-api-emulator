@@ -8820,8 +8820,19 @@ Deno.test('sendVideo keeps the attributes bots define and follows Telegram check
     duration: '5',
     thumbnail: 'attach://preview',
   }, { preview: new File([gifImage(90, 60)], 'preview.gif') });
+  // A URL whose path names no file gives a video without a name.
+  await api.request(
+    `${sessionPath}/web-resources`,
+    jsonRequest('POST', {
+      url: 'https://cdn.example.com/media/',
+      content_type: 'video/mp4',
+      content_base64: new TextEncoder().encode('index').toBase64(),
+    }),
+  );
+  const unnamed = await sendVideo({ video: 'https://cdn.example.com/media/' }, {});
   if (
     misnamed.video.mime_type !== 'video/mp4' || misnamed.video.file_name !== 'notes.txt' ||
+    'file_name' in unnamed.video || unnamed.video.mime_type !== 'video/mp4' ||
     JSON.stringify(downloaded.video) !== JSON.stringify({
         duration: 5,
         width: 0,
