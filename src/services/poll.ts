@@ -244,11 +244,11 @@ export class PollService {
     if (poll === undefined) {
       return { expired: false, reason: 'poll_not_found' };
     }
-    if (poll.closingTime === undefined) {
-      return { expired: false, reason: 'poll_without_closing_time' };
-    }
     if (poll.isClosed) {
       return { expired: false, reason: 'poll_already_closed' };
+    }
+    if (poll.closingTime === undefined) {
+      return { expired: false, reason: 'poll_without_closing_time' };
     }
     const closedPoll = this.#polls.closePoll(pollId);
     this.#events.publish({ type: 'poll_closed', poll: closedPoll });
