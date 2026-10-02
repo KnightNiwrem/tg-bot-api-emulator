@@ -21,6 +21,7 @@ const NEW_POLL: NewPoll = {
   isAnonymous: false,
   allowsMultipleAnswers: false,
   allowsRevoting: true,
+  isClosed: false,
 };
 
 const SPECIFIED_POLL: SpecifiedPoll = {
@@ -30,6 +31,7 @@ const SPECIFIED_POLL: SpecifiedPoll = {
   isAnonymous: true,
   allowsMultipleAnswers: false,
   allowsRevoting: true,
+  isClosed: false,
 };
 
 /** A stored poll with the given settings and answers. */
@@ -42,7 +44,7 @@ function createPoll(
   for (const [voterId, optionPositions] of answers) {
     poll = polls.setVoterAnswer(poll.id, voterId, optionPositions);
   }
-  return { ...poll, isClosed: settings.isClosed ?? false };
+  return poll;
 }
 
 Deno.test('toChosenOptionPositions orders options and counts each once, as TDLib does', () => {

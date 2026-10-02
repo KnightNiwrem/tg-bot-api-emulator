@@ -172,10 +172,11 @@ export class BotActivityService {
 
 function describeUpdateOrigin(
   update: BotApiUpdate,
-): { readonly chatId?: number; readonly userId: number } {
+): { readonly chatId?: number; readonly userId?: number } {
   const chatId = getBotApiUpdateChatId(update);
+  const userId = getBotApiUpdateUserId(update);
   return {
     ...(chatId === undefined ? {} : { chatId }),
-    userId: getBotApiUpdateUserId(update),
+    ...(userId === undefined ? {} : { userId }),
   };
 }

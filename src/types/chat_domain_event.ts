@@ -1,6 +1,7 @@
 import type { CallbackQuery } from './callback_query.ts';
 import type { ChatMemberStatus } from './chat_membership.ts';
 import type { InlineQuery } from './inline_query.ts';
+import type { Poll } from './poll.ts';
 import type { SharedChat } from './virtual_chat.ts';
 import type { ChatMessage } from './virtual_message.ts';
 
@@ -23,6 +24,23 @@ export interface CallbackQueryCreatedEvent {
   readonly callbackQuery: CallbackQuery;
   /** The message carrying the pressed button, as it was when the button was pressed. */
   readonly message: ChatMessage;
+}
+
+/** An account answered a poll, changed its answer, or retracted it. */
+export interface PollAnswerChangedEvent {
+  readonly type: 'poll_answer_changed';
+  /** The poll as the answer left it. */
+  readonly poll: Poll;
+  readonly voterId: number;
+  /** The options the voter chose, as positions in increasing order; none for a retraction. */
+  readonly chosenOptionPositions: readonly number[];
+}
+
+/** The bot that owns a poll stopped it. */
+export interface PollStoppedEvent {
+  readonly type: 'poll_stopped';
+  /** The poll as stopping it left it: closed, with its votes. */
+  readonly poll: Poll;
 }
 
 /** An account typed an inline query for a bot. */
@@ -75,6 +93,8 @@ export type ChatDomainEvent =
   | MessageCreatedEvent
   | MessageEditedEvent
   | CallbackQueryCreatedEvent
+  | PollAnswerChangedEvent
+  | PollStoppedEvent
   | InlineQueryCreatedEvent
   | InlineQueryResultChosenEvent
   | BotBlockChangedEvent

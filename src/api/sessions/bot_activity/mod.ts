@@ -133,7 +133,7 @@ function presentBotActivityEntry(entry: BotActivityEntry) {
         via: entry.via,
         update: entry.update,
         ...chatIdField,
-        user_id: entry.userId,
+        ...(entry.userId === undefined ? {} : { user_id: entry.userId }),
       };
     case 'update_confirmed':
       return {
@@ -143,7 +143,7 @@ function presentBotActivityEntry(entry: BotActivityEntry) {
         via: entry.via,
         update_id: entry.updateId,
         ...chatIdField,
-        user_id: entry.userId,
+        ...(entry.userId === undefined ? {} : { user_id: entry.userId }),
       };
     default: {
       const unhandledEntry: never = entry;

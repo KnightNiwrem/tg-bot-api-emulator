@@ -9,6 +9,7 @@ import type {
   BotApiSupergroupMessage,
   BotApiUpdateType,
 } from '../types/bot_api.ts';
+import type { BotApiPoll, BotApiPollAnswer } from '../types/bot_api_poll.ts';
 import type { CallbackQuery } from '../types/callback_query.ts';
 import type {
   BotBlockChangedEvent,
@@ -17,9 +18,11 @@ import type {
   ChatMemberStatusChangedEvent,
   InlineQueryCreatedEvent,
   InlineQueryResultChosenEvent,
+  PollAnswerChangedEvent,
 } from '../types/chat_domain_event.ts';
 import type { ChatMembership } from '../types/chat_membership.ts';
 import type { InlineQuery } from '../types/inline_query.ts';
+import type { Poll } from '../types/poll.ts';
 import type { VirtualBot, VirtualBotProfile } from '../types/virtual_bot.ts';
 import {
   type CanonicalMessageId,
@@ -39,6 +42,8 @@ interface BotMessageViews {
     callbackQuery: CallbackQuery,
     message: ChatMessage,
   ): BotApiCallbackQuery;
+  viewPollForBot(poll: Poll): BotApiPoll;
+  viewPollAnswerForBot(event: PollAnswerChangedEvent): BotApiPollAnswer;
   viewInlineQueryForBot(inlineQuery: InlineQuery): BotApiInlineQuery;
   viewChosenInlineResultForBot(event: InlineQueryResultChosenEvent): BotApiChosenInlineResult;
   viewBotBlockChangeForBot(event: BotBlockChangedEvent): BotApiMyChatMemberUpdated;
@@ -50,6 +55,8 @@ interface BotUpdateMailboxes {
   enqueueMessageUpdate(botId: number, message: BotApiMessage): void;
   enqueueEditedMessageUpdate(botId: number, editedMessage: BotApiMessage): void;
   enqueueCallbackQueryUpdate(botId: number, callbackQuery: BotApiCallbackQuery): void;
+  enqueuePollUpdate(botId: number, poll: BotApiPoll): void;
+  enqueuePollAnswerUpdate(botId: number, pollAnswer: BotApiPollAnswer): void;
   enqueueInlineQueryUpdate(botId: number, inlineQuery: BotApiInlineQuery): void;
   enqueueChosenInlineResultUpdate(
     botId: number,
@@ -140,6 +147,12 @@ export class BotUpdateDeliveryService {
         return;
       case 'callback_query_created':
         this.#deliverCallbackQuery(event);
+        return;
+      case 'poll_answer_changed':
+        this.#deliverPollAnswerChange(event);
+        return;
+      case 'poll_stopped':
+        this.#deliverPollState(event.poll);
         return;
       case 'inline_query_created':
         this.#deliverInlineQuery(event);
@@ -288,6 +301,34 @@ export class BotUpdateDeliveryService {
     this.#botUpdates.enqueueCallbackQueryUpdate(
       observingBotId,
       this.#botMessageViews.viewCallbackQueryForBot(callbackQuery, message),
+    );
+  }
+
+  /**
+   * A changed answer to a poll is observed only by the bot that sent the poll, as the Bot API
+   * documents, wherever the answer was given: through the poll's message or a forward of it. The
+   * bot receives the voter's `poll_answer` only for a poll that is not anonymous, then the poll's
+   * new counts.
+   */
+  #deliverPollAnswerChange(event: PollAnswerChangedEvent): void {
+    const { poll } = event;
+    if (!poll.isAnonymous && this.#isSubscribed(poll.creatorBotId, 'poll_answer')) {
+      this.#botUpdates.enqueuePollAnswerUpdate(
+        poll.creatorBotId,
+        this.#botMessageViews.viewPollAnswerForBot(event),
+      );
+    }
+    this.#deliverPollState(poll);
+  }
+
+  /** A poll's new state is observed only by the bot that sent the poll. */
+  #deliverPollState(poll: Poll): void {
+    if (!this.#isSubscribed(poll.creatorBotId, 'poll')) {
+      return;
+    }
+    this.#botUpdates.enqueuePollUpdate(
+      poll.creatorBotId,
+      this.#botMessageViews.viewPollForBot(poll),
     );
   }
 

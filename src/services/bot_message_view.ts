@@ -13,6 +13,8 @@ import {
   projectChatMemberChange,
   projectChosenInlineResultForBot,
   projectInlineQueryForBot,
+  projectPoll,
+  projectPollAnswerForBot,
   projectPrivateMessageForBot,
   projectSupergroupMessage,
 } from '../projections/bot_api_message.ts';
@@ -32,6 +34,7 @@ import type {
   BotApiSupergroupMessage,
   BotApiUser,
 } from '../types/bot_api.ts';
+import type { BotApiPoll, BotApiPollAnswer } from '../types/bot_api_poll.ts';
 import type { CallbackQuery } from '../types/callback_query.ts';
 import {
   getStoredFileThumbnail,
@@ -42,6 +45,7 @@ import type {
   BotBlockChangedEvent,
   ChatMemberStatusChangedEvent,
   InlineQueryResultChosenEvent,
+  PollAnswerChangedEvent,
 } from '../types/chat_domain_event.ts';
 import type { ChatMemberStatus } from '../types/chat_membership.ts';
 import type { InlineQuery } from '../types/inline_query.ts';
@@ -207,6 +211,19 @@ export class BotMessageViewService {
         ? { message: this.viewMessageForBot(message, callbackQuery.botId) }
         : {}),
     });
+  }
+
+  /** Returns a poll's state as the bot that sent it receives it in a `poll` update. */
+  viewPollForBot(poll: Poll): BotApiPoll {
+    return projectPoll(poll);
+  }
+
+  /** Returns an account's changed answer to a poll as the bot that sent the poll receives it. */
+  viewPollAnswerForBot(event: PollAnswerChangedEvent): BotApiPollAnswer {
+    return projectPollAnswerForBot(
+      event,
+      this.#findAccountProfile(event.voterId, `answer to poll ${event.poll.id}`),
+    );
   }
 
   /** Returns an inline query as the inline bot receives it. */

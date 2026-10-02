@@ -1,7 +1,8 @@
 import type { BotApiMessageEntity } from './bot_api.ts';
+import type { VirtualAccountProfile } from './virtual_account.ts';
 
-// The Bot API's `Poll` and the types it holds, in the field order of the official Bot API server's
-// `JsonPoll` and `JsonPollOption`.
+// The Bot API's `Poll`, the types it holds, and `PollAnswer`, in the field order of the official
+// Bot API server's `JsonPoll`, `JsonPollOption`, and `JsonPollAnswer`.
 
 export interface BotApiPollOption {
   readonly persistent_id: string;
@@ -28,4 +29,16 @@ export interface BotApiPoll {
   readonly allows_revoting: boolean;
   readonly members_only: false;
   readonly type: 'regular';
+}
+
+/**
+ * An account's answer to a non-anonymous poll, as the bot that owns the poll receives it. Only
+ * accounts vote, so the voter is always a `user`.
+ */
+export interface BotApiPollAnswer {
+  readonly poll_id: string;
+  readonly user: VirtualAccountProfile;
+  /** The chosen options' positions, counted from 0; empty for a retracted answer. */
+  readonly option_ids: readonly number[];
+  readonly option_persistent_ids: readonly string[];
 }

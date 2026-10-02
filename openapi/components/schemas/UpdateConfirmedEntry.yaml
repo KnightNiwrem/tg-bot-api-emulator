@@ -9,7 +9,6 @@ required:
   - bot_id
   - via
   - update_id
-  - user_id
 properties:
   position:
     $ref: ./BotActivityPosition.yaml
@@ -27,4 +26,6 @@ properties:
     description: The chat the update happened in; omitted for updates without one.
   user_id:
     type: integer
-    description: The user whose action caused the update.
+    description: >-
+      The user whose action caused the update; omitted for a poll's new state, which names no
+      user.

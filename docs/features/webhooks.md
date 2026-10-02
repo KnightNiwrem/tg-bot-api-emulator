@@ -17,14 +17,14 @@ whole seconds, sets the wait before the next attempt instead, up to one hour, as
 
 Updates wait in queues, as in the official server's [`WebhookActor`][webhook-queues]: messages and
 their edits by chat, inline queries, chosen inline results and callback queries by the sending user,
-and `my_chat_member` or `chat_member` updates by chat or by member. The queue for each update is
-chosen by the [`Client::add_update`][webhook-queue-ids] calls, and for messages in
-[`process_new_message_queue`][message-queue-id]. Each queue sends one update at a time, in order,
-and moves on only once that update is confirmed. Up to `max_connections` queues send at once, so a
-failing update holds back only the later updates of its queue. Updates are therefore confirmed
-individually, as [`TQueue::forget`][webhook-forget] does, and a bot that switches to `getUpdates`
-receives the rest. The official server also opens connections gradually under flood control, which
-the emulator does not reproduce.
+`poll` and `poll_answer` updates by poll, and `my_chat_member` or `chat_member` updates by chat or
+by member. The queue for each update is chosen by the [`Client::add_update`][webhook-queue-ids]
+calls, and for messages in [`process_new_message_queue`][message-queue-id]. Each queue sends one
+update at a time, in order, and moves on only once that update is confirmed. Up to `max_connections`
+queues send at once, so a failing update holds back only the later updates of its queue. Updates are
+therefore confirmed individually, as [`TQueue::forget`][webhook-forget] does, and a bot that
+switches to `getUpdates` receives the rest. The official server also opens connections gradually
+under flood control, which the emulator does not reproduce.
 
 `deleteWebhook`, or `setWebhook` with an empty URL, removes the registration. Both support
 `drop_pending_updates`. `setWebhook` also accepts `allowed_updates`. `getWebhookInfo` reports the

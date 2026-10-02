@@ -6,6 +6,7 @@ import {
   type SupergroupMembershipLookup,
 } from '../types/chat_membership.ts';
 import type { InlineKeyboard } from '../types/inline_keyboard.ts';
+import type { Poll, PollId } from '../types/poll.ts';
 import { type AlbumCompositionFailureReason, formsAlbum } from '../types/media_album.ts';
 import type { ExternalReplyTarget } from '../types/message_reply.ts';
 import type { MessageForward } from '../types/message_forward.ts';
@@ -49,6 +50,7 @@ import {
   type FileUploadStore,
   getReplyQuoteSource,
   hasOnlyValidButtonCallbackData,
+  hasOnlyValidCallbackData,
   hasWebAppButton,
   isSameMessageContent,
   isUnchangedContent,
@@ -73,6 +75,7 @@ import {
   toOutgoingAccountContent,
   toOutgoingAccountMedia,
 } from './message_content.ts';
+import { findStoppablePoll, type PollStopFailureReason } from './poll.ts';
 
 export interface SendSupergroupAccountMessageInput {
   readonly fromAccountId: number;
@@ -336,6 +339,29 @@ export type EditSupergroupBotMessageInlineKeyboardFailureReason =
   | 'button_type_invalid'
   | 'message_not_modified';
 
+/** A poll a bot stops through its message in a supergroup. */
+export interface StopSupergroupBotPollInput {
+  readonly fromBotId: number;
+  readonly chatId: number;
+  /** The supergroup's ID of the poll's message. */
+  readonly messageId: number;
+  /** The keyboard the poll's message shows once stopped; omitting it removes the keyboard. */
+  readonly inlineKeyboard?: InlineKeyboard;
+}
+
+export type StopSupergroupBotPollResult =
+  | { readonly stopped: true; readonly message: SupergroupMessage; readonly poll: Poll }
+  | {
+    readonly stopped: false;
+    readonly reason:
+      | 'bot_not_found'
+      | SupergroupBotAccessFailureReason
+      | 'message_not_found'
+      | PollStopFailureReason
+      | 'button_type_invalid'
+      | 'callback_data_invalid';
+  };
+
 export type EditSupergroupBotMessageTextFailureReason =
   | EditSupergroupBotMessageInlineKeyboardFailureReason
   | 'message_text_empty'
@@ -548,6 +574,12 @@ interface SupergroupMessageStore {
   getSupergroupMessages(chatId: number): readonly SupergroupMessage[];
 }
 
+/** Stores the polls bots send and closes the polls they stop. */
+interface PollStore extends NewPollStore {
+  getPoll(pollId: PollId): Poll | undefined;
+  closePoll(pollId: PollId): Poll;
+}
+
 interface MessageBoxStore {
   assignMessageId(ownerId: number, canonicalMessageId: CanonicalMessageId): number;
   getMessageId(ownerId: number, canonicalMessageId: CanonicalMessageId): number | undefined;
@@ -564,7 +596,7 @@ interface SupergroupMessagingServiceDependencies {
   readonly sharedChats: SupergroupMemberStore;
   readonly messages: SupergroupMessageStore;
   readonly files: FileUploadStore;
-  readonly polls: NewPollStore;
+  readonly polls: PollStore;
   readonly messageBoxes: MessageBoxStore;
   readonly events: ChatDomainEventSink;
   readonly currentUnixTimeSeconds: () => number;
@@ -591,7 +623,7 @@ export class SupergroupMessagingService {
   readonly #sharedChats: SupergroupMemberStore;
   readonly #messages: SupergroupMessageStore;
   readonly #files: FileUploadStore;
-  readonly #polls: NewPollStore;
+  readonly #polls: PollStore;
   readonly #messageBoxes: MessageBoxStore;
   readonly #events: ChatDomainEventSink;
   readonly #currentUnixTimeSeconds: () => number;
@@ -960,6 +992,47 @@ export class SupergroupMessagingService {
       inlineKeyboard: input.inlineKeyboard,
       contentEditedAtUnixSeconds: message.contentEditedAtUnixSeconds,
     });
+  }
+
+  /**
+   * Stops a poll the bot sent to a supergroup it is a member of, as for a private chat. As for
+   * other edits in a supergroup, the new keyboard has no Web App button, which Telegram allows only
+   * in private chats.
+   */
+  stopBotPoll(input: StopSupergroupBotPollInput): StopSupergroupBotPollResult {
+    if (this.#bots.getById(input.fromBotId) === undefined) {
+      return { stopped: false, reason: 'bot_not_found' };
+    }
+    const lookup = this.#findBotEditTarget(input);
+    if (!lookup.resolved) {
+      return { stopped: false, reason: lookup.reason };
+    }
+    const { message } = lookup;
+    const pollLookup = findStoppablePoll(message, input.fromBotId, this.#polls);
+    if (!pollLookup.found) {
+      return { stopped: false, reason: pollLookup.reason };
+    }
+    if (!isSupergroupContentMessage(message)) {
+      throw new Error(`Service message ${message.id} shows poll ${pollLookup.poll.id}`);
+    }
+    const { inlineKeyboard } = input;
+    if (inlineKeyboard !== undefined) {
+      if (hasWebAppButton(inlineKeyboard, { kind: 'existing', content: message.content })) {
+        return { stopped: false, reason: 'button_type_invalid' };
+      }
+      if (!hasOnlyValidCallbackData(inlineKeyboard)) {
+        return { stopped: false, reason: 'callback_data_invalid' };
+      }
+    }
+
+    const stoppedPoll = this.#polls.closePoll(pollLookup.poll.id);
+    const editedMessage = this.#messages.editSupergroupMessage(message.id, {
+      content: message.content,
+      inlineKeyboard,
+      contentEditedAtUnixSeconds: message.contentEditedAtUnixSeconds,
+    });
+    this.#events.publish({ type: 'poll_stopped', poll: stoppedPoll });
+    return { stopped: true, message: editedMessage, poll: stoppedPoll };
   }
 
   /**

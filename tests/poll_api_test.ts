@@ -1,4 +1,5 @@
 import { Bot } from 'https://cdn.jsdelivr.net/gh/grammyjs/grammY@^1.46.0/src/bot.ts';
+import { webhookCallback } from 'https://cdn.jsdelivr.net/gh/grammyjs/grammY@^1.46.0/src/convenience/webhook.ts';
 
 import { createEmulationApi } from '../src/api/mod.ts';
 import { createSessionLifecycleService } from '../src/composition/session_lifecycle.ts';
@@ -18,6 +19,7 @@ interface TestPoll {
   readonly question_entities?: unknown;
   readonly options: readonly TestPollOption[];
   readonly total_voter_count: number;
+  readonly is_closed: boolean;
   readonly is_anonymous: boolean;
 }
 
@@ -39,8 +41,9 @@ interface PollAnswerResponse {
 }
 
 /**
- * Creates a session where Ada owns a supergroup with Grace and a bot as members, and has started a
- * private chat with the bot; Linus is an account outside the supergroup.
+ * Creates a session where Ada owns a supergroup with Grace, the poll bot, and another bot that
+ * reads all group messages as members, and has started private chats with both bots; Linus is an
+ * account outside the supergroup.
  */
 async function createPollFixture() {
   const api = createEmulationApi({
@@ -61,14 +64,20 @@ async function createPollFixture() {
   const ada = await createAccount('Ada');
   const grace = await createAccount('Grace');
   const linus = await createAccount('Linus');
-  const { body: createdBot } = await requestJson<{ token: string; bot: { id: number } }>(
-    api,
-    'POST',
-    `${sessionPath}/bots`,
-    { first_name: 'Poll Bot', username: 'poll_bot' },
-  );
-  const botApiPath = `${sessionPath}/bot-api/bot${createdBot.token}`;
+  const createBot = async (username: string, settings: Record<string, unknown> = {}) => {
+    const { body } = await requestJson<{ token: string; bot: { id: number } }>(
+      api,
+      'POST',
+      `${sessionPath}/bots`,
+      { first_name: 'Poll Bot', username, ...settings },
+    );
+    return { ...body, botApiPath: `${sessionPath}/bot-api/bot${body.token}` };
+  };
+  const createdBot = await createBot('poll_bot');
+  const otherBot = await createBot('other_bot', { can_read_all_group_messages: true });
+  const botApiPath = createdBot.botApiPath;
   const privateChat = { type: 'private', botId: createdBot.bot.id } as const;
+  const otherBotChat = { type: 'private', botId: otherBot.bot.id } as const;
   const sendAccountMessage = async (accountId: number, body: Record<string, unknown>) =>
     (await requestJson<{ message: TestMessage }>(
       api,
@@ -77,6 +86,7 @@ async function createPollFixture() {
       body,
     )).body.message;
   const startMessage = await sendAccountMessage(ada.id, { to: privateChat, text: '/start' });
+  await sendAccountMessage(ada.id, { to: otherBotChat, text: '/start' });
 
   const { body: { supergroup } } = await requestJson<{ supergroup: { id: number } }>(
     api,
@@ -85,7 +95,7 @@ async function createPollFixture() {
     { title: 'Team' },
   );
   const supergroupChat = { type: 'supergroup', chatId: supergroup.id } as const;
-  for (const memberId of [grace.id, createdBot.bot.id]) {
+  for (const memberId of [grace.id, createdBot.bot.id, otherBot.bot.id]) {
     const response = await api.request(
       `${sessionPath}/accounts/${ada.id}/conversations/supergroup/${supergroup.id}/members/${memberId}`,
       { method: 'PUT' },
@@ -149,7 +159,9 @@ async function createPollFixture() {
     bot: createdBot.bot,
     botToken: createdBot.token,
     botApiPath,
+    otherBot,
     privateChat,
+    otherBotChat,
     supergroupChat,
     startMessage,
     callBot,
@@ -158,6 +170,25 @@ async function createPollFixture() {
     pollAnswerPath,
     answerPoll,
     getHistory,
+    readUpdates: createUpdateReader(api),
+  };
+}
+
+/** Returns a reader of each bot's updates since the reader last read that bot's updates. */
+function createUpdateReader(api: EmulationApi) {
+  const nextOffsetsByBotApiPath = new Map<string, number>();
+  return async (botApiPath: string): Promise<Array<Record<string, unknown>>> => {
+    const { body } = await requestJson<{ result: Array<Record<string, unknown>> }>(
+      api,
+      'POST',
+      `${botApiPath}/getUpdates`,
+      { offset: nextOffsetsByBotApiPath.get(botApiPath) ?? 0 },
+    );
+    const lastUpdateId = body.result.at(-1)?.update_id;
+    if (typeof lastUpdateId === 'number') {
+      nextOffsetsByBotApiPath.set(botApiPath, lastUpdateId + 1);
+    }
+    return body.result.map(({ update_id: _updateId, ...update }) => update);
   };
 }
 
@@ -732,4 +763,386 @@ Deno.test('a grammY bot sends a poll in reply to a command, and accounts vote in
     ['Lunch?', false, '[[1,1],1]'],
     'Expected the account to vote for both options of the bot poll',
   );
+});
+
+Deno.test('stopPoll closes a poll, keeps its votes and refuses later answers', async () => {
+  const {
+    api,
+    ada,
+    grace,
+    privateChat,
+    supergroupChat,
+    startMessage,
+    callBot,
+    sendPoll,
+    answerPoll,
+    pollAnswerPath,
+    getHistory,
+  } = await createPollFixture();
+  const keyboard = { inline_keyboard: [[{ text: 'Results', callback_data: 'results' }]] };
+  const sent = await sendPoll({
+    chat_id: ada.id,
+    question: 'Lunch?',
+    options: ['Pizza', 'Pasta'],
+    reply_markup: keyboard,
+  });
+  await answerPoll(ada.id, privateChat, sent.message_id, [1]);
+
+  const refusals = [
+    await callBot('stopPoll', { chat_id: ada.id, message_id: sent.message_id + 100 }),
+    await callBot('stopPoll', { chat_id: ada.id }),
+    await callBot('stopPoll', { chat_id: ada.id, message_id: startMessage.message_id }),
+    await callBot('stopPoll', { chat_id: grace.id + 100, message_id: sent.message_id }),
+    await callBot('stopPoll', { message_id: sent.message_id }),
+    await callBot('stopPoll', {
+      chat_id: ada.id,
+      message_id: sent.message_id,
+      reply_markup: { inline_keyboard: [[{ text: 'x', callback_data: 'x'.repeat(65) }]] },
+    }),
+    await callBot('stopPoll', { chat_id: ada.id, message_id: sent.message_id, open_period: 5 }),
+  ];
+  expectEqual(
+    refusals.map(({ body }) => body.description),
+    [
+      'Bad Request: message with poll to stop not found',
+      'Bad Request: message with poll to stop not found',
+      'Bad Request: message is not a poll',
+      'Bad Request: chat not found',
+      'Bad Request: chat_id is empty',
+      'Bad Request: BUTTON_DATA_INVALID',
+      'Bad Request: invalid stopPoll parameters',
+    ],
+    'Expected stopPoll to refuse what Telegram refuses',
+  );
+  const stillOpen = (await getHistory(ada.id, privateChat)).find(({ message_id }) =>
+    message_id === sent.message_id
+  );
+  expectEqual(
+    [stillOpen?.poll?.is_closed, stillOpen?.reply_markup],
+    [false, keyboard],
+    'Expected refused stops to leave the poll and its keyboard',
+  );
+
+  const newKeyboard = { inline_keyboard: [[{ text: 'Closed', callback_data: 'closed' }]] };
+  const { status, body } = await callBot('stopPoll', {
+    chat_id: ada.id,
+    message_id: sent.message_id,
+    reply_markup: newKeyboard,
+  });
+  const expectedPoll = {
+    ...sent.poll,
+    options: [
+      { persistent_id: '0', text: 'Pizza', voter_count: 0 },
+      { persistent_id: '1', text: 'Pasta', voter_count: 1 },
+    ],
+    total_voter_count: 1,
+    is_closed: true,
+  };
+  expectEqual([status, body.result], [200, expectedPoll], 'Expected the closed poll');
+  const stoppedMessage = (await getHistory(ada.id, privateChat)).find(({ message_id }) =>
+    message_id === sent.message_id
+  );
+  expectEqual(
+    [stoppedMessage?.poll, stoppedMessage?.reply_markup],
+    [expectedPoll, newKeyboard],
+    'Expected the message to show the closed poll and its new keyboard',
+  );
+
+  const afterStop = [
+    (await answerPoll(ada.id, privateChat, sent.message_id, [0])).status,
+    (await api.request(pollAnswerPath(ada.id, privateChat, sent.message_id), {
+      method: 'DELETE',
+    })).status,
+    (await callBot('stopPoll', { chat_id: ada.id, message_id: sent.message_id })).body
+      .description,
+  ];
+  expectEqual(
+    afterStop,
+    [409, 409, 'Bad Request: poll has already been closed'],
+    'Expected a closed poll to refuse answers and a second stop',
+  );
+  expectEqual(
+    (await requestJson<PollAnswerResponse>(
+      api,
+      'GET',
+      pollAnswerPath(ada.id, privateChat, sent.message_id),
+    )).body.message.poll,
+    expectedPoll,
+    'Expected refused answers to keep the closed counts',
+  );
+
+  // A forward shows the closed poll but cannot stop it, and a copy is a new, open poll.
+  const { body: forward } = await callBot('forwardMessage', {
+    chat_id: supergroupChat.chatId,
+    from_chat_id: ada.id,
+    message_id: sent.message_id,
+  });
+  const forwardMessageId = (forward.result as TestMessage).message_id;
+  const { body: copy } = await callBot('copyMessage', {
+    chat_id: ada.id,
+    from_chat_id: ada.id,
+    message_id: sent.message_id,
+  });
+  const copiedMessageId = (copy.result as { message_id: number }).message_id;
+  const copied = (await getHistory(ada.id, privateChat)).find(({ message_id }) =>
+    message_id === copiedMessageId
+  );
+  expectEqual(
+    [
+      (forward.result as TestMessage).poll,
+      (await callBot('stopPoll', { chat_id: supergroupChat.chatId, message_id: forwardMessageId }))
+        .body.description,
+      copied?.poll?.is_closed,
+      voterCounts(copied?.poll),
+    ],
+    [expectedPoll, "Bad Request: poll can't be stopped", false, '[[0,0],0]'],
+    'Expected forwards to show the closed poll and copies to be open',
+  );
+
+  // Omitting the keyboard removes it, as an edit does.
+  const otherPoll = await sendPoll({
+    chat_id: supergroupChat.chatId,
+    question: 'Dinner?',
+    options: ['Soup'],
+    reply_markup: keyboard,
+  });
+  const webAppStop = await callBot('stopPoll', {
+    chat_id: supergroupChat.chatId,
+    message_id: otherPoll.message_id,
+    reply_markup: { inline_keyboard: [[{ text: 'App', web_app: { url: 'https://example.com' } }]] },
+  });
+  const plainStop = await callBot('stopPoll', {
+    chat_id: supergroupChat.chatId,
+    message_id: otherPoll.message_id,
+  });
+  const otherPollMessage = (await getHistory(grace.id, supergroupChat)).find(({ message_id }) =>
+    message_id === otherPoll.message_id
+  );
+  expectEqual(
+    [webAppStop.body.description, plainStop.status, otherPollMessage?.reply_markup],
+    ['Bad Request: BUTTON_TYPE_INVALID', 200, undefined],
+    'Expected a stop without a keyboard to remove it',
+  );
+});
+
+Deno.test('sendPoll sends a closed poll as a preview, which accepts no answers', async () => {
+  const { ada, privateChat, sendPoll, answerPoll, callBot } = await createPollFixture();
+  const preview = await sendPoll({
+    chat_id: ada.id,
+    question: 'Lunch?',
+    options: ['Pizza'],
+    is_closed: true,
+  });
+  const vote = await answerPoll(ada.id, privateChat, preview.message_id, [0]);
+  const stop = await callBot('stopPoll', { chat_id: ada.id, message_id: preview.message_id });
+  expectEqual(
+    [preview.poll.is_closed, vote.status, stop.body.description],
+    [true, 409, 'Bad Request: poll has already been closed'],
+    'Expected the preview to be closed from the start',
+  );
+});
+
+Deno.test('only the bot that sent a poll receives its poll and poll_answer updates', async () => {
+  const {
+    api,
+    ada,
+    grace,
+    botApiPath,
+    otherBot,
+    privateChat,
+    otherBotChat,
+    supergroupChat,
+    callBot,
+    sendPoll,
+    sendAccountMessage,
+    answerPoll,
+    pollAnswerPath,
+    readUpdates,
+  } = await createPollFixture();
+  await readUpdates(botApiPath);
+  await readUpdates(otherBot.botApiPath);
+
+  const publicPoll = await sendPoll({
+    chat_id: ada.id,
+    question: 'Lunch?',
+    options: ['Pizza', 'Pasta'],
+    is_anonymous: false,
+  });
+  const pollState = (optionVoterCounts: readonly number[], isClosed = false) => ({
+    poll: {
+      ...publicPoll.poll,
+      options: publicPoll.poll.options.map((option, index) => ({
+        ...option,
+        voter_count: optionVoterCounts[index],
+      })),
+      total_voter_count: optionVoterCounts.reduce((sum, count) => sum + count, 0),
+      is_closed: isClosed,
+    },
+  });
+  const pollAnswer = (optionIds: readonly number[]) => ({
+    poll_answer: {
+      poll_id: publicPoll.poll.id,
+      user: ada,
+      option_ids: optionIds,
+      option_persistent_ids: optionIds.map(String),
+    },
+  });
+
+  await answerPoll(ada.id, privateChat, publicPoll.message_id, [0]);
+  await answerPoll(ada.id, privateChat, publicPoll.message_id, [0]);
+  await answerPoll(ada.id, privateChat, publicPoll.message_id, [0, 1]);
+  await answerPoll(ada.id, privateChat, publicPoll.message_id, [1]);
+  await api.request(pollAnswerPath(ada.id, privateChat, publicPoll.message_id), {
+    method: 'DELETE',
+  });
+  expectEqual(
+    await readUpdates(botApiPath),
+    [
+      pollAnswer([0]),
+      pollState([1, 0]),
+      pollAnswer([1]),
+      pollState([0, 1]),
+      pollAnswer([]),
+      pollState([0, 0]),
+    ],
+    'Expected each changed answer to send the voter and the new counts, and nothing else',
+  );
+
+  // An anonymous poll names no voter. A forward to another bot's chat shares the poll, and votes
+  // through it reach only the bot that sent the poll.
+  const anonymousPoll = await sendPoll({
+    chat_id: supergroupChat.chatId,
+    question: 'Dinner?',
+    options: ['Soup', 'Salad'],
+  });
+  const forward = await sendAccountMessage(ada.id, {
+    to: otherBotChat,
+    forward: { chat: supergroupChat, message_id: anonymousPoll.message_id },
+  });
+  await answerPoll(grace.id, supergroupChat, anonymousPoll.message_id, [1]);
+  await answerPoll(ada.id, otherBotChat, forward.message_id, [1]);
+  await callBot('stopPoll', {
+    chat_id: supergroupChat.chatId,
+    message_id: anonymousPoll.message_id,
+  });
+  await callBot('stopPoll', {
+    chat_id: supergroupChat.chatId,
+    message_id: anonymousPoll.message_id,
+  });
+  const updates = await readUpdates(botApiPath);
+  expectEqual(
+    updates.map((update) => (update.poll as TestPoll | undefined)?.total_voter_count),
+    [1, 2, 2],
+    'Expected only poll updates for the anonymous poll, the last one closed',
+  );
+  if (
+    updates.some((update) => 'poll_answer' in update) ||
+    [grace.id, ada.id].some((voterId) => JSON.stringify(updates).includes(`"id":${voterId}`)) ||
+    (updates.at(-1)?.poll as { is_closed?: boolean } | undefined)?.is_closed !== true
+  ) {
+    throw new Error(`Expected no voter of an anonymous poll, received ${JSON.stringify(updates)}`);
+  }
+  expectEqual(
+    (await readUpdates(otherBot.botApiPath)).map((update) => Object.keys(update)),
+    [['message']],
+    'Expected the other bot to receive the forward but no poll updates',
+  );
+
+  // The bot's subscription decides which of the poll's updates it receives.
+  await callBot('getUpdates', { allowed_updates: ['poll_answer'] });
+  await answerPoll(ada.id, privateChat, publicPoll.message_id, [0]);
+  await callBot('getUpdates', { allowed_updates: ['message'] });
+  await answerPoll(ada.id, privateChat, publicPoll.message_id, [1]);
+  expectEqual(
+    await readUpdates(botApiPath),
+    [pollAnswer([0])],
+    'Expected only subscribed updates to be created',
+  );
+});
+
+Deno.test('a grammY bot thanks voters through its webhook, as the activity log shows', async () => {
+  const {
+    api,
+    sessionPath,
+    ada,
+    bot,
+    botToken,
+    privateChat,
+    sendPoll,
+    answerPoll,
+    getHistory,
+  } = await createPollFixture();
+  const grammyBot = new Bot(botToken, {
+    client: {
+      apiRoot: `http://emulator.example:9000${sessionPath}/bot-api`,
+      fetch: async (input, init) => await api.fetch(new Request(input, init)),
+    },
+  });
+  const thanked = Promise.withResolvers<void>();
+  const pollObserved = Promise.withResolvers<number>();
+  grammyBot.on('poll', (context) => {
+    pollObserved.resolve(context.poll.total_voter_count);
+  });
+  grammyBot.on('poll_answer', async (context) => {
+    const { user, option_ids } = context.pollAnswer;
+    if (user !== undefined) {
+      await context.api.sendMessage(user.id, `Thanks for choosing option ${option_ids[0]}`);
+      thanked.resolve();
+    }
+  });
+  const handleWebhookRequest = webhookCallback(grammyBot, 'std/http');
+  const webhookServer = Deno.serve(
+    { hostname: '127.0.0.1', port: 0, onListen: () => {} },
+    (request) => handleWebhookRequest(request),
+  );
+  try {
+    await grammyBot.api.setWebhook(`http://127.0.0.1:${webhookServer.addr.port}/webhook`);
+    const sent = await sendPoll({
+      chat_id: ada.id,
+      question: 'Lunch?',
+      options: ['Pizza', 'Pasta'],
+      is_anonymous: false,
+    });
+    await answerPoll(ada.id, privateChat, sent.message_id, [1]);
+    let timeoutId: ReturnType<typeof setTimeout> | undefined;
+    const [, observedTotal] = await Promise.race([
+      Promise.all([thanked.promise, pollObserved.promise]),
+      new Promise<never>((_, reject) => {
+        timeoutId = setTimeout(
+          () => reject(new Error('Expected the bot to thank the voter and see the poll')),
+          5_000,
+        );
+      }),
+    ]).finally(() => clearTimeout(timeoutId));
+    if (observedTotal !== 1) {
+      throw new Error(`Expected the bot to see one vote, received ${observedTotal}`);
+    }
+    const activity = await requestJson<{
+      entries: Array<{ update: Record<string, unknown>; chat_id?: number; user_id?: number }>;
+    }>(
+      api,
+      'GET',
+      `${sessionPath}/bot-activity?bot_id=${bot.id}&kind=update_delivered`,
+    );
+    const pollEntries = activity.body.entries.filter(({ update }) =>
+      'poll' in update || 'poll_answer' in update
+    );
+    expectEqual(
+      pollEntries.map(({ update, chat_id, user_id }) => [
+        Object.keys(update).filter((key) => key !== 'update_id'),
+        chat_id,
+        user_id,
+      ]),
+      [[['poll_answer'], undefined, ada.id], [['poll'], undefined, undefined]],
+      'Expected the log to record the poll updates without a chat, and the voter of the answer',
+    );
+    expectEqual(
+      (await getHistory(ada.id, privateChat)).at(-1)?.text,
+      'Thanks for choosing option 1',
+      'Expected the account to receive the thanks',
+    );
+  } finally {
+    await api.request(sessionPath, { method: 'DELETE' });
+    await webhookServer.shutdown();
+  }
 });

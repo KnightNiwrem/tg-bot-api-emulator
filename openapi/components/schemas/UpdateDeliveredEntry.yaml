@@ -10,7 +10,6 @@ required:
   - bot_id
   - via
   - update
-  - user_id
 properties:
   position:
     $ref: ./BotActivityPosition.yaml
@@ -27,7 +26,10 @@ properties:
     type: integer
     description: >-
       The chat the update happened in, as grammY's `ctx.chat` finds it; omitted for inline
-      queries, chosen inline results, and presses of buttons on messages sent through inline mode.
+      queries, chosen inline results, presses of buttons on messages sent through inline mode,
+      polls, and poll answers.
   user_id:
     type: integer
-    description: The user whose action caused the update, as grammY's `ctx.from` finds it.
+    description: >-
+      The user whose action caused the update, as grammY's `ctx.from` finds it; omitted for a
+      poll's new state, which names no user.

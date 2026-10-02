@@ -912,7 +912,7 @@ const updateDeliveredEntrySchema = z.strictObject({
   via: botUpdateTransportSchema,
   update: z.looseObject({ update_id: z.int() }),
   chat_id: z.int().optional(),
-  user_id: z.int(),
+  user_id: z.int().optional(),
 });
 
 const updateConfirmedEntrySchema = z.strictObject({
@@ -922,7 +922,7 @@ const updateConfirmedEntrySchema = z.strictObject({
   via: botUpdateTransportSchema,
   update_id: z.int(),
   chat_id: z.int().optional(),
-  user_id: z.int(),
+  user_id: z.int().optional(),
 });
 
 const botActivityEntrySchema: z.ZodType<BotActivityEntry> = z.discriminatedUnion('kind', [

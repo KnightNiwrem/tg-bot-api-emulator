@@ -1,3 +1,4 @@
+import type { ChatDomainEvent } from '../types/chat_domain_event.ts';
 import type { ChatMembership } from '../types/chat_membership.ts';
 import {
   checkPollAnswer,
@@ -14,7 +15,12 @@ import type {
   PrivateConversationKey,
   SharedChat,
 } from '../types/virtual_chat.ts';
-import type { ChatMessage, PrivateMessage, SupergroupMessage } from '../types/virtual_message.ts';
+import {
+  canBotEditMessage,
+  type ChatMessage,
+  type PrivateMessage,
+  type SupergroupMessage,
+} from '../types/virtual_message.ts';
 
 /**
  * The chat of a poll message as an account addresses it: its private chat with a bot, where the
@@ -105,6 +111,10 @@ interface PollAnswerStore {
   setVoterAnswer(pollId: PollId, voterId: number, chosenOptionPositions: readonly number[]): Poll;
 }
 
+interface ChatDomainEventSink {
+  publish(event: ChatDomainEvent): void;
+}
+
 interface PollServiceDependencies {
   readonly accounts: AccountLookup;
   readonly bots: BotLookup;
@@ -113,6 +123,7 @@ interface PollServiceDependencies {
   readonly sharedChats: SupergroupLookup;
   readonly supergroupMessages: SupergroupMessageLookup;
   readonly polls: PollAnswerStore;
+  readonly events: ChatDomainEventSink;
 }
 
 type PollMessageResolution =
@@ -123,7 +134,8 @@ type PollMessageResolution =
  * Carries out accounts' votes in polls, as TDLib's `setPollAnswer` does for a user: an account
  * answers a poll shown by a message of its private chat with a bot or of a supergroup it is a
  * member of, changes its answer, or retracts it, as the poll allows. A forward shows the same
- * poll as the message it repeats, so a vote through either counts once in that poll.
+ * poll as the message it repeats, so a vote through either counts once in that poll. Each changed
+ * answer is published, for the bot that sent the poll to observe.
  */
 export class PollService {
   readonly #accounts: AccountLookup;
@@ -133,6 +145,7 @@ export class PollService {
   readonly #sharedChats: SupergroupLookup;
   readonly #supergroupMessages: SupergroupMessageLookup;
   readonly #polls: PollAnswerStore;
+  readonly #events: ChatDomainEventSink;
 
   constructor(
     {
@@ -143,6 +156,7 @@ export class PollService {
       sharedChats,
       supergroupMessages,
       polls,
+      events,
     }: PollServiceDependencies,
   ) {
     this.#accounts = accounts;
@@ -152,6 +166,7 @@ export class PollService {
     this.#sharedChats = sharedChats;
     this.#supergroupMessages = supergroupMessages;
     this.#polls = polls;
+    this.#events = events;
   }
 
   /** Returns the poll a message shows to an account that can read it, with the account's answer. */
@@ -171,9 +186,10 @@ export class PollService {
 
   /**
    * Replaces an account's answer to the poll a message shows, after the poll's checks, which
-   * `checkPollAnswer` makes; no options retract the answer. In a poll that allows revoting, an
-   * answer that chooses the options the account already chose leaves the poll as it is; a poll
-   * that disallows revoting refuses any answer from an account that has answered.
+   * `checkPollAnswer` makes; no options retract the answer. A changed answer is published for the
+   * bot that sent the poll. In a poll that allows revoting, an answer that chooses the options the
+   * account already chose leaves the poll as it is and publishes nothing; a poll that disallows
+   * revoting refuses any answer from an account that has answered.
    */
   setAccountPollAnswer(input: SetAccountPollAnswerInput): SetAccountPollAnswerResult {
     const resolution = this.#resolvePollMessage(input);
@@ -191,12 +207,18 @@ export class PollService {
       return { answered: true, poll, message, chosenOptionPositions };
     }
 
-    return {
-      answered: true,
-      poll: this.#polls.setVoterAnswer(poll.id, input.accountId, chosenOptionPositions),
-      message,
+    const answeredPoll = this.#polls.setVoterAnswer(
+      poll.id,
+      input.accountId,
       chosenOptionPositions,
-    };
+    );
+    this.#events.publish({
+      type: 'poll_answer_changed',
+      poll: answeredPoll,
+      voterId: input.accountId,
+      chosenOptionPositions,
+    });
+    return { answered: true, poll: answeredPoll, message, chosenOptionPositions };
   }
 
   /**
@@ -267,6 +289,46 @@ export class PollService {
       ? { found: false, reason: 'message_not_found' }
       : { found: true, message };
   }
+}
+
+/**
+ * Why a bot cannot stop the poll of a message it found: the message shows no poll, the bot cannot
+ * edit the message, or the poll is already closed.
+ */
+export type PollStopFailureReason =
+  | 'message_has_no_poll'
+  | 'poll_not_stoppable'
+  | 'poll_already_closed';
+
+interface PollLookup {
+  getPoll(pollId: PollId): Poll | undefined;
+}
+
+/**
+ * Finds the poll a bot stops through a message, as TDLib's `get_message_poll_id` and `stop_poll`
+ * check it once the Bot API server has found the message: the message must show a poll, the bot
+ * must be able to edit the message, as `canBotEditMessage` decides, and the poll must be open.
+ * Only the bot that sent a poll can edit its message, so only it stops the poll; a forward of the
+ * poll cannot be edited.
+ */
+export function findStoppablePoll(
+  message: ChatMessage,
+  botId: number,
+  polls: PollLookup,
+):
+  | { readonly found: true; readonly poll: Poll }
+  | { readonly found: false; readonly reason: PollStopFailureReason } {
+  if (message.content.kind !== 'poll') {
+    return { found: false, reason: 'message_has_no_poll' };
+  }
+  if (!canBotEditMessage(message, botId)) {
+    return { found: false, reason: 'poll_not_stoppable' };
+  }
+  const poll = polls.getPoll(message.content.pollId);
+  if (poll === undefined) {
+    throw new Error(`Poll ${message.content.pollId} of message ${message.id} does not exist`);
+  }
+  return poll.isClosed ? { found: false, reason: 'poll_already_closed' } : { found: true, poll };
 }
 
 function areSameOptionPositions(

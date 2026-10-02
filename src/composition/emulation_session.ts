@@ -169,6 +169,7 @@ export function createEmulationSession(
     sharedChats,
     supergroupMessages: supergroupMessaging,
     polls,
+    events: botUpdateDelivery,
   });
   const inlineQueries = new InlineQueryService({
     accounts,
