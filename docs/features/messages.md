@@ -177,8 +177,9 @@ reply markup, and `remove_caption` drops media captions.
 As TDLib's [`get_forwarded_messages`][forwarded-albums] groups them, the forwards or copies of an
 [album](media-and-files.md#albums)'s messages form a new album of their own when a request repeats
 two or more of them; a lone one, like a message `forwardMessage` or `copyMessage` repeats, belongs
-to no album. A request that repeats 2 to 10 documents and nothing else, all first sent by one user
-whom their forwards show, puts them in one new album, whichever albums they came from.
+to no album. A request that repeats 2 to 10 documents and nothing else, all first sent by one user,
+none of them a forward that hides its original sender, puts them in one new album, whichever albums
+they came from.
 
 An account created with `has_private_forwards` keeps forwards from linking to it, as Telegram's
 "Forwarded messages" privacy setting does. As TDLib's

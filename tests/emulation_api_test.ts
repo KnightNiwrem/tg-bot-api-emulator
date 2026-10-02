@@ -7787,7 +7787,7 @@ Deno.test('forwards and copies of albums form new albums as TDLib groups them', 
       JSON.stringify([forwardedGroup, forwardedGroup, forwardedGroup, undefined]) ||
     copiedPart[0] === undefined || copiedPart[1] !== copiedPart[0] ||
     new Set([originalGroup, forwardedGroup, copiedPart[0]]).size !== 3 ||
-    loneMembers.some((group) => group !== undefined) ||
+    loneMembers.length !== 3 || loneMembers.some((group) => group !== undefined) ||
     separateDocuments[0] === undefined || separateDocuments[1] !== separateDocuments[0] ||
     mixedDocuments.some((group) => group !== undefined)
   ) {

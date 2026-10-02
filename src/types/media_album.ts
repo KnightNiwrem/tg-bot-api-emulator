@@ -89,8 +89,9 @@ export interface RepeatedAlbums {
  * Groups the messages that one request forwards or copies, in order, into new albums, as TDLib's
  * `get_forwarded_messages` does. The repeated messages of an album form a new album of their own
  * when there are at least two of them, while a lone one is sent outside any album. When the request
- * repeats 2 to 10 documents and nothing else, all first sent by the same user whom their forwards
- * show, they form one new album together, whichever albums they came from.
+ * repeats 2 to 10 documents and nothing else, all first sent by the same user, none of them a forward
+ * that hides its original sender, they form one new album together, whichever albums they came
+ * from.
  */
 export function groupRepeatedAlbums(messages: readonly ChatMessage[]): RepeatedAlbums {
   if (formsDocumentAlbum(messages)) {

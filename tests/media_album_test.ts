@@ -93,7 +93,7 @@ Deno.test('groupRepeatedAlbums gives each album repeated twice or more a new alb
     albumPhoto('2'),
   ]);
   if (
-    albumCount !== 2 ||
+    albumCount !== 2 || albumIndexes.length !== 7 ||
     JSON.stringify(albumIndexes) !==
       JSON.stringify([0, undefined, 1, 0, undefined, 1, 1])
   ) {
@@ -126,15 +126,19 @@ Deno.test('groupRepeatedAlbums groups documents that one visible user first sent
     [privateMessage({ kind: 'document' }), privateMessage({ kind: 'photo' })],
     Array.from({ length: MAX_ALBUM_MESSAGE_COUNT + 1 }, () => privateMessage({ kind: 'document' })),
     [privateMessage({ kind: 'document' })],
-  ].map((messages) => groupRepeatedAlbums(messages).albumIndexes);
+  ].map((messages) => groupRepeatedAlbums(messages));
+  const ungrouped = (count: number) => ({
+    albumCount: 0,
+    albumIndexes: Array.from({ length: count }, () => undefined),
+  });
   const expectedGroupings = [
-    [0, 0],
-    [0, 0],
-    [undefined, undefined],
-    [undefined, undefined],
-    [undefined, undefined],
-    Array.from({ length: MAX_ALBUM_MESSAGE_COUNT + 1 }, () => undefined),
-    [undefined],
+    { albumCount: 1, albumIndexes: [0, 0] },
+    { albumCount: 1, albumIndexes: [0, 0] },
+    ungrouped(2),
+    ungrouped(2),
+    ungrouped(2),
+    ungrouped(MAX_ALBUM_MESSAGE_COUNT + 1),
+    ungrouped(1),
   ];
   if (JSON.stringify(groupings) !== JSON.stringify(expectedGroupings)) {
     throw new Error(`Expected TDLib's document albums, received ${JSON.stringify(groupings)}`);

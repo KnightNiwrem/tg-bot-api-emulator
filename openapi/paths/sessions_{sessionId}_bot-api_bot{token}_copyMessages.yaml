@@ -2,8 +2,9 @@ description: >-
   Telegram Bot API method for copying up to 100 messages of one of the bot's chats at once, as
   `forwardMessages` forwards them. Each copy repeats its message's content as `copyMessage`
   does; as TDLib does for copies of several messages, the copies keep no reply markup, and
-  `remove_caption` sends photos and documents without their captions. Copies of albums form new
-  albums as forwards do. As TDLib lets bots do,
+  `remove_caption` sends photos and documents without their captions. The copies of two or more
+  messages of one album form a new album, while a lone copy of an album's message belongs to
+  none, and documents form one new album under the conditions `forwardMessages` gives. As TDLib lets bots do,
   a bot may copy messages whose sender protected them. Topics, paid broadcasts, and suggested
   posts are not supported.
 parameters:
