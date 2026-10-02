@@ -8245,7 +8245,8 @@ Deno.test('albums hold photos with videos, and documents only among documents', 
       {
         type: 'video',
         media: 'attach://clip',
-        thumbnail: 'attach://preview',
+        // The legacy name of `thumbnail`, which the official server still reads.
+        thumb: 'attach://preview',
         duration: 100_000,
         width: 640,
         height: 360,

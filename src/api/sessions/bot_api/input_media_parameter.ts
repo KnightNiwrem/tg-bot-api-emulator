@@ -86,6 +86,7 @@ const inputMediaDocumentSchema = z.strictObject({
   type: z.literal('document'),
   media: z.string().default(''),
   thumbnail: z.string().optional(),
+  thumb: z.string().optional(),
   ...captionShape,
   disable_content_type_detection: z.boolean().optional(),
 });
@@ -103,6 +104,7 @@ const inputMediaVideoSchema = z.strictObject({
   type: z.literal('video'),
   media: z.string().default(''),
   thumbnail: z.string().optional(),
+  thumb: z.string().optional(),
   start_timestamp: clampedIntegerField(0, MAX_MEDIA_DURATION_SECONDS),
   ...captionShape,
   show_caption_above_media: z.boolean().default(false),

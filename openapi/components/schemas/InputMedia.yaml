@@ -51,6 +51,10 @@ oneOf:
         description: >-
           `attach://<part name>` for a thumbnail uploaded in that part, which works as the
           thumbnail of `sendDocument` does.
+      thumb:
+        type: string
+        description: >-
+          Legacy name of `thumbnail`, read as it is when `thumbnail` names no uploaded part.
       caption:
         $ref: ./Caption.yaml
       parse_mode:
@@ -81,6 +85,10 @@ oneOf:
         description: >-
           `attach://<part name>` for a thumbnail uploaded in that part, which works as the
           thumbnail of `sendVideo` does.
+      thumb:
+        type: string
+        description: >-
+          Legacy name of `thumbnail`, read as it is when `thumbnail` names no uploaded part.
       start_timestamp:
         type: integer
         default: 0
