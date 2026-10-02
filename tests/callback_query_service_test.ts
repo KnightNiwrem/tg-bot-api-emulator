@@ -3,6 +3,7 @@ import { BlockedUserRepository } from '../src/repositories/blocked_user.ts';
 import { BotRepository } from '../src/repositories/bot.ts';
 import { CallbackQueryRepository } from '../src/repositories/callback_query.ts';
 import { FileRepository } from '../src/repositories/file.ts';
+import { PollRepository } from '../src/repositories/poll.ts';
 import { MessageRepository } from '../src/repositories/message.ts';
 import { PrivateConversationRepository } from '../src/repositories/private_conversation.ts';
 import { SharedChatRepository } from '../src/repositories/shared_chat.ts';
@@ -431,6 +432,7 @@ function createCallbackQueryFixture() {
   const privateConversations = new PrivateConversationRepository();
   const messages = new MessageRepository();
   const files = new FileRepository();
+  const polls = new PollRepository();
   const messageBoxes = new MessageBoxRepository();
   const sharedChats = new SharedChatRepository();
   const publishedEvents: ChatDomainEvent[] = [];
@@ -441,6 +443,7 @@ function createCallbackQueryFixture() {
     privateConversations,
     messages,
     files,
+    polls,
     messageBoxes,
     blockedUsers: new BlockedUserRepository(),
     events,
@@ -452,6 +455,7 @@ function createCallbackQueryFixture() {
     sharedChats,
     messages,
     files,
+    polls,
     messageBoxes,
     events,
     currentUnixTimeSeconds: () => 1_700_000_000,

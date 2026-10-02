@@ -12398,7 +12398,7 @@ Deno.test('tests queue rate limit answers for the next Bot API calls of a bot', 
     throw new Error("Expected the queued answers under the methods' current names");
   }
   const refusals = await Promise.all([
-    queueResponses({ method: 'sendPoll', retry_after: 3 }),
+    queueResponses({ method: 'sendDice', retry_after: 3 }),
     queueResponses({ retry_after: 0 }),
     api.request(
       `${sessionPath}/bots/${createdAccount.account.id}/rate-limit-responses`,

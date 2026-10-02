@@ -45,6 +45,7 @@ import {
   checkBotMessageEdit,
   type ContentNormalizationFailure,
   type ContentReplacement,
+  type ContentTextNormalizationFailure,
   type FileUploadStore,
   getReplyQuoteSource,
   hasOnlyValidButtonCallbackData,
@@ -52,6 +53,7 @@ import {
   isSameMessageContent,
   isUnchangedContent,
   type MediaContent,
+  type NewPollStore,
   type NormalizedOutgoingContent,
   normalizeOutgoingAlbum,
   normalizeOutgoingContent,
@@ -114,7 +116,7 @@ export type SendSupergroupAccountAlbumResult =
           | Exclude<SendSupergroupAccountMessageFailureReason, 'message_text_empty'>
           | AlbumCompositionFailureReason;
       }
-      | ContentNormalizationFailure
+      | ContentTextNormalizationFailure
     )
   );
 
@@ -240,7 +242,7 @@ export type SendSupergroupBotAlbumResult =
           >
           | AlbumCompositionFailureReason;
       }
-      | ContentNormalizationFailure
+      | ContentTextNormalizationFailure
     )
   );
 
@@ -350,7 +352,8 @@ export type EditSupergroupBotMessageMediaFailureReason =
   /** As `EditBotMessageMediaFailureReason` describes it. */
   | 'message_media_not_editable'
   | 'caption_too_long'
-  | 'album_media_kind_changed';
+  | 'album_media_kind_changed'
+  | 'message_media_not_editable';
 
 export type SupergroupMessageEditResult<FailureReason extends string> =
   | { readonly edited: true; readonly message: SupergroupMessage }
@@ -561,6 +564,7 @@ interface SupergroupMessagingServiceDependencies {
   readonly sharedChats: SupergroupMemberStore;
   readonly messages: SupergroupMessageStore;
   readonly files: FileUploadStore;
+  readonly polls: NewPollStore;
   readonly messageBoxes: MessageBoxStore;
   readonly events: ChatDomainEventSink;
   readonly currentUnixTimeSeconds: () => number;
@@ -587,19 +591,30 @@ export class SupergroupMessagingService {
   readonly #sharedChats: SupergroupMemberStore;
   readonly #messages: SupergroupMessageStore;
   readonly #files: FileUploadStore;
+  readonly #polls: NewPollStore;
   readonly #messageBoxes: MessageBoxStore;
   readonly #events: ChatDomainEventSink;
   readonly #currentUnixTimeSeconds: () => number;
 
   constructor(
-    { accounts, bots, sharedChats, messages, files, messageBoxes, events, currentUnixTimeSeconds }:
-      SupergroupMessagingServiceDependencies,
+    {
+      accounts,
+      bots,
+      sharedChats,
+      messages,
+      files,
+      polls,
+      messageBoxes,
+      events,
+      currentUnixTimeSeconds,
+    }: SupergroupMessagingServiceDependencies,
   ) {
     this.#accounts = accounts;
     this.#bots = bots;
     this.#sharedChats = sharedChats;
     this.#messages = messages;
     this.#files = files;
+    this.#polls = polls;
     this.#messageBoxes = messageBoxes;
     this.#events = events;
     this.#currentUnixTimeSeconds = currentUnixTimeSeconds;
@@ -1330,7 +1345,7 @@ export class SupergroupMessagingService {
 
     const editedMessage = this.#messages.editSupergroupMessage(message.id, {
       ...edit,
-      content: storeOutgoingContent(content, this.#files),
+      content: storeOutgoingContent(content, this.#files, this.#polls),
     });
     this.#events.publish({ type: 'message_edited', message: editedMessage });
     return { edited: true, message: editedMessage };
@@ -1368,7 +1383,7 @@ export class SupergroupMessagingService {
     return this.#commitMessage({
       ...message,
       sentAtUnixSeconds: this.#currentUnixTimeSeconds(),
-      content: storeOutgoingContent(content, this.#files),
+      content: storeOutgoingContent(content, this.#files, this.#polls),
     }, repliedMessage);
   }
 

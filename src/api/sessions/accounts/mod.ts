@@ -53,6 +53,7 @@ const PRIVATE_CONVERSATION_PATH =
 const PRIVATE_MESSAGE_HISTORY_PATH = `${PRIVATE_CONVERSATION_PATH}/messages` as const;
 const MESSAGE_ID_PARAMETER = 'messageId';
 const PRIVATE_MESSAGE_PATH = `${PRIVATE_MESSAGE_HISTORY_PATH}/:${MESSAGE_ID_PARAMETER}` as const;
+const PRIVATE_MESSAGE_POLL_ANSWER_PATH = `${PRIVATE_MESSAGE_PATH}/poll-answer` as const;
 const BLOCKED_BOT_PATH = `/:${ACCOUNT_ID_PARAMETER}/blocked-bots/:${BOT_ID_PARAMETER}` as const;
 const PRIVATE_CHAT_COMMANDS_PATH = `${PRIVATE_CONVERSATION_PATH}/commands` as const;
 const PRIVATE_CHAT_MENU_BUTTON_PATH = `${PRIVATE_CONVERSATION_PATH}/menu-button` as const;
@@ -80,6 +81,7 @@ const SUPERGROUP_NOTIFICATIONS_PATH = `${SUPERGROUP_CONVERSATION_PATH}/notificat
 const SUPERGROUP_REPLY_INTERFACE_PATH = `${SUPERGROUP_CONVERSATION_PATH}/reply-interface` as const;
 const SUPERGROUP_MESSAGE_PATH =
   `${SUPERGROUP_MESSAGE_HISTORY_PATH}/:${MESSAGE_ID_PARAMETER}` as const;
+const SUPERGROUP_MESSAGE_POLL_ANSWER_PATH = `${SUPERGROUP_MESSAGE_PATH}/poll-answer` as const;
 const USER_ID_PARAMETER = 'userId';
 const SUPERGROUP_MEMBER_PATH =
   `${SUPERGROUP_CONVERSATION_PATH}/members/:${USER_ID_PARAMETER}` as const;
@@ -305,6 +307,14 @@ const pressCallbackButtonRequestSchema = z.strictObject({
   message_id: z.int().positive(),
   callback_data: z.string().min(1),
   expired: z.boolean().default(false),
+});
+
+/**
+ * The options an account chooses in a poll, by their positions counted from 0, as the Bot API's
+ * `option_ids` numbers them; a repeated position counts once. Retracting an answer chooses none.
+ */
+const setPollAnswerRequestSchema = z.strictObject({
+  option_ids: z.array(z.int().nonnegative()).min(1),
 });
 
 /**
@@ -1229,6 +1239,61 @@ export function createAccountRoutes(): Hono<SessionRouteContextTypes> {
     return context.json({ callback_query: presentCallbackQueryForAccount(callbackQuery) });
   });
 
+  for (
+    const [pollAnswerPath, chatType] of [
+      [PRIVATE_MESSAGE_POLL_ANSWER_PATH, 'private'],
+      [SUPERGROUP_MESSAGE_POLL_ANSWER_PATH, 'supergroup'],
+    ] as const
+  ) {
+    accountRoutes.get(pollAnswerPath, (context) => {
+      const pollMessage = readPollMessageKey(context.req.param(), chatType);
+      if (pollMessage === undefined) {
+        return context.body(null, 400);
+      }
+      const { pollAnswers, botMessageViews } = context.get('emulationSession');
+      const result = pollAnswers.getAccountPollAnswer(pollMessage);
+      if (!result.found) {
+        return context.body(null, pollAnswerFailureStatus(result.reason));
+      }
+      return context.json(presentPollAnswerForAccount(botMessageViews, result, pollMessage));
+    });
+
+    accountRoutes.put(pollAnswerPath, async (context) => {
+      const pollMessage = readPollMessageKey(context.req.param(), chatType);
+      if (pollMessage === undefined) {
+        return context.body(null, 400);
+      }
+      const requestBody = await readJsonRequestBody(context.req, setPollAnswerRequestSchema);
+      if (requestBody === undefined) {
+        return context.body(null, 400);
+      }
+      const { pollAnswers, botMessageViews } = context.get('emulationSession');
+      const result = pollAnswers.setAccountPollAnswer({
+        ...pollMessage,
+        optionPositions: requestBody.option_ids,
+      });
+      if (!result.answered) {
+        return context.body(null, pollAnswerFailureStatus(result.reason));
+      }
+      return context.json(presentPollAnswerForAccount(botMessageViews, result, pollMessage));
+    });
+
+    // Retracting chooses no options, as TDLib's `setPollAnswer` does with none.
+    accountRoutes.delete(pollAnswerPath, (context) => {
+      const pollMessage = readPollMessageKey(context.req.param(), chatType);
+      if (pollMessage === undefined) {
+        return context.body(null, 400);
+      }
+      const result = context.get('emulationSession').pollAnswers.setAccountPollAnswer({
+        ...pollMessage,
+        optionPositions: [],
+      });
+      return result.answered
+        ? context.body(null, 204)
+        : context.body(null, pollAnswerFailureStatus(result.reason));
+    });
+  }
+
   accountRoutes.post(INLINE_QUERY_COLLECTION_PATH, async (context) => {
     const accountPath = accountPathSchema.safeParse(context.req.param());
     if (!accountPath.success) {
@@ -1747,6 +1812,103 @@ function presentReplyKeyboardButtonRequest(request: ReplyKeyboardButtonRequest) 
     default: {
       const unhandledRequest: never = request;
       throw new Error(`Unhandled reply keyboard request: ${JSON.stringify(unhandledRequest)}`);
+    }
+  }
+}
+
+/** A message showing a poll, as an account addresses it. */
+type AccountPollMessageKey = Parameters<EmulationSession['pollAnswers']['getAccountPollAnswer']>[0];
+
+/** A poll an account found, with its own answer. */
+type AccountPollAnswer = Omit<
+  Extract<
+    ReturnType<EmulationSession['pollAnswers']['getAccountPollAnswer']>,
+    { readonly found: true }
+  >,
+  'found'
+>;
+
+/**
+ * Reads the message of a poll answer route, in an account's private chat with a bot or in a
+ * supergroup; `undefined` for path parameters that identify none.
+ */
+function readPollMessageKey(
+  pathParameters: Record<string, string>,
+  chatType: AccountPollMessageKey['chat']['type'],
+): AccountPollMessageKey | undefined {
+  if (chatType === 'private') {
+    const messagePath = privateMessagePathSchema.safeParse(pathParameters);
+    return messagePath.success
+      ? {
+        accountId: messagePath.data.accountId,
+        chat: { type: 'private', botId: messagePath.data.botId },
+        messageId: messagePath.data.messageId,
+      }
+      : undefined;
+  }
+  const messagePath = supergroupMessagePathSchema.safeParse(pathParameters);
+  return messagePath.success
+    ? {
+      accountId: messagePath.data.accountId,
+      chat: { type: 'supergroup', chatId: messagePath.data.chatId },
+      messageId: messagePath.data.messageId,
+    }
+    : undefined;
+}
+
+/**
+ * Shows an account's answer to a poll, with the message showing the poll as these routes show
+ * messages. Options are identified by position, as `option_ids` of the Bot API's `PollAnswer`
+ * numbers them, and by their persistent identifiers.
+ */
+function presentPollAnswerForAccount(
+  botMessageViews: EmulationSession['botMessageViews'],
+  { poll, message, chosenOptionPositions }: AccountPollAnswer,
+  { accountId }: AccountPollMessageKey,
+) {
+  return {
+    poll_answer: {
+      poll_id: poll.id,
+      option_ids: chosenOptionPositions,
+      option_persistent_ids: chosenOptionPositions.map((optionPosition) =>
+        poll.options[optionPosition].persistentId
+      ),
+    },
+    message: viewChatMessageForAccount(botMessageViews, message, accountId),
+  };
+}
+
+/**
+ * A chat or message the account cannot find, or one without a poll, is not found; a chat the
+ * account is no member of forbids voting; an answer the poll cannot accept is rejected; and an
+ * answer the poll's state or settings forbid, such as a change of an answer that cannot be
+ * changed, conflicts with it.
+ */
+function pollAnswerFailureStatus(
+  reason: Extract<
+    ReturnType<EmulationSession['pollAnswers']['setAccountPollAnswer']>,
+    { readonly answered: false }
+  >['reason'],
+): 400 | 403 | 404 | 409 {
+  switch (reason) {
+    case 'account_not_found':
+    case 'bot_not_found':
+    case 'chat_not_found':
+    case 'message_not_found':
+    case 'message_has_no_poll':
+      return 404;
+    case 'not_a_member':
+      return 403;
+    case 'multiple_answers_not_allowed':
+    case 'poll_option_not_found':
+      return 400;
+    case 'poll_closed':
+    case 'answer_retraction_not_allowed':
+    case 'answer_change_not_allowed':
+      return 409;
+    default: {
+      const unhandledReason: never = reason;
+      throw new Error(`Unhandled poll answer failure: ${unhandledReason}`);
     }
   }
 }

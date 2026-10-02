@@ -18,6 +18,7 @@ import { ChatActionRepository } from '../repositories/chat_action.ts';
 import { FileRepository } from '../repositories/file.ts';
 import { InlineQueryRepository } from '../repositories/inline_query.ts';
 import { MessageRepository } from '../repositories/message.ts';
+import { PollRepository } from '../repositories/poll.ts';
 import { PrivateConversationRepository } from '../repositories/private_conversation.ts';
 import { SharedChatRepository } from '../repositories/shared_chat.ts';
 import { TelegramIdentityRepository } from '../repositories/telegram_identity.ts';
@@ -45,6 +46,7 @@ import { InlineQueryService } from '../services/inline_query.ts';
 import { MediaFileService } from '../services/media_file.ts';
 import { normalizeCaption } from '../services/message_content.ts';
 import { MessageForwardingService } from '../services/message_forwarding.ts';
+import { PollService } from '../services/poll.ts';
 import { PrivateMessagingService } from '../services/private_messaging.ts';
 import { SharedChatAdministrationService } from '../services/shared_chat_administration.ts';
 import { SupergroupMessagingService } from '../services/supergroup_messaging.ts';
@@ -71,6 +73,7 @@ export function createEmulationSession(
   const sharedChats = new SharedChatRepository();
   const messages = new MessageRepository();
   const files = new FileRepository();
+  const polls = new PollRepository();
   const messageBoxes = new MessageBoxRepository();
   const botUpdates = new BotUpdateRepository();
   const updateSubscriptions = new BotUpdateSubscriptionRepository();
@@ -81,6 +84,7 @@ export function createEmulationSession(
     messageBoxes,
     messages,
     files,
+    polls,
   });
   const botUpdateDelivery = new BotUpdateDeliveryService({
     botMessageViews,
@@ -97,6 +101,7 @@ export function createEmulationSession(
     sharedChats,
     messages,
     files,
+    polls,
     messageBoxes,
     events: botUpdateDelivery,
     currentUnixTimeSeconds,
@@ -118,6 +123,7 @@ export function createEmulationSession(
     privateConversations,
     messages,
     files,
+    polls,
     messageBoxes,
     blockedUsers,
     events: botUpdateDelivery,
@@ -154,6 +160,15 @@ export function createEmulationSession(
     supergroupMessages: supergroupMessaging,
     callbackQueries: new CallbackQueryRepository(),
     events: botUpdateDelivery,
+  });
+  const pollAnswers = new PollService({
+    accounts,
+    bots,
+    privateConversations,
+    privateMessages: privateMessaging,
+    sharedChats,
+    supergroupMessages: supergroupMessaging,
+    polls,
   });
   const inlineQueries = new InlineQueryService({
     accounts,
@@ -238,6 +253,7 @@ export function createEmulationSession(
     inlineQueries,
     inlineMessages: messages,
     mediaGroups: messages,
+    polls,
     // As the messaging services decide it, a text mention may name any user of the session.
     botCaptions: {
       normalizeBotCaption: (caption) =>
@@ -265,6 +281,7 @@ export function createEmulationSession(
     messageForwarding,
     botBlocking,
     callbackQueries,
+    pollAnswers,
     inlineQueries,
     botCommands,
     botMenuButtons,

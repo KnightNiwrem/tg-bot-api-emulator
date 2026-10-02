@@ -1,0 +1,39 @@
+type: object
+additionalProperties: false
+description: >-
+  An answer option of a poll, as the official Bot API server's `JsonPollOption` shows it to bots.
+  Options added after the poll was created and media of options are not supported.
+required:
+  - persistent_id
+  - text
+  - voter_count
+properties:
+  persistent_id:
+    type: string
+    minLength: 1
+    description: >-
+      The option's identifier, which keeps identifying it however options change. Telegram's
+      servers choose it; the emulator uses the decimal text of the option's position when the
+      poll was created.
+  text:
+    type: string
+    minLength: 1
+    description: The option's text, at most 100 characters as Telegram counts them.
+  text_entities:
+    type: array
+    minItems: 1
+    description: >-
+      The custom emoji of the text, the only entities Telegram keeps in options; omitted when
+      there are none.
+    items:
+      allOf:
+        - $ref: ./MessageEntity.yaml
+        - properties:
+            type:
+              const: custom_emoji
+          required:
+            - custom_emoji_id
+  voter_count:
+    type: integer
+    minimum: 0
+    description: How many accounts chose the option. Bots see the counts of every poll.

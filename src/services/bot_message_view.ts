@@ -45,6 +45,7 @@ import type {
 } from '../types/chat_domain_event.ts';
 import type { ChatMemberStatus } from '../types/chat_membership.ts';
 import type { InlineQuery } from '../types/inline_query.ts';
+import type { Poll, PollId } from '../types/poll.ts';
 import {
   getRichMessageMentionedUserIds,
   listRichMessageFiles,
@@ -87,6 +88,10 @@ interface SharedChatLookup {
   getSharedChat(chatId: number): SharedChat | undefined;
 }
 
+interface PollLookup {
+  getPoll(pollId: PollId): Poll | undefined;
+}
+
 interface ObserverFileIdentities {
   getFile(fileId: StoredFileId): StoredFile | undefined;
   getOrAssignObserverFileId(observerId: number, fileId: StoredFileId): string;
@@ -99,6 +104,7 @@ interface BotMessageViewServiceDependencies {
   readonly messageBoxes: MessageIdLookup;
   readonly messages: MessageLookup;
   readonly files: ObserverFileIdentities;
+  readonly polls: PollLookup;
 }
 
 /**
@@ -117,9 +123,10 @@ export class BotMessageViewService {
   readonly #messageBoxes: MessageIdLookup;
   readonly #messages: MessageLookup;
   readonly #files: ObserverFileIdentities;
+  readonly #polls: PollLookup;
 
   constructor(
-    { accounts, bots, sharedChats, messageBoxes, messages, files }:
+    { accounts, bots, sharedChats, messageBoxes, messages, files, polls }:
       BotMessageViewServiceDependencies,
   ) {
     this.#accounts = accounts;
@@ -128,6 +135,7 @@ export class BotMessageViewService {
     this.#messageBoxes = messageBoxes;
     this.#messages = messages;
     this.#files = files;
+    this.#polls = polls;
   }
 
   /**
@@ -379,7 +387,7 @@ export class BotMessageViewService {
 
   /**
    * Resolves the users a message mentions, the bot it was sent through, a forward's original
-   * sender, its files, and the members a service message names, as the observer sees them.
+   * sender, its files or poll, and the members a service message names, as the observer sees them.
    */
   #resolveProjectionContext(message: ChatMessage, observerId: number) {
     const context = {
@@ -405,6 +413,8 @@ export class BotMessageViewService {
           ...context,
           richMessageFiles: this.#observeRichMessageFiles(content, observerId, message.id),
         };
+      case 'poll':
+        return { ...context, poll: this.#findPoll(content.pollId, message) };
       case 'members_joined':
         return { ...context, changedMembers: this.#findChangedMembers(content.memberIds, message) };
       case 'member_left':
@@ -440,7 +450,8 @@ export class BotMessageViewService {
 
   /**
    * Looks up what a reply to a message of another chat shows of it: its original sender and
-   * supergroup, which exist as long as the session does, and its media as the observer knows it.
+   * supergroup, which exist as long as the session does, and its media as the observer knows it,
+   * or its poll as it is now.
    */
   #resolveExternalReply(
     { origin, supergroupMessage, media }: ExternalReply,
@@ -463,8 +474,19 @@ export class BotMessageViewService {
       ...(supergroup === undefined ? {} : { supergroup }),
       ...(media === undefined
         ? {}
+        : media.kind === 'poll'
+        ? { poll: this.#findPoll(media.pollId, message) }
         : { mediaFile: this.#observeFile(media.fileId, observerId, message.id) }),
     };
+  }
+
+  /** Looks up the poll a message shows, which exists as long as the session does. */
+  #findPoll(pollId: PollId, message: ChatMessage): Poll {
+    const poll = this.#polls.getPoll(pollId);
+    if (poll === undefined) {
+      throw new Error(`Poll ${pollId} of message ${message.id} does not exist`);
+    }
+    return poll;
   }
 
   /** Looks up the inline bot a message was sent through, which exists as long as the session does. */

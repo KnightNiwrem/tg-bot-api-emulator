@@ -27,11 +27,11 @@ import type {
   SupergroupMessage,
 } from '../types/virtual_message.ts';
 import {
-  type ContentNormalizationFailure,
+  type ContentTextNormalizationFailure,
   hasOnlyValidButtonCallbackData,
   type NormalizedOutgoingContent,
   normalizeOutgoingContent,
-  type OutgoingMessageContent,
+  type OutgoingContentOtherThanPoll,
   toContentOfStoredFile,
 } from './message_content.ts';
 
@@ -92,7 +92,8 @@ type SpecifiedInlineQueryResultListing =
  */
 export type SpecifiedInlineQueryResult = SpecifiedInlineQueryResultListing & {
   readonly id: string;
-  readonly messageContent: OutgoingMessageContent;
+  /** As the Bot API's `InputMessageContent`, which has no poll. */
+  readonly messageContent: OutgoingContentOtherThanPoll;
   /** Omitted when the sent message has no inline keyboard. */
   readonly inlineKeyboard?: InlineKeyboard;
 };
@@ -127,7 +128,10 @@ export type AnswerInlineQueryResult =
   | { readonly answered: true; readonly inlineQuery: InlineQuery }
   | (
     & { readonly answered: false }
-    & ({ readonly reason: AnswerInlineQueryFailureReason } | ContentNormalizationFailure)
+    & (
+      | { readonly reason: AnswerInlineQueryFailureReason }
+      | ContentTextNormalizationFailure
+    )
   );
 
 /** Identifies an inline query by the account that sent it. */

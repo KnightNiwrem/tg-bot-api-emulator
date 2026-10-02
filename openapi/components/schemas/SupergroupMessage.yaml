@@ -26,6 +26,8 @@ oneOf:
   - required:
       - rich_message
   - required:
+      - poll
+  - required:
       - new_chat_participant
       - new_chat_member
       - new_chat_members
@@ -152,6 +154,10 @@ properties:
     $ref: ./RichMessage.yaml
     description: >-
       The blocks of a rich message, which only bots send, as `sendRichMessage` describes them.
+  poll:
+    $ref: ./Poll.yaml
+    description: >-
+      The poll of a poll message, which only bots send, with its votes as they are now.
   reply_markup:
     $ref: ./InlineKeyboardMarkup.yaml
   via_bot:

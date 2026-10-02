@@ -5,6 +5,7 @@ import {
   type FormattedText,
   getContentText,
   isCaptionedMediaContent,
+  type MessageContent,
   type TextEntity,
   type TextQuote,
 } from './virtual_message.ts';
@@ -42,7 +43,7 @@ export interface ExternalReplyTarget {
 /**
  * Creates what a reply to a message of another chat shows of it, as TDLib's `RepliedMessageInfo`
  * does for a reply being sent: the replied message's origin, its supergroup message ID, and its
- * media, whose caption is left to the reply's quote. As the Bot API's `ExternalReplyInfo` has no
+ * media or poll, as `getExternalReplyMedia` keeps them. As the Bot API's `ExternalReplyInfo` has no
  * field for one, a replied rich message shows no content, like replied text. `messageIdInChat` is
  * the replied message's ID in its chat, which Telegram shows only for a supergroup message.
  */
@@ -59,12 +60,22 @@ export function createExternalReply(
       ...(repliedMessage.kind === 'supergroup_message'
         ? { supergroupMessage: { chatId: repliedMessage.chatId, messageId: messageIdInChat } }
         : {}),
-      ...(isCaptionedMediaContent(content)
-        ? { media: { ...content, caption: { text: '', entities: [] } } }
-        : {}),
+      ...getExternalReplyMedia(content),
     },
     repliedText: { text, entities },
   };
+}
+
+/**
+ * What a reply shows of replied content: media without its caption, which the reply's quote shows
+ * instead, or a poll, as TDLib's `RepliedMessageInfo` keeps them; nothing for text or a rich
+ * message.
+ */
+function getExternalReplyMedia(content: MessageContent): Pick<ExternalReply, 'media'> {
+  if (isCaptionedMediaContent(content)) {
+    return { media: { ...content, caption: { text: '', entities: [] } } };
+  }
+  return content.kind === 'poll' ? { media: content } : {};
 }
 
 /**

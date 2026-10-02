@@ -1,6 +1,7 @@
 import { AccountRepository } from '../src/repositories/account.ts';
 import { BotRepository } from '../src/repositories/bot.ts';
 import { FileRepository } from '../src/repositories/file.ts';
+import { PollRepository } from '../src/repositories/poll.ts';
 import { MessageRepository } from '../src/repositories/message.ts';
 import { SharedChatRepository } from '../src/repositories/shared_chat.ts';
 import { TelegramIdentityRepository } from '../src/repositories/telegram_identity.ts';
@@ -364,6 +365,7 @@ function createViewFixture() {
     messageBoxes,
     messages,
     files,
+    polls: new PollRepository(),
   });
   return { virtualUsers, messages, files, messageBoxes, botMessageViews };
 }

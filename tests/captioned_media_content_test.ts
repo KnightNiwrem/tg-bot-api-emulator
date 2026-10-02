@@ -61,6 +61,11 @@ const CONTENT_CASES: readonly {
     contentText: NO_TEXT,
   },
   {
+    content: { kind: 'poll', pollId: '1' },
+    isCaptionedMedia: false,
+    contentText: NO_TEXT,
+  },
+  {
     content: { kind: 'members_joined', memberIds: [1] },
     isCaptionedMedia: false,
     contentText: NO_TEXT,

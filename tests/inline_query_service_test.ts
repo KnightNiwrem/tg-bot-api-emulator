@@ -2,6 +2,7 @@ import { AccountRepository } from '../src/repositories/account.ts';
 import { BlockedUserRepository } from '../src/repositories/blocked_user.ts';
 import { BotRepository } from '../src/repositories/bot.ts';
 import { FileRepository } from '../src/repositories/file.ts';
+import { PollRepository } from '../src/repositories/poll.ts';
 import { InlineQueryRepository } from '../src/repositories/inline_query.ts';
 import { MessageRepository } from '../src/repositories/message.ts';
 import { MessageBoxRepository } from '../src/repositories/message_box.ts';
@@ -444,6 +445,7 @@ function createInlineQueryFixture() {
   const virtualUsers = new VirtualUserService({ identities, accounts, bots });
   const messages = new MessageRepository();
   const files = new FileRepository();
+  const polls = new PollRepository();
   const messageBoxes = new MessageBoxRepository();
   const sharedChats = new SharedChatRepository();
   const blockedUsers = new BlockedUserRepository();
@@ -455,6 +457,7 @@ function createInlineQueryFixture() {
     privateConversations: new PrivateConversationRepository(),
     messages,
     files,
+    polls,
     messageBoxes,
     blockedUsers,
     events,
@@ -466,6 +469,7 @@ function createInlineQueryFixture() {
     sharedChats,
     messages,
     files,
+    polls,
     messageBoxes,
     events,
     currentUnixTimeSeconds: () => 1_700_000_000,

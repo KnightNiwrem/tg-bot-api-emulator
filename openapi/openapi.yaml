@@ -113,6 +113,10 @@ paths:
     $ref: paths/sessions_{sessionId}_accounts_{accountId}_callback-queries.yaml
   /sessions/{sessionId}/accounts/{accountId}/callback-queries/{callbackQueryId}:
     $ref: paths/sessions_{sessionId}_accounts_{accountId}_callback-queries_{callbackQueryId}.yaml
+  /sessions/{sessionId}/accounts/{accountId}/conversations/private/{botId}/messages/{messageId}/poll-answer:
+    $ref: paths/sessions_{sessionId}_accounts_{accountId}_conversations_private_{botId}_messages_{messageId}_poll-answer.yaml
+  /sessions/{sessionId}/accounts/{accountId}/conversations/supergroup/{chatId}/messages/{messageId}/poll-answer:
+    $ref: paths/sessions_{sessionId}_accounts_{accountId}_conversations_supergroup_{chatId}_messages_{messageId}_poll-answer.yaml
   /sessions/{sessionId}/accounts/{accountId}/inline-queries:
     $ref: paths/sessions_{sessionId}_accounts_{accountId}_inline-queries.yaml
   /sessions/{sessionId}/accounts/{accountId}/inline-queries/{inlineQueryId}:
@@ -147,6 +151,8 @@ paths:
     $ref: paths/sessions_{sessionId}_bot-api_bot{token}_sendMediaGroup.yaml
   /sessions/{sessionId}/bot-api/bot{token}/sendRichMessage:
     $ref: paths/sessions_{sessionId}_bot-api_bot{token}_sendRichMessage.yaml
+  /sessions/{sessionId}/bot-api/bot{token}/sendPoll:
+    $ref: paths/sessions_{sessionId}_bot-api_bot{token}_sendPoll.yaml
   /sessions/{sessionId}/bot-api/bot{token}/forwardMessage:
     $ref: paths/sessions_{sessionId}_bot-api_bot{token}_forwardMessage.yaml
   /sessions/{sessionId}/bot-api/bot{token}/copyMessage:

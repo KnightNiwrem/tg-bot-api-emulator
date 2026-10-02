@@ -1,6 +1,7 @@
 import { AccountRepository } from '../src/repositories/account.ts';
 import { BotRepository } from '../src/repositories/bot.ts';
 import { FileRepository } from '../src/repositories/file.ts';
+import { PollRepository } from '../src/repositories/poll.ts';
 import { MessageRepository } from '../src/repositories/message.ts';
 import { MessageBoxRepository } from '../src/repositories/message_box.ts';
 import { SharedChatRepository } from '../src/repositories/shared_chat.ts';
@@ -623,6 +624,7 @@ function createSupergroupMessagingFixture() {
     sharedChats,
     messages: new MessageRepository(),
     files: new FileRepository(),
+    polls: new PollRepository(),
     messageBoxes,
     events,
     currentUnixTimeSeconds,

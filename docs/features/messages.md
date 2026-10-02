@@ -8,9 +8,9 @@
 Accounts and bots exchange text, photos, documents, [videos](media-and-files.md#videos),
 [voice notes](media-and-files.md#voice-notes) and [albums](media-and-files.md#albums) of photos and
 videos, or documents, in private chats and supergroups, and bots also send
-[rich messages](rich-messages.md). A private conversation must first be started by the account
-before the bot can send to it. `sendMessage`, `sendRichMessage`, `sendPhoto`, `sendDocument`,
-`sendVideo` and `sendVoice` accept `protect_content` and supported
+[rich messages](rich-messages.md) and [polls](polls.md). A private conversation must first be
+started by the account before the bot can send to it. `sendMessage`, `sendRichMessage`, `sendPoll`,
+`sendPhoto`, `sendDocument`, `sendVideo` and `sendVoice` accept `protect_content` and supported
 [reply markup](keyboards-and-callbacks.md); `sendMediaGroup` accepts `protect_content` and no reply
 markup. Bot messages appear in account history; bots receive no updates for their own sends or
 edits.
@@ -91,9 +91,9 @@ notification; a deleted message has none.
 Bots edit text, captions, media and inline keyboards with `editMessageText`, `editMessageCaption`,
 `editMessageMedia` and `editMessageReplyMarkup`; `editMessageText` also turns text into a
 [rich message](rich-messages.md#sending-and-editing) and back. Omitting the inline keyboard in an
-edit removes it. Unchanged content and markup produce the message-not-modified error. Accounts can
-edit their own text or captions through the emulation API, producing `edited_message` updates for
-eligible bots.
+edit removes it. Unchanged content and markup produce the message-not-modified error. A
+[poll's](polls.md#sending-polls) media cannot be edited. Accounts can edit their own text or
+captions through the emulation API, producing `edited_message` updates for eligible bots.
 
 Forwarded messages and messages originally carrying a reply keyboard, keyboard removal or forced
 reply cannot be edited. A bot can edit its own content or content sent through its inline mode;
@@ -167,8 +167,9 @@ text. Accounts can forward messages from their own chats too.
 request's reply and markup. A supplied caption, including an empty one, replaces the caption of a
 photo, document, video or voice note; without one the original caption is kept. Forwards and copies
 of a rich message disable its [buttons](rich-messages.md#sending-and-editing) that would not work
-away from the original. `show_caption_above_media` applies to a copied photo or video when a
-replacement caption is supplied. As the official server's
+away from the original. A forward of a poll shows the same poll, while a copy shows a
+[new poll without votes](polls.md#forwards-copies-and-replies). `show_caption_above_media` applies
+to a copied photo or video when a replacement caption is supplied. As the official server's
 [`process_forward_message_query`][forward-video-start] and `process_copy_message_query` read it, a
 `video_start_timestamp` gives a forwarded or copied video the second from which it plays, a negative
 one its beginning, as TDLib's [`set_message_content_video_start_timestamp`][video-start-replacement]

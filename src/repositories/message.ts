@@ -435,6 +435,8 @@ function copyContent(content: SupergroupMessageContent): SupergroupMessageConten
       };
     case 'rich_message':
       return structuredClone(content);
+    case 'poll':
+      return { ...content };
     case 'members_joined':
       return { ...content, memberIds: [...content.memberIds] };
     case 'member_left':

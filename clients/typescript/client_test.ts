@@ -1059,6 +1059,78 @@ Deno.test('TypeScript client reads rich messages and presses their buttons', asy
   await session.end();
 });
 
+Deno.test('TypeScript client votes in polls of private chats and supergroups', async () => {
+  const publicOrigin = 'http://emulator.example:9000';
+  const api = createEmulationApi({
+    sessionLifecycle: createSessionLifecycleService(),
+    publicOrigin,
+  });
+  const client = new TelegramEmulationClient(publicOrigin, {
+    fetch: createInProcessFetch(api.fetch),
+  });
+  const session = await client.createSession();
+  const { token, bot } = await session.createBot({ first_name: 'Test Bot', username: 'test_bot' });
+  const { account } = await session.createAccount({ first_name: 'Ada' });
+  const privateChat = { type: 'private', botId: bot.id } as const;
+  await account.sendMessage({ to: privateChat, text: 'Hello' });
+  const supergroup = await account.createSupergroup({ title: 'Team' });
+  const groupChat = { type: 'supergroup', chatId: supergroup.id } as const;
+  await account.addChatMember({ chat: groupChat, userId: bot.id });
+  const sendPoll = async (chatId: number, parameters: Record<string, unknown> = {}) => {
+    const response = await api.request(`/sessions/${session.id}/bot-api/bot${token}/sendPoll`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ chat_id: chatId, question: 'Lunch?', ...parameters }),
+    });
+    return (await response.json() as { result: { message_id: number } }).result.message_id;
+  };
+
+  const privatePollId = await sendPoll(account.id, { options: ['Pizza', 'Pasta'] });
+  const vote = await account.answerPoll({
+    chat: privateChat,
+    message_id: privatePollId,
+    option_ids: [1],
+  });
+  const readAnswer = await account.getPollAnswer({ chat: privateChat, message_id: privatePollId });
+  if (
+    JSON.stringify(vote.poll_answer.option_persistent_ids) !== JSON.stringify(['1']) ||
+    vote.message.poll?.options[1].voter_count !== 1 ||
+    JSON.stringify(readAnswer) !== JSON.stringify(vote)
+  ) {
+    throw new Error(`Expected the client to vote in the poll, received ${JSON.stringify(vote)}`);
+  }
+  await account.retractPollAnswer({ chat: privateChat, message_id: privatePollId });
+  const retracted = await account.getPollAnswer({ chat: privateChat, message_id: privatePollId });
+  if (
+    retracted.poll_answer.option_ids.length !== 0 ||
+    retracted.message.poll?.total_voter_count !== 0
+  ) {
+    throw new Error('Expected the client to retract the vote');
+  }
+
+  const groupPollId = await sendPoll(supergroup.id, {
+    options: ['Pizza', 'Pasta'],
+    allows_revoting: false,
+  });
+  const groupVote = await account.answerPoll({
+    chat: groupChat,
+    message_id: groupPollId,
+    option_ids: [0],
+  });
+  if (groupVote.message.chat.id !== supergroup.id || groupVote.message.poll?.allows_revoting) {
+    throw new Error('Expected the client to read the supergroup poll message');
+  }
+  try {
+    await account.answerPoll({ chat: groupChat, message_id: groupPollId, option_ids: [1] });
+    throw new Error('Expected a changed answer of a poll without revoting to fail');
+  } catch (error) {
+    if (!(error instanceof EmulationClientError) || error.status !== 409) {
+      throw error;
+    }
+  }
+  await session.end();
+});
+
 Deno.test('TypeScript client sends inline queries and results through an inline bot', async () => {
   const publicOrigin = 'http://emulator.example:9000';
   const api = createEmulationApi({

@@ -113,6 +113,19 @@ try {
   });
   console.log(album.map(({ media_group_id }) => media_group_id));
 
+  // Vote in the latest poll the bot sent, if any. The answer comes back with the poll's message
+  // as it is now, whose options show their voter counts.
+  const pollMessage = (await account.getMessages({ chat: { type: 'private', botId: bot.id } }))
+    .findLast(({ poll, from }) => poll !== undefined && from.id === bot.id);
+  if (pollMessage !== undefined) {
+    const { poll_answer, message } = await account.answerPoll({
+      chat: { type: 'private', botId: bot.id },
+      message_id: pollMessage.message_id,
+      option_ids: [0],
+    });
+    console.log(poll_answer.option_persistent_ids, message.poll?.total_voter_count);
+  }
+
   // Edit the account's first message, which sends the bot an edited_message update. Accounts
   // format text and captions with entities, as bots specify them.
   await account.editMessage({

@@ -16,6 +16,7 @@ import {
   menuButtonResponseSchema,
   messageHistoryResponseSchema,
   notificationsResponseSchema,
+  pollAnswerResponseSchema,
   rateLimitResponsesListSchema,
   rateLimitResponsesSchema,
   replyInterfaceResponseSchema,
@@ -25,6 +26,7 @@ import {
   sentSupergroupMessageResponseSchema,
   supergroupBotCommandsResponseSchema,
   supergroupMessageHistoryResponseSchema,
+  supergroupPollAnswerResponseSchema,
   webResourceSchema,
 } from './schemas.ts';
 import type {
@@ -38,6 +40,8 @@ import type {
   AccountMenuButtonInput,
   AccountMessageHistoryInput,
   AccountNotificationsInput,
+  AccountPollAnswer,
+  AccountPollMessageInput,
   AccountReplyInterfaceInput,
   AccountSendDocumentInput,
   AccountSendMediaGroupInput,
@@ -47,6 +51,7 @@ import type {
   AccountSendVoiceInput,
   AccountSupergroupBotCommandsInput,
   AddChatMemberInput,
+  AnswerPollInput,
   BotActivityCriteria,
   BotActivityFilterFor,
   BotActivityLog,
@@ -613,6 +618,34 @@ function createVirtualAccountClient(
       });
       return response.callback_query;
     },
+    answerPoll<Target extends MessageTarget>(
+      { chat, message_id, option_ids }: AnswerPollInput<Target>,
+    ): Promise<AccountPollAnswer<Target>> {
+      return requestJson(fetchImplementation, {
+        method: 'PUT',
+        url: pollAnswerUrl(accountUrl, { chat, message_id }),
+        expectedStatus: HTTP_STATUS_OK,
+        responseSchema: messageResponseSchemasFor(chat).pollAnswer,
+        body: { option_ids },
+      });
+    },
+    getPollAnswer<Target extends MessageTarget>(
+      input: AccountPollMessageInput<Target>,
+    ): Promise<AccountPollAnswer<Target>> {
+      return requestJson(fetchImplementation, {
+        method: 'GET',
+        url: pollAnswerUrl(accountUrl, input),
+        expectedStatus: HTTP_STATUS_OK,
+        responseSchema: messageResponseSchemasFor(input.chat).pollAnswer,
+      });
+    },
+    async retractPollAnswer(input: AccountPollMessageInput): Promise<void> {
+      await requestEmptyResponse(fetchImplementation, {
+        method: 'DELETE',
+        url: pollAnswerUrl(accountUrl, input),
+        expectedStatus: HTTP_STATUS_NO_CONTENT,
+      });
+    },
     async sendInlineQuery(input: SendInlineQueryInput): Promise<InlineQuery> {
       const response = await requestJson(fetchImplementation, {
         method: 'POST',
@@ -729,10 +762,18 @@ function conversationUrl(accountUrl: string, chat: MessageTarget): string {
     : `${accountUrl}/conversations/supergroup/${encodeURIComponent(chat.chatId)}`;
 }
 
+/** The URL of an account's answer to the poll a message of its chat shows. */
+function pollAnswerUrl(accountUrl: string, { chat, message_id }: AccountPollMessageInput): string {
+  return `${conversationUrl(accountUrl, chat)}/messages/${
+    encodeURIComponent(message_id)
+  }/poll-answer`;
+}
+
 interface MessageResponseSchemas<Target extends MessageTarget> {
   readonly sent: z.ZodType<{ readonly message: MessageIn<Target> }>;
   readonly sentAlbum: z.ZodType<{ readonly messages: readonly MessageIn<Target>[] }>;
   readonly history: z.ZodType<{ readonly messages: readonly MessageIn<Target>[] }>;
+  readonly pollAnswer: z.ZodType<AccountPollAnswer<Target>>;
 }
 
 /**
@@ -748,11 +789,13 @@ function messageResponseSchemasFor<Target extends MessageTarget>(
       sent: sentSupergroupMessageResponseSchema,
       sentAlbum: sentSupergroupMediaGroupResponseSchema,
       history: supergroupMessageHistoryResponseSchema,
+      pollAnswer: supergroupPollAnswerResponseSchema,
     }
     : {
       sent: sentMessageResponseSchema,
       sentAlbum: sentMediaGroupResponseSchema,
       history: messageHistoryResponseSchema,
+      pollAnswer: pollAnswerResponseSchema,
     };
   return schemas as MessageResponseSchemas<Target>;
 }

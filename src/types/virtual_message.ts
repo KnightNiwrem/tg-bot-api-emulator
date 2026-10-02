@@ -1,4 +1,5 @@
 import type { InlineKeyboard } from './inline_keyboard.ts';
+import type { PollId } from './poll.ts';
 import type { ReplyInterfaceMarkup } from './reply_interface.ts';
 import { type RichMessage, richMessageMentionsUser } from './rich_message.ts';
 import type { StoredFileId } from './stored_file.ts';
@@ -231,8 +232,21 @@ export type CaptionedMediaContent =
   | VideoMessageContent
   | VoiceMessageContent;
 
-/** What a message shows: text, captioned media, or a rich message. */
-export type MessageContent = TextMessageContent | CaptionedMediaContent | RichMessageContent;
+/**
+ * A poll, which only bots send. The message shows the poll by its identifier: the question,
+ * options, votes, and state belong to the poll, which every forward of the message shows alike.
+ */
+export interface PollMessageContent {
+  readonly kind: 'poll';
+  readonly pollId: PollId;
+}
+
+/** What a message shows: text, captioned media, a rich message, or a poll. */
+export type MessageContent =
+  | TextMessageContent
+  | CaptionedMediaContent
+  | RichMessageContent
+  | PollMessageContent;
 
 /** A service message's record that accounts or bots joined a supergroup. */
 export interface MembersJoinedMessageContent {
@@ -275,8 +289,8 @@ export function isSupergroupServiceContent(
 }
 
 /**
- * Whether a message's content is captioned media, rather than text, a rich message, or a service
- * message.
+ * Whether a message's content is captioned media, rather than text, a rich message, a poll, or a
+ * service message.
  */
 export function isCaptionedMediaContent(
   content: SupergroupMessageContent,
@@ -289,6 +303,7 @@ export function isCaptionedMediaContent(
       return true;
     case 'text':
     case 'rich_message':
+    case 'poll':
     case 'members_joined':
     case 'member_left':
     case 'title_changed':
@@ -303,7 +318,8 @@ export function isCaptionedMediaContent(
 /**
  * The text a message's content carries: the text of a text message, or the caption of captioned
  * media, which is empty when it has none. As TDLib's `get_message_content_text` has none for
- * them, a rich message and a service message carry no text.
+ * them, a rich message and a service message carry no text; it reads only the description of a
+ * poll, which the emulator does not support, so a poll carries none either.
  */
 export function getContentText(content: SupergroupMessageContent): FormattedText {
   if (isCaptionedMediaContent(content)) {
@@ -313,6 +329,7 @@ export function getContentText(content: SupergroupMessageContent): FormattedText
     case 'text':
       return content;
     case 'rich_message':
+    case 'poll':
     case 'members_joined':
     case 'member_left':
     case 'title_changed':
@@ -386,8 +403,11 @@ export interface ExternalReply {
    * chat and ID Telegram does not show in other chats.
    */
   readonly supergroupMessage?: SupergroupMessageReference;
-  /** The replied media without its caption; omitted for a text or rich message. */
-  readonly media?: CaptionedMediaContent;
+  /**
+   * The replied media without its caption, or the replied poll, which the reply shows as it is
+   * now; omitted for a text or rich message.
+   */
+  readonly media?: CaptionedMediaContent | PollMessageContent;
 }
 
 /** A canonical message of a private conversation, written by either participant. */

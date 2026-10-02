@@ -4,6 +4,7 @@ import { BotRepository } from '../src/repositories/bot.ts';
 import { BotUpdateRepository } from '../src/repositories/bot_update.ts';
 import { BotUpdateSubscriptionRepository } from '../src/repositories/bot_update_subscription.ts';
 import { FileRepository } from '../src/repositories/file.ts';
+import { PollRepository } from '../src/repositories/poll.ts';
 import { MessageRepository } from '../src/repositories/message.ts';
 import { PrivateConversationRepository } from '../src/repositories/private_conversation.ts';
 import { SharedChatRepository } from '../src/repositories/shared_chat.ts';
@@ -2000,6 +2001,7 @@ function createPrivateMessagingFixture() {
   const privateConversations = new PrivateConversationRepository();
   const messages = new MessageRepository();
   const files = new FileRepository();
+  const polls = new PollRepository();
   const messageBoxes = new MessageBoxRepository();
   const botUpdates = new BotUpdateRepository();
   const sharedChats = new SharedChatRepository();
@@ -2011,6 +2013,7 @@ function createPrivateMessagingFixture() {
       messageBoxes,
       messages,
       files,
+      polls,
     }),
     botUpdates,
     updateSubscriptions: new BotUpdateSubscriptionRepository(),
@@ -2033,6 +2036,7 @@ function createPrivateMessagingFixture() {
         return files.addFile(upload);
       },
     },
+    polls,
     messageBoxes,
     blockedUsers,
     events: {

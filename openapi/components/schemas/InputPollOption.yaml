@@ -1,0 +1,22 @@
+description: >-
+  An answer option of a poll being sent: its text, or an object with its text and the
+  `text_parse_mode` or `text_entities` that format it. As Telegram keeps them, only custom emoji
+  remain of the formatting. Media of options are not supported.
+oneOf:
+  - type: string
+  - type: object
+    additionalProperties: false
+    required:
+      - text
+    properties:
+      text:
+        type: string
+        description: >-
+          The option's text, normalized as message text is, which must keep 1–100 characters.
+      text_parse_mode:
+        $ref: ./ParseMode.yaml
+      text_entities:
+        type: array
+        description: Entities marking the text; ignored when `text_parse_mode` formats it.
+        items:
+          $ref: ./MessageEntityParameter.yaml
