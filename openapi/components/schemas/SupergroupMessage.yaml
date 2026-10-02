@@ -119,7 +119,7 @@ properties:
   has_media_spoiler:
     type: boolean
     const: true
-    description: Present when clients cover the photo until the user reveals it.
+    description: Present when clients cover the photo or video until the user reveals it.
   new_chat_participant:
     $ref: ./MessageUser.yaml
     description: Legacy alias of `new_chat_member`.

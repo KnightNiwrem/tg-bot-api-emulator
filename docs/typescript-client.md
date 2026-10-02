@@ -8,8 +8,8 @@ with its virtual token and `session.botApiRoot` configured as the API root.
 This walkthrough shows the available client operations. Run your bot alongside it. The session's
 [bot activity log](features/bot-activity.md) records the bot's calls, so a test can wait for the bot
 to act before inspecting a reply, callback answer, or inline result. The photo and album examples
-also need a local `receipt.png` file. The import below assumes the example is saved directly in
-`docs/`.
+also need a local `receipt.png` file, and the video example a local `clip.mp4` file. The import
+below assumes the example is saved directly in `docs/`.
 
 Tests can use the TypeScript client instead of constructing emulation server URLs directly:
 

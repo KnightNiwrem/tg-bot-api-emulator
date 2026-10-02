@@ -11,8 +11,8 @@ get:
   responses:
     '200':
       description: >-
-        The file's content, as it was sent, with its document's MIME type or its photo's
-        image type.
+        The file's content, as it was sent, with its document's or video's MIME type, or the
+        image type its photo or thumbnail was sent in.
       content:
         application/octet-stream:
           schema:

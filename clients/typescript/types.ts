@@ -372,7 +372,7 @@ export interface AccountDeleteMessageInput {
 
 export interface AccountEditMessageCaptionInput<Target extends MessageTarget = MessageTarget> {
   readonly chat: Target;
-  /** The ID of the account's photo or document to edit, as message history shows it. */
+  /** The ID of the account's captioned media to edit, as message history shows it. */
   readonly message_id: number;
   /** The new caption, which must differ from the current one; empty removes the caption. */
   readonly caption: string;
