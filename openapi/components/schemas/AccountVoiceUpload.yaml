@@ -1,0 +1,22 @@
+description: >-
+  A voice note an account records, whose duration its client defines. It is sent as
+  `audio/ogg`, as Telegram's clients record voice notes; the emulator neither reads nor
+  transcodes the content.
+type: object
+additionalProperties: false
+required:
+  - content_base64
+properties:
+  content_base64:
+    type: string
+    minLength: 1
+    contentEncoding: base64
+    description: >-
+      The recording's content, which must not be empty. An account uploads through its own
+      client, so the session's upload profile, which limits bot uploads, does not apply.
+  duration:
+    type: integer
+    minimum: 0
+    maximum: 86400
+    default: 0
+    description: Duration in seconds.

@@ -39,7 +39,7 @@ import {
   type TextQuote,
 } from '../types/virtual_message.ts';
 import {
-  type AccountMediaContent,
+  type AccountAlbumMediaContent,
   type AccountMessageContent,
   type AccountMessageEdit,
   checkBotMessageEdit,
@@ -99,7 +99,7 @@ export interface SendSupergroupAccountAlbumInput {
   readonly fromAccountId: number;
   readonly chatId: number;
   /** The album's media in the order the supergroup shows them, each with its caption. */
-  readonly contents: readonly AccountMediaContent[];
+  readonly contents: readonly AccountAlbumMediaContent[];
   /** As `SendSupergroupAccountMessageInput` describes it; every message of the album replies to it. */
   readonly replyToMessageId?: number;
 }
@@ -347,6 +347,8 @@ export type EditSupergroupBotMessageCaptionFailureReason =
 
 export type EditSupergroupBotMessageMediaFailureReason =
   | EditSupergroupBotMessageInlineKeyboardFailureReason
+  /** As `EditBotMessageMediaFailureReason` describes it. */
+  | 'message_media_not_editable'
   | 'caption_too_long'
   | 'album_media_kind_changed';
 
@@ -652,7 +654,7 @@ export class SupergroupMessagingService {
       return { sent: false, reason: memberResolution.reason };
     }
     const albumNormalization = normalizeOutgoingAlbum(
-      input.contents.map(toOutgoingAccountMedia),
+      input.contents.map((content) => toOutgoingAccountMedia(content)),
       'account',
       this.#textFixingContext,
     );

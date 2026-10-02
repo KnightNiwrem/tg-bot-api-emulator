@@ -208,19 +208,28 @@ export interface VideoMessageContent {
   readonly startTimestampSeconds: number;
 }
 
+/** A voice note, which, unlike other captioned media, never forms albums or replaces media. */
+export interface VoiceMessageContent {
+  readonly kind: 'voice';
+  readonly fileId: StoredFileId;
+  /** Empty for a voice note without a caption. */
+  readonly caption: FormattedText;
+}
+
 /** A message laid out in blocks, which only bots send. It has no text or caption. */
 export interface RichMessageContent extends RichMessage {
   readonly kind: 'rich_message';
 }
 
 /**
- * Media that a message shows with a caption: a photo, a document, or a video. Each carries the one
- * stored file it shows, and a caption that is empty when it has none.
+ * Media that a message shows with a caption: a photo, a document, a video, or a voice note. Each
+ * carries the one stored file it shows, and a caption that is empty when it has none.
  */
 export type CaptionedMediaContent =
   | PhotoMessageContent
   | DocumentMessageContent
-  | VideoMessageContent;
+  | VideoMessageContent
+  | VoiceMessageContent;
 
 /** What a message shows: text, captioned media, or a rich message. */
 export type MessageContent = TextMessageContent | CaptionedMediaContent | RichMessageContent;
@@ -276,6 +285,7 @@ export function isCaptionedMediaContent(
     case 'photo':
     case 'document':
     case 'video':
+    case 'voice':
       return true;
     case 'text':
     case 'rich_message':

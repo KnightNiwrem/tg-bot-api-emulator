@@ -5,13 +5,13 @@
 ## Supported behavior
 
 Bots send photos and documents with `sendPhoto` and `sendDocument`, [videos](#videos) with
-`sendVideo`, photos, videos and documents as [albums](#albums) with `sendMediaGroup`, and photos and
-documents in the blocks of [rich messages](rich-messages.md). Files can be multipart uploads, either
-in the part named for the parameter or referenced with `attach://<part-name>`, an existing `file_id`
-known to that bot, or an HTTP URL that Telegram downloads, as described in
-[files sent by URL](#files-sent-by-url). Accounts upload base64 content through the emulation API;
-the TypeScript client accepts bytes and performs the encoding. Both sides can supply captions and
-caption entities.
+`sendVideo`, [voice notes](#voice-notes) with `sendVoice`, photos, videos and documents as
+[albums](#albums) with `sendMediaGroup`, and photos and documents in the blocks of
+[rich messages](rich-messages.md). Files can be multipart uploads, either in the part named for the
+parameter or referenced with `attach://<part-name>`, an existing `file_id` known to that bot, or an
+HTTP URL that Telegram downloads, as described in [files sent by URL](#files-sent-by-url). Accounts
+upload base64 content through the emulation API; the TypeScript client accepts bytes and performs
+the encoding. Both sides can supply captions and caption entities.
 
 Photos expose dimensions, `has_media_spoiler` when requested and `show_caption_above_media` for a
 caption above the photo. Documents expose their cleaned filename and a MIME type derived from its
@@ -37,10 +37,11 @@ photo or document (`Bad Request: can't use file of type Thumbnail as Photo`).
 
 Each observer receives a different `file_id` for the same stored file. `file_unique_id` identifies
 it across observers in that session. Reusing another bot's `file_id`, or sending a document ID as a
-photo or a video, fails; see [file IDs of other kinds](#file-ids-of-other-kinds). `getFile` returns
-a `file_path`; download the bytes at `<botApiRoot>/file/bot<token>/<file_path>`. A path is available
-after `getFile` assigns it, and remains valid for the session. Tests can bypass bot downloads with
-`session.downloadFile(file_unique_id)`; that is an emulation API convenience, not a Telegram API.
+photo, video or voice note, fails; see [file IDs of other kinds](#file-ids-of-other-kinds).
+`getFile` returns a `file_path`; download the bytes at `<botApiRoot>/file/bot<token>/<file_path>`. A
+path is available after `getFile` assigns it, and remains valid for the session. Tests can bypass
+bot downloads with `session.downloadFile(file_unique_id)`; that is an emulation API convenience, not
+a Telegram API.
 
 ### Files sent by URL
 
@@ -49,8 +50,8 @@ downloads before it sends the file. The emulator downloads it from the session's
 register what each URL serves with `POST /sessions/{sessionId}/web-resources` or the TypeScript
 client's `registerWebResource`, giving a status, `Content-Type`, body, or redirect `location`. A URL
 without a registered resource is unreachable, and the emulator never reaches the network.
-`sendPhoto`, `sendDocument`, `sendVideo`, `editMessageMedia`, including for inline messages, and the
-photo and document blocks of rich messages accept URLs.
+`sendPhoto`, `sendDocument`, `sendVideo`, `sendVoice`, `editMessageMedia`, including for inline
+messages, and the photo and document blocks of rich messages accept URLs.
 
 The URL is read as TDLib's [`parse_url`][parse-url] reads it, so a URL without a protocol is an HTTP
 one, and a resource answers every spelling that TDLib reads alike; a URL TDLib refuses fails with
@@ -61,8 +62,11 @@ files to 20 MB, read as 5,242,880 and 20,971,520 bytes, whatever the upload prof
 Telegram's servers download them. A photo must be served as an image. As that reference says that
 only PDF and ZIP files can be sent as documents, a document must be served as `application/pdf` or
 `application/zip`. The reference requires the correct MIME type for other media, and Telegram
-documents only MPEG-4 videos as playable, so a video must be served as `video/mp4`. The content of a
-document or video is not inspected.
+documents only MPEG-4 videos as playable, so a video must be served as `video/mp4`. As the reference
+says for `sendVoice`, a voice note must be served as `audio/ogg`; one of at most 1 MB, read as
+1,048,576 bytes, is sent as a voice note, and a larger one, up to 20 MB, as a file, which the
+emulator sends as a document named after the URL. The content of a document, video or voice note is
+not inspected.
 
 | Download outcome                                                                         | Error                                             |
 | ---------------------------------------------------------------------------------------- | ------------------------------------------------- |
@@ -87,7 +91,7 @@ clamped to 0–86,400 seconds and 0–10,000 pixels, as the official server's
 [`process_send_video_query`][send-video] clamps them; an account's must lie in those ranges. Each
 defaults to 0. The emulator does not read video content, so it checks no container, codec or
 duration and sends any non-empty content as a video; see
-[sender-defined video attributes](#sender-defined-video-attributes).
+[sender-defined media attributes](#sender-defined-media-attributes).
 
 A bot's upload is named as a document's is. Its MIME type is the type the file name's extension
 decides when that is a `video/` type, and `video/mp4` otherwise, as TDLib's
@@ -109,6 +113,36 @@ whatever the request specifies, and takes the request's caption, spoiler, captio
 start. A video sent by [URL](#files-sent-by-url) keeps the attributes the bot specified and takes no
 thumbnail: TDLib sends it as `inputMediaDocumentExternal`, which carries neither, and how Telegram's
 servers determine the attributes of a downloaded video is not in the source.
+
+### Voice notes
+
+Bots send voice notes with `sendVoice`, and accounts with a `voice` in
+`POST /sessions/{sessionId}/accounts/{accountId}/messages` or the TypeScript client's `sendVoice`.
+As the Bot API's [`Voice`][voice-object] gives it, a voice note's duration is the one its sender
+defines: a bot's `duration`, clamped to 0–86,400 seconds as the official server's
+[`process_send_voice_query`][send-voice] clamps it, or an account's, which must lie in that range;
+it defaults to 0. As for videos, the emulator reads no content, so it sends any non-empty content as
+a voice note, while Telegram documents that its clients play OGG/Opus, MP3 and M4A voice notes and
+that it may send other formats as audio or documents; see
+[sender-defined media attributes](#sender-defined-media-attributes).
+
+A voice note shows its duration and MIME type, but no file name. As TDLib's
+[`VoiceNotesManager::get_input_media`][voice-upload] uploads a voice note, a bot's upload is
+`audio/ogg`, `audio/mpeg` or `audio/mp4` when its file name's extension decides that type, and
+`audio/ogg` otherwise; an account's voice note is `audio/ogg`, as Telegram's clients record
+OGG/Opus. A voice note sent by [URL](#files-sent-by-url) is `audio/ogg`, keeps the duration the bot
+specified, and becomes a document when it is larger than 1 MB. A voice note sent again by `file_id`
+keeps its duration and type. Voice notes are limited only by the session's
+[upload profile](#upload-profiles), and bots download them with `getFile` from `voice/`, under the
+extension `oga`, `mp3` or `m4a` of their type, the extensions TDLib's
+[`FileManager::get_file_name`][voice-file-name] keeps for voice notes.
+
+A voice note has a caption, which `editMessageCaption` and the account client edit, but, as TDLib's
+[`is_allowed_media_group_content`][album-content] and [`can_edit_message_media`][voice-media-edit]
+decide, it never forms [albums](#albums), and its media cannot be replaced: `editMessageMedia` fails
+with `Bad Request: message media can't be edited`. An `InputMediaVoiceNote` is refused for albums
+and new media alike, as the official server's [`get_input_media`][input-media-album] reads it only
+in rich messages, whose voice note blocks the emulator [lacks](rich-messages.md#real-gaps).
 
 ### Albums
 
@@ -185,12 +219,12 @@ unusable URL fails for its first such URL, whichever item holds it, rather than 
 
 A session's [upload profile](sessions-and-requests.md#supported-behavior) names the official Bot API
 server deployment whose upload limits its bots meet: `cloud` for `api.telegram.org`, the default, or
-`local` for a server started with `--local`. Each photo, document or video a bot uploads with
-`multipart/form-data` must fit the profile's limit; a photo must also meet the 10 × 1024 × 1024 byte
-photo limit, whatever the profile. The cloud limit is checked first, as `api.telegram.org` refuses
-an oversized request outright, and the local limit after the photo limit, as Telegram enforces it
-after TDLib's checks, so in practice the local limit binds only documents and videos: a photo that
-large fails as too big for a photo.
+`local` for a server started with `--local`. Each photo, document, video or voice note a bot uploads
+with `multipart/form-data` must fit the profile's limit; a photo must also meet the 10 × 1024 × 1024
+byte photo limit, whatever the profile. The cloud limit is checked first, as `api.telegram.org`
+refuses an oversized request outright, and the local limit after the photo limit, as Telegram
+enforces it after TDLib's checks, so in practice the local limit binds only documents, videos and
+voice notes: a photo that large fails as too big for a photo.
 
 | Profile | Largest bot upload                       | Larger uploads fail with                                                                   |
 | ------- | ---------------------------------------- | ------------------------------------------------------------------------------------------ |
@@ -203,8 +237,9 @@ oversized request before reading any parameter, so a request with another fault 
 there. Sending a file again by `file_id`, forwarding and copying are not uploads and meet no size
 limit. An uploaded thumbnail is checked only against TDLib's own thumbnail limit, described above.
 Accounts upload through their own client, so no profile limits them: their photos meet the photo
-limit, and their documents and videos no limit, since a user's client uploads files of up to 2000
-MB, or 4000 MB with Telegram Premium, which base64 fixtures in JSON requests are not meant to reach.
+limit, and their documents, videos and voice notes no limit, since a user's client uploads files of
+up to 2000 MB, or 4000 MB with Telegram Premium, which base64 fixtures in JSON requests are not
+meant to reach.
 
 The profile changes nothing else; see
 [the cloud server's other file handling](#the-cloud-servers-other-file-handling).
@@ -227,25 +262,28 @@ Telegram; the actual server image processor is outside these open-source reposit
 comparison establishes the missing processing pipeline, not an exhaustive list of formats or exact
 transformations Telegram will apply.
 
-### Sender-defined video attributes
+### Sender-defined media attributes
 
-A video's duration and dimensions are those its sender defines, as the Bot API documents them, and
-the emulator never reads video content: it does not parse containers, check codecs, measure
-durations, generate thumbnails, covers or alternative qualities, or transcode. Telegram's servers do
-process uploaded videos, and, as the [`sendVideo` reference][send-video-reference] says, may send
-formats other than MPEG-4 as documents; which files they reclassify, and how, is not in the
-open-source server or TDLib. Keeping fixture bytes unchanged lets tests send small placeholder
-videos and predict every attribute the bot sees.
+A video's duration and dimensions and a voice note's duration are those their sender defines, as the
+Bot API documents them, and the emulator never reads video or audio content: it does not parse
+containers, check codecs, measure durations, generate thumbnails, covers, alternative qualities or
+waveforms, transcribe, or transcode. Telegram's servers do process uploaded media, and, as the
+[`sendVideo`][send-video-reference] and [`sendVoice`][send-voice-reference] references say, may send
+videos other than MPEG-4 as documents and voice notes other than OGG/Opus, MP3 or M4A as audio or
+documents; which files they reclassify, and how, is not in the open-source server or TDLib. Keeping
+fixture bytes unchanged lets tests send small placeholder media and predict every attribute the bot
+sees.
 
 ### File IDs of other kinds
 
 Each `file_id` sends only a file of its own kind: a photo's only a photo, a document's only a
-document, and a video's only a video, failing with TDLib's wording, such as
-`Bad Request: can't use file of type Video as Document`. TDLib's
+document, a video's only a video, and a voice note's only a voice note, failing with TDLib's
+wording, such as `Bad Request: can't use file of type Video as Document` or
+`Bad Request: can't use file of type VoiceNote as Document`. TDLib's
 [`check_input_file_id`][file-type-check] refuses a photo's `file_id` for other media, but treats
-documents, videos and other document-class files as one class and leaves Telegram's servers to
-decide what the message shows, which is not in the source. Refusing them keeps a bot's mix-up of
-media kinds visible in tests.
+documents, videos, voice notes and other document-class files as one class and leaves Telegram's
+servers to decide what the message shows, which is not in the source. Refusing them keeps a bot's
+mix-up of media kinds visible in tests.
 
 ### No generated document previews
 
@@ -354,15 +392,17 @@ upload, `file_id` and URL.
 
 ### Additional media types and methods
 
-Media types other than photos, documents and videos, stickers and sticker sets are missing, so
-`editMessageMedia` replaces media only with photos, documents and videos, and albums hold only
-photos and videos, or documents. Rich message blocks hold no videos.
+Media types other than photos, documents, videos and voice notes, stickers and sticker sets are
+missing, so `editMessageMedia` replaces media only with photos, documents and videos, and albums
+hold only photos and videos, or documents. Rich message blocks hold no videos or voice notes. Voice
+notes keep no waveform and are never transcribed.
 
 ## Local evidence
 
 [Media service](../../src/services/media_file.ts),
 [image header reader](../../src/media/image_dimensions.ts),
 [video MIME types](../../src/media/video_file.ts),
+[voice note MIME types](../../src/media/voice_file.ts),
 [file repository](../../src/repositories/file.ts),
 [URL downloads](../../src/services/web_file_download.ts),
 [web resources](../../src/services/web_resource.ts),
@@ -391,6 +431,13 @@ photos and videos, or documents. Rich message blocks hold no videos.
 [album-media-edit]: https://github.com/tdlib/td/blob/bc9c263e2bfee06aaab41e82db51a103376030bc/td/telegram/MessagesManager.cpp#L23720-L23763
 [video-object]: https://core.telegram.org/bots/api#video
 [send-video-reference]: https://core.telegram.org/bots/api#sendvideo
+[voice-object]: https://core.telegram.org/bots/api#voice
+[send-voice-reference]: https://core.telegram.org/bots/api#sendvoice
+[send-voice]: https://github.com/tdlib/telegram-bot-api/blob/e3e9dd8e5b3d7ab8537cd5a10dc31d5ffa8f82d1/telegram-bot-api/Client.cpp#L14159-L14172
+[voice-upload]: https://github.com/tdlib/td/blob/bc9c263e2bfee06aaab41e82db51a103376030bc/td/telegram/VoiceNotesManager.cpp#L168-L221
+[voice-file-name]: https://github.com/tdlib/td/blob/bc9c263e2bfee06aaab41e82db51a103376030bc/td/telegram/files/FileManager.cpp#L1344-L1370
+[voice-media-edit]: https://github.com/tdlib/td/blob/bc9c263e2bfee06aaab41e82db51a103376030bc/td/telegram/MessagesManager.cpp#L23294-L23310
+[album-content]: https://github.com/tdlib/td/blob/bc9c263e2bfee06aaab41e82db51a103376030bc/td/telegram/MessageContentType.cpp#L224-L328
 [send-video]: https://github.com/tdlib/telegram-bot-api/blob/e3e9dd8e5b3d7ab8537cd5a10dc31d5ffa8f82d1/telegram-bot-api/Client.cpp#L14120-L14143
 [video-upload]: https://github.com/tdlib/td/blob/bc9c263e2bfee06aaab41e82db51a103376030bc/td/telegram/VideosManager.cpp#L274-L377
 [file-type-check]: https://github.com/tdlib/td/blob/bc9c263e2bfee06aaab41e82db51a103376030bc/td/telegram/files/FileManager.cpp#L4140-L4165

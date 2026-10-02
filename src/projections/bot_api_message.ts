@@ -60,6 +60,7 @@ import {
   projectDocument,
   projectPhotoSize,
   projectVideo,
+  projectVoice,
 } from './bot_api_file.ts';
 import { projectInlineKeyboardMarkup } from './bot_api_inline_keyboard.ts';
 import { projectRichMessage } from './bot_api_rich_message.ts';
@@ -304,6 +305,8 @@ function projectExternalReplyMedia(
         video: projectVideo(mediaFile, media.startTimestampSeconds),
         ...(media.hasSpoiler ? { has_media_spoiler: true as const } : {}),
       };
+    case 'voice':
+      return { voice: projectVoice(mediaFile) };
     default: {
       const unhandledMedia: never = media;
       throw new Error(`Unhandled external reply media: ${JSON.stringify(unhandledMedia)}`);
@@ -400,6 +403,11 @@ function projectMessageContent(
         ...(content.hasSpoiler ? { has_media_spoiler: true as const } : {}),
       };
     }
+    case 'voice':
+      return {
+        voice: projectVoice(contentFile),
+        ...projectCaption(content.caption, mentionedUsers),
+      };
     case 'rich_message':
       return {
         rich_message: projectRichMessage(content, {

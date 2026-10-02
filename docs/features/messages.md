@@ -5,11 +5,12 @@
 
 ## Sending, replying and inspecting history
 
-Accounts and bots exchange text, photos, documents, [videos](media-and-files.md#videos) and
-[albums](media-and-files.md#albums) of photos and videos, or documents, in private chats and
-supergroups, and bots also send [rich messages](rich-messages.md). A private conversation must first
-be started by the account before the bot can send to it. `sendMessage`, `sendRichMessage`,
-`sendPhoto`, `sendDocument` and `sendVideo` accept `protect_content` and supported
+Accounts and bots exchange text, photos, documents, [videos](media-and-files.md#videos),
+[voice notes](media-and-files.md#voice-notes) and [albums](media-and-files.md#albums) of photos and
+videos, or documents, in private chats and supergroups, and bots also send
+[rich messages](rich-messages.md). A private conversation must first be started by the account
+before the bot can send to it. `sendMessage`, `sendRichMessage`, `sendPhoto`, `sendDocument`,
+`sendVideo` and `sendVoice` accept `protect_content` and supported
 [reply markup](keyboards-and-callbacks.md); `sendMediaGroup` accepts `protect_content` and no reply
 markup. Bot messages appear in account history; bots receive no updates for their own sends or
 edits.
@@ -21,9 +22,9 @@ precedence, and a missing/non-positive message ID means no reply. If a target is
 without recursively nesting the replied message's own reply.
 
 Bots can add a message effect with `message_effect_id` to `sendMessage`, `sendPhoto`,
-`sendDocument`, `sendVideo`, `sendMediaGroup`, `forwardMessage` and `copyMessage`, which gives it to
-every message of an album, as TDLib's `send_message_group` does. The message then reports it as
-`effect_id`, including in account history. `0` means no effect. As in TDLib's
+`sendDocument`, `sendVideo`, `sendVoice`, `sendMediaGroup`, `forwardMessage` and `copyMessage`,
+which gives it to every message of an album, as TDLib's `send_message_group` does. The message then
+reports it as `effect_id`, including in account history. `0` means no effect. As in TDLib's
 [`MessageSendOptions::get_message_send_options`][effect-rules], effects are refused in supergroups,
 and `forwardMessages` or `copyMessages` accept one only when a single message is found. Telegram's
 servers decide which effect identifiers exist; that check is not in the open-source code, and the
@@ -35,9 +36,9 @@ Bots can also reply to a message of another of their chats by naming its `chat_i
 must be able to read that chat, and a missing message fails the send unless
 `allow_sending_without_reply` is set. The reply shows the message in `external_reply` as TDLib's
 [`RepliedMessageInfo`][replied-message-info] keeps it. It includes the original sender and date, and
-the chat and message ID when the message is in a supergroup. It also carries a photo, document or
-video without its caption. The text or caption becomes an automatic `quote` of up to 1,024
-characters. That quote keeps only the entity types TDLib's
+the chat and message ID when the message is in a supergroup. It also carries a photo, document,
+video or voice note without its caption. The text or caption becomes an automatic `quote` of up to
+1,024 characters. That quote keeps only the entity types TDLib's
 [`is_allowed_quote_entity_type`][quote-entities] allows. As TDLib's
 [`create_message_input_reply_to`][external-reply-input] does, the emulator sends a reply to
 protected content or a service message of another chat without a reply. The emulator resolves the
@@ -76,11 +77,11 @@ pagination or deleted entries; it is a test inspection API, not a Telegram histo
 Tests read the notifications an account's client shows through `account.getNotifications` for a
 private chat or a supergroup. Every message another participant sent to the chat notifies, in order,
 and the account's own messages do not. `disable_notification` on `sendMessage`, `sendPhoto`,
-`sendDocument`, `sendVideo`, `sendMediaGroup`, `forwardMessage(s)` and `copyMessage(s)` makes the
-notification silent. The official server passes the option to TDLib's send options. As TDLib's
-[`Message::disable_notification`][silent-message] carries it to the recipient, the notification
-reports it as `is_silent`, as TDLib's [`notification`][notification-object] object does. Bot API
-messages do not show it.
+`sendDocument`, `sendVideo`, `sendVoice`, `sendMediaGroup`, `forwardMessage(s)` and `copyMessage(s)`
+makes the notification silent. The official server passes the option to TDLib's send options. As
+TDLib's [`Message::disable_notification`][silent-message] carries it to the recipient, the
+notification reports it as `is_silent`, as TDLib's [`notification`][notification-object] object
+does. Bot API messages do not show it.
 
 Accounts have no notification settings, so no chat is muted, and reading a message keeps its
 notification; a deleted message has none.
@@ -127,12 +128,15 @@ read from an `InputMediaPhoto`, `InputMediaDocument` or `InputMediaVideo` as the
 a video takes the attributes, spoiler, caption placement and start that `sendVideo` takes. As
 TDLib's [`edit_message_media`][edit-media] allows, a photo, document or video changes its media, and
 a text or rich message becomes media, keeping its ID, its reply and its place in an album; the old
-caption goes with the old content. As TDLib's `edit_message_media` refuses it once the caption is
-read, a photo or video of an [album](media-and-files.md#albums) cannot become a document, nor a
-document a photo or video (`Bad Request: can't change media type in the album`). A caption or file
-is refused as by `sendPhoto`, `sendVideo` and `sendDocument`, and media Telegram cannot read fails
-with its description prefixed by `Bad Request: can't parse InputMedia:`. Animations, audio and live
-photos are [missing](README.md#unimplemented-areas) and refused with
+caption goes with the old content. As TDLib's `can_edit_message_media` refuses it, a voice note's
+media cannot be replaced (`Bad Request: message media can't be edited`). As TDLib's
+`edit_message_media` refuses it once the caption is read, a photo or video of an
+[album](media-and-files.md#albums) cannot become a document, nor a document a photo or video
+(`Bad Request: can't change media type in the album`). A caption or file is refused as by
+`sendPhoto`, `sendVideo` and `sendDocument`, and media Telegram cannot read fails with its
+description prefixed by `Bad Request: can't parse InputMedia:`, such as a `voice_note`, which the
+official server reads only in rich messages (`type "voice_note" is not allowed`). Animations, audio
+and live photos are [missing](README.md#unimplemented-areas) and refused with
 `Bad Request: InputMedia of type "…" is not supported`. An inline message's new media must reuse a
 file by its `file_id` or name one by URL, as for
 [rich messages](rich-messages.md#sending-and-editing); an upload fails with
@@ -161,14 +165,14 @@ text. Accounts can forward messages from their own chats too.
 
 `copyMessage` returns only the new `message_id`. The copy has no forward origin and uses the
 request's reply and markup. A supplied caption, including an empty one, replaces the caption of a
-photo, document or video; without one the original caption is kept. Forwards and copies of a rich
-message disable its [buttons](rich-messages.md#sending-and-editing) that would not work away from
-the original. `show_caption_above_media` applies to a copied photo or video when a replacement
-caption is supplied. As the official server's [`process_forward_message_query`][forward-video-start]
-and `process_copy_message_query` read it, a `video_start_timestamp` gives a forwarded or copied
-video the second from which it plays, a negative one its beginning, as TDLib's
-[`set_message_content_video_start_timestamp`][video-start-replacement] does; other content ignores
-it. Without one, a video keeps its own start.
+photo, document, video or voice note; without one the original caption is kept. Forwards and copies
+of a rich message disable its [buttons](rich-messages.md#sending-and-editing) that would not work
+away from the original. `show_caption_above_media` applies to a copied photo or video when a
+replacement caption is supplied. As the official server's
+[`process_forward_message_query`][forward-video-start] and `process_copy_message_query` read it, a
+`video_start_timestamp` gives a forwarded or copied video the second from which it plays, a negative
+one its beginning, as TDLib's [`set_message_content_video_start_timestamp`][video-start-replacement]
+does; other content ignores it. Without one, a video keeps its own start.
 
 Protected messages, including every message of a supergroup whose owner
 [protects its content](supergroups.md#administrator-operations), cannot be forwarded, but bots can

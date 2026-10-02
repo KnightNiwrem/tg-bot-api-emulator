@@ -63,7 +63,12 @@ import {
   type RichMessageButtonAction,
   type RichMessageFileTypes,
 } from '../types/rich_message.ts';
-import type { StoredFile, VideoAttributes, WebFile } from '../types/stored_file.ts';
+import {
+  isWebVoiceNoteSentAsVoiceNote,
+  type StoredFile,
+  type VideoAttributes,
+  type WebFile,
+} from '../types/stored_file.ts';
 import type { BotUploadTooBigFailure } from '../types/upload_profile.ts';
 import { isUserId } from '../types/telegram_identity.ts';
 import type { VirtualBot, VirtualBotProfile } from '../types/virtual_bot.ts';
@@ -91,6 +96,8 @@ import type {
   PhotoUploadRequest,
   VideoUploadPreparation,
   VideoUploadRequest,
+  VoiceUploadPreparation,
+  VoiceUploadRequest,
 } from './media_file.ts';
 import type {
   DeleteWebhookOutcome,
@@ -119,11 +126,13 @@ import type {
   CaptionNormalization,
   ContentNormalizationFailure,
   MediaContent,
+  OutgoingCaptionedMedia,
   OutgoingDocument,
   OutgoingMessageContent,
   OutgoingPhoto,
   OutgoingRichMessage,
   OutgoingVideo,
+  OutgoingVoice,
   SpecifiedCaption,
   SpecifiedQuote,
   TextInvalidFailure,
@@ -347,6 +356,17 @@ export interface SpecifiedVideo {
 }
 
 export type SendVideoRequest = SendRequestOptions & SpecifiedVideo;
+
+export type SendVoiceRequest = SendRequestOptions & {
+  readonly voice: BotApiInputFile;
+  /**
+   * The duration, in seconds, that the bot specified, which a voice note sent by `file_id` ignores
+   * in favor of its own.
+   */
+  readonly durationSeconds: number;
+  /** Empty text for no caption. */
+  readonly caption: SpecifiedFormattedText;
+};
 
 export type SendFailureReason =
   | 'message_text_empty'
@@ -618,6 +638,8 @@ export type EditMessageCaptionFailureReason =
 
 export type EditMessageMediaFailureReason =
   | EditMessageReplyMarkupFailureReason
+  /** The message is a voice note, whose media TDLib's `can_edit_message_media` refuses to edit. */
+  | 'message_media_not_editable'
   | 'caption_too_long'
   /**
    * The new media is a document for a photo or video of an album, or a photo or video for a
@@ -1158,7 +1180,10 @@ interface BotMessaging {
     },
   ):
     | BotMessageEditingResult<
-      BotMessageEditFailureReason | 'caption_too_long' | 'album_media_kind_changed'
+      | BotMessageEditFailureReason
+      | 'message_media_not_editable'
+      | 'caption_too_long'
+      | 'album_media_kind_changed'
     >
     | ({ readonly edited: false } & TextInvalidFailure);
   editBotMessageInlineKeyboard(
@@ -1283,7 +1308,10 @@ interface SupergroupBotMessaging {
     },
   ):
     | SupergroupBotMessageEditingResult<
-      SupergroupBotMessageEditFailureReason | 'caption_too_long' | 'album_media_kind_changed'
+      | SupergroupBotMessageEditFailureReason
+      | 'message_media_not_editable'
+      | 'caption_too_long'
+      | 'album_media_kind_changed'
     >
     | ({ readonly edited: false } & TextInvalidFailure);
   editBotMessageInlineKeyboard(
@@ -1359,6 +1387,7 @@ interface MediaFiles {
   preparePhotoUpload(request: PhotoUploadRequest): PhotoUploadPreparation;
   prepareDocumentUpload(request: DocumentUploadRequest): DocumentUploadPreparation;
   prepareVideoUpload(request: VideoUploadRequest): VideoUploadPreparation;
+  prepareVoiceUpload(request: VoiceUploadRequest): VoiceUploadPreparation;
   findObserverFile(observerId: number, fileId: string): StoredFile | undefined;
   getBotFile(botId: number, fileId: string):
     | {
@@ -2018,6 +2047,26 @@ export class BotApiService {
       caption,
       hasSpoiler,
       showsCaptionAboveMedia,
+    });
+    if (!resolution.resolved) {
+      return { sent: false, ...resolution.failure };
+    }
+    return this.#send(authenticatedBot, resolution.file, options);
+  }
+
+  /**
+   * Sends a voice note with an optional caption, as `sendPhoto` sends a photo. Telegram documents
+   * that its clients play OGG/Opus, MP3 and M4A voice notes and that it may send other formats as
+   * audio or documents; the emulator inspects no content and always sends a voice note, apart from
+   * one sent by URL, which `#resolveVoiceMedia` may send as a document.
+   */
+  sendVoice(
+    authenticatedBot: VirtualBotProfile,
+    { voice, durationSeconds, caption, ...options }: SendVoiceRequest,
+  ): SendResult {
+    const resolution = this.#resolveVoiceMedia(authenticatedBot, voice, durationSeconds, {
+      caption: caption.text,
+      captionEntities: caption.entities,
     });
     if (!resolution.resolved) {
       return { sent: false, ...resolution.failure };
@@ -2810,6 +2859,68 @@ export class BotApiService {
       : { resolved: false, failure: uploadPreparationFailure(preparation) };
   }
 
+  /**
+   * Resolves the voice note a request sends, as `#resolveVideo` resolves a video: an upload, whose
+   * MIME type its file name decides, with the duration the bot specified; a voice note the bot
+   * knows by `file_id`, which keeps its own; or a file downloaded from a URL, typed as it was
+   * served. As for a video, how Telegram's servers determine the duration of a downloaded voice
+   * note is not in the source, so the emulator keeps the one the bot specified.
+   */
+  #resolveVoice(
+    authenticatedBot: VirtualBotProfile,
+    input: BotApiInputFile,
+    durationSeconds: number,
+  ): FileResolution<OutgoingVoice> {
+    if (input.kind === 'file_id') {
+      const file = this.#mediaFiles.findObserverFile(authenticatedBot.id, input.fileId);
+      if (file?.type === 'voice') {
+        return { resolved: true, file: { kind: 'stored', file } };
+      }
+      return { resolved: false, failure: fileIdFailure(file, 'voice') };
+    }
+    const preparation = this.#mediaFiles.prepareVoiceUpload(
+      input.kind === 'upload'
+        ? {
+          content: input.content,
+          fileName: cleanUploadedFileName(input.fileName),
+          durationSeconds,
+          source: 'bot_upload',
+        }
+        : {
+          content: input.webFile.content,
+          mimeType: input.webFile.mediaType,
+          durationSeconds,
+          source: 'web_download',
+        },
+    );
+    return preparation.prepared
+      ? { resolved: true, file: { kind: 'upload', upload: preparation.upload } }
+      : { resolved: false, failure: uploadPreparationFailure(preparation) };
+  }
+
+  /**
+   * Resolves the media that `sendVoice` sends: a voice note, as `#resolveVoice` resolves it, or, as
+   * the Bot API documents for a voice note sent by URL that is larger than 1 MB, a document, which
+   * `#resolveDocument` resolves from the downloaded file.
+   */
+  #resolveVoiceMedia(
+    authenticatedBot: VirtualBotProfile,
+    voice: BotApiInputFile,
+    durationSeconds: number,
+    caption: SpecifiedCaption,
+  ): FileResolution<Extract<OutgoingCaptionedMedia, { readonly kind: 'voice' | 'document' }>> {
+    if (voice.kind === 'web_file' && !isWebVoiceNoteSentAsVoiceNote(voice.webFile.content.length)) {
+      const resolution = this.#resolveDocument(authenticatedBot, voice, undefined);
+      return resolution.resolved
+        ? { resolved: true, file: { kind: 'document', document: resolution.file, ...caption } }
+        : resolution;
+    }
+    const resolution = this.#resolveVoice(authenticatedBot, voice, durationSeconds);
+    return resolution.resolved
+      ? { resolved: true, file: { kind: 'voice', voice: resolution.file, ...caption } }
+      : resolution;
+  }
+
   /** Resolves the file of a video a request specifies, as `#resolveVideo` does. */
   #resolveVideoMedia(
     authenticatedBot: VirtualBotProfile,
@@ -3433,6 +3544,7 @@ export class BotApiService {
     switch (result.reason) {
       case 'text_invalid':
         return result;
+      case 'message_media_not_editable':
       case 'caption_too_long':
       case 'album_media_kind_changed':
         return { edited: false, reason: result.reason };
@@ -3691,6 +3803,8 @@ export class BotApiService {
         return { edited: false, reason: result.reason };
       case 'album_media_kind_changed':
         throw new Error(`Inline message ${inlineMessageId} belongs to an album`);
+      case 'message_media_not_editable':
+        throw new Error(`Inline message ${inlineMessageId} is a voice note`);
       default:
         return {
           edited: false,
@@ -4149,7 +4263,10 @@ type FileResolution<File> =
 /** Why Telegram refuses an uploaded file, as its preparation reports it. */
 function uploadPreparationFailure(
   preparation: Extract<
-    PhotoUploadPreparation | DocumentUploadPreparation | VideoUploadPreparation,
+    | PhotoUploadPreparation
+    | DocumentUploadPreparation
+    | VideoUploadPreparation
+    | VoiceUploadPreparation,
     { readonly prepared: false }
   >,
 ): FileResolutionFailure {

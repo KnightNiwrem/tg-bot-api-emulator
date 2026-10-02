@@ -13,7 +13,7 @@ export const MAX_BOT_DOWNLOAD_FILE_BYTES = 20 * 1024 * 1024;
 export const MAX_PHOTO_UPLOAD_BYTES = 10 * 1024 * 1024;
 
 /** What a bot sends a file by URL as, which decides how large it may be and of which types. */
-export type WebFileKind = 'photo' | 'document' | 'video';
+export type WebFileKind = 'photo' | 'document' | 'video' | 'voice';
 
 /**
  * Telegram downloads a file that a bot sends by URL only up to these sizes: 5 MB for a photo and
@@ -24,11 +24,27 @@ export const MAX_WEB_FILE_BYTES: Readonly<Record<WebFileKind, number>> = {
   photo: 5 * 1024 * 1024,
   document: 20 * 1024 * 1024,
   video: 20 * 1024 * 1024,
+  voice: 20 * 1024 * 1024,
 };
 
 /**
+ * The largest file, in bytes, that Telegram sends as a voice note when a bot sends it by URL: the
+ * Bot API documents 1 MB, read in binary megabytes as the other limits are, and sends a larger
+ * one, up to the 20 MB it downloads, as a file.
+ */
+const MAX_WEB_VOICE_NOTE_BYTES = 1024 * 1024;
+
+/**
+ * Whether Telegram sends a voice note that a bot sends by URL as a voice note, rather than as a
+ * file, as the Bot API documents it for `sendVoice`.
+ */
+export function isWebVoiceNoteSentAsVoiceNote(contentSizeBytes: number): boolean {
+  return contentSizeBytes <= MAX_WEB_VOICE_NOTE_BYTES;
+}
+
+/**
  * A file that Telegram downloaded from the URL a bot sent it by, before it is stored as a photo,
- * document, or video.
+ * document, video, or voice note.
  */
 export interface WebFile {
   readonly content: Uint8Array<ArrayBuffer>;
@@ -116,10 +132,23 @@ export interface VideoUpload extends VideoAttributes {
 }
 
 /**
+ * A file sent as a voice note, before it is stored. Its content is not inspected, and, as the Bot
+ * API's `Voice` shows, it keeps no file name.
+ */
+export interface VoiceUpload {
+  readonly type: 'voice';
+  readonly content: Uint8Array<ArrayBuffer>;
+  /** The voice note's MIME type: `audio/ogg`, `audio/mpeg`, or `audio/mp4`. */
+  readonly mimeType: string;
+  /** As the sender defined it; zero when it specified none. */
+  readonly durationSeconds: number;
+}
+
+/**
  * A file a user sends as a message's media; a thumbnail is uploaded only with its document or
  * video.
  */
-export type FileUpload = PhotoUpload | DocumentUpload | VideoUpload;
+export type FileUpload = PhotoUpload | DocumentUpload | VideoUpload | VoiceUpload;
 
 interface StoredFileIdentity {
   readonly id: StoredFileId;
@@ -155,10 +184,13 @@ export type StoredVideoFile =
     readonly thumbnail?: StoredThumbnailFile;
   };
 
+export type StoredVoiceFile = StoredFileIdentity & VoiceUpload;
+
 export type StoredFile =
   | StoredPhotoFile
   | StoredDocumentFile
   | StoredVideoFile
+  | StoredVoiceFile
   | StoredThumbnailFile;
 
 /** The thumbnail a stored file carries; `undefined` for a file without one. */
@@ -168,6 +200,7 @@ export function getStoredFileThumbnail(file: StoredFile): StoredThumbnailFile | 
     case 'video':
       return file.thumbnail;
     case 'photo':
+    case 'voice':
     case 'thumbnail':
       return undefined;
     default: {

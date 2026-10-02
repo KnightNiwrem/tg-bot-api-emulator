@@ -86,7 +86,7 @@ try {
     caption: 'My receipt',
   });
   const reply = (await account.getMessages({ chat: { type: 'private', botId: bot.id } })).at(-1);
-  const replyFile = reply?.document ?? reply?.video ?? reply?.photo?.at(-1);
+  const replyFile = reply?.document ?? reply?.video ?? reply?.voice ?? reply?.photo?.at(-1);
   if (replyFile !== undefined) {
     const content = await session.downloadFile(replyFile.file_unique_id);
     console.log(content.length, photo.photo?.[0].width);

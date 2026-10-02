@@ -1,6 +1,7 @@
 import { getDocumentMimeType, getFileNameExtension } from '../media/document_file.ts';
 import { readImageDimensions } from '../media/image_dimensions.ts';
 import { getVideoMimeType } from '../media/video_file.ts';
+import { getVoiceFileExtension, getVoiceMimeType } from '../media/voice_file.ts';
 import { formatHttpUrl, getHttpUrlFileName, parseHttpUrl } from '../types/http_url.ts';
 import {
   type DocumentUpload,
@@ -15,6 +16,7 @@ import {
   type ThumbnailUpload,
   type VideoAttributes,
   type VideoUpload,
+  type VoiceUpload,
   type WebFile,
   type WebFileKind,
 } from '../types/stored_file.ts';
@@ -37,6 +39,7 @@ const BOT_FILE_DIRECTORIES: Readonly<Record<StoredFile['type'], string>> = {
   photo: 'photos',
   document: 'documents',
   video: 'videos',
+  voice: 'voice',
   thumbnail: 'thumbnails',
 };
 
@@ -64,12 +67,14 @@ const WEB_DOCUMENT_MEDIA_TYPES: ReadonlySet<string> = new Set([
 /**
  * Whether Telegram sends a file served as a media type by URL as each kind of file: a photo served
  * as an image; a document served as a PDF or ZIP file, the only kinds Telegram documents for URLs;
- * and a video served as an MPEG-4 video, the only format Telegram documents that its clients play.
+ * a video served as an MPEG-4 video, the only format Telegram documents that its clients play; and
+ * a voice note served as `audio/ogg`, which Telegram documents as required for `sendVoice`.
  */
 const ACCEPTS_WEB_MEDIA_TYPE: Readonly<Record<WebFileKind, (mediaType: string) => boolean>> = {
   photo: (mediaType) => mediaType.startsWith('image/'),
   document: (mediaType) => WEB_DOCUMENT_MEDIA_TYPES.has(mediaType),
   video: (mediaType) => mediaType === 'video/mp4',
+  voice: (mediaType) => mediaType === 'audio/ogg',
 };
 
 /** Downloads the file at a URL, as `WebFileDownloader` does. */
@@ -118,6 +123,11 @@ export type VideoUploadPreparation =
   | { readonly prepared: false; readonly reason: 'file_empty' }
   | ({ readonly prepared: false } & BotUploadTooBigFailure);
 
+export type VoiceUploadPreparation =
+  | { readonly prepared: true; readonly upload: VoiceUpload }
+  | { readonly prepared: false; readonly reason: 'file_empty' }
+  | ({ readonly prepared: false } & BotUploadTooBigFailure);
+
 export interface PhotoUploadRequest {
   readonly content: Uint8Array<ArrayBuffer>;
   readonly source: UploadSource;
@@ -147,6 +157,23 @@ export interface VideoUploadRequest {
   readonly attributes: VideoAttributes;
   /** The content of the thumbnail uploaded with the video; omitted for none. */
   readonly thumbnailContent?: Uint8Array<ArrayBuffer>;
+  readonly source: UploadSource;
+}
+
+export interface VoiceUploadRequest {
+  readonly content: Uint8Array<ArrayBuffer>;
+  /**
+   * The name the file was sent under, whose extension decides the voice note's MIME type; omitted
+   * for none. The voice note keeps no name.
+   */
+  readonly fileName?: string;
+  /**
+   * The voice note's MIME type, which must be `audio/ogg`, `audio/mpeg`, or `audio/mp4`, as a voice
+   * note sent by URL is served; omitted for the one its file name decides.
+   */
+  readonly mimeType?: string;
+  /** As its sender defines it, unchecked against the content. */
+  readonly durationSeconds: number;
   readonly source: UploadSource;
 }
 
@@ -180,8 +207,8 @@ interface MediaFileServiceDependencies {
 }
 
 /**
- * Checks files that users send as photos, documents, or videos, resolves the `file_id` by which a
- * user reuses a file it has seen, and lets bots download files, as Telegram does.
+ * Checks files that users send as photos, documents, videos, or voice notes, resolves the `file_id`
+ * by which a user reuses a file it has seen, and lets bots download files, as Telegram does.
  *
  * Messages store their uploads when they are sent; this service stores no file content itself.
  */
@@ -200,8 +227,9 @@ export class MediaFileService {
    * Downloads a file that a bot sends by URL, as Telegram does before it sends the file. The URL
    * is read as TDLib's `parse_url` reads it. A photo may be at most 5 MB and must be served as an
    * image. A document may be at most 20 MB and must be served as a PDF or ZIP file, the only kinds
-   * Telegram documents for URLs. A video may be at most 20 MB and must be served as `video/mp4`.
-   * The content of a document or video is not inspected. Content that cannot be downloaded,
+   * Telegram documents for URLs. A video may be at most 20 MB and must be served as `video/mp4`,
+   * and a voice note at most 20 MB, served as `audio/ogg`. The content of a document, video, or
+   * voice note is not inspected. Content that cannot be downloaded,
    * including larger content, fails as Telegram's `WEBPAGE_CURL_FAILED`, and empty content or
    * content of another type as its `WEBPAGE_MEDIA_EMPTY`.
    */
@@ -340,6 +368,32 @@ export class MediaFileService {
   }
 
   /**
+   * Prepares a file to be sent as a voice note, as `prepareVideoUpload` prepares a video: its
+   * duration is kept as its sender defines it, and its content is neither inspected nor
+   * transcoded. TDLib refuses no voice note for its size beyond the upload profile's limit.
+   */
+  prepareVoiceUpload(
+    { content, fileName, mimeType, durationSeconds, source }: VoiceUploadRequest,
+  ): VoiceUploadPreparation {
+    if (content.length === 0) {
+      return { prepared: false, reason: 'file_empty' };
+    }
+    const uploadSizeFailure = this.#checkUploadSize(content, source);
+    if (uploadSizeFailure !== undefined) {
+      return { prepared: false, ...uploadSizeFailure };
+    }
+    return {
+      prepared: true,
+      upload: {
+        type: 'voice',
+        content,
+        mimeType: mimeType ?? getVoiceMimeType(fileName),
+        durationSeconds,
+      },
+    };
+  }
+
+  /**
    * Finds the file a user knows by a `file_id`. As on Telegram, a `file_id` belongs to the user
    * that saw the file, so another user's `file_id` finds nothing.
    */
@@ -408,8 +462,8 @@ export class MediaFileService {
 }
 
 /**
- * The extension of the file a bot downloads: that of an image's format, or of the name a document
- * or video was sent under; `undefined` for a file without one.
+ * The extension of the file a bot downloads: that of an image's format, of the name a document or
+ * video was sent under, or of a voice note's type; `undefined` for a file without one.
  */
 function getBotFileExtension(file: StoredFile): string | undefined {
   switch (file.type) {
@@ -420,6 +474,8 @@ function getBotFileExtension(file: StoredFile): string | undefined {
       return getFileNameExtension(file.fileName);
     case 'video':
       return file.fileName === undefined ? undefined : getFileNameExtension(file.fileName);
+    case 'voice':
+      return getVoiceFileExtension(file.mimeType);
     default: {
       const unhandledFile: never = file;
       throw new Error(`Unhandled stored file: ${JSON.stringify(unhandledFile)}`);

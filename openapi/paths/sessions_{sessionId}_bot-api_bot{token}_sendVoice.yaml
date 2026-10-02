@@ -1,0 +1,77 @@
+description: >-
+  Telegram Bot API method for sending a voice note with an optional caption, as `sendPhoto` sends
+  a photo. The voice note's duration is the one the bot specifies; the emulator never reads its
+  content, so it sends any content as a voice note, while Telegram documents that its clients play
+  OGG/Opus, MP3 and M4A voice notes and that it may send other formats as audio or documents. An
+  upload's MIME type is the one its file name's extension decides when that is `audio/ogg`,
+  `audio/mpeg` or `audio/mp4`, and otherwise `audio/ogg`, as TDLib uploads a voice note; the
+  voice note keeps no file name. A voice note sent by `file_id` keeps its own duration and type.
+  As the Bot API documents, a voice note sent by HTTP URL must be served as `audio/ogg`; one of at
+  most 1 MB (1048576 bytes) is sent as a voice note, keeping the duration the bot specified, and a
+  larger one, up to 20 MB (20971520 bytes), as a document named after the URL's last path segment.
+parameters:
+  - $ref: ../components/parameters/SessionId.yaml
+  - $ref: ../components/parameters/BotToken.yaml
+post:
+  operationId: sendVoice
+  summary: Send a voice note from the authenticated virtual bot to an account or a supergroup
+  requestBody:
+    required: true
+    content:
+      multipart/form-data:
+        schema:
+          $ref: ../components/schemas/SendVoiceRequest.yaml
+        encoding:
+          caption_entities:
+            contentType: application/json
+          reply_parameters:
+            contentType: application/json
+          reply_markup:
+            contentType: application/json
+      application/json:
+        schema:
+          $ref: ../components/schemas/SendVoiceRequest.yaml
+  responses:
+    '200':
+      description: >-
+        The voice note, or a document for a voice note sent by URL that is larger than 1 MB, was
+        stored in the private conversation or supergroup. No bot receives an update for a bot's
+        message.
+      content:
+        application/json:
+          schema:
+            $ref: ../components/schemas/MessageResponse.yaml
+    '400':
+      description: >-
+        The request cannot be decoded or has unsupported parameters, or Telegram would reject it
+        for the reasons `sendDocument` gives: the request names no file (`Bad Request: there is no
+        voice in the request`), the uploaded file is empty or, in a session with the `local` upload
+        profile, larger than 2097152000 bytes, the voice note sent by URL cannot be downloaded
+        within its limit or is not served as `audio/ogg`, or the `file_id` identifies no file the
+        bot knows or a file of another type (`Bad Request: can't use file of type Document as
+        VoiceNote`), which the emulator refuses as for `sendVideo`.
+      content:
+        application/json:
+          schema:
+            $ref: ../components/schemas/BotApiErrorResponse.yaml
+    '401':
+      description: The token does not belong to a virtual bot in the addressed session.
+      content:
+        application/json:
+          schema:
+            $ref: ../components/schemas/BotApiErrorResponse.yaml
+    '403':
+      description: >-
+        The account blocks the bot (`Forbidden: bot was blocked by the user`), or the bot left
+        the supergroup (`Forbidden: bot is not a member of the supergroup chat`) or was removed
+        from it (`Forbidden: bot was kicked from the supergroup chat`).
+      content:
+        application/json:
+          schema:
+            $ref: ../components/schemas/BotApiErrorResponse.yaml
+    '404':
+      description: No active test session has the supplied identifier.
+    '413':
+      $ref: ../components/responses/BotApiUploadTooLarge.yaml
+    '429':
+      $ref: ../components/responses/BotApiRateLimited.yaml

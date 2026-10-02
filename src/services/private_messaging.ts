@@ -30,7 +30,7 @@ import {
   type TextQuote,
 } from '../types/virtual_message.ts';
 import {
-  type AccountMediaContent,
+  type AccountAlbumMediaContent,
   type AccountMessageContent,
   type AccountMessageEdit,
   checkBotMessageEdit,
@@ -115,7 +115,7 @@ export interface SendAccountAlbumInput {
     readonly botId: number;
   };
   /** The album's media in the order the chat shows them, each with its caption. */
-  readonly contents: readonly AccountMediaContent[];
+  readonly contents: readonly AccountAlbumMediaContent[];
   /** As `SendAccountMessageInput` describes it; every message of the album replies to it. */
   readonly replyToBotMessageId?: number;
 }
@@ -340,6 +340,8 @@ export type EditBotMessageCaptionFailureReason =
 
 export type EditBotMessageMediaFailureReason =
   | EditBotMessageInlineKeyboardFailureReason
+  /** The message is a voice note, whose media TDLib does not let anyone edit. */
+  | 'message_media_not_editable'
   | 'caption_too_long'
   | 'album_media_kind_changed';
 
@@ -764,7 +766,7 @@ export class PrivateMessagingService {
       return { sent: false, reason: 'bot_blocked' };
     }
     const albumNormalization = normalizeOutgoingAlbum(
-      input.contents.map(toOutgoingAccountMedia),
+      input.contents.map((content) => toOutgoingAccountMedia(content)),
       'account',
       this.#textFixingContext,
     );

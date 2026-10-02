@@ -54,8 +54,12 @@ post:
         `InputMedia` schema describes, the file cannot be sent as for `sendPhoto`, `sendDocument`
         and `sendVideo`, or Telegram would reject the edit for the reasons `editMessageCaption`
         gives, apart from the message's kind: any message the bot can edit can take new media,
-        except that a photo or video of an album cannot become a document, nor a document a
-        photo or video (`Bad Request: can't change media type in the album`).
+        except that a voice note's media cannot be edited (`Bad Request: message media can't be
+        edited`), as TDLib's `can_edit_message_media` decides, and a photo or video of an album
+        cannot become a document, nor a document a photo or video (`Bad Request: can't change
+        media type in the album`). A `voice_note` cannot be new media either, as the official
+        server refuses it outside rich messages (`Bad Request: can't parse InputMedia: type
+        "voice_note" is not allowed`).
       content:
         application/json:
           schema:

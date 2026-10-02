@@ -743,7 +743,7 @@ Deno.test('TypeScript client sends, edits, and downloads photos and documents', 
   throw new Error('Expected content that is not an image to be refused as a photo');
 });
 
-Deno.test('TypeScript client sends videos that bots receive and send back', async () => {
+Deno.test('TypeScript client sends videos and voice notes that bots receive and send back', async () => {
   const publicOrigin = 'http://emulator.example:9000';
   const api = createEmulationApi({
     sessionLifecycle: createSessionLifecycleService(),
@@ -814,6 +814,40 @@ Deno.test('TypeScript client sends videos that bots receive and send back', asyn
     reply?.video?.start_timestamp !== 2 || reply.has_media_spoiler !== true
   ) {
     throw new Error(`Expected the bot to send the video back, received ${JSON.stringify(reply)}`);
+  }
+
+  const voice = await account.sendVoice({
+    to,
+    voice: new TextEncoder().encode('recording'),
+    duration: 5,
+    caption: 'Memo',
+    reply_to_message_id: video.message_id,
+  });
+  if (
+    JSON.stringify(voice.voice) !== JSON.stringify({
+        duration: 5,
+        mime_type: 'audio/ogg',
+        file_id: voice.voice?.file_id,
+        file_unique_id: voice.voice?.file_unique_id,
+        file_size: 9,
+      }) || voice.caption !== 'Memo' || voice.reply_to_message?.message_id !== video.message_id
+  ) {
+    throw new Error(`Expected the client to send a voice note, received ${JSON.stringify(voice)}`);
+  }
+  const botVoiceReply = await api.request(`/sessions/${session.id}/bot-api/bot${token}/sendVoice`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ chat_id: account.id, voice: voice.voice?.file_id, caption: 'Noted' }),
+  });
+  const voiceReply = (await account.getMessages({ chat: to })).at(-1);
+  if (
+    botVoiceReply.status !== 200 ||
+    voiceReply?.voice?.file_unique_id !== voice.voice?.file_unique_id ||
+    voiceReply?.voice?.duration !== 5 || voiceReply.caption !== 'Noted'
+  ) {
+    throw new Error(
+      `Expected the bot to send the voice note back, received ${JSON.stringify(voiceReply)}`,
+    );
   }
 
   try {

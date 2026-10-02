@@ -243,6 +243,13 @@ export interface BotApiVideo extends BotApiFile {
   readonly thumb?: BotApiPhotoSize;
 }
 
+/** A voice note as the official Bot API server's `JsonVoiceNote` shows it. */
+export interface BotApiVoice extends BotApiFile {
+  /** In seconds, as the sender defined it. */
+  readonly duration: number;
+  readonly mime_type: string;
+}
+
 /** A caption's fields, which Telegram omits for a media message without a caption. */
 interface BotApiCaption {
   readonly caption?: string;
@@ -250,7 +257,10 @@ interface BotApiCaption {
   readonly caption_entities?: readonly BotApiMessageEntity[];
 }
 
-/** The fields of media that a message shows with a caption: a photo, a document, or a video. */
+/**
+ * The fields of media that a message shows with a caption: a photo, a document, a video, or a
+ * voice note.
+ */
 type BotApiCaptionedMediaContent =
   & BotApiCaption
   & (
@@ -270,6 +280,7 @@ type BotApiCaptionedMediaContent =
       /** Present only for a video that clients cover until the user reveals it. */
       readonly has_media_spoiler?: true;
     }
+    | { readonly voice: BotApiVoice }
   );
 
 /** The fields that show what a message is, which follow its reply. */
@@ -346,7 +357,8 @@ export type BotApiExternalReplyMedia =
     readonly video: BotApiVideo;
     /** Present only for a video that clients cover until the user reveals it. */
     readonly has_media_spoiler?: true;
-  };
+  }
+  | { readonly voice: BotApiVoice };
 
 /** A message of another chat that a message replies to, as Telegram's `ExternalReplyInfo`. */
 export type BotApiExternalReplyInfo =

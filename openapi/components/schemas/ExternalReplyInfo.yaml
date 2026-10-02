@@ -3,8 +3,8 @@ additionalProperties: false
 description: >-
   The message of another chat that a message replies to, present only for such a reply. As
   TDLib's `RepliedMessageInfo` keeps it, it shows where the replied message first appeared,
-  its supergroup and ID when it is a supergroup message, and a photo, document, or video
-  without its caption. The replied text or caption appears as the reply's `quote` instead.
+  its supergroup and ID when it is a supergroup message, and a photo, document, video, or voice
+  note without its caption. The replied text or caption appears as the reply's `quote` instead.
 required:
   - origin
 properties:
@@ -27,3 +27,5 @@ properties:
     $ref: ./Document.yaml
   video:
     $ref: ./Video.yaml
+  voice:
+    $ref: ./Voice.yaml

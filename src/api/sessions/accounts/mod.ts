@@ -209,8 +209,22 @@ const accountVideoShape = {
 };
 
 /**
- * A text message, a photo, a document, or a video, each with an optional caption; or a forward of
- * a message of one of the account's chats, which, as in Telegram's clients, replies to none.
+ * A voice note the account records, with an optional caption. Its client defines its duration,
+ * which defaults to 0, and records it as `audio/ogg`, as Telegram's clients record OGG/Opus.
+ */
+const accountVoiceShape = {
+  voice: z.strictObject({
+    content_base64: base64ContentSchema,
+    duration: z.int().min(0).max(MAX_MEDIA_DURATION_SECONDS).default(0),
+  }),
+  caption: captionSchema,
+  caption_entities: messageEntitiesSchema,
+};
+
+/**
+ * A text message, a photo, a document, a video, or a voice note, each with an optional caption; or
+ * a forward of a message of one of the account's chats, which, as in Telegram's clients, replies to
+ * none.
  */
 const sendMessageRequestSchema = z.union([
   z.strictObject({
@@ -229,6 +243,7 @@ const sendMessageRequestSchema = z.union([
   z.strictObject({ ...sentMessageTargetShape, ...accountPhotoShape }),
   z.strictObject({ ...sentMessageTargetShape, ...accountDocumentShape }),
   z.strictObject({ ...sentMessageTargetShape, ...accountVideoShape }),
+  z.strictObject({ ...sentMessageTargetShape, ...accountVoiceShape }),
 ]);
 
 /**
@@ -431,7 +446,7 @@ export function createAccountRoutes(): Hono<SessionRouteContextTypes> {
     const { privateMessaging, supergroupMessaging, botMessageViews, mediaFiles } = context.get(
       'emulationSession',
     );
-    const contents: AccountMediaContent[] = [];
+    const contents: AccountAlbumMediaContent[] = [];
     for (const media of requestBody.media) {
       const content = readAccountMediaContent(media, mediaFiles);
       if (content === undefined) {
@@ -1310,7 +1325,7 @@ type AccountMessageContent = Parameters<
   EmulationSession['privateMessaging']['sendAccountMessage']
 >[0]['content'];
 
-type AccountMediaContent = Parameters<
+type AccountAlbumMediaContent = Parameters<
   EmulationSession['privateMessaging']['sendAccountAlbum']
 >[0]['contents'][number];
 
@@ -1322,9 +1337,35 @@ function readAccountMessageContent(
   request: Exclude<z.infer<typeof sendMessageRequestSchema>, { readonly forward: unknown }>,
   mediaFiles: EmulationSession['mediaFiles'],
 ): AccountMessageContent | undefined {
-  return 'text' in request
-    ? { kind: 'text', text: request.text, entities: request.entities }
+  if ('text' in request) {
+    return { kind: 'text', text: request.text, entities: request.entities };
+  }
+  return 'voice' in request
+    ? readAccountVoiceContent(request, mediaFiles)
     : readAccountMediaContent(request, mediaFiles);
+}
+
+/**
+ * Reads a voice note an account records, as its client prepares it; returns `undefined` for an
+ * upload Telegram refuses. Unlike other media, a voice note never joins an album.
+ */
+function readAccountVoiceContent(
+  request: z.infer<z.ZodObject<typeof accountVoiceShape>>,
+  mediaFiles: EmulationSession['mediaFiles'],
+): AccountMessageContent | undefined {
+  const preparation = mediaFiles.prepareVoiceUpload({
+    content: request.voice.content_base64,
+    durationSeconds: request.voice.duration,
+    source: 'account_upload',
+  });
+  return preparation.prepared
+    ? {
+      kind: 'media',
+      upload: preparation.upload,
+      caption: request.caption,
+      captionEntities: request.caption_entities,
+    }
+    : undefined;
 }
 
 /**
@@ -1337,7 +1378,7 @@ function readAccountMediaContent(
     | z.infer<z.ZodObject<typeof accountDocumentShape>>
     | z.infer<z.ZodObject<typeof accountVideoShape>>,
   mediaFiles: EmulationSession['mediaFiles'],
-): AccountMediaContent | undefined {
+): AccountAlbumMediaContent | undefined {
   const preparation = prepareAccountUpload(request, mediaFiles);
   return preparation.prepared
     ? {
