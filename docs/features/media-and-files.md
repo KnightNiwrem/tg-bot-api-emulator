@@ -47,7 +47,8 @@ server deployment whose upload limits its bots meet: `cloud` for `api.telegram.o
 `multipart/form-data` must fit the profile's limit; a photo must also meet the 10 × 1024 × 1024 byte
 photo limit, whatever the profile. The cloud limit is checked first, as `api.telegram.org` refuses
 an oversized request outright, and the local limit after the photo limit, as Telegram enforces it
-after TDLib's checks.
+after TDLib's checks, so in practice the local limit binds only documents: a photo that large fails
+as too big for a photo.
 
 | Profile | Largest bot upload                       | Larger uploads fail with                                                                   |
 | ------- | ---------------------------------------- | ------------------------------------------------------------------------------------------ |
