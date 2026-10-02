@@ -16,7 +16,9 @@ properties:
       content_base64:
         type: string
         contentEncoding: base64
-        description: The file's content, which must not be empty.
+        description: >-
+          The file's content, which must not be empty. An account uploads through its own
+          client, so the session's upload profile, which limits bot uploads, does not apply.
       file_name:
         type: string
         minLength: 1

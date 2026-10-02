@@ -10,6 +10,7 @@ import type { EmulationSession } from '../../../types/emulation_session.ts';
 import type { InlineKeyboard } from '../../../types/inline_keyboard.ts';
 import type { BotMessageReplyMarkup } from '../../../types/reply_interface.ts';
 import { MAX_PHOTO_UPLOAD_BYTES, type StoredFile } from '../../../types/stored_file.ts';
+import type { BotUploadTooBigFailure } from '../../../types/upload_profile.ts';
 import { isUserId } from '../../../types/telegram_identity.ts';
 import type { VirtualBotProfile } from '../../../types/virtual_bot.ts';
 import type { ChatAction } from '../../../types/virtual_chat.ts';
@@ -148,6 +149,7 @@ const FILE_EMPTY_DESCRIPTION = 'Bad Request: file must be non-empty';
 const IMAGE_INVALID_DESCRIPTION = 'Bad Request: IMAGE_PROCESS_FAILED';
 const PHOTO_DIMENSIONS_INVALID_DESCRIPTION = 'Bad Request: PHOTO_INVALID_DIMENSIONS';
 const FILE_ID_INVALID_DESCRIPTION = 'Bad Request: wrong file identifier/HTTP URL specified';
+const REQUEST_ENTITY_TOO_LARGE_DESCRIPTION = 'Request Entity Too Large';
 const CAPTION_TOO_LONG_DESCRIPTION = 'Bad Request: message caption is too long';
 
 /** TDLib's names of file types in its errors about a file of the wrong type. */
@@ -713,6 +715,7 @@ type FileResolutionFailure =
       | 'file_id_invalid';
   }
   | { readonly reason: 'photo_too_big'; readonly fileSizeBytes: number }
+  | BotUploadTooBigFailure
   | {
     readonly reason: 'file_type_mismatch';
     readonly expectedFileType: StoredFile['type'];
@@ -1754,6 +1757,7 @@ function sendMethodAnswer(result: SendResult | SendFailure): BotApiMethodAnswer 
     case 'file_id_invalid':
       return fileResolutionFailureAnswer({ reason: result.reason });
     case 'photo_too_big':
+    case 'bot_upload_too_big':
     case 'file_type_mismatch':
       return fileResolutionFailureAnswer(result);
     default: {
@@ -1761,6 +1765,23 @@ function sendMethodAnswer(result: SendResult | SendFailure): BotApiMethodAnswer 
       throw new Error(`Unhandled send failure: ${JSON.stringify(unhandledFailure)}`);
     }
   }
+}
+
+/**
+ * Telegram's error for a file larger than the session's Bot API server lets a bot upload. Telegram's
+ * own server answers `413 Request Entity Too Large` without reading the request; this limit is not
+ * in the server's source, so the answer is the one bots observe. A local server's limit is enforced
+ * by Telegram after the upload, with an error that is not in the source either; the emulator words
+ * it as TDLib's `check_full_local_location` words its own size checks.
+ */
+function botUploadTooBigAnswer(failure: BotUploadTooBigFailure): BotApiMethodAnswer {
+  return failure.uploadProfile === 'cloud'
+    ? botApiError(413, REQUEST_ENTITY_TOO_LARGE_DESCRIPTION)
+    : botApiError(
+      400,
+      `Bad Request: file of size ${failure.fileSizeBytes} bytes is too big; ` +
+        `the maximum size is ${failure.maxFileSizeBytes} bytes`,
+    );
 }
 
 /** Telegram's error for a file it cannot send: an upload it refuses, or an unusable `file_id`. */
@@ -1778,6 +1799,8 @@ function fileResolutionFailureAnswer(failure: FileResolutionFailure): BotApiMeth
         `Bad Request: file of size ${failure.fileSizeBytes} bytes is too big for a photo; ` +
           `the maximum size is ${MAX_PHOTO_UPLOAD_BYTES} bytes`,
       );
+    case 'bot_upload_too_big':
+      return botUploadTooBigAnswer(failure);
     case 'file_id_invalid':
       return botApiError(400, FILE_ID_INVALID_DESCRIPTION);
     case 'file_type_mismatch':
@@ -2161,6 +2184,7 @@ function editMessageAnswer(result: MessageEditResult): BotApiMethodAnswer {
     case 'file_id_invalid':
       return fileResolutionFailureAnswer({ reason: result.reason });
     case 'photo_too_big':
+    case 'bot_upload_too_big':
     case 'file_type_mismatch':
       return fileResolutionFailureAnswer(result);
     default: {
@@ -2204,6 +2228,7 @@ function inlineMessageEditAnswer(result: InlineMessageEditResult): BotApiMethodA
     case 'file_id_invalid':
       return fileResolutionFailureAnswer({ reason: result.reason });
     case 'photo_too_big':
+    case 'bot_upload_too_big':
     case 'file_type_mismatch':
       return fileResolutionFailureAnswer(result);
     default: {

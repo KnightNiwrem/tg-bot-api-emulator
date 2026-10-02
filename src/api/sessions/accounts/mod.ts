@@ -1230,11 +1230,15 @@ function readAccountMessageContent(
     return { kind: 'text', text: request.text, entities: request.entities };
   }
   const preparation = 'photo' in request
-    ? mediaFiles.preparePhotoUpload(request.photo.content_base64)
-    : mediaFiles.prepareDocumentUpload(
-      request.document.content_base64,
-      request.document.file_name,
-    );
+    ? mediaFiles.preparePhotoUpload({
+      content: request.photo.content_base64,
+      source: 'account_upload',
+    })
+    : mediaFiles.prepareDocumentUpload({
+      content: request.document.content_base64,
+      fileName: request.document.file_name,
+      source: 'account_upload',
+    });
   return preparation.prepared
     ? {
       kind: 'media',

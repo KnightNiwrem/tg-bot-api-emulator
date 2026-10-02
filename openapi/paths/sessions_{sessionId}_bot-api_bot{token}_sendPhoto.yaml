@@ -43,7 +43,8 @@ post:
         it, checking in this order: the request names no uploaded file and no `file_id` (`Bad
         Request: there is no photo in the request`); the caption or its formatting cannot be
         read, as for `sendMessage`; `chat_id` is missing (`Bad Request: chat_id is empty`); the
-        uploaded file is empty (`Bad Request: file must be non-empty`), is larger than
+        uploaded file is empty (`Bad Request: file must be non-empty`), is larger than the
+        session's upload profile allows (`413`, or `400` for the `local` profile), is larger than
         10485760 bytes (`Bad Request: file of size <size> bytes is too big for a photo; the
         maximum size is 10485760 bytes`), is not an image (`Bad Request:
         IMAGE_PROCESS_FAILED`), or has dimensions Telegram refuses (`Bad
@@ -75,5 +76,7 @@ post:
             $ref: ../components/schemas/BotApiErrorResponse.yaml
     '404':
       description: No active test session has the supplied identifier.
+    '413':
+      $ref: ../components/responses/BotApiUploadTooLarge.yaml
     '429':
       $ref: ../components/responses/BotApiRateLimited.yaml
