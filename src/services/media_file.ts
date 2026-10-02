@@ -11,6 +11,11 @@ import {
   type StoredFileId,
   type ThumbnailUpload,
 } from '../types/stored_file.ts';
+import {
+  type BotUploadTooBigFailure,
+  checkBotUploadSize,
+  type UploadProfile,
+} from '../types/upload_profile.ts';
 
 /** Telegram rejects a photo whose width and height add up to more than this. */
 const MAX_PHOTO_DIMENSION_SUM = 10_000;
@@ -33,6 +38,12 @@ const PHOTO_FILE_EXTENSIONS: Readonly<Record<PhotoImageFormat, string>> = {
   bmp: 'bmp',
 };
 
+/**
+ * Who uploaded new file content, which decides the size limits it must meet: a bot, through the
+ * session's Bot API server, or an account, through its own Telegram client.
+ */
+export type UploadSource = 'bot_upload' | 'account_upload';
+
 /** An uploaded file is too large for a photo. */
 export interface PhotoTooBigFailure {
   readonly reason: 'photo_too_big';
@@ -45,11 +56,26 @@ export type PhotoUploadPreparation =
     readonly prepared: false;
     readonly reason: 'file_empty' | 'image_invalid' | 'photo_dimensions_invalid';
   }
-  | ({ readonly prepared: false } & PhotoTooBigFailure);
+  | ({ readonly prepared: false } & (PhotoTooBigFailure | BotUploadTooBigFailure));
 
 export type DocumentUploadPreparation =
   | { readonly prepared: true; readonly upload: DocumentUpload }
-  | { readonly prepared: false; readonly reason: 'file_empty' };
+  | { readonly prepared: false; readonly reason: 'file_empty' }
+  | ({ readonly prepared: false } & BotUploadTooBigFailure);
+
+export interface PhotoUploadRequest {
+  readonly content: Uint8Array<ArrayBuffer>;
+  readonly source: UploadSource;
+}
+
+export interface DocumentUploadRequest {
+  readonly content: Uint8Array<ArrayBuffer>;
+  /** The nonempty name to send the document under, whose extension decides its MIME type. */
+  readonly fileName: string;
+  /** The content of the thumbnail uploaded with the document; omitted for none. */
+  readonly thumbnailContent?: Uint8Array<ArrayBuffer>;
+  readonly source: UploadSource;
+}
 
 /** A file a bot can download, with the path it downloads the file from. */
 export interface BotDownloadableFile {
@@ -74,6 +100,8 @@ interface FileStore {
 
 interface MediaFileServiceDependencies {
   readonly files: FileStore;
+  /** The upload profile of the session, which decides how large a file its bots may upload. */
+  readonly uploadProfile: UploadProfile;
 }
 
 /**
@@ -84,20 +112,27 @@ interface MediaFileServiceDependencies {
  */
 export class MediaFileService {
   readonly #files: FileStore;
+  readonly #uploadProfile: UploadProfile;
 
-  constructor({ files }: MediaFileServiceDependencies) {
+  constructor({ files, uploadProfile }: MediaFileServiceDependencies) {
     this.#files = files;
+    this.#uploadProfile = uploadProfile;
   }
 
   /**
    * Reads an uploaded image, which must be a JPEG, PNG, GIF, WebP, or BMP image, and checks its
    * dimensions as Telegram does for photos. Telegram also accepts other image formats, such as
-   * TIFF, which the emulator does not read. As TDLib's `check_full_local_location` does, the size
-   * is checked first, before Telegram's server reads the image.
+   * TIFF, which the emulator does not read. A bot's upload must first fit its session's upload
+   * profile. Then, as TDLib's `check_full_local_location` does for bots and accounts alike, the
+   * photo's size is checked, before Telegram's server reads the image.
    */
-  preparePhotoUpload(content: Uint8Array<ArrayBuffer>): PhotoUploadPreparation {
+  preparePhotoUpload({ content, source }: PhotoUploadRequest): PhotoUploadPreparation {
     if (content.length === 0) {
       return { prepared: false, reason: 'file_empty' };
+    }
+    const uploadSizeFailure = this.#checkUploadSize(content, source);
+    if (uploadSizeFailure !== undefined) {
+      return { prepared: false, ...uploadSizeFailure };
     }
     if (content.length > MAX_PHOTO_UPLOAD_BYTES) {
       return { prepared: false, reason: 'photo_too_big', fileSizeBytes: content.length };
@@ -117,19 +152,21 @@ export class MediaFileService {
   }
 
   /**
-   * Prepares an uploaded file to be sent as a document under the given nonempty name, whose
-   * extension decides its MIME type, with the thumbnail uploaded for it, if any. As TDLib's
+   * Prepares an uploaded file to be sent as a document, with the thumbnail uploaded for it, if any.
+   * A bot's upload must fit its session's upload profile. As TDLib's
    * `get_input_thumbnail_photo_size` does, a thumbnail that cannot be used is left out rather than
    * failing the document: one that is empty or larger than 200 KB, which TDLib refuses, or whose
    * image the emulator cannot read.
    */
   prepareDocumentUpload(
-    content: Uint8Array<ArrayBuffer>,
-    fileName: string,
-    thumbnailContent?: Uint8Array<ArrayBuffer>,
+    { content, fileName, thumbnailContent, source }: DocumentUploadRequest,
   ): DocumentUploadPreparation {
     if (content.length === 0) {
       return { prepared: false, reason: 'file_empty' };
+    }
+    const uploadSizeFailure = this.#checkUploadSize(content, source);
+    if (uploadSizeFailure !== undefined) {
+      return { prepared: false, ...uploadSizeFailure };
     }
     const thumbnail = thumbnailContent === undefined
       ? undefined
@@ -184,6 +221,21 @@ export class MediaFileService {
   /** Finds a file by its `file_unique_id`, which is the same for every user. */
   findFileByUniqueId(uniqueId: string): StoredFile | undefined {
     return this.#files.getFileByUniqueId(uniqueId);
+  }
+
+  /**
+   * Checks the size of new file content against the limit of its source. A bot's upload must fit
+   * its session's upload profile. An account's upload meets no such limit: a user's own client
+   * uploads files of up to 2000 MB, or 4000 MB with Telegram Premium, which base64 fixtures in
+   * JSON requests are not meant to reach.
+   */
+  #checkUploadSize(
+    content: Uint8Array<ArrayBuffer>,
+    source: UploadSource,
+  ): BotUploadTooBigFailure | undefined {
+    return source === 'bot_upload'
+      ? checkBotUploadSize(this.#uploadProfile, content.length)
+      : undefined;
   }
 
   /**

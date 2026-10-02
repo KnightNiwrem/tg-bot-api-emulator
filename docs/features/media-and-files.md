@@ -17,8 +17,9 @@ Photo uploads larger than 10 × 1024 × 1024 bytes fail before the image is read
 accounts alike, as TDLib's [`check_full_local_location`][photo-size-limit] refuses them; bots
 receive
 `Bad Request: file of size <size> bytes is too big for a photo; the maximum size is 10485760 bytes`.
-Captions can be edited with `editMessageCaption` or the account client, and bots replace a message's
-photo or document with [`editMessageMedia`](messages.md#editing-and-deleting).
+Bot uploads must also fit the session's [upload profile](#upload-profiles). Captions can be edited
+with `editMessageCaption` or the account client, and bots replace a message's photo or document with
+[`editMessageMedia`](messages.md#editing-and-deleting).
 
 A bot can upload a thumbnail with `sendDocument`: the part that `thumbnail` names with
 `attach://<part-name>`, or else the part named `thumbnail`, and failing both, likewise for the
@@ -42,8 +43,25 @@ remains valid for the session. Tests can bypass bot downloads with
 
 A session's [upload profile](sessions-and-requests.md#supported-behavior) names the official Bot API
 server deployment whose upload limits its bots meet: `cloud` for `api.telegram.org`, the default, or
-`local` for a server started with `--local`. Both profiles currently apply the same upload checks,
-described above. The profile changes nothing else; see
+`local` for a server started with `--local`. Each photo or document a bot uploads with
+`multipart/form-data` must fit the profile's limit; a photo must also meet the 10 × 1024 × 1024 byte
+photo limit, whatever the profile.
+
+| Profile | Largest bot upload                       | Larger uploads fail with                                                                   |
+| ------- | ---------------------------------------- | ------------------------------------------------------------------------------------------ |
+| `cloud` | 50 × 1024 × 1024 = 52,428,800 bytes      | `413` `Request Entity Too Large`                                                           |
+| `local` | 2000 × 1024 × 1024 = 2,097,152,000 bytes | `400` `Bad Request: file of size <size> bytes is too big; the maximum size is <max> bytes` |
+
+The limit is checked when the emulator reads the file, after the caption and other parameters and
+before the chat, so a failed upload sends and stores nothing; `api.telegram.org` refuses an
+oversized request before reading any parameter, so a request with another fault fails differently
+there. Sending a file again by `file_id`, forwarding and copying are not uploads and meet no size
+limit. An uploaded thumbnail is checked only against TDLib's own thumbnail limit, described below.
+Accounts upload through their own client, so no profile limits them: their photos meet the photo
+limit, and their documents no limit, since a user's client uploads files of up to 2000 MB, or 4000
+MB with Telegram Premium, which base64 fixtures in JSON requests are not meant to reach.
+
+The profile changes nothing else; see
 [the cloud server's other file handling](#the-cloud-servers-other-file-handling).
 
 ## Intentional deviations
@@ -88,6 +106,18 @@ and files it would read from a `getFile` path are downloaded. The webhook addres
 restrictions that local mode relaxes are relaxed in every session, while `max_connections` keeps the
 cloud range; see [webhooks](webhooks.md#intentional-deviations).
 
+### Upload limit units and errors
+
+Telegram's [file sending reference][sending-files] gives the multipart limits as 10 MB for photos
+and 50 MB for other files, and the [local server][local-mode] as 2000 MB, without naming the unit or
+the error. The 10 MB photo limit is `10 * (1 << 20)` bytes in TDLib, as is the 20 MB download limit
+in the Bot API server, so the emulator reads 50 MB and 2000 MB in the same binary megabytes; 2000 MB
+is also TDLib's limit of 4000 upload parts of 512 KB each. Neither limit appears in the open-source
+server or TDLib: the open-source server's own HTTP reader refuses only files larger than 4000 MB.
+For the cloud limit, the emulator gives the answer bots observe from `api.telegram.org`. For the
+local limit, which Telegram enforces after TDLib's checks with an error not visible in the source,
+it words the error as `check_full_local_location` words its own size checks.
+
 ### Opaque session file identifiers
 
 `file_id` and `file_unique_id` are opaque emulator identifiers. Tests should treat them as session
@@ -119,18 +149,10 @@ not inspect document content or reproduce that classification.
 
 Tests need to exercise media classification and the flag's effect.
 
-### File limits and sources
+### Files sent by URL
 
-| Concern               | Emulator    | Upstream comparison                                                          |
-| --------------------- | ----------- | ---------------------------------------------------------------------------- |
-| Document upload sizes | No byte cap | Server-side 50 MB cap, 2000 MB in local mode; its error is not in the source |
-| HTTP URL file sources | Rejected    | `get_input_file` and TDLib support remote sources                            |
-
-Upload handling is in [`Client::get_input_file`][file-input]. The public [document][send-document]
-method reference documents the cloud upload ceiling. Passing a large document to the emulator does
-not test it.
-
-Tests need document size validation and files sent by URL.
+HTTP URL file sources are rejected. [`Client::get_input_file`][file-input] and TDLib accept remote
+sources, which Telegram's servers download; tests need files sent by URL.
 
 ### Additional media types and methods
 
@@ -153,5 +175,5 @@ Media types other than photos/documents, albums, stickers and sticker sets are m
 [documents]: https://github.com/tdlib/td/blob/bc9c263e2bfee06aaab41e82db51a103376030bc/td/telegram/DocumentsManager.cpp#L329-L605
 [download-limit]: https://github.com/tdlib/telegram-bot-api/blob/e3e9dd8e5b3d7ab8537cd5a10dc31d5ffa8f82d1/telegram-bot-api/Client.cpp#L9365-L9390
 [file-input]: https://github.com/tdlib/telegram-bot-api/blob/e3e9dd8e5b3d7ab8537cd5a10dc31d5ffa8f82d1/telegram-bot-api/Client.cpp#L10758-L10839
-[send-document]: https://core.telegram.org/bots/api#senddocument
+[sending-files]: https://core.telegram.org/bots/api#sending-files
 [local-mode]: https://github.com/tdlib/telegram-bot-api/blob/e3e9dd8e5b3d7ab8537cd5a10dc31d5ffa8f82d1/README.md#usage

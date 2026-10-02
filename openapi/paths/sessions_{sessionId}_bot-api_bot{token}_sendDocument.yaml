@@ -41,7 +41,9 @@ post:
         The request cannot be decoded or has unsupported parameters, or Telegram would reject
         it for the reasons `sendPhoto` gives, apart from those about images: the request names
         no file (`Bad Request: there is no document in the request`), the uploaded file is
-        empty, or the `file_id` identifies no file the bot knows or identifies a photo (`Bad
+        empty or, in a session with the `local` upload profile, larger than 2097152000 bytes
+        (`Bad Request: file of size <size> bytes is too big; the maximum size is 2097152000
+        bytes`), or the `file_id` identifies no file the bot knows or identifies a photo (`Bad
         Request: can't use file of type Photo as Document`).
       content:
         application/json:
@@ -64,5 +66,7 @@ post:
             $ref: ../components/schemas/BotApiErrorResponse.yaml
     '404':
       description: No active test session has the supplied identifier.
+    '413':
+      $ref: ../components/responses/BotApiUploadTooLarge.yaml
     '429':
       $ref: ../components/responses/BotApiRateLimited.yaml

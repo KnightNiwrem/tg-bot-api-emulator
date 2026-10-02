@@ -1,0 +1,11 @@
+description: >-
+  The session has the `cloud` upload profile, and a photo or document the bot uploaded with
+  `multipart/form-data` is larger than 52428800 bytes (50 × 1024 × 1024). The body is
+  `{"ok":false,"error_code":413,"description":"Request Entity Too Large"}`, the answer bots
+  observe from `api.telegram.org`. In a session with the `local` upload profile, a file larger
+  than 2097152000 bytes fails with `400` instead (`Bad Request: file of size <size> bytes is too
+  big; the maximum size is 2097152000 bytes`).
+content:
+  application/json:
+    schema:
+      $ref: ../schemas/BotApiErrorResponse.yaml

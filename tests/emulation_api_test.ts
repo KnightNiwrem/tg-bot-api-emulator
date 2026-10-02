@@ -7372,6 +7372,103 @@ Deno.test('sendPhoto and sendDocument upload files, reuse file IDs, and follow T
   }
 });
 
+Deno.test('a cloud session answers bot uploads over 50 MB with 413 and keeps no trace', async () => {
+  const { api, sessionPath, botApiPath, createdBot, createdAccount, sendText } =
+    await createPrivateConversationFixture();
+  await sendText('/start');
+  const chatId = String(createdAccount.account.id);
+  const maxUploadBytes = 50 * 1024 * 1024;
+
+  const atLimit = await callBotApiWithFiles(api, `${botApiPath}/sendDocument`, {
+    chat_id: chatId,
+  }, { document: new File([new Uint8Array(maxUploadBytes)], 'at-limit.bin') });
+  const atLimitMessage = botApiResult(atLimit.body);
+  const atLimitDocument = atLimitMessage?.document as Record<string, unknown> | undefined;
+  if (atLimit.status !== 200 || atLimitDocument?.file_size !== maxUploadBytes) {
+    throw new Error(`Expected a document of exactly 50 MB, received ${atLimit.status}`);
+  }
+
+  const oversizedFile = new File([new Uint8Array(maxUploadBytes + 1)], 'oversized.bin');
+  const oversizedAnswers = [
+    await callBotApiWithFiles(api, `${botApiPath}/sendDocument`, { chat_id: chatId }, {
+      document: oversizedFile,
+    }),
+    await callBotApiWithFiles(api, `${botApiPath}/sendPhoto`, { chat_id: chatId }, {
+      photo: oversizedFile,
+    }),
+    await callBotApiWithFiles(api, `${botApiPath}/editMessageMedia`, {
+      chat_id: chatId,
+      message_id: String(atLimitMessage?.message_id),
+      media: JSON.stringify({ type: 'document', media: 'attach://replacement' }),
+    }, { replacement: oversizedFile }),
+  ];
+  for (const { status, body } of oversizedAnswers) {
+    if (
+      status !== 413 || JSON.stringify(body) !==
+        JSON.stringify({ ok: false, error_code: 413, description: 'Request Entity Too Large' })
+    ) {
+      throw new Error(`Expected 413 Request Entity Too Large, received ${JSON.stringify(body)}`);
+    }
+  }
+
+  const historyResponse = await api.request(
+    `${sessionPath}/accounts/${chatId}/conversations/private/${createdBot.bot.id}/messages`,
+  );
+  const history = await historyResponse.json() as {
+    messages: { document?: { file_name: string } }[];
+  };
+  const documentNames = history.messages.map((message) => message.document?.file_name ?? null);
+  if (JSON.stringify(documentNames) !== JSON.stringify([null, 'at-limit.bin'])) {
+    throw new Error(`Expected only the document within the limit, received ${documentNames}`);
+  }
+
+  const activityResponse = await api.request(
+    `${sessionPath}/bot-activity?kind=bot_api_call&bot_id=${createdBot.bot.id}`,
+  );
+  const activity = await activityResponse.json() as {
+    entries: { method: string; answer: { error_code?: number } }[];
+  };
+  const recordedAnswers = activity.entries.map((entry) => [
+    entry.method,
+    entry.answer.error_code ?? 200,
+  ]);
+  if (
+    JSON.stringify(recordedAnswers) !== JSON.stringify([
+      ['sendDocument', 200],
+      ['sendDocument', 413],
+      ['sendPhoto', 413],
+      ['editMessageMedia', 413],
+    ])
+  ) {
+    throw new Error(`Expected the refused calls to be recorded, received ${recordedAnswers}`);
+  }
+});
+
+Deno.test('a local session lets bots upload documents over 50 MB that getFile cannot serve', async () => {
+  const { api, botApiPath, createdAccount, sendText } = await createPrivateConversationFixture({
+    upload_profile: 'local',
+  });
+  await sendText('/start');
+  const fileSizeBytes = 50 * 1024 * 1024 + 1;
+
+  const uploaded = await callBotApiWithFiles(api, `${botApiPath}/sendDocument`, {
+    chat_id: String(createdAccount.account.id),
+  }, { document: new File([new Uint8Array(fileSizeBytes)], 'large.bin') });
+  const document = botApiResult(uploaded.body)?.document as Record<string, unknown> | undefined;
+  if (uploaded.status !== 200 || document?.file_size !== fileSizeBytes) {
+    throw new Error(`Expected the large document to be sent, received ${uploaded.status}`);
+  }
+
+  // The local profile changes only upload limits; downloads keep the cloud server's 20 MB cap.
+  const download = await callBotApi(api, `${botApiPath}/getFile`, { file_id: document.file_id });
+  if (
+    download.status !== 400 || !isBadRequestResponse(download.body) ||
+    download.body.description !== 'Bad Request: file is too big'
+  ) {
+    throw new Error(`Expected getFile to refuse the file, received ${JSON.stringify(download)}`);
+  }
+});
+
 Deno.test('sendDocument keeps an uploaded thumbnail that bots and accounts see and download', async () => {
   const { api, sessionPath, botApiPath, createdBot, createdAccount, sendText } =
     await createPrivateConversationFixture();
@@ -9784,12 +9881,15 @@ async function expectSettlementWithin<T>(
 }
 
 /** Creates a session holding a bot and an account that can message it. */
-async function createPrivateConversationFixture() {
+async function createPrivateConversationFixture(sessionSettings?: { upload_profile: string }) {
   const api = createEmulationApi({
     sessionLifecycle: createSessionLifecycleService(),
     publicOrigin: 'http://emulator.example:9000',
   });
-  const createSessionResponse = await api.request('/sessions', { method: 'POST' });
+  const createSessionResponse = await api.request(
+    '/sessions',
+    sessionSettings === undefined ? { method: 'POST' } : jsonRequest('POST', sessionSettings),
+  );
   const sessionPath = createSessionResponse.headers.get('Location');
   if (sessionPath === null) {
     throw new Error('Expected the created session to have a Location');

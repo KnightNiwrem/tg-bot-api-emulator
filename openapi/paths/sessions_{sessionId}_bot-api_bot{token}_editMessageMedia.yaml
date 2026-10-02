@@ -73,5 +73,7 @@ post:
             $ref: ../components/schemas/BotApiErrorResponse.yaml
     '404':
       description: No active test session has the supplied identifier.
+    '413':
+      $ref: ../components/responses/BotApiUploadTooLarge.yaml
     '429':
       $ref: ../components/responses/BotApiRateLimited.yaml

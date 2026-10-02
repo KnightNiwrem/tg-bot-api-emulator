@@ -57,6 +57,7 @@ import {
   type RichMessageFileTypes,
 } from '../types/rich_message.ts';
 import type { DocumentUpload, PhotoUpload, StoredFile } from '../types/stored_file.ts';
+import type { BotUploadTooBigFailure } from '../types/upload_profile.ts';
 import { isUserId } from '../types/telegram_identity.ts';
 import type { VirtualBot, VirtualBotProfile } from '../types/virtual_bot.ts';
 import type { ChatAction, ChatActionChat, Supergroup } from '../types/virtual_chat.ts';
@@ -73,7 +74,13 @@ import {
   type TextEntity,
 } from '../types/virtual_message.ts';
 import type { GetUpdatesRequest, GetUpdatesResult } from './bot_update_polling.ts';
-import type { PhotoTooBigFailure } from './media_file.ts';
+import type {
+  DocumentUploadPreparation,
+  DocumentUploadRequest,
+  PhotoTooBigFailure,
+  PhotoUploadPreparation,
+  PhotoUploadRequest,
+} from './media_file.ts';
 import type {
   DeleteWebhookOutcome,
   DeleteWebhookRequest,
@@ -329,6 +336,7 @@ export type SendResult =
       | TextInvalidFailure
       | FileTypeMismatchFailure
       | PhotoTooBigFailure
+      | BotUploadTooBigFailure
     )
   );
 
@@ -1232,20 +1240,8 @@ interface ChatMemberships {
 }
 
 interface MediaFiles {
-  preparePhotoUpload(content: Uint8Array<ArrayBuffer>):
-    | { readonly prepared: true; readonly upload: PhotoUpload }
-    | {
-      readonly prepared: false;
-      readonly reason: 'file_empty' | 'image_invalid' | 'photo_dimensions_invalid';
-    }
-    | ({ readonly prepared: false } & PhotoTooBigFailure);
-  prepareDocumentUpload(
-    content: Uint8Array<ArrayBuffer>,
-    fileName: string,
-    thumbnailContent?: Uint8Array<ArrayBuffer>,
-  ):
-    | { readonly prepared: true; readonly upload: DocumentUpload }
-    | { readonly prepared: false; readonly reason: 'file_empty' };
+  preparePhotoUpload(request: PhotoUploadRequest): PhotoUploadPreparation;
+  prepareDocumentUpload(request: DocumentUploadRequest): DocumentUploadPreparation;
   findObserverFile(observerId: number, fileId: string): StoredFile | undefined;
   getBotFile(botId: number, fileId: string):
     | {
@@ -2336,16 +2332,13 @@ export class BotApiService {
       }
       return { resolved: false, failure: fileIdFailure(file, 'photo') };
     }
-    const preparation = this.#mediaFiles.preparePhotoUpload(input.content);
-    if (preparation.prepared) {
-      return { resolved: true, file: { kind: 'upload', upload: preparation.upload } };
-    }
-    return {
-      resolved: false,
-      failure: preparation.reason === 'photo_too_big'
-        ? { reason: preparation.reason, fileSizeBytes: preparation.fileSizeBytes }
-        : { reason: preparation.reason },
-    };
+    const preparation = this.#mediaFiles.preparePhotoUpload({
+      content: input.content,
+      source: 'bot_upload',
+    });
+    return preparation.prepared
+      ? { resolved: true, file: { kind: 'upload', upload: preparation.upload } }
+      : { resolved: false, failure: uploadPreparationFailure(preparation) };
   }
 
   /**
@@ -2365,14 +2358,15 @@ export class BotApiService {
       }
       return { resolved: false, failure: fileIdFailure(file, 'document') };
     }
-    const preparation = this.#mediaFiles.prepareDocumentUpload(
-      input.content,
-      cleanUploadedFileName(input.fileName),
-      thumbnailContent,
-    );
+    const preparation = this.#mediaFiles.prepareDocumentUpload({
+      content: input.content,
+      fileName: cleanUploadedFileName(input.fileName),
+      ...(thumbnailContent === undefined ? {} : { thumbnailContent }),
+      source: 'bot_upload',
+    });
     return preparation.prepared
       ? { resolved: true, file: { kind: 'upload', upload: preparation.upload } }
-      : { resolved: false, failure: { reason: preparation.reason } };
+      : { resolved: false, failure: uploadPreparationFailure(preparation) };
   }
 
   /**
@@ -3668,12 +3662,32 @@ export class BotApiService {
 export type FileResolutionFailure =
   | { readonly reason: 'file_empty' | 'image_invalid' | 'photo_dimensions_invalid' }
   | PhotoTooBigFailure
+  | BotUploadTooBigFailure
   | { readonly reason: 'file_id_invalid' }
   | FileTypeMismatchFailure;
 
 type FileResolution<File> =
   | { readonly resolved: true; readonly file: File }
   | { readonly resolved: false; readonly failure: FileResolutionFailure };
+
+/** Why Telegram refuses an uploaded file, as its preparation reports it. */
+function uploadPreparationFailure(
+  preparation: Extract<
+    PhotoUploadPreparation | DocumentUploadPreparation,
+    { readonly prepared: false }
+  >,
+): FileResolutionFailure {
+  switch (preparation.reason) {
+    case 'photo_too_big':
+      return { reason: preparation.reason, fileSizeBytes: preparation.fileSizeBytes };
+    case 'bot_upload_too_big': {
+      const { reason, uploadProfile, fileSizeBytes, maxFileSizeBytes } = preparation;
+      return { reason, uploadProfile, fileSizeBytes, maxFileSizeBytes };
+    }
+    default:
+      return { reason: preparation.reason };
+  }
+}
 
 /**
  * A button action's link as TDLib reads it: normalized, for a button that opens one, or TDLib's

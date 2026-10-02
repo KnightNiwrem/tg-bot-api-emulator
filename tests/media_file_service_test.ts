@@ -1,10 +1,11 @@
 import { FileRepository } from '../src/repositories/file.ts';
-import { MediaFileService } from '../src/services/media_file.ts';
+import { MediaFileService, type UploadSource } from '../src/services/media_file.ts';
 import {
   MAX_BOT_DOWNLOAD_FILE_BYTES,
   MAX_PHOTO_UPLOAD_BYTES,
   MAX_THUMBNAIL_UPLOAD_BYTES,
 } from '../src/types/stored_file.ts';
+import { MAX_BOT_UPLOAD_BYTES, type UploadProfile } from '../src/types/upload_profile.ts';
 
 const FIRST_BOT_ID = 1;
 const SECOND_BOT_ID = 2;
@@ -12,7 +13,10 @@ const SECOND_BOT_ID = 2;
 Deno.test('MediaFileService checks photos as Telegram does', () => {
   const { mediaFiles } = createMediaFileFixture();
 
-  const photo = mediaFiles.preparePhotoUpload(gifImage(1280, 720));
+  const photo = mediaFiles.preparePhotoUpload({
+    content: gifImage(1280, 720),
+    source: 'bot_upload',
+  });
   if (
     !photo.prepared || photo.upload.imageFormat !== 'gif' || photo.upload.width !== 1280 ||
     photo.upload.height !== 720
@@ -29,12 +33,14 @@ Deno.test('MediaFileService checks photos as Telegram does', () => {
     { content: gifImage(2_100, 100), expectedReason: 'photo_dimensions_invalid' },
   ];
   for (const { content, expectedReason } of rejections) {
-    const preparation = mediaFiles.preparePhotoUpload(content);
+    const preparation = mediaFiles.preparePhotoUpload({ content, source: 'bot_upload' });
     if (preparation.prepared || preparation.reason !== expectedReason) {
       throw new Error(`Expected ${expectedReason}, received ${JSON.stringify(preparation)}`);
     }
   }
-  if (!mediaFiles.preparePhotoUpload(gifImage(2_000, 100)).prepared) {
+  if (
+    !mediaFiles.preparePhotoUpload({ content: gifImage(2_000, 100), source: 'bot_upload' }).prepared
+  ) {
     throw new Error('Expected a photo exactly 20 times as wide as it is tall to be accepted');
   }
 });
@@ -47,26 +53,100 @@ Deno.test('MediaFileService refuses photos larger than 10 MB before reading them
     return content;
   };
 
-  if (!mediaFiles.preparePhotoUpload(imageOfSize(MAX_PHOTO_UPLOAD_BYTES)).prepared) {
-    throw new Error('Expected a photo of exactly 10 MB to be accepted');
-  }
-  // The size is checked before the content, so even an unreadable file is too big.
-  for (const content of [imageOfSize(MAX_PHOTO_UPLOAD_BYTES + 1), new Uint8Array(11_000_000)]) {
-    const preparation = mediaFiles.preparePhotoUpload(content);
+  // TDLib checks the photo limit for bots and accounts alike.
+  for (const source of ['bot_upload', 'account_upload'] as const) {
     if (
-      preparation.prepared || preparation.reason !== 'photo_too_big' ||
-      preparation.fileSizeBytes !== content.length
+      !mediaFiles.preparePhotoUpload({ content: imageOfSize(MAX_PHOTO_UPLOAD_BYTES), source })
+        .prepared
     ) {
-      throw new Error(`Expected photo_too_big, received ${JSON.stringify(preparation)}`);
+      throw new Error(`Expected a photo of exactly 10 MB to be accepted from ${source}`);
     }
+    // The size is checked before the content, so even an unreadable file is too big.
+    for (const content of [imageOfSize(MAX_PHOTO_UPLOAD_BYTES + 1), new Uint8Array(11_000_000)]) {
+      const preparation = mediaFiles.preparePhotoUpload({ content, source });
+      if (
+        preparation.prepared || preparation.reason !== 'photo_too_big' ||
+        preparation.fileSizeBytes !== content.length
+      ) {
+        throw new Error(`Expected photo_too_big, received ${JSON.stringify(preparation)}`);
+      }
+    }
+  }
+});
+
+Deno.test('MediaFileService refuses bot uploads larger than the cloud profile allows', () => {
+  const { mediaFiles } = createMediaFileFixture('cloud');
+  const atLimit = new Uint8Array(MAX_BOT_UPLOAD_BYTES.cloud);
+  const overLimit = new Uint8Array(MAX_BOT_UPLOAD_BYTES.cloud + 1);
+  const prepareDocument = (content: Uint8Array<ArrayBuffer>, source: UploadSource) =>
+    mediaFiles.prepareDocumentUpload({ content, fileName: 'video.mp4', source });
+
+  if (!prepareDocument(atLimit, 'bot_upload').prepared) {
+    throw new Error('Expected a bot document of exactly 50 MB to be accepted');
+  }
+  const expectedFailure = {
+    prepared: false,
+    reason: 'bot_upload_too_big',
+    uploadProfile: 'cloud',
+    fileSizeBytes: MAX_BOT_UPLOAD_BYTES.cloud + 1,
+    maxFileSizeBytes: MAX_BOT_UPLOAD_BYTES.cloud,
+  };
+  // A photo over the server's limit fails for it before TDLib checks the photo limit.
+  const failures = [
+    prepareDocument(overLimit, 'bot_upload'),
+    mediaFiles.preparePhotoUpload({ content: overLimit, source: 'bot_upload' }),
+  ];
+  for (const failure of failures) {
+    if (JSON.stringify(failure) !== JSON.stringify(expectedFailure)) {
+      throw new Error(`Expected bot_upload_too_big, received ${JSON.stringify(failure)}`);
+    }
+  }
+
+  // An account uploads through its own client, which the Bot API server's limit does not bind.
+  if (!prepareDocument(overLimit, 'account_upload').prepared) {
+    throw new Error('Expected an account document over 50 MB to be accepted');
+  }
+  const accountPhoto = mediaFiles.preparePhotoUpload({
+    content: overLimit,
+    source: 'account_upload',
+  });
+  if (accountPhoto.prepared || accountPhoto.reason !== 'photo_too_big') {
+    throw new Error(`Expected photo_too_big, received ${JSON.stringify(accountPhoto)}`);
+  }
+});
+
+Deno.test('MediaFileService lets bots of the local profile upload documents over 50 MB', () => {
+  const { mediaFiles } = createMediaFileFixture('local');
+  const overCloudLimit = new Uint8Array(MAX_BOT_UPLOAD_BYTES.cloud + 1);
+
+  const document = mediaFiles.prepareDocumentUpload({
+    content: overCloudLimit,
+    fileName: 'video.mp4',
+    source: 'bot_upload',
+  });
+  if (!document.prepared) {
+    throw new Error(`Expected the document to be accepted, received ${JSON.stringify(document)}`);
+  }
+  // TDLib's photo limit still applies to a local server's bots.
+  const photo = mediaFiles.preparePhotoUpload({ content: overCloudLimit, source: 'bot_upload' });
+  if (photo.prepared || photo.reason !== 'photo_too_big') {
+    throw new Error(`Expected photo_too_big, received ${JSON.stringify(photo)}`);
   }
 });
 
 Deno.test('MediaFileService names documents and derives their MIME type', () => {
   const { mediaFiles } = createMediaFileFixture();
 
-  const document = mediaFiles.prepareDocumentUpload(new Uint8Array([1]), 'Report.PDF');
-  const emptyDocument = mediaFiles.prepareDocumentUpload(new Uint8Array(), 'empty.txt');
+  const document = mediaFiles.prepareDocumentUpload({
+    content: new Uint8Array([1]),
+    fileName: 'Report.PDF',
+    source: 'bot_upload',
+  });
+  const emptyDocument = mediaFiles.prepareDocumentUpload({
+    content: new Uint8Array(),
+    fileName: 'empty.txt',
+    source: 'bot_upload',
+  });
   if (
     !document.prepared || document.upload.fileName !== 'Report.PDF' ||
     document.upload.mimeType !== 'application/pdf' ||
@@ -79,7 +159,12 @@ Deno.test('MediaFileService names documents and derives their MIME type', () => 
 Deno.test('MediaFileService keeps a usable thumbnail and leaves out others, as TDLib does', () => {
   const { mediaFiles } = createMediaFileFixture();
   const withThumbnail = (thumbnailContent: Uint8Array<ArrayBuffer>) =>
-    mediaFiles.prepareDocumentUpload(new Uint8Array([1]), 'report.pdf', thumbnailContent);
+    mediaFiles.prepareDocumentUpload({
+      content: new Uint8Array([1]),
+      fileName: 'report.pdf',
+      thumbnailContent,
+      source: 'bot_upload',
+    });
 
   const document = withThumbnail(gifImage(320, 240));
   if (
@@ -223,9 +308,9 @@ Deno.test('MediaFileService refuses downloads of files larger than 20 MB', () =>
   }
 });
 
-function createMediaFileFixture() {
+function createMediaFileFixture(uploadProfile: UploadProfile = 'cloud') {
   const files = new FileRepository();
-  return { files, mediaFiles: new MediaFileService({ files }) };
+  return { files, mediaFiles: new MediaFileService({ files, uploadProfile }) };
 }
 
 /** The header of a GIF image, which is all the emulator reads of a photo. */

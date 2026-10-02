@@ -120,7 +120,7 @@ export function createEmulationSession(
     supergroupMessages: supergroupMessaging,
     getPrivateForwardName: getAccountPrivateForwardName,
   });
-  const mediaFiles = new MediaFileService({ files });
+  const mediaFiles = new MediaFileService({ files, uploadProfile });
   const botBlocking = new BotBlockingService({
     accounts,
     bots,
