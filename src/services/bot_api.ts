@@ -56,7 +56,7 @@ import {
   type RichMessageButtonAction,
   type RichMessageFileTypes,
 } from '../types/rich_message.ts';
-import type { DocumentUpload, PhotoUpload, StoredFile } from '../types/stored_file.ts';
+import type { StoredFile } from '../types/stored_file.ts';
 import type { BotUploadTooBigFailure } from '../types/upload_profile.ts';
 import { isUserId } from '../types/telegram_identity.ts';
 import type { VirtualBot, VirtualBotProfile } from '../types/virtual_bot.ts';
