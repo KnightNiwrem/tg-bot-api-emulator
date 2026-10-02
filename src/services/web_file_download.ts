@@ -36,8 +36,9 @@ const CONTENT_TOO_BIG: WebFileDownload = { downloaded: false, reason: 'content_t
  * budget, and reads at most the given number of bytes, stopping as soon as the content, or its
  * declared length, is larger. Content shorter than its declared length is truncated and fails.
  *
- * A failed download releases the response it was reading, whether it failed for its content, its
- * time budget, or the caller's signal.
+ * A failed download requests the cancellation of the response it was reading, whether it failed
+ * for its content, its time budget, or the caller's signal, without waiting for the cancellation
+ * to complete.
  */
 export class WebFileDownloader {
   readonly #fetchWebResource: WebResourceFetcher;
@@ -92,12 +93,12 @@ export class WebFileDownloader {
       );
       if (!REDIRECT_STATUSES.has(response.status)) {
         if (!response.ok) {
-          await response.body?.cancel();
+          releaseBody(response);
           return CONTENT_UNAVAILABLE;
         }
         return await readBoundedContent(response, maxContentBytes, signal);
       }
-      await response.body?.cancel();
+      releaseBody(response);
       const location = response.headers.get('Location');
       const nextUrl = location === null ? null : URL.parse(location, currentUrl);
       if (
@@ -126,7 +127,7 @@ export class WebFileDownloader {
         (response) => {
           signal.removeEventListener('abort', rejectForAbort);
           if (signal.aborted) {
-            void response.body?.cancel().catch(() => {});
+            releaseBody(response);
           } else {
             resolve(response);
           }
@@ -155,7 +156,7 @@ async function readBoundedContent(
     ? Number(declaredLengthText)
     : undefined;
   if (declaredLength !== undefined && declaredLength > maxContentBytes) {
-    await response.body?.cancel();
+    releaseBody(response);
     return CONTENT_TOO_BIG;
   }
   if (response.body === null) {
@@ -169,7 +170,7 @@ async function readBoundedContent(
   }
 
   const reader = response.body.getReader();
-  const cancelForAbort = () => void reader.cancel(signal.reason).catch(() => {});
+  const cancelForAbort = () => cancelUnawaited(reader.cancel(signal.reason));
   signal.addEventListener('abort', cancelForAbort, { once: true });
   try {
     const chunks: Uint8Array[] = [];
@@ -184,7 +185,7 @@ async function readBoundedContent(
       }
       contentLength += value.byteLength;
       if (contentLength > maxContentBytes) {
-        await reader.cancel();
+        cancelUnawaited(reader.cancel());
         return CONTENT_TOO_BIG;
       }
       chunks.push(value);
@@ -203,6 +204,25 @@ async function readBoundedContent(
     signal.removeEventListener('abort', cancelForAbort);
     reader.releaseLock();
   }
+}
+
+/**
+ * Requests the cancellation of a response's unread body, as `cancelUnawaited` describes; the
+ * cancellation may never complete.
+ */
+function releaseBody(response: Response): void {
+  if (response.body !== null) {
+    cancelUnawaited(response.body.cancel());
+  }
+}
+
+/**
+ * Takes a stream's cancellation, already requested, without awaiting it and ignoring whether it
+ * fails. A source whose cancellation never settles must not hold the download past its time
+ * budget, and the download's outcome is decided once the cancellation is requested.
+ */
+function cancelUnawaited(cancellation: Promise<void>): void {
+  cancellation.catch(() => {});
 }
 
 /** Reads the lowercase media type of a `Content-Type` header, without its parameters. */
