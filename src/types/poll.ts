@@ -147,7 +147,9 @@ export function getVoterAnswer(poll: Poll, voterId: number): readonly number[] {
 /**
  * Whether an observer sees which options of a quiz are correct, and its explanation: once the quiz
  * is closed, as the bot that sent it, or as an account that answered it, as Telegram's servers
- * give them to TDLib. A regular poll has neither.
+ * give them to TDLib. An account that retracts its answer to a quiz that allows revoting no longer
+ * sees them: TDLib's `get_poll_object` hides them for a retraction, and its `on_get_poll` accepts
+ * servers clearing them only for such a quiz. A regular poll has neither.
  */
 export function showsQuizSolution(poll: Poll, observerId: number): boolean {
   return poll.type.kind === 'quiz' &&

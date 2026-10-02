@@ -244,6 +244,7 @@ Deno.test('normalizeNewPoll checks quizzes as TDLib checks them, then the docume
 });
 
 Deno.test('showsQuizSolution shows a quiz solution to its bot, its voters, and once closed', () => {
+  // A voter that retracts its answer to a quiz that allows revoting no longer sees the solution.
   const polls = new PollRepository();
   const quiz = polls.addPoll({
     ...NEW_POLL,
@@ -254,15 +255,18 @@ Deno.test('showsQuizSolution shows a quiz solution to its bot, its voters, and o
     },
   });
   const answered = polls.setVoterAnswer(quiz.id, 7, [0]);
+  polls.setVoterAnswer(quiz.id, 8, [1]);
+  const retracted = polls.setVoterAnswer(quiz.id, 8, []);
   const closed = polls.closePoll(quiz.id);
   const regular = polls.addPoll(NEW_POLL);
   const observers = [NEW_POLL.creatorBotId, 7, 8];
-  const visibility = [quiz, answered, closed, regular].map((poll) =>
+  const visibility = [quiz, answered, retracted, closed, regular].map((poll) =>
     observers.map((observerId) => showsQuizSolution(poll, observerId))
   );
   if (
     JSON.stringify(visibility) !== JSON.stringify([
       [true, false, false],
+      [true, true, false],
       [true, true, false],
       [true, true, true],
       [false, false, false],
