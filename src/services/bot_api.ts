@@ -2304,6 +2304,7 @@ export class BotApiService {
       ? closingTime.openPeriodSeconds
       : closingTime.closeDateUnixSeconds - now;
     if (
+      !Number.isSafeInteger(openPeriodSeconds) ||
       openPeriodSeconds < MIN_POLL_OPEN_PERIOD_SECONDS ||
       openPeriodSeconds > MAX_POLL_OPEN_PERIOD_SECONDS
     ) {
