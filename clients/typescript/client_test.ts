@@ -880,7 +880,8 @@ Deno.test('TypeScript client sends albums to private chats and supergroups', asy
   });
   const [mixedPhoto, mixedVideo] = mixedAlbum;
   if (
-    mixedAlbum.length !== 2 || mixedPhoto.media_group_id === undefined ||
+    mixedAlbum.length !== 2 || !('photo' in mixedPhoto) ||
+    mixedPhoto.media_group_id === undefined ||
     mixedVideo.media_group_id !== mixedPhoto.media_group_id || mixedVideo.video?.duration !== 3
   ) {
     throw new Error(`Expected a photo and video album, received ${JSON.stringify(mixedAlbum)}`);

@@ -34,7 +34,7 @@ post:
     '400':
       description: >-
         The request or a caption is invalid, a photo is not an image Telegram accepts, a file is
-        empty, the album holds no item or more than 10, mixes documents with photos, or the
+        empty, the album holds no item or more than 10, mixes documents with photos or videos, or the
         replied message is not a message of the chat.
     '403':
       description: The account is not a member of the supergroup.

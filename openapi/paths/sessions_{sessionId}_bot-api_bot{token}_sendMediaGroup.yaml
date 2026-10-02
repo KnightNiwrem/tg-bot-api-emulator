@@ -49,15 +49,16 @@ post:
         downloaded, as for `sendPhoto`, which fails with Telegram's error for the item's
         position (`Bad Request: failed to send message #<position> with the error message
         "WEBPAGE_CURL_FAILED"`, or `"WEBPAGE_MEDIA_EMPTY"` for empty content or content of
-        another type); item by item, an item's file fails as for `sendPhoto` and `sendDocument`,
+        another type); item by item, an item's file fails as for `sendPhoto`, `sendVideo` and
+        `sendDocument`,
         apart from content Telegram's servers refuse, or its normalized caption fails, with a
         caption longer than 1024 characters rejected (`Bad Request: message caption is too
         long`); the album
         holds more than 10 items (`Bad Request:
         too many messages to send as an album`) or none (`Bad Request: there are no messages to
-        send`), its photos place their captions differently (`Bad Request: parameter
+        send`), its photos and videos place their captions differently (`Bad Request: parameter
         show_caption_above_media must be the same for all messages`), or it mixes documents
-        with photos (`Bad Request: document can't be mixed with other media types`); an upload
+        with photos or videos (`Bad Request: document can't be mixed with other media types`); an upload
         Telegram's servers refuse fails with their error for the first such item's position:
         `IMAGE_PROCESS_FAILED`, `PHOTO_INVALID_DIMENSIONS`, or, for the `local` upload profile,
         a file larger than it allows; then the checks of `sendMessage` from the chat on. No
