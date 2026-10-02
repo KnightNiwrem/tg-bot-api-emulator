@@ -348,7 +348,7 @@ function createVirtualAccountClient(
         body: {
           to,
           media: media.map((item) =>
-            'photo' in item
+            item.photo !== undefined
               ? {
                 photo: { content_base64: item.photo.toBase64() },
                 caption: item.caption,

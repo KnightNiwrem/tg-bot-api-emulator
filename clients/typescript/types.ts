@@ -198,12 +198,15 @@ export type AccountMediaGroupItem =
   | {
     /** As `AccountSendPhotoInput` describes it. */
     readonly photo: Uint8Array;
+    readonly document?: never;
+    readonly file_name?: never;
     /** Omitted or empty for no caption. */
     readonly caption?: string;
     /** Formatting of the caption; entity types Telegram detects by itself are ignored. */
     readonly caption_entities?: readonly MessageEntityInput[];
   }
   | {
+    readonly photo?: never;
     readonly document: Uint8Array;
     /** The file name, whose extension decides the document's MIME type. */
     readonly file_name: string;

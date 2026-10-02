@@ -8,12 +8,14 @@ import {
 
 const photo: AlbumMember = { kind: 'photo', showsCaptionAboveMedia: false };
 const document: AlbumMember = { kind: 'document', showsCaptionAboveMedia: false };
+const abovePhoto: AlbumMember = { kind: 'photo', showsCaptionAboveMedia: true };
 
 Deno.test('checkAlbumComposition accepts photos alone and documents alone, up to ten', () => {
   const accepted = [
     [photo],
     [document],
     [photo, photo],
+    Array.from({ length: MAX_ALBUM_MESSAGE_COUNT }, () => abovePhoto),
     Array.from({ length: MAX_ALBUM_MESSAGE_COUNT }, () => document),
   ].map(checkAlbumComposition);
   if (accepted.some((failure) => failure !== undefined)) {
@@ -22,7 +24,6 @@ Deno.test('checkAlbumComposition accepts photos alone and documents alone, up to
 });
 
 Deno.test('checkAlbumComposition refuses albums in the order TDLib checks them', () => {
-  const abovePhoto: AlbumMember = { kind: 'photo', showsCaptionAboveMedia: true };
   const failures = [
     [],
     Array.from({ length: MAX_ALBUM_MESSAGE_COUNT + 1 }, () => photo),

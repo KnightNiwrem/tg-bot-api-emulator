@@ -76,6 +76,7 @@ properties:
   media_group_id:
     type: string
     pattern: '^[1-9]\d*$'
+    maxLength: 19
     description: >-
       The identifier the messages of an album share, as the decimal text of a positive 64-bit
       integer; omitted for a message outside albums. Each album sent gets a new one.

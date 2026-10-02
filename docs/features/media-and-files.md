@@ -112,9 +112,10 @@ larger than it allows. As the official server's [`on_message_send_failed`][album
 reports the first such item with its position and Telegram's error, unchanged. Other file failures,
 such as an empty upload, a photo larger than 10 MB, or an unknown `file_id`, fail as they do for
 `sendPhoto` and `sendDocument`, before the album is checked, as TDLib reads every item's file first.
-As for `sendPhoto`, the emulator downloads files sent by URL once the request's parameters are read,
-before it reads the other items' files, so an album with both an unusable URL and another failing
-file fails for its URL.
+As for `sendPhoto`, the emulator downloads files sent by URL, in the album's order, once the
+request's parameters are read and before it reads the other items' files, so an album with an
+unusable URL fails for its first such URL, whichever item holds it, rather than for an upload or
+`file_id` that fails.
 
 ### Upload profiles
 
