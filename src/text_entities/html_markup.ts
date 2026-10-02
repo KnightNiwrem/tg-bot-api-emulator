@@ -13,12 +13,8 @@ import {
   Utf8MarkupOutput,
 } from './markup_input.ts';
 import { readMarkupDateTimeFormat } from './date_time_format.ts';
-import {
-  getCheckedLink,
-  getLinkUserId,
-  parseCustomEmojiId,
-  toAsciiLowerCase,
-} from './telegram_link.ts';
+import { toAsciiLowerCase } from '../types/http_url.ts';
+import { getCheckedLink, getLinkUserId, parseCustomEmojiId } from './telegram_link.ts';
 import { compareTextEntities } from './text_entity_order.ts';
 
 const AMPERSAND = asciiCode('&');

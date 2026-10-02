@@ -1,15 +1,18 @@
 import { getDocumentMimeType, getFileNameExtension } from '../media/document_file.ts';
 import { readImageDimensions } from '../media/image_dimensions.ts';
+import { formatHttpUrl, getHttpUrlFileName, parseHttpUrl } from '../types/http_url.ts';
 import {
   type DocumentUpload,
   MAX_BOT_DOWNLOAD_FILE_BYTES,
   MAX_PHOTO_UPLOAD_BYTES,
   MAX_THUMBNAIL_UPLOAD_BYTES,
+  MAX_WEB_FILE_BYTES,
   type PhotoImageFormat,
   type PhotoUpload,
   type StoredFile,
   type StoredFileId,
   type ThumbnailUpload,
+  type WebFile,
 } from '../types/stored_file.ts';
 import {
   type BotUploadTooBigFailure,
@@ -17,6 +20,7 @@ import {
   IS_BOT_UPLOAD_LIMIT_CHECKED_BEFORE_TDLIB,
   type UploadProfile,
 } from '../types/upload_profile.ts';
+import type { WebFileDownload } from './web_file_download.ts';
 
 /** Telegram rejects a photo whose width and height add up to more than this. */
 const MAX_PHOTO_DIMENSION_SUM = 10_000;
@@ -40,10 +44,39 @@ const PHOTO_FILE_EXTENSIONS: Readonly<Record<PhotoImageFormat, string>> = {
 };
 
 /**
- * Who uploaded new file content, which decides the size limits it must meet: a bot, through the
- * session's Bot API server, or an account, through its own Telegram client.
+ * Where new file content comes from, which decides the size limits it must meet: a bot's upload,
+ * through the session's Bot API server; an account's upload, through its own Telegram client; or
+ * Telegram's download of a URL a bot sent, which `downloadWebFile` limits as it reads.
  */
-export type UploadSource = 'bot_upload' | 'account_upload';
+export type UploadSource = 'bot_upload' | 'account_upload' | 'web_download';
+
+/** Media types of files that Telegram sends by URL as documents: PDF and ZIP files only. */
+const WEB_DOCUMENT_MEDIA_TYPES: ReadonlySet<string> = new Set([
+  'application/pdf',
+  'application/zip',
+]);
+
+/** Downloads the file at a URL, as `WebFileDownloader` does. */
+interface WebFileSource {
+  download(url: string, maxContentBytes: number, signal?: AbortSignal): Promise<WebFileDownload>;
+}
+
+export interface WebFileDownloadRequest {
+  /** The URL as the bot sent it. */
+  readonly url: string;
+  /** What the bot sends the file as, which decides how large it may be and of which types. */
+  readonly fileKind: 'photo' | 'document';
+  /** Aborts the download when the bot stops waiting for the answer. */
+  readonly signal?: AbortSignal;
+}
+
+export type WebFileDownloadResult =
+  | { readonly downloaded: true; readonly webFile: WebFile }
+  | { readonly downloaded: false; readonly reason: 'file_url_invalid'; readonly urlError: string }
+  | {
+    readonly downloaded: false;
+    readonly reason: 'web_content_unavailable' | 'web_content_type_invalid';
+  };
 
 /** An uploaded file is too large for a photo. */
 export interface PhotoTooBigFailure {
@@ -71,8 +104,10 @@ export interface PhotoUploadRequest {
 
 export interface DocumentUploadRequest {
   readonly content: Uint8Array<ArrayBuffer>;
-  /** The nonempty name to send the document under, whose extension decides its MIME type. */
+  /** The nonempty name to send the document under. */
   readonly fileName: string;
+  /** The document's MIME type; omitted for the one its file name's extension decides. */
+  readonly mimeType?: string;
   /** The content of the thumbnail uploaded with the document; omitted for none. */
   readonly thumbnailContent?: Uint8Array<ArrayBuffer>;
   readonly source: UploadSource;
@@ -103,6 +138,8 @@ interface MediaFileServiceDependencies {
   readonly files: FileStore;
   /** The upload profile of the session, which decides how large a file its bots may upload. */
   readonly uploadProfile: UploadProfile;
+  /** Downloads the files bots send by URL from the session's emulated web. */
+  readonly webFiles: WebFileSource;
 }
 
 /**
@@ -114,10 +151,49 @@ interface MediaFileServiceDependencies {
 export class MediaFileService {
   readonly #files: FileStore;
   readonly #uploadProfile: UploadProfile;
+  readonly #webFiles: WebFileSource;
 
-  constructor({ files, uploadProfile }: MediaFileServiceDependencies) {
+  constructor({ files, uploadProfile, webFiles }: MediaFileServiceDependencies) {
     this.#files = files;
     this.#uploadProfile = uploadProfile;
+    this.#webFiles = webFiles;
+  }
+
+  /**
+   * Downloads a file that a bot sends by URL, as Telegram does before it sends the file. The URL
+   * is read as TDLib's `parse_url` reads it. A photo may be at most 5 MB and must be served as an
+   * image. A document may be at most 20 MB and must be served as a PDF or ZIP file, the only kinds
+   * Telegram documents for URLs; its content is not inspected. Content that cannot be downloaded,
+   * including larger content, fails as Telegram's `WEBPAGE_CURL_FAILED`, and empty content or
+   * content of another type as its `WEBPAGE_MEDIA_EMPTY`.
+   */
+  async downloadWebFile(
+    { url, fileKind, signal }: WebFileDownloadRequest,
+  ): Promise<WebFileDownloadResult> {
+    const parsing = parseHttpUrl(url);
+    if (!parsing.parsed) {
+      return { downloaded: false, reason: 'file_url_invalid', urlError: parsing.error };
+    }
+    const download = await this.#webFiles.download(
+      formatHttpUrl(parsing.url),
+      MAX_WEB_FILE_BYTES[fileKind],
+      signal,
+    );
+    if (!download.downloaded) {
+      return { downloaded: false, reason: 'web_content_unavailable' };
+    }
+    const { content, mediaType } = download;
+    const hasAcceptedType = mediaType !== undefined &&
+      (fileKind === 'photo'
+        ? mediaType.startsWith('image/')
+        : WEB_DOCUMENT_MEDIA_TYPES.has(mediaType));
+    if (content.length === 0 || !hasAcceptedType) {
+      return { downloaded: false, reason: 'web_content_type_invalid' };
+    }
+    return {
+      downloaded: true,
+      webFile: { content, mediaType, fileName: getHttpUrlFileName(parsing.url) },
+    };
   }
 
   /**
@@ -167,7 +243,7 @@ export class MediaFileService {
    * image the emulator cannot read.
    */
   prepareDocumentUpload(
-    { content, fileName, thumbnailContent, source }: DocumentUploadRequest,
+    { content, fileName, mimeType, thumbnailContent, source }: DocumentUploadRequest,
   ): DocumentUploadPreparation {
     if (content.length === 0) {
       return { prepared: false, reason: 'file_empty' };
@@ -185,7 +261,7 @@ export class MediaFileService {
         type: 'document',
         content,
         fileName,
-        mimeType: getDocumentMimeType(fileName),
+        mimeType: mimeType ?? getDocumentMimeType(fileName),
         ...(thumbnail === undefined ? {} : { thumbnail }),
       },
     };
@@ -235,7 +311,7 @@ export class MediaFileService {
    * Checks the size of new file content against the limit of its source. A bot's upload must fit
    * its session's upload profile. An account's upload meets no such limit: a user's own client
    * uploads files of up to 2000 MB, or 4000 MB with Telegram Premium, which base64 fixtures in
-   * JSON requests are not meant to reach.
+   * JSON requests are not meant to reach. A downloaded file met its limit as it was read.
    */
   #checkUploadSize(
     content: Uint8Array<ArrayBuffer>,

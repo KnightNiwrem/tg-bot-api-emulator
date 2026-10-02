@@ -1,18 +1,22 @@
 import type { EmulationSession } from '../../../types/emulation_session.ts';
 import type { BotApiUploadedFiles } from './request_parameters.ts';
 
-type BotApiInputFile = Parameters<EmulationSession['botApi']['sendPhoto']>[1]['photo'];
+export type BotApiInputFile = Parameters<EmulationSession['botApi']['sendPhoto']>[1]['photo'];
 
-/** The emulator's description for a file sent by URL, which Telegram downloads itself. */
-export const FILE_URL_UNSUPPORTED_DESCRIPTION =
-  'Bad Request: sending files by URL is not supported';
+/**
+ * A file as a request names it: a `file_id`, an uploaded part, or an HTTP URL, which Telegram
+ * downloads before it sends the file, as `resolveRequestedInputFile` does.
+ */
+export type RequestedInputFile =
+  | Exclude<BotApiInputFile, { readonly kind: 'web_file' }>
+  | { readonly kind: 'url'; readonly url: string };
 
 /** The prefix of a parameter value that names the multipart part carrying the file. */
 const ATTACHED_FILE_PREFIX = 'attach://';
 
 export type InputFileParameterReading =
-  | { readonly read: true; readonly inputFile: BotApiInputFile }
-  | { readonly read: false; readonly reason: 'file_missing' | 'url_unsupported' };
+  | { readonly read: true; readonly inputFile: RequestedInputFile }
+  | { readonly read: false; readonly reason: 'file_missing' };
 
 /**
  * Reads the file a method sends from its parameter, as the official Bot API server's
@@ -20,8 +24,7 @@ export type InputFileParameterReading =
  * text is a `file_id` or an HTTP URL, and without the parameter the file is the uploaded part
  * named after the parameter.
  *
- * As TDLib does, text with a dot is taken for a URL, which `file_id` values never contain. Telegram
- * downloads a file from a URL itself; the emulator does not.
+ * As TDLib does, text with a dot is taken for a URL, which `file_id` values never contain.
  */
 export function readInputFileParameter(
   parameterName: string,
@@ -37,9 +40,12 @@ export function readInputFileParameter(
       ? { read: false, reason: 'file_missing' }
       : { read: true, inputFile: { kind: 'upload', ...uploadedFile } };
   }
-  return value.includes('.')
-    ? { read: false, reason: 'url_unsupported' }
-    : { read: true, inputFile: { kind: 'file_id', fileId: value } };
+  return {
+    read: true,
+    inputFile: value.includes('.')
+      ? { kind: 'url', url: value }
+      : { kind: 'file_id', fileId: value },
+  };
 }
 
 /** The parameters that name a document's thumbnail: the current name, then the legacy one. */

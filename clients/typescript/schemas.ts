@@ -29,6 +29,7 @@ import type {
   SupergroupMessage,
   VirtualAccountProfile,
   VirtualBotProfile,
+  WebResource,
 } from './types.ts';
 
 interface CreatedVirtualAccountResponse {
@@ -78,6 +79,14 @@ export const emulationSessionSchema: z.ZodType<EmulationSession> = z.strictObjec
 export const createdVirtualBotSchema: z.ZodType<CreatedVirtualBot> = z.strictObject({
   token: z.string().min(1),
   bot: virtualBotProfileSchema,
+});
+
+export const webResourceSchema: z.ZodType<WebResource> = z.strictObject({
+  url: z.url({ protocol: /^https?$/ }),
+  status: z.int().min(200).max(599),
+  content_type: z.string().min(1).optional(),
+  location: z.string().min(1).optional(),
+  content_length: z.int().nonnegative(),
 });
 
 export const rateLimitResponsesSchema: z.ZodType<RateLimitResponses> = z.strictObject({

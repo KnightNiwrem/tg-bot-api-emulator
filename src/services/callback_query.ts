@@ -1,4 +1,5 @@
-import { getLinkBotStart, toAsciiLowerCase } from '../text_entities/telegram_link.ts';
+import { getLinkBotStart } from '../text_entities/telegram_link.ts';
+import { toAsciiLowerCase } from '../types/http_url.ts';
 import type {
   CallbackQuery,
   CallbackQueryAnswer,

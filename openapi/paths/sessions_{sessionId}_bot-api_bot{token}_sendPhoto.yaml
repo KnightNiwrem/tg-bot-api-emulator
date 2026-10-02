@@ -3,8 +3,10 @@ description: >-
   uploaded with the request, or a photo the bot knows by its `file_id`, which, as on Telegram,
   is the bot's own. The emulator reads the dimensions of JPEG, PNG, GIF, WebP, and BMP images
   and keeps the photo in the one size and format it was sent in, whereas Telegram converts a
-  photo to JPEG in several sizes and accepts other image formats too. Files sent by URL are not
-  supported. The caption is read, formatted, and normalized as `sendMessage` reads text, and
+  photo to JPEG in several sizes and accepts other image formats too. A photo sent by HTTP URL is
+  downloaded, as Telegram downloads it, from the resources registered with `POST
+  /sessions/{sessionId}/web-resources`; it may be at most 5 MB (5242880 bytes) and must be served as an image.
+  The caption is read, formatted, and normalized as `sendMessage` reads text, and
   the other parameters work as for `sendMessage`.
 parameters:
   - $ref: ../components/parameters/SessionId.yaml
@@ -53,8 +55,13 @@ post:
         (`Bad Request: can't use file of type Document as Photo`); then the checks of
         `sendMessage` from the chat on, with a caption longer than 1024 characters rejected
         (`Bad Request: message caption is too long`). Telegram checks the chat before the file.
-        Files sent by URL are not supported (`Bad Request: sending files by URL is not
-        supported`).
+        A photo sent by URL fails, after the caption and other parameters are read and before the
+        chat, when its URL is not one TDLib reads (`Bad Request: invalid file HTTP URL specified:
+        <reason>`), when it cannot be downloaded within its 5242880-byte limit, including from a URL no
+        resource is registered for (`Bad Request: failed to get HTTP URL content`), or when it is
+        empty or not served as an image (`Bad Request: wrong type of the web page content`). A
+        downloaded photo is then checked as an uploaded one, failing with `Bad Request:
+        IMAGE_PROCESS_FAILED` or `Bad Request: PHOTO_INVALID_DIMENSIONS`.
       content:
         application/json:
           schema:

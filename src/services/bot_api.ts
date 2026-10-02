@@ -56,7 +56,7 @@ import {
   type RichMessageButtonAction,
   type RichMessageFileTypes,
 } from '../types/rich_message.ts';
-import type { StoredFile } from '../types/stored_file.ts';
+import type { StoredFile, WebFile } from '../types/stored_file.ts';
 import type { BotUploadTooBigFailure } from '../types/upload_profile.ts';
 import { isUserId } from '../types/telegram_identity.ts';
 import type { VirtualBot, VirtualBotProfile } from '../types/virtual_bot.ts';
@@ -240,8 +240,8 @@ type OutgoingReply =
 export type SendMessageRequest = SpecifiedFormattedText & SendRequestOptions;
 
 /**
- * A file a request sends: one the bot knows by its `file_id`, or a file uploaded with the request
- * under the name its sender gave it.
+ * A file a request sends: one the bot knows by its `file_id`, a file uploaded with the request
+ * under the name its sender gave it, or a file Telegram downloaded from the URL the bot sent.
  */
 export type BotApiInputFile =
   | { readonly kind: 'file_id'; readonly fileId: string }
@@ -249,7 +249,8 @@ export type BotApiInputFile =
     readonly kind: 'upload';
     readonly fileName: string;
     readonly content: Uint8Array<ArrayBuffer>;
-  };
+  }
+  | { readonly kind: 'web_file'; readonly webFile: WebFile };
 
 export type SendPhotoRequest = SendRequestOptions & {
   readonly photo: BotApiInputFile;
@@ -2321,7 +2322,10 @@ export class BotApiService {
     }
   }
 
-  /** Resolves the photo a request sends: an upload, or a photo the bot knows by `file_id`. */
+  /**
+   * Resolves the photo a request sends: an upload, a photo the bot knows by `file_id`, or an image
+   * downloaded from a URL, which is checked as an upload is.
+   */
   #resolvePhoto(authenticatedBot: VirtualBotProfile, input: BotApiInputFile): FileResolution<
     OutgoingPhoto
   > {
@@ -2332,10 +2336,11 @@ export class BotApiService {
       }
       return { resolved: false, failure: fileIdFailure(file, 'photo') };
     }
-    const preparation = this.#mediaFiles.preparePhotoUpload({
-      content: input.content,
-      source: 'bot_upload',
-    });
+    const preparation = this.#mediaFiles.preparePhotoUpload(
+      input.kind === 'upload'
+        ? { content: input.content, source: 'bot_upload' }
+        : { content: input.webFile.content, source: 'web_download' },
+    );
     return preparation.prepared
       ? { resolved: true, file: { kind: 'upload', upload: preparation.upload } }
       : { resolved: false, failure: uploadPreparationFailure(preparation) };
@@ -2343,8 +2348,10 @@ export class BotApiService {
 
   /**
    * Resolves the document a request sends: an upload, whose name the Bot API server cleans, with
-   * the thumbnail uploaded for it, or a document the bot knows by `file_id`, which keeps its own
-   * thumbnail.
+   * the thumbnail uploaded for it; a document the bot knows by `file_id`, which keeps its own
+   * thumbnail; or a file downloaded from a URL, named after the URL and typed as it was served.
+   * TDLib sends a URL document as `inputMediaDocumentExternal`, which takes no thumbnail, so an
+   * uploaded thumbnail is left out.
    */
   #resolveDocument(
     authenticatedBot: VirtualBotProfile,
@@ -2358,12 +2365,21 @@ export class BotApiService {
       }
       return { resolved: false, failure: fileIdFailure(file, 'document') };
     }
-    const preparation = this.#mediaFiles.prepareDocumentUpload({
-      content: input.content,
-      fileName: cleanUploadedFileName(input.fileName),
-      ...(thumbnailContent === undefined ? {} : { thumbnailContent }),
-      source: 'bot_upload',
-    });
+    const preparation = this.#mediaFiles.prepareDocumentUpload(
+      input.kind === 'upload'
+        ? {
+          content: input.content,
+          fileName: cleanUploadedFileName(input.fileName),
+          ...(thumbnailContent === undefined ? {} : { thumbnailContent }),
+          source: 'bot_upload',
+        }
+        : {
+          content: input.webFile.content,
+          fileName: cleanUploadedFileName(input.webFile.fileName),
+          mimeType: input.webFile.mediaType,
+          source: 'web_download',
+        },
+    );
     return preparation.prepared
       ? { resolved: true, file: { kind: 'upload', upload: preparation.upload } }
       : { resolved: false, failure: uploadPreparationFailure(preparation) };

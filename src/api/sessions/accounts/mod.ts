@@ -38,6 +38,7 @@ import {
   getMessageNotification,
   MAX_TEXT_MESSAGE_LENGTH,
 } from '../../../types/virtual_message.ts';
+import { base64ContentSchema } from '../base64_content.ts';
 import { readMessageEntitiesParameter } from '../bot_api/message_entities_parameter.ts';
 import { readJsonRequestBody } from '../json_request_body.ts';
 import type { SessionRouteContextTypes } from '../session_route_context_types.ts';
@@ -143,15 +144,6 @@ const createAccountRequestSchema = z.strictObject({
 });
 
 /** A file's content, which JSON carries as base64 text. */
-const base64ContentSchema = z.string().transform((base64Text, context) => {
-  try {
-    return Uint8Array.fromBase64(base64Text);
-  } catch {
-    context.issues.push({ code: 'custom', message: 'Expected base64 text', input: base64Text });
-    return z.NEVER;
-  }
-});
-
 const sentMessageTargetShape = {
   to: chatSchema,
   /** The replied message's ID as the chat's bots see it, which is how these routes show messages. */

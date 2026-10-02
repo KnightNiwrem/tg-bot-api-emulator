@@ -21,6 +21,7 @@ import { MessageRepository } from '../repositories/message.ts';
 import { PrivateConversationRepository } from '../repositories/private_conversation.ts';
 import { SharedChatRepository } from '../repositories/shared_chat.ts';
 import { TelegramIdentityRepository } from '../repositories/telegram_identity.ts';
+import { WebResourceRepository } from '../repositories/web_resource.ts';
 import { MessageBoxRepository } from '../repositories/message_box.ts';
 import { BotActivityService } from '../services/bot_activity.ts';
 import { BotApiService } from '../services/bot_api.ts';
@@ -47,6 +48,12 @@ import { PrivateMessagingService } from '../services/private_messaging.ts';
 import { SharedChatAdministrationService } from '../services/shared_chat_administration.ts';
 import { SupergroupMessagingService } from '../services/supergroup_messaging.ts';
 import { VirtualUserService } from '../services/virtual_user.ts';
+import {
+  MAX_WEB_FILE_REDIRECTS,
+  WEB_FILE_DOWNLOAD_TIMEOUT_MILLISECONDS,
+  WebFileDownloader,
+} from '../services/web_file_download.ts';
+import { WebResourceService } from '../services/web_resource.ts';
 
 export function createEmulationSession(
   id: string,
@@ -120,7 +127,16 @@ export function createEmulationSession(
     supergroupMessages: supergroupMessaging,
     getPrivateForwardName: getAccountPrivateForwardName,
   });
-  const mediaFiles = new MediaFileService({ files, uploadProfile });
+  const webResources = new WebResourceService({ webResources: new WebResourceRepository() });
+  const mediaFiles = new MediaFileService({
+    files,
+    uploadProfile,
+    webFiles: new WebFileDownloader({
+      fetchWebResource: (request) => webResources.fetchWebResource(request),
+      timeoutMilliseconds: WEB_FILE_DOWNLOAD_TIMEOUT_MILLISECONDS,
+      maxRedirects: MAX_WEB_FILE_REDIRECTS,
+    }),
+  });
   const botBlocking = new BotBlockingService({
     accounts,
     bots,
@@ -245,6 +261,7 @@ export function createEmulationSession(
     chatActions,
     botMessageViews,
     mediaFiles,
+    webResources,
     botRateLimits,
     botApi,
     botActivity,

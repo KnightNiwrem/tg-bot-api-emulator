@@ -1,14 +1,15 @@
 import { MAX_START_PARAMETER_LENGTH } from '../types/inline_query.ts';
 import { MAX_TELEGRAM_USER_ID, MIN_TELEGRAM_USER_ID } from '../types/telegram_identity.ts';
 import type { DateTimeFormat } from '../types/virtual_message.ts';
+import { formatHttpUrl, parseHttpUrl, toAsciiLowerCase } from '../types/http_url.ts';
 import { readMarkupDateTimeFormat } from './date_time_format.ts';
 
 /**
  * Link rules that Telegram applies to text links and bot start links, mirroring
  * `LinkManager::check_link`, `LinkManager::get_link_user_id`,
  * `LinkManager::get_link_custom_emoji_id`, `LinkManager::get_link_formatted_date`, and the parsing
- * of bot start links in TDLib's `td/telegram/LinkManager.cpp`, and `parse_url` in
- * `tdutils/td/utils/HttpUrl.cpp`.
+ * of bot start links in TDLib's `td/telegram/LinkManager.cpp`; URLs are read as `parseHttpUrl`
+ * reads them.
  *
  * Failures carry TDLib's own error message, which callers wrap as Telegram does.
  */
@@ -21,14 +22,6 @@ type LinkScheme = 'tg' | 'ton' | 'tonsite';
 
 const LINK_SCHEMES: readonly LinkScheme[] = ['tg', 'ton', 'tonsite'];
 
-/** Characters that end the protocol part of a URL in TDLib's `parse_url`. */
-const PROTOCOL_TERMINATORS = ':/?#@[]';
-/** Characters that end the user information, host, and port part of a URL. */
-const AUTHORITY_TERMINATORS = '/?#';
-/** Punctuation that RFC 7230 and RFC 3986 allow in a URL host or user information. */
-const URL_PART_PUNCTUATION = ".-_!$,~*'();&+=";
-
-const MAX_PORT = 65_535;
 const INT64_MIN = -(2n ** 63n);
 const INT64_MAX = 2n ** 63n - 1n;
 const INT32_MAX = 2n ** 31n - 1n;
@@ -211,11 +204,6 @@ export function parseCustomEmojiId(text: string): string | undefined {
   return customEmojiId === undefined || customEmojiId === 0n ? undefined : customEmojiId.toString();
 }
 
-/** Lowercases ASCII letters only, as TDLib's `to_lower` does. */
-export function toAsciiLowerCase(text: string): string {
-  return text.replace(/[A-Z]/g, (letter) => letter.toLowerCase());
-}
-
 /**
  * Reads a signed 64-bit integer that `to_integer_safe` accepts: its decimal text must round-trip,
  * so a plus sign, leading zeros, and `-0` are rejected.
@@ -312,145 +300,7 @@ function checkLinkWithoutContext(link: string, httpsOnly: boolean): LinkCheck {
   if (!url.host.includes('.') && !url.isIpv6) {
     return { valid: false, error: 'Wrong HTTP URL' };
   }
-  const userinfo = url.userinfo.length === 0 ? '' : `${url.userinfo}@`;
-  const port = url.specifiedPort > 0 ? `:${url.specifiedPort}` : '';
-  return { valid: true, url: `${url.protocol}://${userinfo}${url.host}${port}${url.query}` };
-}
-
-interface HttpUrl {
-  readonly protocol: 'http' | 'https';
-  readonly userinfo: string;
-  /** Lowercased. */
-  readonly host: string;
-  readonly isIpv6: boolean;
-  /** 0 when the URL names no port. */
-  readonly specifiedPort: number;
-  /** The path, query, and fragment; always begins with `/`. */
-  readonly query: string;
-}
-
-type HttpUrlParsing =
-  | { readonly parsed: true; readonly url: HttpUrl }
-  | { readonly parsed: false; readonly error: string };
-
-/** Mirrors TDLib's `parse_url` with HTTP as the default protocol. */
-function parseHttpUrl(url: string): HttpUrlParsing {
-  let position = 0;
-  const protocolText = toAsciiLowerCase(readUntil(url, position, PROTOCOL_TERMINATORS));
-  let protocol: HttpUrl['protocol'] = 'http';
-  if (url.startsWith('://', protocolText.length)) {
-    if (protocolText !== 'http' && protocolText !== 'https') {
-      return { parsed: false, error: 'Unsupported URL protocol' };
-    }
-    protocol = protocolText;
-    position = protocolText.length + '://'.length;
-  }
-
-  const authority = readUntil(url, position, AUTHORITY_TERMINATORS);
-  position += authority.length;
-
-  let colonIndex = authority.length - 1;
-  while (colonIndex > 0 && !':]@'.includes(authority[colonIndex])) {
-    colonIndex--;
-  }
-  let port = 0;
-  let userinfoAndHost = authority;
-  if (colonIndex > 0 && authority[colonIndex] === ':') {
-    let portText = authority.slice(colonIndex + 1);
-    while (portText.length > 1 && portText[0] === '0') {
-      portText = portText.slice(1);
-    }
-    const parsedPort = /^\d+$/.test(portText) && String(Number(portText)) === portText
-      ? Number(portText)
-      : 0;
-    port = parsedPort === 0 ? -1 : parsedPort;
-    userinfoAndHost = authority.slice(0, colonIndex);
-  }
-  if (port < 0 || port > MAX_PORT) {
-    return { parsed: false, error: 'Wrong port number specified in the URL' };
-  }
-
-  const atIndex = userinfoAndHost.lastIndexOf('@');
-  const userinfo = atIndex === -1 ? '' : userinfoAndHost.slice(0, atIndex);
-  const host = userinfoAndHost.slice(atIndex + 1);
-
-  const isIpv6 = host.length > 0 && host[0] === '[' && host.endsWith(']');
-  if (isIpv6 && !URL.canParse(`http://${host}/`)) {
-    return { parsed: false, error: 'Wrong IPv6 address specified in the URL' };
-  }
-  if (host.length === 0) {
-    return { parsed: false, error: 'URL host is empty' };
-  }
-  if (host === '.') {
-    return { parsed: false, error: 'Host is invalid' };
-  }
-
-  let rawQuery = url.slice(position);
-  while (rawQuery.length > 0 && isTdlibSpace(rawQuery[rawQuery.length - 1])) {
-    rawQuery = rawQuery.slice(0, -1);
-  }
-  if (rawQuery.length === 0) {
-    rawQuery = '/';
-  }
-  let query = rawQuery[0] === '/' ? '' : '/';
-  for (const character of rawQuery) {
-    const codePoint = character.codePointAt(0) ?? 0;
-    query += codePoint <= 0x20
-      ? `%${codePoint.toString(16).toUpperCase().padStart(2, '0')}`
-      : character;
-  }
-
-  const lowerCasedHost = toAsciiLowerCase(host);
-  if (isIpv6) {
-    if (!/^[:0-9a-f.]*$/.test(lowerCasedHost.slice(1, -1))) {
-      return { parsed: false, error: 'Wrong IPv6 URL host' };
-    }
-  } else {
-    const partError = checkUrlPart(lowerCasedHost, 'host', false) ??
-      checkUrlPart(userinfo, 'userinfo', true);
-    if (partError !== undefined) {
-      return { parsed: false, error: partError };
-    }
-  }
-
-  return {
-    parsed: true,
-    url: { protocol, userinfo, host: lowerCasedHost, isIpv6, specifiedPort: port, query },
-  };
-}
-
-/** Returns TDLib's error for a character a URL host or user information may not contain. */
-function checkUrlPart(part: string, name: string, allowColon: boolean): string | undefined {
-  for (let index = 0; index < part.length; index++) {
-    const character = part[index];
-    if (
-      isAsciiAlphanumeric(character) || URL_PART_PUNCTUATION.includes(character) ||
-      (allowColon && character === ':')
-    ) {
-      continue;
-    }
-    if (character === '%') {
-      if (isAsciiHexDigit(part[index + 1]) && isAsciiHexDigit(part[index + 2])) {
-        index += 2;
-        continue;
-      }
-      return `Wrong percent-encoded symbol in URL ${name}`;
-    }
-    // Plain Unicode characters are allowed.
-    if (character.charCodeAt(0) >= 0x80) {
-      continue;
-    }
-    return `Disallowed character in URL ${name}`;
-  }
-  return undefined;
-}
-
-function readUntil(text: string, start: number, terminators: string): string {
-  let end = start;
-  while (end < text.length && !terminators.includes(text[end])) {
-    end++;
-  }
-  return text.slice(start, end);
+  return { valid: true, url: formatHttpUrl(url) };
 }
 
 function removePrefix(text: string, prefix: string): string {
@@ -464,13 +314,4 @@ function truncateAt(text: string, terminator: string): string {
 
 function isAsciiAlphanumeric(character: string | undefined): boolean {
   return character !== undefined && /^[A-Za-z0-9]$/.test(character);
-}
-
-function isAsciiHexDigit(character: string | undefined): boolean {
-  return character !== undefined && /^[0-9A-Fa-f]$/.test(character);
-}
-
-/** TDLib's `is_space`, which also counts NUL and vertical tab. */
-function isTdlibSpace(character: string): boolean {
-  return ' \t\r\n\0\v'.includes(character);
 }

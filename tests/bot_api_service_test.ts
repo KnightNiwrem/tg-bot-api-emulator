@@ -246,7 +246,13 @@ function createBotApiFixture() {
     supergroupBotMessages: supergroupMessaging,
     chatMemberships: sharedChatAdministration,
     botMessageViews,
-    mediaFiles: new MediaFileService({ files, uploadProfile: 'cloud' }),
+    mediaFiles: new MediaFileService({
+      files,
+      uploadProfile: 'cloud',
+      webFiles: {
+        download: () => Promise.resolve({ downloaded: false, reason: 'content_unavailable' }),
+      },
+    }),
     callbackQueries,
     inlineQueries: new InlineQueryService({
       accounts,

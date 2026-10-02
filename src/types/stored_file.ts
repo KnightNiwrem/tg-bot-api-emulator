@@ -12,6 +12,28 @@ export const MAX_BOT_DOWNLOAD_FILE_BYTES = 20 * 1024 * 1024;
 /** TDLib refuses to upload a larger file as a photo, for bots and user accounts alike. */
 export const MAX_PHOTO_UPLOAD_BYTES = 10 * 1024 * 1024;
 
+/**
+ * Telegram downloads a file that a bot sends by URL only up to these sizes: 5 MB for a photo and
+ * 20 MB for any other file, whatever the session's upload profile, since Telegram's own servers
+ * download it. As for uploads, the documented figures are read in binary megabytes.
+ */
+export const MAX_WEB_FILE_BYTES: Readonly<Record<'photo' | 'document', number>> = {
+  photo: 5 * 1024 * 1024,
+  document: 20 * 1024 * 1024,
+};
+
+/**
+ * A file that Telegram downloaded from the URL a bot sent it by, before it is stored as a photo or
+ * document.
+ */
+export interface WebFile {
+  readonly content: Uint8Array<ArrayBuffer>;
+  /** The lowercase media type of the response's `Content-Type`, without its parameters. */
+  readonly mediaType: string;
+  /** The last segment of the URL's path, which may be empty. */
+  readonly fileName: string;
+}
+
 /** Image formats whose dimensions the emulator reads, which it accepts as photos. */
 export type PhotoImageFormat = 'jpeg' | 'png' | 'gif' | 'webp' | 'bmp';
 
@@ -45,7 +67,10 @@ export interface DocumentUpload {
   readonly content: Uint8Array<ArrayBuffer>;
   /** The file name as Telegram shows it, which is never empty. */
   readonly fileName: string;
-  /** The MIME type Telegram derives from the file name's extension. */
+  /**
+   * The document's MIME type: for an upload, the one Telegram derives from the file name's
+   * extension; for a file sent by URL, the media type it was served as, whatever its name.
+   */
   readonly mimeType: string;
   /** Omitted for a document sent without a usable thumbnail. */
   readonly thumbnail?: ThumbnailUpload;
