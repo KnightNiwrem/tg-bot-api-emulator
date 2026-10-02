@@ -58,12 +58,11 @@ post:
         too many messages to send as an album`) or none (`Bad Request: there are no messages to
         send`), its photos and videos place their captions differently (`Bad Request: parameter
         show_caption_above_media must be the same for all messages`), or it mixes documents
-        with photos or videos (`Bad Request: document can't be mixed with other media types`); an upload
-        Telegram's servers refuse fails with their error for the first such item's position:
-        `IMAGE_PROCESS_FAILED`, `PHOTO_INVALID_DIMENSIONS`, or, for the `local` upload profile,
-        a file larger than it allows; then the checks of `sendMessage` from the chat on. No
-        message is sent unless every check passes. Telegram checks the chat before
-        the files.
+        with photos or videos (`Bad Request: document can't be mixed with other media types`);
+        an upload Telegram's servers refuse fails with their error for the first such item's
+        position: `IMAGE_PROCESS_FAILED`, `PHOTO_INVALID_DIMENSIONS`, or, for the `local` upload
+        profile, a file larger than it allows; then the checks of `sendMessage` from the chat on.
+        No message is sent unless every check passes. Telegram checks the chat before the files.
       content:
         application/json:
           schema:
