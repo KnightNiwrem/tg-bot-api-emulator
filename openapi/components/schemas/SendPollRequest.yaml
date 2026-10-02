@@ -17,6 +17,7 @@ properties:
       supergroup.
   question:
     type: string
+    minLength: 1
     description: >-
       The question, normalized as message text is, which must keep 1–300 characters. As
       Telegram keeps them, only custom emoji remain of its formatting.
@@ -29,6 +30,8 @@ properties:
       $ref: ./MessageEntityParameter.yaml
   options:
     type: array
+    minItems: 1
+    maxItems: 12
     description: >-
       The answer options, 1–12, in the order clients show them. `null` holds none, which
       Telegram refuses.

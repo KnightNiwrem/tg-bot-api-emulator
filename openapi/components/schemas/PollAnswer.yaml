@@ -11,6 +11,7 @@ properties:
   poll_id:
     type: string
     pattern: '^[1-9]\d*$'
+    maxLength: 19
   option_ids:
     type: array
     description: The chosen options' positions, counted from 0, in increasing order.
