@@ -265,6 +265,7 @@ function createBotApiFixture() {
       currentTimeMilliseconds: () => 1_700_000_000_000,
     }),
     inlineMessages: messages,
+    mediaGroups: messages,
     botCommands: new BotCommandService({
       accounts,
       bots,

@@ -42,6 +42,7 @@ import type {
 } from '../types/stored_file.ts';
 import {
   type ChatMessage,
+  type ContentMessage,
   countTextCharacters,
   type DocumentMessageContent,
   type FormattedText,
@@ -502,22 +503,26 @@ export function replaceMessageCaption(
  * them, as TDLib's `edit_message_media` does: the old caption goes with the old content, so new
  * media without a caption has none. As TDLib's `can_edit_message_media` allows, the old content
  * may be any content the emulator has: a photo or a document, whose media is replaced, or text or
- * a rich message, which becomes media.
+ * a rich message, which becomes media. As that method checks once the new caption is read, a
+ * message of an album keeps its kind of media, since documents form albums only with documents.
  */
 export function replaceMessageMedia(
-  content: MessageContent,
+  { content, mediaGroupId }: Pick<ContentMessage, 'content' | 'mediaGroupId'>,
   media: MediaContent,
   context: FormattedTextFixingContext,
-): ContentReplacement<'caption_too_long'> {
+): ContentReplacement<'caption_too_long' | 'album_media_kind_changed'> {
   switch (content.kind) {
     case 'text':
     case 'photo':
     case 'document':
     case 'rich_message': {
       const normalization = normalizeMediaContent(media, 'bot', context);
-      return normalization.normalized
-        ? { replaced: true, content: normalization.content }
-        : { replaced: false, failure: normalization.failure };
+      if (!normalization.normalized) {
+        return { replaced: false, failure: normalization.failure };
+      }
+      return mediaGroupId !== undefined && media.kind !== content.kind
+        ? { replaced: false, failure: { reason: 'album_media_kind_changed' } }
+        : { replaced: true, content: normalization.content };
     }
     default: {
       const unhandledContent: never = content;

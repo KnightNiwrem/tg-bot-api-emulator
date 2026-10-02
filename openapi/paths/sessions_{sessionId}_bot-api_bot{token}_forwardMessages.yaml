@@ -3,7 +3,11 @@ description: >-
   each as `forwardMessage` forwards it, to a chat that `forwardMessage` can address. As TDLib
   does, identifiers of no message are skipped, as are messages that cannot be forwarded, and a
   message that replies to an earlier message of the request replies to that message's forward.
-  Topics, paid broadcasts, and suggested posts are not supported.
+  As TDLib's `get_forwarded_messages` does, the forwards of two or more messages of one album
+  form a new album, while a lone forward of an album's message belongs to none; and 2 to 10
+  documents first sent by one user, none of them a forward that hides its original sender, form
+  one new album when the request forwards nothing else. Topics, paid broadcasts, and suggested
+  posts are not supported.
 parameters:
   - $ref: ../components/parameters/SessionId.yaml
   - $ref: ../components/parameters/BotToken.yaml

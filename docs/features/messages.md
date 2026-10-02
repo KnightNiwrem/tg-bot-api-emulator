@@ -101,7 +101,8 @@ TDLib's [`MessagesManager::can_edit_message`][edit-permissions]. Inline edits ar
 `deleteMessage` deletes one message and fails if it is missing. `deleteMessages` accepts 1–100 IDs
 and skips missing messages. In private chats, the bot may delete either participant's messages. In
 supergroups, it may delete its own content; `can_delete_messages` allows deleting other members'
-messages and membership service messages.
+messages and membership service messages. Deleting a message of an album leaves the album's other
+messages in it.
 
 Accounts delete messages through the emulation API or `account.deleteMessage`, for every
 participant, as Telegram's clients delete for everyone. As TDLib's
@@ -122,10 +123,12 @@ an `InputMediaPhoto` or `InputMediaDocument` as the official server's
 [`get_input_media`][input-media] reads it: the `media` is a `file_id` the bot knows or
 `attach://<part name>`, and a document may have a thumbnail as for `sendDocument`. As TDLib's
 [`edit_message_media`][edit-media] allows, a photo or document changes its media, and a text or rich
-message becomes media; the old caption goes with the old content. A caption or file is refused as by
-`sendPhoto` and `sendDocument`, and media Telegram cannot read fails with its description prefixed
-by `Bad Request: can't parse InputMedia:`. Animations, audio, live photos and videos are
-[missing](README.md#unimplemented-areas) and refused with
+message becomes media; the old caption goes with the old content. As TDLib's `edit_message_media`
+refuses it once the caption is read, a photo of an [album](media-and-files.md#albums) cannot become
+a document, nor a document a photo (`Bad Request: can't change media type in the album`). A caption
+or file is refused as by `sendPhoto` and `sendDocument`, and media Telegram cannot read fails with
+its description prefixed by `Bad Request: can't parse InputMedia:`. Animations, audio, live photos
+and videos are [missing](README.md#unimplemented-areas) and refused with
 `Bad Request: InputMedia of type "…" is not supported`. An inline message's new media must reuse a
 file by its `file_id`, as for [rich messages](rich-messages.md#sending-and-editing).
 
@@ -171,6 +174,13 @@ or copied are skipped, and the request fails only when none is left. A message t
 earlier message of the same request replies to that message's new counterpart. Batch copies keep no
 reply markup, and `remove_caption` drops media captions.
 
+As TDLib's [`get_forwarded_messages`][forwarded-albums] groups them, the forwards or copies of an
+[album](media-and-files.md#albums)'s messages form a new album of their own when a request repeats
+two or more of them; a lone one, like a message `forwardMessage` or `copyMessage` repeats, belongs
+to no album. A request that repeats 2 to 10 documents and nothing else, all first sent by one user,
+none of them a forward that hides its original sender, puts them in one new album, whichever albums
+they came from.
+
 An account created with `has_private_forwards` keeps forwards from linking to it, as Telegram's
 "Forwarded messages" privacy setting does. As TDLib's
 [`MessageOrigin::hide_sender_if_needed`][hide-sender] does, forwards of its messages show a
@@ -181,7 +191,7 @@ chats. Telegram's servers supply the shown name; the emulator uses the account's
 name, joined as TDLib's `get_user_title` joins them. The official server serializes the origin in
 [`JsonMessageOrigin`][json-origin].
 
-Other origins are users. Channel and chat origins, video start timestamps and forwarded albums are
+Other origins are users. Channel and chat origins and video start timestamps are
 [real gaps](#real-gaps).
 
 ## Intentional deviations
@@ -215,9 +225,6 @@ Other origins are users. Channel and chat origins, video start timestamps and fo
   the missing channels and anonymous administrators.
 - **Video start timestamps.** Forwarding and copying cannot specify a video start timestamp. This
   option is missing along with video message support.
-- **Forwarded and copied albums.** `forwardMessages` and `copyMessages` send each message of an
-  album outside any album. TDLib's [`get_forwarded_messages`][forwarded-albums] gives the repeated
-  messages of an album a new album of their own; tests need forwarded albums to stay together.
 - **Additional content.** The other message kinds listed in the
   [feature inventory](README.md#unimplemented-areas) are not implemented.
 

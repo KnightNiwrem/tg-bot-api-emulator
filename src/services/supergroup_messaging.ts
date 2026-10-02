@@ -176,6 +176,11 @@ export type SendSupergroupBotMessageInput = BotMessageReplyMarkup & {
   /** Where the content first appeared, for a forward; omitted for other messages. */
   readonly forwardInfo?: MessageForwardInfo;
   /**
+   * The album the message belongs to, as a forward or copy of an album's message, which the
+   * caller issued; omitted outside albums.
+   */
+  readonly mediaGroupId?: MediaGroupId;
+  /**
    * The message effect the bot asks for; omitted for none. Telegram allows message effects only in
    * private chats, so a message with one is not sent.
    */
@@ -342,7 +347,8 @@ export type EditSupergroupBotMessageCaptionFailureReason =
 
 export type EditSupergroupBotMessageMediaFailureReason =
   | EditSupergroupBotMessageInlineKeyboardFailureReason
-  | 'caption_too_long';
+  | 'caption_too_long'
+  | 'album_media_kind_changed';
 
 export type SupergroupMessageEditResult<FailureReason extends string> =
   | { readonly edited: true; readonly message: SupergroupMessage }
@@ -780,6 +786,7 @@ export class SupergroupMessagingService {
         inlineKeyboard: input.inlineKeyboard,
         replyInterfaceMarkup: input.replyInterfaceMarkup,
         forwardInfo: input.forwardInfo,
+        mediaGroupId: input.mediaGroupId,
         isContentProtected: input.isContentProtected,
         isSilent: input.isSilent,
       }, repliedMessage),
@@ -910,7 +917,7 @@ export class SupergroupMessagingService {
     const { message } = resolution;
     return this.#editBotMessageContent(
       message,
-      replaceMessageMedia(message.content, input.media, this.#textFixingContext),
+      replaceMessageMedia(message, input.media, this.#textFixingContext),
       input.inlineKeyboard,
     );
   }

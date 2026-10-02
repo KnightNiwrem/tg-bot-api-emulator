@@ -105,6 +105,10 @@ album. A refused album sends and stores nothing.
 | An item Telegram cannot read, such as a missing part | `Bad Request: can't parse InputMedia: media not found`, as for `editMessageMedia`   |
 | A file Telegram's servers refuse, at item _position_ | `Bad Request: failed to send message #position with the error message "<error>"`    |
 
+Forwards and copies of an album's messages form [new albums](messages.md#forwarding-and-copying),
+and `editMessageMedia` keeps a message of an album to its kind of media; deleting one message leaves
+the others in their album.
+
 Telegram's servers, rather than TDLib, refuse content they cannot process as a photo
 (`IMAGE_PROCESS_FAILED`, `PHOTO_INVALID_DIMENSIONS`), a file they cannot download from a URL
 (`WEBPAGE_CURL_FAILED`, `WEBPAGE_MEDIA_EMPTY`), and, for the `local` upload profile, an upload

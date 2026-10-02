@@ -236,6 +236,7 @@ export function createEmulationSession(
     callbackQueries,
     inlineQueries,
     inlineMessages: messages,
+    mediaGroups: messages,
     botCommands,
     botDescriptions,
     defaultAdministratorRights,

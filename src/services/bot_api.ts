@@ -44,6 +44,7 @@ import {
 import {
   type AlbumCompositionFailureReason,
   checkAlbumComposition,
+  groupRepeatedAlbums,
   toAlbumMember,
 } from '../types/media_album.ts';
 import { createExternalReply, type ExternalReplyTarget } from '../types/message_reply.ts';
@@ -71,6 +72,7 @@ import {
   type ChatMessage,
   type InlineMessageId,
   isContentMessage,
+  type MediaGroupId,
   type MessageContent,
   type MessageForwardInfo,
   type PrivateMessage,
@@ -457,6 +459,17 @@ interface MessageRepetition {
   readonly inlineKeyboard?: InlineKeyboard;
 }
 
+/**
+ * What a forward or copy shows beyond its content and reply markup: where a forward's content
+ * first appeared, and the new album that a repeated message of an album belongs to.
+ */
+interface RepetitionDetails {
+  /** Omitted for a message that is no forward. */
+  readonly forwardInfo?: MessageForwardInfo;
+  /** Omitted for a message sent outside any album. */
+  readonly mediaGroupId?: MediaGroupId;
+}
+
 export interface EditMessageTextRequest extends MessageTarget {
   readonly content: TextMessageReplacementRequest;
   /** Omitting the keyboard removes the message's keyboard, as on Telegram. */
@@ -564,7 +577,9 @@ export type EditMessageCaptionFailureReason =
 
 export type EditMessageMediaFailureReason =
   | EditMessageReplyMarkupFailureReason
-  | 'caption_too_long';
+  | 'caption_too_long'
+  /** The new media is a photo for a document of an album, or a document for a photo. */
+  | 'album_media_kind_changed';
 
 export type EditMessageResult<FailureReason extends string> =
   | { readonly edited: true; readonly message: BotApiMessage }
@@ -1069,6 +1084,7 @@ interface BotMessaging {
       readonly isContentProtected?: boolean;
       readonly isSilent?: boolean;
       readonly forwardInfo?: MessageForwardInfo;
+      readonly mediaGroupId?: MediaGroupId;
       readonly messageEffectId?: string;
     },
   ): BotMessageSendingResult;
@@ -1097,7 +1113,9 @@ interface BotMessaging {
       readonly inlineKeyboard?: InlineKeyboard;
     },
   ):
-    | BotMessageEditingResult<BotMessageEditFailureReason | 'caption_too_long'>
+    | BotMessageEditingResult<
+      BotMessageEditFailureReason | 'caption_too_long' | 'album_media_kind_changed'
+    >
     | ({ readonly edited: false } & TextInvalidFailure);
   editBotMessageInlineKeyboard(
     input: PrivateMessageEditTarget & { readonly inlineKeyboard?: InlineKeyboard },
@@ -1176,6 +1194,7 @@ interface SupergroupBotMessaging {
       readonly isContentProtected?: boolean;
       readonly isSilent?: boolean;
       readonly forwardInfo?: MessageForwardInfo;
+      readonly mediaGroupId?: MediaGroupId;
       readonly messageEffectId?: string;
     },
   ):
@@ -1219,7 +1238,9 @@ interface SupergroupBotMessaging {
       readonly inlineKeyboard?: InlineKeyboard;
     },
   ):
-    | SupergroupBotMessageEditingResult<SupergroupBotMessageEditFailureReason | 'caption_too_long'>
+    | SupergroupBotMessageEditingResult<
+      SupergroupBotMessageEditFailureReason | 'caption_too_long' | 'album_media_kind_changed'
+    >
     | ({ readonly edited: false } & TextInvalidFailure);
   editBotMessageInlineKeyboard(
     input: SupergroupMessageEditTarget & { readonly inlineKeyboard?: InlineKeyboard },
@@ -1484,6 +1505,10 @@ interface InlineMessageLookup {
   getMessageByInlineMessageId(inlineMessageId: InlineMessageId): ChatMessage | undefined;
 }
 
+interface MediaGroupIdIssuer {
+  createMediaGroupId(): MediaGroupId;
+}
+
 interface BotMessageViews {
   viewPrivateMessageForBot(message: PrivateMessage): BotApiPrivateMessage;
   viewSupergroupMessage(message: SupergroupMessage, observerId: number): BotApiSupergroupMessage;
@@ -1512,6 +1537,8 @@ interface BotApiServiceDependencies {
   readonly callbackQueries: CallbackQueryAnswering;
   readonly inlineQueries: InlineQueryAnswering;
   readonly inlineMessages: InlineMessageLookup;
+  /** Issues the identifiers of the albums that forwards and copies of albums form. */
+  readonly mediaGroups: MediaGroupIdIssuer;
   readonly botCommands: BotCommandLists;
   readonly botDescriptions: BotDescriptions;
   readonly defaultAdministratorRights: BotDefaultAdministratorRightsSettings;
@@ -1546,6 +1573,7 @@ export class BotApiService {
   readonly #callbackQueries: CallbackQueryAnswering;
   readonly #inlineQueries: InlineQueryAnswering;
   readonly #inlineMessages: InlineMessageLookup;
+  readonly #mediaGroups: MediaGroupIdIssuer;
   readonly #botCommands: BotCommandLists;
   readonly #botDescriptions: BotDescriptions;
   readonly #defaultAdministratorRights: BotDefaultAdministratorRightsSettings;
@@ -1567,6 +1595,7 @@ export class BotApiService {
       callbackQueries,
       inlineQueries,
       inlineMessages,
+      mediaGroups,
       botCommands,
       botDescriptions,
       defaultAdministratorRights,
@@ -1587,6 +1616,7 @@ export class BotApiService {
     this.#callbackQueries = callbackQueries;
     this.#inlineQueries = inlineQueries;
     this.#inlineMessages = inlineMessages;
+    this.#mediaGroups = mediaGroups;
     this.#botCommands = botCommands;
     this.#botDescriptions = botDescriptions;
     this.#defaultAdministratorRights = defaultAdministratorRights;
@@ -1994,7 +2024,7 @@ export class BotApiService {
         messageEffectId,
         ...(inlineKeyboard === undefined ? {} : { inlineKeyboard }),
       },
-      forwardInfo,
+      { forwardInfo },
     );
   }
 
@@ -2154,11 +2184,19 @@ export class BotApiService {
       return { sent: false, reason: 'messages_not_repeatable' };
     }
 
+    const { albumCount, albumIndexes } = groupRepeatedAlbums(
+      repetitions.map(({ message }) => message),
+    );
+    const newMediaGroupIds = Array.from(
+      { length: albumCount },
+      () => this.#mediaGroups.createMediaGroupId(),
+    );
     const sentMessageIdsByRepeatedMessageId = new Map<CanonicalMessageId, number>();
-    for (const { message, repetition } of repetitions) {
+    for (const [repetitionIndex, { message, repetition }] of repetitions.entries()) {
       const repliedMessageId = message.replyToMessageId === undefined
         ? undefined
         : sentMessageIdsByRepeatedMessageId.get(message.replyToMessageId);
+      const albumIndex = albumIndexes[repetitionIndex];
       const { content, forwardInfo, inlineKeyboard } = repetition;
       const result = this.#send(
         authenticatedBot,
@@ -2173,7 +2211,10 @@ export class BotApiService {
             ? {}
             : { replyTo: { messageId: repliedMessageId, allowSendingWithoutReply: true } }),
         },
-        forwardInfo,
+        {
+          forwardInfo,
+          mediaGroupId: albumIndex === undefined ? undefined : newMediaGroupIds[albumIndex],
+        },
       );
       if (!result.sent) {
         return result;
@@ -2241,7 +2282,8 @@ export class BotApiService {
   }
 
   /**
-   * Sends content to a private chat or a supergroup; a forward also shows where it came from.
+   * Sends content to a private chat or a supergroup; a forward also shows where it came from, and
+   * a repeated message of an album belongs to the album its repetition forms.
    *
    * A reply to a message of another chat is resolved before the chat the message goes to, while
    * Telegram checks that chat and the text first; a request that fails both ways fails for its
@@ -2251,7 +2293,7 @@ export class BotApiService {
     authenticatedBot: VirtualBotProfile,
     content: OutgoingMessageContent,
     { replyTo, ...options }: SendRequestOptions,
-    forwardInfo?: MessageForwardInfo,
+    repetitionDetails: RepetitionDetails = {},
   ): SendResult {
     const replyResolution = this.#resolveOutgoingReply(authenticatedBot, replyTo);
     if (!replyResolution.resolved) {
@@ -2259,8 +2301,8 @@ export class BotApiService {
     }
     const { reply } = replyResolution;
     const result = isUserId(options.chatId)
-      ? this.#sendPrivateMessage(authenticatedBot, content, options, reply, forwardInfo)
-      : this.#sendSupergroupMessage(authenticatedBot, content, options, reply, forwardInfo);
+      ? this.#sendPrivateMessage(authenticatedBot, content, options, reply, repetitionDetails)
+      : this.#sendSupergroupMessage(authenticatedBot, content, options, reply, repetitionDetails);
     if (result.sent) {
       // As TDLib's `DialogActionManager` does, a bot's message ends its chat action.
       this.#chatActions.endBotChatAction({
@@ -2325,7 +2367,7 @@ export class BotApiService {
     { chatId, isContentProtected, isSilent, messageEffectId, ...replyMarkup }:
       SendDestinationOptions,
     { replyTo, externalReply, quote }: OutgoingReply,
-    forwardInfo: MessageForwardInfo | undefined,
+    { forwardInfo, mediaGroupId }: RepetitionDetails,
   ): SendResult {
     const result = this.#botMessages.sendBotMessage({
       ...replyMarkup,
@@ -2341,6 +2383,7 @@ export class BotApiService {
       isContentProtected,
       isSilent,
       forwardInfo,
+      mediaGroupId,
       messageEffectId,
     });
     if (result.sent) {
@@ -2381,7 +2424,7 @@ export class BotApiService {
     { chatId, isContentProtected, isSilent, messageEffectId, ...replyMarkup }:
       SendDestinationOptions,
     { replyTo, externalReply, quote }: OutgoingReply,
-    forwardInfo: MessageForwardInfo | undefined,
+    { forwardInfo, mediaGroupId }: RepetitionDetails,
   ): SendResult {
     const result = this.#supergroupBotMessages.sendBotMessage({
       ...replyMarkup,
@@ -2394,6 +2437,7 @@ export class BotApiService {
       isContentProtected,
       isSilent,
       forwardInfo,
+      mediaGroupId,
       messageEffectId,
     });
     if (result.sent) {
@@ -3188,6 +3232,7 @@ export class BotApiService {
       case 'text_invalid':
         return result;
       case 'caption_too_long':
+      case 'album_media_kind_changed':
         return { edited: false, reason: result.reason };
       default:
         return {
@@ -3442,6 +3487,8 @@ export class BotApiService {
         return result;
       case 'caption_too_long':
         return { edited: false, reason: result.reason };
+      case 'album_media_kind_changed':
+        throw new Error(`Inline message ${inlineMessageId} belongs to an album`);
       default:
         return {
           edited: false,

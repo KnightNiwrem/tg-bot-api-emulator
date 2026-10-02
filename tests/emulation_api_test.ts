@@ -7716,6 +7716,351 @@ Deno.test('albums reach supergroup bots as their messages would alone', async ()
   }
 });
 
+Deno.test('forwards and copies of albums form new albums as TDLib groups them', async () => {
+  const { api, sessionPath, botApiPath, createdBot, createdAccount } =
+    await createPrivateConversationFixture();
+  const chatId = createdAccount.account.id;
+  const accountPath = `${sessionPath}/accounts/${chatId}`;
+  const historyPath = `${accountPath}/conversations/private/${createdBot.bot.id}/messages`;
+  const sendAccountMedia = async (path: string, body: Record<string, unknown>) => {
+    const response = await api.request(
+      `${accountPath}/${path}`,
+      jsonRequest('POST', { to: { type: 'private', botId: createdBot.bot.id }, ...body }),
+    );
+    if (response.status !== 201) {
+      throw new Error(`Expected the account's ${path} to be sent, received ${response.status}`);
+    }
+  };
+  const photo = { photo: { content_base64: gifImage(4, 3).toBase64() } };
+  const document = (fileName: string) => ({
+    document: { content_base64: 'ZmlsZQ==', file_name: fileName },
+  });
+  // Messages 1 to 3 form an album, 4 is text, and 5 and 6 are separate documents.
+  await sendAccountMedia('media-groups', { media: [photo, photo, photo] });
+  await sendAccountMedia('messages', { text: 'Between' });
+  await sendAccountMedia('messages', document('a.txt'));
+  await sendAccountMedia('messages', document('b.txt'));
+  const readGroups = async (messageIds: readonly number[]) => {
+    const { messages } = await (await api.request(historyPath)).json() as {
+      messages: Array<{ message_id: number; media_group_id?: string }>;
+    };
+    return messageIds.map((messageId) =>
+      messages.find((message) => message.message_id === messageId)?.media_group_id
+    );
+  };
+  const repeat = async (method: string, parameters: Record<string, unknown>) => {
+    const { status, body } = await callBotApi(api, `${botApiPath}/${method}`, {
+      chat_id: chatId,
+      from_chat_id: chatId,
+      ...parameters,
+    });
+    const result = (body as { result?: unknown }).result;
+    if (status !== 200) {
+      throw new Error(`Expected ${method} to succeed, received ${JSON.stringify(body)}`);
+    }
+    return Array.isArray(result)
+      ? result.map(({ message_id }: { message_id: number }) => message_id)
+      : [(result as { message_id: number }).message_id];
+  };
+
+  const [originalGroup] = await readGroups([1]);
+  const forwardedAlbum = await readGroups(
+    await repeat('forwardMessages', { message_ids: [1, 2, 3, 4] }),
+  );
+  const copiedPart = await readGroups(await repeat('copyMessages', { message_ids: [2, 3] }));
+  const loneMembers = await readGroups([
+    ...await repeat('forwardMessages', { message_ids: [1] }),
+    ...await repeat('forwardMessage', { message_id: 2 }),
+    ...await repeat('copyMessage', { message_id: 3 }),
+  ]);
+  const separateDocuments = await readGroups(
+    await repeat('forwardMessages', { message_ids: [5, 6] }),
+  );
+  const mixedDocuments = await readGroups(
+    await repeat('copyMessages', { message_ids: [4, 5, 6] }),
+  );
+  const [forwardedGroup] = forwardedAlbum;
+  if (
+    originalGroup === undefined || forwardedGroup === undefined ||
+    forwardedGroup === originalGroup ||
+    JSON.stringify(forwardedAlbum) !==
+      JSON.stringify([forwardedGroup, forwardedGroup, forwardedGroup, undefined]) ||
+    copiedPart[0] === undefined || copiedPart[1] !== copiedPart[0] ||
+    new Set([originalGroup, forwardedGroup, copiedPart[0]]).size !== 3 ||
+    loneMembers.length !== 3 || loneMembers.some((group) => group !== undefined) ||
+    separateDocuments[0] === undefined || separateDocuments[1] !== separateDocuments[0] ||
+    mixedDocuments.some((group) => group !== undefined)
+  ) {
+    throw new Error(
+      `Expected repeated albums to form new albums, received ${
+        JSON.stringify({ forwardedAlbum, copiedPart, loneMembers, separateDocuments })
+      }`,
+    );
+  }
+});
+
+Deno.test('a message of an album keeps its kind of media, and its album outlives a deletion', async () => {
+  const { api, sessionPath, botApiPath, createdBot, createdAccount, sendText } =
+    await createPrivateConversationFixture();
+  await sendText('/start');
+  const chatId = String(createdAccount.account.id);
+  const album = await callBotApiWithFiles(api, `${botApiPath}/sendMediaGroup`, {
+    chat_id: chatId,
+    media: JSON.stringify([
+      { type: 'photo', media: 'attach://front', caption: 'Front' },
+      { type: 'photo', media: 'attach://back' },
+    ]),
+  }, {
+    front: new File([gifImage(4, 3)], 'front.gif'),
+    back: new File([gifImage(3, 4)], 'back.gif'),
+  });
+  const [front, back] = (album.body as { result: Record<string, unknown>[] }).result;
+  const editMedia = (messageId: unknown, media: Record<string, unknown>, files = {}) =>
+    callBotApiWithFiles(api, `${botApiPath}/editMessageMedia`, {
+      chat_id: chatId,
+      message_id: String(messageId),
+      media: JSON.stringify(media),
+    }, files);
+
+  const toDocument = await editMedia(front.message_id, {
+    type: 'document',
+    media: 'attach://notes',
+  }, { notes: new File(['notes'], 'notes.txt') });
+  const toPhoto = await editMedia(front.message_id, {
+    type: 'photo',
+    media: photoSizeOf(back)?.file_id,
+    caption: 'Both sides',
+  });
+  const editedFront = botApiResult(toPhoto.body);
+  if (
+    toDocument.status !== 400 || !isBadRequestResponse(toDocument.body) ||
+    toDocument.body.description !== "Bad Request: can't change media type in the album" ||
+    toPhoto.status !== 200 || editedFront?.media_group_id !== front.media_group_id ||
+    editedFront?.caption !== 'Both sides'
+  ) {
+    throw new Error(
+      `Expected only a photo to replace the album's photo, received ${
+        JSON.stringify({ toDocument: toDocument.body, toPhoto: toPhoto.body })
+      }`,
+    );
+  }
+
+  const deletion = await callBotApi(api, `${botApiPath}/deleteMessage`, {
+    chat_id: chatId,
+    message_id: back.message_id,
+  });
+  const { messages } = await (await api.request(
+    `${sessionPath}/accounts/${chatId}/conversations/private/${createdBot.bot.id}/messages`,
+  )).json() as { messages: Record<string, unknown>[] };
+  if (
+    deletion.status !== 200 ||
+    JSON.stringify(messages.map((message) => [message.message_id, message.media_group_id])) !==
+      JSON.stringify([[1, undefined], [front.message_id, front.media_group_id]])
+  ) {
+    throw new Error(
+      `Expected the rest of the album to remain, received ${JSON.stringify(messages)}`,
+    );
+  }
+});
+
+Deno.test('a grammY bot receives an album through its webhook and answers with one', async () => {
+  const { api, sessionPath, createdBot, createdAccount } = await createPrivateConversationFixture();
+  const grammyBot = new Bot(createdBot.token, {
+    client: {
+      apiRoot: `http://emulator.example:9000${sessionPath}/bot-api`,
+      fetch: createInProcessFetch(api.fetch),
+    },
+  });
+  const receivedAlbum: Array<{ messageId: number; mediaGroupId?: string; fileId: string }> = [];
+  grammyBot.on('message:photo', async (context) => {
+    const { message } = context;
+    receivedAlbum.push({
+      messageId: message.message_id,
+      mediaGroupId: message.media_group_id,
+      fileId: message.photo[0].file_id,
+    });
+    if (receivedAlbum.length === 2) {
+      await context.replyWithMediaGroup([
+        { type: 'photo', media: receivedAlbum[0].fileId, caption: 'Yours' },
+        { type: 'photo', media: new InputFile(gifImage(8, 6), 'mine.gif') },
+      ], { reply_parameters: { message_id: message.message_id } });
+    }
+  });
+  const handleWebhookRequest = webhookCallback(grammyBot, 'std/http');
+  const webhookServer = Deno.serve(
+    { hostname: '127.0.0.1', port: 0, onListen: () => {} },
+    (request) => handleWebhookRequest(request),
+  );
+  const accountPath = `${sessionPath}/accounts/${createdAccount.account.id}`;
+  const historyPath = `${accountPath}/conversations/private/${createdBot.bot.id}/messages`;
+
+  try {
+    await grammyBot.api.setWebhook(`http://127.0.0.1:${webhookServer.addr.port}/webhook`);
+    const albumResponse = await api.request(
+      `${accountPath}/media-groups`,
+      jsonRequest('POST', {
+        to: { type: 'private', botId: createdBot.bot.id },
+        media: [
+          { photo: { content_base64: gifImage(4, 3).toBase64() } },
+          { photo: { content_base64: gifImage(3, 4).toBase64() } },
+        ],
+      }),
+    );
+    const history = await expectSettlementWithin(
+      (async () => {
+        for (;;) {
+          const { messages } = await (await api.request(historyPath)).json() as {
+            messages: Array<Record<string, unknown>>;
+          };
+          if (messages.length === 4) {
+            return messages;
+          }
+          await new Promise((resolve) => setTimeout(resolve, 5));
+        }
+      })(),
+      5_000,
+      'Expected the bot to answer the album with one',
+    );
+    const [first, second, answer, upload] = history;
+    if (
+      albumResponse.status !== 201 ||
+      JSON.stringify(
+          receivedAlbum.map(({ messageId, mediaGroupId }) => [messageId, mediaGroupId]),
+        ) !==
+        JSON.stringify([[1, first.media_group_id], [2, first.media_group_id]]) ||
+      typeof answer.media_group_id !== 'string' || answer.media_group_id === first.media_group_id ||
+      upload.media_group_id !== answer.media_group_id ||
+      (answer.reply_to_message as Record<string, unknown>).message_id !== second.message_id ||
+      photoSizeOf(answer)?.file_unique_id !== photoSizeOf(first)?.file_unique_id ||
+      (upload.photo as Array<{ width: number }>)[0].width !== 8
+    ) {
+      throw new Error(
+        `Expected the bot's album in reply to the account's, received ${JSON.stringify(history)}`,
+      );
+    }
+    // The call is recorded once its answer is ready, which may follow the history's change.
+    const entries = await expectSettlementWithin(
+      (async () => {
+        for (;;) {
+          const { entries } = await (await api.request(`${sessionPath}/bot-activity`)).json() as {
+            entries: Array<Record<string, unknown>>;
+          };
+          if (entries.some((entry) => entry.method === 'sendMediaGroup')) {
+            return entries;
+          }
+          await new Promise((resolve) => setTimeout(resolve, 5));
+        }
+      })(),
+      5_000,
+      'Expected the album to be recorded as bot activity',
+    );
+    const albumActivity = entries.flatMap((entry) =>
+      entry.kind === 'update_delivered'
+        ? [[entry.kind, entry.via]]
+        : entry.method === 'sendMediaGroup'
+        ? [[entry.kind, (entry.uploaded_files as unknown[]).length, entry.chat_id]]
+        : []
+    );
+    if (
+      JSON.stringify(albumActivity) !== JSON.stringify([
+        ['update_delivered', 'webhook'],
+        ['update_delivered', 'webhook'],
+        ['bot_api_call', 1, createdAccount.account.id],
+      ])
+    ) {
+      throw new Error(`Expected the album's activity, received ${JSON.stringify(albumActivity)}`);
+    }
+  } finally {
+    await api.request(sessionPath, { method: 'DELETE' });
+    await webhookServer.shutdown();
+  }
+});
+
+Deno.test("sendMediaGroup reuses files only by the bot's own file_id or a URL", async () => {
+  const { api, sessionPath, botApiPath, createdBot, createdAccount, sendText } =
+    await createPrivateConversationFixture();
+  const otherSession = await createPrivateConversationFixture();
+  await otherSession.sendText('/start');
+  await sendText('/start');
+  const chatId = String(createdAccount.account.id);
+  const otherBot = await createBot(api, sessionPath, 'other_bot');
+  const otherBotApiPath = `${sessionPath}/bot-api/bot${otherBot.token}`;
+  const accountPhoto = await api.request(
+    `${sessionPath}/accounts/${chatId}/messages`,
+    jsonRequest('POST', {
+      to: { type: 'private', botId: otherBot.bot.id },
+      photo: { content_base64: gifImage(4, 3).toBase64() },
+    }),
+  );
+  const otherBotFileId = photoSizeOf(
+    updateMessages((await callBotApi(api, `${otherBotApiPath}/getUpdates`, {})).body)[0],
+  )?.file_id;
+  const ownPhoto = await callBotApiWithFiles(api, `${botApiPath}/sendPhoto`, { chat_id: chatId }, {
+    photo: new File([gifImage(4, 3)], 'own.gif'),
+  });
+  const ownFileId = photoSizeOf(botApiResult(ownPhoto.body))?.file_id;
+  await api.request(
+    `${sessionPath}/web-resources`,
+    jsonRequest('POST', {
+      url: 'https://cdn.example.com/chart.gif',
+      content_type: 'image/gif',
+      content_base64: gifImage(6, 5).toBase64(),
+    }),
+  );
+  const historyPath =
+    `${sessionPath}/accounts/${chatId}/conversations/private/${createdBot.bot.id}/messages`;
+  const historyBefore = await (await api.request(historyPath)).text();
+
+  // The account's photo is known to the other bot only, and the file IDs to this session only.
+  const refusals = await Promise.all(
+    [
+      { sessionApi: api, sessionBotApiPath: botApiPath, sessionChatId: chatId },
+      {
+        sessionApi: otherSession.api,
+        sessionBotApiPath: otherSession.botApiPath,
+        sessionChatId: String(otherSession.createdAccount.account.id),
+      },
+    ].map(async ({ sessionApi, sessionBotApiPath, sessionChatId }, index) => {
+      const { status, body } = await callBotApi(sessionApi, `${sessionBotApiPath}/sendMediaGroup`, {
+        chat_id: sessionChatId,
+        media: [
+          { type: 'photo', media: ownFileId },
+          { type: 'photo', media: index === 0 ? otherBotFileId : ownFileId },
+        ],
+      });
+      return status === 400 && isBadRequestResponse(body) ? body.description : status;
+    }),
+  );
+  if (
+    accountPhoto.status !== 201 || otherBotFileId === undefined || ownFileId === undefined ||
+    JSON.stringify(refusals) !== JSON.stringify([
+        'Bad Request: wrong file identifier/HTTP URL specified',
+        'Bad Request: wrong file identifier/HTTP URL specified',
+      ]) ||
+    (await (await api.request(historyPath)).text()) !== historyBefore
+  ) {
+    throw new Error(
+      `Expected other bots' and sessions' file IDs to fail, received ${JSON.stringify(refusals)}`,
+    );
+  }
+
+  const album = await callBotApi(api, `${botApiPath}/sendMediaGroup`, {
+    chat_id: chatId,
+    media: [
+      { type: 'photo', media: ownFileId },
+      { type: 'photo', media: 'https://CDN.example.com/chart.gif' },
+    ],
+  });
+  const [reused, downloaded] = (album.body as { result?: Record<string, unknown>[] }).result ?? [];
+  if (
+    album.status !== 200 || photoSizeOf(reused)?.file_id !== ownFileId ||
+    (downloaded?.photo as Array<{ width: number }> | undefined)?.[0].width !== 6 ||
+    downloaded.media_group_id !== reused.media_group_id
+  ) {
+    throw new Error(`Expected a reused and a downloaded photo, received ${JSON.stringify(album)}`);
+  }
+});
+
 Deno.test('a cloud session answers bot uploads over 50 MB with 413 and keeps no trace', async () => {
   const { api, sessionPath, botApiPath, createdBot, createdAccount, sendText } =
     await createPrivateConversationFixture();

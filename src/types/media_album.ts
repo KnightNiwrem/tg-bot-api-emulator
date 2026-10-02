@@ -1,3 +1,5 @@
+import { type ChatMessage, getMessageAuthorId, type MediaGroupId } from './virtual_message.ts';
+
 /** The most messages an album holds, as Telegram's servers limit it. */
 export const MAX_ALBUM_MESSAGE_COUNT = 10;
 
@@ -71,4 +73,71 @@ export function toAlbumMember(
  */
 export function formsAlbum(memberCount: number): boolean {
   return memberCount > 1;
+}
+
+/** The new albums that messages forwarded or copied together form. */
+export interface RepeatedAlbums {
+  readonly albumCount: number;
+  /**
+   * For each message, in order, the index of the new album it belongs to, counted from 0 in order
+   * of the albums' first messages; `undefined` for a message sent outside any album.
+   */
+  readonly albumIndexes: readonly (number | undefined)[];
+}
+
+/**
+ * Groups the messages that one request forwards or copies, in order, into new albums, as TDLib's
+ * `get_forwarded_messages` does. The repeated messages of an album form a new album of their own
+ * when there are at least two of them, while a lone one is sent outside any album. When the request
+ * repeats 2 to 10 documents and nothing else, all first sent by the same user, none of them a forward
+ * that hides its original sender, they form one new album together, whichever albums they came
+ * from.
+ */
+export function groupRepeatedAlbums(messages: readonly ChatMessage[]): RepeatedAlbums {
+  if (formsDocumentAlbum(messages)) {
+    return { albumCount: 1, albumIndexes: messages.map(() => 0) };
+  }
+  const repeatedMemberCounts = new Map<MediaGroupId, number>();
+  for (const { mediaGroupId } of messages) {
+    if (mediaGroupId !== undefined) {
+      repeatedMemberCounts.set(mediaGroupId, (repeatedMemberCounts.get(mediaGroupId) ?? 0) + 1);
+    }
+  }
+  const newAlbumIndexes = new Map<MediaGroupId, number>();
+  const albumIndexes = messages.map(({ mediaGroupId }) => {
+    if (mediaGroupId === undefined || !formsAlbum(repeatedMemberCounts.get(mediaGroupId) ?? 0)) {
+      return undefined;
+    }
+    const newAlbumIndex = newAlbumIndexes.get(mediaGroupId) ?? newAlbumIndexes.size;
+    newAlbumIndexes.set(mediaGroupId, newAlbumIndex);
+    return newAlbumIndex;
+  });
+  return { albumCount: newAlbumIndexes.size, albumIndexes };
+}
+
+/**
+ * Whether repeated messages are documents that TDLib groups into one album: 2 to 10 of them, all
+ * first sent by the same user, as TDLib's `get_message_original_sender` finds them, whom no forward
+ * hides.
+ */
+function formsDocumentAlbum(messages: readonly ChatMessage[]): boolean {
+  if (!formsAlbum(messages.length) || messages.length > MAX_ALBUM_MESSAGE_COUNT) {
+    return false;
+  }
+  const originalSenderIds = new Set(messages.map(getOriginalSenderId));
+  return messages.every(({ content }) => content.kind === 'document') &&
+    originalSenderIds.size === 1 && !originalSenderIds.has(undefined);
+}
+
+/**
+ * The user who first sent a message, as TDLib's `get_message_original_sender` finds them: the
+ * author of a message, or the sender a forward shows; `undefined` for a forward that hides its
+ * sender.
+ */
+function getOriginalSenderId(message: ChatMessage): number | undefined {
+  if (message.forwardInfo === undefined) {
+    return getMessageAuthorId(message);
+  }
+  const { originalSender } = message.forwardInfo;
+  return originalSender.kind === 'user' ? originalSender.userId : undefined;
 }
