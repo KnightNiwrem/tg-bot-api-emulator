@@ -1,4 +1,4 @@
-import { Hono, type HonoRequest } from 'hono';
+import { Hono } from 'hono';
 import { basePath } from 'hono/route';
 import { z } from 'zod';
 
@@ -9,6 +9,7 @@ import { createBotActivityRoutes } from './bot_activity/mod.ts';
 import { createBotApiRoutes } from './bot_api/mod.ts';
 import { createBotRoutes } from './bots/mod.ts';
 import { createFileRoutes } from './files/mod.ts';
+import { readJsonRequestBody } from './json_request_body.ts';
 import type { SessionRouteContextTypes } from './session_route_context_types.ts';
 
 const SESSION_ID_PARAMETER = 'sessionId';
@@ -41,11 +42,14 @@ export function createSessionRoutes(
   const sessionRoutes = new Hono<SessionRouteContextTypes>();
 
   sessionRoutes.post('/', async (context) => {
-    const options = await readCreateSessionOptions(context.req);
-    if (options === undefined) {
+    // The body is optional: without one, every setting has its default.
+    const requestBody = await readJsonRequestBody(context.req, createSessionRequestSchema, {
+      allowsEmptyBody: true,
+    });
+    if (requestBody === undefined) {
       return context.body(null, 400);
     }
-    const session = sessionLifecycle.createSession(options);
+    const session = sessionLifecycle.createSession({ uploadProfile: requestBody.upload_profile });
     const sessionPath = `${basePath(context)}/${session.id}`;
 
     return context.json(
@@ -85,27 +89,4 @@ export function createSessionRoutes(
   sessionRoutes.route(FILE_COLLECTION_PATH, createFileRoutes());
 
   return sessionRoutes;
-}
-
-/**
- * Reads the settings of a new session from its creation request, whose body is optional: without
- * one, every setting has its default. Returns `undefined` for a body that is not JSON or that names
- * unknown or invalid settings.
- */
-async function readCreateSessionOptions(
-  request: HonoRequest,
-): Promise<EmulationSessionOptions | undefined> {
-  const body = await request.text();
-  let requestBody: unknown = {};
-  if (body.length > 0) {
-    try {
-      requestBody = JSON.parse(body);
-    } catch {
-      return undefined;
-    }
-  }
-  const parsedRequestBody = createSessionRequestSchema.safeParse(requestBody);
-  return parsedRequestBody.success
-    ? { uploadProfile: parsedRequestBody.data.upload_profile }
-    : undefined;
 }

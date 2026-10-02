@@ -84,8 +84,9 @@ mode, so the emulator does not read them either.
 [Local mode][local-mode] is a setting of a self-hosted server, not behavior of the bot under test.
 Beyond its upload limits, it chiefly gives the bot direct access to the server's filesystem, which
 an isolated test session has no use for: files the bot would read from disk are uploaded instead,
-and files it would read from a `getFile` path are downloaded. The webhook restrictions that local
-mode relaxes are relaxed in every session; see [webhooks](webhooks.md#intentional-deviations).
+and files it would read from a `getFile` path are downloaded. The webhook address and port
+restrictions that local mode relaxes are relaxed in every session, while `max_connections` keeps the
+cloud range; see [webhooks](webhooks.md#intentional-deviations).
 
 ### Opaque session file identifiers
 
