@@ -14,6 +14,7 @@ import {
 } from '../types/inline_keyboard.ts';
 import {
   type AlbumCompositionFailureReason,
+  canChangeAlbumMediaKind,
   checkAlbumComposition,
   toAlbumMember,
 } from '../types/media_album.ts';
@@ -568,8 +569,9 @@ export function replaceMessageCaption(
  * them, as TDLib's `edit_message_media` does: the old caption goes with the old content, so new
  * media without a caption has none. As TDLib's `can_edit_message_media` allows, the old content
  * may be any content the emulator has: a photo, a document, or a video, whose media is replaced,
- * or text or a rich message, which becomes media. As that method checks once the new caption is read, a
- * message of an album keeps its kind of media, since documents form albums only with documents.
+ * or text or a rich message, which becomes media. As that method checks once the new caption is
+ * read, a message of an album changes its media only as `canChangeAlbumMediaKind` allows; only
+ * media is sent in albums.
  */
 export function replaceMessageMedia(
   { content, mediaGroupId }: Pick<ContentMessage, 'content' | 'mediaGroupId'>,
@@ -578,15 +580,20 @@ export function replaceMessageMedia(
 ): ContentReplacement<'caption_too_long' | 'album_media_kind_changed'> {
   switch (content.kind) {
     case 'text':
+    case 'rich_message': {
+      const normalization = normalizeMediaContent(media, 'bot', context);
+      return normalization.normalized
+        ? { replaced: true, content: normalization.content }
+        : { replaced: false, failure: normalization.failure };
+    }
     case 'photo':
     case 'document':
-    case 'video':
-    case 'rich_message': {
+    case 'video': {
       const normalization = normalizeMediaContent(media, 'bot', context);
       if (!normalization.normalized) {
         return { replaced: false, failure: normalization.failure };
       }
-      return mediaGroupId !== undefined && media.kind !== content.kind
+      return mediaGroupId !== undefined && !canChangeAlbumMediaKind(content.kind, media.kind)
         ? { replaced: false, failure: { reason: 'album_media_kind_changed' } }
         : { replaced: true, content: normalization.content };
     }

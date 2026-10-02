@@ -626,7 +626,7 @@ interface NewPrivateMessage {
 }
 
 /**
- * Carries out exchanges of text, captioned media, and albums of photos or documents between an
+ * Carries out exchanges of text, captioned media, and media albums between an
  * account and a bot in their private conversation, including forwards by either and copies by the
  * bot, and commits each accepted message: its upload stored, the message stored, numbered for both
  * participants, then published. Bots can attach inline keyboards to their messages, edit them afterward, and delete
@@ -746,7 +746,7 @@ export class PrivateMessagingService {
   }
 
   /**
-   * Sends an album of photos or documents from an account to its private chat with a bot, as
+   * Sends a media album from an account to its private chat with a bot, as
    * `sendAccountMessage` sends one message. Every message of the album is checked before any is
    * stored, as `normalizeOutgoingAlbum` checks them, and every message replies to the same message.
    * The bot receives each message in the album's order.
@@ -886,7 +886,7 @@ export class PrivateMessagingService {
   }
 
   /**
-   * Sends an album of photos or documents from a bot to an account, as `sendBotMessage` sends one
+   * Sends a media album from a bot to an account, as `sendBotMessage` sends one
    * message and in its order of checks, checking every message of the album before any is stored:
    * each caption is normalized, and the album is checked, as `normalizeOutgoingAlbum` does. Every
    * message replies to the same message, with the same quote.

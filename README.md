@@ -6,9 +6,9 @@ make them, and inspect the resulting conversations. Bots connect through their u
 using a session-specific API root.
 
 The emulator supports private chats and supergroups, polling and webhooks, text, photos, documents,
-videos and albums of photos or documents, rich messages, keyboards, inline queries, and selected
-moderation methods. See the [feature documentation](docs/features/README.md) for the complete method
-inventory, missing features, and known differences from the official Bot API server and TDLib.
+videos and albums of them, rich messages, keyboards, inline queries, and selected moderation
+methods. See the [feature documentation](docs/features/README.md) for the complete method inventory,
+missing features, and known differences from the official Bot API server and TDLib.
 
 ## Getting started
 

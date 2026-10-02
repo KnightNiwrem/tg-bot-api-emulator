@@ -871,6 +871,20 @@ Deno.test('TypeScript client sends albums to private chats and supergroups', asy
   }
 
   const supergroup = await account.createSupergroup({ title: 'Team' });
+  const mixedAlbum = await account.sendMediaGroup({
+    to: { type: 'supergroup', chatId: supergroup.id },
+    media: [
+      { photo: image },
+      { video: new TextEncoder().encode('clip'), file_name: 'clip.mp4', duration: 3 },
+    ],
+  });
+  const [mixedPhoto, mixedVideo] = mixedAlbum;
+  if (
+    mixedAlbum.length !== 2 || mixedPhoto.media_group_id === undefined ||
+    mixedVideo.media_group_id !== mixedPhoto.media_group_id || mixedVideo.video?.duration !== 3
+  ) {
+    throw new Error(`Expected a photo and video album, received ${JSON.stringify(mixedAlbum)}`);
+  }
   const supergroupAlbum = await account.sendMediaGroup({
     to: { type: 'supergroup', chatId: supergroup.id },
     media: [

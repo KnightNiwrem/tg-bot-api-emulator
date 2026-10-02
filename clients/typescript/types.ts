@@ -216,23 +216,27 @@ export interface AccountSendVideoInput<Target extends MessageTarget = MessageTar
   readonly reply_to_message_id?: number;
 }
 
-/** A photo or document of an album an account sends, with an optional caption. */
-export type AccountMediaGroupItem =
-  | {
+/** The fields that name the file of each kind of media of an album an account sends. */
+interface AccountMediaGroupFileFields {
+  readonly photo: {
     /** As `AccountSendPhotoInput` describes it. */
     readonly photo: Uint8Array;
-    readonly document?: never;
-    readonly file_name?: never;
-    /** Omitted or empty for no caption. */
-    readonly caption?: string;
-    /** Formatting of the caption; entity types Telegram detects by itself are ignored. */
-    readonly caption_entities?: readonly MessageEntityInput[];
-  }
-  | {
-    readonly photo?: never;
+  };
+  readonly document: {
     readonly document: Uint8Array;
     /** The file name, whose extension decides the document's MIME type. */
     readonly file_name: string;
+  };
+  readonly video: Pick<
+    AccountSendVideoInput,
+    'video' | 'file_name' | 'duration' | 'width' | 'height'
+  >;
+}
+
+/** A photo, video, or document of an album an account sends, with an optional caption. */
+export type AccountMediaGroupItem =
+  & ExclusiveAlternatives<AccountMediaGroupFileFields>
+  & {
     /** Omitted or empty for no caption. */
     readonly caption?: string;
     /** Formatting of the caption; entity types Telegram detects by itself are ignored. */
@@ -242,8 +246,8 @@ export type AccountMediaGroupItem =
 export interface AccountSendMediaGroupInput<Target extends MessageTarget = MessageTarget> {
   readonly to: Target;
   /**
-   * The album's photos or documents, in the order the chat shows them: at most 10, and documents
-   * only among documents. A single item is sent as a message outside any album.
+   * The album's photos and videos, or documents, in the order the chat shows them: at most 10,
+   * and documents only among documents. A single item is sent as a message outside any album.
    */
   readonly media: readonly AccountMediaGroupItem[];
   /** The ID of the chat's message that every message of the album replies to. */
@@ -1372,7 +1376,8 @@ export interface VirtualAccountClient extends VirtualAccountProfile {
     input: AccountSendVideoInput<Target>,
   ): Promise<MessageIn<Target>>;
   /**
-   * Sends photos or documents as an album, as `sendPhoto` and `sendDocument` send one, and returns
+   * Sends photos and videos, or documents, as an album, as `sendPhoto`, `sendVideo` and
+   * `sendDocument` send one, and returns
    * the album's messages in order, which share a `media_group_id`. The chat's bots receive each
    * message as a separate update, in the album's order.
    */

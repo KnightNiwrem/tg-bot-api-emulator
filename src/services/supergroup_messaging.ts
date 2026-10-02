@@ -565,7 +565,7 @@ interface SupergroupMessagingServiceDependencies {
 }
 
 /**
- * Carries out exchanges of text, captioned media, and albums of photos or documents among the
+ * Carries out exchanges of text, captioned media, and media albums among the
  * members of a supergroup, accounts and bots alike, including forwards by members and copies by
  * bots, and commits each accepted message: its upload stored, the message stored, numbered once in
  * the supergroup's own message box, then published. Only members write to a supergroup or read its
@@ -641,7 +641,7 @@ export class SupergroupMessagingService {
   }
 
   /**
-   * Sends an album of photos or documents from an account to a supergroup it is a member of, as
+   * Sends a media album from an account to a supergroup it is a member of, as
    * `sendAccountMessage` sends one message. Every message of the album is checked before any is
    * stored, as `normalizeOutgoingAlbum` checks them, and every message replies to the same message.
    * The supergroup's bots receive each message they would receive alone, in the album's order.
@@ -794,7 +794,7 @@ export class SupergroupMessagingService {
   }
 
   /**
-   * Sends an album of photos or documents from a bot to a supergroup it is a member of, as
+   * Sends a media album from a bot to a supergroup it is a member of, as
    * `sendBotMessage` sends one message and in its order of checks, checking every message of the
    * album before any is stored: each caption is normalized, and the album is checked, as
    * `normalizeOutgoingAlbum` does. Every message replies to the same message, with the same quote.

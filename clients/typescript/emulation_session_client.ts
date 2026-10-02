@@ -34,6 +34,7 @@ import type {
   AccountEditMessageCaptionInput,
   AccountEditMessageInput,
   AccountForwardMessageInput,
+  AccountMediaGroupItem,
   AccountMenuButtonInput,
   AccountMessageHistoryInput,
   AccountNotificationsInput,
@@ -108,7 +109,7 @@ export interface EmulationSessionClient extends EmulationSession {
   /** Lists the rate limit answers still queued for a bot, earliest first. */
   getRateLimitResponses(botId: number): Promise<readonly RateLimitResponses[]>;
   /**
-   * Returns the content of a photo or document of the session's messages by its
+   * Returns the content of a file of the session's messages, such as a photo, by its
    * `file_unique_id`, which, unlike `file_id`, is the same for every user.
    */
   downloadFile(fileUniqueId: string): Promise<Uint8Array>;
@@ -358,7 +359,7 @@ function createVirtualAccountClient(
         responseSchema: messageResponseSchemasFor(to).sent,
         body: {
           to,
-          video: { content_base64: video.toBase64(), file_name, duration, width, height },
+          video: toAccountVideoUpload({ video, file_name, duration, width, height }),
           caption,
           caption_entities,
           reply_to_message_id,
@@ -376,19 +377,11 @@ function createVirtualAccountClient(
         responseSchema: messageResponseSchemasFor(to).sentAlbum,
         body: {
           to,
-          media: media.map((item) =>
-            item.photo !== undefined
-              ? {
-                photo: { content_base64: item.photo.toBase64() },
-                caption: item.caption,
-                caption_entities: item.caption_entities,
-              }
-              : {
-                document: { content_base64: item.document.toBase64(), file_name: item.file_name },
-                caption: item.caption,
-                caption_entities: item.caption_entities,
-              }
-          ),
+          media: media.map((item) => ({
+            ...toAccountMediaGroupFile(item),
+            caption: item.caption,
+            caption_entities: item.caption_entities,
+          })),
           reply_to_message_id,
         },
       });
@@ -684,6 +677,27 @@ function createVirtualAccountClient(
       return response.message;
     },
   });
+}
+
+/** A video an account uploads, as the emulation API reads it. */
+function toAccountVideoUpload(
+  { video, file_name, duration, width, height }: Pick<
+    AccountSendVideoInput,
+    'video' | 'file_name' | 'duration' | 'width' | 'height'
+  >,
+) {
+  return { content_base64: video.toBase64(), file_name, duration, width, height };
+}
+
+/** The file of an album's photo, document, or video, as the emulation API reads it. */
+function toAccountMediaGroupFile(item: AccountMediaGroupItem) {
+  if (item.photo !== undefined) {
+    return { photo: { content_base64: item.photo.toBase64() } };
+  }
+  if (item.document !== undefined) {
+    return { document: { content_base64: item.document.toBase64(), file_name: item.file_name } };
+  }
+  return { video: toAccountVideoUpload(item) };
 }
 
 /** The account's view of a chat, under which its messages and members are addressed. */

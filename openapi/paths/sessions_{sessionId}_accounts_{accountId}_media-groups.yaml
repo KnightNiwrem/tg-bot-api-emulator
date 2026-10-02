@@ -6,8 +6,8 @@ post:
   operationId: sendAccountMediaGroup
   summary: Send an album as a virtual account
   description: >-
-    Sends photos or documents as an album to the account's private chat with a bot, or to a
-    supergroup the account is a member of. Every item is uploaded and checked as by `POST
+    Sends photos and videos, or documents, as an album to the account's private chat with a bot,
+    or to a supergroup the account is a member of. Every item is uploaded and checked as by `POST
     /sessions/{sessionId}/accounts/{accountId}/messages`, and the album is checked as Telegram
     checks it, before any message is stored. The messages are stored in order, each as a
     separate message that the chat's bots receive as a separate update, as they would receive it

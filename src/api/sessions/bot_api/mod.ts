@@ -41,7 +41,12 @@ import {
   type UnreadInputMessageContent,
 } from './inline_query_answer_parameters.ts';
 import { readInputFileParameter, readThumbnailParameter } from './input_file_parameter.ts';
-import { readInputMediaGroupParameter, readInputMediaParameter } from './input_media_parameter.ts';
+import {
+  getRequestedMediaFile,
+  readInputMediaGroupParameter,
+  readInputMediaParameter,
+  toMediaReplacementRequest,
+} from './input_media_parameter.ts';
 import { linkPreviewOptionsParameter } from './link_preview_options_parameter.ts';
 import {
   replyParametersParameter,
@@ -741,7 +746,7 @@ type SendResult = ReturnType<EmulationSession['botApi']['sendMessage']>;
 
 type SendMediaGroupResult = ReturnType<EmulationSession['botApi']['sendMediaGroup']>;
 
-/** An album's photo or document as the service sends it, with its file resolved. */
+/** An album's photo, video, or document as the service sends it, with its file resolved. */
 type MediaReplacementRequest = Parameters<
   EmulationSession['botApi']['sendMediaGroup']
 >[1]['media'][number];
@@ -1620,19 +1625,14 @@ async function handleSendMediaGroup(
   for (const [memberIndex, member] of mediaReading.media.entries()) {
     const fileResolution = await resolveRequestedInputFile(
       context,
-      member.kind === 'photo' ? member.photo : member.document,
+      getRequestedMediaFile(member),
       member.kind,
       memberIndex + 1,
     );
     if (!fileResolution.resolved) {
       return fileResolution.errorAnswer;
     }
-    const caption = captions[memberIndex];
-    media.push(
-      member.kind === 'photo'
-        ? { ...member, photo: fileResolution.value, caption }
-        : { ...member, document: fileResolution.value, caption },
-    );
+    media.push(toMediaReplacementRequest(member, fileResolution.value, captions[memberIndex]));
   }
 
   const { chatId, replyTo, isContentProtected, isSilent, messageEffectId } = optionsReading.options;
@@ -2291,7 +2291,7 @@ async function handleEditMessageMedia(
   const { media } = mediaReading;
   const fileResolution = await resolveRequestedInputFile(
     context,
-    media.kind === 'photo' ? media.photo : media.document,
+    getRequestedMediaFile(media),
     media.kind,
   );
   if (!fileResolution.resolved) {
@@ -2300,11 +2300,8 @@ async function handleEditMessageMedia(
 
   const { target } = targetReading;
   const { botApi } = context.session;
-  const caption = captionReading.formattedText;
   const edit = {
-    media: media.kind === 'photo'
-      ? { ...media, photo: fileResolution.value, caption }
-      : { ...media, document: fileResolution.value, caption },
+    media: toMediaReplacementRequest(media, fileResolution.value, captionReading.formattedText),
     inlineKeyboard: keyboardReading.inlineKeyboard,
   };
   return target.kind === 'inline_message'

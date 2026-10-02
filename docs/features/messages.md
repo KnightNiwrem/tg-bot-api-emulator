@@ -6,10 +6,10 @@
 ## Sending, replying and inspecting history
 
 Accounts and bots exchange text, photos, documents, [videos](media-and-files.md#videos) and
-[albums](media-and-files.md#albums) of photos or documents in private chats and supergroups, and
-bots also send [rich messages](rich-messages.md). A private conversation must first be started by
-the account before the bot can send to it. `sendMessage`, `sendRichMessage`, `sendPhoto`,
-`sendDocument` and `sendVideo` accept `protect_content` and supported
+[albums](media-and-files.md#albums) of photos and videos, or documents, in private chats and
+supergroups, and bots also send [rich messages](rich-messages.md). A private conversation must first
+be started by the account before the bot can send to it. `sendMessage`, `sendRichMessage`,
+`sendPhoto`, `sendDocument` and `sendVideo` accept `protect_content` and supported
 [reply markup](keyboards-and-callbacks.md); `sendMediaGroup` accepts `protect_content` and no reply
 markup. Bot messages appear in account history; bots receive no updates for their own sends or
 edits.
@@ -120,21 +120,23 @@ Message deletion does not consider message age, and account edits have no age li
 messages and automatic deletion timers are absent. These timing simplifications are
 [intentional](#intentional-deviations).
 
-`editMessageMedia` replaces a message's content with a photo or document and its caption, read from
-an `InputMediaPhoto` or `InputMediaDocument` as the official server's
-[`get_input_media`][input-media] reads it: the `media` is a `file_id` the bot knows or
-`attach://<part name>`, and a document may have a thumbnail as for `sendDocument`. As TDLib's
-[`edit_message_media`][edit-media] allows, a photo, document or video changes its media, and a text
-or rich message becomes media; the old caption goes with the old content. As TDLib's
-`edit_message_media` refuses it once the caption is read, a photo of an
-[album](media-and-files.md#albums) cannot become a document, nor a document a photo
-(`Bad Request: can't change media type in the album`). A caption or file is refused as by
-`sendPhoto` and `sendDocument`, and media Telegram cannot read fails with its description prefixed
-by `Bad Request: can't parse InputMedia:`. Animations, audio and live photos are
-[missing](README.md#unimplemented-areas), and new videos are a
-[real gap](media-and-files.md#additional-media-types-and-methods); each is refused with
+`editMessageMedia` replaces a message's content with a photo, document or video and its caption,
+read from an `InputMediaPhoto`, `InputMediaDocument` or `InputMediaVideo` as the official server's
+[`get_input_media`][input-media] reads it: the `media` is a `file_id` the bot knows,
+`attach://<part name>` or a URL, a document or video may have a thumbnail as for `sendDocument`, and
+a video takes the attributes, spoiler, caption placement and start that `sendVideo` takes. As
+TDLib's [`edit_message_media`][edit-media] allows, a photo, document or video changes its media, and
+a text or rich message becomes media, keeping its ID, its reply and its place in an album; the old
+caption goes with the old content. As TDLib's `edit_message_media` refuses it once the caption is
+read, a photo or video of an [album](media-and-files.md#albums) cannot become a document, nor a
+document a photo or video (`Bad Request: can't change media type in the album`). A caption or file
+is refused as by `sendPhoto`, `sendVideo` and `sendDocument`, and media Telegram cannot read fails
+with its description prefixed by `Bad Request: can't parse InputMedia:`. Animations, audio and live
+photos are [missing](README.md#unimplemented-areas) and refused with
 `Bad Request: InputMedia of type "…" is not supported`. An inline message's new media must reuse a
-file by its `file_id`, as for [rich messages](rich-messages.md#sending-and-editing).
+file by its `file_id` or name one by URL, as for
+[rich messages](rich-messages.md#sending-and-editing); an upload fails with
+`Bad Request: invalid message content specified`.
 
 Deleting a message only for the account is an [intentional deviation](#intentional-deviations).
 

@@ -7527,7 +7527,7 @@ Deno.test('sendMediaGroup follows Telegram checks and sends nothing it refuses',
     {
       parameters: {
         chat_id: chatId,
-        media: JSON.stringify([photo, { type: 'video', media: 'x' }]),
+        media: JSON.stringify([photo, { type: 'live_photo', media: 'x' }]),
       },
       files: {},
     },
@@ -7618,7 +7618,7 @@ Deno.test('sendMediaGroup follows Telegram checks and sends nothing it refuses',
     "Bad Request: document can't be mixed with other media types",
     'Bad Request: parameter show_caption_above_media must be the same for all messages',
     "Bad Request: can't parse InputMedia: media not found",
-    'Bad Request: InputMedia of type "video" is not supported',
+    'Bad Request: InputMedia of type "live_photo" is not supported',
     "Bad Request: can't parse InputMedia: Can't parse entities: Can't find end of Bold entity at byte offset 0",
     'Bad Request: message caption is too long',
     'Bad Request: failed to send message #2 with the error message "IMAGE_PROCESS_FAILED"',
@@ -8131,7 +8131,7 @@ Deno.test("sendMediaGroup reuses files only by the bot's own file_id or a URL", 
   }
 });
 
-Deno.test('sendMediaGroup sends photos and documents and names each kind it refuses', async () => {
+Deno.test('sendMediaGroup sends photos, videos and documents and names each kind it refuses', async () => {
   const { api, botApiPath, createdAccount, sendText } = await createPrivateConversationFixture();
   await sendText('/start');
   const chatId = String(createdAccount.account.id);
@@ -8148,7 +8148,7 @@ Deno.test('sendMediaGroup sends photos and documents and names each kind it refu
     if (status === 200) {
       const messages = (body as { result: Record<string, unknown>[] }).result;
       return messages.map((message) =>
-        'photo' in message ? 'photo' : 'document' in message ? 'document' : 'unexpected'
+        ['photo', 'document', 'video'].find((kind) => kind in message) ?? 'unexpected'
       ).join(',');
     }
     return status === 400 && isBadRequestResponse(body) ? body.description : status;
@@ -8168,8 +8168,8 @@ Deno.test('sendMediaGroup sends photos and documents and names each kind it refu
   const expectedOutcomes = [
     ['photo', 'photo,photo'],
     ['document', 'document,document'],
+    ['video', 'video,video'],
     // Telegram sends these in albums; the emulator lacks them.
-    ['video', 'Bad Request: InputMedia of type "video" is not supported'],
     ['live_photo', 'Bad Request: InputMedia of type "live_photo" is not supported'],
     ['audio', 'Bad Request: InputMedia of type "audio" is not supported'],
     // Telegram refuses these in albums itself.
@@ -8187,6 +8187,423 @@ Deno.test('sendMediaGroup sends photos and documents and names each kind it refu
     throw new Error(
       `Expected each album kind's outcome, received ${
         JSON.stringify({ outcomes, replacement: replacement.body }, null, 2)
+      }`,
+    );
+  }
+});
+
+Deno.test('albums hold photos with videos, and documents only among documents', async () => {
+  const { api, sessionPath, botApiPath, createdBot, createdAccount, sendText } =
+    await createPrivateConversationFixture();
+  await sendText('/start');
+  const chatId = String(createdAccount.account.id);
+  const accountPath = `${sessionPath}/accounts/${chatId}`;
+  const historyPath = `${accountPath}/conversations/private/${createdBot.bot.id}/messages`;
+
+  // An account sends a photo and a video as one album, which the bot receives in order.
+  const accountAlbum = await api.request(
+    `${accountPath}/media-groups`,
+    jsonRequest('POST', {
+      to: { type: 'private', botId: createdBot.bot.id },
+      media: [
+        { photo: { content_base64: gifImage(4, 3).toBase64() }, caption: 'Before' },
+        {
+          video: {
+            content_base64: new TextEncoder().encode('after').toBase64(),
+            file_name: 'after.mp4',
+            duration: 8,
+          },
+          caption: 'After',
+        },
+      ],
+    }),
+  );
+  const received = updateMessages((await callBotApi(api, `${botApiPath}/getUpdates`, {})).body)
+    .slice(-2);
+  const receivedVideo = received[1]?.video as Record<string, unknown> | undefined;
+  if (
+    accountAlbum.status !== 201 || typeof received[0]?.media_group_id !== 'string' ||
+    received[1].media_group_id !== received[0].media_group_id ||
+    photoSizeOf(received[0]) === undefined || receivedVideo?.duration !== 8 ||
+    received[1].caption !== 'After'
+  ) {
+    throw new Error(`Expected the account's album, received ${JSON.stringify(received)}`);
+  }
+
+  // The bot answers with videos from an upload, its file_id and a URL, and a photo.
+  await api.request(
+    `${sessionPath}/web-resources`,
+    jsonRequest('POST', {
+      url: 'https://cdn.example.com/teaser.mp4',
+      content_type: 'video/mp4',
+      content_base64: new TextEncoder().encode('teaser').toBase64(),
+    }),
+  );
+  const album = await callBotApiWithFiles(api, `${botApiPath}/sendMediaGroup`, {
+    chat_id: chatId,
+    media: JSON.stringify([
+      {
+        type: 'video',
+        media: 'attach://clip',
+        thumbnail: 'attach://preview',
+        duration: 100_000,
+        width: 640,
+        height: 360,
+        start_timestamp: 2,
+        has_spoiler: true,
+        supports_streaming: true,
+        caption: '<i>Clip</i>',
+        parse_mode: 'HTML',
+      },
+      { type: 'video', media: receivedVideo.file_id, duration: 1 },
+      { type: 'video', media: 'https://cdn.example.com/teaser.mp4', width: 320 },
+      { type: 'photo', media: 'attach://still' },
+    ]),
+  }, {
+    clip: new File(['clip'], 'clip.mov'),
+    preview: new File([gifImage(32, 18)], 'preview.gif'),
+    still: new File([gifImage(16, 9)], 'still.gif'),
+  });
+  const albumMessages = (album.body as { result?: Record<string, unknown>[] }).result ?? [];
+  const albumVideos = albumMessages.map((message) =>
+    message.video as Record<string, unknown> | undefined
+  );
+  if (
+    album.status !== 200 || albumMessages.length !== 4 ||
+    new Set(albumMessages.map((message) => message.media_group_id)).size !== 1 ||
+    albumMessages[0].media_group_id === received[0].media_group_id ||
+    albumVideos[0]?.duration !== 86_400 || albumVideos[0].mime_type !== 'video/quicktime' ||
+    albumVideos[0].start_timestamp !== 2 ||
+    (albumVideos[0].thumbnail as Record<string, unknown> | undefined)?.width !== 32 ||
+    albumMessages[0].has_media_spoiler !== true || albumMessages[0].caption !== 'Clip' ||
+    albumVideos[1]?.file_unique_id !== receivedVideo.file_unique_id ||
+    albumVideos[1]?.duration !== 8 || albumVideos[2]?.file_name !== 'teaser.mp4' ||
+    albumVideos[2].width !== 320 || photoSizeOf(albumMessages[3]) === undefined
+  ) {
+    throw new Error(`Expected the bot's photo and video album, received ${JSON.stringify(album)}`);
+  }
+
+  // Forwarding the album's messages together forms a new album of photos and videos.
+  const forwarded = await callBotApi(api, `${botApiPath}/forwardMessages`, {
+    chat_id: chatId,
+    from_chat_id: chatId,
+    message_ids: albumMessages.map((message) => message.message_id),
+  });
+  const historyBefore = await (await api.request(historyPath)).text();
+  const forwardedMessages = (JSON.parse(historyBefore) as {
+    messages: Array<Record<string, unknown>>;
+  }).messages.slice(-4);
+  if (
+    forwarded.status !== 200 ||
+    new Set(forwardedMessages.map((message) => message.media_group_id)).size !== 1 ||
+    forwardedMessages[0].media_group_id === albumMessages[0].media_group_id ||
+    JSON.stringify(forwardedMessages.map((message) => 'video' in message)) !==
+      JSON.stringify([true, true, true, false])
+  ) {
+    throw new Error(`Expected a new forwarded album, received ${JSON.stringify(forwarded)}`);
+  }
+
+  const refusals = [
+    [{ type: 'video', media: receivedVideo.file_id }, {
+      type: 'document',
+      media: 'attach://notes',
+    }],
+    [{ type: 'video', media: receivedVideo.file_id, show_caption_above_media: true }, {
+      type: 'photo',
+      media: 'attach://still',
+    }],
+    [{ type: 'video', media: receivedVideo.file_id, cover: 'attach://still' }],
+    [{ type: 'video', media: receivedVideo.file_id }, {
+      type: 'video',
+      media: 'https://cdn.example.com/missing.mp4',
+    }],
+    [{ type: 'video', media: receivedVideo.file_id }, {
+      type: 'video',
+      media: photoSizeOf(albumMessages[3])?.file_id,
+    }],
+  ];
+  const descriptions = [];
+  for (const media of refusals) {
+    const { status, body } = await callBotApiWithFiles(api, `${botApiPath}/sendMediaGroup`, {
+      chat_id: chatId,
+      media: JSON.stringify(media),
+    }, {
+      notes: new File(['notes'], 'notes.txt'),
+      still: new File([gifImage(16, 9)], 'still.gif'),
+    });
+    descriptions.push(status === 400 && isBadRequestResponse(body) ? body.description : status);
+  }
+  const accountRefusal = await api.request(
+    `${accountPath}/media-groups`,
+    jsonRequest('POST', {
+      to: { type: 'private', botId: createdBot.bot.id },
+      media: [
+        { video: { content_base64: new TextEncoder().encode('clip').toBase64() } },
+        {
+          document: {
+            content_base64: new TextEncoder().encode('notes').toBase64(),
+            file_name: 'a.txt',
+          },
+        },
+      ],
+    }),
+  );
+  const expectedDescriptions = [
+    "Bad Request: document can't be mixed with other media types",
+    'Bad Request: parameter show_caption_above_media must be the same for all messages',
+    'Bad Request: invalid sendMediaGroup parameters',
+    'Bad Request: failed to send message #2 with the error message "WEBPAGE_CURL_FAILED"',
+    "Bad Request: can't use file of type Photo as Video",
+  ];
+  if (
+    JSON.stringify(descriptions) !== JSON.stringify(expectedDescriptions) ||
+    accountRefusal.status !== 400 ||
+    (await (await api.request(historyPath)).text()) !== historyBefore
+  ) {
+    throw new Error(
+      `Expected Telegram's refusals and no new message, received ${
+        JSON.stringify(descriptions, null, 2)
+      }`,
+    );
+  }
+});
+
+Deno.test('editMessageMedia puts videos in messages and albums, keeping their place', async () => {
+  const { api, owner, member, bot, readerBot, supergroup, supergroupPath, sendSupergroupText } =
+    await createSupergroupFixture();
+  const chatId = String(supergroup.id);
+  const question = await sendSupergroupText(member.id, 'What happened?');
+  const editMedia = (messageId: unknown, media: unknown, files: Record<string, File> = {}) =>
+    callBotApiWithFiles(api, `${bot.botApiPath}/editMessageMedia`, {
+      chat_id: chatId,
+      message_id: String(messageId),
+      media: JSON.stringify(media),
+      reply_markup: JSON.stringify({
+        inline_keyboard: [[{ text: 'Replay', callback_data: 'replay' }]],
+      }),
+    }, files);
+  const lastUpdateId = async (botApiPath: string) => {
+    const { body } = await callBotApi(api, `${botApiPath}/getUpdates`, {});
+    return (body as { result: Array<{ update_id: number }> }).result.at(-1)?.update_id ?? 0;
+  };
+  const botOffset = await lastUpdateId(bot.botApiPath);
+  const readerOffset = await lastUpdateId(readerBot.botApiPath);
+
+  // A text reply becomes a video, keeping its ID, its reply and its place in the chat.
+  const answer = botApiResult(
+    (await callBotApi(api, `${bot.botApiPath}/sendMessage`, {
+      chat_id: supergroup.id,
+      text: 'Watch this',
+      reply_parameters: { message_id: question.message_id },
+    })).body,
+  );
+  const textToVideo = await editMedia(answer?.message_id, {
+    type: 'video',
+    media: 'attach://clip',
+    thumbnail: 'attach://preview',
+    duration: 4,
+    width: 640,
+    height: 480,
+    start_timestamp: 1,
+    has_spoiler: true,
+    show_caption_above_media: true,
+    caption: 'The replay',
+  }, {
+    clip: new File(['clip'], 'replay.mp4'),
+    preview: new File([gifImage(24, 18)], 'preview.gif'),
+  });
+  const editedAnswer = botApiResult(textToVideo.body);
+  const editedVideo = editedAnswer?.video as Record<string, unknown> | undefined;
+  if (
+    textToVideo.status !== 200 || editedAnswer === undefined ||
+    editedAnswer.message_id !== answer?.message_id || 'text' in editedAnswer ||
+    (editedAnswer.reply_to_message as Record<string, unknown> | undefined)?.message_id !==
+      question.message_id ||
+    editedVideo?.duration !== 4 || editedVideo.start_timestamp !== 1 ||
+    (editedVideo.thumbnail as Record<string, unknown> | undefined)?.height !== 18 ||
+    editedAnswer.has_media_spoiler !== true || editedAnswer.show_caption_above_media !== true ||
+    editedAnswer.caption !== 'The replay' || typeof editedAnswer.edit_date !== 'number' ||
+    JSON.stringify(editedAnswer.reply_markup) !==
+      JSON.stringify({ inline_keyboard: [[{ text: 'Replay', callback_data: 'replay' }]] })
+  ) {
+    throw new Error(
+      `Expected the reply to become a video, received ${JSON.stringify(editedAnswer)}`,
+    );
+  }
+
+  // In an album, a photo and a video replace each other, while a document stays apart.
+  const album = await callBotApiWithFiles(api, `${bot.botApiPath}/sendMediaGroup`, {
+    chat_id: chatId,
+    media: JSON.stringify([
+      { type: 'photo', media: 'attach://still' },
+      { type: 'video', media: editedVideo.file_id },
+    ]),
+  }, { still: new File([gifImage(8, 6)], 'still.gif') });
+  const [albumPhoto, albumVideo] = (album.body as { result: Record<string, unknown>[] }).result;
+  const documents = await callBotApiWithFiles(api, `${bot.botApiPath}/sendMediaGroup`, {
+    chat_id: chatId,
+    media: JSON.stringify([
+      { type: 'document', media: 'attach://first' },
+      { type: 'document', media: 'attach://second' },
+    ]),
+  }, { first: new File(['1'], 'first.txt'), second: new File(['2'], 'second.txt') });
+  const [firstDocument] = (documents.body as { result: Record<string, unknown>[] }).result;
+  const photoToVideo = botApiResult(
+    (await editMedia(albumPhoto.message_id, { type: 'video', media: editedVideo.file_id })).body,
+  );
+  const videoToPhoto = botApiResult(
+    (await editMedia(albumVideo.message_id, {
+      type: 'photo',
+      media: 'attach://still',
+    }, { still: new File([gifImage(8, 6)], 'still.gif') })).body,
+  );
+  const refusedEdits = await Promise.all([
+    editMedia(albumVideo.message_id, { type: 'document', media: 'attach://notes' }, {
+      notes: new File(['notes'], 'notes.txt'),
+    }),
+    editMedia(firstDocument.message_id, { type: 'video', media: editedVideo.file_id }),
+  ]);
+  if (
+    photoToVideo?.media_group_id !== albumPhoto.media_group_id ||
+    (photoToVideo?.video as Record<string, unknown> | undefined)?.file_unique_id !==
+      editedVideo.file_unique_id ||
+    videoToPhoto?.media_group_id !== albumPhoto.media_group_id ||
+    photoSizeOf(videoToPhoto) === undefined ||
+    refusedEdits.some(({ status, body }) =>
+      status !== 400 || !isBadRequestResponse(body) ||
+      body.description !== "Bad Request: can't change media type in the album"
+    )
+  ) {
+    throw new Error(
+      `Expected album media to change within its kind, received ${
+        JSON.stringify({ photoToVideo, videoToPhoto, refusedEdits })
+      }`,
+    );
+  }
+
+  // Members see the edits in their history; no bot receives an update for a bot's edit.
+  const history = await (await api.request(`${supergroupPath(owner.id)}/messages`)).json() as {
+    messages: Array<Record<string, unknown>>;
+  };
+  const shownAnswer = history.messages.find((message) => message.message_id === answer?.message_id);
+  const updatesAfter = async (botApiPath: string, offset: number) => {
+    const { body } = await callBotApi(api, `${botApiPath}/getUpdates`, { offset: offset + 1 });
+    return (body as { result: Array<Record<string, unknown>> }).result.map((update) =>
+      Object.keys(update).find((key) => key !== 'update_id')
+    );
+  };
+  const botUpdates = await updatesAfter(bot.botApiPath, botOffset);
+  const readerUpdates = await updatesAfter(readerBot.botApiPath, readerOffset);
+  if (
+    (shownAnswer?.video as Record<string, unknown> | undefined)?.file_unique_id !==
+      editedVideo.file_unique_id ||
+    botUpdates.length !== 0 || readerUpdates.includes('edited_message')
+  ) {
+    throw new Error(
+      `Expected members to see the video and no bot an edit, received ${
+        JSON.stringify({ shownAnswer, botUpdates, readerUpdates })
+      }`,
+    );
+  }
+});
+
+Deno.test('an inline message takes a video by file_id or URL but not by upload', async () => {
+  const { api, sessionPath, createdBot, createdAccount, sendText } =
+    await createPrivateConversationFixture();
+  await sendText('/start');
+  const chatId = createdAccount.account.id;
+  const accountPath = `${sessionPath}/accounts/${chatId}`;
+  const inlineBot = await createBot(api, sessionPath, 'clips_bot', {
+    supports_inline_queries: true,
+    receives_chosen_inline_results: true,
+  });
+  await api.request(
+    `${accountPath}/messages`,
+    jsonRequest('POST', { to: { type: 'private', botId: inlineBot.bot.id }, text: '/start' }),
+  );
+  const queryResponse = await api.request(
+    `${accountPath}/inline-queries`,
+    jsonRequest('POST', {
+      bot_id: inlineBot.bot.id,
+      chat: { type: 'private', botId: createdBot.bot.id },
+      query: 'clips',
+    }),
+  );
+  const { inline_query: inlineQuery } = await queryResponse.json() as {
+    inline_query: { id: string };
+  };
+  await callBotApi(api, `${inlineBot.botApiPath}/answerInlineQuery`, {
+    inline_query_id: inlineQuery.id,
+    results: [{
+      type: 'article',
+      id: 'clips',
+      title: 'Clips',
+      input_message_content: { message_text: 'Clips' },
+      // Telegram gives the bot an inline message ID only for a message with a keyboard.
+      reply_markup: { inline_keyboard: [[{ text: 'More', callback_data: 'more' }]] },
+    }],
+  });
+  const chosen = await api.request(
+    `${accountPath}/inline-queries/${inlineQuery.id}/chosen-results`,
+    jsonRequest('POST', { result_id: 'clips' }),
+  );
+  const { message: inlineMessage } = await chosen.json() as { message: { message_id: number } };
+  const updates = await (await api.request(`${inlineBot.botApiPath}/getUpdates`)).json() as {
+    result: Array<{ chosen_inline_result?: { inline_message_id?: string } }>;
+  };
+  const inlineMessageId = updates.result.find((update) => update.chosen_inline_result !== undefined)
+    ?.chosen_inline_result?.inline_message_id;
+  const ownVideo = botApiResult(
+    (await callBotApiWithFiles(api, `${inlineBot.botApiPath}/sendVideo`, {
+      chat_id: String(chatId),
+      duration: '6',
+    }, { video: new File(['clip'], 'clip.mp4') })).body,
+  )?.video as Record<string, unknown> | undefined;
+  await api.request(
+    `${sessionPath}/web-resources`,
+    jsonRequest('POST', {
+      url: 'https://cdn.example.com/clip.mp4',
+      content_type: 'video/mp4',
+      content_base64: new TextEncoder().encode('remote').toBase64(),
+    }),
+  );
+  const editInline = (media: unknown, files: Record<string, File> = {}) =>
+    callBotApiWithFiles(api, `${inlineBot.botApiPath}/editMessageMedia`, {
+      inline_message_id: String(inlineMessageId),
+      media: JSON.stringify(media),
+    }, files);
+  const historyPath = `${accountPath}/conversations/private/${createdBot.bot.id}/messages`;
+  const shownMessage = async () =>
+    ((await (await api.request(historyPath)).json()) as {
+      messages: Array<Record<string, unknown>>;
+    }).messages.find(({ message_id }) => message_id === inlineMessage.message_id);
+
+  const upload = await editInline(
+    { type: 'video', media: 'attach://clip' },
+    { clip: new File(['clip'], 'clip.mp4') },
+  );
+  const afterUpload = await shownMessage();
+  const byFileId = await editInline({
+    type: 'video',
+    media: ownVideo?.file_id,
+    start_timestamp: 3,
+  });
+  const afterFileId = await shownMessage();
+  const byUrl = await editInline({ type: 'video', media: 'https://cdn.example.com/clip.mp4' });
+  const afterUrl = await shownMessage();
+  const afterUrlVideo = afterUrl?.video as Record<string, unknown> | undefined;
+  if (
+    !isBadRequestResponse(upload.body) ||
+    upload.body.description !== 'Bad Request: invalid message content specified' ||
+    afterUpload?.text !== 'Clips' ||
+    JSON.stringify(byFileId.body) !== JSON.stringify({ ok: true, result: true }) ||
+    (afterFileId?.video as Record<string, unknown> | undefined)?.start_timestamp !== 3 ||
+    JSON.stringify(byUrl.body) !== JSON.stringify({ ok: true, result: true }) ||
+    afterUrlVideo?.file_name !== 'clip.mp4' || afterUrlVideo.file_size !== 6
+  ) {
+    throw new Error(
+      `Expected an inline message's video by file_id or URL only, received ${
+        JSON.stringify([upload, byFileId, byUrl, afterUrl])
       }`,
     );
   }
@@ -9586,7 +10003,7 @@ Deno.test('editMessageMedia replaces the media of a message', async () => {
     ],
     [
       { type: 'video', media: photoFileId },
-      'Bad Request: InputMedia of type "video" is not supported',
+      "Bad Request: can't use file of type Photo as Video",
     ],
     [
       { type: 'photo', media: 'attach://missing' },

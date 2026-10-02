@@ -5,7 +5,7 @@
 ## Supported behavior
 
 Bots send photos and documents with `sendPhoto` and `sendDocument`, [videos](#videos) with
-`sendVideo`, photos and documents as [albums](#albums) with `sendMediaGroup`, and photos and
+`sendVideo`, photos, videos and documents as [albums](#albums) with `sendMediaGroup`, and photos and
 documents in the blocks of [rich messages](rich-messages.md). Files can be multipart uploads, either
 in the part named for the parameter or referenced with `attach://<part-name>`, an existing `file_id`
 known to that bot, or an HTTP URL that Telegram downloads, as described in
@@ -21,8 +21,8 @@ accounts alike, as TDLib's [`check_full_local_location`][photo-size-limit] refus
 receive
 `Bad Request: file of size <size> bytes is too big for a photo; the maximum size is 10485760 bytes`.
 Bot uploads must also fit the session's [upload profile](#upload-profiles). Captions can be edited
-with `editMessageCaption` or the account client, and bots replace a message's photo or document with
-[`editMessageMedia`](messages.md#editing-and-deleting).
+with `editMessageCaption` or the account client, and bots replace a message's media with a photo,
+document or video with [`editMessageMedia`](messages.md#editing-and-deleting).
 
 A bot can upload a thumbnail with `sendDocument`: the part that `thumbnail` names with
 `attach://<part-name>`, or else the part named `thumbnail`, and failing both, likewise for the
@@ -102,36 +102,38 @@ A message shows `has_media_spoiler` and `show_caption_above_media` for a video a
 the video's `start_timestamp`, the second from which clients play it, when a bot's `start_timestamp`
 places it past the beginning. As TDLib keeps it, the start belongs to the message: forwards and
 copies keep it unless their request gives a
-[`video_start_timestamp`](messages.md#forwarding-and-copying). A video sent again by `file_id` keeps
-its duration, dimensions, name, type and thumbnail, whatever the request specifies, and takes the
-request's caption, spoiler, caption placement and start. A video sent by [URL](#files-sent-by-url)
-keeps the attributes the bot specified and takes no thumbnail: TDLib sends it as
-`inputMediaDocumentExternal`, which carries neither, and how Telegram's servers determine the
-attributes of a downloaded video is not in the source.
+[`video_start_timestamp`](messages.md#forwarding-and-copying). `InputMediaVideo` specifies a video
+for [albums](#albums) and `editMessageMedia` as `sendVideo` does, apart from its file, which `media`
+names. A video sent again by `file_id` keeps its duration, dimensions, name, type and thumbnail,
+whatever the request specifies, and takes the request's caption, spoiler, caption placement and
+start. A video sent by [URL](#files-sent-by-url) keeps the attributes the bot specified and takes no
+thumbnail: TDLib sends it as `inputMediaDocumentExternal`, which carries neither, and how Telegram's
+servers determine the attributes of a downloaded video is not in the source.
 
 ### Albums
 
-Bots send photos or documents as an album with `sendMediaGroup`, whose `media` is a JSON array of
-`InputMediaPhoto` and `InputMediaDocument`. Each item names its file as `editMessageMedia` does: an
-upload, a `file_id`, or a [URL](#files-sent-by-url). Accounts send albums with
-`POST /sessions/{sessionId}/accounts/{accountId}/media-groups`, or the TypeScript client's
-`sendMediaGroup`, uploading each file as they upload a single photo or document. Each item has its
-own caption.
+Bots send photos, videos or documents as an album with `sendMediaGroup`, whose `media` is a JSON
+array of `InputMediaPhoto`, `InputMediaVideo` and `InputMediaDocument`. Each item names its file as
+`editMessageMedia` does: an upload, a `file_id`, or a [URL](#files-sent-by-url). Accounts send
+albums with `POST /sessions/{sessionId}/accounts/{accountId}/media-groups`, or the TypeScript
+client's `sendMediaGroup`, uploading each file as they upload a single photo, video or document.
+Each item has its own caption.
 
-The emulator's albums hold photos or documents. Telegram also sends videos, live photos and audio in
-albums, which the emulator's albums [lack](#additional-media-types-and-methods) and refuse by name,
-while it refuses other media itself, as the official server's [`get_input_media`][input-media-album]
-reads it for an album:
+The emulator's albums hold photos and videos together, or documents. Telegram also sends live photos
+and audio in albums, which the emulator's albums [lack](#additional-media-types-and-methods) and
+refuse by name, while it refuses other media itself, as the official server's
+[`get_input_media`][input-media-album] reads it for an album:
 
-| `InputMedia` type     | Telegram's albums                   | Emulator                                                                                             |
-| --------------------- | ----------------------------------- | ---------------------------------------------------------------------------------------------------- |
-| `photo`               | With photos, live photos and videos | With photos                                                                                          |
-| `document`            | With documents only                 | With documents only                                                                                  |
-| `video`, `live_photo` | With photos, live photos and videos | `Bad Request: InputMedia of type "<type>" is not supported`                                          |
-| `audio`               | With audio only                     | `Bad Request: InputMedia of type "audio" is not supported`                                           |
-| `animation`           | Refused                             | `Bad Request: can't parse InputMedia: type "animation" can't be used in sendMediaGroup`, as upstream |
-| `voice_note`          | Refused                             | `Bad Request: can't parse InputMedia: type "voice_note" is not allowed`, as upstream                 |
-| Any other type        | Refused                             | `Bad Request: can't parse InputMedia: type "<type>" is unsupported`, as upstream                     |
+| `InputMedia` type | Telegram's albums                   | Emulator                                                                                             |
+| ----------------- | ----------------------------------- | ---------------------------------------------------------------------------------------------------- |
+| `photo`           | With photos, live photos and videos | With photos and videos                                                                               |
+| `document`        | With documents only                 | With documents only                                                                                  |
+| `video`           | With photos, live photos and videos | With photos and videos                                                                               |
+| `live_photo`      | With photos, live photos and videos | `Bad Request: InputMedia of type "live_photo" is not supported`                                      |
+| `audio`           | With audio only                     | `Bad Request: InputMedia of type "audio" is not supported`                                           |
+| `animation`       | Refused                             | `Bad Request: can't parse InputMedia: type "animation" can't be used in sendMediaGroup`, as upstream |
+| `voice_note`      | Refused                             | `Bad Request: can't parse InputMedia: type "voice_note" is not allowed`, as upstream                 |
+| Any other type    | Refused                             | `Bad Request: can't parse InputMedia: type "<type>" is unsupported`, as upstream                     |
 
 An album is a sequence of ordinary messages that share a `media_group_id`, which is the decimal text
 of a positive 64-bit identifier and new for each album. The messages are stored in order, and each
@@ -143,22 +145,25 @@ message replies to the same message, and `disable_notification`, `protect_conten
 emulator rejects one as an unknown parameter.
 
 As TDLib's [`check_message_group_message_contents`][album-checks] does, an album holds at most 10
-items, its photos place their captions alike, and documents are sent only with documents. As
+items, its photos and videos place their captions alike, and documents are sent only with documents,
+since TDLib's `is_homogenous_media_group_content` keeps them apart. As
 [`send_message_group`][send-message-group] does, a single item is sent as one message outside any
 album. A refused album sends and stores nothing.
 
-| Album                                                | Error                                                                               |
-| ---------------------------------------------------- | ----------------------------------------------------------------------------------- |
-| `media` is `[]` or `null`                            | `Bad Request: there are no messages to send`                                        |
-| More than 10 items                                   | `Bad Request: too many messages to send as an album`                                |
-| Photos with different `show_caption_above_media`     | `Bad Request: parameter show_caption_above_media must be the same for all messages` |
-| Documents with photos                                | `Bad Request: document can't be mixed with other media types`                       |
-| An item Telegram cannot read, such as a missing part | `Bad Request: can't parse InputMedia: media not found`, as for `editMessageMedia`   |
-| A file Telegram's servers refuse, at item _position_ | `Bad Request: failed to send message #position with the error message "<error>"`    |
+| Album                                                      | Error                                                                               |
+| ---------------------------------------------------------- | ----------------------------------------------------------------------------------- |
+| `media` is `[]` or `null`                                  | `Bad Request: there are no messages to send`                                        |
+| More than 10 items                                         | `Bad Request: too many messages to send as an album`                                |
+| Photos or videos with different `show_caption_above_media` | `Bad Request: parameter show_caption_above_media must be the same for all messages` |
+| Documents with photos or videos                            | `Bad Request: document can't be mixed with other media types`                       |
+| An item Telegram cannot read, such as a missing part       | `Bad Request: can't parse InputMedia: media not found`, as for `editMessageMedia`   |
+| A file Telegram's servers refuse, at item _position_       | `Bad Request: failed to send message #position with the error message "<error>"`    |
 
-Forwards and copies of an album's messages form [new albums](messages.md#forwarding-and-copying),
-and `editMessageMedia` keeps a message of an album to its kind of media; deleting one message leaves
-the others in their album.
+Forwards and copies of an album's messages form [new albums](messages.md#forwarding-and-copying). As
+TDLib's [`edit_message_media`][album-media-edit] allows, `editMessageMedia` turns a photo of an
+album into a video and a video into a photo, but keeps a document a document, and no photo or video
+becomes one (`Bad Request: can't change media type in the album`). Deleting one message leaves the
+others in their album.
 
 Telegram's servers, rather than TDLib, refuse content they cannot process as a photo
 (`IMAGE_PROCESS_FAILED`, `PHOTO_INVALID_DIMENSIONS`), a file they cannot download from a URL
@@ -166,13 +171,13 @@ Telegram's servers, rather than TDLib, refuse content they cannot process as a p
 larger than it allows. As the official server's [`on_message_send_failed`][album-failure] does, it
 reports the first such item with its position and Telegram's error, unchanged. Other file failures,
 such as an empty upload, a photo larger than 10 MB, or an unknown `file_id`, and captions that
-Telegram cannot normalize or that are longer than 1024 characters fail as they do for `sendPhoto`
-and `sendDocument`, before the album is checked. As the official server reads it, every item's
-caption formatting, such as its `parse_mode` and entities, is parsed with the request, before any
-file. Then, as TDLib's `get_input_message_content` does, each item's file is read and its caption
-normalized and measured before the next item's, so the first item with either fault fails the album.
-As for `sendPhoto`, the emulator downloads files sent by URL, in the album's order, once the
-request's parameters are read and before it reads the other items' files, so an album with an
+Telegram cannot normalize or that are longer than 1024 characters fail as they do for `sendPhoto`,
+`sendVideo` and `sendDocument`, before the album is checked. As the official server reads it, every
+item's caption formatting, such as its `parse_mode` and entities, is parsed with the request, before
+any file. Then, as TDLib's `get_input_message_content` does, each item's file is read and its
+caption normalized and measured before the next item's, so the first item with either fault fails
+the album. As for `sendPhoto`, the emulator downloads files sent by URL, in the album's order, once
+the request's parameters are read and before it reads the other items' files, so an album with an
 unusable URL fails for its first such URL, whichever item holds it, rather than for an upload or
 `file_id` that fails.
 
@@ -349,10 +354,9 @@ upload, `file_id` and URL.
 
 ### Additional media types and methods
 
-Media types other than photos, documents and videos, stickers and sticker sets are missing.
-`editMessageMedia` sets only photos and documents, even in place of a video, albums hold only photos
-or only documents, and rich message blocks hold no videos. Tests need videos as new media and in
-albums.
+Media types other than photos, documents and videos, stickers and sticker sets are missing, so
+`editMessageMedia` replaces media only with photos, documents and videos, and albums hold only
+photos and videos, or documents. Rich message blocks hold no videos.
 
 ## Local evidence
 
@@ -384,6 +388,7 @@ albums.
 [album-failure]: https://github.com/tdlib/telegram-bot-api/blob/e3e9dd8e5b3d7ab8537cd5a10dc31d5ffa8f82d1/telegram-bot-api/Client.cpp#L13684-L13715
 [album-checks]: https://github.com/tdlib/td/blob/bc9c263e2bfee06aaab41e82db51a103376030bc/td/telegram/MessageContent.cpp#L5378-L5406
 [send-message-group]: https://github.com/tdlib/td/blob/bc9c263e2bfee06aaab41e82db51a103376030bc/td/telegram/MessagesManager.cpp#L21891-L21978
+[album-media-edit]: https://github.com/tdlib/td/blob/bc9c263e2bfee06aaab41e82db51a103376030bc/td/telegram/MessagesManager.cpp#L23720-L23763
 [video-object]: https://core.telegram.org/bots/api#video
 [send-video-reference]: https://core.telegram.org/bots/api#sendvideo
 [send-video]: https://github.com/tdlib/telegram-bot-api/blob/e3e9dd8e5b3d7ab8537cd5a10dc31d5ffa8f82d1/telegram-bot-api/Client.cpp#L14120-L14143

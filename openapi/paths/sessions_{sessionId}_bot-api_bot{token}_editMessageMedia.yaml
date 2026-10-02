@@ -1,8 +1,9 @@
 description: >-
   Telegram Bot API method for replacing the content of a message the bot sent to a private chat
-  or a supergroup with a new photo or document and its caption. As TDLib's `edit_message_media`
-  allows, a photo, document, or video message changes its media, and a text or rich message
-  becomes media; the old caption goes with the old content. As on Telegram, the edited message keeps
+  or a supergroup with a new photo, document, or video and its caption. As TDLib's
+  `edit_message_media` allows, a photo, document, or video message changes its media, and a text
+  or rich message becomes media; the old caption goes with the old content. In an album, a photo
+  and a video replace each other, while a document neither becomes nor replaces other media. As on Telegram, the edited message keeps
   only the inline keyboard given in `reply_markup`, and the bot receives no update for its own
   edit. Without `chat_id` and `message_id`, the method edits a message an account sent through
   the bot's inline mode, which `inline_message_id` identifies, as `editMessageText` does; as
@@ -49,11 +50,11 @@ post:
       description: >-
         The request cannot be decoded or has unsupported parameters, the `media` parameter is
         missing (`Bad Request: parameter "media" is required`) or cannot be read as the
-        `InputMedia` schema describes, the file cannot be sent as for `sendPhoto` and
-        `sendDocument`, or Telegram would reject the edit for the reasons `editMessageCaption`
+        `InputMedia` schema describes, the file cannot be sent as for `sendPhoto`, `sendDocument`
+        and `sendVideo`, or Telegram would reject the edit for the reasons `editMessageCaption`
         gives, apart from the message's kind: any message the bot can edit can take new media,
-        except that a photo of an album cannot become a document, nor a document a photo (`Bad
-        Request: can't change media type in the album`).
+        except that a photo or video of an album cannot become a document, nor a document a
+        photo or video (`Bad Request: can't change media type in the album`).
       content:
         application/json:
           schema:

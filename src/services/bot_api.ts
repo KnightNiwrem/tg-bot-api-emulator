@@ -326,7 +326,8 @@ export type SendDocumentRequest = SendRequestOptions & {
   readonly caption: SpecifiedFormattedText;
 };
 
-export type SendVideoRequest = SendRequestOptions & {
+/** A video and how its message shows it, as `sendVideo` and `InputMediaVideo` specify them. */
+export interface SpecifiedVideo {
   readonly video: BotApiInputFile;
   /**
    * The duration and dimensions the bot specified, which a video sent by `file_id` ignores in
@@ -343,7 +344,9 @@ export type SendVideoRequest = SendRequestOptions & {
   readonly hasSpoiler: boolean;
   /** The Bot API `show_caption_above_media`. */
   readonly showsCaptionAboveMedia: boolean;
-};
+}
+
+export type SendVideoRequest = SendRequestOptions & SpecifiedVideo;
 
 export type SendFailureReason =
   | 'message_text_empty'
@@ -522,8 +525,9 @@ export interface EditMessageCaptionRequest extends MessageTarget {
 }
 
 /**
- * New media of a message and its caption, as `editMessageMedia` specifies them: a photo or a
- * document, uploaded with the request or reused by the `file_id` the bot knows it by.
+ * New media of a message and its caption, as `editMessageMedia` specifies them: a photo, a
+ * document, or a video, uploaded with the request, reused by the `file_id` the bot knows it by,
+ * or downloaded from a URL.
  */
 export type MediaReplacementRequest =
   | {
@@ -543,10 +547,11 @@ export type MediaReplacementRequest =
     readonly thumbnail?: Uint8Array<ArrayBuffer>;
     /** Empty text for no caption. */
     readonly caption: SpecifiedFormattedText;
-  };
+  }
+  | ({ readonly kind: 'video' } & SpecifiedVideo);
 
 /**
- * The photos or documents that `sendMediaGroup` sends as an album, each specified as
+ * The photos, videos, or documents that `sendMediaGroup` sends as an album, each specified as
  * `editMessageMedia` specifies new media, in the order the chat shows them. Every message of the
  * album is sent alike, and none has reply markup, which the Bot API does not read for albums.
  */
@@ -614,7 +619,10 @@ export type EditMessageCaptionFailureReason =
 export type EditMessageMediaFailureReason =
   | EditMessageReplyMarkupFailureReason
   | 'caption_too_long'
-  /** The new media is a photo for a document of an album, or a document for a photo. */
+  /**
+   * The new media is a document for a photo or video of an album, or a photo or video for a
+   * document.
+   */
   | 'album_media_kind_changed';
 
 export type EditMessageResult<FailureReason extends string> =
@@ -2002,25 +2010,25 @@ export class BotApiService {
       ...options
     }: SendVideoRequest,
   ): SendResult {
-    const videoResolution = this.#resolveVideo(authenticatedBot, video, attributes, thumbnail);
-    if (!videoResolution.resolved) {
-      return { sent: false, ...videoResolution.failure };
-    }
-    return this.#send(authenticatedBot, {
-      kind: 'video',
-      video: videoResolution.file,
-      caption: caption.text,
-      captionEntities: caption.entities,
+    const resolution = this.#resolveVideoMedia(authenticatedBot, {
+      video,
+      attributes,
+      ...(thumbnail === undefined ? {} : { thumbnail }),
+      startTimestampSeconds,
+      caption,
       hasSpoiler,
       showsCaptionAboveMedia,
-      startTimestampSeconds,
-    }, options);
+    });
+    if (!resolution.resolved) {
+      return { sent: false, ...resolution.failure };
+    }
+    return this.#send(authenticatedBot, resolution.file, options);
   }
 
   /**
-   * Sends photos or documents to a private chat or a supergroup as an album, as TDLib's
-   * `send_message_group` does: each message's file is resolved as `sendPhoto` and `sendDocument`
-   * resolve theirs, in order, and the album is then checked as `checkAlbumComposition` does. An
+   * Sends photos and videos, or documents, to a private chat or a supergroup as an album, as
+   * TDLib's `send_message_group` does: each message's file is resolved as `sendPhoto`,
+   * `sendVideo` and `sendDocument` resolve theirs, in order, and the album is then checked as `checkAlbumComposition` does. An
    * upload that only Telegram's servers refuse fails after those checks, as TDLib learns of it
    * only when the album is sent. Every check passes before any message is sent; the messages are
    * then sent in order, each as a reply to the same message, and share a new `media_group_id`
@@ -2802,34 +2810,66 @@ export class BotApiService {
       : { resolved: false, failure: uploadPreparationFailure(preparation) };
   }
 
+  /** Resolves the file of a video a request specifies, as `#resolveVideo` does. */
+  #resolveVideoMedia(
+    authenticatedBot: VirtualBotProfile,
+    { video, attributes, thumbnail, caption, ...presentation }: SpecifiedVideo,
+  ): FileResolution<Extract<MediaContent, { readonly kind: 'video' }>> {
+    const resolution = this.#resolveVideo(authenticatedBot, video, attributes, thumbnail);
+    return resolution.resolved
+      ? {
+        resolved: true,
+        file: {
+          kind: 'video',
+          video: resolution.file,
+          caption: caption.text,
+          captionEntities: caption.entities,
+          hasSpoiler: presentation.hasSpoiler,
+          showsCaptionAboveMedia: presentation.showsCaptionAboveMedia,
+          startTimestampSeconds: presentation.startTimestampSeconds,
+        },
+      }
+      : resolution;
+  }
+
   /**
-   * Resolves the file of new media, as `#resolvePhoto` and `#resolveDocument` resolve a photo and
-   * a document.
+   * Resolves the file of new media, as `#resolvePhoto`, `#resolveDocument` and `#resolveVideo`
+   * resolve a photo, a document, and a video.
    */
   #resolveMediaReplacement(
     authenticatedBot: VirtualBotProfile,
     media: MediaReplacementRequest,
   ): FileResolution<MediaContent> {
     const caption = { caption: media.caption.text, captionEntities: media.caption.entities };
-    if (media.kind === 'photo') {
-      const resolution = this.#resolvePhoto(authenticatedBot, media.photo);
-      return resolution.resolved
-        ? {
-          resolved: true,
-          file: {
-            kind: 'photo',
-            photo: resolution.file,
-            ...caption,
-            hasSpoiler: media.hasSpoiler,
-            showsCaptionAboveMedia: media.showsCaptionAboveMedia,
-          },
-        }
-        : resolution;
+    switch (media.kind) {
+      case 'photo': {
+        const resolution = this.#resolvePhoto(authenticatedBot, media.photo);
+        return resolution.resolved
+          ? {
+            resolved: true,
+            file: {
+              kind: 'photo',
+              photo: resolution.file,
+              ...caption,
+              hasSpoiler: media.hasSpoiler,
+              showsCaptionAboveMedia: media.showsCaptionAboveMedia,
+            },
+          }
+          : resolution;
+      }
+      case 'document': {
+        const resolution = this.#resolveDocument(authenticatedBot, media.document, media.thumbnail);
+        return resolution.resolved
+          ? { resolved: true, file: { kind: 'document', document: resolution.file, ...caption } }
+          : resolution;
+      }
+      case 'video':
+        return this.#resolveVideoMedia(authenticatedBot, media);
+      default: {
+        const unhandledMedia: never = media;
+        throw new Error(`Unhandled media replacement: ${JSON.stringify(unhandledMedia)}`);
+      }
     }
-    const resolution = this.#resolveDocument(authenticatedBot, media.document, media.thumbnail);
-    return resolution.resolved
-      ? { resolved: true, file: { kind: 'document', document: resolution.file, ...caption } }
-      : resolution;
   }
 
   /** Resolves new content of a text or rich message: the files of a rich message. */
@@ -3355,10 +3395,10 @@ export class BotApiService {
   }
 
   /**
-   * Replaces the content, caption and inline keyboard of a message the bot sent with a new photo
-   * or document, as TDLib's `edit_message_media` does; a photo, document, or video message
-   * changes its media, and a text or rich message becomes media. As for `sendPhoto` and `sendDocument`, the
-   * file is resolved before the message is found.
+   * Replaces the content, caption and inline keyboard of a message the bot sent with a new photo,
+   * document, or video, as TDLib's `edit_message_media` does; a photo, document, or video message
+   * changes its media, and a text or rich message becomes media. As for `sendPhoto`, the file is
+   * resolved before the message is found.
    */
   editMessageMedia(
     authenticatedBot: VirtualBotProfile,
@@ -3613,9 +3653,9 @@ export class BotApiService {
 
   /**
    * Replaces the content, caption and inline keyboard of a message sent through the bot with a
-   * new photo or document, as `editMessageMedia` replaces them. As TDLib's
-   * `edit_inline_message_media` requires, the media may reuse a file by its `file_id` but not
-   * upload one.
+   * new photo, document, or video, as `editMessageMedia` replaces them. As TDLib's
+   * `edit_inline_message_media` requires, the media may reuse a file by its `file_id` or name one
+   * by URL but not upload one.
    */
   editInlineMessageMedia(
     authenticatedBot: VirtualBotProfile,
@@ -3625,7 +3665,7 @@ export class BotApiService {
     if (message === undefined) {
       return { edited: false, reason: 'inline_message_not_found' };
     }
-    if ((media.kind === 'photo' ? media.photo : media.document).kind === 'upload') {
+    if (getMediaReplacementFile(media).kind === 'upload') {
       return { edited: false, reason: 'inline_message_upload_unsupported' };
     }
     const mediaResolution = this.#resolveMediaReplacement(authenticatedBot, media);
@@ -4202,6 +4242,22 @@ function readHttpsButtonUrl(
   return linkCheck.valid
     ? { read: true, url: linkCheck.url }
     : { read: false, keyboardError: `${buttonDescription} ${linkCheck.error}` };
+}
+
+/** The file that new media names, as its request specifies it. */
+function getMediaReplacementFile(media: MediaReplacementRequest): BotApiInputFile {
+  switch (media.kind) {
+    case 'photo':
+      return media.photo;
+    case 'document':
+      return media.document;
+    case 'video':
+      return media.video;
+    default: {
+      const unhandledMedia: never = media;
+      throw new Error(`Unhandled media replacement: ${JSON.stringify(unhandledMedia)}`);
+    }
+  }
 }
 
 /** Looks up what a file of a request resolved to, which must have been resolved before. */
