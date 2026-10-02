@@ -425,6 +425,7 @@ function copyContent(content: SupergroupMessageContent): SupergroupMessageConten
     case 'photo':
     case 'document':
     case 'video':
+    case 'voice':
       return {
         ...content,
         caption: {

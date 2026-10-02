@@ -216,6 +216,23 @@ export interface AccountSendVideoInput<Target extends MessageTarget = MessageTar
   readonly reply_to_message_id?: number;
 }
 
+export interface AccountSendVoiceInput<Target extends MessageTarget = MessageTarget> {
+  readonly to: Target;
+  /**
+   * The recording, which the emulator neither inspects nor transcodes and sends as `audio/ogg`,
+   * as Telegram's clients record voice notes.
+   */
+  readonly voice: Uint8Array;
+  /** In seconds, from 0, the default, to 86400. */
+  readonly duration?: number;
+  /** Omitted or empty for no caption. */
+  readonly caption?: string;
+  /** Formatting of the caption; entity types Telegram detects by itself are ignored. */
+  readonly caption_entities?: readonly MessageEntityInput[];
+  /** The ID of the chat's message to reply to, as message history shows it. */
+  readonly reply_to_message_id?: number;
+}
+
 /** The fields that name the file of each kind of media of an album an account sends. */
 interface AccountMediaGroupFileFields {
   readonly photo: {
@@ -667,6 +684,14 @@ export interface Video extends MessageFile {
   readonly thumb?: PhotoSize;
 }
 
+/** A voice note, whose duration is the one its sender defined. */
+export interface Voice extends MessageFile {
+  /** In seconds. */
+  readonly duration: number;
+  /** `audio/ogg`, `audio/mpeg`, or `audio/mp4`. */
+  readonly mime_type: string;
+}
+
 /**
  * Text of a rich message: plain text as a string, texts one after another as an array, or an
  * object of a type.
@@ -893,6 +918,12 @@ interface MessageContentFields {
     /** Present when clients cover the video until the user reveals it. */
     readonly has_media_spoiler?: true;
   };
+  readonly voice: {
+    readonly voice: Voice;
+    /** Omitted for a voice note without a caption. */
+    readonly caption?: string;
+    readonly caption_entities?: readonly MessageEntity[];
+  };
   readonly rich_message: {
     /** A message a bot laid out in blocks, which only bots send. */
     readonly rich_message: RichMessage;
@@ -900,9 +931,9 @@ interface MessageContentFields {
 }
 
 /**
- * The fields that show what a message is: text, a photo, a document, a video, or a rich message.
- * Each kind declares the others' fields absent, so that any of them can be read from a message of
- * unknown kind.
+ * The fields that show what a message is: text, a photo, a document, a video, a voice note, or a
+ * rich message. Each kind declares the others' fields absent, so that any of them can be read from
+ * a message of unknown kind.
  */
 export type MessageContent = ExclusiveAlternatives<MessageContentFields>;
 
@@ -989,6 +1020,7 @@ interface ExternalReplyMediaFields {
     /** Present when clients cover the video until the user reveals it. */
     readonly has_media_spoiler?: true;
   };
+  readonly voice: { readonly voice: Voice };
 }
 
 /**
@@ -1374,6 +1406,13 @@ export interface VirtualAccountClient extends VirtualAccountProfile {
    */
   sendVideo<Target extends MessageTarget>(
     input: AccountSendVideoInput<Target>,
+  ): Promise<MessageIn<Target>>;
+  /**
+   * Sends a voice note, with an optional caption, as `sendMessage` sends text. Its duration is
+   * the one the input defines; the emulator never reads the content.
+   */
+  sendVoice<Target extends MessageTarget>(
+    input: AccountSendVoiceInput<Target>,
   ): Promise<MessageIn<Target>>;
   /**
    * Sends photos and videos, or documents, as an album, as `sendPhoto`, `sendVideo` and

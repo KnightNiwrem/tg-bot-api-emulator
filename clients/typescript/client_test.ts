@@ -743,7 +743,7 @@ Deno.test('TypeScript client sends, edits, and downloads photos and documents', 
   throw new Error('Expected content that is not an image to be refused as a photo');
 });
 
-Deno.test('TypeScript client sends videos that bots receive and send back', async () => {
+Deno.test('TypeScript client sends videos and voice notes that bots receive and send back', async () => {
   const publicOrigin = 'http://emulator.example:9000';
   const api = createEmulationApi({
     sessionLifecycle: createSessionLifecycleService(),
@@ -814,6 +814,25 @@ Deno.test('TypeScript client sends videos that bots receive and send back', asyn
     reply?.video?.start_timestamp !== 2 || reply.has_media_spoiler !== true
   ) {
     throw new Error(`Expected the bot to send the video back, received ${JSON.stringify(reply)}`);
+  }
+
+  const voice = await account.sendVoice({
+    to,
+    voice: new TextEncoder().encode('recording'),
+    duration: 5,
+    caption: 'Memo',
+    reply_to_message_id: video.message_id,
+  });
+  if (
+    JSON.stringify(voice.voice) !== JSON.stringify({
+        duration: 5,
+        mime_type: 'audio/ogg',
+        file_id: voice.voice?.file_id,
+        file_unique_id: voice.voice?.file_unique_id,
+        file_size: 9,
+      }) || voice.caption !== 'Memo' || voice.reply_to_message?.video === undefined
+  ) {
+    throw new Error(`Expected the client to send a voice note, received ${JSON.stringify(voice)}`);
   }
 
   try {

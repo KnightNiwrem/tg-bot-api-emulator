@@ -141,6 +141,8 @@ paths:
     $ref: paths/sessions_{sessionId}_bot-api_bot{token}_sendDocument.yaml
   /sessions/{sessionId}/bot-api/bot{token}/sendVideo:
     $ref: paths/sessions_{sessionId}_bot-api_bot{token}_sendVideo.yaml
+  /sessions/{sessionId}/bot-api/bot{token}/sendVoice:
+    $ref: paths/sessions_{sessionId}_bot-api_bot{token}_sendVoice.yaml
   /sessions/{sessionId}/bot-api/bot{token}/sendMediaGroup:
     $ref: paths/sessions_{sessionId}_bot-api_bot{token}_sendMediaGroup.yaml
   /sessions/{sessionId}/bot-api/bot{token}/sendRichMessage:

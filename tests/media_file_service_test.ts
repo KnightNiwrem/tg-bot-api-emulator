@@ -4,6 +4,7 @@ import { WebFileDownloader, type WebResourceFetcher } from '../src/services/web_
 import { WebResourceService } from '../src/services/web_resource.ts';
 import { WebResourceRepository } from '../src/repositories/web_resource.ts';
 import {
+  isWebVoiceNoteSentAsVoiceNote,
   MAX_BOT_DOWNLOAD_FILE_BYTES,
   MAX_PHOTO_UPLOAD_BYTES,
   MAX_THUMBNAIL_UPLOAD_BYTES,
@@ -502,6 +503,138 @@ Deno.test('MediaFileService downloads a video sent by URL only when served as MP
       JSON.stringify(['web_content_type_invalid', 'web_content_unavailable'])
   ) {
     throw new Error(`Expected only MPEG-4 videos of up to 20 MB, received ${failures}`);
+  }
+});
+
+Deno.test('MediaFileService types voice notes as TDLib uploads them and keeps their duration', () => {
+  const { mediaFiles } = createMediaFileFixture();
+  const prepareVoice = (fileName: string | undefined) =>
+    mediaFiles.prepareVoiceUpload({
+      // The content is never read, so any bytes are sent as a voice note.
+      content: new TextEncoder().encode('not a recording'),
+      ...(fileName === undefined ? {} : { fileName }),
+      durationSeconds: 9,
+      source: 'bot_upload',
+    });
+
+  const mimeTypes = ['note.ogg', 'note.opus', 'note.MP3', 'note.m4a', 'note.wav', undefined].map(
+    (fileName) => {
+      const preparation = prepareVoice(fileName);
+      if (!preparation.prepared || preparation.upload.durationSeconds !== 9) {
+        throw new Error(`Expected a voice note, received ${JSON.stringify(preparation)}`);
+      }
+      return preparation.upload.mimeType;
+    },
+  );
+  const empty = mediaFiles.prepareVoiceUpload({
+    content: new Uint8Array(),
+    durationSeconds: 0,
+    source: 'account_upload',
+  });
+  if (
+    JSON.stringify(mimeTypes) !== JSON.stringify([
+        'audio/ogg',
+        'audio/ogg',
+        'audio/mpeg',
+        'audio/mp4',
+        'audio/ogg',
+        'audio/ogg',
+      ]) || empty.prepared || empty.reason !== 'file_empty'
+  ) {
+    throw new Error(`Expected TDLib's voice note types, received ${JSON.stringify(mimeTypes)}`);
+  }
+});
+
+Deno.test('MediaFileService limits bot voice notes by the upload profile only', () => {
+  const prepareVoice = (
+    profile: UploadProfile,
+    content: Uint8Array<ArrayBuffer>,
+    source: UploadSource,
+  ) =>
+    createMediaFileFixture(profile).mediaFiles.prepareVoiceUpload({
+      content,
+      durationSeconds: 0,
+      source,
+    });
+  const overCloudLimit = new Uint8Array(MAX_BOT_UPLOAD_BYTES.cloud + 1);
+  const cloudFailure = prepareVoice('cloud', overCloudLimit, 'bot_upload');
+  if (
+    !prepareVoice('cloud', new Uint8Array(MAX_BOT_UPLOAD_BYTES.cloud), 'bot_upload').prepared ||
+    cloudFailure.prepared || cloudFailure.reason !== 'bot_upload_too_big' ||
+    !prepareVoice('local', overCloudLimit, 'bot_upload').prepared ||
+    !prepareVoice('cloud', overCloudLimit, 'account_upload').prepared
+  ) {
+    throw new Error(`Expected only the cloud bot upload to fail, received ${cloudFailure}`);
+  }
+});
+
+Deno.test('MediaFileService downloads a voice note sent by URL only when served as OGG', async () => {
+  const webResources = new WebResourceService({ webResources: new WebResourceRepository() });
+  const register = (url: string, contentType: string, content: Uint8Array<ArrayBuffer>) =>
+    webResources.registerWebResource({ url, status: 200, contentType, content });
+  register('https://example.com/note.ogg', 'audio/ogg', new Uint8Array([1, 2]));
+  register('https://example.com/note.mp3', 'audio/mpeg', new Uint8Array([1, 2]));
+  register(
+    'https://example.com/largest.ogg',
+    'audio/ogg',
+    new Uint8Array(MAX_WEB_FILE_BYTES.voice),
+  );
+  register(
+    'https://example.com/large.ogg',
+    'audio/ogg',
+    new Uint8Array(MAX_WEB_FILE_BYTES.voice + 1),
+  );
+  const { mediaFiles } = createMediaFileFixture(
+    'cloud',
+    createWebFileDownloader((request) => webResources.fetchWebResource(request)),
+  );
+  const download = (url: string) => mediaFiles.downloadWebFile({ url, fileKind: 'voice' });
+
+  const outcomes = await Promise.all([
+    'https://example.com/note.ogg',
+    'https://example.com/largest.ogg',
+    'https://example.com/note.mp3',
+    'https://example.com/large.ogg',
+  ].map(async (url) => {
+    const result = await download(url);
+    return result.downloaded ? result.webFile.mediaType : result.reason;
+  }));
+  if (
+    JSON.stringify(outcomes) !== JSON.stringify([
+      'audio/ogg',
+      'audio/ogg',
+      'web_content_type_invalid',
+      'web_content_unavailable',
+    ])
+  ) {
+    throw new Error(`Expected only OGG voice notes of up to 20 MB, received ${outcomes}`);
+  }
+});
+
+Deno.test('isWebVoiceNoteSentAsVoiceNote sends voice notes by URL as such up to 1 MB', () => {
+  const megabyte = 1024 * 1024;
+  if (!isWebVoiceNoteSentAsVoiceNote(megabyte) || isWebVoiceNoteSentAsVoiceNote(megabyte + 1)) {
+    throw new Error('Expected voice notes of at most 1048576 bytes to stay voice notes');
+  }
+});
+
+Deno.test('MediaFileService lets bots download voice notes under their type extension', () => {
+  const { files, mediaFiles } = createMediaFileFixture();
+  const voiceNotes = ['audio/ogg', 'audio/mpeg', 'audio/mp4'].map((mimeType) =>
+    files.addFile({ type: 'voice', content: new Uint8Array([1]), mimeType, durationSeconds: 1 })
+  );
+  const paths = voiceNotes.map((voice) => {
+    const result = mediaFiles.getBotFile(
+      FIRST_BOT_ID,
+      files.getOrAssignObserverFileId(FIRST_BOT_ID, voice.id),
+    );
+    return result.found ? result.downloadableFile.filePath : result.reason;
+  });
+  if (
+    JSON.stringify(paths) !==
+      JSON.stringify(['voice/file_0.oga', 'voice/file_1.mp3', 'voice/file_2.m4a'])
+  ) {
+    throw new Error(`Expected voice note paths, received ${JSON.stringify(paths)}`);
   }
 });
 

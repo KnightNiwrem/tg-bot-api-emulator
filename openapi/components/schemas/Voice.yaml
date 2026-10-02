@@ -1,0 +1,35 @@
+type: object
+additionalProperties: false
+description: >-
+  A voice note, in the field order of the official Bot API server's `JsonVoiceNote`. Its
+  duration is the one its sender defined; the emulator neither reads nor transcodes its content.
+required:
+  - duration
+  - mime_type
+  - file_id
+  - file_unique_id
+  - file_size
+properties:
+  duration:
+    type: integer
+    minimum: 0
+    maximum: 86400
+    description: Duration in seconds as the sender defined it; 0 when it specified none.
+  mime_type:
+    type: string
+    enum:
+      - audio/ogg
+      - audio/mpeg
+      - audio/mp4
+    description: >-
+      The type the uploaded file name's extension decides when it is one of these, and otherwise
+      `audio/ogg`, as TDLib's `VoiceNotesManager` uploads a voice note; for a voice note sent by
+      URL, `audio/ogg`, the type it must be served as. An account's voice note is `audio/ogg`.
+  file_id:
+    $ref: ./FileId.yaml
+  file_unique_id:
+    $ref: ./FileUniqueId.yaml
+  file_size:
+    type: integer
+    minimum: 1
+    description: Size of the file in bytes.

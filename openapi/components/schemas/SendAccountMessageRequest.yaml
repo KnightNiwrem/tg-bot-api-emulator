@@ -1,7 +1,8 @@
-description: Text, a photo, a document, or a video to send, or a message to forward.
+description: Text, a photo, a document, a video, or a voice note to send, or a message to forward.
 oneOf:
   - $ref: ./SendAccountTextRequest.yaml
   - $ref: ./SendAccountPhotoRequest.yaml
   - $ref: ./SendAccountDocumentRequest.yaml
   - $ref: ./SendAccountVideoRequest.yaml
+  - $ref: ./SendAccountVoiceRequest.yaml
   - $ref: ./ForwardAccountMessageRequest.yaml

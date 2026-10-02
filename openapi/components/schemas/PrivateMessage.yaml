@@ -1,8 +1,8 @@
 type: object
 additionalProperties: false
 description: >-
-  A private-chat message as the conversation's bot sees it: text, a photo, a document, a video,
-  or a rich message, each with the fields Telegram shows for it.
+  A private-chat message as the conversation's bot sees it: text, a photo, a document, a video, a
+  voice note, or a rich message, each with the fields Telegram shows for it.
 required:
   - message_id
   - from
@@ -17,6 +17,8 @@ oneOf:
       - document
   - required:
       - video
+  - required:
+      - voice
   - required:
       - rich_message
 properties:
@@ -105,10 +107,12 @@ properties:
     $ref: ./Document.yaml
   video:
     $ref: ./Video.yaml
+  voice:
+    $ref: ./Voice.yaml
   caption:
     type: string
     minLength: 1
-    description: The caption of a photo, document, or video, omitted when it has none.
+    description: The caption of a photo, document, video, or voice note, omitted when it has none.
   caption_entities:
     type: array
     minItems: 1

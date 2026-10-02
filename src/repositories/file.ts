@@ -7,8 +7,10 @@ import type {
   StoredFileId,
   StoredPhotoFile,
   StoredVideoFile,
+  StoredVoiceFile,
   ThumbnailUpload,
   VideoUpload,
+  VoiceUpload,
 } from '../types/stored_file.ts';
 
 /** Random bytes behind a `file_id`, which Telegram's are much longer than a `file_unique_id`. */
@@ -34,9 +36,10 @@ export class FileRepository {
   addFile(upload: PhotoUpload): StoredPhotoFile;
   addFile(upload: DocumentUpload): StoredDocumentFile;
   addFile(upload: VideoUpload): StoredVideoFile;
+  addFile(upload: VoiceUpload): StoredVoiceFile;
   addFile(upload: FileUpload): Exclude<StoredFile, { readonly type: 'thumbnail' }>;
   addFile(upload: FileUpload): Exclude<StoredFile, { readonly type: 'thumbnail' }> {
-    if (upload.type === 'photo') {
+    if (upload.type === 'photo' || upload.type === 'voice') {
       return this.#store(upload);
     }
     const { thumbnail, ...file } = upload;
@@ -51,6 +54,7 @@ export class FileRepository {
       | PhotoUpload
       | Omit<DocumentUpload, 'thumbnail'>
       | Omit<VideoUpload, 'thumbnail'>
+      | VoiceUpload
       | ThumbnailUpload,
   >(
     upload: Upload,

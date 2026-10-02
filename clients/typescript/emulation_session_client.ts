@@ -44,6 +44,7 @@ import type {
   AccountSendMessageInput,
   AccountSendPhotoInput,
   AccountSendVideoInput,
+  AccountSendVoiceInput,
   AccountSupergroupBotCommandsInput,
   AddChatMemberInput,
   BotActivityCriteria,
@@ -360,6 +361,27 @@ function createVirtualAccountClient(
         body: {
           to,
           video: toAccountVideoUpload({ video, file_name, duration, width, height }),
+          caption,
+          caption_entities,
+          reply_to_message_id,
+        },
+      });
+      return response.message;
+    },
+    async sendVoice<Target extends MessageTarget>(
+      { to, voice, duration, caption, caption_entities, reply_to_message_id }:
+        AccountSendVoiceInput<
+          Target
+        >,
+    ): Promise<MessageIn<Target>> {
+      const response = await requestJson(fetchImplementation, {
+        method: 'POST',
+        url: `${accountUrl}/messages`,
+        expectedStatus: HTTP_STATUS_CREATED,
+        responseSchema: messageResponseSchemasFor(to).sent,
+        body: {
+          to,
+          voice: { content_base64: voice.toBase64(), duration },
           caption,
           caption_entities,
           reply_to_message_id,

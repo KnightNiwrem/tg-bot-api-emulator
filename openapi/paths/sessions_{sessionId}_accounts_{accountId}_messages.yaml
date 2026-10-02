@@ -6,8 +6,8 @@ post:
   operationId: sendAccountMessage
   summary: Send a message as a virtual account
   description: >-
-    Sends text, a photo, a document, or a video to the account's private chat with a bot, or to
-    a supergroup the account is a member of; or forwards a message of such a chat there, as the
+    Sends text, a photo, a document, a video, or a voice note to the account's private chat with a
+    bot, or to a supergroup the account is a member of; or forwards a message of such a chat there, as the
     account's message that shows who first sent it. Messages protected from forwarding and
     service messages cannot be forwarded, and, as on Telegram, a forward cannot be edited. In
     a supergroup, the supergroup's bots receive the message unless it is not addressed to a

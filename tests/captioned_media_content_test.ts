@@ -51,6 +51,11 @@ const CONTENT_CASES: readonly {
     contentText: CAPTION,
   },
   {
+    content: { kind: 'voice', fileId: 'voice', caption: CAPTION },
+    isCaptionedMedia: true,
+    contentText: CAPTION,
+  },
+  {
     content: { kind: 'rich_message', blocks: [], isRightToLeft: false },
     isCaptionedMedia: false,
     contentText: NO_TEXT,

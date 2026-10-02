@@ -1,4 +1,9 @@
-import type { BotApiDocument, BotApiPhotoSize, BotApiVideo } from '../types/bot_api.ts';
+import type {
+  BotApiDocument,
+  BotApiPhotoSize,
+  BotApiVideo,
+  BotApiVoice,
+} from '../types/bot_api.ts';
 import type { StoredFile, StoredThumbnailFile } from '../types/stored_file.ts';
 
 /** A stored file with the `file_id` by which the observer of a projection knows it. */
@@ -64,6 +69,24 @@ export function projectVideo(
     mime_type: file.mimeType,
     ...(startTimestampSeconds > 0 ? { start_timestamp: startTimestampSeconds } : {}),
     ...projectThumbnail(file.thumbnail, contentFile.observerThumbnailFileId),
+    file_id: contentFile.observerFileId,
+    file_unique_id: file.uniqueId,
+    file_size: file.content.length,
+  };
+}
+
+/**
+ * Shows a voice note as the official Bot API server's `JsonVoiceNote` does; the observed file must
+ * be the message's voice note.
+ */
+export function projectVoice(contentFile: ObservedFile | undefined): BotApiVoice {
+  const file = contentFile?.file;
+  if (contentFile === undefined || file?.type !== 'voice') {
+    throw new Error('Expected the voice note of the message to be provided');
+  }
+  return {
+    duration: file.durationSeconds,
+    mime_type: file.mimeType,
     file_id: contentFile.observerFileId,
     file_unique_id: file.uniqueId,
     file_size: file.content.length,

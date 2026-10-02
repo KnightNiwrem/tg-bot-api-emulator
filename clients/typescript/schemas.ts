@@ -471,6 +471,12 @@ const videoSchema = z.strictObject({
   ...messageFileShape,
 });
 
+const voiceSchema = z.strictObject({
+  duration: z.number().int().nonnegative(),
+  mime_type: z.enum(['audio/ogg', 'audio/mpeg', 'audio/mp4']),
+  ...messageFileShape,
+});
+
 const captionShape = {
   caption: z.string().min(1).optional(),
   caption_entities: z.array(messageEntitySchema).min(1).optional(),
@@ -497,6 +503,8 @@ const videoContentShape = {
   has_media_spoiler: z.literal(true).optional(),
 };
 
+const voiceContentShape = { voice: voiceSchema, ...captionShape };
+
 const externalReplyShape = {
   origin: messageOriginSchema,
   chat: supergroupChatSchema.optional(),
@@ -505,7 +513,7 @@ const externalReplyShape = {
 
 /** How a message replies to a message of another chat, and what it quotes of a replied message. */
 const messageReplyInfoShape = {
-  // The replied message's media, which only a photo, document, or video message has.
+  // The replied message's media, which only a photo, document, video, or voice message has.
   external_reply: z.union([
     z.strictObject(externalReplyShape),
     z.strictObject({
@@ -519,6 +527,7 @@ const messageReplyInfoShape = {
       video: videoSchema,
       has_media_spoiler: z.literal(true).optional(),
     }),
+    z.strictObject({ ...externalReplyShape, voice: voiceSchema }),
   ]).optional(),
   quote: z.strictObject({
     text: z.string().min(1),
@@ -563,6 +572,7 @@ function contentMessageSchemas<Header extends z.ZodRawShape>(header: Header) {
     z.strictObject({ ...header, ...photoContentShape, ...messageTrailerShape }),
     z.strictObject({ ...header, ...documentContentShape, ...messageTrailerShape }),
     z.strictObject({ ...header, ...videoContentShape, ...messageTrailerShape }),
+    z.strictObject({ ...header, ...voiceContentShape, ...messageTrailerShape }),
     z.strictObject({ ...header, rich_message: richMessageSchema, ...messageTrailerShape }),
   ] as const;
 }

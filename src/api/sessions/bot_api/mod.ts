@@ -172,6 +172,7 @@ const TDLIB_FILE_TYPE_NAMES = {
   photo: 'Photo',
   document: 'Document',
   video: 'Video',
+  voice: 'VoiceNote',
   thumbnail: 'Thumbnail',
 } as const;
 
@@ -196,6 +197,8 @@ const MESSAGE_HAS_NO_TEXT_DESCRIPTION = 'Bad Request: there is no text in the me
 const MESSAGE_HAS_NO_CAPTION_DESCRIPTION =
   'Bad Request: there is no caption in the message to edit';
 const MESSAGE_NOT_EDITABLE_DESCRIPTION = "Bad Request: message can't be edited";
+/** TDLib's `can_edit_message_media` refuses to edit a voice note's media. */
+const MESSAGE_MEDIA_NOT_EDITABLE_DESCRIPTION = "Bad Request: message media can't be edited";
 /** TDLib's `edit_message_media` keeps a message of an album to its kind of media. */
 const ALBUM_MEDIA_TYPE_UNCHANGEABLE_DESCRIPTION =
   "Bad Request: can't change media type in the album";
@@ -467,6 +470,14 @@ const sendVideoParametersSchema = z.strictObject({
   show_caption_above_media: booleanParameter().default(false),
   has_spoiler: booleanParameter().default(false),
   supports_streaming: booleanParameter().optional(),
+});
+
+const sendVoiceParametersSchema = z.strictObject({
+  ...sendOptionsParametersShape,
+  ...replyMarkupParametersShape,
+  voice: z.string().optional(),
+  ...captionParametersShape,
+  duration: clampedIntegerParameter(0, MAX_MEDIA_DURATION_SECONDS).default(0),
 });
 
 /**
@@ -940,6 +951,7 @@ const BOT_API_METHODS: readonly BotApiMethod[] = [
   { name: 'sendPhoto', handler: handleSendPhoto },
   { name: 'sendRichMessage', handler: handleSendRichMessage },
   { name: 'sendVideo', handler: handleSendVideo },
+  { name: 'sendVoice', handler: handleSendVoice },
   {
     name: 'setChatAdministratorCustomTitle',
     handler: handleSetChatAdministratorCustomTitle,
@@ -1579,6 +1591,48 @@ async function handleSendVideo(
   }));
 }
 
+async function handleSendVoice(
+  context: BotApiMethodContext,
+  parameters: BotApiRequestParameters,
+  uploadedFiles: BotApiUploadedFiles,
+): Promise<BotApiMethodAnswer> {
+  const invalidParametersDescription = 'Bad Request: invalid sendVoice parameters';
+  const parsedParameters = sendVoiceParametersSchema.safeParse(parameters);
+  if (!parsedParameters.success) {
+    return botApiError(400, invalidParametersDescription);
+  }
+  const { data } = parsedParameters;
+  // Telegram reads the file, then the caption and its formatting, before it looks at the chat.
+  const voiceReading = readInputFileParameter('voice', data.voice, uploadedFiles);
+  if (!voiceReading.read) {
+    return missingInputFileError('voice');
+  }
+  const captionReading = readSpecifiedCaption(context, data, invalidParametersDescription);
+  if (!captionReading.read) {
+    return captionReading.errorAnswer;
+  }
+  const optionsReading = readSendOptions(context, data, invalidParametersDescription);
+  if (!optionsReading.read) {
+    return optionsReading.errorAnswer;
+  }
+
+  const voiceResolution = await resolveRequestedInputFile(
+    context,
+    voiceReading.inputFile,
+    'voice',
+  );
+  if (!voiceResolution.resolved) {
+    return voiceResolution.errorAnswer;
+  }
+
+  return sendMethodAnswer(context.session.botApi.sendVoice(context.bot, {
+    ...optionsReading.options,
+    voice: voiceResolution.value,
+    durationSeconds: data.duration,
+    caption: captionReading.formattedText,
+  }));
+}
+
 /**
  * Sends an album, as `BotApiService.sendMediaGroup` does. As the official Bot API server reads
  * them, the media and their captions are read before the chat; the files the media name by URL are
@@ -2014,7 +2068,9 @@ function readInlineKeyboardParameter(
 }
 
 /** The error for a file parameter that names no uploaded file. */
-function missingInputFileError(parameterName: 'photo' | 'document' | 'video'): BotApiMethodAnswer {
+function missingInputFileError(
+  parameterName: 'photo' | 'document' | 'video' | 'voice',
+): BotApiMethodAnswer {
   return botApiError(400, `Bad Request: there is no ${parameterName} in the request`);
 }
 
@@ -2499,6 +2555,8 @@ function editMessageAnswer(result: MessageEditResult): BotApiMethodAnswer {
       return botApiError(400, MESSAGE_TEXT_TOO_LONG_DESCRIPTION);
     case 'caption_too_long':
       return botApiError(400, CAPTION_TOO_LONG_DESCRIPTION);
+    case 'message_media_not_editable':
+      return botApiError(400, MESSAGE_MEDIA_NOT_EDITABLE_DESCRIPTION);
     case 'album_media_kind_changed':
       return botApiError(400, ALBUM_MEDIA_TYPE_UNCHANGEABLE_DESCRIPTION);
     case 'callback_data_invalid':
