@@ -23,7 +23,8 @@ post:
             $ref: ../components/schemas/WebResource.yaml
     '400':
       description: >-
-        The request body is malformed or does not match the schema, or TDLib would not read
-        the URL.
+        The request body is malformed or does not match the schema; TDLib would not read the
+        URL; the URL is one TDLib reads but an HTTP request cannot carry; or `content_type` or
+        `location` is not a valid header value, such as one with a line break.
     '404':
       description: No active test session has the supplied identifier.

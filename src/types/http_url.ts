@@ -28,7 +28,7 @@ export function parseHttpUrl(text: string): HttpUrlParsing {
   let protocol: 'http' | 'https' = 'http';
   let rest = text;
   if (protocolEnd !== -1 && text.startsWith('://', protocolEnd)) {
-    const protocolText = text.slice(0, protocolEnd).toLowerCase();
+    const protocolText = toAsciiLowerCase(text.slice(0, protocolEnd));
     if (protocolText !== 'http' && protocolText !== 'https') {
       return { parsed: false, error: 'Unsupported URL protocol' };
     }
@@ -47,7 +47,7 @@ export function parseHttpUrl(text: string): HttpUrlParsing {
   const { userinfoAndHost, specifiedPort } = portReading;
   const atIndex = userinfoAndHost.lastIndexOf('@');
   const userinfo = atIndex === -1 ? '' : userinfoAndHost.slice(0, atIndex);
-  const host = userinfoAndHost.slice(atIndex + 1).toLowerCase();
+  const host = toAsciiLowerCase(userinfoAndHost.slice(atIndex + 1));
 
   const isIpv6 = host.startsWith('[') && host.endsWith(']');
   if (isIpv6 && !URL.canParse(`http://${host}/`)) {
@@ -132,6 +132,11 @@ function normalizeQuery(rawQuery: string): string {
       : character;
   }
   return normalizedQuery;
+}
+
+/** Lowercases ASCII letters only, as TDLib's `to_lower` does, leaving other letters as given. */
+function toAsciiLowerCase(text: string): string {
+  return text.replace(/[A-Z]+/g, (letters) => letters.toLowerCase());
 }
 
 /**

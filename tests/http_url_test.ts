@@ -17,6 +17,10 @@ Deno.test('parseHttpUrl reads URLs into TDLib canonical form', () => {
     ['https://example.com/a.pdf\0\v', 'https://example.com/a.pdf'],
     ['https://example.com/a.pdf\f', 'https://example.com/a.pdf%0C'],
     ['https://пример.рф/файл.pdf', 'https://пример.рф/файл.pdf'],
+    // TDLib lowercases ASCII letters only, so other letters keep their case.
+    ['https://EXAMPLE.ПРИМЕР.рф/a.pdf', 'https://example.ПРИМЕР.рф/a.pdf'],
+    // As in TDLib, the userinfo of an IPv6 host is not checked.
+    ['https://us"er@[::1]/a.pdf', 'https://us"er@[::1]/a.pdf'],
   ];
   for (const [text, expectedUrl] of cases) {
     const parsing = parseHttpUrl(text);

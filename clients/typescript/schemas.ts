@@ -82,7 +82,7 @@ export const createdVirtualBotSchema: z.ZodType<CreatedVirtualBot> = z.strictObj
 });
 
 export const webResourceSchema: z.ZodType<WebResource> = z.strictObject({
-  url: z.url(),
+  url: z.url({ protocol: /^https?$/ }),
   status: z.int().min(200).max(599),
   content_type: z.string().min(1).optional(),
   location: z.string().min(1).optional(),

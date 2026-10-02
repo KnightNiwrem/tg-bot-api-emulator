@@ -38,9 +38,11 @@ const WEB_CONTENT_TYPE_INVALID_DESCRIPTION = 'Bad Request: wrong type of the web
 /**
  * Downloads a file that a request names by URL, as Telegram does before it sends the file, from
  * the session's emulated web; a `file_id` or an uploaded part is resolved as it is. Telegram
- * downloads the file after the Bot API server looks at the chat; the emulator downloads it first,
- * as it reads uploads first, so a request with both an unknown chat and an unusable URL fails for
- * its URL.
+ * downloads the file after the Bot API server looks at the chat; the emulator downloads it once the
+ * request's other parameters are read, before the service looks up the chat or the edited message,
+ * as it reads uploads, so a request with both an unknown chat ID and an unusable URL fails for its
+ * URL. A chat named by `@username` is resolved before any method runs, so an unknown username
+ * fails first.
  */
 export async function resolveRequestedInputFile(
   context: BotApiMethodContext,
