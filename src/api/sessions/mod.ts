@@ -10,6 +10,7 @@ import { createBotApiRoutes } from './bot_api/mod.ts';
 import { createBotRoutes } from './bots/mod.ts';
 import { createFileRoutes } from './files/mod.ts';
 import { readJsonRequestBody } from './json_request_body.ts';
+import { createPollRoutes } from './polls/mod.ts';
 import type { SessionRouteContextTypes } from './session_route_context_types.ts';
 import { createWebResourceRoutes } from './web_resources/mod.ts';
 
@@ -22,6 +23,7 @@ const BOT_API_PATH = `${SESSION_PATH}/bot-api` as const;
 const BOT_ACTIVITY_PATH = `${SESSION_PATH}/bot-activity` as const;
 const FILE_COLLECTION_PATH = `${SESSION_PATH}/files` as const;
 const WEB_RESOURCE_COLLECTION_PATH = `${SESSION_PATH}/web-resources` as const;
+const POLL_COLLECTION_PATH = `${SESSION_PATH}/polls` as const;
 
 const createSessionRequestSchema = z.strictObject({
   upload_profile: z.enum(UPLOAD_PROFILES).default(DEFAULT_UPLOAD_PROFILE),
@@ -90,6 +92,7 @@ export function createSessionRoutes(
   sessionRoutes.route(BOT_ACTIVITY_PATH, createBotActivityRoutes());
   sessionRoutes.route(FILE_COLLECTION_PATH, createFileRoutes());
   sessionRoutes.route(WEB_RESOURCE_COLLECTION_PATH, createWebResourceRoutes());
+  sessionRoutes.route(POLL_COLLECTION_PATH, createPollRoutes());
 
   return sessionRoutes;
 }

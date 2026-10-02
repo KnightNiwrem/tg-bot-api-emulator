@@ -1128,6 +1128,28 @@ Deno.test('TypeScript client votes in polls of private chats and supergroups', a
       throw error;
     }
   }
+
+  const quizMessageId = await sendPoll(account.id, {
+    options: ['Pizza', 'Pasta'],
+    type: 'quiz',
+    correct_option_ids: [0],
+    explanation: 'Round',
+    open_period: 60,
+  });
+  const quizMessage = (await account.getMessages({ chat: privateChat })).find(({ message_id }) =>
+    message_id === quizMessageId
+  );
+  const pollId = quizMessage?.poll?.id;
+  if (pollId === undefined) {
+    throw new Error('Expected the quiz message to show the poll');
+  }
+  const expired = await session.expirePoll(pollId);
+  if (
+    quizMessage?.poll?.open_period !== 60 || quizMessage.poll.correct_option_id !== 0 ||
+    !expired.is_closed || expired.explanation !== 'Round' || expired.open_period !== undefined
+  ) {
+    throw new Error(`Expected the client to expire the quiz, received ${JSON.stringify(expired)}`);
+  }
   await session.end();
 });
 

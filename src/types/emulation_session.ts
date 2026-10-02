@@ -37,7 +37,7 @@ export interface EmulationSession extends EmulationSessionOptions {
   readonly messageForwarding: MessageForwardingService;
   readonly botBlocking: BotBlockingService;
   readonly callbackQueries: CallbackQueryService;
-  readonly pollAnswers: PollService;
+  readonly polls: PollService;
   readonly inlineQueries: InlineQueryService;
   readonly botCommands: BotCommandService;
   readonly botMenuButtons: BotMenuButtonService;

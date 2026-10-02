@@ -14,7 +14,7 @@ export interface BotApiPollOption {
 
 /**
  * A poll as bots see it. The emulator's polls never restrict who may vote, so `members_only` is
- * false and `country_codes` is omitted.
+ * false and `country_codes` is omitted; they have no description or media.
  */
 export interface BotApiPoll {
   readonly id: string;
@@ -23,12 +23,23 @@ export interface BotApiPoll {
   readonly question_entities?: readonly BotApiMessageEntity[];
   readonly options: readonly BotApiPollOption[];
   readonly total_voter_count: number;
+  /** Present, with `close_date`, only for an open poll that closes by itself. */
+  readonly open_period?: number;
+  readonly close_date?: number;
   readonly is_closed: boolean;
   readonly is_anonymous: boolean;
   readonly allows_multiple_answers: boolean;
   readonly allows_revoting: boolean;
   readonly members_only: false;
-  readonly type: 'regular';
+  readonly type: 'regular' | 'quiz';
+  /** Present for a quiz with one correct option, to an observer that sees its solution. */
+  readonly correct_option_id?: number;
+  /** Present for a quiz, to an observer that sees its solution. */
+  readonly correct_option_ids?: readonly number[];
+  /** Present for a quiz with an explanation, to an observer that sees its solution. */
+  readonly explanation?: string;
+  /** Present with the explanation, even without entities, as the official server writes it. */
+  readonly explanation_entities?: readonly BotApiMessageEntity[];
 }
 
 /**

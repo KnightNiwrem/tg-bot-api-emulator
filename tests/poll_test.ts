@@ -6,6 +6,7 @@ import {
   getVoterAnswer,
   type NewPoll,
   type Poll,
+  showsQuizSolution,
   toChosenOptionPositions,
 } from '../src/types/poll.ts';
 
@@ -21,6 +22,7 @@ const NEW_POLL: NewPoll = {
   isAnonymous: false,
   allowsMultipleAnswers: false,
   allowsRevoting: true,
+  type: { kind: 'regular' },
   isClosed: false,
 };
 
@@ -31,6 +33,7 @@ const SPECIFIED_POLL: SpecifiedPoll = {
   isAnonymous: true,
   allowsMultipleAnswers: false,
   allowsRevoting: true,
+  type: { kind: 'regular' },
   isClosed: false,
 };
 
@@ -197,3 +200,84 @@ Deno.test('normalizeNewPoll refuses polls in the order TDLib checks them', () =>
     throw new Error('Expected a question of 300 characters and 12 options to be accepted');
   }
 });
+
+Deno.test('normalizeNewPoll checks quizzes as TDLib checks them, then the documented limits', () => {
+  const quiz = (correctOptionPositions: readonly number[], explanation = '') =>
+    normalizeNewPoll({
+      ...SPECIFIED_POLL,
+      options: [{ text: 'A' }, { text: 'B' }, { text: 'C' }],
+      type: { kind: 'quiz', correctOptionPositions, explanation: { text: explanation } },
+    }, NO_MENTIONABLE_USERS);
+  const cases: ReadonlyArray<readonly [ReturnType<typeof quiz>, string]> = [
+    [quiz([]), 'quiz_correct_options_missing'],
+    [quiz([2, 1]), 'quiz_correct_options_not_increasing'],
+    [quiz([1, 1]), 'quiz_correct_options_not_increasing'],
+    [quiz([0, 3]), 'quiz_correct_option_not_found'],
+    [quiz([-1]), 'quiz_correct_option_not_found'],
+    [quiz([0], 'x'.repeat(201)), 'quiz_explanation_too_long'],
+    [quiz([0], 'a\nb\nc\nd'), 'quiz_explanation_has_too_many_line_feeds'],
+  ];
+  for (const [normalization, expected] of cases) {
+    if (normalization.normalized || normalization.failure.reason !== expected) {
+      throw new Error(`Expected ${expected}, got ${JSON.stringify(normalization)}`);
+    }
+  }
+
+  const accepted = quiz([0, 2], '  Pizza is round.\n/start  ');
+  const blank = quiz([1], ' \n ');
+  if (!accepted.normalized || !blank.normalized) {
+    throw new Error('Expected quizzes within the limits to be accepted');
+  }
+  expectQuizType(accepted.poll, {
+    kind: 'quiz',
+    correctOptionPositions: [0, 2],
+    explanation: {
+      text: 'Pizza is round.\n/start',
+      entities: [{ type: 'bot_command', offset: 16, length: 6 }],
+    },
+  });
+  expectQuizType(blank.poll, {
+    kind: 'quiz',
+    correctOptionPositions: [1],
+    explanation: { text: '', entities: [] },
+  });
+});
+
+Deno.test('showsQuizSolution shows a quiz solution to its bot, its voters, and once closed', () => {
+  // A voter that retracts its answer to a quiz that allows revoting no longer sees the solution.
+  const polls = new PollRepository();
+  const quiz = polls.addPoll({
+    ...NEW_POLL,
+    type: {
+      kind: 'quiz',
+      correctOptionPositions: [1],
+      explanation: { text: 'Pasta', entities: [] },
+    },
+  });
+  const answered = polls.setVoterAnswer(quiz.id, 7, [0]);
+  polls.setVoterAnswer(quiz.id, 8, [1]);
+  const retracted = polls.setVoterAnswer(quiz.id, 8, []);
+  const closed = polls.closePoll(quiz.id);
+  const regular = polls.addPoll(NEW_POLL);
+  const observers = [NEW_POLL.creatorBotId, 7, 8];
+  const visibility = [quiz, answered, retracted, closed, regular].map((poll) =>
+    observers.map((observerId) => showsQuizSolution(poll, observerId))
+  );
+  if (
+    JSON.stringify(visibility) !== JSON.stringify([
+      [true, false, false],
+      [true, true, false],
+      [true, true, false],
+      [true, true, true],
+      [false, false, false],
+    ])
+  ) {
+    throw new Error(`Unexpected quiz solution visibility: ${JSON.stringify(visibility)}`);
+  }
+});
+
+function expectQuizType(poll: NewPoll, expected: NewPoll['type']): void {
+  if (JSON.stringify(poll.type) !== JSON.stringify(expected)) {
+    throw new Error(`Expected ${JSON.stringify(expected)}, got ${JSON.stringify(poll.type)}`);
+  }
+}

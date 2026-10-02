@@ -1,0 +1,8 @@
+name: pollId
+in: path
+required: true
+description: The `id` of a poll, as messages and updates show it.
+schema:
+  type: string
+  pattern: '^[1-9]\d*$'
+  maxLength: 19

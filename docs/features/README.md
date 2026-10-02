@@ -30,7 +30,7 @@ thresholds, which tests replace with
 | [Messages](messages.md)                               | Sending, replies, edits, deletion, blocking, forwarding and copying        |
 | [Text formatting](text-formatting.md)                 | Parse modes, entities, normalization and limits                            |
 | [Rich messages](rich-messages.md)                     | Blocks, rich text, buttons, media and edits of rich messages               |
-| [Polls](polls.md)                                     | Regular polls, account votes, stopping, poll updates, forwards and copies  |
+| [Polls](polls.md)                                     | Polls, quizzes, votes, stopping, closing times, updates, forwards, copies  |
 | [Keyboards and callbacks](keyboards-and-callbacks.md) | Inline buttons, reply interfaces and callback answers                      |
 | [Media and files](media-and-files.md)                 | Photos, documents, videos, voice notes, albums, file IDs and downloads     |
 | [Inline mode](inline-mode.md)                         | Queries, results, feedback and inline message editing                      |
@@ -79,7 +79,7 @@ above determines whether an individual method is available.
 - Media other than photos, documents, videos and voice notes, stickers and sticker sets, dice,
   locations, venues, contacts, games, checklists, ephemeral messages, drafts and stories. Rich
   messages lack [drafts and some blocks](rich-messages.md#real-gaps), and polls lack
-  [quizzes and closing times](polls.md#real-gaps).
+  [Telegram's newest poll options](polls.md#real-gaps).
 - Reactions, pins, chat photos and other chat settings, invite links, join requests, member
   restrictions, and promotion through the Bot API. Tests can promote supergroup members through the
   emulation API.

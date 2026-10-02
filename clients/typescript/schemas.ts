@@ -518,13 +518,21 @@ const pollSchema: z.ZodType<Poll> = z.strictObject({
     voter_count: z.number().int().nonnegative(),
   })).min(1),
   total_voter_count: z.number().int().nonnegative(),
+  open_period: z.number().int().positive().optional(),
+  close_date: z.number().int().positive().optional(),
   is_closed: z.boolean(),
   is_anonymous: z.boolean(),
   allows_multiple_answers: z.boolean(),
   allows_revoting: z.boolean(),
   members_only: z.literal(false),
-  type: z.literal('regular'),
+  type: z.enum(['regular', 'quiz']),
+  correct_option_id: z.number().int().nonnegative().optional(),
+  correct_option_ids: z.array(z.number().int().nonnegative()).min(1).optional(),
+  explanation: z.string().min(1).optional(),
+  explanation_entities: z.array(messageEntitySchema).optional(),
 });
+
+export const expiredPollResponseSchema = z.strictObject({ poll: pollSchema });
 
 const externalReplyShape = {
   origin: messageOriginSchema,

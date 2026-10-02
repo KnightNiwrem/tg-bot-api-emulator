@@ -1,9 +1,10 @@
 type: object
 additionalProperties: false
 description: >-
-  A regular poll to send. Quizzes, options added after creation, restrictions on who may vote,
-  shuffled options, results hidden until the poll closes, closing times, descriptions, and media
-  are not supported, nor are topics, business connections, paid broadcasts, and suggested posts.
+  A regular poll or a quiz to send. Options added after creation, restrictions on who may vote,
+  shuffled options, results hidden until the poll closes, descriptions, and media are not
+  supported, nor are topics, business connections, paid broadcasts, and suggested posts. The quiz
+  parameters are rejected for a regular poll, and `open_period` with `close_date`.
 required:
   - chat_id
   - question
@@ -45,17 +46,58 @@ properties:
       poll.
   type:
     type: string
+    default: regular
     enum:
       - ''
       - regular
-    description: The poll's type; only regular polls are supported.
+      - quiz
+    description: The poll's type; empty means `regular`.
   allows_multiple_answers:
     type: boolean
     default: false
   allows_revoting:
     type: boolean
-    default: true
-    description: Whether voters may change or retract their answers.
+    description: >-
+      Whether voters may change or retract their answers; defaults to true for a regular poll and
+      to false for a quiz.
+  correct_option_ids:
+    type: array
+    minItems: 1
+    uniqueItems: true
+    description: >-
+      The correct options of a quiz, counted from 0, in increasing order; at least one is
+      required.
+    items:
+      type: integer
+      minimum: 0
+  correct_option_id:
+    type: integer
+    minimum: 0
+    description: The older form of a single correct option, ignored with `correct_option_ids`.
+  explanation:
+    type: string
+    description: >-
+      What clients show a voter who chose a wrong option of a quiz, 0–200 characters with at most 2
+      line feeds after normalization, which keeps all its entities.
+  explanation_parse_mode:
+    $ref: ./ParseMode.yaml
+  explanation_entities:
+    type: array
+    description: Entities marking the explanation; ignored when `explanation_parse_mode` formats it.
+    items:
+      $ref: ./MessageEntityParameter.yaml
+  open_period:
+    type: integer
+    minimum: 5
+    maximum: 2628000
+    description: >-
+      How long the poll stays open, in seconds. The emulator does not close polls as time passes;
+      the poll expiry route closes it.
+  close_date:
+    type: integer
+    description: >-
+      When the poll closes, as a Unix time 5 to 2628000 seconds from now, which the poll shows
+      with the matching `open_period`.
   is_closed:
     type: boolean
     default: false

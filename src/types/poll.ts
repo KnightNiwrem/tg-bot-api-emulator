@@ -18,6 +18,42 @@ export const MAX_POLL_OPTION_TEXT_LENGTH = 100;
  */
 export const MAX_POLL_OPTION_COUNT = 12;
 
+/**
+ * The most characters of a quiz's explanation, as the Bot API documents it; Telegram's servers
+ * enforce it, not TDLib.
+ */
+export const MAX_QUIZ_EXPLANATION_LENGTH = 200;
+
+/** The most line feeds a quiz's explanation holds, as the Bot API documents it. */
+export const MAX_QUIZ_EXPLANATION_LINE_FEEDS = 2;
+
+/** The shortest time a poll stays open when it closes by itself, as the Bot API documents it. */
+export const MIN_POLL_OPEN_PERIOD_SECONDS = 5;
+
+/** The longest time a poll stays open when it closes by itself, as the Bot API documents it. */
+export const MAX_POLL_OPEN_PERIOD_SECONDS = 2_628_000;
+
+/**
+ * What kind of poll it is: a regular poll, or a quiz, whose correct options and explanation only
+ * some observers see, as `showsQuizSolution` decides.
+ */
+export type PollType =
+  | { readonly kind: 'regular' }
+  | {
+    readonly kind: 'quiz';
+    /** The positions of the correct options, in increasing order; at least one. */
+    readonly correctOptionPositions: readonly number[];
+    /** What clients show a voter who chose a wrong option; empty for none. */
+    readonly explanation: FormattedText;
+  };
+
+/** When a poll closes by itself, as the Bot API shows it with `open_period` and `close_date`. */
+export interface PollClosingTime {
+  /** How long the poll stays open after it is sent. */
+  readonly openPeriodSeconds: number;
+  readonly closeDateUnixSeconds: number;
+}
+
 /** An answer option of a poll. */
 export interface PollOption {
   /**
@@ -46,8 +82,11 @@ export interface NewPoll {
   readonly allowsMultipleAnswers: boolean;
   /** Whether a voter may change or retract its answer, which TDLib calls revoting. */
   readonly allowsRevoting: boolean;
+  readonly type: PollType;
   /** Whether the poll is created closed, as a bot's preview of a poll is. */
   readonly isClosed: boolean;
+  /** When the poll closes by itself; omitted for a poll that stays open until it is stopped. */
+  readonly closingTime?: PollClosingTime;
 }
 
 /**
@@ -63,8 +102,14 @@ export interface Poll {
   readonly isAnonymous: boolean;
   readonly allowsMultipleAnswers: boolean;
   readonly allowsRevoting: boolean;
-  /** Whether the poll no longer accepts answers: it was created closed, or its owner stopped it. */
+  readonly type: PollType;
+  /**
+   * Whether the poll no longer accepts answers: it was created closed, its owner stopped it, or
+   * its closing time arrived.
+   */
   readonly isClosed: boolean;
+  /** As `NewPoll` describes it; kept after the poll closes. */
+  readonly closingTime?: PollClosingTime;
   /**
    * Each voter's chosen options, by the voting account's ID, as option positions in increasing
    * order. A voter who never answered, or who retracted its answer, has no entry.
@@ -97,6 +142,18 @@ export function countPollVoters(poll: Poll): PollVoterCounts {
  */
 export function getVoterAnswer(poll: Poll, voterId: number): readonly number[] {
   return poll.answersByVoterId.get(voterId) ?? [];
+}
+
+/**
+ * Whether an observer sees which options of a quiz are correct, and its explanation: once the quiz
+ * is closed, as the bot that sent it, or as an account that answered it, as Telegram's servers
+ * give them to TDLib. An account that retracts its answer to a quiz that allows revoting no longer
+ * sees them: TDLib's `get_poll_object` hides them for a retraction, and its `on_get_poll` accepts
+ * servers clearing them only for such a quiz. A regular poll has neither.
+ */
+export function showsQuizSolution(poll: Poll, observerId: number): boolean {
+  return poll.type.kind === 'quiz' &&
+    (poll.isClosed || poll.creatorBotId === observerId || poll.answersByVoterId.has(observerId));
 }
 
 /**

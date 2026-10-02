@@ -1,0 +1,26 @@
+description: >-
+  The arrival of a poll's closing time. The emulator does not close polls as time passes, so a
+  test chooses when a poll sent with `open_period` or `close_date` closes.
+parameters:
+  - $ref: ../components/parameters/SessionId.yaml
+  - $ref: ../components/parameters/PollId.yaml
+post:
+  operationId: expirePoll
+  summary: Close a poll as the arrival of its closing time does
+  description: >-
+    Closes the poll, which keeps its votes and accepts no more answers, through every message
+    showing it. The bot that sent the poll receives a `poll` update with the closed poll, as
+    Telegram's servers report a poll that closed by itself.
+  responses:
+    '200':
+      description: The poll closed; it is shown as the bot that sent it sees it.
+      content:
+        application/json:
+          schema:
+            $ref: ../components/schemas/ExpiredPollResponse.yaml
+    '404':
+      description: No active test session has the supplied identifier, or the session has no such poll.
+    '409':
+      description: >-
+        The poll has no closing time, so it stays open until its bot stops it, or it is already
+        closed.

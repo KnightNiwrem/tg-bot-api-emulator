@@ -1,5 +1,5 @@
 description: >-
-  Telegram Bot API method for sending a regular poll, which the sending bot owns. Accounts of the
+  Telegram Bot API method for sending a regular poll or a quiz, which the sending bot owns. Accounts of the
   chat vote in it through the account routes; bots see each option's voter count in the message.
   The question and options are read and normalized as message text is, and keep only their
   custom emoji, as TDLib keeps them. A forward of the poll's message shows the same poll, whose
@@ -10,7 +10,7 @@ parameters:
   - $ref: ../components/parameters/BotToken.yaml
 post:
   operationId: sendPoll
-  summary: Send a regular poll from the authenticated virtual bot to an account or a supergroup
+  summary: Send a poll or a quiz from the authenticated virtual bot to an account or a supergroup
   requestBody:
     required: true
     content:
@@ -29,6 +29,10 @@ post:
             contentType: application/json
           reply_markup:
             contentType: application/json
+          correct_option_ids:
+            contentType: application/json
+          explanation_entities:
+            contentType: application/json
       multipart/form-data:
         schema:
           $ref: ../components/schemas/SendPollRequest.yaml
@@ -40,6 +44,10 @@ post:
           reply_parameters:
             contentType: application/json
           reply_markup:
+            contentType: application/json
+          correct_option_ids:
+            contentType: application/json
+          explanation_entities:
             contentType: application/json
   responses:
     '200':
@@ -59,15 +67,29 @@ post:
         option cannot be read (`Bad Request: can't parse InputPollOption: …`, such as `Expected
         InputPollOption to be an Object`, `Can't find field "text"`, or the description of its
         formatting); an option has media (`Bad Request: media of poll options is not
-        supported`); `type` is `quiz` (`Bad Request: quiz polls are not supported`) or unknown
-        (`Bad Request: unsupported poll type specified`); `chat_id` is missing (`Bad Request:
-        chat_id is empty`); the reply markup, the chat, the reply, and the message effect fail
-        as for `sendMessage`; the question is empty after normalization (`Bad Request: text
+        supported`); `type` is unknown (`Bad Request: unsupported poll type specified`); a quiz's
+        explanation cannot be read, as for text, or `correct_option_ids` is not JSON (`Bad
+        Request: can't parse correct option identifiers JSON object`), not an array (`Bad
+        Request: expected an Array of correct option identifiers`), or holds a value that is not a
+        number (`Bad Request: correct option identifier must be of type Number`) or not a 32-bit
+        integer (`Bad Request: invalid correct option identifier specified`); both `open_period`
+        and `close_date` are given (`Bad Request: open_period and close_date can't be used
+        together`); `chat_id` is missing (`Bad Request: chat_id is empty`); a button of the reply
+        markup cannot be read, as for `sendMessage`; `open_period` is outside 5–2628000 (`Bad
+        Request: open_period must be from 5 to 2628000 seconds`) or `close_date` is not 5 to
+        2628000 seconds from now (`Bad Request: close_date must be from 5 to 2628000 seconds in
+        the future`); the chat, the reply, and the message effect fail as for `sendMessage`; the question is empty after normalization (`Bad Request: text
         must be non-empty`) or longer than 300 characters (`Bad Request: poll question length
         must not exceed 300`); there are no options (`Bad Request: poll must have at least one
         answer option`) or more than 12 (`Bad Request: poll can't have more than 12 options`);
         an option is empty after normalization (`Bad Request: text must be non-empty`) or
-        longer than 100 characters (`Bad Request: poll options length must not exceed 100`); or
+        longer than 100 characters (`Bad Request: poll options length must not exceed 100`); a
+        quiz lists no correct option (`Bad Request: correct quiz option list must be
+        non-empty`), lists them out of order (`Bad Request: correct quiz option list must be
+        increasing`), or lists an option the poll lacks (`Bad Request: wrong quiz
+        correct_option_id`); its explanation has more than 200 characters (`Bad Request: quiz
+        explanation must have at most 200 characters`) or 2 line feeds (`Bad Request: quiz
+        explanation must have at most 2 line feeds`); or
         a button's callback data exceeds 64 bytes (`Bad Request: BUTTON_DATA_INVALID`). A
         refused poll stores nothing.
       content:

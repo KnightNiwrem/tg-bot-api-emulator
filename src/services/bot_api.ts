@@ -31,7 +31,14 @@ import {
   getSupergroupNonMemberFailureReason,
 } from '../types/chat_membership.ts';
 import type { InlineQueryId, InlineQueryResultsButton } from '../types/inline_query.ts';
-import type { Poll, PollId } from '../types/poll.ts';
+import {
+  MAX_POLL_OPEN_PERIOD_SECONDS,
+  MIN_POLL_OPEN_PERIOD_SECONDS,
+  type Poll,
+  type PollClosingTime,
+  type PollId,
+  showsQuizSolution,
+} from '../types/poll.ts';
 import {
   allowsSomeInlineQueryChat,
   type InlineKeyboard,
@@ -332,9 +339,25 @@ export interface SpecifiedRichMessage {
 
 export type SendRichMessageRequest = SendRequestOptions & SpecifiedRichMessage;
 
+/** A poll's type as `sendPoll` specifies it: regular, or a quiz with its solution. */
+export type PollTypeRequest =
+  | { readonly kind: 'regular' }
+  | {
+    readonly kind: 'quiz';
+    /** The Bot API `correct_option_ids`, or the legacy `correct_option_id` as one position. */
+    readonly correctOptionPositions: readonly number[];
+    /** The Bot API `explanation`; empty text for none. */
+    readonly explanation: SpecifiedFormattedText;
+  };
+
+/** When a poll closes by itself, as `sendPoll` specifies it with one of two parameters. */
+export type PollClosingTimeRequest =
+  | { readonly kind: 'open_period'; readonly openPeriodSeconds: number }
+  | { readonly kind: 'close_date'; readonly closeDateUnixSeconds: number };
+
 /**
- * A regular poll as `sendPoll` specifies it. Restrictions on who may vote, added options, media,
- * descriptions, and shuffled or hidden results are not supported.
+ * A regular poll or a quiz as `sendPoll` specifies it. Restrictions on who may vote, added
+ * options, media, descriptions, and shuffled or hidden results are not supported.
  */
 export type SendPollRequest = SendRequestOptions & {
   readonly question: SpecifiedFormattedText;
@@ -346,8 +369,11 @@ export type SendPollRequest = SendRequestOptions & {
   readonly allowsMultipleAnswers: boolean;
   /** The Bot API `allows_revoting`. */
   readonly allowsRevoting: boolean;
+  readonly type: PollTypeRequest;
   /** The Bot API `is_closed`, which sends the poll closed, as a preview. */
   readonly isClosed: boolean;
+  /** Omitted for a poll that stays open until it is stopped. */
+  readonly closingTime?: PollClosingTimeRequest;
 };
 
 /** New content of a text or rich message: text with its formatting, or a rich message. */
@@ -411,6 +437,8 @@ export type SendFailureReason =
   | 'button_type_invalid'
   | 'quote_invalid'
   | PollLimitFailure['reason']
+  | 'poll_open_period_invalid'
+  | 'poll_close_date_invalid'
   | 'bot_blocked'
   | 'file_empty'
   | 'image_invalid'
@@ -1694,6 +1722,8 @@ interface BotApiServiceDependencies {
   readonly publicChats: PublicChatDirectory;
   /** Hides the accounts whose privacy settings keep forwards from linking to them. */
   readonly getPrivateForwardName: PrivateForwardNameLookup;
+  /** The time that closing times of polls count from. */
+  readonly currentUnixTimeSeconds: () => number;
 }
 
 interface PublicChatDirectory {
@@ -1730,6 +1760,7 @@ export class BotApiService {
   readonly #chatActions: ChatActions;
   readonly #publicChats: PublicChatDirectory;
   readonly #getPrivateForwardName: PrivateForwardNameLookup;
+  readonly #currentUnixTimeSeconds: () => number;
 
   constructor(
     {
@@ -1754,6 +1785,7 @@ export class BotApiService {
       chatActions,
       publicChats,
       getPrivateForwardName,
+      currentUnixTimeSeconds,
     }: BotApiServiceDependencies,
   ) {
     this.#bots = bots;
@@ -1777,6 +1809,7 @@ export class BotApiService {
     this.#chatActions = chatActions;
     this.#publicChats = publicChats;
     this.#getPrivateForwardName = getPrivateForwardName;
+    this.#currentUnixTimeSeconds = currentUnixTimeSeconds;
   }
 
   /**
@@ -2208,9 +2241,13 @@ export class BotApiService {
   }
 
   /**
-   * Sends a regular poll to a private chat or a supergroup, as `sendMessage` sends text. Its
-   * question and options are checked as `normalizeNewPoll` checks them, where `sendMessage` checks
-   * its text. The bot owns the poll; the accounts of the chat vote in it.
+   * Sends a regular poll or a quiz to a private chat or a supergroup, as `sendMessage` sends text.
+   * Its question, options, and quiz settings are checked as `normalizeNewPoll` checks them, where
+   * `sendMessage` checks its text. The bot owns the poll; the accounts of the chat vote in it.
+   *
+   * A closing time is checked first, as `#resolvePollClosingTime` checks it, while Telegram's
+   * servers check it only once the poll is sent; a request that also fails otherwise fails for its
+   * closing time.
    */
   sendPoll(
     authenticatedBot: VirtualBotProfile,
@@ -2220,10 +2257,18 @@ export class BotApiService {
       isAnonymous,
       allowsMultipleAnswers,
       allowsRevoting,
+      type,
       isClosed,
+      closingTime,
       ...options
     }: SendPollRequest,
   ): SendResult {
+    const closingTimeResolution = closingTime === undefined
+      ? undefined
+      : this.#resolvePollClosingTime(closingTime);
+    if (closingTimeResolution?.resolved === false) {
+      return { sent: false, reason: closingTimeResolution.reason };
+    }
     return this.#send(authenticatedBot, {
       kind: 'poll',
       poll: {
@@ -2233,9 +2278,47 @@ export class BotApiService {
         isAnonymous,
         allowsMultipleAnswers,
         allowsRevoting,
+        type,
         isClosed,
+        ...(closingTimeResolution === undefined
+          ? {}
+          : { closingTime: closingTimeResolution.closingTime }),
       },
     }, options);
+  }
+
+  /**
+   * Resolves when a poll sent now closes by itself, as Telegram shows it: an open period of 5 to
+   * 2628000 seconds closes the poll that long after now, and a close date at least 5 and at most
+   * 2628000 seconds after now leaves the poll open until then. The Bot API documents these
+   * limits, which Telegram's servers enforce.
+   */
+  #resolvePollClosingTime(closingTime: PollClosingTimeRequest):
+    | { readonly resolved: true; readonly closingTime: PollClosingTime }
+    | {
+      readonly resolved: false;
+      readonly reason: 'poll_open_period_invalid' | 'poll_close_date_invalid';
+    } {
+    const now = this.#currentUnixTimeSeconds();
+    const openPeriodSeconds = closingTime.kind === 'open_period'
+      ? closingTime.openPeriodSeconds
+      : closingTime.closeDateUnixSeconds - now;
+    if (
+      !Number.isSafeInteger(openPeriodSeconds) ||
+      openPeriodSeconds < MIN_POLL_OPEN_PERIOD_SECONDS ||
+      openPeriodSeconds > MAX_POLL_OPEN_PERIOD_SECONDS
+    ) {
+      return {
+        resolved: false,
+        reason: closingTime.kind === 'open_period'
+          ? 'poll_open_period_invalid'
+          : 'poll_close_date_invalid',
+      };
+    }
+    return {
+      resolved: true,
+      closingTime: { openPeriodSeconds, closeDateUnixSeconds: now + openPeriodSeconds },
+    };
   }
 
   /**
@@ -2296,8 +2379,9 @@ export class BotApiService {
    * of copied media, while text and rich messages stay as they are, apart from the buttons of a
    * rich message, which change as for a forward, and a video takes the request's start timestamp,
    * if any, as for a forward. A copy of a poll is a new poll, as `#createPollCopy` creates it, which
-   * ignores a new caption. As TDLib lets bots do, a bot may copy a message whose sender protected
-   * it; a service message cannot be copied.
+   * ignores a new caption; a quiz whose solution the bot does not see cannot be copied. As TDLib
+   * lets bots do, a bot may copy a message whose sender protected it; a service message cannot be
+   * copied.
    *
    * As for `forwardMessage`, the copied message is checked in full before the chat it goes to.
    */
@@ -2319,9 +2403,9 @@ export class BotApiService {
       return { sent: false, reason: 'message_not_copyable' };
     }
     const content = getRepeatedContent(lookup.message.content, 'copy');
-    const result = this.#send(
-      authenticatedBot,
-      content.kind === 'poll' ? this.#createPollCopy(authenticatedBot, content.pollId) : {
+    const copiedContent: OutgoingMessageContent | undefined = content.kind === 'poll'
+      ? this.#createPollCopy(authenticatedBot, content.pollId)
+      : {
         kind: 'existing',
         content: videoStartTimestampSeconds === undefined
           ? content
@@ -2333,9 +2417,11 @@ export class BotApiService {
             showsCaptionAboveMedia,
           },
         }),
-      },
-      options,
-    );
+      };
+    if (copiedContent === undefined) {
+      return { sent: false, reason: 'message_not_copyable' };
+    }
+    const result = this.#send(authenticatedBot, copiedContent, options);
     return result.sent ? { sent: true, messageId: result.message.message_id } : result;
   }
 
@@ -2383,7 +2469,8 @@ export class BotApiService {
         }
         const content = getRepeatedContent(message.content, 'copy');
         if (content.kind === 'poll') {
-          return { content: this.#createPollCopy(authenticatedBot, content.pollId) };
+          const pollCopy = this.#createPollCopy(authenticatedBot, content.pollId);
+          return pollCopy === undefined ? undefined : { content: pollCopy };
         }
         return {
           content: {
@@ -2515,13 +2602,23 @@ export class BotApiService {
 
   /**
    * Creates the content of a copy of a poll, as TDLib's `dup_poll` does: a new poll that the copying
-   * bot owns, open and without votes, with the original's question, options, and settings.
+   * bot owns, open and without votes, with the original's question, options, settings, and quiz
+   * solution, and the original's open period counted from now. As TDLib's `has_input_media` and
+   * the Bot API require, a quiz can be copied only by a bot that sees its solution, as
+   * `showsQuizSolution` decides; returns `undefined` for any other quiz.
    */
-  #createPollCopy(authenticatedBot: VirtualBotProfile, pollId: PollId): OutgoingMessageContent {
+  #createPollCopy(
+    authenticatedBot: VirtualBotProfile,
+    pollId: PollId,
+  ): OutgoingMessageContent | undefined {
     const poll = this.#polls.getPoll(pollId);
     if (poll === undefined) {
       throw new Error(`Copied poll ${pollId} does not exist`);
     }
+    if (poll.type.kind === 'quiz' && !showsQuizSolution(poll, authenticatedBot.id)) {
+      return undefined;
+    }
+    const openPeriodSeconds = poll.closingTime?.openPeriodSeconds;
     return {
       kind: 'poll',
       poll: {
@@ -2531,7 +2628,14 @@ export class BotApiService {
         isAnonymous: poll.isAnonymous,
         allowsMultipleAnswers: poll.allowsMultipleAnswers,
         allowsRevoting: poll.allowsRevoting,
+        type: poll.type,
         isClosed: false,
+        ...(openPeriodSeconds === undefined ? {} : {
+          closingTime: {
+            openPeriodSeconds,
+            closeDateUnixSeconds: this.#currentUnixTimeSeconds() + openPeriodSeconds,
+          },
+        }),
       },
     };
   }
@@ -2718,6 +2822,11 @@ export class BotApiService {
       case 'poll_options_missing':
       case 'poll_has_too_many_options':
       case 'poll_option_too_long':
+      case 'quiz_correct_options_missing':
+      case 'quiz_correct_options_not_increasing':
+      case 'quiz_correct_option_not_found':
+      case 'quiz_explanation_too_long':
+      case 'quiz_explanation_has_too_many_line_feeds':
       case 'bot_blocked':
         return { sent: false, reason: result.reason };
       // A bot can address a user only after the user has written to it. Telegram reports any
@@ -2781,6 +2890,11 @@ export class BotApiService {
       case 'poll_options_missing':
       case 'poll_has_too_many_options':
       case 'poll_option_too_long':
+      case 'quiz_correct_options_missing':
+      case 'quiz_correct_options_not_increasing':
+      case 'quiz_correct_option_not_found':
+      case 'quiz_explanation_too_long':
+      case 'quiz_explanation_has_too_many_line_feeds':
         return { sent: false, reason: result.reason };
       case 'bot_not_found':
         throw new Error(`Authenticated bot ${authenticatedBot.id} does not exist`);

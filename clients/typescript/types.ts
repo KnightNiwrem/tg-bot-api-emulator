@@ -905,7 +905,7 @@ export interface PollOption {
   readonly voter_count: number;
 }
 
-/** A regular poll a bot sent, with its votes as they are now. */
+/** A regular poll or a quiz a bot sent, with its votes as they are now. */
 export interface Poll {
   readonly id: string;
   readonly question: string;
@@ -914,13 +914,32 @@ export interface Poll {
   readonly options: readonly PollOption[];
   /** How many accounts chose any option. */
   readonly total_voter_count: number;
+  /**
+   * How long the poll was set to stay open after it was sent, in seconds; present, with
+   * `close_date`, only while a poll sent with a closing time is open. The emulator does not close
+   * polls as time passes: `session.expirePoll` makes the closing time arrive.
+   */
+  readonly open_period?: number;
+  /** When the poll is set to close, as a Unix time in seconds; present only with `open_period`. */
+  readonly close_date?: number;
   readonly is_closed: boolean;
   readonly is_anonymous: boolean;
   readonly allows_multiple_answers: boolean;
   readonly allows_revoting: boolean;
   /** The emulator's polls never restrict who may vote. */
   readonly members_only: false;
-  readonly type: 'regular';
+  readonly type: 'regular' | 'quiz';
+  /**
+   * The correct option of a quiz with one, shown to its bot, to accounts that answered, and to
+   * everyone once it is closed.
+   */
+  readonly correct_option_id?: number;
+  /** The correct options of a quiz, shown as `correct_option_id` is. */
+  readonly correct_option_ids?: readonly number[];
+  /** A quiz's explanation, shown as `correct_option_id` is; absent without one. */
+  readonly explanation?: string;
+  /** Present with the explanation, empty when it has no entities. */
+  readonly explanation_entities?: readonly MessageEntity[];
 }
 
 /**
