@@ -55,6 +55,7 @@ import {
   type ChatMessage,
   type ExternalReply,
   getContentText,
+  isCaptionedMediaContent,
   type MessageForwardInfo,
   type PrivateMessage,
   type SupergroupMessage,
@@ -386,15 +387,15 @@ export class BotMessageViewService {
       }),
     };
     const { content } = message;
+    if (isCaptionedMediaContent(content)) {
+      return {
+        ...context,
+        contentFile: this.#observeFile(content.fileId, observerId, message.id),
+      };
+    }
     switch (content.kind) {
       case 'text':
         return context;
-      case 'photo':
-      case 'document':
-        return {
-          ...context,
-          contentFile: this.#observeFile(content.fileId, observerId, message.id),
-        };
       case 'rich_message':
         return {
           ...context,

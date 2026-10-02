@@ -65,7 +65,7 @@ interface MessageProjectionContext {
   readonly observerId: number;
   /** Every user the message's text, caption, or rich message mentions, by ID. */
   readonly mentionedUsers: ReadonlyMap<number, BotApiUser>;
-  /** The file of a photo or document message; omitted for other messages. */
+  /** The file of a captioned media message; omitted for other messages. */
   readonly contentFile?: ObservedFile;
   /**
    * The files of a rich message's photo and document blocks, by stored file; omitted for other
@@ -100,7 +100,7 @@ export interface ExternalReplyProjectionContext {
   readonly originSender?: BotApiUser;
   /** The replied message's supergroup; omitted for a message of a private chat. */
   readonly supergroup?: Supergroup;
-  /** The replied photo or document; omitted for a replied text message. */
+  /** The file of the replied media; omitted for a replied text or rich message. */
   readonly mediaFile?: ObservedFile;
 }
 

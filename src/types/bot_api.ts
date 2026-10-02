@@ -229,6 +229,21 @@ interface BotApiCaption {
   readonly caption_entities?: readonly BotApiMessageEntity[];
 }
 
+/** The fields of media that a message shows with a caption: a photo or a document. */
+type BotApiCaptionedMediaContent =
+  & BotApiCaption
+  & (
+    | {
+      /** The photo's sizes, smallest first; the emulator keeps a single size. */
+      readonly photo: readonly BotApiPhotoSize[];
+      /** Present only for a caption that clients show above the photo. */
+      readonly show_caption_above_media?: true;
+      /** Present only for a photo that clients cover until the user reveals it. */
+      readonly has_media_spoiler?: true;
+    }
+    | { readonly document: BotApiDocument }
+  );
+
 /** The fields that show what a message is, which follow its reply. */
 export type BotApiMessageContent =
   | {
@@ -236,15 +251,7 @@ export type BotApiMessageContent =
     /** Omitted when the text has no entities, as Telegram does. */
     readonly entities?: readonly BotApiMessageEntity[];
   }
-  | (BotApiCaption & {
-    /** The photo's sizes, smallest first; the emulator keeps a single size. */
-    readonly photo: readonly BotApiPhotoSize[];
-    /** Present only for a caption that clients show above the photo. */
-    readonly show_caption_above_media?: true;
-    /** Present only for a photo that clients cover until the user reveals it. */
-    readonly has_media_spoiler?: true;
-  })
-  | (BotApiCaption & { readonly document: BotApiDocument })
+  | BotApiCaptionedMediaContent
   | { readonly rich_message: BotApiRichMessage };
 
 /**

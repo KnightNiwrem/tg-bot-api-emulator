@@ -197,12 +197,14 @@ export interface RichMessageContent extends RichMessage {
   readonly kind: 'rich_message';
 }
 
-/** What a message shows: text, a file with a caption, or a rich message. */
-export type MessageContent =
-  | TextMessageContent
-  | PhotoMessageContent
-  | DocumentMessageContent
-  | RichMessageContent;
+/**
+ * Media that a message shows with a caption: a photo or a document. Each carries the one stored
+ * file it shows, and a caption that is empty when it has none.
+ */
+export type CaptionedMediaContent = PhotoMessageContent | DocumentMessageContent;
+
+/** What a message shows: text, captioned media, or a rich message. */
+export type MessageContent = TextMessageContent | CaptionedMediaContent | RichMessageContent;
 
 /** A service message's record that accounts or bots joined a supergroup. */
 export interface MembersJoinedMessageContent {
@@ -245,17 +247,41 @@ export function isSupergroupServiceContent(
 }
 
 /**
- * The text a message's content carries: the text of a text message, or the caption of a media
- * message, which is empty when it has none. As TDLib's `get_message_content_text` has none for
+ * Whether a message's content is captioned media, rather than text, a rich message, or a service
+ * message.
+ */
+export function isCaptionedMediaContent(
+  content: SupergroupMessageContent,
+): content is CaptionedMediaContent {
+  switch (content.kind) {
+    case 'photo':
+    case 'document':
+      return true;
+    case 'text':
+    case 'rich_message':
+    case 'members_joined':
+    case 'member_left':
+    case 'title_changed':
+      return false;
+    default: {
+      const unhandledContent: never = content;
+      throw new Error(`Unhandled message content: ${JSON.stringify(unhandledContent)}`);
+    }
+  }
+}
+
+/**
+ * The text a message's content carries: the text of a text message, or the caption of captioned
+ * media, which is empty when it has none. As TDLib's `get_message_content_text` has none for
  * them, a rich message and a service message carry no text.
  */
 export function getContentText(content: SupergroupMessageContent): FormattedText {
+  if (isCaptionedMediaContent(content)) {
+    return content.caption;
+  }
   switch (content.kind) {
     case 'text':
       return content;
-    case 'photo':
-    case 'document':
-      return content.caption;
     case 'rich_message':
     case 'members_joined':
     case 'member_left':
@@ -330,8 +356,8 @@ export interface ExternalReply {
    * chat and ID Telegram does not show in other chats.
    */
   readonly supergroupMessage?: SupergroupMessageReference;
-  /** The replied photo or document without its caption; omitted for a text message. */
-  readonly media?: PhotoMessageContent | DocumentMessageContent;
+  /** The replied media without its caption; omitted for a text or rich message. */
+  readonly media?: CaptionedMediaContent;
 }
 
 /** A canonical message of a private conversation, written by either participant. */

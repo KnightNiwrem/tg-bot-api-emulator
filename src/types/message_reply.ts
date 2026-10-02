@@ -4,6 +4,7 @@ import {
   type ExternalReply,
   type FormattedText,
   getContentText,
+  isCaptionedMediaContent,
   type TextEntity,
   type TextQuote,
 } from './virtual_message.ts';
@@ -58,7 +59,7 @@ export function createExternalReply(
       ...(repliedMessage.kind === 'supergroup_message'
         ? { supergroupMessage: { chatId: repliedMessage.chatId, messageId: messageIdInChat } }
         : {}),
-      ...(content.kind === 'photo' || content.kind === 'document'
+      ...(isCaptionedMediaContent(content)
         ? { media: { ...content, caption: { text: '', entities: [] } } }
         : {}),
     },
