@@ -776,8 +776,11 @@ Deno.test('TypeScript client sends albums to private chats and supergroups', asy
   const [front, back] = privateAlbum;
   if (
     privateAlbum.length !== 2 || front.media_group_id === undefined ||
-    back.media_group_id !== front.media_group_id || !('photo' in front) ||
-    front.caption !== 'Front' || back.reply_to_message?.message_id !== greeting.message_id
+    back.media_group_id !== front.media_group_id || !('photo' in front) || !('photo' in back) ||
+    front.caption !== 'Front' || back.caption !== undefined ||
+    JSON.stringify(front.caption_entities) !==
+      JSON.stringify([{ type: 'bold', offset: 0, length: 5 }]) ||
+    back.reply_to_message?.message_id !== greeting.message_id
   ) {
     throw new Error(`Expected the private album, received ${JSON.stringify(privateAlbum)}`);
   }
@@ -798,6 +801,9 @@ Deno.test('TypeScript client sends albums to private chats and supergroups', asy
     supergroupAlbum.length !== 2 || plan.chat.id !== supergroup.id ||
     plan.media_group_id === undefined || notes.media_group_id !== plan.media_group_id ||
     plan.media_group_id === front.media_group_id ||
+    plan.document?.file_name !== 'plan.txt' || notes.document?.file_name !== 'notes.txt' ||
+    plan.caption !== undefined ||
+    notes.caption !== 'Notes' ||
     JSON.stringify(history.slice(-2)) !== JSON.stringify(supergroupAlbum)
   ) {
     throw new Error(`Expected the supergroup album, received ${JSON.stringify(supergroupAlbum)}`);
