@@ -70,7 +70,8 @@ reads with its own descriptions, such as
 `Bad Request: correct option identifier must be of type Number`, or the legacy `correct_option_id`.
 Its `explanation`, with `explanation_parse_mode` or `explanation_entities`, is read before them and
 normalized as text that may be empty, keeping all its entities. After the options, TDLib's
-[`check_quiz_correct_option_ids`][check-quiz] checks the correct options:
+[`check_quiz_correct_option_ids`][check-quiz] checks the correct options, then Telegram's servers
+check the explanation's documented limits:
 
 | Check                                                | Error                                                            |
 | ---------------------------------------------------- | ---------------------------------------------------------------- |

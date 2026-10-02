@@ -915,11 +915,12 @@ export interface Poll {
   /** How many accounts chose any option. */
   readonly total_voter_count: number;
   /**
-   * How long the poll stays open after it was sent, in seconds; present, with `close_date`, only
-   * while a poll that closes by itself is open.
+   * How long the poll was set to stay open after it was sent, in seconds; present, with
+   * `close_date`, only while a poll sent with a closing time is open. The emulator does not close
+   * polls as time passes: `session.expirePoll` makes the closing time arrive.
    */
   readonly open_period?: number;
-  /** When the poll closes, as a Unix time in seconds; present only with `open_period`. */
+  /** When the poll is set to close, as a Unix time in seconds; present only with `open_period`. */
   readonly close_date?: number;
   readonly is_closed: boolean;
   readonly is_anonymous: boolean;
