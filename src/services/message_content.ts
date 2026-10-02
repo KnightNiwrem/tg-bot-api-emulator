@@ -41,16 +41,16 @@ import type {
   StoredPhotoFile,
 } from '../types/stored_file.ts';
 import {
+  type CaptionedMediaContent,
   type ChatMessage,
   type ContentMessage,
   countTextCharacters,
-  type DocumentMessageContent,
   type FormattedText,
   getContentText,
+  isCaptionedMediaContent,
   MAX_CAPTION_LENGTH,
   MAX_TEXT_MESSAGE_LENGTH,
   type MessageContent,
-  type PhotoMessageContent,
   type TextEntity,
   type TextQuote,
 } from '../types/virtual_message.ts';
@@ -141,7 +141,6 @@ export type CaptionReplacement = SpecifiedCaption & { readonly showsCaptionAbove
 /** New message content that passed Telegram's checks, whose upload is not yet stored. */
 export type NormalizedOutgoingContent =
   | Extract<MessageContent, { readonly kind: 'text' }>
-  | { readonly kind: 'existing'; readonly content: MessageContent }
   | {
     readonly kind: 'photo';
     readonly photo: OutgoingPhoto;
@@ -154,7 +153,8 @@ export type NormalizedOutgoingContent =
     readonly document: OutgoingDocument;
     readonly caption: FormattedText;
   }
-  | { readonly kind: 'rich_message'; readonly richMessage: OutgoingRichMessage };
+  | { readonly kind: 'rich_message'; readonly richMessage: OutgoingRichMessage }
+  | { readonly kind: 'existing'; readonly content: MessageContent };
 
 export type ContentNormalizationFailure =
   | TextInvalidFailure
@@ -255,8 +255,9 @@ export function normalizeOutgoingAlbum(
 }
 
 /**
- * Keeps the content of an existing message as it is, apart from a replaced caption of media, which
- * is normalized as a new caption is. Text and rich messages have no caption to replace.
+ * Keeps the content of an existing message as it is, apart from a replaced caption of captioned
+ * media, which is normalized as a new caption is. Text and rich messages have no caption to
+ * replace.
  */
 function normalizeExistingContent(
   content: MessageContent,
@@ -264,9 +265,7 @@ function normalizeExistingContent(
   sender: MessageSenderKind,
   context: FormattedTextFixingContext,
 ): OutgoingContentNormalization {
-  if (
-    captionReplacement === undefined || (content.kind !== 'photo' && content.kind !== 'document')
-  ) {
+  if (captionReplacement === undefined || !isCaptionedMediaContent(content)) {
     return { normalized: true, content: { kind: 'existing', content } };
   }
   const captionNormalization = normalizeCaption(captionReplacement, sender, context);
@@ -468,7 +467,7 @@ export function replaceMessageText(
 }
 
 /**
- * Replaces the caption of a media message, normalized as when sending; an empty caption removes
+ * Replaces the caption of captioned media, normalized as when sending; an empty caption removes
  * it. As on Telegram, a text message has no caption to replace, and only a photo shows its caption
  * above itself: a document ignores `showsCaptionAboveMedia`, and omitting it keeps the setting.
  */
@@ -478,7 +477,7 @@ export function replaceMessageCaption(
   sender: MessageSenderKind,
   context: FormattedTextFixingContext,
 ): ContentReplacement<'message_has_no_caption' | 'caption_too_long'> {
-  if (content.kind !== 'photo' && content.kind !== 'document') {
+  if (!isCaptionedMediaContent(content)) {
     return { replaced: false, failure: { reason: 'message_has_no_caption' } };
   }
   const captionNormalization = normalizeCaption(specifiedCaption, sender, context);
@@ -536,10 +535,10 @@ export function replaceMessageMedia(
  * placement keeps it.
  */
 function withCaption(
-  content: PhotoMessageContent | DocumentMessageContent,
+  content: CaptionedMediaContent,
   caption: FormattedText,
   showsCaptionAboveMedia: boolean | undefined,
-): PhotoMessageContent | DocumentMessageContent {
+): CaptionedMediaContent {
   return content.kind === 'photo'
     ? {
       ...content,

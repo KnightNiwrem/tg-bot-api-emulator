@@ -71,6 +71,7 @@ import {
   type CanonicalMessageId,
   type ChatMessage,
   type InlineMessageId,
+  isCaptionedMediaContent,
   isContentMessage,
   type MediaGroupId,
   type MessageContent,
@@ -4179,11 +4180,11 @@ function toEditInlineMessageFailureReason(
 }
 
 /**
- * Media content without its caption, as a copy that removes captions sends it; text and rich
+ * Captioned media without its caption, as a copy that removes captions sends it; text and rich
  * messages are kept.
  */
 function withoutCaption(content: MessageContent): MessageContent {
-  return content.kind === 'photo' || content.kind === 'document'
+  return isCaptionedMediaContent(content)
     ? { ...content, caption: { text: '', entities: [] } }
     : content;
 }
