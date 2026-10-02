@@ -3,6 +3,7 @@ additionalProperties: false
 required:
   - id
   - botApiRoot
+  - uploadProfile
 properties:
   id:
     type: string
@@ -12,3 +13,5 @@ properties:
     type: string
     format: uri
     description: Absolute API root for bots operating in this test session.
+  uploadProfile:
+    $ref: ./UploadProfile.yaml

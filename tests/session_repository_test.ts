@@ -3,8 +3,8 @@ import { SessionRepository } from '../src/repositories/session.ts';
 
 Deno.test('SessionRepository stores and retrieves a session without overwriting its ID', () => {
   const sessions = new SessionRepository();
-  const originalSession = createEmulationSession('test-session');
-  const replacementSession = createEmulationSession('test-session');
+  const originalSession = createEmulationSession('test-session', { uploadProfile: 'cloud' });
+  const replacementSession = createEmulationSession('test-session', { uploadProfile: 'cloud' });
 
   if (!sessions.add(originalSession)) {
     throw new Error('Expected the session to be added');

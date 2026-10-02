@@ -119,7 +119,9 @@ parity.
 
 Unless a page says otherwise, cloud restrictions refer to the official server without `--local`. The
 official [local mode][local-mode] relaxes webhook and file restrictions. The emulator has its own
-combination of constraints and is not an implementation of either deployment mode in full.
+combination of constraints and is not an implementation of either deployment mode in full; a
+session's [upload profile](media-and-files.md#upload-profiles) chooses between the two modes' upload
+limits only.
 
 [upstream-methods]: https://github.com/tdlib/telegram-bot-api/blob/e3e9dd8e5b3d7ab8537cd5a10dc31d5ffa8f82d1/telegram-bot-api/Client.cpp#L200-L410
 [bot-api-revision]: https://github.com/tdlib/telegram-bot-api/commit/e3e9dd8e5b3d7ab8537cd5a10dc31d5ffa8f82d1

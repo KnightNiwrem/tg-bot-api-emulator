@@ -72,6 +72,7 @@ export const virtualAccountProfileSchema: z.ZodType<VirtualAccountProfile> = z.s
 export const emulationSessionSchema: z.ZodType<EmulationSession> = z.strictObject({
   id: z.uuid(),
   botApiRoot: z.url(),
+  uploadProfile: z.enum(['cloud', 'local']),
 });
 
 export const createdVirtualBotSchema: z.ZodType<CreatedVirtualBot> = z.strictObject({

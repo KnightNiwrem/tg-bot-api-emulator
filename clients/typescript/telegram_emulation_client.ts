@@ -4,6 +4,7 @@ import {
   type EmulationSessionClient,
 } from './emulation_session_client.ts';
 import { emulationSessionSchema } from './schemas.ts';
+import type { CreateSessionInput } from './types.ts';
 import { normalizeUrlRoot, requestJson } from './utils.ts';
 
 export interface TelegramEmulationClientOptions {
@@ -25,12 +26,13 @@ export class TelegramEmulationClient {
     }
   }
 
-  async createSession(): Promise<EmulationSessionClient> {
+  async createSession(input: CreateSessionInput = {}): Promise<EmulationSessionClient> {
     const session = await requestJson(this.#fetch, {
       method: 'POST',
       url: new URL('sessions', this.#serverRoot).href,
       expectedStatus: HTTP_STATUS_CREATED,
       responseSchema: emulationSessionSchema,
+      body: input,
     });
 
     return createEmulationSessionClient(this.#serverRoot, session, this.#fetch);

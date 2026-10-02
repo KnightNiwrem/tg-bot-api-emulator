@@ -1,7 +1,22 @@
-/** The server-assigned identity and Bot API location for an emulation session. */
+/**
+ * The deployment of the official Bot API server whose upload limits a session's bots meet:
+ * `cloud` for the server Telegram hosts at `api.telegram.org`, `local` for a self-hosted server
+ * started with `--local`. The profile changes only upload limits; every other behavior stays that
+ * of the cloud server.
+ */
+export type UploadProfile = 'cloud' | 'local';
+
+/** Settings of a new session, which stay fixed for its lifetime. */
+export interface CreateSessionInput {
+  /** Defaults to `cloud`. */
+  readonly upload_profile?: UploadProfile;
+}
+
+/** The server-assigned identity, Bot API location, and settings of an emulation session. */
 export interface EmulationSession {
   readonly id: string;
   readonly botApiRoot: string;
+  readonly uploadProfile: UploadProfile;
 }
 
 export interface CreateVirtualBotInput {

@@ -8,6 +8,13 @@ Create a session with `POST /sessions`, then create its bots and accounts throug
 or [TypeScript client](../typescript-client.md). The response supplies `botApiRoot`; a virtual bot's
 token authenticates calls under `<botApiRoot>/bot<token>/<method>`. `getMe` returns its profile.
 
+`POST /sessions` takes an optional JSON body. Its `upload_profile` chooses the official Bot API
+server deployment whose upload limits the session's bots meet: `cloud`, the default, for the server
+Telegram hosts at `api.telegram.org`, or `local` for a self-hosted server started with `--local`.
+The response reports the profile as `uploadProfile`, and it stays fixed for the session's lifetime.
+The TypeScript client takes it as `createSession({ upload_profile: 'local' })`.
+[Media and files](media-and-files.md#upload-profiles) describes what each profile changes.
+
 Sessions isolate users, chats, messages, files, update queues and bot settings. Bot creation accepts
 `can_read_all_group_messages`, `supports_inline_queries`, `receives_chosen_inline_results` and
 `requests_inline_location`, all false by default. These stand in for selected BotFather settings.

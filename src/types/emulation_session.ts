@@ -14,13 +14,19 @@ import type { PrivateMessagingService } from '../services/private_messaging.ts';
 import type { SharedChatAdministrationService } from '../services/shared_chat_administration.ts';
 import type { SupergroupMessagingService } from '../services/supergroup_messaging.ts';
 import type { VirtualUserService } from '../services/virtual_user.ts';
+import type { UploadProfile } from './upload_profile.ts';
+
+/** Settings chosen when a session is created, which stay fixed for its lifetime. */
+export interface EmulationSessionOptions {
+  readonly uploadProfile: UploadProfile;
+}
 
 /**
  * The application capabilities of one isolated Telegram emulation.
  *
  * Repositories stay private to composition so that each invariant has a single service owner.
  */
-export interface EmulationSession {
+export interface EmulationSession extends EmulationSessionOptions {
   readonly id: string;
   readonly virtualUsers: VirtualUserService;
   readonly sharedChatAdministration: SharedChatAdministrationService;

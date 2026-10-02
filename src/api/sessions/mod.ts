@@ -1,12 +1,15 @@
 import { Hono } from 'hono';
 import { basePath } from 'hono/route';
+import { z } from 'zod';
 
-import type { EmulationSession } from '../../types/emulation_session.ts';
+import type { EmulationSession, EmulationSessionOptions } from '../../types/emulation_session.ts';
+import { DEFAULT_UPLOAD_PROFILE, UPLOAD_PROFILES } from '../../types/upload_profile.ts';
 import { createAccountRoutes } from './accounts/mod.ts';
 import { createBotActivityRoutes } from './bot_activity/mod.ts';
 import { createBotApiRoutes } from './bot_api/mod.ts';
 import { createBotRoutes } from './bots/mod.ts';
 import { createFileRoutes } from './files/mod.ts';
+import { readJsonRequestBody } from './json_request_body.ts';
 import type { SessionRouteContextTypes } from './session_route_context_types.ts';
 
 const SESSION_ID_PARAMETER = 'sessionId';
@@ -18,8 +21,12 @@ const BOT_API_PATH = `${SESSION_PATH}/bot-api` as const;
 const BOT_ACTIVITY_PATH = `${SESSION_PATH}/bot-activity` as const;
 const FILE_COLLECTION_PATH = `${SESSION_PATH}/files` as const;
 
+const createSessionRequestSchema = z.strictObject({
+  upload_profile: z.enum(UPLOAD_PROFILES).default(DEFAULT_UPLOAD_PROFILE),
+});
+
 export interface SessionLifecycle {
-  createSession(): EmulationSession;
+  createSession(options: EmulationSessionOptions): EmulationSession;
   endSession(sessionId: string): boolean;
   getSessionById(sessionId: string): EmulationSession | undefined;
 }
@@ -34,14 +41,22 @@ export function createSessionRoutes(
 ): Hono<SessionRouteContextTypes> {
   const sessionRoutes = new Hono<SessionRouteContextTypes>();
 
-  sessionRoutes.post('/', (context) => {
-    const session = sessionLifecycle.createSession();
+  sessionRoutes.post('/', async (context) => {
+    // The body is optional: without one, every setting has its default.
+    const requestBody = await readJsonRequestBody(context.req, createSessionRequestSchema, {
+      allowsEmptyBody: true,
+    });
+    if (requestBody === undefined) {
+      return context.body(null, 400);
+    }
+    const session = sessionLifecycle.createSession({ uploadProfile: requestBody.upload_profile });
     const sessionPath = `${basePath(context)}/${session.id}`;
 
     return context.json(
       {
         id: session.id,
         botApiRoot: new URL(`${sessionPath}/bot-api`, publicOrigin).href,
+        uploadProfile: session.uploadProfile,
       },
       201,
       { Location: sessionPath },
