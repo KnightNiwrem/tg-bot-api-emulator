@@ -222,6 +222,27 @@ export interface BotApiDocument extends BotApiFile {
   readonly thumb?: BotApiPhotoSize;
 }
 
+/**
+ * A video as the official Bot API server's `JsonVideo` shows it: its duration, dimensions, name and
+ * type, then its start timestamp and thumbnail, precede its file fields. Telegram's cover and
+ * alternative qualities are not modeled, so they are never shown.
+ */
+export interface BotApiVideo extends BotApiFile {
+  /** In seconds, as the sender defined it. */
+  readonly duration: number;
+  readonly width: number;
+  readonly height: number;
+  /** Omitted for a video sent without a file name. */
+  readonly file_name?: string;
+  readonly mime_type: string;
+  /** Present only for a video that clients play from past its beginning. */
+  readonly start_timestamp?: number;
+  /** Omitted for a video without a thumbnail. */
+  readonly thumbnail?: BotApiPhotoSize;
+  /** Legacy copy of `thumbnail`, which the Bot API still shows. */
+  readonly thumb?: BotApiPhotoSize;
+}
+
 /** A caption's fields, which Telegram omits for a media message without a caption. */
 interface BotApiCaption {
   readonly caption?: string;
@@ -229,7 +250,7 @@ interface BotApiCaption {
   readonly caption_entities?: readonly BotApiMessageEntity[];
 }
 
-/** The fields of media that a message shows with a caption: a photo or a document. */
+/** The fields of media that a message shows with a caption: a photo, a document, or a video. */
 type BotApiCaptionedMediaContent =
   & BotApiCaption
   & (
@@ -242,6 +263,13 @@ type BotApiCaptionedMediaContent =
       readonly has_media_spoiler?: true;
     }
     | { readonly document: BotApiDocument }
+    | {
+      readonly video: BotApiVideo;
+      /** Present only for a caption that clients show above the video. */
+      readonly show_caption_above_media?: true;
+      /** Present only for a video that clients cover until the user reveals it. */
+      readonly has_media_spoiler?: true;
+    }
   );
 
 /** The fields that show what a message is, which follow its reply. */
@@ -313,7 +341,12 @@ export type BotApiExternalReplyMedia =
     /** Present only for a photo that clients cover until the user reveals it. */
     readonly has_media_spoiler?: true;
   }
-  | { readonly document: BotApiDocument };
+  | { readonly document: BotApiDocument }
+  | {
+    readonly video: BotApiVideo;
+    /** Present only for a video that clients cover until the user reveals it. */
+    readonly has_media_spoiler?: true;
+  };
 
 /** A message of another chat that a message replies to, as Telegram's `ExternalReplyInfo`. */
 export type BotApiExternalReplyInfo =

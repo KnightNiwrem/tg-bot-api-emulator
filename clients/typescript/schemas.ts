@@ -459,6 +459,18 @@ const documentSchema = z.strictObject({
   ...messageFileShape,
 });
 
+const videoSchema = z.strictObject({
+  duration: z.number().int().nonnegative(),
+  width: z.number().int().nonnegative(),
+  height: z.number().int().nonnegative(),
+  file_name: z.string().min(1).optional(),
+  mime_type: z.string().regex(/^video\//),
+  start_timestamp: z.number().int().positive().optional(),
+  thumbnail: photoSizeSchema.optional(),
+  thumb: photoSizeSchema.optional(),
+  ...messageFileShape,
+});
+
 const captionShape = {
   caption: z.string().min(1).optional(),
   caption_entities: z.array(messageEntitySchema).min(1).optional(),
@@ -478,6 +490,13 @@ const photoContentShape = {
 
 const documentContentShape = { document: documentSchema, ...captionShape };
 
+const videoContentShape = {
+  video: videoSchema,
+  ...captionShape,
+  show_caption_above_media: z.literal(true).optional(),
+  has_media_spoiler: z.literal(true).optional(),
+};
+
 const externalReplyShape = {
   origin: messageOriginSchema,
   chat: supergroupChatSchema.optional(),
@@ -486,7 +505,7 @@ const externalReplyShape = {
 
 /** How a message replies to a message of another chat, and what it quotes of a replied message. */
 const messageReplyInfoShape = {
-  // The replied message's media, which only a photo or document message has.
+  // The replied message's media, which only a photo, document, or video message has.
   external_reply: z.union([
     z.strictObject(externalReplyShape),
     z.strictObject({
@@ -495,6 +514,11 @@ const messageReplyInfoShape = {
       has_media_spoiler: z.literal(true).optional(),
     }),
     z.strictObject({ ...externalReplyShape, document: documentSchema }),
+    z.strictObject({
+      ...externalReplyShape,
+      video: videoSchema,
+      has_media_spoiler: z.literal(true).optional(),
+    }),
   ]).optional(),
   quote: z.strictObject({
     text: z.string().min(1),
@@ -538,6 +562,7 @@ function contentMessageSchemas<Header extends z.ZodRawShape>(header: Header) {
     z.strictObject({ ...header, ...textContentShape, ...messageTrailerShape }),
     z.strictObject({ ...header, ...photoContentShape, ...messageTrailerShape }),
     z.strictObject({ ...header, ...documentContentShape, ...messageTrailerShape }),
+    z.strictObject({ ...header, ...videoContentShape, ...messageTrailerShape }),
     z.strictObject({ ...header, rich_message: richMessageSchema, ...messageTrailerShape }),
   ] as const;
 }

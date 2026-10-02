@@ -8,8 +8,8 @@ with its virtual token and `session.botApiRoot` configured as the API root.
 This walkthrough shows the available client operations. Run your bot alongside it. The session's
 [bot activity log](features/bot-activity.md) records the bot's calls, so a test can wait for the bot
 to act before inspecting a reply, callback answer, or inline result. The photo and album examples
-also need a local `receipt.png` file. The import below assumes the example is saved directly in
-`docs/`.
+also need a local `receipt.png` file, and the video example a local `clip.mp4` file. The import
+below assumes the example is saved directly in `docs/`.
 
 Tests can use the TypeScript client instead of constructing emulation server URLs directly:
 
@@ -86,11 +86,23 @@ try {
     caption: 'My receipt',
   });
   const reply = (await account.getMessages({ chat: { type: 'private', botId: bot.id } })).at(-1);
-  const replyFile = reply?.document ?? reply?.photo?.at(-1);
+  const replyFile = reply?.document ?? reply?.video ?? reply?.photo?.at(-1);
   if (replyFile !== undefined) {
     const content = await session.downloadFile(replyFile.file_unique_id);
     console.log(content.length, photo.photo?.[0].width);
   }
+
+  // Send the bot a video, whose duration and dimensions the account's client defines; the
+  // emulator keeps them as given and never reads the content.
+  const clip = await account.sendVideo({
+    to: { type: 'private', botId: bot.id },
+    video: await Deno.readFile('clip.mp4'),
+    file_name: 'clip.mp4',
+    duration: 12,
+    width: 1280,
+    height: 720,
+  });
+  console.log(clip.video?.duration);
 
   // Send the receipt twice as an album. The bot receives each photo as a message, and both
   // messages share a media_group_id.

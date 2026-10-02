@@ -1,0 +1,39 @@
+description: >-
+  A video an account uploads, whose duration and dimensions its client defines. The emulator
+  neither reads nor transcodes the content.
+type: object
+additionalProperties: false
+required:
+  - content_base64
+properties:
+  content_base64:
+    type: string
+    minLength: 1
+    contentEncoding: base64
+    description: >-
+      The video's content, which must not be empty. An account uploads through its own
+      client, so the session's upload profile, which limits bot uploads, does not apply.
+  file_name:
+    type: string
+    minLength: 1
+    description: >-
+      The file's name, whose extension decides the video's MIME type when it names a `video/`
+      type; otherwise, and without a name, the video is `video/mp4`.
+  duration:
+    type: integer
+    minimum: 0
+    maximum: 86400
+    default: 0
+    description: Duration in seconds.
+  width:
+    type: integer
+    minimum: 0
+    maximum: 10000
+    default: 0
+    description: Width in pixels.
+  height:
+    type: integer
+    minimum: 0
+    maximum: 10000
+    default: 0
+    description: Height in pixels.

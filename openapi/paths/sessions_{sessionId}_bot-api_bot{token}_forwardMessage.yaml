@@ -11,8 +11,10 @@ description: >-
   and the switch-inline buttons of a message sent through an inline bot, which then let the user
   choose any chat. As TDLib's `InlineKeyboardButton::clone` does, the buttons of a rich message
   keep working when they are URL or copy-text buttons, and show the others as disabled buttons.
-  As on Telegram, a forward cannot be edited and the bot receives no update for it. Topics, paid
-  broadcasts, suggested posts, and video start timestamps are not supported.
+  A `video_start_timestamp` replaces the start of a forwarded video, as TDLib's
+  `set_message_content_video_start_timestamp` does. As on Telegram, a forward cannot be edited
+  and the bot receives no update for it. Topics, paid broadcasts, and suggested posts are not
+  supported.
 parameters:
   - $ref: ../components/parameters/SessionId.yaml
   - $ref: ../components/parameters/BotToken.yaml

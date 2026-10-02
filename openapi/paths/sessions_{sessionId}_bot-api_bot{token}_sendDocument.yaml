@@ -48,8 +48,10 @@ post:
         empty or, in a session with the `local` upload profile, larger than 2097152000 bytes
         (`Bad Request: file of size <size> bytes is too big; the maximum size is 2097152000
         bytes`), the document sent by URL fails as for `sendPhoto`, with its own limits, or the
-        `file_id` identifies no file the bot knows or identifies a photo (`Bad
-        Request: can't use file of type Photo as Document`).
+        `file_id` identifies no file the bot knows or identifies a file of another type (`Bad
+        Request: can't use file of type Photo as Document`). TDLib accepts the `file_id` of a
+        video and leaves Telegram's servers to decide what the message shows; the emulator
+        refuses it (`Bad Request: can't use file of type Video as Document`).
       content:
         application/json:
           schema:

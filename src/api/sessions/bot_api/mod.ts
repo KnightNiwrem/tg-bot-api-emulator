@@ -10,7 +10,12 @@ import type { EmulationSession } from '../../../types/emulation_session.ts';
 import type { InlineKeyboard } from '../../../types/inline_keyboard.ts';
 import type { BotMessageReplyMarkup } from '../../../types/reply_interface.ts';
 import type { RichMessage } from '../../../types/rich_message.ts';
-import { MAX_PHOTO_UPLOAD_BYTES, type StoredFile } from '../../../types/stored_file.ts';
+import {
+  MAX_MEDIA_DURATION_SECONDS,
+  MAX_PHOTO_UPLOAD_BYTES,
+  MAX_VIDEO_SIDE_LENGTH,
+  type StoredFile,
+} from '../../../types/stored_file.ts';
 import type { BotUploadTooBigFailure } from '../../../types/upload_profile.ts';
 import { isUserId } from '../../../types/telegram_identity.ts';
 import type { VirtualBotProfile } from '../../../types/virtual_bot.ts';
@@ -161,6 +166,7 @@ const CAPTION_TOO_LONG_DESCRIPTION = 'Bad Request: message caption is too long';
 const TDLIB_FILE_TYPE_NAMES = {
   photo: 'Photo',
   document: 'Document',
+  video: 'Video',
   thumbnail: 'Thumbnail',
 } as const;
 
@@ -336,6 +342,14 @@ const MEMBER_IS_ADMINISTRATOR_DESCRIPTION = 'Bad Request: user is an administrat
 /** Telegram caps how long a client may cache a callback query answer at 30 days. */
 const MAX_CALLBACK_QUERY_ANSWER_CACHE_TIME_SECONDS = 30 * 24 * 60 * 60;
 
+/**
+ * An integer parameter that the official Bot API server clamps to a range, as its
+ * `get_integer_arg` does.
+ */
+function clampedIntegerParameter(min: number, max: number) {
+  return integerParameter(z.int().transform((value) => Math.min(Math.max(value, min), max)));
+}
+
 const getMeParametersSchema = z.strictObject({});
 
 const deleteWebhookParametersSchema = z.strictObject({
@@ -346,10 +360,9 @@ const setWebhookParametersSchema = z.strictObject({
   url: z.string().default(''),
   certificate: z.string().optional(),
   ip_address: z.string().default(''),
-  max_connections: integerParameter(
-    z.int().transform((maxConnections) =>
-      Math.min(Math.max(maxConnections, MIN_WEBHOOK_MAX_CONNECTIONS), MAX_WEBHOOK_MAX_CONNECTIONS)
-    ),
+  max_connections: clampedIntegerParameter(
+    MIN_WEBHOOK_MAX_CONNECTIONS,
+    MAX_WEBHOOK_MAX_CONNECTIONS,
   ).default(DEFAULT_WEBHOOK_MAX_CONNECTIONS),
   // As for getUpdates, a malformed value is rejected rather than ignored.
   allowed_updates: jsonParameter(z.array(z.string())).optional(),
@@ -432,12 +445,41 @@ const sendDocumentParametersSchema = z.strictObject({
   disable_content_type_detection: booleanParameter().optional(),
 });
 
+// The emulator never inspects or transcodes a video, so `supports_streaming`, which TDLib passes to
+// Telegram's servers but the Bot API never shows, is validated and ignored. A cover is not
+// supported.
+const sendVideoParametersSchema = z.strictObject({
+  ...sendOptionsParametersShape,
+  ...replyMarkupParametersShape,
+  video: z.string().optional(),
+  duration: clampedIntegerParameter(0, MAX_MEDIA_DURATION_SECONDS).default(0),
+  width: clampedIntegerParameter(0, MAX_VIDEO_SIDE_LENGTH).default(0),
+  height: clampedIntegerParameter(0, MAX_VIDEO_SIDE_LENGTH).default(0),
+  thumbnail: z.string().optional(),
+  thumb: z.string().optional(),
+  start_timestamp: clampedIntegerParameter(0, MAX_MEDIA_DURATION_SECONDS).default(0),
+  ...captionParametersShape,
+  show_caption_above_media: booleanParameter().default(false),
+  has_spoiler: booleanParameter().default(false),
+  supports_streaming: booleanParameter().optional(),
+});
+
+/**
+ * The second from which a forwarded or copied video plays, which other content ignores. As TDLib's
+ * `send_message` reads it, a negative second plays the video from its beginning.
+ */
+const videoStartTimestampParametersShape = {
+  video_start_timestamp: integerParameter(z.int().transform((seconds) => Math.max(seconds, 0)))
+    .optional(),
+};
+
 // As for sending, Telegram accepts only numeric chat IDs of the emulator's chats. Topics, paid
-// broadcasts, suggested posts, and video start timestamps are not supported.
+// broadcasts, and suggested posts are not supported.
 const forwardMessageParametersSchema = z.strictObject({
   chat_id: integerParameter(z.int()).optional(),
   from_chat_id: integerParameter(z.int()).optional(),
   message_id: integerParameter(z.int()).optional(),
+  ...videoStartTimestampParametersShape,
   disable_notification: booleanParameter().default(false),
   protect_content: booleanParameter().default(false),
   message_effect_id: optionalInt64Identifier().optional(),
@@ -450,6 +492,7 @@ const copyMessageParametersSchema = z.strictObject({
   ...replyMarkupParametersShape,
   from_chat_id: integerParameter(z.int()).optional(),
   message_id: integerParameter(z.int()).optional(),
+  ...videoStartTimestampParametersShape,
   caption: z.string().optional(),
   parse_mode: z.string().optional(),
   caption_entities: messageEntitiesParameter().optional(),
@@ -891,6 +934,7 @@ const BOT_API_METHODS: readonly BotApiMethod[] = [
   { name: 'sendMessage', handler: handleSendMessage },
   { name: 'sendPhoto', handler: handleSendPhoto },
   { name: 'sendRichMessage', handler: handleSendRichMessage },
+  { name: 'sendVideo', handler: handleSendVideo },
   {
     name: 'setChatAdministratorCustomTitle',
     handler: handleSetChatAdministratorCustomTitle,
@@ -1483,6 +1527,53 @@ async function handleSendDocument(
   }));
 }
 
+async function handleSendVideo(
+  context: BotApiMethodContext,
+  parameters: BotApiRequestParameters,
+  uploadedFiles: BotApiUploadedFiles,
+): Promise<BotApiMethodAnswer> {
+  const invalidParametersDescription = 'Bad Request: invalid sendVideo parameters';
+  const parsedParameters = sendVideoParametersSchema.safeParse(parameters);
+  if (!parsedParameters.success) {
+    return botApiError(400, invalidParametersDescription);
+  }
+  const { data } = parsedParameters;
+  // Telegram reads the file, then the caption and its formatting, before it looks at the chat.
+  const videoReading = readInputFileParameter('video', data.video, uploadedFiles);
+  if (!videoReading.read) {
+    return missingInputFileError('video');
+  }
+  const captionReading = readSpecifiedCaption(context, data, invalidParametersDescription);
+  if (!captionReading.read) {
+    return captionReading.errorAnswer;
+  }
+  const optionsReading = readSendOptions(context, data, invalidParametersDescription);
+  if (!optionsReading.read) {
+    return optionsReading.errorAnswer;
+  }
+
+  const videoResolution = await resolveRequestedInputFile(
+    context,
+    videoReading.inputFile,
+    'video',
+  );
+  if (!videoResolution.resolved) {
+    return videoResolution.errorAnswer;
+  }
+
+  const thumbnail = readThumbnailParameter(data, uploadedFiles);
+  return sendMethodAnswer(context.session.botApi.sendVideo(context.bot, {
+    ...optionsReading.options,
+    video: videoResolution.value,
+    attributes: { durationSeconds: data.duration, width: data.width, height: data.height },
+    ...(thumbnail === undefined ? {} : { thumbnail }),
+    startTimestampSeconds: data.start_timestamp,
+    caption: captionReading.formattedText,
+    hasSpoiler: data.has_spoiler,
+    showsCaptionAboveMedia: data.show_caption_above_media,
+  }));
+}
+
 /**
  * Sends an album, as `BotApiService.sendMediaGroup` does. As the official Bot API server reads
  * them, the media and their captions are read before the chat; the files the media name by URL are
@@ -1618,6 +1709,7 @@ function handleForwardMessage(
     chat_id: chatId,
     from_chat_id: fromChatId,
     message_id: messageId,
+    video_start_timestamp: videoStartTimestampSeconds,
     disable_notification: isSilent,
     protect_content: isContentProtected,
     message_effect_id: messageEffectId,
@@ -1636,6 +1728,7 @@ function handleForwardMessage(
     {
       chatId,
       forwardedMessage: { chatId: fromChatId, messageId: messageIdOrNone(messageId) },
+      ...(videoStartTimestampSeconds === undefined ? {} : { videoStartTimestampSeconds }),
       isContentProtected,
       isSilent,
       messageEffectId,
@@ -1686,6 +1779,9 @@ function handleCopyMessage(
     {
       ...optionsReading.options,
       copiedMessage: { chatId: data.from_chat_id, messageId: messageIdOrNone(data.message_id) },
+      ...(data.video_start_timestamp === undefined
+        ? {}
+        : { videoStartTimestampSeconds: data.video_start_timestamp }),
       caption: captionReading?.formattedText,
       showsCaptionAboveMedia: data.show_caption_above_media,
     },
@@ -1918,7 +2014,7 @@ function readInlineKeyboardParameter(
 }
 
 /** The error for a file parameter that names no uploaded file. */
-function missingInputFileError(parameterName: 'photo' | 'document'): BotApiMethodAnswer {
+function missingInputFileError(parameterName: 'photo' | 'document' | 'video'): BotApiMethodAnswer {
   return botApiError(400, `Bad Request: there is no ${parameterName} in the request`);
 }
 

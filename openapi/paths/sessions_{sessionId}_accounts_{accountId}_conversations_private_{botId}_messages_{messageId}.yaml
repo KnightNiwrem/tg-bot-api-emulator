@@ -8,7 +8,7 @@ patch:
   operationId: editAccountMessage
   summary: Edit the text or caption of a message the account sent
   description: >-
-    Replaces the text of the account's text message, or the caption of its photo or document,
+    Replaces the text of the account's text message, or the caption of its photo, document, or video,
     normalized as when sending it, and dates the edit. Unless the bot's allowed_updates subscription excludes edited_message updates, the
     bot receives an edited_message update carrying the edited message.
   requestBody:
@@ -27,7 +27,7 @@ patch:
     '400':
       description: >-
         The request, text, or caption is invalid, the bot wrote the message, the request gives
-        text for a photo or document or a caption for a text message, or the normalized text or
+        text for captioned media or a caption for a text message, or the normalized text or
         caption is the message's current one.
     '404':
       description: The session, account, bot, or message of their private chat does not exist.

@@ -16,6 +16,11 @@ properties:
   message_id:
     type: integer
     description: The forwarded message's ID in the bot's chat.
+  video_start_timestamp:
+    type: integer
+    description: >-
+      The second from which a forwarded video plays, replacing the video's own; other content
+      ignores it. As TDLib reads it, a negative second plays the video from its beginning.
   disable_notification:
     type: boolean
     default: false

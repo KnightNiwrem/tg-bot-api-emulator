@@ -1,7 +1,8 @@
 description: >-
-  Telegram Bot API method for editing the caption of a photo or document the bot sent to a
-  private chat or a supergroup; an empty caption removes it. The caption is formatted and
-  normalized as by `sendPhoto`, `show_caption_above_media` applies only to photos, and, as on
+  Telegram Bot API method for editing the caption of a photo, document, or video the bot sent to
+  a private chat or a supergroup; an empty caption removes it. The caption is formatted and
+  normalized as by `sendPhoto`, `show_caption_above_media` applies only to photos and videos,
+  and, as on
   Telegram, the edited message keeps only the inline keyboard given in `reply_markup` and the
   bot receives no update for its own edit. The edit date changes only when the caption, its
   entities, or where it shows do. Without `chat_id` and `message_id`, the method edits a

@@ -25,6 +25,7 @@ import type {
   ReplyKeyboardButton,
   ReplyKeyboardButtonRequest,
 } from '../../../types/reply_interface.ts';
+import { MAX_MEDIA_DURATION_SECONDS, MAX_VIDEO_SIDE_LENGTH } from '../../../types/stored_file.ts';
 import {
   MAX_SUPERGROUP_OR_CHANNEL_ID,
   MAX_TELEGRAM_USER_ID,
@@ -191,8 +192,25 @@ const accountDocumentShape = {
 };
 
 /**
- * A text message, a photo, or a document, each with an optional caption; or a forward of a message
- * of one of the account's chats, which, as in Telegram's clients, replies to none.
+ * A video the account uploads, with an optional caption. Its client defines its duration and
+ * dimensions, which default to 0, and may name its file, whose extension decides its `video/` MIME
+ * type, or else `video/mp4`.
+ */
+const accountVideoShape = {
+  video: z.strictObject({
+    content_base64: base64ContentSchema,
+    file_name: z.string().min(1).optional(),
+    duration: z.int().min(0).max(MAX_MEDIA_DURATION_SECONDS).default(0),
+    width: z.int().min(0).max(MAX_VIDEO_SIDE_LENGTH).default(0),
+    height: z.int().min(0).max(MAX_VIDEO_SIDE_LENGTH).default(0),
+  }),
+  caption: captionSchema,
+  caption_entities: messageEntitiesSchema,
+};
+
+/**
+ * A text message, a photo, a document, or a video, each with an optional caption; or a forward of
+ * a message of one of the account's chats, which, as in Telegram's clients, replies to none.
  */
 const sendMessageRequestSchema = z.union([
   z.strictObject({
@@ -210,6 +228,7 @@ const sendMessageRequestSchema = z.union([
   }),
   z.strictObject({ ...sentMessageTargetShape, ...accountPhotoShape }),
   z.strictObject({ ...sentMessageTargetShape, ...accountDocumentShape }),
+  z.strictObject({ ...sentMessageTargetShape, ...accountVideoShape }),
 ]);
 
 /**
@@ -253,7 +272,7 @@ const createSupergroupRequestSchema = z.strictObject({
   description: z.string().min(1).optional(),
 });
 
-/** New text for a text message, or a new caption for a photo or document; empty removes it. */
+/** New text for a text message, or a new caption for captioned media; empty removes it. */
 const editMessageRequestSchema = z.union([
   z.strictObject({ text: messageTextSchema, entities: messageEntitiesSchema }),
   z.strictObject({ caption: z.string(), caption_entities: messageEntitiesSchema }),
@@ -1308,25 +1327,17 @@ function readAccountMessageContent(
 }
 
 /**
- * Reads a photo or document an account uploads, as its client prepares it; returns `undefined`
- * for an upload Telegram refuses.
+ * Reads a photo, document, or video an account uploads, as its client prepares it; returns
+ * `undefined` for an upload Telegram refuses.
  */
 function readAccountMediaContent(
   request:
     | z.infer<z.ZodObject<typeof accountPhotoShape>>
-    | z.infer<z.ZodObject<typeof accountDocumentShape>>,
+    | z.infer<z.ZodObject<typeof accountDocumentShape>>
+    | z.infer<z.ZodObject<typeof accountVideoShape>>,
   mediaFiles: EmulationSession['mediaFiles'],
 ): AccountMediaContent | undefined {
-  const preparation = 'photo' in request
-    ? mediaFiles.preparePhotoUpload({
-      content: request.photo.content_base64,
-      source: 'account_upload',
-    })
-    : mediaFiles.prepareDocumentUpload({
-      content: request.document.content_base64,
-      fileName: request.document.file_name,
-      source: 'account_upload',
-    });
+  const preparation = prepareAccountUpload(request, mediaFiles);
   return preparation.prepared
     ? {
       kind: 'media',
@@ -1335,6 +1346,39 @@ function readAccountMediaContent(
       captionEntities: request.caption_entities,
     }
     : undefined;
+}
+
+/** How a file an account uploads was prepared, or why Telegram refuses it. */
+type AccountUploadPreparation =
+  | ReturnType<EmulationSession['mediaFiles']['preparePhotoUpload']>
+  | ReturnType<EmulationSession['mediaFiles']['prepareDocumentUpload']>
+  | ReturnType<EmulationSession['mediaFiles']['prepareVideoUpload']>;
+
+/** Prepares the file of an account's photo, document, or video as its client uploads it. */
+function prepareAccountUpload(
+  request: Parameters<typeof readAccountMediaContent>[0],
+  mediaFiles: EmulationSession['mediaFiles'],
+): AccountUploadPreparation {
+  if ('photo' in request) {
+    return mediaFiles.preparePhotoUpload({
+      content: request.photo.content_base64,
+      source: 'account_upload',
+    });
+  }
+  if ('document' in request) {
+    return mediaFiles.prepareDocumentUpload({
+      content: request.document.content_base64,
+      fileName: request.document.file_name,
+      source: 'account_upload',
+    });
+  }
+  const { content_base64: content, file_name: fileName, duration, width, height } = request.video;
+  return mediaFiles.prepareVideoUpload({
+    content,
+    ...(fileName === undefined ? {} : { fileName }),
+    attributes: { durationSeconds: duration, width, height },
+    source: 'account_upload',
+  });
 }
 
 type AccountMessageEdit = Parameters<

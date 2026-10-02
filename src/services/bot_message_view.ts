@@ -33,7 +33,11 @@ import type {
   BotApiUser,
 } from '../types/bot_api.ts';
 import type { CallbackQuery } from '../types/callback_query.ts';
-import type { StoredFile, StoredFileId } from '../types/stored_file.ts';
+import {
+  getStoredFileThumbnail,
+  type StoredFile,
+  type StoredFileId,
+} from '../types/stored_file.ts';
 import type {
   BotBlockChangedEvent,
   ChatMemberStatusChangedEvent,
@@ -528,16 +532,14 @@ export class BotMessageViewService {
       throw new Error(`File ${fileId} of message ${messageId} does not exist`);
     }
     const observerFileId = this.#files.getOrAssignObserverFileId(observerId, fileId);
-    if (file.type !== 'document' || file.thumbnail === undefined) {
+    const thumbnail = getStoredFileThumbnail(file);
+    if (thumbnail === undefined) {
       return { file, observerFileId };
     }
     return {
       file,
       observerFileId,
-      observerThumbnailFileId: this.#files.getOrAssignObserverFileId(
-        observerId,
-        file.thumbnail.id,
-      ),
+      observerThumbnailFileId: this.#files.getOrAssignObserverFileId(observerId, thumbnail.id),
     };
   }
 

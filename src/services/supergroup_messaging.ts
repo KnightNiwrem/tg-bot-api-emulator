@@ -307,7 +307,7 @@ export type EditSupergroupBotMessageCaptionInput =
   & EditSupergroupBotMessageTarget
   & SpecifiedCaption
   & {
-    /** Whether a photo shows its caption above itself; a document ignores it. */
+    /** Whether a photo or video shows its caption above itself; a document ignores it. */
     readonly showsCaptionAboveMedia: boolean;
     /** The keyboard the edited message shows; omitting it removes the message's keyboard. */
     readonly inlineKeyboard?: InlineKeyboard;
@@ -565,7 +565,7 @@ interface SupergroupMessagingServiceDependencies {
 }
 
 /**
- * Carries out exchanges of text, photos, documents, and albums of photos or documents among the
+ * Carries out exchanges of text, captioned media, and albums of photos or documents among the
  * members of a supergroup, accounts and bots alike, including forwards by members and copies by
  * bots, and commits each accepted message: its upload stored, the message stored, numbered once in
  * the supergroup's own message box, then published. Only members write to a supergroup or read its
@@ -604,7 +604,7 @@ export class SupergroupMessagingService {
   }
 
   /**
-   * Sends text, a photo, or a document from an account to a supergroup it is a member of. As a
+   * Sends text or captioned media from an account to a supergroup it is a member of. As a
    * Telegram client does, the text or caption is normalized, which marks bot commands.
    */
   sendAccountMessage(input: SendSupergroupAccountMessageInput): SendSupergroupAccountMessageResult {
@@ -722,7 +722,7 @@ export class SupergroupMessagingService {
   }
 
   /**
-   * Sends text, a photo, or a document from a bot to a supergroup it is a member of, or the content
+   * Sends text or captioned media from a bot to a supergroup it is a member of, or the content
    * of an existing message as a forward or copy of it. A supergroup the bot is not a member of is
    * unknown to it, as on Telegram.
    *
@@ -877,7 +877,7 @@ export class SupergroupMessagingService {
   }
 
   /**
-   * Replaces the caption, its entities, and the inline keyboard of a photo or document the bot
+   * Replaces the caption, its entities, and the inline keyboard of captioned media the bot
    * sent, or that was sent through its inline mode; an empty caption removes it. Only a changed
    * caption dates the edit. Updates follow `editBotMessageText`.
    */

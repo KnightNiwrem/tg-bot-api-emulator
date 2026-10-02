@@ -1,5 +1,6 @@
 description: >-
-  The content of a photo or document of the session's messages, addressed by its
+  The content of a file of the session's messages, such as a photo, document, video, or
+  thumbnail, addressed by its
   `file_unique_id`, which, unlike `file_id`, is the same for every user.
 parameters:
   - $ref: ../components/parameters/SessionId.yaml
@@ -10,8 +11,8 @@ get:
   responses:
     '200':
       description: >-
-        The file's content, as it was sent, with its document's MIME type or its photo's
-        image type.
+        The file's content, as it was sent, with its document's or video's MIME type, or the
+        image type its photo or thumbnail was sent in.
       content:
         application/octet-stream:
           schema:

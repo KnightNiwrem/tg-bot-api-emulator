@@ -1,11 +1,14 @@
 import type {
   DocumentUpload,
+  FileUpload,
   PhotoUpload,
   StoredDocumentFile,
   StoredFile,
   StoredFileId,
   StoredPhotoFile,
+  StoredVideoFile,
   ThumbnailUpload,
+  VideoUpload,
 } from '../types/stored_file.ts';
 
 /** Random bytes behind a `file_id`, which Telegram's are much longer than a `file_unique_id`. */
@@ -25,24 +28,31 @@ export class FileRepository {
   readonly #storedFileIdsByBotFilePathByBotId = new Map<number, Map<string, StoredFileId>>();
 
   /**
-   * Stores an upload under a new identity. A document's thumbnail is stored as a file of its own,
-   * which users can download and know by a `file_id` of its own.
+   * Stores an upload under a new identity. A document's or video's thumbnail is stored as a file of
+   * its own, which users can download and know by a `file_id` of its own.
    */
   addFile(upload: PhotoUpload): StoredPhotoFile;
   addFile(upload: DocumentUpload): StoredDocumentFile;
-  addFile(upload: PhotoUpload | DocumentUpload): StoredPhotoFile | StoredDocumentFile;
-  addFile(upload: PhotoUpload | DocumentUpload): StoredPhotoFile | StoredDocumentFile {
+  addFile(upload: VideoUpload): StoredVideoFile;
+  addFile(upload: FileUpload): Exclude<StoredFile, { readonly type: 'thumbnail' }>;
+  addFile(upload: FileUpload): Exclude<StoredFile, { readonly type: 'thumbnail' }> {
     if (upload.type === 'photo') {
       return this.#store(upload);
     }
-    const { thumbnail, ...document } = upload;
+    const { thumbnail, ...file } = upload;
     return this.#store({
-      ...document,
+      ...file,
       ...(thumbnail === undefined ? {} : { thumbnail: this.#store(thumbnail) }),
     });
   }
 
-  #store<Upload extends PhotoUpload | Omit<DocumentUpload, 'thumbnail'> | ThumbnailUpload>(
+  #store<
+    Upload extends
+      | PhotoUpload
+      | Omit<DocumentUpload, 'thumbnail'>
+      | Omit<VideoUpload, 'thumbnail'>
+      | ThumbnailUpload,
+  >(
     upload: Upload,
   ): Upload & Pick<StoredFile, 'id' | 'uniqueId'> {
     const file = {

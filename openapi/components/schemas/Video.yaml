@@ -1,0 +1,65 @@
+type: object
+additionalProperties: false
+description: >-
+  A video, in the field order of the official Bot API server's `JsonVideo`. Its duration and
+  dimensions are those its sender defined; the emulator neither reads nor transcodes video
+  content, so it shows no cover or alternative `qualities`.
+required:
+  - duration
+  - width
+  - height
+  - mime_type
+  - file_id
+  - file_unique_id
+  - file_size
+properties:
+  duration:
+    type: integer
+    minimum: 0
+    maximum: 86400
+    description: Duration in seconds as the sender defined it; 0 when it specified none.
+  width:
+    type: integer
+    minimum: 0
+    maximum: 10000
+    description: Width as the sender defined it; 0 when it specified none.
+  height:
+    type: integer
+    minimum: 0
+    maximum: 10000
+    description: Height as the sender defined it; 0 when it specified none.
+  file_name:
+    type: string
+    minLength: 1
+    description: >-
+      The file's name, cleaned as a document's for a bot's upload; omitted for a video an
+      account sent without one, or one sent by a URL whose path ends without a name.
+  mime_type:
+    type: string
+    pattern: '^video/'
+    description: >-
+      The `video/` MIME type the file name's extension decides, as for a document, or
+      `video/mp4` when the name decides another type or there is none, as TDLib's
+      `VideosManager` uploads a video; for a video sent by URL, the type it was served as.
+  start_timestamp:
+    type: integer
+    minimum: 1
+    description: >-
+      The second from which clients play the video in this message; omitted for a video they
+      play from its beginning.
+  thumbnail:
+    $ref: ./PhotoSize.yaml
+    description: >-
+      The preview image a bot uploaded with the video, kept as it was sent; omitted for none.
+      It has a `file_id` and `file_unique_id` of its own.
+  thumb:
+    $ref: ./PhotoSize.yaml
+    description: Legacy copy of `thumbnail`, which the Bot API still shows.
+  file_id:
+    $ref: ./FileId.yaml
+  file_unique_id:
+    $ref: ./FileUniqueId.yaml
+  file_size:
+    type: integer
+    minimum: 1
+    description: Size of the file in bytes.

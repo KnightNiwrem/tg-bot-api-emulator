@@ -743,6 +743,91 @@ Deno.test('TypeScript client sends, edits, and downloads photos and documents', 
   throw new Error('Expected content that is not an image to be refused as a photo');
 });
 
+Deno.test('TypeScript client sends videos that bots receive and send back', async () => {
+  const publicOrigin = 'http://emulator.example:9000';
+  const api = createEmulationApi({
+    sessionLifecycle: createSessionLifecycleService(),
+    publicOrigin,
+  });
+  const client = new TelegramEmulationClient(publicOrigin, {
+    fetch: createInProcessFetch(api.fetch),
+  });
+  const session = await client.createSession();
+  const { token, bot } = await session.createBot({ first_name: 'Test Bot', username: 'test_bot' });
+  const { account } = await session.createAccount({ first_name: 'Ada' });
+  const to = { type: 'private', botId: bot.id } as const;
+  const content = new TextEncoder().encode('clip');
+
+  const video = await account.sendVideo({
+    to,
+    video: content,
+    file_name: 'clip.webm',
+    duration: 4,
+    width: 640,
+    height: 360,
+    caption: 'Clip',
+  });
+  const supergroup = await account.createSupergroup({ title: 'Team' });
+  const unnamedVideo = await account.sendVideo({
+    to: { type: 'supergroup', chatId: supergroup.id },
+    video: content,
+  });
+  const editedVideo = await account.editMessageCaption({
+    chat: to,
+    message_id: video.message_id,
+    caption: 'My clip',
+  });
+  const downloaded = await session.downloadFile(video.video?.file_unique_id ?? '');
+  if (
+    JSON.stringify(video.video) !== JSON.stringify({
+        duration: 4,
+        width: 640,
+        height: 360,
+        file_name: 'clip.webm',
+        mime_type: 'video/webm',
+        file_id: video.video?.file_id,
+        file_unique_id: video.video?.file_unique_id,
+        file_size: content.length,
+      }) ||
+    video.caption !== 'Clip' || unnamedVideo.chat.id !== supergroup.id ||
+    unnamedVideo.video?.mime_type !== 'video/mp4' || unnamedVideo.video.duration !== 0 ||
+    editedVideo.caption !== 'My clip' || downloaded.toBase64() !== content.toBase64()
+  ) {
+    throw new Error(`Expected the client to send videos, received ${JSON.stringify(video)}`);
+  }
+
+  const botReply = await api.request(`/sessions/${session.id}/bot-api/bot${token}/sendVideo`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      chat_id: account.id,
+      video: video.video?.file_id,
+      caption: 'Back to you',
+      has_spoiler: true,
+      start_timestamp: 2,
+    }),
+  });
+  const history = await account.getMessages({ chat: to });
+  const reply = history.at(-1);
+  if (
+    botReply.status !== 200 || reply?.video?.file_unique_id !== video.video?.file_unique_id ||
+    reply?.video?.start_timestamp !== 2 || reply.has_media_spoiler !== true
+  ) {
+    throw new Error(`Expected the bot to send the video back, received ${JSON.stringify(reply)}`);
+  }
+
+  try {
+    await account.sendVideo({ to, video: new Uint8Array() });
+  } catch (error) {
+    if (error instanceof EmulationClientError && error.status === 400) {
+      await session.end();
+      return;
+    }
+    throw error;
+  }
+  throw new Error('Expected an empty video to be refused');
+});
+
 Deno.test('TypeScript client sends albums to private chats and supergroups', async () => {
   const publicOrigin = 'http://emulator.example:9000';
   const api = createEmulationApi({

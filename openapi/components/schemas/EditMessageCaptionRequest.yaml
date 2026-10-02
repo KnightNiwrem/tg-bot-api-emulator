@@ -26,7 +26,7 @@ properties:
   show_caption_above_media:
     type: boolean
     default: false
-    description: Shows a photo's caption above the photo; a document ignores it.
+    description: Shows the caption of a photo or video above it; a document ignores it.
   reply_markup:
     $ref: ./InlineKeyboardMarkup.yaml
     description: Keyboard the edited message shows; omitting it removes the keyboard.

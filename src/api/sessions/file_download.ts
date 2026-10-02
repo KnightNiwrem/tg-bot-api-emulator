@@ -3,10 +3,24 @@ import type { Context } from 'hono';
 import type { StoredFile } from '../../types/stored_file.ts';
 
 /**
- * Serves a stored file's content with its media type: a document's MIME type, or the format a
- * photo was sent in.
+ * Serves a stored file's content with its media type: a document's or video's MIME type, or the
+ * format an image was sent in.
  */
 export function fileDownloadResponse(context: Context, file: StoredFile): Response {
-  const contentType = file.type === 'document' ? file.mimeType : `image/${file.imageFormat}`;
-  return context.body(file.content, 200, { 'Content-Type': contentType });
+  return context.body(file.content, 200, { 'Content-Type': getFileContentType(file) });
+}
+
+function getFileContentType(file: StoredFile): string {
+  switch (file.type) {
+    case 'document':
+    case 'video':
+      return file.mimeType;
+    case 'photo':
+    case 'thumbnail':
+      return `image/${file.imageFormat}`;
+    default: {
+      const unhandledFile: never = file;
+      throw new Error(`Unhandled stored file: ${JSON.stringify(unhandledFile)}`);
+    }
+  }
 }
