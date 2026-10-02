@@ -15,7 +15,8 @@ description: >-
   from 1 to 8 `buttons` and an optional `align`. `photo` and `document` hold their media, whose
   captions are ignored, and an optional `caption`; the media's `media` is the `file_id` of a
   file of that type the bot knows, `attach://<part name>` for a file uploaded in that part, or an
-  HTTP URL, downloaded as by `sendPhoto` and `sendDocument`, and a document's `thumbnail` works as
+  HTTP or HTTPS URL, which is downloaded the same way as for `sendPhoto` and `sendDocument`, and
+  a document's `thumbnail` works as
   for `sendDocument`.
 
   Telegram's `animation`, `audio`, `video`, and `voice_note` blocks are not supported (`Bad

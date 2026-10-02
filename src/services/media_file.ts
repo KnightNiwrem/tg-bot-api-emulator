@@ -162,9 +162,10 @@ export class MediaFileService {
   /**
    * Downloads a file that a bot sends by URL, as Telegram does before it sends the file. The URL
    * is read as TDLib's `parse_url` reads it. A photo may be at most 5 MB and must be served as an
-   * image; a document at most 20 MB and, as Telegram documents, only a PDF or ZIP file. Content
-   * that cannot be downloaded, including larger content, fails as Telegram's `WEBPAGE_CURL_FAILED`,
-   * and empty content or content of another type as its `WEBPAGE_MEDIA_EMPTY`.
+   * image. A document may be at most 20 MB and must be served as a PDF or ZIP file, the only kinds
+   * Telegram documents for URLs; its content is not inspected. Content that cannot be downloaded,
+   * including larger content, fails as Telegram's `WEBPAGE_CURL_FAILED`, and empty content or
+   * content of another type as its `WEBPAGE_MEDIA_EMPTY`.
    */
   async downloadWebFile(
     { url, fileKind, signal }: WebFileDownloadRequest,

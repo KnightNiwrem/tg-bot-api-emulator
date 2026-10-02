@@ -9,7 +9,8 @@ description: >-
   errors. Thumbnails, and the dimensions of a photo, are validated and ignored. Text and
   captions are read and normalized as by `sendMessage` and `sendPhoto`, and a rich message as
   by `sendRichMessage`, whose files must be reused by `file_id`: TDLib refuses an uploaded file,
-  and the emulator a file sent by URL (`Bad Request: invalid inline message content specified`). The official server prefixes its
+  and the emulator refuses a file sent by URL, both with `Bad Request: invalid inline message
+  content specified`. The official server prefixes its
   own descriptions of a rich message it cannot read with `Bad Request: can't parse
   InlineQueryResult: `, which the emulator words as for `sendRichMessage`. The older `switch_pm_text` and `switch_pm_parameter`
   parameters form the `button` when it is omitted.

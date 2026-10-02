@@ -2322,7 +2322,10 @@ export class BotApiService {
     }
   }
 
-  /** Resolves the photo a request sends: an upload, or a photo the bot knows by `file_id`. */
+  /**
+   * Resolves the photo a request sends: an upload, a photo the bot knows by `file_id`, or an image
+   * downloaded from a URL, which is checked as an upload is.
+   */
   #resolvePhoto(authenticatedBot: VirtualBotProfile, input: BotApiInputFile): FileResolution<
     OutgoingPhoto
   > {

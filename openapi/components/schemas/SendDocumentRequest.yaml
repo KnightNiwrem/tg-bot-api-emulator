@@ -10,7 +10,7 @@ properties:
     type: string
     description: >-
       The `file_id` of a document the bot knows, `attach://<part name>` for a file uploaded in
-      that part, or an HTTP URL to download it from. Without it, the document is the part named
+      that part, or an HTTP or HTTPS URL to download it from. Without it, the document is the part named
       `document`.
   thumbnail:
     type: string

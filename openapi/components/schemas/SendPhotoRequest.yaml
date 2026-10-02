@@ -12,7 +12,7 @@ properties:
     type: string
     description: >-
       The `file_id` of a photo the bot knows, `attach://<part name>` for a photo uploaded in
-      that part, or an HTTP URL to download it from. Without it, the photo is the part named
+      that part, or an HTTP or HTTPS URL to download it from. Without it, the photo is the part named
       `photo`.
   caption:
     $ref: ./Caption.yaml

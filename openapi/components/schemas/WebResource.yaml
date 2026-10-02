@@ -7,8 +7,10 @@ required:
 properties:
   url:
     type: string
-    format: uri
-    description: The URL in the canonical form TDLib reads it in.
+    format: iri
+    description: >-
+      The URL in the canonical form TDLib reads it in, which keeps non-ASCII characters as they
+      were given.
   status:
     type: integer
     minimum: 200
@@ -20,4 +22,6 @@ properties:
   content_length:
     type: integer
     minimum: 0
-    description: The size of the response body in bytes.
+    description: >-
+      The size of the registered body in bytes. A 204, 205, or 304 response serves no body, whatever
+      was registered.

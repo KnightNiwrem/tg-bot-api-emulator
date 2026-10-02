@@ -1041,12 +1041,13 @@ Deno.test('TypeScript client registers web resources that bots send files from',
     body: JSON.stringify({ chat_id: account.id, document: resource.url }),
   });
   const sent = await response.json();
-  const downloaded = await session.downloadFile(sent.result?.document?.file_unique_id);
-  if (
-    sent.result?.document?.file_name !== 'Archive.zip' ||
-    downloaded.toBase64() !== content.toBase64()
-  ) {
+  const document = sent.result?.document;
+  if (response.status !== 200 || document?.file_name !== 'Archive.zip') {
     throw new Error(`Expected the document sent by URL, received ${JSON.stringify(sent)}`);
+  }
+  const downloaded = await session.downloadFile(document.file_unique_id);
+  if (downloaded.toBase64() !== content.toBase64()) {
+    throw new Error('Expected the document to keep the content its URL served');
   }
   await session.end();
 });

@@ -89,3 +89,35 @@ Deno.test('WebResourceService serves URLs with userinfo, which TDLib reads', asy
     throw new Error(`Expected the resource to be served, received ${JSON.stringify(download)}`);
   }
 });
+
+Deno.test('WebResourceService refuses header values a response cannot carry', () => {
+  const webResources = new WebResourceService({ webResources: new WebResourceRepository() });
+  for (
+    const header of [{ contentType: 'text/plain\r\nX-Injected: 1' }, {
+      location: '/next\nX-Injected: 1',
+    }]
+  ) {
+    const registration = webResources.registerWebResource({
+      url: 'https://example.com/a.pdf',
+      status: 200,
+      ...header,
+      content: new Uint8Array(),
+    });
+    if (registration.registered || registration.reason !== 'header_invalid') {
+      throw new Error(`Expected ${JSON.stringify(header)} to be refused`);
+    }
+  }
+});
+
+Deno.test('WebResourceService declares the length of the body it serves', async () => {
+  const webResources = new WebResourceService({ webResources: new WebResourceRepository() });
+  webResources.registerWebResource({
+    url: 'https://example.com/none',
+    status: 204,
+    content: new TextEncoder().encode('ignored'),
+  });
+  const response = await webResources.fetchWebResource(new Request('https://example.com/none'));
+  if (response.body !== null || response.headers.get('Content-Length') !== '0') {
+    throw new Error('Expected a 204 response to declare the empty body it serves');
+  }
+});

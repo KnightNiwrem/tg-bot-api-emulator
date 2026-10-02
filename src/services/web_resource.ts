@@ -20,7 +20,8 @@ export type WebResourceRegistration = Omit<WebResource, 'url'> & {
 
 export type RegisterWebResourceResult =
   | { readonly registered: true; readonly resource: WebResource }
-  | { readonly registered: false; readonly reason: 'url_invalid'; readonly urlError: string };
+  | { readonly registered: false; readonly reason: 'url_invalid'; readonly urlError: string }
+  | { readonly registered: false; readonly reason: 'header_invalid' };
 
 /**
  * Serves a session's emulated web: the responses tests register for URLs, from which Telegram
@@ -49,6 +50,9 @@ export class WebResourceService {
       return { registered: false, reason: 'url_invalid', urlError: 'Host is invalid' };
     }
     const resource = { ...registration, url: parsing.url };
+    if (createResponseHeaders(resource) === undefined) {
+      return { registered: false, reason: 'header_invalid' };
+    }
     this.#webResources.set(requestUrl, resource);
     return { registered: true, resource };
   }
@@ -60,17 +64,42 @@ export class WebResourceService {
     if (resource === undefined) {
       return Promise.reject(new TypeError(`No web resource is registered for ${request.url}`));
     }
-    const headers = new Headers({ 'Content-Length': String(resource.content.length) });
+    const headers = createResponseHeaders(resource);
+    if (headers === undefined) {
+      throw new Error(`Web resource ${resource.url} was registered with invalid headers`);
+    }
+    return Promise.resolve(
+      new Response(servesBody(resource) ? resource.content : null, {
+        status: resource.status,
+        headers,
+      }),
+    );
+  }
+}
+
+/** Whether a resource's response carries its content, which a status without a body cannot. */
+function servesBody(resource: WebResource): boolean {
+  return resource.content.length > 0 && !NULL_BODY_STATUSES.has(resource.status);
+}
+
+/**
+ * The headers a resource's response carries, with the length of the body it serves; or `undefined`
+ * when a registered value cannot be a header value, such as one with a line break.
+ */
+function createResponseHeaders(resource: WebResource): Headers | undefined {
+  try {
+    const headers = new Headers({
+      'Content-Length': String(servesBody(resource) ? resource.content.length : 0),
+    });
     if (resource.contentType !== undefined) {
       headers.set('Content-Type', resource.contentType);
     }
     if (resource.location !== undefined) {
       headers.set('Location', resource.location);
     }
-    const hasBody = resource.content.length > 0 && !NULL_BODY_STATUSES.has(resource.status);
-    return Promise.resolve(
-      new Response(hasBody ? resource.content : null, { status: resource.status, headers }),
-    );
+    return headers;
+  } catch {
+    return undefined;
   }
 }
 

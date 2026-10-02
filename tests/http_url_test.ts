@@ -13,6 +13,9 @@ Deno.test('parseHttpUrl reads URLs into TDLib canonical form', () => {
       'https://user:secret@example.com:443/a%20b.pdf',
     ],
     ['https://[::1]:8443/x', 'https://[::1]:8443/x'],
+    // TDLib trims only its own spaces, among them NUL, and keeps a form feed, which it encodes.
+    ['https://example.com/a.pdf\0\v', 'https://example.com/a.pdf'],
+    ['https://example.com/a.pdf\f', 'https://example.com/a.pdf%0C'],
     ['https://пример.рф/файл.pdf', 'https://пример.рф/файл.pdf'],
   ];
   for (const [text, expectedUrl] of cases) {

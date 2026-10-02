@@ -12,6 +12,9 @@ export type HttpUrlParsing =
 /** Characters that end a URL's protocol, as TDLib's parser reads it. */
 const PROTOCOL_TERMINATORS = /[:/?#@[\]]/;
 
+/** Trailing characters that TDLib's `is_space` reads as spaces, which it trims from a query. */
+const TRAILING_TDLIB_SPACES = /[ \t\r\n\0\v]+$/;
+
 /** Characters, besides letters and digits, that RFC 3986 allows in a URL's host and userinfo. */
 const URL_PART_SYMBOLS = ".-_!$,~*'();&+=";
 
@@ -119,7 +122,7 @@ function checkUrlPart(part: string, name: string, allowsColon: boolean): string 
  * begins with `/`, and control characters and spaces are percent-encoded.
  */
 function normalizeQuery(rawQuery: string): string {
-  const trimmedQuery = rawQuery.replace(/\s+$/, '');
+  const trimmedQuery = rawQuery.replace(TRAILING_TDLIB_SPACES, '');
   const query = trimmedQuery.length === 0 ? '/' : trimmedQuery;
   let normalizedQuery = query.startsWith('/') ? '' : '/';
   for (const character of query) {
