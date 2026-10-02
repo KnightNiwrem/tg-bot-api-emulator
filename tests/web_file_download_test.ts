@@ -192,6 +192,53 @@ Deno.test('WebFileDownloader stops when the caller aborts', async () => {
   }
 });
 
+Deno.test('WebFileDownloader does not wait for a body whose cancellation never settles', async () => {
+  // A source whose cancellation never settles, after an optional chunk of content.
+  const stuckBody = (chunk?: Uint8Array<ArrayBuffer>) =>
+    new ReadableStream<Uint8Array<ArrayBuffer>>({
+      start(controller) {
+        if (chunk !== undefined) {
+          controller.enqueue(chunk);
+        }
+      },
+      cancel: () => new Promise<void>(() => {}),
+    });
+  const cases: { respond: () => Response; expectedReason: string }[] = [
+    {
+      respond: () => new Response(stuckBody(), { status: 500 }),
+      expectedReason: 'content_unavailable',
+    },
+    {
+      respond: () => new Response(stuckBody(), { status: 302, headers: { Location: 'file:///x' } }),
+      expectedReason: 'content_unavailable',
+    },
+    {
+      respond: () => new Response(stuckBody(), { headers: { 'Content-Length': '1001' } }),
+      expectedReason: 'content_too_big',
+    },
+    {
+      respond: () => new Response(stuckBody(new Uint8Array(1_001))),
+      expectedReason: 'content_too_big',
+    },
+  ];
+  for (const { respond, expectedReason } of cases) {
+    const downloader = createDownloader(() => Promise.resolve(respond()), {
+      timeoutMilliseconds: 50,
+    });
+    const guard = Promise.withResolvers<'still waiting'>();
+    const guardTimer = setTimeout(() => guard.resolve('still waiting'), 1_000);
+    const outcome = await Promise.race([
+      downloader.download('https://example.com/a', 1_000),
+      guard.promise,
+    ]);
+    clearTimeout(guardTimer);
+    if (outcome === 'still waiting') {
+      throw new Error(`Expected ${expectedReason} without waiting for the cancellation`);
+    }
+    assertFailure(outcome, expectedReason);
+  }
+});
+
 function createDownloader(
   fetchWebResource: WebResourceFetcher,
   { timeoutMilliseconds = 1_000, maxRedirects = 5 } = {},

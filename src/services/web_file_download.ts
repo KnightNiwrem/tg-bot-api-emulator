@@ -92,12 +92,12 @@ export class WebFileDownloader {
       );
       if (!REDIRECT_STATUSES.has(response.status)) {
         if (!response.ok) {
-          await response.body?.cancel();
+          releaseBody(response);
           return CONTENT_UNAVAILABLE;
         }
         return await readBoundedContent(response, maxContentBytes, signal);
       }
-      await response.body?.cancel();
+      releaseBody(response);
       const location = response.headers.get('Location');
       const nextUrl = location === null ? null : URL.parse(location, currentUrl);
       if (
@@ -126,7 +126,7 @@ export class WebFileDownloader {
         (response) => {
           signal.removeEventListener('abort', rejectForAbort);
           if (signal.aborted) {
-            void response.body?.cancel().catch(() => {});
+            releaseBody(response);
           } else {
             resolve(response);
           }
@@ -155,7 +155,7 @@ async function readBoundedContent(
     ? Number(declaredLengthText)
     : undefined;
   if (declaredLength !== undefined && declaredLength > maxContentBytes) {
-    await response.body?.cancel();
+    releaseBody(response);
     return CONTENT_TOO_BIG;
   }
   if (response.body === null) {
@@ -169,7 +169,7 @@ async function readBoundedContent(
   }
 
   const reader = response.body.getReader();
-  const cancelForAbort = () => void reader.cancel(signal.reason).catch(() => {});
+  const cancelForAbort = () => cancelUnawaited(reader.cancel(signal.reason));
   signal.addEventListener('abort', cancelForAbort, { once: true });
   try {
     const chunks: Uint8Array[] = [];
@@ -184,7 +184,7 @@ async function readBoundedContent(
       }
       contentLength += value.byteLength;
       if (contentLength > maxContentBytes) {
-        await reader.cancel();
+        cancelUnawaited(reader.cancel());
         return CONTENT_TOO_BIG;
       }
       chunks.push(value);
@@ -203,6 +203,22 @@ async function readBoundedContent(
     signal.removeEventListener('abort', cancelForAbort);
     reader.releaseLock();
   }
+}
+
+/** Releases a response's body without reading it, as `cancelUnawaited` cancels it. */
+function releaseBody(response: Response): void {
+  if (response.body !== null) {
+    cancelUnawaited(response.body.cancel());
+  }
+}
+
+/**
+ * Lets a stream's cancellation finish on its own. A download waits for it neither to succeed nor
+ * to fail: a source whose cancellation never settles must not hold the download past its time
+ * budget, and the download's outcome is decided once the cancellation is requested.
+ */
+function cancelUnawaited(cancellation: Promise<void>): void {
+  cancellation.catch(() => {});
 }
 
 /** Reads the lowercase media type of a `Content-Type` header, without its parameters. */
