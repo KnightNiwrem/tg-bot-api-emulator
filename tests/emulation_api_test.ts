@@ -8845,8 +8845,8 @@ Deno.test('sendVideo keeps the attributes bots define and follows Telegram check
       })
   ) {
     throw new Error(
-      `Expected an MPEG-4 upload and a URL video without a thumbnail, received ${
-        JSON.stringify([misnamed.video, downloaded.video])
+      `Expected an MPEG-4 upload, a URL video without a thumbnail and one without a name, received ${
+        JSON.stringify([misnamed.video, downloaded.video, unnamed.video])
       }`,
     );
   }
