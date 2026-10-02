@@ -37,6 +37,9 @@ export type WebFileResolution<Resolved> =
   | { readonly resolved: true; readonly value: Resolved }
   | { readonly resolved: false; readonly errorAnswer: BotApiMethodAnswer };
 
+/** What a request sends a file named by URL as, which decides how Telegram downloads it. */
+type WebFileKind = Parameters<EmulationSession['mediaFiles']['downloadWebFile']>[0]['fileKind'];
+
 type WebContentFailureReason = Exclude<
   Extract<
     Awaited<ReturnType<EmulationSession['mediaFiles']['downloadWebFile']>>,
@@ -79,7 +82,7 @@ const WEB_CONTENT_FAILURES: Readonly<
 export async function resolveRequestedInputFile(
   context: BotApiMethodContext,
   inputFile: RequestedInputFile,
-  fileKind: 'photo' | 'document',
+  fileKind: WebFileKind,
   albumMemberPosition?: number,
 ): Promise<WebFileResolution<BotApiInputFile>> {
   if (inputFile.kind !== 'url') {

@@ -28,5 +28,5 @@ properties:
         type: string
         description: >-
           Where the bot downloads the file under the Bot API file route: a directory for
-          the file's type, `photos` or `documents`, and a numbered name, such as
-          `documents/file_0.pdf`.
+          the file's type, `photos`, `documents`, `videos` or `thumbnails`, and a numbered
+          name, such as `documents/file_0.pdf`.

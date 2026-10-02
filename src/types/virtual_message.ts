@@ -192,16 +192,35 @@ export interface DocumentMessageContent {
   readonly caption: FormattedText;
 }
 
+export interface VideoMessageContent {
+  readonly kind: 'video';
+  readonly fileId: StoredFileId;
+  /** Empty for a video without a caption. */
+  readonly caption: FormattedText;
+  /** Whether clients cover the video until the user reveals it. */
+  readonly hasSpoiler: boolean;
+  /** Whether clients show the caption above the video, which matters only with a caption. */
+  readonly showsCaptionAboveMedia: boolean;
+  /**
+   * The second of the video from which clients play it in the message, which TDLib keeps with the
+   * message rather than the file; 0 to play it from its start.
+   */
+  readonly startTimestampSeconds: number;
+}
+
 /** A message laid out in blocks, which only bots send. It has no text or caption. */
 export interface RichMessageContent extends RichMessage {
   readonly kind: 'rich_message';
 }
 
 /**
- * Media that a message shows with a caption: a photo or a document. Each carries the one stored
- * file it shows, and a caption that is empty when it has none.
+ * Media that a message shows with a caption: a photo, a document, or a video. Each carries the one
+ * stored file it shows, and a caption that is empty when it has none.
  */
-export type CaptionedMediaContent = PhotoMessageContent | DocumentMessageContent;
+export type CaptionedMediaContent =
+  | PhotoMessageContent
+  | DocumentMessageContent
+  | VideoMessageContent;
 
 /** What a message shows: text, captioned media, or a rich message. */
 export type MessageContent = TextMessageContent | CaptionedMediaContent | RichMessageContent;
@@ -256,6 +275,7 @@ export function isCaptionedMediaContent(
   switch (content.kind) {
     case 'photo':
     case 'document':
+    case 'video':
       return true;
     case 'text':
     case 'rich_message':

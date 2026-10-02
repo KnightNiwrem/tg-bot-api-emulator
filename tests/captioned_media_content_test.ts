@@ -39,6 +39,18 @@ const CONTENT_CASES: readonly {
     contentText: CAPTION,
   },
   {
+    content: {
+      kind: 'video',
+      fileId: 'video',
+      caption: CAPTION,
+      hasSpoiler: false,
+      showsCaptionAboveMedia: false,
+      startTimestampSeconds: 0,
+    },
+    isCaptionedMedia: true,
+    contentText: CAPTION,
+  },
+  {
     content: { kind: 'rich_message', blocks: [], isRightToLeft: false },
     isCaptionedMedia: false,
     contentText: NO_TEXT,

@@ -300,7 +300,7 @@ export type EditBotMessageTextInput = EditBotMessageTarget & {
 };
 
 export type EditBotMessageCaptionInput = EditBotMessageTarget & SpecifiedCaption & {
-  /** Whether a photo shows its caption above itself; a document ignores it. */
+  /** Whether a photo or video shows its caption above itself; a document ignores it. */
   readonly showsCaptionAboveMedia: boolean;
   /** The keyboard the edited message shows; omitting it removes the message's keyboard. */
   readonly inlineKeyboard?: InlineKeyboard;
@@ -626,7 +626,7 @@ interface NewPrivateMessage {
 }
 
 /**
- * Carries out exchanges of text, photos, documents, and albums of photos or documents between an
+ * Carries out exchanges of text, captioned media, and albums of photos or documents between an
  * account and a bot in their private conversation, including forwards by either and copies by the
  * bot, and commits each accepted message: its upload stored, the message stored, numbered for both
  * participants, then published. Bots can attach inline keyboards to their messages, edit them afterward, and delete
@@ -818,7 +818,7 @@ export class PrivateMessagingService {
   }
 
   /**
-   * Sends text, a photo, or a document from a bot to an account, or the content of an existing
+   * Sends text or captioned media from a bot to an account, or the content of an existing
    * message as a forward or copy of it. As on Telegram, a bot cannot initiate a private
    * conversation, so the account must have started one with the bot.
    *
@@ -971,7 +971,7 @@ export class PrivateMessagingService {
   }
 
   /**
-   * Replaces the caption, its entities, and the inline keyboard of a photo or document the bot
+   * Replaces the caption, its entities, and the inline keyboard of captioned media the bot
    * sent, or that was sent through its inline mode; an empty caption removes it. Only a changed
    * caption dates the edit. Updates follow `editBotMessageText`.
    */

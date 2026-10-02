@@ -5,7 +5,7 @@ export const MAX_ALBUM_MESSAGE_COUNT = 10;
 
 /** What an album's rules read of one of its messages: its media and where it shows a caption. */
 export interface AlbumMember {
-  readonly kind: 'photo' | 'document';
+  readonly kind: 'photo' | 'document' | 'video';
   /** Whether clients show the caption above the media; a document never does. */
   readonly showsCaptionAboveMedia: boolean;
 }
@@ -53,17 +53,17 @@ export function checkAlbumComposition(
 }
 
 /**
- * Reads what an album's rules need of media being sent: a photo shows its caption where its sender
- * chose, and a document below itself.
+ * Reads what an album's rules need of media being sent: a photo or video shows its caption where
+ * its sender chose, and a document below itself.
  */
 export function toAlbumMember(
   media:
-    | { readonly kind: 'photo'; readonly showsCaptionAboveMedia: boolean }
+    | { readonly kind: 'photo' | 'video'; readonly showsCaptionAboveMedia: boolean }
     | { readonly kind: 'document' },
 ): AlbumMember {
   return {
     kind: media.kind,
-    showsCaptionAboveMedia: media.kind === 'photo' && media.showsCaptionAboveMedia,
+    showsCaptionAboveMedia: media.kind !== 'document' && media.showsCaptionAboveMedia,
   };
 }
 

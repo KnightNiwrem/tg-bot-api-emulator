@@ -27,7 +27,7 @@ patch:
     '400':
       description: >-
         The request, text, or caption is invalid, another member wrote the message, the request
-        gives text for a photo or document or a caption for a text message, or the normalized
+        gives text for captioned media or a caption for a text message, or the normalized
         text or caption is the message's current one.
     '403':
       description: The account is not a member of the supergroup.

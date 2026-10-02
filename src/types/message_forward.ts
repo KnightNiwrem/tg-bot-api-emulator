@@ -76,6 +76,18 @@ export function getRepeatedContent(
     : content;
 }
 
+/**
+ * Gives the repeated content of a forward or copy the start timestamp its request specifies, as
+ * TDLib's `set_message_content_video_start_timestamp` does: a video plays from that second, and
+ * other content is kept as it is.
+ */
+export function withVideoStartTimestamp(
+  content: MessageContent,
+  startTimestampSeconds: number,
+): MessageContent {
+  return content.kind === 'video' ? { ...content, startTimestampSeconds } : content;
+}
+
 const EVERY_INLINE_QUERY_CHAT: InlineQuerySwitchTarget = {
   kind: 'chosen_chat',
   chatTypes: {

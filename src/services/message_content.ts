@@ -39,6 +39,8 @@ import type {
   StoredFile,
   StoredFileId,
   StoredPhotoFile,
+  StoredVideoFile,
+  VideoUpload,
 } from '../types/stored_file.ts';
 import {
   type CaptionedMediaContent,
@@ -79,6 +81,11 @@ export type OutgoingPhoto = OutgoingFile<StoredPhotoFile, PhotoUpload>;
 
 export type OutgoingDocument = OutgoingFile<StoredDocumentFile, DocumentUpload>;
 
+export type OutgoingVideo = OutgoingFile<StoredVideoFile, VideoUpload>;
+
+/** A file that new captioned media carries. */
+type OutgoingMediaFile = OutgoingPhoto | OutgoingDocument | OutgoingVideo;
+
 /** The files of a rich message being sent: each reused by its stored file, or a new upload. */
 export interface OutgoingRichMessageFileTypes {
   readonly photo: OutgoingPhoto;
@@ -114,6 +121,14 @@ export type OutgoingMessageContent =
     readonly kind: 'document';
     readonly document: OutgoingDocument;
   })
+  | (SpecifiedCaption & {
+    readonly kind: 'video';
+    readonly video: OutgoingVideo;
+    readonly hasSpoiler: boolean;
+    readonly showsCaptionAboveMedia: boolean;
+    /** As `VideoMessageContent` describes it. */
+    readonly startTimestampSeconds: number;
+  })
   | {
     readonly kind: 'rich_message';
     readonly richMessage: OutgoingRichMessage;
@@ -135,7 +150,9 @@ export type OutgoingMessageContent =
     readonly captionReplacement?: CaptionReplacement;
   };
 
-/** A new caption of media, with where a photo shows it; a document ignores the placement. */
+/**
+ * A new caption of media, with where a photo or video shows it; a document ignores the placement.
+ */
 export type CaptionReplacement = SpecifiedCaption & { readonly showsCaptionAboveMedia: boolean };
 
 /** New message content that passed Telegram's checks, whose upload is not yet stored. */
@@ -152,6 +169,14 @@ export type NormalizedOutgoingContent =
     readonly kind: 'document';
     readonly document: OutgoingDocument;
     readonly caption: FormattedText;
+  }
+  | {
+    readonly kind: 'video';
+    readonly video: OutgoingVideo;
+    readonly caption: FormattedText;
+    readonly hasSpoiler: boolean;
+    readonly showsCaptionAboveMedia: boolean;
+    readonly startTimestampSeconds: number;
   }
   | { readonly kind: 'rich_message'; readonly richMessage: OutgoingRichMessage }
   | { readonly kind: 'existing'; readonly content: MessageContent };
@@ -189,7 +214,7 @@ export function normalizeOutgoingContent(
 /** New media of a message with its caption, as its sender specified it. */
 export type MediaContent = Extract<
   OutgoingMessageContent,
-  { readonly kind: 'photo' | 'document' }
+  { readonly kind: 'photo' | 'document' | 'video' }
 >;
 
 type MediaContentNormalization =
@@ -206,19 +231,42 @@ function normalizeMediaContent(
   if (!captionNormalization.normalized) {
     return captionNormalization;
   }
-  const { caption } = captionNormalization;
   return {
     normalized: true,
-    content: content.kind === 'photo'
-      ? {
+    content: withNormalizedCaption(content, captionNormalization.caption),
+  };
+}
+
+/** New media with its caption normalized, in place of the caption its sender specified. */
+function withNormalizedCaption(
+  content: MediaContent,
+  caption: FormattedText,
+): NormalizedOutgoingContent {
+  switch (content.kind) {
+    case 'photo':
+      return {
         kind: 'photo',
         photo: content.photo,
         caption,
         hasSpoiler: content.hasSpoiler,
         showsCaptionAboveMedia: content.showsCaptionAboveMedia,
-      }
-      : { kind: 'document', document: content.document, caption },
-  };
+      };
+    case 'document':
+      return { kind: 'document', document: content.document, caption };
+    case 'video':
+      return {
+        kind: 'video',
+        video: content.video,
+        caption,
+        hasSpoiler: content.hasSpoiler,
+        showsCaptionAboveMedia: content.showsCaptionAboveMedia,
+        startTimestampSeconds: content.startTimestampSeconds,
+      };
+    default: {
+      const unhandledContent: never = content;
+      throw new Error(`Unhandled media content: ${JSON.stringify(unhandledContent)}`);
+    }
+  }
 }
 
 export type OutgoingAlbumNormalization =
@@ -391,8 +439,8 @@ export function normalizeCaption(
 }
 
 /**
- * What an account sends: text, or media with a caption, which is a photo or a document as its
- * upload says, each with the formatting the account specified.
+ * What an account sends: text, or media with a caption, which is a photo, a document, or a video
+ * as its upload says, each with the formatting the account specified.
  */
 export type AccountMessageContent =
   | {
@@ -403,7 +451,7 @@ export type AccountMessageContent =
   }
   | AccountMediaContent;
 
-/** Media an account sends, a photo or a document as its upload says, with its caption. */
+/** Media an account sends, a photo, a document, or a video as its upload says, with its caption. */
 export type AccountMediaContent = SpecifiedCaption & {
   readonly kind: 'media';
   readonly upload: FileUpload;
@@ -418,22 +466,39 @@ export function toOutgoingAccountContent(content: AccountMessageContent): Outgoi
 }
 
 /**
- * Turns media an account sends into outgoing media. An account never covers a photo or moves its
- * caption.
+ * Turns media an account sends into outgoing media. An account never covers a photo or video,
+ * moves its caption, or starts a video past its beginning.
  */
 export function toOutgoingAccountMedia(
   { upload, caption, captionEntities }: AccountMediaContent,
 ): MediaContent {
-  return upload.type === 'photo'
-    ? {
-      kind: 'photo',
-      photo: { kind: 'upload', upload },
-      caption,
-      captionEntities,
-      hasSpoiler: false,
-      showsCaptionAboveMedia: false,
+  switch (upload.type) {
+    case 'photo':
+      return {
+        kind: 'photo',
+        photo: { kind: 'upload', upload },
+        caption,
+        captionEntities,
+        hasSpoiler: false,
+        showsCaptionAboveMedia: false,
+      };
+    case 'document':
+      return { kind: 'document', document: { kind: 'upload', upload }, caption, captionEntities };
+    case 'video':
+      return {
+        kind: 'video',
+        video: { kind: 'upload', upload },
+        caption,
+        captionEntities,
+        hasSpoiler: false,
+        showsCaptionAboveMedia: false,
+        startTimestampSeconds: 0,
+      };
+    default: {
+      const unhandledUpload: never = upload;
+      throw new Error(`Unhandled account upload: ${JSON.stringify(unhandledUpload)}`);
     }
-    : { kind: 'document', document: { kind: 'upload', upload }, caption, captionEntities };
+  }
 }
 
 /**
@@ -468,8 +533,9 @@ export function replaceMessageText(
 
 /**
  * Replaces the caption of captioned media, normalized as when sending; an empty caption removes
- * it. As on Telegram, a text message has no caption to replace, and only a photo shows its caption
- * above itself: a document ignores `showsCaptionAboveMedia`, and omitting it keeps the setting.
+ * it. As on Telegram, a text message has no caption to replace, and only a photo or video shows its
+ * caption above itself: a document ignores `showsCaptionAboveMedia`, and omitting it keeps the
+ * setting.
  */
 export function replaceMessageCaption(
   content: MessageContent,
@@ -501,8 +567,8 @@ export function replaceMessageCaption(
  * Replaces a message's content with new media and its caption, normalized as when a bot sends
  * them, as TDLib's `edit_message_media` does: the old caption goes with the old content, so new
  * media without a caption has none. As TDLib's `can_edit_message_media` allows, the old content
- * may be any content the emulator has: a photo or a document, whose media is replaced, or text or
- * a rich message, which becomes media. As that method checks once the new caption is read, a
+ * may be any content the emulator has: a photo, a document, or a video, whose media is replaced,
+ * or text or a rich message, which becomes media. As that method checks once the new caption is read, a
  * message of an album keeps its kind of media, since documents form albums only with documents.
  */
 export function replaceMessageMedia(
@@ -514,6 +580,7 @@ export function replaceMessageMedia(
     case 'text':
     case 'photo':
     case 'document':
+    case 'video':
     case 'rich_message': {
       const normalization = normalizeMediaContent(media, 'bot', context);
       if (!normalization.normalized) {
@@ -531,21 +598,29 @@ export function replaceMessageMedia(
 }
 
 /**
- * Gives media a normalized caption. Only a photo shows its caption above itself; omitting the
- * placement keeps it.
+ * Gives media a normalized caption. Only a photo or video shows its caption above itself; omitting
+ * the placement keeps it.
  */
 function withCaption(
   content: CaptionedMediaContent,
   caption: FormattedText,
   showsCaptionAboveMedia: boolean | undefined,
 ): CaptionedMediaContent {
-  return content.kind === 'photo'
-    ? {
-      ...content,
-      caption,
-      showsCaptionAboveMedia: showsCaptionAboveMedia ?? content.showsCaptionAboveMedia,
+  switch (content.kind) {
+    case 'photo':
+    case 'video':
+      return {
+        ...content,
+        caption,
+        showsCaptionAboveMedia: showsCaptionAboveMedia ?? content.showsCaptionAboveMedia,
+      };
+    case 'document':
+      return { ...content, caption };
+    default: {
+      const unhandledContent: never = content;
+      throw new Error(`Unhandled media content: ${JSON.stringify(unhandledContent)}`);
     }
-    : { ...content, caption };
+  }
 }
 
 /**
@@ -625,6 +700,15 @@ export function storeOutgoingContent(
         fileId: storeOutgoingFile(content.document, files),
         caption: content.caption,
       };
+    case 'video':
+      return {
+        kind: 'video',
+        fileId: storeOutgoingFile(content.video, files),
+        caption: content.caption,
+        hasSpoiler: content.hasSpoiler,
+        showsCaptionAboveMedia: content.showsCaptionAboveMedia,
+        startTimestampSeconds: content.startTimestampSeconds,
+      };
     case 'rich_message':
       return {
         kind: 'rich_message',
@@ -640,10 +724,7 @@ export function storeOutgoingContent(
   }
 }
 
-function storeOutgoingFile(
-  file: OutgoingPhoto | OutgoingDocument,
-  files: FileUploadStore,
-): StoredFileId {
+function storeOutgoingFile(file: OutgoingMediaFile, files: FileUploadStore): StoredFileId {
   return file.kind === 'stored' ? file.file.id : files.addFile(file.upload).id;
 }
 
@@ -672,6 +753,15 @@ export function toContentOfStoredFile(content: NormalizedOutgoingContent): Messa
         fileId: getStoredFileId(content.document),
         caption: content.caption,
       };
+    case 'video':
+      return {
+        kind: 'video',
+        fileId: getStoredFileId(content.video),
+        caption: content.caption,
+        hasSpoiler: content.hasSpoiler,
+        showsCaptionAboveMedia: content.showsCaptionAboveMedia,
+        startTimestampSeconds: content.startTimestampSeconds,
+      };
     case 'rich_message':
       return {
         kind: 'rich_message',
@@ -697,6 +787,8 @@ function hasOutgoingUpload(content: NormalizedOutgoingContent): boolean {
       return content.photo.kind === 'upload';
     case 'document':
       return content.document.kind === 'upload';
+    case 'video':
+      return content.video.kind === 'upload';
     case 'rich_message':
       return listRichMessageFiles(content.richMessage).some(({ file }) => file.kind === 'upload');
     default: {
@@ -718,7 +810,7 @@ export function isUnchangedContent(
     isSameMessageContent(toContentOfStoredFile(replacement), content);
 }
 
-function getStoredFileId(file: OutgoingPhoto | OutgoingDocument): StoredFileId {
+function getStoredFileId(file: OutgoingMediaFile): StoredFileId {
   if (file.kind !== 'stored') {
     throw new Error('Expected a stored file rather than an upload');
   }
@@ -813,6 +905,13 @@ export function isSameMessageContent(first: MessageContent, second: MessageConte
     case 'document':
       return second.kind === 'document' && first.fileId === second.fileId &&
         isSameFormattedText(first.caption, second.caption);
+    case 'video':
+      return second.kind === 'video' && first.fileId === second.fileId &&
+        first.hasSpoiler === second.hasSpoiler &&
+        first.startTimestampSeconds === second.startTimestampSeconds &&
+        isSameFormattedText(first.caption, second.caption) &&
+        (first.caption.text.length === 0 ||
+          first.showsCaptionAboveMedia === second.showsCaptionAboveMedia);
     case 'rich_message':
       return second.kind === 'rich_message' && areRichMessagesEqual(first, second);
     default: {

@@ -1,8 +1,8 @@
 description: >-
   Telegram Bot API method for replacing the content of a message the bot sent to a private chat
   or a supergroup with a new photo or document and its caption. As TDLib's `edit_message_media`
-  allows, a photo or document message changes its media, and a text or rich message becomes
-  media; the old caption goes with the old content. As on Telegram, the edited message keeps
+  allows, a photo, document, or video message changes its media, and a text or rich message
+  becomes media; the old caption goes with the old content. As on Telegram, the edited message keeps
   only the inline keyboard given in `reply_markup`, and the bot receives no update for its own
   edit. Without `chat_id` and `message_id`, the method edits a message an account sent through
   the bot's inline mode, which `inline_message_id` identifies, as `editMessageText` does; as

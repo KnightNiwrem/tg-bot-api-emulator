@@ -40,6 +40,7 @@ import {
   getRepeatedContent,
   isForwardable,
   type PrivateForwardNameLookup,
+  withVideoStartTimestamp,
 } from '../types/message_forward.ts';
 import {
   type AlbumCompositionFailureReason,
@@ -62,7 +63,7 @@ import {
   type RichMessageButtonAction,
   type RichMessageFileTypes,
 } from '../types/rich_message.ts';
-import type { StoredFile, WebFile } from '../types/stored_file.ts';
+import type { StoredFile, VideoAttributes, WebFile } from '../types/stored_file.ts';
 import type { BotUploadTooBigFailure } from '../types/upload_profile.ts';
 import { isUserId } from '../types/telegram_identity.ts';
 import type { VirtualBot, VirtualBotProfile } from '../types/virtual_bot.ts';
@@ -88,6 +89,8 @@ import type {
   PhotoTooBigFailure,
   PhotoUploadPreparation,
   PhotoUploadRequest,
+  VideoUploadPreparation,
+  VideoUploadRequest,
 } from './media_file.ts';
 import type {
   DeleteWebhookOutcome,
@@ -120,6 +123,7 @@ import type {
   OutgoingMessageContent,
   OutgoingPhoto,
   OutgoingRichMessage,
+  OutgoingVideo,
   SpecifiedCaption,
   SpecifiedQuote,
   TextInvalidFailure,
@@ -322,6 +326,25 @@ export type SendDocumentRequest = SendRequestOptions & {
   readonly caption: SpecifiedFormattedText;
 };
 
+export type SendVideoRequest = SendRequestOptions & {
+  readonly video: BotApiInputFile;
+  /**
+   * The duration and dimensions the bot specified, which a video sent by `file_id` ignores in
+   * favor of its own.
+   */
+  readonly attributes: VideoAttributes;
+  /** As `SendDocumentRequest` describes it; a video sent by `file_id` keeps its own. */
+  readonly thumbnail?: Uint8Array<ArrayBuffer>;
+  /** The Bot API `start_timestamp`, as `VideoMessageContent` describes it. */
+  readonly startTimestampSeconds: number;
+  /** Empty text for no caption. */
+  readonly caption: SpecifiedFormattedText;
+  /** The Bot API `has_spoiler`. */
+  readonly hasSpoiler: boolean;
+  /** The Bot API `show_caption_above_media`. */
+  readonly showsCaptionAboveMedia: boolean;
+};
+
 export type SendFailureReason =
   | 'message_text_empty'
   | 'chat_not_found'
@@ -372,6 +395,11 @@ export interface ForwardMessageRequest {
   readonly chatId: number;
   /** The forwarded message: the Bot API `from_chat_id` and `message_id`. */
   readonly forwardedMessage: MessageTarget;
+  /**
+   * The Bot API `video_start_timestamp`: the second from which a forwarded video plays, which
+   * other content ignores; omitted to keep the video's own.
+   */
+  readonly videoStartTimestampSeconds?: number;
   /** The Bot API `protect_content`; omitted for an unprotected message. */
   readonly isContentProtected?: boolean;
   /** As `SendRequestOptions` describes it. */
@@ -400,9 +428,14 @@ export type ForwardMessageResult = SendResult | RepetitionFailure<'message_not_f
 export type CopyMessageRequest = SendRequestOptions & {
   /** The copied message: the Bot API `from_chat_id` and `message_id`. */
   readonly copiedMessage: MessageTarget;
+  /** As `ForwardMessageRequest` describes it, for the copied video. */
+  readonly videoStartTimestampSeconds?: number;
   /** A caption that replaces the caption of copied media; omitted to keep it. */
   readonly caption?: SpecifiedFormattedText;
-  /** The Bot API `show_caption_above_media`, which applies only with a new caption of a photo. */
+  /**
+   * The Bot API `show_caption_above_media`, which applies only with a new caption of a photo or
+   * video.
+   */
   readonly showsCaptionAboveMedia: boolean;
 };
 
@@ -482,7 +515,7 @@ export interface EditMessageTextRequest extends MessageTarget {
 export interface EditMessageCaptionRequest extends MessageTarget {
   /** Empty text removes the caption. */
   readonly caption: SpecifiedFormattedText;
-  /** The Bot API `show_caption_above_media`, which only a photo honors. */
+  /** The Bot API `show_caption_above_media`, which only a photo or video honors. */
   readonly showsCaptionAboveMedia: boolean;
   /** Omitting the keyboard removes the message's keyboard, as on Telegram. */
   readonly inlineKeyboard?: InlineKeyboard;
@@ -615,7 +648,7 @@ export interface EditInlineMessageTextRequest extends InlineMessageTarget {
 export interface EditInlineMessageCaptionRequest extends InlineMessageTarget {
   /** Empty text removes the caption. */
   readonly caption: SpecifiedFormattedText;
-  /** The Bot API `show_caption_above_media`, which only a photo honors. */
+  /** The Bot API `show_caption_above_media`, which only a photo or video honors. */
   readonly showsCaptionAboveMedia: boolean;
   /** Omitting the keyboard removes the message's keyboard, as on Telegram. */
   readonly inlineKeyboard?: InlineKeyboard;
@@ -1317,6 +1350,7 @@ interface ChatMemberships {
 interface MediaFiles {
   preparePhotoUpload(request: PhotoUploadRequest): PhotoUploadPreparation;
   prepareDocumentUpload(request: DocumentUploadRequest): DocumentUploadPreparation;
+  prepareVideoUpload(request: VideoUploadRequest): VideoUploadPreparation;
   findObserverFile(observerId: number, fileId: string): StoredFile | undefined;
   getBotFile(botId: number, fileId: string):
     | {
@@ -1951,6 +1985,39 @@ export class BotApiService {
   }
 
   /**
+   * Sends a video with an optional caption, as `sendPhoto` sends a photo. Telegram's clients play
+   * MPEG-4 videos and Telegram may send other formats as documents; the emulator inspects no
+   * content and always sends a video.
+   */
+  sendVideo(
+    authenticatedBot: VirtualBotProfile,
+    {
+      video,
+      attributes,
+      thumbnail,
+      startTimestampSeconds,
+      caption,
+      hasSpoiler,
+      showsCaptionAboveMedia,
+      ...options
+    }: SendVideoRequest,
+  ): SendResult {
+    const videoResolution = this.#resolveVideo(authenticatedBot, video, attributes, thumbnail);
+    if (!videoResolution.resolved) {
+      return { sent: false, ...videoResolution.failure };
+    }
+    return this.#send(authenticatedBot, {
+      kind: 'video',
+      video: videoResolution.file,
+      caption: caption.text,
+      captionEntities: caption.entities,
+      hasSpoiler,
+      showsCaptionAboveMedia,
+      startTimestampSeconds,
+    }, options);
+  }
+
+  /**
    * Sends photos or documents to a private chat or a supergroup as an album, as TDLib's
    * `send_message_group` does: each message's file is resolved as `sendPhoto` and `sendDocument`
    * resolve theirs, in order, and the album is then checked as `checkAlbumComposition` does. An
@@ -2019,15 +2086,22 @@ export class BotApiService {
   /**
    * Forwards a message of one of the bot's chats to a private chat or a supergroup, as TDLib does:
    * the forward repeats the message's content and shows who first sent it and when. As on Telegram,
-   * a message whose sender protected it cannot be forwarded, nor can a service message.
+   * a message whose sender protected it cannot be forwarded, nor can a service message. A request's
+   * video start timestamp replaces that of a forwarded video, as `withVideoStartTimestamp` does.
    *
    * The forwarded message is checked in full before the chat it goes to, while TDLib checks whether
    * it can be forwarded only after that chat; a request that fails both ways fails for the message.
    */
   forwardMessage(
     authenticatedBot: VirtualBotProfile,
-    { chatId, forwardedMessage, isContentProtected, isSilent, messageEffectId }:
-      ForwardMessageRequest,
+    {
+      chatId,
+      forwardedMessage,
+      videoStartTimestampSeconds,
+      isContentProtected,
+      isSilent,
+      messageEffectId,
+    }: ForwardMessageRequest,
   ): ForwardMessageResult {
     const lookup = this.#findRepeatedMessage(authenticatedBot, forwardedMessage);
     if (!lookup.found) {
@@ -2042,7 +2116,12 @@ export class BotApiService {
     );
     return this.#send(
       authenticatedBot,
-      { kind: 'existing', content },
+      {
+        kind: 'existing',
+        content: videoStartTimestampSeconds === undefined
+          ? content
+          : withVideoStartTimestamp(content, videoStartTimestampSeconds),
+      },
       {
         chatId,
         isContentProtected,
@@ -2059,14 +2138,21 @@ export class BotApiService {
    * message, which, unlike a forward, does not show where it came from, and which takes the reply
    * and reply markup of the request instead of the original's. A new caption replaces the caption
    * of copied media, while text and rich messages stay as they are, apart from the buttons of a
-   * rich message, which change as for a forward. As TDLib lets bots do, a bot may copy a message
-   * whose sender protected it; a service message cannot be copied.
+   * rich message, which change as for a forward, and a video takes the request's start timestamp,
+   * if any, as for a forward. As TDLib lets bots do, a bot may copy a message whose sender
+   * protected it; a service message cannot be copied.
    *
    * As for `forwardMessage`, the copied message is checked in full before the chat it goes to.
    */
   copyMessage(
     authenticatedBot: VirtualBotProfile,
-    { copiedMessage, caption, showsCaptionAboveMedia, ...options }: CopyMessageRequest,
+    {
+      copiedMessage,
+      videoStartTimestampSeconds,
+      caption,
+      showsCaptionAboveMedia,
+      ...options
+    }: CopyMessageRequest,
   ): CopyMessageResult {
     const lookup = this.#findRepeatedMessage(authenticatedBot, copiedMessage);
     if (!lookup.found) {
@@ -2075,9 +2161,12 @@ export class BotApiService {
     if (!isContentMessage(lookup.message)) {
       return { sent: false, reason: 'message_not_copyable' };
     }
+    const content = getRepeatedContent(lookup.message.content, 'copy');
     const result = this.#send(authenticatedBot, {
       kind: 'existing',
-      content: getRepeatedContent(lookup.message.content, 'copy'),
+      content: videoStartTimestampSeconds === undefined
+        ? content
+        : withVideoStartTimestamp(content, videoStartTimestampSeconds),
       ...(caption === undefined ? {} : {
         captionReplacement: {
           caption: caption.text,
@@ -2667,6 +2756,50 @@ export class BotApiService {
   }
 
   /**
+   * Resolves the video a request sends, as `#resolveDocument` resolves a document: an upload, whose
+   * name the Bot API server cleans, with the duration, dimensions and thumbnail the bot specified;
+   * a video the bot knows by `file_id`, which keeps its own; or a file downloaded from a URL, named
+   * after the URL and typed as it was served. As for a document, TDLib sends a URL video as
+   * `inputMediaDocumentExternal`, which takes no thumbnail, so an uploaded thumbnail is left out.
+   * That media carries none of the bot's attributes either, which Telegram's servers determine
+   * themselves; the emulator, which reads no video content, keeps the ones the bot specified.
+   */
+  #resolveVideo(
+    authenticatedBot: VirtualBotProfile,
+    input: BotApiInputFile,
+    attributes: VideoAttributes,
+    thumbnailContent: Uint8Array<ArrayBuffer> | undefined,
+  ): FileResolution<OutgoingVideo> {
+    if (input.kind === 'file_id') {
+      const file = this.#mediaFiles.findObserverFile(authenticatedBot.id, input.fileId);
+      if (file?.type === 'video') {
+        return { resolved: true, file: { kind: 'stored', file } };
+      }
+      return { resolved: false, failure: fileIdFailure(file, 'video') };
+    }
+    const preparation = this.#mediaFiles.prepareVideoUpload(
+      input.kind === 'upload'
+        ? {
+          content: input.content,
+          fileName: cleanUploadedFileName(input.fileName),
+          attributes,
+          ...(thumbnailContent === undefined ? {} : { thumbnailContent }),
+          source: 'bot_upload',
+        }
+        : {
+          content: input.webFile.content,
+          fileName: cleanUploadedFileName(input.webFile.fileName),
+          mimeType: input.webFile.mediaType,
+          attributes,
+          source: 'web_download',
+        },
+    );
+    return preparation.prepared
+      ? { resolved: true, file: { kind: 'upload', upload: preparation.upload } }
+      : { resolved: false, failure: uploadPreparationFailure(preparation) };
+  }
+
+  /**
    * Resolves the file of new media, as `#resolvePhoto` and `#resolveDocument` resolve a photo and
    * a document.
    */
@@ -3170,8 +3303,8 @@ export class BotApiService {
   }
 
   /**
-   * Replaces the caption, its entities, and the inline keyboard of a photo or document the bot
-   * sent; empty caption text removes the caption.
+   * Replaces the caption, its entities, and the inline keyboard of a photo, document, or video
+   * the bot sent; empty caption text removes the caption.
    */
   editMessageCaption(
     authenticatedBot: VirtualBotProfile,
@@ -3220,8 +3353,8 @@ export class BotApiService {
 
   /**
    * Replaces the content, caption and inline keyboard of a message the bot sent with a new photo
-   * or document, as TDLib's `edit_message_media` does; a photo or document message changes its
-   * media, and a text or rich message becomes media. As for `sendPhoto` and `sendDocument`, the
+   * or document, as TDLib's `edit_message_media` does; a photo, document, or video message
+   * changes its media, and a text or rich message becomes media. As for `sendPhoto` and `sendDocument`, the
    * file is resolved before the message is found.
    */
   editMessageMedia(
@@ -3435,8 +3568,8 @@ export class BotApiService {
   }
 
   /**
-   * Replaces the caption, its entities, and the inline keyboard of a photo or document sent
-   * through the bot; empty caption text removes the caption.
+   * Replaces the caption, its entities, and the inline keyboard of a photo, document, or video
+   * sent through the bot; empty caption text removes the caption.
    */
   editInlineMessageCaption(
     authenticatedBot: VirtualBotProfile,
@@ -3973,7 +4106,7 @@ type FileResolution<File> =
 /** Why Telegram refuses an uploaded file, as its preparation reports it. */
 function uploadPreparationFailure(
   preparation: Extract<
-    PhotoUploadPreparation | DocumentUploadPreparation,
+    PhotoUploadPreparation | DocumentUploadPreparation | VideoUploadPreparation,
     { readonly prepared: false }
   >,
 ): FileResolutionFailure {

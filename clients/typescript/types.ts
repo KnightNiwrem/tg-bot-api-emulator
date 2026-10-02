@@ -193,6 +193,29 @@ export interface AccountSendDocumentInput<Target extends MessageTarget = Message
   readonly reply_to_message_id?: number;
 }
 
+export interface AccountSendVideoInput<Target extends MessageTarget = MessageTarget> {
+  readonly to: Target;
+  /** The video's content, which the emulator neither inspects nor transcodes. */
+  readonly video: Uint8Array;
+  /**
+   * The file name, whose extension decides the video's MIME type when it names a `video/` type;
+   * otherwise, and without a name, the video is `video/mp4`.
+   */
+  readonly file_name?: string;
+  /** In seconds, from 0, the default, to 86400. */
+  readonly duration?: number;
+  /** In pixels, from 0, the default, to 10000. */
+  readonly width?: number;
+  /** In pixels, from 0, the default, to 10000. */
+  readonly height?: number;
+  /** Omitted or empty for no caption. */
+  readonly caption?: string;
+  /** Formatting of the caption; entity types Telegram detects by itself are ignored. */
+  readonly caption_entities?: readonly MessageEntityInput[];
+  /** The ID of the chat's message to reply to, as message history shows it. */
+  readonly reply_to_message_id?: number;
+}
+
 /** A photo or document of an album an account sends, with an optional caption. */
 export type AccountMediaGroupItem =
   | {
@@ -596,7 +619,7 @@ export interface InlineKeyboardMarkup {
   readonly inline_keyboard: readonly (readonly InlineKeyboardButton[])[];
 }
 
-/** A file of a message: a photo size or a document. */
+/** A file of a message: a photo size, a document, or a video. */
 interface MessageFile {
   /**
    * The identifier by which the message's observer knows the file. As on Telegram, each user
@@ -618,6 +641,23 @@ export interface Document extends MessageFile {
   readonly file_name: string;
   readonly mime_type: string;
   /** The preview image the sender uploaded with the document; omitted for none. */
+  readonly thumbnail?: PhotoSize;
+  /** Legacy copy of `thumbnail`, which the Bot API still shows. */
+  readonly thumb?: PhotoSize;
+}
+
+/** A video, whose duration and dimensions are those its sender defined. */
+export interface Video extends MessageFile {
+  /** In seconds. */
+  readonly duration: number;
+  readonly width: number;
+  readonly height: number;
+  /** Omitted for a video sent without a file name. */
+  readonly file_name?: string;
+  readonly mime_type: string;
+  /** The second from which clients play the video in its message; omitted for its beginning. */
+  readonly start_timestamp?: number;
+  /** The preview image the sender uploaded with the video; omitted for none. */
   readonly thumbnail?: PhotoSize;
   /** Legacy copy of `thumbnail`, which the Bot API still shows. */
   readonly thumb?: PhotoSize;
@@ -839,6 +879,16 @@ interface MessageContentFields {
     readonly caption?: string;
     readonly caption_entities?: readonly MessageEntity[];
   };
+  readonly video: {
+    readonly video: Video;
+    /** Omitted for a video without a caption. */
+    readonly caption?: string;
+    readonly caption_entities?: readonly MessageEntity[];
+    /** Present when clients show the caption above the video. */
+    readonly show_caption_above_media?: true;
+    /** Present when clients cover the video until the user reveals it. */
+    readonly has_media_spoiler?: true;
+  };
   readonly rich_message: {
     /** A message a bot laid out in blocks, which only bots send. */
     readonly rich_message: RichMessage;
@@ -846,9 +896,9 @@ interface MessageContentFields {
 }
 
 /**
- * The fields that show what a message is: text, a photo, a document, or a rich message. Each kind
- * declares the others' fields absent, so that any of them can be read from a message of unknown
- * kind.
+ * The fields that show what a message is: text, a photo, a document, a video, or a rich message.
+ * Each kind declares the others' fields absent, so that any of them can be read from a message of
+ * unknown kind.
  */
 export type MessageContent = ExclusiveAlternatives<MessageContentFields>;
 
@@ -930,6 +980,11 @@ interface ExternalReplyMediaFields {
     readonly has_media_spoiler?: true;
   };
   readonly document: { readonly document: Document };
+  readonly video: {
+    readonly video: Video;
+    /** Present when clients cover the video until the user reveals it. */
+    readonly has_media_spoiler?: true;
+  };
 }
 
 /**
@@ -1310,6 +1365,13 @@ export interface VirtualAccountClient extends VirtualAccountProfile {
     input: AccountSendDocumentInput<Target>,
   ): Promise<MessageIn<Target>>;
   /**
+   * Sends a video, with an optional caption, as `sendMessage` sends text. Its duration and
+   * dimensions are those the input defines; the emulator never reads the content.
+   */
+  sendVideo<Target extends MessageTarget>(
+    input: AccountSendVideoInput<Target>,
+  ): Promise<MessageIn<Target>>;
+  /**
    * Sends photos or documents as an album, as `sendPhoto` and `sendDocument` send one, and returns
    * the album's messages in order, which share a `media_group_id`. The chat's bots receive each
    * message as a separate update, in the album's order.
@@ -1332,7 +1394,10 @@ export interface VirtualAccountClient extends VirtualAccountProfile {
   editMessage<Target extends MessageTarget>(
     input: AccountEditMessageInput<Target>,
   ): Promise<MessageIn<Target>>;
-  /** Edits the caption of a photo or document this account sent, as `editMessage` edits text. */
+  /**
+   * Edits the caption of a photo, document, or video this account sent, as `editMessage` edits
+   * text.
+   */
   editMessageCaption<Target extends MessageTarget>(
     input: AccountEditMessageCaptionInput<Target>,
   ): Promise<MessageIn<Target>>;

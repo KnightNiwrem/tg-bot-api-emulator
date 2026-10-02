@@ -1,5 +1,10 @@
-import { createMessageForward, isForwardable } from '../src/types/message_forward.ts';
+import {
+  createMessageForward,
+  isForwardable,
+  withVideoStartTimestamp,
+} from '../src/types/message_forward.ts';
 import type {
+  MessageContent,
   MessageForwardInfo,
   PrivateMessage,
   SupergroupMessage,
@@ -116,6 +121,33 @@ Deno.test('createMessageForward shows only the name of a sender with private for
         JSON.stringify({ forward, forwardOfForward, forwardOfBotMessage })
       }`,
     );
+  }
+});
+
+Deno.test('withVideoStartTimestamp changes where a video plays and keeps other content', () => {
+  const caption = { text: 'Clip', entities: [] };
+  const video: MessageContent = {
+    kind: 'video',
+    fileId: 'video',
+    caption,
+    hasSpoiler: true,
+    showsCaptionAboveMedia: true,
+    startTimestampSeconds: 5,
+  };
+  const photo: MessageContent = {
+    kind: 'photo',
+    fileId: 'photo',
+    caption,
+    hasSpoiler: false,
+    showsCaptionAboveMedia: false,
+  };
+
+  if (
+    JSON.stringify(withVideoStartTimestamp(video, 0)) !==
+      JSON.stringify({ ...video, startTimestampSeconds: 0 }) ||
+    withVideoStartTimestamp(photo, 30) !== photo
+  ) {
+    throw new Error('Expected only the video to take the new start timestamp');
   }
 });
 

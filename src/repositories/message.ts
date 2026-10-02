@@ -424,6 +424,7 @@ function copyContent(content: SupergroupMessageContent): SupergroupMessageConten
       return { ...content, entities: content.entities.map((entity) => ({ ...entity })) };
     case 'photo':
     case 'document':
+    case 'video':
       return {
         ...content,
         caption: {

@@ -86,11 +86,23 @@ try {
     caption: 'My receipt',
   });
   const reply = (await account.getMessages({ chat: { type: 'private', botId: bot.id } })).at(-1);
-  const replyFile = reply?.document ?? reply?.photo?.at(-1);
+  const replyFile = reply?.document ?? reply?.video ?? reply?.photo?.at(-1);
   if (replyFile !== undefined) {
     const content = await session.downloadFile(replyFile.file_unique_id);
     console.log(content.length, photo.photo?.[0].width);
   }
+
+  // Send the bot a video, whose duration and dimensions the account's client defines; the
+  // emulator keeps them as given and never reads the content.
+  const clip = await account.sendVideo({
+    to: { type: 'private', botId: bot.id },
+    video: await Deno.readFile('clip.mp4'),
+    file_name: 'clip.mp4',
+    duration: 12,
+    width: 1280,
+    height: 720,
+  });
+  console.log(clip.video?.duration);
 
   // Send the receipt twice as an album. The bot receives each photo as a message, and both
   // messages share a media_group_id.

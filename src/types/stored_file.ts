@@ -12,19 +12,23 @@ export const MAX_BOT_DOWNLOAD_FILE_BYTES = 20 * 1024 * 1024;
 /** TDLib refuses to upload a larger file as a photo, for bots and user accounts alike. */
 export const MAX_PHOTO_UPLOAD_BYTES = 10 * 1024 * 1024;
 
+/** What a bot sends a file by URL as, which decides how large it may be and of which types. */
+export type WebFileKind = 'photo' | 'document' | 'video';
+
 /**
  * Telegram downloads a file that a bot sends by URL only up to these sizes: 5 MB for a photo and
  * 20 MB for any other file, whatever the session's upload profile, since Telegram's own servers
  * download it. As for uploads, the documented figures are read in binary megabytes.
  */
-export const MAX_WEB_FILE_BYTES: Readonly<Record<'photo' | 'document', number>> = {
+export const MAX_WEB_FILE_BYTES: Readonly<Record<WebFileKind, number>> = {
   photo: 5 * 1024 * 1024,
   document: 20 * 1024 * 1024,
+  video: 20 * 1024 * 1024,
 };
 
 /**
- * A file that Telegram downloaded from the URL a bot sent it by, before it is stored as a photo or
- * document.
+ * A file that Telegram downloaded from the URL a bot sent it by, before it is stored as a photo,
+ * document, or video.
  */
 export interface WebFile {
   readonly content: Uint8Array<ArrayBuffer>;
@@ -50,8 +54,9 @@ export interface PhotoUpload {
 export const MAX_THUMBNAIL_UPLOAD_BYTES = 200 * 1024 - 1;
 
 /**
- * A preview image that a sender uploaded with a document, as it was sent. Telegram asks for a JPEG
- * of at most 320 pixels a side; the emulator keeps any image whose dimensions it reads unchanged.
+ * A preview image that a sender uploaded with a document or video, as it was sent. Telegram asks
+ * for a JPEG of at most 320 pixels a side; the emulator keeps any image whose dimensions it reads
+ * unchanged.
  */
 export interface ThumbnailUpload {
   readonly type: 'thumbnail';
@@ -76,8 +81,45 @@ export interface DocumentUpload {
   readonly thumbnail?: ThumbnailUpload;
 }
 
-/** A file a user sends as a message's media; a thumbnail is uploaded only with its document. */
-export type FileUpload = PhotoUpload | DocumentUpload;
+/**
+ * The longest duration, in seconds, that the official Bot API server passes on for media, and the
+ * latest second it starts a video from; it clamps larger values a bot specifies to it.
+ */
+export const MAX_MEDIA_DURATION_SECONDS = 24 * 60 * 60;
+
+/**
+ * The longest width or height, in pixels, that the official Bot API server passes on for a video;
+ * it clamps larger values a bot specifies to it.
+ */
+export const MAX_VIDEO_SIDE_LENGTH = 10_000;
+
+/**
+ * The attributes of a video as its sender defines them, which Telegram shows as the sender
+ * defined them; zero for an attribute the sender left unspecified.
+ */
+export interface VideoAttributes {
+  readonly durationSeconds: number;
+  readonly width: number;
+  readonly height: number;
+}
+
+/** A file sent as a video, before it is stored. Its content is not inspected. */
+export interface VideoUpload extends VideoAttributes {
+  readonly type: 'video';
+  readonly content: Uint8Array<ArrayBuffer>;
+  /** The file name as Telegram shows it; omitted for a video sent without one. */
+  readonly fileName?: string;
+  /** The video's MIME type, which is always a `video/` type. */
+  readonly mimeType: string;
+  /** Omitted for a video sent without a usable thumbnail. */
+  readonly thumbnail?: ThumbnailUpload;
+}
+
+/**
+ * A file a user sends as a message's media; a thumbnail is uploaded only with its document or
+ * video.
+ */
+export type FileUpload = PhotoUpload | DocumentUpload | VideoUpload;
 
 interface StoredFileIdentity {
   readonly id: StoredFileId;
@@ -105,4 +147,32 @@ export type StoredDocumentFile =
     readonly thumbnail?: StoredThumbnailFile;
   };
 
-export type StoredFile = StoredPhotoFile | StoredDocumentFile | StoredThumbnailFile;
+export type StoredVideoFile =
+  & StoredFileIdentity
+  & Omit<VideoUpload, 'thumbnail'>
+  & {
+    /** Omitted for a video without a thumbnail. */
+    readonly thumbnail?: StoredThumbnailFile;
+  };
+
+export type StoredFile =
+  | StoredPhotoFile
+  | StoredDocumentFile
+  | StoredVideoFile
+  | StoredThumbnailFile;
+
+/** The thumbnail a stored file carries; `undefined` for a file without one. */
+export function getStoredFileThumbnail(file: StoredFile): StoredThumbnailFile | undefined {
+  switch (file.type) {
+    case 'document':
+    case 'video':
+      return file.thumbnail;
+    case 'photo':
+    case 'thumbnail':
+      return undefined;
+    default: {
+      const unhandledFile: never = file;
+      throw new Error(`Unhandled stored file: ${JSON.stringify(unhandledFile)}`);
+    }
+  }
+}

@@ -3,12 +3,13 @@ description: >-
   or a supergroup, as `forwardMessage` addresses them. The copy is the bot's own message: it
   repeats the content but, unlike a forward, shows neither where it came from nor the bot the
   original was sent through, and takes its reply and reply markup from the request. A
-  `caption`, even an empty one, replaces the caption of a photo or document, formatted and
-  normalized as by `sendPhoto`, with `show_caption_above_media` for a photo; text and rich
-  messages stay as they are, apart from the buttons of a rich message, which change as for
-  `forwardMessage`. As TDLib lets bots do, a bot may copy a message whose sender protected it. The bot
-  receives no update for the copy. Topics, paid broadcasts, suggested posts, and video start
-  timestamps are not supported.
+  `caption`, even an empty one, replaces the caption of a photo, document, or video, formatted
+  and normalized as by `sendPhoto`, with `show_caption_above_media` for a photo or video; text
+  and rich messages stay as they are, apart from the buttons of a rich message, which change as
+  for `forwardMessage`. A `video_start_timestamp` replaces the start of a copied video, as for
+  `forwardMessage`. As TDLib lets bots do, a bot may copy a message whose sender protected it.
+  The bot receives no update for the copy. Topics, paid broadcasts, and suggested posts are not
+  supported.
 parameters:
   - $ref: ../components/parameters/SessionId.yaml
   - $ref: ../components/parameters/BotToken.yaml

@@ -380,6 +380,173 @@ Deno.test('MediaFileService gives each bot its own file IDs and download paths',
   }
 });
 
+Deno.test('MediaFileService keeps the attributes a sender defines for a video', () => {
+  const { mediaFiles } = createMediaFileFixture();
+  const attributes = { durationSeconds: 12, width: 1920, height: 1080 };
+  const prepareVideo = (fileName: string | undefined, mimeType?: string) =>
+    mediaFiles.prepareVideoUpload({
+      // The content is never read, so any bytes are sent as a video.
+      content: new TextEncoder().encode('not a video'),
+      ...(fileName === undefined ? {} : { fileName }),
+      ...(mimeType === undefined ? {} : { mimeType }),
+      attributes,
+      thumbnailContent: gifImage(320, 180),
+      source: 'bot_upload',
+    });
+
+  const uploads = [
+    prepareVideo('clip.mp4'),
+    prepareVideo('clip.MOV'),
+    prepareVideo('notes.txt'),
+    prepareVideo(undefined),
+    prepareVideo('download', 'video/mp4'),
+  ].map((preparation) => {
+    if (!preparation.prepared) {
+      throw new Error(`Expected a video, received ${JSON.stringify(preparation)}`);
+    }
+    return preparation.upload;
+  });
+  // As TDLib uploads it, a video whose name names no video type is sent as `video/mp4`.
+  const summaries = uploads.map(({ fileName, mimeType }) => [fileName ?? null, mimeType]);
+  if (
+    JSON.stringify(summaries) !== JSON.stringify([
+        ['clip.mp4', 'video/mp4'],
+        ['clip.MOV', 'video/quicktime'],
+        ['notes.txt', 'video/mp4'],
+        [null, 'video/mp4'],
+        ['download', 'video/mp4'],
+      ]) ||
+    uploads.some(({ durationSeconds, width, height, thumbnail }) =>
+      durationSeconds !== 12 || width !== 1920 || height !== 1080 || thumbnail?.width !== 320
+    )
+  ) {
+    throw new Error(`Expected the sender's attributes, received ${JSON.stringify(summaries)}`);
+  }
+
+  const empty = mediaFiles.prepareVideoUpload({
+    content: new Uint8Array(),
+    fileName: 'clip.mp4',
+    attributes,
+    source: 'account_upload',
+  });
+  if (empty.prepared || empty.reason !== 'file_empty') {
+    throw new Error(`Expected file_empty, received ${JSON.stringify(empty)}`);
+  }
+});
+
+Deno.test('MediaFileService limits bot videos by the upload profile only', () => {
+  const attributes = { durationSeconds: 0, width: 0, height: 0 };
+  const prepareVideo = (
+    profile: UploadProfile,
+    content: Uint8Array<ArrayBuffer>,
+    source: UploadSource,
+  ) =>
+    createMediaFileFixture(profile).mediaFiles.prepareVideoUpload({
+      content,
+      fileName: 'clip.mp4',
+      attributes,
+      source,
+    });
+  const overCloudLimit = new Uint8Array(MAX_BOT_UPLOAD_BYTES.cloud + 1);
+
+  const cloudFailure = prepareVideo('cloud', overCloudLimit, 'bot_upload');
+  if (
+    !prepareVideo('cloud', new Uint8Array(MAX_BOT_UPLOAD_BYTES.cloud), 'bot_upload').prepared ||
+    JSON.stringify(cloudFailure) !== JSON.stringify({
+        prepared: false,
+        reason: 'bot_upload_too_big',
+        uploadProfile: 'cloud',
+        fileSizeBytes: MAX_BOT_UPLOAD_BYTES.cloud + 1,
+        maxFileSizeBytes: MAX_BOT_UPLOAD_BYTES.cloud,
+      }) ||
+    !prepareVideo('local', overCloudLimit, 'bot_upload').prepared ||
+    !prepareVideo('cloud', overCloudLimit, 'account_upload').prepared
+  ) {
+    throw new Error(`Expected only the cloud bot upload to fail, received ${cloudFailure}`);
+  }
+});
+
+Deno.test('MediaFileService downloads a video sent by URL only when served as MPEG-4', async () => {
+  const webResources = new WebResourceService({ webResources: new WebResourceRepository() });
+  const register = (url: string, contentType: string, content: Uint8Array<ArrayBuffer>) =>
+    webResources.registerWebResource({ url, status: 200, contentType, content });
+  register('https://example.com/clip.mp4', 'video/mp4', new Uint8Array([1, 2, 3]));
+  register('https://example.com/clip.webm', 'video/webm', new Uint8Array([1, 2, 3]));
+  register(
+    'https://example.com/largest.mp4',
+    'video/mp4',
+    new Uint8Array(MAX_WEB_FILE_BYTES.video),
+  );
+  register(
+    'https://example.com/large.mp4',
+    'video/mp4',
+    new Uint8Array(MAX_WEB_FILE_BYTES.video + 1),
+  );
+  const { mediaFiles } = createMediaFileFixture(
+    'cloud',
+    createWebFileDownloader((request) => webResources.fetchWebResource(request)),
+  );
+  const download = (url: string) => mediaFiles.downloadWebFile({ url, fileKind: 'video' });
+
+  const video = await download('https://example.com/clip.mp4');
+  const largest = await download('https://example.com/largest.mp4');
+  const failures = [
+    await download('https://example.com/clip.webm'),
+    await download('https://example.com/large.mp4'),
+  ].map((result) => result.downloaded ? 'downloaded' : result.reason);
+  if (
+    !video.downloaded || video.webFile.fileName !== 'clip.mp4' ||
+    video.webFile.mediaType !== 'video/mp4' || !largest.downloaded ||
+    JSON.stringify(failures) !==
+      JSON.stringify(['web_content_type_invalid', 'web_content_unavailable'])
+  ) {
+    throw new Error(`Expected only MPEG-4 videos of up to 20 MB, received ${failures}`);
+  }
+});
+
+Deno.test('MediaFileService lets bots download a video and its thumbnail as files', () => {
+  const { files, mediaFiles } = createMediaFileFixture();
+  const video = files.addFile({
+    type: 'video',
+    content: new Uint8Array([1, 2, 3]),
+    fileName: 'clip.mov',
+    mimeType: 'video/quicktime',
+    durationSeconds: 3,
+    width: 640,
+    height: 480,
+    thumbnail: {
+      type: 'thumbnail',
+      content: gifImage(32, 24),
+      imageFormat: 'gif',
+      width: 32,
+      height: 24,
+    },
+  });
+  const unnamedVideo = files.addFile({
+    type: 'video',
+    content: new Uint8Array([4]),
+    mimeType: 'video/mp4',
+    durationSeconds: 0,
+    width: 0,
+    height: 0,
+  });
+  const getPath = (fileId: string) => {
+    const result = mediaFiles.getBotFile(
+      FIRST_BOT_ID,
+      files.getOrAssignObserverFileId(FIRST_BOT_ID, fileId),
+    );
+    return result.found ? result.downloadableFile.filePath : result.reason;
+  };
+
+  const paths = [video.id, video.thumbnail?.id ?? '', unnamedVideo.id].map(getPath);
+  if (
+    JSON.stringify(paths) !==
+      JSON.stringify(['videos/file_0.mov', 'thumbnails/file_1.gif', 'videos/file_2'])
+  ) {
+    throw new Error(`Expected video and thumbnail paths, received ${JSON.stringify(paths)}`);
+  }
+});
+
 Deno.test('MediaFileService refuses downloads of files larger than 20 MB', () => {
   const { files, mediaFiles } = createMediaFileFixture();
   const largeDocument = files.addFile({

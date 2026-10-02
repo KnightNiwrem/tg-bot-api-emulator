@@ -4,10 +4,11 @@
 
 ## Supported behavior
 
-Bots send photos and documents with `sendPhoto` and `sendDocument`, as [albums](#albums) with
-`sendMediaGroup`, and in the blocks of [rich messages](rich-messages.md). Files can be multipart
-uploads, either in the part named for the parameter or referenced with `attach://<part-name>`, an
-existing `file_id` known to that bot, or an HTTP URL that Telegram downloads, as described in
+Bots send photos and documents with `sendPhoto` and `sendDocument`, [videos](#videos) with
+`sendVideo`, photos and documents as [albums](#albums) with `sendMediaGroup`, and photos and
+documents in the blocks of [rich messages](rich-messages.md). Files can be multipart uploads, either
+in the part named for the parameter or referenced with `attach://<part-name>`, an existing `file_id`
+known to that bot, or an HTTP URL that Telegram downloads, as described in
 [files sent by URL](#files-sent-by-url). Accounts upload base64 content through the emulation API;
 the TypeScript client accepts bytes and performs the encoding. Both sides can supply captions and
 caption entities.
@@ -36,9 +37,9 @@ photo or document (`Bad Request: can't use file of type Thumbnail as Photo`).
 
 Each observer receives a different `file_id` for the same stored file. `file_unique_id` identifies
 it across observers in that session. Reusing another bot's `file_id`, or sending a document ID as a
-photo, fails. `getFile` returns a `file_path`; download the bytes at
-`<botApiRoot>/file/bot<token>/<file_path>`. A path is available after `getFile` assigns it, and
-remains valid for the session. Tests can bypass bot downloads with
+photo or a video, fails; see [file IDs of other kinds](#file-ids-of-other-kinds). `getFile` returns
+a `file_path`; download the bytes at `<botApiRoot>/file/bot<token>/<file_path>`. A path is available
+after `getFile` assigns it, and remains valid for the session. Tests can bypass bot downloads with
 `session.downloadFile(file_unique_id)`; that is an emulation API convenience, not a Telegram API.
 
 ### Files sent by URL
@@ -48,8 +49,8 @@ downloads before it sends the file. The emulator downloads it from the session's
 register what each URL serves with `POST /sessions/{sessionId}/web-resources` or the TypeScript
 client's `registerWebResource`, giving a status, `Content-Type`, body, or redirect `location`. A URL
 without a registered resource is unreachable, and the emulator never reaches the network.
-`sendPhoto`, `sendDocument`, `editMessageMedia`, including for inline messages, and the photo and
-document blocks of rich messages accept URLs.
+`sendPhoto`, `sendDocument`, `sendVideo`, `editMessageMedia`, including for inline messages, and the
+photo and document blocks of rich messages accept URLs.
 
 The URL is read as TDLib's [`parse_url`][parse-url] reads it, so a URL without a protocol is an HTTP
 one, and a resource answers every spelling that TDLib reads alike; a URL TDLib refuses fails with
@@ -59,7 +60,9 @@ seconds. Telegram's [file sending reference][sending-files] limits URL photos to
 files to 20 MB, read as 5,242,880 and 20,971,520 bytes, whatever the upload profile, since
 Telegram's servers download them. A photo must be served as an image. As that reference says that
 only PDF and ZIP files can be sent as documents, a document must be served as `application/pdf` or
-`application/zip`; its content is not inspected.
+`application/zip`. The reference requires the correct MIME type for other media, and Telegram
+documents only MPEG-4 videos as playable, so a video must be served as `video/mp4`. The content of a
+document or video is not inspected.
 
 | Download outcome                                                                         | Error                                             |
 | ---------------------------------------------------------------------------------------- | ------------------------------------------------- |
@@ -70,8 +73,41 @@ These are the server's descriptions of Telegram's `WEBPAGE_CURL_FAILED` and `WEB
 [`Client::fail_query_with_error`][error-rewriting]. A downloaded photo is then checked as an
 uploaded one, so content that is not a readable image fails with `IMAGE_PROCESS_FAILED`. A document
 is named after the URL's last path segment, cleaned as an upload's name, keeps the type it was
-served as, and takes no thumbnail, as TDLib sends it as `inputMediaDocumentExternal`. A file sent by
-URL is stored as a new file, like an upload.
+served as, and takes no thumbnail, as TDLib sends it as `inputMediaDocumentExternal`; a video sent
+by URL is named and typed alike and takes no thumbnail either. A file sent by URL is stored as a new
+file, like an upload.
+
+### Videos
+
+Bots send videos with `sendVideo`, and accounts with a `video` in
+`POST /sessions/{sessionId}/accounts/{accountId}/messages` or the TypeScript client's `sendVideo`.
+The Bot API's [`Video`][video-object] gives the duration, width and height as defined by the sender,
+and the emulator keeps them as the sender defines them. A bot's `duration`, `width` and `height` are
+clamped to 0–86,400 seconds and 0–10,000 pixels, as the official server's
+[`process_send_video_query`][send-video] clamps them; an account's must lie in those ranges. Each
+defaults to 0. The emulator does not read video content, so it checks no container, codec or
+duration and sends any non-empty content as a video; see
+[sender-defined video attributes](#sender-defined-video-attributes).
+
+A bot's upload is named as a document's is. Its MIME type is the type the file name's extension
+decides when that is a `video/` type, and `video/mp4` otherwise, as TDLib's
+[`VideosManager::get_input_media`][video-upload] uploads a video; an account may send a video
+without a file name, which then shows none and is `video/mp4`. A bot can upload a thumbnail with the
+video, read and kept as for `sendDocument`, which the video shows as `thumbnail` and `thumb`. Videos
+are limited only by the session's [upload profile](#upload-profiles): TDLib's
+[`check_full_local_location`][photo-size-limit] has no limit of its own for them. Bots download
+videos with `getFile` from `videos/`, under the extension of the video's file name.
+
+A message shows `has_media_spoiler` and `show_caption_above_media` for a video as for a photo, and
+the video's `start_timestamp`, the second from which clients play it, when a bot's `start_timestamp`
+places it past the beginning. As TDLib keeps it, the start belongs to the message: forwards and
+copies keep it unless their request gives a
+[`video_start_timestamp`](messages.md#forwarding-and-copying). A video sent again by `file_id` keeps
+its duration, dimensions, name, type and thumbnail, whatever the request specifies, and takes the
+request's caption, spoiler, caption placement and start. A video sent by [URL](#files-sent-by-url)
+keeps the attributes the bot specified and takes no thumbnail: TDLib sends it as
+`inputMediaDocumentExternal`, which carries neither, and how Telegram's servers determine the
+attributes of a downloaded video is not in the source.
 
 ### Albums
 
@@ -83,9 +119,9 @@ upload, a `file_id`, or a [URL](#files-sent-by-url). Accounts send albums with
 own caption.
 
 The emulator's albums hold photos or documents. Telegram also sends videos, live photos and audio in
-albums, which are [missing](#additional-media-types-and-methods) and refused by name, while it
-refuses other media itself, as the official server's [`get_input_media`][input-media-album] reads it
-for an album:
+albums, which the emulator's albums [lack](#additional-media-types-and-methods) and refuse by name,
+while it refuses other media itself, as the official server's [`get_input_media`][input-media-album]
+reads it for an album:
 
 | `InputMedia` type     | Telegram's albums                   | Emulator                                                                                             |
 | --------------------- | ----------------------------------- | ---------------------------------------------------------------------------------------------------- |
@@ -144,12 +180,12 @@ unusable URL fails for its first such URL, whichever item holds it, rather than 
 
 A session's [upload profile](sessions-and-requests.md#supported-behavior) names the official Bot API
 server deployment whose upload limits its bots meet: `cloud` for `api.telegram.org`, the default, or
-`local` for a server started with `--local`. Each photo or document a bot uploads with
+`local` for a server started with `--local`. Each photo, document or video a bot uploads with
 `multipart/form-data` must fit the profile's limit; a photo must also meet the 10 × 1024 × 1024 byte
 photo limit, whatever the profile. The cloud limit is checked first, as `api.telegram.org` refuses
 an oversized request outright, and the local limit after the photo limit, as Telegram enforces it
-after TDLib's checks, so in practice the local limit binds only documents: a photo that large fails
-as too big for a photo.
+after TDLib's checks, so in practice the local limit binds only documents and videos: a photo that
+large fails as too big for a photo.
 
 | Profile | Largest bot upload                       | Larger uploads fail with                                                                   |
 | ------- | ---------------------------------------- | ------------------------------------------------------------------------------------------ |
@@ -162,8 +198,8 @@ oversized request before reading any parameter, so a request with another fault 
 there. Sending a file again by `file_id`, forwarding and copying are not uploads and meet no size
 limit. An uploaded thumbnail is checked only against TDLib's own thumbnail limit, described above.
 Accounts upload through their own client, so no profile limits them: their photos meet the photo
-limit, and their documents no limit, since a user's client uploads files of up to 2000 MB, or 4000
-MB with Telegram Premium, which base64 fixtures in JSON requests are not meant to reach.
+limit, and their documents and videos no limit, since a user's client uploads files of up to 2000
+MB, or 4000 MB with Telegram Premium, which base64 fixtures in JSON requests are not meant to reach.
 
 The profile changes nothing else; see
 [the cloud server's other file handling](#the-cloud-servers-other-file-handling).
@@ -185,6 +221,26 @@ TDLib's [`Photo` implementation][photos] consumes server-provided sizes and send
 Telegram; the actual server image processor is outside these open-source repositories. The
 comparison establishes the missing processing pipeline, not an exhaustive list of formats or exact
 transformations Telegram will apply.
+
+### Sender-defined video attributes
+
+A video's duration and dimensions are those its sender defines, as the Bot API documents them, and
+the emulator never reads video content: it does not parse containers, check codecs, measure
+durations, generate thumbnails, covers or alternative qualities, or transcode. Telegram's servers do
+process uploaded videos, and, as the [`sendVideo` reference][send-video-reference] says, may send
+formats other than MPEG-4 as documents; which files they reclassify, and how, is not in the
+open-source server or TDLib. Keeping fixture bytes unchanged lets tests send small placeholder
+videos and predict every attribute the bot sees.
+
+### File IDs of other kinds
+
+Each `file_id` sends only a file of its own kind: a photo's only a photo, a document's only a
+document, and a video's only a video, failing with TDLib's wording, such as
+`Bad Request: can't use file of type Video as Document`. TDLib's
+[`check_input_file_id`][file-type-check] refuses a photo's `file_id` for other media, but treats
+documents, videos and other document-class files as one class and leaves Telegram's servers to
+decide what the message shows, which is not in the source. Refusing them keeps a bot's mix-up of
+media kinds visible in tests.
 
 ### No generated document previews
 
@@ -275,9 +331,9 @@ attributes, by which [`DocumentsManager`][documents] classifies the returned med
 returns the message as that media. Which files the server reclassifies, and how, is not in the
 source.
 
-Classifying documents needs the animation, audio and video media the emulator lacks, and rules for
-it would rest on observed rather than documented server behavior. Tests need media classification,
-through which the flag would take effect.
+Classifying documents needs the animation and audio media the emulator lacks, and rules for it would
+rest on observed rather than documented server behavior. Tests need media classification, through
+which the flag would take effect.
 
 ### Files sent by URL in inline query results
 
@@ -285,16 +341,24 @@ A rich message that an inline query result sends must reuse its files by `file_i
 file by URL fails, as an upload does, with `Bad Request: invalid inline message content specified`.
 Telegram downloads such files; tests need inline query results that send files by URL.
 
+### Video covers
+
+`sendVideo` rejects a `cover` as an unsupported parameter, so messages never show a video's cover, a
+photo that Telegram shows in its place; `start_timestamp` is supported. Tests need covers sent by
+upload, `file_id` and URL.
+
 ### Additional media types and methods
 
-Media types other than photos and documents, stickers and sticker sets are missing.
-`editMessageMedia` therefore replaces media only with photos and documents, and albums hold only
-photos or only documents.
+Media types other than photos, documents and videos, stickers and sticker sets are missing.
+`editMessageMedia` sets only photos and documents, even in place of a video, albums hold only photos
+or only documents, and rich message blocks hold no videos. Tests need videos as new media and in
+albums.
 
 ## Local evidence
 
 [Media service](../../src/services/media_file.ts),
 [image header reader](../../src/media/image_dimensions.ts),
+[video MIME types](../../src/media/video_file.ts),
 [file repository](../../src/repositories/file.ts),
 [URL downloads](../../src/services/web_file_download.ts),
 [web resources](../../src/services/web_resource.ts),
@@ -320,3 +384,8 @@ photos or only documents.
 [album-failure]: https://github.com/tdlib/telegram-bot-api/blob/e3e9dd8e5b3d7ab8537cd5a10dc31d5ffa8f82d1/telegram-bot-api/Client.cpp#L13684-L13715
 [album-checks]: https://github.com/tdlib/td/blob/bc9c263e2bfee06aaab41e82db51a103376030bc/td/telegram/MessageContent.cpp#L5378-L5406
 [send-message-group]: https://github.com/tdlib/td/blob/bc9c263e2bfee06aaab41e82db51a103376030bc/td/telegram/MessagesManager.cpp#L21891-L21978
+[video-object]: https://core.telegram.org/bots/api#video
+[send-video-reference]: https://core.telegram.org/bots/api#sendvideo
+[send-video]: https://github.com/tdlib/telegram-bot-api/blob/e3e9dd8e5b3d7ab8537cd5a10dc31d5ffa8f82d1/telegram-bot-api/Client.cpp#L14120-L14143
+[video-upload]: https://github.com/tdlib/td/blob/bc9c263e2bfee06aaab41e82db51a103376030bc/td/telegram/VideosManager.cpp#L274-L377
+[file-type-check]: https://github.com/tdlib/td/blob/bc9c263e2bfee06aaab41e82db51a103376030bc/td/telegram/files/FileManager.cpp#L4140-L4165

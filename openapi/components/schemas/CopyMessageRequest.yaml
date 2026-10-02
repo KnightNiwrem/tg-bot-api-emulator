@@ -14,12 +14,17 @@ properties:
   message_id:
     type: integer
     description: The copied message's ID in the bot's chat.
+  video_start_timestamp:
+    type: integer
+    description: >-
+      The second from which a copied video plays, replacing the video's own; other content
+      ignores it. As TDLib reads it, a negative second plays the video from its beginning.
   caption:
     type: string
     maxLength: 1024
     description: >-
-      A caption that replaces the caption of a copied photo or document; an empty caption
-      removes it. Omitted, the caption is kept. Text messages ignore it.
+      A caption that replaces the caption of a copied photo, document, or video; an empty
+      caption removes it. Omitted, the caption is kept. Text messages ignore it.
   parse_mode:
     $ref: ./ParseMode.yaml
   caption_entities:
@@ -27,7 +32,7 @@ properties:
   show_caption_above_media:
     type: boolean
     default: false
-    description: With a new caption of a photo, shows it above the photo.
+    description: With a new caption of a photo or video, shows it above the media.
   disable_notification:
     type: boolean
     default: false
