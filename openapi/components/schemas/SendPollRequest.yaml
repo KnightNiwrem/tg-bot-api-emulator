@@ -56,6 +56,10 @@ properties:
     type: boolean
     default: true
     description: Whether voters may change or retract their answers.
+  is_closed:
+    type: boolean
+    default: false
+    description: Sends the poll already closed, as a preview.
   disable_notification:
     type: boolean
     default: false

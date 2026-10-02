@@ -22,6 +22,7 @@ properties:
       poll_id:
         type: string
         pattern: '^[1-9]\d*$'
+        maxLength: 19
       user:
         $ref: ./Account.yaml
       option_ids:

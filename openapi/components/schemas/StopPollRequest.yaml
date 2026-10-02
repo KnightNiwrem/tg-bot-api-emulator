@@ -12,6 +12,7 @@ properties:
       negative chat ID, or `@` followed by the username of a public supergroup.
   message_id:
     type: integer
+    minimum: 1
     description: Identifier of the poll's message in the bot's chat.
   reply_markup:
     $ref: ./InlineKeyboardMarkup.yaml

@@ -37,7 +37,9 @@ post:
     '400':
       description: >-
         The request cannot be decoded or has unsupported parameters, or Telegram would reject
-        it, checking in this order: a button of `reply_markup` cannot be read, as for
+        it, checking in this order, after a `chat_id` username that names no chat (`Bad
+        Request: chat not found`), which every method checks first: a button of `reply_markup`
+        cannot be read, as for
         `editMessageReplyMarkup`; `chat_id` is missing (`Bad Request: chat_id is empty`); the
         chat is not found (`Bad Request: chat not found`); the chat has no such message, or
         `message_id` is not positive (`Bad Request: message with poll to stop not found`); the
