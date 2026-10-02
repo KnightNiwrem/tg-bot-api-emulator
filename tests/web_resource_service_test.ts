@@ -121,3 +121,17 @@ Deno.test('WebResourceService declares the length of the body it serves', async 
     throw new Error('Expected a 204 response to declare the empty body it serves');
   }
 });
+
+Deno.test('WebResourceService refuses statuses a response cannot carry', () => {
+  const webResources = new WebResourceService({ webResources: new WebResourceRepository() });
+  for (const status of [101, 199, 600, 200.5]) {
+    const registration = webResources.registerWebResource({
+      url: 'https://example.com/a.pdf',
+      status,
+      content: new Uint8Array(),
+    });
+    if (registration.registered || registration.reason !== 'status_invalid') {
+      throw new Error(`Expected status ${status} to be refused`);
+    }
+  }
+});

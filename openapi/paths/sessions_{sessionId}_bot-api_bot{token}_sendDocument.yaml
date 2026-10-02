@@ -5,7 +5,7 @@ description: >-
   and GIF animations, as other media unless `disable_content_type_detection` is set; the
   emulator always sends a document. An uploaded `thumbnail` is kept as the document's
   thumbnail, as described for that parameter. A document sent by HTTP URL is downloaded as
-  `sendPhoto` downloads a photo. Telegram documents that only PDF and ZIP files can be sent so;
+  `sendPhoto` downloads a photo. Telegram documents that only PDF and ZIP files can be sent by URL;
   the emulator requires the response to be served as `application/pdf` or `application/zip`,
   without inspecting its content, and to be at most 20 MB (20971520 bytes). It is named after
   the URL's last path segment and keeps no thumbnail.

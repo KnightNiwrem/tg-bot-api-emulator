@@ -1,6 +1,10 @@
 import { parseHttpUrl } from '../types/http_url.ts';
 import type { WebResource } from '../types/web_resource.ts';
 
+/** The range of statuses a `Response` can carry, which the emulator serves. */
+const MIN_RESPONSE_STATUS = 200;
+const MAX_RESPONSE_STATUS = 599;
+
 /** HTTP statuses whose responses have no body. */
 const NULL_BODY_STATUSES: ReadonlySet<number> = new Set([204, 205, 304]);
 
@@ -21,7 +25,7 @@ export type WebResourceRegistration = Omit<WebResource, 'url'> & {
 export type RegisterWebResourceResult =
   | { readonly registered: true; readonly resource: WebResource }
   | { readonly registered: false; readonly reason: 'url_invalid'; readonly urlError: string }
-  | { readonly registered: false; readonly reason: 'header_invalid' };
+  | { readonly registered: false; readonly reason: 'status_invalid' | 'header_invalid' };
 
 /**
  * Serves a session's emulated web: the responses tests register for URLs, from which Telegram
@@ -40,6 +44,12 @@ export class WebResourceService {
    * file URL, so the resource answers every spelling of it that TDLib reads alike.
    */
   registerWebResource(registration: WebResourceRegistration): RegisterWebResourceResult {
+    if (
+      !Number.isInteger(registration.status) || registration.status < MIN_RESPONSE_STATUS ||
+      registration.status > MAX_RESPONSE_STATUS
+    ) {
+      return { registered: false, reason: 'status_invalid' };
+    }
     const parsing = parseHttpUrl(registration.url);
     if (!parsing.parsed) {
       return { registered: false, reason: 'url_invalid', urlError: parsing.error };
@@ -66,7 +76,9 @@ export class WebResourceService {
     }
     const headers = createResponseHeaders(resource);
     if (headers === undefined) {
-      throw new Error(`Web resource ${resource.url} was registered with invalid headers`);
+      return Promise.reject(
+        new Error(`Web resource ${resource.url} was registered with invalid headers`),
+      );
     }
     return Promise.resolve(
       new Response(servesBody(resource) ? resource.content : null, {

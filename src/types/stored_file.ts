@@ -67,7 +67,10 @@ export interface DocumentUpload {
   readonly content: Uint8Array<ArrayBuffer>;
   /** The file name as Telegram shows it, which is never empty. */
   readonly fileName: string;
-  /** The MIME type Telegram derives from the file name's extension. */
+  /**
+   * The document's MIME type: for an upload, the one Telegram derives from the file name's
+   * extension; for a file sent by URL, the media type it was served as, whatever its name.
+   */
   readonly mimeType: string;
   /** Omitted for a document sent without a usable thumbnail. */
   readonly thumbnail?: ThumbnailUpload;
