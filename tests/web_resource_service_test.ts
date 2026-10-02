@@ -1,4 +1,5 @@
 import { WebResourceRepository } from '../src/repositories/web_resource.ts';
+import { WebFileDownloader } from '../src/services/web_file_download.ts';
 import { WebResourceService } from '../src/services/web_resource.ts';
 
 Deno.test('WebResourceService serves what a test registered for each spelling of a URL', async () => {
@@ -66,4 +67,25 @@ Deno.test('WebResourceService refuses invalid URLs and answers unregistered ones
     throw error;
   }
   throw new Error('Expected an unregistered URL to be unreachable');
+});
+
+Deno.test('WebResourceService serves URLs with userinfo, which TDLib reads', async () => {
+  const webResources = new WebResourceService({ webResources: new WebResourceRepository() });
+  const registration = webResources.registerWebResource({
+    url: 'https://user:secret@example.com/private.pdf',
+    status: 200,
+    contentType: 'application/pdf',
+    content: new TextEncoder().encode('%PDF'),
+  });
+  const downloader = new WebFileDownloader({
+    fetchWebResource: (request) => webResources.fetchWebResource(request),
+    timeoutMilliseconds: 1_000,
+    maxRedirects: 5,
+  });
+  const download = await downloader.download('https://user:secret@example.com/private.pdf', 100);
+  if (
+    !registration.registered || !download.downloaded || download.mediaType !== 'application/pdf'
+  ) {
+    throw new Error(`Expected the resource to be served, received ${JSON.stringify(download)}`);
+  }
 });
