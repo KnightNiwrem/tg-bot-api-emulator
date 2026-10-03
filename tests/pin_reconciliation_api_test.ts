@@ -175,6 +175,11 @@ Deno.test('an edited pinned message stays pinned and shows its edit wherever it 
     [['edited_message']],
     'the edit reaches the administrator bot as an edit, with no further pin update',
   );
+  expectEqual(
+    await readUpdates(observerBot),
+    [],
+    'the observer in privacy mode receives neither the edit nor a pin update',
+  );
   for (const bot of [pinningBot, observerBot]) {
     const pinnedMessage = await getChatPinnedMessage(bot, chatId);
     expectEqual(
