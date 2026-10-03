@@ -27,7 +27,7 @@ import type {
 } from '../../../types/reply_interface.ts';
 import { MAX_MEDIA_DURATION_SECONDS, MAX_VIDEO_SIDE_LENGTH } from '../../../types/stored_file.ts';
 import { MAX_ACCOUNT_NAME_LENGTH } from '../../../types/virtual_account.ts';
-import type { Supergroup, VisibleChatAction } from '../../../types/virtual_chat.ts';
+import type { VisibleChatAction } from '../../../types/virtual_chat.ts';
 import {
   type ChatMessage,
   countTextCharacters,
@@ -36,7 +36,6 @@ import {
 } from '../../../types/virtual_message.ts';
 import { base64ContentSchema } from '../base64_content.ts';
 import { readMessageEntitiesParameter } from '../bot_api/message_entities_parameter.ts';
-import { presentChatInviteLinkUsage, presentChatJoinRequest } from '../invite_link_presentation.ts';
 import { readJsonRequestBody } from '../json_request_body.ts';
 import type { SessionRouteContextTypes } from '../session_route_context_types.ts';
 import {
@@ -63,6 +62,7 @@ import {
   supergroupMemberFailureStatus,
 } from './messaging_failure_statuses.ts';
 import { accountLocationSchema, chatSchema, telegramUserIdSchema } from './request_fields.ts';
+import { createSupergroupMembershipRoutes } from './supergroup_membership.ts';
 
 const ACCOUNT_MESSAGE_COLLECTION_PATH = `/:${ACCOUNT_ID_PARAMETER}/messages` as const;
 const ACCOUNT_MEDIA_GROUP_COLLECTION_PATH = `/:${ACCOUNT_ID_PARAMETER}/media-groups` as const;
@@ -87,7 +87,6 @@ const INLINE_QUERY_ID_PARAMETER = 'inlineQueryId';
 const INLINE_QUERY_COLLECTION_PATH = `/:${ACCOUNT_ID_PARAMETER}/inline-queries` as const;
 const INLINE_QUERY_PATH = `${INLINE_QUERY_COLLECTION_PATH}/:${INLINE_QUERY_ID_PARAMETER}` as const;
 const CHOSEN_INLINE_RESULT_COLLECTION_PATH = `${INLINE_QUERY_PATH}/chosen-results` as const;
-const SUPERGROUP_COLLECTION_PATH = `/:${ACCOUNT_ID_PARAMETER}/supergroups` as const;
 const SUPERGROUP_COMMANDS_PATH = `${SUPERGROUP_CONVERSATION_PATH}/commands` as const;
 const SUPERGROUP_CHAT_ACTIONS_PATH = `${SUPERGROUP_CONVERSATION_PATH}/chat-actions` as const;
 const SUPERGROUP_NOTIFICATIONS_PATH = `${SUPERGROUP_CONVERSATION_PATH}/notifications` as const;
@@ -97,8 +96,6 @@ const SUPERGROUP_PINNED_MESSAGE_COLLECTION_PATH =
   `${SUPERGROUP_CONVERSATION_PATH}/pinned-messages` as const;
 const SUPERGROUP_PINNED_MESSAGE_PATH =
   `${SUPERGROUP_PINNED_MESSAGE_COLLECTION_PATH}/:${MESSAGE_ID_PARAMETER}` as const;
-const SUPERGROUP_MEMBER_PATH =
-  `${SUPERGROUP_CONVERSATION_PATH}/members/:${USER_ID_PARAMETER}` as const;
 const SUPERGROUP_ADMINISTRATOR_COLLECTION_PATH =
   `${SUPERGROUP_CONVERSATION_PATH}/administrators` as const;
 const SUPERGROUP_ADMINISTRATOR_PATH =
@@ -111,11 +108,6 @@ const SUPERGROUP_CONTENT_PROTECTION_PATH =
 const SUPERGROUP_TITLE_PATH = `${SUPERGROUP_CONVERSATION_PATH}/title` as const;
 const SUPERGROUP_DEFAULT_PERMISSIONS_PATH = `${SUPERGROUP_CONVERSATION_PATH}/permissions` as const;
 const SUPERGROUP_DESCRIPTION_PATH = `${SUPERGROUP_CONVERSATION_PATH}/description` as const;
-const SUPERGROUP_INVITE_LINK_COLLECTION_PATH =
-  `${SUPERGROUP_CONVERSATION_PATH}/invite-links` as const;
-const SUPERGROUP_JOIN_REQUEST_COLLECTION_PATH =
-  `${SUPERGROUP_CONVERSATION_PATH}/join-requests` as const;
-const CHAT_JOIN_COLLECTION_PATH = `/:${ACCOUNT_ID_PARAMETER}/chat-joins` as const;
 
 /** An E.164 phone number's digits: a country code that never starts with 0, and at most 15 digits. */
 const ACCOUNT_PHONE_NUMBER_PATTERN = /^[1-9][0-9]{0,14}$/;
@@ -278,11 +270,6 @@ const sendMediaGroupRequestSchema = z.strictObject({
   ])),
 });
 
-/** An invite link the account uses, as the bot that created it received it. */
-const joinChatByInviteLinkRequestSchema = z.strictObject({
-  invite_link: z.string().min(1),
-});
-
 /** The rights an administrator holds, by the Bot API's names; an omitted right is not held. */
 const promoteChatMemberRequestSchema = z.partialRecord(
   z.enum(SUPERGROUP_ADMINISTRATOR_RIGHTS),
@@ -323,13 +310,6 @@ const changeSupergroupTitleRequestSchema = z.strictObject({ title: z.string() })
 
 /** A supergroup's new description, which Telegram cleans; empty removes it. */
 const changeSupergroupDescriptionRequestSchema = z.strictObject({ description: z.string() });
-
-const createSupergroupRequestSchema = z.strictObject({
-  title: z.string().min(1),
-  /** Makes the supergroup public under this username, unique among the session's usernames. */
-  username: z.string().min(1).optional(),
-  description: z.string().min(1).optional(),
-});
 
 /** New text for a text message, or a new caption for captioned media; empty removes it. */
 const editMessageRequestSchema = z.union([
@@ -544,238 +524,7 @@ export function createAccountRoutes(): Hono<SessionRouteContextTypes> {
     );
   });
 
-  accountRoutes.post(SUPERGROUP_COLLECTION_PATH, async (context) => {
-    const accountPath = accountPathSchema.safeParse(context.req.param());
-    if (!accountPath.success) {
-      return context.body(null, 400);
-    }
-    const { accountId } = accountPath.data;
-
-    const requestBody = await readJsonRequestBody(context.req, createSupergroupRequestSchema);
-    if (requestBody === undefined) {
-      return context.body(null, 400);
-    }
-
-    const { title, username, description } = requestBody;
-    const result = context.get('emulationSession').sharedChatAdministration.createSupergroup({
-      creatorAccountId: accountId,
-      title,
-      ...(username === undefined ? {} : { username }),
-      description,
-    });
-    if (!result.created) {
-      switch (result.reason) {
-        case 'creator_account_not_found':
-          return context.body(null, 404);
-        case 'username_taken':
-          return context.body(null, 409);
-        case 'identity_limit_reached':
-          return context.body(null, 507);
-        default: {
-          const unhandledReason: never = result.reason;
-          throw new Error(`Unhandled supergroup creation failure: ${unhandledReason}`);
-        }
-      }
-    }
-    return context.json({ supergroup: presentSupergroup(result.supergroup) }, 201);
-  });
-
-  // The account joins a public supergroup by itself when it names itself, and otherwise adds the
-  // member as the owner.
-  accountRoutes.put(SUPERGROUP_MEMBER_PATH, (context) => {
-    const memberPath = supergroupMemberPathSchema.safeParse(context.req.param());
-    if (!memberPath.success) {
-      return context.body(null, 400);
-    }
-    const { accountId, chatId, userId } = memberPath.data;
-
-    if (userId === accountId) {
-      const result = context.get('emulationSession').chatAdmission.joinPublicSupergroup({
-        accountId,
-        chatId,
-      });
-      if (result.joined) {
-        return context.body(null, 204);
-      }
-      switch (result.reason) {
-        // Joining again changes nothing, as a repeated PUT should.
-        case 'already_a_member':
-          return context.body(null, 204);
-        case 'chat_not_public':
-        case 'banned':
-          return context.body(null, 403);
-        case 'account_not_found':
-        case 'chat_not_found':
-          return context.body(null, 404);
-        default: {
-          const unhandledReason: never = result.reason;
-          throw new Error(`Unhandled public supergroup joining failure: ${unhandledReason}`);
-        }
-      }
-    }
-
-    const result = context.get('emulationSession').sharedChatAdministration.addChatMember({
-      actorAccountId: accountId,
-      chatId,
-      memberId: userId,
-    });
-    if (result.added) {
-      return context.body(null, 204);
-    }
-    switch (result.reason) {
-      // Adding a member again changes nothing, as a repeated PUT should.
-      case 'member_already_present':
-        return context.body(null, 204);
-      case 'actor_not_authorized':
-        return context.body(null, 403);
-      case 'actor_account_not_found':
-      case 'chat_not_found':
-      case 'member_not_found':
-        return context.body(null, 404);
-      // Only supergroups are addressed here, and they accept bots.
-      case 'bot_not_permitted_in_channel':
-        throw new Error(`Supergroup ${chatId} refused bot ${userId} as a channel`);
-      default: {
-        const unhandledReason: never = result.reason;
-        throw new Error(`Unhandled chat member addition failure: ${unhandledReason}`);
-      }
-    }
-  });
-
-  // The account leaves when it names itself, and otherwise removes the member as the owner.
-  accountRoutes.delete(SUPERGROUP_MEMBER_PATH, (context) => {
-    const memberPath = supergroupMemberPathSchema.safeParse(context.req.param());
-    if (!memberPath.success) {
-      return context.body(null, 400);
-    }
-    const { accountId, chatId, userId } = memberPath.data;
-
-    const { sharedChatAdministration } = context.get('emulationSession');
-    if (userId === accountId) {
-      const result = sharedChatAdministration.leaveChat({
-        memberId: accountId,
-        chatId,
-      });
-      if (result.left) {
-        return context.body(null, 204);
-      }
-      switch (result.reason) {
-        // Leaving again changes nothing, as a repeated DELETE should.
-        case 'not_a_member':
-          return context.body(null, 204);
-        case 'member_not_found':
-        case 'chat_not_found':
-          return context.body(null, 404);
-        case 'owner_cannot_leave':
-          return context.body(null, 409);
-        default: {
-          const unhandledReason: never = result.reason;
-          throw new Error(`Unhandled chat leaving failure: ${unhandledReason}`);
-        }
-      }
-    }
-
-    const result = sharedChatAdministration.removeChatMember({
-      actorAccountId: accountId,
-      chatId,
-      memberId: userId,
-    });
-    if (result.removed) {
-      return context.body(null, 204);
-    }
-    switch (result.reason) {
-      // Removing a member again changes nothing, as a repeated DELETE should.
-      case 'not_a_member':
-        return context.body(null, 204);
-      case 'actor_not_authorized':
-        return context.body(null, 403);
-      case 'actor_account_not_found':
-      case 'chat_not_found':
-      case 'member_not_found':
-        return context.body(null, 404);
-      // A chat has one owner, and an owner naming itself leaves instead.
-      case 'member_is_owner':
-        throw new Error(`Supergroup ${chatId} has an owner besides ${accountId}`);
-      default: {
-        const unhandledReason: never = result.reason;
-        throw new Error(`Unhandled chat member removal failure: ${unhandledReason}`);
-      }
-    }
-  });
-
-  // The account joins the chat an invite link leads to, or requests to join it.
-  accountRoutes.post(CHAT_JOIN_COLLECTION_PATH, async (context) => {
-    const accountPath = accountPathSchema.safeParse(context.req.param());
-    if (!accountPath.success) {
-      return context.body(null, 400);
-    }
-    const requestBody = await readJsonRequestBody(context.req, joinChatByInviteLinkRequestSchema);
-    if (requestBody === undefined) {
-      return context.body(null, 400);
-    }
-
-    const result = context.get('emulationSession').chatAdmission.joinChatByInviteLink({
-      accountId: accountPath.data.accountId,
-      inviteLinkUrl: requestBody.invite_link,
-    });
-    if (result.used) {
-      return context.json({ chat_id: result.chatId, outcome: result.outcome });
-    }
-    switch (result.reason) {
-      case 'account_not_found':
-      case 'invite_link_not_found':
-        return context.body(null, 404);
-      case 'banned':
-        return context.body(null, 403);
-      case 'already_a_member':
-      case 'join_request_pending':
-        return context.body(null, 409);
-      // Telegram's clients show a link whose member limit is reached as expired.
-      case 'invite_link_expired':
-      case 'invite_link_member_limit_reached':
-        return context.body(null, 410);
-      default: {
-        const unhandledReason: never = result.reason;
-        throw new Error(`Unhandled invite link joining failure: ${unhandledReason}`);
-      }
-    }
-  });
-
-  // The owner inspects the supergroup's invite links and how many members joined through each.
-  accountRoutes.get(SUPERGROUP_INVITE_LINK_COLLECTION_PATH, (context) => {
-    const conversationPath = supergroupConversationPathSchema.safeParse(context.req.param());
-    if (!conversationPath.success) {
-      return context.body(null, 400);
-    }
-    const { accountId, chatId } = conversationPath.data;
-
-    const result = context.get('emulationSession').chatAdmission.getInviteLinksForAccount({
-      accountId,
-      chatId,
-    });
-    if (result.found) {
-      return context.json({ invite_links: result.links.map(presentChatInviteLinkUsage) });
-    }
-    return context.body(null, ownerInspectionFailureStatus(result.reason));
-  });
-
-  // The owner inspects the pending requests to join the supergroup.
-  accountRoutes.get(SUPERGROUP_JOIN_REQUEST_COLLECTION_PATH, (context) => {
-    const conversationPath = supergroupConversationPathSchema.safeParse(context.req.param());
-    if (!conversationPath.success) {
-      return context.body(null, 400);
-    }
-    const { accountId, chatId } = conversationPath.data;
-
-    const result = context.get('emulationSession').chatAdmission.getJoinRequestsForAccount({
-      accountId,
-      chatId,
-    });
-    if (result.found) {
-      return context.json({ join_requests: result.requests.map(presentChatJoinRequest) });
-    }
-    return context.body(null, ownerInspectionFailureStatus(result.reason));
-  });
+  accountRoutes.route('/', createSupergroupMembershipRoutes());
 
   // A member inspects the owner and administrators, who promoted each, and whom it may edit.
   accountRoutes.get(SUPERGROUP_ADMINISTRATOR_COLLECTION_PATH, (context) => {
@@ -1957,29 +1706,6 @@ function memberRoleChangeFailureStatus(
   }
 }
 
-/**
- * Only the owner inspects a supergroup's invite links and join requests, which chat admission
- * refuses for the same reasons; a missing account or supergroup is not found.
- */
-function ownerInspectionFailureStatus(
-  reason: Extract<
-    ReturnType<EmulationSession['chatAdmission']['getInviteLinksForAccount']>,
-    { readonly found: false }
-  >['reason'],
-): 403 | 404 {
-  switch (reason) {
-    case 'account_not_found':
-    case 'chat_not_found':
-      return 404;
-    case 'not_the_owner':
-      return 403;
-    default: {
-      const unhandledReason: never = reason;
-      throw new Error(`Unhandled owner inspection failure: ${unhandledReason}`);
-    }
-  }
-}
-
 /** Answers the owner's request to protect a supergroup's content, or to lift that protection. */
 function setSupergroupContentProtection(
   context: Context<SessionRouteContextTypes>,
@@ -2119,17 +1845,6 @@ function supergroupInfoChangeFailureStatus(
 }
 
 type SupergroupAdministration = EmulationSession['sharedChatAdministration'];
-
-/** Shows a supergroup as the Bot API shows a chat, with its description when it has one. */
-function presentSupergroup({ id, title, username, description }: Supergroup) {
-  return {
-    id,
-    type: 'supergroup' as const,
-    title,
-    ...(username === undefined ? {} : { username }),
-    ...(description === undefined ? {} : { description }),
-  };
-}
 
 /** The owner or an administrator of a supergroup, as a member account inspects it. */
 type AdministratorStandingForAccount = Extract<
