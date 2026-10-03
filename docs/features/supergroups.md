@@ -57,13 +57,14 @@ Owners, and administrator bots with `can_promote_members`, grant administrator r
 API names. Promotion and demotion update an affected bot's `my_chat_member` status, and
 administrator status bypasses privacy mode. The implemented rights with behavioral effects are:
 
-| Right                  | Effect                                                                                 |
-| ---------------------- | -------------------------------------------------------------------------------------- |
-| `can_change_info`      | Call `setChatTitle` and `setChatDescription`                                           |
-| `can_delete_messages`  | Delete other members' content and service messages                                     |
-| `can_invite_users`     | Call `createChatInviteLink`, and decide join requests                                  |
-| `can_restrict_members` | Call `banChatMember`, `unbanChatMember`, `restrictChatMember` and `setChatPermissions` |
-| `can_promote_members`  | Call `promoteChatMember`, granting the rights the bot holds                            |
+| Right                  | Effect                                                                                                               |
+| ---------------------- | -------------------------------------------------------------------------------------------------------------------- |
+| `can_change_info`      | Call `setChatTitle` and `setChatDescription`                                                                         |
+| `can_delete_messages`  | Delete other members' content and service messages                                                                   |
+| `can_invite_users`     | Call `createChatInviteLink`, decide join requests, and receive `chat_join_request` updates when subscribed           |
+| `can_restrict_members` | Call `banChatMember`, `unbanChatMember`, `restrictChatMember` and `setChatPermissions`                               |
+| `can_pin_messages`     | Call `pinChatMessage` and `unpinChatMessage`, under the [pinning rules](pinned-messages.md#pinning-with-the-bot-api) |
+| `can_promote_members`  | Call `promoteChatMember`, granting the rights the bot holds, and `setChatAdministratorCustomTitle`                   |
 
 ### Administrator delegation
 
@@ -221,9 +222,9 @@ What a member may do follows TDLib's [`apply_restrictions`][apply-restrictions],
 and the supergroup's default permissions, by the Bot API's `ChatPermissions` names:
 
 - The owner may do everything.
-- An administrator sends anything. It holds `can_change_info`, `can_invite_users`,
-  `can_pin_messages` and `can_manage_topics` as far as it holds the administrator rights of those
-  names, and, if it is an account, as far as the default permissions grant them.
+- An administrator sends anything. It holds each of `can_change_info`, `can_invite_users`,
+  `can_pin_messages` and `can_manage_topics` when it holds the administrator right of that name, or,
+  if it is an account, when the default permissions grant it.
 - Any other member holds the default permissions, as far as its restriction, if any, lets it. A bot
   never gets those four permissions from the default permissions.
 
@@ -255,7 +256,8 @@ account's inline query result needs `can_send_other_messages`, as
 then the permission of its content. The emulation API answers an account's refused message, album,
 forward, button press or inline result with `403`. `can_change_info` decides
 [title and description](#title-and-description) changes, and `can_pin_messages` decides
-[pins](pinned-messages.md).
+[pins](pinned-messages.md), except that a public supergroup ignores its default permissions for
+them, so only the owner and administrators with the right pin there.
 
 The other permissions are stored and shown but enforce nothing, because the emulator lacks what they
 govern: `can_send_audios` and `can_send_video_notes` (audio and video notes),
@@ -395,10 +397,10 @@ production read permissions.
   other bots. Tests of cooperating bots need the setting and its routing. Telegram's servers apply
   these rules; the Bot API and TDLib source at the comparison baseline show no trace of the setting.
 
-- **Administrator rights enforcement.** Rights other than `can_change_info`, `can_delete_messages`,
-  `can_invite_users`, `can_restrict_members` and `can_promote_members` are stored without
-  corresponding enforcement. Tests need their behavioral effects as the associated features are
-  supported.
+- **Administrator rights enforcement.** Rights that the
+  [administrator operations](#administrator-operations) table does not list, such as
+  `can_manage_video_chats` and the story rights, are stored without corresponding enforcement. Tests
+  need their behavioral effects as the associated features are supported.
 
 - **Restrictions by administrator accounts.** Only the owner restricts users through the emulation
   API; an administrator account with `can_restrict_members` cannot.
