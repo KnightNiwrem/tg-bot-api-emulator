@@ -390,6 +390,8 @@ Deno.test('sign-up names fit in contacts, and phone numbers are the digits of an
     { first_name: '\r' },
     { first_name: '\ud800' },
     { first_name: 'Linus', last_name: 'Torvalds\udc00' },
+    { first_name: 'Ada\u0007Lovelace' },
+    { first_name: 'Linus', last_name: '\r' },
   ];
   for (const profile of unusableProfiles) {
     const response = await api.request(accountsPath, {

@@ -33,12 +33,11 @@ export type AccountCreationResult =
   };
 
 /**
- * Whether an account's first or last name stays a name once Telegram cleans it: well-formed
- * Unicode, and, for a first name, not emptied by the cleanup.
+ * Whether an account's name is already clean: well-formed Unicode that Telegram's cleanup leaves
+ * as it is, so that the account's own contact shows exactly the name its profile shows.
  */
-function isUsableAccountName(name: string, part: 'first' | 'last'): boolean {
-  const cleanedName = cleanInputString(name);
-  return cleanedName !== undefined && (part === 'last' || cleanedName.length > 0);
+function isCleanAccountName(name: string): boolean {
+  return cleanInputString(name) === name;
 }
 
 /**
@@ -97,15 +96,15 @@ export class VirtualUserService {
 
   /**
    * Creates an account with the profile, settings and phone number the input gives. Its names must
-   * survive the cleanup Telegram applies to the texts of its own contact, as `cleanInputString`
-   * performs it: a first name that is not well-formed Unicode or that cleaning empties, or a last
-   * name that is not well-formed Unicode, is refused, so that every account can share its own
-   * contact.
+   * already be as clean as Telegram makes the texts of its own contact, as `cleanInputString`
+   * cleans them: a name that is not well-formed Unicode, or that the cleanup would change, such as
+   * one with a control character or a carriage return, is refused. Every account can therefore
+   * share its own contact, which shows exactly its profile's names.
    */
   createAccount(input: CreateVirtualAccountInput): AccountCreationResult {
     if (
-      !isUsableAccountName(input.first_name, 'first') ||
-      (input.last_name !== undefined && !isUsableAccountName(input.last_name, 'last'))
+      !isCleanAccountName(input.first_name) ||
+      (input.last_name !== undefined && !isCleanAccountName(input.last_name))
     ) {
       return { created: false, reason: 'name_invalid' };
     }

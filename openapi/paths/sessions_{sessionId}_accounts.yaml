@@ -27,8 +27,8 @@ post:
     '400':
       description: >-
         The request body is malformed or does not match the account creation schema, or a name
-        is not well-formed Unicode or, for the first name, keeps no character once Telegram cleans
-        it.
+        is not well-formed Unicode or would be changed by the cleanup Telegram applies to the
+        account's own contact.
     '404':
       description: No active test session has the supplied identifier.
     '409':
