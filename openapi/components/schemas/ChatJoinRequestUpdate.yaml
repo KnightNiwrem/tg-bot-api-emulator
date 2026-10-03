@@ -1,0 +1,14 @@
+type: object
+additionalProperties: false
+description: >-
+  Received by the supergroup's administrator bots that hold `can_invite_users`, as on Telegram,
+  unless their allowed_updates subscription excludes `chat_join_request`.
+required:
+  - update_id
+  - chat_join_request
+properties:
+  update_id:
+    type: integer
+    minimum: 1
+  chat_join_request:
+    $ref: ./ChatJoinRequest.yaml

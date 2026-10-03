@@ -188,3 +188,59 @@ function assertMemberAdditionFailure(
     throw new Error(`Expected member addition to fail with ${expectedReason}`);
   }
 }
+
+Deno.test('SharedChatRepository keeps pending join requests only for users that may still join', () => {
+  const sharedChats = new SharedChatRepository();
+  const chatId = -1_000_000_000_001;
+  sharedChats.registerSupergroup({
+    kind: 'supergroup',
+    id: chatId,
+    title: 'Test',
+    chatInstance: '-42',
+    hasProtectedContent: false,
+    defaultPermissions: ALL_CHAT_PERMISSIONS,
+  }, 1);
+  const inviteLinkUrl = 'https://t.me/+AAAAAAAAAAAAAAAA';
+  const request = (userId: number) => ({
+    chatId,
+    userId,
+    inviteLinkUrl,
+    requestedAtUnixSeconds: 1_700_000_000,
+  });
+  for (const userId of [2, 3, 4]) {
+    sharedChats.addJoinRequest(request(userId));
+  }
+
+  const refusals = [1, 2].map((userId) => {
+    try {
+      sharedChats.addJoinRequest(request(userId));
+      return 'stored';
+    } catch {
+      return 'refused';
+    }
+  });
+  // User 2 joins, user 3 is banned, and user 4 is restricted, which still lets it join.
+  sharedChats.addChatMember(chatId, 2);
+  sharedChats.updateFormerMemberStatus(chatId, 3, { status: 'kicked' });
+  sharedChats.updateFormerMemberStatus(chatId, 4, {
+    status: 'restricted',
+    isMember: false,
+    permissions: new Set(['can_send_messages']),
+  });
+
+  const remaining = sharedChats.listJoinRequests(chatId).map(({ userId }) => userId);
+  if (
+    JSON.stringify([
+      refusals,
+      remaining,
+      sharedChats.countJoinRequestsByInviteLink(chatId, inviteLinkUrl),
+    ]) !==
+      JSON.stringify([['refused', 'refused'], [4], 1])
+  ) {
+    throw new Error(
+      `Expected a member and a duplicate refused, and only the restricted user's request kept, received ${
+        JSON.stringify([refusals, remaining])
+      }`,
+    );
+  }
+});

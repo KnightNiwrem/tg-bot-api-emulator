@@ -7,6 +7,7 @@ required:
   - invite_link
   - creator_user_id
   - member_count
+  - pending_join_request_count
   - creates_join_request
   - is_expired
 properties:
@@ -35,6 +36,10 @@ properties:
     minimum: 0
     description: >-
       How many members joined through the link and still are, which its member limit counts.
+  pending_join_request_count:
+    type: integer
+    minimum: 0
+    description: How many pending join requests were sent through the link.
   creates_join_request:
     type: boolean
     description: Whether users who use the link send a join request instead of joining.

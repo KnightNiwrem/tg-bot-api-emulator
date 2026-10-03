@@ -1,0 +1,25 @@
+type: object
+additionalProperties: false
+required:
+  - join_requests
+properties:
+  join_requests:
+    type: array
+    description: The supergroup's pending join requests, in the order they were sent.
+    items:
+      type: object
+      additionalProperties: false
+      required:
+        - user_id
+        - invite_link
+        - date
+      properties:
+        user_id:
+          $ref: ./TelegramUserId.yaml
+          description: The account that wants to join.
+        invite_link:
+          type: string
+          description: The whole invite link the request was sent through.
+        date:
+          type: integer
+          description: Unix time when the request was sent.

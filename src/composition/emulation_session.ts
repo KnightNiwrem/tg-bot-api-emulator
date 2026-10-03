@@ -124,6 +124,7 @@ export function createEmulationSession(
     sharedChats,
     inviteLinks: new ChatInviteLinkRepository(),
     memberships: sharedChatAdministration,
+    events: botUpdateDelivery,
     currentUnixTimeSeconds,
   });
   const privateConversations = new PrivateConversationRepository();

@@ -5,10 +5,12 @@
 ## Supported behavior
 
 The emulator generates `message`, `edited_message`, `callback_query`, `inline_query`,
-`chosen_inline_result`, `poll`, `poll_answer`, `my_chat_member` and `chat_member` updates. Only the
-bot that sent a poll receives its [`poll` and `poll_answer` updates](polls.md#poll-updates).
-`chat_member` requires the observing bot to be a supergroup administrator and explicitly subscribe
-to it. Inline feedback also requires the bot's `receives_chosen_inline_results` creation setting.
+`chosen_inline_result`, `poll`, `poll_answer`, `my_chat_member`, `chat_member` and
+`chat_join_request` updates. Only the bot that sent a poll receives its
+[`poll` and `poll_answer` updates](polls.md#poll-updates). `chat_member` requires the observing bot
+to be a supergroup administrator and explicitly subscribe to it, and
+[`chat_join_request`](invite-links.md#join-requests) to be an administrator with `can_invite_users`.
+Inline feedback also requires the bot's `receives_chosen_inline_results` creation setting.
 
 `getUpdates` supports `offset`, `limit` (1–100, default 100), `timeout` (0–50 seconds, default 0),
 and `allowed_updates`. A positive offset confirms earlier updates; reading without advancing the

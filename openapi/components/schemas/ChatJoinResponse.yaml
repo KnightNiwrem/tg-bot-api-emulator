@@ -9,5 +9,9 @@ properties:
     description: The supergroup the link leads to.
   outcome:
     type: string
-    const: joined
-    description: The account joined the supergroup.
+    enum:
+      - joined
+      - join_request_sent
+    description: >-
+      `joined` when the account joined the supergroup; `join_request_sent` when the link creates
+      join requests, which leaves the account outside with a pending request.

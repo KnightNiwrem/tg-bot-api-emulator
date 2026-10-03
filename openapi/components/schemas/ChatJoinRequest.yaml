@@ -1,0 +1,31 @@
+type: object
+additionalProperties: false
+description: >-
+  A request to join a supergroup, in the field order of the official Bot API server. Bios and
+  join request queries are not supported.
+required:
+  - chat
+  - from
+  - user_chat_id
+  - date
+  - invite_link
+properties:
+  chat:
+    $ref: ./SupergroupChat.yaml
+  from:
+    $ref: ./Account.yaml
+    description: The account that sent the request.
+  user_chat_id:
+    $ref: ./TelegramUserId.yaml
+    description: >-
+      The requester's private chat with the bot, whose ID is the requester's. The emulator
+      opens no such chat: the bot writes to it only once the account has started the bot.
+  date:
+    type: integer
+    minimum: 0
+    description: Unix timestamp of the request.
+  invite_link:
+    $ref: ./ChatInviteLink.yaml
+    description: >-
+      The invite link the request was sent through, as the bot sees it, with the pending
+      requests sent through it, this one included.

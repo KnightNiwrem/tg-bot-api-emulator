@@ -18,6 +18,7 @@
           "src/types/chat_membership.ts",
           "src/types/chat_permissions.ts",
           "src/types/chat_invite_link.ts",
+          "src/types/chat_join_request.ts",
           "src/types/virtual_message.ts",
           "src/types/rich_message.ts",
           "src/types/message_forward.ts",

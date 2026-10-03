@@ -33,6 +33,10 @@ properties:
     maximum: 99999
     description: >-
       How many users that joined through the link may be members at once; omitted for no limit.
+  pending_join_request_count:
+    type: integer
+    minimum: 1
+    description: How many pending join requests were sent through the link; omitted for none.
   creates_join_request:
     type: boolean
     description: Whether users who use the link send a join request instead of joining.

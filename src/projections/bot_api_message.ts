@@ -2,6 +2,7 @@ import {
   type BotApiBotUser,
   type BotApiCallbackQuery,
   type BotApiChatInviteLink,
+  type BotApiChatJoinRequest,
   type BotApiChatMember,
   type BotApiChatMemberUpdated,
   type BotApiChosenInlineResult,
@@ -40,6 +41,7 @@ import type { BotApiPoll, BotApiPollAnswer } from '../types/bot_api_poll.ts';
 import type { CallbackQuery } from '../types/callback_query.ts';
 import type {
   BotBlockChangedEvent,
+  ChatJoinRequestedEvent,
   ChatMemberStatusChangedEvent,
   InlineQueryResultChosenEvent,
   PollAnswerChangedEvent,
@@ -921,6 +923,31 @@ export function projectChatMemberChange(
     old_chat_member: projectChatMember(member, event.oldStatus, canObserverEdit),
     new_chat_member: projectChatMember(member, event.newStatus, canObserverEdit),
     ...(inviteLink === undefined ? {} : { invite_link: inviteLink }),
+  };
+}
+
+export interface ChatJoinRequestProjectionInput {
+  readonly event: ChatJoinRequestedEvent;
+  /** The account that sent the request. */
+  readonly requester: VirtualAccountProfile;
+  /** The invite link the request was sent through, as the observing bot sees it. */
+  readonly inviteLink: BotApiChatInviteLink;
+}
+
+/**
+ * Projects a request to join a supergroup as an administrator bot receives it, in the field order
+ * of the official Bot API server's `JsonChatJoinRequest`. Its `user_chat_id` is the requester's
+ * private chat with the bot, whose ID is the requester's.
+ */
+export function projectChatJoinRequest(
+  { event, requester, inviteLink }: ChatJoinRequestProjectionInput,
+): BotApiChatJoinRequest {
+  return {
+    chat: projectSupergroupChat(event.chat),
+    from: requester,
+    user_chat_id: requester.id,
+    date: event.request.requestedAtUnixSeconds,
+    invite_link: inviteLink,
   };
 }
 

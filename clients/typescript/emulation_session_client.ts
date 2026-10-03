@@ -8,6 +8,7 @@ import {
   callbackQueryResponseSchema,
   chatActionsResponseSchema,
   chatAdministratorsResponseSchema,
+  chatJoinRequestsResponseSchema,
   chatJoinResponseSchema,
   chosenInlineResultResponseSchema,
   createdSupergroupResponseSchema,
@@ -40,6 +41,7 @@ import type {
   AccountChatActionsInput,
   AccountChatAdministratorsInput,
   AccountChatInviteLinksInput,
+  AccountChatJoinRequestsInput,
   AccountDeleteMessageInput,
   AccountEditMessageCaptionInput,
   AccountEditMessageInput,
@@ -76,6 +78,7 @@ import type {
   ChangeSupergroupTitleInput,
   ChatAction,
   ChatJoin,
+  ChatJoinRequest,
   ChooseInlineQueryResultInput,
   CreatedVirtualAccount,
   CreatedVirtualBot,
@@ -638,6 +641,17 @@ function createVirtualAccountClient(
         responseSchema: supergroupInviteLinksResponseSchema,
       });
       return response.invite_links;
+    },
+    async getChatJoinRequests(
+      input: AccountChatJoinRequestsInput,
+    ): Promise<readonly ChatJoinRequest[]> {
+      const response = await requestJson(fetchImplementation, {
+        method: 'GET',
+        url: `${conversationUrl(accountUrl, input.chat)}/join-requests`,
+        expectedStatus: HTTP_STATUS_OK,
+        responseSchema: chatJoinRequestsResponseSchema,
+      });
+      return response.join_requests;
     },
     async promoteChatMember(input: PromoteChatMemberInput): Promise<void> {
       await requestEmptyResponse(fetchImplementation, {

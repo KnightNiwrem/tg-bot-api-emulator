@@ -405,8 +405,9 @@ production read permissions.
 - **Promotions by administrator accounts.** Only the owner promotes and demotes through the
   emulation API; an administrator account with `can_promote_members` cannot.
 - **Anonymous administrators.** Anonymous administration and its message attribution are absent.
-- **Join requests and the link lifecycle.** [Invite links](invite-links.md#real-gaps) cannot create
-  join requests, nor be edited, revoked or exported.
+- **Join request decisions and the link lifecycle.** Bots cannot yet approve or decline
+  [join requests](invite-links.md#real-gaps), and invite links cannot be edited, revoked or
+  exported.
 - **Additional service messages.** Only membership, title and [pin](pinned-messages.md) service
   messages are produced. Other service events, such as photo changes, need corresponding messages as
   their features are supported.
