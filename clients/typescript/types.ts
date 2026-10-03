@@ -2319,6 +2319,11 @@ export interface WaitForBotActivityOptions {
   readonly after: BotActivityPosition;
   /** How long to wait for a matching entry; defaults to the log's timeout. */
   readonly timeoutMs?: number;
+  /**
+   * Cancels the wait when it aborts: its pending read is abandoned, and the wait rejects with the
+   * signal's reason, as `fetch` does.
+   */
+  readonly signal?: AbortSignal;
 }
 
 export interface BotActivityRange {
@@ -2341,6 +2346,14 @@ export interface BotActivityLog {
   /**
    * Returns the first matching entry after `after`, waiting for one to be recorded, and fails
    * with `BotActivityTimeoutError` when none is recorded in time.
+   *
+   * The wait's deadline is `timeoutMs` after the call. A read that holds for an entry is abandoned
+   * if the emulator has not answered it, body included, by the deadline, and an answer received
+   * later never counts. Reads of entries already recorded, those after a page that filled the read
+   * limit up to the head it reported and the single read of a wait of 0 ms, may take one more
+   * second. A wait therefore settles
+   * within `timeoutMs` plus one second however the transport behaves, and sooner when `signal`
+   * aborts.
    */
   waitFor<const Criteria extends BotActivityCriteria>(
     filter: BotActivityFilterFor<Criteria>,
@@ -2362,10 +2375,13 @@ export interface BotActivityLog {
 export interface BotActivityCursor {
   /** The position the next search starts after. */
   readonly position: number;
-  /** Waits for the first matching entry after the cursor, and moves the cursor to it. */
+  /**
+   * Waits for the first matching entry after the cursor, as `waitFor` does, and moves the cursor
+   * to it. A wait that fails or is cancelled leaves the cursor where it was.
+   */
   next<const Criteria extends BotActivityCriteria>(
     filter: BotActivityFilterFor<Criteria>,
-    options?: { readonly timeoutMs?: number },
+    options?: Omit<WaitForBotActivityOptions, 'after'>,
   ): Promise<BotActivityEntryMatching<Criteria>>;
 }
 

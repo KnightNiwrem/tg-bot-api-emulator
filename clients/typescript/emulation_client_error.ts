@@ -5,7 +5,11 @@ export interface EmulationClientErrorDetails extends RequestDetails {
   readonly responseBody?: string;
 }
 
-/** An HTTP, transport, or response-contract failure reported by the emulation client. */
+/**
+ * An HTTP, transport, or response-contract failure reported by the emulation client, or a request
+ * it abandoned unanswered, such as a bot activity read still pending at its wait's deadline, whose
+ * `cause` is the reason it was abandoned.
+ */
 export class EmulationClientError extends Error {
   override readonly name = 'EmulationClientError';
   readonly method: HttpMethod;

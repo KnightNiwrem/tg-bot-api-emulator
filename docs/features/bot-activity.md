@@ -89,6 +89,22 @@ they name that `kind`. A list of different filters needs a declared type, such a
 - `cursor({ after })` returns a cursor whose `next(filter)` waits after the cursor's position and
   moves the cursor to the entry it finds.
 
+A wait's deadline is `timeoutMs` after the call, measured by the client. A read that holds for an
+entry must be answered, response body included, by the deadline. Otherwise the client abandons it,
+aborting the request through the fetch signal and cancelling the body, and the wait fails with
+`BotActivityTimeoutError`, whose `cause` is an `EmulationClientError` naming the abandoned read. An
+answer that arrives later never counts, so a slow transport cannot pass off an entry recorded after
+the deadline as found in time; an entry recorded just before the deadline whose answer arrives after
+it is not found either. A page that fills the read limit reports the head position when it was
+answered, and the entries after the page are read up to that position, even after the deadline. A
+wait of `timeoutMs: 0` makes one read of what is recorded when the emulator answers. These reads of
+entries already recorded get one more second after the deadline, so every wait settles within
+`timeoutMs` plus one second, however the transport behaves.
+
+`waitFor` and `next` also take a `signal`. When it aborts, the wait abandons its read and rejects
+with the signal's reason, as `fetch` does, and a cursor stays where it was. Failed requests and
+answers that break the read contract still reject with `EmulationClientError`.
+
 Every `after` and `before` takes a position or an entry. `latest(...)` picks the latest of several.
 Positions are values, so independent waits can start from the same position. The waits below assert
 that B and C both follow A, in whichever order they come, and that D follows both:

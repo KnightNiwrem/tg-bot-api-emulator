@@ -1,6 +1,7 @@
 import { BOT_ACTIVITY_KINDS } from '../../src/types/bot_activity_kind.ts';
 import { toCurrentBotApiMethodName } from '../../src/types/bot_api_method_name.ts';
 import { HTTP_STATUS_OK } from './constants.ts';
+import { EmulationClientError } from './emulation_client_error.ts';
 import { botActivityReadResponseSchema } from './schemas.ts';
 import type {
   BotActivityCriteria,
@@ -19,6 +20,12 @@ import type {
 import { requestJson } from './utils.ts';
 
 const DEFAULT_TIMEOUT_MILLISECONDS = 5_000;
+/**
+ * How long after its deadline a wait's reads of entries already recorded may take: those after a
+ * page that filled the read limit, up to the head it reported, and the one read of a wait with no
+ * time to wait.
+ */
+const RECORDED_READ_ALLOWANCE_MILLISECONDS = 1_000;
 /** The most entries the server answers a read with. */
 const READ_LIMIT = 1_000;
 
@@ -30,17 +37,27 @@ export function latest(
   return Math.max(...[firstPosition, ...otherPositions].map(toPositionNumber));
 }
 
-/** No entry matching a filter was recorded after a position before the wait ended. */
+/**
+ * No entry matching a filter was found after a position before the wait ended. When the wait
+ * abandoned a read the emulator had not answered in time, `cause` is the `EmulationClientError`
+ * naming that read.
+ */
 export class BotActivityTimeoutError extends Error {
   override readonly name = 'BotActivityTimeoutError';
   readonly filter: BotActivityFilter;
   readonly after: number;
   readonly timeoutMs: number;
 
-  constructor(filter: BotActivityFilter, after: number, timeoutMs: number) {
+  constructor(
+    filter: BotActivityFilter,
+    after: number,
+    timeoutMs: number,
+    options?: { readonly cause: EmulationClientError },
+  ) {
     super(
-      `No bot activity matching ${describeFilter(filter)} was recorded after position ${after} ` +
+      `No bot activity matching ${describeFilter(filter)} was found after position ${after} ` +
         `within ${timeoutMs} ms`,
+      options,
     );
     this.filter = filter;
     this.after = after;
@@ -96,6 +113,16 @@ interface BotActivityRead {
   readonly filter: BotActivityFilter;
   readonly limit: number;
   readonly waitMilliseconds?: number;
+  /** Abandons the read, unanswered or with its response unread, when it aborts. */
+  readonly signal?: AbortSignal;
+}
+
+/** A range of the log whose entries are all recorded, read a page at a time. */
+interface RecordedRange {
+  readonly after: number;
+  readonly before: number;
+  readonly filter: BotActivityFilter;
+  readonly signal?: AbortSignal;
 }
 
 class HttpBotActivityLog implements BotActivityLog {
@@ -123,36 +150,95 @@ class HttpBotActivityLog implements BotActivityLog {
 
   async waitFor<const Criteria extends BotActivityCriteria>(
     filter: BotActivityFilterFor<Criteria>,
-    { after, timeoutMs = this.#defaultTimeoutMilliseconds }: WaitForBotActivityOptions,
+    { after, timeoutMs = this.#defaultTimeoutMilliseconds, signal }: WaitForBotActivityOptions,
   ): Promise<BotActivityEntryMatching<Criteria>> {
     validateTimeout(timeoutMs);
     const combinedFilter = combineFilters(this.#baseFilter, acceptingAnyEntry(filter));
     const afterPosition = toPositionNumber(after);
-    const deadline = performance.now() + timeoutMs;
-    let unreadAfter = afterPosition;
+    const waitTime = new BotActivityWaitTime(timeoutMs, signal);
+    let match: BotActivityEntry | undefined;
+    try {
+      match = await this.#findFirstMatch(combinedFilter, afterPosition, waitTime);
+    } catch (error) {
+      if (error instanceof EmulationClientError) {
+        if (waitTime.isExpiryReason(error.cause)) {
+          throw new BotActivityTimeoutError(combinedFilter, afterPosition, timeoutMs, {
+            cause: error,
+          });
+        }
+        if (signal?.aborted && error.cause === signal.reason) {
+          throw signal.reason;
+        }
+      }
+      throw error;
+    } finally {
+      waitTime.end();
+    }
+    if (match === undefined) {
+      throw new BotActivityTimeoutError(combinedFilter, afterPosition, timeoutMs);
+    }
+    assertEntryMatching(match, filter);
+    return match;
+  }
+
+  /**
+   * Finds the first entry after a position that the filter's `where` predicate accepts, among the
+   * entries the emulator reports in the wait's time, or `undefined` once that time is up.
+   */
+  async #findFirstMatch(
+    filter: BotActivityFilter,
+    after: number,
+    waitTime: BotActivityWaitTime,
+  ): Promise<BotActivityEntry | undefined> {
+    const isMatch = (entry: BotActivityEntry) => filter.where?.(entry) ?? true;
+    let unreadAfter = after;
+    let remainingMilliseconds = waitTime.remainingMilliseconds();
     for (;;) {
-      const remainingMilliseconds = Math.max(0, Math.ceil(deadline - performance.now()));
+      // A read with time left holds until an entry is recorded, and only an answer received by the
+      // deadline counts; one without time left, as in a wait of 0 ms, takes what is recorded.
       const { entries, head_position } = await this.#read({
         after: unreadAfter,
-        filter: combinedFilter,
+        filter,
         limit: READ_LIMIT,
         waitMilliseconds: remainingMilliseconds,
+        signal: remainingMilliseconds > 0
+          ? waitTime.holdingReadSignal
+          : waitTime.recordedReadSignal,
       });
-      const match = entries.find((entry) => combinedFilter.where?.(entry) ?? true);
+      let match = entries.find(isMatch);
+      if (match === undefined && entries.length === READ_LIMIT) {
+        // A full page may have left entries unread up to the head it reports, which were recorded
+        // before it was answered and are checked even after the deadline.
+        const unreadRange = {
+          after: entries[entries.length - 1].position,
+          before: head_position + 1,
+          filter,
+          signal: waitTime.recordedReadSignal,
+        };
+        match = await this.#findFirstRecorded(unreadRange, isMatch);
+      }
       if (match !== undefined) {
-        assertEntryMatching(match, filter);
         return match;
       }
-      // A read that filled its limit may have left later entries unread, which are checked even
-      // after the wait ends; any other read read every entry up to the head.
-      const leftEntriesUnread = entries.length === READ_LIMIT;
-      if (!leftEntriesUnread && remainingMilliseconds === 0) {
-        throw new BotActivityTimeoutError(combinedFilter, afterPosition, timeoutMs);
+      remainingMilliseconds = waitTime.remainingMilliseconds();
+      if (remainingMilliseconds === 0) {
+        return undefined;
       }
-      unreadAfter = leftEntriesUnread
-        ? entries[entries.length - 1].position
-        : Math.max(unreadAfter, head_position);
+      unreadAfter = Math.max(unreadAfter, head_position);
     }
+  }
+
+  async #findFirstRecorded(
+    range: RecordedRange,
+    isMatch: (entry: BotActivityEntry) => boolean,
+  ): Promise<BotActivityEntry | undefined> {
+    for await (const entries of this.#readRecordedPages(range)) {
+      const match = entries.find(isMatch);
+      if (match !== undefined) {
+        return match;
+      }
+    }
+    return undefined;
   }
 
   async assertNone<const Criteria extends BotActivityCriteria>(
@@ -163,21 +249,9 @@ class HttpBotActivityLog implements BotActivityLog {
     const afterPosition = toPositionNumber(after);
     const beforePosition = toPositionNumber(before);
     const matchingEntries: BotActivityEntry[] = [];
-    let unreadAfter = afterPosition;
-    for (;;) {
-      const { entries } = await this.#read({
-        after: unreadAfter,
-        before: beforePosition,
-        filter: combinedFilter,
-        limit: READ_LIMIT,
-      });
-      matchingEntries.push(
-        ...entries.filter((entry) => combinedFilter.where?.(entry) ?? true),
-      );
-      if (entries.length < READ_LIMIT) {
-        break;
-      }
-      unreadAfter = entries[entries.length - 1].position;
+    const range = { after: afterPosition, before: beforePosition, filter: combinedFilter };
+    for await (const entries of this.#readRecordedPages(range)) {
+      matchingEntries.push(...entries.filter((entry) => combinedFilter.where?.(entry) ?? true));
     }
     if (matchingEntries.length > 0) {
       throw new UnexpectedBotActivityError(
@@ -198,16 +272,37 @@ class HttpBotActivityLog implements BotActivityLog {
       },
       async next<const Criteria extends BotActivityCriteria>(
         filter: BotActivityFilterFor<Criteria>,
-        options: { readonly timeoutMs?: number } = {},
+        options: Omit<WaitForBotActivityOptions, 'after'> = {},
       ): Promise<BotActivityEntryMatching<Criteria>> {
-        const entry = await waitFor(filter, { after: position, ...options });
+        const entry = await waitFor(filter, { ...options, after: position });
         position = entry.position;
         return entry;
       },
     };
   }
 
-  #read({ after, before, filter, limit, waitMilliseconds }: BotActivityRead) {
+  /** Reads the entries in a range that is already recorded, a page at a time. */
+  async *#readRecordedPages(
+    { after, before, filter, signal }: RecordedRange,
+  ): AsyncGenerator<readonly BotActivityEntry[]> {
+    let unreadAfter = after;
+    for (;;) {
+      const { entries } = await this.#read({
+        after: unreadAfter,
+        before,
+        filter,
+        limit: READ_LIMIT,
+        signal,
+      });
+      yield entries;
+      if (entries.length < READ_LIMIT) {
+        return;
+      }
+      unreadAfter = entries[entries.length - 1].position;
+    }
+  }
+
+  #read({ after, before, filter, limit, waitMilliseconds, signal }: BotActivityRead) {
     const query = new URLSearchParams({ after: String(after), limit: String(limit) });
     if (before !== undefined) {
       query.set('before', String(before));
@@ -230,8 +325,88 @@ class HttpBotActivityLog implements BotActivityLog {
       url: `${this.#activityUrl}?${query}`,
       expectedStatus: HTTP_STATUS_OK,
       responseSchema: botActivityReadResponseSchema,
+      signal,
     });
   }
+}
+
+/**
+ * The time a wait has. Until its deadline, `timeoutMs` after it starts, it waits for entries to be
+ * recorded, and abandons a read that holds for one if the emulator has not answered by then, so
+ * that an answer received later never counts. Reads of entries already recorded get
+ * `RECORDED_READ_ALLOWANCE_MILLISECONDS` more. The caller's signal abandons every read at once.
+ */
+class BotActivityWaitTime {
+  /** Aborts at the deadline, or when the caller cancels the wait. */
+  readonly holdingReadSignal: AbortSignal;
+  /** Aborts once the allowance after the deadline is used up, or when the caller cancels. */
+  readonly recordedReadSignal: AbortSignal;
+  readonly #deadline: number;
+  readonly #deadlineController = new AbortController();
+  readonly #allowanceController = new AbortController();
+  readonly #timerIds: readonly ReturnType<typeof setTimeout>[];
+
+  constructor(timeoutMs: number, cancellationSignal: AbortSignal | undefined) {
+    this.#deadline = performance.now() + timeoutMs;
+    this.#timerIds = [
+      abortLater(
+        this.#deadlineController,
+        timeoutMs,
+        new DOMException(`The wait's ${timeoutMs} ms are up`, 'TimeoutError'),
+      ),
+      abortLater(
+        this.#allowanceController,
+        timeoutMs + RECORDED_READ_ALLOWANCE_MILLISECONDS,
+        new DOMException(
+          `The ${RECORDED_READ_ALLOWANCE_MILLISECONDS} ms to read recorded entries after the ` +
+            `wait's ${timeoutMs} ms are up`,
+          'TimeoutError',
+        ),
+      ),
+    ];
+    const cancellationSignals = cancellationSignal === undefined ? [] : [cancellationSignal];
+    this.holdingReadSignal = AbortSignal.any([
+      ...cancellationSignals,
+      this.#deadlineController.signal,
+    ]);
+    this.recordedReadSignal = AbortSignal.any([
+      ...cancellationSignals,
+      this.#allowanceController.signal,
+    ]);
+  }
+
+  /** The whole milliseconds left before the deadline, rounded up; 0 once it has passed. */
+  remainingMilliseconds(): number {
+    return Math.max(0, Math.ceil(this.#deadline - performance.now()));
+  }
+
+  /** Whether a read was abandoned because the wait's time was up, rather than cancelled. */
+  isExpiryReason(reason: unknown): boolean {
+    return [this.#deadlineController.signal, this.#allowanceController.signal].some((signal) =>
+      signal.aborted && signal.reason === reason
+    );
+  }
+
+  /** Stops the timers once the wait has ended. */
+  end(): void {
+    for (const timerId of this.#timerIds) {
+      clearTimeout(timerId);
+    }
+  }
+}
+
+/** The longest delay `setTimeout` keeps; it runs a callback with a longer one at once. */
+const MAX_TIMER_DELAY_MILLISECONDS = 2 ** 31 - 1;
+
+function abortLater(
+  controller: AbortController,
+  delayMilliseconds: number,
+  reason: DOMException,
+): ReturnType<typeof setTimeout> {
+  return setTimeout(
+    () => controller.abort(reason),
+    Math.min(delayMilliseconds, MAX_TIMER_DELAY_MILLISECONDS),
+  );
 }
 
 /**
