@@ -1,6 +1,6 @@
 description: >-
-  A deleted message of a supergroup, as a pin's service message there shows its pinned message
-  once deleted.
+  A deleted supergroup message, as a pin's service message shows it once the pinned message is
+  deleted.
 allOf:
   - $ref: ./InaccessibleMessage.yaml
   - properties:

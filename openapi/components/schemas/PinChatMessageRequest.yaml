@@ -16,5 +16,6 @@ properties:
     type: boolean
     default: false
     description: >-
-      Makes the pin's service message notify a supergroup's members without sound. Pins in
-      private chats always notify without sound.
+      When true, the pin's service message notifies a supergroup's members without sound, as
+      `disable_notification` does for a message; when false, the default, it notifies with
+      sound. Pins in private chats always notify without sound.
