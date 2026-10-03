@@ -421,7 +421,7 @@ export function createAccountRoutes(): Hono<SessionRouteContextTypes> {
 
     const result = context.get('emulationSession').virtualUsers.createAccount(requestBody);
     if (!result.created) {
-      return context.body(null, result.reason === 'username_taken' ? 409 : 507);
+      return context.body(null, accountCreationFailureStatus(result.reason));
     }
 
     const accountPath = `${basePath(context)}/${result.account.profile.id}`;
@@ -1771,6 +1771,30 @@ function forwardFailureStatus(
     default: {
       const unhandledReason: never = reason;
       throw new Error(`Unhandled account forward failure: ${unhandledReason}`);
+    }
+  }
+}
+
+/**
+ * A name Telegram's cleanup would empty or refuse rejects the request; a taken username conflicts
+ * with the session's usernames; and a session out of user IDs has no room for the account.
+ */
+function accountCreationFailureStatus(
+  reason: Extract<
+    ReturnType<EmulationSession['virtualUsers']['createAccount']>,
+    { readonly created: false }
+  >['reason'],
+): 400 | 409 | 507 {
+  switch (reason) {
+    case 'name_invalid':
+      return 400;
+    case 'username_taken':
+      return 409;
+    case 'identity_limit_reached':
+      return 507;
+    default: {
+      const unhandledReason: never = reason;
+      throw new Error(`Unhandled account creation failure: ${unhandledReason}`);
     }
   }
 }

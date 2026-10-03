@@ -19,7 +19,9 @@ Sessions isolate users, chats, messages, files, update queues and bot settings. 
 `can_read_all_group_messages`, `supports_inline_queries`, `receives_chosen_inline_results` and
 `requests_inline_location`, all false by default. These stand in for selected BotFather settings.
 Account profiles can include a username and language code. A first or last name has at most 64
-characters, the server-side limit of TDLib's `UserManager::MAX_NAME_LENGTH`. Usernames are unique
+characters, the server-side limit of TDLib's `UserManager::MAX_NAME_LENGTH`, and must be well-formed
+Unicode; a first name must also keep a character once Telegram cleans it, so that the account's
+[own contact](contacts-and-locations.md#whose-contact-it-is) can be shared. Usernames are unique
 within a session, compared without case. Account creation also accepts `has_private_forwards`, false
 by default, which stands in for the
 ["Forwarded messages" privacy setting](messages.md#forwarding-and-copying), and `phone_number`,

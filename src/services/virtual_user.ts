@@ -3,6 +3,7 @@ import type {
   IdentityReservationInput,
   IdentityReservationResult,
 } from '../repositories/telegram_identity.ts';
+import { cleanInputString } from '../text_entities/input_string.ts';
 import type { VirtualAccount, VirtualAccountProfile } from '../types/virtual_account.ts';
 import type { VirtualBot, VirtualBotProfile } from '../types/virtual_bot.ts';
 
@@ -28,8 +29,17 @@ export type AccountCreationResult =
   }
   | {
     readonly created: false;
-    readonly reason: IdentityReservationFailureReason;
+    readonly reason: IdentityReservationFailureReason | 'name_invalid';
   };
+
+/**
+ * Whether an account's first or last name stays a name once Telegram cleans it: well-formed
+ * Unicode, and, for a first name, not emptied by the cleanup.
+ */
+function isUsableAccountName(name: string, part: 'first' | 'last'): boolean {
+  const cleanedName = cleanInputString(name);
+  return cleanedName !== undefined && (part === 'last' || cleanedName.length > 0);
+}
 
 /**
  * A bot's profile and settings as its owner sets them up with BotFather, each off by default, as
@@ -85,7 +95,20 @@ export class VirtualUserService {
     this.#bots = bots;
   }
 
+  /**
+   * Creates an account with the profile, settings and phone number the input gives. Its names must
+   * survive the cleanup Telegram applies to the texts of its own contact, as `cleanInputString`
+   * performs it: a first name that is not well-formed Unicode or that cleaning empties, or a last
+   * name that is not well-formed Unicode, is refused, so that every account can share its own
+   * contact.
+   */
   createAccount(input: CreateVirtualAccountInput): AccountCreationResult {
+    if (
+      !isUsableAccountName(input.first_name, 'first') ||
+      (input.last_name !== undefined && !isUsableAccountName(input.last_name, 'last'))
+    ) {
+      return { created: false, reason: 'name_invalid' };
+    }
     const identityReservation = this.#identities.reserveIdentity({
       kind: 'account',
       username: input.username,

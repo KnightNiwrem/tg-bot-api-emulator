@@ -386,6 +386,19 @@ Deno.test('accounts share their own or written contacts in private chats and sup
 Deno.test('sign-up names fit in contacts, and phone numbers are the digits of an E.164 number', async () => {
   const { api, accountPath } = await createContactFixture();
   const accountsPath = accountPath(0).replace(/\/0$/, '');
+  const unusableProfiles = [
+    { first_name: '\r' },
+    { first_name: '\ud800' },
+    { first_name: 'Linus', last_name: 'Torvalds\udc00' },
+  ];
+  for (const profile of unusableProfiles) {
+    const response = await api.request(accountsPath, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ ...profile, phone_number: '15550111' }),
+    });
+    expectEqual(response.status, 400, `Expected ${JSON.stringify(profile)} to be refused`);
+  }
   for (const name of ['x'.repeat(65), '😀'.repeat(65)]) {
     for (const profile of [{ first_name: name }, { first_name: 'Linus', last_name: name }]) {
       const response = await api.request(accountsPath, {

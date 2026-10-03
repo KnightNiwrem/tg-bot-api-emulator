@@ -9,12 +9,13 @@ properties:
     maxLength: 64
     description: >-
       At most 64 characters, counted by code point, the server-side limit TDLib's
-      `UserManager::MAX_NAME_LENGTH` gives a user's names.
+      `UserManager::MAX_NAME_LENGTH` gives a user's names. It must be well-formed Unicode and keep
+      a character once Telegram cleans it, as it does the texts of the account's own contact.
   last_name:
     type: string
     minLength: 1
     maxLength: 64
-    description: At most 64 characters, as for `first_name`.
+    description: At most 64 characters of well-formed Unicode, as for `first_name`.
   username:
     type: string
     minLength: 1
