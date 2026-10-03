@@ -779,9 +779,10 @@ function checkSpecifiedResults(
 
 /**
  * Telegram's checks of a media result whose file the bot names by URL: the URL must be one
- * Telegram can download, and a photo, as the Bot API requires, needs a thumbnail to list. The
- * Bot API server and TDLib pass the URL on as it is, so Telegram's servers check it; the emulator
- * reads it as TDLib's `parse_url` reads the URL of a file sent by URL.
+ * Telegram can download, and a photo, as the Bot API requires, needs a thumbnail to list, whose
+ * URL must be one too. The Bot API server and TDLib pass both URLs on as they are, so Telegram's
+ * servers check them; the emulator reads them as TDLib's `parse_url` reads the URL of a file sent
+ * by URL.
  */
 function checkWebMediaListing(
   result: SpecifiedInlineQueryResult,
@@ -796,9 +797,13 @@ function checkWebMediaListing(
   if (!parseHttpUrl(file.url).parsed) {
     return 'web_document_url_invalid';
   }
-  return result.kind === 'photo' && result.thumbnailUrl.length === 0
-    ? 'photo_thumbnail_url_empty'
-    : undefined;
+  if (result.kind !== 'photo') {
+    return undefined;
+  }
+  if (result.thumbnailUrl.length === 0) {
+    return 'photo_thumbnail_url_empty';
+  }
+  return parseHttpUrl(result.thumbnailUrl).parsed ? undefined : 'web_document_url_invalid';
 }
 
 /**

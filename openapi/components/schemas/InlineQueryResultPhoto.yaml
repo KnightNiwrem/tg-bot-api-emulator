@@ -21,7 +21,8 @@ properties:
   thumbnail_url:
     type: string
     minLength: 1
-    description: The URL of the thumbnail the client lists, which is not downloaded.
+    description: >-
+      The URL of the thumbnail the client lists, an HTTP or HTTPS URL that is not downloaded.
   photo_width:
     type: integer
     description: Validated and ignored; the sent photo has the downloaded image's width.

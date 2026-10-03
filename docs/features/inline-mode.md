@@ -58,8 +58,9 @@ web document, so answering does not download it, and Telegram's servers check it
 cannot read as an HTTP or HTTPS URL, as for
 [files sent by URL](media-and-files.md#files-sent-by-url), fails with
 `Bad Request: WEBDOCUMENT_URL_INVALID`, and a photo without the `thumbnail_url` the Bot API requires
-fails with `Bad Request: PHOTO_THUMB_URL_EMPTY`. A document must declare a `mime_type` that begins
-with `application/pdf` or `application/zip`, which TDLib checks before anything else, failing with
+fails with `Bad Request: PHOTO_THUMB_URL_EMPTY`, or with `WEBDOCUMENT_URL_INVALID` when that
+thumbnail URL cannot be read either. A document must declare a `mime_type` that begins with
+`application/pdf` or `application/zip`, which TDLib checks before anything else, failing with
 `Bad Request: unallowed document MIME type`. A refused answer records none of its results.
 
 Telegram downloads the file when an account sends the result: `messages.sendInlineBotResult`, unlike
@@ -71,8 +72,8 @@ the Bot API reference rather than those of the send methods: a photo must be a J
 5 MB, which the emulator requires to be served as `image/jpeg`, and a document a PDF or ZIP file,
 served as `application/pdf` or `application/zip`, of at most 20 MB, the limit of other files sent by
 URL. A photo is then read as an uploaded one, and a document is named after the URL's last path
-segment and keeps the type it was served as. The declared photo dimensions and the thumbnail are
-validated and ignored; the client lists the thumbnail without the emulator downloading it.
+segment and keeps the type it was served as. The declared photo dimensions and other thumbnails are
+validated and ignored; the client lists a thumbnail without the emulator downloading it.
 
 Choosing a result whose media no resource serves fails with `502`, and one whose media is empty,
 served as another type, or a photo that is not a readable image fails with `422`; neither sends a
