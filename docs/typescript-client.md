@@ -5,11 +5,14 @@
 The client drives virtual accounts and inspects session state. Your bot uses the ordinary Bot API
 with its virtual token and `session.botApiRoot` configured as the API root.
 
-This walkthrough shows the available client operations. Run your bot alongside it. The session's
+This walkthrough shows the available client operations. Run your bot alongside it. An account's
+action returns once the bot can receive it, not once the bot has handled it. The session's
 [bot activity log](features/bot-activity.md) records the bot's calls, so a test can wait for the bot
-to act before inspecting a reply, callback answer, or inline result. The photo and album examples
-also need a local `receipt.png` file, and the video example a local `clip.mp4` file. The import
-below assumes the example is saved directly in `docs/`.
+to act before inspecting a reply, callback answer, or inline result. Each step that reads the bot's
+response states the bot behavior it relies on, takes the log's position before acting, waits for the
+bot's successful call, and then selects the response by what identifies it. The photo and album
+examples also need a local `receipt.png` file, and the video example a local `clip.mp4` file. The
+import below assumes the example is saved directly in `docs/`.
 
 Tests can use the TypeScript client instead of constructing emulation server URLs directly:
 
@@ -35,23 +38,24 @@ try {
   });
 
   // Run a grammY bot with token and session.botApiRoot as its apiRoot. Its polling receives the
-  // message above. Wait for its reply before reading the stored history; the entry also holds the
-  // parameters the bot sent and the answer it received.
+  // message above. Wait for its successful reply before reading the stored history; the entry also
+  // holds the parameters the bot sent and the answer it received.
   const greeting = await activity.waitFor(
-    { method: 'sendMessage', chat_id: account.id },
+    { method: 'sendMessage', chat_id: account.id, ok: true },
     { after: start },
   );
   const history = await account.getMessages({
     chat: { type: 'private', botId: bot.id },
   });
 
-  // Press a callback button on the bot's latest reply by its label, then read the bot's answer.
+  // Press a callback button on the bot's latest message by its label, then read the bot's answer.
+  // This step needs a bot whose latest message has a Details button in a row that mentions Potion.
   // `within` narrows a repeated label to the innermost row, list item, or block that mentions the
   // text; a selector that matches no button or several fails and lists the candidates.
   // A selector can also be a predicate over the buttons `listButtons` returns, each with its path
   // and the parts of the message around it. `pressCallbackButton` presses a button by its exact
   // callback data instead.
-  const menu = history.at(-1);
+  const menu = history.findLast(({ from }) => from.id === bot.id);
   if (menu !== undefined) {
     // Read what a rich message shows as plain text, including collapsed content.
     if (menu.rich_message !== undefined) console.log(richMessageToPlainText(menu.rich_message));
@@ -79,18 +83,36 @@ try {
     });
   }
 
-  // Send the bot a photo, then read the bytes of the file the bot's reply carries, if any.
+  // Send the bot a photo, then read the bytes of the document the bot replies to it with. This step
+  // needs a bot that answers a photo by calling sendDocument with only the photo's message_id as
+  // reply_parameters, as grammY's
+  // `ctx.replyWithDocument(file, { reply_parameters: { message_id: ctx.msg.message_id } })` does.
+  // Until the bot has replied, the latest message may still be the account's own upload, so the
+  // reply is selected by the message it replies to, after its call has succeeded.
+  const beforePhoto = await activity.position();
   const photo = await account.sendPhoto({
     to: { type: 'private', botId: bot.id },
     photo: await Deno.readFile('receipt.png'),
     caption: 'My receipt',
   });
-  const reply = (await account.getMessages({ chat: { type: 'private', botId: bot.id } })).at(-1);
-  const replyFile = reply?.document ?? reply?.video ?? reply?.voice ?? reply?.photo?.at(-1);
-  if (replyFile !== undefined) {
-    const content = await session.downloadFile(replyFile.file_unique_id);
-    console.log(content.length, photo.photo?.[0].width);
+  await activity.waitFor(
+    {
+      method: 'sendDocument',
+      chat_id: account.id,
+      ok: true,
+      parameters: { reply_parameters: JSON.stringify({ message_id: photo.message_id }) },
+    },
+    { after: beforePhoto },
+  );
+  const photoReply = (await account.getMessages({ chat: { type: 'private', botId: bot.id } }))
+    .find(({ from, reply_to_message }) =>
+      from.id === bot.id && reply_to_message?.message_id === photo.message_id
+    );
+  if (photoReply?.document === undefined) {
+    throw new Error('Expected the bot to reply to the photo with a document');
   }
+  const replyContent = await session.downloadFile(photoReply.document.file_unique_id);
+  console.log(replyContent.length, photo.photo?.[0].width);
 
   // Send the bot a video, whose duration and dimensions the account's client defines; the
   // emulator keeps them as given and never reads the content.
@@ -127,18 +149,36 @@ try {
     location: { latitude: 51.5007, longitude: -0.1246, horizontal_accuracy: 10 },
   });
 
-  // Vote in the latest poll the bot sent, if any. The answer comes back with the poll's message
-  // as it is now, whose options show their voter counts.
+  // Vote in the poll the bot sends. This step needs a bot that answers /poll by calling sendPoll
+  // with only the command's message_id as reply_parameters. The answer comes back with the poll's
+  // message as it is now, whose options show their voter counts.
+  const beforePollCommand = await activity.position();
+  const pollCommand = await account.sendMessage({
+    to: { type: 'private', botId: bot.id },
+    text: '/poll',
+  });
+  await activity.waitFor(
+    {
+      method: 'sendPoll',
+      chat_id: account.id,
+      ok: true,
+      parameters: { reply_parameters: JSON.stringify({ message_id: pollCommand.message_id }) },
+    },
+    { after: beforePollCommand },
+  );
   const pollMessage = (await account.getMessages({ chat: { type: 'private', botId: bot.id } }))
-    .findLast(({ poll, from }) => poll !== undefined && from.id === bot.id);
-  if (pollMessage !== undefined) {
-    const { poll_answer, message } = await account.answerPoll({
-      chat: { type: 'private', botId: bot.id },
-      message_id: pollMessage.message_id,
-      option_ids: [0],
-    });
-    console.log(poll_answer.option_persistent_ids, message.poll?.total_voter_count);
+    .find(({ from, reply_to_message }) =>
+      from.id === bot.id && reply_to_message?.message_id === pollCommand.message_id
+    );
+  if (pollMessage?.poll === undefined) {
+    throw new Error('Expected the bot to reply to /poll with a poll');
   }
+  const { poll_answer, message } = await account.answerPoll({
+    chat: { type: 'private', botId: bot.id },
+    message_id: pollMessage.message_id,
+    option_ids: [0],
+  });
+  console.log(poll_answer.option_persistent_ids, message.poll?.total_voter_count);
 
   // Edit the account's first message, which sends the bot an edited_message update. Accounts
   // format text and captions with entities, as bots specify them.
@@ -175,13 +215,19 @@ try {
   await account.pinMessage({ chat: groupChat, message_id: groupCommand.message_id });
   console.log((await account.getPinnedMessages({ chat: groupChat })).length);
 
-  // Forward the command to the bot's private chat. The bot receives it with its forward_origin.
+  // Forward the command to the bot's private chat. The bot receives it with its forward_origin,
+  // which names the original sender, or gives only their name when they have private forwards.
   const forwardedCommand = await account.forwardMessage({
     from: groupChat,
     message_id: groupCommand.message_id,
     to: { type: 'private', botId: bot.id },
   });
-  console.log(forwardedCommand.forward_origin?.sender_user.first_name);
+  const origin = forwardedCommand.forward_origin;
+  if (origin?.type === 'user') {
+    console.log(origin.sender_user.first_name);
+  } else if (origin?.type === 'hidden_user') {
+    console.log(origin.sender_user_name);
+  }
 
   // Type an inline query for the bot in the supergroup, read the bot's answer once it has
   // answered, and send a result, which appears in the supergroup with via_bot.
@@ -229,20 +275,23 @@ try {
   await account.restrictChatMember({ chat: groupChat, userId: bot.id, permissions: {} });
   await account.liftChatMemberRestriction({ chat: groupChat, userId: bot.id });
 
-  // Let the bot create invite links. Once it has created one, another account uses it; a link with
-  // an expiry date admits nobody once the test makes that date arrive.
+  // Let the bot create invite links. This step needs a bot that creates a link for the supergroup
+  // once it may. Once it has, another account uses the link; a link with an expiry date admits
+  // nobody once the test makes that date arrive.
   const beforeInviting = await activity.position();
   await account.promoteChatMember({
     chat: groupChat,
     userId: bot.id,
     rights: { can_invite_users: true },
   });
-  const linkCreation = await activity.waitFor(
-    { method: 'createChatInviteLink' },
+  await activity.waitFor(
+    { method: 'createChatInviteLink', chat_id: groupChat.chatId, ok: true },
     { after: beforeInviting },
   );
-  if (linkCreation.answer.ok) {
-    const link = linkCreation.answer.result as { invite_link: string; expire_date?: number };
+  // The owner sees the supergroup's links in the order bots created them, with each one's creator.
+  const link = (await account.getChatInviteLinks({ chat: groupChat }))
+    .findLast(({ creator_user_id }) => creator_user_id === bot.id);
+  if (link !== undefined) {
     const { account: friend } = await session.createAccount({ first_name: 'Grace' });
     // The friend joins, or, through a link the bot created with creates_join_request, stays
     // outside with a pending request, which the bot receives as a chat_join_request update and
