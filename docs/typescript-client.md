@@ -231,6 +231,7 @@ try {
 
   // Let the bot create invite links. Once it has created one, another account joins through it,
   // and the test makes the link's expiry date arrive, after which it admits nobody.
+  const beforeInviting = await activity.position();
   await account.promoteChatMember({
     chat: groupChat,
     userId: bot.id,
@@ -238,7 +239,7 @@ try {
   });
   const linkCreation = await activity.waitFor(
     { method: 'createChatInviteLink' },
-    { after: start },
+    { after: beforeInviting },
   );
   if (linkCreation.answer.ok) {
     const { invite_link: inviteLink } = linkCreation.answer.result as { invite_link: string };
