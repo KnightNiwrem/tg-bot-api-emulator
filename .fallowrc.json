@@ -230,6 +230,7 @@
       {
         "name": "domain-services",
         "patterns": [
+          "src/services/account_chat_message.ts",
           "src/services/callback_query.ts",
           "src/services/inline_query.ts",
           "src/services/private_messaging.ts",
