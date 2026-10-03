@@ -140,6 +140,12 @@ Deno.test('SupergroupMessagingService sends albums whole, numbered in order for 
       fromBotId: bot.profile.id,
       chatId: supergroup.id,
       contents: [photo(''), photo('')],
+      replyTo: { messageId: 99, allowSendingWithoutReply: false },
+    }),
+    supergroupMessaging.sendBotAlbum({
+      fromBotId: bot.profile.id,
+      chatId: supergroup.id,
+      contents: [photo(''), photo('')],
       messageEffectId: '5104841245755180586',
     }),
     supergroupMessaging.sendBotAlbum({
@@ -157,6 +163,7 @@ Deno.test('SupergroupMessagingService sends albums whole, numbered in order for 
     JSON.stringify(failures) !==
       JSON.stringify([
         'not_a_member',
+        'reply_message_not_found',
         'message_effect_not_allowed_in_chat',
         'caption_too_long',
         'album_too_large',
@@ -165,6 +172,19 @@ Deno.test('SupergroupMessagingService sends albums whole, numbered in order for 
     throw new Error(
       `Expected refused albums to send nothing, received ${JSON.stringify(failures)}`,
     );
+  }
+
+  const albumWithoutReply = supergroupMessaging.sendBotAlbum({
+    fromBotId: bot.profile.id,
+    chatId: supergroup.id,
+    contents: [photo(''), photo('')],
+    replyTo: { messageId: 99, allowSendingWithoutReply: true },
+  });
+  if (
+    !albumWithoutReply.sent ||
+    albumWithoutReply.messages.some((message) => message.replyToMessageId !== undefined)
+  ) {
+    throw new Error('Expected allowSendingWithoutReply to send the album as no reply');
   }
 });
 
@@ -745,6 +765,46 @@ Deno.test('SupergroupMessagingService sends only what a member may send', () => 
     throw new Error(
       `Expected default permissions to bind members only, received ${
         JSON.stringify([sendsUnderDefaults, sendsAsAdministrator])
+      }`,
+    );
+  }
+});
+
+Deno.test('SupergroupMessagingService lets a text mention name any user of the session', () => {
+  const { virtualUsers, supergroupMessaging, owner, bot, supergroup } =
+    createSupergroupMessagingFixture();
+  const outsideAccount = createAccount(virtualUsers, 'Grace');
+  const outsideBot = createBot(virtualUsers, 'outside_bot');
+  const sendMention = (userId: number) =>
+    supergroupMessaging.sendBotMessage({
+      fromBotId: bot.profile.id,
+      chatId: supergroup.id,
+      content: {
+        kind: 'text',
+        text: 'Hi',
+        entities: [{ type: 'text_mention', offset: 0, length: 2, userId }],
+      },
+    });
+
+  // A member, an account outside the supergroup and a bot outside it can all be mentioned.
+  for (const userId of [owner.profile.id, outsideAccount.profile.id, outsideBot.profile.id]) {
+    const message = expectContentMessage(expectSent(sendMention(userId)));
+    const entities = getContentText(message.content).entities;
+    const expectedEntities = [{ type: 'text_mention', offset: 0, length: 2, userId }];
+    if (JSON.stringify(entities) !== JSON.stringify(expectedEntities)) {
+      throw new Error(
+        `Expected the mention of ${userId} to be kept, received ${JSON.stringify(entities)}`,
+      );
+    }
+  }
+  const unknownUserResult = sendMention(999);
+  if (
+    unknownUserResult.sent || unknownUserResult.reason !== 'text_invalid' ||
+    unknownUserResult.textError !== 'User not found'
+  ) {
+    throw new Error(
+      `Expected a mention of an unknown user to be rejected, received ${
+        JSON.stringify(unknownUserResult)
       }`,
     );
   }

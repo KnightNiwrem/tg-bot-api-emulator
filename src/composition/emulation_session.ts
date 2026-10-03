@@ -51,6 +51,7 @@ import { MessageForwardingService } from '../services/message_forwarding.ts';
 import { MessagePinningService } from '../services/message_pinning.ts';
 import { PollService } from '../services/poll.ts';
 import { PrivateMessagingService } from '../services/private_messaging.ts';
+import { createSessionUserMentionContext } from '../services/session_user_mention.ts';
 import { SharedChatAdministrationService } from '../services/shared_chat_administration.ts';
 import { SupergroupMessagingService } from '../services/supergroup_messaging.ts';
 import { VirtualUserService } from '../services/virtual_user.ts';
@@ -265,6 +266,7 @@ export function createEmulationSession(
     waitBeforeRetry: waitForRetryDelay,
     currentUnixTimeSeconds,
   });
+  const sessionTextFixingContext = createSessionUserMentionContext({ accounts, bots });
   const botApi = new BotApiService({
     bots,
     updatePolling: botUpdatePolling,
@@ -281,13 +283,8 @@ export function createEmulationSession(
     inlineMessages: messages,
     mediaGroups: messages,
     polls,
-    // As the messaging services decide it, a text mention may name any user of the session.
     botCaptions: {
-      normalizeBotCaption: (caption) =>
-        normalizeCaption(caption, 'bot', {
-          isMentionableUser: (userId) =>
-            accounts.getById(userId) !== undefined || bots.getById(userId) !== undefined,
-        }),
+      normalizeBotCaption: (caption) => normalizeCaption(caption, 'bot', sessionTextFixingContext),
     },
     botCommands,
     botDescriptions,

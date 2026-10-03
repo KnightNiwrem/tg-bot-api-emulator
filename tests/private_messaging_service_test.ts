@@ -1949,6 +1949,67 @@ Deno.test('PrivateMessagingService refuses writing either way while the account 
   }
 });
 
+Deno.test('PrivateMessagingService checks the account, bot, and block alike on every account send', () => {
+  const { virtualUsers, privateConversations, blockedUsers, publishedEvents, privateMessaging } =
+    createPrivateMessagingFixture();
+  const account = createAccount(virtualUsers, 'Ada');
+  const bot = createBot(virtualUsers, 'Test Bot', 'test_bot');
+  const blockingAccount = createAccount(virtualUsers, 'Grace');
+  blockedUsers.block(blockingAccount.profile.id, bot.profile.id);
+  const sendFromEveryAccountPath = (fromAccountId: number, botId: number) =>
+    [
+      privateMessaging.sendAccountMessage({
+        fromAccountId,
+        to: { type: 'private', botId },
+        content: { kind: 'text', text: 'Hello' },
+      }),
+      privateMessaging.sendAccountAlbum({
+        fromAccountId,
+        to: { type: 'private', botId },
+        contents: [{ kind: 'media', upload: photoUpload(), caption: '' }],
+      }),
+      privateMessaging.sendAccountInlineResult({
+        fromAccountId,
+        to: { type: 'private', botId },
+        viaBotId: bot.profile.id,
+        content: { kind: 'text', text: 'Result', entities: [] },
+      }),
+      privateMessaging.sendAccountForward({
+        fromAccountId,
+        to: { type: 'private', botId },
+        forward: {
+          content: { kind: 'text', text: 'Forwarded', entities: [] },
+          forwardInfo: {
+            originalSender: { kind: 'user', userId: account.profile.id },
+            originalSentAtUnixSeconds: 0,
+          },
+        },
+      }),
+    ].map((result) => result.sent ? 'sent' : result.reason);
+
+  const received = [
+    sendFromEveryAccountPath(999, 999),
+    sendFromEveryAccountPath(account.profile.id, 999),
+    sendFromEveryAccountPath(blockingAccount.profile.id, bot.profile.id),
+  ];
+  const expected = [
+    Array(4).fill('account_not_found'),
+    Array(4).fill('bot_not_found'),
+    Array(4).fill('bot_blocked'),
+  ];
+  if (JSON.stringify(received) !== JSON.stringify(expected)) {
+    throw new Error(`Expected sender checks in order, received ${JSON.stringify(received)}`);
+  }
+  if (
+    privateConversations.getPrivateConversation({
+        accountId: blockingAccount.profile.id,
+        botId: bot.profile.id,
+      }) !== undefined || publishedEvents.length !== 0
+  ) {
+    throw new Error('Expected refused sends to start no conversation and publish nothing');
+  }
+});
+
 const COLOR_KEYBOARD: ReplyInterfaceMarkup = {
   kind: 'reply_keyboard',
   rows: [[{ text: 'Red' }, { text: 'Green' }]],
