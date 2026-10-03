@@ -40,6 +40,7 @@ import type {
   PrivateMessage,
   SupergroupMessage,
 } from '../types/virtual_message.ts';
+import type { FormattedTextFixingContext } from '../text_entities/formatted_text.ts';
 import type {
   DocumentUploadPreparation,
   InlineResultWebFileDownloadRequest,
@@ -59,6 +60,7 @@ import {
   type SpecifiedCaption,
   toContentOfStoredFile,
 } from './message_content.ts';
+import { createSessionUserMentionContext } from './session_user_mention.ts';
 
 export interface SendInlineQueryInput {
   readonly fromAccountId: number;
@@ -382,6 +384,7 @@ const utf8Encoder = new TextEncoder();
 export class InlineQueryService {
   readonly #accounts: AccountLookup;
   readonly #bots: BotLookup;
+  readonly #textFixingContext: FormattedTextFixingContext;
   readonly #sharedChats: SupergroupLookup;
   readonly #privateMessages: PrivateInlineResultMessaging;
   readonly #supergroupMessages: SupergroupInlineResultMessaging;
@@ -405,6 +408,7 @@ export class InlineQueryService {
   ) {
     this.#accounts = accounts;
     this.#bots = bots;
+    this.#textFixingContext = createSessionUserMentionContext({ accounts, bots });
     this.#sharedChats = sharedChats;
     this.#privateMessages = privateMessages;
     this.#supergroupMessages = supergroupMessages;
@@ -793,14 +797,6 @@ export class InlineQueryService {
     return {
       normalized: true,
       content: withWebMediaCaption(content, captionNormalization.caption),
-    };
-  }
-
-  /** A text mention may name any user of the session. */
-  get #textFixingContext() {
-    return {
-      isMentionableUser: (userId: number) =>
-        this.#accounts.getById(userId) !== undefined || this.#bots.getById(userId) !== undefined,
     };
   }
 }

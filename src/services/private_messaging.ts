@@ -35,6 +35,7 @@ import {
   type PrivateServiceContent,
   type TextQuote,
 } from '../types/virtual_message.ts';
+import type { FormattedTextFixingContext } from '../text_entities/formatted_text.ts';
 import {
   type AccountAlbumMediaContent,
   type AccountMessageContent,
@@ -71,6 +72,7 @@ import {
   toOutgoingAccountMedia,
 } from './message_content.ts';
 import { findStoppablePoll, type PollStopFailureReason } from './poll.ts';
+import { createSessionUserMentionContext } from './session_user_mention.ts';
 
 export type PrivateConversationActivationFailureReason =
   | 'account_not_found'
@@ -710,6 +712,7 @@ interface NewPrivateMessage {
 export class PrivateMessagingService {
   readonly #accounts: AccountLookup;
   readonly #bots: BotLookup;
+  readonly #textFixingContext: FormattedTextFixingContext;
   readonly #privateConversations: PrivateConversationStore;
   readonly #messages: PrivateMessageStore;
   readonly #files: FileUploadStore;
@@ -735,6 +738,7 @@ export class PrivateMessagingService {
   ) {
     this.#accounts = accounts;
     this.#bots = bots;
+    this.#textFixingContext = createSessionUserMentionContext({ accounts, bots });
     this.#privateConversations = privateConversations;
     this.#messages = messages;
     this.#files = files;
@@ -1681,14 +1685,6 @@ export class PrivateMessagingService {
   #findInlineMessage(inlineMessageId: InlineMessageId): PrivateMessage | undefined {
     const message = this.#messages.getMessageByInlineMessageId(inlineMessageId);
     return message?.kind === 'private_message' ? message : undefined;
-  }
-
-  /** A text mention may name any user of the session. */
-  get #textFixingContext() {
-    return {
-      isMentionableUser: (userId: number) =>
-        this.#accounts.getById(userId) !== undefined || this.#bots.getById(userId) !== undefined,
-    };
   }
 
   /**
