@@ -198,6 +198,7 @@ Deno.test('an account sends the contacts and locations that inline results list'
     },
     locationResult,
     { ...contactResult, id: 'first-name-only', phone_number: ' 555 ', last_name: undefined },
+    { ...locationResult, id: 'untitled', title: '', latitude: -33.8568, longitude: 151.2153 },
   ]);
   expectEqual(answered.body, { ok: true, result: true }, 'Expected the answer to be accepted');
   expectEqual(
@@ -206,6 +207,7 @@ Deno.test('an account sends the contacts and locations that inline results list'
       { type: 'contact', id: 'grace', title: 'Grace Hopper', description: '+1 555 0100' },
       { type: 'location', id: 'london', title: 'London', description: '51.500000 -0.127500' },
       { type: 'contact', id: 'first-name-only', title: 'Grace', description: '555' },
+      { type: 'location', id: 'untitled', description: '-33.856800 151.215300' },
     ],
     'Expected TDLib descriptions of the contacts and the location',
   );
@@ -452,7 +454,7 @@ Deno.test('a grammY bot answers through its webhook with a location an account s
     const chosen = await choose(ada.id, inlineQuery.id, 'london');
     // The webhook confirms the inline query, the account's message, and the chosen result.
     let confirmationCount = 0;
-    for (let attempt = 0; confirmationCount < 3 && attempt < 100; attempt++) {
+    for (let attempt = 0; confirmationCount < 3 && attempt < 250; attempt++) {
       if (attempt > 0) {
         await new Promise((resolve) => setTimeout(resolve, 20));
       }

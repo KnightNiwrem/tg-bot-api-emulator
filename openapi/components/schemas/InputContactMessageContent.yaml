@@ -10,8 +10,10 @@ required:
 properties:
   phone_number:
     type: string
+    minLength: 1
   first_name:
     type: string
+    minLength: 1
     maxLength: 64
   last_name:
     type: string

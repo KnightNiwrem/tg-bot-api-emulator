@@ -19,10 +19,14 @@ properties:
     $ref: ./InlineQueryResultId.yaml
   latitude:
     type: number
+    minimum: -90
+    maximum: 90
     description: >-
       Outside ±90° fails with `Bad Request: invalid location specified`.
   longitude:
     type: number
+    minimum: -180
+    maximum: 180
     description: >-
       Outside ±180° fails with `Bad Request: invalid location specified`.
   horizontal_accuracy:

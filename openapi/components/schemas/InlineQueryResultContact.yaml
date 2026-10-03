@@ -16,11 +16,13 @@ properties:
     $ref: ./InlineQueryResultId.yaml
   phone_number:
     type: string
+    minLength: 1
     description: >-
       Must not be empty once surrounding whitespace is trimmed (`Bad Request: field
       "phone_number" must contain a valid phone number`).
   first_name:
     type: string
+    minLength: 1
     maxLength: 64
     description: >-
       Must not be empty once surrounding whitespace is trimmed (`Bad Request: field "first_name"
