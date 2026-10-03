@@ -5,7 +5,6 @@ required:
 properties:
   custom_title:
     type: string
-    maxLength: 16
     description: >-
       The new title, of at most 16 characters counted as Unicode code points and without
       emoji, as the Bot API documents it; empty removes the title.

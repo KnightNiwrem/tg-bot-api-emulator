@@ -134,17 +134,30 @@ sent without the reply, though bots may still copy them. As TDLib's
 setting. The official server hides the service message for the change from bots, so they receive
 none.
 
-The owner also sets its own custom title or an administrator's through the emulation API, and an
-empty title removes it. Bots see it as `custom_title` of the owner and administrators, in the field
-order of the official server's [`JsonChatMember`][chat-member-json], and a bot whose title changes
-receives `my_chat_member`. An administrator keeps its title when its rights change and loses it when
-demoted. Titles hold at most 16 characters without emoji, as the Bot API documents; the emulator
-refuses others. The official server's
-[`process_set_chat_administrator_custom_title_query`][custom-title-method] lets a bot set only the
-title of an administrator it may edit. Setting titles through `setChatAdministratorCustomTitle` is
-not implemented yet: it fails with Telegram's error for each refused case, and with
-`Bad Request: not enough rights to change custom title of the user` for an administrator the bot may
-edit.
+The owner sets its own custom title or an administrator's through the emulation API, and a bot sets
+the title of an administrator it may edit with `setChatAdministratorCustomTitle`; an empty or
+missing title removes it. Bots see it as `custom_title` of the owner and administrators, in the
+field order of the official server's [`JsonChatMember`][chat-member-json], and members in the list
+of administrators. An administrator keeps its title when its rights change and loses it when
+demoted, as member tags are not supported.
+
+A title is read as Telegram reads it: TDLib's `clean_input_string` cleans it
+(`Bad Request: strings must be encoded in UTF-8` for text that is not well-formed Unicode);
+Telegram's servers refuse more than 16 characters, counted by code point, or emoji, as the Bot API
+documents "0-16 characters, emoji are not allowed"; and TDLib keeps it as
+[`strip_empty_characters`][rank-strip] strips it, without surrounding spaces. The official server
+reports the servers' `RANK_INVALID` and `RANK_EMOJI_NOT_ALLOWED` as
+[`Bad Request: CUSTOM_TITLE_INVALID` and `Bad Request: CUSTOM_TITLE_EMOJI_NOT_ALLOWED`][rank-errors];
+the emulation API answers `400`. Setting the title a user has changes nothing.
+
+Before the title, [`process_set_chat_administrator_custom_title_query`][custom-title-method] checks
+that the owner alone sets its own title (`Bad Request: only the owner can edit their custom title`),
+that the user is an administrator (`Bad Request: user is not an administrator`), and that the bot
+may edit it (`Bad Request: not enough rights to change custom title of the user`). The server then
+sets the title as the member's tag with TDLib's `setChatMemberTag`. Telegram announces tag changes
+only in basic groups, as its [member tag documentation][member-tags] says, so no update reports a
+bot's title change. The owner's change, which Telegram's clients make with `channels.editAdmin`,
+reaches administrator bots as `chat_member`, and the titled bot as `my_chat_member`.
 
 `getChatMember`, `getChatAdministrators` and `getChatMemberCount` expose stored membership.
 `getChatAdministrators` excludes bot administrators by default and accepts `return_bots: true`, as
@@ -407,6 +420,8 @@ not show. The emulator chooses where they are not visible:
 - A bot acts on an administrator it promoted indirectly, through administrators it promoted, as the
   Bot API documents for `can_promote_members`; bans and restrictions follow the same chain.
 - Demoting a user that is not a member fails without effect, where TDLib may first lift its ban.
+- Telegram's servers' definition of an emoji in a title is not public: the emulator refuses
+  pictographs, flag letters and the keycap mark, and checks a title's length before its emoji.
 - An administrator bot that grants itself every permission becomes a member, as TDLib asks the
   servers to make it.
 - Whoever sets an administrator's rights becomes its `promoted_by`, and setting the rights it holds
@@ -443,6 +458,9 @@ not show. The emulator chooses where they are not visible:
 [participant-checks]: https://github.com/tdlib/td/blob/bc9c263e2bfee06aaab41e82db51a103376030bc/td/telegram/DialogParticipantManager.cpp#L2820-L3065
 [administrator-list]: https://github.com/tdlib/telegram-bot-api/blob/e3e9dd8e5b3d7ab8537cd5a10dc31d5ffa8f82d1/telegram-bot-api/Client.cpp#L7925-L7995
 [participant-admin]: https://core.telegram.org/constructor/channelParticipantAdmin
+[rank-strip]: https://github.com/tdlib/td/blob/bc9c263e2bfee06aaab41e82db51a103376030bc/td/telegram/DialogParticipant.cpp#L389-L390
+[rank-errors]: https://github.com/tdlib/telegram-bot-api/blob/e3e9dd8e5b3d7ab8537cd5a10dc31d5ffa8f82d1/telegram-bot-api/Client.cpp#L154-L162
+[member-tags]: https://core.telegram.org/api/rank
 [promote-method]: https://github.com/tdlib/telegram-bot-api/blob/e3e9dd8e5b3d7ab8537cd5a10dc31d5ffa8f82d1/telegram-bot-api/Client.cpp#L16397-L16449
 [administrator-rights]: https://github.com/tdlib/td/blob/bc9c263e2bfee06aaab41e82db51a103376030bc/td/telegram/DialogParticipant.cpp#L69-L115
 [edit-admin]: https://core.telegram.org/method/channels.editAdmin

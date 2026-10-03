@@ -25,6 +25,8 @@ import {
   type ChatMembership,
   type ChatMemberStatus,
   createRestrictedStatus,
+  type CustomTitleViolation,
+  findCustomTitleViolation,
   type FormerChatMemberStatus,
   getEffectiveChatPermissions,
   getSupergroupNonMemberFailureReason,
@@ -33,6 +35,7 @@ import {
   isChatMember,
   isSameChatMemberStatus,
   LEFT_CHAT_MEMBER_STATUS,
+  MAX_CUSTOM_TITLE_LENGTH,
   resolveSupergroupBotMembership,
   type SupergroupAdministratorRights,
   type SupergroupBotAccessFailureReason,
@@ -223,16 +226,50 @@ export interface SetCustomTitleInput {
   readonly chatId: number;
   /** The owner itself or an administrator. */
   readonly memberId: number;
-  /** The new title; empty removes it. */
+  /** The new title, before Telegram cleans it; empty removes it. */
   readonly customTitle: string;
 }
+
+/** Why a custom title is refused: Telegram cannot read it, or its servers refuse it. */
+type CustomTitleRefusal = 'text_encoding_invalid' | `custom_title_${CustomTitleViolation}`;
 
 export type SetCustomTitleResult =
   | { readonly set: true }
   | {
     readonly set: false;
-    readonly reason: OwnerMemberManagementFailureReason | 'not_an_administrator';
+    readonly reason:
+      | OwnerMemberManagementFailureReason
+      | 'not_an_administrator'
+      | CustomTitleRefusal;
   };
+
+export interface SetCustomTitleAsBotInput {
+  readonly actorBotId: number;
+  readonly chatId: number;
+  /** An administrator the bot may edit. */
+  readonly memberId: number;
+  /** The new title, before Telegram cleans it; empty removes it. */
+  readonly customTitle: string;
+}
+
+/**
+ * Why a bot cannot set an administrator's custom title, in the order the official Bot API server
+ * and then Telegram check them.
+ */
+export type SetCustomTitleAsBotFailureReason =
+  | 'bot_not_found'
+  | SupergroupBotAccessFailureReason
+  | 'member_not_found'
+  /** The owner alone sets its own title. */
+  | 'member_is_owner'
+  | 'member_is_not_administrator'
+  /** The bot may not edit the administrator, as `canEditSupergroupAdministrator` decides. */
+  | 'custom_title_not_editable'
+  | CustomTitleRefusal;
+
+export type SetCustomTitleAsBotResult =
+  | { readonly set: true }
+  | { readonly set: false; readonly reason: SetCustomTitleAsBotFailureReason };
 
 export interface SetContentProtectionInput {
   /** The owner, who alone restricts saving content. */
@@ -1005,7 +1042,9 @@ export class SharedChatAdministrationService {
 
   /**
    * Sets the custom title that clients show for the owner of a supergroup or an administrator in
-   * place of its role, as the owner. Setting the title it has succeeds without effect.
+   * place of its role, as the owner, as Telegram's clients set it with `channels.editAdmin`, which
+   * changes the participant and so publishes the change. The title is read as
+   * `#normalizeCustomTitle` reads it. Setting the title it has succeeds without effect.
    */
   setCustomTitle(input: SetCustomTitleInput): SetCustomTitleResult {
     const target = this.#resolveMemberAsOwner(input);
@@ -1016,21 +1055,19 @@ export class SharedChatAdministrationService {
     if (membership.status !== 'owner' && membership.status !== 'administrator') {
       return { set: false, reason: 'not_an_administrator' };
     }
-    const newCustomTitle = input.customTitle === '' ? undefined : input.customTitle;
-    if (membership.customTitle === newCustomTitle) {
+    const title = this.#normalizeCustomTitle(input.customTitle);
+    if (!title.read) {
+      return { set: false, reason: title.reason };
+    }
+    if (membership.customTitle === title.customTitle) {
       return { set: true };
     }
     const { customTitle: _, ...untitledMembership } = membership;
-    const newStatus: ChatMembership = newCustomTitle === undefined
+    const newStatus: ChatMembership = title.customTitle === undefined
       ? untitledMembership
-      : { ...untitledMembership, customTitle: newCustomTitle };
+      : { ...untitledMembership, customTitle: title.customTitle };
 
-    const update = this.#sharedChats.setCustomTitle(chat.id, input.memberId, newCustomTitle);
-    if (!update.updated) {
-      throw new Error(
-        `Custom title of member ${input.memberId} of chat ${chat.id} could not be set: ${update.reason}`,
-      );
-    }
+    this.#storeCustomTitle(chat.id, input.memberId, title.customTitle);
     this.#events.publish({
       type: 'chat_member_status_changed',
       chat,
@@ -1040,6 +1077,46 @@ export class SharedChatAdministrationService {
       newStatus,
       changedAtUnixSeconds: this.#currentUnixTimeSeconds(),
     });
+    return { set: true };
+  }
+
+  /**
+   * Sets the custom title of a supergroup administrator as a bot, as the official Bot API server's
+   * `process_set_chat_administrator_custom_title_query` does: the owner alone sets its own title,
+   * the user must be an administrator, and the bot must be allowed to edit it, as
+   * `canEditSupergroupAdministrator` decides. The server then sets the title as the member's tag
+   * with TDLib's `setChatMemberTag`, which reads it as `#normalizeCustomTitle` does. Telegram
+   * announces tag changes only in basic groups, as its documentation of member tags says, so no
+   * update reports the change. Setting the title the administrator has succeeds without effect.
+   */
+  setCustomTitleAsBot(input: SetCustomTitleAsBotInput): SetCustomTitleAsBotResult {
+    const target = this.#resolveModerationTarget(input);
+    if (!target.resolved) {
+      return { set: false, reason: target.reason };
+    }
+    const { memberStatus } = target;
+    if (memberStatus.status === 'owner') {
+      return { set: false, reason: 'member_is_owner' };
+    }
+    if (memberStatus.status !== 'administrator') {
+      return { set: false, reason: 'member_is_not_administrator' };
+    }
+    if (
+      !canEditSupergroupAdministrator(
+        this.#readMembership(input.chatId),
+        input.actorBotId,
+        memberStatus,
+      )
+    ) {
+      return { set: false, reason: 'custom_title_not_editable' };
+    }
+    const title = this.#normalizeCustomTitle(input.customTitle);
+    if (!title.read) {
+      return { set: false, reason: title.reason };
+    }
+    if (memberStatus.customTitle !== title.customTitle) {
+      this.#storeCustomTitle(input.chatId, input.memberId, title.customTitle);
+    }
     return { set: true };
   }
 
@@ -1694,6 +1771,39 @@ export class SharedChatAdministrationService {
         throw new Error(
           `Restriction of member ${memberId} of chat ${chatId} could not be lifted: ${lifting.reason}`,
         );
+    }
+  }
+
+  /**
+   * Reads a custom title as Telegram does: TDLib's `clean_input_string` cleans it, refusing text
+   * that is not well-formed Unicode; Telegram's servers refuse it as `findCustomTitleViolation`
+   * decides; and TDLib keeps it as `strip_empty_characters` strips it. A title that is empty then
+   * stands for none.
+   */
+  #normalizeCustomTitle(
+    title: string,
+  ):
+    | { readonly read: true; readonly customTitle: string | undefined }
+    | { readonly read: false; readonly reason: CustomTitleRefusal } {
+    const cleanedTitle = cleanInputString(title);
+    if (cleanedTitle === undefined) {
+      return { read: false, reason: 'text_encoding_invalid' };
+    }
+    const violation = findCustomTitleViolation(cleanedTitle);
+    if (violation !== undefined) {
+      return { read: false, reason: `custom_title_${violation}` };
+    }
+    const customTitle = stripEmptyCharacters(cleanedTitle, MAX_CUSTOM_TITLE_LENGTH);
+    return { read: true, customTitle: customTitle.length === 0 ? undefined : customTitle };
+  }
+
+  /** Stores the custom title of the owner or an administrator; `undefined` removes it. */
+  #storeCustomTitle(chatId: number, memberId: number, customTitle: string | undefined): void {
+    const update = this.#sharedChats.setCustomTitle(chatId, memberId, customTitle);
+    if (!update.updated) {
+      throw new Error(
+        `Custom title of member ${memberId} of chat ${chatId} could not be set: ${update.reason}`,
+      );
     }
   }
 

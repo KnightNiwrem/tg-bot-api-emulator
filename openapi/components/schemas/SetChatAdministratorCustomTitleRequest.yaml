@@ -13,4 +13,7 @@ properties:
     $ref: ./TelegramUserId.yaml
   custom_title:
     type: string
-    description: The new title, which the method never applies here.
+    default: ''
+    description: >-
+      The new title, of at most 16 characters counted by code point and without emoji, as the
+      Bot API documents it; empty removes the title.

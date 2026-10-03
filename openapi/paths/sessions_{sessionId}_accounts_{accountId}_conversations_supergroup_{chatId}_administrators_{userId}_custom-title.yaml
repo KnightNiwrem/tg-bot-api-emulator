@@ -11,7 +11,8 @@ put:
   summary: Set the custom title of the owner or an administrator of a supergroup the account owns
   description: >-
     Sets the owner's own custom title or an administrator's, as Telegram lets a supergroup's
-    owner do; an empty title removes it. Bots see the title as `custom_title` in getChatMember,
+    owner do; an empty title removes it. Telegram cleans the title and keeps it stripped of
+    surrounding spaces, as a bot's titles are. Bots see the title as `custom_title` in getChatMember,
     getChatAdministrators, and chat member updates, and a bot whose title changes receives a
     my_chat_member update. An administrator keeps its title when its rights change, and loses
     it when demoted. Setting the title a user has changes nothing.
@@ -26,8 +27,9 @@ put:
       description: The user has the given title, or none for an empty title.
     '400':
       description: >-
-        A path identifier or the body is invalid, such as a title longer than 16 characters or
-        one with emoji.
+        A path identifier or the body is invalid, or the title is not well-formed Unicode, is
+        longer than 16 characters, or has emoji. These title checks follow the account's
+        ownership of the supergroup and the user's standing.
     '403':
       description: The account does not own the supergroup.
     '404':

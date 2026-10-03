@@ -9,7 +9,6 @@ import { toBotApiMenuButton } from '../../../types/bot_menu_button.ts';
 import type { CallbackQuery } from '../../../types/callback_query.ts';
 import {
   grantSupergroupAdministratorRights,
-  MAX_CUSTOM_TITLE_LENGTH,
   SUPERGROUP_ADMINISTRATOR_RIGHTS,
 } from '../../../types/chat_membership.ts';
 import { CHAT_PERMISSIONS } from '../../../types/chat_permissions.ts';
@@ -297,14 +296,10 @@ const restrictChatMemberRequestSchema = z.strictObject({
 });
 
 /**
- * A custom title of at most 16 characters, counted by code point, without emoji, as the Bot API
- * documents it; empty removes the title.
+ * A custom title, which Telegram cleans and refuses beyond 16 characters or with emoji; empty
+ * removes the title.
  */
-const setCustomTitleRequestSchema = z.strictObject({
-  custom_title: z.string()
-    .refine((title) => [...title].length <= MAX_CUSTOM_TITLE_LENGTH)
-    .refine((title) => !/\p{Extended_Pictographic}/u.test(title)),
-});
+const setCustomTitleRequestSchema = z.strictObject({ custom_title: z.string() });
 
 /** A supergroup's new title, which Telegram cleans; one that cleans to nothing is refused. */
 const changeSupergroupTitleRequestSchema = z.strictObject({ title: z.string() });
@@ -783,6 +778,10 @@ export function createAccountRoutes(): Hono<SessionRouteContextTypes> {
       case 'not_a_member':
       case 'not_an_administrator':
         return context.body(null, 409);
+      case 'text_encoding_invalid':
+      case 'custom_title_too_long':
+      case 'custom_title_contains_emoji':
+        return context.body(null, 400);
       default: {
         const unhandledReason: never = result.reason;
         throw new Error(`Unhandled custom title failure: ${unhandledReason}`);
