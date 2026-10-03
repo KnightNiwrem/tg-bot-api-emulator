@@ -248,7 +248,8 @@ Deno.test('a queued pin update keeps the pinned message as it was when it was cr
   const messageId = await sendToPinningBot('soon gone');
   await readUpdates(pinningBot);
   await callBot(pinningBot, 'pinChatMessage', { chat_id: ada, message_id: messageId });
-  await api.request(`${privatePath}/messages/${messageId}`, { method: 'DELETE' });
+  const deletion = await api.request(`${privatePath}/messages/${messageId}`, { method: 'DELETE' });
+  expectEqual(deletion.status, 204, 'the account deletes the pinned message');
 
   const [pinUpdate] = await readUpdates(pinningBot);
   expectEqual(
