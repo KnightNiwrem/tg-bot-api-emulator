@@ -177,6 +177,62 @@ Deno.test("InlineQueryService checks answers in Telegram's order", () => {
   }
 });
 
+Deno.test('InlineQueryService lets a result mention any user of the session', () => {
+  const { virtualUsers, inlineQueries, account, inlineBot, sendQuery } = createInlineQueryFixture();
+  const otherBot = createBot(virtualUsers, 'other_bot', { supports_inline_queries: false });
+  const inlineQuery = sendQuery();
+  const mentionArticle = (userId: number) => ({
+    ...article('1'),
+    messageContent: {
+      kind: 'text' as const,
+      text: 'Hi',
+      entities: [{ type: 'text_mention' as const, offset: 0, length: 2, userId }],
+    },
+  });
+  const answer = (results: readonly SpecifiedInlineQueryResult[]) =>
+    inlineQueries.answerInlineQuery({
+      fromBotId: inlineBot.profile.id,
+      inlineQueryId: inlineQuery.id,
+      results,
+      cacheTimeSeconds: 300,
+      isPersonal: false,
+      nextOffset: '',
+    });
+
+  const unknownUserAnswer = answer([mentionArticle(999)]);
+  if (
+    unknownUserAnswer.answered || !('textError' in unknownUserAnswer) ||
+    unknownUserAnswer.textError !== 'User not found'
+  ) {
+    throw new Error(
+      `Expected a mention of an unknown user to be rejected, received ${
+        JSON.stringify(unknownUserAnswer)
+      }`,
+    );
+  }
+  const mentionedUserIds = [account.profile.id, otherBot.profile.id];
+  const answered = answer(
+    mentionedUserIds.map((userId, index) => ({
+      ...mentionArticle(userId),
+      id: String(index),
+    })),
+  );
+  if (!answered.answered || answered.inlineQuery.state.status !== 'answered') {
+    throw new Error(`Expected mentions of session users to be answered`);
+  }
+  const mentionedEntities = answered.inlineQuery.state.answer.results.map((result) =>
+    result.messageContent.kind === 'text' ? result.messageContent.entities : undefined
+  );
+  const expectedEntities = mentionedUserIds.map((userId) => [
+    { type: 'text_mention', offset: 0, length: 2, userId },
+  ]);
+  if (JSON.stringify(mentionedEntities) !== JSON.stringify(expectedEntities)) {
+    throw new Error(
+      `Expected the mentions to be kept, received ${JSON.stringify(mentionedEntities)}`,
+    );
+  }
+});
+
 Deno.test("InlineQueryService sends a chosen result as the account's message through the bot", async () => {
   const {
     virtualUsers,
