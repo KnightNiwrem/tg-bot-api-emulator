@@ -52,9 +52,9 @@ client's `registerWebResource`, giving a status, `Content-Type`, body, or redire
 without a registered resource is unreachable, and the emulator never reaches the network.
 `sendPhoto`, `sendDocument`, `sendVideo`, `sendVoice`, `editMessageMedia`, including for inline
 messages, and the photo and document blocks of rich messages accept URLs. Photo, document, video and
-voice results of `answerInlineQuery` also accept them, with contracts of their own, and are
-downloaded when an account sends the result, as [inline mode](inline-mode.md#media-named-by-url)
-describes.
+voice results of `answerInlineQuery` also accept them, with contracts of their own; the file is
+downloaded when an account sends a result as its media, and never when `input_message_content`
+replaces it, as [inline mode](inline-mode.md#media-named-by-url) describes.
 
 The URL is read as TDLib's [`parse_url`][parse-url] reads it, so a URL without a protocol is an HTTP
 one, and a resource answers every spelling that TDLib reads alike; a URL TDLib refuses fails with

@@ -4440,6 +4440,7 @@ function readInlineQueryResultContent(
           kind: 'video',
           description: result.description,
           video: result.video,
+          thumbnailUrl: result.thumbnailUrl,
           showsCaptionAboveMedia: result.showsCaptionAboveMedia,
           attributes: result.attributes,
         },

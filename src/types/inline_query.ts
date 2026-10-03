@@ -51,7 +51,9 @@ export type InlineResultWebMedia =
     /** Empty for no caption. */
     readonly caption: FormattedText;
     readonly showsCaptionAboveMedia: boolean;
-    /** As the bot specified them, which the downloaded video keeps. */
+    /**
+     * As the bot specified them, clamped as for `sendVideo`, which the downloaded video keeps.
+     */
     readonly attributes: VideoAttributes;
   }
   | {
@@ -59,7 +61,7 @@ export type InlineResultWebMedia =
     readonly url: string;
     /** Empty for no caption. */
     readonly caption: FormattedText;
-    /** As the bot specified it, which the downloaded voice note keeps. */
+    /** As the bot specified it, clamped as for `sendVoice`, which the downloaded voice note keeps. */
     readonly durationSeconds: number;
   };
 
@@ -69,13 +71,17 @@ export type InlineResultWebMedia =
  */
 export type InlineResultMessageContent = MessageContent | InlineResultWebMedia;
 
-/**
- * The file a media result lists: one the bot knows by `file_id`, or one it names by URL. A video
- * result may instead list a web page with an embedded video player, which it cannot send itself.
- */
+/** The file a media result lists: one the bot knows by `file_id`, or one it names by URL. */
 export type InlineResultListedFile =
   | { readonly source: 'stored'; readonly fileId: StoredFileId }
-  | { readonly source: 'web'; readonly url: string }
+  | { readonly source: 'web'; readonly url: string };
+
+/**
+ * What a video result lists: a video file, or a web page with an embedded video player, which the
+ * result cannot send itself.
+ */
+export type InlineResultListedVideo =
+  | InlineResultListedFile
   | { readonly source: 'embedded_player'; readonly url: string };
 
 interface InlineQueryResultBase {
@@ -124,7 +130,7 @@ export interface DocumentInlineQueryResult extends InlineQueryResultBase {
 /** A video, or a web page with an embedded video player, which the client lists by its title. */
 export interface VideoInlineQueryResult extends InlineQueryResultBase {
   readonly kind: 'video';
-  readonly file: InlineResultListedFile;
+  readonly file: InlineResultListedVideo;
   /** Never empty. */
   readonly title: string;
   /** Omitted when empty. */

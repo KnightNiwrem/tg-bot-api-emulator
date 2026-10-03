@@ -75,7 +75,10 @@ A video declared as `text/html` is a web page with an embedded video player, suc
 The Bot API requires such a result to replace its content with `input_message_content`, so the
 emulator refuses one without it with
 `Bad Request: inline query results with an embedded video player must specify input_message_content`;
-what Telegram does instead is not documented. The page is only listed and never downloaded.
+what Telegram does instead is not documented. The page is only listed and never downloaded. The Bot
+API also requires the `thumbnail_url` of a video named by URL, for which Telegram documents no
+error, so the emulator refuses a video URL without one with the invalid-parameters error, and a
+thumbnail URL it cannot read with `Bad Request: WEBDOCUMENT_URL_INVALID`, as for a photo.
 
 Telegram downloads the file when an account sends the result: `messages.sendInlineBotResult`, unlike
 `messages.setInlineBotResults`, fails with the download errors `WEBPAGE_CURL_FAILED` and

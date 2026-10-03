@@ -11,6 +11,7 @@ import {
   type InlineQueryResult,
   type InlineQueryResultsButton,
   type InlineResultListedFile,
+  type InlineResultListedVideo,
   type InlineResultMessageContent,
   type InlineResultWebMedia,
   isSameInlineQueryRequest,
@@ -88,6 +89,14 @@ export type SpecifiedInlineResultFile<Stored extends StoredFile> =
   | { readonly source: 'stored'; readonly file: Stored }
   | { readonly source: 'web'; readonly url: string };
 
+/**
+ * What a video result lists: a video file, or a web page with an embedded video player, which only
+ * the listing shows.
+ */
+type SpecifiedInlineResultVideo =
+  | SpecifiedInlineResultFile<StoredVideoFile>
+  | { readonly source: 'embedded_player'; readonly url: string };
+
 /** What each kind of result lists, as the bot specified it, before Telegram's checks. */
 type SpecifiedInlineQueryResultListing =
   | {
@@ -119,10 +128,9 @@ type SpecifiedInlineQueryResultListing =
   }
   | {
     readonly kind: 'video';
-    /** A video file, or a web page with an embedded video player, which only the listing shows. */
-    readonly video:
-      | SpecifiedInlineResultFile<StoredVideoFile>
-      | { readonly source: 'embedded_player'; readonly url: string };
+    readonly video: SpecifiedInlineResultVideo;
+    /** The URL of the thumbnail the client lists; empty for none. */
+    readonly thumbnailUrl: string;
     readonly title: string;
     /** Empty for none. */
     readonly description: string;
@@ -874,9 +882,12 @@ function checkWebMediaListing(
   if (!parseHttpUrl(file.url).parsed) {
     return 'web_document_url_invalid';
   }
-  const thumbnailUrl = result.kind === 'photo' || result.kind === 'document'
-    ? result.thumbnailUrl
-    : '';
+  // A video named by URL always has a thumbnail, which the emulator requires as it reads the
+  // result's parameters, since Telegram documents no error for a missing one.
+  const thumbnailUrl =
+    result.kind === 'photo' || result.kind === 'document' || result.kind === 'video'
+      ? result.thumbnailUrl
+      : '';
   if (thumbnailUrl.length === 0) {
     return result.kind === 'photo' ? 'photo_thumbnail_url_empty' : undefined;
   }
@@ -886,10 +897,7 @@ function checkWebMediaListing(
 /** The file a specified result lists, or `undefined` for an article, which lists none. */
 function getSpecifiedListedFile(
   result: SpecifiedInlineQueryResult,
-):
-  | SpecifiedInlineResultFile<StoredFile>
-  | { readonly source: 'embedded_player'; readonly url: string }
-  | undefined {
+): SpecifiedInlineResultFile<StoredFile> | SpecifiedInlineResultVideo | undefined {
   switch (result.kind) {
     case 'article':
       return undefined;
@@ -1021,7 +1029,7 @@ function toInlineQueryResult(
         ...shared,
         ...optionalDescription(result.description),
         kind: 'video',
-        file: toListedFile(result.video),
+        file: toListedVideo(result.video),
         title: result.title,
       };
     case 'voice':
@@ -1043,10 +1051,10 @@ function optionalDescription(description: string): { readonly description?: stri
   return description.length === 0 ? {} : { description };
 }
 
-function toListedFile(
-  file:
-    | SpecifiedInlineResultFile<StoredFile>
-    | { readonly source: 'embedded_player'; readonly url: string },
-): InlineResultListedFile {
+function toListedFile(file: SpecifiedInlineResultFile<StoredFile>): InlineResultListedFile {
   return file.source === 'stored' ? { source: 'stored', fileId: file.file.id } : file;
+}
+
+function toListedVideo(video: SpecifiedInlineResultVideo): InlineResultListedVideo {
+  return video.source === 'embedded_player' ? video : toListedFile(video);
 }

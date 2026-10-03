@@ -17,9 +17,11 @@ post:
     the message's `inline_message_id` when the message has an inline keyboard. The inline bot
     edits the message by that identifier, and presses of its callback buttons reach the inline
     bot as callback queries carrying it instead of the message. As on Telegram, the account
-    can send a result again, each time as a new message. Media the result names
-    by URL is downloaded from the session's emulated web each time the result is sent, as a new
-    file, before the account's access to the chat is checked.
+    can send a result again, each time as a new message. A photo, document, video file, or voice
+    note the result names by URL and sends as its media, without `input_message_content`, is
+    downloaded from the session's emulated web each time the result is sent, as a new file,
+    before the account's access to the chat is checked; an embedded video player is never
+    downloaded.
   requestBody:
     required: true
     content:

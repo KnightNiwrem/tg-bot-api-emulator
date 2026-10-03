@@ -85,6 +85,8 @@ export type InlineQueryResultParameter =
   | (InlineQueryResultParameterBase & {
     readonly kind: 'video';
     readonly video: InlineQueryResultVideoParameter;
+    /** The URL of the video's thumbnail in the list of results; empty for none. */
+    readonly thumbnailUrl: string;
     readonly title: string;
     readonly caption: UnreadFormattedText;
     readonly showsCaptionAboveMedia: boolean;
@@ -265,7 +267,7 @@ const videoResultSchema = z.strictObject({
   video_url: z.string().default(''),
   video_file_id: z.string().default(''),
   mime_type: z.string().optional(),
-  thumbnail_url: z.string().optional(),
+  thumbnail_url: z.string().default(''),
   video_width: clampedAttributeField(MAX_VIDEO_SIDE_LENGTH),
   video_height: clampedAttributeField(MAX_VIDEO_SIDE_LENGTH),
   video_duration: clampedAttributeField(MAX_MEDIA_DURATION_SECONDS),
@@ -472,8 +474,13 @@ function readVideoResult(value: unknown): InlineQueryResultReading {
   }
   const { data } = parsing;
   const file = readResultFile(data.video_url, data.video_file_id);
-  // The Bot API server requires the MIME type of a video given by `video_url`.
-  if (file === undefined || (data.video_url.length > 0 && data.mime_type === undefined)) {
+  // The Bot API server requires the MIME type of a video given by `video_url`. The Bot API also
+  // requires its thumbnail, for which Telegram documents no error, so the emulator refuses a video
+  // URL without one as malformed.
+  if (
+    file === undefined ||
+    (data.video_url.length > 0 && (data.mime_type === undefined || data.thumbnail_url === ''))
+  ) {
     return { kind: 'malformed' };
   }
   const mimeType = data.mime_type ?? '';
@@ -495,6 +502,7 @@ function readVideoResult(value: unknown): InlineQueryResultReading {
       kind: 'video',
       ...readSharedFields(data),
       video,
+      thumbnailUrl: data.thumbnail_url,
       title: data.title,
       caption: readCaption(data),
       showsCaptionAboveMedia: data.show_caption_above_media,

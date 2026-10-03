@@ -12,6 +12,20 @@ required:
   - title
   - video_url
   - mime_type
+  - thumbnail_url
+if:
+  required:
+    - mime_type
+  properties:
+    mime_type:
+      pattern: ^text/html
+then:
+  description: A `text/html` page cannot be sent itself, so it needs content to send instead.
+  required:
+    - input_message_content
+  properties:
+    input_message_content:
+      type: object
 properties:
   type:
     type: string
@@ -30,7 +44,10 @@ properties:
     description: The declared type, which TDLib requires to begin with `video/mp4` or `text/html`.
   thumbnail_url:
     type: string
-    description: Validated and ignored.
+    minLength: 1
+    description: >-
+      The URL of the thumbnail the client lists, an HTTP or HTTPS URL that is not downloaded. The
+      Bot API requires it, so a video without one is refused as invalid parameters.
   title:
     type: string
     minLength: 1

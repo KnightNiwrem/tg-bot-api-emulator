@@ -939,6 +939,8 @@ export type InlineQueryResultRequest =
     readonly video:
       | InlineResultFileRequest
       | { readonly kind: 'embedded_player'; readonly url: string };
+    /** The URL of the thumbnail the client lists; empty for none. */
+    readonly thumbnailUrl: string;
     readonly title: string;
     /** Empty text for no caption. */
     readonly caption: SpecifiedFormattedText;
@@ -4846,6 +4848,7 @@ export class BotApiService {
           kind: 'video' as const,
           description: result.description,
           title: result.title,
+          thumbnailUrl: result.thumbnailUrl,
         };
         if (result.video.kind === 'embedded_player') {
           if (messageContent === undefined) {

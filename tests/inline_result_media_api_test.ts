@@ -727,6 +727,8 @@ Deno.test('answerInlineQuery checks video and voice results by their own rules',
     [{ ...urlVoiceResult, voice_url: 'ftp://cdn.example.com/meow.ogg' }],
     [{ type: 'voice', id: 'meow', voice_file_id: sentVideo.video?.file_id, title: 'Meow' }],
     [{ ...urlVoiceResult, description: 'Not a voice field' }],
+    [{ ...urlVideoResult, thumbnail_url: undefined }],
+    [{ ...urlVideoResult, thumbnail_url: 'ftp://cdn.example.com/thumbnail.jpg' }],
   ];
   const descriptions = [];
   for (const results of refusals) {
@@ -742,6 +744,8 @@ Deno.test('answerInlineQuery checks video and voice results by their own rules',
       'Bad Request: WEBDOCUMENT_URL_INVALID',
       "Bad Request: can't use file of type Video as VoiceNote",
       'Bad Request: invalid answerInlineQuery parameters',
+      'Bad Request: invalid answerInlineQuery parameters',
+      'Bad Request: WEBDOCUMENT_URL_INVALID',
     ],
     "Expected Telegram's and the emulator's errors",
   );
