@@ -2019,7 +2019,7 @@ function answerPinChange(
  * A missing account, chat, or message is not found; an account that is not a member of the
  * supergroup, or may not pin there, is forbidden from it; a service message cannot be pinned; and
  * pinning a pinned message, or unpinning one that is not, conflicts with its state, as Telegram
- * refuses it.
+ * refuses it, as does a block of the private chat's bot.
  */
 function pinChangeFailureStatus(
   reason:
@@ -2039,10 +2039,12 @@ function pinChangeFailureStatus(
     case 'message_already_pinned':
     case 'message_not_pinned':
       return 409;
-    // Only bots are refused for their former membership, or for being blocked.
+    // As for an account's messages, a block conflicts with writing to the bot.
+    case 'bot_blocked':
+      return 409;
+    // Only bots are refused for their former membership.
     case 'bot_not_a_member':
     case 'bot_kicked':
-    case 'bot_blocked':
       throw new Error(`Account refused as a bot: ${reason}`);
     default: {
       const unhandledReason: never = reason;

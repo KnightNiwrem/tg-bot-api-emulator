@@ -81,7 +81,10 @@ type PinningChatAccessFailureReason =
   | Exclude<SupergroupBotAccessFailureReason, 'chat_not_found'>
   /** The pinner is an account that is not a member of the supergroup. */
   | 'not_a_member'
-  /** The pinner is a bot whose private chat's account blocks it, so it may not write there. */
+  /**
+   * The private chat's account blocks its bot, so neither participant may write there, as for
+   * their messages; reading the chat's pinned messages is unaffected.
+   */
   | 'bot_blocked';
 
 /** Why an account or a bot cannot pin or unpin a message, in the order Telegram checks. */
@@ -253,7 +256,7 @@ export class MessagePinningService {
    * sound, as the Bot API documents notifications there to be always disabled.
    */
   pinMessage({ pinner, chat, messageId, isSilent }: PinMessageInput): PinMessageResult {
-    const access = this.#reachChat(pinner, chat);
+    const access = this.#reachChatToWrite(pinner, chat);
     if (!access.reached) {
       return { pinned: false, reason: access.reason };
     }
@@ -280,7 +283,7 @@ export class MessagePinningService {
    * `getChatPinnedMessage`. Telegram's servers refuse to unpin a message that is not pinned.
    */
   unpinMessage({ pinner, chat, messageId }: UnpinMessageInput): UnpinMessageResult {
-    const access = this.#reachChat(pinner, chat);
+    const access = this.#reachChatToWrite(pinner, chat);
     if (!access.reached) {
       return { unpinned: false, reason: access.reason };
     }
@@ -361,16 +364,36 @@ export class MessagePinningService {
   }
 
   /**
+   * Reaches a chat to pin or unpin there, as `#reachChat` reaches it, unless its account blocks
+   * the bot of a private chat: as for their messages and the bot's chat actions, neither
+   * participant may then write there.
+   */
+  #reachChatToWrite(
+    pinner: MessagePinner,
+    chat: PinningChat,
+  ):
+    | { readonly reached: true; readonly chat: ReachedPinningChat }
+    | { readonly reached: false; readonly reason: PinningChatAccessFailureReason } {
+    const access = this.#reachChat(pinner, chat);
+    if (access.reached && access.chat.type === 'private') {
+      const { accountId, botId } = access.chat.conversation;
+      if (this.#blockedUsers.isBlocked(accountId, botId)) {
+        return { reached: false, reason: 'bot_blocked' };
+      }
+    }
+    return access;
+  }
+
+  /**
    * Reaches a private chat: an account's chat with an existing bot, or a bot's chat with an account
-   * that started it and does not block the bot, which, as for its messages and chat actions, may
-   * not write there while blocked.
+   * that started it.
    */
   #reachPrivateChat(
     pinner: MessagePinner,
     peerId: number,
   ):
     | { readonly reached: true; readonly chat: ReachedPinningChat }
-    | { readonly reached: false; readonly reason: 'chat_not_found' | 'bot_blocked' } {
+    | { readonly reached: false; readonly reason: 'chat_not_found' } {
     if (pinner.kind === 'account') {
       return this.#bots.getById(peerId) === undefined
         ? { reached: false, reason: 'chat_not_found' }
@@ -380,14 +403,9 @@ export class MessagePinningService {
         };
     }
     const conversation: PrivateConversationKey = { accountId: peerId, botId: pinner.botId };
-    if (
-      this.#accounts.getById(peerId) === undefined ||
-      this.#privateConversations.getPrivateConversation(conversation) === undefined
-    ) {
-      return { reached: false, reason: 'chat_not_found' };
-    }
-    return this.#blockedUsers.isBlocked(peerId, pinner.botId)
-      ? { reached: false, reason: 'bot_blocked' }
+    return this.#accounts.getById(peerId) === undefined ||
+        this.#privateConversations.getPrivateConversation(conversation) === undefined
+      ? { reached: false, reason: 'chat_not_found' }
       : { reached: true, chat: { type: 'private', conversation } };
   }
 

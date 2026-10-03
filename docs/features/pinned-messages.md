@@ -70,7 +70,8 @@ it, and other members as the default permissions and their restriction grant it.
 documents for `ChatPermissions.can_pin_messages`, a public supergroup ignores its default
 permissions for pins, so only the owner and administrators with the right pin there. A refused
 request answers `404` for an unknown account, bot, supergroup or message, `403` for a non-member or
-a missing permission, `400` for a service message, and `409` for a pin that changes nothing.
+a missing permission, `400` for a service message, and `409` for a pin that changes nothing or a
+private chat whose bot the account blocks.
 
 `GET` on `.../pinned-messages`, or the client's `getPinnedMessages`, returns the chat's pinned
 messages newest first by sending date, as Telegram's search for pinned messages lists them. Private
@@ -135,8 +136,9 @@ Pins are kept by Telegram's servers, whose decisions the open-source code shows 
   notifications as disabled in private chats rather than absent, so the emulator records pins in
   private chats as in supergroups.
 - **Blocked bots.** Whether Telegram's servers let a bot pin in the private chat of an account that
-  blocked it is not visible. As for the bot's messages and chat actions, the emulator refuses its
-  pins and unpins there with `Forbidden: bot was blocked by the user`.
+  blocked it is not visible. As for their messages, the emulator refuses pins and unpins there by
+  either participant while the account blocks the bot: the bot's with
+  `Forbidden: bot was blocked by the user`, the account's with `409`.
 
 ## Local evidence
 
