@@ -25,7 +25,8 @@ properties:
     type: string
     minLength: 1
     description: >-
-      The URL of the thumbnail the client lists, an HTTP or HTTPS URL that is not downloaded.
+      The URL of the thumbnail the client lists, an HTTP or HTTPS URL read as TDLib reads the URL
+      of a file sent by URL, so a URL without a protocol is an HTTP one. It is not downloaded.
   photo_width:
     type: integer
     description: Validated and ignored; the sent photo has the downloaded image's width.

@@ -52,7 +52,8 @@ properties:
   thumbnail_url:
     type: string
     description: >-
-      The URL of the thumbnail the client lists, an HTTP or HTTPS URL that is not downloaded.
+      The URL of the thumbnail the client lists, an HTTP or HTTPS URL read as TDLib reads the URL
+      of a file sent by URL, so a URL without a protocol is an HTTP one. It is not downloaded.
   thumbnail_width:
     type: integer
     description: Validated and ignored.
