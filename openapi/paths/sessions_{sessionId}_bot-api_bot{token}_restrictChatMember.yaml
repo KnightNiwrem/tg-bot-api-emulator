@@ -1,0 +1,81 @@
+description: >-
+  Telegram Bot API method for restricting what a user may do in a supergroup, which needs the
+  `can_restrict_members` administrator right. The user keeps the permissions `permissions`
+  grants, read with the official server's implications unless
+  `use_independent_chat_permissions` is true; granting every permission lifts a restriction.
+  A user that is not a member is restricted before it joins, and keeps its restriction when it
+  joins or leaves. Administrator bots subscribed to `chat_member` updates, and a restricted bot
+  subscribed to `my_chat_member`, receive the change; no service message records it. A
+  restriction shorter than 30 seconds or longer than 366 days lasts until it is lifted, as on
+  Telegram; the emulator never lifts a restriction when its `until_date` passes. A restriction
+  that changes nothing succeeds without rights and without updates.
+parameters:
+  - $ref: ../components/parameters/SessionId.yaml
+  - $ref: ../components/parameters/BotToken.yaml
+post:
+  operationId: restrictChatMember
+  summary: Restrict a user of a supergroup as the authenticated virtual bot
+  requestBody:
+    required: true
+    content:
+      application/json:
+        schema:
+          $ref: ../components/schemas/RestrictChatMemberRequest.yaml
+      application/x-www-form-urlencoded:
+        schema:
+          $ref: ../components/schemas/RestrictChatMemberRequest.yaml
+      multipart/form-data:
+        schema:
+          $ref: ../components/schemas/RestrictChatMemberRequest.yaml
+  responses:
+    '200':
+      description: The user is restricted as requested, or its restriction is lifted.
+      content:
+        application/json:
+          schema:
+            $ref: ../components/schemas/TrueResultResponse.yaml
+    '400':
+      description: >-
+        The request cannot be decoded or has unsupported parameters, such as the deprecated
+        permissions given as separate parameters, or Telegram would reject it, in this order:
+        `user_id` is missing or not positive (`Bad Request: invalid user_id specified`);
+        `permissions` is not JSON (`Bad Request: can't parse permissions JSON object`), not an
+        object (`Bad Request: object expected as permissions`), or has a field that is not a
+        boolean (`Bad Request: can't parse chat permissions: Field "…" must be of type
+        Boolean`); `chat_id` is missing (`Bad Request: chat_id is empty`); the chat is neither a
+        private chat with an account that has written to the bot nor a supergroup the bot is or
+        was a member of (`Bad Request: chat not found`); the chat is a private chat (`Bad
+        Request: method is available only in supergroups`); the user is no user of the session
+        (`Bad Request: member not found`). A restriction that changes something then fails when
+        the user is the owner (`Bad Request: can't remove chat owner`); when the user is the bot
+        itself, which may not restrict itself (`Bad Request: can't restrict self`) or lift its
+        own restriction (`Bad Request: can't unrestrict self`); when every permission would make
+        an administrator a member and the bot lacks `can_promote_members` (`Bad Request: not
+        enough rights`); when the bot lacks `can_restrict_members` (`Bad Request: not enough
+        rights to restrict/unrestrict chat member`); or when the user is an administrator,
+        which Telegram lets a bot restrict only if it promoted it, and bots promote none here
+        (`Bad Request: user is an administrator of the chat`). As TDLib lets it, an
+        administrator bot that grants itself every permission becomes a member.
+      content:
+        application/json:
+          schema:
+            $ref: ../components/schemas/BotApiErrorResponse.yaml
+    '401':
+      description: The token does not belong to a virtual bot in the addressed session.
+      content:
+        application/json:
+          schema:
+            $ref: ../components/schemas/BotApiErrorResponse.yaml
+    '403':
+      description: >-
+        The bot left the supergroup (`Forbidden: bot is not a member of the
+        supergroup chat`) or was removed from it (`Forbidden: bot was kicked from
+        the supergroup chat`).
+      content:
+        application/json:
+          schema:
+            $ref: ../components/schemas/BotApiErrorResponse.yaml
+    '404':
+      description: No active test session has the supplied identifier.
+    '429':
+      $ref: ../components/responses/BotApiRateLimited.yaml

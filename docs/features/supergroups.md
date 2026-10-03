@@ -54,11 +54,11 @@ Owners grant administrator rights by their Bot API names. Promotion and demotion
 bot's `my_chat_member` status, and administrator status bypasses privacy mode. The implemented
 rights with behavioral effects are:
 
-| Right                  | Effect                                             |
-| ---------------------- | -------------------------------------------------- |
-| `can_change_info`      | Call `setChatTitle` and `setChatDescription`       |
-| `can_delete_messages`  | Delete other members' content and service messages |
-| `can_restrict_members` | Call `banChatMember` and `unbanChatMember`         |
+| Right                  | Effect                                                           |
+| ---------------------- | ---------------------------------------------------------------- |
+| `can_change_info`      | Call `setChatTitle` and `setChatDescription`                     |
+| `can_delete_messages`  | Delete other members' content and service messages               |
+| `can_restrict_members` | Call `banChatMember`, `unbanChatMember` and `restrictChatMember` |
 
 `banChatMember` removes a current member and records a service message authored by the bot.
 `unbanChatMember` lifts a ban; unless `only_if_banned` is true, it also removes a current member.
@@ -110,8 +110,8 @@ nobody configured further shows:
 - Accounts accept every kind of gift, and supergroups none.
 - A supergroup has `has_visible_history`, since new members see earlier messages, and
   `join_to_send_messages`, which TDLib documents as false only for discussion groups.
-- A supergroup's `permissions` grant everything, since member restrictions and default permissions
-  are a [real gap](#real-gaps).
+- A supergroup's `permissions` are its [default permissions](#member-restrictions), which grant
+  everything, since changing them is a [real gap](#real-gaps).
 
 ### Title and description
 
@@ -126,9 +126,10 @@ removes it. Bots and members then see the change in `getChat` and in the supergr
 As TDLib's [`apply_restrictions`][apply-restrictions] decides, a bot needs to be an administrator
 with `can_change_info`: default permissions never extend to bots. Otherwise the change fails with
 `Bad Request: not enough rights to change chat title` or
-`Bad Request: not enough rights to set chat description`. Accounts also get what the supergroup's
-default permissions allow, which the emulator does not restrict, so any member may change them. A
-private chat has neither: `Bad Request: can't change private chat title`, or
+`Bad Request: not enough rights to set chat description`. Accounts also get `can_change_info` from
+the supergroup's default permissions, as far as a [restriction](#member-restrictions) lets them, so
+by default any member may change them. A private chat has neither:
+`Bad Request: can't change private chat title`, or
 `Bad Request: can't change private chat description`.
 
 A new title is recorded as the changer's service message with `new_chat_title`, which, like a
@@ -137,6 +138,111 @@ membership service message, every bot of the supergroup receives. As the officia
 itself. Setting the title the supergroup has changes nothing. Telegram's servers refuse the
 description the supergroup has, which the official server reports as
 `Bad Request: chat description is not modified`, and no service message records a description.
+
+## Member restrictions
+
+What a member may do follows TDLib's [`apply_restrictions`][apply-restrictions], from its standing
+and the supergroup's default permissions, by the Bot API's `ChatPermissions` names:
+
+- The owner may do everything.
+- An administrator sends anything. It holds `can_change_info`, `can_invite_users`,
+  `can_pin_messages` and `can_manage_topics` as far as it holds the administrator rights of those
+  names, and, if it is an account, as far as the default permissions grant them.
+- Any other member holds the default permissions, as far as its restriction, if any, lets it. A bot
+  never gets those four permissions from the default permissions.
+
+The default permissions grant everything; changing them is a [real gap](#real-gaps). Both accounts
+and bots are refused what they may not send, as TDLib's
+[`can_send_message_content`][send-permission] checks each message after reading its content:
+
+| Content                                         | Permission needed                                           | Bot API error, after `Bad Request:`                      |
+| ----------------------------------------------- | ----------------------------------------------------------- | -------------------------------------------------------- |
+| Text, including a pressed reply keyboard button | `can_send_messages`                                         | `not enough rights to send text messages to the chat`    |
+| Photo                                           | `can_send_photos`                                           | `not enough rights to send photos to the chat`           |
+| Document                                        | `can_send_documents`                                        | `not enough rights to send documents to the chat`        |
+| Video                                           | `can_send_videos`                                           | `not enough rights to send videos to the chat`           |
+| Voice note                                      | `can_send_voice_notes`                                      | `not enough rights to send voice notes to the chat`      |
+| Poll                                            | `can_send_polls`                                            | `not enough rights to send polls to the chat`            |
+| Rich message                                    | `can_send_messages`, and each photo's and file's permission | `not enough rights to send the rich message to the chat` |
+
+An album fails for its first item that may not be sent. As TDLib's `edit_message_media` and
+`edit_message_text` check new media and rich messages, a bot's edit that puts such content into a
+message of the supergroup fails the same way; new text is not checked, nor is an edit addressed by
+`inline_message_id`. `forwardMessage` and `copyMessage` report such content as
+`Bad Request: the message can't be forwarded` or `Bad Request: the message can't be copied`, as
+TDLib's [`forward_message`][forward-message] does once [`forward_messages_impl`][forward-messages]
+skips it; `forwardMessages` and `copyMessages` skip it and fail only when nothing is left. An
+account's inline query result needs `can_send_other_messages`, as
+[`send_inline_query_result_message`][inline-result-permission] requires for using inline bots, and
+then the permission of its content. The emulation API answers an account's refused message, album,
+forward, button press or inline result with `403`. `can_change_info` decides
+[title and description](#title-and-description) changes.
+
+The other permissions are stored and shown but enforce nothing, because the emulator lacks what they
+govern: `can_send_audios` and `can_send_video_notes` (audio and video notes),
+`can_send_other_messages` beyond inline results (stickers, GIFs, games), `can_add_web_page_previews`
+(link previews), `can_react_to_messages` (reactions), `can_edit_tag` (member tags),
+`can_invite_users` (invitations), `can_pin_messages` (pins) and `can_manage_topics` (topics).
+
+### Restricting users
+
+An administrator bot with `can_restrict_members` restricts a user with `restrictChatMember`, member
+or not, and keeps it the permissions `permissions` grants, as the official server's
+[`get_chat_permissions`][read-permissions] reads them:
+
+- A missing object or field grants nothing; `can_manage_topics` and `can_edit_tag` default to
+  `can_pin_messages`.
+- Without any media field, `can_send_media_messages` grants or withholds every media permission.
+- `can_react_to_messages` defaults to `can_send_messages` as granted so far.
+- Unless `use_independent_chat_permissions` is true, `can_send_media_messages` also grants
+  `can_send_messages`, `can_send_polls` grants `can_send_messages`, and `can_send_other_messages` or
+  `can_add_web_page_previews` grants every media permission and `can_send_messages`.
+
+As the emulator is stricter, `can_send_media_messages` must be a boolean even when media fields make
+Telegram ignore it.
+
+Granting every permission lifts the restriction: as TDLib's
+[`DialogParticipantStatus::Restricted`][restricted-status] decides, such a user is a plain member,
+or has left. A restricted member that leaves stays restricted, as TDLib's
+[`leave_dialog`][leave-dialog] asks, and joins again restricted, which
+[`set_channel_participant_status_impl`][participant-status] relies on when it only adds a user whose
+restriction stays as it is. A ban replaces a restriction, and so does a promotion.
+
+Checks follow `set_channel_participant_status_impl` and
+[`restrict_channel_participant`][restrict-participant]: a restriction that changes nothing succeeds
+without rights; nobody restricts the owner (`Bad Request: can't remove chat owner`); a bot neither
+restricts itself (`Bad Request: can't restrict self`) nor lifts its own restriction
+(`Bad Request: can't unrestrict self`); granting an administrator every permission makes it a
+member, which needs `can_promote_members` (`Bad Request: not enough rights`); otherwise the bot
+needs `can_restrict_members`; and, as for a ban, Telegram lets a bot restrict only administrators it
+promoted (`Bad Request: user is an administrator of the chat`). A private chat has no members to
+restrict (`Bad Request: method is available only in supergroups`). As TDLib's
+`promote_channel_participant` allows, an administrator bot that grants itself every permission
+becomes a member.
+
+No service message records a restriction. A change reaches administrator bots subscribed to
+`chat_member`, and a restricted bot subscribed to `my_chat_member`, with its old and new standing;
+`getChatMember` shows a `restricted` user with `until_date`, every permission, and `is_member`.
+
+The owner restricts users through the emulation API with
+`PUT /sessions/{sessionId}/accounts/{accountId}/conversations/supergroup/{chatId}/restrictions/{userId}`
+and lifts a restriction with `DELETE` on the same path, or the TypeScript client's
+`restrictChatMember` and `liftChatMemberRestriction`. The request lists the kept permissions, none
+implying another, and an optional `until_date`. As Telegram lets an owner do, a restricted
+administrator loses its rights and custom title.
+
+### Restriction ends
+
+As TDLib's [`get_dialog_participant_status`][participant-status-input] decides, a restriction
+shorter than 30 seconds or longer than 366 days lasts until it is lifted, and `getChatMember` shows
+its `until_date` as 0. The emulator never ends a restriction as time passes. A test makes a
+temporary restriction's end arrive with
+`POST /sessions/{sessionId}/supergroups/{chatId}/restrictions/{userId}/expiry`, or the TypeScript
+client's `session.expireChatMemberRestriction`: as TDLib's [`update_restrictions`][ban-expiry]
+clears an elapsed restriction, a member becomes a plain member and a non-member has left. No bot
+receives an update: TDLib clears the restriction locally, and the public source shows no update
+Telegram's servers send for it, which is a [comparison limit](#comparison-limits). A user that is
+not restricted, or whose restriction lasts until it is lifted, answers `409`.
 
 ## Intentional deviations
 
@@ -153,10 +259,19 @@ unqualified command in a group where no bot has sent a message yet, and its serv
 the public Bot API or TDLib source. The emulator delivers such a command to every privacy-enabled
 bot, so a test of a newly added bot receives `/start` without first making the bot speak.
 
-**Explicit ban removal.** Membership changes remain under explicit test control. `until_date` is
-normalized using the less-than-30-seconds / more-than-366-days permanent-ban rule, but a ban remains
-in effect after its date passes. TDLib also normalizes the date and later clears elapsed
-restrictions in [`DialogParticipantStatus::update_restrictions`][ban-expiry].
+**Explicit ban and restriction removal.** Membership changes remain under explicit test control.
+`until_date` is normalized using the less-than-30-seconds / more-than-366-days permanent rule, but a
+ban or restriction remains in effect after its date passes. TDLib also normalizes the date and later
+clears elapsed restrictions in [`DialogParticipantStatus::update_restrictions`][ban-expiry]. Tests
+end a temporary restriction with its [expiry route](#restriction-ends); bans have none.
+
+**Strict permission parameters.** `restrictChatMember` refuses a `permissions` field that Telegram
+does not know, and the deprecated permissions given as separate parameters, such as
+`can_send_messages`, which the official server ignores or still reads; refusing them surfaces the
+bot's mistake in tests.
+
+**Explicit owner restrictions.** The emulation API's restrictions keep exactly the listed
+permissions, without the Bot API's implications, so that tests state each permission they rely on.
 
 **An owner remains in the chat.** The owner cannot leave, retaining a member who can administer test
 fixtures. TDLib's [creator status transitions][owner-leave] support an owner who is no longer a
@@ -187,8 +302,10 @@ production read permissions.
   and `can_restrict_members` are stored without corresponding enforcement. Tests need their
   behavioral effects as the associated features are supported.
 
-- **Member restrictions and default permissions.** `restrictChatMember` and default chat permissions
-  are absent. Tests cannot apply partial restrictions to members.
+- **Default permissions.** `setChatPermissions` is absent, and default permissions always grant
+  everything. Tests cannot restrict all members at once.
+- **Restrictions by administrator accounts.** Only the owner restricts users through the emulation
+  API; an administrator account with `can_restrict_members` cannot.
 - **Bot-driven promotion and demotion.** `promoteChatMember` is not implemented. Only the owner can
   change administrators through the emulation API.
 - **Anonymous administrators.** Anonymous administration and its message attribution are absent.
@@ -207,9 +324,26 @@ production read permissions.
 - **Topics.** Forum topics and channel direct-message topics are unsupported.
 - **Chat migration.** Basic-group-to-supergroup migration and its API effects are unsupported.
 
+## Comparison limits
+
+TDLib passes restrictions to Telegram's servers, whose checks and updates the open-source code does
+not show. The emulator chooses where they are not visible:
+
+- No bot receives an update when a restriction ends by itself.
+- A restricted user that the owner adds again keeps its restriction, as
+  `set_channel_participant_status_impl` expects when it only adds such a user.
+- A bot with `can_promote_members` that grants an administrator every permission is refused as for a
+  restriction (`Bad Request: user is an administrator of the chat`), since bots promote no one here.
+- An administrator bot that grants itself every permission becomes a member, as TDLib asks the
+  servers to make it.
+
 ## Local evidence
 
 [Administration service](../../src/services/shared_chat_administration.ts),
+[permission evaluator](../../src/types/chat_membership.ts),
+[permissions parameter](../../src/api/sessions/bot_api/chat_permissions_parameter.ts),
+[restriction tests](../../tests/chat_member_restriction_api_test.ts),
+[permission tests](../../tests/chat_permissions_test.ts),
 [privacy filtering](../../src/services/bot_update_delivery.ts),
 [administration tests](../../tests/shared_chat_administration_service_test.ts),
 [delivery tests](../../tests/bot_update_delivery_service_test.ts) and
@@ -233,4 +367,14 @@ production read permissions.
 [set-title]: https://github.com/tdlib/td/blob/bc9c263e2bfee06aaab41e82db51a103376030bc/td/telegram/DialogManager.cpp#L2341-L2383
 [set-description]: https://github.com/tdlib/td/blob/bc9c263e2bfee06aaab41e82db51a103376030bc/td/telegram/ChatManager.cpp#L3678-L3689
 [apply-restrictions]: https://github.com/tdlib/td/blob/bc9c263e2bfee06aaab41e82db51a103376030bc/td/telegram/DialogParticipant.cpp#L558-L591
+[send-permission]: https://github.com/tdlib/td/blob/bc9c263e2bfee06aaab41e82db51a103376030bc/td/telegram/MessageContent.cpp#L6207-L6481
+[forward-message]: https://github.com/tdlib/td/blob/bc9c263e2bfee06aaab41e82db51a103376030bc/td/telegram/MessagesManager.cpp#L24477-L24495
+[forward-messages]: https://github.com/tdlib/td/blob/bc9c263e2bfee06aaab41e82db51a103376030bc/td/telegram/MessagesManager.cpp#L24700-L24742
+[inline-result-permission]: https://github.com/tdlib/td/blob/bc9c263e2bfee06aaab41e82db51a103376030bc/td/telegram/MessagesManager.cpp#L23025-L23063
+[read-permissions]: https://github.com/tdlib/telegram-bot-api/blob/e3e9dd8e5b3d7ab8537cd5a10dc31d5ffa8f82d1/telegram-bot-api/Client.cpp#L12536-L12673
+[restricted-status]: https://github.com/tdlib/td/blob/bc9c263e2bfee06aaab41e82db51a103376030bc/td/telegram/DialogParticipant.cpp#L426-L435
+[leave-dialog]: https://github.com/tdlib/td/blob/bc9c263e2bfee06aaab41e82db51a103376030bc/td/telegram/DialogParticipantManager.cpp#L2414-L2439
+[participant-status]: https://github.com/tdlib/td/blob/bc9c263e2bfee06aaab41e82db51a103376030bc/td/telegram/DialogParticipantManager.cpp#L2844-L2965
+[restrict-participant]: https://github.com/tdlib/td/blob/bc9c263e2bfee06aaab41e82db51a103376030bc/td/telegram/DialogParticipantManager.cpp#L2967-L3090
+[participant-status-input]: https://github.com/tdlib/td/blob/bc9c263e2bfee06aaab41e82db51a103376030bc/td/telegram/DialogParticipant.cpp#L676-L720
 [skip-update]: https://github.com/tdlib/telegram-bot-api/blob/e3e9dd8e5b3d7ab8537cd5a10dc31d5ffa8f82d1/telegram-bot-api/Client.cpp#L18833-L18878

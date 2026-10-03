@@ -78,7 +78,8 @@ post:
         markup cannot be read, as for `sendMessage`; `open_period` is outside 5–2628000 (`Bad
         Request: open_period must be from 5 to 2628000 seconds`) or `close_date` is not 5 to
         2628000 seconds from now (`Bad Request: close_date must be from 5 to 2628000 seconds in
-        the future`); the chat, the reply, and the message effect fail as for `sendMessage`; the question is empty after normalization (`Bad Request: text
+        the future`); the chat, the reply, and the message effect fail as for `sendMessage`; the
+        question is empty after normalization (`Bad Request: text
         must be non-empty`) or longer than 300 characters (`Bad Request: poll question length
         must not exceed 300`); there are no options (`Bad Request: poll must have at least one
         answer option`) or more than 12 (`Bad Request: poll can't have more than 12 options`);
@@ -89,8 +90,9 @@ post:
         increasing`), or lists an option the poll lacks (`Bad Request: wrong quiz
         correct_option_id`); its explanation has more than 200 characters (`Bad Request: quiz
         explanation must have at most 200 characters`) or 2 line feeds (`Bad Request: quiz
-        explanation must have at most 2 line feeds`); or
-        a button's callback data exceeds 64 bytes (`Bad Request: BUTTON_DATA_INVALID`). A
+        explanation must have at most 2 line feeds`); the bot may not send polls to a
+        supergroup (`Bad Request: not enough rights to send polls to the chat`); or a button's
+        callback data exceeds 64 bytes (`Bad Request: BUTTON_DATA_INVALID`). A
         refused poll stores nothing.
       content:
         application/json:

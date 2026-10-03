@@ -76,7 +76,10 @@ post:
         Request: there is no text in the message to edit`); the text and its entities
         cannot be normalized, as for `sendMessage`, or the rich message's strings and text
         mentions fail as for `sendRichMessage`; the normalized text is longer than 4096
-        characters (`Bad Request: message is too long`); a button's callback data exceeds 64
+        characters (`Bad Request: message is too long`); a new rich message in a supergroup is one
+        the bot may not send, as for `sendRichMessage` (`Bad Request: not enough rights to send
+        the rich message to the chat`), which TDLib does not check for new text nor for a
+        message addressed by `inline_message_id`; a button's callback data exceeds 64
         bytes (`Bad Request: BUTTON_DATA_INVALID`); or the content and keyboard are
         unchanged (`Bad Request: message is not modified: specified new message content and
         reply markup are exactly the same as a current content and reply markup of the

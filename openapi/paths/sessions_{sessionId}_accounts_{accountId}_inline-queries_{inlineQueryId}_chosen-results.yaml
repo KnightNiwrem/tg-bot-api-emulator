@@ -38,7 +38,10 @@ post:
     '400':
       description: The request is invalid, or the answer has no result with the given ID.
     '403':
-      description: The account is no longer a member of the supergroup.
+      description: >-
+        The account is no longer a member of the supergroup, or may not send the result there:
+        as TDLib's `send_inline_query_result_message` requires, it needs `can_send_other_messages`
+        to use inline bots, and then the permission for the result's content.
     '404':
       description: The session does not exist, or the account sent no such inline query.
     '409':

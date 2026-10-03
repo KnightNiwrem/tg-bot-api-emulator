@@ -10,8 +10,8 @@ put:
   summary: Change the description of a supergroup the account is a member of
   description: >-
     The description is cleaned as for the Bot API's `setChatDescription`; an empty description
-    removes it, and no service message records the change. As for the title, any member may
-    change it.
+    removes it, and no service message records the change. The same members as for the title
+    may change it.
   requestBody:
     required: true
     content:
@@ -30,7 +30,8 @@ put:
     '400':
       description: A path identifier or the body is invalid, or the text is not well-formed Unicode.
     '403':
-      description: The account is not a member of the supergroup.
+      description: >-
+        The account is not a member of the supergroup, or may not change its information.
     '404':
       description: The session, account, or supergroup does not exist.
     '409':

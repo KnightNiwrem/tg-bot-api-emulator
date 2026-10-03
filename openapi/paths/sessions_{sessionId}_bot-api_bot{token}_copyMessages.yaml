@@ -43,7 +43,8 @@ post:
     '400':
       description: >-
         As for `forwardMessages`, whose descriptions Telegram uses for copies too. Only service
-        messages cannot be copied.
+        messages, quizzes whose solution the bot does not see, and content the bot may not send
+        to the supergroup the copies go to cannot be copied.
       content:
         application/json:
           schema:

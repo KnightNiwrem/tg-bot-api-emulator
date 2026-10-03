@@ -49,8 +49,10 @@ post:
         unknown to the bot (`Bad Request: chat not found`); `message_id` is missing or
         identifies no message of that chat (`Bad Request: message to forward not found`); the
         message's sender protected it, or it is a service message (`Bad Request: the message
-        can't be forwarded`), which Telegram checks after the chat the forward goes to; or that
-        chat is unknown to the bot (`Bad Request: chat not found`).
+        can't be forwarded`), which Telegram checks after the chat the forward goes to; that
+        chat is unknown to the bot (`Bad Request: chat not found`); or the bot may not send the
+        message's content to that supergroup, which TDLib's `forward_messages_impl` skips,
+        leaving nothing to forward (`Bad Request: the message can't be forwarded`).
       content:
         application/json:
           schema:

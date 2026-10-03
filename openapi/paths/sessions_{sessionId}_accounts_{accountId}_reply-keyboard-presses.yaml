@@ -35,7 +35,9 @@ post:
         or the button has a request, such as for the user's contact, which the emulator
         cannot answer.
     '403':
-      description: The account is not a member of the supergroup.
+      description: >-
+        The account is not a member of the supergroup, or may not send text there, as its
+        restriction or the supergroup's default permissions decide.
     '404':
       description: The session, account, bot, or supergroup does not exist.
     '409':

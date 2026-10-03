@@ -22,6 +22,7 @@ import {
   grantSupergroupAdministratorRights,
   type SupergroupAdministratorRight,
 } from '../src/types/chat_membership.ts';
+import { ALL_CHAT_PERMISSIONS, type ChatPermissions } from '../src/types/chat_permissions.ts';
 import type { BasicGroup, Channel, Supergroup } from '../src/types/virtual_chat.ts';
 import type { SupergroupMessageAuthor } from '../src/types/virtual_message.ts';
 
@@ -1009,6 +1010,112 @@ Deno.test('SharedChatAdministrationService keeps a restriction while the user le
   }
 });
 
+Deno.test('SharedChatAdministrationService lets bots restrict users in TDLib order', () => {
+  const {
+    owner,
+    member,
+    stranger,
+    moderatorBot,
+    otherBot,
+    supergroup,
+    sharedChats,
+    publishedEvents,
+    sharedChatAdministration,
+  } = createModerationFixture();
+  const sendingOnly: ChatPermissions = new Set(['can_send_messages']);
+  const restrict = (memberId: number, permissions: ChatPermissions = sendingOnly) => {
+    const result = sharedChatAdministration.restrictChatMember({
+      actorBotId: moderatorBot.profile.id,
+      chatId: supergroup.id,
+      memberId,
+      permissions,
+    });
+    return result.restricted ? 'restricted' : result.reason;
+  };
+  const statusOf = (userId: number) =>
+    describeStatus(
+      sharedChats.getChatMembership(supergroup.id, userId) ??
+        sharedChats.getFormerMemberStatus(supergroup.id, userId) ?? { status: 'left' },
+    );
+  const promote = (memberId: number, rights: SupergroupAdministratorRight[]) =>
+    sharedChatAdministration.promoteChatMember({
+      actorAccountId: owner.profile.id,
+      chatId: supergroup.id,
+      memberId,
+      rights: grantSupergroupAdministratorRights(rights),
+    });
+
+  // A restriction that changes nothing needs no rights; any other needs the right to restrict.
+  const withoutRights = [
+    restrict(member.profile.id, ALL_CHAT_PERMISSIONS),
+    restrict(member.profile.id),
+    restrict(owner.profile.id),
+    restrict(moderatorBot.profile.id),
+  ];
+  promote(moderatorBot.profile.id, ['can_restrict_members']);
+  promote(otherBot.profile.id, ['can_pin_messages']);
+  sharedChatAdministration.banChatMember({
+    actorBotId: moderatorBot.profile.id,
+    chatId: supergroup.id,
+    memberId: stranger.profile.id,
+  });
+  publishedEvents.length = 0;
+  const withRights = [
+    restrict(otherBot.profile.id),
+    // Making an administrator a member is a promotion, which needs the right to promote members.
+    restrict(otherBot.profile.id, ALL_CHAT_PERMISSIONS),
+    // A partial restriction of a banned user leaves it restricted, and every permission unbans it.
+    restrict(stranger.profile.id),
+    statusOf(stranger.profile.id),
+    restrict(stranger.profile.id, ALL_CHAT_PERMISSIONS),
+    statusOf(stranger.profile.id),
+  ];
+  promote(moderatorBot.profile.id, ['can_restrict_members', 'can_promote_members']);
+  const withPromotionRight = restrict(otherBot.profile.id, ALL_CHAT_PERMISSIONS);
+  // An administrator bot makes itself a plain member with every permission, as TDLib allows.
+  const selfDemotion = [
+    restrict(moderatorBot.profile.id, ALL_CHAT_PERMISSIONS),
+    statusOf(moderatorBot.profile.id),
+  ];
+  expectEqual(
+    [...withoutRights, ...withRights, withPromotionRight, ...selfDemotion],
+    [
+      'restricted',
+      'not_enough_rights',
+      'member_is_owner',
+      'cannot_restrict_self',
+      'member_is_administrator',
+      'not_enough_rights_to_promote',
+      'restricted',
+      'restricted non-member(can_send_messages)',
+      'restricted',
+      'left',
+      'member_is_administrator',
+      'restricted',
+      'member',
+    ],
+    'Expected restrictions in TDLib order',
+  );
+  expectEqual(
+    publishedEvents.map((event) =>
+      event.type === 'chat_member_status_changed'
+        ? `${event.memberId}: ${describeStatus(event.oldStatus)} -> ${
+          describeStatus(event.newStatus)
+        }`
+        : event.type
+    ),
+    [
+      `${stranger.profile.id}: kicked -> restricted non-member(can_send_messages)`,
+      `${stranger.profile.id}: restricted non-member(can_send_messages) -> left`,
+      `${moderatorBot.profile.id}: administrator(can_manage_chat,can_restrict_members) -> ` +
+      'administrator(can_manage_chat,can_promote_members,can_restrict_members)',
+      `${moderatorBot.profile.id}: administrator(can_manage_chat,can_promote_members,` +
+      `can_restrict_members) -> member`,
+    ],
+    'Expected each change, and only changes, to be published',
+  );
+});
+
 Deno.test('SharedChatAdministrationService lets members change information as permissions allow', () => {
   const { owner, member, moderatorBot, supergroup, sharedChats, sharedChatAdministration } =
     createModerationFixture();
@@ -1154,4 +1261,12 @@ function createBot(virtualUsers: VirtualUserService, firstName: string, username
     throw new Error(`Expected bot creation to succeed, received ${result.reason}`);
   }
   return result.bot;
+}
+
+function expectEqual(actual: unknown, expected: unknown, message: string): void {
+  if (JSON.stringify(actual) !== JSON.stringify(expected)) {
+    throw new Error(
+      `${message}: expected ${JSON.stringify(expected)}, received ${JSON.stringify(actual)}`,
+    );
+  }
 }

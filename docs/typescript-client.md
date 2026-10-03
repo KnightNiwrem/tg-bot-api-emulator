@@ -193,6 +193,20 @@ try {
   });
   await account.demoteChatMember({ chat: groupChat, userId: bot.id });
 
+  // Restrict the bot to text for an hour: its photos, polls and other content fail with Telegram's
+  // errors until the restriction ends, which the test makes arrive.
+  await account.restrictChatMember({
+    chat: groupChat,
+    userId: bot.id,
+    permissions: { can_send_messages: true },
+    untilDate: Math.floor(Date.now() / 1_000) + 3_600,
+  });
+  await session.expireChatMemberRestriction({ chatId: groupChat.chatId, userId: bot.id });
+
+  // A restriction without an end lasts until the owner lifts it.
+  await account.restrictChatMember({ chat: groupChat, userId: bot.id, permissions: {} });
+  await account.liftChatMemberRestriction({ chat: groupChat, userId: bot.id });
+
   // Remove the bot, which bans it: it receives a my_chat_member update showing it as kicked, and
   // its requests to the supergroup fail with 403 until the owner adds it again.
   await account.removeChatMember({ chat: groupChat, userId: bot.id });

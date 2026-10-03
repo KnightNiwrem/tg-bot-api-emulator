@@ -350,6 +350,58 @@ export interface DemoteChatMemberInput {
   readonly userId: number;
 }
 
+/**
+ * A permission a supergroup grants its members, by the Bot API's `ChatPermissions` name.
+ * `can_send_media_messages`, which the Bot API derives from the media permissions, is none.
+ */
+export type ChatPermission =
+  | 'can_send_messages'
+  | 'can_send_audios'
+  | 'can_send_documents'
+  | 'can_send_photos'
+  | 'can_send_videos'
+  | 'can_send_video_notes'
+  | 'can_send_voice_notes'
+  | 'can_send_polls'
+  | 'can_send_other_messages'
+  | 'can_add_web_page_previews'
+  | 'can_react_to_messages'
+  | 'can_edit_tag'
+  | 'can_change_info'
+  | 'can_invite_users'
+  | 'can_pin_messages'
+  | 'can_manage_topics';
+
+export interface RestrictChatMemberInput {
+  readonly chat: SupergroupMessageTarget;
+  /** The account or bot to restrict, whether it is a member or not. */
+  readonly userId: number;
+  /**
+   * The permissions the user keeps; a permission set to `true` is kept, and, unlike in the Bot
+   * API, none implies another. Keeping every permission lifts the restriction.
+   */
+  readonly permissions: Readonly<Partial<Record<ChatPermission, boolean>>>;
+  /**
+   * When the restriction ends, as a Unix time in seconds; omitted, or less than 30 seconds or more
+   * than 366 days away, for one that lasts until it is lifted. The emulator never lifts it as time
+   * passes: `session.expireChatMemberRestriction` makes its end arrive.
+   */
+  readonly untilDate?: number;
+}
+
+export interface LiftChatMemberRestrictionInput {
+  readonly chat: SupergroupMessageTarget;
+  /** The restricted account or bot. */
+  readonly userId: number;
+}
+
+export interface ExpireChatMemberRestrictionInput {
+  /** The supergroup's chat ID. */
+  readonly chatId: number;
+  /** The account or bot whose temporary restriction ends. */
+  readonly userId: number;
+}
+
 export interface SetContentProtectionInput {
   readonly chat: SupergroupMessageTarget;
   readonly hasProtectedContent: boolean;
@@ -1562,7 +1614,7 @@ export interface VirtualAccountClient extends VirtualAccountProfile {
    * which must include at least one, or replaces an administrator's rights. A promoted bot
    * receives a `my_chat_member` update showing it as `administrator`, receives every message of
    * the supergroup, and uses its rights: `can_delete_messages` lets it delete any message there,
-   * and `can_restrict_members` lets it ban and unban members.
+   * and `can_restrict_members` lets it ban, unban, and restrict members.
    */
   promoteChatMember(input: PromoteChatMemberInput): Promise<void>;
   /**
@@ -1571,6 +1623,21 @@ export interface VirtualAccountClient extends VirtualAccountProfile {
    * administrator has no effect.
    */
   demoteChatMember(input: DemoteChatMemberInput): Promise<void>;
+  /**
+   * Restricts what an account or a bot may do in a supergroup this account owns, member or not,
+   * as `restrictChatMember` does for an administrator bot. A restricted member that leaves stays
+   * restricted, and joins again with its restriction; a restricted administrator loses its rights.
+   * Administrator bots receive the change as a `chat_member` update, and a restricted bot as
+   * `my_chat_member`. Its sends that its permissions, or the supergroup's default permissions,
+   * withhold fail with Telegram's errors, such as `Bad Request: not enough rights to send photos
+   * to the chat`.
+   */
+  restrictChatMember(input: RestrictChatMemberInput): Promise<void>;
+  /**
+   * Lifts the restriction of a user of a supergroup this account owns, which leaves a member a
+   * plain member. Lifting no restriction has no effect.
+   */
+  liftChatMemberRestriction(input: LiftChatMemberRestrictionInput): Promise<void>;
   /**
    * Sets this account's own custom title in a supergroup it owns, or an administrator's, which
    * bots see as `custom_title` in its chat member. An administrator keeps its title when its

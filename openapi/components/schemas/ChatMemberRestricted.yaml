@@ -1,0 +1,79 @@
+type: object
+additionalProperties: false
+description: >-
+  A restricted user, a member or not, with the permissions its restriction leaves it, in the
+  field order Telegram uses; the supergroup's default permissions limit them further, and
+  `can_send_media_messages` is granted when any media permission is. A restricted member that
+  leaves stays restricted, and joins again with its restriction.
+required:
+  - user
+  - status
+  - until_date
+  - can_send_messages
+  - can_send_media_messages
+  - can_send_audios
+  - can_send_documents
+  - can_send_photos
+  - can_send_videos
+  - can_send_video_notes
+  - can_send_voice_notes
+  - can_send_polls
+  - can_send_other_messages
+  - can_add_web_page_previews
+  - can_react_to_messages
+  - can_edit_tag
+  - can_change_info
+  - can_invite_users
+  - can_pin_messages
+  - can_manage_topics
+  - is_member
+properties:
+  user:
+    $ref: ./MessageUser.yaml
+  status:
+    type: string
+    const: restricted
+  until_date:
+    type: integer
+    minimum: 0
+    description: >-
+      Unix timestamp when the restriction ends, or 0 for one that lasts until it is lifted. The
+      emulator never lifts a restriction when this time passes; a test ends it with
+      `POST /sessions/{sessionId}/supergroups/{chatId}/restrictions/{userId}/expiry`.
+  can_send_messages:
+    type: boolean
+  can_send_media_messages:
+    type: boolean
+  can_send_audios:
+    type: boolean
+  can_send_documents:
+    type: boolean
+  can_send_photos:
+    type: boolean
+  can_send_videos:
+    type: boolean
+  can_send_video_notes:
+    type: boolean
+  can_send_voice_notes:
+    type: boolean
+  can_send_polls:
+    type: boolean
+  can_send_other_messages:
+    type: boolean
+  can_add_web_page_previews:
+    type: boolean
+  can_react_to_messages:
+    type: boolean
+  can_edit_tag:
+    type: boolean
+  can_change_info:
+    type: boolean
+  can_invite_users:
+    type: boolean
+  can_pin_messages:
+    type: boolean
+  can_manage_topics:
+    type: boolean
+  is_member:
+    type: boolean
+    description: Whether the user is a member of the supergroup.

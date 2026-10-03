@@ -21,21 +21,21 @@ thresholds, which tests replace with
 
 ## Feature guide
 
-| Feature                                               | Coverage                                                                   |
-| ----------------------------------------------------- | -------------------------------------------------------------------------- |
-| [Sessions and requests](sessions-and-requests.md)     | Test isolation, virtual identities, request formats, validation and errors |
-| [Bot activity](bot-activity.md)                       | Recorded calls and updates, waiting for them and asserting their order     |
-| [Updates and polling](updates.md)                     | Generated update types, subscriptions, offsets, long polling and retention |
-| [Webhooks](webhooks.md)                               | Delivery, replies, retry behavior and connection limitations               |
-| [Messages](messages.md)                               | Sending, replies, edits, deletion, blocking, forwarding and copying        |
-| [Text formatting](text-formatting.md)                 | Parse modes, entities, normalization and limits                            |
-| [Rich messages](rich-messages.md)                     | Blocks, rich text, buttons, media and edits of rich messages               |
-| [Polls](polls.md)                                     | Polls, quizzes, votes, stopping, closing times, updates, forwards, copies  |
-| [Keyboards and callbacks](keyboards-and-callbacks.md) | Inline buttons, reply interfaces and callback answers                      |
-| [Media and files](media-and-files.md)                 | Photos, documents, videos, voice notes, albums, file IDs and downloads     |
-| [Inline mode](inline-mode.md)                         | Queries, results, feedback and inline message editing                      |
-| [Supergroups](supergroups.md)                         | Privacy mode, membership, service messages and administration              |
-| [Command menus](command-menus.md)                     | Commands, menu buttons, descriptions and default administrator rights      |
+| Feature                                               | Coverage                                                                    |
+| ----------------------------------------------------- | --------------------------------------------------------------------------- |
+| [Sessions and requests](sessions-and-requests.md)     | Test isolation, virtual identities, request formats, validation and errors  |
+| [Bot activity](bot-activity.md)                       | Recorded calls and updates, waiting for them and asserting their order      |
+| [Updates and polling](updates.md)                     | Generated update types, subscriptions, offsets, long polling and retention  |
+| [Webhooks](webhooks.md)                               | Delivery, replies, retry behavior and connection limitations                |
+| [Messages](messages.md)                               | Sending, replies, edits, deletion, blocking, forwarding and copying         |
+| [Text formatting](text-formatting.md)                 | Parse modes, entities, normalization and limits                             |
+| [Rich messages](rich-messages.md)                     | Blocks, rich text, buttons, media and edits of rich messages                |
+| [Polls](polls.md)                                     | Polls, quizzes, votes, stopping, closing times, updates, forwards, copies   |
+| [Keyboards and callbacks](keyboards-and-callbacks.md) | Inline buttons, reply interfaces and callback answers                       |
+| [Media and files](media-and-files.md)                 | Photos, documents, videos, voice notes, albums, file IDs and downloads      |
+| [Inline mode](inline-mode.md)                         | Queries, results, feedback and inline message editing                       |
+| [Supergroups](supergroups.md)                         | Privacy mode, membership, restrictions, service messages and administration |
+| [Command menus](command-menus.md)                     | Commands, menu buttons, descriptions and default administrator rights       |
 
 ## Implemented Bot API methods
 
@@ -43,24 +43,24 @@ This is the complete inventory from the
 [HTTP method registry](../../src/api/sessions/bot_api/mod.ts). Method names are case-insensitive.
 The two legacy aliases below are also accepted.
 
-| Area             | Methods                                                                                                                                            |
-| ---------------- | -------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Identity         | `getMe`                                                                                                                                            |
-| Updates          | `getUpdates`, `setWebhook`, `deleteWebhook`, `getWebhookInfo`                                                                                      |
-| Sending          | `sendMessage`, `sendRichMessage`, `sendPhoto`, `sendDocument`, `sendVideo`, `sendVoice`, `sendMediaGroup`, `sendChatAction`                        |
-| Reusing messages | `forwardMessage`, `forwardMessages`, `copyMessage`, `copyMessages`                                                                                 |
-| Editing          | `editMessageText`, `editMessageCaption`, `editMessageMedia`, `editMessageReplyMarkup`                                                              |
-| Deletion         | `deleteMessage`, `deleteMessages`                                                                                                                  |
-| Files            | `getFile`, plus HTTP file downloads                                                                                                                |
-| Interaction      | `answerCallbackQuery`, `answerInlineQuery`                                                                                                         |
-| Polls            | `sendPoll`, `stopPoll`                                                                                                                             |
-| Commands         | `setMyCommands`, `getMyCommands`, `deleteMyCommands`                                                                                               |
-| Bot profile      | `setMyDescription`, `getMyDescription`, `setMyShortDescription`, `getMyShortDescription`                                                           |
-| Bot settings     | `setChatMenuButton`, `getChatMenuButton`, `setMyDefaultAdministratorRights`, `getMyDefaultAdministratorRights`                                     |
-| Chat information | `getChat`                                                                                                                                          |
-| Chat settings    | `setChatTitle`, `setChatDescription`                                                                                                               |
-| Membership       | `leaveChat`, `getChatMember`, `getChatAdministrators`, `getChatMemberCount`, `banChatMember`, `unbanChatMember`, `setChatAdministratorCustomTitle` |
-| Legacy aliases   | `getChatMembersCount` → `getChatMemberCount`, `kickChatMember` → `banChatMember`                                                                   |
+| Area             | Methods                                                                                                                                                                  |
+| ---------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| Identity         | `getMe`                                                                                                                                                                  |
+| Updates          | `getUpdates`, `setWebhook`, `deleteWebhook`, `getWebhookInfo`                                                                                                            |
+| Sending          | `sendMessage`, `sendRichMessage`, `sendPhoto`, `sendDocument`, `sendVideo`, `sendVoice`, `sendMediaGroup`, `sendChatAction`                                              |
+| Reusing messages | `forwardMessage`, `forwardMessages`, `copyMessage`, `copyMessages`                                                                                                       |
+| Editing          | `editMessageText`, `editMessageCaption`, `editMessageMedia`, `editMessageReplyMarkup`                                                                                    |
+| Deletion         | `deleteMessage`, `deleteMessages`                                                                                                                                        |
+| Files            | `getFile`, plus HTTP file downloads                                                                                                                                      |
+| Interaction      | `answerCallbackQuery`, `answerInlineQuery`                                                                                                                               |
+| Polls            | `sendPoll`, `stopPoll`                                                                                                                                                   |
+| Commands         | `setMyCommands`, `getMyCommands`, `deleteMyCommands`                                                                                                                     |
+| Bot profile      | `setMyDescription`, `getMyDescription`, `setMyShortDescription`, `getMyShortDescription`                                                                                 |
+| Bot settings     | `setChatMenuButton`, `getChatMenuButton`, `setMyDefaultAdministratorRights`, `getMyDefaultAdministratorRights`                                                           |
+| Chat information | `getChat`                                                                                                                                                                |
+| Chat settings    | `setChatTitle`, `setChatDescription`                                                                                                                                     |
+| Membership       | `leaveChat`, `getChatMember`, `getChatAdministrators`, `getChatMemberCount`, `banChatMember`, `unbanChatMember`, `restrictChatMember`, `setChatAdministratorCustomTitle` |
+| Legacy aliases   | `getChatMembersCount` → `getChatMemberCount`, `kickChatMember` → `banChatMember`                                                                                         |
 
 Methods outside this inventory return `404` with a Bot API error body. For supported methods,
 unknown parameters usually produce `400`, including parameters that the official method supports but
@@ -80,8 +80,8 @@ above determines whether an individual method is available.
   locations, venues, contacts, games, checklists, ephemeral messages, drafts and stories. Rich
   messages lack [drafts and some blocks](rich-messages.md#real-gaps), and polls lack
   [Telegram's newest poll options](polls.md#real-gaps).
-- Reactions, pins, chat photos and other chat settings, invite links, join requests, member
-  restrictions, and promotion through the Bot API. Tests can promote supergroup members through the
+- Reactions, pins, chat photos and other chat settings, invite links, join requests, default chat
+  permissions, and promotion through the Bot API. Tests can promote supergroup members through the
   emulation API.
 - Payments, invoices, shipping, Telegram Stars, gifts, paid broadcasts and paid media.
 - Business connections, managed bots, Mini Apps, login authorization, Passport and boosts.

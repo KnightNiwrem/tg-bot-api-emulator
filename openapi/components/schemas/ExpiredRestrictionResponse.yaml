@@ -1,0 +1,7 @@
+type: object
+additionalProperties: false
+required:
+  - chat_member
+properties:
+  chat_member:
+    $ref: ./ChatMember.yaml
