@@ -116,7 +116,10 @@ async function createReconciliationFixture() {
     (await requestJson<{ messages: ShownMessage[] }>(api, 'GET', `${chatPath}/pinned-messages`))
       .body.messages.map(({ message_id }) => message_id);
   const getChatPinnedMessage = async (bot: CreatedBot, chatId: number) => {
-    const [, chat] = await callBot(bot, 'getChat', { chat_id: chatId });
+    const [status, chat] = await callBot(bot, 'getChat', { chat_id: chatId });
+    if (status !== 200) {
+      throw new Error(`getChat for ${chatId} failed with ${status}: ${chat}`);
+    }
     return (chat as { pinned_message?: ShownMessage }).pinned_message;
   };
 

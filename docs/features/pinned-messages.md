@@ -102,11 +102,12 @@ TDLib's [`pinChatMessage`][td-pin-chat-message] documents notifications to be al
 A pin follows its message, wherever the chat shows it:
 
 - **Edits.** An edited message stays pinned. Its pin's service messages and `getChat` show it as it
-  is now, with its `edit_date`; the edit reaches bots as an `edited_message`, and the pin as nothing
-  further.
+  is now, with its `edit_date`. The bots that receive edits of the message receive this one as an
+  `edited_message`, as [for any edit](messages.md#editing-and-deleting); the pin adds no update.
 - **Deleting the pinned message.** The message leaves the pinned messages, so `getChat` shows the
   next newest pin, and pinning or unpinning it fails as for a message that was never there. Its
-  pin's service messages then show it as an `InaccessibleMessage`.
+  pin's service messages then show it as an `InaccessibleMessage`, except where a service message is
+  itself shown as a replied message, which then shows no `pinned_message`.
 - **Deleting a pin's service message.** The message stays pinned. Who may delete the service message
   is decided as for any message: either participant of a private chat, the bot that pinned in a
   supergroup, and accounts and bots with `can_delete_messages`.
