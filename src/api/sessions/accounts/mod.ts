@@ -810,17 +810,7 @@ export function createAccountRoutes(): Hono<SessionRouteContextTypes> {
     if (result.found) {
       return context.json({ invite_links: result.links.map(presentChatInviteLinkUsage) });
     }
-    switch (result.reason) {
-      case 'account_not_found':
-      case 'chat_not_found':
-        return context.body(null, 404);
-      case 'not_the_owner':
-        return context.body(null, 403);
-      default: {
-        const unhandledReason: never = result.reason;
-        throw new Error(`Unhandled invite link inspection failure: ${unhandledReason}`);
-      }
-    }
+    return context.body(null, ownerInspectionFailureStatus(result.reason));
   });
 
   // The owner inspects the pending requests to join the supergroup.
@@ -838,17 +828,7 @@ export function createAccountRoutes(): Hono<SessionRouteContextTypes> {
     if (result.found) {
       return context.json({ join_requests: result.requests.map(presentChatJoinRequest) });
     }
-    switch (result.reason) {
-      case 'account_not_found':
-      case 'chat_not_found':
-        return context.body(null, 404);
-      case 'not_the_owner':
-        return context.body(null, 403);
-      default: {
-        const unhandledReason: never = result.reason;
-        throw new Error(`Unhandled join request inspection failure: ${unhandledReason}`);
-      }
-    }
+    return context.body(null, ownerInspectionFailureStatus(result.reason));
   });
 
   // A member inspects the owner and administrators, who promoted each, and whom it may edit.
@@ -2094,6 +2074,29 @@ function memberRoleChangeFailureStatus(
     default: {
       const unhandledReason: never = reason;
       throw new Error(`Unhandled member role change failure: ${unhandledReason}`);
+    }
+  }
+}
+
+/**
+ * Only the owner inspects a supergroup's invite links and join requests, which chat admission
+ * refuses for the same reasons; a missing account or supergroup is not found.
+ */
+function ownerInspectionFailureStatus(
+  reason: Extract<
+    ReturnType<EmulationSession['chatAdmission']['getInviteLinksForAccount']>,
+    { readonly found: false }
+  >['reason'],
+): 403 | 404 {
+  switch (reason) {
+    case 'account_not_found':
+    case 'chat_not_found':
+      return 404;
+    case 'not_the_owner':
+      return 403;
+    default: {
+      const unhandledReason: never = reason;
+      throw new Error(`Unhandled owner inspection failure: ${unhandledReason}`);
     }
   }
 }

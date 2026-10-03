@@ -101,6 +101,15 @@ export type JoinPublicSupergroupResult =
       | 'chat_not_public';
   };
 
+/**
+ * Why an account cannot inspect a supergroup's invite links or join requests, which only its owner
+ * inspects among accounts.
+ */
+export type OwnerInspectionFailureReason =
+  | 'account_not_found'
+  | 'chat_not_found'
+  | 'not_the_owner';
+
 export interface GetInviteLinksForAccountInput {
   /** The account that inspects the links, which must own the supergroup. */
   readonly accountId: number;
@@ -124,7 +133,7 @@ export type GetInviteLinksForAccountResult =
   }
   | {
     readonly found: false;
-    readonly reason: 'account_not_found' | 'chat_not_found' | 'not_the_owner';
+    readonly reason: OwnerInspectionFailureReason;
   };
 
 export interface DecideJoinRequestAsBotInput {
@@ -166,7 +175,7 @@ export type GetJoinRequestsForAccountResult =
   }
   | {
     readonly found: false;
-    readonly reason: 'account_not_found' | 'chat_not_found' | 'not_the_owner';
+    readonly reason: OwnerInspectionFailureReason;
   };
 
 export interface ExpireInviteLinkInput {
@@ -402,14 +411,9 @@ export class ChatAdmissionService {
   getInviteLinksForAccount(
     { accountId, chatId }: GetInviteLinksForAccountInput,
   ): GetInviteLinksForAccountResult {
-    if (this.#accounts.getById(accountId) === undefined) {
-      return { found: false, reason: 'account_not_found' };
-    }
-    if (this.#sharedChats.getSharedChat(chatId)?.kind !== 'supergroup') {
-      return { found: false, reason: 'chat_not_found' };
-    }
-    if (this.#sharedChats.getChatMembership(chatId, accountId)?.status !== 'owner') {
-      return { found: false, reason: 'not_the_owner' };
+    const inspectionFailure = this.#authorizeOwnerInspection(accountId, chatId);
+    if (inspectionFailure !== undefined) {
+      return { found: false, reason: inspectionFailure };
     }
     return {
       found: true,
@@ -468,14 +472,9 @@ export class ChatAdmissionService {
   getJoinRequestsForAccount(
     { accountId, chatId }: GetJoinRequestsForAccountInput,
   ): GetJoinRequestsForAccountResult {
-    if (this.#accounts.getById(accountId) === undefined) {
-      return { found: false, reason: 'account_not_found' };
-    }
-    if (this.#sharedChats.getSharedChat(chatId)?.kind !== 'supergroup') {
-      return { found: false, reason: 'chat_not_found' };
-    }
-    if (this.#sharedChats.getChatMembership(chatId, accountId)?.status !== 'owner') {
-      return { found: false, reason: 'not_the_owner' };
+    const inspectionFailure = this.#authorizeOwnerInspection(accountId, chatId);
+    if (inspectionFailure !== undefined) {
+      return { found: false, reason: inspectionFailure };
     }
     return { found: true, requests: this.#sharedChats.listJoinRequests(chatId) };
   }
@@ -499,6 +498,26 @@ export class ChatAdmissionService {
       expired: true,
       link: this.#describeUsage(this.#inviteLinks.markInviteLinkExpired(link.url)),
     };
+  }
+
+  /**
+   * Returns why an account may not inspect a supergroup's invite links and join requests, or
+   * `undefined` when it owns the supergroup and may.
+   */
+  #authorizeOwnerInspection(
+    accountId: number,
+    chatId: number,
+  ): OwnerInspectionFailureReason | undefined {
+    if (this.#accounts.getById(accountId) === undefined) {
+      return 'account_not_found';
+    }
+    if (this.#sharedChats.getSharedChat(chatId)?.kind !== 'supergroup') {
+      return 'chat_not_found';
+    }
+    if (this.#sharedChats.getChatMembership(chatId, accountId)?.status !== 'owner') {
+      return 'not_the_owner';
+    }
+    return undefined;
   }
 
   /**

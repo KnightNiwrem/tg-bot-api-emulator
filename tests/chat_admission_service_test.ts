@@ -78,6 +78,7 @@ function createAdmissionFixture() {
     publishedEvents,
     chatId,
     botId,
+    adaId: ada.account.profile.id,
     graceId: grace.account.profile.id,
   };
 }
@@ -149,5 +150,40 @@ Deno.test('ChatAdmissionService keeps a link usable after its expiry date passes
       [[graceId, CREATION_TIME_UNIX_SECONDS + 3_600, creation.link.url]],
     ],
     'Expected only a test to make the expiry date arrive, as time does not pass by itself',
+  );
+});
+
+Deno.test('ChatAdmissionService lets only the owner inspect invite links and join requests', () => {
+  const { chatAdmission, chatId, botId, adaId, graceId } = createAdmissionFixture();
+  const unknownChatId = -1_009_999_999_999;
+  const inspect = (accountId: number, inspectedChatId: number) => {
+    const inviteLinks = chatAdmission.getInviteLinksForAccount({
+      accountId,
+      chatId: inspectedChatId,
+    });
+    const joinRequests = chatAdmission.getJoinRequestsForAccount({
+      accountId,
+      chatId: inspectedChatId,
+    });
+    return [
+      inviteLinks.found ? 'found' : inviteLinks.reason,
+      joinRequests.found ? 'found' : joinRequests.reason,
+    ];
+  };
+
+  expectEqual(
+    [
+      inspect(adaId, chatId),
+      inspect(graceId, chatId),
+      inspect(botId, chatId),
+      inspect(adaId, unknownChatId),
+    ],
+    [
+      ['found', 'found'],
+      ['not_the_owner', 'not_the_owner'],
+      ['account_not_found', 'account_not_found'],
+      ['chat_not_found', 'chat_not_found'],
+    ],
+    'Expected both inspections to refuse an outsider, a bot and an unknown chat alike',
   );
 });
