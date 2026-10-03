@@ -14,7 +14,6 @@ import {
 import { CHAT_PERMISSIONS } from '../../../types/chat_permissions.ts';
 import { isContactVcardWithinLimit, MAX_CONTACT_NAME_LENGTH } from '../../../types/contact.ts';
 import type { EmulationSession } from '../../../types/emulation_session.ts';
-import { createGeoLocation, MAX_HORIZONTAL_ACCURACY_METERS } from '../../../types/geo_location.ts';
 import {
   type InlineQuery,
   type InlineQueryResult,
@@ -27,12 +26,6 @@ import type {
   ReplyKeyboardButtonRequest,
 } from '../../../types/reply_interface.ts';
 import { MAX_MEDIA_DURATION_SECONDS, MAX_VIDEO_SIDE_LENGTH } from '../../../types/stored_file.ts';
-import {
-  MAX_SUPERGROUP_OR_CHANNEL_ID,
-  MAX_TELEGRAM_USER_ID,
-  MIN_SUPERGROUP_OR_CHANNEL_ID,
-  MIN_TELEGRAM_USER_ID,
-} from '../../../types/telegram_identity.ts';
 import { MAX_ACCOUNT_NAME_LENGTH } from '../../../types/virtual_account.ts';
 import type { Supergroup, VisibleChatAction } from '../../../types/virtual_chat.ts';
 import {
@@ -46,16 +39,33 @@ import { readMessageEntitiesParameter } from '../bot_api/message_entities_parame
 import { presentChatInviteLinkUsage, presentChatJoinRequest } from '../invite_link_presentation.ts';
 import { readJsonRequestBody } from '../json_request_body.ts';
 import type { SessionRouteContextTypes } from '../session_route_context_types.ts';
+import {
+  ACCOUNT_ID_PARAMETER,
+  accountPathSchema,
+  BOT_ID_PARAMETER,
+  MESSAGE_ID_PARAMETER,
+  PRIVATE_CONVERSATION_PATH,
+  PRIVATE_MESSAGE_HISTORY_PATH,
+  PRIVATE_MESSAGE_PATH,
+  privateConversationPathSchema,
+  privateMessagePathSchema,
+  SUPERGROUP_CONVERSATION_PATH,
+  SUPERGROUP_MESSAGE_HISTORY_PATH,
+  SUPERGROUP_MESSAGE_PATH,
+  supergroupConversationPathSchema,
+  supergroupMemberPathSchema,
+  supergroupMessagePathSchema,
+  USER_ID_PARAMETER,
+} from './account_paths.ts';
+import { viewChatMessageForAccount } from './chat_message_view.ts';
+import {
+  accountMessageFailureStatus,
+  supergroupMemberFailureStatus,
+} from './messaging_failure_statuses.ts';
+import { accountLocationSchema, chatSchema, telegramUserIdSchema } from './request_fields.ts';
 
-const ACCOUNT_ID_PARAMETER = 'accountId';
-const BOT_ID_PARAMETER = 'botId';
 const ACCOUNT_MESSAGE_COLLECTION_PATH = `/:${ACCOUNT_ID_PARAMETER}/messages` as const;
 const ACCOUNT_MEDIA_GROUP_COLLECTION_PATH = `/:${ACCOUNT_ID_PARAMETER}/media-groups` as const;
-const PRIVATE_CONVERSATION_PATH =
-  `/:${ACCOUNT_ID_PARAMETER}/conversations/private/:${BOT_ID_PARAMETER}` as const;
-const PRIVATE_MESSAGE_HISTORY_PATH = `${PRIVATE_CONVERSATION_PATH}/messages` as const;
-const MESSAGE_ID_PARAMETER = 'messageId';
-const PRIVATE_MESSAGE_PATH = `${PRIVATE_MESSAGE_HISTORY_PATH}/:${MESSAGE_ID_PARAMETER}` as const;
 const PRIVATE_MESSAGE_POLL_ANSWER_PATH = `${PRIVATE_MESSAGE_PATH}/poll-answer` as const;
 const BLOCKED_BOT_PATH = `/:${ACCOUNT_ID_PARAMETER}/blocked-bots/:${BOT_ID_PARAMETER}` as const;
 const PRIVATE_CHAT_COMMANDS_PATH = `${PRIVATE_CONVERSATION_PATH}/commands` as const;
@@ -78,22 +88,15 @@ const INLINE_QUERY_COLLECTION_PATH = `/:${ACCOUNT_ID_PARAMETER}/inline-queries` 
 const INLINE_QUERY_PATH = `${INLINE_QUERY_COLLECTION_PATH}/:${INLINE_QUERY_ID_PARAMETER}` as const;
 const CHOSEN_INLINE_RESULT_COLLECTION_PATH = `${INLINE_QUERY_PATH}/chosen-results` as const;
 const SUPERGROUP_COLLECTION_PATH = `/:${ACCOUNT_ID_PARAMETER}/supergroups` as const;
-const CHAT_ID_PARAMETER = 'chatId';
-const SUPERGROUP_CONVERSATION_PATH =
-  `/:${ACCOUNT_ID_PARAMETER}/conversations/supergroup/:${CHAT_ID_PARAMETER}` as const;
-const SUPERGROUP_MESSAGE_HISTORY_PATH = `${SUPERGROUP_CONVERSATION_PATH}/messages` as const;
 const SUPERGROUP_COMMANDS_PATH = `${SUPERGROUP_CONVERSATION_PATH}/commands` as const;
 const SUPERGROUP_CHAT_ACTIONS_PATH = `${SUPERGROUP_CONVERSATION_PATH}/chat-actions` as const;
 const SUPERGROUP_NOTIFICATIONS_PATH = `${SUPERGROUP_CONVERSATION_PATH}/notifications` as const;
 const SUPERGROUP_REPLY_INTERFACE_PATH = `${SUPERGROUP_CONVERSATION_PATH}/reply-interface` as const;
-const SUPERGROUP_MESSAGE_PATH =
-  `${SUPERGROUP_MESSAGE_HISTORY_PATH}/:${MESSAGE_ID_PARAMETER}` as const;
 const SUPERGROUP_MESSAGE_POLL_ANSWER_PATH = `${SUPERGROUP_MESSAGE_PATH}/poll-answer` as const;
 const SUPERGROUP_PINNED_MESSAGE_COLLECTION_PATH =
   `${SUPERGROUP_CONVERSATION_PATH}/pinned-messages` as const;
 const SUPERGROUP_PINNED_MESSAGE_PATH =
   `${SUPERGROUP_PINNED_MESSAGE_COLLECTION_PATH}/:${MESSAGE_ID_PARAMETER}` as const;
-const USER_ID_PARAMETER = 'userId';
 const SUPERGROUP_MEMBER_PATH =
   `${SUPERGROUP_CONVERSATION_PATH}/members/:${USER_ID_PARAMETER}` as const;
 const SUPERGROUP_ADMINISTRATOR_COLLECTION_PATH =
@@ -116,51 +119,6 @@ const CHAT_JOIN_COLLECTION_PATH = `/:${ACCOUNT_ID_PARAMETER}/chat-joins` as cons
 
 /** An E.164 phone number's digits: a country code that never starts with 0, and at most 15 digits. */
 const ACCOUNT_PHONE_NUMBER_PATTERN = /^[1-9][0-9]{0,14}$/;
-
-const telegramUserIdSchema = z.number().int()
-  .min(MIN_TELEGRAM_USER_ID)
-  .max(MAX_TELEGRAM_USER_ID);
-const telegramUserIdPathParameterSchema = z.coerce.number().pipe(telegramUserIdSchema);
-const supergroupChatIdSchema = z.number().int()
-  .min(MIN_SUPERGROUP_OR_CHANNEL_ID)
-  .max(MAX_SUPERGROUP_OR_CHANNEL_ID);
-const supergroupChatIdPathParameterSchema = z.coerce.number().pipe(supergroupChatIdSchema);
-/** A message's ID as the chat's bots see it, which is how these routes show messages. */
-const messageIdPathParameterSchema = z.coerce.number().pipe(z.int().positive());
-
-/** The path parameters of the account a route acts as. */
-const accountPathSchema = z.object({
-  [ACCOUNT_ID_PARAMETER]: telegramUserIdPathParameterSchema,
-});
-/** The path parameters of an account's private chat with a bot. */
-const privateConversationPathSchema = accountPathSchema.extend({
-  [BOT_ID_PARAMETER]: telegramUserIdPathParameterSchema,
-});
-/** The path parameters of a message of an account's private chat with a bot. */
-const privateMessagePathSchema = privateConversationPathSchema.extend({
-  [MESSAGE_ID_PARAMETER]: messageIdPathParameterSchema,
-});
-/** The path parameters of a supergroup as an account addresses it. */
-const supergroupConversationPathSchema = accountPathSchema.extend({
-  [CHAT_ID_PARAMETER]: supergroupChatIdPathParameterSchema,
-});
-/** The path parameters of a supergroup message as an account addresses it. */
-const supergroupMessagePathSchema = supergroupConversationPathSchema.extend({
-  [MESSAGE_ID_PARAMETER]: messageIdPathParameterSchema,
-});
-/** The path parameters of a supergroup member as an account addresses it. */
-const supergroupMemberPathSchema = supergroupConversationPathSchema.extend({
-  [USER_ID_PARAMETER]: telegramUserIdPathParameterSchema,
-});
-
-/**
- * The chat a message goes to or a button is on: a private chat with a bot, or a supergroup the
- * account is a member of.
- */
-const chatSchema = z.discriminatedUnion('type', [
-  z.strictObject({ type: z.literal('private'), botId: telegramUserIdSchema }),
-  z.strictObject({ type: z.literal('supergroup'), chatId: supergroupChatIdSchema }),
-]);
 
 /** An account's first or last name, of at most as many characters as Telegram's servers allow. */
 const accountNameSchema = z.string().min(1).refine(
@@ -277,18 +235,6 @@ const accountContactShape = {
     vcard: z.string().refine(isContactVcardWithinLimit).default(''),
   }),
 };
-
-/**
- * A point on Earth the account shares, with the radius of uncertainty its client reports, which
- * becomes whole meters as `createGeoLocation` rounds it.
- */
-const accountLocationSchema = z.strictObject({
-  latitude: z.number().min(-90).max(90),
-  longitude: z.number().min(-180).max(180),
-  horizontal_accuracy: z.number().min(0).max(MAX_HORIZONTAL_ACCURACY_METERS).default(0),
-}).transform(({ latitude, longitude, horizontal_accuracy }) =>
-  createGeoLocation(latitude, longitude, horizontal_accuracy)
-);
 
 /**
  * A text message, a photo, a document, a video, or a voice note, each with an optional caption; a
@@ -1904,73 +1850,6 @@ function readAccountMessageEdit(
 }
 
 /**
- * Why an account's message, sent directly or by pressing a reply keyboard button, or its album
- * failed.
- */
-type AccountMessageFailureReason =
-  | Extract<
-    ReturnType<EmulationSession['privateMessaging']['pressReplyKeyboardButton']>,
-    { readonly sent: false }
-  >['reason']
-  | Extract<
-    ReturnType<EmulationSession['privateMessaging']['sendAccountAlbum']>,
-    { readonly sent: false }
-  >['reason'];
-
-/**
- * A missing participant is not found; a block conflicts with writing to the bot, and an account
- * without a phone number conflicts with sharing its own contact.
- */
-function accountMessageFailureStatus(reason: AccountMessageFailureReason): 400 | 404 | 409 {
-  switch (reason) {
-    case 'account_not_found':
-    case 'bot_not_found':
-      return 404;
-    case 'bot_blocked':
-    case 'account_phone_number_missing':
-      return 409;
-    default:
-      return 400;
-  }
-}
-
-type SupergroupMessaging = EmulationSession['supergroupMessaging'];
-
-/** Why an account's message, album, edit, or history request in a supergroup failed. */
-type SupergroupAccountFailureReason =
-  | Extract<ReturnType<SupergroupMessaging['sendAccountMessage']>, { sent: false }>['reason']
-  | Extract<ReturnType<SupergroupMessaging['sendAccountAlbum']>, { sent: false }>['reason']
-  | Extract<
-    ReturnType<SupergroupMessaging['pressReplyKeyboardButton']>,
-    { sent: false }
-  >['reason']
-  | Extract<ReturnType<SupergroupMessaging['editAccountMessage']>, { edited: false }>['reason']
-  | Extract<ReturnType<SupergroupMessaging['getMessageHistory']>, { found: false }>['reason'];
-
-/**
- * A missing account, supergroup, or message is not found, and an account that is not a member of
- * the supergroup, or may not send the content, is forbidden from it; an account without a phone
- * number conflicts with sharing its own contact; other failures reject the request.
- */
-function supergroupMemberFailureStatus(
-  reason: SupergroupAccountFailureReason,
-): 400 | 403 | 404 | 409 {
-  switch (reason) {
-    case 'account_not_found':
-    case 'chat_not_found':
-    case 'message_not_found':
-      return 404;
-    case 'not_a_member':
-    case 'send_permission_missing':
-      return 403;
-    case 'account_phone_number_missing':
-      return 409;
-    default:
-      return 400;
-  }
-}
-
-/**
  * A missing account, bot, supergroup, or message is not found, and an account that is not a member
  * of a supergroup, or may not send the message's content there, is forbidden from it. A message
  * that cannot be forwarded rejects the request, and a block conflicts with writing to the bot.
@@ -2560,20 +2439,6 @@ function chosenInlineResultFailureStatus(
       throw new Error(`Unhandled inline query result choice failure: ${unhandledReason}`);
     }
   }
-}
-
-/**
- * Shows a message as these routes show messages: a private message as the conversation's bot sees
- * it, and a supergroup message as the requesting account sees it.
- */
-function viewChatMessageForAccount(
-  botMessageViews: EmulationSession['botMessageViews'],
-  message: ChatMessage,
-  accountId: number,
-) {
-  return message.kind === 'private_message'
-    ? botMessageViews.viewPrivateMessageForBot(message)
-    : botMessageViews.viewSupergroupMessage(message, accountId);
 }
 
 /** Shows an inline query to the account that sent it, with the bot's answer once given. */
