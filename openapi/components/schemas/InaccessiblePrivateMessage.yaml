@@ -1,0 +1,8 @@
+description: >-
+  A deleted message of a private chat, as a pin's service message there shows its pinned
+  message once deleted.
+allOf:
+  - $ref: ./InaccessibleMessage.yaml
+  - properties:
+      chat:
+        $ref: ./PrivateChat.yaml

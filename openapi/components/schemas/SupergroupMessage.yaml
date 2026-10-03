@@ -172,8 +172,8 @@ properties:
       Where the service message is itself shown as `reply_to_message` and the pinned message
       was deleted, it is omitted, as `SupergroupPinOfDeletedMessage` shows.
     oneOf:
-      - $ref: ./SupergroupMessage.yaml
-      - $ref: ./InaccessibleMessage.yaml
+      - $ref: ./PinnedSupergroupMessage.yaml
+      - $ref: ./InaccessibleSupergroupMessage.yaml
   rich_message:
     $ref: ./RichMessage.yaml
     description: >-

@@ -1,0 +1,8 @@
+description: >-
+  A deleted message of a supergroup, as a pin's service message there shows its pinned message
+  once deleted.
+allOf:
+  - $ref: ./InaccessibleMessage.yaml
+  - properties:
+      chat:
+        $ref: ./SupergroupChat.yaml

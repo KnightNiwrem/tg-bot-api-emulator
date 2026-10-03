@@ -1,7 +1,9 @@
 description: >-
-  A pinned private message as `getChat` shows it: a private message without a
-  `reply_to_message` of its own, as the official server shows a replied message.
+  A pinned private message as `getChat` and a pin's service message show it: a private message
+  without a `reply_to_message` of its own, as the official server shows a replied message, and
+  never a service message.
 allOf:
   - $ref: ./PrivateMessage.yaml
   - properties:
       reply_to_message: false
+      pinned_message: false

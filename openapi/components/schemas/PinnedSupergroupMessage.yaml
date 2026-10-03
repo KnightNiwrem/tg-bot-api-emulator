@@ -1,6 +1,7 @@
 description: >-
-  A pinned supergroup message as `getChat` shows it: a supergroup message that a member wrote,
-  without a `reply_to_message` of its own, since service messages are never pinned.
+  A pinned supergroup message as `getChat` and a pin's service message show it: a supergroup
+  message that a member wrote, without a `reply_to_message` of its own, since service messages
+  are never pinned.
 allOf:
   - $ref: ./SupergroupMessage.yaml
   - properties:
@@ -11,3 +12,4 @@ allOf:
       left_chat_participant: false
       left_chat_member: false
       new_chat_title: false
+      pinned_message: false
