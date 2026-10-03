@@ -32,7 +32,7 @@ interface TestMessage {
     readonly sender_user?: { readonly id: number };
   };
   readonly external_reply?: {
-    readonly origin: { readonly type: string };
+    readonly origin: { readonly type: string; readonly sender_user?: { readonly id: number } };
     readonly contact?: TestContact;
     readonly location?: TestLocation;
   };
@@ -287,20 +287,29 @@ Deno.test('replies from another chat show the replied contact or location withou
     { body },
   ) => body.result as TestMessage);
   expectEqual(
+    [contactReplyMessage, locationReplyMessage].map(({ external_reply }) => [
+      external_reply?.origin.type,
+      external_reply?.origin.sender_user?.id,
+    ]),
+    [['user', ada.id], ['user', ada.id]],
+    'Expected each reply to show that Ada first sent the replied message',
+  );
+  expectEqual(
     [
-      contactReplyMessage.external_reply,
+      contactReplyMessage.external_reply?.contact,
+      contactReplyMessage.external_reply?.location,
       contactReplyMessage.quote,
       locationReplyMessage.external_reply?.location,
+      locationReplyMessage.external_reply?.contact,
       locationReplyMessage.location,
       locationReplyMessage.quote,
     ],
     [
-      {
-        origin: contactReplyMessage.external_reply?.origin,
-        contact: { ...OWN_CONTACT, user_id: ada.id },
-      },
+      { ...OWN_CONTACT, user_id: ada.id },
+      undefined,
       undefined,
       SHARED_LOCATION,
+      undefined,
       { latitude: 0, longitude: 0 },
       undefined,
     ],

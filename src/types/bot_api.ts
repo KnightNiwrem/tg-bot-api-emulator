@@ -351,7 +351,7 @@ export type BotApiMessageOrigin = BotApiMessageOriginUser | BotApiMessageOriginH
 
 /**
  * The media of a message of another chat that a message replies to, whose caption shows as the
- * reply's quote instead, or its poll: nothing for text.
+ * reply's quote instead, or its poll, contact, or location: nothing for text.
  */
 export type BotApiExternalReplyMedia =
   | Record<never, never>

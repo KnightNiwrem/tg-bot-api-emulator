@@ -31,7 +31,7 @@ thresholds, which tests replace with
 | [Text formatting](text-formatting.md)                 | Parse modes, entities, normalization and limits                             |
 | [Rich messages](rich-messages.md)                     | Blocks, rich text, buttons, media and edits of rich messages                |
 | [Polls](polls.md)                                     | Polls, quizzes, votes, stopping, closing times, updates, forwards, copies   |
-| [Contacts and locations](contacts-and-locations.md)   | Contacts, own contacts, static locations, requests, forwards and replies    |
+| [Contacts and locations](contacts-and-locations.md)   | Contacts, own contacts, locations, requests, forwards, copies, replies      |
 | [Keyboards and callbacks](keyboards-and-callbacks.md) | Inline buttons, reply interfaces and callback answers                       |
 | [Media and files](media-and-files.md)                 | Photos, documents, videos, voice notes, albums, file IDs and downloads      |
 | [Inline mode](inline-mode.md)                         | Queries, results, feedback and inline message editing                       |
