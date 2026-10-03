@@ -787,7 +787,12 @@ export const chatAdministratorsResponseSchema = z.strictObject({
       promoted_by_user_id: z.number().int().positive(),
       can_be_edited: z.boolean(),
     }),
-  ])).min(1),
+  ])).refine(
+    (administrators) =>
+      administrators[0]?.status === 'owner' &&
+      administrators.slice(1).every(({ status }) => status === 'administrator'),
+    'Expected the owner, then the administrators',
+  ),
 });
 
 export const chatActionsResponseSchema = z.strictObject({
