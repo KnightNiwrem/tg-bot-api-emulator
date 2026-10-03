@@ -1251,12 +1251,14 @@ interface ExternalReplyMediaFields {
     readonly has_media_spoiler?: true;
   };
   readonly voice: { readonly voice: Voice };
+  readonly contact: { readonly contact: Contact };
+  readonly location: { readonly location: Location };
 }
 
 /**
  * A message of another chat that a message replies to: who first wrote it and when, the
  * supergroup message it is, and its media, if any, whose caption the reply's quote shows instead,
- * or its poll as it is now.
+ * its poll as it is now, or its contact or location.
  */
 export type ExternalReplyInfo =
   & {

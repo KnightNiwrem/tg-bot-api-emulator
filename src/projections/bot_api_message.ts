@@ -117,7 +117,10 @@ export interface ExternalReplyProjectionContext {
   readonly originSender?: BotApiUser;
   /** The replied message's supergroup; omitted for a message of a private chat. */
   readonly supergroup?: Supergroup;
-  /** The file of the replied media; omitted for a replied text, rich message, or poll. */
+  /**
+   * The file of the replied media; omitted for a replied text, rich message, poll, contact, or
+   * location.
+   */
   readonly mediaFile?: ObservedFile;
   /** The replied poll, as it is now; omitted for other replied messages. */
   readonly poll?: ObservedPoll;
@@ -331,6 +334,10 @@ function projectExternalReplyMedia(
       };
     case 'voice':
       return { voice: projectVoice(mediaFile) };
+    case 'contact':
+      return { contact: toBotApiContact(media.contact) };
+    case 'location':
+      return { location: toBotApiLocation(media.location) };
     default: {
       const unhandledMedia: never = media;
       throw new Error(`Unhandled external reply media: ${JSON.stringify(unhandledMedia)}`);

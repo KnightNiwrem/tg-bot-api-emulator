@@ -1472,6 +1472,34 @@ Deno.test('TypeScript client shares contacts and locations and answers their req
     );
   }
 
+  const supergroup = await account.createSupergroup({ title: 'Team' });
+  const groupChat = { type: 'supergroup', chatId: supergroup.id } as const;
+  await account.addChatMember({ chat: groupChat, userId: bot.id });
+  for (const repliedMessageId of [own.message_id, location.message_id]) {
+    await api.request(`/sessions/${session.id}/bot-api/bot${token}/sendMessage`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        chat_id: supergroup.id,
+        text: 'Shared with me',
+        reply_parameters: { chat_id: account.id, message_id: repliedMessageId },
+      }),
+    });
+  }
+  const externalReplies = (await account.getMessages({ chat: groupChat }))
+    .slice(-2)
+    .map(({ external_reply }) => [external_reply?.contact?.user_id, external_reply?.location]);
+  if (
+    JSON.stringify(externalReplies) !==
+      JSON.stringify([[account.id, undefined], [undefined, location.location]])
+  ) {
+    throw new Error(
+      `Expected replies to show the contact and location, received ${
+        JSON.stringify(externalReplies)
+      }`,
+    );
+  }
+
   try {
     await stranger.shareOwnContact({ to });
   } catch (error) {

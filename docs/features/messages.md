@@ -38,8 +38,9 @@ must be able to read that chat, and a missing message fails the send unless
 `allow_sending_without_reply` is set. The reply shows the message in `external_reply` as TDLib's
 [`RepliedMessageInfo`][replied-message-info] keeps it. It includes the original sender and date, and
 the chat and message ID when the message is in a supergroup. It also carries a photo, document,
-video or voice note without its caption. The text or caption becomes an automatic `quote` of up to
-1,024 characters. That quote keeps only the entity types TDLib's
+video or voice note without its caption, a poll, a contact, or a location, which TDLib's
+[`is_supported_reply_message_content`][reply-content] lists. The text or caption becomes an
+automatic `quote` of up to 1,024 characters. That quote keeps only the entity types TDLib's
 [`is_allowed_quote_entity_type`][quote-entities] allows. As TDLib's
 [`create_message_input_reply_to`][external-reply-input] does, the emulator sends a reply to
 protected content or a service message of another chat without a reply. The emulator resolves the
@@ -169,8 +170,10 @@ request's reply and markup. A supplied caption, including an empty one, replaces
 photo, document, video or voice note; without one the original caption is kept. Forwards and copies
 of a rich message disable its [buttons](rich-messages.md#sending-and-editing) that would not work
 away from the original. A forward of a poll shows the same poll, while a copy shows a
-[new poll without votes](polls.md#forwards-copies-and-replies). `show_caption_above_media` applies
-to a copied photo or video when a replacement caption is supplied. As the official server's
+[new poll without votes](polls.md#forwards-copies-and-replies). Forwards and copies of a
+[contact or location](contacts-and-locations.md#forwards-copies-and-replies) repeat it unchanged,
+the user of an account's own contact included. `show_caption_above_media` applies to a copied photo
+or video when a replacement caption is supplied. As the official server's
 [`process_forward_message_query`][forward-video-start] and `process_copy_message_query` read it, a
 `video_start_timestamp` gives a forwarded or copied video the second from which it plays, a negative
 one its beginning, as TDLib's [`set_message_content_video_start_timestamp`][video-start-replacement]
@@ -262,6 +265,7 @@ Other origins are users. Channel and chat origins are [real gaps](#real-gaps).
 [external-reply-input]: https://github.com/tdlib/td/blob/bc9c263e2bfee06aaab41e82db51a103376030bc/td/telegram/MessagesManager.cpp#L21264-L21291
 [quote-entities]: https://github.com/tdlib/td/blob/bc9c263e2bfee06aaab41e82db51a103376030bc/td/telegram/MessageEntity.cpp#L4840-L4853
 [replied-message-info]: https://github.com/tdlib/td/blob/bc9c263e2bfee06aaab41e82db51a103376030bc/td/telegram/RepliedMessageInfo.cpp#L142-L200
+[reply-content]: https://github.com/tdlib/td/blob/bc9c263e2bfee06aaab41e82db51a103376030bc/td/telegram/MessageContentType.cpp#L848-L884
 [reply-parameters]: https://github.com/tdlib/telegram-bot-api/blob/e3e9dd8e5b3d7ab8537cd5a10dc31d5ffa8f82d1/telegram-bot-api/Client.cpp#L10130-L10180
 [input-media]: https://github.com/tdlib/telegram-bot-api/blob/e3e9dd8e5b3d7ab8537cd5a10dc31d5ffa8f82d1/telegram-bot-api/Client.cpp#L12794-L12883
 [edit-media]: https://github.com/tdlib/td/blob/bc9c263e2bfee06aaab41e82db51a103376030bc/td/telegram/MessagesManager.cpp#L23720-L23763
