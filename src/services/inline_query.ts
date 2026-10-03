@@ -610,88 +610,77 @@ export class InlineQueryService {
     | { readonly prepared: true; readonly content: InlineResultSendingContent }
     | { readonly prepared: false; readonly reason: InlineResultWebMediaFailureReason }
   > {
+    if (!isInlineResultWebMedia(content)) {
+      return { prepared: true, content: { kind: 'existing', content } };
+    }
+    const download = await this.#downloadWebMedia(
+      content.url,
+      WEB_MEDIA_FILE_KINDS[content.kind],
+      signal,
+    );
+    if (!download.downloaded) {
+      return { prepared: false, reason: download.reason };
+    }
+    const sendingContent = this.#toWebMediaSendingContent(content, download.webFile);
+    return sendingContent === undefined
+      ? { prepared: false, reason: 'web_media_invalid' }
+      : { prepared: true, content: sendingContent };
+  }
+
+  /**
+   * Prepares downloaded media as the result's kind of media, with the caption and presentation the
+   * answer holds; returns `undefined` for a file that is not media of that kind.
+   */
+  #toWebMediaSendingContent(
+    content: InlineResultWebMedia,
+    webFile: WebFile,
+  ): InlineResultSendingContent | undefined {
+    const { caption } = content;
     switch (content.kind) {
       case 'web_photo': {
-        const download = await this.#downloadWebMedia(content.url, 'photo', signal);
-        if (!download.downloaded) {
-          return { prepared: false, reason: download.reason };
-        }
-        const preparation = this.#webMediaFiles.prepareInlineResultWebPhotoUpload(download.webFile);
+        const preparation = this.#webMediaFiles.prepareInlineResultWebPhotoUpload(webFile);
         return preparation.prepared
           ? {
-            prepared: true,
-            content: {
-              kind: 'photo',
-              photo: { kind: 'upload', upload: preparation.upload },
-              caption: content.caption,
-              hasSpoiler: false,
-              showsCaptionAboveMedia: content.showsCaptionAboveMedia,
-            },
+            kind: 'photo',
+            photo: { kind: 'upload', upload: preparation.upload },
+            caption,
+            hasSpoiler: false,
+            showsCaptionAboveMedia: content.showsCaptionAboveMedia,
           }
-          : { prepared: false, reason: 'web_media_invalid' };
+          : undefined;
       }
       case 'web_document': {
-        const download = await this.#downloadWebMedia(content.url, 'document', signal);
-        if (!download.downloaded) {
-          return { prepared: false, reason: download.reason };
-        }
-        const preparation = this.#webMediaFiles.prepareWebDocumentUpload(download.webFile);
+        const preparation = this.#webMediaFiles.prepareWebDocumentUpload(webFile);
         return preparation.prepared
-          ? {
-            prepared: true,
-            content: {
-              kind: 'document',
-              document: { kind: 'upload', upload: preparation.upload },
-              caption: content.caption,
-            },
-          }
-          : { prepared: false, reason: 'web_media_invalid' };
+          ? { kind: 'document', document: { kind: 'upload', upload: preparation.upload }, caption }
+          : undefined;
       }
       case 'web_video': {
-        const download = await this.#downloadWebMedia(content.url, 'video', signal);
-        if (!download.downloaded) {
-          return { prepared: false, reason: download.reason };
-        }
-        const preparation = this.#webMediaFiles.prepareWebVideoUpload(
-          download.webFile,
-          content.attributes,
-        );
+        const preparation = this.#webMediaFiles.prepareWebVideoUpload(webFile, content.attributes);
         return preparation.prepared
           ? {
-            prepared: true,
-            content: {
-              kind: 'video',
-              video: { kind: 'upload', upload: preparation.upload },
-              caption: content.caption,
-              hasSpoiler: false,
-              showsCaptionAboveMedia: content.showsCaptionAboveMedia,
-              startTimestampSeconds: 0,
-            },
+            kind: 'video',
+            video: { kind: 'upload', upload: preparation.upload },
+            caption,
+            hasSpoiler: false,
+            showsCaptionAboveMedia: content.showsCaptionAboveMedia,
+            startTimestampSeconds: 0,
           }
-          : { prepared: false, reason: 'web_media_invalid' };
+          : undefined;
       }
       case 'web_voice': {
-        const download = await this.#downloadWebMedia(content.url, 'voice', signal);
-        if (!download.downloaded) {
-          return { prepared: false, reason: download.reason };
-        }
         const preparation = this.#webMediaFiles.prepareWebVoiceUpload(
-          download.webFile,
+          webFile,
           content.durationSeconds,
         );
         return preparation.prepared
-          ? {
-            prepared: true,
-            content: {
-              kind: 'voice',
-              voice: { kind: 'upload', upload: preparation.upload },
-              caption: content.caption,
-            },
-          }
-          : { prepared: false, reason: 'web_media_invalid' };
+          ? { kind: 'voice', voice: { kind: 'upload', upload: preparation.upload }, caption }
+          : undefined;
       }
-      default:
-        return { prepared: true, content: { kind: 'existing', content } };
+      default: {
+        const unhandledContent: never = content;
+        throw new Error(`Unhandled web media: ${JSON.stringify(unhandledContent)}`);
+      }
     }
   }
 
@@ -840,29 +829,44 @@ function checkSpecifiedResults(
       return 'result_id_duplicate';
     }
     resultIds.add(result.id);
-    if (result.kind === 'article' && result.title.length === 0) {
-      return 'article_title_empty';
+    const listingFailure = checkTitle(result) ?? checkWebMediaListing(result);
+    if (listingFailure !== undefined) {
+      return listingFailure;
     }
-    if (result.kind === 'document' && result.title.length === 0) {
-      return 'document_title_empty';
-    }
-    if (result.kind === 'video' && result.title.length === 0) {
-      return 'video_title_empty';
-    }
-    const webMediaFailure = checkWebMediaListing(result);
-    if (webMediaFailure !== undefined) {
-      return webMediaFailure;
-    }
-    const messageContent = messageContents[resultIndex];
-    if (
-      isInlineResultWebMedia(messageContent)
-        ? result.inlineKeyboard !== undefined && !hasOnlyValidCallbackData(result.inlineKeyboard)
-        : !hasOnlyValidButtonCallbackData(result.inlineKeyboard, messageContent)
-    ) {
+    if (!hasOnlyValidResultCallbackData(result, messageContents[resultIndex])) {
       return 'callback_data_invalid';
     }
   }
   return undefined;
+}
+
+/** The kinds of result whose empty title Telegram refuses, with the reason it gives. */
+const REQUIRED_TITLE_FAILURES: Readonly<
+  Partial<Record<SpecifiedInlineQueryResult['kind'], AnswerInlineQueryFailureReason>>
+> = {
+  article: 'article_title_empty',
+  document: 'document_title_empty',
+  video: 'video_title_empty',
+};
+
+/** Telegram's check that a result of a kind that is listed by its title has one. */
+function checkTitle(
+  result: SpecifiedInlineQueryResult,
+): AnswerInlineQueryFailureReason | undefined {
+  return result.title.length === 0 ? REQUIRED_TITLE_FAILURES[result.kind] : undefined;
+}
+
+/**
+ * Whether the buttons of what a result sends carry valid callback data: those of its inline
+ * keyboard, and of a rich message it sends; media named by URL has no buttons of its own.
+ */
+function hasOnlyValidResultCallbackData(
+  result: SpecifiedInlineQueryResult,
+  messageContent: NormalizedInlineResultContent,
+): boolean {
+  return isInlineResultWebMedia(messageContent)
+    ? result.inlineKeyboard === undefined || hasOnlyValidCallbackData(result.inlineKeyboard)
+    : hasOnlyValidButtonCallbackData(result.inlineKeyboard, messageContent);
 }
 
 /**
@@ -922,13 +926,20 @@ function getSpecifiedListedFile(
  */
 type NormalizedInlineResultContent = NormalizedOutgoingContent | InlineResultWebMedia;
 
-/** The kinds of media a result names by URL, which only sending it downloads. */
-const WEB_MEDIA_KINDS: ReadonlySet<string> = new Set<InlineResultWebMedia['kind']>([
-  'web_photo',
-  'web_document',
-  'web_video',
-  'web_voice',
-]);
+/**
+ * The kinds of media a result names by URL, which only sending it downloads, with the kind of file
+ * each downloads.
+ */
+const WEB_MEDIA_FILE_KINDS: Readonly<
+  Record<InlineResultWebMedia['kind'], InlineResultWebFileKind>
+> = {
+  web_photo: 'photo',
+  web_document: 'document',
+  web_video: 'video',
+  web_voice: 'voice',
+};
+
+const WEB_MEDIA_KINDS: ReadonlySet<string> = new Set(Object.keys(WEB_MEDIA_FILE_KINDS));
 
 function isInlineResultWebMedia(
   content: NormalizedInlineResultContent | InlineResultMessageContent,

@@ -4800,38 +4800,22 @@ export class BotApiService {
             messageContent,
           },
         };
-      case 'photo': {
-        const resolution = this.#resolveInlineResultFile(authenticatedBot, result.photo, 'photo');
-        if (!resolution.resolved) {
-          return resolution;
-        }
-        const photo = resolution.file;
-        return {
-          resolved: true,
-          result: {
-            ...shared,
-            kind: 'photo',
-            description: result.description,
-            photo,
-            thumbnailUrl: result.thumbnailUrl,
-            title: result.title,
-            messageContent: messageContent ?? toInlineResultPhotoContent(photo, result),
-          },
-        };
-      }
-      case 'document': {
-        const resolution = this.#resolveInlineResultFile(
+      case 'photo':
+        return this.#resolveInlineMediaResult(authenticatedBot, result.photo, 'photo', (photo) => ({
+          ...shared,
+          kind: 'photo',
+          description: result.description,
+          photo,
+          thumbnailUrl: result.thumbnailUrl,
+          title: result.title,
+          messageContent: messageContent ?? toInlineResultPhotoContent(photo, result),
+        }));
+      case 'document':
+        return this.#resolveInlineMediaResult(
           authenticatedBot,
           result.document,
           'document',
-        );
-        if (!resolution.resolved) {
-          return resolution;
-        }
-        const document = resolution.file;
-        return {
-          resolved: true,
-          result: {
+          (document) => ({
             ...shared,
             kind: 'document',
             description: result.description,
@@ -4839,9 +4823,8 @@ export class BotApiService {
             thumbnailUrl: result.thumbnailUrl,
             title: result.title,
             messageContent: messageContent ?? toInlineResultDocumentContent(document, result),
-          },
-        };
-      }
+          }),
+        );
       case 'video': {
         const listing = {
           ...shared,
@@ -4850,50 +4833,34 @@ export class BotApiService {
           title: result.title,
           thumbnailUrl: result.thumbnailUrl,
         };
-        if (result.video.kind === 'embedded_player') {
-          if (messageContent === undefined) {
-            throw new Error('Expected an embedded video player to send its input message content');
-          }
-          return {
-            resolved: true,
-            result: {
-              ...listing,
-              video: { source: 'embedded_player', url: result.video.url },
-              messageContent,
-            },
-          };
+        const { video } = result;
+        if (video.kind !== 'embedded_player') {
+          return this.#resolveInlineMediaResult(authenticatedBot, video, 'video', (file) => ({
+            ...listing,
+            video: file,
+            messageContent: messageContent ?? toInlineResultVideoContent(file, result),
+          }));
         }
-        const resolution = this.#resolveInlineResultFile(authenticatedBot, result.video, 'video');
-        if (!resolution.resolved) {
-          return resolution;
+        if (messageContent === undefined) {
+          throw new Error('Expected an embedded video player to send its input message content');
         }
-        const video = resolution.file;
         return {
           resolved: true,
           result: {
             ...listing,
-            video,
-            messageContent: messageContent ?? toInlineResultVideoContent(video, result),
+            video: { source: 'embedded_player', url: video.url },
+            messageContent,
           },
         };
       }
-      case 'voice': {
-        const resolution = this.#resolveInlineResultFile(authenticatedBot, result.voice, 'voice');
-        if (!resolution.resolved) {
-          return resolution;
-        }
-        const voice = resolution.file;
-        return {
-          resolved: true,
-          result: {
-            ...shared,
-            kind: 'voice',
-            voice,
-            title: result.title,
-            messageContent: messageContent ?? toInlineResultVoiceContent(voice, result),
-          },
-        };
-      }
+      case 'voice':
+        return this.#resolveInlineMediaResult(authenticatedBot, result.voice, 'voice', (voice) => ({
+          ...shared,
+          kind: 'voice',
+          voice,
+          title: result.title,
+          messageContent: messageContent ?? toInlineResultVoiceContent(voice, result),
+        }));
       default: {
         const unhandledResult: never = result;
         throw new Error(`Unhandled inline query result: ${JSON.stringify(unhandledResult)}`);
@@ -4902,29 +4869,29 @@ export class BotApiService {
   }
 
   /**
-   * Resolves the file of a media result: one the bot knows by `file_id`, which must be a file of
+   * Resolves a media result from its file: one the bot knows by `file_id`, which must be a file of
    * the result's type, or one it names by URL, which keeps its URL for Telegram to download when the
-   * result is sent.
+   * result is sent. `toResult` specifies the result with the resolved file.
    */
-  #resolveInlineResultFile<Type extends StoredFile['type']>(
+  #resolveInlineMediaResult<Type extends StoredFile['type']>(
     authenticatedBot: VirtualBotProfile,
     file: InlineResultFileRequest,
     expectedFileType: Type,
+    toResult: (
+      file: SpecifiedInlineResultFile<Extract<StoredFile, { readonly type: Type }>>,
+    ) => SpecifiedInlineQueryResult,
   ):
-    | {
-      readonly resolved: true;
-      readonly file: SpecifiedInlineResultFile<Extract<StoredFile, { readonly type: Type }>>;
-    }
+    | { readonly resolved: true; readonly result: SpecifiedInlineQueryResult }
     | {
       readonly resolved: false;
       readonly failure: { readonly reason: 'file_id_invalid' } | FileTypeMismatchFailure;
     } {
     if (file.kind === 'url') {
-      return { resolved: true, file: { source: 'web', url: file.url } };
+      return { resolved: true, result: toResult({ source: 'web', url: file.url }) };
     }
     const storedFile = this.#mediaFiles.findObserverFile(authenticatedBot.id, file.fileId);
     return isStoredFileOfType(storedFile, expectedFileType)
-      ? { resolved: true, file: { source: 'stored', file: storedFile } }
+      ? { resolved: true, result: toResult({ source: 'stored', file: storedFile }) }
       : { resolved: false, failure: fileIdFailure(storedFile, expectedFileType) };
   }
 
