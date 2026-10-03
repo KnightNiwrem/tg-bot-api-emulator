@@ -13,12 +13,6 @@ export type BotActivityEntry = BotApiCallEntry | UpdateDeliveredEntry | UpdateCo
 
 export type BotActivityKind = BotActivityEntry['kind'];
 
-export const BOT_ACTIVITY_KINDS = [
-  'bot_api_call',
-  'update_delivered',
-  'update_confirmed',
-] as const satisfies readonly BotActivityKind[];
-
 /** How a bot's call reached the emulator: as an HTTP request, or in a webhook's response. */
 export type BotApiCallTransport = 'http' | 'webhook_reply';
 

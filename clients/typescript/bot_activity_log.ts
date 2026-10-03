@@ -1,4 +1,4 @@
-import { BOT_ACTIVITY_KINDS } from '../../src/types/bot_activity.ts';
+import { BOT_ACTIVITY_KINDS } from '../../src/types/bot_activity_kind.ts';
 import { toCurrentBotApiMethodName } from '../../src/types/bot_api_method_name.ts';
 import { HTTP_STATUS_OK } from './constants.ts';
 import { botActivityReadResponseSchema } from './schemas.ts';

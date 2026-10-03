@@ -1,11 +1,8 @@
 import { Hono } from 'hono';
 import { z } from 'zod';
 
-import {
-  BOT_ACTIVITY_KINDS,
-  type BotActivityEntry,
-  type BotActivityFilter,
-} from '../../../types/bot_activity.ts';
+import type { BotActivityEntry, BotActivityFilter } from '../../../types/bot_activity.ts';
+import { BOT_ACTIVITY_KINDS } from '../../../types/bot_activity_kind.ts';
 import { toCurrentBotApiMethodName } from '../../../types/bot_api_method_name.ts';
 import { integerParameter } from '../bot_api/request_parameters.ts';
 import type { SessionRouteContextTypes } from '../session_route_context_types.ts';
