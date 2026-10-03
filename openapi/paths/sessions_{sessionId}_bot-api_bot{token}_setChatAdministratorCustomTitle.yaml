@@ -1,13 +1,17 @@
 description: >-
-  Telegram Bot API method for setting the custom title of a supergroup administrator. Setting a
-  title is not implemented yet, so the method always fails, and an administrator the bot may edit
-  is refused as one it may not; the supergroup's owner sets titles through the emulation API.
+  Telegram Bot API method for setting the custom title of a supergroup administrator the bot may
+  edit: one it promoted, directly or through administrators it promoted, while it holds
+  `can_promote_members`. Telegram cleans the title and keeps it stripped of surrounding spaces;
+  an empty or missing title removes it. Bots see the title as `custom_title` in getChatMember and
+  getChatAdministrators, and members see it in the emulation API's list of administrators. As
+  Telegram announces member tag changes only in basic groups, no update reports the change.
+  Setting the title the administrator has changes nothing.
 parameters:
   - $ref: ../components/parameters/SessionId.yaml
   - $ref: ../components/parameters/BotToken.yaml
 post:
   operationId: setChatAdministratorCustomTitle
-  summary: Try to set an administrator's custom title as the authenticated virtual bot
+  summary: Set an administrator's custom title as the authenticated virtual bot
   requestBody:
     required: true
     content:
@@ -21,6 +25,12 @@ post:
         schema:
           $ref: ../components/schemas/SetChatAdministratorCustomTitleRequest.yaml
   responses:
+    '200':
+      description: The administrator has the given title, or none for an empty title.
+      content:
+        application/json:
+          schema:
+            $ref: ../components/schemas/TrueResultResponse.yaml
     '400':
       description: >-
         The request cannot be decoded or has unsupported parameters, or, as the official
@@ -32,8 +42,12 @@ post:
         method is available only in groups and supergroups`); the user is no user of the
         session (`Bad Request: member not found`); the user is the owner (`Bad Request: only
         the owner can edit their custom title`); the user is not an administrator (`Bad
-        Request: user is not an administrator`); or the bot did not promote the administrator
-        (`Bad Request: not enough rights to change custom title of the user`).
+        Request: user is not an administrator`); the bot may not edit the administrator (`Bad
+        Request: not enough rights to change custom title of the user`); the title is not
+        well-formed Unicode (`Bad Request: strings must be encoded in UTF-8`); or Telegram's
+        servers refuse it, beyond 16 characters, counted by code point (`Bad Request:
+        CUSTOM_TITLE_INVALID`), or with emoji (`Bad Request:
+        CUSTOM_TITLE_EMOJI_NOT_ALLOWED`). A refused request changes nothing.
       content:
         application/json:
           schema:

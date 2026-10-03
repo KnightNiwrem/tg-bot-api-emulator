@@ -48,8 +48,33 @@ export function grantSupergroupAdministratorRights(
   return rights;
 }
 
-/** The Bot API's documented limit on an administrator's custom title. */
+/**
+ * The most characters of a custom title, counted by code point: the Bot API documents 0-16
+ * characters, and TDLib keeps at most 16 of a title it receives.
+ */
 export const MAX_CUSTOM_TITLE_LENGTH = 16;
+
+/** Why Telegram's servers refuse a custom title. */
+export type CustomTitleViolation = 'too_long' | 'contains_emoji';
+
+/**
+ * Pictographs, flag letters, skin tone modifiers and the keycap mark, which make up emoji. Digits,
+ * `#` and `*`, which Unicode also counts as emoji, are left out, as titles may use them.
+ */
+const EMOJI_PATTERN =
+  /[\p{Extended_Pictographic}\p{Regional_Indicator}\p{Emoji_Modifier}\u{20E3}]/u;
+
+/**
+ * Finds what Telegram's servers refuse in a custom title, which the Bot API documents as "0-16
+ * characters, emoji are not allowed": more than `MAX_CUSTOM_TITLE_LENGTH` characters, or an emoji.
+ * Returns `undefined` for a title they accept.
+ */
+export function findCustomTitleViolation(title: string): CustomTitleViolation | undefined {
+  if ([...title].length > MAX_CUSTOM_TITLE_LENGTH) {
+    return 'too_long';
+  }
+  return EMOJI_PATTERN.test(title) ? 'contains_emoji' : undefined;
+}
 
 /**
  * What a supergroup user may still do while restricted, as far as the supergroup's default

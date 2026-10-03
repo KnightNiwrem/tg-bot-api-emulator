@@ -417,6 +417,12 @@ const OWNER_CUSTOM_TITLE_DESCRIPTION = 'Bad Request: only the owner can edit the
 const MEMBER_IS_NOT_ADMINISTRATOR_DESCRIPTION = 'Bad Request: user is not an administrator';
 const CUSTOM_TITLE_NOT_EDITABLE_DESCRIPTION =
   'Bad Request: not enough rights to change custom title of the user';
+/**
+ * Telegram's servers refuse titles as `RANK_INVALID` and `RANK_EMOJI_NOT_ALLOWED`, which the
+ * official server reports under these names.
+ */
+const CUSTOM_TITLE_INVALID_DESCRIPTION = 'Bad Request: CUSTOM_TITLE_INVALID';
+const CUSTOM_TITLE_EMOJI_NOT_ALLOWED_DESCRIPTION = 'Bad Request: CUSTOM_TITLE_EMOJI_NOT_ALLOWED';
 const MEMBER_IS_OWNER_DESCRIPTION = "Bad Request: can't remove chat owner";
 const NOT_ENOUGH_RIGHTS_TO_RESTRICT_DESCRIPTION =
   'Bad Request: not enough rights to restrict/unrestrict chat member';
@@ -3613,8 +3619,8 @@ function handleUnbanChatMember(
  * a missing or non-positive `user_id` as 0, which identifies no user.
  */
 /**
- * Answers `setChatAdministratorCustomTitle`, which always fails here, as setting a title is not
- * implemented yet.
+ * Answers `setChatAdministratorCustomTitle`. As the official server reads it, a missing
+ * `custom_title` is empty, which removes the title.
  */
 function handleSetChatAdministratorCustomTitle(
   context: BotApiMethodContext,
@@ -3629,11 +3635,14 @@ function handleSetChatAdministratorCustomTitle(
     return targetReading.errorAnswer;
   }
 
-  const reason = context.session.botApi.setChatAdministratorCustomTitle(
-    context.bot,
-    targetReading.target,
-  );
-  switch (reason) {
+  const result = context.session.botApi.setChatAdministratorCustomTitle(context.bot, {
+    ...targetReading.target,
+    customTitle: parsedParameters.data.custom_title ?? '',
+  });
+  if (result.set) {
+    return botApiResult(true);
+  }
+  switch (result.reason) {
     case 'method_unavailable_outside_groups':
       return botApiError(400, METHOD_UNAVAILABLE_OUTSIDE_GROUPS_DESCRIPTION);
     case 'member_is_owner':
@@ -3642,8 +3651,14 @@ function handleSetChatAdministratorCustomTitle(
       return botApiError(400, MEMBER_IS_NOT_ADMINISTRATOR_DESCRIPTION);
     case 'custom_title_not_editable':
       return botApiError(400, CUSTOM_TITLE_NOT_EDITABLE_DESCRIPTION);
+    case 'text_encoding_invalid':
+      return botApiError(400, STRINGS_NOT_UTF8_DESCRIPTION);
+    case 'custom_title_too_long':
+      return botApiError(400, CUSTOM_TITLE_INVALID_DESCRIPTION);
+    case 'custom_title_contains_emoji':
+      return botApiError(400, CUSTOM_TITLE_EMOJI_NOT_ALLOWED_DESCRIPTION);
     default:
-      return chatMemberFailureAnswer(reason);
+      return chatMemberFailureAnswer(result.reason);
   }
 }
 

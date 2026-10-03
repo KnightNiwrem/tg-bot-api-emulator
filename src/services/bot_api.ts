@@ -129,6 +129,8 @@ import type {
   PromoteChatMemberAsBotFailureReason,
   PromoteChatMemberAsBotResult,
   RestrictChatMemberResult,
+  SetCustomTitleAsBotFailureReason,
+  SetCustomTitleAsBotResult,
   UnbanChatMemberResult,
 } from './shared_chat_administration.ts';
 import type {
@@ -1051,19 +1053,18 @@ export interface SetChatAdministratorCustomTitleRequest {
   /** The Bot API `chat_id`, as `SendRequestOptions` describes it. */
   readonly chatId: number;
   readonly userId: number;
+  /** The new title, before Telegram cleans it; empty removes it. */
+  readonly customTitle: string;
 }
 
-/**
- * Why a bot cannot set an administrator's custom title. Setting a title is not implemented yet, so
- * the method always fails.
- */
-export type SetChatAdministratorCustomTitleFailureReason =
-  | ChatMemberAccessFailureReason
-  | 'member_not_found'
-  | 'method_unavailable_outside_groups'
-  | 'member_is_owner'
-  | 'member_is_not_administrator'
-  | 'custom_title_not_editable';
+export type BotApiSetChatAdministratorCustomTitleResult =
+  | { readonly set: true }
+  | {
+    readonly set: false;
+    readonly reason:
+      | Exclude<SetCustomTitleAsBotFailureReason, 'bot_not_found'>
+      | 'method_unavailable_outside_groups';
+  };
 
 export interface GetChatAdministratorsRequest {
   /** The Bot API `chat_id`, as `SendRequestOptions` describes it. */
@@ -1546,6 +1547,12 @@ interface ChatMemberships {
     readonly memberId: number;
     readonly rights: SupergroupAdministratorRights;
   }): PromoteChatMemberAsBotResult;
+  setCustomTitleAsBot(input: {
+    readonly actorBotId: number;
+    readonly chatId: number;
+    readonly memberId: number;
+    readonly customTitle: string;
+  }): SetCustomTitleAsBotResult;
   changeSupergroupTitle(input: {
     readonly actor: SupergroupMessageAuthor;
     readonly chatId: number;
@@ -3689,37 +3696,32 @@ export class BotApiService {
   }
 
   /**
-   * Refuses to set the custom title of a supergroup administrator, for the reason the official Bot
-   * API server's `process_set_chat_administrator_custom_title_query` gives: the chat must be a
-   * group, the owner alone edits its own title, the user must be an administrator, and the bot must
-   * be allowed to edit it. Setting a title is not implemented yet, so a title the bot may edit is
-   * refused as one it may not.
+   * Sets the custom title of a supergroup administrator the bot may edit, as
+   * `SharedChatAdministrationService.setCustomTitleAsBot` does. As the official Bot API server's
+   * `process_set_chat_administrator_custom_title_query` refuses, a private chat has none.
    */
   setChatAdministratorCustomTitle(
     authenticatedBot: VirtualBotProfile,
-    { chatId, userId }: SetChatAdministratorCustomTitleRequest,
-  ): SetChatAdministratorCustomTitleFailureReason {
+    { chatId, userId, customTitle }: SetChatAdministratorCustomTitleRequest,
+  ): BotApiSetChatAdministratorCustomTitleResult {
     if (isUserId(chatId)) {
-      return this.#isPrivateChatKnown(authenticatedBot, chatId)
-        ? 'method_unavailable_outside_groups'
-        : 'chat_not_found';
+      return {
+        set: false,
+        reason: this.#isPrivateChatKnown(authenticatedBot, chatId)
+          ? 'method_unavailable_outside_groups'
+          : 'chat_not_found',
+      };
     }
-    const result = this.#chatMemberships.getChatMemberStatus({
-      observerBotId: authenticatedBot.id,
+    const result = this.#chatMemberships.setCustomTitleAsBot({
+      actorBotId: authenticatedBot.id,
       chatId,
-      userId,
+      memberId: userId,
+      customTitle,
     });
-    if (!result.found) {
-      return excludeMissingBotFailure(authenticatedBot, result.reason);
-    }
-    switch (result.status.status) {
-      case 'owner':
-        return 'member_is_owner';
-      case 'administrator':
-        return 'custom_title_not_editable';
-      default:
-        return 'member_is_not_administrator';
-    }
+    return result.set ? result : {
+      set: false,
+      reason: excludeMissingBotFailure(authenticatedBot, result.reason),
+    };
   }
 
   /**

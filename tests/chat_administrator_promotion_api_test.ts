@@ -809,3 +809,174 @@ Deno.test('a grammY bot promotes a member through its webhook, as the activity l
     await webhookServer.shutdown();
   }
 });
+
+Deno.test('a bot titles an administrator it promoted, which every read shows, without updates', async () => {
+  const {
+    api,
+    ada,
+    hopper,
+    delegatingBot,
+    otherBot,
+    supergroup,
+    supergroupPath,
+    promoteAsOwner,
+    callBot,
+    getChatMember,
+    getAdministratorsAsAccount,
+    readUpdates,
+  } = await createPromotionFixture();
+  await promoteAsOwner(otherBot.bot.id, { can_restrict_members: true });
+  await promoteAsOwner(delegatingBot.bot.id, {
+    can_promote_members: true,
+    can_delete_messages: true,
+  });
+  const call = (method: string, parameters: object) =>
+    callBot(delegatingBot, method, { chat_id: supergroup.id, user_id: hopper.id, ...parameters })
+      .then(({ body }) => body.ok ? body.result : body.description);
+  const titleOf = async () => [
+    (await getChatMember(delegatingBot, hopper.id)).custom_title,
+    ((await callBot(otherBot, 'getChatAdministrators', { chat_id: supergroup.id })).body
+      .result as Array<{ user: { id: number }; custom_title?: string }>)
+      .find(({ user }) => user.id === hopper.id)?.custom_title,
+    (await getAdministratorsAsAccount(ada.id)).body.administrators
+      .find(({ user_id }) => user_id === hopper.id)?.custom_title,
+  ];
+  await call('promoteChatMember', { can_delete_messages: true });
+  for (const bot of [delegatingBot, otherBot]) {
+    await readUpdates(bot);
+  }
+
+  // Telegram keeps the title stripped of surrounding spaces.
+  const titling = await call('setChatAdministratorCustomTitle', { custom_title: '  Janitor  ' });
+  const titled = await titleOf();
+  const updatesAfterTitling = [await readUpdates(delegatingBot), await readUpdates(otherBot)];
+  const rightsChange = await call('promoteChatMember', { can_promote_members: true });
+  const titledAfterRightsChange = await titleOf();
+  // A title of 16 characters outside the Basic Multilingual Plane is as long as Telegram allows.
+  const longestTitle = '𝔸'.repeat(16);
+  const longestTitling = await call('setChatAdministratorCustomTitle', {
+    custom_title: longestTitle,
+  });
+  const longestTitled = (await getChatMember(delegatingBot, hopper.id)).custom_title;
+  // A missing title removes it, as an empty one does.
+  const removal = await call('setChatAdministratorCustomTitle', {});
+  const untitled = await titleOf();
+  await call('setChatAdministratorCustomTitle', { custom_title: 'Janitor' });
+  const demotion = await call('promoteChatMember', {});
+  await call('promoteChatMember', { can_delete_messages: true });
+  const titleAfterDemotion = await titleOf();
+  // The owner's titles, set with channels.editAdmin, still reach administrator bots.
+  await readUpdates(otherBot);
+  await expectStatus(
+    api.request(
+      `${supergroupPath(ada.id)}/administrators/${hopper.id}/custom-title`,
+      jsonRequest('PUT', { custom_title: ' Lead ' }),
+    ),
+    204,
+    'Expected the owner to title Hopper',
+  );
+  const titledByOwner = await titleOf();
+  const ownerTitleUpdates = describeMembershipUpdates(await readUpdates(otherBot));
+
+  expectEqual(
+    [titling, rightsChange, longestTitling, removal, demotion],
+    [true, true, true, true, true],
+    'Expected each call to succeed',
+  );
+  expectEqual(titled, ['Janitor', 'Janitor', 'Janitor'], 'Expected every read to show the title');
+  expectEqual(updatesAfterTitling, [[], []], 'Expected no update for a title change');
+  expectEqual(
+    titledAfterRightsChange,
+    ['Janitor', 'Janitor', 'Janitor'],
+    'Expected the title to outlast a change of rights',
+  );
+  expectEqual(longestTitled, longestTitle, 'Expected the longest title to be kept whole');
+  expectEqual(untitled, [undefined, undefined, undefined], 'Expected the title to be removed');
+  expectEqual(
+    titleAfterDemotion,
+    [undefined, undefined, undefined],
+    'Expected a demotion to drop the title',
+  );
+  expectEqual(titledByOwner, ['Lead', 'Lead', 'Lead'], 'Expected the owner to title Hopper');
+  expectEqual(
+    ownerTitleUpdates,
+    [`chat_member ${hopper.id}: administrator(fixed) -> administrator(fixed)`],
+    "Expected the owner's title to reach administrator bots",
+  );
+});
+
+Deno.test('setChatAdministratorCustomTitle refuses what Telegram refuses, without changing anything', async () => {
+  const {
+    ada,
+    grace,
+    hopper,
+    linus,
+    delegatingBot,
+    otherBot,
+    supergroup,
+    callBot,
+    getChatMember,
+  } = await createPromotionFixture();
+  const setTitle = async (actor: FixtureBot, parameters: Record<string, unknown>) => {
+    const { status, body } = await callBot(actor, 'setChatAdministratorCustomTitle', parameters);
+    return [status, body.ok ? body.result : body.description];
+  };
+  const forHopper = (customTitle: string) => ({
+    chat_id: supergroup.id,
+    user_id: hopper.id,
+    custom_title: customTitle,
+  });
+  await callBot(delegatingBot, 'promoteChatMember', {
+    chat_id: supergroup.id,
+    user_id: hopper.id,
+    can_promote_members: true,
+  });
+  await setTitle(delegatingBot, forHopper('Janitor'));
+
+  const refusals = [
+    await setTitle(delegatingBot, { chat_id: supergroup.id, custom_title: 'Janitor' }),
+    await setTitle(delegatingBot, { user_id: hopper.id, custom_title: 'Janitor' }),
+    await setTitle(delegatingBot, { chat_id: linus.id, user_id: linus.id, custom_title: 'Boss' }),
+    await setTitle(delegatingBot, { chat_id: supergroup.id, user_id: 999_999 }),
+    await setTitle(delegatingBot, { chat_id: supergroup.id, user_id: ada.id, custom_title: 'X' }),
+    await setTitle(delegatingBot, { chat_id: supergroup.id, user_id: linus.id, custom_title: 'X' }),
+    // Grace was promoted by the owner, and the other bot promoted nobody.
+    await setTitle(delegatingBot, { chat_id: supergroup.id, user_id: grace.id, custom_title: 'X' }),
+    await setTitle(otherBot, forHopper('X')),
+    await setTitle(delegatingBot, forHopper('Seventeen letters')),
+    await setTitle(delegatingBot, forHopper('Thumbs 👍')),
+    await setTitle(delegatingBot, forHopper('From 🇫🇷')),
+    await setTitle(delegatingBot, forHopper('Press 1\ufe0f\u20e3')),
+    await setTitle(delegatingBot, forHopper('Tone \u{1F3FB}')),
+    await setTitle(delegatingBot, forHopper('Broken \ud800')),
+  ];
+
+  expectEqual(
+    refusals,
+    [
+      [400, 'Bad Request: invalid user_id specified'],
+      [400, 'Bad Request: chat_id is empty'],
+      [400, 'Bad Request: chat not found'],
+      [400, 'Bad Request: member not found'],
+      [400, 'Bad Request: only the owner can edit their custom title'],
+      [400, 'Bad Request: user is not an administrator'],
+      [400, 'Bad Request: not enough rights to change custom title of the user'],
+      [400, 'Bad Request: not enough rights to change custom title of the user'],
+      [400, 'Bad Request: CUSTOM_TITLE_INVALID'],
+      [400, 'Bad Request: CUSTOM_TITLE_EMOJI_NOT_ALLOWED'],
+      [400, 'Bad Request: CUSTOM_TITLE_EMOJI_NOT_ALLOWED'],
+      [400, 'Bad Request: CUSTOM_TITLE_EMOJI_NOT_ALLOWED'],
+      [400, 'Bad Request: CUSTOM_TITLE_EMOJI_NOT_ALLOWED'],
+      [400, 'Bad Request: strings must be encoded in UTF-8'],
+    ],
+    'Expected Telegram errors',
+  );
+  expectEqual(
+    [
+      (await getChatMember(delegatingBot, hopper.id)).custom_title,
+      (await getChatMember(delegatingBot, grace.id)).custom_title,
+    ],
+    ['Janitor', undefined],
+    'Expected no title to change',
+  );
+});
