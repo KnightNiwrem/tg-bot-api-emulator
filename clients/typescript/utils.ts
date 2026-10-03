@@ -3,10 +3,19 @@ import { z } from 'zod';
 import { EmulationClientError } from './emulation_client_error.ts';
 import type { RequestDetails } from './types.ts';
 
-interface JsonRequest<T> extends RequestDetails {
+/**
+ * A request that is abandoned once its signal aborts: unsent if it has already aborted, and
+ * otherwise unanswered or with its response unread. An abandoned request fails with an
+ * `EmulationClientError` whose `cause` is the signal's reason, and the transport is told to release
+ * it through the signal; a response that a transport still delivers later is cancelled unread.
+ */
+interface AbortableRequest extends RequestDetails {
+  readonly signal?: AbortSignal;
+}
+
+interface JsonRequest<T> extends SerializableRequest, AbortableRequest {
   readonly expectedStatus: number;
   readonly responseSchema: z.ZodType<T>;
-  readonly body?: unknown;
 }
 
 /** A request whose response is read as it is, rather than as JSON. */
@@ -112,7 +121,7 @@ export function normalizeUrlRoot(value: string | URL, parameterName: string): UR
 
 async function sendRequest(
   fetchImplementation: typeof globalThis.fetch,
-  request: SerializableRequest,
+  request: SerializableRequest & AbortableRequest,
 ): Promise<Response> {
   let serializedRequestBody: string | undefined;
   if (request.body !== undefined) {
@@ -127,29 +136,110 @@ async function sendRequest(
     }
   }
 
+  const { signal } = request;
+  if (signal?.aborted) {
+    throw createAbandonedRequestError(request, signal);
+  }
+  let pendingResponse: Promise<Response> | undefined;
   try {
-    return await fetchImplementation(request.url, {
+    pendingResponse = fetchImplementation(request.url, {
       method: request.method,
       headers: serializedRequestBody === undefined
         ? undefined
         : { 'Content-Type': 'application/json' },
       body: serializedRequestBody,
+      signal,
     });
+    return await settleUnlessAborted(pendingResponse, signal);
   } catch (cause) {
+    if (signal?.aborted) {
+      // A transport that ignores the signal may still deliver the response, which nobody reads.
+      pendingResponse?.then((response) => response.body?.cancel()).catch(() => {});
+      throw createAbandonedRequestError(request, signal);
+    }
     throw new EmulationClientError(`${formatRequest(request)} failed`, request, { cause });
   }
 }
 
-async function readResponseBody(response: Response, request: RequestDetails): Promise<string> {
+async function readResponseBody(response: Response, request: AbortableRequest): Promise<string> {
+  const { signal } = request;
   try {
-    return await response.text();
+    return await readResponseText(response, signal);
   } catch (cause) {
+    if (signal?.aborted) {
+      throw createAbandonedRequestError(request, signal, response.status);
+    }
     throw new EmulationClientError(
       `Could not read the response from ${formatRequest(request)}`,
       { ...request, status: response.status },
       { cause },
     );
   }
+}
+
+/** Settles as `promise` does, unless `signal` aborts first, which rejects with its reason. */
+function settleUnlessAborted<T>(promise: Promise<T>, signal: AbortSignal | undefined): Promise<T> {
+  if (signal === undefined) {
+    return promise;
+  }
+  return new Promise<T>((resolve, reject) => {
+    const rejectWithReason = () => reject(signal.reason);
+    signal.addEventListener('abort', rejectWithReason, { once: true });
+    // The signal may have aborted while the promise was being created, as in a transport's call.
+    if (signal.aborted) {
+      rejectWithReason();
+    }
+    promise.then(resolve, reject).finally(() =>
+      signal.removeEventListener('abort', rejectWithReason)
+    );
+  });
+}
+
+/**
+ * Reads a response's body as UTF-8 text, as `Response.text` does, except that a signal that aborts
+ * cancels the body, which ends a read that would otherwise wait for a stalled stream.
+ */
+async function readResponseText(
+  response: Response,
+  signal: AbortSignal | undefined,
+): Promise<string> {
+  if (response.body === null) {
+    signal?.throwIfAborted();
+    return '';
+  }
+  const reader = response.body.getReader();
+  const cancelBody = () => {
+    reader.cancel(signal?.reason).catch(() => {});
+  };
+  signal?.addEventListener('abort', cancelBody, { once: true });
+  if (signal?.aborted) {
+    cancelBody();
+  }
+  try {
+    const decoder = new TextDecoder();
+    let text = '';
+    for (let chunk = await reader.read(); !chunk.done; chunk = await reader.read()) {
+      text += decoder.decode(chunk.value, { stream: true });
+    }
+    // A cancelled body ends like a complete one, so only the signal tells them apart.
+    signal?.throwIfAborted();
+    return text + decoder.decode();
+  } finally {
+    signal?.removeEventListener('abort', cancelBody);
+    reader.releaseLock();
+  }
+}
+
+function createAbandonedRequestError(
+  request: RequestDetails,
+  signal: AbortSignal,
+  status?: number,
+): EmulationClientError {
+  return new EmulationClientError(
+    `${formatRequest(request)} was abandoned before its response was read`,
+    { method: request.method, url: request.url, status },
+    { cause: signal.reason },
+  );
 }
 
 function assertResponseStatus(
