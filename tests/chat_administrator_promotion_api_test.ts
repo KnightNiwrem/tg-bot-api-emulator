@@ -947,6 +947,7 @@ Deno.test('setChatAdministratorCustomTitle refuses what Telegram refuses, withou
     await setTitle(delegatingBot, forHopper('Thumbs 👍')),
     await setTitle(delegatingBot, forHopper('From 🇫🇷')),
     await setTitle(delegatingBot, forHopper('Press 1\ufe0f\u20e3')),
+    await setTitle(delegatingBot, forHopper('Tone \u{1F3FB}')),
     await setTitle(delegatingBot, forHopper('Broken \ud800')),
   ];
 
@@ -962,6 +963,7 @@ Deno.test('setChatAdministratorCustomTitle refuses what Telegram refuses, withou
       [400, 'Bad Request: not enough rights to change custom title of the user'],
       [400, 'Bad Request: not enough rights to change custom title of the user'],
       [400, 'Bad Request: CUSTOM_TITLE_INVALID'],
+      [400, 'Bad Request: CUSTOM_TITLE_EMOJI_NOT_ALLOWED'],
       [400, 'Bad Request: CUSTOM_TITLE_EMOJI_NOT_ALLOWED'],
       [400, 'Bad Request: CUSTOM_TITLE_EMOJI_NOT_ALLOWED'],
       [400, 'Bad Request: CUSTOM_TITLE_EMOJI_NOT_ALLOWED'],

@@ -421,7 +421,8 @@ not show. The emulator chooses where they are not visible:
   Bot API documents for `can_promote_members`; bans and restrictions follow the same chain.
 - Demoting a user that is not a member fails without effect, where TDLib may first lift its ban.
 - Telegram's servers' definition of an emoji in a title is not public: the emulator refuses
-  pictographs, flag letters and the keycap mark, and checks a title's length before its emoji.
+  pictographs, flag letters, skin tone modifiers and the keycap mark, and checks a title's length
+  before its emoji.
 - An administrator bot that grants itself every permission becomes a member, as TDLib asks the
   servers to make it.
 - Whoever sets an administrator's rights becomes its `promoted_by`, and setting the rights it holds

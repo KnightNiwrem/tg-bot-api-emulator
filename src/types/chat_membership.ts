@@ -58,10 +58,11 @@ export const MAX_CUSTOM_TITLE_LENGTH = 16;
 export type CustomTitleViolation = 'too_long' | 'contains_emoji';
 
 /**
- * Pictographs, flag letters and the keycap mark, which make up emoji. Digits, `#` and `*`, which
- * Unicode also counts as emoji, are left out, as titles may use them.
+ * Pictographs, flag letters, skin tone modifiers and the keycap mark, which make up emoji. Digits,
+ * `#` and `*`, which Unicode also counts as emoji, are left out, as titles may use them.
  */
-const EMOJI_PATTERN = /[\p{Extended_Pictographic}\p{Regional_Indicator}\u{20E3}]/u;
+const EMOJI_PATTERN =
+  /[\p{Extended_Pictographic}\p{Regional_Indicator}\p{Emoji_Modifier}\u{20E3}]/u;
 
 /**
  * Finds what Telegram's servers refuse in a custom title, which the Bot API documents as "0-16

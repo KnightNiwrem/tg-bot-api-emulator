@@ -28,7 +28,7 @@ put:
     '400':
       description: >-
         A path identifier or the body is invalid, or the title is not well-formed Unicode, is
-        longer than 16 characters, or has emoji. These title checks follow the account's
+        longer than 16 Unicode code points, or has emoji. These title checks follow the account's
         ownership of the supergroup and the user's standing.
     '403':
       description: The account does not own the supergroup.
