@@ -19,12 +19,13 @@ Sessions isolate users, chats, messages, files, update queues and bot settings. 
 `can_read_all_group_messages`, `supports_inline_queries`, `receives_chosen_inline_results` and
 `requests_inline_location`, all false by default. These stand in for selected BotFather settings.
 Account profiles can include a username and language code. A first or last name has at most 64
-characters, the server-side limit of TDLib's `UserManager::MAX_NAME_LENGTH`, and must already be as
-clean as Telegram makes the texts of the account's
-[own contact](contacts-and-locations.md#whose-contact-it-is): well-formed Unicode without control
-characters other than line feeds, carriage returns or directional overrides, so that the own contact
-shows exactly the profile's names. Usernames are unique within a session, compared without case.
-Account creation also accepts `has_private_forwards`, false by default, which stands in for the
+characters, the server-side limit of TDLib's `UserManager::MAX_NAME_LENGTH`, and must be text that
+Telegram's cleanup of the account's [own contact](contacts-and-locations.md#whose-contact-it-is)
+leaves unchanged: well-formed Unicode that the cleanup neither replaces nor removes any character
+of. Names with carriage returns, directional overrides, or control characters other than line feeds
+are among those refused, and the own contact shows exactly the profile's names. Usernames are unique
+within a session, compared without case. Account creation also accepts `has_private_forwards`, false
+by default, which stands in for the
 ["Forwarded messages" privacy setting](messages.md#forwarding-and-copying), and `phone_number`,
 which the account shares as its [own contact](contacts-and-locations.md#whose-contact-it-is).
 

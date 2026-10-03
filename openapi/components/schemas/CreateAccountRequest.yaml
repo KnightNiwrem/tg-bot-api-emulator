@@ -10,8 +10,9 @@ properties:
     description: >-
       At most 64 characters, counted by code point, the server-side limit TDLib's
       `UserManager::MAX_NAME_LENGTH` gives a user's names. It must be well-formed Unicode that
-      Telegram's cleanup of the account's own contact leaves unchanged: no control characters
-      other than line feeds, no carriage returns, and no directional overrides.
+      Telegram's cleanup of the account's own contact leaves unchanged. Names with carriage
+      returns, directional overrides, or control characters other than line feeds are among those
+      refused.
   last_name:
     type: string
     minLength: 1
