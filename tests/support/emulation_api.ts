@@ -4,6 +4,7 @@
  */
 import { createEmulationApi } from '../../src/api/mod.ts';
 import { createSessionLifecycleService } from '../../src/composition/session_lifecycle.ts';
+import type { UploadProfile } from '../../src/types/upload_profile.ts';
 
 /** An in-process emulation API that tests send requests to without a network. */
 export type EmulationApi = ReturnType<typeof createEmulationApi>;
@@ -13,7 +14,7 @@ export const TEST_PUBLIC_ORIGIN = 'http://emulator.example:9000';
 
 /** The settings `POST /sessions` accepts. */
 export interface SessionSettings {
-  readonly upload_profile: string;
+  readonly upload_profile?: UploadProfile;
 }
 
 /** Creates an in-process emulation API with its own, empty set of sessions. */
