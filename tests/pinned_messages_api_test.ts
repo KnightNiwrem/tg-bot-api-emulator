@@ -1,7 +1,9 @@
-import { createEmulationApi } from '../src/api/mod.ts';
-import { createSessionLifecycleService } from '../src/composition/session_lifecycle.ts';
-
-type EmulationApi = ReturnType<typeof createEmulationApi>;
+import {
+  createSession,
+  createTestApi,
+  type EmulationApi,
+  requestJson,
+} from './support/emulation_api.ts';
 
 /** A user ID that no account or bot of a fixture has. */
 const UNKNOWN_USER_ID = 999_999;
@@ -16,11 +18,8 @@ interface ShownMessage {
  * Creates a session where Ada has written to a bot and owns a supergroup with Grace, the bot, and
  * Linus, an administrator account without the right to pin.
  */
-async function createPinnedMessagesFixture(api: EmulationApi = createApi()) {
-  const sessionPath = (await api.request('/sessions', { method: 'POST' })).headers.get('Location');
-  if (sessionPath === null) {
-    throw new Error('Expected the created session to have a Location');
-  }
+async function createPinnedMessagesFixture(api: EmulationApi = createTestApi()) {
+  const sessionPath = await createSession(api);
   const createAccount = async (firstName: string) =>
     (await requestJson<{ account: { id: number } }>(
       api,
@@ -113,13 +112,6 @@ async function createPinnedMessagesFixture(api: EmulationApi = createApi()) {
     pinnedTexts,
     changePin,
   };
-}
-
-function createApi(): EmulationApi {
-  return createEmulationApi({
-    sessionLifecycle: createSessionLifecycleService(),
-    publicOrigin: 'http://emulator.example:9000',
-  });
 }
 
 Deno.test('an account pins private messages, which getChat shows the newest of', async () => {
@@ -263,7 +255,7 @@ Deno.test('an account that blocks the bot cannot pin in their private chat, but 
 });
 
 Deno.test('pinned messages of one session stay out of another', async () => {
-  const api = createApi();
+  const api = createTestApi();
   const first = await createPinnedMessagesFixture(api);
   const second = await createPinnedMessagesFixture(api);
   const messageId = await first.sendToBot('first session');
@@ -273,25 +265,6 @@ Deno.test('pinned messages of one session stay out of another', async () => {
   expectEqual(await second.pinnedTexts(second.privatePath(second.ada)), [], 'not in the other');
   expectEqual((await second.getChat(second.ada)).pinned_message, undefined, 'nor its getChat');
 });
-
-async function requestJson<Body>(
-  api: EmulationApi,
-  method: 'DELETE' | 'GET' | 'POST' | 'PUT',
-  path: string,
-  body?: unknown,
-): Promise<{ status: number; body: Body }> {
-  const response = await api.request(path, {
-    method,
-    ...(body === undefined
-      ? {}
-      : { headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) }),
-  });
-  const text = await response.text();
-  return {
-    status: response.status,
-    body: (text.length === 0 ? undefined : JSON.parse(text)) as Body,
-  };
-}
 
 function expectEqual(actual: unknown, expected: unknown, message: string): void {
   if (JSON.stringify(actual) !== JSON.stringify(expected)) {

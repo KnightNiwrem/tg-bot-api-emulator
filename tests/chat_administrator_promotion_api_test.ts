@@ -1,10 +1,11 @@
 import { Bot } from 'https://cdn.jsdelivr.net/gh/grammyjs/grammY@^1.46.0/src/bot.ts';
 import { webhookCallback } from 'https://cdn.jsdelivr.net/gh/grammyjs/grammY@^1.46.0/src/convenience/webhook.ts';
-
-import { createEmulationApi } from '../src/api/mod.ts';
-import { createSessionLifecycleService } from '../src/composition/session_lifecycle.ts';
-
-type EmulationApi = ReturnType<typeof createEmulationApi>;
+import {
+  createTestSession,
+  type EmulationApi,
+  requestJson,
+  TEST_PUBLIC_ORIGIN,
+} from './support/emulation_api.ts';
 
 interface BotApiResponse {
   readonly ok: boolean;
@@ -42,14 +43,7 @@ const SUPERGROUP_ADMINISTRATOR_RIGHTS = [
  * `can_promote_members`; Linus is an account outside the supergroup.
  */
 async function createPromotionFixture() {
-  const api = createEmulationApi({
-    sessionLifecycle: createSessionLifecycleService(),
-    publicOrigin: 'http://emulator.example:9000',
-  });
-  const sessionPath = (await api.request('/sessions', { method: 'POST' })).headers.get('Location');
-  if (sessionPath === null) {
-    throw new Error('Expected the created session to have a Location');
-  }
+  const { api, sessionPath } = await createTestSession();
   const createAccount = async (firstName: string) =>
     (await requestJson<{ account: { id: number; first_name: string } }>(
       api,
@@ -191,25 +185,6 @@ function administratorForAccount(
 /** The bot user that membership updates and chat members show. */
 function botUser(bot: FixtureBot, username: string) {
   return { id: bot.bot.id, is_bot: true, first_name: 'Test Bot', username };
-}
-
-async function requestJson<Body>(
-  api: EmulationApi,
-  method: 'DELETE' | 'GET' | 'POST' | 'PUT',
-  path: string,
-  body?: unknown,
-): Promise<{ status: number; body: Body }> {
-  const response = await api.request(path, {
-    method,
-    ...(body === undefined
-      ? {}
-      : { headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) }),
-  });
-  const text = await response.text();
-  return {
-    status: response.status,
-    body: (text.length === 0 ? undefined : JSON.parse(text)) as Body,
-  };
 }
 
 function jsonRequest(method: 'POST' | 'PUT', body: unknown): RequestInit {
@@ -741,7 +716,7 @@ Deno.test('a grammY bot promotes a member through its webhook, as the activity l
   });
   const grammyBot = new Bot(delegatingBot.token, {
     client: {
-      apiRoot: `http://emulator.example:9000${sessionPath}/bot-api`,
+      apiRoot: `${TEST_PUBLIC_ORIGIN}${sessionPath}/bot-api`,
       fetch: async (input, init) => await api.fetch(new Request(input, init)),
     },
   });

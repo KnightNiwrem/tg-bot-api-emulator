@@ -25,14 +25,7 @@ Deno.test('TypeScript client validates the official Telegram user ID range', () 
 });
 
 Deno.test('TypeScript client manages all currently implemented session resources', async () => {
-  const publicOrigin = 'http://emulator.example:9000';
-  const api = createEmulationApi({
-    sessionLifecycle: createSessionLifecycleService(),
-    publicOrigin,
-  });
-  const client = new TelegramEmulationClient(publicOrigin, {
-    fetch: createInProcessFetch(api.fetch),
-  });
+  const { api, client, publicOrigin } = createInProcessClient();
 
   const session = await client.createSession();
   if (session.botApiRoot !== `${publicOrigin}/sessions/${session.id}/bot-api`) {
@@ -353,14 +346,7 @@ Deno.test('TypeScript client manages all currently implemented session resources
 });
 
 Deno.test('TypeScript client runs supergroups with members, messages, and buttons', async () => {
-  const publicOrigin = 'http://emulator.example:9000';
-  const api = createEmulationApi({
-    sessionLifecycle: createSessionLifecycleService(),
-    publicOrigin,
-  });
-  const client = new TelegramEmulationClient(publicOrigin, {
-    fetch: createInProcessFetch(api.fetch),
-  });
+  const { api, client } = createInProcessClient();
   const session = await client.createSession();
   const { token, bot } = await session.createBot({
     first_name: 'Test Bot',
@@ -627,14 +613,7 @@ Deno.test('TypeScript client runs supergroups with members, messages, and button
 });
 
 Deno.test('TypeScript client restricts members and changes what members may do by default', async () => {
-  const publicOrigin = 'http://emulator.example:9000';
-  const api = createEmulationApi({
-    sessionLifecycle: createSessionLifecycleService(),
-    publicOrigin,
-  });
-  const client = new TelegramEmulationClient(publicOrigin, {
-    fetch: createInProcessFetch(api.fetch),
-  });
+  const { client } = createInProcessClient();
   const session = await client.createSession();
   const { account: owner } = await session.createAccount({ first_name: 'Ada' });
   const { account: member } = await session.createAccount({ first_name: 'Grace' });
@@ -693,14 +672,7 @@ Deno.test('TypeScript client restricts members and changes what members may do b
 });
 
 Deno.test('TypeScript client joins supergroups through invite links and by username', async () => {
-  const publicOrigin = 'http://emulator.example:9000';
-  const api = createEmulationApi({
-    sessionLifecycle: createSessionLifecycleService(),
-    publicOrigin,
-  });
-  const client = new TelegramEmulationClient(publicOrigin, {
-    fetch: createInProcessFetch(api.fetch),
-  });
+  const { api, client } = createInProcessClient();
   const session = await client.createSession();
   const { bot, token } = await session.createBot({
     first_name: 'Inviter',
@@ -769,14 +741,7 @@ Deno.test('TypeScript client joins supergroups through invite links and by usern
 });
 
 Deno.test('TypeScript client requests to join through a link and lists pending requests', async () => {
-  const publicOrigin = 'http://emulator.example:9000';
-  const api = createEmulationApi({
-    sessionLifecycle: createSessionLifecycleService(),
-    publicOrigin,
-  });
-  const client = new TelegramEmulationClient(publicOrigin, {
-    fetch: createInProcessFetch(api.fetch),
-  });
+  const { api, client } = createInProcessClient();
   const session = await client.createSession();
   const { bot, token } = await session.createBot({
     first_name: 'Inviter',
@@ -818,14 +783,7 @@ Deno.test('TypeScript client requests to join through a link and lists pending r
 });
 
 Deno.test('TypeScript client changes a supergroup title and reads its service message', async () => {
-  const publicOrigin = 'http://emulator.example:9000';
-  const api = createEmulationApi({
-    sessionLifecycle: createSessionLifecycleService(),
-    publicOrigin,
-  });
-  const client = new TelegramEmulationClient(publicOrigin, {
-    fetch: createInProcessFetch(api.fetch),
-  });
+  const { client } = createInProcessClient();
   const session = await client.createSession();
   const { account: owner } = await session.createAccount({ first_name: 'Ada' });
   const supergroup = await owner.createSupergroup({ title: 'Team' });
@@ -849,14 +807,7 @@ Deno.test('TypeScript client changes a supergroup title and reads its service me
 });
 
 Deno.test('TypeScript client pins and unpins messages and reads the pinned ones', async () => {
-  const publicOrigin = 'http://emulator.example:9000';
-  const api = createEmulationApi({
-    sessionLifecycle: createSessionLifecycleService(),
-    publicOrigin,
-  });
-  const client = new TelegramEmulationClient(publicOrigin, {
-    fetch: createInProcessFetch(api.fetch),
-  });
+  const { client } = createInProcessClient();
   const session = await client.createSession();
   const { bot } = await session.createBot({ first_name: 'Test Bot', username: 'test_bot' });
   const { account } = await session.createAccount({ first_name: 'Ada' });
@@ -925,14 +876,7 @@ Deno.test('TypeScript client pins and unpins messages and reads the pinned ones'
 });
 
 Deno.test('TypeScript client sends, edits, and downloads photos and documents', async () => {
-  const publicOrigin = 'http://emulator.example:9000';
-  const api = createEmulationApi({
-    sessionLifecycle: createSessionLifecycleService(),
-    publicOrigin,
-  });
-  const client = new TelegramEmulationClient(publicOrigin, {
-    fetch: createInProcessFetch(api.fetch),
-  });
+  const { api, client } = createInProcessClient();
   const session = await client.createSession();
   const { token, bot } = await session.createBot({ first_name: 'Test Bot', username: 'test_bot' });
   const { account } = await session.createAccount({ first_name: 'Ada' });
@@ -1024,14 +968,7 @@ Deno.test('TypeScript client sends, edits, and downloads photos and documents', 
 });
 
 Deno.test('TypeScript client sends videos and voice notes that bots receive and send back', async () => {
-  const publicOrigin = 'http://emulator.example:9000';
-  const api = createEmulationApi({
-    sessionLifecycle: createSessionLifecycleService(),
-    publicOrigin,
-  });
-  const client = new TelegramEmulationClient(publicOrigin, {
-    fetch: createInProcessFetch(api.fetch),
-  });
+  const { api, client } = createInProcessClient();
   const session = await client.createSession();
   const { token, bot } = await session.createBot({ first_name: 'Test Bot', username: 'test_bot' });
   const { account } = await session.createAccount({ first_name: 'Ada' });
@@ -1143,14 +1080,7 @@ Deno.test('TypeScript client sends videos and voice notes that bots receive and 
 });
 
 Deno.test('TypeScript client sends albums to private chats and supergroups', async () => {
-  const publicOrigin = 'http://emulator.example:9000';
-  const api = createEmulationApi({
-    sessionLifecycle: createSessionLifecycleService(),
-    publicOrigin,
-  });
-  const client = new TelegramEmulationClient(publicOrigin, {
-    fetch: createInProcessFetch(api.fetch),
-  });
+  const { client } = createInProcessClient();
   const session = await client.createSession();
   const { bot } = await session.createBot({ first_name: 'Test Bot', username: 'test_bot' });
   const { account } = await session.createAccount({ first_name: 'Ada' });
@@ -1226,14 +1156,7 @@ Deno.test('TypeScript client sends albums to private chats and supergroups', asy
 });
 
 Deno.test('TypeScript client reads rich messages and presses their buttons', async () => {
-  const publicOrigin = 'http://emulator.example:9000';
-  const api = createEmulationApi({
-    sessionLifecycle: createSessionLifecycleService(),
-    publicOrigin,
-  });
-  const client = new TelegramEmulationClient(publicOrigin, {
-    fetch: createInProcessFetch(api.fetch),
-  });
+  const { api, client } = createInProcessClient();
   const session = await client.createSession();
   const { token, bot } = await session.createBot({ first_name: 'Test Bot', username: 'test_bot' });
   const { account } = await session.createAccount({ first_name: 'Ada' });
@@ -1340,14 +1263,7 @@ Deno.test('TypeScript client reads rich messages and presses their buttons', asy
 });
 
 Deno.test('TypeScript client votes in polls of private chats and supergroups', async () => {
-  const publicOrigin = 'http://emulator.example:9000';
-  const api = createEmulationApi({
-    sessionLifecycle: createSessionLifecycleService(),
-    publicOrigin,
-  });
-  const client = new TelegramEmulationClient(publicOrigin, {
-    fetch: createInProcessFetch(api.fetch),
-  });
+  const { api, client } = createInProcessClient();
   const session = await client.createSession();
   const { token, bot } = await session.createBot({ first_name: 'Test Bot', username: 'test_bot' });
   const { account } = await session.createAccount({ first_name: 'Ada' });
@@ -1434,14 +1350,7 @@ Deno.test('TypeScript client votes in polls of private chats and supergroups', a
 });
 
 Deno.test('TypeScript client sends inline queries and results through an inline bot', async () => {
-  const publicOrigin = 'http://emulator.example:9000';
-  const api = createEmulationApi({
-    sessionLifecycle: createSessionLifecycleService(),
-    publicOrigin,
-  });
-  const client = new TelegramEmulationClient(publicOrigin, {
-    fetch: createInProcessFetch(api.fetch),
-  });
+  const { api, client } = createInProcessClient();
   const session = await client.createSession();
   const { token, bot } = await session.createBot({
     first_name: 'Cats Bot',
@@ -1496,14 +1405,7 @@ Deno.test('TypeScript client sends inline queries and results through an inline 
 });
 
 Deno.test('TypeScript client queues rate limit answers for a bot', async () => {
-  const publicOrigin = 'http://emulator.example:9000';
-  const api = createEmulationApi({
-    sessionLifecycle: createSessionLifecycleService(),
-    publicOrigin,
-  });
-  const client = new TelegramEmulationClient(publicOrigin, {
-    fetch: createInProcessFetch(api.fetch),
-  });
+  const { api, client } = createInProcessClient();
   const session = await client.createSession();
   const createdBot = await session.createBot({ first_name: 'Test Bot', username: 'test_bot' });
 
@@ -1527,14 +1429,7 @@ Deno.test('TypeScript client queues rate limit answers for a bot', async () => {
 });
 
 Deno.test('TypeScript client reports HTTP failures with request details', async () => {
-  const publicOrigin = 'http://emulator.example:9000';
-  const api = createEmulationApi({
-    sessionLifecycle: createSessionLifecycleService(),
-    publicOrigin,
-  });
-  const client = new TelegramEmulationClient(publicOrigin, {
-    fetch: createInProcessFetch(api.fetch),
-  });
+  const { client } = createInProcessClient();
   const session = await client.createSession();
   await session.end();
 
@@ -1577,14 +1472,7 @@ Deno.test('TypeScript client rejects a successful response that violates the con
 });
 
 Deno.test('TypeScript client shares contacts and locations and answers their requests', async () => {
-  const publicOrigin = 'http://emulator.example:9000';
-  const api = createEmulationApi({
-    sessionLifecycle: createSessionLifecycleService(),
-    publicOrigin,
-  });
-  const client = new TelegramEmulationClient(publicOrigin, {
-    fetch: createInProcessFetch(api.fetch),
-  });
+  const { api, client } = createInProcessClient();
   const session = await client.createSession();
   const { token, bot } = await session.createBot({ first_name: 'Test Bot', username: 'test_bot' });
   const { account } = await session.createAccount({ first_name: 'Ada', phone_number: '15550100' });
@@ -1712,6 +1600,19 @@ Deno.test('TypeScript client shares contacts and locations and answers their req
   throw new Error('Expected an account without a phone number to have no contact to share');
 });
 
+/** Creates an in-process emulation API and a client that reaches it without a network. */
+function createInProcessClient() {
+  const publicOrigin = 'http://emulator.example:9000';
+  const api = createEmulationApi({
+    sessionLifecycle: createSessionLifecycleService(),
+    publicOrigin,
+  });
+  const client = new TelegramEmulationClient(publicOrigin, {
+    fetch: createInProcessFetch(api.fetch),
+  });
+  return { api, client, publicOrigin };
+}
+
 function createInProcessFetch(
   handler: (request: Request) => Response | Promise<Response>,
 ): typeof globalThis.fetch {
@@ -1719,13 +1620,9 @@ function createInProcessFetch(
 }
 
 Deno.test('TypeScript client registers web resources that bots send files from', async () => {
-  const publicOrigin = 'http://emulator.example:9000';
-  const api = createEmulationApi({
-    sessionLifecycle: createSessionLifecycleService(),
-    publicOrigin,
-  });
+  const { api, client } = createInProcessClient();
   const fetch = createInProcessFetch(api.fetch);
-  const session = await new TelegramEmulationClient(publicOrigin, { fetch }).createSession();
+  const session = await client.createSession();
   const { token, bot } = await session.createBot({ first_name: 'Files', username: 'files_bot' });
   const { account } = await session.createAccount({ first_name: 'Ada' });
   await account.sendMessage({ to: { type: 'private', botId: bot.id }, text: '/start' });

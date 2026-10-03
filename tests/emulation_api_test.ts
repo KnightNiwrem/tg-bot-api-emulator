@@ -7,16 +7,17 @@ import { InputFile } from 'https://cdn.jsdelivr.net/gh/grammyjs/grammY@^1.46.0/s
 import { GrammyError } from 'https://cdn.jsdelivr.net/gh/grammyjs/grammY@^1.46.0/src/core/error.ts';
 import { webhookCallback } from 'https://cdn.jsdelivr.net/gh/grammyjs/grammY@^1.46.0/src/convenience/webhook.ts';
 
-import { createEmulationApi } from '../src/api/mod.ts';
-import { createSessionLifecycleService } from '../src/composition/session_lifecycle.ts';
 import { MAX_TELEGRAM_USER_ID } from '../src/types/telegram_identity.ts';
+import {
+  createTestApi,
+  createTestSession,
+  type EmulationApi,
+  type SessionSettings,
+  TEST_PUBLIC_ORIGIN,
+} from './support/emulation_api.ts';
 
 Deno.test('POST /sessions creates a session and returns its API locations', async () => {
-  const publicOrigin = 'http://emulator.example:9000';
-  const api = createEmulationApi({
-    sessionLifecycle: createSessionLifecycleService(),
-    publicOrigin,
-  });
+  const api = createTestApi();
 
   const response = await api.request('/sessions', { method: 'POST' });
   const body: unknown = await response.json();
@@ -32,7 +33,7 @@ Deno.test('POST /sessions creates a session and returns its API locations', asyn
   if (response.headers.get('Location') !== sessionPath) {
     throw new Error('Expected Location to identify the created session');
   }
-  if (body.botApiRoot !== `${publicOrigin}${sessionPath}/bot-api`) {
+  if (body.botApiRoot !== `${TEST_PUBLIC_ORIGIN}${sessionPath}/bot-api`) {
     throw new Error('Expected botApiRoot to identify the session Bot API');
   }
   if (body.uploadProfile !== 'cloud') {
@@ -41,10 +42,7 @@ Deno.test('POST /sessions creates a session and returns its API locations', asyn
 });
 
 Deno.test('POST /sessions creates a session with the upload profile it names', async () => {
-  const api = createEmulationApi({
-    sessionLifecycle: createSessionLifecycleService(),
-    publicOrigin: 'http://emulator.example:9000',
-  });
+  const api = createTestApi();
 
   for (const uploadProfile of ['cloud', 'local']) {
     const response = await api.request('/sessions', {
@@ -63,10 +61,7 @@ Deno.test('POST /sessions creates a session with the upload profile it names', a
 });
 
 Deno.test('POST /sessions rejects unknown or invalid session settings', async () => {
-  const api = createEmulationApi({
-    sessionLifecycle: createSessionLifecycleService(),
-    publicOrigin: 'http://emulator.example:9000',
-  });
+  const api = createTestApi();
 
   for (const body of ['{"upload_profile":"premium"}', '{"mode":"local"}', '[]', 'local']) {
     const response = await api.request('/sessions', {
@@ -114,15 +109,7 @@ Deno.test('DELETE /sessions/:sessionId ends the session and answers its held lon
 });
 
 Deno.test('POST bots and accounts create virtual users in one ID namespace', async () => {
-  const api = createEmulationApi({
-    sessionLifecycle: createSessionLifecycleService(),
-    publicOrigin: 'http://emulator.example:9000',
-  });
-  const createSessionResponse = await api.request('/sessions', { method: 'POST' });
-  const sessionPath = createSessionResponse.headers.get('Location');
-  if (sessionPath === null) {
-    throw new Error('Expected the created session to have a Location');
-  }
+  const { api, sessionPath } = await createTestSession();
 
   const botResponse = await api.request(`${sessionPath}/bots`, {
     method: 'POST',
@@ -202,15 +189,7 @@ Deno.test('emulator routes reject request bodies that are not JSON or not as spe
 });
 
 Deno.test('Bot API rejects unknown tokens before resolving methods or parameters', async () => {
-  const api = createEmulationApi({
-    sessionLifecycle: createSessionLifecycleService(),
-    publicOrigin: 'http://emulator.example:9000',
-  });
-  const createSessionResponse = await api.request('/sessions', { method: 'POST' });
-  const sessionPath = createSessionResponse.headers.get('Location');
-  if (sessionPath === null) {
-    throw new Error('Expected the created session to have a Location');
-  }
+  const { api, sessionPath } = await createTestSession();
   const botApiPath = `${sessionPath}/bot-api/bot123:unknown`;
 
   const responses = [
@@ -274,7 +253,7 @@ Deno.test('private account messages are stored and delivered through getUpdates'
   const getUpdatesPath = `${sessionPath}/bot-api/bot${createdBot.token}/getUpdates`;
   const grammyBot = new Bot(createdBot.token, {
     client: {
-      apiRoot: `http://emulator.example:9000${sessionPath}/bot-api`,
+      apiRoot: `${TEST_PUBLIC_ORIGIN}${sessionPath}/bot-api`,
       fetch: createInProcessFetch(api.fetch),
     },
   });
@@ -558,7 +537,7 @@ Deno.test('grammY command handlers match account-sent bot commands', async () =>
 
   const grammyBot = new Bot(createdBot.token, {
     client: {
-      apiRoot: `http://emulator.example:9000${sessionPath}/bot-api`,
+      apiRoot: `${TEST_PUBLIC_ORIGIN}${sessionPath}/bot-api`,
       fetch: createInProcessFetch(api.fetch),
     },
   });
@@ -755,7 +734,7 @@ Deno.test('a grammY bot receives updates through its webhook and replies', async
     await createPrivateConversationFixture();
   const grammyBot = new Bot(createdBot.token, {
     client: {
-      apiRoot: `http://emulator.example:9000${sessionPath}/bot-api`,
+      apiRoot: `${TEST_PUBLIC_ORIGIN}${sessionPath}/bot-api`,
       fetch: createInProcessFetch(api.fetch),
     },
   });
@@ -894,7 +873,7 @@ Deno.test('a grammY bot replies through its webhook response', async () => {
     await createPrivateConversationFixture();
   const grammyBot = new Bot(createdBot.token, {
     client: {
-      apiRoot: `http://emulator.example:9000${sessionPath}/bot-api`,
+      apiRoot: `${TEST_PUBLIC_ORIGIN}${sessionPath}/bot-api`,
       fetch: createInProcessFetch(api.fetch),
       canUseWebhookReply: (method) => method === 'sendMessage',
     },
@@ -1027,7 +1006,7 @@ Deno.test('a grammY bot starts polling, replies to a command, and resumes after 
   const startGrammyBot = () => {
     const grammyBot = new Bot(createdBot.token, {
       client: {
-        apiRoot: `http://emulator.example:9000${sessionPath}/bot-api`,
+        apiRoot: `${TEST_PUBLIC_ORIGIN}${sessionPath}/bot-api`,
         fetch: createInProcessFetch(api.fetch),
       },
     });
@@ -1542,14 +1521,7 @@ Deno.test('Web App buttons work only in private chats', async () => {
 });
 
 Deno.test('forwards keep switch-inline buttons only of messages sent through an inline bot', async () => {
-  const api = createEmulationApi({
-    sessionLifecycle: createSessionLifecycleService(),
-    publicOrigin: 'http://emulator.example:9000',
-  });
-  const sessionPath = (await api.request('/sessions', { method: 'POST' })).headers.get('Location');
-  if (sessionPath === null) {
-    throw new Error('Expected the created session to have a Location');
-  }
+  const { api, sessionPath } = await createTestSession();
   const account = await createAccount(api, sessionPath, 'Ada');
   const inlineBot = await createBot(api, sessionPath, 'cats_bot', {
     supports_inline_queries: true,
@@ -1630,7 +1602,7 @@ Deno.test('messages carry the entities Telegram detects in their text', async ()
   const accountId = createdAccount.account.id;
   const grammyBot = new Bot(createdBot.token, {
     client: {
-      apiRoot: `http://emulator.example:9000${sessionPath}/bot-api`,
+      apiRoot: `${TEST_PUBLIC_ORIGIN}${sessionPath}/bot-api`,
       fetch: createInProcessFetch(api.fetch),
     },
   });
@@ -2190,7 +2162,7 @@ Deno.test('a grammY bot answers an inline keyboard press and edits its message',
   const accountId = createdAccount.account.id;
   const grammyBot = new Bot(createdBot.token, {
     client: {
-      apiRoot: `http://emulator.example:9000${sessionPath}/bot-api`,
+      apiRoot: `${TEST_PUBLIC_ORIGIN}${sessionPath}/bot-api`,
       fetch: createInProcessFetch(api.fetch),
     },
   });
@@ -2407,7 +2379,7 @@ Deno.test('a grammY bot deletes an incoming secret and its menu after a button p
     `${sessionPath}/accounts/${accountId}/conversations/private/${createdBot.bot.id}/messages`;
   const grammyBot = new Bot(createdBot.token, {
     client: {
-      apiRoot: `http://emulator.example:9000${sessionPath}/bot-api`,
+      apiRoot: `${TEST_PUBLIC_ORIGIN}${sessionPath}/bot-api`,
       fetch: createInProcessFetch(api.fetch),
     },
   });
@@ -2474,15 +2446,7 @@ Deno.test('a grammY bot deletes an incoming secret and its menu after a button p
 });
 
 Deno.test('private message routes validate participants and request bodies', async () => {
-  const api = createEmulationApi({
-    sessionLifecycle: createSessionLifecycleService(),
-    publicOrigin: 'http://emulator.example:9000',
-  });
-  const createSessionResponse = await api.request('/sessions', { method: 'POST' });
-  const sessionPath = createSessionResponse.headers.get('Location');
-  if (sessionPath === null) {
-    throw new Error('Expected the created session to have a Location');
-  }
+  const { api, sessionPath } = await createTestSession();
   const createAccountResponse = await api.request(`${sessionPath}/accounts`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
@@ -2806,7 +2770,7 @@ Deno.test('a grammY bot replies with HTML and receives Telegram errors for bad M
     await createPrivateConversationFixture();
   const grammyBot = new Bot(createdBot.token, {
     client: {
-      apiRoot: `http://emulator.example:9000${sessionPath}/bot-api`,
+      apiRoot: `${TEST_PUBLIC_ORIGIN}${sessionPath}/bot-api`,
       fetch: createInProcessFetch(api.fetch),
     },
   });
@@ -3451,7 +3415,7 @@ Deno.test('a grammY bot sends a rich message with an uploaded photo', async () =
   await sendText('/start');
   const grammyBot = new Bot(createdBot.token, {
     client: {
-      apiRoot: `http://emulator.example:9000${sessionPath}/bot-api`,
+      apiRoot: `${TEST_PUBLIC_ORIGIN}${sessionPath}/bot-api`,
       fetch: createInProcessFetch(api.fetch),
     },
   });
@@ -4240,7 +4204,7 @@ Deno.test('a grammY bot asks a question in a reply and reads the account reply t
     await createPrivateConversationFixture();
   const grammyBot = new Bot(createdBot.token, {
     client: {
-      apiRoot: `http://emulator.example:9000${sessionPath}/bot-api`,
+      apiRoot: `${TEST_PUBLIC_ORIGIN}${sessionPath}/bot-api`,
       fetch: createInProcessFetch(api.fetch),
     },
   });
@@ -4611,7 +4575,7 @@ Deno.test('a grammY bot runs a menu on a reply keyboard and asks with a forced r
   const accountPath = `${sessionPath}/accounts/${createdAccount.account.id}`;
   const grammyBot = new Bot(createdBot.token, {
     client: {
-      apiRoot: `http://emulator.example:9000${sessionPath}/bot-api`,
+      apiRoot: `${TEST_PUBLIC_ORIGIN}${sessionPath}/bot-api`,
       fetch: createInProcessFetch(api.fetch),
     },
   });
@@ -4983,7 +4947,7 @@ Deno.test('a grammY bot answers an edited message and forgets a user who blocks 
   const accountPath = `${sessionPath}/accounts/${createdAccount.account.id}`;
   const grammyBot = new Bot(createdBot.token, {
     client: {
-      apiRoot: `http://emulator.example:9000${sessionPath}/bot-api`,
+      apiRoot: `${TEST_PUBLIC_ORIGIN}${sessionPath}/bot-api`,
       fetch: createInProcessFetch(api.fetch),
     },
   });
@@ -5737,7 +5701,7 @@ Deno.test('a grammY bot runs a vote with an inline keyboard in a supergroup', as
     await createSupergroupFixture();
   const grammyBot = new Bot(bot.token, {
     client: {
-      apiRoot: `http://emulator.example:9000${sessionPath}/bot-api`,
+      apiRoot: `${TEST_PUBLIC_ORIGIN}${sessionPath}/bot-api`,
       fetch: createInProcessFetch(api.fetch),
     },
   });
@@ -6063,7 +6027,7 @@ Deno.test('a grammY bot welcomes new members and learns it was removed', async (
   const newcomer = await createAccount(api, sessionPath, 'Linus');
   const grammyBot = new Bot(bot.token, {
     client: {
-      apiRoot: `http://emulator.example:9000${sessionPath}/bot-api`,
+      apiRoot: `${TEST_PUBLIC_ORIGIN}${sessionPath}/bot-api`,
       fetch: createInProcessFetch(api.fetch),
     },
   });
@@ -6820,14 +6784,7 @@ Deno.test('the owner protects all supergroup content from forwarding and saving'
 });
 
 Deno.test('bots address public supergroups by their usernames', async () => {
-  const api = createEmulationApi({
-    sessionLifecycle: createSessionLifecycleService(),
-    publicOrigin: 'http://emulator.example:9000',
-  });
-  const sessionPath = (await api.request('/sessions', { method: 'POST' })).headers.get('Location');
-  if (sessionPath === null) {
-    throw new Error('Expected the created session to have a Location');
-  }
+  const { api, sessionPath } = await createTestSession();
   const owner = await createAccount(api, sessionPath, 'Ada');
   await api.request(
     `${sessionPath}/accounts`,
@@ -7174,7 +7131,7 @@ Deno.test('a grammY bot bans a spammer for an administrator and deletes the spam
   );
   const grammyBot = new Bot(bot.token, {
     client: {
-      apiRoot: `http://emulator.example:9000${sessionPath}/bot-api`,
+      apiRoot: `${TEST_PUBLIC_ORIGIN}${sessionPath}/bot-api`,
       fetch: createInProcessFetch(api.fetch),
     },
   });
@@ -7937,7 +7894,7 @@ Deno.test('a grammY bot receives an album through its webhook and answers with o
   const { api, sessionPath, createdBot, createdAccount } = await createPrivateConversationFixture();
   const grammyBot = new Bot(createdBot.token, {
     client: {
-      apiRoot: `http://emulator.example:9000${sessionPath}/bot-api`,
+      apiRoot: `${TEST_PUBLIC_ORIGIN}${sessionPath}/bot-api`,
       fetch: createInProcessFetch(api.fetch),
     },
   });
@@ -9708,7 +9665,7 @@ Deno.test('a grammY bot receives a video through its webhook and answers with on
   const { api, sessionPath, createdBot, createdAccount } = await createPrivateConversationFixture();
   const grammyBot = new Bot(createdBot.token, {
     client: {
-      apiRoot: `http://emulator.example:9000${sessionPath}/bot-api`,
+      apiRoot: `${TEST_PUBLIC_ORIGIN}${sessionPath}/bot-api`,
       fetch: createInProcessFetch(api.fetch),
     },
   });
@@ -9792,7 +9749,7 @@ Deno.test('a grammY bot answers an account voice note with one it downloads and 
   );
   const sentMessage = (await sent.json()).message as Record<string, unknown> | undefined;
 
-  const apiRoot = `http://emulator.example:9000${sessionPath}/bot-api`;
+  const apiRoot = `${TEST_PUBLIC_ORIGIN}${sessionPath}/bot-api`;
   const fetch = createInProcessFetch(api.fetch);
   const grammyBot = new Bot(createdBot.token, { client: { apiRoot, fetch } });
   const received: Array<{ voice: Record<string, unknown>; filePath?: string; bytes: string }> = [];
@@ -10612,7 +10569,7 @@ Deno.test('a grammY bot downloads a document from an account and replies with a 
     throw new Error(`Expected the document to be sent, received ${sentResponse.status}`);
   }
 
-  const apiRoot = `http://emulator.example:9000${sessionPath}/bot-api`;
+  const apiRoot = `${TEST_PUBLIC_ORIGIN}${sessionPath}/bot-api`;
   const fetch = createInProcessFetch(api.fetch);
   const grammyBot = new Bot(createdBot.token, { client: { apiRoot, fetch } });
   const downloadedTexts: string[] = [];
@@ -10646,14 +10603,7 @@ Deno.test('a grammY bot downloads a document from an account and replies with a 
 });
 
 Deno.test('an account sends an inline query, a bot answers, and the account sends a result', async () => {
-  const api = createEmulationApi({
-    sessionLifecycle: createSessionLifecycleService(),
-    publicOrigin: 'http://emulator.example:9000',
-  });
-  const sessionPath = (await api.request('/sessions', { method: 'POST' })).headers.get('Location');
-  if (sessionPath === null) {
-    throw new Error('Expected the created session to have a Location');
-  }
+  const { api, sessionPath } = await createTestSession();
   const account = await createAccount(api, sessionPath, 'Ada');
   const inlineBot = await createBot(api, sessionPath, 'cats_bot', {
     supports_inline_queries: true,
@@ -10879,14 +10829,7 @@ Deno.test('an account sends an inline query, a bot answers, and the account send
 });
 
 Deno.test('repeated inline queries reuse the answer within its cache time', async () => {
-  const api = createEmulationApi({
-    sessionLifecycle: createSessionLifecycleService(),
-    publicOrigin: 'http://emulator.example:9000',
-  });
-  const sessionPath = (await api.request('/sessions', { method: 'POST' })).headers.get('Location');
-  if (sessionPath === null) {
-    throw new Error('Expected the created session to have a Location');
-  }
+  const { api, sessionPath } = await createTestSession();
   const ada = await createAccount(api, sessionPath, 'Ada');
   const grace = await createAccount(api, sessionPath, 'Grace');
   const inlineBot = await createBot(api, sessionPath, 'cats_bot', {
@@ -10950,14 +10893,7 @@ Deno.test('repeated inline queries reuse the answer within its cache time', asyn
 });
 
 Deno.test('accounts share their location with inline bots that request it', async () => {
-  const api = createEmulationApi({
-    sessionLifecycle: createSessionLifecycleService(),
-    publicOrigin: 'http://emulator.example:9000',
-  });
-  const sessionPath = (await api.request('/sessions', { method: 'POST' })).headers.get('Location');
-  if (sessionPath === null) {
-    throw new Error('Expected the created session to have a Location');
-  }
+  const { api, sessionPath } = await createTestSession();
   const account = await createAccount(api, sessionPath, 'Ada');
   const nearbyBot = await createBot(api, sessionPath, 'nearby_bot', {
     supports_inline_queries: true,
@@ -11252,14 +11188,7 @@ Deno.test('answerInlineQuery and the inline query routes follow Telegram checks'
 });
 
 Deno.test('inline query results send rich messages that reuse files', async () => {
-  const api = createEmulationApi({
-    sessionLifecycle: createSessionLifecycleService(),
-    publicOrigin: 'http://emulator.example:9000',
-  });
-  const sessionPath = (await api.request('/sessions', { method: 'POST' })).headers.get('Location');
-  if (sessionPath === null) {
-    throw new Error('Expected the created session to have a Location');
-  }
+  const { api, sessionPath } = await createTestSession();
   const account = await createAccount(api, sessionPath, 'Ada');
   const inlineBot = await createBot(api, sessionPath, 'cats_bot', {
     supports_inline_queries: true,
@@ -11379,7 +11308,7 @@ Deno.test('a grammY bot answers inline queries and edits the message it sent to 
   const ownerPath = `${sessionPath}/accounts/${owner.id}`;
   const grammyBot = new Bot(inlineBot.token, {
     client: {
-      apiRoot: `http://emulator.example:9000${sessionPath}/bot-api`,
+      apiRoot: `${TEST_PUBLIC_ORIGIN}${sessionPath}/bot-api`,
       fetch: createInProcessFetch(api.fetch),
     },
   });
@@ -12335,7 +12264,7 @@ Deno.test('a grammY support bot forwards questions to its team and copies answer
   const customer = await createAccount(api, sessionPath, 'Linus');
   const grammyBot = new Bot(bot.token, {
     client: {
-      apiRoot: `http://emulator.example:9000${sessionPath}/bot-api`,
+      apiRoot: `${TEST_PUBLIC_ORIGIN}${sessionPath}/bot-api`,
       fetch: createInProcessFetch(api.fetch),
     },
   });
@@ -12442,7 +12371,7 @@ Deno.test('tests queue rate limit answers for the next Bot API calls of a bot', 
   const getMe = await callBotApi(api, `${botApiPath}/getMe`, {});
   const grammyBot = new Bot(createdBot.token, {
     client: {
-      apiRoot: `http://emulator.example:9000${sessionPath}/bot-api`,
+      apiRoot: `${TEST_PUBLIC_ORIGIN}${sessionPath}/bot-api`,
       fetch: createInProcessFetch(api.fetch),
     },
   });
@@ -12487,19 +12416,8 @@ async function expectSettlementWithin<T>(
 }
 
 /** Creates a session holding a bot and an account that can message it. */
-async function createPrivateConversationFixture(sessionSettings?: { upload_profile: string }) {
-  const api = createEmulationApi({
-    sessionLifecycle: createSessionLifecycleService(),
-    publicOrigin: 'http://emulator.example:9000',
-  });
-  const createSessionResponse = await api.request(
-    '/sessions',
-    sessionSettings === undefined ? { method: 'POST' } : jsonRequest('POST', sessionSettings),
-  );
-  const sessionPath = createSessionResponse.headers.get('Location');
-  if (sessionPath === null) {
-    throw new Error('Expected the created session to have a Location');
-  }
+async function createPrivateConversationFixture(sessionSettings?: SessionSettings) {
+  const { api, sessionPath } = await createTestSession(sessionSettings);
   const createBotResponse = await api.request(`${sessionPath}/bots`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
@@ -12548,15 +12466,7 @@ async function createPrivateConversationFixture(sessionSettings?: { upload_profi
  * a bot in privacy mode, and a bot that reads all group messages.
  */
 async function createSupergroupFixture() {
-  const api = createEmulationApi({
-    sessionLifecycle: createSessionLifecycleService(),
-    publicOrigin: 'http://emulator.example:9000',
-  });
-  const createSessionResponse = await api.request('/sessions', { method: 'POST' });
-  const sessionPath = createSessionResponse.headers.get('Location');
-  if (sessionPath === null) {
-    throw new Error('Expected the created session to have a Location');
-  }
+  const { api, sessionPath } = await createTestSession();
   const owner = await createAccount(api, sessionPath, 'Ada');
   const member = await createAccount(api, sessionPath, 'Grace');
   const bot = await createBot(api, sessionPath, 'test_bot');
@@ -12615,7 +12525,7 @@ async function createSupergroupFixture() {
 }
 
 async function createAccount(
-  api: ReturnType<typeof createEmulationApi>,
+  api: EmulationApi,
   sessionPath: string,
   firstName: string,
 ) {
@@ -12631,7 +12541,7 @@ async function createAccount(
 }
 
 async function createBot(
-  api: ReturnType<typeof createEmulationApi>,
+  api: EmulationApi,
   sessionPath: string,
   username: string,
   options: {
@@ -12758,7 +12668,7 @@ function isUnauthorizedResponse(value: unknown): value is {
 
 /** Calls a Bot API method with JSON parameters and returns the status and decoded body. */
 async function callBotApi(
-  api: ReturnType<typeof createEmulationApi>,
+  api: EmulationApi,
   methodPath: string,
   parameters: Record<string, unknown>,
 ): Promise<{ status: number; body: unknown }> {
@@ -12775,7 +12685,7 @@ async function callBotApi(
  * files, and returns the status and decoded body.
  */
 async function callBotApiWithFiles(
-  api: ReturnType<typeof createEmulationApi>,
+  api: EmulationApi,
   methodPath: string,
   parameters: Record<string, string>,
   files: Record<string, File>,
@@ -13001,7 +12911,7 @@ function isUserProfile(value: unknown): value is {
 }
 
 /** Returns a reader of each bot's updates since the reader last read that bot's updates. */
-function createUpdateReader(api: ReturnType<typeof createEmulationApi>) {
+function createUpdateReader(api: EmulationApi) {
   const nextOffsetsByBotApiPath = new Map<string, number>();
   return async (botApiPath: string): Promise<Array<Record<string, unknown>>> => {
     const { body } = await callBotApi(api, `${botApiPath}/getUpdates`, {

@@ -1,7 +1,4 @@
-import { createEmulationApi } from '../src/api/mod.ts';
-import { createSessionLifecycleService } from '../src/composition/session_lifecycle.ts';
-
-type EmulationApi = ReturnType<typeof createEmulationApi>;
+import { createTestSession, requestJson } from './support/emulation_api.ts';
 
 interface BotApiResponse {
   readonly ok: boolean;
@@ -29,14 +26,7 @@ interface CreatedBot {
  * administrator with `can_pin_messages`, and an observer bot in privacy mode.
  */
 async function createReconciliationFixture() {
-  const api = createEmulationApi({
-    sessionLifecycle: createSessionLifecycleService(),
-    publicOrigin: 'http://emulator.example:9000',
-  });
-  const sessionPath = (await api.request('/sessions', { method: 'POST' })).headers.get('Location');
-  if (sessionPath === null) {
-    throw new Error('Expected the created session to have a Location');
-  }
+  const { api, sessionPath } = await createTestSession();
   const createAccount = async (firstName: string) =>
     (await requestJson<{ account: { id: number } }>(
       api,
@@ -402,25 +392,6 @@ Deno.test('pin service messages cannot be edited, forwarded, or copied, and copi
     'only the original is pinned, not its copy or forward',
   );
 });
-
-async function requestJson<Body>(
-  api: EmulationApi,
-  method: 'DELETE' | 'GET' | 'PATCH' | 'POST' | 'PUT',
-  path: string,
-  body?: unknown,
-): Promise<{ status: number; body: Body }> {
-  const response = await api.request(path, {
-    method,
-    ...(body === undefined
-      ? {}
-      : { headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) }),
-  });
-  const text = await response.text();
-  return {
-    status: response.status,
-    body: (text.length === 0 ? undefined : JSON.parse(text)) as Body,
-  };
-}
 
 function expectEqual(actual: unknown, expected: unknown, message: string): void {
   if (JSON.stringify(actual) !== JSON.stringify(expected)) {

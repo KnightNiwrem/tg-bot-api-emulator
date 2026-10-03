@@ -1,10 +1,10 @@
 import { Bot } from 'https://cdn.jsdelivr.net/gh/grammyjs/grammY@^1.46.0/src/bot.ts';
 import { webhookCallback } from 'https://cdn.jsdelivr.net/gh/grammyjs/grammY@^1.46.0/src/convenience/webhook.ts';
-
-import { createEmulationApi } from '../src/api/mod.ts';
-import { createSessionLifecycleService } from '../src/composition/session_lifecycle.ts';
-
-type EmulationApi = ReturnType<typeof createEmulationApi>;
+import {
+  createTestSession,
+  type EmulationApi,
+  TEST_PUBLIC_ORIGIN,
+} from './support/emulation_api.ts';
 
 interface BotActivityReadBody {
   readonly entries: ReadonlyArray<Record<string, unknown>>;
@@ -250,7 +250,7 @@ Deno.test('GET bot-activity records a webhook reply before the confirmation of i
   const { api, sessionPath, activityPath, createdBot, account, sendText } = await createFixture();
   const grammyBot = new Bot(createdBot.token, {
     client: {
-      apiRoot: `http://emulator.example:9000${sessionPath}/bot-api`,
+      apiRoot: `${TEST_PUBLIC_ORIGIN}${sessionPath}/bot-api`,
       fetch: createInProcessFetch(api.fetch),
       canUseWebhookReply: (method) => method === 'sendMessage',
     },
@@ -291,14 +291,7 @@ Deno.test('GET bot-activity records a webhook reply before the confirmation of i
 
 /** Creates a session holding a bot and an account that can message it. */
 async function createFixture() {
-  const api = createEmulationApi({
-    sessionLifecycle: createSessionLifecycleService(),
-    publicOrigin: 'http://emulator.example:9000',
-  });
-  const sessionPath = (await api.request('/sessions', { method: 'POST' })).headers.get('Location');
-  if (sessionPath === null) {
-    throw new Error('Expected the created session to have a Location');
-  }
+  const { api, sessionPath } = await createTestSession();
   const createdBot = await postJson(api, `${sessionPath}/bots`, {
     first_name: 'Test Bot',
     username: 'test_bot',

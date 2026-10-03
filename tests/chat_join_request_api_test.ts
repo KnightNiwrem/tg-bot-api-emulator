@@ -1,10 +1,11 @@
 import { Bot } from 'https://cdn.jsdelivr.net/gh/grammyjs/grammY@^1.46.0/src/bot.ts';
 import { webhookCallback } from 'https://cdn.jsdelivr.net/gh/grammyjs/grammY@^1.46.0/src/convenience/webhook.ts';
-
-import { createEmulationApi } from '../src/api/mod.ts';
-import { createSessionLifecycleService } from '../src/composition/session_lifecycle.ts';
-
-type EmulationApi = ReturnType<typeof createEmulationApi>;
+import {
+  createTestSession,
+  type EmulationApi,
+  requestJson,
+  TEST_PUBLIC_ORIGIN,
+} from './support/emulation_api.ts';
 
 interface BotApiResponse {
   readonly ok: boolean;
@@ -40,14 +41,7 @@ const READ_UPDATE_TYPES = ['message', 'chat_member', 'chat_join_request'];
  * link that creates join requests.
  */
 async function createJoinRequestFixture() {
-  const api = createEmulationApi({
-    sessionLifecycle: createSessionLifecycleService(),
-    publicOrigin: 'http://emulator.example:9000',
-  });
-  const sessionPath = (await api.request('/sessions', { method: 'POST' })).headers.get('Location');
-  if (sessionPath === null) {
-    throw new Error('Expected the created session to have a Location');
-  }
+  const { api, sessionPath } = await createTestSession();
   const createAccount = async (firstName: string) =>
     (await requestJson<{ account: FixtureAccount }>(
       api,
@@ -203,25 +197,6 @@ function describeJoinRequests(updates: ReadonlyArray<Record<string, unknown>>): 
 /** The link as an administrator other than its creator sees it, with half its hash hidden. */
 function hiddenInviteLink(inviteLink: string): string {
   return `https://t.me/+${inviteLink.slice('https://t.me/+'.length).slice(0, 8)}...`;
-}
-
-async function requestJson<Body>(
-  api: EmulationApi,
-  method: 'DELETE' | 'GET' | 'POST' | 'PUT',
-  path: string,
-  body?: unknown,
-): Promise<{ status: number; body: Body }> {
-  const response = await api.request(path, {
-    method,
-    ...(body === undefined
-      ? {}
-      : { headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) }),
-  });
-  const text = await response.text();
-  return {
-    status: response.status,
-    body: (text.length === 0 ? undefined : JSON.parse(text)) as Body,
-  };
 }
 
 function jsonRequest(method: 'POST' | 'PUT', body: unknown): RequestInit {
@@ -489,7 +464,7 @@ Deno.test('a grammY bot receives a join request through its webhook, as the log 
     await createJoinRequestFixture();
   const grammyBot = new Bot(inviterBot.token, {
     client: {
-      apiRoot: `http://emulator.example:9000${sessionPath}/bot-api`,
+      apiRoot: `${TEST_PUBLIC_ORIGIN}${sessionPath}/bot-api`,
       fetch: async (input, init) => await api.fetch(new Request(input, init)),
     },
   });
@@ -922,7 +897,7 @@ Deno.test('a grammY bot approves join requests through its webhook', async () =>
     await createJoinRequestFixture();
   const grammyBot = new Bot(inviterBot.token, {
     client: {
-      apiRoot: `http://emulator.example:9000${sessionPath}/bot-api`,
+      apiRoot: `${TEST_PUBLIC_ORIGIN}${sessionPath}/bot-api`,
       fetch: async (input, init) => await api.fetch(new Request(input, init)),
     },
   });
