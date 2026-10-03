@@ -20,18 +20,13 @@ import { createBlockedBotRoutes } from './blocked_bots.ts';
 import { viewChatMessageForAccount } from './chat_message_view.ts';
 import { createConversationReadRoutes } from './conversation_reads.ts';
 import { createMessageRoutes } from './messages.ts';
-import {
-  accountMessageFailureStatus,
-  supergroupMemberFailureStatus,
-} from './messaging_failure_statuses.ts';
 import { createPinnedMessageRoutes } from './pinned_messages.ts';
 import { createPollAnswerRoutes } from './poll_answers.ts';
+import { createReplyKeyboardPressRoutes } from './reply_keyboard_presses.ts';
 import { accountLocationSchema, chatSchema, telegramUserIdSchema } from './request_fields.ts';
 import { createSupergroupAdministrationRoutes } from './supergroup_administration.ts';
 import { createSupergroupMembershipRoutes } from './supergroup_membership.ts';
 
-const REPLY_KEYBOARD_PRESS_COLLECTION_PATH =
-  `/:${ACCOUNT_ID_PARAMETER}/reply-keyboard-presses` as const;
 const CALLBACK_QUERY_ID_PARAMETER = 'callbackQueryId';
 const CALLBACK_QUERY_COLLECTION_PATH = `/:${ACCOUNT_ID_PARAMETER}/callback-queries` as const;
 const CALLBACK_QUERY_PATH =
@@ -62,16 +57,6 @@ const createAccountRequestSchema = z.strictObject({
    * E.164 number without its `+`, as Telegram's `user.phone` holds it.
    */
   phone_number: z.string().regex(ACCOUNT_PHONE_NUMBER_PATTERN).optional(),
-});
-
-/**
- * A press of a reply keyboard button, by its text. A `request_location` button needs the location
- * the account's client reports, which no other button takes.
- */
-const pressReplyKeyboardButtonRequestSchema = z.strictObject({
-  chat: chatSchema,
-  text: z.string().min(1),
-  location: accountLocationSchema.optional(),
 });
 
 const pressCallbackButtonRequestSchema = z.strictObject({
@@ -140,57 +125,7 @@ export function createAccountRoutes(): Hono<SessionRouteContextTypes> {
 
   accountRoutes.route('/', createBlockedBotRoutes());
 
-  accountRoutes.post(REPLY_KEYBOARD_PRESS_COLLECTION_PATH, async (context) => {
-    const accountPath = accountPathSchema.safeParse(context.req.param());
-    if (!accountPath.success) {
-      return context.body(null, 400);
-    }
-    const { accountId } = accountPath.data;
-
-    const requestBody = await readJsonRequestBody(
-      context.req,
-      pressReplyKeyboardButtonRequestSchema,
-    );
-    if (requestBody === undefined) {
-      return context.body(null, 400);
-    }
-
-    const { privateMessaging, supergroupMessaging, botMessageViews } = context.get(
-      'emulationSession',
-    );
-    const { chat, text, location } = requestBody;
-    if (chat.type === 'supergroup') {
-      // Only private chats show buttons with a request, so no supergroup button takes a location.
-      if (location !== undefined) {
-        return context.body(null, 400);
-      }
-      const result = supergroupMessaging.pressReplyKeyboardButton({
-        fromAccountId: accountId,
-        chatId: chat.chatId,
-        text,
-      });
-      if (!result.sent) {
-        return context.body(null, supergroupMemberFailureStatus(result.reason));
-      }
-      return context.json(
-        { message: botMessageViews.viewSupergroupMessage(result.message, accountId) },
-        201,
-      );
-    }
-    const result = privateMessaging.pressReplyKeyboardButton({
-      fromAccountId: accountId,
-      chat,
-      text,
-      ...(location === undefined ? {} : { location }),
-    });
-    if (!result.sent) {
-      return context.body(null, accountMessageFailureStatus(result.reason));
-    }
-    return context.json(
-      { message: botMessageViews.viewPrivateMessageForBot(result.message) },
-      201,
-    );
-  });
+  accountRoutes.route('/', createReplyKeyboardPressRoutes());
 
   accountRoutes.post(CALLBACK_QUERY_COLLECTION_PATH, async (context) => {
     const accountPath = accountPathSchema.safeParse(context.req.param());
