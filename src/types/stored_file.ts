@@ -32,7 +32,7 @@ export const MAX_WEB_FILE_BYTES: Readonly<Record<WebFileKind, number>> = {
  * sends the result. Inline results have contracts of their own rather than those of the send
  * methods.
  */
-export type InlineResultWebFileKind = 'photo' | 'document';
+export type InlineResultWebFileKind = 'photo' | 'document' | 'video' | 'voice';
 
 /**
  * The largest file Telegram downloads for an inline query result: 5 MB for a photo, as the Bot API
@@ -42,6 +42,8 @@ export type InlineResultWebFileKind = 'photo' | 'document';
 export const MAX_INLINE_RESULT_WEB_FILE_BYTES: Readonly<Record<InlineResultWebFileKind, number>> = {
   photo: 5 * 1024 * 1024,
   document: 20 * 1024 * 1024,
+  video: 20 * 1024 * 1024,
+  voice: 20 * 1024 * 1024,
 };
 
 /**

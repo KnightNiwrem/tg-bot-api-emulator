@@ -2,6 +2,11 @@ import { z } from 'zod';
 
 import type { InlineKeyboard } from '../../../types/inline_keyboard.ts';
 import type { InlineQueryResultsButton } from '../../../types/inline_query.ts';
+import {
+  MAX_MEDIA_DURATION_SECONDS,
+  MAX_VIDEO_SIDE_LENGTH,
+  type VideoAttributes,
+} from '../../../types/stored_file.ts';
 import { linkPreviewOptionsSchema } from './link_preview_options_parameter.ts';
 import { inlineKeyboardMarkupSchema } from './reply_markup_parameter.ts';
 import { jsonParameter } from './request_parameters.ts';
@@ -28,6 +33,14 @@ export type UnreadInputMessageContent =
 export type InlineQueryResultFileParameter =
   | { readonly kind: 'file_id'; readonly fileId: string }
   | { readonly kind: 'url'; readonly url: string };
+
+/**
+ * The video of a video result: a video file, as `InlineQueryResultFileParameter`, or a web page
+ * with an embedded video player, which the bot declares as `text/html`.
+ */
+export type InlineQueryResultVideoParameter =
+  | InlineQueryResultFileParameter
+  | { readonly kind: 'embedded_player'; readonly url: string };
 
 interface InlineQueryResultParameterBase {
   readonly id: string;
@@ -68,6 +81,26 @@ export type InlineQueryResultParameter =
     readonly title: string;
     readonly caption: UnreadFormattedText;
     readonly messageContent?: UnreadInputMessageContent;
+  })
+  | (InlineQueryResultParameterBase & {
+    readonly kind: 'video';
+    readonly video: InlineQueryResultVideoParameter;
+    readonly title: string;
+    readonly caption: UnreadFormattedText;
+    readonly showsCaptionAboveMedia: boolean;
+    /** As the bot specified them, clamped as `sendVideo` clamps them. */
+    readonly attributes: VideoAttributes;
+    /** Always given for an embedded video player, which cannot be sent itself. */
+    readonly messageContent?: UnreadInputMessageContent;
+  })
+  | (Omit<InlineQueryResultParameterBase, 'description'> & {
+    readonly kind: 'voice';
+    readonly voice: InlineQueryResultFileParameter;
+    readonly title: string;
+    readonly caption: UnreadFormattedText;
+    /** As the bot specified it, clamped as `sendVoice` clamps it. */
+    readonly durationSeconds: number;
+    readonly messageContent?: UnreadInputMessageContent;
   });
 
 export type InlineQueryResultsParameterReading =
@@ -82,6 +115,24 @@ const WEB_DOCUMENT_MIME_TYPES = ['application/pdf', 'application/zip'] as const;
 
 const WEB_DOCUMENT_MIME_TYPE_INVALID_DESCRIPTION = 'Bad Request: unallowed document MIME type';
 
+/**
+ * The MIME types TDLib's `get_input_bot_inline_result` allows a video given by URL to declare,
+ * matched as prefixes: a video file, or a web page with an embedded video player.
+ */
+const WEB_VIDEO_FILE_MIME_TYPE = 'video/mp4';
+const EMBEDDED_VIDEO_PLAYER_MIME_TYPE = 'text/html';
+
+const WEB_VIDEO_MIME_TYPE_INVALID_DESCRIPTION = 'Bad Request: unallowed video MIME type';
+
+/**
+ * The emulator's description for an embedded video player without `input_message_content`, which
+ * the Bot API requires because the player itself cannot be sent; what Telegram does with one is not
+ * documented.
+ */
+const EMBEDDED_VIDEO_PLAYER_CONTENT_MISSING_DESCRIPTION =
+  'Bad Request: inline query results with an embedded video player must specify ' +
+  'input_message_content';
+
 /** Telegram's result types that the emulator does not support. */
 const UNSUPPORTED_RESULT_TYPES = [
   'audio',
@@ -92,8 +143,6 @@ const UNSUPPORTED_RESULT_TYPES = [
   'mpeg4_gif',
   'sticker',
   'venue',
-  'video',
-  'voice',
 ] as const;
 
 /**
@@ -201,10 +250,47 @@ const documentResultSchema = z.strictObject({
 });
 
 /**
+ * An integer attribute of a video or voice note, which the emulator clamps to a range as the
+ * official server's `get_input_video` clamps those of `sendVideo`; a missing one is 0.
+ */
+function clampedAttributeField(max: number) {
+  return z.int().transform((value) => Math.min(Math.max(value, 0), max)).default(0);
+}
+
+// As for `sendVideo`, inline videos are covered by no spoiler and start at their beginning.
+const videoResultSchema = z.strictObject({
+  ...sharedResultShape,
+  ...captionShape,
+  title: z.string(),
+  video_url: z.string().default(''),
+  video_file_id: z.string().default(''),
+  mime_type: z.string().optional(),
+  thumbnail_url: z.string().optional(),
+  video_width: clampedAttributeField(MAX_VIDEO_SIDE_LENGTH),
+  video_height: clampedAttributeField(MAX_VIDEO_SIDE_LENGTH),
+  video_duration: clampedAttributeField(MAX_MEDIA_DURATION_SECONDS),
+  show_caption_above_media: z.boolean().default(false),
+});
+
+// A voice result has no description, which the Bot API server does not read for one.
+const voiceResultSchema = z.strictObject({
+  type: sharedResultShape.type,
+  id: sharedResultShape.id,
+  reply_markup: sharedResultShape.reply_markup,
+  input_message_content: sharedResultShape.input_message_content,
+  ...captionShape,
+  title: z.string(),
+  voice_url: z.string().default(''),
+  voice_file_id: z.string().default(''),
+  voice_duration: clampedAttributeField(MAX_MEDIA_DURATION_SECONDS),
+});
+
+/**
  * Reads the elements of an `answerInlineQuery` `results` parameter as the official Bot API
  * server's `get_inline_query_result` does, failing with Telegram's description for a result it
- * cannot read. Article, photo, and document results are supported, the latter two with files given
- * by `file_id` or by URL; other result types fail as unsupported. A result's `input_message_content`
+ * cannot read. Article, photo, document, video, and voice results are supported, all but articles
+ * with files given by `file_id` or by URL; other result types fail as unsupported. A result's
+ * `input_message_content`
  * may send text or a rich message; other message contents fail as unsupported.
  *
  * `invalidParametersDescription` answers results that Telegram would read leniently, such as
@@ -254,7 +340,10 @@ function readInlineQueryResult(value: unknown): InlineQueryResultReading {
       description: `Bad Request: inline query results of type "${type}" are not supported`,
     };
   }
-  if (type !== 'article' && type !== 'photo' && type !== 'document') {
+  if (
+    type !== 'article' && type !== 'photo' && type !== 'document' && type !== 'video' &&
+    type !== 'voice'
+  ) {
     return {
       kind: 'failure',
       description:
@@ -279,6 +368,10 @@ function readInlineQueryResult(value: unknown): InlineQueryResultReading {
       return readPhotoResult(value);
     case 'document':
       return readDocumentResult(value);
+    case 'video':
+      return readVideoResult(value);
+    case 'voice':
+      return readVoiceResult(value);
     default: {
       const unhandledType: never = type;
       throw new Error(`Unhandled inline query result type: ${unhandledType}`);
@@ -367,6 +460,75 @@ function readDocumentResult(value: unknown): InlineQueryResultReading {
       thumbnailUrl: data.thumbnail_url ?? '',
       title: data.title,
       caption: readCaption(data),
+      ...(messageContent === undefined ? {} : { messageContent }),
+    },
+  };
+}
+
+function readVideoResult(value: unknown): InlineQueryResultReading {
+  const parsing = videoResultSchema.safeParse(value);
+  if (!parsing.success) {
+    return { kind: 'malformed' };
+  }
+  const { data } = parsing;
+  const file = readResultFile(data.video_url, data.video_file_id);
+  // The Bot API server requires the MIME type of a video given by `video_url`.
+  if (file === undefined || (data.video_url.length > 0 && data.mime_type === undefined)) {
+    return { kind: 'malformed' };
+  }
+  const mimeType = data.mime_type ?? '';
+  let video: InlineQueryResultVideoParameter = file;
+  if (file.kind === 'url') {
+    if (mimeType.startsWith(EMBEDDED_VIDEO_PLAYER_MIME_TYPE)) {
+      video = { kind: 'embedded_player', url: file.url };
+    } else if (!mimeType.startsWith(WEB_VIDEO_FILE_MIME_TYPE)) {
+      return { kind: 'failure', description: WEB_VIDEO_MIME_TYPE_INVALID_DESCRIPTION };
+    }
+  }
+  const messageContent = data.input_message_content;
+  if (video.kind === 'embedded_player' && messageContent === undefined) {
+    return { kind: 'failure', description: EMBEDDED_VIDEO_PLAYER_CONTENT_MISSING_DESCRIPTION };
+  }
+  return {
+    kind: 'result',
+    result: {
+      kind: 'video',
+      ...readSharedFields(data),
+      video,
+      title: data.title,
+      caption: readCaption(data),
+      showsCaptionAboveMedia: data.show_caption_above_media,
+      attributes: {
+        durationSeconds: data.video_duration,
+        width: data.video_width,
+        height: data.video_height,
+      },
+      ...(messageContent === undefined ? {} : { messageContent }),
+    },
+  };
+}
+
+function readVoiceResult(value: unknown): InlineQueryResultReading {
+  const parsing = voiceResultSchema.safeParse(value);
+  if (!parsing.success) {
+    return { kind: 'malformed' };
+  }
+  const { data } = parsing;
+  const voice = readResultFile(data.voice_url, data.voice_file_id);
+  if (voice === undefined) {
+    return { kind: 'malformed' };
+  }
+  const messageContent = data.input_message_content;
+  return {
+    kind: 'result',
+    result: {
+      kind: 'voice',
+      id: data.id,
+      ...(data.reply_markup === undefined ? {} : { inlineKeyboard: data.reply_markup }),
+      voice,
+      title: data.title,
+      caption: readCaption(data),
+      durationSeconds: data.voice_duration,
       ...(messageContent === undefined ? {} : { messageContent }),
     },
   };

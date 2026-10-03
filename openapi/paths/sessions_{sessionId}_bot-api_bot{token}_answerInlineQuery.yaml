@@ -1,10 +1,13 @@
 description: >-
   Telegram Bot API method for answering an inline query an account sent to the bot, once, with
-  up to 50 results that the account's client lists and sends. Article results, and photo and
-  document results with files the bot knows by `file_id` or names by URL, are supported. A
-  file named by URL is not downloaded with the answer: Telegram downloads it from the session's
-  emulated web each time an account sends it, and never when the result's
-  `input_message_content` replaces it. Results of other types (`Bad Request:
+  up to 50 results that the account's client lists and sends. Article results, and photo,
+  document, video, and voice results with files the bot knows by `file_id` or names by URL, are
+  supported. A file named by URL is not downloaded with the answer: Telegram downloads it from
+  the session's emulated web each time an account sends it, and never when the result's
+  `input_message_content` replaces it. A video declared as `text/html` is a web page with an
+  embedded player, which only the listing shows; such a result must specify
+  `input_message_content` (`Bad Request: inline query results with an embedded video player must
+  specify input_message_content`). Results of other types (`Bad Request:
   inline query results of type "<type>" are not supported`) and `input_message_content` of a
   location, venue, contact, or invoice (`Bad Request: inline query results sending a location,
   venue, contact, or invoice are not supported`) are rejected with these emulator errors.
@@ -60,7 +63,9 @@ post:
         InlineQueryResult: Input message content is not specified`), or text or formatting it
         cannot read, described as for `sendMessage` after `Bad Request: can't parse
         InlineQueryResult: `, or a document named by URL whose `mime_type` does not begin with
-        `application/pdf` or `application/zip` (`Bad Request: unallowed document MIME type`).
+        `application/pdf` or `application/zip` (`Bad Request: unallowed document MIME type`), or
+        a video named by URL whose `mime_type` does not begin with `video/mp4` or `text/html`
+        (`Bad Request: unallowed video MIME type`).
         Every result's file is then resolved: a `file_id` the bot does
         not know (`Bad Request: wrong remote file identifier specified: can't unserialize it`)
         or of another file type (`Bad Request: can't use file of type Document as Photo`).
@@ -78,9 +83,10 @@ post:
         and each result for an empty identifier (`Bad Request: RESULT_ID_EMPTY`), one longer
         than 64 bytes (`Bad Request: RESULT_ID_INVALID`), a repeated one (`Bad Request:
         RESULT_ID_DUPLICATE`), an empty article title (`Bad Request: ARTICLE_TITLE_EMPTY`), an
-        empty document title (`Bad Request: FILE_TITLE_EMPTY`), a file URL, or the thumbnail URL
-        of a result naming its file by URL, that is not an HTTP or HTTPS URL (`Bad Request:
-        WEBDOCUMENT_URL_INVALID`), a photo named by URL without a
+        empty document title (`Bad Request: FILE_TITLE_EMPTY`), an empty video title (`Bad
+        Request: VIDEO_TITLE_EMPTY`), a file URL, or the thumbnail URL of a result naming its file by URL,
+        that is not an HTTP or HTTPS URL (`Bad Request: WEBDOCUMENT_URL_INVALID`), a photo named
+        by URL without a
         `thumbnail_url` (`Bad Request: PHOTO_THUMB_URL_EMPTY`), and callback data longer than
         64 bytes (`Bad Request: BUTTON_DATA_INVALID`). A refused answer records none of its
         results.

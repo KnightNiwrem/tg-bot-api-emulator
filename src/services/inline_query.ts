@@ -25,16 +25,26 @@ import type {
   StoredDocumentFile,
   StoredFile,
   StoredPhotoFile,
+  StoredVideoFile,
+  StoredVoiceFile,
+  VideoAttributes,
   WebFile,
 } from '../types/stored_file.ts';
 import type { VirtualAccount } from '../types/virtual_account.ts';
 import type { VirtualBot } from '../types/virtual_bot.ts';
 import type { SharedChat } from '../types/virtual_chat.ts';
-import type { ChatMessage, PrivateMessage, SupergroupMessage } from '../types/virtual_message.ts';
+import type {
+  ChatMessage,
+  FormattedText,
+  PrivateMessage,
+  SupergroupMessage,
+} from '../types/virtual_message.ts';
 import type {
   DocumentUploadPreparation,
   InlineResultWebFileDownloadRequest,
   PhotoUploadPreparation,
+  VideoUploadPreparation,
+  VoiceUploadPreparation,
   WebFileDownloadResult,
 } from './media_file.ts';
 import {
@@ -106,6 +116,22 @@ type SpecifiedInlineQueryResultListing =
     readonly title: string;
     /** Empty for none. */
     readonly description: string;
+  }
+  | {
+    readonly kind: 'video';
+    /** A video file, or a web page with an embedded video player, which only the listing shows. */
+    readonly video:
+      | SpecifiedInlineResultFile<StoredVideoFile>
+      | { readonly source: 'embedded_player'; readonly url: string };
+    readonly title: string;
+    /** Empty for none. */
+    readonly description: string;
+  }
+  | {
+    readonly kind: 'voice';
+    readonly voice: SpecifiedInlineResultFile<StoredVoiceFile>;
+    /** Empty for none. */
+    readonly title: string;
   };
 
 /**
@@ -118,7 +144,18 @@ export type SpecifiedInlineResultWebMedia =
     readonly url: string;
     readonly showsCaptionAboveMedia: boolean;
   })
-  | (SpecifiedCaption & { readonly kind: 'web_document'; readonly url: string });
+  | (SpecifiedCaption & { readonly kind: 'web_document'; readonly url: string })
+  | (SpecifiedCaption & {
+    readonly kind: 'web_video';
+    readonly url: string;
+    readonly showsCaptionAboveMedia: boolean;
+    readonly attributes: VideoAttributes;
+  })
+  | (SpecifiedCaption & {
+    readonly kind: 'web_voice';
+    readonly url: string;
+    readonly durationSeconds: number;
+  });
 
 /**
  * A result of an answer as the bot specified it, before Telegram's checks. Its message content is
@@ -157,6 +194,7 @@ export type AnswerInlineQueryFailureReason =
   | 'result_id_duplicate'
   | 'article_title_empty'
   | 'document_title_empty'
+  | 'video_title_empty'
   | 'web_document_url_invalid'
   | 'photo_thumbnail_url_empty'
   | 'callback_data_invalid';
@@ -290,6 +328,8 @@ interface InlineResultWebMediaFiles {
   ): Promise<WebFileDownloadResult>;
   prepareInlineResultWebPhotoUpload(webFile: WebFile): PhotoUploadPreparation;
   prepareWebDocumentUpload(webFile: WebFile): DocumentUploadPreparation;
+  prepareWebVideoUpload(webFile: WebFile, attributes: VideoAttributes): VideoUploadPreparation;
+  prepareWebVoiceUpload(webFile: WebFile, durationSeconds: number): VoiceUploadPreparation;
 }
 
 interface InlineQueryServiceDependencies {
@@ -599,6 +639,49 @@ export class InlineQueryService {
           }
           : { prepared: false, reason: 'web_media_invalid' };
       }
+      case 'web_video': {
+        const download = await this.#downloadWebMedia(content.url, 'video', signal);
+        if (!download.downloaded) {
+          return { prepared: false, reason: download.reason };
+        }
+        const preparation = this.#webMediaFiles.prepareWebVideoUpload(
+          download.webFile,
+          content.attributes,
+        );
+        return preparation.prepared
+          ? {
+            prepared: true,
+            content: {
+              kind: 'video',
+              video: { kind: 'upload', upload: preparation.upload },
+              caption: content.caption,
+              hasSpoiler: false,
+              showsCaptionAboveMedia: content.showsCaptionAboveMedia,
+              startTimestampSeconds: 0,
+            },
+          }
+          : { prepared: false, reason: 'web_media_invalid' };
+      }
+      case 'web_voice': {
+        const download = await this.#downloadWebMedia(content.url, 'voice', signal);
+        if (!download.downloaded) {
+          return { prepared: false, reason: download.reason };
+        }
+        const preparation = this.#webMediaFiles.prepareWebVoiceUpload(
+          download.webFile,
+          content.durationSeconds,
+        );
+        return preparation.prepared
+          ? {
+            prepared: true,
+            content: {
+              kind: 'voice',
+              voice: { kind: 'upload', upload: preparation.upload },
+              caption: content.caption,
+            },
+          }
+          : { prepared: false, reason: 'web_media_invalid' };
+      }
       default:
         return { prepared: true, content: { kind: 'existing', content } };
     }
@@ -689,24 +772,16 @@ export class InlineQueryService {
   ):
     | { readonly normalized: true; readonly content: NormalizedInlineResultContent }
     | { readonly normalized: false; readonly failure: ContentTextNormalizationFailure } {
-    if (content.kind !== 'web_photo' && content.kind !== 'web_document') {
+    if (!isSpecifiedInlineResultWebMedia(content)) {
       return normalizeOutgoingContent(content, 'bot', this.#textFixingContext);
     }
     const captionNormalization = normalizeCaption(content, 'bot', this.#textFixingContext);
     if (!captionNormalization.normalized) {
       return captionNormalization;
     }
-    const { caption } = captionNormalization;
     return {
       normalized: true,
-      content: content.kind === 'web_photo'
-        ? {
-          kind: 'web_photo',
-          url: content.url,
-          caption,
-          showsCaptionAboveMedia: content.showsCaptionAboveMedia,
-        }
-        : { kind: 'web_document', url: content.url, caption },
+      content: withWebMediaCaption(content, captionNormalization.caption),
     };
   }
 
@@ -763,6 +838,9 @@ function checkSpecifiedResults(
     if (result.kind === 'document' && result.title.length === 0) {
       return 'document_title_empty';
     }
+    if (result.kind === 'video' && result.title.length === 0) {
+      return 'video_title_empty';
+    }
     const webMediaFailure = checkWebMediaListing(result);
     if (webMediaFailure !== undefined) {
       return webMediaFailure;
@@ -780,29 +858,54 @@ function checkSpecifiedResults(
 }
 
 /**
- * Telegram's checks of a media result whose file the bot names by URL: the URL must be one
- * Telegram can download, and so must its thumbnail's, which a photo, as the Bot API requires, must
- * have. TDLib passes both URLs on as web documents, so Telegram's servers check them; the emulator
- * reads them as TDLib's `parse_url` reads the URL of a file sent by URL. TDLib sends no thumbnail
- * for a file the bot knows by `file_id`.
+ * Telegram's checks of a media result whose file, or embedded video player, the bot names by URL:
+ * the URL must be one Telegram can download, and so must its thumbnail's, which a photo, as the Bot
+ * API requires, must have. TDLib passes both URLs on as web documents, so Telegram's servers check
+ * them; the emulator reads them as TDLib's `parse_url` reads the URL of a file sent by URL. TDLib
+ * sends no thumbnail for a file the bot knows by `file_id`.
  */
 function checkWebMediaListing(
   result: SpecifiedInlineQueryResult,
 ): 'web_document_url_invalid' | 'photo_thumbnail_url_empty' | undefined {
-  if (result.kind === 'article') {
-    return undefined;
-  }
-  const file = result.kind === 'photo' ? result.photo : result.document;
-  if (file.source !== 'web') {
+  const file = getSpecifiedListedFile(result);
+  if (file === undefined || file.source === 'stored') {
     return undefined;
   }
   if (!parseHttpUrl(file.url).parsed) {
     return 'web_document_url_invalid';
   }
-  if (result.thumbnailUrl.length === 0) {
+  const thumbnailUrl = result.kind === 'photo' || result.kind === 'document'
+    ? result.thumbnailUrl
+    : '';
+  if (thumbnailUrl.length === 0) {
     return result.kind === 'photo' ? 'photo_thumbnail_url_empty' : undefined;
   }
-  return parseHttpUrl(result.thumbnailUrl).parsed ? undefined : 'web_document_url_invalid';
+  return parseHttpUrl(thumbnailUrl).parsed ? undefined : 'web_document_url_invalid';
+}
+
+/** The file a specified result lists, or `undefined` for an article, which lists none. */
+function getSpecifiedListedFile(
+  result: SpecifiedInlineQueryResult,
+):
+  | SpecifiedInlineResultFile<StoredFile>
+  | { readonly source: 'embedded_player'; readonly url: string }
+  | undefined {
+  switch (result.kind) {
+    case 'article':
+      return undefined;
+    case 'photo':
+      return result.photo;
+    case 'document':
+      return result.document;
+    case 'video':
+      return result.video;
+    case 'voice':
+      return result.voice;
+    default: {
+      const unhandledResult: never = result;
+      throw new Error(`Unhandled inline query result: ${JSON.stringify(unhandledResult)}`);
+    }
+  }
 }
 
 /**
@@ -811,10 +914,61 @@ function checkWebMediaListing(
  */
 type NormalizedInlineResultContent = NormalizedOutgoingContent | InlineResultWebMedia;
 
+/** The kinds of media a result names by URL, which only sending it downloads. */
+const WEB_MEDIA_KINDS: ReadonlySet<string> = new Set<InlineResultWebMedia['kind']>([
+  'web_photo',
+  'web_document',
+  'web_video',
+  'web_voice',
+]);
+
 function isInlineResultWebMedia(
   content: NormalizedInlineResultContent | InlineResultMessageContent,
 ): content is InlineResultWebMedia {
-  return content.kind === 'web_photo' || content.kind === 'web_document';
+  return WEB_MEDIA_KINDS.has(content.kind);
+}
+
+function isSpecifiedInlineResultWebMedia(
+  content: SpecifiedInlineQueryResult['messageContent'],
+): content is SpecifiedInlineResultWebMedia {
+  return WEB_MEDIA_KINDS.has(content.kind);
+}
+
+/** Media named by URL with its caption normalized, in place of the caption the bot specified. */
+function withWebMediaCaption(
+  content: SpecifiedInlineResultWebMedia,
+  caption: FormattedText,
+): InlineResultWebMedia {
+  switch (content.kind) {
+    case 'web_photo':
+      return {
+        kind: 'web_photo',
+        url: content.url,
+        caption,
+        showsCaptionAboveMedia: content.showsCaptionAboveMedia,
+      };
+    case 'web_document':
+      return { kind: 'web_document', url: content.url, caption };
+    case 'web_video':
+      return {
+        kind: 'web_video',
+        url: content.url,
+        caption,
+        showsCaptionAboveMedia: content.showsCaptionAboveMedia,
+        attributes: content.attributes,
+      };
+    case 'web_voice':
+      return {
+        kind: 'web_voice',
+        url: content.url,
+        caption,
+        durationSeconds: content.durationSeconds,
+      };
+    default: {
+      const unhandledContent: never = content;
+      throw new Error(`Unhandled web media: ${JSON.stringify(unhandledContent)}`);
+    }
+  }
 }
 
 /**
@@ -836,12 +990,12 @@ function toInlineQueryResult(
     id: result.id,
     messageContent,
     ...(result.inlineKeyboard === undefined ? {} : { inlineKeyboard: result.inlineKeyboard }),
-    ...(result.description.length === 0 ? {} : { description: result.description }),
   };
   switch (result.kind) {
     case 'article':
       return {
         ...shared,
+        ...optionalDescription(result.description),
         kind: 'article',
         title: result.title,
         ...(result.url.length === 0 ? {} : { url: result.url }),
@@ -849,6 +1003,7 @@ function toInlineQueryResult(
     case 'photo':
       return {
         ...shared,
+        ...optionalDescription(result.description),
         kind: 'photo',
         file: toListedFile(result.photo),
         ...(result.title.length === 0 ? {} : { title: result.title }),
@@ -856,9 +1011,25 @@ function toInlineQueryResult(
     case 'document':
       return {
         ...shared,
+        ...optionalDescription(result.description),
         kind: 'document',
         file: toListedFile(result.document),
         title: result.title,
+      };
+    case 'video':
+      return {
+        ...shared,
+        ...optionalDescription(result.description),
+        kind: 'video',
+        file: toListedFile(result.video),
+        title: result.title,
+      };
+    case 'voice':
+      return {
+        ...shared,
+        kind: 'voice',
+        file: toListedFile(result.voice),
+        ...(result.title.length === 0 ? {} : { title: result.title }),
       };
     default: {
       const unhandledResult: never = result;
@@ -867,8 +1038,15 @@ function toInlineQueryResult(
   }
 }
 
-function toListedFile(file: SpecifiedInlineResultFile<StoredFile>): InlineResultListedFile {
-  return file.source === 'stored'
-    ? { source: 'stored', fileId: file.file.id }
-    : { source: 'web', url: file.url };
+/** A result's description as the answer keeps it, omitted when empty. */
+function optionalDescription(description: string): { readonly description?: string } {
+  return description.length === 0 ? {} : { description };
+}
+
+function toListedFile(
+  file:
+    | SpecifiedInlineResultFile<StoredFile>
+    | { readonly source: 'embedded_player'; readonly url: string },
+): InlineResultListedFile {
+  return file.source === 'stored' ? { source: 'stored', fileId: file.file.id } : file;
 }

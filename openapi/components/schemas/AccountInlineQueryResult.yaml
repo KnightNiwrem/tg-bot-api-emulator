@@ -10,12 +10,14 @@ properties:
       - article
       - photo
       - document
+      - video
+      - voice
   id:
     type: string
   title:
     type: string
     minLength: 1
-    description: Omitted for a photo without a title.
+    description: Omitted for a photo or voice note without a title.
   description:
     type: string
     minLength: 1

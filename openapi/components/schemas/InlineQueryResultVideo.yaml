@@ -1,0 +1,65 @@
+description: >-
+  A video file or a web page with an embedded video player, which the bot names by URL. A video
+  file declared as `video/mp4` is downloaded from the session's emulated web each time an account
+  sends it without `input_message_content`; it must be served as `video/mp4` and be at most 20 MB,
+  and keeps the duration and dimensions the bot specified. A page declared as `text/html` is only
+  listed: the result must send its `input_message_content`.
+type: object
+additionalProperties: false
+required:
+  - type
+  - id
+  - title
+  - video_url
+  - mime_type
+properties:
+  type:
+    type: string
+    const: video
+  id:
+    $ref: ./InlineQueryResultId.yaml
+  video_url:
+    type: string
+    minLength: 1
+    description: >-
+      An HTTP or HTTPS URL, read as TDLib reads the URL of a file sent by URL, so a URL without a
+      protocol is an HTTP one.
+  mime_type:
+    type: string
+    pattern: ^(video/mp4|text/html)
+    description: The declared type, which TDLib requires to begin with `video/mp4` or `text/html`.
+  thumbnail_url:
+    type: string
+    description: Validated and ignored.
+  title:
+    type: string
+    minLength: 1
+  description:
+    type: string
+  caption:
+    $ref: ./Caption.yaml
+  parse_mode:
+    $ref: ./ParseMode.yaml
+  caption_entities:
+    $ref: ./CaptionEntitiesParameter.yaml
+  show_caption_above_media:
+    type: boolean
+    default: false
+  video_width:
+    type: integer
+    description: Clamped to 0 through 10000, as for `sendVideo`.
+  video_height:
+    type: integer
+    description: Clamped to 0 through 10000, as for `sendVideo`.
+  video_duration:
+    type: integer
+    description: Seconds, clamped to 0 through 86400, as for `sendVideo`.
+  reply_markup:
+    $ref: ./InlineKeyboardMarkup.yaml
+  input_message_content:
+    oneOf:
+      - $ref: ./InputTextMessageContent.yaml
+      - $ref: ./InputRichMessageContent.yaml
+    description: >-
+      Text, if it has text, or a rich message that sending the result writes instead of the
+      video, which is then not downloaded. Required for a `text/html` page.

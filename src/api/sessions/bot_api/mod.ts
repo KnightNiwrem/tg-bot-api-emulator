@@ -329,6 +329,7 @@ const ANSWER_INLINE_QUERY_FAILURE_DESCRIPTIONS = {
   result_id_duplicate: 'Bad Request: RESULT_ID_DUPLICATE',
   article_title_empty: 'Bad Request: ARTICLE_TITLE_EMPTY',
   document_title_empty: 'Bad Request: FILE_TITLE_EMPTY',
+  video_title_empty: 'Bad Request: VIDEO_TITLE_EMPTY',
   web_document_url_invalid: 'Bad Request: WEBDOCUMENT_URL_INVALID',
   photo_thumbnail_url_empty: 'Bad Request: PHOTO_THUMB_URL_EMPTY',
   callback_data_invalid: BUTTON_DATA_INVALID_DESCRIPTION,
@@ -3187,6 +3188,8 @@ function inlineMessageEditAnswer(result: InlineMessageEditResult): BotApiMethodA
       return botApiError(400, MESSAGE_NOT_MODIFIED_DESCRIPTION);
     case 'inline_message_upload_unsupported':
       return botApiError(400, INLINE_MESSAGE_CONTENT_INVALID_DESCRIPTION);
+    case 'message_media_not_editable':
+      return botApiError(400, MESSAGE_MEDIA_NOT_EDITABLE_DESCRIPTION);
     case 'file_empty':
     case 'image_invalid':
     case 'photo_dimensions_invalid':
@@ -4364,7 +4367,6 @@ function readInlineQueryResultContent(
     );
   const shared = {
     id: result.id,
-    description: result.description,
     ...(result.inlineKeyboard === undefined ? {} : { inlineKeyboard: result.inlineKeyboard }),
   };
   const messageContentReading = result.messageContent === undefined
@@ -4385,7 +4387,14 @@ function readInlineQueryResultContent(
     }
     return {
       read: true,
-      result: { ...shared, kind: 'article', title: result.title, url: result.url, messageContent },
+      result: {
+        ...shared,
+        kind: 'article',
+        description: result.description,
+        title: result.title,
+        url: result.url,
+        messageContent,
+      },
     };
   }
 
@@ -4399,23 +4408,57 @@ function readInlineQueryResultContent(
     caption: captionReading.formattedText,
     ...(messageContent === undefined ? {} : { messageContent }),
   };
-  return {
-    read: true,
-    result: result.kind === 'photo'
-      ? {
-        ...media,
-        kind: 'photo',
-        photo: result.photo,
-        thumbnailUrl: result.thumbnailUrl,
-        showsCaptionAboveMedia: result.showsCaptionAboveMedia,
-      }
-      : {
-        ...media,
-        kind: 'document',
-        document: result.document,
-        thumbnailUrl: result.thumbnailUrl,
-      },
-  };
+  switch (result.kind) {
+    case 'photo':
+      return {
+        read: true,
+        result: {
+          ...media,
+          kind: 'photo',
+          description: result.description,
+          photo: result.photo,
+          thumbnailUrl: result.thumbnailUrl,
+          showsCaptionAboveMedia: result.showsCaptionAboveMedia,
+        },
+      };
+    case 'document':
+      return {
+        read: true,
+        result: {
+          ...media,
+          kind: 'document',
+          description: result.description,
+          document: result.document,
+          thumbnailUrl: result.thumbnailUrl,
+        },
+      };
+    case 'video':
+      return {
+        read: true,
+        result: {
+          ...media,
+          kind: 'video',
+          description: result.description,
+          video: result.video,
+          showsCaptionAboveMedia: result.showsCaptionAboveMedia,
+          attributes: result.attributes,
+        },
+      };
+    case 'voice':
+      return {
+        read: true,
+        result: {
+          ...media,
+          kind: 'voice',
+          voice: result.voice,
+          durationSeconds: result.durationSeconds,
+        },
+      };
+    default: {
+      const unhandledResult: never = result;
+      throw new Error(`Unhandled inline query result: ${JSON.stringify(unhandledResult)}`);
+    }
+  }
 }
 
 /**

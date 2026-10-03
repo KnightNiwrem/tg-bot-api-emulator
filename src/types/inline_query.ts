@@ -1,6 +1,6 @@
 import type { GeoLocation } from './geo_location.ts';
 import type { InlineKeyboard } from './inline_keyboard.ts';
-import type { StoredFileId } from './stored_file.ts';
+import type { StoredFileId, VideoAttributes } from './stored_file.ts';
 import type { FormattedText, MessageContent } from './virtual_message.ts';
 
 /** Telegram's decimal text form of a 64-bit inline query identifier. */
@@ -44,6 +44,23 @@ export type InlineResultWebMedia =
     readonly url: string;
     /** Empty for no caption. */
     readonly caption: FormattedText;
+  }
+  | {
+    readonly kind: 'web_video';
+    readonly url: string;
+    /** Empty for no caption. */
+    readonly caption: FormattedText;
+    readonly showsCaptionAboveMedia: boolean;
+    /** As the bot specified them, which the downloaded video keeps. */
+    readonly attributes: VideoAttributes;
+  }
+  | {
+    readonly kind: 'web_voice';
+    readonly url: string;
+    /** Empty for no caption. */
+    readonly caption: FormattedText;
+    /** As the bot specified it, which the downloaded voice note keeps. */
+    readonly durationSeconds: number;
   };
 
 /**
@@ -52,10 +69,14 @@ export type InlineResultWebMedia =
  */
 export type InlineResultMessageContent = MessageContent | InlineResultWebMedia;
 
-/** The file a media result lists: one the bot knows by `file_id`, or one it names by URL. */
+/**
+ * The file a media result lists: one the bot knows by `file_id`, or one it names by URL. A video
+ * result may instead list a web page with an embedded video player, which it cannot send itself.
+ */
 export type InlineResultListedFile =
   | { readonly source: 'stored'; readonly fileId: StoredFileId }
-  | { readonly source: 'web'; readonly url: string };
+  | { readonly source: 'web'; readonly url: string }
+  | { readonly source: 'embedded_player'; readonly url: string };
 
 interface InlineQueryResultBase {
   /** The bot's identifier of the result, unique within its answer. */
@@ -100,11 +121,31 @@ export interface DocumentInlineQueryResult extends InlineQueryResultBase {
   readonly description?: string;
 }
 
+/** A video, or a web page with an embedded video player, which the client lists by its title. */
+export interface VideoInlineQueryResult extends InlineQueryResultBase {
+  readonly kind: 'video';
+  readonly file: InlineResultListedFile;
+  /** Never empty. */
+  readonly title: string;
+  /** Omitted when empty. */
+  readonly description?: string;
+}
+
+/** A voice note, which the client lists by its title. */
+export interface VoiceInlineQueryResult extends InlineQueryResultBase {
+  readonly kind: 'voice';
+  readonly file: InlineResultListedFile;
+  /** Omitted when empty. */
+  readonly title?: string;
+}
+
 /** A result of an answer to an inline query. The Bot API's other result types are not supported. */
 export type InlineQueryResult =
   | ArticleInlineQueryResult
   | PhotoInlineQueryResult
-  | DocumentInlineQueryResult;
+  | DocumentInlineQueryResult
+  | VideoInlineQueryResult
+  | VoiceInlineQueryResult;
 
 /**
  * The button the account's client shows above the results: it opens the bot's private chat with a

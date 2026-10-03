@@ -2461,7 +2461,10 @@ function presentInlineQueryResultForAccount(result: InlineQueryResult) {
     type: result.kind,
     id: result.id,
     ...(result.title === undefined ? {} : { title: result.title }),
-    ...(result.description === undefined ? {} : { description: result.description }),
+    // A voice note result has no description.
+    ...('description' in result && result.description !== undefined
+      ? { description: result.description }
+      : {}),
     ...(result.kind === 'article' && result.url !== undefined ? { url: result.url } : {}),
   };
 }

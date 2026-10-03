@@ -1,0 +1,44 @@
+description: >-
+  A voice note the bot names by URL, which Telegram downloads from the session's emulated web each
+  time an account sends it without `input_message_content`; it must be served as `audio/ogg` and be
+  at most 20 MB, and keeps the duration the bot specified. Unlike with `sendVoice`, a voice note
+  larger than 1 MB is still sent as a voice note.
+type: object
+additionalProperties: false
+required:
+  - type
+  - id
+  - title
+  - voice_url
+properties:
+  type:
+    type: string
+    const: voice
+  id:
+    $ref: ./InlineQueryResultId.yaml
+  voice_url:
+    type: string
+    minLength: 1
+    description: >-
+      An HTTP or HTTPS URL, read as TDLib reads the URL of a file sent by URL, so a URL without a
+      protocol is an HTTP one.
+  title:
+    type: string
+  caption:
+    $ref: ./Caption.yaml
+  parse_mode:
+    $ref: ./ParseMode.yaml
+  caption_entities:
+    $ref: ./CaptionEntitiesParameter.yaml
+  voice_duration:
+    type: integer
+    description: Seconds, clamped to 0 through 86400, as for `sendVoice`.
+  reply_markup:
+    $ref: ./InlineKeyboardMarkup.yaml
+  input_message_content:
+    oneOf:
+      - $ref: ./InputTextMessageContent.yaml
+      - $ref: ./InputRichMessageContent.yaml
+    description: >-
+      Text, if it has text, or a rich message that sending the result writes instead of the voice
+      note, which is then not downloaded.

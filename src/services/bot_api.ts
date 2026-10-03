@@ -81,6 +81,8 @@ import {
   type StoredDocumentFile,
   type StoredFile,
   type StoredPhotoFile,
+  type StoredVideoFile,
+  type StoredVoiceFile,
   type VideoAttributes,
   type WebFile,
 } from '../types/stored_file.ts';
@@ -848,6 +850,8 @@ export type EditInlineMessageCaptionFailureReason =
 export type EditInlineMessageMediaFailureReason =
   | EditInlineMessageReplyMarkupFailureReason
   | 'caption_too_long'
+  /** The message is a voice note, which an inline query result can send but no edit replaces. */
+  | 'message_media_not_editable'
   /** The new media is uploaded, which an inline message cannot receive. */
   | 'inline_message_upload_unsupported';
 
@@ -927,6 +931,32 @@ export type InlineQueryResultRequest =
     readonly title: string;
     /** Empty text for no caption. */
     readonly caption: SpecifiedFormattedText;
+    readonly messageContent?: InlineResultMessageContentRequest;
+  })
+  | (InlineQueryResultRequestBase & {
+    readonly kind: 'video';
+    /** A video file, or a web page with an embedded video player, which the bot names by URL. */
+    readonly video:
+      | InlineResultFileRequest
+      | { readonly kind: 'embedded_player'; readonly url: string };
+    readonly title: string;
+    /** Empty text for no caption. */
+    readonly caption: SpecifiedFormattedText;
+    readonly showsCaptionAboveMedia: boolean;
+    /** Kept by a video the bot names by URL; a stored video keeps its own. */
+    readonly attributes: VideoAttributes;
+    /** Required for an embedded video player, which cannot be sent itself. */
+    readonly messageContent?: InlineResultMessageContentRequest;
+  })
+  | (Omit<InlineQueryResultRequestBase, 'description'> & {
+    readonly kind: 'voice';
+    readonly voice: InlineResultFileRequest;
+    /** Empty for none. */
+    readonly title: string;
+    /** Empty text for no caption. */
+    readonly caption: SpecifiedFormattedText;
+    /** Kept by a voice note the bot names by URL; a stored one keeps its own. */
+    readonly durationSeconds: number;
     readonly messageContent?: InlineResultMessageContentRequest;
   });
 
@@ -1658,7 +1688,9 @@ interface MediaFiles {
   prepareWebPhotoUpload(webFile: WebFile): PhotoUploadPreparation;
   prepareWebDocumentUpload(webFile: WebFile): DocumentUploadPreparation;
   prepareVideoUpload(request: VideoUploadRequest): VideoUploadPreparation;
+  prepareWebVideoUpload(webFile: WebFile, attributes: VideoAttributes): VideoUploadPreparation;
   prepareVoiceUpload(request: VoiceUploadRequest): VoiceUploadPreparation;
+  prepareWebVoiceUpload(webFile: WebFile, durationSeconds: number): VoiceUploadPreparation;
   findObserverFile(observerId: number, fileId: string): StoredFile | undefined;
   getBotFile(botId: number, fileId: string):
     | {
@@ -3359,25 +3391,15 @@ export class BotApiService {
       }
       return { resolved: false, failure: fileIdFailure(file, 'video') };
     }
-    const preparation = this.#mediaFiles.prepareVideoUpload(
-      input.kind === 'upload'
-        ? {
-          content: input.content,
-          fileName: cleanUploadedFileName(input.fileName),
-          attributes,
-          ...(thumbnailContent === undefined ? {} : { thumbnailContent }),
-          source: 'bot_upload',
-        }
-        : {
-          content: input.webFile.content,
-          ...(input.webFile.fileName.length === 0
-            ? {}
-            : { fileName: cleanUploadedFileName(input.webFile.fileName) }),
-          mimeType: input.webFile.mediaType,
-          attributes,
-          source: 'web_download',
-        },
-    );
+    const preparation = input.kind === 'upload'
+      ? this.#mediaFiles.prepareVideoUpload({
+        content: input.content,
+        fileName: cleanUploadedFileName(input.fileName),
+        attributes,
+        ...(thumbnailContent === undefined ? {} : { thumbnailContent }),
+        source: 'bot_upload',
+      })
+      : this.#mediaFiles.prepareWebVideoUpload(input.webFile, attributes);
     return preparation.prepared
       ? { resolved: true, file: { kind: 'upload', upload: preparation.upload } }
       : { resolved: false, failure: uploadPreparationFailure(preparation) };
@@ -3402,21 +3424,14 @@ export class BotApiService {
       }
       return { resolved: false, failure: fileIdFailure(file, 'voice') };
     }
-    const preparation = this.#mediaFiles.prepareVoiceUpload(
-      input.kind === 'upload'
-        ? {
-          content: input.content,
-          fileName: cleanUploadedFileName(input.fileName),
-          durationSeconds,
-          source: 'bot_upload',
-        }
-        : {
-          content: input.webFile.content,
-          mimeType: input.webFile.mediaType,
-          durationSeconds,
-          source: 'web_download',
-        },
-    );
+    const preparation = input.kind === 'upload'
+      ? this.#mediaFiles.prepareVoiceUpload({
+        content: input.content,
+        fileName: cleanUploadedFileName(input.fileName),
+        durationSeconds,
+        source: 'bot_upload',
+      })
+      : this.#mediaFiles.prepareWebVoiceUpload(input.webFile, durationSeconds);
     return preparation.prepared
       ? { resolved: true, file: { kind: 'upload', upload: preparation.upload } }
       : { resolved: false, failure: uploadPreparationFailure(preparation) };
@@ -4502,7 +4517,8 @@ export class BotApiService {
    * Replaces the content, caption and inline keyboard of a message sent through the bot with a
    * new photo, document, or video, as `editMessageMedia` replaces them. As TDLib's
    * `edit_inline_message_media` requires, the media may reuse a file by its `file_id` or name one
-   * by URL but not upload one.
+   * by URL but not upload one. A voice note that an inline query result sent keeps its media, as
+   * any voice note does.
    */
   editInlineMessageMedia(
     authenticatedBot: VirtualBotProfile,
@@ -4538,11 +4554,10 @@ export class BotApiService {
       case 'send_permission_missing':
         throw new Error(`Inline message ${inlineMessageId} was refused for a permission`);
       case 'caption_too_long':
+      case 'message_media_not_editable':
         return { edited: false, reason: result.reason };
       case 'album_media_kind_changed':
         throw new Error(`Inline message ${inlineMessageId} belongs to an album`);
-      case 'message_media_not_editable':
-        throw new Error(`Inline message ${inlineMessageId} is a voice note or shows a poll`);
       default:
         return {
           edited: false,
@@ -4739,11 +4754,11 @@ export class BotApiService {
   }
 
   /**
-   * Resolves the files of an inline query result as TDLib's `answer_inline_query` does: its photo
-   * or document known by `file_id`, and the files of a rich message it sends, which must reuse
-   * files by `file_id` because an inline message cannot receive an upload. A photo or document
+   * Resolves the files of an inline query result as TDLib's `answer_inline_query` does: its photo,
+   * document, video, or voice note known by `file_id`, and the files of a rich message it sends,
+   * which must reuse files by `file_id` because an inline message cannot receive an upload. Media
    * named by URL keeps its URL, as TDLib passes it on, for Telegram to download when the result is
-   * sent.
+   * sent; an embedded video player is only listed, and sends its `input_message_content`.
    */
   #resolveInlineQueryResult(
     authenticatedBot: VirtualBotProfile,
@@ -4758,7 +4773,6 @@ export class BotApiService {
     } {
     const shared = {
       id: result.id,
-      description: result.description,
       ...(result.inlineKeyboard === undefined ? {} : { inlineKeyboard: result.inlineKeyboard }),
     };
     const contentResolution = result.messageContent === undefined
@@ -4779,6 +4793,7 @@ export class BotApiService {
             ...shared,
             kind: 'article',
             title: result.title,
+            description: result.description,
             url: result.url,
             messageContent,
           },
@@ -4794,6 +4809,7 @@ export class BotApiService {
           result: {
             ...shared,
             kind: 'photo',
+            description: result.description,
             photo,
             thumbnailUrl: result.thumbnailUrl,
             title: result.title,
@@ -4816,10 +4832,62 @@ export class BotApiService {
           result: {
             ...shared,
             kind: 'document',
+            description: result.description,
             document,
             thumbnailUrl: result.thumbnailUrl,
             title: result.title,
             messageContent: messageContent ?? toInlineResultDocumentContent(document, result),
+          },
+        };
+      }
+      case 'video': {
+        const listing = {
+          ...shared,
+          kind: 'video' as const,
+          description: result.description,
+          title: result.title,
+        };
+        if (result.video.kind === 'embedded_player') {
+          if (messageContent === undefined) {
+            throw new Error('Expected an embedded video player to send its input message content');
+          }
+          return {
+            resolved: true,
+            result: {
+              ...listing,
+              video: { source: 'embedded_player', url: result.video.url },
+              messageContent,
+            },
+          };
+        }
+        const resolution = this.#resolveInlineResultFile(authenticatedBot, result.video, 'video');
+        if (!resolution.resolved) {
+          return resolution;
+        }
+        const video = resolution.file;
+        return {
+          resolved: true,
+          result: {
+            ...listing,
+            video,
+            messageContent: messageContent ?? toInlineResultVideoContent(video, result),
+          },
+        };
+      }
+      case 'voice': {
+        const resolution = this.#resolveInlineResultFile(authenticatedBot, result.voice, 'voice');
+        if (!resolution.resolved) {
+          return resolution;
+        }
+        const voice = resolution.file;
+        return {
+          resolved: true,
+          result: {
+            ...shared,
+            kind: 'voice',
+            voice,
+            title: result.title,
+            messageContent: messageContent ?? toInlineResultVoiceContent(voice, result),
           },
         };
       }
@@ -5214,6 +5282,48 @@ function toInlineResultDocumentContent(
       document: { kind: 'stored', file: document.file },
       ...toSpecifiedCaption(result),
     };
+}
+
+/**
+ * What a video result sends without `input_message_content`: its video with its caption, played
+ * from its beginning and covered by no spoiler. A video named by URL takes the attributes the bot
+ * specified; a stored one keeps its own.
+ */
+function toInlineResultVideoContent(
+  video: SpecifiedInlineResultFile<StoredVideoFile>,
+  result: Extract<InlineQueryResultRequest, { readonly kind: 'video' }>,
+): OutgoingContentOtherThanPoll | SpecifiedInlineResultWebMedia {
+  const presentation = {
+    ...toSpecifiedCaption(result),
+    showsCaptionAboveMedia: result.showsCaptionAboveMedia,
+  };
+  return video.source === 'web'
+    ? { kind: 'web_video', url: video.url, ...presentation, attributes: result.attributes }
+    : {
+      kind: 'video',
+      video: { kind: 'stored', file: video.file },
+      ...presentation,
+      hasSpoiler: false,
+      startTimestampSeconds: 0,
+    };
+}
+
+/**
+ * What a voice result sends without `input_message_content`: its voice note with its caption. A
+ * voice note named by URL takes the duration the bot specified; a stored one keeps its own.
+ */
+function toInlineResultVoiceContent(
+  voice: SpecifiedInlineResultFile<StoredVoiceFile>,
+  result: Extract<InlineQueryResultRequest, { readonly kind: 'voice' }>,
+): OutgoingContentOtherThanPoll | SpecifiedInlineResultWebMedia {
+  return voice.source === 'web'
+    ? {
+      kind: 'web_voice',
+      url: voice.url,
+      ...toSpecifiedCaption(result),
+      durationSeconds: result.durationSeconds,
+    }
+    : { kind: 'voice', voice: { kind: 'stored', file: voice.file }, ...toSpecifiedCaption(result) };
 }
 
 /**

@@ -26,15 +26,17 @@ of the destination supergroup. Choices can be repeated while the account can sti
 Eligible chat bots receive the resulting account message; privacy mode includes messages sent
 through the observing bot.
 
-Supported results are articles with text or rich message input content, and photos/documents
-identified by a `file_id` the bot knows or [named by URL](#media-named-by-url). Photo/document
-results may instead specify text or rich message input content, which the chosen message holds in
-place of the media the listing shows. Supported caption formatting and inline keyboards apply. A
-rich message, which the official server's [`get_input_message_content`][input-message-content] reads
-in place of text, is read as for [`sendRichMessage`](rich-messages.md#sending-and-editing), and its
-buttons work as in any inline message. As TDLib's
-[`InlineQueriesManager::get_inline_message`][inline-rich-message] requires, its photos and documents
-are files the bot knows by `file_id`; an upload fails with
+Supported results are articles with text or rich message input content, and photos, documents,
+videos and voice notes identified by a `file_id` the bot knows or
+[named by URL](#media-named-by-url). Media results may instead specify text or rich message input
+content, which the chosen message holds in place of the media the listing shows. A video result
+needs a nonempty title (`Bad Request: VIDEO_TITLE_EMPTY`), as a document result does
+(`Bad Request: FILE_TITLE_EMPTY`); a voice note result has no description. Supported caption
+formatting and inline keyboards apply. A rich message, which the official server's
+[`get_input_message_content`][input-message-content] reads in place of text, is read as for
+[`sendRichMessage`](rich-messages.md#sending-and-editing), and its buttons work as in any inline
+message. As TDLib's [`InlineQueriesManager::get_inline_message`][inline-rich-message] requires, its
+photos and documents are files the bot knows by `file_id`; an upload fails with
 `Bad Request: invalid inline message content specified`. The server prefixes its own descriptions of
 a rich message it cannot read with `can't parse InlineQueryResult:`, which the emulator words as for
 `sendRichMessage`. Answers allow up to 50 results, unique nonempty result IDs of at most 64 UTF-8
@@ -48,21 +50,32 @@ presses then reach the inline bot without a message payload. That bot can edit t
 and keyboards using the inline ID, with a result of `true`, even without access to the chat. If it
 can access the chat, it can also edit via `chat_id`/`message_id`; another bot cannot edit the inline
 message. TDLib makes the originating bot check in
-[`MessagesManager::can_edit_message`][edit-inline].
+[`MessagesManager::can_edit_message`][edit-inline]. Media edits of an inline message reuse a file by
+`file_id` or name one by URL, but an upload fails with
+`Bad Request: invalid message content specified`. A voice note sent from a result keeps its media,
+as any voice note does (`Bad Request: message media can't be edited`), while its caption and
+keyboard can change.
 
 ### Media named by URL
 
-As TDLib's [`get_input_bot_inline_result`][results] reads them, `photo_url` and `document_url` name
-a file by URL when they contain a dot; otherwise they are a `file_id`. TDLib passes the URL on as a
-web document, so answering does not download it, and Telegram's servers check it: a URL the emulator
-cannot read as an HTTP or HTTPS URL, as for
+As TDLib's [`get_input_bot_inline_result`][results] reads them, `photo_url`, `document_url`,
+`video_url` and `voice_url` name a file by URL when they contain a dot; otherwise they are a
+`file_id`. TDLib passes the URL on as a web document, so answering does not download it, and
+Telegram's servers check it: a URL the emulator cannot read as an HTTP or HTTPS URL, as for
 [files sent by URL](media-and-files.md#files-sent-by-url), fails with
 `Bad Request: WEBDOCUMENT_URL_INVALID`, as does a `thumbnail_url` of such a result that cannot be
 read, since TDLib passes it on as a web document too. A photo without the `thumbnail_url` the Bot
 API requires fails with `Bad Request: PHOTO_THUMB_URL_EMPTY`. A document must declare a `mime_type`
 that begins with `application/pdf` or `application/zip`, which TDLib checks before anything else,
-failing with `Bad Request: unallowed document MIME type`. A refused answer records none of its
-results.
+failing with `Bad Request: unallowed document MIME type`, and a video one that begins with
+`video/mp4` or `text/html`, failing with `Bad Request: unallowed video MIME type`. A refused answer
+records none of its results.
+
+A video declared as `text/html` is a web page with an embedded video player, such as a YouTube page.
+The Bot API requires such a result to replace its content with `input_message_content`, so the
+emulator refuses one without it with
+`Bad Request: inline query results with an embedded video player must specify input_message_content`;
+what Telegram does instead is not documented. The page is only listed and never downloaded.
 
 Telegram downloads the file when an account sends the result: `messages.sendInlineBotResult`, unlike
 `messages.setInlineBotResults`, fails with the download errors `WEBPAGE_CURL_FAILED` and
@@ -72,10 +85,16 @@ stores it as a new file, as a file a bot sends by URL. Inline results have their
 the Bot API reference rather than those of the send methods: a photo must be a JPEG image of at most
 5 MB, which the emulator requires to be served as `image/jpeg` and to read as a JPEG image, and a
 document a PDF or ZIP file, served as `application/pdf` or `application/zip`, of at most 20 MB, the
-limit of other files sent by URL. A photo is then read as an uploaded one, and a document is named
-after the URL's last path segment and keeps the type it was served as. The declared photo dimensions
-and the thumbnails of other results are validated and ignored; the client lists a thumbnail without
-the emulator downloading it.
+limit of other files sent by URL. A video file must be served as `video/mp4`, the only file type the
+reference allows, and a voice note as `audio/ogg`, the type TDLib declares for it, each of at most
+20 MB. Unlike with `sendVoice`, a voice note larger than 1 MB stays a voice note, as nothing
+documents the conversion to a file for inline results. A photo is then read as an uploaded one; a
+document, and a video whose URL path names a file, is named after the URL's last path segment, and
+each keeps the type it was served as. A video keeps the duration, width and height the bot
+specified, clamped as for `sendVideo`, and a voice note its specified duration; a video or voice
+note the bot knows by `file_id` keeps its own. The declared photo dimensions and the thumbnails of
+other results are validated and ignored; the client lists a thumbnail without the emulator
+downloading it.
 
 Choosing a result whose media no resource serves fails with `502`, and one whose media is empty,
 served as another type, or a photo that is not a readable JPEG image fails with `422`; neither sends
@@ -128,10 +147,10 @@ TDLib-compatible encoding. Tests should treat them as opaque values.
 
 ## Real gaps
 
-- **Additional results and input content.** Result kinds other than articles, photos and documents
-  are unsupported. Only text and rich message `input_message_content` works; locations, venues,
-  contacts, invoices and other content types do not. Compare the result dispatch in
-  [`InlineQueriesManager::get_input_bot_inline_result`][results].
+- **Additional results and input content.** Result kinds other than articles, photos, documents,
+  videos and voice notes are unsupported. Only text and rich message `input_message_content` works;
+  locations, venues, contacts, invoices and other content types do not. Compare the result dispatch
+  in [`InlineQueriesManager::get_input_bot_inline_result`][results].
 
 - **Prepared messages and sharing.** Prepared inline messages and result-sharing flows are not
   implemented. Tests currently have to use the supported query-and-choice workflow.
