@@ -170,6 +170,10 @@ try {
   const groupHistory = await account.getMessages({ chat: groupChat });
   console.log(groupHistory.map(({ from, text }) => `${from.first_name}: ${text ?? '(service)'}`));
 
+  // Pin the command. A chat pins any number of messages, and getChat shows bots the newest.
+  await account.pinMessage({ chat: groupChat, message_id: groupCommand.message_id });
+  console.log((await account.getPinnedMessages({ chat: groupChat })).length);
+
   // Forward the command to the bot's private chat. The bot receives it with its forward_origin.
   const forwardedCommand = await account.forwardMessage({
     from: groupChat,

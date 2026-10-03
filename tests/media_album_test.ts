@@ -211,5 +211,6 @@ function privateMessage(
       : { forwardInfo: { originalSender, originalSentAtUnixSeconds: 1_600_000_000 } }),
     isContentProtected: false,
     isSilent: false,
+    isPinned: false,
   };
 }

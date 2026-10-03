@@ -723,6 +723,42 @@ Deno.test('TypeScript client changes a supergroup title and reads its service me
   }
 });
 
+Deno.test('TypeScript client pins and unpins messages and reads the pinned ones', async () => {
+  const publicOrigin = 'http://emulator.example:9000';
+  const api = createEmulationApi({
+    sessionLifecycle: createSessionLifecycleService(),
+    publicOrigin,
+  });
+  const client = new TelegramEmulationClient(publicOrigin, {
+    fetch: createInProcessFetch(api.fetch),
+  });
+  const session = await client.createSession();
+  const { bot } = await session.createBot({ first_name: 'Test Bot', username: 'test_bot' });
+  const { account } = await session.createAccount({ first_name: 'Ada' });
+  const chat = { type: 'private', botId: bot.id } as const;
+  const first = await account.sendMessage({ to: chat, text: 'first' });
+  const second = await account.sendMessage({ to: chat, text: 'second' });
+
+  await account.pinMessage({ chat, message_id: second.message_id });
+  await account.pinMessage({ chat, message_id: first.message_id });
+  await account.unpinMessage({ chat, message_id: second.message_id });
+  await account.pinMessage({ chat, message_id: second.message_id });
+  const pinnedTexts = (await account.getPinnedMessages({ chat })).map(({ text }) => text);
+  if (JSON.stringify(pinnedTexts) !== JSON.stringify(['second', 'first'])) {
+    throw new Error(`Expected the pinned messages newest first, received ${pinnedTexts}`);
+  }
+  let refusal: unknown;
+  try {
+    await account.pinMessage({ chat, message_id: first.message_id });
+  } catch (error) {
+    refusal = error;
+  }
+  if (!(refusal instanceof EmulationClientError) || refusal.status !== 409) {
+    throw new Error(`Expected a repeated pin to be refused, received ${refusal}`);
+  }
+  await session.end();
+});
+
 Deno.test('TypeScript client sends, edits, and downloads photos and documents', async () => {
   const publicOrigin = 'http://emulator.example:9000';
   const api = createEmulationApi({

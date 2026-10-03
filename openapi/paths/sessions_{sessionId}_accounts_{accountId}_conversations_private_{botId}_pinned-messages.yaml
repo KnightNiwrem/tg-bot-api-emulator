@@ -1,0 +1,23 @@
+description: The messages a private conversation between an account and a bot pins.
+parameters:
+  - $ref: ../components/parameters/SessionId.yaml
+  - $ref: ../components/parameters/AccountId.yaml
+  - $ref: ../components/parameters/BotId.yaml
+get:
+  operationId: getPrivatePinnedMessages
+  summary: Return the private chat's pinned messages
+  description: >-
+    Returns the messages either participant pinned, newest first by sending date, as the bot
+    sees them, which is how message history shows them. The first is the `pinned_message` that
+    the bot's `getChat` shows. Deleting a message unpins it.
+  responses:
+    '200':
+      description: The participants exist; the message list may be empty.
+      content:
+        application/json:
+          schema:
+            $ref: ../components/schemas/MessageHistory.yaml
+    '400':
+      description: An account or bot path identifier is invalid.
+    '404':
+      description: The session, account, or bot does not exist.

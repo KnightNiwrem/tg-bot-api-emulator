@@ -1,0 +1,36 @@
+description: >-
+  Whether a message of a private conversation is pinned, addressed by its ID as the bot sees it.
+parameters:
+  - $ref: ../components/parameters/SessionId.yaml
+  - $ref: ../components/parameters/AccountId.yaml
+  - $ref: ../components/parameters/BotId.yaml
+  - $ref: ../components/parameters/MessageId.yaml
+put:
+  operationId: pinPrivateMessage
+  summary: Pin a message of the private chat
+  description: >-
+    Adds a message either participant wrote to the chat's pinned messages, which both
+    participants share; a chat pins any number of messages. Either participant of a private
+    chat may pin, as the Bot API documents for private chats.
+  responses:
+    '204':
+      description: The message was pinned.
+    '400':
+      description: A path identifier is invalid, or the message is a service message.
+    '404':
+      description: The session, account, bot, or message of their private chat does not exist.
+    '409':
+      description: The message is already pinned, which Telegram refuses as not modified.
+delete:
+  operationId: unpinPrivateMessage
+  summary: Unpin a message of the private chat
+  description: Removes a pinned message from the chat's pinned messages.
+  responses:
+    '204':
+      description: The message was unpinned.
+    '400':
+      description: A path identifier is invalid, or the message is a service message.
+    '404':
+      description: The session, account, bot, or message of their private chat does not exist.
+    '409':
+      description: The message is not pinned, which Telegram refuses as not modified.

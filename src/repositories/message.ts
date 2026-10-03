@@ -133,6 +133,7 @@ export class MessageRepository {
         : { replyInterfaceMarkup: copyReplyInterfaceMarkup(input.replyInterfaceMarkup) }),
       isContentProtected: input.isContentProtected ?? false,
       isSilent: input.isSilent ?? false,
+      isPinned: false,
       ...(input.messageEffectId === undefined ? {} : { messageEffectId: input.messageEffectId }),
     };
     this.#privateMessagesById.set(message.id, message);
@@ -176,6 +177,7 @@ export class MessageRepository {
       replyInterfaceMarkup,
       isContentProtected,
       isSilent,
+      isPinned,
       messageEffectId,
     } = storedMessage;
     const editedMessage: PrivateMessage = {
@@ -199,6 +201,7 @@ export class MessageRepository {
         : { contentEditedAtUnixSeconds: edit.contentEditedAtUnixSeconds }),
       isContentProtected,
       isSilent,
+      isPinned,
       ...(messageEffectId === undefined ? {} : { messageEffectId }),
     };
     this.#privateMessagesById.set(messageId, editedMessage);
@@ -259,6 +262,7 @@ export class MessageRepository {
         : { replyInterfaceMarkup: copyReplyInterfaceMarkup(input.replyInterfaceMarkup) }),
       isContentProtected: input.isContentProtected ?? false,
       isSilent: input.isSilent ?? false,
+      isPinned: false,
     };
     this.#supergroupMessagesById.set(message.id, message);
     this.#indexInlineMessage(message);
@@ -297,6 +301,7 @@ export class MessageRepository {
       replyInterfaceMarkup,
       isContentProtected,
       isSilent,
+      isPinned,
     } = storedMessage;
     const editedMessage: SupergroupMessage = {
       kind,
@@ -319,6 +324,7 @@ export class MessageRepository {
         : { contentEditedAtUnixSeconds: edit.contentEditedAtUnixSeconds }),
       isContentProtected,
       isSilent,
+      isPinned,
     };
     this.#supergroupMessagesById.set(messageId, editedMessage);
     return editedMessage;
@@ -353,6 +359,26 @@ export class MessageRepository {
       throw new Error(`Inline message ${inlineMessageId} is indexed but not stored`);
     }
     return message;
+  }
+
+  /**
+   * Pins or unpins a stored message of any chat and returns the message as the change left it.
+   * Pinning changes nothing else about the message.
+   */
+  setMessagePinned(messageId: CanonicalMessageId, isPinned: boolean): ChatMessage {
+    const privateMessage = this.#privateMessagesById.get(messageId);
+    if (privateMessage !== undefined) {
+      const changedMessage: PrivateMessage = { ...privateMessage, isPinned };
+      this.#privateMessagesById.set(messageId, changedMessage);
+      return changedMessage;
+    }
+    const supergroupMessage = this.#supergroupMessagesById.get(messageId);
+    if (supergroupMessage !== undefined) {
+      const changedMessage: SupergroupMessage = { ...supergroupMessage, isPinned };
+      this.#supergroupMessagesById.set(messageId, changedMessage);
+      return changedMessage;
+    }
+    throw new Error(`Message ${messageId} does not exist`);
   }
 
   getSupergroupMessages(chatId: number): readonly SupergroupMessage[] {

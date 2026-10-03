@@ -28,6 +28,7 @@ import { BotMenuButtonService } from '../src/services/bot_menu_button.ts';
 import { BotMessageViewService } from '../src/services/bot_message_view.ts';
 import { MediaFileService } from '../src/services/media_file.ts';
 import { normalizeCaption } from '../src/services/message_content.ts';
+import { MessagePinningService } from '../src/services/message_pinning.ts';
 import { SharedChatAdministrationService } from '../src/services/shared_chat_administration.ts';
 import { BotUpdateDeliveryService } from '../src/services/bot_update_delivery.ts';
 import { BotUpdatePollingService } from '../src/services/bot_update_polling.ts';
@@ -475,6 +476,15 @@ function createBotApiFixture() {
     supergroupBotMessages: supergroupMessaging,
     chatMemberships: sharedChatAdministration,
     botMessageViews,
+    pinnedMessages: new MessagePinningService({
+      accounts,
+      bots,
+      privateConversations,
+      sharedChats,
+      privateMessages: privateMessaging,
+      supergroupMessages: supergroupMessaging,
+      messages,
+    }),
     mediaFiles: new MediaFileService({
       files,
       uploadProfile: 'cloud',

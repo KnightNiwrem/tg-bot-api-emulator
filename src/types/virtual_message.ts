@@ -483,6 +483,8 @@ export interface PrivateMessage {
   readonly isContentProtected: boolean;
   /** As `SupergroupMessage` describes it. */
   readonly isSilent: boolean;
+  /** As `SupergroupMessage` describes it. */
+  readonly isPinned: boolean;
   /**
    * The decimal text of the 64-bit identifier of the message effect clients play with the
    * message; omitted for none. Only bots add effects, which Telegram allows only in private chats.
@@ -543,6 +545,11 @@ export interface SupergroupMessage {
    * API's `disable_notification` does. Only bots send silently.
    */
   readonly isSilent: boolean;
+  /**
+   * Whether the message is one of its chat's pinned messages, as Telegram's `pinned` flag of a
+   * message shows it. A chat pins any number of messages; deleting a message unpins it.
+   */
+  readonly isPinned: boolean;
 }
 
 /** A canonical message of any chat the emulator supports. */

@@ -37,6 +37,10 @@ properties:
     description: Present when the account keeps forwards of its messages from linking to it.
   accepted_gift_types:
     $ref: ./AcceptedGiftTypes.yaml
+  pinned_message:
+    $ref: ./PinnedPrivateMessage.yaml
+    description: >-
+      The chat's newest pinned message by sending date. Omitted when the chat pins no message.
   max_reaction_count:
     type: integer
     description: How many different reactions a message may carry, 11 in every emulated chat.
