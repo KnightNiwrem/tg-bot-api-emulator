@@ -12,6 +12,7 @@ import {
   SUPERGROUP_ADMINISTRATOR_RIGHTS,
 } from '../../../types/chat_membership.ts';
 import { CHAT_PERMISSIONS } from '../../../types/chat_permissions.ts';
+import { isContactVcardWithinLimit, MAX_CONTACT_NAME_LENGTH } from '../../../types/contact.ts';
 import type { EmulationSession } from '../../../types/emulation_session.ts';
 import { createGeoLocation, MAX_HORIZONTAL_ACCURACY_METERS } from '../../../types/geo_location.ts';
 import {
@@ -32,6 +33,7 @@ import {
   MIN_SUPERGROUP_OR_CHANNEL_ID,
   MIN_TELEGRAM_USER_ID,
 } from '../../../types/telegram_identity.ts';
+import { MAX_ACCOUNT_NAME_LENGTH } from '../../../types/virtual_account.ts';
 import type { Supergroup, VisibleChatAction } from '../../../types/virtual_chat.ts';
 import {
   type ChatMessage,
@@ -98,6 +100,9 @@ const SUPERGROUP_TITLE_PATH = `${SUPERGROUP_CONVERSATION_PATH}/title` as const;
 const SUPERGROUP_DEFAULT_PERMISSIONS_PATH = `${SUPERGROUP_CONVERSATION_PATH}/permissions` as const;
 const SUPERGROUP_DESCRIPTION_PATH = `${SUPERGROUP_CONVERSATION_PATH}/description` as const;
 
+/** An E.164 phone number's digits: a country code that never starts with 0, and at most 15 digits. */
+const ACCOUNT_PHONE_NUMBER_PATTERN = /^[1-9][0-9]{0,14}$/;
+
 const telegramUserIdSchema = z.number().int()
   .min(MIN_TELEGRAM_USER_ID)
   .max(MAX_TELEGRAM_USER_ID);
@@ -143,13 +148,24 @@ const chatSchema = z.discriminatedUnion('type', [
   z.strictObject({ type: z.literal('supergroup'), chatId: supergroupChatIdSchema }),
 ]);
 
+/** An account's first or last name, of at most as many characters as Telegram's servers allow. */
+const accountNameSchema = z.string().min(1).refine(
+  (name) => countTextCharacters(name) <= MAX_ACCOUNT_NAME_LENGTH,
+  { message: `A name must have at most ${MAX_ACCOUNT_NAME_LENGTH} characters` },
+);
+
 const createAccountRequestSchema = z.strictObject({
-  first_name: z.string().min(1),
-  last_name: z.string().min(1).optional(),
+  first_name: accountNameSchema,
+  last_name: accountNameSchema.optional(),
   username: z.string().min(1).optional(),
   language_code: z.string().min(1).optional(),
   /** Keeps forwards of the account's messages from linking to it; they show only its name. */
   has_private_forwards: z.boolean().optional(),
+  /**
+   * The number the account signed up with, which it shares as its own contact: the digits of an
+   * E.164 number without its `+`, as Telegram's `user.phone` holds it.
+   */
+  phone_number: z.string().regex(ACCOUNT_PHONE_NUMBER_PATTERN).optional(),
 });
 
 /** A file's content, which JSON carries as base64 text. */
@@ -228,9 +244,30 @@ const accountVoiceShape = {
   caption_entities: messageEntitiesSchema,
 };
 
+/** A contact's first or last name, of at most as many characters as TDLib documents. */
+const contactNameSchema = z.string().refine(
+  (name) => countTextCharacters(name) <= MAX_CONTACT_NAME_LENGTH,
+  { message: `A contact name must have at most ${MAX_CONTACT_NAME_LENGTH} characters` },
+);
+
 /**
- * A text message, a photo, a document, a video, or a voice note, each with an optional caption; or
- * a forward of a message of one of the account's chats, which, as in Telegram's clients, replies to
+ * A contact the account writes: a nonempty phone number in any form and first name, with an
+ * optional last name and vCard, which is never parsed. Its Telegram user stays unknown, as the
+ * emulator never looks users up by phone number.
+ */
+const accountContactShape = {
+  contact: z.strictObject({
+    phone_number: z.string().min(1),
+    first_name: contactNameSchema.pipe(z.string().min(1)),
+    last_name: contactNameSchema.default(''),
+    vcard: z.string().refine(isContactVcardWithinLimit).default(''),
+  }),
+};
+
+/**
+ * A text message, a photo, a document, a video, or a voice note, each with an optional caption; a
+ * contact the account writes, or its own contact, which Telegram shows as the account's user; or a
+ * forward of a message of one of the account's chats, which, as in Telegram's clients, replies to
  * none.
  */
 const sendMessageRequestSchema = z.union([
@@ -251,6 +288,8 @@ const sendMessageRequestSchema = z.union([
   z.strictObject({ ...sentMessageTargetShape, ...accountDocumentShape }),
   z.strictObject({ ...sentMessageTargetShape, ...accountVideoShape }),
   z.strictObject({ ...sentMessageTargetShape, ...accountVoiceShape }),
+  z.strictObject({ ...sentMessageTargetShape, ...accountContactShape }),
+  z.strictObject({ ...sentMessageTargetShape, own_contact: z.literal(true) }),
 ]);
 
 /**
@@ -382,7 +421,7 @@ export function createAccountRoutes(): Hono<SessionRouteContextTypes> {
 
     const result = context.get('emulationSession').virtualUsers.createAccount(requestBody);
     if (!result.created) {
-      return context.body(null, result.reason === 'username_taken' ? 409 : 507);
+      return context.body(null, accountCreationFailureStatus(result.reason));
     }
 
     const accountPath = `${basePath(context)}/${result.account.profile.id}`;
@@ -1533,6 +1572,16 @@ function readAccountMessageContent(
   if ('text' in request) {
     return { kind: 'text', text: request.text, entities: request.entities };
   }
+  if ('own_contact' in request) {
+    return { kind: 'own_contact' };
+  }
+  if ('contact' in request) {
+    const { phone_number, first_name, last_name, vcard } = request.contact;
+    return {
+      kind: 'contact',
+      contact: { phoneNumber: phone_number, firstName: first_name, lastName: last_name, vcard },
+    };
+  }
   return 'voice' in request
     ? readAccountVoiceContent(request, mediaFiles)
     : readAccountMediaContent(request, mediaFiles);
@@ -1642,13 +1691,17 @@ type AccountMessageFailureReason =
     { readonly sent: false }
   >['reason'];
 
-/** A missing participant is not found, and a block conflicts with writing to the bot. */
+/**
+ * A missing participant is not found; a block conflicts with writing to the bot, and an account
+ * without a phone number conflicts with sharing its own contact.
+ */
 function accountMessageFailureStatus(reason: AccountMessageFailureReason): 400 | 404 | 409 {
   switch (reason) {
     case 'account_not_found':
     case 'bot_not_found':
       return 404;
     case 'bot_blocked':
+    case 'account_phone_number_missing':
       return 409;
     default:
       return 400;
@@ -1670,10 +1723,12 @@ type SupergroupAccountFailureReason =
 
 /**
  * A missing account, supergroup, or message is not found, and an account that is not a member of
- * the supergroup, or may not send the content, is forbidden from it; other failures reject the
- * request.
+ * the supergroup, or may not send the content, is forbidden from it; an account without a phone
+ * number conflicts with sharing its own contact; other failures reject the request.
  */
-function supergroupMemberFailureStatus(reason: SupergroupAccountFailureReason): 400 | 403 | 404 {
+function supergroupMemberFailureStatus(
+  reason: SupergroupAccountFailureReason,
+): 400 | 403 | 404 | 409 {
   switch (reason) {
     case 'account_not_found':
     case 'chat_not_found':
@@ -1682,6 +1737,8 @@ function supergroupMemberFailureStatus(reason: SupergroupAccountFailureReason): 
     case 'not_a_member':
     case 'send_permission_missing':
       return 403;
+    case 'account_phone_number_missing':
+      return 409;
     default:
       return 400;
   }
@@ -1714,6 +1771,30 @@ function forwardFailureStatus(
     default: {
       const unhandledReason: never = reason;
       throw new Error(`Unhandled account forward failure: ${unhandledReason}`);
+    }
+  }
+}
+
+/**
+ * A name Telegram's cleanup would empty or refuse rejects the request; a taken username conflicts
+ * with the session's usernames; and a session out of user IDs has no room for the account.
+ */
+function accountCreationFailureStatus(
+  reason: Extract<
+    ReturnType<EmulationSession['virtualUsers']['createAccount']>,
+    { readonly created: false }
+  >['reason'],
+): 400 | 409 | 507 {
+  switch (reason) {
+    case 'name_invalid':
+      return 400;
+    case 'username_taken':
+      return 409;
+    case 'identity_limit_reached':
+      return 507;
+    default: {
+      const unhandledReason: never = reason;
+      throw new Error(`Unhandled account creation failure: ${unhandledReason}`);
     }
   }
 }

@@ -108,6 +108,35 @@ Deno.test('BotApiService translates private messaging failures into Bot API reas
   }
 });
 
+Deno.test('BotApiService sends a contact without a user its caller passes along', () => {
+  const { virtualUsers, privateMessaging, botApi } = createBotApiFixture();
+  const bot = createBot(virtualUsers, 'test_bot');
+  const account = createAccount(virtualUsers);
+  privateMessaging.sendAccountMessage({
+    fromAccountId: account.profile.id,
+    to: { type: 'private', botId: bot.profile.id },
+    content: { kind: 'text', text: '/start' },
+  });
+  const contactWithUser = {
+    phoneNumber: '15550100',
+    firstName: 'Ada',
+    lastName: '',
+    vcard: '',
+    userId: account.profile.id,
+  };
+  const result = botApi.sendContact(bot.profile, {
+    chatId: account.profile.id,
+    contact: contactWithUser,
+  });
+  if (
+    !result.sent ||
+    JSON.stringify('contact' in result.message ? result.message.contact : undefined) !==
+      JSON.stringify({ phone_number: '15550100', first_name: 'Ada' })
+  ) {
+    throw new Error(`Expected the contact to show no user, received ${JSON.stringify(result)}`);
+  }
+});
+
 Deno.test('BotApiService reads text with its parse mode or entities', () => {
   const { botApi } = createBotApiFixture();
   const bold = { type: 'bold', offset: 0, length: 2 } as const;

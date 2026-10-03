@@ -6,9 +6,10 @@ post:
   operationId: sendAccountMessage
   summary: Send a message as a virtual account
   description: >-
-    Sends text, a photo, a document, a video, or a voice note to the account's private chat with a
-    bot, or to a supergroup the account is a member of; or forwards a message of such a chat there, as the
-    account's message that shows who first sent it. Messages protected from forwarding and
+    Sends text, a photo, a document, a video, a voice note, or a contact to the account's private
+    chat with a bot, or to a supergroup the account is a member of; or forwards a message of such
+    a chat there, as the account's message that shows who first sent it. A contact the account
+    writes shows no Telegram user, while its own contact shows the account as its user. Messages protected from forwarding and
     service messages cannot be forwarded, and, as on Telegram, a forward cannot be edited. In
     a supergroup, the supergroup's bots receive the message unless it is not addressed to a
     bot in privacy mode. As on Telegram, a message reaches only the one bot in privacy mode it
@@ -53,4 +54,6 @@ post:
         The session, sending account, a bot or supergroup of the request, or the forwarded
         message does not exist.
     '409':
-      description: The account blocks the target bot and must unblock it before writing to it.
+      description: >-
+        The account blocks the target bot and must unblock it before writing to it, or shares its
+        own contact without having a phone number.

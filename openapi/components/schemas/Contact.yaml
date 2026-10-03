@@ -1,0 +1,31 @@
+type: object
+additionalProperties: false
+description: >-
+  A phone contact, in the field order of the official Bot API server's `JsonContact`. Telegram
+  cleans its texts as it cleans names, turning control characters into spaces, and reads nothing
+  else of them: the phone number keeps any form its sender wrote, and the vCard is never parsed.
+required:
+  - phone_number
+  - first_name
+properties:
+  phone_number:
+    type: string
+    minLength: 1
+  first_name:
+    type: string
+    minLength: 1
+  last_name:
+    type: string
+    minLength: 1
+    description: Omitted for a contact without a last name.
+  vcard:
+    type: string
+    minLength: 1
+    description: Omitted for a contact without a vCard.
+  user_id:
+    type: integer
+    minimum: 1
+    description: >-
+      The contact's Telegram user, which Telegram's servers attach. The emulator never looks users
+      up by phone number, so it is present only on an account's own contact, which the account
+      shares directly or by pressing a `request_contact` button.

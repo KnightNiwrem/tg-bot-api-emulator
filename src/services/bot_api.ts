@@ -32,6 +32,7 @@ import {
   type SupergroupAdministratorRights,
 } from '../types/chat_membership.ts';
 import type { ChatPermissions } from '../types/chat_permissions.ts';
+import { createWrittenContact, type WrittenContact } from '../types/contact.ts';
 import type { InlineQueryId, InlineQueryResultsButton } from '../types/inline_query.ts';
 import {
   MAX_POLL_OPEN_PERIOD_SECONDS,
@@ -432,6 +433,14 @@ export type SendVoiceRequest = SendRequestOptions & {
   readonly durationSeconds: number;
   /** Empty text for no caption. */
   readonly caption: SpecifiedFormattedText;
+};
+
+/**
+ * A contact as `sendContact` specifies it. Like the official Bot API server, a bot names no
+ * Telegram user, so the contact's user stays unknown.
+ */
+export type SendContactRequest = SendRequestOptions & {
+  readonly contact: WrittenContact;
 };
 
 export type SendFailureReason =
@@ -2345,6 +2354,23 @@ export class BotApiService {
       });
     }
     return result;
+  }
+
+  /**
+   * Sends a contact to a private chat or a supergroup, as `sendMessage` sends text. Its texts are
+   * cleaned as `normalizeOutgoingContent` cleans a contact, where `sendMessage` normalizes text.
+   * As the official Bot API server's `process_send_contact_query` names no user, and the emulator
+   * never looks users up by phone number, the contact shows no user.
+   */
+  sendContact(
+    authenticatedBot: VirtualBotProfile,
+    { contact, ...options }: SendContactRequest,
+  ): SendResult {
+    return this.#send(
+      authenticatedBot,
+      { kind: 'contact', contact: createWrittenContact(contact) },
+      options,
+    );
   }
 
   /**

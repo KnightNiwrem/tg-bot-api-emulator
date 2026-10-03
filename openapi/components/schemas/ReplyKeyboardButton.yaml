@@ -2,8 +2,9 @@ description: >-
   A reply keyboard button: a button that sends its text, or one with a request that asks the
   client to share something instead. As TDLib does, only a private chat allows buttons with a
   request; elsewhere sending fails with TDLib's error, such as `Bad Request: phone number can be
-  requested in private chats only`. Responses show every field of a request. The emulator cannot
-  answer requests, so accounts cannot press such buttons. Telegram also reads legacy request
+  requested in private chats only`. Responses show every field of a request. Pressing a
+  `request_contact` button shares the account's own contact; the emulator cannot answer other
+  requests, so accounts cannot press such buttons. Telegram also reads legacy request
   names, managed bot requests, and buttons with several requests, using the first it
   recognizes; the emulator rejects them.
 oneOf:
@@ -35,7 +36,9 @@ oneOf:
       request_contact:
         type: boolean
         const: true
-        description: Asks the client to share the user's phone number as a contact.
+        description: >-
+          Asks the client to share the user's phone number as a contact; pressing it shares the
+          account's own contact.
   - type: object
     additionalProperties: false
     required:

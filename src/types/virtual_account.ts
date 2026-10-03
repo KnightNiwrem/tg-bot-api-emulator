@@ -1,4 +1,11 @@
 import type { User } from 'grammy/types';
+import type { Contact } from './contact.ts';
+
+/**
+ * The most characters of an account's first or last name, the server-side limit of TDLib's
+ * `UserManager::MAX_NAME_LENGTH`. It keeps an account's own contact within the contact name limit.
+ */
+export const MAX_ACCOUNT_NAME_LENGTH = 64;
 
 export type VirtualAccountProfile = Readonly<User> & {
   readonly is_bot: false;
@@ -11,6 +18,26 @@ export interface VirtualAccount {
    * Telegram's "Forwarded messages" setting does; the Bot API reports it as `has_private_forwards`.
    */
   readonly hasPrivateForwards: boolean;
+  /**
+   * The phone number the account signed up with, as the digits of Telegram's `user.phone`; omitted
+   * for an account a test created without one, which has no contact of its own to share.
+   */
+  readonly phoneNumber?: string;
+}
+
+/**
+ * The account's own contact, as Telegram's clients share it: its phone number and profile name,
+ * which Telegram's servers show as the account's user. Returns `undefined` for an account without
+ * a phone number.
+ */
+export function getOwnContact({ profile, phoneNumber }: VirtualAccount): Contact | undefined {
+  return phoneNumber === undefined ? undefined : {
+    phoneNumber,
+    firstName: profile.first_name,
+    lastName: profile.last_name ?? '',
+    vcard: '',
+    userId: profile.id,
+  };
 }
 
 /**

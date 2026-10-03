@@ -3,12 +3,14 @@ import type {
   IdentityReservationInput,
   IdentityReservationResult,
 } from '../repositories/telegram_identity.ts';
+import { cleanInputString } from '../text_entities/input_string.ts';
 import type { VirtualAccount, VirtualAccountProfile } from '../types/virtual_account.ts';
 import type { VirtualBot, VirtualBotProfile } from '../types/virtual_bot.ts';
 
 /**
- * An account's profile and privacy settings: `has_private_forwards` keeps forwards of the account's
- * messages from linking to it, and is off by default, as for a new Telegram account.
+ * An account's profile, privacy settings and phone number: `has_private_forwards` keeps forwards
+ * of the account's messages from linking to it, and is off by default, as for a new Telegram
+ * account; `phone_number` is the number whose contact the account shares as its own.
  */
 export type CreateVirtualAccountInput =
   & Pick<VirtualAccountProfile, 'first_name'>
@@ -18,7 +20,7 @@ export type CreateVirtualAccountInput =
       'last_name' | 'username' | 'language_code'
     >
   >
-  & { readonly has_private_forwards?: boolean };
+  & { readonly has_private_forwards?: boolean; readonly phone_number?: string };
 
 export type AccountCreationResult =
   | {
@@ -27,8 +29,16 @@ export type AccountCreationResult =
   }
   | {
     readonly created: false;
-    readonly reason: IdentityReservationFailureReason;
+    readonly reason: IdentityReservationFailureReason | 'name_invalid';
   };
+
+/**
+ * Whether an account's name is already clean: well-formed Unicode that Telegram's cleanup leaves
+ * as it is, so that the account's own contact shows exactly the name its profile shows.
+ */
+function isCleanAccountName(name: string): boolean {
+  return cleanInputString(name) === name;
+}
 
 /**
  * A bot's profile and settings as its owner sets them up with BotFather, each off by default, as
@@ -84,7 +94,20 @@ export class VirtualUserService {
     this.#bots = bots;
   }
 
+  /**
+   * Creates an account with the profile, settings and phone number the input gives. Its names must
+   * already be as clean as Telegram makes the texts of its own contact, as `cleanInputString`
+   * cleans them: a name that is not well-formed Unicode, or that the cleanup would change, such as
+   * one with a control character or a carriage return, is refused. Every account can therefore
+   * share its own contact, which shows exactly its profile's names.
+   */
   createAccount(input: CreateVirtualAccountInput): AccountCreationResult {
+    if (
+      !isCleanAccountName(input.first_name) ||
+      (input.last_name !== undefined && !isCleanAccountName(input.last_name))
+    ) {
+      return { created: false, reason: 'name_invalid' };
+    }
     const identityReservation = this.#identities.reserveIdentity({
       kind: 'account',
       username: input.username,
@@ -96,13 +119,21 @@ export class VirtualUserService {
       throw new Error('Account identity reservation returned a different identity kind');
     }
 
-    const { has_private_forwards: hasPrivateForwards = false, ...profileInput } = input;
+    const {
+      has_private_forwards: hasPrivateForwards = false,
+      phone_number: phoneNumber,
+      ...profileInput
+    } = input;
     const profile: VirtualAccountProfile = {
       ...profileInput,
       id: identityReservation.identity.id,
       is_bot: false,
     };
-    const account: VirtualAccount = { profile, hasPrivateForwards };
+    const account: VirtualAccount = {
+      profile,
+      hasPrivateForwards,
+      ...(phoneNumber === undefined ? {} : { phoneNumber }),
+    };
     if (!this.#accounts.add(account)) {
       throw new Error(`Account ID ${profile.id} is already registered`);
     }

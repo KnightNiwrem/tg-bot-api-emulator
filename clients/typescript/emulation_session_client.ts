@@ -47,12 +47,14 @@ import type {
   AccountPollAnswer,
   AccountPollMessageInput,
   AccountReplyInterfaceInput,
+  AccountSendContactInput,
   AccountSendDocumentInput,
   AccountSendMediaGroupInput,
   AccountSendMessageInput,
   AccountSendPhotoInput,
   AccountSendVideoInput,
   AccountSendVoiceInput,
+  AccountShareOwnContactInput,
   AccountSupergroupBotCommandsInput,
   AddChatMemberInput,
   AnswerPollInput,
@@ -438,6 +440,30 @@ function createVirtualAccountClient(
           caption_entities,
           reply_to_message_id,
         },
+      });
+      return response.message;
+    },
+    async sendContact<Target extends MessageTarget>(
+      input: AccountSendContactInput<Target>,
+    ): Promise<MessageIn<Target>> {
+      const response = await requestJson(fetchImplementation, {
+        method: 'POST',
+        url: `${accountUrl}/messages`,
+        expectedStatus: HTTP_STATUS_CREATED,
+        responseSchema: messageResponseSchemasFor(input.to).sent,
+        body: input,
+      });
+      return response.message;
+    },
+    async shareOwnContact<Target extends MessageTarget>(
+      { to, reply_to_message_id }: AccountShareOwnContactInput<Target>,
+    ): Promise<MessageIn<Target>> {
+      const response = await requestJson(fetchImplementation, {
+        method: 'POST',
+        url: `${accountUrl}/messages`,
+        expectedStatus: HTTP_STATUS_CREATED,
+        responseSchema: messageResponseSchemasFor(to).sent,
+        body: { to, own_contact: true, reply_to_message_id },
       });
       return response.message;
     },

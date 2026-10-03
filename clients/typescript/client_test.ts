@@ -1375,6 +1375,83 @@ Deno.test('TypeScript client rejects a successful response that violates the con
   throw new Error('Expected the client to reject an invalid session response');
 });
 
+Deno.test('TypeScript client shares written and own contacts and answers contact requests', async () => {
+  const publicOrigin = 'http://emulator.example:9000';
+  const api = createEmulationApi({
+    sessionLifecycle: createSessionLifecycleService(),
+    publicOrigin,
+  });
+  const client = new TelegramEmulationClient(publicOrigin, {
+    fetch: createInProcessFetch(api.fetch),
+  });
+  const session = await client.createSession();
+  const { token, bot } = await session.createBot({ first_name: 'Test Bot', username: 'test_bot' });
+  const { account } = await session.createAccount({ first_name: 'Ada', phone_number: '15550100' });
+  const { account: stranger } = await session.createAccount({ first_name: 'Linus' });
+  const to = { type: 'private', botId: bot.id } as const;
+
+  const written = await account.sendContact({
+    to,
+    contact: { phone_number: '+1 555 0199', first_name: 'Grace', vcard: 'BEGIN:VCARD\nEND:VCARD' },
+  });
+  const own = await account.shareOwnContact({ to, reply_to_message_id: written.message_id });
+  if (
+    JSON.stringify(written.contact) !== JSON.stringify({
+        phone_number: '+1 555 0199',
+        first_name: 'Grace',
+        vcard: 'BEGIN:VCARD\nEND:VCARD',
+      }) ||
+    JSON.stringify(own.contact) !== JSON.stringify({
+        phone_number: '15550100',
+        first_name: 'Ada',
+        user_id: account.id,
+      }) ||
+    own.reply_to_message?.contact?.first_name !== 'Grace'
+  ) {
+    throw new Error(
+      `Expected the client to send contacts, received ${JSON.stringify([written, own])}`,
+    );
+  }
+
+  const keyboard = await api.request(`/sessions/${session.id}/bot-api/bot${token}/sendMessage`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      chat_id: account.id,
+      text: 'Your number?',
+      reply_markup: { keyboard: [[{ text: 'Share', request_contact: true }]] },
+    }),
+  });
+  const keyboardMessageId =
+    (await keyboard.json() as { result: { message_id: number } }).result.message_id;
+  const replyInterface = await account.getReplyInterface({ chat: to });
+  const shared = await account.pressReplyKeyboardButton({ chat: to, text: 'Share' });
+  if (
+    JSON.stringify(replyInterface?.type === 'keyboard' ? replyInterface.keyboard : null) !==
+      JSON.stringify([[{ text: 'Share', request_contact: true }]]) ||
+    shared.contact?.user_id !== account.id ||
+    shared.reply_to_message?.message_id !== keyboardMessageId
+  ) {
+    throw new Error(
+      `Expected the press to share the own contact, received ${JSON.stringify(shared)}`,
+    );
+  }
+  const history = await account.getMessages({ chat: to });
+  if (history.at(-1)?.contact?.phone_number !== '15550100') {
+    throw new Error('Expected the history to end with the shared contact');
+  }
+
+  try {
+    await stranger.shareOwnContact({ to });
+  } catch (error) {
+    if (error instanceof EmulationClientError && error.status === 409) {
+      return;
+    }
+    throw error;
+  }
+  throw new Error('Expected an account without a phone number to have no contact to share');
+});
+
 function createInProcessFetch(
   handler: (request: Request) => Response | Promise<Response>,
 ): typeof globalThis.fetch {

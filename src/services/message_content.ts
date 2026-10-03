@@ -3,9 +3,11 @@ import {
   fixFormattedText,
   type FormattedTextFixingContext,
 } from '../text_entities/formatted_text.ts';
+import { cleanInputString } from '../text_entities/input_string.ts';
 import { areTextEntitiesEqual } from '../text_entities/text_entity_equality.ts';
 import { compareTextEntities } from '../text_entities/text_entity_order.ts';
 import { isSameButtonAppearance } from '../types/button_appearance.ts';
+import { type Contact, createWrittenContact, type WrittenContact } from '../types/contact.ts';
 import {
   type InlineKeyboard,
   type InlineKeyboardButton,
@@ -46,9 +48,11 @@ import type {
   VideoUpload,
   VoiceUpload,
 } from '../types/stored_file.ts';
+import { getOwnContact, type VirtualAccount } from '../types/virtual_account.ts';
 import {
   type CaptionedMediaContent,
   type ChatMessage,
+  type ContactMessageContent,
   type ContentMessage,
   countTextCharacters,
   type FormattedText,
@@ -71,7 +75,8 @@ import { normalizeRichMessage } from './rich_message_normalization.ts';
 
 /**
  * Telegram rejected the text or its entities while normalizing them, for example because only
- * whitespace remains or an entity ends past the text. `textError` is TDLib's own description.
+ * whitespace remains or an entity ends past the text. `textError` is TDLib's own description, or,
+ * for text that only Telegram's servers refuse, a description in its style.
  */
 export interface TextInvalidFailure {
   readonly reason: 'text_invalid';
@@ -159,6 +164,11 @@ export type OutgoingMessageContent =
     readonly poll: SpecifiedPoll;
   }
   | {
+    /** A contact, whose texts Telegram cleans as `normalizeContact` does. */
+    readonly kind: 'contact';
+    readonly contact: Contact;
+  }
+  | {
     /** The content of an existing message, which a forward or a copy repeats. */
     readonly kind: 'existing';
     /** The content as Telegram checked it when the existing message was sent. */
@@ -207,6 +217,7 @@ export type NormalizedOutgoingContent =
   }
   | { readonly kind: 'rich_message'; readonly richMessage: OutgoingRichMessage }
   | { readonly kind: 'poll'; readonly poll: NewPoll }
+  | ContactMessageContent
   | { readonly kind: 'existing'; readonly content: MessageContent };
 
 /** Why Telegram refuses the text or caption of new content: as for every content but a poll. */
@@ -231,8 +242,8 @@ export type OutgoingContentOtherThanPoll = Exclude<
 /**
  * Normalizes the text or caption of new message content, with the entities its sender specified,
  * as Telegram does, which also marks bot commands; then checks that the result fits in a message.
- * A rich message is checked and has its entities marked as `normalizeRichMessage` does, and a poll
- * is checked as `normalizeNewPoll` does.
+ * A rich message is checked and has its entities marked as `normalizeRichMessage` does, a poll is
+ * checked as `normalizeNewPoll` does, and a contact is cleaned as `normalizeContact` cleans it.
  */
 export function normalizeOutgoingContent(
   content: OutgoingContentOtherThanPoll,
@@ -264,7 +275,64 @@ export function normalizeOutgoingContent(
       ? { normalized: true, content: { kind: 'poll', poll: pollNormalization.poll } }
       : pollNormalization;
   }
+  if (content.kind === 'contact') {
+    const contactNormalization = normalizeContact(content.contact);
+    return contactNormalization.normalized
+      ? { normalized: true, content: { kind: 'contact', contact: contactNormalization.contact } }
+      : contactNormalization;
+  }
   return normalizeMediaContent(content, sender, context);
+}
+
+/**
+ * The texts of a contact in the order TDLib's `Contact::validate` cleans them, each with the name
+ * its error gives the text.
+ */
+const CONTACT_TEXT_FIELDS = [
+  { field: 'phoneNumber', name: 'Phone number' },
+  { field: 'firstName', name: 'First name' },
+  { field: 'lastName', name: 'Last name' },
+  { field: 'vcard', name: 'vCard' },
+] as const satisfies readonly { readonly field: keyof Contact; readonly name: string }[];
+
+type ContactNormalization =
+  | { readonly normalized: true; readonly contact: Contact }
+  | { readonly normalized: false; readonly failure: TextInvalidFailure };
+
+/** The texts every contact has, which its sender must not leave empty. */
+const REQUIRED_CONTACT_TEXT_FIELDS: ReadonlySet<keyof Contact> = new Set([
+  'phoneNumber',
+  'firstName',
+]);
+
+/**
+ * Cleans the texts of a contact in order as TDLib's `Contact::validate` does with
+ * `clean_input_string`, which refuses text that is not well-formed Unicode with an error naming
+ * it, such as "Phone number must be encoded in UTF-8". Cleaning removes some characters, such as
+ * carriage returns, so a phone number or first name of only such characters becomes empty, which
+ * TDLib passes on to Telegram's servers; the emulator refuses it, such as with "First name must be
+ * non-empty". Nothing else of a contact is checked: the phone number keeps any form its sender
+ * wrote, and the vCard is never parsed.
+ */
+function normalizeContact(contact: Contact): ContactNormalization {
+  let cleanedContact = contact;
+  for (const { field, name } of CONTACT_TEXT_FIELDS) {
+    const cleanedText = cleanInputString(contact[field]);
+    if (cleanedText === undefined) {
+      return {
+        normalized: false,
+        failure: { reason: 'text_invalid', textError: `${name} must be encoded in UTF-8` },
+      };
+    }
+    if (cleanedText.length === 0 && REQUIRED_CONTACT_TEXT_FIELDS.has(field)) {
+      return {
+        normalized: false,
+        failure: { reason: 'text_invalid', textError: `${name} must be non-empty` },
+      };
+    }
+    cleanedContact = { ...cleanedContact, [field]: cleanedText };
+  }
+  return { normalized: true, contact: cleanedContact };
 }
 
 /** New captioned media of a message, as its sender specified it. */
@@ -504,8 +572,9 @@ export function normalizeCaption(
 }
 
 /**
- * What an account sends: text, or media with a caption, which is a photo, a document, a video, or
- * a voice note as its upload says, each with the formatting the account specified.
+ * What an account sends: text; media with a caption, which is a photo, a document, a video, or a
+ * voice note as its upload says, each with the formatting the account specified; a contact the
+ * account writes, whose Telegram user stays unknown; or the account's own contact.
  */
 export type AccountMessageContent =
   | {
@@ -514,7 +583,9 @@ export type AccountMessageContent =
     /** Formatting the account specified; omitted for none. */
     readonly entities?: readonly TextEntity[];
   }
-  | AccountMediaContent;
+  | AccountMediaContent
+  | { readonly kind: 'contact'; readonly contact: WrittenContact }
+  | { readonly kind: 'own_contact' };
 
 /** Media an account sends, of the kind its upload says, with its caption. */
 export type AccountMediaContent<Upload extends FileUpload = FileUpload> = SpecifiedCaption & {
@@ -527,10 +598,30 @@ export type AccountAlbumMediaContent = AccountMediaContent<Exclude<FileUpload, V
 
 /**
  * Turns what an account sends into outgoing content, which its client normalizes as Telegram
- * does, as `toOutgoingAccountMedia` turns media.
+ * does, as `toOutgoingAccountMedia` turns media. The account's own contact is the one
+ * `getOwnContact` gives; returns `undefined` for the own contact of an account without a phone
+ * number.
  */
-export function toOutgoingAccountContent(content: AccountMessageContent): OutgoingMessageContent {
-  return content.kind === 'text' ? content : toOutgoingAccountMedia(content);
+export function toOutgoingAccountContent(
+  content: AccountMessageContent,
+  account: VirtualAccount,
+): OutgoingMessageContent | undefined {
+  switch (content.kind) {
+    case 'text':
+      return content;
+    case 'contact':
+      return { kind: 'contact', contact: createWrittenContact(content.contact) };
+    case 'own_contact': {
+      const ownContact = getOwnContact(account);
+      return ownContact === undefined ? undefined : { kind: 'contact', contact: ownContact };
+    }
+    case 'media':
+      return toOutgoingAccountMedia(content);
+    default: {
+      const unhandledContent: never = content;
+      throw new Error(`Unhandled account content: ${JSON.stringify(unhandledContent)}`);
+    }
+  }
 }
 
 /**
@@ -640,8 +731,8 @@ export function replaceMessageCaption(
  * them, as TDLib's `edit_message_media` does: the old caption goes with the old content, so new
  * media without a caption has none. As TDLib's `can_edit_message_media` allows, the old content
  * may be a photo, a document, or a video, whose media is replaced, or text or a rich message,
- * which becomes media; the media of a voice note or a poll cannot be edited, which that method
- * checks before it reads the new media. As that method checks once the new caption is read, a
+ * which becomes media; the media of a voice note, a poll, or a contact cannot be edited, which
+ * that method checks before it reads the new media. As that method checks once the new caption is read, a
  * message of an album changes its media only as `canChangeAlbumMediaKind` allows; only media is
  * sent in albums.
  */
@@ -674,6 +765,7 @@ export function replaceMessageMedia(
         : { replaced: true, content: normalization.content };
     }
     case 'poll':
+    case 'contact':
       return { replaced: false, failure: { reason: 'message_media_not_editable' } };
     default: {
       const unhandledContent: never = content;
@@ -775,6 +867,7 @@ export function storeOutgoingContent(
 ): MessageContent {
   switch (content.kind) {
     case 'text':
+    case 'contact':
       return content;
     case 'existing':
       return content.content;
@@ -836,6 +929,7 @@ function storeOutgoingFile(file: OutgoingMediaFile, files: FileUploadStore): Sto
 export function toContentOfStoredFile(content: NormalizedOutgoingContent): MessageContent {
   switch (content.kind) {
     case 'text':
+    case 'contact':
       return content;
     case 'existing':
       return content.content;
@@ -888,6 +982,7 @@ export function toContentOfStoredFile(content: NormalizedOutgoingContent): Messa
 function hasUnstoredContent(content: NormalizedOutgoingContent): boolean {
   switch (content.kind) {
     case 'text':
+    case 'contact':
     case 'existing':
       return false;
     case 'photo':
@@ -1030,11 +1125,20 @@ export function isSameMessageContent(first: MessageContent, second: MessageConte
       return second.kind === 'rich_message' && areRichMessagesEqual(first, second);
     case 'poll':
       return second.kind === 'poll' && first.pollId === second.pollId;
+    case 'contact':
+      return second.kind === 'contact' && isSameContact(first.contact, second.contact);
     default: {
       const unhandledContent: never = first;
       throw new Error(`Unhandled message content: ${JSON.stringify(unhandledContent)}`);
     }
   }
+}
+
+/** Whether two contacts are the same, as TDLib's `Contact` compares every field. */
+function isSameContact(first: Contact, second: Contact): boolean {
+  return first.phoneNumber === second.phoneNumber && first.firstName === second.firstName &&
+    first.lastName === second.lastName && first.vcard === second.vcard &&
+    first.userId === second.userId;
 }
 
 function isSameFormattedText(first: FormattedText, second: FormattedText): boolean {

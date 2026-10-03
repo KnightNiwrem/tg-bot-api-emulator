@@ -1,0 +1,17 @@
+type: object
+additionalProperties: false
+description: >-
+  The account's own contact: the phone number it was created with and its profile's first and
+  last name, which Telegram shows with the account as the contact's user. An account created
+  without a phone number has no contact of its own to share.
+required:
+  - to
+  - own_contact
+properties:
+  to:
+    $ref: ./MessageTarget.yaml
+  own_contact:
+    type: boolean
+    const: true
+  reply_to_message_id:
+    $ref: ./AccountReplyToMessageId.yaml

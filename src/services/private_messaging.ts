@@ -97,6 +97,7 @@ export type SendAccountMessageFailureReason =
   | 'bot_not_found'
   | 'bot_blocked'
   | 'message_text_empty'
+  | 'account_phone_number_missing'
   | 'reply_message_not_found';
 
 export type SendAccountMessageResult =
@@ -132,7 +133,10 @@ export type SendAccountAlbumResult =
     & (
       | {
         readonly reason:
-          | Exclude<SendAccountMessageFailureReason, 'message_text_empty'>
+          | Exclude<
+            SendAccountMessageFailureReason,
+            'message_text_empty' | 'account_phone_number_missing'
+          >
           | AlbumCompositionFailureReason;
       }
       | ContentTextNormalizationFailure
@@ -617,6 +621,7 @@ interface PollStore extends NewPollStore {
 
 interface MessageBoxStore {
   assignMessageId(ownerId: number, canonicalMessageId: CanonicalMessageId): number;
+  getMessageId(ownerId: number, canonicalMessageId: CanonicalMessageId): number | undefined;
   getCanonicalMessageId(ownerId: number, messageId: number): CanonicalMessageId | undefined;
 }
 
@@ -740,6 +745,11 @@ export class PrivateMessagingService {
     return this.#privateConversations.getPrivateConversation(key) !== undefined;
   }
 
+  /**
+   * Sends text, captioned media, or a contact from an account to its private chat with a bot. As
+   * a Telegram client does, the text or caption is normalized, which marks bot commands. The
+   * account's own contact needs the phone number the account was created with.
+   */
   sendAccountMessage(input: SendAccountMessageInput): SendAccountMessageResult {
     const account = this.#accounts.getById(input.fromAccountId);
     if (account === undefined) {
@@ -755,10 +765,11 @@ export class PrivateMessagingService {
     if (input.content.kind === 'text' && input.content.text.length === 0) {
       return { sent: false, reason: 'message_text_empty' };
     }
-    const contentNormalization = this.#normalizeContent(
-      toOutgoingAccountContent(input.content),
-      'account',
-    );
+    const outgoingContent = toOutgoingAccountContent(input.content, account);
+    if (outgoingContent === undefined) {
+      return { sent: false, reason: 'account_phone_number_missing' };
+    }
+    const contentNormalization = this.#normalizeContent(outgoingContent, 'account');
     if (!contentNormalization.normalized) {
       return { sent: false, ...contentNormalization.failure };
     }
@@ -1299,9 +1310,13 @@ export class PrivateMessagingService {
   /**
    * Presses a button of the reply keyboard the account's client shows, which, as on Telegram,
    * sends the button's text to the bot as the account's message. The keyboard stays shown, even a
-   * one-time keyboard, which Telegram clients only hide until the user shows it again. A button
-   * with a request, such as for the user's contact, cannot be pressed: Telegram's clients answer
-   * it with what it requests rather than its text, which the emulator does not model.
+   * one-time keyboard, which Telegram clients only hide until the user shows it again.
+   *
+   * A button that requests the user's contact instead shares the account's own contact, as
+   * `sendAccountMessage` sends it, in reply to the keyboard's message, as Telegram Desktop's
+   * `ActivateBotCommand` and Telegram for Android's `shareMyContact` do once the user confirms.
+   * The bot receives an ordinary contact message, which only its reply ties to the keyboard.
+   * Buttons with other requests cannot be pressed, which the emulator does not model.
    */
   pressReplyKeyboardButton(input: PressReplyKeyboardButtonInput): PressReplyKeyboardButtonResult {
     if (this.#accounts.getById(input.fromAccountId) === undefined) {
@@ -1310,25 +1325,47 @@ export class PrivateMessagingService {
     if (this.#bots.getById(input.chat.botId) === undefined) {
       return { sent: false, reason: 'bot_not_found' };
     }
-    const replyInterface = this.#findShownReplyInterface({
+    const shownReplyInterface = this.#findShownReplyInterface({
       accountId: input.fromAccountId,
       botId: input.chat.botId,
-    })?.replyInterface;
+    });
+    const replyInterface = shownReplyInterface?.replyInterface;
     const button = replyInterface?.kind === 'reply_keyboard'
       ? findReplyKeyboardButton(replyInterface, input.text)
       : undefined;
-    if (button === undefined) {
+    if (shownReplyInterface === undefined || button === undefined) {
       return { sent: false, reason: 'reply_keyboard_button_not_found' };
     }
-    if (button.request !== undefined) {
-      return { sent: false, reason: 'reply_keyboard_button_request_unsupported' };
-    }
 
-    return this.sendAccountMessage({
-      fromAccountId: input.fromAccountId,
-      to: input.chat,
-      content: { kind: 'text', text: input.text },
-    });
+    switch (button.request?.kind) {
+      case undefined:
+        return this.sendAccountMessage({
+          fromAccountId: input.fromAccountId,
+          to: input.chat,
+          content: { kind: 'text', text: input.text },
+        });
+      case 'contact':
+        return this.sendAccountMessage({
+          fromAccountId: input.fromAccountId,
+          to: input.chat,
+          content: { kind: 'own_contact' },
+          replyToBotMessageId: this.#getBotMessageId(
+            input.chat.botId,
+            shownReplyInterface.message,
+          ),
+        });
+      default:
+        return { sent: false, reason: 'reply_keyboard_button_request_unsupported' };
+    }
+  }
+
+  /** The ID by which a bot sees a message of its private chat, which its message box holds. */
+  #getBotMessageId(botId: number, message: PrivateMessage): number {
+    const botMessageId = this.#messageBoxes.getMessageId(botId, message.id);
+    if (botMessageId === undefined) {
+      throw new Error(`Message ${message.id} is missing from the message box of bot ${botId}`);
+    }
+    return botMessageId;
   }
 
   /**

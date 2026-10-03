@@ -4553,10 +4553,10 @@ Deno.test('reply keyboard buttons request data only in private chats', async () 
 
   const press = await api.request(
     `${accountPath}/reply-keyboard-presses`,
-    jsonRequest('POST', { chat: { type: 'private', botId: createdBot.bot.id }, text: 'Phone' }),
+    jsonRequest('POST', { chat: { type: 'private', botId: createdBot.bot.id }, text: 'Quiz' }),
   );
   if (press.status !== 400) {
-    throw new Error(`Expected a request button not to send its text, received ${press.status}`);
+    throw new Error(`Expected a poll request button to be unanswerable, received ${press.status}`);
   }
 
   const invalidWebApps: Array<[string, string]> = [

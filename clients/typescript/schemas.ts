@@ -508,6 +508,14 @@ const videoContentShape = {
 
 const voiceContentShape = { voice: voiceSchema, ...captionShape };
 
+const contactSchema = z.strictObject({
+  phone_number: z.string().min(1),
+  first_name: z.string().min(1),
+  last_name: z.string().min(1).optional(),
+  vcard: z.string().min(1).optional(),
+  user_id: z.number().int().positive().optional(),
+});
+
 const pollSchema: z.ZodType<Poll> = z.strictObject({
   id: z.string().regex(/^[1-9]\d*$/),
   question: z.string().min(1),
@@ -615,6 +623,7 @@ function contentMessageSchemas<Header extends z.ZodRawShape>(header: Header) {
     z.strictObject({ ...header, ...voiceContentShape, ...messageTrailerShape }),
     z.strictObject({ ...header, rich_message: richMessageSchema, ...messageTrailerShape }),
     z.strictObject({ ...header, poll: pollSchema, ...messageTrailerShape }),
+    z.strictObject({ ...header, contact: contactSchema, ...messageTrailerShape }),
   ] as const;
 }
 

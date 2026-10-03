@@ -11,6 +11,7 @@ import {
   SUPERGROUP_ADMINISTRATOR_RIGHTS,
   type SupergroupAdministratorRights,
 } from '../../../types/chat_membership.ts';
+import { isContactVcardWithinLimit, MAX_CONTACT_NAME_LENGTH } from '../../../types/contact.ts';
 import type { EmulationSession } from '../../../types/emulation_session.ts';
 import type { InlineKeyboard } from '../../../types/inline_keyboard.ts';
 import {
@@ -34,6 +35,7 @@ import type { BotUploadTooBigFailure } from '../../../types/upload_profile.ts';
 import { isUserId } from '../../../types/telegram_identity.ts';
 import type { VirtualBotProfile } from '../../../types/virtual_bot.ts';
 import type { ChatAction } from '../../../types/virtual_chat.ts';
+import { countTextCharacters } from '../../../types/virtual_message.ts';
 import { fileDownloadResponse } from '../file_download.ts';
 import type { SessionRouteContextTypes } from '../session_route_context_types.ts';
 import {
@@ -392,6 +394,7 @@ const SEND_PERMISSION_MISSING_DESCRIPTIONS = {
   voice: 'Bad Request: not enough rights to send voice notes to the chat',
   poll: 'Bad Request: not enough rights to send polls to the chat',
   rich_message: 'Bad Request: not enough rights to send the rich message to the chat',
+  contact: 'Bad Request: not enough rights to send contacts to the chat',
 } as const satisfies Record<
   Extract<SendFailure, { readonly reason: 'send_permission_missing' }>['contentKind'],
   string
@@ -543,6 +546,23 @@ const sendPollParametersSchema = z.strictObject({
   open_period: integerParameter(z.int()).optional(),
   close_date: integerParameter(z.int()).optional(),
   is_closed: booleanParameter().default(false),
+});
+
+/** A contact's first or last name, of at most as many characters as TDLib documents. */
+const contactNameParameter = () =>
+  z.string().default('').refine((name) => countTextCharacters(name) <= MAX_CONTACT_NAME_LENGTH);
+
+// As for sendMessage, topics, business connections, paid broadcasts, suggested posts, and
+// ephemeral messages are not supported. Names longer than TDLib documents for a contact and a
+// vCard longer than the Bot API documents are rejected, as the emulator cannot tell how
+// Telegram's servers refuse them.
+const sendContactParametersSchema = z.strictObject({
+  ...sendOptionsParametersShape,
+  ...replyMarkupParametersShape,
+  phone_number: z.string().default(''),
+  first_name: contactNameParameter(),
+  last_name: contactNameParameter(),
+  vcard: z.string().default('').refine(isContactVcardWithinLimit),
 });
 
 const sendPhotoParametersSchema = z.strictObject({
@@ -1130,6 +1150,7 @@ const BOT_API_METHODS: readonly BotApiMethod[] = [
   { name: 'promoteChatMember', handler: handlePromoteChatMember },
   { name: 'restrictChatMember', handler: handleRestrictChatMember },
   { name: 'sendChatAction', handler: handleSendChatAction },
+  { name: 'sendContact', handler: handleSendContact },
   { name: 'sendDocument', handler: handleSendDocument },
   { name: 'sendMediaGroup', handler: handleSendMediaGroup },
   { name: 'sendMessage', handler: handleSendMessage },
@@ -1557,6 +1578,43 @@ function handleSendMessage(
   return sendMethodAnswer(context.session.botApi.sendMessage(context.bot, {
     ...optionsReading.options,
     ...formattedTextReading.formattedText,
+  }));
+}
+
+/**
+ * Sends a contact as the official Bot API server's `process_send_contact_query` reads it, before
+ * the chat: a phone number and a first name, each required, and an optional last name and vCard.
+ * As that method does, a bot names no Telegram user for the contact.
+ */
+function handleSendContact(
+  context: BotApiMethodContext,
+  parameters: BotApiRequestParameters,
+): BotApiMethodAnswer {
+  const invalidParametersDescription = 'Bad Request: invalid sendContact parameters';
+  const parsedParameters = sendContactParametersSchema.safeParse(parameters);
+  if (!parsedParameters.success) {
+    return botApiError(400, invalidParametersDescription);
+  }
+  const { data } = parsedParameters;
+  if (data.phone_number.length === 0) {
+    return botApiError(400, 'Bad Request: parameter "phone_number" is required');
+  }
+  if (data.first_name.length === 0) {
+    return botApiError(400, 'Bad Request: parameter "first_name" is required');
+  }
+  const optionsReading = readSendOptions(context, data, invalidParametersDescription);
+  if (!optionsReading.read) {
+    return optionsReading.errorAnswer;
+  }
+
+  return sendMethodAnswer(context.session.botApi.sendContact(context.bot, {
+    ...optionsReading.options,
+    contact: {
+      phoneNumber: data.phone_number,
+      firstName: data.first_name,
+      lastName: data.last_name,
+      vcard: data.vcard,
+    },
   }));
 }
 

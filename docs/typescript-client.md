@@ -113,6 +113,14 @@ try {
   });
   console.log(album.map(({ media_group_id }) => media_group_id));
 
+  // Share a contact the account writes, which shows no Telegram user. An account created with a
+  // phone_number also shares its own contact, which shows the account as its user, with
+  // shareOwnContact or by pressing a request_contact button.
+  await account.sendContact({
+    to: { type: 'private', botId: bot.id },
+    contact: { phone_number: '+1 555 0199', first_name: 'Grace', last_name: 'Hopper' },
+  });
+
   // Vote in the latest poll the bot sent, if any. The answer comes back with the poll's message
   // as it is now, whose options show their voter counts.
   const pollMessage = (await account.getMessages({ chat: { type: 'private', botId: bot.id } }))
