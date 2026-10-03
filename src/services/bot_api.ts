@@ -922,6 +922,8 @@ export type InlineQueryResultRequest =
   | (InlineQueryResultRequestBase & {
     readonly kind: 'document';
     readonly document: InlineResultFileRequest;
+    /** The URL of the thumbnail the client lists; empty for none. */
+    readonly thumbnailUrl: string;
     readonly title: string;
     /** Empty text for no caption. */
     readonly caption: SpecifiedFormattedText;
@@ -4815,6 +4817,7 @@ export class BotApiService {
             ...shared,
             kind: 'document',
             document,
+            thumbnailUrl: result.thumbnailUrl,
             title: result.title,
             messageContent: messageContent ?? toInlineResultDocumentContent(document, result),
           },

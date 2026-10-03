@@ -4409,7 +4409,12 @@ function readInlineQueryResultContent(
         thumbnailUrl: result.thumbnailUrl,
         showsCaptionAboveMedia: result.showsCaptionAboveMedia,
       }
-      : { ...media, kind: 'document', document: result.document },
+      : {
+        ...media,
+        kind: 'document',
+        document: result.document,
+        thumbnailUrl: result.thumbnailUrl,
+      },
   };
 }
 

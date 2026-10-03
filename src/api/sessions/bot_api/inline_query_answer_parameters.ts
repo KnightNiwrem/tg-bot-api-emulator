@@ -63,6 +63,8 @@ export type InlineQueryResultParameter =
   | (InlineQueryResultParameterBase & {
     readonly kind: 'document';
     readonly document: InlineQueryResultFileParameter;
+    /** The URL of the document's thumbnail in the list of results; empty for none. */
+    readonly thumbnailUrl: string;
     readonly title: string;
     readonly caption: UnreadFormattedText;
     readonly messageContent?: UnreadInputMessageContent;
@@ -362,6 +364,7 @@ function readDocumentResult(value: unknown): InlineQueryResultReading {
       kind: 'document',
       ...readSharedFields(data),
       document,
+      thumbnailUrl: data.thumbnail_url ?? '',
       title: data.title,
       caption: readCaption(data),
       ...(messageContent === undefined ? {} : { messageContent }),

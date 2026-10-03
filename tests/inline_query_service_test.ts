@@ -368,6 +368,7 @@ Deno.test('InlineQueryService downloads media named by URL each time a result is
     kind: 'document',
     id,
     document: { source: 'web', url },
+    thumbnailUrl: '',
     title: 'Cats',
     description: '',
     messageContent: { kind: 'web_document', url, caption: '' },

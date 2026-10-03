@@ -101,6 +101,8 @@ type SpecifiedInlineQueryResultListing =
   | {
     readonly kind: 'document';
     readonly document: SpecifiedInlineResultFile<StoredDocumentFile>;
+    /** The URL of the thumbnail the client lists; empty for none. */
+    readonly thumbnailUrl: string;
     readonly title: string;
     /** Empty for none. */
     readonly description: string;
@@ -779,10 +781,10 @@ function checkSpecifiedResults(
 
 /**
  * Telegram's checks of a media result whose file the bot names by URL: the URL must be one
- * Telegram can download, and a photo, as the Bot API requires, needs a thumbnail to list, whose
- * URL must be one too. The Bot API server and TDLib pass both URLs on as they are, so Telegram's
- * servers check them; the emulator reads them as TDLib's `parse_url` reads the URL of a file sent
- * by URL.
+ * Telegram can download, and so must its thumbnail's, which a photo, as the Bot API requires, must
+ * have. TDLib passes both URLs on as web documents, so Telegram's servers check them; the emulator
+ * reads them as TDLib's `parse_url` reads the URL of a file sent by URL. TDLib sends no thumbnail
+ * for a file the bot knows by `file_id`.
  */
 function checkWebMediaListing(
   result: SpecifiedInlineQueryResult,
@@ -797,11 +799,8 @@ function checkWebMediaListing(
   if (!parseHttpUrl(file.url).parsed) {
     return 'web_document_url_invalid';
   }
-  if (result.kind !== 'photo') {
-    return undefined;
-  }
   if (result.thumbnailUrl.length === 0) {
-    return 'photo_thumbnail_url_empty';
+    return result.kind === 'photo' ? 'photo_thumbnail_url_empty' : undefined;
   }
   return parseHttpUrl(result.thumbnailUrl).parsed ? undefined : 'web_document_url_invalid';
 }

@@ -51,7 +51,8 @@ properties:
       document, which is then not downloaded.
   thumbnail_url:
     type: string
-    description: Validated and ignored.
+    description: >-
+      The URL of the thumbnail the client lists, an HTTP or HTTPS URL that is not downloaded.
   thumbnail_width:
     type: integer
     description: Validated and ignored.
