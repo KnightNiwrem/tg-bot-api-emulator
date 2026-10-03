@@ -229,6 +229,7 @@
           "src/services/poll_normalization.ts",
           "src/services/rich_message_normalization.ts",
           "src/services/message_forwarding.ts",
+          "src/services/message_pinning.ts",
           "src/services/media_file.ts",
           "src/services/shared_chat_administration.ts",
           "src/services/virtual_user.ts",

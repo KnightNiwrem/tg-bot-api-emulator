@@ -22,6 +22,7 @@ Deno.test('createExternalReply shows a supergroup message by its hidden origin a
     content: { kind: 'text', text: 'Ship it', entities: [] },
     isContentProtected: false,
     isSilent: false,
+    isPinned: false,
   };
 
   const target = createExternalReply(
@@ -61,6 +62,7 @@ Deno.test('createExternalReply keeps private media without its caption', () => {
     },
     isContentProtected: false,
     isSilent: false,
+    isPinned: false,
   };
 
   const { externalReply, repliedText } = createExternalReply(message, 7, () => undefined);

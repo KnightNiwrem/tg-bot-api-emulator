@@ -1,6 +1,8 @@
 import type {
   BotApiAcceptedGiftTypes,
   BotApiPrivateChatFullInfo,
+  BotApiRepliedPrivateMessage,
+  BotApiRepliedSupergroupMessage,
   BotApiSupergroupChatFullInfo,
 } from '../types/bot_api.ts';
 import type { VirtualAccount } from '../types/virtual_account.ts';
@@ -24,10 +26,11 @@ const SUPERGROUP_CHAT_ID_OFFSET = 1_000_000_000_000;
  * A private chat with an account, as the official Bot API server's `JsonChat` shows its full
  * information, and in its field order. The account has no bio, photo, birthdate or business
  * profile, so those fields are omitted, and, as TDLib's default gift settings do, it accepts
- * every kind of gift.
+ * every kind of gift. `JsonChat` shows the chat's newest pinned message without its reply.
  */
 export function projectPrivateChatFullInfo(
   { profile, hasPrivateForwards }: VirtualAccount,
+  pinnedMessage: BotApiRepliedPrivateMessage | undefined,
 ): BotApiPrivateChatFullInfo {
   const { id, first_name, last_name, username } = profile;
   return {
@@ -40,6 +43,7 @@ export function projectPrivateChatFullInfo(
     ...(username === undefined ? {} : { active_usernames: [username] }),
     ...(hasPrivateForwards ? { has_private_forwards: true } : {}),
     accepted_gift_types: acceptedGiftTypes(true),
+    ...(pinnedMessage === undefined ? {} : { pinned_message: pinnedMessage }),
     max_reaction_count: MAX_REACTION_COUNT,
     // TDLib's `AccentColorId(UserId)`, for a user that chose no accent color.
     accent_color_id: id % BUILT_IN_ACCENT_COLOR_COUNT,
@@ -55,9 +59,12 @@ export function projectPrivateChatFullInfo(
  * - As TDLib documents for `supergroup.join_to_send_messages`, only discussion groups let
  *   non-members write, and the emulator has none.
  * - Gifts cannot be sent to it, so it accepts none, as `JsonChat` derives from `can_send_gift`.
+ *
+ * As for a private chat, `JsonChat` shows the newest pinned message without its reply.
  */
 export function projectSupergroupChatFullInfo(
   { id, title, username, description, hasProtectedContent, defaultPermissions }: Supergroup,
+  pinnedMessage: BotApiRepliedSupergroupMessage | undefined,
 ): BotApiSupergroupChatFullInfo {
   const channelId = -id - SUPERGROUP_CHAT_ID_OFFSET;
   return {
@@ -71,6 +78,7 @@ export function projectSupergroupChatFullInfo(
     permissions: projectChatPermissions(defaultPermissions),
     join_to_send_messages: true,
     accepted_gift_types: acceptedGiftTypes(false),
+    ...(pinnedMessage === undefined ? {} : { pinned_message: pinnedMessage }),
     max_reaction_count: MAX_REACTION_COUNT,
     // TDLib's `AccentColorId(ChannelId)`, for a supergroup that chose no accent color.
     accent_color_id: channelId % BUILT_IN_ACCENT_COLOR_COUNT,

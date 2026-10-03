@@ -366,16 +366,40 @@ export class BotMessageViewService {
   }
 
   /**
-   * Returns everything `getChat` shows about a chat, whose access the caller checked: the private
-   * chat with an account, or a supergroup; `undefined` for neither.
+   * Returns everything `getChat` shows a bot about a chat, whose access the caller checked: the
+   * bot's private chat with an account, or a supergroup, with the given pinned message of the chat
+   * as a reply shows a message; `undefined` for neither.
    */
-  viewChatFullInfo(chatId: number): BotApiChatFullInfo | undefined {
+  viewChatFullInfo(
+    { chatId, observerBotId, pinnedMessage }: {
+      readonly chatId: number;
+      readonly observerBotId: number;
+      /** The chat's newest pinned message; omitted when it pins none. */
+      readonly pinnedMessage: ChatMessage | undefined;
+    },
+  ): BotApiChatFullInfo | undefined {
     if (isUserId(chatId)) {
       const account = this.#accounts.getById(chatId);
-      return account === undefined ? undefined : projectPrivateChatFullInfo(account);
+      if (pinnedMessage !== undefined && pinnedMessage.kind !== 'private_message') {
+        throw new Error(`Pinned message ${pinnedMessage.id} is not a private message`);
+      }
+      return account === undefined ? undefined : projectPrivateChatFullInfo(
+        account,
+        pinnedMessage === undefined ? undefined : this.#viewPrivateMessage(pinnedMessage),
+      );
     }
     const chat = this.#sharedChats.getSharedChat(chatId);
-    return chat?.kind === 'supergroup' ? projectSupergroupChatFullInfo(chat) : undefined;
+    if (pinnedMessage !== undefined && pinnedMessage.kind !== 'supergroup_message') {
+      throw new Error(`Pinned message ${pinnedMessage.id} is not a supergroup message`);
+    }
+    return chat?.kind === 'supergroup'
+      ? projectSupergroupChatFullInfo(
+        chat,
+        pinnedMessage === undefined
+          ? undefined
+          : this.#viewSupergroupMessage(pinnedMessage, observerBotId),
+      )
+      : undefined;
   }
 
   /** Projects a supergroup message with the given view of the message it replies to, if any. */

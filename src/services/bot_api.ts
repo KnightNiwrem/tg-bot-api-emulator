@@ -159,6 +159,7 @@ import type {
   TextInvalidFailure,
   TextMessageReplacement,
 } from './message_content.ts';
+import type { PinnedMessagesChat } from './message_pinning.ts';
 import type { PollStopFailureReason } from './poll.ts';
 import type { PollLimitFailure } from './poll_normalization.ts';
 import type {
@@ -1804,7 +1805,15 @@ interface BotMessageViews {
     readonly status: ChatMemberStatus;
     readonly observerBotId: number;
   }): BotApiChatMember | undefined;
-  viewChatFullInfo(chatId: number): BotApiChatFullInfo | undefined;
+  viewChatFullInfo(input: {
+    readonly chatId: number;
+    readonly observerBotId: number;
+    readonly pinnedMessage: ChatMessage | undefined;
+  }): BotApiChatFullInfo | undefined;
+}
+
+interface PinnedMessageLookup {
+  findNewestPinnedMessage(chat: PinnedMessagesChat): ChatMessage | undefined;
 }
 
 interface ChatActions {
@@ -1824,6 +1833,8 @@ interface BotApiServiceDependencies {
   readonly supergroupBotMessages: SupergroupBotMessaging;
   readonly chatMemberships: ChatMemberships;
   readonly botMessageViews: BotMessageViews;
+  /** Finds the pinned message that `getChat` shows. */
+  readonly pinnedMessages: PinnedMessageLookup;
   readonly mediaFiles: MediaFiles;
   readonly callbackQueries: CallbackQueryAnswering;
   readonly inlineQueries: InlineQueryAnswering;
@@ -1869,6 +1880,7 @@ export class BotApiService {
   readonly #supergroupBotMessages: SupergroupBotMessaging;
   readonly #chatMemberships: ChatMemberships;
   readonly #botMessageViews: BotMessageViews;
+  readonly #pinnedMessages: PinnedMessageLookup;
   readonly #mediaFiles: MediaFiles;
   readonly #callbackQueries: CallbackQueryAnswering;
   readonly #inlineQueries: InlineQueryAnswering;
@@ -1894,6 +1906,7 @@ export class BotApiService {
       supergroupBotMessages,
       chatMemberships,
       botMessageViews,
+      pinnedMessages,
       mediaFiles,
       callbackQueries,
       inlineQueries,
@@ -1918,6 +1931,7 @@ export class BotApiService {
     this.#supergroupBotMessages = supergroupBotMessages;
     this.#chatMemberships = chatMemberships;
     this.#botMessageViews = botMessageViews;
+    this.#pinnedMessages = pinnedMessages;
     this.#mediaFiles = mediaFiles;
     this.#callbackQueries = callbackQueries;
     this.#inlineQueries = inlineQueries;
@@ -3803,13 +3817,20 @@ export class BotApiService {
 
   /**
    * Returns everything a bot may learn about a chat: the private chat with an account that started
-   * it, or a supergroup the bot may read, which a public one is to bots that are not members.
+   * it, or a supergroup the bot may read, which a public one is to bots that are not members. It
+   * shows the chat's newest pinned message, as the official Bot API server's `getChat` asks
+   * TDLib's `getChatPinnedMessage` for it.
    */
   getChat(authenticatedBot: VirtualBotProfile, { chatId }: GetChatRequest): BotApiGetChatResult {
+    let pinnedMessagesChat: PinnedMessagesChat;
     if (isUserId(chatId)) {
       if (!this.#isPrivateChatKnown(authenticatedBot, chatId)) {
         return { found: false, reason: 'chat_not_found' };
       }
+      pinnedMessagesChat = {
+        type: 'private',
+        conversation: { accountId: chatId, botId: authenticatedBot.id },
+      };
     } else {
       const result = this.#chatMemberships.getReadableSupergroup({
         observerBotId: authenticatedBot.id,
@@ -3818,8 +3839,13 @@ export class BotApiService {
       if (!result.found) {
         return { found: false, reason: excludeMissingBotFailure(authenticatedBot, result.reason) };
       }
+      pinnedMessagesChat = { type: 'supergroup', chatId };
     }
-    const chat = this.#botMessageViews.viewChatFullInfo(chatId);
+    const chat = this.#botMessageViews.viewChatFullInfo({
+      chatId,
+      observerBotId: authenticatedBot.id,
+      pinnedMessage: this.#pinnedMessages.findNewestPinnedMessage(pinnedMessagesChat),
+    });
     if (chat === undefined) {
       throw new Error(`Chat ${chatId} was found but cannot be shown`);
     }

@@ -29,6 +29,7 @@ function accountMessage(overrides: Partial<PrivateMessage> = {}): PrivateMessage
     content: { kind: 'text', text: 'Hello', entities: [] },
     isContentProtected: false,
     isSilent: false,
+    isPinned: false,
     ...overrides,
   };
 }
@@ -161,6 +162,7 @@ Deno.test('isForwardable refuses content its sender or chat protects, and servic
     content: { kind: 'members_joined', memberIds: [BOT_ID] },
     isContentProtected: false,
     isSilent: false,
+    isPinned: false,
   };
 
   const forwardability = [

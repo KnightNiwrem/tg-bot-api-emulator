@@ -46,6 +46,7 @@ import { InlineQueryService } from '../services/inline_query.ts';
 import { MediaFileService } from '../services/media_file.ts';
 import { normalizeCaption } from '../services/message_content.ts';
 import { MessageForwardingService } from '../services/message_forwarding.ts';
+import { MessagePinningService } from '../services/message_pinning.ts';
 import { PollService } from '../services/poll.ts';
 import { PrivateMessagingService } from '../services/private_messaging.ts';
 import { SharedChatAdministrationService } from '../services/shared_chat_administration.ts';
@@ -128,6 +129,15 @@ export function createEmulationSession(
     blockedUsers,
     events: botUpdateDelivery,
     currentUnixTimeSeconds,
+  });
+  const messagePinning = new MessagePinningService({
+    accounts,
+    bots,
+    privateConversations,
+    sharedChats,
+    privateMessages: privateMessaging,
+    supergroupMessages: supergroupMessaging,
+    messages,
   });
   const messageForwarding = new MessageForwardingService({
     privateMessages: privateMessaging,
@@ -249,6 +259,7 @@ export function createEmulationSession(
     supergroupBotMessages: supergroupMessaging,
     chatMemberships: sharedChatAdministration,
     botMessageViews,
+    pinnedMessages: messagePinning,
     mediaFiles,
     callbackQueries,
     inlineQueries,
@@ -281,6 +292,7 @@ export function createEmulationSession(
     privateMessaging,
     supergroupMessaging,
     messageForwarding,
+    messagePinning,
     botBlocking,
     callbackQueries,
     polls: pollService,

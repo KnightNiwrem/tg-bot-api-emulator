@@ -84,6 +84,8 @@ export interface BotApiPrivateChatFullInfo extends BotApiPrivateChat, BotApiChat
   readonly active_usernames?: readonly string[];
   /** Present only when true. */
   readonly has_private_forwards?: true;
+  /** The newest pinned message, as a reply shows a message; omitted when none is pinned. */
+  readonly pinned_message?: BotApiRepliedPrivateMessage;
 }
 
 /** A supergroup, as `getChat` shows it; fields for unset settings are omitted. */
@@ -97,6 +99,8 @@ export interface BotApiSupergroupChatFullInfo extends BotApiSupergroupChat, BotA
   readonly permissions: BotApiChatPermissions;
   /** Present only when true. */
   readonly join_to_send_messages?: true;
+  /** The newest pinned message, as a reply shows a message; omitted when none is pinned. */
+  readonly pinned_message?: BotApiRepliedSupergroupMessage;
 }
 
 /** A chat with everything `getChat` tells a bot about it. */
