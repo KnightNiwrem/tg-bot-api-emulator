@@ -1,7 +1,7 @@
 description: >-
-  Telegram Bot API method for setting the custom title of a supergroup administrator. Telegram
-  lets a bot set only the titles of administrators it promoted, and bots promote none here, so
-  the method always fails; the supergroup's owner sets titles through the emulation API.
+  Telegram Bot API method for setting the custom title of a supergroup administrator. Setting a
+  title is not implemented yet, so the method always fails, and an administrator the bot may edit
+  is refused as one it may not; the supergroup's owner sets titles through the emulation API.
 parameters:
   - $ref: ../components/parameters/SessionId.yaml
   - $ref: ../components/parameters/BotToken.yaml

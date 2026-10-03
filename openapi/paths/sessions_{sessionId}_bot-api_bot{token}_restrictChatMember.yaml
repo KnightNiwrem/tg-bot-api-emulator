@@ -52,10 +52,12 @@ post:
         own restriction (`Bad Request: can't unrestrict self`); when every permission would make
         an administrator a member and the bot lacks `can_promote_members` (`Bad Request: not
         enough rights`); when the bot lacks `can_restrict_members` (`Bad Request: not enough
-        rights to restrict/unrestrict chat member`); or when the user is an administrator,
-        which Telegram lets a bot restrict only if it promoted it, and bots promote none here
-        (`Bad Request: user is an administrator of the chat`). As TDLib lets it, an
-        administrator bot that grants itself every permission becomes a member.
+        rights to restrict/unrestrict chat member`); or when the user is an administrator the
+        bot did not promote, directly or through administrators it promoted, which Telegram
+        does not let it restrict or demote (`Bad Request: user is an administrator of the
+        chat`). Every permission demotes an administrator the bot may edit, as
+        `promoteChatMember` does, and an administrator bot that grants itself every
+        permission becomes a member, as TDLib lets it.
       content:
         application/json:
           schema:

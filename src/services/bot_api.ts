@@ -29,6 +29,7 @@ import {
   type ChatMemberStatus,
   type FormerSupergroupMemberFailureReason,
   getSupergroupNonMemberFailureReason,
+  type SupergroupAdministratorRights,
 } from '../types/chat_membership.ts';
 import type { ChatPermissions } from '../types/chat_permissions.ts';
 import type { InlineQueryId, InlineQueryResultsButton } from '../types/inline_query.ts';
@@ -125,6 +126,8 @@ import type {
   GetChatMemberStatusResult,
   GetReadableSupergroupResult,
   LeaveChatResult,
+  PromoteChatMemberAsBotFailureReason,
+  PromoteChatMemberAsBotResult,
   RestrictChatMemberResult,
   UnbanChatMemberResult,
 } from './shared_chat_administration.ts';
@@ -1051,8 +1054,8 @@ export interface SetChatAdministratorCustomTitleRequest {
 }
 
 /**
- * Why a bot cannot set an administrator's custom title. Telegram lets a bot set only the titles of
- * administrators it promoted, and bots promote none here, so the method always fails.
+ * Why a bot cannot set an administrator's custom title. Setting a title is not implemented yet, so
+ * the method always fails.
  */
 export type SetChatAdministratorCustomTitleFailureReason =
   | ChatMemberAccessFailureReason
@@ -1140,6 +1143,23 @@ export type BotApiRestrictChatMemberResult =
       | 'cannot_unrestrict_self'
       | 'not_enough_rights_to_promote'
       | 'method_unavailable_outside_supergroups';
+  };
+
+export interface PromoteChatMemberRequest {
+  /** The Bot API `chat_id`, as `SendRequestOptions` describes it. */
+  readonly chatId: number;
+  readonly userId: number;
+  /** The supergroup rights the user holds from now on; none demotes an administrator. */
+  readonly rights: SupergroupAdministratorRights;
+}
+
+export type BotApiPromoteChatMemberResult =
+  | { readonly promoted: true }
+  | {
+    readonly promoted: false;
+    readonly reason:
+      | Exclude<PromoteChatMemberAsBotFailureReason, 'bot_not_found'>
+      | 'method_unavailable_in_private_chats';
   };
 
 export interface UnbanChatMemberRequest {
@@ -1520,6 +1540,12 @@ interface ChatMemberships {
     readonly memberId: number;
     readonly onlyIfBanned: boolean;
   }): UnbanChatMemberResult;
+  promoteChatMemberAsBot(input: {
+    readonly actorBotId: number;
+    readonly chatId: number;
+    readonly memberId: number;
+    readonly rights: SupergroupAdministratorRights;
+  }): PromoteChatMemberAsBotResult;
   changeSupergroupTitle(input: {
     readonly actor: SupergroupMessageAuthor;
     readonly chatId: number;
@@ -3666,7 +3692,8 @@ export class BotApiService {
    * Refuses to set the custom title of a supergroup administrator, for the reason the official Bot
    * API server's `process_set_chat_administrator_custom_title_query` gives: the chat must be a
    * group, the owner alone edits its own title, the user must be an administrator, and the bot must
-   * be allowed to edit it. A bot may edit only administrators it promoted, which no bot is here.
+   * be allowed to edit it. Setting a title is not implemented yet, so a title the bot may edit is
+   * refused as one it may not.
    */
   setChatAdministratorCustomTitle(
     authenticatedBot: VirtualBotProfile,
@@ -3824,6 +3851,36 @@ export class BotApiService {
     });
     return result.restricted ? result : {
       restricted: false,
+      reason: excludeMissingBotFailure(authenticatedBot, result.reason),
+    };
+  }
+
+  /**
+   * Promotes a supergroup member to administrator, changes an administrator's rights, or demotes
+   * one, as `SharedChatAdministrationService.promoteChatMemberAsBot` does. As the official Bot API
+   * server's `process_promote_chat_member_query` refuses, a private chat has no members to
+   * promote.
+   */
+  promoteChatMember(
+    authenticatedBot: VirtualBotProfile,
+    { chatId, userId, rights }: PromoteChatMemberRequest,
+  ): BotApiPromoteChatMemberResult {
+    if (isUserId(chatId)) {
+      return {
+        promoted: false,
+        reason: this.#isPrivateChatKnown(authenticatedBot, chatId)
+          ? 'method_unavailable_in_private_chats'
+          : 'chat_not_found',
+      };
+    }
+    const result = this.#chatMemberships.promoteChatMemberAsBot({
+      actorBotId: authenticatedBot.id,
+      chatId,
+      memberId: userId,
+      rights,
+    });
+    return result.promoted ? result : {
+      promoted: false,
       reason: excludeMissingBotFailure(authenticatedBot, result.reason),
     };
   }

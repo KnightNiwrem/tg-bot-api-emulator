@@ -6,6 +6,11 @@ import {
   MAX_BOT_COMMAND_LENGTH,
 } from '../../../types/bot_command.ts';
 import { MAX_CALLBACK_QUERY_ANSWER_TEXT_LENGTH } from '../../../types/callback_query.ts';
+import {
+  grantSupergroupAdministratorRights,
+  SUPERGROUP_ADMINISTRATOR_RIGHTS,
+  type SupergroupAdministratorRights,
+} from '../../../types/chat_membership.ts';
 import type { EmulationSession } from '../../../types/emulation_session.ts';
 import type { InlineKeyboard } from '../../../types/inline_keyboard.ts';
 import {
@@ -416,6 +421,14 @@ const MEMBER_IS_OWNER_DESCRIPTION = "Bad Request: can't remove chat owner";
 const NOT_ENOUGH_RIGHTS_TO_RESTRICT_DESCRIPTION =
   'Bad Request: not enough rights to restrict/unrestrict chat member';
 const MEMBER_IS_ADMINISTRATOR_DESCRIPTION = 'Bad Request: user is an administrator of the chat';
+const CANNOT_PROMOTE_SELF_DESCRIPTION = "Bad Request: can't promote self";
+/** Telegram's servers' errors for promotions, which the official server passes on. */
+const MEMBER_NOT_IN_CHAT_DESCRIPTION = 'Bad Request: USER_NOT_MUTUAL_CONTACT';
+const MEMBER_KICKED_DESCRIPTION = 'Bad Request: USER_KICKED';
+const RIGHTS_NOT_HELD_DESCRIPTION = 'Bad Request: RIGHT_FORBIDDEN';
+const BOTS_CANNOT_ADD_MEMBERS_DESCRIPTION = "Bad Request: bots can't add new chat members";
+const ANONYMOUS_ADMINISTRATORS_UNSUPPORTED_DESCRIPTION =
+  'Bad Request: anonymous administrators are not supported';
 
 /** Telegram caps how long a client may cache a callback query answer at 30 days. */
 const MAX_CALLBACK_QUERY_ANSWER_CACHE_TIME_SECONDS = 30 * 24 * 60 * 60;
@@ -827,6 +840,34 @@ const setChatAdministratorCustomTitleParametersSchema = z.strictObject({
   custom_title: z.string().optional(),
 });
 
+// The official server also reads `can_manage_voice_chats`, the deprecated name of
+// `can_manage_video_chats`. It reads the rights that apply only to channels, which TDLib's
+// `AdministratorRights` drops in supergroups, and `is_anonymous`, whose administrators the emulator
+// does not support.
+const promoteChatMemberParametersSchema = z.strictObject({
+  chat_id: integerParameter(z.int()).optional(),
+  user_id: integerParameter(z.int()).optional(),
+  is_anonymous: booleanParameter().optional(),
+  can_manage_chat: booleanParameter().optional(),
+  can_delete_messages: booleanParameter().optional(),
+  can_manage_video_chats: booleanParameter().optional(),
+  can_manage_voice_chats: booleanParameter().optional(),
+  can_restrict_members: booleanParameter().optional(),
+  can_promote_members: booleanParameter().optional(),
+  can_change_info: booleanParameter().optional(),
+  can_invite_users: booleanParameter().optional(),
+  can_post_stories: booleanParameter().optional(),
+  can_edit_stories: booleanParameter().optional(),
+  can_delete_stories: booleanParameter().optional(),
+  can_post_messages: booleanParameter().optional(),
+  can_edit_messages: booleanParameter().optional(),
+  can_pin_messages: booleanParameter().optional(),
+  can_manage_topics: booleanParameter().optional(),
+  can_manage_direct_messages: booleanParameter().optional(),
+  can_manage_tags: booleanParameter().optional(),
+  can_send_welcome_messages: booleanParameter().optional(),
+});
+
 // Telegram also reads the deprecated permissions given as separate parameters, such as
 // `can_send_messages`; rejecting them instead surfaces the bot's mistake in tests.
 const restrictChatMemberParametersSchema = z.strictObject({
@@ -992,7 +1033,18 @@ type ChatMemberFailureReason =
   | Extract<
     ReturnType<EmulationSession['botApi']['restrictChatMember']>,
     { readonly restricted: false }
-  >['reason'];
+  >['reason']
+  | Exclude<
+    Extract<
+      ReturnType<EmulationSession['botApi']['promoteChatMember']>,
+      { readonly promoted: false }
+    >['reason'],
+    | 'cannot_promote_self'
+    | 'member_not_in_chat'
+    | 'member_kicked'
+    | 'rights_not_held'
+    | 'bots_cannot_add_members'
+  >;
 
 type MyCommandsTargetFailureReason = Extract<
   ReturnType<EmulationSession['botApi']['getMyCommands']>,
@@ -1069,6 +1121,7 @@ const BOT_API_METHODS: readonly BotApiMethod[] = [
   { name: 'getUpdates', handler: handleGetUpdates },
   { name: 'getWebhookInfo', handler: handleGetWebhookInfo },
   { name: 'leaveChat', handler: handleLeaveChat },
+  { name: 'promoteChatMember', handler: handlePromoteChatMember },
   { name: 'restrictChatMember', handler: handleRestrictChatMember },
   { name: 'sendChatAction', handler: handleSendChatAction },
   { name: 'sendDocument', handler: handleSendDocument },
@@ -3473,6 +3526,68 @@ function handleRestrictChatMember(
   return result.restricted ? botApiResult(true) : chatMemberFailureAnswer(result.reason);
 }
 
+/**
+ * Answers `promoteChatMember`. As the official server's `process_promote_chat_member_query` reads
+ * them, each right is a separate parameter, a missing one is false, and passing none demotes an
+ * administrator.
+ */
+function handlePromoteChatMember(
+  context: BotApiMethodContext,
+  parameters: BotApiRequestParameters,
+): BotApiMethodAnswer {
+  const parsedParameters = promoteChatMemberParametersSchema.safeParse(parameters);
+  if (!parsedParameters.success) {
+    return botApiError(400, 'Bad Request: invalid promoteChatMember parameters');
+  }
+  const { data } = parsedParameters;
+  const targetReading = readChatMemberTarget(data);
+  if (!targetReading.read) {
+    return targetReading.errorAnswer;
+  }
+  // Anonymous administrators are not supported; granting the right alone would misrepresent them.
+  if (data.is_anonymous === true) {
+    return botApiError(400, ANONYMOUS_ADMINISTRATORS_UNSUPPORTED_DESCRIPTION);
+  }
+
+  const result = context.session.botApi.promoteChatMember(context.bot, {
+    ...targetReading.target,
+    rights: readPromotedSupergroupRights(data),
+  });
+  if (result.promoted) {
+    return botApiResult(true);
+  }
+  switch (result.reason) {
+    case 'cannot_promote_self':
+      return botApiError(400, CANNOT_PROMOTE_SELF_DESCRIPTION);
+    case 'member_not_in_chat':
+      return botApiError(400, MEMBER_NOT_IN_CHAT_DESCRIPTION);
+    case 'member_kicked':
+      return botApiError(400, MEMBER_KICKED_DESCRIPTION);
+    case 'rights_not_held':
+      return botApiError(400, RIGHTS_NOT_HELD_DESCRIPTION);
+    case 'bots_cannot_add_members':
+      return botApiError(400, BOTS_CANNOT_ADD_MEMBERS_DESCRIPTION);
+    default:
+      return chatMemberFailureAnswer(result.reason);
+  }
+}
+
+/**
+ * The supergroup rights a `promoteChatMember` request grants: those it passes as true, with
+ * `can_manage_voice_chats` naming `can_manage_video_chats`, and with `can_manage_chat` once any is
+ * granted, as TDLib's `AdministratorRights` makes them for a supergroup.
+ */
+function readPromotedSupergroupRights(
+  requestedRights: z.infer<typeof promoteChatMemberParametersSchema>,
+): SupergroupAdministratorRights {
+  return grantSupergroupAdministratorRights(
+    SUPERGROUP_ADMINISTRATOR_RIGHTS.filter((right) =>
+      requestedRights[right] === true ||
+      (right === 'can_manage_video_chats' && requestedRights.can_manage_voice_chats === true)
+    ),
+  );
+}
+
 function handleUnbanChatMember(
   context: BotApiMethodContext,
   parameters: BotApiRequestParameters,
@@ -3498,8 +3613,8 @@ function handleUnbanChatMember(
  * a missing or non-positive `user_id` as 0, which identifies no user.
  */
 /**
- * Answers `setChatAdministratorCustomTitle`, which always fails here: bots may edit only the titles
- * of administrators they promoted, and they promote none.
+ * Answers `setChatAdministratorCustomTitle`, which always fails here, as setting a title is not
+ * implemented yet.
  */
 function handleSetChatAdministratorCustomTitle(
   context: BotApiMethodContext,

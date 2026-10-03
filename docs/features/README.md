@@ -60,6 +60,7 @@ The two legacy aliases below are also accepted.
 | Chat information | `getChat`                                                                                                                                                                |
 | Chat settings    | `setChatTitle`, `setChatDescription`, `setChatPermissions`                                                                                                               |
 | Membership       | `leaveChat`, `getChatMember`, `getChatAdministrators`, `getChatMemberCount`, `banChatMember`, `unbanChatMember`, `restrictChatMember`, `setChatAdministratorCustomTitle` |
+| Administration   | `promoteChatMember`                                                                                                                                                      |
 | Legacy aliases   | `getChatMembersCount` → `getChatMemberCount`, `kickChatMember` → `banChatMember`                                                                                         |
 
 Methods outside this inventory return `404` with a Bot API error body. For supported methods,
@@ -80,8 +81,7 @@ above determines whether an individual method is available.
   locations, venues, contacts, games, checklists, ephemeral messages, drafts and stories. Rich
   messages lack [drafts and some blocks](rich-messages.md#real-gaps), and polls lack
   [Telegram's newest poll options](polls.md#real-gaps).
-- Reactions, pins, chat photos and other chat settings, invite links, join requests, and promotion
-  through the Bot API. Tests can promote supergroup members through the emulation API.
+- Reactions, pins, chat photos and other chat settings, invite links and join requests.
 - Payments, invoices, shipping, Telegram Stars, gifts, paid broadcasts and paid media.
 - Business connections, managed bots, Mini Apps, login authorization, Passport and boosts.
 - Other bot profile methods, such as names and profile photos, plus `getUserProfilePhotos`.

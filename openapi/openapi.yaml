@@ -213,6 +213,8 @@ paths:
     $ref: paths/sessions_{sessionId}_bot-api_bot{token}_getChatMemberCount.yaml
   /sessions/{sessionId}/bot-api/bot{token}/banChatMember:
     $ref: paths/sessions_{sessionId}_bot-api_bot{token}_banChatMember.yaml
+  /sessions/{sessionId}/bot-api/bot{token}/promoteChatMember:
+    $ref: paths/sessions_{sessionId}_bot-api_bot{token}_promoteChatMember.yaml
   /sessions/{sessionId}/bot-api/bot{token}/restrictChatMember:
     $ref: paths/sessions_{sessionId}_bot-api_bot{token}_restrictChatMember.yaml
   /sessions/{sessionId}/bot-api/bot{token}/setChatAdministratorCustomTitle:

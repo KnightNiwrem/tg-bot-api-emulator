@@ -29,12 +29,14 @@ import {
   getEffectiveChatPermissions,
   getSupergroupNonMemberFailureReason,
   holdsSupergroupAdministratorRight,
+  isAdministratorPromotedBy,
   isChatMember,
   isSameChatMemberStatus,
   LEFT_CHAT_MEMBER_STATUS,
   resolveSupergroupBotMembership,
   type SupergroupAdministratorRights,
   type SupergroupBotAccessFailureReason,
+  type SupergroupMembershipReader,
 } from '../types/chat_membership.ts';
 import {
   ALL_CHAT_PERMISSIONS,
@@ -379,6 +381,64 @@ export type RestrictChatMemberFailureReason =
 export type RestrictChatMemberResult =
   | { readonly restricted: true }
   | { readonly restricted: false; readonly reason: RestrictChatMemberFailureReason };
+
+export interface PromoteChatMemberAsBotInput {
+  readonly actorBotId: number;
+  readonly chatId: number;
+  /** The account or bot to promote, change the rights of, or demote. */
+  readonly memberId: number;
+  /** The rights the user holds from now on; none demotes an administrator to a member. */
+  readonly rights: SupergroupAdministratorRights;
+}
+
+/**
+ * Why a bot cannot promote a user, change an administrator's rights, or demote one, in the order
+ * TDLib and then Telegram's servers check them.
+ */
+export type PromoteChatMemberAsBotFailureReason =
+  | 'bot_not_found'
+  | SupergroupBotAccessFailureReason
+  | 'member_not_found'
+  | 'member_is_owner'
+  /** The bot would make itself an administrator, or change its own rights. */
+  | 'cannot_promote_self'
+  /** The bot lacks `can_promote_members`, which TDLib's `promote_channel_participant` requires. */
+  | 'not_enough_rights_to_promote'
+  /** The user is not a member, which Telegram's servers refuse as `USER_NOT_MUTUAL_CONTACT`. */
+  | 'member_not_in_chat'
+  /** The user is banned, which Telegram's servers refuse as `USER_KICKED`. */
+  | 'member_kicked'
+  /** The user is an administrator the bot did not promote, directly or indirectly. */
+  | 'member_is_administrator'
+  /** The bot would grant a right it does not hold, which Telegram refuses as `RIGHT_FORBIDDEN`. */
+  | 'rights_not_held'
+  /**
+   * Demoting a user that is not a member would add it, which TDLib's `add_channel_participant`
+   * refuses to bots.
+   */
+  | 'bots_cannot_add_members'
+  /** Demoting a restricted or banned user lifts its restriction, which needs this right. */
+  | 'not_enough_rights'
+  /** The bot would lift its own restriction. */
+  | 'cannot_unrestrict_self';
+
+export type PromoteChatMemberAsBotResult =
+  | { readonly promoted: true }
+  | { readonly promoted: false; readonly reason: PromoteChatMemberAsBotFailureReason };
+
+/** The standing a bot's promotion gives a user: an administrator, or a member when demoted. */
+type PromotedStatus = AdministratorMembership | { readonly status: 'member' };
+
+/** The checks of a bot's promotion that its target can fail once TDLib let the bot change it. */
+type BotPromotionFailureReason = Extract<
+  PromoteChatMemberAsBotFailureReason,
+  | 'cannot_promote_self'
+  | 'not_enough_rights_to_promote'
+  | 'member_not_in_chat'
+  | 'member_kicked'
+  | 'member_is_administrator'
+  | 'rights_not_held'
+>;
 
 export interface RestrictChatMemberAsOwnerInput {
   /** The owner, who alone restricts users through the emulation API. */
@@ -990,7 +1050,8 @@ export class SharedChatAdministrationService {
    *
    * Checks follow TDLib's order: a ban that changes nothing succeeds without rights, and nobody can
    * ban the owner; otherwise the bot needs the `can_restrict_members` right. Telegram lets a bot
-   * ban only administrators it promoted, and bots promote none here.
+   * ban only administrators it promoted, directly or indirectly, as `isAdministratorPromotedBy`
+   * decides.
    */
   banChatMember(input: BanChatMemberInput): BanChatMemberResult {
     const target = this.#resolveModerationTarget(input);
@@ -1057,11 +1118,11 @@ export class SharedChatAdministrationService {
    *
    * Checks follow TDLib's `set_channel_participant_status_impl` and
    * `restrict_channel_participant`: a restriction that changes nothing succeeds without rights;
-   * nobody restricts the owner; a bot changes its own standing only as `#restrictSelf` allows. A
-   * bot needs `can_restrict_members`, or `can_promote_members` to make an administrator a plain
-   * member, and Telegram lets it restrict only administrators it promoted, which none is here.
-   * As for a ban, a restriction shorter than 30 seconds or longer than 366 days lasts until it is
-   * lifted.
+   * nobody restricts the owner; a bot changes its own standing only as `#restrictSelf` allows.
+   * Making an administrator a plain member demotes it, as `#promoteAsBot` does. Otherwise a bot
+   * needs `can_restrict_members`, and Telegram lets it restrict only administrators it promoted,
+   * directly or indirectly. As for a ban, a restriction shorter than 30 seconds or longer than 366
+   * days lasts until it is lifted.
    */
   restrictChatMember(input: RestrictChatMemberInput): RestrictChatMemberResult {
     const target = this.#resolveModerationTarget(input);
@@ -1083,17 +1144,27 @@ export class SharedChatAdministrationService {
       return this.#restrictSelf(target, newStatus);
     }
     if (memberStatus.status === 'administrator' && newStatus.status === 'member') {
-      return {
-        restricted: false,
-        reason: holdsSupergroupAdministratorRight(botMembership, 'can_promote_members')
-          ? 'member_is_administrator'
-          : 'not_enough_rights_to_promote',
-      };
+      const demotion = this.#promoteAsBot(target, newStatus);
+      if (demotion.promoted) {
+        return { restricted: true };
+      }
+      switch (demotion.reason) {
+        case 'not_enough_rights_to_promote':
+        case 'member_is_administrator':
+          return { restricted: false, reason: demotion.reason };
+        default:
+          throw new Error(
+            `Administrator ${input.memberId} of chat ${input.chatId} could not be demoted: ${demotion.reason}`,
+          );
+      }
     }
     if (!holdsSupergroupAdministratorRight(botMembership, 'can_restrict_members')) {
       return { restricted: false, reason: 'not_enough_rights' };
     }
-    if (memberStatus.status === 'administrator') {
+    if (
+      memberStatus.status === 'administrator' &&
+      !isAdministratorPromotedBy(this.#readMembership(input.chatId), input.actorBotId, memberStatus)
+    ) {
       return { restricted: false, reason: 'member_is_administrator' };
     }
 
@@ -1104,6 +1175,62 @@ export class SharedChatAdministrationService {
       newStatus,
     });
     return { restricted: true };
+  }
+
+  /**
+   * Promotes a supergroup member to administrator as a bot, changes an administrator's rights, or,
+   * with no rights, demotes an administrator to a member, as the Bot API's `promoteChatMember`
+   * asks TDLib's `setChatMemberStatus` to. The bot becomes the administrator's promoter, and an
+   * administrator keeps its custom title while its rights change. No service message records it.
+   *
+   * Checks follow TDLib's `set_channel_participant_status_impl`: nobody changes the owner, and a
+   * change that changes nothing succeeds without rights; for an administrator, only one the bot
+   * may edit counts as unchanged, as TDLib compares `can_be_edited` too. Promotions and demotions
+   * then go through `#promoteAsBot`. Demoting a user that is no administrator lifts a member's
+   * restriction, as `restrictChatMember` does with every permission, and fails for a user that is
+   * not a member, as TDLib would have to add it; unlike TDLib, which may first lift a ban, such a
+   * failure changes nothing.
+   */
+  promoteChatMemberAsBot(input: PromoteChatMemberAsBotInput): PromoteChatMemberAsBotResult {
+    const target = this.#resolveModerationTarget(input);
+    if (!target.resolved) {
+      return { promoted: false, reason: target.reason };
+    }
+    const { botMembership, memberStatus } = target;
+    if (memberStatus.status === 'owner') {
+      return { promoted: false, reason: 'member_is_owner' };
+    }
+    const newStatus: PromotedStatus = input.rights.size === 0 ? { status: 'member' } : {
+      status: 'administrator',
+      rights: input.rights,
+      promotedById: input.actorBotId,
+      ...(memberStatus.status === 'administrator' && memberStatus.customTitle !== undefined
+        ? { customTitle: memberStatus.customTitle }
+        : {}),
+    };
+    const isUnchanged = isSameChatMemberStatus(memberStatus, newStatus) &&
+      (memberStatus.status !== 'administrator' ||
+        canEditSupergroupAdministrator(
+          this.#readMembership(input.chatId),
+          input.actorBotId,
+          memberStatus,
+        ));
+    if (isUnchanged) {
+      return { promoted: true };
+    }
+    if (newStatus.status === 'administrator' || memberStatus.status === 'administrator') {
+      return this.#promoteAsBot(target, newStatus);
+    }
+    if (isChatMember(memberStatus)) {
+      return this.#liftRestrictionByDemotion(input);
+    }
+    if (
+      memberStatus.status !== 'left' &&
+      !holdsSupergroupAdministratorRight(botMembership, 'can_restrict_members')
+    ) {
+      return { promoted: false, reason: 'not_enough_rights' };
+    }
+    return { promoted: false, reason: 'bots_cannot_add_members' };
   }
 
   /**
@@ -1197,7 +1324,7 @@ export class SharedChatAdministrationService {
     if (this.#sharedChats.getChatMembership(chatId, observerAccountId) === undefined) {
       return { found: false, reason: 'not_a_member' };
     }
-    const readMembership = (userId: number) => this.#sharedChats.getChatMembership(chatId, userId);
+    const readMembership = this.#readMembership(chatId);
     return {
       found: true,
       administrators: this.#listAdministratorStandings(chatId).map(({ userId, status }) => ({
@@ -1490,6 +1617,92 @@ export class SharedChatAdministrationService {
   }
 
   /**
+   * Promotes a user to administrator as a bot, changes an administrator's rights, or demotes one,
+   * once TDLib's `set_channel_participant_status_impl` chose a promotion. As TDLib's
+   * `promote_channel_participant` checks, a bot cannot promote itself, though it may demote itself,
+   * and needs `can_promote_members` for anyone else. Telegram's servers then refuse a user that is
+   * not a member, an administrator the bot did not promote, directly or indirectly, and rights the
+   * bot does not hold, as the Bot API documents `can_promote_members`: an administrator adds others
+   * "with a subset of their own privileges". The servers' order of these checks is not public.
+   */
+  #promoteAsBot(
+    { chat, botId, botMembership, memberId, memberStatus }: ModerationTarget,
+    newStatus: PromotedStatus,
+  ):
+    | { readonly promoted: true }
+    | { readonly promoted: false; readonly reason: BotPromotionFailureReason } {
+    if (memberId === botId) {
+      if (newStatus.status === 'administrator') {
+        return { promoted: false, reason: 'cannot_promote_self' };
+      }
+    } else {
+      if (!holdsSupergroupAdministratorRight(botMembership, 'can_promote_members')) {
+        return { promoted: false, reason: 'not_enough_rights_to_promote' };
+      }
+      if (!isChatMember(memberStatus)) {
+        return {
+          promoted: false,
+          reason: memberStatus.status === 'kicked' ? 'member_kicked' : 'member_not_in_chat',
+        };
+      }
+      if (
+        memberStatus.status === 'administrator' &&
+        !isAdministratorPromotedBy(this.#readMembership(chat.id), botId, memberStatus)
+      ) {
+        return { promoted: false, reason: 'member_is_administrator' };
+      }
+      if (
+        newStatus.status === 'administrator' &&
+        ![...newStatus.rights].every((right) =>
+          holdsSupergroupAdministratorRight(botMembership, right)
+        )
+      ) {
+        return { promoted: false, reason: 'rights_not_held' };
+      }
+    }
+
+    this.#changeStatusOfUser(chat, {
+      actorId: botId,
+      memberId,
+      oldStatus: memberStatus,
+      newStatus,
+    });
+    return { promoted: true };
+  }
+
+  /**
+   * Lifts a restricted member's restriction as a bot that demotes it, which TDLib's
+   * `set_channel_participant_status_impl` does as `restrictChatMember` does with every permission.
+   */
+  #liftRestrictionByDemotion(
+    { actorBotId, chatId, memberId }: PromoteChatMemberAsBotInput,
+  ): PromoteChatMemberAsBotResult {
+    const lifting = this.restrictChatMember({
+      actorBotId,
+      chatId,
+      memberId,
+      permissions: ALL_CHAT_PERMISSIONS,
+    });
+    if (lifting.restricted) {
+      return { promoted: true };
+    }
+    switch (lifting.reason) {
+      case 'not_enough_rights':
+      case 'cannot_unrestrict_self':
+        return { promoted: false, reason: lifting.reason };
+      default:
+        throw new Error(
+          `Restriction of member ${memberId} of chat ${chatId} could not be lifted: ${lifting.reason}`,
+        );
+    }
+  }
+
+  /** Reads the current memberships of a chat, as administrator delegation follows them. */
+  #readMembership(chatId: number): SupergroupMembershipReader {
+    return (userId) => this.#sharedChats.getChatMembership(chatId, userId);
+  }
+
+  /**
    * Applies a bot's restriction of itself as TDLib does: it can neither restrict itself nor lift
    * its own restriction, but every permission makes an administrator a plain member, which TDLib's
    * `promote_channel_participant` lets a bot do to itself without the right to promote members.
@@ -1657,7 +1870,10 @@ export class SharedChatAdministrationService {
     if (!holdsSupergroupAdministratorRight(botMembership, 'can_restrict_members')) {
       return { restricted: false, reason: 'not_enough_rights' };
     }
-    if (memberStatus.status === 'administrator') {
+    if (
+      memberStatus.status === 'administrator' &&
+      !isAdministratorPromotedBy(this.#readMembership(chat.id), botId, memberStatus)
+    ) {
       return { restricted: false, reason: 'member_is_administrator' };
     }
 

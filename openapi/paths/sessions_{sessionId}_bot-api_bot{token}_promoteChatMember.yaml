@@ -1,0 +1,84 @@
+description: >-
+  Telegram Bot API method for promoting a supergroup member to administrator, changing an
+  administrator's rights, or demoting one by passing every right as false. The bot needs
+  `can_promote_members` and grants only rights it holds; any right includes `can_manage_chat`,
+  and the rights that apply only to channels are dropped, as TDLib drops them in supergroups. The
+  bot becomes the administrator's promoter, so it may edit the administrator later, as may the
+  bots that promoted it, directly or indirectly. An administrator keeps its custom title while its
+  rights change and loses it when demoted. Administrator bots subscribed to `chat_member` updates,
+  and a promoted bot subscribed to `my_chat_member`, receive the change, each with its own
+  `can_be_edited`; no service message records it. A promotion that changes nothing succeeds
+  without updates. Passing every right as false to a restricted member lifts its restriction, as
+  `restrictChatMember` does with every permission.
+parameters:
+  - $ref: ../components/parameters/SessionId.yaml
+  - $ref: ../components/parameters/BotToken.yaml
+post:
+  operationId: promoteChatMember
+  summary: Promote or demote a supergroup member as the authenticated virtual bot
+  requestBody:
+    required: true
+    content:
+      application/json:
+        schema:
+          $ref: ../components/schemas/PromoteChatMemberRequest.yaml
+      application/x-www-form-urlencoded:
+        schema:
+          $ref: ../components/schemas/PromoteChatMemberRequest.yaml
+      multipart/form-data:
+        schema:
+          $ref: ../components/schemas/PromoteChatMemberRequest.yaml
+  responses:
+    '200':
+      description: The user holds the given rights, or is a member when none is given.
+      content:
+        application/json:
+          schema:
+            $ref: ../components/schemas/TrueResultResponse.yaml
+    '400':
+      description: >-
+        The request cannot be decoded or has unsupported parameters, or Telegram would reject
+        it, in this order: `user_id` is missing or not positive (`Bad Request: invalid user_id
+        specified`); `chat_id` is missing (`Bad Request: chat_id is empty`); `is_anonymous` is
+        true, as anonymous administrators are not supported (`Bad Request: anonymous
+        administrators are not supported`); the chat is neither a private chat with an account
+        that has written to the bot nor a supergroup the bot is or was a member of (`Bad
+        Request: chat not found`); the chat is a private chat (`Bad Request: method is
+        available only in supergroup and channel chats`); the user is no user of the session
+        (`Bad Request: member not found`); the user is the owner (`Bad Request: can't remove
+        chat owner`). A change that changes something then fails, for a promotion or a change
+        of an administrator, when the bot would promote itself or change its own rights (`Bad
+        Request: can't promote self`); when the bot lacks `can_promote_members` (`Bad Request:
+        not enough rights`); when the user is not a member (`Bad Request:
+        USER_NOT_MUTUAL_CONTACT`) or is banned (`Bad Request: USER_KICKED`); when the user is an
+        administrator the bot did not promote, directly or through administrators it promoted
+        (`Bad Request: user is an administrator of the chat`); or when the bot would grant a
+        right it does not hold (`Bad Request: RIGHT_FORBIDDEN`). Demoting a user that is no
+        administrator fails when lifting its ban or restriction needs `can_restrict_members`
+        (`Bad Request: not enough rights to restrict/unrestrict chat member`), when the bot
+        would lift its own restriction (`Bad Request: can't unrestrict self`), or when the user
+        is not a member, which a bot cannot add (`Bad Request: bots can't add new chat
+        members`). A refused request changes nothing.
+      content:
+        application/json:
+          schema:
+            $ref: ../components/schemas/BotApiErrorResponse.yaml
+    '401':
+      description: The token does not belong to a virtual bot in the addressed session.
+      content:
+        application/json:
+          schema:
+            $ref: ../components/schemas/BotApiErrorResponse.yaml
+    '403':
+      description: >-
+        The bot left the supergroup (`Forbidden: bot is not a member of the
+        supergroup chat`) or was removed from it (`Forbidden: bot was kicked from
+        the supergroup chat`).
+      content:
+        application/json:
+          schema:
+            $ref: ../components/schemas/BotApiErrorResponse.yaml
+    '404':
+      description: No active test session has the supplied identifier.
+    '429':
+      $ref: ../components/responses/BotApiRateLimited.yaml
