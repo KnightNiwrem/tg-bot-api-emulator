@@ -263,6 +263,7 @@ function toCanonicalJson(value: unknown): string {
 Deno.test('a request link leaves the account outside and sends its request to eligible bots', async () => {
   const {
     api,
+    ada,
     grace,
     hopper,
     inviterBot,
@@ -307,10 +308,18 @@ Deno.test('a request link leaves the account outside and sends its request to el
     'Expected Grace to stay outside the supergroup',
   );
   const request = inviterUpdates[0]?.chat_join_request as Record<string, unknown>;
+  const { body: { join_requests: [storedRequest] } } = await requestJson<
+    { join_requests: Array<{ user_id: number; date: number }> }
+  >(api, 'GET', `${supergroupPath(ada.id)}/join-requests`);
   expectEqual(
     Object.keys(request),
     ['chat', 'from', 'user_chat_id', 'date', 'invite_link'],
     "Expected the fields in the official server's order",
+  );
+  expectEqual(
+    typeof storedRequest?.date === 'number' && storedRequest.date > 1_700_000_000,
+    true,
+    'Expected the request to be dated when it was sent',
   );
   expectEqual(
     request,
@@ -318,7 +327,7 @@ Deno.test('a request link leaves the account outside and sends its request to el
       chat: { id: supergroup.id, title: 'Team', type: 'supergroup' },
       from: { id: grace.id, is_bot: false, first_name: 'Grace' },
       user_chat_id: grace.id,
-      date: request.date,
+      date: storedRequest?.date,
       invite_link: { ...requestLink, pending_join_request_count: 1 },
     },
     "Expected the creator to receive Grace's request with the whole link",

@@ -22,4 +22,5 @@ properties:
           description: The whole invite link the request was sent through.
         date:
           type: integer
+          minimum: 0
           description: Unix time when the request was sent.
