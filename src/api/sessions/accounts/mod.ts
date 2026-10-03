@@ -7,11 +7,6 @@ import type { BotCommand } from '../../../types/bot_command.ts';
 import { getApplicableAdministratorRightFlags } from '../../../types/bot_default_administrator_rights.ts';
 import { toBotApiMenuButton } from '../../../types/bot_menu_button.ts';
 import type { CallbackQuery } from '../../../types/callback_query.ts';
-import {
-  grantSupergroupAdministratorRights,
-  SUPERGROUP_ADMINISTRATOR_RIGHTS,
-} from '../../../types/chat_membership.ts';
-import { CHAT_PERMISSIONS } from '../../../types/chat_permissions.ts';
 import { isContactVcardWithinLimit, MAX_CONTACT_NAME_LENGTH } from '../../../types/contact.ts';
 import type { EmulationSession } from '../../../types/emulation_session.ts';
 import {
@@ -52,9 +47,7 @@ import {
   SUPERGROUP_MESSAGE_HISTORY_PATH,
   SUPERGROUP_MESSAGE_PATH,
   supergroupConversationPathSchema,
-  supergroupMemberPathSchema,
   supergroupMessagePathSchema,
-  USER_ID_PARAMETER,
 } from './account_paths.ts';
 import { viewChatMessageForAccount } from './chat_message_view.ts';
 import {
@@ -62,6 +55,7 @@ import {
   supergroupMemberFailureStatus,
 } from './messaging_failure_statuses.ts';
 import { accountLocationSchema, chatSchema, telegramUserIdSchema } from './request_fields.ts';
+import { createSupergroupAdministrationRoutes } from './supergroup_administration.ts';
 import { createSupergroupMembershipRoutes } from './supergroup_membership.ts';
 
 const ACCOUNT_MESSAGE_COLLECTION_PATH = `/:${ACCOUNT_ID_PARAMETER}/messages` as const;
@@ -96,18 +90,6 @@ const SUPERGROUP_PINNED_MESSAGE_COLLECTION_PATH =
   `${SUPERGROUP_CONVERSATION_PATH}/pinned-messages` as const;
 const SUPERGROUP_PINNED_MESSAGE_PATH =
   `${SUPERGROUP_PINNED_MESSAGE_COLLECTION_PATH}/:${MESSAGE_ID_PARAMETER}` as const;
-const SUPERGROUP_ADMINISTRATOR_COLLECTION_PATH =
-  `${SUPERGROUP_CONVERSATION_PATH}/administrators` as const;
-const SUPERGROUP_ADMINISTRATOR_PATH =
-  `${SUPERGROUP_ADMINISTRATOR_COLLECTION_PATH}/:${USER_ID_PARAMETER}` as const;
-const SUPERGROUP_CUSTOM_TITLE_PATH = `${SUPERGROUP_ADMINISTRATOR_PATH}/custom-title` as const;
-const SUPERGROUP_RESTRICTION_PATH =
-  `${SUPERGROUP_CONVERSATION_PATH}/restrictions/:${USER_ID_PARAMETER}` as const;
-const SUPERGROUP_CONTENT_PROTECTION_PATH =
-  `${SUPERGROUP_CONVERSATION_PATH}/content-protection` as const;
-const SUPERGROUP_TITLE_PATH = `${SUPERGROUP_CONVERSATION_PATH}/title` as const;
-const SUPERGROUP_DEFAULT_PERMISSIONS_PATH = `${SUPERGROUP_CONVERSATION_PATH}/permissions` as const;
-const SUPERGROUP_DESCRIPTION_PATH = `${SUPERGROUP_CONVERSATION_PATH}/description` as const;
 
 /** An E.164 phone number's digits: a country code that never starts with 0, and at most 15 digits. */
 const ACCOUNT_PHONE_NUMBER_PATTERN = /^[1-9][0-9]{0,14}$/;
@@ -269,47 +251,6 @@ const sendMediaGroupRequestSchema = z.strictObject({
     z.strictObject(accountVideoShape),
   ])),
 });
-
-/** The rights an administrator holds, by the Bot API's names; an omitted right is not held. */
-const promoteChatMemberRequestSchema = z.partialRecord(
-  z.enum(SUPERGROUP_ADMINISTRATOR_RIGHTS),
-  z.boolean(),
-);
-
-/**
- * Permissions by the Bot API's names, where an omitted permission is withheld and, unlike in the
- * Bot API, no permission implies another.
- */
-const chatPermissionsSchema = z.partialRecord(z.enum(CHAT_PERMISSIONS), z.boolean())
-  .transform((permissions) =>
-    new Set(CHAT_PERMISSIONS.filter((permission) => permissions[permission] === true))
-  );
-
-/** What a supergroup's members may do by default, which a member with the right changes. */
-const changeDefaultPermissionsRequestSchema = z.strictObject({
-  permissions: chatPermissionsSchema,
-});
-
-/**
- * A restriction the owner applies: the permissions the user keeps, and when it ends, as a Unix time
- * Telegram normalizes, or never when omitted.
- */
-const restrictChatMemberRequestSchema = z.strictObject({
-  permissions: chatPermissionsSchema,
-  until_date: z.int().optional(),
-});
-
-/**
- * A custom title, which Telegram cleans and refuses beyond 16 characters or with emoji; empty
- * removes the title.
- */
-const setCustomTitleRequestSchema = z.strictObject({ custom_title: z.string() });
-
-/** A supergroup's new title, which Telegram cleans; one that cleans to nothing is refused. */
-const changeSupergroupTitleRequestSchema = z.strictObject({ title: z.string() });
-
-/** A supergroup's new description, which Telegram cleans; empty removes it. */
-const changeSupergroupDescriptionRequestSchema = z.strictObject({ description: z.string() });
 
 /** New text for a text message, or a new caption for captioned media; empty removes it. */
 const editMessageRequestSchema = z.union([
@@ -526,256 +467,7 @@ export function createAccountRoutes(): Hono<SessionRouteContextTypes> {
 
   accountRoutes.route('/', createSupergroupMembershipRoutes());
 
-  // A member inspects the owner and administrators, who promoted each, and whom it may edit.
-  accountRoutes.get(SUPERGROUP_ADMINISTRATOR_COLLECTION_PATH, (context) => {
-    const conversationPath = supergroupConversationPathSchema.safeParse(context.req.param());
-    if (!conversationPath.success) {
-      return context.body(null, 400);
-    }
-    const { accountId, chatId } = conversationPath.data;
-
-    const result = context.get('emulationSession').sharedChatAdministration
-      .getAdministratorsForAccount({ observerAccountId: accountId, chatId });
-    if (!result.found) {
-      return context.body(null, supergroupMemberFailureStatus(result.reason));
-    }
-    return context.json({
-      administrators: result.administrators.map(presentAdministratorForAccount),
-    });
-  });
-
-  // The owner promotes a member to administrator, or changes an administrator's rights.
-  accountRoutes.put(SUPERGROUP_ADMINISTRATOR_PATH, async (context) => {
-    const memberPath = supergroupMemberPathSchema.safeParse(context.req.param());
-    if (!memberPath.success) {
-      return context.body(null, 400);
-    }
-    const requestBody = await readJsonRequestBody(context.req, promoteChatMemberRequestSchema);
-    if (requestBody === undefined) {
-      return context.body(null, 400);
-    }
-    const { accountId, chatId, userId } = memberPath.data;
-
-    const result = context.get('emulationSession').sharedChatAdministration.promoteChatMember({
-      actorAccountId: accountId,
-      chatId,
-      memberId: userId,
-      rights: grantSupergroupAdministratorRights(
-        SUPERGROUP_ADMINISTRATOR_RIGHTS.filter((right) => requestBody[right] === true),
-      ),
-    });
-    if (result.promoted) {
-      return context.body(null, 204);
-    }
-    // An administrator without rights would be a member; DELETE demotes one instead.
-    return result.reason === 'no_rights_granted'
-      ? context.body(null, 400)
-      : context.body(null, memberRoleChangeFailureStatus(result.reason));
-  });
-
-  // The owner restricts a user, member or not, or changes its restriction.
-  accountRoutes.put(SUPERGROUP_RESTRICTION_PATH, async (context) => {
-    const memberPath = supergroupMemberPathSchema.safeParse(context.req.param());
-    if (!memberPath.success) {
-      return context.body(null, 400);
-    }
-    const requestBody = await readJsonRequestBody(context.req, restrictChatMemberRequestSchema);
-    if (requestBody === undefined) {
-      return context.body(null, 400);
-    }
-    const { accountId, chatId, userId } = memberPath.data;
-
-    const result = context.get('emulationSession').sharedChatAdministration
-      .restrictChatMemberAsOwner({
-        actorAccountId: accountId,
-        chatId,
-        memberId: userId,
-        permissions: requestBody.permissions,
-        requestedRestrictionEndUnixSeconds: requestBody.until_date,
-      });
-    return result.changed
-      ? context.body(null, 204)
-      : context.body(null, ownerRestrictionFailureStatus(result.reason));
-  });
-
-  // The owner lifts a user's restriction; lifting none changes nothing.
-  accountRoutes.delete(SUPERGROUP_RESTRICTION_PATH, (context) => {
-    const memberPath = supergroupMemberPathSchema.safeParse(context.req.param());
-    if (!memberPath.success) {
-      return context.body(null, 400);
-    }
-    const { accountId, chatId, userId } = memberPath.data;
-
-    const result = context.get('emulationSession').sharedChatAdministration
-      .liftRestrictionAsOwner({ actorAccountId: accountId, chatId, memberId: userId });
-    return result.changed
-      ? context.body(null, 204)
-      : context.body(null, ownerRestrictionFailureStatus(result.reason));
-  });
-
-  // The owner sets its own custom title or an administrator's; an empty title removes it.
-  accountRoutes.put(SUPERGROUP_CUSTOM_TITLE_PATH, async (context) => {
-    const memberPath = supergroupMemberPathSchema.safeParse(context.req.param());
-    if (!memberPath.success) {
-      return context.body(null, 400);
-    }
-    const requestBody = await readJsonRequestBody(context.req, setCustomTitleRequestSchema);
-    if (requestBody === undefined) {
-      return context.body(null, 400);
-    }
-    const { accountId, chatId, userId } = memberPath.data;
-
-    const result = context.get('emulationSession').sharedChatAdministration.setCustomTitle({
-      actorAccountId: accountId,
-      chatId,
-      memberId: userId,
-      customTitle: requestBody.custom_title,
-    });
-    if (result.set) {
-      return context.body(null, 204);
-    }
-    switch (result.reason) {
-      case 'actor_account_not_found':
-      case 'chat_not_found':
-      case 'member_not_found':
-        return context.body(null, 404);
-      case 'actor_not_authorized':
-        return context.body(null, 403);
-      case 'not_a_member':
-      case 'not_an_administrator':
-        return context.body(null, 409);
-      case 'text_encoding_invalid':
-      case 'custom_title_too_long':
-      case 'custom_title_contains_emoji':
-        return context.body(null, 400);
-      default: {
-        const unhandledReason: never = result.reason;
-        throw new Error(`Unhandled custom title failure: ${unhandledReason}`);
-      }
-    }
-  });
-
-  // A member changes the supergroup's title, which a service message records.
-  accountRoutes.put(SUPERGROUP_TITLE_PATH, async (context) => {
-    const conversationPath = supergroupConversationPathSchema.safeParse(context.req.param());
-    if (!conversationPath.success) {
-      return context.body(null, 400);
-    }
-    const requestBody = await readJsonRequestBody(
-      context.req,
-      changeSupergroupTitleRequestSchema,
-    );
-    if (requestBody === undefined) {
-      return context.body(null, 400);
-    }
-    const { accountId, chatId } = conversationPath.data;
-
-    const result = context.get('emulationSession').sharedChatAdministration
-      .changeSupergroupTitle({
-        actor: { kind: 'account', accountId },
-        chatId,
-        title: requestBody.title,
-      });
-    return result.changed
-      ? context.body(null, 204)
-      : context.body(null, supergroupInfoChangeFailureStatus(result.reason));
-  });
-
-  // A member changes the supergroup's description, which no service message records.
-  accountRoutes.put(SUPERGROUP_DESCRIPTION_PATH, async (context) => {
-    const conversationPath = supergroupConversationPathSchema.safeParse(context.req.param());
-    if (!conversationPath.success) {
-      return context.body(null, 400);
-    }
-    const requestBody = await readJsonRequestBody(
-      context.req,
-      changeSupergroupDescriptionRequestSchema,
-    );
-    if (requestBody === undefined) {
-      return context.body(null, 400);
-    }
-    const { accountId, chatId } = conversationPath.data;
-
-    const result = context.get('emulationSession').sharedChatAdministration
-      .changeSupergroupDescription({
-        actor: { kind: 'account', accountId },
-        chatId,
-        description: requestBody.description,
-      });
-    return result.changed
-      ? context.body(null, 204)
-      : context.body(null, supergroupInfoChangeFailureStatus(result.reason));
-  });
-
-  // A member with the right to restrict members changes what members may do by default.
-  accountRoutes.put(SUPERGROUP_DEFAULT_PERMISSIONS_PATH, async (context) => {
-    const conversationPath = supergroupConversationPathSchema.safeParse(context.req.param());
-    if (!conversationPath.success) {
-      return context.body(null, 400);
-    }
-    const requestBody = await readJsonRequestBody(
-      context.req,
-      changeDefaultPermissionsRequestSchema,
-    );
-    if (requestBody === undefined) {
-      return context.body(null, 400);
-    }
-    const { accountId, chatId } = conversationPath.data;
-
-    const result = context.get('emulationSession').sharedChatAdministration
-      .changeDefaultPermissions({
-        actor: { kind: 'account', accountId },
-        chatId,
-        permissions: requestBody.permissions,
-      });
-    if (result.changed) {
-      return context.body(null, 204);
-    }
-    switch (result.reason) {
-      case 'actor_not_found':
-      case 'chat_not_found':
-        return context.body(null, 404);
-      case 'not_a_member':
-      case 'not_enough_rights':
-        return context.body(null, 403);
-      // Only bots are refused for their former membership.
-      case 'bot_not_a_member':
-      case 'bot_kicked':
-        throw new Error(`Account ${accountId} refused as a bot: ${result.reason}`);
-      default: {
-        const unhandledReason: never = result.reason;
-        throw new Error(`Unhandled default permissions failure: ${unhandledReason}`);
-      }
-    }
-  });
-
-  // The owner protects all content of the supergroup from forwarding and saving, or lifts that.
-  accountRoutes.put(
-    SUPERGROUP_CONTENT_PROTECTION_PATH,
-    (context) => setSupergroupContentProtection(context, true),
-  );
-  accountRoutes.delete(
-    SUPERGROUP_CONTENT_PROTECTION_PATH,
-    (context) => setSupergroupContentProtection(context, false),
-  );
-
-  // The owner demotes an administrator to a member; demoting a member changes nothing.
-  accountRoutes.delete(SUPERGROUP_ADMINISTRATOR_PATH, (context) => {
-    const memberPath = supergroupMemberPathSchema.safeParse(context.req.param());
-    if (!memberPath.success) {
-      return context.body(null, 400);
-    }
-    const { accountId, chatId, userId } = memberPath.data;
-
-    const result = context.get('emulationSession').sharedChatAdministration.demoteChatMember({
-      actorAccountId: accountId,
-      chatId,
-      memberId: userId,
-    });
-    return result.demoted
-      ? context.body(null, 204)
-      : context.body(null, memberRoleChangeFailureStatus(result.reason));
-  });
+  accountRoutes.route('/', createSupergroupAdministrationRoutes());
 
   accountRoutes.get(SUPERGROUP_MESSAGE_HISTORY_PATH, (context) => {
     const conversationPath = supergroupConversationPathSchema.safeParse(context.req.param());
@@ -1653,81 +1345,6 @@ function accountCreationFailureStatus(
   }
 }
 
-/**
- * Only the owner restricts users through these routes, and nobody restricts the owner; a missing
- * account, supergroup, or user is not found.
- */
-function ownerRestrictionFailureStatus(
-  reason: Extract<
-    ReturnType<EmulationSession['sharedChatAdministration']['restrictChatMemberAsOwner']>,
-    { readonly changed: false }
-  >['reason'],
-): 403 | 404 | 409 {
-  switch (reason) {
-    case 'actor_account_not_found':
-    case 'chat_not_found':
-    case 'member_not_found':
-      return 404;
-    case 'actor_not_authorized':
-      return 403;
-    case 'member_is_owner':
-      return 409;
-    default: {
-      const unhandledReason: never = reason;
-      throw new Error(`Unhandled restriction failure: ${unhandledReason}`);
-    }
-  }
-}
-
-/**
- * Only the owner changes a member's role, and only a current member other than the owner has a
- * role to change.
- */
-function memberRoleChangeFailureStatus(
-  reason: Extract<
-    ReturnType<EmulationSession['sharedChatAdministration']['demoteChatMember']>,
-    { readonly demoted: false }
-  >['reason'],
-): 403 | 404 | 409 {
-  switch (reason) {
-    case 'actor_account_not_found':
-    case 'chat_not_found':
-    case 'member_not_found':
-      return 404;
-    case 'actor_not_authorized':
-      return 403;
-    case 'not_a_member':
-    case 'member_is_owner':
-      return 409;
-    default: {
-      const unhandledReason: never = reason;
-      throw new Error(`Unhandled member role change failure: ${unhandledReason}`);
-    }
-  }
-}
-
-/** Answers the owner's request to protect a supergroup's content, or to lift that protection. */
-function setSupergroupContentProtection(
-  context: Context<SessionRouteContextTypes>,
-  hasProtectedContent: boolean,
-): Response {
-  const conversationPath = supergroupConversationPathSchema.safeParse(context.req.param());
-  if (!conversationPath.success) {
-    return context.body(null, 400);
-  }
-  const { accountId, chatId } = conversationPath.data;
-
-  const result = context.get('emulationSession').sharedChatAdministration.setContentProtection({
-    actorAccountId: accountId,
-    chatId,
-    hasProtectedContent,
-  });
-  if (result.set) {
-    return context.body(null, 204);
-  }
-  return context.body(null, result.reason === 'actor_not_authorized' ? 403 : 404);
-}
-
 type PinningChat = Parameters<EmulationSession['messagePinning']['pinMessage']>[0]['chat'];
 
 /** Answers an account's request for the pinned messages of its chat, shown as its history shows. */
@@ -1808,73 +1425,6 @@ function pinChangeFailureStatus(
 }
 
 type MessagePinning = EmulationSession['messagePinning'];
-
-/**
- * A missing account or supergroup is not found; an account that is not a member, or may not
- * change the supergroup's information, is forbidden from it; a description the supergroup has
- * conflicts with it, as Telegram refuses it; text Telegram cannot use rejects the request.
- */
-function supergroupInfoChangeFailureStatus(
-  reason: Extract<
-    | ReturnType<SupergroupAdministration['changeSupergroupTitle']>
-    | ReturnType<SupergroupAdministration['changeSupergroupDescription']>,
-    { readonly changed: false }
-  >['reason'],
-): 400 | 403 | 404 | 409 {
-  switch (reason) {
-    case 'actor_not_found':
-    case 'chat_not_found':
-      return 404;
-    case 'not_a_member':
-    case 'not_enough_rights':
-      return 403;
-    case 'description_not_modified':
-      return 409;
-    case 'text_encoding_invalid':
-    case 'title_empty':
-      return 400;
-    // Only bots are refused for their former membership.
-    case 'bot_not_a_member':
-    case 'bot_kicked':
-      throw new Error(`Account refused as a bot: ${reason}`);
-    default: {
-      const unhandledReason: never = reason;
-      throw new Error(`Unhandled supergroup information failure: ${unhandledReason}`);
-    }
-  }
-}
-
-type SupergroupAdministration = EmulationSession['sharedChatAdministration'];
-
-/** The owner or an administrator of a supergroup, as a member account inspects it. */
-type AdministratorStandingForAccount = Extract<
-  ReturnType<EmulationSession['sharedChatAdministration']['getAdministratorsForAccount']>,
-  { readonly found: true }
->['administrators'][number];
-
-/**
- * Shows the owner or an administrator of a supergroup as a member account inspects it: an
- * administrator with every supergroup right, held or not, the user that last set its rights, and
- * whether the account may edit it.
- */
-function presentAdministratorForAccount(
-  { userId, status, canBeEdited }: AdministratorStandingForAccount,
-) {
-  const customTitle = status.customTitle === undefined ? {} : { custom_title: status.customTitle };
-  if (status.status === 'owner') {
-    return { user_id: userId, status: 'owner' as const, ...customTitle };
-  }
-  return {
-    user_id: userId,
-    status: 'administrator' as const,
-    rights: Object.fromEntries(
-      SUPERGROUP_ADMINISTRATOR_RIGHTS.map((right) => [right, status.rights.has(right)]),
-    ),
-    ...customTitle,
-    promoted_by_user_id: status.promotedById,
-    can_be_edited: canBeEdited,
-  };
-}
 
 /** Shows a chat action as the account's client shows it: the bot and what it is doing. */
 function presentChatActionForAccount({ botId, action }: VisibleChatAction) {
