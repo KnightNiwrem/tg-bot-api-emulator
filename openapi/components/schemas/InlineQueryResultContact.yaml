@@ -1,6 +1,6 @@
 description: >-
-  A phone contact, which the client lists by its trimmed names and phone number, as TDLib
-  describes it, and which sending the result writes as for `sendContact`.
+  A phone contact, which the client lists by its trimmed and cleaned names and phone number, as
+  TDLib describes it, and which sending the result writes as for `sendContact`.
 type: object
 additionalProperties: false
 required:

@@ -1,5 +1,5 @@
 import { cleanUploadedFileName } from '../media/document_file.ts';
-import { trimTdlibSpaces } from '../text_entities/input_string.ts';
+import { cleanInputString, trimTdlibSpaces } from '../text_entities/input_string.ts';
 import { isParseMode, parseMarkup } from '../text_entities/parse_mode.ts';
 import { checkLink, getLinkUserId } from '../text_entities/telegram_link.ts';
 import type {
@@ -4416,7 +4416,8 @@ export class BotApiService {
    * knows by `file_id`.
    *
    * Every result's file is resolved before the other checks, while TDLib checks the button and
-   * the number of results first and resolves each result's file after its message content.
+   * the number of results first, and resolves each result's file after its message content and
+   * after cleaning its title and description.
    */
   answerInlineQuery(
     authenticatedBot: VirtualBotProfile,
@@ -4429,7 +4430,11 @@ export class BotApiService {
       if (!resolution.resolved) {
         return { answered: false, ...resolution.failure };
       }
-      specifiedResults.push(resolution.result);
+      const cleaning = cleanInlineResultListing(resolution.result);
+      if (!cleaning.cleaned) {
+        return { answered: false, ...cleaning.failure };
+      }
+      specifiedResults.push(cleaning.result);
     }
     const answering = this.#inlineQueries.answerInlineQuery({
       fromBotId: authenticatedBot.id,
@@ -5258,6 +5263,36 @@ function getMediaReplacementFile(media: MediaReplacementRequest): BotApiInputFil
       throw new Error(`Unhandled media replacement: ${JSON.stringify(unhandledMedia)}`);
     }
   }
+}
+
+/** TDLib's error for a result's title or description that is not well-formed Unicode. */
+const INLINE_RESULT_TEXT_ENCODING_INVALID_ERROR = 'Strings must be encoded in UTF-8';
+
+/**
+ * Cleans the title and description a result lists as TDLib's `get_input_bot_inline_result` does
+ * once it has derived them, such as a contact's names: with `clean_input_string`, which refuses
+ * text that is not well-formed Unicode.
+ */
+function cleanInlineResultListing(
+  result: SpecifiedInlineQueryResult,
+):
+  | { readonly cleaned: true; readonly result: SpecifiedInlineQueryResult }
+  | { readonly cleaned: false; readonly failure: TextInvalidFailure } {
+  const encodingFailure = {
+    cleaned: false,
+    failure: { reason: 'text_invalid', textError: INLINE_RESULT_TEXT_ENCODING_INVALID_ERROR },
+  } as const;
+  const title = cleanInputString(result.title);
+  if (title === undefined) {
+    return encodingFailure;
+  }
+  if (result.kind === 'voice') {
+    return { cleaned: true, result: { ...result, title } };
+  }
+  const description = cleanInputString(result.description);
+  return description === undefined
+    ? encodingFailure
+    : { cleaned: true, result: { ...result, title, description } };
 }
 
 /** The decimal places of the coordinates TDLib writes into a location result's description. */

@@ -199,6 +199,14 @@ Deno.test('an account sends the contacts and locations that inline results list'
     locationResult,
     { ...contactResult, id: 'first-name-only', phone_number: ' 555 ', last_name: undefined },
     { ...locationResult, id: 'untitled', title: '', latitude: -33.8568, longitude: 151.2153 },
+    {
+      ...contactResult,
+      id: 'cleaned',
+      phone_number: '+1\r555',
+      first_name: 'Gr\race',
+      last_name: 'B\tH',
+    },
+    { ...locationResult, id: 'cleaned-title', title: 'Lon\rdon\u2028' },
   ]);
   expectEqual(answered.body, { ok: true, result: true }, 'Expected the answer to be accepted');
   expectEqual(
@@ -208,8 +216,15 @@ Deno.test('an account sends the contacts and locations that inline results list'
       { type: 'location', id: 'london', title: 'London', description: '51.500000 -0.127500' },
       { type: 'contact', id: 'first-name-only', title: 'Grace', description: '555' },
       { type: 'location', id: 'untitled', description: '-33.856800 151.215300' },
+      { type: 'contact', id: 'cleaned', title: 'Grace B H', description: '+1555' },
+      {
+        type: 'location',
+        id: 'cleaned-title',
+        title: 'London',
+        description: '51.500000 -0.127500',
+      },
     ],
-    'Expected TDLib descriptions of the contacts and the location',
+    'Expected TDLib descriptions of the contacts and the locations, with their texts cleaned',
   );
 
   const chosenContact = await choose(ada.id, inlineQuery.id, 'grace');
@@ -294,6 +309,8 @@ Deno.test('answerInlineQuery checks contacts and locations and records no part o
     [{ ...contactResult, first_name: '  ' }],
     [{ ...contactResult, first_name: 'G'.repeat(65) }],
     [{ ...contactResult, phone_number: undefined }],
+    [{ ...contactResult, last_name: '\ud800' }],
+    [{ ...locationResult, title: '\udc00' }],
     [article({ phone_number: '+1 555 0100', first_name: '\r' })],
     [article({ phone_number: '+1 555 0100' })],
     [{ ...locationResult, latitude: 91 }],
@@ -315,6 +332,8 @@ Deno.test('answerInlineQuery checks contacts and locations and records no part o
       'Bad Request: field "first_name" must be non-empty',
       'Bad Request: invalid answerInlineQuery parameters',
       'Bad Request: invalid answerInlineQuery parameters',
+      'Bad Request: strings must be encoded in UTF-8',
+      'Bad Request: strings must be encoded in UTF-8',
       'Bad Request: first name must be non-empty',
       'Bad Request: invalid answerInlineQuery parameters',
       'Bad Request: invalid location specified',

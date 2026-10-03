@@ -41,8 +41,11 @@ are files the bot knows by `file_id`; an upload fails with
 `Bad Request: invalid inline message content specified`. The server prefixes its own descriptions of
 a rich message it cannot read with `can't parse InlineQueryResult:`, which the emulator words as for
 `sendRichMessage`. Answers allow up to 50 results, unique nonempty result IDs of at most 64 UTF-8
-bytes and a `next_offset` of at most 64 UTF-8 bytes. The emulator checks button options, result
-count and message content before query state and result metadata, producing errors such as
+bytes and a `next_offset` of at most 64 UTF-8 bytes. As TDLib's
+[`get_input_bot_inline_result`][results] does, the emulator cleans every result's title and
+description with `clean_input_string` before listing them, and refuses text that is not well-formed
+Unicode with `Bad Request: strings must be encoded in UTF-8`. The emulator checks button options,
+result count and message content before query state and result metadata, producing errors such as
 `RESULT_ID_DUPLICATE` and the query-too-old error.
 
 With `receives_chosen_inline_results: true`, a choice also generates `chosen_inline_result` for the
@@ -61,10 +64,11 @@ keyboard can change.
 
 A contact result lists the names and phone number that TDLib's
 [`get_input_bot_inline_result`][results] trims: its title is the first name, followed by the last
-name after a space, and its description is the phone number. An empty trimmed phone number fails
-with `Bad Request: field "phone_number" must contain a valid phone number`, and an empty first name
-with `Bad Request: field "first_name" must be non-empty`. The contact it sends keeps the texts as
-the bot wrote them and is read as for [`sendContact`](contacts-and-locations.md#contacts): texts are
+name after a space, and its description is the phone number, both then cleaned as every result's
+title and description are. An empty trimmed phone number fails with
+`Bad Request: field "phone_number" must contain a valid phone number`, and an empty first name with
+`Bad Request: field "first_name" must be non-empty`. The contact it sends keeps the texts as the bot
+wrote them and is read as for [`sendContact`](contacts-and-locations.md#contacts): texts are
 cleaned, names may have at most 64 characters and a vCard at most 2048 bytes, and it names no
 Telegram user. A static location result lists its title and, as TDLib describes it, its coordinates
 to six decimal places, and sends the location as
