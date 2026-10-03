@@ -11,7 +11,9 @@ put:
   description: >-
     Adds a message either participant wrote to the chat's pinned messages, which both
     participants share; a chat pins any number of messages. Either participant of a private
-    chat may pin, as the Bot API documents for private chats.
+    chat may pin, as the Bot API documents for private chats. The pin is recorded as the
+    account's service message with `pinned_message`, which notifies no one with sound and which
+    the bot receives unless it excludes `message` updates. Unpinning records nothing.
   responses:
     '204':
       description: The message was pinned.
@@ -20,7 +22,9 @@ put:
     '404':
       description: The session, account, bot, or message of their private chat does not exist.
     '409':
-      description: The message is already pinned, which Telegram refuses as not modified.
+      description: >-
+        The message is already pinned, which Telegram refuses as not modified, or the account
+        blocks the bot.
 delete:
   operationId: unpinPrivateMessage
   summary: Unpin a message of the private chat
@@ -33,4 +37,6 @@ delete:
     '404':
       description: The session, account, bot, or message of their private chat does not exist.
     '409':
-      description: The message is not pinned, which Telegram refuses as not modified.
+      description: >-
+        The message is not pinned, which Telegram refuses as not modified, or the account blocks
+        the bot.

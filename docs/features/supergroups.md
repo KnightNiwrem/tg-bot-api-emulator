@@ -403,9 +403,9 @@ production read permissions.
 - **Anonymous administrators.** Anonymous administration and its message attribution are absent.
 - **Invitation and joining workflows.** Invite links, join requests and account self-joining are
   absent; additions require the owner.
-- **Additional service messages.** Only membership and title service messages are produced. Other
-  service events, such as photo changes or pins, need corresponding messages as their features are
-  supported.
+- **Additional service messages.** Only membership, title and [pin](pinned-messages.md) service
+  messages are produced. Other service events, such as photo changes, need corresponding messages as
+  their features are supported.
 
 - **Basic groups and channels.** Internal representations exist, but there is no usable HTTP
   messaging workflow for these chat kinds. See the

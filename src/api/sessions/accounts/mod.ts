@@ -2007,7 +2007,8 @@ function answerPinChange(
   const { messagePinning } = context.get('emulationSession');
   const input = { pinner: { kind: 'account', accountId } as const, chat, messageId };
   if (change === 'pin') {
-    const result = messagePinning.pinMessage(input);
+    // Accounts pin as Telegram's clients do by default, notifying the members of a supergroup.
+    const result = messagePinning.pinMessage({ ...input, isSilent: false });
     return context.body(null, result.pinned ? 204 : pinChangeFailureStatus(result.reason));
   }
   const result = messagePinning.unpinMessage(input);
@@ -2018,7 +2019,7 @@ function answerPinChange(
  * A missing account, chat, or message is not found; an account that is not a member of the
  * supergroup, or may not pin there, is forbidden from it; a service message cannot be pinned; and
  * pinning a pinned message, or unpinning one that is not, conflicts with its state, as Telegram
- * refuses it.
+ * refuses it, as does a block of the private chat's bot.
  */
 function pinChangeFailureStatus(
   reason:
@@ -2037,6 +2038,9 @@ function pinChangeFailureStatus(
       return 400;
     case 'message_already_pinned':
     case 'message_not_pinned':
+      return 409;
+    // As for an account's messages, a block conflicts with writing to the bot.
+    case 'bot_blocked':
       return 409;
     // Only bots are refused for their former membership.
     case 'bot_not_a_member':

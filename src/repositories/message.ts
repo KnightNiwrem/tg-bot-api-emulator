@@ -10,6 +10,7 @@ import type {
   MessageContent,
   MessageForwardInfo,
   PrivateMessage,
+  PrivateMessageContent,
   SupergroupMessage,
   SupergroupMessageAuthor,
   SupergroupMessageContent,
@@ -27,7 +28,7 @@ export interface AddPrivateMessageInput {
   readonly conversation: PrivateConversationKey;
   readonly authorRole: PrivateConversationRole;
   readonly sentAtUnixSeconds: number;
-  readonly content: MessageContent;
+  readonly content: PrivateMessageContent;
   /** The message of the same conversation this one replies to; omitted when it is no reply. */
   readonly replyToMessageId?: CanonicalMessageId;
   /** The message of another chat this one replies to; omitted when it replies to none. */
@@ -471,6 +472,7 @@ function copyContent(content: SupergroupMessageContent): SupergroupMessageConten
       return { ...content, memberIds: [...content.memberIds] };
     case 'member_left':
     case 'title_changed':
+    case 'message_pinned':
       return { ...content };
     default: {
       const unhandledContent: never = content;

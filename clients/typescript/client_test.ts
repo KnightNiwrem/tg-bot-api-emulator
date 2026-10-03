@@ -747,6 +747,15 @@ Deno.test('TypeScript client pins and unpins messages and reads the pinned ones'
   if (JSON.stringify(pinnedTexts) !== JSON.stringify(['second', 'first'])) {
     throw new Error(`Expected the pinned messages newest first, received ${pinnedTexts}`);
   }
+  const [pinServiceMessage] = (await account.getMessages({ chat })).slice(-1);
+  const pinnedMessage = pinServiceMessage?.pinned_message;
+  if (
+    pinnedMessage === undefined || !('text' in pinnedMessage) || pinnedMessage.text !== 'second'
+  ) {
+    throw new Error(
+      `Expected the pin's service message, received ${JSON.stringify(pinServiceMessage)}`,
+    );
+  }
   let refusal: unknown;
   try {
     await account.pinMessage({ chat, message_id: first.message_id });
@@ -755,6 +764,37 @@ Deno.test('TypeScript client pins and unpins messages and reads the pinned ones'
   }
   if (!(refusal instanceof EmulationClientError) || refusal.status !== 409) {
     throw new Error(`Expected a repeated pin to be refused, received ${refusal}`);
+  }
+  // A reply to the pin's service message shows the pin nested, and nothing once it is deleted,
+  // which the client still reads, as it reads the service message's inaccessible pin.
+  const reply = await account.sendMessage({
+    to: chat,
+    text: 'about that pin',
+    reply_to_message_id: pinServiceMessage.message_id,
+  });
+  if (reply.reply_to_message?.pinned_message?.text !== 'second') {
+    throw new Error(
+      `Expected the reply to show the nested pin, received ${
+        JSON.stringify(reply.reply_to_message)
+      }`,
+    );
+  }
+  await account.deleteMessage({ chat, message_id: second.message_id });
+  const history = await account.getMessages({ chat });
+  const replyAfterDeletion = history.find(({ message_id }) => message_id === reply.message_id);
+  const serviceAfterDeletion = history.find(({ message_id }) =>
+    message_id === pinServiceMessage.message_id
+  );
+  if (
+    replyAfterDeletion?.reply_to_message === undefined ||
+    replyAfterDeletion.reply_to_message.pinned_message !== undefined ||
+    serviceAfterDeletion?.pinned_message?.date !== 0
+  ) {
+    throw new Error(
+      `Expected the deleted pin to be left out or inaccessible, received ${
+        JSON.stringify([replyAfterDeletion, serviceAfterDeletion])
+      }`,
+    );
   }
   await session.end();
 });

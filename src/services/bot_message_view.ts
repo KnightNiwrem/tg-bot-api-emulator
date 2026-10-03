@@ -7,6 +7,8 @@ import {
   type AdministratorEditability,
   type ExternalReplyProjectionContext,
   type ObservedPoll,
+  type ObservedPrivateMessage,
+  type ObservedSupergroupMessage,
   projectBotAsUser,
   projectBotBlockChangeForBot,
   projectBotMembershipChangeForBot,
@@ -15,9 +17,15 @@ import {
   projectChatMemberChange,
   projectChosenInlineResultForBot,
   projectInlineQueryForBot,
+  projectPinnedPrivateMessageForBot,
+  projectPinnedSupergroupMessage,
   projectPoll,
   projectPollAnswerForBot,
+  projectPrivateChat,
   projectPrivateMessageForBot,
+  projectRepliedPrivateMessageForBot,
+  projectRepliedSupergroupMessage,
+  projectSupergroupChat,
   projectSupergroupMessage,
 } from '../projections/bot_api_message.ts';
 import type {
@@ -30,6 +38,8 @@ import type {
   BotApiInlineQuery,
   BotApiMessage,
   BotApiMyChatMemberUpdated,
+  BotApiPinnedPrivateMessage,
+  BotApiPinnedSupergroupMessage,
   BotApiPrivateMessage,
   BotApiRepliedPrivateMessage,
   BotApiRepliedSupergroupMessage,
@@ -71,7 +81,10 @@ import {
   type ExternalReply,
   getContentText,
   isCaptionedMediaContent,
+  isPrivateContentMessage,
+  isSupergroupContentMessage,
   type MessageForwardInfo,
+  type MessagePinnedContent,
   type PrivateMessage,
   type SupergroupMessage,
   type SupergroupMessageAuthor,
@@ -175,10 +188,22 @@ export class BotMessageViewService {
     const repliedMessage = message.replyToMessageId === undefined
       ? undefined
       : this.#messages.getPrivateMessage(message.replyToMessageId);
-    return this.#viewPrivateMessage(
-      message,
-      repliedMessage === undefined ? undefined : this.#viewPrivateMessage(repliedMessage),
-    );
+    const observed = this.#observePrivateMessage(message);
+    return projectPrivateMessageForBot({
+      ...observed,
+      ...(repliedMessage === undefined
+        ? {}
+        : { repliedMessage: this.#viewRepliedPrivateMessage(repliedMessage) }),
+      ...(message.content.kind === 'message_pinned'
+        ? {
+          pinnedMessage: this.#findPinnedPrivateMessage(message.content) ?? {
+            message_id: this.#requireMessageId(observed.bot.id, message.content.pinnedMessageId),
+            chat: projectPrivateChat(observed.account),
+            date: 0,
+          },
+        }
+        : {}),
+    });
   }
 
   /**
@@ -191,13 +216,22 @@ export class BotMessageViewService {
     const repliedMessage = message.replyToMessageId === undefined
       ? undefined
       : this.#messages.getSupergroupMessage(message.replyToMessageId);
-    return this.#viewSupergroupMessage(
-      message,
-      observerId,
-      repliedMessage === undefined
-        ? undefined
-        : this.#viewSupergroupMessage(repliedMessage, observerId),
-    );
+    const observed = this.#observeSupergroupMessage(message, observerId);
+    return projectSupergroupMessage({
+      ...observed,
+      ...(repliedMessage === undefined
+        ? {}
+        : { repliedMessage: this.#viewRepliedSupergroupMessage(repliedMessage, observerId) }),
+      ...(message.content.kind === 'message_pinned'
+        ? {
+          pinnedMessage: this.#findPinnedSupergroupMessage(message.content, observerId) ?? {
+            message_id: this.#requireMessageId(message.chatId, message.content.pinnedMessageId),
+            chat: projectSupergroupChat(observed.supergroup),
+            date: 0,
+          },
+        }
+        : {}),
+    });
   }
 
   /**
@@ -385,7 +419,7 @@ export class BotMessageViewService {
       }
       return account === undefined ? undefined : projectPrivateChatFullInfo(
         account,
-        pinnedMessage === undefined ? undefined : this.#viewPrivateMessage(pinnedMessage),
+        pinnedMessage === undefined ? undefined : this.#viewPinnedPrivateMessage(pinnedMessage),
       );
     }
     const chat = this.#sharedChats.getSharedChat(chatId);
@@ -397,34 +431,84 @@ export class BotMessageViewService {
         chat,
         pinnedMessage === undefined
           ? undefined
-          : this.#viewSupergroupMessage(pinnedMessage, observerBotId),
+          : this.#viewPinnedSupergroupMessage(pinnedMessage, observerBotId),
       )
       : undefined;
   }
 
-  /** Projects a supergroup message with the given view of the message it replies to, if any. */
-  #viewSupergroupMessage(
+  /**
+   * Shows a supergroup message as the message another one replies to shows it: without its own
+   * reply, and, for a pin, with the pinned message unless it was deleted.
+   */
+  #viewRepliedSupergroupMessage(
     message: SupergroupMessage,
     observerId: number,
-    repliedMessage?: BotApiRepliedSupergroupMessage,
-  ): BotApiSupergroupMessage {
+  ): BotApiRepliedSupergroupMessage {
+    const pinnedMessage = message.content.kind === 'message_pinned'
+      ? this.#findPinnedSupergroupMessage(message.content, observerId)
+      : undefined;
+    return projectRepliedSupergroupMessage({
+      ...this.#observeSupergroupMessage(message, observerId),
+      ...(pinnedMessage === undefined ? {} : { pinnedMessage }),
+    });
+  }
+
+  /**
+   * Finds and shows the message a pin's service message pinned, as it is now; `undefined` once it
+   * was deleted.
+   */
+  #findPinnedSupergroupMessage(
+    { pinnedMessageId }: MessagePinnedContent,
+    observerId: number,
+  ): BotApiPinnedSupergroupMessage | undefined {
+    const pinnedMessage = this.#messages.getSupergroupMessage(pinnedMessageId);
+    return pinnedMessage === undefined
+      ? undefined
+      : this.#viewPinnedSupergroupMessage(pinnedMessage, observerId);
+  }
+
+  /**
+   * Shows a pinned supergroup message as a pin's service message and `getChat` show it, without
+   * its reply. A pinned message is never a service message.
+   */
+  #viewPinnedSupergroupMessage(
+    message: SupergroupMessage,
+    observerId: number,
+  ): BotApiPinnedSupergroupMessage {
+    if (!isSupergroupContentMessage(message)) {
+      throw new Error(`Service message ${message.id} cannot be pinned`);
+    }
+    return projectPinnedSupergroupMessage(this.#observeSupergroupMessage(message, observerId));
+  }
+
+  /** Resolves what a member's projection of a committed supergroup message needs. */
+  #observeSupergroupMessage<Message extends SupergroupMessage>(
+    message: Message,
+    observerId: number,
+  ): ObservedSupergroupMessage<Message> {
     const supergroup = this.#sharedChats.getSharedChat(message.chatId);
     if (supergroup?.kind !== 'supergroup') {
       throw new Error(`Supergroup ${message.chatId} of message ${message.id} does not exist`);
     }
-    const messageId = this.#messageBoxes.getMessageId(message.chatId, message.id);
-    if (messageId === undefined) {
-      throw new Error(`Supergroup message ${message.id} is not numbered in its supergroup`);
-    }
-
-    return projectSupergroupMessage({
+    return {
       message,
       supergroup,
       author: this.#findSupergroupMessageAuthor(message.author, message.id),
-      messageId,
+      messageId: this.#requireMessageId(message.chatId, message.id),
       context: this.#resolveProjectionContext(message, observerId),
-      repliedMessage,
-    });
+    };
+  }
+
+  /**
+   * The ID a message box gives a message, which every committed message has in the boxes it was
+   * numbered in, and keeps once deleted.
+   */
+  #requireMessageId(boxOwnerId: number, messageId: CanonicalMessageId): number {
+    const observerMessageId = this.#messageBoxes.getMessageId(boxOwnerId, messageId);
+    if (observerMessageId === undefined) {
+      throw new Error(`Message ${messageId} is not numbered in the message box of ${boxOwnerId}`);
+    }
+    return observerMessageId;
   }
 
   #findSupergroupMessageAuthor(
@@ -457,11 +541,49 @@ export class BotMessageViewService {
     return bot === undefined ? undefined : projectBotAsUser(bot.profile);
   }
 
-  /** Projects a message with the given view of the message it replies to, if any. */
-  #viewPrivateMessage(
-    message: PrivateMessage,
-    repliedMessage?: BotApiRepliedPrivateMessage,
-  ): BotApiPrivateMessage {
+  /**
+   * Shows a private message as the message another one replies to shows it: without its own
+   * reply, and, for a pin, with the pinned message unless it was deleted.
+   */
+  #viewRepliedPrivateMessage(message: PrivateMessage): BotApiRepliedPrivateMessage {
+    const pinnedMessage = message.content.kind === 'message_pinned'
+      ? this.#findPinnedPrivateMessage(message.content)
+      : undefined;
+    return projectRepliedPrivateMessageForBot({
+      ...this.#observePrivateMessage(message),
+      ...(pinnedMessage === undefined ? {} : { pinnedMessage }),
+    });
+  }
+
+  /**
+   * Finds and shows the message a pin's service message pinned, as it is now; `undefined` once it
+   * was deleted.
+   */
+  #findPinnedPrivateMessage(
+    { pinnedMessageId }: MessagePinnedContent,
+  ): BotApiPinnedPrivateMessage | undefined {
+    const pinnedMessage = this.#messages.getPrivateMessage(pinnedMessageId);
+    return pinnedMessage === undefined ? undefined : this.#viewPinnedPrivateMessage(pinnedMessage);
+  }
+
+  /**
+   * Shows a pinned private message as a pin's service message and `getChat` show it, without its
+   * reply. A pinned message is never a service message.
+   */
+  #viewPinnedPrivateMessage(message: PrivateMessage): BotApiPinnedPrivateMessage {
+    if (!isPrivateContentMessage(message)) {
+      throw new Error(`Service message ${message.id} cannot be pinned`);
+    }
+    return projectPinnedPrivateMessageForBot(this.#observePrivateMessage(message));
+  }
+
+  /**
+   * Resolves what the projection of a committed private message for the bot of its conversation
+   * needs: its participants exist, and it is numbered in the bot's message box.
+   */
+  #observePrivateMessage<Message extends PrivateMessage>(
+    message: Message,
+  ): ObservedPrivateMessage<Message> {
     const { accountId, botId: observingBotId } = message.conversation;
     const account = this.#accounts.getById(accountId);
     if (account === undefined) {
@@ -471,19 +593,13 @@ export class BotMessageViewService {
     if (bot === undefined) {
       throw new Error(`Bot ${observingBotId} of message ${message.id} does not exist`);
     }
-    const observerMessageId = this.#messageBoxes.getMessageId(observingBotId, message.id);
-    if (observerMessageId === undefined) {
-      throw new Error(`Private message ${message.id} was not delivered to bot ${observingBotId}`);
-    }
-
-    return projectPrivateMessageForBot({
+    return {
       message,
       account: account.profile,
       bot: bot.profile,
-      observerMessageId,
+      observerMessageId: this.#requireMessageId(observingBotId, message.id),
       context: this.#resolveProjectionContext(message, observingBotId),
-      repliedMessage,
-    });
+    };
   }
 
   /**
@@ -529,6 +645,7 @@ export class BotMessageViewService {
           changedMembers: this.#findChangedMembers([content.memberId], message),
         };
       case 'title_changed':
+      case 'message_pinned':
         return context;
       default: {
         const unhandledContent: never = content;

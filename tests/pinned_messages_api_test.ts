@@ -245,6 +245,23 @@ Deno.test('pin routes refuse service messages, non-members, and unknown chats', 
   );
 });
 
+Deno.test('an account that blocks the bot cannot pin in their private chat, but reads pins', async () => {
+  const { api, sessionPath, ada, botId, privatePath, sendToBot, pinnedTexts, changePin } =
+    await createPinnedMessagesFixture();
+  const messageId = await sendToBot('before the block');
+  const otherId = await sendToBot('second');
+  expectEqual(await changePin('PUT', privatePath(ada), messageId), 204, 'pinned before the block');
+  await api.request(`${sessionPath}/accounts/${ada}/blocked-bots/${botId}`, { method: 'PUT' });
+
+  expectEqual(await changePin('PUT', privatePath(ada), otherId), 409, 'no pin while blocked');
+  expectEqual(
+    await changePin('DELETE', privatePath(ada), messageId),
+    409,
+    'no unpin while blocked',
+  );
+  expectEqual(await pinnedTexts(privatePath(ada)), ['before the block'], 'the pins stay readable');
+});
+
 Deno.test('pinned messages of one session stay out of another', async () => {
   const api = createApi();
   const first = await createPinnedMessagesFixture(api);

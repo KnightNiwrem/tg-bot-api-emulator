@@ -1180,14 +1180,15 @@ interface MessageContentFields {
  */
 export type MessageContent = ExclusiveAlternatives<MessageContentFields>;
 
-/** The fields of a change of a supergroup's members or title, which content never has. */
-interface NoSupergroupChange {
+/** The fields of a service message's change of its chat, which content never has. */
+interface NoServiceChange {
   readonly new_chat_participant?: never;
   readonly new_chat_member?: never;
   readonly new_chat_members?: never;
   readonly left_chat_participant?: never;
   readonly left_chat_member?: never;
   readonly new_chat_title?: never;
+  readonly pinned_message?: never;
 }
 
 /** The fields of content, which a service message never has. */
@@ -1200,6 +1201,7 @@ type NoContent = AbsentFields<FieldNameOfAnyKind<MessageContentFields>>;
 export type MembershipChangeContent =
   | (NoContent & {
     readonly new_chat_title?: never;
+    readonly pinned_message?: never;
     /** Legacy alias of `new_chat_member`. */
     readonly new_chat_participant: VirtualAccountProfile | MessageSenderBot;
     /** Legacy: the requesting account if it joined, otherwise the first new member. */
@@ -1210,6 +1212,7 @@ export type MembershipChangeContent =
   })
   | (NoContent & {
     readonly new_chat_title?: never;
+    readonly pinned_message?: never;
     readonly new_chat_participant?: never;
     readonly new_chat_member?: never;
     readonly new_chat_members?: never;
@@ -1222,14 +1225,61 @@ export type MembershipChangeContent =
 /** The field of a service message about a supergroup's new title. */
 export type TitleChangeContent =
   & NoContent
-  & Omit<NoSupergroupChange, 'new_chat_title'>
+  & Omit<NoServiceChange, 'new_chat_title'>
   & { readonly new_chat_title: string };
 
-/** What a supergroup message shows: content, or a change of the supergroup's members or title. */
+/** A deleted message, which a pin's service message shows in place of the pinned message. */
+export interface InaccessibleMessage<Chat> {
+  readonly message_id: number;
+  readonly chat: Chat;
+  /** Always 0, which tells an inaccessible message apart from a message. */
+  readonly date: 0;
+}
+
+/**
+ * The field of a service message about a pin, which takes the place of content: the pinned
+ * message as a reply shows it, or, once deleted, inaccessible.
+ */
+export type PinContent<Chat, PinnedMessage> =
+  & NoContent
+  & Omit<NoServiceChange, 'pinned_message'>
+  & { readonly pinned_message: PinnedMessage | InaccessibleMessage<Chat> };
+
+/**
+ * The field of a service message about a pin as a replied message shows it, which leaves out a
+ * deleted pinned message rather than show it inaccessible.
+ */
+export type RepliedPinContent<PinnedMessage> =
+  & NoContent
+  & Omit<NoServiceChange, 'pinned_message'>
+  & { readonly pinned_message?: PinnedMessage };
+
+/** What a private message shows: content, or a pin. */
+export type PrivateMessageContent =
+  | (MessageContent & NoServiceChange)
+  | PinContent<PrivateChat, PinnedPrivateMessage>;
+
+/** What a private message shows as a replied message, as `RepliedPinContent` shows a pin. */
+export type RepliedPrivateMessageContent =
+  | (MessageContent & NoServiceChange)
+  | RepliedPinContent<PinnedPrivateMessage>;
+
+/**
+ * What a supergroup message shows: content, or a change of the supergroup's members or title, or
+ * a pin.
+ */
 export type SupergroupMessageContent =
-  | (MessageContent & NoSupergroupChange)
+  | (MessageContent & NoServiceChange)
   | MembershipChangeContent
-  | TitleChangeContent;
+  | TitleChangeContent
+  | PinContent<SupergroupChat, PinnedSupergroupMessage>;
+
+/** What a supergroup message shows as a replied message, as `RepliedPinContent` shows a pin. */
+export type RepliedSupergroupMessageContent =
+  | (MessageContent & NoServiceChange)
+  | MembershipChangeContent
+  | TitleChangeContent
+  | RepliedPinContent<PinnedSupergroupMessage>;
 
 /** Who first sent a forwarded message, and when. */
 export interface MessageOriginUser {
@@ -1341,17 +1391,27 @@ interface MessageTrailer {
   readonly effect_id?: string;
 }
 
+/** A pinned message, which is never a service message, as a reply shows a message. */
+export type PinnedPrivateMessage =
+  & MessageHeader<PrivateChat>
+  & MessageReplyInfo
+  & MessageAlbumInfo
+  & MessageContent
+  & NoServiceChange
+  & MessageTrailer;
+
 /** A message as a reply shows it, without its own reply. */
 export type RepliedPrivateMessage =
   & MessageHeader<PrivateChat>
   & MessageReplyInfo
   & MessageAlbumInfo
-  & MessageContent
+  & RepliedPrivateMessageContent
   & MessageTrailer;
 
 /**
  * A private-chat message as the conversation's bot sees it: numbered in the bot's message box,
- * with the account as its chat, whichever participant wrote it.
+ * with the account as its chat, whichever participant wrote it, or a service message about a pin,
+ * from the participant who pinned.
  */
 export type PrivateMessage =
   & MessageHeader<PrivateChat>
@@ -1361,7 +1421,16 @@ export type PrivateMessage =
   }
   & MessageReplyInfo
   & MessageAlbumInfo
+  & PrivateMessageContent
+  & MessageTrailer;
+
+/** A pinned supergroup message, which is never a service message, as a reply shows a message. */
+export type PinnedSupergroupMessage =
+  & MessageHeader<SupergroupChat>
+  & MessageReplyInfo
+  & MessageAlbumInfo
   & MessageContent
+  & NoServiceChange
   & MessageTrailer;
 
 /** A message as a reply shows it, without its own reply. */
@@ -1369,14 +1438,14 @@ export type RepliedSupergroupMessage =
   & MessageHeader<SupergroupChat>
   & MessageReplyInfo
   & MessageAlbumInfo
-  & SupergroupMessageContent
+  & RepliedSupergroupMessageContent
   & MessageTrailer;
 
 /**
  * A supergroup message as the requesting account sees it: numbered once by the supergroup, and
- * written by an account or a bot, or a service message about members joining or leaving, from the
- * member who made the change. Members see the same message, apart from the `file_id` of its file
- * and the legacy `new_chat_member` of a service message.
+ * written by an account or a bot, or a service message about members joining or leaving, a new
+ * title, or a pin, from the member who made the change. Members see the same message, apart from
+ * the `file_id` of its file and the legacy `new_chat_member` of a service message.
  */
 export type SupergroupMessage =
   & MessageHeader<SupergroupChat>
@@ -1841,13 +1910,14 @@ export interface VirtualAccountClient extends VirtualAccountProfile {
    * participant of a private chat pins any of its messages; in a supergroup, this account needs
    * the `can_pin_messages` permission, which the owner holds, an administrator holds with that
    * right, and the default permissions grant other members unless withheld, except in a public
-   * supergroup, which ignores them for pins. Service messages
-   * cannot be pinned, and pinning a pinned message fails, as Telegram refuses it.
+   * supergroup, which ignores them for pins. Service messages cannot be pinned, and pinning a
+   * pinned message fails, as Telegram refuses it. The pin is recorded as this account's service
+   * message with `pinned_message`, which the chat's bots receive.
    */
   pinMessage(input: AccountPinMessageInput): Promise<void>;
   /**
-   * Unpins a pinned message, with the permission `pinMessage` needs. Unpinning a message that is
-   * not pinned fails, as Telegram refuses it.
+   * Unpins a pinned message, with the permission `pinMessage` needs; no service message records
+   * it. Unpinning a message that is not pinned fails, as Telegram refuses it.
    */
   unpinMessage(input: AccountPinMessageInput): Promise<void>;
   /**

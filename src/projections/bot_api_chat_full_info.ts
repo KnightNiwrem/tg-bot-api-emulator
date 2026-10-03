@@ -1,8 +1,8 @@
 import type {
   BotApiAcceptedGiftTypes,
+  BotApiPinnedPrivateMessage,
+  BotApiPinnedSupergroupMessage,
   BotApiPrivateChatFullInfo,
-  BotApiRepliedPrivateMessage,
-  BotApiRepliedSupergroupMessage,
   BotApiSupergroupChatFullInfo,
 } from '../types/bot_api.ts';
 import type { VirtualAccount } from '../types/virtual_account.ts';
@@ -30,7 +30,7 @@ const SUPERGROUP_CHAT_ID_OFFSET = 1_000_000_000_000;
  */
 export function projectPrivateChatFullInfo(
   { profile, hasPrivateForwards }: VirtualAccount,
-  pinnedMessage: BotApiRepliedPrivateMessage | undefined,
+  pinnedMessage: BotApiPinnedPrivateMessage | undefined,
 ): BotApiPrivateChatFullInfo {
   const { id, first_name, last_name, username } = profile;
   return {
@@ -64,7 +64,7 @@ export function projectPrivateChatFullInfo(
  */
 export function projectSupergroupChatFullInfo(
   { id, title, username, description, hasProtectedContent, defaultPermissions }: Supergroup,
-  pinnedMessage: BotApiRepliedSupergroupMessage | undefined,
+  pinnedMessage: BotApiPinnedSupergroupMessage | undefined,
 ): BotApiSupergroupChatFullInfo {
   const channelId = -id - SUPERGROUP_CHAT_ID_OFFSET;
   return {

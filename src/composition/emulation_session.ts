@@ -134,10 +134,12 @@ export function createEmulationSession(
     accounts,
     bots,
     privateConversations,
+    blockedUsers,
     sharedChats,
     privateMessages: privateMessaging,
     supergroupMessages: supergroupMessaging,
     messages,
+    currentUnixTimeSeconds,
   });
   const messageForwarding = new MessageForwardingService({
     privateMessages: privateMessaging,
@@ -259,7 +261,7 @@ export function createEmulationSession(
     supergroupBotMessages: supergroupMessaging,
     chatMemberships: sharedChatAdministration,
     botMessageViews,
-    pinnedMessages: messagePinning,
+    messagePinning,
     mediaFiles,
     callbackQueries,
     inlineQueries,

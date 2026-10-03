@@ -1,0 +1,63 @@
+description: >-
+  Telegram Bot API method for removing a message from a chat's pinned messages, with the
+  rights `pinChatMessage` needs. Without `message_id`, the chat's newest pinned message by
+  sending date is unpinned, as the official server finds it with `getChatPinnedMessage`. No
+  service message records an unpin, and no bot receives an update for it.
+parameters:
+  - $ref: ../components/parameters/SessionId.yaml
+  - $ref: ../components/parameters/BotToken.yaml
+post:
+  operationId: unpinChatMessage
+  summary: Unpin a message of one of the authenticated virtual bot's chats
+  requestBody:
+    required: true
+    content:
+      application/json:
+        schema:
+          $ref: ../components/schemas/UnpinChatMessageRequest.yaml
+      application/x-www-form-urlencoded:
+        schema:
+          $ref: ../components/schemas/UnpinChatMessageRequest.yaml
+      multipart/form-data:
+        schema:
+          $ref: ../components/schemas/UnpinChatMessageRequest.yaml
+  responses:
+    '200':
+      description: The message is unpinned.
+      content:
+        application/json:
+          schema:
+            $ref: ../components/schemas/TrueResultResponse.yaml
+    '400':
+      description: >-
+        The request cannot be decoded or has unsupported parameters, such as a negative
+        `message_id` or `business_connection_id`, or Telegram would reject it, checking in this
+        order: `chat_id` is missing (`Bad Request: chat_id is empty`); the chat is not one the
+        bot can address (`Bad Request: chat not found`); `message_id` identifies no message of
+        the chat, or, without one, the chat pins nothing (`Bad Request: message to unpin not
+        found`); the bot lacks the right (`Bad Request: not enough rights to manage pinned
+        messages in the chat`); the message is a service message (`Bad Request: service
+        messages can't be pinned`); or it is not pinned (`Bad Request: CHAT_NOT_MODIFIED`).
+      content:
+        application/json:
+          schema:
+            $ref: ../components/schemas/BotApiErrorResponse.yaml
+    '401':
+      description: The token does not belong to a virtual bot in the addressed session.
+      content:
+        application/json:
+          schema:
+            $ref: ../components/schemas/BotApiErrorResponse.yaml
+    '403':
+      description: >-
+        The bot left the supergroup (`Forbidden: bot is not a member of the supergroup chat`) or
+        was removed from it (`Forbidden: bot was kicked from the supergroup chat`), or the account
+        of the private chat blocks it (`Forbidden: bot was blocked by the user`).
+      content:
+        application/json:
+          schema:
+            $ref: ../components/schemas/BotApiErrorResponse.yaml
+    '404':
+      description: No active test session has the supplied identifier.
+    '429':
+      $ref: ../components/responses/BotApiRateLimited.yaml

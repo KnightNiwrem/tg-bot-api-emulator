@@ -476,14 +476,16 @@ function createBotApiFixture() {
     supergroupBotMessages: supergroupMessaging,
     chatMemberships: sharedChatAdministration,
     botMessageViews,
-    pinnedMessages: new MessagePinningService({
+    messagePinning: new MessagePinningService({
       accounts,
       bots,
       privateConversations,
+      blockedUsers,
       sharedChats,
       privateMessages: privateMessaging,
       supergroupMessages: supergroupMessaging,
       messages,
+      currentUnixTimeSeconds: () => 1_700_000_000,
     }),
     mediaFiles: new MediaFileService({
       files,

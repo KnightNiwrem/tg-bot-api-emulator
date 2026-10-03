@@ -159,7 +159,14 @@ import type {
   TextInvalidFailure,
   TextMessageReplacement,
 } from './message_content.ts';
-import type { PinnedMessagesChat } from './message_pinning.ts';
+import type {
+  PinMessageInput,
+  PinMessageResult,
+  PinnedMessagesChat,
+  PinningChat,
+  UnpinMessageInput,
+  UnpinMessageResult,
+} from './message_pinning.ts';
 import type { PollStopFailureReason } from './poll.ts';
 import type { PollLimitFailure } from './poll_normalization.ts';
 import type {
@@ -1020,6 +1027,50 @@ export type BotApiSetChatPermissionsResult =
       | 'not_enough_rights';
   };
 
+export interface PinChatMessageRequest {
+  /** The Bot API `chat_id`, as `SendRequestOptions` describes it. */
+  readonly chatId: number;
+  /** The message's ID in the bot's chat. */
+  readonly messageId: number;
+  /** Notifies the supergroup's members of the pin without sound, as `disable_notification` asks. */
+  readonly isSilent: boolean;
+}
+
+export interface UnpinChatMessageRequest {
+  /** The Bot API `chat_id`, as `SendRequestOptions` describes it. */
+  readonly chatId: number;
+  /** The message's ID in the bot's chat; omitted to unpin the chat's newest pinned message. */
+  readonly messageId?: number;
+}
+
+/** Why a bot cannot pin or unpin a message, in the order the official server and TDLib check. */
+type BotPinChangeFailureReason =
+  | 'chat_not_found'
+  | FormerSupergroupMemberFailureReason
+  /** The account of the bot's private chat blocks the bot. */
+  | 'bot_blocked'
+  /** No such message is in the chat; for an unpin without a target, no message is pinned. */
+  | 'message_not_found'
+  /** The bot lacks the `can_pin_messages` administrator right in a supergroup. */
+  | 'not_enough_rights'
+  | 'service_message_not_pinnable';
+
+export type BotApiPinChatMessageResult =
+  | { readonly pinned: true }
+  | {
+    readonly pinned: false;
+    /** `message_already_pinned`: Telegram's servers refuse a pin that changes nothing. */
+    readonly reason: BotPinChangeFailureReason | 'message_already_pinned';
+  };
+
+export type BotApiUnpinChatMessageResult =
+  | { readonly unpinned: true }
+  | {
+    readonly unpinned: false;
+    /** `message_not_pinned`: Telegram's servers refuse an unpin that changes nothing. */
+    readonly reason: BotPinChangeFailureReason | 'message_not_pinned';
+  };
+
 export type DeleteMessageRequest = MessageTarget;
 
 export type DeleteMessageResult =
@@ -1812,7 +1863,9 @@ interface BotMessageViews {
   }): BotApiChatFullInfo | undefined;
 }
 
-interface PinnedMessageLookup {
+interface MessagePinning {
+  pinMessage(input: PinMessageInput): PinMessageResult;
+  unpinMessage(input: UnpinMessageInput): UnpinMessageResult;
   findNewestPinnedMessage(chat: PinnedMessagesChat): ChatMessage | undefined;
 }
 
@@ -1833,8 +1886,8 @@ interface BotApiServiceDependencies {
   readonly supergroupBotMessages: SupergroupBotMessaging;
   readonly chatMemberships: ChatMemberships;
   readonly botMessageViews: BotMessageViews;
-  /** Finds the pinned message that `getChat` shows. */
-  readonly pinnedMessages: PinnedMessageLookup;
+  /** Pins and unpins messages, and finds the pinned message that `getChat` shows. */
+  readonly messagePinning: MessagePinning;
   readonly mediaFiles: MediaFiles;
   readonly callbackQueries: CallbackQueryAnswering;
   readonly inlineQueries: InlineQueryAnswering;
@@ -1880,7 +1933,7 @@ export class BotApiService {
   readonly #supergroupBotMessages: SupergroupBotMessaging;
   readonly #chatMemberships: ChatMemberships;
   readonly #botMessageViews: BotMessageViews;
-  readonly #pinnedMessages: PinnedMessageLookup;
+  readonly #messagePinning: MessagePinning;
   readonly #mediaFiles: MediaFiles;
   readonly #callbackQueries: CallbackQueryAnswering;
   readonly #inlineQueries: InlineQueryAnswering;
@@ -1906,7 +1959,7 @@ export class BotApiService {
       supergroupBotMessages,
       chatMemberships,
       botMessageViews,
-      pinnedMessages,
+      messagePinning,
       mediaFiles,
       callbackQueries,
       inlineQueries,
@@ -1931,7 +1984,7 @@ export class BotApiService {
     this.#supergroupBotMessages = supergroupBotMessages;
     this.#chatMemberships = chatMemberships;
     this.#botMessageViews = botMessageViews;
-    this.#pinnedMessages = pinnedMessages;
+    this.#messagePinning = messagePinning;
     this.#mediaFiles = mediaFiles;
     this.#callbackQueries = callbackQueries;
     this.#inlineQueries = inlineQueries;
@@ -3844,7 +3897,7 @@ export class BotApiService {
     const chat = this.#botMessageViews.viewChatFullInfo({
       chatId,
       observerBotId: authenticatedBot.id,
-      pinnedMessage: this.#pinnedMessages.findNewestPinnedMessage(pinnedMessagesChat),
+      pinnedMessage: this.#messagePinning.findNewestPinnedMessage(pinnedMessagesChat),
     });
     if (chat === undefined) {
       throw new Error(`Chat ${chatId} was found but cannot be shown`);
@@ -4214,6 +4267,45 @@ export class BotApiService {
         throw new Error(`Unhandled poll stop failure: ${JSON.stringify(unhandledReason)}`);
       }
     }
+  }
+
+  /**
+   * Pins a message of a bot's chat, as `MessagePinningService.pinMessage` pins it for the bot,
+   * which then receives the pin's service message, as the official server's
+   * `need_skip_update_message` keeps a bot's own pins.
+   */
+  pinChatMessage(
+    authenticatedBot: VirtualBotProfile,
+    { chatId, messageId, isSilent }: PinChatMessageRequest,
+  ): BotApiPinChatMessageResult {
+    const result = this.#messagePinning.pinMessage({
+      pinner: { kind: 'bot', botId: authenticatedBot.id },
+      chat: toPinningChat(chatId),
+      messageId,
+      isSilent,
+    });
+    return result.pinned
+      ? { pinned: true }
+      : { pinned: false, reason: excludeAccountPinChangeFailure(authenticatedBot, result.reason) };
+  }
+
+  /**
+   * Unpins a message of a bot's chat, or, without one, the chat's newest pinned message, as
+   * `MessagePinningService.unpinMessage` unpins it for the bot. No service message records it.
+   */
+  unpinChatMessage(
+    authenticatedBot: VirtualBotProfile,
+    { chatId, messageId }: UnpinChatMessageRequest,
+  ): BotApiUnpinChatMessageResult {
+    const result = this.#messagePinning.unpinMessage({
+      pinner: { kind: 'bot', botId: authenticatedBot.id },
+      chat: toPinningChat(chatId),
+      messageId,
+    });
+    return result.unpinned ? { unpinned: true } : {
+      unpinned: false,
+      reason: excludeAccountPinChangeFailure(authenticatedBot, result.reason),
+    };
   }
 
   /**
@@ -5078,6 +5170,28 @@ function excludeMissingBotFailure<Reason extends string>(
 ): Reason {
   if (reason === 'bot_not_found') {
     throw new Error(`Authenticated bot ${authenticatedBot.id} does not exist`);
+  }
+  return reason;
+}
+
+/**
+ * The chat a bot pins in, by the Bot API `chat_id`: a user's ID names the bot's private chat with
+ * that user, and any other ID a supergroup.
+ */
+function toPinningChat(chatId: number): PinningChat {
+  return isUserId(chatId) ? { type: 'private', peerId: chatId } : { type: 'supergroup', chatId };
+}
+
+/**
+ * Leaves out the pin failures that only an account meets, which an authenticated bot never does:
+ * it exists, and a supergroup refuses it as a former member, not as a non-member account.
+ */
+function excludeAccountPinChangeFailure<Reason extends string>(
+  authenticatedBot: VirtualBotProfile,
+  reason: Reason | 'pinner_not_found' | 'not_a_member',
+): Reason {
+  if (reason === 'pinner_not_found' || reason === 'not_a_member') {
+    throw new Error(`Bot ${authenticatedBot.id} could not pin: ${reason}`);
   }
   return reason;
 }

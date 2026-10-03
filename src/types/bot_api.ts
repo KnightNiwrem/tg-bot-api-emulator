@@ -85,7 +85,7 @@ export interface BotApiPrivateChatFullInfo extends BotApiPrivateChat, BotApiChat
   /** Present only when true. */
   readonly has_private_forwards?: true;
   /** The newest pinned message, as a reply shows a message; omitted when none is pinned. */
-  readonly pinned_message?: BotApiRepliedPrivateMessage;
+  readonly pinned_message?: BotApiPinnedPrivateMessage;
 }
 
 /** A supergroup, as `getChat` shows it; fields for unset settings are omitted. */
@@ -100,7 +100,7 @@ export interface BotApiSupergroupChatFullInfo extends BotApiSupergroupChat, BotA
   /** Present only when true. */
   readonly join_to_send_messages?: true;
   /** The newest pinned message, as a reply shows a message; omitted when none is pinned. */
-  readonly pinned_message?: BotApiRepliedSupergroupMessage;
+  readonly pinned_message?: BotApiPinnedSupergroupMessage;
 }
 
 /** A chat with everything `getChat` tells a bot about it. */
@@ -328,11 +328,55 @@ export interface BotApiTitleChangeServiceContent {
   readonly new_chat_title: string;
 }
 
+/**
+ * A deleted message, as the Bot API's `InaccessibleMessage` shows it in place of the message:
+ * only its chat and ID, with a `date` of 0.
+ */
+export interface BotApiInaccessibleMessage<Chat> {
+  readonly message_id: number;
+  readonly chat: Chat;
+  readonly date: 0;
+}
+
+/**
+ * The field of a service message about a pin, which takes the place of content: the pinned
+ * message, or, once deleted, inaccessible.
+ */
+export interface BotApiPinServiceContent<PinnedMessage, Chat> {
+  readonly pinned_message: PinnedMessage | BotApiInaccessibleMessage<Chat>;
+}
+
+/**
+ * The field of a service message about a pin where the service message is itself shown as a
+ * replied message, which leaves out a deleted pinned message, as the official server does there.
+ */
+export interface BotApiRepliedPinServiceContent<PinnedMessage> {
+  readonly pinned_message?: PinnedMessage;
+}
+
+/** What a private message shows: content, or a pin. */
+export type BotApiPrivateMessageContent =
+  | BotApiMessageContent
+  | BotApiPinServiceContent<BotApiPinnedPrivateMessage, BotApiPrivateChat>;
+
+/** What a private message shows as a replied message: content, or a pin. */
+export type BotApiRepliedPrivateMessageContent =
+  | BotApiMessageContent
+  | BotApiRepliedPinServiceContent<BotApiPinnedPrivateMessage>;
+
 /** What a supergroup message shows: content, or a change of the supergroup. */
 export type BotApiSupergroupMessageContent =
   | BotApiMessageContent
   | BotApiMembershipServiceContent
-  | BotApiTitleChangeServiceContent;
+  | BotApiTitleChangeServiceContent
+  | BotApiPinServiceContent<BotApiPinnedSupergroupMessage, BotApiSupergroupChat>;
+
+/** What a supergroup message shows as a replied message: content, or a change of the supergroup. */
+export type BotApiRepliedSupergroupMessageContent =
+  | BotApiMessageContent
+  | BotApiMembershipServiceContent
+  | BotApiTitleChangeServiceContent
+  | BotApiRepliedPinServiceContent<BotApiPinnedSupergroupMessage>;
 
 /** Where a forward first appeared: a user, because the emulator's senders are users. */
 export interface BotApiMessageOriginUser {
@@ -450,38 +494,61 @@ type BotApiRepliedMessageInChat<Chat, Content> =
   & Content
   & BotApiMessageTrailer;
 
-/** A message in a chat of the given type, in the field order Telegram uses. */
-type BotApiMessageInChat<Chat, Content> =
+/**
+ * A message in a chat of the given type, with what it shows as a message and as a replied message,
+ * in the field order Telegram uses.
+ */
+type BotApiMessageInChat<Chat, Content, RepliedContent> =
   & BotApiMessageHeader<Chat>
   & {
     /**
      * The replied message, without its own reply; omitted when the message is no reply or the
      * replied message was deleted.
      */
-    readonly reply_to_message?: BotApiRepliedMessageInChat<Chat, Content>;
+    readonly reply_to_message?: BotApiRepliedMessageInChat<Chat, RepliedContent>;
   }
   & BotApiMessageReplyInfo
   & BotApiMessageAlbumInfo
   & Content
   & BotApiMessageTrailer;
 
-export type BotApiPrivateMessage = BotApiMessageInChat<BotApiPrivateChat, BotApiMessageContent>;
+export type BotApiPrivateMessage = BotApiMessageInChat<
+  BotApiPrivateChat,
+  BotApiPrivateMessageContent,
+  BotApiRepliedPrivateMessageContent
+>;
 
 export type BotApiSupergroupMessage = BotApiMessageInChat<
   BotApiSupergroupChat,
-  BotApiSupergroupMessageContent
+  BotApiSupergroupMessageContent,
+  BotApiRepliedSupergroupMessageContent
 >;
 
 export type BotApiMessage = BotApiPrivateMessage | BotApiSupergroupMessage;
 
 export type BotApiRepliedPrivateMessage = BotApiRepliedMessageInChat<
   BotApiPrivateChat,
-  BotApiMessageContent
+  BotApiRepliedPrivateMessageContent
 >;
 
 export type BotApiRepliedSupergroupMessage = BotApiRepliedMessageInChat<
   BotApiSupergroupChat,
-  BotApiSupergroupMessageContent
+  BotApiRepliedSupergroupMessageContent
+>;
+
+/**
+ * A pinned message as a pin's service message and `getChat` show it: as a reply shows a message,
+ * with content, since service messages are never pinned.
+ */
+export type BotApiPinnedPrivateMessage = BotApiRepliedMessageInChat<
+  BotApiPrivateChat,
+  BotApiMessageContent
+>;
+
+/** A pinned supergroup message, as `BotApiPinnedPrivateMessage` describes a private one. */
+export type BotApiPinnedSupergroupMessage = BotApiRepliedMessageInChat<
+  BotApiSupergroupChat,
+  BotApiMessageContent
 >;
 
 /** A bot command as the Bot API shows it. */

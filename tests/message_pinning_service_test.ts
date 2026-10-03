@@ -141,13 +141,15 @@ Deno.test('a chat pins several messages, lists them newest first, and unpins the
 
   for (const messageId of [thirdId, firstId]) {
     expectEqual(
-      session.messagePinning.pinMessage({ pinner, chat: botChat, messageId }).pinned,
+      session.messagePinning.pinMessage({ isSilent: false, pinner, chat: botChat, messageId })
+        .pinned,
       true,
       `message ${messageId} is pinned`,
     );
   }
   expectEqual(
     session.messagePinning.pinMessage({
+      isSilent: false,
       pinner: { kind: 'account', accountId: ada },
       chat: accountChat,
       messageId: secondId,
@@ -192,9 +194,9 @@ Deno.test('a repeated pin or an unpin of an unpinned message is refused without 
     { unpinned: false, reason: 'message_not_found' },
     'without a pinned message, an unpin without a target finds none',
   );
-  session.messagePinning.pinMessage({ pinner, chat, messageId });
+  session.messagePinning.pinMessage({ isSilent: false, pinner, chat, messageId });
   expectEqual(
-    session.messagePinning.pinMessage({ pinner, chat, messageId }),
+    session.messagePinning.pinMessage({ isSilent: false, pinner, chat, messageId }),
     { pinned: false, reason: 'message_already_pinned' },
     'a pinned message cannot be pinned again',
   );
@@ -222,6 +224,7 @@ Deno.test('a bot reaches only private chats an account started and supergroups i
 
   expectEqual(
     session.messagePinning.pinMessage({
+      isSilent: false,
       pinner: { kind: 'bot', botId: pinningBot },
       chat: { type: 'private', peerId: grace },
       messageId: 1,
@@ -231,6 +234,7 @@ Deno.test('a bot reaches only private chats an account started and supergroups i
   );
   expectEqual(
     session.messagePinning.pinMessage({
+      isSilent: false,
       pinner: { kind: 'bot', botId: removedBot },
       chat: { type: 'supergroup', chatId },
       messageId,
@@ -240,6 +244,7 @@ Deno.test('a bot reaches only private chats an account started and supergroups i
   );
   expectEqual(
     session.messagePinning.pinMessage({
+      isSilent: false,
       pinner: { kind: 'account', accountId: outsider },
       chat: { type: 'supergroup', chatId },
       messageId,
@@ -249,6 +254,7 @@ Deno.test('a bot reaches only private chats an account started and supergroups i
   );
   expectEqual(
     session.messagePinning.pinMessage({
+      isSilent: false,
       pinner: { kind: 'bot', botId: pinningBot },
       chat: { type: 'supergroup', chatId },
       messageId: messageId + 100,
@@ -258,6 +264,7 @@ Deno.test('a bot reaches only private chats an account started and supergroups i
   );
   expectEqual(
     session.messagePinning.pinMessage({
+      isSilent: false,
       pinner: { kind: 'bot', botId: pinningBot },
       chat: { type: 'private', peerId: ada },
       messageId,
@@ -273,7 +280,7 @@ Deno.test('supergroup pins need can_pin_messages, which bots get only as an admi
   const messageId = sendToSupergroup(ada, 'rules');
   const chat: PinningChat = { type: 'supergroup', chatId };
   const pin = (pinner: Parameters<typeof session.messagePinning.pinMessage>[0]['pinner']) =>
-    session.messagePinning.pinMessage({ pinner, chat, messageId });
+    session.messagePinning.pinMessage({ isSilent: false, pinner, chat, messageId });
   const unpin = (pinner: Parameters<typeof session.messagePinning.unpinMessage>[0]['pinner']) =>
     session.messagePinning.unpinMessage({ pinner, chat, messageId });
 
@@ -336,7 +343,12 @@ Deno.test('a public supergroup ignores its default permissions for pins', () => 
   const messageId = messageIdIn(session, chatId, sent.message);
   const chat: PinningChat = { type: 'supergroup', chatId };
   const pin = (accountId: number) =>
-    session.messagePinning.pinMessage({ pinner: { kind: 'account', accountId }, chat, messageId });
+    session.messagePinning.pinMessage({
+      isSilent: false,
+      pinner: { kind: 'account', accountId },
+      chat,
+      messageId,
+    });
 
   expectEqual(
     pin(grace),
@@ -353,6 +365,7 @@ Deno.test('a public supergroup ignores its default permissions for pins', () => 
   expectEqual(pin(grace).pinned, true, 'the right lets the administrator pin');
   expectEqual(
     session.messagePinning.pinMessage({
+      isSilent: false,
       pinner: { kind: 'account', accountId: grace },
       chat: { type: 'supergroup', chatId: privateChatId },
       messageId: sendToSupergroup(grace, 'private rules'),
@@ -373,6 +386,7 @@ Deno.test('a service message cannot be pinned or unpinned, after the right to pi
 
   expectEqual(
     session.messagePinning.pinMessage({
+      isSilent: false,
       pinner: { kind: 'bot', botId: memberBot },
       chat,
       messageId: joinMessageId,
@@ -382,6 +396,7 @@ Deno.test('a service message cannot be pinned or unpinned, after the right to pi
   );
   expectEqual(
     session.messagePinning.pinMessage({
+      isSilent: false,
       pinner: { kind: 'bot', botId: pinningBot },
       chat,
       messageId: joinMessageId,
@@ -412,8 +427,8 @@ Deno.test('findNewestPinnedMessage returns the pinned message sent last', () => 
   };
 
   expectEqual(newestText(), undefined, 'a chat without pins has none');
-  session.messagePinning.pinMessage({ pinner, chat, messageId: newerId });
-  session.messagePinning.pinMessage({ pinner, chat, messageId: olderId });
+  session.messagePinning.pinMessage({ isSilent: false, pinner, chat, messageId: newerId });
+  session.messagePinning.pinMessage({ isSilent: false, pinner, chat, messageId: olderId });
   expectEqual(newestText(), 'newer', 'pinning an older message keeps the newest');
   session.messagePinning.unpinMessage({ pinner, chat, messageId: newerId });
   expectEqual(newestText(), 'older', 'unpinning the newest shows the next');

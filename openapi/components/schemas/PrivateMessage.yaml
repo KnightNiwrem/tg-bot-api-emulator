@@ -3,7 +3,7 @@ additionalProperties: false
 description: >-
   A private-chat message as the conversation's bot sees it: text, a photo, a document, a video, a
   voice note, a rich message, a poll, a contact, or a location, each with the fields Telegram shows
-  for it.
+  for it, or a service message recording that a participant pinned a message (`pinned_message`).
 required:
   - message_id
   - from
@@ -34,6 +34,13 @@ oneOf:
     properties:
       location:
         $ref: ./Location.yaml
+  - required:
+      - pinned_message
+    properties:
+      pinned_message:
+        oneOf:
+          - $ref: ./PinnedPrivateMessage.yaml
+          - $ref: ./InaccessiblePrivateMessage.yaml
 properties:
   message_id:
     type: integer
@@ -42,7 +49,7 @@ properties:
       Message ID in the conversation bot's message sequence, which spans all of that bot's
       private chats. Other observers can number the same message differently.
   from:
-    description: The account or bot that wrote the message.
+    description: The account or bot that wrote the message, or that pinned a message.
     oneOf:
       - $ref: ./Account.yaml
       - $ref: ./MessageSenderBot.yaml
@@ -78,11 +85,14 @@ properties:
     minimum: 0
     description: Legacy form of `forward_origin.date`, present only for a forward.
   reply_to_message:
-    $ref: ./PrivateMessage.yaml
     description: >-
       The current state of the message this one replies to, which never has a
       `reply_to_message` of its own. Omitted when the message is no reply or the replied
-      message was deleted.
+      message was deleted. A replied pin service message whose pinned message was deleted shows
+      only its header.
+    oneOf:
+      - $ref: ./PrivateMessage.yaml
+      - $ref: ./PrivatePinOfDeletedMessage.yaml
   external_reply:
     $ref: ./ExternalReplyInfo.yaml
   quote:
@@ -154,6 +164,15 @@ properties:
   location:
     $ref: ./Location.yaml
     description: The static location of a location message.
+  pinned_message:
+    description: >-
+      The message a service message records the pin of, which is never a service message, as
+      it is now and without its own `reply_to_message`; once deleted, an inaccessible message.
+      Where the service message is itself shown as `reply_to_message` and the pinned message
+      was deleted, it is omitted, as `PrivatePinOfDeletedMessage` shows.
+    oneOf:
+      - $ref: ./PinnedPrivateMessage.yaml
+      - $ref: ./InaccessiblePrivateMessage.yaml
   reply_markup:
     $ref: ./InlineKeyboardMarkup.yaml
     description: >-
