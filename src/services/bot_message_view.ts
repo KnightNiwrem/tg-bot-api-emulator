@@ -367,8 +367,8 @@ export class BotMessageViewService {
 
   /**
    * Returns everything `getChat` shows a bot about a chat, whose access the caller checked: the
-   * bot's private chat with an account, or a supergroup, with the given pinned message of the chat
-   * as a reply shows a message; `undefined` for neither.
+   * bot's private chat with an account, or a supergroup; `undefined` for neither. The chat's newest
+   * pinned message, if given, is shown as a replied message is, without its own `reply_to_message`.
    */
   viewChatFullInfo(
     { chatId, observerBotId, pinnedMessage }: {
