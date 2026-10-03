@@ -67,19 +67,36 @@ they have one, and a copy turns them into URL buttons. As for text, `copyMessage
 `caption` for a rich message.
 
 Photo and document blocks hold an `InputMediaPhoto` or `InputMediaDocument`, whose `media` is a
-`file_id` the bot knows or `attach://<part name>` for a file uploaded with the request. A document's
-thumbnail works as for `sendDocument`, and the media's caption is ignored. Uploads are checked as
-for `sendPhoto` and `sendDocument`, and are stored only with the message. A photo shows its one kept
-size, and `has_spoiler` when the media covers it.
+`file_id` the bot knows, `attach://<part name>` for a file uploaded with the request, or an HTTP or
+HTTPS URL. A document's thumbnail works as for `sendDocument`, and the media's caption is ignored.
+Uploads are checked as for `sendPhoto` and `sendDocument`, and are stored only with the message. A
+URL is read and downloaded as for `sendPhoto` and `sendDocument`, as
+[files sent by URL](media-and-files.md#files-sent-by-url) describes: the emulator downloads it from
+the session's emulated web, where tests register what each URL serves, and never from the network. A
+photo must be served as an image of at most 5 MB, and a document as a PDF or ZIP file of at most 20
+MB. The files are downloaded in the order the message shows them, and the first that fails fails the
+message with its download error, such as `Bad Request: failed to get HTTP URL content`. A photo
+shows its one kept size, and `has_spoiler` when the media covers it.
 
 `editMessageText` with a `rich_message` replaces the content of a text or rich message with a rich
 message, and any `text` is ignored, as in the server's
 [`process_edit_message_text_query`][edit-text-query]. As TDLib's [`edit_message_text`][edit-text]
 allows, text can replace a rich message too. An empty `rich_message` fails as for sending, and an
-unchanged message fails with `Bad Request: message is not modified: …`. An inline message's new rich
-message reuses files by `file_id`. As TDLib's [`edit_inline_message_text`][edit-inline-text]
-requires, it uploads none: `Bad Request: invalid message content specified`. `editMessageCaption`
-finds no caption in a rich message.
+unchanged message fails with `Bad Request: message is not modified: …`. The new rich message names
+its files as a sent one does. An inline message's new rich message, edited by its
+`inline_message_id`, reuses files by `file_id` or names them by URL, but as TDLib's
+[`edit_inline_message_text`][edit-inline-text] requires, it uploads none:
+`Bad Request: invalid message content specified`. `editMessageCaption` finds no caption in a rich
+message.
+
+A rich message that an [inline query result](inline-mode.md#supported-behavior) sends as its
+`input_message_content` cannot name files by URL, unlike an edit of the inline message it becomes:
+its photos and documents must be files the bot knows by `file_id`. An upload or a URL fails
+`answerInlineQuery` with `Bad Request: invalid inline message content specified`; files named by URL
+there are a [real gap](media-and-files.md#files-sent-by-url-in-inline-query-results). Photo,
+document, video and voice results themselves can
+[name their files by URL](inline-mode.md#media-named-by-url), which an account's choice downloads,
+unless the result's `input_message_content` replaces them.
 
 ## Intentional deviations
 
@@ -133,7 +150,9 @@ dimensions it fills in, which the emulator does not.
 [domain model](../../src/types/rich_message.ts),
 [normalization](../../src/services/rich_message_normalization.ts),
 [projection](../../src/projections/bot_api_rich_message.ts),
-[unit tests](../../tests/rich_message_test.ts) and [HTTP tests](../../tests/emulation_api_test.ts).
+[URL downloads](../../src/api/sessions/bot_api/web_file_parameter.ts),
+[unit tests](../../tests/rich_message_test.ts), [HTTP tests](../../tests/emulation_api_test.ts) and
+[inline URL media tests](../../tests/inline_result_media_api_test.ts).
 
 [input-rich-message]: https://github.com/tdlib/telegram-bot-api/blob/e3e9dd8e5b3d7ab8537cd5a10dc31d5ffa8f82d1/telegram-bot-api/Client.cpp#L12462-L12486
 [input-page-block]: https://github.com/tdlib/telegram-bot-api/blob/e3e9dd8e5b3d7ab8537cd5a10dc31d5ffa8f82d1/telegram-bot-api/Client.cpp#L12267-L12437

@@ -34,6 +34,13 @@ interface TestMessage {
     readonly duration: number;
     readonly mime_type?: string;
   };
+  readonly rich_message?: {
+    readonly blocks: ReadonlyArray<{
+      readonly type: string;
+      readonly photo?: readonly TestPhotoSize[];
+      readonly document?: { readonly file_name?: string; readonly mime_type?: string };
+    }>;
+  };
   readonly caption?: string;
   readonly show_caption_above_media?: boolean;
   readonly via_bot?: { readonly id: number; readonly username?: string };
@@ -185,6 +192,22 @@ async function createInlineMediaFixture() {
     )).body.messages;
   const readUpdates = createUpdateReader(api, bot.botApiPath);
   await readUpdates();
+  /** Chooses a result with an inline keyboard and returns the inline message ID the bot receives. */
+  const chooseResultForInlineMessageId = async (
+    accountId: number,
+    inlineQueryId: string,
+    resultId: string,
+  ) => {
+    await readUpdates();
+    await choose(accountId, inlineQueryId, resultId);
+    const chosenResult = (await readUpdates()).find((update) => update.chosen_inline_result)
+      ?.chosen_inline_result as { inline_message_id?: string } | undefined;
+    const inlineMessageId = chosenResult?.inline_message_id;
+    if (inlineMessageId === undefined) {
+      throw new Error(`Expected result ${resultId} to have an inline message ID`);
+    }
+    return inlineMessageId;
+  };
 
   return {
     api,
@@ -202,6 +225,7 @@ async function createInlineMediaFixture() {
     getInlineQuery,
     answer,
     choose,
+    chooseResultForInlineMessageId,
     getHistory,
     readUpdates,
   };
@@ -518,8 +542,8 @@ Deno.test('URL media follows supergroup permissions, blocking, cached answers an
     sendQuery,
     answer,
     choose,
+    chooseResultForInlineMessageId,
     getHistory,
-    readUpdates,
   } = await createInlineMediaFixture();
 
   // Grace may write in the supergroup but not send photos there.
@@ -574,14 +598,7 @@ Deno.test('URL media follows supergroup permissions, blocking, cached answers an
   );
 
   // The bot edits the inline message it sent the document as.
-  await readUpdates();
-  await choose(ada.id, adaQuery.id, 'cats-pdf');
-  const chosenResult = (await readUpdates()).find((update) => update.chosen_inline_result)
-    ?.chosen_inline_result as { inline_message_id?: string } | undefined;
-  const inlineMessageId = chosenResult?.inline_message_id;
-  if (inlineMessageId === undefined) {
-    throw new Error('Expected the document result to have an inline message ID');
-  }
+  const inlineMessageId = await chooseResultForInlineMessageId(ada.id, adaQuery.id, 'cats-pdf');
   const edits = [
     await callBot(bot.botApiPath, 'editMessageCaption', {
       inline_message_id: inlineMessageId,
@@ -611,6 +628,61 @@ Deno.test('URL media follows supergroup permissions, blocking, cached answers an
       bot.id,
     ],
     'Expected the inline bot alone to edit the message, without uploads',
+  );
+});
+
+Deno.test('a bot edits an inline message into a rich message with files named by URL', async () => {
+  const {
+    ada,
+    bot,
+    privateChat,
+    sendQuery,
+    answer,
+    chooseResultForInlineMessageId,
+    callBot,
+    getHistory,
+  } = await createInlineMediaFixture();
+  const inlineQuery = await sendQuery(ada.id);
+  await answer(inlineQuery.id, [{
+    type: 'article',
+    id: 'fact',
+    title: 'Cat fact',
+    input_message_content: { message_text: 'Cats sleep a lot' },
+    reply_markup: { inline_keyboard: [[{ text: 'More', callback_data: 'more' }]] },
+  }]);
+  const inlineMessageId = await chooseResultForInlineMessageId(ada.id, inlineQuery.id, 'fact');
+  const editToRichMessageWithPhotoAt = (photoUrl: string) =>
+    callBot(bot.botApiPath, 'editMessageText', {
+      inline_message_id: inlineMessageId,
+      rich_message: {
+        blocks: [
+          { type: 'photo', photo: { type: 'photo', media: photoUrl } },
+          { type: 'document', document: { type: 'document', media: CATS_PDF_URL } },
+        ],
+      },
+    });
+
+  // No resource of the session's emulated web serves this URL.
+  const unservedEdit = await editToRichMessageWithPhotoAt('https://cdn.example.com/missing.jpg');
+  const servedEdit = await editToRichMessageWithPhotoAt(CAT_PHOTO_URL);
+  const editedMessage = (await getHistory(ada.id, privateChat)).at(-1);
+  const [photoBlock, documentBlock] = editedMessage?.rich_message?.blocks ?? [];
+  expectEqual(
+    [
+      [unservedEdit, servedEdit].map(({ body }) => body.ok ? body.result : body.description),
+      photoBlock?.photo?.map(({ width, height }) => [width, height]),
+      documentBlock?.document?.file_name,
+      documentBlock?.document?.mime_type,
+      editedMessage?.via_bot?.id,
+    ],
+    [
+      ['Bad Request: failed to get HTTP URL content', true],
+      [[640, 480]],
+      'cats.pdf',
+      'application/pdf',
+      bot.id,
+    ],
+    'Expected the inline message to show the files downloaded from the emulated web',
   );
 });
 

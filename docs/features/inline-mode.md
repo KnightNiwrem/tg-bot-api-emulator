@@ -38,15 +38,16 @@ in place of text, is read as for [`sendRichMessage`](rich-messages.md#sending-an
 buttons work as in any inline message. As TDLib's
 [`InlineQueriesManager::get_inline_message`][inline-rich-message] requires, its photos and documents
 are files the bot knows by `file_id`; an upload fails with
-`Bad Request: invalid inline message content specified`. The server prefixes its own descriptions of
-a rich message it cannot read with `can't parse InlineQueryResult:`, which the emulator words as for
-`sendRichMessage`. Answers allow up to 50 results, unique nonempty result IDs of at most 64 UTF-8
-bytes and a `next_offset` of at most 64 UTF-8 bytes. As TDLib's
-[`get_input_bot_inline_result`][results] does, the emulator cleans every result's title and
-description with `clean_input_string` before listing them, and refuses text that is not well-formed
-Unicode with `Bad Request: strings must be encoded in UTF-8`. The emulator checks button options,
-result count and message content before query state and result metadata, producing errors such as
-`RESULT_ID_DUPLICATE` and the query-too-old error.
+`Bad Request: invalid inline message content specified`, as does a file named by URL, which the
+emulator [does not download](media-and-files.md#files-sent-by-url-in-inline-query-results) for such
+content. The server prefixes its own descriptions of a rich message it cannot read with
+`can't parse InlineQueryResult:`, which the emulator words as for `sendRichMessage`. Answers allow
+up to 50 results, unique nonempty result IDs of at most 64 UTF-8 bytes and a `next_offset` of at
+most 64 UTF-8 bytes. As TDLib's [`get_input_bot_inline_result`][results] does, the emulator cleans
+every result's title and description with `clean_input_string` before listing them, and refuses text
+that is not well-formed Unicode with `Bad Request: strings must be encoded in UTF-8`. The emulator
+checks button options, result count and message content before query state and result metadata,
+producing errors such as `RESULT_ID_DUPLICATE` and the query-too-old error.
 
 With `receives_chosen_inline_results: true`, a choice also generates `chosen_inline_result` for the
 inline bot. If the result has an inline keyboard, that update supplies `inline_message_id`. Callback
@@ -54,8 +55,9 @@ presses then reach the inline bot without a message payload. That bot can edit t
 and keyboards using the inline ID, with a result of `true`, even without access to the chat. If it
 can access the chat, it can also edit via `chat_id`/`message_id`; another bot cannot edit the inline
 message. TDLib makes the originating bot check in
-[`MessagesManager::can_edit_message`][edit-inline]. Media edits of an inline message reuse a file by
-`file_id` or name one by URL, but an upload fails with
+[`MessagesManager::can_edit_message`][edit-inline]. Media edits of an inline message, and
+[rich messages](rich-messages.md#sending-and-editing) that `editMessageText` puts in place of its
+text, reuse a file by `file_id` or name one by URL, but an upload fails with
 `Bad Request: invalid message content specified`. A voice note sent from a result keeps its media,
 as any voice note does (`Bad Request: message media can't be edited`), while its caption and
 keyboard can change.
