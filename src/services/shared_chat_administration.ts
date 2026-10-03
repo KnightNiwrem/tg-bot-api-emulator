@@ -1416,8 +1416,8 @@ export class SharedChatAdministrationService {
 
   /**
    * Changes a user's restriction as the owner of its supergroup, to the standing `getNewStatus`
-   * gives the user from whether it is a member and its standing. A change that changes nothing
-   * succeeds without effect; the owner's own standing cannot change.
+   * gives the user from whether it is a member and its standing. The owner itself is refused even
+   * when nothing would change; any other change that changes nothing succeeds without effect.
    */
   #changeRestrictionAsOwner(
     { actorAccountId, chatId, memberId }: {
@@ -1441,12 +1441,12 @@ export class SharedChatAdministrationService {
       return { changed: false, reason: 'member_not_found' };
     }
     const oldStatus = this.#lookUpChatMemberStatus(chatId, memberId);
+    if (oldStatus.status === 'owner') {
+      return { changed: false, reason: 'member_is_owner' };
+    }
     const newStatus = getNewStatus(isChatMember(oldStatus), oldStatus);
     if (isSameChatMemberStatus(oldStatus, newStatus)) {
       return { changed: true };
-    }
-    if (oldStatus.status === 'owner') {
-      return { changed: false, reason: 'member_is_owner' };
     }
     this.#changeStatusOfUser(chat, { actorId: actorAccountId, memberId, oldStatus, newStatus });
     return { changed: true };

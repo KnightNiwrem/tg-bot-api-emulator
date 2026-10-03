@@ -658,7 +658,14 @@ Deno.test('only the owner restricts users through the emulation API', async () =
       jsonRequest('PUT', restriction),
     )).status,
   ];
-  expectEqual(statuses, [403, 409, 404, 400, 400, 404], 'Expected owner-only restriction checks');
+  const ownerLift = await api.request(`${supergroupPath(ada.id)}/restrictions/${ada.id}`, {
+    method: 'DELETE',
+  });
+  expectEqual(
+    [...statuses, ownerLift.status],
+    [403, 409, 404, 400, 400, 404, 409],
+    'Expected owner-only restriction checks',
+  );
   expectEqual(
     await getChatMember(grace.id),
     { user: grace, status: 'member' },
