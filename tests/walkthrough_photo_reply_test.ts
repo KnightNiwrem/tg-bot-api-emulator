@@ -24,7 +24,11 @@ Deno.test('the walkthrough photo step reads the delayed bot reply, not the uploa
     // Held until the test has read the chat, so the reply cannot exist when it reads.
     await photoHandling.promise;
     // Activity the wait must skip: another method, another chat, a failed call, and a document
-    // that replies to nothing, all in the account's chat and after the photo where they can.
+    // that replies to nothing, all in the account's chat and after the photo where they can. The
+    // text acknowledgement also replies to the photo, so the selection must skip it too.
+    await context.reply('Processing your receipt', {
+      reply_parameters: { message_id: context.message.message_id },
+    });
     await context.replyWithChatAction('upload_document');
     await context.api.sendDocument(grace.id, new InputFile(PROCESSED_RECEIPT, 'audit.txt'));
     await context.replyWithDocument('unknown-file-id').catch((error: unknown) => {
@@ -55,8 +59,10 @@ Deno.test('the walkthrough photo step reads the delayed bot reply, not the uploa
       },
       { after: beforePhoto },
     );
-    const photoReply = (await ada.getMessages({ chat })).find(({ from, reply_to_message }) =>
-      from.id === botId && reply_to_message?.message_id === photo.message_id
+    const photoReply = (await ada.getMessages({ chat })).find(
+      ({ from, reply_to_message, document }) =>
+        from.id === botId && reply_to_message?.message_id === photo.message_id &&
+        document !== undefined,
     );
     if (photoReply?.document === undefined) {
       throw new Error('Expected the bot to reply to the photo with a document');

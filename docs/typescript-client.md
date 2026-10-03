@@ -65,7 +65,11 @@ try {
       button: { label: 'Details', within: 'Potion' },
     });
     await activity.waitFor(
-      { method: 'answerCallbackQuery', parameters: { callback_query_id: callbackQuery.id } },
+      {
+        method: 'answerCallbackQuery',
+        ok: true,
+        parameters: { callback_query_id: callbackQuery.id },
+      },
       { after: greeting },
     );
     const { answer } = await account.getCallbackQuery(callbackQuery.id);
@@ -105,8 +109,9 @@ try {
     { after: beforePhoto },
   );
   const photoReply = (await account.getMessages({ chat: { type: 'private', botId: bot.id } }))
-    .find(({ from, reply_to_message }) =>
-      from.id === bot.id && reply_to_message?.message_id === photo.message_id
+    .find(({ from, reply_to_message, document }) =>
+      from.id === bot.id && reply_to_message?.message_id === photo.message_id &&
+      document !== undefined
     );
   if (photoReply?.document === undefined) {
     throw new Error('Expected the bot to reply to the photo with a document');
@@ -167,8 +172,9 @@ try {
     { after: beforePollCommand },
   );
   const pollMessage = (await account.getMessages({ chat: { type: 'private', botId: bot.id } }))
-    .find(({ from, reply_to_message }) =>
-      from.id === bot.id && reply_to_message?.message_id === pollCommand.message_id
+    .find(({ from, reply_to_message, poll }) =>
+      from.id === bot.id && reply_to_message?.message_id === pollCommand.message_id &&
+      poll !== undefined
     );
   if (pollMessage?.poll === undefined) {
     throw new Error('Expected the bot to reply to /poll with a poll');
@@ -237,7 +243,7 @@ try {
     query: 'cats',
   });
   await activity.waitFor(
-    { method: 'answerInlineQuery', parameters: { inline_query_id: inlineQuery.id } },
+    { method: 'answerInlineQuery', ok: true, parameters: { inline_query_id: inlineQuery.id } },
     { after: start },
   );
   const answeredQuery = await account.getInlineQuery(inlineQuery.id);
