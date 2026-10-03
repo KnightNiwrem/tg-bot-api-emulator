@@ -747,6 +747,15 @@ Deno.test('TypeScript client pins and unpins messages and reads the pinned ones'
   if (JSON.stringify(pinnedTexts) !== JSON.stringify(['second', 'first'])) {
     throw new Error(`Expected the pinned messages newest first, received ${pinnedTexts}`);
   }
+  const [pinServiceMessage] = (await account.getMessages({ chat })).slice(-1);
+  const pinnedMessage = pinServiceMessage?.pinned_message;
+  if (
+    pinnedMessage === undefined || !('text' in pinnedMessage) || pinnedMessage.text !== 'second'
+  ) {
+    throw new Error(
+      `Expected the pin's service message, received ${JSON.stringify(pinServiceMessage)}`,
+    );
+  }
   let refusal: unknown;
   try {
     await account.pinMessage({ chat, message_id: first.message_id });

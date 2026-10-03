@@ -3,7 +3,8 @@ additionalProperties: false
 description: >-
   A supergroup message as the requesting member sees it: one a member wrote, or a service
   message recording that members joined (`new_chat_members`), that a member left or was
-  removed (`left_chat_member`), or that a member changed the title (`new_chat_title`). As Telegram does, a service message also carries the legacy
+  removed (`left_chat_member`), that a member changed the title (`new_chat_title`), or that a
+  member pinned a message (`pinned_message`). As Telegram does, a service message also carries the legacy
   fields `new_chat_participant` and `new_chat_member`, or `left_chat_participant`. Members see
   the same message, apart from the `file_id` of its file and the legacy `new_chat_member`.
   Its other fields mean what they mean for a private message.
@@ -46,6 +47,8 @@ oneOf:
       - left_chat_member
   - required:
       - new_chat_title
+  - required:
+      - pinned_message
 properties:
   message_id:
     type: integer
@@ -54,7 +57,7 @@ properties:
   from:
     description: >-
       The member, an account or a bot, that wrote the message, or that added, removed, or left,
-      or changed the title, as a service message records.
+      changed the title, or pinned a message, as a service message records.
     oneOf:
       - $ref: ./Account.yaml
       - $ref: ./MessageSenderBot.yaml
@@ -160,6 +163,15 @@ properties:
     type: string
     minLength: 1
     description: The supergroup's new title, which the service message's sender set.
+  pinned_message:
+    description: >-
+      The message a service message records the pin of, which is never a service message, as
+      it is now and without its own `reply_to_message`; once deleted, an inaccessible message.
+      Omitted only where the service message is itself shown as `reply_to_message` and the
+      pinned message was deleted, as the official server omits it there.
+    oneOf:
+      - $ref: ./SupergroupMessage.yaml
+      - $ref: ./InaccessibleMessage.yaml
   rich_message:
     $ref: ./RichMessage.yaml
     description: >-

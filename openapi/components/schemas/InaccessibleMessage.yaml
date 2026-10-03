@@ -1,0 +1,20 @@
+type: object
+additionalProperties: false
+description: >-
+  A deleted message, as a pin's service message shows it in place of the pinned message: only
+  its ID and chat, with a `date` of 0.
+required:
+  - message_id
+  - chat
+  - date
+properties:
+  message_id:
+    type: integer
+    minimum: 1
+  chat:
+    oneOf:
+      - $ref: ./PrivateChat.yaml
+      - $ref: ./SupergroupChat.yaml
+  date:
+    type: integer
+    const: 0

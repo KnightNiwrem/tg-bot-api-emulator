@@ -18,12 +18,15 @@ import {
   type BotApiPrivateChat,
   type BotApiPrivateChatBotMember,
   type BotApiPrivateMessage,
+  type BotApiPrivateMessageContent,
+  type BotApiPrivatePinServiceContent,
   type BotApiRepliedPrivateMessage,
   type BotApiRepliedSupergroupMessage,
   type BotApiSupergroupAdministratorRights,
   type BotApiSupergroupChat,
   type BotApiSupergroupMessage,
   type BotApiSupergroupMessageContent,
+  type BotApiSupergroupPinServiceContent,
   type BotApiTextQuote,
   type BotApiUser,
   toBotApiContact,
@@ -57,6 +60,7 @@ import {
   type MessageContent,
   type MessageForwardInfo,
   type PrivateMessage,
+  type PrivateMessageContent,
   type SupergroupMessage,
   type SupergroupMessageContent,
   type TextEntity,
@@ -146,6 +150,11 @@ export interface PrivateMessageForBotProjectionInput {
   readonly context: MessageProjectionContext;
   /** The replied message as the observing bot sees it; omitted when there is none to show. */
   readonly repliedMessage?: BotApiRepliedPrivateMessage;
+  /**
+   * The message a pin's service message shows as pinned, as the observing bot sees it; omitted for
+   * other messages, and where the official server shows none.
+   */
+  readonly pinnedMessage?: BotApiPrivatePinServiceContent['pinned_message'];
 }
 
 /**
@@ -155,7 +164,7 @@ export interface PrivateMessageForBotProjectionInput {
  * The chat is always the account, whoever wrote the message; the sender follows the author.
  */
 export function projectPrivateMessageForBot(
-  { message, account, bot, observerMessageId, context, repliedMessage }:
+  { message, account, bot, observerMessageId, context, repliedMessage, pinnedMessage }:
     PrivateMessageForBotProjectionInput,
 ): BotApiPrivateMessage {
   return {
@@ -165,7 +174,7 @@ export function projectPrivateMessageForBot(
     date: message.sentAtUnixSeconds,
     ...projectMessageBody(
       message,
-      projectMessageContent(message.content, context),
+      projectPrivateMessageContent(message.content, context, pinnedMessage),
       context,
       repliedMessage,
       false,
@@ -183,6 +192,11 @@ export interface SupergroupMessageProjectionInput {
   readonly context: MessageProjectionContext;
   /** The replied message; omitted when there is none to show. */
   readonly repliedMessage?: BotApiRepliedSupergroupMessage;
+  /**
+   * The message a pin's service message shows as pinned; omitted for other messages, and where
+   * the official server shows none.
+   */
+  readonly pinnedMessage?: BotApiSupergroupPinServiceContent['pinned_message'];
 }
 
 /**
@@ -191,7 +205,7 @@ export interface SupergroupMessageProjectionInput {
  * the legacy `new_chat_member` field of a service message.
  */
 export function projectSupergroupMessage(
-  { message, supergroup, author, messageId, context, repliedMessage }:
+  { message, supergroup, author, messageId, context, repliedMessage, pinnedMessage }:
     SupergroupMessageProjectionInput,
 ): BotApiSupergroupMessage {
   return {
@@ -201,7 +215,7 @@ export function projectSupergroupMessage(
     date: message.sentAtUnixSeconds,
     ...projectMessageBody(
       message,
-      projectSupergroupMessageContent(message.content, context),
+      projectSupergroupMessageContent(message.content, context, pinnedMessage),
       context,
       repliedMessage,
       supergroup.hasProtectedContent,
@@ -214,7 +228,10 @@ export function projectSupergroupMessage(
  * given projection of its content. As the official Bot API server shows a message that cannot be
  * saved, content is protected when its sender or its chat protects it.
  */
-function projectMessageBody<Content extends BotApiSupergroupMessageContent, RepliedMessage>(
+function projectMessageBody<
+  Content extends BotApiPrivateMessageContent | BotApiSupergroupMessageContent,
+  RepliedMessage,
+>(
   message: ChatMessage,
   content: Content,
   context: MessageProjectionContext,
@@ -360,9 +377,20 @@ function projectTextQuote(
   };
 }
 
+function projectPrivateMessageContent(
+  content: PrivateMessageContent,
+  context: MessageProjectionContext,
+  pinnedMessage: BotApiPrivatePinServiceContent['pinned_message'],
+): BotApiPrivateMessageContent {
+  return content.kind === 'message_pinned'
+    ? projectPinServiceContent(pinnedMessage)
+    : projectMessageContent(content, context);
+}
+
 function projectSupergroupMessageContent(
   content: SupergroupMessageContent,
   context: MessageProjectionContext,
+  pinnedMessage: BotApiSupergroupPinServiceContent['pinned_message'],
 ): BotApiSupergroupMessageContent {
   switch (content.kind) {
     case 'members_joined':
@@ -370,9 +398,22 @@ function projectSupergroupMessageContent(
       return projectMembershipServiceContent(content, context);
     case 'title_changed':
       return { new_chat_title: content.title };
+    case 'message_pinned':
+      return projectPinServiceContent(pinnedMessage);
     default:
       return projectMessageContent(content, context);
   }
+}
+
+/**
+ * Shows a pin as the official Bot API server's `JsonMessage` shows `messagePinMessage`: the pinned
+ * message without its reply, or, when it was deleted, inaccessible, or not at all where the
+ * service message is itself shown as a replied message.
+ */
+function projectPinServiceContent<PinnedMessage>(
+  pinnedMessage: PinnedMessage | undefined,
+): { readonly pinned_message?: PinnedMessage } {
+  return pinnedMessage === undefined ? {} : { pinned_message: pinnedMessage };
 }
 
 /** Projects a membership change with the members the context resolved for it. */
@@ -830,7 +871,7 @@ export function projectBotAsUser(bot: VirtualBotProfile): BotApiBotUser {
 }
 
 /** Shows the private chat with an account, as the bot at its other end sees it. */
-function projectPrivateChat(
+export function projectPrivateChat(
   { id, first_name, last_name, username }: VirtualAccountProfile,
 ): BotApiPrivateChat {
   return {
@@ -850,7 +891,7 @@ function projectGroupChat(chat: BasicGroup | Supergroup): BotApiGroupChat {
 }
 
 /** Shows a supergroup as the official Bot API server's `JsonChat` does, with its username. */
-function projectSupergroupChat({ id, title, username }: Supergroup): BotApiSupergroupChat {
+export function projectSupergroupChat({ id, title, username }: Supergroup): BotApiSupergroupChat {
   return { id, title, ...(username === undefined ? {} : { username }), type: 'supergroup' };
 }
 

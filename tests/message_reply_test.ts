@@ -2,7 +2,7 @@ import { resolveReplyQuote, type SpecifiedQuote } from '../src/services/message_
 import { createAutomaticQuote, createExternalReply } from '../src/types/message_reply.ts';
 import type {
   FormattedText,
-  PrivateMessage,
+  PrivateContentMessage,
   SupergroupContentMessage,
 } from '../src/types/virtual_message.ts';
 
@@ -47,7 +47,7 @@ Deno.test('createExternalReply shows a supergroup message by its hidden origin a
 
 Deno.test('createExternalReply keeps private media without its caption', () => {
   const caption = { text: 'A photo', entities: [] };
-  const message: PrivateMessage = {
+  const message: PrivateContentMessage = {
     kind: 'private_message',
     id: 'message',
     conversation: { accountId: ACCOUNT_ID, botId: BOT_ID },

@@ -11,7 +11,9 @@ put:
   description: >-
     Adds a message either participant wrote to the chat's pinned messages, which both
     participants share; a chat pins any number of messages. Either participant of a private
-    chat may pin, as the Bot API documents for private chats.
+    chat may pin, as the Bot API documents for private chats. The pin is recorded as the
+    account's service message with `pinned_message`, which notifies no one with sound and which
+    the bot receives. Unpinning records nothing.
   responses:
     '204':
       description: The message was pinned.

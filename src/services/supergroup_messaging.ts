@@ -520,12 +520,14 @@ export type SendSupergroupBotChatActionResult =
 export interface RecordSupergroupServiceMessageInput {
   readonly chatId: number;
   /**
-   * The member who made the change: the one who added members, left, removed a member, or changed
-   * the title.
+   * The member who made the change: the one who added members, left, removed a member, changed
+   * the title, or pinned a message.
    */
   readonly author: SupergroupMessageAuthor;
   readonly content: SupergroupServiceContent;
   readonly changedAtUnixSeconds: number;
+  /** Notifies the members without sound; omitted for a service message that notifies with sound. */
+  readonly isSilent?: boolean;
 }
 
 export interface GetSupergroupMessageForBotInput {
@@ -1315,13 +1317,15 @@ export class SupergroupMessagingService {
    * who made it. As on Telegram, the service message is numbered like any message.
    */
   recordServiceMessage(
-    { chatId, author, content, changedAtUnixSeconds }: RecordSupergroupServiceMessageInput,
+    { chatId, author, content, changedAtUnixSeconds, isSilent }:
+      RecordSupergroupServiceMessageInput,
   ): SupergroupMessage {
     return this.#commitMessage({
       chatId,
       author,
       sentAtUnixSeconds: changedAtUnixSeconds,
       content,
+      isSilent,
     });
   }
 

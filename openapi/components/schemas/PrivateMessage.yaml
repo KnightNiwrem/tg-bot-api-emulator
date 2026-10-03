@@ -3,7 +3,7 @@ additionalProperties: false
 description: >-
   A private-chat message as the conversation's bot sees it: text, a photo, a document, a video, a
   voice note, a rich message, a poll, a contact, or a location, each with the fields Telegram shows
-  for it.
+  for it, or a service message recording that a participant pinned a message (`pinned_message`).
 required:
   - message_id
   - from
@@ -34,6 +34,8 @@ oneOf:
     properties:
       location:
         $ref: ./Location.yaml
+  - required:
+      - pinned_message
 properties:
   message_id:
     type: integer
@@ -42,7 +44,7 @@ properties:
       Message ID in the conversation bot's message sequence, which spans all of that bot's
       private chats. Other observers can number the same message differently.
   from:
-    description: The account or bot that wrote the message.
+    description: The account or bot that wrote the message, or that pinned a message.
     oneOf:
       - $ref: ./Account.yaml
       - $ref: ./MessageSenderBot.yaml
@@ -154,6 +156,15 @@ properties:
   location:
     $ref: ./Location.yaml
     description: The static location of a location message.
+  pinned_message:
+    description: >-
+      The message a service message records the pin of, which is never a service message, as
+      it is now and without its own `reply_to_message`; once deleted, an inaccessible message.
+      Omitted only where the service message is itself shown as `reply_to_message` and the
+      pinned message was deleted, as the official server omits it there.
+    oneOf:
+      - $ref: ./PrivateMessage.yaml
+      - $ref: ./InaccessibleMessage.yaml
   reply_markup:
     $ref: ./InlineKeyboardMarkup.yaml
     description: >-

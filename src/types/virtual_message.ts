@@ -291,20 +291,59 @@ export interface TitleChangedMessageContent {
 }
 
 /**
- * What a service message shows instead of content: a change of the supergroup's members or of its
- * title, which Telegram records as a message of whoever made the change.
+ * A service message's record that a message of its chat was pinned, which Telegram records as a
+ * message of whoever pinned it, in private chats and supergroups alike. Unpinning records nothing.
  */
-export type SupergroupServiceContent = MembershipServiceContent | TitleChangedMessageContent;
+export interface MessagePinnedContent {
+  readonly kind: 'message_pinned';
+  /** The pinned message of the same chat, which may since have been deleted. */
+  readonly pinnedMessageId: CanonicalMessageId;
+}
+
+/**
+ * What a service message shows instead of content: a change of the supergroup's members or of its
+ * title, or a pin, which Telegram records as a message of whoever made the change.
+ */
+export type SupergroupServiceContent =
+  | MembershipServiceContent
+  | TitleChangedMessageContent
+  | MessagePinnedContent;
 
 /** What a supergroup message shows: content its author wrote, or a change of the supergroup. */
 export type SupergroupMessageContent = MessageContent | SupergroupServiceContent;
 
-/** Whether a supergroup message's content records a change of the supergroup. */
+/** What a private service message shows instead of content: a pin, the one change it records. */
+export type PrivateServiceContent = MessagePinnedContent;
+
+/** What a private message shows: content its author wrote, or a pin. */
+export type PrivateMessageContent = MessageContent | PrivateServiceContent;
+
+/**
+ * Whether a message's content records a change of its chat, as a service message, rather than
+ * content its author wrote. Every private service content is also a supergroup's.
+ */
 export function isSupergroupServiceContent(
   content: SupergroupMessageContent,
 ): content is SupergroupServiceContent {
-  return content.kind === 'members_joined' || content.kind === 'member_left' ||
-    content.kind === 'title_changed';
+  switch (content.kind) {
+    case 'members_joined':
+    case 'member_left':
+    case 'title_changed':
+    case 'message_pinned':
+      return true;
+    case 'text':
+    case 'photo':
+    case 'document':
+    case 'video':
+    case 'voice':
+    case 'rich_message':
+    case 'poll':
+      return false;
+    default: {
+      const unhandledContent: never = content;
+      throw new Error(`Unhandled message content: ${JSON.stringify(unhandledContent)}`);
+    }
+  }
 }
 
 /**
@@ -328,6 +367,7 @@ export function isCaptionedMediaContent(
     case 'members_joined':
     case 'member_left':
     case 'title_changed':
+    case 'message_pinned':
       return false;
     default: {
       const unhandledContent: never = content;
@@ -356,6 +396,7 @@ export function getContentText(content: SupergroupMessageContent): FormattedText
     case 'members_joined':
     case 'member_left':
     case 'title_changed':
+    case 'message_pinned':
       return { text: '', entities: [] };
     default: {
       const unhandledContent: never = content;
@@ -442,14 +483,17 @@ export type ExternalReplyMedia =
   | ContactMessageContent
   | LocationMessageContent;
 
-/** A canonical message of a private conversation, written by either participant. */
+/**
+ * A canonical message of a private conversation: one either participant wrote, or a service
+ * message recording a pin that either participant made.
+ */
 export interface PrivateMessage {
   readonly kind: 'private_message';
   readonly id: CanonicalMessageId;
   readonly conversation: PrivateConversationKey;
   readonly authorRole: PrivateConversationRole;
   readonly sentAtUnixSeconds: number;
-  readonly content: MessageContent;
+  readonly content: PrivateMessageContent;
   /** The message of the same conversation this one replies to; omitted when it is no reply. */
   readonly replyToMessageId?: CanonicalMessageId;
   /** The message of another chat this one replies to; omitted when it replies to none. */
@@ -647,12 +691,24 @@ export function isSupergroupContentMessage(
   return !isSupergroupServiceContent(message.content);
 }
 
+/** A private message that shows content its author wrote, rather than a service message. */
+export type PrivateContentMessage = PrivateMessage & { readonly content: MessageContent };
+
+/** Whether a private message shows content its author wrote, which only such a message has. */
+export function isPrivateContentMessage(
+  message: PrivateMessage,
+): message is PrivateContentMessage {
+  return !isSupergroupServiceContent(message.content);
+}
+
 /** A message of any chat that shows content its author wrote, rather than a service message. */
-export type ContentMessage = PrivateMessage | SupergroupContentMessage;
+export type ContentMessage = PrivateContentMessage | SupergroupContentMessage;
 
 /** Whether a message of any chat shows content its author wrote. */
 export function isContentMessage(message: ChatMessage): message is ContentMessage {
-  return message.kind === 'private_message' || isSupergroupContentMessage(message);
+  return message.kind === 'private_message'
+    ? isPrivateContentMessage(message)
+    : isSupergroupContentMessage(message);
 }
 
 /**

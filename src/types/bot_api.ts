@@ -328,11 +328,44 @@ export interface BotApiTitleChangeServiceContent {
   readonly new_chat_title: string;
 }
 
+/**
+ * A deleted message, as the Bot API's `InaccessibleMessage` shows it in place of the message:
+ * only its chat and ID, with a `date` of 0.
+ */
+export interface BotApiInaccessibleMessage<Chat> {
+  readonly message_id: number;
+  readonly chat: Chat;
+  readonly date: 0;
+}
+
+/**
+ * The field of a private service message about a pin, which takes the place of content: the
+ * pinned message as a reply shows a message, or, once deleted, inaccessible. It is omitted only
+ * where the service message is itself shown as a replied message and the pinned message was
+ * deleted, as the official server omits it there.
+ */
+export interface BotApiPrivatePinServiceContent {
+  readonly pinned_message?:
+    | BotApiRepliedPrivateMessage
+    | BotApiInaccessibleMessage<BotApiPrivateChat>;
+}
+
+/** The field of a supergroup service message about a pin, as for a private one. */
+export interface BotApiSupergroupPinServiceContent {
+  readonly pinned_message?:
+    | BotApiRepliedSupergroupMessage
+    | BotApiInaccessibleMessage<BotApiSupergroupChat>;
+}
+
+/** What a private message shows: content, or a pin. */
+export type BotApiPrivateMessageContent = BotApiMessageContent | BotApiPrivatePinServiceContent;
+
 /** What a supergroup message shows: content, or a change of the supergroup. */
 export type BotApiSupergroupMessageContent =
   | BotApiMessageContent
   | BotApiMembershipServiceContent
-  | BotApiTitleChangeServiceContent;
+  | BotApiTitleChangeServiceContent
+  | BotApiSupergroupPinServiceContent;
 
 /** Where a forward first appeared: a user, because the emulator's senders are users. */
 export interface BotApiMessageOriginUser {
@@ -465,7 +498,10 @@ type BotApiMessageInChat<Chat, Content> =
   & Content
   & BotApiMessageTrailer;
 
-export type BotApiPrivateMessage = BotApiMessageInChat<BotApiPrivateChat, BotApiMessageContent>;
+export type BotApiPrivateMessage = BotApiMessageInChat<
+  BotApiPrivateChat,
+  BotApiPrivateMessageContent
+>;
 
 export type BotApiSupergroupMessage = BotApiMessageInChat<
   BotApiSupergroupChat,
@@ -476,7 +512,7 @@ export type BotApiMessage = BotApiPrivateMessage | BotApiSupergroupMessage;
 
 export type BotApiRepliedPrivateMessage = BotApiRepliedMessageInChat<
   BotApiPrivateChat,
-  BotApiMessageContent
+  BotApiPrivateMessageContent
 >;
 
 export type BotApiRepliedSupergroupMessage = BotApiRepliedMessageInChat<

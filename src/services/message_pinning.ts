@@ -11,14 +11,17 @@ import type { VirtualBot } from '../types/virtual_bot.ts';
 import type {
   PrivateConversation,
   PrivateConversationKey,
+  PrivateConversationRole,
   Supergroup,
 } from '../types/virtual_chat.ts';
 import {
   type CanonicalMessageId,
   type ChatMessage,
   isContentMessage,
+  type MessagePinnedContent,
   type PrivateMessage,
   type SupergroupMessage,
+  type SupergroupMessageAuthor,
 } from '../types/virtual_message.ts';
 
 /** The account or bot that pins or unpins a message of a chat it takes part in. */
@@ -50,6 +53,11 @@ export interface PinMessageInput {
    * box, by which accounts address private messages too; in a supergroup, the supergroup's ID.
    */
   readonly messageId: number;
+  /**
+   * Whether the pin's service message notifies a supergroup's members without sound, as the Bot
+   * API's `disable_notification` asks. A private chat's pins always notify without sound.
+   */
+  readonly isSilent: boolean;
 }
 
 export interface UnpinMessageInput {
@@ -126,15 +134,28 @@ interface PrivateConversationLookup {
   getPrivateConversation(key: PrivateConversationKey): PrivateConversation | undefined;
 }
 
-interface PrivateMessageLookup {
+interface PrivateChatMessages {
   getPrivateMessageByBotMessageId(
     conversation: PrivateConversationKey,
     botMessageId: number,
   ): PrivateMessage | undefined;
+  recordServiceMessage(input: {
+    readonly conversation: PrivateConversationKey;
+    readonly authorRole: PrivateConversationRole;
+    readonly content: MessagePinnedContent;
+    readonly isSilent: boolean;
+  }): PrivateMessage;
 }
 
-interface SupergroupMessageLookup {
+interface SupergroupChatMessages {
   getMessageByChatMessageId(chatId: number, messageId: number): SupergroupMessage | undefined;
+  recordServiceMessage(input: {
+    readonly chatId: number;
+    readonly author: SupergroupMessageAuthor;
+    readonly content: MessagePinnedContent;
+    readonly changedAtUnixSeconds: number;
+    readonly isSilent: boolean;
+  }): SupergroupMessage;
 }
 
 interface PinnedMessageStore {
@@ -148,9 +169,12 @@ interface MessagePinningServiceDependencies {
   readonly bots: BotLookup;
   readonly privateConversations: PrivateConversationLookup;
   readonly sharedChats: SupergroupMembershipLookup;
-  readonly privateMessages: PrivateMessageLookup;
-  readonly supergroupMessages: SupergroupMessageLookup;
+  /** Finds the messages of private chats and records the service messages of their pins. */
+  readonly privateMessages: PrivateChatMessages;
+  /** Finds the messages of supergroups and records the service messages of their pins. */
+  readonly supergroupMessages: SupergroupChatMessages;
   readonly messages: PinnedMessageStore;
+  readonly currentUnixTimeSeconds: () => number;
 }
 
 /** A chat a pinner reached, with what it may do there. */
@@ -171,16 +195,19 @@ type ReachedPinningChat =
  * messages are those of the chat's current history that carry the mark; deleting a message
  * unpins it. Either participant of a private chat pins and unpins any of its messages; in a
  * supergroup, the pinner needs the `can_pin_messages` permission, as `canPinSupergroupMessages`
- * decides it. Service messages are never pinned.
+ * decides it. Service messages are never pinned. Each pin is recorded as a service message of the
+ * pinner, which the chat's bots receive; an unpin records nothing, as Telegram has no service
+ * message for it.
  */
 export class MessagePinningService {
   readonly #accounts: AccountLookup;
   readonly #bots: BotLookup;
   readonly #privateConversations: PrivateConversationLookup;
   readonly #sharedChats: SupergroupMembershipLookup;
-  readonly #privateMessages: PrivateMessageLookup;
-  readonly #supergroupMessages: SupergroupMessageLookup;
+  readonly #privateMessages: PrivateChatMessages;
+  readonly #supergroupMessages: SupergroupChatMessages;
   readonly #messages: PinnedMessageStore;
+  readonly #currentUnixTimeSeconds: () => number;
 
   constructor(
     {
@@ -191,6 +218,7 @@ export class MessagePinningService {
       privateMessages,
       supergroupMessages,
       messages,
+      currentUnixTimeSeconds,
     }: MessagePinningServiceDependencies,
   ) {
     this.#accounts = accounts;
@@ -200,14 +228,17 @@ export class MessagePinningService {
     this.#privateMessages = privateMessages;
     this.#supergroupMessages = supergroupMessages;
     this.#messages = messages;
+    this.#currentUnixTimeSeconds = currentUnixTimeSeconds;
   }
 
   /**
    * Adds a message to its chat's pinned messages, as TDLib's `pin_dialog_message` checks it: the
    * pinner must reach the chat and find the message there, then hold the right to pin, and the
-   * message must not be a service message. Telegram's servers refuse to pin a pinned message.
+   * message must not be a service message. Telegram's servers refuse to pin a pinned message. The
+   * pin is recorded as the pinner's service message, which in a private chat notifies without
+   * sound, as the Bot API documents notifications there to be always disabled.
    */
-  pinMessage({ pinner, chat, messageId }: PinMessageInput): PinMessageResult {
+  pinMessage({ pinner, chat, messageId, isSilent }: PinMessageInput): PinMessageResult {
     const access = this.#reachChat(pinner, chat);
     if (!access.reached) {
       return { pinned: false, reason: access.reason };
@@ -223,7 +254,9 @@ export class MessagePinningService {
     if (message.isPinned) {
       return { pinned: false, reason: 'message_already_pinned' };
     }
-    return { pinned: true, message: this.#messages.setMessagePinned(message.id, true) };
+    const pinnedMessage = this.#messages.setMessagePinned(message.id, true);
+    this.#recordPin(pinner, access.chat, pinnedMessage.id, isSilent);
+    return { pinned: true, message: pinnedMessage };
   }
 
   /**
@@ -380,6 +413,32 @@ export class MessagePinningService {
     return membership === undefined
       ? { resolved: false, reason: 'not_a_member' }
       : { resolved: true, supergroup, membership };
+  }
+
+  /** Records a pin as the pinner's service message of the chat. */
+  #recordPin(
+    pinner: MessagePinner,
+    chat: ReachedPinningChat,
+    pinnedMessageId: CanonicalMessageId,
+    isSilent: boolean,
+  ): void {
+    const content: MessagePinnedContent = { kind: 'message_pinned', pinnedMessageId };
+    if (chat.type === 'private') {
+      this.#privateMessages.recordServiceMessage({
+        conversation: chat.conversation,
+        authorRole: pinner.kind,
+        content,
+        isSilent: true,
+      });
+      return;
+    }
+    this.#supergroupMessages.recordServiceMessage({
+      chatId: chat.chatId,
+      author: pinner,
+      content,
+      changedAtUnixSeconds: this.#currentUnixTimeSeconds(),
+      isSilent,
+    });
   }
 
   #findChatMessage(chat: ReachedPinningChat, messageId: number): ChatMessage | undefined {

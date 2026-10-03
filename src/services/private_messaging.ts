@@ -25,10 +25,14 @@ import {
   type ChatMessage,
   type ExternalReply,
   type InlineMessageId,
+  isPrivateContentMessage,
   type MediaGroupId,
   type MessageContent,
   type MessageForwardInfo,
+  type PrivateContentMessage,
   type PrivateMessage,
+  type PrivateMessageContent,
+  type PrivateServiceContent,
   type TextQuote,
 } from '../types/virtual_message.ts';
 import {
@@ -522,6 +526,15 @@ export type PressReplyKeyboardButtonResult =
       | 'reply_keyboard_button_location_not_requested';
   };
 
+export interface RecordPrivateServiceMessageInput {
+  readonly conversation: PrivateConversationKey;
+  /** The participant who made the change: the one who pinned a message. */
+  readonly authorRole: PrivateConversationRole;
+  readonly content: PrivateServiceContent;
+  /** Whether the service message notifies the other participant without sound. */
+  readonly isSilent: boolean;
+}
+
 export interface GetMessageForBotInput {
   readonly botId: number;
   /** The account at the other end of the bot's private chat. */
@@ -595,7 +608,7 @@ interface PrivateMessageStore {
     readonly conversation: PrivateConversationKey;
     readonly authorRole: PrivateConversationRole;
     readonly sentAtUnixSeconds: number;
-    readonly content: MessageContent;
+    readonly content: PrivateMessageContent;
     readonly replyToMessageId?: CanonicalMessageId;
     readonly externalReply?: ExternalReply;
     readonly quote?: TextQuote;
@@ -662,7 +675,7 @@ interface NewPrivateMessage {
   readonly account: VirtualAccount;
   readonly bot: VirtualBot;
   readonly authorRole: PrivateConversationRole;
-  readonly content: MessageContent;
+  readonly content: PrivateMessageContent;
   readonly replyToMessageId?: CanonicalMessageId;
   readonly externalReply?: ExternalReply;
   readonly quote?: TextQuote;
@@ -1113,6 +1126,9 @@ export class PrivateMessagingService {
     if (!pollLookup.found) {
       return { stopped: false, reason: pollLookup.reason };
     }
+    if (!isPrivateContentMessage(lookup.message)) {
+      throw new Error(`Service message ${lookup.message.id} shows poll ${pollLookup.poll.id}`);
+    }
     if (input.inlineKeyboard !== undefined && !hasOnlyValidCallbackData(input.inlineKeyboard)) {
       return { stopped: false, reason: 'callback_data_invalid' };
     }
@@ -1146,10 +1162,11 @@ export class PrivateMessagingService {
     if (message === undefined) {
       return { edited: false, reason: 'message_not_found' };
     }
-    // As in TDLib, only the inline bot edits a message sent through it, and no one edits a forward.
+    // As in TDLib, only the inline bot edits a message sent through it, and no one edits a forward
+    // or a service message.
     if (
-      message.authorRole !== 'account' || message.viaBot !== undefined ||
-      message.forwardInfo !== undefined
+      !isPrivateContentMessage(message) || message.authorRole !== 'account' ||
+      message.viaBot !== undefined || message.forwardInfo !== undefined
     ) {
       return { edited: false, reason: 'message_not_editable' };
     }
@@ -1268,6 +1285,24 @@ export class PrivateMessagingService {
     return this.#blockedUsers.isBlocked(to.accountId, fromBotId)
       ? { sent: false, reason: 'bot_blocked' }
       : { sent: true };
+  }
+
+  /**
+   * Records a change of a private conversation, which the caller has made, as a service message of
+   * the participant who made it. As on Telegram, the service message is numbered like any message,
+   * for both participants.
+   */
+  recordServiceMessage(
+    { conversation, authorRole, content, isSilent }: RecordPrivateServiceMessageInput,
+  ): PrivateMessage {
+    const account = this.#accounts.getById(conversation.accountId);
+    const bot = this.#bots.getById(conversation.botId);
+    if (account === undefined || bot === undefined) {
+      throw new Error(
+        `Participants of conversation ${JSON.stringify(conversation)} do not exist`,
+      );
+    }
+    return this.#storePrivateMessage({ account, bot, authorRole, content, isSilent });
   }
 
   /**
@@ -1518,12 +1553,12 @@ export class PrivateMessagingService {
 
   /**
    * Resolves the message an edit targets, found as `#findBotEditTarget` does, which the bot must
-   * be allowed to edit.
+   * be allowed to edit. A service message has no content to edit.
    */
   #resolveEditableBotMessage(
     target: EditBotMessageTarget,
   ):
-    | { readonly resolved: true; readonly message: PrivateMessage }
+    | { readonly resolved: true; readonly message: PrivateContentMessage }
     | {
       readonly resolved: false;
       readonly reason:
@@ -1536,8 +1571,9 @@ export class PrivateMessagingService {
     if (!lookup.resolved) {
       return lookup;
     }
-    return canBotEditMessage(lookup.message, target.fromBotId)
-      ? lookup
+    const { message } = lookup;
+    return isPrivateContentMessage(message) && canBotEditMessage(message, target.fromBotId)
+      ? { resolved: true, message }
       : { resolved: false, reason: 'message_not_editable' };
   }
 
@@ -1578,7 +1614,7 @@ export class PrivateMessagingService {
    * content dates the edit.
    */
   #editBotMessageContent<FailureReason extends string>(
-    message: PrivateMessage,
+    message: PrivateContentMessage,
     replacement: ContentReplacement<FailureReason>,
     inlineKeyboard: InlineKeyboard | undefined,
   ):
@@ -1601,7 +1637,7 @@ export class PrivateMessagingService {
    * The new content's upload is stored only once the edit passes its checks.
    */
   #editBotMessage(
-    message: PrivateMessage,
+    message: PrivateContentMessage,
     { content, ...edit }: {
       readonly content: NormalizedOutgoingContent;
       readonly inlineKeyboard: InlineKeyboard | undefined;

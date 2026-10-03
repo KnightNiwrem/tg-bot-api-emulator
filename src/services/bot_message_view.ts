@@ -17,7 +17,9 @@ import {
   projectInlineQueryForBot,
   projectPoll,
   projectPollAnswerForBot,
+  projectPrivateChat,
   projectPrivateMessageForBot,
+  projectSupergroupChat,
   projectSupergroupMessage,
 } from '../projections/bot_api_message.ts';
 import type {
@@ -27,6 +29,7 @@ import type {
   BotApiChatMember,
   BotApiChatMemberUpdated,
   BotApiChosenInlineResult,
+  BotApiInaccessibleMessage,
   BotApiInlineQuery,
   BotApiMessage,
   BotApiMyChatMemberUpdated,
@@ -76,6 +79,12 @@ import {
   type SupergroupMessage,
   type SupergroupMessageAuthor,
 } from '../types/virtual_message.ts';
+
+/**
+ * Where a view shows a message: as the message itself, or nested in another, as the message it
+ * replies to or a pinned message, which the official server shows with less.
+ */
+type MessagePlacement = 'message' | 'nested';
 
 interface AccountLookup {
   getById(accountId: number): VirtualAccount | undefined;
@@ -175,10 +184,12 @@ export class BotMessageViewService {
     const repliedMessage = message.replyToMessageId === undefined
       ? undefined
       : this.#messages.getPrivateMessage(message.replyToMessageId);
-    return this.#viewPrivateMessage(
-      message,
-      repliedMessage === undefined ? undefined : this.#viewPrivateMessage(repliedMessage),
-    );
+    return this.#viewPrivateMessage(message, {
+      shownAs: 'message',
+      repliedMessage: repliedMessage === undefined
+        ? undefined
+        : this.#viewPrivateMessage(repliedMessage, { shownAs: 'nested' }),
+    });
   }
 
   /**
@@ -191,13 +202,12 @@ export class BotMessageViewService {
     const repliedMessage = message.replyToMessageId === undefined
       ? undefined
       : this.#messages.getSupergroupMessage(message.replyToMessageId);
-    return this.#viewSupergroupMessage(
-      message,
-      observerId,
-      repliedMessage === undefined
+    return this.#viewSupergroupMessage(message, observerId, {
+      shownAs: 'message',
+      repliedMessage: repliedMessage === undefined
         ? undefined
-        : this.#viewSupergroupMessage(repliedMessage, observerId),
-    );
+        : this.#viewSupergroupMessage(repliedMessage, observerId, { shownAs: 'nested' }),
+    });
   }
 
   /**
@@ -385,7 +395,9 @@ export class BotMessageViewService {
       }
       return account === undefined ? undefined : projectPrivateChatFullInfo(
         account,
-        pinnedMessage === undefined ? undefined : this.#viewPrivateMessage(pinnedMessage),
+        pinnedMessage === undefined
+          ? undefined
+          : this.#viewPrivateMessage(pinnedMessage, { shownAs: 'nested' }),
       );
     }
     const chat = this.#sharedChats.getSharedChat(chatId);
@@ -397,16 +409,22 @@ export class BotMessageViewService {
         chat,
         pinnedMessage === undefined
           ? undefined
-          : this.#viewSupergroupMessage(pinnedMessage, observerBotId),
+          : this.#viewSupergroupMessage(pinnedMessage, observerBotId, { shownAs: 'nested' }),
       )
       : undefined;
   }
 
-  /** Projects a supergroup message with the given view of the message it replies to, if any. */
+  /**
+   * Projects a supergroup message with the given view of the message it replies to, if any, and,
+   * for a pin, the pinned message, as `#viewPinnedMessage` shows it.
+   */
   #viewSupergroupMessage(
     message: SupergroupMessage,
     observerId: number,
-    repliedMessage?: BotApiRepliedSupergroupMessage,
+    { shownAs, repliedMessage }: {
+      readonly shownAs: MessagePlacement;
+      readonly repliedMessage?: BotApiRepliedSupergroupMessage;
+    },
   ): BotApiSupergroupMessage {
     const supergroup = this.#sharedChats.getSharedChat(message.chatId);
     if (supergroup?.kind !== 'supergroup') {
@@ -424,7 +442,50 @@ export class BotMessageViewService {
       messageId,
       context: this.#resolveProjectionContext(message, observerId),
       repliedMessage,
+      pinnedMessage: message.content.kind === 'message_pinned'
+        ? this.#viewPinnedMessage({
+          pinnedMessageId: message.content.pinnedMessageId,
+          shownAs,
+          findPinnedMessage: (pinnedMessageId) =>
+            this.#messages.getSupergroupMessage(pinnedMessageId),
+          viewPinnedMessage: (pinnedMessage) =>
+            this.#viewSupergroupMessage(pinnedMessage, observerId, { shownAs: 'nested' }),
+          boxOwnerId: message.chatId,
+          chat: projectSupergroupChat(supergroup),
+        })
+        : undefined,
     });
+  }
+
+  /**
+   * Shows the message a pin's service message pinned, as the official Bot API server's
+   * `JsonMessage` shows `messagePinMessage`: as it is now, without its reply; once deleted, as an
+   * `InaccessibleMessage` with its ID, its chat, and a `date` of 0, unless the service message is
+   * itself shown nested, as a replied message, where nothing is shown for it.
+   */
+  #viewPinnedMessage<Message extends ChatMessage, View, Chat>(
+    { pinnedMessageId, shownAs, findPinnedMessage, viewPinnedMessage, boxOwnerId, chat }: {
+      readonly pinnedMessageId: CanonicalMessageId;
+      readonly shownAs: MessagePlacement;
+      readonly findPinnedMessage: (pinnedMessageId: CanonicalMessageId) => Message | undefined;
+      readonly viewPinnedMessage: (pinnedMessage: Message) => View;
+      /** The owner of the message box that numbers the chat's messages for the observer. */
+      readonly boxOwnerId: number;
+      readonly chat: Chat;
+    },
+  ): View | BotApiInaccessibleMessage<Chat> | undefined {
+    const pinnedMessage = findPinnedMessage(pinnedMessageId);
+    if (pinnedMessage !== undefined) {
+      return viewPinnedMessage(pinnedMessage);
+    }
+    if (shownAs === 'nested') {
+      return undefined;
+    }
+    const messageId = this.#messageBoxes.getMessageId(boxOwnerId, pinnedMessageId);
+    if (messageId === undefined) {
+      throw new Error(`Pinned message ${pinnedMessageId} was never numbered for ${boxOwnerId}`);
+    }
+    return { message_id: messageId, chat, date: 0 };
   }
 
   #findSupergroupMessageAuthor(
@@ -457,10 +518,16 @@ export class BotMessageViewService {
     return bot === undefined ? undefined : projectBotAsUser(bot.profile);
   }
 
-  /** Projects a message with the given view of the message it replies to, if any. */
+  /**
+   * Projects a private message with the given view of the message it replies to, if any, and, for
+   * a pin, the pinned message, as `#viewPinnedMessage` shows it.
+   */
   #viewPrivateMessage(
     message: PrivateMessage,
-    repliedMessage?: BotApiRepliedPrivateMessage,
+    { shownAs, repliedMessage }: {
+      readonly shownAs: MessagePlacement;
+      readonly repliedMessage?: BotApiRepliedPrivateMessage;
+    },
   ): BotApiPrivateMessage {
     const { accountId, botId: observingBotId } = message.conversation;
     const account = this.#accounts.getById(accountId);
@@ -483,6 +550,17 @@ export class BotMessageViewService {
       observerMessageId,
       context: this.#resolveProjectionContext(message, observingBotId),
       repliedMessage,
+      pinnedMessage: message.content.kind === 'message_pinned'
+        ? this.#viewPinnedMessage({
+          pinnedMessageId: message.content.pinnedMessageId,
+          shownAs,
+          findPinnedMessage: (pinnedMessageId) => this.#messages.getPrivateMessage(pinnedMessageId),
+          viewPinnedMessage: (pinnedMessage) =>
+            this.#viewPrivateMessage(pinnedMessage, { shownAs: 'nested' }),
+          boxOwnerId: observingBotId,
+          chat: projectPrivateChat(account.profile),
+        })
+        : undefined,
     });
   }
 
@@ -529,6 +607,7 @@ export class BotMessageViewService {
           changedMembers: this.#findChangedMembers([content.memberId], message),
         };
       case 'title_changed':
+      case 'message_pinned':
         return context;
       default: {
         const unhandledContent: never = content;

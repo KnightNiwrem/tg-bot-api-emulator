@@ -13,7 +13,9 @@ put:
     administrator holds it with that right or as the default permissions grant it, and any
     other member as the default permissions and its restriction grant it. A public supergroup
     ignores its default permissions for pins, as the Bot API documents, so only the owner and
-    administrators with the right pin there.
+    administrators with the right pin there. The pin is recorded as the account's service
+    message with `pinned_message`, which notifies the members and which every bot of the
+    supergroup receives. Unpinning records nothing.
   responses:
     '204':
       description: The message was pinned.

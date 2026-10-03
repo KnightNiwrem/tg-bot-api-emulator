@@ -28,6 +28,7 @@ import {
   type CanonicalMessageId,
   type ChatMessage,
   getContentText,
+  isPrivateContentMessage,
   isSupergroupContentMessage,
   mentionsUser,
   type PrivateMessage,
@@ -193,11 +194,14 @@ export class BotUpdateDeliveryService {
 
   /**
    * A private message, and each edit of it, is observed only by the bot of its conversation,
-   * which, as on Telegram, receives no update for its own message or edit.
+   * which, as on Telegram, receives no update for its own message or edit. A service message
+   * recording the bot's own pin is the exception, which the Bot API server's
+   * `need_skip_update_message` keeps among a bot's outgoing messages.
    */
   #deliverPrivateMessage(message: PrivateMessage, updateType: MessageUpdateType): void {
     const observingBotId = message.conversation.botId;
-    if (message.authorRole === 'bot' || !this.#isSubscribed(observingBotId, updateType)) {
+    const isOwnContentMessage = message.authorRole === 'bot' && isPrivateContentMessage(message);
+    if (isOwnContentMessage || !this.#isSubscribed(observingBotId, updateType)) {
       return;
     }
 

@@ -2007,7 +2007,8 @@ function answerPinChange(
   const { messagePinning } = context.get('emulationSession');
   const input = { pinner: { kind: 'account', accountId } as const, chat, messageId };
   if (change === 'pin') {
-    const result = messagePinning.pinMessage(input);
+    // Accounts pin as Telegram's clients do by default, notifying the members of a supergroup.
+    const result = messagePinning.pinMessage({ ...input, isSilent: false });
     return context.body(null, result.pinned ? 204 : pinChangeFailureStatus(result.reason));
   }
   const result = messagePinning.unpinMessage(input);
