@@ -53,22 +53,29 @@ Deno.test('A wait does not count an answer received after its deadline', async (
   assertTimeoutAbandoning(error, transport.reads[0]);
 });
 
-Deno.test('A wait does not count an answer that kept the event loop busy past its deadline', async () => {
-  const timeoutMs = 5;
-  const transport = createScriptedTransport(() => {
-    // The deadline's timer cannot run while the transport holds the event loop past it.
-    const busyUntil = performance.now() + timeoutMs + 20;
-    while (performance.now() < busyUntil) {
-      // Busy.
-    }
-    return page([sendMessageCall(1, 'late')], 1);
-  });
+Deno.test('A wait does not count a read that kept the event loop busy past its deadline', async () => {
+  const lateAnswers = [
+    () => page([sendMessageCall(1, 'late')], 1),
+    () => Promise.resolve(new Response(null, { status: 500 })),
+  ];
+  for (const lateAnswer of lateAnswers) {
+    const timeoutMs = 100;
+    const waitStart = performance.now();
+    const transport = createScriptedTransport(() => {
+      // The deadline's timer cannot run while the transport holds the event loop past it.
+      while (performance.now() < waitStart + timeoutMs + 20) {
+        // Busy.
+      }
+      return lateAnswer();
+    });
 
-  const error = await rejectionOf(
-    createActivityLog(transport).waitFor({ method: 'sendMessage' }, { after: 0, timeoutMs }),
-  );
+    const error = await rejectionOf(
+      createActivityLog(transport).waitFor({ method: 'sendMessage' }, { after: 0, timeoutMs }),
+    );
 
-  assert(error instanceof BotActivityTimeoutError, `Expected a timeout, got ${error}`);
+    assert(error instanceof BotActivityTimeoutError, `Expected a timeout, got ${error}`);
+    assert(Number(transport.reads[0].query.get('wait_ms')) > 0, 'Expected a read that holds');
+  }
 });
 
 Deno.test('A cancelled wait rejects with the reason and releases its read', async () => {
