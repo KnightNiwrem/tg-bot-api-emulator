@@ -105,9 +105,11 @@ The administrator rights a chat request requires are kept for the requested kind
 Accounts see each request in the fields of a Bot API `KeyboardButton`, with every field of
 `request_users` and `request_chat` and the normalized Web App link. Telegram's clients answer such a
 button with what it requests rather than its text. Pressing a `request_contact` button shares the
-account's [own contact](contacts-and-locations.md#answering-contact-requests) in reply to the
-keyboard's message; the emulator [cannot answer](#real-gaps) the other requests, so pressing one
-fails with `400`. Legacy names that the server also reads, `request_phone_number` and
+account's [own contact](contacts-and-locations.md#answering-contact-requests), and pressing a
+`request_location` button shares the
+[location the press reports](contacts-and-locations.md#answering-location-requests), each in reply
+to the keyboard's message; the emulator [cannot answer](#real-gaps) the other requests, so pressing
+one fails with `400`. Legacy names that the server also reads, `request_phone_number` and
 `request_user`, and `request_managed_bot` for the missing managed bots, are rejected.
 
 ### In supergroups
@@ -180,11 +182,10 @@ no buttons, and it checks only the icon identifier's syntax, as it does for
 - **Game and payment buttons.** These inline buttons need their
   [missing features](README.md#unimplemented-areas). Tests cannot exercise those button definitions
   or actions.
-- **Answering reply keyboard requests.** Apart from sharing their own contact, accounts cannot
-  answer a [request button](#request-buttons): sharing a location, users or a chat, creating a poll,
-  or sending Web App data. Locations are among the
-  [missing message kinds](README.md#unimplemented-areas), accounts do not create polls, and the
-  `users_shared`, `chat_shared` and `web_app_data` service messages are missing too.
+- **Answering reply keyboard requests.** Apart from sharing their own contact or a location,
+  accounts cannot answer a [request button](#request-buttons): sharing users or a chat, creating a
+  poll, or sending Web App data. Accounts do not create polls, and the `users_shared`, `chat_shared`
+  and `web_app_data` service messages are missing.
 
 ## Comparison limits
 

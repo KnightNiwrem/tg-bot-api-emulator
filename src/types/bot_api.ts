@@ -298,7 +298,8 @@ export type BotApiMessageContent =
   | BotApiCaptionedMediaContent
   | { readonly rich_message: BotApiRichMessage }
   | { readonly poll: BotApiPoll }
-  | { readonly contact: BotApiContact };
+  | { readonly contact: BotApiContact }
+  | { readonly location: BotApiLocation };
 
 /**
  * The fields of a service message about a membership change, which take the place of content.

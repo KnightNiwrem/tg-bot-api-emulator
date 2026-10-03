@@ -1,7 +1,11 @@
 import { z } from 'zod';
 
 import type { EmulationSession } from '../../../types/emulation_session.ts';
-import { createGeoLocation, MAX_HORIZONTAL_ACCURACY_METERS } from '../../../types/geo_location.ts';
+import {
+  createGeoLocation,
+  isPointOnEarth,
+  MAX_HORIZONTAL_ACCURACY_METERS,
+} from '../../../types/geo_location.ts';
 import {
   EMPTY_RICH_TEXT,
   type HorizontalAlignment,
@@ -63,7 +67,8 @@ const LIST_ITEM_TYPE_INVALID_DESCRIPTION = 'Bad Request: invalid list item type 
 const TABLE_CELL_COLUMN_SPAN_INVALID_DESCRIPTION =
   'Bad Request: invalid table cell colspan specified';
 const TABLE_CELL_ROW_SPAN_INVALID_DESCRIPTION = 'Bad Request: invalid table cell rowspan specified';
-const LOCATION_INVALID_DESCRIPTION = 'Bad Request: invalid location specified';
+/** TDLib's description of coordinates that name no point on Earth, as `isPointOnEarth` decides. */
+export const LOCATION_INVALID_DESCRIPTION = 'Bad Request: invalid location specified';
 const MAP_PROPERTIES_INVALID_DESCRIPTION = 'Bad Request: invalid map properties specified';
 const BUTTON_ROW_EMPTY_DESCRIPTION = 'Bad Request: button row must be non-empty';
 const MEDIA_NOT_FOUND_DESCRIPTION = 'Bad Request: media not found';
@@ -614,10 +619,7 @@ class RichMessageReader {
   #readMap(block: z.output<typeof mapBlockSchema>): SpecifiedRichBlock {
     const caption = this.#readCaption(block.caption);
     const { latitude, longitude, horizontal_accuracy } = block.location;
-    if (
-      !Number.isFinite(latitude) || !Number.isFinite(longitude) || Math.abs(latitude) > 90 ||
-      Math.abs(longitude) > 180
-    ) {
+    if (!isPointOnEarth(latitude, longitude)) {
       throw new RichMessageParameterError(LOCATION_INVALID_DESCRIPTION);
     }
     const { zoom, width, height } = block;

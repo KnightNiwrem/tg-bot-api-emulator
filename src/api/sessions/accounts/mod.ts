@@ -265,10 +265,22 @@ const accountContactShape = {
 };
 
 /**
+ * A point on Earth the account shares, with the radius of uncertainty its client reports, which
+ * becomes whole meters as `createGeoLocation` rounds it.
+ */
+const accountLocationSchema = z.strictObject({
+  latitude: z.number().min(-90).max(90),
+  longitude: z.number().min(-180).max(180),
+  horizontal_accuracy: z.number().min(0).max(MAX_HORIZONTAL_ACCURACY_METERS).default(0),
+}).transform(({ latitude, longitude, horizontal_accuracy }) =>
+  createGeoLocation(latitude, longitude, horizontal_accuracy)
+);
+
+/**
  * A text message, a photo, a document, a video, or a voice note, each with an optional caption; a
- * contact the account writes, or its own contact, which Telegram shows as the account's user; or a
- * forward of a message of one of the account's chats, which, as in Telegram's clients, replies to
- * none.
+ * contact the account writes, or its own contact, which Telegram shows as the account's user; a
+ * static location; or a forward of a message of one of the account's chats, which, as in
+ * Telegram's clients, replies to none.
  */
 const sendMessageRequestSchema = z.union([
   z.strictObject({
@@ -290,6 +302,7 @@ const sendMessageRequestSchema = z.union([
   z.strictObject({ ...sentMessageTargetShape, ...accountVoiceShape }),
   z.strictObject({ ...sentMessageTargetShape, ...accountContactShape }),
   z.strictObject({ ...sentMessageTargetShape, own_contact: z.literal(true) }),
+  z.strictObject({ ...sentMessageTargetShape, location: accountLocationSchema }),
 ]);
 
 /**
@@ -359,9 +372,14 @@ const editMessageRequestSchema = z.union([
   z.strictObject({ caption: z.string(), caption_entities: messageEntitiesSchema }),
 ]);
 
+/**
+ * A press of a reply keyboard button, by its text. A `request_location` button needs the location
+ * the account's client reports, which no other button takes.
+ */
 const pressReplyKeyboardButtonRequestSchema = z.strictObject({
   chat: chatSchema,
   text: z.string().min(1),
+  location: accountLocationSchema.optional(),
 });
 
 const pressCallbackButtonRequestSchema = z.strictObject({
@@ -391,13 +409,7 @@ const sendInlineQueryRequestSchema = z.strictObject({
   /** The `next_offset` of an earlier answer, requesting more results; empty for the first. */
   offset: z.string().default(''),
   /** Where the account is, shared with a bot that requests it. */
-  location: z.strictObject({
-    latitude: z.number().min(-90).max(90),
-    longitude: z.number().min(-180).max(180),
-    horizontal_accuracy: z.number().min(0).max(MAX_HORIZONTAL_ACCURACY_METERS).default(0),
-  }).transform(({ latitude, longitude, horizontal_accuracy }) =>
-    createGeoLocation(latitude, longitude, horizontal_accuracy)
-  ).optional(),
+  location: accountLocationSchema.optional(),
 });
 
 const chooseInlineQueryResultRequestSchema = z.strictObject({
@@ -1320,8 +1332,12 @@ export function createAccountRoutes(): Hono<SessionRouteContextTypes> {
     const { privateMessaging, supergroupMessaging, botMessageViews } = context.get(
       'emulationSession',
     );
-    const { chat, text } = requestBody;
+    const { chat, text, location } = requestBody;
     if (chat.type === 'supergroup') {
+      // Only private chats show buttons with a request, so no supergroup button takes a location.
+      if (location !== undefined) {
+        return context.body(null, 400);
+      }
       const result = supergroupMessaging.pressReplyKeyboardButton({
         fromAccountId: accountId,
         chatId: chat.chatId,
@@ -1339,6 +1355,7 @@ export function createAccountRoutes(): Hono<SessionRouteContextTypes> {
       fromAccountId: accountId,
       chat,
       text,
+      ...(location === undefined ? {} : { location }),
     });
     if (!result.sent) {
       return context.body(null, accountMessageFailureStatus(result.reason));
@@ -1574,6 +1591,9 @@ function readAccountMessageContent(
   }
   if ('own_contact' in request) {
     return { kind: 'own_contact' };
+  }
+  if ('location' in request) {
+    return { kind: 'location', location: request.location };
   }
   if ('contact' in request) {
     const { phone_number, first_name, last_name, vcard } = request.contact;

@@ -10,3 +10,8 @@ properties:
     type: string
     minLength: 1
     description: The text of the button to press.
+  location:
+    $ref: ./Location.yaml
+    description: >-
+      The location the account's client reports, which a `request_location` button shares and
+      requires; no other button takes one.

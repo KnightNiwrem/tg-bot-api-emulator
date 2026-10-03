@@ -13,6 +13,11 @@ import {
 } from '../../../types/chat_membership.ts';
 import { isContactVcardWithinLimit, MAX_CONTACT_NAME_LENGTH } from '../../../types/contact.ts';
 import type { EmulationSession } from '../../../types/emulation_session.ts';
+import {
+  createGeoLocation,
+  isPointOnEarth,
+  MAX_HORIZONTAL_ACCURACY_METERS,
+} from '../../../types/geo_location.ts';
 import type { InlineKeyboard } from '../../../types/inline_keyboard.ts';
 import {
   MAX_POLL_OPEN_PERIOD_SECONDS,
@@ -74,7 +79,10 @@ import {
   replyParametersParameter,
   selectSpecifiedReplyTarget,
 } from './reply_parameters_parameter.ts';
-import { readRichMessageParameter } from './rich_message_parameter.ts';
+import {
+  LOCATION_INVALID_DESCRIPTION,
+  readRichMessageParameter,
+} from './rich_message_parameter.ts';
 import {
   excludeRichMessageWebFiles,
   type RequestedRichMessageFileTypes,
@@ -104,6 +112,7 @@ import {
   decodeBotApiRequestParameters,
   integerParameter,
   jsonParameter,
+  numberParameter,
   optionalInt64Identifier,
 } from './request_parameters.ts';
 
@@ -395,6 +404,7 @@ const SEND_PERMISSION_MISSING_DESCRIPTIONS = {
   poll: 'Bad Request: not enough rights to send polls to the chat',
   rich_message: 'Bad Request: not enough rights to send the rich message to the chat',
   contact: 'Bad Request: not enough rights to send contacts to the chat',
+  location: 'Bad Request: not enough rights to send locations to the chat',
 } as const satisfies Record<
   Extract<SendFailure, { readonly reason: 'send_permission_missing' }>['contentKind'],
   string
@@ -563,6 +573,31 @@ const sendContactParametersSchema = z.strictObject({
   first_name: contactNameParameter(),
   last_name: contactNameParameter(),
   vcard: z.string().default('').refine(isContactVcardWithinLimit),
+});
+
+/**
+ * A decimal number parameter, which the official server trims and reads as `undefined` when empty
+ * or missing.
+ */
+const optionalTrimmedNumberParameter = () =>
+  z.string().trim().pipe(z.union([
+    z.literal('').transform(() => undefined),
+    numberParameter(),
+  ])).optional();
+
+// As for sendMessage, topics, business connections, paid broadcasts, suggested posts, and
+// ephemeral messages are not supported. Live locations are not supported either: `live_period`,
+// `heading` and `proximity_alert_radius` are rejected, even with values that send a static
+// location on Telegram, as is an accuracy outside the 0–1500 meters the Bot API documents, which
+// Telegram clamps.
+const sendLocationParametersSchema = z.strictObject({
+  ...sendOptionsParametersShape,
+  ...replyMarkupParametersShape,
+  latitude: optionalTrimmedNumberParameter(),
+  longitude: optionalTrimmedNumberParameter(),
+  horizontal_accuracy: optionalTrimmedNumberParameter().refine((accuracy) =>
+    accuracy === undefined || (accuracy >= 0 && accuracy <= MAX_HORIZONTAL_ACCURACY_METERS)
+  ),
 });
 
 const sendPhotoParametersSchema = z.strictObject({
@@ -1152,6 +1187,7 @@ const BOT_API_METHODS: readonly BotApiMethod[] = [
   { name: 'sendChatAction', handler: handleSendChatAction },
   { name: 'sendContact', handler: handleSendContact },
   { name: 'sendDocument', handler: handleSendDocument },
+  { name: 'sendLocation', handler: handleSendLocation },
   { name: 'sendMediaGroup', handler: handleSendMediaGroup },
   { name: 'sendMessage', handler: handleSendMessage },
   { name: 'sendPhoto', handler: handleSendPhoto },
@@ -1615,6 +1651,44 @@ function handleSendContact(
       lastName: data.last_name,
       vcard: data.vcard,
     },
+  }));
+}
+
+/**
+ * Sends a static location as the official Bot API server's `process_send_location_query` reads
+ * it: the latitude and longitude, each required, and an optional accuracy, which TDLib's
+ * `get_input_geo_point` sends as whole meters, rounded up. As TDLib's `Location::init` decides,
+ * coordinates that name no point on Earth are refused. The emulator checks them once it has read
+ * `chat_id` and the reply markup, but before it looks the chat up, while TDLib checks them once
+ * the chat is found.
+ */
+function handleSendLocation(
+  context: BotApiMethodContext,
+  parameters: BotApiRequestParameters,
+): BotApiMethodAnswer {
+  const invalidParametersDescription = 'Bad Request: invalid sendLocation parameters';
+  const parsedParameters = sendLocationParametersSchema.safeParse(parameters);
+  if (!parsedParameters.success) {
+    return botApiError(400, invalidParametersDescription);
+  }
+  const { data } = parsedParameters;
+  if (data.latitude === undefined) {
+    return botApiError(400, 'Bad Request: latitude is empty');
+  }
+  if (data.longitude === undefined) {
+    return botApiError(400, 'Bad Request: longitude is empty');
+  }
+  const optionsReading = readSendOptions(context, data, invalidParametersDescription);
+  if (!optionsReading.read) {
+    return optionsReading.errorAnswer;
+  }
+  if (!isPointOnEarth(data.latitude, data.longitude)) {
+    return botApiError(400, LOCATION_INVALID_DESCRIPTION);
+  }
+
+  return sendMethodAnswer(context.session.botApi.sendLocation(context.bot, {
+    ...optionsReading.options,
+    location: createGeoLocation(data.latitude, data.longitude, data.horizontal_accuracy ?? 0),
   }));
 }
 

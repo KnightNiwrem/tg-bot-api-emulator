@@ -8,6 +8,7 @@ import { areTextEntitiesEqual } from '../text_entities/text_entity_equality.ts';
 import { compareTextEntities } from '../text_entities/text_entity_order.ts';
 import { isSameButtonAppearance } from '../types/button_appearance.ts';
 import { type Contact, createWrittenContact, type WrittenContact } from '../types/contact.ts';
+import type { GeoLocation } from '../types/geo_location.ts';
 import {
   type InlineKeyboard,
   type InlineKeyboardButton,
@@ -58,6 +59,7 @@ import {
   type FormattedText,
   getContentText,
   isCaptionedMediaContent,
+  type LocationMessageContent,
   MAX_CAPTION_LENGTH,
   MAX_TEXT_MESSAGE_LENGTH,
   type MessageContent,
@@ -168,6 +170,7 @@ export type OutgoingMessageContent =
     readonly kind: 'contact';
     readonly contact: Contact;
   }
+  | LocationMessageContent
   | {
     /** The content of an existing message, which a forward or a copy repeats. */
     readonly kind: 'existing';
@@ -218,6 +221,7 @@ export type NormalizedOutgoingContent =
   | { readonly kind: 'rich_message'; readonly richMessage: OutgoingRichMessage }
   | { readonly kind: 'poll'; readonly poll: NewPoll }
   | ContactMessageContent
+  | LocationMessageContent
   | { readonly kind: 'existing'; readonly content: MessageContent };
 
 /** Why Telegram refuses the text or caption of new content: as for every content but a poll. */
@@ -243,7 +247,9 @@ export type OutgoingContentOtherThanPoll = Exclude<
  * Normalizes the text or caption of new message content, with the entities its sender specified,
  * as Telegram does, which also marks bot commands; then checks that the result fits in a message.
  * A rich message is checked and has its entities marked as `normalizeRichMessage` does, a poll is
- * checked as `normalizeNewPoll` does, and a contact is cleaned as `normalizeContact` cleans it.
+ * checked as `normalizeNewPoll` does, and a contact is cleaned as `normalizeContact` cleans it. A
+ * location carries no text, so it passes as it is: every reader of a location, the Bot API handler
+ * and the account routes, checks it as `isPointOnEarth` requires before it becomes content.
  */
 export function normalizeOutgoingContent(
   content: OutgoingContentOtherThanPoll,
@@ -260,6 +266,9 @@ export function normalizeOutgoingContent(
   sender: MessageSenderKind,
   context: FormattedTextFixingContext,
 ): OutgoingContentNormalization {
+  if (content.kind === 'location') {
+    return { normalized: true, content };
+  }
   if (content.kind === 'text' || content.kind === 'rich_message') {
     const replacement = normalizeTextMessageReplacement(content, context);
     return replacement.normalized
@@ -574,7 +583,7 @@ export function normalizeCaption(
 /**
  * What an account sends: text; media with a caption, which is a photo, a document, a video, or a
  * voice note as its upload says, each with the formatting the account specified; a contact the
- * account writes, whose Telegram user stays unknown; or the account's own contact.
+ * account writes, whose Telegram user stays unknown; the account's own contact; or a location.
  */
 export type AccountMessageContent =
   | {
@@ -585,7 +594,8 @@ export type AccountMessageContent =
   }
   | AccountMediaContent
   | { readonly kind: 'contact'; readonly contact: WrittenContact }
-  | { readonly kind: 'own_contact' };
+  | { readonly kind: 'own_contact' }
+  | LocationMessageContent;
 
 /** Media an account sends, of the kind its upload says, with its caption. */
 export type AccountMediaContent<Upload extends FileUpload = FileUpload> = SpecifiedCaption & {
@@ -608,6 +618,7 @@ export function toOutgoingAccountContent(
 ): OutgoingMessageContent | undefined {
   switch (content.kind) {
     case 'text':
+    case 'location':
       return content;
     case 'contact':
       return { kind: 'contact', contact: createWrittenContact(content.contact) };
@@ -731,8 +742,8 @@ export function replaceMessageCaption(
  * them, as TDLib's `edit_message_media` does: the old caption goes with the old content, so new
  * media without a caption has none. As TDLib's `can_edit_message_media` allows, the old content
  * may be a photo, a document, or a video, whose media is replaced, or text or a rich message,
- * which becomes media; the media of a voice note, a poll, or a contact cannot be edited, which
- * that method checks before it reads the new media. As that method checks once the new caption is read, a
+ * which becomes media; the media of a voice note, a poll, a contact, or a location cannot be
+ * edited, which that method checks before it reads the new media. As that method checks once the new caption is read, a
  * message of an album changes its media only as `canChangeAlbumMediaKind` allows; only media is
  * sent in albums.
  */
@@ -766,6 +777,7 @@ export function replaceMessageMedia(
     }
     case 'poll':
     case 'contact':
+    case 'location':
       return { replaced: false, failure: { reason: 'message_media_not_editable' } };
     default: {
       const unhandledContent: never = content;
@@ -868,6 +880,7 @@ export function storeOutgoingContent(
   switch (content.kind) {
     case 'text':
     case 'contact':
+    case 'location':
       return content;
     case 'existing':
       return content.content;
@@ -930,6 +943,7 @@ export function toContentOfStoredFile(content: NormalizedOutgoingContent): Messa
   switch (content.kind) {
     case 'text':
     case 'contact':
+    case 'location':
       return content;
     case 'existing':
       return content.content;
@@ -983,6 +997,7 @@ function hasUnstoredContent(content: NormalizedOutgoingContent): boolean {
   switch (content.kind) {
     case 'text':
     case 'contact':
+    case 'location':
     case 'existing':
       return false;
     case 'photo':
@@ -1127,6 +1142,8 @@ export function isSameMessageContent(first: MessageContent, second: MessageConte
       return second.kind === 'poll' && first.pollId === second.pollId;
     case 'contact':
       return second.kind === 'contact' && isSameContact(first.contact, second.contact);
+    case 'location':
+      return second.kind === 'location' && isSameGeoLocation(first.location, second.location);
     default: {
       const unhandledContent: never = first;
       throw new Error(`Unhandled message content: ${JSON.stringify(unhandledContent)}`);
@@ -1139,6 +1156,11 @@ function isSameContact(first: Contact, second: Contact): boolean {
   return first.phoneNumber === second.phoneNumber && first.firstName === second.firstName &&
     first.lastName === second.lastName && first.vcard === second.vcard &&
     first.userId === second.userId;
+}
+
+function isSameGeoLocation(first: GeoLocation, second: GeoLocation): boolean {
+  return first.latitude === second.latitude && first.longitude === second.longitude &&
+    first.horizontalAccuracyMeters === second.horizontalAccuracyMeters;
 }
 
 function isSameFormattedText(first: FormattedText, second: FormattedText): boolean {

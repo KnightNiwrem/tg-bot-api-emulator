@@ -1,4 +1,5 @@
 import type { ChatDomainEvent } from '../types/chat_domain_event.ts';
+import type { GeoLocation } from '../types/geo_location.ts';
 import type { InlineKeyboard } from '../types/inline_keyboard.ts';
 import type { Poll, PollId } from '../types/poll.ts';
 import { type AlbumCompositionFailureReason, formsAlbum } from '../types/media_album.ts';
@@ -503,6 +504,11 @@ export interface PressReplyKeyboardButtonInput {
   };
   /** The text of the button to press. */
   readonly text: string;
+  /**
+   * The location the account's client reports, which only a button that requests the user's
+   * location shares; omitted for any other button.
+   */
+  readonly location?: GeoLocation;
 }
 
 export type PressReplyKeyboardButtonResult =
@@ -511,7 +517,9 @@ export type PressReplyKeyboardButtonResult =
     readonly sent: false;
     readonly reason:
       | 'reply_keyboard_button_not_found'
-      | 'reply_keyboard_button_request_unsupported';
+      | 'reply_keyboard_button_request_unsupported'
+      | 'reply_keyboard_button_location_missing'
+      | 'reply_keyboard_button_location_not_requested';
   };
 
 export interface GetMessageForBotInput {
@@ -1315,8 +1323,11 @@ export class PrivateMessagingService {
    * A button that requests the user's contact instead shares the account's own contact, as
    * `sendAccountMessage` sends it, in reply to the keyboard's message, as Telegram Desktop's
    * `ActivateBotCommand` and Telegram for Android's `shareMyContact` do once the user confirms.
-   * The bot receives an ordinary contact message, which only its reply ties to the keyboard.
-   * Buttons with other requests cannot be pressed, which the emulator does not model.
+   * A button that requests the user's location likewise shares the location the press reports,
+   * as Telegram for Android's `sendLocation` replies with the device's location. The bot receives
+   * an ordinary contact or location message, which only its reply ties to the keyboard. Only a
+   * location button takes a location. Buttons with other requests cannot be pressed, which the
+   * emulator does not model.
    */
   pressReplyKeyboardButton(input: PressReplyKeyboardButtonInput): PressReplyKeyboardButtonResult {
     if (this.#accounts.getById(input.fromAccountId) === undefined) {
@@ -1336,6 +1347,9 @@ export class PrivateMessagingService {
     if (shownReplyInterface === undefined || button === undefined) {
       return { sent: false, reason: 'reply_keyboard_button_not_found' };
     }
+    if (input.location !== undefined && button.request?.kind !== 'location') {
+      return { sent: false, reason: 'reply_keyboard_button_location_not_requested' };
+    }
 
     switch (button.request?.kind) {
       case undefined:
@@ -1349,6 +1363,19 @@ export class PrivateMessagingService {
           fromAccountId: input.fromAccountId,
           to: input.chat,
           content: { kind: 'own_contact' },
+          replyToBotMessageId: this.#getBotMessageId(
+            input.chat.botId,
+            shownReplyInterface.message,
+          ),
+        });
+      case 'location':
+        if (input.location === undefined) {
+          return { sent: false, reason: 'reply_keyboard_button_location_missing' };
+        }
+        return this.sendAccountMessage({
+          fromAccountId: input.fromAccountId,
+          to: input.chat,
+          content: { kind: 'location', location: input.location },
           replyToBotMessageId: this.#getBotMessageId(
             input.chat.botId,
             shownReplyInterface.message,

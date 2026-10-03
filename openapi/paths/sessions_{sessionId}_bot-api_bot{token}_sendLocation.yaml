@@ -1,0 +1,81 @@
+description: >-
+  Telegram Bot API method for sending a static location. As the official server's
+  `process_send_location_query` reads it, the latitude and longitude are required and the accuracy
+  is optional; TDLib's `get_input_geo_point` sends the accuracy as whole meters, rounded up, and 0
+  means unknown. Live locations are not supported: `live_period`, `heading` and
+  `proximity_alert_radius` are rejected, and `editMessageLiveLocation` and
+  `stopMessageLiveLocation` are not implemented. The other parameters work as for `sendMessage`.
+parameters:
+  - $ref: ../components/parameters/SessionId.yaml
+  - $ref: ../components/parameters/BotToken.yaml
+post:
+  operationId: sendLocation
+  summary: Send a static location from the authenticated virtual bot to an account or a supergroup
+  requestBody:
+    required: true
+    content:
+      application/json:
+        schema:
+          $ref: ../components/schemas/SendLocationRequest.yaml
+      application/x-www-form-urlencoded:
+        schema:
+          $ref: ../components/schemas/SendLocationRequest.yaml
+        encoding:
+          reply_parameters:
+            contentType: application/json
+          reply_markup:
+            contentType: application/json
+      multipart/form-data:
+        schema:
+          $ref: ../components/schemas/SendLocationRequest.yaml
+        encoding:
+          reply_parameters:
+            contentType: application/json
+          reply_markup:
+            contentType: application/json
+  responses:
+    '200':
+      description: >-
+        The location was stored in the private conversation or supergroup. No bot receives an
+        update for a bot's message.
+      content:
+        application/json:
+          schema:
+            $ref: ../components/schemas/MessageResponse.yaml
+    '400':
+      description: >-
+        The request cannot be decoded or has unsupported parameters, such as `live_period`,
+        `heading` or `proximity_alert_radius`, a coordinate that is not a decimal number, or an
+        accuracy outside 0–1500 meters (`Bad Request: invalid sendLocation parameters`); or
+        Telegram would reject it, checking in this order: `latitude` is missing or empty (`Bad
+        Request: latitude is empty`); `longitude` is missing or empty (`Bad Request: longitude is
+        empty`); `chat_id` is missing (`Bad Request: chat_id is empty`); a button of the reply
+        markup cannot be read, as for `sendMessage`; the coordinates are not finite or lie outside
+        -90–90 and -180–180 degrees (`Bad Request: invalid location specified`), which the emulator
+        checks before the chat while TDLib checks it after; the chat, the reply, and the message
+        effect fail as for `sendMessage`; the bot may not send messages to a supergroup (`Bad
+        Request: not enough rights to send locations to the chat`); or a button's callback data
+        exceeds 64 bytes (`Bad Request: BUTTON_DATA_INVALID`). A refused location stores nothing.
+      content:
+        application/json:
+          schema:
+            $ref: ../components/schemas/BotApiErrorResponse.yaml
+    '401':
+      description: The token does not belong to a virtual bot in the addressed session.
+      content:
+        application/json:
+          schema:
+            $ref: ../components/schemas/BotApiErrorResponse.yaml
+    '403':
+      description: >-
+        The account blocks the bot (`Forbidden: bot was blocked by the user`), or the bot left
+        the supergroup (`Forbidden: bot is not a member of the supergroup chat`) or was removed
+        from it (`Forbidden: bot was kicked from the supergroup chat`).
+      content:
+        application/json:
+          schema:
+            $ref: ../components/schemas/BotApiErrorResponse.yaml
+    '404':
+      description: No active test session has the supplied identifier.
+    '429':
+      $ref: ../components/responses/BotApiRateLimited.yaml

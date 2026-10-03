@@ -1,0 +1,15 @@
+type: object
+additionalProperties: false
+description: >-
+  A static location the account shares. Live locations are not supported, so the location takes
+  no `live_period`, `heading` or `proximity_alert_radius`.
+required:
+  - to
+  - location
+properties:
+  to:
+    $ref: ./MessageTarget.yaml
+  location:
+    $ref: ./Location.yaml
+  reply_to_message_id:
+    $ref: ./AccountReplyToMessageId.yaml

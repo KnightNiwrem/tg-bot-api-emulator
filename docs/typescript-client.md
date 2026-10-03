@@ -121,6 +121,12 @@ try {
     contact: { phone_number: '+1 555 0199', first_name: 'Grace', last_name: 'Hopper' },
   });
 
+  // Share a static location; pressing a request_location button takes the location to report.
+  await account.sendLocation({
+    to: { type: 'private', botId: bot.id },
+    location: { latitude: 51.5007, longitude: -0.1246, horizontal_accuracy: 10 },
+  });
+
   // Vote in the latest poll the bot sent, if any. The answer comes back with the poll's message
   // as it is now, whose options show their voter counts.
   const pollMessage = (await account.getMessages({ chat: { type: 'private', botId: bot.id } }))

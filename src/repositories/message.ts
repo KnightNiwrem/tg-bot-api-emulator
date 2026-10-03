@@ -439,6 +439,8 @@ function copyContent(content: SupergroupMessageContent): SupergroupMessageConten
       return { ...content };
     case 'contact':
       return { ...content, contact: { ...content.contact } };
+    case 'location':
+      return { ...content, location: { ...content.location } };
     case 'members_joined':
       return { ...content, memberIds: [...content.memberIds] };
     case 'member_left':

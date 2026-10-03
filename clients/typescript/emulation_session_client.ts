@@ -49,6 +49,7 @@ import type {
   AccountReplyInterfaceInput,
   AccountSendContactInput,
   AccountSendDocumentInput,
+  AccountSendLocationInput,
   AccountSendMediaGroupInput,
   AccountSendMessageInput,
   AccountSendPhotoInput,
@@ -464,6 +465,18 @@ function createVirtualAccountClient(
         expectedStatus: HTTP_STATUS_CREATED,
         responseSchema: messageResponseSchemasFor(to).sent,
         body: { to, own_contact: true, reply_to_message_id },
+      });
+      return response.message;
+    },
+    async sendLocation<Target extends MessageTarget>(
+      input: AccountSendLocationInput<Target>,
+    ): Promise<MessageIn<Target>> {
+      const response = await requestJson(fetchImplementation, {
+        method: 'POST',
+        url: `${accountUrl}/messages`,
+        expectedStatus: HTTP_STATUS_CREATED,
+        responseSchema: messageResponseSchemasFor(input.to).sent,
+        body: input,
       });
       return response.message;
     },

@@ -196,6 +196,14 @@ export interface AccountSendContactInput<Target extends MessageTarget = MessageT
   readonly reply_to_message_id?: number;
 }
 
+/** A static location the account shares; live locations are not supported. */
+export interface AccountSendLocationInput<Target extends MessageTarget = MessageTarget> {
+  readonly to: Target;
+  readonly location: LocationInput;
+  /** The ID of the chat's message to reply to, as message history shows it. */
+  readonly reply_to_message_id?: number;
+}
+
 export interface AccountShareOwnContactInput<Target extends MessageTarget = MessageTarget> {
   readonly to: Target;
   /** The ID of the chat's message to reply to, as message history shows it. */
@@ -1149,12 +1157,16 @@ interface MessageContentFields {
     readonly poll: Poll;
   };
   readonly contact: { readonly contact: Contact };
+  readonly location: {
+    /** A static location, whose accuracy Telegram keeps in whole meters. */
+    readonly location: Location;
+  };
 }
 
 /**
  * The fields that show what a message is: text, a photo, a document, a video, a voice note, a rich
- * message, a poll, or a contact. Each kind declares the others' fields absent, so that any of them
- * can be read from a message of unknown kind.
+ * message, a poll, a contact, or a location. Each kind declares the others' fields absent, so that
+ * any of them can be read from a message of unknown kind.
  */
 export type MessageContent = ExclusiveAlternatives<MessageContentFields>;
 
@@ -1374,7 +1386,8 @@ export type RequiredChatAdministratorRights = Readonly<Record<string, boolean>>;
 /**
  * What a reply keyboard button asks the client to share instead of sending its text, in the
  * fields of a Bot API `KeyboardButton`. Pressing a `request_contact` button shares the account's
- * own contact; the emulator cannot answer the other requests, so such buttons cannot be pressed.
+ * own contact, and pressing a `request_location` button shares the location the press reports;
+ * the emulator cannot answer the other requests, so such buttons cannot be pressed.
  */
 export type ReplyKeyboardButtonRequest =
   | { readonly request_contact: true }
@@ -1447,6 +1460,11 @@ export interface PressReplyKeyboardButtonInput<Target extends MessageTarget = Me
   readonly chat: Target;
   /** The text of the button to press, which the account then sends to the chat. */
   readonly text: string;
+  /**
+   * The location the account's client reports, which a `request_location` button shares and no
+   * other button takes.
+   */
+  readonly location?: LocationInput;
 }
 
 export interface AccountReplyInterfaceInput {
@@ -1651,6 +1669,13 @@ export interface VirtualAccountClient extends VirtualAccountProfile {
    */
   shareOwnContact<Target extends MessageTarget>(
     input: AccountShareOwnContactInput<Target>,
+  ): Promise<MessageIn<Target>>;
+  /**
+   * Shares a static location, as `sendMessage` sends text. Telegram keeps its accuracy in whole
+   * meters, rounded up.
+   */
+  sendLocation<Target extends MessageTarget>(
+    input: AccountSendLocationInput<Target>,
   ): Promise<MessageIn<Target>>;
   /**
    * Sends photos and videos, or documents, as an album, as `sendPhoto`, `sendVideo` and
@@ -1892,8 +1917,9 @@ export interface VirtualAccountClient extends VirtualAccountProfile {
    * account's message; in a supergroup, the message replies to the keyboard's message, as
    * Telegram's clients send it. A `request_contact` button, which only private chats show, shares
    * the account's own contact instead, in reply to the keyboard's message, and fails for an
-   * account created without a phone number. Fails when the chat shows no keyboard with such a
-   * button, or for a button with another request.
+   * account created without a phone number; a `request_location` button likewise shares the
+   * location the input reports, which it requires and no other button takes. Fails when the chat
+   * shows no keyboard with such a button, or for a button with another request.
    */
   pressReplyKeyboardButton<Target extends MessageTarget>(
     input: PressReplyKeyboardButtonInput<Target>,
