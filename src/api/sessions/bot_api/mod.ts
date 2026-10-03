@@ -11,6 +11,7 @@ import {
   grantSupergroupAdministratorRights,
   SUPERGROUP_ADMINISTRATOR_RIGHTS,
   type SupergroupAdministratorRights,
+  type SupergroupBotAccessFailureReason,
 } from '../../../types/chat_membership.ts';
 import type { EmulationSession } from '../../../types/emulation_session.ts';
 import {
@@ -2604,11 +2605,9 @@ function sendMethodAnswer(result: SendResult | SendFailure): BotApiMethodAnswer 
     case 'text_invalid':
       return botApiError(400, badRequestDescription(result.textError));
     case 'chat_not_found':
-      return botApiError(400, CHAT_NOT_FOUND_DESCRIPTION);
     case 'bot_not_a_member':
-      return botApiError(403, BOT_NOT_SUPERGROUP_MEMBER_DESCRIPTION);
     case 'bot_kicked':
-      return botApiError(403, BOT_KICKED_FROM_SUPERGROUP_DESCRIPTION);
+      return supergroupBotAccessFailureAnswer(result.reason);
     case 'reply_message_not_found':
       return botApiError(400, REPLY_MESSAGE_NOT_FOUND_DESCRIPTION);
     case 'message_effect_not_allowed_in_chat':
@@ -2972,11 +2971,9 @@ function handleStopPoll(
   }
   switch (result.reason) {
     case 'chat_not_found':
-      return botApiError(400, CHAT_NOT_FOUND_DESCRIPTION);
     case 'bot_not_a_member':
-      return botApiError(403, BOT_NOT_SUPERGROUP_MEMBER_DESCRIPTION);
     case 'bot_kicked':
-      return botApiError(403, BOT_KICKED_FROM_SUPERGROUP_DESCRIPTION);
+      return supergroupBotAccessFailureAnswer(result.reason);
     case 'message_not_found':
       return botApiError(400, MESSAGE_WITH_POLL_TO_STOP_NOT_FOUND_DESCRIPTION);
     case 'message_has_no_poll':
@@ -3138,11 +3135,9 @@ function editMessageAnswer(result: MessageEditResult): BotApiMethodAnswer {
     case 'text_invalid':
       return botApiError(400, badRequestDescription(result.textError));
     case 'chat_not_found':
-      return botApiError(400, CHAT_NOT_FOUND_DESCRIPTION);
     case 'bot_not_a_member':
-      return botApiError(403, BOT_NOT_SUPERGROUP_MEMBER_DESCRIPTION);
     case 'bot_kicked':
-      return botApiError(403, BOT_KICKED_FROM_SUPERGROUP_DESCRIPTION);
+      return supergroupBotAccessFailureAnswer(result.reason);
     case 'message_not_found':
       return botApiError(400, MESSAGE_TO_EDIT_NOT_FOUND_DESCRIPTION);
     case 'message_not_editable':
@@ -3252,11 +3247,9 @@ function handleDeleteMessage(
   }
   switch (result.reason) {
     case 'chat_not_found':
-      return botApiError(400, CHAT_NOT_FOUND_DESCRIPTION);
     case 'bot_not_a_member':
-      return botApiError(403, BOT_NOT_SUPERGROUP_MEMBER_DESCRIPTION);
     case 'bot_kicked':
-      return botApiError(403, BOT_KICKED_FROM_SUPERGROUP_DESCRIPTION);
+      return supergroupBotAccessFailureAnswer(result.reason);
     case 'message_not_found':
       return botApiError(400, MESSAGE_TO_DELETE_NOT_FOUND_DESCRIPTION);
     case 'message_not_deletable':
@@ -3334,22 +3327,18 @@ function handleUnpinChatMessage(
 /** Telegram's error for a pin or unpin refused for the chat, the bot's rights, or the message. */
 function pinChangeFailureAnswer(
   reason:
-    | 'chat_not_found'
-    | 'bot_not_a_member'
-    | 'bot_kicked'
+    | SupergroupBotAccessFailureReason
     | 'bot_blocked'
     | 'not_enough_rights'
     | 'service_message_not_pinnable',
 ): BotApiMethodAnswer {
   switch (reason) {
     case 'chat_not_found':
-      return botApiError(400, CHAT_NOT_FOUND_DESCRIPTION);
+    case 'bot_not_a_member':
+    case 'bot_kicked':
+      return supergroupBotAccessFailureAnswer(reason);
     case 'bot_blocked':
       return botApiError(403, BOT_BLOCKED_DESCRIPTION);
-    case 'bot_not_a_member':
-      return botApiError(403, BOT_NOT_SUPERGROUP_MEMBER_DESCRIPTION);
-    case 'bot_kicked':
-      return botApiError(403, BOT_KICKED_FROM_SUPERGROUP_DESCRIPTION);
     case 'not_enough_rights':
       return botApiError(400, NOT_ENOUGH_RIGHTS_TO_PIN_DESCRIPTION);
     case 'service_message_not_pinnable':
@@ -3357,6 +3346,27 @@ function pinChangeFailureAnswer(
     default: {
       const unhandledReason: never = reason;
       throw new Error(`Unhandled pin failure: ${unhandledReason}`);
+    }
+  }
+}
+
+/**
+ * Telegram's error for a request to a chat the bot cannot reach as a supergroup member, whichever
+ * method made it.
+ */
+function supergroupBotAccessFailureAnswer(
+  reason: SupergroupBotAccessFailureReason,
+): BotApiMethodAnswer {
+  switch (reason) {
+    case 'chat_not_found':
+      return botApiError(400, CHAT_NOT_FOUND_DESCRIPTION);
+    case 'bot_not_a_member':
+      return botApiError(403, BOT_NOT_SUPERGROUP_MEMBER_DESCRIPTION);
+    case 'bot_kicked':
+      return botApiError(403, BOT_KICKED_FROM_SUPERGROUP_DESCRIPTION);
+    default: {
+      const unhandledReason: never = reason;
+      throw new Error(`Unhandled supergroup bot access failure: ${unhandledReason}`);
     }
   }
 }
@@ -3393,11 +3403,9 @@ function handleDeleteMessages(
   }
   switch (result.reason) {
     case 'chat_not_found':
-      return botApiError(400, CHAT_NOT_FOUND_DESCRIPTION);
     case 'bot_not_a_member':
-      return botApiError(403, BOT_NOT_SUPERGROUP_MEMBER_DESCRIPTION);
     case 'bot_kicked':
-      return botApiError(403, BOT_KICKED_FROM_SUPERGROUP_DESCRIPTION);
+      return supergroupBotAccessFailureAnswer(result.reason);
     case 'message_not_deletable':
       return botApiError(400, MESSAGE_NOT_DELETABLE_DESCRIPTION);
     default: {
@@ -3500,11 +3508,9 @@ function handleSendChatAction(
   }
   switch (result.reason) {
     case 'chat_not_found':
-      return botApiError(400, CHAT_NOT_FOUND_DESCRIPTION);
     case 'bot_not_a_member':
-      return botApiError(403, BOT_NOT_SUPERGROUP_MEMBER_DESCRIPTION);
     case 'bot_kicked':
-      return botApiError(403, BOT_KICKED_FROM_SUPERGROUP_DESCRIPTION);
+      return supergroupBotAccessFailureAnswer(result.reason);
     case 'bot_blocked':
       return botApiError(403, BOT_BLOCKED_DESCRIPTION);
     default: {
@@ -3626,15 +3632,13 @@ function handleSetChatPermissions(
 
 /** Telegram's error for a chat whose information a bot cannot reach, or text it cannot read. */
 function chatInfoChangeFailureAnswer(
-  reason: 'chat_not_found' | 'bot_not_a_member' | 'bot_kicked' | 'text_encoding_invalid',
+  reason: SupergroupBotAccessFailureReason | 'text_encoding_invalid',
 ): BotApiMethodAnswer {
   switch (reason) {
     case 'chat_not_found':
-      return botApiError(400, CHAT_NOT_FOUND_DESCRIPTION);
     case 'bot_not_a_member':
-      return botApiError(403, BOT_NOT_SUPERGROUP_MEMBER_DESCRIPTION);
     case 'bot_kicked':
-      return botApiError(403, BOT_KICKED_FROM_SUPERGROUP_DESCRIPTION);
+      return supergroupBotAccessFailureAnswer(reason);
     case 'text_encoding_invalid':
       return botApiError(400, STRINGS_NOT_UTF8_DESCRIPTION);
     default: {
@@ -3666,11 +3670,9 @@ function handleLeaveChat(
   }
   switch (result.reason) {
     case 'chat_not_found':
-      return botApiError(400, CHAT_NOT_FOUND_DESCRIPTION);
     case 'bot_not_a_member':
-      return botApiError(403, BOT_NOT_SUPERGROUP_MEMBER_DESCRIPTION);
     case 'bot_kicked':
-      return botApiError(403, BOT_KICKED_FROM_SUPERGROUP_DESCRIPTION);
+      return supergroupBotAccessFailureAnswer(result.reason);
     case 'private_chat_not_leavable':
       return botApiError(400, badRequestDescription("Can't leave private chats"));
     default: {
@@ -3909,11 +3911,9 @@ function handleCreateChatInviteLink(
   }
   switch (result.reason) {
     case 'chat_not_found':
-      return botApiError(400, CHAT_NOT_FOUND_DESCRIPTION);
     case 'bot_not_a_member':
-      return botApiError(403, BOT_NOT_SUPERGROUP_MEMBER_DESCRIPTION);
     case 'bot_kicked':
-      return botApiError(403, BOT_KICKED_FROM_SUPERGROUP_DESCRIPTION);
+      return supergroupBotAccessFailureAnswer(result.reason);
     case 'private_chat_has_no_invite_links':
       return botApiError(400, PRIVATE_CHAT_HAS_NO_INVITE_LINKS_DESCRIPTION);
     case 'text_encoding_invalid':
@@ -3982,11 +3982,9 @@ function answerChatJoinRequestDecision(
   }
   switch (result.reason) {
     case 'chat_not_found':
-      return botApiError(400, CHAT_NOT_FOUND_DESCRIPTION);
     case 'bot_not_a_member':
-      return botApiError(403, BOT_NOT_SUPERGROUP_MEMBER_DESCRIPTION);
     case 'bot_kicked':
-      return botApiError(403, BOT_KICKED_FROM_SUPERGROUP_DESCRIPTION);
+      return supergroupBotAccessFailureAnswer(result.reason);
     case 'private_chat_has_no_join_requests':
       return botApiError(400, PRIVATE_CHAT_HAS_NO_JOIN_REQUESTS_DESCRIPTION);
     case 'not_enough_rights':
@@ -4087,11 +4085,9 @@ function readChatMemberTarget(
 function chatMemberFailureAnswer(reason: ChatMemberFailureReason): BotApiMethodAnswer {
   switch (reason) {
     case 'chat_not_found':
-      return botApiError(400, CHAT_NOT_FOUND_DESCRIPTION);
     case 'bot_not_a_member':
-      return botApiError(403, BOT_NOT_SUPERGROUP_MEMBER_DESCRIPTION);
     case 'bot_kicked':
-      return botApiError(403, BOT_KICKED_FROM_SUPERGROUP_DESCRIPTION);
+      return supergroupBotAccessFailureAnswer(reason);
     case 'member_not_found':
       return botApiError(400, MEMBER_NOT_FOUND_DESCRIPTION);
     case 'private_chat_has_no_administrators':
@@ -4229,11 +4225,9 @@ function readMyCommandsTarget(
 function myCommandsTargetError(reason: MyCommandsTargetFailureReason): BotApiMethodAnswer {
   switch (reason) {
     case 'chat_not_found':
-      return botApiError(400, CHAT_NOT_FOUND_DESCRIPTION);
     case 'bot_not_a_member':
-      return botApiError(403, BOT_NOT_SUPERGROUP_MEMBER_DESCRIPTION);
     case 'bot_kicked':
-      return botApiError(403, BOT_KICKED_FROM_SUPERGROUP_DESCRIPTION);
+      return supergroupBotAccessFailureAnswer(reason);
     case 'scope_not_allowed_in_private_chats':
       return botApiError(400, SCOPE_NOT_ALLOWED_IN_PRIVATE_CHATS_DESCRIPTION);
     case 'language_code_invalid':
