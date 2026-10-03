@@ -111,6 +111,13 @@ await activity.waitFor(reply('D'), { after: latest(b, c) });
 A filter that names a `kind`, or criteria only calls or only updates have, returns a correspondingly
 narrowed entry type, so `reply('A')` finds a `BotApiCallEntry` whose `answer` can be read directly.
 
+An account's action returns before the bot handles it, so the chat's latest message may still be the
+account's own. A test that reads the bot's reply takes the position before acting, waits for the
+reply's successful call with criteria that only that reply meets, and then selects the message by
+what identifies it, such as the message it replies to. The
+[client walkthrough](../typescript-client.md) does this for a photo and the document the bot replies
+with.
+
 A delivery's `update_id` finds that update's confirmation. The wait below asserts that the bot
 received the account's message, then that it confirmed it:
 

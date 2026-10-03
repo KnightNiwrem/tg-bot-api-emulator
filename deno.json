@@ -6,7 +6,7 @@
     "fmt:check": "deno fmt --check",
     "fmt": "deno fmt",
     "lint": "deno lint",
-    "check": "deno check --allow-import=cdn.jsdelivr.net,cdn.skypack.dev,jsr.io src/ tests/ clients/",
+    "check": "deno check --allow-import=cdn.jsdelivr.net,cdn.skypack.dev,jsr.io src/ tests/ clients/ && deno check --doc-only README.md docs/typescript-client.md",
     "architecture:check": "npx --yes fallow@3.27.0 dead-code --boundary-violations",
     "openapi:lint": "npx --yes @redocly/cli@2.54.2 lint openapi/openapi.yaml",
     "test": "deno test --allow-net=127.0.0.1 --allow-import=cdn.jsdelivr.net,cdn.skypack.dev,jsr.io"
