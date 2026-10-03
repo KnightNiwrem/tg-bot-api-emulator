@@ -229,8 +229,8 @@ try {
   await account.restrictChatMember({ chat: groupChat, userId: bot.id, permissions: {} });
   await account.liftChatMemberRestriction({ chat: groupChat, userId: bot.id });
 
-  // Let the bot create invite links. Once it has created one, another account joins through it,
-  // and the test makes the link's expiry date arrive, after which it admits nobody.
+  // Let the bot create invite links. Once it has created one, another account joins through it;
+  // a link with an expiry date admits nobody once the test makes that date arrive.
   const beforeInviting = await activity.position();
   await account.promoteChatMember({
     chat: groupChat,
@@ -242,10 +242,15 @@ try {
     { after: beforeInviting },
   );
   if (linkCreation.answer.ok) {
-    const { invite_link: inviteLink } = linkCreation.answer.result as { invite_link: string };
+    const link = linkCreation.answer.result as { invite_link: string; expire_date?: number };
     const { account: friend } = await session.createAccount({ first_name: 'Grace' });
-    await friend.joinChatByInviteLink({ inviteLink });
-    await session.expireChatInviteLink({ chatId: groupChat.chatId, inviteLink });
+    await friend.joinChatByInviteLink({ inviteLink: link.invite_link });
+    if (link.expire_date !== undefined) {
+      await session.expireChatInviteLink({
+        chatId: groupChat.chatId,
+        inviteLink: link.invite_link,
+      });
+    }
     console.log(await account.getChatInviteLinks({ chat: groupChat }));
   }
 
