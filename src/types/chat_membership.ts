@@ -111,7 +111,7 @@ export type FormerChatMemberStatus =
 
 /**
  * A user's standing in a shared chat, whether it is a member or not. A user that never joined the
- * chat has `left` it.
+ * chat has `left` it, unless it was banned or restricted before it could join.
  */
 export type ChatMemberStatus = ChatMembership | FormerChatMemberStatus;
 
@@ -184,7 +184,7 @@ export function getEffectiveChatPermissions(
 ): ChatPermissions {
   switch (membership.status) {
     case 'owner':
-      return ALL_CHAT_PERMISSIONS;
+      return new Set(ALL_CHAT_PERMISSIONS);
     case 'administrator':
       return new Set(
         CHAT_PERMISSIONS.filter((permission) =>

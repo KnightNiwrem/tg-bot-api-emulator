@@ -1932,8 +1932,10 @@ function presentCallbackQueryForAccount({ id, callbackData, state }: CallbackQue
 }
 
 /**
- * A missing query is not found; a result the answer does not hold rejects the request; a query
- * without an answer, or a chat the account can no longer write to, conflicts with sending it.
+ * A missing query is not found; a result the answer does not hold rejects the request; an account
+ * no longer a member of the supergroup, or one that may not use inline bots or send the result's
+ * content there, is forbidden; and a query without an answer, or a bot the account blocks,
+ * conflicts with sending it.
  */
 function chosenInlineResultFailureStatus(
   reason: Extract<

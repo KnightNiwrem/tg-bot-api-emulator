@@ -42,7 +42,10 @@ export interface BotApiAcceptedGiftTypes {
   readonly gifts_from_channels: boolean;
 }
 
-/** What members of a group may do by default, or what a restricted member may still do. */
+/**
+ * What members of a group may do by default, or the permissions a member's restriction leaves it,
+ * which the group's default permissions narrow further.
+ */
 export interface BotApiChatPermissions {
   readonly can_send_messages: boolean;
   readonly can_send_media_messages: boolean;

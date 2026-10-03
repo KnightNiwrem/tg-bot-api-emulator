@@ -984,19 +984,26 @@ Deno.test('SharedChatAdministrationService keeps a restriction while the user le
     memberId: member.profile.id,
   });
   restrict();
+  const statusBeforeBan = statusOf(member.profile.id);
   const ban = sharedChatAdministration.banChatMember({
     actorBotId: moderatorBot.profile.id,
     chatId: supergroup.id,
     memberId: member.profile.id,
   });
   if (
-    !removal.unbanned || statusAfterRemoval !== 'left' || !ban.banned ||
-    statusOf(member.profile.id) !== 'kicked' ||
+    !removal.unbanned || statusAfterRemoval !== 'left' || statusBeforeBan !== restrictedMember ||
+    !ban.banned || statusOf(member.profile.id) !== 'kicked' ||
     sharedChats.getChatMemberIds(supergroup.id).includes(member.profile.id)
   ) {
     throw new Error(
       `Expected removal and a ban to end the membership, received ${
-        JSON.stringify([removal, statusAfterRemoval, ban, statusOf(member.profile.id)])
+        JSON.stringify([
+          removal,
+          statusAfterRemoval,
+          statusBeforeBan,
+          ban,
+          statusOf(member.profile.id),
+        ])
       }`,
     );
   }
