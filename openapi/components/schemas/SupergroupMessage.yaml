@@ -49,6 +49,11 @@ oneOf:
       - new_chat_title
   - required:
       - pinned_message
+    properties:
+      pinned_message:
+        oneOf:
+          - $ref: ./PinnedSupergroupMessage.yaml
+          - $ref: ./InaccessibleSupergroupMessage.yaml
 properties:
   message_id:
     type: integer

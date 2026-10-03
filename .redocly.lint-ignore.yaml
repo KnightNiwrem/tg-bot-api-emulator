@@ -10,11 +10,3 @@ openapi/components/schemas/MyChatMemberUpdate.yaml:
   # which the rule does not inspect, so they are mutually exclusive.
   no-illogical-composition-keywords:
     - '#/properties/my_chat_member/oneOf'
-openapi/components/schemas/PrivateMessage.yaml:
-  # The alternative requires a property of the enclosing schema, which the rule does not look up.
-  no-required-schema-properties-undefined:
-    - '#/oneOf/7/required/0'
-openapi/components/schemas/SupergroupMessage.yaml:
-  # As for PrivateMessage.yaml, the property is defined by the enclosing schema.
-  no-required-schema-properties-undefined:
-    - '#/oneOf/10/required/0'

@@ -338,6 +338,8 @@ export function isSupergroupServiceContent(
     case 'voice':
     case 'rich_message':
     case 'poll':
+    case 'contact':
+    case 'location':
       return false;
     default: {
       const unhandledContent: never = content;
