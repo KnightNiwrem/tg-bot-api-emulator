@@ -147,6 +147,84 @@ Deno.test('MessageRepository keeps what an edit cannot change', () => {
   }
 });
 
+Deno.test('MessageRepository keeps fields that only some messages carry through an edit', () => {
+  const messages = new MessageRepository();
+  const forwardInfo = {
+    originalSender: { kind: 'hidden_user' as const, name: 'Ann' },
+    originalSentAtUnixSeconds: 1_600_000_000,
+  };
+  const privateMessage = messages.addPrivateMessage({
+    conversation: { accountId: 1, botId: 2 },
+    authorRole: 'account',
+    sentAtUnixSeconds: 1_700_000_000,
+    content: { kind: 'text', text: 'Forwarded', entities: [] },
+    forwardInfo,
+    isSilent: true,
+    messageEffectId: '5104841245755180586',
+  });
+  const supergroupMessage = messages.addSupergroupMessage({
+    chatId: -1_000_000_000_001,
+    author: { kind: 'account', accountId: 1 },
+    sentAtUnixSeconds: 1_700_000_000,
+    content: { kind: 'text', text: 'Quoted', entities: [] },
+    externalReply: { origin: forwardInfo },
+    quote: { text: { text: 'Hi', entities: [] }, position: 0, isManual: true },
+    viaBotId: 3,
+  });
+  const edit = {
+    content: { kind: 'text' as const, text: 'Edited', entities: [] },
+    inlineKeyboard: undefined,
+    contentEditedAtUnixSeconds: 1_700_000_005,
+  };
+
+  const editedPrivateMessage = messages.editPrivateMessage(privateMessage.id, edit);
+  const editedSupergroupMessage = messages.editSupergroupMessage(supergroupMessage.id, edit);
+  const isSameValue = (left: unknown, right: unknown) =>
+    left !== undefined && JSON.stringify(left) === JSON.stringify(right);
+  if (
+    editedPrivateMessage.messageEffectId !== '5104841245755180586' ||
+    !isSameValue(editedPrivateMessage.forwardInfo, forwardInfo) ||
+    !editedPrivateMessage.isSilent ||
+    !isSameValue(editedSupergroupMessage.externalReply, supergroupMessage.externalReply) ||
+    !isSameValue(editedSupergroupMessage.quote, supergroupMessage.quote) ||
+    !isSameValue(editedSupergroupMessage.viaBot, supergroupMessage.viaBot)
+  ) {
+    throw new Error('Expected the edits to keep every field they do not replace');
+  }
+});
+
+Deno.test('MessageRepository drops the inline keyboard and edit time that an edit omits', () => {
+  const messages = new MessageRepository();
+  const inlineKeyboard = [[{ kind: 'callback' as const, text: 'Yes', callbackData: 'yes' }]];
+  const message = messages.addSupergroupMessage({
+    chatId: -1_000_000_000_001,
+    author: { kind: 'bot', botId: 2 },
+    sentAtUnixSeconds: 1_700_000_000,
+    content: { kind: 'text', text: 'Continue?', entities: [] },
+    inlineKeyboard,
+  });
+  const editedMessage = messages.editSupergroupMessage(message.id, {
+    content: { kind: 'text', text: 'Continue now?', entities: [] },
+    inlineKeyboard,
+    contentEditedAtUnixSeconds: 1_700_000_005,
+  });
+  if (
+    JSON.stringify(editedMessage.inlineKeyboard) !== JSON.stringify(inlineKeyboard) ||
+    editedMessage.contentEditedAtUnixSeconds !== 1_700_000_005
+  ) {
+    throw new Error('Expected the edit to write the inline keyboard and edit time it carries');
+  }
+
+  const reeditedMessage = messages.editSupergroupMessage(message.id, {
+    content: { kind: 'text', text: 'Done', entities: [] },
+    inlineKeyboard: undefined,
+    contentEditedAtUnixSeconds: undefined,
+  });
+  if ('inlineKeyboard' in reeditedMessage || 'contentEditedAtUnixSeconds' in reeditedMessage) {
+    throw new Error('Expected the edit to drop the inline keyboard and edit time it omits');
+  }
+});
+
 Deno.test('MessageRepository issues distinct album identifiers that messages keep through edits', () => {
   const messages = new MessageRepository();
   const mediaGroupIds = Array.from({ length: 100 }, () => messages.createMediaGroupId());
