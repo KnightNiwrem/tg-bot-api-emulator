@@ -5271,28 +5271,37 @@ const INLINE_RESULT_TEXT_ENCODING_INVALID_ERROR = 'Strings must be encoded in UT
 /**
  * Cleans the title and description a result lists as TDLib's `get_input_bot_inline_result` does
  * once it has derived them, such as a contact's names: with `clean_input_string`, which refuses
- * text that is not well-formed Unicode.
+ * text that is not well-formed Unicode. TDLib would pass on a contact whose phone number or title
+ * cleaning empties; as for `sendContact`, the emulator refuses it instead, with the errors TDLib
+ * gives for an empty trimmed phone number or first name, since Telegram's outcome is not public.
  */
 function cleanInlineResultListing(
   result: SpecifiedInlineQueryResult,
 ):
   | { readonly cleaned: true; readonly result: SpecifiedInlineQueryResult }
-  | { readonly cleaned: false; readonly failure: TextInvalidFailure } {
+  | {
+    readonly cleaned: false;
+    readonly failure: TextInvalidFailure | { readonly reason: InlineContactResultFailureReason };
+  } {
   const encodingFailure = {
     cleaned: false,
     failure: { reason: 'text_invalid', textError: INLINE_RESULT_TEXT_ENCODING_INVALID_ERROR },
   } as const;
   const title = cleanInputString(result.title);
-  if (title === undefined) {
-    return encodingFailure;
-  }
   if (result.kind === 'voice') {
-    return { cleaned: true, result: { ...result, title } };
+    return title === undefined ? encodingFailure : { cleaned: true, result: { ...result, title } };
   }
   const description = cleanInputString(result.description);
-  return description === undefined
-    ? encodingFailure
-    : { cleaned: true, result: { ...result, title, description } };
+  if (title === undefined || description === undefined) {
+    return encodingFailure;
+  }
+  if (result.kind === 'contact' && description.length === 0) {
+    return { cleaned: false, failure: { reason: 'contact_phone_number_empty' } };
+  }
+  if (result.kind === 'contact' && title.length === 0) {
+    return { cleaned: false, failure: { reason: 'contact_first_name_empty' } };
+  }
+  return { cleaned: true, result: { ...result, title, description } };
 }
 
 /** The decimal places of the coordinates TDLib writes into a location result's description. */

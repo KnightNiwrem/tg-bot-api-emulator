@@ -68,8 +68,9 @@ post:
         `application/pdf` or `application/zip` (`Bad Request: unallowed document MIME type`), or
         a video named by URL whose `mime_type` does not begin with `video/mp4` or `text/html`
         (`Bad Request: unallowed video MIME type`), or a contact result whose trimmed phone
-        number or first name is empty (`Bad Request: field "phone_number" must contain a valid
-        phone number`, `Bad Request: field "first_name" must be non-empty`), or a location,
+        number or first name is empty, or whose phone number or title cleaning empties (`Bad
+        Request: field "phone_number" must contain a valid phone number`, `Bad Request: field
+        "first_name" must be non-empty`), or a location,
         listed or sent, outside ±90° and ±180° (`Bad Request: invalid location specified`), or
         a result whose title or description, as the client lists it, is not well-formed Unicode
         (`Bad Request: strings must be encoded in UTF-8`).

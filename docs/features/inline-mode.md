@@ -67,17 +67,18 @@ A contact result lists the names and phone number that TDLib's
 name after a space, and its description is the phone number, both then cleaned as every result's
 title and description are. An empty trimmed phone number fails with
 `Bad Request: field "phone_number" must contain a valid phone number`, and an empty first name with
-`Bad Request: field "first_name" must be non-empty`. The contact it sends keeps the texts as the bot
-wrote them and is read as for [`sendContact`](contacts-and-locations.md#contacts): texts are
-cleaned, names may have at most 64 characters and a vCard at most 2048 bytes, and it names no
-Telegram user. A static location result lists its title and, as TDLib describes it, its coordinates
-to six decimal places, and sends the location as
-[`sendLocation`](contacts-and-locations.md#locations) reads one: coordinates outside ±90° and ±180°
-fail with `Bad Request: invalid location specified`, and an accuracy, from 0 to 1500 meters, is
-rounded up to whole meters. The same rules apply to `input_message_content` of a contact
-(`phone_number`, `first_name`, `last_name`, `vcard`) or a location (`latitude`, `longitude`,
-`horizontal_accuracy`). The emulator checks a location result's own coordinates even when its
-`input_message_content` replaces them, where TDLib only lists them.
+`Bad Request: field "first_name" must be non-empty`. The emulator gives the same errors when
+cleaning empties the phone number, or the title of a contact without a last name, which TDLib would
+pass on to Telegram with an unknown outcome. The contact it sends keeps the texts as the bot wrote
+them and is read as for [`sendContact`](contacts-and-locations.md#contacts): texts are cleaned,
+names may have at most 64 characters and a vCard at most 2048 bytes, and it names no Telegram user.
+A static location result lists its title and, as TDLib describes it, its coordinates to six decimal
+places, and sends the location as [`sendLocation`](contacts-and-locations.md#locations) reads one:
+coordinates outside ±90° and ±180° fail with `Bad Request: invalid location specified`, and an
+accuracy, from 0 to 1500 meters, is rounded up to whole meters. The same rules apply to
+`input_message_content` of a contact (`phone_number`, `first_name`, `last_name`, `vcard`) or a
+location (`latitude`, `longitude`, `horizontal_accuracy`). The emulator checks a location result's
+own coordinates even when its `input_message_content` replaces them, where TDLib only lists them.
 
 As for `sendLocation`, live locations are not supported: `live_period`, `heading` and
 `proximity_alert_radius` fail with the invalid-parameters error, in a result or its content. The
