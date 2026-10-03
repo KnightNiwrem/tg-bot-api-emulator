@@ -99,7 +99,10 @@ TDLib's [`pinChatMessage`][td-pin-chat-message] documents notifications to be al
 
 ## Edits, deletions and replies
 
-A pin follows its message, wherever the chat shows it:
+A pin follows its message wherever the chat shows it now: in history, `getChat`, and updates created
+later. An update already queued keeps the messages as they were when it was created, as the official
+server's updates do, so a pending pin update still shows the pinned message from before a later edit
+or deletion.
 
 - **Edits.** An edited message stays pinned. Its pin's service messages and `getChat` show it as it
   is now, with its `edit_date`. The bots that receive edits of the message receive this one as an

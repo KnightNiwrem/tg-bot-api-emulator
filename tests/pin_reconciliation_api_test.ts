@@ -170,8 +170,10 @@ Deno.test('an edited pinned message stays pinned and shows its edit wherever it 
   await requestJson(api, 'PATCH', `${supergroupPath(grace)}/messages/${messageId}`, {
     text: 'final',
   });
+  const editUpdates = await readUpdates(pinningBot);
+  const editDate = editUpdates[0]?.edited_message?.edit_date;
   expectEqual(
-    (await readUpdates(pinningBot)).map((update) => Object.keys(update)),
+    editUpdates.map((update) => Object.keys(update)),
     [['edited_message']],
     'the edit reaches the administrator bot as an edit, with no further pin update',
   );
@@ -190,10 +192,11 @@ Deno.test('an edited pinned message stays pinned and shows its edit wherever it 
   }
   const serviceMessage = (await getHistory(supergroupPath(grace))).at(-1);
   expectEqual(
-    [serviceMessage?.pinned_message?.text, typeof serviceMessage?.pinned_message?.edit_date],
-    ['final', 'number'],
+    [serviceMessage?.pinned_message?.text, serviceMessage?.pinned_message?.edit_date],
+    ['final', editDate],
     'the service message shows the pinned message as it is now, with its edit date',
   );
+  expectEqual(typeof editDate, 'number', 'the edit is dated');
 });
 
 Deno.test('deleting a pinned message unpins it, and getChat shows the next newest', async () => {
