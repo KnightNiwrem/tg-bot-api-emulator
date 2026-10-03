@@ -233,7 +233,8 @@ Deno.test('a bot pins private messages, receives the service messages, and unpin
 });
 
 Deno.test('a bot receives the service message of an account pin in its private chat', async () => {
-  const { pinningBot, privatePath, api, sendToPinningBot, readMessages } = await createPinFixture();
+  const { ada, pinningBot, privatePath, api, sendToPinningBot, readMessages } =
+    await createPinFixture();
   const messageId = await sendToPinningBot('hello');
   await readMessages(pinningBot);
 
@@ -241,7 +242,7 @@ Deno.test('a bot receives the service message of an account pin in its private c
   const [serviceMessage] = await readMessages(pinningBot);
   expectEqual(
     serviceMessage === undefined ? undefined : describePin(serviceMessage),
-    { from: serviceMessage?.chat?.id, pinned: 'hello', pinnedId: messageId, nestedReply: false },
+    { from: ada, pinned: 'hello', pinnedId: messageId, nestedReply: false },
     'the account authored the service message',
   );
 });
@@ -390,7 +391,7 @@ Deno.test('a pin service message shows a deleted pinned message as inaccessible'
   const serviceMessage = (await getHistory(supergroupPath(ada))).at(-1);
   expectEqual(
     serviceMessage?.pinned_message,
-    { message_id: messageId, chat: serviceMessage?.chat, date: 0 },
+    { message_id: messageId, chat: { id: chatId, title: 'Team', type: 'supergroup' }, date: 0 },
     'the pinned message is inaccessible',
   );
   expectEqual(

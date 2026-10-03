@@ -1444,8 +1444,8 @@ export type RepliedSupergroupMessage =
 /**
  * A supergroup message as the requesting account sees it: numbered once by the supergroup, and
  * written by an account or a bot, or a service message about members joining or leaving, a new
- * title, or a pin, from the member who made the change. Members see the same message, apart from the `file_id` of its file
- * and the legacy `new_chat_member` of a service message.
+ * title, or a pin, from the member who made the change. Members see the same message, apart from
+ * the `file_id` of its file and the legacy `new_chat_member` of a service message.
  */
 export type SupergroupMessage =
   & MessageHeader<SupergroupChat>

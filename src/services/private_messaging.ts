@@ -1122,22 +1122,24 @@ export class PrivateMessagingService {
     if (!lookup.resolved) {
       return { stopped: false, reason: lookup.reason };
     }
-    const pollLookup = findStoppablePoll(lookup.message, input.fromBotId, this.#polls);
+    const pollMessage = lookup.message;
+    // A service message shows no poll.
+    if (!isPrivateContentMessage(pollMessage)) {
+      return { stopped: false, reason: 'message_has_no_poll' };
+    }
+    const pollLookup = findStoppablePoll(pollMessage, input.fromBotId, this.#polls);
     if (!pollLookup.found) {
       return { stopped: false, reason: pollLookup.reason };
-    }
-    if (!isPrivateContentMessage(lookup.message)) {
-      throw new Error(`Service message ${lookup.message.id} shows poll ${pollLookup.poll.id}`);
     }
     if (input.inlineKeyboard !== undefined && !hasOnlyValidCallbackData(input.inlineKeyboard)) {
       return { stopped: false, reason: 'callback_data_invalid' };
     }
 
     const stoppedPoll = this.#polls.closePoll(pollLookup.poll.id);
-    const message = this.#messages.editPrivateMessage(lookup.message.id, {
-      content: lookup.message.content,
+    const message = this.#messages.editPrivateMessage(pollMessage.id, {
+      content: pollMessage.content,
       inlineKeyboard: input.inlineKeyboard,
-      contentEditedAtUnixSeconds: lookup.message.contentEditedAtUnixSeconds,
+      contentEditedAtUnixSeconds: pollMessage.contentEditedAtUnixSeconds,
     });
     this.#events.publish({ type: 'poll_closed', poll: stoppedPoll });
     return { stopped: true, message, poll: stoppedPoll };

@@ -546,7 +546,7 @@ export type SupergroupMessageAuthor =
 
 /**
  * A canonical message of a supergroup: one that a member wrote, or a service message recording a
- * membership change that its author made.
+ * change of the supergroup or a pin, which its author made.
  */
 export interface SupergroupMessage {
   readonly kind: 'supergroup_message';

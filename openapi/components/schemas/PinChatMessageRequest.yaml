@@ -8,7 +8,7 @@ properties:
     $ref: ./ChatIdentifier.yaml
     description: >-
       Identifier of the chat: for a private chat, the account's user ID; for a supergroup, its
-      negative chat ID.
+      negative chat ID, or `@username` for a public one.
   message_id:
     type: integer
     description: Identifier of the message to pin in the bot's chat.

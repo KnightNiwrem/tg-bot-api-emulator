@@ -5162,6 +5162,16 @@ function projectBotCommand({ command, description, isEphemeral }: BotCommand): B
  * Narrows why a member query or moderation of the authenticated bot failed to the reasons it can
  * meet: the authenticated bot itself always exists.
  */
+function excludeMissingBotFailure<Reason extends string>(
+  authenticatedBot: VirtualBotProfile,
+  reason: Reason | 'bot_not_found',
+): Reason {
+  if (reason === 'bot_not_found') {
+    throw new Error(`Authenticated bot ${authenticatedBot.id} does not exist`);
+  }
+  return reason;
+}
+
 /**
  * The chat a bot pins in, by the Bot API `chat_id`: a user's ID names the bot's private chat with
  * that user, and any other ID a supergroup.
@@ -5180,16 +5190,6 @@ function excludeAccountPinChangeFailure<Reason extends string>(
 ): Reason {
   if (reason === 'pinner_not_found' || reason === 'not_a_member') {
     throw new Error(`Bot ${authenticatedBot.id} could not pin: ${reason}`);
-  }
-  return reason;
-}
-
-function excludeMissingBotFailure<Reason extends string>(
-  authenticatedBot: VirtualBotProfile,
-  reason: Reason | 'bot_not_found',
-): Reason {
-  if (reason === 'bot_not_found') {
-    throw new Error(`Authenticated bot ${authenticatedBot.id} does not exist`);
   }
   return reason;
 }

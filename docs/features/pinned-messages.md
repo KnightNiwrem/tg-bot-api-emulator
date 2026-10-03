@@ -45,15 +45,16 @@ A request is checked in the order of the official server's [`check_message`][che
 TDLib's [`pin_dialog_message`][pin-dialog-message] and [`can_pin_message`][can-pin-message], which
 an unpin passes through too:
 
-| Check                                                                  | Error, after `Bad Request:`                                         |
-| ---------------------------------------------------------------------- | ------------------------------------------------------------------- |
-| `chat_id` is missing                                                   | `chat_id is empty`                                                  |
-| The bot cannot address the chat, as for `sendMessage`                  | `chat not found`, or `403` for a supergroup it left                 |
-| `message_id` is missing, not positive, or names no message of the chat | `message to pin not found` (`message to unpin not found`)           |
-| Without a `message_id`, the chat pins nothing                          | `message to unpin not found`, as [the server][unpin-target] answers |
-| The bot lacks `can_pin_messages` in a supergroup                       | `not enough rights to manage pinned messages in the chat`           |
-| The message is a service message, also for an unpin                    | `service messages can't be pinned`                                  |
-| The message is already pinned, or, for an unpin, not pinned            | `CHAT_NOT_MODIFIED` (see [comparison limits](#comparison-limits))   |
+| Check                                                                | Error, after `Bad Request:`                                         |
+| -------------------------------------------------------------------- | ------------------------------------------------------------------- |
+| `chat_id` is missing                                                 | `chat_id is empty`                                                  |
+| The bot cannot address the chat, as for `sendMessage`                | `chat not found`, or `403` for a supergroup it left                 |
+| `pinChatMessage`'s `message_id` is missing, not positive, or unknown | `message to pin not found`                                          |
+| `unpinChatMessage`'s positive `message_id` is unknown                | `message to unpin not found`                                        |
+| Without a `message_id`, the chat pins nothing                        | `message to unpin not found`, as [the server][unpin-target] answers |
+| The bot lacks `can_pin_messages` in a supergroup                     | `not enough rights to manage pinned messages in the chat`           |
+| The message is a service message, also for an unpin                  | `service messages can't be pinned`                                  |
+| The message is already pinned, or, for an unpin, not pinned          | `CHAT_NOT_MODIFIED` (see [comparison limits](#comparison-limits))   |
 
 ## Account pins
 

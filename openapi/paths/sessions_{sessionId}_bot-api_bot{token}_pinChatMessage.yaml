@@ -4,8 +4,9 @@ description: >-
   bot pins any message either participant wrote; in a supergroup, it needs to be an
   administrator with `can_pin_messages`, a right that bots never get from the default
   permissions. Service messages cannot be pinned. The pin is recorded as the bot's service
-  message with `pinned_message`, which the chat's bots receive, privacy mode notwithstanding,
-  the bot itself included, as the official server's `need_skip_update_message` lets it.
+  message with `pinned_message`, which the chat's bots subscribed to `message` updates
+  receive, privacy mode notwithstanding, the bot itself included, as the official server's
+  `need_skip_update_message` lets it.
 parameters:
   - $ref: ../components/parameters/SessionId.yaml
   - $ref: ../components/parameters/BotToken.yaml
