@@ -1,0 +1,28 @@
+type: object
+additionalProperties: false
+description: >-
+  A supergroup's service message about a pin, shown as `reply_to_message` after its pinned
+  message was deleted, as `PrivatePinOfDeletedMessage` describes it for a private chat.
+required:
+  - message_id
+  - from
+  - chat
+  - date
+properties:
+  message_id:
+    type: integer
+    minimum: 1
+  from:
+    description: The member, an account or a bot, that pinned the message.
+    oneOf:
+      - $ref: ./Account.yaml
+      - $ref: ./MessageSenderBot.yaml
+  chat:
+    $ref: ./SupergroupChat.yaml
+  date:
+    type: integer
+    minimum: 0
+  has_protected_content:
+    type: boolean
+    const: true
+    description: Present while the owner protects the supergroup's content.

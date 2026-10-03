@@ -1,0 +1,25 @@
+type: object
+additionalProperties: false
+description: >-
+  A private chat's service message about a pin, shown as `reply_to_message` after its pinned
+  message was deleted: as the official server shows it there, without `pinned_message`, so only
+  the message's header remains.
+required:
+  - message_id
+  - from
+  - chat
+  - date
+properties:
+  message_id:
+    type: integer
+    minimum: 1
+  from:
+    description: The account or bot that pinned the message.
+    oneOf:
+      - $ref: ./Account.yaml
+      - $ref: ./MessageSenderBot.yaml
+  chat:
+    $ref: ./PrivateChat.yaml
+  date:
+    type: integer
+    minimum: 0

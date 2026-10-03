@@ -639,7 +639,6 @@ function contentMessageSchemas<Header extends z.ZodRawShape>(header: Header) {
 /**
  * A service message about a pin, with fields as `contentMessageSchemas` reads them: the pinned
  * message, which is never a service message, as a reply shows it, or, once deleted, inaccessible.
- * It is absent only where the service message is itself shown as a replied message.
  */
 function pinServiceMessageSchema<
   Header extends z.ZodRawShape,
@@ -655,21 +654,32 @@ function pinServiceMessageSchema<
         chat: chatSchema,
         date: z.literal(0),
       }),
-    ]).optional(),
+    ]),
     ...messageTrailerShape,
   });
 }
 
 /**
- * A service message about members joining or leaving, about a new title, or about a pin, as
+ * A service message about a pin as a replied message shows it, as `pinServiceMessageSchema` reads
+ * it, but without a deleted pinned message, which the server leaves out there.
+ */
+function repliedPinServiceMessageSchema<Header extends z.ZodRawShape>(header: Header) {
+  return z.strictObject({
+    ...header,
+    pinned_message: z.union(contentMessageSchemas(header)).optional(),
+    ...messageTrailerShape,
+  });
+}
+
+/**
+ * A service message about members joining or leaving, or about a new title, as
  * `contentMessageSchemas` reads others.
  */
-function supergroupServiceMessageSchemas<Header extends z.ZodRawShape>(header: Header) {
+function supergroupChangeMessageSchemas<Header extends z.ZodRawShape>(header: Header) {
   return [
     z.strictObject({ ...header, ...membersJoinedContentShape, ...messageTrailerShape }),
     z.strictObject({ ...header, ...memberLeftContentShape, ...messageTrailerShape }),
     z.strictObject({ ...header, new_chat_title: z.string().min(1), ...messageTrailerShape }),
-    pinServiceMessageSchema(header, supergroupMessageHeader, supergroupChatSchema),
   ] as const;
 }
 
@@ -687,28 +697,50 @@ const supergroupMessageHeader = {
   ...messageAlbumInfoShape,
 };
 
-/** Private messages, which service messages about pins are among. */
-function privateMessageSchemas<Header extends z.ZodRawShape>(header: Header) {
-  return [
-    ...contentMessageSchemas(header),
-    pinServiceMessageSchema(header, privateMessageHeader, privateChatSchema),
-  ] as const;
+// A private message, which may be a service message about a pin, with its replied message, which
+// may be one too.
+const privateMessageSchema: z.ZodType<PrivateMessage> = z.union([
+  ...contentMessageSchemas({ ...privateMessageHeader, reply_to_message: repliedPrivateMessage() }),
+  pinServiceMessageSchema(
+    { ...privateMessageHeader, reply_to_message: repliedPrivateMessage() },
+    privateMessageHeader,
+    privateChatSchema,
+  ),
+]);
+
+/** The message a private message replies to, which never shows its own reply. */
+function repliedPrivateMessage() {
+  return z.union([
+    ...contentMessageSchemas(privateMessageHeader),
+    repliedPinServiceMessageSchema(privateMessageHeader),
+  ]).optional();
 }
 
-const privateMessageSchema: z.ZodType<PrivateMessage> = z.union(privateMessageSchemas({
-  ...privateMessageHeader,
-  reply_to_message: z.union(privateMessageSchemas(privateMessageHeader)).optional(),
-}));
-
-/** Supergroup messages, which service messages about changes of the supergroup are among. */
-function supergroupMessageSchemas<Header extends z.ZodRawShape>(header: Header) {
-  return [...contentMessageSchemas(header), ...supergroupServiceMessageSchemas(header)] as const;
+/** The message a supergroup message replies to, which never shows its own reply. */
+function repliedSupergroupMessage() {
+  return z.union([
+    ...contentMessageSchemas(supergroupMessageHeader),
+    ...supergroupChangeMessageSchemas(supergroupMessageHeader),
+    repliedPinServiceMessageSchema(supergroupMessageHeader),
+  ]).optional();
 }
 
-const supergroupMessageSchema: z.ZodType<SupergroupMessage> = z.union(supergroupMessageSchemas({
-  ...supergroupMessageHeader,
-  reply_to_message: z.union(supergroupMessageSchemas(supergroupMessageHeader)).optional(),
-}));
+// Supergroup messages, which service messages about changes of the supergroup and pins are among.
+const supergroupMessageSchema: z.ZodType<SupergroupMessage> = z.union([
+  ...contentMessageSchemas({
+    ...supergroupMessageHeader,
+    reply_to_message: repliedSupergroupMessage(),
+  }),
+  ...supergroupChangeMessageSchemas({
+    ...supergroupMessageHeader,
+    reply_to_message: repliedSupergroupMessage(),
+  }),
+  pinServiceMessageSchema(
+    { ...supergroupMessageHeader, reply_to_message: repliedSupergroupMessage() },
+    supergroupMessageHeader,
+    supergroupChatSchema,
+  ),
+]);
 
 export const sentMessageResponseSchema = z.strictObject({
   message: privateMessageSchema,

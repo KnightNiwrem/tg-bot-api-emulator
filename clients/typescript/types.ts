@@ -1238,18 +1238,31 @@ export interface InaccessibleMessage<Chat> {
 
 /**
  * The field of a service message about a pin, which takes the place of content: the pinned
- * message as a reply shows it, or, once deleted, inaccessible. It is absent only where the service
- * message is itself shown as a replied message and the pinned message was deleted.
+ * message as a reply shows it, or, once deleted, inaccessible.
  */
 export type PinContent<Chat, PinnedMessage> =
   & NoContent
   & Omit<NoServiceChange, 'pinned_message'>
-  & { readonly pinned_message?: PinnedMessage | InaccessibleMessage<Chat> };
+  & { readonly pinned_message: PinnedMessage | InaccessibleMessage<Chat> };
+
+/**
+ * The field of a service message about a pin as a replied message shows it, which leaves out a
+ * deleted pinned message rather than show it inaccessible.
+ */
+export type RepliedPinContent<PinnedMessage> =
+  & NoContent
+  & Omit<NoServiceChange, 'pinned_message'>
+  & { readonly pinned_message?: PinnedMessage };
 
 /** What a private message shows: content, or a pin. */
 export type PrivateMessageContent =
   | (MessageContent & NoServiceChange)
   | PinContent<PrivateChat, PinnedPrivateMessage>;
+
+/** What a private message shows as a replied message, as `RepliedPinContent` shows a pin. */
+export type RepliedPrivateMessageContent =
+  | (MessageContent & NoServiceChange)
+  | RepliedPinContent<PinnedPrivateMessage>;
 
 /**
  * What a supergroup message shows: content, or a change of the supergroup's members or title, or
@@ -1260,6 +1273,13 @@ export type SupergroupMessageContent =
   | MembershipChangeContent
   | TitleChangeContent
   | PinContent<SupergroupChat, PinnedSupergroupMessage>;
+
+/** What a supergroup message shows as a replied message, as `RepliedPinContent` shows a pin. */
+export type RepliedSupergroupMessageContent =
+  | (MessageContent & NoServiceChange)
+  | MembershipChangeContent
+  | TitleChangeContent
+  | RepliedPinContent<PinnedSupergroupMessage>;
 
 /** Who first sent a forwarded message, and when. */
 export interface MessageOriginUser {
@@ -1385,7 +1405,7 @@ export type RepliedPrivateMessage =
   & MessageHeader<PrivateChat>
   & MessageReplyInfo
   & MessageAlbumInfo
-  & PrivateMessageContent
+  & RepliedPrivateMessageContent
   & MessageTrailer;
 
 /**
@@ -1418,7 +1438,7 @@ export type RepliedSupergroupMessage =
   & MessageHeader<SupergroupChat>
   & MessageReplyInfo
   & MessageAlbumInfo
-  & SupergroupMessageContent
+  & RepliedSupergroupMessageContent
   & MessageTrailer;
 
 /**

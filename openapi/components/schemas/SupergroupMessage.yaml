@@ -87,7 +87,9 @@ properties:
     minimum: 0
     description: Legacy form of `forward_origin.date`, present only for a forward.
   reply_to_message:
-    $ref: ./SupergroupMessage.yaml
+    oneOf:
+      - $ref: ./SupergroupMessage.yaml
+      - $ref: ./SupergroupPinOfDeletedMessage.yaml
   external_reply:
     $ref: ./ExternalReplyInfo.yaml
   quote:
@@ -167,8 +169,8 @@ properties:
     description: >-
       The message a service message records the pin of, which is never a service message, as
       it is now and without its own `reply_to_message`; once deleted, an inaccessible message.
-      Omitted only where the service message is itself shown as `reply_to_message` and the
-      pinned message was deleted, as the official server omits it there.
+      Where the service message is itself shown as `reply_to_message` and the pinned message
+      was deleted, it is omitted, as `SupergroupPinOfDeletedMessage` shows.
     oneOf:
       - $ref: ./SupergroupMessage.yaml
       - $ref: ./InaccessibleMessage.yaml
