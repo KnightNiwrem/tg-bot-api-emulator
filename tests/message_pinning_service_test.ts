@@ -343,7 +343,12 @@ Deno.test('a public supergroup ignores its default permissions for pins', () => 
   const messageId = messageIdIn(session, chatId, sent.message);
   const chat: PinningChat = { type: 'supergroup', chatId };
   const pin = (accountId: number) =>
-    session.messagePinning.pinMessage({ pinner: { kind: 'account', accountId }, chat, messageId });
+    session.messagePinning.pinMessage({
+      isSilent: false,
+      pinner: { kind: 'account', accountId },
+      chat,
+      messageId,
+    });
 
   expectEqual(
     pin(grace),
@@ -360,6 +365,7 @@ Deno.test('a public supergroup ignores its default permissions for pins', () => 
   expectEqual(pin(grace).pinned, true, 'the right lets the administrator pin');
   expectEqual(
     session.messagePinning.pinMessage({
+      isSilent: false,
       pinner: { kind: 'account', accountId: grace },
       chat: { type: 'supergroup', chatId: privateChatId },
       messageId: sendToSupergroup(grace, 'private rules'),
