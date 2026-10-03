@@ -1974,6 +1974,17 @@ Deno.test('PrivateMessagingService checks the account, bot, and block alike on e
         viaBotId: bot.profile.id,
         content: { kind: 'text', text: 'Result', entities: [] },
       }),
+      privateMessaging.sendAccountForward({
+        fromAccountId,
+        to: { type: 'private', botId },
+        forward: {
+          content: { kind: 'text', text: 'Forwarded', entities: [] },
+          forwardInfo: {
+            originalSender: { kind: 'user', userId: account.profile.id },
+            originalSentAtUnixSeconds: 0,
+          },
+        },
+      }),
     ].map((result) => result.sent ? 'sent' : result.reason);
 
   const received = [
@@ -1982,9 +1993,9 @@ Deno.test('PrivateMessagingService checks the account, bot, and block alike on e
     sendFromEveryAccountPath(blockingAccount.profile.id, bot.profile.id),
   ];
   const expected = [
-    ['account_not_found', 'account_not_found', 'account_not_found'],
-    ['bot_not_found', 'bot_not_found', 'bot_not_found'],
-    ['bot_blocked', 'bot_blocked', 'bot_blocked'],
+    Array(4).fill('account_not_found'),
+    Array(4).fill('bot_not_found'),
+    Array(4).fill('bot_blocked'),
   ];
   if (JSON.stringify(received) !== JSON.stringify(expected)) {
     throw new Error(`Expected sender checks in order, received ${JSON.stringify(received)}`);
