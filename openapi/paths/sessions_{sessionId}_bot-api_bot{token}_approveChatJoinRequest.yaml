@@ -33,7 +33,8 @@ post:
     '400':
       description: >-
         The request cannot be decoded or has unsupported parameters, or Telegram would reject
-        it, in this order: `user_id` is missing or not positive (`Bad Request: invalid user_id
+        it, in this order, once a `chat_id` given as `@username` is resolved, which an unknown
+        one fails first (`Bad Request: chat not found`): `user_id` is missing or not positive (`Bad Request: invalid user_id
         specified`); `chat_id` is missing (`Bad Request: chat_id is empty`); the chat is neither
         a private chat with an account that has written to the bot nor a supergroup the bot is
         or was a member of (`Bad Request: chat not found`); the chat is a private chat (`Bad

@@ -150,7 +150,8 @@ leaves the account outside, which no update reports; the account may request aga
 A decision consumes its request, so a session decides each request once, even when bots decide at
 the same time: the session handles one call after another, and a later approval or decline finds the
 account a member, or the request gone. Nothing adds a member twice. The bot activity log records
-each call with its answer. Requests are checked in this order:
+each call with its answer. Requests are checked in this order, after a `chat_id` given as
+`@username` is [resolved](sessions-and-requests.md#chat-usernames):
 
 | Check                                                          | Error, after `Bad Request:`                                             |
 | -------------------------------------------------------------- | ----------------------------------------------------------------------- |
