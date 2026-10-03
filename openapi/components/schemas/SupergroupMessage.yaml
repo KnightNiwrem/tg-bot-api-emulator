@@ -28,6 +28,11 @@ oneOf:
   - required:
       - poll
   - required:
+      - contact
+    properties:
+      contact:
+        $ref: ./Contact.yaml
+  - required:
       - new_chat_participant
       - new_chat_member
       - new_chat_members
@@ -158,6 +163,9 @@ properties:
     $ref: ./Poll.yaml
     description: >-
       The poll of a poll message, which only bots send, with its votes as they are now.
+  contact:
+    $ref: ./Contact.yaml
+    description: The phone contact of a contact message.
   reply_markup:
     $ref: ./InlineKeyboardMarkup.yaml
   via_bot:

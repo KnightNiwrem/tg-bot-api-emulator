@@ -1,0 +1,81 @@
+description: >-
+  Telegram Bot API method for sending a phone contact. As the official server's
+  `process_send_contact_query` does, the bot names no Telegram user for the contact, and the
+  emulator never looks users up by phone number, so the sent contact shows no `user_id`. Its texts
+  are cleaned as TDLib's `Contact::validate` cleans them, turning control characters into spaces;
+  nothing else of them is read, so the phone number keeps any form and the vCard is never parsed.
+  The other parameters work as for `sendMessage`.
+parameters:
+  - $ref: ../components/parameters/SessionId.yaml
+  - $ref: ../components/parameters/BotToken.yaml
+post:
+  operationId: sendContact
+  summary: Send a phone contact from the authenticated virtual bot to an account or a supergroup
+  requestBody:
+    required: true
+    content:
+      application/json:
+        schema:
+          $ref: ../components/schemas/SendContactRequest.yaml
+      application/x-www-form-urlencoded:
+        schema:
+          $ref: ../components/schemas/SendContactRequest.yaml
+        encoding:
+          reply_parameters:
+            contentType: application/json
+          reply_markup:
+            contentType: application/json
+      multipart/form-data:
+        schema:
+          $ref: ../components/schemas/SendContactRequest.yaml
+        encoding:
+          reply_parameters:
+            contentType: application/json
+          reply_markup:
+            contentType: application/json
+  responses:
+    '200':
+      description: >-
+        The contact was stored in the private conversation or supergroup. No bot receives an
+        update for a bot's message.
+      content:
+        application/json:
+          schema:
+            $ref: ../components/schemas/MessageResponse.yaml
+    '400':
+      description: >-
+        The request cannot be decoded or has unsupported parameters, such as `user_id`, or a name
+        longer than 64 characters or a vCard longer than 2048 bytes (`Bad Request: invalid
+        sendContact parameters`); or Telegram would reject it, checking in this order:
+        `phone_number` is missing or empty (`Bad Request: parameter "phone_number" is required`);
+        `first_name` is missing or empty (`Bad Request: parameter "first_name" is required`);
+        `chat_id` is missing (`Bad Request: chat_id is empty`); a button of the reply markup
+        cannot be read, as for `sendMessage`; the chat, the reply, and the message effect fail as
+        for `sendMessage`; a text is not well-formed Unicode (`Bad Request: phone number must be
+        encoded in UTF-8`, or the same for the first name, the last name, or the `vCard`); the bot
+        may not send messages to a supergroup (`Bad Request: not enough rights to send contacts to
+        the chat`); or a button's callback data exceeds 64 bytes (`Bad Request:
+        BUTTON_DATA_INVALID`). A refused contact stores nothing.
+      content:
+        application/json:
+          schema:
+            $ref: ../components/schemas/BotApiErrorResponse.yaml
+    '401':
+      description: The token does not belong to a virtual bot in the addressed session.
+      content:
+        application/json:
+          schema:
+            $ref: ../components/schemas/BotApiErrorResponse.yaml
+    '403':
+      description: >-
+        The account blocks the bot (`Forbidden: bot was blocked by the user`), or the bot left
+        the supergroup (`Forbidden: bot is not a member of the supergroup chat`) or was removed
+        from it (`Forbidden: bot was kicked from the supergroup chat`).
+      content:
+        application/json:
+          schema:
+            $ref: ../components/schemas/BotApiErrorResponse.yaml
+    '404':
+      description: No active test session has the supplied identifier.
+    '429':
+      $ref: ../components/responses/BotApiRateLimited.yaml

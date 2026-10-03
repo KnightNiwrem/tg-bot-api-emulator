@@ -3,6 +3,7 @@ import type { BotApiRichMessage } from './bot_api_rich_message.ts';
 import type { ChatAdministratorRightName } from './bot_default_administrator_rights.ts';
 import type { ButtonStyle } from './button_appearance.ts';
 import type { SupergroupAdministratorRight } from './chat_membership.ts';
+import type { Contact } from './contact.ts';
 import type { GeoLocation } from './geo_location.ts';
 import type { VirtualAccountProfile } from './virtual_account.ts';
 import type { PlainTextEntityType } from './virtual_message.ts';
@@ -296,7 +297,8 @@ export type BotApiMessageContent =
   }
   | BotApiCaptionedMediaContent
   | { readonly rich_message: BotApiRichMessage }
-  | { readonly poll: BotApiPoll };
+  | { readonly poll: BotApiPoll }
+  | { readonly contact: BotApiContact };
 
 /**
  * The fields of a service message about a membership change, which take the place of content.
@@ -518,7 +520,31 @@ export type BotApiCallbackQuery =
     readonly data: string;
   };
 
-/** An inline query, in the field order Telegram uses. User locations are not supported. */
+/** A phone contact, in the field order of the official Bot API server's `JsonContact`. */
+export interface BotApiContact {
+  readonly phone_number: string;
+  readonly first_name: string;
+  /** Omitted when the contact has no last name. */
+  readonly last_name?: string;
+  /** Omitted when the contact has no vCard. */
+  readonly vcard?: string;
+  /** Omitted when the contact's Telegram user is unknown. */
+  readonly user_id?: number;
+}
+
+/** Shows a contact as the official Bot API server's `JsonContact` does, omitting empty fields. */
+export function toBotApiContact(
+  { phoneNumber, firstName, lastName, vcard, userId }: Contact,
+): BotApiContact {
+  return {
+    phone_number: phoneNumber,
+    first_name: firstName,
+    ...(lastName.length === 0 ? {} : { last_name: lastName }),
+    ...(vcard.length === 0 ? {} : { vcard }),
+    ...(userId === undefined ? {} : { user_id: userId }),
+  };
+}
+
 /** A location, in the field order of the official Bot API server's `JsonLocation`. */
 export interface BotApiLocation {
   readonly latitude: number;

@@ -106,6 +106,7 @@ export type SendSupergroupAccountMessageFailureReason =
   | 'chat_not_found'
   | 'not_a_member'
   | 'message_text_empty'
+  | 'account_phone_number_missing'
   | 'reply_message_not_found';
 
 export type SendSupergroupAccountMessageResult =
@@ -709,10 +710,11 @@ export class SupergroupMessagingService {
     if (input.content.kind === 'text' && input.content.text.length === 0) {
       return { sent: false, reason: 'message_text_empty' };
     }
-    const contentNormalization = this.#normalizeContent(
-      toOutgoingAccountContent(input.content),
-      'account',
-    );
+    const outgoingContent = toOutgoingAccountContent(input.content, memberResolution.account);
+    if (outgoingContent === undefined) {
+      return { sent: false, reason: 'account_phone_number_missing' };
+    }
+    const contentNormalization = this.#normalizeContent(outgoingContent, 'account');
     if (!contentNormalization.normalized) {
       return { sent: false, ...contentNormalization.failure };
     }
@@ -1426,6 +1428,7 @@ export class SupergroupMessagingService {
   ):
     | {
       readonly resolved: true;
+      readonly account: VirtualAccount;
       readonly supergroup: Supergroup;
       readonly membership: ChatMembership;
     }
@@ -1433,7 +1436,8 @@ export class SupergroupMessagingService {
       readonly resolved: false;
       readonly reason: 'account_not_found' | 'chat_not_found' | 'not_a_member';
     } {
-    if (this.#accounts.getById(accountId) === undefined) {
+    const account = this.#accounts.getById(accountId);
+    if (account === undefined) {
       return { resolved: false, reason: 'account_not_found' };
     }
     const chat = this.#sharedChats.getSharedChat(chatId);
@@ -1444,7 +1448,7 @@ export class SupergroupMessagingService {
     if (membership === undefined) {
       return { resolved: false, reason: 'not_a_member' };
     }
-    return { resolved: true, supergroup: chat, membership };
+    return { resolved: true, account, supergroup: chat, membership };
   }
 
   /** What a member may do in its supergroup, as `getEffectiveChatPermissions` decides. */

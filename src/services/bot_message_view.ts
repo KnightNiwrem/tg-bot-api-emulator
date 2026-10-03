@@ -483,6 +483,7 @@ export class BotMessageViewService {
     }
     switch (content.kind) {
       case 'text':
+      case 'contact':
         return context;
       case 'rich_message':
         return {

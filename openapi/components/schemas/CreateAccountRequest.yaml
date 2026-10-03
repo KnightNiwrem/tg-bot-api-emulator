@@ -22,3 +22,11 @@ properties:
       Sets the account's "Forwarded messages" privacy setting so that forwards of its
       messages, and replies to them from other chats, do not link to it. Their origin is a
       hidden user that shows only the account's first and last name.
+  phone_number:
+    type: string
+    pattern: '^[1-9][0-9]{0,14}$'
+    description: >-
+      The number the account signed up with, as the digits of an E.164 number without its `+`,
+      as Telegram's `user.phone` holds them. The account shares it as its own contact, directly or
+      by pressing a `request_contact` button; an account without one has no contact of its own.
+      The emulator shows it nowhere else and never looks accounts up by it.

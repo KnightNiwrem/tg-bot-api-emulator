@@ -437,6 +437,8 @@ function copyContent(content: SupergroupMessageContent): SupergroupMessageConten
       return structuredClone(content);
     case 'poll':
       return { ...content };
+    case 'contact':
+      return { ...content, contact: { ...content.contact } };
     case 'members_joined':
       return { ...content, memberIds: [...content.memberIds] };
     case 'member_left':

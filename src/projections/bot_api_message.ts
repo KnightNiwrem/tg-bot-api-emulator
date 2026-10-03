@@ -26,6 +26,7 @@ import {
   type BotApiSupergroupMessageContent,
   type BotApiTextQuote,
   type BotApiUser,
+  toBotApiContact,
   toBotApiLocation,
 } from '../types/bot_api.ts';
 import type { BotApiPoll, BotApiPollAnswer } from '../types/bot_api_poll.ts';
@@ -440,6 +441,8 @@ function projectMessageContent(
       };
     case 'poll':
       return { poll: projectPoll(requireObservedPoll(poll, content.pollId)) };
+    case 'contact':
+      return { contact: toBotApiContact(content.contact) };
     default: {
       const unhandledContent: never = content;
       throw new Error(`Unhandled message content: ${JSON.stringify(unhandledContent)}`);

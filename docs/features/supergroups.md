@@ -229,6 +229,7 @@ accounts and bots are refused what they may not send, as TDLib's
 | Video                                           | `can_send_videos`                                           | `not enough rights to send videos to the chat`           |
 | Voice note                                      | `can_send_voice_notes`                                      | `not enough rights to send voice notes to the chat`      |
 | Poll                                            | `can_send_polls`                                            | `not enough rights to send polls to the chat`            |
+| Contact                                         | `can_send_messages`                                         | `not enough rights to send contacts to the chat`         |
 | Rich message                                    | `can_send_messages`, and each photo's and file's permission | `not enough rights to send the rich message to the chat` |
 
 An album fails for its first item that may not be sent. As TDLib's `edit_message_media` and

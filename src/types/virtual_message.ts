@@ -1,3 +1,4 @@
+import type { Contact } from './contact.ts';
 import type { InlineKeyboard } from './inline_keyboard.ts';
 import type { PollId } from './poll.ts';
 import type { ReplyInterfaceMarkup } from './reply_interface.ts';
@@ -241,12 +242,19 @@ export interface PollMessageContent {
   readonly pollId: PollId;
 }
 
-/** What a message shows: text, captioned media, a rich message, or a poll. */
+/** A phone contact, which carries no text or caption. */
+export interface ContactMessageContent {
+  readonly kind: 'contact';
+  readonly contact: Contact;
+}
+
+/** What a message shows: text, captioned media, a rich message, a poll, or a contact. */
 export type MessageContent =
   | TextMessageContent
   | CaptionedMediaContent
   | RichMessageContent
-  | PollMessageContent;
+  | PollMessageContent
+  | ContactMessageContent;
 
 /** A service message's record that accounts or bots joined a supergroup. */
 export interface MembersJoinedMessageContent {
@@ -289,8 +297,8 @@ export function isSupergroupServiceContent(
 }
 
 /**
- * Whether a message's content is captioned media, rather than text, a rich message, a poll, or a
- * service message.
+ * Whether a message's content is captioned media, rather than text, a rich message, a poll, a
+ * contact, or a service message.
  */
 export function isCaptionedMediaContent(
   content: SupergroupMessageContent,
@@ -304,6 +312,7 @@ export function isCaptionedMediaContent(
     case 'text':
     case 'rich_message':
     case 'poll':
+    case 'contact':
     case 'members_joined':
     case 'member_left':
     case 'title_changed':
@@ -318,8 +327,8 @@ export function isCaptionedMediaContent(
 /**
  * The text a message's content carries: the text of a text message, or the caption of captioned
  * media, which is empty when it has none. As TDLib's `get_message_content_text` has none for
- * them, a rich message and a service message carry no text; it reads only the description of a
- * poll, which the emulator does not support, so a poll carries none either.
+ * them, a rich message, a contact, and a service message carry no text; it reads only the
+ * description of a poll, which the emulator does not support, so a poll carries none either.
  */
 export function getContentText(content: SupergroupMessageContent): FormattedText {
   if (isCaptionedMediaContent(content)) {
@@ -330,6 +339,7 @@ export function getContentText(content: SupergroupMessageContent): FormattedText
       return content;
     case 'rich_message':
     case 'poll':
+    case 'contact':
     case 'members_joined':
     case 'member_left':
     case 'title_changed':

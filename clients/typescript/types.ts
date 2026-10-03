@@ -129,6 +129,12 @@ export interface CreateVirtualAccountInput {
    * to the account: their origin is a hidden user that shows only its name. Defaults to `false`.
    */
   readonly has_private_forwards?: boolean;
+  /**
+   * The number the account signed up with, which it shares as its own contact: the digits of an
+   * E.164 number without its `+`, such as `15550100`. Omitted for an account that has no contact
+   * of its own to share.
+   */
+  readonly phone_number?: string;
 }
 
 export interface VirtualAccountProfile {
@@ -164,6 +170,32 @@ export interface AccountSendMessageInput<Target extends MessageTarget = MessageT
   readonly text: string;
   /** Formatting of the text; entity types Telegram detects by itself are ignored. */
   readonly entities?: readonly MessageEntityInput[];
+  /** The ID of the chat's message to reply to, as message history shows it. */
+  readonly reply_to_message_id?: number;
+}
+
+/**
+ * A contact the account writes. Its Telegram user stays unknown, as the emulator never looks users
+ * up by phone number; `shareOwnContact` shares the account's own contact with its user.
+ */
+export interface AccountSendContactInput<Target extends MessageTarget = MessageTarget> {
+  readonly to: Target;
+  readonly contact: {
+    /** Nonempty, in any form; Telegram never reads it. */
+    readonly phone_number: string;
+    /** From 1 to 64 characters. */
+    readonly first_name: string;
+    /** At most 64 characters; omitted or empty for none. */
+    readonly last_name?: string;
+    /** At most 2048 bytes in UTF-8, which Telegram never parses; omitted or empty for none. */
+    readonly vcard?: string;
+  };
+  /** The ID of the chat's message to reply to, as message history shows it. */
+  readonly reply_to_message_id?: number;
+}
+
+export interface AccountShareOwnContactInput<Target extends MessageTarget = MessageTarget> {
+  readonly to: Target;
   /** The ID of the chat's message to reply to, as message history shows it. */
   readonly reply_to_message_id?: number;
 }
@@ -803,6 +835,18 @@ export interface Video extends MessageFile {
   readonly thumb?: PhotoSize;
 }
 
+/** A phone contact, as its sender wrote it. */
+export interface Contact {
+  readonly phone_number: string;
+  readonly first_name: string;
+  /** Omitted for a contact without a last name. */
+  readonly last_name?: string;
+  /** Omitted for a contact without a vCard. */
+  readonly vcard?: string;
+  /** The contact's Telegram user, known only when an account shares its own contact. */
+  readonly user_id?: number;
+}
+
 /** A voice note, whose duration is the one its sender defined. */
 export interface Voice extends MessageFile {
   /** In seconds. */
@@ -1098,12 +1142,13 @@ interface MessageContentFields {
     /** A poll a bot sent, with its votes as they are now. */
     readonly poll: Poll;
   };
+  readonly contact: { readonly contact: Contact };
 }
 
 /**
  * The fields that show what a message is: text, a photo, a document, a video, a voice note, a rich
- * message, or a poll. Each kind declares the others' fields absent, so that any of them can be read
- * from a message of unknown kind.
+ * message, a poll, or a contact. Each kind declares the others' fields absent, so that any of them
+ * can be read from a message of unknown kind.
  */
 export type MessageContent = ExclusiveAlternatives<MessageContentFields>;
 
@@ -1322,8 +1367,8 @@ export type RequiredChatAdministratorRights = Readonly<Record<string, boolean>>;
 
 /**
  * What a reply keyboard button asks the client to share instead of sending its text, in the
- * fields of a Bot API `KeyboardButton`. The emulator cannot answer these requests, so such
- * buttons cannot be pressed.
+ * fields of a Bot API `KeyboardButton`. Pressing a `request_contact` button shares the account's
+ * own contact; the emulator cannot answer the other requests, so such buttons cannot be pressed.
  */
 export type ReplyKeyboardButtonRequest =
   | { readonly request_contact: true }
@@ -1587,6 +1632,21 @@ export interface VirtualAccountClient extends VirtualAccountProfile {
     input: AccountSendVoiceInput<Target>,
   ): Promise<MessageIn<Target>>;
   /**
+   * Sends a contact the account writes, as `sendMessage` sends text. Telegram cleans its texts,
+   * as it cleans names, and shows no user for it.
+   */
+  sendContact<Target extends MessageTarget>(
+    input: AccountSendContactInput<Target>,
+  ): Promise<MessageIn<Target>>;
+  /**
+   * Shares the account's own contact, as `sendMessage` sends text: its phone number and profile
+   * name, with the account as the contact's user. Fails for an account created without a phone
+   * number.
+   */
+  shareOwnContact<Target extends MessageTarget>(
+    input: AccountShareOwnContactInput<Target>,
+  ): Promise<MessageIn<Target>>;
+  /**
    * Sends photos and videos, or documents, as an album, as `sendPhoto`, `sendVideo` and
    * `sendDocument` send one, and returns the album's messages in order, which share a
    * `media_group_id`. The chat's bots receive each message as a separate update, in the album's
@@ -1824,7 +1884,10 @@ export interface VirtualAccountClient extends VirtualAccountProfile {
   /**
    * Presses a button of the reply keyboard the chat shows, which sends the button's text as this
    * account's message; in a supergroup, the message replies to the keyboard's message, as
-   * Telegram's clients send it. Fails when the chat shows no keyboard with such a button.
+   * Telegram's clients send it. A `request_contact` button, which only private chats show, shares
+   * the account's own contact instead, in reply to the keyboard's message, and fails for an
+   * account created without a phone number. Fails when the chat shows no keyboard with such a
+   * button, or for a button with another request.
    */
   pressReplyKeyboardButton<Target extends MessageTarget>(
     input: PressReplyKeyboardButtonInput<Target>,

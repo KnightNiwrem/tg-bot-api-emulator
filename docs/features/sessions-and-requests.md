@@ -20,7 +20,9 @@ Sessions isolate users, chats, messages, files, update queues and bot settings. 
 `requests_inline_location`, all false by default. These stand in for selected BotFather settings.
 Account profiles can include a username and language code. Usernames are unique within a session,
 compared without case. Account creation also accepts `has_private_forwards`, false by default, which
-stands in for the ["Forwarded messages" privacy setting](messages.md#forwarding-and-copying).
+stands in for the ["Forwarded messages" privacy setting](messages.md#forwarding-and-copying), and
+`phone_number`, which the account shares as its
+[own contact](contacts-and-locations.md#whose-contact-it-is).
 
 `DELETE /sessions/{sessionId}` or `session.end()` discards the session and stops webhook delivery
 and waiting long polls. State lives in memory and is lost on process restart. There is no account

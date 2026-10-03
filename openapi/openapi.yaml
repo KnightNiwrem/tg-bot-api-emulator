@@ -163,6 +163,8 @@ paths:
     $ref: paths/sessions_{sessionId}_bot-api_bot{token}_sendRichMessage.yaml
   /sessions/{sessionId}/bot-api/bot{token}/sendPoll:
     $ref: paths/sessions_{sessionId}_bot-api_bot{token}_sendPoll.yaml
+  /sessions/{sessionId}/bot-api/bot{token}/sendContact:
+    $ref: paths/sessions_{sessionId}_bot-api_bot{token}_sendContact.yaml
   /sessions/{sessionId}/bot-api/bot{token}/forwardMessage:
     $ref: paths/sessions_{sessionId}_bot-api_bot{token}_forwardMessage.yaml
   /sessions/{sessionId}/bot-api/bot{token}/copyMessage:

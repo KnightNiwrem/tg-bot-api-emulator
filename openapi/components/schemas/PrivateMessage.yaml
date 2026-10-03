@@ -2,7 +2,7 @@ type: object
 additionalProperties: false
 description: >-
   A private-chat message as the conversation's bot sees it: text, a photo, a document, a video, a
-  voice note, a rich message, or a poll, each with the fields Telegram shows for it.
+  voice note, a rich message, a poll, or a contact, each with the fields Telegram shows for it.
 required:
   - message_id
   - from
@@ -23,6 +23,11 @@ oneOf:
       - rich_message
   - required:
       - poll
+  - required:
+      - contact
+    properties:
+      contact:
+        $ref: ./Contact.yaml
 properties:
   message_id:
     type: integer
@@ -137,6 +142,9 @@ properties:
     $ref: ./Poll.yaml
     description: >-
       The poll of a poll message, which only bots send, with its votes as they are now.
+  contact:
+    $ref: ./Contact.yaml
+    description: The phone contact of a contact message.
   reply_markup:
     $ref: ./InlineKeyboardMarkup.yaml
     description: >-

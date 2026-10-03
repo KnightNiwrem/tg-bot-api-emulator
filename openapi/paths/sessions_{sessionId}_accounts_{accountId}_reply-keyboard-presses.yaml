@@ -10,7 +10,11 @@ post:
     supergroup, as Telegram Desktop's `HistoryWidget::sendBotCommand` does outside private
     chats, the message replies to the keyboard's message, so that the bot that sent it
     receives it even in privacy mode. The keyboard stays shown afterward, even a one-time
-    keyboard, which Telegram clients only hide until the user shows it again.
+    keyboard, which Telegram clients only hide until the user shows it again. A
+    `request_contact` button, which only private chats show, instead shares the account's own
+    contact in reply to the keyboard's message, as Telegram Desktop's `ActivateBotCommand` and
+    Telegram for Android's `shareMyContact` do once the user confirms; the bot receives an
+    ordinary contact message whose `user_id` is the account's.
   requestBody:
     required: true
     content:
@@ -20,9 +24,9 @@ post:
   responses:
     '201':
       description: >-
-        The button's text was sent as the account's message, and, unless the bot's
-        allowed_updates subscription excludes message updates, an update was enqueued for the
-        bot.
+        The button's text, or the account's own contact, was sent as the account's message, and,
+        unless the bot's allowed_updates subscription excludes message updates, an update was
+        enqueued for the bot.
       content:
         application/json:
           schema:
@@ -32,7 +36,7 @@ post:
     '400':
       description: >-
         The request is invalid, the chat shows no reply keyboard with a button of that text,
-        or the button has a request, such as for the user's contact, which the emulator
+        or the button has a request other than for the user's contact, which the emulator
         cannot answer.
     '403':
       description: >-
@@ -41,4 +45,6 @@ post:
     '404':
       description: The session, account, bot, or supergroup does not exist.
     '409':
-      description: The account blocks the bot and must unblock it before writing to it.
+      description: >-
+        The account blocks the bot and must unblock it before writing to it, or presses a
+        `request_contact` button without having a phone number.
