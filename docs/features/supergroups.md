@@ -54,11 +54,11 @@ Owners grant administrator rights by their Bot API names. Promotion and demotion
 bot's `my_chat_member` status, and administrator status bypasses privacy mode. The implemented
 rights with behavioral effects are:
 
-| Right                  | Effect                                                           |
-| ---------------------- | ---------------------------------------------------------------- |
-| `can_change_info`      | Call `setChatTitle` and `setChatDescription`                     |
-| `can_delete_messages`  | Delete other members' content and service messages               |
-| `can_restrict_members` | Call `banChatMember`, `unbanChatMember` and `restrictChatMember` |
+| Right                  | Effect                                                                                 |
+| ---------------------- | -------------------------------------------------------------------------------------- |
+| `can_change_info`      | Call `setChatTitle` and `setChatDescription`                                           |
+| `can_delete_messages`  | Delete other members' content and service messages                                     |
+| `can_restrict_members` | Call `banChatMember`, `unbanChatMember`, `restrictChatMember` and `setChatPermissions` |
 
 `banChatMember` removes a current member and records a service message authored by the bot.
 `unbanChatMember` lifts a ban; unless `only_if_banned` is true, it also removes a current member.
@@ -191,9 +191,9 @@ as there, a missing object withholds every permission. Bots then see them as `pe
 `getChat`. As TDLib's [`set_dialog_permissions`][set-permissions] checks, a bot without the right is
 refused, even for the permissions the supergroup has
 (`Bad Request: not enough rights to change chat permissions`), and a private chat has none to change
-(`Bad Request: can't change private chat permissions`). The permissions the supergroup has change
-nothing. No service message records the change, and no bot receives an update for it, as the Bot API
-has no update for it.
+(`Bad Request: can't change private chat permissions`). Setting the default permissions the
+supergroup already has succeeds without effect. No service message records the change, and no bot
+receives an update for it, as the Bot API has no update for it.
 
 Accounts change them through the emulation API with
 `PUT /sessions/{sessionId}/accounts/{accountId}/conversations/supergroup/{chatId}/permissions`, or
