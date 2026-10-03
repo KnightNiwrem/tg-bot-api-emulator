@@ -70,23 +70,14 @@ export function createAccountRoutes(): Hono<SessionRouteContextTypes> {
   });
 
   accountRoutes.route('/', createMessageRoutes());
-
   accountRoutes.route('/', createSupergroupMembershipRoutes());
-
   accountRoutes.route('/', createSupergroupAdministrationRoutes());
-
   accountRoutes.route('/', createConversationReadRoutes());
-
   accountRoutes.route('/', createPinnedMessageRoutes());
-
   accountRoutes.route('/', createBlockedBotRoutes());
-
   accountRoutes.route('/', createReplyKeyboardPressRoutes());
-
   accountRoutes.route('/', createCallbackQueryRoutes());
-
   accountRoutes.route('/', createPollAnswerRoutes());
-
   accountRoutes.route('/', createInlineQueryRoutes());
 
   return accountRoutes;
