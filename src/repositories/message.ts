@@ -166,45 +166,12 @@ export class MessageRepository {
     }
 
     const {
-      id,
-      kind,
-      conversation,
-      authorRole,
-      sentAtUnixSeconds,
-      replyToMessageId,
-      mediaGroupId,
-      viaBot,
-      forwardInfo,
-      replyInterfaceMarkup,
-      isContentProtected,
-      isSilent,
-      isPinned,
-      messageEffectId,
+      content: _replacedContent,
+      inlineKeyboard: _replacedInlineKeyboard,
+      contentEditedAtUnixSeconds: _replacedContentEditedAtUnixSeconds,
+      ...preservedFields
     } = storedMessage;
-    const editedMessage: PrivateMessage = {
-      kind,
-      id,
-      conversation,
-      authorRole,
-      sentAtUnixSeconds,
-      content: copyContent(edit.content),
-      ...(replyToMessageId === undefined ? {} : { replyToMessageId }),
-      ...copyReply(storedMessage),
-      ...(mediaGroupId === undefined ? {} : { mediaGroupId }),
-      ...(edit.inlineKeyboard === undefined
-        ? {}
-        : { inlineKeyboard: copyInlineKeyboard(edit.inlineKeyboard) }),
-      ...(viaBot === undefined ? {} : { viaBot }),
-      ...(forwardInfo === undefined ? {} : { forwardInfo }),
-      ...(replyInterfaceMarkup === undefined ? {} : { replyInterfaceMarkup }),
-      ...(edit.contentEditedAtUnixSeconds === undefined
-        ? {}
-        : { contentEditedAtUnixSeconds: edit.contentEditedAtUnixSeconds }),
-      isContentProtected,
-      isSilent,
-      isPinned,
-      ...(messageEffectId === undefined ? {} : { messageEffectId }),
-    };
+    const editedMessage: PrivateMessage = { ...preservedFields, ...copyMessageEdit(edit) };
     this.#privateMessagesById.set(messageId, editedMessage);
     return editedMessage;
   }
@@ -290,43 +257,12 @@ export class MessageRepository {
     }
 
     const {
-      id,
-      kind,
-      chatId,
-      author,
-      sentAtUnixSeconds,
-      replyToMessageId,
-      mediaGroupId,
-      viaBot,
-      forwardInfo,
-      replyInterfaceMarkup,
-      isContentProtected,
-      isSilent,
-      isPinned,
+      content: _replacedContent,
+      inlineKeyboard: _replacedInlineKeyboard,
+      contentEditedAtUnixSeconds: _replacedContentEditedAtUnixSeconds,
+      ...preservedFields
     } = storedMessage;
-    const editedMessage: SupergroupMessage = {
-      kind,
-      id,
-      chatId,
-      author,
-      sentAtUnixSeconds,
-      content: copyContent(edit.content),
-      ...(replyToMessageId === undefined ? {} : { replyToMessageId }),
-      ...copyReply(storedMessage),
-      ...(mediaGroupId === undefined ? {} : { mediaGroupId }),
-      ...(edit.inlineKeyboard === undefined
-        ? {}
-        : { inlineKeyboard: copyInlineKeyboard(edit.inlineKeyboard) }),
-      ...(viaBot === undefined ? {} : { viaBot }),
-      ...(forwardInfo === undefined ? {} : { forwardInfo }),
-      ...(replyInterfaceMarkup === undefined ? {} : { replyInterfaceMarkup }),
-      ...(edit.contentEditedAtUnixSeconds === undefined
-        ? {}
-        : { contentEditedAtUnixSeconds: edit.contentEditedAtUnixSeconds }),
-      isContentProtected,
-      isSilent,
-      isPinned,
-    };
+    const editedMessage: SupergroupMessage = { ...preservedFields, ...copyMessageEdit(edit) };
     this.#supergroupMessagesById.set(messageId, editedMessage);
     return editedMessage;
   }
@@ -441,6 +377,26 @@ function copyReply(
         },
       },
     }),
+  };
+}
+
+/**
+ * Copies the fields an edit writes to a message, leaving out the inline keyboard and edit time it
+ * omits, so the edited message drops them too.
+ */
+function copyMessageEdit(edit: MessageEdit): {
+  readonly content: MessageContent;
+  readonly inlineKeyboard?: InlineKeyboard;
+  readonly contentEditedAtUnixSeconds?: number;
+} {
+  return {
+    content: copyContent(edit.content),
+    ...(edit.inlineKeyboard === undefined
+      ? {}
+      : { inlineKeyboard: copyInlineKeyboard(edit.inlineKeyboard) }),
+    ...(edit.contentEditedAtUnixSeconds === undefined
+      ? {}
+      : { contentEditedAtUnixSeconds: edit.contentEditedAtUnixSeconds }),
   };
 }
 
