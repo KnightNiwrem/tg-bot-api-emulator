@@ -190,9 +190,9 @@ Deno.test('an edited pinned message stays pinned and shows its edit wherever it 
   }
   const serviceMessage = (await getHistory(supergroupPath(grace))).at(-1);
   expectEqual(
-    serviceMessage?.pinned_message?.text,
-    'final',
-    'the service message shows the pinned message as it is now',
+    [serviceMessage?.pinned_message?.text, typeof serviceMessage?.pinned_message?.edit_date],
+    ['final', 'number'],
+    'the service message shows the pinned message as it is now, with its edit date',
   );
 });
 
@@ -318,7 +318,7 @@ Deno.test('a reply to a pin service message shows its pin, and nothing once the 
   );
 });
 
-Deno.test('pin service messages cannot be edited, forwarded, or copied, nor copies and forwards pinned', async () => {
+Deno.test('pin service messages cannot be edited, forwarded, or copied, and copies and forwards of a pin are not pinned', async () => {
   const {
     ada,
     chatId,
