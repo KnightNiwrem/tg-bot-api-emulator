@@ -5,7 +5,7 @@ import {
   type ChatMemberAdditionResult,
   SharedChatRepository,
 } from '../src/repositories/shared_chat.ts';
-import { ALL_CHAT_PERMISSIONS } from '../src/types/chat_permissions.ts';
+import { ALL_CHAT_PERMISSIONS, CHAT_PERMISSIONS } from '../src/types/chat_permissions.ts';
 
 Deno.test('SharedChatRepository atomically registers a basic group and its initial memberships', () => {
   const sharedChats = new SharedChatRepository();
@@ -127,6 +127,56 @@ Deno.test('SharedChatRepository adds a member once to an existing shared chat', 
     sharedChats.getChatMembership(group.id, 3) !== undefined
   ) {
     throw new Error('Expected the added member, and rejected additions to change nothing');
+  }
+});
+
+Deno.test('SharedChatRepository refuses to store a restriction that keeps every permission', () => {
+  const sharedChats = new SharedChatRepository();
+  const group = { kind: 'basic_group', id: -1, title: 'Test Group' } as const;
+  sharedChats.registerBasicGroup(group, 1, [2]);
+  const restrictions = [
+    () =>
+      sharedChats.updateChatMemberStatus(group.id, 2, {
+        status: 'restricted',
+        isMember: true,
+        permissions: ALL_CHAT_PERMISSIONS,
+      }),
+    () =>
+      sharedChats.removeChatMember(group.id, 2, {
+        status: 'restricted',
+        isMember: false,
+        permissions: ALL_CHAT_PERMISSIONS,
+      }),
+    () =>
+      sharedChats.updateFormerMemberStatus(group.id, 3, {
+        status: 'restricted',
+        isMember: false,
+        permissions: new Set(CHAT_PERMISSIONS),
+      }),
+    () =>
+      sharedChats.addChatMember(group.id, 3, {
+        status: 'restricted',
+        isMember: true,
+        permissions: ALL_CHAT_PERMISSIONS,
+      }),
+  ];
+  for (const restrict of restrictions) {
+    let refused = false;
+    try {
+      restrict();
+    } catch {
+      refused = true;
+    }
+    if (!refused) {
+      throw new Error('Expected a restriction keeping every permission to be refused');
+    }
+  }
+  if (
+    sharedChats.getChatMembership(group.id, 2)?.status !== 'member' ||
+    sharedChats.getChatMembership(group.id, 3) !== undefined ||
+    sharedChats.getFormerMemberStatus(group.id, 3) !== undefined
+  ) {
+    throw new Error('Expected refused restrictions to change nothing');
   }
 });
 

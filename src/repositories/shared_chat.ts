@@ -1,5 +1,13 @@
-import type { ChatMembership, FormerChatMemberStatus } from '../types/chat_membership.ts';
-import type { ChatPermissions } from '../types/chat_permissions.ts';
+import type {
+  ChatMembership,
+  ChatMemberStatus,
+  FormerChatMemberStatus,
+} from '../types/chat_membership.ts';
+import {
+  ALL_CHAT_PERMISSIONS,
+  type ChatPermissions,
+  isSameChatPermissions,
+} from '../types/chat_permissions.ts';
 import type { BasicGroup, Channel, SharedChat, Supergroup } from '../types/virtual_chat.ts';
 import type { CanonicalMessageId } from '../types/virtual_message.ts';
 
@@ -188,6 +196,7 @@ export class SharedChatRepository {
       return { added: false, reason: 'member_already_present' };
     }
 
+    assertRestrictionWithholdsPermission(chatId, memberId, membership);
     membershipsByIdentityId.set(memberId, membership);
     this.#formerMemberStatusesByChatId.get(chatId)?.delete(memberId);
     return { added: true };
@@ -256,6 +265,7 @@ export class SharedChatRepository {
       return { updated: false, reason: 'member_is_owner' };
     }
 
+    assertRestrictionWithholdsPermission(chatId, memberId, status);
     membershipsByIdentityId.set(memberId, status);
     return { updated: true };
   }
@@ -319,6 +329,7 @@ export class SharedChatRepository {
     memberId: number,
     formerStatus: FormerChatMemberStatus,
   ): ChatMemberRemovalResult {
+    assertRestrictionWithholdsPermission(chatId, memberId, formerStatus);
     const membershipsByIdentityId = this.#sharedChatMembershipsByChatId.get(chatId);
     const formerMemberStatuses = this.#formerMemberStatusesByChatId.get(chatId);
     if (membershipsByIdentityId === undefined || formerMemberStatuses === undefined) {
@@ -350,7 +361,27 @@ export class SharedChatRepository {
       return { updated: false, reason: 'member_present' };
     }
 
+    assertRestrictionWithholdsPermission(chatId, identityId, formerStatus);
     formerMemberStatuses.set(identityId, formerStatus);
     return { updated: true };
+  }
+}
+
+/**
+ * Refuses to store a restriction that keeps every permission, which TDLib's
+ * `DialogParticipantStatus::Restricted` makes a plain member, or a user that left, instead.
+ */
+function assertRestrictionWithholdsPermission(
+  chatId: number,
+  userId: number,
+  status: ChatMemberStatus,
+): void {
+  if (
+    status.status === 'restricted' &&
+    isSameChatPermissions(status.permissions, ALL_CHAT_PERMISSIONS)
+  ) {
+    throw new Error(
+      `User ${userId} of chat ${chatId} cannot be restricted while keeping every permission`,
+    );
   }
 }
