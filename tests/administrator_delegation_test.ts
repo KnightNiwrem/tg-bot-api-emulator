@@ -1,5 +1,6 @@
 import {
   type AdministratorMembership,
+  type AdministratorTenureId,
   canEditSupergroupAdministrator,
   type ChatMembership,
   grantSupergroupAdministratorRights,
@@ -14,14 +15,20 @@ const DELEGATES_APPOINTEE_ID = 4;
 const OTHER_BOT_ID = 5;
 const MEMBER_ID = 6;
 
+/**
+ * An administrator in its tenure `tenureId`, promoted by the owner, or by an administrator in that
+ * administrator's tenure `promoterTenureId`.
+ */
 function administrator(
-  promotedById: number,
+  tenureId: AdministratorTenureId,
   rights: readonly SupergroupAdministratorRight[],
+  promotion: { readonly promotedById: number; readonly promoterTenureId?: AdministratorTenureId },
 ): AdministratorMembership {
   return {
     status: 'administrator',
     rights: grantSupergroupAdministratorRights(rights),
-    promotedById,
+    tenureId,
+    ...promotion,
   };
 }
 
@@ -33,10 +40,22 @@ function administrator(
 function createDelegationChain(): Map<number, ChatMembership> {
   return new Map<number, ChatMembership>([
     [OWNER_ID, { status: 'owner' }],
-    [DELEGATING_BOT_ID, administrator(OWNER_ID, ['can_promote_members'])],
-    [DELEGATE_ID, administrator(DELEGATING_BOT_ID, ['can_promote_members'])],
-    [DELEGATES_APPOINTEE_ID, administrator(DELEGATE_ID, ['can_delete_messages'])],
-    [OTHER_BOT_ID, administrator(OWNER_ID, ['can_promote_members'])],
+    [
+      DELEGATING_BOT_ID,
+      administrator(1, ['can_promote_members'], { promotedById: OWNER_ID }),
+    ],
+    [
+      DELEGATE_ID,
+      administrator(2, ['can_promote_members'], {
+        promotedById: DELEGATING_BOT_ID,
+        promoterTenureId: 1,
+      }),
+    ],
+    [
+      DELEGATES_APPOINTEE_ID,
+      administrator(3, ['can_delete_messages'], { promotedById: DELEGATE_ID, promoterTenureId: 2 }),
+    ],
+    [OTHER_BOT_ID, administrator(4, ['can_promote_members'], { promotedById: OWNER_ID })],
     [MEMBER_ID, { status: 'member' }],
   ]);
 }
@@ -50,11 +69,10 @@ function canEdit(
   if (membership?.status !== 'administrator') {
     throw new Error(`User ${administratorId} is no administrator`);
   }
-  return canEditSupergroupAdministrator(
-    (userId) => memberships.get(userId),
-    editorId,
+  return canEditSupergroupAdministrator((userId) => memberships.get(userId), editorId, {
+    userId: administratorId,
     membership,
-  );
+  });
 }
 
 function expectEqual(actual: unknown, expected: unknown, message: string): void {
@@ -90,27 +108,39 @@ Deno.test('administrators edit those they promoted, directly or indirectly, and 
 
 Deno.test('editing an administrator needs the right to promote, though the chain runs through others', () => {
   const memberships = createDelegationChain();
-  // The owner takes the delegate's right to promote; the delegate's appointee stays in the chain
-  // of the bot that promoted the delegate.
-  memberships.set(DELEGATE_ID, administrator(DELEGATING_BOT_ID, ['can_invite_users']));
-  memberships.set(DELEGATING_BOT_ID, administrator(OWNER_ID, ['can_invite_users']));
+  // The owner takes the right to promote from the bot and its delegate, keeping their tenures; the
+  // delegate's appointee stays in the bot's chain.
+  memberships.set(
+    DELEGATE_ID,
+    administrator(2, ['can_invite_users'], {
+      promotedById: DELEGATING_BOT_ID,
+      promoterTenureId: 1,
+    }),
+  );
+  memberships.set(
+    DELEGATING_BOT_ID,
+    administrator(1, ['can_invite_users'], { promotedById: OWNER_ID }),
+  );
+  const appointee = memberships.get(DELEGATES_APPOINTEE_ID);
+  if (appointee?.status !== 'administrator') {
+    throw new Error('Expected the appointee to be an administrator');
+  }
 
   expectEqual(
     [
       canEdit(memberships, DELEGATE_ID, DELEGATES_APPOINTEE_ID),
       canEdit(memberships, DELEGATING_BOT_ID, DELEGATE_ID),
-      isAdministratorPromotedBy(
-        (userId) => memberships.get(userId),
-        DELEGATING_BOT_ID,
-        administrator(DELEGATE_ID, []),
-      ),
+      isAdministratorPromotedBy((userId) => memberships.get(userId), DELEGATING_BOT_ID, {
+        userId: DELEGATES_APPOINTEE_ID,
+        membership: appointee,
+      }),
     ],
     [false, false, true],
     'Expected only the right to promote to be missing',
   );
 });
 
-Deno.test('a chain broken by a demoted promoter leaves its administrators to the owner', () => {
+Deno.test('a promoter whose tenure ended no longer stands above its appointees, even once promoted again', () => {
   const memberships = createDelegationChain();
   memberships.set(DELEGATE_ID, { status: 'member' });
 
@@ -123,29 +153,98 @@ Deno.test('a chain broken by a demoted promoter leaves its administrators to the
     'Expected only the owner to edit the appointee of a demoted delegate',
   );
 
-  memberships.delete(DELEGATE_ID);
+  // Promoted again, the delegate starts a new tenure, which its old appointee's link does not name.
+  memberships.set(
+    DELEGATE_ID,
+    administrator(5, ['can_promote_members'], {
+      promotedById: DELEGATING_BOT_ID,
+      promoterTenureId: 1,
+    }),
+  );
   expectEqual(
-    canEdit(memberships, DELEGATING_BOT_ID, DELEGATES_APPOINTEE_ID),
-    false,
-    'Expected a delegate that left to break the chain too',
+    [
+      canEdit(memberships, DELEGATE_ID, DELEGATES_APPOINTEE_ID),
+      canEdit(memberships, DELEGATING_BOT_ID, DELEGATES_APPOINTEE_ID),
+      canEdit(memberships, DELEGATING_BOT_ID, DELEGATE_ID),
+    ],
+    [false, false, true],
+    'Expected the old appointee to stay with the owner, and the new tenure to be editable',
   );
 });
 
-Deno.test('promotions that form a cycle are refused as a broken invariant', () => {
+Deno.test('a demoted promoter promoted back by its own appointee forms no cycle', () => {
+  // The owner promoted the bot (tenure 1), which promoted its delegate (tenure 2), then demoted
+  // itself; the delegate promoted the bot again (tenure 3).
   const memberships = new Map<number, ChatMembership>([
     [OWNER_ID, { status: 'owner' }],
-    [DELEGATING_BOT_ID, administrator(DELEGATE_ID, ['can_promote_members'])],
-    [DELEGATE_ID, administrator(DELEGATES_APPOINTEE_ID, ['can_promote_members'])],
-    [DELEGATES_APPOINTEE_ID, administrator(DELEGATE_ID, ['can_promote_members'])],
+    [
+      DELEGATE_ID,
+      administrator(2, ['can_promote_members'], {
+        promotedById: DELEGATING_BOT_ID,
+        promoterTenureId: 1,
+      }),
+    ],
+    [
+      DELEGATING_BOT_ID,
+      administrator(3, ['can_promote_members'], { promotedById: DELEGATE_ID, promoterTenureId: 2 }),
+    ],
   ]);
 
-  let failure: unknown;
-  try {
-    canEdit(memberships, DELEGATING_BOT_ID, DELEGATE_ID);
-  } catch (error) {
-    failure = error;
-  }
-  if (!(failure instanceof Error) || !failure.message.includes('cycle')) {
-    throw new Error(`Expected the cycle to be reported, received ${String(failure)}`);
-  }
+  expectEqual(
+    [
+      canEdit(memberships, DELEGATE_ID, DELEGATING_BOT_ID),
+      canEdit(memberships, DELEGATING_BOT_ID, DELEGATE_ID),
+      canEdit(memberships, DELEGATE_ID, DELEGATE_ID),
+      canEdit(memberships, DELEGATING_BOT_ID, DELEGATING_BOT_ID),
+      canEdit(memberships, OWNER_ID, DELEGATE_ID),
+    ],
+    [true, false, false, false, true],
+    'Expected only the delegate to edit the bot it promoted back, and nobody to edit itself',
+  );
+});
+
+Deno.test('nobody edits itself, and no data shape makes the delegation walk fail', () => {
+  // Links that count yet form cycles, and one that names its own administrator, which no
+  // sequence of changes stores, still answer without failing.
+  const memberships = new Map<number, ChatMembership>([
+    [OWNER_ID, { status: 'owner' }],
+    [
+      DELEGATING_BOT_ID,
+      administrator(1, ['can_promote_members'], { promotedById: DELEGATE_ID, promoterTenureId: 2 }),
+    ],
+    [
+      DELEGATE_ID,
+      administrator(2, ['can_promote_members'], {
+        promotedById: DELEGATING_BOT_ID,
+        promoterTenureId: 1,
+      }),
+    ],
+    [
+      DELEGATES_APPOINTEE_ID,
+      administrator(3, ['can_promote_members'], {
+        promotedById: DELEGATES_APPOINTEE_ID,
+        promoterTenureId: 3,
+      }),
+    ],
+    [
+      OTHER_BOT_ID,
+      administrator(4, ['can_promote_members'], {
+        promotedById: DELEGATING_BOT_ID,
+        promoterTenureId: 1,
+      }),
+    ],
+  ]);
+
+  expectEqual(
+    [
+      canEdit(memberships, DELEGATING_BOT_ID, DELEGATING_BOT_ID),
+      canEdit(memberships, DELEGATE_ID, DELEGATE_ID),
+      canEdit(memberships, DELEGATES_APPOINTEE_ID, DELEGATES_APPOINTEE_ID),
+      canEdit(memberships, DELEGATE_ID, DELEGATING_BOT_ID),
+      canEdit(memberships, DELEGATE_ID, OTHER_BOT_ID),
+      canEdit(memberships, DELEGATES_APPOINTEE_ID, OTHER_BOT_ID),
+    ],
+    [false, false, false, true, true, false],
+    'Expected no self-editing, and a walk that stops at a user it met before',
+  );
 });

@@ -126,6 +126,7 @@ async function createPromotionFixture() {
     callBot,
     getChatMember,
     getAdministratorsAsAccount,
+    createBot,
   };
 }
 
@@ -980,3 +981,150 @@ Deno.test('setChatAdministratorCustomTitle refuses what Telegram refuses, withou
     'Expected no title to change',
   );
 });
+
+/**
+ * Runs the reported sequence: the owner gave the delegating bot the right to promote, the bot
+ * promotes the other bot with that right, demotes itself, and the other bot promotes it back.
+ * With an observer, an administrator bot subscribed to membership updates watches every change.
+ */
+async function runDemotedPromoterRepromotion({ withObserver }: { withObserver: boolean }) {
+  const fixture = await createPromotionFixture();
+  const { ada, delegatingBot, otherBot, supergroup, supergroupPath, api, callBot, readUpdates } =
+    fixture;
+  const observerBot = withObserver ? await fixture.createBot('observer_bot') : undefined;
+  if (observerBot !== undefined) {
+    await expectStatus(
+      api.request(`${supergroupPath(ada.id)}/members/${observerBot.bot.id}`, { method: 'PUT' }),
+      204,
+      'Expected the observer bot to be added',
+    );
+    await fixture.promoteAsOwner(observerBot.bot.id, { can_invite_users: true });
+    await readUpdates(observerBot);
+  }
+  const promote = async (actor: FixtureBot, userId: number, rights: Record<string, boolean>) => {
+    const { status, body } = await callBot(actor, 'promoteChatMember', {
+      chat_id: supergroup.id,
+      user_id: userId,
+      ...rights,
+    });
+    return [status, body.ok ? body.result : body.description];
+  };
+
+  const steps = [
+    await promote(delegatingBot, otherBot.bot.id, { can_promote_members: true }),
+    await promote(delegatingBot, delegatingBot.bot.id, {}),
+    await promote(otherBot, delegatingBot.bot.id, { can_promote_members: true }),
+  ];
+  return { ...fixture, observerBot, promote, steps };
+}
+
+/** The `can_be_edited` of the given administrators, keyed by user ID, as a bot sees it. */
+async function readEditabilityAsBot(
+  callBot: (bot: FixtureBot, method: string, parameters: object) => Promise<{
+    status: number;
+    body: BotApiResponse;
+  }>,
+  observer: FixtureBot,
+  chatId: number,
+  administratorIds: readonly number[],
+) {
+  const { status, body } = await callBot(observer, 'getChatAdministrators', {
+    chat_id: chatId,
+    return_bots: true,
+  });
+  return [
+    status,
+    Object.fromEntries(
+      (body.result as Array<{ user: { id: number }; can_be_edited?: boolean }>)
+        .filter(({ user }) => administratorIds.includes(user.id))
+        .map(({ user, can_be_edited }) => [user.id, can_be_edited]),
+    ),
+  ];
+}
+
+for (const withObserver of [false, true]) {
+  Deno.test(
+    `a demoted promoter promoted back by its appointee revives no delegation${
+      withObserver ? ', while another administrator bot observes' : ''
+    }`,
+    async () => {
+      const {
+        ada,
+        delegatingBot,
+        otherBot,
+        supergroup,
+        observerBot,
+        promote,
+        steps,
+        callBot,
+        readUpdates,
+        getAdministratorsAsAccount,
+      } = await runDemotedPromoterRepromotion({ withObserver });
+      const delegatingBotId = delegatingBot.bot.id;
+      const otherBotId = otherBot.bot.id;
+      const bots = [delegatingBotId, otherBotId];
+
+      expectEqual(steps, Array(3).fill([200, true]), 'Expected every step to succeed');
+      // The delegating bot's link to its promoter is new; the other bot's link names the tenure the
+      // delegating bot ended, so only the other bot edits, and nobody edits itself.
+      expectEqual(
+        [
+          await readEditabilityAsBot(callBot, delegatingBot, supergroup.id, bots),
+          await readEditabilityAsBot(callBot, otherBot, supergroup.id, bots),
+        ],
+        [
+          [200, { [delegatingBotId]: false, [otherBotId]: false }],
+          [200, { [delegatingBotId]: true, [otherBotId]: false }],
+        ],
+        'Expected the bots to agree on who edits whom',
+      );
+      const asOwnerSees = (await getAdministratorsAsAccount(ada.id)).body.administrators
+        .filter(({ user_id }) => bots.includes(user_id as number))
+        .map(({ user_id, promoted_by_user_id, can_be_edited }) => [
+          user_id,
+          promoted_by_user_id,
+          can_be_edited,
+        ]);
+      expectEqual(
+        asOwnerSees,
+        [[delegatingBotId, otherBotId, true], [otherBotId, delegatingBotId, true]],
+        'Expected each promoted_by to name who promoted the bot, and the owner to edit both',
+      );
+      if (observerBot !== undefined) {
+        expectEqual(
+          describeMembershipUpdates(await readUpdates(observerBot)),
+          [
+            `chat_member ${otherBotId}: member -> administrator(fixed)`,
+            `chat_member ${delegatingBotId}: administrator(fixed) -> member`,
+            `chat_member ${delegatingBotId}: member -> administrator(fixed)`,
+          ],
+          'Expected the observer to receive every change',
+        );
+      }
+
+      // The delegating bot may no longer demote the other bot, and the refusal changes nothing.
+      const administratorsBefore = (await getAdministratorsAsAccount(ada.id)).body;
+      expectEqual(
+        [
+          await promote(delegatingBot, otherBotId, {}),
+          await promote(delegatingBot, otherBotId, { can_promote_members: true }),
+          await promote(otherBot, otherBotId, { can_promote_members: true }),
+        ],
+        [
+          [400, 'Bad Request: user is an administrator of the chat'],
+          [400, 'Bad Request: user is an administrator of the chat'],
+          [400, "Bad Request: can't promote self"],
+        ],
+        'Expected the stale link to grant nothing',
+      );
+      expectEqual(
+        (await getAdministratorsAsAccount(ada.id)).body,
+        administratorsBefore,
+        'Expected the refusals to change nothing',
+      );
+      if (observerBot !== undefined) {
+        expectEqual(await readUpdates(observerBot), [], 'Expected no update for a refusal');
+      }
+    },
+  );
+}

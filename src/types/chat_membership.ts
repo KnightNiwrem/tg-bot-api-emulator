@@ -48,6 +48,14 @@ export function grantSupergroupAdministratorRights(
   return rights;
 }
 
+/** Whether two sets of administrator rights hold the same rights. */
+export function isSameSupergroupAdministratorRights(
+  first: SupergroupAdministratorRights,
+  second: SupergroupAdministratorRights,
+): boolean {
+  return first.size === second.size && [...first].every((right) => second.has(right));
+}
+
 /**
  * The most characters of a custom title, counted by code point: the Bot API documents 0-16
  * characters, and TDLib keeps at most 16 of a title it receives.
@@ -102,17 +110,39 @@ export type RestrictedChatMemberStatus<IsMember extends boolean = boolean> =
   & { readonly status: 'restricted'; readonly isMember: IsMember }
   & ChatMemberRestriction;
 
-/** A supergroup administrator's standing. */
+/**
+ * A supergroup administrator's standing. Its delegation link, `promotedById` together with
+ * `promoterTenureId`, ties it to the tenure of the administrator that set its rights; it decides
+ * who may edit the administrator, as `canEditSupergroupAdministrator` tells.
+ */
 export interface AdministratorMembership {
   readonly status: 'administrator';
   readonly rights: SupergroupAdministratorRights;
   /**
-   * The owner or administrator that last set the administrator's rights, as Telegram records it
-   * in `channelParticipantAdmin.promoted_by`. It decides who may edit the administrator, as
-   * `canEditSupergroupAdministrator` tells.
+   * Identifies this administrator tenure: the time from the user's promotion until it stops being
+   * an administrator. Changes of its rights or title keep it; a later promotion starts a new one.
+   */
+  readonly tenureId: AdministratorTenureId;
+  /**
+   * The owner or administrator that last set the administrator's rights, as Telegram records and
+   * shows it as `promoted_by` in `channelParticipantAdmin`, even after that promoter's tenure ends.
    */
   readonly promotedById: number;
+  /**
+   * The tenure in which the promoter set the rights; omitted when the owner did, whose standing
+   * never ends. The delegation link counts only while that tenure lasts.
+   */
+  readonly promoterTenureId?: AdministratorTenureId;
   readonly customTitle?: string;
+}
+
+/** Identifies one administrator tenure in a session, issued in increasing order. */
+export type AdministratorTenureId = number;
+
+/** An administrator and its standing, as delegation decides whether someone may edit it. */
+export interface SupergroupAdministrator {
+  readonly userId: number;
+  readonly membership: AdministratorMembership;
 }
 
 /**
@@ -223,16 +253,23 @@ export type SupergroupMembershipReader = (userId: number) => ChatMembership | un
 /**
  * Whether an administrator was promoted by a member, directly or through administrators the
  * member promoted in turn, as the Bot API describes `can_promote_members`; the owner counts as
- * having promoted every administrator. The chain follows each administrator's `promotedById`,
- * which is all Telegram records of a promotion, through current administrators only: once a
- * promoter in it is no longer an administrator, only the owner stands above the administrators
- * it promoted.
+ * having promoted every administrator, and nobody counts as having promoted itself.
+ *
+ * The chain follows delegation links, each of which counts only while the tenure of the promoter
+ * that made it lasts: once a promoter stops being an administrator, the administrators it promoted
+ * are left to the owner, even if it is promoted again later. A promotion that starts a tenure thus
+ * links to a tenure that started earlier, and a change of rights links to an editor the
+ * administrator already descends from, so counting links never form a cycle. The walk still stops
+ * at a user it met before, so that no state can make it fail.
  */
 export function isAdministratorPromotedBy(
   readMembership: SupergroupMembershipReader,
   ancestorId: number,
-  administrator: AdministratorMembership,
+  { userId: administratorId, membership: administrator }: SupergroupAdministrator,
 ): boolean {
+  if (ancestorId === administratorId) {
+    return false;
+  }
   const ancestor = readMembership(ancestorId);
   if (ancestor?.status === 'owner') {
     return true;
@@ -240,20 +277,20 @@ export function isAdministratorPromotedBy(
   if (ancestor?.status !== 'administrator') {
     return false;
   }
-  const visitedPromoterIds = new Set<number>();
-  let promoterId = administrator.promotedById;
-  while (promoterId !== ancestorId) {
-    if (visitedPromoterIds.has(promoterId)) {
-      throw new Error(`Administrators were promoted in a cycle through user ${promoterId}`);
-    }
-    visitedPromoterIds.add(promoterId);
-    const promoter = readMembership(promoterId);
-    if (promoter?.status !== 'administrator') {
+  const visitedUserIds = new Set([administratorId]);
+  let link: AdministratorMembership = administrator;
+  while (!visitedUserIds.has(link.promotedById)) {
+    const promoter = readMembership(link.promotedById);
+    if (promoter?.status !== 'administrator' || promoter.tenureId !== link.promoterTenureId) {
       return false;
     }
-    promoterId = promoter.promotedById;
+    if (link.promotedById === ancestorId) {
+      return true;
+    }
+    visitedUserIds.add(link.promotedById);
+    link = promoter;
   }
-  return true;
+  return false;
 }
 
 /**
@@ -261,14 +298,15 @@ export function isAdministratorPromotedBy(
  * `can_be_edited`: as TDLib's `promote_channel_participant` requires, the member holds
  * `can_promote_members`, which the owner holds, and, as the Bot API documents that right, it
  * promoted the administrator, directly or indirectly, as `isAdministratorPromotedBy` decides. No
- * administrator may edit itself.
+ * member may edit itself.
  */
 export function canEditSupergroupAdministrator(
   readMembership: SupergroupMembershipReader,
   editorId: number,
-  administrator: AdministratorMembership,
+  administrator: SupergroupAdministrator,
 ): boolean {
-  return holdsSupergroupAdministratorRight(readMembership(editorId), 'can_promote_members') &&
+  return editorId !== administrator.userId &&
+    holdsSupergroupAdministratorRight(readMembership(editorId), 'can_promote_members') &&
     isAdministratorPromotedBy(readMembership, editorId, administrator);
 }
 
@@ -334,8 +372,7 @@ export function isSameChatMemberStatus(
       return first.status === second.status;
     case 'administrator':
       return second.status === 'administrator' && first.customTitle === second.customTitle &&
-        first.rights.size === second.rights.size &&
-        [...first.rights].every((right) => second.rights.has(right));
+        isSameSupergroupAdministratorRights(first.rights, second.rights);
     case 'kicked':
       return second.status === 'kicked' &&
         first.bannedUntilUnixSeconds === second.bannedUntilUnixSeconds;

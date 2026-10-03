@@ -21,6 +21,7 @@ import {
 import type { ChatDomainEvent } from '../types/chat_domain_event.ts';
 import {
   type AdministratorMembership,
+  type AdministratorTenureId,
   canEditSupergroupAdministrator,
   type ChatMembership,
   type ChatMemberStatus,
@@ -34,6 +35,7 @@ import {
   isAdministratorPromotedBy,
   isChatMember,
   isSameChatMemberStatus,
+  isSameSupergroupAdministratorRights,
   LEFT_CHAT_MEMBER_STATUS,
   MAX_CUSTOM_TITLE_LENGTH,
   resolveSupergroupBotMembership,
@@ -463,9 +465,6 @@ export type PromoteChatMemberAsBotResult =
   | { readonly promoted: true }
   | { readonly promoted: false; readonly reason: PromoteChatMemberAsBotFailureReason };
 
-/** The standing a bot's promotion gives a user: an administrator, or a member when demoted. */
-type PromotedStatus = AdministratorMembership | { readonly status: 'member' };
-
 /** The checks of a bot's promotion that its target can fail once TDLib let the bot change it. */
 type BotPromotionFailureReason = Extract<
   PromoteChatMemberAsBotFailureReason,
@@ -660,6 +659,7 @@ interface OwnerOnlySharedChatStore {
 }
 
 interface ChatMembershipStore {
+  issueAdministratorTenureId(): AdministratorTenureId;
   getSharedChat(chatId: number): SharedChat | undefined;
   getChatMembership(chatId: number, identityId: number): ChatMembership | undefined;
   getFormerMemberStatus(chatId: number, identityId: number): FormerChatMemberStatus | undefined;
@@ -723,6 +723,20 @@ interface SharedChatAdministrationServiceDependencies {
   readonly supergroupMessages: SupergroupServiceMessageRecorder;
   readonly events: ChatDomainEventSink;
   readonly currentUnixTimeSeconds: () => number;
+}
+
+/**
+ * The tenure of an administrator bot that promotes someone. Only the owner, which no bot is,
+ * promotes without a tenure.
+ */
+function getAdministratorTenureId(
+  promoterId: number,
+  promoterMembership: ChatMembership,
+): AdministratorTenureId {
+  if (promoterMembership.status !== 'administrator') {
+    throw new Error(`User ${promoterId} promotes someone without being an administrator`);
+  }
+  return promoterMembership.tenureId;
 }
 
 /**
@@ -1016,14 +1030,16 @@ export class SharedChatAdministrationService {
     if (input.rights.size === 0) {
       return { promoted: false, reason: 'no_rights_granted' };
     }
-    const change = this.#changeMemberRoleAsOwner(input, (membership) => ({
-      status: 'administrator',
-      rights: input.rights,
-      promotedById: input.actorAccountId,
-      ...(membership.status === 'administrator' && membership.customTitle !== undefined
-        ? { customTitle: membership.customTitle }
-        : {}),
-    }));
+    const change = this.#changeMemberRoleAsOwner(
+      input,
+      (membership) =>
+        membership.status === 'administrator' &&
+          isSameSupergroupAdministratorRights(membership.rights, input.rights)
+          ? membership
+          : this.#createAdministratorStatus(membership, input.rights, {
+            promotedById: input.actorAccountId,
+          }),
+    );
     return change.changed ? { promoted: true } : { promoted: false, reason: change.reason };
   }
 
@@ -1102,11 +1118,10 @@ export class SharedChatAdministrationService {
       return { set: false, reason: 'member_is_not_administrator' };
     }
     if (
-      !canEditSupergroupAdministrator(
-        this.#readMembership(input.chatId),
-        input.actorBotId,
-        memberStatus,
-      )
+      !canEditSupergroupAdministrator(this.#readMembership(input.chatId), input.actorBotId, {
+        userId: input.memberId,
+        membership: memberStatus,
+      })
     ) {
       return { set: false, reason: 'custom_title_not_editable' };
     }
@@ -1221,7 +1236,7 @@ export class SharedChatAdministrationService {
       return this.#restrictSelf(target, newStatus);
     }
     if (memberStatus.status === 'administrator' && newStatus.status === 'member') {
-      const demotion = this.#promoteAsBot(target, newStatus);
+      const demotion = this.#promoteAsBot(target, new Set());
       if (demotion.promoted) {
         return { restricted: true };
       }
@@ -1240,7 +1255,10 @@ export class SharedChatAdministrationService {
     }
     if (
       memberStatus.status === 'administrator' &&
-      !isAdministratorPromotedBy(this.#readMembership(input.chatId), input.actorBotId, memberStatus)
+      !isAdministratorPromotedBy(this.#readMembership(input.chatId), input.actorBotId, {
+        userId: input.memberId,
+        membership: memberStatus,
+      })
     ) {
       return { restricted: false, reason: 'member_is_administrator' };
     }
@@ -1277,26 +1295,19 @@ export class SharedChatAdministrationService {
     if (memberStatus.status === 'owner') {
       return { promoted: false, reason: 'member_is_owner' };
     }
-    const newStatus: PromotedStatus = input.rights.size === 0 ? { status: 'member' } : {
-      status: 'administrator',
-      rights: input.rights,
-      promotedById: input.actorBotId,
-      ...(memberStatus.status === 'administrator' && memberStatus.customTitle !== undefined
-        ? { customTitle: memberStatus.customTitle }
-        : {}),
-    };
-    const isUnchanged = isSameChatMemberStatus(memberStatus, newStatus) &&
-      (memberStatus.status !== 'administrator' ||
-        canEditSupergroupAdministrator(
-          this.#readMembership(input.chatId),
-          input.actorBotId,
-          memberStatus,
-        ));
+    const isUnchanged = input.rights.size === 0
+      ? memberStatus.status === 'member'
+      : memberStatus.status === 'administrator' &&
+        isSameSupergroupAdministratorRights(memberStatus.rights, input.rights) &&
+        canEditSupergroupAdministrator(this.#readMembership(input.chatId), input.actorBotId, {
+          userId: input.memberId,
+          membership: memberStatus,
+        });
     if (isUnchanged) {
       return { promoted: true };
     }
-    if (newStatus.status === 'administrator' || memberStatus.status === 'administrator') {
-      return this.#promoteAsBot(target, newStatus);
+    if (input.rights.size > 0 || memberStatus.status === 'administrator') {
+      return this.#promoteAsBot(target, input.rights);
     }
     if (isChatMember(memberStatus)) {
       return this.#liftRestrictionByDemotion(input);
@@ -1408,7 +1419,10 @@ export class SharedChatAdministrationService {
         userId,
         status,
         canBeEdited: status.status === 'administrator' &&
-          canEditSupergroupAdministrator(readMembership, observerAccountId, status),
+          canEditSupergroupAdministrator(readMembership, observerAccountId, {
+            userId,
+            membership: status,
+          }),
       })),
     };
   }
@@ -1704,12 +1718,12 @@ export class SharedChatAdministrationService {
    */
   #promoteAsBot(
     { chat, botId, botMembership, memberId, memberStatus }: ModerationTarget,
-    newStatus: PromotedStatus,
+    rights: SupergroupAdministratorRights,
   ):
     | { readonly promoted: true }
     | { readonly promoted: false; readonly reason: BotPromotionFailureReason } {
     if (memberId === botId) {
-      if (newStatus.status === 'administrator') {
+      if (rights.size > 0) {
         return { promoted: false, reason: 'cannot_promote_self' };
       }
     } else {
@@ -1724,16 +1738,14 @@ export class SharedChatAdministrationService {
       }
       if (
         memberStatus.status === 'administrator' &&
-        !isAdministratorPromotedBy(this.#readMembership(chat.id), botId, memberStatus)
+        !isAdministratorPromotedBy(this.#readMembership(chat.id), botId, {
+          userId: memberId,
+          membership: memberStatus,
+        })
       ) {
         return { promoted: false, reason: 'member_is_administrator' };
       }
-      if (
-        newStatus.status === 'administrator' &&
-        ![...newStatus.rights].every((right) =>
-          holdsSupergroupAdministratorRight(botMembership, right)
-        )
-      ) {
+      if (![...rights].every((right) => holdsSupergroupAdministratorRight(botMembership, right))) {
         return { promoted: false, reason: 'rights_not_held' };
       }
     }
@@ -1742,9 +1754,38 @@ export class SharedChatAdministrationService {
       actorId: botId,
       memberId,
       oldStatus: memberStatus,
-      newStatus,
+      newStatus: rights.size === 0
+        ? { status: 'member' }
+        : this.#createAdministratorStatus(memberStatus, rights, {
+          promotedById: botId,
+          promoterTenureId: getAdministratorTenureId(botId, botMembership),
+        }),
     });
     return { promoted: true };
+  }
+
+  /**
+   * The standing of an administrator holding `rights` that a promoter set, with the delegation
+   * link to the promoter: one that already is an administrator keeps its tenure and custom title,
+   * and anyone else starts a new tenure. Call it only for a change that will be stored, since a
+   * new tenure takes its identifier for good.
+   */
+  #createAdministratorStatus(
+    oldStatus: ChatMemberStatus,
+    rights: SupergroupAdministratorRights,
+    delegationLink: Pick<AdministratorMembership, 'promotedById' | 'promoterTenureId'>,
+  ): AdministratorMembership {
+    return {
+      status: 'administrator',
+      rights,
+      tenureId: oldStatus.status === 'administrator'
+        ? oldStatus.tenureId
+        : this.#sharedChats.issueAdministratorTenureId(),
+      ...delegationLink,
+      ...(oldStatus.status === 'administrator' && oldStatus.customTitle !== undefined
+        ? { customTitle: oldStatus.customTitle }
+        : {}),
+    };
   }
 
   /**
@@ -1982,7 +2023,10 @@ export class SharedChatAdministrationService {
     }
     if (
       memberStatus.status === 'administrator' &&
-      !isAdministratorPromotedBy(this.#readMembership(chat.id), botId, memberStatus)
+      !isAdministratorPromotedBy(this.#readMembership(chat.id), botId, {
+        userId: memberId,
+        membership: memberStatus,
+      })
     ) {
       return { restricted: false, reason: 'member_is_administrator' };
     }

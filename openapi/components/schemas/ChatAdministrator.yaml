@@ -33,7 +33,7 @@ properties:
     description: >-
       Whether the observing bot may change the administrator's rights or demote it: it holds
       `can_promote_members` and promoted the administrator, directly or through administrators
-      it promoted.
+      it promoted, during administrator tenures that still last. No bot may edit itself.
   can_manage_chat:
     type: boolean
   can_change_info:

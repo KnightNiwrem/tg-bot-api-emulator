@@ -25,6 +25,7 @@ Deno.test('getEffectiveChatPermissions exempts the owner and administrators from
   const administrator: ChatMembership = {
     status: 'administrator',
     rights: grantSupergroupAdministratorRights(['can_pin_messages']),
+    tenureId: 1,
     promotedById: OWNER_ID,
   };
 
@@ -57,6 +58,7 @@ Deno.test('getEffectiveChatPermissions grants default permissions that are right
   const administrator: ChatMembership = {
     status: 'administrator',
     rights: grantSupergroupAdministratorRights(['can_delete_messages']),
+    tenureId: 1,
     promotedById: OWNER_ID,
   };
   const member: ChatMembership = { status: 'member' };

@@ -90,10 +90,11 @@ properties:
           type: integer
           description: >-
             The owner or administrator that last set the administrator's rights, as Telegram
-            records it in `promoted_by`.
+            records it in `promoted_by`, even once that promoter's tenure has ended.
         can_be_edited:
           type: boolean
           description: >-
             Whether the account may change the administrator's rights or demote it: it is the
             owner, or it holds `can_promote_members` and promoted the administrator, directly
-            or through administrators it promoted.
+            or through administrators it promoted, during administrator tenures that still last.
+            No account may edit itself.

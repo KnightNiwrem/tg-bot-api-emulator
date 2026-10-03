@@ -70,7 +70,13 @@ Each administrator records who last set its rights, as Telegram records `promote
 the Bot API documents `can_promote_members`: a bot may edit an administrator when it holds
 `can_promote_members`, which TDLib's [`promote_channel_participant`][promote-participant] requires
 of any change, and promoted the administrator, directly or through administrators it promoted. No
-administrator may edit itself. The owner edits every administrator.
+member may edit itself. The owner edits every administrator.
+
+A promotion counts for editing only while the promoter's tenure as an administrator lasts. Once a
+promoter is demoted or leaves, the administrators it promoted are left to the owner, and stay so
+even if it is promoted again, which starts a new tenure; `promoted_by_user_id` still names it. So an
+administrator that its own appointee promotes back may be edited by that appointee, but edits
+neither it nor the others it promoted before.
 
 Members inspect the owner and administrators with
 `GET /sessions/{sessionId}/accounts/{accountId}/conversations/supergroup/{chatId}/administrators`,
@@ -427,9 +433,11 @@ not show. The emulator chooses where they are not visible:
   servers to make it.
 - Whoever sets an administrator's rights becomes its `promoted_by`, and setting the rights it holds
   changes nothing, as TDLib skips such a change. The chain of promoters that decides `can_be_edited`
-  runs through current administrators only: a promoter that is demoted or leaves no longer stands
-  above the administrators it promoted, which only the owner then edits, since `promoted_by` is all
-  Telegram exposes of a promotion.
+  counts a promotion only while the promoter's administrator tenure that made it lasts: a promoter
+  that is demoted or leaves no longer stands above the administrators it promoted, which only the
+  owner then edits, even after the promoter is promoted again. `promoted_by` is all Telegram exposes
+  of a promotion; tying it to the tenure keeps a promoter that its old appointee promotes back from
+  editing that appointee, which would let two administrators edit each other.
 
 ## Local evidence
 

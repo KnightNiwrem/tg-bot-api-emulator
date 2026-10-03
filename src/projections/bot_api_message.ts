@@ -37,8 +37,8 @@ import type {
   PollAnswerChangedEvent,
 } from '../types/chat_domain_event.ts';
 import type {
-  AdministratorMembership,
   ChatMemberStatus,
+  SupergroupAdministrator,
   SupergroupAdministratorRights,
 } from '../types/chat_membership.ts';
 import { getInlineQueryChatType, type InlineQuery } from '../types/inline_query.ts';
@@ -667,7 +667,7 @@ export function projectBotBlockChangeForBot(
  * Whether the bot that observes a standing may edit an administrator, which the Bot API shows as
  * `can_be_edited`.
  */
-export type AdministratorEditability = (administrator: AdministratorMembership) => boolean;
+export type AdministratorEditability = (administrator: SupergroupAdministrator) => boolean;
 
 export interface BotMembershipChangeProjectionInput {
   readonly event: ChatMemberStatusChangedEvent;
@@ -751,7 +751,7 @@ export function projectChatMember<User extends BotApiUser>(
       return {
         user,
         status: 'administrator',
-        can_be_edited: canObserverEdit(status),
+        can_be_edited: canObserverEdit({ userId: user.id, membership: status }),
         ...projectSupergroupAdministratorRights(status.rights),
         can_manage_voice_chats: status.rights.has('can_manage_video_chats'),
         ...projectCustomTitle(status.customTitle),
