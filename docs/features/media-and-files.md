@@ -50,11 +50,14 @@ downloads before it sends the file. The emulator downloads it from the session's
 register what each URL serves with `POST /sessions/{sessionId}/web-resources` or the TypeScript
 client's `registerWebResource`, giving a status, `Content-Type`, body, or redirect `location`. A URL
 without a registered resource is unreachable, and the emulator never reaches the network.
-`sendPhoto`, `sendDocument`, `sendVideo`, `sendVoice`, `editMessageMedia`, including for inline
-messages, and the photo and document blocks of rich messages accept URLs. Photo, document, video and
-voice results of `answerInlineQuery` also accept them, with contracts of their own; the file is
-downloaded when an account sends a result as its media, and never when `input_message_content`
-replaces it, as [inline mode](inline-mode.md#media-named-by-url) describes.
+`sendPhoto`, `sendDocument`, `sendVideo`, `sendVoice` and `editMessageMedia` accept URLs, as do the
+photo and document blocks of [rich messages](rich-messages.md#sending-and-editing) that
+`sendRichMessage` sends or `editMessageText` puts in place, including for inline messages. Photo,
+document, video and voice results of `answerInlineQuery` also accept them, with contracts of their
+own; the file is downloaded when an account sends a result as its media, and never when
+`input_message_content` replaces it, as [inline mode](inline-mode.md#media-named-by-url) describes.
+A rich message in a result's `input_message_content`
+[does not](#files-sent-by-url-in-inline-query-results) accept them.
 
 The URL is read as TDLib's [`parse_url`][parse-url] reads it, so a URL without a protocol is an HTTP
 one, and a resource answers every spelling that TDLib reads alike; a URL TDLib refuses fails with
