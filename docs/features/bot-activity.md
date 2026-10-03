@@ -99,11 +99,14 @@ it is not found either. A page that fills the read limit reports the head positi
 answered, and the entries after the page are read up to that position, even after the deadline. A
 wait of `timeoutMs: 0` makes one read of what is recorded when the emulator answers. These reads of
 entries already recorded get one more second after the deadline, so every wait settles within
-`timeoutMs` plus one second, however the transport behaves.
+`timeoutMs` plus one second, however the transport behaves. The emulator holds a read for at most 10
+minutes, so a wait with a longer `timeoutMs` fails at its first read with an `EmulationClientError`
+for the `400` answer.
 
 `waitFor` and `next` also take a `signal`. When it aborts, the wait abandons its read and rejects
-with the signal's reason, as `fetch` does, and a cursor stays where it was. Failed requests and
-answers that break the read contract still reject with `EmulationClientError`.
+with the signal's reason, as `fetch` does, and a cursor stays where it was. Requests that fail
+before the wait abandons them, and answers that break the read contract, still reject with
+`EmulationClientError`.
 
 Every `after` and `before` takes a position or an entry. `latest(...)` picks the latest of several.
 Positions are values, so independent waits can start from the same position. The waits below assert

@@ -53,6 +53,24 @@ Deno.test('A wait does not count an answer received after its deadline', async (
   assertTimeoutAbandoning(error, transport.reads[0]);
 });
 
+Deno.test('A wait does not count an answer that kept the event loop busy past its deadline', async () => {
+  const timeoutMs = 5;
+  const transport = createScriptedTransport(() => {
+    // The deadline's timer cannot run while the transport holds the event loop past it.
+    const busyUntil = performance.now() + timeoutMs + 20;
+    while (performance.now() < busyUntil) {
+      // Busy.
+    }
+    return page([sendMessageCall(1, 'late')], 1);
+  });
+
+  const error = await rejectionOf(
+    createActivityLog(transport).waitFor({ method: 'sendMessage' }, { after: 0, timeoutMs }),
+  );
+
+  assert(error instanceof BotActivityTimeoutError, `Expected a timeout, got ${error}`);
+});
+
 Deno.test('A cancelled wait rejects with the reason and releases its read', async () => {
   for (const unanswered of [neverAnswered, rejectedWhenAbandoned]) {
     const readStarted = Promise.withResolvers<void>();

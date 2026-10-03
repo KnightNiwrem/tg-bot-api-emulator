@@ -204,6 +204,7 @@ async function readResponseText(
   signal: AbortSignal | undefined,
 ): Promise<string> {
   if (response.body === null) {
+    signal?.throwIfAborted();
     return '';
   }
   const reader = response.body.getReader();

@@ -205,6 +205,11 @@ class HttpBotActivityLog implements BotActivityLog {
           ? waitTime.holdingReadSignal
           : waitTime.recordedReadSignal,
       });
+      // The deadline's timer runs only once the event loop is free, so the clock also decides
+      // whether a holding read's answer arrived in time.
+      if (remainingMilliseconds > 0 && waitTime.remainingMilliseconds() === 0) {
+        return undefined;
+      }
       let match = entries.find(isMatch);
       if (match === undefined && entries.length === READ_LIMIT) {
         // A full page may have left entries unread up to the head it reports, which were recorded
