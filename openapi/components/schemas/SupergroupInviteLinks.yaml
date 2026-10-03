@@ -1,0 +1,10 @@
+type: object
+additionalProperties: false
+required:
+  - invite_links
+properties:
+  invite_links:
+    type: array
+    description: The supergroup's invite links, in the order they were created.
+    items:
+      $ref: ./SupergroupInviteLink.yaml

@@ -2,6 +2,7 @@ import {
   projectPrivateChatFullInfo,
   projectSupergroupChatFullInfo,
 } from '../projections/bot_api_chat_full_info.ts';
+import { projectChatInviteLink } from '../projections/bot_api_chat_invite_link.ts';
 import type { ObservedFile } from '../projections/bot_api_file.ts';
 import {
   type AdministratorEditability,
@@ -32,6 +33,7 @@ import type {
   BotApiBotUser,
   BotApiCallbackQuery,
   BotApiChatFullInfo,
+  BotApiChatInviteLink,
   BotApiChatMember,
   BotApiChatMemberUpdated,
   BotApiChosenInlineResult,
@@ -48,6 +50,7 @@ import type {
 } from '../types/bot_api.ts';
 import type { BotApiPoll, BotApiPollAnswer } from '../types/bot_api_poll.ts';
 import type { CallbackQuery } from '../types/callback_query.ts';
+import type { ChatInviteLink } from '../types/chat_invite_link.ts';
 import {
   getStoredFileThumbnail,
   type StoredFile,
@@ -356,7 +359,22 @@ export class BotMessageViewService {
       actor,
       member,
       canObserverEdit: this.#getAdministratorEditability(chat.id, observerBotId),
+      ...(event.inviteLink === undefined
+        ? {}
+        : { inviteLink: this.viewChatInviteLink(event.inviteLink, observerBotId) }),
     });
+  }
+
+  /**
+   * Returns an invite link as the Bot API shows it to an observing user, which sees the whole link
+   * only if it created it.
+   */
+  viewChatInviteLink(link: ChatInviteLink, observerId: number): BotApiChatInviteLink {
+    const creator = this.#findUser(link.creatorId);
+    if (creator === undefined) {
+      throw new Error(`Creator ${link.creatorId} of invite link ${link.url} does not exist`);
+    }
+    return projectChatInviteLink({ link, creator, observerId });
   }
 
   /**

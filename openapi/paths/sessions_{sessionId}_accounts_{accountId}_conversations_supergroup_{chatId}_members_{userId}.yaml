@@ -1,6 +1,6 @@
 description: >-
   A member of a supergroup, as the supergroup's owner adds or removes it, or as the member
-  itself leaves.
+  itself joins a public supergroup or leaves.
 parameters:
   - $ref: ../components/parameters/SessionId.yaml
   - $ref: ../components/parameters/AccountId.yaml
@@ -8,7 +8,7 @@ parameters:
   - $ref: ../components/parameters/UserId.yaml
 put:
   operationId: addSupergroupMember
-  summary: Add an account or a bot to a supergroup the account owns
+  summary: Add an account or a bot to a supergroup the account owns, or join a public one
   description: >-
     Adds the user as a member, which a service message from the account records with
     `new_chat_members`. An added bot first receives a my_chat_member update, to `member` from
@@ -16,13 +16,22 @@ put:
     the supergroup, the added one included, then receives the service message, privacy mode
     notwithstanding. Updates that a bot's allowed_updates subscription excludes are not sent.
     Adding a member again changes nothing.
+
+
+    When the user is the account itself, the account joins the supergroup by itself, as
+    Telegram's clients join a public supergroup they find by its username: a banned account is
+    refused, and a restricted one joins with its restriction. Administrator bots subscribed to
+    `chat_member` receive the change, without an invite link. A private supergroup admits
+    accounts only through an invite link or its owner.
   responses:
     '204':
       description: The user is a member of the supergroup.
     '400':
       description: A path identifier is invalid.
     '403':
-      description: The account does not own the supergroup.
+      description: >-
+        The account adds another user to a supergroup it does not own, or joins a supergroup
+        that has no username or that bans it.
     '404':
       description: The session, account, supergroup, or user to add does not exist.
 delete:

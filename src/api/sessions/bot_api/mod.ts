@@ -461,6 +461,16 @@ const BOTS_CANNOT_ADD_MEMBERS_DESCRIPTION = "Bad Request: bots can't add new cha
 const ANONYMOUS_ADMINISTRATORS_UNSUPPORTED_DESCRIPTION =
   'Bad Request: anonymous administrators are not supported';
 
+const PRIVATE_CHAT_HAS_NO_INVITE_LINKS_DESCRIPTION =
+  "Bad Request: can't invite members to a private chat";
+const MEMBER_LIMIT_WITH_JOIN_REQUEST_DESCRIPTION =
+  "Bad Request: member limit can't be specified for links requiring administrator approval";
+const NOT_ENOUGH_RIGHTS_TO_MANAGE_INVITE_LINKS_DESCRIPTION =
+  'Bad Request: not enough rights to manage chat invite link';
+/** Telegram's servers' errors for invite links, which the official server passes on. */
+const INVITE_LINK_EXPIRY_DATE_INVALID_DESCRIPTION = 'Bad Request: EXPIRE_DATE_INVALID';
+const INVITE_LINK_MEMBER_LIMIT_INVALID_DESCRIPTION = 'Bad Request: USAGE_LIMIT_INVALID';
+
 /** Telegram caps how long a client may cache a callback query answer at 30 days. */
 const MAX_CALLBACK_QUERY_ANSWER_CACHE_TIME_SECONDS = 30 * 24 * 60 * 60;
 
@@ -955,6 +965,16 @@ const promoteChatMemberParametersSchema = z.strictObject({
   can_send_welcome_messages: booleanParameter().optional(),
 });
 
+// Telegram reads a missing name as empty, and a missing or zero `expire_date` or `member_limit` as
+// none; it clamps a negative one to zero, which the emulator rejects to surface the bot's mistake.
+const createChatInviteLinkParametersSchema = z.strictObject({
+  chat_id: integerParameter(z.int()).optional(),
+  name: z.string().default(''),
+  expire_date: integerParameter(z.int().nonnegative()).optional(),
+  member_limit: integerParameter(z.int().nonnegative()).optional(),
+  creates_join_request: booleanParameter().default(false),
+});
+
 // Telegram also reads the deprecated permissions given as separate parameters, such as
 // `can_send_messages`; rejecting them instead surfaces the bot's mistake in tests.
 const restrictChatMemberParametersSchema = z.strictObject({
@@ -1179,6 +1199,7 @@ const BOT_API_METHODS: readonly BotApiMethod[] = [
   { name: 'answerInlineQuery', handler: handleAnswerInlineQuery },
   { name: 'banChatMember', handler: handleBanChatMember, legacyNames: ['kickChatMember'] },
   { name: 'copyMessage', handler: handleCopyMessage },
+  { name: 'createChatInviteLink', handler: handleCreateChatInviteLink },
   { name: 'copyMessages', handler: handleCopyMessages },
   { name: 'deleteMessage', handler: handleDeleteMessage },
   { name: 'deleteMessages', handler: handleDeleteMessages },
@@ -3845,6 +3866,64 @@ function readPromotedSupergroupRights(
       (right === 'can_manage_video_chats' && requestedRights.can_manage_voice_chats === true)
     ),
   );
+}
+
+/**
+ * Answers `createChatInviteLink` with the new link as its creator sees it. As the official server's
+ * `process_create_chat_invite_link_query` reads them, a zero `expire_date` or `member_limit` means
+ * none.
+ */
+function handleCreateChatInviteLink(
+  context: BotApiMethodContext,
+  parameters: BotApiRequestParameters,
+): BotApiMethodAnswer {
+  const parsedParameters = createChatInviteLinkParametersSchema.safeParse(parameters);
+  if (!parsedParameters.success) {
+    return botApiError(400, 'Bad Request: invalid createChatInviteLink parameters');
+  }
+  const { data } = parsedParameters;
+  if (data.chat_id === undefined) {
+    return botApiError(400, CHAT_ID_EMPTY_DESCRIPTION);
+  }
+
+  const result = context.session.botApi.createChatInviteLink(context.bot, {
+    chatId: data.chat_id,
+    name: data.name,
+    ...(data.expire_date === undefined || data.expire_date === 0
+      ? {}
+      : { expiresAtUnixSeconds: data.expire_date }),
+    ...(data.member_limit === undefined || data.member_limit === 0
+      ? {}
+      : { memberLimit: data.member_limit }),
+    createsJoinRequest: data.creates_join_request,
+  });
+  if (result.created) {
+    return botApiResult(result.inviteLink);
+  }
+  switch (result.reason) {
+    case 'chat_not_found':
+      return botApiError(400, CHAT_NOT_FOUND_DESCRIPTION);
+    case 'bot_not_a_member':
+      return botApiError(403, BOT_NOT_SUPERGROUP_MEMBER_DESCRIPTION);
+    case 'bot_kicked':
+      return botApiError(403, BOT_KICKED_FROM_SUPERGROUP_DESCRIPTION);
+    case 'private_chat_has_no_invite_links':
+      return botApiError(400, PRIVATE_CHAT_HAS_NO_INVITE_LINKS_DESCRIPTION);
+    case 'text_encoding_invalid':
+      return botApiError(400, STRINGS_NOT_UTF8_DESCRIPTION);
+    case 'member_limit_with_join_request':
+      return botApiError(400, MEMBER_LIMIT_WITH_JOIN_REQUEST_DESCRIPTION);
+    case 'not_enough_rights':
+      return botApiError(400, NOT_ENOUGH_RIGHTS_TO_MANAGE_INVITE_LINKS_DESCRIPTION);
+    case 'expiry_date_invalid':
+      return botApiError(400, INVITE_LINK_EXPIRY_DATE_INVALID_DESCRIPTION);
+    case 'member_limit_invalid':
+      return botApiError(400, INVITE_LINK_MEMBER_LIMIT_INVALID_DESCRIPTION);
+    default: {
+      const unhandledReason: never = result.reason;
+      throw new Error(`Unhandled createChatInviteLink failure: ${unhandledReason}`);
+    }
+  }
 }
 
 function handleUnbanChatMember(

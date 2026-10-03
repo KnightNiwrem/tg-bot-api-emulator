@@ -730,6 +730,28 @@ export type BotApiGroupChatBotMember = Exclude<
   { readonly status: 'creator' }
 >;
 
+/**
+ * An invite link of a chat, in the field order of the official Bot API server's
+ * `JsonChatInviteLink`. Primary, revoked, and subscription links are not supported.
+ */
+export interface BotApiChatInviteLink {
+  /**
+   * The link; one that another administrator created shows only the first part of its hash,
+   * followed by `...`.
+   */
+  readonly invite_link: string;
+  /** Omitted for none. */
+  readonly name?: string;
+  readonly creator: BotApiUser;
+  /** Omitted for a link without an expiry date. */
+  readonly expire_date?: number;
+  /** Omitted for a link without a member limit. */
+  readonly member_limit?: number;
+  readonly creates_join_request: boolean;
+  readonly is_primary: false;
+  readonly is_revoked: false;
+}
+
 /** A change of a user's membership in a chat, in the field order Telegram uses. */
 interface BotApiChatMemberUpdatedInChat<Chat, ChatMember> {
   readonly chat: Chat;
@@ -750,10 +772,12 @@ export type BotApiMyChatMemberUpdated =
   | BotApiChatMemberUpdatedInChat<BotApiGroupChat, BotApiGroupChatBotMember>;
 
 /** A change of another user's standing in a group, which administrator bots may subscribe to. */
-export type BotApiChatMemberUpdated = BotApiChatMemberUpdatedInChat<
-  BotApiGroupChat,
-  BotApiChatMember
->;
+export type BotApiChatMemberUpdated =
+  & BotApiChatMemberUpdatedInChat<BotApiGroupChat, BotApiChatMember>
+  & {
+    /** The invite link the member joined through; omitted for every other change. */
+    readonly invite_link?: BotApiChatInviteLink;
+  };
 
 export interface BotApiMessageUpdate {
   readonly update_id: number;

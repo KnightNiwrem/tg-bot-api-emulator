@@ -1,0 +1,26 @@
+description: >-
+  The arrival of an invite link's expiry date. The emulator does not let time pass by itself, so
+  a test chooses when a link created with `expire_date` stops working.
+parameters:
+  - $ref: ../components/parameters/SessionId.yaml
+  - $ref: ../components/parameters/SupergroupChatId.yaml
+  - $ref: ../components/parameters/InviteLinkHash.yaml
+post:
+  operationId: expireChatInviteLink
+  summary: End an invite link's use as the arrival of its expiry date does
+  description: >-
+    The link admits nobody from then on; the members that joined through it stay. No bot
+    receives an update for it.
+  responses:
+    '200':
+      description: The link expired; it is shown as the supergroup's owner sees it.
+      content:
+        application/json:
+          schema:
+            $ref: ../components/schemas/ExpiredInviteLinkResponse.yaml
+    '400':
+      description: A path identifier is invalid.
+    '404':
+      description: No active test session, supergroup, or invite link of the supergroup has the supplied identifier.
+    '409':
+      description: The link has no expiry date, or its expiry date arrived before.

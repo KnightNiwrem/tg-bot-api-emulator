@@ -1,0 +1,26 @@
+description: The invite links of a supergroup the account owns.
+parameters:
+  - $ref: ../components/parameters/SessionId.yaml
+  - $ref: ../components/parameters/AccountId.yaml
+  - $ref: ../components/parameters/SupergroupChatId.yaml
+get:
+  operationId: getSupergroupInviteLinks
+  summary: Return the invite links of the supergroup, as its owner sees them
+  description: >-
+    Lists the supergroup's additional invite links in the order bots created them, each whole,
+    with its settings, how many members joined through it and still are, and whether a test
+    made its expiry date arrive. As TDLib requires the owner for links that other
+    administrators created, and only bots create links, only the owner sees them.
+  responses:
+    '200':
+      description: The invite links of the supergroup.
+      content:
+        application/json:
+          schema:
+            $ref: ../components/schemas/SupergroupInviteLinks.yaml
+    '400':
+      description: An account or supergroup path identifier is invalid.
+    '403':
+      description: The account does not own the supergroup.
+    '404':
+      description: The session, account, or supergroup does not exist.

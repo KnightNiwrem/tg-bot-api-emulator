@@ -1,0 +1,45 @@
+description: >-
+  The account's uses of invite links, each of which joins the supergroup a link leads to.
+parameters:
+  - $ref: ../components/parameters/SessionId.yaml
+  - $ref: ../components/parameters/AccountId.yaml
+post:
+  operationId: joinChatByInviteLink
+  summary: Join the supergroup an invite link leads to
+  description: >-
+    Joins the supergroup as Telegram's clients do with an invite link: the link must be one of
+    the session's, a test must not have made its expiry date arrive, and its member limit must
+    leave a place, counting the members that joined through it and still are. A restricted user
+    joins with its restriction. A service message from the account records the join with
+    `new_chat_members`, which every bot of the supergroup receives, privacy mode
+    notwithstanding; administrator bots subscribed to `chat_member` receive the change with the
+    link, the whole link only if they created it. The membership takes a place of the link's
+    member limit until it ends. A link that creates join requests admits nobody directly; the
+    emulator does not support join requests.
+  requestBody:
+    required: true
+    content:
+      application/json:
+        schema:
+          $ref: ../components/schemas/JoinChatByInviteLinkRequest.yaml
+  responses:
+    '200':
+      description: The account joined the supergroup.
+      content:
+        application/json:
+          schema:
+            $ref: ../components/schemas/ChatJoinResponse.yaml
+    '400':
+      description: The account path identifier or the request body is invalid.
+    '403':
+      description: The account is banned from the supergroup.
+    '404':
+      description: The session, the account, or an invite link of the session does not exist.
+    '409':
+      description: The account is a member of the supergroup already.
+    '410':
+      description: >-
+        A test made the link's expiry date arrive, or as many users as its member limit allows
+        joined through it and are members.
+    '501':
+      description: The link creates join requests, which the emulator does not support.

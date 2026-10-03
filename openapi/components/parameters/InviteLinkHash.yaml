@@ -1,0 +1,7 @@
+name: inviteLinkHash
+in: path
+required: true
+description: The hash of an invite link, which follows `https://t.me/+` in the link.
+schema:
+  type: string
+  pattern: '^[A-Za-z0-9_-]{16}$'

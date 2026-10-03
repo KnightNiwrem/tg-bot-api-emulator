@@ -15,6 +15,7 @@ import { BotUpdateSubscriptionRepository } from '../repositories/bot_update_subs
 import { BotWebhookRepository } from '../repositories/bot_webhook.ts';
 import { CallbackQueryRepository } from '../repositories/callback_query.ts';
 import { ChatActionRepository } from '../repositories/chat_action.ts';
+import { ChatInviteLinkRepository } from '../repositories/chat_invite_link.ts';
 import { FileRepository } from '../repositories/file.ts';
 import { InlineQueryRepository } from '../repositories/inline_query.ts';
 import { MessageRepository } from '../repositories/message.ts';
@@ -42,6 +43,7 @@ import {
 } from '../services/bot_webhook.ts';
 import { CallbackQueryService } from '../services/callback_query.ts';
 import { ChatActionService } from '../services/chat_action.ts';
+import { ChatAdmissionService } from '../services/chat_admission.ts';
 import { InlineQueryService } from '../services/inline_query.ts';
 import { MediaFileService } from '../services/media_file.ts';
 import { normalizeCaption } from '../services/message_content.ts';
@@ -114,6 +116,14 @@ export function createEmulationSession(
     sharedChats,
     supergroupMessages: supergroupMessaging,
     events: botUpdateDelivery,
+    currentUnixTimeSeconds,
+  });
+  const chatAdmission = new ChatAdmissionService({
+    accounts,
+    bots,
+    sharedChats,
+    inviteLinks: new ChatInviteLinkRepository(),
+    memberships: sharedChatAdministration,
     currentUnixTimeSeconds,
   });
   const privateConversations = new PrivateConversationRepository();
@@ -260,6 +270,7 @@ export function createEmulationSession(
     botMessages: privateMessaging,
     supergroupBotMessages: supergroupMessaging,
     chatMemberships: sharedChatAdministration,
+    chatAdmission,
     botMessageViews,
     messagePinning,
     mediaFiles,
@@ -291,6 +302,7 @@ export function createEmulationSession(
     uploadProfile,
     virtualUsers,
     sharedChatAdministration,
+    chatAdmission,
     privateMessaging,
     supergroupMessaging,
     messageForwarding,

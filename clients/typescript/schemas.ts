@@ -840,6 +840,30 @@ const customTitleSchema = z.string().min(1).refine((title) =>
   [...title].length <= MAX_CUSTOM_TITLE_LENGTH
 );
 
+export const chatJoinResponseSchema = z.strictObject({
+  chat_id: z.number().int().negative(),
+  outcome: z.literal('joined'),
+});
+
+const supergroupInviteLinkSchema = z.strictObject({
+  invite_link: z.string().startsWith('https://t.me/+'),
+  name: z.string().min(1).optional(),
+  creator_user_id: z.number().int().positive(),
+  expire_date: z.number().int().positive().optional(),
+  member_limit: z.number().int().positive().optional(),
+  member_count: z.number().int().nonnegative(),
+  creates_join_request: z.boolean(),
+  is_expired: z.boolean(),
+});
+
+export const supergroupInviteLinksResponseSchema = z.strictObject({
+  invite_links: z.array(supergroupInviteLinkSchema),
+});
+
+export const expiredInviteLinkResponseSchema = z.strictObject({
+  invite_link: supergroupInviteLinkSchema,
+});
+
 export const chatAdministratorsResponseSchema = z.strictObject({
   administrators: z.array(z.discriminatedUnion('status', [
     z.strictObject({

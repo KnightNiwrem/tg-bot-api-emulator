@@ -1,6 +1,7 @@
 import {
   type BotApiBotUser,
   type BotApiCallbackQuery,
+  type BotApiChatInviteLink,
   type BotApiChatMember,
   type BotApiChatMemberUpdated,
   type BotApiChosenInlineResult,
@@ -902,11 +903,16 @@ export interface ChatMemberChangeProjectionInput {
   readonly member: BotApiUser;
   /** Whether the observing bot may edit the member as an administrator, before or after it. */
   readonly canObserverEdit: AdministratorEditability;
+  /** The invite link the member joined through, as the observing bot sees it; omitted for none. */
+  readonly inviteLink?: BotApiChatInviteLink;
 }
 
-/** Projects a change of a user's standing in a group as an administrator bot observes it. */
+/**
+ * Projects a change of a user's standing in a group as an administrator bot observes it, in the
+ * field order of the official Bot API server's `JsonChatMemberUpdated`.
+ */
 export function projectChatMemberChange(
-  { event, chat, actor, member, canObserverEdit }: ChatMemberChangeProjectionInput,
+  { event, chat, actor, member, canObserverEdit, inviteLink }: ChatMemberChangeProjectionInput,
 ): BotApiChatMemberUpdated {
   return {
     chat: projectGroupChat(chat),
@@ -914,6 +920,7 @@ export function projectChatMemberChange(
     date: event.changedAtUnixSeconds,
     old_chat_member: projectChatMember(member, event.oldStatus, canObserverEdit),
     new_chat_member: projectChatMember(member, event.newStatus, canObserverEdit),
+    ...(inviteLink === undefined ? {} : { invite_link: inviteLink }),
   };
 }
 

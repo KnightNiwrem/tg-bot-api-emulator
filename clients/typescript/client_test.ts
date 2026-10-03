@@ -692,6 +692,82 @@ Deno.test('TypeScript client restricts members and changes what members may do b
   await session.end();
 });
 
+Deno.test('TypeScript client joins supergroups through invite links and by username', async () => {
+  const publicOrigin = 'http://emulator.example:9000';
+  const api = createEmulationApi({
+    sessionLifecycle: createSessionLifecycleService(),
+    publicOrigin,
+  });
+  const client = new TelegramEmulationClient(publicOrigin, {
+    fetch: createInProcessFetch(api.fetch),
+  });
+  const session = await client.createSession();
+  const { bot, token } = await session.createBot({
+    first_name: 'Inviter',
+    username: 'inviter_bot',
+  });
+  const { account: owner } = await session.createAccount({ first_name: 'Ada' });
+  const { account: grace } = await session.createAccount({ first_name: 'Grace' });
+  const { account: hopper } = await session.createAccount({ first_name: 'Hopper' });
+  const supergroup = await owner.createSupergroup({ title: 'Team' });
+  const commons = await owner.createSupergroup({ title: 'Commons', username: 'commons' });
+  const chat = { type: 'supergroup', chatId: supergroup.id } as const;
+  await owner.addChatMember({ chat, userId: bot.id });
+  await owner.promoteChatMember({ chat, userId: bot.id, rights: { can_invite_users: true } });
+  const creation = await api.request(
+    `/sessions/${session.id}/bot-api/bot${token}/createChatInviteLink`,
+    {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        chat_id: supergroup.id,
+        expire_date: Math.floor(Date.now() / 1_000) + 3_600,
+        member_limit: 2,
+      }),
+    },
+  );
+  const { result: { invite_link: inviteLink } } = await creation.json() as {
+    result: { invite_link: string };
+  };
+
+  const joining = await grace.joinChatByInviteLink({ inviteLink });
+  const expiredLink = await session.expireChatInviteLink({ chatId: supergroup.id, inviteLink });
+  let refusal: unknown;
+  try {
+    await hopper.joinChatByInviteLink({ inviteLink });
+  } catch (error) {
+    refusal = error;
+  }
+  await hopper.joinChat({ chat: { type: 'supergroup', chatId: commons.id } });
+  const links = await owner.getChatInviteLinks({ chat });
+  const commonsMembers = (await owner.getMessages({
+    chat: { type: 'supergroup', chatId: commons.id },
+  })).flatMap(({ new_chat_members }) => new_chat_members?.map(({ id }) => id) ?? []);
+
+  const outcomes = [
+    joining,
+    [expiredLink.member_count, expiredLink.is_expired],
+    refusal instanceof EmulationClientError ? refusal.status : refusal,
+    links.map(({ invite_link, member_limit, member_count }) => [
+      invite_link === inviteLink,
+      member_limit,
+      member_count,
+    ]),
+    commonsMembers,
+  ];
+  const expected = [
+    { chat_id: supergroup.id, outcome: 'joined' },
+    [1, true],
+    410,
+    [[true, 2, 1]],
+    [hopper.id],
+  ];
+  if (JSON.stringify(outcomes) !== JSON.stringify(expected)) {
+    throw new Error(`Expected the joins to follow the links, received ${JSON.stringify(outcomes)}`);
+  }
+  await session.end();
+});
+
 Deno.test('TypeScript client changes a supergroup title and reads its service message', async () => {
   const publicOrigin = 'http://emulator.example:9000';
   const api = createEmulationApi({

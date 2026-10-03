@@ -6,8 +6,10 @@
 
 An account creates a supergroup and becomes its owner. The owner adds accounts and bots, removes
 members, and promotes/demotes administrators through the emulation API; administrator bots promote
-and demote with `promoteChatMember`. Members can leave; bots leave through `leaveChat`. Removed
-members are banned until unbanned or added back by the owner.
+and demote with `promoteChatMember`. Accounts also join by themselves, through an administrator
+bot's [invite link](invite-links.md), or a public supergroup by its username. Members can leave;
+bots leave through `leaveChat`. Removed members are banned until unbanned or added back by the
+owner.
 
 Text, photos, documents, replies, inline keyboards, callbacks, forwarding and edits use the same Bot
 API methods as private chats, with a negative supergroup chat ID. Message IDs belong to the
@@ -59,6 +61,7 @@ administrator status bypasses privacy mode. The implemented rights with behavior
 | ---------------------- | -------------------------------------------------------------------------------------- |
 | `can_change_info`      | Call `setChatTitle` and `setChatDescription`                                           |
 | `can_delete_messages`  | Delete other members' content and service messages                                     |
+| `can_invite_users`     | Call `createChatInviteLink`                                                            |
 | `can_restrict_members` | Call `banChatMember`, `unbanChatMember`, `restrictChatMember` and `setChatPermissions` |
 | `can_promote_members`  | Call `promoteChatMember`, granting the rights the bot holds                            |
 
@@ -258,7 +261,7 @@ The other permissions are stored and shown but enforce nothing, because the emul
 govern: `can_send_audios` and `can_send_video_notes` (audio and video notes),
 `can_send_other_messages` beyond inline results (stickers, GIFs, games), `can_add_web_page_previews`
 (link previews), `can_react_to_messages` (reactions), `can_edit_tag` (member tags),
-`can_invite_users` (invitations) and `can_manage_topics` (topics).
+`can_invite_users` (invitations by members) and `can_manage_topics` (topics).
 
 ### Default permissions
 
@@ -393,16 +396,17 @@ production read permissions.
   these rules; the Bot API and TDLib source at the comparison baseline show no trace of the setting.
 
 - **Administrator rights enforcement.** Rights other than `can_change_info`, `can_delete_messages`,
-  `can_restrict_members` and `can_promote_members` are stored without corresponding enforcement.
-  Tests need their behavioral effects as the associated features are supported.
+  `can_invite_users`, `can_restrict_members` and `can_promote_members` are stored without
+  corresponding enforcement. Tests need their behavioral effects as the associated features are
+  supported.
 
 - **Restrictions by administrator accounts.** Only the owner restricts users through the emulation
   API; an administrator account with `can_restrict_members` cannot.
 - **Promotions by administrator accounts.** Only the owner promotes and demotes through the
   emulation API; an administrator account with `can_promote_members` cannot.
 - **Anonymous administrators.** Anonymous administration and its message attribution are absent.
-- **Invitation and joining workflows.** Invite links, join requests and account self-joining are
-  absent; additions require the owner.
+- **Join requests and the link lifecycle.** [Invite links](invite-links.md#real-gaps) cannot create
+  join requests, nor be edited, revoked or exported.
 - **Additional service messages.** Only membership, title and [pin](pinned-messages.md) service
   messages are produced. Other service events, such as photo changes, need corresponding messages as
   their features are supported.

@@ -1,0 +1,43 @@
+type: object
+additionalProperties: false
+description: >-
+  An invite link of a supergroup as its owner inspects it: the whole link, its settings by the
+  Bot API's names, and how it is used.
+required:
+  - invite_link
+  - creator_user_id
+  - member_count
+  - creates_join_request
+  - is_expired
+properties:
+  invite_link:
+    type: string
+    description: The whole link, `https://t.me/+` and its hash.
+  name:
+    type: string
+    minLength: 1
+    maxLength: 32
+    description: The link's name; omitted for none.
+  creator_user_id:
+    $ref: ./TelegramUserId.yaml
+    description: The administrator bot that created the link.
+  expire_date:
+    type: integer
+    description: Unix time when the link stops working; omitted for no expiry date.
+  member_limit:
+    type: integer
+    minimum: 1
+    maximum: 99999
+    description: >-
+      How many users that joined through the link may be members at once; omitted for no limit.
+  member_count:
+    type: integer
+    minimum: 0
+    description: >-
+      How many members joined through the link and still are, which its member limit counts.
+  creates_join_request:
+    type: boolean
+    description: Whether users who use the link send a join request instead of joining.
+  is_expired:
+    type: boolean
+    description: Whether a test made the link's expiry date arrive, which ended its use.

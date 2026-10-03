@@ -90,12 +90,15 @@ export type FormerMemberStatusUpdateResult =
 /**
  * Stores shared chats together with their memberships, so that a registered chat always has
  * exactly one owner, who stays a member. It remembers how each former member's membership ended,
- * including bans of users that never joined, until the user is added again.
+ * including bans of users that never joined, until the user is added again, and the invite link
+ * each current membership began with, which the membership ending forgets.
  */
 export class SharedChatRepository {
   readonly #sharedChatsById = new Map<number, SharedChat>();
   readonly #sharedChatMembershipsByChatId = new Map<number, Map<number, ChatMembership>>();
   readonly #formerMemberStatusesByChatId = new Map<number, Map<number, FormerChatMemberStatus>>();
+  /** Keyed by chat ID, then by the ID of a member that joined through an invite link. */
+  readonly #joiningInviteLinkUrlsByChatId = new Map<number, Map<number, string>>();
   /** Keyed by chat ID, then by the ID of the account whose client shows the reply interface. */
   readonly #replyInterfaceMessageIdsByChatId = new Map<number, Map<number, CanonicalMessageId>>();
   #lastAdministratorTenureId: AdministratorTenureId = 0;
@@ -190,11 +193,15 @@ export class SharedChatRepository {
     return [...(this.#sharedChatMembershipsByChatId.get(chatId)?.keys() ?? [])];
   }
 
-  /** Adds a user to a chat as a member, or as a restricted member that keeps its restriction. */
+  /**
+   * Adds a user to a chat as a member, or as a restricted member that keeps its restriction,
+   * remembering the invite link it joined through, if any, for as long as the membership lasts.
+   */
   addChatMember(
     chatId: number,
     memberId: number,
     membership: JoiningMemberStatus = { status: 'member' },
+    joiningInviteLinkUrl?: string,
   ): ChatMemberAdditionResult {
     const membershipsByIdentityId = this.#sharedChatMembershipsByChatId.get(chatId);
     if (membershipsByIdentityId === undefined) {
@@ -207,7 +214,19 @@ export class SharedChatRepository {
     assertRestrictionWithholdsPermission(chatId, memberId, membership);
     membershipsByIdentityId.set(memberId, membership);
     this.#formerMemberStatusesByChatId.get(chatId)?.delete(memberId);
+    if (joiningInviteLinkUrl !== undefined) {
+      const linkUrlsByMemberId = this.#joiningInviteLinkUrlsByChatId.get(chatId) ??
+        new Map<number, string>();
+      linkUrlsByMemberId.set(memberId, joiningInviteLinkUrl);
+      this.#joiningInviteLinkUrlsByChatId.set(chatId, linkUrlsByMemberId);
+    }
     return { added: true };
+  }
+
+  /** Counts the current members of a chat whose membership began with an invite link. */
+  countMembersJoinedByInviteLink(chatId: number, inviteLinkUrl: string): number {
+    return [...(this.#joiningInviteLinkUrlsByChatId.get(chatId)?.values() ?? [])]
+      .filter((url) => url === inviteLinkUrl).length;
   }
 
   /**
@@ -347,6 +366,7 @@ export class SharedChatRepository {
       return { removed: false, reason: 'not_a_member' };
     }
 
+    this.#joiningInviteLinkUrlsByChatId.get(chatId)?.delete(memberId);
     formerMemberStatuses.set(memberId, formerStatus);
     return { removed: true };
   }

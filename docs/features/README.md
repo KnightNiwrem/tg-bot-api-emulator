@@ -37,6 +37,7 @@ thresholds, which tests replace with
 | [Media and files](media-and-files.md)                 | Photos, documents, videos, voice notes, albums, file IDs and downloads      |
 | [Inline mode](inline-mode.md)                         | Queries, results, feedback and inline message editing                       |
 | [Supergroups](supergroups.md)                         | Privacy mode, membership, restrictions, service messages and administration |
+| [Invite links](invite-links.md)                       | Bots' invite links, member limits, expiry, joining by link or username      |
 | [Command menus](command-menus.md)                     | Commands, menu buttons, descriptions and default administrator rights       |
 
 ## Implemented Bot API methods
@@ -64,6 +65,7 @@ The two legacy aliases below are also accepted.
 | Chat settings    | `setChatTitle`, `setChatDescription`, `setChatPermissions`                                                                                                               |
 | Membership       | `leaveChat`, `getChatMember`, `getChatAdministrators`, `getChatMemberCount`, `banChatMember`, `unbanChatMember`, `restrictChatMember`, `setChatAdministratorCustomTitle` |
 | Administration   | `promoteChatMember`                                                                                                                                                      |
+| Invitations      | `createChatInviteLink`                                                                                                                                                   |
 | Legacy aliases   | `getChatMembersCount` → `getChatMemberCount`, `kickChatMember` → `banChatMember`                                                                                         |
 
 Methods outside this inventory return `404` with a Bot API error body. For supported methods,
@@ -85,7 +87,7 @@ above determines whether an individual method is available.
   [drafts and some blocks](rich-messages.md#real-gaps), and polls lack
   [Telegram's newest poll options](polls.md#real-gaps).
 - Reactions, [unpinning all messages](pinned-messages.md#real-gaps), chat photos and other chat
-  settings, invite links and join requests.
+  settings, and [join requests and editing or revoking invite links](invite-links.md#real-gaps).
 - Payments, invoices, shipping, Telegram Stars, gifts, paid broadcasts and paid media.
 - Business connections, managed bots, Mini Apps, login authorization, Passport and boosts.
 - Other bot profile methods, such as names and profile photos, plus `getUserProfilePhotos`.
