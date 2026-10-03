@@ -310,6 +310,53 @@ Deno.test('supergroup pins need can_pin_messages, which bots get only as an admi
   );
 });
 
+Deno.test('a public supergroup ignores its default permissions for pins', () => {
+  const { session, ada, grace, memberBot, chatId: privateChatId, sendToSupergroup } =
+    createPinningFixture();
+  const creation = session.sharedChatAdministration.createSupergroup({
+    title: 'Public',
+    username: 'public_team',
+    creatorAccountId: ada,
+  });
+  if (!creation.created) {
+    throw new Error(`Supergroup was not created: ${creation.reason}`);
+  }
+  const chatId = creation.supergroup.id;
+  for (const memberId of [grace, memberBot]) {
+    session.sharedChatAdministration.addChatMember({ actorAccountId: ada, chatId, memberId });
+  }
+  promote(session, { ownerId: ada, chatId, memberId: grace, rights: ['can_delete_messages'] });
+  const sent = session.supergroupMessaging.sendAccountMessage({
+    fromAccountId: ada,
+    chatId,
+    content: { kind: 'text', text: 'public rules' },
+  });
+  if (!sent.sent) {
+    throw new Error(`Message was not sent: ${sent.reason}`);
+  }
+  const messageId = messageIdIn(session, chatId, sent.message);
+  const chat: PinningChat = { type: 'supergroup', chatId };
+  const pin = (accountId: number) =>
+    session.messagePinning.pinMessage({ pinner: { kind: 'account', accountId }, chat, messageId });
+
+  expectEqual(
+    pin(grace),
+    { pinned: false, reason: 'not_enough_rights' },
+    'an administrator without the right gets no pin right from the defaults',
+  );
+  promote(session, { ownerId: ada, chatId, memberId: grace, rights: ['can_pin_messages'] });
+  expectEqual(pin(grace).pinned, true, 'the right lets the administrator pin');
+  expectEqual(
+    session.messagePinning.pinMessage({
+      pinner: { kind: 'account', accountId: grace },
+      chat: { type: 'supergroup', chatId: privateChatId },
+      messageId: sendToSupergroup(grace, 'private rules'),
+    }).pinned,
+    true,
+    'a private supergroup applies its defaults',
+  );
+});
+
 Deno.test('a service message cannot be pinned or unpinned, after the right to pin is checked', () => {
   const { session, ada, memberBot, pinningBot, chatId } = createPinningFixture();
   const serviceMessage = session.supergroupMessaging.getMessageHistory({ accountId: ada, chatId });

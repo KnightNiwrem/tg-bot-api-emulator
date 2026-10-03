@@ -34,6 +34,8 @@ chats. In a supergroup, the account needs the `can_pin_messages` permission, as 
 [permission evaluator](supergroups.md#member-restrictions) applies the supergroup's default
 permissions: the owner holds it, an administrator holds it with that right or as the default
 permissions grant it, and other members as the default permissions and their restriction grant it.
+As the Bot API documents for `ChatPermissions.can_pin_messages`, a public supergroup ignores its
+default permissions for pins, so only the owner and administrators with the right pin there.
 Unpinning needs the same permission.
 
 A request is checked as TDLib's [`pin_dialog_message`][pin-dialog-message] checks it: the account

@@ -1840,7 +1840,8 @@ export interface VirtualAccountClient extends VirtualAccountProfile {
    * of; a chat pins any number of messages, and `getChat` shows a bot the newest one. Either
    * participant of a private chat pins any of its messages; in a supergroup, this account needs
    * the `can_pin_messages` permission, which the owner holds, an administrator holds with that
-   * right, and the default permissions grant other members unless withheld. Service messages
+   * right, and the default permissions grant other members unless withheld, except in a public
+   * supergroup, which ignores them for pins. Service messages
    * cannot be pinned, and pinning a pinned message fails, as Telegram refuses it.
    */
   pinMessage(input: AccountPinMessageInput): Promise<void>;

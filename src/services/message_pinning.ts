@@ -1,6 +1,7 @@
 import {
   type ChatMembership,
   getEffectiveChatPermissions,
+  holdsSupergroupAdministratorRight,
   resolveSupergroupBotMembership,
   type SupergroupBotAccessFailureReason,
   type SupergroupMembershipLookup,
@@ -169,7 +170,7 @@ type ReachedPinningChat =
  * As on Telegram, a chat pins any number of its messages, each marked as pinned, so the pinned
  * messages are those of the chat's current history that carry the mark; deleting a message
  * unpins it. Either participant of a private chat pins and unpins any of its messages; in a
- * supergroup, the pinner needs the `can_pin_messages` permission, as `getEffectiveChatPermissions`
+ * supergroup, the pinner needs the `can_pin_messages` permission, as `canPinSupergroupMessages`
  * decides it. Service messages are never pinned.
  */
 export class MessagePinningService {
@@ -345,13 +346,13 @@ export class MessagePinningService {
     if (!access.resolved) {
       return { reached: false, reason: access.reason };
     }
-    const permissions = getEffectiveChatPermissions(access.membership, {
-      defaultPermissions: access.supergroup.defaultPermissions,
-      isBot: pinner.kind === 'bot',
-    });
     return {
       reached: true,
-      chat: { type: 'supergroup', chatId, canPinMessages: permissions.has('can_pin_messages') },
+      chat: {
+        type: 'supergroup',
+        chatId,
+        canPinMessages: canPinSupergroupMessages(access.supergroup, access.membership, pinner),
+      },
     };
   }
 
@@ -394,6 +395,26 @@ export class MessagePinningService {
       : this.#messages.getSupergroupMessages(chat.chatId);
     return history.filter((message) => message.isPinned).reverse();
   }
+}
+
+/**
+ * Whether a member may pin and unpin a supergroup's messages: as `getEffectiveChatPermissions`
+ * decides `can_pin_messages`, except that, as the Bot API documents for that permission, a public
+ * supergroup ignores its default permissions, so only the owner and administrators with the right
+ * pin there.
+ */
+function canPinSupergroupMessages(
+  supergroup: Supergroup,
+  membership: ChatMembership,
+  pinner: MessagePinner,
+): boolean {
+  if (supergroup.username !== undefined) {
+    return holdsSupergroupAdministratorRight(membership, 'can_pin_messages');
+  }
+  return getEffectiveChatPermissions(membership, {
+    defaultPermissions: supergroup.defaultPermissions,
+    isBot: pinner.kind === 'bot',
+  }).has('can_pin_messages');
 }
 
 /**
