@@ -117,6 +117,7 @@ import type {
 } from './bot_webhook.ts';
 import type {
   BanChatMemberResult,
+  ChangeDefaultPermissionsResult,
   ChangeSupergroupDescriptionResult,
   ChangeSupergroupTitleResult,
   GetChatAdministratorsResult,
@@ -978,6 +979,25 @@ export type BotApiSetChatDescriptionResult =
     readonly reason: BotApiChatInfoChangeFailureReason | 'description_not_modified';
   };
 
+export interface SetChatPermissionsRequest {
+  /** The Bot API `chat_id`, as `SendRequestOptions` describes it. */
+  readonly chatId: number;
+  /** What members may do by default, as the Bot API `permissions` grants it. */
+  readonly permissions: ChatPermissions;
+}
+
+export type BotApiSetChatPermissionsResult =
+  | { readonly set: true }
+  | {
+    readonly set: false;
+    readonly reason:
+      | 'chat_not_found'
+      | FormerSupergroupMemberFailureReason
+      /** A private chat has no permissions a bot can change. */
+      | 'private_chat_permissions_unchangeable'
+      | 'not_enough_rights';
+  };
+
 export type DeleteMessageRequest = MessageTarget;
 
 export type DeleteMessageResult =
@@ -1510,6 +1530,11 @@ interface ChatMemberships {
     readonly chatId: number;
     readonly description: string;
   }): ChangeSupergroupDescriptionResult;
+  changeDefaultPermissions(input: {
+    readonly actor: SupergroupMessageAuthor;
+    readonly chatId: number;
+    readonly permissions: ChatPermissions;
+  }): ChangeDefaultPermissionsResult;
 }
 
 interface MediaFiles {
@@ -3492,6 +3517,43 @@ export class BotApiService {
       actor: { kind: 'bot', botId: authenticatedBot.id },
       chatId,
       description,
+    });
+    if (result.changed) {
+      return { set: true };
+    }
+    switch (result.reason) {
+      // The authenticated bot exists, and a bot is not refused as an account that is no member.
+      case 'actor_not_found':
+      case 'not_a_member':
+        throw new Error(
+          `Bot ${authenticatedBot.id} could not act in chat ${chatId}: ${result.reason}`,
+        );
+      default:
+        return { set: false, reason: result.reason };
+    }
+  }
+
+  /**
+   * Changes what a supergroup's members may do by default, as
+   * `SharedChatAdministrationService.changeDefaultPermissions` changes it for a bot. As TDLib's
+   * `set_dialog_permissions` refuses, a private chat's permissions cannot be changed.
+   */
+  setChatPermissions(
+    authenticatedBot: VirtualBotProfile,
+    { chatId, permissions }: SetChatPermissionsRequest,
+  ): BotApiSetChatPermissionsResult {
+    if (isUserId(chatId)) {
+      return {
+        set: false,
+        reason: this.#isPrivateChatKnown(authenticatedBot, chatId)
+          ? 'private_chat_permissions_unchangeable'
+          : 'chat_not_found',
+      };
+    }
+    const result = this.#chatMemberships.changeDefaultPermissions({
+      actor: { kind: 'bot', botId: authenticatedBot.id },
+      chatId,
+      permissions,
     });
     if (result.changed) {
       return { set: true };

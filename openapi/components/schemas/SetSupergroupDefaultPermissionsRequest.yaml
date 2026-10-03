@@ -1,0 +1,45 @@
+type: object
+additionalProperties: false
+required:
+  - permissions
+properties:
+  permissions:
+    type: object
+    additionalProperties: false
+    description: >-
+      The permissions members get by default, by the Bot API's names; an omitted permission is
+      withheld. `can_send_media_messages`, which the Bot API derives from the media permissions,
+      is not accepted.
+    properties:
+      can_send_messages:
+        type: boolean
+      can_send_audios:
+        type: boolean
+      can_send_documents:
+        type: boolean
+      can_send_photos:
+        type: boolean
+      can_send_videos:
+        type: boolean
+      can_send_video_notes:
+        type: boolean
+      can_send_voice_notes:
+        type: boolean
+      can_send_polls:
+        type: boolean
+      can_send_other_messages:
+        type: boolean
+      can_add_web_page_previews:
+        type: boolean
+      can_react_to_messages:
+        type: boolean
+      can_edit_tag:
+        type: boolean
+      can_change_info:
+        type: boolean
+      can_invite_users:
+        type: boolean
+      can_pin_messages:
+        type: boolean
+      can_manage_topics:
+        type: boolean

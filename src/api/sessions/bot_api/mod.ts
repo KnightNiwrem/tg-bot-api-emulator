@@ -732,6 +732,13 @@ const setChatDescriptionParametersSchema = z.strictObject({
   description: z.string().default(''),
 });
 
+// As for restrictChatMember, the deprecated permissions given as separate parameters are refused.
+const setChatPermissionsParametersSchema = z.strictObject({
+  chat_id: integerParameter(z.int()).optional(),
+  permissions: z.string().optional(),
+  use_independent_chat_permissions: booleanParameter().default(false),
+});
+
 // Topics and business connections are not supported.
 const sendChatActionParametersSchema = z.strictObject({
   chat_id: integerParameter(z.int()).optional(),
@@ -1078,6 +1085,7 @@ const BOT_API_METHODS: readonly BotApiMethod[] = [
   },
   { name: 'setChatDescription', handler: handleSetChatDescription },
   { name: 'setChatMenuButton', handler: handleSetChatMenuButton },
+  { name: 'setChatPermissions', handler: handleSetChatPermissions },
   { name: 'setChatTitle', handler: handleSetChatTitle },
   { name: 'setMyCommands', handler: handleSetMyCommands },
   { name: 'setMyDefaultAdministratorRights', handler: handleSetMyDefaultAdministratorRights },
@@ -3175,6 +3183,10 @@ const NOT_ENOUGH_RIGHTS_TO_SET_DESCRIPTION_DESCRIPTION =
 const PRIVATE_CHAT_TITLE_UNCHANGEABLE_DESCRIPTION = "Bad Request: can't change private chat title";
 const PRIVATE_CHAT_DESCRIPTION_UNCHANGEABLE_DESCRIPTION =
   "Bad Request: can't change private chat description";
+const NOT_ENOUGH_RIGHTS_TO_CHANGE_PERMISSIONS_DESCRIPTION =
+  'Bad Request: not enough rights to change chat permissions';
+const PRIVATE_CHAT_PERMISSIONS_UNCHANGEABLE_DESCRIPTION =
+  "Bad Request: can't change private chat permissions";
 /** The official server's description of Telegram's refusal of an unchanged description. */
 const CHAT_DESCRIPTION_NOT_MODIFIED_DESCRIPTION = 'Bad Request: chat description is not modified';
 
@@ -3229,6 +3241,44 @@ function handleSetChatDescription(
       return botApiError(400, NOT_ENOUGH_RIGHTS_TO_SET_DESCRIPTION_DESCRIPTION);
     case 'private_chat_info_unchangeable':
       return botApiError(400, PRIVATE_CHAT_DESCRIPTION_UNCHANGEABLE_DESCRIPTION);
+    default:
+      return chatInfoChangeFailureAnswer(result.reason);
+  }
+}
+
+function handleSetChatPermissions(
+  context: BotApiMethodContext,
+  parameters: BotApiRequestParameters,
+): BotApiMethodAnswer {
+  const invalidParametersDescription = 'Bad Request: invalid setChatPermissions parameters';
+  const parsedParameters = setChatPermissionsParametersSchema.safeParse(parameters);
+  if (!parsedParameters.success) {
+    return botApiError(400, invalidParametersDescription);
+  }
+  const { data } = parsedParameters;
+  // Telegram reads the permissions before it looks at the chat.
+  const permissionsReading = readChatPermissionsParameter(data.permissions, {
+    usesIndependentChatPermissions: data.use_independent_chat_permissions,
+    invalidParametersDescription,
+  });
+  if (!permissionsReading.read) {
+    return botApiError(400, permissionsReading.description);
+  }
+  if (data.chat_id === undefined) {
+    return botApiError(400, CHAT_ID_EMPTY_DESCRIPTION);
+  }
+  const result = context.session.botApi.setChatPermissions(context.bot, {
+    chatId: data.chat_id,
+    permissions: permissionsReading.permissions,
+  });
+  if (result.set) {
+    return botApiResult(true);
+  }
+  switch (result.reason) {
+    case 'not_enough_rights':
+      return botApiError(400, NOT_ENOUGH_RIGHTS_TO_CHANGE_PERMISSIONS_DESCRIPTION);
+    case 'private_chat_permissions_unchangeable':
+      return botApiError(400, PRIVATE_CHAT_PERMISSIONS_UNCHANGEABLE_DESCRIPTION);
     default:
       return chatInfoChangeFailureAnswer(result.reason);
   }

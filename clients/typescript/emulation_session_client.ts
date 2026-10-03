@@ -93,6 +93,7 @@ import type {
   ReplyInterface,
   RestrictChatMemberInput,
   SendInlineQueryInput,
+  SetChatPermissionsInput,
   SetContentProtectionInput,
   SetCustomTitleInput,
   Supergroup,
@@ -577,6 +578,14 @@ function createVirtualAccountClient(
           encodeURIComponent(input.userId)
         }`,
         expectedStatus: HTTP_STATUS_NO_CONTENT,
+      });
+    },
+    async setChatPermissions(input: SetChatPermissionsInput): Promise<void> {
+      await requestEmptyResponse(fetchImplementation, {
+        method: 'PUT',
+        url: `${conversationUrl(accountUrl, input.chat)}/permissions`,
+        expectedStatus: HTTP_STATUS_NO_CONTENT,
+        body: { permissions: input.permissions },
       });
     },
     async setCustomTitle(input: SetCustomTitleInput): Promise<void> {

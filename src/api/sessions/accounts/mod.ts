@@ -94,6 +94,7 @@ const SUPERGROUP_RESTRICTION_PATH =
 const SUPERGROUP_CONTENT_PROTECTION_PATH =
   `${SUPERGROUP_CONVERSATION_PATH}/content-protection` as const;
 const SUPERGROUP_TITLE_PATH = `${SUPERGROUP_CONVERSATION_PATH}/title` as const;
+const SUPERGROUP_DEFAULT_PERMISSIONS_PATH = `${SUPERGROUP_CONVERSATION_PATH}/permissions` as const;
 const SUPERGROUP_DESCRIPTION_PATH = `${SUPERGROUP_CONVERSATION_PATH}/description` as const;
 
 const telegramUserIdSchema = z.number().int()
@@ -271,12 +272,25 @@ const promoteChatMemberRequestSchema = z.partialRecord(
 );
 
 /**
- * A restriction the owner applies: the permissions the user keeps, by the Bot API's names, where
- * an omitted permission is withheld and, unlike in the Bot API, no permission implies another; and
- * when it ends, as a Unix time Telegram normalizes, or never when omitted.
+ * Permissions by the Bot API's names, where an omitted permission is withheld and, unlike in the
+ * Bot API, no permission implies another.
+ */
+const chatPermissionsSchema = z.partialRecord(z.enum(CHAT_PERMISSIONS), z.boolean())
+  .transform((permissions) =>
+    new Set(CHAT_PERMISSIONS.filter((permission) => permissions[permission] === true))
+  );
+
+/** What a supergroup's members may do by default, which a member with the right changes. */
+const changeDefaultPermissionsRequestSchema = z.strictObject({
+  permissions: chatPermissionsSchema,
+});
+
+/**
+ * A restriction the owner applies: the permissions the user keeps, and when it ends, as a Unix time
+ * Telegram normalizes, or never when omitted.
  */
 const restrictChatMemberRequestSchema = z.strictObject({
-  permissions: z.partialRecord(z.enum(CHAT_PERMISSIONS), z.boolean()),
+  permissions: chatPermissionsSchema,
   until_date: z.int().optional(),
 });
 
@@ -695,9 +709,7 @@ export function createAccountRoutes(): Hono<SessionRouteContextTypes> {
         actorAccountId: accountId,
         chatId,
         memberId: userId,
-        permissions: new Set(
-          CHAT_PERMISSIONS.filter((permission) => requestBody.permissions[permission] === true),
-        ),
+        permissions: requestBody.permissions,
         requestedRestrictionEndUnixSeconds: requestBody.until_date,
       });
     return result.changed
@@ -808,6 +820,48 @@ export function createAccountRoutes(): Hono<SessionRouteContextTypes> {
     return result.changed
       ? context.body(null, 204)
       : context.body(null, supergroupInfoChangeFailureStatus(result.reason));
+  });
+
+  // A member with the right to restrict members changes what members may do by default.
+  accountRoutes.put(SUPERGROUP_DEFAULT_PERMISSIONS_PATH, async (context) => {
+    const conversationPath = supergroupConversationPathSchema.safeParse(context.req.param());
+    if (!conversationPath.success) {
+      return context.body(null, 400);
+    }
+    const requestBody = await readJsonRequestBody(
+      context.req,
+      changeDefaultPermissionsRequestSchema,
+    );
+    if (requestBody === undefined) {
+      return context.body(null, 400);
+    }
+    const { accountId, chatId } = conversationPath.data;
+
+    const result = context.get('emulationSession').sharedChatAdministration
+      .changeDefaultPermissions({
+        actor: { kind: 'account', accountId },
+        chatId,
+        permissions: requestBody.permissions,
+      });
+    if (result.changed) {
+      return context.body(null, 204);
+    }
+    switch (result.reason) {
+      case 'actor_not_found':
+      case 'chat_not_found':
+        return context.body(null, 404);
+      case 'not_a_member':
+      case 'not_enough_rights':
+        return context.body(null, 403);
+      // Only bots are refused for their former membership.
+      case 'bot_not_a_member':
+      case 'bot_kicked':
+        throw new Error(`Account ${accountId} refused as a bot: ${result.reason}`);
+      default: {
+        const unhandledReason: never = result.reason;
+        throw new Error(`Unhandled default permissions failure: ${unhandledReason}`);
+      }
+    }
   });
 
   // The owner protects all content of the supergroup from forwarding and saving, or lifts that.
