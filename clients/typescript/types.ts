@@ -1899,8 +1899,8 @@ export interface VirtualAccountClient extends VirtualAccountProfile {
    * only for the bot that created it. The link must not have expired, and its member limit must
    * leave a place; this account must be neither a member nor banned. A link that creates join
    * requests sends this account's request instead, which administrator bots with
-   * `can_invite_users` receive as a `chat_join_request` update; this account stays outside, and
-   * using such a link again while the request is pending fails.
+   * `can_invite_users` receive as a `chat_join_request` update; this account stays outside until
+   * one of them approves the request, and using such a link again while it is pending fails.
    */
   joinChatByInviteLink(input: JoinChatByInviteLinkInput): Promise<ChatJoin>;
   /**
@@ -1910,7 +1910,8 @@ export interface VirtualAccountClient extends VirtualAccountProfile {
   getChatInviteLinks(input: AccountChatInviteLinksInput): Promise<readonly SupergroupInviteLink[]>;
   /**
    * Returns the pending requests to join a supergroup this account owns, in the order they were
-   * sent. A request ends when its account joins, whichever way, or is banned.
+   * sent. A request ends when a bot approves or declines it, or when its account joins another way
+   * or is banned.
    */
   getChatJoinRequests(input: AccountChatJoinRequestsInput): Promise<readonly ChatJoinRequest[]>;
   /**

@@ -20,8 +20,9 @@ post:
 
     A link that creates join requests leaves the account outside and stores its request, as
     Telegram answers `INVITE_REQUEST_SENT`. The supergroup's administrator bots holding
-    `can_invite_users` receive it as a `chat_join_request` update. An account has one pending
-    request per supergroup, which ends when it joins, whichever way, or is banned.
+    `can_invite_users` receive it as a `chat_join_request` update, and any of them approves or
+    declines it. An account has one pending request per supergroup, which also ends when it
+    joins another way or is banned.
   requestBody:
     required: true
     content:

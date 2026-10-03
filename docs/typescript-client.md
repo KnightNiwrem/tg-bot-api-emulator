@@ -245,7 +245,8 @@ try {
     const link = linkCreation.answer.result as { invite_link: string; expire_date?: number };
     const { account: friend } = await session.createAccount({ first_name: 'Grace' });
     // The friend joins, or, through a link the bot created with creates_join_request, stays
-    // outside with a pending request, which the bot receives as a chat_join_request update.
+    // outside with a pending request, which the bot receives as a chat_join_request update and
+    // decides with approveChatJoinRequest or declineChatJoinRequest.
     const { outcome } = await friend.joinChatByInviteLink({ inviteLink: link.invite_link });
     console.log(outcome, await account.getChatJoinRequests({ chat: groupChat }));
     if (link.expire_date !== undefined) {

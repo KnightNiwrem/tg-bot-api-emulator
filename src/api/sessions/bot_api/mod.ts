@@ -467,6 +467,13 @@ const MEMBER_LIMIT_WITH_JOIN_REQUEST_DESCRIPTION =
   "Bad Request: member limit can't be specified for links requiring administrator approval";
 const NOT_ENOUGH_RIGHTS_TO_MANAGE_INVITE_LINKS_DESCRIPTION =
   'Bad Request: not enough rights to manage chat invite link';
+const PRIVATE_CHAT_HAS_NO_JOIN_REQUESTS_DESCRIPTION =
+  "Bad Request: the chat can't have join requests";
+const NOT_ENOUGH_RIGHTS_TO_MANAGE_JOIN_REQUESTS_DESCRIPTION =
+  'Bad Request: not enough rights to manage chat join requests';
+/** Telegram's servers' errors for join requests, which the official server passes on. */
+const USER_ALREADY_PARTICIPANT_DESCRIPTION = 'Bad Request: USER_ALREADY_PARTICIPANT';
+const JOIN_REQUEST_MISSING_DESCRIPTION = 'Bad Request: HIDE_REQUESTER_MISSING';
 /** Telegram's servers' errors for invite links, which the official server passes on. */
 const INVITE_LINK_EXPIRY_DATE_INVALID_DESCRIPTION = 'Bad Request: EXPIRE_DATE_INVALID';
 const INVITE_LINK_MEMBER_LIMIT_INVALID_DESCRIPTION = 'Bad Request: USAGE_LIMIT_INVALID';
@@ -975,6 +982,12 @@ const createChatInviteLinkParametersSchema = z.strictObject({
   creates_join_request: booleanParameter().default(false),
 });
 
+/** Parameters of approveChatJoinRequest and declineChatJoinRequest, which name one request. */
+const chatJoinRequestDecisionParametersSchema = z.strictObject({
+  chat_id: integerParameter(z.int()).optional(),
+  user_id: integerParameter(z.int()).optional(),
+});
+
 // Telegram also reads the deprecated permissions given as separate parameters, such as
 // `can_send_messages`; rejecting them instead surfaces the bot's mistake in tests.
 const restrictChatMemberParametersSchema = z.strictObject({
@@ -1197,9 +1210,11 @@ export interface BotApiMethod {
 const BOT_API_METHODS: readonly BotApiMethod[] = [
   { name: 'answerCallbackQuery', handler: handleAnswerCallbackQuery },
   { name: 'answerInlineQuery', handler: handleAnswerInlineQuery },
+  { name: 'approveChatJoinRequest', handler: handleApproveChatJoinRequest },
   { name: 'banChatMember', handler: handleBanChatMember, legacyNames: ['kickChatMember'] },
   { name: 'copyMessage', handler: handleCopyMessage },
   { name: 'createChatInviteLink', handler: handleCreateChatInviteLink },
+  { name: 'declineChatJoinRequest', handler: handleDeclineChatJoinRequest },
   { name: 'copyMessages', handler: handleCopyMessages },
   { name: 'deleteMessage', handler: handleDeleteMessage },
   { name: 'deleteMessages', handler: handleDeleteMessages },
@@ -3922,6 +3937,75 @@ function handleCreateChatInviteLink(
     default: {
       const unhandledReason: never = result.reason;
       throw new Error(`Unhandled createChatInviteLink failure: ${unhandledReason}`);
+    }
+  }
+}
+
+function handleApproveChatJoinRequest(
+  context: BotApiMethodContext,
+  parameters: BotApiRequestParameters,
+): BotApiMethodAnswer {
+  return answerChatJoinRequestDecision(
+    'approveChatJoinRequest',
+    parameters,
+    (request) => context.session.botApi.approveChatJoinRequest(context.bot, request),
+  );
+}
+
+function handleDeclineChatJoinRequest(
+  context: BotApiMethodContext,
+  parameters: BotApiRequestParameters,
+): BotApiMethodAnswer {
+  return answerChatJoinRequestDecision(
+    'declineChatJoinRequest',
+    parameters,
+    (request) => context.session.botApi.declineChatJoinRequest(context.bot, request),
+  );
+}
+
+/**
+ * Answers `approveChatJoinRequest` or `declineChatJoinRequest`, which the official server's
+ * `process_approve_chat_join_request_query` and `process_decline_chat_join_request_query` read
+ * alike: the user, then the chat.
+ */
+function answerChatJoinRequestDecision(
+  methodName: 'approveChatJoinRequest' | 'declineChatJoinRequest',
+  parameters: BotApiRequestParameters,
+  decide: (
+    request: { readonly chatId: number; readonly userId: number },
+  ) => ReturnType<EmulationSession['botApi']['approveChatJoinRequest']>,
+): BotApiMethodAnswer {
+  const parsedParameters = chatJoinRequestDecisionParametersSchema.safeParse(parameters);
+  if (!parsedParameters.success) {
+    return botApiError(400, `Bad Request: invalid ${methodName} parameters`);
+  }
+  const targetReading = readChatMemberTarget(parsedParameters.data);
+  if (!targetReading.read) {
+    return targetReading.errorAnswer;
+  }
+
+  const result = decide(targetReading.target);
+  if (result.decided) {
+    return botApiResult(true);
+  }
+  switch (result.reason) {
+    case 'chat_not_found':
+      return botApiError(400, CHAT_NOT_FOUND_DESCRIPTION);
+    case 'bot_not_a_member':
+      return botApiError(403, BOT_NOT_SUPERGROUP_MEMBER_DESCRIPTION);
+    case 'bot_kicked':
+      return botApiError(403, BOT_KICKED_FROM_SUPERGROUP_DESCRIPTION);
+    case 'private_chat_has_no_join_requests':
+      return botApiError(400, PRIVATE_CHAT_HAS_NO_JOIN_REQUESTS_DESCRIPTION);
+    case 'not_enough_rights':
+      return botApiError(400, NOT_ENOUGH_RIGHTS_TO_MANAGE_JOIN_REQUESTS_DESCRIPTION);
+    case 'already_a_member':
+      return botApiError(400, USER_ALREADY_PARTICIPANT_DESCRIPTION);
+    case 'join_request_missing':
+      return botApiError(400, JOIN_REQUEST_MISSING_DESCRIPTION);
+    default: {
+      const unhandledReason: never = result.reason;
+      throw new Error(`Unhandled ${methodName} failure: ${unhandledReason}`);
     }
   }
 }

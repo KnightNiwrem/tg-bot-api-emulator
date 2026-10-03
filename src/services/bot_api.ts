@@ -107,6 +107,9 @@ import type {
   CreateInviteLinkAsBotFailureReason,
   CreateInviteLinkAsBotInput,
   CreateInviteLinkAsBotResult,
+  DecideJoinRequestAsBotFailureReason,
+  DecideJoinRequestAsBotInput,
+  DecideJoinRequestAsBotResult,
 } from './chat_admission.ts';
 import type {
   DocumentUploadPreparation,
@@ -1275,6 +1278,22 @@ export type BotApiCreateChatInviteLinkResult =
       | 'private_chat_has_no_invite_links';
   };
 
+export interface DecideChatJoinRequestRequest {
+  /** The Bot API `chat_id`, as `SendRequestOptions` describes it. */
+  readonly chatId: number;
+  /** The Bot API `user_id` of the account whose request the bot decides on. */
+  readonly userId: number;
+}
+
+export type BotApiDecideChatJoinRequestResult =
+  | { readonly decided: true }
+  | {
+    readonly decided: false;
+    readonly reason:
+      | Exclude<DecideJoinRequestAsBotFailureReason, 'bot_not_found'>
+      | 'private_chat_has_no_join_requests';
+  };
+
 export interface AnswerCallbackQueryRequest {
   readonly callbackQueryId: CallbackQueryId;
   readonly text?: string;
@@ -1895,6 +1914,8 @@ interface BotMessageViews {
 
 interface ChatAdmission {
   createInviteLinkAsBot(input: CreateInviteLinkAsBotInput): CreateInviteLinkAsBotResult;
+  approveJoinRequestAsBot(input: DecideJoinRequestAsBotInput): DecideJoinRequestAsBotResult;
+  declineJoinRequestAsBot(input: DecideJoinRequestAsBotInput): DecideJoinRequestAsBotResult;
 }
 
 interface MessagePinning {
@@ -1919,7 +1940,7 @@ interface BotApiServiceDependencies {
   readonly botMessages: BotMessaging;
   readonly supergroupBotMessages: SupergroupBotMessaging;
   readonly chatMemberships: ChatMemberships;
-  /** Creates the invite links that let accounts join supergroups. */
+  /** Creates the invite links that let accounts join supergroups, and decides join requests. */
   readonly chatAdmission: ChatAdmission;
   readonly botMessageViews: BotMessageViews;
   /** Pins and unpins messages, and finds the pinned message that `getChat` shows. */
@@ -4112,6 +4133,56 @@ export class BotApiService {
       created: true,
       inviteLink: this.#botMessageViews.viewChatInviteLink(result.link, authenticatedBot.id),
     };
+  }
+
+  /**
+   * Approves an account's pending request to join a supergroup, as
+   * `ChatAdmissionService.approveJoinRequestAsBot` does. As TDLib's
+   * `can_manage_dialog_join_requests` refuses, a private chat has no join requests.
+   */
+  approveChatJoinRequest(
+    authenticatedBot: VirtualBotProfile,
+    request: DecideChatJoinRequestRequest,
+  ): BotApiDecideChatJoinRequestResult {
+    return this.#decideChatJoinRequest(
+      authenticatedBot,
+      request,
+      (input) => this.#chatAdmission.approveJoinRequestAsBot(input),
+    );
+  }
+
+  /**
+   * Declines an account's pending request to join a supergroup, as
+   * `ChatAdmissionService.declineJoinRequestAsBot` does; a private chat has no join requests.
+   */
+  declineChatJoinRequest(
+    authenticatedBot: VirtualBotProfile,
+    request: DecideChatJoinRequestRequest,
+  ): BotApiDecideChatJoinRequestResult {
+    return this.#decideChatJoinRequest(
+      authenticatedBot,
+      request,
+      (input) => this.#chatAdmission.declineJoinRequestAsBot(input),
+    );
+  }
+
+  #decideChatJoinRequest(
+    authenticatedBot: VirtualBotProfile,
+    { chatId, userId }: DecideChatJoinRequestRequest,
+    decide: (input: DecideJoinRequestAsBotInput) => DecideJoinRequestAsBotResult,
+  ): BotApiDecideChatJoinRequestResult {
+    if (isUserId(chatId)) {
+      return {
+        decided: false,
+        reason: this.#isPrivateChatKnown(authenticatedBot, chatId)
+          ? 'private_chat_has_no_join_requests'
+          : 'chat_not_found',
+      };
+    }
+    const result = decide({ deciderBotId: authenticatedBot.id, chatId, userId });
+    return result.decided
+      ? result
+      : { decided: false, reason: excludeMissingBotFailure(authenticatedBot, result.reason) };
   }
 
   /**

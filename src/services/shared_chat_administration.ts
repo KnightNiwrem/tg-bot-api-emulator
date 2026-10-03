@@ -153,11 +153,16 @@ export type AddChatMemberResult =
   };
 
 export interface AdmitAccountInput {
-  /** The account that joins by itself. */
+  /** The account that joins. */
   readonly accountId: number;
   readonly chatId: number;
   /** The invite link the account joins through; omitted when it joins by the chat's username. */
   readonly inviteLink?: ChatInviteLink;
+  /**
+   * The administrator that approved the account's request to join; omitted when the account
+   * joined by itself.
+   */
+  readonly approverId?: number;
 }
 
 export interface LeaveChatInput {
@@ -942,7 +947,8 @@ export class SharedChatAdministrationService {
       return addition;
     }
     this.#publishJoin(chat, {
-      actor: { kind: 'account', accountId: input.actorAccountId },
+      actorId: input.actorAccountId,
+      author: { kind: 'account', accountId: input.actorAccountId },
       memberId: input.memberId,
       oldStatus: statusBeforeJoining,
       newStatus: statusAfterJoining,
@@ -951,14 +957,15 @@ export class SharedChatAdministrationService {
   }
 
   /**
-   * Adds an account that joins a supergroup by itself, through its public username or an invite
-   * link, which the caller checked that it may: it is neither a member nor banned, and the link,
-   * if any, lets it join. A restricted user joins with its restriction, as when the owner adds it.
-   * The join is recorded as the account's own service message, as the official Bot API server
-   * shows TDLib's `messageChatJoinByLink`, and published with the invite link, which the
-   * membership remembers while it lasts.
+   * Adds an account that joins a supergroup through its public username or an invite link, by
+   * itself or as an administrator approved its request, which the caller checked that it may: it
+   * is neither a member nor banned, and the link, if any, lets it join. A restricted user joins
+   * with its restriction, as when the owner adds it. The join is recorded as the account's own
+   * service message, as the official Bot API server shows TDLib's `messageChatJoinByLink` and
+   * `messageChatJoinByRequest`, and published from the account, or from its approver, with the
+   * invite link, which the membership remembers while it lasts.
    */
-  admitAccount({ accountId, chatId, inviteLink }: AdmitAccountInput): void {
+  admitAccount({ accountId, chatId, inviteLink, approverId }: AdmitAccountInput): void {
     const chat = this.#sharedChats.getSharedChat(chatId);
     if (chat?.kind !== 'supergroup') {
       throw new Error(`Account ${accountId} cannot join chat ${chatId}, which is no supergroup`);
@@ -980,7 +987,8 @@ export class SharedChatAdministrationService {
       throw new Error(`Account ${accountId} could not join chat ${chatId}: ${addition.reason}`);
     }
     this.#publishJoin(chat, {
-      actor: { kind: 'account', accountId },
+      actorId: approverId ?? accountId,
+      author: { kind: 'account', accountId },
       memberId: accountId,
       oldStatus: statusBeforeJoining,
       newStatus: statusAfterJoining,
@@ -2219,9 +2227,14 @@ export class SharedChatAdministrationService {
   /** Publishes a user's joining a chat, then records it as a service message. */
   #publishJoin(
     chat: SharedChat,
-    { actor, memberId, oldStatus, newStatus, inviteLink }: {
-      /** The account that added the member, or the member itself when it joined by itself. */
-      readonly actor: SupergroupMessageAuthor;
+    { actorId, author, memberId, oldStatus, newStatus, inviteLink }: {
+      /**
+       * The user that made the change: the account that added the member, the administrator that
+       * approved its request, or the member itself when it joined by itself.
+       */
+      readonly actorId: number;
+      /** The account that added the member, or the member itself when it joined otherwise. */
+      readonly author: SupergroupMessageAuthor;
       readonly memberId: number;
       readonly oldStatus: FormerChatMemberStatus;
       readonly newStatus: JoiningMemberStatus;
@@ -2232,7 +2245,7 @@ export class SharedChatAdministrationService {
     this.#events.publish({
       type: 'chat_member_status_changed',
       chat,
-      actorId: actor.kind === 'account' ? actor.accountId : actor.botId,
+      actorId,
       memberId,
       oldStatus,
       newStatus,
@@ -2240,7 +2253,7 @@ export class SharedChatAdministrationService {
       ...(inviteLink === undefined ? {} : { inviteLink }),
     });
     this.#recordSupergroupServiceMessage(chat, {
-      author: actor,
+      author,
       content: { kind: 'members_joined', memberIds: [memberId] },
       changedAtUnixSeconds: joinedAtUnixSeconds,
     });
