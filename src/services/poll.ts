@@ -1,5 +1,4 @@
 import type { ChatDomainEvent } from '../types/chat_domain_event.ts';
-import type { ChatMembership } from '../types/chat_membership.ts';
 import {
   checkPollAnswer,
   getVoterAnswer,
@@ -9,26 +8,16 @@ import {
   toChosenOptionPositions,
 } from '../types/poll.ts';
 import type { VirtualAccount } from '../types/virtual_account.ts';
-import type { VirtualBot } from '../types/virtual_bot.ts';
-import type {
-  PrivateConversation,
-  PrivateConversationKey,
-  SharedChat,
-} from '../types/virtual_chat.ts';
+import { canBotEditMessage, type ChatMessage } from '../types/virtual_message.ts';
 import {
-  canBotEditMessage,
-  type ChatMessage,
-  type PrivateMessage,
-  type SupergroupMessage,
-} from '../types/virtual_message.ts';
+  type AccountChatMessageLookupFailureReason,
+  type AccountChatMessageLookups,
+  type AccountMessageChat,
+  findAccountChatMessage,
+} from './account_chat_message.ts';
 
-/**
- * The chat of a poll message as an account addresses it: its private chat with a bot, where the
- * bot's message box numbers messages, or a supergroup, which numbers its own messages.
- */
-export type PollMessageChat =
-  | { readonly type: 'private'; readonly botId: number }
-  | { readonly type: 'supergroup'; readonly chatId: number };
+/** The chat of a poll message, as an account addresses it. */
+export type PollMessageChat = AccountMessageChat;
 
 /** A message showing a poll, as an account that can read its chat addresses it. */
 export interface AccountPollMessageKey {
@@ -53,10 +42,7 @@ export interface SetAccountPollAnswerInput extends AccountPollMessageKey {
  */
 export type PollMessageLookupFailureReason =
   | 'account_not_found'
-  | 'bot_not_found'
-  | 'chat_not_found'
-  | 'not_a_member'
-  | 'message_not_found'
+  | AccountChatMessageLookupFailureReason
   | 'message_has_no_poll';
 
 /** A poll an account found through a message showing it, with the account's own answer. */
@@ -94,30 +80,6 @@ interface AccountLookup {
   getById(accountId: number): VirtualAccount | undefined;
 }
 
-interface BotLookup {
-  getById(botId: number): VirtualBot | undefined;
-}
-
-interface PrivateConversationLookup {
-  getPrivateConversation(key: PrivateConversationKey): PrivateConversation | undefined;
-}
-
-interface PrivateMessageLookup {
-  getPrivateMessageByBotMessageId(
-    conversation: PrivateConversationKey,
-    botMessageId: number,
-  ): PrivateMessage | undefined;
-}
-
-interface SupergroupLookup {
-  getSharedChat(chatId: number): SharedChat | undefined;
-  getChatMembership(chatId: number, identityId: number): ChatMembership | undefined;
-}
-
-interface SupergroupMessageLookup {
-  getMessageByChatMessageId(chatId: number, messageId: number): SupergroupMessage | undefined;
-}
-
 interface PollStore {
   getPoll(pollId: PollId): Poll | undefined;
   setVoterAnswer(pollId: PollId, voterId: number, chosenOptionPositions: readonly number[]): Poll;
@@ -128,13 +90,8 @@ interface ChatDomainEventSink {
   publish(event: ChatDomainEvent): void;
 }
 
-interface PollServiceDependencies {
+interface PollServiceDependencies extends AccountChatMessageLookups {
   readonly accounts: AccountLookup;
-  readonly bots: BotLookup;
-  readonly privateConversations: PrivateConversationLookup;
-  readonly privateMessages: PrivateMessageLookup;
-  readonly sharedChats: SupergroupLookup;
-  readonly supergroupMessages: SupergroupMessageLookup;
   readonly polls: PollStore;
   readonly events: ChatDomainEventSink;
 }
@@ -152,11 +109,7 @@ type PollMessageResolution =
  */
 export class PollService {
   readonly #accounts: AccountLookup;
-  readonly #bots: BotLookup;
-  readonly #privateConversations: PrivateConversationLookup;
-  readonly #privateMessages: PrivateMessageLookup;
-  readonly #sharedChats: SupergroupLookup;
-  readonly #supergroupMessages: SupergroupMessageLookup;
+  readonly #chatMessageLookups: AccountChatMessageLookups;
   readonly #polls: PollStore;
   readonly #events: ChatDomainEventSink;
 
@@ -173,11 +126,13 @@ export class PollService {
     }: PollServiceDependencies,
   ) {
     this.#accounts = accounts;
-    this.#bots = bots;
-    this.#privateConversations = privateConversations;
-    this.#privateMessages = privateMessages;
-    this.#sharedChats = sharedChats;
-    this.#supergroupMessages = supergroupMessages;
+    this.#chatMessageLookups = {
+      bots,
+      privateConversations,
+      privateMessages,
+      sharedChats,
+      supergroupMessages,
+    };
     this.#polls = polls;
     this.#events = events;
   }
@@ -256,9 +211,8 @@ export class PollService {
   }
 
   /**
-   * Finds a message of a chat the account can read, as TDLib's `get_message_poll_id` does, and
-   * the poll it shows. As for a callback button, the account's private chat with a bot is found
-   * only once the account has started it.
+   * Finds a message of a chat the account can reach, by `findAccountChatMessage` as for a callback
+   * button, and the poll it shows, as TDLib's `get_message_poll_id` does.
    */
   #resolvePollMessage(
     { accountId, chat, messageId }: AccountPollMessageKey,
@@ -266,9 +220,7 @@ export class PollService {
     if (this.#accounts.getById(accountId) === undefined) {
       return { resolved: false, reason: 'account_not_found' };
     }
-    const lookup = chat.type === 'private'
-      ? this.#findPrivateMessage(accountId, chat.botId, messageId)
-      : this.#findSupergroupMessage(accountId, chat.chatId, messageId);
+    const lookup = findAccountChatMessage(this.#chatMessageLookups, accountId, chat, messageId);
     if (!lookup.found) {
       return { resolved: false, reason: lookup.reason };
     }
@@ -281,47 +233,6 @@ export class PollService {
       throw new Error(`Poll ${message.content.pollId} of message ${message.id} does not exist`);
     }
     return { resolved: true, message, poll };
-  }
-
-  #findPrivateMessage(
-    accountId: number,
-    botId: number,
-    botMessageId: number,
-  ):
-    | { readonly found: true; readonly message: ChatMessage }
-    | { readonly found: false; readonly reason: 'bot_not_found' | 'message_not_found' } {
-    if (this.#bots.getById(botId) === undefined) {
-      return { found: false, reason: 'bot_not_found' };
-    }
-    const conversation: PrivateConversationKey = { accountId, botId };
-    const message = this.#privateConversations.getPrivateConversation(conversation) === undefined
-      ? undefined
-      : this.#privateMessages.getPrivateMessageByBotMessageId(conversation, botMessageId);
-    return message === undefined
-      ? { found: false, reason: 'message_not_found' }
-      : { found: true, message };
-  }
-
-  #findSupergroupMessage(
-    accountId: number,
-    chatId: number,
-    messageId: number,
-  ):
-    | { readonly found: true; readonly message: ChatMessage }
-    | {
-      readonly found: false;
-      readonly reason: 'chat_not_found' | 'not_a_member' | 'message_not_found';
-    } {
-    if (this.#sharedChats.getSharedChat(chatId)?.kind !== 'supergroup') {
-      return { found: false, reason: 'chat_not_found' };
-    }
-    if (this.#sharedChats.getChatMembership(chatId, accountId) === undefined) {
-      return { found: false, reason: 'not_a_member' };
-    }
-    const message = this.#supergroupMessages.getMessageByChatMessageId(chatId, messageId);
-    return message === undefined
-      ? { found: false, reason: 'message_not_found' }
-      : { found: true, message };
   }
 }
 

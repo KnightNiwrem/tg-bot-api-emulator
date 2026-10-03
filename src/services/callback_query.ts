@@ -8,29 +8,22 @@ import type {
 import type { ChatDomainEvent } from '../types/chat_domain_event.ts';
 import type { VirtualAccount } from '../types/virtual_account.ts';
 import type { VirtualBot } from '../types/virtual_bot.ts';
-import type { ChatMembership } from '../types/chat_membership.ts';
 import { listRichMessageButtons, type RichMessageButtonAction } from '../types/rich_message.ts';
-import type {
-  PrivateConversation,
-  PrivateConversationKey,
-  SharedChat,
-} from '../types/virtual_chat.ts';
 import {
   type CanonicalMessageId,
   type ChatMessage,
   getInlineKeyboardOwnerId,
   type InlineMessageId,
-  type PrivateMessage,
-  type SupergroupMessage,
 } from '../types/virtual_message.ts';
+import {
+  type AccountChatMessageLookupFailureReason,
+  type AccountChatMessageLookups,
+  type AccountMessageChat,
+  findAccountChatMessage,
+} from './account_chat_message.ts';
 
-/**
- * The chat of the message carrying a pressed button: the account's private chat with a bot, where
- * the bot's message box numbers messages, or a supergroup, which numbers its own messages.
- */
-export type CallbackButtonChat =
-  | { readonly type: 'private'; readonly botId: number }
-  | { readonly type: 'supergroup'; readonly chatId: number };
+/** The chat of the message carrying a pressed button, as the pressing account addresses it. */
+export type CallbackButtonChat = AccountMessageChat;
 
 export interface PressCallbackButtonInput {
   readonly fromAccountId: number;
@@ -47,10 +40,7 @@ export interface PressCallbackButtonInput {
 
 export type PressCallbackButtonFailureReason =
   | 'account_not_found'
-  | 'bot_not_found'
-  | 'chat_not_found'
-  | 'not_a_member'
-  | 'message_not_found'
+  | AccountChatMessageLookupFailureReason
   | 'callback_button_not_found';
 
 export type PressCallbackButtonResult =
@@ -89,26 +79,6 @@ interface BotLookup {
   getById(botId: number): VirtualBot | undefined;
 }
 
-interface PrivateConversationLookup {
-  getPrivateConversation(key: PrivateConversationKey): PrivateConversation | undefined;
-}
-
-interface PrivateMessageLookup {
-  getPrivateMessageByBotMessageId(
-    conversation: PrivateConversationKey,
-    botMessageId: number,
-  ): PrivateMessage | undefined;
-}
-
-interface SupergroupLookup {
-  getSharedChat(chatId: number): SharedChat | undefined;
-  getChatMembership(chatId: number, identityId: number): ChatMembership | undefined;
-}
-
-interface SupergroupMessageLookup {
-  getMessageByChatMessageId(chatId: number, messageId: number): SupergroupMessage | undefined;
-}
-
 interface CallbackQueryStore {
   addCallbackQuery(input: {
     readonly accountId: number;
@@ -127,28 +97,11 @@ interface ChatDomainEventSink {
   publish(event: ChatDomainEvent): void;
 }
 
-interface CallbackQueryServiceDependencies {
+interface CallbackQueryServiceDependencies extends AccountChatMessageLookups {
   readonly accounts: AccountLookup;
-  readonly bots: BotLookup;
-  readonly privateConversations: PrivateConversationLookup;
-  readonly privateMessages: PrivateMessageLookup;
-  readonly sharedChats: SupergroupLookup;
-  readonly supergroupMessages: SupergroupMessageLookup;
   readonly callbackQueries: CallbackQueryStore;
   readonly events: ChatDomainEventSink;
 }
-
-/** A message found in the chat where an account presses one of its buttons. */
-type PressedMessageResolution =
-  | {
-    readonly resolved: true;
-    readonly message: ChatMessage;
-    readonly chatInstance: string;
-  }
-  | {
-    readonly resolved: false;
-    readonly reason: Exclude<PressCallbackButtonFailureReason, 'account_not_found'>;
-  };
 
 /**
  * Carries out callback queries: an account presses a callback button on a bot's message, or on a
@@ -159,10 +112,7 @@ type PressedMessageResolution =
 export class CallbackQueryService {
   readonly #accounts: AccountLookup;
   readonly #bots: BotLookup;
-  readonly #privateConversations: PrivateConversationLookup;
-  readonly #privateMessages: PrivateMessageLookup;
-  readonly #sharedChats: SupergroupLookup;
-  readonly #supergroupMessages: SupergroupMessageLookup;
+  readonly #chatMessageLookups: AccountChatMessageLookups;
   readonly #callbackQueries: CallbackQueryStore;
   readonly #events: ChatDomainEventSink;
 
@@ -180,10 +130,13 @@ export class CallbackQueryService {
   ) {
     this.#accounts = accounts;
     this.#bots = bots;
-    this.#privateConversations = privateConversations;
-    this.#privateMessages = privateMessages;
-    this.#sharedChats = sharedChats;
-    this.#supergroupMessages = supergroupMessages;
+    this.#chatMessageLookups = {
+      bots,
+      privateConversations,
+      privateMessages,
+      sharedChats,
+      supergroupMessages,
+    };
     this.#callbackQueries = callbackQueries;
     this.#events = events;
   }
@@ -198,13 +151,16 @@ export class CallbackQueryService {
     if (this.#accounts.getById(input.fromAccountId) === undefined) {
       return { pressed: false, reason: 'account_not_found' };
     }
-    const resolution = input.chat.type === 'private'
-      ? this.#resolvePrivateChatMessage(input.fromAccountId, input.chat.botId, input.messageId)
-      : this.#resolveSupergroupMessage(input.fromAccountId, input.chat.chatId, input.messageId);
-    if (!resolution.resolved) {
-      return { pressed: false, reason: resolution.reason };
+    const lookup = findAccountChatMessage(
+      this.#chatMessageLookups,
+      input.fromAccountId,
+      input.chat,
+      input.messageId,
+    );
+    if (!lookup.found) {
+      return { pressed: false, reason: lookup.reason };
     }
-    const { message } = resolution;
+    const { message } = lookup;
     const botId = getInlineKeyboardOwnerId(message);
     if (botId === undefined || !hasCallbackButton(message, input.callbackData)) {
       return { pressed: false, reason: 'callback_button_not_found' };
@@ -215,7 +171,7 @@ export class CallbackQueryService {
       botId,
       messageId: message.id,
       inlineMessageId: message.viaBot?.inlineMessageId,
-      chatInstance: resolution.chatInstance,
+      chatInstance: lookup.chat.chatInstance,
       callbackData: input.callbackData,
       expired: input.expired,
     });
@@ -272,44 +228,6 @@ export class CallbackQueryService {
   ): CallbackQuery | undefined {
     const callbackQuery = this.#callbackQueries.getCallbackQuery(callbackQueryId);
     return callbackQuery?.accountId === accountId ? callbackQuery : undefined;
-  }
-
-  #resolvePrivateChatMessage(
-    accountId: number,
-    botId: number,
-    botMessageId: number,
-  ): PressedMessageResolution {
-    if (this.#bots.getById(botId) === undefined) {
-      return { resolved: false, reason: 'bot_not_found' };
-    }
-    const conversationKey: PrivateConversationKey = { accountId, botId };
-    const conversation = this.#privateConversations.getPrivateConversation(conversationKey);
-    const message = conversation === undefined
-      ? undefined
-      : this.#privateMessages.getPrivateMessageByBotMessageId(conversationKey, botMessageId);
-    if (conversation === undefined || message === undefined) {
-      return { resolved: false, reason: 'message_not_found' };
-    }
-    return { resolved: true, message, chatInstance: conversation.chatInstance };
-  }
-
-  #resolveSupergroupMessage(
-    accountId: number,
-    chatId: number,
-    messageId: number,
-  ): PressedMessageResolution {
-    const supergroup = this.#sharedChats.getSharedChat(chatId);
-    if (supergroup?.kind !== 'supergroup') {
-      return { resolved: false, reason: 'chat_not_found' };
-    }
-    if (this.#sharedChats.getChatMembership(chatId, accountId) === undefined) {
-      return { resolved: false, reason: 'not_a_member' };
-    }
-    const message = this.#supergroupMessages.getMessageByChatMessageId(chatId, messageId);
-    if (message === undefined) {
-      return { resolved: false, reason: 'message_not_found' };
-    }
-    return { resolved: true, message, chatInstance: supergroup.chatInstance };
   }
 }
 
