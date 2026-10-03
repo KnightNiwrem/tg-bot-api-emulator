@@ -107,7 +107,8 @@ TDLib's [`MessagesManager::can_edit_message`][edit-permissions]. Inline edits ar
 and skips missing messages. In private chats, the bot may delete either participant's messages. In
 supergroups, it may delete its own content; `can_delete_messages` allows deleting other members'
 messages and membership service messages. Deleting a message of an album leaves the album's other
-messages in it.
+messages in it. Deleting a pinned message unpins it, as
+[pinned messages](pinned-messages.md#edits-deletions-and-replies) describes.
 
 Accounts delete messages through the emulation API or `account.deleteMessage`, for every
 participant, as Telegram's clients delete for everyone. As TDLib's

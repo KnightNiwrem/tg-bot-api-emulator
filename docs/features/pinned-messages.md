@@ -97,6 +97,30 @@ with `disable_notification` notifies without sound, and an account's pin notifie
 Telegram's clients pin by default. In a private chat, a pin always notifies without sound, as
 TDLib's [`pinChatMessage`][td-pin-chat-message] documents notifications to be always disabled there.
 
+## Edits, deletions and replies
+
+A pin follows its message wherever the chat shows it now: in history, `getChat`, and updates created
+later. An update already queued keeps the messages as they were when it was created, as the official
+server's updates do, so a pending pin update still shows the pinned message from before a later edit
+or deletion.
+
+- **Edits.** An edited message stays pinned. Its pin's service messages and `getChat` show it as it
+  is now, with its `edit_date`. The bots that receive edits of the message receive this one as an
+  `edited_message`, as [for any edit](messages.md#editing-and-deleting); the pin adds no update.
+- **Deleting the pinned message.** The message leaves the pinned messages, so `getChat` shows the
+  next newest pin, and pinning or unpinning it fails as for a message that was never there. Its
+  pin's service messages then show it as an `InaccessibleMessage`, except where a service message is
+  itself shown as a replied message, which then shows no `pinned_message`.
+- **Deleting a pin's service message.** The message stays pinned. Who may delete the service message
+  is decided as for any message: either participant of a private chat, the bot that pinned in a
+  supergroup, and accounts and bots with `can_delete_messages`.
+- **Pinning again.** A message unpinned and pinned again gets another service message; the unpin
+  gets none.
+- **Replies, forwards and copies.** A reply may answer a pin's service message, and shows its pinned
+  message nested, as [service messages](#service-messages) describes. A pin's service message cannot
+  be edited, forwarded or copied, as for other service messages, and a forward or copy of a pinned
+  message is not pinned.
+
 ## Pinned message in getChat
 
 `getChat` shows the chat's newest pinned message by sending date as `pinned_message`, as the Bot API
@@ -151,8 +175,9 @@ Pins are kept by Telegram's servers, whose decisions the open-source code shows 
 [`getChat` projection](../../src/projections/bot_api_chat_full_info.ts),
 [account routes](../../src/api/sessions/accounts/mod.ts),
 [service tests](../../tests/message_pinning_service_test.ts),
-[account HTTP tests](../../tests/pinned_messages_api_test.ts) and
-[Bot API HTTP tests](../../tests/pin_chat_message_api_test.ts).
+[account HTTP tests](../../tests/pinned_messages_api_test.ts),
+[Bot API HTTP tests](../../tests/pin_chat_message_api_test.ts) and
+[edit and deletion tests](../../tests/pin_reconciliation_api_test.ts).
 
 [api-pin]: https://core.telegram.org/api/pin
 [update-pinned-message-errors]: https://core.telegram.org/method/messages.updatePinnedMessage
