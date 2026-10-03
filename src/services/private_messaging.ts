@@ -133,7 +133,10 @@ export type SendAccountAlbumResult =
     & (
       | {
         readonly reason:
-          | Exclude<SendAccountMessageFailureReason, 'message_text_empty'>
+          | Exclude<
+            SendAccountMessageFailureReason,
+            'message_text_empty' | 'account_phone_number_missing'
+          >
           | AlbumCompositionFailureReason;
       }
       | ContentTextNormalizationFailure
@@ -742,6 +745,11 @@ export class PrivateMessagingService {
     return this.#privateConversations.getPrivateConversation(key) !== undefined;
   }
 
+  /**
+   * Sends text, captioned media, or a contact from an account to its private chat with a bot. As
+   * a Telegram client does, the text or caption is normalized, which marks bot commands. The
+   * account's own contact needs the phone number the account was created with.
+   */
   sendAccountMessage(input: SendAccountMessageInput): SendAccountMessageResult {
     const account = this.#accounts.getById(input.fromAccountId);
     if (account === undefined) {

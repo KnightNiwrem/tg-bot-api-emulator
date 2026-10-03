@@ -15,15 +15,19 @@ replaced either, while a bot may still edit its inline keyboard.
 As the official server's [`process_send_contact_query`][send-contact] does, `sendContact` requires a
 nonempty `phone_number` and `first_name`, with `Bad Request: parameter "phone_number" is required`
 or `Bad Request: parameter "first_name" is required`, before it looks at the chat. TDLib's
-[`Contact::validate`][contact-validate] cleans each text as it cleans names, turning control
-characters into spaces, and refuses text that is not well-formed Unicode with an error naming it,
+[`Contact::validate`][contact-validate] cleans each text with `clean_input_string`, which turns
+control characters other than line feeds into spaces and removes carriage returns and a few
+formatting characters, and refuses text that is not well-formed Unicode with an error naming it,
 such as `Bad Request: phone number must be encoded in UTF-8` or
-`Bad Request: vCard must be encoded in UTF-8`. Nothing else of a contact is read: the phone number
-keeps any form its sender wrote, such as `+1 (555) 010-0200`, and the vCard is never parsed, as
-Telegram does not parse it. TDLib's [`contact`][td-contact] object documents names of 1–64
-characters, and the Bot API documents vCards of at most 2048 bytes; the emulator refuses longer
-names and vCards with the method's invalid-parameters error, because the open-source code does not
-show how Telegram's servers refuse them. In supergroups a contact needs `can_send_messages`, as
+`Bad Request: vCard must be encoded in UTF-8`. A phone number or first name that cleaning empties,
+such as one of only carriage returns, is refused with `Bad Request: phone number must be non-empty`
+or `Bad Request: first name must be non-empty`, where TDLib would pass it on to Telegram's servers.
+Nothing else of a contact is read: the phone number keeps any form its sender wrote, such as
+`+1 (555) 010-0200`, and the vCard is never parsed, as Telegram does not parse it. TDLib's
+[`contact`][td-contact] object documents first names of 1–64 characters and last names of 0–64, and
+the Bot API documents vCards of at most 2048 bytes; the emulator refuses longer names and vCards
+with the method's invalid-parameters error, because the open-source code does not show how
+Telegram's servers refuse them. In supergroups a contact needs `can_send_messages`, as
 [`can_send_message_content`][send-permission] requires.
 
 ### Whose contact it is
@@ -61,15 +65,17 @@ without a phone number gets `409`, and nothing is sent.
 - **Explicit phone numbers.** Accounts have no phone number unless a test gives one, because
   inventing numbers would hide which contact a test expects. The emulator shows the number only in
   the account's own contact.
-- **Refusing over-long names and vCards.** Names longer than TDLib documents and vCards longer than
-  the Bot API documents are refused rather than passed on to an unknown server-side outcome.
+- **Refusing over-long names and vCards, and emptied required texts.** Names longer than TDLib
+  documents, vCards longer than the Bot API documents, and phone numbers and first names that
+  cleaning empties are refused rather than passed on to an unknown server-side outcome.
 
 ## Real gaps
 
 - **Address books.** Telegram's servers attach the `user_id` of a written contact whose number
   belongs to a user, which depends on phone number privacy and the sender's contacts. The emulator
   models no address book or phone number lookup, so written and bot contacts never show a user.
-- **Locations.** Location messages and `request_location` buttons are not supported yet.
+- **Locations.** Location messages are missing. Bots may send `request_location` buttons, which
+  accounts see, but pressing one fails with `400`.
 
 ## Local evidence
 

@@ -52,10 +52,12 @@ post:
         `chat_id` is missing (`Bad Request: chat_id is empty`); a button of the reply markup
         cannot be read, as for `sendMessage`; the chat, the reply, and the message effect fail as
         for `sendMessage`; a text is not well-formed Unicode (`Bad Request: phone number must be
-        encoded in UTF-8`, or the same for the first name, the last name, or the `vCard`); the bot
-        may not send messages to a supergroup (`Bad Request: not enough rights to send contacts to
-        the chat`); or a button's callback data exceeds 64 bytes (`Bad Request:
-        BUTTON_DATA_INVALID`). A refused contact stores nothing.
+        encoded in UTF-8`, or the same for the first name, the last name, or the `vCard`), or the
+        phone number or first name is empty once cleaned (`Bad Request: phone number must be
+        non-empty` or `Bad Request: first name must be non-empty`), as one of only carriage
+        returns is; the bot may not send messages to a supergroup (`Bad Request: not enough
+        rights to send contacts to the chat`); or a button's callback data exceeds 64 bytes (`Bad
+        Request: BUTTON_DATA_INVALID`). A refused contact stores nothing.
       content:
         application/json:
           schema:

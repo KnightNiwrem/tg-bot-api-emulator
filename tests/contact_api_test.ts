@@ -205,6 +205,8 @@ Deno.test('sendContact refuses missing, malformed and over-long contacts without
     [{ ...valid, first_name: 'Li\udc00' }, 'Bad Request: first name must be encoded in UTF-8'],
     [{ ...valid, last_name: '\ud800' }, 'Bad Request: last name must be encoded in UTF-8'],
     [{ ...valid, vcard: '\ud800' }, 'Bad Request: vCard must be encoded in UTF-8'],
+    [{ ...valid, phone_number: '\r' }, 'Bad Request: phone number must be non-empty'],
+    [{ ...valid, first_name: '\r\r' }, 'Bad Request: first name must be non-empty'],
     [{ ...valid, first_name: 'x'.repeat(65) }, 'Bad Request: invalid sendContact parameters'],
     [{ ...valid, last_name: '😀'.repeat(65) }, 'Bad Request: invalid sendContact parameters'],
     [{ ...valid, vcard: 'é'.repeat(1025) }, 'Bad Request: invalid sendContact parameters'],
@@ -365,6 +367,7 @@ Deno.test('accounts share their own or written contacts in private chats and sup
     { to: privateChat, contact: { phone_number: '1', first_name: 'A', vcard: 'é'.repeat(1025) } },
     { to: privateChat, contact: { phone_number: '1', first_name: 'A', user_id: ada.id } },
     { to: privateChat, contact: { phone_number: '\ud800', first_name: 'A' } },
+    { to: privateChat, contact: { phone_number: '1', first_name: '\r' } },
     { to: privateChat, own_contact: false },
     { to: privateChat, own_contact: true, contact: { phone_number: '1', first_name: 'A' } },
   ];

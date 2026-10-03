@@ -113,9 +113,9 @@ try {
   });
   console.log(album.map(({ media_group_id }) => media_group_id));
 
-  // Share a contact the account writes, which shows no Telegram user, and then the account's own
-  // contact, which needs a phone_number at account creation and shows the account as its user.
-  // Pressing a request_contact button shares the own contact in reply to the keyboard instead.
+  // Share a contact the account writes, which shows no Telegram user. An account created with a
+  // phone_number also shares its own contact, which shows the account as its user, with
+  // shareOwnContact or by pressing a request_contact button.
   await account.sendContact({
     to: { type: 'private', botId: bot.id },
     contact: { phone_number: '+1 555 0199', first_name: 'Grace', last_name: 'Hopper' },

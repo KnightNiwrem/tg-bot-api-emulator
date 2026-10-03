@@ -75,7 +75,8 @@ import { normalizeRichMessage } from './rich_message_normalization.ts';
 
 /**
  * Telegram rejected the text or its entities while normalizing them, for example because only
- * whitespace remains or an entity ends past the text. `textError` is TDLib's own description.
+ * whitespace remains or an entity ends past the text. `textError` is TDLib's own description, or,
+ * for text that only Telegram's servers refuse, a description in its style.
  */
 export interface TextInvalidFailure {
   readonly reason: 'text_invalid';
@@ -298,12 +299,20 @@ type ContactNormalization =
   | { readonly normalized: true; readonly contact: Contact }
   | { readonly normalized: false; readonly failure: TextInvalidFailure };
 
+/** The texts every contact has, which its sender must not leave empty. */
+const REQUIRED_CONTACT_TEXT_FIELDS: ReadonlySet<keyof Contact> = new Set([
+  'phoneNumber',
+  'firstName',
+]);
+
 /**
  * Cleans the texts of a contact in order as TDLib's `Contact::validate` does with
  * `clean_input_string`, which refuses text that is not well-formed Unicode with an error naming
- * it, such as "Phone number must be encoded in UTF-8". TDLib checks nothing else of a contact, so
- * neither does this: the phone number keeps any form its sender wrote, and the vCard is never
- * parsed.
+ * it, such as "Phone number must be encoded in UTF-8". Cleaning removes some characters, such as
+ * carriage returns, so a phone number or first name of only such characters becomes empty, which
+ * TDLib passes on to Telegram's servers; the emulator refuses it, such as with "First name must be
+ * non-empty". Nothing else of a contact is checked: the phone number keeps any form its sender
+ * wrote, and the vCard is never parsed.
  */
 function normalizeContact(contact: Contact): ContactNormalization {
   let cleanedContact = contact;
@@ -313,6 +322,12 @@ function normalizeContact(contact: Contact): ContactNormalization {
       return {
         normalized: false,
         failure: { reason: 'text_invalid', textError: `${name} must be encoded in UTF-8` },
+      };
+    }
+    if (cleanedText.length === 0 && REQUIRED_CONTACT_TEXT_FIELDS.has(field)) {
+      return {
+        normalized: false,
+        failure: { reason: 'text_invalid', textError: `${name} must be non-empty` },
       };
     }
     cleanedContact = { ...cleanedContact, [field]: cleanedText };
