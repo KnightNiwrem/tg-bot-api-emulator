@@ -313,12 +313,12 @@ Deno.test('a reply to a pin service message shows its pin, and nothing once the 
   const serviceMessage = history.find(({ message_id }) => message_id === serviceMessageId);
   expectEqual(
     serviceMessage?.pinned_message,
-    { message_id: pinnedId, chat: serviceMessage?.chat, date: 0 },
+    { message_id: pinnedId, chat: { id: ada, type: 'private', first_name: 'Ada' }, date: 0 },
     'the service message itself shows the pin as inaccessible',
   );
 });
 
-Deno.test('pin service messages cannot be edited, forwarded, or copied, and copies are not pinned', async () => {
+Deno.test('pin service messages cannot be edited, forwarded, or copied, nor copies and forwards pinned', async () => {
   const {
     ada,
     chatId,
@@ -368,7 +368,19 @@ Deno.test('pin service messages cannot be edited, forwarded, or copied, and copi
   expectEqual(copyStatus, 200, 'a pinned message can be copied');
   const copyId = (copy as { message_id: number }).message_id;
   expectEqual(copyId > messageId, true, 'the copy is a new message');
-  expectEqual(await getPinnedIds(privatePath), [messageId], 'only the original is pinned');
+  const [forwardStatus, forward] = await callBot(pinningBot, 'forwardMessage', {
+    chat_id: ada,
+    from_chat_id: ada,
+    message_id: messageId,
+  });
+  expectEqual(forwardStatus, 200, 'a pinned message can be forwarded');
+  const forwardId = (forward as { message_id: number }).message_id;
+  expectEqual(forwardId > copyId, true, 'the forward is a new message');
+  expectEqual(
+    await getPinnedIds(privatePath),
+    [messageId],
+    'only the original is pinned, not its copy or forward',
+  );
 });
 
 async function requestJson<Body>(
