@@ -46,6 +46,7 @@ import {
   type SupergroupServiceContent,
   type TextQuote,
 } from '../types/virtual_message.ts';
+import type { FormattedTextFixingContext } from '../text_entities/formatted_text.ts';
 import {
   type AccountAlbumMediaContent,
   type AccountMessageContent,
@@ -83,6 +84,7 @@ import {
   toOutgoingAccountMedia,
 } from './message_content.ts';
 import { findStoppablePoll, type PollStopFailureReason } from './poll.ts';
+import { createSessionUserMentionContext } from './session_user_mention.ts';
 
 /**
  * Why a member cannot send content: it lacks a permission the content needs, as
@@ -673,6 +675,7 @@ interface SupergroupMessagingServiceDependencies {
 export class SupergroupMessagingService {
   readonly #accounts: AccountLookup;
   readonly #bots: BotLookup;
+  readonly #textFixingContext: FormattedTextFixingContext;
   readonly #sharedChats: SupergroupMemberStore;
   readonly #messages: SupergroupMessageStore;
   readonly #files: FileUploadStore;
@@ -696,6 +699,7 @@ export class SupergroupMessagingService {
   ) {
     this.#accounts = accounts;
     this.#bots = bots;
+    this.#textFixingContext = createSessionUserMentionContext({ accounts, bots });
     this.#sharedChats = sharedChats;
     this.#messages = messages;
     this.#files = files;
@@ -1656,14 +1660,6 @@ export class SupergroupMessagingService {
     });
     this.#events.publish({ type: 'message_edited', message: editedMessage });
     return { edited: true, message: editedMessage };
-  }
-
-  /** A text mention may name any user of the session. */
-  get #textFixingContext() {
-    return {
-      isMentionableUser: (userId: number) =>
-        this.#accounts.getById(userId) !== undefined || this.#bots.getById(userId) !== undefined,
-    };
   }
 
   /**

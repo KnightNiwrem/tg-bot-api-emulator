@@ -770,6 +770,46 @@ Deno.test('SupergroupMessagingService sends only what a member may send', () => 
   }
 });
 
+Deno.test('SupergroupMessagingService lets a text mention name any user of the session', () => {
+  const { virtualUsers, supergroupMessaging, owner, bot, supergroup } =
+    createSupergroupMessagingFixture();
+  const outsideAccount = createAccount(virtualUsers, 'Grace');
+  const outsideBot = createBot(virtualUsers, 'outside_bot');
+  const sendMention = (userId: number) =>
+    supergroupMessaging.sendBotMessage({
+      fromBotId: bot.profile.id,
+      chatId: supergroup.id,
+      content: {
+        kind: 'text',
+        text: 'Hi',
+        entities: [{ type: 'text_mention', offset: 0, length: 2, userId }],
+      },
+    });
+
+  // A member, an account outside the supergroup and a bot outside it can all be mentioned.
+  for (const userId of [owner.profile.id, outsideAccount.profile.id, outsideBot.profile.id]) {
+    const message = expectContentMessage(expectSent(sendMention(userId)));
+    const entities = getContentText(message.content).entities;
+    const expectedEntities = [{ type: 'text_mention', offset: 0, length: 2, userId }];
+    if (JSON.stringify(entities) !== JSON.stringify(expectedEntities)) {
+      throw new Error(
+        `Expected the mention of ${userId} to be kept, received ${JSON.stringify(entities)}`,
+      );
+    }
+  }
+  const unknownUserResult = sendMention(999);
+  if (
+    unknownUserResult.sent || unknownUserResult.reason !== 'text_invalid' ||
+    unknownUserResult.textError !== 'User not found'
+  ) {
+    throw new Error(
+      `Expected a mention of an unknown user to be rejected, received ${
+        JSON.stringify(unknownUserResult)
+      }`,
+    );
+  }
+});
+
 function createSupergroupMessagingFixture() {
   const identities = new TelegramIdentityRepository();
   const accounts = new AccountRepository();
