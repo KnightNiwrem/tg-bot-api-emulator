@@ -751,6 +751,39 @@ export const notificationsResponseSchema = z.strictObject({
   })),
 });
 
+export const chatAdministratorsResponseSchema = z.strictObject({
+  administrators: z.array(z.discriminatedUnion('status', [
+    z.strictObject({
+      user_id: z.number().int().positive(),
+      status: z.literal('owner'),
+      custom_title: z.string().optional(),
+    }),
+    z.strictObject({
+      user_id: z.number().int().positive(),
+      status: z.literal('administrator'),
+      rights: z.strictObject({
+        can_manage_chat: z.boolean(),
+        can_change_info: z.boolean(),
+        can_delete_messages: z.boolean(),
+        can_invite_users: z.boolean(),
+        can_restrict_members: z.boolean(),
+        can_pin_messages: z.boolean(),
+        can_manage_topics: z.boolean(),
+        can_promote_members: z.boolean(),
+        can_manage_video_chats: z.boolean(),
+        can_post_stories: z.boolean(),
+        can_edit_stories: z.boolean(),
+        can_delete_stories: z.boolean(),
+        can_manage_tags: z.boolean(),
+        can_send_welcome_messages: z.boolean(),
+      }),
+      custom_title: z.string().optional(),
+      promoted_by_user_id: z.number().int().positive(),
+      can_be_edited: z.boolean(),
+    }),
+  ])),
+});
+
 export const chatActionsResponseSchema = z.strictObject({
   chat_actions: z.array(z.strictObject({
     bot_id: z.number().int().positive(),

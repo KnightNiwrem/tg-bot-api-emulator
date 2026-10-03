@@ -13,6 +13,7 @@ export {
 export type {
   AccountBotCommandsInput,
   AccountChatActionsInput,
+  AccountChatAdministratorsInput,
   AccountDeleteMessageInput,
   AccountEditMessageCaptionInput,
   AccountEditMessageInput,
@@ -141,6 +142,7 @@ export type {
   SetContentProtectionInput,
   SetCustomTitleInput,
   Supergroup,
+  SupergroupAdministrator,
   SupergroupAdministratorRight,
   SupergroupBotCommands,
   SupergroupChat,

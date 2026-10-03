@@ -284,6 +284,7 @@ Deno.test('BotCommandService resolves the commands a member sees in a supergroup
   sharedChats.updateChatMemberStatus(chatId, administrator.profile.id, {
     status: 'administrator',
     rights: new Set(['can_manage_chat']),
+    promotedById: account.profile.id,
   });
   // A restricted member administers nothing, so it sees the lists of members.
   sharedChats.updateChatMemberStatus(chatId, member.profile.id, {

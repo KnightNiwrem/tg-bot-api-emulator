@@ -86,8 +86,10 @@ const SUPERGROUP_MESSAGE_POLL_ANSWER_PATH = `${SUPERGROUP_MESSAGE_PATH}/poll-ans
 const USER_ID_PARAMETER = 'userId';
 const SUPERGROUP_MEMBER_PATH =
   `${SUPERGROUP_CONVERSATION_PATH}/members/:${USER_ID_PARAMETER}` as const;
+const SUPERGROUP_ADMINISTRATOR_COLLECTION_PATH =
+  `${SUPERGROUP_CONVERSATION_PATH}/administrators` as const;
 const SUPERGROUP_ADMINISTRATOR_PATH =
-  `${SUPERGROUP_CONVERSATION_PATH}/administrators/:${USER_ID_PARAMETER}` as const;
+  `${SUPERGROUP_ADMINISTRATOR_COLLECTION_PATH}/:${USER_ID_PARAMETER}` as const;
 const SUPERGROUP_CUSTOM_TITLE_PATH = `${SUPERGROUP_ADMINISTRATOR_PATH}/custom-title` as const;
 const SUPERGROUP_RESTRICTION_PATH =
   `${SUPERGROUP_CONVERSATION_PATH}/restrictions/:${USER_ID_PARAMETER}` as const;
@@ -661,6 +663,24 @@ export function createAccountRoutes(): Hono<SessionRouteContextTypes> {
         throw new Error(`Unhandled chat member removal failure: ${unhandledReason}`);
       }
     }
+  });
+
+  // A member inspects the owner and administrators, who promoted each, and whom it may edit.
+  accountRoutes.get(SUPERGROUP_ADMINISTRATOR_COLLECTION_PATH, (context) => {
+    const conversationPath = supergroupConversationPathSchema.safeParse(context.req.param());
+    if (!conversationPath.success) {
+      return context.body(null, 400);
+    }
+    const { accountId, chatId } = conversationPath.data;
+
+    const result = context.get('emulationSession').sharedChatAdministration
+      .getAdministratorsForAccount({ observerAccountId: accountId, chatId });
+    if (!result.found) {
+      return context.body(null, supergroupMemberFailureStatus(result.reason));
+    }
+    return context.json({
+      administrators: result.administrators.map(presentAdministratorForAccount),
+    });
   });
 
   // The owner promotes a member to administrator, or changes an administrator's rights.
@@ -1819,6 +1839,36 @@ function presentSupergroup({ id, title, username, description }: Supergroup) {
     title,
     ...(username === undefined ? {} : { username }),
     ...(description === undefined ? {} : { description }),
+  };
+}
+
+/** The owner or an administrator of a supergroup, as a member account inspects it. */
+type AdministratorStandingForAccount = Extract<
+  ReturnType<EmulationSession['sharedChatAdministration']['getAdministratorsForAccount']>,
+  { readonly found: true }
+>['administrators'][number];
+
+/**
+ * Shows the owner or an administrator of a supergroup as a member account inspects it: an
+ * administrator with every supergroup right, held or not, the user that last set its rights, and
+ * whether the account may edit it.
+ */
+function presentAdministratorForAccount(
+  { userId, status, canBeEdited }: AdministratorStandingForAccount,
+) {
+  const customTitle = status.customTitle === undefined ? {} : { custom_title: status.customTitle };
+  if (status.status === 'owner') {
+    return { user_id: userId, status: 'owner' as const, ...customTitle };
+  }
+  return {
+    user_id: userId,
+    status: 'administrator' as const,
+    rights: Object.fromEntries(
+      SUPERGROUP_ADMINISTRATOR_RIGHTS.map((right) => [right, status.rights.has(right)]),
+    ),
+    ...customTitle,
+    promoted_by_user_id: status.promotedById,
+    can_be_edited: canBeEdited,
   };
 }
 

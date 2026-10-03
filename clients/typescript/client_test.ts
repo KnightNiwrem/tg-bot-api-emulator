@@ -535,6 +535,19 @@ Deno.test('TypeScript client runs supergroups with members, messages, and button
   const deletionBeforePromotion = await deleteGreeting();
   await owner.promoteChatMember({ chat, userId: bot.id, rights: { can_delete_messages: true } });
   await owner.setCustomTitle({ chat, userId: bot.id, customTitle: 'Janitor' });
+  const administrators = await owner.getChatAdministrators({ chat });
+  const botAdministrator = administrators.find(({ user_id }) => user_id === bot.id);
+  if (
+    botAdministrator?.status !== 'administrator' ||
+    botAdministrator.promoted_by_user_id !== owner.id || !botAdministrator.can_be_edited ||
+    !botAdministrator.rights.can_delete_messages || botAdministrator.custom_title !== 'Janitor'
+  ) {
+    throw new Error(
+      `Expected the owner to inspect the bot it promoted, received ${
+        JSON.stringify(administrators)
+      }`,
+    );
+  }
   await owner.setContentProtection({ chat, hasProtectedContent: true });
   const protectedGreeting = (await owner.getMessages({ chat }))
     .find(({ message_id }) => message_id === greeting.message_id);

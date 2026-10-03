@@ -7,6 +7,7 @@ import {
   botCommandsResponseSchema,
   callbackQueryResponseSchema,
   chatActionsResponseSchema,
+  chatAdministratorsResponseSchema,
   chosenInlineResultResponseSchema,
   createdSupergroupResponseSchema,
   createdVirtualAccountSchema,
@@ -34,6 +35,7 @@ import {
 import type {
   AccountBotCommandsInput,
   AccountChatActionsInput,
+  AccountChatAdministratorsInput,
   AccountDeleteMessageInput,
   AccountEditMessageCaptionInput,
   AccountEditMessageInput,
@@ -97,6 +99,7 @@ import type {
   SetContentProtectionInput,
   SetCustomTitleInput,
   Supergroup,
+  SupergroupAdministrator,
   SupergroupBotCommands,
   SupergroupMessage,
   UploadProfile,
@@ -548,6 +551,17 @@ function createVirtualAccountClient(
         expectedStatus: HTTP_STATUS_NO_CONTENT,
         body: input.rights,
       });
+    },
+    async getChatAdministrators(
+      input: AccountChatAdministratorsInput,
+    ): Promise<readonly SupergroupAdministrator[]> {
+      const response = await requestJson(fetchImplementation, {
+        method: 'GET',
+        url: `${conversationUrl(accountUrl, input.chat)}/administrators`,
+        expectedStatus: HTTP_STATUS_OK,
+        responseSchema: chatAdministratorsResponseSchema,
+      });
+      return response.administrators;
     },
     async demoteChatMember(input: DemoteChatMemberInput): Promise<void> {
       await requestEmptyResponse(fetchImplementation, {

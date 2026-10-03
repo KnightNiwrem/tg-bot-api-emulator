@@ -1,8 +1,7 @@
 type: object
 additionalProperties: false
 description: >-
-  A supergroup administrator with every right Telegram shows, held or not. No bot may change
-  an administrator's rights, since only the owner promotes administrators here.
+  A supergroup administrator with every right Telegram shows, held or not.
 required:
   - user
   - status
@@ -31,7 +30,10 @@ properties:
     const: administrator
   can_be_edited:
     type: boolean
-    const: false
+    description: >-
+      Whether the observing bot may change the administrator's rights or demote it: it holds
+      `can_promote_members` and promoted the administrator, directly or through administrators
+      it promoted.
   can_manage_chat:
     type: boolean
   can_change_info:

@@ -344,6 +344,33 @@ export interface PromoteChatMemberInput {
   readonly rights: Readonly<Partial<Record<SupergroupAdministratorRight, boolean>>>;
 }
 
+export interface AccountChatAdministratorsInput {
+  readonly chat: SupergroupMessageTarget;
+}
+
+/** The owner or an administrator of a supergroup, as a member account inspects it. */
+export type SupergroupAdministrator =
+  | {
+    readonly user_id: number;
+    readonly status: 'owner';
+    readonly custom_title?: string;
+  }
+  | {
+    readonly user_id: number;
+    readonly status: 'administrator';
+    /** Every supergroup right, held or not. */
+    readonly rights: Readonly<Record<SupergroupAdministratorRight, boolean>>;
+    readonly custom_title?: string;
+    /** The owner or administrator that last set the administrator's rights. */
+    readonly promoted_by_user_id: number;
+    /**
+     * Whether this account may change the administrator's rights or demote it: it owns the
+     * supergroup, or it holds `can_promote_members` and promoted the administrator, directly or
+     * through administrators it promoted.
+     */
+    readonly can_be_edited: boolean;
+  };
+
 export interface DemoteChatMemberInput {
   readonly chat: SupergroupMessageTarget;
   /** The administrator, account or bot, to demote. */
@@ -1626,6 +1653,14 @@ export interface VirtualAccountClient extends VirtualAccountProfile {
    * and `can_restrict_members` lets it ban, unban, and restrict members.
    */
   promoteChatMember(input: PromoteChatMemberInput): Promise<void>;
+  /**
+   * Returns the owner, then the administrators in the order they joined, of a supergroup this
+   * account is a member of, with who promoted each administrator and whether this account may edit
+   * it, as bots see `can_be_edited`.
+   */
+  getChatAdministrators(
+    input: AccountChatAdministratorsInput,
+  ): Promise<readonly SupergroupAdministrator[]>;
   /**
    * Demotes an administrator of a supergroup this account owns to a member. A demoted bot
    * receives a `my_chat_member` update showing it as `member`. Demoting a member that is no

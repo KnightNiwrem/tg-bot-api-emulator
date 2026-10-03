@@ -36,7 +36,11 @@ import type {
   InlineQueryResultChosenEvent,
   PollAnswerChangedEvent,
 } from '../types/chat_domain_event.ts';
-import type { ChatMemberStatus, SupergroupAdministratorRights } from '../types/chat_membership.ts';
+import type {
+  AdministratorMembership,
+  ChatMemberStatus,
+  SupergroupAdministratorRights,
+} from '../types/chat_membership.ts';
 import { getInlineQueryChatType, type InlineQuery } from '../types/inline_query.ts';
 import { countPollVoters, type Poll, type PollType } from '../types/poll.ts';
 import type { StoredFileId } from '../types/stored_file.ts';
@@ -659,6 +663,12 @@ export function projectBotBlockChangeForBot(
   };
 }
 
+/**
+ * Whether the bot that observes a standing may edit an administrator, which the Bot API shows as
+ * `can_be_edited`.
+ */
+export type AdministratorEditability = (administrator: AdministratorMembership) => boolean;
+
 export interface BotMembershipChangeProjectionInput {
   readonly event: ChatMemberStatusChangedEvent;
   readonly chat: BasicGroup | Supergroup;
@@ -666,19 +676,21 @@ export interface BotMembershipChangeProjectionInput {
   readonly actor: BotApiUser;
   /** The bot whose membership changed, which observes the change. */
   readonly bot: VirtualBotProfile;
+  /** Whether the bot may edit itself as an administrator, before or after the change. */
+  readonly canObserverEdit: AdministratorEditability;
 }
 
 /** Projects a change of a bot's standing in a group as the bot receives it. */
 export function projectBotMembershipChangeForBot(
-  { event, chat, actor, bot }: BotMembershipChangeProjectionInput,
+  { event, chat, actor, bot, canObserverEdit }: BotMembershipChangeProjectionInput,
 ): BotApiMyChatMemberUpdated {
   const user = projectBotAsUser(bot);
   return {
     chat: projectGroupChat(chat),
     from: actor,
     date: event.changedAtUnixSeconds,
-    old_chat_member: projectGroupChatBotMember(user, event.oldStatus),
-    new_chat_member: projectGroupChatBotMember(user, event.newStatus),
+    old_chat_member: projectGroupChatBotMember(user, event.oldStatus, canObserverEdit),
+    new_chat_member: projectGroupChatBotMember(user, event.newStatus, canObserverEdit),
   };
 }
 
@@ -689,26 +701,29 @@ export interface ChatMemberChangeProjectionInput {
   readonly actor: BotApiUser;
   /** The account or bot whose standing changed. */
   readonly member: BotApiUser;
+  /** Whether the observing bot may edit the member as an administrator, before or after it. */
+  readonly canObserverEdit: AdministratorEditability;
 }
 
-/** Projects a change of a user's standing in a group as administrator bots observe it. */
+/** Projects a change of a user's standing in a group as an administrator bot observes it. */
 export function projectChatMemberChange(
-  { event, chat, actor, member }: ChatMemberChangeProjectionInput,
+  { event, chat, actor, member, canObserverEdit }: ChatMemberChangeProjectionInput,
 ): BotApiChatMemberUpdated {
   return {
     chat: projectGroupChat(chat),
     from: actor,
     date: event.changedAtUnixSeconds,
-    old_chat_member: projectChatMember(member, event.oldStatus),
-    new_chat_member: projectChatMember(member, event.newStatus),
+    old_chat_member: projectChatMember(member, event.oldStatus, canObserverEdit),
+    new_chat_member: projectChatMember(member, event.newStatus, canObserverEdit),
   };
 }
 
 function projectGroupChatBotMember(
   user: BotApiBotUser,
   status: ChatMemberStatus,
+  canObserverEdit: AdministratorEditability,
 ): BotApiGroupChatBotMember {
-  const member = projectChatMember(user, status);
+  const member = projectChatMember(user, status, canObserverEdit);
   if (member.status === 'creator') {
     throw new Error(`Bot ${user.id} cannot own a group`);
   }
@@ -716,13 +731,13 @@ function projectGroupChatBotMember(
 }
 
 /**
- * Projects a user's standing in a group as the Bot API shows it to a bot, in the field order of
- * the official Bot API server's `JsonChatMember`. Bots never promote administrators here, so no
- * bot may change an administrator's rights.
+ * Projects a user's standing in a group as the Bot API shows it to an observing bot, in the field
+ * order of the official Bot API server's `JsonChatMember`.
  */
 export function projectChatMember<User extends BotApiUser>(
   user: User,
   status: ChatMemberStatus,
+  canObserverEdit: AdministratorEditability,
 ): BotApiChatMember<User> {
   switch (status.status) {
     case 'owner':
@@ -736,7 +751,7 @@ export function projectChatMember<User extends BotApiUser>(
       return {
         user,
         status: 'administrator',
-        can_be_edited: false,
+        can_be_edited: canObserverEdit(status),
         ...projectSupergroupAdministratorRights(status.rights),
         can_manage_voice_chats: status.rights.has('can_manage_video_chats'),
         ...projectCustomTitle(status.customTitle),

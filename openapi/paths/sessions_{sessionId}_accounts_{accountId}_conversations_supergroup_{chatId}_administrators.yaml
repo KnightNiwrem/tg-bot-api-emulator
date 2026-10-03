@@ -1,0 +1,25 @@
+description: The owner and administrators of a supergroup the account is a member of.
+parameters:
+  - $ref: ../components/parameters/SessionId.yaml
+  - $ref: ../components/parameters/AccountId.yaml
+  - $ref: ../components/parameters/SupergroupChatId.yaml
+get:
+  operationId: getSupergroupAdministrators
+  summary: Return the owner and administrators of the supergroup, as the account sees them
+  description: >-
+    Lists the owner, then the administrators in the order they joined, with their rights and
+    custom titles, the user that last set each administrator's rights, and whether the account
+    may change those rights or demote the administrator, as bots see `can_be_edited`.
+  responses:
+    '200':
+      description: The owner and administrators of the supergroup.
+      content:
+        application/json:
+          schema:
+            $ref: ../components/schemas/AccountSupergroupAdministrators.yaml
+    '400':
+      description: An account or supergroup path identifier is invalid.
+    '403':
+      description: The account is not a member of the supergroup.
+    '404':
+      description: The session, account, or supergroup does not exist.

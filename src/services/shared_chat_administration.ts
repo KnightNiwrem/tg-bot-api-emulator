@@ -20,6 +20,8 @@ import {
 } from '../text_entities/input_string.ts';
 import type { ChatDomainEvent } from '../types/chat_domain_event.ts';
 import {
+  type AdministratorMembership,
+  canEditSupergroupAdministrator,
   type ChatMembership,
   type ChatMemberStatus,
   createRestrictedStatus,
@@ -27,7 +29,6 @@ import {
   getEffectiveChatPermissions,
   getSupergroupNonMemberFailureReason,
   holdsSupergroupAdministratorRight,
-  isChatAdministrator,
   isChatMember,
   isSameChatMemberStatus,
   LEFT_CHAT_MEMBER_STATUS,
@@ -472,6 +473,34 @@ export type GetChatAdministratorsResult =
   }
   | { readonly found: false; readonly reason: 'bot_not_found' | SupergroupBotAccessFailureReason };
 
+export interface GetAdministratorsForAccountInput {
+  /** The account that inspects the supergroup, which must be a member of it. */
+  readonly observerAccountId: number;
+  readonly chatId: number;
+}
+
+/** The owner or an administrator of a supergroup, as a member account inspects it. */
+export interface AdministratorStandingForAccount {
+  readonly userId: number;
+  readonly status: Extract<ChatMembership, { status: 'owner' }> | AdministratorMembership;
+  /**
+   * Whether the observing account may change the administrator's rights or demote it, as
+   * `canEditSupergroupAdministrator` decides; nobody edits the owner.
+   */
+  readonly canBeEdited: boolean;
+}
+
+export type GetAdministratorsForAccountResult =
+  | {
+    readonly found: true;
+    /** The owner, then the administrators in the order they joined. */
+    readonly administrators: readonly AdministratorStandingForAccount[];
+  }
+  | {
+    readonly found: false;
+    readonly reason: 'account_not_found' | 'chat_not_found' | 'not_a_member';
+  };
+
 export type GetChatMemberCountResult =
   | { readonly found: true; readonly memberCount: number }
   | { readonly found: false; readonly reason: 'bot_not_found' | SupergroupBotAccessFailureReason };
@@ -882,8 +911,9 @@ export class SharedChatAdministrationService {
 
   /**
    * Promotes a member of a supergroup to administrator as its owner, or changes the rights of an
-   * administrator, who keeps its custom title. A promotion that changes nothing succeeds without
-   * effect.
+   * administrator, who keeps its custom title. The owner then counts as the administrator's
+   * promoter, as Telegram records whoever last set an administrator's rights. A promotion that
+   * changes nothing succeeds without effect and keeps the promoter.
    */
   promoteChatMember(input: PromoteChatMemberInput): PromoteChatMemberResult {
     if (input.rights.size === 0) {
@@ -892,6 +922,7 @@ export class SharedChatAdministrationService {
     const change = this.#changeMemberRoleAsOwner(input, (membership) => ({
       status: 'administrator',
       rights: input.rights,
+      promotedById: input.actorAccountId,
       ...(membership.status === 'administrator' && membership.customTitle !== undefined
         ? { customTitle: membership.customTitle }
         : {}),
@@ -1147,16 +1178,34 @@ export class SharedChatAdministrationService {
     if (!access.resolved) {
       return { found: false, reason: access.reason };
     }
-    const standings = this.#sharedChats.getChatMemberIds(input.chatId).flatMap((userId) => {
-      const status = this.#sharedChats.getChatMembership(input.chatId, userId);
-      return status === undefined || !isChatAdministrator(status) ? [] : [{ userId, status }];
-    });
+    return { found: true, administrators: this.#listAdministratorStandings(input.chatId) };
+  }
+
+  /**
+   * Returns the owner and administrators of a supergroup to an account that is a member of it,
+   * with who promoted each administrator and whether the account may edit it.
+   */
+  getAdministratorsForAccount(
+    { observerAccountId, chatId }: GetAdministratorsForAccountInput,
+  ): GetAdministratorsForAccountResult {
+    if (this.#accounts.getById(observerAccountId) === undefined) {
+      return { found: false, reason: 'account_not_found' };
+    }
+    if (this.#sharedChats.getSharedChat(chatId)?.kind !== 'supergroup') {
+      return { found: false, reason: 'chat_not_found' };
+    }
+    if (this.#sharedChats.getChatMembership(chatId, observerAccountId) === undefined) {
+      return { found: false, reason: 'not_a_member' };
+    }
+    const readMembership = (userId: number) => this.#sharedChats.getChatMembership(chatId, userId);
     return {
       found: true,
-      administrators: [
-        ...standings.filter(({ status }) => status.status === 'owner'),
-        ...standings.filter(({ status }) => status.status === 'administrator'),
-      ],
+      administrators: this.#listAdministratorStandings(chatId).map(({ userId, status }) => ({
+        userId,
+        status,
+        canBeEdited: status.status === 'administrator' &&
+          canEditSupergroupAdministrator(readMembership, observerAccountId, status),
+      })),
     };
   }
 
@@ -1690,6 +1739,23 @@ export class SharedChatAdministrationService {
       return { resolved: false, reason: 'bot_not_found' };
     }
     return resolveSupergroupBotMembership(this.#sharedChats, observerBotId, chatId);
+  }
+
+  /** The owner and administrators of a chat: the owner, then the others in the order they joined. */
+  #listAdministratorStandings(chatId: number): readonly {
+    readonly userId: number;
+    readonly status: Extract<ChatMembership, { status: 'owner' }> | AdministratorMembership;
+  }[] {
+    const standings = this.#sharedChats.getChatMemberIds(chatId).flatMap((userId) => {
+      const status = this.#sharedChats.getChatMembership(chatId, userId);
+      return status?.status === 'owner' || status?.status === 'administrator'
+        ? [{ userId, status }]
+        : [];
+    });
+    return [
+      ...standings.filter(({ status }) => status.status === 'owner'),
+      ...standings.filter(({ status }) => status.status === 'administrator'),
+    ];
   }
 
   /** A user's standing in a chat; a user that never joined it has `left` it. */

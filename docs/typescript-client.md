@@ -191,6 +191,9 @@ try {
     userId: bot.id,
     rights: { can_delete_messages: true, can_restrict_members: true },
   });
+  // Inspect the administrators, who promoted each, and whom this account may edit.
+  const administrators = await account.getChatAdministrators({ chat: groupChat });
+  console.log(administrators.map(({ user_id, status }) => `${user_id}: ${status}`));
   await account.demoteChatMember({ chat: groupChat, userId: bot.id });
 
   // Restrict the bot to text for an hour: its photos, polls and other content fail with Telegram's

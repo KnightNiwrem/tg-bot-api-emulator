@@ -4,6 +4,7 @@ import {
 } from '../projections/bot_api_chat_full_info.ts';
 import type { ObservedFile } from '../projections/bot_api_file.ts';
 import {
+  type AdministratorEditability,
   type ExternalReplyProjectionContext,
   type ObservedPoll,
   projectBotAsUser,
@@ -48,7 +49,11 @@ import type {
   InlineQueryResultChosenEvent,
   PollAnswerChangedEvent,
 } from '../types/chat_domain_event.ts';
-import type { ChatMemberStatus } from '../types/chat_membership.ts';
+import {
+  canEditSupergroupAdministrator,
+  type ChatMembership,
+  type ChatMemberStatus,
+} from '../types/chat_membership.ts';
 import type { InlineQuery } from '../types/inline_query.ts';
 import { type Poll, type PollId, showsQuizSolution } from '../types/poll.ts';
 import {
@@ -91,6 +96,7 @@ interface MessageLookup {
 
 interface SharedChatLookup {
   getSharedChat(chatId: number): SharedChat | undefined;
+  getChatMembership(chatId: number, identityId: number): ChatMembership | undefined;
 }
 
 interface PollLookup {
@@ -277,14 +283,27 @@ export class BotMessageViewService {
     if (bot === undefined) {
       throw new Error(`Member ${event.memberId} whose membership changed is no bot`);
     }
-    return projectBotMembershipChangeForBot({ event, chat, actor, bot: bot.profile });
+    return projectBotMembershipChangeForBot({
+      event,
+      chat,
+      actor,
+      bot: bot.profile,
+      canObserverEdit: this.#getAdministratorEditability(chat.id, event.memberId),
+    });
   }
 
   /**
-   * Returns a change of a user's standing in a group as administrator bots observe it. The chat
+   * Returns a change of a user's standing in a group as an administrator bot observes it. The chat
    * must be a basic group or a supergroup.
+   *
+   * Call it as the change is published: whether the bot may edit the member as an administrator
+   * is read from the memberships the change left, which also decide it for the member's old
+   * standing, since the administrators that promoted a member never include the member itself.
    */
-  viewChatMemberChange(event: ChatMemberStatusChangedEvent): BotApiChatMemberUpdated {
+  viewChatMemberChange(
+    event: ChatMemberStatusChangedEvent,
+    observerBotId: number,
+  ): BotApiChatMemberUpdated {
     const { chat } = event;
     if (chat.kind === 'channel') {
       throw new Error(`Channel ${chat.id} has no chat member updates`);
@@ -297,16 +316,52 @@ export class BotMessageViewService {
     if (member === undefined) {
       throw new Error(`Member ${event.memberId} whose membership changed does not exist`);
     }
-    return projectChatMemberChange({ event, chat, actor, member });
+    return projectChatMemberChange({
+      event,
+      chat,
+      actor,
+      member,
+      canObserverEdit: this.#getAdministratorEditability(chat.id, observerBotId),
+    });
   }
 
   /**
-   * Returns a user's standing in a group as the Bot API shows it, or `undefined` for a user the
-   * session does not know.
+   * Returns a user's standing in a chat as the Bot API shows it to an observing bot, or
+   * `undefined` for a user the session does not know. Without an observer, the standing is shown
+   * as to a bot that may edit no administrator.
    */
-  viewChatMember(userId: number, status: ChatMemberStatus): BotApiChatMember | undefined {
+  viewChatMember(
+    { chatId, userId, status, observerBotId }: {
+      readonly chatId: number;
+      readonly userId: number;
+      readonly status: ChatMemberStatus;
+      readonly observerBotId?: number;
+    },
+  ): BotApiChatMember | undefined {
     const user = this.#findUser(userId);
-    return user === undefined ? undefined : projectChatMember(user, status);
+    if (user === undefined) {
+      return undefined;
+    }
+    return projectChatMember(
+      user,
+      status,
+      observerBotId === undefined
+        ? () => false
+        : this.#getAdministratorEditability(chatId, observerBotId),
+    );
+  }
+
+  /**
+   * Decides whether a bot may edit an administrator of a chat, as
+   * `canEditSupergroupAdministrator` does from the chat's current memberships.
+   */
+  #getAdministratorEditability(chatId: number, observerBotId: number): AdministratorEditability {
+    return (administrator) =>
+      canEditSupergroupAdministrator(
+        (userId) => this.#sharedChats.getChatMembership(chatId, userId),
+        observerBotId,
+        administrator,
+      );
   }
 
   /**

@@ -16,12 +16,16 @@ import {
 } from '../src/types/chat_permissions.ts';
 import type { RichBlock } from '../src/types/rich_message.ts';
 
+/** The owner that promoted the administrators here, which changes nothing they may do. */
+const OWNER_ID = 1_000_001;
+
 Deno.test('getEffectiveChatPermissions exempts the owner and administrators from restrictions', () => {
   const defaultPermissions: ChatPermissions = new Set();
   const owner: ChatMembership = { status: 'owner' };
   const administrator: ChatMembership = {
     status: 'administrator',
     rights: grantSupergroupAdministratorRights(['can_pin_messages']),
+    promotedById: OWNER_ID,
   };
 
   assertPermissions(
@@ -53,6 +57,7 @@ Deno.test('getEffectiveChatPermissions grants default permissions that are right
   const administrator: ChatMembership = {
     status: 'administrator',
     rights: grantSupergroupAdministratorRights(['can_delete_messages']),
+    promotedById: OWNER_ID,
   };
   const member: ChatMembership = { status: 'member' };
 

@@ -407,6 +407,7 @@ Deno.test('BotUpdateDeliveryService delivers a promotion and every message to an
   const administratorStatus = {
     status: 'administrator',
     rights: grantSupergroupAdministratorRights(['can_delete_messages']),
+    promotedById: owner.profile.id,
   } as const;
   sharedChats.updateChatMemberStatus(
     supergroup.id,
@@ -790,6 +791,7 @@ Deno.test('BotUpdateDeliveryService lets a message reach only the privacy-mode b
   sharedChats.updateChatMemberStatus(supergroup.id, administratorBot.profile.id, {
     status: 'administrator',
     rights: grantSupergroupAdministratorRights([]),
+    promotedById: owner.profile.id,
   });
   const bots = { a: botA, b: botB, c: botC, admin: administratorBot };
   const send = (
@@ -907,6 +909,7 @@ Deno.test('BotUpdateDeliveryService sends general commands to the bot that last 
   sharedChats.updateChatMemberStatus(supergroup.id, administratorBot.profile.id, {
     status: 'administrator',
     rights: grantSupergroupAdministratorRights([]),
+    promotedById: owner.profile.id,
   });
   const bots = { a: botA, b: botB, inline: inlineBot, admin: administratorBot };
   const send = (
@@ -998,6 +1001,7 @@ Deno.test('BotUpdateDeliveryService delivers chat_member updates to subscribed a
   const administratorStatus = {
     status: 'administrator',
     rights: grantSupergroupAdministratorRights(['can_restrict_members']),
+    promotedById: owner.profile.id,
   } as const;
   sharedChats.registerSupergroup(supergroup, owner.profile.id);
   for (const bot of [subscribedAdministratorBot, unsubscribedAdministratorBot]) {

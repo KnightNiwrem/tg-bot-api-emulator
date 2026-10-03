@@ -77,18 +77,27 @@ export type RestrictedChatMemberStatus<IsMember extends boolean = boolean> =
   & { readonly status: 'restricted'; readonly isMember: IsMember }
   & ChatMemberRestriction;
 
+/** A supergroup administrator's standing. */
+export interface AdministratorMembership {
+  readonly status: 'administrator';
+  readonly rights: SupergroupAdministratorRights;
+  /**
+   * The owner or administrator that last set the administrator's rights, as Telegram records it
+   * in `channelParticipantAdmin.promoted_by`. It decides who may edit the administrator, as
+   * `canEditSupergroupAdministrator` tells.
+   */
+  readonly promotedById: number;
+  readonly customTitle?: string;
+}
+
 /**
- * A current member's standing in a shared chat. Only supergroups have administrators, whom the
- * owner promotes, and restricted members. The owner and administrators may carry a custom title
- * that clients show instead of their role; it is omitted for none.
+ * A current member's standing in a shared chat. Only supergroups have administrators and
+ * restricted members. The owner and administrators may carry a custom title that clients show
+ * instead of their role; it is omitted for none.
  */
 export type ChatMembership =
   | { readonly status: 'owner'; readonly customTitle?: string }
-  | {
-    readonly status: 'administrator';
-    readonly rights: SupergroupAdministratorRights;
-    readonly customTitle?: string;
-  }
+  | AdministratorMembership
   | { readonly status: 'member' }
   | RestrictedChatMemberStatus<true>;
 
@@ -157,7 +166,7 @@ export function isChatMember(status: ChatMemberStatus): status is ChatMembership
   }
 }
 
-/** Whether a member administers a chat: it owns the chat, or the owner promoted it. */
+/** Whether a member administers a chat: it owns the chat, or it was promoted. */
 export function isChatAdministrator(membership: ChatMembership): boolean {
   return membership.status === 'owner' || membership.status === 'administrator';
 }
@@ -181,6 +190,61 @@ export function holdsSupergroupAdministratorRight(
       throw new Error(`Unhandled chat membership: ${JSON.stringify(unhandledMembership)}`);
     }
   }
+}
+
+/** Finds the standing of a current member of one supergroup; `undefined` for a non-member. */
+export type SupergroupMembershipReader = (userId: number) => ChatMembership | undefined;
+
+/**
+ * Whether an administrator was promoted by a member, directly or through administrators the
+ * member promoted in turn, as the Bot API describes `can_promote_members`; the owner counts as
+ * having promoted every administrator. The chain follows each administrator's `promotedById`,
+ * which is all Telegram records of a promotion, through current administrators only: once a
+ * promoter in it is no longer an administrator, only the owner stands above the administrators
+ * it promoted.
+ */
+export function isAdministratorPromotedBy(
+  readMembership: SupergroupMembershipReader,
+  ancestorId: number,
+  administrator: AdministratorMembership,
+): boolean {
+  const ancestor = readMembership(ancestorId);
+  if (ancestor?.status === 'owner') {
+    return true;
+  }
+  if (ancestor?.status !== 'administrator') {
+    return false;
+  }
+  const visitedPromoterIds = new Set<number>();
+  let promoterId = administrator.promotedById;
+  while (promoterId !== ancestorId) {
+    if (visitedPromoterIds.has(promoterId)) {
+      throw new Error(`Administrators were promoted in a cycle through user ${promoterId}`);
+    }
+    visitedPromoterIds.add(promoterId);
+    const promoter = readMembership(promoterId);
+    if (promoter?.status !== 'administrator') {
+      return false;
+    }
+    promoterId = promoter.promotedById;
+  }
+  return true;
+}
+
+/**
+ * Whether a member may change an administrator's rights or demote it, which the Bot API shows as
+ * `can_be_edited`: as TDLib's `promote_channel_participant` requires, the member holds
+ * `can_promote_members`, which the owner holds, and, as the Bot API documents that right, it
+ * promoted the administrator, directly or indirectly, as `isAdministratorPromotedBy` decides. No
+ * administrator may edit itself.
+ */
+export function canEditSupergroupAdministrator(
+  readMembership: SupergroupMembershipReader,
+  editorId: number,
+  administrator: AdministratorMembership,
+): boolean {
+  return holdsSupergroupAdministratorRight(readMembership(editorId), 'can_promote_members') &&
+    isAdministratorPromotedBy(readMembership, editorId, administrator);
 }
 
 /**
@@ -230,7 +294,8 @@ export function getEffectiveChatPermissions(
 
 /**
  * Whether two standings in a chat are the same, rights, custom title, restriction and ban end
- * included.
+ * included. Who promoted an administrator is not compared: setting the rights an administrator
+ * holds changes nothing, as TDLib's `set_channel_participant_status_impl` skips such a change.
  */
 export function isSameChatMemberStatus(
   first: ChatMemberStatus,

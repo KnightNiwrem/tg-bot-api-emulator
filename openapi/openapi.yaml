@@ -73,6 +73,8 @@ paths:
     $ref: paths/sessions_{sessionId}_accounts_{accountId}_supergroups.yaml
   /sessions/{sessionId}/accounts/{accountId}/conversations/supergroup/{chatId}/members/{userId}:
     $ref: paths/sessions_{sessionId}_accounts_{accountId}_conversations_supergroup_{chatId}_members_{userId}.yaml
+  /sessions/{sessionId}/accounts/{accountId}/conversations/supergroup/{chatId}/administrators:
+    $ref: paths/sessions_{sessionId}_accounts_{accountId}_conversations_supergroup_{chatId}_administrators.yaml
   /sessions/{sessionId}/accounts/{accountId}/conversations/supergroup/{chatId}/administrators/{userId}:
     $ref: paths/sessions_{sessionId}_accounts_{accountId}_conversations_supergroup_{chatId}_administrators_{userId}.yaml
   /sessions/{sessionId}/accounts/{accountId}/conversations/supergroup/{chatId}/administrators/{userId}/custom-title:

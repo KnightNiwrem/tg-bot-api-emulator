@@ -43,7 +43,7 @@ export function createSupergroupRoutes(): Hono<SessionRouteContextTypes> {
     if (!result.expired) {
       return context.body(null, result.reason === 'restriction_not_temporary' ? 409 : 404);
     }
-    const chatMember = botMessageViews.viewChatMember(userId, result.status);
+    const chatMember = botMessageViews.viewChatMember({ chatId, userId, status: result.status });
     if (chatMember === undefined) {
       throw new Error(`User ${userId} whose restriction expired does not exist`);
     }
