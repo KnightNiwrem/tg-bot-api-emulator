@@ -33,8 +33,8 @@ post:
     '400':
       description: >-
         The request cannot be decoded, has unsupported parameters, or has a negative
-        `expire_date` or `member_limit`, which Telegram reads as zero, or Telegram would reject
-        it, in this order: `chat_id` is missing (`Bad Request: chat_id is empty`); the chat is
+        `expire_date` or `member_limit`, which Telegram would read as zero (`Bad Request: invalid
+        createChatInviteLink parameters`), or Telegram would reject it, in this order: `chat_id` is missing (`Bad Request: chat_id is empty`); the chat is
         neither a private chat with an account that has written to the bot nor a supergroup the
         bot is or was a member of (`Bad Request: chat not found`); the chat is a private chat
         (`Bad Request: can't invite members to a private chat`); the name is not well-formed

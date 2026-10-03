@@ -91,17 +91,19 @@ restrictions as time passes: a link keeps admitting users until a test makes its
 with `POST /sessions/{sessionId}/supergroups/{chatId}/invite-links/{inviteLinkHash}/expiry`, or the
 TypeScript client's `session.expireChatInviteLink`. The link then admits nobody; the members that
 joined through it stay. No bot receives an update for it. A link without an expiry date, or one that
-already expired, answers `409`, and an unknown supergroup or link `404`. Only the date a bot gives
-is compared with the session's clock, which must lie after it.
+already expired, answers `409`, and an unknown supergroup or link `404`. The route makes the date
+arrive whatever the session's clock reads; the clock only decides, when a bot creates a link, that
+its expiry date lies in the future.
 
 ## Joining public supergroups
 
 An account joins a public supergroup by itself with
 `PUT /sessions/{sessionId}/accounts/{accountId}/conversations/supergroup/{chatId}/members/{accountId}`,
-naming itself, or the TypeScript client's `joinChat`, as Telegram's clients join one they find by
-its username with TDLib's `join_channel`. The join is recorded and delivered as through a link,
-without `invite_link`. A supergroup without a username answers `403`, as only an invite link or its
-owner lets users in, and so does one that bans the account; joining again changes nothing.
+naming itself, or the TypeScript client's `joinChat`, both addressing the supergroup by its chat ID,
+as Telegram's clients join one they find by its username with TDLib's `join_channel`. The join is
+recorded and delivered as through a link, without `invite_link`. A member's join changes nothing, in
+any supergroup. A supergroup without a username answers `403`, as only an invite link or its owner
+lets users in, and so does one that bans the account.
 
 ## Inspecting links
 

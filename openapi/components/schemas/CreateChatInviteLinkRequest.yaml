@@ -23,9 +23,11 @@ properties:
   member_limit:
     type: integer
     minimum: 0
+    maximum: 99999
     description: >-
       How many users that joined through the link may be members at once, 1-99999; 0 or
-      omitted for no limit. A member that leaves, or is removed, frees its place.
+      omitted for no limit. A member that leaves, or is removed, frees its place. A greater
+      limit is refused with `Bad Request: USAGE_LIMIT_INVALID`.
   creates_join_request:
     type: boolean
     default: false

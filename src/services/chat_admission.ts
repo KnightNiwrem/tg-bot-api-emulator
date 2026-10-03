@@ -298,7 +298,8 @@ export class ChatAdmissionService {
 
   /**
    * Lets an account join a public supergroup by itself, as TDLib's `join_channel` does for a
-   * supergroup it finds by its username. The account must be neither a member nor banned.
+   * supergroup it finds by its username. The account must be neither a member nor banned; a
+   * member is told so whether the supergroup is public or not.
    */
   joinPublicSupergroup(
     { accountId, chatId }: JoinPublicSupergroupInput,
@@ -310,12 +311,12 @@ export class ChatAdmissionService {
     if (supergroup?.kind !== 'supergroup') {
       return { joined: false, reason: 'chat_not_found' };
     }
-    if (supergroup.username === undefined) {
-      return { joined: false, reason: 'chat_not_public' };
-    }
     const standingFailure = this.#findSelfJoinStandingFailure(chatId, accountId);
     if (standingFailure !== undefined) {
       return { joined: false, reason: standingFailure };
+    }
+    if (supergroup.username === undefined) {
+      return { joined: false, reason: 'chat_not_public' };
     }
 
     this.#memberships.admitAccount({ accountId, chatId });

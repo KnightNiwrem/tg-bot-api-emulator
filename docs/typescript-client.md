@@ -236,7 +236,10 @@ try {
     userId: bot.id,
     rights: { can_invite_users: true },
   });
-  const linkCreation = await activity.waitFor({ method: 'createChatInviteLink' });
+  const linkCreation = await activity.waitFor(
+    { method: 'createChatInviteLink' },
+    { after: start },
+  );
   if (linkCreation.answer.ok) {
     const { invite_link: inviteLink } = linkCreation.answer.result as { invite_link: string };
     const { account: friend } = await session.createAccount({ first_name: 'Grace' });

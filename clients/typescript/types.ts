@@ -359,7 +359,7 @@ export interface LeaveChatInput {
 }
 
 export interface JoinChatInput {
-  /** A public supergroup, which has a username. */
+  /** A public supergroup, which has a username, addressed by its chat ID. */
   readonly chat: SupergroupMessageTarget;
 }
 
@@ -1867,8 +1867,9 @@ export interface VirtualAccountClient extends VirtualAccountProfile {
    */
   leaveChat(input: LeaveChatInput): Promise<void>;
   /**
-   * Joins a public supergroup by itself, as Telegram's clients join one they find by its
-   * username, which a `new_chat_members` service message from this account records.
+   * Joins a public supergroup by itself, addressed by its chat ID, as Telegram's clients join one
+   * they find by its username, which a `new_chat_members` service message from this account
+   * records.
    * Administrator bots receive a `chat_member` update. A private supergroup, or one that banned
    * this account, refuses it; joining a supergroup this account is a member of has no effect.
    */

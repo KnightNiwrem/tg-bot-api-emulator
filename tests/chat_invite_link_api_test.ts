@@ -855,9 +855,10 @@ Deno.test('accounts join a public supergroup by themselves, without an invite li
       await joinStatus(grace.id, hidden.id),
       await joinStatus(hopper.id, commons.id),
       await joinStatus(grace.id, -1_009_999_999_999),
+      await joinStatus(ada.id, hidden.id),
     ],
-    [204, 204, 403, 403, 404],
-    'Expected a public supergroup to admit Grace once, and the others to refuse',
+    [204, 204, 403, 403, 404, 204],
+    'Expected a public supergroup to admit Grace once, the others to refuse, and the owner of a private one to stay',
   );
   expectEqual(
     describeUpdates(await readUpdates(inviterBot)),
