@@ -483,6 +483,7 @@ function createBotApiFixture() {
       sharedChats,
       inviteLinks: new ChatInviteLinkRepository(),
       memberships: sharedChatAdministration,
+      events,
       currentUnixTimeSeconds: () => 1_700_000_000,
     }),
     botMessageViews,

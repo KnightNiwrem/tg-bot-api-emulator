@@ -14,6 +14,7 @@ import {
   projectBotBlockChangeForBot,
   projectBotMembershipChangeForBot,
   projectCallbackQueryForBot,
+  projectChatJoinRequest,
   projectChatMember,
   projectChatMemberChange,
   projectChosenInlineResultForBot,
@@ -34,6 +35,7 @@ import type {
   BotApiCallbackQuery,
   BotApiChatFullInfo,
   BotApiChatInviteLink,
+  BotApiChatJoinRequest,
   BotApiChatMember,
   BotApiChatMemberUpdated,
   BotApiChosenInlineResult,
@@ -58,6 +60,7 @@ import {
 } from '../types/stored_file.ts';
 import type {
   BotBlockChangedEvent,
+  ChatJoinRequestedEvent,
   ChatMemberStatusChangedEvent,
   InlineQueryResultChosenEvent,
   PollAnswerChangedEvent,
@@ -113,6 +116,7 @@ interface MessageLookup {
 interface SharedChatLookup {
   getSharedChat(chatId: number): SharedChat | undefined;
   getChatMembership(chatId: number, identityId: number): ChatMembership | undefined;
+  countJoinRequestsByInviteLink(chatId: number, inviteLinkUrl: string): number;
 }
 
 interface PollLookup {
@@ -367,14 +371,37 @@ export class BotMessageViewService {
 
   /**
    * Returns an invite link as the Bot API shows it to an observing user, which sees the whole link
-   * only if it created it.
+   * only if it created it, with the pending join requests sent through it now.
    */
   viewChatInviteLink(link: ChatInviteLink, observerId: number): BotApiChatInviteLink {
     const creator = this.#findUser(link.creatorId);
     if (creator === undefined) {
       throw new Error(`Creator ${link.creatorId} of invite link ${link.url} does not exist`);
     }
-    return projectChatInviteLink({ link, creator, observerId });
+    return projectChatInviteLink({
+      link,
+      creator,
+      observerId,
+      pendingJoinRequestCount: this.#sharedChats.countJoinRequestsByInviteLink(
+        link.chatId,
+        link.url,
+      ),
+    });
+  }
+
+  /**
+   * Returns a request to join a supergroup as an administrator bot receives it, with the invite
+   * link it was sent through as the bot sees it.
+   */
+  viewChatJoinRequestForBot(
+    event: ChatJoinRequestedEvent,
+    observerBotId: number,
+  ): BotApiChatJoinRequest {
+    return projectChatJoinRequest({
+      event,
+      requester: this.#findAccountProfile(event.request.userId, 'a join request'),
+      inviteLink: this.viewChatInviteLink(event.inviteLink, observerBotId),
+    });
   }
 
   /**

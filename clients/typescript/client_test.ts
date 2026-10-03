@@ -768,6 +768,55 @@ Deno.test('TypeScript client joins supergroups through invite links and by usern
   await session.end();
 });
 
+Deno.test('TypeScript client requests to join through a link and lists pending requests', async () => {
+  const publicOrigin = 'http://emulator.example:9000';
+  const api = createEmulationApi({
+    sessionLifecycle: createSessionLifecycleService(),
+    publicOrigin,
+  });
+  const client = new TelegramEmulationClient(publicOrigin, {
+    fetch: createInProcessFetch(api.fetch),
+  });
+  const session = await client.createSession();
+  const { bot, token } = await session.createBot({
+    first_name: 'Inviter',
+    username: 'inviter_bot',
+  });
+  const { account: owner } = await session.createAccount({ first_name: 'Ada' });
+  const { account: grace } = await session.createAccount({ first_name: 'Grace' });
+  const supergroup = await owner.createSupergroup({ title: 'Team' });
+  const chat = { type: 'supergroup', chatId: supergroup.id } as const;
+  await owner.addChatMember({ chat, userId: bot.id });
+  await owner.promoteChatMember({ chat, userId: bot.id, rights: { can_invite_users: true } });
+  const creation = await api.request(
+    `/sessions/${session.id}/bot-api/bot${token}/createChatInviteLink`,
+    {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ chat_id: supergroup.id, creates_join_request: true }),
+    },
+  );
+  const { result: { invite_link: inviteLink } } = await creation.json() as {
+    result: { invite_link: string };
+  };
+
+  const request = await grace.joinChatByInviteLink({ inviteLink });
+  const pendingRequests = await owner.getChatJoinRequests({ chat });
+  const [link] = await owner.getChatInviteLinks({ chat });
+
+  const outcomes = [
+    request.outcome,
+    pendingRequests.map(({ user_id, invite_link }) => [user_id, invite_link === inviteLink]),
+    link?.pending_join_request_count,
+  ];
+  if (
+    JSON.stringify(outcomes) !== JSON.stringify(['join_request_sent', [[grace.id, true]], 1])
+  ) {
+    throw new Error(`Expected Grace's request to be pending, received ${JSON.stringify(outcomes)}`);
+  }
+  await session.end();
+});
+
 Deno.test('TypeScript client changes a supergroup title and reads its service message', async () => {
   const publicOrigin = 'http://emulator.example:9000';
   const api = createEmulationApi({

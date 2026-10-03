@@ -842,7 +842,7 @@ const customTitleSchema = z.string().min(1).refine((title) =>
 
 export const chatJoinResponseSchema = z.strictObject({
   chat_id: z.number().int().negative(),
-  outcome: z.literal('joined'),
+  outcome: z.enum(['joined', 'join_request_sent']),
 });
 
 const supergroupInviteLinkSchema = z.strictObject({
@@ -852,12 +852,21 @@ const supergroupInviteLinkSchema = z.strictObject({
   expire_date: z.number().int().positive().optional(),
   member_limit: z.number().int().positive().optional(),
   member_count: z.number().int().nonnegative(),
+  pending_join_request_count: z.number().int().nonnegative(),
   creates_join_request: z.boolean(),
   is_expired: z.boolean(),
 });
 
 export const supergroupInviteLinksResponseSchema = z.strictObject({
   invite_links: z.array(supergroupInviteLinkSchema),
+});
+
+export const chatJoinRequestsResponseSchema = z.strictObject({
+  join_requests: z.array(z.strictObject({
+    user_id: z.number().int().positive(),
+    invite_link: z.string().startsWith('https://t.me/+'),
+    date: z.number().int().positive(),
+  })),
 });
 
 export const expiredInviteLinkResponseSchema = z.strictObject({

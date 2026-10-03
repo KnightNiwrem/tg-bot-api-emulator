@@ -381,6 +381,7 @@ Deno.test('an administrator bot creates invite links that keep the settings it c
             expire_date: expireDate,
             member_limit: 5,
             member_count: 0,
+            pending_join_request_count: 0,
             creates_join_request: false,
             is_expired: false,
           },
@@ -388,6 +389,7 @@ Deno.test('an administrator bot creates invite links that keep the settings it c
             invite_link: plainLink.invite_link,
             creator_user_id: inviterBot.bot.id,
             member_count: 0,
+            pending_join_request_count: 0,
             creates_join_request: false,
             is_expired: false,
           },
@@ -396,6 +398,7 @@ Deno.test('an administrator bot creates invite links that keep the settings it c
             name: 'x'.repeat(32),
             creator_user_id: inviterBot.bot.id,
             member_count: 0,
+            pending_join_request_count: 0,
             creates_join_request: true,
             is_expired: false,
           },
@@ -760,6 +763,7 @@ Deno.test('a test makes an invite link expire, after which it admits nobody', as
           creator_user_id: inviterBot.bot.id,
           expire_date: expireDate,
           member_count: 1,
+          pending_join_request_count: 0,
           creates_join_request: false,
           is_expired: true,
         },
@@ -807,17 +811,6 @@ Deno.test('only the owner inspects the invite links of a supergroup', async () =
     ],
     [200, 403, 404, 404],
     'Expected an administrator account, a bot and an unknown chat to be refused',
-  );
-});
-
-Deno.test('a link that creates join requests admits nobody directly', async () => {
-  const { grace, createLink, joinByLink, getMemberStatus } = await createInviteLinkFixture();
-  const link = await createLink({ creates_join_request: true });
-
-  expectEqual(
-    [(await joinByLink(grace, link.invite_link)).status, await getMemberStatus(grace.id)],
-    [501, 'left'],
-    'Expected join requests to be unsupported, leaving Grace outside',
   );
 });
 

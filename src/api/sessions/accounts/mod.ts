@@ -43,7 +43,7 @@ import {
 } from '../../../types/virtual_message.ts';
 import { base64ContentSchema } from '../base64_content.ts';
 import { readMessageEntitiesParameter } from '../bot_api/message_entities_parameter.ts';
-import { presentChatInviteLinkUsage } from '../invite_link_presentation.ts';
+import { presentChatInviteLinkUsage, presentChatJoinRequest } from '../invite_link_presentation.ts';
 import { readJsonRequestBody } from '../json_request_body.ts';
 import type { SessionRouteContextTypes } from '../session_route_context_types.ts';
 
@@ -110,6 +110,8 @@ const SUPERGROUP_DEFAULT_PERMISSIONS_PATH = `${SUPERGROUP_CONVERSATION_PATH}/per
 const SUPERGROUP_DESCRIPTION_PATH = `${SUPERGROUP_CONVERSATION_PATH}/description` as const;
 const SUPERGROUP_INVITE_LINK_COLLECTION_PATH =
   `${SUPERGROUP_CONVERSATION_PATH}/invite-links` as const;
+const SUPERGROUP_JOIN_REQUEST_COLLECTION_PATH =
+  `${SUPERGROUP_CONVERSATION_PATH}/join-requests` as const;
 const CHAT_JOIN_COLLECTION_PATH = `/:${ACCOUNT_ID_PARAMETER}/chat-joins` as const;
 
 /** An E.164 phone number's digits: a country code that never starts with 0, and at most 15 digits. */
@@ -755,7 +757,7 @@ export function createAccountRoutes(): Hono<SessionRouteContextTypes> {
     }
   });
 
-  // The account joins the chat an invite link leads to.
+  // The account joins the chat an invite link leads to, or requests to join it.
   accountRoutes.post(CHAT_JOIN_COLLECTION_PATH, async (context) => {
     const accountPath = accountPathSchema.safeParse(context.req.param());
     if (!accountPath.success) {
@@ -770,8 +772,8 @@ export function createAccountRoutes(): Hono<SessionRouteContextTypes> {
       accountId: accountPath.data.accountId,
       inviteLinkUrl: requestBody.invite_link,
     });
-    if (result.joined) {
-      return context.json({ chat_id: result.chatId, outcome: 'joined' as const });
+    if (result.used) {
+      return context.json({ chat_id: result.chatId, outcome: result.outcome });
     }
     switch (result.reason) {
       case 'account_not_found':
@@ -780,13 +782,12 @@ export function createAccountRoutes(): Hono<SessionRouteContextTypes> {
       case 'banned':
         return context.body(null, 403);
       case 'already_a_member':
+      case 'join_request_pending':
         return context.body(null, 409);
       // Telegram's clients show a link whose member limit is reached as expired.
       case 'invite_link_expired':
       case 'invite_link_member_limit_reached':
         return context.body(null, 410);
-      case 'join_requests_unsupported':
-        return context.body(null, 501);
       default: {
         const unhandledReason: never = result.reason;
         throw new Error(`Unhandled invite link joining failure: ${unhandledReason}`);
@@ -818,6 +819,34 @@ export function createAccountRoutes(): Hono<SessionRouteContextTypes> {
       default: {
         const unhandledReason: never = result.reason;
         throw new Error(`Unhandled invite link inspection failure: ${unhandledReason}`);
+      }
+    }
+  });
+
+  // The owner inspects the pending requests to join the supergroup.
+  accountRoutes.get(SUPERGROUP_JOIN_REQUEST_COLLECTION_PATH, (context) => {
+    const conversationPath = supergroupConversationPathSchema.safeParse(context.req.param());
+    if (!conversationPath.success) {
+      return context.body(null, 400);
+    }
+    const { accountId, chatId } = conversationPath.data;
+
+    const result = context.get('emulationSession').chatAdmission.getJoinRequestsForAccount({
+      accountId,
+      chatId,
+    });
+    if (result.found) {
+      return context.json({ join_requests: result.requests.map(presentChatJoinRequest) });
+    }
+    switch (result.reason) {
+      case 'account_not_found':
+      case 'chat_not_found':
+        return context.body(null, 404);
+      case 'not_the_owner':
+        return context.body(null, 403);
+      default: {
+        const unhandledReason: never = result.reason;
+        throw new Error(`Unhandled join request inspection failure: ${unhandledReason}`);
       }
     }
   });

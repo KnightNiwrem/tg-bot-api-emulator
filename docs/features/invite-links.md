@@ -1,16 +1,17 @@
-# Invite links and joining
+# Invite links and join requests
 
 [Feature index and comparison baseline](README.md) · [Supergroups](supergroups.md) ·
 [Updates](updates.md)
 
 ## Capability matrix
 
-| Area                   | Supported                                                                                        | Not supported                                                                                           |
-| ---------------------- | ------------------------------------------------------------------------------------------------ | ------------------------------------------------------------------------------------------------------- |
-| `createChatInviteLink` | `chat_id`, `name`, `expire_date`, `member_limit`, `creates_join_request`, in supergroups         | Basic groups, channels                                                                                  |
-| Other Bot API          | `invite_link` in `chat_member` updates                                                           | `editChatInviteLink`, `revokeChatInviteLink`, `exportChatInviteLink`, subscription links, join requests |
-| Account actions        | Joining through an invite link, joining a public supergroup by itself, inspecting a chat's links | Creating, editing and revoking links as an account, primary links                                       |
-| Time                   | Expiry dates that a test [makes arrive](#expiry-dates)                                           | Expiry by elapsed time                                                                                  |
+| Area                   | Supported                                                                                                                           | Not supported                                                                                  |
+| ---------------------- | ----------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------- |
+| `createChatInviteLink` | `chat_id`, `name`, `expire_date`, `member_limit`, `creates_join_request`, in supergroups                                            | Basic groups, channels                                                                         |
+| Other Bot API          | `invite_link` in `chat_member` updates, `chat_join_request` updates                                                                 | `editChatInviteLink`, `revokeChatInviteLink`, `exportChatInviteLink`, subscription links, bios |
+| Account actions        | Joining or requesting to join through an invite link, joining a public supergroup by itself, inspecting a chat's links and requests | Creating, editing and revoking links as an account, primary links                              |
+| Join requests          | One pending request per account and chat, sent through links that create join requests                                              | Deciding them, contact before a decision, requests without a link, join request queries        |
+| Time                   | Expiry dates that a test [makes arrive](#expiry-dates)                                                                              | Expiry by elapsed time                                                                         |
 
 ## Creating invite links
 
@@ -55,13 +56,12 @@ An account joins the supergroup a link leads to with
 TypeScript client's `joinChatByInviteLink`, which answer the supergroup's `chat_id` and the outcome
 `joined`. The whole link must be given as the bot received it. A refused use changes nothing:
 
-| Case                                                                      | Status |
-| ------------------------------------------------------------------------- | ------ |
-| The account or the link is unknown, including a link of another session   | `404`  |
-| A test made the link's expiry date arrive, or its member limit is reached | `410`  |
-| The account is a member already                                           | `409`  |
-| The account is banned from the supergroup                                 | `403`  |
-| The link creates join requests                                            | `501`  |
+| Case                                                                              | Status |
+| --------------------------------------------------------------------------------- | ------ |
+| The account or the link is unknown, including a link of another session           | `404`  |
+| A test made the link's expiry date arrive, or its member limit is reached         | `410`  |
+| The account is a member already, or its [join request](#join-requests) is pending | `409`  |
+| The account is banned from the supergroup                                         | `403`  |
 
 A restricted user that is not a member joins with its restriction, as when the owner adds it. As the
 official server shows TDLib's `messageChatJoinByLink`, the join is the account's own service message
@@ -95,6 +95,42 @@ already expired, answers `409`, and an unknown supergroup or link `404`. The rou
 arrive whatever the session's clock reads; the clock only decides, when a bot creates a link, that
 its expiry date lies in the future.
 
+## Join requests
+
+A link that creates join requests leaves an account that uses it outside the supergroup and stores
+its pending request, as Telegram answers `INVITE_REQUEST_SENT` instead of joining; the outcome is
+`join_request_sent`. As [`messages.hideChatJoinRequest`][hide-join-request] addresses a request by
+its chat and user, an account has one pending request per supergroup: using a request link again
+while its request is pending answers `409` and changes nothing, keeping the first request with its
+link and date, and sending no update. The expiry and standing checks of
+[joining through a link](#joining-through-a-link) come first. A request ends when its account joins,
+whichever way, or is banned; a restriction leaves it pending, as a restricted account may still
+join.
+
+The supergroup's administrator bots that hold `can_invite_users` receive the request as a
+`chat_join_request` update, as the Bot API documents: "The bot must have the can_invite_users
+administrator right in the chat to receive these updates". Other bots, and bots whose
+`allowed_updates` exclude `chat_join_request`, receive nothing. The update has the fields of the
+official server's [`JsonChatJoinRequest`][json-chat-join-request] in its order: `chat`, `from`, the
+requester, `user_chat_id`, `date` and `invite_link`, which, as in `chat_member` updates, only the
+link's creator sees whole, and whose `pending_join_request_count` includes the new request. Bios are
+not modeled, so `bio` is omitted, and so is `query_id`, as join request queries are not supported. A
+webhook receives join requests in a queue per requester, as the official server's
+[`add_update_chat_join_request`][join-request-queue] chooses it.
+
+`user_chat_id` is the requester's ID, which names its private chat with the bot. The Bot API lets a
+bot write there "for 5 minutes ... until the join request is processed", but the emulator opens no
+such chat: as for any account, a bot writes to the requester only once it has started the bot, and
+otherwise fails with `Bad Request: chat not found`. Contacting a requester before a decision is a
+[real gap](#real-gaps).
+
+The owner inspects the pending requests with
+`GET /sessions/{sessionId}/accounts/{accountId}/conversations/supergroup/{chatId}/join-requests`, or
+the TypeScript client's `getChatJoinRequests`: each request's `user_id`, the whole `invite_link` it
+was sent through and its `date`, in the order they were sent; any other account is answered `403`.
+The supergroup's links show their `pending_join_request_count`, and the Bot API's `ChatInviteLink`
+shows it too when it is not 0.
+
 ## Joining public supergroups
 
 An account joins a public supergroup by itself with
@@ -111,9 +147,9 @@ The owner inspects a supergroup's links with
 `GET /sessions/{sessionId}/accounts/{accountId}/conversations/supergroup/{chatId}/invite-links`, or
 the TypeScript client's `getChatInviteLinks`: each whole link, in the order bots created them, with
 its settings by the Bot API's names, `creator_user_id`, `member_count`, the members that joined
-through it and still are, and `is_expired`. As TDLib's `getChatInviteLinks` requires the owner for
-links that other administrators created, and only bots create links, any other account is answered
-`403`.
+through it and still are, `pending_join_request_count`, and `is_expired`. As TDLib's
+`getChatInviteLinks` requires the owner for links that other administrators created, and only bots
+create links, any other account is answered `403`.
 
 ## Intentional deviations
 
@@ -129,8 +165,11 @@ links that other administrators created, and only bots create links, any other a
 
 - **Link lifecycle.** `editChatInviteLink`, `revokeChatInviteLink`, `exportChatInviteLink`, primary
   links and subscription links are not implemented.
-- **Join requests.** A link that creates join requests admits nobody, and bots receive no
-  `chat_join_request` update.
+- **Deciding join requests.** Pending requests cannot be approved or declined yet.
+- **Contact before a decision.** Bots cannot write to a requester that has not started them, which
+  the Bot API allows for 5 minutes through `user_chat_id`.
+- **Requests without a link.** Public supergroups that require approval to join, and the join
+  request queries of guard bots, are not supported.
 - **Account administrators.** Accounts cannot create links, even as administrators with
   `can_invite_users`.
 - **Other chat kinds.** Basic groups and channels have no invite links.
@@ -150,19 +189,25 @@ in part:
 - **Hidden links.** How much of a link Telegram's servers hide from other administrators is not
   public; the emulator keeps the first half of the hash.
 - **Creator's tenure.** A link keeps working when its creator leaves or loses its rights.
+- **Repeated and ended requests.** Whether Telegram's servers send bots another update for a
+  repeated request, and what becomes of a request when its user joins otherwise or is banned, is not
+  public. The emulator keeps one request per account and chat, sends one update for it, and ends it
+  when the account joins or is banned.
 
 ## Local evidence
 
 [Domain model](../../src/types/chat_invite_link.ts),
 [admission service](../../src/services/chat_admission.ts),
 [storage](../../src/repositories/chat_invite_link.ts),
-[membership storage](../../src/repositories/shared_chat.ts),
+[membership and request storage](../../src/repositories/shared_chat.ts),
+[update delivery](../../src/services/bot_update_delivery.ts),
 [Bot API handlers](../../src/api/sessions/bot_api/mod.ts),
 [projection](../../src/projections/bot_api_chat_invite_link.ts),
 [account routes](../../src/api/sessions/accounts/mod.ts),
 [expiry route](../../src/api/sessions/supergroups/mod.ts),
-[service tests](../../tests/chat_admission_service_test.ts) and
-[HTTP tests](../../tests/chat_invite_link_api_test.ts).
+[service tests](../../tests/chat_admission_service_test.ts),
+[link HTTP tests](../../tests/chat_invite_link_api_test.ts) and
+[join request HTTP tests](../../tests/chat_join_request_api_test.ts).
 
 [json-chat-invite-link]: https://github.com/tdlib/telegram-bot-api/blob/e3e9dd8e5b3d7ab8537cd5a10dc31d5ffa8f82d1/telegram-bot-api/Client.cpp#L1401-L1434
 [json-chat-member-updated]: https://github.com/tdlib/telegram-bot-api/blob/e3e9dd8e5b3d7ab8537cd5a10dc31d5ffa8f82d1/telegram-bot-api/Client.cpp#L5926-L5953
@@ -174,3 +219,6 @@ in part:
 [truncated-link]: https://github.com/tdlib/td/blob/bc9c263e2bfee06aaab41e82db51a103376030bc/td/telegram/DialogInviteLink.cpp#L97-L102
 [export-chat-invite]: https://core.telegram.org/method/messages.exportChatInvite
 [import-chat-invite]: https://core.telegram.org/method/messages.importChatInvite
+[hide-join-request]: https://core.telegram.org/method/messages.hideChatJoinRequest
+[json-chat-join-request]: https://github.com/tdlib/telegram-bot-api/blob/e3e9dd8e5b3d7ab8537cd5a10dc31d5ffa8f82d1/telegram-bot-api/Client.cpp#L5955-L5980
+[join-request-queue]: https://github.com/tdlib/telegram-bot-api/blob/e3e9dd8e5b3d7ab8537cd5a10dc31d5ffa8f82d1/telegram-bot-api/Client.cpp#L18722-L18733

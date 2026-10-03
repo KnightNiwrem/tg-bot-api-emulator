@@ -1,5 +1,6 @@
 import type {
   BotApiCallbackQuery,
+  BotApiChatJoinRequest,
   BotApiChatMemberUpdated,
   BotApiChosenInlineResult,
   BotApiInlineQuery,
@@ -15,12 +16,16 @@ import type {
   BotBlockChangedEvent,
   CallbackQueryCreatedEvent,
   ChatDomainEvent,
+  ChatJoinRequestedEvent,
   ChatMemberStatusChangedEvent,
   InlineQueryCreatedEvent,
   InlineQueryResultChosenEvent,
   PollAnswerChangedEvent,
 } from '../types/chat_domain_event.ts';
-import type { ChatMembership } from '../types/chat_membership.ts';
+import {
+  type ChatMembership,
+  holdsSupergroupAdministratorRight,
+} from '../types/chat_membership.ts';
 import type { InlineQuery } from '../types/inline_query.ts';
 import type { Poll } from '../types/poll.ts';
 import type { VirtualBot, VirtualBotProfile } from '../types/virtual_bot.ts';
@@ -53,6 +58,10 @@ interface BotMessageViews {
     event: ChatMemberStatusChangedEvent,
     observerBotId: number,
   ): BotApiChatMemberUpdated;
+  viewChatJoinRequestForBot(
+    event: ChatJoinRequestedEvent,
+    observerBotId: number,
+  ): BotApiChatJoinRequest;
 }
 
 interface BotUpdateMailboxes {
@@ -68,6 +77,7 @@ interface BotUpdateMailboxes {
   ): void;
   enqueueMyChatMemberUpdate(botId: number, myChatMember: BotApiMyChatMemberUpdated): void;
   enqueueChatMemberUpdate(botId: number, chatMember: BotApiChatMemberUpdated): void;
+  enqueueChatJoinRequestUpdate(botId: number, chatJoinRequest: BotApiChatJoinRequest): void;
 }
 
 interface BotUpdateSubscriptionLookup {
@@ -169,6 +179,9 @@ export class BotUpdateDeliveryService {
         return;
       case 'chat_member_status_changed':
         this.#deliverChatMemberStatusChange(event);
+        return;
+      case 'chat_join_requested':
+        this.#deliverChatJoinRequest(event);
         return;
       default: {
         const unhandledEvent: never = event;
@@ -405,6 +418,29 @@ export class BotUpdateDeliveryService {
       this.#botUpdates.enqueueChatMemberUpdate(
         observerId,
         this.#botMessageViews.viewChatMemberChange(event, observerId),
+      );
+    }
+  }
+
+  /**
+   * A request to join a supergroup is observed by its administrator bots that hold the
+   * `can_invite_users` right, as the Bot API documents for `chat_join_request` updates.
+   */
+  #deliverChatJoinRequest(event: ChatJoinRequestedEvent): void {
+    for (const memberId of this.#sharedChats.getChatMemberIds(event.chat.id)) {
+      if (
+        this.#bots.getById(memberId) === undefined ||
+        !holdsSupergroupAdministratorRight(
+          this.#sharedChats.getChatMembership(event.chat.id, memberId),
+          'can_invite_users',
+        ) ||
+        !this.#isSubscribed(memberId, 'chat_join_request')
+      ) {
+        continue;
+      }
+      this.#botUpdates.enqueueChatJoinRequestUpdate(
+        memberId,
+        this.#botMessageViews.viewChatJoinRequestForBot(event, memberId),
       );
     }
   }

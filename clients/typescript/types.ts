@@ -372,8 +372,25 @@ export interface JoinChatByInviteLinkInput {
 export interface ChatJoin {
   /** The Bot API `chat_id` of the supergroup the link leads to. */
   readonly chat_id: number;
-  /** The account joined the supergroup. */
-  readonly outcome: 'joined';
+  /**
+   * `joined` when the account joined the supergroup; `join_request_sent` when the link creates
+   * join requests, which leaves the account outside until an administrator decides.
+   */
+  readonly outcome: 'joined' | 'join_request_sent';
+}
+
+export interface AccountChatJoinRequestsInput {
+  readonly chat: SupergroupMessageTarget;
+}
+
+/** A pending request to join a supergroup, as its owner inspects it. */
+export interface ChatJoinRequest {
+  /** The account that wants to join. */
+  readonly user_id: number;
+  /** The whole invite link the request was sent through. */
+  readonly invite_link: string;
+  /** When the request was sent, as a Unix time in seconds. */
+  readonly date: number;
 }
 
 export interface AccountChatInviteLinksInput {
@@ -394,6 +411,8 @@ export interface SupergroupInviteLink {
   readonly member_limit?: number;
   /** How many members joined through the link and still are, which its member limit counts. */
   readonly member_count: number;
+  /** How many pending join requests were sent through the link. */
+  readonly pending_join_request_count: number;
   /** Whether users who use the link send a join request instead of joining. */
   readonly creates_join_request: boolean;
   /** Whether `session.expireChatInviteLink` made the link's expiry date arrive. */
@@ -1878,7 +1897,10 @@ export interface VirtualAccountClient extends VirtualAccountProfile {
    * Joins the supergroup an invite link leads to, which a `new_chat_members` service message from
    * this account records. Administrator bots receive a `chat_member` update with the link, whole
    * only for the bot that created it. The link must not have expired, and its member limit must
-   * leave a place; this account must be neither a member nor banned.
+   * leave a place; this account must be neither a member nor banned. A link that creates join
+   * requests sends this account's request instead, which administrator bots with
+   * `can_invite_users` receive as a `chat_join_request` update; this account stays outside, and
+   * using such a link again while the request is pending fails.
    */
   joinChatByInviteLink(input: JoinChatByInviteLinkInput): Promise<ChatJoin>;
   /**
@@ -1886,6 +1908,11 @@ export interface VirtualAccountClient extends VirtualAccountProfile {
    * with how many members joined through each and still are.
    */
   getChatInviteLinks(input: AccountChatInviteLinksInput): Promise<readonly SupergroupInviteLink[]>;
+  /**
+   * Returns the pending requests to join a supergroup this account owns, in the order they were
+   * sent. A request ends when its account joins, whichever way, or is banned.
+   */
+  getChatJoinRequests(input: AccountChatJoinRequestsInput): Promise<readonly ChatJoinRequest[]>;
   /**
    * Promotes a member of a supergroup this account owns to administrator with the given rights,
    * which must include at least one, or replaces an administrator's rights. A promoted bot

@@ -9,3 +9,4 @@ oneOf:
   - $ref: ./PollAnswerUpdate.yaml
   - $ref: ./MyChatMemberUpdate.yaml
   - $ref: ./ChatMemberUpdate.yaml
+  - $ref: ./ChatJoinRequestUpdate.yaml

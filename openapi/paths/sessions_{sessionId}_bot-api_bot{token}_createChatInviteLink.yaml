@@ -4,7 +4,9 @@ description: >-
   link keeps its creator, name, expiry date, member limit, and whether it creates join requests;
   accounts use it through the emulation API, and administrator bots subscribed to `chat_member`
   see it in the update for a member that joined through it, the whole link only if they created
-  it. Editing, revoking, and exporting links are not supported.
+  it. A link that creates join requests sends administrator bots holding `can_invite_users` a
+  `chat_join_request` update for each account that uses it. Editing, revoking, and exporting links
+  are not supported.
 parameters:
   - $ref: ../components/parameters/SessionId.yaml
   - $ref: ../components/parameters/BotToken.yaml

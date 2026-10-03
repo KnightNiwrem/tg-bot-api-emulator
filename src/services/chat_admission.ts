@@ -11,6 +11,8 @@ import {
   type SupergroupBotAccessFailureReason,
   type SupergroupMembershipLookup,
 } from '../types/chat_membership.ts';
+import type { ChatDomainEvent } from '../types/chat_domain_event.ts';
+import type { ChatJoinRequest } from '../types/chat_join_request.ts';
 import type { VirtualAccount } from '../types/virtual_account.ts';
 import type { VirtualBot } from '../types/virtual_bot.ts';
 
@@ -63,9 +65,14 @@ type SelfJoinFailureReason =
   | 'banned';
 
 export type JoinChatByInviteLinkResult =
-  | { readonly joined: true; readonly chatId: number }
   | {
-    readonly joined: false;
+    readonly used: true;
+    readonly chatId: number;
+    /** The account joined, or, through a link that creates join requests, sent a request. */
+    readonly outcome: 'joined' | 'join_request_sent';
+  }
+  | {
+    readonly used: false;
     readonly reason:
       | SelfJoinFailureReason
       /** No link of the session has this URL. */
@@ -74,8 +81,8 @@ export type JoinChatByInviteLinkResult =
       | 'invite_link_expired'
       /** As many users as the link's member limit allows joined through it and are members. */
       | 'invite_link_member_limit_reached'
-      /** The link creates join requests, which the emulator does not support yet. */
-      | 'join_requests_unsupported';
+      /** The account's request to join the chat is pending already. */
+      | 'join_request_pending';
   };
 
 export interface JoinPublicSupergroupInput {
@@ -105,6 +112,8 @@ export interface ChatInviteLinkUsage {
   readonly link: ChatInviteLink;
   /** The members that joined through the link and still are, which its member limit counts. */
   readonly memberCount: number;
+  /** The pending join requests sent through the link. */
+  readonly pendingJoinRequestCount: number;
 }
 
 export type GetInviteLinksForAccountResult =
@@ -112,6 +121,23 @@ export type GetInviteLinksForAccountResult =
     readonly found: true;
     /** The chat's links in the order they were created. */
     readonly links: readonly ChatInviteLinkUsage[];
+  }
+  | {
+    readonly found: false;
+    readonly reason: 'account_not_found' | 'chat_not_found' | 'not_the_owner';
+  };
+
+export interface GetJoinRequestsForAccountInput {
+  /** The account that inspects the requests, which must own the supergroup. */
+  readonly accountId: number;
+  readonly chatId: number;
+}
+
+export type GetJoinRequestsForAccountResult =
+  | {
+    readonly found: true;
+    /** The chat's pending join requests in the order they were sent. */
+    readonly requests: readonly ChatJoinRequest[];
   }
   | {
     readonly found: false;
@@ -142,8 +168,16 @@ interface BotLookup {
   getById(botId: number): VirtualBot | undefined;
 }
 
-interface ChatMembershipLookup extends SupergroupMembershipLookup {
+interface ChatAdmissionStore extends SupergroupMembershipLookup {
   countMembersJoinedByInviteLink(chatId: number, inviteLinkUrl: string): number;
+  addJoinRequest(request: ChatJoinRequest): void;
+  getJoinRequest(chatId: number, userId: number): ChatJoinRequest | undefined;
+  listJoinRequests(chatId: number): readonly ChatJoinRequest[];
+  countJoinRequestsByInviteLink(chatId: number, inviteLinkUrl: string): number;
+}
+
+interface ChatDomainEventSink {
+  publish(event: ChatDomainEvent): void;
 }
 
 interface ChatInviteLinkStore {
@@ -166,11 +200,13 @@ interface AccountAdmission {
 interface ChatAdmissionServiceDependencies {
   readonly accounts: AccountLookup;
   readonly bots: BotLookup;
-  readonly sharedChats: ChatMembershipLookup;
+  readonly sharedChats: ChatAdmissionStore;
   readonly inviteLinks: ChatInviteLinkStore;
   /** Adds the accounts that may join, publishing and recording each join. */
   readonly memberships: AccountAdmission;
-  /** The time an invite link's expiry date must lie after. */
+  /** Receives each join request an account sends. */
+  readonly events: ChatDomainEventSink;
+  /** The time links are created and requests sent at, which an expiry date must lie after. */
   readonly currentUnixTimeSeconds: () => number;
 }
 
@@ -178,19 +214,20 @@ interface ChatAdmissionServiceDependencies {
  * Decides who may enter a supergroup without its owner adding them: administrator bots create
  * additional invite links, and accounts join through them, or by the username of a public
  * supergroup. A link keeps its creator, its expiry date, its member limit, and whether it creates
- * join requests. Its expiry date arrives only when a test makes it arrive, so tests decide when a
- * link stops working.
+ * join requests, which keep the account outside until an administrator decides. Its expiry date
+ * arrives only when a test makes it arrive, so tests decide when a link stops working.
  */
 export class ChatAdmissionService {
   readonly #accounts: AccountLookup;
   readonly #bots: BotLookup;
-  readonly #sharedChats: ChatMembershipLookup;
+  readonly #sharedChats: ChatAdmissionStore;
   readonly #inviteLinks: ChatInviteLinkStore;
   readonly #memberships: AccountAdmission;
+  readonly #events: ChatDomainEventSink;
   readonly #currentUnixTimeSeconds: () => number;
 
   constructor(
-    { accounts, bots, sharedChats, inviteLinks, memberships, currentUnixTimeSeconds }:
+    { accounts, bots, sharedChats, inviteLinks, memberships, events, currentUnixTimeSeconds }:
       ChatAdmissionServiceDependencies,
   ) {
     this.#accounts = accounts;
@@ -198,6 +235,7 @@ export class ChatAdmissionService {
     this.#sharedChats = sharedChats;
     this.#inviteLinks = inviteLinks;
     this.#memberships = memberships;
+    this.#events = events;
     this.#currentUnixTimeSeconds = currentUnixTimeSeconds;
   }
 
@@ -258,42 +296,47 @@ export class ChatAdmissionService {
   }
 
   /**
-   * Lets an account join a supergroup through an invite link, as TDLib's `joinChatByInviteLink`
-   * asks Telegram's servers to: the link must be one of the session's, its expiry date must not
-   * have arrived, and its member limit must leave a place, counting the members that joined
-   * through it and still are. The account must be neither a member nor banned; a restricted user
-   * joins with its restriction. The membership remembers the link, which the chat's administrator
-   * bots see in the `chat_member` update.
+   * Uses an invite link as an account, as TDLib's `joinChatByInviteLink` asks Telegram's servers
+   * to: the link must be one of the session's, its expiry date must not have arrived, and its
+   * member limit must leave a place, counting the members that joined through it and still are.
+   * The account must be neither a member nor banned.
+   *
+   * A link that creates join requests stores the account's request and leaves it outside, as
+   * Telegram answers `INVITE_REQUEST_SENT`; the chat's administrator bots with
+   * `can_invite_users` receive it. An account has one pending request per chat, so using such a
+   * link again while its request is pending changes nothing. Any other link lets the account
+   * join, a restricted user with its restriction, and the membership remembers the link, which
+   * the chat's administrator bots see in the `chat_member` update.
    */
   joinChatByInviteLink(
     { accountId, inviteLinkUrl }: JoinChatByInviteLinkInput,
   ): JoinChatByInviteLinkResult {
     if (this.#accounts.getById(accountId) === undefined) {
-      return { joined: false, reason: 'account_not_found' };
+      return { used: false, reason: 'account_not_found' };
     }
     const link = this.#inviteLinks.findInviteLink(inviteLinkUrl);
     if (link === undefined) {
-      return { joined: false, reason: 'invite_link_not_found' };
+      return { used: false, reason: 'invite_link_not_found' };
     }
     if (link.hasExpired) {
-      return { joined: false, reason: 'invite_link_expired' };
+      return { used: false, reason: 'invite_link_expired' };
     }
     if (
       link.memberLimit !== undefined &&
       this.#sharedChats.countMembersJoinedByInviteLink(link.chatId, link.url) >= link.memberLimit
     ) {
-      return { joined: false, reason: 'invite_link_member_limit_reached' };
+      return { used: false, reason: 'invite_link_member_limit_reached' };
     }
     const standingFailure = this.#findSelfJoinStandingFailure(link.chatId, accountId);
     if (standingFailure !== undefined) {
-      return { joined: false, reason: standingFailure };
+      return { used: false, reason: standingFailure };
     }
     if (link.createsJoinRequest) {
-      return { joined: false, reason: 'join_requests_unsupported' };
+      return this.#sendJoinRequest(accountId, link);
     }
 
     this.#memberships.admitAccount({ accountId, chatId: link.chatId, inviteLink: link });
-    return { joined: true, chatId: link.chatId };
+    return { used: true, chatId: link.chatId, outcome: 'joined' };
   }
 
   /**
@@ -347,6 +390,26 @@ export class ChatAdmissionService {
   }
 
   /**
+   * Returns the pending join requests of a supergroup to its owner, in the order they were sent.
+   * Requests reach administrator bots with `can_invite_users`; among accounts, only the owner
+   * inspects them, as for the invite links they were sent through.
+   */
+  getJoinRequestsForAccount(
+    { accountId, chatId }: GetJoinRequestsForAccountInput,
+  ): GetJoinRequestsForAccountResult {
+    if (this.#accounts.getById(accountId) === undefined) {
+      return { found: false, reason: 'account_not_found' };
+    }
+    if (this.#sharedChats.getSharedChat(chatId)?.kind !== 'supergroup') {
+      return { found: false, reason: 'chat_not_found' };
+    }
+    if (this.#sharedChats.getChatMembership(chatId, accountId)?.status !== 'owner') {
+      return { found: false, reason: 'not_the_owner' };
+    }
+    return { found: true, requests: this.#sharedChats.listJoinRequests(chatId) };
+  }
+
+  /**
    * Makes an invite link's expiry date arrive, which the emulator never does as time passes: the
    * link stops working for good, and the members that joined through it stay.
    */
@@ -365,6 +428,31 @@ export class ChatAdmissionService {
       expired: true,
       link: this.#describeUsage(this.#inviteLinks.markInviteLinkExpired(link.url)),
     };
+  }
+
+  /**
+   * Stores an account's request to join the chat a link leads to, and publishes it, unless its
+   * request is pending already.
+   */
+  #sendJoinRequest(accountId: number, link: ChatInviteLink): JoinChatByInviteLinkResult {
+    if (this.#sharedChats.getJoinRequest(link.chatId, accountId) !== undefined) {
+      return { used: false, reason: 'join_request_pending' };
+    }
+    const chat = this.#sharedChats.getSharedChat(link.chatId);
+    if (chat?.kind !== 'supergroup') {
+      throw new Error(
+        `Invite link ${link.url} leads to chat ${link.chatId}, which is no supergroup`,
+      );
+    }
+    const request: ChatJoinRequest = {
+      chatId: link.chatId,
+      userId: accountId,
+      inviteLinkUrl: link.url,
+      requestedAtUnixSeconds: this.#currentUnixTimeSeconds(),
+    };
+    this.#sharedChats.addJoinRequest(request);
+    this.#events.publish({ type: 'chat_join_requested', chat, request, inviteLink: link });
+    return { used: true, chatId: link.chatId, outcome: 'join_request_sent' };
   }
 
   /**
@@ -387,6 +475,10 @@ export class ChatAdmissionService {
     return {
       link,
       memberCount: this.#sharedChats.countMembersJoinedByInviteLink(link.chatId, link.url),
+      pendingJoinRequestCount: this.#sharedChats.countJoinRequestsByInviteLink(
+        link.chatId,
+        link.url,
+      ),
     };
   }
 }

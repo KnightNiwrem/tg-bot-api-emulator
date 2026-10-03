@@ -747,6 +747,8 @@ export interface BotApiChatInviteLink {
   readonly expire_date?: number;
   /** Omitted for a link without a member limit. */
   readonly member_limit?: number;
+  /** How many pending join requests were sent through the link; omitted for none. */
+  readonly pending_join_request_count?: number;
   readonly creates_join_request: boolean;
   readonly is_primary: false;
   readonly is_revoked: false;
@@ -778,6 +780,20 @@ export type BotApiChatMemberUpdated =
     /** The invite link the member joined through; omitted for every other change. */
     readonly invite_link?: BotApiChatInviteLink;
   };
+
+/**
+ * A request to join a supergroup, in the field order of the official Bot API server's
+ * `JsonChatJoinRequest`. Bios and join request queries are not supported.
+ */
+export interface BotApiChatJoinRequest {
+  readonly chat: BotApiSupergroupChat;
+  readonly from: VirtualAccountProfile;
+  /** The requester's private chat with the bot, whose ID is the requester's. */
+  readonly user_chat_id: number;
+  readonly date: number;
+  /** The invite link the request was sent through, as the observing bot sees it. */
+  readonly invite_link: BotApiChatInviteLink;
+}
 
 export interface BotApiMessageUpdate {
   readonly update_id: number;
@@ -826,6 +842,11 @@ export interface BotApiChatMemberUpdate {
   readonly chat_member: BotApiChatMemberUpdated;
 }
 
+export interface BotApiChatJoinRequestUpdate {
+  readonly update_id: number;
+  readonly chat_join_request: BotApiChatJoinRequest;
+}
+
 export type BotApiUpdate =
   | BotApiMessageUpdate
   | BotApiEditedMessageUpdate
@@ -835,7 +856,8 @@ export type BotApiUpdate =
   | BotApiPollUpdate
   | BotApiPollAnswerUpdate
   | BotApiMyChatMemberUpdate
-  | BotApiChatMemberUpdate;
+  | BotApiChatMemberUpdate
+  | BotApiChatJoinRequestUpdate;
 
 /**
  * The ID of the chat an update happened in, as grammY's `ctx.chat` finds it; `undefined` for an
@@ -857,6 +879,9 @@ export function getBotApiUpdateChatId(update: BotApiUpdate): number | undefined 
   }
   if ('chat_member' in update) {
     return update.chat_member.chat.id;
+  }
+  if ('chat_join_request' in update) {
+    return update.chat_join_request.chat.id;
   }
   return undefined;
 }
@@ -889,6 +914,9 @@ export function getBotApiUpdateUserId(update: BotApiUpdate): number | undefined 
   }
   if ('my_chat_member' in update) {
     return update.my_chat_member.from.id;
+  }
+  if ('chat_join_request' in update) {
+    return update.chat_join_request.from.id;
   }
   return update.chat_member.from.id;
 }

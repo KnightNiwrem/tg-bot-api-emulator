@@ -40,6 +40,7 @@ function createAdmissionFixture() {
     sharedChats,
     inviteLinks: new ChatInviteLinkRepository(),
     memberships: sharedChatAdministration,
+    events: { publish: (event) => publishedEvents.push(event) },
     currentUnixTimeSeconds,
   });
 
@@ -144,7 +145,7 @@ Deno.test('ChatAdmissionService keeps a link usable after its expiry date passes
       ),
     ],
     [
-      { joined: true, chatId },
+      { used: true, chatId, outcome: 'joined' },
       [[graceId, CREATION_TIME_UNIX_SECONDS + 3_600, creation.link.url]],
     ],
     'Expected only a test to make the expiry date arrive, as time does not pass by itself',

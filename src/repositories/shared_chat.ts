@@ -4,6 +4,7 @@ import type {
   ChatMemberStatus,
   FormerChatMemberStatus,
 } from '../types/chat_membership.ts';
+import type { ChatJoinRequest } from '../types/chat_join_request.ts';
 import {
   ALL_CHAT_PERMISSIONS,
   type ChatPermissions,
@@ -91,7 +92,9 @@ export type FormerMemberStatusUpdateResult =
  * Stores shared chats together with their memberships, so that a registered chat always has
  * exactly one owner, who stays a member. It remembers how each former member's membership ended,
  * including bans of users that never joined, until the user is added again, and the invite link
- * each current membership began with, which the membership ending forgets.
+ * each current membership began with, which the membership ending forgets. It also keeps the
+ * pending join requests of users outside each chat that may still join: a user's request ends
+ * when the user joins, whichever way, or is banned.
  */
 export class SharedChatRepository {
   readonly #sharedChatsById = new Map<number, SharedChat>();
@@ -99,6 +102,8 @@ export class SharedChatRepository {
   readonly #formerMemberStatusesByChatId = new Map<number, Map<number, FormerChatMemberStatus>>();
   /** Keyed by chat ID, then by the ID of a member that joined through an invite link. */
   readonly #joiningInviteLinkUrlsByChatId = new Map<number, Map<number, string>>();
+  /** Keyed by chat ID, then by the requester's ID, in the order the requests were sent. */
+  readonly #pendingJoinRequestsByChatId = new Map<number, Map<number, ChatJoinRequest>>();
   /** Keyed by chat ID, then by the ID of the account whose client shows the reply interface. */
   readonly #replyInterfaceMessageIdsByChatId = new Map<number, Map<number, CanonicalMessageId>>();
   #lastAdministratorTenureId: AdministratorTenureId = 0;
@@ -214,6 +219,7 @@ export class SharedChatRepository {
     assertRestrictionWithholdsPermission(chatId, memberId, membership);
     membershipsByIdentityId.set(memberId, membership);
     this.#formerMemberStatusesByChatId.get(chatId)?.delete(memberId);
+    this.#pendingJoinRequestsByChatId.get(chatId)?.delete(memberId);
     if (joiningInviteLinkUrl !== undefined) {
       const linkUrlsByMemberId = this.#joiningInviteLinkUrlsByChatId.get(chatId) ??
         new Map<number, string>();
@@ -221,6 +227,46 @@ export class SharedChatRepository {
       this.#joiningInviteLinkUrlsByChatId.set(chatId, linkUrlsByMemberId);
     }
     return { added: true };
+  }
+
+  /**
+   * Stores a user's pending request to join a chat. The user must be neither a member nor banned,
+   * and have no pending request there.
+   */
+  addJoinRequest(request: ChatJoinRequest): void {
+    const { chatId, userId } = request;
+    if (!this.#sharedChatsById.has(chatId)) {
+      throw new Error(`Chat ${chatId} does not exist`);
+    }
+    if (
+      this.getChatMembership(chatId, userId) !== undefined ||
+      this.getFormerMemberStatus(chatId, userId)?.status === 'kicked'
+    ) {
+      throw new Error(`User ${userId} of chat ${chatId} cannot request to join it`);
+    }
+    const requestsByUserId = this.#pendingJoinRequestsByChatId.get(chatId) ??
+      new Map<number, ChatJoinRequest>();
+    if (requestsByUserId.has(userId)) {
+      throw new Error(`User ${userId} already requested to join chat ${chatId}`);
+    }
+    requestsByUserId.set(userId, request);
+    this.#pendingJoinRequestsByChatId.set(chatId, requestsByUserId);
+  }
+
+  /** Returns a user's pending request to join a chat; `undefined` for none. */
+  getJoinRequest(chatId: number, userId: number): ChatJoinRequest | undefined {
+    return this.#pendingJoinRequestsByChatId.get(chatId)?.get(userId);
+  }
+
+  /** Returns a chat's pending join requests in the order they were sent. */
+  listJoinRequests(chatId: number): readonly ChatJoinRequest[] {
+    return [...(this.#pendingJoinRequestsByChatId.get(chatId)?.values() ?? [])];
+  }
+
+  /** Counts a chat's pending join requests sent through an invite link. */
+  countJoinRequestsByInviteLink(chatId: number, inviteLinkUrl: string): number {
+    return this.listJoinRequests(chatId)
+      .filter((request) => request.inviteLinkUrl === inviteLinkUrl).length;
   }
 
   /** Counts the current members of a chat whose membership began with an invite link. */
@@ -391,6 +437,9 @@ export class SharedChatRepository {
 
     assertRestrictionWithholdsPermission(chatId, identityId, formerStatus);
     formerMemberStatuses.set(identityId, formerStatus);
+    if (formerStatus.status === 'kicked') {
+      this.#pendingJoinRequestsByChatId.get(chatId)?.delete(identityId);
+    }
     return { updated: true };
   }
 }

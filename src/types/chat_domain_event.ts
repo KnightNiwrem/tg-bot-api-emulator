@@ -1,9 +1,10 @@
 import type { CallbackQuery } from './callback_query.ts';
 import type { ChatInviteLink } from './chat_invite_link.ts';
+import type { ChatJoinRequest } from './chat_join_request.ts';
 import type { ChatMemberStatus } from './chat_membership.ts';
 import type { InlineQuery } from './inline_query.ts';
 import type { Poll } from './poll.ts';
-import type { SharedChat } from './virtual_chat.ts';
+import type { SharedChat, Supergroup } from './virtual_chat.ts';
 import type { ChatMessage } from './virtual_message.ts';
 
 /** A canonical message was stored and numbered in the message boxes that hold it. */
@@ -91,6 +92,15 @@ export interface ChatMemberStatusChangedEvent {
   readonly inviteLink?: ChatInviteLink;
 }
 
+/** An account used an invite link that creates join requests, which sent a request to join. */
+export interface ChatJoinRequestedEvent {
+  readonly type: 'chat_join_requested';
+  readonly chat: Supergroup;
+  readonly request: ChatJoinRequest;
+  /** The invite link the request was sent through. */
+  readonly inviteLink: ChatInviteLink;
+}
+
 /** A state change produced by a chat command, published in the order it happened. */
 export type ChatDomainEvent =
   | MessageCreatedEvent
@@ -101,4 +111,5 @@ export type ChatDomainEvent =
   | InlineQueryCreatedEvent
   | InlineQueryResultChosenEvent
   | BotBlockChangedEvent
-  | ChatMemberStatusChangedEvent;
+  | ChatMemberStatusChangedEvent
+  | ChatJoinRequestedEvent;
