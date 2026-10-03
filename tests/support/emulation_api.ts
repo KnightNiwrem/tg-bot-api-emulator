@@ -58,8 +58,11 @@ export async function createTestSession(
 
 /**
  * Sends a request to `api`, with `body` serialized as its JSON body when given, and returns the
- * response status with the parsed JSON body, or `undefined` for an empty body. `Body` is the
- * caller's expectation of the body's shape and is not checked.
+ * response status with the parsed JSON body. `Body` is the caller's expectation of the body's shape
+ * and is not checked.
+ *
+ * A response without a body, such as a refusal or a `204`, still yields its status, but reading its
+ * `body` throws, naming the request, rather than yielding a value its type does not allow.
  */
 export async function requestJson<Body>(
   api: EmulationApi,
@@ -74,8 +77,15 @@ export async function requestJson<Body>(
       : { headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) }),
   });
   const text = await response.text();
+  if (text.length > 0) {
+    return { status: response.status, body: JSON.parse(text) as Body };
+  }
   return {
     status: response.status,
-    body: (text.length === 0 ? undefined : JSON.parse(text)) as Body,
+    get body(): Body {
+      throw new Error(
+        `Expected ${method} ${path} to answer with a JSON body, but its ${response.status} response had none`,
+      );
+    },
   };
 }
