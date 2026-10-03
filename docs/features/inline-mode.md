@@ -26,17 +26,18 @@ of the destination supergroup. Choices can be repeated while the account can sti
 Eligible chat bots receive the resulting account message; privacy mode includes messages sent
 through the observing bot.
 
-Supported results are articles with text or rich message input content, and photos, documents,
-videos and voice notes identified by a `file_id` the bot knows or
-[named by URL](#media-named-by-url). Media results may instead specify text or rich message input
-content, which the chosen message holds in place of the media the listing shows. A video result
-needs a nonempty title (`Bad Request: VIDEO_TITLE_EMPTY`), as a document result does
-(`Bad Request: FILE_TITLE_EMPTY`); a voice note result has no description. Supported caption
-formatting and inline keyboards apply. A rich message, which the official server's
-[`get_input_message_content`][input-message-content] reads in place of text, is read as for
-[`sendRichMessage`](rich-messages.md#sending-and-editing), and its buttons work as in any inline
-message. As TDLib's [`InlineQueriesManager::get_inline_message`][inline-rich-message] requires, its
-photos and documents are files the bot knows by `file_id`; an upload fails with
+Supported results are articles, [contacts and static locations](#contacts-and-locations), and
+photos, documents, videos and voice notes identified by a `file_id` the bot knows or
+[named by URL](#media-named-by-url). Any of them may specify `input_message_content` of text, a rich
+message, a contact or a static location, which an article requires; the chosen message then holds
+that content in place of what the listing shows. A video result needs a nonempty title
+(`Bad Request: VIDEO_TITLE_EMPTY`), as a document result does (`Bad Request: FILE_TITLE_EMPTY`); a
+voice note result has no description. Supported caption formatting and inline keyboards apply. A
+rich message, which the official server's [`get_input_message_content`][input-message-content] reads
+in place of text, is read as for [`sendRichMessage`](rich-messages.md#sending-and-editing), and its
+buttons work as in any inline message. As TDLib's
+[`InlineQueriesManager::get_inline_message`][inline-rich-message] requires, its photos and documents
+are files the bot knows by `file_id`; an upload fails with
 `Bad Request: invalid inline message content specified`. The server prefixes its own descriptions of
 a rich message it cannot read with `can't parse InlineQueryResult:`, which the emulator words as for
 `sendRichMessage`. Answers allow up to 50 results, unique nonempty result IDs of at most 64 UTF-8
@@ -55,6 +56,30 @@ message. TDLib makes the originating bot check in
 `Bad Request: invalid message content specified`. A voice note sent from a result keeps its media,
 as any voice note does (`Bad Request: message media can't be edited`), while its caption and
 keyboard can change.
+
+### Contacts and locations
+
+A contact result lists the names and phone number that TDLib's
+[`get_input_bot_inline_result`][results] trims: its title is the first name, followed by the last
+name after a space, and its description is the phone number. An empty trimmed phone number fails
+with `Bad Request: field "phone_number" must contain a valid phone number`, and an empty first name
+with `Bad Request: field "first_name" must be non-empty`. The contact it sends keeps the texts as
+the bot wrote them and is read as for [`sendContact`](contacts-and-locations.md#contacts): texts are
+cleaned, names may have at most 64 characters and a vCard at most 2048 bytes, and it names no
+Telegram user. A static location result lists its title and, as TDLib describes it, its coordinates
+to six decimal places, and sends the location as
+[`sendLocation`](contacts-and-locations.md#locations) reads one: coordinates outside ±90° and ±180°
+fail with `Bad Request: invalid location specified`, and an accuracy, from 0 to 1500 meters, is
+rounded up to whole meters. The same rules apply to `input_message_content` of a contact
+(`phone_number`, `first_name`, `last_name`, `vcard`) or a location (`latitude`, `longitude`,
+`horizontal_accuracy`). The emulator checks a location result's own coordinates even when its
+`input_message_content` replaces them, where TDLib only lists them.
+
+As for `sendLocation`, live locations are not supported: `live_period`, `heading` and
+`proximity_alert_radius` fail with the invalid-parameters error, in a result or its content. The
+official server's [`get_input_message_content`][input-message-content] reads content with
+coordinates, a `title` and an `address` as a venue, and content with a `payload` as an invoice; both
+fail with `Bad Request: inline query results sending a venue or invoice are not supported`.
 
 ### Media named by URL
 
@@ -150,10 +175,10 @@ TDLib-compatible encoding. Tests should treat them as opaque values.
 
 ## Real gaps
 
-- **Additional results and input content.** Result kinds other than articles, photos, documents,
-  videos and voice notes are unsupported. Only text and rich message `input_message_content` works;
-  locations, venues, contacts, invoices and other content types do not. Compare the result dispatch
-  in [`InlineQueriesManager::get_input_bot_inline_result`][results].
+- **Additional results and input content.** Audio, animation, sticker, venue and game results are
+  unsupported, as are venue, invoice and live location `input_message_content`, until the emulator
+  models those messages. Compare the result dispatch in
+  [`InlineQueriesManager::get_input_bot_inline_result`][results].
 
 - **Prepared messages and sharing.** Prepared inline messages and result-sharing flows are not
   implemented. Tests currently have to use the supported query-and-choice workflow.
@@ -179,8 +204,9 @@ public.
 [result parsing](../../src/api/sessions/bot_api/inline_query_answer_parameters.ts),
 [message edit permissions](../../src/types/virtual_message.ts),
 [inline tests](../../tests/inline_query_service_test.ts),
-[HTTP tests](../../tests/emulation_api_test.ts) and
-[URL media tests](../../tests/inline_result_media_api_test.ts).
+[HTTP tests](../../tests/emulation_api_test.ts),
+[URL media tests](../../tests/inline_result_media_api_test.ts) and
+[contact and location result tests](../../tests/inline_result_contact_location_api_test.ts).
 
 [edit-inline]: https://github.com/tdlib/td/blob/bc9c263e2bfee06aaab41e82db51a103376030bc/td/telegram/MessagesManager.cpp#L23183-L23292
 [results]: https://github.com/tdlib/td/blob/bc9c263e2bfee06aaab41e82db51a103376030bc/td/telegram/InlineQueriesManager.cpp#L870-L1280

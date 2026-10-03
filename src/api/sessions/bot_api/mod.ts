@@ -11,7 +11,6 @@ import {
   SUPERGROUP_ADMINISTRATOR_RIGHTS,
   type SupergroupAdministratorRights,
 } from '../../../types/chat_membership.ts';
-import { isContactVcardWithinLimit, MAX_CONTACT_NAME_LENGTH } from '../../../types/contact.ts';
 import type { EmulationSession } from '../../../types/emulation_session.ts';
 import {
   createGeoLocation,
@@ -40,7 +39,6 @@ import type { BotUploadTooBigFailure } from '../../../types/upload_profile.ts';
 import { isUserId } from '../../../types/telegram_identity.ts';
 import type { VirtualBotProfile } from '../../../types/virtual_bot.ts';
 import type { ChatAction } from '../../../types/virtual_chat.ts';
-import { countTextCharacters } from '../../../types/virtual_message.ts';
 import { fileDownloadResponse } from '../file_download.ts';
 import type { SessionRouteContextTypes } from '../session_route_context_types.ts';
 import {
@@ -50,6 +48,7 @@ import {
 } from './bot_command_parameters.ts';
 import { readChatAdministratorRightsParameter } from './chat_administrator_rights_parameter.ts';
 import { readChatPermissionsParameter } from './chat_permissions_parameter.ts';
+import { contactNameSchema, contactVcardSchema } from './contact_parameter.ts';
 import { readMenuButtonParameter } from './menu_button_parameter.ts';
 import {
   messageEntitiesParameter,
@@ -59,6 +58,7 @@ import {
   type InlineQueryResultParameter,
   inlineQueryResultsButtonParameter,
   readInlineQueryResultsParameter,
+  readUnreadLocation,
   type UnreadFormattedText,
   type UnreadInputMessageContent,
 } from './inline_query_answer_parameters.ts';
@@ -337,6 +337,8 @@ const ANSWER_INLINE_QUERY_FAILURE_DESCRIPTIONS = {
   caption_too_long: 'Bad Request: MEDIA_CAPTION_TOO_LONG',
   file_id_invalid: "Bad Request: wrong remote file identifier specified: can't unserialize it",
   inline_message_content_invalid: 'Bad Request: invalid inline message content specified',
+  contact_phone_number_empty: 'Bad Request: field "phone_number" must contain a valid phone number',
+  contact_first_name_empty: 'Bad Request: field "first_name" must be non-empty',
 } as const;
 
 /** How the Bot API server reports that it cannot read an inline query result. */
@@ -573,21 +575,15 @@ const sendPollParametersSchema = z.strictObject({
   is_closed: booleanParameter().default(false),
 });
 
-/** A contact's first or last name, of at most as many characters as TDLib documents. */
-const contactNameParameter = () =>
-  z.string().default('').refine((name) => countTextCharacters(name) <= MAX_CONTACT_NAME_LENGTH);
-
 // As for sendMessage, topics, business connections, paid broadcasts, suggested posts, and
-// ephemeral messages are not supported. Names longer than TDLib documents for a contact and a
-// vCard longer than the Bot API documents are rejected, as the emulator cannot tell how
-// Telegram's servers refuse them.
+// ephemeral messages are not supported.
 const sendContactParametersSchema = z.strictObject({
   ...sendOptionsParametersShape,
   ...replyMarkupParametersShape,
   phone_number: z.string().default(''),
-  first_name: contactNameParameter(),
-  last_name: contactNameParameter(),
-  vcard: z.string().default('').refine(isContactVcardWithinLimit),
+  first_name: contactNameSchema.default(''),
+  last_name: contactNameSchema.default(''),
+  vcard: contactVcardSchema,
 });
 
 /**
@@ -4397,6 +4393,26 @@ function readInlineQueryResultContent(
       },
     };
   }
+  const optionalMessageContent = messageContent === undefined ? {} : { messageContent };
+  if (result.kind === 'contact') {
+    return {
+      read: true,
+      result: { ...shared, ...optionalMessageContent, kind: 'contact', contact: result.contact },
+    };
+  }
+  if (result.kind === 'location') {
+    const location = readUnreadLocation(result.location);
+    return location === undefined ? { read: false, description: LOCATION_INVALID_DESCRIPTION } : {
+      read: true,
+      result: {
+        ...shared,
+        ...optionalMessageContent,
+        kind: 'location',
+        title: result.title,
+        location,
+      },
+    };
+  }
 
   const captionReading = readText(result.caption);
   if (!captionReading.read) {
@@ -4404,9 +4420,9 @@ function readInlineQueryResultContent(
   }
   const media = {
     ...shared,
+    ...optionalMessageContent,
     title: result.title,
     caption: captionReading.formattedText,
-    ...(messageContent === undefined ? {} : { messageContent }),
   };
   switch (result.kind) {
     case 'photo':
@@ -4463,11 +4479,13 @@ function readInlineQueryResultContent(
 }
 
 /**
- * Reads what a result's `input_message_content` sends: text with its parse mode or entities, or a
- * rich message, read as `readSpecifiedRichMessage` reads the `rich_message` of `sendRichMessage`.
- * Its uploads are read so that answering can refuse them, as TDLib refuses an inline message's
- * uploads. The official server prefixes its own descriptions of a rich message it cannot read with
- * `can't parse InlineQueryResult: `, which the emulator words as for `sendRichMessage`.
+ * Reads what a result's `input_message_content` sends: text with its parse mode or entities; a
+ * rich message, read as `readSpecifiedRichMessage` reads the `rich_message` of `sendRichMessage`;
+ * a contact, which the service cleans as `sendContact` does; or a static location, whose
+ * coordinates must name a point on Earth, as TDLib's `process_input_message_location` requires.
+ * A rich message's uploads are read so that answering can refuse them, as TDLib refuses an inline
+ * message's uploads. The official server prefixes its own descriptions of a rich message it cannot
+ * read with `can't parse InlineQueryResult: `, which the emulator words as for `sendRichMessage`.
  */
 function readInlineResultMessageContent(
   context: BotApiMethodContext,
@@ -4487,6 +4505,15 @@ function readInlineResultMessageContent(
     return textReading.read
       ? { read: true, content: { kind: 'text', text: textReading.formattedText } }
       : textReading;
+  }
+  if (content.kind === 'contact') {
+    return { read: true, content };
+  }
+  if (content.kind === 'location') {
+    const location = readUnreadLocation(content.location);
+    return location === undefined
+      ? { read: false, description: LOCATION_INVALID_DESCRIPTION }
+      : { read: true, content: { kind: 'location', location } };
   }
   const richMessageReading = readRichMessageParameter(
     JSON.stringify(content.richMessage),

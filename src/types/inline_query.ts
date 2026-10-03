@@ -107,6 +107,24 @@ export interface ArticleInlineQueryResult extends InlineQueryResultBase {
   readonly url?: string;
 }
 
+/** A phone contact, which the client lists by its names and phone number. */
+export interface ContactInlineQueryResult extends InlineQueryResultBase {
+  readonly kind: 'contact';
+  /** The contact's first name, and its last name after a space; never empty. */
+  readonly title: string;
+  /** The contact's phone number; never empty. */
+  readonly description: string;
+}
+
+/** A static location, which the client lists by its title and coordinates. */
+export interface LocationInlineQueryResult extends InlineQueryResultBase {
+  readonly kind: 'location';
+  /** Omitted when empty. */
+  readonly title?: string;
+  /** The latitude and longitude to six decimal places, separated by a space. */
+  readonly description: string;
+}
+
 /** A photo, which the client lists as the photo. */
 export interface PhotoInlineQueryResult extends InlineQueryResultBase {
   readonly kind: 'photo';
@@ -148,6 +166,8 @@ export interface VoiceInlineQueryResult extends InlineQueryResultBase {
 /** A result of an answer to an inline query. The Bot API's other result types are not supported. */
 export type InlineQueryResult =
   | ArticleInlineQueryResult
+  | ContactInlineQueryResult
+  | LocationInlineQueryResult
   | PhotoInlineQueryResult
   | DocumentInlineQueryResult
   | VideoInlineQueryResult

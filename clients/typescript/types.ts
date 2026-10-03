@@ -1657,7 +1657,7 @@ export interface Location {
 
 /** A result of an answer as the account's client lists it. */
 export interface InlineQueryResultListing {
-  readonly type: 'article' | 'photo' | 'document' | 'video' | 'voice';
+  readonly type: 'article' | 'contact' | 'location' | 'photo' | 'document' | 'video' | 'voice';
   readonly id: string;
   readonly title?: string;
   readonly description?: string;

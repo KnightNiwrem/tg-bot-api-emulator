@@ -18,9 +18,11 @@ properties:
     oneOf:
       - $ref: ./InputTextMessageContent.yaml
       - $ref: ./InputRichMessageContent.yaml
+      - $ref: ./InputContactMessageContent.yaml
+      - $ref: ./InputLocationMessageContent.yaml
     description: >-
-      The text message, which must have text, or the rich message that sending the article
-      writes.
+      The text message, which must have text, the rich message, the contact, or the location that
+      sending the article writes.
   reply_markup:
     $ref: ./InlineKeyboardMarkup.yaml
   url:

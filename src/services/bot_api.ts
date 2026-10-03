@@ -1,4 +1,5 @@
 import { cleanUploadedFileName } from '../media/document_file.ts';
+import { trimTdlibSpaces } from '../text_entities/input_string.ts';
 import { isParseMode, parseMarkup } from '../text_entities/parse_mode.ts';
 import { checkLink, getLinkUserId } from '../text_entities/telegram_link.ts';
 import type {
@@ -96,6 +97,7 @@ import {
   type InlineMessageId,
   isCaptionedMediaContent,
   isContentMessage,
+  type LocationMessageContent,
   type MediaGroupId,
   type MessageContent,
   type MessageForwardInfo,
@@ -879,8 +881,8 @@ interface InlineQueryResultRequestBase {
 }
 
 /**
- * What a result's `input_message_content` sends: text, or a rich message, which reuses its files
- * by the `file_id` the bot knows them by.
+ * What a result's `input_message_content` sends: text; a rich message, which reuses its files by
+ * the `file_id` the bot knows them by; a contact the bot writes; or a static location.
  */
 export type InlineResultMessageContentRequest =
   | { readonly kind: 'text'; readonly text: SpecifiedFormattedText }
@@ -889,7 +891,9 @@ export type InlineResultMessageContentRequest =
     readonly richMessage: RichMessage<BotApiRichMessageFileTypes>;
     /** Whether Telegram marks the entities it detects in the text. */
     readonly detectsEntities: boolean;
-  };
+  }
+  | { readonly kind: 'contact'; readonly contact: WrittenContact }
+  | LocationMessageContent;
 
 /**
  * The file of a media result: one the bot knows by `file_id`, or one it names by URL, which
@@ -910,6 +914,19 @@ export type InlineQueryResultRequest =
     /** Empty for none. */
     readonly url: string;
     readonly messageContent: InlineResultMessageContentRequest;
+  })
+  | (Omit<InlineQueryResultRequestBase, 'description'> & {
+    readonly kind: 'contact';
+    /** Listed by its texts, which TDLib's `get_input_bot_inline_result` trims. */
+    readonly contact: WrittenContact;
+    readonly messageContent?: InlineResultMessageContentRequest;
+  })
+  | (Omit<InlineQueryResultRequestBase, 'description'> & {
+    readonly kind: 'location';
+    readonly title: string;
+    /** Also listed by its coordinates, as TDLib's `get_input_bot_inline_result` describes them. */
+    readonly location: GeoLocation;
+    readonly messageContent?: InlineResultMessageContentRequest;
   })
   | (InlineQueryResultRequestBase & {
     readonly kind: 'photo';
@@ -973,6 +990,12 @@ export interface AnswerInlineQueryRequest {
   readonly button?: InlineQueryResultsButton;
 }
 
+/**
+ * Why TDLib's `get_input_bot_inline_result` refuses a contact result: its phone number or first
+ * name, once trimmed, is empty.
+ */
+type InlineContactResultFailureReason = 'contact_phone_number_empty' | 'contact_first_name_empty';
+
 export type BotApiAnswerInlineQueryResult =
   | { readonly answered: true }
   | (
@@ -982,7 +1005,8 @@ export type BotApiAnswerInlineQueryResult =
         readonly reason:
           | AnswerInlineQueryFailureReason
           | 'file_id_invalid'
-          | 'inline_message_content_invalid';
+          | 'inline_message_content_invalid'
+          | InlineContactResultFailureReason;
       }
       | ContentTextNormalizationFailure
       | FileTypeMismatchFailure
@@ -4760,7 +4784,9 @@ export class BotApiService {
    * document, video, or voice note known by `file_id`, and the files of a rich message it sends,
    * which must reuse files by `file_id` because an inline message cannot receive an upload. Media
    * named by URL keeps its URL, as TDLib passes it on, for Telegram to download when the result is
-   * sent; an embedded video player is only listed, and sends its `input_message_content`.
+   * sent; an embedded video player is only listed, and sends its `input_message_content`. A
+   * contact or location result sends its own contact or location unless its
+   * `input_message_content` replaces it.
    */
   #resolveInlineQueryResult(
     authenticatedBot: VirtualBotProfile,
@@ -4770,7 +4796,12 @@ export class BotApiService {
     | {
       readonly resolved: false;
       readonly failure:
-        | { readonly reason: 'file_id_invalid' | 'inline_message_content_invalid' }
+        | {
+          readonly reason:
+            | 'file_id_invalid'
+            | 'inline_message_content_invalid'
+            | InlineContactResultFailureReason;
+        }
         | FileTypeMismatchFailure;
     } {
     const shared = {
@@ -4798,6 +4829,33 @@ export class BotApiService {
             description: result.description,
             url: result.url,
             messageContent,
+          },
+        };
+      case 'contact': {
+        const listing = listInlineContactResult(result.contact);
+        return listing.listed
+          ? {
+            resolved: true,
+            result: {
+              ...shared,
+              kind: 'contact',
+              title: listing.title,
+              description: listing.description,
+              messageContent: messageContent ??
+                { kind: 'contact', contact: createWrittenContact(result.contact) },
+            },
+          }
+          : { resolved: false, failure: { reason: listing.reason } };
+      }
+      case 'location':
+        return {
+          resolved: true,
+          result: {
+            ...shared,
+            kind: 'location',
+            title: result.title,
+            description: describeInlineResultLocation(result.location),
+            messageContent: messageContent ?? { kind: 'location', location: result.location },
           },
         };
       case 'photo':
@@ -4916,6 +4974,15 @@ export class BotApiService {
         resolved: true,
         content: { kind: 'text', text: content.text.text, entities: content.text.entities },
       };
+    }
+    if (content.kind === 'contact') {
+      return {
+        resolved: true,
+        content: { kind: 'contact', contact: createWrittenContact(content.contact) },
+      };
+    }
+    if (content.kind === 'location') {
+      return { resolved: true, content };
     }
     if (
       listRichMessageFiles(content.richMessage).some((file) =>
@@ -5191,6 +5258,45 @@ function getMediaReplacementFile(media: MediaReplacementRequest): BotApiInputFil
       throw new Error(`Unhandled media replacement: ${JSON.stringify(unhandledMedia)}`);
     }
   }
+}
+
+/** The decimal places of the coordinates TDLib writes into a location result's description. */
+const INLINE_RESULT_LOCATION_DECIMAL_PLACES = 6;
+
+/**
+ * Lists a contact result as TDLib's `get_input_bot_inline_result` does: by its trimmed first name,
+ * followed by its trimmed last name after a space, and its trimmed phone number. TDLib refuses a
+ * contact whose trimmed phone number or first name is empty.
+ */
+function listInlineContactResult(
+  contact: WrittenContact,
+):
+  | { readonly listed: true; readonly title: string; readonly description: string }
+  | { readonly listed: false; readonly reason: InlineContactResultFailureReason } {
+  const phoneNumber = trimTdlibSpaces(contact.phoneNumber);
+  if (phoneNumber.length === 0) {
+    return { listed: false, reason: 'contact_phone_number_empty' };
+  }
+  const firstName = trimTdlibSpaces(contact.firstName);
+  if (firstName.length === 0) {
+    return { listed: false, reason: 'contact_first_name_empty' };
+  }
+  const lastName = trimTdlibSpaces(contact.lastName);
+  return {
+    listed: true,
+    title: lastName.length === 0 ? firstName : `${firstName} ${lastName}`,
+    description: phoneNumber,
+  };
+}
+
+/**
+ * Describes a location result as TDLib's `get_input_bot_inline_result` does: its latitude and
+ * longitude, in fixed notation with six decimal places, separated by a space.
+ */
+function describeInlineResultLocation({ latitude, longitude }: GeoLocation): string {
+  return `${latitude.toFixed(INLINE_RESULT_LOCATION_DECIMAL_PLACES)} ${
+    longitude.toFixed(INLINE_RESULT_LOCATION_DECIMAL_PLACES)
+  }`;
 }
 
 /** Looks up what a file of a request resolved to, which must have been resolved before. */
