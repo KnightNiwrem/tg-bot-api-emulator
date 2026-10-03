@@ -37,6 +37,9 @@ properties:
     const: true
   permissions:
     $ref: ./ChatPermissions.yaml
+    description: >-
+      What members may do by default, which every permission grants until `setChatPermissions`
+      or a member with `can_restrict_members` changes it.
   join_to_send_messages:
     type: boolean
     const: true

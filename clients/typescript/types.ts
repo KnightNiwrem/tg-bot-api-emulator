@@ -395,6 +395,15 @@ export interface LiftChatMemberRestrictionInput {
   readonly userId: number;
 }
 
+export interface SetChatPermissionsInput {
+  readonly chat: SupergroupMessageTarget;
+  /**
+   * What members may do by default; a permission set to `true` is granted, and, unlike in the Bot
+   * API, none implies another.
+   */
+  readonly permissions: Readonly<Partial<Record<ChatPermission, boolean>>>;
+}
+
 export interface ExpireChatMemberRestrictionInput {
   /** The supergroup's chat ID. */
   readonly chatId: number;
@@ -1638,6 +1647,13 @@ export interface VirtualAccountClient extends VirtualAccountProfile {
    * plain member. Lifting no restriction has no effect.
    */
   liftChatMemberRestriction(input: LiftChatMemberRestrictionInput): Promise<void>;
+  /**
+   * Changes what the members of a supergroup may do by default, as `setChatPermissions` does for
+   * an administrator bot; this account must own the supergroup or hold `can_restrict_members`.
+   * Members, bots included, are then refused what the defaults withhold, while the owner and
+   * administrators are exempt. Bots see the defaults as `permissions` in `getChat`.
+   */
+  setChatPermissions(input: SetChatPermissionsInput): Promise<void>;
   /**
    * Sets this account's own custom title in a supergroup it owns, or an administrator's, which
    * bots see as `custom_title` in its chat member. An administrator keeps its title when its

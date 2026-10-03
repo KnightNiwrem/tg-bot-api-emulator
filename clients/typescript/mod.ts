@@ -137,6 +137,7 @@ export type {
   RichText,
   RichTextObject,
   SendInlineQueryInput,
+  SetChatPermissionsInput,
   SetContentProtectionInput,
   SetCustomTitleInput,
   Supergroup,

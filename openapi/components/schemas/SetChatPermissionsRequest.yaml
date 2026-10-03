@@ -1,0 +1,19 @@
+type: object
+additionalProperties: false
+required:
+  - chat_id
+properties:
+  chat_id:
+    $ref: ./ChatIdentifier.yaml
+    description: >-
+      Identifier of the chat: for a supergroup, its negative chat ID; for a private chat, whose
+      permissions cannot be changed, the account's user ID.
+  permissions:
+    $ref: ./ChatPermissionsParameter.yaml
+  use_independent_chat_permissions:
+    type: boolean
+    default: false
+    description: >-
+      Whether each permission stands alone. Otherwise, as on Telegram, `can_send_polls` implies
+      `can_send_messages`, and `can_send_other_messages` or `can_add_web_page_previews` implies
+      every media permission and `can_send_messages`.

@@ -613,7 +613,7 @@ Deno.test('TypeScript client runs supergroups with members, messages, and button
   throw new Error('Expected a non-member to be refused the supergroup history');
 });
 
-Deno.test('TypeScript client restricts a member, lifts it, and ends a temporary restriction', async () => {
+Deno.test('TypeScript client restricts members and changes what members may do by default', async () => {
   const publicOrigin = 'http://emulator.example:9000';
   const api = createEmulationApi({
     sessionLifecycle: createSessionLifecycleService(),
@@ -661,14 +661,19 @@ Deno.test('TypeScript client restricts a member, lifts it, and ends a temporary 
     userId: member.id,
   });
   const afterExpiry = await sendText();
-  if (
-    JSON.stringify([whileRestricted, afterLifting, whileMuted, statusAfterExpiry, afterExpiry]) !==
-      JSON.stringify([403, 'sent', 403, 'member', 'sent'])
-  ) {
+  await owner.setChatPermissions({ chat, permissions: { can_send_photos: true } });
+  const underDefaults = await sendText();
+  const outcomes = [
+    whileRestricted,
+    afterLifting,
+    whileMuted,
+    statusAfterExpiry,
+    afterExpiry,
+    underDefaults,
+  ];
+  if (JSON.stringify(outcomes) !== JSON.stringify([403, 'sent', 403, 'member', 'sent', 403])) {
     throw new Error(
-      `Expected restrictions to decide what the member sends, received ${
-        JSON.stringify([whileRestricted, afterLifting, whileMuted, statusAfterExpiry, afterExpiry])
-      }`,
+      `Expected permissions to decide what the member sends, received ${JSON.stringify(outcomes)}`,
     );
   }
   await session.end();

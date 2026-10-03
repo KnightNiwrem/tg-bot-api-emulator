@@ -1,0 +1,72 @@
+description: >-
+  Telegram Bot API method for changing what a supergroup's members may do by default, which bots
+  then see as `permissions` in `getChat`. As TDLib's `set_dialog_permissions` requires, the bot
+  needs the `can_restrict_members` administrator right. `permissions` is read with the official
+  server's implications unless `use_independent_chat_permissions` is true, and a missing object
+  withholds every permission. Members, bots included, are refused what the default permissions
+  withhold, and a restricted member is refused what its restriction withholds too; the owner and
+  administrators are exempt, though a bot never gets `can_change_info`, `can_invite_users`,
+  `can_pin_messages`, or `can_manage_topics` from the defaults. No service message records the
+  change, and no bot receives an update for it. The permissions the supergroup has change
+  nothing.
+parameters:
+  - $ref: ../components/parameters/SessionId.yaml
+  - $ref: ../components/parameters/BotToken.yaml
+post:
+  operationId: setChatPermissions
+  summary: Change a supergroup's default permissions as the authenticated virtual bot
+  requestBody:
+    required: true
+    content:
+      application/json:
+        schema:
+          $ref: ../components/schemas/SetChatPermissionsRequest.yaml
+      application/x-www-form-urlencoded:
+        schema:
+          $ref: ../components/schemas/SetChatPermissionsRequest.yaml
+      multipart/form-data:
+        schema:
+          $ref: ../components/schemas/SetChatPermissionsRequest.yaml
+  responses:
+    '200':
+      description: The supergroup's members may do what the permissions grant.
+      content:
+        application/json:
+          schema:
+            $ref: ../components/schemas/TrueResultResponse.yaml
+    '400':
+      description: >-
+        The request cannot be decoded or has unsupported parameters, such as the deprecated
+        permissions given as separate parameters, or Telegram would reject it, in this order:
+        `permissions` is not JSON (`Bad Request: can't parse permissions JSON object`), not an
+        object (`Bad Request: object expected as permissions`), or has a field that is not a
+        boolean (`Bad Request: can't parse chat permissions: Field "…" must be of type
+        Boolean`); `chat_id` is missing (`Bad Request: chat_id is empty`); the chat is neither a
+        private chat with an account that has written to the bot nor a supergroup the bot is or
+        was a member of (`Bad Request: chat not found`); the chat is a private chat (`Bad
+        Request: can't change private chat permissions`); or the bot lacks
+        `can_restrict_members` (`Bad Request: not enough rights to change chat permissions`),
+        even for the permissions the supergroup has.
+      content:
+        application/json:
+          schema:
+            $ref: ../components/schemas/BotApiErrorResponse.yaml
+    '401':
+      description: The token does not belong to a virtual bot in the addressed session.
+      content:
+        application/json:
+          schema:
+            $ref: ../components/schemas/BotApiErrorResponse.yaml
+    '403':
+      description: >-
+        The bot left the supergroup (`Forbidden: bot is not a member of the
+        supergroup chat`) or was removed from it (`Forbidden: bot was kicked from
+        the supergroup chat`).
+      content:
+        application/json:
+          schema:
+            $ref: ../components/schemas/BotApiErrorResponse.yaml
+    '404':
+      description: No active test session has the supplied identifier.
+    '429':
+      $ref: ../components/responses/BotApiRateLimited.yaml

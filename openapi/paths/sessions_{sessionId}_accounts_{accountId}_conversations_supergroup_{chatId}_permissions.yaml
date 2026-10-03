@@ -1,0 +1,32 @@
+description: >-
+  What a supergroup's members may do by default, which a member with the `can_restrict_members`
+  right changes, as Telegram's clients do through TDLib's `set_dialog_permissions`.
+parameters:
+  - $ref: ../components/parameters/SessionId.yaml
+  - $ref: ../components/parameters/AccountId.yaml
+  - $ref: ../components/parameters/SupergroupChatId.yaml
+put:
+  operationId: setSupergroupDefaultPermissions
+  summary: Change the default permissions of a supergroup as one of its members
+  description: >-
+    Grants members exactly the listed permissions by default; unlike in the Bot API, no
+    permission implies another. The owner may change them, and so may an administrator with
+    `can_restrict_members`. Bots see them as `permissions` in `getChat`; no service message
+    records the change, and no bot receives an update for it.
+  requestBody:
+    required: true
+    content:
+      application/json:
+        schema:
+          $ref: ../components/schemas/SetSupergroupDefaultPermissionsRequest.yaml
+  responses:
+    '204':
+      description: The supergroup's members may do what the permissions grant.
+    '400':
+      description: A path identifier or the body is invalid.
+    '403':
+      description: >-
+        The account is not a member of the supergroup, or lacks the `can_restrict_members`
+        right.
+    '404':
+      description: The session, account, or supergroup does not exist.

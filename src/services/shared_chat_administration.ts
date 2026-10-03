@@ -35,7 +35,11 @@ import {
   type SupergroupAdministratorRights,
   type SupergroupBotAccessFailureReason,
 } from '../types/chat_membership.ts';
-import { ALL_CHAT_PERMISSIONS, type ChatPermissions } from '../types/chat_permissions.ts';
+import {
+  ALL_CHAT_PERMISSIONS,
+  type ChatPermissions,
+  isSameChatPermissions,
+} from '../types/chat_permissions.ts';
 import type { VirtualAccount } from '../types/virtual_account.ts';
 import type { VirtualBot } from '../types/virtual_bot.ts';
 import {
@@ -288,6 +292,27 @@ export type ChangeSupergroupDescriptionResult =
     readonly reason: SupergroupInfoChangeFailureReason | 'description_not_modified';
   };
 
+export interface ChangeDefaultPermissionsInput {
+  /** The account or bot that changes what members may do by default. */
+  readonly actor: SupergroupMessageAuthor;
+  readonly chatId: number;
+  /** What members may do from now on, unless a restriction of their own withholds more. */
+  readonly permissions: ChatPermissions;
+}
+
+export type ChangeDefaultPermissionsResult =
+  | { readonly changed: true }
+  | {
+    readonly changed: false;
+    readonly reason:
+      | 'actor_not_found'
+      | SupergroupBotAccessFailureReason
+      /** The actor is an account that is not a member of the supergroup. */
+      | 'not_a_member'
+      /** The actor lacks the `can_restrict_members` administrator right. */
+      | 'not_enough_rights';
+  };
+
 export interface DemoteChatMemberInput {
   /** The owner, who alone demotes administrators here. */
   readonly actorAccountId: number;
@@ -533,6 +558,7 @@ interface ChatMembershipStore {
     info: { readonly title?: string; readonly description?: string },
   ): boolean;
   updateSupergroupContentProtection(chatId: number, hasProtectedContent: boolean): boolean;
+  updateSupergroupDefaultPermissions(chatId: number, defaultPermissions: ChatPermissions): boolean;
   removeChatMember(
     chatId: number,
     memberId: number,
@@ -1200,7 +1226,7 @@ export class SharedChatAdministrationService {
    * supergroup has succeeds without effect; a new one is recorded as the actor's service message.
    */
   changeSupergroupTitle(input: ChangeSupergroupTitleInput): ChangeSupergroupTitleResult {
-    const access = this.#resolveSupergroupInfoEditor(input);
+    const access = this.#resolveSupergroupActor(input);
     if (!access.resolved) {
       return { changed: false, reason: access.reason };
     }
@@ -1240,7 +1266,7 @@ export class SharedChatAdministrationService {
   changeSupergroupDescription(
     input: ChangeSupergroupDescriptionInput,
   ): ChangeSupergroupDescriptionResult {
-    const access = this.#resolveSupergroupInfoEditor(input);
+    const access = this.#resolveSupergroupActor(input);
     if (!access.resolved) {
       return { changed: false, reason: access.reason };
     }
@@ -1263,6 +1289,30 @@ export class SharedChatAdministrationService {
   }
 
   /**
+   * Changes what a supergroup's members may do by default, as an account or a bot, as TDLib's
+   * `set_dialog_permissions` does: the actor needs the `can_restrict_members` right, which the
+   * owner holds, and permissions the supergroup has succeed without effect. Administrators stay
+   * exempt, and a restricted member's restriction may withhold more. No service message records
+   * the change, and no bot receives an update for it.
+   */
+  changeDefaultPermissions(input: ChangeDefaultPermissionsInput): ChangeDefaultPermissionsResult {
+    const access = this.#resolveSupergroupActor(input);
+    if (!access.resolved) {
+      return { changed: false, reason: access.reason };
+    }
+    if (!holdsSupergroupAdministratorRight(access.membership, 'can_restrict_members')) {
+      return { changed: false, reason: 'not_enough_rights' };
+    }
+    if (isSameChatPermissions(access.supergroup.defaultPermissions, input.permissions)) {
+      return { changed: true };
+    }
+    if (!this.#sharedChats.updateSupergroupDefaultPermissions(input.chatId, input.permissions)) {
+      throw new Error(`Supergroup ${input.chatId} could not be updated`);
+    }
+    return { changed: true };
+  }
+
+  /**
    * Finds the chat a bot addresses by a public username, as the official Bot API server's
    * `check_chat` finds it with `searchPublicChat`: a public supergroup, or the private chat with a
    * bot, whose ID is the bot's. An account's username names no chat a bot may address this way.
@@ -1279,11 +1329,11 @@ export class SharedChatAdministrationService {
   }
 
   /**
-   * Resolves a supergroup whose information an account or a bot changes, and the actor's
-   * membership: a bot as the Bot API server's `check_chat` requires for writing, and an account
-   * as a member of the supergroup.
+   * Resolves a supergroup whose information or settings an account or a bot changes, and the
+   * actor's membership: a bot as the Bot API server's `check_chat` requires for writing, and an
+   * account as a member of the supergroup.
    */
-  #resolveSupergroupInfoEditor(
+  #resolveSupergroupActor(
     { actor, chatId }: { readonly actor: SupergroupMessageAuthor; readonly chatId: number },
   ):
     | {
