@@ -78,7 +78,9 @@ import {
 } from '../types/rich_message.ts';
 import {
   isWebVoiceNoteSentAsVoiceNote,
+  type StoredDocumentFile,
   type StoredFile,
+  type StoredPhotoFile,
   type VideoAttributes,
   type WebFile,
 } from '../types/stored_file.ts';
@@ -140,6 +142,8 @@ import type {
   AnswerInlineQueryInput,
   AnswerInlineQueryResult,
   SpecifiedInlineQueryResult,
+  SpecifiedInlineResultFile,
+  SpecifiedInlineResultWebMedia,
 } from './inline_query.ts';
 import type {
   CaptionNormalization,
@@ -4778,76 +4782,41 @@ export class BotApiService {
           },
         };
       case 'photo': {
-        const caption = { caption: result.caption.text, captionEntities: result.caption.entities };
-        const listing = {
-          ...shared,
-          kind: 'photo' as const,
-          thumbnailUrl: result.thumbnailUrl,
-          title: result.title,
-        };
-        if (result.photo.kind === 'url') {
-          const { url } = result.photo;
-          return {
-            resolved: true,
-            result: {
-              ...listing,
-              photo: { source: 'web', url },
-              messageContent: messageContent ?? {
-                kind: 'web_photo',
-                url,
-                ...caption,
-                showsCaptionAboveMedia: result.showsCaptionAboveMedia,
-              },
-            },
-          };
+        const resolution = this.#resolveInlineResultFile(authenticatedBot, result.photo, 'photo');
+        if (!resolution.resolved) {
+          return resolution;
         }
-        const file = this.#mediaFiles.findObserverFile(authenticatedBot.id, result.photo.fileId);
-        if (file?.type !== 'photo') {
-          return { resolved: false, failure: fileIdFailure(file, 'photo') };
-        }
+        const photo = resolution.file;
         return {
           resolved: true,
           result: {
-            ...listing,
-            photo: { source: 'stored', file },
-            messageContent: messageContent ?? {
-              kind: 'photo',
-              photo: { kind: 'stored', file },
-              ...caption,
-              hasSpoiler: false,
-              showsCaptionAboveMedia: result.showsCaptionAboveMedia,
-            },
+            ...shared,
+            kind: 'photo',
+            photo,
+            thumbnailUrl: result.thumbnailUrl,
+            title: result.title,
+            messageContent: messageContent ?? toInlineResultPhotoContent(photo, result),
           },
         };
       }
       case 'document': {
-        const caption = { caption: result.caption.text, captionEntities: result.caption.entities };
-        const listing = { ...shared, kind: 'document' as const, title: result.title };
-        if (result.document.kind === 'url') {
-          const { url } = result.document;
-          return {
-            resolved: true,
-            result: {
-              ...listing,
-              document: { source: 'web', url },
-              messageContent: messageContent ?? { kind: 'web_document', url, ...caption },
-            },
-          };
+        const resolution = this.#resolveInlineResultFile(
+          authenticatedBot,
+          result.document,
+          'document',
+        );
+        if (!resolution.resolved) {
+          return resolution;
         }
-        const file = this.#mediaFiles.findObserverFile(authenticatedBot.id, result.document.fileId);
-        if (file?.type !== 'document') {
-          return { resolved: false, failure: fileIdFailure(file, 'document') };
-        }
+        const document = resolution.file;
         return {
           resolved: true,
           result: {
-            ...listing,
-            document: { source: 'stored', file },
-            messageContent: messageContent ?? {
-              kind: 'document',
-              document: { kind: 'stored', file },
-              ...caption,
-            },
+            ...shared,
+            kind: 'document',
+            document,
+            title: result.title,
+            messageContent: messageContent ?? toInlineResultDocumentContent(document, result),
           },
         };
       }
@@ -4856,6 +4825,33 @@ export class BotApiService {
         throw new Error(`Unhandled inline query result: ${JSON.stringify(unhandledResult)}`);
       }
     }
+  }
+
+  /**
+   * Resolves the file of a media result: one the bot knows by `file_id`, which must be a file of
+   * the result's type, or one it names by URL, which keeps its URL for Telegram to download when the
+   * result is sent.
+   */
+  #resolveInlineResultFile<Type extends StoredFile['type']>(
+    authenticatedBot: VirtualBotProfile,
+    file: InlineResultFileRequest,
+    expectedFileType: Type,
+  ):
+    | {
+      readonly resolved: true;
+      readonly file: SpecifiedInlineResultFile<Extract<StoredFile, { readonly type: Type }>>;
+    }
+    | {
+      readonly resolved: false;
+      readonly failure: { readonly reason: 'file_id_invalid' } | FileTypeMismatchFailure;
+    } {
+    if (file.kind === 'url') {
+      return { resolved: true, file: { source: 'web', url: file.url } };
+    }
+    const storedFile = this.#mediaFiles.findObserverFile(authenticatedBot.id, file.fileId);
+    return isStoredFileOfType(storedFile, expectedFileType)
+      ? { resolved: true, file: { source: 'stored', file: storedFile } }
+      : { resolved: false, failure: fileIdFailure(storedFile, expectedFileType) };
   }
 
   /**
@@ -5166,6 +5162,55 @@ function getResolvedFile<RequestedFile, ResolvedFile>(
     throw new Error('Expected every file of the rich message to be resolved');
   }
   return resolvedFile;
+}
+
+function isStoredFileOfType<Type extends StoredFile['type']>(
+  file: StoredFile | undefined,
+  type: Type,
+): file is Extract<StoredFile, { readonly type: Type }> {
+  return file?.type === type;
+}
+
+/** The caption a media result specified, as new content takes it. */
+function toSpecifiedCaption({ caption }: { readonly caption: SpecifiedFormattedText }) {
+  return { caption: caption.text, captionEntities: caption.entities };
+}
+
+/**
+ * What a photo result sends without `input_message_content`: its photo, a stored one or one
+ * named by URL, with its caption; inline results cover no photo with a spoiler.
+ */
+function toInlineResultPhotoContent(
+  photo: SpecifiedInlineResultFile<StoredPhotoFile>,
+  result: Extract<InlineQueryResultRequest, { readonly kind: 'photo' }>,
+): OutgoingContentOtherThanPoll | SpecifiedInlineResultWebMedia {
+  const presentation = {
+    ...toSpecifiedCaption(result),
+    showsCaptionAboveMedia: result.showsCaptionAboveMedia,
+  };
+  return photo.source === 'web' ? { kind: 'web_photo', url: photo.url, ...presentation } : {
+    kind: 'photo',
+    photo: { kind: 'stored', file: photo.file },
+    ...presentation,
+    hasSpoiler: false,
+  };
+}
+
+/**
+ * What a document result sends without `input_message_content`: its document, a stored one or
+ * one named by URL, with its caption.
+ */
+function toInlineResultDocumentContent(
+  document: SpecifiedInlineResultFile<StoredDocumentFile>,
+  result: Extract<InlineQueryResultRequest, { readonly kind: 'document' }>,
+): OutgoingContentOtherThanPoll | SpecifiedInlineResultWebMedia {
+  return document.source === 'web'
+    ? { kind: 'web_document', url: document.url, ...toSpecifiedCaption(result) }
+    : {
+      kind: 'document',
+      document: { kind: 'stored', file: document.file },
+      ...toSpecifiedCaption(result),
+    };
 }
 
 /**

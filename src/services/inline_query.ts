@@ -74,7 +74,7 @@ export type SendInlineQueryResult =
   | { readonly sent: false; readonly reason: SendInlineQueryFailureReason };
 
 /** The file a media result lists: one the bot knows by `file_id`, or one it names by URL. */
-type SpecifiedInlineResultFile<Stored extends StoredFile> =
+export type SpecifiedInlineResultFile<Stored extends StoredFile> =
   | { readonly source: 'stored'; readonly file: Stored }
   | { readonly source: 'web'; readonly url: string };
 
