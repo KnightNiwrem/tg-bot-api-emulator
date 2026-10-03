@@ -1,7 +1,4 @@
-import { createEmulationApi } from '../src/api/mod.ts';
-import { createSessionLifecycleService } from '../src/composition/session_lifecycle.ts';
-
-type EmulationApi = ReturnType<typeof createEmulationApi>;
+import { createTestSession, requestJson } from './support/emulation_api.ts';
 
 interface BotApiResponse {
   readonly ok: boolean;
@@ -34,14 +31,7 @@ interface CreatedBot {
  * privacy mode, and an outsider bot is in no chat.
  */
 async function createPinFixture() {
-  const api = createEmulationApi({
-    sessionLifecycle: createSessionLifecycleService(),
-    publicOrigin: 'http://emulator.example:9000',
-  });
-  const sessionPath = (await api.request('/sessions', { method: 'POST' })).headers.get('Location');
-  if (sessionPath === null) {
-    throw new Error('Expected the created session to have a Location');
-  }
+  const { api, sessionPath } = await createTestSession();
   const createAccount = async (firstName: string) =>
     (await requestJson<{ account: { id: number } }>(
       api,
@@ -440,25 +430,6 @@ Deno.test('a bot that excludes message updates still pins, and the call is recor
     'the activity log records the call with its chat',
   );
 });
-
-async function requestJson<Body>(
-  api: EmulationApi,
-  method: 'DELETE' | 'GET' | 'POST' | 'PUT',
-  path: string,
-  body?: unknown,
-): Promise<{ status: number; body: Body }> {
-  const response = await api.request(path, {
-    method,
-    ...(body === undefined
-      ? {}
-      : { headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) }),
-  });
-  const text = await response.text();
-  return {
-    status: response.status,
-    body: (text.length === 0 ? undefined : JSON.parse(text)) as Body,
-  };
-}
 
 function expectEqual(actual: unknown, expected: unknown, message: string): void {
   if (JSON.stringify(actual) !== JSON.stringify(expected)) {

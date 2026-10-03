@@ -1,10 +1,11 @@
 import { Bot } from 'https://cdn.jsdelivr.net/gh/grammyjs/grammY@^1.46.0/src/bot.ts';
 import { webhookCallback } from 'https://cdn.jsdelivr.net/gh/grammyjs/grammY@^1.46.0/src/convenience/webhook.ts';
-
-import { createEmulationApi } from '../src/api/mod.ts';
-import { createSessionLifecycleService } from '../src/composition/session_lifecycle.ts';
-
-type EmulationApi = ReturnType<typeof createEmulationApi>;
+import {
+  createTestSession,
+  type EmulationApi,
+  requestJson,
+  TEST_PUBLIC_ORIGIN,
+} from './support/emulation_api.ts';
 
 interface BotApiResponse {
   readonly ok: boolean;
@@ -57,14 +58,7 @@ const PHOTO_BASE64 = btoa(
  * is an account outside the supergroup.
  */
 async function createRestrictionFixture() {
-  const api = createEmulationApi({
-    sessionLifecycle: createSessionLifecycleService(),
-    publicOrigin: 'http://emulator.example:9000',
-  });
-  const sessionPath = (await api.request('/sessions', { method: 'POST' })).headers.get('Location');
-  if (sessionPath === null) {
-    throw new Error('Expected the created session to have a Location');
-  }
+  const { api, sessionPath } = await createTestSession();
   const createAccount = async (firstName: string) =>
     (await requestJson<{ account: { id: number; first_name: string } }>(
       api,
@@ -220,25 +214,6 @@ function restrictedMember(
     until_date: untilDate,
     ...permissionFields(granted),
     is_member: isMember,
-  };
-}
-
-async function requestJson<Body>(
-  api: EmulationApi,
-  method: 'DELETE' | 'GET' | 'POST' | 'PUT',
-  path: string,
-  body?: unknown,
-): Promise<{ status: number; body: Body }> {
-  const response = await api.request(path, {
-    method,
-    ...(body === undefined
-      ? {}
-      : { headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) }),
-  });
-  const text = await response.text();
-  return {
-    status: response.status,
-    body: (text.length === 0 ? undefined : JSON.parse(text)) as Body,
   };
 }
 
@@ -783,7 +758,7 @@ Deno.test('a grammY bot mutes a member through its webhook and observes the chan
   } = await createRestrictionFixture();
   const grammyBot = new Bot(moderatorBot.token, {
     client: {
-      apiRoot: `http://emulator.example:9000${sessionPath}/bot-api`,
+      apiRoot: `${TEST_PUBLIC_ORIGIN}${sessionPath}/bot-api`,
       fetch: async (input, init) => await api.fetch(new Request(input, init)),
     },
   });

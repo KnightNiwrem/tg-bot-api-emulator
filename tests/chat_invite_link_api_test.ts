@@ -1,7 +1,9 @@
-import { createEmulationApi } from '../src/api/mod.ts';
-import { createSessionLifecycleService } from '../src/composition/session_lifecycle.ts';
-
-type EmulationApi = ReturnType<typeof createEmulationApi>;
+import {
+  createSession,
+  createTestSession,
+  type EmulationApi,
+  requestJson,
+} from './support/emulation_api.ts';
 
 interface BotApiResponse {
   readonly ok: boolean;
@@ -38,11 +40,7 @@ const INVITER_RIGHTS = { can_invite_users: true };
  * membership updates and messages.
  */
 async function createInviteLinkFixture() {
-  const api = createEmulationApi({
-    sessionLifecycle: createSessionLifecycleService(),
-    publicOrigin: 'http://emulator.example:9000',
-  });
-  const sessionPath = await createSession(api);
+  const { api, sessionPath } = await createTestSession();
   const createAccount = (firstName: string) => createSessionAccount(api, sessionPath, firstName);
   const ada = await createAccount('Ada');
   const grace = await createAccount('Grace');
@@ -156,14 +154,6 @@ async function createInviteLinkFixture() {
   };
 }
 
-async function createSession(api: EmulationApi): Promise<string> {
-  const sessionPath = (await api.request('/sessions', { method: 'POST' })).headers.get('Location');
-  if (sessionPath === null) {
-    throw new Error('Expected the created session to have a Location');
-  }
-  return sessionPath;
-}
-
 async function createSessionAccount(
   api: EmulationApi,
   sessionPath: string,
@@ -239,25 +229,6 @@ function inviteLinkHash(inviteLink: string): string {
 /** The link as an administrator other than its creator sees it, with half its hash hidden. */
 function hiddenInviteLink(inviteLink: string): string {
   return `https://t.me/+${inviteLinkHash(inviteLink).slice(0, 8)}...`;
-}
-
-async function requestJson<Body>(
-  api: EmulationApi,
-  method: 'DELETE' | 'GET' | 'POST' | 'PUT',
-  path: string,
-  body?: unknown,
-): Promise<{ status: number; body: Body }> {
-  const response = await api.request(path, {
-    method,
-    ...(body === undefined
-      ? {}
-      : { headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) }),
-  });
-  const text = await response.text();
-  return {
-    status: response.status,
-    body: (text.length === 0 ? undefined : JSON.parse(text)) as Body,
-  };
 }
 
 function jsonRequest(method: 'POST' | 'PUT', body: unknown): RequestInit {

@@ -1,7 +1,4 @@
-import { createEmulationApi } from '../src/api/mod.ts';
-import { createSessionLifecycleService } from '../src/composition/session_lifecycle.ts';
-
-type EmulationApi = ReturnType<typeof createEmulationApi>;
+import { createTestSession, type EmulationApi, requestJson } from './support/emulation_api.ts';
 
 interface TestContact {
   readonly phone_number: string;
@@ -25,14 +22,7 @@ interface TestMessage {
  * a private chat with the bot.
  */
 async function createContactFixture() {
-  const api = createEmulationApi({
-    sessionLifecycle: createSessionLifecycleService(),
-    publicOrigin: 'http://emulator.example:9000',
-  });
-  const sessionPath = (await api.request('/sessions', { method: 'POST' })).headers.get('Location');
-  if (sessionPath === null) {
-    throw new Error('Expected the created session to have a Location');
-  }
+  const { api, sessionPath } = await createTestSession();
   const createAccount = async (profile: Record<string, unknown>) =>
     (await requestJson<{ account: { id: number } }>(
       api,
@@ -126,25 +116,6 @@ function createUpdateReader(api: EmulationApi, botApiPath: string) {
       nextOffset = lastUpdateId + 1;
     }
     return body.result.map(({ update_id: _updateId, ...update }) => update);
-  };
-}
-
-async function requestJson<Body>(
-  api: EmulationApi,
-  method: 'DELETE' | 'GET' | 'POST' | 'PUT',
-  path: string,
-  body?: unknown,
-): Promise<{ status: number; body: Body }> {
-  const response = await api.request(path, {
-    method,
-    ...(body === undefined
-      ? {}
-      : { headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) }),
-  });
-  const text = await response.text();
-  return {
-    status: response.status,
-    body: (text.length === 0 ? undefined : JSON.parse(text)) as Body,
   };
 }
 

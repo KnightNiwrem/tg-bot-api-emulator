@@ -1,10 +1,11 @@
 import { Bot } from 'https://cdn.jsdelivr.net/gh/grammyjs/grammY@^1.46.0/src/bot.ts';
 import { webhookCallback } from 'https://cdn.jsdelivr.net/gh/grammyjs/grammY@^1.46.0/src/convenience/webhook.ts';
-
-import { createEmulationApi } from '../src/api/mod.ts';
-import { createSessionLifecycleService } from '../src/composition/session_lifecycle.ts';
-
-type EmulationApi = ReturnType<typeof createEmulationApi>;
+import {
+  createTestSession,
+  type EmulationApi,
+  requestJson,
+  TEST_PUBLIC_ORIGIN,
+} from './support/emulation_api.ts';
 
 interface TestPollOption {
   readonly persistent_id: string;
@@ -48,14 +49,7 @@ interface PollAnswerResponse {
  * account outside the supergroup.
  */
 async function createPollFixture() {
-  const api = createEmulationApi({
-    sessionLifecycle: createSessionLifecycleService(),
-    publicOrigin: 'http://emulator.example:9000',
-  });
-  const sessionPath = (await api.request('/sessions', { method: 'POST' })).headers.get('Location');
-  if (sessionPath === null) {
-    throw new Error('Expected the created session to have a Location');
-  }
+  const { api, sessionPath } = await createTestSession();
   const createAccount = async (firstName: string) =>
     (await requestJson<{ account: { id: number } }>(
       api,
@@ -191,25 +185,6 @@ function createUpdateReader(api: EmulationApi) {
       nextOffsetsByBotApiPath.set(botApiPath, lastUpdateId + 1);
     }
     return body.result.map(({ update_id: _updateId, ...update }) => update);
-  };
-}
-
-async function requestJson<Body>(
-  api: EmulationApi,
-  method: 'DELETE' | 'GET' | 'POST' | 'PUT',
-  path: string,
-  body?: unknown,
-): Promise<{ status: number; body: Body }> {
-  const response = await api.request(path, {
-    method,
-    ...(body === undefined
-      ? {}
-      : { headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) }),
-  });
-  const text = await response.text();
-  return {
-    status: response.status,
-    body: (text.length === 0 ? undefined : JSON.parse(text)) as Body,
   };
 }
 
@@ -728,7 +703,7 @@ Deno.test('a grammY bot sends a poll in reply to a command, and accounts vote in
     await createPollFixture();
   const grammyBot = new Bot(botToken, {
     client: {
-      apiRoot: `http://emulator.example:9000${sessionPath}/bot-api`,
+      apiRoot: `${TEST_PUBLIC_ORIGIN}${sessionPath}/bot-api`,
       fetch: async (input, init) => await api.fetch(new Request(input, init)),
     },
   });
@@ -1072,7 +1047,7 @@ Deno.test('a grammY bot thanks voters through its webhook, as the activity log s
   } = await createPollFixture();
   const grammyBot = new Bot(botToken, {
     client: {
-      apiRoot: `http://emulator.example:9000${sessionPath}/bot-api`,
+      apiRoot: `${TEST_PUBLIC_ORIGIN}${sessionPath}/bot-api`,
       fetch: async (input, init) => await api.fetch(new Request(input, init)),
     },
   });
