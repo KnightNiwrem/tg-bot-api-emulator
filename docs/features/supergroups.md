@@ -174,8 +174,9 @@ demotions, bans and unbans.
 `getChat` shows a supergroup, or the private chat with an account that has written to the bot, with
 the fields and field order of the official server's full [`JsonChat`][json-chat]. As its
 [`check_chat_access`][chat-read-access] requires for reading, a bot that is not a member may read a
-public supergroup, but not one it was removed from. Fields for data the emulator does not model,
-such as photos, bios, pins and invite links, are omitted. The remaining fields show what a chat
+public supergroup, but not one it was removed from. It shows the newest
+[pinned message](pinned-messages.md#pinned-message-in-getchat). Fields for data the emulator does
+not model, such as photos, bios and invite links, are omitted. The remaining fields show what a chat
 nobody configured further shows:
 
 - `accent_color_id` is TDLib's default [`AccentColorId`][accent-color] of the user or channel ID,
@@ -250,13 +251,14 @@ account's inline query result needs `can_send_other_messages`, as
 [`send_inline_query_result_message`][inline-result-permission] requires for using inline bots, and
 then the permission of its content. The emulation API answers an account's refused message, album,
 forward, button press or inline result with `403`. `can_change_info` decides
-[title and description](#title-and-description) changes.
+[title and description](#title-and-description) changes, and `can_pin_messages` decides
+[pins](pinned-messages.md).
 
 The other permissions are stored and shown but enforce nothing, because the emulator lacks what they
 govern: `can_send_audios` and `can_send_video_notes` (audio and video notes),
 `can_send_other_messages` beyond inline results (stickers, GIFs, games), `can_add_web_page_previews`
 (link previews), `can_react_to_messages` (reactions), `can_edit_tag` (member tags),
-`can_invite_users` (invitations), `can_pin_messages` (pins) and `can_manage_topics` (topics).
+`can_invite_users` (invitations) and `can_manage_topics` (topics).
 
 ### Default permissions
 

@@ -22,6 +22,8 @@ export type {
   AccountMenuButtonInput,
   AccountMessageHistoryInput,
   AccountNotificationsInput,
+  AccountPinMessageInput,
+  AccountPinnedMessagesInput,
   AccountPollAnswer,
   AccountPollMessageInput,
   AccountReplyInterfaceInput,

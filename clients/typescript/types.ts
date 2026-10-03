@@ -543,6 +543,16 @@ export interface AccountMessageHistoryInput<Target extends MessageTarget = Messa
   readonly chat: Target;
 }
 
+export interface AccountPinMessageInput {
+  readonly chat: MessageTarget;
+  /** The ID of the message to pin or unpin, as message history shows it. */
+  readonly message_id: number;
+}
+
+export interface AccountPinnedMessagesInput<Target extends MessageTarget = MessageTarget> {
+  readonly chat: Target;
+}
+
 export interface PressCallbackButtonInput {
   readonly chat: MessageTarget;
   /** The ID of the message carrying the button, as message history shows it. */
@@ -1824,6 +1834,27 @@ export interface VirtualAccountClient extends VirtualAccountProfile {
    */
   getMessages<Target extends MessageTarget>(
     input: AccountMessageHistoryInput<Target>,
+  ): Promise<readonly MessageIn<Target>[]>;
+  /**
+   * Pins a message of this account's private chat with a bot, or of a supergroup it is a member
+   * of; a chat pins any number of messages, and `getChat` shows a bot the newest one. Either
+   * participant of a private chat pins any of its messages; in a supergroup, this account needs
+   * the `can_pin_messages` permission, which the owner holds, an administrator holds with that
+   * right, and the default permissions grant other members unless withheld. Service messages
+   * cannot be pinned, and pinning a pinned message fails, as Telegram refuses it.
+   */
+  pinMessage(input: AccountPinMessageInput): Promise<void>;
+  /**
+   * Unpins a pinned message, with the permission `pinMessage` needs. Unpinning a message that is
+   * not pinned fails, as Telegram refuses it.
+   */
+  unpinMessage(input: AccountPinMessageInput): Promise<void>;
+  /**
+   * Returns the pinned messages of a private conversation or of a supergroup this account is a
+   * member of, newest first by sending date. Deleting a message unpins it.
+   */
+  getPinnedMessages<Target extends MessageTarget>(
+    input: AccountPinnedMessagesInput<Target>,
   ): Promise<readonly MessageIn<Target>[]>;
   /**
    * Returns the chat actions, such as typing, that this account's client shows in its private

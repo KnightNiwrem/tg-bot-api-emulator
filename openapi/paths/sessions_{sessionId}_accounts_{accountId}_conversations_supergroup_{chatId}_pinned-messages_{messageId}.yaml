@@ -1,0 +1,40 @@
+description: Whether a supergroup message is pinned, addressed by the supergroup's message ID.
+parameters:
+  - $ref: ../components/parameters/SessionId.yaml
+  - $ref: ../components/parameters/AccountId.yaml
+  - $ref: ../components/parameters/SupergroupChatId.yaml
+  - $ref: ../components/parameters/SupergroupMessageId.yaml
+put:
+  operationId: pinSupergroupMessage
+  summary: Pin a message of the supergroup
+  description: >-
+    Adds a message to the supergroup's pinned messages; a supergroup pins any number of
+    messages. The account needs the `can_pin_messages` permission: the owner holds it, an
+    administrator holds it with that right or as the default permissions grant it, and any
+    other member as the default permissions and its restriction grant it.
+  responses:
+    '204':
+      description: The message was pinned.
+    '400':
+      description: A path identifier is invalid, or the message is a service message.
+    '403':
+      description: The account is not a member, or lacks the `can_pin_messages` permission.
+    '404':
+      description: The session, account, supergroup, or message does not exist.
+    '409':
+      description: The message is already pinned, which Telegram refuses as not modified.
+delete:
+  operationId: unpinSupergroupMessage
+  summary: Unpin a message of the supergroup
+  description: Removes a pinned message, which needs the same permission as pinning it.
+  responses:
+    '204':
+      description: The message was unpinned.
+    '400':
+      description: A path identifier is invalid, or the message is a service message.
+    '403':
+      description: The account is not a member, or lacks the `can_pin_messages` permission.
+    '404':
+      description: The session, account, supergroup, or message does not exist.
+    '409':
+      description: The message is not pinned, which Telegram refuses as not modified.

@@ -44,6 +44,8 @@ import type {
   AccountMenuButtonInput,
   AccountMessageHistoryInput,
   AccountNotificationsInput,
+  AccountPinMessageInput,
+  AccountPinnedMessagesInput,
   AccountPollAnswer,
   AccountPollMessageInput,
   AccountReplyInterfaceInput,
@@ -689,6 +691,31 @@ function createVirtualAccountClient(
       });
     },
     getMessages,
+    async pinMessage(input: AccountPinMessageInput): Promise<void> {
+      await requestEmptyResponse(fetchImplementation, {
+        method: 'PUT',
+        url: pinnedMessageUrl(accountUrl, input),
+        expectedStatus: HTTP_STATUS_NO_CONTENT,
+      });
+    },
+    async unpinMessage(input: AccountPinMessageInput): Promise<void> {
+      await requestEmptyResponse(fetchImplementation, {
+        method: 'DELETE',
+        url: pinnedMessageUrl(accountUrl, input),
+        expectedStatus: HTTP_STATUS_NO_CONTENT,
+      });
+    },
+    async getPinnedMessages<Target extends MessageTarget>(
+      input: AccountPinnedMessagesInput<Target>,
+    ): Promise<readonly MessageIn<Target>[]> {
+      const response = await requestJson(fetchImplementation, {
+        method: 'GET',
+        url: `${conversationUrl(accountUrl, input.chat)}/pinned-messages`,
+        expectedStatus: HTTP_STATUS_OK,
+        responseSchema: messageResponseSchemasFor(input.chat).history,
+      });
+      return response.messages;
+    },
     async getChatActions(input: AccountChatActionsInput): Promise<readonly ChatAction[]> {
       const response = await requestJson(fetchImplementation, {
         method: 'GET',
@@ -887,6 +914,14 @@ function conversationUrl(accountUrl: string, chat: MessageTarget): string {
   return chat.type === 'private'
     ? `${accountUrl}/conversations/private/${encodeURIComponent(chat.botId)}`
     : `${accountUrl}/conversations/supergroup/${encodeURIComponent(chat.chatId)}`;
+}
+
+/** The URL by which an account pins or unpins a message of its chat. */
+function pinnedMessageUrl(
+  accountUrl: string,
+  { chat, message_id }: AccountPinMessageInput,
+): string {
+  return `${conversationUrl(accountUrl, chat)}/pinned-messages/${encodeURIComponent(message_id)}`;
 }
 
 /** The URL of an account's answer to the poll a message of its chat shows. */

@@ -1,7 +1,8 @@
 description: >-
   Telegram Bot API method for reading everything a bot may learn about a chat: the private chat
   with an account, or a supergroup. As the official server's access check for reading does, a
-  bot that is not a member may read a public supergroup, unless it was removed from it.
+  bot that is not a member may read a public supergroup, unless it was removed from it. The
+  chat's newest pinned message by sending date shows as `pinned_message`.
 parameters:
   - $ref: ../components/parameters/SessionId.yaml
   - $ref: ../components/parameters/BotToken.yaml
