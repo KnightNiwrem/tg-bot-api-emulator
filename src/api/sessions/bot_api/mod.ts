@@ -2892,6 +2892,8 @@ function editMessageAnswer(result: MessageEditResult): BotApiMethodAnswer {
       return botApiError(400, BUTTON_TYPE_INVALID_DESCRIPTION);
     case 'message_not_modified':
       return botApiError(400, MESSAGE_NOT_MODIFIED_DESCRIPTION);
+    case 'send_permission_missing':
+      return botApiError(400, SEND_PERMISSION_MISSING_DESCRIPTIONS[result.contentKind]);
     case 'file_empty':
     case 'image_invalid':
     case 'photo_dimensions_invalid':

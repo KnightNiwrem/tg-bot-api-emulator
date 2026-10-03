@@ -431,7 +431,7 @@ export type SupergroupMessageEditResult<FailureReason extends string> =
 
 export type EditSupergroupBotMessageTextResult =
   | SupergroupMessageEditResult<EditSupergroupBotMessageTextFailureReason>
-  | ({ readonly edited: false } & TextInvalidFailure);
+  | ({ readonly edited: false } & (TextInvalidFailure | SendPermissionMissingFailure));
 
 export type EditSupergroupBotMessageCaptionResult =
   | SupergroupMessageEditResult<EditSupergroupBotMessageCaptionFailureReason>
@@ -439,7 +439,7 @@ export type EditSupergroupBotMessageCaptionResult =
 
 export type EditSupergroupBotMessageMediaResult =
   | SupergroupMessageEditResult<EditSupergroupBotMessageMediaFailureReason>
-  | ({ readonly edited: false } & TextInvalidFailure);
+  | ({ readonly edited: false } & (TextInvalidFailure | SendPermissionMissingFailure));
 
 export interface EditSupergroupAccountMessageInput {
   readonly fromAccountId: number;
@@ -1045,11 +1045,15 @@ export class SupergroupMessagingService {
       return { edited: false, reason: resolution.reason };
     }
     const { message } = resolution;
-    return this.#editBotMessageContent(
-      message,
-      replaceMessageText(message.content, input.content, this.#textFixingContext),
-      input.inlineKeyboard,
-    );
+    const replacement = replaceMessageText(message.content, input.content, this.#textFixingContext);
+    // As TDLib's `edit_message_text` does, only a rich message is checked as new content.
+    const permissionFailure = replacement.replaced && replacement.content.kind === 'rich_message'
+      ? this.#findMissingEditPermission(input, replacement.content)
+      : undefined;
+    if (permissionFailure !== undefined) {
+      return { edited: false, ...permissionFailure };
+    }
+    return this.#editBotMessageContent(message, replacement, input.inlineKeyboard);
   }
 
   /**
@@ -1091,11 +1095,14 @@ export class SupergroupMessagingService {
       return { edited: false, reason: resolution.reason };
     }
     const { message } = resolution;
-    return this.#editBotMessageContent(
-      message,
-      replaceMessageMedia(message, input.media, this.#textFixingContext),
-      input.inlineKeyboard,
-    );
+    const replacement = replaceMessageMedia(message, input.media, this.#textFixingContext);
+    const permissionFailure = replacement.replaced
+      ? this.#findMissingEditPermission(input, replacement.content)
+      : undefined;
+    if (permissionFailure !== undefined) {
+      return { edited: false, ...permissionFailure };
+    }
+    return this.#editBotMessageContent(message, replacement, input.inlineKeyboard);
   }
 
   /**
@@ -1485,6 +1492,34 @@ export class SupergroupMessagingService {
   #checkBotAccess(botId: number, chatId: number): SupergroupBotAccessFailureReason | undefined {
     const resolution = resolveSupergroupBotMembership(this.#sharedChats, botId, chatId);
     return resolution.resolved ? undefined : resolution.reason;
+  }
+
+  /**
+   * Finds a permission the bot lacks for the new content of an edit, as TDLib's
+   * `edit_message_media` and `edit_message_text` check new media and rich messages with
+   * `can_send_message_content`. TDLib checks no permission for a message addressed by its inline
+   * message identifier, which has no chat to check it in.
+   */
+  #findMissingEditPermission(
+    target: EditSupergroupBotMessageTarget,
+    content: NormalizedOutgoingContent,
+  ): SendPermissionMissingFailure | undefined {
+    if ('inlineMessageId' in target) {
+      return undefined;
+    }
+    const botMembership = resolveSupergroupBotMembership(
+      this.#sharedChats,
+      target.fromBotId,
+      target.chatId,
+    );
+    if (!botMembership.resolved) {
+      throw new Error(`Bot ${target.fromBotId} edits in chat ${target.chatId} as no member`);
+    }
+    return this.#findMissingSendPermission(
+      botMembership,
+      { kind: 'bot', botId: target.fromBotId },
+      [content],
+    );
   }
 
   /**

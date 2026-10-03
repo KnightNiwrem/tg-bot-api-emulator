@@ -191,11 +191,39 @@ Deno.test('BotApiService sends, forwards and copies to a supergroup only what th
   sendOwnerContent({ kind: 'text', text: 'Agenda' });
   sendOwnerContent({ kind: 'media', upload: photoUpload(), caption: '' });
   const [textMessageId, photoMessageId] = [2, 3];
+  const botPhoto = botApi.sendPhoto(bot.profile, {
+    chatId,
+    photo: { kind: 'upload', fileName: 'photo.gif', content: photoUpload().content },
+    caption: { text: '' },
+    hasSpoiler: false,
+    showsCaptionAboveMedia: false,
+  });
+  if (!botPhoto.sent) {
+    throw new Error(`Expected the bot's photo to be sent, received ${botPhoto.reason}`);
+  }
   sharedChats.updateChatMemberStatus(chatId, bot.profile.id, {
     status: 'restricted',
     isMember: true,
     permissions: new Set(['can_send_messages']),
   });
+  // As TDLib's `edit_message_media` does, new media of an edit needs its permission too.
+  const mediaEdit = botApi.editMessageMedia(bot.profile, {
+    chatId,
+    messageId: botPhoto.message.message_id,
+    media: {
+      kind: 'photo',
+      photo: { kind: 'upload', fileName: 'other.gif', content: photoUpload().content },
+      caption: { text: 'Replaced' },
+      hasSpoiler: false,
+      showsCaptionAboveMedia: false,
+    },
+  });
+  if (
+    mediaEdit.edited || mediaEdit.reason !== 'send_permission_missing' ||
+    mediaEdit.contentKind !== 'photo'
+  ) {
+    throw new Error(`Expected the media edit to be refused, received ${JSON.stringify(mediaEdit)}`);
+  }
   const reasonOf = (result: { readonly sent: boolean; readonly reason?: string }) =>
     result.sent ? 'sent' : result.reason;
   const repeat = { chatId, fromChatId: chatId };
