@@ -80,7 +80,9 @@ type PinningChatAccessFailureReason =
   | 'chat_not_found'
   | Exclude<SupergroupBotAccessFailureReason, 'chat_not_found'>
   /** The pinner is an account that is not a member of the supergroup. */
-  | 'not_a_member';
+  | 'not_a_member'
+  /** The pinner is a bot whose private chat's account blocks it, so it may not write there. */
+  | 'bot_blocked';
 
 /** Why an account or a bot cannot pin or unpin a message, in the order Telegram checks. */
 type PinChangeFailureReason =
@@ -119,7 +121,10 @@ export type GetPinnedMessagesResult =
   }
   | {
     readonly found: false;
-    readonly reason: Exclude<PinningChatAccessFailureReason, 'bot_not_a_member' | 'bot_kicked'>;
+    readonly reason: Exclude<
+      PinningChatAccessFailureReason,
+      'bot_not_a_member' | 'bot_kicked' | 'bot_blocked'
+    >;
   };
 
 interface AccountLookup {
@@ -128,6 +133,10 @@ interface AccountLookup {
 
 interface BotLookup {
   getById(botId: number): VirtualBot | undefined;
+}
+
+interface BlockedUserLookup {
+  isBlocked(accountId: number, userId: number): boolean;
 }
 
 interface PrivateConversationLookup {
@@ -168,6 +177,8 @@ interface MessagePinningServiceDependencies {
   readonly accounts: AccountLookup;
   readonly bots: BotLookup;
   readonly privateConversations: PrivateConversationLookup;
+  /** Finds the bots an account blocks, which may not pin or unpin in its private chat. */
+  readonly blockedUsers: BlockedUserLookup;
   readonly sharedChats: SupergroupMembershipLookup;
   /** Finds the messages of private chats and records the service messages of their pins. */
   readonly privateMessages: PrivateChatMessages;
@@ -203,6 +214,7 @@ export class MessagePinningService {
   readonly #accounts: AccountLookup;
   readonly #bots: BotLookup;
   readonly #privateConversations: PrivateConversationLookup;
+  readonly #blockedUsers: BlockedUserLookup;
   readonly #sharedChats: SupergroupMembershipLookup;
   readonly #privateMessages: PrivateChatMessages;
   readonly #supergroupMessages: SupergroupChatMessages;
@@ -214,6 +226,7 @@ export class MessagePinningService {
       accounts,
       bots,
       privateConversations,
+      blockedUsers,
       sharedChats,
       privateMessages,
       supergroupMessages,
@@ -224,6 +237,7 @@ export class MessagePinningService {
     this.#accounts = accounts;
     this.#bots = bots;
     this.#privateConversations = privateConversations;
+    this.#blockedUsers = blockedUsers;
     this.#sharedChats = sharedChats;
     this.#privateMessages = privateMessages;
     this.#supergroupMessages = supergroupMessages;
@@ -296,6 +310,7 @@ export class MessagePinningService {
       switch (access.reason) {
         case 'bot_not_a_member':
         case 'bot_kicked':
+        case 'bot_blocked':
           throw new Error(`Account ${accountId} refused as a bot: ${access.reason}`);
         default:
           return { found: false, reason: access.reason };
@@ -345,12 +360,17 @@ export class MessagePinningService {
       : this.#bots.getById(pinner.botId) !== undefined;
   }
 
+  /**
+   * Reaches a private chat: an account's chat with an existing bot, or a bot's chat with an account
+   * that started it and does not block the bot, which, as for its messages and chat actions, may
+   * not write there while blocked.
+   */
   #reachPrivateChat(
     pinner: MessagePinner,
     peerId: number,
   ):
     | { readonly reached: true; readonly chat: ReachedPinningChat }
-    | { readonly reached: false; readonly reason: 'chat_not_found' } {
+    | { readonly reached: false; readonly reason: 'chat_not_found' | 'bot_blocked' } {
     if (pinner.kind === 'account') {
       return this.#bots.getById(peerId) === undefined
         ? { reached: false, reason: 'chat_not_found' }
@@ -360,9 +380,14 @@ export class MessagePinningService {
         };
     }
     const conversation: PrivateConversationKey = { accountId: peerId, botId: pinner.botId };
-    return this.#accounts.getById(peerId) === undefined ||
-        this.#privateConversations.getPrivateConversation(conversation) === undefined
-      ? { reached: false, reason: 'chat_not_found' }
+    if (
+      this.#accounts.getById(peerId) === undefined ||
+      this.#privateConversations.getPrivateConversation(conversation) === undefined
+    ) {
+      return { reached: false, reason: 'chat_not_found' };
+    }
+    return this.#blockedUsers.isBlocked(peerId, pinner.botId)
+      ? { reached: false, reason: 'bot_blocked' }
       : { reached: true, chat: { type: 'private', conversation } };
   }
 

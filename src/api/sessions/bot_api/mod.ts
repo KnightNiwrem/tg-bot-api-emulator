@@ -3309,12 +3309,15 @@ function pinChangeFailureAnswer(
     | 'chat_not_found'
     | 'bot_not_a_member'
     | 'bot_kicked'
+    | 'bot_blocked'
     | 'not_enough_rights'
     | 'service_message_not_pinnable',
 ): BotApiMethodAnswer {
   switch (reason) {
     case 'chat_not_found':
       return botApiError(400, CHAT_NOT_FOUND_DESCRIPTION);
+    case 'bot_blocked':
+      return botApiError(403, BOT_BLOCKED_DESCRIPTION);
     case 'bot_not_a_member':
       return botApiError(403, BOT_NOT_SUPERGROUP_MEMBER_DESCRIPTION);
     case 'bot_kicked':

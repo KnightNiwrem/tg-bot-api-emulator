@@ -1047,6 +1047,8 @@ export interface UnpinChatMessageRequest {
 type BotPinChangeFailureReason =
   | 'chat_not_found'
   | FormerSupergroupMemberFailureReason
+  /** The account of the bot's private chat blocks the bot. */
+  | 'bot_blocked'
   /** No such message is in the chat; for an unpin without a target, no message is pinned. */
   | 'message_not_found'
   /** The bot lacks the `can_pin_messages` administrator right in a supergroup. */

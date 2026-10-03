@@ -304,6 +304,7 @@ Deno.test('supergroup pins need can_pin_messages and reach every bot as a servic
 Deno.test('pin methods refuse unknown chats and messages, service messages, and bad parameters', async () => {
   const {
     api,
+    sessionPath,
     ada,
     grace,
     chatId,
@@ -312,6 +313,7 @@ Deno.test('pin methods refuse unknown chats and messages, service messages, and 
     supergroupPath,
     getHistory,
     callBot,
+    sendToPinningBot,
   } = await createPinFixture();
   const serviceMessageId = (await getHistory(supergroupPath(ada)))[0].message_id;
   const cases: Array<[CreatedBot, string, object, readonly [number, unknown]]> = [
@@ -373,6 +375,20 @@ Deno.test('pin methods refuse unknown chats and messages, service messages, and 
     );
   }
 
+  const privateMessageId = await sendToPinningBot('hello');
+  await api.request(`${sessionPath}/accounts/${ada}/blocked-bots/${pinningBot.id}`, {
+    method: 'PUT',
+  });
+  expectEqual(
+    await callBot(pinningBot, 'pinChatMessage', { chat_id: ada, message_id: privateMessageId }),
+    [403, 'Forbidden: bot was blocked by the user'],
+    'a blocked bot cannot pin in the private chat',
+  );
+  expectEqual(
+    await callBot(pinningBot, 'unpinChatMessage', { chat_id: ada }),
+    [403, 'Forbidden: bot was blocked by the user'],
+    'nor unpin',
+  );
   await api.request(`${supergroupPath(ada)}/members/${pinningBot.id}`, { method: 'DELETE' });
   expectEqual(
     await callBot(pinningBot, 'unpinChatMessage', { chat_id: chatId }),

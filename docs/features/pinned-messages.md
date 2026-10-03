@@ -135,7 +135,8 @@ Pins are kept by Telegram's servers, whose decisions the open-source code shows 
   notifications as disabled in private chats rather than absent, so the emulator records pins in
   private chats as in supergroups.
 - **Blocked bots.** Whether Telegram's servers let a bot pin in the private chat of an account that
-  blocked it is not visible; the emulator lets it.
+  blocked it is not visible. As for the bot's messages and chat actions, the emulator refuses its
+  pins and unpins there with `Forbidden: bot was blocked by the user`.
 
 ## Local evidence
 

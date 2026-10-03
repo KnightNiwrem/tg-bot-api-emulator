@@ -480,6 +480,7 @@ function createBotApiFixture() {
       accounts,
       bots,
       privateConversations,
+      blockedUsers,
       sharedChats,
       privateMessages: privateMessaging,
       supergroupMessages: supergroupMessaging,

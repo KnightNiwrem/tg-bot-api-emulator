@@ -2039,9 +2039,10 @@ function pinChangeFailureStatus(
     case 'message_already_pinned':
     case 'message_not_pinned':
       return 409;
-    // Only bots are refused for their former membership.
+    // Only bots are refused for their former membership, or for being blocked.
     case 'bot_not_a_member':
     case 'bot_kicked':
+    case 'bot_blocked':
       throw new Error(`Account refused as a bot: ${reason}`);
     default: {
       const unhandledReason: never = reason;
