@@ -3742,19 +3742,10 @@ export class BotApiService {
       chatId,
       title,
     });
-    if (result.changed) {
-      return { set: true };
-    }
-    switch (result.reason) {
-      // The authenticated bot exists, and a bot is not refused as an account that is no member.
-      case 'actor_not_found':
-      case 'not_a_member':
-        throw new Error(
-          `Bot ${authenticatedBot.id} could not act in chat ${chatId}: ${result.reason}`,
-        );
-      default:
-        return { set: false, reason: result.reason };
-    }
+    return result.changed ? { set: true } : {
+      set: false,
+      reason: excludeAccountActorFailure(authenticatedBot, chatId, result.reason),
+    };
   }
 
   /**
@@ -3777,19 +3768,10 @@ export class BotApiService {
       chatId,
       description,
     });
-    if (result.changed) {
-      return { set: true };
-    }
-    switch (result.reason) {
-      // The authenticated bot exists, and a bot is not refused as an account that is no member.
-      case 'actor_not_found':
-      case 'not_a_member':
-        throw new Error(
-          `Bot ${authenticatedBot.id} could not act in chat ${chatId}: ${result.reason}`,
-        );
-      default:
-        return { set: false, reason: result.reason };
-    }
+    return result.changed ? { set: true } : {
+      set: false,
+      reason: excludeAccountActorFailure(authenticatedBot, chatId, result.reason),
+    };
   }
 
   /**
@@ -3814,19 +3796,10 @@ export class BotApiService {
       chatId,
       permissions,
     });
-    if (result.changed) {
-      return { set: true };
-    }
-    switch (result.reason) {
-      // The authenticated bot exists, and a bot is not refused as an account that is no member.
-      case 'actor_not_found':
-      case 'not_a_member':
-        throw new Error(
-          `Bot ${authenticatedBot.id} could not act in chat ${chatId}: ${result.reason}`,
-        );
-      default:
-        return { set: false, reason: result.reason };
-    }
+    return result.changed ? { set: true } : {
+      set: false,
+      reason: excludeAccountActorFailure(authenticatedBot, chatId, result.reason),
+    };
   }
 
   /**
@@ -5636,6 +5609,22 @@ function excludeMissingBotFailure<Reason extends string>(
  */
 function toPinningChat(chatId: number): PinningChat {
   return isUserId(chatId) ? { type: 'private', peerId: chatId } : { type: 'supergroup', chatId };
+}
+
+/**
+ * Leaves out the failures of a supergroup change that only an account meets, which an
+ * authenticated bot never does: it exists, and a supergroup refuses it as a former member, not as a
+ * non-member account.
+ */
+function excludeAccountActorFailure<Reason extends string>(
+  authenticatedBot: VirtualBotProfile,
+  chatId: number,
+  reason: Reason | 'actor_not_found' | 'not_a_member',
+): Reason {
+  if (reason === 'actor_not_found' || reason === 'not_a_member') {
+    throw new Error(`Bot ${authenticatedBot.id} could not act in chat ${chatId}: ${reason}`);
+  }
+  return reason;
 }
 
 /**
