@@ -401,9 +401,9 @@ not show. The emulator chooses where they are not visible:
   `set_channel_participant_status_impl` expects when it only adds such a user.
 - A bot's promotion of a user that is not a member fails with `USER_NOT_MUTUAL_CONTACT`, or
   `USER_KICKED` for a banned one, the errors `channels.editAdmin` documents for these users;
-  Telegram may add a user an administrator promotes, which the emulator does not support. Of the
-  servers' checks, the membership comes first, then whether the bot may edit an administrator, then
-  the rights it grants.
+  Telegram may add a user an administrator promotes, which the emulator does not support. The
+  servers' order of their checks is not public; the emulator checks the membership first, then
+  whether the bot may edit an administrator, then the rights it grants.
 - A bot acts on an administrator it promoted indirectly, through administrators it promoted, as the
   Bot API documents for `can_promote_members`; bans and restrictions follow the same chain.
 - Demoting a user that is not a member fails without effect, where TDLib may first lift its ban.

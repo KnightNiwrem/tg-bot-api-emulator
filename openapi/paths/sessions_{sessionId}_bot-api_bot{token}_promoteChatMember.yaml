@@ -1,14 +1,16 @@
 description: >-
   Telegram Bot API method for promoting a supergroup member to administrator, changing an
-  administrator's rights, or demoting one by passing every right as false. The bot needs
-  `can_promote_members` and grants only rights it holds; any right includes `can_manage_chat`,
+  administrator's rights, or demoting one by passing every right as false. To promote anyone or
+  change another administrator, the bot needs `can_promote_members` and grants only rights it
+  holds, though it may demote itself without it; any right includes `can_manage_chat`,
   and the rights that apply only to channels are dropped, as TDLib drops them in supergroups. The
   bot becomes the administrator's promoter, so it may edit the administrator later, as may the
   bots that promoted it, directly or indirectly. An administrator keeps its custom title while its
   rights change and loses it when demoted. Administrator bots subscribed to `chat_member` updates,
   and a promoted bot subscribed to `my_chat_member`, receive the change, each with its own
   `can_be_edited`; no service message records it. A promotion that changes nothing succeeds
-  without updates. Passing every right as false to a restricted member lifts its restriction, as
+  without rights and without updates, but, as TDLib compares `can_be_edited` too, an
+  administrator counts as unchanged only if the bot may edit it. Passing every right as false to a restricted member lifts its restriction, as
   `restrictChatMember` does with every permission.
 parameters:
   - $ref: ../components/parameters/SessionId.yaml
