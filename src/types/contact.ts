@@ -5,7 +5,7 @@
 export const MAX_CONTACT_NAME_LENGTH = 64;
 
 /** The most bytes of a contact's vCard, encoded in UTF-8, as the Bot API documents for `sendContact`. */
-export const MAX_CONTACT_VCARD_BYTES = 2_048;
+const MAX_CONTACT_VCARD_BYTES = 2_048;
 
 /**
  * A phone contact that a message shows, as TDLib's `Contact` holds it. Telegram reads none of its

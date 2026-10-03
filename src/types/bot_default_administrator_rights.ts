@@ -32,7 +32,7 @@ export type DefaultAdministratorRightsChatKind = 'group' | 'channel';
  * The rights that apply to each kind of chat, in the order the official Bot API server shows them
  * for supergroups and channels in `json_store_administrator_rights`.
  */
-export const APPLICABLE_ADMINISTRATOR_RIGHT_NAMES: {
+const APPLICABLE_ADMINISTRATOR_RIGHT_NAMES: {
   readonly [Kind in DefaultAdministratorRightsChatKind]: readonly ChatAdministratorRightName[];
 } = {
   group: [
