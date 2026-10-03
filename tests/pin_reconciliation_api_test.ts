@@ -319,8 +319,16 @@ Deno.test('a reply to a pin service message shows its pin, and nothing once the 
 });
 
 Deno.test('pin service messages cannot be edited, forwarded, or copied, and copies are not pinned', async () => {
-  const { ada, chatId, pinningBot, privatePath, sendToPinningBot, callBot, getHistory } =
-    await createReconciliationFixture();
+  const {
+    ada,
+    chatId,
+    pinningBot,
+    privatePath,
+    sendToPinningBot,
+    callBot,
+    getHistory,
+    getPinnedIds,
+  } = await createReconciliationFixture();
   const messageId = await sendToPinningBot('original');
   await callBot(pinningBot, 'pinChatMessage', { chat_id: ada, message_id: messageId });
   const serviceMessageId = (await getHistory(privatePath)).at(-1)?.message_id;
@@ -352,20 +360,15 @@ Deno.test('pin service messages cannot be edited, forwarded, or copied, and copi
     [400, "Bad Request: the message can't be forwarded"],
     'nor forwarded',
   );
-  const [, copy] = await callBot(pinningBot, 'copyMessage', {
+  const [copyStatus, copy] = await callBot(pinningBot, 'copyMessage', {
     chat_id: ada,
     from_chat_id: ada,
     message_id: messageId,
   });
-  const [, chat] = await callBot(pinningBot, 'getChat', { chat_id: ada });
-  expectEqual(
-    [
-      (copy as { message_id: number }).message_id === messageId,
-      (chat as { pinned_message?: ShownMessage }).pinned_message?.message_id,
-    ],
-    [false, messageId],
-    'a copy of a pinned message is not pinned',
-  );
+  expectEqual(copyStatus, 200, 'a pinned message can be copied');
+  const copyId = (copy as { message_id: number }).message_id;
+  expectEqual(copyId > messageId, true, 'the copy is a new message');
+  expectEqual(await getPinnedIds(privatePath), [messageId], 'only the original is pinned');
 });
 
 async function requestJson<Body>(
