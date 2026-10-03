@@ -11,6 +11,7 @@ import {
 } from '../src/services/bot_command.ts';
 import { VirtualUserService } from '../src/services/virtual_user.ts';
 import type { BotCommand, BotCommandScope } from '../src/types/bot_command.ts';
+import { ALL_CHAT_PERMISSIONS } from '../src/types/chat_permissions.ts';
 
 Deno.test('BotCommandService stores commands cleaned and trimmed as Telegram does', () => {
   const { botCommands, bot } = createBotCommandFixture();
@@ -284,6 +285,12 @@ Deno.test('BotCommandService resolves the commands a member sees in a supergroup
     status: 'administrator',
     rights: new Set(['can_manage_chat']),
   });
+  // A restricted member administers nothing, so it sees the lists of members.
+  sharedChats.updateChatMemberStatus(chatId, member.profile.id, {
+    status: 'restricted',
+    isMember: true,
+    permissions: new Set(['can_send_messages']),
+  });
   const set = (scope: BotCommandScope, languageCode: string, command: string) =>
     assertSet(botCommands.setBotCommands({
       botId: bot.profile.id,
@@ -369,6 +376,7 @@ function registerSupergroup(
       title: 'Team',
       chatInstance: String(-chatId),
       hasProtectedContent: false,
+      defaultPermissions: ALL_CHAT_PERMISSIONS,
     },
     ownerAccountId,
   );

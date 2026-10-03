@@ -5,6 +5,7 @@ import { SharedChatRepository } from '../src/repositories/shared_chat.ts';
 import { TelegramIdentityRepository } from '../src/repositories/telegram_identity.ts';
 import { ChatActionService, type GetChatActionsResult } from '../src/services/chat_action.ts';
 import { VirtualUserService } from '../src/services/virtual_user.ts';
+import { ALL_CHAT_PERMISSIONS } from '../src/types/chat_permissions.ts';
 import type { ChatActionChat } from '../src/types/virtual_chat.ts';
 
 const SUPERGROUP_ID = -1_000_000_000_001;
@@ -42,6 +43,7 @@ Deno.test('ChatActionService shows members each bot latest action until its mess
       title: 'Team',
       chatInstance: '1',
       hasProtectedContent: false,
+      defaultPermissions: ALL_CHAT_PERMISSIONS,
     },
     account.profile.id,
   );

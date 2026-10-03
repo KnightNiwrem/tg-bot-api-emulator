@@ -374,6 +374,23 @@ const MENU_BUTTON_FAILURE_DESCRIPTIONS = {
   menu_button_url_not_utf8: 'Bad Request: menu button URL must be encoded in UTF-8',
 } as const;
 
+/**
+ * TDLib's `can_send_message_content` errors, as the official Bot API server reports them, for each
+ * kind of content a member lacks the permission to send.
+ */
+const SEND_PERMISSION_MISSING_DESCRIPTIONS = {
+  text: 'Bad Request: not enough rights to send text messages to the chat',
+  photo: 'Bad Request: not enough rights to send photos to the chat',
+  document: 'Bad Request: not enough rights to send documents to the chat',
+  video: 'Bad Request: not enough rights to send videos to the chat',
+  voice: 'Bad Request: not enough rights to send voice notes to the chat',
+  poll: 'Bad Request: not enough rights to send polls to the chat',
+  rich_message: 'Bad Request: not enough rights to send the rich message to the chat',
+} as const satisfies Record<
+  Extract<SendFailure, { readonly reason: 'send_permission_missing' }>['contentKind'],
+  string
+>;
+
 /** Telegram's descriptions for rejected requests about chat members. */
 const USER_ID_INVALID_DESCRIPTION = 'Bad Request: invalid user_id specified';
 const MEMBER_NOT_FOUND_DESCRIPTION = 'Bad Request: member not found';
@@ -2333,6 +2350,8 @@ function sendMethodAnswer(result: SendResult | SendFailure): BotApiMethodAnswer 
       return botApiError(400, BUTTON_TYPE_INVALID_DESCRIPTION);
     case 'quote_invalid':
       return botApiError(400, QUOTE_TEXT_INVALID_DESCRIPTION);
+    case 'send_permission_missing':
+      return botApiError(400, SEND_PERMISSION_MISSING_DESCRIPTIONS[result.contentKind]);
     case 'poll_question_too_long':
       return botApiError(400, POLL_QUESTION_TOO_LONG_DESCRIPTION);
     case 'poll_options_missing':
@@ -2873,6 +2892,8 @@ function editMessageAnswer(result: MessageEditResult): BotApiMethodAnswer {
       return botApiError(400, BUTTON_TYPE_INVALID_DESCRIPTION);
     case 'message_not_modified':
       return botApiError(400, MESSAGE_NOT_MODIFIED_DESCRIPTION);
+    case 'send_permission_missing':
+      return botApiError(400, SEND_PERMISSION_MISSING_DESCRIPTIONS[result.contentKind]);
     case 'file_empty':
     case 'image_invalid':
     case 'photo_dimensions_invalid':

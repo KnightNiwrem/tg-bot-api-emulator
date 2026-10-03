@@ -1,10 +1,17 @@
 import type { ChatDomainEvent } from '../types/chat_domain_event.ts';
 import {
+  type ChatMembership,
+  getEffectiveChatPermissions,
   holdsSupergroupAdministratorRight,
   resolveSupergroupBotMembership,
   type SupergroupBotAccessFailureReason,
   type SupergroupMembershipLookup,
 } from '../types/chat_membership.ts';
+import {
+  type ChatPermissions,
+  getContentSendPermissions,
+  type PermissionGovernedContent,
+} from '../types/chat_permissions.ts';
 import type { InlineKeyboard } from '../types/inline_keyboard.ts';
 import type { Poll, PollId } from '../types/poll.ts';
 import { type AlbumCompositionFailureReason, formsAlbum } from '../types/media_album.ts';
@@ -77,6 +84,15 @@ import {
 } from './message_content.ts';
 import { findStoppablePoll, type PollStopFailureReason } from './poll.ts';
 
+/**
+ * Why a member cannot send content: it lacks a permission the content needs, as
+ * `getContentSendPermissions` lists them, which Telegram reports by the kind of content.
+ */
+export interface SendPermissionMissingFailure {
+  readonly reason: 'send_permission_missing';
+  readonly contentKind: PermissionGovernedContent['kind'];
+}
+
 export interface SendSupergroupAccountMessageInput {
   readonly fromAccountId: number;
   readonly chatId: number;
@@ -96,7 +112,11 @@ export type SendSupergroupAccountMessageResult =
   | { readonly sent: true; readonly message: SupergroupMessage }
   | (
     & { readonly sent: false }
-    & ({ readonly reason: SendSupergroupAccountMessageFailureReason } | ContentNormalizationFailure)
+    & (
+      | { readonly reason: SendSupergroupAccountMessageFailureReason }
+      | ContentNormalizationFailure
+      | SendPermissionMissingFailure
+    )
   );
 
 /** An album an account sends to a supergroup it is a member of. */
@@ -120,6 +140,7 @@ export type SendSupergroupAccountAlbumResult =
           | AlbumCompositionFailureReason;
       }
       | ContentTextNormalizationFailure
+      | SendPermissionMissingFailure
     )
   );
 
@@ -139,10 +160,20 @@ export interface SendSupergroupAccountInlineResultInput {
 
 export type SendSupergroupAccountInlineResultResult =
   | { readonly sent: true; readonly message: SupergroupMessage }
-  | {
-    readonly sent: false;
-    readonly reason: 'account_not_found' | 'chat_not_found' | 'not_a_member';
-  };
+  | (
+    & { readonly sent: false }
+    & (
+      | {
+        readonly reason:
+          | 'account_not_found'
+          | 'chat_not_found'
+          | 'not_a_member'
+          /** The account may not send other messages, which inline bots' results count as. */
+          | 'inline_bots_not_permitted';
+      }
+      | SendPermissionMissingFailure
+    )
+  );
 
 /** A forward that an account sends to a supergroup it is a member of. */
 export interface SendSupergroupAccountForwardInput {
@@ -151,7 +182,15 @@ export interface SendSupergroupAccountForwardInput {
   readonly forward: MessageForward;
 }
 
-export type SendSupergroupAccountForwardResult = SendSupergroupAccountInlineResultResult;
+export type SendSupergroupAccountForwardResult =
+  | { readonly sent: true; readonly message: SupergroupMessage }
+  | (
+    & { readonly sent: false }
+    & (
+      | { readonly reason: 'account_not_found' | 'chat_not_found' | 'not_a_member' }
+      | SendPermissionMissingFailure
+    )
+  );
 
 /** The message of the supergroup that a bot's message replies to. */
 export interface SupergroupBotMessageReplyTarget {
@@ -206,7 +245,11 @@ export type SendSupergroupBotMessageResult =
   | { readonly sent: true; readonly message: SupergroupMessage }
   | (
     & { readonly sent: false }
-    & ({ readonly reason: SendSupergroupBotMessageFailureReason } | ContentNormalizationFailure)
+    & (
+      | { readonly reason: SendSupergroupBotMessageFailureReason }
+      | ContentNormalizationFailure
+      | SendPermissionMissingFailure
+    )
   );
 
 /**
@@ -246,6 +289,7 @@ export type SendSupergroupBotAlbumResult =
           | AlbumCompositionFailureReason;
       }
       | ContentTextNormalizationFailure
+      | SendPermissionMissingFailure
     )
   );
 
@@ -387,7 +431,7 @@ export type SupergroupMessageEditResult<FailureReason extends string> =
 
 export type EditSupergroupBotMessageTextResult =
   | SupergroupMessageEditResult<EditSupergroupBotMessageTextFailureReason>
-  | ({ readonly edited: false } & TextInvalidFailure);
+  | ({ readonly edited: false } & (TextInvalidFailure | SendPermissionMissingFailure));
 
 export type EditSupergroupBotMessageCaptionResult =
   | SupergroupMessageEditResult<EditSupergroupBotMessageCaptionFailureReason>
@@ -395,7 +439,7 @@ export type EditSupergroupBotMessageCaptionResult =
 
 export type EditSupergroupBotMessageMediaResult =
   | SupergroupMessageEditResult<EditSupergroupBotMessageMediaFailureReason>
-  | ({ readonly edited: false } & TextInvalidFailure);
+  | ({ readonly edited: false } & (TextInvalidFailure | SendPermissionMissingFailure));
 
 export interface EditSupergroupAccountMessageInput {
   readonly fromAccountId: number;
@@ -654,7 +698,8 @@ export class SupergroupMessagingService {
 
   /**
    * Sends text or captioned media from an account to a supergroup it is a member of. As a
-   * Telegram client does, the text or caption is normalized, which marks bot commands.
+   * Telegram client does, the text or caption is normalized, which marks bot commands, and then
+   * the account must be allowed to send the content, as `#findMissingSendPermission` decides.
    */
   sendAccountMessage(input: SendSupergroupAccountMessageInput): SendSupergroupAccountMessageResult {
     const memberResolution = this.#resolveAccountMember(input.fromAccountId, input.chatId);
@@ -670,6 +715,14 @@ export class SupergroupMessagingService {
     );
     if (!contentNormalization.normalized) {
       return { sent: false, ...contentNormalization.failure };
+    }
+    const permissionFailure = this.#findMissingSendPermission(
+      memberResolution,
+      { kind: 'account', accountId: input.fromAccountId },
+      [contentNormalization.content],
+    );
+    if (permissionFailure !== undefined) {
+      return { sent: false, ...permissionFailure };
     }
     const repliedMessage = input.replyToMessageId === undefined
       ? undefined
@@ -692,7 +745,8 @@ export class SupergroupMessagingService {
   /**
    * Sends a media album from an account to a supergroup it is a member of, as
    * `sendAccountMessage` sends one message. Every message of the album is checked before any is
-   * stored, as `normalizeOutgoingAlbum` checks them, and every message replies to the same message.
+   * stored, as `normalizeOutgoingAlbum` checks them and then the account's permissions, and every
+   * message replies to the same message.
    * The supergroup's bots receive each message they would receive alone, in the album's order.
    */
   sendAccountAlbum(input: SendSupergroupAccountAlbumInput): SendSupergroupAccountAlbumResult {
@@ -707,6 +761,14 @@ export class SupergroupMessagingService {
     );
     if (!albumNormalization.normalized) {
       return { sent: false, ...albumNormalization.failure };
+    }
+    const permissionFailure = this.#findMissingSendPermission(
+      memberResolution,
+      { kind: 'account', accountId: input.fromAccountId },
+      albumNormalization.contents,
+    );
+    if (permissionFailure !== undefined) {
+      return { sent: false, ...permissionFailure };
     }
     const repliedMessage = input.replyToMessageId === undefined
       ? undefined
@@ -727,7 +789,9 @@ export class SupergroupMessagingService {
 
   /**
    * Sends an inline query result from an account to a supergroup it is a member of, as the
-   * account's message sent through the inline bot.
+   * account's message sent through the inline bot. As TDLib's `send_inline_query_result_message`
+   * requires, the account must be allowed to use inline bots, which `can_send_other_messages`
+   * allows, and then to send the result's content.
    */
   sendAccountInlineResult(
     input: SendSupergroupAccountInlineResultInput,
@@ -735,6 +799,16 @@ export class SupergroupMessagingService {
     const memberResolution = this.#resolveAccountMember(input.fromAccountId, input.chatId);
     if (!memberResolution.resolved) {
       return { sent: false, reason: memberResolution.reason };
+    }
+    const author: SupergroupMessageAuthor = { kind: 'account', accountId: input.fromAccountId };
+    if (!this.#getEffectivePermissions(memberResolution, author).has('can_send_other_messages')) {
+      return { sent: false, reason: 'inline_bots_not_permitted' };
+    }
+    const permissionFailure = this.#findMissingSendPermission(memberResolution, author, [
+      { kind: 'existing', content: input.content },
+    ]);
+    if (permissionFailure !== undefined) {
+      return { sent: false, ...permissionFailure };
     }
     return {
       sent: true,
@@ -750,7 +824,8 @@ export class SupergroupMessagingService {
   }
 
   /**
-   * Sends a forward from an account to a supergroup it is a member of, as the account's message.
+   * Sends a forward from an account to a supergroup it is a member of, as the account's message,
+   * which it must be allowed to send.
    */
   sendAccountForward(
     { fromAccountId, chatId, forward }: SendSupergroupAccountForwardInput,
@@ -758,6 +833,14 @@ export class SupergroupMessagingService {
     const memberResolution = this.#resolveAccountMember(fromAccountId, chatId);
     if (!memberResolution.resolved) {
       return { sent: false, reason: memberResolution.reason };
+    }
+    const permissionFailure = this.#findMissingSendPermission(
+      memberResolution,
+      { kind: 'account', accountId: fromAccountId },
+      [{ kind: 'existing', content: forward.content }],
+    );
+    if (permissionFailure !== undefined) {
+      return { sent: false, ...permissionFailure };
     }
     return {
       sent: true,
@@ -778,7 +861,8 @@ export class SupergroupMessagingService {
    * Checks follow Telegram's order: text is checked for emptiness before the chat is resolved, and
    * the replied message is looked up after it; a message effect is then refused, as TDLib's
    * `MessageSendOptions::get_message_send_options` refuses it outside private chats. The text or
-   * caption is normalized with its entities next, and the result is checked for length. Callback
+   * caption is normalized with its entities next, and the result is checked for length. The bot
+   * must then be allowed to send the content, as `#findMissingSendPermission` decides. Callback
    * data is checked next, and a quote last, as Telegram's servers check it.
    */
   sendBotMessage(input: SendSupergroupBotMessageInput): SendSupergroupBotMessageResult {
@@ -788,9 +872,13 @@ export class SupergroupMessagingService {
     if (input.content.kind === 'text' && input.content.text.length === 0) {
       return { sent: false, reason: 'message_text_empty' };
     }
-    const accessFailure = this.#checkBotAccess(input.fromBotId, input.chatId);
-    if (accessFailure !== undefined) {
-      return { sent: false, reason: accessFailure };
+    const botMembership = resolveSupergroupBotMembership(
+      this.#sharedChats,
+      input.fromBotId,
+      input.chatId,
+    );
+    if (!botMembership.resolved) {
+      return { sent: false, reason: botMembership.reason };
     }
     const repliedMessage = input.replyTo === undefined
       ? undefined
@@ -807,6 +895,14 @@ export class SupergroupMessagingService {
     const contentNormalization = this.#normalizeContent(input.content, 'bot');
     if (!contentNormalization.normalized) {
       return { sent: false, ...contentNormalization.failure };
+    }
+    const permissionFailure = this.#findMissingSendPermission(
+      botMembership,
+      { kind: 'bot', botId: input.fromBotId },
+      [contentNormalization.content],
+    );
+    if (permissionFailure !== undefined) {
+      return { sent: false, ...permissionFailure };
     }
     if (!hasOnlyValidButtonCallbackData(input.inlineKeyboard, contentNormalization.content)) {
       return { sent: false, reason: 'callback_data_invalid' };
@@ -843,18 +939,41 @@ export class SupergroupMessagingService {
   }
 
   /**
+   * Whether a bot that is a member of a supergroup lacks a permission it needs to send content
+   * there, as `sendBotMessage` checks it; false for a bot that is not a member, whose sending fails
+   * for that instead.
+   */
+  lacksBotSendPermission(
+    { botId, chatId, content }: {
+      readonly botId: number;
+      readonly chatId: number;
+      readonly content: OutgoingMessageContent;
+    },
+  ): boolean {
+    const botMembership = resolveSupergroupBotMembership(this.#sharedChats, botId, chatId);
+    return botMembership.resolved &&
+      this.#findMissingSendPermission(botMembership, { kind: 'bot', botId }, [content]) !==
+        undefined;
+  }
+
+  /**
    * Sends a media album from a bot to a supergroup it is a member of, as
    * `sendBotMessage` sends one message and in its order of checks, checking every message of the
    * album before any is stored: each caption is normalized, and the album is checked, as
-   * `normalizeOutgoingAlbum` does. Every message replies to the same message, with the same quote.
+   * `normalizeOutgoingAlbum` does, before the bot's permissions are. Every message replies to the
+   * same message, with the same quote.
    */
   sendBotAlbum(input: SendSupergroupBotAlbumInput): SendSupergroupBotAlbumResult {
     if (this.#bots.getById(input.fromBotId) === undefined) {
       return { sent: false, reason: 'bot_not_found' };
     }
-    const accessFailure = this.#checkBotAccess(input.fromBotId, input.chatId);
-    if (accessFailure !== undefined) {
-      return { sent: false, reason: accessFailure };
+    const botMembership = resolveSupergroupBotMembership(
+      this.#sharedChats,
+      input.fromBotId,
+      input.chatId,
+    );
+    if (!botMembership.resolved) {
+      return { sent: false, reason: botMembership.reason };
     }
     const repliedMessage = input.replyTo === undefined
       ? undefined
@@ -875,6 +994,14 @@ export class SupergroupMessagingService {
     );
     if (!albumNormalization.normalized) {
       return { sent: false, ...albumNormalization.failure };
+    }
+    const permissionFailure = this.#findMissingSendPermission(
+      botMembership,
+      { kind: 'bot', botId: input.fromBotId },
+      albumNormalization.contents,
+    );
+    if (permissionFailure !== undefined) {
+      return { sent: false, ...permissionFailure };
     }
     const quoteResolution = resolveReplyQuote(
       getReplyQuoteSource(repliedMessage, input.externalReply),
@@ -918,11 +1045,15 @@ export class SupergroupMessagingService {
       return { edited: false, reason: resolution.reason };
     }
     const { message } = resolution;
-    return this.#editBotMessageContent(
-      message,
-      replaceMessageText(message.content, input.content, this.#textFixingContext),
-      input.inlineKeyboard,
-    );
+    const replacement = replaceMessageText(message.content, input.content, this.#textFixingContext);
+    // As TDLib's `edit_message_text` does, only a rich message is checked as new content.
+    const permissionFailure = replacement.replaced && replacement.content.kind === 'rich_message'
+      ? this.#findMissingEditPermission(input, replacement.content)
+      : undefined;
+    if (permissionFailure !== undefined) {
+      return { edited: false, ...permissionFailure };
+    }
+    return this.#editBotMessageContent(message, replacement, input.inlineKeyboard);
   }
 
   /**
@@ -964,11 +1095,14 @@ export class SupergroupMessagingService {
       return { edited: false, reason: resolution.reason };
     }
     const { message } = resolution;
-    return this.#editBotMessageContent(
-      message,
-      replaceMessageMedia(message, input.media, this.#textFixingContext),
-      input.inlineKeyboard,
-    );
+    const replacement = replaceMessageMedia(message, input.media, this.#textFixingContext);
+    const permissionFailure = replacement.replaced
+      ? this.#findMissingEditPermission(input, replacement.content)
+      : undefined;
+    if (permissionFailure !== undefined) {
+      return { edited: false, ...permissionFailure };
+    }
+    return this.#editBotMessageContent(message, replacement, input.inlineKeyboard);
   }
 
   /**
@@ -1290,7 +1424,11 @@ export class SupergroupMessagingService {
     accountId: number,
     chatId: number,
   ):
-    | { readonly resolved: true; readonly supergroup: Supergroup }
+    | {
+      readonly resolved: true;
+      readonly supergroup: Supergroup;
+      readonly membership: ChatMembership;
+    }
     | {
       readonly resolved: false;
       readonly reason: 'account_not_found' | 'chat_not_found' | 'not_a_member';
@@ -1302,16 +1440,86 @@ export class SupergroupMessagingService {
     if (chat?.kind !== 'supergroup') {
       return { resolved: false, reason: 'chat_not_found' };
     }
-    if (this.#sharedChats.getChatMembership(chatId, accountId) === undefined) {
+    const membership = this.#sharedChats.getChatMembership(chatId, accountId);
+    if (membership === undefined) {
       return { resolved: false, reason: 'not_a_member' };
     }
-    return { resolved: true, supergroup: chat };
+    return { resolved: true, supergroup: chat, membership };
+  }
+
+  /** What a member may do in its supergroup, as `getEffectiveChatPermissions` decides. */
+  #getEffectivePermissions(
+    { supergroup, membership }: {
+      readonly supergroup: Supergroup;
+      readonly membership: ChatMembership;
+    },
+    member: SupergroupMessageAuthor,
+  ): ChatPermissions {
+    return getEffectiveChatPermissions(membership, {
+      defaultPermissions: supergroup.defaultPermissions,
+      isBot: member.kind === 'bot',
+    });
+  }
+
+  /**
+   * Finds the first content, in order, that a member may not send, as TDLib's
+   * `can_send_message_content` checks each message, and reports its kind; `undefined` when the
+   * member may send them all.
+   */
+  #findMissingSendPermission(
+    memberResolution: {
+      readonly supergroup: Supergroup;
+      readonly membership: ChatMembership;
+    },
+    member: SupergroupMessageAuthor,
+    contents: readonly (OutgoingMessageContent | NormalizedOutgoingContent)[],
+  ): SendPermissionMissingFailure | undefined {
+    const permissions = this.#getEffectivePermissions(memberResolution, member);
+    for (const content of contents) {
+      const governedContent = toPermissionGovernedContent(content);
+      if (
+        !getContentSendPermissions(governedContent).every((permission) =>
+          permissions.has(permission)
+        )
+      ) {
+        return { reason: 'send_permission_missing', contentKind: governedContent.kind };
+      }
+    }
+    return undefined;
   }
 
   /** Checks that the bot is a member of the supergroup, which it needs to act there. */
   #checkBotAccess(botId: number, chatId: number): SupergroupBotAccessFailureReason | undefined {
     const resolution = resolveSupergroupBotMembership(this.#sharedChats, botId, chatId);
     return resolution.resolved ? undefined : resolution.reason;
+  }
+
+  /**
+   * Finds a permission the bot lacks for the new content of an edit, as TDLib's
+   * `edit_message_media` and `edit_message_text` check new media and rich messages with
+   * `can_send_message_content`. TDLib checks no permission for a message addressed by its inline
+   * message identifier, which has no chat to check it in.
+   */
+  #findMissingEditPermission(
+    target: EditSupergroupBotMessageTarget,
+    content: NormalizedOutgoingContent,
+  ): SendPermissionMissingFailure | undefined {
+    if ('inlineMessageId' in target) {
+      return undefined;
+    }
+    const botMembership = resolveSupergroupBotMembership(
+      this.#sharedChats,
+      target.fromBotId,
+      target.chatId,
+    );
+    if (!botMembership.resolved) {
+      throw new Error(`Bot ${target.fromBotId} edits in chat ${target.chatId} as no member`);
+    }
+    return this.#findMissingSendPermission(
+      botMembership,
+      { kind: 'bot', botId: target.fromBotId },
+      [content],
+    );
   }
 
   /**
@@ -1571,5 +1779,22 @@ export class SupergroupMessagingService {
       return undefined;
     }
     return { message, replyInterface };
+  }
+}
+
+/** The content whose sending permissions govern, of new content or of an existing message. */
+function toPermissionGovernedContent(
+  content: OutgoingMessageContent | NormalizedOutgoingContent | MessageContent,
+): PermissionGovernedContent {
+  switch (content.kind) {
+    case 'existing':
+      return toPermissionGovernedContent(content.content);
+    case 'rich_message':
+      return {
+        kind: 'rich_message',
+        richMessage: 'richMessage' in content ? content.richMessage : content,
+      };
+    default:
+      return { kind: content.kind };
   }
 }

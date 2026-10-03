@@ -41,6 +41,7 @@ import { InlineQueryService } from '../src/services/inline_query.ts';
 import { PrivateMessagingService } from '../src/services/private_messaging.ts';
 import { SupergroupMessagingService } from '../src/services/supergroup_messaging.ts';
 import { VirtualUserService } from '../src/services/virtual_user.ts';
+import type { PhotoUpload } from '../src/types/stored_file.ts';
 
 Deno.test('BotApiService translates private messaging failures into Bot API reasons', () => {
   const { virtualUsers, privateMessaging, botApi } = createBotApiFixture();
@@ -153,6 +154,199 @@ Deno.test('BotApiService reads text with its parse mode or entities', () => {
     markupFailure.markupError !== 'Can\'t find end tag corresponding to start tag "b"'
   ) {
     throw new Error(`Expected TDLib's markup error, received ${JSON.stringify(markupFailure)}`);
+  }
+});
+
+Deno.test('BotApiService sends, forwards and copies to a supergroup only what the bot may send', () => {
+  const { virtualUsers, sharedChats, sharedChatAdministration, supergroupMessaging, botApi } =
+    createBotApiFixture();
+  const owner = createAccount(virtualUsers);
+  const bot = createBot(virtualUsers, 'test_bot');
+  const creation = sharedChatAdministration.createSupergroup({
+    title: 'Team',
+    creatorAccountId: owner.profile.id,
+  });
+  if (!creation.created) {
+    throw new Error(`Expected the supergroup to be created, received ${creation.reason}`);
+  }
+  const chatId = creation.supergroup.id;
+  sharedChatAdministration.addChatMember({
+    actorAccountId: owner.profile.id,
+    chatId,
+    memberId: bot.profile.id,
+  });
+  const sendOwnerContent = (
+    content: Parameters<typeof supergroupMessaging.sendAccountMessage>[0]['content'],
+  ) => {
+    const result = supergroupMessaging.sendAccountMessage({
+      fromAccountId: owner.profile.id,
+      chatId,
+      content,
+    });
+    if (!result.sent) {
+      throw new Error(`Expected the owner's message to be sent, received ${result.reason}`);
+    }
+  };
+  // The bot's addition is the supergroup's first message, so these are its second and third.
+  sendOwnerContent({ kind: 'text', text: 'Agenda' });
+  sendOwnerContent({ kind: 'media', upload: photoUpload(), caption: '' });
+  const [textMessageId, photoMessageId] = [2, 3];
+  const botPhoto = botApi.sendPhoto(bot.profile, {
+    chatId,
+    photo: { kind: 'upload', fileName: 'photo.gif', content: photoUpload().content },
+    caption: { text: '' },
+    hasSpoiler: false,
+    showsCaptionAboveMedia: false,
+  });
+  if (!botPhoto.sent) {
+    throw new Error(`Expected the bot's photo to be sent, received ${botPhoto.reason}`);
+  }
+  sharedChats.updateChatMemberStatus(chatId, bot.profile.id, {
+    status: 'restricted',
+    isMember: true,
+    permissions: new Set(['can_send_messages']),
+  });
+  // As TDLib's `edit_message_media` does, new media of an edit needs its permission too.
+  const mediaEdit = botApi.editMessageMedia(bot.profile, {
+    chatId,
+    messageId: botPhoto.message.message_id,
+    media: {
+      kind: 'photo',
+      photo: { kind: 'upload', fileName: 'other.gif', content: photoUpload().content },
+      caption: { text: 'Replaced' },
+      hasSpoiler: false,
+      showsCaptionAboveMedia: false,
+    },
+  });
+  if (
+    mediaEdit.edited || mediaEdit.reason !== 'send_permission_missing' ||
+    mediaEdit.contentKind !== 'photo'
+  ) {
+    throw new Error(`Expected the media edit to be refused, received ${JSON.stringify(mediaEdit)}`);
+  }
+  const reasonOf = (result: { readonly sent: boolean; readonly reason?: string }) =>
+    result.sent ? 'sent' : result.reason;
+  const repeat = { chatId, fromChatId: chatId };
+
+  const received = [
+    reasonOf(botApi.sendMessage(bot.profile, { chatId, text: 'Allowed' })),
+    reasonOf(botApi.sendPhoto(bot.profile, {
+      chatId,
+      photo: { kind: 'upload', fileName: 'photo.gif', content: photoUpload().content },
+      caption: { text: '' },
+      hasSpoiler: false,
+      showsCaptionAboveMedia: false,
+    })),
+    reasonOf(botApi.forwardMessage(bot.profile, {
+      chatId,
+      forwardedMessage: { chatId, messageId: textMessageId },
+    })),
+    reasonOf(botApi.forwardMessage(bot.profile, {
+      chatId,
+      forwardedMessage: { chatId, messageId: photoMessageId },
+    })),
+    reasonOf(botApi.copyMessage(bot.profile, {
+      chatId,
+      copiedMessage: { chatId, messageId: photoMessageId },
+      showsCaptionAboveMedia: false,
+    })),
+    reasonOf(botApi.forwardMessages(bot.profile, { ...repeat, messageIds: [photoMessageId] })),
+  ];
+  // As TDLib's `forward_messages_impl` does, a batch skips what the bot may not send.
+  const batch = botApi.forwardMessages(bot.profile, {
+    ...repeat,
+    messageIds: [textMessageId, photoMessageId],
+  });
+  const batchKinds = batch.sent
+    ? batch.messageIds.map((messageId) =>
+      supergroupMessaging.getMessageByChatMessageId(chatId, messageId)?.content.kind
+    )
+    : [];
+  if (
+    JSON.stringify(received) !== JSON.stringify([
+        'sent',
+        'send_permission_missing',
+        'sent',
+        'message_not_forwardable',
+        'message_not_copyable',
+        'messages_not_repeatable',
+      ]) || JSON.stringify(batchKinds) !== JSON.stringify(['text'])
+  ) {
+    throw new Error(
+      `Expected only text to reach the supergroup, received ${JSON.stringify([received, batch])}`,
+    );
+  }
+});
+
+Deno.test('BotApiService shows restricted members and default permissions', () => {
+  const { virtualUsers, sharedChats, sharedChatAdministration, botApi } = createBotApiFixture();
+  const owner = createAccount(virtualUsers);
+  const member = createAccount(virtualUsers);
+  const bot = createBot(virtualUsers, 'test_bot');
+  const creation = sharedChatAdministration.createSupergroup({
+    title: 'Team',
+    creatorAccountId: owner.profile.id,
+  });
+  if (!creation.created) {
+    throw new Error(`Expected the supergroup to be created, received ${creation.reason}`);
+  }
+  const chatId = creation.supergroup.id;
+  for (const memberId of [member.profile.id, bot.profile.id]) {
+    sharedChatAdministration.addChatMember({ actorAccountId: owner.profile.id, chatId, memberId });
+  }
+  sharedChats.updateChatMemberStatus(chatId, member.profile.id, {
+    status: 'restricted',
+    isMember: true,
+    permissions: new Set(['can_send_messages', 'can_send_voice_notes']),
+    restrictedUntilUnixSeconds: 1_700_003_600,
+  });
+  sharedChats.updateSupergroupDefaultPermissions(
+    chatId,
+    new Set(['can_send_messages', 'can_send_polls', 'can_invite_users']),
+  );
+
+  const chatMember = botApi.getChatMember(bot.profile, { chatId, userId: member.profile.id });
+  const chat = botApi.getChat(bot.profile, { chatId });
+  const permissionsOf = (granted: readonly string[]) =>
+    Object.fromEntries(
+      [
+        'can_send_messages',
+        'can_send_media_messages',
+        'can_send_audios',
+        'can_send_documents',
+        'can_send_photos',
+        'can_send_videos',
+        'can_send_video_notes',
+        'can_send_voice_notes',
+        'can_send_polls',
+        'can_send_other_messages',
+        'can_add_web_page_previews',
+        'can_react_to_messages',
+        'can_edit_tag',
+        'can_change_info',
+        'can_invite_users',
+        'can_pin_messages',
+        'can_manage_topics',
+      ].map((permission) => [permission, granted.includes(permission)]),
+    );
+  const expectedMember = {
+    user: member.profile,
+    status: 'restricted',
+    until_date: 1_700_003_600,
+    ...permissionsOf(['can_send_messages', 'can_send_media_messages', 'can_send_voice_notes']),
+    is_member: true,
+  };
+  if (
+    !chatMember.found || JSON.stringify(chatMember.member) !== JSON.stringify(expectedMember) ||
+    !chat.found || !('permissions' in chat.chat) ||
+    JSON.stringify(chat.chat.permissions) !==
+      JSON.stringify(permissionsOf(['can_send_messages', 'can_send_polls', 'can_invite_users']))
+  ) {
+    throw new Error(
+      `Expected the restriction and default permissions, received ${
+        JSON.stringify([chatMember, chat])
+      }`,
+    );
   }
 });
 
@@ -311,7 +505,22 @@ function createBotApiFixture() {
     getPrivateForwardName: () => undefined,
     currentUnixTimeSeconds: () => 1_700_000_000,
   });
-  return { virtualUsers, privateMessaging, botApi };
+  return {
+    virtualUsers,
+    sharedChats,
+    sharedChatAdministration,
+    supergroupMessaging,
+    privateMessaging,
+    botApi,
+  };
+}
+
+/** A photo upload of a 4 by 3 GIF image, whose header is all the emulator reads. */
+function photoUpload(): PhotoUpload {
+  const content = new Uint8Array(13);
+  content.set(new TextEncoder().encode('GIF89a'));
+  content.set([4, 0, 3, 0], 6);
+  return { type: 'photo', content, imageFormat: 'gif', width: 4, height: 3 };
 }
 
 function createBot(virtualUsers: VirtualUserService, username: string) {

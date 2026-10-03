@@ -8,6 +8,7 @@ import {
 } from '../types/bot_command.ts';
 import { type BotLanguageCode, isBotLanguageCode } from '../types/bot_language_code.ts';
 import {
+  isChatAdministrator,
   resolveSupergroupBotMembership,
   type SupergroupBotAccessFailureReason,
   type SupergroupMembershipLookup,
@@ -245,7 +246,7 @@ export class BotCommandService {
       return { found: false, reason: 'not_a_member' };
     }
 
-    const isAdministrator = membership.status !== 'member';
+    const isAdministrator = isChatAdministrator(membership);
     const scopes: readonly BotCommandScope[] = [
       { type: 'chat_member', chatId, userId: accountId },
       ...(isAdministrator ? [{ type: 'chat_administrators', chatId } as const] : []),
