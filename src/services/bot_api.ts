@@ -32,7 +32,7 @@ import {
   type SupergroupAdministratorRights,
 } from '../types/chat_membership.ts';
 import type { ChatPermissions } from '../types/chat_permissions.ts';
-import type { Contact } from '../types/contact.ts';
+import { createWrittenContact, type WrittenContact } from '../types/contact.ts';
 import type { InlineQueryId, InlineQueryResultsButton } from '../types/inline_query.ts';
 import {
   MAX_POLL_OPEN_PERIOD_SECONDS,
@@ -440,7 +440,7 @@ export type SendVoiceRequest = SendRequestOptions & {
  * Telegram user, so the contact's user stays unknown.
  */
 export type SendContactRequest = SendRequestOptions & {
-  readonly contact: Omit<Contact, 'userId'>;
+  readonly contact: WrittenContact;
 };
 
 export type SendFailureReason =
@@ -2366,7 +2366,11 @@ export class BotApiService {
     authenticatedBot: VirtualBotProfile,
     { contact, ...options }: SendContactRequest,
   ): SendResult {
-    return this.#send(authenticatedBot, { kind: 'contact', contact }, options);
+    return this.#send(
+      authenticatedBot,
+      { kind: 'contact', contact: createWrittenContact(contact) },
+      options,
+    );
   }
 
   /**

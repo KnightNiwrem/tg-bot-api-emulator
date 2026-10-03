@@ -7,7 +7,7 @@ import { cleanInputString } from '../text_entities/input_string.ts';
 import { areTextEntitiesEqual } from '../text_entities/text_entity_equality.ts';
 import { compareTextEntities } from '../text_entities/text_entity_order.ts';
 import { isSameButtonAppearance } from '../types/button_appearance.ts';
-import type { Contact } from '../types/contact.ts';
+import { type Contact, createWrittenContact, type WrittenContact } from '../types/contact.ts';
 import {
   type InlineKeyboard,
   type InlineKeyboardButton,
@@ -584,7 +584,7 @@ export type AccountMessageContent =
     readonly entities?: readonly TextEntity[];
   }
   | AccountMediaContent
-  | { readonly kind: 'contact'; readonly contact: Omit<Contact, 'userId'> }
+  | { readonly kind: 'contact'; readonly contact: WrittenContact }
   | { readonly kind: 'own_contact' };
 
 /** Media an account sends, of the kind its upload says, with its caption. */
@@ -608,8 +608,9 @@ export function toOutgoingAccountContent(
 ): OutgoingMessageContent | undefined {
   switch (content.kind) {
     case 'text':
-    case 'contact':
       return content;
+    case 'contact':
+      return { kind: 'contact', contact: createWrittenContact(content.contact) };
     case 'own_contact': {
       const ownContact = getOwnContact(account);
       return ownContact === undefined ? undefined : { kind: 'contact', contact: ownContact };

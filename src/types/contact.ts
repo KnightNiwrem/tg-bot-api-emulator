@@ -26,6 +26,19 @@ export interface Contact {
   readonly userId?: number;
 }
 
+/** A contact as its sender writes it, which names no Telegram user. */
+export type WrittenContact = Omit<Contact, 'userId'>;
+
+/**
+ * The contact a sender writes, with only the texts it gives: whatever else the value carries, such
+ * as a user, is dropped, since Telegram's servers, not the sender, attach a contact's user.
+ */
+export function createWrittenContact(
+  { phoneNumber, firstName, lastName, vcard }: WrittenContact,
+): Contact {
+  return { phoneNumber, firstName, lastName, vcard };
+}
+
 const utf8Encoder = new TextEncoder();
 
 /** Whether a vCard fits in the bytes the Bot API documents for it. */
