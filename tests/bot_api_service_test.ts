@@ -229,6 +229,11 @@ Deno.test('BotApiService sends, forwards and copies to a supergroup only what th
     ...repeat,
     messageIds: [textMessageId, photoMessageId],
   });
+  const batchKinds = batch.sent
+    ? batch.messageIds.map((messageId) =>
+      supergroupMessaging.getMessageByChatMessageId(chatId, messageId)?.content.kind
+    )
+    : [];
   if (
     JSON.stringify(received) !== JSON.stringify([
         'sent',
@@ -237,7 +242,7 @@ Deno.test('BotApiService sends, forwards and copies to a supergroup only what th
         'message_not_forwardable',
         'message_not_copyable',
         'messages_not_repeatable',
-      ]) || !batch.sent || batch.messageIds.length !== 1
+      ]) || JSON.stringify(batchKinds) !== JSON.stringify(['text'])
   ) {
     throw new Error(
       `Expected only text to reach the supergroup, received ${JSON.stringify([received, batch])}`,

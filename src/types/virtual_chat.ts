@@ -81,8 +81,8 @@ export interface Supergroup extends SharedChatBase {
    */
   readonly hasProtectedContent: boolean;
   /**
-   * What members may do unless a restriction of their own withholds more, as Telegram's
-   * `default_banned_rights` of a supergroup grants it; administrators are exempt.
+   * What members may do unless a restriction of their own withholds more: the permissions that
+   * Telegram's `default_banned_rights` of a supergroup does not ban. Administrators are exempt.
    */
   readonly defaultPermissions: ChatPermissions;
 }
