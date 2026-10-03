@@ -18,13 +18,12 @@ import type { SessionRouteContextTypes } from '../session_route_context_types.ts
 import {
   ACCOUNT_ID_PARAMETER,
   accountPathSchema,
-  BOT_ID_PARAMETER,
   PRIVATE_MESSAGE_PATH,
-  privateConversationPathSchema,
   privateMessagePathSchema,
   SUPERGROUP_MESSAGE_PATH,
   supergroupMessagePathSchema,
 } from './account_paths.ts';
+import { createBlockedBotRoutes } from './blocked_bots.ts';
 import { viewChatMessageForAccount } from './chat_message_view.ts';
 import { createConversationReadRoutes } from './conversation_reads.ts';
 import { createMessageRoutes } from './messages.ts';
@@ -38,7 +37,6 @@ import { createSupergroupAdministrationRoutes } from './supergroup_administratio
 import { createSupergroupMembershipRoutes } from './supergroup_membership.ts';
 
 const PRIVATE_MESSAGE_POLL_ANSWER_PATH = `${PRIVATE_MESSAGE_PATH}/poll-answer` as const;
-const BLOCKED_BOT_PATH = `/:${ACCOUNT_ID_PARAMETER}/blocked-bots/:${BOT_ID_PARAMETER}` as const;
 const REPLY_KEYBOARD_PRESS_COLLECTION_PATH =
   `/:${ACCOUNT_ID_PARAMETER}/reply-keyboard-presses` as const;
 const CALLBACK_QUERY_ID_PARAMETER = 'callbackQueryId';
@@ -156,33 +154,7 @@ export function createAccountRoutes(): Hono<SessionRouteContextTypes> {
 
   accountRoutes.route('/', createPinnedMessageRoutes());
 
-  accountRoutes.put(BLOCKED_BOT_PATH, (context) => {
-    const conversationPath = privateConversationPathSchema.safeParse(context.req.param());
-    if (!conversationPath.success) {
-      return context.body(null, 400);
-    }
-    const { accountId, botId } = conversationPath.data;
-
-    const result = context.get('emulationSession').botBlocking.blockBot({
-      accountId,
-      botId,
-    });
-    return context.body(null, result.applied ? 204 : 404);
-  });
-
-  accountRoutes.delete(BLOCKED_BOT_PATH, (context) => {
-    const conversationPath = privateConversationPathSchema.safeParse(context.req.param());
-    if (!conversationPath.success) {
-      return context.body(null, 400);
-    }
-    const { accountId, botId } = conversationPath.data;
-
-    const result = context.get('emulationSession').botBlocking.unblockBot({
-      accountId,
-      botId,
-    });
-    return context.body(null, result.applied ? 204 : 404);
-  });
+  accountRoutes.route('/', createBlockedBotRoutes());
 
   accountRoutes.post(REPLY_KEYBOARD_PRESS_COLLECTION_PATH, async (context) => {
     const accountPath = accountPathSchema.safeParse(context.req.param());
