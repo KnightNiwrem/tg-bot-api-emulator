@@ -1,7 +1,8 @@
 description: >-
   A document the bot names by URL, which Telegram downloads from the session's emulated web each
-  time an account sends the result; it must be served as `application/pdf` or `application/zip`
-  and be at most 20 MB, and is named after the URL's last path segment.
+  time an account sends it without `input_message_content`; it must be served as
+  `application/pdf` or `application/zip` and be at most 20 MB, and is named after the URL's last
+  path segment.
 type: object
 additionalProperties: false
 required:
@@ -22,7 +23,9 @@ properties:
   document_url:
     type: string
     minLength: 1
-    description: An HTTP or HTTPS URL, read as TDLib reads the URL of a file sent by URL.
+    description: >-
+      An HTTP or HTTPS URL, read as TDLib reads the URL of a file sent by URL, so a URL without a
+      protocol is an HTTP one.
   mime_type:
     type: string
     pattern: ^application/(pdf|zip)
@@ -51,5 +54,7 @@ properties:
     description: Validated and ignored.
   thumbnail_width:
     type: integer
+    description: Validated and ignored.
   thumbnail_height:
     type: integer
+    description: Validated and ignored.

@@ -286,7 +286,7 @@ interface InlineResultWebMediaFiles {
   downloadInlineResultWebFile(
     request: InlineResultWebFileDownloadRequest,
   ): Promise<WebFileDownloadResult>;
-  prepareWebPhotoUpload(webFile: WebFile): PhotoUploadPreparation;
+  prepareInlineResultWebPhotoUpload(webFile: WebFile): PhotoUploadPreparation;
   prepareWebDocumentUpload(webFile: WebFile): DocumentUploadPreparation;
 }
 
@@ -566,7 +566,7 @@ export class InlineQueryService {
         if (!download.downloaded) {
           return { prepared: false, reason: download.reason };
         }
-        const preparation = this.#webMediaFiles.prepareWebPhotoUpload(download.webFile);
+        const preparation = this.#webMediaFiles.prepareInlineResultWebPhotoUpload(download.webFile);
         return preparation.prepared
           ? {
             prepared: true,

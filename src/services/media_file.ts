@@ -299,6 +299,18 @@ export class MediaFileService {
   }
 
   /**
+   * Prepares a photo that an inline query result names by URL, as `prepareWebPhotoUpload` does,
+   * which must also be a JPEG image, the only format the Bot API documents for
+   * `InlineQueryResultPhoto`, whatever type it was served as.
+   */
+  prepareInlineResultWebPhotoUpload(webFile: WebFile): PhotoUploadPreparation {
+    const preparation = this.prepareWebPhotoUpload(webFile);
+    return preparation.prepared && preparation.upload.imageFormat !== 'jpeg'
+      ? { prepared: false, reason: 'image_invalid' }
+      : preparation;
+  }
+
+  /**
    * Prepares a file downloaded from a URL as a document, as `prepareDocumentUpload` prepares an
    * upload: named after the URL's last path segment, cleaned as an upload's name, and typed as it
    * was served. TDLib sends a document given by URL as a web document, which takes no thumbnail.

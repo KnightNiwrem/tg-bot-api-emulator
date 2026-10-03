@@ -3,7 +3,8 @@ description: >-
   up to 50 results that the account's client lists and sends. Article results, and photo and
   document results with files the bot knows by `file_id` or names by URL, are supported. A
   file named by URL is not downloaded with the answer: Telegram downloads it from the session's
-  emulated web each time an account sends the result. Results of other types (`Bad Request:
+  emulated web each time an account sends it, and never when the result's
+  `input_message_content` replaces it. Results of other types (`Bad Request:
   inline query results of type "<type>" are not supported`) and `input_message_content` of a
   location, venue, contact, or invoice (`Bad Request: inline query results sending a location,
   venue, contact, or invoice are not supported`) are rejected with these emulator errors.

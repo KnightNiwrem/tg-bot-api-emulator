@@ -1,6 +1,7 @@
 description: >-
   A photo the bot names by URL, which Telegram downloads from the session's emulated web each
-  time an account sends the result; it must be served as `image/jpeg` and be at most 5 MB.
+  time an account sends it without `input_message_content`; it must be a JPEG image served as
+  `image/jpeg` and be at most 5 MB.
 type: object
 additionalProperties: false
 required:
@@ -17,7 +18,9 @@ properties:
   photo_url:
     type: string
     minLength: 1
-    description: An HTTP or HTTPS URL, read as TDLib reads the URL of a file sent by URL.
+    description: >-
+      An HTTP or HTTPS URL, read as TDLib reads the URL of a file sent by URL, so a URL without a
+      protocol is an HTTP one.
   thumbnail_url:
     type: string
     minLength: 1

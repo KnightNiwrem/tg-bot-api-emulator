@@ -69,18 +69,20 @@ Telegram downloads the file when an account sends the result: `messages.sendInli
 [emulated web](media-and-files.md#files-sent-by-url) each time an account chooses the result, and
 stores it as a new file, as a file a bot sends by URL. Inline results have their own contracts in
 the Bot API reference rather than those of the send methods: a photo must be a JPEG image of at most
-5 MB, which the emulator requires to be served as `image/jpeg`, and a document a PDF or ZIP file,
-served as `application/pdf` or `application/zip`, of at most 20 MB, the limit of other files sent by
-URL. A photo is then read as an uploaded one, and a document is named after the URL's last path
-segment and keeps the type it was served as. The declared photo dimensions and other thumbnails are
-validated and ignored; the client lists a thumbnail without the emulator downloading it.
+5 MB, which the emulator requires to be served as `image/jpeg` and to read as a JPEG image, and a
+document a PDF or ZIP file, served as `application/pdf` or `application/zip`, of at most 20 MB, the
+limit of other files sent by URL. A photo is then read as an uploaded one, and a document is named
+after the URL's last path segment and keeps the type it was served as. The declared photo dimensions
+and other thumbnails are validated and ignored; the client lists a thumbnail without the emulator
+downloading it.
 
 Choosing a result whose media no resource serves fails with `502`, and one whose media is empty,
-served as another type, or a photo that is not a readable image fails with `422`; neither sends a
-message or a `chosen_inline_result`. The file is downloaded before the account's access to the chat
-is checked. A result with `input_message_content` sends that content, and its file, which only the
-listing shows, is never downloaded. Cached answers, personal or not, hold the URL rather than a
-file, so every account that sends a result from one downloads the file anew.
+served as another type, or a photo that is not a readable JPEG image fails with `422`; neither sends
+a message or a `chosen_inline_result`. The file is downloaded before the account's access to the
+chat is checked, and stored only with the message, so a choice the chat refuses stores no file. A
+result with `input_message_content` sends that content, and its file, which only the listing shows,
+is never downloaded. Cached answers, personal or not, hold the URL rather than a file, so every
+account that sends a result from one downloads the file anew.
 
 ### Answer caching
 

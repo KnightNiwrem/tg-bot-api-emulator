@@ -178,6 +178,7 @@ async function createInlineMediaFixture() {
     supergroupChat,
     accountPath,
     supergroupPath,
+    registerWebResource,
     callBot,
     sendQuery,
     getInlineQuery,
@@ -442,13 +443,27 @@ Deno.test('answerInlineQuery checks results naming media by URL and records no p
 });
 
 Deno.test('an account cannot send media at a URL the emulated web does not serve as the result kind', async () => {
-  const { ada, privateChat, sendQuery, answer, choose, getHistory, readUpdates } =
-    await createInlineMediaFixture();
+  const {
+    ada,
+    privateChat,
+    registerWebResource,
+    sendQuery,
+    answer,
+    choose,
+    getHistory,
+    readUpdates,
+  } = await createInlineMediaFixture();
+  const gifImage = new Uint8Array(13);
+  gifImage.set(new TextEncoder().encode('GIF89a'));
+  gifImage.set([4, 0, 3, 0], 6);
+  const mislabeledGifUrl = 'https://cdn.example.com/cat-animation.jpg';
+  await registerWebResource(mislabeledGifUrl, 'image/jpeg', gifImage);
   const inlineQuery = await sendQuery(ada.id);
   await answer(inlineQuery.id, [
     { ...urlPhotoResult, id: 'unserved', photo_url: 'https://cdn.example.com/unserved.jpg' },
     // An inline photo must be a JPEG image, unlike a photo that sendPhoto sends by URL.
     { ...urlPhotoResult, id: 'pdf-as-photo', photo_url: CATS_PDF_URL },
+    { ...urlPhotoResult, id: 'gif-as-photo', photo_url: mislabeledGifUrl },
     { ...urlDocumentResult, id: 'photo-as-document', document_url: CAT_PHOTO_URL },
   ]);
   const historyBefore = await getHistory(ada.id, privateChat);
@@ -457,9 +472,10 @@ Deno.test('an account cannot send media at a URL the emulated web does not serve
   const statuses = [
     (await choose(ada.id, inlineQuery.id, 'unserved')).status,
     (await choose(ada.id, inlineQuery.id, 'pdf-as-photo')).status,
+    (await choose(ada.id, inlineQuery.id, 'gif-as-photo')).status,
     (await choose(ada.id, inlineQuery.id, 'photo-as-document')).status,
   ];
-  expectEqual(statuses, [502, 422, 422], 'Expected unusable media to be refused');
+  expectEqual(statuses, [502, 422, 422, 422], 'Expected unusable media to be refused');
   expectEqual(
     [(await getHistory(ada.id, privateChat)).length, (await readUpdates()).length],
     [historyBefore.length, 0],

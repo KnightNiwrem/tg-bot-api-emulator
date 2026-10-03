@@ -22,6 +22,7 @@ import type { WebFileDownload } from '../src/services/web_file_download.ts';
 import type { ChatDomainEvent } from '../src/types/chat_domain_event.ts';
 import { ALL_CHAT_PERMISSIONS } from '../src/types/chat_permissions.ts';
 import type { InlineQueryChat } from '../src/types/inline_query.ts';
+import type { FileUpload } from '../src/types/stored_file.ts';
 
 const SUPERGROUP = {
   kind: 'supergroup',
@@ -325,6 +326,8 @@ Deno.test('InlineQueryService downloads media named by URL each time a result is
     files,
     webResources,
     downloadedUrls,
+    storedUploads,
+    blockedUsers,
     inlineQueries,
     publishedEvents,
     account,
@@ -335,6 +338,11 @@ Deno.test('InlineQueryService downloads media named by URL each time a result is
     webResources.set(url, { downloaded: true, content, mediaType });
   serve('https://example.com/cat.jpg', 'image/jpeg', jpegImage(4, 3));
   serve('https://example.com/dog.png', 'image/jpeg', new Uint8Array([1, 2, 3]));
+  // A readable image that is not a JPEG, whatever type it is served as.
+  const gifImage = new Uint8Array(13);
+  gifImage.set(new TextEncoder().encode('GIF89a'));
+  gifImage.set([4, 0, 3, 0], 6);
+  serve('https://example.com/cat.gif', 'image/jpeg', gifImage);
   serve('https://example.com/cats.pdf', 'application/pdf', new Uint8Array([1, 2]));
   serve('https://example.com/cats.zip', 'application/x-zip', new Uint8Array([1, 2]));
   const webPhoto = (
@@ -407,6 +415,7 @@ Deno.test('InlineQueryService downloads media named by URL each time a result is
     }),
     webPhoto('unserved', 'https://example.com/unserved.jpg'),
     webPhoto('unreadable', 'https://example.com/dog.png'),
+    webPhoto('not-jpeg', 'https://example.com/cat.gif'),
     webDocument('mistyped', 'https://example.com/cats.zip'),
   ]);
   if (!answered.answered || answered.inlineQuery.state.status !== 'answered') {
@@ -465,17 +474,34 @@ Deno.test('InlineQueryService downloads media named by URL each time a result is
   }
 
   const publishedEventCount = publishedEvents.length;
+  const storedUploadCount = storedUploads.length;
+  const downloadCount = downloadedUrls.length;
   const failures = [
     await choose('unserved'),
     await choose('unreadable'),
+    await choose('not-jpeg'),
     await choose('mistyped'),
   ].map((result) => result.chosen ? 'chosen' : result.reason);
+  // A download that the chat then refuses is not stored either.
+  blockedUsers.block(account.profile.id, inlineBot.profile.id);
+  const blocked = await choose('photo');
   if (
-    JSON.stringify(failures) !==
-      JSON.stringify(['web_media_unavailable', 'web_media_invalid', 'web_media_invalid']) ||
-    publishedEvents.length !== publishedEventCount
+    JSON.stringify([...failures, blocked.chosen ? 'chosen' : blocked.reason]) !==
+      JSON.stringify([
+        'web_media_unavailable',
+        'web_media_invalid',
+        'web_media_invalid',
+        'web_media_invalid',
+        'bot_blocked',
+      ]) ||
+    publishedEvents.length !== publishedEventCount ||
+    storedUploads.length !== storedUploadCount || downloadedUrls.length !== downloadCount + 5
   ) {
-    throw new Error(`Expected unusable media to be refused unpublished, received ${failures}`);
+    throw new Error(
+      `Expected refused results to store and publish nothing, received ${failures}, ${
+        JSON.stringify(blocked)
+      }`,
+    );
   }
 });
 
@@ -615,12 +641,20 @@ function createInlineQueryFixture() {
   const blockedUsers = new BlockedUserRepository();
   const publishedEvents: ChatDomainEvent[] = [];
   const events = { publish: (event: ChatDomainEvent) => publishedEvents.push(event) };
+  // The uploads the messaging services store with their messages, in order.
+  const storedUploads: FileUpload[] = [];
+  const messageFiles = {
+    addFile: (upload: FileUpload) => {
+      storedUploads.push(upload);
+      return files.addFile(upload);
+    },
+  };
   const privateMessaging = new PrivateMessagingService({
     accounts,
     bots,
     privateConversations: new PrivateConversationRepository(),
     messages,
-    files,
+    files: messageFiles,
     polls,
     messageBoxes,
     blockedUsers,
@@ -632,7 +666,7 @@ function createInlineQueryFixture() {
     bots,
     sharedChats,
     messages,
-    files,
+    files: messageFiles,
     polls,
     messageBoxes,
     events,
@@ -689,6 +723,7 @@ function createInlineQueryFixture() {
     files,
     webResources,
     downloadedUrls,
+    storedUploads,
     sharedChats,
     blockedUsers,
     inlineQueries,
