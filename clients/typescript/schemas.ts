@@ -1,6 +1,7 @@
 import { z } from 'zod';
 
 import {
+  MAX_CUSTOM_TITLE_LENGTH,
   MAX_SUPERGROUP_OR_CHANNEL_ID,
   MAX_TELEGRAM_USER_ID,
   MIN_SUPERGROUP_OR_CHANNEL_ID,
@@ -751,12 +752,17 @@ export const notificationsResponseSchema = z.strictObject({
   })),
 });
 
+/** A custom title, which holds at least one and at most 16 characters, counted by code point. */
+const customTitleSchema = z.string().min(1).refine((title) =>
+  [...title].length <= MAX_CUSTOM_TITLE_LENGTH
+);
+
 export const chatAdministratorsResponseSchema = z.strictObject({
   administrators: z.array(z.discriminatedUnion('status', [
     z.strictObject({
       user_id: z.number().int().positive(),
       status: z.literal('owner'),
-      custom_title: z.string().optional(),
+      custom_title: customTitleSchema.optional(),
     }),
     z.strictObject({
       user_id: z.number().int().positive(),
@@ -777,11 +783,11 @@ export const chatAdministratorsResponseSchema = z.strictObject({
         can_manage_tags: z.boolean(),
         can_send_welcome_messages: z.boolean(),
       }),
-      custom_title: z.string().optional(),
+      custom_title: customTitleSchema.optional(),
       promoted_by_user_id: z.number().int().positive(),
       can_be_edited: z.boolean(),
     }),
-  ])),
+  ])).min(1),
 });
 
 export const chatActionsResponseSchema = z.strictObject({
