@@ -263,6 +263,11 @@ export class SharedChatRepository {
     return [...(this.#pendingJoinRequestsByChatId.get(chatId)?.values() ?? [])];
   }
 
+  /** Ends a user's pending request to join a chat, as a decline does; returns false for none. */
+  removeJoinRequest(chatId: number, userId: number): boolean {
+    return this.#pendingJoinRequestsByChatId.get(chatId)?.delete(userId) ?? false;
+  }
+
   /** Counts a chat's pending join requests sent through an invite link. */
   countJoinRequestsByInviteLink(chatId: number, inviteLinkUrl: string): number {
     return this.listJoinRequests(chatId)

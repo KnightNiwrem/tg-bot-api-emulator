@@ -61,7 +61,7 @@ administrator status bypasses privacy mode. The implemented rights with behavior
 | ---------------------- | -------------------------------------------------------------------------------------- |
 | `can_change_info`      | Call `setChatTitle` and `setChatDescription`                                           |
 | `can_delete_messages`  | Delete other members' content and service messages                                     |
-| `can_invite_users`     | Call `createChatInviteLink`                                                            |
+| `can_invite_users`     | Call `createChatInviteLink`, and decide join requests                                  |
 | `can_restrict_members` | Call `banChatMember`, `unbanChatMember`, `restrictChatMember` and `setChatPermissions` |
 | `can_promote_members`  | Call `promoteChatMember`, granting the rights the bot holds                            |
 
@@ -405,9 +405,8 @@ production read permissions.
 - **Promotions by administrator accounts.** Only the owner promotes and demotes through the
   emulation API; an administrator account with `can_promote_members` cannot.
 - **Anonymous administrators.** Anonymous administration and its message attribution are absent.
-- **Join request decisions and the link lifecycle.** Bots cannot yet approve or decline
-  [join requests](invite-links.md#real-gaps), and invite links cannot be edited, revoked or
-  exported.
+- **The invite link lifecycle.** [Invite links](invite-links.md#real-gaps) cannot be edited, revoked
+  or exported.
 - **Additional service messages.** Only membership, title and [pin](pinned-messages.md) service
   messages are produced. Other service events, such as photo changes, need corresponding messages as
   their features are supported.

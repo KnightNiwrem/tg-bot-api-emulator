@@ -545,3 +545,428 @@ Deno.test('a grammY bot receives a join request through its webhook, as the log 
     await webhookServer.shutdown();
   }
 });
+
+/** Describes membership updates and service messages briefly, as `kind user by actor: change`. */
+function describeMembershipUpdates(updates: ReadonlyArray<Record<string, unknown>>): string[] {
+  return updates.map((update) => {
+    const chatMember = update.chat_member as
+      | {
+        from: { id: number };
+        old_chat_member: { user: { id: number }; status: string };
+        new_chat_member: { status: string };
+        invite_link?: { invite_link: string };
+      }
+      | undefined;
+    if (chatMember !== undefined) {
+      return `chat_member ${chatMember.old_chat_member.user.id} by ${chatMember.from.id}: ${chatMember.old_chat_member.status} -> ${chatMember.new_chat_member.status} via ${chatMember.invite_link?.invite_link}`;
+    }
+    const message = update.message as
+      | { from: { id: number }; new_chat_members?: Array<{ id: number }> }
+      | undefined;
+    if (message?.new_chat_members !== undefined) {
+      return `joined ${
+        message.new_chat_members.map(({ id }) => id).join(',')
+      } by ${message.from.id}`;
+    }
+    return JSON.stringify(update);
+  });
+}
+
+Deno.test('a bot approves a request, which lets the account in through the link', async () => {
+  const {
+    api,
+    grace,
+    hopper,
+    inviterBot,
+    coInviterBot,
+    observerBot,
+    memberBot,
+    supergroup,
+    supergroupPath,
+    readUpdates,
+    callBot,
+    requestLink,
+    useLink,
+    getJoinRequests,
+    getPendingCounts,
+    getMemberStatus,
+  } = await createJoinRequestFixture();
+  await useLink(grace, requestLink.invite_link);
+  await useLink(hopper, requestLink.invite_link);
+  for (const bot of [inviterBot, coInviterBot, observerBot, memberBot]) {
+    await readUpdates(bot);
+  }
+  const memberCount = async () =>
+    (await callBot(inviterBot, 'getChatMemberCount', { chat_id: supergroup.id })).body.result;
+  const memberCountBefore = await memberCount() as number;
+
+  // The co-inviter, which did not create the link, approves Grace's request.
+  const approval = await callBot(coInviterBot, 'approveChatJoinRequest', {
+    chat_id: supergroup.id,
+    user_id: grace.id,
+  });
+
+  expectEqual(
+    [approval.status, approval.body.result],
+    [200, true],
+    'Expected an administrator with can_invite_users to approve a request it did not receive first',
+  );
+  expectEqual(
+    [
+      await getMemberStatus(grace.id),
+      await memberCount(),
+      await getJoinRequests(),
+      await getPendingCounts(),
+    ],
+    ['member', memberCountBefore + 1, [[hopper.id, requestLink.invite_link]], [1]],
+    "Expected Grace to join and her request to disappear, leaving Hopper's",
+  );
+  const inviterUpdates = await readUpdates(inviterBot);
+  expectEqual(
+    describeMembershipUpdates(inviterUpdates),
+    [
+      `chat_member ${grace.id} by ${coInviterBot.bot.id}: left -> member via ${requestLink.invite_link}`,
+      `joined ${grace.id} by ${grace.id}`,
+    ],
+    "Expected the approval from the co-inviter, with the link, and Grace's own service message",
+  );
+  expectEqual(
+    (inviterUpdates[0]?.chat_member as { invite_link: unknown }).invite_link,
+    { ...requestLink, pending_join_request_count: 1 },
+    'Expected the creator to see the whole link with the request still pending',
+  );
+  expectEqual(
+    [
+      describeMembershipUpdates(await readUpdates(observerBot)),
+      describeMembershipUpdates(await readUpdates(memberBot)),
+    ],
+    [
+      [
+        `chat_member ${grace.id} by ${coInviterBot.bot.id}: left -> member via ${
+          hiddenInviteLink(requestLink.invite_link)
+        }`,
+        `joined ${grace.id} by ${grace.id}`,
+      ],
+      [`joined ${grace.id} by ${grace.id}`],
+    ],
+    'Expected other administrators to see the hidden link, and other bots only the service message',
+  );
+  const { body: { messages } } = await requestJson<
+    { messages: Array<{ from: { id: number }; new_chat_members?: Array<{ id: number }> }> }
+  >(api, 'GET', `${supergroupPath(grace.id)}/messages`);
+  expectEqual(
+    [messages.at(-1)?.from.id, messages.at(-1)?.new_chat_members?.map(({ id }) => id)],
+    [grace.id, [grace.id]],
+    "Expected Grace's history to end with her joining",
+  );
+});
+
+Deno.test('a bot declines a request, which leaves the account outside without an update', async () => {
+  const {
+    api,
+    grace,
+    inviterBot,
+    observerBot,
+    memberBot,
+    supergroup,
+    supergroupPath,
+    readUpdates,
+    callBot,
+    requestLink,
+    useLink,
+    getJoinRequests,
+    getPendingCounts,
+    getMemberStatus,
+  } = await createJoinRequestFixture();
+  await useLink(grace, requestLink.invite_link);
+  for (const bot of [inviterBot, observerBot, memberBot]) {
+    await readUpdates(bot);
+  }
+
+  const decline = await callBot(inviterBot, 'declineChatJoinRequest', {
+    chat_id: supergroup.id,
+    user_id: grace.id,
+  });
+
+  expectEqual(
+    [
+      [decline.status, decline.body.result],
+      await getMemberStatus(grace.id),
+      await getJoinRequests(),
+      await getPendingCounts(),
+      (await api.request(`${supergroupPath(grace.id)}/messages`)).status,
+      await readUpdates(inviterBot),
+      await readUpdates(observerBot),
+      await readUpdates(memberBot),
+    ],
+    [[200, true], 'left', [], [0], 403, [], [], []],
+    'Expected the request to disappear, Grace to stay outside, and no bot to hear of it',
+  );
+  expectEqual(
+    [
+      (await useLink(grace, requestLink.invite_link)).body.outcome,
+      await getJoinRequests(),
+    ],
+    ['join_request_sent', [[grace.id, requestLink.invite_link]]],
+    'Expected Grace to be able to request again',
+  );
+});
+
+Deno.test('deciding a request has an explicit outcome for each standing, right and chat', async () => {
+  const {
+    api,
+    sessionPath,
+    grace,
+    hopper,
+    linus,
+    inviterBot,
+    coInviterBot,
+    observerBot,
+    memberBot,
+    supergroup,
+    readUpdates,
+    callBot,
+    requestLink,
+    useLink,
+    getJoinRequests,
+  } = await createJoinRequestFixture();
+  await useLink(grace, requestLink.invite_link);
+  await useLink(hopper, requestLink.invite_link);
+  // Linus starts a private chat with the inviter, which has no join requests.
+  await expectStatus(
+    api.request(
+      `${sessionPath}/accounts/${linus.id}/messages`,
+      jsonRequest('POST', { to: { type: 'private', botId: inviterBot.bot.id }, text: 'hi' }),
+    ),
+    201,
+    'Expected Linus to write to the inviter',
+  );
+  const decide = async (
+    bot: FixtureBot,
+    method: 'approveChatJoinRequest' | 'declineChatJoinRequest',
+    parameters: object,
+  ) => {
+    const { status, body } = await callBot(bot, method, parameters);
+    return [status, body.ok ? body.result : body.description];
+  };
+  const inChat = (userId: number) => ({ chat_id: supergroup.id, user_id: userId });
+  const requestsBefore = await getJoinRequests();
+  await readUpdates(inviterBot);
+  await readUpdates(coInviterBot);
+
+  const refusals = [
+    await decide(inviterBot, 'approveChatJoinRequest', { chat_id: supergroup.id }),
+    await decide(inviterBot, 'approveChatJoinRequest', { user_id: grace.id }),
+    await decide(inviterBot, 'approveChatJoinRequest', { ...inChat(grace.id), extra: 1 }),
+    await decide(inviterBot, 'approveChatJoinRequest', {
+      chat_id: -1_009_999_999_999,
+      user_id: grace.id,
+    }),
+    await decide(inviterBot, 'declineChatJoinRequest', { chat_id: linus.id, user_id: grace.id }),
+    await decide(observerBot, 'approveChatJoinRequest', inChat(grace.id)),
+    await decide(memberBot, 'declineChatJoinRequest', inChat(grace.id)),
+    await decide(inviterBot, 'approveChatJoinRequest', inChat(linus.id)),
+    await decide(inviterBot, 'declineChatJoinRequest', inChat(999_999_999)),
+    await decide(inviterBot, 'approveChatJoinRequest', inChat(inviterBot.bot.id)),
+  ];
+
+  expectEqual(
+    refusals,
+    [
+      [400, 'Bad Request: invalid user_id specified'],
+      [400, 'Bad Request: chat_id is empty'],
+      [400, 'Bad Request: invalid approveChatJoinRequest parameters'],
+      [400, 'Bad Request: chat not found'],
+      [400, "Bad Request: the chat can't have join requests"],
+      [400, 'Bad Request: not enough rights to manage chat join requests'],
+      [400, 'Bad Request: not enough rights to manage chat join requests'],
+      [400, 'Bad Request: HIDE_REQUESTER_MISSING'],
+      [400, 'Bad Request: HIDE_REQUESTER_MISSING'],
+      [400, 'Bad Request: USER_ALREADY_PARTICIPANT'],
+    ],
+    'Expected each refusal in the order Telegram checks',
+  );
+  expectEqual(
+    [await getJoinRequests(), await readUpdates(inviterBot), await readUpdates(coInviterBot)],
+    [requestsBefore, [], []],
+    'Expected the refusals to change nothing and send no update',
+  );
+
+  // Decisions consume requests, so repeating one, or deciding the other way, is refused.
+  const decisions = [
+    await decide(inviterBot, 'approveChatJoinRequest', inChat(grace.id)),
+    await decide(coInviterBot, 'approveChatJoinRequest', inChat(grace.id)),
+    await decide(inviterBot, 'declineChatJoinRequest', inChat(grace.id)),
+    await decide(inviterBot, 'declineChatJoinRequest', inChat(hopper.id)),
+    await decide(inviterBot, 'declineChatJoinRequest', inChat(hopper.id)),
+    await decide(coInviterBot, 'approveChatJoinRequest', inChat(hopper.id)),
+  ];
+  expectEqual(
+    decisions,
+    [
+      [200, true],
+      [400, 'Bad Request: USER_ALREADY_PARTICIPANT'],
+      [400, 'Bad Request: USER_ALREADY_PARTICIPANT'],
+      [200, true],
+      [400, 'Bad Request: HIDE_REQUESTER_MISSING'],
+      [400, 'Bad Request: HIDE_REQUESTER_MISSING'],
+    ],
+    'Expected each request to be decided once',
+  );
+
+  await callBot(inviterBot, 'leaveChat', { chat_id: supergroup.id });
+  expectEqual(
+    await decide(inviterBot, 'approveChatJoinRequest', inChat(hopper.id)),
+    [403, 'Forbidden: bot is not a member of the supergroup chat'],
+    'Expected a bot that left to be turned away',
+  );
+});
+
+Deno.test('simultaneous approvals add the member once, as the activity log shows', async () => {
+  const {
+    api,
+    sessionPath,
+    grace,
+    inviterBot,
+    coInviterBot,
+    observerBot,
+    supergroup,
+    readUpdates,
+    callBot,
+    requestLink,
+    useLink,
+  } = await createJoinRequestFixture();
+  await useLink(grace, requestLink.invite_link);
+  await readUpdates(observerBot);
+  const memberCount = async () =>
+    (await callBot(inviterBot, 'getChatMemberCount', { chat_id: supergroup.id })).body.result;
+  const memberCountBefore = await memberCount() as number;
+  const approve = (bot: FixtureBot) =>
+    callBot(bot, 'approveChatJoinRequest', { chat_id: supergroup.id, user_id: grace.id });
+
+  const approvals = await Promise.all([approve(inviterBot), approve(coInviterBot)]);
+  const activity = await requestJson<{ entries: Array<Record<string, unknown>> }>(
+    api,
+    'GET',
+    `${sessionPath}/bot-activity?method=approveChatJoinRequest`,
+  );
+
+  expectEqual(
+    approvals.map(({ status, body }) => [status, body.ok ? body.result : body.description])
+      .sort(),
+    [[200, true], [400, 'Bad Request: USER_ALREADY_PARTICIPANT']].sort(),
+    'Expected one approval to succeed and the other to find Grace a member',
+  );
+  expectEqual(
+    [await memberCount(), describeMembershipUpdates(await readUpdates(observerBot)).length],
+    [memberCountBefore + 1, 2],
+    'Expected Grace to join once, with one membership update and one service message',
+  );
+  expectEqual(
+    activity.body.entries.map(({ bot_id, answer }) => [bot_id, (answer as { ok: boolean }).ok])
+      .sort(),
+    [[inviterBot.bot.id, true], [coInviterBot.bot.id, false]].sort(),
+    'Expected the activity log to record the success and the failure',
+  );
+});
+
+Deno.test('an approved account joins with its restriction, and counts for its link while it stays', async () => {
+  const {
+    api,
+    ada,
+    grace,
+    inviterBot,
+    supergroup,
+    supergroupPath,
+    asOwner,
+    callBot,
+    requestLink,
+    useLink,
+  } = await createJoinRequestFixture();
+  await useLink(grace, requestLink.invite_link);
+  await asOwner(
+    `restrictions/${grace.id}`,
+    jsonRequest('PUT', { permissions: { can_send_messages: true } }),
+  );
+  const linkMemberCount = async () =>
+    (await requestJson<{ invite_links: Array<{ member_count: number }> }>(
+      api,
+      'GET',
+      `${supergroupPath(ada.id)}/invite-links`,
+    )).body.invite_links[0].member_count;
+
+  await callBot(inviterBot, 'approveChatJoinRequest', {
+    chat_id: supergroup.id,
+    user_id: grace.id,
+  });
+  const member = (await callBot(inviterBot, 'getChatMember', {
+    chat_id: supergroup.id,
+    user_id: grace.id,
+  })).body.result as { status: string; is_member: boolean };
+  const countWhileMember = await linkMemberCount();
+  await expectStatus(
+    api.request(`${supergroupPath(grace.id)}/members/${grace.id}`, { method: 'DELETE' }),
+    204,
+    'Expected Grace to leave',
+  );
+
+  expectEqual(
+    [member.status, member.is_member, countWhileMember, await linkMemberCount()],
+    ['restricted', true, 1, 0],
+    'Expected Grace to join restricted, through the link, until she leaves',
+  );
+});
+
+Deno.test('a grammY bot approves join requests through its webhook', async () => {
+  const { api, sessionPath, grace, inviterBot, supergroup, requestLink, useLink, getMemberStatus } =
+    await createJoinRequestFixture();
+  const grammyBot = new Bot(inviterBot.token, {
+    client: {
+      apiRoot: `http://emulator.example:9000${sessionPath}/bot-api`,
+      fetch: async (input, init) => await api.fetch(new Request(input, init)),
+    },
+  });
+  const memberObserved = Promise.withResolvers<Record<string, unknown>>();
+  grammyBot.on('chat_join_request', async (context) => {
+    await context.approveChatJoinRequest(context.chatJoinRequest.from.id);
+  });
+  grammyBot.on('chat_member', (context) => {
+    memberObserved.resolve(context.chatMember as unknown as Record<string, unknown>);
+  });
+  const handleWebhookRequest = webhookCallback(grammyBot, 'std/http');
+  const webhookServer = Deno.serve(
+    { hostname: '127.0.0.1', port: 0, onListen: () => {} },
+    (request) => handleWebhookRequest(request),
+  );
+  try {
+    await grammyBot.api.setWebhook(`http://127.0.0.1:${webhookServer.addr.port}/webhook`, {
+      allowed_updates: ['chat_join_request', 'chat_member'],
+    });
+    await useLink(grace, requestLink.invite_link);
+    let timeoutId: ReturnType<typeof setTimeout> | undefined;
+    const observed = await Promise.race([
+      memberObserved.promise,
+      new Promise<never>((_, reject) => {
+        timeoutId = setTimeout(
+          () => reject(new Error('Expected the bot to observe the approved member')),
+          5_000,
+        );
+      }),
+    ]).finally(() => clearTimeout(timeoutId));
+
+    expectEqual(
+      [
+        (observed.from as { id: number }).id,
+        (observed.new_chat_member as { user: { id: number }; status: string }).user.id,
+        (observed.invite_link as { invite_link: string }).invite_link,
+        await getMemberStatus(grace.id),
+        (observed.chat as { id: number }).id,
+      ],
+      [inviterBot.bot.id, grace.id, requestLink.invite_link, 'member', supergroup.id],
+      'Expected the bot to approve Grace and receive her joining from itself',
+    );
+  } finally {
+    await api.request(sessionPath, { method: 'DELETE' });
+    await webhookServer.shutdown();
+  }
+});

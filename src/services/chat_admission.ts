@@ -127,6 +127,31 @@ export type GetInviteLinksForAccountResult =
     readonly reason: 'account_not_found' | 'chat_not_found' | 'not_the_owner';
   };
 
+export interface DecideJoinRequestAsBotInput {
+  readonly deciderBotId: number;
+  readonly chatId: number;
+  /** The account whose request the bot approves or declines. */
+  readonly userId: number;
+}
+
+/**
+ * Why a bot cannot approve or decline a join request, in the order the official Bot API server,
+ * TDLib's `process_dialog_join_request`, and then Telegram's servers check them.
+ */
+export type DecideJoinRequestAsBotFailureReason =
+  | 'bot_not_found'
+  | SupergroupBotAccessFailureReason
+  /** The bot lacks the `can_invite_users` administrator right. */
+  | 'not_enough_rights'
+  /** The user is a member, which Telegram refuses as `USER_ALREADY_PARTICIPANT`. */
+  | 'already_a_member'
+  /** The user has no pending request, which Telegram refuses as `HIDE_REQUESTER_MISSING`. */
+  | 'join_request_missing';
+
+export type DecideJoinRequestAsBotResult =
+  | { readonly decided: true }
+  | { readonly decided: false; readonly reason: DecideJoinRequestAsBotFailureReason };
+
 export interface GetJoinRequestsForAccountInput {
   /** The account that inspects the requests, which must own the supergroup. */
   readonly accountId: number;
@@ -172,6 +197,7 @@ interface ChatAdmissionStore extends SupergroupMembershipLookup {
   countMembersJoinedByInviteLink(chatId: number, inviteLinkUrl: string): number;
   addJoinRequest(request: ChatJoinRequest): void;
   getJoinRequest(chatId: number, userId: number): ChatJoinRequest | undefined;
+  removeJoinRequest(chatId: number, userId: number): boolean;
   listJoinRequests(chatId: number): readonly ChatJoinRequest[];
   countJoinRequestsByInviteLink(chatId: number, inviteLinkUrl: string): number;
 }
@@ -193,6 +219,7 @@ interface AccountAdmission {
       readonly accountId: number;
       readonly chatId: number;
       readonly inviteLink?: ChatInviteLink;
+      readonly approverId?: number;
     },
   ): void;
 }
@@ -214,8 +241,9 @@ interface ChatAdmissionServiceDependencies {
  * Decides who may enter a supergroup without its owner adding them: administrator bots create
  * additional invite links, and accounts join through them, or by the username of a public
  * supergroup. A link keeps its creator, its expiry date, its member limit, and whether it creates
- * join requests, which keep the account outside until an administrator decides. Its expiry date
- * arrives only when a test makes it arrive, so tests decide when a link stops working.
+ * join requests, which keep the account outside until an administrator bot with
+ * `can_invite_users` approves or declines them. Its expiry date arrives only when a test makes it
+ * arrive, so tests decide when a link stops working.
  */
 export class ChatAdmissionService {
   readonly #accounts: AccountLookup;
@@ -390,6 +418,49 @@ export class ChatAdmissionService {
   }
 
   /**
+   * Approves an account's pending request to join a supergroup as an administrator bot: the
+   * account joins, restricted if it was, through the link it sent the request through, and the
+   * request ends. The join is the account's own service message, and administrator bots receive
+   * it from the approving bot with the link. Checks are as `#resolveJoinRequestDecision` makes them.
+   */
+  approveJoinRequestAsBot(input: DecideJoinRequestAsBotInput): DecideJoinRequestAsBotResult {
+    const decision = this.#resolveJoinRequestDecision(input);
+    if (!decision.resolved) {
+      return { decided: false, reason: decision.reason };
+    }
+    const { request } = decision;
+    const inviteLink = this.#inviteLinks.findInviteLink(request.inviteLinkUrl);
+    if (inviteLink === undefined) {
+      throw new Error(
+        `Join request of user ${request.userId} names unknown link ${request.inviteLinkUrl}`,
+      );
+    }
+    this.#memberships.admitAccount({
+      accountId: request.userId,
+      chatId: request.chatId,
+      inviteLink,
+      approverId: input.deciderBotId,
+    });
+    return { decided: true };
+  }
+
+  /**
+   * Declines an account's pending request to join a supergroup as an administrator bot: the
+   * request ends and the account stays outside, which no update reports. Checks are as
+   * `#resolveJoinRequestDecision` makes them.
+   */
+  declineJoinRequestAsBot(input: DecideJoinRequestAsBotInput): DecideJoinRequestAsBotResult {
+    const decision = this.#resolveJoinRequestDecision(input);
+    if (!decision.resolved) {
+      return { decided: false, reason: decision.reason };
+    }
+    if (!this.#sharedChats.removeJoinRequest(input.chatId, input.userId)) {
+      throw new Error(`Join request of user ${input.userId} to chat ${input.chatId} vanished`);
+    }
+    return { decided: true };
+  }
+
+  /**
    * Returns the pending join requests of a supergroup to its owner, in the order they were sent.
    * Requests reach administrator bots with `can_invite_users`; among accounts, only the owner
    * inspects them, as for the invite links they were sent through.
@@ -428,6 +499,37 @@ export class ChatAdmissionService {
       expired: true,
       link: this.#describeUsage(this.#inviteLinks.markInviteLinkExpired(link.url)),
     };
+  }
+
+  /**
+   * Finds the pending request a bot decides on, as TDLib's `process_dialog_join_request` and then
+   * Telegram's servers check it: the bot must be able to write to the supergroup and, as TDLib's
+   * `can_manage_dialog_join_requests` requires, hold the `can_invite_users` administrator right,
+   * whoever created the link the request was sent through. A member has no request to decide,
+   * and neither has a user whose request was decided before.
+   */
+  #resolveJoinRequestDecision(
+    { deciderBotId, chatId, userId }: DecideJoinRequestAsBotInput,
+  ):
+    | { readonly resolved: true; readonly request: ChatJoinRequest }
+    | { readonly resolved: false; readonly reason: DecideJoinRequestAsBotFailureReason } {
+    if (this.#bots.getById(deciderBotId) === undefined) {
+      return { resolved: false, reason: 'bot_not_found' };
+    }
+    const access = resolveSupergroupBotMembership(this.#sharedChats, deciderBotId, chatId);
+    if (!access.resolved) {
+      return { resolved: false, reason: access.reason };
+    }
+    if (!holdsSupergroupAdministratorRight(access.membership, 'can_invite_users')) {
+      return { resolved: false, reason: 'not_enough_rights' };
+    }
+    if (this.#sharedChats.getChatMembership(chatId, userId) !== undefined) {
+      return { resolved: false, reason: 'already_a_member' };
+    }
+    const request = this.#sharedChats.getJoinRequest(chatId, userId);
+    return request === undefined
+      ? { resolved: false, reason: 'join_request_missing' }
+      : { resolved: true, request };
   }
 
   /**

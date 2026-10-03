@@ -1,0 +1,13 @@
+type: object
+additionalProperties: false
+required:
+  - chat_id
+  - user_id
+properties:
+  chat_id:
+    $ref: ./ChatIdentifier.yaml
+    description: >-
+      Identifier of the supergroup: its negative chat ID, or `@username` for a public one.
+  user_id:
+    type: integer
+    description: Identifier of the account whose pending join request the bot decides on.

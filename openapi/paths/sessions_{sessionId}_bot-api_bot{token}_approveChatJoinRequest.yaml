@@ -1,0 +1,66 @@
+description: >-
+  Telegram Bot API method for approving an account's pending request to join a supergroup. Any
+  administrator bot with `can_invite_users` decides any request, whoever created the link it was
+  sent through. The account joins, restricted if it was, through that link, whose member count
+  includes it while it stays; the request ends. The join is the account's own service message
+  with `new_chat_members`, which every bot of the supergroup receives, and administrator bots
+  subscribed to `chat_member` receive the change from the approving bot with `invite_link`.
+parameters:
+  - $ref: ../components/parameters/SessionId.yaml
+  - $ref: ../components/parameters/BotToken.yaml
+post:
+  operationId: approveChatJoinRequest
+  summary: Approve a join request as the authenticated virtual bot
+  requestBody:
+    required: true
+    content:
+      application/json:
+        schema:
+          $ref: ../components/schemas/ChatJoinRequestDecisionRequest.yaml
+      application/x-www-form-urlencoded:
+        schema:
+          $ref: ../components/schemas/ChatJoinRequestDecisionRequest.yaml
+      multipart/form-data:
+        schema:
+          $ref: ../components/schemas/ChatJoinRequestDecisionRequest.yaml
+  responses:
+    '200':
+      description: The account joined the supergroup.
+      content:
+        application/json:
+          schema:
+            $ref: ../components/schemas/TrueResultResponse.yaml
+    '400':
+      description: >-
+        The request cannot be decoded or has unsupported parameters, or Telegram would reject
+        it, in this order: `user_id` is missing or not positive (`Bad Request: invalid user_id
+        specified`); `chat_id` is missing (`Bad Request: chat_id is empty`); the chat is neither
+        a private chat with an account that has written to the bot nor a supergroup the bot is
+        or was a member of (`Bad Request: chat not found`); the chat is a private chat (`Bad
+        Request: the chat can't have join requests`); the bot lacks `can_invite_users` (`Bad
+        Request: not enough rights to manage chat join requests`); the user is a member (`Bad
+        Request: USER_ALREADY_PARTICIPANT`); or the user has no pending request, also when one
+        was approved or declined before (`Bad Request: HIDE_REQUESTER_MISSING`). A refused
+        request changes nothing.
+      content:
+        application/json:
+          schema:
+            $ref: ../components/schemas/BotApiErrorResponse.yaml
+    '401':
+      description: The token does not belong to a virtual bot in the addressed session.
+      content:
+        application/json:
+          schema:
+            $ref: ../components/schemas/BotApiErrorResponse.yaml
+    '403':
+      description: >-
+        The bot left the supergroup (`Forbidden: bot is not a member of the supergroup chat`) or
+        was removed from it (`Forbidden: bot was kicked from the supergroup chat`).
+      content:
+        application/json:
+          schema:
+            $ref: ../components/schemas/BotApiErrorResponse.yaml
+    '404':
+      description: No active test session has the supplied identifier.
+    '429':
+      $ref: ../components/responses/BotApiRateLimited.yaml

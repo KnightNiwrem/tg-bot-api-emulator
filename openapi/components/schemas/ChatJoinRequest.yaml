@@ -19,7 +19,8 @@ properties:
     $ref: ./TelegramUserId.yaml
     description: >-
       The requester's private chat with the bot, whose ID is the requester's. The emulator
-      opens no such chat: the bot writes to it only once the account has started the bot.
+      opens no such chat before a decision: the bot writes to it only once the account has
+      started the bot.
   date:
     type: integer
     minimum: 0

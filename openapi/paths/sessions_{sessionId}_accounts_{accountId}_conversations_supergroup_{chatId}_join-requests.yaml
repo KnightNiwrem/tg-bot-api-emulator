@@ -8,7 +8,8 @@ get:
   summary: Return the pending requests to join the supergroup, as its owner sees them
   description: >-
     Lists the requests that accounts sent through invite links that create join requests, in the
-    order they were sent. A request ends when its account joins, whichever way, or is banned.
+    order they were sent. A request ends when a bot approves or declines it, or when its account
+    joins another way or is banned.
     Only the owner sees them, as only it sees the invite links they were sent through.
   responses:
     '200':
