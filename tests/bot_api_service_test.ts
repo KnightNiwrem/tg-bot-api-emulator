@@ -382,6 +382,46 @@ Deno.test('BotApiService shows restricted members and default permissions', () =
   }
 });
 
+Deno.test('BotApiService refuses to change a supergroup for a bot that does not exist', () => {
+  const { virtualUsers, sharedChatAdministration, botApi } = createBotApiFixture();
+  const owner = createAccount(virtualUsers);
+  const bot = createBot(virtualUsers, 'test_bot');
+  const creation = sharedChatAdministration.createSupergroup({
+    title: 'Team',
+    creatorAccountId: owner.profile.id,
+  });
+  if (!creation.created) {
+    throw new Error(`Expected the supergroup to be created, received ${creation.reason}`);
+  }
+  const chatId = creation.supergroup.id;
+  // An authenticated bot always exists, so a bot that does not is an internal error, not a reason.
+  const missingBot = { ...bot.profile, id: bot.profile.id + 1 };
+  const expectedMessage = `Bot ${missingBot.id} could not act in chat ${chatId}: actor_not_found`;
+
+  const changes = [
+    ['setChatTitle', () => botApi.setChatTitle(missingBot, { chatId, title: 'Renamed' })],
+    [
+      'setChatDescription',
+      () => botApi.setChatDescription(missingBot, { chatId, description: 'About' }),
+    ],
+    [
+      'setChatPermissions',
+      () => botApi.setChatPermissions(missingBot, { chatId, permissions: new Set() }),
+    ],
+  ] as const;
+  for (const [method, change] of changes) {
+    let changeError: unknown;
+    try {
+      change();
+    } catch (error) {
+      changeError = error;
+    }
+    if (!(changeError instanceof Error) || changeError.message !== expectedMessage) {
+      throw new Error(`Expected ${method} to throw ${expectedMessage}, received ${changeError}`);
+    }
+  }
+});
+
 function createBotApiFixture() {
   const identities = new TelegramIdentityRepository();
   const accounts = new AccountRepository();
