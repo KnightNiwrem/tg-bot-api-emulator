@@ -155,15 +155,15 @@ The default permissions grant everything; changing them is a [real gap](#real-ga
 and bots are refused what they may not send, as TDLib's
 [`can_send_message_content`][send-permission] checks each message after reading its content:
 
-| Content                                         | Permission needed                                | Bot API error, after `Bad Request:`                      |
-| ----------------------------------------------- | ------------------------------------------------ | -------------------------------------------------------- |
-| Text, including a pressed reply keyboard button | `can_send_messages`                              | `not enough rights to send text messages to the chat`    |
-| Photo                                           | `can_send_photos`                                | `not enough rights to send photos to the chat`           |
-| Document                                        | `can_send_documents`                             | `not enough rights to send documents to the chat`        |
-| Video                                           | `can_send_videos`                                | `not enough rights to send videos to the chat`           |
-| Voice note                                      | `can_send_voice_notes`                           | `not enough rights to send voice notes to the chat`      |
-| Poll                                            | `can_send_polls`                                 | `not enough rights to send polls to the chat`            |
-| Rich message                                    | `can_send_messages`, and each photo's and file's | `not enough rights to send the rich message to the chat` |
+| Content                                         | Permission needed                                           | Bot API error, after `Bad Request:`                      |
+| ----------------------------------------------- | ----------------------------------------------------------- | -------------------------------------------------------- |
+| Text, including a pressed reply keyboard button | `can_send_messages`                                         | `not enough rights to send text messages to the chat`    |
+| Photo                                           | `can_send_photos`                                           | `not enough rights to send photos to the chat`           |
+| Document                                        | `can_send_documents`                                        | `not enough rights to send documents to the chat`        |
+| Video                                           | `can_send_videos`                                           | `not enough rights to send videos to the chat`           |
+| Voice note                                      | `can_send_voice_notes`                                      | `not enough rights to send voice notes to the chat`      |
+| Poll                                            | `can_send_polls`                                            | `not enough rights to send polls to the chat`            |
+| Rich message                                    | `can_send_messages`, and each photo's and file's permission | `not enough rights to send the rich message to the chat` |
 
 An album fails for its first item that may not be sent. `forwardMessage` and `copyMessage` report
 such content as `Bad Request: the message can't be forwarded` or
@@ -184,17 +184,19 @@ govern: `can_send_audios` and `can_send_video_notes` (audio and video notes),
 ### Restricting users
 
 An administrator bot with `can_restrict_members` restricts a user with `restrictChatMember`, member
-or not, and keeps it the permissions `permissions` grants, which the official server's
-[`get_chat_permissions`][read-permissions] reads with these implications unless
-`use_independent_chat_permissions` is true:
+or not, and keeps it the permissions `permissions` grants, as the official server's
+[`get_chat_permissions`][read-permissions] reads them:
 
 - A missing object or field grants nothing; `can_manage_topics` and `can_edit_tag` default to
   `can_pin_messages`.
-- Without any media field, `can_send_media_messages` grants or withholds every media permission, and
-  grants `can_send_messages` too.
+- Without any media field, `can_send_media_messages` grants or withholds every media permission.
 - `can_react_to_messages` defaults to `can_send_messages` as granted so far.
-- `can_send_other_messages` and `can_add_web_page_previews` grant every media permission and
-  `can_send_messages`, and `can_send_polls` grants `can_send_messages`.
+- Unless `use_independent_chat_permissions` is true, `can_send_media_messages` also grants
+  `can_send_messages`, `can_send_polls` grants `can_send_messages`, and `can_send_other_messages` or
+  `can_add_web_page_previews` grants every media permission and `can_send_messages`.
+
+As the emulator is stricter, `can_send_media_messages` must be a boolean even when media fields make
+Telegram ignore it.
 
 Granting every permission lifts the restriction: as TDLib's
 [`DialogParticipantStatus::Restricted`][restricted-status] decides, such a user is a plain member,

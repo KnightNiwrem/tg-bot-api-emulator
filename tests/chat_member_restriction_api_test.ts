@@ -455,6 +455,11 @@ Deno.test('restrictChatMember refuses what Telegram refuses, without changing an
     await restrict(moderatorBot, { user_id: grace.id, permissions: '{' }),
     await restrict(moderatorBot, { user_id: grace.id, permissions: [] }),
     await restrict(moderatorBot, { user_id: grace.id, permissions: { can_send_polls: 1 } }),
+    // Telegram ignores this summary next to a media field; the emulator still checks its type.
+    await restrict(moderatorBot, {
+      user_id: grace.id,
+      permissions: { can_send_photos: true, can_send_media_messages: 'yes' },
+    }),
     await restrict(moderatorBot, { user_id: grace.id, permissions: { can_fly: true } }),
     await restrict(moderatorBot, { user_id: grace.id, can_send_messages: true }),
   ];
@@ -476,6 +481,11 @@ Deno.test('restrictChatMember refuses what Telegram refuses, without changing an
       [
         400,
         'Bad Request: can\'t parse chat permissions: Field "can_send_polls" must be of type Boolean',
+      ],
+      [
+        400,
+        'Bad Request: can\'t parse chat permissions: Field "can_send_media_messages" must be of ' +
+        'type Boolean',
       ],
       [400, 'Bad Request: invalid restrictChatMember parameters'],
       [400, 'Bad Request: invalid restrictChatMember parameters'],

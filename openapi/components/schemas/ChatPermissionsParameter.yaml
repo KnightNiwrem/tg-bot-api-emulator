@@ -2,10 +2,14 @@ description: >-
   The permissions granted, as a Bot API `ChatPermissions` object. As the official Bot API
   server's `get_chat_permissions` reads it, a missing object or field grants nothing, unless
   another field implies it: `can_manage_topics` and `can_edit_tag` default to
-  `can_pin_messages`; without any media field, `can_send_media_messages` grants or withholds
-  every media permission and, unless permissions are independent, grants `can_send_messages`
-  too; and `can_react_to_messages` defaults to `can_send_messages`. A field Telegram does not
-  know is refused.
+  `can_pin_messages`; when no individual media field is present, `can_send_media_messages`
+  grants or withholds every media permission; and `can_react_to_messages` defaults to
+  `can_send_messages` as granted so far. Unless `use_independent_chat_permissions` is true,
+  `can_send_media_messages` also grants `can_send_messages`, `can_send_polls` grants
+  `can_send_messages`, and `can_send_other_messages` or `can_add_web_page_previews` grants every
+  media permission and `can_send_messages`. A field Telegram does not know is refused, and
+  `can_send_media_messages` must be a boolean even when individual media fields make Telegram
+  ignore it.
 type: object
 additionalProperties: false
 properties:

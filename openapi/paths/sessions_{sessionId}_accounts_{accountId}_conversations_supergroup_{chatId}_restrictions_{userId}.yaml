@@ -24,7 +24,9 @@ put:
           $ref: ../components/schemas/RestrictSupergroupMemberRequest.yaml
   responses:
     '204':
-      description: The user is restricted as requested.
+      description: >-
+        The user keeps the listed permissions: restricted, or, with every permission, a plain
+        member or a user that left.
     '400':
       description: A path identifier or the body is invalid.
     '403':

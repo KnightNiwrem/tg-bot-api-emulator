@@ -51,7 +51,8 @@ const KNOWN_FIELD_NAMES: ReadonlySet<string> = new Set([
  *   `can_send_polls` grants `can_send_messages`.
  *
  * Telegram's descriptions answer text that is not a JSON object and a field that is not a JSON
- * boolean, checking fields in the server's order. `invalidParametersDescription` answers a field
+ * boolean, checking fields in the server's order, where `can_send_media_messages` is checked even
+ * when the server ignores it. `invalidParametersDescription` answers a field
  * Telegram does not know, which the server ignores; rejecting it instead surfaces the bot's
  * mistake in tests.
  */
@@ -125,22 +126,22 @@ function readPermissionFields(
   if (!readPermission('can_manage_topics', granted.has('can_pin_messages'))) {
     return { read: false, fieldName: 'can_manage_topics' };
   }
+  // Telegram ignores the summary of media when a media field is given, whatever its type; refusing
+  // one that is not a boolean instead surfaces the bot's mistake in tests.
+  const sendsMedia = readField(MEDIA_MESSAGES_FIELD_NAME, false);
+  if (sendsMedia === undefined) {
+    return { read: false, fieldName: MEDIA_MESSAGES_FIELD_NAME };
+  }
   if (MEDIA_PERMISSIONS.some((permission) => fields.has(permission))) {
     for (const permission of MEDIA_PERMISSIONS) {
       if (!readPermission(permission, false)) {
         return { read: false, fieldName: permission };
       }
     }
-  } else {
-    const sendsMedia = readField(MEDIA_MESSAGES_FIELD_NAME, false);
-    if (sendsMedia === undefined) {
-      return { read: false, fieldName: MEDIA_MESSAGES_FIELD_NAME };
-    }
-    if (sendsMedia) {
-      MEDIA_PERMISSIONS.forEach((permission) => granted.add(permission));
-      if (!usesIndependentChatPermissions) {
-        granted.add('can_send_messages');
-      }
+  } else if (sendsMedia) {
+    MEDIA_PERMISSIONS.forEach((permission) => granted.add(permission));
+    if (!usesIndependentChatPermissions) {
+      granted.add('can_send_messages');
     }
   }
   if (!readPermission('can_edit_tag', granted.has('can_pin_messages'))) {
