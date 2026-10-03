@@ -1,0 +1,99 @@
+type: object
+additionalProperties: false
+required:
+  - administrators
+properties:
+  administrators:
+    type: array
+    minItems: 1
+    description: The owner, then the administrators in the order they joined.
+    prefixItems:
+      - type: object
+        additionalProperties: false
+        required:
+          - user_id
+          - status
+        properties:
+          user_id:
+            type: integer
+          status:
+            type: string
+            const: owner
+          custom_title:
+            $ref: ./CustomTitle.yaml
+    items:
+      type: object
+      additionalProperties: false
+      required:
+        - user_id
+        - status
+        - rights
+        - promoted_by_user_id
+        - can_be_edited
+      properties:
+        user_id:
+          type: integer
+        status:
+          type: string
+          const: administrator
+        rights:
+          type: object
+          additionalProperties: false
+          description: Every supergroup right by its Bot API name, held or not.
+          required:
+            - can_manage_chat
+            - can_change_info
+            - can_delete_messages
+            - can_invite_users
+            - can_restrict_members
+            - can_pin_messages
+            - can_manage_topics
+            - can_promote_members
+            - can_manage_video_chats
+            - can_post_stories
+            - can_edit_stories
+            - can_delete_stories
+            - can_manage_tags
+            - can_send_welcome_messages
+          properties:
+            can_manage_chat:
+              type: boolean
+            can_change_info:
+              type: boolean
+            can_delete_messages:
+              type: boolean
+            can_invite_users:
+              type: boolean
+            can_restrict_members:
+              type: boolean
+            can_pin_messages:
+              type: boolean
+            can_manage_topics:
+              type: boolean
+            can_promote_members:
+              type: boolean
+            can_manage_video_chats:
+              type: boolean
+            can_post_stories:
+              type: boolean
+            can_edit_stories:
+              type: boolean
+            can_delete_stories:
+              type: boolean
+            can_manage_tags:
+              type: boolean
+            can_send_welcome_messages:
+              type: boolean
+        custom_title:
+          $ref: ./CustomTitle.yaml
+        promoted_by_user_id:
+          type: integer
+          description: >-
+            The owner or administrator that last set the administrator's rights, as Telegram
+            records it in `promoted_by`.
+        can_be_edited:
+          type: boolean
+          description: >-
+            Whether the account may change the administrator's rights or demote it: it is the
+            owner, or it holds `can_promote_members` and promoted the administrator, directly
+            or through administrators it promoted.

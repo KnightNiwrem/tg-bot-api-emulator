@@ -1,3 +1,4 @@
+export { MAX_CUSTOM_TITLE_LENGTH } from '../../src/types/chat_membership.ts';
 export {
   MAX_SUPERGROUP_OR_CHANNEL_ID,
   MAX_TELEGRAM_USER_ID,

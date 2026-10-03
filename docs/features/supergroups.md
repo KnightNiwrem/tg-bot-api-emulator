@@ -60,6 +60,21 @@ rights with behavioral effects are:
 | `can_delete_messages`  | Delete other members' content and service messages                                     |
 | `can_restrict_members` | Call `banChatMember`, `unbanChatMember`, `restrictChatMember` and `setChatPermissions` |
 
+### Administrator delegation
+
+Each administrator records who last set its rights, as Telegram records `promoted_by` in its
+[`channelParticipantAdmin`][participant-admin]; the owner's promotions record the owner. Bots see
+`can_be_edited` in `getChatMember`, `getChatAdministrators`, `chat_member` and `my_chat_member` as
+the Bot API documents `can_promote_members`: a bot may edit an administrator when it holds
+`can_promote_members`, which TDLib's [`promote_channel_participant`][promote-participant] requires
+of any change, and promoted the administrator, directly or through administrators it promoted. No
+administrator may edit itself. The owner edits every administrator.
+
+Members inspect the owner and administrators with
+`GET /sessions/{sessionId}/accounts/{accountId}/conversations/supergroup/{chatId}/administrators`,
+or the TypeScript client's `getChatAdministrators`: each administrator shows its rights, custom
+title, `promoted_by_user_id`, and `can_be_edited` as decided for the inspecting account.
+
 `banChatMember` removes a current member and records a service message authored by the bot.
 `unbanChatMember` lifts a ban; unless `only_if_banned` is true, it also removes a current member.
 Checks include self-targeting, owner protection, required rights and administrator targets. The
@@ -324,8 +339,6 @@ production read permissions.
 - **Bot-driven promotion and demotion.** `promoteChatMember` is not implemented. Only the owner can
   change administrators through the emulation API.
 - **Anonymous administrators.** Anonymous administration and its message attribution are absent.
-- **Administrator delegation.** The emulator has no delegated administrator hierarchy for deciding
-  who can edit another administrator's status.
 - **Invitation and joining workflows.** Invite links, join requests and account self-joining are
   absent; additions require the owner.
 - **Additional service messages.** Only membership and title service messages are produced. Other
@@ -351,13 +364,20 @@ not show. The emulator chooses where they are not visible:
   restriction (`Bad Request: user is an administrator of the chat`), since bots promote no one here.
 - An administrator bot that grants itself every permission becomes a member, as TDLib asks the
   servers to make it.
+- Whoever sets an administrator's rights becomes its `promoted_by`, and setting the rights it holds
+  changes nothing, as TDLib skips such a change. The chain of promoters that decides `can_be_edited`
+  runs through current administrators only: a promoter that is demoted or leaves no longer stands
+  above the administrators it promoted, which only the owner then edits, since `promoted_by` is all
+  Telegram exposes of a promotion.
 
 ## Local evidence
 
 [Administration service](../../src/services/shared_chat_administration.ts),
-[permission evaluator](../../src/types/chat_membership.ts),
+[permission evaluator and administrator delegation](../../src/types/chat_membership.ts),
 [permissions parameter](../../src/api/sessions/bot_api/chat_permissions_parameter.ts),
 [restriction tests](../../tests/chat_member_restriction_api_test.ts),
+[delegation tests](../../tests/administrator_delegation_test.ts),
+[promotion tests](../../tests/chat_administrator_promotion_api_test.ts),
 [default permission tests](../../tests/chat_default_permissions_api_test.ts),
 [permission tests](../../tests/chat_permissions_test.ts),
 [privacy filtering](../../src/services/bot_update_delivery.ts),
@@ -377,6 +397,8 @@ not show. The emulator chooses where they are not visible:
 [custom-title-method]: https://github.com/tdlib/telegram-bot-api/blob/e3e9dd8e5b3d7ab8537cd5a10dc31d5ffa8f82d1/telegram-bot-api/Client.cpp#L16451-L16482
 [participant-checks]: https://github.com/tdlib/td/blob/bc9c263e2bfee06aaab41e82db51a103376030bc/td/telegram/DialogParticipantManager.cpp#L2820-L3065
 [administrator-list]: https://github.com/tdlib/telegram-bot-api/blob/e3e9dd8e5b3d7ab8537cd5a10dc31d5ffa8f82d1/telegram-bot-api/Client.cpp#L7925-L7995
+[participant-admin]: https://core.telegram.org/constructor/channelParticipantAdmin
+[promote-participant]: https://github.com/tdlib/td/blob/bc9c263e2bfee06aaab41e82db51a103376030bc/td/telegram/DialogParticipantManager.cpp#L2937-L2965
 [ban-expiry]: https://github.com/tdlib/td/blob/bc9c263e2bfee06aaab41e82db51a103376030bc/td/telegram/DialogParticipant.cpp#L595-L715
 [ban-member]: https://github.com/tdlib/td/blob/bc9c263e2bfee06aaab41e82db51a103376030bc/td/telegram/DialogParticipantManager.cpp#L2385-L2413
 [owner-leave]: https://github.com/tdlib/td/blob/bc9c263e2bfee06aaab41e82db51a103376030bc/td/telegram/DialogParticipantManager.cpp#L2860-L2890

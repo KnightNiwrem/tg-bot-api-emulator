@@ -48,7 +48,10 @@ interface BotMessageViews {
   viewChosenInlineResultForBot(event: InlineQueryResultChosenEvent): BotApiChosenInlineResult;
   viewBotBlockChangeForBot(event: BotBlockChangedEvent): BotApiMyChatMemberUpdated;
   viewBotMembershipChangeForBot(event: ChatMemberStatusChangedEvent): BotApiMyChatMemberUpdated;
-  viewChatMemberChange(event: ChatMemberStatusChangedEvent): BotApiChatMemberUpdated;
+  viewChatMemberChange(
+    event: ChatMemberStatusChangedEvent,
+    observerBotId: number,
+  ): BotApiChatMemberUpdated;
 }
 
 interface BotUpdateMailboxes {
@@ -394,12 +397,11 @@ export class BotUpdateDeliveryService {
       memberId !== event.memberId && this.#bots.getById(memberId) !== undefined &&
       this.#isAdministrator(memberId, event.chat.id) && this.#isSubscribed(memberId, 'chat_member')
     );
-    if (observerIds.length === 0) {
-      return;
-    }
-    const chatMember = this.#botMessageViews.viewChatMemberChange(event);
     for (const observerId of observerIds) {
-      this.#botUpdates.enqueueChatMemberUpdate(observerId, chatMember);
+      this.#botUpdates.enqueueChatMemberUpdate(
+        observerId,
+        this.#botMessageViews.viewChatMemberChange(event, observerId),
+      );
     }
   }
 

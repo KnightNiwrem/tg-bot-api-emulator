@@ -1749,7 +1749,12 @@ interface BotMessageViews {
   viewPollForBot(poll: Poll): BotApiPoll;
   viewPrivateMessageForBot(message: PrivateMessage): BotApiPrivateMessage;
   viewSupergroupMessage(message: SupergroupMessage, observerId: number): BotApiSupergroupMessage;
-  viewChatMember(userId: number, status: ChatMemberStatus): BotApiChatMember | undefined;
+  viewChatMember(input: {
+    readonly chatId: number;
+    readonly userId: number;
+    readonly status: ChatMemberStatus;
+    readonly observerBotId: number;
+  }): BotApiChatMember | undefined;
   viewChatFullInfo(chatId: number): BotApiChatFullInfo | undefined;
 }
 
@@ -3633,7 +3638,14 @@ export class BotApiService {
         return { found: false, reason: 'chat_not_found' };
       }
       return userId === authenticatedBot.id || userId === chatId
-        ? { found: true, member: this.#viewChatMember(userId, { status: 'member' }) }
+        ? {
+          found: true,
+          member: this.#viewChatMember(authenticatedBot, {
+            chatId,
+            userId,
+            status: { status: 'member' },
+          }),
+        }
         : { found: false, reason: 'member_not_found' };
     }
     const result = this.#chatMemberships.getChatMemberStatus({
@@ -3644,7 +3656,10 @@ export class BotApiService {
     if (!result.found) {
       return { found: false, reason: excludeMissingBotFailure(authenticatedBot, result.reason) };
     }
-    return { found: true, member: this.#viewChatMember(userId, result.status) };
+    return {
+      found: true,
+      member: this.#viewChatMember(authenticatedBot, { chatId, userId, status: result.status }),
+    };
   }
 
   /**
@@ -3704,7 +3719,9 @@ export class BotApiService {
       return { found: false, reason: excludeMissingBotFailure(authenticatedBot, result.reason) };
     }
     const administrators = result.administrators
-      .map(({ userId, status }) => this.#viewChatMember(userId, status))
+      .map(({ userId, status }) =>
+        this.#viewChatMember(authenticatedBot, { chatId, userId, status })
+      )
       .filter(({ user }) => includesOtherBots || !user.is_bot || user.id === authenticatedBot.id);
     return { found: true, administrators };
   }
@@ -4705,9 +4722,24 @@ export class BotApiService {
     });
   }
 
-  /** Shows a user of the session, which the caller found, in its standing in a chat. */
-  #viewChatMember(userId: number, status: ChatMemberStatus): BotApiChatMember {
-    const member = this.#botMessageViews.viewChatMember(userId, status);
+  /**
+   * Shows a user of the session, which the caller found, in its standing in a chat, as the
+   * authenticated bot observes it.
+   */
+  #viewChatMember(
+    authenticatedBot: VirtualBotProfile,
+    { chatId, userId, status }: {
+      readonly chatId: number;
+      readonly userId: number;
+      readonly status: ChatMemberStatus;
+    },
+  ): BotApiChatMember {
+    const member = this.#botMessageViews.viewChatMember({
+      chatId,
+      userId,
+      status,
+      observerBotId: authenticatedBot.id,
+    });
     if (member === undefined) {
       throw new Error(`Chat member ${userId} does not exist`);
     }
