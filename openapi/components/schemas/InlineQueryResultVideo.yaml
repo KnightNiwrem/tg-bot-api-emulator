@@ -46,7 +46,8 @@ properties:
     type: string
     minLength: 1
     description: >-
-      The URL of the thumbnail the client lists, an HTTP or HTTPS URL that is not downloaded. The
+      The URL of the thumbnail the client lists, an HTTP or HTTPS URL read as TDLib reads the URL
+      of a file sent by URL, so a URL without a protocol is an HTTP one. It is not downloaded. The
       Bot API requires it, so a video without one is refused as invalid parameters.
   title:
     type: string
