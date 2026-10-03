@@ -358,6 +358,55 @@ export interface LeaveChatInput {
   readonly chat: SupergroupMessageTarget;
 }
 
+export interface JoinChatInput {
+  /** A public supergroup, which has a username, addressed by its chat ID. */
+  readonly chat: SupergroupMessageTarget;
+}
+
+export interface JoinChatByInviteLinkInput {
+  /** The whole link, as the bot that created it received it from `createChatInviteLink`. */
+  readonly inviteLink: string;
+}
+
+/** What an account's use of an invite link did. */
+export interface ChatJoin {
+  /** The Bot API `chat_id` of the supergroup the link leads to. */
+  readonly chat_id: number;
+  /** The account joined the supergroup. */
+  readonly outcome: 'joined';
+}
+
+export interface AccountChatInviteLinksInput {
+  readonly chat: SupergroupMessageTarget;
+}
+
+/** An invite link of a supergroup, as its owner inspects it. */
+export interface SupergroupInviteLink {
+  /** The whole link, `https://t.me/+` and its hash. */
+  readonly invite_link: string;
+  /** Omitted for none. */
+  readonly name?: string;
+  /** The administrator bot that created the link. */
+  readonly creator_user_id: number;
+  /** When the link stops working, as a Unix time in seconds; omitted for no expiry date. */
+  readonly expire_date?: number;
+  /** How many users that joined through the link may be members at once; omitted for no limit. */
+  readonly member_limit?: number;
+  /** How many members joined through the link and still are, which its member limit counts. */
+  readonly member_count: number;
+  /** Whether users who use the link send a join request instead of joining. */
+  readonly creates_join_request: boolean;
+  /** Whether `session.expireChatInviteLink` made the link's expiry date arrive. */
+  readonly is_expired: boolean;
+}
+
+export interface ExpireChatInviteLinkInput {
+  /** The supergroup's chat ID. */
+  readonly chatId: number;
+  /** The whole link, as `createChatInviteLink` returned it. */
+  readonly inviteLink: string;
+}
+
 /**
  * A supergroup administrator right, by the Bot API's name. Any right includes `can_manage_chat`,
  * as on Telegram.
@@ -1817,6 +1866,26 @@ export interface VirtualAccountClient extends VirtualAccountProfile {
    * leave. Leaving a supergroup this account is not a member of has no effect.
    */
   leaveChat(input: LeaveChatInput): Promise<void>;
+  /**
+   * Joins a public supergroup by itself, addressed by its chat ID, as Telegram's clients join one
+   * they find by its username, which a `new_chat_members` service message from this account
+   * records.
+   * Administrator bots receive a `chat_member` update. A private supergroup, or one that banned
+   * this account, refuses it; joining a supergroup this account is a member of has no effect.
+   */
+  joinChat(input: JoinChatInput): Promise<void>;
+  /**
+   * Joins the supergroup an invite link leads to, which a `new_chat_members` service message from
+   * this account records. Administrator bots receive a `chat_member` update with the link, whole
+   * only for the bot that created it. The link must not have expired, and its member limit must
+   * leave a place; this account must be neither a member nor banned.
+   */
+  joinChatByInviteLink(input: JoinChatByInviteLinkInput): Promise<ChatJoin>;
+  /**
+   * Returns the invite links of a supergroup this account owns, in the order bots created them,
+   * with how many members joined through each and still are.
+   */
+  getChatInviteLinks(input: AccountChatInviteLinksInput): Promise<readonly SupergroupInviteLink[]>;
   /**
    * Promotes a member of a supergroup this account owns to administrator with the given rights,
    * which must include at least one, or replaces an administrator's rights. A promoted bot

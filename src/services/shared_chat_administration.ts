@@ -19,6 +19,7 @@ import {
   stripEmptyCharacters,
 } from '../text_entities/input_string.ts';
 import type { ChatDomainEvent } from '../types/chat_domain_event.ts';
+import type { ChatInviteLink } from '../types/chat_invite_link.ts';
 import {
   type AdministratorMembership,
   type AdministratorTenureId,
@@ -150,6 +151,14 @@ export type AddChatMemberResult =
     readonly added: false;
     readonly reason: AddChatMemberFailureReason;
   };
+
+export interface AdmitAccountInput {
+  /** The account that joins by itself. */
+  readonly accountId: number;
+  readonly chatId: number;
+  /** The invite link the account joins through; omitted when it joins by the chat's username. */
+  readonly inviteLink?: ChatInviteLink;
+}
 
 export interface LeaveChatInput {
   /** The account or bot that leaves. */
@@ -668,6 +677,7 @@ interface ChatMembershipStore {
     chatId: number,
     memberId: number,
     membership: JoiningMemberStatus,
+    joiningInviteLinkUrl?: string,
   ): ChatMemberAdditionResult;
   updateChatMemberStatus(
     chatId: number,
@@ -723,6 +733,17 @@ interface SharedChatAdministrationServiceDependencies {
   readonly supergroupMessages: SupergroupServiceMessageRecorder;
   readonly events: ChatDomainEventSink;
   readonly currentUnixTimeSeconds: () => number;
+}
+
+/**
+ * The standing a user joins a chat with, given its standing outside the chat: a restricted user
+ * keeps its restriction, as TDLib's `set_channel_participant_status_impl` expects when it only
+ * adds such a user, and anyone else becomes a plain member.
+ */
+function getJoiningMemberStatus(statusBeforeJoining: FormerChatMemberStatus): JoiningMemberStatus {
+  return statusBeforeJoining.status === 'restricted'
+    ? { ...statusBeforeJoining, isMember: true }
+    : { status: 'member' };
 }
 
 /**
@@ -906,15 +927,12 @@ export class SharedChatAdministrationService {
       return { added: false, reason: 'bot_not_permitted_in_channel' };
     }
 
-    // As an owner does in Telegram's apps, adding a banned user lifts its ban, whereas a restricted
-    // user joins with its restriction.
+    // As an owner does in Telegram's apps, adding a banned user lifts its ban.
     const statusBeforeJoining = this.#sharedChats.getFormerMemberStatus(
       input.chatId,
       input.memberId,
     ) ?? LEFT_CHAT_MEMBER_STATUS;
-    const statusAfterJoining: JoiningMemberStatus = statusBeforeJoining.status === 'restricted'
-      ? { ...statusBeforeJoining, isMember: true }
-      : { status: 'member' };
+    const statusAfterJoining = getJoiningMemberStatus(statusBeforeJoining);
     const addition = this.#sharedChats.addChatMember(
       input.chatId,
       input.memberId,
@@ -923,22 +941,51 @@ export class SharedChatAdministrationService {
     if (!addition.added) {
       return addition;
     }
-    const addedAtUnixSeconds = this.#currentUnixTimeSeconds();
-    this.#events.publish({
-      type: 'chat_member_status_changed',
-      chat,
-      actorId: input.actorAccountId,
+    this.#publishJoin(chat, {
+      actor: { kind: 'account', accountId: input.actorAccountId },
       memberId: input.memberId,
       oldStatus: statusBeforeJoining,
       newStatus: statusAfterJoining,
-      changedAtUnixSeconds: addedAtUnixSeconds,
-    });
-    this.#recordSupergroupServiceMessage(chat, {
-      author: { kind: 'account', accountId: input.actorAccountId },
-      content: { kind: 'members_joined', memberIds: [input.memberId] },
-      changedAtUnixSeconds: addedAtUnixSeconds,
     });
     return addition;
+  }
+
+  /**
+   * Adds an account that joins a supergroup by itself, through its public username or an invite
+   * link, which the caller checked that it may: it is neither a member nor banned, and the link,
+   * if any, lets it join. A restricted user joins with its restriction, as when the owner adds it.
+   * The join is recorded as the account's own service message, as the official Bot API server
+   * shows TDLib's `messageChatJoinByLink`, and published with the invite link, which the
+   * membership remembers while it lasts.
+   */
+  admitAccount({ accountId, chatId, inviteLink }: AdmitAccountInput): void {
+    const chat = this.#sharedChats.getSharedChat(chatId);
+    if (chat?.kind !== 'supergroup') {
+      throw new Error(`Account ${accountId} cannot join chat ${chatId}, which is no supergroup`);
+    }
+    const statusBeforeJoining = this.#lookUpChatMemberStatus(chatId, accountId);
+    if (isChatMember(statusBeforeJoining) || statusBeforeJoining.status === 'kicked') {
+      throw new Error(
+        `Account ${accountId} cannot join supergroup ${chatId} as ${statusBeforeJoining.status}`,
+      );
+    }
+    const statusAfterJoining = getJoiningMemberStatus(statusBeforeJoining);
+    const addition = this.#sharedChats.addChatMember(
+      chatId,
+      accountId,
+      statusAfterJoining,
+      inviteLink?.url,
+    );
+    if (!addition.added) {
+      throw new Error(`Account ${accountId} could not join chat ${chatId}: ${addition.reason}`);
+    }
+    this.#publishJoin(chat, {
+      actor: { kind: 'account', accountId },
+      memberId: accountId,
+      oldStatus: statusBeforeJoining,
+      newStatus: statusAfterJoining,
+      ...(inviteLink === undefined ? {} : { inviteLink }),
+    });
   }
 
   /**
@@ -2166,6 +2213,36 @@ export class SharedChatAdministrationService {
       author: actor,
       content: { kind: 'member_left', memberId },
       changedAtUnixSeconds: leftAtUnixSeconds,
+    });
+  }
+
+  /** Publishes a user's joining a chat, then records it as a service message. */
+  #publishJoin(
+    chat: SharedChat,
+    { actor, memberId, oldStatus, newStatus, inviteLink }: {
+      /** The account that added the member, or the member itself when it joined by itself. */
+      readonly actor: SupergroupMessageAuthor;
+      readonly memberId: number;
+      readonly oldStatus: FormerChatMemberStatus;
+      readonly newStatus: JoiningMemberStatus;
+      readonly inviteLink?: ChatInviteLink;
+    },
+  ): void {
+    const joinedAtUnixSeconds = this.#currentUnixTimeSeconds();
+    this.#events.publish({
+      type: 'chat_member_status_changed',
+      chat,
+      actorId: actor.kind === 'account' ? actor.accountId : actor.botId,
+      memberId,
+      oldStatus,
+      newStatus,
+      changedAtUnixSeconds: joinedAtUnixSeconds,
+      ...(inviteLink === undefined ? {} : { inviteLink }),
+    });
+    this.#recordSupergroupServiceMessage(chat, {
+      author: actor,
+      content: { kind: 'members_joined', memberIds: [memberId] },
+      changedAtUnixSeconds: joinedAtUnixSeconds,
     });
   }
 

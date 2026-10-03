@@ -4,6 +4,7 @@ import { checkLink, getLinkUserId } from '../text_entities/telegram_link.ts';
 import type {
   BotApiBotCommand,
   BotApiChatFullInfo,
+  BotApiChatInviteLink,
   BotApiChatMember,
   BotApiDefaultAdministratorRights,
   BotApiDownloadableFile,
@@ -25,6 +26,7 @@ import type { BotDescriptionKind } from '../types/bot_description.ts';
 import { type BotMenuButton, toBotApiMenuButton } from '../types/bot_menu_button.ts';
 import type { BotLanguageCode } from '../types/bot_language_code.ts';
 import type { CallbackQueryId } from '../types/callback_query.ts';
+import type { ChatInviteLink } from '../types/chat_invite_link.ts';
 import {
   type ChatMemberStatus,
   type FormerSupergroupMemberFailureReason,
@@ -101,6 +103,11 @@ import {
   type TextEntity,
 } from '../types/virtual_message.ts';
 import type { GetUpdatesRequest, GetUpdatesResult } from './bot_update_polling.ts';
+import type {
+  CreateInviteLinkAsBotFailureReason,
+  CreateInviteLinkAsBotInput,
+  CreateInviteLinkAsBotResult,
+} from './chat_admission.ts';
 import type {
   DocumentUploadPreparation,
   DocumentUploadRequest,
@@ -1246,6 +1253,28 @@ export type BotApiUnbanChatMemberResult =
     readonly reason: ChatMemberModerationFailureReason | 'method_unavailable_in_private_chats';
   };
 
+export interface CreateChatInviteLinkRequest {
+  /** The Bot API `chat_id`, as `SendRequestOptions` describes it. */
+  readonly chatId: number;
+  /** The Bot API `name`, before Telegram cleans it; empty for none. */
+  readonly name: string;
+  /** The Bot API `expire_date`; omitted for a link without an expiry date. */
+  readonly expiresAtUnixSeconds?: number;
+  /** The Bot API `member_limit`; omitted for a link without a member limit. */
+  readonly memberLimit?: number;
+  /** The Bot API `creates_join_request`. */
+  readonly createsJoinRequest: boolean;
+}
+
+export type BotApiCreateChatInviteLinkResult =
+  | { readonly created: true; readonly inviteLink: BotApiChatInviteLink }
+  | {
+    readonly created: false;
+    readonly reason:
+      | Exclude<CreateInviteLinkAsBotFailureReason, 'bot_not_found'>
+      | 'private_chat_has_no_invite_links';
+  };
+
 export interface AnswerCallbackQueryRequest {
   readonly callbackQueryId: CallbackQueryId;
   readonly text?: string;
@@ -1861,6 +1890,11 @@ interface BotMessageViews {
     readonly observerBotId: number;
     readonly pinnedMessage: ChatMessage | undefined;
   }): BotApiChatFullInfo | undefined;
+  viewChatInviteLink(link: ChatInviteLink, observerId: number): BotApiChatInviteLink;
+}
+
+interface ChatAdmission {
+  createInviteLinkAsBot(input: CreateInviteLinkAsBotInput): CreateInviteLinkAsBotResult;
 }
 
 interface MessagePinning {
@@ -1885,6 +1919,8 @@ interface BotApiServiceDependencies {
   readonly botMessages: BotMessaging;
   readonly supergroupBotMessages: SupergroupBotMessaging;
   readonly chatMemberships: ChatMemberships;
+  /** Creates the invite links that let accounts join supergroups. */
+  readonly chatAdmission: ChatAdmission;
   readonly botMessageViews: BotMessageViews;
   /** Pins and unpins messages, and finds the pinned message that `getChat` shows. */
   readonly messagePinning: MessagePinning;
@@ -1932,6 +1968,7 @@ export class BotApiService {
   readonly #botMessages: BotMessaging;
   readonly #supergroupBotMessages: SupergroupBotMessaging;
   readonly #chatMemberships: ChatMemberships;
+  readonly #chatAdmission: ChatAdmission;
   readonly #botMessageViews: BotMessageViews;
   readonly #messagePinning: MessagePinning;
   readonly #mediaFiles: MediaFiles;
@@ -1958,6 +1995,7 @@ export class BotApiService {
       botMessages,
       supergroupBotMessages,
       chatMemberships,
+      chatAdmission,
       botMessageViews,
       messagePinning,
       mediaFiles,
@@ -1983,6 +2021,7 @@ export class BotApiService {
     this.#botMessages = botMessages;
     this.#supergroupBotMessages = supergroupBotMessages;
     this.#chatMemberships = chatMemberships;
+    this.#chatAdmission = chatAdmission;
     this.#botMessageViews = botMessageViews;
     this.#messagePinning = messagePinning;
     this.#mediaFiles = mediaFiles;
@@ -4037,6 +4076,41 @@ export class BotApiService {
     return result.unbanned ? result : {
       unbanned: false,
       reason: excludeMissingBotFailure(authenticatedBot, result.reason),
+    };
+  }
+
+  /**
+   * Creates an additional invite link of a supergroup, as
+   * `ChatAdmissionService.createInviteLinkAsBot` does, and returns it as its creator sees it. As
+   * TDLib's `can_manage_dialog_invite_links` refuses, a private chat has no invite links.
+   */
+  createChatInviteLink(
+    authenticatedBot: VirtualBotProfile,
+    { chatId, name, expiresAtUnixSeconds, memberLimit, createsJoinRequest }:
+      CreateChatInviteLinkRequest,
+  ): BotApiCreateChatInviteLinkResult {
+    if (isUserId(chatId)) {
+      return {
+        created: false,
+        reason: this.#isPrivateChatKnown(authenticatedBot, chatId)
+          ? 'private_chat_has_no_invite_links'
+          : 'chat_not_found',
+      };
+    }
+    const result = this.#chatAdmission.createInviteLinkAsBot({
+      creatorBotId: authenticatedBot.id,
+      chatId,
+      name,
+      ...(expiresAtUnixSeconds === undefined ? {} : { expiresAtUnixSeconds }),
+      ...(memberLimit === undefined ? {} : { memberLimit }),
+      createsJoinRequest,
+    });
+    if (!result.created) {
+      return { created: false, reason: excludeMissingBotFailure(authenticatedBot, result.reason) };
+    }
+    return {
+      created: true,
+      inviteLink: this.#botMessageViews.viewChatInviteLink(result.link, authenticatedBot.id),
     };
   }
 

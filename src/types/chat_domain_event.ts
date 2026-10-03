@@ -1,4 +1,5 @@
 import type { CallbackQuery } from './callback_query.ts';
+import type { ChatInviteLink } from './chat_invite_link.ts';
 import type { ChatMemberStatus } from './chat_membership.ts';
 import type { InlineQuery } from './inline_query.ts';
 import type { Poll } from './poll.ts';
@@ -70,15 +71,15 @@ export interface BotBlockChangedEvent {
 }
 
 /**
- * A user's standing in a shared chat changed: it joined, left, or was removed, promoted, demoted,
- * banned, or unbanned.
+ * A user's standing in a shared chat changed: it joined, by itself or through an invite link, left,
+ * or was added, removed, promoted, demoted, banned, or unbanned.
  */
 export interface ChatMemberStatusChangedEvent {
   readonly type: 'chat_member_status_changed';
   readonly chat: SharedChat;
   /**
    * The user that made the change: the account or bot that added, removed, promoted, demoted,
-   * banned, or unbanned the member, or the member itself when it left.
+   * banned, or unbanned the member, or the member itself when it joined by itself or left.
    */
   readonly actorId: number;
   /** The account or bot whose standing changed. */
@@ -86,6 +87,8 @@ export interface ChatMemberStatusChangedEvent {
   readonly oldStatus: ChatMemberStatus;
   readonly newStatus: ChatMemberStatus;
   readonly changedAtUnixSeconds: number;
+  /** The invite link the member joined through; omitted for every other change. */
+  readonly inviteLink?: ChatInviteLink;
 }
 
 /** A state change produced by a chat command, published in the order it happened. */

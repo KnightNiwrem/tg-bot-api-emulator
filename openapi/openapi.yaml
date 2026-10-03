@@ -77,6 +77,10 @@ paths:
     $ref: paths/sessions_{sessionId}_accounts_{accountId}_supergroups.yaml
   /sessions/{sessionId}/accounts/{accountId}/conversations/supergroup/{chatId}/members/{userId}:
     $ref: paths/sessions_{sessionId}_accounts_{accountId}_conversations_supergroup_{chatId}_members_{userId}.yaml
+  /sessions/{sessionId}/accounts/{accountId}/conversations/supergroup/{chatId}/invite-links:
+    $ref: paths/sessions_{sessionId}_accounts_{accountId}_conversations_supergroup_{chatId}_invite-links.yaml
+  /sessions/{sessionId}/accounts/{accountId}/chat-joins:
+    $ref: paths/sessions_{sessionId}_accounts_{accountId}_chat-joins.yaml
   /sessions/{sessionId}/accounts/{accountId}/conversations/supergroup/{chatId}/administrators:
     $ref: paths/sessions_{sessionId}_accounts_{accountId}_conversations_supergroup_{chatId}_administrators.yaml
   /sessions/{sessionId}/accounts/{accountId}/conversations/supergroup/{chatId}/administrators/{userId}:
@@ -157,6 +161,8 @@ paths:
     $ref: paths/sessions_{sessionId}_polls_{pollId}_expiry.yaml
   /sessions/{sessionId}/supergroups/{chatId}/restrictions/{userId}/expiry:
     $ref: paths/sessions_{sessionId}_supergroups_{chatId}_restrictions_{userId}_expiry.yaml
+  /sessions/{sessionId}/supergroups/{chatId}/invite-links/{inviteLinkHash}/expiry:
+    $ref: paths/sessions_{sessionId}_supergroups_{chatId}_invite-links_{inviteLinkHash}_expiry.yaml
   /sessions/{sessionId}/bot-api/bot{token}/sendPhoto:
     $ref: paths/sessions_{sessionId}_bot-api_bot{token}_sendPhoto.yaml
   /sessions/{sessionId}/bot-api/bot{token}/sendDocument:
@@ -231,6 +237,8 @@ paths:
     $ref: paths/sessions_{sessionId}_bot-api_bot{token}_banChatMember.yaml
   /sessions/{sessionId}/bot-api/bot{token}/promoteChatMember:
     $ref: paths/sessions_{sessionId}_bot-api_bot{token}_promoteChatMember.yaml
+  /sessions/{sessionId}/bot-api/bot{token}/createChatInviteLink:
+    $ref: paths/sessions_{sessionId}_bot-api_bot{token}_createChatInviteLink.yaml
   /sessions/{sessionId}/bot-api/bot{token}/restrictChatMember:
     $ref: paths/sessions_{sessionId}_bot-api_bot{token}_restrictChatMember.yaml
   /sessions/{sessionId}/bot-api/bot{token}/setChatAdministratorCustomTitle:

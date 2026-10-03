@@ -1,0 +1,9 @@
+type: object
+additionalProperties: false
+required:
+  - invite_link
+properties:
+  invite_link:
+    type: string
+    minLength: 1
+    description: The whole link, as the bot that created it received it.

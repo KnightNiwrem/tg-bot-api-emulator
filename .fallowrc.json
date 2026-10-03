@@ -17,6 +17,7 @@
           "src/types/virtual_chat.ts",
           "src/types/chat_membership.ts",
           "src/types/chat_permissions.ts",
+          "src/types/chat_invite_link.ts",
           "src/types/virtual_message.ts",
           "src/types/rich_message.ts",
           "src/types/message_forward.ts",
@@ -71,6 +72,12 @@
         "name": "shared-chat-repository",
         "patterns": [
           "src/repositories/shared_chat.ts"
+        ]
+      },
+      {
+        "name": "chat-invite-link-repository",
+        "patterns": [
+          "src/repositories/chat_invite_link.ts"
         ]
       },
       {
@@ -232,6 +239,7 @@
           "src/services/message_pinning.ts",
           "src/services/media_file.ts",
           "src/services/shared_chat_administration.ts",
+          "src/services/chat_admission.ts",
           "src/services/virtual_user.ts",
           "src/services/bot_command.ts",
           "src/services/bot_description.ts",
@@ -327,6 +335,12 @@
       },
       {
         "from": "shared-chat-repository",
+        "allow": [
+          "domain"
+        ]
+      },
+      {
+        "from": "chat-invite-link-repository",
         "allow": [
           "domain"
         ]
@@ -492,6 +506,7 @@
           "account-repository",
           "bot-repository",
           "shared-chat-repository",
+          "chat-invite-link-repository",
           "identity-repository"
         ]
       },
@@ -554,6 +569,7 @@
           "bot-repository",
           "private-conversation-repository",
           "shared-chat-repository",
+          "chat-invite-link-repository",
           "message-repository",
           "file-repository",
           "message-box-repository",

@@ -1,0 +1,44 @@
+type: object
+additionalProperties: false
+description: >-
+  An additional invite link of a supergroup, in the field order of the official Bot API server.
+  Primary, revoked, and subscription links are not supported.
+required:
+  - invite_link
+  - creator
+  - creates_join_request
+  - is_primary
+  - is_revoked
+properties:
+  invite_link:
+    type: string
+    description: >-
+      The link, `https://t.me/+` and its hash. A link that another administrator created shows
+      the first half of its hash, followed by `...`, as the Bot API hides "the second part of the
+      link".
+  name:
+    type: string
+    minLength: 1
+    maxLength: 32
+    description: The link's name; omitted for none.
+  creator:
+    $ref: ./MessageUser.yaml
+    description: The administrator bot that created the link.
+  expire_date:
+    type: integer
+    description: Unix time when the link stops working; omitted for no expiry date.
+  member_limit:
+    type: integer
+    minimum: 1
+    maximum: 99999
+    description: >-
+      How many users that joined through the link may be members at once; omitted for no limit.
+  creates_join_request:
+    type: boolean
+    description: Whether users who use the link send a join request instead of joining.
+  is_primary:
+    type: boolean
+    const: false
+  is_revoked:
+    type: boolean
+    const: false

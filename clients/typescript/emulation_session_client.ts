@@ -8,10 +8,12 @@ import {
   callbackQueryResponseSchema,
   chatActionsResponseSchema,
   chatAdministratorsResponseSchema,
+  chatJoinResponseSchema,
   chosenInlineResultResponseSchema,
   createdSupergroupResponseSchema,
   createdVirtualAccountSchema,
   createdVirtualBotSchema,
+  expiredInviteLinkResponseSchema,
   expiredPollResponseSchema,
   expiredRestrictionResponseSchema,
   getMeResponseSchema,
@@ -28,6 +30,7 @@ import {
   sentSupergroupMediaGroupResponseSchema,
   sentSupergroupMessageResponseSchema,
   supergroupBotCommandsResponseSchema,
+  supergroupInviteLinksResponseSchema,
   supergroupMessageHistoryResponseSchema,
   supergroupPollAnswerResponseSchema,
   webResourceSchema,
@@ -36,6 +39,7 @@ import type {
   AccountBotCommandsInput,
   AccountChatActionsInput,
   AccountChatAdministratorsInput,
+  AccountChatInviteLinksInput,
   AccountDeleteMessageInput,
   AccountEditMessageCaptionInput,
   AccountEditMessageInput,
@@ -71,6 +75,7 @@ import type {
   ChangeSupergroupDescriptionInput,
   ChangeSupergroupTitleInput,
   ChatAction,
+  ChatJoin,
   ChooseInlineQueryResultInput,
   CreatedVirtualAccount,
   CreatedVirtualBot,
@@ -79,8 +84,11 @@ import type {
   CreateVirtualBotInput,
   DemoteChatMemberInput,
   EmulationSession,
+  ExpireChatInviteLinkInput,
   ExpireChatMemberRestrictionInput,
   InlineQuery,
+  JoinChatByInviteLinkInput,
+  JoinChatInput,
   LeaveChatInput,
   LiftChatMemberRestrictionInput,
   MenuButton,
@@ -106,6 +114,7 @@ import type {
   Supergroup,
   SupergroupAdministrator,
   SupergroupBotCommands,
+  SupergroupInviteLink,
   SupergroupMessage,
   UploadProfile,
   VirtualAccountClient,
@@ -153,6 +162,12 @@ export interface EmulationSessionClient extends EmulationSession {
    * receives an update for it.
    */
   expireChatMemberRestriction(input: ExpireChatMemberRestrictionInput): Promise<'member' | 'left'>;
+  /**
+   * Makes an invite link's `expire_date` arrive, and returns the link as the supergroup's owner
+   * sees it. The emulator does not let time pass by itself, so tests choose when a link created
+   * with `expire_date` stops admitting users; the members that joined through it stay.
+   */
+  expireChatInviteLink(input: ExpireChatInviteLinkInput): Promise<SupergroupInviteLink>;
   /**
    * A view of the session's bot activity log: the Bot API calls its bots make, with their answers,
    * and the updates delivered to and confirmed by them. `filter` applies to every read of the
@@ -292,6 +307,20 @@ class HttpEmulationSessionClient implements EmulationSessionClient {
       responseSchema: expiredRestrictionResponseSchema,
     });
     return response.chat_member.status;
+  }
+
+  async expireChatInviteLink(
+    { chatId, inviteLink }: ExpireChatInviteLinkInput,
+  ): Promise<SupergroupInviteLink> {
+    const response = await requestJson(this.#fetch, {
+      method: 'POST',
+      url: `${this.#sessionUrl}/supergroups/${encodeURIComponent(chatId)}/invite-links/${
+        encodeURIComponent(getInviteLinkHash(inviteLink))
+      }/expiry`,
+      expectedStatus: HTTP_STATUS_OK,
+      responseSchema: expiredInviteLinkResponseSchema,
+    });
+    return response.invite_link;
   }
 
   registerWebResource({ content, ...input }: RegisterWebResourceInput): Promise<WebResource> {
@@ -582,6 +611,33 @@ function createVirtualAccountClient(
         url: `${conversationUrl(accountUrl, input.chat)}/members/${encodeURIComponent(profile.id)}`,
         expectedStatus: HTTP_STATUS_NO_CONTENT,
       });
+    },
+    async joinChat(input: JoinChatInput): Promise<void> {
+      await requestEmptyResponse(fetchImplementation, {
+        method: 'PUT',
+        url: `${conversationUrl(accountUrl, input.chat)}/members/${encodeURIComponent(profile.id)}`,
+        expectedStatus: HTTP_STATUS_NO_CONTENT,
+      });
+    },
+    joinChatByInviteLink(input: JoinChatByInviteLinkInput): Promise<ChatJoin> {
+      return requestJson(fetchImplementation, {
+        method: 'POST',
+        url: `${accountUrl}/chat-joins`,
+        expectedStatus: HTTP_STATUS_OK,
+        responseSchema: chatJoinResponseSchema,
+        body: { invite_link: input.inviteLink },
+      });
+    },
+    async getChatInviteLinks(
+      input: AccountChatInviteLinksInput,
+    ): Promise<readonly SupergroupInviteLink[]> {
+      const response = await requestJson(fetchImplementation, {
+        method: 'GET',
+        url: `${conversationUrl(accountUrl, input.chat)}/invite-links`,
+        expectedStatus: HTTP_STATUS_OK,
+        responseSchema: supergroupInviteLinksResponseSchema,
+      });
+      return response.invite_links;
     },
     async promoteChatMember(input: PromoteChatMemberInput): Promise<void> {
       await requestEmptyResponse(fetchImplementation, {
@@ -960,6 +1016,17 @@ function messageResponseSchemasFor<Target extends MessageTarget>(
       pollAnswer: pollAnswerResponseSchema,
     };
   return schemas as MessageResponseSchemas<Target>;
+}
+
+/** The prefix of every invite link, after which its hash follows. */
+const INVITE_LINK_PREFIX = 'https://t.me/+';
+
+/** The hash that names an invite link in the emulation API. */
+function getInviteLinkHash(inviteLink: string): string {
+  if (typeof inviteLink !== 'string' || !inviteLink.startsWith(INVITE_LINK_PREFIX)) {
+    throw new TypeError(`inviteLink must start with ${INVITE_LINK_PREFIX}`);
+  }
+  return inviteLink.slice(INVITE_LINK_PREFIX.length);
 }
 
 function validateBotToken(botToken: string): void {

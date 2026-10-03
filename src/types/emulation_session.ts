@@ -7,6 +7,7 @@ import type { BotMessageViewService } from '../services/bot_message_view.ts';
 import type { BotRateLimitService } from '../services/bot_rate_limit.ts';
 import type { CallbackQueryService } from '../services/callback_query.ts';
 import type { ChatActionService } from '../services/chat_action.ts';
+import type { ChatAdmissionService } from '../services/chat_admission.ts';
 import type { InlineQueryService } from '../services/inline_query.ts';
 import type { MediaFileService } from '../services/media_file.ts';
 import type { MessageForwardingService } from '../services/message_forwarding.ts';
@@ -33,6 +34,7 @@ export interface EmulationSession extends EmulationSessionOptions {
   readonly id: string;
   readonly virtualUsers: VirtualUserService;
   readonly sharedChatAdministration: SharedChatAdministrationService;
+  readonly chatAdmission: ChatAdmissionService;
   readonly privateMessaging: PrivateMessagingService;
   readonly supergroupMessaging: SupergroupMessagingService;
   readonly messageForwarding: MessageForwardingService;

@@ -229,6 +229,31 @@ try {
   await account.restrictChatMember({ chat: groupChat, userId: bot.id, permissions: {} });
   await account.liftChatMemberRestriction({ chat: groupChat, userId: bot.id });
 
+  // Let the bot create invite links. Once it has created one, another account joins through it;
+  // a link with an expiry date admits nobody once the test makes that date arrive.
+  const beforeInviting = await activity.position();
+  await account.promoteChatMember({
+    chat: groupChat,
+    userId: bot.id,
+    rights: { can_invite_users: true },
+  });
+  const linkCreation = await activity.waitFor(
+    { method: 'createChatInviteLink' },
+    { after: beforeInviting },
+  );
+  if (linkCreation.answer.ok) {
+    const link = linkCreation.answer.result as { invite_link: string; expire_date?: number };
+    const { account: friend } = await session.createAccount({ first_name: 'Grace' });
+    await friend.joinChatByInviteLink({ inviteLink: link.invite_link });
+    if (link.expire_date !== undefined) {
+      await session.expireChatInviteLink({
+        chatId: groupChat.chatId,
+        inviteLink: link.invite_link,
+      });
+    }
+    console.log(await account.getChatInviteLinks({ chat: groupChat }));
+  }
+
   // Let members send only text by default. The owner and administrators are exempt, and bots see
   // the defaults as permissions in getChat.
   await account.setChatPermissions({ chat: groupChat, permissions: { can_send_messages: true } });

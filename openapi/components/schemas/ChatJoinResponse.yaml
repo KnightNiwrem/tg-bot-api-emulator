@@ -1,0 +1,13 @@
+type: object
+additionalProperties: false
+required:
+  - chat_id
+  - outcome
+properties:
+  chat_id:
+    $ref: ./SupergroupChatId.yaml
+    description: The supergroup the link leads to.
+  outcome:
+    type: string
+    const: joined
+    description: The account joined the supergroup.

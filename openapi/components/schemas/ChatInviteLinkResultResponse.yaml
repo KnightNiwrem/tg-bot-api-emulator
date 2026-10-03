@@ -1,0 +1,11 @@
+type: object
+additionalProperties: false
+required:
+  - ok
+  - result
+properties:
+  ok:
+    type: boolean
+    const: true
+  result:
+    $ref: ./ChatInviteLink.yaml

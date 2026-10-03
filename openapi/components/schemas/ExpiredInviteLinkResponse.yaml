@@ -1,0 +1,7 @@
+type: object
+additionalProperties: false
+required:
+  - invite_link
+properties:
+  invite_link:
+    $ref: ./SupergroupInviteLink.yaml

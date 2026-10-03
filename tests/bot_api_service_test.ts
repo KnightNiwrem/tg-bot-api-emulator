@@ -11,6 +11,7 @@ import { BotUpdateSubscriptionRepository } from '../src/repositories/bot_update_
 import { BotWebhookRepository } from '../src/repositories/bot_webhook.ts';
 import { CallbackQueryRepository } from '../src/repositories/callback_query.ts';
 import { ChatActionRepository } from '../src/repositories/chat_action.ts';
+import { ChatInviteLinkRepository } from '../src/repositories/chat_invite_link.ts';
 import { FileRepository } from '../src/repositories/file.ts';
 import { PollRepository } from '../src/repositories/poll.ts';
 import { InlineQueryRepository } from '../src/repositories/inline_query.ts';
@@ -38,6 +39,7 @@ import {
 } from '../src/services/bot_webhook.ts';
 import { CallbackQueryService } from '../src/services/callback_query.ts';
 import { ChatActionService } from '../src/services/chat_action.ts';
+import { ChatAdmissionService } from '../src/services/chat_admission.ts';
 import { InlineQueryService } from '../src/services/inline_query.ts';
 import { PrivateMessagingService } from '../src/services/private_messaging.ts';
 import { SupergroupMessagingService } from '../src/services/supergroup_messaging.ts';
@@ -475,6 +477,14 @@ function createBotApiFixture() {
     botMessages: privateMessaging,
     supergroupBotMessages: supergroupMessaging,
     chatMemberships: sharedChatAdministration,
+    chatAdmission: new ChatAdmissionService({
+      accounts,
+      bots,
+      sharedChats,
+      inviteLinks: new ChatInviteLinkRepository(),
+      memberships: sharedChatAdministration,
+      currentUnixTimeSeconds: () => 1_700_000_000,
+    }),
     botMessageViews,
     messagePinning: new MessagePinningService({
       accounts,
