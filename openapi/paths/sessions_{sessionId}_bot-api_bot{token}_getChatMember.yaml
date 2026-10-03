@@ -3,8 +3,9 @@ description: >-
   account and the bot are members. In a supergroup the bot is a member of, the owner is
   `creator`, administrators show their rights, both show the custom title the owner set, and
   a user of the session that never joined or has left is `left`; a banned user is `kicked`
-  until the date its ban ends, or 0 for a ban that lasts until it is lifted. Member tags are
-  not supported.
+  until the date its ban ends, or 0 for a ban that lasts until it is lifted; and a restricted
+  user, member or not, is `restricted` with the permissions it keeps. Member tags are not
+  supported.
 parameters:
   - $ref: ../components/parameters/SessionId.yaml
   - $ref: ../components/parameters/BotToken.yaml

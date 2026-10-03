@@ -61,7 +61,9 @@ post:
         with photos or videos (`Bad Request: document can't be mixed with other media types`);
         an upload Telegram's servers refuse fails with their error for the first such item's
         position: `IMAGE_PROCESS_FAILED`, `PHOTO_INVALID_DIMENSIONS`, or, for the `local` upload
-        profile, a file larger than it allows; then the checks of `sendMessage` from the chat on.
+        profile, a file larger than it allows; then the checks of `sendMessage` from the chat on,
+        where the first item the bot may not send to a supergroup fails the album with its
+        kind's error.
         No message is sent unless every check passes. Telegram checks the chat before the files.
       content:
         application/json:

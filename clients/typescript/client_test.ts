@@ -613,6 +613,67 @@ Deno.test('TypeScript client runs supergroups with members, messages, and button
   throw new Error('Expected a non-member to be refused the supergroup history');
 });
 
+Deno.test('TypeScript client restricts a member, lifts it, and ends a temporary restriction', async () => {
+  const publicOrigin = 'http://emulator.example:9000';
+  const api = createEmulationApi({
+    sessionLifecycle: createSessionLifecycleService(),
+    publicOrigin,
+  });
+  const client = new TelegramEmulationClient(publicOrigin, {
+    fetch: createInProcessFetch(api.fetch),
+  });
+  const session = await client.createSession();
+  const { account: owner } = await session.createAccount({ first_name: 'Ada' });
+  const { account: member } = await session.createAccount({ first_name: 'Grace' });
+  const supergroup = await owner.createSupergroup({ title: 'Team' });
+  const chat = { type: 'supergroup', chatId: supergroup.id } as const;
+  await owner.addChatMember({ chat, userId: member.id });
+  const sendText = async () => {
+    try {
+      await member.sendMessage({ to: chat, text: 'Hello' });
+      return 'sent';
+    } catch (error) {
+      if (error instanceof EmulationClientError) {
+        return error.status;
+      }
+      throw error;
+    }
+  };
+
+  await owner.restrictChatMember({
+    chat,
+    userId: member.id,
+    permissions: { can_send_photos: true },
+  });
+  const whileRestricted = await sendText();
+  await owner.liftChatMemberRestriction({ chat, userId: member.id });
+  await owner.liftChatMemberRestriction({ chat, userId: member.id });
+  const afterLifting = await sendText();
+  await owner.restrictChatMember({
+    chat,
+    userId: member.id,
+    permissions: {},
+    untilDate: Math.floor(Date.now() / 1_000) + 3_600,
+  });
+  const whileMuted = await sendText();
+  const statusAfterExpiry = await session.expireChatMemberRestriction({
+    chatId: supergroup.id,
+    userId: member.id,
+  });
+  const afterExpiry = await sendText();
+  if (
+    JSON.stringify([whileRestricted, afterLifting, whileMuted, statusAfterExpiry, afterExpiry]) !==
+      JSON.stringify([403, 'sent', 403, 'member', 'sent'])
+  ) {
+    throw new Error(
+      `Expected restrictions to decide what the member sends, received ${
+        JSON.stringify([whileRestricted, afterLifting, whileMuted, statusAfterExpiry, afterExpiry])
+      }`,
+    );
+  }
+  await session.end();
+});
+
 Deno.test('TypeScript client changes a supergroup title and reads its service message', async () => {
   const publicOrigin = 'http://emulator.example:9000';
   const api = createEmulationApi({

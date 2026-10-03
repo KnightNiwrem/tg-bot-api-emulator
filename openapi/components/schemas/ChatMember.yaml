@@ -37,6 +37,7 @@ oneOf:
         enum:
           - member
           - left
+  - $ref: ./ChatMemberRestricted.yaml
   - type: object
     additionalProperties: false
     description: A banned user, which cannot be a member until its ban is lifted.

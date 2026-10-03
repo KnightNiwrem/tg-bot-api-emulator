@@ -62,7 +62,8 @@ post:
         that chat (`Bad Request: message to copy not found`); the message is a service message
         (`Bad Request: the message can't be copied`), which Telegram checks after the rest of
         the request; or the request fails as `sendPhoto` does for the chat the copy goes to,
-        its reply, the new caption, or the reply markup.
+        its reply, the new caption, or the reply markup, except that content the bot may not
+        send to that supergroup cannot be copied (`Bad Request: the message can't be copied`).
       content:
         application/json:
           schema:

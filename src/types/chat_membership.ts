@@ -118,6 +118,26 @@ export type ChatMemberStatus = ChatMembership | FormerChatMemberStatus;
 /** A user that left a chat, or never joined it. */
 export const LEFT_CHAT_MEMBER_STATUS: FormerChatMemberStatus = { status: 'left' };
 
+/**
+ * The standing that restricting a user gives it, as TDLib's `DialogParticipantStatus::Restricted`
+ * makes it: the user stays a member or not, and one that keeps every permission is not restricted,
+ * so it is a member or has left.
+ */
+export function createRestrictedStatus(
+  isMember: boolean,
+  { permissions, restrictedUntilUnixSeconds }: ChatMemberRestriction,
+): ChatMemberStatus {
+  if (isSameChatPermissions(permissions, ALL_CHAT_PERMISSIONS)) {
+    return isMember ? { status: 'member' } : LEFT_CHAT_MEMBER_STATUS;
+  }
+  return {
+    status: 'restricted',
+    isMember,
+    permissions,
+    ...(restrictedUntilUnixSeconds === undefined ? {} : { restrictedUntilUnixSeconds }),
+  };
+}
+
 /** Whether a user's standing makes it a current member of the chat. */
 export function isChatMember(status: ChatMemberStatus): status is ChatMembership {
   switch (status.status) {

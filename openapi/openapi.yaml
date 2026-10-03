@@ -77,6 +77,8 @@ paths:
     $ref: paths/sessions_{sessionId}_accounts_{accountId}_conversations_supergroup_{chatId}_administrators_{userId}.yaml
   /sessions/{sessionId}/accounts/{accountId}/conversations/supergroup/{chatId}/administrators/{userId}/custom-title:
     $ref: paths/sessions_{sessionId}_accounts_{accountId}_conversations_supergroup_{chatId}_administrators_{userId}_custom-title.yaml
+  /sessions/{sessionId}/accounts/{accountId}/conversations/supergroup/{chatId}/restrictions/{userId}:
+    $ref: paths/sessions_{sessionId}_accounts_{accountId}_conversations_supergroup_{chatId}_restrictions_{userId}.yaml
   /sessions/{sessionId}/accounts/{accountId}/conversations/supergroup/{chatId}/content-protection:
     $ref: paths/sessions_{sessionId}_accounts_{accountId}_conversations_supergroup_{chatId}_content-protection.yaml
   /sessions/{sessionId}/accounts/{accountId}/conversations/supergroup/{chatId}/title:
@@ -141,6 +143,8 @@ paths:
     $ref: paths/sessions_{sessionId}_web-resources.yaml
   /sessions/{sessionId}/polls/{pollId}/expiry:
     $ref: paths/sessions_{sessionId}_polls_{pollId}_expiry.yaml
+  /sessions/{sessionId}/supergroups/{chatId}/restrictions/{userId}/expiry:
+    $ref: paths/sessions_{sessionId}_supergroups_{chatId}_restrictions_{userId}_expiry.yaml
   /sessions/{sessionId}/bot-api/bot{token}/sendPhoto:
     $ref: paths/sessions_{sessionId}_bot-api_bot{token}_sendPhoto.yaml
   /sessions/{sessionId}/bot-api/bot{token}/sendDocument:
@@ -203,6 +207,8 @@ paths:
     $ref: paths/sessions_{sessionId}_bot-api_bot{token}_getChatMemberCount.yaml
   /sessions/{sessionId}/bot-api/bot{token}/banChatMember:
     $ref: paths/sessions_{sessionId}_bot-api_bot{token}_banChatMember.yaml
+  /sessions/{sessionId}/bot-api/bot{token}/restrictChatMember:
+    $ref: paths/sessions_{sessionId}_bot-api_bot{token}_restrictChatMember.yaml
   /sessions/{sessionId}/bot-api/bot{token}/setChatAdministratorCustomTitle:
     $ref: paths/sessions_{sessionId}_bot-api_bot{token}_setChatAdministratorCustomTitle.yaml
   /sessions/{sessionId}/bot-api/bot{token}/unbanChatMember:

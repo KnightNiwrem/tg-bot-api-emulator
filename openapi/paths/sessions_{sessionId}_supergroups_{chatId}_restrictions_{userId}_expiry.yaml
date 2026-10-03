@@ -1,0 +1,28 @@
+description: >-
+  The arrival of the end of a user's temporary restriction. The emulator does not lift
+  restrictions as time passes, so a test chooses when a restriction with an `until_date` ends.
+parameters:
+  - $ref: ../components/parameters/SessionId.yaml
+  - $ref: ../components/parameters/SupergroupChatId.yaml
+  - $ref: ../components/parameters/UserId.yaml
+post:
+  operationId: expireSupergroupMemberRestriction
+  summary: End a temporary restriction as the arrival of its end does
+  description: >-
+    Lifts the restriction as TDLib's `DialogParticipantStatus::update_restrictions` clears one
+    that elapsed: a restricted member becomes a plain member, and a restricted user that is not
+    a member one that left. No bot receives an update: TDLib clears the restriction locally, and
+    the public source shows no update Telegram's servers send for it.
+  responses:
+    '200':
+      description: The restriction ended; the user's standing is shown as bots see it.
+      content:
+        application/json:
+          schema:
+            $ref: ../components/schemas/ExpiredRestrictionResponse.yaml
+    '400':
+      description: A path identifier is invalid.
+    '404':
+      description: No active test session, supergroup, or user has the supplied identifier.
+    '409':
+      description: The user is not restricted, or its restriction lasts until it is lifted.

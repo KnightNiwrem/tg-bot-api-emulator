@@ -37,6 +37,7 @@ import {
   readBotCommandScopeParameter,
 } from './bot_command_parameters.ts';
 import { readChatAdministratorRightsParameter } from './chat_administrator_rights_parameter.ts';
+import { readChatPermissionsParameter } from './chat_permissions_parameter.ts';
 import { readMenuButtonParameter } from './menu_button_parameter.ts';
 import {
   messageEntitiesParameter,
@@ -401,6 +402,10 @@ const PRIVATE_CHAT_MEMBERS_NOT_BANNABLE_DESCRIPTION =
 const METHOD_UNAVAILABLE_IN_PRIVATE_CHATS_DESCRIPTION =
   'Bad Request: method is available only in supergroup and channel chats';
 const CANNOT_RESTRICT_SELF_DESCRIPTION = "Bad Request: can't restrict self";
+const CANNOT_UNRESTRICT_SELF_DESCRIPTION = "Bad Request: can't unrestrict self";
+const METHOD_UNAVAILABLE_OUTSIDE_SUPERGROUPS_DESCRIPTION =
+  'Bad Request: method is available only in supergroups';
+const NOT_ENOUGH_RIGHTS_DESCRIPTION = 'Bad Request: not enough rights';
 const METHOD_UNAVAILABLE_OUTSIDE_GROUPS_DESCRIPTION =
   'Bad Request: method is available only in groups and supergroups';
 const OWNER_CUSTOM_TITLE_DESCRIPTION = 'Bad Request: only the owner can edit their custom title';
@@ -815,6 +820,16 @@ const setChatAdministratorCustomTitleParametersSchema = z.strictObject({
   custom_title: z.string().optional(),
 });
 
+// Telegram also reads the deprecated permissions given as separate parameters, such as
+// `can_send_messages`; rejecting them instead surfaces the bot's mistake in tests.
+const restrictChatMemberParametersSchema = z.strictObject({
+  chat_id: integerParameter(z.int()).optional(),
+  user_id: integerParameter(z.int()).optional(),
+  permissions: z.string().optional(),
+  use_independent_chat_permissions: booleanParameter().default(false),
+  until_date: integerParameter(z.int()).optional(),
+});
+
 const unbanChatMemberParametersSchema = z.strictObject({
   chat_id: integerParameter(z.int()).optional(),
   user_id: integerParameter(z.int()).optional(),
@@ -966,6 +981,10 @@ type ChatMemberFailureReason =
   | Extract<
     ReturnType<EmulationSession['botApi']['unbanChatMember']>,
     { readonly unbanned: false }
+  >['reason']
+  | Extract<
+    ReturnType<EmulationSession['botApi']['restrictChatMember']>,
+    { readonly restricted: false }
   >['reason'];
 
 type MyCommandsTargetFailureReason = Extract<
@@ -1043,6 +1062,7 @@ const BOT_API_METHODS: readonly BotApiMethod[] = [
   { name: 'getUpdates', handler: handleGetUpdates },
   { name: 'getWebhookInfo', handler: handleGetWebhookInfo },
   { name: 'leaveChat', handler: handleLeaveChat },
+  { name: 'restrictChatMember', handler: handleRestrictChatMember },
   { name: 'sendChatAction', handler: handleSendChatAction },
   { name: 'sendDocument', handler: handleSendDocument },
   { name: 'sendMediaGroup', handler: handleSendMediaGroup },
@@ -3369,6 +3389,40 @@ function handleBanChatMember(
   return result.banned ? botApiResult(true) : chatMemberFailureAnswer(result.reason);
 }
 
+function handleRestrictChatMember(
+  context: BotApiMethodContext,
+  parameters: BotApiRequestParameters,
+): BotApiMethodAnswer {
+  const invalidParametersDescription = 'Bad Request: invalid restrictChatMember parameters';
+  const parsedParameters = restrictChatMemberParametersSchema.safeParse(parameters);
+  if (!parsedParameters.success) {
+    return botApiError(400, invalidParametersDescription);
+  }
+  const { data } = parsedParameters;
+  // Telegram reads the user, then the permissions, before it looks at the chat.
+  if (data.user_id === undefined || data.user_id <= 0) {
+    return botApiError(400, USER_ID_INVALID_DESCRIPTION);
+  }
+  const permissionsReading = readChatPermissionsParameter(data.permissions, {
+    usesIndependentChatPermissions: data.use_independent_chat_permissions,
+    invalidParametersDescription,
+  });
+  if (!permissionsReading.read) {
+    return botApiError(400, permissionsReading.description);
+  }
+  const targetReading = readChatMemberTarget(data);
+  if (!targetReading.read) {
+    return targetReading.errorAnswer;
+  }
+
+  const result = context.session.botApi.restrictChatMember(context.bot, {
+    ...targetReading.target,
+    permissions: permissionsReading.permissions,
+    untilUnixSeconds: data.until_date,
+  });
+  return result.restricted ? botApiResult(true) : chatMemberFailureAnswer(result.reason);
+}
+
 function handleUnbanChatMember(
   context: BotApiMethodContext,
   parameters: BotApiRequestParameters,
@@ -3460,6 +3514,12 @@ function chatMemberFailureAnswer(reason: ChatMemberFailureReason): BotApiMethodA
       return botApiError(400, METHOD_UNAVAILABLE_IN_PRIVATE_CHATS_DESCRIPTION);
     case 'cannot_restrict_self':
       return botApiError(400, CANNOT_RESTRICT_SELF_DESCRIPTION);
+    case 'cannot_unrestrict_self':
+      return botApiError(400, CANNOT_UNRESTRICT_SELF_DESCRIPTION);
+    case 'method_unavailable_outside_supergroups':
+      return botApiError(400, METHOD_UNAVAILABLE_OUTSIDE_SUPERGROUPS_DESCRIPTION);
+    case 'not_enough_rights_to_promote':
+      return botApiError(400, NOT_ENOUGH_RIGHTS_DESCRIPTION);
     case 'member_is_owner':
       return botApiError(400, MEMBER_IS_OWNER_DESCRIPTION);
     case 'not_enough_rights':

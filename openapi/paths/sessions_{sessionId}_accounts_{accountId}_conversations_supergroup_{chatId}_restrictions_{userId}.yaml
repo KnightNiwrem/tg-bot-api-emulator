@@ -1,0 +1,53 @@
+description: >-
+  A user's restriction in a supergroup, which the supergroup's owner applies, changes, or lifts,
+  as `restrictChatMember` does for an administrator bot.
+parameters:
+  - $ref: ../components/parameters/SessionId.yaml
+  - $ref: ../components/parameters/AccountId.yaml
+  - $ref: ../components/parameters/SupergroupChatId.yaml
+  - $ref: ../components/parameters/UserId.yaml
+put:
+  operationId: restrictSupergroupMember
+  summary: Restrict a user of a supergroup the account owns
+  description: >-
+    Leaves the user, an account or a bot, member or not, exactly the listed permissions; unlike
+    in the Bot API, no permission implies another, and every permission lifts the restriction.
+    An administrator that the owner restricts loses its rights and custom title, as Telegram
+    lets the owner do. Administrator bots subscribed to `chat_member` updates, and a restricted
+    bot subscribed to `my_chat_member`, receive the change from the account. A restriction that
+    changes nothing changes nothing.
+  requestBody:
+    required: true
+    content:
+      application/json:
+        schema:
+          $ref: ../components/schemas/RestrictSupergroupMemberRequest.yaml
+  responses:
+    '204':
+      description: The user is restricted as requested.
+    '400':
+      description: A path identifier or the body is invalid.
+    '403':
+      description: The account does not own the supergroup.
+    '404':
+      description: The session, account, supergroup, or user to restrict does not exist.
+    '409':
+      description: The user is the supergroup's owner.
+delete:
+  operationId: liftSupergroupMemberRestriction
+  summary: Lift a user's restriction in a supergroup the account owns
+  description: >-
+    Makes a restricted member a plain member, and a restricted user that is not a member one
+    that left. The change reaches bots as for a restriction; lifting no restriction changes
+    nothing.
+  responses:
+    '204':
+      description: The user is not restricted.
+    '400':
+      description: A path identifier is invalid.
+    '403':
+      description: The account does not own the supergroup.
+    '404':
+      description: The session, account, supergroup, or user does not exist.
+    '409':
+      description: The user is the supergroup's owner.

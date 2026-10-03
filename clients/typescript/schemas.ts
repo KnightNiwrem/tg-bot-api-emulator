@@ -582,6 +582,14 @@ const messageTrailerShape = {
 
 const messageUserSchema = z.union([virtualAccountProfileSchema, messageSenderBotSchema]);
 
+/** A user's standing once its temporary restriction ends, as bots see it. */
+export const expiredRestrictionResponseSchema = z.strictObject({
+  chat_member: z.strictObject({
+    user: messageUserSchema,
+    status: z.enum(['member', 'left']),
+  }),
+});
+
 const membersJoinedContentShape = {
   new_chat_participant: messageUserSchema,
   new_chat_member: messageUserSchema,

@@ -11,8 +11,9 @@ put:
   description: >-
     The title is cleaned as for the Bot API's `setChatTitle`. Bots of the supergroup receive the
     account's service message with `new_chat_title`; the title the supergroup has changes
-    nothing. As TDLib decides with the supergroup's default permissions applied, any member
-    may change it, because the emulator's default permissions let members change information.
+    nothing. As TDLib decides with the supergroup's default permissions applied, the owner, an
+    administrator with `can_change_info`, and any member that `can_change_info` permits,
+    after its restriction, if any, may change it.
   requestBody:
     required: true
     content:
@@ -33,6 +34,7 @@ put:
         A path identifier or the body is invalid, or the title is empty once cleaned or not
         well-formed Unicode.
     '403':
-      description: The account is not a member of the supergroup.
+      description: >-
+        The account is not a member of the supergroup, or may not change its information.
     '404':
       description: The session, account, or supergroup does not exist.

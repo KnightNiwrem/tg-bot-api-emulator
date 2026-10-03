@@ -12,6 +12,7 @@ import {
   createdVirtualAccountSchema,
   createdVirtualBotSchema,
   expiredPollResponseSchema,
+  expiredRestrictionResponseSchema,
   getMeResponseSchema,
   inlineQueryResponseSchema,
   menuButtonResponseSchema,
@@ -71,8 +72,10 @@ import type {
   CreateVirtualBotInput,
   DemoteChatMemberInput,
   EmulationSession,
+  ExpireChatMemberRestrictionInput,
   InlineQuery,
   LeaveChatInput,
+  LiftChatMemberRestrictionInput,
   MenuButton,
   MessageIn,
   MessageTarget,
@@ -88,6 +91,7 @@ import type {
   RegisterWebResourceInput,
   RemoveChatMemberInput,
   ReplyInterface,
+  RestrictChatMemberInput,
   SendInlineQueryInput,
   SetContentProtectionInput,
   SetCustomTitleInput,
@@ -133,6 +137,13 @@ export interface EmulationSessionClient extends EmulationSession {
    * `open_period` or `close_date` closes; the bot receives a `poll` update with the closed poll.
    */
   expirePoll(pollId: string): Promise<Poll>;
+  /**
+   * Ends a user's temporary restriction in a supergroup as its `until_date` arriving does, and
+   * returns the user's standing after it: `member`, or `left` for a user that is not a member. The
+   * emulator does not lift restrictions as time passes, so tests choose when one ends; no bot
+   * receives an update for it.
+   */
+  expireChatMemberRestriction(input: ExpireChatMemberRestrictionInput): Promise<'member' | 'left'>;
   /**
    * A view of the session's bot activity log: the Bot API calls its bots make, with their answers,
    * and the updates delivered to and confirmed by them. `filter` applies to every read of the
@@ -258,6 +269,20 @@ class HttpEmulationSessionClient implements EmulationSessionClient {
       responseSchema: expiredPollResponseSchema,
     });
     return response.poll;
+  }
+
+  async expireChatMemberRestriction(
+    { chatId, userId }: ExpireChatMemberRestrictionInput,
+  ): Promise<'member' | 'left'> {
+    const response = await requestJson(this.#fetch, {
+      method: 'POST',
+      url: `${this.#sessionUrl}/supergroups/${encodeURIComponent(chatId)}/restrictions/${
+        encodeURIComponent(userId)
+      }/expiry`,
+      expectedStatus: HTTP_STATUS_OK,
+      responseSchema: expiredRestrictionResponseSchema,
+    });
+    return response.chat_member.status;
   }
 
   registerWebResource({ content, ...input }: RegisterWebResourceInput): Promise<WebResource> {
@@ -527,6 +552,28 @@ function createVirtualAccountClient(
       await requestEmptyResponse(fetchImplementation, {
         method: 'DELETE',
         url: `${conversationUrl(accountUrl, input.chat)}/administrators/${
+          encodeURIComponent(input.userId)
+        }`,
+        expectedStatus: HTTP_STATUS_NO_CONTENT,
+      });
+    },
+    async restrictChatMember(input: RestrictChatMemberInput): Promise<void> {
+      await requestEmptyResponse(fetchImplementation, {
+        method: 'PUT',
+        url: `${conversationUrl(accountUrl, input.chat)}/restrictions/${
+          encodeURIComponent(input.userId)
+        }`,
+        expectedStatus: HTTP_STATUS_NO_CONTENT,
+        body: {
+          permissions: input.permissions,
+          ...(input.untilDate === undefined ? {} : { until_date: input.untilDate }),
+        },
+      });
+    },
+    async liftChatMemberRestriction(input: LiftChatMemberRestrictionInput): Promise<void> {
+      await requestEmptyResponse(fetchImplementation, {
+        method: 'DELETE',
+        url: `${conversationUrl(accountUrl, input.chat)}/restrictions/${
           encodeURIComponent(input.userId)
         }`,
         expectedStatus: HTTP_STATUS_NO_CONTENT,

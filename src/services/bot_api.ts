@@ -30,6 +30,7 @@ import {
   type FormerSupergroupMemberFailureReason,
   getSupergroupNonMemberFailureReason,
 } from '../types/chat_membership.ts';
+import type { ChatPermissions } from '../types/chat_permissions.ts';
 import type { InlineQueryId, InlineQueryResultsButton } from '../types/inline_query.ts';
 import {
   MAX_POLL_OPEN_PERIOD_SECONDS,
@@ -123,6 +124,7 @@ import type {
   GetChatMemberStatusResult,
   GetReadableSupergroupResult,
   LeaveChatResult,
+  RestrictChatMemberResult,
   UnbanChatMemberResult,
 } from './shared_chat_administration.ts';
 import type {
@@ -1098,6 +1100,28 @@ export type BotApiBanChatMemberResult =
       | 'private_chat_members_not_bannable';
   };
 
+export interface RestrictChatMemberRequest {
+  /** The Bot API `chat_id`, as `SendRequestOptions` describes it. */
+  readonly chatId: number;
+  readonly userId: number;
+  /** The permissions the user keeps, as the Bot API `permissions` grants them. */
+  readonly permissions: ChatPermissions;
+  /** The Bot API `until_date`; omitted for a restriction that lasts until it is lifted. */
+  readonly untilUnixSeconds?: number;
+}
+
+export type BotApiRestrictChatMemberResult =
+  | { readonly restricted: true }
+  | {
+    readonly restricted: false;
+    readonly reason:
+      | ChatMemberModerationFailureReason
+      | 'cannot_restrict_self'
+      | 'cannot_unrestrict_self'
+      | 'not_enough_rights_to_promote'
+      | 'method_unavailable_outside_supergroups';
+  };
+
 export interface UnbanChatMemberRequest {
   /** The Bot API `chat_id`, as `SendRequestOptions` describes it. */
   readonly chatId: number;
@@ -1463,6 +1487,13 @@ interface ChatMemberships {
     readonly memberId: number;
     readonly requestedBanEndUnixSeconds?: number;
   }): BanChatMemberResult;
+  restrictChatMember(input: {
+    readonly actorBotId: number;
+    readonly chatId: number;
+    readonly memberId: number;
+    readonly permissions: ChatPermissions;
+    readonly requestedRestrictionEndUnixSeconds?: number;
+  }): RestrictChatMemberResult;
   unbanChatMember(input: {
     readonly actorBotId: number;
     readonly chatId: number;
@@ -3686,6 +3717,36 @@ export class BotApiService {
       return result;
     }
     return { banned: false, reason: excludeMissingBotFailure(authenticatedBot, result.reason) };
+  }
+
+  /**
+   * Restricts what a user may do in a supergroup, or lifts its restriction, as
+   * `SharedChatAdministrationService.restrictChatMember` does. As the official Bot API server's
+   * `process_restrict_chat_member_query` refuses, a private chat has no members to restrict.
+   */
+  restrictChatMember(
+    authenticatedBot: VirtualBotProfile,
+    { chatId, userId, permissions, untilUnixSeconds }: RestrictChatMemberRequest,
+  ): BotApiRestrictChatMemberResult {
+    if (isUserId(chatId)) {
+      return {
+        restricted: false,
+        reason: this.#isPrivateChatKnown(authenticatedBot, chatId)
+          ? 'method_unavailable_outside_supergroups'
+          : 'chat_not_found',
+      };
+    }
+    const result = this.#chatMemberships.restrictChatMember({
+      actorBotId: authenticatedBot.id,
+      chatId,
+      memberId: userId,
+      permissions,
+      requestedRestrictionEndUnixSeconds: untilUnixSeconds,
+    });
+    return result.restricted ? result : {
+      restricted: false,
+      reason: excludeMissingBotFailure(authenticatedBot, result.reason),
+    };
   }
 
   /**

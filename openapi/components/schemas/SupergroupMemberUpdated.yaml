@@ -2,8 +2,8 @@ type: object
 additionalProperties: false
 description: >-
   A change of another user's standing in a supergroup: an account or bot joins, leaves, or
-  is removed, promoted, demoted, banned, or unbanned. A change of the bot's own standing is a
-  my_chat_member update instead.
+  is removed, promoted, demoted, banned, unbanned, restricted, or freed from its restriction.
+  A change of the bot's own standing is a my_chat_member update instead.
 required:
   - chat
   - from

@@ -72,8 +72,12 @@ post:
         text and its entities cannot be normalized (for example `Bad Request: text must be
         non-empty`, `Bad Request: entity URL '…' is invalid: …`, or `Bad Request: user not
         found`); the normalized text is longer than 4096 characters (`Bad Request: message is
-        too long`); or a button's callback data exceeds 64 bytes (`Bad Request:
-        BUTTON_DATA_INVALID`). A reply to a message of another chat is checked before all of
+        too long`); the bot may not send the content to a supergroup, as its restriction or the
+        supergroup's default permissions decide (`Bad Request: not enough rights to send text
+        messages to the chat`; the other send methods name their content instead: `photos`,
+        `documents`, `videos`, `voice notes`, `polls`, or `the rich message`, which needs
+        `can_send_messages` and the permissions of its photos and documents); or a button's
+        callback data exceeds 64 bytes (`Bad Request: BUTTON_DATA_INVALID`). A reply to a message of another chat is checked before all of
         these, while Telegram checks the text and the chat first: the replied message's chat is
         not one the bot can read (`Bad Request: chat not found`, or the membership errors of
         a supergroup the bot left or was removed from), or the replied message is not found

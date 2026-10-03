@@ -14,7 +14,8 @@ put:
     A promoted bot receives a my_chat_member update from the account showing it as
     `administrator` with its rights. As on Telegram, an administrator bot receives every
     message of the supergroup, privacy mode notwithstanding; with `can_delete_messages` it
-    deletes any message there, and with `can_restrict_members` it bans and unbans users. Bots
+    deletes any message there, with `can_restrict_members` it bans, unbans, and restricts
+    users, and with `can_change_info` it changes the supergroup's title and description. Bots
     see the other rights but the emulator does not enforce them. Promoting an administrator
     with the rights it holds changes nothing.
   requestBody:

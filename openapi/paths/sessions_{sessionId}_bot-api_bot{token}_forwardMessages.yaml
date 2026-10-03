@@ -55,8 +55,9 @@ post:
         can't use message effects in the chat`) or for more than one found message (`Bad
         Request: can't use message effects in the method`); the identifiers of its messages do
         not increase (`Bad Request: message identifiers must be in a strictly increasing
-        order`); none of its messages can be forwarded (`Bad Request: messages can't be
-        forwarded`); or the chat the forwards go to is unknown to the bot (`Bad Request: chat
+        order`); none of its messages can be forwarded, where a message whose content the bot may
+        not send to the supergroup the forwards go to is skipped too (`Bad Request: messages
+        can't be forwarded`); or the chat the forwards go to is unknown to the bot (`Bad Request: chat
         not found`). Telegram checks the chat the forwards go to before the forwarded
         messages.
       content:

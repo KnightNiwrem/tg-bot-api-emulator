@@ -44,7 +44,10 @@ post:
         accepts, the file is empty, the replied message is not a message of the chat, or the
         forwarded message cannot be forwarded.
     '403':
-      description: The account is not a member of a supergroup of the request.
+      description: >-
+        The account is not a member of a supergroup of the request, or may not send the content,
+        or the forwarded message's content, there, as its restriction or the supergroup's
+        default permissions decide.
     '404':
       description: >-
         The session, sending account, a bot or supergroup of the request, or the forwarded

@@ -69,8 +69,10 @@ post:
         is empty`); a file cannot be sent, as for `sendPhoto` and `sendDocument`; the chat, the
         reply, and the message effect fail as for `sendMessage`; a string is not well-formed
         Unicode (for example `Bad Request: rich text must be encoded in UTF-8`) or a text
-        mention names a user the session does not know (`Bad Request: user not found`); or a
-        button's callback data exceeds 64 bytes (`Bad Request: BUTTON_DATA_INVALID`). Telegram
+        mention names a user the session does not know (`Bad Request: user not found`); the bot
+        may not send the rich message to a supergroup, which needs `can_send_messages` and the
+        permission of each photo and document it shows (`Bad Request: not enough rights to send
+        the rich message to the chat`); or a button's callback data exceeds 64 bytes (`Bad Request: BUTTON_DATA_INVALID`). Telegram
         checks the chat before the blocks and files, which the emulator reads first.
       content:
         application/json:

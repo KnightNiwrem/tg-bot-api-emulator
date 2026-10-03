@@ -12,6 +12,7 @@ import {
   MAX_CUSTOM_TITLE_LENGTH,
   SUPERGROUP_ADMINISTRATOR_RIGHTS,
 } from '../../../types/chat_membership.ts';
+import { CHAT_PERMISSIONS } from '../../../types/chat_permissions.ts';
 import type { EmulationSession } from '../../../types/emulation_session.ts';
 import { createGeoLocation, MAX_HORIZONTAL_ACCURACY_METERS } from '../../../types/geo_location.ts';
 import {
@@ -88,6 +89,8 @@ const SUPERGROUP_MEMBER_PATH =
 const SUPERGROUP_ADMINISTRATOR_PATH =
   `${SUPERGROUP_CONVERSATION_PATH}/administrators/:${USER_ID_PARAMETER}` as const;
 const SUPERGROUP_CUSTOM_TITLE_PATH = `${SUPERGROUP_ADMINISTRATOR_PATH}/custom-title` as const;
+const SUPERGROUP_RESTRICTION_PATH =
+  `${SUPERGROUP_CONVERSATION_PATH}/restrictions/:${USER_ID_PARAMETER}` as const;
 const SUPERGROUP_CONTENT_PROTECTION_PATH =
   `${SUPERGROUP_CONVERSATION_PATH}/content-protection` as const;
 const SUPERGROUP_TITLE_PATH = `${SUPERGROUP_CONVERSATION_PATH}/title` as const;
@@ -266,6 +269,16 @@ const promoteChatMemberRequestSchema = z.partialRecord(
   z.enum(SUPERGROUP_ADMINISTRATOR_RIGHTS),
   z.boolean(),
 );
+
+/**
+ * A restriction the owner applies: the permissions the user keeps, by the Bot API's names, where
+ * an omitted permission is withheld and, unlike in the Bot API, no permission implies another; and
+ * when it ends, as a Unix time Telegram normalizes, or never when omitted.
+ */
+const restrictChatMemberRequestSchema = z.strictObject({
+  permissions: z.partialRecord(z.enum(CHAT_PERMISSIONS), z.boolean()),
+  until_date: z.int().optional(),
+});
 
 /**
  * A custom title of at most 16 characters, counted by code point, without emoji, as the Bot API
@@ -663,6 +676,48 @@ export function createAccountRoutes(): Hono<SessionRouteContextTypes> {
     return result.reason === 'no_rights_granted'
       ? context.body(null, 400)
       : context.body(null, memberRoleChangeFailureStatus(result.reason));
+  });
+
+  // The owner restricts a user, member or not, or changes its restriction.
+  accountRoutes.put(SUPERGROUP_RESTRICTION_PATH, async (context) => {
+    const memberPath = supergroupMemberPathSchema.safeParse(context.req.param());
+    if (!memberPath.success) {
+      return context.body(null, 400);
+    }
+    const requestBody = await readJsonRequestBody(context.req, restrictChatMemberRequestSchema);
+    if (requestBody === undefined) {
+      return context.body(null, 400);
+    }
+    const { accountId, chatId, userId } = memberPath.data;
+
+    const result = context.get('emulationSession').sharedChatAdministration
+      .restrictChatMemberAsOwner({
+        actorAccountId: accountId,
+        chatId,
+        memberId: userId,
+        permissions: new Set(
+          CHAT_PERMISSIONS.filter((permission) => requestBody.permissions[permission] === true),
+        ),
+        requestedRestrictionEndUnixSeconds: requestBody.until_date,
+      });
+    return result.changed
+      ? context.body(null, 204)
+      : context.body(null, ownerRestrictionFailureStatus(result.reason));
+  });
+
+  // The owner lifts a user's restriction; lifting none changes nothing.
+  accountRoutes.delete(SUPERGROUP_RESTRICTION_PATH, (context) => {
+    const memberPath = supergroupMemberPathSchema.safeParse(context.req.param());
+    if (!memberPath.success) {
+      return context.body(null, 400);
+    }
+    const { accountId, chatId, userId } = memberPath.data;
+
+    const result = context.get('emulationSession').sharedChatAdministration
+      .liftRestrictionAsOwner({ actorAccountId: accountId, chatId, memberId: userId });
+    return result.changed
+      ? context.body(null, 204)
+      : context.body(null, ownerRestrictionFailureStatus(result.reason));
   });
 
   // The owner sets its own custom title or an administrator's; an empty title removes it.
@@ -1586,6 +1641,32 @@ function forwardFailureStatus(
     default: {
       const unhandledReason: never = reason;
       throw new Error(`Unhandled account forward failure: ${unhandledReason}`);
+    }
+  }
+}
+
+/**
+ * Only the owner restricts users through these routes, and nobody restricts the owner; a missing
+ * account, supergroup, or user is not found.
+ */
+function ownerRestrictionFailureStatus(
+  reason: Extract<
+    ReturnType<EmulationSession['sharedChatAdministration']['restrictChatMemberAsOwner']>,
+    { readonly changed: false }
+  >['reason'],
+): 403 | 404 | 409 {
+  switch (reason) {
+    case 'actor_account_not_found':
+    case 'chat_not_found':
+    case 'member_not_found':
+      return 404;
+    case 'actor_not_authorized':
+      return 403;
+    case 'member_is_owner':
+      return 409;
+    default: {
+      const unhandledReason: never = reason;
+      throw new Error(`Unhandled restriction failure: ${unhandledReason}`);
     }
   }
 }

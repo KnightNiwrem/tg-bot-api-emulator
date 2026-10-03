@@ -22,6 +22,7 @@ import type { ChatDomainEvent } from '../types/chat_domain_event.ts';
 import {
   type ChatMembership,
   type ChatMemberStatus,
+  createRestrictedStatus,
   type FormerChatMemberStatus,
   getEffectiveChatPermissions,
   getSupergroupNonMemberFailureReason,
@@ -34,7 +35,7 @@ import {
   type SupergroupAdministratorRights,
   type SupergroupBotAccessFailureReason,
 } from '../types/chat_membership.ts';
-import { ALL_CHAT_PERMISSIONS } from '../types/chat_permissions.ts';
+import { ALL_CHAT_PERMISSIONS, type ChatPermissions } from '../types/chat_permissions.ts';
 import type { VirtualAccount } from '../types/virtual_account.ts';
 import type { VirtualBot } from '../types/virtual_bot.ts';
 import {
@@ -324,6 +325,82 @@ export type BanChatMemberResult =
   | { readonly banned: true }
   | { readonly banned: false; readonly reason: BotModerationFailureReason };
 
+export interface RestrictChatMemberInput {
+  readonly actorBotId: number;
+  readonly chatId: number;
+  /** The account or bot to restrict, whether it is a member or not. */
+  readonly memberId: number;
+  /** The permissions the user keeps; keeping every permission lifts its restriction. */
+  readonly permissions: ChatPermissions;
+  /**
+   * When the restriction ends, as the bot requested it; omitted for one that lasts until it is
+   * lifted. It is normalized as a ban's end is.
+   */
+  readonly requestedRestrictionEndUnixSeconds?: number;
+}
+
+/** Why a bot cannot restrict a user or lift its restriction, in the order TDLib checks them. */
+export type RestrictChatMemberFailureReason =
+  | BotModerationFailureReason
+  /** The bot would lift its own restriction. */
+  | 'cannot_unrestrict_self'
+  /**
+   * The bot would make an administrator a plain member, which TDLib's
+   * `promote_channel_participant` allows only with the `can_promote_members` right.
+   */
+  | 'not_enough_rights_to_promote';
+
+export type RestrictChatMemberResult =
+  | { readonly restricted: true }
+  | { readonly restricted: false; readonly reason: RestrictChatMemberFailureReason };
+
+export interface RestrictChatMemberAsOwnerInput {
+  /** The owner, who alone restricts users through the emulation API. */
+  readonly actorAccountId: number;
+  readonly chatId: number;
+  /** The account or bot to restrict, whether it is a member or not. */
+  readonly memberId: number;
+  /** As `RestrictChatMemberInput` describes it. */
+  readonly permissions: ChatPermissions;
+  /** As `RestrictChatMemberInput` describes it. */
+  readonly requestedRestrictionEndUnixSeconds?: number;
+}
+
+export interface LiftRestrictionAsOwnerInput {
+  /** The owner, who alone lifts restrictions through the emulation API. */
+  readonly actorAccountId: number;
+  readonly chatId: number;
+  readonly memberId: number;
+}
+
+/** Why the owner cannot restrict a user of its supergroup, or lift the user's restriction. */
+export type OwnerRestrictionFailureReason =
+  | 'actor_account_not_found'
+  | 'chat_not_found'
+  | 'actor_not_authorized'
+  | 'member_not_found'
+  | 'member_is_owner';
+
+export type OwnerRestrictionResult =
+  | { readonly changed: true }
+  | { readonly changed: false; readonly reason: OwnerRestrictionFailureReason };
+
+export interface ExpireRestrictionInput {
+  readonly chatId: number;
+  readonly memberId: number;
+}
+
+export type ExpireRestrictionResult =
+  | { readonly expired: true; readonly status: ChatMemberStatus }
+  | {
+    readonly expired: false;
+    readonly reason:
+      | 'chat_not_found'
+      | 'member_not_found'
+      /** The user is not restricted, or its restriction lasts until it is lifted. */
+      | 'restriction_not_temporary';
+  };
+
 export interface UnbanChatMemberInput {
   readonly actorBotId: number;
   readonly chatId: number;
@@ -390,11 +467,11 @@ interface ModerationTarget {
 /** A ban of a member that the bot lifts at once, which is how Telegram removes a member. */
 const MEMBER_REMOVAL_BAN_DURATION_SECONDS = 60;
 
-/** Telegram treats a ban shorter than this as one that lasts until it is lifted. */
-const MIN_TEMPORARY_BAN_DURATION_SECONDS = 30;
+/** Telegram treats a ban or restriction shorter than this as one that lasts until it is lifted. */
+const MIN_TEMPORARY_STATUS_DURATION_SECONDS = 30;
 
-/** Telegram treats a ban longer than this as one that lasts until it is lifted. */
-const MAX_TEMPORARY_BAN_DURATION_SECONDS = 366 * 24 * 60 * 60;
+/** Telegram treats a ban or restriction longer than this as one that lasts until it is lifted. */
+const MAX_TEMPORARY_STATUS_DURATION_SECONDS = 366 * 24 * 60 * 60;
 
 interface AccountLookup {
   getById(accountId: number): VirtualAccount | undefined;
@@ -917,6 +994,113 @@ export class SharedChatAdministrationService {
   }
 
   /**
+   * Restricts what a user may do in a supergroup as a bot, whether the user is a member or not, or
+   * lifts its restriction when it keeps every permission, as TDLib's `setChatMemberStatus` does
+   * with the status `restrictChatMember` asks for. No service message records it.
+   *
+   * Checks follow TDLib's `set_channel_participant_status_impl` and
+   * `restrict_channel_participant`: a restriction that changes nothing succeeds without rights;
+   * nobody restricts the owner; a bot changes its own standing only as `#restrictSelf` allows. A
+   * bot needs `can_restrict_members`, or `can_promote_members` to make an administrator a plain
+   * member, and Telegram lets it restrict only administrators it promoted, which none is here.
+   * As for a ban, a restriction shorter than 30 seconds or longer than 366 days lasts until it is
+   * lifted.
+   */
+  restrictChatMember(input: RestrictChatMemberInput): RestrictChatMemberResult {
+    const target = this.#resolveModerationTarget(input);
+    if (!target.resolved) {
+      return { restricted: false, reason: target.reason };
+    }
+    const { botMembership, memberStatus } = target;
+    const newStatus = createRestrictedStatus(isChatMember(memberStatus), {
+      permissions: input.permissions,
+      ...this.#normalizeRestrictionEnd(input.requestedRestrictionEndUnixSeconds),
+    });
+    if (isSameChatMemberStatus(memberStatus, newStatus)) {
+      return { restricted: true };
+    }
+    if (memberStatus.status === 'owner') {
+      return { restricted: false, reason: 'member_is_owner' };
+    }
+    if (input.memberId === input.actorBotId) {
+      return this.#restrictSelf(target, newStatus);
+    }
+    if (memberStatus.status === 'administrator' && newStatus.status === 'member') {
+      return {
+        restricted: false,
+        reason: holdsSupergroupAdministratorRight(botMembership, 'can_promote_members')
+          ? 'member_is_administrator'
+          : 'not_enough_rights_to_promote',
+      };
+    }
+    if (!holdsSupergroupAdministratorRight(botMembership, 'can_restrict_members')) {
+      return { restricted: false, reason: 'not_enough_rights' };
+    }
+    if (memberStatus.status === 'administrator') {
+      return { restricted: false, reason: 'member_is_administrator' };
+    }
+
+    this.#changeStatusOfUser(target.chat, {
+      actorId: input.actorBotId,
+      memberId: input.memberId,
+      oldStatus: memberStatus,
+      newStatus,
+    });
+    return { restricted: true };
+  }
+
+  /**
+   * Restricts what a user may do in a supergroup as its owner, whether the user is a member or not,
+   * as `restrictChatMember` does for a bot. The owner may restrict an administrator, which then
+   * loses its rights and custom title, as Telegram lets the owner do.
+   */
+  restrictChatMemberAsOwner(input: RestrictChatMemberAsOwnerInput): OwnerRestrictionResult {
+    return this.#changeRestrictionAsOwner(input, (isMember) =>
+      createRestrictedStatus(isMember, {
+        permissions: input.permissions,
+        ...this.#normalizeRestrictionEnd(input.requestedRestrictionEndUnixSeconds),
+      }));
+  }
+
+  /**
+   * Lifts a user's restriction in a supergroup as its owner, which leaves a member a plain member
+   * and a non-member as having left. A user that is not restricted stays as it is.
+   */
+  liftRestrictionAsOwner(input: LiftRestrictionAsOwnerInput): OwnerRestrictionResult {
+    return this.#changeRestrictionAsOwner(
+      input,
+      (isMember, status) =>
+        status.status === 'restricted'
+          ? createRestrictedStatus(isMember, { permissions: ALL_CHAT_PERMISSIONS })
+          : status,
+    );
+  }
+
+  /**
+   * Ends a temporary restriction as its end arrives, which the emulator never does as time passes:
+   * as TDLib's `DialogParticipantStatus::update_restrictions` clears an elapsed restriction, a
+   * member becomes a plain member and a non-member is left as having left. TDLib clears it locally,
+   * and the public source shows no update Telegram's servers send for it, so no event is published.
+   */
+  expireRestriction({ chatId, memberId }: ExpireRestrictionInput): ExpireRestrictionResult {
+    if (this.#sharedChats.getSharedChat(chatId)?.kind !== 'supergroup') {
+      return { expired: false, reason: 'chat_not_found' };
+    }
+    if (this.#identifyUser(memberId) === undefined) {
+      return { expired: false, reason: 'member_not_found' };
+    }
+    const status = this.#lookUpChatMemberStatus(chatId, memberId);
+    if (status.status !== 'restricted' || status.restrictedUntilUnixSeconds === undefined) {
+      return { expired: false, reason: 'restriction_not_temporary' };
+    }
+    const statusAfterExpiry = createRestrictedStatus(status.isMember, {
+      permissions: ALL_CHAT_PERMISSIONS,
+    });
+    this.#storeStatusOfUser(chatId, memberId, statusAfterExpiry);
+    return { expired: true, status: statusAfterExpiry };
+  }
+
+  /**
    * Returns a user's standing in a supergroup to a bot that is a member of it. A user of the session
    * that never joined the supergroup has `left` it.
    */
@@ -1206,6 +1390,122 @@ export class SharedChatAdministrationService {
     return { changed: true };
   }
 
+  /**
+   * Applies a bot's restriction of itself as TDLib does: it can neither restrict itself nor lift
+   * its own restriction, but every permission makes an administrator a plain member, which TDLib's
+   * `promote_channel_participant` lets a bot do to itself without the right to promote members.
+   */
+  #restrictSelf(
+    { chat, botId, memberStatus }: ModerationTarget,
+    newStatus: ChatMemberStatus,
+  ): RestrictChatMemberResult {
+    if (newStatus.status !== 'member') {
+      return { restricted: false, reason: 'cannot_restrict_self' };
+    }
+    if (memberStatus.status !== 'administrator') {
+      return { restricted: false, reason: 'cannot_unrestrict_self' };
+    }
+    this.#changeStatusOfUser(chat, {
+      actorId: botId,
+      memberId: botId,
+      oldStatus: memberStatus,
+      newStatus,
+    });
+    return { restricted: true };
+  }
+
+  /**
+   * Changes a user's restriction as the owner of its supergroup, to the standing `getNewStatus`
+   * gives the user from whether it is a member and its standing. A change that changes nothing
+   * succeeds without effect; the owner's own standing cannot change.
+   */
+  #changeRestrictionAsOwner(
+    { actorAccountId, chatId, memberId }: {
+      readonly actorAccountId: number;
+      readonly chatId: number;
+      readonly memberId: number;
+    },
+    getNewStatus: (isMember: boolean, status: ChatMemberStatus) => ChatMemberStatus,
+  ): OwnerRestrictionResult {
+    if (this.#accounts.getById(actorAccountId) === undefined) {
+      return { changed: false, reason: 'actor_account_not_found' };
+    }
+    const chat = this.#sharedChats.getSharedChat(chatId);
+    if (chat?.kind !== 'supergroup') {
+      return { changed: false, reason: 'chat_not_found' };
+    }
+    if (this.#sharedChats.getChatMembership(chatId, actorAccountId)?.status !== 'owner') {
+      return { changed: false, reason: 'actor_not_authorized' };
+    }
+    if (this.#identifyUser(memberId) === undefined) {
+      return { changed: false, reason: 'member_not_found' };
+    }
+    const oldStatus = this.#lookUpChatMemberStatus(chatId, memberId);
+    const newStatus = getNewStatus(isChatMember(oldStatus), oldStatus);
+    if (isSameChatMemberStatus(oldStatus, newStatus)) {
+      return { changed: true };
+    }
+    if (oldStatus.status === 'owner') {
+      return { changed: false, reason: 'member_is_owner' };
+    }
+    this.#changeStatusOfUser(chat, { actorId: actorAccountId, memberId, oldStatus, newStatus });
+    return { changed: true };
+  }
+
+  /**
+   * Stores a user's new standing in a supergroup, which keeps it a member or not, and publishes the
+   * change. Use it only for changes that neither add nor remove a member, which record service
+   * messages.
+   */
+  #changeStatusOfUser(
+    chat: Supergroup,
+    { actorId, memberId, oldStatus, newStatus }: {
+      readonly actorId: number;
+      readonly memberId: number;
+      readonly oldStatus: ChatMemberStatus;
+      readonly newStatus: ChatMemberStatus;
+    },
+  ): void {
+    if (isChatMember(oldStatus) !== isChatMember(newStatus)) {
+      throw new Error(
+        `Member ${memberId} of chat ${chat.id} would join or leave by a change of its standing`,
+      );
+    }
+    this.#storeStatusOfUser(chat.id, memberId, newStatus);
+    this.#events.publish({
+      type: 'chat_member_status_changed',
+      chat,
+      actorId,
+      memberId,
+      oldStatus,
+      newStatus,
+      changedAtUnixSeconds: this.#currentUnixTimeSeconds(),
+    });
+  }
+
+  /**
+   * Stores a user's new standing in a supergroup: a member's, or, for a user that is not a
+   * member, how its membership ended. The owner's standing never changes.
+   */
+  #storeStatusOfUser(chatId: number, memberId: number, status: ChatMemberStatus): void {
+    if (isChatMember(status)) {
+      if (status.status === 'owner') {
+        throw new Error(`Member ${memberId} of chat ${chatId} cannot become its owner`);
+      }
+      const update = this.#sharedChats.updateChatMemberStatus(chatId, memberId, status);
+      if (!update.updated) {
+        throw new Error(
+          `Member ${memberId} of chat ${chatId} could not be updated: ${update.reason}`,
+        );
+      }
+      return;
+    }
+    const update = this.#sharedChats.updateFormerMemberStatus(chatId, memberId, status);
+    if (!update.updated) {
+      throw new Error(`Non-member ${memberId} of chat ${chatId} could not be updated`);
+    }
+  }
+
   /** Resolves a bot that moderates a supergroup and the standing of the user it moderates. */
   #resolveModerationTarget(
     { actorBotId, chatId, memberId }: {
@@ -1295,14 +1595,34 @@ export class SharedChatAdministrationService {
   #normalizeBanEnd(
     requestedBanEndUnixSeconds: number | undefined,
   ): { readonly bannedUntilUnixSeconds?: number } {
-    if (requestedBanEndUnixSeconds === undefined) {
-      return {};
+    const bannedUntilUnixSeconds = this.#normalizeTemporaryStatusEnd(requestedBanEndUnixSeconds);
+    return bannedUntilUnixSeconds === undefined ? {} : { bannedUntilUnixSeconds };
+  }
+
+  /** Resolves the end of a restriction as `#normalizeBanEnd` resolves a ban's. */
+  #normalizeRestrictionEnd(
+    requestedRestrictionEndUnixSeconds: number | undefined,
+  ): { readonly restrictedUntilUnixSeconds?: number } {
+    const restrictedUntilUnixSeconds = this.#normalizeTemporaryStatusEnd(
+      requestedRestrictionEndUnixSeconds,
+    );
+    return restrictedUntilUnixSeconds === undefined ? {} : { restrictedUntilUnixSeconds };
+  }
+
+  /**
+   * Resolves when a ban or restriction ends as TDLib's `get_dialog_participant_status` does: one
+   * shorter than 30 seconds or longer than 366 days lasts until it is lifted, which `undefined`
+   * stands for.
+   */
+  #normalizeTemporaryStatusEnd(requestedEndUnixSeconds: number | undefined): number | undefined {
+    if (requestedEndUnixSeconds === undefined) {
+      return undefined;
     }
-    const banDurationSeconds = requestedBanEndUnixSeconds - this.#currentUnixTimeSeconds();
-    return banDurationSeconds < MIN_TEMPORARY_BAN_DURATION_SECONDS ||
-        banDurationSeconds > MAX_TEMPORARY_BAN_DURATION_SECONDS
-      ? {}
-      : { bannedUntilUnixSeconds: requestedBanEndUnixSeconds };
+    const durationSeconds = requestedEndUnixSeconds - this.#currentUnixTimeSeconds();
+    return durationSeconds < MIN_TEMPORARY_STATUS_DURATION_SECONDS ||
+        durationSeconds > MAX_TEMPORARY_STATUS_DURATION_SECONDS
+      ? undefined
+      : requestedEndUnixSeconds;
   }
 
   /** Resolves a bot that asks about a supergroup, which it must be a member of. */
