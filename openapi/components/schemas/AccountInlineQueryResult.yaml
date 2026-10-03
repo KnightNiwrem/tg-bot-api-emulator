@@ -8,6 +8,8 @@ properties:
     type: string
     enum:
       - article
+      - contact
+      - location
       - photo
       - document
       - video
@@ -17,11 +19,15 @@ properties:
   title:
     type: string
     minLength: 1
-    description: Omitted for a photo or voice note without a title.
+    description: >-
+      Cleaned as TDLib's `clean_input_string` cleans it. Omitted for a location, photo or voice
+      note without a title.
   description:
     type: string
     minLength: 1
-    description: Omitted when the bot gave none.
+    description: >-
+      Cleaned as TDLib's `clean_input_string` cleans it, and omitted when empty. For a contact,
+      its phone number, and for a location, its coordinates, as TDLib describes them.
   url:
     type: string
     minLength: 1

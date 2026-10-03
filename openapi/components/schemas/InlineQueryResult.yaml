@@ -1,8 +1,10 @@
 description: >-
-  An article, or a photo, document, video, or voice note the bot knows by `file_id` or names by
-  URL.
+  An article, a contact, a static location, or a photo, document, video, or voice note the bot knows
+  by `file_id` or names by URL.
 oneOf:
   - $ref: ./InlineQueryResultArticle.yaml
+  - $ref: ./InlineQueryResultContact.yaml
+  - $ref: ./InlineQueryResultLocation.yaml
   - $ref: ./InlineQueryResultCachedPhoto.yaml
   - $ref: ./InlineQueryResultPhoto.yaml
   - $ref: ./InlineQueryResultCachedDocument.yaml

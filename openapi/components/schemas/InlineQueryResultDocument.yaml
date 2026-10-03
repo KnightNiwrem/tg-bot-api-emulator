@@ -30,8 +30,8 @@ properties:
     type: string
     pattern: ^application/(pdf|zip)
     description: >-
-      The declared type, which TDLib requires to begin with `application/pdf` or
-      `application/zip`. The sent document has the type the URL serves it as.
+      The declared type, which TDLib requires to begin with `application/pdf` or `application/zip`.
+      The sent document has the type the URL serves it as.
   description:
     type: string
   caption:
@@ -46,9 +46,11 @@ properties:
     oneOf:
       - $ref: ./InputTextMessageContent.yaml
       - $ref: ./InputRichMessageContent.yaml
+      - $ref: ./InputContactMessageContent.yaml
+      - $ref: ./InputLocationMessageContent.yaml
     description: >-
-      Text, if it has text, or a rich message that sending the result writes instead of the
-      document, which is then not downloaded.
+      Text, if it has text, a rich message, a contact, or a location that sending the result writes
+      instead of the document, which is then not downloaded.
   thumbnail_url:
     type: string
     description: >-

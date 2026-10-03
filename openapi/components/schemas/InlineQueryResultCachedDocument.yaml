@@ -30,6 +30,8 @@ properties:
     oneOf:
       - $ref: ./InputTextMessageContent.yaml
       - $ref: ./InputRichMessageContent.yaml
+      - $ref: ./InputContactMessageContent.yaml
+      - $ref: ./InputLocationMessageContent.yaml
     description: >-
-      Text, if it has text, or a rich message that sending the result writes instead of the
-      document.
+      Text, if it has text, a rich message, a contact, or a location that sending the result writes
+      instead of the document.

@@ -11155,7 +11155,11 @@ Deno.test('answerInlineQuery and the inline query routes follow Telegram checks'
     await answer({ results: [{ ...article('1'), type: 'poll' }] }),
     await answer({ results: [{ ...article('1'), input_message_content: { message_text: '' } }] }),
     await answer({
-      results: [article('1', { input_message_content: { latitude: 1, longitude: 2 } })],
+      results: [
+        article('1', {
+          input_message_content: { latitude: 1, longitude: 2, title: 'Cafe', address: 'Main St' },
+        }),
+      ],
     }),
     await answer({
       results: [
@@ -11189,7 +11193,7 @@ Deno.test('answerInlineQuery and the inline query routes follow Telegram checks'
       'Bad Request: inline query results of type "gif" are not supported',
       `Bad Request: can't parse InlineQueryResult: type "poll" is unsupported for the inline query result`,
       "Bad Request: can't parse InlineQueryResult: Input message content is not specified",
-      'Bad Request: inline query results sending a location, venue, contact, or invoice are not supported',
+      'Bad Request: inline query results sending a venue or invoice are not supported',
       "Bad Request: can't parse InlineQueryResult: Can't parse entities: Character '.' is reserved and must be escaped with the preceding '\\'",
       'Bad Request: unallowed document MIME type',
       "Bad Request: wrong remote file identifier specified: can't unserialize it",

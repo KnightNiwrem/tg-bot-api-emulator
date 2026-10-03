@@ -127,6 +127,14 @@ Both reach bots as ordinary `message` updates, through polling or webhooks, subj
 [bot activity](bot-activity.md) recording. No bot receives an update for its own contact or
 location, and account histories show both, as bots see them.
 
+## Inline query results
+
+Inline bots send contacts and static locations as results of `answerInlineQuery`, or as the
+`input_message_content` of any result, read as `sendContact` and `sendLocation` read them. The
+account that chooses such a result sends the contact or location as its own message through the bot;
+[inline mode](inline-mode.md#contacts-and-locations) describes how the results are listed and
+checked.
+
 ## Intentional deviations
 
 - **Explicit phone numbers.** Accounts have no phone number unless a test gives one, because
@@ -153,8 +161,10 @@ location, and account histories show both, as bots see them.
 [content normalization](../../src/services/message_content.ts),
 [Bot API handler](../../src/api/sessions/bot_api/mod.ts),
 [account routes](../../src/api/sessions/accounts/mod.ts) and
-[contact tests](../../tests/contact_api_test.ts), [location tests](../../tests/location_api_test.ts)
-and [forward, copy, reply and delivery tests](../../tests/contact_location_reuse_api_test.ts).
+[contact tests](../../tests/contact_api_test.ts),
+[location tests](../../tests/location_api_test.ts),
+[inline result tests](../../tests/inline_result_contact_location_api_test.ts) and
+[forward, copy, reply and delivery tests](../../tests/contact_location_reuse_api_test.ts).
 
 [json-contact]: https://github.com/tdlib/telegram-bot-api/blob/e3e9dd8e5b3d7ab8537cd5a10dc31d5ffa8f82d1/telegram-bot-api/Client.cpp#L2589-L2610
 [send-contact]: https://github.com/tdlib/telegram-bot-api/blob/e3e9dd8e5b3d7ab8537cd5a10dc31d5ffa8f82d1/telegram-bot-api/Client.cpp#L14243-L14252

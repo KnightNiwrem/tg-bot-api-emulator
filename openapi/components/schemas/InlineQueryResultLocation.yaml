@@ -1,0 +1,56 @@
+description: >-
+  A static location, which the client lists by its title and, as TDLib describes it, its
+  coordinates to six decimal places, and which sending the result writes as for `sendLocation`.
+  Live locations are not supported, so `live_period`, `heading` and `proximity_alert_radius` are
+  refused as unknown fields.
+type: object
+additionalProperties: false
+required:
+  - type
+  - id
+  - latitude
+  - longitude
+  - title
+properties:
+  type:
+    type: string
+    const: location
+  id:
+    $ref: ./InlineQueryResultId.yaml
+  latitude:
+    type: number
+    minimum: -90
+    maximum: 90
+    description: >-
+      Outside ±90° fails with `Bad Request: invalid location specified`.
+  longitude:
+    type: number
+    minimum: -180
+    maximum: 180
+    description: >-
+      Outside ±180° fails with `Bad Request: invalid location specified`.
+  horizontal_accuracy:
+    type: number
+    minimum: 0
+    maximum: 1500
+    description: Meters, rounded up to whole meters; 0 means unknown.
+  title:
+    type: string
+  reply_markup:
+    $ref: ./InlineKeyboardMarkup.yaml
+  input_message_content:
+    oneOf:
+      - $ref: ./InputTextMessageContent.yaml
+      - $ref: ./InputRichMessageContent.yaml
+      - $ref: ./InputContactMessageContent.yaml
+      - $ref: ./InputLocationMessageContent.yaml
+    description: >-
+      Text, if it has text, a rich message, a contact, or a location that sending the result writes
+      instead of the location.
+  thumbnail_url:
+    type: string
+    description: Validated and ignored.
+  thumbnail_width:
+    type: integer
+  thumbnail_height:
+    type: integer

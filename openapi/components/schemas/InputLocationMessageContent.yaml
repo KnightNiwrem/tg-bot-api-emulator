@@ -1,0 +1,25 @@
+type: object
+additionalProperties: false
+description: >-
+  A static location that sending an inline query result writes, read as for `sendLocation`.
+  Coordinates outside ±90° and ±180° fail with `Bad Request: invalid location specified`. Live
+  locations are not supported, so `live_period`, `heading` and `proximity_alert_radius` are
+  refused as unknown fields, as are a venue's `title` and `address` with coordinates (`Bad
+  Request: inline query results sending a venue or invoice are not supported`).
+required:
+  - latitude
+  - longitude
+properties:
+  latitude:
+    type: number
+    minimum: -90
+    maximum: 90
+  longitude:
+    type: number
+    minimum: -180
+    maximum: 180
+  horizontal_accuracy:
+    type: number
+    minimum: 0
+    maximum: 1500
+    description: Meters, rounded up to whole meters; 0 means unknown.

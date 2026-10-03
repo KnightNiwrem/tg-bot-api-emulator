@@ -1,16 +1,18 @@
 description: >-
   Telegram Bot API method for answering an inline query an account sent to the bot, once, with
-  up to 50 results that the account's client lists and sends. Article results, and photo,
-  document, video, and voice results with files the bot knows by `file_id` or names by URL, are
-  supported. A file named by URL is not downloaded with the answer: Telegram downloads it from
-  the session's emulated web each time an account sends it, and never when the result's
+  up to 50 results that the account's client lists and sends. Article, contact, and static
+  location results, and photo, document, video, and voice results with files the bot knows by
+  `file_id` or names by URL, are supported. The `input_message_content` that replaces what a
+  result sends may be text, a rich message, a contact, or a static location, each read as by the
+  method that sends it. A file named by URL is not downloaded with the answer: Telegram downloads
+  it from the session's emulated web each time an account sends it, and never when the result's
   `input_message_content` replaces it. A video declared as `text/html` is a web page with an
   embedded player, which only the listing shows; such a result must specify
   `input_message_content` (`Bad Request: inline query results with an embedded video player must
   specify input_message_content`). Results of other types (`Bad Request:
   inline query results of type "<type>" are not supported`) and `input_message_content` of a
-  location, venue, contact, or invoice (`Bad Request: inline query results sending a location,
-  venue, contact, or invoice are not supported`) are rejected with these emulator errors.
+  venue or invoice (`Bad Request: inline query results sending a venue or invoice are not
+  supported`) are rejected with these emulator errors.
   Thumbnails, and the dimensions of a photo, are validated and ignored. Text and
   captions are read and normalized as by `sendMessage` and `sendPhoto`, and a rich message as
   by `sendRichMessage`, whose files must be reused by `file_id`: TDLib refuses an uploaded file,
@@ -65,7 +67,13 @@ post:
         InlineQueryResult: `, or a document named by URL whose `mime_type` does not begin with
         `application/pdf` or `application/zip` (`Bad Request: unallowed document MIME type`), or
         a video named by URL whose `mime_type` does not begin with `video/mp4` or `text/html`
-        (`Bad Request: unallowed video MIME type`).
+        (`Bad Request: unallowed video MIME type`), or a contact result whose trimmed phone
+        number or first name is empty, or whose phone number or title cleaning empties (`Bad
+        Request: field "phone_number" must contain a valid phone number`, `Bad Request: field
+        "first_name" must be non-empty`), or a location,
+        listed or sent, outside ±90° and ±180° (`Bad Request: invalid location specified`), or
+        a result whose title or description, as the client lists it, is not well-formed Unicode
+        (`Bad Request: strings must be encoded in UTF-8`).
         Every result's file is then resolved: a `file_id` the bot does
         not know (`Bad Request: wrong remote file identifier specified: can't unserialize it`)
         or of another file type (`Bad Request: can't use file of type Document as Photo`).
@@ -76,7 +84,9 @@ post:
         50 results (`Bad Request: too many inline query results specified`); and each
         result's message content as when sending it, where normalized text longer than 4096
         characters fails with `Bad Request: MESSAGE_TOO_LONG` and a caption longer than 1024
-        characters with `Bad Request: MEDIA_CAPTION_TOO_LONG`. Telegram's servers finally
+        characters with `Bad Request: MEDIA_CAPTION_TOO_LONG`, and a contact's texts are cleaned
+        as for `sendContact`, such as with `Bad Request: first name must be non-empty`.
+        Telegram's servers finally
         check the query, which must exist, have been sent to this bot, and be unanswered
         (`Bad Request: query is too old and response timeout expired or query ID is
         invalid`); a `next_offset` longer than 64 bytes (`Bad Request: NEXT_OFFSET_INVALID`);

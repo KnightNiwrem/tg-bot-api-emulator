@@ -1,5 +1,12 @@
 import { z } from 'zod';
 
+import type { WrittenContact } from '../../../types/contact.ts';
+import {
+  createGeoLocation,
+  type GeoLocation,
+  isPointOnEarth,
+  MAX_HORIZONTAL_ACCURACY_METERS,
+} from '../../../types/geo_location.ts';
 import type { InlineKeyboard } from '../../../types/inline_keyboard.ts';
 import type { InlineQueryResultsButton } from '../../../types/inline_query.ts';
 import {
@@ -7,6 +14,7 @@ import {
   MAX_VIDEO_SIDE_LENGTH,
   type VideoAttributes,
 } from '../../../types/stored_file.ts';
+import { contactNameSchema, contactVcardSchema } from './contact_parameter.ts';
 import { linkPreviewOptionsSchema } from './link_preview_options_parameter.ts';
 import { inlineKeyboardMarkupSchema } from './reply_markup_parameter.ts';
 import { jsonParameter } from './request_parameters.ts';
@@ -19,12 +27,25 @@ export interface UnreadFormattedText {
 }
 
 /**
- * What a result's `input_message_content` sends, before its text is read: text, or a rich
- * message, which is still the JSON `InputRichMessage` the bot specified.
+ * A static location as a result specifies it, before its coordinates are checked. An accuracy of 0
+ * means unknown.
+ */
+export interface UnreadLocation {
+  readonly latitude: number;
+  readonly longitude: number;
+  readonly horizontalAccuracyMeters: number;
+}
+
+/**
+ * What a result's `input_message_content` sends, before it is read: text; a rich message, which is
+ * still the JSON `InputRichMessage` the bot specified; a contact, whose texts are not yet cleaned;
+ * or a static location.
  */
 export type UnreadInputMessageContent =
   | { readonly kind: 'text'; readonly text: UnreadFormattedText }
-  | { readonly kind: 'rich_message'; readonly richMessage: Readonly<Record<string, unknown>> };
+  | { readonly kind: 'rich_message'; readonly richMessage: Readonly<Record<string, unknown>> }
+  | { readonly kind: 'contact'; readonly contact: WrittenContact }
+  | { readonly kind: 'location'; readonly location: UnreadLocation };
 
 /**
  * The file of a media result: one the bot knows by `file_id`, or one it names by URL, which
@@ -44,10 +65,13 @@ export type InlineQueryResultVideoParameter =
 
 interface InlineQueryResultParameterBase {
   readonly id: string;
-  /** Empty for none. */
-  readonly description: string;
   /** Omitted for a result whose message has no inline keyboard. */
   readonly inlineKeyboard?: InlineKeyboard;
+}
+
+interface DescribedInlineQueryResultParameter extends InlineQueryResultParameterBase {
+  /** Empty for none. */
+  readonly description: string;
 }
 
 /**
@@ -55,7 +79,7 @@ interface InlineQueryResultParameterBase {
  * file resolved. `messageContent` is what its `input_message_content` sends.
  */
 export type InlineQueryResultParameter =
-  | (InlineQueryResultParameterBase & {
+  | (DescribedInlineQueryResultParameter & {
     readonly kind: 'article';
     readonly title: string;
     /** Empty for none, including a URL the bot asks clients to hide. */
@@ -63,6 +87,19 @@ export type InlineQueryResultParameter =
     readonly messageContent: UnreadInputMessageContent;
   })
   | (InlineQueryResultParameterBase & {
+    readonly kind: 'contact';
+    /** Listed by its texts, which TDLib's `get_input_bot_inline_result` trims. */
+    readonly contact: WrittenContact;
+    readonly messageContent?: UnreadInputMessageContent;
+  })
+  | (InlineQueryResultParameterBase & {
+    readonly kind: 'location';
+    readonly title: string;
+    /** Also listed by its coordinates, as TDLib's `get_input_bot_inline_result` describes them. */
+    readonly location: UnreadLocation;
+    readonly messageContent?: UnreadInputMessageContent;
+  })
+  | (DescribedInlineQueryResultParameter & {
     readonly kind: 'photo';
     readonly photo: InlineQueryResultFileParameter;
     /** The URL of the photo's thumbnail in the list of results; empty for none. */
@@ -73,7 +110,7 @@ export type InlineQueryResultParameter =
     readonly showsCaptionAboveMedia: boolean;
     readonly messageContent?: UnreadInputMessageContent;
   })
-  | (InlineQueryResultParameterBase & {
+  | (DescribedInlineQueryResultParameter & {
     readonly kind: 'document';
     readonly document: InlineQueryResultFileParameter;
     /** The URL of the document's thumbnail in the list of results; empty for none. */
@@ -82,7 +119,7 @@ export type InlineQueryResultParameter =
     readonly caption: UnreadFormattedText;
     readonly messageContent?: UnreadInputMessageContent;
   })
-  | (InlineQueryResultParameterBase & {
+  | (DescribedInlineQueryResultParameter & {
     readonly kind: 'video';
     readonly video: InlineQueryResultVideoParameter;
     /** The URL of the video's thumbnail in the list of results; empty for none. */
@@ -95,7 +132,7 @@ export type InlineQueryResultParameter =
     /** Always given for an embedded video player, which cannot be sent itself. */
     readonly messageContent?: UnreadInputMessageContent;
   })
-  | (Omit<InlineQueryResultParameterBase, 'description'> & {
+  | (InlineQueryResultParameterBase & {
     readonly kind: 'voice';
     readonly voice: InlineQueryResultFileParameter;
     readonly title: string;
@@ -135,32 +172,39 @@ const EMBEDDED_VIDEO_PLAYER_CONTENT_MISSING_DESCRIPTION =
   'Bad Request: inline query results with an embedded video player must specify ' +
   'input_message_content';
 
+/** The result types that the emulator reads, by the lowercase names Telegram matches. */
+const SUPPORTED_RESULT_TYPES = [
+  'article',
+  'contact',
+  'location',
+  'photo',
+  'document',
+  'video',
+  'voice',
+] as const;
+
+type SupportedResultType = typeof SUPPORTED_RESULT_TYPES[number];
+
 /** Telegram's result types that the emulator does not support. */
 const UNSUPPORTED_RESULT_TYPES = [
   'audio',
-  'contact',
   'game',
   'gif',
-  'location',
   'mpeg4_gif',
   'sticker',
   'venue',
 ] as const;
 
 /**
- * Fields by which Telegram recognizes `input_message_content` of a location, venue, contact, or
- * invoice, which the emulator does not support.
+ * Fields by which the official server's `get_input_message_content` recognizes an
+ * `input_message_content` it reads as a venue, which also has coordinates, or an invoice; the
+ * emulator supports neither.
  */
-const UNSUPPORTED_INPUT_MESSAGE_CONTENT_FIELDS = [
-  'latitude',
-  'longitude',
-  'phone_number',
-  'payload',
-] as const;
+const VENUE_INPUT_MESSAGE_CONTENT_FIELDS = ['latitude', 'longitude', 'title', 'address'] as const;
+const INVOICE_INPUT_MESSAGE_CONTENT_FIELD = 'payload';
 
 const UNSUPPORTED_INPUT_MESSAGE_CONTENT_DESCRIPTION =
-  'Bad Request: inline query results sending a location, venue, contact, or invoice are not ' +
-  'supported';
+  'Bad Request: inline query results sending a venue or invoice are not supported';
 
 // TDLib reads an empty text as none, so the text of a photo or document result may be empty.
 const inputTextMessageContentSchema = z.strictObject({
@@ -189,10 +233,61 @@ const inputRichMessageContentSchema = z.strictObject({
   richMessage: rich_message,
 }));
 
+// As for `sendContact`, a contact names no Telegram user.
+const inputContactMessageContentSchema = z.strictObject({
+  phone_number: z.string(),
+  first_name: contactNameSchema,
+  last_name: contactNameSchema.default(''),
+  vcard: contactVcardSchema,
+}).transform(({ phone_number, first_name, last_name, vcard }): UnreadInputMessageContent => ({
+  kind: 'contact',
+  contact: { phoneNumber: phone_number, firstName: first_name, lastName: last_name, vcard },
+}));
+
+/**
+ * The fields of a static location, whose accuracy the Bot API documents from 0 to 1500 meters. As
+ * for `sendLocation`, live locations are not supported, so `live_period`, `heading` and
+ * `proximity_alert_radius` are refused.
+ */
+const locationShape = {
+  latitude: z.number(),
+  longitude: z.number(),
+  horizontal_accuracy: z.number().min(0).max(MAX_HORIZONTAL_ACCURACY_METERS).default(0),
+};
+
+const inputLocationMessageContentSchema = z.strictObject(locationShape).transform((
+  location,
+): UnreadInputMessageContent => ({ kind: 'location', location: toUnreadLocation(location) }));
+
 const inputMessageContentSchema = z.union([
   inputRichMessageContentSchema,
+  inputContactMessageContentSchema,
+  inputLocationMessageContentSchema,
   inputTextMessageContentSchema,
 ]);
+
+function toUnreadLocation(
+  { latitude, longitude, horizontal_accuracy }: {
+    readonly latitude: number;
+    readonly longitude: number;
+    readonly horizontal_accuracy: number;
+  },
+): UnreadLocation {
+  return { latitude, longitude, horizontalAccuracyMeters: horizontal_accuracy };
+}
+
+/**
+ * Reads a static location as TDLib's `Location::init` does, returning `undefined` for coordinates
+ * that name no point on Earth. The accuracy is rounded up to whole meters, as TDLib's
+ * `get_input_geo_point` sends it.
+ */
+export function readUnreadLocation(
+  { latitude, longitude, horizontalAccuracyMeters }: UnreadLocation,
+): GeoLocation | undefined {
+  return isPointOnEarth(latitude, longitude)
+    ? createGeoLocation(latitude, longitude, horizontalAccuracyMeters)
+    : undefined;
+}
 
 /**
  * Thumbnails, which clients show in the list of results; the emulator validates and ignores
@@ -207,10 +302,12 @@ const thumbnailShape = {
 const sharedResultShape = {
   type: z.string(),
   id: z.string(),
-  description: z.string().default(''),
   reply_markup: inlineKeyboardMarkupSchema.optional(),
   input_message_content: inputMessageContentSchema.optional(),
 };
+
+/** The description of the results that take one. */
+const descriptionShape = { description: z.string().default('') };
 
 const captionShape = {
   caption: z.string().default(''),
@@ -221,6 +318,7 @@ const captionShape = {
 // `hide_url` is an older option that Telegram still honors by not sending the URL.
 const articleResultSchema = z.strictObject({
   ...sharedResultShape,
+  ...descriptionShape,
   ...thumbnailShape,
   title: z.string(),
   url: z.string().default(''),
@@ -231,6 +329,7 @@ const articleResultSchema = z.strictObject({
 // validated and ignored.
 const photoResultSchema = z.strictObject({
   ...sharedResultShape,
+  ...descriptionShape,
   ...captionShape,
   photo_url: z.string().default(''),
   photo_file_id: z.string().default(''),
@@ -243,6 +342,7 @@ const photoResultSchema = z.strictObject({
 
 const documentResultSchema = z.strictObject({
   ...sharedResultShape,
+  ...descriptionShape,
   ...captionShape,
   ...thumbnailShape,
   title: z.string(),
@@ -262,6 +362,7 @@ function clampedAttributeField(max: number) {
 // As for `sendVideo`, inline videos are covered by no spoiler and start at their beginning.
 const videoResultSchema = z.strictObject({
   ...sharedResultShape,
+  ...descriptionShape,
   ...captionShape,
   title: z.string(),
   video_url: z.string().default(''),
@@ -276,10 +377,7 @@ const videoResultSchema = z.strictObject({
 
 // A voice result has no description, which the Bot API server does not read for one.
 const voiceResultSchema = z.strictObject({
-  type: sharedResultShape.type,
-  id: sharedResultShape.id,
-  reply_markup: sharedResultShape.reply_markup,
-  input_message_content: sharedResultShape.input_message_content,
+  ...sharedResultShape,
   ...captionShape,
   title: z.string(),
   voice_url: z.string().default(''),
@@ -287,13 +385,31 @@ const voiceResultSchema = z.strictObject({
   voice_duration: clampedAttributeField(MAX_MEDIA_DURATION_SECONDS),
 });
 
+// TDLib describes a contact result by its texts, so it takes no description, and names no user.
+const contactResultSchema = z.strictObject({
+  ...sharedResultShape,
+  ...thumbnailShape,
+  phone_number: z.string(),
+  first_name: contactNameSchema,
+  last_name: contactNameSchema.default(''),
+  vcard: contactVcardSchema,
+});
+
+// TDLib describes a location result by its coordinates, so it takes no description.
+const locationResultSchema = z.strictObject({
+  ...sharedResultShape,
+  ...thumbnailShape,
+  ...locationShape,
+  title: z.string(),
+});
+
 /**
  * Reads the elements of an `answerInlineQuery` `results` parameter as the official Bot API
  * server's `get_inline_query_result` does, failing with Telegram's description for a result it
- * cannot read. Article, photo, document, video, and voice results are supported, all but articles
- * with files given by `file_id` or by URL; other result types fail as unsupported. A result's
- * `input_message_content`
- * may send text or a rich message; other message contents fail as unsupported.
+ * cannot read. Article, contact, static location, photo, document, video, and voice results are
+ * supported, the media among them with files given by `file_id` or by URL; other result types fail
+ * as unsupported. A result's `input_message_content` may send text, a rich message, a contact, or
+ * a static location; a venue or an invoice fails as unsupported.
  *
  * `invalidParametersDescription` answers results that Telegram would read leniently, such as
  * numbers written as strings, which are rejected instead to surface the bot's mistake in tests.
@@ -342,10 +458,7 @@ function readInlineQueryResult(value: unknown): InlineQueryResultReading {
       description: `Bad Request: inline query results of type "${type}" are not supported`,
     };
   }
-  if (
-    type !== 'article' && type !== 'photo' && type !== 'document' && type !== 'video' &&
-    type !== 'voice'
-  ) {
+  if (!isSupportedResultType(type)) {
     return {
       kind: 'failure',
       description:
@@ -356,9 +469,7 @@ function readInlineQueryResult(value: unknown): InlineQueryResultReading {
     .safeParse(value);
   if (
     inputMessageContent.success &&
-    UNSUPPORTED_INPUT_MESSAGE_CONTENT_FIELDS.some((field) =>
-      field in inputMessageContent.data.input_message_content
-    )
+    sendsVenueOrInvoice(inputMessageContent.data.input_message_content)
   ) {
     return { kind: 'failure', description: UNSUPPORTED_INPUT_MESSAGE_CONTENT_DESCRIPTION };
   }
@@ -366,6 +477,10 @@ function readInlineQueryResult(value: unknown): InlineQueryResultReading {
   switch (type) {
     case 'article':
       return readArticleResult(value);
+    case 'contact':
+      return readContactResult(value);
+    case 'location':
+      return readLocationResult(value);
     case 'photo':
       return readPhotoResult(value);
     case 'document':
@@ -379,6 +494,63 @@ function readInlineQueryResult(value: unknown): InlineQueryResultReading {
       throw new Error(`Unhandled inline query result type: ${unhandledType}`);
     }
   }
+}
+
+function isSupportedResultType(type: string): type is SupportedResultType {
+  return (SUPPORTED_RESULT_TYPES as readonly string[]).includes(type);
+}
+
+/**
+ * Whether `input_message_content` is one the official server's `get_input_message_content` reads
+ * as a venue, which has coordinates, a title, and an address, or as an invoice.
+ */
+function sendsVenueOrInvoice(inputMessageContent: Readonly<Record<string, unknown>>): boolean {
+  return VENUE_INPUT_MESSAGE_CONTENT_FIELDS.every((field) => field in inputMessageContent) ||
+    INVOICE_INPUT_MESSAGE_CONTENT_FIELD in inputMessageContent;
+}
+
+/** Reads a contact result, whose contact keeps the texts the bot wrote. */
+function readContactResult(value: unknown): InlineQueryResultReading {
+  const parsing = contactResultSchema.safeParse(value);
+  if (!parsing.success) {
+    return { kind: 'malformed' };
+  }
+  const { data } = parsing;
+  const messageContent = data.input_message_content;
+  return {
+    kind: 'result',
+    result: {
+      kind: 'contact',
+      ...readSharedFields(data),
+      contact: {
+        phoneNumber: data.phone_number,
+        firstName: data.first_name,
+        lastName: data.last_name,
+        vcard: data.vcard,
+      },
+      ...(messageContent === undefined ? {} : { messageContent }),
+    },
+  };
+}
+
+/** Reads a static location result, whose coordinates are checked once it is read. */
+function readLocationResult(value: unknown): InlineQueryResultReading {
+  const parsing = locationResultSchema.safeParse(value);
+  if (!parsing.success) {
+    return { kind: 'malformed' };
+  }
+  const { data } = parsing;
+  const messageContent = data.input_message_content;
+  return {
+    kind: 'result',
+    result: {
+      kind: 'location',
+      ...readSharedFields(data),
+      title: data.title,
+      location: toUnreadLocation(data),
+      ...(messageContent === undefined ? {} : { messageContent }),
+    },
+  };
 }
 
 function readArticleResult(value: unknown): InlineQueryResultReading {
@@ -401,6 +573,7 @@ function readArticleResult(value: unknown): InlineQueryResultReading {
     result: {
       kind: 'article',
       ...readSharedFields(data),
+      description: data.description,
       title: data.title,
       url: data.hide_url ? '' : data.url,
       messageContent,
@@ -424,6 +597,7 @@ function readPhotoResult(value: unknown): InlineQueryResultReading {
     result: {
       kind: 'photo',
       ...readSharedFields(data),
+      description: data.description,
       photo,
       thumbnailUrl: data.thumbnail_url,
       title: data.title,
@@ -458,6 +632,7 @@ function readDocumentResult(value: unknown): InlineQueryResultReading {
     result: {
       kind: 'document',
       ...readSharedFields(data),
+      description: data.description,
       document,
       thumbnailUrl: data.thumbnail_url ?? '',
       title: data.title,
@@ -501,6 +676,7 @@ function readVideoResult(value: unknown): InlineQueryResultReading {
     result: {
       kind: 'video',
       ...readSharedFields(data),
+      description: data.description,
       video,
       thumbnailUrl: data.thumbnail_url,
       title: data.title,
@@ -531,8 +707,7 @@ function readVoiceResult(value: unknown): InlineQueryResultReading {
     kind: 'result',
     result: {
       kind: 'voice',
-      id: data.id,
-      ...(data.reply_markup === undefined ? {} : { inlineKeyboard: data.reply_markup }),
+      ...readSharedFields(data),
       voice,
       title: data.title,
       caption: readCaption(data),
@@ -543,17 +718,9 @@ function readVoiceResult(value: unknown): InlineQueryResultReading {
 }
 
 function readSharedFields(
-  { id, description, reply_markup }: {
-    readonly id: string;
-    readonly description: string;
-    readonly reply_markup?: InlineKeyboard;
-  },
+  { id, reply_markup }: { readonly id: string; readonly reply_markup?: InlineKeyboard },
 ) {
-  return {
-    id,
-    description,
-    ...(reply_markup === undefined ? {} : { inlineKeyboard: reply_markup }),
-  };
+  return { id, ...(reply_markup === undefined ? {} : { inlineKeyboard: reply_markup }) };
 }
 
 /**

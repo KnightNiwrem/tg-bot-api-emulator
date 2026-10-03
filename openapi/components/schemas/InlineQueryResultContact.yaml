@@ -1,0 +1,53 @@
+description: >-
+  A phone contact, which the client lists by its trimmed and cleaned names and phone number, as
+  TDLib describes it, and which sending the result writes as for `sendContact`.
+type: object
+additionalProperties: false
+required:
+  - type
+  - id
+  - phone_number
+  - first_name
+properties:
+  type:
+    type: string
+    const: contact
+  id:
+    $ref: ./InlineQueryResultId.yaml
+  phone_number:
+    type: string
+    minLength: 1
+    description: >-
+      Must not be empty once surrounding whitespace is trimmed (`Bad Request: field
+      "phone_number" must contain a valid phone number`).
+  first_name:
+    type: string
+    minLength: 1
+    maxLength: 64
+    description: >-
+      Must not be empty once surrounding whitespace is trimmed (`Bad Request: field "first_name"
+      must be non-empty`).
+  last_name:
+    type: string
+    maxLength: 64
+  vcard:
+    type: string
+    description: At most 2048 bytes in UTF-8.
+  reply_markup:
+    $ref: ./InlineKeyboardMarkup.yaml
+  input_message_content:
+    oneOf:
+      - $ref: ./InputTextMessageContent.yaml
+      - $ref: ./InputRichMessageContent.yaml
+      - $ref: ./InputContactMessageContent.yaml
+      - $ref: ./InputLocationMessageContent.yaml
+    description: >-
+      Text, if it has text, a rich message, a contact, or a location that sending the result writes
+      instead of the contact.
+  thumbnail_url:
+    type: string
+    description: Validated and ignored.
+  thumbnail_width:
+    type: integer
+  thumbnail_height:
+    type: integer

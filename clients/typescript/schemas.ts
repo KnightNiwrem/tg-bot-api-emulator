@@ -1019,7 +1019,7 @@ const inlineQuerySchema: z.ZodType<InlineQuery> = z.strictObject({
   status: z.enum(['awaiting_answer', 'answered']),
   answer: z.strictObject({
     results: z.array(z.strictObject({
-      type: z.enum(['article', 'photo', 'document', 'video', 'voice']),
+      type: z.enum(['article', 'contact', 'location', 'photo', 'document', 'video', 'voice']),
       id: z.string().min(1),
       title: z.string().min(1).optional(),
       description: z.string().min(1).optional(),

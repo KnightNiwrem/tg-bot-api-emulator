@@ -108,6 +108,20 @@ type SpecifiedInlineQueryResultListing =
     readonly url: string;
   }
   | {
+    readonly kind: 'contact';
+    /** The contact's names. */
+    readonly title: string;
+    /** The contact's phone number. */
+    readonly description: string;
+  }
+  | {
+    readonly kind: 'location';
+    /** Empty for none. */
+    readonly title: string;
+    /** The location's coordinates. */
+    readonly description: string;
+  }
+  | {
     readonly kind: 'photo';
     readonly photo: SpecifiedInlineResultFile<StoredPhotoFile>;
     /** The URL of the thumbnail the client lists; empty for none. */
@@ -898,12 +912,14 @@ function checkWebMediaListing(
   return parseHttpUrl(thumbnailUrl).parsed ? undefined : 'web_document_url_invalid';
 }
 
-/** The file a specified result lists, or `undefined` for an article, which lists none. */
+/** The file a specified result lists, or `undefined` for a result that lists none. */
 function getSpecifiedListedFile(
   result: SpecifiedInlineQueryResult,
 ): SpecifiedInlineResultFile<StoredFile> | SpecifiedInlineResultVideo | undefined {
   switch (result.kind) {
     case 'article':
+    case 'contact':
+    case 'location':
       return undefined;
     case 'photo':
       return result.photo;
@@ -1018,6 +1034,15 @@ function toInlineQueryResult(
         kind: 'article',
         title: result.title,
         ...(result.url.length === 0 ? {} : { url: result.url }),
+      };
+    case 'contact':
+      return { ...shared, kind: 'contact', title: result.title, description: result.description };
+    case 'location':
+      return {
+        ...shared,
+        kind: 'location',
+        ...(result.title.length === 0 ? {} : { title: result.title }),
+        description: result.description,
       };
     case 'photo':
       return {
