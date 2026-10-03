@@ -67,12 +67,22 @@ export function isSameChatPermissions(first: ChatPermissions, second: ChatPermis
  * with a rich message's blocks, whose photos and documents need their own permissions.
  */
 export type PermissionGovernedContent =
-  | { readonly kind: 'text' | 'photo' | 'document' | 'video' | 'voice' | 'poll' | 'contact' }
+  | {
+    readonly kind:
+      | 'text'
+      | 'photo'
+      | 'document'
+      | 'video'
+      | 'voice'
+      | 'poll'
+      | 'contact'
+      | 'location';
+  }
   | { readonly kind: 'rich_message'; readonly richMessage: RichMessage<RichMessageFileTypes> };
 
 /**
  * The permissions a member needs to send content, as TDLib's `can_send_message_content` requires
- * them: one per media kind, `can_send_messages` for text and contacts, and, as
+ * them: one per media kind, `can_send_messages` for text, contacts, and locations, and, as
  * `RichMessage::can_send` and each block's `can_send` require, `can_send_messages` and the
  * permission of every photo and document a rich message shows.
  */
@@ -82,6 +92,7 @@ export function getContentSendPermissions(
   switch (content.kind) {
     case 'text':
     case 'contact':
+    case 'location':
       return ['can_send_messages'];
     case 'photo':
       return ['can_send_photos'];

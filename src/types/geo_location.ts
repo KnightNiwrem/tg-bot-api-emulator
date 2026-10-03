@@ -15,6 +15,16 @@ export interface GeoLocation {
 }
 
 /**
+ * Whether coordinates name a point on Earth, as TDLib's `Location::init` requires: both finite,
+ * with a latitude from -90 to 90 degrees and a longitude from -180 to 180. TDLib treats any other
+ * coordinates as no location.
+ */
+export function isPointOnEarth(latitude: number, longitude: number): boolean {
+  return Number.isFinite(latitude) && Number.isFinite(longitude) && Math.abs(latitude) <= 90 &&
+    Math.abs(longitude) <= 180;
+}
+
+/**
  * Creates a location from the coordinates and accuracy a client reports, rounding the accuracy up
  * to whole meters as TDLib's `get_input_geo_point` does. An accuracy of 0 means unknown.
  */

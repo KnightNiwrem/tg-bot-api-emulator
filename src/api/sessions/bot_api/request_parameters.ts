@@ -28,6 +28,7 @@ const URL_ENCODED_FORM_MEDIA_TYPE = 'application/x-www-form-urlencoded';
 const MULTIPART_FORM_MEDIA_TYPE = 'multipart/form-data';
 
 const DECIMAL_INTEGER_PATTERN = /^-?\d+$/;
+const DECIMAL_NUMBER_PATTERN = /^[+-]?(\d+\.?\d*|\.\d+)([eE][+-]?\d+)?$/;
 /** Spellings that Telegram's `to_bool` reads as true, compared after trimming and lowercasing. */
 const TRUE_BOOLEAN_TEXTS = ['true', 'yes', '1'] as const;
 const FALSE_BOOLEAN_TEXTS = ['false', 'no', '0'] as const;
@@ -175,6 +176,15 @@ function decodeJsonObjectParameterEntries(body: string): BodyParameterEntriesDec
  */
 export function integerParameter<Output>(integerSchema: z.ZodType<Output, number>) {
   return z.string().regex(DECIMAL_INTEGER_PATTERN).transform(Number).pipe(integerSchema);
+}
+
+/**
+ * A parameter holding a decimal number, possibly with a fraction and an exponent, which may be too
+ * large to be finite. Telegram reads any leading number and ignores the rest; rejecting other
+ * text, such as `NaN`, instead surfaces the bot's mistake in tests.
+ */
+export function numberParameter() {
+  return z.string().regex(DECIMAL_NUMBER_PATTERN).transform(Number);
 }
 
 /**

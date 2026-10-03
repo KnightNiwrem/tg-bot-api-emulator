@@ -1375,7 +1375,7 @@ Deno.test('TypeScript client rejects a successful response that violates the con
   throw new Error('Expected the client to reject an invalid session response');
 });
 
-Deno.test('TypeScript client shares written and own contacts and answers contact requests', async () => {
+Deno.test('TypeScript client shares contacts and locations and answers their requests', async () => {
   const publicOrigin = 'http://emulator.example:9000';
   const api = createEmulationApi({
     sessionLifecycle: createSessionLifecycleService(),
@@ -1439,6 +1439,37 @@ Deno.test('TypeScript client shares written and own contacts and answers contact
   const history = await account.getMessages({ chat: to });
   if (history.at(-1)?.contact?.phone_number !== '15550100') {
     throw new Error('Expected the history to end with the shared contact');
+  }
+
+  const location = await account.sendLocation({
+    to,
+    location: { latitude: 51.5007, longitude: -0.1246, horizontal_accuracy: 7.5 },
+  });
+  await api.request(`/sessions/${session.id}/bot-api/bot${token}/sendMessage`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      chat_id: account.id,
+      text: 'Where are you?',
+      reply_markup: { keyboard: [[{ text: 'Here', request_location: true }]] },
+    }),
+  });
+  const pressedLocation = await account.pressReplyKeyboardButton({
+    chat: to,
+    text: 'Here',
+    location: { latitude: 48.8584, longitude: 2.2945 },
+  });
+  if (
+    JSON.stringify(location.location) !==
+      JSON.stringify({ latitude: 51.5007, longitude: -0.1246, horizontal_accuracy: 8 }) ||
+    JSON.stringify(pressedLocation.location) !==
+      JSON.stringify({ latitude: 48.8584, longitude: 2.2945 })
+  ) {
+    throw new Error(
+      `Expected the client to share locations, received ${
+        JSON.stringify([location, pressedLocation])
+      }`,
+    );
   }
 
   try {

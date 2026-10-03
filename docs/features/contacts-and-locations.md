@@ -61,6 +61,53 @@ any keyboard just as well. As TDLib's [`KeyboardButton::get_keyboard_button`][td
 allows request buttons only in private chats, only private chats show such buttons. An account
 without a phone number gets `409`, and nothing is sent.
 
+## Locations
+
+Bots send static locations with `sendLocation`, and accounts share them through the messages route,
+in private chats and supergroups. A location message shows its `location` in the fields of the
+official server's [`JsonLocation`][json-location]: `latitude`, `longitude`, and
+`horizontal_accuracy` when known. Like a contact, it carries no text or caption, its media cannot be
+replaced, and a bot may still edit its inline keyboard. In supergroups a location needs
+`can_send_messages`, as [`can_send_message_content`][location-permission] requires, with
+`Bad Request: not enough rights to send locations to the chat`.
+
+As the official server's [`get_location`][get-location] reads them, `sendLocation` requires a
+`latitude` and a `longitude`, which it trims, with `Bad Request: latitude is empty` or
+`Bad Request: longitude is empty`. The emulator reads each as a decimal number, possibly with an
+exponent; other text, such as `NaN`, is refused with the method's invalid-parameters error, where
+the official server would read it as 0. As TDLib's [`Location::init`][location-init] decides,
+coordinates that are not finite or lie outside -90–90 and -180–180 degrees name no location:
+`Bad Request: invalid location specified`, as [`process_input_message_location`][input-location]
+reports it. TDLib checks that once it has found the chat; the emulator checks it before the chat.
+
+The accuracy is the radius of uncertainty in meters, which the Bot API documents as 0–1500. TDLib's
+[`get_input_geo_point`][geo-point] sends it to Telegram rounded up to whole meters, so a location
+shows `12.2` as `13`, and 0 means unknown and is omitted. TDLib's [`fix_accuracy`][fix-accuracy]
+clamps an accuracy outside 0–1500 meters; the emulator refuses it instead. Accounts report the same
+coordinates and accuracy, which the emulation API checks against the same ranges.
+
+### Static locations only
+
+Live locations are [not supported](#real-gaps). The official server's
+[`process_send_location_query`][send-location] sends a live location for any nonzero `live_period`
+and passes `heading` and `proximity_alert_radius` with it. The emulator rejects all three parameters
+as unknown, with `Bad Request: invalid sendLocation parameters`, even a `live_period` of 0 or a
+`heading` without a live period, which send a static location on Telegram. Accounts' locations take
+none of them either, and `editMessageLiveLocation` and `stopMessageLiveLocation` answer `404` like
+every other unimplemented method.
+
+### Answering location requests
+
+A reply keyboard button with `request_location` asks the client for the user's current location. The
+emulator has no device location, so the press reports one: `reply-keyboard-presses` takes it as
+`location`, and the TypeScript client's `pressReplyKeyboardButton` as its `location` input. The
+press shares it in reply to the keyboard's message, as Telegram for Android's
+[`sendLocation`][android-send-location] replies with the device's location; Telegram Desktop cannot
+share a location. As for contacts, nothing else ties the message to the keyboard, and accounts share
+locations without any keyboard just as well. A location button pressed without a location, a
+location given for any other button, or one given in a supergroup, where no button requests
+anything, answers `400`, and nothing is sent.
+
 ## Intentional deviations
 
 - **Explicit phone numbers.** Accounts have no phone number unless a test gives one, because
@@ -69,22 +116,26 @@ without a phone number gets `409`, and nothing is sent.
 - **Refusing over-long names and vCards, and emptied required texts.** Names longer than TDLib
   documents, vCards longer than the Bot API documents, and phone numbers and first names that
   cleaning empties are refused rather than passed on to an unknown server-side outcome.
+- **Strict location parameters.** Coordinates that are not decimal numbers, accuracies outside the
+  documented 0–1500 meters, and every live location parameter are refused, where Telegram reads them
+  as 0, clamps them, or ignores them, so that a bot's mistake surfaces in tests.
 
 ## Real gaps
 
 - **Address books.** Telegram's servers attach the `user_id` of a written contact whose number
   belongs to a user, which depends on phone number privacy and the sender's contacts. The emulator
   models no address book or phone number lookup, so written and bot contacts never show a user.
-- **Locations.** Location messages are missing. Bots may send `request_location` buttons, which
-  accounts see, but pressing one fails with `400`.
+- **Live locations.** Live periods, headings, proximity alerts, and editing or stopping a live
+  location are missing, as are venues.
 
 ## Local evidence
 
-[Contact type](../../src/types/contact.ts),
+[Contact type](../../src/types/contact.ts), [location type](../../src/types/geo_location.ts),
 [content normalization](../../src/services/message_content.ts),
 [Bot API handler](../../src/api/sessions/bot_api/mod.ts),
 [account routes](../../src/api/sessions/accounts/mod.ts) and
-[contact tests](../../tests/contact_api_test.ts).
+[contact tests](../../tests/contact_api_test.ts) and
+[location tests](../../tests/location_api_test.ts).
 
 [json-contact]: https://github.com/tdlib/telegram-bot-api/blob/e3e9dd8e5b3d7ab8537cd5a10dc31d5ffa8f82d1/telegram-bot-api/Client.cpp#L2589-L2610
 [send-contact]: https://github.com/tdlib/telegram-bot-api/blob/e3e9dd8e5b3d7ab8537cd5a10dc31d5ffa8f82d1/telegram-bot-api/Client.cpp#L14243-L14252
@@ -94,4 +145,13 @@ without a phone number gets `409`, and nothing is sent.
 [send-permission]: https://github.com/tdlib/td/blob/bc9c263e2bfee06aaab41e82db51a103376030bc/td/telegram/MessageContent.cpp#L6247-L6251
 [td-keyboard-button]: https://github.com/tdlib/td/blob/bc9c263e2bfee06aaab41e82db51a103376030bc/td/telegram/KeyboardButton.cpp#L82-L179
 [desktop-request-phone]: https://github.com/telegramdesktop/tdesktop/blob/64ca5475f24dde7331a388176d3fe60c0849b965/Telegram/SourceFiles/api/api_bot.cpp#L385-L409
+[json-location]: https://github.com/tdlib/telegram-bot-api/blob/e3e9dd8e5b3d7ab8537cd5a10dc31d5ffa8f82d1/telegram-bot-api/Client.cpp#L1164-L1178
+[get-location]: https://github.com/tdlib/telegram-bot-api/blob/e3e9dd8e5b3d7ab8537cd5a10dc31d5ffa8f82d1/telegram-bot-api/Client.cpp#L12488-L12501
+[send-location]: https://github.com/tdlib/telegram-bot-api/blob/e3e9dd8e5b3d7ab8537cd5a10dc31d5ffa8f82d1/telegram-bot-api/Client.cpp#L14197-L14211
+[location-init]: https://github.com/tdlib/td/blob/bc9c263e2bfee06aaab41e82db51a103376030bc/td/telegram/Location.cpp#L27-L38
+[fix-accuracy]: https://github.com/tdlib/td/blob/bc9c263e2bfee06aaab41e82db51a103376030bc/td/telegram/Location.cpp#L17-L25
+[geo-point]: https://github.com/tdlib/td/blob/bc9c263e2bfee06aaab41e82db51a103376030bc/td/telegram/Location.cpp#L90-L102
+[input-location]: https://github.com/tdlib/td/blob/bc9c263e2bfee06aaab41e82db51a103376030bc/td/telegram/Location.cpp#L158-L177
+[location-permission]: https://github.com/tdlib/td/blob/bc9c263e2bfee06aaab41e82db51a103376030bc/td/telegram/MessageContent.cpp#L6296-L6300
+[android-send-location]: https://github.com/DrKLO/Telegram/blob/f2908b14133bbffbf7ab04f641ecb5bfaf533242/TMessagesProj/src/main/java/org/telegram/messenger/SendMessagesHelper.java#L3636-L3645
 [android-share-contact]: https://github.com/DrKLO/Telegram/blob/f2908b14133bbffbf7ab04f641ecb5bfaf533242/TMessagesProj/src/main/java/org/telegram/ui/ChatActivity.java#L12989-L13023

@@ -14,7 +14,9 @@ post:
     `request_contact` button, which only private chats show, instead shares the account's own
     contact in reply to the keyboard's message, as Telegram Desktop's `ActivateBotCommand` and
     Telegram for Android's `shareMyContact` do once the user confirms; the bot receives an
-    ordinary contact message whose `user_id` is the account's.
+    ordinary contact message whose `user_id` is the account's. A `request_location` button
+    likewise shares the `location` the request reports, as Telegram for Android's
+    `sendLocation` replies with the device's location; no other button takes a location.
   requestBody:
     required: true
     content:
@@ -24,9 +26,9 @@ post:
   responses:
     '201':
       description: >-
-        The button's text, or the account's own contact, was sent as the account's message, and,
-        unless the bot's allowed_updates subscription excludes message updates, an update was
-        enqueued for the bot.
+        The button's text, the account's own contact, or the reported location was sent as the
+        account's message, and, unless the bot's allowed_updates subscription excludes message
+        updates, an update was enqueued for the bot.
       content:
         application/json:
           schema:
@@ -35,9 +37,10 @@ post:
               - $ref: ../components/schemas/SentSupergroupMessage.yaml
     '400':
       description: >-
-        The request is invalid, the chat shows no reply keyboard with a button of that text,
-        or the button has a request other than for the user's contact, which the emulator
-        cannot answer.
+        The request is invalid, the chat shows no reply keyboard with a button of that text, the
+        button has a request other than for the user's contact or location, which the emulator
+        cannot answer, or a location is missing for a `request_location` button or given for
+        any other button.
     '403':
       description: >-
         The account is not a member of the supergroup, or may not send text there, as its

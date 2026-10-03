@@ -1,4 +1,5 @@
 import type { Contact } from './contact.ts';
+import type { GeoLocation } from './geo_location.ts';
 import type { InlineKeyboard } from './inline_keyboard.ts';
 import type { PollId } from './poll.ts';
 import type { ReplyInterfaceMarkup } from './reply_interface.ts';
@@ -248,13 +249,23 @@ export interface ContactMessageContent {
   readonly contact: Contact;
 }
 
-/** What a message shows: text, captioned media, a rich message, a poll, or a contact. */
+/**
+ * A static location, which carries no text or caption. Live locations, which their sender keeps
+ * updating, are not supported.
+ */
+export interface LocationMessageContent {
+  readonly kind: 'location';
+  readonly location: GeoLocation;
+}
+
+/** What a message shows: text, captioned media, a rich message, a poll, a contact, or a location. */
 export type MessageContent =
   | TextMessageContent
   | CaptionedMediaContent
   | RichMessageContent
   | PollMessageContent
-  | ContactMessageContent;
+  | ContactMessageContent
+  | LocationMessageContent;
 
 /** A service message's record that accounts or bots joined a supergroup. */
 export interface MembersJoinedMessageContent {
@@ -298,7 +309,7 @@ export function isSupergroupServiceContent(
 
 /**
  * Whether a message's content is captioned media, rather than text, a rich message, a poll, a
- * contact, or a service message.
+ * contact, a location, or a service message.
  */
 export function isCaptionedMediaContent(
   content: SupergroupMessageContent,
@@ -313,6 +324,7 @@ export function isCaptionedMediaContent(
     case 'rich_message':
     case 'poll':
     case 'contact':
+    case 'location':
     case 'members_joined':
     case 'member_left':
     case 'title_changed':
@@ -327,8 +339,8 @@ export function isCaptionedMediaContent(
 /**
  * The text a message's content carries: the text of a text message, or the caption of captioned
  * media, which is empty when it has none. As TDLib's `get_message_content_text` has none for
- * them, a rich message, a contact, and a service message carry no text; it reads only the
- * description of a poll, which the emulator does not support, so a poll carries none either.
+ * them, a rich message, a contact, a location, and a service message carry no text; it reads only
+ * the description of a poll, which the emulator does not support, so a poll carries none either.
  */
 export function getContentText(content: SupergroupMessageContent): FormattedText {
   if (isCaptionedMediaContent(content)) {
@@ -340,6 +352,7 @@ export function getContentText(content: SupergroupMessageContent): FormattedText
     case 'rich_message':
     case 'poll':
     case 'contact':
+    case 'location':
     case 'members_joined':
     case 'member_left':
     case 'title_changed':

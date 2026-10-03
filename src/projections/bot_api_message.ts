@@ -443,6 +443,8 @@ function projectMessageContent(
       return { poll: projectPoll(requireObservedPoll(poll, content.pollId)) };
     case 'contact':
       return { contact: toBotApiContact(content.contact) };
+    case 'location':
+      return { location: toBotApiLocation(content.location) };
     default: {
       const unhandledContent: never = content;
       throw new Error(`Unhandled message content: ${JSON.stringify(unhandledContent)}`);

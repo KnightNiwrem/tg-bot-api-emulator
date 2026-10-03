@@ -516,6 +516,12 @@ const contactSchema = z.strictObject({
   user_id: z.number().int().positive().optional(),
 });
 
+const locationSchema = z.strictObject({
+  latitude: z.number().min(-90).max(90),
+  longitude: z.number().min(-180).max(180),
+  horizontal_accuracy: z.int().min(1).max(1500).optional(),
+});
+
 const pollSchema: z.ZodType<Poll> = z.strictObject({
   id: z.string().regex(/^[1-9]\d*$/),
   question: z.string().min(1),
@@ -624,6 +630,7 @@ function contentMessageSchemas<Header extends z.ZodRawShape>(header: Header) {
     z.strictObject({ ...header, rich_message: richMessageSchema, ...messageTrailerShape }),
     z.strictObject({ ...header, poll: pollSchema, ...messageTrailerShape }),
     z.strictObject({ ...header, contact: contactSchema, ...messageTrailerShape }),
+    z.strictObject({ ...header, location: locationSchema, ...messageTrailerShape }),
   ] as const;
 }
 
@@ -908,11 +915,7 @@ const inlineQuerySchema: z.ZodType<InlineQuery> = z.strictObject({
   chat: messageTargetSchema,
   query: z.string(),
   offset: z.string(),
-  location: z.strictObject({
-    latitude: z.number().min(-90).max(90),
-    longitude: z.number().min(-180).max(180),
-    horizontal_accuracy: z.int().min(1).max(1500).optional(),
-  }).optional(),
+  location: locationSchema.optional(),
   status: z.enum(['awaiting_answer', 'answered']),
   answer: z.strictObject({
     results: z.array(z.strictObject({

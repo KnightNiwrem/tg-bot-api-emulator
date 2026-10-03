@@ -33,6 +33,7 @@ import {
 } from '../types/chat_membership.ts';
 import type { ChatPermissions } from '../types/chat_permissions.ts';
 import { createWrittenContact, type WrittenContact } from '../types/contact.ts';
+import type { GeoLocation } from '../types/geo_location.ts';
 import type { InlineQueryId, InlineQueryResultsButton } from '../types/inline_query.ts';
 import {
   MAX_POLL_OPEN_PERIOD_SECONDS,
@@ -442,6 +443,9 @@ export type SendVoiceRequest = SendRequestOptions & {
 export type SendContactRequest = SendRequestOptions & {
   readonly contact: WrittenContact;
 };
+
+/** A static location as `sendLocation` specifies it, on Earth as `isPointOnEarth` requires. */
+export type SendLocationRequest = SendRequestOptions & { readonly location: GeoLocation };
 
 export type SendFailureReason =
   | 'message_text_empty'
@@ -2371,6 +2375,14 @@ export class BotApiService {
       { kind: 'contact', contact: createWrittenContact(contact) },
       options,
     );
+  }
+
+  /** Sends a static location to a private chat or a supergroup, as `sendMessage` sends text. */
+  sendLocation(
+    authenticatedBot: VirtualBotProfile,
+    { location, ...options }: SendLocationRequest,
+  ): SendResult {
+    return this.#send(authenticatedBot, { kind: 'location', location }, options);
   }
 
   /**

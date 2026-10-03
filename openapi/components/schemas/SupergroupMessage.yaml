@@ -33,6 +33,11 @@ oneOf:
       contact:
         $ref: ./Contact.yaml
   - required:
+      - location
+    properties:
+      location:
+        $ref: ./Location.yaml
+  - required:
       - new_chat_participant
       - new_chat_member
       - new_chat_members
@@ -166,6 +171,9 @@ properties:
   contact:
     $ref: ./Contact.yaml
     description: The phone contact of a contact message.
+  location:
+    $ref: ./Location.yaml
+    description: The static location of a location message.
   reply_markup:
     $ref: ./InlineKeyboardMarkup.yaml
   via_bot:

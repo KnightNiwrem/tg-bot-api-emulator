@@ -7,13 +7,14 @@
 
 Accounts and bots exchange text, photos, documents, [videos](media-and-files.md#videos),
 [voice notes](media-and-files.md#voice-notes) and [albums](media-and-files.md#albums) of photos and
-videos, or documents, and [contacts](contacts-and-locations.md#contacts), in private chats and
-supergroups, and bots also send [rich messages](rich-messages.md) and [polls](polls.md). A private
-conversation must first be started by the account before the bot can send to it. `sendMessage`,
-`sendRichMessage`, `sendPoll`, `sendPhoto`, `sendDocument`, `sendVideo`, `sendVoice` and
-`sendContact` accept `protect_content` and supported [reply markup](keyboards-and-callbacks.md);
-`sendMediaGroup` accepts `protect_content` and no reply markup. Bot messages appear in account
-history; bots receive no updates for their own sends or edits.
+videos, or documents, [contacts](contacts-and-locations.md#contacts) and static
+[locations](contacts-and-locations.md#locations), in private chats and supergroups, and bots also
+send [rich messages](rich-messages.md) and [polls](polls.md). A private conversation must first be
+started by the account before the bot can send to it. `sendMessage`, `sendRichMessage`, `sendPoll`,
+`sendPhoto`, `sendDocument`, `sendVideo`, `sendVoice`, `sendContact` and `sendLocation` accept
+`protect_content` and supported [reply markup](keyboards-and-callbacks.md); `sendMediaGroup` accepts
+`protect_content` and no reply markup. Bot messages appear in account history; bots receive no
+updates for their own sends or edits.
 
 Both sides can reply to a message in the same chat. Bots use `reply_parameters` or the legacy
 `reply_to_message_id` and `allow_sending_without_reply` parameters. `reply_parameters` takes
@@ -22,14 +23,14 @@ precedence, and a missing/non-positive message ID means no reply. If a target is
 without recursively nesting the replied message's own reply.
 
 Bots can add a message effect with `message_effect_id` to `sendMessage`, `sendPhoto`,
-`sendDocument`, `sendVideo`, `sendVoice`, `sendContact`, `sendMediaGroup`, `forwardMessage` and
-`copyMessage`, which gives it to every message of an album, as TDLib's `send_message_group` does.
-The message then reports it as `effect_id`, including in account history. `0` means no effect. As in
-TDLib's [`MessageSendOptions::get_message_send_options`][effect-rules], effects are refused in
-supergroups, and `forwardMessages` or `copyMessages` accept one only when a single message is found.
-Telegram's servers decide which effect identifiers exist; that check is not in the open-source code,
-and the emulator accepts any 64-bit identifier. The [official send path][message-effects] shows how
-the option is read.
+`sendDocument`, `sendVideo`, `sendVoice`, `sendContact`, `sendLocation`, `sendMediaGroup`,
+`forwardMessage` and `copyMessage`, which gives it to every message of an album, as TDLib's
+`send_message_group` does. The message then reports it as `effect_id`, including in account history.
+`0` means no effect. As in TDLib's [`MessageSendOptions::get_message_send_options`][effect-rules],
+effects are refused in supergroups, and `forwardMessages` or `copyMessages` accept one only when a
+single message is found. Telegram's servers decide which effect identifiers exist; that check is not
+in the open-source code, and the emulator accepts any 64-bit identifier. The
+[official send path][message-effects] shows how the option is read.
 
 Bots can also reply to a message of another of their chats by naming its `chat_id` in
 `reply_parameters`. As the official server's [`check_reply_parameters`][check-reply] does, the bot

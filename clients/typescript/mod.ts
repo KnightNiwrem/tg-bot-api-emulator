@@ -27,6 +27,7 @@ export type {
   AccountReplyInterfaceInput,
   AccountSendContactInput,
   AccountSendDocumentInput,
+  AccountSendLocationInput,
   AccountSendMediaGroupInput,
   AccountSendMessageInput,
   AccountSendPhotoInput,
