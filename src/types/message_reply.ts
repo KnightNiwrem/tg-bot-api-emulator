@@ -4,7 +4,6 @@ import {
   type ExternalReply,
   type FormattedText,
   getContentText,
-  isCaptionedMediaContent,
   type MessageContent,
   type TextEntity,
   type TextQuote,
@@ -43,7 +42,7 @@ export interface ExternalReplyTarget {
 /**
  * Creates what a reply to a message of another chat shows of it, as TDLib's `RepliedMessageInfo`
  * does for a reply being sent: the replied message's origin, its supergroup message ID, and its
- * media or poll, as `getExternalReplyMedia` keeps them. As the Bot API's `ExternalReplyInfo` has no
+ * media, poll, contact, or location, as `getExternalReplyMedia` keeps them. As the Bot API's `ExternalReplyInfo` has no
  * field for one, a replied rich message shows no content, like replied text. `messageIdInChat` is
  * the replied message's ID in its chat, which Telegram shows only for a supergroup message.
  */
@@ -68,14 +67,28 @@ export function createExternalReply(
 
 /**
  * What a reply shows of replied content: media without its caption, which the reply's quote shows
- * instead, or a poll, as TDLib's `RepliedMessageInfo` keeps them; nothing for text or a rich
- * message.
+ * instead, or a poll, a contact, or a location as it is, as TDLib's `RepliedMessageInfo` keeps
+ * them; nothing for text or a rich message.
  */
 function getExternalReplyMedia(content: MessageContent): Pick<ExternalReply, 'media'> {
-  if (isCaptionedMediaContent(content)) {
-    return { media: { ...content, caption: { text: '', entities: [] } } };
+  switch (content.kind) {
+    case 'photo':
+    case 'document':
+    case 'video':
+    case 'voice':
+      return { media: { ...content, caption: { text: '', entities: [] } } };
+    case 'poll':
+    case 'contact':
+    case 'location':
+      return { media: content };
+    case 'text':
+    case 'rich_message':
+      return {};
+    default: {
+      const unhandledContent: never = content;
+      throw new Error(`Unhandled message content: ${JSON.stringify(unhandledContent)}`);
+    }
   }
-  return content.kind === 'poll' ? { media: content } : {};
 }
 
 /**

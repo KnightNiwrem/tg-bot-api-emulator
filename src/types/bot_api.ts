@@ -351,7 +351,7 @@ export type BotApiMessageOrigin = BotApiMessageOriginUser | BotApiMessageOriginH
 
 /**
  * The media of a message of another chat that a message replies to, whose caption shows as the
- * reply's quote instead, or its poll: nothing for text.
+ * reply's quote instead, or its poll, contact, or location: nothing for text.
  */
 export type BotApiExternalReplyMedia =
   | Record<never, never>
@@ -367,7 +367,9 @@ export type BotApiExternalReplyMedia =
     /** Present only for a video that clients cover until the user reveals it. */
     readonly has_media_spoiler?: true;
   }
-  | { readonly voice: BotApiVoice };
+  | { readonly voice: BotApiVoice }
+  | { readonly contact: BotApiContact }
+  | { readonly location: BotApiLocation };
 
 /** A message of another chat that a message replies to, as Telegram's `ExternalReplyInfo`. */
 export type BotApiExternalReplyInfo =

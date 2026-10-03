@@ -110,6 +110,23 @@ locations without any keyboard just as well. A location button pressed without a
 location given for any other button, or one given in a supergroup, where no button requests
 anything, answers `400`, and nothing is sent.
 
+## Forwards, copies and replies
+
+Contacts and locations travel like other content. A forward, by a bot or an account, and a copy
+repeat the contact or location unchanged, and a copy ignores a replacement caption, which neither
+has. TDLib's `dup_message_content` copies both whole, the [contact][dup-contact] and the
+[location][dup-location], so a copy of an account's own contact still shows that account as its
+`user_id`; the emulator keeps it, as the number still belongs to that account, rather than looking
+the user up again. In a supergroup, forwarding or copying either needs `can_send_messages`, as
+sending does. A reply from another chat shows the replied contact or location in `external_reply`,
+as TDLib's [`is_supported_reply_message_content`][reply-content] keeps both, and neither gives the
+reply a quote, as neither has text.
+
+Both reach bots as ordinary `message` updates, through polling or webhooks, subject to the bot's
+`allowed_updates`, to [privacy mode](supergroups.md#privacy-mode) in supergroups, and to
+[bot activity](bot-activity.md) recording. No bot receives an update for its own contact or
+location, and account histories show both, as bots see them.
+
 ## Intentional deviations
 
 - **Explicit phone numbers.** Accounts have no phone number unless a test gives one, because
@@ -136,8 +153,8 @@ anything, answers `400`, and nothing is sent.
 [content normalization](../../src/services/message_content.ts),
 [Bot API handler](../../src/api/sessions/bot_api/mod.ts),
 [account routes](../../src/api/sessions/accounts/mod.ts) and
-[contact tests](../../tests/contact_api_test.ts) and
-[location tests](../../tests/location_api_test.ts).
+[contact tests](../../tests/contact_api_test.ts), [location tests](../../tests/location_api_test.ts)
+and [forward, copy, reply and delivery tests](../../tests/contact_location_reuse_api_test.ts).
 
 [json-contact]: https://github.com/tdlib/telegram-bot-api/blob/e3e9dd8e5b3d7ab8537cd5a10dc31d5ffa8f82d1/telegram-bot-api/Client.cpp#L2589-L2610
 [send-contact]: https://github.com/tdlib/telegram-bot-api/blob/e3e9dd8e5b3d7ab8537cd5a10dc31d5ffa8f82d1/telegram-bot-api/Client.cpp#L14243-L14252
@@ -156,4 +173,7 @@ anything, answers `400`, and nothing is sent.
 [input-location]: https://github.com/tdlib/td/blob/bc9c263e2bfee06aaab41e82db51a103376030bc/td/telegram/Location.cpp#L158-L177
 [location-permission]: https://github.com/tdlib/td/blob/bc9c263e2bfee06aaab41e82db51a103376030bc/td/telegram/MessageContent.cpp#L6296-L6300
 [android-send-location]: https://github.com/DrKLO/Telegram/blob/f2908b14133bbffbf7ab04f641ecb5bfaf533242/TMessagesProj/src/main/java/org/telegram/messenger/SendMessagesHelper.java#L3636-L3645
+[dup-contact]: https://github.com/tdlib/td/blob/bc9c263e2bfee06aaab41e82db51a103376030bc/td/telegram/MessageContent.cpp#L10193-L10194
+[dup-location]: https://github.com/tdlib/td/blob/bc9c263e2bfee06aaab41e82db51a103376030bc/td/telegram/MessageContent.cpp#L10257-L10258
+[reply-content]: https://github.com/tdlib/td/blob/bc9c263e2bfee06aaab41e82db51a103376030bc/td/telegram/MessageContentType.cpp#L848-L884
 [android-share-contact]: https://github.com/DrKLO/Telegram/blob/f2908b14133bbffbf7ab04f641ecb5bfaf533242/TMessagesProj/src/main/java/org/telegram/ui/ChatActivity.java#L12989-L13023

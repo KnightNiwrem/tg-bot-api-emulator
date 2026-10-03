@@ -554,12 +554,36 @@ export class BotMessageViewService {
     return {
       ...(originSender === undefined ? {} : { originSender }),
       ...(supergroup === undefined ? {} : { supergroup }),
-      ...(media === undefined
-        ? {}
-        : media.kind === 'poll'
-        ? { poll: this.#observePoll(this.#findPoll(media.pollId, message), observerId) }
-        : { mediaFile: this.#observeFile(media.fileId, observerId, message.id) }),
+      ...this.#observeExternalReplyMedia(media, observerId, message),
     };
+  }
+
+  /**
+   * Resolves what an observer sees of the media of a reply to another chat: the file of replied
+   * media, or the replied poll; a contact or location needs nothing resolved.
+   */
+  #observeExternalReplyMedia(
+    media: ExternalReply['media'],
+    observerId: number,
+    message: ChatMessage,
+  ): Pick<ExternalReplyProjectionContext, 'mediaFile' | 'poll'> {
+    switch (media?.kind) {
+      case undefined:
+      case 'contact':
+      case 'location':
+        return {};
+      case 'poll':
+        return { poll: this.#observePoll(this.#findPoll(media.pollId, message), observerId) };
+      case 'photo':
+      case 'document':
+      case 'video':
+      case 'voice':
+        return { mediaFile: this.#observeFile(media.fileId, observerId, message.id) };
+      default: {
+        const unhandledMedia: never = media;
+        throw new Error(`Unhandled external reply media: ${JSON.stringify(unhandledMedia)}`);
+      }
+    }
   }
 
   /** Looks up the poll a message shows, which exists as long as the session does. */

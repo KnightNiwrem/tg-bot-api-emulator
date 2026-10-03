@@ -426,12 +426,21 @@ export interface ExternalReply {
    * chat and ID Telegram does not show in other chats.
    */
   readonly supergroupMessage?: SupergroupMessageReference;
-  /**
-   * The replied media without its caption, or the replied poll, which the reply shows as it is
-   * now; omitted for a text or rich message.
-   */
-  readonly media?: CaptionedMediaContent | PollMessageContent;
+  /** What the reply shows of the replied content besides its text; omitted for none. */
+  readonly media?: ExternalReplyMedia;
 }
+
+/**
+ * What a reply to a message of another chat shows of the replied content besides its text: media
+ * without its caption, a poll as it is now, a contact, or a location. TDLib's
+ * `is_supported_reply_message_content` lists them all, and the Bot API's `ExternalReplyInfo` has a
+ * field for each.
+ */
+export type ExternalReplyMedia =
+  | CaptionedMediaContent
+  | PollMessageContent
+  | ContactMessageContent
+  | LocationMessageContent;
 
 /** A canonical message of a private conversation, written by either participant. */
 export interface PrivateMessage {

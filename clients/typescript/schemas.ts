@@ -558,7 +558,7 @@ const externalReplyShape = {
 /** How a message replies to a message of another chat, and what it quotes of a replied message. */
 const messageReplyInfoShape = {
   // The replied message's media, which only a photo, document, video, or voice message has, or its
-  // poll.
+  // poll, contact, or location.
   external_reply: z.union([
     z.strictObject(externalReplyShape),
     z.strictObject({ ...externalReplyShape, poll: pollSchema }),
@@ -574,6 +574,8 @@ const messageReplyInfoShape = {
       has_media_spoiler: z.literal(true).optional(),
     }),
     z.strictObject({ ...externalReplyShape, voice: voiceSchema }),
+    z.strictObject({ ...externalReplyShape, contact: contactSchema }),
+    z.strictObject({ ...externalReplyShape, location: locationSchema }),
   ]).optional(),
   quote: z.strictObject({
     text: z.string().min(1),
