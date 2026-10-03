@@ -201,6 +201,7 @@ export function createEmulationSession(
     privateMessages: privateMessaging,
     supergroupMessages: supergroupMessaging,
     inlineQueries: new InlineQueryRepository(),
+    webMediaFiles: mediaFiles,
     events: botUpdateDelivery,
     currentTimeMilliseconds: () => Date.now(),
   });

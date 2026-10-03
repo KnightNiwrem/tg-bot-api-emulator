@@ -329,6 +329,8 @@ const ANSWER_INLINE_QUERY_FAILURE_DESCRIPTIONS = {
   result_id_duplicate: 'Bad Request: RESULT_ID_DUPLICATE',
   article_title_empty: 'Bad Request: ARTICLE_TITLE_EMPTY',
   document_title_empty: 'Bad Request: FILE_TITLE_EMPTY',
+  web_document_url_invalid: 'Bad Request: WEBDOCUMENT_URL_INVALID',
+  photo_thumbnail_url_empty: 'Bad Request: PHOTO_THUMB_URL_EMPTY',
   callback_data_invalid: BUTTON_DATA_INVALID_DESCRIPTION,
   message_text_too_long: 'Bad Request: MESSAGE_TOO_LONG',
   caption_too_long: 'Bad Request: MEDIA_CAPTION_TOO_LONG',
@@ -4566,10 +4568,16 @@ function readInlineQueryResultContent(
       ? {
         ...media,
         kind: 'photo',
-        photoFileId: result.photoFileId,
+        photo: result.photo,
+        thumbnailUrl: result.thumbnailUrl,
         showsCaptionAboveMedia: result.showsCaptionAboveMedia,
       }
-      : { ...media, kind: 'document', documentFileId: result.documentFileId },
+      : {
+        ...media,
+        kind: 'document',
+        document: result.document,
+        thumbnailUrl: result.thumbnailUrl,
+      },
   };
 }
 

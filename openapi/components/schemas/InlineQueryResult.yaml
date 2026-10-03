@@ -1,5 +1,7 @@
-description: An article, or a photo or document the bot knows by `file_id`.
+description: An article, or a photo or document the bot knows by `file_id` or names by URL.
 oneOf:
   - $ref: ./InlineQueryResultArticle.yaml
   - $ref: ./InlineQueryResultCachedPhoto.yaml
+  - $ref: ./InlineQueryResultPhoto.yaml
   - $ref: ./InlineQueryResultCachedDocument.yaml
+  - $ref: ./InlineQueryResultDocument.yaml

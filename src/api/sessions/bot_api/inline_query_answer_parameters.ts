@@ -21,6 +21,14 @@ export type UnreadInputMessageContent =
   | { readonly kind: 'text'; readonly text: UnreadFormattedText }
   | { readonly kind: 'rich_message'; readonly richMessage: Readonly<Record<string, unknown>> };
 
+/**
+ * The file of a media result: one the bot knows by `file_id`, or one it names by URL, which
+ * Telegram downloads when an account sends the result.
+ */
+export type InlineQueryResultFileParameter =
+  | { readonly kind: 'file_id'; readonly fileId: string }
+  | { readonly kind: 'url'; readonly url: string };
+
 interface InlineQueryResultParameterBase {
   readonly id: string;
   /** Empty for none. */
@@ -43,8 +51,9 @@ export type InlineQueryResultParameter =
   })
   | (InlineQueryResultParameterBase & {
     readonly kind: 'photo';
-    /** The `file_id` of the photo. */
-    readonly photoFileId: string;
+    readonly photo: InlineQueryResultFileParameter;
+    /** The URL of the photo's thumbnail in the list of results; empty for none. */
+    readonly thumbnailUrl: string;
     /** Empty for none. */
     readonly title: string;
     readonly caption: UnreadFormattedText;
@@ -53,8 +62,9 @@ export type InlineQueryResultParameter =
   })
   | (InlineQueryResultParameterBase & {
     readonly kind: 'document';
-    /** The `file_id` of the document. */
-    readonly documentFileId: string;
+    readonly document: InlineQueryResultFileParameter;
+    /** The URL of the document's thumbnail in the list of results; empty for none. */
+    readonly thumbnailUrl: string;
     readonly title: string;
     readonly caption: UnreadFormattedText;
     readonly messageContent?: UnreadInputMessageContent;
@@ -64,8 +74,13 @@ export type InlineQueryResultsParameterReading =
   | { readonly read: true; readonly results: readonly InlineQueryResultParameter[] }
   | { readonly read: false; readonly description: string };
 
-/** The emulator's description for a file given by URL, which Telegram downloads itself. */
-const FILE_URL_UNSUPPORTED_DESCRIPTION = 'Bad Request: sending files by URL is not supported';
+/**
+ * The MIME types TDLib's `get_input_bot_inline_result` allows a document given by URL to declare,
+ * which it matches as prefixes of the declared type: PDF and ZIP files only.
+ */
+const WEB_DOCUMENT_MIME_TYPES = ['application/pdf', 'application/zip'] as const;
+
+const WEB_DOCUMENT_MIME_TYPE_INVALID_DESCRIPTION = 'Bad Request: unallowed document MIME type';
 
 /** Telegram's result types that the emulator does not support. */
 const UNSUPPORTED_RESULT_TYPES = [
@@ -170,7 +185,7 @@ const photoResultSchema = z.strictObject({
   photo_file_id: z.string().default(''),
   photo_width: z.int().optional(),
   photo_height: z.int().optional(),
-  thumbnail_url: z.string().optional(),
+  thumbnail_url: z.string().default(''),
   title: z.string().default(''),
   show_caption_above_media: z.boolean().default(false),
 });
@@ -188,8 +203,8 @@ const documentResultSchema = z.strictObject({
 /**
  * Reads the elements of an `answerInlineQuery` `results` parameter as the official Bot API
  * server's `get_inline_query_result` does, failing with Telegram's description for a result it
- * cannot read. Article, photo, and document results are supported, the latter two only with files
- * given by `file_id`; other result types fail as unsupported. A result's `input_message_content`
+ * cannot read. Article, photo, and document results are supported, the latter two with files given
+ * by `file_id` or by URL; other result types fail as unsupported. A result's `input_message_content`
  * may send text or a rich message; other message contents fail as unsupported.
  *
  * `invalidParametersDescription` answers results that Telegram would read leniently, such as
@@ -304,9 +319,9 @@ function readPhotoResult(value: unknown): InlineQueryResultReading {
     return { kind: 'malformed' };
   }
   const { data } = parsing;
-  const fileReading = readResultFile(data.photo_url, data.photo_file_id);
-  if (fileReading.kind !== 'file_id') {
-    return fileReading;
+  const photo = readResultFile(data.photo_url, data.photo_file_id);
+  if (photo === undefined) {
+    return { kind: 'malformed' };
   }
   const messageContent = data.input_message_content;
   return {
@@ -314,7 +329,8 @@ function readPhotoResult(value: unknown): InlineQueryResultReading {
     result: {
       kind: 'photo',
       ...readSharedFields(data),
-      photoFileId: fileReading.fileId,
+      photo,
+      thumbnailUrl: data.thumbnail_url,
       title: data.title,
       caption: readCaption(data),
       showsCaptionAboveMedia: data.show_caption_above_media,
@@ -329,9 +345,17 @@ function readDocumentResult(value: unknown): InlineQueryResultReading {
     return { kind: 'malformed' };
   }
   const { data } = parsing;
-  const fileReading = readResultFile(data.document_url, data.document_file_id);
-  if (fileReading.kind !== 'file_id') {
-    return fileReading;
+  const document = readResultFile(data.document_url, data.document_file_id);
+  // The Bot API server requires the MIME type of a document given by `document_url`.
+  if (document === undefined || (data.document_url.length > 0 && data.mime_type === undefined)) {
+    return { kind: 'malformed' };
+  }
+  const mimeType = data.mime_type ?? '';
+  if (
+    document.kind === 'url' &&
+    !WEB_DOCUMENT_MIME_TYPES.some((allowedMimeType) => mimeType.startsWith(allowedMimeType))
+  ) {
+    return { kind: 'failure', description: WEB_DOCUMENT_MIME_TYPE_INVALID_DESCRIPTION };
   }
   const messageContent = data.input_message_content;
   return {
@@ -339,7 +363,8 @@ function readDocumentResult(value: unknown): InlineQueryResultReading {
     result: {
       kind: 'document',
       ...readSharedFields(data),
-      documentFileId: fileReading.fileId,
+      document,
+      thumbnailUrl: data.thumbnail_url ?? '',
       title: data.title,
       caption: readCaption(data),
       ...(messageContent === undefined ? {} : { messageContent }),
@@ -362,22 +387,16 @@ function readSharedFields(
 }
 
 /**
- * Reads the file of a photo or document result as TDLib does: a URL, if given, takes the place of
- * the `file_id`, and text with a dot is a URL, which `file_id` values never contain.
+ * Reads the file of a media result as the Bot API server and TDLib do: a URL, if given, takes the
+ * place of the `file_id`, and text with a dot is a URL, which `file_id` values never contain.
+ * Returns `undefined` for a result that gives neither.
  */
-function readResultFile(
-  url: string,
-  fileId: string,
-):
-  | { readonly kind: 'file_id'; readonly fileId: string }
-  | Exclude<InlineQueryResultReading, { readonly kind: 'result' }> {
+function readResultFile(url: string, fileId: string): InlineQueryResultFileParameter | undefined {
   const file = url.length > 0 ? url : fileId;
   if (file.length === 0) {
-    return { kind: 'malformed' };
+    return undefined;
   }
-  return file.includes('.')
-    ? { kind: 'failure', description: FILE_URL_UNSUPPORTED_DESCRIPTION }
-    : { kind: 'file_id', fileId: file };
+  return file.includes('.') ? { kind: 'url', url: file } : { kind: 'file_id', fileId: file };
 }
 
 function readCaption(

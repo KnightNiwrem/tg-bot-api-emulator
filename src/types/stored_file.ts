@@ -28,6 +28,23 @@ export const MAX_WEB_FILE_BYTES: Readonly<Record<WebFileKind, number>> = {
 };
 
 /**
+ * What an inline query result names a file by URL as, which Telegram downloads when an account
+ * sends the result. Inline results have contracts of their own rather than those of the send
+ * methods.
+ */
+export type InlineResultWebFileKind = 'photo' | 'document';
+
+/**
+ * The largest file Telegram downloads for an inline query result: 5 MB for a photo, as the Bot API
+ * documents for `InlineQueryResultPhoto`, and, as it documents no other size, the 20 MB it
+ * downloads for any other file sent by URL.
+ */
+export const MAX_INLINE_RESULT_WEB_FILE_BYTES: Readonly<Record<InlineResultWebFileKind, number>> = {
+  photo: 5 * 1024 * 1024,
+  document: 20 * 1024 * 1024,
+};
+
+/**
  * The largest file, in bytes, that Telegram sends as a voice note when a bot sends it by URL: the
  * Bot API documents 1 MB, read in binary megabytes as the other limits are, and sends a larger
  * one, up to the 20 MB it downloads, as a file.

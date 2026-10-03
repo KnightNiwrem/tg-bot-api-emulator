@@ -21,8 +21,8 @@ properties:
     type: string
     minLength: 1
     description: >-
-      The `Content-Type` header. A photo must be served as an image, and a document as
-      `application/pdf` or `application/zip`.
+      The `Content-Type` header. A photo must be served as an image, or as `image/jpeg` for an
+      inline query result, and a document as `application/pdf` or `application/zip`.
   location:
     type: string
     minLength: 1

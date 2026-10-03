@@ -156,8 +156,11 @@ export interface SendSupergroupAccountInlineResultInput {
   readonly fromAccountId: number;
   readonly chatId: number;
   readonly viaBotId: number;
-  /** Content the inline bot's answer holds, which Telegram checked when the bot answered. */
-  readonly content: MessageContent;
+  /**
+   * What the result sends, which Telegram checked when the bot answered: content the answer holds,
+   * as `existing` content, or media downloaded from a URL, whose upload is stored with the message.
+   */
+  readonly content: Exclude<NormalizedOutgoingContent, { readonly kind: 'poll' }>;
   /** Omitted when the result sends no inline keyboard. */
   readonly inlineKeyboard?: InlineKeyboard;
 }
@@ -813,17 +816,16 @@ export class SupergroupMessagingService {
       return { sent: false, reason: 'inline_bots_not_permitted' };
     }
     const permissionFailure = this.#findMissingSendPermission(memberResolution, author, [
-      { kind: 'existing', content: input.content },
+      input.content,
     ]);
     if (permissionFailure !== undefined) {
       return { sent: false, ...permissionFailure };
     }
     return {
       sent: true,
-      message: this.#commitMessage({
+      message: this.#storeMessage({
         chatId: input.chatId,
-        author: { kind: 'account', accountId: input.fromAccountId },
-        sentAtUnixSeconds: this.#currentUnixTimeSeconds(),
+        author,
         content: input.content,
         inlineKeyboard: input.inlineKeyboard,
         viaBotId: input.viaBotId,

@@ -456,6 +456,13 @@ function createBotApiFixture() {
     events,
     currentUnixTimeSeconds: () => 1_700_000_000,
   });
+  const mediaFiles = new MediaFileService({
+    files,
+    uploadProfile: 'cloud',
+    webFiles: {
+      download: () => Promise.resolve({ downloaded: false, reason: 'content_unavailable' }),
+    },
+  });
   const botApi = new BotApiService({
     bots,
     updatePolling: new BotUpdatePollingService({
@@ -498,13 +505,7 @@ function createBotApiFixture() {
       messages,
       currentUnixTimeSeconds: () => 1_700_000_000,
     }),
-    mediaFiles: new MediaFileService({
-      files,
-      uploadProfile: 'cloud',
-      webFiles: {
-        download: () => Promise.resolve({ downloaded: false, reason: 'content_unavailable' }),
-      },
-    }),
+    mediaFiles,
     callbackQueries,
     inlineQueries: new InlineQueryService({
       accounts,
@@ -513,6 +514,7 @@ function createBotApiFixture() {
       privateMessages: privateMessaging,
       supergroupMessages: supergroupMessaging,
       inlineQueries: new InlineQueryRepository(),
+      webMediaFiles: mediaFiles,
       events,
       currentTimeMilliseconds: () => 1_700_000_000_000,
     }),

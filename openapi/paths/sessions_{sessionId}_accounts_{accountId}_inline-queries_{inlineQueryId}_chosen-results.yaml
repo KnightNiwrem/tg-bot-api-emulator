@@ -17,7 +17,9 @@ post:
     the message's `inline_message_id` when the message has an inline keyboard. The inline bot
     edits the message by that identifier, and presses of its callback buttons reach the inline
     bot as callback queries carrying it instead of the message. As on Telegram, the account
-    can send a result again, each time as a new message.
+    can send a result again, each time as a new message. A photo or document the result names
+    by URL is downloaded from the session's emulated web each time the result is sent, as a new
+    file, before the account's access to the chat is checked.
   requestBody:
     required: true
     content:
@@ -48,3 +50,12 @@ post:
       description: >-
         The bot has not answered the query yet, or the account blocks the bot of the private
         chat and must unblock it before writing to it.
+    '422':
+      description: >-
+        The media the result names by URL was downloaded but is not of the result's kind: it is
+        empty, served as another type, or, for a photo, not an image Telegram can process. The
+        account's client receives Telegram's `WEBPAGE_MEDIA_EMPTY` or image error.
+    '502':
+      description: >-
+        The media the result names by URL cannot be downloaded from the session's emulated web,
+        as Telegram's `WEBPAGE_CURL_FAILED`.

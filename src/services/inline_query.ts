@@ -1,6 +1,7 @@
 import type { ChatDomainEvent } from '../types/chat_domain_event.ts';
 import type { ChatMembership } from '../types/chat_membership.ts';
 import type { GeoLocation } from '../types/geo_location.ts';
+import { parseHttpUrl } from '../types/http_url.ts';
 import {
   findInlineQueryResult,
   type InlineQuery,
@@ -9,6 +10,9 @@ import {
   type InlineQueryId,
   type InlineQueryResult,
   type InlineQueryResultsButton,
+  type InlineResultListedFile,
+  type InlineResultMessageContent,
+  type InlineResultWebMedia,
   isSameInlineQueryRequest,
   MAX_INLINE_QUERY_NEXT_OFFSET_BYTES,
   MAX_INLINE_QUERY_RESULT_COUNT,
@@ -16,22 +20,32 @@ import {
   MAX_START_PARAMETER_LENGTH,
 } from '../types/inline_query.ts';
 import type { InlineKeyboard } from '../types/inline_keyboard.ts';
-import type { StoredDocumentFile, StoredPhotoFile } from '../types/stored_file.ts';
+import type {
+  InlineResultWebFileKind,
+  StoredDocumentFile,
+  StoredFile,
+  StoredPhotoFile,
+  WebFile,
+} from '../types/stored_file.ts';
 import type { VirtualAccount } from '../types/virtual_account.ts';
 import type { VirtualBot } from '../types/virtual_bot.ts';
 import type { SharedChat } from '../types/virtual_chat.ts';
+import type { ChatMessage, PrivateMessage, SupergroupMessage } from '../types/virtual_message.ts';
 import type {
-  ChatMessage,
-  MessageContent,
-  PrivateMessage,
-  SupergroupMessage,
-} from '../types/virtual_message.ts';
+  DocumentUploadPreparation,
+  InlineResultWebFileDownloadRequest,
+  PhotoUploadPreparation,
+  WebFileDownloadResult,
+} from './media_file.ts';
 import {
   type ContentTextNormalizationFailure,
   hasOnlyValidButtonCallbackData,
+  hasOnlyValidCallbackData,
+  normalizeCaption,
   type NormalizedOutgoingContent,
   normalizeOutgoingContent,
   type OutgoingContentOtherThanPoll,
+  type SpecifiedCaption,
   toContentOfStoredFile,
 } from './message_content.ts';
 
@@ -59,6 +73,11 @@ export type SendInlineQueryResult =
   | { readonly sent: true; readonly inlineQuery: InlineQuery }
   | { readonly sent: false; readonly reason: SendInlineQueryFailureReason };
 
+/** The file a media result lists: one the bot knows by `file_id`, or one it names by URL. */
+export type SpecifiedInlineResultFile<Stored extends StoredFile> =
+  | { readonly source: 'stored'; readonly file: Stored }
+  | { readonly source: 'web'; readonly url: string };
+
 /** What each kind of result lists, as the bot specified it, before Telegram's checks. */
 type SpecifiedInlineQueryResultListing =
   | {
@@ -71,7 +90,9 @@ type SpecifiedInlineQueryResultListing =
   }
   | {
     readonly kind: 'photo';
-    readonly photo: StoredPhotoFile;
+    readonly photo: SpecifiedInlineResultFile<StoredPhotoFile>;
+    /** The URL of the thumbnail the client lists; empty for none. */
+    readonly thumbnailUrl: string;
     /** Empty for none. */
     readonly title: string;
     /** Empty for none. */
@@ -79,21 +100,35 @@ type SpecifiedInlineQueryResultListing =
   }
   | {
     readonly kind: 'document';
-    readonly document: StoredDocumentFile;
+    readonly document: SpecifiedInlineResultFile<StoredDocumentFile>;
+    /** The URL of the thumbnail the client lists; empty for none. */
+    readonly thumbnailUrl: string;
     readonly title: string;
     /** Empty for none. */
     readonly description: string;
   };
 
 /**
+ * Media of a result that the bot names by URL, with the caption it specified, before Telegram's
+ * checks; Telegram downloads the file only when an account sends the result.
+ */
+export type SpecifiedInlineResultWebMedia =
+  | (SpecifiedCaption & {
+    readonly kind: 'web_photo';
+    readonly url: string;
+    readonly showsCaptionAboveMedia: boolean;
+  })
+  | (SpecifiedCaption & { readonly kind: 'web_document'; readonly url: string });
+
+/**
  * A result of an answer as the bot specified it, before Telegram's checks. Its message content is
- * the text or rich message the bot specified, or else the result's own photo or document with a
- * caption.
+ * the content its `input_message_content` specified, or else the result's own media with a
+ * caption: a stored file, or one named by URL.
  */
 export type SpecifiedInlineQueryResult = SpecifiedInlineQueryResultListing & {
   readonly id: string;
-  /** As the Bot API's `InputMessageContent`, which has no poll. */
-  readonly messageContent: OutgoingContentOtherThanPoll;
+  /** As the Bot API's `InputMessageContent`, which has no poll, or the result's media. */
+  readonly messageContent: OutgoingContentOtherThanPoll | SpecifiedInlineResultWebMedia;
   /** Omitted when the sent message has no inline keyboard. */
   readonly inlineKeyboard?: InlineKeyboard;
 };
@@ -122,6 +157,8 @@ export type AnswerInlineQueryFailureReason =
   | 'result_id_duplicate'
   | 'article_title_empty'
   | 'document_title_empty'
+  | 'web_document_url_invalid'
+  | 'photo_thumbnail_url_empty'
   | 'callback_data_invalid';
 
 export type AnswerInlineQueryResult =
@@ -142,6 +179,8 @@ export interface AccountInlineQueryKey {
 
 export interface ChooseInlineQueryResultInput extends AccountInlineQueryKey {
   readonly resultId: string;
+  /** Aborts downloading the result's media when the account stops waiting for it. */
+  readonly signal?: AbortSignal;
 }
 
 export type ChooseInlineQueryResultFailureReason =
@@ -150,7 +189,15 @@ export type ChooseInlineQueryResultFailureReason =
   | 'result_not_found'
   | 'not_a_member'
   | 'bot_blocked'
-  | InlineResultPermissionFailureReason;
+  | InlineResultPermissionFailureReason
+  | InlineResultWebMediaFailureReason;
+
+/**
+ * Why the media a result names by URL cannot be sent: it cannot be downloaded, as Telegram's
+ * `WEBPAGE_CURL_FAILED`, or what was downloaded is not media of the result's kind, as its
+ * `WEBPAGE_MEDIA_EMPTY` or, for a photo, an image Telegram cannot process.
+ */
+type InlineResultWebMediaFailureReason = 'web_media_unavailable' | 'web_media_invalid';
 
 /**
  * Why a supergroup member may not send an inline result: it may not use inline bots there, or may
@@ -175,9 +222,15 @@ interface SupergroupLookup {
   getChatMembership(chatId: number, identityId: number): ChatMembership | undefined;
 }
 
+/**
+ * What an account's chosen result sends: content the answer holds, as `existing` content, or media
+ * downloaded from a URL, whose upload is stored with the message.
+ */
+type InlineResultSendingContent = Exclude<NormalizedOutgoingContent, { readonly kind: 'poll' }>;
+
 /** Sends an account's chosen result as its message sent through the inline bot. */
 interface InlineResultSending {
-  readonly content: MessageContent;
+  readonly content: InlineResultSendingContent;
   readonly inlineKeyboard?: InlineKeyboard;
   readonly viaBotId: number;
   readonly fromAccountId: number;
@@ -230,6 +283,15 @@ interface ChatDomainEventSink {
   publish(event: ChatDomainEvent): void;
 }
 
+/** Downloads the media that results name by URL, and prepares it as media of the result's kind. */
+interface InlineResultWebMediaFiles {
+  downloadInlineResultWebFile(
+    request: InlineResultWebFileDownloadRequest,
+  ): Promise<WebFileDownloadResult>;
+  prepareInlineResultWebPhotoUpload(webFile: WebFile): PhotoUploadPreparation;
+  prepareWebDocumentUpload(webFile: WebFile): DocumentUploadPreparation;
+}
+
 interface InlineQueryServiceDependencies {
   readonly accounts: AccountLookup;
   readonly bots: BotLookup;
@@ -237,6 +299,7 @@ interface InlineQueryServiceDependencies {
   readonly privateMessages: PrivateInlineResultMessaging;
   readonly supergroupMessages: SupergroupInlineResultMessaging;
   readonly inlineQueries: InlineQueryStore;
+  readonly webMediaFiles: InlineResultWebMediaFiles;
   readonly events: ChatDomainEventSink;
   readonly currentTimeMilliseconds: () => number;
 }
@@ -261,6 +324,7 @@ export class InlineQueryService {
   readonly #privateMessages: PrivateInlineResultMessaging;
   readonly #supergroupMessages: SupergroupInlineResultMessaging;
   readonly #inlineQueries: InlineQueryStore;
+  readonly #webMediaFiles: InlineResultWebMediaFiles;
   readonly #events: ChatDomainEventSink;
   readonly #currentTimeMilliseconds: () => number;
 
@@ -272,6 +336,7 @@ export class InlineQueryService {
       privateMessages,
       supergroupMessages,
       inlineQueries,
+      webMediaFiles,
       events,
       currentTimeMilliseconds,
     }: InlineQueryServiceDependencies,
@@ -282,6 +347,7 @@ export class InlineQueryService {
     this.#privateMessages = privateMessages;
     this.#supergroupMessages = supergroupMessages;
     this.#inlineQueries = inlineQueries;
+    this.#webMediaFiles = webMediaFiles;
     this.#events = events;
     this.#currentTimeMilliseconds = currentTimeMilliseconds;
   }
@@ -353,13 +419,9 @@ export class InlineQueryService {
     if (input.results.length > MAX_INLINE_QUERY_RESULT_COUNT) {
       return { answered: false, reason: 'too_many_results' };
     }
-    const messageContents: NormalizedOutgoingContent[] = [];
+    const messageContents: NormalizedInlineResultContent[] = [];
     for (const result of input.results) {
-      const normalization = normalizeOutgoingContent(
-        result.messageContent,
-        'bot',
-        this.#textFixingContext,
-      );
+      const normalization = this.#normalizeResultContent(result.messageContent);
       if (!normalization.normalized) {
         return { answered: false, ...normalization.failure };
       }
@@ -387,7 +449,7 @@ export class InlineQueryService {
         inlineQuery.id,
         {
           results: input.results.map((result, resultIndex) =>
-            toInlineQueryResult(result, toContentOfStoredFile(messageContents[resultIndex]))
+            toInlineQueryResult(result, toAnsweredResultContent(messageContents[resultIndex]))
           ),
           cacheTimeSeconds: input.cacheTimeSeconds,
           isPersonal: input.isPersonal,
@@ -411,8 +473,15 @@ export class InlineQueryService {
    * Sends a result of the bot's answer to the chat where the account typed the query, as the
    * account's message sent through the inline bot, and publishes the choice for the bot. As on
    * Telegram, the account can send a result again, and must still be able to write to the chat.
+   *
+   * Media that a result names by URL is downloaded each time the result is sent, as
+   * `messages.sendInlineBotResult` fails with Telegram's download errors, and is then stored as a
+   * new file, like a file a bot sends by URL. It is downloaded before the account's access to the
+   * chat is checked, so a result that can be neither downloaded nor sent fails for its media.
    */
-  chooseInlineQueryResult(input: ChooseInlineQueryResultInput): ChooseInlineQueryResultResult {
+  async chooseInlineQueryResult(
+    input: ChooseInlineQueryResultInput,
+  ): Promise<ChooseInlineQueryResultResult> {
     const inlineQuery = this.getAccountInlineQuery(input);
     if (inlineQuery === undefined) {
       return { chosen: false, reason: 'inline_query_not_found' };
@@ -425,7 +494,14 @@ export class InlineQueryService {
       return { chosen: false, reason: 'result_not_found' };
     }
 
-    const sending = this.#sendResult(inlineQuery, result);
+    const contentPreparation = await this.#prepareSendingContent(
+      result.messageContent,
+      input.signal,
+    );
+    if (!contentPreparation.prepared) {
+      return { chosen: false, reason: contentPreparation.reason };
+    }
+    const sending = this.#sendResult(inlineQuery, result, contentPreparation.content);
     if (!sending.sent) {
       return { chosen: false, reason: sending.reason };
     }
@@ -475,9 +551,97 @@ export class InlineQueryService {
       : undefined;
   }
 
+  /**
+   * Prepares what a chosen result sends: content the answer holds, as it is, or media named by
+   * URL, downloaded and prepared as the result's kind of media.
+   */
+  async #prepareSendingContent(
+    content: InlineResultMessageContent,
+    signal: AbortSignal | undefined,
+  ): Promise<
+    | { readonly prepared: true; readonly content: InlineResultSendingContent }
+    | { readonly prepared: false; readonly reason: InlineResultWebMediaFailureReason }
+  > {
+    switch (content.kind) {
+      case 'web_photo': {
+        const download = await this.#downloadWebMedia(content.url, 'photo', signal);
+        if (!download.downloaded) {
+          return { prepared: false, reason: download.reason };
+        }
+        const preparation = this.#webMediaFiles.prepareInlineResultWebPhotoUpload(download.webFile);
+        return preparation.prepared
+          ? {
+            prepared: true,
+            content: {
+              kind: 'photo',
+              photo: { kind: 'upload', upload: preparation.upload },
+              caption: content.caption,
+              hasSpoiler: false,
+              showsCaptionAboveMedia: content.showsCaptionAboveMedia,
+            },
+          }
+          : { prepared: false, reason: 'web_media_invalid' };
+      }
+      case 'web_document': {
+        const download = await this.#downloadWebMedia(content.url, 'document', signal);
+        if (!download.downloaded) {
+          return { prepared: false, reason: download.reason };
+        }
+        const preparation = this.#webMediaFiles.prepareWebDocumentUpload(download.webFile);
+        return preparation.prepared
+          ? {
+            prepared: true,
+            content: {
+              kind: 'document',
+              document: { kind: 'upload', upload: preparation.upload },
+              caption: content.caption,
+            },
+          }
+          : { prepared: false, reason: 'web_media_invalid' };
+      }
+      default:
+        return { prepared: true, content: { kind: 'existing', content } };
+    }
+  }
+
+  /**
+   * Downloads media a result names by URL, whose URL Telegram's checks of the answer read
+   * successfully.
+   */
+  async #downloadWebMedia(
+    url: string,
+    fileKind: InlineResultWebFileKind,
+    signal: AbortSignal | undefined,
+  ): Promise<
+    | { readonly downloaded: true; readonly webFile: WebFile }
+    | { readonly downloaded: false; readonly reason: InlineResultWebMediaFailureReason }
+  > {
+    const download = await this.#webMediaFiles.downloadInlineResultWebFile({
+      url,
+      fileKind,
+      signal,
+    });
+    if (download.downloaded) {
+      return download;
+    }
+    switch (download.reason) {
+      case 'web_content_unavailable':
+        return { downloaded: false, reason: 'web_media_unavailable' };
+      case 'web_content_type_invalid':
+        return { downloaded: false, reason: 'web_media_invalid' };
+      case 'file_url_invalid':
+        throw new Error(`The URL of an answered inline query result is invalid: ${url}`);
+      default: {
+        const unhandledFailure: never = download;
+        throw new Error(`Unhandled web file failure: ${JSON.stringify(unhandledFailure)}`);
+      }
+    }
+  }
+
   #sendResult(
     inlineQuery: InlineQuery,
     result: InlineQueryResult,
+    content: InlineResultSendingContent,
   ):
     | { readonly sent: true; readonly message: ChatMessage }
     | {
@@ -487,7 +651,7 @@ export class InlineQueryService {
     const sending: InlineResultSending = {
       fromAccountId: inlineQuery.accountId,
       viaBotId: inlineQuery.botId,
-      content: result.messageContent,
+      content,
       ...(result.inlineKeyboard === undefined ? {} : { inlineKeyboard: result.inlineKeyboard }),
     };
     const { chat } = inlineQuery;
@@ -514,6 +678,36 @@ export class InlineQueryService {
         throw new Error(`Unhandled inline result sending failure: ${unhandledReason}`);
       }
     }
+  }
+
+  /**
+   * Normalizes what a result sends as `normalizeOutgoingContent` normalizes new content, and the
+   * caption of media named by URL as `normalizeCaption` normalizes a bot's caption.
+   */
+  #normalizeResultContent(
+    content: SpecifiedInlineQueryResult['messageContent'],
+  ):
+    | { readonly normalized: true; readonly content: NormalizedInlineResultContent }
+    | { readonly normalized: false; readonly failure: ContentTextNormalizationFailure } {
+    if (content.kind !== 'web_photo' && content.kind !== 'web_document') {
+      return normalizeOutgoingContent(content, 'bot', this.#textFixingContext);
+    }
+    const captionNormalization = normalizeCaption(content, 'bot', this.#textFixingContext);
+    if (!captionNormalization.normalized) {
+      return captionNormalization;
+    }
+    const { caption } = captionNormalization;
+    return {
+      normalized: true,
+      content: content.kind === 'web_photo'
+        ? {
+          kind: 'web_photo',
+          url: content.url,
+          caption,
+          showsCaptionAboveMedia: content.showsCaptionAboveMedia,
+        }
+        : { kind: 'web_document', url: content.url, caption },
+    };
   }
 
   /** A text mention may name any user of the session. */
@@ -549,7 +743,7 @@ function checkResultsButton(
  */
 function checkSpecifiedResults(
   results: readonly SpecifiedInlineQueryResult[],
-  messageContents: readonly NormalizedOutgoingContent[],
+  messageContents: readonly NormalizedInlineResultContent[],
 ): AnswerInlineQueryFailureReason | undefined {
   const resultIds = new Set<string>();
   for (const [resultIndex, result] of results.entries()) {
@@ -569,17 +763,74 @@ function checkSpecifiedResults(
     if (result.kind === 'document' && result.title.length === 0) {
       return 'document_title_empty';
     }
-    if (!hasOnlyValidButtonCallbackData(result.inlineKeyboard, messageContents[resultIndex])) {
+    const webMediaFailure = checkWebMediaListing(result);
+    if (webMediaFailure !== undefined) {
+      return webMediaFailure;
+    }
+    const messageContent = messageContents[resultIndex];
+    if (
+      isInlineResultWebMedia(messageContent)
+        ? result.inlineKeyboard !== undefined && !hasOnlyValidCallbackData(result.inlineKeyboard)
+        : !hasOnlyValidButtonCallbackData(result.inlineKeyboard, messageContent)
+    ) {
       return 'callback_data_invalid';
     }
   }
   return undefined;
 }
 
+/**
+ * Telegram's checks of a media result whose file the bot names by URL: the URL must be one
+ * Telegram can download, and so must its thumbnail's, which a photo, as the Bot API requires, must
+ * have. TDLib passes both URLs on as web documents, so Telegram's servers check them; the emulator
+ * reads them as TDLib's `parse_url` reads the URL of a file sent by URL. TDLib sends no thumbnail
+ * for a file the bot knows by `file_id`.
+ */
+function checkWebMediaListing(
+  result: SpecifiedInlineQueryResult,
+): 'web_document_url_invalid' | 'photo_thumbnail_url_empty' | undefined {
+  if (result.kind === 'article') {
+    return undefined;
+  }
+  const file = result.kind === 'photo' ? result.photo : result.document;
+  if (file.source !== 'web') {
+    return undefined;
+  }
+  if (!parseHttpUrl(file.url).parsed) {
+    return 'web_document_url_invalid';
+  }
+  if (result.thumbnailUrl.length === 0) {
+    return result.kind === 'photo' ? 'photo_thumbnail_url_empty' : undefined;
+  }
+  return parseHttpUrl(result.thumbnailUrl).parsed ? undefined : 'web_document_url_invalid';
+}
+
+/**
+ * What a result sends once its text or caption is normalized: new content, or media named by URL,
+ * which is downloaded when the result is sent.
+ */
+type NormalizedInlineResultContent = NormalizedOutgoingContent | InlineResultWebMedia;
+
+function isInlineResultWebMedia(
+  content: NormalizedInlineResultContent | InlineResultMessageContent,
+): content is InlineResultWebMedia {
+  return content.kind === 'web_photo' || content.kind === 'web_document';
+}
+
+/**
+ * Returns what an answered result sends, as the answer holds it: content whose file, if any, the
+ * bot reused by `file_id`, or media named by URL.
+ */
+function toAnsweredResultContent(
+  content: NormalizedInlineResultContent,
+): InlineResultMessageContent {
+  return isInlineResultWebMedia(content) ? content : toContentOfStoredFile(content);
+}
+
 /** Keeps a checked result with its normalized message content; empty text is none. */
 function toInlineQueryResult(
   result: SpecifiedInlineQueryResult,
-  messageContent: MessageContent,
+  messageContent: InlineResultMessageContent,
 ): InlineQueryResult {
   const shared = {
     id: result.id,
@@ -599,14 +850,25 @@ function toInlineQueryResult(
       return {
         ...shared,
         kind: 'photo',
-        fileId: result.photo.id,
+        file: toListedFile(result.photo),
         ...(result.title.length === 0 ? {} : { title: result.title }),
       };
     case 'document':
-      return { ...shared, kind: 'document', fileId: result.document.id, title: result.title };
+      return {
+        ...shared,
+        kind: 'document',
+        file: toListedFile(result.document),
+        title: result.title,
+      };
     default: {
       const unhandledResult: never = result;
       throw new Error(`Unhandled inline query result: ${JSON.stringify(unhandledResult)}`);
     }
   }
+}
+
+function toListedFile(file: SpecifiedInlineResultFile<StoredFile>): InlineResultListedFile {
+  return file.source === 'stored'
+    ? { source: 'stored', fileId: file.file.id }
+    : { source: 'web', url: file.url };
 }

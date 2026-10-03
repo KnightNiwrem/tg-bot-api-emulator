@@ -2081,6 +2081,9 @@ export interface VirtualAccountClient extends VirtualAccountProfile {
    * message with `via_bot`. The chat's bots receive it as any message of this account, and a bot
    * with inline feedback receives a `chosen_inline_result` update. Presses of the message's
    * callback buttons reach the inline bot, which edits the message by its `inline_message_id`.
+   * A photo or document the result names by URL is downloaded from the session's web resources
+   * each time it is sent. Sending fails with status 502 when no resource serves the media, and
+   * with status 422 when the resource serves media that is not of the result's kind.
    */
   chooseInlineQueryResult(
     input: ChooseInlineQueryResultInput,
