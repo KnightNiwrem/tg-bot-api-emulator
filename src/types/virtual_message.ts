@@ -322,7 +322,7 @@ export type PrivateMessageContent = MessageContent | PrivateServiceContent;
  * Whether a message's content records a change of its chat, as a service message, rather than
  * content its author wrote. Every private service content is also a supergroup's.
  */
-export function isSupergroupServiceContent(
+function isSupergroupServiceContent(
   content: SupergroupMessageContent,
 ): content is SupergroupServiceContent {
   switch (content.kind) {

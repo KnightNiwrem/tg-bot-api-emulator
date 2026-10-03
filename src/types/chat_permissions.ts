@@ -41,7 +41,7 @@ export const ALL_CHAT_PERMISSIONS: ChatPermissions = new Set(CHAT_PERMISSIONS);
  * `ALL_ADMIN_PERMISSION_RIGHTS`. Default permissions grant them to administrators that are
  * accounts, but never to bots, which need the administrator right itself.
  */
-export const ADMINISTRATOR_RIGHT_PERMISSIONS = [
+const ADMINISTRATOR_RIGHT_PERMISSIONS = [
   'can_change_info',
   'can_invite_users',
   'can_pin_messages',

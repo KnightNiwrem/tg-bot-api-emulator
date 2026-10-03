@@ -66,7 +66,7 @@ export function isInviteLinkHash(text: string): boolean {
 }
 
 /** The hash that identifies an invite link, after `INVITE_LINK_PREFIX`. */
-export function getInviteLinkHash(link: ChatInviteLink): string {
+function getInviteLinkHash(link: ChatInviteLink): string {
   return link.url.slice(INVITE_LINK_PREFIX.length);
 }
 
