@@ -6,7 +6,7 @@ import {
   type BotActivityEntry,
   type BotActivityFilter,
 } from '../../../types/bot_activity.ts';
-import { findBotApiMethod } from '../bot_api/mod.ts';
+import { toCurrentBotApiMethodName } from '../../../types/bot_api_method_name.ts';
 import { integerParameter } from '../bot_api/request_parameters.ts';
 import type { SessionRouteContextTypes } from '../session_route_context_types.ts';
 
@@ -94,9 +94,7 @@ function toBotActivityFilter(query: ReadBotActivityQuery): BotActivityFilter {
     ...(query.bot_id === undefined ? {} : { botId: query.bot_id }),
     ...(query.kind === undefined ? {} : { kind: query.kind }),
     // A method is recorded by its current name, so an older name finds its calls too.
-    ...(query.method === undefined
-      ? {}
-      : { method: findBotApiMethod(query.method)?.name ?? query.method }),
+    ...(query.method === undefined ? {} : { method: toCurrentBotApiMethodName(query.method) }),
     ...(query.chat_id === undefined ? {} : { chatId: query.chat_id }),
     ...(query.user_id === undefined ? {} : { userId: query.user_id }),
     ...(query.update_id === undefined ? {} : { updateId: query.update_id }),

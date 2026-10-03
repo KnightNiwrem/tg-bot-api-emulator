@@ -2272,7 +2272,10 @@ export interface BotActivityCriteria {
   readonly update_id?: number;
   /** Whether the call's answer was successful. */
   readonly ok?: boolean;
-  /** Parameter text the call must have sent, by parameter name, compared exactly. */
+  /**
+   * Parameter text the call must have sent, by parameter name, compared exactly. An empty map
+   * still matches only calls.
+   */
   readonly parameters?: Readonly<Record<string, string>>;
 }
 
