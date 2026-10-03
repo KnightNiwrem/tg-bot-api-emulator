@@ -45,9 +45,9 @@ post:
         can't restrict self`) or no user of the session (`Bad Request: member not
         found`); the user is the owner (`Bad Request: can't remove chat owner`); the
         bot lacks the right (`Bad Request: not enough rights to restrict/unrestrict
-        chat member`); or the user is an administrator, which Telegram lets a bot
-        ban only if it promoted it, and bots promote none here (`Bad Request: user
-        is an administrator of the chat`).
+        chat member`); or the user is an administrator the bot did not promote,
+        directly or through administrators it promoted, which Telegram does not let
+        it ban (`Bad Request: user is an administrator of the chat`).
       content:
         application/json:
           schema:

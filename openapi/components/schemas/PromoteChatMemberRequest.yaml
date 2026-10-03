@@ -1,0 +1,78 @@
+type: object
+additionalProperties: false
+description: >-
+  The user to promote and the rights it holds from now on, each a separate parameter; a missing
+  right is false, and passing none demotes an administrator.
+required:
+  - chat_id
+  - user_id
+properties:
+  chat_id:
+    $ref: ./ChatIdentifier.yaml
+    description: >-
+      Identifier of the chat: for a supergroup, its negative chat ID; for a private chat, whose
+      members cannot be promoted, the account's user ID.
+  user_id:
+    $ref: ./TelegramUserId.yaml
+  is_anonymous:
+    type: boolean
+    default: false
+    description: Anonymous administrators are not supported, so `true` is refused.
+  can_manage_chat:
+    type: boolean
+    default: false
+  can_delete_messages:
+    type: boolean
+    default: false
+  can_manage_video_chats:
+    type: boolean
+    default: false
+  can_manage_voice_chats:
+    type: boolean
+    default: false
+    description: Deprecated name of `can_manage_video_chats`.
+  can_restrict_members:
+    type: boolean
+    default: false
+  can_promote_members:
+    type: boolean
+    default: false
+  can_change_info:
+    type: boolean
+    default: false
+  can_invite_users:
+    type: boolean
+    default: false
+  can_post_stories:
+    type: boolean
+    default: false
+  can_edit_stories:
+    type: boolean
+    default: false
+  can_delete_stories:
+    type: boolean
+    default: false
+  can_post_messages:
+    type: boolean
+    default: false
+    description: Applies only to channels, so it is dropped.
+  can_edit_messages:
+    type: boolean
+    default: false
+    description: Applies only to channels, so it is dropped.
+  can_pin_messages:
+    type: boolean
+    default: false
+  can_manage_topics:
+    type: boolean
+    default: false
+  can_manage_direct_messages:
+    type: boolean
+    default: false
+    description: Applies only to channels, so it is dropped.
+  can_manage_tags:
+    type: boolean
+    default: false
+  can_send_welcome_messages:
+    type: boolean
+    default: false

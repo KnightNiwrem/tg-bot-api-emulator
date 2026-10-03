@@ -1,3 +1,6 @@
+import { Bot } from 'https://cdn.jsdelivr.net/gh/grammyjs/grammY@^1.46.0/src/bot.ts';
+import { webhookCallback } from 'https://cdn.jsdelivr.net/gh/grammyjs/grammY@^1.46.0/src/convenience/webhook.ts';
+
 import { createEmulationApi } from '../src/api/mod.ts';
 import { createSessionLifecycleService } from '../src/composition/session_lifecycle.ts';
 
@@ -355,4 +358,454 @@ Deno.test('members inspect who promoted each administrator and whom they may edi
     [403, 404, 400],
     'Expected a non-member, an unknown supergroup, and an invalid identifier to be refused',
   );
+});
+
+/** Describes membership updates as their kind, member, old and new status, and editability. */
+function describeMembershipUpdates(updates: ReadonlyArray<Record<string, unknown>>): string[] {
+  return updates.map((update) => {
+    const [kind, change] = Object.entries(update)[0];
+    const { old_chat_member, new_chat_member } = change as {
+      old_chat_member: { status: string; can_be_edited?: boolean };
+      new_chat_member: { user: { id: number }; status: string; can_be_edited?: boolean };
+    };
+    const describe = ({ status, can_be_edited }: { status: string; can_be_edited?: boolean }) =>
+      can_be_edited === undefined ? status : `${status}(${can_be_edited ? 'editable' : 'fixed'})`;
+    return `${kind} ${new_chat_member.user.id}: ${describe(old_chat_member)} -> ${
+      describe(new_chat_member)
+    }`;
+  });
+}
+
+Deno.test('a bot promotes a member, changes its rights and demotes it, as observers see', async () => {
+  const {
+    ada,
+    grace,
+    hopper,
+    delegatingBot,
+    otherBot,
+    supergroup,
+    promoteAsOwner,
+    callBot,
+    getChatMember,
+    getAdministratorsAsAccount,
+    readUpdates,
+  } = await createPromotionFixture();
+  // The other bot administers the supergroup, so it observes other members' changes.
+  await promoteAsOwner(otherBot.bot.id, { can_restrict_members: true });
+  await promoteAsOwner(delegatingBot.bot.id, {
+    can_promote_members: true,
+    can_delete_messages: true,
+  });
+  for (const bot of [delegatingBot, otherBot]) {
+    await readUpdates(bot);
+  }
+  const promote = (rights: Record<string, boolean>) =>
+    callBot(delegatingBot, 'promoteChatMember', {
+      chat_id: supergroup.id,
+      user_id: hopper.id,
+      ...rights,
+    });
+
+  const promotion = await promote({ can_delete_messages: true });
+  const promoted = await getChatMember(delegatingBot, hopper.id);
+  const promotedAsOtherBotSees = await getChatMember(otherBot, hopper.id);
+  const inspectedByOwner = await getAdministratorsAsAccount(ada.id);
+  const inspectedByGrace = await getAdministratorsAsAccount(grace.id);
+  // Granting the rights the administrator holds changes nothing, and no update reports it.
+  const repeatedPromotion = await promote({ can_delete_messages: true });
+  const rightsChange = await promote({ can_promote_members: true, can_manage_voice_chats: false });
+  // The documented demotion passes every right as false.
+  const demotion = await promote({ can_promote_members: false, can_delete_messages: false });
+  const repeatedDemotion = await promote({});
+  const demoted = await getChatMember(delegatingBot, hopper.id);
+
+  expectEqual(
+    [promotion.body, repeatedPromotion.body, rightsChange.body, demotion.body],
+    Array(4).fill({ ok: true, result: true }),
+    'Expected every promotion and the demotion to succeed',
+  );
+  expectEqual(
+    [promoted, promotedAsOtherBotSees],
+    [
+      administratorMember(hopper, ['can_delete_messages'], { canBeEdited: true }),
+      administratorMember(hopper, ['can_delete_messages'], { canBeEdited: false }),
+    ],
+    'Expected only the promoting bot to edit the administrator',
+  );
+  const findHopper = (administrators: ReadonlyArray<Record<string, unknown>>) =>
+    administrators.find(({ user_id }) => user_id === hopper.id);
+  expectEqual(
+    [
+      findHopper(inspectedByOwner.body.administrators),
+      findHopper(inspectedByGrace.body.administrators),
+    ],
+    [
+      administratorForAccount(hopper.id, ['can_delete_messages'], {
+        promotedById: delegatingBot.bot.id,
+        canBeEdited: true,
+      }),
+      administratorForAccount(hopper.id, ['can_delete_messages'], {
+        promotedById: delegatingBot.bot.id,
+        canBeEdited: false,
+      }),
+    ],
+    'Expected accounts to see the bot as the promoter, and only the owner to edit it',
+  );
+  expectEqual(
+    [repeatedDemotion.body, demoted],
+    [{ ok: true, result: true }, { user: hopper, status: 'member' }],
+    'Expected the demoted administrator to be a member, and demoting it again to change nothing',
+  );
+  expectEqual(
+    describeMembershipUpdates(await readUpdates(delegatingBot)),
+    [
+      `chat_member ${hopper.id}: member -> administrator(editable)`,
+      `chat_member ${hopper.id}: administrator(editable) -> administrator(editable)`,
+      `chat_member ${hopper.id}: administrator(editable) -> member`,
+    ],
+    'Expected the promoting bot to observe each change once, as its editor',
+  );
+  expectEqual(
+    describeMembershipUpdates(await readUpdates(otherBot)),
+    [
+      `chat_member ${hopper.id}: member -> administrator(fixed)`,
+      `chat_member ${hopper.id}: administrator(fixed) -> administrator(fixed)`,
+      `chat_member ${hopper.id}: administrator(fixed) -> member`,
+    ],
+    'Expected the other administrator bot to observe the same changes, without editing them',
+  );
+});
+
+Deno.test('a delegated chain of bots edits only its descendants, within its own rights', async () => {
+  const { ada, grace, hopper, delegatingBot, otherBot, supergroup, callBot, getChatMember } =
+    await createPromotionFixture();
+  const promote = (actor: FixtureBot, userId: number, rights: Record<string, boolean>) =>
+    callBot(actor, 'promoteChatMember', { chat_id: supergroup.id, user_id: userId, ...rights })
+      .then(({ body }) => body.ok ? body.result : body.description);
+
+  // The owner promoted the delegating bot, which promotes the other bot, which promotes Hopper.
+  const chain = [
+    await promote(delegatingBot, otherBot.bot.id, { can_promote_members: true }),
+    await promote(otherBot, hopper.id, { can_promote_members: true }),
+  ];
+  const editabilityInChain = [
+    (await getChatMember(delegatingBot, hopper.id)).can_be_edited,
+    (await getChatMember(otherBot, hopper.id)).can_be_edited,
+    (await getChatMember(delegatingBot, otherBot.bot.id)).can_be_edited,
+    (await getChatMember(otherBot, delegatingBot.bot.id)).can_be_edited,
+  ];
+  const escalations = [
+    // A right the other bot does not hold.
+    await promote(otherBot, hopper.id, { can_promote_members: true, can_restrict_members: true }),
+    // Its own rights, its promoter, an administrator the owner promoted, and the owner.
+    await promote(otherBot, otherBot.bot.id, { can_promote_members: true }),
+    await promote(otherBot, delegatingBot.bot.id, {}),
+    await promote(otherBot, grace.id, {}),
+    await promote(otherBot, ada.id, { can_promote_members: true }),
+  ];
+  // The delegating bot demotes Hopper, whom it promoted indirectly.
+  const indirectDemotion = await promote(delegatingBot, hopper.id, {});
+
+  expectEqual(chain, [true, true], 'Expected each bot to promote the next one');
+  expectEqual(
+    editabilityInChain,
+    [true, true, true, false],
+    'Expected each bot to edit its descendants only',
+  );
+  expectEqual(
+    escalations,
+    [
+      'Bad Request: RIGHT_FORBIDDEN',
+      "Bad Request: can't promote self",
+      'Bad Request: user is an administrator of the chat',
+      'Bad Request: user is an administrator of the chat',
+      "Bad Request: can't remove chat owner",
+    ],
+    'Expected every escalation to be refused',
+  );
+  expectEqual(
+    [indirectDemotion, (await getChatMember(otherBot, hopper.id)).status],
+    [true, 'member'],
+    'Expected the delegating bot to demote an indirect appointee',
+  );
+});
+
+Deno.test('a broken chain leaves the appointee to the owner', async () => {
+  const { ada, hopper, delegatingBot, otherBot, supergroup, callBot, getAdministratorsAsAccount } =
+    await createPromotionFixture();
+  const promote = (actor: FixtureBot, userId: number, rights: Record<string, boolean>) =>
+    callBot(actor, 'promoteChatMember', { chat_id: supergroup.id, user_id: userId, ...rights })
+      .then(({ body }) => body.ok ? body.result : body.description);
+
+  const setup = [
+    await promote(delegatingBot, otherBot.bot.id, { can_promote_members: true }),
+    await promote(otherBot, hopper.id, { can_promote_members: true }),
+    await promote(delegatingBot, otherBot.bot.id, {}),
+  ];
+  const editByFormerAncestor = await promote(delegatingBot, hopper.id, {});
+  const hopperAsOwnerSees = (await getAdministratorsAsAccount(ada.id)).body.administrators
+    .find(({ user_id }) => user_id === hopper.id);
+
+  expectEqual(setup, [true, true, true], 'Expected the chain to be built and broken');
+  expectEqual(
+    [
+      editByFormerAncestor,
+      hopperAsOwnerSees?.promoted_by_user_id,
+      hopperAsOwnerSees?.can_be_edited,
+    ],
+    ['Bad Request: user is an administrator of the chat', otherBot.bot.id, true],
+    'Expected only the owner to edit the appointee of a demoted promoter',
+  );
+});
+
+Deno.test('a demoted promoter loses its privileges, and bots act on administrators they promoted', async () => {
+  const { grace, hopper, delegatingBot, otherBot, supergroup, promoteAsOwner, callBot } =
+    await createPromotionFixture();
+  await promoteAsOwner(delegatingBot.bot.id, {
+    can_promote_members: true,
+    can_restrict_members: true,
+  });
+  const call = (actor: FixtureBot, method: string, parameters: object) =>
+    callBot(actor, method, { chat_id: supergroup.id, ...parameters })
+      .then(({ body }) => body.ok ? body.result : body.description);
+  const statusOf = async (userId: number) =>
+    ((await callBot(delegatingBot, 'getChatMember', { chat_id: supergroup.id, user_id: userId }))
+      .body.result as { status: string }).status;
+
+  const delegation = [
+    await call(delegatingBot, 'promoteChatMember', {
+      user_id: otherBot.bot.id,
+      can_promote_members: true,
+      can_restrict_members: true,
+    }),
+    await call(otherBot, 'promoteChatMember', {
+      user_id: hopper.id,
+      can_restrict_members: true,
+    }),
+  ];
+  const restrictionOfAppointee = await call(otherBot, 'restrictChatMember', {
+    user_id: hopper.id,
+    permissions: { can_send_messages: true },
+  });
+  const banOfOwnersAdministrator = await call(otherBot, 'banChatMember', { user_id: grace.id });
+  const demotion = await call(delegatingBot, 'promoteChatMember', {
+    user_id: otherBot.bot.id,
+    can_promote_members: false,
+    can_restrict_members: false,
+  });
+  const afterDemotion = [
+    await call(otherBot, 'banChatMember', { user_id: hopper.id }),
+    await call(otherBot, 'promoteChatMember', { user_id: hopper.id, can_restrict_members: true }),
+  ];
+
+  expectEqual(delegation, [true, true], 'Expected the delegation to succeed');
+  expectEqual(
+    [restrictionOfAppointee, await statusOf(hopper.id), banOfOwnersAdministrator],
+    [true, 'restricted', 'Bad Request: user is an administrator of the chat'],
+    'Expected a bot to restrict only an administrator it promoted, which then loses its rights',
+  );
+  expectEqual(
+    [demotion, await statusOf(otherBot.bot.id), afterDemotion],
+    [true, 'member', [
+      'Bad Request: not enough rights to restrict/unrestrict chat member',
+      'Bad Request: not enough rights',
+    ]],
+    'Expected the demoted bot to lose its privileges',
+  );
+});
+
+Deno.test('promoteChatMember refuses what Telegram refuses, without changing anything', async () => {
+  const {
+    api,
+    ada,
+    grace,
+    hopper,
+    linus,
+    delegatingBot,
+    otherBot,
+    supergroup,
+    supergroupPath,
+    promoteAsOwner,
+    callBot,
+    readUpdates,
+    getAdministratorsAsAccount,
+  } = await createPromotionFixture();
+  // Hopper is banned once the owner removes her, and Grace, no longer an administrator, is
+  // restricted.
+  await expectStatus(
+    api.request(`${supergroupPath(ada.id)}/members/${hopper.id}`, { method: 'DELETE' }),
+    204,
+    'Expected the owner to remove Hopper',
+  );
+  await expectStatus(
+    api.request(
+      `${supergroupPath(ada.id)}/restrictions/${grace.id}`,
+      jsonRequest('PUT', { permissions: { can_send_messages: true } }),
+    ),
+    204,
+    'Expected the owner to restrict Grace',
+  );
+  const administratorsBefore = await getAdministratorsAsAccount(ada.id);
+  for (const bot of [delegatingBot, otherBot]) {
+    await readUpdates(bot);
+  }
+  const describe = async (actor: FixtureBot, parameters: Record<string, unknown>) => {
+    const { status, body } = await callBot(actor, 'promoteChatMember', parameters);
+    return [status, body.ok ? body.result : body.description];
+  };
+
+  const failures = [
+    await describe(delegatingBot, { chat_id: supergroup.id }),
+    await describe(delegatingBot, { user_id: linus.id }),
+    await describe(delegatingBot, { chat_id: -1_000_000_999_999, user_id: linus.id }),
+    await describe(delegatingBot, { chat_id: linus.id, user_id: linus.id }),
+    await describe(delegatingBot, { chat_id: supergroup.id, user_id: 999_999 }),
+    await describe(delegatingBot, {
+      chat_id: supergroup.id,
+      user_id: linus.id,
+      is_anonymous: true,
+    }),
+    await describe(delegatingBot, { chat_id: supergroup.id, user_id: linus.id, can_fly: true }),
+    await describe(otherBot, {
+      chat_id: supergroup.id,
+      user_id: linus.id,
+      can_invite_users: true,
+    }),
+    await describe(delegatingBot, {
+      chat_id: supergroup.id,
+      user_id: linus.id,
+      can_promote_members: true,
+    }),
+    await describe(delegatingBot, {
+      chat_id: supergroup.id,
+      user_id: hopper.id,
+      can_promote_members: true,
+    }),
+    // Demoting users that are no administrators: one that left would have to be added, and
+    // lifting a ban or restriction needs `can_restrict_members`.
+    await describe(delegatingBot, { chat_id: supergroup.id, user_id: linus.id }),
+    await describe(delegatingBot, { chat_id: supergroup.id, user_id: hopper.id }),
+    await describe(delegatingBot, { chat_id: supergroup.id, user_id: grace.id }),
+  ];
+  const administratorsAfter = await getAdministratorsAsAccount(ada.id);
+
+  expectEqual(
+    failures,
+    [
+      [400, 'Bad Request: invalid user_id specified'],
+      [400, 'Bad Request: chat_id is empty'],
+      [400, 'Bad Request: chat not found'],
+      [400, 'Bad Request: chat not found'],
+      [400, 'Bad Request: member not found'],
+      [400, 'Bad Request: anonymous administrators are not supported'],
+      [400, 'Bad Request: invalid promoteChatMember parameters'],
+      [400, 'Bad Request: not enough rights'],
+      [400, 'Bad Request: USER_NOT_MUTUAL_CONTACT'],
+      [400, 'Bad Request: USER_KICKED'],
+      [400, "Bad Request: bots can't add new chat members"],
+      [400, 'Bad Request: not enough rights to restrict/unrestrict chat member'],
+      [400, 'Bad Request: not enough rights to restrict/unrestrict chat member'],
+    ],
+    'Expected Telegram errors',
+  );
+  expectEqual(administratorsAfter.body, administratorsBefore.body, 'Expected no change');
+  expectEqual(
+    [await readUpdates(delegatingBot), await readUpdates(otherBot)],
+    [[], []],
+    'Expected no update for a refused promotion',
+  );
+
+  // Demoting a restricted member lifts its restriction once the bot may restrict members.
+  await promoteAsOwner(delegatingBot.bot.id, {
+    can_promote_members: true,
+    can_restrict_members: true,
+  });
+  expectEqual(
+    [
+      await describe(delegatingBot, { chat_id: supergroup.id, user_id: grace.id }),
+      (await callBot(delegatingBot, 'getChatMember', { chat_id: supergroup.id, user_id: grace.id }))
+        .body.result,
+    ],
+    [[200, true], { user: grace, status: 'member' }],
+    'Expected the demotion of a restricted member to lift its restriction',
+  );
+});
+
+Deno.test('a grammY bot promotes a member through its webhook, as the activity log shows', async () => {
+  const { api, sessionPath, ada, hopper, delegatingBot, supergroup, promoteAsOwner } =
+    await createPromotionFixture();
+  await promoteAsOwner(delegatingBot.bot.id, {
+    can_promote_members: true,
+    can_pin_messages: true,
+  });
+  const grammyBot = new Bot(delegatingBot.token, {
+    client: {
+      apiRoot: `http://emulator.example:9000${sessionPath}/bot-api`,
+      fetch: async (input, init) => await api.fetch(new Request(input, init)),
+    },
+  });
+  const promotionObserved = Promise.withResolvers<{ status: string; can_be_edited?: boolean }>();
+  grammyBot.command('promote', async (context) => {
+    const promotedUser = context.message?.reply_to_message?.from;
+    if (promotedUser !== undefined) {
+      await context.promoteChatMember(promotedUser.id, { can_pin_messages: true });
+    }
+  });
+  grammyBot.on('chat_member', (context) => {
+    promotionObserved.resolve(context.chatMember.new_chat_member);
+  });
+  const handleWebhookRequest = webhookCallback(grammyBot, 'std/http');
+  const webhookServer = Deno.serve(
+    { hostname: '127.0.0.1', port: 0, onListen: () => {} },
+    (request) => handleWebhookRequest(request),
+  );
+  const sendAccountMessage = (accountId: number, content: object) =>
+    requestJson<{ message?: { message_id: number } }>(
+      api,
+      'POST',
+      `${sessionPath}/accounts/${accountId}/messages`,
+      { to: { type: 'supergroup', chatId: supergroup.id }, ...content },
+    );
+  try {
+    await grammyBot.api.setWebhook(`http://127.0.0.1:${webhookServer.addr.port}/webhook`, {
+      allowed_updates: ['message', 'chat_member'],
+    });
+    const request = await sendAccountMessage(hopper.id, { text: 'May I pin?' });
+    await sendAccountMessage(ada.id, {
+      text: '/promote',
+      reply_to_message_id: request.body.message?.message_id,
+    });
+    let timeoutId: ReturnType<typeof setTimeout> | undefined;
+    const observed = await Promise.race([
+      promotionObserved.promise,
+      new Promise<never>((_, reject) => {
+        timeoutId = setTimeout(
+          () => reject(new Error('Expected the bot to observe the promotion')),
+          5_000,
+        );
+      }),
+    ]).finally(() => clearTimeout(timeoutId));
+    const activity = await requestJson<{ entries: Array<Record<string, unknown>> }>(
+      api,
+      'GET',
+      `${sessionPath}/bot-activity?method=promoteChatMember`,
+    );
+    expectEqual(
+      [observed.status, observed.can_be_edited],
+      ['administrator', true],
+      'Expected the bot to observe its promotion of the member, as its editor',
+    );
+    expectEqual(
+      activity.body.entries.map(({ via, parameters, answer }) => [via, parameters, answer]),
+      [[
+        'http',
+        { chat_id: String(supergroup.id), user_id: String(hopper.id), can_pin_messages: 'true' },
+        { ok: true, result: true },
+      ]],
+      'Expected the activity log to record the promotion',
+    );
+  } finally {
+    await api.request(sessionPath, { method: 'DELETE' });
+    await webhookServer.shutdown();
+  }
 });

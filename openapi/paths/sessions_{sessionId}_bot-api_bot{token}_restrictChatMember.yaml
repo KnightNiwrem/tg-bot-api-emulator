@@ -49,13 +49,16 @@ post:
         (`Bad Request: member not found`). A restriction that changes something then fails when
         the user is the owner (`Bad Request: can't remove chat owner`); when the user is the bot
         itself, which may not restrict itself (`Bad Request: can't restrict self`) or lift its
-        own restriction (`Bad Request: can't unrestrict self`); when every permission would make
-        an administrator a member and the bot lacks `can_promote_members` (`Bad Request: not
-        enough rights`); when the bot lacks `can_restrict_members` (`Bad Request: not enough
-        rights to restrict/unrestrict chat member`); or when the user is an administrator,
-        which Telegram lets a bot restrict only if it promoted it, and bots promote none here
-        (`Bad Request: user is an administrator of the chat`). As TDLib lets it, an
-        administrator bot that grants itself every permission becomes a member.
+        own restriction (`Bad Request: can't unrestrict self`). Every permission makes an
+        administrator a member, which demotes it as `promoteChatMember` does, without
+        `can_restrict_members`: it fails when the bot lacks `can_promote_members` (`Bad Request:
+        not enough rights`), then when the bot did not promote the administrator, directly or
+        through administrators it promoted (`Bad Request: user is an administrator of the
+        chat`). Any other restriction fails when the bot lacks `can_restrict_members` (`Bad
+        Request: not enough rights to restrict/unrestrict chat member`), then when the user is
+        an administrator the bot did not promote, directly or indirectly (`Bad Request: user is
+        an administrator of the chat`). As TDLib lets it, an administrator bot that grants
+        itself every permission becomes a member.
       content:
         application/json:
           schema:
