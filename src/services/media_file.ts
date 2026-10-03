@@ -86,14 +86,18 @@ const ACCEPTS_WEB_MEDIA_TYPE: Readonly<Record<WebFileKind, (mediaType: string) =
 /**
  * Whether Telegram sends a file that an inline query result names by URL, served as a media type,
  * as the result's kind of media: a photo served as a JPEG image, the only format the Bot API
- * documents for `InlineQueryResultPhoto`, and a document served as a PDF or ZIP file, the only
- * kinds it documents for `InlineQueryResultDocument`.
+ * documents for `InlineQueryResultPhoto`; a document served as a PDF or ZIP file, the only kinds
+ * it documents for `InlineQueryResultDocument`; a video file served as `video/mp4`, the only file
+ * type it documents for `InlineQueryResultVideo`; and a voice note served as `audio/ogg`, as
+ * TDLib types the web document of `InlineQueryResultVoice`.
  */
 const ACCEPTS_INLINE_RESULT_WEB_MEDIA_TYPE: Readonly<
   Record<InlineResultWebFileKind, (mediaType: string) => boolean>
 > = {
   photo: (mediaType) => mediaType === 'image/jpeg',
   document: (mediaType) => WEB_DOCUMENT_MEDIA_TYPES.has(mediaType),
+  video: (mediaType) => mediaType === 'video/mp4',
+  voice: (mediaType) => mediaType === 'audio/ogg',
 };
 
 /** Downloads the file at a URL, as `WebFileDownloader` does. */
@@ -275,9 +279,10 @@ export class MediaFileService {
   /**
    * Downloads a file that an inline query result names by URL, as Telegram does when an account
    * sends the result, with the contracts the Bot API documents for inline results rather than
-   * those of the send methods: a photo of at most 5 MB served as `image/jpeg`, and a document of at
-   * most 20 MB served as a PDF or ZIP file. The URL is read, and failures are given, as
-   * `downloadWebFile` reads and gives them.
+   * those of the send methods: a photo of at most 5 MB served as `image/jpeg`, and, of at most
+   * 20 MB, a document served as a PDF or ZIP file, a video served as `video/mp4`, and a voice note
+   * served as `audio/ogg`. The URL is read, and failures are given, as `downloadWebFile` reads and
+   * gives them.
    */
   downloadInlineResultWebFile(
     { url, fileKind, signal }: InlineResultWebFileDownloadRequest,
@@ -320,6 +325,37 @@ export class MediaFileService {
       content: webFile.content,
       fileName: cleanUploadedFileName(webFile.fileName),
       mimeType: webFile.mediaType,
+      source: 'web_download',
+    });
+  }
+
+  /**
+   * Prepares a file downloaded from a URL as a video, as `prepareVideoUpload` prepares an upload,
+   * with the attributes its sender specified: named after the URL's last path segment, if it has
+   * one, and typed as it was served. As for a document, TDLib sends it as a web document, which
+   * takes no thumbnail.
+   */
+  prepareWebVideoUpload(webFile: WebFile, attributes: VideoAttributes): VideoUploadPreparation {
+    return this.prepareVideoUpload({
+      content: webFile.content,
+      ...(webFile.fileName.length === 0
+        ? {}
+        : { fileName: cleanUploadedFileName(webFile.fileName) }),
+      mimeType: webFile.mediaType,
+      attributes,
+      source: 'web_download',
+    });
+  }
+
+  /**
+   * Prepares a file downloaded from a URL as a voice note, as `prepareVoiceUpload` prepares an
+   * upload, typed as it was served and with the duration its sender specified.
+   */
+  prepareWebVoiceUpload(webFile: WebFile, durationSeconds: number): VoiceUploadPreparation {
+    return this.prepareVoiceUpload({
+      content: webFile.content,
+      mimeType: webFile.mediaType,
+      durationSeconds,
       source: 'web_download',
     });
   }

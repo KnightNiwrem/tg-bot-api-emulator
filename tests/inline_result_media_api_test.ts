@@ -21,6 +21,19 @@ interface TestMessage {
     readonly file_name?: string;
     readonly mime_type?: string;
   };
+  readonly video?: {
+    readonly file_id: string;
+    readonly duration: number;
+    readonly width: number;
+    readonly height: number;
+    readonly file_name?: string;
+    readonly mime_type?: string;
+  };
+  readonly voice?: {
+    readonly file_id: string;
+    readonly duration: number;
+    readonly mime_type?: string;
+  };
   readonly caption?: string;
   readonly show_caption_above_media?: boolean;
   readonly via_bot?: { readonly id: number; readonly username?: string };
@@ -48,6 +61,8 @@ function jpegImage(width: number, height: number): Uint8Array<ArrayBuffer> {
 
 const CAT_PHOTO_URL = 'https://cdn.example.com/cat.jpg';
 const CATS_PDF_URL = 'https://cdn.example.com/docs/cats.pdf';
+const CAT_VIDEO_URL = 'https://cdn.example.com/clips/purring.mp4';
+const CAT_VOICE_URL = 'https://cdn.example.com/voice/meow.ogg';
 const THUMBNAIL_URL = 'https://cdn.example.com/cat-thumbnail.jpg';
 
 /**
@@ -119,6 +134,9 @@ async function createInlineMediaFixture() {
   };
   await registerWebResource(CAT_PHOTO_URL, 'image/jpeg', jpegImage(640, 480));
   await registerWebResource(CATS_PDF_URL, 'application/pdf', new TextEncoder().encode('%PDF-1.7'));
+  // The emulator inspects no video or voice content.
+  await registerWebResource(CAT_VIDEO_URL, 'video/mp4', new Uint8Array([0, 0, 0, 24]));
+  await registerWebResource(CAT_VOICE_URL, 'audio/ogg', new TextEncoder().encode('OggS'));
 
   const callBot = (
     botApiPath: string,
@@ -593,5 +611,257 @@ Deno.test('URL media follows supergroup permissions, blocking, cached answers an
       bot.id,
     ],
     'Expected the inline bot alone to edit the message, without uploads',
+  );
+});
+
+const urlVideoResult = {
+  type: 'video',
+  id: 'purring',
+  video_url: CAT_VIDEO_URL,
+  mime_type: 'video/mp4',
+  thumbnail_url: THUMBNAIL_URL,
+  title: 'Purring',
+  description: 'A cat purrs',
+  caption: 'Listen',
+  show_caption_above_media: true,
+  video_width: 640,
+  video_height: 360,
+  video_duration: 12,
+};
+
+const urlVoiceResult = {
+  type: 'voice',
+  id: 'meow',
+  voice_url: CAT_VOICE_URL,
+  title: 'Meow',
+  caption: 'Hello',
+  voice_duration: 3,
+};
+
+Deno.test('an account sends videos and voice notes that inline results name by file_id or URL', async () => {
+  const { ada, bot, callBot, sendQuery, getInlineQuery, answer, choose } =
+    await createInlineMediaFixture();
+  const sentVideo = (await callBot(bot.botApiPath, 'sendVideo', {
+    chat_id: ada.id,
+    video: CAT_VIDEO_URL,
+    duration: 5,
+    width: 320,
+    height: 180,
+  })).body.result as TestMessage;
+  const sentVoice = (await callBot(bot.botApiPath, 'sendVoice', {
+    chat_id: ada.id,
+    voice: CAT_VOICE_URL,
+    duration: 2,
+  })).body.result as TestMessage;
+  const inlineQuery = await sendQuery(ada.id);
+  const answered = await answer(inlineQuery.id, [
+    urlVideoResult,
+    urlVoiceResult,
+    { type: 'video', id: 'cached-video', video_file_id: sentVideo.video?.file_id, title: 'Again' },
+    { type: 'voice', id: 'cached-voice', voice_file_id: sentVoice.voice?.file_id, title: '' },
+  ]);
+  expectEqual(answered.body, { ok: true, result: true }, 'Expected the answer to be accepted');
+  expectEqual(
+    (await getInlineQuery(ada.id, inlineQuery.id)).answer?.results,
+    [
+      { type: 'video', id: 'purring', title: 'Purring', description: 'A cat purrs' },
+      { type: 'voice', id: 'meow', title: 'Meow' },
+      { type: 'video', id: 'cached-video', title: 'Again' },
+      { type: 'voice', id: 'cached-voice' },
+    ],
+    'Expected the account to see the listing',
+  );
+
+  const messages = [];
+  for (const resultId of ['purring', 'meow', 'cached-video', 'cached-voice']) {
+    const chosen = await choose(ada.id, inlineQuery.id, resultId);
+    if (chosen.status !== 201 || chosen.body === undefined) {
+      throw new Error(`Expected ${resultId} to be sent, received ${chosen.status}`);
+    }
+    messages.push(chosen.body.message);
+  }
+  const [urlVideo, urlVoice, cachedVideo, cachedVoice] = messages;
+  expectEqual(
+    [
+      urlVideo.video && [
+        urlVideo.video.duration,
+        urlVideo.video.width,
+        urlVideo.video.height,
+        urlVideo.video.file_name,
+        urlVideo.video.mime_type,
+      ],
+      urlVideo.caption,
+      urlVideo.show_caption_above_media,
+      urlVoice.voice && [urlVoice.voice.duration, urlVoice.voice.mime_type],
+      urlVoice.caption,
+      cachedVideo.video?.duration,
+      cachedVoice.voice?.duration,
+      messages.map((message) => message.via_bot?.id),
+    ],
+    [
+      [12, 640, 360, 'purring.mp4', 'video/mp4'],
+      'Listen',
+      true,
+      [3, 'audio/ogg'],
+      'Hello',
+      5,
+      2,
+      [bot.id, bot.id, bot.id, bot.id],
+    ],
+    'Expected the downloaded media with the attributes the bot specified, and the stored media',
+  );
+});
+
+Deno.test('answerInlineQuery checks video and voice results by their own rules', async () => {
+  const { ada, bot, callBot, sendQuery, answer, choose } = await createInlineMediaFixture();
+  const sentVideo = (await callBot(bot.botApiPath, 'sendVideo', {
+    chat_id: ada.id,
+    video: CAT_VIDEO_URL,
+  })).body.result as TestMessage;
+  const inlineQuery = await sendQuery(ada.id);
+  const refusals = [
+    [{ ...urlVideoResult, title: '' }],
+    [{ ...urlVideoResult, mime_type: 'video/webm' }],
+    [{ ...urlVideoResult, mime_type: undefined }],
+    [{ ...urlVideoResult, mime_type: 'text/html' }],
+    [{ ...urlVoiceResult, voice_url: 'ftp://cdn.example.com/meow.ogg' }],
+    [{ type: 'voice', id: 'meow', voice_file_id: sentVideo.video?.file_id, title: 'Meow' }],
+    [{ ...urlVoiceResult, description: 'Not a voice field' }],
+    [{ ...urlVideoResult, thumbnail_url: undefined }],
+    [{ ...urlVideoResult, thumbnail_url: 'ftp://cdn.example.com/thumbnail.jpg' }],
+  ];
+  const descriptions = [];
+  for (const results of refusals) {
+    descriptions.push((await answer(inlineQuery.id, results)).body.description);
+  }
+  expectEqual(
+    descriptions,
+    [
+      'Bad Request: VIDEO_TITLE_EMPTY',
+      'Bad Request: unallowed video MIME type',
+      'Bad Request: invalid answerInlineQuery parameters',
+      'Bad Request: inline query results with an embedded video player must specify input_message_content',
+      'Bad Request: WEBDOCUMENT_URL_INVALID',
+      "Bad Request: can't use file of type Video as VoiceNote",
+      'Bad Request: invalid answerInlineQuery parameters',
+      'Bad Request: invalid answerInlineQuery parameters',
+      'Bad Request: WEBDOCUMENT_URL_INVALID',
+    ],
+    "Expected Telegram's and the emulator's errors",
+  );
+
+  // An embedded video player is only listed: the result sends its input_message_content.
+  const answered = await answer(inlineQuery.id, [{
+    ...urlVideoResult,
+    video_url: 'https://video.example.com/watch?v=purring',
+    mime_type: 'text/html',
+    input_message_content: { message_text: 'https://video.example.com/watch?v=purring' },
+  }]);
+  const chosen = await choose(ada.id, inlineQuery.id, 'purring');
+  expectEqual(
+    [answered.body, chosen.status, chosen.body?.message.text, chosen.body?.message.video],
+    [{ ok: true, result: true }, 201, 'https://video.example.com/watch?v=purring', undefined],
+    'Expected the embedded player to send its text',
+  );
+});
+
+Deno.test('video and voice results follow the inline media contracts, permissions and edits', async () => {
+  const {
+    api,
+    ada,
+    grace,
+    bot,
+    privateChat,
+    supergroupChat,
+    supergroupPath,
+    registerWebResource,
+    callBot,
+    sendQuery,
+    answer,
+    choose,
+    getHistory,
+    readUpdates,
+  } = await createInlineMediaFixture();
+  // Inline results take only MPEG-4 videos and OGG voice notes.
+  await registerWebResource(
+    'https://cdn.example.com/clips/purring.webm',
+    'video/webm',
+    new Uint8Array([1]),
+  );
+  await registerWebResource(
+    'https://cdn.example.com/voice/meow.mp3',
+    'audio/mpeg',
+    new Uint8Array([1]),
+  );
+  const inlineQuery = await sendQuery(ada.id);
+  await answer(inlineQuery.id, [
+    { ...urlVideoResult, id: 'webm', video_url: 'https://cdn.example.com/clips/purring.webm' },
+    { ...urlVoiceResult, id: 'mp3', voice_url: 'https://cdn.example.com/voice/meow.mp3' },
+    {
+      ...urlVideoResult,
+      reply_markup: { inline_keyboard: [[{ text: 'Like', callback_data: 'like' }]] },
+    },
+    {
+      ...urlVoiceResult,
+      reply_markup: { inline_keyboard: [[{ text: 'Like', callback_data: 'like' }]] },
+    },
+  ]);
+  expectEqual(
+    [
+      (await choose(ada.id, inlineQuery.id, 'webm')).status,
+      (await choose(ada.id, inlineQuery.id, 'mp3')).status,
+    ],
+    [422, 422],
+    'Expected media of other types to be refused',
+  );
+
+  // The bot edits the inline video's media and the inline voice note's caption only.
+  await readUpdates();
+  await choose(ada.id, inlineQuery.id, 'purring');
+  await choose(ada.id, inlineQuery.id, 'meow');
+  const [videoMessageId, voiceMessageId] = (await readUpdates()).flatMap((update) =>
+    update.chosen_inline_result === undefined
+      ? []
+      : [(update.chosen_inline_result as { inline_message_id: string }).inline_message_id]
+  );
+  const edits = [
+    await callBot(bot.botApiPath, 'editMessageMedia', {
+      inline_message_id: videoMessageId,
+      media: { type: 'video', media: CAT_VIDEO_URL, caption: 'Purring, again', duration: 7 },
+    }),
+    await callBot(bot.botApiPath, 'editMessageCaption', {
+      inline_message_id: voiceMessageId,
+      caption: 'Hello again',
+    }),
+    await callBot(bot.botApiPath, 'editMessageMedia', {
+      inline_message_id: voiceMessageId,
+      media: { type: 'photo', media: CAT_PHOTO_URL },
+    }),
+  ].map(({ body }) => body.ok ? body.result : body.description);
+  const [videoMessage, voiceMessage] = (await getHistory(ada.id, privateChat)).slice(-2);
+  expectEqual(
+    [edits, videoMessage.video?.duration, videoMessage.caption, voiceMessage.caption],
+    [
+      [true, true, "Bad Request: message media can't be edited"],
+      7,
+      'Purring, again',
+      'Hello again',
+    ],
+    'Expected the video media and the voice caption to be edited',
+  );
+
+  // Grace may send neither videos nor voice notes to the supergroup.
+  await requestJson(api, 'PUT', `${supergroupPath(ada.id)}/permissions`, {
+    permissions: { can_send_messages: true, can_send_other_messages: true },
+  });
+  const groupQuery = await sendQuery(grace.id, supergroupChat);
+  await answer(groupQuery.id, [urlVideoResult, urlVoiceResult]);
+  expectEqual(
+    [
+      (await choose(grace.id, groupQuery.id, 'purring')).status,
+      (await choose(grace.id, groupQuery.id, 'meow')).status,
+    ],
+    [403, 403],
+    'Expected the media permissions to apply',
   );
 });

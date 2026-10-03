@@ -9,7 +9,7 @@ post:
   description: >-
     Sends a result of the bot's answer to the chat where the account typed the query, as the
     account's own message sent through the inline bot, which its `via_bot` shows. The message
-    holds the text of the result's `input_message_content`, or else its photo or document with
+    holds the text of the result's `input_message_content`, or else its media with
     its caption, and the result's inline keyboard. The chat's bots receive it as they receive
     the account's other messages; in a supergroup, the inline bot receives it in privacy mode
     too when it is a member. Then, if the inline bot was created with
@@ -17,9 +17,11 @@ post:
     the message's `inline_message_id` when the message has an inline keyboard. The inline bot
     edits the message by that identifier, and presses of its callback buttons reach the inline
     bot as callback queries carrying it instead of the message. As on Telegram, the account
-    can send a result again, each time as a new message. A photo or document the result names
-    by URL is downloaded from the session's emulated web each time the result is sent, as a new
-    file, before the account's access to the chat is checked.
+    can send a result again, each time as a new message. A photo, document, video file, or voice
+    note the result names by URL and sends as its media, without `input_message_content`, is
+    downloaded from the session's emulated web each time the result is sent, as a new file,
+    before the account's access to the chat is checked; an embedded video player is never
+    downloaded.
   requestBody:
     required: true
     content:

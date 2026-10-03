@@ -11,6 +11,7 @@ import {
   type InlineQueryResult,
   type InlineQueryResultsButton,
   type InlineResultListedFile,
+  type InlineResultListedVideo,
   type InlineResultMessageContent,
   type InlineResultWebMedia,
   isSameInlineQueryRequest,
@@ -25,16 +26,26 @@ import type {
   StoredDocumentFile,
   StoredFile,
   StoredPhotoFile,
+  StoredVideoFile,
+  StoredVoiceFile,
+  VideoAttributes,
   WebFile,
 } from '../types/stored_file.ts';
 import type { VirtualAccount } from '../types/virtual_account.ts';
 import type { VirtualBot } from '../types/virtual_bot.ts';
 import type { SharedChat } from '../types/virtual_chat.ts';
-import type { ChatMessage, PrivateMessage, SupergroupMessage } from '../types/virtual_message.ts';
+import type {
+  ChatMessage,
+  FormattedText,
+  PrivateMessage,
+  SupergroupMessage,
+} from '../types/virtual_message.ts';
 import type {
   DocumentUploadPreparation,
   InlineResultWebFileDownloadRequest,
   PhotoUploadPreparation,
+  VideoUploadPreparation,
+  VoiceUploadPreparation,
   WebFileDownloadResult,
 } from './media_file.ts';
 import {
@@ -78,6 +89,14 @@ export type SpecifiedInlineResultFile<Stored extends StoredFile> =
   | { readonly source: 'stored'; readonly file: Stored }
   | { readonly source: 'web'; readonly url: string };
 
+/**
+ * What a video result lists: a video file, or a web page with an embedded video player, which only
+ * the listing shows.
+ */
+type SpecifiedInlineResultVideo =
+  | SpecifiedInlineResultFile<StoredVideoFile>
+  | { readonly source: 'embedded_player'; readonly url: string };
+
 /** What each kind of result lists, as the bot specified it, before Telegram's checks. */
 type SpecifiedInlineQueryResultListing =
   | {
@@ -106,6 +125,21 @@ type SpecifiedInlineQueryResultListing =
     readonly title: string;
     /** Empty for none. */
     readonly description: string;
+  }
+  | {
+    readonly kind: 'video';
+    readonly video: SpecifiedInlineResultVideo;
+    /** The URL of the thumbnail the client lists; empty for none. */
+    readonly thumbnailUrl: string;
+    readonly title: string;
+    /** Empty for none. */
+    readonly description: string;
+  }
+  | {
+    readonly kind: 'voice';
+    readonly voice: SpecifiedInlineResultFile<StoredVoiceFile>;
+    /** Empty for none. */
+    readonly title: string;
   };
 
 /**
@@ -118,7 +152,18 @@ export type SpecifiedInlineResultWebMedia =
     readonly url: string;
     readonly showsCaptionAboveMedia: boolean;
   })
-  | (SpecifiedCaption & { readonly kind: 'web_document'; readonly url: string });
+  | (SpecifiedCaption & { readonly kind: 'web_document'; readonly url: string })
+  | (SpecifiedCaption & {
+    readonly kind: 'web_video';
+    readonly url: string;
+    readonly showsCaptionAboveMedia: boolean;
+    readonly attributes: VideoAttributes;
+  })
+  | (SpecifiedCaption & {
+    readonly kind: 'web_voice';
+    readonly url: string;
+    readonly durationSeconds: number;
+  });
 
 /**
  * A result of an answer as the bot specified it, before Telegram's checks. Its message content is
@@ -157,6 +202,7 @@ export type AnswerInlineQueryFailureReason =
   | 'result_id_duplicate'
   | 'article_title_empty'
   | 'document_title_empty'
+  | 'video_title_empty'
   | 'web_document_url_invalid'
   | 'photo_thumbnail_url_empty'
   | 'callback_data_invalid';
@@ -290,6 +336,8 @@ interface InlineResultWebMediaFiles {
   ): Promise<WebFileDownloadResult>;
   prepareInlineResultWebPhotoUpload(webFile: WebFile): PhotoUploadPreparation;
   prepareWebDocumentUpload(webFile: WebFile): DocumentUploadPreparation;
+  prepareWebVideoUpload(webFile: WebFile, attributes: VideoAttributes): VideoUploadPreparation;
+  prepareWebVoiceUpload(webFile: WebFile, durationSeconds: number): VoiceUploadPreparation;
 }
 
 interface InlineQueryServiceDependencies {
@@ -562,45 +610,77 @@ export class InlineQueryService {
     | { readonly prepared: true; readonly content: InlineResultSendingContent }
     | { readonly prepared: false; readonly reason: InlineResultWebMediaFailureReason }
   > {
+    if (!isInlineResultWebMedia(content)) {
+      return { prepared: true, content: { kind: 'existing', content } };
+    }
+    const download = await this.#downloadWebMedia(
+      content.url,
+      WEB_MEDIA_FILE_KINDS[content.kind],
+      signal,
+    );
+    if (!download.downloaded) {
+      return { prepared: false, reason: download.reason };
+    }
+    const sendingContent = this.#toWebMediaSendingContent(content, download.webFile);
+    return sendingContent === undefined
+      ? { prepared: false, reason: 'web_media_invalid' }
+      : { prepared: true, content: sendingContent };
+  }
+
+  /**
+   * Prepares downloaded media as the result's kind of media, with the caption and presentation the
+   * answer holds; returns `undefined` for a file that is not media of that kind.
+   */
+  #toWebMediaSendingContent(
+    content: InlineResultWebMedia,
+    webFile: WebFile,
+  ): InlineResultSendingContent | undefined {
+    const { caption } = content;
     switch (content.kind) {
       case 'web_photo': {
-        const download = await this.#downloadWebMedia(content.url, 'photo', signal);
-        if (!download.downloaded) {
-          return { prepared: false, reason: download.reason };
-        }
-        const preparation = this.#webMediaFiles.prepareInlineResultWebPhotoUpload(download.webFile);
+        const preparation = this.#webMediaFiles.prepareInlineResultWebPhotoUpload(webFile);
         return preparation.prepared
           ? {
-            prepared: true,
-            content: {
-              kind: 'photo',
-              photo: { kind: 'upload', upload: preparation.upload },
-              caption: content.caption,
-              hasSpoiler: false,
-              showsCaptionAboveMedia: content.showsCaptionAboveMedia,
-            },
+            kind: 'photo',
+            photo: { kind: 'upload', upload: preparation.upload },
+            caption,
+            hasSpoiler: false,
+            showsCaptionAboveMedia: content.showsCaptionAboveMedia,
           }
-          : { prepared: false, reason: 'web_media_invalid' };
+          : undefined;
       }
       case 'web_document': {
-        const download = await this.#downloadWebMedia(content.url, 'document', signal);
-        if (!download.downloaded) {
-          return { prepared: false, reason: download.reason };
-        }
-        const preparation = this.#webMediaFiles.prepareWebDocumentUpload(download.webFile);
+        const preparation = this.#webMediaFiles.prepareWebDocumentUpload(webFile);
+        return preparation.prepared
+          ? { kind: 'document', document: { kind: 'upload', upload: preparation.upload }, caption }
+          : undefined;
+      }
+      case 'web_video': {
+        const preparation = this.#webMediaFiles.prepareWebVideoUpload(webFile, content.attributes);
         return preparation.prepared
           ? {
-            prepared: true,
-            content: {
-              kind: 'document',
-              document: { kind: 'upload', upload: preparation.upload },
-              caption: content.caption,
-            },
+            kind: 'video',
+            video: { kind: 'upload', upload: preparation.upload },
+            caption,
+            hasSpoiler: false,
+            showsCaptionAboveMedia: content.showsCaptionAboveMedia,
+            startTimestampSeconds: 0,
           }
-          : { prepared: false, reason: 'web_media_invalid' };
+          : undefined;
       }
-      default:
-        return { prepared: true, content: { kind: 'existing', content } };
+      case 'web_voice': {
+        const preparation = this.#webMediaFiles.prepareWebVoiceUpload(
+          webFile,
+          content.durationSeconds,
+        );
+        return preparation.prepared
+          ? { kind: 'voice', voice: { kind: 'upload', upload: preparation.upload }, caption }
+          : undefined;
+      }
+      default: {
+        const unhandledContent: never = content;
+        throw new Error(`Unhandled web media: ${JSON.stringify(unhandledContent)}`);
+      }
     }
   }
 
@@ -689,24 +769,16 @@ export class InlineQueryService {
   ):
     | { readonly normalized: true; readonly content: NormalizedInlineResultContent }
     | { readonly normalized: false; readonly failure: ContentTextNormalizationFailure } {
-    if (content.kind !== 'web_photo' && content.kind !== 'web_document') {
+    if (!isSpecifiedInlineResultWebMedia(content)) {
       return normalizeOutgoingContent(content, 'bot', this.#textFixingContext);
     }
     const captionNormalization = normalizeCaption(content, 'bot', this.#textFixingContext);
     if (!captionNormalization.normalized) {
       return captionNormalization;
     }
-    const { caption } = captionNormalization;
     return {
       normalized: true,
-      content: content.kind === 'web_photo'
-        ? {
-          kind: 'web_photo',
-          url: content.url,
-          caption,
-          showsCaptionAboveMedia: content.showsCaptionAboveMedia,
-        }
-        : { kind: 'web_document', url: content.url, caption },
+      content: withWebMediaCaption(content, captionNormalization.caption),
     };
   }
 
@@ -757,52 +829,95 @@ function checkSpecifiedResults(
       return 'result_id_duplicate';
     }
     resultIds.add(result.id);
-    if (result.kind === 'article' && result.title.length === 0) {
-      return 'article_title_empty';
+    const listingFailure = checkTitle(result) ?? checkWebMediaListing(result);
+    if (listingFailure !== undefined) {
+      return listingFailure;
     }
-    if (result.kind === 'document' && result.title.length === 0) {
-      return 'document_title_empty';
-    }
-    const webMediaFailure = checkWebMediaListing(result);
-    if (webMediaFailure !== undefined) {
-      return webMediaFailure;
-    }
-    const messageContent = messageContents[resultIndex];
-    if (
-      isInlineResultWebMedia(messageContent)
-        ? result.inlineKeyboard !== undefined && !hasOnlyValidCallbackData(result.inlineKeyboard)
-        : !hasOnlyValidButtonCallbackData(result.inlineKeyboard, messageContent)
-    ) {
+    if (!hasOnlyValidResultCallbackData(result, messageContents[resultIndex])) {
       return 'callback_data_invalid';
     }
   }
   return undefined;
 }
 
+/** The kinds of result whose empty title Telegram refuses, with the reason it gives. */
+const REQUIRED_TITLE_FAILURES: Readonly<
+  Partial<Record<SpecifiedInlineQueryResult['kind'], AnswerInlineQueryFailureReason>>
+> = {
+  article: 'article_title_empty',
+  document: 'document_title_empty',
+  video: 'video_title_empty',
+};
+
+/** Telegram's check that a result of a kind that is listed by its title has one. */
+function checkTitle(
+  result: SpecifiedInlineQueryResult,
+): AnswerInlineQueryFailureReason | undefined {
+  return result.title.length === 0 ? REQUIRED_TITLE_FAILURES[result.kind] : undefined;
+}
+
 /**
- * Telegram's checks of a media result whose file the bot names by URL: the URL must be one
- * Telegram can download, and so must its thumbnail's, which a photo, as the Bot API requires, must
- * have. TDLib passes both URLs on as web documents, so Telegram's servers check them; the emulator
- * reads them as TDLib's `parse_url` reads the URL of a file sent by URL. TDLib sends no thumbnail
- * for a file the bot knows by `file_id`.
+ * Whether the buttons of what a result sends carry valid callback data: those of its inline
+ * keyboard, and of a rich message it sends; media named by URL has no buttons of its own.
+ */
+function hasOnlyValidResultCallbackData(
+  result: SpecifiedInlineQueryResult,
+  messageContent: NormalizedInlineResultContent,
+): boolean {
+  return isInlineResultWebMedia(messageContent)
+    ? result.inlineKeyboard === undefined || hasOnlyValidCallbackData(result.inlineKeyboard)
+    : hasOnlyValidButtonCallbackData(result.inlineKeyboard, messageContent);
+}
+
+/**
+ * Telegram's checks of a media result whose file, or embedded video player, the bot names by URL:
+ * the URL must be one Telegram can download, and so must its thumbnail's, which a photo, as the Bot
+ * API requires, must have. TDLib passes both URLs on as web documents, so Telegram's servers check
+ * them; the emulator reads them as TDLib's `parse_url` reads the URL of a file sent by URL. TDLib
+ * sends no thumbnail for a file the bot knows by `file_id`.
  */
 function checkWebMediaListing(
   result: SpecifiedInlineQueryResult,
 ): 'web_document_url_invalid' | 'photo_thumbnail_url_empty' | undefined {
-  if (result.kind === 'article') {
-    return undefined;
-  }
-  const file = result.kind === 'photo' ? result.photo : result.document;
-  if (file.source !== 'web') {
+  const file = getSpecifiedListedFile(result);
+  if (file === undefined || file.source === 'stored') {
     return undefined;
   }
   if (!parseHttpUrl(file.url).parsed) {
     return 'web_document_url_invalid';
   }
-  if (result.thumbnailUrl.length === 0) {
+  // A video named by URL always has a thumbnail, which the emulator requires as it reads the
+  // result's parameters, since Telegram documents no error for a missing one.
+  const thumbnailUrl =
+    result.kind === 'photo' || result.kind === 'document' || result.kind === 'video'
+      ? result.thumbnailUrl
+      : '';
+  if (thumbnailUrl.length === 0) {
     return result.kind === 'photo' ? 'photo_thumbnail_url_empty' : undefined;
   }
-  return parseHttpUrl(result.thumbnailUrl).parsed ? undefined : 'web_document_url_invalid';
+  return parseHttpUrl(thumbnailUrl).parsed ? undefined : 'web_document_url_invalid';
+}
+
+/** The file a specified result lists, or `undefined` for an article, which lists none. */
+function getSpecifiedListedFile(
+  result: SpecifiedInlineQueryResult,
+): SpecifiedInlineResultFile<StoredFile> | SpecifiedInlineResultVideo | undefined {
+  switch (result.kind) {
+    case 'article':
+      return undefined;
+    case 'photo':
+      return result.photo;
+    case 'document':
+      return result.document;
+    case 'video':
+      return result.video;
+    case 'voice':
+      return result.voice;
+    default: {
+      const unhandledResult: never = result;
+      throw new Error(`Unhandled inline query result: ${JSON.stringify(unhandledResult)}`);
+    }
+  }
 }
 
 /**
@@ -811,10 +926,68 @@ function checkWebMediaListing(
  */
 type NormalizedInlineResultContent = NormalizedOutgoingContent | InlineResultWebMedia;
 
+/**
+ * The kinds of media a result names by URL, which only sending it downloads, with the kind of file
+ * each downloads.
+ */
+const WEB_MEDIA_FILE_KINDS: Readonly<
+  Record<InlineResultWebMedia['kind'], InlineResultWebFileKind>
+> = {
+  web_photo: 'photo',
+  web_document: 'document',
+  web_video: 'video',
+  web_voice: 'voice',
+};
+
+const WEB_MEDIA_KINDS: ReadonlySet<string> = new Set(Object.keys(WEB_MEDIA_FILE_KINDS));
+
 function isInlineResultWebMedia(
   content: NormalizedInlineResultContent | InlineResultMessageContent,
 ): content is InlineResultWebMedia {
-  return content.kind === 'web_photo' || content.kind === 'web_document';
+  return WEB_MEDIA_KINDS.has(content.kind);
+}
+
+function isSpecifiedInlineResultWebMedia(
+  content: SpecifiedInlineQueryResult['messageContent'],
+): content is SpecifiedInlineResultWebMedia {
+  return WEB_MEDIA_KINDS.has(content.kind);
+}
+
+/** Media named by URL with its caption normalized, in place of the caption the bot specified. */
+function withWebMediaCaption(
+  content: SpecifiedInlineResultWebMedia,
+  caption: FormattedText,
+): InlineResultWebMedia {
+  switch (content.kind) {
+    case 'web_photo':
+      return {
+        kind: 'web_photo',
+        url: content.url,
+        caption,
+        showsCaptionAboveMedia: content.showsCaptionAboveMedia,
+      };
+    case 'web_document':
+      return { kind: 'web_document', url: content.url, caption };
+    case 'web_video':
+      return {
+        kind: 'web_video',
+        url: content.url,
+        caption,
+        showsCaptionAboveMedia: content.showsCaptionAboveMedia,
+        attributes: content.attributes,
+      };
+    case 'web_voice':
+      return {
+        kind: 'web_voice',
+        url: content.url,
+        caption,
+        durationSeconds: content.durationSeconds,
+      };
+    default: {
+      const unhandledContent: never = content;
+      throw new Error(`Unhandled web media: ${JSON.stringify(unhandledContent)}`);
+    }
+  }
 }
 
 /**
@@ -836,12 +1009,12 @@ function toInlineQueryResult(
     id: result.id,
     messageContent,
     ...(result.inlineKeyboard === undefined ? {} : { inlineKeyboard: result.inlineKeyboard }),
-    ...(result.description.length === 0 ? {} : { description: result.description }),
   };
   switch (result.kind) {
     case 'article':
       return {
         ...shared,
+        ...optionalDescription(result.description),
         kind: 'article',
         title: result.title,
         ...(result.url.length === 0 ? {} : { url: result.url }),
@@ -849,6 +1022,7 @@ function toInlineQueryResult(
     case 'photo':
       return {
         ...shared,
+        ...optionalDescription(result.description),
         kind: 'photo',
         file: toListedFile(result.photo),
         ...(result.title.length === 0 ? {} : { title: result.title }),
@@ -856,9 +1030,25 @@ function toInlineQueryResult(
     case 'document':
       return {
         ...shared,
+        ...optionalDescription(result.description),
         kind: 'document',
         file: toListedFile(result.document),
         title: result.title,
+      };
+    case 'video':
+      return {
+        ...shared,
+        ...optionalDescription(result.description),
+        kind: 'video',
+        file: toListedVideo(result.video),
+        title: result.title,
+      };
+    case 'voice':
+      return {
+        ...shared,
+        kind: 'voice',
+        file: toListedFile(result.voice),
+        ...(result.title.length === 0 ? {} : { title: result.title }),
       };
     default: {
       const unhandledResult: never = result;
@@ -867,8 +1057,15 @@ function toInlineQueryResult(
   }
 }
 
+/** A result's description as the answer keeps it, omitted when empty. */
+function optionalDescription(description: string): { readonly description?: string } {
+  return description.length === 0 ? {} : { description };
+}
+
 function toListedFile(file: SpecifiedInlineResultFile<StoredFile>): InlineResultListedFile {
-  return file.source === 'stored'
-    ? { source: 'stored', fileId: file.file.id }
-    : { source: 'web', url: file.url };
+  return file.source === 'stored' ? { source: 'stored', fileId: file.file.id } : file;
+}
+
+function toListedVideo(video: SpecifiedInlineResultVideo): InlineResultListedVideo {
+  return video.source === 'embedded_player' ? video : toListedFile(video);
 }
