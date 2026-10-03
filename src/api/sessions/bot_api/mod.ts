@@ -1658,8 +1658,9 @@ function handleSendContact(
  * Sends a static location as the official Bot API server's `process_send_location_query` reads
  * it: the latitude and longitude, each required, and an optional accuracy, which TDLib's
  * `get_input_geo_point` sends as whole meters, rounded up. As TDLib's `Location::init` decides,
- * coordinates that name no point on Earth are refused; the emulator checks them before it looks
- * at the chat, while TDLib checks them once the chat is found.
+ * coordinates that name no point on Earth are refused. The emulator checks them once it has read
+ * `chat_id` and the reply markup, but before it looks the chat up, while TDLib checks them once
+ * the chat is found.
  */
 function handleSendLocation(
   context: BotApiMethodContext,

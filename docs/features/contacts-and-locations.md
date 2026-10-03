@@ -68,8 +68,10 @@ in private chats and supergroups. A location message shows its `location` in the
 official server's [`JsonLocation`][json-location]: `latitude`, `longitude`, and
 `horizontal_accuracy` when known. Like a contact, it carries no text or caption, its media cannot be
 replaced, and a bot may still edit its inline keyboard. In supergroups a location needs
-`can_send_messages`, as [`can_send_message_content`][location-permission] requires, with
-`Bad Request: not enough rights to send locations to the chat`.
+`can_send_messages`, as [`can_send_message_content`][location-permission] requires and the
+[permission rules](supergroups.md#member-restrictions) give it to owners, administrators and other
+members. A bot without it gets `Bad Request: not enough rights to send locations to the chat`, and
+an account `403`.
 
 As the official server's [`get_location`][get-location] reads them, `sendLocation` requires a
 `latitude` and a `longitude`, which it trims, with `Bad Request: latitude is empty` or

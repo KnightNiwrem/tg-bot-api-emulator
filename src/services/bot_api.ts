@@ -444,7 +444,10 @@ export type SendContactRequest = SendRequestOptions & {
   readonly contact: WrittenContact;
 };
 
-/** A static location as `sendLocation` specifies it, on Earth as `isPointOnEarth` requires. */
+/**
+ * A static location as `sendLocation` specifies it, which its reader has checked to be on Earth,
+ * as `isPointOnEarth` requires.
+ */
 export type SendLocationRequest = SendRequestOptions & { readonly location: GeoLocation };
 
 export type SendFailureReason =
@@ -2377,7 +2380,12 @@ export class BotApiService {
     );
   }
 
-  /** Sends a static location to a private chat or a supergroup, as `sendMessage` sends text. */
+  /**
+   * Sends a static location to a private chat or a supergroup, as `sendMessage` sends text. The
+   * caller reads the location as `isPointOnEarth` requires, as the Bot API handler does, since
+   * TDLib refuses other coordinates while reading the request; a location carries no text to
+   * normalize.
+   */
   sendLocation(
     authenticatedBot: VirtualBotProfile,
     { location, ...options }: SendLocationRequest,

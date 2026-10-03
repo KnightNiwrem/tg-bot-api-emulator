@@ -307,6 +307,7 @@ Deno.test('accounts share locations in private chats and supergroups', async () 
     privateChat,
     supergroupChat,
     sendAccountMessage,
+    callBot,
     pressButton,
     getHistory,
     readUpdates,
@@ -355,12 +356,23 @@ Deno.test('accounts share locations in private chats and supergroups', async () 
     const { status } = await sendAccountMessage(ada.id, body);
     expectEqual(status, 400, `Expected ${JSON.stringify(body)} to be refused`);
   }
+  const supergroupKeyboard = await callBot('sendMessage', {
+    chat_id: supergroupChat.chatId,
+    text: 'Ready?',
+    reply_markup: { keyboard: [[{ text: 'Yes' }]] },
+  });
+  expectEqual(supergroupKeyboard.status, 200, 'Expected the bot to show a supergroup keyboard');
+  const groupHistoryLength = (await getHistory(grace.id, supergroupChat)).length;
   const supergroupPress = await pressButton(grace.id, {
     chat: supergroupChat,
-    text: 'Here',
+    text: 'Yes',
     location: { latitude: 0, longitude: 0 },
   });
-  expectEqual(supergroupPress.status, 400, 'Expected no supergroup button to take a location');
+  expectEqual(
+    [supergroupPress.status, (await getHistory(grace.id, supergroupChat)).length],
+    [400, groupHistoryLength],
+    'Expected a shown supergroup button to refuse a location and send nothing',
+  );
   expectEqual(
     [(await getHistory(ada.id, privateChat)).length, await readUpdates()],
     [historyLength, []],

@@ -248,7 +248,8 @@ export type OutgoingContentOtherThanPoll = Exclude<
  * as Telegram does, which also marks bot commands; then checks that the result fits in a message.
  * A rich message is checked and has its entities marked as `normalizeRichMessage` does, a poll is
  * checked as `normalizeNewPoll` does, and a contact is cleaned as `normalizeContact` cleans it. A
- * location, which carries no text, is checked where it is read, as `isPointOnEarth` checks it.
+ * location carries no text, so it passes as it is: every reader of a location, the Bot API handler
+ * and the account routes, checks it as `isPointOnEarth` requires before it becomes content.
  */
 export function normalizeOutgoingContent(
   content: OutgoingContentOtherThanPoll,
