@@ -1633,10 +1633,11 @@ export function createAccountRoutes(): Hono<SessionRouteContextTypes> {
     }
 
     const { inlineQueries, botMessageViews } = context.get('emulationSession');
-    const result = inlineQueries.chooseInlineQueryResult({
+    const result = await inlineQueries.chooseInlineQueryResult({
       accountId,
       inlineQueryId: context.req.param(INLINE_QUERY_ID_PARAMETER),
       resultId: requestBody.result_id,
+      signal: context.req.raw.signal,
     });
     if (!result.chosen) {
       return context.body(null, chosenInlineResultFailureStatus(result.reason));
@@ -2380,15 +2381,16 @@ function presentCallbackQueryForAccount({ id, callbackData, state }: CallbackQue
 /**
  * A missing query is not found; a result the answer does not hold rejects the request; an account
  * no longer a member of the supergroup, or one that may not use inline bots or send the result's
- * content there, is forbidden; and a query without an answer, or a bot the account blocks,
- * conflicts with sending it.
+ * content there, is forbidden; a query without an answer, or a bot the account blocks, conflicts
+ * with sending it; and media the result names by URL that the emulated web does not serve fails as
+ * a bad gateway, while media it serves that is not of the result's kind cannot be processed.
  */
 function chosenInlineResultFailureStatus(
   reason: Extract<
-    ReturnType<EmulationSession['inlineQueries']['chooseInlineQueryResult']>,
+    Awaited<ReturnType<EmulationSession['inlineQueries']['chooseInlineQueryResult']>>,
     { readonly chosen: false }
   >['reason'],
-): 400 | 403 | 404 | 409 {
+): 400 | 403 | 404 | 409 | 422 | 502 {
   switch (reason) {
     case 'inline_query_not_found':
       return 404;
@@ -2401,6 +2403,10 @@ function chosenInlineResultFailureStatus(
     case 'inline_query_not_answered':
     case 'bot_blocked':
       return 409;
+    case 'web_media_invalid':
+      return 422;
+    case 'web_media_unavailable':
+      return 502;
     default: {
       const unhandledReason: never = reason;
       throw new Error(`Unhandled inline query result choice failure: ${unhandledReason}`);

@@ -26,12 +26,13 @@ of the destination supergroup. Choices can be repeated while the account can sti
 Eligible chat bots receive the resulting account message; privacy mode includes messages sent
 through the observing bot.
 
-Supported results are articles with text or rich message input content, and cached photos/documents
-identified by a `file_id` the bot knows. Photo/document results may instead specify text or rich
-message input content. Supported caption formatting and inline keyboards apply. A rich message,
-which the official server's [`get_input_message_content`][input-message-content] reads in place of
-text, is read as for [`sendRichMessage`](rich-messages.md#sending-and-editing), and its buttons work
-as in any inline message. As TDLib's
+Supported results are articles with text or rich message input content, and photos/documents
+identified by a `file_id` the bot knows or [named by URL](#media-named-by-url). Photo/document
+results may instead specify text or rich message input content, which the chosen message holds in
+place of the media the listing shows. Supported caption formatting and inline keyboards apply. A
+rich message, which the official server's [`get_input_message_content`][input-message-content] reads
+in place of text, is read as for [`sendRichMessage`](rich-messages.md#sending-and-editing), and its
+buttons work as in any inline message. As TDLib's
 [`InlineQueriesManager::get_inline_message`][inline-rich-message] requires, its photos and documents
 are files the bot knows by `file_id`; an upload fails with
 `Bad Request: invalid inline message content specified`. The server prefixes its own descriptions of
@@ -48,6 +49,37 @@ and keyboards using the inline ID, with a result of `true`, even without access 
 can access the chat, it can also edit via `chat_id`/`message_id`; another bot cannot edit the inline
 message. TDLib makes the originating bot check in
 [`MessagesManager::can_edit_message`][edit-inline].
+
+### Media named by URL
+
+As TDLib's [`get_input_bot_inline_result`][results] reads them, `photo_url` and `document_url` name
+a file by URL when they contain a dot; otherwise they are a `file_id`. TDLib passes the URL on as a
+web document, so answering does not download it, and Telegram's servers check it: a URL the emulator
+cannot read as an HTTP or HTTPS URL, as for
+[files sent by URL](media-and-files.md#files-sent-by-url), fails with
+`Bad Request: WEBDOCUMENT_URL_INVALID`, and a photo without the `thumbnail_url` the Bot API requires
+fails with `Bad Request: PHOTO_THUMB_URL_EMPTY`. A document must declare a `mime_type` that begins
+with `application/pdf` or `application/zip`, which TDLib checks before anything else, failing with
+`Bad Request: unallowed document MIME type`. A refused answer records none of its results.
+
+Telegram downloads the file when an account sends the result: `messages.sendInlineBotResult`, unlike
+`messages.setInlineBotResults`, fails with the download errors `WEBPAGE_CURL_FAILED` and
+`WEBPAGE_MEDIA_EMPTY`. The emulator therefore downloads the file from the session's
+[emulated web](media-and-files.md#files-sent-by-url) each time an account chooses the result, and
+stores it as a new file, as a file a bot sends by URL. Inline results have their own contracts in
+the Bot API reference rather than those of the send methods: a photo must be a JPEG image of at most
+5 MB, which the emulator requires to be served as `image/jpeg`, and a document a PDF or ZIP file,
+served as `application/pdf` or `application/zip`, of at most 20 MB, the limit of other files sent by
+URL. A photo is then read as an uploaded one, and a document is named after the URL's last path
+segment and keeps the type it was served as. The declared photo dimensions and the thumbnail are
+validated and ignored; the client lists the thumbnail without the emulator downloading it.
+
+Choosing a result whose media no resource serves fails with `502`, and one whose media is empty,
+served as another type, or a photo that is not a readable image fails with `422`; neither sends a
+message or a `chosen_inline_result`. The file is downloaded before the account's access to the chat
+is checked. A result with `input_message_content` sends that content, and its file, which only the
+listing shows, is never downloaded. Cached answers, personal or not, hold the URL rather than a
+file, so every account that sends a result from one downloads the file anew.
 
 ### Answer caching
 
@@ -92,9 +124,9 @@ TDLib-compatible encoding. Tests should treat them as opaque values.
 
 ## Real gaps
 
-- **Additional results and input content.** URL-backed photo/document results and all other result
-  kinds are unsupported. Only text and rich message `input_message_content` works; locations,
-  venues, contacts, invoices and other content types do not. Compare the result dispatch in
+- **Additional results and input content.** Result kinds other than articles, photos and documents
+  are unsupported. Only text and rich message `input_message_content` works; locations, venues,
+  contacts, invoices and other content types do not. Compare the result dispatch in
   [`InlineQueriesManager::get_input_bot_inline_result`][results].
 
 - **Prepared messages and sharing.** Prepared inline messages and result-sharing flows are not
@@ -109,15 +141,20 @@ TDLib-compatible encoding. Tests should treat them as opaque values.
 ## Comparison limits
 
 TDLib passes query answers to Telegram's remote server in [`answer_inline_query`][answer]. The exact
-remote expiry and repeated-answer rules were not verified through live calls.
+remote expiry and repeated-answer rules were not verified through live calls. When Telegram
+downloads media named by URL, and whether it reuses a download for later sends, is inferred from the
+documented errors of `messages.setInlineBotResults` and `messages.sendInlineBotResult` rather than
+from source code; Telegram's own wording of `WEBDOCUMENT_URL_INVALID` and its URL checks are not
+public.
 
 ## Local evidence
 
 [Inline query service](../../src/services/inline_query.ts),
 [result parsing](../../src/api/sessions/bot_api/inline_query_answer_parameters.ts),
 [message edit permissions](../../src/types/virtual_message.ts),
-[inline tests](../../tests/inline_query_service_test.ts) and
-[HTTP tests](../../tests/emulation_api_test.ts).
+[inline tests](../../tests/inline_query_service_test.ts),
+[HTTP tests](../../tests/emulation_api_test.ts) and
+[URL media tests](../../tests/inline_result_media_api_test.ts).
 
 [edit-inline]: https://github.com/tdlib/td/blob/bc9c263e2bfee06aaab41e82db51a103376030bc/td/telegram/MessagesManager.cpp#L23183-L23292
 [results]: https://github.com/tdlib/td/blob/bc9c263e2bfee06aaab41e82db51a103376030bc/td/telegram/InlineQueriesManager.cpp#L870-L1280

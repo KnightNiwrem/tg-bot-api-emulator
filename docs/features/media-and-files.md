@@ -51,7 +51,9 @@ register what each URL serves with `POST /sessions/{sessionId}/web-resources` or
 client's `registerWebResource`, giving a status, `Content-Type`, body, or redirect `location`. A URL
 without a registered resource is unreachable, and the emulator never reaches the network.
 `sendPhoto`, `sendDocument`, `sendVideo`, `sendVoice`, `editMessageMedia`, including for inline
-messages, and the photo and document blocks of rich messages accept URLs.
+messages, and the photo and document blocks of rich messages accept URLs. Photo and document results
+of `answerInlineQuery` also accept them, with contracts of their own, and are downloaded when an
+account sends the result, as [inline mode](inline-mode.md#media-named-by-url) describes.
 
 The URL is read as TDLib's [`parse_url`][parse-url] reads it, so a URL without a protocol is an HTTP
 one, and a resource answers every spelling that TDLib reads alike; a URL TDLib refuses fails with
@@ -382,7 +384,8 @@ which the flag would take effect.
 
 A rich message that an inline query result sends must reuse its files by `file_id`: one naming a
 file by URL fails, as an upload does, with `Bad Request: invalid inline message content specified`.
-Telegram downloads such files; tests need inline query results that send files by URL.
+Telegram downloads such files; tests need inline rich messages that send files by URL, as photo and
+document results [already do](inline-mode.md#media-named-by-url).
 
 ### Video covers
 

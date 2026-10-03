@@ -1,0 +1,52 @@
+description: >-
+  A photo the bot names by URL, which Telegram downloads from the session's emulated web each
+  time an account sends the result; it must be served as `image/jpeg` and be at most 5 MB.
+type: object
+additionalProperties: false
+required:
+  - type
+  - id
+  - photo_url
+  - thumbnail_url
+properties:
+  type:
+    type: string
+    const: photo
+  id:
+    $ref: ./InlineQueryResultId.yaml
+  photo_url:
+    type: string
+    minLength: 1
+    description: An HTTP or HTTPS URL, read as TDLib reads the URL of a file sent by URL.
+  thumbnail_url:
+    type: string
+    minLength: 1
+    description: The URL of the thumbnail the client lists, which is not downloaded.
+  photo_width:
+    type: integer
+    description: Validated and ignored; the sent photo has the downloaded image's width.
+  photo_height:
+    type: integer
+    description: Validated and ignored; the sent photo has the downloaded image's height.
+  title:
+    type: string
+  description:
+    type: string
+  caption:
+    $ref: ./Caption.yaml
+  parse_mode:
+    $ref: ./ParseMode.yaml
+  caption_entities:
+    $ref: ./CaptionEntitiesParameter.yaml
+  show_caption_above_media:
+    type: boolean
+    default: false
+  reply_markup:
+    $ref: ./InlineKeyboardMarkup.yaml
+  input_message_content:
+    oneOf:
+      - $ref: ./InputTextMessageContent.yaml
+      - $ref: ./InputRichMessageContent.yaml
+    description: >-
+      Text, if it has text, or a rich message that sending the result writes instead of the
+      photo, which is then not downloaded.

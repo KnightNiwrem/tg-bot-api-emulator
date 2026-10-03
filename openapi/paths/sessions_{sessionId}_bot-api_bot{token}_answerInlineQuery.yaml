@@ -1,12 +1,13 @@
 description: >-
   Telegram Bot API method for answering an inline query an account sent to the bot, once, with
   up to 50 results that the account's client lists and sends. Article results, and photo and
-  document results with files the bot knows by `file_id`, are supported. Results of other
-  types (`Bad Request: inline query results of type "<type>" are not supported`), files given
-  by URL (`Bad Request: sending files by URL is not supported`), and `input_message_content`
-  of a location, venue, contact, or invoice (`Bad Request: inline query results sending a
-  location, venue, contact, or invoice are not supported`) are rejected with these emulator
-  errors. Thumbnails, and the dimensions of a photo, are validated and ignored. Text and
+  document results with files the bot knows by `file_id` or names by URL, are supported. A
+  file named by URL is not downloaded with the answer: Telegram downloads it from the session's
+  emulated web each time an account sends the result. Results of other types (`Bad Request:
+  inline query results of type "<type>" are not supported`) and `input_message_content` of a
+  location, venue, contact, or invoice (`Bad Request: inline query results sending a location,
+  venue, contact, or invoice are not supported`) are rejected with these emulator errors.
+  Thumbnails, and the dimensions of a photo, are validated and ignored. Text and
   captions are read and normalized as by `sendMessage` and `sendPhoto`, and a rich message as
   by `sendRichMessage`, whose files must be reused by `file_id`: TDLib refuses an uploaded file,
   and the emulator refuses a file sent by URL, both with `Bad Request: invalid inline message
@@ -57,7 +58,9 @@ post:
         query result`), an article without message text (`Bad Request: can't parse
         InlineQueryResult: Input message content is not specified`), or text or formatting it
         cannot read, described as for `sendMessage` after `Bad Request: can't parse
-        InlineQueryResult: `. Every result's file is then resolved: a `file_id` the bot does
+        InlineQueryResult: `, or a document named by URL whose `mime_type` does not begin with
+        `application/pdf` or `application/zip` (`Bad Request: unallowed document MIME type`).
+        Every result's file is then resolved: a `file_id` the bot does
         not know (`Bad Request: wrong remote file identifier specified: can't unserialize it`)
         or of another file type (`Bad Request: can't use file of type Document as Photo`).
         TDLib then checks the button's `start_parameter` for being empty (`Bad Request: can't
@@ -74,8 +77,11 @@ post:
         and each result for an empty identifier (`Bad Request: RESULT_ID_EMPTY`), one longer
         than 64 bytes (`Bad Request: RESULT_ID_INVALID`), a repeated one (`Bad Request:
         RESULT_ID_DUPLICATE`), an empty article title (`Bad Request: ARTICLE_TITLE_EMPTY`), an
-        empty document title (`Bad Request: FILE_TITLE_EMPTY`), and callback data longer than
-        64 bytes (`Bad Request: BUTTON_DATA_INVALID`).
+        empty document title (`Bad Request: FILE_TITLE_EMPTY`), a file URL that is not an HTTP
+        or HTTPS URL (`Bad Request: WEBDOCUMENT_URL_INVALID`), a photo named by URL without a
+        `thumbnail_url` (`Bad Request: PHOTO_THUMB_URL_EMPTY`), and callback data longer than
+        64 bytes (`Bad Request: BUTTON_DATA_INVALID`). A refused answer records none of its
+        results.
       content:
         application/json:
           schema:

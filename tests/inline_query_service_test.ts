@@ -14,9 +14,11 @@ import {
   InlineQueryService,
   type SpecifiedInlineQueryResult,
 } from '../src/services/inline_query.ts';
+import { MediaFileService } from '../src/services/media_file.ts';
 import { PrivateMessagingService } from '../src/services/private_messaging.ts';
 import { SupergroupMessagingService } from '../src/services/supergroup_messaging.ts';
 import { VirtualUserService } from '../src/services/virtual_user.ts';
+import type { WebFileDownload } from '../src/services/web_file_download.ts';
 import type { ChatDomainEvent } from '../src/types/chat_domain_event.ts';
 import { ALL_CHAT_PERMISSIONS } from '../src/types/chat_permissions.ts';
 import type { InlineQueryChat } from '../src/types/inline_query.ts';
@@ -174,7 +176,7 @@ Deno.test("InlineQueryService checks answers in Telegram's order", () => {
   }
 });
 
-Deno.test("InlineQueryService sends a chosen result as the account's message through the bot", () => {
+Deno.test("InlineQueryService sends a chosen result as the account's message through the bot", async () => {
   const {
     virtualUsers,
     files,
@@ -200,7 +202,7 @@ Deno.test("InlineQueryService sends a chosen result as the account's message thr
       inlineQueryId: inlineQuery.id,
       resultId,
     });
-  const unanswered = choose('1');
+  const unanswered = await choose('1');
   if (unanswered.chosen || unanswered.reason !== 'inline_query_not_answered') {
     throw new Error('Expected an unanswered query to offer no result');
   }
@@ -215,7 +217,8 @@ Deno.test("InlineQueryService sends a chosen result as the account's message thr
       {
         kind: 'photo',
         id: 'photo',
-        photo,
+        photo: { source: 'stored', file: photo },
+        thumbnailUrl: '',
         title: '',
         description: '',
         messageContent: {
@@ -235,14 +238,14 @@ Deno.test("InlineQueryService sends a chosen result as the account's message thr
     throw new Error(`Expected the answer to be recorded, received ${answered.reason}`);
   }
 
-  const failures = [choose('1', 999), choose('unknown')].map((result) =>
+  const failures = [await choose('1', 999), await choose('unknown')].map((result) =>
     result.chosen ? 'chosen' : result.reason
   );
   if (JSON.stringify(failures) !== JSON.stringify(['inline_query_not_found', 'result_not_found'])) {
     throw new Error(`Expected unknown queries and results to be refused, received ${failures}`);
   }
-  const chosenArticle = choose('1');
-  const chosenPhoto = choose('photo');
+  const chosenArticle = await choose('1');
+  const chosenPhoto = await choose('photo');
   if (!chosenArticle.chosen || !chosenPhoto.chosen) {
     throw new Error('Expected both results to be sent');
   }
@@ -274,13 +277,13 @@ Deno.test("InlineQueryService sends a chosen result as the account's message thr
   }
 
   blockedUsers.block(account.profile.id, chatBot.profile.id);
-  const blocked = choose('1');
+  const blocked = await choose('1');
   if (blocked.chosen || blocked.reason !== 'bot_blocked') {
     throw new Error("Expected a blocked chat's bot to refuse the result");
   }
 });
 
-Deno.test('InlineQueryService sends results to supergroups the inline bot is not a member of', () => {
+Deno.test('InlineQueryService sends results to supergroups the inline bot is not a member of', async () => {
   const { sharedChats, inlineQueries, account, inlineBot, sendQuery } = createInlineQueryFixture();
   sharedChats.registerSupergroup(SUPERGROUP, account.profile.id);
   const inlineQuery = sendQuery({ type: 'supergroup', chatId: SUPERGROUP.id });
@@ -293,7 +296,7 @@ Deno.test('InlineQueryService sends results to supergroups the inline bot is not
     nextOffset: '',
   });
 
-  const chosen = inlineQueries.chooseInlineQueryResult({
+  const chosen = await inlineQueries.chooseInlineQueryResult({
     accountId: account.profile.id,
     inlineQueryId: inlineQuery.id,
     resultId: '1',
@@ -307,13 +310,172 @@ Deno.test('InlineQueryService sends results to supergroups the inline bot is not
   }
 
   sharedChats.removeChatMember(SUPERGROUP.id, account.profile.id, { status: 'left' });
-  const departed = inlineQueries.chooseInlineQueryResult({
+  const departed = await inlineQueries.chooseInlineQueryResult({
     accountId: account.profile.id,
     inlineQueryId: inlineQuery.id,
     resultId: '1',
   });
   if (departed.chosen || departed.reason !== 'not_a_member') {
     throw new Error('Expected an account that left to be unable to send the result');
+  }
+});
+
+Deno.test('InlineQueryService downloads media named by URL each time a result is sent', async () => {
+  const {
+    files,
+    webResources,
+    downloadedUrls,
+    inlineQueries,
+    publishedEvents,
+    account,
+    inlineBot,
+    sendQuery,
+  } = createInlineQueryFixture();
+  const serve = (url: string, mediaType: string, content: Uint8Array<ArrayBuffer>) =>
+    webResources.set(url, { downloaded: true, content, mediaType });
+  serve('https://example.com/cat.jpg', 'image/jpeg', jpegImage(4, 3));
+  serve('https://example.com/dog.png', 'image/jpeg', new Uint8Array([1, 2, 3]));
+  serve('https://example.com/cats.pdf', 'application/pdf', new Uint8Array([1, 2]));
+  serve('https://example.com/cats.zip', 'application/x-zip', new Uint8Array([1, 2]));
+  const webPhoto = (
+    id: string,
+    url: string,
+    overrides: Partial<Extract<SpecifiedInlineQueryResult, { readonly kind: 'photo' }>> = {},
+  ): SpecifiedInlineQueryResult => ({
+    kind: 'photo',
+    id,
+    photo: { source: 'web', url },
+    thumbnailUrl: 'https://example.com/thumbnail.jpg',
+    title: '',
+    description: '',
+    messageContent: {
+      kind: 'web_photo',
+      url,
+      caption: 'A /cat',
+      showsCaptionAboveMedia: true,
+    },
+    ...overrides,
+  });
+  const webDocument = (id: string, url: string): SpecifiedInlineQueryResult => ({
+    kind: 'document',
+    id,
+    document: { source: 'web', url },
+    title: 'Cats',
+    description: '',
+    messageContent: { kind: 'web_document', url, caption: '' },
+  });
+  const inlineQuery = sendQuery();
+  const answer = (results: readonly SpecifiedInlineQueryResult[]) =>
+    inlineQueries.answerInlineQuery({
+      fromBotId: inlineBot.profile.id,
+      inlineQueryId: inlineQuery.id,
+      results,
+      cacheTimeSeconds: 300,
+      isPersonal: false,
+      nextOffset: '',
+    });
+
+  const refusals = [
+    answer([webPhoto('1', 'ftp://example.com/cat.jpg')]),
+    answer([webDocument('1', 'ftp://example.com/cats.pdf')]),
+    answer([webPhoto('1', 'https://example.com/cat.jpg', { thumbnailUrl: '' })]),
+    answer([webPhoto('1', 'https://example.com/cat.jpg', {
+      messageContent: {
+        kind: 'web_photo',
+        url: 'https://example.com/cat.jpg',
+        caption: 'a'.repeat(1_025),
+        showsCaptionAboveMedia: false,
+      },
+    })]),
+  ].map((result) => result.answered ? 'answered' : result.reason);
+  if (
+    JSON.stringify(refusals) !== JSON.stringify([
+      'web_document_url_invalid',
+      'web_document_url_invalid',
+      'photo_thumbnail_url_empty',
+      'caption_too_long',
+    ])
+  ) {
+    throw new Error(`Expected Telegram's checks of media named by URL, received ${refusals}`);
+  }
+
+  const answered = answer([
+    webPhoto('photo', 'https://example.com/cat.jpg'),
+    webDocument('document', 'https://example.com/cats.pdf'),
+    webPhoto('text', 'https://example.com/unserved.jpg', {
+      messageContent: { kind: 'text', text: 'Cats' },
+    }),
+    webPhoto('unserved', 'https://example.com/unserved.jpg'),
+    webPhoto('unreadable', 'https://example.com/dog.png'),
+    webDocument('mistyped', 'https://example.com/cats.zip'),
+  ]);
+  if (!answered.answered || answered.inlineQuery.state.status !== 'answered') {
+    throw new Error('Expected the answer naming media by URL to be recorded');
+  }
+  const [recordedPhoto] = answered.inlineQuery.state.answer.results;
+  if (
+    recordedPhoto.kind !== 'photo' || recordedPhoto.file.source !== 'web' ||
+    recordedPhoto.messageContent.kind !== 'web_photo' ||
+    JSON.stringify(recordedPhoto.messageContent.caption.entities) !==
+      JSON.stringify([{ type: 'bot_command', offset: 2, length: 4 }]) ||
+    downloadedUrls.length !== 0
+  ) {
+    throw new Error(
+      `Expected the answer to keep the URL undownloaded, received ${JSON.stringify(recordedPhoto)}`,
+    );
+  }
+
+  const choose = (resultId: string) =>
+    inlineQueries.chooseInlineQueryResult({
+      accountId: account.profile.id,
+      inlineQueryId: inlineQuery.id,
+      resultId,
+    });
+  const [firstPhoto, secondPhoto, document, text] = [
+    await choose('photo'),
+    await choose('photo'),
+    await choose('document'),
+    await choose('text'),
+  ].map((result) => {
+    if (!result.chosen) {
+      throw new Error(`Expected the result to be sent, received ${result.reason}`);
+    }
+    return result.message.content;
+  });
+  const firstPhotoFile = firstPhoto.kind === 'photo' ? files.getFile(firstPhoto.fileId) : undefined;
+  const documentFile = document.kind === 'document' ? files.getFile(document.fileId) : undefined;
+  if (
+    firstPhoto.kind !== 'photo' || secondPhoto.kind !== 'photo' ||
+    firstPhoto.fileId === secondPhoto.fileId || firstPhotoFile?.type !== 'photo' ||
+    firstPhotoFile.width !== 4 || firstPhoto.caption.text !== 'A /cat' ||
+    !firstPhoto.showsCaptionAboveMedia || firstPhoto.hasSpoiler ||
+    documentFile?.type !== 'document' || documentFile.fileName !== 'cats.pdf' ||
+    documentFile.mimeType !== 'application/pdf' || text.kind !== 'text' ||
+    JSON.stringify(downloadedUrls) !== JSON.stringify([
+        'https://example.com/cat.jpg',
+        'https://example.com/cat.jpg',
+        'https://example.com/cats.pdf',
+      ])
+  ) {
+    throw new Error(
+      `Expected each sending to download its media anew, received ${
+        JSON.stringify([firstPhoto, secondPhoto, documentFile, text, downloadedUrls])
+      }`,
+    );
+  }
+
+  const publishedEventCount = publishedEvents.length;
+  const failures = [
+    await choose('unserved'),
+    await choose('unreadable'),
+    await choose('mistyped'),
+  ].map((result) => result.chosen ? 'chosen' : result.reason);
+  if (
+    JSON.stringify(failures) !==
+      JSON.stringify(['web_media_unavailable', 'web_media_invalid', 'web_media_invalid']) ||
+    publishedEvents.length !== publishedEventCount
+  ) {
+    throw new Error(`Expected unusable media to be refused unpublished, received ${failures}`);
   }
 });
 
@@ -477,6 +639,21 @@ function createInlineQueryFixture() {
     currentUnixTimeSeconds: () => 1_700_000_000,
   });
   let currentTimeMilliseconds = 1_700_000_000_000;
+  // What the emulated web serves at each URL, as `formatHttpUrl` spells it; other URLs fail.
+  const webResources = new Map<string, WebFileDownload>();
+  const downloadedUrls: string[] = [];
+  const mediaFiles = new MediaFileService({
+    files,
+    uploadProfile: 'cloud',
+    webFiles: {
+      download: (url) => {
+        downloadedUrls.push(url);
+        return Promise.resolve(
+          webResources.get(url) ?? { downloaded: false, reason: 'content_unavailable' },
+        );
+      },
+    },
+  });
   const inlineQueries = new InlineQueryService({
     accounts,
     bots,
@@ -484,6 +661,7 @@ function createInlineQueryFixture() {
     privateMessages: privateMessaging,
     supergroupMessages: supergroupMessaging,
     inlineQueries: new InlineQueryRepository(),
+    webMediaFiles: mediaFiles,
     events,
     currentTimeMilliseconds: () => currentTimeMilliseconds,
   });
@@ -509,6 +687,8 @@ function createInlineQueryFixture() {
   return {
     virtualUsers,
     files,
+    webResources,
+    downloadedUrls,
     sharedChats,
     blockedUsers,
     inlineQueries,
@@ -544,4 +724,17 @@ function createBot(
     throw new Error(`Expected bot creation to succeed, received ${result.reason}`);
   }
   return result.bot;
+}
+
+/** A JPEG image of only a frame header, which is all the emulator reads of it. */
+function jpegImage(width: number, height: number): Uint8Array<ArrayBuffer> {
+  const image = new Uint8Array(21);
+  const view = new DataView(image.buffer);
+  view.setUint16(0, 0xffd8);
+  view.setUint16(2, 0xffc0);
+  view.setUint16(4, 17);
+  view.setUint8(6, 8);
+  view.setUint16(7, height);
+  view.setUint16(9, width);
+  return image;
 }

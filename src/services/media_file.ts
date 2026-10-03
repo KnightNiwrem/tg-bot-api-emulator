@@ -1,11 +1,17 @@
-import { getDocumentMimeType, getFileNameExtension } from '../media/document_file.ts';
+import {
+  cleanUploadedFileName,
+  getDocumentMimeType,
+  getFileNameExtension,
+} from '../media/document_file.ts';
 import { readImageDimensions } from '../media/image_dimensions.ts';
 import { getVideoMimeType } from '../media/video_file.ts';
 import { getVoiceFileExtension, getVoiceMimeType } from '../media/voice_file.ts';
 import { formatHttpUrl, getHttpUrlFileName, parseHttpUrl } from '../types/http_url.ts';
 import {
   type DocumentUpload,
+  type InlineResultWebFileKind,
   MAX_BOT_DOWNLOAD_FILE_BYTES,
+  MAX_INLINE_RESULT_WEB_FILE_BYTES,
   MAX_PHOTO_UPLOAD_BYTES,
   MAX_THUMBNAIL_UPLOAD_BYTES,
   MAX_WEB_FILE_BYTES,
@@ -77,6 +83,19 @@ const ACCEPTS_WEB_MEDIA_TYPE: Readonly<Record<WebFileKind, (mediaType: string) =
   voice: (mediaType) => mediaType === 'audio/ogg',
 };
 
+/**
+ * Whether Telegram sends a file that an inline query result names by URL, served as a media type,
+ * as the result's kind of media: a photo served as a JPEG image, the only format the Bot API
+ * documents for `InlineQueryResultPhoto`, and a document served as a PDF or ZIP file, the only
+ * kinds it documents for `InlineQueryResultDocument`.
+ */
+const ACCEPTS_INLINE_RESULT_WEB_MEDIA_TYPE: Readonly<
+  Record<InlineResultWebFileKind, (mediaType: string) => boolean>
+> = {
+  photo: (mediaType) => mediaType === 'image/jpeg',
+  document: (mediaType) => WEB_DOCUMENT_MEDIA_TYPES.has(mediaType),
+};
+
 /** Downloads the file at a URL, as `WebFileDownloader` does. */
 interface WebFileSource {
   download(url: string, maxContentBytes: number, signal?: AbortSignal): Promise<WebFileDownload>;
@@ -88,6 +107,15 @@ export interface WebFileDownloadRequest {
   /** What the bot sends the file as, which decides how large it may be and of which types. */
   readonly fileKind: WebFileKind;
   /** Aborts the download when the bot stops waiting for the answer. */
+  readonly signal?: AbortSignal;
+}
+
+export interface InlineResultWebFileDownloadRequest {
+  /** The URL as the bot's answer named it. */
+  readonly url: string;
+  /** What the result sends the file as, which decides how large it may be and of which types. */
+  readonly fileKind: InlineResultWebFileKind;
+  /** Aborts the download when the account stops waiting for the result to be sent. */
   readonly signal?: AbortSignal;
 }
 
@@ -233,32 +261,55 @@ export class MediaFileService {
    * including larger content, fails as Telegram's `WEBPAGE_CURL_FAILED`, and empty content or
    * content of another type as its `WEBPAGE_MEDIA_EMPTY`.
    */
-  async downloadWebFile(
+  downloadWebFile(
     { url, fileKind, signal }: WebFileDownloadRequest,
   ): Promise<WebFileDownloadResult> {
-    const parsing = parseHttpUrl(url);
-    if (!parsing.parsed) {
-      return { downloaded: false, reason: 'file_url_invalid', urlError: parsing.error };
-    }
-    const download = await this.#webFiles.download(
-      formatHttpUrl(parsing.url),
+    return this.#downloadWebContent(
+      url,
       MAX_WEB_FILE_BYTES[fileKind],
+      ACCEPTS_WEB_MEDIA_TYPE[fileKind],
       signal,
     );
-    if (!download.downloaded) {
-      return { downloaded: false, reason: 'web_content_unavailable' };
-    }
-    const { content, mediaType } = download;
-    if (
-      content.length === 0 || mediaType === undefined ||
-      !ACCEPTS_WEB_MEDIA_TYPE[fileKind](mediaType)
-    ) {
-      return { downloaded: false, reason: 'web_content_type_invalid' };
-    }
-    return {
-      downloaded: true,
-      webFile: { content, mediaType, fileName: getHttpUrlFileName(parsing.url) },
-    };
+  }
+
+  /**
+   * Downloads a file that an inline query result names by URL, as Telegram does when an account
+   * sends the result, with the contracts the Bot API documents for inline results rather than
+   * those of the send methods: a photo of at most 5 MB served as `image/jpeg`, and a document of at
+   * most 20 MB served as a PDF or ZIP file. The URL is read, and failures are given, as
+   * `downloadWebFile` reads and gives them.
+   */
+  downloadInlineResultWebFile(
+    { url, fileKind, signal }: InlineResultWebFileDownloadRequest,
+  ): Promise<WebFileDownloadResult> {
+    return this.#downloadWebContent(
+      url,
+      MAX_INLINE_RESULT_WEB_FILE_BYTES[fileKind],
+      ACCEPTS_INLINE_RESULT_WEB_MEDIA_TYPE[fileKind],
+      signal,
+    );
+  }
+
+  /**
+   * Prepares a photo downloaded from a URL as `preparePhotoUpload` prepares an uploaded one, so
+   * that content that is not a readable image, or whose dimensions Telegram refuses, fails.
+   */
+  prepareWebPhotoUpload(webFile: WebFile): PhotoUploadPreparation {
+    return this.preparePhotoUpload({ content: webFile.content, source: 'web_download' });
+  }
+
+  /**
+   * Prepares a file downloaded from a URL as a document, as `prepareDocumentUpload` prepares an
+   * upload: named after the URL's last path segment, cleaned as an upload's name, and typed as it
+   * was served. TDLib sends a document given by URL as a web document, which takes no thumbnail.
+   */
+  prepareWebDocumentUpload(webFile: WebFile): DocumentUploadPreparation {
+    return this.prepareDocumentUpload({
+      content: webFile.content,
+      fileName: cleanUploadedFileName(webFile.fileName),
+      mimeType: webFile.mediaType,
+      source: 'web_download',
+    });
   }
 
   /**
@@ -431,6 +482,39 @@ export class MediaFileService {
   /** Finds a file by its `file_unique_id`, which is the same for every user. */
   findFileByUniqueId(uniqueId: string): StoredFile | undefined {
     return this.#files.getFileByUniqueId(uniqueId);
+  }
+
+  /**
+   * Downloads a file from a URL read as TDLib's `parse_url` reads it, failing for content that
+   * cannot be downloaded within `maxContentBytes`, and for empty content or content served as a
+   * media type that `acceptsMediaType` refuses.
+   */
+  async #downloadWebContent(
+    url: string,
+    maxContentBytes: number,
+    acceptsMediaType: (mediaType: string) => boolean,
+    signal: AbortSignal | undefined,
+  ): Promise<WebFileDownloadResult> {
+    const parsing = parseHttpUrl(url);
+    if (!parsing.parsed) {
+      return { downloaded: false, reason: 'file_url_invalid', urlError: parsing.error };
+    }
+    const download = await this.#webFiles.download(
+      formatHttpUrl(parsing.url),
+      maxContentBytes,
+      signal,
+    );
+    if (!download.downloaded) {
+      return { downloaded: false, reason: 'web_content_unavailable' };
+    }
+    const { content, mediaType } = download;
+    if (content.length === 0 || mediaType === undefined || !acceptsMediaType(mediaType)) {
+      return { downloaded: false, reason: 'web_content_type_invalid' };
+    }
+    return {
+      downloaded: true,
+      webFile: { content, mediaType, fileName: getHttpUrlFileName(parsing.url) },
+    };
   }
 
   /**

@@ -11163,7 +11163,13 @@ Deno.test('answerInlineQuery and the inline query routes follow Telegram checks'
       ],
     }),
     await answer({
-      results: [{ type: 'photo', id: '1', photo_url: 'https://example.com/cat.jpg' }],
+      results: [{
+        type: 'document',
+        id: '1',
+        title: 'Cats',
+        document_url: 'https://example.com/cats.txt',
+        mime_type: 'text/plain',
+      }],
     }),
     await answer({ results: [{ type: 'photo', id: '1', photo_file_id: 'unknown' }] }),
     await answer({ results: [{ type: 'document', id: '1', title: '', document_file_id: 'x' }] }),
@@ -11185,7 +11191,7 @@ Deno.test('answerInlineQuery and the inline query routes follow Telegram checks'
       "Bad Request: can't parse InlineQueryResult: Input message content is not specified",
       'Bad Request: inline query results sending a location, venue, contact, or invoice are not supported',
       "Bad Request: can't parse InlineQueryResult: Can't parse entities: Character '.' is reserved and must be escaped with the preceding '\\'",
-      'Bad Request: sending files by URL is not supported',
+      'Bad Request: unallowed document MIME type',
       "Bad Request: wrong remote file identifier specified: can't unserialize it",
       "Bad Request: wrong remote file identifier specified: can't unserialize it",
       'Bad Request: unallowed characters in start_parameter are used',

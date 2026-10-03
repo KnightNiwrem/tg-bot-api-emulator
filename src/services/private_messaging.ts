@@ -159,8 +159,11 @@ export interface SendAccountInlineResultInput {
     readonly botId: number;
   };
   readonly viaBotId: number;
-  /** Content the inline bot's answer holds, which Telegram checked when the bot answered. */
-  readonly content: MessageContent;
+  /**
+   * What the result sends, which Telegram checked when the bot answered: content the answer holds,
+   * as `existing` content, or media downloaded from a URL, whose upload is stored with the message.
+   */
+  readonly content: Exclude<NormalizedOutgoingContent, { readonly kind: 'poll' }>;
   /** Omitted when the result sends no inline keyboard. */
   readonly inlineKeyboard?: InlineKeyboard;
 }
@@ -887,7 +890,10 @@ export class PrivateMessagingService {
   sendAccountForward(
     { fromAccountId, to, forward }: SendAccountForwardInput,
   ): SendAccountForwardResult {
-    return this.#sendAccountPreparedMessage(fromAccountId, to.botId, forward);
+    return this.#sendAccountPreparedMessage(fromAccountId, to.botId, {
+      ...forward,
+      content: { kind: 'existing', content: forward.content },
+    });
   }
 
   /**
@@ -1685,14 +1691,15 @@ export class PrivateMessagingService {
   }
 
   /**
-   * Sends content that is ready to store, such as an inline query result or a forward, from an
-   * account to its private chat with a bot, which the account must not block.
+   * Sends content that passed its checks, such as an inline query result or a forward, from an
+   * account to its private chat with a bot, which the account must not block. Its upload, if any,
+   * is stored with the message.
    */
   #sendAccountPreparedMessage(
     fromAccountId: number,
     botId: number,
-    preparedMessage: {
-      readonly content: MessageContent;
+    { content, ...preparedMessage }: {
+      readonly content: Exclude<NormalizedOutgoingContent, { readonly kind: 'poll' }>;
       readonly inlineKeyboard?: InlineKeyboard;
       readonly viaBotId?: number;
       readonly forwardInfo?: MessageForwardInfo;
@@ -1718,6 +1725,7 @@ export class PrivateMessagingService {
       sent: true,
       message: this.#storePrivateMessage({
         ...preparedMessage,
+        content: storeOutgoingContent(content, this.#files, this.#polls),
         account,
         bot,
         authorRole: 'account',

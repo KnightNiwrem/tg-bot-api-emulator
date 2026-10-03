@@ -1,7 +1,7 @@
 import type { GeoLocation } from './geo_location.ts';
 import type { InlineKeyboard } from './inline_keyboard.ts';
 import type { StoredFileId } from './stored_file.ts';
-import type { MessageContent } from './virtual_message.ts';
+import type { FormattedText, MessageContent } from './virtual_message.ts';
 
 /** Telegram's decimal text form of a 64-bit inline query identifier. */
 export type InlineQueryId = string;
@@ -27,11 +27,44 @@ export type InlineQueryChat =
   | { readonly type: 'private'; readonly botId: number }
   | { readonly type: 'supergroup'; readonly chatId: number };
 
+/**
+ * Media of a result that the bot names by URL, with the caption it is sent with. Telegram
+ * downloads the file each time an account sends the result, so the answer holds only its URL.
+ */
+export type InlineResultWebMedia =
+  | {
+    readonly kind: 'web_photo';
+    readonly url: string;
+    /** Empty for no caption. */
+    readonly caption: FormattedText;
+    readonly showsCaptionAboveMedia: boolean;
+  }
+  | {
+    readonly kind: 'web_document';
+    readonly url: string;
+    /** Empty for no caption. */
+    readonly caption: FormattedText;
+  };
+
+/**
+ * What sending a result writes: content as a message holds it, or media given by URL, which is
+ * downloaded when the result is sent.
+ */
+export type InlineResultMessageContent = MessageContent | InlineResultWebMedia;
+
+/** The file a media result lists: one the bot knows by `file_id`, or one it names by URL. */
+export type InlineResultListedFile =
+  | { readonly source: 'stored'; readonly fileId: StoredFileId }
+  | { readonly source: 'web'; readonly url: string };
+
 interface InlineQueryResultBase {
   /** The bot's identifier of the result, unique within its answer. */
   readonly id: string;
-  /** What choosing the result sends to the chat. */
-  readonly messageContent: MessageContent;
+  /**
+   * What choosing the result sends to the chat: the result's own media, or the content of its
+   * `input_message_content`, which the listing does not show.
+   */
+  readonly messageContent: InlineResultMessageContent;
   /** Omitted when the sent message has no inline keyboard. */
   readonly inlineKeyboard?: InlineKeyboard;
 }
@@ -47,30 +80,27 @@ export interface ArticleInlineQueryResult extends InlineQueryResultBase {
   readonly url?: string;
 }
 
-/** A photo the bot knows by its `file_id`, which the client lists as the photo. */
+/** A photo, which the client lists as the photo. */
 export interface PhotoInlineQueryResult extends InlineQueryResultBase {
   readonly kind: 'photo';
-  readonly fileId: StoredFileId;
+  readonly file: InlineResultListedFile;
   /** Omitted when empty. */
   readonly title?: string;
   /** Omitted when empty. */
   readonly description?: string;
 }
 
-/** A document the bot knows by its `file_id`, which the client lists by its title. */
+/** A document, which the client lists by its title. */
 export interface DocumentInlineQueryResult extends InlineQueryResultBase {
   readonly kind: 'document';
-  readonly fileId: StoredFileId;
+  readonly file: InlineResultListedFile;
   /** Never empty. */
   readonly title: string;
   /** Omitted when empty. */
   readonly description?: string;
 }
 
-/**
- * A result of an answer to an inline query. The Bot API's other result types, and results with
- * files given by URL, are not supported.
- */
+/** A result of an answer to an inline query. The Bot API's other result types are not supported. */
 export type InlineQueryResult =
   | ArticleInlineQueryResult
   | PhotoInlineQueryResult

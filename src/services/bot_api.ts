@@ -871,10 +871,6 @@ interface InlineQueryResultRequestBase {
 }
 
 /**
- * A result of `answerInlineQuery`, as the Bot API specifies it. `messageText` is the text of its
- * `input_message_content`, which a photo or document result sends instead of its own file.
- */
-/**
  * What a result's `input_message_content` sends: text, or a rich message, which reuses its files
  * by the `file_id` the bot knows them by.
  */
@@ -887,6 +883,18 @@ export type InlineResultMessageContentRequest =
     readonly detectsEntities: boolean;
   };
 
+/**
+ * The file of a media result: one the bot knows by `file_id`, or one it names by URL, which
+ * Telegram downloads when an account sends the result.
+ */
+export type InlineResultFileRequest =
+  | { readonly kind: 'file_id'; readonly fileId: string }
+  | { readonly kind: 'url'; readonly url: string };
+
+/**
+ * A result of `answerInlineQuery`, as the Bot API specifies it. A media result sends the content
+ * of its `input_message_content`, if it has one, instead of its own file.
+ */
 export type InlineQueryResultRequest =
   | (InlineQueryResultRequestBase & {
     readonly kind: 'article';
@@ -897,8 +905,9 @@ export type InlineQueryResultRequest =
   })
   | (InlineQueryResultRequestBase & {
     readonly kind: 'photo';
-    /** The `file_id` the bot knows the photo by. */
-    readonly photoFileId: string;
+    readonly photo: InlineResultFileRequest;
+    /** The URL of the thumbnail the client lists; empty for none. */
+    readonly thumbnailUrl: string;
     /** Empty for none. */
     readonly title: string;
     /** Empty text for no caption. */
@@ -908,8 +917,7 @@ export type InlineQueryResultRequest =
   })
   | (InlineQueryResultRequestBase & {
     readonly kind: 'document';
-    /** The `file_id` the bot knows the document by. */
-    readonly documentFileId: string;
+    readonly document: InlineResultFileRequest;
     readonly title: string;
     /** Empty text for no caption. */
     readonly caption: SpecifiedFormattedText;
@@ -1641,6 +1649,8 @@ interface ChatMemberships {
 interface MediaFiles {
   preparePhotoUpload(request: PhotoUploadRequest): PhotoUploadPreparation;
   prepareDocumentUpload(request: DocumentUploadRequest): DocumentUploadPreparation;
+  prepareWebPhotoUpload(webFile: WebFile): PhotoUploadPreparation;
+  prepareWebDocumentUpload(webFile: WebFile): DocumentUploadPreparation;
   prepareVideoUpload(request: VideoUploadRequest): VideoUploadPreparation;
   prepareVoiceUpload(request: VoiceUploadRequest): VoiceUploadPreparation;
   findObserverFile(observerId: number, fileId: string): StoredFile | undefined;
@@ -3280,11 +3290,9 @@ export class BotApiService {
       }
       return { resolved: false, failure: fileIdFailure(file, 'photo') };
     }
-    const preparation = this.#mediaFiles.preparePhotoUpload(
-      input.kind === 'upload'
-        ? { content: input.content, source: 'bot_upload' }
-        : { content: input.webFile.content, source: 'web_download' },
-    );
+    const preparation = input.kind === 'upload'
+      ? this.#mediaFiles.preparePhotoUpload({ content: input.content, source: 'bot_upload' })
+      : this.#mediaFiles.prepareWebPhotoUpload(input.webFile);
     return preparation.prepared
       ? { resolved: true, file: { kind: 'upload', upload: preparation.upload } }
       : { resolved: false, failure: uploadPreparationFailure(preparation) };
@@ -3309,21 +3317,14 @@ export class BotApiService {
       }
       return { resolved: false, failure: fileIdFailure(file, 'document') };
     }
-    const preparation = this.#mediaFiles.prepareDocumentUpload(
-      input.kind === 'upload'
-        ? {
-          content: input.content,
-          fileName: cleanUploadedFileName(input.fileName),
-          ...(thumbnailContent === undefined ? {} : { thumbnailContent }),
-          source: 'bot_upload',
-        }
-        : {
-          content: input.webFile.content,
-          fileName: cleanUploadedFileName(input.webFile.fileName),
-          mimeType: input.webFile.mediaType,
-          source: 'web_download',
-        },
-    );
+    const preparation = input.kind === 'upload'
+      ? this.#mediaFiles.prepareDocumentUpload({
+        content: input.content,
+        fileName: cleanUploadedFileName(input.fileName),
+        ...(thumbnailContent === undefined ? {} : { thumbnailContent }),
+        source: 'bot_upload',
+      })
+      : this.#mediaFiles.prepareWebDocumentUpload(input.webFile);
     return preparation.prepared
       ? { resolved: true, file: { kind: 'upload', upload: preparation.upload } }
       : { resolved: false, failure: uploadPreparationFailure(preparation) };
@@ -4733,8 +4734,10 @@ export class BotApiService {
 
   /**
    * Resolves the files of an inline query result as TDLib's `answer_inline_query` does: its photo
-   * or document, and the files of a rich message it sends, which must reuse files by `file_id`
-   * because an inline message cannot receive an upload.
+   * or document known by `file_id`, and the files of a rich message it sends, which must reuse
+   * files by `file_id` because an inline message cannot receive an upload. A photo or document
+   * named by URL keeps its URL, as TDLib passes it on, for Telegram to download when the result is
+   * sent.
    */
   #resolveInlineQueryResult(
     authenticatedBot: VirtualBotProfile,
@@ -4775,22 +4778,42 @@ export class BotApiService {
           },
         };
       case 'photo': {
-        const file = this.#mediaFiles.findObserverFile(authenticatedBot.id, result.photoFileId);
+        const caption = { caption: result.caption.text, captionEntities: result.caption.entities };
+        const listing = {
+          ...shared,
+          kind: 'photo' as const,
+          thumbnailUrl: result.thumbnailUrl,
+          title: result.title,
+        };
+        if (result.photo.kind === 'url') {
+          const { url } = result.photo;
+          return {
+            resolved: true,
+            result: {
+              ...listing,
+              photo: { source: 'web', url },
+              messageContent: messageContent ?? {
+                kind: 'web_photo',
+                url,
+                ...caption,
+                showsCaptionAboveMedia: result.showsCaptionAboveMedia,
+              },
+            },
+          };
+        }
+        const file = this.#mediaFiles.findObserverFile(authenticatedBot.id, result.photo.fileId);
         if (file?.type !== 'photo') {
           return { resolved: false, failure: fileIdFailure(file, 'photo') };
         }
         return {
           resolved: true,
           result: {
-            ...shared,
-            kind: 'photo',
-            photo: file,
-            title: result.title,
+            ...listing,
+            photo: { source: 'stored', file },
             messageContent: messageContent ?? {
               kind: 'photo',
               photo: { kind: 'stored', file },
-              caption: result.caption.text,
-              captionEntities: result.caption.entities,
+              ...caption,
               hasSpoiler: false,
               showsCaptionAboveMedia: result.showsCaptionAboveMedia,
             },
@@ -4798,22 +4821,32 @@ export class BotApiService {
         };
       }
       case 'document': {
-        const file = this.#mediaFiles.findObserverFile(authenticatedBot.id, result.documentFileId);
+        const caption = { caption: result.caption.text, captionEntities: result.caption.entities };
+        const listing = { ...shared, kind: 'document' as const, title: result.title };
+        if (result.document.kind === 'url') {
+          const { url } = result.document;
+          return {
+            resolved: true,
+            result: {
+              ...listing,
+              document: { source: 'web', url },
+              messageContent: messageContent ?? { kind: 'web_document', url, ...caption },
+            },
+          };
+        }
+        const file = this.#mediaFiles.findObserverFile(authenticatedBot.id, result.document.fileId);
         if (file?.type !== 'document') {
           return { resolved: false, failure: fileIdFailure(file, 'document') };
         }
         return {
           resolved: true,
           result: {
-            ...shared,
-            kind: 'document',
-            document: file,
-            title: result.title,
+            ...listing,
+            document: { source: 'stored', file },
             messageContent: messageContent ?? {
               kind: 'document',
               document: { kind: 'stored', file },
-              caption: result.caption.text,
-              captionEntities: result.caption.entities,
+              ...caption,
             },
           },
         };
