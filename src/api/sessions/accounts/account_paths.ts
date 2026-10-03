@@ -20,7 +20,7 @@ export const USER_ID_PARAMETER = 'userId';
 
 const telegramUserIdPathParameterSchema = z.coerce.number().pipe(telegramUserIdSchema);
 const supergroupChatIdPathParameterSchema = z.coerce.number().pipe(supergroupChatIdSchema);
-/** A message's ID as the chat's bots see it, which is how these routes show messages. */
+/** A message's ID as the chat's bots see it, which is how the account routes show messages. */
 const messageIdPathParameterSchema = z.coerce.number().pipe(z.int().positive());
 
 /** The path parameters of the account a route acts as. */
