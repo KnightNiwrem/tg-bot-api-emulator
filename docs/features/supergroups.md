@@ -61,7 +61,7 @@ administrator status bypasses privacy mode. The implemented rights with behavior
 | ---------------------- | -------------------------------------------------------------------------------------------------------------------- |
 | `can_change_info`      | Call `setChatTitle` and `setChatDescription`                                                                         |
 | `can_delete_messages`  | Delete other members' content and service messages                                                                   |
-| `can_invite_users`     | Call `createChatInviteLink`, decide join requests, and receive `chat_join_request` updates                           |
+| `can_invite_users`     | Call `createChatInviteLink`, decide join requests, and receive `chat_join_request` updates when subscribed           |
 | `can_restrict_members` | Call `banChatMember`, `unbanChatMember`, `restrictChatMember` and `setChatPermissions`                               |
 | `can_pin_messages`     | Call `pinChatMessage` and `unpinChatMessage`, under the [pinning rules](pinned-messages.md#pinning-with-the-bot-api) |
 | `can_promote_members`  | Call `promoteChatMember`, granting the rights the bot holds, and `setChatAdministratorCustomTitle`                   |
