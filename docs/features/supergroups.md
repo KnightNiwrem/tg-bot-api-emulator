@@ -75,7 +75,8 @@ member may edit itself. The owner edits every administrator.
 A promotion counts for editing only while the promoter's tenure as an administrator lasts. Once a
 promoter is demoted or leaves, the administrators it promoted are left to the owner, and stay so
 even if it is promoted again, which starts a new tenure; `promoted_by_user_id` still names it. So an
-administrator demoted and promoted back by its own appointee edits nothing above it.
+administrator that its own appointee promotes back may be edited by that appointee, but edits
+neither it nor the others it promoted before.
 
 Members inspect the owner and administrators with
 `GET /sessions/{sessionId}/accounts/{accountId}/conversations/supergroup/{chatId}/administrators`,
@@ -435,8 +436,8 @@ not show. The emulator chooses where they are not visible:
   counts a promotion only while the promoter's administrator tenure that made it lasts: a promoter
   that is demoted or leaves no longer stands above the administrators it promoted, which only the
   owner then edits, even after the promoter is promoted again. `promoted_by` is all Telegram exposes
-  of a promotion; tying it to the tenure keeps a demoted promoter's old appointees from editing it
-  once they promote it back, which would let two administrators edit each other.
+  of a promotion; tying it to the tenure keeps a promoter that its old appointee promotes back from
+  editing that appointee, which would let two administrators edit each other.
 
 ## Local evidence
 
