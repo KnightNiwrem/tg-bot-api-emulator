@@ -28,7 +28,9 @@ export type ForwardAccountMessageFailureReason =
   | 'not_a_member'
   | 'message_not_found'
   | 'message_not_forwardable'
-  | 'bot_blocked';
+  | 'bot_blocked'
+  /** The account may not send the forwarded message's kind of content to the supergroup. */
+  | 'send_permission_missing';
 
 export type ForwardAccountMessageResult =
   | { readonly forwarded: true; readonly message: ChatMessage }
@@ -86,7 +88,7 @@ interface SupergroupForwardMessaging {
     readonly forward: MessageForward;
   }): AccountForwardSendingResult<
     SupergroupMessage,
-    'account_not_found' | 'chat_not_found' | 'not_a_member'
+    'account_not_found' | 'chat_not_found' | 'not_a_member' | 'send_permission_missing'
   >;
 }
 

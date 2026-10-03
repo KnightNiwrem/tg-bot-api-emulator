@@ -5,6 +5,7 @@ import {
   type ChatMemberAdditionResult,
   SharedChatRepository,
 } from '../src/repositories/shared_chat.ts';
+import { ALL_CHAT_PERMISSIONS } from '../src/types/chat_permissions.ts';
 
 Deno.test('SharedChatRepository atomically registers a basic group and its initial memberships', () => {
   const sharedChats = new SharedChatRepository();
@@ -48,6 +49,7 @@ Deno.test('SharedChatRepository registers supergroups and channels with their re
     title: 'Test',
     chatInstance: '-42',
     hasProtectedContent: false,
+    defaultPermissions: ALL_CHAT_PERMISSIONS,
   } as const;
   const channel = { kind: 'channel', id: -1_000_000_000_002, title: 'Test' } as const;
 

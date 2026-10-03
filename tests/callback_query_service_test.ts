@@ -17,6 +17,7 @@ import { PrivateMessagingService } from '../src/services/private_messaging.ts';
 import { SupergroupMessagingService } from '../src/services/supergroup_messaging.ts';
 import { VirtualUserService } from '../src/services/virtual_user.ts';
 import type { ChatDomainEvent } from '../src/types/chat_domain_event.ts';
+import { ALL_CHAT_PERMISSIONS } from '../src/types/chat_permissions.ts';
 
 Deno.test('CallbackQueryService publishes a callback query for a pressed button', () => {
   const { publishedEvents, privateConversations, callbackQueries, chat } =
@@ -66,6 +67,7 @@ Deno.test('CallbackQueryService presses buttons on bot messages in a supergroup 
     title: 'Team',
     chatInstance: '-42',
     hasProtectedContent: false,
+    defaultPermissions: ALL_CHAT_PERMISSIONS,
   } as const;
   sharedChats.registerSupergroup(supergroup, chat.account.profile.id);
   sharedChats.addChatMember(supergroup.id, chat.bot.profile.id);

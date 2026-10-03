@@ -158,6 +158,7 @@ import type {
   StopBotPollResult,
 } from './private_messaging.ts';
 import type {
+  SendPermissionMissingFailure,
   SendSupergroupBotAlbumInput,
   SendSupergroupBotAlbumResult,
   StopSupergroupBotPollInput,
@@ -462,6 +463,7 @@ export type SendResult =
       | FileTypeMismatchFailure
       | PhotoTooBigFailure
       | BotUploadTooBigFailure
+      | SendPermissionMissingFailure
     )
   );
 
@@ -1365,8 +1367,13 @@ interface SupergroupBotMessaging {
         | 'button_type_invalid'
         | 'quote_invalid';
     }
-    | ({ readonly sent: false } & ContentNormalizationFailure);
+    | ({ readonly sent: false } & (ContentNormalizationFailure | SendPermissionMissingFailure));
   sendBotAlbum(input: SendSupergroupBotAlbumInput): SendSupergroupBotAlbumResult;
+  lacksBotSendPermission(input: {
+    readonly botId: number;
+    readonly chatId: number;
+    readonly content: OutgoingMessageContent;
+  }): boolean;
   editBotMessageText(
     input: SupergroupMessageEditTarget & {
       readonly content: TextMessageReplacement;
@@ -2326,7 +2333,8 @@ export class BotApiService {
    * the forward repeats the message's content and shows who first sent it and when. As on Telegram,
    * a message whose sender protected it cannot be forwarded, nor can a service message. A request's
    * video start timestamp replaces that of a forwarded video, as `withVideoStartTimestamp` does. A
-   * forward of a poll shows the same poll, whose votes it shares.
+   * forward of a poll shows the same poll, whose votes it shares. As TDLib's `forward_messages_impl`
+   * skips content the bot may not send to a supergroup, such content cannot be forwarded there.
    *
    * The forwarded message is checked in full before the chat it goes to, while TDLib checks whether
    * it can be forwarded only after that chat; a request that fails both ways fails for the message.
@@ -2353,7 +2361,7 @@ export class BotApiService {
       lookup.message,
       this.#getPrivateForwardName,
     );
-    return this.#send(
+    const result = this.#send(
       authenticatedBot,
       {
         kind: 'existing',
@@ -2370,6 +2378,10 @@ export class BotApiService {
       },
       { forwardInfo },
     );
+    // TDLib's `forward_messages_impl` skips content the bot may not send, which leaves nothing.
+    return !result.sent && result.reason === 'send_permission_missing'
+      ? { sent: false, reason: 'message_not_forwardable' }
+      : result;
   }
 
   /**
@@ -2381,7 +2393,7 @@ export class BotApiService {
    * if any, as for a forward. A copy of a poll is a new poll, as `#createPollCopy` creates it, which
    * ignores a new caption; a quiz whose solution the bot does not see cannot be copied. As TDLib
    * lets bots do, a bot may copy a message whose sender protected it; a service message cannot be
-   * copied.
+   * copied, nor can content the bot may not send to a supergroup.
    *
    * As for `forwardMessage`, the copied message is checked in full before the chat it goes to.
    */
@@ -2422,13 +2434,20 @@ export class BotApiService {
       return { sent: false, reason: 'message_not_copyable' };
     }
     const result = this.#send(authenticatedBot, copiedContent, options);
-    return result.sent ? { sent: true, messageId: result.message.message_id } : result;
+    if (result.sent) {
+      return { sent: true, messageId: result.message.message_id };
+    }
+    // As for `forwardMessage`, TDLib skips content the bot may not send.
+    return result.reason === 'send_permission_missing'
+      ? { sent: false, reason: 'message_not_copyable' }
+      : result;
   }
 
   /**
    * Forwards up to 100 messages of one of the bot's chats to a private chat or a supergroup, each
-   * as `forwardMessage` does, as TDLib's `forward_messages` does. A message that is not found, or
-   * that cannot be forwarded, is skipped; the request fails only when none is left.
+   * as `forwardMessage` does, as TDLib's `forward_messages` does. A message that is not found, that
+   * cannot be forwarded, or whose content the bot may not send to the chat, is skipped; the request
+   * fails only when none is left.
    */
   forwardMessages(
     authenticatedBot: VirtualBotProfile,
@@ -2554,7 +2573,10 @@ export class BotApiService {
     }
     const repetitions = repeatedMessages.flatMap(({ message, chatProtectsContent }) => {
       const repetition = repeat(message, chatProtectsContent);
-      return repetition === undefined ? [] : [{ message, repetition }];
+      return repetition === undefined ||
+          this.#lacksSendPermission(authenticatedBot, chatId, repetition.content)
+        ? []
+        : [{ message, repetition }];
     });
     if (repetitions.length === 0) {
       return { sent: false, reason: 'messages_not_repeatable' };
@@ -2598,6 +2620,24 @@ export class BotApiService {
       sentMessageIdsByRepeatedMessageId.set(message.id, result.message.message_id);
     }
     return { sent: true, messageIds: [...sentMessageIdsByRepeatedMessageId.values()] };
+  }
+
+  /**
+   * Whether the bot lacks a permission it needs to send content to a supergroup it is a member of,
+   * as `SupergroupMessagingService.lacksBotSendPermission` decides; a private chat restricts no
+   * content.
+   */
+  #lacksSendPermission(
+    authenticatedBot: VirtualBotProfile,
+    chatId: number,
+    content: OutgoingMessageContent,
+  ): boolean {
+    return !isUserId(chatId) &&
+      this.#supergroupBotMessages.lacksBotSendPermission({
+        botId: authenticatedBot.id,
+        chatId,
+        content,
+      });
   }
 
   /**
@@ -2874,6 +2914,7 @@ export class BotApiService {
 
     switch (result.reason) {
       case 'text_invalid':
+      case 'send_permission_missing':
         return result;
       case 'message_text_empty':
       case 'chat_not_found':
@@ -2988,6 +3029,7 @@ export class BotApiService {
 
     switch (result.reason) {
       case 'text_invalid':
+      case 'send_permission_missing':
         return result;
       case 'chat_not_found':
       case 'bot_not_a_member':

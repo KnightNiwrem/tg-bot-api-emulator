@@ -16,6 +16,7 @@
           "src/types/virtual_bot.ts",
           "src/types/virtual_chat.ts",
           "src/types/chat_membership.ts",
+          "src/types/chat_permissions.ts",
           "src/types/virtual_message.ts",
           "src/types/rich_message.ts",
           "src/types/message_forward.ts",

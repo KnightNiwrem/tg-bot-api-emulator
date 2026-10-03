@@ -18,6 +18,7 @@ import { PrivateMessagingService } from '../src/services/private_messaging.ts';
 import { SupergroupMessagingService } from '../src/services/supergroup_messaging.ts';
 import { VirtualUserService } from '../src/services/virtual_user.ts';
 import type { ChatDomainEvent } from '../src/types/chat_domain_event.ts';
+import { ALL_CHAT_PERMISSIONS } from '../src/types/chat_permissions.ts';
 import type { InlineQueryChat } from '../src/types/inline_query.ts';
 
 const SUPERGROUP = {
@@ -26,6 +27,7 @@ const SUPERGROUP = {
   title: 'Team',
   chatInstance: '-42',
   hasProtectedContent: false,
+  defaultPermissions: ALL_CHAT_PERMISSIONS,
 } as const;
 
 Deno.test('InlineQueryService sends queries only to inline bots in chats the account writes to', () => {

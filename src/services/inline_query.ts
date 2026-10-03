@@ -149,7 +149,14 @@ export type ChooseInlineQueryResultFailureReason =
   | 'inline_query_not_answered'
   | 'result_not_found'
   | 'not_a_member'
-  | 'bot_blocked';
+  | 'bot_blocked'
+  | InlineResultPermissionFailureReason;
+
+/**
+ * Why a supergroup member may not send an inline result: it may not use inline bots there, or may
+ * not send the result's kind of content.
+ */
+type InlineResultPermissionFailureReason = 'inline_bots_not_permitted' | 'send_permission_missing';
 
 export type ChooseInlineQueryResultResult =
   | { readonly chosen: true; readonly message: ChatMessage }
@@ -194,7 +201,11 @@ interface SupergroupInlineResultMessaging {
     | { readonly sent: true; readonly message: SupergroupMessage }
     | {
       readonly sent: false;
-      readonly reason: 'account_not_found' | 'chat_not_found' | 'not_a_member';
+      readonly reason:
+        | 'account_not_found'
+        | 'chat_not_found'
+        | 'not_a_member'
+        | InlineResultPermissionFailureReason;
     };
 }
 
@@ -469,7 +480,10 @@ export class InlineQueryService {
     result: InlineQueryResult,
   ):
     | { readonly sent: true; readonly message: ChatMessage }
-    | { readonly sent: false; readonly reason: 'not_a_member' | 'bot_blocked' } {
+    | {
+      readonly sent: false;
+      readonly reason: 'not_a_member' | 'bot_blocked' | InlineResultPermissionFailureReason;
+    } {
     const sending: InlineResultSending = {
       fromAccountId: inlineQuery.accountId,
       viaBotId: inlineQuery.botId,
@@ -487,6 +501,8 @@ export class InlineQueryService {
     switch (reason) {
       case 'not_a_member':
       case 'bot_blocked':
+      case 'inline_bots_not_permitted':
+      case 'send_permission_missing':
         return { sent: false, reason };
       // The emulator never removes accounts, bots, or supergroups, which the query found.
       case 'account_not_found':

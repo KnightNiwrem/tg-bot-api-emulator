@@ -57,6 +57,7 @@ import {
   type TextEntity,
   type TextQuote,
 } from '../types/virtual_message.ts';
+import { projectChatPermissions } from './bot_api_chat_permissions.ts';
 import { writeDateTimeFormat } from './bot_api_date_time_format.ts';
 import {
   type ObservedFile,
@@ -745,6 +746,14 @@ export function projectChatMember<User extends BotApiUser>(
       return { user, status: status.status };
     case 'kicked':
       return { user, status: 'kicked', until_date: status.bannedUntilUnixSeconds ?? 0 };
+    case 'restricted':
+      return {
+        user,
+        status: 'restricted',
+        until_date: status.restrictedUntilUnixSeconds ?? 0,
+        ...projectChatPermissions(status.permissions),
+        is_member: status.isMember,
+      };
     default: {
       const unhandledStatus: never = status;
       throw new Error(`Unhandled chat member status: ${JSON.stringify(unhandledStatus)}`);

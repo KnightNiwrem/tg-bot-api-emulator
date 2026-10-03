@@ -12,10 +12,13 @@ import { SupergroupMessagingService } from '../src/services/supergroup_messaging
 import { VirtualUserService } from '../src/services/virtual_user.ts';
 import type { ChatDomainEvent } from '../src/types/chat_domain_event.ts';
 import { grantSupergroupAdministratorRights } from '../src/types/chat_membership.ts';
+import { createMessageForward } from '../src/types/message_forward.ts';
 import type { PhotoUpload } from '../src/types/stored_file.ts';
 import {
   getContentText,
+  isSupergroupContentMessage,
   MAX_CAPTION_LENGTH,
+  type SupergroupContentMessage,
   type SupergroupMessage,
 } from '../src/types/virtual_message.ts';
 
@@ -608,6 +611,145 @@ Deno.test('SupergroupMessagingService turns away bots that left or were removed'
   }
 });
 
+Deno.test('SupergroupMessagingService sends only what a member may send', () => {
+  const {
+    supergroupMessaging,
+    sharedChatAdministration,
+    sharedChats,
+    virtualUsers,
+    publishedEvents,
+    owner,
+    bot,
+    supergroup,
+  } = createSupergroupMessagingFixture();
+  const member = createAccount(virtualUsers, 'Grace');
+  sharedChatAdministration.addChatMember({
+    actorAccountId: owner.profile.id,
+    chatId: supergroup.id,
+    memberId: member.profile.id,
+  });
+  const ownerPhoto = expectSent(supergroupMessaging.sendAccountMessage({
+    fromAccountId: owner.profile.id,
+    chatId: supergroup.id,
+    content: { kind: 'media', upload: photoUpload(), caption: '' },
+  }));
+  sharedChats.updateChatMemberStatus(supergroup.id, member.profile.id, {
+    status: 'restricted',
+    isMember: true,
+    permissions: new Set(['can_send_messages']),
+  });
+  publishedEvents.splice(0);
+  const describe = (
+    result:
+      | { readonly sent: true }
+      | { readonly sent: false; readonly reason: string; readonly contentKind?: string },
+  ) => result.sent ? 'sent' : [result.reason, result.contentKind].filter(Boolean).join(' ');
+
+  // The restriction leaves the member text, and nothing else, which no album or forward bypasses.
+  const restrictedSends = [
+    supergroupMessaging.sendAccountMessage({
+      fromAccountId: member.profile.id,
+      chatId: supergroup.id,
+      content: { kind: 'text', text: 'Hello' },
+    }),
+    supergroupMessaging.sendAccountMessage({
+      fromAccountId: member.profile.id,
+      chatId: supergroup.id,
+      content: { kind: 'media', upload: photoUpload(), caption: 'Look' },
+    }),
+    supergroupMessaging.sendAccountAlbum({
+      fromAccountId: member.profile.id,
+      chatId: supergroup.id,
+      contents: [
+        { kind: 'media', upload: photoUpload(), caption: '' },
+        { kind: 'media', upload: photoUpload(), caption: '' },
+      ],
+    }),
+    supergroupMessaging.sendAccountForward({
+      fromAccountId: member.profile.id,
+      chatId: supergroup.id,
+      forward: createMessageForward(expectContentMessage(ownerPhoto), () => undefined),
+    }),
+    supergroupMessaging.sendAccountInlineResult({
+      fromAccountId: member.profile.id,
+      chatId: supergroup.id,
+      viaBotId: bot.profile.id,
+      content: { kind: 'text', text: 'Result', entities: [] },
+    }),
+  ].map(describe);
+  if (
+    JSON.stringify(restrictedSends) !== JSON.stringify([
+        'sent',
+        'send_permission_missing photo',
+        'send_permission_missing photo',
+        'send_permission_missing photo',
+        'inline_bots_not_permitted',
+      ]) || publishedEvents.length !== 1
+  ) {
+    throw new Error(
+      `Expected only the restricted member's text to be sent, received ${
+        JSON.stringify(restrictedSends)
+      }`,
+    );
+  }
+
+  // Default permissions bind every member, bots too, but not the owner or administrators.
+  sharedChats.updateSupergroupDefaultPermissions(supergroup.id, new Set(['can_send_photos']));
+  const defaultSends = () =>
+    [
+      supergroupMessaging.sendAccountMessage({
+        fromAccountId: member.profile.id,
+        chatId: supergroup.id,
+        content: { kind: 'text', text: 'Still here' },
+      }),
+      supergroupMessaging.sendAccountMessage({
+        fromAccountId: owner.profile.id,
+        chatId: supergroup.id,
+        content: { kind: 'text', text: 'Quiet, please' },
+      }),
+      supergroupMessaging.sendBotMessage({
+        fromBotId: bot.profile.id,
+        chatId: supergroup.id,
+        content: { kind: 'text', text: 'Noted' },
+      }),
+      supergroupMessaging.sendBotAlbum({
+        fromBotId: bot.profile.id,
+        chatId: supergroup.id,
+        contents: [{
+          kind: 'photo',
+          photo: { kind: 'upload', upload: photoUpload() },
+          caption: '',
+          hasSpoiler: false,
+          showsCaptionAboveMedia: false,
+        }],
+      }),
+    ].map(describe);
+  const sendsUnderDefaults = defaultSends();
+  sharedChatAdministration.promoteChatMember({
+    actorAccountId: owner.profile.id,
+    chatId: supergroup.id,
+    memberId: bot.profile.id,
+    rights: grantSupergroupAdministratorRights(['can_pin_messages']),
+  });
+  const sendsAsAdministrator = defaultSends();
+  if (
+    JSON.stringify(sendsUnderDefaults) !== JSON.stringify([
+        'send_permission_missing text',
+        'sent',
+        'send_permission_missing text',
+        'sent',
+      ]) ||
+    JSON.stringify(sendsAsAdministrator) !==
+      JSON.stringify(['send_permission_missing text', 'sent', 'sent', 'sent'])
+  ) {
+    throw new Error(
+      `Expected default permissions to bind members only, received ${
+        JSON.stringify([sendsUnderDefaults, sendsAsAdministrator])
+      }`,
+    );
+  }
+});
+
 function createSupergroupMessagingFixture() {
   const identities = new TelegramIdentityRepository();
   const accounts = new AccountRepository();
@@ -660,6 +802,7 @@ function createSupergroupMessagingFixture() {
 
   return {
     virtualUsers,
+    sharedChats,
     sharedChatAdministration,
     supergroupMessaging,
     messageBoxes,
@@ -687,6 +830,13 @@ function expectSent(
     throw new Error(`Expected the message to be sent, received ${result.reason}`);
   }
   return result.message;
+}
+
+function expectContentMessage(message: SupergroupMessage): SupergroupContentMessage {
+  if (!isSupergroupContentMessage(message)) {
+    throw new Error(`Expected message ${message.id} to have content`);
+  }
+  return message;
 }
 
 function createAccount(virtualUsers: VirtualUserService, firstName: string) {

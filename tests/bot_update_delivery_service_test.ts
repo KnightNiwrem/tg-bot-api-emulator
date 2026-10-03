@@ -14,6 +14,7 @@ import { VirtualUserService } from '../src/services/virtual_user.ts';
 import { findDetectedEntities } from '../src/text_entities/detected_entities.ts';
 import type { BotApiMessage, BotApiUpdate } from '../src/types/bot_api.ts';
 import { grantSupergroupAdministratorRights } from '../src/types/chat_membership.ts';
+import { ALL_CHAT_PERMISSIONS } from '../src/types/chat_permissions.ts';
 
 Deno.test('BotUpdateDeliveryService delivers a private message to its conversation bot', () => {
   const { virtualUsers, messages, messageBoxes, botUpdates, botUpdateDelivery } =
@@ -334,6 +335,7 @@ Deno.test('BotUpdateDeliveryService delivers supergroup additions and edits to t
     title: 'Team',
     chatInstance: '-42',
     hasProtectedContent: false,
+    defaultPermissions: ALL_CHAT_PERMISSIONS,
   } as const;
   sharedChats.registerSupergroup(supergroup, owner.profile.id);
   updateSubscriptions.setAllowedUpdateTypes(privacyModeBot.profile.id, new Set(['message']));
@@ -398,6 +400,7 @@ Deno.test('BotUpdateDeliveryService delivers a promotion and every message to an
     title: 'Team',
     chatInstance: '-42',
     hasProtectedContent: false,
+    defaultPermissions: ALL_CHAT_PERMISSIONS,
   } as const;
   sharedChats.registerSupergroup(supergroup, owner.profile.id);
   sharedChats.addChatMember(supergroup.id, administratorBot.profile.id);
@@ -501,6 +504,7 @@ Deno.test("BotUpdateDeliveryService delivers bots' membership service messages t
     title: 'Team',
     chatInstance: '-42',
     hasProtectedContent: false,
+    defaultPermissions: ALL_CHAT_PERMISSIONS,
   } as const;
   sharedChats.registerSupergroup(supergroup, owner.profile.id);
   for (
@@ -585,6 +589,7 @@ Deno.test('BotUpdateDeliveryService addresses supergroup media by caption and pe
     title: 'Team',
     chatInstance: '-42',
     hasProtectedContent: false,
+    defaultPermissions: ALL_CHAT_PERMISSIONS,
   } as const;
   sharedChats.registerSupergroup(supergroup, owner.profile.id);
   sharedChats.addChatMember(supergroup.id, privacyModeBot.profile.id);
@@ -733,6 +738,7 @@ Deno.test('BotUpdateDeliveryService delivers supergroup messages sent through a 
     title: 'Team',
     chatInstance: '-42',
     hasProtectedContent: false,
+    defaultPermissions: ALL_CHAT_PERMISSIONS,
   } as const;
   sharedChats.registerSupergroup(supergroup, owner.profile.id);
   sharedChats.addChatMember(supergroup.id, inlineBot.profile.id);
@@ -775,6 +781,7 @@ Deno.test('BotUpdateDeliveryService lets a message reach only the privacy-mode b
     title: 'Team',
     chatInstance: '-42',
     hasProtectedContent: false,
+    defaultPermissions: ALL_CHAT_PERMISSIONS,
   } as const;
   sharedChats.registerSupergroup(supergroup, owner.profile.id);
   for (const bot of [botA, botB, botC, administratorBot]) {
@@ -891,6 +898,7 @@ Deno.test('BotUpdateDeliveryService sends general commands to the bot that last 
     title: 'Team',
     chatInstance: '-42',
     hasProtectedContent: false,
+    defaultPermissions: ALL_CHAT_PERMISSIONS,
   } as const;
   sharedChats.registerSupergroup(supergroup, owner.profile.id);
   for (const bot of [botA, botB, inlineBot, administratorBot]) {
@@ -985,6 +993,7 @@ Deno.test('BotUpdateDeliveryService delivers chat_member updates to subscribed a
     title: 'Team',
     chatInstance: '-42',
     hasProtectedContent: false,
+    defaultPermissions: ALL_CHAT_PERMISSIONS,
   } as const;
   const administratorStatus = {
     status: 'administrator',

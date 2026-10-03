@@ -1542,7 +1542,8 @@ type SupergroupAccountFailureReason =
 
 /**
  * A missing account, supergroup, or message is not found, and an account that is not a member of
- * the supergroup is forbidden from it; other failures reject the request.
+ * the supergroup, or may not send the content, is forbidden from it; other failures reject the
+ * request.
  */
 function supergroupMemberFailureStatus(reason: SupergroupAccountFailureReason): 400 | 403 | 404 {
   switch (reason) {
@@ -1551,6 +1552,7 @@ function supergroupMemberFailureStatus(reason: SupergroupAccountFailureReason): 
     case 'message_not_found':
       return 404;
     case 'not_a_member':
+    case 'send_permission_missing':
       return 403;
     default:
       return 400;
@@ -1559,8 +1561,8 @@ function supergroupMemberFailureStatus(reason: SupergroupAccountFailureReason): 
 
 /**
  * A missing account, bot, supergroup, or message is not found, and an account that is not a member
- * of a supergroup is forbidden from it. A message that cannot be forwarded rejects the request,
- * and a block conflicts with writing to the bot.
+ * of a supergroup, or may not send the message's content there, is forbidden from it. A message
+ * that cannot be forwarded rejects the request, and a block conflicts with writing to the bot.
  */
 function forwardFailureStatus(
   reason: Extract<
@@ -1575,6 +1577,7 @@ function forwardFailureStatus(
     case 'message_not_found':
       return 404;
     case 'not_a_member':
+    case 'send_permission_missing':
       return 403;
     case 'message_not_forwardable':
       return 400;
@@ -1944,6 +1947,8 @@ function chosenInlineResultFailureStatus(
     case 'result_not_found':
       return 400;
     case 'not_a_member':
+    case 'inline_bots_not_permitted':
+    case 'send_permission_missing':
       return 403;
     case 'inline_query_not_answered':
     case 'bot_blocked':

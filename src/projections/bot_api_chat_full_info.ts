@@ -1,11 +1,11 @@
 import type {
   BotApiAcceptedGiftTypes,
-  BotApiChatPermissions,
   BotApiPrivateChatFullInfo,
   BotApiSupergroupChatFullInfo,
 } from '../types/bot_api.ts';
 import type { VirtualAccount } from '../types/virtual_account.ts';
 import type { Supergroup } from '../types/virtual_chat.ts';
+import { projectChatPermissions } from './bot_api_chat_permissions.ts';
 
 /**
  * How many different reactions a message may carry, TDLib's `reactions_uniq_max` default that
@@ -48,18 +48,16 @@ export function projectPrivateChatFullInfo(
 
 /**
  * A supergroup, as the official Bot API server's `JsonChat` shows its full information, and in its
- * field order, with the defaults of a supergroup that no one has configured beyond what the
- * emulator models:
+ * field order. Its `permissions` are its default permissions, and its other fields are those of a
+ * supergroup that no one has configured beyond what the emulator models:
  *
  * - New members see earlier messages, as they do in the emulator, so its history is visible.
  * - As TDLib documents for `supergroup.join_to_send_messages`, only discussion groups let
  *   non-members write, and the emulator has none.
- * - Members have no default restrictions, which the emulator does not model, so every permission
- *   is granted.
  * - Gifts cannot be sent to it, so it accepts none, as `JsonChat` derives from `can_send_gift`.
  */
 export function projectSupergroupChatFullInfo(
-  { id, title, username, description, hasProtectedContent }: Supergroup,
+  { id, title, username, description, hasProtectedContent, defaultPermissions }: Supergroup,
 ): BotApiSupergroupChatFullInfo {
   const channelId = -id - SUPERGROUP_CHAT_ID_OFFSET;
   return {
@@ -70,7 +68,7 @@ export function projectSupergroupChatFullInfo(
     ...(username === undefined ? {} : { active_usernames: [username] }),
     ...(description === undefined || description.length === 0 ? {} : { description }),
     has_visible_history: true,
-    permissions: UNRESTRICTED_CHAT_PERMISSIONS,
+    permissions: projectChatPermissions(defaultPermissions),
     join_to_send_messages: true,
     accepted_gift_types: acceptedGiftTypes(false),
     max_reaction_count: MAX_REACTION_COUNT,
@@ -89,23 +87,3 @@ function acceptedGiftTypes(acceptsGifts: boolean): BotApiAcceptedGiftTypes {
     gifts_from_channels: acceptsGifts,
   };
 }
-
-const UNRESTRICTED_CHAT_PERMISSIONS: BotApiChatPermissions = {
-  can_send_messages: true,
-  can_send_media_messages: true,
-  can_send_audios: true,
-  can_send_documents: true,
-  can_send_photos: true,
-  can_send_videos: true,
-  can_send_video_notes: true,
-  can_send_voice_notes: true,
-  can_send_polls: true,
-  can_send_other_messages: true,
-  can_add_web_page_previews: true,
-  can_react_to_messages: true,
-  can_edit_tag: true,
-  can_change_info: true,
-  can_invite_users: true,
-  can_pin_messages: true,
-  can_manage_topics: true,
-};

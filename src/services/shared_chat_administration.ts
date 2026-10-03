@@ -5,6 +5,7 @@ import type {
   ChatMemberStatusUpdateResult,
   CustomTitleUpdateResult,
   FormerMemberStatusUpdateResult,
+  JoiningMemberStatus,
   NonOwnerMemberStatus,
   SharedChatRegistrationResult,
 } from '../repositories/shared_chat.ts';
@@ -22,14 +23,18 @@ import {
   type ChatMembership,
   type ChatMemberStatus,
   type FormerChatMemberStatus,
+  getEffectiveChatPermissions,
   getSupergroupNonMemberFailureReason,
   holdsSupergroupAdministratorRight,
+  isChatAdministrator,
+  isChatMember,
   isSameChatMemberStatus,
   LEFT_CHAT_MEMBER_STATUS,
   resolveSupergroupBotMembership,
   type SupergroupAdministratorRights,
   type SupergroupBotAccessFailureReason,
 } from '../types/chat_membership.ts';
+import { ALL_CHAT_PERMISSIONS } from '../types/chat_permissions.ts';
 import type { VirtualAccount } from '../types/virtual_account.ts';
 import type { VirtualBot } from '../types/virtual_bot.ts';
 import {
@@ -431,7 +436,11 @@ interface ChatMembershipStore {
   getChatMembership(chatId: number, identityId: number): ChatMembership | undefined;
   getFormerMemberStatus(chatId: number, identityId: number): FormerChatMemberStatus | undefined;
   getChatMemberIds(chatId: number): readonly number[];
-  addChatMember(chatId: number, memberId: number): ChatMemberAdditionResult;
+  addChatMember(
+    chatId: number,
+    memberId: number,
+    membership: JoiningMemberStatus,
+  ): ChatMemberAdditionResult;
   updateChatMemberStatus(
     chatId: number,
     memberId: number,
@@ -490,17 +499,20 @@ interface SharedChatAdministrationServiceDependencies {
 /**
  * Whether a member may change a supergroup's title and description, as TDLib's
  * `can_change_info_and_settings` decides once `apply_restrictions` applies the supergroup's default
- * permissions: the owner may, and so may an administrator with `can_change_info`. Other accounts
- * may too, because the supergroup's default permissions, which the emulator does not restrict, let
- * members change its information. A bot gets no right from default permissions, so it needs the
+ * permissions, which `getEffectiveChatPermissions` does: the owner may, an administrator with
+ * `can_change_info` may, and so may an account that the default permissions, and its restriction,
+ * if any, let change it. A bot gets no such permission from default permissions, so it needs the
  * administrator right.
  */
 function canChangeSupergroupInfo(
+  supergroup: Supergroup,
   actor: SupergroupMessageAuthor,
   membership: ChatMembership,
 ): boolean {
-  return actor.kind === 'account' ||
-    holdsSupergroupAdministratorRight(membership, 'can_change_info');
+  return getEffectiveChatPermissions(membership, {
+    defaultPermissions: supergroup.defaultPermissions,
+    isBot: actor.kind === 'bot',
+  }).has('can_change_info');
 }
 
 /**
@@ -593,6 +605,7 @@ export class SharedChatAdministrationService {
       description: input.description,
       chatInstance: createChatInstance(),
       hasProtectedContent: false,
+      defaultPermissions: ALL_CHAT_PERMISSIONS,
     };
     const registration = this.#sharedChats.registerSupergroup(supergroup, input.creatorAccountId);
     if (!registration.registered) {
@@ -650,12 +663,20 @@ export class SharedChatAdministrationService {
       return { added: false, reason: 'bot_not_permitted_in_channel' };
     }
 
-    // As an owner does in Telegram's apps, adding a banned user lifts its ban.
+    // As an owner does in Telegram's apps, adding a banned user lifts its ban, whereas a restricted
+    // user joins with its restriction.
     const statusBeforeJoining = this.#sharedChats.getFormerMemberStatus(
       input.chatId,
       input.memberId,
     ) ?? LEFT_CHAT_MEMBER_STATUS;
-    const addition = this.#sharedChats.addChatMember(input.chatId, input.memberId);
+    const statusAfterJoining: JoiningMemberStatus = statusBeforeJoining.status === 'restricted'
+      ? { ...statusBeforeJoining, isMember: true }
+      : { status: 'member' };
+    const addition = this.#sharedChats.addChatMember(
+      input.chatId,
+      input.memberId,
+      statusAfterJoining,
+    );
     if (!addition.added) {
       return addition;
     }
@@ -666,7 +687,7 @@ export class SharedChatAdministrationService {
       actorId: input.actorAccountId,
       memberId: input.memberId,
       oldStatus: statusBeforeJoining,
-      newStatus: { status: 'member' },
+      newStatus: statusAfterJoining,
       changedAtUnixSeconds: addedAtUnixSeconds,
     });
     this.#recordSupergroupServiceMessage(chat, {
@@ -707,7 +728,10 @@ export class SharedChatAdministrationService {
       actor: member,
       memberId,
       membership,
-      statusAfterLeaving: LEFT_CHAT_MEMBER_STATUS,
+      // As TDLib's `leave_dialog` asks, a restricted member stays restricted once it leaves.
+      statusAfterLeaving: membership.status === 'restricted'
+        ? { ...membership, isMember: false }
+        : LEFT_CHAT_MEMBER_STATUS,
     });
     return { left: true };
   }
@@ -774,10 +798,14 @@ export class SharedChatAdministrationService {
 
   /**
    * Demotes an administrator of a supergroup to a member as its owner, which drops its custom
-   * title. Demoting a member that is no administrator succeeds without effect.
+   * title. Demoting a member that is no administrator succeeds without effect, and a restricted
+   * member stays restricted.
    */
   demoteChatMember(input: DemoteChatMemberInput): DemoteChatMemberResult {
-    const change = this.#changeMemberRoleAsOwner(input, () => ({ status: 'member' }));
+    const change = this.#changeMemberRoleAsOwner(
+      input,
+      (membership) => membership.status === 'administrator' ? { status: 'member' } : membership,
+    );
     return change.changed ? { demoted: true } : { demoted: false, reason: change.reason };
   }
 
@@ -791,7 +819,7 @@ export class SharedChatAdministrationService {
       return { set: false, reason: target.reason };
     }
     const { chat, membership } = target;
-    if (membership.status === 'member') {
+    if (membership.status !== 'owner' && membership.status !== 'administrator') {
       return { set: false, reason: 'not_an_administrator' };
     }
     const newCustomTitle = input.customTitle === '' ? undefined : input.customTitle;
@@ -869,7 +897,7 @@ export class SharedChatAdministrationService {
     }
 
     let bannedTarget: ModerationTarget = target;
-    if (target.memberStatus.status === 'member') {
+    if (isChatMember(target.memberStatus)) {
       // Telegram removes a member by banning it briefly, then lifting the ban.
       const removalBan: FormerChatMemberStatus = {
         status: 'kicked',
@@ -911,7 +939,7 @@ export class SharedChatAdministrationService {
     }
     const standings = this.#sharedChats.getChatMemberIds(input.chatId).flatMap((userId) => {
       const status = this.#sharedChats.getChatMembership(input.chatId, userId);
-      return status === undefined || status.status === 'member' ? [] : [{ userId, status }];
+      return status === undefined || !isChatAdministrator(status) ? [] : [{ userId, status }];
     });
     return {
       found: true,
@@ -1000,7 +1028,7 @@ export class SharedChatAdministrationService {
     if (title.length === 0) {
       return { changed: false, reason: 'title_empty' };
     }
-    if (!canChangeSupergroupInfo(input.actor, access.membership)) {
+    if (!canChangeSupergroupInfo(access.supergroup, input.actor, access.membership)) {
       return { changed: false, reason: 'not_enough_rights' };
     }
     if (access.supergroup.title === title) {
@@ -1037,7 +1065,7 @@ export class SharedChatAdministrationService {
       return { changed: false, reason: 'text_encoding_invalid' };
     }
     const description = stripEmptyCharacters(cleanedDescription, MAX_CHAT_DESCRIPTION_LENGTH);
-    if (!canChangeSupergroupInfo(input.actor, access.membership)) {
+    if (!canChangeSupergroupInfo(access.supergroup, input.actor, access.membership)) {
       return { changed: false, reason: 'not_enough_rights' };
     }
     if ((access.supergroup.description ?? '') === description) {
@@ -1235,7 +1263,7 @@ export class SharedChatAdministrationService {
     }
 
     const actor: SupergroupMessageAuthor = { kind: 'bot', botId };
-    if (memberStatus.status === 'member') {
+    if (isChatMember(memberStatus)) {
       this.#endMembership(chat, {
         actor,
         memberId,

@@ -23,6 +23,7 @@ import {
   type SupergroupAdministratorRight,
 } from '../src/types/chat_membership.ts';
 import type { BasicGroup, Channel, Supergroup } from '../src/types/virtual_chat.ts';
+import type { SupergroupMessageAuthor } from '../src/types/virtual_message.ts';
 
 Deno.test('SharedChatAdministrationService creates a basic group with its initial participants', () => {
   const { virtualUsers, identities, sharedChats, sharedChatAdministration } =
@@ -890,10 +891,174 @@ Deno.test('SharedChatAdministrationService tells member bots the standing of sup
 });
 
 /** Describes a standing compactly: rights sorted, and a ban's end when it has one. */
+Deno.test('SharedChatAdministrationService keeps a restriction while the user leaves and joins', () => {
+  const {
+    owner,
+    member,
+    moderatorBot,
+    supergroup,
+    sharedChats,
+    publishedEvents,
+    sharedChatAdministration,
+  } = createModerationFixture();
+  const restriction: ChatMemberStatus = {
+    status: 'restricted',
+    isMember: true,
+    permissions: new Set(['can_send_messages']),
+  };
+  const statusOf = (userId: number) =>
+    describeStatus(
+      sharedChats.getChatMembership(supergroup.id, userId) ??
+        sharedChats.getFormerMemberStatus(supergroup.id, userId) ?? { status: 'left' },
+    );
+  const restrict = () =>
+    sharedChats.updateChatMemberStatus(supergroup.id, member.profile.id, restriction);
+  restrict();
+
+  // As Telegram keeps it, the restriction outlasts leaving and joining again, which events show.
+  const statuses = [statusOf(member.profile.id)];
+  sharedChatAdministration.leaveChat({ memberId: member.profile.id, chatId: supergroup.id });
+  statuses.push(statusOf(member.profile.id));
+  sharedChatAdministration.addChatMember({
+    actorAccountId: owner.profile.id,
+    chatId: supergroup.id,
+    memberId: member.profile.id,
+  });
+  statuses.push(statusOf(member.profile.id));
+  // Demotion leaves a restricted member as it is, and the restricted member administers nothing.
+  const demotion = sharedChatAdministration.demoteChatMember({
+    actorAccountId: owner.profile.id,
+    chatId: supergroup.id,
+    memberId: member.profile.id,
+  });
+  statuses.push(statusOf(member.profile.id));
+  const administrators = sharedChatAdministration.getChatAdministrators({
+    observerBotId: moderatorBot.profile.id,
+    chatId: supergroup.id,
+  });
+  const restrictedMember = 'restricted member(can_send_messages)';
+  if (
+    JSON.stringify(statuses) !== JSON.stringify([
+        restrictedMember,
+        'restricted non-member(can_send_messages)',
+        restrictedMember,
+        restrictedMember,
+      ]) ||
+    !demotion.demoted || !administrators.found ||
+    JSON.stringify(administrators.administrators.map(({ userId }) => userId)) !==
+      JSON.stringify([owner.profile.id])
+  ) {
+    throw new Error(`Expected the restriction to last, received ${JSON.stringify(statuses)}`);
+  }
+  const changes = publishedEvents.map((event) =>
+    event.type === 'chat_member_status_changed'
+      ? `${describeStatus(event.oldStatus)} -> ${describeStatus(event.newStatus)}`
+      : event.type
+  );
+  if (
+    JSON.stringify(changes) !== JSON.stringify([
+      `${restrictedMember} -> restricted non-member(can_send_messages)`,
+      `restricted non-member(can_send_messages) -> ${restrictedMember}`,
+    ])
+  ) {
+    throw new Error(`Expected the restriction in each change, received ${JSON.stringify(changes)}`);
+  }
+
+  // A ban or a removal ends a restricted member's membership as it ends any other's.
+  sharedChatAdministration.promoteChatMember({
+    actorAccountId: owner.profile.id,
+    chatId: supergroup.id,
+    memberId: moderatorBot.profile.id,
+    rights: grantSupergroupAdministratorRights(['can_restrict_members']),
+  });
+  const removal = sharedChatAdministration.unbanChatMember({
+    actorBotId: moderatorBot.profile.id,
+    chatId: supergroup.id,
+    memberId: member.profile.id,
+    onlyIfBanned: false,
+  });
+  const statusAfterRemoval = statusOf(member.profile.id);
+  sharedChatAdministration.addChatMember({
+    actorAccountId: owner.profile.id,
+    chatId: supergroup.id,
+    memberId: member.profile.id,
+  });
+  restrict();
+  const ban = sharedChatAdministration.banChatMember({
+    actorBotId: moderatorBot.profile.id,
+    chatId: supergroup.id,
+    memberId: member.profile.id,
+  });
+  if (
+    !removal.unbanned || statusAfterRemoval !== 'left' || !ban.banned ||
+    statusOf(member.profile.id) !== 'kicked' ||
+    sharedChats.getChatMemberIds(supergroup.id).includes(member.profile.id)
+  ) {
+    throw new Error(
+      `Expected removal and a ban to end the membership, received ${
+        JSON.stringify([removal, statusAfterRemoval, ban, statusOf(member.profile.id)])
+      }`,
+    );
+  }
+});
+
+Deno.test('SharedChatAdministrationService lets members change information as permissions allow', () => {
+  const { owner, member, moderatorBot, supergroup, sharedChats, sharedChatAdministration } =
+    createModerationFixture();
+  const changeTitle = (actor: SupergroupMessageAuthor, title: string) => {
+    const result = sharedChatAdministration.changeSupergroupTitle({
+      actor,
+      chatId: supergroup.id,
+      title,
+    });
+    return result.changed ? 'changed' : result.reason;
+  };
+  const memberAccount: SupergroupMessageAuthor = { kind: 'account', accountId: member.profile.id };
+  const bot: SupergroupMessageAuthor = { kind: 'bot', botId: moderatorBot.profile.id };
+
+  // By default every account member may change information, but a bot needs the right.
+  const byDefault = [changeTitle(memberAccount, 'Members'), changeTitle(bot, 'Bots')];
+  sharedChats.updateSupergroupDefaultPermissions(supergroup.id, new Set(['can_send_messages']));
+  const withoutDefault = [
+    changeTitle(memberAccount, 'Members again'),
+    changeTitle({ kind: 'account', accountId: owner.profile.id }, 'Owners'),
+  ];
+  sharedChatAdministration.promoteChatMember({
+    actorAccountId: owner.profile.id,
+    chatId: supergroup.id,
+    memberId: moderatorBot.profile.id,
+    rights: grantSupergroupAdministratorRights(['can_change_info']),
+  });
+  sharedChats.updateSupergroupDefaultPermissions(supergroup.id, new Set(['can_change_info']));
+  sharedChats.updateChatMemberStatus(supergroup.id, member.profile.id, {
+    status: 'restricted',
+    isMember: true,
+    permissions: new Set(['can_send_messages']),
+  });
+  const withRestriction = [changeTitle(memberAccount, 'Restricted'), changeTitle(bot, 'Bots')];
+  const received = [...byDefault, ...withoutDefault, ...withRestriction];
+  if (
+    JSON.stringify(received) !== JSON.stringify([
+      'changed',
+      'not_enough_rights',
+      'not_enough_rights',
+      'changed',
+      'not_enough_rights',
+      'changed',
+    ])
+  ) {
+    throw new Error(`Expected permissions to decide title changes, received ${received}`);
+  }
+});
+
 function describeStatus(status: ChatMemberStatus): string {
   switch (status.status) {
     case 'administrator':
       return `administrator(${[...status.rights].sort().join()})`;
+    case 'restricted':
+      return `restricted ${status.isMember ? 'member' : 'non-member'}(${
+        [...status.permissions].sort().join()
+      })`;
     case 'kicked':
       return status.bannedUntilUnixSeconds === undefined
         ? 'kicked'

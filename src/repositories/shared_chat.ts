@@ -1,4 +1,5 @@
 import type { ChatMembership, FormerChatMemberStatus } from '../types/chat_membership.ts';
+import type { ChatPermissions } from '../types/chat_permissions.ts';
 import type { BasicGroup, Channel, SharedChat, Supergroup } from '../types/virtual_chat.ts';
 import type { CanonicalMessageId } from '../types/virtual_message.ts';
 
@@ -41,6 +42,12 @@ export type ChatMemberRemovalResult =
     readonly removed: false;
     readonly reason: ChatMemberRemovalFailureReason;
   };
+
+/** The standing a user joins a chat with: a member, or restricted if it was restricted before. */
+export type JoiningMemberStatus = Extract<
+  ChatMembership,
+  { readonly status: 'member' | 'restricted' }
+>;
 
 /** The standing of a member that is not the owner, which the owner can change. */
 export type NonOwnerMemberStatus = Exclude<ChatMembership, { readonly status: 'owner' }>;
@@ -167,7 +174,12 @@ export class SharedChatRepository {
     return [...(this.#sharedChatMembershipsByChatId.get(chatId)?.keys() ?? [])];
   }
 
-  addChatMember(chatId: number, memberId: number): ChatMemberAdditionResult {
+  /** Adds a user to a chat as a member, or as a restricted member that keeps its restriction. */
+  addChatMember(
+    chatId: number,
+    memberId: number,
+    membership: JoiningMemberStatus = { status: 'member' },
+  ): ChatMemberAdditionResult {
     const membershipsByIdentityId = this.#sharedChatMembershipsByChatId.get(chatId);
     if (membershipsByIdentityId === undefined) {
       return { added: false, reason: 'chat_not_found' };
@@ -176,7 +188,7 @@ export class SharedChatRepository {
       return { added: false, reason: 'member_already_present' };
     }
 
-    membershipsByIdentityId.set(memberId, { status: 'member' });
+    membershipsByIdentityId.set(memberId, membership);
     this.#formerMemberStatusesByChatId.get(chatId)?.delete(memberId);
     return { added: true };
   }
@@ -213,7 +225,20 @@ export class SharedChatRepository {
     return true;
   }
 
-  /** Promotes a member to administrator, changes its rights, or demotes it; never the owner. */
+  /** Sets what a supergroup's members may do by default; returns false for an unknown supergroup. */
+  updateSupergroupDefaultPermissions(chatId: number, defaultPermissions: ChatPermissions): boolean {
+    const chat = this.#sharedChatsById.get(chatId);
+    if (chat?.kind !== 'supergroup') {
+      return false;
+    }
+    this.#sharedChatsById.set(chatId, { ...chat, defaultPermissions });
+    return true;
+  }
+
+  /**
+   * Promotes a member to administrator, changes its rights, restricts it, or makes it a plain
+   * member; never the owner.
+   */
   updateChatMemberStatus(
     chatId: number,
     memberId: number,
@@ -249,7 +274,7 @@ export class SharedChatRepository {
     if (membership === undefined) {
       return { updated: false, reason: 'not_a_member' };
     }
-    if (membership.status === 'member') {
+    if (membership.status !== 'owner' && membership.status !== 'administrator') {
       return { updated: false, reason: 'not_an_administrator' };
     }
 
@@ -307,7 +332,10 @@ export class SharedChatRepository {
     return { removed: true };
   }
 
-  /** Bans a user that is not a member, or lifts its ban, which leaves it as having left. */
+  /**
+   * Bans or restricts a user that is not a member, or lifts its ban or restriction, which leaves
+   * it as having left.
+   */
   updateFormerMemberStatus(
     chatId: number,
     identityId: number,

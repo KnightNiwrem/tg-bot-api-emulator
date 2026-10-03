@@ -1,3 +1,10 @@
+import {
+  ALL_CHAT_PERMISSIONS,
+  CHAT_PERMISSIONS,
+  type ChatPermissions,
+  isAdministratorRightPermission,
+  isSameChatPermissions,
+} from './chat_permissions.ts';
 import type { SharedChat, Supergroup } from './virtual_chat.ts';
 
 /**
@@ -45,9 +52,35 @@ export function grantSupergroupAdministratorRights(
 export const MAX_CUSTOM_TITLE_LENGTH = 16;
 
 /**
+ * What a supergroup user may still do while restricted, as far as the supergroup's default
+ * permissions allow it too. The restriction lasts while the user leaves and joins again, as
+ * Telegram keeps it, until it is lifted, or the user is banned or promoted.
+ */
+export interface ChatMemberRestriction {
+  /**
+   * The permissions the user keeps, which never include every permission: TDLib's
+   * `DialogParticipantStatus::Restricted` treats a user that keeps them all as unrestricted.
+   */
+  readonly permissions: ChatPermissions;
+  /**
+   * When the restriction ends; omitted for one that lasts until it is lifted. The emulator never
+   * lifts a restriction on its own when this time passes.
+   */
+  readonly restrictedUntilUnixSeconds?: number;
+}
+
+/**
+ * A restricted user's standing, by the Bot API's status name, whether it is a member or not, as
+ * the Bot API's `ChatMemberRestricted.is_member` tells.
+ */
+export type RestrictedChatMemberStatus<IsMember extends boolean = boolean> =
+  & { readonly status: 'restricted'; readonly isMember: IsMember }
+  & ChatMemberRestriction;
+
+/**
  * A current member's standing in a shared chat. Only supergroups have administrators, whom the
- * owner promotes. The owner and administrators may carry a custom title that clients show instead
- * of their role; it is omitted for none.
+ * owner promotes, and restricted members. The owner and administrators may carry a custom title
+ * that clients show instead of their role; it is omitted for none.
  */
 export type ChatMembership =
   | { readonly status: 'owner'; readonly customTitle?: string }
@@ -56,11 +89,13 @@ export type ChatMembership =
     readonly rights: SupergroupAdministratorRights;
     readonly customTitle?: string;
   }
-  | { readonly status: 'member' };
+  | { readonly status: 'member' }
+  | RestrictedChatMemberStatus<true>;
 
 /**
  * How a former member's membership ended, by the Bot API's status names: the member `left`, or it
- * was removed, which in a supergroup bans it as `kicked` until the ban is lifted.
+ * was removed, which in a supergroup bans it as `kicked` until the ban is lifted. A restricted
+ * member that leaves stays `restricted`, and so does a user restricted before it joins.
  */
 export type FormerChatMemberStatus =
   | { readonly status: 'left' }
@@ -71,7 +106,8 @@ export type FormerChatMemberStatus =
      * emulator never lifts a ban on its own when this time passes.
      */
     readonly bannedUntilUnixSeconds?: number;
-  };
+  }
+  | RestrictedChatMemberStatus<false>;
 
 /**
  * A user's standing in a shared chat, whether it is a member or not. A user that never joined the
@@ -81,6 +117,30 @@ export type ChatMemberStatus = ChatMembership | FormerChatMemberStatus;
 
 /** A user that left a chat, or never joined it. */
 export const LEFT_CHAT_MEMBER_STATUS: FormerChatMemberStatus = { status: 'left' };
+
+/** Whether a user's standing makes it a current member of the chat. */
+export function isChatMember(status: ChatMemberStatus): status is ChatMembership {
+  switch (status.status) {
+    case 'owner':
+    case 'administrator':
+    case 'member':
+      return true;
+    case 'restricted':
+      return status.isMember;
+    case 'left':
+    case 'kicked':
+      return false;
+    default: {
+      const unhandledStatus: never = status;
+      throw new Error(`Unhandled chat member status: ${JSON.stringify(unhandledStatus)}`);
+    }
+  }
+}
+
+/** Whether a member administers a chat: it owns the chat, or the owner promoted it. */
+export function isChatAdministrator(membership: ChatMembership): boolean {
+  return membership.status === 'owner' || membership.status === 'administrator';
+}
 
 /** Whether a supergroup member holds an administrator right; the owner holds every right. */
 export function holdsSupergroupAdministratorRight(
@@ -93,6 +153,7 @@ export function holdsSupergroupAdministratorRight(
     case 'administrator':
       return membership.rights.has(right);
     case 'member':
+    case 'restricted':
     case undefined:
       return false;
     default: {
@@ -102,7 +163,55 @@ export function holdsSupergroupAdministratorRight(
   }
 }
 
-/** Whether two standings in a chat are the same, rights, custom title and ban end included. */
+/**
+ * What a supergroup member may do, as TDLib's `DialogParticipantStatus::apply_restrictions` decides
+ * from its standing and the supergroup's default permissions:
+ *
+ * - The owner may do everything.
+ * - An administrator may send anything, and holds the permissions that are also administrator
+ *   rights as far as it holds those rights; an administrator that is an account also holds them
+ *   as far as the default permissions grant them.
+ * - Any other member holds the default permissions, as far as its restriction, if any, lets it.
+ *   As for administrators, the default permissions never grant a bot the permissions that are also
+ *   administrator rights.
+ */
+export function getEffectiveChatPermissions(
+  membership: ChatMembership,
+  { defaultPermissions, isBot }: {
+    readonly defaultPermissions: ChatPermissions;
+    readonly isBot: boolean;
+  },
+): ChatPermissions {
+  switch (membership.status) {
+    case 'owner':
+      return ALL_CHAT_PERMISSIONS;
+    case 'administrator':
+      return new Set(
+        CHAT_PERMISSIONS.filter((permission) =>
+          !isAdministratorRightPermission(permission) || membership.rights.has(permission) ||
+          (!isBot && defaultPermissions.has(permission))
+        ),
+      );
+    case 'member':
+    case 'restricted':
+      return new Set(
+        CHAT_PERMISSIONS.filter((permission) =>
+          defaultPermissions.has(permission) &&
+          (membership.status === 'member' || membership.permissions.has(permission)) &&
+          !(isBot && isAdministratorRightPermission(permission))
+        ),
+      );
+    default: {
+      const unhandledMembership: never = membership;
+      throw new Error(`Unhandled chat membership: ${JSON.stringify(unhandledMembership)}`);
+    }
+  }
+}
+
+/**
+ * Whether two standings in a chat are the same, rights, custom title, restriction and ban end
+ * included.
+ */
 export function isSameChatMemberStatus(
   first: ChatMemberStatus,
   second: ChatMemberStatus,
@@ -120,6 +229,10 @@ export function isSameChatMemberStatus(
     case 'kicked':
       return second.status === 'kicked' &&
         first.bannedUntilUnixSeconds === second.bannedUntilUnixSeconds;
+    case 'restricted':
+      return second.status === 'restricted' && first.isMember === second.isMember &&
+        first.restrictedUntilUnixSeconds === second.restrictedUntilUnixSeconds &&
+        isSameChatPermissions(first.permissions, second.permissions);
     default: {
       const unhandledStatus: never = first;
       throw new Error(`Unhandled chat member status: ${JSON.stringify(unhandledStatus)}`);
@@ -186,6 +299,7 @@ export function getSupergroupNonMemberFailureReason(
     case undefined:
       return 'chat_not_found';
     case 'left':
+    case 'restricted':
       return 'bot_not_a_member';
     case 'kicked':
       return 'bot_kicked';
