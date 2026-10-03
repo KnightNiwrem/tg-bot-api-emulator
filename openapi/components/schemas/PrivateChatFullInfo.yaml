@@ -38,10 +38,9 @@ properties:
   accepted_gift_types:
     $ref: ./AcceptedGiftTypes.yaml
   pinned_message:
-    $ref: ./PrivateMessage.yaml
+    $ref: ./PinnedPrivateMessage.yaml
     description: >-
-      The chat's newest pinned message by sending date, which never has a `reply_to_message`
-      of its own. Omitted when the chat pins no message.
+      The chat's newest pinned message by sending date. Omitted when the chat pins no message.
   max_reaction_count:
     type: integer
     description: How many different reactions a message may carry, 11 in every emulated chat.

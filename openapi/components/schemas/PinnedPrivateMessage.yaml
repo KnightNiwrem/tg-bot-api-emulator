@@ -1,0 +1,7 @@
+description: >-
+  A pinned private message as `getChat` shows it: a private message without a
+  `reply_to_message` of its own, as the official server shows a replied message.
+allOf:
+  - $ref: ./PrivateMessage.yaml
+  - properties:
+      reply_to_message: false
