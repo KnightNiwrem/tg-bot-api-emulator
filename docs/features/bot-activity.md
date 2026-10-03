@@ -69,15 +69,15 @@ parameter.
 `session.botActivity(filter?, options?)` returns a view of the log. The view's filter applies to
 every read in addition to the read's own filter. Filters use the entries' field names, such as
 `bot_id` and `chat_id`. An empty `parameters` map matches only calls, like any criteria only calls
-have; as it puts nothing in the query, the client sends `kind=bot_api_call` for it. Methods compare
-as the server compares them, so a view of `kickChatMember` reads its `banChatMember` calls. A view
-and a read whose criteria together can match no entry are rejected with a `TypeError`: different
-values for one criterion, or a call's criteria or `kind` together with an update's. A `where`
-predicate checks the entries that match the other criteria, on the client, and receives only the
-kinds of entry those criteria can match: a `BotApiCallEntry` when they name a `method`, an
-`UpdateDeliveredEntry` when they name that `kind`. A list of different filters needs a declared
-type, such as `BotActivityCriteria[]`, as TypeScript infers the narrowed type from a single filter
-only.
+have; as it puts nothing in the query, the client sends `kind=bot_api_call` for it. A view and a
+read whose criteria together can match no entry are rejected with a `TypeError`: different values
+for one criterion, or a call's criteria or `kind` together with an update's. Methods differ only
+when the server would read them differently, ignoring case and resolving older names, so a view of
+`kickChatMember` accepts a read of `banChatMember` and finds its calls. A `where` predicate checks
+the entries that match the other criteria, on the client, and receives only the kinds of entry those
+criteria can match: a `BotApiCallEntry` when they name a `method`, an `UpdateDeliveredEntry` when
+they name that `kind`. A list of different filters needs a declared type, such as
+`BotActivityCriteria[]`, as TypeScript infers the narrowed type from a single filter only.
 
 - `position()` returns the head position.
 - `waitFor(filter, { after })` returns the first matching entry after a position. It holds one
