@@ -353,7 +353,8 @@ export class BotMessageViewService {
 
   /**
    * Decides whether a bot may edit an administrator of a chat, as
-   * `canEditSupergroupAdministrator` does from the chat's current memberships.
+   * `canEditSupergroupAdministrator` does from the chat's current memberships. It never fails,
+   * so a change that is already stored is always delivered.
    */
   #getAdministratorEditability(chatId: number, observerBotId: number): AdministratorEditability {
     return (administrator) =>

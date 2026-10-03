@@ -1,4 +1,5 @@
 import type {
+  AdministratorTenureId,
   ChatMembership,
   ChatMemberStatus,
   FormerChatMemberStatus,
@@ -97,6 +98,13 @@ export class SharedChatRepository {
   readonly #formerMemberStatusesByChatId = new Map<number, Map<number, FormerChatMemberStatus>>();
   /** Keyed by chat ID, then by the ID of the account whose client shows the reply interface. */
   readonly #replyInterfaceMessageIdsByChatId = new Map<number, Map<number, CanonicalMessageId>>();
+  #lastAdministratorTenureId: AdministratorTenureId = 0;
+
+  /** Issues the identifier of an administrator tenure that starts, greater than every earlier one. */
+  issueAdministratorTenureId(): AdministratorTenureId {
+    this.#lastAdministratorTenureId += 1;
+    return this.#lastAdministratorTenureId;
+  }
 
   registerBasicGroup(
     group: BasicGroup,

@@ -361,12 +361,16 @@ export type SupergroupAdministrator =
     /** Every supergroup right, held or not. */
     readonly rights: Readonly<Record<SupergroupAdministratorRight, boolean>>;
     readonly custom_title?: string;
-    /** The owner or administrator that last set the administrator's rights. */
+    /**
+     * The owner or administrator that last set the administrator's rights, even once that
+     * promoter's tenure has ended.
+     */
     readonly promoted_by_user_id: number;
     /**
      * Whether this account may change the administrator's rights or demote it: it owns the
      * supergroup, or it holds `can_promote_members` and promoted the administrator, directly or
-     * through administrators it promoted.
+     * through administrators it promoted, during administrator tenures that still last. No
+     * account may edit itself.
      */
     readonly can_be_edited: boolean;
   };
