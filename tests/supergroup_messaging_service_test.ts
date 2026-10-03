@@ -140,6 +140,12 @@ Deno.test('SupergroupMessagingService sends albums whole, numbered in order for 
       fromBotId: bot.profile.id,
       chatId: supergroup.id,
       contents: [photo(''), photo('')],
+      replyTo: { messageId: 99, allowSendingWithoutReply: false },
+    }),
+    supergroupMessaging.sendBotAlbum({
+      fromBotId: bot.profile.id,
+      chatId: supergroup.id,
+      contents: [photo(''), photo('')],
       messageEffectId: '5104841245755180586',
     }),
     supergroupMessaging.sendBotAlbum({
@@ -157,6 +163,7 @@ Deno.test('SupergroupMessagingService sends albums whole, numbered in order for 
     JSON.stringify(failures) !==
       JSON.stringify([
         'not_a_member',
+        'reply_message_not_found',
         'message_effect_not_allowed_in_chat',
         'caption_too_long',
         'album_too_large',
@@ -165,6 +172,19 @@ Deno.test('SupergroupMessagingService sends albums whole, numbered in order for 
     throw new Error(
       `Expected refused albums to send nothing, received ${JSON.stringify(failures)}`,
     );
+  }
+
+  const albumWithoutReply = supergroupMessaging.sendBotAlbum({
+    fromBotId: bot.profile.id,
+    chatId: supergroup.id,
+    contents: [photo(''), photo('')],
+    replyTo: { messageId: 99, allowSendingWithoutReply: true },
+  });
+  if (
+    !albumWithoutReply.sent ||
+    albumWithoutReply.messages.some((message) => message.replyToMessageId !== undefined)
+  ) {
+    throw new Error('Expected allowSendingWithoutReply to send the album as no reply');
   }
 });
 

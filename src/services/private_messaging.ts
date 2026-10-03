@@ -775,17 +775,11 @@ export class PrivateMessagingService {
    * account's own contact needs the phone number the account was created with.
    */
   sendAccountMessage(input: SendAccountMessageInput): SendAccountMessageResult {
-    const account = this.#accounts.getById(input.fromAccountId);
-    if (account === undefined) {
-      return { sent: false, reason: 'account_not_found' };
+    const senderResolution = this.#resolveAccountSender(input.fromAccountId, input.to.botId);
+    if (!senderResolution.resolved) {
+      return { sent: false, reason: senderResolution.reason };
     }
-    const bot = this.#bots.getById(input.to.botId);
-    if (bot === undefined) {
-      return { sent: false, reason: 'bot_not_found' };
-    }
-    if (this.#blockedUsers.isBlocked(account.profile.id, bot.profile.id)) {
-      return { sent: false, reason: 'bot_blocked' };
-    }
+    const { account, bot } = senderResolution;
     if (input.content.kind === 'text' && input.content.text.length === 0) {
       return { sent: false, reason: 'message_text_empty' };
     }
@@ -828,17 +822,11 @@ export class PrivateMessagingService {
    * The bot receives each message in the album's order.
    */
   sendAccountAlbum(input: SendAccountAlbumInput): SendAccountAlbumResult {
-    const account = this.#accounts.getById(input.fromAccountId);
-    if (account === undefined) {
-      return { sent: false, reason: 'account_not_found' };
+    const senderResolution = this.#resolveAccountSender(input.fromAccountId, input.to.botId);
+    if (!senderResolution.resolved) {
+      return { sent: false, reason: senderResolution.reason };
     }
-    const bot = this.#bots.getById(input.to.botId);
-    if (bot === undefined) {
-      return { sent: false, reason: 'bot_not_found' };
-    }
-    if (this.#blockedUsers.isBlocked(account.profile.id, bot.profile.id)) {
-      return { sent: false, reason: 'bot_blocked' };
-    }
+    const { account, bot } = senderResolution;
     const albumNormalization = normalizeOutgoingAlbum(
       input.contents.map((content) => toOutgoingAccountMedia(content)),
       'account',
@@ -1497,6 +1485,30 @@ export class PrivateMessagingService {
   }
 
   /**
+   * Finds the account that sends a message to its private chat with a bot, and the bot. As on
+   * Telegram, an account that blocked the bot cannot send it messages.
+   */
+  #resolveAccountSender(accountId: number, botId: number):
+    | { readonly resolved: true; readonly account: VirtualAccount; readonly bot: VirtualBot }
+    | {
+      readonly resolved: false;
+      readonly reason: 'account_not_found' | 'bot_not_found' | 'bot_blocked';
+    } {
+    const account = this.#accounts.getById(accountId);
+    if (account === undefined) {
+      return { resolved: false, reason: 'account_not_found' };
+    }
+    const bot = this.#bots.getById(botId);
+    if (bot === undefined) {
+      return { resolved: false, reason: 'bot_not_found' };
+    }
+    if (this.#blockedUsers.isBlocked(account.profile.id, bot.profile.id)) {
+      return { resolved: false, reason: 'bot_blocked' };
+    }
+    return { resolved: true, account, bot };
+  }
+
+  /**
    * Finds the account a bot writes to and their conversation. As on Telegram, a bot cannot initiate
    * a private conversation, so the account must have started one with the bot.
    */
@@ -1705,17 +1717,11 @@ export class PrivateMessagingService {
       readonly forwardInfo?: MessageForwardInfo;
     },
   ): SendAccountInlineResultResult {
-    const account = this.#accounts.getById(fromAccountId);
-    if (account === undefined) {
-      return { sent: false, reason: 'account_not_found' };
+    const senderResolution = this.#resolveAccountSender(fromAccountId, botId);
+    if (!senderResolution.resolved) {
+      return { sent: false, reason: senderResolution.reason };
     }
-    const bot = this.#bots.getById(botId);
-    if (bot === undefined) {
-      return { sent: false, reason: 'bot_not_found' };
-    }
-    if (this.#blockedUsers.isBlocked(account.profile.id, bot.profile.id)) {
-      return { sent: false, reason: 'bot_blocked' };
-    }
+    const { account, bot } = senderResolution;
 
     this.#privateConversations.getOrCreatePrivateConversation({
       accountId: account.profile.id,

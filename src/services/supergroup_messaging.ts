@@ -890,15 +890,11 @@ export class SupergroupMessagingService {
     if (!botMembership.resolved) {
       return { sent: false, reason: botMembership.reason };
     }
-    const repliedMessage = input.replyTo === undefined
-      ? undefined
-      : this.getMessageByChatMessageId(input.chatId, input.replyTo.messageId);
-    if (
-      input.replyTo !== undefined && repliedMessage === undefined &&
-      !input.replyTo.allowSendingWithoutReply
-    ) {
+    const replyResolution = this.#resolveBotMessageReplyTarget(input.chatId, input.replyTo);
+    if (!replyResolution.resolved) {
       return { sent: false, reason: 'reply_message_not_found' };
     }
+    const { repliedMessage } = replyResolution;
     if (input.messageEffectId !== undefined) {
       return { sent: false, reason: 'message_effect_not_allowed_in_chat' };
     }
@@ -985,15 +981,11 @@ export class SupergroupMessagingService {
     if (!botMembership.resolved) {
       return { sent: false, reason: botMembership.reason };
     }
-    const repliedMessage = input.replyTo === undefined
-      ? undefined
-      : this.getMessageByChatMessageId(input.chatId, input.replyTo.messageId);
-    if (
-      input.replyTo !== undefined && repliedMessage === undefined &&
-      !input.replyTo.allowSendingWithoutReply
-    ) {
+    const replyResolution = this.#resolveBotMessageReplyTarget(input.chatId, input.replyTo);
+    if (!replyResolution.resolved) {
       return { sent: false, reason: 'reply_message_not_found' };
     }
+    const { repliedMessage } = replyResolution;
     if (input.messageEffectId !== undefined) {
       return { sent: false, reason: 'message_effect_not_allowed_in_chat' };
     }
@@ -1430,6 +1422,26 @@ export class SupergroupMessagingService {
     return canonicalMessageId === undefined
       ? undefined
       : this.#messages.getSupergroupMessage(canonicalMessageId);
+  }
+
+  /**
+   * Finds the message a bot's message replies to. As on Telegram, a target that is not found,
+   * such as a deleted message, fails the send unless the bot allowed sending without a reply.
+   */
+  #resolveBotMessageReplyTarget(
+    chatId: number,
+    replyTo: SupergroupBotMessageReplyTarget | undefined,
+  ):
+    | { readonly resolved: true; readonly repliedMessage?: SupergroupMessage }
+    | { readonly resolved: false } {
+    if (replyTo === undefined) {
+      return { resolved: true };
+    }
+    const repliedMessage = this.getMessageByChatMessageId(chatId, replyTo.messageId);
+    if (repliedMessage !== undefined) {
+      return { resolved: true, repliedMessage };
+    }
+    return replyTo.allowSendingWithoutReply ? { resolved: true } : { resolved: false };
   }
 
   #resolveAccountMember(
