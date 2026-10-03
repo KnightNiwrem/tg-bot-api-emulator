@@ -1,0 +1,17 @@
+type: object
+additionalProperties: false
+required:
+  - chat_id
+properties:
+  chat_id:
+    $ref: ./ChatIdentifier.yaml
+    description: >-
+      Identifier of the chat: for a private chat, the account's user ID; for a supergroup, its
+      negative chat ID.
+  message_id:
+    type: integer
+    minimum: 0
+    description: >-
+      Identifier of the message to unpin in the bot's chat. Omitted or 0, the chat's newest
+      pinned message by sending date is unpinned. Telegram reads a negative identifier as
+      omitted; the emulator rejects it.

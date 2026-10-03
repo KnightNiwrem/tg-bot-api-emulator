@@ -1,0 +1,65 @@
+description: >-
+  Telegram Bot API method for adding a message to a chat's pinned messages; a chat pins any
+  number of messages, and `getChat` shows the newest by sending date. In a private chat, the
+  bot pins any message either participant wrote; in a supergroup, it needs to be an
+  administrator with `can_pin_messages`, a right that bots never get from the default
+  permissions. Service messages cannot be pinned. The pin is recorded as the bot's service
+  message with `pinned_message`, which the chat's bots receive, privacy mode notwithstanding,
+  the bot itself included, as the official server's `need_skip_update_message` lets it.
+parameters:
+  - $ref: ../components/parameters/SessionId.yaml
+  - $ref: ../components/parameters/BotToken.yaml
+post:
+  operationId: pinChatMessage
+  summary: Pin a message of one of the authenticated virtual bot's chats
+  requestBody:
+    required: true
+    content:
+      application/json:
+        schema:
+          $ref: ../components/schemas/PinChatMessageRequest.yaml
+      application/x-www-form-urlencoded:
+        schema:
+          $ref: ../components/schemas/PinChatMessageRequest.yaml
+      multipart/form-data:
+        schema:
+          $ref: ../components/schemas/PinChatMessageRequest.yaml
+  responses:
+    '200':
+      description: The message is pinned.
+      content:
+        application/json:
+          schema:
+            $ref: ../components/schemas/TrueResultResponse.yaml
+    '400':
+      description: >-
+        The request cannot be decoded or has unsupported parameters, such as
+        `business_connection_id`, or Telegram would reject it, checking in this order:
+        `chat_id` is missing (`Bad Request: chat_id is empty`); the chat is not one the bot can
+        address (`Bad Request: chat not found`); `message_id` is missing, not positive, or
+        identifies no message of the chat (`Bad Request: message to pin not found`); the bot
+        lacks the right (`Bad Request: not enough rights to manage pinned messages in the
+        chat`); the message is a service message (`Bad Request: service messages can't be
+        pinned`); or it is already pinned (`Bad Request: CHAT_NOT_MODIFIED`).
+      content:
+        application/json:
+          schema:
+            $ref: ../components/schemas/BotApiErrorResponse.yaml
+    '401':
+      description: The token does not belong to a virtual bot in the addressed session.
+      content:
+        application/json:
+          schema:
+            $ref: ../components/schemas/BotApiErrorResponse.yaml
+    '403':
+      description: >-
+        The bot left the supergroup (`Forbidden: bot is not a member of the supergroup chat`) or
+        was removed from it (`Forbidden: bot was kicked from the supergroup chat`).
+      content:
+        application/json:
+          schema:
+            $ref: ../components/schemas/BotApiErrorResponse.yaml
+    '404':
+      description: No active test session has the supplied identifier.
+    '429':
+      $ref: ../components/responses/BotApiRateLimited.yaml
