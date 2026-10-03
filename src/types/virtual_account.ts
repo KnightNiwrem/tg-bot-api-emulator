@@ -1,6 +1,12 @@
 import type { User } from 'grammy/types';
 import type { Contact } from './contact.ts';
 
+/**
+ * The most characters of an account's first or last name, the server-side limit of TDLib's
+ * `UserManager::MAX_NAME_LENGTH`. It keeps an account's own contact within the contact name limit.
+ */
+export const MAX_ACCOUNT_NAME_LENGTH = 64;
+
 export type VirtualAccountProfile = Readonly<User> & {
   readonly is_bot: false;
 };

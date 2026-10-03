@@ -39,9 +39,10 @@ emulator knows to be the account's:
 - **Own contact.** An account created with `phone_number`, the digits of an E.164 number without its
   `+` as Telegram's `user.phone` holds them, shares its own contact with `own_contact: true` or the
   TypeScript client's `shareOwnContact`. The contact shows that number, the account's first and last
-  name, and the account's ID as its `user_id`, so a bot can compare `contact.user_id` with
-  `from.id`. An account created without a phone number has no contact of its own; sharing it fails
-  with `409` and sends nothing.
+  name, which account creation limits to 64 characters as Telegram's servers limit a user's names,
+  and the account's ID as its `user_id`, so a bot can compare `contact.user_id` with `from.id`. An
+  account created without a phone number has no contact of its own; sharing it fails with `409` and
+  sends nothing.
 - **Written contact.** Any other contact an account sends, with `contact` or the TypeScript client's
   `sendContact`, shows no `user_id`, even when it carries the account's own number or another
   account's.

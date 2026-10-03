@@ -383,9 +383,19 @@ Deno.test('accounts share their own or written contacts in private chats and sup
   );
 });
 
-Deno.test('a phone number at sign-up must be the digits of an E.164 number', async () => {
+Deno.test('sign-up names fit in contacts, and phone numbers are the digits of an E.164 number', async () => {
   const { api, accountPath } = await createContactFixture();
   const accountsPath = accountPath(0).replace(/\/0$/, '');
+  for (const name of ['x'.repeat(65), '😀'.repeat(65)]) {
+    for (const profile of [{ first_name: name }, { first_name: 'Linus', last_name: name }]) {
+      const response = await api.request(accountsPath, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(profile),
+      });
+      expectEqual(response.status, 400, 'Expected a name over 64 characters to be refused');
+    }
+  }
   for (const phoneNumber of ['+15550100', '015550100', '1555 0100', '', '1234567890123456', 5]) {
     const response = await api.request(accountsPath, {
       method: 'POST',

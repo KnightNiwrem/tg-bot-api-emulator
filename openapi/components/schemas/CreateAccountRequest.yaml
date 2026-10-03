@@ -6,9 +6,15 @@ properties:
   first_name:
     type: string
     minLength: 1
+    maxLength: 64
+    description: >-
+      At most 64 characters, counted by code point, the server-side limit TDLib's
+      `UserManager::MAX_NAME_LENGTH` gives a user's names.
   last_name:
     type: string
     minLength: 1
+    maxLength: 64
+    description: At most 64 characters, as for `first_name`.
   username:
     type: string
     minLength: 1

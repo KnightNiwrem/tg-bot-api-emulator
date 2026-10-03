@@ -33,6 +33,7 @@ import {
   MIN_SUPERGROUP_OR_CHANNEL_ID,
   MIN_TELEGRAM_USER_ID,
 } from '../../../types/telegram_identity.ts';
+import { MAX_ACCOUNT_NAME_LENGTH } from '../../../types/virtual_account.ts';
 import type { Supergroup, VisibleChatAction } from '../../../types/virtual_chat.ts';
 import {
   type ChatMessage,
@@ -147,9 +148,15 @@ const chatSchema = z.discriminatedUnion('type', [
   z.strictObject({ type: z.literal('supergroup'), chatId: supergroupChatIdSchema }),
 ]);
 
+/** An account's first or last name, of at most as many characters as Telegram's servers allow. */
+const accountNameSchema = z.string().min(1).refine(
+  (name) => countTextCharacters(name) <= MAX_ACCOUNT_NAME_LENGTH,
+  { message: `A name must have at most ${MAX_ACCOUNT_NAME_LENGTH} characters` },
+);
+
 const createAccountRequestSchema = z.strictObject({
-  first_name: z.string().min(1),
-  last_name: z.string().min(1).optional(),
+  first_name: accountNameSchema,
+  last_name: accountNameSchema.optional(),
   username: z.string().min(1).optional(),
   language_code: z.string().min(1).optional(),
   /** Keeps forwards of the account's messages from linking to it; they show only its name. */

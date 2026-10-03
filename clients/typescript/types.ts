@@ -120,7 +120,9 @@ export interface QueueRateLimitResponsesInput {
 }
 
 export interface CreateVirtualAccountInput {
+  /** From 1 to 64 characters, as Telegram's servers limit a user's names. */
   readonly first_name: string;
+  /** From 1 to 64 characters; omitted for none. */
   readonly last_name?: string;
   readonly username?: string;
   readonly language_code?: string;
