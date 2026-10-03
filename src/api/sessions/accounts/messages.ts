@@ -27,7 +27,7 @@ import { accountLocationSchema, chatSchema } from './request_fields.ts';
 const ACCOUNT_MESSAGE_COLLECTION_PATH = `/:${ACCOUNT_ID_PARAMETER}/messages` as const;
 const ACCOUNT_MEDIA_GROUP_COLLECTION_PATH = `/:${ACCOUNT_ID_PARAMETER}/media-groups` as const;
 
-/** A file's content, which JSON carries as base64 text. */
+/** Where a message the account sends goes: its chat, and the message it replies to, if any. */
 const sentMessageTargetShape = {
   to: chatSchema,
   /** The replied message's ID as the chat's bots see it, which is how these routes show messages. */
