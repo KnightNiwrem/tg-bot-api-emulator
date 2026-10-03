@@ -2351,9 +2351,10 @@ export interface BotActivityLog {
    * if the emulator has not answered it, body included, by the deadline, and an answer received
    * later never counts. Reads of entries already recorded, those after a page that filled the read
    * limit up to the head it reported and the single read of a wait of 0 ms, may take one more
-   * second. A wait therefore settles
-   * within `timeoutMs` plus one second however the transport behaves, and sooner when `signal`
-   * aborts.
+   * second. No read counts that settles after its cutoff: the deadline for a holding read, that
+   * second later for the others. With a transport that does not block the event loop, a wait
+   * therefore settles within `timeoutMs` plus that second, and sooner when `signal` aborts; a
+   * transport that blocks the event loop delays the wait until it yields.
    */
   waitFor<const Criteria extends BotActivityCriteria>(
     filter: BotActivityFilterFor<Criteria>,

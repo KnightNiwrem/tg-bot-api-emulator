@@ -8,12 +8,13 @@ with its virtual token and `session.botApiRoot` configured as the API root.
 This walkthrough shows the available client operations. Run your bot alongside it. An account's
 action returns once the bot can receive it, not once the bot has handled it. The session's
 [bot activity log](features/bot-activity.md) records the bot's calls, so a test can wait for the bot
-to act before inspecting a reply, callback answer, or inline result. A wait settles within its
-`timeoutMs` plus one second even when the emulator stalls, and takes a `signal` that cancels it, as
-the log's [TypeScript client section](features/bot-activity.md#typescript-client) describes. Each
-step that reads the bot's response states the bot behavior it relies on, takes the log's position
-before acting, waits for the bot's successful call, and then selects the response by what identifies
-it. The photo and album examples also need a local `receipt.png` file, and the video example a local
+to act before inspecting a reply, callback answer, or inline result. A wait that the emulator leaves
+unanswered settles by its `timeoutMs`, plus one second for reads of entries already recorded, and
+takes a `signal` that cancels it, as the log's
+[TypeScript client section](features/bot-activity.md#typescript-client) describes. Each step that
+reads the bot's response states the bot behavior it relies on, takes the log's position before
+acting, waits for the bot's successful call, and then selects the response by what identifies it.
+The photo and album examples also need a local `receipt.png` file, and the video example a local
 `clip.mp4` file. The import below assumes the example is saved directly in `docs/`.
 
 Tests can use the TypeScript client instead of constructing emulation server URLs directly:
