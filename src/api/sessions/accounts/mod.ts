@@ -1603,8 +1603,15 @@ export function createAccountRoutes(): Hono<SessionRouteContextTypes> {
           return context.body(null, 400);
         case 'not_a_member':
           return context.body(null, 403);
-        default:
+        case 'account_not_found':
+        case 'bot_not_found':
+        case 'chat_not_found':
+        case 'message_not_found':
           return context.body(null, 404);
+        default: {
+          const unhandledReason: never = result.reason;
+          throw new Error(`Unhandled callback button press failure: ${unhandledReason}`);
+        }
       }
     }
 
@@ -1717,8 +1724,14 @@ export function createAccountRoutes(): Hono<SessionRouteContextTypes> {
         case 'inline_mode_disabled':
         case 'inline_location_not_requested':
           return context.body(null, 409);
-        default:
+        case 'account_not_found':
+        case 'bot_not_found':
+        case 'chat_not_found':
           return context.body(null, 404);
+        default: {
+          const unhandledReason: never = result.reason;
+          throw new Error(`Unhandled inline query send failure: ${unhandledReason}`);
+        }
       }
     }
 
