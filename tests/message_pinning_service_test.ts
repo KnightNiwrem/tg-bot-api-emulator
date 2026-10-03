@@ -325,7 +325,6 @@ Deno.test('a public supergroup ignores its default permissions for pins', () => 
   for (const memberId of [grace, memberBot]) {
     session.sharedChatAdministration.addChatMember({ actorAccountId: ada, chatId, memberId });
   }
-  promote(session, { ownerId: ada, chatId, memberId: grace, rights: ['can_delete_messages'] });
   const sent = session.supergroupMessaging.sendAccountMessage({
     fromAccountId: ada,
     chatId,
@@ -342,7 +341,13 @@ Deno.test('a public supergroup ignores its default permissions for pins', () => 
   expectEqual(
     pin(grace),
     { pinned: false, reason: 'not_enough_rights' },
-    'an administrator without the right gets no pin right from the defaults',
+    'a member gets no pin right from the defaults, which grant every permission',
+  );
+  promote(session, { ownerId: ada, chatId, memberId: grace, rights: ['can_delete_messages'] });
+  expectEqual(
+    pin(grace),
+    { pinned: false, reason: 'not_enough_rights' },
+    'nor does an administrator without the right',
   );
   promote(session, { ownerId: ada, chatId, memberId: grace, rights: ['can_pin_messages'] });
   expectEqual(pin(grace).pinned, true, 'the right lets the administrator pin');
