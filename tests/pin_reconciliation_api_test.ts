@@ -242,6 +242,22 @@ Deno.test('deleting a pinned message unpins it, and getChat shows the next newes
   );
 });
 
+Deno.test('a queued pin update keeps the pinned message as it was when it was created', async () => {
+  const { ada, pinningBot, privatePath, api, sendToPinningBot, callBot, readUpdates } =
+    await createReconciliationFixture();
+  const messageId = await sendToPinningBot('soon gone');
+  await readUpdates(pinningBot);
+  await callBot(pinningBot, 'pinChatMessage', { chat_id: ada, message_id: messageId });
+  await api.request(`${privatePath}/messages/${messageId}`, { method: 'DELETE' });
+
+  const [pinUpdate] = await readUpdates(pinningBot);
+  expectEqual(
+    [pinUpdate?.message?.pinned_message?.message_id, pinUpdate?.message?.pinned_message?.text],
+    [messageId, 'soon gone'],
+    'the pending update shows the pinned message from before its deletion',
+  );
+});
+
 Deno.test('deleting a pin service message leaves the message pinned', async () => {
   const { ada, pinningBot, privatePath, sendToPinningBot, callBot, getHistory, getPinnedIds } =
     await createReconciliationFixture();
