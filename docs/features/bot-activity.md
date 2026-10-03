@@ -99,9 +99,10 @@ recorded just before the deadline whose answer arrives after it is not found eit
 fills the read limit reports the head position when it was answered, and the entries after the page
 are read up to that position, even after the deadline. A wait of `timeoutMs: 0` makes one read of
 what is recorded when the emulator answers. These reads of entries already recorded get one more
-second after the deadline, so every wait settles within `timeoutMs` plus one second, however the
-transport behaves. The emulator holds a read for at most 10 minutes, so a wait with a longer
-`timeoutMs` fails at its first read with an `EmulationClientError` for the `400` answer.
+second after the deadline, and count, like a holding read, only if they settle in that time, so
+every wait settles within `timeoutMs` plus one second, however the transport behaves. The emulator
+holds a read for at most 10 minutes, so a wait with a longer `timeoutMs` fails at its first read
+with an `EmulationClientError` for the `400` answer.
 
 `waitFor` and `next` also take a `signal`. When it aborts, the wait abandons its read and rejects
 with the signal's reason, as `fetch` does, and a cursor stays where it was. Other failed requests,

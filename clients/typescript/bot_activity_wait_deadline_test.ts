@@ -78,6 +78,44 @@ Deno.test('A wait does not count a read that kept the event loop busy past its d
   }
 });
 
+Deno.test('A wait does not count a recorded read that kept the event loop busy past its allowance', async () => {
+  const allowanceMilliseconds = 1_000;
+  const busyPastAllowance = (waitStart: number) => {
+    // The allowance's timer cannot run while the transport holds the event loop past it.
+    while (performance.now() < waitStart + allowanceMilliseconds + 20) {
+      // Busy.
+    }
+  };
+  const scripts = [
+    // The single read of a wait of 0 ms.
+    (waitStart: number) => [() => {
+      busyPastAllowance(waitStart);
+      return page([sendMessageCall(1, 'late')], 1);
+    }],
+    // The read of the entries after a full page.
+    (waitStart: number) => [
+      () => page(skippedCalls(1, READ_LIMIT), READ_LIMIT + 1),
+      () => {
+        busyPastAllowance(waitStart);
+        return page([sendMessageCall(READ_LIMIT + 1, 'late')], READ_LIMIT + 1);
+      },
+    ],
+  ];
+  for (const script of scripts) {
+    const waitStart = performance.now();
+    const transport = createScriptedTransport(...script(waitStart));
+
+    const error = await rejectionOf(
+      createActivityLog(transport).waitFor(
+        { method: 'sendMessage', where: (call) => call.parameters.text === 'late' },
+        { after: 0, timeoutMs: 0 },
+      ),
+    );
+
+    assert(error instanceof BotActivityTimeoutError, `Expected a timeout, got ${error}`);
+  }
+});
+
 Deno.test('A cancelled wait rejects with the reason and releases its read', async () => {
   for (const unanswered of [neverAnswered, rejectedWhenAbandoned]) {
     const readStarted = Promise.withResolvers<void>();

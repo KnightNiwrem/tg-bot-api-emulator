@@ -41,7 +41,7 @@ export function latest(
 
 /**
  * No entry matching a filter was found after a position before the wait ended. When a read the
- * wait sent was abandoned unanswered at the deadline, or failed after it, `cause` is the
+ * wait sent was abandoned unanswered, or failed, once the time it had was over, `cause` is the
  * `EmulationClientError` for that read.
  */
 export class BotActivityTimeoutError extends Error {
@@ -122,19 +122,31 @@ interface BotActivityRead {
 type BotActivityReadAnswer = z.output<typeof botActivityReadResponseSchema>;
 
 /**
- * How a wait's search ended: with a matching entry, or with its time up. A read that the deadline
- * cut short, or that failed after it, is kept to explain the timeout.
+ * A wait's reads: one that holds until an entry is recorded, which must settle by the deadline, or
+ * one of entries already recorded, which gets the allowance after it.
  */
-type BotActivitySearchOutcome =
-  | { readonly found: true; readonly entry: BotActivityEntry }
-  | { readonly found: false; readonly lateRead?: EmulationClientError };
+type BotActivityWaitReadKind = 'holding' | 'recorded';
+
+/**
+ * Ends a wait's search once a read settled, or was abandoned, after the time its kind of read has;
+ * `waitFor` reports it as a `BotActivityTimeoutError`. A read that failed or was abandoned is kept
+ * to explain the timeout.
+ */
+class BotActivityWaitTimeUp extends Error {
+  override readonly name = 'BotActivityWaitTimeUp';
+  readonly lateRead?: EmulationClientError;
+
+  constructor(lateRead?: EmulationClientError) {
+    super('The wait for bot activity ran out of time');
+    this.lateRead = lateRead;
+  }
+}
 
 /** A range of the log whose entries are all recorded, read a page at a time. */
 interface RecordedRange {
   readonly after: number;
   readonly before: number;
   readonly filter: BotActivityFilter;
-  readonly signal?: AbortSignal;
 }
 
 class HttpBotActivityLog implements BotActivityLog {
@@ -168,76 +180,53 @@ class HttpBotActivityLog implements BotActivityLog {
     const combinedFilter = combineFilters(this.#baseFilter, acceptingAnyEntry(filter));
     const afterPosition = toPositionNumber(after);
     const waitTime = new BotActivityWaitTime(timeoutMs, signal);
-    let outcome: BotActivitySearchOutcome;
+    let match: BotActivityEntry | undefined;
     try {
-      outcome = await this.#findFirstMatch(combinedFilter, afterPosition, waitTime);
+      match = await this.#findFirstMatch(combinedFilter, afterPosition, waitTime);
     } catch (error) {
-      if (error instanceof EmulationClientError) {
-        if (waitTime.isCancellationReason(error.cause)) {
-          throw error.cause;
-        }
-        if (waitTime.isExpiryReason(error.cause)) {
-          throw new BotActivityTimeoutError(combinedFilter, afterPosition, timeoutMs, {
-            cause: error,
-          });
-        }
+      if (error instanceof BotActivityWaitTimeUp) {
+        throw new BotActivityTimeoutError(
+          combinedFilter,
+          afterPosition,
+          timeoutMs,
+          error.lateRead === undefined ? undefined : { cause: error.lateRead },
+        );
+      }
+      if (error instanceof EmulationClientError && waitTime.isCancellationReason(error.cause)) {
+        throw error.cause;
       }
       throw error;
     } finally {
       waitTime.end();
     }
-    if (!outcome.found) {
-      throw new BotActivityTimeoutError(
-        combinedFilter,
-        afterPosition,
-        timeoutMs,
-        outcome.lateRead === undefined ? undefined : { cause: outcome.lateRead },
-      );
+    if (match === undefined) {
+      throw new BotActivityTimeoutError(combinedFilter, afterPosition, timeoutMs);
     }
-    assertEntryMatching(outcome.entry, filter);
-    return outcome.entry;
+    assertEntryMatching(match, filter);
+    return match;
   }
 
   /**
    * Finds the first entry after a position that the filter's `where` predicate accepts, among the
-   * entries the emulator reports in the wait's time.
+   * entries the emulator reports in the wait's time, or `undefined` once the deadline has passed.
    */
   async #findFirstMatch(
     filter: BotActivityFilter,
     after: number,
     waitTime: BotActivityWaitTime,
-  ): Promise<BotActivitySearchOutcome> {
+  ): Promise<BotActivityEntry | undefined> {
     const isMatch = (entry: BotActivityEntry) => filter.where?.(entry) ?? true;
+    const readRecorded = (read: BotActivityRead) => this.#readForWait(read, 'recorded', waitTime);
     let unreadAfter = after;
     let remainingMilliseconds = waitTime.remainingMilliseconds();
     for (;;) {
-      // A read with time left holds until an entry is recorded, and counts only if it settles by
-      // the deadline; one without time left, as in a wait of 0 ms, takes what is recorded.
-      const isHoldingRead = remainingMilliseconds > 0;
-      let answer: BotActivityReadAnswer;
-      try {
-        answer = await this.#read({
-          after: unreadAfter,
-          filter,
-          limit: READ_LIMIT,
-          waitMilliseconds: remainingMilliseconds,
-          signal: isHoldingRead ? waitTime.holdingReadSignal : waitTime.recordedReadSignal,
-        });
-      } catch (error) {
-        // The deadline's timer runs only once the event loop is free, so the clock decides too
-        // whether a holding read settled in time, whether it was abandoned, failed or answered.
-        if (
-          isHoldingRead && error instanceof EmulationClientError &&
-          !waitTime.isCancellationReason(error.cause) && waitTime.remainingMilliseconds() === 0
-        ) {
-          return { found: false, lateRead: error };
-        }
-        throw error;
-      }
-      if (isHoldingRead && waitTime.remainingMilliseconds() === 0) {
-        return { found: false };
-      }
-      const { entries, head_position } = answer;
+      // A read with time left holds until an entry is recorded; one without, as in a wait of 0 ms,
+      // takes what is recorded.
+      const { entries, head_position } = await this.#readForWait(
+        { after: unreadAfter, filter, limit: READ_LIMIT, waitMilliseconds: remainingMilliseconds },
+        remainingMilliseconds > 0 ? 'holding' : 'recorded',
+        waitTime,
+      );
       let match = entries.find(isMatch);
       if (match === undefined && entries.length === READ_LIMIT) {
         // A full page may have left entries unread up to the head it reports, which were recorded
@@ -246,32 +235,51 @@ class HttpBotActivityLog implements BotActivityLog {
           after: entries[entries.length - 1].position,
           before: head_position + 1,
           filter,
-          signal: waitTime.recordedReadSignal,
         };
-        match = await this.#findFirstRecorded(unreadRange, isMatch);
+        for await (const recordedEntries of this.#readRecordedPages(unreadRange, readRecorded)) {
+          match = recordedEntries.find(isMatch);
+          if (match !== undefined) {
+            break;
+          }
+        }
       }
       if (match !== undefined) {
-        return { found: true, entry: match };
+        return match;
       }
       remainingMilliseconds = waitTime.remainingMilliseconds();
       if (remainingMilliseconds === 0) {
-        return { found: false };
+        return undefined;
       }
       unreadAfter = Math.max(unreadAfter, head_position);
     }
   }
 
-  async #findFirstRecorded(
-    range: RecordedRange,
-    isMatch: (entry: BotActivityEntry) => boolean,
-  ): Promise<BotActivityEntry | undefined> {
-    for await (const entries of this.#readRecordedPages(range)) {
-      const match = entries.find(isMatch);
-      if (match !== undefined) {
-        return match;
+  /**
+   * Makes one of a wait's reads, and throws `BotActivityWaitTimeUp` unless it settles in the time
+   * its kind of read has. The timers that abandon a read run only once the event loop is free, so
+   * the clock decides too whether a read settled in time, whether it was answered or failed.
+   */
+  async #readForWait(
+    read: BotActivityRead,
+    kind: BotActivityWaitReadKind,
+    waitTime: BotActivityWaitTime,
+  ): Promise<BotActivityReadAnswer> {
+    let answer: BotActivityReadAnswer;
+    try {
+      answer = await this.#read({ ...read, signal: waitTime.signalFor(kind) });
+    } catch (error) {
+      if (
+        error instanceof EmulationClientError && !waitTime.isCancellationReason(error.cause) &&
+        (waitTime.isExpiryReason(error.cause) || waitTime.isOverFor(kind))
+      ) {
+        throw new BotActivityWaitTimeUp(error);
       }
+      throw error;
     }
-    return undefined;
+    if (waitTime.isOverFor(kind)) {
+      throw new BotActivityWaitTimeUp();
+    }
+    return answer;
   }
 
   async assertNone<const Criteria extends BotActivityCriteria>(
@@ -283,7 +291,7 @@ class HttpBotActivityLog implements BotActivityLog {
     const beforePosition = toPositionNumber(before);
     const matchingEntries: BotActivityEntry[] = [];
     const range = { after: afterPosition, before: beforePosition, filter: combinedFilter };
-    for await (const entries of this.#readRecordedPages(range)) {
+    for await (const entries of this.#readRecordedPages(range, (read) => this.#read(read))) {
       matchingEntries.push(...entries.filter((entry) => combinedFilter.where?.(entry) ?? true));
     }
     if (matchingEntries.length > 0) {
@@ -314,19 +322,14 @@ class HttpBotActivityLog implements BotActivityLog {
     };
   }
 
-  /** Reads the entries in a range that is already recorded, a page at a time. */
+  /** Reads the entries in a range that is already recorded, a page at a time, with `readPage`. */
   async *#readRecordedPages(
-    { after, before, filter, signal }: RecordedRange,
+    { after, before, filter }: RecordedRange,
+    readPage: (read: BotActivityRead) => Promise<BotActivityReadAnswer>,
   ): AsyncGenerator<readonly BotActivityEntry[]> {
     let unreadAfter = after;
     for (;;) {
-      const { entries } = await this.#read({
-        after: unreadAfter,
-        before,
-        filter,
-        limit: READ_LIMIT,
-        signal,
-      });
+      const { entries } = await readPage({ after: unreadAfter, before, filter, limit: READ_LIMIT });
       yield entries;
       if (entries.length < READ_LIMIT) {
         return;
@@ -410,6 +413,17 @@ class BotActivityWaitTime {
       ...cancellationSignals,
       this.#allowanceController.signal,
     ]);
+  }
+
+  /** The signal that abandons a read of the kind. */
+  signalFor(kind: BotActivityWaitReadKind): AbortSignal {
+    return kind === 'holding' ? this.holdingReadSignal : this.recordedReadSignal;
+  }
+
+  /** Whether, by the clock, the time a read of the kind has is over. */
+  isOverFor(kind: BotActivityWaitReadKind): boolean {
+    const allowanceMilliseconds = kind === 'holding' ? 0 : RECORDED_READ_ALLOWANCE_MILLISECONDS;
+    return performance.now() >= this.#deadline + allowanceMilliseconds;
   }
 
   /** The whole milliseconds left before the deadline, rounded up; 0 once it has passed. */
