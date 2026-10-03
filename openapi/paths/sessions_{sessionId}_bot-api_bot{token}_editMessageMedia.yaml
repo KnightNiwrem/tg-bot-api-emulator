@@ -59,7 +59,10 @@ post:
         of an album cannot become a document, nor a document a photo or video (`Bad Request: can't
         change media type in the album`). A `voice_note` cannot be new media either, as the
         official server refuses it outside rich messages (`Bad Request: can't parse InputMedia:
-        type "voice_note" is not allowed`).
+        type "voice_note" is not allowed`). As TDLib's `edit_message_media` checks new media
+        with `can_send_message_content`, a bot may not put media it may not send into a message
+        of a supergroup (`Bad Request: not enough rights to send photos to the chat`, or the like
+        for documents and videos); a message addressed by `inline_message_id` is not checked.
       content:
         application/json:
           schema:

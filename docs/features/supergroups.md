@@ -165,15 +165,18 @@ and bots are refused what they may not send, as TDLib's
 | Poll                                            | `can_send_polls`                                            | `not enough rights to send polls to the chat`            |
 | Rich message                                    | `can_send_messages`, and each photo's and file's permission | `not enough rights to send the rich message to the chat` |
 
-An album fails for its first item that may not be sent. `forwardMessage` and `copyMessage` report
-such content as `Bad Request: the message can't be forwarded` or
-`Bad Request: the message can't be copied`, as TDLib's [`forward_message`][forward-message] does
-once [`forward_messages_impl`][forward-messages] skips it; `forwardMessages` and `copyMessages` skip
-it and fail only when nothing is left. An account's inline query result needs
-`can_send_other_messages`, as [`send_inline_query_result_message`][inline-result-permission]
-requires for using inline bots, and then the permission of its content. The emulation API answers an
-account's refused message, album, forward, button press or inline result with `403`.
-`can_change_info` decides [title and description](#title-and-description) changes.
+An album fails for its first item that may not be sent. As TDLib's `edit_message_media` and
+`edit_message_text` check new media and rich messages, a bot's edit that puts such content into a
+message of the supergroup fails the same way; new text is not checked, nor is an edit addressed by
+`inline_message_id`. `forwardMessage` and `copyMessage` report such content as
+`Bad Request: the message can't be forwarded` or `Bad Request: the message can't be copied`, as
+TDLib's [`forward_message`][forward-message] does once [`forward_messages_impl`][forward-messages]
+skips it; `forwardMessages` and `copyMessages` skip it and fail only when nothing is left. An
+account's inline query result needs `can_send_other_messages`, as
+[`send_inline_query_result_message`][inline-result-permission] requires for using inline bots, and
+then the permission of its content. The emulation API answers an account's refused message, album,
+forward, button press or inline result with `403`. `can_change_info` decides
+[title and description](#title-and-description) changes.
 
 The other permissions are stored and shown but enforce nothing, because the emulator lacks what they
 govern: `can_send_audios` and `can_send_video_notes` (audio and video notes),
