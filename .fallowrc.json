@@ -37,6 +37,7 @@
           "src/types/inline_keyboard.ts",
           "src/types/reply_interface.ts",
           "src/types/bot_api.ts",
+          "src/types/bot_api_method_name.ts",
           "src/types/bot_api_rich_message.ts",
           "src/types/poll.ts",
           "src/types/bot_api_poll.ts",

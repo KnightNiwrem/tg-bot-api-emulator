@@ -7,7 +7,7 @@ import {
   TelegramEmulationClient,
   UnexpectedBotActivityError,
 } from './mod.ts';
-import type { BotActivityCriteria } from './mod.ts';
+import type { BotActivityCriteria, BotActivityLog } from './mod.ts';
 
 Deno.test('BotActivityLog waits for entries after the same position in either order', async () => {
   for (const order of [['B', 'C'], ['C', 'B']]) {
@@ -209,6 +209,126 @@ Deno.test('BotActivityLog rejects a read whose filter conflicts with the log fil
   await session.end();
 });
 
+Deno.test('BotActivityLog matches only calls for empty parameters, in a view or a read', async () => {
+  const { session, getUpdates } = await createFixture();
+  await getUpdates({});
+  await getUpdates({ offset: 2 });
+  const noParameters: Record<string, string> = Object.fromEntries([]);
+  const views: { readonly view: BotActivityLog; readonly filter: BotActivityCriteria }[] = [
+    { view: session.botActivity({}, { timeoutMs: 20 }), filter: { parameters: noParameters } },
+    { view: session.botActivity({ parameters: noParameters }, { timeoutMs: 20 }), filter: {} },
+    {
+      view: session.botActivity({ parameters: noParameters }, { timeoutMs: 20 }),
+      filter: { parameters: noParameters },
+    },
+  ];
+
+  for (const { view, filter } of views) {
+    await view.assertNone(filter, { after: 0, before: 2 });
+    await assertRejects(
+      () => view.waitFor(filter, { after: 0 }),
+      BotActivityTimeoutError,
+      `Expected ${JSON.stringify(filter)} to find no update`,
+    );
+    await assertRejects(
+      () => view.cursor({ after: 0 }).next(filter),
+      BotActivityTimeoutError,
+      `Expected a cursor for ${JSON.stringify(filter)} to find no update`,
+    );
+  }
+  const anyEntry = await session.botActivity().waitFor({ parameters: undefined }, { after: 0 });
+  if (anyEntry.kind !== 'update_delivered') {
+    throw new Error('Expected filters without parameters to match updates');
+  }
+  await session.end();
+});
+
+Deno.test('BotActivityLog finds the calls among updates for empty and nonempty parameters', async () => {
+  const { session, callBot, getUpdates } = await createFixture();
+  await getUpdates({});
+  await callBot('sendMessage', { text: 'A' });
+  await getUpdates({ offset: 2 });
+  await callBot('sendMessage', { text: 'B' });
+  const head = await session.botActivity().position();
+
+  const call = await session.botActivity().waitFor({ parameters: {} }, { after: 0 });
+  const viewedCall = await session.botActivity({ parameters: {} }).waitFor(
+    { where: (entry) => entry.kind === 'bot_api_call' && entry.parameters.text === 'B' },
+    { after: 0 },
+  );
+  const textCall = await session.botActivity({ parameters: { text: 'B' } }).waitFor(
+    { parameters: {} },
+    { after: 0 },
+  );
+  if (call.position !== 2 || viewedCall.position !== 4 || textCall.position !== 4) {
+    throw new Error('Expected the waits to skip the updates and find the calls');
+  }
+  try {
+    await session.botActivity({ parameters: {} }).assertNone({}, { after: 0, before: head });
+  } catch (error) {
+    if (
+      error instanceof UnexpectedBotActivityError && error.entries.length === 1 &&
+      error.entries[0].kind === 'bot_api_call'
+    ) {
+      await session.end();
+      return;
+    }
+    throw error;
+  }
+  throw new Error('Expected the call between the updates to fail the assertion');
+});
+
+Deno.test('BotActivityLog combines older and current names of a method in either order', async () => {
+  const { session, callBot } = await createFixture();
+  await callBot('banChatMember', { user_id: 1 });
+  await callBot('sendMessage', { text: 'After' });
+
+  const methodPairs = [['kickChatMember', 'banChatMember'], ['BANCHATMEMBER', 'kickchatmember']];
+  for (const [viewMethod, readMethod] of methodPairs) {
+    const activity = session.botActivity({ method: viewMethod });
+    const call = await activity.waitFor({ method: readMethod }, { after: 0 });
+    if (call.method !== 'banChatMember') {
+      throw new Error(`Expected ${viewMethod} and ${readMethod} to find the banChatMember call`);
+    }
+    await assertRejects(
+      () => activity.assertNone({ method: readMethod }, { after: 0, before: call.position + 1 }),
+      UnexpectedBotActivityError,
+      `Expected ${viewMethod} and ${readMethod} to find the banChatMember call in a range`,
+    );
+  }
+  await assertRejects(
+    () =>
+      session.botActivity({ method: 'kickChatMember' }).waitFor(
+        { method: 'unbanChatMember' },
+        { after: 0 },
+      ),
+    TypeError,
+    'Expected different methods to conflict',
+  );
+  await session.end();
+});
+
+Deno.test('BotActivityLog rejects criteria that only calls have with those of updates', async () => {
+  const { session, account } = await createFixture();
+  const contradictions: {
+    readonly view: BotActivityCriteria;
+    readonly read: BotActivityCriteria;
+  }[] = [
+    { view: { kind: 'update_delivered' }, read: { parameters: {} } },
+    { view: { parameters: {} }, read: { kind: 'update_confirmed' } },
+    { view: {}, read: { parameters: {}, user_id: account.id } },
+    { view: { kind: 'bot_api_call' }, read: { update_id: 1 } },
+  ];
+  for (const { view, read } of contradictions) {
+    await assertRejects(
+      () => session.botActivity(view).assertNone(read, { after: 0, before: 1 }),
+      TypeError,
+      `Expected ${JSON.stringify(read)} in a view of ${JSON.stringify(view)} to be rejected`,
+    );
+  }
+  await session.end();
+});
+
 Deno.test('BotActivityLog reports positions the server rejects', async () => {
   const { session } = await createFixture();
   try {
@@ -222,6 +342,22 @@ Deno.test('BotActivityLog reports positions the server rejects', async () => {
   }
   throw new Error('Expected a position beyond the head to be rejected');
 });
+
+async function assertRejects(
+  action: () => Promise<unknown>,
+  errorClass: abstract new (...args: never[]) => Error,
+  message: string,
+): Promise<void> {
+  try {
+    await action();
+  } catch (error) {
+    if (error instanceof errorClass) {
+      return;
+    }
+    throw error;
+  }
+  throw new Error(message);
+}
 
 async function createFixture() {
   const publicOrigin = 'http://emulator.example:9000';

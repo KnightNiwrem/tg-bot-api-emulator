@@ -1,3 +1,5 @@
+import { BOT_ACTIVITY_KINDS } from '../../src/types/bot_activity.ts';
+import { toCurrentBotApiMethodName } from '../../src/types/bot_api_method_name.ts';
 import { HTTP_STATUS_OK } from './constants.ts';
 import { botActivityReadResponseSchema } from './schemas.ts';
 import type {
@@ -7,6 +9,7 @@ import type {
   BotActivityEntryMatching,
   BotActivityFilter,
   BotActivityFilterFor,
+  BotActivityKind,
   BotActivityLog,
   BotActivityLogOptions,
   BotActivityPosition,
@@ -212,8 +215,8 @@ class HttpBotActivityLog implements BotActivityLog {
     if (waitMilliseconds !== undefined) {
       query.set('wait_ms', String(waitMilliseconds));
     }
-    const { bot_id, kind, method, chat_id, user_id, update_id, ok, parameters } = filter;
-    const criteria = { bot_id, kind, method, chat_id, user_id, update_id, ok };
+    const { bot_id, method, chat_id, user_id, update_id, ok, parameters } = filter;
+    const criteria = { bot_id, kind: toReadKind(filter), method, chat_id, user_id, update_id, ok };
     for (const [name, value] of Object.entries(criteria)) {
       if (value !== undefined) {
         query.set(name, String(value));
@@ -233,38 +236,61 @@ class HttpBotActivityLog implements BotActivityLog {
 
 /**
  * Combines the log's filter with a read's into one that an entry satisfies only by satisfying
- * both. Two different values for one criterion could match no entry, so they are rejected as a
- * mistake.
+ * both. Two different values for one criterion, or criteria only calls have together with criteria
+ * only updates have, could match no entry, so they are rejected as a mistake.
  */
 function combineFilters(
   logFilter: BotActivityFilter,
   readFilter: BotActivityFilter,
 ): BotActivityFilter {
-  const parameters: Record<string, string> = { ...logFilter.parameters };
-  for (const [name, text] of Object.entries(readFilter.parameters ?? {})) {
-    assertCompatibleCriteria(`parameter ${name}`, parameters[name], text);
-    parameters[name] = text;
-  }
+  const parameters = combineParameters(logFilter.parameters, readFilter.parameters);
   const { where: logWhere } = logFilter;
   const { where: readWhere } = readFilter;
-  return {
+  const combinedFilter: BotActivityFilter = {
     bot_id: combineCriterion('bot_id', logFilter.bot_id, readFilter.bot_id),
     kind: combineCriterion('kind', logFilter.kind, readFilter.kind),
     method: combineCriterion(
       'method',
       logFilter.method,
       readFilter.method,
-      (method) => method.toLowerCase(),
+      // The server reads a method by its current name and without regard to case.
+      (method) => toCurrentBotApiMethodName(method).toLowerCase(),
     ),
     chat_id: combineCriterion('chat_id', logFilter.chat_id, readFilter.chat_id),
     user_id: combineCriterion('user_id', logFilter.user_id, readFilter.user_id),
     update_id: combineCriterion('update_id', logFilter.update_id, readFilter.update_id),
     ok: combineCriterion('ok', logFilter.ok, readFilter.ok),
-    ...(Object.keys(parameters).length === 0 ? {} : { parameters }),
+    ...(parameters === undefined ? {} : { parameters }),
     ...(logWhere === undefined || readWhere === undefined
       ? { where: logWhere ?? readWhere }
       : { where: (entry: BotActivityEntry) => logWhere(entry) && readWhere(entry) }),
   };
+  if (kindsMatchableBy(combinedFilter).length === 0) {
+    throw new TypeError(
+      `No bot activity entry can match ${describeFilter(combinedFilter)}, ` +
+        'whose criteria include some that only calls have and some that only updates have',
+    );
+  }
+  return combinedFilter;
+}
+
+/**
+ * Combines parameter criteria. An empty map is kept, as it still matches only calls, unlike
+ * absent parameter criteria, which match every entry.
+ */
+function combineParameters(
+  logParameters: Readonly<Record<string, string>> | undefined,
+  readParameters: Readonly<Record<string, string>> | undefined,
+): Readonly<Record<string, string>> | undefined {
+  if (logParameters === undefined && readParameters === undefined) {
+    return undefined;
+  }
+  const parameters = new Map(Object.entries(logParameters ?? {}));
+  for (const [name, text] of Object.entries(readParameters ?? {})) {
+    assertCompatibleCriteria(`parameter ${name}`, parameters.get(name), text);
+    parameters.set(name, text);
+  }
+  return Object.fromEntries(parameters);
 }
 
 function combineCriterion<Value>(
@@ -327,19 +353,31 @@ function assertEntryMatching<Criteria extends BotActivityCriteria>(
 }
 
 function isEntryMatching(entry: BotActivityEntry, criteria: BotActivityCriteria): boolean {
-  if (criteria.kind !== undefined) {
-    return entry.kind === criteria.kind;
-  }
-  if (
-    criteria.method !== undefined || criteria.ok !== undefined ||
-    criteria.parameters !== undefined
-  ) {
-    return entry.kind === 'bot_api_call';
-  }
-  if (criteria.user_id !== undefined || criteria.update_id !== undefined) {
-    return entry.kind !== 'bot_api_call';
-  }
-  return true;
+  return kindsMatchableBy(criteria).includes(entry.kind);
+}
+
+/**
+ * The kinds of entry criteria can match: the kind they name, if any, narrowed by the criteria
+ * that only calls have, `method`, `ok` and `parameters`, even an empty map, and those that only
+ * updates have, `user_id` and `update_id`.
+ */
+function kindsMatchableBy(criteria: BotActivityCriteria): readonly BotActivityKind[] {
+  const hasCallCriteria = criteria.method !== undefined || criteria.ok !== undefined ||
+    criteria.parameters !== undefined;
+  const hasUpdateCriteria = criteria.user_id !== undefined || criteria.update_id !== undefined;
+  return BOT_ACTIVITY_KINDS.filter((kind) =>
+    (criteria.kind === undefined || kind === criteria.kind) &&
+    (kind === 'bot_api_call' ? !hasUpdateCriteria : !hasCallCriteria)
+  );
+}
+
+/**
+ * The kind a read sends: the only kind its criteria can match, if just one. Empty parameter
+ * criteria limit a read to calls but put nothing on the wire, which the kind then expresses.
+ */
+function toReadKind(criteria: BotActivityCriteria): BotActivityKind | undefined {
+  const matchableKinds = kindsMatchableBy(criteria);
+  return matchableKinds.length === 1 ? matchableKinds[0] : undefined;
 }
 
 function toPositionNumber(position: BotActivityPosition): number {

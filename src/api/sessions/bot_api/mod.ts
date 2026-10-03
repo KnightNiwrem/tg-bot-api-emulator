@@ -1,6 +1,7 @@
 import { type Context, Hono } from 'hono';
 import { z } from 'zod';
 
+import { toCurrentBotApiMethodName } from '../../../types/bot_api_method_name.ts';
 import {
   MAX_BOT_COMMAND_DESCRIPTION_LENGTH,
   MAX_BOT_COMMAND_LENGTH,
@@ -1202,15 +1203,13 @@ export type BotApiMethodHandler = (
 export interface BotApiMethod {
   readonly name: string;
   readonly handler: BotApiMethodHandler;
-  /** Telegram's older names of the method, which still call it. */
-  readonly legacyNames?: readonly string[];
 }
 
 const BOT_API_METHODS: readonly BotApiMethod[] = [
   { name: 'answerCallbackQuery', handler: handleAnswerCallbackQuery },
   { name: 'answerInlineQuery', handler: handleAnswerInlineQuery },
   { name: 'approveChatJoinRequest', handler: handleApproveChatJoinRequest },
-  { name: 'banChatMember', handler: handleBanChatMember, legacyNames: ['kickChatMember'] },
+  { name: 'banChatMember', handler: handleBanChatMember },
   { name: 'copyMessage', handler: handleCopyMessage },
   { name: 'createChatInviteLink', handler: handleCreateChatInviteLink },
   { name: 'declineChatJoinRequest', handler: handleDeclineChatJoinRequest },
@@ -1228,11 +1227,7 @@ const BOT_API_METHODS: readonly BotApiMethod[] = [
   { name: 'getChat', handler: handleGetChat },
   { name: 'getChatAdministrators', handler: handleGetChatAdministrators },
   { name: 'getChatMember', handler: handleGetChatMember },
-  {
-    name: 'getChatMemberCount',
-    handler: handleGetChatMemberCount,
-    legacyNames: ['getChatMembersCount'],
-  },
+  { name: 'getChatMemberCount', handler: handleGetChatMemberCount },
   { name: 'getChatMenuButton', handler: handleGetChatMenuButton },
   { name: 'getFile', handler: handleGetFile },
   { name: 'getMe', handler: handleGetMe },
@@ -1277,11 +1272,7 @@ const BOT_API_METHODS: readonly BotApiMethod[] = [
 
 /** Keyed by lowercase name, because Telegram matches method names case-insensitively. */
 const BOT_API_METHODS_BY_LOWERCASE_NAME: ReadonlyMap<string, BotApiMethod> = new Map(
-  BOT_API_METHODS.flatMap((method) =>
-    [method.name, ...(method.legacyNames ?? [])].map((name) =>
-      [name.toLowerCase(), method] as const
-    )
-  ),
+  BOT_API_METHODS.map((method) => [method.name.toLowerCase(), method] as const),
 );
 
 /**
@@ -1289,7 +1280,7 @@ const BOT_API_METHODS_BY_LOWERCASE_NAME: ReadonlyMap<string, BotApiMethod> = new
  * case-insensitively.
  */
 export function findBotApiMethod(methodName: string): BotApiMethod | undefined {
-  return BOT_API_METHODS_BY_LOWERCASE_NAME.get(methodName.toLowerCase());
+  return BOT_API_METHODS_BY_LOWERCASE_NAME.get(toCurrentBotApiMethodName(methodName).toLowerCase());
 }
 
 /** A bot's call of a method the emulator implements, as it arrived. */
