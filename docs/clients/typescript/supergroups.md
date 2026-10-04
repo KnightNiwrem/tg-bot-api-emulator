@@ -82,9 +82,10 @@ addressed to it: commands, replies to its messages, and mentions of it, plus ser
 bot an unqualified command such as `/start` reaches.
 
 Asserting that the bot did not receive a message needs a fence: a later entry that the bot can only
-record after it would have received the message. The fixture's bot handles updates one at a time in
-the order the emulator delivers them, so its reply to a command sent after the chatter fences the
-chatter's delivery.
+record after it would have received the message. A bot's updates queue in the order they happen and
+`getUpdates` hands them over from the front of the queue, so chatter sent before a command would be
+delivered no later than the command. The command's delivery precedes the bot's reply to it, so that
+reply fences the chatter's delivery.
 [Asserting that something did not happen](../../features/bot-activity.md#asserting-that-something-did-not-happen)
 explains fences.
 
@@ -116,7 +117,7 @@ Deno.test('a bot in privacy mode receives commands but not chatter', () =>
       parameters: { reply_parameters: JSON.stringify({ message_id: command.message_id }) },
     }, { after: beforeSending });
 
-    // The bot handles updates in order, so its reply to the later command fences the chatter.
+    // Chatter sent first would be delivered no later than the command the reply answers.
     await activity.assertNone({
       kind: 'update_delivered',
       chat_id: supergroup.id,
