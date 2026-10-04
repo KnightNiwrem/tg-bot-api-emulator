@@ -91,7 +91,10 @@ Deno.test('the bot repeats the bold part of a message in bold', () =>
     handlers: (bot) => {
       bot.on('message:text', (ctx) => {
         const boldText = ctx.entities('bold').map(({ text }) => text).join(', ');
-        return ctx.reply(`Noted: <b>${boldText}</b>`, {
+        // The account's text is not markup, so HTML parse mode needs it escaped.
+        const escapedBoldText = boldText.replaceAll('&', '&amp;').replaceAll('<', '&lt;')
+          .replaceAll('>', '&gt;');
+        return ctx.reply(`Noted: <b>${escapedBoldText}</b>`, {
           parse_mode: 'HTML',
           reply_parameters: { message_id: ctx.msg.message_id },
         });
