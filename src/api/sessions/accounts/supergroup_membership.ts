@@ -2,6 +2,7 @@ import { Hono } from 'hono';
 import { z } from 'zod';
 
 import type { EmulationSession } from '../../../types/emulation_session.ts';
+import { isTelegramUsername } from '../../../types/telegram_identity.ts';
 import type { Supergroup } from '../../../types/virtual_chat.ts';
 import { presentChatInviteLinkUsage, presentChatJoinRequest } from '../invite_link_presentation.ts';
 import { readJsonRequestBody } from '../json_request_body.ts';
@@ -32,7 +33,7 @@ const joinChatByInviteLinkRequestSchema = z.strictObject({
 const createSupergroupRequestSchema = z.strictObject({
   title: z.string().min(1),
   /** Makes the supergroup public under this username, unique among the session's usernames. */
-  username: z.string().min(1).optional(),
+  username: z.string().refine(isTelegramUsername).optional(),
   description: z.string().min(1).optional(),
 });
 

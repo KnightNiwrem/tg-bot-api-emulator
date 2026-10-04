@@ -1,0 +1,9 @@
+description: >-
+  A Telegram username, without `@`, of the syntax TDLib's `is_valid_username` admits: from 1 to
+  32 ASCII letters, digits, and underscores, beginning with a letter, without a trailing or
+  doubled underscore. Telegram's further rules for choosing a new username, such as its minimum
+  of 5 characters, are not checked, since older usernames break them and still name real chats.
+type: string
+minLength: 1
+maxLength: 32
+pattern: '^[A-Za-z](?:_?[A-Za-z0-9])*$'

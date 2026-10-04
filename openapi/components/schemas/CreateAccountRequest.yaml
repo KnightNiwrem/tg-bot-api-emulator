@@ -19,8 +19,7 @@ properties:
     maxLength: 64
     description: At most 64 characters, as clean as `first_name` must be.
   username:
-    type: string
-    minLength: 1
+    $ref: ./Username.yaml
   language_code:
     type: string
     minLength: 1

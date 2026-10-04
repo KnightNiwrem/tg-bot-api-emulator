@@ -158,6 +158,42 @@ Deno.test('POST bots and accounts create virtual users in one ID namespace', asy
   }
 });
 
+Deno.test('POST bots, accounts, and supergroups accept only Telegram-valid usernames', async () => {
+  const { api, sessionPath } = await createTestSession();
+  const owner = await createAccount(api, sessionPath, 'Ada');
+  const creationRoutes = [
+    { path: `${sessionPath}/bots`, body: { first_name: 'Test Bot' } },
+    { path: `${sessionPath}/accounts`, body: { first_name: 'Grace' } },
+    { path: `${sessionPath}/accounts/${owner.id}/supergroups`, body: { title: 'Team' } },
+  ];
+  const invalidUsernames = ['', 'not a username', '_team', 'team_', 'team__chat', 'équipe'];
+  for (const { path, body } of creationRoutes) {
+    for (const username of invalidUsernames) {
+      const response = await api.request(path, jsonRequest('POST', { ...body, username }));
+      if (response.status !== 400) {
+        throw new Error(
+          `Expected ${
+            JSON.stringify(username)
+          } to be refused by ${path}, received ${response.status}`,
+        );
+      }
+    }
+  }
+
+  const validUsernames = ['Test_Bot2', 'g', 'team_chat'];
+  for (const [index, { path, body }] of creationRoutes.entries()) {
+    const response = await api.request(
+      path,
+      jsonRequest('POST', { ...body, username: validUsernames[index] }),
+    );
+    if (response.status !== 201) {
+      throw new Error(
+        `Expected ${validUsernames[index]} to be accepted by ${path}, received ${response.status}`,
+      );
+    }
+  }
+});
+
 Deno.test('emulator routes reject request bodies that are not JSON or not as specified', async () => {
   const { api, sessionPath, createdBot, createdAccount } = await createPrivateConversationFixture();
   const accountMessagesPath = `${sessionPath}/accounts/${createdAccount.account.id}/messages`;
@@ -6893,10 +6929,13 @@ Deno.test('bots address public supergroups by their usernames', async () => {
     );
   }
 
-  // As Telegram's check_chat does, only public supergroups and bots are found by username.
+  // As Telegram's check_chat does, only public supergroups and bots are found by username, and
+  // text after `@` that is no valid username names no chat.
   const failures = [
     await callBot('sendMessage', { chat_id: '@grace', text: 'Hi' }),
     await callBot('sendMessage', { chat_id: '@nobody', text: 'Hi' }),
+    await callBot('sendMessage', { chat_id: '@', text: 'Hi' }),
+    await callBot('sendMessage', { chat_id: '@not a username', text: 'Hi' }),
     await callBot('sendMessage', { chat_id: '@team_bot', text: 'Hi' }),
     await callBot('copyMessage', { chat_id: owner.id, from_chat_id: '@nobody', message_id: 1 }),
     await callBot('sendMessage', {
