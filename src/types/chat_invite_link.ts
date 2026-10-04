@@ -22,9 +22,6 @@ const INVITE_LINK_HASH_LENGTH = 16;
 /** The characters of `base64url`, which TDLib's `is_base64url_characters` accepts in a hash. */
 const BASE64URL_CHARACTERS = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_';
 
-/** A hash of `INVITE_LINK_HASH_LENGTH` base64url characters, as a path segment can hold one. */
-const INVITE_LINK_HASH_PATTERN = new RegExp(`^[A-Za-z0-9_-]{${INVITE_LINK_HASH_LENGTH}}$`);
-
 /**
  * An additional invite link of a supergroup, which an administrator created besides the chat's
  * primary link. Its creator stays its owner, and a link stays usable until its expiry date
@@ -60,9 +57,13 @@ export function createInviteLinkHash(): string {
     .join('');
 }
 
-/** Whether a text has the form of the hash of an invite link the emulator creates. */
+/**
+ * Whether a text has the form of the hash of an invite link the emulator creates:
+ * `INVITE_LINK_HASH_LENGTH` characters from the alphabet `createInviteLinkHash` draws from.
+ */
 export function isInviteLinkHash(text: string): boolean {
-  return INVITE_LINK_HASH_PATTERN.test(text);
+  return text.length === INVITE_LINK_HASH_LENGTH &&
+    [...text].every((character) => BASE64URL_CHARACTERS.includes(character));
 }
 
 /** The hash that identifies an invite link, after `INVITE_LINK_PREFIX`. */
