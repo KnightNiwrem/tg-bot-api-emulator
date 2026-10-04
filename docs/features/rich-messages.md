@@ -1,7 +1,8 @@
 # Rich messages
 
 [Feature index and comparison baseline](README.md) · [Messages](messages.md) ·
-[Text formatting](text-formatting.md) · [Keyboards and callbacks](keyboards-and-callbacks.md)
+[Text formatting](text-formatting.md) · [Keyboards and callbacks](keyboards-and-callbacks.md) ·
+[TypeScript client guide: Rich messages](../clients/typescript/rich-messages.md)
 
 ## Sending and editing
 

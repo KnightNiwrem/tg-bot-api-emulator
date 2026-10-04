@@ -1,6 +1,6 @@
 # Feature coverage and compatibility
 
-[Project README](../../README.md) · [TypeScript client walkthrough](../typescript-client.md)
+[Project README](../../README.md) · [TypeScript client guide](../clients/typescript/README.md)
 
 These pages describe the standalone HTTP server. A supported method implements the behavior and
 parameters described on its feature page; it does not imply support for every Telegram option.

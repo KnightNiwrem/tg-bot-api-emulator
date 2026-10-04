@@ -1,6 +1,7 @@
 # Media and files
 
-[Feature index and comparison baseline](README.md) · [Message operations](messages.md)
+[Feature index and comparison baseline](README.md) · [Message operations](messages.md) ·
+[TypeScript client guide: Media and files](../clients/typescript/media-and-files.md)
 
 ## Supported behavior
 

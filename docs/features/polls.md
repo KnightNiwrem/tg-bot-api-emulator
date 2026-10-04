@@ -1,7 +1,8 @@
 # Polls
 
 [Feature index and comparison baseline](README.md) · [Messages](messages.md) ·
-[Text formatting](text-formatting.md) · [Supergroups](supergroups.md)
+[Text formatting](text-formatting.md) · [Supergroups](supergroups.md) ·
+[TypeScript client guide: Polls](../clients/typescript/polls.md)
 
 ## Capability matrix
 

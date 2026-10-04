@@ -1,6 +1,8 @@
 # Supergroups and administration
 
 [Feature index and comparison baseline](README.md) · [Messages](messages.md) · [Updates](updates.md)
+· [TypeScript client guide: Supergroups](../clients/typescript/supergroups.md) ·
+[TypeScript client guide: Permissions and moderation](../clients/typescript/permissions-and-moderation.md)
 
 ## Membership and messages
 

@@ -1,6 +1,7 @@
 # Keyboards and callbacks
 
-[Feature index and comparison baseline](README.md) · [Inline mode](inline-mode.md)
+[Feature index and comparison baseline](README.md) · [Inline mode](inline-mode.md) ·
+[TypeScript client guide: Buttons and menus](../clients/typescript/buttons-and-menus.md)
 
 ## Inline keyboards
 

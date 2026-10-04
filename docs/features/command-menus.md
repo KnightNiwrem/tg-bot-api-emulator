@@ -1,6 +1,7 @@
 # Command menus
 
-[Feature index and comparison baseline](README.md) · [Text command detection](text-formatting.md)
+[Feature index and comparison baseline](README.md) · [Text command detection](text-formatting.md) ·
+[TypeScript client guide: Buttons and menus](../clients/typescript/buttons-and-menus.md)
 
 ## Supported behavior
 

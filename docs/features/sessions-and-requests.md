@@ -1,12 +1,15 @@
 # Sessions and Bot API requests
 
-[Feature index and comparison baseline](README.md)
+[Feature index and comparison baseline](README.md) ·
+[TypeScript client guide: Sessions and fixtures](../clients/typescript/sessions-and-fixtures.md) ·
+[TypeScript client guide: Test controls](../clients/typescript/test-controls.md)
 
 ## Supported behavior
 
 Create a session with `POST /sessions`, then create its bots and accounts through the emulation API
-or [TypeScript client](../typescript-client.md). The response supplies `botApiRoot`; a virtual bot's
-token authenticates calls under `<botApiRoot>/bot<token>/<method>`. `getMe` returns its profile.
+or [TypeScript client](../clients/typescript/sessions-and-fixtures.md). The response supplies
+`botApiRoot`; a virtual bot's token authenticates calls under `<botApiRoot>/bot<token>/<method>`.
+`getMe` returns its profile.
 
 `POST /sessions` takes an optional JSON body. Its `upload_profile` chooses the official Bot API
 server deployment whose upload limits the session's bots meet: `cloud`, the default, for the server

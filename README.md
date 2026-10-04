@@ -50,7 +50,9 @@ try {
 ```
 
 Save the example at the repository root and run it with `deno run --allow-net <filename>.ts`. The
-[client walkthrough](docs/typescript-client.md) covers driving more involved interactions.
+[TypeScript client guide](docs/clients/typescript/README.md) goes from there to complete tests: its
+[getting started](docs/clients/typescript/getting-started.md) page runs a grammY bot against the
+emulator and asserts its reply, and its topic pages cover more involved interactions.
 [openapi/openapi.yaml](openapi/openapi.yaml) describes the HTTP interface; entries marked
 `x-implementation-status: unimplemented` are placeholders. Each path item lives in `openapi/paths/`,
 named after its URL path with `/` replaced by `_`, and each reusable schema, parameter, and response
@@ -65,7 +67,7 @@ lives in `openapi/components/`, named after the component.
 - `deno task fmt` — format files
 - `deno task fmt:check` — check formatting
 - `deno task check` — type-check source and test files, and the TypeScript examples of this README
-  and the [client walkthrough](docs/typescript-client.md)
+  and the [TypeScript client guide](docs/clients/typescript/README.md)
 - `deno task openapi:lint` — lint the OpenAPI description with Redocly's recommended rules
 - `deno task architecture:check` — check that imports respect the layer boundaries set in
   `.fallowrc.json`

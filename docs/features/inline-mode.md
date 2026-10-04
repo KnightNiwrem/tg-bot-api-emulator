@@ -1,7 +1,8 @@
 # Inline mode
 
 [Feature index and comparison baseline](README.md) ·
-[Keyboards and callbacks](keyboards-and-callbacks.md)
+[Keyboards and callbacks](keyboards-and-callbacks.md) ·
+[TypeScript client guide: Inline mode](../clients/typescript/inline-mode.md)
 
 ## Supported behavior
 
