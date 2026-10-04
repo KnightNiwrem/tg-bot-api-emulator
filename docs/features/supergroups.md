@@ -163,8 +163,10 @@ the emulation API answers `400`. Setting the title a user has changes nothing.
 Telegram does not publish which characters its servers count as emoji in a title, so the emulator
 refuses those that Telegram Desktop [strips from a title][desktop-title-emoji]: characters with
 Unicode's `Emoji` property, except digits, `#` and `*` outside a keycap, and ©, ® and ™ without the
-emoji presentation selector U+FE0F. Symbols such as ★ and ♪, which lack that property, are accepted.
-A lone regional indicator letter is refused, although Telegram Desktop keeps it.
+emoji presentation selector U+FE0F. Pictographic code points that the runtime's Unicode data leaves
+unassigned are refused too, as Unicode reserves them for emoji, so emoji newer than the runtime are
+caught. Symbols such as ★ and ♪, which lack the `Emoji` property, are accepted. A lone regional
+indicator letter is refused, although Telegram Desktop keeps it.
 
 Before the title, [`process_set_chat_administrator_custom_title_query`][custom-title-method] checks
 that the owner alone sets its own title (`Bad Request: only the owner can edit their custom title`),
