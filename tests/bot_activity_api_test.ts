@@ -167,6 +167,27 @@ Deno.test('GET bot-activity filters entries by query parameters', async () => {
   }
 });
 
+Deno.test('GET bot-activity filters by a parameter whose name has a line break', async () => {
+  const { api, activityPath, botApiPath, account } = await createFixture();
+  await callBotApi(api, `${botApiPath}/sendMessage`, {
+    chat_id: account.id,
+    text: 'One',
+    'x\ny': 'match',
+  });
+  await callBotApi(api, `${botApiPath}/sendMessage`, {
+    chat_id: account.id,
+    text: 'Two',
+    'x\ny': 'other',
+  });
+
+  const { entries } = await readActivity(api, `${activityPath}?parameters[x%0Ay]=match`);
+  assertJson(
+    entries.map(({ position }) => position),
+    [1],
+    'Expected a percent-encoded line break to name the recorded parameter',
+  );
+});
+
 Deno.test('GET bot-activity finds calls of a method by an older name of it', async () => {
   const { api, activityPath, botApiPath } = await createFixture();
   await callBotApi(api, `${botApiPath}/getChatMembersCount`, { chat_id: 1 });
@@ -189,7 +210,11 @@ Deno.test('GET bot-activity rejects malformed queries and positions beyond the h
     'after=0&after=1',
     'parameters[text]=a&parameters[text]=b',
     'parameters[]=a',
+    'parameters[x%0Ay]=a&parameters[x%0Ay]=b',
     'parameters=a',
+    'parameters[text=a',
+    'parameterstext]=a',
+    'parameters[text]x=a',
     'after=-1',
     'after=1',
     'before=2',

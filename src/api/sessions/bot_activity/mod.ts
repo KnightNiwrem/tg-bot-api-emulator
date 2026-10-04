@@ -8,10 +8,11 @@ import { integerParameter } from '../bot_api/request_parameters.ts';
 import type { SessionRouteContextTypes } from '../session_route_context_types.ts';
 
 /**
- * A query parameter naming, in OpenAPI's `deepObject` style, a parameter that a recorded call must
- * have sent: `parameters[text]=Hello`.
+ * The wrapper of a query parameter naming, in OpenAPI's `deepObject` style, a parameter that a
+ * recorded call must have sent: `parameters[text]=Hello`.
  */
-const PARAMETER_FILTER_PATTERN = /^parameters\[(.+)\]$/;
+const PARAMETER_FILTER_KEY_PREFIX = 'parameters[';
+const PARAMETER_FILTER_KEY_SUFFIX = ']';
 
 const DEFAULT_READ_LIMIT = 100;
 const MAX_READ_LIMIT = 1_000;
@@ -74,7 +75,7 @@ function readBotActivityQuery(searchParams: URLSearchParams): ReadBotActivityQue
   const queryValues: Record<string, string> = {};
   const parameters: Record<string, string> = {};
   for (const [name, value] of searchParams) {
-    const parameterName = PARAMETER_FILTER_PATTERN.exec(name)?.[1];
+    const parameterName = readParameterFilterName(name);
     const values = parameterName === undefined ? queryValues : parameters;
     const key = parameterName ?? name;
     if (Object.hasOwn(values, key)) {
@@ -84,6 +85,24 @@ function readBotActivityQuery(searchParams: URLSearchParams): ReadBotActivityQue
   }
   const parsedQuery = readBotActivityQuerySchema.safeParse(queryValues);
   return parsedQuery.success ? { ...parsedQuery.data, parameters } : undefined;
+}
+
+/**
+ * The parameter name a `parameters[name]` query key filters by; `undefined` for any other key,
+ * including one that names no parameter. A name may hold any character, line breaks included.
+ */
+function readParameterFilterName(queryKey: string): string | undefined {
+  if (
+    !queryKey.startsWith(PARAMETER_FILTER_KEY_PREFIX) ||
+    !queryKey.endsWith(PARAMETER_FILTER_KEY_SUFFIX)
+  ) {
+    return undefined;
+  }
+  const parameterName = queryKey.slice(
+    PARAMETER_FILTER_KEY_PREFIX.length,
+    -PARAMETER_FILTER_KEY_SUFFIX.length,
+  );
+  return parameterName === '' ? undefined : parameterName;
 }
 
 function toBotActivityFilter(query: ReadBotActivityQuery): BotActivityFilter {
