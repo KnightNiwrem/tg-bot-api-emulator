@@ -31,7 +31,7 @@ export function readMarkupDateTimeFormat(format: string): MarkupDateTimeFormatRe
       kind: 'absolute',
       ...(timePrecision === undefined ? {} : { timePrecision }),
       ...(datePrecision === undefined ? {} : { datePrecision }),
-      showsDayOfWeek: /[wW]/.test(format),
+      showsDayOfWeek: format.includes('w') || format.includes('W'),
     },
   };
 }
