@@ -31,5 +31,11 @@ oneOf:
         properties:
           url:
             type: string
+            description: >-
+              An HTTPS URL. Its scheme is case-insensitive, as URI schemes are; the pattern
+              constrains only the scheme, and the emulator validates the rest of the URL.
             format: uri
-            pattern: '^https://'
+            pattern: '^[Hh][Tt][Tt][Pp][Ss]://'
+            examples:
+              - https://example.com/app
+              - HTTPS://example.com/app
