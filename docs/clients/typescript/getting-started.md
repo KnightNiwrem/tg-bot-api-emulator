@@ -95,8 +95,9 @@ variables when it loads, so it also needs `--allow-env`.
    `createAccount` returns a client that acts as a Telegram user.
 3. **Runs the bot under test.** The bot is ordinary grammY code. Only its API root changes, to
    `session.botApiRoot`, so it long-polls the emulator instead of Telegram.
-4. **Takes a position in the bot activity log** before acting. The log records every Bot API call
-   the bot makes, in order, so the test can wait for calls that come after its action.
+4. **Takes a position in the bot activity log** before acting. The log records the Bot API calls the
+   bot makes, other than its `getUpdates` polling, in order, so the test can wait for calls that
+   come after its action.
 5. **Acts as the account.** `sendMessage` returns once the bot can receive the message, not once the
    bot has handled it.
 6. **Waits for the bot's reply.** `waitFor` resolves with the first successful `sendMessage` to the

@@ -14,9 +14,10 @@ may have finished. Reading the chat at that moment shows whichever of these happ
 
 Sleeping before reading does not fix this. A sleep long enough for a slow machine makes every test
 slow, and one short enough to be fast fails whenever the bot is slower than usual. Instead, the
-session's bot activity log records every Bot API call the bot makes, with the parameters it sent and
-the answer it received, and every update delivered to it and confirmed by it. A test waits for the
-entry that shows the bot has done what the test is about, and only then reads the result.
+session's bot activity log records the Bot API calls the bot makes, with the parameters it sent and
+the answer it received, and every update delivered to it and confirmed by it. Only `getUpdates`
+calls are left out, as the updates they deliver and confirm are recorded instead. A test waits for
+the entry that shows the bot has done what the test is about, and only then reads the result.
 
 ## Positions and waits
 

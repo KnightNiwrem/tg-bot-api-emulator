@@ -7,6 +7,7 @@ This table points to the page for each part of the client.
 | Looking for                                              | Read                                                                           |
 | -------------------------------------------------------- | ------------------------------------------------------------------------------ |
 | Sessions, bots, accounts and running a bot against them  | [Getting started](clients/typescript/getting-started.md)                       |
+| Session ownership and the shared test fixture            | [Sessions and fixtures](clients/typescript/sessions-and-fixtures.md)           |
 | Waiting for the bot and reading its activity             | [Observing bot behavior](clients/typescript/observing-bot-behavior.md)         |
 | Replies, edits, forwards, pins and blocking              | [Messages](clients/typescript/messages.md)                                     |
 | Callback buttons, reply keyboards, commands, menu button | [Buttons and menus](clients/typescript/buttons-and-menus.md)                   |
