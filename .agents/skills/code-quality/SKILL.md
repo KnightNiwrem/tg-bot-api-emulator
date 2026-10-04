@@ -15,22 +15,22 @@ includes fixes, cleanup, or refactoring.
 
 Select analyses that address the requested scope and run them from the repository root:
 
-- `npx fallow dead-code`: investigate reachability and unused code.
-- `npx fallow dupes`: investigate duplication and consolidation candidates.
-- `npx fallow health`: investigate complexity and maintainability.
+- `deno run -A fallow dead-code`: investigate reachability and unused code.
+- `deno run -A fallow dupes`: investigate duplication and consolidation candidates.
+- `deno run -A fallow health`: investigate complexity and maintainability.
+- `deno task architecture:check`: check import boundaries using the project configuration.
 
-For a broad audit, `npx fallow` runs the combined pipeline. Consult `npx fallow --help` or
-subcommand help for version-specific options; see the
+For a broad audit, `deno run -A fallow` runs the combined pipeline. Consult
+`deno run -A fallow --help` or subcommand help for version-specific options; see the
 [official command reference](https://github.com/fallow-rs/fallow#commands) when needed.
 
 Confirm that the analyzer covers the intended files and entry points. Check its handling of Deno
 configuration, import resolution, tasks, and tests before trusting reachability findings. Correct
 analysis configuration narrowly rather than restructuring application code to satisfy discovery.
 
-The auxiliary CLI requires Node.js/npm; it does not require migrating the project's tooling. Report
-unavailable tooling, failed analysis, or incomplete coverage instead of treating them as clean
-results. Continue useful manual analysis and independent work within scope, identifying conclusions
-that remain unverified.
+The CLI uses the version pinned in `deno.json`. Report unavailable tooling, failed analysis, or
+incomplete coverage instead of treating them as clean results. Continue useful manual analysis and
+independent work within scope, identifying conclusions that remain unverified.
 
 ## Separate signal from noise
 
