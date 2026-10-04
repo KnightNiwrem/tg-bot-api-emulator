@@ -160,6 +160,12 @@ reports the servers' `RANK_INVALID` and `RANK_EMOJI_NOT_ALLOWED` as
 [`Bad Request: CUSTOM_TITLE_INVALID` and `Bad Request: CUSTOM_TITLE_EMOJI_NOT_ALLOWED`][rank-errors];
 the emulation API answers `400`. Setting the title a user has changes nothing.
 
+Telegram does not publish which characters its servers count as emoji in a title, so the emulator
+refuses those that Telegram Desktop [strips from a title][desktop-title-emoji]: characters with
+Unicode's `Emoji` property, except digits, `#` and `*` outside a keycap, and ©, ® and ™ without the
+emoji presentation selector U+FE0F. Symbols such as ★ and ♪, which lack that property, are accepted.
+A lone regional indicator letter is refused, although Telegram Desktop keeps it.
+
 Before the title, [`process_set_chat_administrator_custom_title_query`][custom-title-method] checks
 that the owner alone sets its own title (`Bad Request: only the owner can edit their custom title`),
 that the user is an administrator (`Bad Request: user is not an administrator`), and that the bot
@@ -479,6 +485,7 @@ not show. The emulator chooses where they are not visible:
 [participant-admin]: https://core.telegram.org/constructor/channelParticipantAdmin
 [rank-strip]: https://github.com/tdlib/td/blob/bc9c263e2bfee06aaab41e82db51a103376030bc/td/telegram/DialogParticipant.cpp#L389-L390
 [rank-errors]: https://github.com/tdlib/telegram-bot-api/blob/e3e9dd8e5b3d7ab8537cd5a10dc31d5ffa8f82d1/telegram-bot-api/Client.cpp#L154-L162
+[desktop-title-emoji]: https://github.com/telegramdesktop/tdesktop/blob/d8594c011756265de4385408540bd9f7c787a003/Telegram/SourceFiles/boxes/peers/edit_tag_control.cpp#L378-L386
 [member-tags]: https://core.telegram.org/api/rank
 [promote-method]: https://github.com/tdlib/telegram-bot-api/blob/e3e9dd8e5b3d7ab8537cd5a10dc31d5ffa8f82d1/telegram-bot-api/Client.cpp#L16397-L16449
 [administrator-rights]: https://github.com/tdlib/td/blob/bc9c263e2bfee06aaab41e82db51a103376030bc/td/telegram/DialogParticipant.cpp#L69-L115

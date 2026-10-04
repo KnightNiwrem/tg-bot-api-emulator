@@ -957,6 +957,76 @@ Deno.test('setChatAdministratorCustomTitle refuses what Telegram refuses, withou
   );
 });
 
+Deno.test('custom titles keep the symbols Telegram Desktop keeps and lose its emoji', async () => {
+  const { hopper, delegatingBot, supergroup, callBot, getChatMember } =
+    await createPromotionFixture();
+  const promotion = await callBot(delegatingBot, 'promoteChatMember', {
+    chat_id: supergroup.id,
+    user_id: hopper.id,
+    can_promote_members: true,
+  });
+  expectEqual(promotion.body.result, true, 'Expected the bot to promote Hopper');
+  const setTitle = async (customTitle: string) => {
+    const { body } = await callBot(delegatingBot, 'setChatAdministratorCustomTitle', {
+      chat_id: supergroup.id,
+      user_id: hopper.id,
+      custom_title: customTitle,
+    });
+    return body.ok ? body.result : body.description;
+  };
+  // Pictographs without Unicode's Emoji property, ©, ® and ™ in text presentation, and the
+  // characters that are emoji only as keycap bases.
+  const acceptedTitles = ['Star ★', 'Helm ⎈', 'Queen ♛', 'Note ♪', 'Tile 🀰', '© ® ™', '123#*'];
+  const accepted = [];
+  for (const title of acceptedTitles) {
+    accepted.push([
+      await setTitle(title),
+      (await getChatMember(delegatingBot, hopper.id)).custom_title,
+    ]);
+  }
+  const refusedTitles = [
+    'Smile 🙂',
+    'Copy \u{A9}\u{FE0F}',
+    'Mark \u{2122}\u{FE0F}',
+    // An emoji without the emoji presentation selector is still one.
+    'Both \u{2194}',
+    'Both \u{2194}\u{FE0F}',
+    'Love \u{2764}',
+    'Key 1\u{20E3}',
+    'Key 1\u{FE0F}\u{20E3}',
+    'From 🇸🇬',
+    'Family \u{1F468}\u{200D}\u{1F469}\u{200D}\u{1F467}',
+    'Tone \u{1F3FB}',
+    // The flag of Scotland, a tag sequence.
+    'Flag \u{1F3F4}\u{E0067}\u{E0062}\u{E0073}\u{E0063}\u{E0074}\u{E007F}',
+    // Telegram Desktop keeps a lone flag letter, which the emulator refuses.
+    'Letter \u{1F1F8}',
+  ];
+  const refused = [];
+  for (const title of refusedTitles) {
+    refused.push(await setTitle(title));
+  }
+  // The length is checked before the emoji.
+  const tooLongWithEmoji = await setTitle('🙂'.repeat(17));
+
+  expectEqual(
+    accepted,
+    acceptedTitles.map((title) => [true, title]),
+    'Expected symbols without emoji to be kept',
+  );
+  expectEqual(
+    refused,
+    refusedTitles.map(() => 'Bad Request: CUSTOM_TITLE_EMOJI_NOT_ALLOWED'),
+    'Expected emoji to be refused',
+  );
+  expectEqual(tooLongWithEmoji, 'Bad Request: CUSTOM_TITLE_INVALID', 'Expected length first');
+  expectEqual(
+    (await getChatMember(delegatingBot, hopper.id)).custom_title,
+    '123#*',
+    'Expected refused titles to change nothing',
+  );
+});
+
 /**
  * Runs the reported sequence: the owner gave the delegating bot the right to promote, the bot
  * promotes the other bot with that right, demotes itself, and the other bot promotes it back.

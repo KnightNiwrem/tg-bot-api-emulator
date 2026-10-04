@@ -66,11 +66,26 @@ export const MAX_CUSTOM_TITLE_LENGTH = 16;
 export type CustomTitleViolation = 'too_long' | 'contains_emoji';
 
 /**
- * Pictographs, flag letters, skin tone modifiers and the keycap mark, which make up emoji. Digits,
- * `#` and `*`, which Unicode also counts as emoji, are left out, as titles may use them.
+ * Finds an emoji in a custom title. Telegram does not publish which characters its servers count
+ * as emoji in a title, so this follows Telegram Desktop, the official client that keeps emoji out
+ * of one: its `EditTagControl` strips every emoji of its emoji list with
+ * `TextUtilities::RemoveEmoji`. That list holds every character with Unicode's `Emoji` property and
+ * no other pictograph, so symbols such as ★, ⎈ and ♪ are accepted. The pattern matches:
+ *
+ * - a character with the `Emoji` property other than digits, `#` and `*`, which are emoji only as
+ *   the base of a keycap, and ©, ® and ™;
+ * - ©, ® and ™ followed by the emoji presentation selector U+FE0F, which Telegram Desktop requires
+ *   of these three alone;
+ * - the combining keycap U+20E3, which ends a keycap;
+ * - an `Extended_Pictographic` code point that the runtime's Unicode data leaves unassigned, which
+ *   Unicode reserves for emoji, so that emoji newer than the runtime are found too.
+ *
+ * Every other emoji sequence starts with a character the first alternative matches. A regional
+ * indicator letter alone, which Telegram Desktop keeps as it lists only pairs of them as flags, is
+ * refused too, so the emulator is stricter there.
  */
 const EMOJI_PATTERN =
-  /[\p{Extended_Pictographic}\p{Regional_Indicator}\p{Emoji_Modifier}\u{20E3}]/u;
+  /(?![0-9#*\xA9\xAE\u{2122}])\p{Emoji}|[\xA9\xAE\u{2122}]\u{FE0F}|\u{20E3}|(?=\p{Cn})\p{Extended_Pictographic}/u;
 
 /**
  * Finds what Telegram's servers refuse in a custom title, which the Bot API documents as "0-16
