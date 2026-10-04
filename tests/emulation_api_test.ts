@@ -1388,6 +1388,22 @@ Deno.test('login and Web App buttons follow Telegram rules', async () => {
       }`,
     );
   }
+  const { bot_username: _authorizingBot, ...loginUrlWithoutBot } = {
+    ...loginButton.login_url,
+    forward_text: 'Sign in',
+  };
+  const emptyBotEdit = await editLoginButton({ ...loginUrlWithoutBot, bot_username: '' });
+  const omittedBotEdit = await editLoginButton(loginUrlWithoutBot);
+  if (
+    emptyBotEdit.status !== 200 || !isBadRequestResponse(omittedBotEdit.body) ||
+    !omittedBotEdit.body.description.startsWith('Bad Request: message is not modified')
+  ) {
+    throw new Error(
+      `Expected an empty bot username to remove the bot like an omitted one, received ${
+        JSON.stringify([emptyBotEdit, omittedBotEdit])
+      }`,
+    );
+  }
 
   const forward = async (messageId: unknown) =>
     botApiResult(
@@ -1433,6 +1449,14 @@ Deno.test('login and Web App buttons follow Telegram rules', async () => {
     ],
     [
       { text: 'Log in', login_url: { url: 'https://grammy.dev', bot_username: 'test-bot' } },
+      'Bad Request: loginUrl bot username is invalid',
+    ],
+    [
+      { text: 'Log in', login_url: { url: 'https://grammy.dev', bot_username: '@@test_bot' } },
+      'Bad Request: loginUrl bot username is invalid',
+    ],
+    [
+      { text: 'Log in', login_url: { url: 'https://grammy.dev', bot_username: '@' } },
       'Bad Request: loginUrl bot username is invalid',
     ],
     [

@@ -49,6 +49,11 @@ function readButtonAppearance(
   };
 }
 
+/** Removes one leading `@`, if present; a second `@` stays for username validation to reject. */
+function removeOneLeadingAtSign(username: string): string {
+  return username.startsWith('@') ? username.slice(1) : username;
+}
+
 /**
  * The fields of a button's action, which must be exactly one supported action: a callback, a URL,
  * copying text, switching to inline mode, a login URL, a Web App, or none. Telegram also accepts
@@ -118,7 +123,7 @@ const buttonActionSchema = z.union([
       target: { kind: 'current_chat' },
     })),
   // Sending checks the URL and the bot's username as Telegram does. The official Bot API server
-  // reads a `bot_username` with or without its `@`.
+  // reads a non-empty `bot_username` with or without one leading `@`.
   z.strictObject({
     login_url: z.strictObject({
       url: z.string(),
@@ -126,21 +131,18 @@ const buttonActionSchema = z.union([
       bot_username: z.string().optional(),
       request_write_access: z.boolean().default(false),
     }),
-  }).transform(({ login_url: loginUrl }): RichMessageButtonAction => {
-    const authorizingBotUsername = loginUrl.bot_username?.replace(/^@/, '');
-    return {
-      kind: 'login_url',
-      url: loginUrl.url,
-      // As in TDLib, empty forward text keeps the button's text in forwards.
-      ...(loginUrl.forward_text === undefined || loginUrl.forward_text.length === 0
-        ? {}
-        : { forwardText: loginUrl.forward_text }),
-      ...(loginUrl.bot_username === undefined || loginUrl.bot_username.length === 0
-        ? {}
-        : { authorizingBotUsername }),
-      requestsWriteAccess: loginUrl.request_write_access,
-    };
-  }),
+  }).transform(({ login_url: loginUrl }): RichMessageButtonAction => ({
+    kind: 'login_url',
+    url: loginUrl.url,
+    // As in TDLib, empty forward text keeps the button's text in forwards.
+    ...(loginUrl.forward_text === undefined || loginUrl.forward_text.length === 0
+      ? {}
+      : { forwardText: loginUrl.forward_text }),
+    ...(loginUrl.bot_username === undefined || loginUrl.bot_username.length === 0
+      ? {}
+      : { authorizingBotUsername: removeOneLeadingAtSign(loginUrl.bot_username) }),
+    requestsWriteAccess: loginUrl.request_write_access,
+  })),
   // Sending checks the URL as Telegram does.
   z.strictObject({ web_app: z.strictObject({ url: z.string() }) })
     .transform(({ web_app }): RichMessageButtonAction => ({ kind: 'web_app', url: web_app.url })),
