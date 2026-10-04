@@ -48,11 +48,17 @@ Deno.test('the client guide API index names every client operation', async () =>
     new URL(`${GUIDE_DIRECTORY}api-index.md`, REPOSITORY_ROOT),
   );
   const operations = [
-    ...await interfaceMethodNames('clients/typescript/types.ts', 'VirtualAccountClient'),
-    ...await interfaceMethodNames('clients/typescript/types.ts', 'BotActivityLog'),
-    ...await interfaceMethodNames('clients/typescript/types.ts', 'BotActivityCursor'),
-    ...await interfaceMethodNames(
+    ...await publicMethodNames(
+      'clients/typescript/telegram_emulation_client.ts',
+      'class',
+      'TelegramEmulationClient',
+    ),
+    ...await publicMethodNames('clients/typescript/types.ts', 'interface', 'VirtualAccountClient'),
+    ...await publicMethodNames('clients/typescript/types.ts', 'interface', 'BotActivityLog'),
+    ...await publicMethodNames('clients/typescript/types.ts', 'interface', 'BotActivityCursor'),
+    ...await publicMethodNames(
       'clients/typescript/emulation_session_client.ts',
+      'interface',
       'EmulationSessionClient',
     ),
     ...await exportedValueNames('clients/typescript/mod.ts'),
@@ -123,14 +129,28 @@ function headingAnchors(markdown: string): Set<string> {
   return anchors;
 }
 
-/** The names of the methods an exported interface declares, as `name(` or `name<`. */
-async function interfaceMethodNames(sourcePath: string, interfaceName: string): Promise<string[]> {
+/**
+ * The names of the public methods an exported interface or class declares, as `name(` or `name<`,
+ * `async` or not; a class's constructor and `#private` members are not methods of its interface.
+ */
+async function publicMethodNames(
+  sourcePath: string,
+  declarationKind: 'interface' | 'class',
+  declarationName: string,
+): Promise<string[]> {
   const source = await Deno.readTextFile(new URL(sourcePath, REPOSITORY_ROOT));
   const body = source.match(
-    new RegExp(`^export interface ${interfaceName}\\b[^{]*\\{\\n([\\s\\S]*?)^\\}`, 'm'),
+    new RegExp(
+      `^export ${declarationKind} ${declarationName}\\b[^{]*\\{\\n([\\s\\S]*?)^\\}`,
+      'm',
+    ),
   )?.[1];
-  if (body === undefined) throw new Error(`No interface ${interfaceName} in ${sourcePath}`);
-  return [...body.matchAll(/^ {2}([a-zA-Z]+)[<(]/gm)].map(([, name]) => name);
+  if (body === undefined) {
+    throw new Error(`No ${declarationKind} ${declarationName} in ${sourcePath}`);
+  }
+  return [...body.matchAll(/^ {2}(?:async )?([a-zA-Z]+)[<(]/gm)]
+    .map(([, name]) => name)
+    .filter((name) => name !== 'constructor');
 }
 
 /** The names of the values, not types, a module re-exports. */
