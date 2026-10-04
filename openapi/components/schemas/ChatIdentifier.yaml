@@ -1,11 +1,13 @@
 description: >-
   A chat as a Bot API method names it: by its identifier, or, as the official server's
-  `check_chat` reads it, by `@` followed by a public username. A username names a public
-  supergroup, or the private chat with a bot; any other username fails with `Bad Request:
-  chat not found`. The emulator resolves a username in `chat_id` or `from_chat_id` before
-  reading the method's other parameters, so a request with another fault may fail for the
+  `check_chat` reads it, by `@` followed by a public username of the `Username` syntax. Only
+  such usernames can be created, so only they name chats: any other text after `@` fails with
+  `Bad Request: chat not found`, as does a username that names neither a public supergroup nor
+  the private chat with a bot. The emulator resolves a username in `chat_id` or `from_chat_id`
+  before reading the method's other parameters, so a request with another fault may fail for the
   username instead.
 oneOf:
   - type: integer
   - type: string
-    pattern: '^@'
+    maxLength: 33
+    pattern: '^@[A-Za-z](?:_?[A-Za-z0-9])*$'

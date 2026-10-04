@@ -23,9 +23,14 @@ characters, the server-side limit of TDLib's `UserManager::MAX_NAME_LENGTH`, and
 Telegram's cleanup of the account's [own contact](contacts-and-locations.md#whose-contact-it-is)
 leaves unchanged: well-formed Unicode that the cleanup neither replaces nor removes any character
 of. Names with carriage returns, directional overrides, or control characters other than line feeds
-are among those refused, and the own contact shows exactly the profile's names. Usernames are unique
-within a session, compared without case. Account creation also accepts `has_private_forwards`, false
-by default, which stands in for the
+are among those refused, and the own contact shows exactly the profile's names. Usernames of bots,
+accounts and supergroups must have the syntax TDLib's [`is_valid_username`][valid-username] admits:
+1 to 32 ASCII letters, digits and underscores, beginning with a letter, without a trailing or
+doubled underscore; other usernames are refused with `400`. Telegram's further rules for choosing a
+new username, such as its minimum of 5 characters or a bot username's `bot` ending, are not
+enforced, since older usernames such as `@gif`'s break them and still name real chats. Usernames are
+unique within a session, compared without case. Account creation also accepts
+`has_private_forwards`, false by default, which stands in for the
 ["Forwarded messages" privacy setting](messages.md#forwarding-and-copying), and `phone_number`,
 which the account shares as its [own contact](contacts-and-locations.md#whose-contact-it-is).
 
@@ -48,11 +53,12 @@ A supergroup created with a `username` is public. Wherever a method takes a chat
 `from_chat_id`, `reply_parameters` or a command scope, a bot can name it as `@username`, compared
 without case. As the official server's [`Client::check_chat`][check-chat] finds a username with
 `searchPublicChat`, a username names a public supergroup or the private chat with a bot; an
-account's username, or one that nobody has, fails with `Bad Request: chat not found`. Supergroup
-usernames share the session's username namespace with accounts and bots, and chats of public
-supergroups show `username`, as the server's [`JsonChat`][json-chat] does. Telegram resolves a
-username when it checks the chat; the emulator resolves `chat_id` and `from_chat_id` before reading
-the method's other parameters, so a request with another fault may fail for the username instead.
+account's username, one that nobody has, or text after `@` that is no valid username, such as `@`
+alone, fails with `Bad Request: chat not found`. Supergroup usernames share the session's username
+namespace with accounts and bots, and chats of public supergroups show `username`, as the server's
+[`JsonChat`][json-chat] does. Telegram resolves a username when it checks the chat; the emulator
+resolves `chat_id` and `from_chat_id` before reading the method's other parameters, so a request
+with another fault may fail for the username instead.
 
 Responses use Telegram's `ok`/`result` or `ok`/`error_code`/`description` envelope. An unknown
 virtual token gives `401 Unauthorized`; an unimplemented method gives
@@ -165,5 +171,6 @@ managing individual profiles is missing.
 [subscriptions]: https://github.com/tdlib/telegram-bot-api/blob/e3e9dd8e5b3d7ab8537cd5a10dc31d5ffa8f82d1/telegram-bot-api/Client.cpp#L18310-L18364
 [polling]: https://github.com/tdlib/telegram-bot-api/blob/e3e9dd8e5b3d7ab8537cd5a10dc31d5ffa8f82d1/telegram-bot-api/Client.cpp#L16926-L16949
 [check-chat]: https://github.com/tdlib/telegram-bot-api/blob/e3e9dd8e5b3d7ab8537cd5a10dc31d5ffa8f82d1/telegram-bot-api/Client.cpp#L8869-L8895
+[valid-username]: https://github.com/tdlib/td/blob/bc9c263e2bfee06aaab41e82db51a103376030bc/td/telegram/misc.cpp#L260-L282
 [json-chat]: https://github.com/tdlib/telegram-bot-api/blob/e3e9dd8e5b3d7ab8537cd5a10dc31d5ffa8f82d1/telegram-bot-api/Client.cpp#L1554-L1700
 [retry-after-error]: https://github.com/tdlib/telegram-bot-api/blob/e3e9dd8e5b3d7ab8537cd5a10dc31d5ffa8f82d1/telegram-bot-api/Query.cpp#L120-L127

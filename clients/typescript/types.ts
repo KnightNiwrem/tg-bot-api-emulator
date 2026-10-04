@@ -21,6 +21,11 @@ export interface EmulationSession {
 
 export interface CreateVirtualBotInput {
   readonly first_name: string;
+  /**
+   * From 1 to 32 ASCII letters, digits, and underscores, beginning with a letter, without a
+   * trailing or doubled underscore, as Telegram's username syntax allows; unique among the
+   * session's usernames, compared without case.
+   */
   readonly username: string;
   /**
    * Turns off the bot's privacy mode, so that it receives every message of its groups. Defaults to
@@ -124,6 +129,11 @@ export interface CreateVirtualAccountInput {
   readonly first_name: string;
   /** From 1 to 64 characters; omitted for none. */
   readonly last_name?: string;
+  /**
+   * From 1 to 32 ASCII letters, digits, and underscores, beginning with a letter, without a
+   * trailing or doubled underscore, as Telegram's username syntax allows; unique among the
+   * session's usernames, compared without case; omitted for none.
+   */
   readonly username?: string;
   readonly language_code?: string;
   /**
@@ -325,7 +335,8 @@ export interface CreateSupergroupInput {
   readonly title: string;
   /**
    * Makes the supergroup public under this username, unique among the session's usernames, so
-   * that bots can address it as `@username`; omitted for a private supergroup.
+   * that bots can address it as `@username`; omitted for a private supergroup. It has the syntax
+   * of a bot's or account's username.
    */
   readonly username?: string;
   readonly description?: string;

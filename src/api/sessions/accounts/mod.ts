@@ -3,6 +3,7 @@ import { basePath } from 'hono/route';
 import { z } from 'zod';
 
 import type { EmulationSession } from '../../../types/emulation_session.ts';
+import { isTelegramUsername } from '../../../types/telegram_identity.ts';
 import { MAX_ACCOUNT_NAME_LENGTH } from '../../../types/virtual_account.ts';
 import { countTextCharacters } from '../../../types/virtual_message.ts';
 import { readJsonRequestBody } from '../json_request_body.ts';
@@ -30,7 +31,7 @@ const accountNameSchema = z.string().min(1).refine(
 const createAccountRequestSchema = z.strictObject({
   first_name: accountNameSchema,
   last_name: accountNameSchema.optional(),
-  username: z.string().min(1).optional(),
+  username: z.string().refine(isTelegramUsername).optional(),
   language_code: z.string().min(1).optional(),
   /** Keeps forwards of the account's messages from linking to it; they show only its name. */
   has_private_forwards: z.boolean().optional(),

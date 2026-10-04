@@ -3,7 +3,11 @@ import { basePath } from 'hono/route';
 import { z } from 'zod';
 
 import type { QueuedRateLimitResponses } from '../../../types/bot_rate_limit.ts';
-import { MAX_TELEGRAM_USER_ID, MIN_TELEGRAM_USER_ID } from '../../../types/telegram_identity.ts';
+import {
+  isTelegramUsername,
+  MAX_TELEGRAM_USER_ID,
+  MIN_TELEGRAM_USER_ID,
+} from '../../../types/telegram_identity.ts';
 import { findBotApiMethod } from '../bot_api/mod.ts';
 import { readJsonRequestBody } from '../json_request_body.ts';
 import type { SessionRouteContextTypes } from '../session_route_context_types.ts';
@@ -17,7 +21,7 @@ const botIdPathParameterSchema = z.coerce.number().pipe(
 
 const createBotRequestSchema = z.strictObject({
   first_name: z.string().min(1),
-  username: z.string().min(1),
+  username: z.string().refine(isTelegramUsername),
   /** Turns off privacy mode, so that the bot receives every message of its groups. */
   can_read_all_group_messages: z.boolean().optional(),
   /** Turns on inline mode, so that accounts send the bot inline queries. */

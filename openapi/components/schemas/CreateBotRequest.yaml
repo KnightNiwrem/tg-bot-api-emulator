@@ -8,8 +8,7 @@ properties:
     type: string
     minLength: 1
   username:
-    type: string
-    minLength: 1
+    $ref: ./Username.yaml
   can_read_all_group_messages:
     type: boolean
     default: false
