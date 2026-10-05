@@ -145,6 +145,10 @@ paths:
     $ref: paths/sessions_{sessionId}_accounts_{accountId}_conversations_private_{botId}_messages_{messageId}_poll-answer.yaml
   /sessions/{sessionId}/accounts/{accountId}/conversations/supergroup/{chatId}/messages/{messageId}/poll-answer:
     $ref: paths/sessions_{sessionId}_accounts_{accountId}_conversations_supergroup_{chatId}_messages_{messageId}_poll-answer.yaml
+  /sessions/{sessionId}/accounts/{accountId}/conversations/private/{botId}/messages/{messageId}/poll-closure:
+    $ref: paths/sessions_{sessionId}_accounts_{accountId}_conversations_private_{botId}_messages_{messageId}_poll-closure.yaml
+  /sessions/{sessionId}/accounts/{accountId}/conversations/supergroup/{chatId}/messages/{messageId}/poll-closure:
+    $ref: paths/sessions_{sessionId}_accounts_{accountId}_conversations_supergroup_{chatId}_messages_{messageId}_poll-closure.yaml
   /sessions/{sessionId}/accounts/{accountId}/inline-queries:
     $ref: paths/sessions_{sessionId}_accounts_{accountId}_inline-queries.yaml
   /sessions/{sessionId}/accounts/{accountId}/inline-queries/{inlineQueryId}:

@@ -22,7 +22,10 @@ post:
     `users_shared` or `chat_shared` service message of the account that replies to nothing.
     The choice must meet the button's criteria as TDLib's `RequestedDialogType` checks them;
     the bot must already be a member that holds the rights the request requires of it, and
-    sharing grants nobody membership or rights. A failed press creates no message.
+    sharing grants nobody membership or rights. A `request_poll` button sends the `poll` the
+    request creates, which must be of the type the button requests, if any, as the account's own
+    poll that replies to nothing, as Telegram Desktop's `ActivateBotCommand` opens poll creation
+    without a reply. A failed press creates no message.
   requestBody:
     required: true
     content:
@@ -32,8 +35,8 @@ post:
   responses:
     '201':
       description: >-
-        The button's text, the account's own contact, the reported location, or the chosen users
-        or supergroup were sent as the account's message, and, unless the bot's allowed_updates subscription excludes message
+        The button's text, the account's own contact, the reported location, the chosen users or
+        supergroup, or the created poll were sent as the account's message, and, unless the bot's allowed_updates subscription excludes message
         updates, an update was enqueued for the bot.
       content:
         application/json:
@@ -44,10 +47,10 @@ post:
     '400':
       description: >-
         The request is invalid or answers more than one request, the chat shows no reply
-        keyboard with a button of that text, the button has a request for a poll or a Web App,
-        which the emulator cannot answer, an answer is missing for the button's request or given
-        for a button without that request, or the chosen users or supergroup do not meet the
-        button's criteria. A request that requires Premium users, a channel, a forum, or an
+        keyboard with a button of that text, the button has a request for a Web App, which the
+        emulator cannot answer, an answer is missing for the button's request or given for a
+        button without that request, the chosen users or supergroup do not meet the button's
+        criteria, or the created poll is invalid or not of the requested type. A request that requires Premium users, a channel, a forum, or an
         anonymous administrator cannot be answered, as the emulator models none of them.
     '403':
       description: >-

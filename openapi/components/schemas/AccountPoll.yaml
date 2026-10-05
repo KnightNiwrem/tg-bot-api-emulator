@@ -1,0 +1,60 @@
+type: object
+additionalProperties: false
+description: >-
+  A poll the account creates and owns, with the settings `sendPoll` takes from bots and their
+  defaults. The account sends it open and without a closing time. As TDLib checks a user's poll,
+  the question must have 1 to 255 characters once trimmed and the poll 1 to 12 options of 1 to 100
+  characters; only custom emoji stay of their formatting. A quiz lists 1 or more correct options
+  in increasing order and may explain them in at most 200 characters and 2 line feeds; a regular
+  poll has neither.
+required:
+  - question
+  - options
+properties:
+  question:
+    type: string
+  question_entities:
+    $ref: ./AccountMessageEntities.yaml
+  options:
+    type: array
+    items:
+      type: object
+      additionalProperties: false
+      required:
+        - text
+      properties:
+        text:
+          type: string
+        text_entities:
+          $ref: ./AccountMessageEntities.yaml
+  is_anonymous:
+    type: boolean
+    default: true
+    description: Hides who voted for what.
+  type:
+    type: string
+    enum:
+      - regular
+      - quiz
+    default: regular
+  allows_multiple_answers:
+    type: boolean
+    default: false
+  allows_revoting:
+    type: boolean
+    description: >-
+      Lets a voter change or retract its answer; true for a regular poll and false for a quiz
+      when omitted.
+  correct_option_ids:
+    type: array
+    description: >-
+      The positions of a quiz's correct options, counted from 0, in increasing order. Only a quiz
+      takes them, and it requires at least one.
+    items:
+      type: integer
+      minimum: 0
+  explanation:
+    type: string
+    description: What clients show a quiz voter who chose a wrong option. Only a quiz takes it.
+  explanation_entities:
+    $ref: ./AccountMessageEntities.yaml

@@ -1,6 +1,6 @@
 description: >-
   Text, a photo, a document, a video, a voice note, a written contact, the account's own contact,
-  or a static location to send, or a message to forward.
+  a static location, or a new poll to send, or a message to forward.
 oneOf:
   - $ref: ./SendAccountTextRequest.yaml
   - $ref: ./SendAccountPhotoRequest.yaml
@@ -10,4 +10,5 @@ oneOf:
   - $ref: ./SendAccountContactRequest.yaml
   - $ref: ./ShareAccountOwnContactRequest.yaml
   - $ref: ./SendAccountLocationRequest.yaml
+  - $ref: ./SendAccountPollRequest.yaml
   - $ref: ./ForwardAccountMessageRequest.yaml

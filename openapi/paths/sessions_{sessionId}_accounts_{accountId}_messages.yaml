@@ -6,10 +6,12 @@ post:
   operationId: sendAccountMessage
   summary: Send a message as a virtual account
   description: >-
-    Sends text, a photo, a document, a video, a voice note, a contact, or a static location to the
-    account's private chat with a bot, or to a supergroup the account is a member of; or forwards a message of such
-    a chat there, as the account's message that shows who first sent it. A contact the account
-    writes shows no Telegram user, while its own contact shows the account as its user. Messages protected from forwarding and
+    Sends text, a photo, a document, a video, a voice note, a contact, a static location, or a new
+    poll to the account's private chat with a bot, or to a supergroup the account is a member of;
+    or forwards a message of such a chat there, as the account's message that shows who first sent
+    it. A contact the account writes shows no Telegram user, while its own contact shows the
+    account as its user. A poll is the account's own, which only it stops, and about which no bot
+    receives `poll` or `poll_answer` updates. Messages protected from forwarding and
     service messages cannot be forwarded, and, as on Telegram, a forward cannot be edited. In
     a supergroup, the supergroup's bots receive the message unless it is not addressed to a
     bot in privacy mode. As on Telegram, a message reaches only the one bot in privacy mode it
@@ -41,9 +43,9 @@ post:
               - $ref: ../components/schemas/SentSupergroupMessage.yaml
     '400':
       description: >-
-        The request, message text, or caption is invalid, the photo is not an image Telegram
-        accepts, the file is empty, the replied message is not a message of the chat, or the
-        forwarded message cannot be forwarded.
+        The request, message text, caption, or poll is invalid, the photo is not an image
+        Telegram accepts, the file is empty, the replied message is not a message of the chat, or
+        the forwarded message cannot be forwarded.
     '403':
       description: >-
         The account is not a member of a supergroup of the request, or may not send the content,
