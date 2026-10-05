@@ -9,7 +9,6 @@ import {
 import type { VirtualAccount } from '../types/virtual_account.ts';
 import type { VirtualBot } from '../types/virtual_bot.ts';
 import type {
-  PrivateConversation,
   PrivateConversationKey,
   PrivateConversationRole,
   Supergroup,
@@ -143,7 +142,7 @@ interface BlockedUserLookup {
 }
 
 interface PrivateConversationLookup {
-  getPrivateConversation(key: PrivateConversationKey): PrivateConversation | undefined;
+  isPrivateConversationStarted(key: PrivateConversationKey): boolean;
 }
 
 interface PrivateChatMessages {
@@ -404,7 +403,7 @@ export class MessagePinningService {
     }
     const conversation: PrivateConversationKey = { accountId: peerId, botId: pinner.botId };
     return this.#accounts.getById(peerId) === undefined ||
-        this.#privateConversations.getPrivateConversation(conversation) === undefined
+        !this.#privateConversations.isPrivateConversationStarted(conversation)
       ? { reached: false, reason: 'chat_not_found' }
       : { reached: true, chat: { type: 'private', conversation } };
   }

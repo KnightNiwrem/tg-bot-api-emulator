@@ -1,0 +1,7 @@
+type: object
+additionalProperties: false
+required:
+  - join_request
+properties:
+  join_request:
+    $ref: ./SupergroupJoinRequest.yaml

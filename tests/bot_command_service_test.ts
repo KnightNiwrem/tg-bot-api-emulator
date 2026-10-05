@@ -81,7 +81,7 @@ Deno.test('BotCommandService checks scopes and languages before commands', () =>
   const { botCommands, virtualUsers, privateConversations, bot, account } =
     createBotCommandFixture();
   const stranger = createAccount(virtualUsers, 'Grace');
-  privateConversations.getOrCreatePrivateConversation({
+  privateConversations.startPrivateConversation({
     accountId: account.profile.id,
     botId: bot.profile.id,
   });
@@ -185,7 +185,7 @@ Deno.test('BotCommandService resolves the commands an account sees in its privat
     createBotCommandFixture();
   const germanAccount = createAccount(virtualUsers, 'Emmy', 'de-DE');
   for (const { profile } of [account, germanAccount]) {
-    privateConversations.getOrCreatePrivateConversation({
+    privateConversations.startPrivateConversation({
       accountId: profile.id,
       botId: bot.profile.id,
     });

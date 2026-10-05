@@ -77,7 +77,7 @@ function createLookupFixture() {
   const { bot } = botCreation;
 
   const privateConversations = new PrivateConversationRepository();
-  const conversation = privateConversations.getOrCreatePrivateConversation({
+  const conversation = privateConversations.startPrivateConversation({
     accountId: account.profile.id,
     botId: bot.profile.id,
   });

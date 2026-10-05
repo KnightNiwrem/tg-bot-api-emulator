@@ -2010,6 +2010,126 @@ Deno.test('PrivateMessagingService checks the account, bot, and block alike on e
   }
 });
 
+Deno.test('PrivateMessagingService lets a join request contact grant send messages without starting the chat', () => {
+  const {
+    virtualUsers,
+    privateConversations,
+    messages,
+    messageBoxes,
+    blockedUsers,
+    joinRequesterGrants,
+    publishedEvents,
+    privateMessaging,
+  } = createPrivateMessagingFixture();
+  const account = createAccount(virtualUsers, 'Grace');
+  const bot = createBot(virtualUsers, 'Gatekeeper', 'gatekeeper_bot');
+  const accountId = account.profile.id;
+  const conversation = { accountId, botId: bot.profile.id };
+  const to = { type: 'private', accountId } as const;
+  const sendText = (text: string) =>
+    privateMessaging.sendBotMessage({
+      fromBotId: bot.profile.id,
+      to,
+      content: { kind: 'text', text },
+      inlineKeyboard: YES_NO_KEYBOARD,
+    });
+  const describeSend = (result: SendBotMessageResult) =>
+    result.sent ? getContentText(result.message.content).text : result.reason;
+
+  const withoutGrant = describeSend(sendText('Solve this'));
+  joinRequesterGrants.contactableBotIdsByAccountId.set(accountId, new Set([bot.profile.id]));
+  blockedUsers.block(accountId, bot.profile.id);
+  const whileBlocked = describeSend(sendText('Solve this'));
+  blockedUsers.unblock(accountId, bot.profile.id);
+  const eventCountBeforeGrantedSends = publishedEvents.length;
+  const prompt = sendText('Solve this');
+  const album = privateMessaging.sendBotAlbum({
+    fromBotId: bot.profile.id,
+    to,
+    contents: [photoMedia(), photoMedia()],
+  });
+
+  expectJsonEqual(
+    [
+      withoutGrant,
+      whileBlocked,
+      describeSend(prompt),
+      album.sent ? album.messages.length : album.reason,
+      joinRequesterGrants.claims,
+      publishedEvents.length - eventCountBeforeGrantedSends,
+      messages.getPrivateConversationMessages(conversation).length,
+      privateConversations.getPrivateConversation(conversation) !== undefined,
+      privateMessaging.isPrivateConversationStarted(conversation),
+    ],
+    [
+      'conversation_not_started',
+      'bot_blocked',
+      'Solve this',
+      2,
+      [[bot.profile.id, accountId], [bot.profile.id, accountId]],
+      3,
+      3,
+      true,
+      false,
+    ],
+    'Expected only the granted, unblocked sends to be stored and claim the contact, opening an unstarted chat',
+  );
+
+  // The grant covers sending messages only: the bot reaches nothing else in the unstarted chat.
+  if (!prompt.sent) {
+    throw new Error('Expected the prompt to be sent');
+  }
+  const promptId = expectBotMessageId(messageBoxes, bot, prompt.message.id);
+  const edit = privateMessaging.editBotMessageText({
+    fromBotId: bot.profile.id,
+    chat: to,
+    botMessageId: promptId,
+    content: { kind: 'text', text: 'Solved' },
+  });
+  const deletion = privateMessaging.deleteMessagesByBot({
+    fromBotId: bot.profile.id,
+    chat: to,
+    botMessageIds: [promptId],
+  });
+  const chatAction = privateMessaging.sendBotChatAction({
+    fromBotId: bot.profile.id,
+    to,
+    action: 'typing',
+  });
+  joinRequesterGrants.contactableBotIdsByAccountId.delete(accountId);
+  const afterGrant = describeSend(sendText('Still there?'));
+
+  expectJsonEqual(
+    [
+      edit.edited ? 'edited' : edit.reason,
+      deletion.deleted ? 'deleted' : deletion.reason,
+      chatAction.sent ? 'sent' : chatAction.reason,
+      afterGrant,
+    ],
+    [
+      'conversation_not_started',
+      'conversation_not_started',
+      'conversation_not_started',
+      'conversation_not_started',
+    ],
+    'Expected the unstarted chat to refuse edits, deletions, actions, and sends once the grant ended',
+  );
+
+  // The account's reply starts the chat, which the bot then reaches without the grant.
+  sendPrivateText(privateMessaging, accountId, bot);
+  const afterReply = describeSend(sendText('Welcome'));
+
+  expectJsonEqual(
+    [
+      afterReply,
+      joinRequesterGrants.claims.length,
+      privateMessaging.isPrivateConversationStarted(conversation),
+    ],
+    ['Welcome', 2, true],
+    "Expected the account's reply to start the chat, so the bot's later send claims nothing",
+  );
+});
+
 const COLOR_KEYBOARD: ReplyInterfaceMarkup = {
   kind: 'reply_keyboard',
   rows: [[{ text: 'Red' }, { text: 'Green' }]],
@@ -2086,6 +2206,11 @@ function createPrivateMessagingFixture() {
   let currentUnixTimeSeconds = 1_700_000_000;
   const blockedUsers = new BlockedUserRepository();
   const storedUploads: FileUpload[] = [];
+  /** The bots a pending join request lets write to each account, and the contacts they claimed. */
+  const joinRequesterGrants = {
+    contactableBotIdsByAccountId: new Map<number, Set<number>>(),
+    claims: [] as Array<readonly [botId: number, accountId: number]>,
+  };
   const privateMessaging = new PrivateMessagingService({
     accounts,
     bots,
@@ -2100,6 +2225,13 @@ function createPrivateMessagingFixture() {
     polls,
     messageBoxes,
     blockedUsers,
+    joinRequesterContacts: {
+      mayContactJoinRequester: (botId, accountId) =>
+        joinRequesterGrants.contactableBotIdsByAccountId.get(accountId)?.has(botId) ?? false,
+      claimJoinRequesterContact: (botId, accountId) => {
+        joinRequesterGrants.claims.push([botId, accountId]);
+      },
+    },
     events: {
       publish: (event) => {
         publishedEvents.push(event);
@@ -2120,6 +2252,7 @@ function createPrivateMessagingFixture() {
     messageBoxes,
     botUpdates,
     blockedUsers,
+    joinRequesterGrants,
     publishedEvents,
     privateMessaging,
     advanceClockSeconds,
@@ -2177,4 +2310,23 @@ function textContentOf(
   return message !== undefined && 'text' in message
     ? { text: message.text, entities: message.entities }
     : undefined;
+}
+
+/** A photo for an album, without a caption. */
+function photoMedia(): MediaContent {
+  return {
+    kind: 'photo',
+    photo: { kind: 'upload', upload: photoUpload() },
+    caption: '',
+    hasSpoiler: false,
+    showsCaptionAboveMedia: false,
+  };
+}
+
+function expectJsonEqual(actual: unknown, expected: unknown, message: string): void {
+  if (JSON.stringify(actual) !== JSON.stringify(expected)) {
+    throw new Error(
+      `${message}: expected ${JSON.stringify(expected)}, received ${JSON.stringify(actual)}`,
+    );
+  }
 }

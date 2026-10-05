@@ -598,8 +598,9 @@ interface BotLookup {
 }
 
 interface PrivateConversationStore {
-  getOrCreatePrivateConversation(key: PrivateConversationKey): PrivateConversation;
-  getPrivateConversation(key: PrivateConversationKey): PrivateConversation | undefined;
+  startPrivateConversation(key: PrivateConversationKey): PrivateConversation;
+  openPrivateConversation(key: PrivateConversationKey): PrivateConversation;
+  isPrivateConversationStarted(key: PrivateConversationKey): boolean;
   getReplyInterfaceMessageId(key: PrivateConversationKey): CanonicalMessageId | undefined;
   setReplyInterfaceMessageId(
     key: PrivateConversationKey,
@@ -659,6 +660,16 @@ interface ChatDomainEventSink {
   publish(event: ChatDomainEvent): void;
 }
 
+/**
+ * Decides whether a pending join request lets a bot write to an account that has not started a
+ * private conversation with it, which chat admission grants to the bots that receive the request.
+ */
+interface JoinRequesterContactGrants {
+  mayContactJoinRequester(botId: number, accountId: number): boolean;
+  /** Records that the bot wrote to the account under a grant that `mayContactJoinRequester` found. */
+  claimJoinRequesterContact(botId: number, accountId: number): void;
+}
+
 interface PrivateMessagingServiceDependencies {
   readonly accounts: AccountLookup;
   readonly bots: BotLookup;
@@ -668,9 +679,16 @@ interface PrivateMessagingServiceDependencies {
   readonly polls: PollStore;
   readonly messageBoxes: MessageBoxStore;
   readonly blockedUsers: BlockedUserLookup;
+  readonly joinRequesterContacts: JoinRequesterContactGrants;
   readonly events: ChatDomainEventSink;
   readonly currentUnixTimeSeconds: () => number;
 }
+
+/**
+ * What lets a bot write to an account: the conversation the account started, or a pending join
+ * request's contact grant.
+ */
+type BotRecipientAccess = 'started_conversation' | 'join_request_contact';
 
 /**
  * A message of an existing private conversation to store, written by one of its participants,
@@ -719,6 +737,7 @@ export class PrivateMessagingService {
   readonly #polls: PollStore;
   readonly #messageBoxes: MessageBoxStore;
   readonly #blockedUsers: BlockedUserLookup;
+  readonly #joinRequesterContacts: JoinRequesterContactGrants;
   readonly #events: ChatDomainEventSink;
   readonly #currentUnixTimeSeconds: () => number;
 
@@ -732,6 +751,7 @@ export class PrivateMessagingService {
       polls,
       messageBoxes,
       blockedUsers,
+      joinRequesterContacts,
       events,
       currentUnixTimeSeconds,
     }: PrivateMessagingServiceDependencies,
@@ -745,6 +765,7 @@ export class PrivateMessagingService {
     this.#polls = polls;
     this.#messageBoxes = messageBoxes;
     this.#blockedUsers = blockedUsers;
+    this.#joinRequesterContacts = joinRequesterContacts;
     this.#events = events;
     this.#currentUnixTimeSeconds = currentUnixTimeSeconds;
   }
@@ -761,7 +782,7 @@ export class PrivateMessagingService {
 
     return {
       activated: true,
-      conversation: this.#privateConversations.getOrCreatePrivateConversation(input),
+      conversation: this.#privateConversations.startPrivateConversation(input),
     };
   }
 
@@ -770,7 +791,7 @@ export class PrivateMessagingService {
    * chat known to the bot.
    */
   isPrivateConversationStarted(key: PrivateConversationKey): boolean {
-    return this.#privateConversations.getPrivateConversation(key) !== undefined;
+    return this.#privateConversations.isPrivateConversationStarted(key);
   }
 
   /**
@@ -806,7 +827,7 @@ export class PrivateMessagingService {
       return { sent: false, reason: 'reply_message_not_found' };
     }
 
-    this.#privateConversations.getOrCreatePrivateConversation(conversation);
+    this.#privateConversations.startPrivateConversation(conversation);
     return {
       sent: true,
       message: this.#storePrivateMessage({
@@ -850,7 +871,7 @@ export class PrivateMessagingService {
       return { sent: false, reason: 'reply_message_not_found' };
     }
 
-    this.#privateConversations.getOrCreatePrivateConversation(conversation);
+    this.#privateConversations.startPrivateConversation(conversation);
     return {
       sent: true,
       messages: this.#storePrivateAlbum(albumNormalization.contents, {
@@ -891,7 +912,8 @@ export class PrivateMessagingService {
   /**
    * Sends text or captioned media from a bot to an account, or the content of an existing
    * message as a forward or copy of it. As on Telegram, a bot cannot initiate a private
-   * conversation, so the account must have started one with the bot.
+   * conversation, so the account must have started one with the bot, unless a pending join request
+   * of the account lets the bot contact it, as `#findBotRecipient` finds.
    *
    * Checks follow Telegram's order: text is checked for emptiness before the recipient is
    * resolved, and the replied message is looked up after it; the text or caption is then
@@ -911,7 +933,7 @@ export class PrivateMessagingService {
     if (!recipient.found) {
       return { sent: false, reason: recipient.reason };
     }
-    const { account, conversation } = recipient;
+    const { account, conversation, access } = recipient;
     const replyResolution = this.#resolveBotMessageReplyTarget(conversation, input.replyTo);
     if (!replyResolution.resolved) {
       return { sent: false, reason: 'reply_message_not_found' };
@@ -935,6 +957,7 @@ export class PrivateMessagingService {
       return { sent: false, reason: 'bot_blocked' };
     }
 
+    this.#admitBotMessage(conversation, access);
     return {
       sent: true,
       message: this.#storePrivateMessage({
@@ -971,7 +994,7 @@ export class PrivateMessagingService {
     if (!recipient.found) {
       return { sent: false, reason: recipient.reason };
     }
-    const { account, conversation } = recipient;
+    const { account, conversation, access } = recipient;
     const replyResolution = this.#resolveBotMessageReplyTarget(conversation, input.replyTo);
     if (!replyResolution.resolved) {
       return { sent: false, reason: 'reply_message_not_found' };
@@ -996,6 +1019,7 @@ export class PrivateMessagingService {
       return { sent: false, reason: 'bot_blocked' };
     }
 
+    this.#admitBotMessage(conversation, access);
     return {
       sent: true,
       messages: this.#storePrivateAlbum(albumNormalization.contents, {
@@ -1212,7 +1236,7 @@ export class PrivateMessagingService {
       accountId: input.chat.accountId,
       botId: input.fromBotId,
     };
-    if (this.#privateConversations.getPrivateConversation(conversation) === undefined) {
+    if (!this.#privateConversations.isPrivateConversationStarted(conversation)) {
       return { deleted: false, reason: 'conversation_not_started' };
     }
 
@@ -1275,11 +1299,12 @@ export class PrivateMessagingService {
     if (this.#accounts.getById(to.accountId) === undefined) {
       return { sent: false, reason: 'account_not_found' };
     }
-    const conversation = this.#privateConversations.getPrivateConversation({
-      accountId: to.accountId,
-      botId: fromBotId,
-    });
-    if (conversation === undefined) {
+    if (
+      !this.#privateConversations.isPrivateConversationStarted({
+        accountId: to.accountId,
+        botId: fromBotId,
+      })
+    ) {
       return { sent: false, reason: 'conversation_not_started' };
     }
     return this.#blockedUsers.isBlocked(to.accountId, fromBotId)
@@ -1445,7 +1470,7 @@ export class PrivateMessagingService {
       return { found: false, reason: 'account_not_found' };
     }
     const conversation: PrivateConversationKey = { accountId, botId };
-    if (this.#privateConversations.getPrivateConversation(conversation) === undefined) {
+    if (!this.#privateConversations.isPrivateConversationStarted(conversation)) {
       return { found: false, reason: 'conversation_not_started' };
     }
     const message = this.getPrivateMessageByBotMessageId(conversation, botMessageId);
@@ -1513,27 +1538,49 @@ export class PrivateMessagingService {
   }
 
   /**
-   * Finds the account a bot writes to and their conversation. As on Telegram, a bot cannot initiate
-   * a private conversation, so the account must have started one with the bot.
+   * Finds the account a bot sends a message to, their conversation, and what lets the bot write to
+   * it. As on Telegram, a bot cannot initiate a private conversation, so the account must have
+   * started one with the bot. Otherwise, as the Bot API documents for a join request's
+   * `user_chat_id`, a pending join request of the account may let the bot contact it: such a
+   * message claims the contact but starts no conversation, so the bot's access ends with the grant
+   * unless the account writes to the bot. The grant covers sending messages only.
    */
   #findBotRecipient(bot: VirtualBot, to: BotPrivateChat):
     | {
       readonly found: true;
       readonly account: VirtualAccount;
-      readonly conversation: PrivateConversation;
+      readonly conversation: PrivateConversationKey;
+      readonly access: BotRecipientAccess;
     }
     | { readonly found: false; readonly reason: 'account_not_found' | 'conversation_not_started' } {
     const account = this.#accounts.getById(to.accountId);
     if (account === undefined) {
       return { found: false, reason: 'account_not_found' };
     }
-    const conversation = this.#privateConversations.getPrivateConversation({
+    const conversation: PrivateConversationKey = {
       accountId: account.profile.id,
       botId: bot.profile.id,
-    });
-    return conversation === undefined
-      ? { found: false, reason: 'conversation_not_started' }
-      : { found: true, account, conversation };
+    };
+    if (this.#privateConversations.isPrivateConversationStarted(conversation)) {
+      return { found: true, account, conversation, access: 'started_conversation' };
+    }
+    return this.#joinRequesterContacts.mayContactJoinRequester(bot.profile.id, account.profile.id)
+      ? { found: true, account, conversation, access: 'join_request_contact' }
+      : { found: false, reason: 'conversation_not_started' };
+  }
+
+  /**
+   * Prepares the conversation for a bot's message that passed its checks: a message under a join
+   * request's contact grant claims the contact and opens the conversation, which stays unstarted.
+   */
+  #admitBotMessage(conversation: PrivateConversationKey, access: BotRecipientAccess): void {
+    if (access === 'join_request_contact') {
+      this.#joinRequesterContacts.claimJoinRequesterContact(
+        conversation.botId,
+        conversation.accountId,
+      );
+      this.#privateConversations.openPrivateConversation(conversation);
+    }
   }
 
   /**
@@ -1624,7 +1671,7 @@ export class PrivateMessagingService {
       return { resolved: false, reason: 'account_not_found' };
     }
     const conversation: PrivateConversationKey = { accountId: chat.accountId, botId: fromBotId };
-    if (this.#privateConversations.getPrivateConversation(conversation) === undefined) {
+    if (!this.#privateConversations.isPrivateConversationStarted(conversation)) {
       return { resolved: false, reason: 'conversation_not_started' };
     }
     const message = this.getPrivateMessageByBotMessageId(conversation, botMessageId);
@@ -1719,7 +1766,7 @@ export class PrivateMessagingService {
     }
     const { account, bot } = senderResolution;
 
-    this.#privateConversations.getOrCreatePrivateConversation({
+    this.#privateConversations.startPrivateConversation({
       accountId: account.profile.id,
       botId: bot.profile.id,
     });

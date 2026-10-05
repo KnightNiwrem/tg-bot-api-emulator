@@ -1,0 +1,46 @@
+type: object
+additionalProperties: false
+description: A pending request to join a supergroup, as the supergroup's owner inspects it.
+required:
+  - user_id
+  - invite_link
+  - date
+  - requester_contact
+properties:
+  user_id:
+    $ref: ./TelegramUserId.yaml
+    description: The account that wants to join.
+  invite_link:
+    type: string
+    description: The whole invite link the request was sent through.
+  date:
+    type: integer
+    minimum: 0
+    description: Unix time when the request was sent.
+  requester_contact:
+    type: object
+    additionalProperties: false
+    description: >-
+      Which bots may send messages to the user before it starts a private chat with them, as the
+      Bot API documents for the request's `user_chat_id`.
+    required:
+      - status
+      - bot_ids
+    properties:
+      status:
+        type: string
+        enum:
+          - open
+          - claimed
+          - expired
+        description: >-
+          `open` while every bot that received the request may write; `claimed` once one of them
+          wrote, after which only that bot may; `expired` once a test ended the contact window.
+      bot_ids:
+        type: array
+        description: >-
+          The bots that may write to the user now: while open, the bots that received the
+          request, and once claimed, the bot that claimed it, as long as they hold
+          `can_invite_users`.
+        items:
+          $ref: ./TelegramUserId.yaml

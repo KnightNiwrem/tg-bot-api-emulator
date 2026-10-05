@@ -861,12 +861,22 @@ export const supergroupInviteLinksResponseSchema = z.strictObject({
   invite_links: z.array(supergroupInviteLinkSchema),
 });
 
+const chatJoinRequestSchema = z.strictObject({
+  user_id: z.number().int().positive(),
+  invite_link: z.string().startsWith('https://t.me/+'),
+  date: z.number().int().positive(),
+  requester_contact: z.strictObject({
+    status: z.enum(['open', 'claimed', 'expired']),
+    bot_ids: z.array(z.number().int().positive()),
+  }),
+});
+
 export const chatJoinRequestsResponseSchema = z.strictObject({
-  join_requests: z.array(z.strictObject({
-    user_id: z.number().int().positive(),
-    invite_link: z.string().startsWith('https://t.me/+'),
-    date: z.number().int().positive(),
-  })),
+  join_requests: z.array(chatJoinRequestSchema),
+});
+
+export const expiredRequesterContactResponseSchema = z.strictObject({
+  join_request: chatJoinRequestSchema,
 });
 
 export const expiredInviteLinkResponseSchema = z.strictObject({

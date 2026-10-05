@@ -139,6 +139,7 @@ export function createEmulationSession(
     polls,
     messageBoxes,
     blockedUsers,
+    joinRequesterContacts: chatAdmission,
     events: botUpdateDelivery,
     currentUnixTimeSeconds,
   });

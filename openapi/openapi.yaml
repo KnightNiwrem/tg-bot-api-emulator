@@ -165,6 +165,8 @@ paths:
     $ref: paths/sessions_{sessionId}_supergroups_{chatId}_restrictions_{userId}_expiry.yaml
   /sessions/{sessionId}/supergroups/{chatId}/invite-links/{inviteLinkHash}/expiry:
     $ref: paths/sessions_{sessionId}_supergroups_{chatId}_invite-links_{inviteLinkHash}_expiry.yaml
+  /sessions/{sessionId}/supergroups/{chatId}/join-requests/{userId}/requester-contact/expiry:
+    $ref: paths/sessions_{sessionId}_supergroups_{chatId}_join-requests_{userId}_requester-contact_expiry.yaml
   /sessions/{sessionId}/bot-api/bot{token}/sendPhoto:
     $ref: paths/sessions_{sessionId}_bot-api_bot{token}_sendPhoto.yaml
   /sessions/{sessionId}/bot-api/bot{token}/sendDocument:

@@ -8,7 +8,7 @@ import {
   MIN_SUPERGROUP_OR_CHANNEL_ID,
   MIN_TELEGRAM_USER_ID,
 } from '../../../types/telegram_identity.ts';
-import { presentChatInviteLinkUsage } from '../invite_link_presentation.ts';
+import { presentChatInviteLinkUsage, presentChatJoinRequest } from '../invite_link_presentation.ts';
 import type { SessionRouteContextTypes } from '../session_route_context_types.ts';
 
 const CHAT_ID_PARAMETER = 'chatId';
@@ -18,13 +18,15 @@ const RESTRICTION_EXPIRY_PATH =
   `/:${CHAT_ID_PARAMETER}/restrictions/:${USER_ID_PARAMETER}/expiry` as const;
 const INVITE_LINK_EXPIRY_PATH =
   `/:${CHAT_ID_PARAMETER}/invite-links/:${INVITE_LINK_HASH_PARAMETER}/expiry` as const;
+const REQUESTER_CONTACT_EXPIRY_PATH =
+  `/:${CHAT_ID_PARAMETER}/join-requests/:${USER_ID_PARAMETER}/requester-contact/expiry` as const;
 
 const supergroupChatIdPathParameterSchema = z.coerce.number().pipe(
   z.int().min(MIN_SUPERGROUP_OR_CHANNEL_ID).max(MAX_SUPERGROUP_OR_CHANNEL_ID),
 );
 
-/** The path parameters of a supergroup user's restriction. */
-const restrictionPathSchema = z.object({
+/** The path parameters of a supergroup user, such as one with a restriction or a join request. */
+const supergroupUserPathSchema = z.object({
   [CHAT_ID_PARAMETER]: supergroupChatIdPathParameterSchema,
   [USER_ID_PARAMETER]: z.coerce.number().pipe(
     z.int().min(MIN_TELEGRAM_USER_ID).max(MAX_TELEGRAM_USER_ID),
@@ -39,13 +41,14 @@ const inviteLinkPathSchema = z.object({
 
 /**
  * Routes that control supergroups' time, which the emulator does not let pass by itself: a test
- * makes a temporary restriction's end, or an invite link's expiry date, arrive when it chooses.
+ * makes a temporary restriction's end, an invite link's expiry date, or the end of a join
+ * request's contact window arrive when it chooses.
  */
 export function createSupergroupRoutes(): Hono<SessionRouteContextTypes> {
   const supergroupRoutes = new Hono<SessionRouteContextTypes>();
 
   supergroupRoutes.post(RESTRICTION_EXPIRY_PATH, (context) => {
-    const restrictionPath = restrictionPathSchema.safeParse(context.req.param());
+    const restrictionPath = supergroupUserPathSchema.safeParse(context.req.param());
     if (!restrictionPath.success) {
       return context.body(null, 400);
     }
@@ -78,6 +81,24 @@ export function createSupergroupRoutes(): Hono<SessionRouteContextTypes> {
       return context.body(null, result.reason === 'invite_link_not_expirable' ? 409 : 404);
     }
     return context.json({ invite_link: presentChatInviteLinkUsage(result.link) });
+  });
+
+  supergroupRoutes.post(REQUESTER_CONTACT_EXPIRY_PATH, (context) => {
+    const joinRequestPath = supergroupUserPathSchema.safeParse(context.req.param());
+    if (!joinRequestPath.success) {
+      return context.body(null, 400);
+    }
+
+    const result = context.get('emulationSession').chatAdmission.expireJoinRequesterContact(
+      joinRequestPath.data,
+    );
+    if (!result.expired) {
+      return context.body(
+        null,
+        result.reason === 'requester_contact_already_expired' ? 409 : 404,
+      );
+    }
+    return context.json({ join_request: presentChatJoinRequest(result.request) });
   });
 
   return supergroupRoutes;

@@ -16,6 +16,7 @@ import {
   createdVirtualBotSchema,
   expiredInviteLinkResponseSchema,
   expiredPollResponseSchema,
+  expiredRequesterContactResponseSchema,
   expiredRestrictionResponseSchema,
   getMeResponseSchema,
   inlineQueryResponseSchema,
@@ -89,6 +90,7 @@ import type {
   EmulationSession,
   ExpireChatInviteLinkInput,
   ExpireChatMemberRestrictionInput,
+  ExpireJoinRequesterContactInput,
   InlineQuery,
   JoinChatByInviteLinkInput,
   JoinChatInput,
@@ -171,6 +173,13 @@ export interface EmulationSessionClient extends EmulationSession {
    * with `expire_date` stops admitting users; the members that joined through it stay.
    */
   expireChatInviteLink(input: ExpireChatInviteLinkInput): Promise<SupergroupInviteLink>;
+  /**
+   * Ends a pending join request's contact window as its five minutes passing does, and returns the
+   * request as the supergroup's owner sees it. The emulator does not let time pass by itself, so
+   * tests choose when the bots that received the request stop being able to write to a user that
+   * never started them; bots the user started keep writing to it, and the request stays pending.
+   */
+  expireJoinRequesterContact(input: ExpireJoinRequesterContactInput): Promise<ChatJoinRequest>;
   /**
    * A view of the session's bot activity log: the Bot API calls its bots make, with their answers,
    * and the updates delivered to and confirmed by them. `filter` applies to every read of the
@@ -324,6 +333,20 @@ class HttpEmulationSessionClient implements EmulationSessionClient {
       responseSchema: expiredInviteLinkResponseSchema,
     });
     return response.invite_link;
+  }
+
+  async expireJoinRequesterContact(
+    { chatId, userId }: ExpireJoinRequesterContactInput,
+  ): Promise<ChatJoinRequest> {
+    const response = await requestJson(this.#fetch, {
+      method: 'POST',
+      url: `${this.#sessionUrl}/supergroups/${encodeURIComponent(chatId)}/join-requests/${
+        encodeURIComponent(userId)
+      }/requester-contact/expiry`,
+      expectedStatus: HTTP_STATUS_OK,
+      responseSchema: expiredRequesterContactResponseSchema,
+    });
+    return response.join_request;
   }
 
   registerWebResource({ content, ...input }: RegisterWebResourceInput): Promise<WebResource> {
