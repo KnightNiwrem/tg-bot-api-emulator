@@ -25,6 +25,8 @@ oneOf:
   - required:
       - voice
   - required:
+      - audio
+  - required:
       - rich_message
   - required:
       - poll
@@ -128,10 +130,14 @@ properties:
     $ref: ./Video.yaml
   voice:
     $ref: ./Voice.yaml
+  audio:
+    $ref: ./Audio.yaml
   caption:
     type: string
     minLength: 1
-    description: The caption of a photo, document, video, or voice note, omitted when it has none.
+    description: >-
+      The caption of a photo, document, video, voice note, or audio file, omitted when it has
+      none.
   caption_entities:
     type: array
     minItems: 1

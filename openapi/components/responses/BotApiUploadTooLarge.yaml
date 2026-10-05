@@ -1,10 +1,10 @@
 description: >-
-  The session has the `cloud` upload profile, and a photo, document, video, or voice note the bot
-  uploaded with
+  The session has the `cloud` upload profile, and a photo, document, video, voice note, or audio
+  file the bot uploaded with
   `multipart/form-data` is larger than 52428800 bytes (50 × 1024 × 1024). The body is
   `{"ok":false,"error_code":413,"description":"Request Entity Too Large"}`, the answer bots
   observe from `api.telegram.org`. In a session with the `local` upload profile, a document,
-  video, or voice note larger than 2097152000 bytes fails with `400` instead (`Bad Request: file of size <size> bytes
+  video, voice note, or audio file larger than 2097152000 bytes fails with `400` instead (`Bad Request: file of size <size> bytes
   is too big; the maximum size is 2097152000 bytes`), and a photo that large fails the
   10485760-byte photo limit first.
 content:

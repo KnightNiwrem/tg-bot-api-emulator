@@ -1,0 +1,38 @@
+description: >-
+  An audio file, such as a music track, an account uploads, whose duration, performer and title
+  its client defines. The emulator neither reads nor transcodes the content, and reads no tags from
+  it.
+type: object
+additionalProperties: false
+required:
+  - content_base64
+properties:
+  content_base64:
+    type: string
+    minLength: 1
+    contentEncoding: base64
+    description: >-
+      The audio file's content, which must not be empty. An account uploads through its own
+      client, so the session's upload profile, which limits bot uploads, does not apply.
+  file_name:
+    type: string
+    minLength: 1
+    description: >-
+      The file's name, whose extension decides the audio file's MIME type when it names an
+      `audio/` type; otherwise, and without a name, the audio file is `audio/mpeg`.
+  duration:
+    type: integer
+    minimum: 0
+    maximum: 86400
+    default: 0
+    description: Duration in seconds.
+  performer:
+    type: string
+    default: ''
+    description: >-
+      The performer, cleaned as TDLib's `clean_input_string` cleans it; empty for none. Text that
+      is not well-formed Unicode is refused.
+  title:
+    type: string
+    default: ''
+    description: The track's title, cleaned as `performer` is; empty for none.
