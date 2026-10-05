@@ -691,6 +691,8 @@ export class BotMessageViewService {
         };
       case 'title_changed':
       case 'message_pinned':
+      case 'users_shared':
+      case 'chat_shared':
         return context;
       default: {
         const unhandledContent: never = content;

@@ -1,0 +1,26 @@
+type: object
+additionalProperties: false
+description: >-
+  The users an account shared in answer to a `request_users` button, in the field order of the
+  official Bot API server's `JsonUsersShared`, which also keeps the legacy `user_ids`.
+required:
+  - user_ids
+  - users
+  - request_id
+properties:
+  user_ids:
+    type: array
+    minItems: 1
+    description: Legacy form of the IDs of `users`.
+    items:
+      type: integer
+      minimum: 1
+  users:
+    type: array
+    minItems: 1
+    description: The shared users, in the order the account chose them.
+    items:
+      $ref: ./SharedUser.yaml
+  request_id:
+    type: integer
+    description: The `request_id` of the button's request.

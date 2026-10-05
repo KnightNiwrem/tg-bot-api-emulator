@@ -683,6 +683,46 @@ function supergroupChangeMessageSchemas<Header extends z.ZodRawShape>(header: He
   ] as const;
 }
 
+const sharedUserSchema = z.strictObject({
+  user_id: z.number().int().positive(),
+  first_name: z.string().min(1).optional(),
+  last_name: z.string().min(1).optional(),
+  username: z.string().min(1).optional(),
+});
+
+/**
+ * A service message about the users or the supergroup an account shared with the bot, as
+ * `contentMessageSchemas` reads others: a single shared user also shows as the legacy
+ * `user_shared`.
+ */
+function sharedPeersMessageSchemas<Header extends z.ZodRawShape>(header: Header) {
+  return [
+    z.strictObject({
+      ...header,
+      user_shared: z.strictObject({
+        user_id: z.number().int().positive(),
+        request_id: z.number().int(),
+      }).optional(),
+      users_shared: z.strictObject({
+        user_ids: z.array(z.number().int().positive()).min(1),
+        users: z.array(sharedUserSchema).min(1),
+        request_id: z.number().int(),
+      }),
+      ...messageTrailerShape,
+    }),
+    z.strictObject({
+      ...header,
+      chat_shared: z.strictObject({
+        chat_id: z.number().int().negative(),
+        title: z.string().min(1).optional(),
+        username: z.string().min(1).optional(),
+        request_id: z.number().int(),
+      }),
+      ...messageTrailerShape,
+    }),
+  ] as const;
+}
+
 // A reply, which shows no reply of its own, comes between a message's header and content, as does
 // a reply to another chat or a quote, which a replied message still shows.
 const privateMessageHeader = {
@@ -697,8 +737,8 @@ const supergroupMessageHeader = {
   ...messageAlbumInfoShape,
 };
 
-// A private message, which may be a service message about a pin, with its replied message, which
-// may be one too.
+// A private message, which may be a service message about a pin or about users or a chat an
+// account shared, with its replied message, which may be one too.
 const privateMessageSchema: z.ZodType<PrivateMessage> = z.union([
   ...contentMessageSchemas({ ...privateMessageHeader, reply_to_message: repliedPrivateMessage() }),
   pinServiceMessageSchema(
@@ -706,6 +746,10 @@ const privateMessageSchema: z.ZodType<PrivateMessage> = z.union([
     privateMessageHeader,
     privateChatSchema,
   ),
+  ...sharedPeersMessageSchemas({
+    ...privateMessageHeader,
+    reply_to_message: repliedPrivateMessage(),
+  }),
 ]);
 
 /** The message a private message replies to, which never shows its own reply. */
@@ -713,6 +757,7 @@ function repliedPrivateMessage() {
   return z.union([
     ...contentMessageSchemas(privateMessageHeader),
     repliedPinServiceMessageSchema(privateMessageHeader),
+    ...sharedPeersMessageSchemas(privateMessageHeader),
   ]).optional();
 }
 

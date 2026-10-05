@@ -3,7 +3,9 @@ additionalProperties: false
 description: >-
   A private-chat message as the conversation's bot sees it: text, a photo, a document, a video, a
   voice note, a rich message, a poll, a contact, or a location, each with the fields Telegram shows
-  for it, or a service message recording that a participant pinned a message (`pinned_message`).
+  for it, or a service message recording that a participant pinned a message (`pinned_message`),
+  or that the account shared users (`users_shared`) or a supergroup (`chat_shared`) in answer to a
+  reply keyboard button's request.
 required:
   - message_id
   - from
@@ -41,6 +43,16 @@ oneOf:
         oneOf:
           - $ref: ./PinnedPrivateMessage.yaml
           - $ref: ./InaccessiblePrivateMessage.yaml
+  - required:
+      - users_shared
+    properties:
+      users_shared:
+        $ref: ./UsersShared.yaml
+  - required:
+      - chat_shared
+    properties:
+      chat_shared:
+        $ref: ./ChatShared.yaml
 properties:
   message_id:
     type: integer
@@ -173,6 +185,31 @@ properties:
     oneOf:
       - $ref: ./PinnedPrivateMessage.yaml
       - $ref: ./InaccessiblePrivateMessage.yaml
+  user_shared:
+    type: object
+    additionalProperties: false
+    description: >-
+      Legacy form of a `users_shared` that shares a single user, which precedes it; omitted when
+      several users were shared.
+    required:
+      - user_id
+      - request_id
+    properties:
+      user_id:
+        type: integer
+        minimum: 1
+      request_id:
+        type: integer
+  users_shared:
+    $ref: ./UsersShared.yaml
+    description: >-
+      The users the account shared in answer to a `request_users` button. The service message
+      replies to nothing, as TDLib shows it.
+  chat_shared:
+    $ref: ./ChatShared.yaml
+    description: >-
+      The supergroup the account shared in answer to a `request_chat` button. The service message
+      replies to nothing, as TDLib shows it.
   reply_markup:
     $ref: ./InlineKeyboardMarkup.yaml
     description: >-

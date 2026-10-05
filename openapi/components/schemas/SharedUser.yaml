@@ -1,0 +1,24 @@
+type: object
+additionalProperties: false
+description: >-
+  A user an account shared with a bot, in the field order of the official Bot API server's
+  `JsonSharedUser`: the details the bot's `request_users` asked for, as they were when the account
+  shared the user, each omitted when the user lacks it. Emulated users have no profile photos, so
+  `photo` is never present.
+required:
+  - user_id
+properties:
+  user_id:
+    $ref: ./TelegramUserId.yaml
+  first_name:
+    type: string
+    minLength: 1
+    description: Present only when the request asked for names.
+  last_name:
+    type: string
+    minLength: 1
+    description: Present only when the request asked for names and the user has a last name.
+  username:
+    type: string
+    minLength: 1
+    description: Present only when the request asked for usernames and the user has one.

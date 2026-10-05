@@ -4,6 +4,7 @@ import type { PrivateConversationKey, PrivateConversationRole } from '../types/v
 import type {
   CanonicalMessageId,
   ChatMessage,
+  ChatMessageContent,
   ExternalReply,
   InlineMessageId,
   MediaGroupId,
@@ -400,8 +401,8 @@ function copyMessageEdit(edit: MessageEdit): {
   };
 }
 
-function copyContent<Content extends SupergroupMessageContent>(content: Content): Content;
-function copyContent(content: SupergroupMessageContent): SupergroupMessageContent {
+function copyContent<Content extends ChatMessageContent>(content: Content): Content;
+function copyContent(content: ChatMessageContent): ChatMessageContent {
   switch (content.kind) {
     case 'text':
       return { ...content, entities: content.entities.map((entity) => ({ ...entity })) };
@@ -426,9 +427,12 @@ function copyContent(content: SupergroupMessageContent): SupergroupMessageConten
       return { ...content, location: { ...content.location } };
     case 'members_joined':
       return { ...content, memberIds: [...content.memberIds] };
+    case 'users_shared':
+      return { ...content, users: content.users.map((user) => ({ ...user })) };
     case 'member_left':
     case 'title_changed':
     case 'message_pinned':
+    case 'chat_shared':
       return { ...content };
     default: {
       const unhandledContent: never = content;

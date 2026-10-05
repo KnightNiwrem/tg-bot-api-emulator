@@ -1,5 +1,8 @@
 type: object
 additionalProperties: false
+description: >-
+  A press of a reply keyboard button by its text, with at most one answer to the button's request:
+  `location`, `shared_user_ids`, or `shared_chat_id`.
 required:
   - chat
   - text
@@ -15,3 +18,19 @@ properties:
     description: >-
       The location the account's client reports, which a `request_location` button shares and
       requires; no other button takes one.
+  shared_user_ids:
+    type: array
+    minItems: 1
+    description: >-
+      The IDs of the session's accounts and bots the account chooses, which a `request_users`
+      button shares and requires; no other button takes them. They must number at most the
+      request's `max_quantity`, each appear once, and be of the kind `user_is_bot` requires.
+    items:
+      $ref: ./TelegramUserId.yaml
+  shared_chat_id:
+    $ref: ./SupergroupChatId.yaml
+    description: >-
+      The ID of a supergroup the account is a member of and chooses, which a `request_chat`
+      button shares and requires; no other button takes one. It must meet the request's criteria,
+      and the bot must already be a member and hold the rights the request requires of it, since
+      the emulator does not add or promote it.

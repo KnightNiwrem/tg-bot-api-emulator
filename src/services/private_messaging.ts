@@ -1,5 +1,4 @@
 import type { ChatDomainEvent } from '../types/chat_domain_event.ts';
-import type { GeoLocation } from '../types/geo_location.ts';
 import type { InlineKeyboard } from '../types/inline_keyboard.ts';
 import type { Poll, PollId } from '../types/poll.ts';
 import { type AlbumCompositionFailureReason, formsAlbum } from '../types/media_album.ts';
@@ -10,6 +9,7 @@ import {
   findReplyKeyboardButton,
   type ReplyInterface,
   type ReplyInterfaceMarkup,
+  type ReplyKeyboardRequestAnswer,
 } from '../types/reply_interface.ts';
 import type { VirtualAccount } from '../types/virtual_account.ts';
 import type { VirtualBot } from '../types/virtual_bot.ts';
@@ -72,6 +72,15 @@ import {
   toOutgoingAccountMedia,
 } from './message_content.ts';
 import { findStoppablePoll, type PollStopFailureReason } from './poll.ts';
+import {
+  resolveSharedChat,
+  resolveSharedUsers,
+  type SharedChatFailureReason,
+  type SharedChatResolution,
+  type SharedPeerLookups,
+  type SharedUsersFailureReason,
+  type SharedUsersResolution,
+} from './requested_peer_sharing.ts';
 import { createSessionUserMentionContext } from './session_user_mention.ts';
 
 export type PrivateConversationActivationFailureReason =
@@ -514,10 +523,10 @@ export interface PressReplyKeyboardButtonInput {
   /** The text of the button to press. */
   readonly text: string;
   /**
-   * The location the account's client reports, which only a button that requests the user's
-   * location shares; omitted for any other button.
+   * What the account's client answers the button's request with, which only a button with a
+   * request of the same kind takes and requires; omitted for any other button.
    */
-  readonly location?: GeoLocation;
+  readonly answer?: ReplyKeyboardRequestAnswer;
 }
 
 export type PressReplyKeyboardButtonResult =
@@ -527,8 +536,10 @@ export type PressReplyKeyboardButtonResult =
     readonly reason:
       | 'reply_keyboard_button_not_found'
       | 'reply_keyboard_button_request_unsupported'
-      | 'reply_keyboard_button_location_missing'
-      | 'reply_keyboard_button_location_not_requested';
+      | 'reply_keyboard_button_answer_missing'
+      | 'reply_keyboard_button_answer_not_requested'
+      | SharedUsersFailureReason
+      | SharedChatFailureReason;
   };
 
 export interface RecordPrivateServiceMessageInput {
@@ -673,6 +684,8 @@ interface JoinRequesterContactGrants {
 interface PrivateMessagingServiceDependencies {
   readonly accounts: AccountLookup;
   readonly bots: BotLookup;
+  /** The supergroups and memberships an account's chat sharing reads. */
+  readonly sharedChats: SharedPeerLookups['sharedChats'];
   readonly privateConversations: PrivateConversationStore;
   readonly messages: PrivateMessageStore;
   readonly files: FileUploadStore;
@@ -730,6 +743,7 @@ interface NewPrivateMessage {
 export class PrivateMessagingService {
   readonly #accounts: AccountLookup;
   readonly #bots: BotLookup;
+  readonly #sharedPeers: SharedPeerLookups;
   readonly #textFixingContext: FormattedTextFixingContext;
   readonly #privateConversations: PrivateConversationStore;
   readonly #messages: PrivateMessageStore;
@@ -745,6 +759,7 @@ export class PrivateMessagingService {
     {
       accounts,
       bots,
+      sharedChats,
       privateConversations,
       messages,
       files,
@@ -758,6 +773,7 @@ export class PrivateMessagingService {
   ) {
     this.#accounts = accounts;
     this.#bots = bots;
+    this.#sharedPeers = { accounts, bots, sharedChats };
     this.#textFixingContext = createSessionUserMentionContext({ accounts, bots });
     this.#privateConversations = privateConversations;
     this.#messages = messages;
@@ -1383,11 +1399,15 @@ export class PrivateMessagingService {
    * A button that requests the user's contact instead shares the account's own contact, as
    * `sendAccountMessage` sends it, in reply to the keyboard's message, as Telegram Desktop's
    * `ActivateBotCommand` and Telegram for Android's `shareMyContact` do once the user confirms.
-   * A button that requests the user's location likewise shares the location the press reports,
-   * as Telegram for Android's `sendLocation` replies with the device's location. The bot receives
-   * an ordinary contact or location message, which only its reply ties to the keyboard. Only a
-   * location button takes a location. Buttons with other requests cannot be pressed, which the
-   * emulator does not model.
+   * A button that requests the user's location likewise shares the location the press answers
+   * with, as Telegram for Android's `sendLocation` replies with the device's location. The bot
+   * receives an ordinary contact or location message, which only its reply ties to the keyboard.
+   *
+   * A button that requests users or a chat shares those the press answers with, as
+   * `resolveSharedUsers` and `resolveSharedChat` accept them, in a service message of the account
+   * that carries the request's ID and replies to nothing, as TDLib shows it. Buttons with other
+   * requests cannot be pressed, which the emulator does not model. A press that fails changes
+   * nothing.
    */
   pressReplyKeyboardButton(input: PressReplyKeyboardButtonInput): PressReplyKeyboardButtonResult {
     if (this.#accounts.getById(input.fromAccountId) === undefined) {
@@ -1407,11 +1427,13 @@ export class PrivateMessagingService {
     if (shownReplyInterface === undefined || button === undefined) {
       return { sent: false, reason: 'reply_keyboard_button_not_found' };
     }
-    if (input.location !== undefined && button.request?.kind !== 'location') {
-      return { sent: false, reason: 'reply_keyboard_button_location_not_requested' };
+    const { request } = button;
+    const { answer } = input;
+    if (answer !== undefined && answer.kind !== request?.kind) {
+      return { sent: false, reason: 'reply_keyboard_button_answer_not_requested' };
     }
 
-    switch (button.request?.kind) {
+    switch (request?.kind) {
       case undefined:
         return this.sendAccountMessage({
           fromAccountId: input.fromAccountId,
@@ -1429,21 +1451,75 @@ export class PrivateMessagingService {
           ),
         });
       case 'location':
-        if (input.location === undefined) {
-          return { sent: false, reason: 'reply_keyboard_button_location_missing' };
+        if (answer?.kind !== 'location') {
+          return { sent: false, reason: 'reply_keyboard_button_answer_missing' };
         }
         return this.sendAccountMessage({
           fromAccountId: input.fromAccountId,
           to: input.chat,
-          content: { kind: 'location', location: input.location },
+          content: { kind: 'location', location: answer.location },
           replyToBotMessageId: this.#getBotMessageId(
             input.chat.botId,
             shownReplyInterface.message,
           ),
         });
+      case 'users':
+        if (answer?.kind !== 'users') {
+          return { sent: false, reason: 'reply_keyboard_button_answer_missing' };
+        }
+        return this.#sharePeers(
+          input,
+          () => resolveSharedUsers(request, answer.userIds, this.#sharedPeers),
+        );
+      case 'chat':
+        if (answer?.kind !== 'chat') {
+          return { sent: false, reason: 'reply_keyboard_button_answer_missing' };
+        }
+        return this.#sharePeers(
+          input,
+          (conversation) =>
+            resolveSharedChat(request, answer.chatId, conversation, this.#sharedPeers),
+        );
       default:
         return { sent: false, reason: 'reply_keyboard_button_request_unsupported' };
     }
+  }
+
+  /**
+   * Shares the users or chat an account chose with the bot of its private chat, as a service
+   * message of the account that starts the chat, once the account may write to the bot and the
+   * choice is resolved.
+   */
+  #sharePeers(
+    { fromAccountId, chat }: PressReplyKeyboardButtonInput,
+    resolve: (
+      conversation: PrivateConversationKey,
+    ) => SharedUsersResolution | SharedChatResolution,
+  ): PressReplyKeyboardButtonResult {
+    const senderResolution = this.#resolveAccountSender(fromAccountId, chat.botId);
+    if (!senderResolution.resolved) {
+      return { sent: false, reason: senderResolution.reason };
+    }
+    const { account, bot } = senderResolution;
+    const conversation: PrivateConversationKey = {
+      accountId: account.profile.id,
+      botId: bot.profile.id,
+    };
+    const resolution = resolve(conversation);
+    if (!resolution.resolved) {
+      return { sent: false, reason: resolution.reason };
+    }
+    // As any message the account writes does, sharing starts a chat the bot only opened.
+    this.#privateConversations.startPrivateConversation(conversation);
+    return {
+      sent: true,
+      message: this.#storePrivateMessage({
+        account,
+        bot,
+        authorRole: 'account',
+        content: resolution.content,
+      }),
+    };
   }
 
   /** The ID by which a bot sees a message of its private chat, which its message box holds. */

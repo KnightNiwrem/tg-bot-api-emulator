@@ -254,7 +254,8 @@
           "src/services/chat_action.ts",
           "src/services/bot_rate_limit.ts",
           "src/services/web_resource.ts",
-          "src/services/web_file_download.ts"
+          "src/services/web_file_download.ts",
+          "src/services/requested_peer_sharing.ts"
         ]
       },
       {

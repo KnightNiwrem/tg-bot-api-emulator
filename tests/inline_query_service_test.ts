@@ -709,6 +709,7 @@ function createInlineQueryFixture() {
   const privateMessaging = new PrivateMessagingService({
     accounts,
     bots,
+    sharedChats,
     privateConversations: new PrivateConversationRepository(),
     messages,
     files: messageFiles,

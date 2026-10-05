@@ -1360,15 +1360,85 @@ export type RepliedPinContent<PinnedMessage> =
   & Omit<NoServiceChange, 'pinned_message'>
   & { readonly pinned_message?: PinnedMessage };
 
-/** What a private message shows: content, or a pin. */
-export type PrivateMessageContent =
-  | (MessageContent & NoServiceChange)
-  | PinContent<PrivateChat, PinnedPrivateMessage>;
+/**
+ * The fields of a service message about users or a chat an account shared with a bot, which other
+ * private messages never have.
+ */
+interface NoSharedPeers {
+  readonly user_shared?: never;
+  readonly users_shared?: never;
+  readonly chat_shared?: never;
+}
 
-/** What a private message shows as a replied message, as `RepliedPinContent` shows a pin. */
+/**
+ * A user an account shared with a bot: the details the bot's request asked for, as they were when
+ * the account shared it, each omitted when the user lacks it.
+ */
+export interface SharedUser {
+  readonly user_id: number;
+  readonly first_name?: string;
+  readonly last_name?: string;
+  readonly username?: string;
+}
+
+/**
+ * The fields of a service message about users an account shared in answer to a `request_users`
+ * button, which take the place of content. As Telegram does, a single shared user also shows as
+ * the legacy `user_shared`, and `users_shared` keeps the legacy `user_ids`.
+ */
+export type UsersSharedContent =
+  & NoContent
+  & NoServiceChange
+  & {
+    /** Legacy form of a single shared user; omitted when several were shared. */
+    readonly user_shared?: { readonly user_id: number; readonly request_id: number };
+    readonly users_shared: {
+      /** Legacy: the IDs of `users`. */
+      readonly user_ids: readonly number[];
+      /** The shared users, in the order the account chose them. */
+      readonly users: readonly SharedUser[];
+      /** The `request_id` of the button's request. */
+      readonly request_id: number;
+    };
+    readonly chat_shared?: never;
+  };
+
+/**
+ * The field of a service message about a supergroup an account shared in answer to a
+ * `request_chat` button, which takes the place of content: the details the request asked for, as
+ * they were when the account shared it, each omitted when the chat lacks it.
+ */
+export type ChatSharedContent =
+  & NoContent
+  & NoServiceChange
+  & {
+    readonly user_shared?: never;
+    readonly users_shared?: never;
+    readonly chat_shared: {
+      readonly chat_id: number;
+      readonly title?: string;
+      readonly username?: string;
+      /** The `request_id` of the button's request. */
+      readonly request_id: number;
+    };
+  };
+
+/** What a private message shows: content, a pin, or the users or chat an account shared. */
+export type PrivateMessageContent =
+  | (MessageContent & NoServiceChange & NoSharedPeers)
+  | (PinContent<PrivateChat, PinnedPrivateMessage> & NoSharedPeers)
+  | UsersSharedContent
+  | ChatSharedContent;
+
+/**
+ * What a private message shows as a replied message, as `RepliedPinContent` shows a pin, or the
+ * users or chat an account shared.
+ */
 export type RepliedPrivateMessageContent =
-  | (MessageContent & NoServiceChange)
-  | RepliedPinContent<PinnedPrivateMessage>;
+  | (MessageContent & NoServiceChange & NoSharedPeers)
+  | (RepliedPinContent<PinnedPrivateMessage> & NoSharedPeers)
+  | UsersSharedContent
+  | ChatSharedContent;
 
 /**
  * What a supergroup message shows: content, or a change of the supergroup's members or title, or
@@ -1573,8 +1643,9 @@ export type RequiredChatAdministratorRights = Readonly<Record<string, boolean>>;
 /**
  * What a reply keyboard button asks the client to share instead of sending its text, in the
  * fields of a Bot API `KeyboardButton`. Pressing a `request_contact` button shares the account's
- * own contact, and pressing a `request_location` button shares the location the press reports;
- * the emulator cannot answer the other requests, so such buttons cannot be pressed.
+ * own contact, pressing a `request_location` button shares the location the press reports, and
+ * pressing a `request_users` or `request_chat` button shares the users or supergroup the press
+ * chooses; the emulator cannot answer the other requests, so such buttons cannot be pressed.
  */
 export type ReplyKeyboardButtonRequest =
   | { readonly request_contact: true }
@@ -1652,6 +1723,18 @@ export interface PressReplyKeyboardButtonInput<Target extends MessageTarget = Me
    * other button takes.
    */
   readonly location?: LocationInput;
+  /**
+   * The IDs of the session's accounts and bots the account chooses, which a `request_users`
+   * button shares and no other button takes: at most the request's `max_quantity`, each once, and
+   * each of the kind the request requires.
+   */
+  readonly shared_user_ids?: readonly number[];
+  /**
+   * The ID of a supergroup the account is a member of and chooses, which a `request_chat` button
+   * shares and no other button takes. It must meet the request's criteria; the bot must already be
+   * a member and hold the rights the request requires of it, which the press does not grant.
+   */
+  readonly shared_chat_id?: number;
 }
 
 export interface AccountReplyInterfaceInput {
@@ -2168,8 +2251,11 @@ export interface VirtualAccountClient extends VirtualAccountProfile {
    * Telegram's clients send it. A `request_contact` button, which only private chats show, shares
    * the account's own contact instead, in reply to the keyboard's message, and fails for an
    * account created without a phone number; a `request_location` button likewise shares the
-   * location the input reports, which it requires and no other button takes. Fails when the chat
-   * shows no keyboard with such a button, or for a button with another request.
+   * location the input reports, which it requires and no other button takes. A `request_users` or
+   * `request_chat` button shares the `shared_user_ids` or `shared_chat_id` the input chooses,
+   * which it requires and no other button takes, as a `users_shared` or `chat_shared` service
+   * message that replies to nothing. Fails when the chat shows no keyboard with such a button, for
+   * a choice the request's criteria refuse, or for a button with another request.
    */
   pressReplyKeyboardButton<Target extends MessageTarget>(
     input: PressReplyKeyboardButtonInput<Target>,

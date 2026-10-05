@@ -1,0 +1,24 @@
+type: object
+additionalProperties: false
+description: >-
+  The supergroup an account shared in answer to a `request_chat` button, in the field order of the
+  official Bot API server's `JsonChatShared`: the details the request asked for, as they were when
+  the account shared the chat, each omitted when the chat lacks it. Emulated chats have no photos,
+  so `photo` is never present.
+required:
+  - chat_id
+  - request_id
+properties:
+  chat_id:
+    $ref: ./SupergroupChatId.yaml
+  title:
+    type: string
+    minLength: 1
+    description: Present only when the request asked for the title.
+  username:
+    type: string
+    minLength: 1
+    description: Present only when the request asked for the username and the chat is public.
+  request_id:
+    type: integer
+    description: The `request_id` of the button's request.
