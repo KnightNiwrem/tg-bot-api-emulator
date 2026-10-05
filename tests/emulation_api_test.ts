@@ -8151,7 +8151,7 @@ Deno.test("sendMediaGroup reuses files only by the bot's own file_id or a URL", 
   }
 });
 
-Deno.test('sendMediaGroup sends photos, videos and documents and names each kind it refuses', async () => {
+Deno.test('sendMediaGroup sends photos, videos, documents and audio and names each kind it refuses', async () => {
   const { api, botApiPath, createdAccount, sendText } = await createPrivateConversationFixture();
   await sendText('/start');
   const chatId = String(createdAccount.account.id);
@@ -8160,7 +8160,7 @@ Deno.test('sendMediaGroup sends photos, videos and documents and names each kind
     notes: new File(['notes'], 'notes.txt'),
   };
   const sendAlbumOf = async (type: string) => {
-    const media = type === 'document' ? 'attach://notes' : 'attach://image';
+    const media = type === 'document' || type === 'audio' ? 'attach://notes' : 'attach://image';
     const { status, body } = await callBotApiWithFiles(api, `${botApiPath}/sendMediaGroup`, {
       chat_id: chatId,
       media: JSON.stringify([{ type, media }, { type, media }]),
@@ -8168,7 +8168,7 @@ Deno.test('sendMediaGroup sends photos, videos and documents and names each kind
     if (status === 200) {
       const messages = (body as { result: Record<string, unknown>[] }).result;
       return messages.map((message) =>
-        ['photo', 'document', 'video'].find((kind) => kind in message) ?? 'unexpected'
+        ['photo', 'document', 'video', 'audio'].find((kind) => kind in message) ?? 'unexpected'
       ).join(',');
     }
     return status === 400 && isBadRequestResponse(body) ? body.description : status;
@@ -8189,9 +8189,9 @@ Deno.test('sendMediaGroup sends photos, videos and documents and names each kind
     ['photo', 'photo,photo'],
     ['document', 'document,document'],
     ['video', 'video,video'],
-    // Telegram sends these in albums; the emulator lacks them.
+    // Telegram sends live photos in albums; the emulator lacks them.
     ['live_photo', 'Bad Request: InputMedia of type "live_photo" is not supported'],
-    ['audio', 'Bad Request: InputMedia of type "audio" is not supported'],
+    ['audio', 'audio,audio'],
     // Telegram refuses these in albums itself.
     [
       'animation',

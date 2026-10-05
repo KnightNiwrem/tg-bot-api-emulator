@@ -37,9 +37,11 @@ import {
 } from '../types/rich_message.ts';
 import type { NewPoll, Poll, SpecifiedAccountPoll, SpecifiedPoll } from '../types/poll.ts';
 import type {
+  AudioUpload,
   DocumentUpload,
   FileUpload,
   PhotoUpload,
+  StoredAudioFile,
   StoredDocumentFile,
   StoredFile,
   StoredFileId,
@@ -97,8 +99,15 @@ export type OutgoingVideo = OutgoingFile<StoredVideoFile, VideoUpload>;
 
 export type OutgoingVoice = OutgoingFile<StoredVoiceFile, VoiceUpload>;
 
+export type OutgoingAudio = OutgoingFile<StoredAudioFile, AudioUpload>;
+
 /** A file that new captioned media carries. */
-type OutgoingMediaFile = OutgoingPhoto | OutgoingDocument | OutgoingVideo | OutgoingVoice;
+type OutgoingMediaFile =
+  | OutgoingPhoto
+  | OutgoingDocument
+  | OutgoingVideo
+  | OutgoingVoice
+  | OutgoingAudio;
 
 /** The files of a rich message being sent: each reused by its stored file, or a new upload. */
 export interface OutgoingRichMessageFileTypes {
@@ -147,6 +156,10 @@ export type OutgoingMessageContent =
     readonly kind: 'voice';
     readonly voice: OutgoingVoice;
   })
+  | (SpecifiedCaption & {
+    readonly kind: 'audio';
+    readonly audio: OutgoingAudio;
+  })
   | {
     readonly kind: 'rich_message';
     readonly richMessage: OutgoingRichMessage;
@@ -180,7 +193,7 @@ export type OutgoingMessageContent =
   };
 
 /**
- * A new caption of media, with where a photo or video shows it; a document ignores the placement.
+ * A new caption of media, with where a photo or video shows it; other media ignores the placement.
  */
 export type CaptionReplacement = SpecifiedCaption & { readonly showsCaptionAboveMedia: boolean };
 
@@ -212,6 +225,11 @@ export type NormalizedOutgoingContent =
   | {
     readonly kind: 'voice';
     readonly voice: OutgoingVoice;
+    readonly caption: FormattedText;
+  }
+  | {
+    readonly kind: 'audio';
+    readonly audio: OutgoingAudio;
     readonly caption: FormattedText;
   }
   | { readonly kind: 'rich_message'; readonly richMessage: OutgoingRichMessage }
@@ -343,13 +361,14 @@ function normalizeContact(contact: Contact): ContactNormalization {
 /** New captioned media of a message, as its sender specified it. */
 export type OutgoingCaptionedMedia = Extract<
   OutgoingMessageContent,
-  { readonly kind: 'photo' | 'document' | 'video' | 'voice' }
+  { readonly kind: 'photo' | 'document' | 'video' | 'voice' | 'audio' }
 >;
 
 /**
  * New media that albums hold and that replaces a message's media, with its caption, as its sender
- * specified it: a photo, a document, or a video. As TDLib's `is_allowed_media_group_content` and
- * `is_editable_media_message_content` decide, a voice note is neither.
+ * specified it: a photo, a document, a video, or an audio file. As TDLib's
+ * `is_allowed_media_group_content` and `is_editable_media_message_content` decide, a voice note is
+ * neither.
  */
 export type MediaContent = Exclude<OutgoingCaptionedMedia, { readonly kind: 'voice' }>;
 
@@ -357,7 +376,11 @@ type MediaContentNormalization =
   | { readonly normalized: true; readonly content: NormalizedOutgoingContent }
   | { readonly normalized: false; readonly failure: CaptionNormalizationFailure };
 
-/** Normalizes the caption of new media as `normalizeCaption` does. */
+/**
+ * Normalizes the caption of new media as `normalizeCaption` does, and then the metadata of an
+ * uploaded audio file as `normalizeAudioMetadata` does, in the order TDLib's
+ * `create_input_message_content` checks them.
+ */
 function normalizeMediaContent(
   content: OutgoingCaptionedMedia,
   sender: MessageSenderKind,
@@ -367,9 +390,65 @@ function normalizeMediaContent(
   if (!captionNormalization.normalized) {
     return captionNormalization;
   }
+  if (content.kind === 'audio') {
+    const audioNormalization = normalizeAudioMetadata(content.audio);
+    return audioNormalization.normalized
+      ? {
+        normalized: true,
+        content: {
+          kind: 'audio',
+          audio: audioNormalization.audio,
+          caption: captionNormalization.caption,
+        },
+      }
+      : audioNormalization;
+  }
   return {
     normalized: true,
     content: withNormalizedCaption(content, captionNormalization.caption),
+  };
+}
+
+type AudioMetadataNormalization =
+  | { readonly normalized: true; readonly audio: OutgoingAudio }
+  | { readonly normalized: false; readonly failure: TextInvalidFailure };
+
+/**
+ * Cleans the title, then the performer, of an uploaded audio file as TDLib's
+ * `create_input_message_content` does with `clean_input_string`, refusing text that is not
+ * well-formed Unicode with TDLib's error. A title or performer that cleaning empties is none. An
+ * audio file reused by its `file_id` keeps the metadata it was stored with, which was cleaned when
+ * it was sent.
+ */
+function normalizeAudioMetadata(audio: OutgoingAudio): AudioMetadataNormalization {
+  if (audio.kind === 'stored') {
+    return { normalized: true, audio };
+  }
+  const { title, performer, ...upload } = audio.upload;
+  const cleanedTitle = title === undefined ? '' : cleanInputString(title);
+  if (cleanedTitle === undefined) {
+    return {
+      normalized: false,
+      failure: { reason: 'text_invalid', textError: 'Audio title must be encoded in UTF-8' },
+    };
+  }
+  const cleanedPerformer = performer === undefined ? '' : cleanInputString(performer);
+  if (cleanedPerformer === undefined) {
+    return {
+      normalized: false,
+      failure: { reason: 'text_invalid', textError: 'Audio performer must be encoded in UTF-8' },
+    };
+  }
+  return {
+    normalized: true,
+    audio: {
+      kind: 'upload',
+      upload: {
+        ...upload,
+        ...(cleanedPerformer.length === 0 ? {} : { performer: cleanedPerformer }),
+        ...(cleanedTitle.length === 0 ? {} : { title: cleanedTitle }),
+      },
+    },
   };
 }
 
@@ -400,6 +479,8 @@ function withNormalizedCaption(
       };
     case 'voice':
       return { kind: 'voice', voice: content.voice, caption };
+    case 'audio':
+      return { kind: 'audio', audio: content.audio, caption };
     default: {
       const unhandledContent: never = content;
       throw new Error(`Unhandled media content: ${JSON.stringify(unhandledContent)}`);
@@ -577,8 +658,8 @@ export function normalizeCaption(
 }
 
 /**
- * What an account sends: text; media with a caption, which is a photo, a document, a video, or a
- * voice note as its upload says, each with the formatting the account specified; a contact the
+ * What an account sends: text; media with a caption, which is a photo, a document, a video, a voice
+ * note, or an audio file as its upload says, each with the formatting the account specified; a contact the
  * account writes, whose Telegram user stays unknown; the account's own contact; a location; or a
  * new poll, which the account creates.
  */
@@ -601,7 +682,10 @@ export type AccountMediaContent<Upload extends FileUpload = FileUpload> = Specif
   readonly upload: Upload;
 };
 
-/** Media an account sends in an album: a photo, a document, or a video, but no voice note. */
+/**
+ * Media an account sends in an album: a photo, a document, a video, or an audio file, but no voice
+ * note.
+ */
 export type AccountAlbumMediaContent = AccountMediaContent<Exclude<FileUpload, VoiceUpload>>;
 
 /**
@@ -676,6 +760,8 @@ export function toOutgoingAccountMedia(
       };
     case 'voice':
       return { kind: 'voice', voice: { kind: 'upload', upload }, caption, captionEntities };
+    case 'audio':
+      return { kind: 'audio', audio: { kind: 'upload', upload }, caption, captionEntities };
     default: {
       const unhandledUpload: never = upload;
       throw new Error(`Unhandled account upload: ${JSON.stringify(unhandledUpload)}`);
@@ -716,7 +802,7 @@ export function replaceMessageText(
 /**
  * Replaces the caption of captioned media, normalized as when sending; an empty caption removes
  * it. As on Telegram, a text message has no caption to replace, and only a photo or video shows its
- * caption above itself: a document ignores `showsCaptionAboveMedia`, and omitting it keeps the
+ * caption above itself: other media ignores `showsCaptionAboveMedia`, and omitting it keeps the
  * setting.
  */
 export function replaceMessageCaption(
@@ -749,11 +835,11 @@ export function replaceMessageCaption(
  * Replaces a message's content with new media and its caption, normalized as when a bot sends
  * them, as TDLib's `edit_message_media` does: the old caption goes with the old content, so new
  * media without a caption has none. As TDLib's `can_edit_message_media` allows, the old content
- * may be a photo, a document, or a video, whose media is replaced, or text or a rich message,
- * which becomes media; the media of a voice note, a poll, a contact, or a location cannot be
- * edited, which that method checks before it reads the new media. As that method checks once the new caption is read, a
- * message of an album changes its media only as `canChangeAlbumMediaKind` allows; only media is
- * sent in albums.
+ * may be a photo, a document, a video, or an audio file, whose media is replaced, or text or a rich
+ * message, which becomes media; the media of a voice note, a poll, a contact, or a location cannot
+ * be edited, which that method checks before it reads the new media. As that method checks once
+ * the new caption is read, a message of an album changes its media only as
+ * `canChangeAlbumMediaKind` allows; only media is sent in albums.
  */
 export function replaceMessageMedia(
   { content, mediaGroupId }: Pick<ContentMessage, 'content' | 'mediaGroupId'>,
@@ -774,7 +860,8 @@ export function replaceMessageMedia(
     }
     case 'photo':
     case 'document':
-    case 'video': {
+    case 'video':
+    case 'audio': {
       const normalization = normalizeMediaContent(media, 'bot', context);
       if (!normalization.normalized) {
         return { replaced: false, failure: normalization.failure };
@@ -813,6 +900,7 @@ function withCaption(
       };
     case 'document':
     case 'voice':
+    case 'audio':
       return { ...content, caption };
     default: {
       const unhandledContent: never = content;
@@ -921,6 +1009,12 @@ export function storeOutgoingContent(
         fileId: storeOutgoingFile(content.voice, files),
         caption: content.caption,
       };
+    case 'audio':
+      return {
+        kind: 'audio',
+        fileId: storeOutgoingFile(content.audio, files),
+        caption: content.caption,
+      };
     case 'rich_message':
       return {
         kind: 'rich_message',
@@ -980,6 +1074,8 @@ export function toContentOfStoredFile(content: NormalizedOutgoingContent): Messa
       };
     case 'voice':
       return { kind: 'voice', fileId: getStoredFileId(content.voice), caption: content.caption };
+    case 'audio':
+      return { kind: 'audio', fileId: getStoredFileId(content.audio), caption: content.caption };
     case 'rich_message':
       return {
         kind: 'rich_message',
@@ -1016,6 +1112,8 @@ function hasUnstoredContent(content: NormalizedOutgoingContent): boolean {
       return content.video.kind === 'upload';
     case 'voice':
       return content.voice.kind === 'upload';
+    case 'audio':
+      return content.audio.kind === 'upload';
     case 'rich_message':
       return listRichMessageFiles(content.richMessage).some(({ file }) => file.kind === 'upload');
     case 'poll':
@@ -1143,6 +1241,9 @@ export function isSameMessageContent(first: MessageContent, second: MessageConte
           first.showsCaptionAboveMedia === second.showsCaptionAboveMedia);
     case 'voice':
       return second.kind === 'voice' && first.fileId === second.fileId &&
+        isSameFormattedText(first.caption, second.caption);
+    case 'audio':
+      return second.kind === 'audio' && first.fileId === second.fileId &&
         isSameFormattedText(first.caption, second.caption);
     case 'rich_message':
       return second.kind === 'rich_message' && areRichMessagesEqual(first, second);

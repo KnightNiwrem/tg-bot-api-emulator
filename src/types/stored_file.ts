@@ -13,7 +13,7 @@ export const MAX_BOT_DOWNLOAD_FILE_BYTES = 20 * 1024 * 1024;
 export const MAX_PHOTO_UPLOAD_BYTES = 10 * 1024 * 1024;
 
 /** What a bot sends a file by URL as, which decides how large it may be and of which types. */
-export type WebFileKind = 'photo' | 'document' | 'video' | 'voice';
+export type WebFileKind = 'photo' | 'document' | 'video' | 'voice' | 'audio';
 
 /**
  * Telegram downloads a file that a bot sends by URL only up to these sizes: 5 MB for a photo and
@@ -25,6 +25,7 @@ export const MAX_WEB_FILE_BYTES: Readonly<Record<WebFileKind, number>> = {
   document: 20 * 1024 * 1024,
   video: 20 * 1024 * 1024,
   voice: 20 * 1024 * 1024,
+  audio: 20 * 1024 * 1024,
 };
 
 /**
@@ -32,7 +33,7 @@ export const MAX_WEB_FILE_BYTES: Readonly<Record<WebFileKind, number>> = {
  * sends the result. Inline results have contracts of their own rather than those of the send
  * methods.
  */
-export type InlineResultWebFileKind = 'photo' | 'document' | 'video' | 'voice';
+export type InlineResultWebFileKind = 'photo' | 'document' | 'video' | 'voice' | 'audio';
 
 /**
  * The largest file Telegram downloads for an inline query result: 5 MB for a photo, as the Bot API
@@ -44,6 +45,7 @@ export const MAX_INLINE_RESULT_WEB_FILE_BYTES: Readonly<Record<InlineResultWebFi
   document: 20 * 1024 * 1024,
   video: 20 * 1024 * 1024,
   voice: 20 * 1024 * 1024,
+  audio: 20 * 1024 * 1024,
 };
 
 /**
@@ -63,7 +65,7 @@ export function isWebVoiceNoteSentAsVoiceNote(contentSizeBytes: number): boolean
 
 /**
  * A file that Telegram downloaded from the URL a bot sent it by, before it is stored as a photo,
- * document, video, or voice note.
+ * document, video, voice note, or audio file.
  */
 export interface WebFile {
   readonly content: Uint8Array<ArrayBuffer>;
@@ -89,9 +91,9 @@ export interface PhotoUpload {
 export const MAX_THUMBNAIL_UPLOAD_BYTES = 200 * 1024 - 1;
 
 /**
- * A preview image that a sender uploaded with a document or video, as it was sent. Telegram asks
- * for a JPEG of at most 320 pixels a side; the emulator keeps any image whose dimensions it reads
- * unchanged.
+ * A preview image that a sender uploaded with a document, video, or audio file, as it was sent.
+ * Telegram asks for a JPEG of at most 320 pixels a side; the emulator keeps any image whose
+ * dimensions it reads unchanged.
  */
 export interface ThumbnailUpload {
   readonly type: 'thumbnail';
@@ -164,10 +166,38 @@ export interface VoiceUpload {
 }
 
 /**
- * A file a user sends as a message's media; a thumbnail is uploaded only with its document or
- * video.
+ * The metadata of an audio file as its sender defines it, which Telegram shows as the sender
+ * defined it: the emulator reads no tags from the content.
  */
-export type FileUpload = PhotoUpload | DocumentUpload | VideoUpload | VoiceUpload;
+export interface AudioAttributes {
+  /** Zero when the sender specified none. */
+  readonly durationSeconds: number;
+  /** Empty or omitted for none; a stored audio file omits it. */
+  readonly performer?: string;
+  /** Empty or omitted for none; a stored audio file omits it. */
+  readonly title?: string;
+}
+
+/**
+ * A file sent as an audio file, such as a music track, before it is stored. Its content is not
+ * inspected.
+ */
+export interface AudioUpload extends AudioAttributes {
+  readonly type: 'audio';
+  readonly content: Uint8Array<ArrayBuffer>;
+  /** The file name as Telegram shows it; omitted for an audio file sent without one. */
+  readonly fileName?: string;
+  /** The audio file's MIME type, which is always an `audio/` type. */
+  readonly mimeType: string;
+  /** Omitted for an audio file sent without a usable thumbnail, such as its album cover. */
+  readonly thumbnail?: ThumbnailUpload;
+}
+
+/**
+ * A file a user sends as a message's media; a thumbnail is uploaded only with its document, video,
+ * or audio file.
+ */
+export type FileUpload = PhotoUpload | DocumentUpload | VideoUpload | VoiceUpload | AudioUpload;
 
 interface StoredFileIdentity {
   readonly id: StoredFileId;
@@ -205,11 +235,20 @@ export type StoredVideoFile =
 
 export type StoredVoiceFile = StoredFileIdentity & VoiceUpload;
 
+export type StoredAudioFile =
+  & StoredFileIdentity
+  & Omit<AudioUpload, 'thumbnail'>
+  & {
+    /** Omitted for an audio file without a thumbnail. */
+    readonly thumbnail?: StoredThumbnailFile;
+  };
+
 export type StoredFile =
   | StoredPhotoFile
   | StoredDocumentFile
   | StoredVideoFile
   | StoredVoiceFile
+  | StoredAudioFile
   | StoredThumbnailFile;
 
 /** The thumbnail a stored file carries; `undefined` for a file without one. */
@@ -217,6 +256,7 @@ export function getStoredFileThumbnail(file: StoredFile): StoredThumbnailFile | 
   switch (file.type) {
     case 'document':
     case 'video':
+    case 'audio':
       return file.thumbnail;
     case 'photo':
     case 'voice':

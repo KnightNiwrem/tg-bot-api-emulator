@@ -18,6 +18,7 @@ type MediaReplacementRequest = Parameters<
 type PhotoReplacementRequest = Extract<MediaReplacementRequest, { readonly kind: 'photo' }>;
 type DocumentReplacementRequest = Extract<MediaReplacementRequest, { readonly kind: 'document' }>;
 type VideoReplacementRequest = Extract<MediaReplacementRequest, { readonly kind: 'video' }>;
+type AudioReplacementRequest = Extract<MediaReplacementRequest, { readonly kind: 'audio' }>;
 
 /** New media as a request specifies it, with its file as named and its caption not yet read. */
 export type UnreadMediaReplacement =
@@ -30,6 +31,9 @@ export type UnreadMediaReplacement =
     })
     | (Omit<VideoReplacementRequest, 'caption' | 'video'> & {
       readonly video: RequestedInputFile;
+    })
+    | (Omit<AudioReplacementRequest, 'caption' | 'audio'> & {
+      readonly audio: RequestedInputFile;
     })
   )
   & { readonly caption: UnreadFormattedText };
@@ -50,13 +54,9 @@ const INPUT_MEDIA_ERROR_PREFIX = "Bad Request: can't parse InputMedia: ";
 
 /**
  * Media types the official server reads but the emulator lacks. In albums, Telegram sends live
- * photos among photos and videos, and audio only with other audio, while it refuses animations.
+ * photos among photos and videos, while it refuses animations.
  */
-const UNSUPPORTED_MEDIA_TYPES: ReadonlySet<string> = new Set([
-  'animation',
-  'audio',
-  'live_photo',
-]);
+const UNSUPPORTED_MEDIA_TYPES: ReadonlySet<string> = new Set(['animation', 'live_photo']);
 
 /**
  * What media is read for, which decides the types the official server accepts: new media of a
@@ -115,10 +115,26 @@ const inputMediaVideoSchema = z.strictObject({
   has_spoiler: z.boolean().default(false),
 });
 
+// As the official server's `get_input_audio` reads them, the duration is clamped, and a missing
+// performer or title is none. Telegram's audio takes neither a spoiler nor a caption placement,
+// which the official server reads and drops; the emulator rejects them as fields the Bot API does
+// not document for the type.
+const inputMediaAudioSchema = z.strictObject({
+  type: z.literal('audio'),
+  media: z.string().default(''),
+  thumbnail: z.string().optional(),
+  thumb: z.string().optional(),
+  ...captionShape,
+  duration: clampedIntegerField(0, MAX_MEDIA_DURATION_SECONDS),
+  performer: z.string().default(''),
+  title: z.string().default(''),
+});
+
 const INPUT_MEDIA_SCHEMAS = {
   photo: inputMediaPhotoSchema,
   document: inputMediaDocumentSchema,
   video: inputMediaVideoSchema,
+  audio: inputMediaAudioSchema,
 } as const;
 
 /** Whether the emulator reads a type of media, as `INPUT_MEDIA_SCHEMAS` names it. */
@@ -127,9 +143,9 @@ function isReadMediaType(type: string): type is keyof typeof INPUT_MEDIA_SCHEMAS
 }
 
 /**
- * Reads the `media` parameter of `editMessageMedia`, a JSON `InputMediaPhoto`, `InputMediaDocument`
- * or `InputMediaVideo`, as the official Bot API server's `get_input_media` reads it, with its
- * descriptions of media it cannot read, as `readInputMedia` reads it.
+ * Reads the `media` parameter of `editMessageMedia`, a JSON `InputMediaPhoto`, `InputMediaDocument`,
+ * `InputMediaVideo` or `InputMediaAudio`, as the official Bot API server's `get_input_media` reads
+ * it, with its descriptions of media it cannot read, as `readInputMedia` reads it.
  */
 export function readInputMediaParameter(
   text: string | undefined,
@@ -150,7 +166,7 @@ export function readInputMediaParameter(
 
 /**
  * Reads the `media` parameter of `sendMediaGroup`, a JSON array of `InputMediaPhoto`,
- * `InputMediaDocument` and `InputMediaVideo`, as the official Bot API server's
+ * `InputMediaDocument`, `InputMediaVideo` and `InputMediaAudio`, as the official Bot API server's
  * `get_input_message_contents` reads it:
  * each as `readInputMedia` reads it, in order, until one cannot be read. As that server reads
  * `null`, it holds no media. Whether the media can form an album is left to the service.
@@ -192,14 +208,14 @@ export function readInputMediaGroupParameter(
 }
 
 /**
- * Reads one JSON `InputMediaPhoto`, `InputMediaDocument` or `InputMediaVideo` as the official Bot
- * API server's `get_input_media` reads it for its use, with its descriptions of media it cannot
- * read. `media` names the file as `readInputFileParameter` reads a file parameter, except that an
- * upload is named only by `attach://<name>`; a document's or video's thumbnail is read as
- * `readThumbnailParameter` reads it, and a video's attributes are clamped as `get_input_video`
- * clamps them.
+ * Reads one JSON `InputMediaPhoto`, `InputMediaDocument`, `InputMediaVideo` or `InputMediaAudio` as
+ * the official Bot API server's `get_input_media` reads it for its use, with its descriptions of
+ * media it cannot read. `media` names the file as `readInputFileParameter` reads a file parameter,
+ * except that an upload is named only by `attach://<name>`; a document's, video's or audio file's
+ * thumbnail is read as `readThumbnailParameter` reads it, and the duration of a video or audio
+ * file is clamped as `get_input_video` and `get_input_audio` clamp it.
  *
- * Telegram also reads animations, audio and live photos, which the emulator lacks and
+ * Telegram also reads animations and live photos, which the emulator lacks and
  * rejects with its own description, apart from an animation of an album, which Telegram refuses
  * itself. `invalidParametersDescription` answers fields the Bot API does not document for the
  * media's type, or of the wrong JSON type, which Telegram reads leniently; rejecting them instead
@@ -296,6 +312,23 @@ function readInputMedia(
         },
       };
     }
+    case 'audio': {
+      const thumbnail = readThumbnailParameter(data, uploadedFiles);
+      return {
+        read: true,
+        media: {
+          kind: 'audio',
+          audio: fileReading.inputFile,
+          attributes: {
+            durationSeconds: data.duration,
+            performer: data.performer,
+            title: data.title,
+          },
+          ...(thumbnail === undefined ? {} : { thumbnail }),
+          caption,
+        },
+      };
+    }
     default: {
       const unhandledMedia: never = data;
       throw new Error(`Unhandled input media: ${JSON.stringify(unhandledMedia)}`);
@@ -312,6 +345,8 @@ export function getRequestedMediaFile(media: UnreadMediaReplacement): RequestedI
       return media.document;
     case 'video':
       return media.video;
+    case 'audio':
+      return media.audio;
     default: {
       const unhandledMedia: never = media;
       throw new Error(`Unhandled input media: ${JSON.stringify(unhandledMedia)}`);
@@ -332,6 +367,8 @@ export function toMediaReplacementRequest(
       return { ...media, document: file, caption };
     case 'video':
       return { ...media, video: file, caption };
+    case 'audio':
+      return { ...media, audio: file, caption };
     default: {
       const unhandledMedia: never = media;
       throw new Error(`Unhandled input media: ${JSON.stringify(unhandledMedia)}`);

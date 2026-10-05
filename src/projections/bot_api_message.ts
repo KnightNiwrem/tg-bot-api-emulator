@@ -83,6 +83,7 @@ import { projectChatPermissions } from './bot_api_chat_permissions.ts';
 import { writeDateTimeFormat } from './bot_api_date_time_format.ts';
 import {
   type ObservedFile,
+  projectAudio,
   projectDocument,
   projectPhotoSize,
   projectVideo,
@@ -511,6 +512,8 @@ function projectExternalReplyMedia(
       };
     case 'voice':
       return { voice: projectVoice(mediaFile) };
+    case 'audio':
+      return { audio: projectAudio(mediaFile) };
     case 'contact':
       return { contact: toBotApiContact(media.contact) };
     case 'location':
@@ -689,6 +692,11 @@ function projectMessageContent(
     case 'voice':
       return {
         voice: projectVoice(contentFile),
+        ...projectCaption(content.caption, mentionedUsers),
+      };
+    case 'audio':
+      return {
+        audio: projectAudio(contentFile),
         ...projectCaption(content.caption, mentionedUsers),
       };
     case 'rich_message':

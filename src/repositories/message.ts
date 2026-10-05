@@ -434,6 +434,7 @@ function copyContent(content: ChatMessageContent): ChatMessageContent {
     case 'document':
     case 'video':
     case 'voice':
+    case 'audio':
       return {
         ...content,
         caption: {

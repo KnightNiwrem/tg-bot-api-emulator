@@ -94,6 +94,24 @@ const accountVoiceShape = {
   caption_entities: messageEntitiesSchema,
 };
 
+/**
+ * An audio file, such as a music track, the account uploads, with an optional caption. Its client
+ * defines its duration, which defaults to 0, and its performer and title, which are none when
+ * empty, without reading tags from the content, and may name its file, whose extension decides its
+ * `audio/` MIME type, or else `audio/mpeg`.
+ */
+const accountAudioShape = {
+  audio: z.strictObject({
+    content_base64: base64ContentSchema,
+    file_name: z.string().min(1).optional(),
+    duration: z.int().min(0).max(MAX_MEDIA_DURATION_SECONDS).default(0),
+    performer: z.string().default(''),
+    title: z.string().default(''),
+  }),
+  caption: captionSchema,
+  caption_entities: messageEntitiesSchema,
+};
+
 /** A contact's first or last name, of at most as many characters as TDLib documents. */
 const contactNameSchema = z.string().refine(
   (name) => countTextCharacters(name) <= MAX_CONTACT_NAME_LENGTH,
@@ -115,7 +133,8 @@ const accountContactShape = {
 };
 
 /**
- * A text message, a photo, a document, a video, or a voice note, each with an optional caption; a
+ * A text message, a photo, a document, a video, a voice note, or an audio file, each with an
+ * optional caption; a
  * contact the account writes, or its own contact, which Telegram shows as the account's user; a
  * static location; a new poll; or a forward of a message of one of the account's chats, which, as
  * in Telegram's clients, replies to none.
@@ -138,6 +157,7 @@ const sendMessageRequestSchema = z.union([
   z.strictObject({ ...sentMessageTargetShape, ...accountDocumentShape }),
   z.strictObject({ ...sentMessageTargetShape, ...accountVideoShape }),
   z.strictObject({ ...sentMessageTargetShape, ...accountVoiceShape }),
+  z.strictObject({ ...sentMessageTargetShape, ...accountAudioShape }),
   z.strictObject({ ...sentMessageTargetShape, ...accountContactShape }),
   z.strictObject({ ...sentMessageTargetShape, own_contact: z.literal(true) }),
   z.strictObject({ ...sentMessageTargetShape, location: accountLocationSchema }),
@@ -145,8 +165,8 @@ const sendMessageRequestSchema = z.union([
 ]);
 
 /**
- * The photos, videos, or documents of an album, in the order the chat shows them, each with an
- * optional caption. Whether they can form an album is checked as Telegram checks it.
+ * The photos, videos, documents, or audio files of an album, in the order the chat shows them,
+ * each with an optional caption. Whether they can form an album is checked as Telegram checks it.
  */
 const sendMediaGroupRequestSchema = z.strictObject({
   ...sentMessageTargetShape,
@@ -154,6 +174,7 @@ const sendMediaGroupRequestSchema = z.strictObject({
     z.strictObject(accountPhotoShape),
     z.strictObject(accountDocumentShape),
     z.strictObject(accountVideoShape),
+    z.strictObject(accountAudioShape),
   ])),
 });
 
@@ -466,14 +487,15 @@ function readAccountVoiceContent(
 }
 
 /**
- * Reads a photo, document, or video an account uploads, as its client prepares it; returns
- * `undefined` for an upload Telegram refuses.
+ * Reads a photo, document, video, or audio file an account uploads, as its client prepares it;
+ * returns `undefined` for an upload Telegram refuses.
  */
 function readAccountMediaContent(
   request:
     | z.infer<z.ZodObject<typeof accountPhotoShape>>
     | z.infer<z.ZodObject<typeof accountDocumentShape>>
-    | z.infer<z.ZodObject<typeof accountVideoShape>>,
+    | z.infer<z.ZodObject<typeof accountVideoShape>>
+    | z.infer<z.ZodObject<typeof accountAudioShape>>,
   mediaFiles: EmulationSession['mediaFiles'],
 ): AccountAlbumMediaContent | undefined {
   const preparation = prepareAccountUpload(request, mediaFiles);
@@ -491,9 +513,13 @@ function readAccountMediaContent(
 type AccountUploadPreparation =
   | ReturnType<EmulationSession['mediaFiles']['preparePhotoUpload']>
   | ReturnType<EmulationSession['mediaFiles']['prepareDocumentUpload']>
-  | ReturnType<EmulationSession['mediaFiles']['prepareVideoUpload']>;
+  | ReturnType<EmulationSession['mediaFiles']['prepareVideoUpload']>
+  | ReturnType<EmulationSession['mediaFiles']['prepareAudioUpload']>;
 
-/** Prepares the file of an account's photo, document, or video as its client uploads it. */
+/**
+ * Prepares the file of an account's photo, document, video, or audio file as its client uploads
+ * it.
+ */
 function prepareAccountUpload(
   request: Parameters<typeof readAccountMediaContent>[0],
   mediaFiles: EmulationSession['mediaFiles'],
@@ -508,6 +534,16 @@ function prepareAccountUpload(
     return mediaFiles.prepareDocumentUpload({
       content: request.document.content_base64,
       fileName: request.document.file_name,
+      source: 'account_upload',
+    });
+  }
+  if ('audio' in request) {
+    const { content_base64: content, file_name: fileName, duration, performer, title } =
+      request.audio;
+    return mediaFiles.prepareAudioUpload({
+      content,
+      ...(fileName === undefined ? {} : { fileName }),
+      attributes: { durationSeconds: duration, performer, title },
       source: 'account_upload',
     });
   }

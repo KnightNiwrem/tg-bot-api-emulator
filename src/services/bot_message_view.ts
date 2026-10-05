@@ -799,6 +799,7 @@ export class BotMessageViewService {
       case 'document':
       case 'video':
       case 'voice':
+      case 'audio':
         return { mediaFile: this.#observeFile(media.fileId, observerId, message.id) };
       default: {
         const unhandledMedia: never = media;

@@ -681,6 +681,167 @@ Deno.test('MediaFileService lets bots download a video and its thumbnail as file
   }
 });
 
+Deno.test('MediaFileService keeps the metadata a sender defines for an audio file', () => {
+  const { mediaFiles } = createMediaFileFixture();
+  const prepareAudio = (
+    fileName: string | undefined,
+    attributes: { durationSeconds: number; performer?: string; title?: string },
+  ) =>
+    mediaFiles.prepareAudioUpload({
+      // The content is never read, so any bytes are sent as an audio file, and no tags are read.
+      content: new TextEncoder().encode('not audio'),
+      ...(fileName === undefined ? {} : { fileName }),
+      attributes,
+      thumbnailContent: gifImage(300, 300),
+      source: 'bot_upload',
+    });
+
+  const uploads = [
+    prepareAudio('track.mp3', { durationSeconds: 215, performer: 'Ada', title: 'Engines' }),
+    prepareAudio('live.flac', { durationSeconds: 0 }),
+    prepareAudio(undefined, { durationSeconds: 3, performer: '', title: '' }),
+  ].map((preparation) => {
+    if (!preparation.prepared) {
+      throw new Error(`Expected an audio file, received ${JSON.stringify(preparation)}`);
+    }
+    const { content: _content, thumbnail, ...upload } = preparation.upload;
+    return { ...upload, thumbnail: thumbnail === undefined ? null : thumbnail.width };
+  });
+  // An empty performer or title is none, and a name that names no audio type is `audio/mpeg`.
+  const expectedUploads = [
+    {
+      type: 'audio',
+      fileName: 'track.mp3',
+      mimeType: 'audio/mpeg',
+      durationSeconds: 215,
+      performer: 'Ada',
+      title: 'Engines',
+      thumbnail: 300,
+    },
+    {
+      type: 'audio',
+      fileName: 'live.flac',
+      mimeType: 'audio/flac',
+      durationSeconds: 0,
+      thumbnail: 300,
+    },
+    { type: 'audio', mimeType: 'audio/mpeg', durationSeconds: 3, thumbnail: 300 },
+  ];
+  if (JSON.stringify(uploads) !== JSON.stringify(expectedUploads)) {
+    throw new Error(`Expected the sender's metadata, received ${JSON.stringify(uploads)}`);
+  }
+
+  const empty = mediaFiles.prepareAudioUpload({
+    content: new Uint8Array(),
+    attributes: { durationSeconds: 1 },
+    source: 'account_upload',
+  });
+  const tooBig = mediaFiles.prepareAudioUpload({
+    content: new Uint8Array(MAX_BOT_UPLOAD_BYTES.cloud + 1),
+    attributes: { durationSeconds: 1 },
+    source: 'bot_upload',
+  });
+  if (
+    empty.prepared || empty.reason !== 'file_empty' || tooBig.prepared ||
+    tooBig.reason !== 'bot_upload_too_big'
+  ) {
+    throw new Error(
+      `Expected empty and oversized audio to fail, received ${
+        JSON.stringify([empty, tooBig].map((preparation) =>
+          preparation.prepared || preparation.reason
+        ))
+      }`,
+    );
+  }
+});
+
+Deno.test('MediaFileService downloads an audio file sent by URL only when served as MP3', async () => {
+  const webResources = new WebResourceService({ webResources: new WebResourceRepository() });
+  const register = (url: string, contentType: string, content: Uint8Array<ArrayBuffer>) =>
+    webResources.registerWebResource({ url, status: 200, contentType, content });
+  register('https://example.com/songs/track.mp3', 'audio/mpeg', new Uint8Array([1, 2]));
+  register('https://example.com/songs/track.m4a', 'audio/mp4', new Uint8Array([1, 2]));
+  register(
+    'https://example.com/songs/large.mp3',
+    'audio/mpeg',
+    new Uint8Array(MAX_WEB_FILE_BYTES.audio + 1),
+  );
+  const { mediaFiles } = createMediaFileFixture(
+    'cloud',
+    createWebFileDownloader((request) => webResources.fetchWebResource(request)),
+  );
+
+  const outcomes = await Promise.all([
+    'https://example.com/songs/track.mp3',
+    'https://example.com/songs/track.m4a',
+    'https://example.com/songs/large.mp3',
+  ].map(async (url) => {
+    const result = await mediaFiles.downloadWebFile({ url, fileKind: 'audio' });
+    if (!result.downloaded) {
+      return result.reason;
+    }
+    const preparation = mediaFiles.prepareWebAudioUpload(result.webFile, {
+      durationSeconds: 30,
+      title: 'Engines',
+    });
+    return preparation.prepared
+      ? [preparation.upload.fileName, preparation.upload.mimeType, preparation.upload.title]
+      : preparation.reason;
+  }));
+  if (
+    JSON.stringify(outcomes) !== JSON.stringify([
+      ['track.mp3', 'audio/mpeg', 'Engines'],
+      'web_content_type_invalid',
+      'web_content_unavailable',
+    ])
+  ) {
+    throw new Error(`Expected only MP3 audio files of up to 20 MB, received ${outcomes}`);
+  }
+});
+
+Deno.test('MediaFileService lets bots download audio files under music/ as TDLib names them', () => {
+  const { files, mediaFiles } = createMediaFileFixture();
+  const addAudio = (fileName: string | undefined) =>
+    files.addFile({
+      type: 'audio',
+      content: new Uint8Array([1]),
+      ...(fileName === undefined ? {} : { fileName }),
+      mimeType: 'audio/mpeg',
+      durationSeconds: 1,
+      ...(fileName === 'cover.m4a'
+        ? {
+          thumbnail: {
+            type: 'thumbnail',
+            content: gifImage(32, 32),
+            imageFormat: 'gif',
+            width: 32,
+            height: 32,
+          },
+        }
+        : {}),
+    });
+  const audioFiles = ['track.m4a', 'live.flac', undefined, 'cover.m4a'].map(addAudio);
+  const fileIds = [...audioFiles.map(({ id }) => id), audioFiles[3].thumbnail?.id ?? ''];
+  const paths = fileIds.map((fileId) => {
+    const result = mediaFiles.getBotFile(
+      FIRST_BOT_ID,
+      files.getOrAssignObserverFileId(FIRST_BOT_ID, fileId),
+    );
+    return result.found ? result.downloadableFile.filePath : result.reason;
+  });
+  if (
+    JSON.stringify(paths) !== JSON.stringify([
+      'music/file_0.m4a',
+      'music/file_1.mp3',
+      'music/file_2.mp3',
+      'music/file_3.m4a',
+      'thumbnails/file_4.gif',
+    ])
+  ) {
+    throw new Error(`Expected audio paths, received ${JSON.stringify(paths)}`);
+  }
+});
+
 Deno.test('MediaFileService refuses downloads of files larger than 20 MB', () => {
   const { files, mediaFiles } = createMediaFileFixture();
   const largeDocument = files.addFile({

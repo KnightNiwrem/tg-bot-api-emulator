@@ -1,6 +1,6 @@
 import type { GeoLocation } from './geo_location.ts';
 import type { InlineKeyboard } from './inline_keyboard.ts';
-import type { StoredFileId, VideoAttributes } from './stored_file.ts';
+import type { AudioAttributes, StoredFileId, VideoAttributes } from './stored_file.ts';
 import type { FormattedText, MessageContent } from './virtual_message.ts';
 
 /** Telegram's decimal text form of a 64-bit inline query identifier. */
@@ -63,6 +63,17 @@ export type InlineResultWebMedia =
     readonly caption: FormattedText;
     /** As the bot specified it, clamped as for `sendVoice`, which the downloaded voice note keeps. */
     readonly durationSeconds: number;
+  }
+  | {
+    readonly kind: 'web_audio';
+    readonly url: string;
+    /** Empty for no caption. */
+    readonly caption: FormattedText;
+    /**
+     * The result's duration, clamped as for `sendAudio`, and its title and performer, which the
+     * downloaded audio file keeps.
+     */
+    readonly attributes: AudioAttributes;
   };
 
 /**
@@ -163,6 +174,16 @@ export interface VoiceInlineQueryResult extends InlineQueryResultBase {
   readonly title?: string;
 }
 
+/** An audio file, which the client lists by its title and performer. */
+export interface AudioInlineQueryResult extends InlineQueryResultBase {
+  readonly kind: 'audio';
+  readonly file: InlineResultListedFile;
+  /** Omitted when empty. */
+  readonly title?: string;
+  /** The performer, as TDLib describes an audio result; omitted when empty. */
+  readonly description?: string;
+}
+
 /** A result of an answer to an inline query. The Bot API's other result types are not supported. */
 export type InlineQueryResult =
   | ArticleInlineQueryResult
@@ -171,7 +192,8 @@ export type InlineQueryResult =
   | PhotoInlineQueryResult
   | DocumentInlineQueryResult
   | VideoInlineQueryResult
-  | VoiceInlineQueryResult;
+  | VoiceInlineQueryResult
+  | AudioInlineQueryResult;
 
 /**
  * The button the account's client shows above the results: it opens the bot's private chat with a

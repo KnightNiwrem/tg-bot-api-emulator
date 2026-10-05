@@ -234,6 +234,7 @@ const TDLIB_FILE_TYPE_NAMES = {
   document: 'Document',
   video: 'Video',
   voice: 'VoiceNote',
+  audio: 'Audio',
   thumbnail: 'Thumbnail',
 } as const;
 
@@ -434,6 +435,7 @@ const SEND_PERMISSION_MISSING_DESCRIPTIONS = {
   document: 'Bad Request: not enough rights to send documents to the chat',
   video: 'Bad Request: not enough rights to send videos to the chat',
   voice: 'Bad Request: not enough rights to send voice notes to the chat',
+  audio: 'Bad Request: not enough rights to send music to the chat',
   poll: 'Bad Request: not enough rights to send polls to the chat',
   rich_message: 'Bad Request: not enough rights to send the rich message to the chat',
   contact: 'Bad Request: not enough rights to send contacts to the chat',
@@ -698,6 +700,21 @@ const sendVoiceParametersSchema = z.strictObject({
   voice: z.string().optional(),
   ...captionParametersShape,
   duration: clampedIntegerParameter(0, MAX_MEDIA_DURATION_SECONDS).default(0),
+});
+
+// As for sendVoice, the emulator inspects no audio content, so it reads no tags; the duration,
+// performer and title are the bot's, as the official server's `process_send_audio_query` reads
+// them.
+const sendAudioParametersSchema = z.strictObject({
+  ...sendOptionsParametersShape,
+  ...replyMarkupParametersShape,
+  audio: z.string().optional(),
+  ...captionParametersShape,
+  duration: clampedIntegerParameter(0, MAX_MEDIA_DURATION_SECONDS).default(0),
+  performer: z.string().default(''),
+  title: z.string().default(''),
+  thumbnail: z.string().optional(),
+  thumb: z.string().optional(),
 });
 
 /**
@@ -1290,6 +1307,7 @@ const BOT_API_METHODS: readonly BotApiMethod[] = [
   { name: 'promoteChatMember', handler: handlePromoteChatMember },
   { name: 'restrictChatMember', handler: handleRestrictChatMember },
   { name: 'revokeChatInviteLink', handler: handleRevokeChatInviteLink },
+  { name: 'sendAudio', handler: handleSendAudio },
   { name: 'sendChatAction', handler: handleSendChatAction },
   { name: 'sendContact', handler: handleSendContact },
   { name: 'sendDocument', handler: handleSendDocument },
@@ -2200,6 +2218,50 @@ async function handleSendVoice(
   }));
 }
 
+async function handleSendAudio(
+  context: BotApiMethodContext,
+  parameters: BotApiRequestParameters,
+  uploadedFiles: BotApiUploadedFiles,
+): Promise<BotApiMethodAnswer> {
+  const invalidParametersDescription = 'Bad Request: invalid sendAudio parameters';
+  const parsedParameters = sendAudioParametersSchema.safeParse(parameters);
+  if (!parsedParameters.success) {
+    return botApiError(400, invalidParametersDescription);
+  }
+  const { data } = parsedParameters;
+  // Telegram reads the file, then the caption and its formatting, before it looks at the chat.
+  const audioReading = readInputFileParameter('audio', data.audio, uploadedFiles);
+  if (!audioReading.read) {
+    return missingInputFileError('audio');
+  }
+  const captionReading = readSpecifiedCaption(context, data, invalidParametersDescription);
+  if (!captionReading.read) {
+    return captionReading.errorAnswer;
+  }
+  const optionsReading = readSendOptions(context, data, invalidParametersDescription);
+  if (!optionsReading.read) {
+    return optionsReading.errorAnswer;
+  }
+
+  const audioResolution = await resolveRequestedInputFile(
+    context,
+    audioReading.inputFile,
+    'audio',
+  );
+  if (!audioResolution.resolved) {
+    return audioResolution.errorAnswer;
+  }
+
+  const thumbnail = readThumbnailParameter(data, uploadedFiles);
+  return sendMethodAnswer(context.session.botApi.sendAudio(context.bot, {
+    ...optionsReading.options,
+    audio: audioResolution.value,
+    attributes: { durationSeconds: data.duration, performer: data.performer, title: data.title },
+    ...(thumbnail === undefined ? {} : { thumbnail }),
+    caption: captionReading.formattedText,
+  }));
+}
+
 /**
  * Sends an album, as `BotApiService.sendMediaGroup` does. As the official Bot API server reads
  * them, the media and their captions are read before the chat; the files the media name by URL are
@@ -2287,6 +2349,8 @@ function sendMediaGroupAnswer(result: SendMediaGroupResult): BotApiMethodAnswer 
       );
     case 'album_documents_mixed':
       return botApiError(400, "Bad Request: document can't be mixed with other media types");
+    case 'album_audio_mixed':
+      return botApiError(400, "Bad Request: audio can't be mixed with other media types");
     case 'media_group_member_not_sent':
       return albumMessageNotSentError(
         result.memberPosition,
@@ -2636,7 +2700,7 @@ function readInlineKeyboardParameter(
 
 /** The error for a file parameter that names no uploaded file. */
 function missingInputFileError(
-  parameterName: 'photo' | 'document' | 'video' | 'voice',
+  parameterName: 'photo' | 'document' | 'video' | 'voice' | 'audio',
 ): BotApiMethodAnswer {
   return botApiError(400, `Bad Request: there is no ${parameterName} in the request`);
 }
@@ -4811,6 +4875,17 @@ function readInlineQueryResultContent(
           ...media,
           kind: 'voice',
           voice: result.voice,
+          durationSeconds: result.durationSeconds,
+        },
+      };
+    case 'audio':
+      return {
+        read: true,
+        result: {
+          ...media,
+          kind: 'audio',
+          audio: result.audio,
+          performer: result.performer,
           durationSeconds: result.durationSeconds,
         },
       };
