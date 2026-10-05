@@ -964,6 +964,7 @@ const supergroupInviteLinkSchema = z.strictObject({
   pending_join_request_count: z.number().int().nonnegative(),
   creates_join_request: z.boolean(),
   is_expired: z.boolean(),
+  is_revoked: z.boolean(),
 });
 
 export const supergroupInviteLinksResponseSchema = z.strictObject({

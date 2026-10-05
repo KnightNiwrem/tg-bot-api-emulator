@@ -9,8 +9,10 @@ post:
   operationId: expireChatInviteLink
   summary: End an invite link's use as the arrival of its expiry date does
   description: >-
-    The link admits nobody from then on; the members that joined through it stay. No bot
-    receives an update for it.
+    The link admits nobody until the bot that created it edits it, which gives it a new expiry
+    date, or none. The members that joined through it stay, and so do the pending join requests
+    sent through it. A revoked link's expiry date still arrives. No bot receives an update for
+    it.
   responses:
     '200':
       description: The link expired; it is shown as the supergroup's owner sees it.

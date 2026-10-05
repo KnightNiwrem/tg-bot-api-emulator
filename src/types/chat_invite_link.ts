@@ -23,20 +23,12 @@ const INVITE_LINK_HASH_LENGTH = 16;
 const BASE64URL_CHARACTERS = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_';
 
 /**
- * An additional invite link of a supergroup, which an administrator created besides the chat's
- * primary link. Its creator stays its owner, and a link stays usable until its expiry date
- * arrives, which happens only when a test makes it arrive. Primary links, revoked links, and
- * subscription links are not supported.
+ * The settings of an invite link that its creator chooses when it creates the link, and replaces
+ * as a whole when it edits the link.
  */
-export interface ChatInviteLink {
-  /** The link as Telegram shows it to its creator: `INVITE_LINK_PREFIX` and the link's hash. */
-  readonly url: string;
-  readonly chatId: number;
-  /** The administrator that created the link, who alone sees the whole link in updates. */
-  readonly creatorId: number;
+export interface ChatInviteLinkSettings {
   /** A name only administrators see; omitted for none. */
   readonly name?: string;
-  readonly createdAtUnixSeconds: number;
   /** When the link stops working; omitted for a link that works until it is revoked. */
   readonly expiresAtUnixSeconds?: number;
   /**
@@ -46,8 +38,28 @@ export interface ChatInviteLink {
   readonly memberLimit?: number;
   /** Whether using the link sends a join request for administrators to approve, never joining. */
   readonly createsJoinRequest: boolean;
-  /** Whether a test made the link's expiry date arrive, which ends its use for good. */
+}
+
+/**
+ * An additional invite link of a supergroup, which an administrator created besides the chat's
+ * primary link. Its creator stays its owner, and only it edits or revokes the link. A link stays
+ * usable until its expiry date arrives, which happens only when a test makes it arrive, or until
+ * it is revoked. Primary links and subscription links are not supported.
+ */
+export interface ChatInviteLink extends ChatInviteLinkSettings {
+  /** The link as Telegram shows it to its creator: `INVITE_LINK_PREFIX` and the link's hash. */
+  readonly url: string;
+  readonly chatId: number;
+  /** The administrator that created the link, who alone sees the whole link in updates. */
+  readonly creatorId: number;
+  readonly createdAtUnixSeconds: number;
+  /**
+   * Whether a test made the link's current expiry date arrive, which ends its use until an edit
+   * gives the link another expiry date or none.
+   */
   readonly hasExpired: boolean;
+  /** Whether the link's creator revoked it, which ends its use for good. */
+  readonly isRevoked: boolean;
 }
 
 /** Creates a random hash for a new invite link, as long as the hashes of Telegram's links. */

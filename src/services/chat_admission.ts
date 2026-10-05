@@ -2,10 +2,12 @@ import type { NewChatInviteLink } from '../repositories/chat_invite_link.ts';
 import { cleanInputString, cleanName } from '../text_entities/input_string.ts';
 import {
   type ChatInviteLink,
+  type ChatInviteLinkSettings,
   MAX_INVITE_LINK_MEMBER_LIMIT,
   MAX_INVITE_LINK_NAME_LENGTH,
 } from '../types/chat_invite_link.ts';
 import {
+  type ChatMembership,
   holdsSupergroupAdministratorRight,
   resolveSupergroupBotMembership,
   type SupergroupBotAccessFailureReason,
@@ -16,9 +18,11 @@ import type { ChatJoinRequest, JoinRequesterContact } from '../types/chat_join_r
 import type { VirtualAccount } from '../types/virtual_account.ts';
 import type { VirtualBot } from '../types/virtual_bot.ts';
 
-export interface CreateInviteLinkAsBotInput {
-  readonly creatorBotId: number;
-  readonly chatId: number;
+/**
+ * The settings a bot requests for an invite link it creates or edits, before Telegram cleans and
+ * checks them. An edit replaces every setting, so an omitted one is none.
+ */
+export interface RequestedInviteLinkSettings {
   /** The link's name as the bot specified it, before Telegram cleans it; empty for none. */
   readonly name: string;
   /** When the link stops working, which must be in the future; omitted for never. */
@@ -28,27 +32,95 @@ export interface CreateInviteLinkAsBotInput {
   readonly createsJoinRequest: boolean;
 }
 
-/**
- * Why a bot cannot create an invite link, in the order the official Bot API server, TDLib's
- * `export_dialog_invite_link`, and then Telegram's servers check them.
- */
-export type CreateInviteLinkAsBotFailureReason =
+export interface CreateInviteLinkAsBotInput extends RequestedInviteLinkSettings {
+  readonly creatorBotId: number;
+  readonly chatId: number;
+}
+
+/** Why a bot cannot manage a supergroup's invite links at all. */
+type InviteLinkManagerFailureReason =
   | 'bot_not_found'
   | SupergroupBotAccessFailureReason
-  /** The name is not well-formed Unicode, which Telegram rejects as not encoded in UTF-8. */
+  /** A name or link is not well-formed Unicode, which Telegram rejects as not encoded in UTF-8. */
   | 'text_encoding_invalid'
-  /** A link that creates join requests has no member limit, as TDLib refuses one. */
-  | 'member_limit_with_join_request'
   /** The bot lacks the `can_invite_users` administrator right. */
-  | 'not_enough_rights'
+  | 'not_enough_rights';
+
+/** Why Telegram's servers refuse the settings a bot requested for a link. */
+type InviteLinkSettingsFailureReason =
   /** The expiry date is not in the future, which Telegram refuses as `EXPIRE_DATE_INVALID`. */
   | 'expiry_date_invalid'
   /** The member limit exceeds 99999, which Telegram refuses as `USAGE_LIMIT_INVALID`. */
   | 'member_limit_invalid';
 
+/**
+ * Why a bot cannot create an invite link, in the order the official Bot API server, TDLib's
+ * `export_dialog_invite_link`, and then Telegram's servers check them: the bot and the chat, the
+ * name's encoding, the member limit of a link that creates join requests, the bot's right, and
+ * the settings.
+ */
+export type CreateInviteLinkAsBotFailureReason =
+  | InviteLinkManagerFailureReason
+  /** A link that creates join requests has no member limit, as TDLib refuses one. */
+  | 'member_limit_with_join_request'
+  | InviteLinkSettingsFailureReason;
+
 export type CreateInviteLinkAsBotResult =
   | { readonly created: true; readonly link: ChatInviteLink }
   | { readonly created: false; readonly reason: CreateInviteLinkAsBotFailureReason };
+
+export interface EditInviteLinkAsBotInput extends RequestedInviteLinkSettings {
+  readonly editorBotId: number;
+  readonly chatId: number;
+  /** The whole link, as its creator received it. */
+  readonly inviteLinkUrl: string;
+}
+
+/** Why a bot cannot edit or revoke the invite link it names, once it may manage links. */
+type ManagedInviteLinkFailureReason =
+  /** The bot named no link, which TDLib refuses before asking Telegram's servers. */
+  | 'invite_link_empty'
+  /** No link of the chat has this URL, including a link of another chat or session. */
+  | 'invite_link_not_found'
+  /** Another administrator created the link, which only the chat's owner could manage. */
+  | 'not_the_link_creator'
+  /** The link was revoked, after which it can be neither edited nor revoked again. */
+  | 'invite_link_revoked';
+
+/**
+ * Why a bot cannot edit an invite link, in the order the official Bot API server, TDLib's
+ * `edit_dialog_invite_link`, and then Telegram's servers check them: the bot and the chat, the
+ * encoding of the name and link, the bot's right, the member limit of a link that creates join
+ * requests, the link, and the settings.
+ */
+export type EditInviteLinkAsBotFailureReason =
+  | InviteLinkManagerFailureReason
+  | 'member_limit_with_join_request'
+  | ManagedInviteLinkFailureReason
+  | InviteLinkSettingsFailureReason;
+
+export type EditInviteLinkAsBotResult =
+  | { readonly edited: true; readonly link: ChatInviteLink }
+  | { readonly edited: false; readonly reason: EditInviteLinkAsBotFailureReason };
+
+export interface RevokeInviteLinkAsBotInput {
+  readonly revokerBotId: number;
+  readonly chatId: number;
+  /** The whole link, as its creator received it. */
+  readonly inviteLinkUrl: string;
+}
+
+/**
+ * Why a bot cannot revoke an invite link, in the order the official Bot API server, TDLib's
+ * `revoke_dialog_invite_link`, and then Telegram's servers check them.
+ */
+export type RevokeInviteLinkAsBotFailureReason =
+  | InviteLinkManagerFailureReason
+  | ManagedInviteLinkFailureReason;
+
+export type RevokeInviteLinkAsBotResult =
+  | { readonly revoked: true; readonly link: ChatInviteLink }
+  | { readonly revoked: false; readonly reason: RevokeInviteLinkAsBotFailureReason };
 
 export interface JoinChatByInviteLinkInput {
   readonly accountId: number;
@@ -77,6 +149,8 @@ export type JoinChatByInviteLinkResult =
       | SelfJoinFailureReason
       /** No link of the session has this URL. */
       | 'invite_link_not_found'
+      /** The link's creator revoked it. */
+      | 'invite_link_revoked'
       /** A test made the link's expiry date arrive. */
       | 'invite_link_expired'
       /** As many users as the link's member limit allows joined through it and are members. */
@@ -255,6 +329,8 @@ interface ChatInviteLinkStore {
   findInviteLink(url: string): ChatInviteLink | undefined;
   listChatInviteLinks(chatId: number): readonly ChatInviteLink[];
   markInviteLinkExpired(url: string): ChatInviteLink;
+  replaceInviteLinkSettings(url: string, settings: ChatInviteLinkSettings): ChatInviteLink;
+  markInviteLinkRevoked(url: string): ChatInviteLink;
 }
 
 interface AccountAdmission {
@@ -282,14 +358,15 @@ interface ChatAdmissionServiceDependencies {
 }
 
 /**
- * Decides who may enter a supergroup without its owner adding them: administrator bots create
- * additional invite links, and accounts join through them, or by the username of a public
- * supergroup. A link keeps its creator, its expiry date, its member limit, and whether it creates
- * join requests, which keep the account outside until an administrator bot with
+ * Decides who may enter a supergroup without its owner adding them: administrator bots create,
+ * edit and revoke additional invite links, and accounts join through them, or by the username of
+ * a public supergroup. A link keeps its creator, its expiry date, its member limit, and whether it
+ * creates join requests, which keep the account outside until an administrator bot with
  * `can_invite_users` approves or declines them. Until then, the bots that received a request may
- * contact its user, as `mayContactJoinRequester` decides. A link's expiry date, like the end of a
- * request's contact window, arrives only when a test makes it arrive, so tests decide when a link
- * stops working.
+ * contact its user, as `mayContactJoinRequester` decides. A link's edits, revocation and expiry
+ * affect only its later uses, never the requests already sent through it. A link's expiry date,
+ * like the end of a request's contact window, arrives only when a test makes it arrive, so tests
+ * decide when a link stops working.
  */
 export class ChatAdmissionService {
   readonly #accounts: AccountLookup;
@@ -322,16 +399,9 @@ export class ChatAdmissionService {
    * refuse an expiry date that is not in the future and a member limit above 99999.
    */
   createInviteLinkAsBot(input: CreateInviteLinkAsBotInput): CreateInviteLinkAsBotResult {
-    if (this.#bots.getById(input.creatorBotId) === undefined) {
-      return { created: false, reason: 'bot_not_found' };
-    }
-    const access = resolveSupergroupBotMembership(
-      this.#sharedChats,
-      input.creatorBotId,
-      input.chatId,
-    );
-    if (!access.resolved) {
-      return { created: false, reason: access.reason };
+    const manager = this.#resolveInviteLinkManager(input.creatorBotId, input.chatId);
+    if (!manager.resolved) {
+      return { created: false, reason: manager.reason };
     }
     const cleanedName = cleanInputString(input.name);
     if (cleanedName === undefined) {
@@ -340,40 +410,111 @@ export class ChatAdmissionService {
     if (input.createsJoinRequest && input.memberLimit !== undefined) {
       return { created: false, reason: 'member_limit_with_join_request' };
     }
-    if (!holdsSupergroupAdministratorRight(access.membership, 'can_invite_users')) {
+    if (!holdsSupergroupAdministratorRight(manager.membership, 'can_invite_users')) {
       return { created: false, reason: 'not_enough_rights' };
     }
     const createdAtUnixSeconds = this.#currentUnixTimeSeconds();
-    if (
-      input.expiresAtUnixSeconds !== undefined &&
-      input.expiresAtUnixSeconds <= createdAtUnixSeconds
-    ) {
-      return { created: false, reason: 'expiry_date_invalid' };
-    }
-    if (input.memberLimit !== undefined && input.memberLimit > MAX_INVITE_LINK_MEMBER_LIMIT) {
-      return { created: false, reason: 'member_limit_invalid' };
+    const settings = this.#resolveInviteLinkSettings(input, cleanedName, createdAtUnixSeconds);
+    if (!settings.resolved) {
+      return { created: false, reason: settings.reason };
     }
 
-    const name = cleanName(cleanedName, MAX_INVITE_LINK_NAME_LENGTH);
     const link = this.#inviteLinks.createInviteLink({
       chatId: input.chatId,
       creatorId: input.creatorBotId,
-      ...(name.length === 0 ? {} : { name }),
       createdAtUnixSeconds,
-      ...(input.expiresAtUnixSeconds === undefined
-        ? {}
-        : { expiresAtUnixSeconds: input.expiresAtUnixSeconds }),
-      ...(input.memberLimit === undefined ? {} : { memberLimit: input.memberLimit }),
-      createsJoinRequest: input.createsJoinRequest,
+      ...settings.settings,
     });
     return { created: true, link };
   }
 
   /**
+   * Edits an invite link as the administrator bot that created it, as TDLib's
+   * `editChatInviteLink` does: the edit replaces every setting, so an omitted name, expiry date or
+   * member limit becomes none, and the settings are cleaned and checked as for a new link. As
+   * TDLib's `edit_dialog_invite_link` checks them, the bot needs `can_invite_users` before a
+   * link that creates join requests is refused a member limit, and the link must be named. Telegram's
+   * servers then find the link among the chat's, let only its creator edit it, and refuse a
+   * revoked link.
+   *
+   * The edited link applies to later uses only: members that joined through it stay, and pending
+   * join requests sent through it stay pending with their requester contact, however the edit
+   * changed whether the link creates join requests. An edit gives the link a new expiry date that
+   * has not arrived, or none, so a link whose expiry date a test made arrive works again.
+   */
+  editInviteLinkAsBot(input: EditInviteLinkAsBotInput): EditInviteLinkAsBotResult {
+    const manager = this.#resolveInviteLinkManager(input.editorBotId, input.chatId);
+    if (!manager.resolved) {
+      return { edited: false, reason: manager.reason };
+    }
+    const cleanedName = cleanInputString(input.name);
+    const cleanedInviteLinkUrl = cleanInputString(input.inviteLinkUrl);
+    if (cleanedName === undefined || cleanedInviteLinkUrl === undefined) {
+      return { edited: false, reason: 'text_encoding_invalid' };
+    }
+    if (!holdsSupergroupAdministratorRight(manager.membership, 'can_invite_users')) {
+      return { edited: false, reason: 'not_enough_rights' };
+    }
+    if (input.createsJoinRequest && input.memberLimit !== undefined) {
+      return { edited: false, reason: 'member_limit_with_join_request' };
+    }
+    const managedLink = this.#findManagedInviteLink(
+      input.editorBotId,
+      input.chatId,
+      cleanedInviteLinkUrl,
+    );
+    if (!managedLink.found) {
+      return { edited: false, reason: managedLink.reason };
+    }
+    const settings = this.#resolveInviteLinkSettings(
+      input,
+      cleanedName,
+      this.#currentUnixTimeSeconds(),
+    );
+    if (!settings.resolved) {
+      return { edited: false, reason: settings.reason };
+    }
+
+    return {
+      edited: true,
+      link: this.#inviteLinks.replaceInviteLinkSettings(managedLink.link.url, settings.settings),
+    };
+  }
+
+  /**
+   * Revokes an invite link as the administrator bot that created it, as TDLib's
+   * `revokeChatInviteLink` does, with the checks of `editInviteLinkAsBot` that apply to it: the
+   * link admits nobody from then on, and can be neither edited nor revoked again. Members that
+   * joined through it stay, and pending join requests sent through it stay pending with their
+   * requester contact, for an administrator to decide.
+   */
+  revokeInviteLinkAsBot(
+    { revokerBotId, chatId, inviteLinkUrl }: RevokeInviteLinkAsBotInput,
+  ): RevokeInviteLinkAsBotResult {
+    const manager = this.#resolveInviteLinkManager(revokerBotId, chatId);
+    if (!manager.resolved) {
+      return { revoked: false, reason: manager.reason };
+    }
+    const cleanedInviteLinkUrl = cleanInputString(inviteLinkUrl);
+    if (cleanedInviteLinkUrl === undefined) {
+      return { revoked: false, reason: 'text_encoding_invalid' };
+    }
+    if (!holdsSupergroupAdministratorRight(manager.membership, 'can_invite_users')) {
+      return { revoked: false, reason: 'not_enough_rights' };
+    }
+    const managedLink = this.#findManagedInviteLink(revokerBotId, chatId, cleanedInviteLinkUrl);
+    if (!managedLink.found) {
+      return { revoked: false, reason: managedLink.reason };
+    }
+
+    return { revoked: true, link: this.#inviteLinks.markInviteLinkRevoked(managedLink.link.url) };
+  }
+
+  /**
    * Uses an invite link as an account, as TDLib's `joinChatByInviteLink` asks Telegram's servers
-   * to: the link must be one of the session's, its expiry date must not have arrived, and its
-   * member limit must leave a place, counting the members that joined through it and still are.
-   * The account must be neither a member nor banned.
+   * to: the link must be one of the session's, not revoked, its expiry date must not have arrived,
+   * and its member limit must leave a place, counting the members that joined through it and still
+   * are. The account must be neither a member nor banned.
    *
    * A link that creates join requests stores the account's request and leaves it outside, as
    * Telegram answers `INVITE_REQUEST_SENT`; the chat's administrator bots with
@@ -391,6 +532,9 @@ export class ChatAdmissionService {
     const link = this.#inviteLinks.findInviteLink(inviteLinkUrl);
     if (link === undefined) {
       return { used: false, reason: 'invite_link_not_found' };
+    }
+    if (link.isRevoked) {
+      return { used: false, reason: 'invite_link_revoked' };
     }
     if (link.hasExpired) {
       return { used: false, reason: 'invite_link_expired' };
@@ -586,7 +730,9 @@ export class ChatAdmissionService {
 
   /**
    * Makes an invite link's expiry date arrive, which the emulator never does as time passes: the
-   * link stops working for good, and the members that joined through it stay.
+   * link stops working until its creator edits it, and the members that joined through it stay,
+   * as do the pending join requests sent through it. A revoked link's expiry date still arrives,
+   * as time passes for it too.
    */
   expireInviteLink({ chatId, inviteLinkUrl }: ExpireInviteLinkInput): ExpireInviteLinkResult {
     if (this.#sharedChats.getSharedChat(chatId)?.kind !== 'supergroup') {
@@ -602,6 +748,86 @@ export class ChatAdmissionService {
     return {
       expired: true,
       link: this.#describeUsage(this.#inviteLinks.markInviteLinkExpired(link.url)),
+    };
+  }
+
+  /**
+   * Finds the membership of a bot that would manage a supergroup's invite links, which must be
+   * able to write to the supergroup, as the official server's `check_chat` and TDLib's
+   * `can_manage_dialog_invite_links` require before anything else.
+   */
+  #resolveInviteLinkManager(
+    botId: number,
+    chatId: number,
+  ):
+    | { readonly resolved: true; readonly membership: ChatMembership }
+    | {
+      readonly resolved: false;
+      readonly reason: 'bot_not_found' | SupergroupBotAccessFailureReason;
+    } {
+    if (this.#bots.getById(botId) === undefined) {
+      return { resolved: false, reason: 'bot_not_found' };
+    }
+    const access = resolveSupergroupBotMembership(this.#sharedChats, botId, chatId);
+    return access.resolved
+      ? { resolved: true, membership: access.membership }
+      : { resolved: false, reason: access.reason };
+  }
+
+  /**
+   * Finds the link a bot edits or revokes: a link of the chat that the bot created and did not
+   * revoke. A link of another chat is unknown to the chat, as Telegram's servers look links up by
+   * the chat the bot names.
+   */
+  #findManagedInviteLink(
+    botId: number,
+    chatId: number,
+    inviteLinkUrl: string,
+  ):
+    | { readonly found: true; readonly link: ChatInviteLink }
+    | { readonly found: false; readonly reason: ManagedInviteLinkFailureReason } {
+    if (inviteLinkUrl.length === 0) {
+      return { found: false, reason: 'invite_link_empty' };
+    }
+    const link = this.#inviteLinks.findInviteLink(inviteLinkUrl);
+    if (link?.chatId !== chatId) {
+      return { found: false, reason: 'invite_link_not_found' };
+    }
+    if (link.creatorId !== botId) {
+      return { found: false, reason: 'not_the_link_creator' };
+    }
+    return link.isRevoked ? { found: false, reason: 'invite_link_revoked' } : { found: true, link };
+  }
+
+  /**
+   * Turns the settings a bot requested for a link into the link's settings, as Telegram's servers
+   * accept them: the expiry date must lie after the current time and the member limit must not
+   * exceed 99999, and the name, already cleaned of what Telegram removes from input, is cleaned as
+   * a chat title, keeping at most 32 characters.
+   */
+  #resolveInviteLinkSettings(
+    requested: RequestedInviteLinkSettings,
+    cleanedName: string,
+    currentUnixTimeSeconds: number,
+  ):
+    | { readonly resolved: true; readonly settings: ChatInviteLinkSettings }
+    | { readonly resolved: false; readonly reason: InviteLinkSettingsFailureReason } {
+    const { expiresAtUnixSeconds, memberLimit, createsJoinRequest } = requested;
+    if (expiresAtUnixSeconds !== undefined && expiresAtUnixSeconds <= currentUnixTimeSeconds) {
+      return { resolved: false, reason: 'expiry_date_invalid' };
+    }
+    if (memberLimit !== undefined && memberLimit > MAX_INVITE_LINK_MEMBER_LIMIT) {
+      return { resolved: false, reason: 'member_limit_invalid' };
+    }
+    const name = cleanName(cleanedName, MAX_INVITE_LINK_NAME_LENGTH);
+    return {
+      resolved: true,
+      settings: {
+        ...(name.length === 0 ? {} : { name }),
+        ...(expiresAtUnixSeconds === undefined ? {} : { expiresAtUnixSeconds }),
+        ...(memberLimit === undefined ? {} : { memberLimit }),
+        createsJoinRequest,
+      },
     };
   }
 

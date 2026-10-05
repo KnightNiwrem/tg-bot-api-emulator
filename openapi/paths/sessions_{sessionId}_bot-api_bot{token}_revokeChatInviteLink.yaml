@@ -1,0 +1,66 @@
+description: >-
+  Telegram Bot API method for revoking an additional invite link that the bot created in a
+  supergroup. The bot needs the `can_invite_users` administrator right. A revoked link admits
+  nobody from then on and can be neither edited nor revoked again; members that joined through
+  it stay, and pending join requests sent through it stay pending with their requester contact,
+  for an administrator bot to decide. No bot receives an update for it.
+parameters:
+  - $ref: ../components/parameters/SessionId.yaml
+  - $ref: ../components/parameters/BotToken.yaml
+post:
+  operationId: revokeChatInviteLink
+  summary: Revoke an invite link of a supergroup as the virtual bot that created it
+  requestBody:
+    required: true
+    content:
+      application/json:
+        schema:
+          $ref: ../components/schemas/RevokeChatInviteLinkRequest.yaml
+      application/x-www-form-urlencoded:
+        schema:
+          $ref: ../components/schemas/RevokeChatInviteLinkRequest.yaml
+      multipart/form-data:
+        schema:
+          $ref: ../components/schemas/RevokeChatInviteLinkRequest.yaml
+  responses:
+    '200':
+      description: The revoked link, as its creator sees it, with `is_revoked` true.
+      content:
+        application/json:
+          schema:
+            $ref: ../components/schemas/ChatInviteLinkResultResponse.yaml
+    '400':
+      description: >-
+        The request cannot be decoded or has unsupported parameters (`Bad Request: invalid
+        revokeChatInviteLink parameters`), or Telegram would reject it, in this order: `chat_id`
+        is missing (`Bad Request: chat_id is empty`); the chat is neither a private chat with an
+        account that has written to the bot nor a supergroup the bot is or was a member of
+        (`Bad Request: chat not found`); the chat is a private chat (`Bad Request: can't invite
+        members to a private chat`); the link is not well-formed Unicode (`Bad Request: strings
+        must be encoded in UTF-8`); the bot lacks `can_invite_users` (`Bad Request: not enough
+        rights to manage chat invite link`); `invite_link` is missing or empty (`Bad Request:
+        invite link must be non-empty`); no link of the supergroup has this URL, or the link was
+        revoked before (`Bad Request: INVITE_HASH_EXPIRED`); or another administrator created the
+        link (`Bad Request: CHAT_ADMIN_REQUIRED`). A refused request changes nothing.
+      content:
+        application/json:
+          schema:
+            $ref: ../components/schemas/BotApiErrorResponse.yaml
+    '401':
+      description: The token does not belong to a virtual bot in the addressed session.
+      content:
+        application/json:
+          schema:
+            $ref: ../components/schemas/BotApiErrorResponse.yaml
+    '403':
+      description: >-
+        The bot left the supergroup (`Forbidden: bot is not a member of the supergroup chat`) or
+        was removed from it (`Forbidden: bot was kicked from the supergroup chat`).
+      content:
+        application/json:
+          schema:
+            $ref: ../components/schemas/BotApiErrorResponse.yaml
+    '404':
+      description: No active test session has the supplied identifier.
+    '429':
+      $ref: ../components/responses/BotApiRateLimited.yaml

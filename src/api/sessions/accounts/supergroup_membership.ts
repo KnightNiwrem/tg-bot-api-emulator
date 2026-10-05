@@ -231,7 +231,10 @@ export function createSupergroupMembershipRoutes(): Hono<SessionRouteContextType
       case 'already_a_member':
       case 'join_request_pending':
         return context.body(null, 409);
-      // Telegram's clients show a link whose member limit is reached as expired.
+      // `messages.importChatInvite` documents `INVITE_HASH_EXPIRED` for a link that no longer
+      // works, which a revoked link is too, and Telegram's clients show a link whose member limit
+      // is reached as expired.
+      case 'invite_link_revoked':
       case 'invite_link_expired':
       case 'invite_link_member_limit_reached':
         return context.body(null, 410);

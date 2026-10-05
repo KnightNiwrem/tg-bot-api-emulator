@@ -3,7 +3,11 @@ import { BotRepository } from '../src/repositories/bot.ts';
 import { ChatInviteLinkRepository } from '../src/repositories/chat_invite_link.ts';
 import { SharedChatRepository } from '../src/repositories/shared_chat.ts';
 import { TelegramIdentityRepository } from '../src/repositories/telegram_identity.ts';
-import { ChatAdmissionService } from '../src/services/chat_admission.ts';
+import {
+  ChatAdmissionService,
+  type EditInviteLinkAsBotInput,
+  type RequestedInviteLinkSettings,
+} from '../src/services/chat_admission.ts';
 import { SharedChatAdministrationService } from '../src/services/shared_chat_administration.ts';
 import { VirtualUserService } from '../src/services/virtual_user.ts';
 import type { ChatDomainEvent } from '../src/types/chat_domain_event.ts';
@@ -454,3 +458,410 @@ Deno.test('ChatAdmissionService ends a requester contact with its request or whe
     'Expected the decisions to end both requests and their contacts',
   );
 });
+
+/**
+ * Extends the requester contact fixture for link lifecycles: Linus, another account outside the
+ * supergroup, and helpers that create, edit and revoke links as a bot, use them as an account, and
+ * inspect them as the owner.
+ */
+function createInviteLinkLifecycleFixture() {
+  const fixture = createRequesterContactFixture();
+  const { virtualUsers, chatAdmission, chatId, botId, adaId } = fixture;
+  const linus = virtualUsers.createAccount({ first_name: 'Linus' });
+  if (!linus.created) {
+    throw new Error('Expected Linus to be created');
+  }
+  const createLink = (
+    settings: Partial<RequestedInviteLinkSettings> = {},
+    creatorBotId = botId,
+  ) => {
+    const creation = chatAdmission.createInviteLinkAsBot({
+      creatorBotId,
+      chatId,
+      name: '',
+      createsJoinRequest: false,
+      ...settings,
+    });
+    if (!creation.created) {
+      throw new Error(`Expected the link to be created, received ${creation.reason}`);
+    }
+    return creation.link.url;
+  };
+  const edit = (
+    input: Partial<EditInviteLinkAsBotInput> & { readonly inviteLinkUrl: string },
+  ) => {
+    const result = chatAdmission.editInviteLinkAsBot({
+      editorBotId: botId,
+      chatId,
+      name: '',
+      createsJoinRequest: false,
+      ...input,
+    });
+    return result.edited ? result.link : result.reason;
+  };
+  const revoke = (inviteLinkUrl: string, revokerBotId = botId, revokedChatId = chatId) => {
+    const result = chatAdmission.revokeInviteLinkAsBot({
+      revokerBotId,
+      chatId: revokedChatId,
+      inviteLinkUrl,
+    });
+    return result.revoked ? result.link : result.reason;
+  };
+  const join = (accountId: number, inviteLinkUrl: string) => {
+    const result = chatAdmission.joinChatByInviteLink({ accountId, inviteLinkUrl });
+    return result.used ? result.outcome : result.reason;
+  };
+  /** A link as the owner inspects it: its state, members joined through it and pending requests. */
+  const inspectLink = (inviteLinkUrl: string) => {
+    const inspection = chatAdmission.getInviteLinksForAccount({ accountId: adaId, chatId });
+    if (!inspection.found) {
+      throw new Error(`Expected the owner to inspect the links, received ${inspection.reason}`);
+    }
+    const usage = inspection.links.find(({ link }) => link.url === inviteLinkUrl);
+    if (usage === undefined) {
+      throw new Error(`Expected link ${inviteLinkUrl} to be listed`);
+    }
+    return {
+      link: usage.link,
+      memberCount: usage.memberCount,
+      pendingJoinRequestCount: usage.pendingJoinRequestCount,
+    };
+  };
+
+  return {
+    ...fixture,
+    linusId: linus.account.profile.id,
+    createLink,
+    edit,
+    revoke,
+    join,
+    inspectLink,
+  };
+}
+
+Deno.test('ChatAdmissionService replaces every setting of a link its creator edits', () => {
+  const { clock, chatId, botId, createLink, edit, inspectLink } =
+    createInviteLinkLifecycleFixture();
+  const inviteLinkUrl = createLink({
+    name: 'Spring',
+    expiresAtUnixSeconds: CREATION_TIME_UNIX_SECONDS + 3_600,
+    memberLimit: 5,
+  });
+  clock.nowUnixSeconds += 60;
+  const unchangedFields = {
+    url: inviteLinkUrl,
+    chatId,
+    creatorId: botId,
+    createdAtUnixSeconds: CREATION_TIME_UNIX_SECONDS,
+  };
+
+  const renamed = edit({
+    inviteLinkUrl,
+    name: `  Autumn\tsign-ups ${'x'.repeat(40)}`,
+    expiresAtUnixSeconds: CREATION_TIME_UNIX_SECONDS + 7_200,
+    memberLimit: 3,
+  });
+  const afterRename = inspectLink(inviteLinkUrl).link;
+  // An edit that names only the request setting leaves no name, expiry date or member limit.
+  const cleared = edit({ inviteLinkUrl, createsJoinRequest: true });
+  const afterClearing = inspectLink(inviteLinkUrl).link;
+
+  const renamedLink = {
+    ...unchangedFields,
+    name: `Autumn sign-ups ${'x'.repeat(16)}`,
+    expiresAtUnixSeconds: CREATION_TIME_UNIX_SECONDS + 7_200,
+    memberLimit: 3,
+    createsJoinRequest: false,
+    hasExpired: false,
+    isRevoked: false,
+  };
+  const clearedLink = {
+    ...unchangedFields,
+    createsJoinRequest: true,
+    hasExpired: false,
+    isRevoked: false,
+  };
+  expectEqual(
+    [renamed, afterRename, cleared, afterClearing].map(toCanonicalJson),
+    [renamedLink, renamedLink, clearedLink, clearedLink].map(toCanonicalJson),
+    'Expected each edit to replace the name, expiry date, member limit and request setting',
+  );
+});
+
+Deno.test('ChatAdmissionService refuses an invalid edit or revocation without changing anything', () => {
+  const {
+    virtualUsers,
+    sharedChatAdministration,
+    chatAdmission,
+    chatId,
+    botId,
+    coInviterBotId,
+    adaId,
+    graceId,
+    promote,
+    createLink,
+    edit,
+    revoke,
+    inspectLink,
+    describeContacts,
+    requestToJoin,
+  } = createInviteLinkLifecycleFixture();
+  const inviteLinkUrl = createLink({ name: 'Kept', memberLimit: 2 });
+  const coInviterLinkUrl = createLink({ name: 'Theirs' }, coInviterBotId);
+  // A second supergroup, Lab, where the inviter bot also creates a link.
+  const lab = sharedChatAdministration.createSupergroup({ title: 'Lab', creatorAccountId: adaId });
+  const outsider = virtualUsers.createBot({ first_name: 'Outsider', username: 'outsider_bot' });
+  if (!lab.created || !outsider.created) {
+    throw new Error('Expected Lab and the outsider bot to be created');
+  }
+  const labChatId = lab.supergroup.id;
+  sharedChatAdministration.addChatMember({
+    actorAccountId: adaId,
+    chatId: labChatId,
+    memberId: botId,
+  });
+  sharedChatAdministration.promoteChatMember({
+    actorAccountId: adaId,
+    chatId: labChatId,
+    memberId: botId,
+    rights: grantSupergroupAdministratorRights(['can_invite_users']),
+  });
+  const labLink = chatAdmission.createInviteLinkAsBot({
+    creatorBotId: botId,
+    chatId: labChatId,
+    name: '',
+    createsJoinRequest: false,
+  });
+  if (!labLink.created) {
+    throw new Error(`Expected the Lab link to be created, received ${labLink.reason}`);
+  }
+  // The outsider bot was a member of Team and left it.
+  sharedChatAdministration.addChatMember({
+    actorAccountId: adaId,
+    chatId,
+    memberId: outsider.bot.profile.id,
+  });
+  sharedChatAdministration.leaveChat({ memberId: outsider.bot.profile.id, chatId });
+  requestToJoin(graceId);
+  const describeLinks = () =>
+    toCanonicalJson([inspectLink(inviteLinkUrl), inspectLink(coInviterLinkUrl)]);
+  const linksBefore = describeLinks();
+  const contactsBefore = toCanonicalJson(describeContacts());
+
+  const editRefusals = [
+    edit({ inviteLinkUrl, editorBotId: outsider.bot.profile.id }),
+    edit({ inviteLinkUrl, chatId: -1_009_999_999_999 }),
+    edit({ inviteLinkUrl, name: 'Broken \ud800' }),
+    edit({ inviteLinkUrl: `${inviteLinkUrl}\udc00` }),
+    edit({ inviteLinkUrl, createsJoinRequest: true, memberLimit: 1 }),
+    edit({ inviteLinkUrl: '' }),
+    edit({ inviteLinkUrl: 'https://t.me/+AAAAAAAAAAAAAAAA' }),
+    edit({ inviteLinkUrl: labLink.link.url }),
+    edit({ inviteLinkUrl: coInviterLinkUrl }),
+    edit({ inviteLinkUrl, expiresAtUnixSeconds: CREATION_TIME_UNIX_SECONDS }),
+    edit({ inviteLinkUrl, memberLimit: 100_000 }),
+  ];
+  const revocationRefusals = [
+    revoke(inviteLinkUrl, outsider.bot.profile.id),
+    revoke(`${inviteLinkUrl}\udc00`),
+    revoke(''),
+    revoke(labLink.link.url),
+    revoke(inviteLinkUrl, botId, labChatId),
+    revoke(coInviterLinkUrl),
+  ];
+  const contactsUnchanged = toCanonicalJson(describeContacts()) === contactsBefore;
+  // Losing `can_invite_users` ends the creator's management of its links, which is checked before
+  // the member limit of a link that creates join requests.
+  promote(botId, 'can_delete_messages');
+  const afterDemotion = [
+    edit({ inviteLinkUrl, createsJoinRequest: true, memberLimit: 1 }),
+    revoke(inviteLinkUrl),
+  ];
+
+  expectEqual(
+    [
+      editRefusals,
+      revocationRefusals,
+      afterDemotion,
+      [describeLinks() === linksBefore, contactsUnchanged],
+    ],
+    [
+      [
+        'bot_not_a_member',
+        'chat_not_found',
+        'text_encoding_invalid',
+        'text_encoding_invalid',
+        'member_limit_with_join_request',
+        'invite_link_empty',
+        'invite_link_not_found',
+        'invite_link_not_found',
+        'not_the_link_creator',
+        'expiry_date_invalid',
+        'member_limit_invalid',
+      ],
+      [
+        'bot_not_a_member',
+        'text_encoding_invalid',
+        'invite_link_empty',
+        'invite_link_not_found',
+        'invite_link_not_found',
+        'not_the_link_creator',
+      ],
+      ['not_enough_rights', 'not_enough_rights'],
+      [true, true],
+    ],
+    'Expected each refusal in check order, leaving the links and pending requests as they were',
+  );
+});
+
+Deno.test('ChatAdmissionService revokes a link for good, keeping its members and pending requests', () => {
+  const {
+    chatAdmission,
+    chatId,
+    botId,
+    graceId,
+    hopperId,
+    linusId,
+    inviteLinkUrl,
+    createLink,
+    edit,
+    revoke,
+    join,
+    inspectLink,
+    describeContacts,
+    requestToJoin,
+  } = createInviteLinkLifecycleFixture();
+  const directLinkUrl = createLink({ memberLimit: 1 });
+  join(hopperId, directLinkUrl);
+  requestToJoin(graceId);
+  chatAdmission.claimJoinRequesterContact(botId, graceId);
+
+  const revocations = [revoke(inviteLinkUrl), revoke(directLinkUrl)].map((result) =>
+    typeof result === 'string' ? result : [result.isRevoked, result.hasExpired]
+  );
+  const afterRevocation = [
+    join(linusId, inviteLinkUrl),
+    join(linusId, directLinkUrl),
+    revoke(inviteLinkUrl),
+    edit({ inviteLinkUrl, createsJoinRequest: true }),
+    describeContacts(),
+    chatAdmission.mayContactJoinRequester(botId, graceId),
+  ];
+  // Time still passes for a revoked link, and an administrator still decides its requests.
+  const expiry = chatAdmission.expireInviteLink({ chatId, inviteLinkUrl });
+  const approval = chatAdmission.approveJoinRequestAsBot({
+    deciderBotId: botId,
+    chatId,
+    userId: graceId,
+  });
+
+  expectEqual(
+    [
+      revocations,
+      afterRevocation,
+      expiry.expired,
+      approval.decided,
+      [inspectLink(inviteLinkUrl), inspectLink(directLinkUrl)].map((
+        { link, memberCount, pendingJoinRequestCount },
+      ) => [link.isRevoked, link.hasExpired, memberCount, pendingJoinRequestCount]),
+    ],
+    [
+      [[true, false], [true, false]],
+      [
+        'invite_link_revoked',
+        'invite_link_revoked',
+        'invite_link_revoked',
+        'invite_link_revoked',
+        [[graceId, 'claimed', [botId]]],
+        true,
+      ],
+      true,
+      true,
+      [[true, true, 1, 0], [true, false, 1, 0]],
+    ],
+    'Expected revoked links to admit nobody new while their members and requests stay',
+  );
+});
+
+Deno.test('ChatAdmissionService applies an edit to later uses only, and revives an expired link', () => {
+  const {
+    chatAdmission,
+    chatId,
+    botId,
+    coInviterBotId,
+    graceId,
+    hopperId,
+    linusId,
+    createLink,
+    edit,
+    join,
+    inspectLink,
+    describeContacts,
+  } = createInviteLinkLifecycleFixture();
+  const inviteLinkUrl = createLink({
+    expiresAtUnixSeconds: CREATION_TIME_UNIX_SECONDS + 3_600,
+    createsJoinRequest: true,
+  });
+  join(graceId, inviteLinkUrl);
+  chatAdmission.expireInviteLink({ chatId, inviteLinkUrl });
+  const whileExpired = join(hopperId, inviteLinkUrl);
+
+  // Without an expiry date or join requests, and with a member limit, the link admits directly.
+  const revival = edit({ inviteLinkUrl, memberLimit: 1 });
+  const afterRevival = [join(hopperId, inviteLinkUrl), join(linusId, inviteLinkUrl)];
+  const contactsAfterRevival = describeContacts();
+  const usageAfterRevival = inspectLink(inviteLinkUrl);
+  // Grace's request, sent while the link created requests, is still decided as one; approving it
+  // admits her through the link beyond its member limit, as an administrator's decision.
+  const approval = chatAdmission.approveJoinRequestAsBot({
+    deciderBotId: botId,
+    chatId,
+    userId: graceId,
+  });
+  // A new expiry date that a test makes arrive ends the link again, until the next edit.
+  edit({ inviteLinkUrl, expiresAtUnixSeconds: CREATION_TIME_UNIX_SECONDS + 60, memberLimit: 5 });
+  const secondExpiry = chatAdmission.expireInviteLink({ chatId, inviteLinkUrl });
+
+  expectEqual(
+    [
+      whileExpired,
+      typeof revival === 'string'
+        ? revival
+        : [revival.hasExpired, 'expiresAtUnixSeconds' in revival, revival.memberLimit],
+      afterRevival,
+      contactsAfterRevival,
+      [
+        usageAfterRevival.link.createsJoinRequest,
+        usageAfterRevival.memberCount,
+        usageAfterRevival.pendingJoinRequestCount,
+      ],
+      approval.decided,
+      secondExpiry.expired
+        ? [secondExpiry.link.link.hasExpired, secondExpiry.link.memberCount]
+        : secondExpiry.reason,
+      join(linusId, inviteLinkUrl),
+    ],
+    [
+      'invite_link_expired',
+      [false, false, 1],
+      ['joined', 'invite_link_member_limit_reached'],
+      [[graceId, 'open', [botId, coInviterBotId]]],
+      [false, 1, 1],
+      true,
+      [true, 2],
+      'invite_link_expired',
+    ],
+    'Expected the edits to change later uses only, leaving the pending request to a decision',
+  );
+});
+
+/** JSON of a value with its object keys sorted, so that comparisons ignore key order. */
+function toCanonicalJson(value: unknown): string {
+  return JSON.stringify(
+    value,
+    (_key, nestedValue) =>
+      typeof nestedValue === 'object' && nestedValue !== null && !Array.isArray(nestedValue)
+        ? Object.fromEntries(Object.entries(nestedValue).sort(([a], [b]) => a.localeCompare(b)))
+        : nestedValue,
+  );
+}

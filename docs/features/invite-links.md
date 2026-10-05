@@ -6,14 +6,15 @@
 
 ## Capability matrix
 
-| Area                   | Supported                                                                                                                           | Not supported                                                                                  |
-| ---------------------- | ----------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------- |
-| `createChatInviteLink` | `chat_id`, `name`, `expire_date`, `member_limit`, `creates_join_request`, in supergroups                                            | Basic groups, channels                                                                         |
-| Other Bot API          | `approveChatJoinRequest`, `declineChatJoinRequest`, `invite_link` in `chat_member` updates, `chat_join_request` updates             | `editChatInviteLink`, `revokeChatInviteLink`, `exportChatInviteLink`, subscription links, bios |
-| Account actions        | Joining or requesting to join through an invite link, joining a public supergroup by itself, inspecting a chat's links and requests | Creating, editing and revoking links as an account, primary links                              |
-| Join requests          | One pending request per account and chat, decided once by any administrator bot with `can_invite_users`                             | Decisions by accounts, requests without a link, join request queries                           |
-| Requester contact      | Messages from the bots that received a request to its requester [before a decision](#contacting-requesters)                         | Edits, deletions, chat actions and other uses of the chat under the grant                      |
-| Time                   | Expiry dates and contact windows that a test [makes end](#expiry-dates)                                                             | Expiry by elapsed time                                                                         |
+| Area                   | Supported                                                                                                                           | Not supported                                                             |
+| ---------------------- | ----------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------- |
+| `createChatInviteLink` | `chat_id`, `name`, `expire_date`, `member_limit`, `creates_join_request`, in supergroups                                            | Basic groups, channels                                                    |
+| Link management        | `editChatInviteLink` and `revokeChatInviteLink` on the links the bot created, [their effects](#editing-and-revoking-links)          | Links of other administrators, primary links                              |
+| Other Bot API          | `approveChatJoinRequest`, `declineChatJoinRequest`, `invite_link` in `chat_member` updates, `chat_join_request` updates             | `exportChatInviteLink`, subscription links, bios                          |
+| Account actions        | Joining or requesting to join through an invite link, joining a public supergroup by itself, inspecting a chat's links and requests | Creating, editing and revoking links as an account, primary links         |
+| Join requests          | One pending request per account and chat, decided once by any administrator bot with `can_invite_users`                             | Decisions by accounts, requests without a link, join request queries      |
+| Requester contact      | Messages from the bots that received a request to its requester [before a decision](#contacting-requesters)                         | Edits, deletions, chat actions and other uses of the chat under the grant |
+| Time                   | Expiry dates and contact windows that a test [makes end](#expiry-dates)                                                             | Expiry by elapsed time                                                    |
 
 ## Creating invite links
 
@@ -22,9 +23,10 @@ which answers the new link as a `ChatInviteLink` in the field order of the offic
 [`JsonChatInviteLink`][json-chat-invite-link]: `invite_link`, `name`, `creator`, `expire_date`,
 `member_limit`, `creates_join_request`, `is_primary` and `is_revoked`. A link is `https://t.me/+`
 followed by a random 16-character hash, as TDLib's [`get_dialog_invite_link`][dialog-invite-link]
-writes it, and is unique in its session. The emulator creates no primary link, and links are never
-revoked, so `is_primary` and `is_revoked` are false. A link keeps its creator, its name, its expiry
-date, its member limit, and whether it creates join requests.
+writes it, and is unique in its session. The emulator creates no primary link, so `is_primary` is
+false, and `is_revoked` is false until the bot [revokes](#editing-and-revoking-links) the link. A
+link keeps its creator, and its name, its expiry date, its member limit, and whether it creates join
+requests until the bot edits them.
 
 As the official server's [`process_create_chat_invite_link_query`][create-query] reads them, a
 missing name is empty, and a missing or zero `expire_date` or `member_limit` means none; the
@@ -51,6 +53,60 @@ granted": a bot never creates links through default permissions. The join reques
 check comes before it, as `export_dialog_invite_link` makes it before
 `export_dialog_invite_link_impl` checks rights. A refused request creates no link.
 
+## Editing and revoking links
+
+The bot that created a link edits it with `editChatInviteLink` and revokes it with
+`revokeChatInviteLink`, naming the supergroup by `chat_id` and the link by the whole `invite_link`
+it received. Both answer the link as a `ChatInviteLink` as its creator sees it, with
+`pending_join_request_count` when it is not 0, as the official server's
+[`process_edit_chat_invite_link_query`][edit-query] and
+[`process_revoke_chat_invite_link_query`][revoke-query] answer it. No bot receives an update for
+either.
+
+An edit replaces every setting of the link. The official server passes each parameter on to TDLib's
+[`edit_dialog_invite_link`][edit-link], whose [`EditChatInviteLinkQuery`][edit-link-query] sends all
+of them to Telegram's servers. So an omitted name, expiry date or member limit becomes none, and an
+omitted `creates_join_request` false. The settings are read, cleaned and checked as for
+`createChatInviteLink`, and apply to the link's later uses:
+
+- Members that joined through the link stay, even beyond a lowered member limit, and keep their
+  places in it; a raised limit admits further users.
+- The link gets a new expiry date, or none, which has not arrived. A link whose expiry date a test
+  made arrive works again, until a test makes its new date arrive with the same
+  [expiry control](#expiry-dates).
+- Pending [join requests](#join-requests) sent through the link stay pending, with their
+  [requester contact](#contacting-requesters), whether or not the link still creates join requests.
+  Administrator bots decide them as before, and an approval admits the account even when the link's
+  member limit is reached.
+
+A revoked link admits nobody, and can be neither edited nor revoked again. Its members stay. Its
+pending join requests stay pending with their contact until an administrator bot decides them, and
+an approval admits the account through the revoked link, which the `chat_member` update shows with
+`is_revoked` true. A test can still make a revoked link's expiry date arrive.
+
+A request is checked in this order; a revocation makes the checks marked for both:
+
+| Check                                                                                   | Methods | Error, after `Bad Request:`                                                  |
+| --------------------------------------------------------------------------------------- | ------- | ---------------------------------------------------------------------------- |
+| `chat_id` is missing                                                                    | Both    | `chat_id is empty`                                                           |
+| The bot cannot address the chat, as for `sendMessage`                                   | Both    | `chat not found`, or `403` for a supergroup it left or was removed from      |
+| The chat is a private chat                                                              | Both    | `can't invite members to a private chat`                                     |
+| The name or the link is not well-formed Unicode                                         | Both    | `strings must be encoded in UTF-8`                                           |
+| The bot lacks the `can_invite_users` administrator right                                | Both    | `not enough rights to manage chat invite link`                               |
+| The link creates join requests and has a member limit                                   | Edit    | `member limit can't be specified for links requiring administrator approval` |
+| `invite_link` is missing or empty                                                       | Both    | `invite link must be non-empty`                                              |
+| No link of the supergroup has this URL, such as a link of another chat or a hidden link | Both    | `INVITE_HASH_EXPIRED` (see [comparison limits](#comparison-limits))          |
+| Another administrator created the link                                                  | Both    | `CHAT_ADMIN_REQUIRED` (see [comparison limits](#comparison-limits))          |
+| The link was revoked                                                                    | Both    | `INVITE_HASH_EXPIRED` (see [comparison limits](#comparison-limits))          |
+| The expiry date is not in the future                                                    | Edit    | `EXPIRE_DATE_INVALID`                                                        |
+| The member limit exceeds 99999                                                          | Edit    | `USAGE_LIMIT_INVALID`                                                        |
+
+Unlike for `createChatInviteLink`, the rights check comes before the join request and member limit
+check, as `edit_dialog_invite_link` makes them, and TDLib refuses an empty link before Telegram's
+servers look it up. A link of another session is unknown, as is a link shown with its hash hidden. A
+refused call changes no link, membership or request. A bot that loses `can_invite_users`, or leaves
+the supergroup, can no longer manage its links, which keep working.
+
 ## Joining through a link
 
 An account joins the supergroup a link leads to with
@@ -61,7 +117,7 @@ TypeScript client's `joinChatByInviteLink`, which answer the supergroup's `chat_
 | Case                                                                              | Status |
 | --------------------------------------------------------------------------------- | ------ |
 | The account or the link is unknown, including a link of another session           | `404`  |
-| A test made the link's expiry date arrive, or its member limit is reached         | `410`  |
+| The link was revoked, a test made its expiry date arrive, or its limit is reached | `410`  |
 | The account is a member already, or its [join request](#join-requests) is pending | `409`  |
 | The account is banned from the supergroup                                         | `403`  |
 
@@ -91,11 +147,13 @@ even one that once joined through the link. A link whose places are taken refuse
 The emulator never lets an expiry date arrive by itself, as it never closes polls or ends
 restrictions as time passes: a link keeps admitting users until a test makes its expiry date arrive
 with `POST /sessions/{sessionId}/supergroups/{chatId}/invite-links/{inviteLinkHash}/expiry`, or the
-TypeScript client's `session.expireChatInviteLink`. The link then admits nobody; the members that
-joined through it stay. No bot receives an update for it. A link without an expiry date, or one that
-already expired, answers `409`, and an unknown supergroup or link `404`. The route makes the date
-arrive whatever the session's clock reads; the clock only decides, when a bot creates a link, that
-its expiry date lies in the future.
+TypeScript client's `session.expireChatInviteLink`. The link then admits nobody until its creator
+[edits](#editing-and-revoking-links) it, which gives it a new expiry date or none. The members that
+joined through it stay, and so do the pending join requests sent through it. No bot receives an
+update for it. A link without an expiry date, or one whose expiry date already arrived, answers
+`409`, and an unknown supergroup or link `404`. A revoked link's expiry date still arrives. The
+route makes the date arrive whatever the session's clock reads; the clock only decides, when a bot
+creates a link, that its expiry date lies in the future.
 
 ## Join requests
 
@@ -107,7 +165,8 @@ while its request is pending answers `409` and changes nothing, keeping the firs
 link and date, and sending no update. The expiry and standing checks of
 [joining through a link](#joining-through-a-link) come first. A request ends when its account joins,
 whichever way, is banned, or a bot [approves or declines](#approving-and-declining-requests) it; a
-restriction leaves it pending, as a restricted account may still join.
+restriction leaves it pending, as a restricted account may still join, and so do the edits, the
+revocation and the expiry of the link it was sent through.
 
 The supergroup's administrator bots that hold `can_invite_users` receive the request as a
 `chat_join_request` update, as the Bot API documents: "The bot must have the can_invite_users
@@ -151,8 +210,8 @@ it was sent, whether or not their `allowed_updates` include `chat_join_request`:
   `POST /sessions/{sessionId}/supergroups/{chatId}/join-requests/{userId}/requester-contact/expiry`,
   or the TypeScript client's `session.expireJoinRequesterContact`, which answers the request with
   its contact `expired`, and leaves it pending. An expired contact answers `409`, and an unknown
-  supergroup or a user without a pending request `404`. An invite link's expiry leaves its pending
-  requests and their contacts alone.
+  supergroup or a user without a pending request `404`. An invite link's edits, revocation and
+  expiry leave its pending requests and their contacts alone.
 - A bot's message under the grant starts no conversation: once the grant ends, the bot's sends fail
   with `Bad Request: chat not found` again. The account's own message to the bot, such as its answer
   to the prompt, starts the conversation as any account message does, and the bot then writes to it
@@ -217,7 +276,7 @@ The owner inspects a supergroup's links with
 `GET /sessions/{sessionId}/accounts/{accountId}/conversations/supergroup/{chatId}/invite-links`, or
 the TypeScript client's `getChatInviteLinks`: each whole link, in the order bots created them, with
 its settings by the Bot API's names, `creator_user_id`, `member_count`, the members that joined
-through it and still are, `pending_join_request_count`, and `is_expired`. As TDLib's
+through it and still are, `pending_join_request_count`, `is_expired`, and `is_revoked`. As TDLib's
 `getChatInviteLinks` requires the owner for links that other administrators created, and only bots
 create links, any other account is answered `403`.
 
@@ -228,18 +287,20 @@ create links, any other account is answered `403`.
   end, so tests decide the moment deterministically.
 - **Strict parameters.** A negative `expire_date` or `member_limit`, which the official server's
   `get_integer_arg` clamps to zero, is rejected as
-  `Bad Request: invalid createChatInviteLink parameters` to surface the bot's mistake.
+  `Bad Request: invalid createChatInviteLink parameters`, or as invalid `editChatInviteLink`
+  parameters, to surface the bot's mistake.
 - **Exact links.** Accounts use a link exactly as the bot received it; the `t.me/joinchat/` and
   `tg://join` forms that Telegram's clients also accept are unknown links.
 
 ## Real gaps
 
-- **Link lifecycle.** `editChatInviteLink`, `revokeChatInviteLink`, `exportChatInviteLink`, primary
-  links and subscription links are not implemented.
+- **Primary and subscription links.** `exportChatInviteLink`, primary links, subscription links and
+  deleting revoked links are not implemented.
 - **Requests without a link.** Public supergroups that require approval to join, and the join
   request queries of guard bots, are not supported.
-- **Account administrators.** Accounts cannot create links or decide join requests, even as the
-  owner or administrators with `can_invite_users`.
+- **Account administrators.** Accounts cannot create, edit or revoke links or decide join requests,
+  even as the owner or administrators with `can_invite_users`. So no one manages a link of a bot
+  that left.
 - **Other chat kinds.** Basic groups and channels have no invite links.
 
 ## Comparison limits
@@ -256,7 +317,24 @@ in part:
   the emulator answers it as an expired link, and checks the link before the account's standing.
 - **Hidden links.** How much of a link Telegram's servers hide from other administrators is not
   public; the emulator keeps the first half of the hash.
-- **Creator's tenure.** A link keeps working when its creator leaves or loses its rights.
+- **Creator's tenure.** A link keeps working when its creator leaves or loses its rights, although
+  its creator can then no longer edit or revoke it.
+- **Managing links.** Which errors Telegram's servers raise for a link a bot cannot edit or revoke
+  is not public. [`messages.editExportedChatInvite`][edit-exported-chat-invite] documents
+  `INVITE_HASH_EXPIRED`, "The invite link has expired", and `CHAT_ADMIN_REQUIRED`. The emulator
+  answers the first for a link unknown to the supergroup and for a revoked link, and the second for
+  another administrator's link, which TDLib's [`editChatInviteLink`][td-api-link-methods] leaves to
+  the chat's owner. Whether a revoked link can be edited or revoked again is not public either; the
+  emulator refuses both. An expired link can be edited: TDLib's
+  [`getChatInviteLinks`][td-api-revoked-links] lists "active or expired" links apart from revoked
+  ones, and an edit replaces the expiry date, so the link works again until its new date arrives.
+- **Requests through changed links.** Neither the Bot API nor TDLib documents an effect of editing,
+  revoking or the expiry of a link on the pending join requests sent through it: the Bot API's
+  `editChatInviteLink` and `revokeChatInviteLink`, and TDLib's methods of the same names, describe
+  only the link, and the servers' handling is not public. The emulator does not assume that a link
+  change cancels requests: it keeps them pending with their requester contact, for an administrator
+  to decide, and an approval admits the account through the link whatever its state. A request, and
+  its contact, thus end only by a decision, the account's joining or its ban.
 - **Repeated and ended requests.** Whether Telegram's servers send bots another update for a
   repeated request, and what becomes of a request when its user joins otherwise or is banned, is not
   public. The emulator keeps one request per account and chat, sends one update for it, and ends it
@@ -292,6 +370,13 @@ in part:
 [json-chat-invite-link]: https://github.com/tdlib/telegram-bot-api/blob/e3e9dd8e5b3d7ab8537cd5a10dc31d5ffa8f82d1/telegram-bot-api/Client.cpp#L1401-L1434
 [json-chat-member-updated]: https://github.com/tdlib/telegram-bot-api/blob/e3e9dd8e5b3d7ab8537cd5a10dc31d5ffa8f82d1/telegram-bot-api/Client.cpp#L5926-L5953
 [create-query]: https://github.com/tdlib/telegram-bot-api/blob/e3e9dd8e5b3d7ab8537cd5a10dc31d5ffa8f82d1/telegram-bot-api/Client.cpp#L15595-L15610
+[edit-query]: https://github.com/tdlib/telegram-bot-api/blob/e3e9dd8e5b3d7ab8537cd5a10dc31d5ffa8f82d1/telegram-bot-api/Client.cpp#L15628-L15644
+[revoke-query]: https://github.com/tdlib/telegram-bot-api/blob/e3e9dd8e5b3d7ab8537cd5a10dc31d5ffa8f82d1/telegram-bot-api/Client.cpp#L15659-L15669
+[edit-link]: https://github.com/tdlib/td/blob/bc9c263e2bfee06aaab41e82db51a103376030bc/td/telegram/DialogInviteLinkManager.cpp#L1012-L1028
+[edit-link-query]: https://github.com/tdlib/td/blob/bc9c263e2bfee06aaab41e82db51a103376030bc/td/telegram/DialogInviteLinkManager.cpp#L199-L213
+[td-api-link-methods]: https://github.com/tdlib/td/blob/bc9c263e2bfee06aaab41e82db51a103376030bc/td/generate/scheme/td_api.tl#L14106-L14115
+[td-api-revoked-links]: https://github.com/tdlib/td/blob/bc9c263e2bfee06aaab41e82db51a103376030bc/td/generate/scheme/td_api.tl#L14134-L14138
+[edit-exported-chat-invite]: https://core.telegram.org/method/messages.editExportedChatInvite
 [dialog-invite-link]: https://github.com/tdlib/td/blob/bc9c263e2bfee06aaab41e82db51a103376030bc/td/telegram/LinkManager.cpp#L4275-L4284
 [export-link]: https://github.com/tdlib/td/blob/bc9c263e2bfee06aaab41e82db51a103376030bc/td/telegram/DialogInviteLinkManager.cpp#L970-L1010
 [manage-links-check]: https://github.com/tdlib/td/blob/bc9c263e2bfee06aaab41e82db51a103376030bc/td/telegram/DialogInviteLinkManager.cpp#L918-L953

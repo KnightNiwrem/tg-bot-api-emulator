@@ -64,7 +64,7 @@ effects are:
 | ---------------------- | -------------------------------------------------------------------------------------------------------------------- |
 | `can_change_info`      | Call `setChatTitle` and `setChatDescription`                                                                         |
 | `can_delete_messages`  | Delete other members' content and service messages                                                                   |
-| `can_invite_users`     | Call `createChatInviteLink`, decide join requests, and receive `chat_join_request` updates when subscribed           |
+| `can_invite_users`     | Manage the bot's invite links, decide join requests, and receive `chat_join_request` updates when subscribed         |
 | `can_restrict_members` | Call `banChatMember`, `unbanChatMember`, `restrictChatMember` and `setChatPermissions`, or restrict as an account    |
 | `can_pin_messages`     | Call `pinChatMessage` and `unpinChatMessage`, under the [pinning rules](pinned-messages.md#pinning-with-the-bot-api) |
 | `can_promote_members`  | Call `promoteChatMember` and `setChatAdministratorCustomTitle`, or promote as an account, granting held rights       |
@@ -453,8 +453,8 @@ production read permissions.
   need their behavioral effects as the associated features are supported.
 
 - **Anonymous administrators.** Anonymous administration and its message attribution are absent.
-- **The invite link lifecycle.** [Invite links](invite-links.md#real-gaps) cannot be edited, revoked
-  or exported.
+- **Primary invite links.** Supergroups have no primary [invite link](invite-links.md#real-gaps), so
+  it cannot be exported or replaced.
 - **Additional service messages.** Only membership, title and [pin](pinned-messages.md) service
   messages are produced. Other service events, such as photo changes, need corresponding messages as
   their features are supported.

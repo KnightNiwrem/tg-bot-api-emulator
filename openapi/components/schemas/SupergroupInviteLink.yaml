@@ -10,6 +10,7 @@ required:
   - pending_join_request_count
   - creates_join_request
   - is_expired
+  - is_revoked
 properties:
   invite_link:
     type: string
@@ -45,4 +46,11 @@ properties:
     description: Whether users who use the link send a join request instead of joining.
   is_expired:
     type: boolean
-    description: Whether a test made the link's expiry date arrive, which ended its use.
+    description: >-
+      Whether a test made the link's current expiry date arrive, which ended its use until its
+      creator edits it; an edit gives the link a new expiry date, or none, which has not arrived.
+  is_revoked:
+    type: boolean
+    description: >-
+      Whether the bot that created the link revoked it, which ended its use for good. Its
+      members and pending join requests stay.

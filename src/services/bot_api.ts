@@ -116,6 +116,12 @@ import type {
   DecideJoinRequestAsBotFailureReason,
   DecideJoinRequestAsBotInput,
   DecideJoinRequestAsBotResult,
+  EditInviteLinkAsBotFailureReason,
+  EditInviteLinkAsBotInput,
+  EditInviteLinkAsBotResult,
+  RevokeInviteLinkAsBotFailureReason,
+  RevokeInviteLinkAsBotInput,
+  RevokeInviteLinkAsBotResult,
 } from './chat_admission.ts';
 import type {
   DocumentUploadPreparation,
@@ -1348,6 +1354,37 @@ export type BotApiCreateChatInviteLinkResult =
       | 'private_chat_has_no_invite_links';
   };
 
+/** The Bot API `editChatInviteLink` parameters, which replace every setting of the link. */
+export interface EditChatInviteLinkRequest extends CreateChatInviteLinkRequest {
+  /** The Bot API `invite_link`, the whole link; empty when the bot named none. */
+  readonly inviteLink: string;
+}
+
+export type BotApiEditChatInviteLinkResult =
+  | { readonly edited: true; readonly inviteLink: BotApiChatInviteLink }
+  | {
+    readonly edited: false;
+    readonly reason:
+      | Exclude<EditInviteLinkAsBotFailureReason, 'bot_not_found'>
+      | 'private_chat_has_no_invite_links';
+  };
+
+export interface RevokeChatInviteLinkRequest {
+  /** The Bot API `chat_id`, as `SendRequestOptions` describes it. */
+  readonly chatId: number;
+  /** The Bot API `invite_link`, the whole link; empty when the bot named none. */
+  readonly inviteLink: string;
+}
+
+export type BotApiRevokeChatInviteLinkResult =
+  | { readonly revoked: true; readonly inviteLink: BotApiChatInviteLink }
+  | {
+    readonly revoked: false;
+    readonly reason:
+      | Exclude<RevokeInviteLinkAsBotFailureReason, 'bot_not_found'>
+      | 'private_chat_has_no_invite_links';
+  };
+
 export interface DecideChatJoinRequestRequest {
   /** The Bot API `chat_id`, as `SendRequestOptions` describes it. */
   readonly chatId: number;
@@ -1988,6 +2025,8 @@ interface BotMessageViews {
 
 interface ChatAdmission {
   createInviteLinkAsBot(input: CreateInviteLinkAsBotInput): CreateInviteLinkAsBotResult;
+  editInviteLinkAsBot(input: EditInviteLinkAsBotInput): EditInviteLinkAsBotResult;
+  revokeInviteLinkAsBot(input: RevokeInviteLinkAsBotInput): RevokeInviteLinkAsBotResult;
   approveJoinRequestAsBot(input: DecideJoinRequestAsBotInput): DecideJoinRequestAsBotResult;
   declineJoinRequestAsBot(input: DecideJoinRequestAsBotInput): DecideJoinRequestAsBotResult;
 }
@@ -2014,7 +2053,10 @@ interface BotApiServiceDependencies {
   readonly botMessages: BotMessaging;
   readonly supergroupBotMessages: SupergroupBotMessaging;
   readonly chatMemberships: ChatMemberships;
-  /** Creates the invite links that let accounts join supergroups, and decides join requests. */
+  /**
+   * Creates, edits and revokes the invite links that let accounts join supergroups, and decides
+   * join requests.
+   */
   readonly chatAdmission: ChatAdmission;
   readonly botMessageViews: BotMessageViews;
   /** Pins and unpins messages, and finds the pinned message that `getChat` shows. */
@@ -4134,9 +4176,7 @@ export class BotApiService {
     if (isUserId(chatId)) {
       return {
         created: false,
-        reason: this.#isPrivateChatKnown(authenticatedBot, chatId)
-          ? 'private_chat_has_no_invite_links'
-          : 'chat_not_found',
+        reason: this.#describePrivateChatInviteLinkFailure(authenticatedBot, chatId),
       };
     }
     const result = this.#chatAdmission.createInviteLinkAsBot({
@@ -4154,6 +4194,80 @@ export class BotApiService {
       created: true,
       inviteLink: this.#botMessageViews.viewChatInviteLink(result.link, authenticatedBot.id),
     };
+  }
+
+  /**
+   * Edits an invite link the bot created, as `ChatAdmissionService.editInviteLinkAsBot` does, and
+   * returns it as its creator sees it; a private chat has no invite links.
+   */
+  editChatInviteLink(
+    authenticatedBot: VirtualBotProfile,
+    { chatId, inviteLink, name, expiresAtUnixSeconds, memberLimit, createsJoinRequest }:
+      EditChatInviteLinkRequest,
+  ): BotApiEditChatInviteLinkResult {
+    if (isUserId(chatId)) {
+      return {
+        edited: false,
+        reason: this.#describePrivateChatInviteLinkFailure(authenticatedBot, chatId),
+      };
+    }
+    const result = this.#chatAdmission.editInviteLinkAsBot({
+      editorBotId: authenticatedBot.id,
+      chatId,
+      inviteLinkUrl: inviteLink,
+      name,
+      ...(expiresAtUnixSeconds === undefined ? {} : { expiresAtUnixSeconds }),
+      ...(memberLimit === undefined ? {} : { memberLimit }),
+      createsJoinRequest,
+    });
+    if (!result.edited) {
+      return { edited: false, reason: excludeMissingBotFailure(authenticatedBot, result.reason) };
+    }
+    return {
+      edited: true,
+      inviteLink: this.#botMessageViews.viewChatInviteLink(result.link, authenticatedBot.id),
+    };
+  }
+
+  /**
+   * Revokes an invite link the bot created, as `ChatAdmissionService.revokeInviteLinkAsBot` does,
+   * and returns the revoked link as its creator sees it; a private chat has no invite links.
+   */
+  revokeChatInviteLink(
+    authenticatedBot: VirtualBotProfile,
+    { chatId, inviteLink }: RevokeChatInviteLinkRequest,
+  ): BotApiRevokeChatInviteLinkResult {
+    if (isUserId(chatId)) {
+      return {
+        revoked: false,
+        reason: this.#describePrivateChatInviteLinkFailure(authenticatedBot, chatId),
+      };
+    }
+    const result = this.#chatAdmission.revokeInviteLinkAsBot({
+      revokerBotId: authenticatedBot.id,
+      chatId,
+      inviteLinkUrl: inviteLink,
+    });
+    if (!result.revoked) {
+      return { revoked: false, reason: excludeMissingBotFailure(authenticatedBot, result.reason) };
+    }
+    return {
+      revoked: true,
+      inviteLink: this.#botMessageViews.viewChatInviteLink(result.link, authenticatedBot.id),
+    };
+  }
+
+  /**
+   * Why a bot cannot manage invite links in a private chat, which has none, as TDLib's
+   * `can_manage_dialog_invite_links` refuses; a private chat the bot does not know is not found.
+   */
+  #describePrivateChatInviteLinkFailure(
+    authenticatedBot: VirtualBotProfile,
+    chatId: number,
+  ): 'private_chat_has_no_invite_links' | 'chat_not_found' {
+    return this.#isPrivateChatKnown(authenticatedBot, chatId)
+      ? 'private_chat_has_no_invite_links'
+      : 'chat_not_found';
   }
 
   /**
