@@ -112,7 +112,8 @@ is not deleted holds, inspection shows with that message, and `message_reaction`
 Reactions belong to the message that holds them. Deleting a message deletes its reactions and sends
 no update; its reactions can no longer be read, since the message cannot be found. Once an album's
 first message is deleted, the next message holds the album's reactions, starting with none. Edits
-keep a message's reactions, and forwards and copies start without any.
+keep a message's reactions, as does stopping the poll a message shows, whoever sent it, and forwards
+and copies start without any.
 
 ## Intentional deviations
 

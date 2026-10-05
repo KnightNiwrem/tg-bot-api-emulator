@@ -415,6 +415,48 @@ Deno.test('album reactions go to the first message that is not deleted', async (
   }
 });
 
+Deno.test("an account's poll takes reactions, which stopping the poll keeps", async () => {
+  const fixture = await createReactionFixture();
+  const { session, owner, ada, adminBot, team } = fixture;
+  try {
+    await readUpdates(fixture, adminBot, ['message_reaction']);
+    const pollMessage = await ada.sendPoll({
+      to: team,
+      poll: { question: 'Lunch?', options: [{ text: 'Pizza' }, { text: 'Soup' }] },
+    });
+    const key = { chat: team, message_id: pollMessage.message_id };
+
+    await owner.setMessageReaction({ ...key, reaction: [{ type: 'emoji', emoji: '🍌' }] });
+    expectEqual(
+      await callBotApi(fixture, adminBot, 'setMessageReaction', {
+        chat_id: team.chatId,
+        message_id: pollMessage.message_id,
+        reaction: [{ type: 'emoji', emoji: '🤔' }],
+      }),
+      { ok: true, result: true },
+      "Expected the bot to react to the account's poll",
+    );
+    const stopped = await ada.stopPoll(key);
+    const afterStop = await owner.getMessageReactions(key);
+
+    expectEqual(
+      [stopped.poll?.is_closed, afterStop.message.poll?.is_closed, afterStop.reactions],
+      [true, true, [
+        { user_id: owner.id, reaction: [{ type: 'emoji', emoji: '🍌' }] },
+        { user_id: adminBot.id, reaction: [{ type: 'emoji', emoji: '🤔' }] },
+      ]],
+      'Expected the closed poll to keep its reactions',
+    );
+    expectEqual(
+      (await readUpdates(fixture, adminBot)).map((update) => update.message_reaction?.message_id),
+      [pollMessage.message_id],
+      "Expected one update, for the account's reaction",
+    );
+  } finally {
+    await session.end();
+  }
+});
+
 Deno.test('reactions stay inside their session', async () => {
   const api = createEmulationApi({
     sessionLifecycle: createSessionLifecycleService(),
