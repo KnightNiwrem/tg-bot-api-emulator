@@ -1,5 +1,5 @@
 import { PollRepository } from '../src/repositories/poll.ts';
-import { normalizeNewPoll, type SpecifiedPoll } from '../src/services/poll_normalization.ts';
+import { normalizeNewPoll } from '../src/services/poll_normalization.ts';
 import {
   checkPollAnswer,
   countPollVoters,
@@ -7,13 +7,15 @@ import {
   type NewPoll,
   type Poll,
   showsQuizSolution,
+  type SpecifiedPoll,
   toChosenOptionPositions,
 } from '../src/types/poll.ts';
+import type { PrivateMessage, SupergroupMessage } from '../src/types/virtual_message.ts';
 
 const NO_MENTIONABLE_USERS = { isMentionableUser: () => false };
 
 const NEW_POLL: NewPoll = {
-  creatorBotId: 1,
+  creator: { kind: 'bot', botId: 1 },
   question: { text: 'Lunch?', entities: [] },
   optionTexts: [{ text: 'Pizza', entities: [] }, { text: 'Pasta', entities: [] }, {
     text: 'Soup',
@@ -27,7 +29,7 @@ const NEW_POLL: NewPoll = {
 };
 
 const SPECIFIED_POLL: SpecifiedPoll = {
-  creatorBotId: 1,
+  creator: { kind: 'bot', botId: 1 },
   question: { text: 'Lunch?' },
   options: [{ text: 'Pizza' }, { text: 'Pasta' }],
   isAnonymous: true,
@@ -159,7 +161,8 @@ Deno.test('normalizeNewPoll checks a poll as TDLib does and keeps only custom em
         { text: '/pizza 🍕', entities: [{ ...customEmoji, offset: 7, length: 2 }] },
         { text: 'Pasta', entities: [] },
       ]) ||
-    poll.creatorBotId !== 1 || !poll.isAnonymous
+    JSON.stringify(poll.creator) !== JSON.stringify({ kind: 'bot', botId: 1 }) ||
+    !poll.isAnonymous
   ) {
     throw new Error(`Expected trimmed text with only custom emoji, got ${JSON.stringify(poll)}`);
   }
@@ -198,6 +201,24 @@ Deno.test('normalizeNewPoll refuses polls in the order TDLib checks them', () =>
   }, NO_MENTIONABLE_USERS);
   if (!atLimits.normalized) {
     throw new Error('Expected a question of 300 characters and 12 options to be accepted');
+  }
+});
+
+Deno.test('normalizeNewPoll limits an account question to 255 characters, as TDLib does', () => {
+  const accountPoll = (questionLength: number) =>
+    normalizeNewPoll({
+      ...SPECIFIED_POLL,
+      creator: { kind: 'account', accountId: 7 },
+      question: { text: '?'.repeat(questionLength) },
+    }, NO_MENTIONABLE_USERS);
+  const atLimit = accountPoll(255);
+  const overLimit = accountPoll(256);
+  if (
+    !atLimit.normalized ||
+    JSON.stringify(atLimit.poll.creator) !== JSON.stringify({ kind: 'account', accountId: 7 }) ||
+    overLimit.normalized || overLimit.failure.reason !== 'poll_question_too_long'
+  ) {
+    throw new Error(`Unexpected account question limit: ${JSON.stringify([atLimit, overLimit])}`);
   }
 });
 
@@ -259,9 +280,9 @@ Deno.test('showsQuizSolution shows a quiz solution to its bot, its voters, and o
   const retracted = polls.setVoterAnswer(quiz.id, 8, []);
   const closed = polls.closePoll(quiz.id);
   const regular = polls.addPoll(NEW_POLL);
-  const observers = [NEW_POLL.creatorBotId, 7, 8];
+  const observers = [1, 7, 8];
   const visibility = [quiz, answered, retracted, closed, regular].map((poll) =>
-    observers.map((observerId) => showsQuizSolution(poll, observerId))
+    observers.map((observerId) => showsQuizSolution(poll, { observerId }))
   );
   if (
     JSON.stringify(visibility) !== JSON.stringify([
@@ -273,6 +294,61 @@ Deno.test('showsQuizSolution shows a quiz solution to its bot, its voters, and o
     ])
   ) {
     throw new Error(`Unexpected quiz solution visibility: ${JSON.stringify(visibility)}`);
+  }
+});
+
+Deno.test('showsQuizSolution shows an account quiz to the bot of the private chat it was sent to', () => {
+  const polls = new PollRepository();
+  const quiz = polls.addPoll({
+    ...NEW_POLL,
+    creator: { kind: 'account', accountId: 7 },
+    type: {
+      kind: 'quiz',
+      correctOptionPositions: [1],
+      explanation: { text: '', entities: [] },
+    },
+  });
+  const privateMessage: PrivateMessage = {
+    kind: 'private_message',
+    id: 'message-1',
+    conversation: { accountId: 7, botId: 1 },
+    authorRole: 'account',
+    sentAtUnixSeconds: 0,
+    content: { kind: 'poll', pollId: quiz.id },
+    isContentProtected: false,
+    isSilent: false,
+    isPinned: false,
+  };
+  const forward: PrivateMessage = {
+    ...privateMessage,
+    id: 'message-2',
+    conversation: { accountId: 8, botId: 2 },
+    forwardInfo: {
+      originalSender: { kind: 'user', userId: 7 },
+      originalSentAtUnixSeconds: 0,
+    },
+  };
+  const supergroupMessage: SupergroupMessage = {
+    kind: 'supergroup_message',
+    id: 'message-3',
+    chatId: -1_000_000_000_001,
+    author: { kind: 'account', accountId: 7 },
+    sentAtUnixSeconds: 0,
+    content: { kind: 'poll', pollId: quiz.id },
+    isContentProtected: false,
+    isSilent: false,
+    isPinned: false,
+  };
+  const visibility = [
+    showsQuizSolution(quiz, { observerId: 7 }),
+    showsQuizSolution(quiz, { observerId: 1, pollMessage: privateMessage }),
+    showsQuizSolution(quiz, { observerId: 1 }),
+    showsQuizSolution(quiz, { observerId: 2, pollMessage: forward }),
+    showsQuizSolution(quiz, { observerId: 1, pollMessage: supergroupMessage }),
+    showsQuizSolution(quiz, { observerId: 8, pollMessage: privateMessage }),
+  ];
+  if (JSON.stringify(visibility) !== JSON.stringify([true, true, false, false, false, false])) {
+    throw new Error(`Unexpected account quiz solution visibility: ${JSON.stringify(visibility)}`);
   }
 });
 

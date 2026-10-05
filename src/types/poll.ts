@@ -1,4 +1,4 @@
-import type { FormattedText } from './virtual_message.ts';
+import type { ChatMessage, FormattedText, TextEntity } from './virtual_message.ts';
 
 /**
  * Telegram's poll `id`: the decimal text of the positive 64-bit identifier of a poll. Every
@@ -8,6 +8,12 @@ export type PollId = string;
 
 /** The most characters of a poll question that Telegram accepts from bots, as TDLib limits it. */
 export const MAX_POLL_QUESTION_LENGTH = 300;
+
+/**
+ * The most characters of a poll question that Telegram accepts from users, as TDLib's
+ * `create_input_message_content` limits it for a client that is not a bot.
+ */
+export const MAX_ACCOUNT_POLL_QUESTION_LENGTH = 255;
 
 /** The most characters of a poll option's text, as TDLib's `PollOption::get_poll_option` limits. */
 export const MAX_POLL_OPTION_TEXT_LENGTH = 100;
@@ -66,13 +72,23 @@ export interface PollOption {
   readonly text: FormattedText;
 }
 
+/**
+ * The account or bot that created a poll by sending it, which owns it. Only the creator stops the
+ * poll, through the message that sent it, and only a creating bot receives the poll's updates: as
+ * the Bot API documents for `Update`, bots receive votes only in polls they sent.
+ */
+export type PollCreator =
+  | { readonly kind: 'account'; readonly accountId: number }
+  | { readonly kind: 'bot'; readonly botId: number };
+
+/** The user ID of a poll's creator, an account's or a bot's. */
+export function getPollCreatorId(creator: PollCreator): number {
+  return creator.kind === 'account' ? creator.accountId : creator.botId;
+}
+
 /** A poll to create, whose question and options Telegram has normalized. */
 export interface NewPoll {
-  /**
-   * The bot that sends the poll, which owns it: only it may stop the poll, and only it receives
-   * the poll's updates.
-   */
-  readonly creatorBotId: number;
+  readonly creator: PollCreator;
   /** The question, whose only entities are custom emoji, as TDLib's `create_poll` keeps them. */
   readonly question: FormattedText;
   /** The options' texts in the order clients show them, at least one and at most 12. */
@@ -89,14 +105,45 @@ export interface NewPoll {
   readonly closingTime?: PollClosingTime;
 }
 
+/** Text of a poll as its sender specified it, before Telegram's normalization. */
+export interface SpecifiedPollText {
+  readonly text: string;
+  /** Formatting the sender specified; omitted for none. */
+  readonly entities?: readonly TextEntity[];
+}
+
+/** A poll's type as its sender specified it: a quiz's explanation is not yet normalized. */
+export type SpecifiedPollType =
+  | { readonly kind: 'regular' }
+  | {
+    readonly kind: 'quiz';
+    /** The positions of the correct options, as the sender listed them. */
+    readonly correctOptionPositions: readonly number[];
+    /** Empty for no explanation. */
+    readonly explanation: SpecifiedPollText;
+  };
+
+/** A poll as its creator specified it, before Telegram's normalization. */
+export type SpecifiedPoll = Omit<NewPoll, 'question' | 'optionTexts' | 'type'> & {
+  readonly question: SpecifiedPollText;
+  readonly options: readonly SpecifiedPollText[];
+  readonly type: SpecifiedPollType;
+};
+
+/**
+ * A poll as an account specifies it in its client, which sends it open and without a closing
+ * time: TDLib creates a user's poll open whatever it asks, and the emulator does not let accounts
+ * set closing times.
+ */
+export type SpecifiedAccountPoll = Omit<SpecifiedPoll, 'creator' | 'isClosed' | 'closingTime'>;
+
 /**
  * A poll and its votes. Only accounts vote; the poll keeps each voter's answer, from which its
  * counts follow, so the counts always agree with the answers.
  */
 export interface Poll {
   readonly id: PollId;
-  /** As `NewPoll` describes it. */
-  readonly creatorBotId: number;
+  readonly creator: PollCreator;
   readonly question: FormattedText;
   readonly options: readonly PollOption[];
   readonly isAnonymous: boolean;
@@ -145,15 +192,39 @@ export function getVoterAnswer(poll: Poll, voterId: number): readonly number[] {
 }
 
 /**
- * Whether an observer sees which options of a quiz are correct, and its explanation: once the quiz
- * is closed, as the bot that sent it, or as an account that answered it, as Telegram's servers
- * give them to TDLib. An account that retracts its answer to a quiz that allows revoting no longer
- * sees them: TDLib's `get_poll_object` hides them for a retraction, and its `on_get_poll` accepts
- * servers clearing them only for such a quiz. A regular poll has neither.
+ * How an observer meets a poll: by its user ID, and through the message that shows the poll to it,
+ * if any. A `poll` update, or a reply to a message of another chat, shows the poll without its
+ * message.
  */
-export function showsQuizSolution(poll: Poll, observerId: number): boolean {
+export interface PollObservation {
+  readonly observerId: number;
+  /** The message showing the poll to the observer; omitted when it sees the poll otherwise. */
+  readonly pollMessage?: ChatMessage;
+}
+
+/**
+ * Whether an observer sees which options of a quiz are correct, and its explanation: once the quiz
+ * is closed, as its creator, as an account that answered it, as Telegram's servers give them to
+ * TDLib, or as a bot through the message that sent the quiz, not a forward, to its private chat,
+ * as the Bot API documents for `correct_option_ids`. An account that retracts its answer to a quiz
+ * that allows revoting no longer sees them: TDLib's `get_poll_object` hides them for a retraction,
+ * and its `on_get_poll` accepts servers clearing them only for such a quiz. A regular poll has
+ * neither.
+ */
+export function showsQuizSolution(
+  poll: Poll,
+  { observerId, pollMessage }: PollObservation,
+): boolean {
   return poll.type.kind === 'quiz' &&
-    (poll.isClosed || poll.creatorBotId === observerId || poll.answersByVoterId.has(observerId));
+    (poll.isClosed || getPollCreatorId(poll.creator) === observerId ||
+      poll.answersByVoterId.has(observerId) ||
+      (pollMessage !== undefined && isSentToBotPrivateChat(pollMessage, observerId)));
+}
+
+/** Whether a message was sent, not forwarded, to the private chat of the given bot. */
+function isSentToBotPrivateChat(message: ChatMessage, botId: number): boolean {
+  return message.kind === 'private_message' && message.conversation.botId === botId &&
+    message.forwardInfo === undefined;
 }
 
 /**

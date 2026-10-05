@@ -702,6 +702,30 @@ export function canBotEditMessage(message: ChatMessage, botId: number): boolean 
   }
 }
 
+/**
+ * Whether an account may edit a message it has found, as TDLib's `can_edit_message` decides for a
+ * user: only a message the account wrote, other than a service message, a forward, or a message
+ * sent through an inline bot, which only that bot edits.
+ */
+export function canAccountEditMessage(message: ChatMessage, accountId: number): boolean {
+  if (
+    !isContentMessage(message) || message.forwardInfo !== undefined ||
+    message.viaBot !== undefined
+  ) {
+    return false;
+  }
+  switch (message.kind) {
+    case 'private_message':
+      return message.authorRole === 'account' && message.conversation.accountId === accountId;
+    case 'supergroup_message':
+      return message.author.kind === 'account' && message.author.accountId === accountId;
+    default: {
+      const unhandledMessage: never = message;
+      throw new Error(`Unhandled message: ${JSON.stringify(unhandledMessage)}`);
+    }
+  }
+}
+
 /** The account or bot that wrote a message, or made the change a service message records. */
 export function getMessageAuthorId(message: ChatMessage): number {
   switch (message.kind) {

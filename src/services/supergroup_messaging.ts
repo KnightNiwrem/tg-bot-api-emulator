@@ -710,9 +710,10 @@ export class SupergroupMessagingService {
   }
 
   /**
-   * Sends text, captioned media, or a contact from an account to a supergroup it is a member of.
-   * As a Telegram client does, the text or caption is normalized, which marks bot commands, and
-   * then the account must be allowed to send the content, as `#findMissingSendPermission` decides.
+   * Sends text, captioned media, a contact, a location, or a new poll from an account to a
+   * supergroup it is a member of. As a Telegram client does, the text or caption is normalized,
+   * which marks bot commands, and a poll is checked as `normalizeNewPoll` checks it; then the
+   * account must be allowed to send the content, as `#findMissingSendPermission` decides.
    * The account's own contact needs the phone number the account was created with.
    */
   sendAccountMessage(input: SendSupergroupAccountMessageInput): SendSupergroupAccountMessageResult {

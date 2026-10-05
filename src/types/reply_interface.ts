@@ -2,6 +2,7 @@ import type { DefaultAdministratorRights } from './bot_default_administrator_rig
 import type { ButtonAppearance } from './button_appearance.ts';
 import type { GeoLocation } from './geo_location.ts';
 import type { InlineKeyboard } from './inline_keyboard.ts';
+import type { SpecifiedAccountPoll } from './poll.ts';
 
 /**
  * A request that the user choose users to share with the bot, as the Bot API's
@@ -75,8 +76,9 @@ export type ReplyKeyboardButtonRequest =
 
 /**
  * What the user's client answers a reply keyboard button's request with, by the request's kind:
- * the location the client reports, the users the user chose, or the chat the user chose. A button
- * that requests the user's contact takes no answer, as the client shares the user's own contact.
+ * the location the client reports, the users the user chose, the chat the user chose, or the poll
+ * the user created. A button that requests the user's contact takes no answer, as the client
+ * shares the user's own contact.
  */
 export type ReplyKeyboardRequestAnswer =
   | { readonly kind: 'location'; readonly location: GeoLocation }
@@ -85,7 +87,19 @@ export type ReplyKeyboardRequestAnswer =
     /** The chosen users' IDs, in the order the user chose them. */
     readonly userIds: readonly number[];
   }
-  | { readonly kind: 'chat'; readonly chatId: number };
+  | { readonly kind: 'chat'; readonly chatId: number }
+  | { readonly kind: 'poll'; readonly poll: SpecifiedAccountPoll };
+
+/**
+ * Whether a poll the user created is of the type a `request_poll` button allows, as Telegram's
+ * clients lock the poll creation form's quiz switch when the button names a type.
+ */
+export function isRequestedPollType(
+  request: Extract<ReplyKeyboardButtonRequest, { readonly kind: 'poll' }>,
+  poll: SpecifiedAccountPoll,
+): boolean {
+  return request.pollType === undefined || request.pollType === poll.type.kind;
+}
 
 /**
  * A reply keyboard button, which sends its text to the chat as the user's message, or asks the

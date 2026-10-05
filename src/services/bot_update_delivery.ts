@@ -45,7 +45,7 @@ interface BotMessageViews {
     callbackQuery: CallbackQuery,
     message: ChatMessage,
   ): BotApiCallbackQuery;
-  viewPollForBot(poll: Poll): BotApiPoll;
+  viewPollForCreator(poll: Poll): BotApiPoll;
   viewPollAnswerForBot(event: PollAnswerChangedEvent): BotApiPollAnswer;
   viewInlineQueryForBot(inlineQuery: InlineQuery): BotApiInlineQuery;
   viewChosenInlineResultForBot(event: InlineQueryResultChosenEvent): BotApiChosenInlineResult;
@@ -325,27 +325,35 @@ export class BotUpdateDeliveryService {
    * A changed answer to a poll is observed only by the bot that sent the poll, as the Bot API
    * documents, wherever the answer was given: through the poll's message or a forward of it. The
    * bot receives the voter's `poll_answer` only for a poll that is not anonymous, then the poll's
-   * new counts.
+   * new counts. No bot observes answers to an account's poll.
    */
   #deliverPollAnswerChange(event: PollAnswerChangedEvent): void {
     const { poll } = event;
-    if (!poll.isAnonymous && this.#isSubscribed(poll.creatorBotId, 'poll_answer')) {
+    if (poll.creator.kind !== 'bot') {
+      return;
+    }
+    const { botId } = poll.creator;
+    if (!poll.isAnonymous && this.#isSubscribed(botId, 'poll_answer')) {
       this.#botUpdates.enqueuePollAnswerUpdate(
-        poll.creatorBotId,
+        botId,
         this.#botMessageViews.viewPollAnswerForBot(event),
       );
     }
     this.#deliverPollState(poll);
   }
 
-  /** A poll's new state is observed only by the bot that sent the poll. */
+  /**
+   * A poll's new state is observed only by the bot that sent the poll. The Bot API documents that
+   * bots also receive updates about polls stopped manually, but which bots Telegram's servers
+   * tell is not in the open-source code, so no bot observes the state of an account's poll.
+   */
   #deliverPollState(poll: Poll): void {
-    if (!this.#isSubscribed(poll.creatorBotId, 'poll')) {
+    if (poll.creator.kind !== 'bot' || !this.#isSubscribed(poll.creator.botId, 'poll')) {
       return;
     }
     this.#botUpdates.enqueuePollUpdate(
-      poll.creatorBotId,
-      this.#botMessageViews.viewPollForBot(poll),
+      poll.creator.botId,
+      this.#botMessageViews.viewPollForCreator(poll),
     );
   }
 

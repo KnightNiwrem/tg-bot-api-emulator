@@ -7,6 +7,7 @@ import type { MessageForward } from '../types/message_forward.ts';
 import {
   type BotMessageReplyMarkup,
   findReplyKeyboardButton,
+  isRequestedPollType,
   type ReplyInterface,
   type ReplyInterfaceMarkup,
   type ReplyKeyboardRequestAnswer,
@@ -538,6 +539,7 @@ export type PressReplyKeyboardButtonResult =
       | 'reply_keyboard_button_request_unsupported'
       | 'reply_keyboard_button_answer_missing'
       | 'reply_keyboard_button_answer_not_requested'
+      | 'requested_poll_type_mismatch'
       | SharedUsersFailureReason
       | SharedChatFailureReason;
   };
@@ -815,9 +817,10 @@ export class PrivateMessagingService {
   }
 
   /**
-   * Sends text, captioned media, or a contact from an account to its private chat with a bot. As
-   * a Telegram client does, the text or caption is normalized, which marks bot commands. The
-   * account's own contact needs the phone number the account was created with.
+   * Sends text, captioned media, a contact, a location, or a new poll from an account to its
+   * private chat with a bot. As a Telegram client does, the text or caption is normalized, which
+   * marks bot commands, and a poll is checked as `normalizeNewPoll` checks it. The account's own
+   * contact needs the phone number the account was created with.
    */
   sendAccountMessage(input: SendAccountMessageInput): SendAccountMessageResult {
     const senderResolution = this.#resolveAccountSender(input.fromAccountId, input.to.botId);
@@ -1409,9 +1412,11 @@ export class PrivateMessagingService {
    *
    * A button that requests users or a chat shares those the press answers with, as
    * `resolveSharedUsers` and `resolveSharedChat` accept them, in a service message of the account
-   * that carries the request's ID and replies to nothing, as TDLib shows it. Buttons with other
-   * requests cannot be pressed, which the emulator does not model. A press that fails changes
-   * nothing.
+   * that carries the request's ID and replies to nothing, as TDLib shows it. A button that requests
+   * a poll sends the poll the press answers with, as `sendAccountMessage` sends one, if it is of
+   * the requested type; it replies to nothing, as Telegram Desktop's `ActivateBotCommand` opens
+   * poll creation without a reply. Buttons with other requests cannot be pressed, which the
+   * emulator does not model. A press that fails changes nothing.
    */
   pressReplyKeyboardButton(input: PressReplyKeyboardButtonInput): PressReplyKeyboardButtonResult {
     if (this.#accounts.getById(input.fromAccountId) === undefined) {
@@ -1484,6 +1489,18 @@ export class PrivateMessagingService {
           (conversation) =>
             resolveSharedChat(request, answer.chatId, conversation, this.#sharedPeers),
         );
+      case 'poll':
+        if (answer?.kind !== 'poll') {
+          return { sent: false, reason: 'reply_keyboard_button_answer_missing' };
+        }
+        if (!isRequestedPollType(request, answer.poll)) {
+          return { sent: false, reason: 'requested_poll_type_mismatch' };
+        }
+        return this.sendAccountMessage({
+          fromAccountId: input.fromAccountId,
+          to: input.chat,
+          content: { kind: 'poll', poll: answer.poll },
+        });
       default:
         return { sent: false, reason: 'reply_keyboard_button_request_unsupported' };
     }
