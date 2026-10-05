@@ -5,8 +5,9 @@ description: >-
   accounts use it through the emulation API, and administrator bots subscribed to `chat_member`
   see it in the update for a member that joined through it, the whole link only if they created
   it. A link that creates join requests sends administrator bots holding `can_invite_users` a
-  `chat_join_request` update for each account that uses it. Editing, revoking, and exporting links
-  are not supported.
+  `chat_join_request` update for each account that uses it. The bot that created a link edits
+  it with `editChatInviteLink` and revokes it with `revokeChatInviteLink`; exporting primary
+  links is not supported.
 parameters:
   - $ref: ../components/parameters/SessionId.yaml
   - $ref: ../components/parameters/BotToken.yaml

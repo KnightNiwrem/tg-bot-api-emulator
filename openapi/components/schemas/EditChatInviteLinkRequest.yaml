@@ -1,0 +1,46 @@
+type: object
+additionalProperties: false
+description: >-
+  The new settings of an invite link the bot created. An edit replaces every setting, as TDLib's
+  `editChatInviteLink` does: an omitted name, expiry date or member limit becomes none, and an
+  omitted `creates_join_request` false.
+required:
+  - chat_id
+  - invite_link
+properties:
+  chat_id:
+    $ref: ./ChatIdentifier.yaml
+    description: >-
+      Identifier of the supergroup: its negative chat ID, or `@username` for a public one.
+  invite_link:
+    type: string
+    description: >-
+      The whole link, as `createChatInviteLink` answered it to the bot. A link of another chat or
+      session, or one shown with its hash hidden, is unknown.
+  name:
+    type: string
+    default: ''
+    description: >-
+      The link's new name, which Telegram cleans as a chat title: unusual spaces become spaces,
+      each run of spaces and line breaks one space, and at most 32 characters are kept. Empty
+      for none.
+  expire_date:
+    type: integer
+    minimum: 0
+    description: >-
+      Unix time when the link stops working, which must lie in the future; 0 or omitted for no
+      expiry date. Either way, the new date has not arrived, so an expired link works again.
+  member_limit:
+    type: integer
+    minimum: 0
+    maximum: 99999
+    description: >-
+      How many users that joined through the link may be members at once, 1-99999; 0 or
+      omitted for no limit. Members that joined before stay, even beyond a lower limit. A
+      greater limit is refused with `Bad Request: USAGE_LIMIT_INVALID`.
+  creates_join_request:
+    type: boolean
+    default: false
+    description: >-
+      Whether users who use the link from now on send a join request instead of joining. Such a
+      link takes no member limit. Pending requests sent through the link stay pending either way.

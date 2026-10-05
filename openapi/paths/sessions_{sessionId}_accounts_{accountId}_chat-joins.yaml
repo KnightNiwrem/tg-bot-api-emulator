@@ -9,8 +9,9 @@ post:
   summary: Join the supergroup an invite link leads to, or request to join it
   description: >-
     Joins the supergroup as Telegram's clients do with an invite link: the link must be one of
-    the session's, a test must not have made its expiry date arrive, and its member limit must
-    leave a place, counting the members that joined through it and still are. A restricted user
+    the session's and not revoked, a test must not have made its expiry date arrive, and its
+    member limit must leave a place, counting the members that joined through it and still are.
+    The link's settings are those of its last edit. A restricted user
     joins with its restriction. A service message from the account records the join with
     `new_chat_members`, which every bot of the supergroup receives, privacy mode
     notwithstanding; administrator bots subscribed to `chat_member` receive the change with the
@@ -47,5 +48,5 @@ post:
         The account is a member of the supergroup already, or its request to join it is pending.
     '410':
       description: >-
-        A test made the link's expiry date arrive, or as many users as its member limit allows
-        joined through it and are members.
+        The bot that created the link revoked it, a test made its expiry date arrive, or as many
+        users as its member limit allows joined through it and are members.

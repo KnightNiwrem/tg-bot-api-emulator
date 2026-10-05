@@ -251,6 +251,10 @@ paths:
     $ref: paths/sessions_{sessionId}_bot-api_bot{token}_promoteChatMember.yaml
   /sessions/{sessionId}/bot-api/bot{token}/createChatInviteLink:
     $ref: paths/sessions_{sessionId}_bot-api_bot{token}_createChatInviteLink.yaml
+  /sessions/{sessionId}/bot-api/bot{token}/editChatInviteLink:
+    $ref: paths/sessions_{sessionId}_bot-api_bot{token}_editChatInviteLink.yaml
+  /sessions/{sessionId}/bot-api/bot{token}/revokeChatInviteLink:
+    $ref: paths/sessions_{sessionId}_bot-api_bot{token}_revokeChatInviteLink.yaml
   /sessions/{sessionId}/bot-api/bot{token}/approveChatJoinRequest:
     $ref: paths/sessions_{sessionId}_bot-api_bot{token}_approveChatJoinRequest.yaml
   /sessions/{sessionId}/bot-api/bot{token}/declineChatJoinRequest:
