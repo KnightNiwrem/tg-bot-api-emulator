@@ -65,6 +65,7 @@ import type {
   AccountSendMediaGroupInput,
   AccountSendMessageInput,
   AccountSendPhotoInput,
+  AccountSendPollInput,
   AccountSendVideoInput,
   AccountSendVoiceInput,
   AccountShareOwnContactInput,
@@ -614,6 +615,18 @@ function createVirtualAccountClient(
       });
       return response.message;
     },
+    async sendPoll<Target extends MessageTarget>(
+      input: AccountSendPollInput<Target>,
+    ): Promise<MessageIn<Target>> {
+      const response = await requestJson(fetchImplementation, {
+        method: 'POST',
+        url: `${accountUrl}/messages`,
+        expectedStatus: HTTP_STATUS_CREATED,
+        responseSchema: messageResponseSchemasFor(input.to).sent,
+        body: input,
+      });
+      return response.message;
+    },
     async sendMediaGroup<Target extends MessageTarget>(
       { to, media, reply_to_message_id }: AccountSendMediaGroupInput<Target>,
     ): Promise<readonly MessageIn<Target>[]> {
@@ -970,6 +983,17 @@ function createVirtualAccountClient(
         expectedStatus: HTTP_STATUS_NO_CONTENT,
       });
     },
+    async stopPoll<Target extends MessageTarget>(
+      input: AccountPollMessageInput<Target>,
+    ): Promise<MessageIn<Target>> {
+      const response = await requestJson(fetchImplementation, {
+        method: 'POST',
+        url: `${pollMessageUrl(accountUrl, input)}/poll-closure`,
+        expectedStatus: HTTP_STATUS_OK,
+        responseSchema: messageResponseSchemasFor(input.chat).sent,
+      });
+      return response.message;
+    },
     async sendInlineQuery(input: SendInlineQueryInput): Promise<InlineQuery> {
       const response = await requestJson(fetchImplementation, {
         method: 'POST',
@@ -1094,11 +1118,14 @@ function pinnedMessageUrl(
   return `${conversationUrl(accountUrl, chat)}/pinned-messages/${encodeURIComponent(message_id)}`;
 }
 
+/** The URL of a message of an account's chat that shows a poll. */
+function pollMessageUrl(accountUrl: string, { chat, message_id }: AccountPollMessageInput): string {
+  return `${conversationUrl(accountUrl, chat)}/messages/${encodeURIComponent(message_id)}`;
+}
+
 /** The URL of an account's answer to the poll a message of its chat shows. */
-function pollAnswerUrl(accountUrl: string, { chat, message_id }: AccountPollMessageInput): string {
-  return `${conversationUrl(accountUrl, chat)}/messages/${
-    encodeURIComponent(message_id)
-  }/poll-answer`;
+function pollAnswerUrl(accountUrl: string, input: AccountPollMessageInput): string {
+  return `${pollMessageUrl(accountUrl, input)}/poll-answer`;
 }
 
 interface MessageResponseSchemas<Target extends MessageTarget> {

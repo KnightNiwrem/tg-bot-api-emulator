@@ -292,6 +292,53 @@ export interface AccountSendLocationInput<Target extends MessageTarget = Message
   readonly reply_to_message_id?: number;
 }
 
+/** An option of a poll an account creates: its text, of which only custom emoji stay formatted. */
+export interface AccountPollOptionInput {
+  /** From 1 to 100 characters once trimmed. */
+  readonly text: string;
+  readonly text_entities?: readonly MessageEntityInput[];
+}
+
+/** The question, options, and settings of any poll an account creates. */
+interface AccountPollSettingsInput {
+  /** From 1 to 255 characters once trimmed; only custom emoji stay formatted. */
+  readonly question: string;
+  readonly question_entities?: readonly MessageEntityInput[];
+  /** From 1 to 12 options, in the order clients show them. */
+  readonly options: readonly AccountPollOptionInput[];
+  /** Hides who voted for what; `true` when omitted. */
+  readonly is_anonymous?: boolean;
+  /** Lets a voter choose several options; `false` when omitted. */
+  readonly allows_multiple_answers?: boolean;
+  /**
+   * Lets a voter change or retract its answer; when omitted, `true` for a regular poll and
+   * `false` for a quiz.
+   */
+  readonly allows_revoting?: boolean;
+}
+
+/**
+ * A poll an account creates, which it sends open and without a closing time: a regular poll, or a
+ * quiz with its correct options and an optional explanation.
+ */
+export type AccountPollInput =
+  | (AccountPollSettingsInput & { readonly type?: 'regular' })
+  | (AccountPollSettingsInput & {
+    readonly type: 'quiz';
+    /** The positions of the correct options, counted from 0, in increasing order; at least one. */
+    readonly correct_option_ids: readonly number[];
+    /** At most 200 characters and 2 line feeds; omitted for none. */
+    readonly explanation?: string;
+    readonly explanation_entities?: readonly MessageEntityInput[];
+  });
+
+export interface AccountSendPollInput<Target extends MessageTarget = MessageTarget> {
+  readonly to: Target;
+  readonly poll: AccountPollInput;
+  /** The ID of the chat's message to reply to, as message history shows it. */
+  readonly reply_to_message_id?: number;
+}
+
 export interface AccountShareOwnContactInput<Target extends MessageTarget = MessageTarget> {
   readonly to: Target;
   /** The ID of the chat's message to reply to, as message history shows it. */
@@ -1813,6 +1860,11 @@ export interface PressReplyKeyboardButtonInput<Target extends MessageTarget = Me
    * a member and hold the rights the request requires of it, which the press does not grant.
    */
   readonly shared_chat_id?: number;
+  /**
+   * The poll the account creates, which a `request_poll` button sends and no other button takes.
+   * It must be of the type the button requests, if any.
+   */
+  readonly poll?: AccountPollInput;
 }
 
 export interface AccountReplyInterfaceInput {
@@ -2024,6 +2076,15 @@ export interface VirtualAccountClient extends VirtualAccountProfile {
    */
   sendLocation<Target extends MessageTarget>(
     input: AccountSendLocationInput<Target>,
+  ): Promise<MessageIn<Target>>;
+  /**
+   * Creates a poll that this account owns, as `sendMessage` sends text; a supergroup needs the
+   * `can_send_polls` permission. Its question and options are checked as Telegram checks them.
+   * Bots see the message, but receive no `poll` or `poll_answer` updates about the poll, which
+   * only a bot's own polls send it.
+   */
+  sendPoll<Target extends MessageTarget>(
+    input: AccountSendPollInput<Target>,
   ): Promise<MessageIn<Target>>;
   /**
    * Sends photos and videos, or documents, as an album, as `sendPhoto`, `sendVideo` and
@@ -2275,6 +2336,14 @@ export interface VirtualAccountClient extends VirtualAccountProfile {
    */
   retractPollAnswer(input: AccountPollMessageInput): Promise<void>;
   /**
+   * Stops the poll this account sent in a message, which then keeps its votes and accepts no more
+   * answers, and returns the message. Fails for a poll another account or bot sent, for a forward
+   * of the poll, and for a poll that is already closed.
+   */
+  stopPoll<Target extends MessageTarget>(
+    input: AccountPollMessageInput<Target>,
+  ): Promise<MessageIn<Target>>;
+  /**
    * Types an inline query for a bot with inline mode turned on, in a chat this account can write
    * to, which sends the bot an `inline_query` update. The bot answers asynchronously; read the
    * answer with `getInlineQuery`.
@@ -2332,8 +2401,11 @@ export interface VirtualAccountClient extends VirtualAccountProfile {
    * location the input reports, which it requires and no other button takes. A `request_users` or
    * `request_chat` button shares the `shared_user_ids` or `shared_chat_id` the input chooses,
    * which it requires and no other button takes, as a `users_shared` or `chat_shared` service
-   * message that replies to nothing. Fails when the chat shows no keyboard with such a button, for
-   * a choice the request's criteria refuse, or for a button with another request.
+   * message that replies to nothing. A `request_poll` button sends the `poll` the input creates,
+   * which it requires and no other button takes, as `sendPoll` sends one, without a reply; the
+   * poll must be of the type the button requests, if any. Fails when the chat shows no keyboard
+   * with such a button, for a choice the request's criteria refuse, or for a button with another
+   * request.
    */
   pressReplyKeyboardButton<Target extends MessageTarget>(
     input: PressReplyKeyboardButtonInput<Target>,
