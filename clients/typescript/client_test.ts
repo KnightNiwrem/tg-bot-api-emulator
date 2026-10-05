@@ -854,6 +854,95 @@ Deno.test('TypeScript client requests to join through a link and lists pending r
   await session.end();
 });
 
+Deno.test('TypeScript client follows an invite link through its edits and revocation', async () => {
+  const { api, client } = createInProcessClient();
+  const session = await client.createSession();
+  const { bot, token } = await session.createBot({
+    first_name: 'Inviter',
+    username: 'inviter_bot',
+  });
+  const { account: owner } = await session.createAccount({ first_name: 'Ada' });
+  const { account: grace } = await session.createAccount({ first_name: 'Grace' });
+  const { account: hopper } = await session.createAccount({ first_name: 'Hopper' });
+  const { account: linus } = await session.createAccount({ first_name: 'Linus' });
+  const supergroup = await owner.createSupergroup({ title: 'Team' });
+  const chat = { type: 'supergroup', chatId: supergroup.id } as const;
+  await owner.addChatMember({ chat, userId: bot.id });
+  await owner.promoteChatMember({ chat, userId: bot.id, rights: { can_invite_users: true } });
+  const callBot = async (method: string, parameters: object) =>
+    await (await api.request(`/sessions/${session.id}/bot-api/bot${token}/${method}`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(parameters),
+    })).json() as { ok: boolean; result?: { invite_link: string; is_revoked: boolean } };
+  const joinStatus = async (account: typeof grace, inviteLink: string) => {
+    try {
+      return (await account.joinChatByInviteLink({ inviteLink })).outcome;
+    } catch (error) {
+      return error instanceof EmulationClientError ? error.status : error;
+    }
+  };
+  const created = await callBot('createChatInviteLink', {
+    chat_id: supergroup.id,
+    expire_date: Math.floor(Date.now() / 1_000) + 3_600,
+  });
+  const inviteLink = created.result?.invite_link ?? '';
+  const describeLink = async () => {
+    const link = (await owner.getChatInviteLinks({ chat }))
+      .find(({ invite_link }) => invite_link === inviteLink);
+    return [
+      link?.expire_date === undefined,
+      link?.creates_join_request,
+      link?.pending_join_request_count,
+      link?.is_expired,
+      link?.is_revoked,
+    ];
+  };
+
+  const graceJoin = await joinStatus(grace, inviteLink);
+  await session.expireChatInviteLink({ chatId: supergroup.id, inviteLink });
+  const whileExpired = [await joinStatus(hopper, inviteLink), await describeLink()];
+  // An edit without an expiry date revives the link, which now creates join requests.
+  const edit = await callBot('editChatInviteLink', {
+    chat_id: supergroup.id,
+    invite_link: inviteLink,
+    creates_join_request: true,
+  });
+  const afterEdit = [await joinStatus(hopper, inviteLink), await describeLink()];
+  const revocation = await callBot('revokeChatInviteLink', {
+    chat_id: supergroup.id,
+    invite_link: inviteLink,
+  });
+  let expiryOfRevokedLink: unknown;
+  try {
+    await session.expireChatInviteLink({ chatId: supergroup.id, inviteLink });
+  } catch (error) {
+    expiryOfRevokedLink = error instanceof EmulationClientError ? error.status : error;
+  }
+  const afterRevocation = [
+    revocation.result?.is_revoked,
+    await joinStatus(linus, inviteLink),
+    await describeLink(),
+    expiryOfRevokedLink,
+    (await owner.getChatJoinRequests({ chat })).map(({ user_id }) => user_id),
+  ];
+
+  const outcomes = [graceJoin, whileExpired, edit.ok, afterEdit, afterRevocation];
+  const expected = [
+    'joined',
+    [410, [false, false, 0, true, false]],
+    true,
+    ['join_request_sent', [true, true, 1, false, false]],
+    [true, 410, [true, true, 1, false, true], 409, [hopper.id]],
+  ];
+  if (JSON.stringify(outcomes) !== JSON.stringify(expected)) {
+    throw new Error(
+      `Expected the link to follow its lifecycle, received ${JSON.stringify(outcomes)}`,
+    );
+  }
+  await session.end();
+});
+
 Deno.test('TypeScript client shows and expires the contact of a pending join request', async () => {
   const { api, client } = createInProcessClient();
   const session = await client.createSession();

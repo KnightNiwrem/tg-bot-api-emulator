@@ -531,8 +531,13 @@ export interface SupergroupInviteLink {
   readonly pending_join_request_count: number;
   /** Whether users who use the link send a join request instead of joining. */
   readonly creates_join_request: boolean;
-  /** Whether `session.expireChatInviteLink` made the link's expiry date arrive. */
+  /**
+   * Whether `session.expireChatInviteLink` made the link's current expiry date arrive; an edit
+   * that gives the link another expiry date, or none, makes it false again.
+   */
   readonly is_expired: boolean;
+  /** Whether the bot that created the link revoked it with `revokeChatInviteLink`, for good. */
+  readonly is_revoked: boolean;
 }
 
 export interface ExpireChatInviteLinkInput {

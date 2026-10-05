@@ -780,7 +780,7 @@ export type BotApiGroupChatBotMember = Exclude<
 
 /**
  * An invite link of a chat, in the field order of the official Bot API server's
- * `JsonChatInviteLink`. Primary, revoked, and subscription links are not supported.
+ * `JsonChatInviteLink`. Primary and subscription links are not supported.
  */
 export interface BotApiChatInviteLink {
   /**
@@ -799,7 +799,7 @@ export interface BotApiChatInviteLink {
   readonly pending_join_request_count?: number;
   readonly creates_join_request: boolean;
   readonly is_primary: false;
-  readonly is_revoked: false;
+  readonly is_revoked: boolean;
 }
 
 /** A change of a user's membership in a chat, in the field order Telegram uses. */

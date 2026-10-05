@@ -355,6 +355,7 @@ Deno.test('an administrator bot creates invite links that keep the settings it c
             pending_join_request_count: 0,
             creates_join_request: false,
             is_expired: false,
+            is_revoked: false,
           },
           {
             invite_link: plainLink.invite_link,
@@ -363,6 +364,7 @@ Deno.test('an administrator bot creates invite links that keep the settings it c
             pending_join_request_count: 0,
             creates_join_request: false,
             is_expired: false,
+            is_revoked: false,
           },
           {
             invite_link: longNamedLink.invite_link,
@@ -372,6 +374,7 @@ Deno.test('an administrator bot creates invite links that keep the settings it c
             pending_join_request_count: 0,
             creates_join_request: true,
             is_expired: false,
+            is_revoked: false,
           },
         ],
       },
@@ -737,6 +740,7 @@ Deno.test('a test makes an invite link expire, after which it admits nobody', as
           pending_join_request_count: 0,
           creates_join_request: false,
           is_expired: true,
+          is_revoked: false,
         },
       },
     },
@@ -836,5 +840,482 @@ Deno.test('accounts join a public supergroup by themselves, without an invite li
     [await status(commons.id, grace.id), await status(commons.id, hopper.id)],
     ['member', 'kicked'],
     'Expected Grace to be a member and Hopper to stay banned',
+  );
+});
+
+/**
+ * Extends the invite link fixture for link lifecycles: helpers that edit and revoke links as a
+ * bot, list the owner's view of the pending join requests, and make a link's expiry date arrive.
+ */
+async function createInviteLinkLifecycleFixture() {
+  const fixture = await createInviteLinkFixture();
+  const { api, sessionPath, ada, supergroup, inviterBot, callBot, supergroupPath } = fixture;
+  const editLink = (inviteLink: string, parameters: object = {}, bot = inviterBot) =>
+    callBot(bot, 'editChatInviteLink', {
+      chat_id: supergroup.id,
+      invite_link: inviteLink,
+      ...parameters,
+    });
+  const revokeLink = (inviteLink: string, parameters: object = {}, bot = inviterBot) =>
+    callBot(bot, 'revokeChatInviteLink', {
+      chat_id: supergroup.id,
+      invite_link: inviteLink,
+      ...parameters,
+    });
+  const getJoinRequests = async () =>
+    (await requestJson<{ join_requests: Array<{ user_id: number; invite_link: string }> }>(
+      api,
+      'GET',
+      `${supergroupPath(ada.id)}/join-requests`,
+    )).body.join_requests.map(({ user_id, invite_link }) => [user_id, invite_link]);
+  const expireLink = (inviteLink: string) =>
+    requestJson<{ invite_link: Record<string, unknown> }>(
+      api,
+      'POST',
+      `${sessionPath}/supergroups/${supergroup.id}/invite-links/${
+        inviteLinkHash(inviteLink)
+      }/expiry`,
+    );
+  /** A link as the owner inspects it. */
+  const inspectLink = async (inviteLink: string) =>
+    (await fixture.getInviteLinks()).body.invite_links
+      .find(({ invite_link }) => invite_link === inviteLink);
+  return { ...fixture, editLink, revokeLink, getJoinRequests, expireLink, inspectLink };
+}
+
+Deno.test('editChatInviteLink replaces the settings of a link, which its later uses follow', async () => {
+  const {
+    grace,
+    hopper,
+    linus,
+    inviterBot,
+    supergroup,
+    createLink,
+    joinByLink,
+    editLink,
+    expireLink,
+    inspectLink,
+    getJoinRequests,
+  } = await createInviteLinkLifecycleFixture();
+  const expireDate = nowUnixSeconds() + 3_600;
+  const link = await createLink({ name: 'Spring', expire_date: expireDate, member_limit: 1 });
+  await joinByLink(grace, link.invite_link);
+  const whileFull = (await joinByLink(hopper, link.invite_link)).status;
+
+  // The edit names no expiry date, so the link keeps none.
+  const raisedLimit = await editLink(link.invite_link, { name: ' Autumn ', member_limit: 2 });
+  const hopperJoining = await joinByLink(hopper, link.invite_link);
+
+  expectEqual(
+    [whileFull, raisedLimit, Object.keys(raisedLimit.body.result as object), hopperJoining],
+    [
+      410,
+      {
+        status: 200,
+        body: {
+          ok: true,
+          result: {
+            invite_link: link.invite_link,
+            name: 'Autumn',
+            creator: botUser(inviterBot),
+            member_limit: 2,
+            creates_join_request: false,
+            is_primary: false,
+            is_revoked: false,
+          },
+        },
+      },
+      [
+        'invite_link',
+        'name',
+        'creator',
+        'member_limit',
+        'creates_join_request',
+        'is_primary',
+        'is_revoked',
+      ],
+      { status: 200, body: { chat_id: supergroup.id, outcome: 'joined' } },
+    ],
+    'Expected the edit to replace every setting, and the raised limit to admit Hopper',
+  );
+
+  // An expired link that an edit gives a new expiry date and join requests admits again, by request.
+  await editLink(link.invite_link, { expire_date: expireDate });
+  await expireLink(link.invite_link);
+  const whileExpired = (await joinByLink(linus, link.invite_link)).status;
+  const revival = await editLink(link.invite_link, {
+    expire_date: expireDate + 60,
+    creates_join_request: true,
+  });
+  const linusRequest = (await joinByLink(linus, link.invite_link)).body;
+  const renamed = await editLink(link.invite_link, {
+    name: 'Applicants',
+    expire_date: expireDate + 60,
+    creates_join_request: true,
+  });
+
+  expectEqual(
+    [
+      whileExpired,
+      revival.body.result,
+      linusRequest,
+      renamed.body.result,
+      await inspectLink(link.invite_link),
+      await getJoinRequests(),
+    ],
+    [
+      410,
+      {
+        invite_link: link.invite_link,
+        creator: botUser(inviterBot),
+        expire_date: expireDate + 60,
+        creates_join_request: true,
+        is_primary: false,
+        is_revoked: false,
+      },
+      { chat_id: supergroup.id, outcome: 'join_request_sent' },
+      {
+        invite_link: link.invite_link,
+        name: 'Applicants',
+        creator: botUser(inviterBot),
+        expire_date: expireDate + 60,
+        pending_join_request_count: 1,
+        creates_join_request: true,
+        is_primary: false,
+        is_revoked: false,
+      },
+      {
+        invite_link: link.invite_link,
+        name: 'Applicants',
+        creator_user_id: inviterBot.bot.id,
+        expire_date: expireDate + 60,
+        member_count: 2,
+        pending_join_request_count: 1,
+        creates_join_request: true,
+        is_expired: false,
+        is_revoked: false,
+      },
+      [[linus.id, link.invite_link]],
+    ],
+    'Expected the edits to revive the link for requests, as the owner then inspects it',
+  );
+});
+
+Deno.test('revokeChatInviteLink ends a link for good while its members and pending requests stay', async () => {
+  const {
+    grace,
+    hopper,
+    linus,
+    inviterBot,
+    observerBot,
+    supergroup,
+    readUpdates,
+    createLink,
+    joinByLink,
+    editLink,
+    revokeLink,
+    expireLink,
+    inspectLink,
+    getJoinRequests,
+    getMemberStatus,
+    callBot,
+  } = await createInviteLinkLifecycleFixture();
+  const expireDate = nowUnixSeconds() + 3_600;
+  const directLink = await createLink({ member_limit: 3 });
+  const requestLink = await createLink({ expire_date: expireDate, creates_join_request: true });
+  await joinByLink(grace, directLink.invite_link);
+  await joinByLink(hopper, requestLink.invite_link);
+  await readUpdates(inviterBot);
+  await readUpdates(observerBot);
+
+  const revocations = [
+    await revokeLink(directLink.invite_link),
+    await revokeLink(requestLink.invite_link),
+  ];
+  const afterRevocation = [
+    (await joinByLink(linus, directLink.invite_link)).status,
+    (await joinByLink(linus, requestLink.invite_link)).status,
+    await getMemberStatus(grace.id),
+    await getJoinRequests(),
+    [await revokeLink(requestLink.invite_link), await editLink(directLink.invite_link)].map((
+      { status, body },
+    ) => [status, body.description]),
+  ];
+
+  expectEqual(
+    revocations,
+    [
+      {
+        status: 200,
+        body: {
+          ok: true,
+          result: {
+            invite_link: directLink.invite_link,
+            creator: botUser(inviterBot),
+            member_limit: 3,
+            creates_join_request: false,
+            is_primary: false,
+            is_revoked: true,
+          },
+        },
+      },
+      {
+        status: 200,
+        body: {
+          ok: true,
+          result: {
+            invite_link: requestLink.invite_link,
+            creator: botUser(inviterBot),
+            expire_date: expireDate,
+            pending_join_request_count: 1,
+            creates_join_request: true,
+            is_primary: false,
+            is_revoked: true,
+          },
+        },
+      },
+    ],
+    'Expected each revocation to answer the revoked link with its settings',
+  );
+  expectEqual(
+    afterRevocation,
+    [
+      410,
+      410,
+      'member',
+      [[hopper.id, requestLink.invite_link]],
+      [[400, 'Bad Request: INVITE_HASH_EXPIRED'], [400, 'Bad Request: INVITE_HASH_EXPIRED']],
+    ],
+    "Expected the revoked links to admit nobody new, keeping Grace and Hopper's request",
+  );
+
+  // Time passes for a revoked link too, and an administrator still decides its request.
+  const expiry = await expireLink(requestLink.invite_link);
+  const approval = await callBot(inviterBot, 'approveChatJoinRequest', {
+    chat_id: supergroup.id,
+    user_id: hopper.id,
+  });
+  const describeLinkStates = async () =>
+    [await inspectLink(directLink.invite_link), await inspectLink(requestLink.invite_link)].map(
+      (
+        link,
+      ) => [
+        link?.member_count,
+        link?.pending_join_request_count,
+        link?.is_expired,
+        link?.is_revoked,
+      ],
+    );
+
+  expectEqual(
+    [
+      expiry.status,
+      approval.body.result,
+      await getMemberStatus(hopper.id),
+      describeUpdates(await readUpdates(inviterBot)),
+      describeUpdates(await readUpdates(observerBot)),
+      await describeLinkStates(),
+    ],
+    [
+      200,
+      true,
+      'member',
+      [
+        `chat_member ${hopper.id} by ${inviterBot.bot.id}: left -> member via ${requestLink.invite_link}`,
+        `joined ${hopper.id} by ${hopper.id}`,
+      ],
+      [
+        `chat_member ${hopper.id} by ${inviterBot.bot.id}: left -> member via ${
+          hiddenInviteLink(requestLink.invite_link)
+        }`,
+        `joined ${hopper.id} by ${hopper.id}`,
+      ],
+      [[1, 0, false, true], [1, 0, true, true]],
+    ],
+    'Expected the approval to admit Hopper through the revoked link',
+  );
+});
+
+Deno.test('editChatInviteLink and revokeChatInviteLink refuse invalid calls without a change', async () => {
+  const {
+    api,
+    sessionPath,
+    ada,
+    grace,
+    inviterBot,
+    observerBot,
+    memberBot,
+    supergroup,
+    promote,
+    createLink,
+    callBot,
+    editLink,
+    revokeLink,
+    getInviteLinks,
+  } = await createInviteLinkLifecycleFixture();
+  // Grace starts a private chat with the inviter, which has no invite links.
+  await expectStatus(
+    api.request(
+      `${sessionPath}/accounts/${grace.id}/messages`,
+      jsonRequest('POST', { to: { type: 'private', botId: inviterBot.bot.id }, text: 'hi' }),
+    ),
+    201,
+    'Expected Grace to write to the inviter',
+  );
+  // In Elsewhere, another supergroup of Ada's, the inviter also creates links.
+  const { body: { supergroup: elsewhere } } = await requestJson<
+    { supergroup: { id: number } }
+  >(api, 'POST', `${sessionPath}/accounts/${ada.id}/supergroups`, { title: 'Elsewhere' });
+  await expectStatus(
+    api.request(
+      `${sessionPath}/accounts/${ada.id}/conversations/supergroup/${elsewhere.id}/members/${inviterBot.bot.id}`,
+      { method: 'PUT' },
+    ),
+    204,
+    'Expected the inviter to join Elsewhere',
+  );
+  await promote(inviterBot.bot.id, INVITER_RIGHTS, elsewhere.id);
+  const elsewhereLink = await createLink({ chat_id: elsewhere.id });
+  const link = await createLink({ name: 'Kept', member_limit: 2 });
+  // The observer becomes a second inviter, whose links are its own.
+  await promote(observerBot.bot.id, INVITER_RIGHTS);
+  const observerLink = await createLink({}, observerBot);
+  const linksBefore = await getInviteLinks();
+  const answer = async (call: Promise<{ status: number; body: BotApiResponse }>) => {
+    const { status, body } = await call;
+    return [status, body.description];
+  };
+  const edit = (parameters: object, bot = inviterBot) =>
+    answer(callBot(bot, 'editChatInviteLink', parameters));
+  const revoke = (parameters: object, bot = inviterBot) =>
+    answer(callBot(bot, 'revokeChatInviteLink', parameters));
+  const ofLink = (parameters: object = {}) => ({
+    chat_id: supergroup.id,
+    invite_link: link.invite_link,
+    ...parameters,
+  });
+  const invalidEdit = [400, 'Bad Request: invalid editChatInviteLink parameters'];
+  const invalidRevocation = [400, 'Bad Request: invalid revokeChatInviteLink parameters'];
+  const noRights = [400, 'Bad Request: not enough rights to manage chat invite link'];
+  const unavailable = [400, 'Bad Request: INVITE_HASH_EXPIRED'];
+  const othersLink = [400, 'Bad Request: CHAT_ADMIN_REQUIRED'];
+
+  expectEqual(
+    [
+      await edit({ invite_link: link.invite_link }),
+      await edit(ofLink({ member_limit: -1 })),
+      await edit(ofLink({ expire_date: 'tomorrow' })),
+      await edit(ofLink({ is_revoked: true })),
+      await edit(ofLink({ chat_id: -1_009_999_999_999 })),
+      await edit(ofLink({ chat_id: grace.id })),
+      await edit(ofLink({ name: 'bad \ud800 name' })),
+      await edit(ofLink({ invite_link: `${link.invite_link}\udc00` })),
+      await edit(ofLink({ member_limit: 1, creates_join_request: true }), memberBot),
+      await edit(ofLink({ member_limit: 1, creates_join_request: true })),
+      await edit({ chat_id: supergroup.id }),
+      await edit(ofLink({ invite_link: 'https://t.me/+AAAAAAAAAAAAAAAA' })),
+      await edit(ofLink({ invite_link: hiddenInviteLink(link.invite_link) })),
+      await edit(ofLink({ invite_link: elsewhereLink.invite_link })),
+      await edit(ofLink({ chat_id: elsewhere.id })),
+      await edit(ofLink({ invite_link: observerLink.invite_link })),
+      await edit(ofLink(), observerBot),
+      await edit(ofLink({ expire_date: nowUnixSeconds() - 10 })),
+      await edit(ofLink({ member_limit: 100_000 })),
+    ],
+    [
+      [400, 'Bad Request: chat_id is empty'],
+      invalidEdit,
+      invalidEdit,
+      invalidEdit,
+      [400, 'Bad Request: chat not found'],
+      [400, "Bad Request: can't invite members to a private chat"],
+      [400, 'Bad Request: strings must be encoded in UTF-8'],
+      [400, 'Bad Request: strings must be encoded in UTF-8'],
+      noRights,
+      [
+        400,
+        "Bad Request: member limit can't be specified for links requiring administrator approval",
+      ],
+      [400, 'Bad Request: invite link must be non-empty'],
+      unavailable,
+      unavailable,
+      unavailable,
+      unavailable,
+      othersLink,
+      othersLink,
+      [400, 'Bad Request: EXPIRE_DATE_INVALID'],
+      [400, 'Bad Request: USAGE_LIMIT_INVALID'],
+    ],
+    'Expected each refused edit in the order Telegram checks',
+  );
+  expectEqual(
+    [
+      await revoke({ invite_link: link.invite_link }),
+      await revoke(ofLink({ name: 'Gone' })),
+      await revoke(ofLink({ chat_id: grace.id })),
+      await revoke(ofLink(), memberBot),
+      await revoke({ chat_id: supergroup.id }),
+      await revoke(ofLink({ invite_link: elsewhereLink.invite_link })),
+      await revoke(ofLink({ invite_link: observerLink.invite_link })),
+    ],
+    [
+      [400, 'Bad Request: chat_id is empty'],
+      invalidRevocation,
+      [400, "Bad Request: can't invite members to a private chat"],
+      noRights,
+      [400, 'Bad Request: invite link must be non-empty'],
+      unavailable,
+      othersLink,
+    ],
+    'Expected each refused revocation in the order Telegram checks',
+  );
+
+  // The creator loses its right to manage links, then leaves; its links stay as they were.
+  await promote(inviterBot.bot.id, { can_delete_messages: true });
+  const afterDemotion = [await edit(ofLink({ name: 'Renamed' })), await revoke(ofLink())];
+  await callBot(inviterBot, 'leaveChat', { chat_id: supergroup.id });
+  const afterLeaving = [await edit(ofLink({ name: 'Renamed' })), await revoke(ofLink())];
+
+  expectEqual(
+    [afterDemotion, afterLeaving, await getInviteLinks()],
+    [
+      [noRights, noRights],
+      [
+        [403, 'Forbidden: bot is not a member of the supergroup chat'],
+        [403, 'Forbidden: bot is not a member of the supergroup chat'],
+      ],
+      linksBefore,
+    ],
+    'Expected a refused edit or revocation to leave every link as it was',
+  );
+});
+
+Deno.test('a session edits and revokes only its own invite links', async () => {
+  const first = await createInviteLinkLifecycleFixture();
+  const second = await createInviteLinkLifecycleFixture();
+  const link = await first.createLink({ name: 'First' });
+  const linksBefore = await first.getInviteLinks();
+
+  // The second session's inviter, in its own supergroup, names the first session's link.
+  const fromSecondSession = [
+    await second.editLink(link.invite_link, { name: 'Taken' }),
+    await second.revokeLink(link.invite_link),
+  ].map(({ status, body }) => [status, body.description]);
+  // The first session's inviter token is unknown to the second session.
+  const { status: foreignTokenStatus } = await requestJson(
+    second.api,
+    'POST',
+    `${second.sessionPath}/bot-api/bot${first.inviterBot.token}/revokeChatInviteLink`,
+    { chat_id: first.supergroup.id, invite_link: link.invite_link },
+  );
+
+  expectEqual(
+    [fromSecondSession, foreignTokenStatus, await first.getInviteLinks()],
+    [
+      [[400, 'Bad Request: INVITE_HASH_EXPIRED'], [400, 'Bad Request: INVITE_HASH_EXPIRED']],
+      401,
+      linksBefore,
+    ],
+    "Expected another session's bot to find no such link, leaving it as it was",
   );
 });

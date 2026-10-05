@@ -30,6 +30,6 @@ export function projectChatInviteLink(
       : { pending_join_request_count: pendingJoinRequestCount }),
     creates_join_request: link.createsJoinRequest,
     is_primary: false,
-    is_revoked: false,
+    is_revoked: link.isRevoked,
   };
 }
