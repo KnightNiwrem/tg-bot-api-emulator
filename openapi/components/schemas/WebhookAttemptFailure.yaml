@@ -1,0 +1,51 @@
+description: >-
+  Why an attempt to deliver an update to a webhook failed. `error_message` is the description
+  `getWebhookInfo` reports as `last_error_message`; Telegram describes no `response_interrupted`
+  failure.
+oneOf:
+  - type: object
+    additionalProperties: false
+    description: The webhook answered with a status other than 2xx.
+    required:
+      - reason
+      - status_code
+      - error_message
+    properties:
+      reason:
+        type: string
+        const: http_error
+      status_code:
+        type: integer
+        minimum: 100
+        maximum: 599
+      error_message:
+        type: string
+        examples:
+          - 'Wrong response from the webhook: 500 Internal Server Error'
+  - type: object
+    additionalProperties: false
+    description: >-
+      The webhook could not be reached (`connection_failed`), or did not answer completely before
+      the attempt's deadline arrived (`timed_out`).
+    required:
+      - reason
+      - error_message
+    properties:
+      reason:
+        type: string
+        enum:
+          - connection_failed
+          - timed_out
+      error_message:
+        type: string
+        examples:
+          - Read timeout expired
+  - type: object
+    additionalProperties: false
+    description: The connection closed before the whole response arrived.
+    required:
+      - reason
+    properties:
+      reason:
+        type: string
+        const: response_interrupted

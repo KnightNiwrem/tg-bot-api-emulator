@@ -1,0 +1,19 @@
+type: object
+additionalProperties: false
+description: >-
+  How a bot's webhook updates are delivered. This is an emulator control: it does not reproduce
+  Telegram's timing.
+required:
+  - scheduling
+properties:
+  scheduling:
+    type: string
+    enum:
+      - automatic
+      - manual
+    description: >-
+      Who ends the bot's webhook delivery attempts and retry waits. With `automatic`, the default,
+      the emulator does by its own timing: an attempt fails once its 60-second timeout passes, and
+      a failed update is sent again once its retry delay passes. With `manual`, only the test does,
+      by expiring attempts and releasing retries. A change applies to the attempts that begin
+      afterward; an attempt and its retry keep the scheduling they began with.

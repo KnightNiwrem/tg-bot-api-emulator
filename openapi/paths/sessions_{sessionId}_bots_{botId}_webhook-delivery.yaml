@@ -1,0 +1,40 @@
+description: >-
+  How a bot's webhook updates are delivered: whether the emulator ends delivery attempts and retry
+  waits by its own timing, or only the test does. This is an emulator control for testing failure,
+  timeout and recovery without waiting; it does not reproduce Telegram's timing. The setting ends
+  with the session.
+parameters:
+  - $ref: ../components/parameters/SessionId.yaml
+  - $ref: ../components/parameters/BotId.yaml
+get:
+  operationId: getWebhookDelivery
+  summary: Read how a bot's webhook updates are delivered
+  responses:
+    '200':
+      description: The bot's webhook delivery settings.
+      content:
+        application/json:
+          schema:
+            $ref: ../components/schemas/WebhookDelivery.yaml
+    '404':
+      description: No active test session or virtual bot has the supplied identifier.
+put:
+  operationId: setWebhookDelivery
+  summary: Choose who ends a bot's webhook delivery attempts and retry waits
+  requestBody:
+    required: true
+    content:
+      application/json:
+        schema:
+          $ref: ../components/schemas/WebhookDelivery.yaml
+  responses:
+    '200':
+      description: The bot's webhook delivery settings, as set.
+      content:
+        application/json:
+          schema:
+            $ref: ../components/schemas/WebhookDelivery.yaml
+    '400':
+      description: The request body is malformed.
+    '404':
+      description: No active test session or virtual bot has the supplied identifier.

@@ -1,0 +1,29 @@
+description: >-
+  The arrival of an attempt's deadline, an emulator control that ends an attempt in flight as its
+  timeout passing does, under either scheduling. It does not reproduce Telegram's timing.
+parameters:
+  - $ref: ../components/parameters/SessionId.yaml
+  - $ref: ../components/parameters/BotId.yaml
+  - $ref: ../components/parameters/WebhookAttemptId.yaml
+post:
+  operationId: expireWebhookAttempt
+  summary: Make a webhook attempt's deadline arrive
+  description: >-
+    Aborts the attempt's request and answers once its outcome is decided. An attempt still waiting
+    for the webhook's complete answer fails as `timed_out` with `Read timeout expired`, which
+    `getWebhookInfo` reports, and schedules its retry. An attempt whose webhook already answered
+    completely, and whose answer's method is running, is accepted as Telegram would accept it.
+  responses:
+    '200':
+      description: The deadline arrived; the attempt is shown with its outcome.
+      content:
+        application/json:
+          schema:
+            $ref: ../components/schemas/WebhookAttempt.yaml
+    '404':
+      description: >-
+        No active test session or virtual bot has the supplied identifier, or the bot has no such
+        attempt.
+    '409':
+      description: >-
+        The attempt is no longer in flight, or its deadline has already arrived.

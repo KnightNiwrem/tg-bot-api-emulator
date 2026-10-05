@@ -1,0 +1,27 @@
+description: >-
+  Every attempt to deliver an update to the bot's webhook, under either scheduling, with its
+  outcome and the retry its failure scheduled. Attempts of webhooks the bot replaced or deleted
+  stay listed.
+parameters:
+  - $ref: ../components/parameters/SessionId.yaml
+  - $ref: ../components/parameters/BotId.yaml
+get:
+  operationId: listWebhookAttempts
+  summary: List a bot's webhook delivery attempts
+  responses:
+    '200':
+      description: The bot's attempts, earliest first.
+      content:
+        application/json:
+          schema:
+            type: object
+            additionalProperties: false
+            required:
+              - webhook_attempts
+            properties:
+              webhook_attempts:
+                type: array
+                items:
+                  $ref: ../components/schemas/WebhookAttempt.yaml
+    '404':
+      description: No active test session or virtual bot has the supplied identifier.

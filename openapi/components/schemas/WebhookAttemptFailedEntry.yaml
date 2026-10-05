@@ -1,24 +1,24 @@
 type: object
 additionalProperties: false
 description: >-
-  An update the bot confirmed: by a `getUpdates` offset beyond it, or by its webhook's successful
-  answer to it, recorded after any method the answer names has run.
+  A failed attempt to deliver an update to a webhook, which leaves the update pending until the
+  attempt's retry is released. It follows the attempt's `update_delivered` entry.
 required:
   - position
   - kind
   - bot_id
-  - via
   - update_id
+  - webhook_attempt_id
+  - failure
+  - retry_delay_seconds
 properties:
   position:
     $ref: ./BotActivityPosition.yaml
   kind:
     type: string
-    const: update_confirmed
+    const: webhook_attempt_failed
   bot_id:
     $ref: ./TelegramUserId.yaml
-  via:
-    $ref: ./BotUpdateTransport.yaml
   update_id:
     type: integer
   chat_id:
@@ -32,4 +32,9 @@ properties:
   webhook_attempt_id:
     type: integer
     minimum: 1
-    description: The webhook attempt the webhook accepted; present exactly when `via` is `webhook`.
+  failure:
+    $ref: ./WebhookAttemptFailure.yaml
+  retry_delay_seconds:
+    type: integer
+    minimum: 0
+    description: The wait before the update is sent again that `automatic` scheduling observes.

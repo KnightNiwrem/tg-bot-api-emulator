@@ -5,9 +5,11 @@ oneOf:
   - $ref: ./BotApiCallEntry.yaml
   - $ref: ./UpdateDeliveredEntry.yaml
   - $ref: ./UpdateConfirmedEntry.yaml
+  - $ref: ./WebhookAttemptFailedEntry.yaml
 discriminator:
   propertyName: kind
   mapping:
     bot_api_call: ./BotApiCallEntry.yaml
     update_delivered: ./UpdateDeliveredEntry.yaml
     update_confirmed: ./UpdateConfirmedEntry.yaml
+    webhook_attempt_failed: ./WebhookAttemptFailedEntry.yaml

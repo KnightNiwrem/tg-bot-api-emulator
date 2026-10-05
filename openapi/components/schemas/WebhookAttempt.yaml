@@ -1,0 +1,60 @@
+type: object
+additionalProperties: false
+description: >-
+  One request that delivers an update to a bot's webhook, and its outcome. An update is attempted
+  until its webhook accepts it, each attempt after the previous one's retry. `failure` and `retry`
+  are present exactly when `status` is `failed`.
+required:
+  - id
+  - update_id
+  - scheduling
+  - status
+properties:
+  id:
+    type: integer
+    minimum: 1
+    description: Identifies the attempt among every attempt of the session; the first is 1.
+  update_id:
+    type: integer
+  scheduling:
+    type: string
+    enum:
+      - automatic
+      - manual
+    description: The scheduling the attempt and its retry follow, which was the bot's when it began.
+  status:
+    type: string
+    enum:
+      - in_flight
+      - accepted
+      - failed
+      - cancelled
+    description: >-
+      `in_flight` while the request runs; `accepted` once the webhook accepted the update; `failed`
+      once it failed; `cancelled` when delivery stopped before an outcome, because the webhook was
+      replaced or deleted or the session ended, which leaves the update pending.
+  failure:
+    $ref: ./WebhookAttemptFailure.yaml
+  retry:
+    type: object
+    additionalProperties: false
+    description: The wait the failure scheduled before the update is sent again.
+    required:
+      - delay_seconds
+      - status
+    properties:
+      delay_seconds:
+        type: integer
+        minimum: 0
+        description: >-
+          The wait that `automatic` scheduling observes, as Telegram's backoff or the webhook's
+          `Retry-After` header sets it; `manual` scheduling ignores it.
+      status:
+        type: string
+        enum:
+          - waiting
+          - released
+          - cancelled
+        description: >-
+          `waiting` until the delay passes or the test releases the retry, then `released`;
+          `cancelled` when delivery stopped during the wait.

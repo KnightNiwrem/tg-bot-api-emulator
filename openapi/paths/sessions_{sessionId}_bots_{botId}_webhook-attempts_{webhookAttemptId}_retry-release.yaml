@@ -1,0 +1,28 @@
+description: >-
+  The release of a failed attempt's retry, an emulator control that ends the wait before the
+  update is sent again under either scheduling. It does not reproduce Telegram's timing.
+parameters:
+  - $ref: ../components/parameters/SessionId.yaml
+  - $ref: ../components/parameters/BotId.yaml
+  - $ref: ../components/parameters/WebhookAttemptId.yaml
+post:
+  operationId: releaseWebhookRetry
+  summary: Send a failed webhook attempt's update again without waiting
+  description: >-
+    Ends the retry wait at once, so the update's queue sends it again; later updates of the queue
+    keep waiting behind it, and other queues are unaffected. A retry is released once.
+  responses:
+    '200':
+      description: The retry was released; the attempt is shown with its retry `released`.
+      content:
+        application/json:
+          schema:
+            $ref: ../components/schemas/WebhookAttempt.yaml
+    '404':
+      description: >-
+        No active test session or virtual bot has the supplied identifier, or the bot has no such
+        attempt.
+    '409':
+      description: >-
+        The attempt's retry is not waiting: the attempt is in flight or was accepted or cancelled,
+        or its retry was already released or cancelled.

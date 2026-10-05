@@ -45,6 +45,7 @@ get:
           - bot_api_call
           - update_delivered
           - update_confirmed
+          - webhook_attempt_failed
     - name: method
       in: query
       description: >-
@@ -64,8 +65,8 @@ get:
     - name: update_id
       in: query
       description: >-
-        The ID of the update delivered or confirmed. Each bot numbers its updates independently,
-        so an ID names one update only together with `bot_id`.
+        The ID of the update delivered, confirmed, or failed to be delivered. Each bot numbers its
+        updates independently, so an ID names one update only together with `bot_id`.
       schema:
         type: integer
     - name: ok

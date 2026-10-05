@@ -6,6 +6,7 @@ import { BOT_ACTIVITY_KINDS } from '../../../types/bot_activity_kind.ts';
 import { toCurrentBotApiMethodName } from '../../../types/bot_api_method_name.ts';
 import { integerParameter } from '../bot_api/request_parameters.ts';
 import type { SessionRouteContextTypes } from '../session_route_context_types.ts';
+import { presentWebhookAttemptFailure } from '../webhook_attempt_presentation.ts';
 
 /**
  * The wrapper of a query parameter naming, in OpenAPI's `deepObject` style, a parameter that a
@@ -148,6 +149,7 @@ function presentBotActivityEntry(entry: BotActivityEntry) {
         update: entry.update,
         ...chatIdField,
         ...(entry.userId === undefined ? {} : { user_id: entry.userId }),
+        ...presentWebhookAttemptIdField(entry.webhookAttemptId),
       };
     case 'update_confirmed':
       return {
@@ -158,10 +160,27 @@ function presentBotActivityEntry(entry: BotActivityEntry) {
         update_id: entry.updateId,
         ...chatIdField,
         ...(entry.userId === undefined ? {} : { user_id: entry.userId }),
+        ...presentWebhookAttemptIdField(entry.webhookAttemptId),
+      };
+    case 'webhook_attempt_failed':
+      return {
+        position: entry.position,
+        kind: entry.kind,
+        bot_id: entry.botId,
+        update_id: entry.updateId,
+        ...chatIdField,
+        ...(entry.userId === undefined ? {} : { user_id: entry.userId }),
+        webhook_attempt_id: entry.webhookAttemptId,
+        failure: presentWebhookAttemptFailure(entry.failure),
+        retry_delay_seconds: entry.retryDelaySeconds,
       };
     default: {
       const unhandledEntry: never = entry;
       throw new Error(`Unhandled bot activity entry: ${JSON.stringify(unhandledEntry)}`);
     }
   }
+}
+
+function presentWebhookAttemptIdField(webhookAttemptId: number | undefined) {
+  return webhookAttemptId === undefined ? {} : { webhook_attempt_id: webhookAttemptId };
 }
