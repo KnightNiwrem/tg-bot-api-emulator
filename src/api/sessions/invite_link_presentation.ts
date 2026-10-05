@@ -6,7 +6,7 @@ type ChatInviteLinkUsage = Extract<
   { readonly found: true }
 >['links'][number];
 
-/** A pending request to join a supergroup, as the emulation API shows it. */
+/** A pending request to join a supergroup with the bots that may contact its user. */
 type ChatJoinRequest = Extract<
   ReturnType<EmulationSession['chatAdmission']['getJoinRequestsForAccount']>,
   { readonly found: true }
@@ -33,9 +33,18 @@ export function presentChatInviteLinkUsage(
   };
 }
 
-/** Shows a pending join request as the supergroup's owner inspects it. */
+/**
+ * Shows a pending join request as the supergroup's owner inspects it, with the state of its
+ * requester contact and the bots that may write to the user under it.
+ */
 export function presentChatJoinRequest(
-  { userId, inviteLinkUrl, requestedAtUnixSeconds }: ChatJoinRequest,
+  { request: { userId, inviteLinkUrl, requestedAtUnixSeconds, requesterContact }, contactBotIds }:
+    ChatJoinRequest,
 ) {
-  return { user_id: userId, invite_link: inviteLinkUrl, date: requestedAtUnixSeconds };
+  return {
+    user_id: userId,
+    invite_link: inviteLinkUrl,
+    date: requestedAtUnixSeconds,
+    requester_contact: { status: requesterContact.status, bot_ids: contactBotIds },
+  };
 }

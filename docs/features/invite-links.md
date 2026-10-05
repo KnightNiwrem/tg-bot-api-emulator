@@ -6,13 +6,14 @@
 
 ## Capability matrix
 
-| Area                   | Supported                                                                                                                           | Not supported                                                                                   |
-| ---------------------- | ----------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------- |
-| `createChatInviteLink` | `chat_id`, `name`, `expire_date`, `member_limit`, `creates_join_request`, in supergroups                                            | Basic groups, channels                                                                          |
-| Other Bot API          | `approveChatJoinRequest`, `declineChatJoinRequest`, `invite_link` in `chat_member` updates, `chat_join_request` updates             | `editChatInviteLink`, `revokeChatInviteLink`, `exportChatInviteLink`, subscription links, bios  |
-| Account actions        | Joining or requesting to join through an invite link, joining a public supergroup by itself, inspecting a chat's links and requests | Creating, editing and revoking links as an account, primary links                               |
-| Join requests          | One pending request per account and chat, decided once by any administrator bot with `can_invite_users`                             | Decisions by accounts, contact before a decision, requests without a link, join request queries |
-| Time                   | Expiry dates that a test [makes arrive](#expiry-dates)                                                                              | Expiry by elapsed time                                                                          |
+| Area                   | Supported                                                                                                                           | Not supported                                                                                  |
+| ---------------------- | ----------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------- |
+| `createChatInviteLink` | `chat_id`, `name`, `expire_date`, `member_limit`, `creates_join_request`, in supergroups                                            | Basic groups, channels                                                                         |
+| Other Bot API          | `approveChatJoinRequest`, `declineChatJoinRequest`, `invite_link` in `chat_member` updates, `chat_join_request` updates             | `editChatInviteLink`, `revokeChatInviteLink`, `exportChatInviteLink`, subscription links, bios |
+| Account actions        | Joining or requesting to join through an invite link, joining a public supergroup by itself, inspecting a chat's links and requests | Creating, editing and revoking links as an account, primary links                              |
+| Join requests          | One pending request per account and chat, decided once by any administrator bot with `can_invite_users`                             | Decisions by accounts, requests without a link, join request queries                           |
+| Requester contact      | Messages from the bots that received a request to its requester [before a decision](#contacting-requesters)                         | Edits, deletions, chat actions and other uses of the chat under the grant                      |
+| Time                   | Expiry dates and contact windows that a test [makes end](#expiry-dates)                                                             | Expiry by elapsed time                                                                         |
 
 ## Creating invite links
 
@@ -119,18 +120,51 @@ not modeled, so `bio` is omitted, and so is `query_id`, as join request queries 
 webhook receives join requests in a queue per requester, as the official server's
 [`add_update_chat_join_request`][join-request-queue] chooses it.
 
-`user_chat_id` is the requester's ID, which names its private chat with the bot. The Bot API lets a
-bot write there "for 5 minutes ... until the join request is processed", but the emulator opens no
-such chat before a decision: as for any account, a bot writes to the requester only once it has
-started the bot, and otherwise fails with `Bad Request: chat not found`. Contacting a requester
-before a decision is a [real gap](#real-gaps).
+`user_chat_id` is the requester's ID, which names its private chat with the bot, where the bots that
+received the request may [contact the requester](#contacting-requesters) before a decision.
 
 The owner inspects the pending requests with
 `GET /sessions/{sessionId}/accounts/{accountId}/conversations/supergroup/{chatId}/join-requests`, or
 the TypeScript client's `getChatJoinRequests`: each request's `user_id`, the whole `invite_link` it
-was sent through and its `date`, in the order they were sent; any other account is answered `403`.
-The supergroup's links show their `pending_join_request_count`, and the Bot API's `ChatInviteLink`
-shows it too when it is not 0.
+was sent through, its `date` and its `requester_contact`, in the order they were sent; any other
+account is answered `403`. The supergroup's links show their `pending_join_request_count`, and the
+Bot API's `ChatInviteLink` shows it too when it is not 0.
+
+### Contacting requesters
+
+The Bot API documents that a bot "can use this identifier for 5 minutes to send messages until the
+join request is processed, assuming no other administrator contacted the user". The emulator grants
+this to the bots that received the request, the administrator bots holding `can_invite_users` when
+it was sent, whether or not their `allowed_updates` include `chat_join_request`:
+
+- While the contact is `open`, each of these bots may send messages to the requester, although the
+  account never started it: `sendMessage`, the other send methods, `sendMediaGroup`, and forwards
+  and copies into the chat. The account sees them in its private chat with the bot, presses their
+  buttons and answers polls.
+- The first of them to send a message claims the contact: it is then `claimed`, and only that bot
+  may write under it. A message the bot sends to a requester that already started it is ordinary,
+  and claims nothing.
+- A bot must still hold `can_invite_users` when it writes, as deciding the request takes. A bot that
+  gains the right after the request, or administers without it, may not write.
+- The permission ends with the request: when a bot approves or declines it, or the account joins
+  otherwise or is banned. A test ends it earlier, as five minutes passing does, with
+  `POST /sessions/{sessionId}/supergroups/{chatId}/join-requests/{userId}/requester-contact/expiry`,
+  or the TypeScript client's `session.expireJoinRequesterContact`, which answers the request with
+  its contact `expired`, and leaves it pending. An expired contact answers `409`, and an unknown
+  supergroup or a user without a pending request `404`. An invite link's expiry leaves its pending
+  requests and their contacts alone.
+- A bot's message under the grant starts no conversation: once the grant ends, the bot's sends fail
+  with `Bad Request: chat not found` again. The account's own message to the bot, such as its answer
+  to the prompt, starts the conversation as any account message does, and the bot then writes to it
+  as to any account that started it.
+- The grant covers sending messages only. Editing, deleting and pinning the bot's messages there,
+  chat actions, `getChat` and the chat's command scopes need the account to have started the bot.
+
+A refused message is not stored, claims nothing and sends no update; an account that blocked the bot
+refuses it with `Forbidden: bot was blocked by the user`, as for any message. Each request has its
+own contact, so one that a bot claimed does not carry over to the account's next request after a
+decline. A bot that writes to an account with pending requests in several supergroups claims the
+contact of each request it may write under.
 
 ## Approving and declining requests
 
@@ -189,8 +223,9 @@ create links, any other account is answered `403`.
 
 ## Intentional deviations
 
-- **Expiry without elapsed time.** Telegram stops a link when its expiry date passes. The emulator
-  stops it only when a test makes the date arrive, so tests decide the moment deterministically.
+- **Expiry without elapsed time.** Telegram stops a link when its expiry date passes, and ends a
+  requester contact five minutes after the request. The emulator ends each only when a test makes it
+  end, so tests decide the moment deterministically.
 - **Strict parameters.** A negative `expire_date` or `member_limit`, which the official server's
   `get_integer_arg` clamps to zero, is rejected as
   `Bad Request: invalid createChatInviteLink parameters` to surface the bot's mistake.
@@ -201,8 +236,6 @@ create links, any other account is answered `403`.
 
 - **Link lifecycle.** `editChatInviteLink`, `revokeChatInviteLink`, `exportChatInviteLink`, primary
   links and subscription links are not implemented.
-- **Contact before a decision.** Bots cannot write to a requester that has not started them, which
-  the Bot API allows for 5 minutes through `user_chat_id`.
 - **Requests without a link.** Public supergroups that require approval to join, and the join
   request queries of guard bots, are not supported.
 - **Account administrators.** Accounts cannot create links or decide join requests, even as the
@@ -228,6 +261,14 @@ in part:
   repeated request, and what becomes of a request when its user joins otherwise or is banned, is not
   public. The emulator keeps one request per account and chat, sends one update for it, and ends it
   when the account joins or is banned.
+- **Requester contact.** TDLib only opens the private chat when a bot receives a request; Telegram's
+  servers decide who may write there. Which bots receive the permission, what counts as another
+  administrator contacting the user, whether rights are checked again when the bot writes, which
+  uses besides sending messages it allows, and whether a request in one supergroup lets a message
+  claim the contact of another are not public. The emulator applies the
+  [policy above](#contacting-requesters). Whether the requester's answer lets the bot keep writing
+  after the decision is not public either; the emulator treats it as any account message, which
+  starts the conversation.
 - **Decision errors.** The order of the servers' `USER_ALREADY_PARTICIPANT` and
   `HIDE_REQUESTER_MISSING` checks is not public; the emulator checks membership first, and answers a
   user unknown to the session as one without a request.
@@ -242,7 +283,8 @@ in part:
 [Bot API handlers](../../src/api/sessions/bot_api/mod.ts),
 [projection](../../src/projections/bot_api_chat_invite_link.ts),
 [account routes](../../src/api/sessions/accounts/mod.ts),
-[expiry route](../../src/api/sessions/supergroups/mod.ts),
+[expiry routes](../../src/api/sessions/supergroups/mod.ts),
+[private messaging](../../src/services/private_messaging.ts),
 [service tests](../../tests/chat_admission_service_test.ts),
 [link HTTP tests](../../tests/chat_invite_link_api_test.ts) and
 [join request HTTP tests](../../tests/chat_join_request_api_test.ts).

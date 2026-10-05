@@ -63,7 +63,9 @@ A failed call is recorded with its answer, as Telegram would send it:
   and each feature page lists the parameters its methods take.
 - `400 Bad Request: chat not found`: the bot wrote to an account that has never written to it.
   Telegram lets a bot write to a user only after the user has started a chat with it, so the account
-  sends the bot a message first.
+  sends the bot a message first. A bot that received the account's pending join request may also
+  send it messages until the request is decided or its contact window ends; see
+  [Invite links](invite-links.md#prompting-requesters-before-a-decision).
 - `403 Forbidden: bot was blocked by the user`: the account blocked the bot. See
   [Messages](messages.md).
 - `429 Too Many Requests`: the test queued rate limit answers for the bot. See

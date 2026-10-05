@@ -854,6 +854,75 @@ Deno.test('TypeScript client requests to join through a link and lists pending r
   await session.end();
 });
 
+Deno.test('TypeScript client shows and expires the contact of a pending join request', async () => {
+  const { api, client } = createInProcessClient();
+  const session = await client.createSession();
+  const { bot, token } = await session.createBot({
+    first_name: 'Gatekeeper',
+    username: 'gatekeeper_bot',
+  });
+  const { account: owner } = await session.createAccount({ first_name: 'Ada' });
+  const { account: grace } = await session.createAccount({ first_name: 'Grace' });
+  const supergroup = await owner.createSupergroup({ title: 'Team' });
+  const chat = { type: 'supergroup', chatId: supergroup.id } as const;
+  await owner.addChatMember({ chat, userId: bot.id });
+  await owner.promoteChatMember({ chat, userId: bot.id, rights: { can_invite_users: true } });
+  const callBot = async (method: string, parameters: object) =>
+    (await api.request(`/sessions/${session.id}/bot-api/bot${token}/${method}`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(parameters),
+    })).status;
+  const creation = await api.request(
+    `/sessions/${session.id}/bot-api/bot${token}/createChatInviteLink`,
+    {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ chat_id: supergroup.id, creates_join_request: true }),
+    },
+  );
+  const { result: { invite_link: inviteLink } } = await creation.json() as {
+    result: { invite_link: string };
+  };
+  await grace.joinChatByInviteLink({ inviteLink });
+
+  const promptStatus = await callBot('sendMessage', { chat_id: grace.id, text: 'Solve 2 + 2' });
+  const [claimedRequest] = await owner.getChatJoinRequests({ chat });
+  const prompts = await grace.getMessages({ chat: { type: 'private', botId: bot.id } });
+  const expiredRequest = await session.expireJoinRequesterContact({
+    chatId: supergroup.id,
+    userId: grace.id,
+  });
+  const statusAfterExpiry = await callBot('sendMessage', { chat_id: grace.id, text: 'Hello?' });
+  let repeatedExpiry: unknown;
+  try {
+    await session.expireJoinRequesterContact({ chatId: supergroup.id, userId: grace.id });
+  } catch (error) {
+    repeatedExpiry = error;
+  }
+
+  const outcomes = [
+    promptStatus,
+    claimedRequest?.requester_contact,
+    prompts.map(({ text }) => text),
+    expiredRequest.requester_contact,
+    statusAfterExpiry,
+    repeatedExpiry instanceof EmulationClientError ? repeatedExpiry.status : repeatedExpiry,
+  ];
+  const expected = [
+    200,
+    { status: 'claimed', bot_ids: [bot.id] },
+    ['Solve 2 + 2'],
+    { status: 'expired', bot_ids: [] },
+    400,
+    409,
+  ];
+  if (JSON.stringify(outcomes) !== JSON.stringify(expected)) {
+    throw new Error(`Expected the contact to end on expiry, received ${JSON.stringify(outcomes)}`);
+  }
+  await session.end();
+});
+
 Deno.test('TypeScript client changes a supergroup title and reads its service message', async () => {
   const { client } = createInProcessClient();
   const session = await client.createSession();

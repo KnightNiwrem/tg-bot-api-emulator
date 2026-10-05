@@ -4,7 +4,7 @@ Deno.test('PrivateConversationRepository stores one private conversation per acc
   const privateConversations = new PrivateConversationRepository();
   const conversationKey = { accountId: 1, botId: 2 };
 
-  const firstConversation = privateConversations.getOrCreatePrivateConversation(conversationKey);
+  const firstConversation = privateConversations.startPrivateConversation(conversationKey);
   if (
     firstConversation.kind !== 'private' ||
     firstConversation.accountId !== conversationKey.accountId ||
@@ -13,11 +13,11 @@ Deno.test('PrivateConversationRepository stores one private conversation per acc
     throw new Error('Expected the conversation to retain both sides of its canonical identity');
   }
 
-  const secondConversation = privateConversations.getOrCreatePrivateConversation(conversationKey);
+  const secondConversation = privateConversations.startPrivateConversation(conversationKey);
   if (secondConversation !== firstConversation) {
     throw new Error('Expected the account and bot pair to have one canonical conversation');
   }
-  const otherBotConversation = privateConversations.getOrCreatePrivateConversation({
+  const otherBotConversation = privateConversations.startPrivateConversation({
     accountId: 1,
     botId: 3,
   });
@@ -28,11 +28,11 @@ Deno.test('PrivateConversationRepository stores one private conversation per acc
 
 Deno.test('PrivateConversationRepository gives each conversation a Telegram chat instance', () => {
   const privateConversations = new PrivateConversationRepository();
-  const firstConversation = privateConversations.getOrCreatePrivateConversation({
+  const firstConversation = privateConversations.startPrivateConversation({
     accountId: 1,
     botId: 2,
   });
-  const secondConversation = privateConversations.getOrCreatePrivateConversation({
+  const secondConversation = privateConversations.startPrivateConversation({
     accountId: 1,
     botId: 3,
   });
@@ -61,8 +61,8 @@ Deno.test('PrivateConversationRepository records the reply interface message of 
     throw new Error('Expected a reply interface only for an existing conversation');
   }
 
-  privateConversations.getOrCreatePrivateConversation(conversationKey);
-  privateConversations.getOrCreatePrivateConversation({ accountId: 1, botId: 3 });
+  privateConversations.startPrivateConversation(conversationKey);
+  privateConversations.startPrivateConversation({ accountId: 1, botId: 3 });
   privateConversations.setReplyInterfaceMessageId(conversationKey, 'keyboard-message');
   if (
     privateConversations.getReplyInterfaceMessageId(conversationKey) !== 'keyboard-message' ||
@@ -73,5 +73,30 @@ Deno.test('PrivateConversationRepository records the reply interface message of 
   privateConversations.setReplyInterfaceMessageId(conversationKey, undefined);
   if (privateConversations.getReplyInterfaceMessageId(conversationKey) !== undefined) {
     throw new Error('Expected the reply interface message to be cleared');
+  }
+});
+
+Deno.test('PrivateConversationRepository starts a conversation only when the account starts it', () => {
+  const privateConversations = new PrivateConversationRepository();
+  const conversationKey = { accountId: 1, botId: 2 };
+
+  const openedConversation = privateConversations.openPrivateConversation(conversationKey);
+  const startedAfterOpening = privateConversations.isPrivateConversationStarted(conversationKey);
+  const startedConversation = privateConversations.startPrivateConversation(conversationKey);
+  const reopenedConversation = privateConversations.openPrivateConversation(conversationKey);
+
+  const outcomes = [
+    startedAfterOpening,
+    startedConversation === openedConversation,
+    reopenedConversation === openedConversation,
+    privateConversations.isPrivateConversationStarted(conversationKey),
+    privateConversations.isPrivateConversationStarted({ accountId: 1, botId: 3 }),
+  ];
+  if (JSON.stringify(outcomes) !== JSON.stringify([false, true, true, true, false])) {
+    throw new Error(
+      `Expected an opened conversation to stay unstarted until the account starts it, received ${
+        JSON.stringify(outcomes)
+      }`,
+    );
   }
 });

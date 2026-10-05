@@ -402,6 +402,33 @@ export interface ChatJoinRequest {
   readonly invite_link: string;
   /** When the request was sent, as a Unix time in seconds. */
   readonly date: number;
+  /** Which bots may write to the user before it starts a private chat with them. */
+  readonly requester_contact: JoinRequesterContact;
+}
+
+/**
+ * The temporary permission to write to a join request's user that the Bot API documents for
+ * `user_chat_id`. It ends with the request; the emulator never lets its five minutes pass by
+ * themselves, so `session.expireJoinRequesterContact` ends it.
+ */
+export interface JoinRequesterContact {
+  /**
+   * `open` while every bot that received the request may write; `claimed` once one of them wrote,
+   * after which only that bot may; `expired` once `session.expireJoinRequesterContact` ended it.
+   */
+  readonly status: 'open' | 'claimed' | 'expired';
+  /**
+   * The bots that may write to the user now: while open, the bots that received the request, and
+   * once claimed, the bot that claimed it, as long as they hold `can_invite_users`.
+   */
+  readonly bot_ids: readonly number[];
+}
+
+export interface ExpireJoinRequesterContactInput {
+  /** The supergroup's chat ID. */
+  readonly chatId: number;
+  /** The account whose pending request's contact window ends. */
+  readonly userId: number;
 }
 
 export interface AccountChatInviteLinksInput {

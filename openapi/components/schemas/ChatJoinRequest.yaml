@@ -18,9 +18,12 @@ properties:
   user_chat_id:
     $ref: ./TelegramUserId.yaml
     description: >-
-      The requester's private chat with the bot, whose ID is the requester's. The emulator
-      opens no such chat before a decision: the bot writes to it only once the account has
-      started the bot.
+      The requester's private chat with the bot, whose ID is the requester's. Until the request
+      is processed, the bots that received it may send messages there although the account never
+      started them; the first to write claims the contact, which ends the others' permission.
+      Other uses of the chat need the account to have started the bot. The emulator does not end
+      the permission after five minutes by itself; a test ends it through the requester contact
+      expiry route.
   date:
     type: integer
     minimum: 0

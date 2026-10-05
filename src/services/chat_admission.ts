@@ -12,7 +12,7 @@ import {
   type SupergroupMembershipLookup,
 } from '../types/chat_membership.ts';
 import type { ChatDomainEvent } from '../types/chat_domain_event.ts';
-import type { ChatJoinRequest } from '../types/chat_join_request.ts';
+import type { ChatJoinRequest, JoinRequesterContact } from '../types/chat_join_request.ts';
 import type { VirtualAccount } from '../types/virtual_account.ts';
 import type { VirtualBot } from '../types/virtual_bot.ts';
 
@@ -167,11 +167,21 @@ export interface GetJoinRequestsForAccountInput {
   readonly chatId: number;
 }
 
+/** A pending join request with the bots that may write to its user under its contact grant. */
+export interface PendingChatJoinRequest {
+  readonly request: ChatJoinRequest;
+  /**
+   * The bots that may write to the user before it starts a private chat with them, as
+   * `ChatAdmissionService.mayContactJoinRequester` decides it; empty for none.
+   */
+  readonly contactBotIds: readonly number[];
+}
+
 export type GetJoinRequestsForAccountResult =
   | {
     readonly found: true;
     /** The chat's pending join requests in the order they were sent. */
-    readonly requests: readonly ChatJoinRequest[];
+    readonly requests: readonly PendingChatJoinRequest[];
   }
   | {
     readonly found: false;
@@ -194,6 +204,24 @@ export type ExpireInviteLinkResult =
       | 'invite_link_not_expirable';
   };
 
+export interface ExpireJoinRequesterContactInput {
+  readonly chatId: number;
+  /** The account whose pending request's contact window ends. */
+  readonly userId: number;
+}
+
+export type ExpireJoinRequesterContactResult =
+  | { readonly expired: true; readonly request: PendingChatJoinRequest }
+  | {
+    readonly expired: false;
+    readonly reason:
+      | 'chat_not_found'
+      /** The user has no pending request to join the chat. */
+      | 'join_request_not_found'
+      /** A test ended the request's contact window before. */
+      | 'requester_contact_already_expired';
+  };
+
 interface AccountLookup {
   getById(accountId: number): VirtualAccount | undefined;
 }
@@ -203,11 +231,18 @@ interface BotLookup {
 }
 
 interface ChatAdmissionStore extends SupergroupMembershipLookup {
+  getChatMemberIds(chatId: number): readonly number[];
   countMembersJoinedByInviteLink(chatId: number, inviteLinkUrl: string): number;
   addJoinRequest(request: ChatJoinRequest): void;
   getJoinRequest(chatId: number, userId: number): ChatJoinRequest | undefined;
   removeJoinRequest(chatId: number, userId: number): boolean;
   listJoinRequests(chatId: number): readonly ChatJoinRequest[];
+  listJoinRequestsOfUser(userId: number): readonly ChatJoinRequest[];
+  setJoinRequesterContact(
+    chatId: number,
+    userId: number,
+    requesterContact: JoinRequesterContact,
+  ): ChatJoinRequest;
   countJoinRequestsByInviteLink(chatId: number, inviteLinkUrl: string): number;
 }
 
@@ -251,8 +286,10 @@ interface ChatAdmissionServiceDependencies {
  * additional invite links, and accounts join through them, or by the username of a public
  * supergroup. A link keeps its creator, its expiry date, its member limit, and whether it creates
  * join requests, which keep the account outside until an administrator bot with
- * `can_invite_users` approves or declines them. Its expiry date arrives only when a test makes it
- * arrive, so tests decide when a link stops working.
+ * `can_invite_users` approves or declines them. Until then, the bots that received a request may
+ * contact its user, as `mayContactJoinRequester` decides. A link's expiry date, like the end of a
+ * request's contact window, arrives only when a test makes it arrive, so tests decide when a link
+ * stops working.
  */
 export class ChatAdmissionService {
   readonly #accounts: AccountLookup;
@@ -476,7 +513,75 @@ export class ChatAdmissionService {
     if (inspectionFailure !== undefined) {
       return { found: false, reason: inspectionFailure };
     }
-    return { found: true, requests: this.#sharedChats.listJoinRequests(chatId) };
+    return {
+      found: true,
+      requests: this.#sharedChats.listJoinRequests(chatId).map((request) =>
+        this.#describePendingRequest(request)
+      ),
+    };
+  }
+
+  /**
+   * Whether a pending join request lets a bot write to its user, which the user has not let it do
+   * by starting a private chat with it. As the Bot API documents for `user_chat_id`, a bot that
+   * received the request may send the user messages until the request is processed, assuming no
+   * other administrator contacted the user: the first recipient bot to write claims the contact,
+   * which ends the others' permission under that request. The bot must also still hold
+   * `can_invite_users`, which deciding the request takes. The permission ends with the request,
+   * whether approved, declined, or ended by the user's joining or ban, and when a test ends its
+   * contact window.
+   */
+  mayContactJoinRequester(botId: number, userId: number): boolean {
+    return this.#sharedChats.listJoinRequestsOfUser(userId)
+      .some((request) => this.#listContactBotIds(request).includes(botId));
+  }
+
+  /**
+   * Records that a bot wrote to a join request's user under the permission that
+   * `mayContactJoinRequester` grants it: each of the user's pending requests whose contact the bot
+   * may claim becomes the bot's alone. Call it only once the bot's message passed its checks.
+   */
+  claimJoinRequesterContact(botId: number, userId: number): void {
+    const claimableRequests = this.#sharedChats.listJoinRequestsOfUser(userId).filter((request) =>
+      this.#listContactBotIds(request).includes(botId)
+    );
+    if (claimableRequests.length === 0) {
+      throw new Error(`Bot ${botId} may not contact join requester ${userId}`);
+    }
+    for (const request of claimableRequests) {
+      if (request.requesterContact.status === 'open') {
+        this.#sharedChats.setJoinRequesterContact(request.chatId, userId, {
+          status: 'claimed',
+          claimantBotId: botId,
+        });
+      }
+    }
+  }
+
+  /**
+   * Ends a pending join request's contact window, as its five minutes passing does, which the
+   * emulator never lets happen by itself: no bot may write to the user under the request any more,
+   * while bots the user started a private chat with keep writing to it. The request stays pending.
+   */
+  expireJoinRequesterContact(
+    { chatId, userId }: ExpireJoinRequesterContactInput,
+  ): ExpireJoinRequesterContactResult {
+    if (this.#sharedChats.getSharedChat(chatId)?.kind !== 'supergroup') {
+      return { expired: false, reason: 'chat_not_found' };
+    }
+    const request = this.#sharedChats.getJoinRequest(chatId, userId);
+    if (request === undefined) {
+      return { expired: false, reason: 'join_request_not_found' };
+    }
+    if (request.requesterContact.status === 'expired') {
+      return { expired: false, reason: 'requester_contact_already_expired' };
+    }
+    return {
+      expired: true,
+      request: this.#describePendingRequest(
+        this.#sharedChats.setJoinRequesterContact(chatId, userId, { status: 'expired' }),
+      ),
+    };
   }
 
   /**
@@ -570,6 +675,14 @@ export class ChatAdmissionService {
       userId: accountId,
       inviteLinkUrl: link.url,
       requestedAtUnixSeconds: this.#currentUnixTimeSeconds(),
+      recipientBotIds: this.#sharedChats.getChatMemberIds(link.chatId).filter((memberId) =>
+        this.#bots.getById(memberId) !== undefined &&
+        holdsSupergroupAdministratorRight(
+          this.#sharedChats.getChatMembership(link.chatId, memberId),
+          'can_invite_users',
+        )
+      ),
+      requesterContact: { status: 'open' },
     };
     this.#sharedChats.addJoinRequest(request);
     this.#events.publish({ type: 'chat_join_requested', chat, request, inviteLink: link });
@@ -590,6 +703,40 @@ export class ChatAdmissionService {
     return this.#sharedChats.getFormerMemberStatus(chatId, userId)?.status === 'kicked'
       ? 'banned'
       : undefined;
+  }
+
+  #describePendingRequest(request: ChatJoinRequest): PendingChatJoinRequest {
+    return { request, contactBotIds: this.#listContactBotIds(request) };
+  }
+
+  /**
+   * Lists the bots that may write to a pending request's user under its contact grant: while the
+   * contact is open, the bots that received the request; once claimed, its claimant; and only
+   * those that still hold `can_invite_users`.
+   */
+  #listContactBotIds(request: ChatJoinRequest): readonly number[] {
+    const { requesterContact } = request;
+    let permittedBotIds: readonly number[];
+    switch (requesterContact.status) {
+      case 'open':
+        permittedBotIds = request.recipientBotIds;
+        break;
+      case 'claimed':
+        permittedBotIds = [requesterContact.claimantBotId];
+        break;
+      case 'expired':
+        return [];
+      default: {
+        const unhandledContact: never = requesterContact;
+        throw new Error(`Unhandled requester contact: ${JSON.stringify(unhandledContact)}`);
+      }
+    }
+    return permittedBotIds.filter((botId) =>
+      holdsSupergroupAdministratorRight(
+        this.#sharedChats.getChatMembership(request.chatId, botId),
+        'can_invite_users',
+      )
+    );
   }
 
   #describeUsage(link: ChatInviteLink): ChatInviteLinkUsage {

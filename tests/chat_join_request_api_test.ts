@@ -129,6 +129,17 @@ async function createJoinRequestFixture() {
       'GET',
       `${supergroupPath(ada.id)}/invite-links`,
     )).body.invite_links.map(({ pending_join_request_count }) => pending_join_request_count);
+  /** Each pending request as `[user, contact status, bots that may contact the user]`. */
+  const getRequesterContacts = async () =>
+    (await requestJson<
+      {
+        join_requests: Array<
+          { user_id: number; requester_contact: { status: string; bot_ids: number[] } }
+        >;
+      }
+    >(api, 'GET', `${supergroupPath(ada.id)}/join-requests`)).body.join_requests.map((
+      { user_id, requester_contact },
+    ) => [user_id, requester_contact.status, requester_contact.bot_ids]);
   const getMemberStatus = async (userId: number) =>
     ((await callBot(inviterBot, 'getChatMember', { chat_id: supergroup.id, user_id: userId }))
       .body.result as { status: string }).status;
@@ -154,6 +165,7 @@ async function createJoinRequestFixture() {
     useLink,
     getJoinRequests,
     getPendingCounts,
+    getRequesterContacts,
     getMemberStatus,
   };
 }
@@ -443,19 +455,418 @@ Deno.test('a pending request ends when its account joins another way or is banne
   );
 });
 
-Deno.test('a bot cannot write to a requester that never started it before a decision', async () => {
-  const { grace, inviterBot, readUpdates, callBot, requestLink, useLink } =
-    await createJoinRequestFixture();
+Deno.test('a bot that received a request prompts its requester, who answers before the decision', async () => {
+  const {
+    api,
+    sessionPath,
+    grace,
+    inviterBot,
+    coInviterBot,
+    readUpdates,
+    callBot,
+    requestLink,
+    useLink,
+    getRequesterContacts,
+  } = await createJoinRequestFixture();
   await useLink(grace, requestLink.invite_link);
-  const [update] = await readUpdates(inviterBot);
+  const [update] = await readUpdates(inviterBot, [...READ_UPDATE_TYPES, 'callback_query']);
+  await readUpdates(coInviterBot);
   const userChatId = (update?.chat_join_request as { user_chat_id: number }).user_chat_id;
+  const contactsBefore = await getRequesterContacts();
 
-  const reply = await callBot(inviterBot, 'sendMessage', { chat_id: userChatId, text: 'Hello' });
+  const prompt = await callBot(inviterBot, 'sendMessage', {
+    chat_id: userChatId,
+    text: 'Press the button to join',
+    reply_markup: { inline_keyboard: [[{ text: 'I am human', callback_data: 'human' }]] },
+  });
+  const competingPrompt = await callBot(coInviterBot, 'sendMessage', {
+    chat_id: userChatId,
+    text: 'Welcome!',
+  });
+
+  const promptMessageId = (prompt.body.result as { message_id: number }).message_id;
+  expectEqual(
+    [
+      contactsBefore,
+      [prompt.status, (prompt.body.result as { chat: { id: number } }).chat.id],
+      [competingPrompt.status, competingPrompt.body.description],
+      await getRequesterContacts(),
+      await readUpdates(coInviterBot),
+    ],
+    [
+      [[grace.id, 'open', [inviterBot.bot.id, coInviterBot.bot.id]]],
+      [200, grace.id],
+      [400, 'Bad Request: chat not found'],
+      [[grace.id, 'claimed', [inviterBot.bot.id]]],
+      [],
+    ],
+    'Expected the first bot to write to claim the contact, refusing the other administrator',
+  );
+
+  // Grace sees the prompt, presses its button, and answers in the chat.
+  const privatePath =
+    `${sessionPath}/accounts/${grace.id}/conversations/private/${inviterBot.bot.id}`;
+  const history = await requestJson<{ messages: Array<{ message_id: number; text?: string }> }>(
+    api,
+    'GET',
+    `${privatePath}/messages`,
+  );
+  const press = await requestJson<{ callback_query: { callback_data: string } }>(
+    api,
+    'POST',
+    `${sessionPath}/accounts/${grace.id}/callback-queries`,
+    {
+      chat: { type: 'private', botId: inviterBot.bot.id },
+      message_id: promptMessageId,
+      callback_data: 'human',
+    },
+  );
+  const answer = await requestJson<{ message: { text: string } }>(
+    api,
+    'POST',
+    `${sessionPath}/accounts/${grace.id}/messages`,
+    { to: { type: 'private', botId: inviterBot.bot.id }, text: 'Done' },
+  );
+  const updates = await readUpdates(inviterBot, [...READ_UPDATE_TYPES, 'callback_query']);
 
   expectEqual(
-    [userChatId, reply.status, reply.body.description],
-    [grace.id, 400, 'Bad Request: chat not found'],
-    "Expected user_chat_id to name Grace's private chat, which the emulator does not open",
+    [
+      history.body.messages.map(({ message_id, text }) => [message_id, text]),
+      press.status,
+      answer.status,
+      updates.map((received) =>
+        received.callback_query === undefined
+          ? (received.message as { text: string }).text
+          : (received.callback_query as { data: string }).data
+      ),
+    ],
+    [[[promptMessageId, 'Press the button to join']], 201, 201, ['human', 'Done']],
+    'Expected Grace to see the prompt, and the bot to receive her press and answer',
+  );
+
+  // The decision ends the grant, but Grace's answer started the chat, which stays open.
+  await callBot(inviterBot, 'approveChatJoinRequest', {
+    chat_id: (update?.chat_join_request as { chat: { id: number } }).chat.id,
+    user_id: grace.id,
+  });
+  const welcome = await callBot(inviterBot, 'sendMessage', { chat_id: grace.id, text: 'Welcome' });
+  const competingWelcome = await callBot(coInviterBot, 'sendMessage', {
+    chat_id: grace.id,
+    text: 'Welcome',
+  });
+
+  expectEqual(
+    [welcome.status, [competingWelcome.status, competingWelcome.body.description]],
+    [200, [400, 'Bad Request: chat not found']],
+    "Expected Grace's answer, not the prompt, to let the bot keep writing after the decision",
+  );
+});
+
+Deno.test('the prompt alone gives no lasting access, which a decision or an expiry ends', async () => {
+  const {
+    api,
+    sessionPath,
+    grace,
+    hopper,
+    linus,
+    inviterBot,
+    coInviterBot,
+    supergroup,
+    readUpdates,
+    callBot,
+    requestLink,
+    useLink,
+    getRequesterContacts,
+    getJoinRequests,
+  } = await createJoinRequestFixture();
+  for (const account of [grace, hopper, linus]) {
+    await useLink(account, requestLink.invite_link);
+  }
+  await readUpdates(inviterBot);
+  const prompt = (account: FixtureAccount) =>
+    callBot(inviterBot, 'sendMessage', { chat_id: account.id, text: 'Solve 2 + 2' });
+  const contactExpiryPath = (chatId: number | string, userId: number | string) =>
+    `${sessionPath}/supergroups/${chatId}/join-requests/${userId}/requester-contact/expiry`;
+  const gracePrompt = await prompt(grace);
+  await prompt(hopper);
+
+  await callBot(inviterBot, 'approveChatJoinRequest', {
+    chat_id: supergroup.id,
+    user_id: grace.id,
+  });
+  await callBot(coInviterBot, 'declineChatJoinRequest', {
+    chat_id: supergroup.id,
+    user_id: hopper.id,
+  });
+  const expiry = await requestJson<{ join_request: Record<string, unknown> }>(
+    api,
+    'POST',
+    contactExpiryPath(supergroup.id, linus.id),
+  );
+  const graceMessageId = (gracePrompt.body.result as { message_id: number }).message_id;
+  const describe = async (response: Promise<{ status: number; body: BotApiResponse }>) => {
+    const { status, body } = await response;
+    return status === 200 ? status : `${status} ${body.description}`;
+  };
+
+  expectEqual(
+    [
+      expiry.status,
+      expiry.body.join_request,
+      await getRequesterContacts(),
+      await getJoinRequests(),
+      await describe(prompt(grace)),
+      await describe(prompt(hopper)),
+      await describe(prompt(linus)),
+      await describe(callBot(inviterBot, 'getChat', { chat_id: grace.id })),
+      await describe(callBot(inviterBot, 'editMessageText', {
+        chat_id: grace.id,
+        message_id: graceMessageId,
+        text: 'Solved',
+      })),
+      (await readUpdates(inviterBot)).filter(({ message }) =>
+        (message as { chat: { type: string } } | undefined)?.chat.type === 'private'
+      ),
+    ],
+    [
+      200,
+      {
+        user_id: linus.id,
+        invite_link: requestLink.invite_link,
+        date: expiry.body.join_request.date,
+        requester_contact: { status: 'expired', bot_ids: [] },
+      },
+      [[linus.id, 'expired', []]],
+      [[linus.id, requestLink.invite_link]],
+      '400 Bad Request: chat not found',
+      '400 Bad Request: chat not found',
+      '400 Bad Request: chat not found',
+      '400 Bad Request: chat not found',
+      '400 Bad Request: chat not found',
+      [],
+    ],
+    "Expected the decisions and the expiry to end the grants, leaving Linus's request pending",
+  );
+
+  // Ending a window again, or one of no pending request, is refused without a change.
+  expectEqual(
+    await Promise.all(
+      [
+        contactExpiryPath(supergroup.id, linus.id),
+        contactExpiryPath(supergroup.id, grace.id),
+        contactExpiryPath(-1_009_999_999_999, linus.id),
+        contactExpiryPath(supergroup.id, 'linus'),
+        contactExpiryPath('team', linus.id),
+      ].map(async (path) => (await api.request(path, { method: 'POST' })).status),
+    ),
+    [409, 404, 404, 400, 400],
+    'Expected repeated, unknown and malformed expiries to be refused',
+  );
+});
+
+Deno.test('a requester contact excludes unrelated bots, blocked bots and other sessions', async () => {
+  const {
+    api,
+    sessionPath,
+    grace,
+    inviterBot,
+    coInviterBot,
+    observerBot,
+    memberBot,
+    asOwner,
+    readUpdates,
+    callBot,
+    requestLink,
+    useLink,
+    getRequesterContacts,
+  } = await createJoinRequestFixture();
+  await useLink(grace, requestLink.invite_link);
+  // The member bot gains the right only after the request, which it never received.
+  await asOwner(
+    `administrators/${memberBot.bot.id}`,
+    jsonRequest('PUT', { can_invite_users: true }),
+  );
+  await requestJson(
+    api,
+    'PUT',
+    `${sessionPath}/accounts/${grace.id}/blocked-bots/${coInviterBot.bot.id}`,
+  );
+  const otherSession = await createJoinRequestFixture();
+  await readUpdates(inviterBot);
+  const describeSend = async (bot: FixtureBot, chatId: number, call = callBot) => {
+    const { status, body } = await call(bot, 'sendMessage', { chat_id: chatId, text: 'Hello' });
+    return `${status} ${body.description ?? ''}`.trim();
+  };
+
+  expectEqual(
+    [
+      await describeSend(observerBot, grace.id),
+      await describeSend(memberBot, grace.id),
+      await describeSend(coInviterBot, grace.id),
+      await describeSend(otherSession.inviterBot, otherSession.grace.id, otherSession.callBot),
+      await getRequesterContacts(),
+      (await requestJson<{ messages: unknown[] }>(
+        api,
+        'GET',
+        `${sessionPath}/accounts/${grace.id}/conversations/private/${coInviterBot.bot.id}/messages`,
+      )).body.messages,
+      await readUpdates(inviterBot),
+    ],
+    [
+      '400 Bad Request: chat not found',
+      '400 Bad Request: chat not found',
+      '403 Forbidden: bot was blocked by the user',
+      '400 Bad Request: chat not found',
+      [[grace.id, 'open', [inviterBot.bot.id, coInviterBot.bot.id]]],
+      [],
+      [],
+    ],
+    'Expected refusals that store nothing, leave the contact open, and leak into no other session',
+  );
+});
+
+Deno.test('competing and repeated contacts keep each grant to its bot and request', async () => {
+  const {
+    api,
+    sessionPath,
+    grace,
+    inviterBot,
+    coInviterBot,
+    supergroup,
+    readUpdates,
+    callBot,
+    requestLink,
+    useLink,
+    getRequesterContacts,
+  } = await createJoinRequestFixture();
+  // Grace started the co-inviter before requesting, so it writes to her as before.
+  await requestJson(api, 'POST', `${sessionPath}/accounts/${grace.id}/messages`, {
+    to: { type: 'private', botId: coInviterBot.bot.id },
+    text: '/start',
+  });
+  await useLink(grace, requestLink.invite_link);
+  const repeatedRequest = await useLink(grace, requestLink.invite_link);
+  await readUpdates(inviterBot);
+  const ordinaryMessage = await callBot(coInviterBot, 'sendMessage', {
+    chat_id: grace.id,
+    text: 'Hello again',
+  });
+  const contactsAfterOrdinaryMessage = await getRequesterContacts();
+
+  const prompt = await callBot(inviterBot, 'sendMessage', { chat_id: grace.id, text: 'Prove it' });
+  const contactsAfterPrompt = await getRequesterContacts();
+  await callBot(coInviterBot, 'declineChatJoinRequest', {
+    chat_id: supergroup.id,
+    user_id: grace.id,
+  });
+  const afterDecline = await Promise.all(
+    [inviterBot, coInviterBot].map(async (bot) =>
+      (await callBot(bot, 'sendMessage', { chat_id: grace.id, text: 'Still there?' })).status
+    ),
+  );
+  await useLink(grace, requestLink.invite_link);
+
+  expectEqual(
+    [
+      repeatedRequest.status,
+      ordinaryMessage.status,
+      contactsAfterOrdinaryMessage,
+      prompt.status,
+      contactsAfterPrompt,
+      afterDecline,
+      await getRequesterContacts(),
+    ],
+    [
+      409,
+      200,
+      [[grace.id, 'open', [inviterBot.bot.id, coInviterBot.bot.id]]],
+      200,
+      [[grace.id, 'claimed', [inviterBot.bot.id]]],
+      [400, 200],
+      [[grace.id, 'open', [inviterBot.bot.id, coInviterBot.bot.id]]],
+    ],
+    'Expected the started chat to stay ordinary and a new request to open a fresh contact',
+  );
+});
+
+Deno.test('simultaneous prompts of two bots let exactly one claim the contact', async () => {
+  const {
+    api,
+    sessionPath,
+    hopper,
+    inviterBot,
+    coInviterBot,
+    callBot,
+    requestLink,
+    useLink,
+    getRequesterContacts,
+  } = await createJoinRequestFixture();
+  await useLink(hopper, requestLink.invite_link);
+
+  const prompts = await Promise.all(
+    [inviterBot, coInviterBot].map(async (bot) => ({
+      bot,
+      response: await callBot(bot, 'sendMessage', { chat_id: hopper.id, text: 'Prove it' }),
+    })),
+  );
+  const [claimant] = prompts.filter(({ response }) => response.status === 200);
+  const historyLengths = await Promise.all(
+    [inviterBot, coInviterBot].map(async (bot) =>
+      (await requestJson<{ messages: unknown[] }>(
+        api,
+        'GET',
+        `${sessionPath}/accounts/${hopper.id}/conversations/private/${bot.bot.id}/messages`,
+      )).body.messages.length
+    ),
+  );
+
+  expectEqual(
+    [
+      prompts.map(({ response }) => response.status).sort(),
+      await getRequesterContacts(),
+      historyLengths.reduce((total, length) => total + length, 0),
+    ],
+    [[200, 400], [[hopper.id, 'claimed', [claimant?.bot.bot.id]]], 1],
+    'Expected one prompt to be stored and claim the contact, and the other to be refused',
+  );
+});
+
+Deno.test("a link's expiry leaves its pending requests and their contacts in place", async () => {
+  const {
+    api,
+    sessionPath,
+    grace,
+    inviterBot,
+    supergroup,
+    readUpdates,
+    callBot,
+    createLink,
+    useLink,
+    getRequesterContacts,
+  } = await createJoinRequestFixture();
+  const expiringLink = await createLink({
+    creates_join_request: true,
+    expire_date: Math.floor(Date.now() / 1_000) + 3_600,
+  });
+  await useLink(grace, expiringLink.invite_link);
+  await readUpdates(inviterBot);
+
+  await expectStatus(
+    api.request(
+      `${sessionPath}/supergroups/${supergroup.id}/invite-links/${
+        expiringLink.invite_link.slice('https://t.me/+'.length)
+      }/expiry`,
+      { method: 'POST' },
+    ),
+    200,
+    'Expected the link to expire',
+  );
+  const prompt = await callBot(inviterBot, 'sendMessage', { chat_id: grace.id, text: 'Hi' });
+
+  expectEqual(
+    [prompt.status, await getRequesterContacts()],
+    [200, [[grace.id, 'claimed', [inviterBot.bot.id]]]],
+    "Expected the link's expiry to cancel neither Grace's request nor the bots' contact",
   );
 });
 

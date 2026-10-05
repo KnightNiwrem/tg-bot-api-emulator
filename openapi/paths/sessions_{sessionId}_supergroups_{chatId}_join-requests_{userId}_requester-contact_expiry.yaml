@@ -1,0 +1,30 @@
+description: >-
+  The end of a pending join request's contact window, which the Bot API documents as five minutes
+  for the request's `user_chat_id`. The emulator does not let time pass by itself, so a test
+  chooses when the bots that received the request stop being able to write to its user.
+parameters:
+  - $ref: ../components/parameters/SessionId.yaml
+  - $ref: ../components/parameters/SupergroupChatId.yaml
+  - $ref: ../components/parameters/UserId.yaml
+post:
+  operationId: expireJoinRequesterContact
+  summary: End a join request's contact window as its five minutes passing does
+  description: >-
+    No bot may send messages to the user under the request any more, whether the contact was
+    open or claimed; bots the user started keep writing to it. The request stays pending, and no
+    bot receives an update for it.
+  responses:
+    '200':
+      description: The contact window ended; the request is shown as the supergroup's owner sees it.
+      content:
+        application/json:
+          schema:
+            $ref: ../components/schemas/ExpiredRequesterContactResponse.yaml
+    '400':
+      description: A path identifier is invalid.
+    '404':
+      description: >-
+        No active test session or supergroup has the supplied identifier, or the user has no
+        pending request to join the supergroup.
+    '409':
+      description: The request's contact window ended before.

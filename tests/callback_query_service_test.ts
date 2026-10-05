@@ -448,6 +448,12 @@ function createCallbackQueryFixture() {
     polls,
     messageBoxes,
     blockedUsers: new BlockedUserRepository(),
+    joinRequesterContacts: {
+      mayContactJoinRequester: () => false,
+      claimJoinRequesterContact: () => {
+        throw new Error('Unexpected join requester contact');
+      },
+    },
     events,
     currentUnixTimeSeconds: () => 1_700_000_000,
   });

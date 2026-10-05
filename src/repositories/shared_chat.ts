@@ -4,7 +4,7 @@ import type {
   ChatMemberStatus,
   FormerChatMemberStatus,
 } from '../types/chat_membership.ts';
-import type { ChatJoinRequest } from '../types/chat_join_request.ts';
+import type { ChatJoinRequest, JoinRequesterContact } from '../types/chat_join_request.ts';
 import {
   ALL_CHAT_PERMISSIONS,
   type ChatPermissions,
@@ -261,6 +261,30 @@ export class SharedChatRepository {
   /** Returns a chat's pending join requests in the order they were sent. */
   listJoinRequests(chatId: number): readonly ChatJoinRequest[] {
     return [...(this.#pendingJoinRequestsByChatId.get(chatId)?.values() ?? [])];
+  }
+
+  /** Returns a user's pending requests to join chats, one per chat. */
+  listJoinRequestsOfUser(userId: number): readonly ChatJoinRequest[] {
+    return [...this.#pendingJoinRequestsByChatId.values()].flatMap((requestsByUserId) => {
+      const request = requestsByUserId.get(userId);
+      return request === undefined ? [] : [request];
+    });
+  }
+
+  /** Replaces who may write to a pending join request's user, and returns the changed request. */
+  setJoinRequesterContact(
+    chatId: number,
+    userId: number,
+    requesterContact: JoinRequesterContact,
+  ): ChatJoinRequest {
+    const requestsByUserId = this.#pendingJoinRequestsByChatId.get(chatId);
+    const request = requestsByUserId?.get(userId);
+    if (requestsByUserId === undefined || request === undefined) {
+      throw new Error(`User ${userId} has no pending request to join chat ${chatId}`);
+    }
+    const changedRequest: ChatJoinRequest = { ...request, requesterContact };
+    requestsByUserId.set(userId, changedRequest);
+    return changedRequest;
   }
 
   /** Ends a user's pending request to join a chat, as a decline does; returns false for none. */

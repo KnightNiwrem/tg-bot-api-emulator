@@ -206,6 +206,8 @@ Deno.test('SharedChatRepository keeps pending join requests only for users that 
     userId,
     inviteLinkUrl,
     requestedAtUnixSeconds: 1_700_000_000,
+    recipientBotIds: [],
+    requesterContact: { status: 'open' } as const,
   });
   for (const userId of [2, 3, 4]) {
     sharedChats.addJoinRequest(request(userId));
