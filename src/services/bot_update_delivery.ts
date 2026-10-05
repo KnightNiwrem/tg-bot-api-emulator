@@ -5,6 +5,7 @@ import type {
   BotApiChosenInlineResult,
   BotApiInlineQuery,
   BotApiMessage,
+  BotApiMessageReactionUpdated,
   BotApiMyChatMemberUpdated,
   BotApiPrivateMessage,
   BotApiSupergroupMessage,
@@ -20,6 +21,7 @@ import type {
   ChatMemberStatusChangedEvent,
   InlineQueryCreatedEvent,
   InlineQueryResultChosenEvent,
+  MessageReactionChangedEvent,
   PollAnswerChangedEvent,
 } from '../types/chat_domain_event.ts';
 import type { ChatMembership } from '../types/chat_membership.ts';
@@ -59,6 +61,7 @@ interface BotMessageViews {
     event: ChatJoinRequestedEvent,
     observerBotId: number,
   ): BotApiChatJoinRequest;
+  viewMessageReactionChangeForBot(event: MessageReactionChangedEvent): BotApiMessageReactionUpdated;
 }
 
 interface BotUpdateMailboxes {
@@ -75,6 +78,10 @@ interface BotUpdateMailboxes {
   enqueueMyChatMemberUpdate(botId: number, myChatMember: BotApiMyChatMemberUpdated): void;
   enqueueChatMemberUpdate(botId: number, chatMember: BotApiChatMemberUpdated): void;
   enqueueChatJoinRequestUpdate(botId: number, chatJoinRequest: BotApiChatJoinRequest): void;
+  enqueueMessageReactionUpdate(
+    botId: number,
+    messageReaction: BotApiMessageReactionUpdated,
+  ): void;
 }
 
 interface BotUpdateSubscriptionLookup {
@@ -179,6 +186,9 @@ export class BotUpdateDeliveryService {
         return;
       case 'chat_join_requested':
         this.#deliverChatJoinRequest(event);
+        return;
+      case 'message_reaction_changed':
+        this.#deliverMessageReactionChange(event);
         return;
       default: {
         const unhandledEvent: never = event;
@@ -441,6 +451,26 @@ export class BotUpdateDeliveryService {
         botId,
         this.#botMessageViews.viewChatJoinRequestForBot(event, botId),
       );
+    }
+  }
+
+  /**
+   * An account's change of its reactions to a supergroup message is observed by the supergroup's
+   * administrator bots that subscribe to `message_reaction` updates, as the Bot API documents for
+   * them; privacy mode does not matter. Bots never change reactions that bots observe.
+   */
+  #deliverMessageReactionChange(event: MessageReactionChangedEvent): void {
+    const { chatId } = event.message;
+    const observerIds = this.#sharedChats.getChatMemberIds(chatId).filter((memberId) =>
+      this.#bots.getById(memberId) !== undefined && this.#isAdministrator(memberId, chatId) &&
+      this.#isSubscribed(memberId, 'message_reaction')
+    );
+    if (observerIds.length === 0) {
+      return;
+    }
+    const messageReaction = this.#botMessageViews.viewMessageReactionChangeForBot(event);
+    for (const observerId of observerIds) {
+      this.#botUpdates.enqueueMessageReactionUpdate(observerId, messageReaction);
     }
   }
 

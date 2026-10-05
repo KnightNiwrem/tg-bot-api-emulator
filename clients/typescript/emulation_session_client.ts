@@ -22,6 +22,7 @@ import {
   inlineQueryResponseSchema,
   menuButtonResponseSchema,
   messageHistoryResponseSchema,
+  messageReactionsResponseSchema,
   notificationsResponseSchema,
   pollAnswerResponseSchema,
   rateLimitResponsesListSchema,
@@ -60,6 +61,7 @@ import type {
   AccountPinnedMessagesInput,
   AccountPollAnswer,
   AccountPollMessageInput,
+  AccountReactionMessageInput,
   AccountReplyInterfaceInput,
   AccountSendContactInput,
   AccountSendDocumentInput,
@@ -104,6 +106,7 @@ import type {
   LiftChatMemberRestrictionInput,
   MenuButton,
   MessageIn,
+  MessageReactions,
   MessageTarget,
   Notification,
   Poll,
@@ -124,6 +127,7 @@ import type {
   SetChatPermissionsInput,
   SetContentProtectionInput,
   SetCustomTitleInput,
+  SetMessageReactionInput,
   SetWebhookDeliveryInput,
   Supergroup,
   SupergroupAdministrator,
@@ -1028,6 +1032,32 @@ function createVirtualAccountClient(
       });
       return response.message;
     },
+    setMessageReaction(
+      { chat, message_id, reaction }: SetMessageReactionInput,
+    ): Promise<MessageReactions> {
+      return requestJson(fetchImplementation, {
+        method: 'PUT',
+        url: messageReactionsUrl(accountUrl, { chat, message_id }),
+        expectedStatus: HTTP_STATUS_OK,
+        responseSchema: messageReactionsResponseSchema,
+        body: { reaction },
+      });
+    },
+    getMessageReactions(input: AccountReactionMessageInput): Promise<MessageReactions> {
+      return requestJson(fetchImplementation, {
+        method: 'GET',
+        url: messageReactionsUrl(accountUrl, input),
+        expectedStatus: HTTP_STATUS_OK,
+        responseSchema: messageReactionsResponseSchema,
+      });
+    },
+    async removeMessageReaction(input: AccountReactionMessageInput): Promise<void> {
+      await requestEmptyResponse(fetchImplementation, {
+        method: 'DELETE',
+        url: messageReactionsUrl(accountUrl, input),
+        expectedStatus: HTTP_STATUS_NO_CONTENT,
+      });
+    },
     async sendInlineQuery(input: SendInlineQueryInput): Promise<InlineQuery> {
       const response = await requestJson(fetchImplementation, {
         method: 'POST',
@@ -1160,6 +1190,16 @@ function pollMessageUrl(accountUrl: string, { chat, message_id }: AccountPollMes
 /** The URL of an account's answer to the poll a message of its chat shows. */
 function pollAnswerUrl(accountUrl: string, input: AccountPollMessageInput): string {
   return `${pollMessageUrl(accountUrl, input)}/poll-answer`;
+}
+
+/** The URL of the reactions to a message of a supergroup the account is a member of. */
+function messageReactionsUrl(
+  accountUrl: string,
+  { chat, message_id }: AccountReactionMessageInput,
+): string {
+  return `${conversationUrl(accountUrl, chat)}/messages/${
+    encodeURIComponent(message_id)
+  }/reactions`;
 }
 
 interface MessageResponseSchemas<Target extends MessageTarget> {

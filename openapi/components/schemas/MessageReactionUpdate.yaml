@@ -1,0 +1,54 @@
+type: object
+additionalProperties: false
+description: >-
+  An account's change of its reaction to a supergroup message, received by the supergroup's
+  administrator bots whose `allowed_updates` explicitly include `message_reaction`, as on
+  Telegram. No update is sent for reactions set by bots, or for a choice that changes nothing.
+required:
+  - update_id
+  - message_reaction
+properties:
+  update_id:
+    type: integer
+    minimum: 1
+  message_reaction:
+    type: object
+    additionalProperties: false
+    description: >-
+      The Bot API's `MessageReactionUpdated`, in the field order of the official Bot API server.
+      Only accounts react visibly to bots, so the reacting `user` is always named and
+      `actor_chat` never appears.
+    required:
+      - chat
+      - message_id
+      - user
+      - date
+      - old_reaction
+      - new_reaction
+    properties:
+      chat:
+        $ref: ./SupergroupChat.yaml
+      message_id:
+        type: integer
+        minimum: 1
+        description: >-
+          The message that holds the reaction: for a message of an album, the album's first
+          message that is not deleted.
+      user:
+        $ref: ./Account.yaml
+      date:
+        type: integer
+        minimum: 0
+        description: Unix timestamp of the change.
+      old_reaction:
+        type: array
+        description: The account's reactions before the change; empty when it had none.
+        maxItems: 1
+        items:
+          $ref: ./ReactionTypeEmoji.yaml
+      new_reaction:
+        type: array
+        description: The account's reactions after the change; empty when it removed them.
+        maxItems: 1
+        items:
+          $ref: ./ReactionTypeEmoji.yaml

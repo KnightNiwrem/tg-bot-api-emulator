@@ -1,4 +1,5 @@
 import type { InlineKeyboard } from '../types/inline_keyboard.ts';
+import type { UserReaction } from '../types/message_reaction.ts';
 import type { ReplyInterfaceMarkup } from '../types/reply_interface.ts';
 import type { PrivateConversationKey, PrivateConversationRole } from '../types/virtual_chat.ts';
 import type {
@@ -317,6 +318,29 @@ export class MessageRepository {
       return changedMessage;
     }
     throw new Error(`Message ${messageId} does not exist`);
+  }
+
+  /**
+   * Replaces the reactions of a stored supergroup message and returns the message as the change
+   * left it; no reactions leave it without any. Reacting changes nothing else about the message.
+   */
+  setSupergroupMessageReactions(
+    messageId: CanonicalMessageId,
+    reactions: readonly UserReaction[],
+  ): SupergroupMessage {
+    const storedMessage = this.#supergroupMessagesById.get(messageId);
+    if (storedMessage === undefined) {
+      throw new Error(`Supergroup message ${messageId} does not exist`);
+    }
+    const { reactions: _replacedReactions, ...preservedFields } = storedMessage;
+    const changedMessage: SupergroupMessage = {
+      ...preservedFields,
+      ...(reactions.length === 0 ? {} : {
+        reactions: reactions.map(({ userId, emojis }) => ({ userId, emojis: [...emojis] })),
+      }),
+    };
+    this.#supergroupMessagesById.set(messageId, changedMessage);
+    return changedMessage;
   }
 
   getSupergroupMessages(chatId: number): readonly SupergroupMessage[] {

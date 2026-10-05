@@ -1,0 +1,77 @@
+description: >-
+  The reactions to a message of a supergroup the account is a member of, addressed by the
+  message's ID in the supergroup. A message of an album is addressed through any message of the
+  album: its first message that is not deleted holds the album's reactions. Deleting that message
+  deletes them.
+parameters:
+  - $ref: ../components/parameters/SessionId.yaml
+  - $ref: ../components/parameters/AccountId.yaml
+  - $ref: ../components/parameters/SupergroupChatId.yaml
+  - $ref: ../components/parameters/SupergroupMessageId.yaml
+get:
+  operationId: getSupergroupMessageReactions
+  summary: Read the reactions to a message of a supergroup
+  description: Shows every member's reactions, the bots' included.
+  responses:
+    '200':
+      description: The message's reactions, with the message that holds them.
+      content:
+        application/json:
+          schema:
+            $ref: ../components/schemas/SupergroupMessageReactions.yaml
+    '400':
+      description: A path identifier is invalid.
+    '403':
+      description: The account is not a member of the supergroup.
+    '404':
+      description: The session, account, supergroup, or message of the supergroup does not exist.
+put:
+  operationId: setSupergroupAccountMessageReaction
+  summary: React to a message of a supergroup, or change the reaction
+  description: >-
+    Replaces the account's reactions to the message. The supergroup's administrator bots whose
+    `allowed_updates` include `message_reaction` receive a `message_reaction` update with the
+    account's old and new reactions. Choosing the reactions the account already chose changes
+    nothing and sends no update. Only content messages accept reactions.
+  requestBody:
+    required: true
+    content:
+      application/json:
+        schema:
+          $ref: ../components/schemas/SetAccountMessageReactionRequest.yaml
+  responses:
+    '200':
+      description: The message's reactions after the change, with the message that holds them.
+      content:
+        application/json:
+          schema:
+            $ref: ../components/schemas/SupergroupMessageReactions.yaml
+    '400':
+      description: >-
+        The request is invalid, names an emoji the Bot API does not list for
+        `ReactionTypeEmoji`, chooses more than one reaction, or the message is a service message.
+    '403':
+      description: >-
+        The account is not a member of the supergroup, or lacks the `can_react_to_messages`
+        permission.
+    '404':
+      description: The session, account, supergroup, or message of the supergroup does not exist.
+    '409':
+      description: >-
+        The message already shows eleven distinct reactions, Telegram's `reactions_uniq_max`, and
+        the chosen one is not among them.
+delete:
+  operationId: removeSupergroupAccountMessageReaction
+  summary: Remove the account's reaction to a message of a supergroup
+  description: >-
+    As for a change, the administrator bots that subscribe to `message_reaction` receive an
+    update with no new reactions. Removing without a reaction changes nothing.
+  responses:
+    '204':
+      description: The account has no reaction to the message.
+    '400':
+      description: A path identifier is invalid.
+    '403':
+      description: The account is not a member of the supergroup.
+    '404':
+      description: The session, account, supergroup, or message of the supergroup does not exist.

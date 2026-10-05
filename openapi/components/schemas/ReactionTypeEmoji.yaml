@@ -1,0 +1,91 @@
+type: object
+additionalProperties: false
+description: >-
+  An ordinary emoji reaction, as the Bot API's `ReactionTypeEmoji` shows it. Custom emoji and paid
+  reactions are not supported.
+required:
+  - type
+  - emoji
+properties:
+  type:
+    type: string
+    const: emoji
+  emoji:
+    type: string
+    description: >-
+      One of the emoji the Bot API documents for `ReactionTypeEmoji`, written exactly as listed
+      there: for example `❤` and `☃` have no variation selector U+FE0F.
+    enum:
+      - ❤
+      - 👍
+      - 👎
+      - 🔥
+      - 🥰
+      - 👏
+      - 😁
+      - 🤔
+      - 🤯
+      - 😱
+      - 🤬
+      - 😢
+      - 🎉
+      - 🤩
+      - 🤮
+      - 💩
+      - 🙏
+      - 👌
+      - 🕊
+      - 🤡
+      - 🥱
+      - 🥴
+      - 😍
+      - 🐳
+      - ❤‍🔥
+      - 🌚
+      - 🌭
+      - 💯
+      - 🤣
+      - ⚡
+      - 🍌
+      - 🏆
+      - 💔
+      - 🤨
+      - 😐
+      - 🍓
+      - 🍾
+      - 💋
+      - 🖕
+      - 😈
+      - 😴
+      - 😭
+      - 🤓
+      - 👻
+      - 👨‍💻
+      - 👀
+      - 🎃
+      - 🙈
+      - 😇
+      - 😨
+      - 🤝
+      - ✍
+      - 🤗
+      - 🫡
+      - 🎅
+      - 🎄
+      - ☃
+      - 💅
+      - 🤪
+      - 🗿
+      - 🆒
+      - 💘
+      - 🙉
+      - 🦄
+      - 😘
+      - 💊
+      - 🙊
+      - 😎
+      - 👾
+      - 🤷‍♂
+      - 🤷
+      - 🤷‍♀
+      - 😡

@@ -5,10 +5,11 @@
 ## Supported behavior
 
 The emulator generates `message`, `edited_message`, `callback_query`, `inline_query`,
-`chosen_inline_result`, `poll`, `poll_answer`, `my_chat_member`, `chat_member` and
-`chat_join_request` updates. Only the bot that sent a poll receives its
-[`poll` and `poll_answer` updates](polls.md#poll-updates). `chat_member` requires the observing bot
-to be a supergroup administrator and explicitly subscribe to it, and
+`chosen_inline_result`, `poll`, `poll_answer`, `my_chat_member`, `chat_member`, `chat_join_request`
+and `message_reaction` updates. Only the bot that sent a poll receives its
+[`poll` and `poll_answer` updates](polls.md#poll-updates). `chat_member` and
+[`message_reaction`](reactions.md#reaction-updates) require the observing bot to be a supergroup
+administrator and explicitly subscribe to them, and
 [`chat_join_request`](invite-links.md#join-requests) requires the observing bot to be an
 administrator with `can_invite_users`. Inline feedback also requires the bot's
 `receives_chosen_inline_results` creation setting.
@@ -56,9 +57,9 @@ support grammY's `bot.start()` and `bot.stop()` lifecycle.
 
 ## Real gaps
 
-Channel posts, reactions, business, payment, boost and other unsupported features cannot be
-exercised by subscribing to their names. Their coverage follows the corresponding
-[feature gaps](README.md#unimplemented-areas).
+Channel posts, reaction counts (`message_reaction_count`), business, payment, boost and other
+unsupported features cannot be exercised by subscribing to their names. Their coverage follows the
+corresponding [feature gaps](README.md#unimplemented-areas).
 
 [Supergroup privacy filtering](supergroups.md#real-gaps) has separate gaps.
 [Callback expiry](keyboards-and-callbacks.md#intentional-deviations) and

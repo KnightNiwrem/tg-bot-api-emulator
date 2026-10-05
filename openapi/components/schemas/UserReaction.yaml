@@ -1,0 +1,18 @@
+type: object
+additionalProperties: false
+description: The reactions one member, an account or a bot, chose for a message.
+required:
+  - user_id
+  - reaction
+properties:
+  user_id:
+    $ref: ./TelegramUserId.yaml
+  reaction:
+    type: array
+    description: >-
+      The member's reactions, as `new_reaction` of the Bot API's `MessageReactionUpdated` lists
+      them; members choose one reaction per message, as users without Premium do.
+    minItems: 1
+    maxItems: 1
+    items:
+      $ref: ./ReactionTypeEmoji.yaml

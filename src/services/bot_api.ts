@@ -33,6 +33,7 @@ import {
   type FormerSupergroupMemberFailureReason,
   getSupergroupNonMemberFailureReason,
   type SupergroupAdministratorRights,
+  type SupergroupBotAccessFailureReason,
 } from '../types/chat_membership.ts';
 import type { ChatPermissions } from '../types/chat_permissions.ts';
 import { createWrittenContact, type WrittenContact } from '../types/contact.ts';
@@ -191,6 +192,11 @@ import type {
   UnpinMessageInput,
   UnpinMessageResult,
 } from './message_pinning.ts';
+import type {
+  ReactionChoiceFailureReason,
+  SetBotMessageReactionInput,
+  SetBotMessageReactionResult,
+} from './message_reaction.ts';
 import type { PollStopFailureReason } from './poll.ts';
 import type { PollLimitFailure } from './poll_normalization.ts';
 import type {
@@ -1157,6 +1163,27 @@ export type BotApiUnpinChatMessageResult =
     readonly reason: BotPinChangeFailureReason | 'message_not_pinned';
   };
 
+export interface SetMessageReactionRequest {
+  /** The Bot API `chat_id`, as `SendRequestOptions` describes it. */
+  readonly chatId: number;
+  /** The message's ID in the bot's chat. */
+  readonly messageId: number;
+  /** The emoji of the Bot API `reaction`, in order; none removes the bot's reactions. */
+  readonly emojis: readonly string[];
+}
+
+export type BotApiSetMessageReactionResult =
+  | { readonly set: true }
+  | {
+    readonly set: false;
+    readonly reason:
+      | SupergroupBotAccessFailureReason
+      | 'message_not_found'
+      | ReactionChoiceFailureReason
+      /** The emulator supports reactions in supergroups only. */
+      | 'private_chat_reactions_unsupported';
+  };
+
 export type DeleteMessageRequest = MessageTarget;
 
 export type DeleteMessageResult =
@@ -2037,6 +2064,10 @@ interface MessagePinning {
   findNewestPinnedMessage(chat: PinnedMessagesChat): ChatMessage | undefined;
 }
 
+interface MessageReactions {
+  setBotMessageReaction(input: SetBotMessageReactionInput): SetBotMessageReactionResult;
+}
+
 interface ChatActions {
   recordBotChatAction(input: {
     readonly botId: number;
@@ -2061,6 +2092,8 @@ interface BotApiServiceDependencies {
   readonly botMessageViews: BotMessageViews;
   /** Pins and unpins messages, and finds the pinned message that `getChat` shows. */
   readonly messagePinning: MessagePinning;
+  /** Sets the bot's reactions to supergroup messages. */
+  readonly messageReactions: MessageReactions;
   readonly mediaFiles: MediaFiles;
   readonly callbackQueries: CallbackQueryAnswering;
   readonly inlineQueries: InlineQueryAnswering;
@@ -2108,6 +2141,7 @@ export class BotApiService {
   readonly #chatAdmission: ChatAdmission;
   readonly #botMessageViews: BotMessageViews;
   readonly #messagePinning: MessagePinning;
+  readonly #messageReactions: MessageReactions;
   readonly #mediaFiles: MediaFiles;
   readonly #callbackQueries: CallbackQueryAnswering;
   readonly #inlineQueries: InlineQueryAnswering;
@@ -2135,6 +2169,7 @@ export class BotApiService {
       chatAdmission,
       botMessageViews,
       messagePinning,
+      messageReactions,
       mediaFiles,
       callbackQueries,
       inlineQueries,
@@ -2161,6 +2196,7 @@ export class BotApiService {
     this.#chatAdmission = chatAdmission;
     this.#botMessageViews = botMessageViews;
     this.#messagePinning = messagePinning;
+    this.#messageReactions = messageReactions;
     this.#mediaFiles = mediaFiles;
     this.#callbackQueries = callbackQueries;
     this.#inlineQueries = inlineQueries;
@@ -4590,6 +4626,33 @@ export class BotApiService {
       unpinned: false,
       reason: excludeAccountPinChangeFailure(authenticatedBot, result.reason),
     };
+  }
+
+  /**
+   * Replaces the bot's reactions to a message of a supergroup it is a member of, as
+   * `MessageReactionService.setBotMessageReaction` replaces them. Reactions in private chats are
+   * not supported.
+   */
+  setMessageReaction(
+    authenticatedBot: VirtualBotProfile,
+    { chatId, messageId, emojis }: SetMessageReactionRequest,
+  ): BotApiSetMessageReactionResult {
+    if (isUserId(chatId)) {
+      return { set: false, reason: 'private_chat_reactions_unsupported' };
+    }
+    const result = this.#messageReactions.setBotMessageReaction({
+      botId: authenticatedBot.id,
+      chatId,
+      messageId,
+      emojis,
+    });
+    if (result.set) {
+      return result;
+    }
+    if (result.reason === 'bot_not_found') {
+      throw new Error(`Authenticated bot ${authenticatedBot.id} does not exist`);
+    }
+    return { set: false, reason: result.reason };
   }
 
   /**

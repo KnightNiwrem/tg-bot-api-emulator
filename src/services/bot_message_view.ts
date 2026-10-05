@@ -30,6 +30,7 @@ import {
   projectSupergroupChat,
   projectSupergroupMessage,
 } from '../projections/bot_api_message.ts';
+import { projectMessageReactionChange } from '../projections/bot_api_message_reaction.ts';
 import type {
   BotApiBotUser,
   BotApiCallbackQuery,
@@ -41,6 +42,7 @@ import type {
   BotApiChosenInlineResult,
   BotApiInlineQuery,
   BotApiMessage,
+  BotApiMessageReactionUpdated,
   BotApiMyChatMemberUpdated,
   BotApiPinnedPrivateMessage,
   BotApiPinnedSupergroupMessage,
@@ -63,6 +65,7 @@ import type {
   ChatJoinRequestedEvent,
   ChatMemberStatusChangedEvent,
   InlineQueryResultChosenEvent,
+  MessageReactionChangedEvent,
   PollAnswerChangedEvent,
 } from '../types/chat_domain_event.ts';
 import {
@@ -407,6 +410,27 @@ export class BotMessageViewService {
       event,
       requester: this.#findAccountProfile(event.request.userId, 'a join request'),
       inviteLink: this.viewChatInviteLink(event.inviteLink, observerBotId),
+    });
+  }
+
+  /**
+   * Returns an account's change of its reactions to a supergroup message as an administrator bot
+   * of the supergroup receives it; every member sees a supergroup message under the same ID, so
+   * every observer receives the same update.
+   */
+  viewMessageReactionChangeForBot(
+    event: MessageReactionChangedEvent,
+  ): BotApiMessageReactionUpdated {
+    const { message } = event;
+    const supergroup = this.#sharedChats.getSharedChat(message.chatId);
+    if (supergroup?.kind !== 'supergroup') {
+      throw new Error(`Supergroup ${message.chatId} of a reaction change does not exist`);
+    }
+    return projectMessageReactionChange({
+      event,
+      supergroup,
+      reactor: this.#findAccountProfile(event.accountId, 'a reaction change'),
+      messageId: this.#requireMessageId(message.chatId, message.id),
     });
   }
 

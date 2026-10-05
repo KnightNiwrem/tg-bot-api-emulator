@@ -34,6 +34,7 @@ Each topic page stands on its own once you know the core path.
 | [Rich messages](rich-messages.md)                           | Reading rich messages as text and pressing their buttons                     |
 | [Media and files](media-and-files.md)                       | Photos, documents, videos, voice notes, albums, captions and file downloads  |
 | [Polls](polls.md)                                           | Voting, retracting votes, poll updates and closing polls                     |
+| [Reactions](reactions.md)                                   | Reacting to supergroup messages, reaction updates and bots' reactions        |
 | [Contacts and locations](contacts-and-locations.md)         | Sharing contacts and locations, and the buttons that request them            |
 | [Inline mode](inline-mode.md)                               | Inline queries, their answers, chosen results and inline messages            |
 | [Supergroups](supergroups.md)                               | Creating groups, membership, privacy mode and group settings                 |

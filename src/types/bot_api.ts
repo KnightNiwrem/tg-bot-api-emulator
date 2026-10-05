@@ -843,6 +843,28 @@ export interface BotApiChatJoinRequest {
   readonly invite_link: BotApiChatInviteLink;
 }
 
+/** An ordinary emoji reaction, as the Bot API's `ReactionTypeEmoji` shows it. */
+export interface BotApiReactionTypeEmoji {
+  readonly type: 'emoji';
+  readonly emoji: string;
+}
+
+/**
+ * An account's change of its reactions to a supergroup message, in the field order of the official
+ * Bot API server's `JsonMessageReactionUpdated`. Only accounts change reactions that bots observe,
+ * so the update always names the `user` and never an `actor_chat`.
+ */
+export interface BotApiMessageReactionUpdated {
+  readonly chat: BotApiSupergroupChat;
+  readonly message_id: number;
+  readonly user: VirtualAccountProfile;
+  readonly date: number;
+  /** The account's reactions before the change. */
+  readonly old_reaction: readonly BotApiReactionTypeEmoji[];
+  /** The account's reactions after the change; empty when it removed them. */
+  readonly new_reaction: readonly BotApiReactionTypeEmoji[];
+}
+
 export interface BotApiMessageUpdate {
   readonly update_id: number;
   readonly message: BotApiMessage;
@@ -895,6 +917,12 @@ export interface BotApiChatJoinRequestUpdate {
   readonly chat_join_request: BotApiChatJoinRequest;
 }
 
+/** An account's change of its reactions to a message of a supergroup the bot administers. */
+export interface BotApiMessageReactionUpdate {
+  readonly update_id: number;
+  readonly message_reaction: BotApiMessageReactionUpdated;
+}
+
 export type BotApiUpdate =
   | BotApiMessageUpdate
   | BotApiEditedMessageUpdate
@@ -905,7 +933,8 @@ export type BotApiUpdate =
   | BotApiPollAnswerUpdate
   | BotApiMyChatMemberUpdate
   | BotApiChatMemberUpdate
-  | BotApiChatJoinRequestUpdate;
+  | BotApiChatJoinRequestUpdate
+  | BotApiMessageReactionUpdate;
 
 /**
  * The ID of the chat an update happened in, as grammY's `ctx.chat` finds it; `undefined` for an
@@ -930,6 +959,9 @@ export function getBotApiUpdateChatId(update: BotApiUpdate): number | undefined 
   }
   if ('chat_join_request' in update) {
     return update.chat_join_request.chat.id;
+  }
+  if ('message_reaction' in update) {
+    return update.message_reaction.chat.id;
   }
   return undefined;
 }
@@ -965,6 +997,9 @@ export function getBotApiUpdateUserId(update: BotApiUpdate): number | undefined 
   }
   if ('chat_join_request' in update) {
     return update.chat_join_request.from.id;
+  }
+  if ('message_reaction' in update) {
+    return update.message_reaction.user.id;
   }
   return update.chat_member.from.id;
 }

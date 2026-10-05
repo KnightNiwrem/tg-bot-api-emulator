@@ -1,6 +1,7 @@
 import type { Contact } from './contact.ts';
 import type { GeoLocation } from './geo_location.ts';
 import type { InlineKeyboard } from './inline_keyboard.ts';
+import type { UserReaction } from './message_reaction.ts';
 import type { PollId } from './poll.ts';
 import type { ReplyInterfaceMarkup } from './reply_interface.ts';
 import { type RichMessage, richMessageMentionsUser } from './rich_message.ts';
@@ -651,6 +652,12 @@ export interface SupergroupMessage {
    * message shows it. A chat pins any number of messages; deleting a message unpins it.
    */
   readonly isPinned: boolean;
+  /**
+   * The members' reactions to the message, one entry per reacting user, in the order the users
+   * last changed them; omitted while nobody reacts. Edits keep them, and deleting the message
+   * deletes them.
+   */
+  readonly reactions?: readonly UserReaction[];
 }
 
 /** A canonical message of any chat the emulator supports. */

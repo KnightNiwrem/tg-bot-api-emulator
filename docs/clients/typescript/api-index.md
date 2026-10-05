@@ -94,7 +94,7 @@ exact contract.
 | `richMessageToPlainText`    | Reads what a rich message shows as plain text                | [Rich messages](rich-messages.md)         |
 | `richTextToPlainText`       | Reads a piece of rich text as plain text                     | [Rich messages](rich-messages.md)         |
 
-## Account: polls and inline mode
+## Account: polls, reactions and inline mode
 
 | Operation                 | Purpose                                          | Guide                         |
 | ------------------------- | ------------------------------------------------ | ----------------------------- |
@@ -103,6 +103,9 @@ exact contract.
 | `answerPoll`              | Votes in a poll, or changes the vote             | [Polls](polls.md)             |
 | `getPollAnswer`           | Reads the account's vote with the poll's message | [Polls](polls.md)             |
 | `retractPollAnswer`       | Retracts the account's vote                      | [Polls](polls.md)             |
+| `setMessageReaction`      | Reacts to a supergroup message, or changes it    | [Reactions](reactions.md)     |
+| `getMessageReactions`     | Reads a supergroup message's reactions           | [Reactions](reactions.md)     |
+| `removeMessageReaction`   | Removes the account's reaction                   | [Reactions](reactions.md)     |
 | `sendInlineQuery`         | Types an inline query for a bot                  | [Inline mode](inline-mode.md) |
 | `getInlineQuery`          | Reads an inline query with the bot's answer      | [Inline mode](inline-mode.md) |
 | `chooseInlineQueryResult` | Sends a result of the bot's answer               | [Inline mode](inline-mode.md) |

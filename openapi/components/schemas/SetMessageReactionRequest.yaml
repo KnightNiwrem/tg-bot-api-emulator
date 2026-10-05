@@ -1,0 +1,34 @@
+type: object
+additionalProperties: false
+description: >-
+  Addresses a supergroup message and the reactions the bot chooses for it. Business connections
+  are not supported.
+required:
+  - chat_id
+  - message_id
+properties:
+  chat_id:
+    $ref: ./ChatIdentifier.yaml
+    description: >-
+      Identifier of the supergroup: its negative chat ID, or `@` followed by the username of a
+      public supergroup. Reactions in private chats are not supported.
+  message_id:
+    type: integer
+    minimum: 1
+    description: >-
+      Identifier of the message in the supergroup. For a message of an album, the reaction is set
+      to the album's first message that is not deleted.
+  reaction:
+    type: array
+    description: >-
+      The bot's reactions, which replace its earlier ones; at most one, as for users without
+      Premium. Omitting it, or an empty list, removes the bot's reactions. A `custom_emoji`
+      reaction is refused, since no emulated chat allows one, and any other type, `paid`
+      included, is not a reaction type a bot can use.
+    maxItems: 1
+    items:
+      $ref: ./ReactionTypeEmoji.yaml
+  is_big:
+    type: boolean
+    default: false
+    description: Shows the reaction with a big animation, which changes nothing the emulator records.
