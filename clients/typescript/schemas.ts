@@ -472,6 +472,17 @@ const richBlockSchema: z.ZodType<RichBlock> = z.lazy(() =>
       document: documentSchema,
       caption: richBlockCaptionSchema.optional(),
     }),
+    z.strictObject({
+      type: z.literal('video'),
+      video: videoSchema.omit({ start_timestamp: true }),
+      caption: richBlockCaptionSchema.optional(),
+      has_spoiler: z.literal(true).optional(),
+    }),
+    z.strictObject({
+      type: z.literal('voice_note'),
+      voice_note: voiceSchema,
+      caption: richBlockCaptionSchema.optional(),
+    }),
   ])
 );
 

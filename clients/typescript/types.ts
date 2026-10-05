@@ -1403,7 +1403,19 @@ export type RichBlock =
     readonly caption?: RichBlockCaption;
     readonly has_spoiler?: true;
   }
-  | { readonly type: 'document'; readonly document: Document; readonly caption?: RichBlockCaption };
+  | { readonly type: 'document'; readonly document: Document; readonly caption?: RichBlockCaption }
+  | {
+    readonly type: 'video';
+    /** The video, which a block shows without a `start_timestamp`. */
+    readonly video: Video;
+    readonly caption?: RichBlockCaption;
+    readonly has_spoiler?: true;
+  }
+  | {
+    readonly type: 'voice_note';
+    readonly voice_note: Voice;
+    readonly caption?: RichBlockCaption;
+  };
 
 /** A message a bot laid out in blocks. */
 export interface RichMessage {
