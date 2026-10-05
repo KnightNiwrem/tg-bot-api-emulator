@@ -3,9 +3,10 @@ import type { ChatInviteLink } from './chat_invite_link.ts';
 import type { ChatJoinRequest } from './chat_join_request.ts';
 import type { ChatMemberStatus } from './chat_membership.ts';
 import type { InlineQuery } from './inline_query.ts';
+import type { ReactionEmoji } from './message_reaction.ts';
 import type { Poll } from './poll.ts';
 import type { SharedChat, Supergroup } from './virtual_chat.ts';
-import type { ChatMessage } from './virtual_message.ts';
+import type { ChatMessage, SupergroupMessage } from './virtual_message.ts';
 
 /** A canonical message was stored and numbered in the message boxes that hold it. */
 export interface MessageCreatedEvent {
@@ -101,6 +102,19 @@ export interface ChatJoinRequestedEvent {
   readonly inviteLink: ChatInviteLink;
 }
 
+/** An account changed its reactions to a supergroup message: it added, changed, or removed them. */
+export interface MessageReactionChangedEvent {
+  readonly type: 'message_reaction_changed';
+  /** The message as the change left it. */
+  readonly message: SupergroupMessage;
+  readonly accountId: number;
+  /** The account's reactions before the change; none when it had not reacted. */
+  readonly oldEmojis: readonly ReactionEmoji[];
+  /** The account's reactions after the change; none when it removed them. */
+  readonly newEmojis: readonly ReactionEmoji[];
+  readonly changedAtUnixSeconds: number;
+}
+
 /** A state change produced by a chat command, published in the order it happened. */
 export type ChatDomainEvent =
   | MessageCreatedEvent
@@ -112,4 +126,5 @@ export type ChatDomainEvent =
   | InlineQueryResultChosenEvent
   | BotBlockChangedEvent
   | ChatMemberStatusChangedEvent
-  | ChatJoinRequestedEvent;
+  | ChatJoinRequestedEvent
+  | MessageReactionChangedEvent;

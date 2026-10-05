@@ -5,6 +5,7 @@ import type {
   BotApiChosenInlineResult,
   BotApiInlineQuery,
   BotApiMessage,
+  BotApiMessageReactionUpdated,
   BotApiMyChatMemberUpdated,
   BotApiUpdate,
 } from '../types/bot_api.ts';
@@ -100,6 +101,16 @@ export class BotUpdateRepository {
     return this.#enqueueUpdate(
       botId,
       (update_id) => ({ update_id, chat_join_request: chatJoinRequest }),
+    );
+  }
+
+  enqueueMessageReactionUpdate(
+    botId: number,
+    messageReaction: BotApiMessageReactionUpdated,
+  ): BotApiUpdate {
+    return this.#enqueueUpdate(
+      botId,
+      (update_id) => ({ update_id, message_reaction: messageReaction }),
     );
   }
 

@@ -46,6 +46,7 @@ import { MediaFileService } from '../services/media_file.ts';
 import { normalizeCaption } from '../services/message_content.ts';
 import { MessageForwardingService } from '../services/message_forwarding.ts';
 import { MessagePinningService } from '../services/message_pinning.ts';
+import { MessageReactionService } from '../services/message_reaction.ts';
 import { PollService } from '../services/poll.ts';
 import { PrivateMessagingService } from '../services/private_messaging.ts';
 import { createSessionUserMentionContext } from '../services/session_user_mention.ts';
@@ -155,6 +156,15 @@ export function createEmulationSession(
     privateMessages: privateMessaging,
     supergroupMessages: supergroupMessaging,
     messages,
+    currentUnixTimeSeconds,
+  });
+  const messageReactions = new MessageReactionService({
+    accounts,
+    bots,
+    sharedChats,
+    supergroupMessages: supergroupMessaging,
+    messages,
+    events: botUpdateDelivery,
     currentUnixTimeSeconds,
   });
   const messageForwarding = new MessageForwardingService({
@@ -290,6 +300,7 @@ export function createEmulationSession(
     chatAdmission,
     botMessageViews,
     messagePinning,
+    messageReactions,
     mediaFiles,
     callbackQueries,
     inlineQueries,
@@ -319,6 +330,7 @@ export function createEmulationSession(
     supergroupMessaging,
     messageForwarding,
     messagePinning,
+    messageReactions,
     botBlocking,
     callbackQueries,
     polls: pollService,

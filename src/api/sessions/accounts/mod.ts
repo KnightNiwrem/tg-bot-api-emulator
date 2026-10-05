@@ -12,6 +12,7 @@ import { createBlockedBotRoutes } from './blocked_bots.ts';
 import { createCallbackQueryRoutes } from './callback_queries.ts';
 import { createConversationReadRoutes } from './conversation_reads.ts';
 import { createInlineQueryRoutes } from './inline_queries.ts';
+import { createMessageReactionRoutes } from './message_reactions.ts';
 import { createMessageRoutes } from './messages.ts';
 import { createPinnedMessageRoutes } from './pinned_messages.ts';
 import { createPollAnswerRoutes } from './poll_answers.ts';
@@ -81,6 +82,7 @@ export function createAccountRoutes(): Hono<SessionRouteContextTypes> {
   accountRoutes.route('/', createCallbackQueryRoutes());
   accountRoutes.route('/', createPollAnswerRoutes());
   accountRoutes.route('/', createPollClosureRoutes());
+  accountRoutes.route('/', createMessageReactionRoutes());
   accountRoutes.route('/', createInlineQueryRoutes());
 
   return accountRoutes;
