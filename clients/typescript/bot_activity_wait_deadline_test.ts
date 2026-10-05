@@ -275,6 +275,41 @@ Deno.test('A wait cancelled by its where predicate rejects with the reason', asy
   }
 });
 
+Deno.test("A wait cancelled by its view's where predicate runs no other predicate", async () => {
+  const clock = new ManualWaitClock();
+  const transport = createScriptedTransport(() => page([sendMessageCall(1, 'match')], 1));
+  const cancellation = new AbortController();
+  const reason = new Error('Cancelled while inspecting an entry');
+  const activity = createBotActivityLog(
+    ACTIVITY_URL,
+    transport.fetch,
+    {
+      where: () => {
+        cancellation.abort(reason);
+        return true;
+      },
+    },
+    {},
+    clock,
+  );
+  let readPredicateCalls = 0;
+
+  const outcome = await outcomeOf(activity.waitFor({
+    method: 'sendMessage',
+    where: () => {
+      readPredicateCalls++;
+      throw new Error('Inspected after cancellation');
+    },
+  }, { after: 0, timeoutMs: 60_000, signal: cancellation.signal }));
+
+  assert(
+    'error' in outcome && outcome.error === reason,
+    `Expected the cancellation reason, got ${describeOutcome(outcome)}`,
+  );
+  assert(readPredicateCalls === 0, "Expected the read's predicate not to run");
+  assert(clock.pendingCallbackCount === 0, "Expected the wait's timers to be stopped");
+});
+
 Deno.test('A read outlasts a timer that runs before its cutoff', async () => {
   const cases = [
     { kind: 'holding', timeoutMs: 10.9, cutoffMilliseconds: 10.9 },

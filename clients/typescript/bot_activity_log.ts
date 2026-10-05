@@ -206,12 +206,18 @@ class HttpBotActivityLog implements BotActivityLog {
     { after, timeoutMs = this.#defaultTimeoutMilliseconds, signal }: WaitForBotActivityOptions,
   ): Promise<BotActivityEntryMatching<Criteria>> {
     validateTimeout(timeoutMs);
-    const combinedFilter = combineFilters(this.#baseFilter, acceptingAnyEntry(filter));
+    const readFilter = acceptingAnyEntry(filter);
+    const combinedFilter = combineFilters(this.#baseFilter, readFilter);
     const afterPosition = toPositionNumber(after);
     const waitTime = new BotActivityWaitTime(timeoutMs, signal, this.#waitClock);
     let match: BotActivityEntry | undefined;
     try {
-      match = await this.#findFirstMatch(combinedFilter, afterPosition, waitTime);
+      match = await this.#findFirstMatch(
+        combinedFilter,
+        wherePredicates(this.#baseFilter, readFilter),
+        afterPosition,
+        waitTime,
+      );
     } catch (error) {
       if (error instanceof BotActivityWaitTimeUp) {
         throw new BotActivityTimeoutError(
@@ -236,19 +242,26 @@ class HttpBotActivityLog implements BotActivityLog {
   }
 
   /**
-   * Finds the first entry after a position that the filter's `where` predicate accepts, among the
-   * entries the emulator reports in the wait's time, or `undefined` once the deadline has passed.
+   * Finds the first entry after a position that the filter's `where` predicates all accept, among
+   * the entries the emulator reports in the wait's time, or `undefined` once the deadline has
+   * passed. The predicates run one at a time, so that one that cancels the wait is the last to run.
    */
   async #findFirstMatch(
     filter: BotActivityFilter,
+    predicates: readonly BotActivityEntryPredicate[],
     after: number,
     waitTime: BotActivityWaitTime,
   ): Promise<BotActivityEntry | undefined> {
     const isMatch = (entry: BotActivityEntry) => {
-      const isAccepted = filter.where?.(entry) ?? true;
-      // The predicate, or code it calls, may cancel the wait, which then ends without a match.
-      waitTime.throwIfCancelled();
-      return isAccepted;
+      for (const where of predicates) {
+        const isAccepted = where(entry);
+        // The predicate, or code it calls, may cancel the wait, which then ends without a match.
+        waitTime.throwIfCancelled();
+        if (!isAccepted) {
+          return false;
+        }
+      }
+      return true;
     };
     const readRecorded = (read: BotActivityRead) => this.#readForWait(read, 'recorded', waitTime);
     let unreadAfter = after;
@@ -545,8 +558,7 @@ function combineFilters(
   readFilter: BotActivityFilter,
 ): BotActivityFilter {
   const parameters = combineParameters(logFilter.parameters, readFilter.parameters);
-  const { where: logWhere } = logFilter;
-  const { where: readWhere } = readFilter;
+  const predicates = wherePredicates(logFilter, readFilter);
   const combinedFilter: BotActivityFilter = {
     bot_id: combineCriterion('bot_id', logFilter.bot_id, readFilter.bot_id),
     kind: combineCriterion('kind', logFilter.kind, readFilter.kind),
@@ -562,9 +574,9 @@ function combineFilters(
     update_id: combineCriterion('update_id', logFilter.update_id, readFilter.update_id),
     ok: combineCriterion('ok', logFilter.ok, readFilter.ok),
     ...(parameters === undefined ? {} : { parameters }),
-    ...(logWhere === undefined || readWhere === undefined
-      ? { where: logWhere ?? readWhere }
-      : { where: (entry: BotActivityEntry) => logWhere(entry) && readWhere(entry) }),
+    ...(predicates.length === 0
+      ? {}
+      : { where: (entry: BotActivityEntry) => predicates.every((where) => where(entry)) }),
   };
   if (kindsMatchableBy(combinedFilter).length === 0) {
     throw new TypeError(
@@ -573,6 +585,16 @@ function combineFilters(
     );
   }
   return combinedFilter;
+}
+
+type BotActivityEntryPredicate = (entry: BotActivityEntry) => boolean;
+
+/** The `where` predicates of the log's filter and a read's that an entry must satisfy, in order. */
+function wherePredicates(
+  logFilter: BotActivityFilter,
+  readFilter: BotActivityFilter,
+): BotActivityEntryPredicate[] {
+  return [logFilter.where, readFilter.where].filter((where) => where !== undefined);
 }
 
 /**
