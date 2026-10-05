@@ -31,6 +31,8 @@ import {
   sentMessageResponseSchema,
   sentSupergroupMediaGroupResponseSchema,
   sentSupergroupMessageResponseSchema,
+  serverErrorResponsesListSchema,
+  serverErrorResponsesSchema,
   supergroupBotCommandsResponseSchema,
   supergroupInviteLinksResponseSchema,
   supergroupMessageHistoryResponseSchema,
@@ -110,12 +112,14 @@ import type {
   PrivateMessage,
   PromoteChatMemberInput,
   QueueRateLimitResponsesInput,
+  QueueServerErrorResponsesInput,
   RateLimitResponses,
   RegisterWebResourceInput,
   RemoveChatMemberInput,
   ReplyInterface,
   RestrictChatMemberInput,
   SendInlineQueryInput,
+  ServerErrorResponses,
   SetChatPermissionsInput,
   SetContentProtectionInput,
   SetCustomTitleInput,
@@ -150,6 +154,14 @@ export interface EmulationSessionClient extends EmulationSession {
   queueRateLimitResponses(input: QueueRateLimitResponsesInput): Promise<RateLimitResponses>;
   /** Lists the rate limit answers still queued for a bot, earliest first. */
   getRateLimitResponses(botId: number): Promise<readonly RateLimitResponses[]>;
+  /**
+   * Makes a bot's next calls of a method, or of every method, fail with `500 Internal Server
+   * Error` or `503 Service Unavailable` before they run, for testing how the bot retries or falls
+   * back. Queued rate limit answers apply first.
+   */
+  queueServerErrorResponses(input: QueueServerErrorResponsesInput): Promise<ServerErrorResponses>;
+  /** Lists the server error answers still queued for a bot, earliest first. */
+  getServerErrorResponses(botId: number): Promise<readonly ServerErrorResponses[]>;
   /**
    * Chooses who ends a bot's webhook delivery attempts and retry waits from now on: the emulator
    * by its own timing (`automatic`, the default), or only the test (`manual`), through
@@ -315,6 +327,28 @@ class HttpEmulationSessionClient implements EmulationSessionClient {
       responseSchema: rateLimitResponsesListSchema,
     });
     return response.rate_limit_responses;
+  }
+
+  queueServerErrorResponses(
+    { bot_id: botId, ...request }: QueueServerErrorResponsesInput,
+  ): Promise<ServerErrorResponses> {
+    return requestJson(this.#fetch, {
+      method: 'POST',
+      url: `${this.#sessionUrl}/bots/${botId}/server-error-responses`,
+      expectedStatus: HTTP_STATUS_CREATED,
+      responseSchema: serverErrorResponsesSchema,
+      body: request,
+    });
+  }
+
+  async getServerErrorResponses(botId: number): Promise<readonly ServerErrorResponses[]> {
+    const response = await requestJson(this.#fetch, {
+      method: 'GET',
+      url: `${this.#sessionUrl}/bots/${botId}/server-error-responses`,
+      expectedStatus: HTTP_STATUS_OK,
+      responseSchema: serverErrorResponsesListSchema,
+    });
+    return response.server_error_responses;
   }
 
   setWebhookDelivery(
