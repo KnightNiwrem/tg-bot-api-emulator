@@ -8,7 +8,8 @@ description: >-
   it, followed by its `type` and `value`. A table cell shows its `align` and `valign`, and its
   `colspan` and `rowspan` only above 1; a cell without text is invisible. A map shows its zoom
   and dimensions, both 0 when the bot chose none. A photo shows its one kept size, and whether
-  a spoiler covers it.
+  a spoiler covers it. A video shows whether a spoiler covers it, and its `Video` has no
+  `start_timestamp`; a voice note shows its `Voice`.
 required:
   - type
 properties:
@@ -34,6 +35,8 @@ properties:
       - buttons
       - photo
       - document
+      - video
+      - voice_note
   text:
     $ref: ./RichText.yaml
   size:
@@ -172,3 +175,7 @@ properties:
     const: true
   document:
     $ref: ./Document.yaml
+  video:
+    $ref: ./Video.yaml
+  voice_note:
+    $ref: ./Voice.yaml
