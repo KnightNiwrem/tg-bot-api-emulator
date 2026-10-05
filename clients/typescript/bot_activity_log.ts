@@ -94,11 +94,35 @@ export class UnexpectedBotActivityError extends Error {
   }
 }
 
+/**
+ * The monotonic clock and timers that measure a wait's time. Waits use the system's, and tests
+ * replace it to control time.
+ */
+export interface BotActivityWaitClock {
+  /** The current time in milliseconds on a monotonic clock, as `performance.now()` reads it. */
+  now(): number;
+  /**
+   * Runs `callback` once, `delayMilliseconds` from now, and never before returning. Returns a
+   * function that cancels the callback if it has not run. A wait schedules no delay longer than
+   * `setTimeout` keeps.
+   */
+  schedule(callback: () => void, delayMilliseconds: number): () => void;
+}
+
+const SYSTEM_WAIT_CLOCK: BotActivityWaitClock = {
+  now: () => performance.now(),
+  schedule: (callback, delayMilliseconds) => {
+    const timerId = setTimeout(callback, delayMilliseconds);
+    return () => clearTimeout(timerId);
+  },
+};
+
 export function createBotActivityLog<Criteria extends BotActivityCriteria>(
   activityUrl: string,
   fetchImplementation: typeof globalThis.fetch,
   baseFilter: BotActivityFilterFor<Criteria> | undefined,
   { timeoutMs = DEFAULT_TIMEOUT_MILLISECONDS }: BotActivityLogOptions,
+  waitClock: BotActivityWaitClock = SYSTEM_WAIT_CLOCK,
 ): BotActivityLog {
   validateTimeout(timeoutMs);
   return new HttpBotActivityLog(
@@ -106,6 +130,7 @@ export function createBotActivityLog<Criteria extends BotActivityCriteria>(
     fetchImplementation,
     baseFilter === undefined ? {} : acceptingAnyEntry(baseFilter),
     timeoutMs,
+    waitClock,
   );
 }
 
@@ -154,17 +179,20 @@ class HttpBotActivityLog implements BotActivityLog {
   readonly #fetch: typeof globalThis.fetch;
   readonly #baseFilter: BotActivityFilter;
   readonly #defaultTimeoutMilliseconds: number;
+  readonly #waitClock: BotActivityWaitClock;
 
   constructor(
     activityUrl: string,
     fetchImplementation: typeof globalThis.fetch,
     baseFilter: BotActivityFilter,
     defaultTimeoutMilliseconds: number,
+    waitClock: BotActivityWaitClock,
   ) {
     this.#activityUrl = activityUrl;
     this.#fetch = fetchImplementation;
     this.#baseFilter = baseFilter;
     this.#defaultTimeoutMilliseconds = defaultTimeoutMilliseconds;
+    this.#waitClock = waitClock;
   }
 
   async position(): Promise<number> {
@@ -179,7 +207,7 @@ class HttpBotActivityLog implements BotActivityLog {
     validateTimeout(timeoutMs);
     const combinedFilter = combineFilters(this.#baseFilter, acceptingAnyEntry(filter));
     const afterPosition = toPositionNumber(after);
-    const waitTime = new BotActivityWaitTime(timeoutMs, signal);
+    const waitTime = new BotActivityWaitTime(timeoutMs, signal, this.#waitClock);
     let match: BotActivityEntry | undefined;
     try {
       match = await this.#findFirstMatch(combinedFilter, afterPosition, waitTime);
@@ -380,21 +408,29 @@ class BotActivityWaitTime {
   /** Aborts once the allowance after the deadline is used up, or when the caller cancels. */
   readonly recordedReadSignal: AbortSignal;
   readonly #cancellationSignal: AbortSignal | undefined;
+  readonly #clock: BotActivityWaitClock;
   readonly #deadline: number;
   readonly #deadlineController = new AbortController();
   readonly #allowanceController = new AbortController();
-  readonly #timerIds: readonly ReturnType<typeof setTimeout>[];
+  readonly #cancelTimers: readonly (() => void)[];
 
-  constructor(timeoutMs: number, cancellationSignal: AbortSignal | undefined) {
+  constructor(
+    timeoutMs: number,
+    cancellationSignal: AbortSignal | undefined,
+    clock: BotActivityWaitClock,
+  ) {
     this.#cancellationSignal = cancellationSignal;
-    this.#deadline = performance.now() + timeoutMs;
-    this.#timerIds = [
+    this.#clock = clock;
+    this.#deadline = clock.now() + timeoutMs;
+    this.#cancelTimers = [
       abortLater(
+        clock,
         this.#deadlineController,
         timeoutMs,
         new DOMException(`The wait's ${timeoutMs} ms are up`, 'TimeoutError'),
       ),
       abortLater(
+        clock,
         this.#allowanceController,
         timeoutMs + RECORDED_READ_ALLOWANCE_MILLISECONDS,
         new DOMException(
@@ -423,12 +459,12 @@ class BotActivityWaitTime {
   /** Whether, by the clock, the time a read of the kind has is over. */
   isOverFor(kind: BotActivityWaitReadKind): boolean {
     const allowanceMilliseconds = kind === 'holding' ? 0 : RECORDED_READ_ALLOWANCE_MILLISECONDS;
-    return performance.now() >= this.#deadline + allowanceMilliseconds;
+    return this.#clock.now() >= this.#deadline + allowanceMilliseconds;
   }
 
   /** The whole milliseconds left before the deadline, rounded up; 0 once it has passed. */
   remainingMilliseconds(): number {
-    return Math.max(0, Math.ceil(this.#deadline - performance.now()));
+    return Math.max(0, Math.ceil(this.#deadline - this.#clock.now()));
   }
 
   /** Whether a read was abandoned because the caller cancelled the wait. */
@@ -445,8 +481,8 @@ class BotActivityWaitTime {
 
   /** Stops the timers once the wait has ended. */
   end(): void {
-    for (const timerId of this.#timerIds) {
-      clearTimeout(timerId);
+    for (const cancelTimer of this.#cancelTimers) {
+      cancelTimer();
     }
   }
 }
@@ -454,12 +490,14 @@ class BotActivityWaitTime {
 /** The longest delay `setTimeout` keeps; it runs a callback with a longer one at once. */
 const MAX_TIMER_DELAY_MILLISECONDS = 2 ** 31 - 1;
 
+/** Aborts the controller after a delay, and returns a function that cancels that. */
 function abortLater(
+  clock: BotActivityWaitClock,
   controller: AbortController,
   delayMilliseconds: number,
   reason: DOMException,
-): ReturnType<typeof setTimeout> {
-  return setTimeout(
+): () => void {
+  return clock.schedule(
     () => controller.abort(reason),
     Math.min(delayMilliseconds, MAX_TIMER_DELAY_MILLISECONDS),
   );
