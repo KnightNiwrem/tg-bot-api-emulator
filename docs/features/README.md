@@ -26,7 +26,7 @@ thresholds, which tests replace with
 | [Sessions and requests](sessions-and-requests.md)     | Test isolation, virtual identities, request formats, validation and errors  |
 | [Bot activity](bot-activity.md)                       | Recorded calls and updates, waiting for them and asserting their order      |
 | [Updates and polling](updates.md)                     | Generated update types, subscriptions, offsets, long polling and retention  |
-| [Webhooks](webhooks.md)                               | Delivery, replies, retry behavior and connection limitations                |
+| [Webhooks](webhooks.md)                               | Delivery, replies, retry behavior, delivery controls and connection limits  |
 | [Messages](messages.md)                               | Sending, replies, edits, deletion, blocking, forwarding and copying         |
 | [Text formatting](text-formatting.md)                 | Parse modes, entities, normalization and limits                             |
 | [Rich messages](rich-messages.md)                     | Blocks, rich text, buttons, media and edits of rich messages                |

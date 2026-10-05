@@ -33,3 +33,8 @@ properties:
     description: >-
       The user whose action caused the update, as grammY's `ctx.from` finds it; omitted for a
       poll's new state, which names no user.
+  webhook_attempt_id:
+    type: integer
+    minimum: 1
+    description: >-
+      The webhook attempt that handed the update over; present exactly when `via` is `webhook`.

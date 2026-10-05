@@ -35,6 +35,9 @@ import {
   supergroupInviteLinksResponseSchema,
   supergroupMessageHistoryResponseSchema,
   supergroupPollAnswerResponseSchema,
+  webhookAttemptListSchema,
+  webhookAttemptSchema,
+  webhookDeliverySchema,
   webResourceSchema,
 } from './schemas.ts';
 import type {
@@ -116,6 +119,7 @@ import type {
   SetChatPermissionsInput,
   SetContentProtectionInput,
   SetCustomTitleInput,
+  SetWebhookDeliveryInput,
   Supergroup,
   SupergroupAdministrator,
   SupergroupBotCommands,
@@ -125,6 +129,9 @@ import type {
   VirtualAccountClient,
   VirtualAccountProfile,
   VirtualBotProfile,
+  WebhookAttempt,
+  WebhookAttemptControlInput,
+  WebhookDelivery,
   WebResource,
 } from './types.ts';
 import { normalizeUrlRoot, requestBytes, requestEmptyResponse, requestJson } from './utils.ts';
@@ -143,6 +150,27 @@ export interface EmulationSessionClient extends EmulationSession {
   queueRateLimitResponses(input: QueueRateLimitResponsesInput): Promise<RateLimitResponses>;
   /** Lists the rate limit answers still queued for a bot, earliest first. */
   getRateLimitResponses(botId: number): Promise<readonly RateLimitResponses[]>;
+  /**
+   * Chooses who ends a bot's webhook delivery attempts and retry waits from now on: the emulator
+   * by its own timing (`automatic`, the default), or only the test (`manual`), through
+   * `expireWebhookAttempt` and `releaseWebhookRetry`. These are emulator controls, not Telegram's
+   * timing.
+   */
+  setWebhookDelivery(input: SetWebhookDeliveryInput): Promise<WebhookDelivery>;
+  getWebhookDelivery(botId: number): Promise<WebhookDelivery>;
+  /** Lists every attempt to deliver an update to a bot's webhook, earliest first. */
+  getWebhookAttempts(botId: number): Promise<readonly WebhookAttempt[]>;
+  /**
+   * Sends a failed attempt's update again without waiting for its retry delay, and returns the
+   * attempt. Fails with status `409` when the retry is not waiting.
+   */
+  releaseWebhookRetry(input: WebhookAttemptControlInput): Promise<WebhookAttempt>;
+  /**
+   * Makes the deadline of an attempt in flight arrive, as its timeout passing does, and returns
+   * the attempt once its outcome is decided. Fails with status `409` when the attempt is no longer
+   * in flight.
+   */
+  expireWebhookAttempt(input: WebhookAttemptControlInput): Promise<WebhookAttempt>;
   /**
    * Returns the content of a file of the session's messages, such as a photo, by its
    * `file_unique_id`, which, unlike `file_id`, is the same for every user.
@@ -287,6 +315,55 @@ class HttpEmulationSessionClient implements EmulationSessionClient {
       responseSchema: rateLimitResponsesListSchema,
     });
     return response.rate_limit_responses;
+  }
+
+  setWebhookDelivery(
+    { bot_id: botId, ...request }: SetWebhookDeliveryInput,
+  ): Promise<WebhookDelivery> {
+    return requestJson(this.#fetch, {
+      method: 'PUT',
+      url: `${this.#sessionUrl}/bots/${botId}/webhook-delivery`,
+      expectedStatus: HTTP_STATUS_OK,
+      responseSchema: webhookDeliverySchema,
+      body: request,
+    });
+  }
+
+  getWebhookDelivery(botId: number): Promise<WebhookDelivery> {
+    return requestJson(this.#fetch, {
+      method: 'GET',
+      url: `${this.#sessionUrl}/bots/${botId}/webhook-delivery`,
+      expectedStatus: HTTP_STATUS_OK,
+      responseSchema: webhookDeliverySchema,
+    });
+  }
+
+  async getWebhookAttempts(botId: number): Promise<readonly WebhookAttempt[]> {
+    const response = await requestJson(this.#fetch, {
+      method: 'GET',
+      url: `${this.#sessionUrl}/bots/${botId}/webhook-attempts`,
+      expectedStatus: HTTP_STATUS_OK,
+      responseSchema: webhookAttemptListSchema,
+    });
+    return response.webhook_attempts;
+  }
+
+  releaseWebhookRetry({ botId, attemptId }: WebhookAttemptControlInput): Promise<WebhookAttempt> {
+    return requestJson(this.#fetch, {
+      method: 'POST',
+      url: `${this.#sessionUrl}/bots/${botId}/webhook-attempts/${attemptId}/retry-release`,
+      expectedStatus: HTTP_STATUS_OK,
+      responseSchema: webhookAttemptSchema,
+    });
+  }
+
+  expireWebhookAttempt({ botId, attemptId }: WebhookAttemptControlInput): Promise<WebhookAttempt> {
+    return requestJson(this.#fetch, {
+      method: 'POST',
+      url: `${this.#sessionUrl}/bots/${botId}/webhook-attempts/${attemptId}/expiry`,
+      expectedStatus: HTTP_STATUS_OK,
+      responseSchema: webhookAttemptSchema,
+    });
   }
 
   downloadFile(fileUniqueId: string): Promise<Uint8Array> {

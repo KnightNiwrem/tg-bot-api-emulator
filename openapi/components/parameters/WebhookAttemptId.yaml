@@ -1,0 +1,9 @@
+name: webhookAttemptId
+in: path
+required: true
+description: >-
+  The `id` of an attempt to deliver an update to the bot's webhook, as the bot's webhook attempts
+  and its bot activity entries show it.
+schema:
+  type: integer
+  minimum: 1

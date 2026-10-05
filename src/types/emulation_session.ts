@@ -18,6 +18,7 @@ import type { SharedChatAdministrationService } from '../services/shared_chat_ad
 import type { SupergroupMessagingService } from '../services/supergroup_messaging.ts';
 import type { VirtualUserService } from '../services/virtual_user.ts';
 import type { WebResourceService } from '../services/web_resource.ts';
+import type { WebhookAttemptScheduler } from '../services/webhook_attempt_scheduler.ts';
 import type { UploadProfile } from './upload_profile.ts';
 
 /** Settings chosen when a session is created, which stay fixed for its lifetime. */
@@ -52,10 +53,12 @@ export interface EmulationSession extends EmulationSessionOptions {
   readonly botRateLimits: BotRateLimitService;
   readonly botApi: BotApiService;
   readonly botActivity: BotActivityService;
+  readonly webhookAttempts: WebhookAttemptScheduler;
   /**
    * Stops the session from keeping requests waiting and from delivering updates: held long polls
    * and bot activity reads are answered, later ones do not wait, and webhooks stop, including
-   * requests in flight. Requests that are already running complete against the session's state.
+   * requests in flight and retry waits, which are cancelled. Requests that are already running
+   * complete against the session's state.
    */
   end(): void;
 }

@@ -66,7 +66,7 @@ Deno.test('BotActivityService describes the chat and user of each update', async
         data: 'yes',
       },
     },
-  ], 'webhook');
+  ], 'polling');
 
   const entries = await readAll(botActivity);
   assertJson(

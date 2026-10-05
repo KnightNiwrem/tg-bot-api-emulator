@@ -23,6 +23,11 @@ exact contract.
 | `session.registerWebResource(input)`           | Serves content at a URL of the session's emulated web             | [Test controls](test-controls.md)                           |
 | `session.queueRateLimitResponses(input)`       | Makes a bot's next calls fail with `429 Too Many Requests`        | [Test controls](test-controls.md)                           |
 | `session.getRateLimitResponses(botId)`         | Lists the rate limit answers still queued                         | [Test controls](test-controls.md)                           |
+| `session.setWebhookDelivery(input)`            | Chooses automatic or manual webhook scheduling for a bot          | [Test controls](test-controls.md#webhook-delivery-controls) |
+| `session.getWebhookDelivery(botId)`            | Reads a bot's webhook scheduling                                  | [Test controls](test-controls.md#webhook-delivery-controls) |
+| `session.getWebhookAttempts(botId)`            | Lists a bot's webhook attempts and their outcomes                 | [Test controls](test-controls.md#webhook-delivery-controls) |
+| `session.releaseWebhookRetry(input)`           | Sends a failed webhook attempt's update again at once             | [Test controls](test-controls.md#webhook-delivery-controls) |
+| `session.expireWebhookAttempt(input)`          | Makes a webhook attempt's deadline arrive                         | [Test controls](test-controls.md#webhook-delivery-controls) |
 | `session.expirePoll(pollId)`                   | Closes a poll as its closing time arriving does                   | [Polls](polls.md)                                           |
 | `session.expireChatMemberRestriction(input)`   | Ends a temporary restriction                                      | [Permissions and moderation](permissions-and-moderation.md) |
 | `session.expireChatInviteLink(input)`          | Makes an invite link's expiry date arrive                         | [Invite links](invite-links.md)                             |

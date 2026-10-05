@@ -39,6 +39,46 @@ following [`WebhookActor::handle`][webhook-response]. A failed or unimplemented 
 the delivered update pending again. This supports framework webhook replies, including those used by
 grammY and Telegraf.
 
+## Delivery controls
+
+These are emulator test controls, not Telegram features. They let a test drive a real webhook
+through failure, timeout and recovery without waiting for the backoff or the attempt deadline. They
+do not reproduce Telegram's wall-clock scheduling; delivery itself, including queue order,
+`Retry-After` handling, the backoff sequence and the descriptions `getWebhookInfo` reports, stays as
+described above.
+
+Each request that delivers an update is an attempt with an `id` that is unique in the session.
+`GET /sessions/{sessionId}/bots/{botId}/webhook-attempts` lists a bot's attempts with their
+`status`: `in_flight`, `accepted`, `failed`, or `cancelled` when the webhook was replaced or deleted
+or the session ended before an outcome, which leaves the update pending. A failed attempt shows its
+`failure` and its `retry`: the `delay_seconds` Telegram's backoff or the webhook's `Retry-After`
+sets, and whether the retry is `waiting`, `released` or `cancelled`. The
+[bot activity log](bot-activity.md#entries) records each attempt's delivery and confirmation with
+its `webhook_attempt_id`, and each failure as a `webhook_attempt_failed` entry, so a test waits for
+an outcome there.
+
+`PUT /sessions/{sessionId}/bots/{botId}/webhook-delivery` with `{"scheduling":"manual"}` makes the
+emulator end nothing by itself for that bot: an attempt waits for the webhook's answer without a
+deadline, and a failed update waits for the test to release its retry, even the immediate first
+retry. `automatic`, the default, restores the emulator's own timing for attempts that begin
+afterward; an attempt and its retry keep the scheduling they began with. Two controls act on one
+attempt of one bot, under either scheduling:
+
+- `POST .../webhook-attempts/{webhookAttemptId}/retry-release` sends a failed attempt's update again
+  at once. Later updates of its queue still wait behind it, and other queues are unaffected.
+- `POST .../webhook-attempts/{webhookAttemptId}/expiry` makes the deadline of an attempt in flight
+  arrive. The request is aborted and the attempt fails as `timed_out` with `Read timeout expired`,
+  as its timeout passing would. An attempt whose webhook has already answered completely is still
+  accepted.
+
+Each control applies once: releasing a retry that is not waiting, or expiring an attempt that is no
+longer in flight, is refused with `409`, so a repeated or concurrent control cannot send an update
+twice or record a second outcome. An attempt of another bot or session is not found. Replacing or
+deleting the webhook, or ending the session, cancels the bot's attempt in flight and its waiting
+retry, along with their timers and requests. The TypeScript client's
+[test controls](../clients/typescript/test-controls.md#webhook-delivery-controls) show a webhook
+that fails twice and recovers.
+
 ## Intentional deviations
 
 - **Local webhook servers.** HTTP and HTTPS are accepted on arbitrary ports, including localhost, so
@@ -48,7 +88,8 @@ grammY and Telegraf.
 - **Total attempt deadline.** Each delivery attempt has a 60-second total deadline. Telegram uses a
   60-second connection read inactivity timeout, which can allow a longer attempt while data keeps
   arriving. The simpler deadline is retained because matching that distinction has no demonstrated
-  testing value yet. See [TDLib's HTTP connection implementation][http-connection].
+  testing value yet. See [TDLib's HTTP connection implementation][http-connection]. Tests can also
+  end an attempt, or a retry wait, themselves through the [delivery controls](#delivery-controls).
 - **Disposable configuration and retained updates.** Webhook configuration ends with the session and
   is not persisted across process restarts, keeping tests isolated. Unconfirmed updates do not
   expire, preserving events for test assertions. See
@@ -97,8 +138,11 @@ There is no Telegram synchronization error state because sessions have no Telegr
 
 [Webhook service](../../src/services/bot_webhook.ts),
 [response method dispatcher](../../src/api/sessions/bot_api/webhook_reply.ts),
-[webhook tests](../../tests/bot_webhook_service_test.ts) and
-[HTTP tests](../../tests/emulation_api_test.ts).
+[attempt scheduler](../../src/services/webhook_attempt_scheduler.ts),
+[webhook tests](../../tests/bot_webhook_service_test.ts),
+[delivery control tests](../../tests/webhook_attempt_scheduler_test.ts),
+[HTTP tests](../../tests/emulation_api_test.ts) and
+[local webhook control tests](../../clients/typescript/webhook_delivery_client_test.ts).
 
 [webhook-response]: https://github.com/tdlib/telegram-bot-api/blob/e3e9dd8e5b3d7ab8537cd5a10dc31d5ffa8f82d1/telegram-bot-api/WebhookActor.cpp#L608-L680
 [webhook-network]: https://github.com/tdlib/telegram-bot-api/blob/e3e9dd8e5b3d7ab8537cd5a10dc31d5ffa8f82d1/telegram-bot-api/WebhookActor.cpp#L685-L790

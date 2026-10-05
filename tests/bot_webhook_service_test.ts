@@ -3,20 +3,27 @@ import { BotUpdateRepository } from '../src/repositories/bot_update.ts';
 import { BotUpdateSubscriptionRepository } from '../src/repositories/bot_update_subscription.ts';
 import { BotWebhookRepository } from '../src/repositories/bot_webhook.ts';
 import { BotActivityService } from '../src/services/bot_activity.ts';
+import { BotWebhookService, type SetWebhookRequest } from '../src/services/bot_webhook.ts';
 import {
-  BotWebhookService,
-  type SetWebhookRequest,
   waitForRetryDelay,
   WEBHOOK_ATTEMPT_TIMEOUT_MILLISECONDS,
-} from '../src/services/bot_webhook.ts';
-import type { BotApiPrivateMessage } from '../src/types/bot_api.ts';
+  WebhookAttemptScheduler,
+} from '../src/services/webhook_attempt_scheduler.ts';
+import {
+  ADA_ID,
+  createPrivateMessage,
+  NOW_UNIX_SECONDS,
+  ReceivedRequestCounter,
+  respondOnlyByAborting,
+  waitForAbort,
+  waitUntil,
+  WEBHOOK_URL,
+  webhookRequest,
+} from './support/webhook_delivery.ts';
 
 const BOT_ID = 10;
-const ADA_ID = 1;
 const GRACE_ID = 2;
 const LINUS_ID = 3;
-const NOW_UNIX_SECONDS = 1_700_000_000;
-const WEBHOOK_URL = 'https://bot.example/webhook';
 
 Deno.test('BotWebhookService sets, keeps, replaces, and deletes webhooks as Telegram does', () => {
   const { botWebhooks } = createWebhookFixture(() => new Response(null));
@@ -191,7 +198,7 @@ Deno.test('BotWebhookService retries a failed update and reports the latest fail
   }
 });
 
-Deno.test('BotWebhookService records each attempt as a delivery and the acceptance as a confirmation', async () => {
+Deno.test('BotWebhookService records each attempt as a delivery, a failure as such, and the acceptance as a confirmation', async () => {
   const { botUpdates, botActivity, botWebhooks, waitForRequestCount } = createWebhookFixture(
     (_request, requestIndex) =>
       requestIndex === 0
@@ -212,18 +219,38 @@ Deno.test('BotWebhookService records each attempt as a delivery and the acceptan
       waitMilliseconds: 0,
     });
     const summary = recorded.read
-      ? recorded.entries.map((entry) => [entry.kind, entry.botId, entry.chatId])
+      ? recorded.entries.map((entry) => [
+        entry.kind,
+        entry.botId,
+        entry.chatId,
+        entry.kind === 'bot_api_call' ? undefined : entry.webhookAttemptId,
+      ])
       : [];
     if (
       JSON.stringify(summary) !== JSON.stringify([
-        ['update_delivered', BOT_ID, ADA_ID],
-        ['update_delivered', BOT_ID, ADA_ID],
-        ['update_confirmed', BOT_ID, ADA_ID],
+        ['update_delivered', BOT_ID, ADA_ID, 1],
+        ['webhook_attempt_failed', BOT_ID, ADA_ID, 1],
+        ['update_delivered', BOT_ID, ADA_ID, 2],
+        ['update_confirmed', BOT_ID, ADA_ID, 2],
       ])
     ) {
       throw new Error(
-        `Expected two attempts and one confirmation, received ${JSON.stringify(summary)}`,
+        `Expected two attempts, the first one's failure, and the second one's confirmation, received ${
+          JSON.stringify(summary)
+        }`,
       );
+    }
+    const [, failure] = recorded.read ? recorded.entries : [];
+    if (
+      failure?.kind !== 'webhook_attempt_failed' ||
+      JSON.stringify(failure.failure) !== JSON.stringify({
+          reason: 'http_error',
+          statusCode: 500,
+          errorMessage: 'Wrong response from the webhook: 500 Internal Server Error',
+        }) ||
+      failure.retryDelaySeconds !== 0 || failure.updateId !== 1
+    ) {
+      throw new Error(`Expected the failure and its immediate retry, received ${failure}`);
     }
   } finally {
     botWebhooks.endDelivery();
@@ -650,7 +677,7 @@ function createWebhookFixture(
   const botUpdates = new BotUpdateRepository();
   const receivedRequests: ReceivedWebhookRequest[] = [];
   const receivedSignals: AbortSignal[] = [];
-  const requestListeners = new Set<() => void>();
+  const requestCounter = new ReceivedRequestCounter();
   const botActivity = new BotActivityService({ log: new BotActivityLogRepository() });
   const botWebhooks = new BotWebhookService({
     webhooks: new BotWebhookRepository(),
@@ -661,42 +688,19 @@ function createWebhookFixture(
       receivedSignals.push(request.signal);
       const { method, url, headers, redirect } = request;
       receivedRequests.push({ method, url, headers, redirect, body: await request.json() });
-      for (const notify of requestListeners) {
-        notify();
-      }
+      requestCounter.countRequest();
       return await respond(request, receivedRequests.length - 1);
     },
     runWebhookReply,
-    attemptTimeoutMilliseconds: options.attemptTimeoutMilliseconds ??
-      WEBHOOK_ATTEMPT_TIMEOUT_MILLISECONDS,
-    waitBeforeRetry: options.waitBeforeRetry ?? waitForRetryDelay,
+    attempts: new WebhookAttemptScheduler({
+      // These tests control no attempt, so they need no bot.
+      bots: { getById: () => undefined },
+      attemptTimeoutMilliseconds: options.attemptTimeoutMilliseconds ??
+        WEBHOOK_ATTEMPT_TIMEOUT_MILLISECONDS,
+      waitBeforeRetry: options.waitBeforeRetry ?? waitForRetryDelay,
+    }),
     currentUnixTimeSeconds: () => NOW_UNIX_SECONDS,
   });
-
-  /** Resolves once the webhook has received `count` requests, failing after a second. */
-  const waitForRequestCount = (count: number): Promise<void> => {
-    const received = new Promise<void>((resolve) => {
-      const check = () => {
-        if (receivedRequests.length >= count) {
-          requestListeners.delete(check);
-          resolve();
-        }
-      };
-      requestListeners.add(check);
-      check();
-    });
-    let timeoutId: ReturnType<typeof setTimeout> | undefined;
-    const timeout = new Promise<never>((_resolve, reject) => {
-      timeoutId = setTimeout(
-        () =>
-          reject(
-            new Error(`Expected ${count} webhook requests, received ${receivedRequests.length}`),
-          ),
-        1_000,
-      );
-    });
-    return Promise.race([received, timeout]).finally(() => clearTimeout(timeoutId));
-  };
 
   return {
     botUpdates,
@@ -705,51 +709,7 @@ function createWebhookFixture(
     receivedRequests,
     receivedSignals,
     receivedReplies,
-    waitForRequestCount,
-  };
-}
-
-/** Resolves once `condition` holds, checking every few milliseconds and failing after a second. */
-async function waitUntil(condition: () => boolean): Promise<void> {
-  const deadline = Date.now() + 1_000;
-  while (!condition()) {
-    if (Date.now() > deadline) {
-      throw new Error('Expected the condition to hold within a second');
-    }
-    await new Promise((resolve) => setTimeout(resolve, 5));
-  }
-}
-
-/** Resolves once `signal` aborts. */
-function waitForAbort(signal: AbortSignal): Promise<void> {
-  return new Promise((resolve) => {
-    if (signal.aborted) {
-      resolve();
-      return;
-    }
-    signal.addEventListener('abort', () => resolve(), { once: true });
-  });
-}
-
-/** Leaves the webhook request unanswered until it is aborted, as a hanging webhook would. */
-function respondOnlyByAborting(request: Request): Promise<Response> {
-  return new Promise((_resolve, reject) => {
-    request.signal.addEventListener('abort', () => reject(request.signal.reason));
-  });
-}
-
-function webhookRequest(): SetWebhookRequest {
-  return { url: WEBHOOK_URL, secretToken: '', maxConnections: 40, dropPendingUpdates: false };
-}
-
-/** A text message of the private chat of the account `authorId`, which is Ada's by default. */
-function createPrivateMessage(messageId: number, authorId = ADA_ID): BotApiPrivateMessage {
-  const author = { id: authorId, is_bot: false as const, first_name: 'Ada' };
-  return {
-    message_id: messageId,
-    from: author,
-    chat: { id: author.id, type: 'private', first_name: author.first_name },
-    date: NOW_UNIX_SECONDS,
-    text: 'Hello',
+    /** Resolves once the webhook has received `count` requests, failing after a second. */
+    waitForRequestCount: (count: number) => requestCounter.waitForCount(count),
   };
 }

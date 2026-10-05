@@ -5,15 +5,16 @@
 
 A bot under test runs in its own process and answers updates in its own time. Each session keeps a
 bot activity log so that tests can wait for what their bots do and assert the order it happened in.
-The log records the Bot API calls the session's bots make, with the answers they receive, and the
-updates delivered to and confirmed by them. Telegram has no such facility. The emulator provides it
-for tests.
+The log records the Bot API calls the session's bots make, with the answers they receive, the
+updates delivered to and confirmed by them, and the failed attempts to deliver updates to their
+webhooks. Telegram has no such facility. The emulator provides it for tests.
 
 ## The ordering guarantee
 
 Each entry has a position: the first entry is 1, and each later entry's position is 1 greater. An
 entry is positioned when the emulator decides its outcome: when it answers a call, hands an update
-over, or sees one confirmed. Entries are final as soon as they are readable.
+over, sees one confirmed, or sees a webhook fail to accept one. Entries are final as soon as they
+are readable.
 
 **The log's order agrees with every order a bot enforces.** A bot that awaits one call's answer
 before making another call cannot have the second recorded first. A call made while handling an
@@ -27,17 +28,27 @@ order, but calls from different chats can interleave.
 
 ## Entries
 
-| Kind               | Recorded when                                                                                                 | Contents                                                                                                                                                                 |
-| ------------------ | ------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| `bot_api_call`     | The emulator decides a call's answer, whether the method ran, failed or is not implemented                    | Bot, method under its current name, method as called, `http` or `webhook_reply`, parameters as sent, uploaded file names and sizes, the chat `chat_id` names, the answer |
-| `update_delivered` | A `getUpdates` answer includes the update, or a webhook request carries it; every repeat is recorded too      | Bot, `polling` or `webhook`, the update, its chat and user                                                                                                               |
-| `update_confirmed` | A `getUpdates` offset moves past the update, or the webhook accepts it after any method its answer names runs | Bot, `polling` or `webhook`, the update ID, its chat and user                                                                                                            |
+| Kind                     | Recorded when                                                                                                 | Contents                                                                                                                                                                 |
+| ------------------------ | ------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `bot_api_call`           | The emulator decides a call's answer, whether the method ran, failed or is not implemented                    | Bot, method under its current name, method as called, `http` or `webhook_reply`, parameters as sent, uploaded file names and sizes, the chat `chat_id` names, the answer |
+| `update_delivered`       | A `getUpdates` answer includes the update, or a webhook request carries it; every repeat is recorded too      | Bot, `polling` or `webhook`, the update, its chat and user, and for a webhook the attempt's `webhook_attempt_id`                                                         |
+| `update_confirmed`       | A `getUpdates` offset moves past the update, or the webhook accepts it after any method its answer names runs | Bot, `polling` or `webhook`, the update ID, its chat and user, and for a webhook the accepted attempt's `webhook_attempt_id`                                             |
+| `webhook_attempt_failed` | A webhook attempt fails: an answer other than 2xx, no connection, a timeout or a cut-short response           | Bot, the update ID, its chat and user, `webhook_attempt_id`, the `failure`, and the `retry_delay_seconds` automatic scheduling observes                                  |
 
 Parameters are recorded as text, as the Bot API reads them: `chat_id: 1` and `chat_id: "1"` are both
 `"1"`, and structured parameters such as `reply_markup` are JSON text. A `chat_id` naming a public
 username is recorded with the chat it names. An update's chat and user are found as grammY's
 `ctx.chat` and `ctx.from` find them. Inline queries, chosen inline results, presses of buttons on
 inline messages, polls and poll answers have no chat, and a poll's new state has no user.
+
+A webhook attempt is recorded as an `update_delivered` entry when it starts, and as an
+`update_confirmed` or a `webhook_attempt_failed` entry when it ends, all naming the same
+`webhook_attempt_id`. A failure's `reason` is `http_error`, with the webhook's `status_code`,
+`connection_failed`, `timed_out` or `response_interrupted`, and its `error_message` is the
+description `getWebhookInfo` reports. The failure is recorded once its retry is scheduled, so a test
+that finds it can release the retry at once; see
+[webhook delivery controls](webhooks.md#delivery-controls). An attempt cut short because the webhook
+was replaced or deleted or the session ended is recorded as neither confirmed nor failed.
 
 The log does not record:
 

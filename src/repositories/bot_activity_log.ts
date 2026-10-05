@@ -65,8 +65,15 @@ export class BotActivityLogRepository {
         this.#appendWaiters.delete(finish);
         resolve();
       };
-      this.#appendWaiters.add(finish);
+      // Deno loads `setTimeout` on its first use, which may run other code that appends an entry
+      // or aborts `signal`, so the waiter is registered only after the timer has started.
+      const headPositionBeforeTimer = this.#entries.length;
       const timeoutId = setTimeout(finish, timeoutMilliseconds);
+      if (signal.aborted || this.#entries.length !== headPositionBeforeTimer) {
+        finish();
+        return;
+      }
+      this.#appendWaiters.add(finish);
       signal.addEventListener('abort', finish, { once: true });
     });
   }

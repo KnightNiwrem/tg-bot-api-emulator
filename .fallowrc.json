@@ -279,7 +279,8 @@
       {
         "name": "webhook-delivery",
         "patterns": [
-          "src/services/bot_webhook.ts"
+          "src/services/bot_webhook.ts",
+          "src/services/webhook_attempt_scheduler.ts"
         ]
       },
       {
@@ -473,7 +474,8 @@
           "domain-services",
           "bot-api-service",
           "bot-message-view",
-          "bot-activity"
+          "bot-activity",
+          "webhook-delivery"
         ]
       },
       {

@@ -3,21 +3,14 @@ import { basePath } from 'hono/route';
 import { z } from 'zod';
 
 import type { QueuedRateLimitResponses } from '../../../types/bot_rate_limit.ts';
-import {
-  isTelegramUsername,
-  MAX_TELEGRAM_USER_ID,
-  MIN_TELEGRAM_USER_ID,
-} from '../../../types/telegram_identity.ts';
+import { isTelegramUsername } from '../../../types/telegram_identity.ts';
 import { findBotApiMethod } from '../bot_api/mod.ts';
 import { readJsonRequestBody } from '../json_request_body.ts';
 import type { SessionRouteContextTypes } from '../session_route_context_types.ts';
+import { BOT_ID_PARAMETER, botIdPathParameterSchema } from './bot_id_path_parameter.ts';
+import { createWebhookDeliveryRoutes } from './webhook_delivery.ts';
 
-const BOT_ID_PARAMETER = 'botId';
 const RATE_LIMIT_RESPONSES_PATH = `/:${BOT_ID_PARAMETER}/rate-limit-responses` as const;
-
-const botIdPathParameterSchema = z.coerce.number().pipe(
-  z.int().min(MIN_TELEGRAM_USER_ID).max(MAX_TELEGRAM_USER_ID),
-);
 
 const createBotRequestSchema = z.strictObject({
   first_name: z.string().min(1),
@@ -107,6 +100,8 @@ export function createBotRoutes(): Hono<SessionRouteContextTypes> {
       ? context.json({ rate_limit_responses: result.responses.map(presentRateLimitResponses) })
       : context.body(null, 404);
   });
+
+  botRoutes.route('/', createWebhookDeliveryRoutes());
 
   return botRoutes;
 }

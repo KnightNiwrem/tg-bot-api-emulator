@@ -124,6 +124,84 @@ export interface QueueRateLimitResponsesInput {
   readonly count?: number;
 }
 
+/**
+ * Who ends a bot's webhook delivery attempts and retry waits: the emulator by its own timing
+ * (`automatic`, the default), or only the test, by expiring attempts and releasing retries
+ * (`manual`). These are emulator controls; they do not reproduce Telegram's timing.
+ */
+export type WebhookScheduling = 'automatic' | 'manual';
+
+/** How a bot's webhook updates are delivered. */
+export interface WebhookDelivery {
+  /** The scheduling of the attempts that begin from now on. */
+  readonly scheduling: WebhookScheduling;
+}
+
+export interface SetWebhookDeliveryInput extends WebhookDelivery {
+  readonly bot_id: number;
+}
+
+/**
+ * Why an attempt to deliver an update to a webhook failed. `error_message` is the description
+ * `getWebhookInfo` reports as `last_error_message`; Telegram describes no `response_interrupted`.
+ */
+export type WebhookAttemptFailure =
+  | {
+    /** The webhook answered with a status other than 2xx. */
+    readonly reason: 'http_error';
+    readonly status_code: number;
+    readonly error_message: string;
+  }
+  | {
+    /** The webhook could not be reached, or did not answer completely before the deadline. */
+    readonly reason: 'connection_failed' | 'timed_out';
+    readonly error_message: string;
+  }
+  | {
+    /** The connection closed before the whole response arrived. */
+    readonly reason: 'response_interrupted';
+  };
+
+/** The wait that a failed attempt schedules before its update is sent again. */
+export interface WebhookRetry {
+  /** The wait, in seconds, that `automatic` scheduling observes; `manual` scheduling ignores it. */
+  readonly delay_seconds: number;
+  /**
+   * `waiting` until the delay passes or the test releases the retry, then `released`; `cancelled`
+   * when the webhook was replaced or deleted, or the session ended, during the wait.
+   */
+  readonly status: 'waiting' | 'released' | 'cancelled';
+}
+
+interface WebhookAttemptIdentity {
+  /** Identifies the attempt among every attempt of the session; the first is 1. */
+  readonly id: number;
+  readonly update_id: number;
+  /** The scheduling the attempt and its retry follow: the bot's when the attempt began. */
+  readonly scheduling: WebhookScheduling;
+}
+
+/** One request that delivers an update to a bot's webhook, and its outcome. */
+export type WebhookAttempt =
+  | WebhookAttemptIdentity & {
+    /**
+     * `in_flight` while the request runs, `accepted` once the webhook accepted the update, or
+     * `cancelled` when delivery stopped before an outcome, which leaves the update pending.
+     */
+    readonly status: 'in_flight' | 'accepted' | 'cancelled';
+  }
+  | WebhookAttemptIdentity & {
+    readonly status: 'failed';
+    readonly failure: WebhookAttemptFailure;
+    readonly retry: WebhookRetry;
+  };
+
+/** Names one attempt of one bot, which a control applies to. */
+export interface WebhookAttemptControlInput {
+  readonly botId: number;
+  readonly attemptId: number;
+}
+
 export interface CreateVirtualAccountInput {
   /** From 1 to 64 characters, as Telegram's servers limit a user's names. */
   readonly first_name: string;
@@ -2358,6 +2436,8 @@ export interface UpdateDeliveredEntry {
    * poll's new state, which names no user.
    */
   readonly user_id?: number;
+  /** The webhook attempt that handed the update over; present exactly when `via` is `webhook`. */
+  readonly webhook_attempt_id?: number;
 }
 
 /**
@@ -2373,13 +2453,37 @@ export interface UpdateConfirmedEntry {
   readonly chat_id?: number;
   /** As `UpdateDeliveredEntry` describes it. */
   readonly user_id?: number;
+  /** The webhook attempt the webhook accepted; present exactly when `via` is `webhook`. */
+  readonly webhook_attempt_id?: number;
+}
+
+/**
+ * A failed attempt to deliver an update to a webhook, which leaves the update pending until the
+ * attempt's retry is released.
+ */
+export interface WebhookAttemptFailedEntry {
+  readonly position: number;
+  readonly kind: 'webhook_attempt_failed';
+  readonly bot_id: number;
+  readonly update_id: number;
+  readonly chat_id?: number;
+  /** As `UpdateDeliveredEntry` describes it. */
+  readonly user_id?: number;
+  readonly webhook_attempt_id: number;
+  readonly failure: WebhookAttemptFailure;
+  /** The wait before the update is sent again that `automatic` scheduling observes. */
+  readonly retry_delay_seconds: number;
 }
 
 /**
  * An entry of a session's bot activity log. Entries are positioned in the order the emulator
  * decided each outcome, which agrees with every order a bot enforces.
  */
-export type BotActivityEntry = BotApiCallEntry | UpdateDeliveredEntry | UpdateConfirmedEntry;
+export type BotActivityEntry =
+  | BotApiCallEntry
+  | UpdateDeliveredEntry
+  | UpdateConfirmedEntry
+  | WebhookAttemptFailedEntry;
 
 /** A position in the bot activity log, or an entry, which stands at its position. */
 export type BotActivityPosition = number | { readonly position: number };
@@ -2397,8 +2501,8 @@ export interface BotActivityCriteria {
   readonly chat_id?: number;
   readonly user_id?: number;
   /**
-   * The ID of the update delivered or confirmed. Each bot numbers its updates independently, so
-   * an ID names one update only together with `bot_id`.
+   * The ID of the update delivered, confirmed, or failed to be delivered. Each bot numbers its
+   * updates independently, so an ID names one update only together with `bot_id`.
    */
   readonly update_id?: number;
   /** Whether the call's answer was successful. */
@@ -2437,7 +2541,7 @@ export type BotActivityEntryMatching<Criteria extends BotActivityCriteria> = Cri
     | { readonly ok: boolean }
     | { readonly parameters: Readonly<Record<string, string>> } ? BotApiCallEntry
   : Criteria extends { readonly user_id: number } | { readonly update_id: number }
-    ? UpdateDeliveredEntry | UpdateConfirmedEntry
+    ? UpdateDeliveredEntry | UpdateConfirmedEntry | WebhookAttemptFailedEntry
   : BotActivityEntry;
 
 export interface BotActivityLogOptions {

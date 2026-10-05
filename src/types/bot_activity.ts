@@ -1,15 +1,21 @@
 import type { BotApiUpdate } from './bot_api.ts';
+import type { WebhookAttemptFailure } from './bot_webhook.ts';
 
 /**
  * What passes between the emulator and a session's bots, in the order the emulator decided each
- * outcome: when it answered a call, or handed an update over or saw it confirmed.
+ * outcome: when it answered a call, or handed an update over, saw it confirmed, or saw a webhook
+ * fail to accept it.
  *
  * That order agrees with every order a bot enforces. A bot that awaits the answer to one call
  * before it makes another cannot make the second before the first is answered, and it cannot
  * handle an update before the update is delivered. Calls a bot makes concurrently may be recorded
  * in either order, as they may reach Telegram in either order.
  */
-export type BotActivityEntry = BotApiCallEntry | UpdateDeliveredEntry | UpdateConfirmedEntry;
+export type BotActivityEntry =
+  | BotApiCallEntry
+  | UpdateDeliveredEntry
+  | UpdateConfirmedEntry
+  | WebhookAttemptFailedEntry;
 
 export type BotActivityKind = BotActivityEntry['kind'];
 
@@ -80,6 +86,8 @@ export interface UpdateDeliveredEntry {
   readonly chatId?: number;
   /** The user whose action caused the update; omitted for a poll's new state, which names none. */
   readonly userId?: number;
+  /** The webhook attempt that handed the update over; present exactly when `via` is `webhook`. */
+  readonly webhookAttemptId?: number;
 }
 
 /**
@@ -95,13 +103,34 @@ export interface UpdateConfirmedEntry {
   readonly chatId?: number;
   /** As `UpdateDeliveredEntry` describes it. */
   readonly userId?: number;
+  /** The webhook attempt the webhook accepted; present exactly when `via` is `webhook`. */
+  readonly webhookAttemptId?: number;
+}
+
+/**
+ * An attempt to deliver an update to a webhook that failed, which leaves the update pending until
+ * the attempt's retry is released.
+ */
+export interface WebhookAttemptFailedEntry {
+  readonly position: number;
+  readonly kind: 'webhook_attempt_failed';
+  readonly botId: number;
+  readonly updateId: number;
+  readonly chatId?: number;
+  /** As `UpdateDeliveredEntry` describes it. */
+  readonly userId?: number;
+  readonly webhookAttemptId: number;
+  readonly failure: WebhookAttemptFailure;
+  /** The wait before the update is sent again that `automatic` scheduling observes. */
+  readonly retryDelaySeconds: number;
 }
 
 /** An entry as it is recorded, before the log assigns its position. */
 export type UnpositionedBotActivityEntry =
   | Omit<BotApiCallEntry, 'position'>
   | Omit<UpdateDeliveredEntry, 'position'>
-  | Omit<UpdateConfirmedEntry, 'position'>;
+  | Omit<UpdateConfirmedEntry, 'position'>
+  | Omit<WebhookAttemptFailedEntry, 'position'>;
 
 /**
  * Which entries a reader looks for; an entry must satisfy every criterion given. Criteria that
@@ -115,7 +144,10 @@ export interface BotActivityFilter {
   readonly method?: string;
   readonly chatId?: number;
   readonly userId?: number;
-  /** The ID of the update delivered or confirmed; bots number their updates independently. */
+  /**
+   * The ID of the update delivered, confirmed, or failed to be delivered; bots number their
+   * updates independently.
+   */
   readonly updateId?: number;
   /** Whether the call's answer was successful. */
   readonly ok?: boolean;

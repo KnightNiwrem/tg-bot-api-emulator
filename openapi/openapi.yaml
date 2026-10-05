@@ -55,6 +55,14 @@ paths:
     $ref: paths/sessions_{sessionId}_bots_{botId}.yaml
   /sessions/{sessionId}/bots/{botId}/rate-limit-responses:
     $ref: paths/sessions_{sessionId}_bots_{botId}_rate-limit-responses.yaml
+  /sessions/{sessionId}/bots/{botId}/webhook-delivery:
+    $ref: paths/sessions_{sessionId}_bots_{botId}_webhook-delivery.yaml
+  /sessions/{sessionId}/bots/{botId}/webhook-attempts:
+    $ref: paths/sessions_{sessionId}_bots_{botId}_webhook-attempts.yaml
+  /sessions/{sessionId}/bots/{botId}/webhook-attempts/{webhookAttemptId}/retry-release:
+    $ref: paths/sessions_{sessionId}_bots_{botId}_webhook-attempts_{webhookAttemptId}_retry-release.yaml
+  /sessions/{sessionId}/bots/{botId}/webhook-attempts/{webhookAttemptId}/expiry:
+    $ref: paths/sessions_{sessionId}_bots_{botId}_webhook-attempts_{webhookAttemptId}_expiry.yaml
   /sessions/{sessionId}/bot-activity:
     $ref: paths/sessions_{sessionId}_bot-activity.yaml
   /sessions/{sessionId}/accounts:
