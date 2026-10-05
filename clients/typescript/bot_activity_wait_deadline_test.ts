@@ -213,6 +213,126 @@ Deno.test('A cancelled wait rejects with the reason and releases its read', asyn
   }
 });
 
+Deno.test('A wait cancelled by its where predicate rejects with the reason', async () => {
+  const scenarios = [
+    {
+      description: 'accepting an entry',
+      abortingText: 'match',
+      answers: [() => page([sendMessageCall(1, 'match')], 1)],
+    },
+    {
+      description: 'rejecting an entry before a match',
+      abortingText: 'skip',
+      answers: [() => page([sendMessageCall(1, 'skip'), sendMessageCall(2, 'match')], 2)],
+    },
+    {
+      description: 'accepting an entry on the page after a full one',
+      abortingText: 'match',
+      answers: [
+        () => page(skippedCalls(1, READ_LIMIT), READ_LIMIT + 1),
+        () => page([sendMessageCall(READ_LIMIT + 1, 'match')], READ_LIMIT + 1),
+      ],
+    },
+  ];
+  for (const { description, abortingText, answers } of scenarios) {
+    for (const waiter of ['waitFor', 'cursor'] as const) {
+      const clock = new ManualWaitClock();
+      const transport = createScriptedTransport(...answers);
+      const activity = createActivityLog(transport, clock);
+      const cursor = activity.cursor({ after: 0 });
+      const cancellation = new AbortController();
+      const reason = new Error('Cancelled while inspecting an entry');
+      let entriesInspectedAfterCancellation = 0;
+      const filter = {
+        method: 'sendMessage',
+        where: (call: BotApiCallEntry) => {
+          if (cancellation.signal.aborted) {
+            entriesInspectedAfterCancellation++;
+          } else if (call.parameters.text === abortingText) {
+            cancellation.abort(reason);
+          }
+          return call.parameters.text === 'match';
+        },
+      };
+      const options = { timeoutMs: 60_000, signal: cancellation.signal };
+
+      const outcome = await outcomeOf(
+        waiter === 'cursor'
+          ? cursor.next(filter, options)
+          : activity.waitFor(filter, { ...options, after: 0 }),
+      );
+
+      const scenario = `${description}, with ${waiter}`;
+      assert(
+        'error' in outcome && outcome.error === reason,
+        `Expected the cancellation reason, ${scenario}, got ${describeOutcome(outcome)}`,
+      );
+      assert(entriesInspectedAfterCancellation === 0, `Expected no entry inspected, ${scenario}`);
+      assert(transport.reads.length === answers.length, `Expected no further read, ${scenario}`);
+      assert(cursor.position === 0, `Expected the cursor to stay in place, ${scenario}`);
+      assert(clock.pendingCallbackCount === 0, `Expected the timers to be stopped, ${scenario}`);
+    }
+  }
+});
+
+Deno.test("A wait cancelled by its view's where predicate runs no other predicate", async () => {
+  const clock = new ManualWaitClock();
+  const transport = createScriptedTransport(() => page([sendMessageCall(1, 'match')], 1));
+  const cancellation = new AbortController();
+  const reason = new Error('Cancelled while inspecting an entry');
+  const activity = createBotActivityLog(
+    ACTIVITY_URL,
+    transport.fetch,
+    {
+      where: () => {
+        cancellation.abort(reason);
+        return true;
+      },
+    },
+    {},
+    clock,
+  );
+  let readPredicateCalls = 0;
+
+  const outcome = await outcomeOf(activity.waitFor({
+    method: 'sendMessage',
+    where: () => {
+      readPredicateCalls++;
+      throw new Error('Inspected after cancellation');
+    },
+  }, { after: 0, timeoutMs: 60_000, signal: cancellation.signal }));
+
+  assert(
+    'error' in outcome && outcome.error === reason,
+    `Expected the cancellation reason, got ${describeOutcome(outcome)}`,
+  );
+  assert(readPredicateCalls === 0, "Expected the read's predicate not to run");
+  assert(clock.pendingCallbackCount === 0, "Expected the wait's timers to be stopped");
+});
+
+Deno.test('A wait cancelled by a where predicate that then throws rejects with the reason', async () => {
+  const clock = new ManualWaitClock();
+  const transport = createScriptedTransport(() => page([sendMessageCall(1, 'match')], 1));
+  const cancellation = new AbortController();
+  const reason = new Error('Cancelled while inspecting an entry');
+
+  const outcome = await outcomeOf(
+    createActivityLog(transport, clock).waitFor({
+      method: 'sendMessage',
+      where: () => {
+        cancellation.abort(reason);
+        throw new Error('Failed after cancelling');
+      },
+    }, { after: 0, timeoutMs: 60_000, signal: cancellation.signal }),
+  );
+
+  assert(
+    'error' in outcome && outcome.error === reason,
+    `Expected the cancellation reason, got ${describeOutcome(outcome)}`,
+  );
+  assert(clock.pendingCallbackCount === 0, "Expected the wait's timers to be stopped");
+});
+
 Deno.test('A read outlasts a timer that runs before its cutoff', async () => {
   const cases = [
     { kind: 'holding', timeoutMs: 10.9, cutoffMilliseconds: 10.9 },
