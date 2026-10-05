@@ -108,9 +108,10 @@ it yields, but cannot make a late read count. The emulator holds a read for at m
 wait with a longer `timeoutMs` fails at its first read with an `EmulationClientError` for the `400`
 answer.
 
-`waitFor` and `next` also take a `signal`. When it aborts, the wait abandons its read and rejects
-with the signal's reason, as `fetch` does, and a cursor stays where it was. Other failed requests,
-and answers that break the read contract, still reject with `EmulationClientError`.
+`waitFor` and `next` also take a `signal`. When it aborts, even from within `where`, the wait
+abandons its read, checks no further entry, and rejects with the signal's reason, as `fetch` does,
+and a cursor stays where it was. Other failed requests, and answers that break the read contract,
+still reject with `EmulationClientError`.
 
 Every `after` and `before` takes a position or an entry. `latest(...)` picks the latest of several.
 Positions are values, so independent waits can start from the same position. The waits below assert

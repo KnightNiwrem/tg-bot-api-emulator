@@ -244,7 +244,12 @@ class HttpBotActivityLog implements BotActivityLog {
     after: number,
     waitTime: BotActivityWaitTime,
   ): Promise<BotActivityEntry | undefined> {
-    const isMatch = (entry: BotActivityEntry) => filter.where?.(entry) ?? true;
+    const isMatch = (entry: BotActivityEntry) => {
+      const isAccepted = filter.where?.(entry) ?? true;
+      // The predicate, or code it calls, may cancel the wait, which then ends without a match.
+      waitTime.throwIfCancelled();
+      return isAccepted;
+    };
     const readRecorded = (read: BotActivityRead) => this.#readForWait(read, 'recorded', waitTime);
     let unreadAfter = after;
     let remainingMilliseconds = waitTime.remainingMilliseconds();
@@ -471,6 +476,11 @@ class BotActivityWaitTime {
   /** The whole milliseconds left before the deadline, rounded up; 0 once it has passed. */
   remainingMilliseconds(): number {
     return Math.max(0, Math.ceil(this.#deadline - this.#clock.now()));
+  }
+
+  /** Throws the caller's reason if the caller has cancelled the wait. */
+  throwIfCancelled(): void {
+    this.#cancellationSignal?.throwIfAborted();
   }
 
   /** Whether a read was abandoned because the caller cancelled the wait. */
