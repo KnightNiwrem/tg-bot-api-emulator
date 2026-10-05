@@ -1,0 +1,85 @@
+description: >-
+  Telegram Bot API method for sending an audio file, such as a music track, with an optional
+  caption, as `sendPhoto` sends a photo. The audio file's duration, performer and title are the
+  ones the bot specifies; the emulator never reads its content or tags, so it sends any content as
+  an audio file, while Telegram documents that its clients play MP3 and M4A audio. An upload keeps
+  its cleaned file name, and its MIME type is the `audio/` type its file name's extension decides,
+  or otherwise `audio/mpeg`, as TDLib uploads an audio file. A bot can upload a thumbnail, such as
+  the album's cover, as for `sendDocument`. An audio file sent by `file_id` keeps its own duration,
+  performer, title, name, type and thumbnail. As Telegram's file sending reference documents, an
+  audio file sent by HTTP URL must be served as `audio/mpeg`, of at most 20 MB (20971520 bytes); it
+  is named after the URL's last path segment, keeps the metadata the bot specified, and takes no
+  thumbnail.
+parameters:
+  - $ref: ../components/parameters/SessionId.yaml
+  - $ref: ../components/parameters/BotToken.yaml
+post:
+  operationId: sendAudio
+  summary: Send an audio file from the authenticated virtual bot to an account or a supergroup
+  requestBody:
+    required: true
+    content:
+      multipart/form-data:
+        schema:
+          $ref: ../components/schemas/SendAudioRequest.yaml
+        encoding:
+          caption_entities:
+            contentType: application/json
+          reply_parameters:
+            contentType: application/json
+          reply_markup:
+            contentType: application/json
+      application/json:
+        schema:
+          $ref: ../components/schemas/SendAudioRequest.yaml
+  responses:
+    '200':
+      description: >-
+        The audio file was stored in the private conversation or supergroup. No bot receives an
+        update for a bot's message.
+      content:
+        application/json:
+          schema:
+            $ref: ../components/schemas/MessageResponse.yaml
+    '400':
+      description: >-
+        The request cannot be decoded or has unsupported parameters, such as `has_spoiler`, which
+        an audio file does not take, or Telegram would reject it for the reasons `sendDocument`
+        gives: the request names no file (`Bad Request: there is no audio in the request`), the
+        uploaded file is empty or, in a session with the `local` upload profile, larger than
+        2097152000 bytes, the audio file sent by URL cannot be downloaded within its limit or is
+        not served as `audio/mpeg`, the `file_id` identifies no file the bot knows or a file of
+        another type (`Bad Request: can't use file of type Document as Audio`), which the emulator
+        refuses as for `sendVideo`, or the title or performer is not well-formed Unicode (`Bad
+        Request: audio title must be encoded in UTF-8`). In a supergroup, the bot may lack the
+        `can_send_audios` permission (`Bad Request: not enough rights to send music to the
+        chat`).
+      content:
+        application/json:
+          schema:
+            $ref: ../components/schemas/BotApiErrorResponse.yaml
+    '401':
+      description: The token does not belong to a virtual bot in the addressed session.
+      content:
+        application/json:
+          schema:
+            $ref: ../components/schemas/BotApiErrorResponse.yaml
+    '403':
+      description: >-
+        The account blocks the bot (`Forbidden: bot was blocked by the user`), or the bot left
+        the supergroup (`Forbidden: bot is not a member of the supergroup chat`) or was removed
+        from it (`Forbidden: bot was kicked from the supergroup chat`).
+      content:
+        application/json:
+          schema:
+            $ref: ../components/schemas/BotApiErrorResponse.yaml
+    '404':
+      description: No active test session has the supplied identifier.
+    '413':
+      $ref: ../components/responses/BotApiUploadTooLarge.yaml
+    '429':
+      $ref: ../components/responses/BotApiRateLimited.yaml
+    '500':
+      $ref: ../components/responses/BotApiServerError.yaml
+    '503':
+      $ref: ../components/responses/BotApiServerError.yaml

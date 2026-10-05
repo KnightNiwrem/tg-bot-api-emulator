@@ -28,17 +28,22 @@ Eligible chat bots receive the resulting account message; privacy mode includes 
 through the observing bot.
 
 Supported results are articles, [contacts and static locations](#contacts-and-locations), and
-photos, documents, videos and voice notes identified by a `file_id` the bot knows or
+photos, documents, videos, voice notes and audio files identified by a `file_id` the bot knows or
 [named by URL](#media-named-by-url). Any of them may specify `input_message_content` of text, a rich
 message, a contact or a static location, which an article requires; the chosen message then holds
 that content in place of what the listing shows. A video result needs a nonempty title
 (`Bad Request: VIDEO_TITLE_EMPTY`), as a document result does (`Bad Request: FILE_TITLE_EMPTY`); a
-voice note result has no description. Supported caption formatting and inline keyboards apply. A
-rich message, which the official server's [`get_input_message_content`][input-message-content] reads
-in place of text, is read as for [`sendRichMessage`](rich-messages.md#sending-and-editing), and its
-buttons work as in any inline message. As TDLib's
-[`InlineQueriesManager::get_inline_message`][inline-rich-message] requires, its photos and documents
-are files the bot knows by `file_id`; an upload fails with
+voice note result has no description. Nor has an audio result: as TDLib's
+[`get_input_bot_inline_result`][results] describes it, the client lists it by its title and
+`performer`. As the official server reads it, an audio file named by `audio_url` requires a `title`,
+which the emulator refuses to omit with the invalid-parameters error, while an `audio_file_id`
+result takes an optional `title` and `performer`, which the Bot API does not document for it and
+only the listing shows: the sent audio file keeps its own metadata. Supported caption formatting and
+inline keyboards apply. A rich message, which the official server's
+[`get_input_message_content`][input-message-content] reads in place of text, is read as for
+[`sendRichMessage`](rich-messages.md#sending-and-editing), and its buttons work as in any inline
+message. As TDLib's [`InlineQueriesManager::get_inline_message`][inline-rich-message] requires, its
+photos and documents are files the bot knows by `file_id`; an upload fails with
 `Bad Request: invalid inline message content specified`, as does a file named by URL, which the
 emulator [does not download](media-and-files.md#files-sent-by-url-in-inline-query-results) for such
 content. The server prefixes its own descriptions of a rich message it cannot read with
@@ -59,9 +64,10 @@ message. TDLib makes the originating bot check in
 [`MessagesManager::can_edit_message`][edit-inline]. Media edits of an inline message, and
 [rich messages](rich-messages.md#sending-and-editing) that `editMessageText` puts in place of its
 text, reuse a file by `file_id` or name one by URL, but an upload fails with
-`Bad Request: invalid message content specified`. A voice note sent from a result keeps its media,
-as any voice note does (`Bad Request: message media can't be edited`), while its caption and
-keyboard can change.
+`Bad Request: invalid message content specified`. An audio file sent from a result changes its media
+as any audio file outside an album does. A voice note sent from a result keeps its media, as any
+voice note does (`Bad Request: message media can't be edited`), while its caption and keyboard can
+change.
 
 ### Contacts and locations
 
@@ -92,8 +98,8 @@ fail with `Bad Request: inline query results sending a venue or invoice are not 
 ### Media named by URL
 
 As TDLib's [`get_input_bot_inline_result`][results] reads them, `photo_url`, `document_url`,
-`video_url` and `voice_url` name a file by URL when they contain a dot; otherwise they are a
-`file_id`. TDLib passes the URL on as a web document, so answering does not download it, and
+`video_url`, `voice_url` and `audio_url` name a file by URL when they contain a dot; otherwise they
+are a `file_id`. TDLib passes the URL on as a web document, so answering does not download it, and
 Telegram's servers check it: a URL the emulator cannot read as an HTTP or HTTPS URL, as for
 [files sent by URL](media-and-files.md#files-sent-by-url), fails with
 `Bad Request: WEBDOCUMENT_URL_INVALID`, as does a `thumbnail_url` of such a result that cannot be
@@ -122,15 +128,16 @@ the Bot API reference rather than those of the send methods: a photo must be a J
 5 MB, which the emulator requires to be served as `image/jpeg` and to read as a JPEG image, and a
 document a PDF or ZIP file, served as `application/pdf` or `application/zip`, of at most 20 MB, the
 limit of other files sent by URL. A video file must be served as `video/mp4`, the only file type the
-reference allows, and a voice note as `audio/ogg`, the type TDLib declares for it, each of at most
-20 MB. Unlike with `sendVoice`, a voice note larger than 1 MB stays a voice note, as nothing
-documents the conversion to a file for inline results. A photo is then read as an uploaded one; a
-document, and a video whose URL path names a file, is named after the URL's last path segment, and
-each keeps the type it was served as. A video keeps the duration, width and height the bot
-specified, clamped as for `sendVideo`, and a voice note its specified duration; a video or voice
-note the bot knows by `file_id` keeps its own. The declared photo dimensions and the thumbnails of
-other results are validated and ignored; the client lists a thumbnail without the emulator
-downloading it.
+reference allows, a voice note as `audio/ogg`, and an audio file as `audio/mpeg`, the types TDLib
+declares for them, each of at most 20 MB. Unlike with `sendVoice`, a voice note larger than 1 MB
+stays a voice note, as nothing documents the conversion to a file for inline results. A photo is
+then read as an uploaded one; a document, and a video or audio file whose URL path names a file, is
+named after the URL's last path segment, and each keeps the type it was served as. A video keeps the
+duration, width and height the bot specified, clamped as for `sendVideo`, a voice note its specified
+duration, and an audio file the result's `audio_duration`, clamped as for `sendAudio`, `title` and
+`performer`, which TDLib gives its web document as attributes; a video, voice note or audio file the
+bot knows by `file_id` keeps its own. The declared photo dimensions and the thumbnails of other
+results are validated and ignored; the client lists a thumbnail without the emulator downloading it.
 
 Choosing a result whose media no resource serves fails with `502`, and one whose media is empty,
 served as another type, or a photo that is not a readable JPEG image fails with `422`; neither sends
@@ -183,7 +190,7 @@ TDLib-compatible encoding. Tests should treat them as opaque values.
 
 ## Real gaps
 
-- **Additional results and input content.** Audio, animation, sticker, venue and game results are
+- **Additional results and input content.** Animation, sticker, venue and game results are
   unsupported, as are venue, invoice and live location `input_message_content`, until the emulator
   models those messages. Compare the result dispatch in
   [`InlineQueriesManager::get_input_bot_inline_result`][results].

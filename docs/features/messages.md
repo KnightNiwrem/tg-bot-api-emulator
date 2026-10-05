@@ -7,15 +7,16 @@
 ## Sending, replying and inspecting history
 
 Accounts and bots exchange text, photos, documents, [videos](media-and-files.md#videos),
-[voice notes](media-and-files.md#voice-notes) and [albums](media-and-files.md#albums) of photos and
-videos, or documents, [contacts](contacts-and-locations.md#contacts) and static
+[voice notes](media-and-files.md#voice-notes), [audio files](media-and-files.md#audio-files) and
+[albums](media-and-files.md#albums) of photos and videos, of documents, or of audio files,
+[contacts](contacts-and-locations.md#contacts) and static
 [locations](contacts-and-locations.md#locations) and [polls](polls.md), in private chats and
 supergroups, and bots also send [rich messages](rich-messages.md). A private conversation must first
 be started by the account before the bot can send to it. `sendMessage`, `sendRichMessage`,
-`sendPoll`, `sendPhoto`, `sendDocument`, `sendVideo`, `sendVoice`, `sendContact` and `sendLocation`
-accept `protect_content` and supported [reply markup](keyboards-and-callbacks.md); `sendMediaGroup`
-accepts `protect_content` and no reply markup. Bot messages appear in account history; bots receive
-no updates for their own sends or edits.
+`sendPoll`, `sendPhoto`, `sendDocument`, `sendVideo`, `sendVoice`, `sendAudio`, `sendContact` and
+`sendLocation` accept `protect_content` and supported [reply markup](keyboards-and-callbacks.md);
+`sendMediaGroup` accepts `protect_content` and no reply markup. Bot messages appear in account
+history; bots receive no updates for their own sends or edits.
 
 Both sides can reply to a message in the same chat. Bots use `reply_parameters` or the legacy
 `reply_to_message_id` and `allow_sending_without_reply` parameters. `reply_parameters` takes
@@ -24,14 +25,15 @@ precedence, and a missing/non-positive message ID means no reply. If a target is
 without recursively nesting the replied message's own reply.
 
 Bots can add a message effect with `message_effect_id` to `sendMessage`, `sendPhoto`,
-`sendDocument`, `sendVideo`, `sendVoice`, `sendContact`, `sendLocation`, `sendMediaGroup`,
-`forwardMessage` and `copyMessage`, which gives it to every message of an album, as TDLib's
-`send_message_group` does. The message then reports it as `effect_id`, including in account history.
-`0` means no effect. As in TDLib's [`MessageSendOptions::get_message_send_options`][effect-rules],
-effects are refused in supergroups, and `forwardMessages` or `copyMessages` accept one only when a
-single message is found. Telegram's servers decide which effect identifiers exist; that check is not
-in the open-source code, and the emulator accepts any 64-bit identifier. The
-[official send path][message-effects] shows how the option is read.
+`sendDocument`, `sendVideo`, `sendVoice`, `sendAudio`, `sendContact`, `sendLocation`,
+`sendMediaGroup`, `forwardMessage` and `copyMessage`, which gives it to every message of an album,
+as TDLib's `send_message_group` does. The message then reports it as `effect_id`, including in
+account history. `0` means no effect. As in TDLib's
+[`MessageSendOptions::get_message_send_options`][effect-rules], effects are refused in supergroups,
+and `forwardMessages` or `copyMessages` accept one only when a single message is found. Telegram's
+servers decide which effect identifiers exist; that check is not in the open-source code, and the
+emulator accepts any 64-bit identifier. The [official send path][message-effects] shows how the
+option is read.
 
 Bots can also reply to a message of another of their chats by naming its `chat_id` in
 `reply_parameters`. As the official server's [`check_reply_parameters`][check-reply] does, the bot
@@ -39,7 +41,7 @@ must be able to read that chat, and a missing message fails the send unless
 `allow_sending_without_reply` is set. The reply shows the message in `external_reply` as TDLib's
 [`RepliedMessageInfo`][replied-message-info] keeps it. It includes the original sender and date, and
 the chat and message ID when the message is in a supergroup. It also carries a photo, document,
-video or voice note without its caption, a poll, a contact, or a location, which TDLib's
+video, voice note or audio file without its caption, a poll, a contact, or a location, which TDLib's
 [`is_supported_reply_message_content`][reply-content] lists. The text or caption becomes an
 automatic `quote` of up to 1,024 characters. That quote keeps only the entity types TDLib's
 [`is_allowed_quote_entity_type`][quote-entities] allows. As TDLib's
@@ -80,11 +82,12 @@ pagination or deleted entries; it is a test inspection API, not a Telegram histo
 Tests read the notifications an account's client shows through `account.getNotifications` for a
 private chat or a supergroup. Every message another participant sent to the chat notifies, in order,
 and the account's own messages do not. `disable_notification` on `sendMessage`, `sendPhoto`,
-`sendDocument`, `sendVideo`, `sendVoice`, `sendContact`, `sendLocation`, `sendMediaGroup`,
-`forwardMessage(s)` and `copyMessage(s)` makes the notification silent. The official server passes
-the option to TDLib's send options. As TDLib's [`Message::disable_notification`][silent-message]
-carries it to the recipient, the notification reports it as `is_silent`, as TDLib's
-[`notification`][notification-object] object does. Bot API messages do not show it.
+`sendDocument`, `sendVideo`, `sendVoice`, `sendAudio`, `sendContact`, `sendLocation`,
+`sendMediaGroup`, `forwardMessage(s)` and `copyMessage(s)` makes the notification silent. The
+official server passes the option to TDLib's send options. As TDLib's
+[`Message::disable_notification`][silent-message] carries it to the recipient, the notification
+reports it as `is_silent`, as TDLib's [`notification`][notification-object] object does. Bot API
+messages do not show it.
 
 Accounts have no notification settings, so no chat is muted, and reading a message keeps its
 notification; a deleted message has none.
@@ -125,22 +128,23 @@ Message deletion does not consider message age, and account edits have no age li
 messages and automatic deletion timers are absent. These timing simplifications are
 [intentional](#intentional-deviations).
 
-`editMessageMedia` replaces a message's content with a photo, document or video and its caption,
-read from an `InputMediaPhoto`, `InputMediaDocument` or `InputMediaVideo` as the official server's
-[`get_input_media`][input-media] reads it: the `media` is a `file_id` the bot knows,
-`attach://<part name>` or a URL, a document or video may have a thumbnail as for `sendDocument`, and
-a video takes the attributes, spoiler, caption placement and start that `sendVideo` takes. As
-TDLib's [`edit_message_media`][edit-media] allows, a photo, document or video changes its media, and
-a text or rich message becomes media, keeping its ID, its reply and its place in an album; the old
-caption goes with the old content. As TDLib's `can_edit_message_media` refuses it, a voice note's
-media cannot be replaced (`Bad Request: message media can't be edited`). As TDLib's
-`edit_message_media` refuses it once the caption is read, a photo or video of an
-[album](media-and-files.md#albums) cannot become a document, nor a document a photo or video
-(`Bad Request: can't change media type in the album`). A caption or file is refused as by
-`sendPhoto`, `sendVideo` and `sendDocument`, and media Telegram cannot read fails with its
-description prefixed by `Bad Request: can't parse InputMedia:`, such as a `voice_note`, which the
-official server reads only in rich messages (`type "voice_note" is not allowed`). Animations, audio
-and live photos are [missing](README.md#unimplemented-areas) and refused with
+`editMessageMedia` replaces a message's content with a photo, document, video or audio file and its
+caption, read from an `InputMediaPhoto`, `InputMediaDocument`, `InputMediaVideo` or
+`InputMediaAudio` as the official server's [`get_input_media`][input-media] reads it: the `media` is
+a `file_id` the bot knows, `attach://<part name>` or a URL, a document, video or audio file may have
+a thumbnail as for `sendDocument`, a video takes the attributes, spoiler, caption placement and
+start that `sendVideo` takes, and an audio file the duration, performer and title that `sendAudio`
+takes. As TDLib's [`edit_message_media`][edit-media] allows, a photo, document, video or audio file
+changes its media, and a text or rich message becomes media, keeping its ID, its reply and its place
+in an album; the old caption goes with the old content. As TDLib's `can_edit_message_media` refuses
+it, a voice note's media cannot be replaced (`Bad Request: message media can't be edited`). As
+TDLib's `edit_message_media` refuses it once the caption is read, a document or audio file of an
+[album](media-and-files.md#albums) cannot become other media, nor other media a document or audio
+file (`Bad Request: can't change media type in the album`). A caption or file is refused as by
+`sendPhoto`, `sendVideo`, `sendDocument` and `sendAudio`, and media Telegram cannot read fails with
+its description prefixed by `Bad Request: can't parse InputMedia:`, such as a `voice_note`, which
+the official server reads only in rich messages (`type "voice_note" is not allowed`). Animations and
+live photos are [missing](README.md#unimplemented-areas) and refused with
 `Bad Request: InputMedia of type "…" is not supported`. An inline message's new media must reuse a
 file by its `file_id` or name one by URL, as for
 [rich messages](rich-messages.md#sending-and-editing); an upload fails with
@@ -169,9 +173,9 @@ text. Accounts can forward messages from their own chats too.
 
 `copyMessage` returns only the new `message_id`. The copy has no forward origin and uses the
 request's reply and markup. A supplied caption, including an empty one, replaces the caption of a
-photo, document, video or voice note; without one the original caption is kept. Forwards and copies
-of a rich message disable its [buttons](rich-messages.md#sending-and-editing) that would not work
-away from the original. A forward of a poll shows the same poll, while a copy shows a
+photo, document, video, voice note or audio file; without one the original caption is kept. Forwards
+and copies of a rich message disable its [buttons](rich-messages.md#sending-and-editing) that would
+not work away from the original. A forward of a poll shows the same poll, while a copy shows a
 [new poll without votes](polls.md#forwards-copies-and-replies). Forwards and copies of a
 [contact or location](contacts-and-locations.md#forwards-copies-and-replies) repeat it unchanged,
 the user of an account's own contact included. `show_caption_above_media` applies to a copied photo
@@ -199,9 +203,10 @@ reply markup, and `remove_caption` drops media captions.
 As TDLib's [`get_forwarded_messages`][forwarded-albums] groups them, the forwards or copies of an
 [album](media-and-files.md#albums)'s messages form a new album of their own when a request repeats
 two or more of them; a lone one, like a message `forwardMessage` or `copyMessage` repeats, belongs
-to no album. A request that repeats 2 to 10 documents and nothing else, all first sent by one user,
-none of them a forward that hides its original sender, puts them in one new album, whichever albums
-they came from.
+to no album. A request that repeats 2 to 10 documents and nothing else, or 2 to 10 audio files and
+nothing else, all first sent by one user, none of them a forward that hides its original sender,
+puts them in one new album, whichever albums they came from, as TDLib does for media that
+`is_homogenous_media_group_content` keeps apart.
 
 An account created with `has_private_forwards` keeps forwards from linking to it, as Telegram's
 "Forwarded messages" privacy setting does. As TDLib's

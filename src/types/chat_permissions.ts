@@ -74,6 +74,7 @@ export type PermissionGovernedContent =
       | 'document'
       | 'video'
       | 'voice'
+      | 'audio'
       | 'poll'
       | 'contact'
       | 'location';
@@ -102,6 +103,8 @@ export function getContentSendPermissions(
       return ['can_send_videos'];
     case 'voice':
       return ['can_send_voice_notes'];
+    case 'audio':
+      return ['can_send_audios'];
     case 'poll':
       return ['can_send_polls'];
     case 'rich_message': {

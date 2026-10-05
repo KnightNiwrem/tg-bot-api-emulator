@@ -81,7 +81,9 @@ import {
   type RichMessageFileTypes,
 } from '../types/rich_message.ts';
 import {
+  type AudioAttributes,
   isWebVoiceNoteSentAsVoiceNote,
+  type StoredAudioFile,
   type StoredDocumentFile,
   type StoredFile,
   type StoredPhotoFile,
@@ -125,6 +127,8 @@ import type {
   RevokeInviteLinkAsBotResult,
 } from './chat_admission.ts';
 import type {
+  AudioUploadPreparation,
+  AudioUploadRequest,
   DocumentUploadPreparation,
   DocumentUploadRequest,
   PhotoTooBigFailure,
@@ -171,6 +175,7 @@ import type {
   ContentNormalizationFailure,
   ContentTextNormalizationFailure,
   MediaContent,
+  OutgoingAudio,
   OutgoingCaptionedMedia,
   OutgoingContentOtherThanPoll,
   OutgoingDocument,
@@ -474,6 +479,25 @@ export type SendVoiceRequest = SendRequestOptions & {
   readonly caption: SpecifiedFormattedText;
 };
 
+/** An audio file and its caption, as `sendAudio` and `InputMediaAudio` specify them. */
+export interface SpecifiedAudio {
+  readonly audio: BotApiInputFile;
+  /**
+   * The duration, performer and title the bot specified, which an audio file sent by `file_id`
+   * ignores in favor of its own.
+   */
+  readonly attributes: AudioAttributes;
+  /**
+   * As `SendDocumentRequest` describes it, such as the cover of the audio file's album; an audio
+   * file sent by `file_id` keeps its own.
+   */
+  readonly thumbnail?: Uint8Array<ArrayBuffer>;
+  /** Empty text for no caption. */
+  readonly caption: SpecifiedFormattedText;
+}
+
+export type SendAudioRequest = SendRequestOptions & SpecifiedAudio;
+
 /**
  * A contact as `sendContact` specifies it. Like the official Bot API server, a bot names no
  * Telegram user, so the contact's user stays unknown.
@@ -671,8 +695,8 @@ export interface EditMessageCaptionRequest extends MessageTarget {
 
 /**
  * New media of a message and its caption, as `editMessageMedia` specifies them: a photo, a
- * document, or a video, uploaded with the request, reused by the `file_id` the bot knows it by,
- * or downloaded from a URL.
+ * document, a video, or an audio file, uploaded with the request, reused by the `file_id` the bot
+ * knows it by, or downloaded from a URL.
  */
 export type MediaReplacementRequest =
   | {
@@ -693,10 +717,12 @@ export type MediaReplacementRequest =
     /** Empty text for no caption. */
     readonly caption: SpecifiedFormattedText;
   }
-  | ({ readonly kind: 'video' } & SpecifiedVideo);
+  | ({ readonly kind: 'video' } & SpecifiedVideo)
+  | ({ readonly kind: 'audio' } & SpecifiedAudio);
 
 /**
- * The photos, videos, or documents that `sendMediaGroup` sends as an album, each specified as
+ * The photos, videos, documents, or audio files that `sendMediaGroup` sends as an album, each
+ * specified as
  * `editMessageMedia` specifies new media, in the order the chat shows them. Every message of the
  * album is sent alike, and none has reply markup, which the Bot API does not read for albums.
  */
@@ -789,8 +815,8 @@ export type EditMessageMediaFailureReason =
   | 'message_media_not_editable'
   | 'caption_too_long'
   /**
-   * The new media is a document for a photo or video of an album, or a photo or video for a
-   * document.
+   * The message belongs to an album, and either it or the new media is a document or an audio
+   * file, which an album keeps to its own kind.
    */
   | 'album_media_kind_changed';
 
@@ -997,6 +1023,22 @@ export type InlineQueryResultRequest =
     /** Empty text for no caption. */
     readonly caption: SpecifiedFormattedText;
     /** Kept by a voice note the bot names by URL; a stored one keeps its own. */
+    readonly durationSeconds: number;
+    readonly messageContent?: InlineResultMessageContentRequest;
+  })
+  | (Omit<InlineQueryResultRequestBase, 'description'> & {
+    readonly kind: 'audio';
+    readonly audio: InlineResultFileRequest;
+    /** Empty for none; never empty for an audio file the bot names by URL. */
+    readonly title: string;
+    /** Empty for none. */
+    readonly performer: string;
+    /** Empty text for no caption. */
+    readonly caption: SpecifiedFormattedText;
+    /**
+     * Kept by an audio file the bot names by URL, with its title and performer; a stored one keeps
+     * its own.
+     */
     readonly durationSeconds: number;
     readonly messageContent?: InlineResultMessageContentRequest;
   });
@@ -1829,6 +1871,8 @@ interface MediaFiles {
   prepareWebVideoUpload(webFile: WebFile, attributes: VideoAttributes): VideoUploadPreparation;
   prepareVoiceUpload(request: VoiceUploadRequest): VoiceUploadPreparation;
   prepareWebVoiceUpload(webFile: WebFile, durationSeconds: number): VoiceUploadPreparation;
+  prepareAudioUpload(request: AudioUploadRequest): AudioUploadPreparation;
+  prepareWebAudioUpload(webFile: WebFile, attributes: AudioAttributes): AudioUploadPreparation;
   findObserverFile(observerId: number, fileId: string): StoredFile | undefined;
   getBotFile(botId: number, fileId: string):
     | {
@@ -2577,9 +2621,30 @@ export class BotApiService {
   }
 
   /**
-   * Sends photos and videos, or documents, to a private chat or a supergroup as an album, as
-   * TDLib's `send_message_group` does: each message's file is resolved as `sendPhoto`, `sendVideo`
-   * and `sendDocument` resolve theirs, in order, and the album is then checked as
+   * Sends an audio file, such as a music track, with an optional caption, as `sendPhoto` sends a
+   * photo. Telegram documents that its clients play MP3 and M4A audio; the emulator inspects no
+   * content, reads no tags, and always sends an audio file.
+   */
+  sendAudio(
+    authenticatedBot: VirtualBotProfile,
+    { audio, attributes, thumbnail, caption, ...options }: SendAudioRequest,
+  ): SendResult {
+    const resolution = this.#resolveAudioMedia(authenticatedBot, {
+      audio,
+      attributes,
+      ...(thumbnail === undefined ? {} : { thumbnail }),
+      caption,
+    });
+    if (!resolution.resolved) {
+      return { sent: false, ...resolution.failure };
+    }
+    return this.#send(authenticatedBot, resolution.file, options);
+  }
+
+  /**
+   * Sends photos and videos, documents, or audio files to a private chat or a supergroup as an
+   * album, as TDLib's `send_message_group` does: each message's file is resolved as `sendPhoto`,
+   * `sendVideo`, `sendDocument` and `sendAudio` resolve theirs, in order, and the album is then checked as
    * `checkAlbumComposition` does. An upload that only Telegram's servers refuse fails after those
    * checks, as TDLib learns of it only when the album is sent. Every check passes before any
    * message is sent; the messages are then sent in order, each as a reply to the same message, and
@@ -3416,6 +3481,7 @@ export class BotApiService {
       case 'album_too_large':
       case 'album_caption_placement_mixed':
       case 'album_documents_mixed':
+      case 'album_audio_mixed':
         return { sent: false, reason: result.reason };
       // As for a single message, Telegram reports a user who has not started the bot as not found.
       case 'account_not_found':
@@ -3472,6 +3538,7 @@ export class BotApiService {
       case 'album_too_large':
       case 'album_caption_placement_mixed':
       case 'album_documents_mixed':
+      case 'album_audio_mixed':
         return { sent: false, reason: result.reason };
       case 'bot_not_found':
         throw new Error(`Authenticated bot ${authenticatedBot.id} does not exist`);
@@ -3628,6 +3695,62 @@ export class BotApiService {
       : resolution;
   }
 
+  /**
+   * Resolves the audio file a request sends, as `#resolveVideo` resolves a video: an upload, whose
+   * name the Bot API server cleans and whose MIME type its name decides, with the duration,
+   * performer, title and thumbnail the bot specified; an audio file the bot knows by `file_id`,
+   * which keeps its own, since TDLib sends it as `inputMediaDocument` without them; or a file
+   * downloaded from a URL, named after the URL's last path segment, if it has one, and typed as it
+   * was served. TDLib sends a URL audio file as `inputMediaDocumentExternal`, which carries neither
+   * a thumbnail nor the bot's attributes; how Telegram's servers determine the attributes of a
+   * downloaded audio file is not in the source, so the emulator keeps the ones the bot specified.
+   */
+  #resolveAudio(
+    authenticatedBot: VirtualBotProfile,
+    input: BotApiInputFile,
+    attributes: AudioAttributes,
+    thumbnailContent: Uint8Array<ArrayBuffer> | undefined,
+  ): FileResolution<OutgoingAudio> {
+    if (input.kind === 'file_id') {
+      const file = this.#mediaFiles.findObserverFile(authenticatedBot.id, input.fileId);
+      if (file?.type === 'audio') {
+        return { resolved: true, file: { kind: 'stored', file } };
+      }
+      return { resolved: false, failure: fileIdFailure(file, 'audio') };
+    }
+    const preparation = input.kind === 'upload'
+      ? this.#mediaFiles.prepareAudioUpload({
+        content: input.content,
+        fileName: cleanUploadedFileName(input.fileName),
+        attributes,
+        ...(thumbnailContent === undefined ? {} : { thumbnailContent }),
+        source: 'bot_upload',
+      })
+      : this.#mediaFiles.prepareWebAudioUpload(input.webFile, attributes);
+    return preparation.prepared
+      ? { resolved: true, file: { kind: 'upload', upload: preparation.upload } }
+      : { resolved: false, failure: uploadPreparationFailure(preparation) };
+  }
+
+  /** Resolves the file of an audio file a request specifies, as `#resolveAudio` does. */
+  #resolveAudioMedia(
+    authenticatedBot: VirtualBotProfile,
+    { audio, attributes, thumbnail, caption }: SpecifiedAudio,
+  ): FileResolution<Extract<MediaContent, { readonly kind: 'audio' }>> {
+    const resolution = this.#resolveAudio(authenticatedBot, audio, attributes, thumbnail);
+    return resolution.resolved
+      ? {
+        resolved: true,
+        file: {
+          kind: 'audio',
+          audio: resolution.file,
+          caption: caption.text,
+          captionEntities: caption.entities,
+        },
+      }
+      : resolution;
+  }
+
   /** Resolves the file of a video a request specifies, as `#resolveVideo` does. */
   #resolveVideoMedia(
     authenticatedBot: VirtualBotProfile,
@@ -3651,8 +3774,8 @@ export class BotApiService {
   }
 
   /**
-   * Resolves the file of new media, as `#resolvePhoto`, `#resolveDocument` and `#resolveVideo`
-   * resolve a photo, a document, and a video.
+   * Resolves the file of new media, as `#resolvePhoto`, `#resolveDocument`, `#resolveVideo` and
+   * `#resolveAudio` resolve a photo, a document, a video, and an audio file.
    */
   #resolveMediaReplacement(
     authenticatedBot: VirtualBotProfile,
@@ -3683,6 +3806,8 @@ export class BotApiService {
       }
       case 'video':
         return this.#resolveVideoMedia(authenticatedBot, media);
+      case 'audio':
+        return this.#resolveAudioMedia(authenticatedBot, media);
       default: {
         const unhandledMedia: never = media;
         throw new Error(`Unhandled media replacement: ${JSON.stringify(unhandledMedia)}`);
@@ -4412,8 +4537,8 @@ export class BotApiService {
   }
 
   /**
-   * Replaces the caption, its entities, and the inline keyboard of a photo, document, or video
-   * the bot sent; empty caption text removes the caption.
+   * Replaces the caption, its entities, and the inline keyboard of captioned media the bot sent;
+   * empty caption text removes the caption.
    */
   editMessageCaption(
     authenticatedBot: VirtualBotProfile,
@@ -4462,8 +4587,8 @@ export class BotApiService {
 
   /**
    * Replaces the content, caption and inline keyboard of a message the bot sent with a new photo,
-   * document, or video, as TDLib's `edit_message_media` does; a photo, document, or video message
-   * changes its media, and a text or rich message becomes media. As for `sendPhoto`, the file is
+   * document, video, or audio file, as TDLib's `edit_message_media` does; a photo, document,
+   * video, or audio message changes its media, and a text or rich message becomes media. As for `sendPhoto`, the file is
    * resolved before the message is found.
    */
   editMessageMedia(
@@ -4803,8 +4928,8 @@ export class BotApiService {
   }
 
   /**
-   * Replaces the caption, its entities, and the inline keyboard of a photo, document, or video
-   * sent through the bot; empty caption text removes the caption.
+   * Replaces the caption, its entities, and the inline keyboard of captioned media sent through the
+   * bot; empty caption text removes the caption.
    */
   editInlineMessageCaption(
     authenticatedBot: VirtualBotProfile,
@@ -4845,7 +4970,7 @@ export class BotApiService {
 
   /**
    * Replaces the content, caption and inline keyboard of a message sent through the bot with a
-   * new photo, document, or video, as `editMessageMedia` replaces them. As TDLib's
+   * new photo, document, video, or audio file, as `editMessageMedia` replaces them. As TDLib's
    * `edit_inline_message_media` requires, the media may reuse a file by its `file_id` or name one
    * by URL but not upload one. A voice note that an inline query result sent keeps its media, as
    * any voice note does.
@@ -5085,7 +5210,7 @@ export class BotApiService {
 
   /**
    * Resolves the files of an inline query result as TDLib's `answer_inline_query` does: its photo,
-   * document, video, or voice note known by `file_id`, and the files of a rich message it sends,
+   * document, video, voice note, or audio file known by `file_id`, and the files of a rich message it sends,
    * which must reuse files by `file_id` because an inline message cannot receive an upload. Media
    * named by URL keeps its URL, as TDLib passes it on, for Telegram to download when the result is
    * sent; an embedded video player is only listed, and sends its `input_message_content`. A
@@ -5222,6 +5347,15 @@ export class BotApiService {
           voice,
           title: result.title,
           messageContent: messageContent ?? toInlineResultVoiceContent(voice, result),
+        }));
+      case 'audio':
+        return this.#resolveInlineMediaResult(authenticatedBot, result.audio, 'audio', (audio) => ({
+          ...shared,
+          kind: 'audio',
+          audio,
+          title: result.title,
+          description: result.performer,
+          messageContent: messageContent ?? toInlineResultAudioContent(audio, result),
         }));
       default: {
         const unhandledResult: never = result;
@@ -5453,7 +5587,8 @@ function uploadPreparationFailure(
     | PhotoUploadPreparation
     | DocumentUploadPreparation
     | VideoUploadPreparation
-    | VoiceUploadPreparation,
+    | VoiceUploadPreparation
+    | AudioUploadPreparation,
     { readonly prepared: false }
   >,
 ): FileResolutionFailure {
@@ -5557,6 +5692,8 @@ function getMediaReplacementFile(media: MediaReplacementRequest): BotApiInputFil
       return media.document;
     case 'video':
       return media.video;
+    case 'audio':
+      return media.audio;
     default: {
       const unhandledMedia: never = media;
       throw new Error(`Unhandled media replacement: ${JSON.stringify(unhandledMedia)}`);
@@ -5599,6 +5736,26 @@ function cleanInlineResultListing(
   }
   if (result.kind === 'contact' && title.length === 0) {
     return { cleaned: false, failure: { reason: 'contact_first_name_empty' } };
+  }
+  if (result.kind === 'audio' && result.messageContent.kind === 'web_audio') {
+    // An audio file named by URL takes the cleaned title and performer as its metadata.
+    const { messageContent } = result;
+    return {
+      cleaned: true,
+      result: {
+        ...result,
+        title,
+        description,
+        messageContent: {
+          ...messageContent,
+          attributes: toInlineResultAudioAttributes(
+            messageContent.attributes.durationSeconds,
+            title,
+            description,
+          ),
+        },
+      },
+    };
   }
   return { cleaned: true, result: { ...result, title, description } };
 }
@@ -5743,6 +5900,43 @@ function toInlineResultVoiceContent(
       durationSeconds: result.durationSeconds,
     }
     : { kind: 'voice', voice: { kind: 'stored', file: voice.file }, ...toSpecifiedCaption(result) };
+}
+
+/**
+ * What an audio result sends without `input_message_content`: its audio file with its caption. An
+ * audio file named by URL takes the duration, title and performer the result specified, as TDLib
+ * gives its web document their attributes; a stored one keeps its own, which the result's title
+ * and performer only list.
+ */
+function toInlineResultAudioContent(
+  audio: SpecifiedInlineResultFile<StoredAudioFile>,
+  result: Extract<InlineQueryResultRequest, { readonly kind: 'audio' }>,
+): OutgoingContentOtherThanPoll | SpecifiedInlineResultWebMedia {
+  return audio.source === 'web'
+    ? {
+      kind: 'web_audio',
+      url: audio.url,
+      ...toSpecifiedCaption(result),
+      attributes: toInlineResultAudioAttributes(
+        result.durationSeconds,
+        result.title,
+        result.performer,
+      ),
+    }
+    : { kind: 'audio', audio: { kind: 'stored', file: audio.file }, ...toSpecifiedCaption(result) };
+}
+
+/** The metadata an audio result gives the audio file it names by URL; empty text is none. */
+function toInlineResultAudioAttributes(
+  durationSeconds: number,
+  title: string,
+  performer: string,
+): AudioAttributes {
+  return {
+    durationSeconds,
+    ...(performer.length === 0 ? {} : { performer }),
+    ...(title.length === 0 ? {} : { title }),
+  };
 }
 
 /**

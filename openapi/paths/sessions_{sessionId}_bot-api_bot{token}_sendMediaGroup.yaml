@@ -1,8 +1,8 @@
 description: >-
-  Telegram Bot API method for sending photos and videos, or documents, as an album. Each item's
-  file is an upload, a file the bot knows by its `file_id`, or an HTTP URL, as for
-  `editMessageMedia`, and is resolved as `sendPhoto`, `sendVideo` and `sendDocument` resolve
-  theirs; its caption is read, formatted, and normalized as theirs. The album's messages are sent in order, each replying to the same
+  Telegram Bot API method for sending photos and videos, documents, or audio files, as an album.
+  Each item's file is an upload, a file the bot knows by its `file_id`, or an HTTP URL, as for
+  `editMessageMedia`, and is resolved as `sendPhoto`, `sendVideo`, `sendDocument` and `sendAudio`
+  resolve theirs; its caption is read, formatted, and normalized as theirs. The album's messages are sent in order, each replying to the same
   message, and share a new `media_group_id`; the method returns them in that order. A single
   item is sent as one message outside any album, as TDLib sends it. As the official server does,
   the method reads no `reply_markup`; the emulator rejects one. As TDLib sends a document of an
@@ -49,16 +49,18 @@ post:
         downloaded, as for `sendPhoto`, which fails with Telegram's error for the item's
         position (`Bad Request: failed to send message #<position> with the error message
         "WEBPAGE_CURL_FAILED"`, or `"WEBPAGE_MEDIA_EMPTY"` for empty content or content of
-        another type); item by item, an item's file fails as for `sendPhoto`, `sendVideo` and
-        `sendDocument`,
+        another type); item by item, an item's file fails as for `sendPhoto`, `sendVideo`,
+        `sendDocument` and `sendAudio`,
         apart from content Telegram's servers refuse, or its normalized caption fails, with a
         caption longer than 1024 characters rejected (`Bad Request: message caption is too
         long`); the album
         holds more than 10 items (`Bad Request:
         too many messages to send as an album`) or none (`Bad Request: there are no messages to
         send`), its photos and videos place their captions differently (`Bad Request: parameter
-        show_caption_above_media must be the same for all messages`), or it mixes documents
-        with photos or videos (`Bad Request: document can't be mixed with other media types`);
+        show_caption_above_media must be the same for all messages`), or it mixes documents or
+        audio files with other media (`Bad Request: document can't be mixed with other media
+        types`, or `Bad Request: audio can't be mixed with other media types`, naming the kind of
+        the first such item, while TDLib names either kind of an album that mixes both);
         an upload Telegram's servers refuse fails with their error for the first such item's
         position: `IMAGE_PROCESS_FAILED`, `PHOTO_INVALID_DIMENSIONS`, or, for the `local` upload
         profile, a file larger than it allows; then the checks of `sendMessage` from the chat on,

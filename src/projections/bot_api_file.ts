@@ -1,4 +1,5 @@
 import type {
+  BotApiAudio,
   BotApiDocument,
   BotApiPhotoSize,
   BotApiVideo,
@@ -11,8 +12,8 @@ export interface ObservedFile {
   readonly file: StoredFile;
   readonly observerFileId: string;
   /**
-   * The `file_id` by which the observer knows a document's or video's thumbnail; omitted for other
-   * files and for a document or video without a thumbnail.
+   * The `file_id` by which the observer knows the thumbnail of a document, video, or audio file;
+   * omitted for other files and for one without a thumbnail.
    */
   readonly observerThumbnailFileId?: string;
 }
@@ -87,6 +88,28 @@ export function projectVoice(contentFile: ObservedFile | undefined): BotApiVoice
   return {
     duration: file.durationSeconds,
     mime_type: file.mimeType,
+    file_id: contentFile.observerFileId,
+    file_unique_id: file.uniqueId,
+    file_size: file.content.length,
+  };
+}
+
+/**
+ * Shows an audio file as the official Bot API server's `JsonAudio` does, with the metadata its
+ * sender defined; the observed file must be the message's audio file.
+ */
+export function projectAudio(contentFile: ObservedFile | undefined): BotApiAudio {
+  const file = contentFile?.file;
+  if (contentFile === undefined || file?.type !== 'audio') {
+    throw new Error('Expected the audio file of the message to be provided');
+  }
+  return {
+    duration: file.durationSeconds,
+    ...(file.fileName === undefined ? {} : { file_name: file.fileName }),
+    mime_type: file.mimeType,
+    ...(file.title === undefined ? {} : { title: file.title }),
+    ...(file.performer === undefined ? {} : { performer: file.performer }),
+    ...projectThumbnail(file.thumbnail, contentFile.observerThumbnailFileId),
     file_id: contentFile.observerFileId,
     file_unique_id: file.uniqueId,
     file_size: file.content.length,

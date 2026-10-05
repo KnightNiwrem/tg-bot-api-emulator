@@ -6,8 +6,8 @@ post:
   operationId: sendAccountMessage
   summary: Send a message as a virtual account
   description: >-
-    Sends text, a photo, a document, a video, a voice note, a contact, a static location, or a new
-    poll to the account's private chat with a bot, or to a supergroup the account is a member of;
+    Sends text, a photo, a document, a video, a voice note, an audio file, a contact, a static
+    location, or a new poll to the account's private chat with a bot, or to a supergroup the account is a member of;
     or forwards a message of such a chat there, as the account's message that shows who first sent
     it. A contact the account writes shows no Telegram user, while its own contact shows the
     account as its user. A poll is the account's own, which only it stops, and about which no bot

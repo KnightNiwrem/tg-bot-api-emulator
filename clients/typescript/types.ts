@@ -439,6 +439,32 @@ export interface AccountSendVoiceInput<Target extends MessageTarget = MessageTar
   readonly reply_to_message_id?: number;
 }
 
+export interface AccountSendAudioInput<Target extends MessageTarget = MessageTarget> {
+  readonly to: Target;
+  /**
+   * The audio file's content, such as a music track, which the emulator neither inspects nor
+   * transcodes, and from which it reads no tags.
+   */
+  readonly audio: Uint8Array;
+  /**
+   * The file name, whose extension decides the audio file's MIME type when it names an `audio/`
+   * type; otherwise, and without a name, the audio file is `audio/mpeg`.
+   */
+  readonly file_name?: string;
+  /** In seconds, from 0, the default, to 86400. */
+  readonly duration?: number;
+  /** Omitted or empty for none. */
+  readonly performer?: string;
+  /** Omitted or empty for none. */
+  readonly title?: string;
+  /** Omitted or empty for no caption. */
+  readonly caption?: string;
+  /** Formatting of the caption; entity types Telegram detects by itself are ignored. */
+  readonly caption_entities?: readonly MessageEntityInput[];
+  /** The ID of the chat's message to reply to, as message history shows it. */
+  readonly reply_to_message_id?: number;
+}
+
 /** The fields that name the file of each kind of media of an album an account sends. */
 interface AccountMediaGroupFileFields {
   readonly photo: {
@@ -454,9 +480,15 @@ interface AccountMediaGroupFileFields {
     AccountSendVideoInput,
     'video' | 'file_name' | 'duration' | 'width' | 'height'
   >;
+  readonly audio: Pick<
+    AccountSendAudioInput,
+    'audio' | 'file_name' | 'duration' | 'performer' | 'title'
+  >;
 }
 
-/** A photo, video, or document of an album an account sends, with an optional caption. */
+/**
+ * A photo, video, document, or audio file of an album an account sends, with an optional caption.
+ */
 export type AccountMediaGroupItem =
   & ExclusiveAlternatives<AccountMediaGroupFileFields>
   & {
@@ -469,8 +501,8 @@ export type AccountMediaGroupItem =
 export interface AccountSendMediaGroupInput<Target extends MessageTarget = MessageTarget> {
   readonly to: Target;
   /**
-   * The album's photos and videos, or documents, in the order the chat shows them: at most 10,
-   * and documents only among documents. A single item is sent as a message outside any album.
+   * The album's photos and videos, documents, or audio files, in the order the chat shows them: at
+   * most 10, documents only among documents, and audio files only among audio files. A single item is sent as a message outside any album.
    */
   readonly media: readonly AccountMediaGroupItem[];
   /** The ID of the chat's message that every message of the album replies to. */
@@ -1120,7 +1152,7 @@ export interface InlineKeyboardMarkup {
   readonly inline_keyboard: readonly (readonly InlineKeyboardButton[])[];
 }
 
-/** A file of a message: a photo size, a document, a video, or a voice note. */
+/** A file of a message: a photo size, a document, a video, a voice note, or an audio file. */
 interface MessageFile {
   /**
    * The identifier by which the message's observer knows the file. As on Telegram, each user
@@ -1182,6 +1214,30 @@ export interface Voice extends MessageFile {
   readonly duration: number;
   /** `audio/ogg`, `audio/mpeg`, or `audio/mp4`. */
   readonly mime_type: string;
+}
+
+/**
+ * An audio file, such as a music track, whose duration, performer and title are those its sender
+ * defined.
+ */
+export interface Audio extends MessageFile {
+  /** In seconds. */
+  readonly duration: number;
+  /** Omitted for an audio file sent without a file name. */
+  readonly file_name?: string;
+  /** Always an `audio/` type. */
+  readonly mime_type: string;
+  /** Omitted for an audio file without a title. */
+  readonly title?: string;
+  /** Omitted for an audio file without a performer. */
+  readonly performer?: string;
+  /**
+   * The preview image the sender uploaded with the audio file, such as its album's cover; omitted
+   * for none.
+   */
+  readonly thumbnail?: PhotoSize;
+  /** Legacy copy of `thumbnail`, which the Bot API still shows. */
+  readonly thumb?: PhotoSize;
 }
 
 /**
@@ -1463,6 +1519,12 @@ interface MessageContentFields {
     readonly caption?: string;
     readonly caption_entities?: readonly MessageEntity[];
   };
+  readonly audio: {
+    readonly audio: Audio;
+    /** Omitted for an audio file without a caption. */
+    readonly caption?: string;
+    readonly caption_entities?: readonly MessageEntity[];
+  };
   readonly rich_message: {
     /** A message a bot laid out in blocks, which only bots send. */
     readonly rich_message: RichMessage;
@@ -1479,8 +1541,8 @@ interface MessageContentFields {
 }
 
 /**
- * The fields that show what a message is: text, a photo, a document, a video, a voice note, a rich
- * message, a poll, a contact, or a location. Each kind declares the others' fields absent, so that
+ * The fields that show what a message is: text, a photo, a document, a video, a voice note, an audio
+ * file, a rich message, a poll, a contact, or a location. Each kind declares the others' fields absent, so that
  * any of them can be read from a message of unknown kind.
  */
 export type MessageContent = ExclusiveAlternatives<MessageContentFields>;
@@ -1690,6 +1752,7 @@ interface ExternalReplyMediaFields {
     readonly has_media_spoiler?: true;
   };
   readonly voice: { readonly voice: Voice };
+  readonly audio: { readonly audio: Audio };
   readonly contact: { readonly contact: Contact };
   readonly location: { readonly location: Location };
 }
@@ -2050,7 +2113,15 @@ export interface Location {
 
 /** A result of an answer as the account's client lists it. */
 export interface InlineQueryResultListing {
-  readonly type: 'article' | 'contact' | 'location' | 'photo' | 'document' | 'video' | 'voice';
+  readonly type:
+    | 'article'
+    | 'contact'
+    | 'location'
+    | 'photo'
+    | 'document'
+    | 'video'
+    | 'voice'
+    | 'audio';
   readonly id: string;
   readonly title?: string;
   readonly description?: string;
@@ -2130,6 +2201,14 @@ export interface VirtualAccountClient extends VirtualAccountProfile {
     input: AccountSendVoiceInput<Target>,
   ): Promise<MessageIn<Target>>;
   /**
+   * Sends an audio file, such as a music track, with an optional caption, as `sendMessage` sends
+   * text. Its duration, performer and title are those the input defines; the emulator never reads
+   * the content or its tags.
+   */
+  sendAudio<Target extends MessageTarget>(
+    input: AccountSendAudioInput<Target>,
+  ): Promise<MessageIn<Target>>;
+  /**
    * Sends a contact the account writes, as `sendMessage` sends text. Telegram cleans its texts,
    * as it cleans names, and shows no user for it.
    */
@@ -2161,8 +2240,8 @@ export interface VirtualAccountClient extends VirtualAccountProfile {
     input: AccountSendPollInput<Target>,
   ): Promise<MessageIn<Target>>;
   /**
-   * Sends photos and videos, or documents, as an album, as `sendPhoto`, `sendVideo` and
-   * `sendDocument` send one, and returns the album's messages in order, which share a
+   * Sends photos and videos, documents, or audio files, as an album, as `sendPhoto`, `sendVideo`,
+   * `sendDocument` and `sendAudio` send one, and returns the album's messages in order, which share a
    * `media_group_id`. The chat's bots receive each message as a separate update, in the album's
    * order.
    */
@@ -2185,7 +2264,7 @@ export interface VirtualAccountClient extends VirtualAccountProfile {
     input: AccountEditMessageInput<Target>,
   ): Promise<MessageIn<Target>>;
   /**
-   * Edits the caption of a photo, document, video, or voice note this account sent, as
+   * Edits the caption of a photo, document, video, voice note, or audio file this account sent, as
    * `editMessage` edits text.
    */
   editMessageCaption<Target extends MessageTarget>(

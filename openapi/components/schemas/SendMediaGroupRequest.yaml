@@ -15,10 +15,10 @@ properties:
     minItems: 1
     maxItems: 10
     description: >-
-      The album's photos and videos, or documents, in the order the chat shows them, each as
-      `InputMedia` describes it. Documents form an album only with documents, and every photo and
-      video must place its caption alike. Telegram also sends live photos among photos and
-      videos, and audio only with other audio, which the emulator lacks and refuses by name. A
+      The album's photos and videos, documents, or audio files, in the order the chat shows them,
+      each as `InputMedia` describes it. Documents form an album only with documents, audio files
+      only with audio files, and every photo and video must place its caption alike. Telegram also
+      sends live photos among photos and videos, which the emulator lacks and refuses by name. A
       single item is sent as one message outside any album, as TDLib sends it.
     items:
       $ref: ./InputMedia.yaml

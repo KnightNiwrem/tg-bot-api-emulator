@@ -1,7 +1,9 @@
 import type {
+  AudioUpload,
   DocumentUpload,
   FileUpload,
   PhotoUpload,
+  StoredAudioFile,
   StoredDocumentFile,
   StoredFile,
   StoredFileId,
@@ -30,13 +32,14 @@ export class FileRepository {
   readonly #storedFileIdsByBotFilePathByBotId = new Map<number, Map<string, StoredFileId>>();
 
   /**
-   * Stores an upload under a new identity. A document's or video's thumbnail is stored as a file of
-   * its own, which users can download and know by a `file_id` of its own.
+   * Stores an upload under a new identity. A document's, video's, or audio file's thumbnail is
+   * stored as a file of its own, which users can download and know by a `file_id` of its own.
    */
   addFile(upload: PhotoUpload): StoredPhotoFile;
   addFile(upload: DocumentUpload): StoredDocumentFile;
   addFile(upload: VideoUpload): StoredVideoFile;
   addFile(upload: VoiceUpload): StoredVoiceFile;
+  addFile(upload: AudioUpload): StoredAudioFile;
   addFile(upload: FileUpload): Exclude<StoredFile, { readonly type: 'thumbnail' }>;
   addFile(upload: FileUpload): Exclude<StoredFile, { readonly type: 'thumbnail' }> {
     if (upload.type === 'photo' || upload.type === 'voice') {
@@ -55,6 +58,7 @@ export class FileRepository {
       | Omit<DocumentUpload, 'thumbnail'>
       | Omit<VideoUpload, 'thumbnail'>
       | VoiceUpload
+      | Omit<AudioUpload, 'thumbnail'>
       | ThumbnailUpload,
   >(
     upload: Upload,

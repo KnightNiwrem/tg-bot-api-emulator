@@ -1,0 +1,16 @@
+type: object
+additionalProperties: false
+required:
+  - to
+  - audio
+properties:
+  to:
+    $ref: ./MessageTarget.yaml
+  audio:
+    $ref: ./AccountAudioUpload.yaml
+  caption:
+    $ref: ./AccountCaption.yaml
+  caption_entities:
+    $ref: ./AccountMessageEntities.yaml
+  reply_to_message_id:
+    $ref: ./AccountReplyToMessageId.yaml

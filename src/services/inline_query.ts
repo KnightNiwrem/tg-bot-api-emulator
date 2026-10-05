@@ -22,7 +22,9 @@ import {
 } from '../types/inline_query.ts';
 import type { InlineKeyboard } from '../types/inline_keyboard.ts';
 import type {
+  AudioAttributes,
   InlineResultWebFileKind,
+  StoredAudioFile,
   StoredDocumentFile,
   StoredFile,
   StoredPhotoFile,
@@ -42,6 +44,7 @@ import type {
 } from '../types/virtual_message.ts';
 import type { FormattedTextFixingContext } from '../text_entities/formatted_text.ts';
 import type {
+  AudioUploadPreparation,
   DocumentUploadPreparation,
   InlineResultWebFileDownloadRequest,
   PhotoUploadPreparation,
@@ -156,6 +159,14 @@ type SpecifiedInlineQueryResultListing =
     readonly voice: SpecifiedInlineResultFile<StoredVoiceFile>;
     /** Empty for none. */
     readonly title: string;
+  }
+  | {
+    readonly kind: 'audio';
+    readonly audio: SpecifiedInlineResultFile<StoredAudioFile>;
+    /** Empty for none. */
+    readonly title: string;
+    /** The performer, by which TDLib describes an audio result; empty for none. */
+    readonly description: string;
   };
 
 /**
@@ -179,6 +190,11 @@ export type SpecifiedInlineResultWebMedia =
     readonly kind: 'web_voice';
     readonly url: string;
     readonly durationSeconds: number;
+  })
+  | (SpecifiedCaption & {
+    readonly kind: 'web_audio';
+    readonly url: string;
+    readonly attributes: AudioAttributes;
   });
 
 /**
@@ -354,6 +370,7 @@ interface InlineResultWebMediaFiles {
   prepareWebDocumentUpload(webFile: WebFile): DocumentUploadPreparation;
   prepareWebVideoUpload(webFile: WebFile, attributes: VideoAttributes): VideoUploadPreparation;
   prepareWebVoiceUpload(webFile: WebFile, durationSeconds: number): VoiceUploadPreparation;
+  prepareWebAudioUpload(webFile: WebFile, attributes: AudioAttributes): AudioUploadPreparation;
 }
 
 interface InlineQueryServiceDependencies {
@@ -695,6 +712,12 @@ export class InlineQueryService {
           ? { kind: 'voice', voice: { kind: 'upload', upload: preparation.upload }, caption }
           : undefined;
       }
+      case 'web_audio': {
+        const preparation = this.#webMediaFiles.prepareWebAudioUpload(webFile, content.attributes);
+        return preparation.prepared
+          ? { kind: 'audio', audio: { kind: 'upload', upload: preparation.upload }, caption }
+          : undefined;
+      }
       default: {
         const unhandledContent: never = content;
         throw new Error(`Unhandled web media: ${JSON.stringify(unhandledContent)}`);
@@ -925,6 +948,8 @@ function getSpecifiedListedFile(
       return result.video;
     case 'voice':
       return result.voice;
+    case 'audio':
+      return result.audio;
     default: {
       const unhandledResult: never = result;
       throw new Error(`Unhandled inline query result: ${JSON.stringify(unhandledResult)}`);
@@ -949,6 +974,7 @@ const WEB_MEDIA_FILE_KINDS: Readonly<
   web_document: 'document',
   web_video: 'video',
   web_voice: 'voice',
+  web_audio: 'audio',
 };
 
 const WEB_MEDIA_KINDS: ReadonlySet<string> = new Set(Object.keys(WEB_MEDIA_FILE_KINDS));
@@ -995,6 +1021,8 @@ function withWebMediaCaption(
         caption,
         durationSeconds: content.durationSeconds,
       };
+    case 'web_audio':
+      return { kind: 'web_audio', url: content.url, caption, attributes: content.attributes };
     default: {
       const unhandledContent: never = content;
       throw new Error(`Unhandled web media: ${JSON.stringify(unhandledContent)}`);
@@ -1069,6 +1097,14 @@ function toInlineQueryResult(
         ...shared,
         kind: 'voice',
         file: toListedFile(result.voice),
+        ...(result.title.length === 0 ? {} : { title: result.title }),
+      };
+    case 'audio':
+      return {
+        ...shared,
+        ...optionalDescription(result.description),
+        kind: 'audio',
+        file: toListedFile(result.audio),
         ...(result.title.length === 0 ? {} : { title: result.title }),
       };
     default: {

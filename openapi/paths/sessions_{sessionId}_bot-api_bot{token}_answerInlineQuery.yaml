@@ -1,8 +1,8 @@
 description: >-
   Telegram Bot API method for answering an inline query an account sent to the bot, once, with
   up to 50 results that the account's client lists and sends. Article, contact, and static
-  location results, and photo, document, video, and voice results with files the bot knows by
-  `file_id` or names by URL, are supported. The `input_message_content` that replaces what a
+  location results, and photo, document, video, voice, and audio results with files the bot knows
+  by `file_id` or names by URL, are supported. The `input_message_content` that replaces what a
   result sends may be text, a rich message, a contact, or a static location, each read as by the
   method that sends it. A file named by URL is not downloaded with the answer: Telegram downloads
   it from the session's emulated web each time an account sends it, and never when the result's

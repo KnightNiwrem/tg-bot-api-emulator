@@ -140,6 +140,18 @@ export type InlineQueryResultParameter =
     /** As the bot specified it, clamped as `sendVoice` clamps it. */
     readonly durationSeconds: number;
     readonly messageContent?: UnreadInputMessageContent;
+  })
+  | (InlineQueryResultParameterBase & {
+    readonly kind: 'audio';
+    readonly audio: InlineQueryResultFileParameter;
+    /** Required for an audio file given by URL; empty for none. */
+    readonly title: string;
+    /** Empty for none. */
+    readonly performer: string;
+    readonly caption: UnreadFormattedText;
+    /** As the bot specified it, clamped as `sendAudio` clamps it. */
+    readonly durationSeconds: number;
+    readonly messageContent?: UnreadInputMessageContent;
   });
 
 export type InlineQueryResultsParameterReading =
@@ -181,13 +193,13 @@ const SUPPORTED_RESULT_TYPES = [
   'document',
   'video',
   'voice',
+  'audio',
 ] as const;
 
 type SupportedResultType = typeof SUPPORTED_RESULT_TYPES[number];
 
 /** Telegram's result types that the emulator does not support. */
 const UNSUPPORTED_RESULT_TYPES = [
-  'audio',
   'game',
   'gif',
   'mpeg4_gif',
@@ -352,7 +364,7 @@ const documentResultSchema = z.strictObject({
 });
 
 /**
- * An integer attribute of a video or voice note, which the emulator clamps to a range as the
+ * An integer attribute of a video, voice note, or audio file, which the emulator clamps to a range as the
  * official server's `get_input_video` clamps those of `sendVideo`; a missing one is 0.
  */
 function clampedAttributeField(max: number) {
@@ -385,6 +397,20 @@ const voiceResultSchema = z.strictObject({
   voice_duration: clampedAttributeField(MAX_MEDIA_DURATION_SECONDS),
 });
 
+// An audio result has no description: TDLib describes it by its performer. As the official server
+// reads them, the title is required only for an audio file given by URL, which takes the title,
+// performer and duration as its metadata; a cached audio file keeps its own, and its result lists
+// the title and performer, which the Bot API does not document for it, only by them.
+const audioResultSchema = z.strictObject({
+  ...sharedResultShape,
+  ...captionShape,
+  title: z.string().optional(),
+  performer: z.string().default(''),
+  audio_url: z.string().default(''),
+  audio_file_id: z.string().default(''),
+  audio_duration: clampedAttributeField(MAX_MEDIA_DURATION_SECONDS),
+});
+
 // TDLib describes a contact result by its texts, so it takes no description, and names no user.
 const contactResultSchema = z.strictObject({
   ...sharedResultShape,
@@ -406,8 +432,8 @@ const locationResultSchema = z.strictObject({
 /**
  * Reads the elements of an `answerInlineQuery` `results` parameter as the official Bot API
  * server's `get_inline_query_result` does, failing with Telegram's description for a result it
- * cannot read. Article, contact, static location, photo, document, video, and voice results are
- * supported, the media among them with files given by `file_id` or by URL; other result types fail
+ * cannot read. Article, contact, static location, photo, document, video, voice, and audio results
+ * are supported, the media among them with files given by `file_id` or by URL; other result types fail
  * as unsupported. A result's `input_message_content` may send text, a rich message, a contact, or
  * a static location; a venue or an invoice fails as unsupported.
  *
@@ -489,6 +515,8 @@ function readInlineQueryResult(value: unknown): InlineQueryResultReading {
       return readVideoResult(value);
     case 'voice':
       return readVoiceResult(value);
+    case 'audio':
+      return readAudioResult(value);
     default: {
       const unhandledType: never = type;
       throw new Error(`Unhandled inline query result type: ${unhandledType}`);
@@ -712,6 +740,32 @@ function readVoiceResult(value: unknown): InlineQueryResultReading {
       title: data.title,
       caption: readCaption(data),
       durationSeconds: data.voice_duration,
+      ...(messageContent === undefined ? {} : { messageContent }),
+    },
+  };
+}
+
+function readAudioResult(value: unknown): InlineQueryResultReading {
+  const parsing = audioResultSchema.safeParse(value);
+  if (!parsing.success) {
+    return { kind: 'malformed' };
+  }
+  const { data } = parsing;
+  const audio = readResultFile(data.audio_url, data.audio_file_id);
+  if (audio === undefined || (data.audio_url.length > 0 && data.title === undefined)) {
+    return { kind: 'malformed' };
+  }
+  const messageContent = data.input_message_content;
+  return {
+    kind: 'result',
+    result: {
+      kind: 'audio',
+      ...readSharedFields(data),
+      audio,
+      title: data.title ?? '',
+      performer: data.performer,
+      caption: readCaption(data),
+      durationSeconds: data.audio_duration,
       ...(messageContent === undefined ? {} : { messageContent }),
     },
   };

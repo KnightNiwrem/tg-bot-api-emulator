@@ -126,9 +126,9 @@ Deno.test('the bot repeats the bold part of a message in bold', () =>
 ## Editing messages
 
 `account.editMessage` changes the text of a message the account sent, and
-`account.editMessageCaption` the caption of its photo, document, video, or voice note. Both return
-the edited message, with `edit_date`, and send the bot an `edited_message` update. The new text or
-caption must differ from the current one. The
+`account.editMessageCaption` the caption of its photo, document, video, voice note, or audio file.
+Both return the edited message, with `edit_date`, and send the bot an `edited_message` update. The
+new text or caption must differ from the current one. The
 [editing reference](../../features/messages.md#editing-and-deleting) lists what can be edited.
 
 ```ts

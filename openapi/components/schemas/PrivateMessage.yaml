@@ -2,8 +2,8 @@ type: object
 additionalProperties: false
 description: >-
   A private-chat message as the conversation's bot sees it: text, a photo, a document, a video, a
-  voice note, a rich message, a poll, a contact, or a location, each with the fields Telegram shows
-  for it, or a service message recording that a participant pinned a message (`pinned_message`),
+  voice note, an audio file, a rich message, a poll, a contact, or a location, each with the fields
+  Telegram shows for it, or a service message recording that a participant pinned a message (`pinned_message`),
   or that the account shared users (`users_shared`) or a supergroup (`chat_shared`) in answer to a
   reply keyboard button's request.
 required:
@@ -22,6 +22,8 @@ oneOf:
       - video
   - required:
       - voice
+  - required:
+      - audio
   - required:
       - rich_message
   - required:
@@ -144,10 +146,14 @@ properties:
     $ref: ./Video.yaml
   voice:
     $ref: ./Voice.yaml
+  audio:
+    $ref: ./Audio.yaml
   caption:
     type: string
     minLength: 1
-    description: The caption of a photo, document, video, or voice note, omitted when it has none.
+    description: >-
+      The caption of a photo, document, video, voice note, or audio file, omitted when it has
+      none.
   caption_entities:
     type: array
     minItems: 1

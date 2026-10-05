@@ -259,6 +259,26 @@ export interface BotApiVoice extends BotApiFile {
   readonly mime_type: string;
 }
 
+/**
+ * An audio file as the official Bot API server's `JsonAudio` shows it: its duration, then its name,
+ * type, title and performer, each omitted when unknown, then its thumbnail, precede its file fields.
+ */
+export interface BotApiAudio extends BotApiFile {
+  /** In seconds, as the sender defined it. */
+  readonly duration: number;
+  /** Omitted for an audio file sent without a file name. */
+  readonly file_name?: string;
+  readonly mime_type: string;
+  /** Omitted for an audio file without a title. */
+  readonly title?: string;
+  /** Omitted for an audio file without a performer. */
+  readonly performer?: string;
+  /** Omitted for an audio file without a thumbnail. */
+  readonly thumbnail?: BotApiPhotoSize;
+  /** Legacy copy of `thumbnail`, which the Bot API still shows. */
+  readonly thumb?: BotApiPhotoSize;
+}
+
 /** A caption's fields, which Telegram omits for a media message without a caption. */
 interface BotApiCaption {
   readonly caption?: string;
@@ -267,8 +287,8 @@ interface BotApiCaption {
 }
 
 /**
- * The fields of media that a message shows with a caption: a photo, a document, a video, or a
- * voice note.
+ * The fields of media that a message shows with a caption: a photo, a document, a video, a voice
+ * note, or an audio file.
  */
 type BotApiCaptionedMediaContent =
   & BotApiCaption
@@ -290,6 +310,7 @@ type BotApiCaptionedMediaContent =
       readonly has_media_spoiler?: true;
     }
     | { readonly voice: BotApiVoice }
+    | { readonly audio: BotApiAudio }
   );
 
 /** The fields that show what a message is, which follow its reply. */
@@ -464,6 +485,7 @@ export type BotApiExternalReplyMedia =
     readonly has_media_spoiler?: true;
   }
   | { readonly voice: BotApiVoice }
+  | { readonly audio: BotApiAudio }
   | { readonly contact: BotApiContact }
   | { readonly location: BotApiLocation };
 

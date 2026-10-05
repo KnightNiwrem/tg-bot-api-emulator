@@ -1,6 +1,6 @@
 description: >-
   The content of a file of the session's messages, such as a photo, document, video, voice
-  note, or thumbnail, addressed by its
+  note, audio file, or thumbnail, addressed by its
   `file_unique_id`, which, unlike `file_id`, is the same for every user.
 parameters:
   - $ref: ../components/parameters/SessionId.yaml

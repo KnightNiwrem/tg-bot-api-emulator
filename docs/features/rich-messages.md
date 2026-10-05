@@ -95,7 +95,7 @@ A rich message that an [inline query result](inline-mode.md#supported-behavior) 
 its photos and documents must be files the bot knows by `file_id`. An upload or a URL fails
 `answerInlineQuery` with `Bad Request: invalid inline message content specified`; files named by URL
 there are a [real gap](media-and-files.md#files-sent-by-url-in-inline-query-results). Photo,
-document, video and voice results themselves can
+document, video, voice and audio results themselves can
 [name their files by URL](inline-mode.md#media-named-by-url), which an account's choice downloads,
 unless the result's `input_message_content` replaces them.
 
@@ -127,9 +127,9 @@ unless the result's `input_message_content` replaces them.
   drafts.
 - **Other media blocks.** Animation, audio, video and voice note blocks fail with
   `Bad Request: rich message blocks with an animation, audio, video, or voice note are not supported`,
-  as animations and audio are [missing](media-and-files.md#additional-media-types-and-methods), and
-  the emulator's [videos](media-and-files.md#videos) and
-  [voice notes](media-and-files.md#voice-notes) have no blocks yet. Tests need rich messages that
+  as animations are [missing](media-and-files.md#additional-media-types-and-methods), and the
+  emulator's [videos](media-and-files.md#videos), [voice notes](media-and-files.md#voice-notes) and
+  [audio files](media-and-files.md#audio-files) have no blocks yet. Tests need rich messages that
   show them.
 - **Accounts' rich messages.** Accounts cannot send or copy rich messages; they forward them as
   other messages. [Inline query results](inline-mode.md#supported-behavior) can send rich messages

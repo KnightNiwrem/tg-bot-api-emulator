@@ -1,0 +1,76 @@
+type: object
+additionalProperties: false
+required:
+  - chat_id
+properties:
+  chat_id:
+    $ref: ./ChatIdentifier.yaml
+    description: Identifier of the chat, as for `sendMessage`.
+  audio:
+    type: string
+    description: >-
+      The `file_id` of an audio file the bot knows, `attach://<part name>` for a file uploaded in
+      that part, or an HTTP or HTTPS URL to download it from. Without it, the audio file is the
+      part named `audio`.
+  caption:
+    $ref: ./Caption.yaml
+  parse_mode:
+    $ref: ./ParseMode.yaml
+  caption_entities:
+    $ref: ./CaptionEntitiesParameter.yaml
+  duration:
+    type: integer
+    default: 0
+    description: >-
+      Duration in seconds, which the official server clamps to 0–86400. An audio file sent by
+      `file_id` keeps its own.
+  performer:
+    type: string
+    default: ''
+    description: >-
+      The performer, cleaned as TDLib's `clean_input_string` cleans it; empty for none. An audio
+      file sent by `file_id` keeps its own.
+  title:
+    type: string
+    default: ''
+    description: >-
+      The track's title, cleaned as `performer` is; empty for none. An audio file sent by
+      `file_id` keeps its own.
+  thumbnail:
+    type: string
+    description: >-
+      A preview image uploaded with the audio file, such as its album's cover, read as for
+      `sendDocument`. An audio file sent by `file_id` keeps its own thumbnail, and one sent by URL
+      takes none.
+  thumb:
+    type: string
+    description: >-
+      Legacy name of `thumbnail`, read as it is when `thumbnail` names no uploaded part.
+  disable_notification:
+    type: boolean
+    default: false
+    description: As for `sendMessage`.
+  protect_content:
+    type: boolean
+    default: false
+    description: As for `sendMessage`.
+  message_effect_id:
+    type: string
+    pattern: '^-?\d+$'
+    description: As for `sendMessage`.
+  reply_parameters:
+    $ref: ./ReplyParameters.yaml
+  reply_to_message_id:
+    type: integer
+    description: As for `sendMessage`.
+  allow_sending_without_reply:
+    type: boolean
+    default: false
+    description: As for `sendMessage`.
+  reply_markup:
+    description: As for `sendMessage`.
+    oneOf:
+      - $ref: ./InlineKeyboardMarkup.yaml
+      - $ref: ./ReplyKeyboardMarkup.yaml
+      - $ref: ./ReplyKeyboardRemove.yaml
+      - $ref: ./ForceReply.yaml

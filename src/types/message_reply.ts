@@ -76,6 +76,7 @@ function getExternalReplyMedia(content: MessageContent): Pick<ExternalReply, 'me
     case 'document':
     case 'video':
     case 'voice':
+    case 'audio':
       return { media: { ...content, caption: { text: '', entities: [] } } };
     case 'poll':
     case 'contact':

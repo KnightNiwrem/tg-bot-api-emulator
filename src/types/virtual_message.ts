@@ -220,20 +220,33 @@ export interface VoiceMessageContent {
   readonly caption: FormattedText;
 }
 
+/**
+ * An audio file, such as a music track, which clients play in their audio player. Unlike a voice
+ * note, it forms albums with other audio files and replaces media.
+ */
+export interface AudioMessageContent {
+  readonly kind: 'audio';
+  readonly fileId: StoredFileId;
+  /** Empty for an audio file without a caption. */
+  readonly caption: FormattedText;
+}
+
 /** A message laid out in blocks, which only bots send. It has no text or caption. */
 export interface RichMessageContent extends RichMessage {
   readonly kind: 'rich_message';
 }
 
 /**
- * Media that a message shows with a caption: a photo, a document, a video, or a voice note. Each
- * carries the one stored file it shows, and a caption that is empty when it has none.
+ * Media that a message shows with a caption: a photo, a document, a video, a voice note, or an
+ * audio file. Each carries the one stored file it shows, and a caption that is empty when it has
+ * none.
  */
 export type CaptionedMediaContent =
   | PhotoMessageContent
   | DocumentMessageContent
   | VideoMessageContent
-  | VoiceMessageContent;
+  | VoiceMessageContent
+  | AudioMessageContent;
 
 /**
  * A poll, which the account or bot that sent it created. The message shows the poll by its
@@ -388,6 +401,7 @@ function isServiceContent(
     case 'document':
     case 'video':
     case 'voice':
+    case 'audio':
     case 'rich_message':
     case 'poll':
     case 'contact':
@@ -412,6 +426,7 @@ export function isCaptionedMediaContent(
     case 'document':
     case 'video':
     case 'voice':
+    case 'audio':
       return true;
     case 'text':
     case 'rich_message':
