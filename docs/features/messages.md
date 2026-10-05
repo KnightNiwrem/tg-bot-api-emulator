@@ -1,7 +1,8 @@
 # Messages
 
 [Feature index and comparison baseline](README.md) · [Text formatting](text-formatting.md) ·
-[Media](media-and-files.md) · [Supergroups](supergroups.md)
+[Media](media-and-files.md) · [Supergroups](supergroups.md) ·
+[TypeScript client guide: Messages](../clients/typescript/messages.md)
 
 ## Sending, replying and inspecting history
 

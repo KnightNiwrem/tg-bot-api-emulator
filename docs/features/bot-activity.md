@@ -1,6 +1,7 @@
 # Bot activity
 
-[Feature index and comparison baseline](README.md)
+[Feature index and comparison baseline](README.md) ·
+[TypeScript client guide: Observing bot behavior](../clients/typescript/observing-bot-behavior.md)
 
 A bot under test runs in its own process and answers updates in its own time. Each session keeps a
 bot activity log so that tests can wait for what their bots do and assert the order it happened in.
@@ -137,8 +138,8 @@ An account's action returns before the bot handles it, so the chat's latest mess
 account's own. A test that reads the bot's reply takes the position before acting, waits for the
 reply's successful call with criteria that only that reply meets, and then selects the message by
 what identifies it, such as the message it replies to. The
-[client walkthrough](../typescript-client.md) does this for a photo and the document the bot replies
-with.
+[client guide](../clients/typescript/media-and-files.md#replying-to-a-photo-with-a-document) does
+this for a photo and the document the bot replies with.
 
 A delivery's `update_id` finds that update's confirmation. The wait below asserts that the bot
 received the account's message, then that it confirmed it:

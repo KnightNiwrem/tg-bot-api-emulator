@@ -1,7 +1,8 @@
 # Invite links and join requests
 
 [Feature index and comparison baseline](README.md) · [Supergroups](supergroups.md) ·
-[Updates](updates.md)
+[Updates](updates.md) ·
+[TypeScript client guide: Invite links](../clients/typescript/invite-links.md)
 
 ## Capability matrix
 

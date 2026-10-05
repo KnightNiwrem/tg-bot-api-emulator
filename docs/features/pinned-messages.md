@@ -1,7 +1,8 @@
 # Pinned messages
 
 [Feature index and comparison baseline](README.md) · [Messages](messages.md) ·
-[Supergroups](supergroups.md)
+[Supergroups](supergroups.md) ·
+[TypeScript client guide: Messages](../clients/typescript/messages.md)
 
 ## Capability matrix
 

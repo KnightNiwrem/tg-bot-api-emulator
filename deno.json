@@ -6,10 +6,10 @@
     "fmt:check": "deno fmt --check",
     "fmt": "deno fmt",
     "lint": "deno lint",
-    "check": "deno check --allow-import=cdn.jsdelivr.net,cdn.skypack.dev,jsr.io src/ tests/ clients/ && deno check --doc-only README.md docs/typescript-client.md",
+    "check": "deno check --allow-import=cdn.jsdelivr.net,cdn.skypack.dev,jsr.io src/ tests/ clients/ docs/clients/ && deno check --doc-only --allow-import=cdn.jsdelivr.net,cdn.skypack.dev,jsr.io README.md docs/clients/**/*.md",
     "architecture:check": "deno run -A fallow dead-code --boundary-violations",
     "openapi:lint": "npx --yes @redocly/cli@2.54.2 lint openapi/openapi.yaml",
-    "test": "deno test --allow-net=127.0.0.1 --allow-import=cdn.jsdelivr.net,cdn.skypack.dev,jsr.io"
+    "test": "deno test --allow-net=127.0.0.1 --allow-read=. --allow-import=cdn.jsdelivr.net,cdn.skypack.dev,jsr.io"
   },
   "imports": {
     "@grammyjs/runner/": "https://cdn.jsdelivr.net/gh/grammyjs/runner@^2.0.3/src/",

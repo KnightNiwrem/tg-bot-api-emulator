@@ -623,7 +623,8 @@
       "requireAllFiles": true,
       "allowUnmatched": [
         "tests/**",
-        "clients/**"
+        "clients/**",
+        "docs/**"
       ]
     }
   }

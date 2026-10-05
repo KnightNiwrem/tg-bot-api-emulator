@@ -1,6 +1,7 @@
 # Text formatting
 
-[Feature index and comparison baseline](README.md) · [Messages](messages.md)
+[Feature index and comparison baseline](README.md) · [Messages](messages.md) ·
+[TypeScript client guide: Messages](../clients/typescript/messages.md)
 
 ## Supported behavior
 

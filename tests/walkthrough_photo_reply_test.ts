@@ -11,7 +11,8 @@ import { TelegramEmulationClient } from '../clients/typescript/mod.ts';
 const RECEIPT_IMAGE = new Uint8Array([0x47, 0x49, 0x46, 0x38, 0x39, 0x61, 2, 0, 1, 0, 0, 0, 0]);
 const PROCESSED_RECEIPT = new TextEncoder().encode('Receipt total: 12.50');
 
-// Follows the photo step of docs/typescript-client.md, whose snippet `deno task check` type-checks.
+// Follows "Replying to a photo with a document" in docs/clients/typescript/media-and-files.md,
+// whose snippet `deno task check` type-checks.
 Deno.test('the walkthrough photo step reads the delayed bot reply, not the upload or other activity', async () => {
   const { session, fetch, createdBot, ada, grace } = await createFixture();
   const botId = createdBot.bot.id;

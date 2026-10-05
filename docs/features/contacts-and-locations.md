@@ -1,7 +1,8 @@
 # Contacts and locations
 
 [Feature index and comparison baseline](README.md) · [Messages](messages.md) ·
-[Keyboards and callbacks](keyboards-and-callbacks.md) · [Supergroups](supergroups.md)
+[Keyboards and callbacks](keyboards-and-callbacks.md) · [Supergroups](supergroups.md) ·
+[TypeScript client guide: Contacts and locations](../clients/typescript/contacts-and-locations.md)
 
 ## Contacts
 
