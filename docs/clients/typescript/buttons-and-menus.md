@@ -403,8 +403,10 @@ Deno.test('an account answers a forced reply', async () => {
 Keyboard buttons with `request_contact` or `request_location` are pressed the same way by their
 text, but share the account's own contact, or the `location` passed to `pressReplyKeyboardButton`,
 in reply to the keyboard's message instead of sending the text.
-[Contacts and locations](contacts-and-locations.md) shows both. Buttons with `request_poll` or
-`web_app` [requests](../../features/keyboards-and-callbacks.md#request-buttons) cannot be pressed.
+[Contacts and locations](contacts-and-locations.md) shows both. A `request_poll` button takes the
+`poll` the account creates, of the type the button requests, and sends it as the account's poll, as
+[Polls](polls.md#answering-a-poll-request) shows. Buttons with `web_app`
+[requests](../../features/keyboards-and-callbacks.md#request-buttons) cannot be pressed.
 
 ### Sharing users and chats
 

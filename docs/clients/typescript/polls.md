@@ -4,14 +4,15 @@
 
 This page shows how an account votes in a bot's poll, how a test observes the updates the bot
 receives for it, and how a poll closes, by the bot's `stopPoll` or by a closing time the test makes
-arrive. The examples use the [shared fixture](sessions-and-fixtures.md) and the
+arrive. It then shows how an account sends a poll of its own, directly or for a `request_poll`
+button, and stops it. The examples use the [shared fixture](sessions-and-fixtures.md) and the
 [waiting pattern](observing-bot-behavior.md).
 
 ## Voting in a bot's poll
 
-Accounts cannot send polls; they vote in the polls bots send. The bot below answers `/poll` by
-replying with a poll, so the test waits for the `sendPoll` call that replies to its command and then
-selects the poll's message by its sender and the message it replies to.
+Accounts vote in the polls bots send, as in their own. The bot below answers `/poll` by replying
+with a poll, so the test waits for the `sendPoll` call that replies to its command and then selects
+the poll's message by its sender and the message it replies to.
 
 `account.answerPoll` chooses options by their position, counted from 0, and returns the account's
 `poll_answer` together with the poll's message as it is now, whose options show their voter counts.
@@ -301,5 +302,119 @@ Deno.test('the poll closes when the test makes its closing time arrive', () =>
       { after: beforeExpiry },
     );
     assertObjectMatch(pollUpdate.update, { poll: { is_closed: true } });
+  }));
+```
+
+## Sending a poll as an account
+
+`account.sendPoll` creates a poll that the account owns, in its private chat with a bot or in a
+supergroup where it may send polls, with the settings `sendPoll` takes from bots apart from closing
+times. The bot receives the poll as an ordinary message, which a grammY `message:poll` handler can
+inspect and answer. As the Bot API makes a quiz's solution available to the bot of the private chat
+it was sent to, the bot below sees `correct_option_ids`. The bot receives no `poll` or `poll_answer`
+updates about an account's poll, so votes in it reach the bot only through what the account sends
+later. `account.stopPoll` closes the poll; only the account that sent it can, and not through a
+forward. [Accounts' polls](../../features/polls.md#accounts-polls) describes the checks.
+
+```ts
+import { withBotFixture } from './bot_fixture.ts';
+import { assertEquals } from 'jsr:@std/assert@^1';
+
+Deno.test('the bot reads the quiz an account sends, and the account stops it', () =>
+  withBotFixture({
+    handlers: (bot) => {
+      bot.on('message:poll', (ctx) => {
+        const { poll } = ctx.msg;
+        const correct = (poll.correct_option_ids ?? []).map((id) => poll.options[id].text);
+        return ctx.reply(`Answer: ${correct.join(', ')}`);
+      });
+    },
+  }, async ({ account, activity, privateChat }) => {
+    const beforeQuiz = await activity.position();
+    const quiz = await account.sendPoll({
+      to: privateChat,
+      poll: {
+        question: 'Capital of France?',
+        options: [{ text: 'Lyon' }, { text: 'Paris' }],
+        type: 'quiz',
+        correct_option_ids: [1],
+      },
+    });
+    await activity.waitFor(
+      {
+        method: 'sendMessage',
+        chat_id: account.id,
+        ok: true,
+        parameters: { text: 'Answer: Paris' },
+      },
+      { after: beforeQuiz },
+    );
+
+    await account.answerPoll({ chat: privateChat, message_id: quiz.message_id, option_ids: [1] });
+    const stopped = await account.stopPoll({ chat: privateChat, message_id: quiz.message_id });
+    assertEquals(stopped.poll?.is_closed, true);
+    assertEquals(stopped.poll?.total_voter_count, 1);
+  }));
+```
+
+## Answering a poll request
+
+A reply keyboard button with `request_poll` asks the account to create a poll. Pressing it with
+`account.pressReplyKeyboardButton` takes the `poll` the account creates, which must be of the type
+the button requests, if any, and sends it as `sendPoll` does, without a reply. A poll of another
+type, or a press without a poll, fails with status 400 and sends nothing.
+[Answering poll requests](../../features/keyboards-and-callbacks.md#answering-poll-requests)
+describes the press.
+
+```ts
+import { withBotFixture } from './bot_fixture.ts';
+import { EmulationClientError } from '../../../clients/typescript/mod.ts';
+import { assertEquals, assertRejects } from 'jsr:@std/assert@^1';
+
+Deno.test('the account answers a quiz request with a quiz', () =>
+  withBotFixture({
+    handlers: (bot) => {
+      bot.command('quiz', (ctx) =>
+        ctx.reply('Send me a quiz', {
+          reply_markup: { keyboard: [[{ text: 'Create quiz', request_poll: { type: 'quiz' } }]] },
+        }));
+      bot.on('message:poll', (ctx) => ctx.reply(`Got a ${ctx.msg.poll.type}`));
+    },
+  }, async ({ account, activity, privateChat }) => {
+    const beforeCommand = await activity.position();
+    await account.sendMessage({ to: privateChat, text: '/quiz' });
+    await activity.waitFor(
+      {
+        method: 'sendMessage',
+        chat_id: account.id,
+        ok: true,
+        parameters: { text: 'Send me a quiz' },
+      },
+      { after: beforeCommand },
+    );
+
+    const options = [{ text: 'Yes' }, { text: 'No' }];
+    const refusal = await assertRejects(
+      () =>
+        account.pressReplyKeyboardButton({
+          chat: privateChat,
+          text: 'Create quiz',
+          poll: { question: 'Regular?', options },
+        }),
+      EmulationClientError,
+    );
+    assertEquals(refusal.status, 400);
+
+    const beforeQuiz = await activity.position();
+    const quiz = await account.pressReplyKeyboardButton({
+      chat: privateChat,
+      text: 'Create quiz',
+      poll: { question: 'Is it a quiz?', options, type: 'quiz', correct_option_ids: [0] },
+    });
+    assertEquals(quiz.poll?.type, 'quiz');
+    await activity.waitFor(
+      { method: 'sendMessage', chat_id: account.id, ok: true, parameters: { text: 'Got a quiz' } },
+      { after: beforeQuiz },
+    );
   }));
 ```

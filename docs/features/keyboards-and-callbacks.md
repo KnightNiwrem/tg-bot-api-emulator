@@ -110,10 +110,23 @@ account's [own contact](contacts-and-locations.md#answering-contact-requests), a
 `request_location` button shares the
 [location the press reports](contacts-and-locations.md#answering-location-requests), each in reply
 to the keyboard's message. Pressing a `request_users` or `request_chat` button
-[shares the users or supergroup](#sharing-users-and-chats) the press chooses. The emulator
-[cannot answer](#real-gaps) `request_poll` and `web_app` buttons, so pressing one fails with `400`.
-Legacy names that the server also reads, `request_phone_number` and `request_user`, and
-`request_managed_bot` for the missing managed bots, are rejected.
+[shares the users or supergroup](#sharing-users-and-chats) the press chooses, and pressing a
+`request_poll` button [sends the poll](#answering-poll-requests) the press creates. The emulator
+[cannot answer](#real-gaps) `web_app` buttons, so pressing one fails with `400`. Legacy names that
+the server also reads, `request_phone_number` and `request_user`, and `request_managed_bot` for the
+missing managed bots, are rejected.
+
+### Answering poll requests
+
+A press of a `request_poll` button carries `poll`, a poll the account creates with the fields an
+[account's poll](polls.md#accounts-polls) takes, and the press sends it as that account's own poll.
+As Telegram Desktop's [`ActivateBotCommand`][desktop-request-poll] locks the poll creation form's
+quiz switch when the button names a type, a button with `type: quiz` takes only a quiz, one with
+`type: regular` only a regular poll, and one without a type either; a poll of another type fails
+with `400`. As there, the poll replies to nothing, so the bot receives an ordinary poll message from
+the account. The poll is checked as any account's poll is, and a refused press sends nothing. The
+press finds the button as any press does, so a keyboard the chat no longer shows, or one shown to
+another account, refuses it, and the other buttons refuse a `poll` as they refuse a `location`.
 
 ### Sharing users and chats
 
@@ -234,9 +247,8 @@ no buttons, and it checks only the icon identifier's syntax, as it does for
 - **Game and payment buttons.** These inline buttons need their
   [missing features](README.md#unimplemented-areas). Tests cannot exercise those button definitions
   or actions.
-- **Answering reply keyboard requests.** Accounts cannot answer a `request_poll` or `web_app`
-  [request button](#request-buttons): accounts do not create polls, and the `web_app_data` service
-  message is missing.
+- **Answering Web App requests.** Accounts cannot answer a `web_app`
+  [request button](#request-buttons): the `web_app_data` service message is missing.
 - **Premium users, channels, forums, anonymous administrators and photos.** The emulator models none
   of them, so a press refuses a request that requires Premium users, a channel, a forum, or
   `is_anonymous` among the account's or the bot's rights with `400`, and shared users and chats show
@@ -257,8 +269,9 @@ server behavior.
 [user and chat sharing](../../src/services/requested_peer_sharing.ts),
 [callback tests](../../tests/callback_query_service_test.ts) and
 [private message tests](../../tests/private_messaging_service_test.ts),
-[sharing criteria tests](../../tests/requested_peer_sharing_test.ts) and
-[sharing API tests](../../tests/requested_peer_sharing_api_test.ts).
+[sharing criteria tests](../../tests/requested_peer_sharing_test.ts),
+[sharing API tests](../../tests/requested_peer_sharing_api_test.ts) and
+[poll request tests](../../tests/account_poll_api_test.ts).
 
 [received-markup]: https://github.com/tdlib/td/blob/bc9c263e2bfee06aaab41e82db51a103376030bc/td/telegram/ReplyMarkup.cpp#L104-L198
 [dialog-markup]: https://github.com/tdlib/td/blob/bc9c263e2bfee06aaab41e82db51a103376030bc/td/telegram/MessagesManager.cpp#L31226-L31241
@@ -291,3 +304,4 @@ server behavior.
 [callback-answer]: https://github.com/tdlib/td/blob/bc9c263e2bfee06aaab41e82db51a103376030bc/td/telegram/CallbackQueriesManager.cpp#L77-L90
 [td-callback]: https://github.com/tdlib/td/blob/bc9c263e2bfee06aaab41e82db51a103376030bc/td/telegram/CallbackQueriesManager.cpp#L145-L188
 [link-manager]: https://github.com/tdlib/td/blob/bc9c263e2bfee06aaab41e82db51a103376030bc/td/telegram/LinkManager.cpp#L2055-L2084
+[desktop-request-poll]: https://github.com/telegramdesktop/tdesktop/blob/d8594c011756265de4385408540bd9f7c787a003/Telegram/SourceFiles/api/api_bot.cpp#L411-L430
