@@ -235,8 +235,9 @@ export type CaptionedMediaContent =
   | VoiceMessageContent;
 
 /**
- * A poll, which only bots send. The message shows the poll by its identifier: the question,
- * options, votes, and state belong to the poll, which every forward of the message shows alike.
+ * A poll, which the account or bot that sent it created. The message shows the poll by its
+ * identifier: the question, options, votes, and state belong to the poll, which every forward of
+ * the message shows alike.
  */
 export interface PollMessageContent {
   readonly kind: 'poll';

@@ -233,7 +233,7 @@ export type OutgoingContentNormalization<
   | { readonly normalized: true; readonly content: NormalizedOutgoingContent }
   | { readonly normalized: false; readonly failure: Failure };
 
-/** New content other than a poll, which only `sendPoll`, accounts' polls, and copies of polls carry. */
+/** New content other than a poll, which `sendPoll`, accounts' polls, and copies of polls carry. */
 export type OutgoingContentOtherThanPoll = Exclude<
   OutgoingMessageContent,
   { readonly kind: 'poll' }
