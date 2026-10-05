@@ -329,7 +329,7 @@ export type EditBotMessageTextInput = EditBotMessageTarget & {
 };
 
 export type EditBotMessageCaptionInput = EditBotMessageTarget & SpecifiedCaption & {
-  /** Whether a photo or video shows its caption above itself; a document ignores it. */
+  /** Whether a photo or video shows its caption above itself; other media ignores it. */
   readonly showsCaptionAboveMedia: boolean;
   /** The keyboard the edited message shows; omitting it removes the message's keyboard. */
   readonly inlineKeyboard?: InlineKeyboard;

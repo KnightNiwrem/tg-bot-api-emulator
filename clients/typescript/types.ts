@@ -501,8 +501,8 @@ export type AccountMediaGroupItem =
 export interface AccountSendMediaGroupInput<Target extends MessageTarget = MessageTarget> {
   readonly to: Target;
   /**
-   * The album's photos and videos, or documents, in the order the chat shows them: at most 10,
-   * and documents only among documents. A single item is sent as a message outside any album.
+   * The album's photos and videos, documents, or audio files, in the order the chat shows them: at
+   * most 10, documents only among documents, and audio files only among audio files. A single item is sent as a message outside any album.
    */
   readonly media: readonly AccountMediaGroupItem[];
   /** The ID of the chat's message that every message of the album replies to. */

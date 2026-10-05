@@ -815,8 +815,8 @@ export type EditMessageMediaFailureReason =
   | 'message_media_not_editable'
   | 'caption_too_long'
   /**
-   * The new media is a document for a photo or video of an album, or a photo or video for a
-   * document.
+   * The message belongs to an album, and either it or the new media is a document or an audio
+   * file, which an album keeps to its own kind.
    */
   | 'album_media_kind_changed';
 
@@ -4537,8 +4537,8 @@ export class BotApiService {
   }
 
   /**
-   * Replaces the caption, its entities, and the inline keyboard of a photo, document, or video
-   * the bot sent; empty caption text removes the caption.
+   * Replaces the caption, its entities, and the inline keyboard of captioned media the bot sent;
+   * empty caption text removes the caption.
    */
   editMessageCaption(
     authenticatedBot: VirtualBotProfile,
@@ -4587,8 +4587,8 @@ export class BotApiService {
 
   /**
    * Replaces the content, caption and inline keyboard of a message the bot sent with a new photo,
-   * document, or video, as TDLib's `edit_message_media` does; a photo, document, or video message
-   * changes its media, and a text or rich message becomes media. As for `sendPhoto`, the file is
+   * document, video, or audio file, as TDLib's `edit_message_media` does; a photo, document,
+   * video, or audio message changes its media, and a text or rich message becomes media. As for `sendPhoto`, the file is
    * resolved before the message is found.
    */
   editMessageMedia(
@@ -4928,8 +4928,8 @@ export class BotApiService {
   }
 
   /**
-   * Replaces the caption, its entities, and the inline keyboard of a photo, document, or video
-   * sent through the bot; empty caption text removes the caption.
+   * Replaces the caption, its entities, and the inline keyboard of captioned media sent through the
+   * bot; empty caption text removes the caption.
    */
   editInlineMessageCaption(
     authenticatedBot: VirtualBotProfile,
@@ -4970,7 +4970,7 @@ export class BotApiService {
 
   /**
    * Replaces the content, caption and inline keyboard of a message sent through the bot with a
-   * new photo, document, or video, as `editMessageMedia` replaces them. As TDLib's
+   * new photo, document, video, or audio file, as `editMessageMedia` replaces them. As TDLib's
    * `edit_inline_message_media` requires, the media may reuse a file by its `file_id` or name one
    * by URL but not upload one. A voice note that an inline query result sent keeps its media, as
    * any voice note does.
