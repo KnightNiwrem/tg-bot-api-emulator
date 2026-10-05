@@ -2,12 +2,13 @@
 
 [Guide index](README.md) ·
 [Feature reference: Sessions and Bot API requests](../../features/sessions-and-requests.md) ·
-[Feature reference: Media and files](../../features/media-and-files.md)
+[Feature reference: Media and files](../../features/media-and-files.md) ·
+[Feature reference: Webhooks](../../features/webhooks.md)
 
-Telegram reaches some states only through time, load, or the network: a rate limit, a poll's closing
-time, a file a bot sends by URL. A session offers deterministic controls that put the emulator into
-those states when the test decides. Examples use the [shared fixture](sessions-and-fixtures.md) and
-the [waiting pattern](observing-bot-behavior.md).
+Telegram reaches some states only through time, load, or the network: a rate limit, a webhook retry,
+a poll's closing time, a file a bot sends by URL. A session offers deterministic controls that put
+the emulator into those states when the test decides. Examples use the
+[shared fixture](sessions-and-fixtures.md) and the [waiting pattern](observing-bot-behavior.md).
 
 ## Rate limit answers
 
@@ -78,6 +79,99 @@ Deno.test('the bot retries a reply that Telegram rate-limited', async () => {
     );
     assertEquals(replies.map(({ text }) => text), ['Hello!']);
   });
+});
+```
+
+## Webhook delivery controls
+
+A bot that receives updates through a webhook gets each failed update again after Telegram's
+backoff, and an attempt it never answers fails only after 60 seconds. These emulator controls, which
+Telegram does not have, let a test drive the bot through failure, timeout and recovery without that
+wait. `session.setWebhookDelivery({ bot_id, scheduling: 'manual' })` stops the emulator from ending
+the bot's attempts and retry waits by itself, until the test does:
+
+- `session.releaseWebhookRetry({ botId, attemptId })` sends a failed attempt's update again at once.
+- `session.expireWebhookAttempt({ botId, attemptId })` makes an attempt's deadline arrive, failing
+  it as `timed_out` with `Read timeout expired`, and returns the attempt once it has failed.
+
+Both also work under `automatic` scheduling, the default, to cut a wait short, and each fails with
+an `EmulationClientError` whose `status` is `409` when the retry is no longer waiting or the attempt
+no longer in flight. The activity log records a `webhook_attempt_failed` entry for each failure,
+with the `webhook_attempt_id` the controls take, and each attempt's `update_delivered` and
+`update_confirmed` entries name it too. `session.getWebhookAttempts(botId)` lists every attempt with
+its status, failure and retry. [Delivery controls](../../features/webhooks.md#delivery-controls)
+describes their exact behavior.
+
+The bot below fails its first update, as one whose database is briefly unavailable would, so its
+webhook answers `500`. The test releases the retry at once instead of relying on the timing of
+Telegram's retries:
+
+```ts
+import { assertEquals } from 'jsr:@std/assert@^1';
+import { Bot, webhookCallback } from 'npm:grammy@^1.46.0';
+import { TelegramEmulationClient } from '../../../clients/typescript/mod.ts';
+import { EMULATOR_URL } from './bot_fixture.ts';
+
+Deno.test('the bot answers a command its webhook failed the first time', async () => {
+  const session = await new TelegramEmulationClient(EMULATOR_URL).createSession();
+  try {
+    const { token, bot: botProfile } = await session.createBot({
+      first_name: 'Hook Bot',
+      username: 'hook_bot',
+    });
+    const { account } = await session.createAccount({ first_name: 'Ada' });
+    const activity = session.botActivity({ bot_id: botProfile.id });
+
+    const bot = new Bot(token, { client: { apiRoot: session.botApiRoot } });
+    let unavailableCount = 1;
+    bot.command('start', async (ctx) => {
+      if (unavailableCount-- > 0) throw new Error('The database is unavailable');
+      await ctx.reply('Welcome!');
+    });
+    const handleUpdate = webhookCallback(bot, 'std/http');
+    // A handler's error makes the webhook answer 500, so the update is sent again. Deno passes no
+    // request to a handler that declares no parameter, as grammY's does, hence the arrow function.
+    const server = Deno.serve(
+      {
+        hostname: '127.0.0.1',
+        port: 0,
+        onListen: () => {},
+        onError: () => new Response(null, { status: 500 }),
+      },
+      (request) => handleUpdate(request),
+    );
+    try {
+      await session.setWebhookDelivery({ bot_id: botProfile.id, scheduling: 'manual' });
+      await bot.api.setWebhook(`http://127.0.0.1:${server.addr.port}/`);
+
+      const beforeStart = await activity.position();
+      await account.sendMessage({ to: { type: 'private', botId: botProfile.id }, text: '/start' });
+      const failed = await activity.waitFor(
+        { kind: 'webhook_attempt_failed' },
+        { after: beforeStart },
+      );
+      assertEquals(failed.failure.reason, 'http_error');
+
+      await session.releaseWebhookRetry({
+        botId: botProfile.id,
+        attemptId: failed.webhook_attempt_id,
+      });
+      await activity.waitFor(
+        { method: 'sendMessage', ok: true, parameters: { text: 'Welcome!' } },
+        { after: failed },
+      );
+      await activity.waitFor(
+        { kind: 'update_confirmed', update_id: failed.update_id },
+        { after: failed },
+      );
+      const attempts = await session.getWebhookAttempts(botProfile.id);
+      assertEquals(attempts.map(({ status }) => status), ['failed', 'accepted']);
+    } finally {
+      await server.shutdown();
+    }
+  } finally {
+    await session.end();
+  }
 });
 ```
 
