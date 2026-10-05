@@ -15,12 +15,14 @@ import type {
   InlineKeyboardMarkup,
   InlineQuery,
   MessageEntity,
+  MessageReactions,
   MessageSenderBot,
   PlainMessageEntityType,
   Poll,
   PollAnswer,
   PrivateMessage,
   RateLimitResponses,
+  ReactionTypeEmoji,
   ReplyInterface,
   ReplyKeyboardButton,
   RichBlock,
@@ -31,6 +33,7 @@ import type {
   ServerErrorResponses,
   Supergroup,
   SupergroupMessage,
+  UserReaction,
   VirtualAccountProfile,
   VirtualBotProfile,
   WebhookAttempt,
@@ -889,6 +892,21 @@ export const pollAnswerResponseSchema = z.strictObject({
 export const supergroupPollAnswerResponseSchema = z.strictObject({
   poll_answer: pollAnswerSchema,
   message: supergroupMessageSchema,
+});
+
+const reactionTypeEmojiSchema: z.ZodType<ReactionTypeEmoji> = z.strictObject({
+  type: z.literal('emoji'),
+  emoji: z.string().min(1),
+});
+
+const userReactionSchema: z.ZodType<UserReaction> = z.strictObject({
+  user_id: telegramUserIdSchema,
+  reaction: z.array(reactionTypeEmojiSchema).length(1),
+});
+
+export const messageReactionsResponseSchema: z.ZodType<MessageReactions> = z.strictObject({
+  message: supergroupMessageSchema,
+  reactions: z.array(userReactionSchema),
 });
 
 const supergroupSchema: z.ZodType<Supergroup> = z.strictObject({

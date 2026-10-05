@@ -862,6 +862,46 @@ export interface AccountPollAnswer<Target extends MessageTarget = MessageTarget>
   readonly message: MessageIn<Target>;
 }
 
+/**
+ * An ordinary emoji reaction, as the Bot API's `ReactionTypeEmoji` shows it. The emoji must be one
+ * the Bot API lists for it, written exactly as listed: for example `❤` without the variation
+ * selector U+FE0F.
+ */
+export interface ReactionTypeEmoji {
+  readonly type: 'emoji';
+  readonly emoji: string;
+}
+
+/** A message of a supergroup this account is a member of. */
+export interface AccountReactionMessageInput {
+  readonly chat: SupergroupMessageTarget;
+  /** The ID of the message, as message history shows it. */
+  readonly message_id: number;
+}
+
+export interface SetMessageReactionInput extends AccountReactionMessageInput {
+  /** The reactions to choose, which replace this account's earlier ones; exactly one. */
+  readonly reaction: readonly ReactionTypeEmoji[];
+}
+
+/** The reactions one member, an account or a bot, chose for a message. */
+export interface UserReaction {
+  readonly user_id: number;
+  /** The member's reactions; one, as members choose one reaction per message. */
+  readonly reaction: readonly ReactionTypeEmoji[];
+}
+
+/** The reactions to a supergroup message, with the message that holds them. */
+export interface MessageReactions {
+  /**
+   * The message that holds the reactions, as message history shows it: for a message of an album,
+   * the album's first message that is not deleted.
+   */
+  readonly message: SupergroupMessage;
+  /** One entry per reacting member, in the order they last changed their reactions. */
+  readonly reactions: readonly UserReaction[];
+}
+
 export interface PressButtonInput {
   readonly chat: MessageTarget;
   /** The ID of the message carrying the button, as message history shows it. */
@@ -2377,6 +2417,22 @@ export interface VirtualAccountClient extends VirtualAccountProfile {
   stopPoll<Target extends MessageTarget>(
     input: AccountPollMessageInput<Target>,
   ): Promise<MessageIn<Target>>;
+  /**
+   * Reacts to a content message of a supergroup, or changes this account's reaction, with one
+   * ordinary emoji. The supergroup's administrator bots whose `allowed_updates` include
+   * `message_reaction` receive a `message_reaction` update with the old and new reactions.
+   * Choosing the reaction already chosen changes nothing. A message of an album takes the reaction
+   * on the album's first message that is not deleted.
+   */
+  setMessageReaction(input: SetMessageReactionInput): Promise<MessageReactions>;
+  /** Returns the reactions to a supergroup message, the bots' included. */
+  getMessageReactions(input: AccountReactionMessageInput): Promise<MessageReactions>;
+  /**
+   * Removes this account's reaction to a supergroup message, which the administrator bots that
+   * subscribe to `message_reaction` observe as for a change. Removing without a reaction changes
+   * nothing.
+   */
+  removeMessageReaction(input: AccountReactionMessageInput): Promise<void>;
   /**
    * Types an inline query for a bot with inline mode turned on, in a chat this account can write
    * to, which sends the bot an `inline_query` update. The bot answers asynchronously; read the
