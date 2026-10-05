@@ -46,6 +46,7 @@ export type {
   AccountSupergroupBotCommandsInput,
   AddChatMemberInput,
   AnswerPollInput,
+  Audio,
   BotActivityCriteria,
   BotActivityCursor,
   BotActivityEntry,

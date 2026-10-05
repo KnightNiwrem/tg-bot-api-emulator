@@ -1,7 +1,12 @@
 import { createEmulationApi } from '../../src/api/mod.ts';
 import { createSessionLifecycleService } from '../../src/composition/session_lifecycle.ts';
 import { MAX_TELEGRAM_USER_ID } from './constants.ts';
-import { ButtonSelectionError, EmulationClientError, TelegramEmulationClient } from './mod.ts';
+import {
+  type Audio,
+  ButtonSelectionError,
+  EmulationClientError,
+  TelegramEmulationClient,
+} from './mod.ts';
 import { virtualAccountProfileSchema } from './schemas.ts';
 
 Deno.test('TypeScript client validates the official Telegram user ID range', () => {
@@ -1337,9 +1342,10 @@ Deno.test("TypeScript client sends audio files and albums, and reads the bot's a
       { audio: track, file_name: 'two.mp3', performer: 'Grace' },
     ],
   });
-  const downloaded = await session.downloadFile(sent.audio?.file_unique_id ?? '');
+  const sentAudio: Audio | undefined = sent.audio;
+  const downloaded = await session.downloadFile(sentAudio?.file_unique_id ?? '');
   if (
-    JSON.stringify(sent.audio) !== JSON.stringify({
+    JSON.stringify(sentAudio) !== JSON.stringify({
         duration: 215,
         file_name: 'engines.m4a',
         mime_type: 'audio/mp4',
