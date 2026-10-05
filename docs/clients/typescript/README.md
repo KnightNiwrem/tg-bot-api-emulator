@@ -39,7 +39,7 @@ Each topic page stands on its own once you know the core path.
 | [Supergroups](supergroups.md)                               | Creating groups, membership, privacy mode and group settings                 |
 | [Permissions and moderation](permissions-and-moderation.md) | Administrators, rights, restrictions and default permissions                 |
 | [Invite links](invite-links.md)                             | Links bots create, joining through them and join requests                    |
-| [Test controls](test-controls.md)                           | Rate limit answers, webhook retries, expiry, emulated web resources, uploads |
+| [Test controls](test-controls.md)                           | Rate limits, server errors, webhook retries, expiries, emulated web, uploads |
 
 ## Reference
 

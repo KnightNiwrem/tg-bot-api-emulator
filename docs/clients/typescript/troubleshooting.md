@@ -70,6 +70,8 @@ A failed call is recorded with its answer, as Telegram would send it:
   [Messages](messages.md).
 - `429 Too Many Requests`: the test queued rate limit answers for the bot. See
   [Test controls](test-controls.md).
+- `500 Internal Server Error` or `503 Service Unavailable`: the test queued server error answers for
+  the bot. See [Test controls](test-controls.md#server-error-answers).
 
 ## An account's action is refused
 

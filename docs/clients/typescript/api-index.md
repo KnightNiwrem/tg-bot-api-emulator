@@ -23,6 +23,8 @@ exact contract.
 | `session.registerWebResource(input)`           | Serves content at a URL of the session's emulated web             | [Test controls](test-controls.md)                           |
 | `session.queueRateLimitResponses(input)`       | Makes a bot's next calls fail with `429 Too Many Requests`        | [Test controls](test-controls.md)                           |
 | `session.getRateLimitResponses(botId)`         | Lists the rate limit answers still queued                         | [Test controls](test-controls.md)                           |
+| `session.queueServerErrorResponses(input)`     | Makes a bot's next calls fail with `500` or `503`                 | [Test controls](test-controls.md#server-error-answers)      |
+| `session.getServerErrorResponses(botId)`       | Lists the server error answers still queued                       | [Test controls](test-controls.md#server-error-answers)      |
 | `session.setWebhookDelivery(input)`            | Chooses automatic or manual webhook scheduling for a bot          | [Test controls](test-controls.md#webhook-delivery-controls) |
 | `session.getWebhookDelivery(botId)`            | Reads a bot's webhook scheduling                                  | [Test controls](test-controls.md#webhook-delivery-controls) |
 | `session.getWebhookAttempts(botId)`            | Lists a bot's webhook attempts and their outcomes                 | [Test controls](test-controls.md#webhook-delivery-controls) |

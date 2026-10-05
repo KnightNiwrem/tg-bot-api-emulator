@@ -5,9 +5,9 @@
 [Feature reference: Media and files](../../features/media-and-files.md) ·
 [Feature reference: Webhooks](../../features/webhooks.md)
 
-Telegram reaches some states only through time, load, or the network: a rate limit, a webhook retry,
-a poll's closing time, a file a bot sends by URL. A session offers deterministic controls that put
-the emulator into those states when the test decides. Examples use the
+Telegram reaches some states only through time, load, or the network: a rate limit, a server error,
+a webhook retry, a poll's closing time, a file a bot sends by URL. A session offers deterministic
+controls that put the emulator into those states when the test decides. Examples use the
 [shared fixture](sessions-and-fixtures.md) and the [waiting pattern](observing-bot-behavior.md).
 
 ## Rate limit answers
@@ -76,6 +76,59 @@ Deno.test('the bot retries a reply that Telegram rate-limited', async () => {
     const replies = (await account.getMessages({ chat: privateChat })).filter((message) =>
       message.from.id === botProfile.id &&
       message.reply_to_message?.message_id === trigger.message_id
+    );
+    assertEquals(replies.map(({ text }) => text), ['Hello!']);
+  });
+});
+```
+
+## Server error answers
+
+`session.queueServerErrorResponses` makes a bot's next calls of a method, or of every method, fail
+with `500 Internal Server Error` or `503 Service Unavailable`, `count` times (once by default), so a
+test drives the bot's retries and fallbacks deterministically. The emulator never fails calls this
+way by itself. `session.getServerErrorResponses(botId)` lists the answers still queued. A failed
+call runs nothing and changes nothing, and the activity log records it with `ok: false`. A call
+takes at most one queued answer, and queued rate limit answers apply first.
+[Server error answers](../../features/sessions-and-requests.md#server-error-answers) describes the
+answer's exact form and which calls take answers.
+
+The bot below retries failed calls with grammY's auto-retry plugin, which waits 3 seconds before it
+retries a server error, so the test waits longer than the default 5 seconds for the retried reply:
+
+```ts
+import { assertEquals } from 'jsr:@std/assert@^1';
+import { autoRetry } from 'npm:@grammyjs/auto-retry@^2.0.2';
+import { withBotFixture } from './bot_fixture.ts';
+
+Deno.test('the bot retries a reply that failed with a server error', async () => {
+  await withBotFixture({
+    handlers: (bot) => {
+      bot.api.config.use(autoRetry({ maxRetryAttempts: 3 }));
+      bot.command('start', (ctx) => ctx.reply('Hello!'));
+    },
+  }, async ({ session, botProfile, account, privateChat, activity }) => {
+    await session.queueServerErrorResponses({
+      bot_id: botProfile.id,
+      method: 'sendMessage',
+      error_code: 503,
+    });
+
+    const beforeStart = await activity.position();
+    await account.sendMessage({ to: privateChat, text: '/start' });
+    const reply = {
+      method: 'sendMessage',
+      chat_id: account.id,
+      parameters: { text: 'Hello!' },
+    } as const;
+    const failed = await activity.waitFor({ ...reply, ok: false }, { after: beforeStart });
+    assertEquals(failed.answer, { ok: false, error_code: 503, description: 'Service Unavailable' });
+    await activity.waitFor({ ...reply, ok: true }, { after: failed, timeoutMs: 10_000 });
+
+    // The bot used up the queued answer, and the account received one reply.
+    assertEquals(await session.getServerErrorResponses(botProfile.id), []);
+    const replies = (await account.getMessages({ chat: privateChat })).filter((message) =>
+      message.from.id === botProfile.id
     );
     assertEquals(replies.map(({ text }) => text), ['Hello!']);
   });

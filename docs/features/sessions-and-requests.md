@@ -85,6 +85,41 @@ writes it: HTTP status 429, a `Retry-After` header, and
 The emulator does not reject calls that arrive before the wait ends; a test that needs a longer
 limit queues more answers.
 
+### Server error answers
+
+Tests make a bot's next calls fail with a server error by queuing answers with
+`POST /sessions/{sessionId}/bots/{botId}/server-error-responses` or the TypeScript client's
+`queueServerErrorResponses`. A request names the `error_code`, `500` or `503`, optionally a `method`
+and a `count` of calls, which defaults to 1; `GET` on the same path lists the answers still queued.
+This is fault injection for testing retries and fallbacks: the emulator never fails calls this way
+by itself, and the answers make no claim about when Telegram fails calls.
+
+Answers are matched as [rate limit answers](#rate-limit-answers) are: each call of the bot takes one
+answer from the earliest queued answers for its method, or for every method, whatever its
+parameters, and a method is matched by any name Telegram accepts for it. The call receives the
+answer before the method resolves chats, reads its parameters or changes anything, so it sends no
+message and produces no update, and the call after the last answer runs normally. Concurrent calls
+each take a different answer. A call takes at most one queued answer, and queued rate limit answers
+apply first, whichever was queued first: a call that both apply to is rate-limited and leaves the
+server error answer for a later call.
+
+Webhook replies that call methods take answers too. Nothing receives a reply's answer, so the update
+is still confirmed, as when a reply's method fails for any other reason. Calls answered before a
+method is chosen take no answer and are answered as without one: those with an invalid token, an
+unimplemented method or a body that cannot be decoded, and file downloads. The
+[bot activity](bot-activity.md) log records each call with the answer it received. `getUpdates`
+calls, which the log does not record, take answers too, and a failed poll leaves its updates for the
+next.
+
+The answer uses the envelope the official server's [`fail_query`][fail-query] writes, with the HTTP
+status as `error_code` and no `parameters` or `Retry-After` header. A `500` is described as
+[`Client::fail_query_with_error`][fail-query-with-error] describes one without details:
+`{"ok":false,"error_code":500,"description":"Internal Server Error"}`. The official server turns
+every other error code it receives into `400 Bad Request`, so it never writes a `503` itself; the
+emulator gives `503` the same envelope with its reason phrase,
+`{"ok":false,"error_code":503,"description":"Service Unavailable"}`, so that clients that read
+Telegram's JSON errors handle it as a Bot API error.
+
 ## Intentional deviations
 
 - **Virtual identities and no Telegram connection.** Accounts and bot tokens belong to the test
@@ -104,6 +139,9 @@ limit queues more answers.
   Tests [queue rate limit answers](#rate-limit-answers) instead, so bot developers can exercise
   error handling without generating production-scale traffic or depending on Telegram's limit
   figures.
+- **No spontaneous server errors.** The emulator never fails a call with a server error by itself.
+  Tests [queue server error answers](#server-error-answers) instead, so retries and fallbacks are
+  exercised deterministically, without a failing proxy.
 - **No link previews or preview metadata.** Tests should not depend on fetching third-party websites
   to generate previews. Returned messages also omit `link_preview_options`, whose value Telegram
   derives from the generated preview; see
@@ -163,8 +201,11 @@ managing individual profiles is missing.
 [request decoding](../../src/api/sessions/bot_api/request_parameters.ts),
 [method schemas](../../src/api/sessions/bot_api/mod.ts),
 [rate limit answers](../../src/services/bot_rate_limit.ts),
+[server error answers](../../src/services/bot_server_error.ts) and
+[their dispatch](../../src/api/sessions/bot_api/queued_answer.ts),
 [request decoding tests](../../tests/bot_api_request_parameters_test.ts) and
-[HTTP tests](../../tests/emulation_api_test.ts).
+[HTTP tests](../../tests/emulation_api_test.ts), including
+[server error answer tests](../../tests/bot_server_error_api_test.ts).
 
 [http-reader]: https://github.com/tdlib/td/blob/bc9c263e2bfee06aaab41e82db51a103376030bc/tdnet/td/net/HttpReader.cpp#L110-L233
 [query-source]: https://github.com/tdlib/telegram-bot-api/blob/e3e9dd8e5b3d7ab8537cd5a10dc31d5ffa8f82d1/telegram-bot-api/Query.cpp
@@ -177,3 +218,5 @@ managing individual profiles is missing.
 [valid-username]: https://github.com/tdlib/td/blob/bc9c263e2bfee06aaab41e82db51a103376030bc/td/telegram/misc.cpp#L260-L282
 [json-chat]: https://github.com/tdlib/telegram-bot-api/blob/e3e9dd8e5b3d7ab8537cd5a10dc31d5ffa8f82d1/telegram-bot-api/Client.cpp#L1554-L1700
 [retry-after-error]: https://github.com/tdlib/telegram-bot-api/blob/e3e9dd8e5b3d7ab8537cd5a10dc31d5ffa8f82d1/telegram-bot-api/Query.cpp#L120-L127
+[fail-query]: https://github.com/tdlib/telegram-bot-api/blob/e3e9dd8e5b3d7ab8537cd5a10dc31d5ffa8f82d1/telegram-bot-api/Query.h#L263-L269
+[fail-query-with-error]: https://github.com/tdlib/telegram-bot-api/blob/e3e9dd8e5b3d7ab8537cd5a10dc31d5ffa8f82d1/telegram-bot-api/Client.cpp#L73-L207
