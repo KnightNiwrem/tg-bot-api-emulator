@@ -1,0 +1,19 @@
+type: object
+additionalProperties: false
+description: >-
+  The reactions to a supergroup message, with the message that holds them as the account sees it.
+  A message of an album holds no reactions of its own: the album's first message that is not
+  deleted holds them, and is the message shown.
+required:
+  - message
+  - reactions
+properties:
+  message:
+    $ref: ./SupergroupMessage.yaml
+  reactions:
+    type: array
+    description: >-
+      One entry per reacting account or bot, in the order they last changed their reactions;
+      empty while nobody reacts.
+    items:
+      $ref: ./UserReaction.yaml

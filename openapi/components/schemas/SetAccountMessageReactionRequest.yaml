@@ -1,0 +1,14 @@
+type: object
+additionalProperties: false
+required:
+  - reaction
+properties:
+  reaction:
+    type: array
+    minItems: 1
+    description: >-
+      The reactions the account chooses, which replace its earlier ones, as the Bot API's
+      `reaction` lists them. An account without Premium chooses one; more are rejected. Removing
+      the account's reactions is a `DELETE` of the same path.
+    items:
+      $ref: ./ReactionTypeEmoji.yaml

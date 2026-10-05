@@ -1,0 +1,77 @@
+description: >-
+  Telegram Bot API method for changing the bot's reactions to a message of a supergroup it is a
+  member of: one ordinary emoji, or none to remove them. Only content messages accept
+  reactions, and a bot that is not an administrator needs the `can_react_to_messages`
+  permission, which supergroups grant by default. The bot's reactions are shown to accounts with
+  the message's reactions, but no bot receives a `message_reaction` update for them, as the Bot
+  API documents for reactions set by bots. Choosing the reactions the bot already chose changes
+  nothing and succeeds.
+parameters:
+  - $ref: ../components/parameters/SessionId.yaml
+  - $ref: ../components/parameters/BotToken.yaml
+post:
+  operationId: setMessageReaction
+  summary: Set the authenticated virtual bot's reaction to a supergroup message
+  requestBody:
+    required: true
+    content:
+      application/json:
+        schema:
+          $ref: ../components/schemas/SetMessageReactionRequest.yaml
+      application/x-www-form-urlencoded:
+        schema:
+          $ref: ../components/schemas/SetMessageReactionRequest.yaml
+        encoding:
+          reaction:
+            contentType: application/json
+      multipart/form-data:
+        schema:
+          $ref: ../components/schemas/SetMessageReactionRequest.yaml
+        encoding:
+          reaction:
+            contentType: application/json
+  responses:
+    '200':
+      description: The bot's reactions are set.
+      content:
+        application/json:
+          schema:
+            $ref: ../components/schemas/TrueResultResponse.yaml
+    '400':
+      description: >-
+        The request cannot be decoded or has unsupported parameters, or Telegram would reject it,
+        checking in this order: `reaction` is not a JSON array of `ReactionType` objects, with the
+        official server's descriptions such as `Bad Request: expected an Array of ReactionType`
+        and `Bad Request: can't parse ReactionType: invalid reaction type specified`; an emoji is
+        empty (`Bad Request: invalid reaction type specified`); a `custom_emoji` reaction
+        (`Bad Request: REACTION_INVALID`); `chat_id` is missing (`Bad Request: chat_id is empty`);
+        the chat is a private chat (`Bad Request: reactions in private chats are not supported`)
+        or not one the bot can address (`Bad Request: chat not found`); `message_id` is missing,
+        not positive, or identifies no message of the supergroup (`Bad Request: message to react
+        not found`); the message is a service message, or an emoji is not one the Bot API lists
+        (`Bad Request: REACTION_INVALID`); or the bot chooses more than one reaction, or a new
+        reaction for a message that shows eleven distinct ones (`Bad Request:
+        REACTIONS_TOO_MANY`).
+      content:
+        application/json:
+          schema:
+            $ref: ../components/schemas/BotApiErrorResponse.yaml
+    '401':
+      description: The token does not belong to a virtual bot in the addressed session.
+      content:
+        application/json:
+          schema:
+            $ref: ../components/schemas/BotApiErrorResponse.yaml
+    '403':
+      description: >-
+        The bot left the supergroup (`Forbidden: bot is not a member of the supergroup chat`) or
+        was removed from it (`Forbidden: bot was kicked from the supergroup chat`), or lacks the
+        `can_react_to_messages` permission (`Forbidden: CHAT_WRITE_FORBIDDEN`).
+      content:
+        application/json:
+          schema:
+            $ref: ../components/schemas/BotApiErrorResponse.yaml
+    '404':
+      description: No active test session has the supplied identifier.
+    '429':
+      $ref: ../components/responses/BotApiRateLimited.yaml
