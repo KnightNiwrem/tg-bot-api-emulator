@@ -29,10 +29,10 @@ import {
   type MediaGroupId,
   type MessageContent,
   type MessageForwardInfo,
+  type MessagePinnedContent,
   type PrivateContentMessage,
   type PrivateMessage,
   type PrivateMessageContent,
-  type PrivateServiceContent,
   type TextQuote,
 } from '../types/virtual_message.ts';
 import type { FormattedTextFixingContext } from '../text_entities/formatted_text.ts';
@@ -546,7 +546,11 @@ export interface RecordPrivateServiceMessageInput {
   readonly conversation: PrivateConversationKey;
   /** The participant who made the change: the one who pinned a message. */
   readonly authorRole: PrivateConversationRole;
-  readonly content: PrivateServiceContent;
+  /**
+   * The pin, the one change a caller records; users and chats an account shares are recorded
+   * only through `pressReplyKeyboardButton`, which validates them.
+   */
+  readonly content: MessagePinnedContent;
   /** Whether the service message notifies the other participant without sound. */
   readonly isSilent: boolean;
 }
