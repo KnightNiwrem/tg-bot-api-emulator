@@ -5,6 +5,7 @@ import type { BotCommandService } from '../services/bot_command.ts';
 import type { BotMenuButtonService } from '../services/bot_menu_button.ts';
 import type { BotMessageViewService } from '../services/bot_message_view.ts';
 import type { BotRateLimitService } from '../services/bot_rate_limit.ts';
+import type { BotServerErrorService } from '../services/bot_server_error.ts';
 import type { CallbackQueryService } from '../services/callback_query.ts';
 import type { ChatActionService } from '../services/chat_action.ts';
 import type { ChatAdmissionService } from '../services/chat_admission.ts';
@@ -51,6 +52,7 @@ export interface EmulationSession extends EmulationSessionOptions {
   readonly mediaFiles: MediaFileService;
   readonly webResources: WebResourceService;
   readonly botRateLimits: BotRateLimitService;
+  readonly botServerErrors: BotServerErrorService;
   readonly botApi: BotApiService;
   readonly botActivity: BotActivityService;
   readonly webhookAttempts: WebhookAttemptScheduler;

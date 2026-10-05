@@ -34,6 +34,7 @@ import { BotDescriptionService } from '../services/bot_description.ts';
 import { BotMenuButtonService } from '../services/bot_menu_button.ts';
 import { BotMessageViewService } from '../services/bot_message_view.ts';
 import { BotRateLimitService } from '../services/bot_rate_limit.ts';
+import { BotServerErrorService } from '../services/bot_server_error.ts';
 import { BotUpdateDeliveryService } from '../services/bot_update_delivery.ts';
 import { BotUpdatePollingService } from '../services/bot_update_polling.ts';
 import { BotWebhookService } from '../services/bot_webhook.ts';
@@ -247,6 +248,11 @@ export function createEmulationSession(
     rateLimitResponses: new QueuedBotApiAnswerRepository(),
   });
 
+  const botServerErrors = new BotServerErrorService({
+    bots,
+    serverErrorResponses: new QueuedBotApiAnswerRepository(),
+  });
+
   const botActivity = new BotActivityService({ log: new BotActivityLogRepository() });
   const botUpdatePolling = new BotUpdatePollingService({
     botUpdates,
@@ -324,6 +330,7 @@ export function createEmulationSession(
     mediaFiles,
     webResources,
     botRateLimits,
+    botServerErrors,
     botApi,
     botActivity,
     webhookAttempts,

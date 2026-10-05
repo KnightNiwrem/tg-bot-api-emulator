@@ -49,6 +49,7 @@
           "src/types/bot_menu_button.ts",
           "src/types/bot_webhook.ts",
           "src/types/bot_rate_limit.ts",
+          "src/types/bot_server_error.ts",
           "src/types/bot_activity.ts",
           "src/types/bot_activity_kind.ts"
         ]
@@ -253,6 +254,7 @@
           "src/services/bot_blocking.ts",
           "src/services/chat_action.ts",
           "src/services/bot_rate_limit.ts",
+          "src/services/bot_server_error.ts",
           "src/services/web_resource.ts",
           "src/services/web_file_download.ts",
           "src/services/requested_peer_sharing.ts"
