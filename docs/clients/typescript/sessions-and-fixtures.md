@@ -52,6 +52,8 @@ Deno.test('each account sees only its own conversation with the bot', async () =
     const bot = new Bot(token, { client: { apiRoot: session.botApiRoot } });
     bot.on('message:text', (ctx) => ctx.reply(`${ctx.from.first_name} said: ${ctx.msg.text}`));
     const polling = bot.start();
+    // `await polling` below reports an error the bot stops with; until then, it is not unhandled.
+    polling.catch(() => {});
     try {
       const activity = session.botActivity({ bot_id: botProfile.id });
       const chat = { type: 'private', botId: botProfile.id } as const;

@@ -261,6 +261,8 @@ Deno.test('a bot of a local session uploads a file larger than the cloud allows'
         }),
     );
     const polling = bot.start();
+    // `await polling` below reports an error the bot stops with; until then, it is not unhandled.
+    polling.catch(() => {});
     try {
       const beforeCommand = await activity.position();
       const trigger = await account.sendMessage({ to: privateChat, text: '/report' });

@@ -28,6 +28,8 @@ Deno.test('the getting-started test: the bot greets an account that sends /start
         reply_parameters: { message_id: ctx.msg.message_id },
       }));
     const polling = bot.start();
+    // `await polling` below reports an error the bot stops with; until then, it is not unhandled.
+    polling.catch(() => {});
 
     try {
       const activity = session.botActivity({ bot_id: botProfile.id });

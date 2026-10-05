@@ -45,6 +45,8 @@ Deno.test('the bot greets an account that sends /start', async () => {
         reply_parameters: { message_id: ctx.msg.message_id },
       }));
     const polling = bot.start();
+    // `await polling` below reports an error the bot stops with; until then, it is not unhandled.
+    polling.catch(() => {});
 
     try {
       const activity = session.botActivity({ bot_id: botProfile.id });
@@ -106,7 +108,9 @@ variables when it loads, so it also needs `--allow-env`.
 7. **Selects the reply and asserts on it.** The account's history holds both messages; the test
    picks the bot's reply to its command rather than the latest message.
 8. **Cleans up.** The `finally` blocks stop the bot and end the session even when an assertion
-   fails, so a failing test leaves nothing running.
+   fails, so a failing test leaves nothing running. If a handler throws, grammY stops the bot and
+   `polling` rejects; handling that rejection at once keeps Deno from cancelling the test before its
+   cleanup, and `await polling` then fails the test with the handler's error.
 
 ## Next steps
 
