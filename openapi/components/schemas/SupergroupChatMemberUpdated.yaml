@@ -2,10 +2,11 @@ type: object
 additionalProperties: false
 description: >-
   A change of the bot's standing in a supergroup: it becomes `member` from `left`, or from
-  `kicked` after a ban, when an account adds it; `administrator` when the owner promotes it
-  or changes its rights, and `member` again when the owner demotes it; `left` when it leaves
-  or a bot lifts its ban; `kicked` when an account removes it or a bot bans it; and
-  `restricted` when the owner or a bot restricts it, until its restriction is lifted.
+  `kicked` after a ban, when an account adds it; `administrator` when the owner or an
+  administrator, account or bot, promotes it or changes its rights, and `member` again when one
+  demotes it; `left` when it leaves or a bot lifts its ban; `kicked` when an account removes it
+  or a bot bans it; and `restricted` when the owner or an administrator restricts it, until its
+  restriction is lifted.
 required:
   - chat
   - from

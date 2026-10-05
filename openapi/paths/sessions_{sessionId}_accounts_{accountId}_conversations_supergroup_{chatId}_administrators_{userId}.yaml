@@ -1,5 +1,6 @@
 description: >-
-  An administrator of a supergroup, as the supergroup's owner promotes a member or demotes it.
+  An administrator of a supergroup, as the supergroup's owner, or an administrator with
+  `can_promote_members`, promotes a member or demotes it.
 parameters:
   - $ref: ../components/parameters/SessionId.yaml
   - $ref: ../components/parameters/AccountId.yaml
@@ -7,18 +8,23 @@ parameters:
   - $ref: ../components/parameters/UserId.yaml
 put:
   operationId: promoteSupergroupMember
-  summary: Promote a member of a supergroup the account owns to administrator
+  summary: Promote a member of a supergroup to administrator as its owner or an administrator
   description: >-
     Makes the member, an account or a bot, an administrator holding the given rights, or
     replaces an administrator's rights; as on Telegram, any right includes `can_manage_chat`.
-    A promoted bot receives a my_chat_member update from the account showing it as
-    `administrator` with its rights. As on Telegram, an administrator bot receives every
-    message of the supergroup, privacy mode notwithstanding; with `can_delete_messages` it
-    deletes any message there, with `can_restrict_members` it bans, unbans, and restricts
-    users, with `can_change_info` it changes the supergroup's title and description, and with
-    `can_promote_members` it promotes members with the rights it holds. Bots see the other
-    rights but the emulator does not enforce them. The owner becomes the administrator's
-    promoter; promoting an administrator with the rights it holds changes nothing.
+    The account must own the supergroup, or be an administrator with `can_promote_members` that
+    holds every right it grants; it changes only administrators it may edit, which
+    `can_be_edited` in the list of administrators shows: those it promoted, directly or through
+    administrators it promoted, during administrator tenures that still last. Nobody changes the
+    owner or itself. A promoted bot receives a my_chat_member update from the account showing it
+    as `administrator` with its rights, and administrator bots receive a chat_member update. As
+    on Telegram, an administrator bot receives every message of the supergroup, privacy mode
+    notwithstanding; with `can_delete_messages` it deletes any message there, with
+    `can_restrict_members` it bans, unbans, and restricts users, with `can_change_info` it
+    changes the supergroup's title and description, and with `can_promote_members` it promotes
+    members with the rights it holds. Bots see the other rights but the emulator does not
+    enforce them. The account becomes the administrator's promoter; promoting an administrator
+    it may edit with the rights it holds changes nothing. A refused promotion changes nothing.
   requestBody:
     required: true
     content:
@@ -31,25 +37,31 @@ put:
     '400':
       description: A path identifier or the body is invalid, or the body grants no right.
     '403':
-      description: The account does not own the supergroup.
+      description: >-
+        The account is not a member of the supergroup, lacks `can_promote_members`, grants a
+        right it does not hold, or would change itself or an administrator it may not edit.
     '404':
       description: The session, account, supergroup, or user to promote does not exist.
     '409':
       description: The user is not a member of the supergroup, or is its owner.
 delete:
   operationId: demoteSupergroupMember
-  summary: Demote an administrator of a supergroup the account owns to a member
+  summary: Demote an administrator of a supergroup to a member as its owner or an administrator
   description: >-
-    Makes the administrator a member without rights. A demoted bot receives a my_chat_member
-    update from the account showing it as `member`. Demoting a member that is no administrator
-    changes nothing.
+    Makes the administrator a member without rights. The account must own the supergroup, or be
+    an administrator with `can_promote_members` that may edit the administrator, as for a
+    promotion. A demoted bot receives a my_chat_member update from the account showing it as
+    `member`, and administrator bots receive a chat_member update. Demoting a member that is no
+    administrator changes nothing.
   responses:
     '204':
       description: The user is a member of the supergroup without administrator rights.
     '400':
       description: A path identifier is invalid.
     '403':
-      description: The account does not own the supergroup.
+      description: >-
+        The account is not a member of the supergroup, lacks `can_promote_members`, or would
+        demote itself or an administrator it may not edit.
     '404':
       description: The session, account, supergroup, or user to demote does not exist.
     '409':

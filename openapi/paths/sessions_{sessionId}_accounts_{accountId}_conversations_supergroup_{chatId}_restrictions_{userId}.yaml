@@ -1,6 +1,7 @@
 description: >-
-  A user's restriction in a supergroup, which the supergroup's owner applies, changes, or lifts,
-  as `restrictChatMember` does for an administrator bot.
+  A user's restriction in a supergroup, which the supergroup's owner, or an administrator with
+  `can_restrict_members`, applies, changes, or lifts, as `restrictChatMember` does for an
+  administrator bot.
 parameters:
   - $ref: ../components/parameters/SessionId.yaml
   - $ref: ../components/parameters/AccountId.yaml
@@ -8,14 +9,17 @@ parameters:
   - $ref: ../components/parameters/UserId.yaml
 put:
   operationId: restrictSupergroupMember
-  summary: Restrict a user of a supergroup the account owns
+  summary: Restrict a user of a supergroup as its owner or an administrator
   description: >-
     Leaves the user, an account or a bot, member or not, exactly the listed permissions; unlike
     in the Bot API, no permission implies another, and every permission lifts the restriction.
-    An administrator that the owner restricts loses its rights and custom title, as Telegram
-    lets the owner do. Administrator bots subscribed to `chat_member` updates, and a restricted
-    bot subscribed to `my_chat_member`, receive the change from the account. A restriction that
-    changes nothing changes nothing.
+    The account must own the supergroup or hold `can_restrict_members`, and restricts only
+    administrators it promoted, directly or indirectly; nobody restricts the owner or itself. A
+    restricted administrator loses its rights and custom title; keeping an administrator every
+    permission demotes it, which needs `can_promote_members` instead. Administrator bots
+    subscribed to `chat_member` updates, and a restricted bot subscribed to `my_chat_member`,
+    receive the change from the account. A restriction that changes nothing changes nothing,
+    and a refused one changes nothing either.
   requestBody:
     required: true
     content:
@@ -30,25 +34,30 @@ put:
     '400':
       description: A path identifier or the body is invalid.
     '403':
-      description: The account does not own the supergroup.
+      description: >-
+        The account is not a member of the supergroup, lacks the right the change needs, or would
+        restrict itself or an administrator it did not promote.
     '404':
       description: The session, account, supergroup, or user to restrict does not exist.
     '409':
       description: The user is the supergroup's owner.
 delete:
   operationId: liftSupergroupMemberRestriction
-  summary: Lift a user's restriction in a supergroup the account owns
+  summary: Lift a user's restriction in a supergroup as its owner or an administrator
   description: >-
     Makes a restricted member a plain member, and a restricted user that is not a member one
-    that left. The change reaches bots as for a restriction; lifting no restriction changes
-    nothing.
+    that left. The account must own the supergroup or hold `can_restrict_members`, and may not
+    lift its own restriction. The change reaches bots as for a restriction; lifting no
+    restriction changes nothing.
   responses:
     '204':
       description: The user is not restricted.
     '400':
       description: A path identifier is invalid.
     '403':
-      description: The account does not own the supergroup.
+      description: >-
+        The account is not a member of the supergroup, lacks `can_restrict_members`, or would
+        lift its own restriction.
     '404':
       description: The session, account, supergroup, or user does not exist.
     '409':

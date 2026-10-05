@@ -1926,11 +1926,14 @@ export interface VirtualAccountClient extends VirtualAccountProfile {
    */
   getChatJoinRequests(input: AccountChatJoinRequestsInput): Promise<readonly ChatJoinRequest[]>;
   /**
-   * Promotes a member of a supergroup this account owns to administrator with the given rights,
-   * which must include at least one, or replaces an administrator's rights. A promoted bot
-   * receives a `my_chat_member` update showing it as `administrator`, receives every message of
-   * the supergroup, and uses its rights: `can_delete_messages` lets it delete any message there,
-   * and `can_restrict_members` lets it ban, unban, and restrict members.
+   * Promotes a member of a supergroup to administrator with the given rights, which must include
+   * at least one, or replaces an administrator's rights. This account must own the supergroup, or
+   * be an administrator with `can_promote_members` that holds every right it grants; it changes
+   * only administrators it may edit, as `can_be_edited` shows, and becomes their promoter. A
+   * promoted bot receives a `my_chat_member` update from this account showing it as
+   * `administrator`, receives every message of the supergroup, and uses its rights:
+   * `can_delete_messages` lets it delete any message there, and `can_restrict_members` lets it
+   * ban, unban, and restrict members. A refused promotion changes nothing.
    */
   promoteChatMember(input: PromoteChatMemberInput): Promise<void>;
   /**
@@ -1942,24 +1945,28 @@ export interface VirtualAccountClient extends VirtualAccountProfile {
     input: AccountChatAdministratorsInput,
   ): Promise<readonly SupergroupAdministrator[]>;
   /**
-   * Demotes an administrator of a supergroup this account owns to a member. A demoted bot
-   * receives a `my_chat_member` update showing it as `member`. Demoting a member that is no
-   * administrator has no effect.
+   * Demotes an administrator of a supergroup to a member: one this account may edit, as
+   * `can_be_edited` shows. A demoted bot receives a `my_chat_member` update from this account
+   * showing it as `member`. Demoting a member that is no administrator has no effect.
    */
   demoteChatMember(input: DemoteChatMemberInput): Promise<void>;
   /**
-   * Restricts what an account or a bot may do in a supergroup this account owns, member or not,
-   * as `restrictChatMember` does for an administrator bot. A restricted member that leaves stays
-   * restricted, and joins again with its restriction; a restricted administrator loses its rights.
-   * Administrator bots receive the change as a `chat_member` update, and a restricted bot as
+   * Restricts what an account or a bot may do in a supergroup, member or not, as
+   * `restrictChatMember` does for an administrator bot. This account must own the supergroup or
+   * hold `can_restrict_members`, and restricts only administrators it promoted, directly or
+   * indirectly; keeping an administrator every permission demotes it, which needs
+   * `can_promote_members` instead. A restricted member that leaves stays restricted, and joins
+   * again with its restriction; a restricted administrator loses its rights. Administrator bots
+   * receive the change from this account as a `chat_member` update, and a restricted bot as
    * `my_chat_member`. Its sends that its permissions, or the supergroup's default permissions,
    * withhold fail with Telegram's errors, such as `Bad Request: not enough rights to send photos
    * to the chat`.
    */
   restrictChatMember(input: RestrictChatMemberInput): Promise<void>;
   /**
-   * Lifts the restriction of a user of a supergroup this account owns, which leaves a member a
-   * plain member. Lifting no restriction has no effect.
+   * Lifts the restriction of a user of a supergroup, which leaves a member a plain member; this
+   * account must own the supergroup or hold `can_restrict_members`. Lifting no restriction has no
+   * effect.
    */
   liftChatMemberRestriction(input: LiftChatMemberRestrictionInput): Promise<void>;
   /**
