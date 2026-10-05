@@ -1149,10 +1149,8 @@ Deno.test('editChatInviteLink and revokeChatInviteLink refuse invalid calls with
     promote,
     createLink,
     callBot,
-    editLink,
-    revokeLink,
     getInviteLinks,
-  } = await createInviteLinkLifecycleFixture();
+  } = await createInviteLinkFixture();
   // Grace starts a private chat with the inviter, which has no invite links.
   await expectStatus(
     api.request(
