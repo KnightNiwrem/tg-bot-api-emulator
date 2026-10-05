@@ -4,7 +4,7 @@
  * session with one grammY bot and one account, and the fixture stops the bot and ends the session
  * however the test finishes.
  */
-import { Bot } from 'npm:grammy@^1.46.0';
+import { Bot, type PollingOptions } from 'npm:grammy@^1.46.0';
 import {
   type BotActivityLog,
   type CreateVirtualAccountInput,
@@ -26,6 +26,11 @@ export interface BotFixtureOptions {
   readonly bot?: Partial<CreateVirtualBotInput>;
   /** Overrides the account's registration, which defaults to `Ada`. */
   readonly account?: Partial<CreateVirtualAccountInput>;
+  /**
+   * The update types the bot polls for, such as `message_reaction`, which bots receive only when
+   * they ask for it; omitted for Telegram's default subscription.
+   */
+  readonly allowedUpdates?: PollingOptions['allowed_updates'];
 }
 
 export interface BotFixture {
@@ -63,7 +68,10 @@ export async function withBotFixture(
     const bot = new Bot(token, { client: { apiRoot: session.botApiRoot } });
     options.handlers(bot);
     const pollingStarted = Promise.withResolvers<void>();
-    const polling = bot.start({ onStart: () => pollingStarted.resolve() });
+    const polling = bot.start({
+      allowed_updates: options.allowedUpdates,
+      onStart: () => pollingStarted.resolve(),
+    });
     // `await polling` below reports an error the bot stops with; until then, it is not unhandled.
     polling.catch(() => {});
     try {

@@ -33,6 +33,7 @@ thresholds, which tests replace with
 | [Polls](polls.md)                                     | Polls, quizzes, votes, stopping, closing times, updates, forwards, copies   |
 | [Contacts and locations](contacts-and-locations.md)   | Contacts, static locations, requests, forwards, copies, replies             |
 | [Pinned messages](pinned-messages.md)                 | Multiple pins per chat, pinning rights, service messages and `getChat`      |
+| [Reactions](reactions.md)                             | Emoji reactions in supergroups, `message_reaction` updates, albums          |
 | [Keyboards and callbacks](keyboards-and-callbacks.md) | Inline buttons, reply interfaces and callback answers                       |
 | [Media and files](media-and-files.md)                 | Photos, documents, videos, voice notes, albums, file IDs and downloads      |
 | [Inline mode](inline-mode.md)                         | Queries, results, feedback and inline message editing                       |
@@ -55,6 +56,7 @@ The two legacy aliases below are also accepted.
 | Editing          | `editMessageText`, `editMessageCaption`, `editMessageMedia`, `editMessageReplyMarkup`                                                                                    |
 | Deletion         | `deleteMessage`, `deleteMessages`                                                                                                                                        |
 | Pins             | `pinChatMessage`, `unpinChatMessage`                                                                                                                                     |
+| Reactions        | `setMessageReaction`                                                                                                                                                     |
 | Files            | `getFile`, plus HTTP file downloads                                                                                                                                      |
 | Interaction      | `answerCallbackQuery`, `answerInlineQuery`                                                                                                                               |
 | Polls            | `sendPoll`, `stopPoll`                                                                                                                                                   |
@@ -86,8 +88,9 @@ above determines whether an individual method is available.
   locations, venues, games, checklists, ephemeral messages, drafts and stories. Rich messages lack
   [drafts and some blocks](rich-messages.md#real-gaps), and polls lack
   [Telegram's newest poll options](polls.md#real-gaps).
-- Reactions, [unpinning all messages](pinned-messages.md#real-gaps), chat photos and other chat
-  settings, and [primary invite links](invite-links.md#real-gaps).
+- [Reactions outside supergroups, custom emoji and paid reactions, and removing other members'
+  reactions](reactions.md#real-gaps), [unpinning all messages](pinned-messages.md#real-gaps), chat
+  photos and other chat settings, and [primary invite links](invite-links.md#real-gaps).
 - Payments, invoices, shipping, Telegram Stars, gifts, paid broadcasts and paid media.
 - Business connections, managed bots, Mini Apps, login authorization, Passport and boosts.
 - Other bot profile methods, such as names and profile photos, plus `getUserProfilePhotos`.
