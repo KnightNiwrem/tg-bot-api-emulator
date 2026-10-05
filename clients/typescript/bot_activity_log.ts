@@ -254,9 +254,14 @@ class HttpBotActivityLog implements BotActivityLog {
   ): Promise<BotActivityEntry | undefined> {
     const isMatch = (entry: BotActivityEntry) => {
       for (const where of predicates) {
-        const isAccepted = where(entry);
-        // The predicate, or code it calls, may cancel the wait, which then ends without a match.
-        waitTime.throwIfCancelled();
+        let isAccepted: boolean;
+        try {
+          isAccepted = where(entry);
+        } finally {
+          // The predicate, or code it calls, may cancel the wait, which then ends without a match
+          // and with the caller's reason, even if the predicate goes on to throw.
+          waitTime.throwIfCancelled();
+        }
         if (!isAccepted) {
           return false;
         }
