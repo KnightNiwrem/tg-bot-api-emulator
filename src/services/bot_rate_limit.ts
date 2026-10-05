@@ -8,7 +8,7 @@ interface BotLookup {
 interface RateLimitResponseQueues {
   enqueue(botId: number, responses: QueuedRateLimitResponses): void;
   list(botId: number): readonly QueuedRateLimitResponses[];
-  take(botId: number, methodName: string): number | undefined;
+  take(botId: number, methodName: string): QueuedRateLimitResponses | undefined;
 }
 
 interface BotRateLimitServiceDependencies {
@@ -64,6 +64,6 @@ export class BotRateLimitService {
    * its `retry_after` in seconds, or `undefined` to run the call.
    */
   takeRateLimitResponse(botId: number, methodName: string): number | undefined {
-    return this.#rateLimitResponses.take(botId, methodName);
+    return this.#rateLimitResponses.take(botId, methodName)?.retryAfterSeconds;
   }
 }

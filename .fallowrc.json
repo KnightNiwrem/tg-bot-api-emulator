@@ -156,9 +156,9 @@
         ]
       },
       {
-        "name": "bot-rate-limit-repository",
+        "name": "queued-bot-api-answer-repository",
         "patterns": [
-          "src/repositories/bot_rate_limit.ts"
+          "src/repositories/queued_bot_api_answer.ts"
         ]
       },
       {
@@ -425,7 +425,7 @@
         ]
       },
       {
-        "from": "bot-rate-limit-repository",
+        "from": "queued-bot-api-answer-repository",
         "allow": [
           "domain"
         ]
@@ -590,7 +590,7 @@
           "bot-description-repository",
           "bot-default-administrator-rights-repository",
           "bot-menu-button-repository",
-          "bot-rate-limit-repository",
+          "queued-bot-api-answer-repository",
           "bot-activity-log-repository",
           "blocked-user-repository",
           "chat-action-repository",
