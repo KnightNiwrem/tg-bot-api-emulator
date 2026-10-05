@@ -547,6 +547,17 @@ const voiceSchema = z.strictObject({
   ...messageFileShape,
 });
 
+const audioSchema = z.strictObject({
+  duration: z.number().int().nonnegative(),
+  file_name: z.string().min(1).optional(),
+  mime_type: z.string().regex(/^audio\//),
+  title: z.string().min(1).optional(),
+  performer: z.string().min(1).optional(),
+  thumbnail: photoSizeSchema.optional(),
+  thumb: photoSizeSchema.optional(),
+  ...messageFileShape,
+});
+
 const captionShape = {
   caption: z.string().min(1).optional(),
   caption_entities: z.array(messageEntitySchema).min(1).optional(),
@@ -574,6 +585,8 @@ const videoContentShape = {
 };
 
 const voiceContentShape = { voice: voiceSchema, ...captionShape };
+
+const audioContentShape = { audio: audioSchema, ...captionShape };
 
 const contactSchema = z.strictObject({
   phone_number: z.string().min(1),
@@ -624,8 +637,8 @@ const externalReplyShape = {
 
 /** How a message replies to a message of another chat, and what it quotes of a replied message. */
 const messageReplyInfoShape = {
-  // The replied message's media, which only a photo, document, video, or voice message has, or its
-  // poll, contact, or location.
+  // The replied message's media, which only a photo, document, video, voice, or audio message has,
+  // or its poll, contact, or location.
   external_reply: z.union([
     z.strictObject(externalReplyShape),
     z.strictObject({ ...externalReplyShape, poll: pollSchema }),
@@ -641,6 +654,7 @@ const messageReplyInfoShape = {
       has_media_spoiler: z.literal(true).optional(),
     }),
     z.strictObject({ ...externalReplyShape, voice: voiceSchema }),
+    z.strictObject({ ...externalReplyShape, audio: audioSchema }),
     z.strictObject({ ...externalReplyShape, contact: contactSchema }),
     z.strictObject({ ...externalReplyShape, location: locationSchema }),
   ]).optional(),
@@ -696,6 +710,7 @@ function contentMessageSchemas<Header extends z.ZodRawShape>(header: Header) {
     z.strictObject({ ...header, ...documentContentShape, ...messageTrailerShape }),
     z.strictObject({ ...header, ...videoContentShape, ...messageTrailerShape }),
     z.strictObject({ ...header, ...voiceContentShape, ...messageTrailerShape }),
+    z.strictObject({ ...header, ...audioContentShape, ...messageTrailerShape }),
     z.strictObject({ ...header, rich_message: richMessageSchema, ...messageTrailerShape }),
     z.strictObject({ ...header, poll: pollSchema, ...messageTrailerShape }),
     z.strictObject({ ...header, contact: contactSchema, ...messageTrailerShape }),
@@ -1157,7 +1172,16 @@ const inlineQuerySchema: z.ZodType<InlineQuery> = z.strictObject({
   status: z.enum(['awaiting_answer', 'answered']),
   answer: z.strictObject({
     results: z.array(z.strictObject({
-      type: z.enum(['article', 'contact', 'location', 'photo', 'document', 'video', 'voice']),
+      type: z.enum([
+        'article',
+        'contact',
+        'location',
+        'photo',
+        'document',
+        'video',
+        'voice',
+        'audio',
+      ]),
       id: z.string().min(1),
       title: z.string().min(1).optional(),
       description: z.string().min(1).optional(),

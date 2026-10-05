@@ -63,6 +63,7 @@ import type {
   AccountPollMessageInput,
   AccountReactionMessageInput,
   AccountReplyInterfaceInput,
+  AccountSendAudioInput,
   AccountSendContactInput,
   AccountSendDocumentInput,
   AccountSendLocationInput,
@@ -617,6 +618,34 @@ function createVirtualAccountClient(
       });
       return response.message;
     },
+    async sendAudio<Target extends MessageTarget>(
+      {
+        to,
+        audio,
+        file_name,
+        duration,
+        performer,
+        title,
+        caption,
+        caption_entities,
+        reply_to_message_id,
+      }: AccountSendAudioInput<Target>,
+    ): Promise<MessageIn<Target>> {
+      const response = await requestJson(fetchImplementation, {
+        method: 'POST',
+        url: `${accountUrl}/messages`,
+        expectedStatus: HTTP_STATUS_CREATED,
+        responseSchema: messageResponseSchemasFor(to).sent,
+        body: {
+          to,
+          audio: toAccountAudioUpload({ audio, file_name, duration, performer, title }),
+          caption,
+          caption_entities,
+          reply_to_message_id,
+        },
+      });
+      return response.message;
+    },
     async sendContact<Target extends MessageTarget>(
       input: AccountSendContactInput<Target>,
     ): Promise<MessageIn<Target>> {
@@ -1156,13 +1185,26 @@ function toAccountVideoUpload(
   return { content_base64: video.toBase64(), file_name, duration, width, height };
 }
 
-/** The file of an album's photo, document, or video, as the emulation API reads it. */
+/** An audio file an account uploads, as the emulation API reads it. */
+function toAccountAudioUpload(
+  { audio, file_name, duration, performer, title }: Pick<
+    AccountSendAudioInput,
+    'audio' | 'file_name' | 'duration' | 'performer' | 'title'
+  >,
+) {
+  return { content_base64: audio.toBase64(), file_name, duration, performer, title };
+}
+
+/** The file of an album's photo, document, video, or audio file, as the emulation API reads it. */
 function toAccountMediaGroupFile(item: AccountMediaGroupItem) {
   if (item.photo !== undefined) {
     return { photo: { content_base64: item.photo.toBase64() } };
   }
   if (item.document !== undefined) {
     return { document: { content_base64: item.document.toBase64(), file_name: item.file_name } };
+  }
+  if (item.audio !== undefined) {
+    return { audio: toAccountAudioUpload(item) };
   }
   return { video: toAccountVideoUpload(item) };
 }

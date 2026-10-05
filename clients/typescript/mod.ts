@@ -32,6 +32,7 @@ export type {
   AccountPollOptionInput,
   AccountReactionMessageInput,
   AccountReplyInterfaceInput,
+  AccountSendAudioInput,
   AccountSendContactInput,
   AccountSendDocumentInput,
   AccountSendLocationInput,

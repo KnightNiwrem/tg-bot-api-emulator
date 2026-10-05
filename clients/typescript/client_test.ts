@@ -1309,6 +1309,123 @@ Deno.test('TypeScript client sends videos and voice notes that bots receive and 
   throw new Error('Expected an empty video to be refused');
 });
 
+Deno.test("TypeScript client sends audio files and albums, and reads the bot's audio and results", async () => {
+  const { api, client } = createInProcessClient();
+  const session = await client.createSession();
+  const { token, bot } = await session.createBot({
+    first_name: 'Music Bot',
+    username: 'music_bot',
+    supports_inline_queries: true,
+  });
+  const { account } = await session.createAccount({ first_name: 'Ada' });
+  const to = { type: 'private', botId: bot.id } as const;
+  const track = new TextEncoder().encode('ID3 track');
+
+  const sent = await account.sendAudio({
+    to,
+    audio: track,
+    file_name: 'engines.m4a',
+    duration: 215,
+    performer: 'Ada',
+    title: 'Engines',
+    caption: 'Listen',
+  });
+  const album = await account.sendMediaGroup({
+    to,
+    media: [
+      { audio: track, title: 'One', caption: 'Side A' },
+      { audio: track, file_name: 'two.mp3', performer: 'Grace' },
+    ],
+  });
+  const downloaded = await session.downloadFile(sent.audio?.file_unique_id ?? '');
+  if (
+    JSON.stringify(sent.audio) !== JSON.stringify({
+        duration: 215,
+        file_name: 'engines.m4a',
+        mime_type: 'audio/mp4',
+        title: 'Engines',
+        performer: 'Ada',
+        file_id: sent.audio?.file_id,
+        file_unique_id: sent.audio?.file_unique_id,
+        file_size: track.length,
+      }) ||
+    sent.caption !== 'Listen' ||
+    new TextDecoder().decode(downloaded) !== 'ID3 track' ||
+    JSON.stringify(album.map((message) => [message.audio?.title, message.audio?.performer])) !==
+      JSON.stringify([['One', undefined], [undefined, 'Grace']]) ||
+    album[1]?.media_group_id === undefined || album[1].media_group_id !== album[0]?.media_group_id
+  ) {
+    throw new Error(`Expected the client to send audio files, received ${JSON.stringify(sent)}`);
+  }
+
+  // The bot sends a track back with a cover, which the client reads as Telegram shows it.
+  const form = new FormData();
+  form.append('chat_id', String(account.id));
+  form.append('audio', sent.audio?.file_id ?? '');
+  form.append('caption', 'Thanks');
+  const botAudio = await api.request(`/sessions/${session.id}/bot-api/bot${token}/sendAudio`, {
+    method: 'POST',
+    body: form,
+  });
+  const coverForm = new FormData();
+  coverForm.append('chat_id', String(account.id));
+  coverForm.append('title', 'Cover');
+  coverForm.append('audio', new File([track], 'cover.mp3'));
+  coverForm.append('thumbnail', new File([gifHeader(32, 32)], 'cover.gif'));
+  const botCover = await api.request(`/sessions/${session.id}/bot-api/bot${token}/sendAudio`, {
+    method: 'POST',
+    body: coverForm,
+  });
+  const [reply, cover] = (await account.getMessages({ chat: to })).slice(-2);
+  if (
+    botAudio.status !== 200 || reply?.audio?.file_unique_id !== sent.audio?.file_unique_id ||
+    reply.audio?.title !== 'Engines' || reply.caption !== 'Thanks' || botCover.status !== 200 ||
+    cover?.audio?.thumbnail?.width !== 32 || cover.audio.title !== 'Cover'
+  ) {
+    throw new Error(`Expected the bot's audio files, received ${JSON.stringify([reply, cover])}`);
+  }
+
+  // An inline audio result lists its title and performer.
+  const inlineQuery = await account.sendInlineQuery({ bot_id: bot.id, chat: to, query: 'music' });
+  await api.request(`/sessions/${session.id}/bot-api/bot${token}/answerInlineQuery`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      inline_query_id: inlineQuery.id,
+      results: [{
+        type: 'audio',
+        id: 'again',
+        audio_file_id: reply?.audio?.file_id,
+        title: 'Again',
+        performer: 'Ada',
+      }],
+    }),
+  });
+  const answeredQuery = await account.getInlineQuery(inlineQuery.id);
+  const chosen = await account.chooseInlineQueryResult({
+    inline_query_id: inlineQuery.id,
+    result_id: 'again',
+  });
+  if (
+    JSON.stringify(answeredQuery.answer?.results) !==
+      JSON.stringify([{ type: 'audio', id: 'again', title: 'Again', description: 'Ada' }]) ||
+    chosen.audio?.file_unique_id !== sent.audio?.file_unique_id || chosen.audio?.title !== 'Engines'
+  ) {
+    throw new Error(`Expected the inline audio result, received ${JSON.stringify(chosen)}`);
+  }
+  await session.end();
+});
+
+/** The header of a GIF image, which is all the emulator reads of a thumbnail. */
+function gifHeader(width: number, height: number): Uint8Array<ArrayBuffer> {
+  const image = new Uint8Array(13);
+  image.set(new TextEncoder().encode('GIF89a'));
+  const view = new DataView(image.buffer);
+  view.setUint16(6, width, true);
+  view.setUint16(8, height, true);
+  return image;
+}
+
 Deno.test('TypeScript client sends albums to private chats and supergroups', async () => {
   const { client } = createInProcessClient();
   const session = await client.createSession();
