@@ -36,11 +36,7 @@ import { BotMessageViewService } from '../services/bot_message_view.ts';
 import { BotRateLimitService } from '../services/bot_rate_limit.ts';
 import { BotUpdateDeliveryService } from '../services/bot_update_delivery.ts';
 import { BotUpdatePollingService } from '../services/bot_update_polling.ts';
-import {
-  BotWebhookService,
-  waitForRetryDelay,
-  WEBHOOK_ATTEMPT_TIMEOUT_MILLISECONDS,
-} from '../services/bot_webhook.ts';
+import { BotWebhookService } from '../services/bot_webhook.ts';
 import { CallbackQueryService } from '../services/callback_query.ts';
 import { ChatActionService } from '../services/chat_action.ts';
 import { ChatAdmissionService } from '../services/chat_admission.ts';
@@ -55,6 +51,11 @@ import { createSessionUserMentionContext } from '../services/session_user_mentio
 import { SharedChatAdministrationService } from '../services/shared_chat_administration.ts';
 import { SupergroupMessagingService } from '../services/supergroup_messaging.ts';
 import { VirtualUserService } from '../services/virtual_user.ts';
+import {
+  waitForRetryDelay,
+  WEBHOOK_ATTEMPT_TIMEOUT_MILLISECONDS,
+  WebhookAttemptScheduler,
+} from '../services/webhook_attempt_scheduler.ts';
 import {
   MAX_WEB_FILE_REDIRECTS,
   WEB_FILE_DOWNLOAD_TIMEOUT_MILLISECONDS,
@@ -252,6 +253,11 @@ export function createEmulationSession(
     updateSubscriptions,
     updateActivity: botActivity,
   });
+  const webhookAttempts = new WebhookAttemptScheduler({
+    bots,
+    attemptTimeoutMilliseconds: WEBHOOK_ATTEMPT_TIMEOUT_MILLISECONDS,
+    waitBeforeRetry: waitForRetryDelay,
+  });
   const botWebhooks = new BotWebhookService({
     webhooks: new BotWebhookRepository(),
     pendingUpdates: botUpdates,
@@ -264,8 +270,7 @@ export function createEmulationSession(
         await runWebhookReply({ session, bot: bot.profile, signal, via: 'webhook_reply' }, reply);
       }
     },
-    attemptTimeoutMilliseconds: WEBHOOK_ATTEMPT_TIMEOUT_MILLISECONDS,
-    waitBeforeRetry: waitForRetryDelay,
+    attempts: webhookAttempts,
     currentUnixTimeSeconds,
   });
   const sessionTextFixingContext = createSessionUserMentionContext({ accounts, bots });
@@ -321,6 +326,7 @@ export function createEmulationSession(
     botRateLimits,
     botApi,
     botActivity,
+    webhookAttempts,
     end: () => {
       botUpdatePolling.endLongPolling();
       botWebhooks.endDelivery();

@@ -28,6 +28,78 @@ export interface WebhookDeliveryError {
 }
 
 /**
+ * Who ends a bot's webhook delivery attempts and retry waits. With `automatic` scheduling the
+ * emulator does, by its own timing: an attempt fails once its timeout passes, and a failed update
+ * is sent again once its retry delay passes. With `manual` scheduling only a test does, by expiring
+ * attempts and releasing retries, so that a test reaches each state without waiting.
+ */
+export const WEBHOOK_SCHEDULINGS = ['automatic', 'manual'] as const;
+
+export type WebhookScheduling = typeof WEBHOOK_SCHEDULINGS[number];
+
+/**
+ * Why an attempt to deliver an update to a webhook failed, with Telegram's description of the
+ * failure, which `getWebhookInfo` reports.
+ */
+export type WebhookAttemptFailure =
+  | {
+    /** The webhook answered with a status other than 2xx. */
+    readonly reason: 'http_error';
+    readonly statusCode: number;
+    readonly errorMessage: string;
+  }
+  | {
+    /** The webhook could not be reached, or did not answer completely before the deadline. */
+    readonly reason: 'connection_failed' | 'timed_out';
+    readonly errorMessage: string;
+  }
+  | {
+    /** The connection closed before the whole response arrived, which Telegram does not describe. */
+    readonly reason: 'response_interrupted';
+  };
+
+/**
+ * How the wait before an update is sent again stands: `waiting` until the delay passes or a test
+ * releases the retry, then `released`; `cancelled` when delivery stopped during the wait, because
+ * the webhook was replaced or deleted or the session ended.
+ */
+export type WebhookRetryStatus = 'waiting' | 'released' | 'cancelled';
+
+/** The wait that a failed attempt schedules before its update is sent again. */
+export interface WebhookRetry {
+  /** The wait, in seconds, that `automatic` scheduling observes; `manual` scheduling ignores it. */
+  readonly delaySeconds: number;
+  readonly status: WebhookRetryStatus;
+}
+
+interface WebhookAttemptIdentity {
+  /** Identifies the attempt among every attempt of the session; the first is 1. */
+  readonly id: number;
+  readonly botId: number;
+  readonly updateId: number;
+  /** The scheduling the attempt and its retry follow: the bot's when the attempt began. */
+  readonly scheduling: WebhookScheduling;
+}
+
+/**
+ * One request that delivers an update to a bot's webhook, and its outcome. An update is attempted
+ * until its webhook accepts it, each attempt after the previous one's retry.
+ */
+export type WebhookAttempt =
+  | WebhookAttemptIdentity & {
+    /**
+     * `in_flight` while the request runs, `accepted` once the webhook accepted the update, or
+     * `cancelled` when delivery stopped before an outcome, which leaves the update pending.
+     */
+    readonly status: 'in_flight' | 'accepted' | 'cancelled';
+  }
+  | WebhookAttemptIdentity & {
+    readonly status: 'failed';
+    readonly failure: WebhookAttemptFailure;
+    readonly retry: WebhookRetry;
+  };
+
+/**
  * Reads a webhook URL as TDLib's `parse_url` does: `http` and `https` URLs, with a missing scheme
  * meaning `https`. Returns `undefined` for any other text.
  *

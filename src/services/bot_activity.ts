@@ -2,7 +2,6 @@ import {
   type BotActivityEntry,
   type BotActivityFilter,
   type BotApiCallEntry,
-  type BotUpdateTransport,
   matchesBotActivityFilter,
   type UnpositionedBotActivityEntry,
 } from '../types/bot_activity.ts';
@@ -11,6 +10,7 @@ import {
   getBotApiUpdateChatId,
   getBotApiUpdateUserId,
 } from '../types/bot_api.ts';
+import type { WebhookAttemptFailure } from '../types/bot_webhook.ts';
 
 interface BotActivityLog {
   append(entry: UnpositionedBotActivityEntry): BotActivityEntry;
@@ -85,11 +85,8 @@ export class BotActivityService {
     this.#log.append({ kind: 'bot_api_call', ...call });
   }
 
-  recordUpdateDeliveries(
-    botId: number,
-    updates: readonly BotApiUpdate[],
-    via: BotUpdateTransport,
-  ): void {
+  /** Records the updates of a `getUpdates` answer; webhook deliveries are recorded by attempt. */
+  recordUpdateDeliveries(botId: number, updates: readonly BotApiUpdate[], via: 'polling'): void {
     for (const update of updates) {
       this.#log.append({
         kind: 'update_delivered',
@@ -101,10 +98,11 @@ export class BotActivityService {
     }
   }
 
+  /** Records the updates a `getUpdates` offset confirmed. */
   recordUpdateConfirmations(
     botId: number,
     updates: readonly BotApiUpdate[],
-    via: BotUpdateTransport,
+    via: 'polling',
   ): void {
     for (const update of updates) {
       this.#log.append({
@@ -115,6 +113,54 @@ export class BotActivityService {
         ...describeUpdateOrigin(update),
       });
     }
+  }
+
+  /** Records an attempt to deliver an update to a webhook as the update's delivery. */
+  recordWebhookUpdateDelivery(botId: number, update: BotApiUpdate, webhookAttemptId: number): void {
+    this.#log.append({
+      kind: 'update_delivered',
+      botId,
+      via: 'webhook',
+      update,
+      ...describeUpdateOrigin(update),
+      webhookAttemptId,
+    });
+  }
+
+  /** Records the webhook's acceptance of an update in the attempt as the update's confirmation. */
+  recordWebhookUpdateConfirmation(
+    botId: number,
+    update: BotApiUpdate,
+    webhookAttemptId: number,
+  ): void {
+    this.#log.append({
+      kind: 'update_confirmed',
+      botId,
+      via: 'webhook',
+      updateId: update.update_id,
+      ...describeUpdateOrigin(update),
+      webhookAttemptId,
+    });
+  }
+
+  recordWebhookAttemptFailure(
+    { botId, update, webhookAttemptId, failure, retryDelaySeconds }: {
+      readonly botId: number;
+      readonly update: BotApiUpdate;
+      readonly webhookAttemptId: number;
+      readonly failure: WebhookAttemptFailure;
+      readonly retryDelaySeconds: number;
+    },
+  ): void {
+    this.#log.append({
+      kind: 'webhook_attempt_failed',
+      botId,
+      updateId: update.update_id,
+      ...describeUpdateOrigin(update),
+      webhookAttemptId,
+      failure,
+      retryDelaySeconds,
+    });
   }
 
   getHeadPosition(): number {

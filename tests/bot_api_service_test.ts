@@ -33,10 +33,11 @@ import { MessagePinningService } from '../src/services/message_pinning.ts';
 import { SharedChatAdministrationService } from '../src/services/shared_chat_administration.ts';
 import { BotUpdateDeliveryService } from '../src/services/bot_update_delivery.ts';
 import { BotUpdatePollingService } from '../src/services/bot_update_polling.ts';
+import { BotWebhookService } from '../src/services/bot_webhook.ts';
 import {
-  BotWebhookService,
   WEBHOOK_ATTEMPT_TIMEOUT_MILLISECONDS,
-} from '../src/services/bot_webhook.ts';
+  WebhookAttemptScheduler,
+} from '../src/services/webhook_attempt_scheduler.ts';
 import { CallbackQueryService } from '../src/services/callback_query.ts';
 import { ChatActionService } from '../src/services/chat_action.ts';
 import { ChatAdmissionService } from '../src/services/chat_admission.ts';
@@ -524,8 +525,11 @@ function createBotApiFixture() {
       updateActivity: botActivity,
       sendWebhookRequest: () => Promise.reject(new Error('Unexpected webhook request')),
       runWebhookReply: () => Promise.reject(new Error('Unexpected webhook reply')),
-      attemptTimeoutMilliseconds: WEBHOOK_ATTEMPT_TIMEOUT_MILLISECONDS,
-      waitBeforeRetry: () => Promise.reject(new Error('Unexpected webhook retry')),
+      attempts: new WebhookAttemptScheduler({
+        bots,
+        attemptTimeoutMilliseconds: WEBHOOK_ATTEMPT_TIMEOUT_MILLISECONDS,
+        waitBeforeRetry: () => Promise.reject(new Error('Unexpected webhook retry')),
+      }),
       currentUnixTimeSeconds: () => 1_700_000_000,
     }),
     botMessages: privateMessaging,
