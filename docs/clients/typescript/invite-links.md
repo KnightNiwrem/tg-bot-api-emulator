@@ -233,6 +233,95 @@ Deno.test('the bot approves requesters with a username and declines the others',
 });
 ```
 
+### Prompting requesters before a decision
+
+Until a request is decided, the bots that received it may send messages to the requester's
+`user_chat_id` although the account never started them, as the Bot API documents. The first bot to
+write claims the contact, and only it may write further. The account reads the prompt in its private
+chat with the bot, presses its buttons, and answers. Its own message starts the conversation, so the
+bot may keep writing after the decision; the prompt alone gives the bot no lasting access.
+[Contacting requesters](../../features/invite-links.md#contacting-requesters) lists what the grant
+covers. The owner sees each request's `requester_contact` with `getChatJoinRequests`.
+
+```ts
+import { assert, assertEquals } from 'jsr:@std/assert@^1';
+import type { ChatInviteLink } from 'npm:grammy@^1.46.0/types';
+import { withBotFixture } from './bot_fixture.ts';
+
+Deno.test('the bot asks a requester to prove it is human before approving it', async () => {
+  const requestChatIds = new Map<number, number>();
+  await withBotFixture({
+    handlers: (bot) => {
+      bot.on('my_chat_member', async (ctx) => {
+        const member = ctx.myChatMember.new_chat_member;
+        if (member.status === 'administrator' && member.can_invite_users) {
+          await ctx.createChatInviteLink({ name: 'Apply', creates_join_request: true });
+        }
+      });
+      bot.on('chat_join_request', async (ctx) => {
+        requestChatIds.set(ctx.from.id, ctx.chat.id);
+        await ctx.api.sendMessage(ctx.chatJoinRequest.user_chat_id, 'Are you human?', {
+          reply_markup: { inline_keyboard: [[{ text: 'I am', callback_data: 'human' }]] },
+        });
+      });
+      bot.callbackQuery('human', async (ctx) => {
+        const chatId = requestChatIds.get(ctx.from.id);
+        if (chatId !== undefined) {
+          await ctx.api.approveChatJoinRequest(chatId, ctx.from.id);
+        }
+        await ctx.answerCallbackQuery();
+      });
+    },
+  }, async ({ session, botProfile, account, activity }) => {
+    const supergroup = await account.createSupergroup({ title: 'Book club' });
+    const groupChat = { type: 'supergroup', chatId: supergroup.id } as const;
+    await account.addChatMember({ chat: groupChat, userId: botProfile.id });
+    const beforePromotion = await activity.position();
+    await account.promoteChatMember({
+      chat: groupChat,
+      userId: botProfile.id,
+      rights: { can_invite_users: true },
+    });
+    const created = await activity.waitFor(
+      { method: 'createChatInviteLink', chat_id: supergroup.id, ok: true },
+      { after: beforePromotion },
+    );
+    assert(created.answer.ok);
+    const { invite_link: inviteLink } = created.answer.result as ChatInviteLink;
+
+    const { account: grace } = await session.createAccount({ first_name: 'Grace' });
+    const beforeRequest = await activity.position();
+    await grace.joinChatByInviteLink({ inviteLink });
+    await activity.waitFor(
+      { method: 'sendMessage', chat_id: grace.id, ok: true },
+      { after: beforeRequest },
+    );
+    const [request] = await account.getChatJoinRequests({ chat: groupChat });
+    assertEquals(request?.requester_contact, { status: 'claimed', bot_ids: [botProfile.id] });
+
+    // Grace answers the prompt in her private chat with the bot, which approves her.
+    const botChat = { type: 'private', botId: botProfile.id } as const;
+    const [prompt] = await grace.getMessages({ chat: botChat });
+    assert(prompt !== undefined);
+    await grace.pressCallbackButton({
+      chat: botChat,
+      message_id: prompt.message_id,
+      callback_data: 'human',
+    });
+    await activity.waitFor(
+      { method: 'approveChatJoinRequest', chat_id: supergroup.id, ok: true },
+      { after: beforeRequest },
+    );
+    assertEquals(await account.getChatJoinRequests({ chat: groupChat }), []);
+  });
+});
+```
+
+The emulator never ends the contact window by itself. A test ends it as five minutes passing does
+with `session.expireJoinRequesterContact`, naming the supergroup's chat ID and the requester's
+`userId`, which answers the still pending request with its contact `expired`; the bots that never
+were started then fail with `chat not found` again.
+
 ## Member limits
 
 A link created with `member_limit` admits that many users who joined through it and are still

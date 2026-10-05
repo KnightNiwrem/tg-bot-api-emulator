@@ -86,19 +86,21 @@ Deno.test('the bot retries a reply that Telegram rate-limited', async () => {
 The emulator never lets time end anything by itself. Where Telegram acts when a date arrives, the
 test makes that date arrive with a session control, at the point in the scenario it chooses:
 
-| Control                                                   | Makes arrive                           | The bot receives | Walkthrough                                                 |
-| --------------------------------------------------------- | -------------------------------------- | ---------------- | ----------------------------------------------------------- |
-| `session.expirePoll(pollId)`                              | A poll's `open_period` or `close_date` | A `poll` update  | [Polls](polls.md)                                           |
-| `session.expireChatMemberRestriction({ chatId, userId })` | A temporary restriction's `until_date` | Nothing          | [Permissions and moderation](permissions-and-moderation.md) |
-| `session.expireChatInviteLink({ chatId, inviteLink })`    | An invite link's `expire_date`         | Nothing          | [Invite links](invite-links.md#expiry-dates)                |
+| Control                                                   | Makes arrive                               | The bot receives | Walkthrough                                                            |
+| --------------------------------------------------------- | ------------------------------------------ | ---------------- | ---------------------------------------------------------------------- |
+| `session.expirePoll(pollId)`                              | A poll's `open_period` or `close_date`     | A `poll` update  | [Polls](polls.md)                                                      |
+| `session.expireChatMemberRestriction({ chatId, userId })` | A temporary restriction's `until_date`     | Nothing          | [Permissions and moderation](permissions-and-moderation.md)            |
+| `session.expireChatInviteLink({ chatId, inviteLink })`    | An invite link's `expire_date`             | Nothing          | [Invite links](invite-links.md#expiry-dates)                           |
+| `session.expireJoinRequesterContact({ chatId, userId })`  | The end of a join request's contact window | Nothing          | [Invite links](invite-links.md#prompting-requesters-before-a-decision) |
 
 Each control answers the state that results: the closed poll as its bot sees it, the user's standing
-(`member`, or `left` for a non-member), or the link as the owner sees it. A control fails with an
-`EmulationClientError` whose `status` is `409` when there is no date to make arrive, such as for a
-poll without a closing time. The feature pages describe each:
-[closing times](../../features/polls.md#closing-times),
-[restriction ends](../../features/supergroups.md#restriction-ends) and
-[expiry dates](../../features/invite-links.md#expiry-dates).
+(`member`, or `left` for a non-member), the link as the owner sees it, or the still pending join
+request with its contact `expired`. A control fails with an `EmulationClientError` whose `status` is
+`409` when there is no date to make arrive, such as for a poll without a closing time. The feature
+pages describe each: [closing times](../../features/polls.md#closing-times),
+[restriction ends](../../features/supergroups.md#restriction-ends),
+[expiry dates](../../features/invite-links.md#expiry-dates) and
+[contacting requesters](../../features/invite-links.md#contacting-requesters).
 
 ## The emulated web
 
