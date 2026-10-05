@@ -109,9 +109,55 @@ button with what it requests rather than its text. Pressing a `request_contact` 
 account's [own contact](contacts-and-locations.md#answering-contact-requests), and pressing a
 `request_location` button shares the
 [location the press reports](contacts-and-locations.md#answering-location-requests), each in reply
-to the keyboard's message; the emulator [cannot answer](#real-gaps) the other requests, so pressing
-one fails with `400`. Legacy names that the server also reads, `request_phone_number` and
-`request_user`, and `request_managed_bot` for the missing managed bots, are rejected.
+to the keyboard's message. Pressing a `request_users` or `request_chat` button
+[shares the users or supergroup](#sharing-users-and-chats) the press chooses. The emulator
+[cannot answer](#real-gaps) `request_poll` and `web_app` buttons, so pressing one fails with `400`.
+Legacy names that the server also reads, `request_phone_number` and `request_user`, and
+`request_managed_bot` for the missing managed bots, are rejected.
+
+### Sharing users and chats
+
+A press of a `request_users` button carries `shared_user_ids`, the accounts and bots of the session
+the account chooses, and a press of a `request_chat` button carries `shared_chat_id`, a supergroup
+the account is a member of. Each answer belongs to its own kind of button, a press carries at most
+one, and the other buttons refuse it, as they refuse a `location`. TDLib's
+[`shareUsersWithBot` and `shareChatWithBot`][share-dialogs] find the request by its message and
+`request_id`; the press finds it, as any press does, by the text of a button of the keyboard the
+account's chat shows, so a replaced or removed keyboard, another chat's keyboard, or another
+account's keyboard answers nothing.
+
+The bot receives a service message from the account with `users_shared` or `chat_shared` and the
+button's `request_id`, as the official server's [`JsonMessage`][shared-message-json] writes them. As
+TDLib [ignores the reply][shared-reply-info] Telegram sends with it, the message replies to nothing.
+A `users_shared` keeps the legacy `user_ids`, and a single shared user also shows as the legacy
+`user_shared`. Each [`JsonSharedUser` and `JsonChatShared`][shared-json] shows only the details the
+request asked for, as they were when the account shared them: `first_name` and `last_name` for
+`request_name`, `username` for `request_username`, and `title` and `username` for `request_title`
+and `request_username`; a user without a last name or username, or a private supergroup, leaves them
+out. Emulated users and chats have no photos, so `request_photo` adds none. The account's history
+shows the same message, which, like any message the account writes, starts the private chat.
+
+The choice must meet the request as TDLib's
+[`RequestedDialogType::check_shared_dialog_count` and `check_shared_dialog`][check-shared-dialog]
+check it, and a refused choice creates no message or update and changes nothing:
+
+- `request_users` takes at most `max_quantity` users, each of the kind `user_is_bot` requires.
+  Emulated accounts are never Premium users, as their Bot API `User` shows, so
+  `user_is_premium:
+  false` accepts every user.
+- `request_chat` takes a supergroup with a username exactly when `chat_has_username` asks for one,
+  which the account owns when `chat_is_created` is set. Otherwise the account must hold every right
+  of `user_administrator_rights`, as TDLib's [`has_all_administrator_rights`][has-all-rights]
+  compares them; the owner holds every right. As TDLib [reads a received request][received-request],
+  a chat the account must have created skips that check.
+- The bot must already be a member when `bot_is_member` is set, and already hold every right of
+  `bot_administrator_rights`. Telegram's clients add or promote the bot in that case; the emulator
+  grants nothing, so tests add and promote the bot first.
+
+Sharing grants nobody anything: the bot learns the identifiers, but can write to a shared account
+only once it starts a chat, and to a shared supergroup only once it is a member. The emulation API
+answers an unknown user or supergroup with `404`, a supergroup the account is not a member of with
+`403`, and any other refusal with `400`.
 
 ### In supergroups
 
@@ -177,16 +223,24 @@ no buttons, and it checks only the icon identifier's syntax, as it does for
 - **Current button presses only.** Callback presses require a currently stored matching button
   because the intended tests only need those presses. Stale or arbitrary callback data and callbacks
   with inaccessible message payloads are not modeled.
+- **Stricter user and chat sharing.** TDLib passes a repeated user on to Telegram, whose handling of
+  it is unknown; the emulator refuses a repeated user. A shared supergroup must be one the account
+  is a member of, while TDLib only needs a chat the client knows. The bot's membership and rights
+  must exist before the press, since the emulator does not reproduce the client adding or promoting
+  the bot.
 
 ## Real gaps
 
 - **Game and payment buttons.** These inline buttons need their
   [missing features](README.md#unimplemented-areas). Tests cannot exercise those button definitions
   or actions.
-- **Answering reply keyboard requests.** Apart from sharing their own contact or a location,
-  accounts cannot answer a [request button](#request-buttons): sharing users or a chat, creating a
-  poll, or sending Web App data. Accounts do not create polls, and the `users_shared`, `chat_shared`
-  and `web_app_data` service messages are missing.
+- **Answering reply keyboard requests.** Accounts cannot answer a `request_poll` or `web_app`
+  [request button](#request-buttons): accounts do not create polls, and the `web_app_data` service
+  message is missing.
+- **Premium users, channels, forums, anonymous administrators and photos.** The emulator models none
+  of them, so a press refuses a request that requires Premium users, a channel, a forum, or
+  `is_anonymous` among the account's or the bot's rights with `400`, and shared users and chats show
+  no `photo`.
 
 ## Comparison limits
 
@@ -200,8 +254,11 @@ server behavior.
 [callback service](../../src/services/callback_query.ts),
 [start link parsing](../../src/text_entities/telegram_link.ts),
 [reply interface handling](../../src/services/private_messaging.ts),
+[user and chat sharing](../../src/services/requested_peer_sharing.ts),
 [callback tests](../../tests/callback_query_service_test.ts) and
-[private message tests](../../tests/private_messaging_service_test.ts).
+[private message tests](../../tests/private_messaging_service_test.ts),
+[sharing criteria tests](../../tests/requested_peer_sharing_test.ts) and
+[sharing API tests](../../tests/requested_peer_sharing_api_test.ts).
 
 [received-markup]: https://github.com/tdlib/td/blob/bc9c263e2bfee06aaab41e82db51a103376030bc/td/telegram/ReplyMarkup.cpp#L104-L198
 [dialog-markup]: https://github.com/tdlib/td/blob/bc9c263e2bfee06aaab41e82db51a103376030bc/td/telegram/MessagesManager.cpp#L31226-L31241
@@ -218,6 +275,13 @@ server behavior.
 [td-button-equality]: https://github.com/tdlib/td/blob/bc9c263e2bfee06aaab41e82db51a103376030bc/td/telegram/InlineKeyboardButton.cpp#L84-L87
 [login-web-app-parsing]: https://github.com/tdlib/telegram-bot-api/blob/e3e9dd8e5b3d7ab8537cd5a10dc31d5ffa8f82d1/telegram-bot-api/Client.cpp#L10442-L10488
 [reply-button-type]: https://github.com/tdlib/telegram-bot-api/blob/e3e9dd8e5b3d7ab8537cd5a10dc31d5ffa8f82d1/telegram-bot-api/Client.cpp#L10248-L10345
+[shared-json]: https://github.com/tdlib/telegram-bot-api/blob/e3e9dd8e5b3d7ab8537cd5a10dc31d5ffa8f82d1/telegram-bot-api/Client.cpp#L3839-L3922
+[shared-message-json]: https://github.com/tdlib/telegram-bot-api/blob/e3e9dd8e5b3d7ab8537cd5a10dc31d5ffa8f82d1/telegram-bot-api/Client.cpp#L5188-L5200
+[share-dialogs]: https://github.com/tdlib/td/blob/bc9c263e2bfee06aaab41e82db51a103376030bc/td/telegram/MessageQueryManager.cpp#L3206-L3260
+[shared-reply-info]: https://github.com/tdlib/td/blob/bc9c263e2bfee06aaab41e82db51a103376030bc/td/telegram/MessageContent.cpp#L10973-L10995
+[check-shared-dialog]: https://github.com/tdlib/td/blob/bc9c263e2bfee06aaab41e82db51a103376030bc/td/telegram/RequestedDialogType.cpp#L230-L335
+[received-request]: https://github.com/tdlib/td/blob/bc9c263e2bfee06aaab41e82db51a103376030bc/td/telegram/RequestedDialogType.cpp#L82-L95
+[has-all-rights]: https://github.com/tdlib/td/blob/bc9c263e2bfee06aaab41e82db51a103376030bc/td/telegram/DialogParticipant.h#L419-L423
 [td-keyboard-button]: https://github.com/tdlib/td/blob/bc9c263e2bfee06aaab41e82db51a103376030bc/td/telegram/KeyboardButton.cpp#L82-L179
 [requested-dialog-type]: https://github.com/tdlib/td/blob/bc9c263e2bfee06aaab41e82db51a103376030bc/td/telegram/RequestedDialogType.cpp#L33-L51
 [td-login-web-app]: https://github.com/tdlib/td/blob/bc9c263e2bfee06aaab41e82db51a103376030bc/td/telegram/InlineKeyboardButton.cpp#L315-L369

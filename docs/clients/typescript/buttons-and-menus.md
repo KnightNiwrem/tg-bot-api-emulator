@@ -403,8 +403,69 @@ Deno.test('an account answers a forced reply', async () => {
 Keyboard buttons with `request_contact` or `request_location` are pressed the same way by their
 text, but share the account's own contact, or the `location` passed to `pressReplyKeyboardButton`,
 in reply to the keyboard's message instead of sending the text.
-[Contacts and locations](contacts-and-locations.md) shows both. Buttons with other
-[requests](../../features/keyboards-and-callbacks.md#request-buttons) cannot be pressed.
+[Contacts and locations](contacts-and-locations.md) shows both. Buttons with `request_poll` or
+`web_app` [requests](../../features/keyboards-and-callbacks.md#request-buttons) cannot be pressed.
+
+### Sharing users and chats
+
+A `request_users` button takes the `shared_user_ids` of the session's accounts and bots the account
+chooses, and a `request_chat` button takes the `shared_chat_id` of a supergroup the account is a
+member of. The press returns the account's service message, which carries `users_shared` or
+`chat_shared` with the button's `request_id` and only the details the request asked for; the bot
+receives the same message. A choice the request's criteria refuse fails with an
+`EmulationClientError` and sends nothing. The emulator never adds or promotes the bot for a
+`request_chat` with `bot_is_member` or `bot_administrator_rights`, so the test does that first. The
+feature page lists the
+[criteria and their limits](../../features/keyboards-and-callbacks.md#sharing-users-and-chats).
+
+```ts
+import { assertEquals } from 'jsr:@std/assert@^1';
+import { withBotFixture } from './bot_fixture.ts';
+
+Deno.test('an account shares a teammate with the bot that asked for one', async () => {
+  await withBotFixture({
+    handlers: (bot) => {
+      bot.command('invite', (ctx) =>
+        ctx.reply('Whom should I invite?', {
+          reply_markup: {
+            keyboard: [[{
+              text: 'Choose a teammate',
+              request_users: { request_id: 1, user_is_bot: false, request_name: true },
+            }]],
+          },
+        }));
+      bot.on('message:users_shared', (ctx) => {
+        const [teammate] = ctx.msg.users_shared.users;
+        return ctx.reply(`Inviting ${teammate?.first_name}`);
+      });
+    },
+  }, async ({ session, account, activity, privateChat }) => {
+    const { account: grace } = await session.createAccount({ first_name: 'Grace' });
+
+    const beforeCommand = await activity.position();
+    await account.sendMessage({ to: privateChat, text: '/invite' });
+    await activity.waitFor({
+      method: 'sendMessage',
+      chat_id: account.id,
+      parameters: { text: 'Whom should I invite?' },
+    }, { after: beforeCommand });
+
+    const beforeShare = await activity.position();
+    const shared = await account.pressReplyKeyboardButton({
+      chat: privateChat,
+      text: 'Choose a teammate',
+      shared_user_ids: [grace.id],
+    });
+    assertEquals(shared.users_shared?.users, [{ user_id: grace.id, first_name: 'Grace' }]);
+    assertEquals(shared.users_shared?.request_id, 1);
+    await activity.waitFor({
+      method: 'sendMessage',
+      chat_id: account.id,
+      parameters: { text: 'Inviting Grace' },
+    }, { after: beforeShare });
+  });
+});
+```
 
 ## Command menus and the menu button
 
