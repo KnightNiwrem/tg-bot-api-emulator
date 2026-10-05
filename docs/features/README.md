@@ -101,8 +101,10 @@ lifecycle control.
 Other intentional choices include
 [in-memory sessions and strict request validation](sessions-and-requests.md#intentional-deviations),
 [retaining unconfirmed updates](updates.md#intentional-deviations), and omitting production rate
-thresholds in favor of [queued rate limit answers](sessions-and-requests.md#rate-limit-answers). The
-feature pages explain their testing rationale and distinguish them from
+thresholds in favor of [queued rate limit answers](sessions-and-requests.md#rate-limit-answers), and
+failing calls with server errors only as
+[queued server error answers](sessions-and-requests.md#server-error-answers). The feature pages
+explain their testing rationale and distinguish them from
 [missing functionality](sessions-and-requests.md#real-gaps).
 
 ## Comparison baseline and evidence

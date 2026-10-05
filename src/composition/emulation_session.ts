@@ -9,7 +9,6 @@ import { BotCommandRepository } from '../repositories/bot_command.ts';
 import { BotDefaultAdministratorRightsRepository } from '../repositories/bot_default_administrator_rights.ts';
 import { BotDescriptionRepository } from '../repositories/bot_description.ts';
 import { BotMenuButtonRepository } from '../repositories/bot_menu_button.ts';
-import { BotRateLimitRepository } from '../repositories/bot_rate_limit.ts';
 import { BotUpdateRepository } from '../repositories/bot_update.ts';
 import { BotUpdateSubscriptionRepository } from '../repositories/bot_update_subscription.ts';
 import { BotWebhookRepository } from '../repositories/bot_webhook.ts';
@@ -21,6 +20,7 @@ import { InlineQueryRepository } from '../repositories/inline_query.ts';
 import { MessageRepository } from '../repositories/message.ts';
 import { PollRepository } from '../repositories/poll.ts';
 import { PrivateConversationRepository } from '../repositories/private_conversation.ts';
+import { QueuedBotApiAnswerRepository } from '../repositories/queued_bot_api_answer.ts';
 import { SharedChatRepository } from '../repositories/shared_chat.ts';
 import { TelegramIdentityRepository } from '../repositories/telegram_identity.ts';
 import { WebResourceRepository } from '../repositories/web_resource.ts';
@@ -34,6 +34,7 @@ import { BotDescriptionService } from '../services/bot_description.ts';
 import { BotMenuButtonService } from '../services/bot_menu_button.ts';
 import { BotMessageViewService } from '../services/bot_message_view.ts';
 import { BotRateLimitService } from '../services/bot_rate_limit.ts';
+import { BotServerErrorService } from '../services/bot_server_error.ts';
 import { BotUpdateDeliveryService } from '../services/bot_update_delivery.ts';
 import { BotUpdatePollingService } from '../services/bot_update_polling.ts';
 import { BotWebhookService } from '../services/bot_webhook.ts';
@@ -244,7 +245,12 @@ export function createEmulationSession(
 
   const botRateLimits = new BotRateLimitService({
     bots,
-    rateLimitResponses: new BotRateLimitRepository(),
+    rateLimitResponses: new QueuedBotApiAnswerRepository(),
+  });
+
+  const botServerErrors = new BotServerErrorService({
+    bots,
+    serverErrorResponses: new QueuedBotApiAnswerRepository(),
   });
 
   const botActivity = new BotActivityService({ log: new BotActivityLogRepository() });
@@ -324,6 +330,7 @@ export function createEmulationSession(
     mediaFiles,
     webResources,
     botRateLimits,
+    botServerErrors,
     botApi,
     botActivity,
     webhookAttempts,

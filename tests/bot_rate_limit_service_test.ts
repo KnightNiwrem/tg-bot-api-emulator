@@ -1,6 +1,6 @@
 import { AccountRepository } from '../src/repositories/account.ts';
 import { BotRepository } from '../src/repositories/bot.ts';
-import { BotRateLimitRepository } from '../src/repositories/bot_rate_limit.ts';
+import { QueuedBotApiAnswerRepository } from '../src/repositories/queued_bot_api_answer.ts';
 import { TelegramIdentityRepository } from '../src/repositories/telegram_identity.ts';
 import { BotRateLimitService } from '../src/services/bot_rate_limit.ts';
 import { VirtualUserService } from '../src/services/virtual_user.ts';
@@ -72,7 +72,7 @@ function createBotRateLimitFixture() {
     }),
     botRateLimits: new BotRateLimitService({
       bots,
-      rateLimitResponses: new BotRateLimitRepository(),
+      rateLimitResponses: new QueuedBotApiAnswerRepository(),
     }),
   };
 }

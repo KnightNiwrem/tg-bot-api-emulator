@@ -56,3 +56,7 @@ post:
       description: No active test session has the supplied identifier.
     '429':
       $ref: ../components/responses/BotApiRateLimited.yaml
+    '500':
+      $ref: ../components/responses/BotApiServerError.yaml
+    '503':
+      $ref: ../components/responses/BotApiServerError.yaml

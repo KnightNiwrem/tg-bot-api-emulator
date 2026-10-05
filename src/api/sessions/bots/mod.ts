@@ -8,6 +8,7 @@ import { findBotApiMethod } from '../bot_api/mod.ts';
 import { readJsonRequestBody } from '../json_request_body.ts';
 import type { SessionRouteContextTypes } from '../session_route_context_types.ts';
 import { BOT_ID_PARAMETER, botIdPathParameterSchema } from './bot_id_path_parameter.ts';
+import { createServerErrorResponseRoutes } from './server_error_responses.ts';
 import { createWebhookDeliveryRoutes } from './webhook_delivery.ts';
 
 const RATE_LIMIT_RESPONSES_PATH = `/:${BOT_ID_PARAMETER}/rate-limit-responses` as const;
@@ -101,6 +102,7 @@ export function createBotRoutes(): Hono<SessionRouteContextTypes> {
       : context.body(null, 404);
   });
 
+  botRoutes.route('/', createServerErrorResponseRoutes());
   botRoutes.route('/', createWebhookDeliveryRoutes());
 
   return botRoutes;

@@ -1,0 +1,17 @@
+type: object
+additionalProperties: false
+required:
+  - error_code
+properties:
+  method:
+    type: string
+    description: >-
+      An implemented Bot API method, by any name Telegram accepts for it, matched
+      case-insensitively; omit it to fail calls of every method.
+  error_code:
+    $ref: ServerErrorCode.yaml
+  count:
+    type: integer
+    minimum: 1
+    default: 1
+    description: How many of the bot's next matching calls receive an answer.

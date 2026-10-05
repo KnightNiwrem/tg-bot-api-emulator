@@ -85,6 +85,25 @@ export interface RateLimitResponses {
 }
 
 /**
+ * The HTTP status of a queued server error answer: `500 Internal Server Error` or
+ * `503 Service Unavailable`.
+ */
+export type ServerErrorCode = 500 | 503;
+
+/**
+ * Server error answers queued for a bot's next Bot API calls, which receive them instead of
+ * running. They are emulator fault injection, not a reproduction of when Telegram fails calls.
+ */
+export interface ServerErrorResponses {
+  /** The method whose calls receive the answers, by its current name; omitted for every method. */
+  readonly method?: string;
+  /** The HTTP status and `error_code` of every answer. */
+  readonly error_code: ServerErrorCode;
+  /** How many of the bot's next matching calls still receive an answer. */
+  readonly remaining_count: number;
+}
+
+/**
  * What a URL of the session's emulated web serves. Telegram downloads the files bots send by URL;
  * the emulator downloads them from these resources and never from the network.
  */
@@ -120,6 +139,16 @@ export interface QueueRateLimitResponsesInput {
   readonly method?: string;
   /** The `retry_after`, in seconds, of every answer; at least 1. */
   readonly retry_after: number;
+  /** How many of the bot's next matching calls receive an answer. Defaults to 1. */
+  readonly count?: number;
+}
+
+export interface QueueServerErrorResponsesInput {
+  readonly bot_id: number;
+  /** An implemented Bot API method, by any name Telegram accepts; omit it for every method. */
+  readonly method?: string;
+  /** The HTTP status and `error_code` of every answer. */
+  readonly error_code: ServerErrorCode;
   /** How many of the bot's next matching calls receive an answer. Defaults to 1. */
   readonly count?: number;
 }

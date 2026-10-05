@@ -49,6 +49,7 @@
           "src/types/bot_menu_button.ts",
           "src/types/bot_webhook.ts",
           "src/types/bot_rate_limit.ts",
+          "src/types/bot_server_error.ts",
           "src/types/bot_activity.ts",
           "src/types/bot_activity_kind.ts"
         ]
@@ -156,9 +157,9 @@
         ]
       },
       {
-        "name": "bot-rate-limit-repository",
+        "name": "queued-bot-api-answer-repository",
         "patterns": [
-          "src/repositories/bot_rate_limit.ts"
+          "src/repositories/queued_bot_api_answer.ts"
         ]
       },
       {
@@ -253,6 +254,7 @@
           "src/services/bot_blocking.ts",
           "src/services/chat_action.ts",
           "src/services/bot_rate_limit.ts",
+          "src/services/bot_server_error.ts",
           "src/services/web_resource.ts",
           "src/services/web_file_download.ts",
           "src/services/requested_peer_sharing.ts"
@@ -425,7 +427,7 @@
         ]
       },
       {
-        "from": "bot-rate-limit-repository",
+        "from": "queued-bot-api-answer-repository",
         "allow": [
           "domain"
         ]
@@ -590,7 +592,7 @@
           "bot-description-repository",
           "bot-default-administrator-rights-repository",
           "bot-menu-button-repository",
-          "bot-rate-limit-repository",
+          "queued-bot-api-answer-repository",
           "bot-activity-log-repository",
           "blocked-user-repository",
           "chat-action-repository",

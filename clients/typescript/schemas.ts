@@ -28,6 +28,7 @@ import type {
   RichMessageButton,
   RichText,
   RichTextObject,
+  ServerErrorResponses,
   Supergroup,
   SupergroupMessage,
   VirtualAccountProfile,
@@ -103,6 +104,16 @@ export const rateLimitResponsesSchema: z.ZodType<RateLimitResponses> = z.strictO
 
 export const rateLimitResponsesListSchema = z.strictObject({
   rate_limit_responses: z.array(rateLimitResponsesSchema),
+});
+
+export const serverErrorResponsesSchema: z.ZodType<ServerErrorResponses> = z.strictObject({
+  method: z.string().min(1).optional(),
+  error_code: z.literal([500, 503]),
+  remaining_count: z.int().positive(),
+});
+
+export const serverErrorResponsesListSchema = z.strictObject({
+  server_error_responses: z.array(serverErrorResponsesSchema),
 });
 
 const webhookSchedulingSchema = z.enum(['automatic', 'manual']);

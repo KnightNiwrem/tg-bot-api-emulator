@@ -103,8 +103,8 @@ import {
   type BotApiMethodAnswer,
   type BotApiMethodContext,
   botApiResult,
-  botApiRetryAfterError,
 } from './method_call.ts';
+import { takeQueuedAnswer } from './queued_answer.ts';
 import {
   booleanParameter,
   type BotApiRequestParameters,
@@ -1294,9 +1294,9 @@ export interface BotApiMethodCall {
 }
 
 /**
- * Runs a bot's call of a method, however the call arrived, unless a test queued a rate limit
- * answer for it, which the call receives instead. The call and its answer are recorded as bot
- * activity.
+ * Runs a bot's call of a method, however the call arrived, unless a test queued a rate limit or
+ * server error answer for it, which the call receives instead, before the method reads its
+ * parameters or changes anything. The call and its answer are recorded as bot activity.
  */
 export async function callBotApiMethod(
   context: BotApiMethodContext,
@@ -1361,12 +1361,9 @@ async function answerBotApiMethodCall(
   parameters: BotApiRequestParameters,
   uploadedFiles: BotApiUploadedFiles,
 ): Promise<BotApiMethodAnswer> {
-  const retryAfterSeconds = context.session.botRateLimits.takeRateLimitResponse(
-    context.bot.id,
-    name,
-  );
-  if (retryAfterSeconds !== undefined) {
-    return botApiRetryAfterError(retryAfterSeconds);
+  const queuedAnswer = takeQueuedAnswer(context, name);
+  if (queuedAnswer !== undefined) {
+    return queuedAnswer;
   }
   const chatResolution = resolveChatUsernameParameters(context, parameters);
   return chatResolution.resolved

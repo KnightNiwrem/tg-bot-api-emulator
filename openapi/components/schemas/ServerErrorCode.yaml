@@ -1,0 +1,7 @@
+type: integer
+enum:
+  - 500
+  - 503
+description: >-
+  The HTTP status and `error_code` of every answer: `500` for `Internal Server Error`, or `503`
+  for `Service Unavailable`.
