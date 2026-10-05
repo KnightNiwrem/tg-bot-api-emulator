@@ -103,6 +103,7 @@ Deno.test('shared users carry only the details the request asks for, as they are
 Deno.test('shared users are refused as TDLib checks them, and repeats as the emulator does', () => {
   const lookups = createLookups();
   const cases: Array<[ReplyKeyboardUsersRequest, number[], string]> = [
+    [USERS_REQUEST, [], 'shared_users_too_few'],
     [USERS_REQUEST, [ADA_ID, GRACE_ID, LINUS_ID], 'shared_users_too_many'],
     [USERS_REQUEST, [ADA_ID, ADA_ID], 'shared_users_duplicated'],
     [USERS_REQUEST, [ADA_ID, 99], 'shared_user_not_found'],

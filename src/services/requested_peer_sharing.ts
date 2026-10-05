@@ -31,6 +31,8 @@ type UnmodeledRequestFailureReason = 'reply_keyboard_button_request_unsupported'
  */
 export type SharedUsersFailureReason =
   | UnmodeledRequestFailureReason
+  /** No user at all: "Too few chats are chosen". */
+  | 'shared_users_too_few'
   /** More users than the request's `max_quantity`: "Too many chats are chosen". */
   | 'shared_users_too_many'
   /** The same user chosen twice, which the emulator refuses. */
@@ -100,7 +102,7 @@ export interface SharedPeerLookups {
  * names and usernames the request asks for as they are now. The emulator has no profile photos, so
  * no shared user shows one.
  *
- * As TDLib's `RequestedDialogType::check_shared_dialog_count` does, more users than
+ * As TDLib's `RequestedDialogType::check_shared_dialog_count` does, no users or more users than
  * `max_quantity` are refused, and as its `check_shared_dialog` does, so is a user of the wrong
  * kind. Emulated accounts are never Premium users, as the Bot API shows them, so a request that
  * requires Premium users cannot be answered. TDLib passes repeated users on to Telegram, whose
@@ -113,6 +115,9 @@ export function resolveSharedUsers(
 ): SharedUsersResolution {
   if (request.userIsPremium === true) {
     return { resolved: false, reason: 'reply_keyboard_button_request_unsupported' };
+  }
+  if (userIds.length === 0) {
+    return { resolved: false, reason: 'shared_users_too_few' };
   }
   if (userIds.length > request.maxQuantity) {
     return { resolved: false, reason: 'shared_users_too_many' };
