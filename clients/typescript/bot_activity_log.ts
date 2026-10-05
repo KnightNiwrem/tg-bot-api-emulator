@@ -102,9 +102,10 @@ export interface BotActivityWaitClock {
   /** The current time in milliseconds on a monotonic clock, as `performance.now()` reads it. */
   now(): number;
   /**
-   * Runs `callback` once, `delayMilliseconds` from now, and never before returning. Returns a
-   * function that cancels the callback if it has not run. A wait schedules no delay longer than
-   * `setTimeout` keeps.
+   * Runs `callback` once, about `delayMilliseconds` from now, and never before returning. It may
+   * run a little early, as `setTimeout` does with a fractional delay, so a wait checks the time
+   * when it runs. Returns a function that cancels the callback if it has not run. A wait schedules
+   * only whole milliseconds, and no delay longer than `setTimeout` keeps.
    */
   schedule(callback: () => void, delayMilliseconds: number): () => void;
 }
@@ -423,16 +424,16 @@ class BotActivityWaitTime {
     this.#clock = clock;
     this.#deadline = clock.now() + timeoutMs;
     this.#cancelTimers = [
-      abortLater(
+      abortAtCutoff(
         clock,
         this.#deadlineController,
-        timeoutMs,
+        this.#cutoffFor('holding'),
         new DOMException(`The wait's ${timeoutMs} ms are up`, 'TimeoutError'),
       ),
-      abortLater(
+      abortAtCutoff(
         clock,
         this.#allowanceController,
-        timeoutMs + RECORDED_READ_ALLOWANCE_MILLISECONDS,
+        this.#cutoffFor('recorded'),
         new DOMException(
           `The ${RECORDED_READ_ALLOWANCE_MILLISECONDS} ms to read recorded entries after the ` +
             `wait's ${timeoutMs} ms are up`,
@@ -458,8 +459,13 @@ class BotActivityWaitTime {
 
   /** Whether, by the clock, the time a read of the kind has is over. */
   isOverFor(kind: BotActivityWaitReadKind): boolean {
+    return this.#clock.now() >= this.#cutoffFor(kind);
+  }
+
+  /** The time by the clock that a read of the kind must settle before. */
+  #cutoffFor(kind: BotActivityWaitReadKind): number {
     const allowanceMilliseconds = kind === 'holding' ? 0 : RECORDED_READ_ALLOWANCE_MILLISECONDS;
-    return this.#clock.now() >= this.#deadline + allowanceMilliseconds;
+    return this.#deadline + allowanceMilliseconds;
   }
 
   /** The whole milliseconds left before the deadline, rounded up; 0 once it has passed. */
@@ -490,17 +496,33 @@ class BotActivityWaitTime {
 /** The longest delay `setTimeout` keeps; it runs a callback with a longer one at once. */
 const MAX_TIMER_DELAY_MILLISECONDS = 2 ** 31 - 1;
 
-/** Aborts the controller after a delay, and returns a function that cancels that. */
-function abortLater(
+/**
+ * Aborts the controller once the clock reaches the cutoff, and returns a function that cancels
+ * that. A timer that runs before the cutoff, early or because the time left is longer than a timer
+ * keeps, schedules another for the time left.
+ */
+function abortAtCutoff(
   clock: BotActivityWaitClock,
   controller: AbortController,
-  delayMilliseconds: number,
+  cutoff: number,
   reason: DOMException,
 ): () => void {
-  return clock.schedule(
-    () => controller.abort(reason),
-    Math.min(delayMilliseconds, MAX_TIMER_DELAY_MILLISECONDS),
-  );
+  let cancelArmedTimer: () => void;
+  const armTimer = () => {
+    const delayMilliseconds = Math.min(
+      Math.max(0, Math.ceil(cutoff - clock.now())),
+      MAX_TIMER_DELAY_MILLISECONDS,
+    );
+    cancelArmedTimer = clock.schedule(() => {
+      if (clock.now() >= cutoff) {
+        controller.abort(reason);
+      } else {
+        armTimer();
+      }
+    }, delayMilliseconds);
+  };
+  armTimer();
+  return () => cancelArmedTimer();
 }
 
 /**

@@ -213,30 +213,107 @@ Deno.test('A cancelled wait rejects with the reason and releases its read', asyn
   }
 });
 
-Deno.test('A wait longer than a timer can hold schedules only delays a timer keeps', async () => {
+Deno.test('A read outlasts a timer that runs before its cutoff', async () => {
+  const cases = [
+    { kind: 'holding', timeoutMs: 10.9, cutoffMilliseconds: 10.9 },
+    { kind: 'recorded', timeoutMs: 0, cutoffMilliseconds: RECORDED_READ_ALLOWANCE_MILLISECONDS },
+  ];
+  for (const { kind, timeoutMs, cutoffMilliseconds } of cases) {
+    const clock = new ManualWaitClock();
+    const transport = createScriptedTransport(neverAnswered);
+
+    const wait = rejectionOf(
+      createActivityLog(transport, clock).waitFor({ method: 'sendMessage' }, {
+        after: 0,
+        timeoutMs,
+      }),
+    );
+    await transport.untilReadsSent(1);
+    // A native timer set for a fractional delay runs once its whole milliseconds are up.
+    clock.advance(cutoffMilliseconds - 0.5);
+    clock.runCallbacksEarly();
+
+    const [read] = transport.reads;
+    assert(read.signal?.aborted === false, `Expected the ${kind} read to hold until its cutoff`);
+    // The timer that replaced it is due a whole millisecond later, but one that runs exactly at the
+    // cutoff ends the read.
+    clock.advance(0.5);
+    clock.runCallbacksEarly();
+    assertTimeoutAbandoning(await wait, read);
+    assert(clock.pendingCallbackCount === 0, "Expected the wait's timers to be stopped");
+  }
+});
+
+Deno.test('A wait rounds the delays of its timers up to whole milliseconds', async () => {
   const clock = new ManualWaitClock();
   const transport = createScriptedTransport(neverAnswered);
   const cancellation = new AbortController();
-  const reason = new Error('The test ended');
 
   const wait = rejectionOf(
-    createActivityLog(transport, clock).waitFor({}, {
+    createActivityLog(transport, clock).waitFor({ method: 'sendMessage' }, {
       after: 0,
-      timeoutMs: 2 ** 31,
+      timeoutMs: 10.9,
       signal: cancellation.signal,
     }),
   );
   await transport.untilReadsSent(1);
-  // `setTimeout` would run a callback with a longer delay after 1 ms.
-  clock.advance(1);
-  clock.runDueCallbacks();
+  clock.advance(10.5);
+  clock.runCallbacksEarly();
+  cancellation.abort(new Error('The test ended'));
+  await wait;
+
+  // The deadline's and the allowance's, then again for the time each had left.
+  assert(
+    clock.scheduledDelays.join() === '11,1011,1,1001',
+    `Expected delays rounded up, got ${clock.scheduledDelays}`,
+  );
+});
+
+Deno.test('A wait cancelled after its timers ran early stops the timers that replaced them', async () => {
+  const clock = new ManualWaitClock();
+  const transport = createScriptedTransport(rejectedWhenAbandoned);
+  const cancellation = new AbortController();
+  const reason = new Error('The test ended');
+
+  const wait = rejectionOf(
+    createActivityLog(transport, clock).waitFor({ method: 'sendMessage' }, {
+      after: 0,
+      timeoutMs: 10,
+      signal: cancellation.signal,
+    }),
+  );
+  await transport.untilReadsSent(1);
+  clock.advance(5);
+  clock.runCallbacksEarly();
+  const replacementTimerCount = clock.pendingCallbackCount;
   cancellation.abort(reason);
 
+  assert(await wait === reason, 'Expected the wait to reject with the cancellation reason');
+  assert(replacementTimerCount === 2, 'Expected the timers that ran early to be replaced');
+  assert(clock.pendingCallbackCount === 0, 'Expected the replacement timers to be stopped');
+});
+
+Deno.test('A wait longer than a timer can hold lasts until its deadline', async () => {
+  const clock = new ManualWaitClock();
+  const transport = createScriptedTransport(neverAnswered);
+  const timeoutMs = 2 ** 31;
+
+  const wait = rejectionOf(
+    createActivityLog(transport, clock).waitFor({}, { after: 0, timeoutMs }),
+  );
+  await transport.untilReadsSent(1);
+  clock.advance(MAX_TIMER_DELAY_MILLISECONDS);
+  clock.runDueCallbacks();
+
+  const [read] = transport.reads;
+  assert(read.signal?.aborted === false, 'Expected the read to hold past the longest timer');
   assert(
     clock.scheduledDelays.every((delay) => delay <= MAX_TIMER_DELAY_MILLISECONDS),
     `Expected delays a timer keeps, got ${clock.scheduledDelays}`,
   );
-  assert(await wait === reason, 'Expected the wait to last until it was cancelled');
+  clock.advance(timeoutMs - MAX_TIMER_DELAY_MILLISECONDS);
+  clock.runDueCallbacks();
+  assertTimeoutAbandoning(await wait, read);
 });
 
 Deno.test('A wait whose signal has already aborted sends no read', async () => {
@@ -287,20 +364,31 @@ Deno.test('Concurrent waits on one log end at their own deadlines', async () => 
   );
 });
 
-Deno.test('A wait with the system clock abandons a read its transport leaves unanswered', async () => {
-  const transport = createScriptedTransport(neverAnswered);
+Deno.test('A wait with the system clock abandons an unanswered read only once its time is up', async () => {
+  const timeoutMs = 10.9;
+  let abandonedAt: number | undefined;
+  const transport = createScriptedTransport((read) => {
+    read.signal?.addEventListener('abort', () => abandonedAt = performance.now());
+    return neverAnswered();
+  });
 
+  const waitStart = performance.now();
   const error = await rejectionOf(
     createBotActivityLog(ACTIVITY_URL, transport.fetch, undefined, {}).waitFor(
       { method: 'sendMessage' },
-      { after: 0, timeoutMs: SHORT_TIMEOUT_MILLISECONDS },
+      { after: 0, timeoutMs },
     ),
   );
 
   // Whether the read holds depends on how long the runner takes to send it, so either kind is
-  // abandoned once its time is up.
+  // abandoned, no sooner than the deadline.
   assertTimeoutAbandoning(error, transport.reads[0]);
-  assert(transport.reads[0].signal?.aborted === true, 'Expected the read to be released');
+  assert(
+    abandonedAt !== undefined && abandonedAt - waitStart >= timeoutMs,
+    `Expected the read to be abandoned no sooner than ${timeoutMs} ms, got ${
+      abandonedAt === undefined ? 'none' : abandonedAt - waitStart
+    }`,
+  );
 });
 
 Deno.test('A wait of 0 ms reads once what is recorded', async () => {
@@ -464,6 +552,18 @@ class ManualWaitClock implements BotActivityWaitClock {
   /** Moves time forward without running the callbacks that come due. */
   advance(milliseconds: number): void {
     this.#now += milliseconds;
+  }
+
+  /**
+   * Runs every pending callback, even one not yet due, as a native timer may run before the time
+   * it was set for. Callbacks they schedule stay pending.
+   */
+  runCallbacksEarly(): void {
+    const pendingCallbacks = [...this.#pendingCallbacks];
+    this.#pendingCallbacks.clear();
+    for (const { callback } of pendingCallbacks) {
+      callback();
+    }
   }
 
   /** Runs the callbacks that are due, earliest first. */
