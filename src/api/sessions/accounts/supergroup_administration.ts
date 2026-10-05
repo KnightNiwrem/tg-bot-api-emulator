@@ -51,8 +51,8 @@ const changeDefaultPermissionsRequestSchema = z.strictObject({
 });
 
 /**
- * A restriction the owner applies: the permissions the user keeps, and when it ends, as a Unix time
- * Telegram normalizes, or never when omitted.
+ * A restriction an account applies: the permissions the user keeps, and when it ends, as a Unix
+ * time Telegram normalizes, or never when omitted.
  */
 const restrictChatMemberRequestSchema = z.strictObject({
   permissions: chatPermissionsSchema,
@@ -97,7 +97,8 @@ export function createSupergroupAdministrationRoutes(): Hono<SessionRouteContext
     });
   });
 
-  // The owner promotes a member to administrator, or changes an administrator's rights.
+  // The owner or an administrator that may promote makes a member an administrator, or changes
+  // the rights of an administrator it may edit.
   accountRoutes.put(SUPERGROUP_ADMINISTRATOR_PATH, async (context) => {
     const memberPath = supergroupMemberPathSchema.safeParse(context.req.param());
     if (!memberPath.success) {
@@ -123,10 +124,11 @@ export function createSupergroupAdministrationRoutes(): Hono<SessionRouteContext
     // An administrator without rights would be a member; DELETE demotes one instead.
     return result.reason === 'no_rights_granted'
       ? context.body(null, 400)
-      : context.body(null, memberRoleChangeFailureStatus(result.reason));
+      : context.body(null, accountAdministrationFailureStatus(result.reason));
   });
 
-  // The owner restricts a user, member or not, or changes its restriction.
+  // The owner or an administrator that may restrict members restricts a user, member or not, or
+  // changes its restriction.
   accountRoutes.put(SUPERGROUP_RESTRICTION_PATH, async (context) => {
     const memberPath = supergroupMemberPathSchema.safeParse(context.req.param());
     if (!memberPath.success) {
@@ -139,7 +141,7 @@ export function createSupergroupAdministrationRoutes(): Hono<SessionRouteContext
     const { accountId, chatId, userId } = memberPath.data;
 
     const result = context.get('emulationSession').sharedChatAdministration
-      .restrictChatMemberAsOwner({
+      .restrictChatMemberAsAccount({
         actorAccountId: accountId,
         chatId,
         memberId: userId,
@@ -148,10 +150,11 @@ export function createSupergroupAdministrationRoutes(): Hono<SessionRouteContext
       });
     return result.changed
       ? context.body(null, 204)
-      : context.body(null, ownerRestrictionFailureStatus(result.reason));
+      : context.body(null, accountAdministrationFailureStatus(result.reason));
   });
 
-  // The owner lifts a user's restriction; lifting none changes nothing.
+  // The owner or an administrator that may restrict members lifts a user's restriction; lifting
+  // none changes nothing.
   accountRoutes.delete(SUPERGROUP_RESTRICTION_PATH, (context) => {
     const memberPath = supergroupMemberPathSchema.safeParse(context.req.param());
     if (!memberPath.success) {
@@ -160,10 +163,10 @@ export function createSupergroupAdministrationRoutes(): Hono<SessionRouteContext
     const { accountId, chatId, userId } = memberPath.data;
 
     const result = context.get('emulationSession').sharedChatAdministration
-      .liftRestrictionAsOwner({ actorAccountId: accountId, chatId, memberId: userId });
+      .liftRestrictionAsAccount({ actorAccountId: accountId, chatId, memberId: userId });
     return result.changed
       ? context.body(null, 204)
-      : context.body(null, ownerRestrictionFailureStatus(result.reason));
+      : context.body(null, accountAdministrationFailureStatus(result.reason));
   });
 
   // The owner sets its own custom title or an administrator's; an empty title removes it.
@@ -312,7 +315,8 @@ export function createSupergroupAdministrationRoutes(): Hono<SessionRouteContext
     (context) => setSupergroupContentProtection(context, false),
   );
 
-  // The owner demotes an administrator to a member; demoting a member changes nothing.
+  // The owner or an administrator that may edit an administrator demotes it to a member;
+  // demoting a member changes nothing.
   accountRoutes.delete(SUPERGROUP_ADMINISTRATOR_PATH, (context) => {
     const memberPath = supergroupMemberPathSchema.safeParse(context.req.param());
     if (!memberPath.success) {
@@ -327,61 +331,58 @@ export function createSupergroupAdministrationRoutes(): Hono<SessionRouteContext
     });
     return result.demoted
       ? context.body(null, 204)
-      : context.body(null, memberRoleChangeFailureStatus(result.reason));
+      : context.body(null, accountAdministrationFailureStatus(result.reason));
   });
 
   return accountRoutes;
 }
 
 /**
- * Only the owner restricts users through these routes, and nobody restricts the owner; a missing
- * account, supergroup, or user is not found.
+ * Why an account cannot promote, demote, restrict, or lift the restriction of a supergroup user,
+ * other than a promotion granting no right.
  */
-function ownerRestrictionFailureStatus(
-  reason: Extract<
-    ReturnType<EmulationSession['sharedChatAdministration']['restrictChatMemberAsOwner']>,
+type AccountAdministrationFailureReason =
+  | Exclude<
+    Extract<
+      ReturnType<SupergroupAdministration['promoteChatMember']>,
+      { readonly promoted: false }
+    >[
+      'reason'
+    ],
+    'no_rights_granted'
+  >
+  | Extract<
+    ReturnType<SupergroupAdministration['restrictChatMemberAsAccount']>,
     { readonly changed: false }
-  >['reason'],
-): 403 | 404 | 409 {
-  switch (reason) {
-    case 'actor_account_not_found':
-    case 'chat_not_found':
-    case 'member_not_found':
-      return 404;
-    case 'actor_not_authorized':
-      return 403;
-    case 'member_is_owner':
-      return 409;
-    default: {
-      const unhandledReason: never = reason;
-      throw new Error(`Unhandled restriction failure: ${unhandledReason}`);
-    }
-  }
-}
+  >['reason'];
 
 /**
- * Only the owner changes a member's role, and only a current member other than the owner has a
- * role to change.
+ * A missing account, supergroup, or user is not found; an account that is not a member, lacks the
+ * right, would grant a right it lacks, or acts on itself or on an administrator it did not promote
+ * is forbidden; the owner, and a user that is not a member for a change of role, conflict with the
+ * change.
  */
-function memberRoleChangeFailureStatus(
-  reason: Extract<
-    ReturnType<EmulationSession['sharedChatAdministration']['demoteChatMember']>,
-    { readonly demoted: false }
-  >['reason'],
+function accountAdministrationFailureStatus(
+  reason: AccountAdministrationFailureReason,
 ): 403 | 404 | 409 {
   switch (reason) {
     case 'actor_account_not_found':
     case 'chat_not_found':
     case 'member_not_found':
       return 404;
-    case 'actor_not_authorized':
+    case 'actor_not_a_member':
+    case 'cannot_manage_self':
+    case 'not_enough_rights':
+    case 'not_enough_rights_to_promote':
+    case 'administrator_not_promoted_by_actor':
+    case 'rights_not_held':
       return 403;
     case 'not_a_member':
     case 'member_is_owner':
       return 409;
     default: {
       const unhandledReason: never = reason;
-      throw new Error(`Unhandled member role change failure: ${unhandledReason}`);
+      throw new Error(`Unhandled account administration failure: ${unhandledReason}`);
     }
   }
 }

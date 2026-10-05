@@ -624,7 +624,7 @@ Deno.test('a restricted bot cannot send or forward what it may not, nor lift its
   );
 });
 
-Deno.test('only the owner restricts users through the emulation API', async () => {
+Deno.test('accounts without the right restrict nobody through the emulation API', async () => {
   const { ada, grace, linus, accountPath, supergroupPath, api, getChatMember } =
     await createRestrictionFixture();
   const restrictAs = (accountId: number, userId: number, body: unknown) =>
@@ -649,7 +649,7 @@ Deno.test('only the owner restricts users through the emulation API', async () =
   expectEqual(
     [...statuses, ownerLift.status],
     [403, 409, 404, 400, 400, 404, 409],
-    'Expected owner-only restriction checks',
+    'Expected the restriction checks',
   );
   expectEqual(
     await getChatMember(grace.id),
@@ -671,6 +671,136 @@ Deno.test('only the owner restricts users through the emulation API', async () =
   if (member.status !== 'restricted' || member.until_date === 0) {
     throw new Error(`Expected a temporary restriction, received ${JSON.stringify(member)}`);
   }
+});
+
+Deno.test('an administrator account restricts users and lifts restrictions within its rights', async () => {
+  const {
+    api,
+    ada,
+    grace,
+    linus,
+    moderatorBot,
+    otherBot,
+    supergroup,
+    supergroupPath,
+    readUpdates,
+    describeCall,
+    getChatMember,
+  } = await createRestrictionFixture();
+  await expectStatus(
+    api.request(
+      `${supergroupPath(ada.id)}/administrators/${grace.id}`,
+      jsonRequest('PUT', { can_restrict_members: true }),
+    ),
+    204,
+    'Expected the owner to promote Grace',
+  );
+  for (const { botApiPath } of [moderatorBot, otherBot]) {
+    await readUpdates(botApiPath);
+  }
+  // The emulation API names every permission but the Bot API's `can_send_media_messages` summary.
+  const everyEmulationApiPermission = Object.fromEntries(
+    CHAT_PERMISSION_NAMES.filter((name) => name !== 'can_send_media_messages')
+      .map((name) => [name, true]),
+  );
+  const restrictionPath = (actorId: number, userId: number) =>
+    `${supergroupPath(actorId)}/restrictions/${userId}`;
+  const restrict = async (actorId: number, userId: number, permissions: object) =>
+    (await api.request(restrictionPath(actorId, userId), jsonRequest('PUT', { permissions })))
+      .status;
+  const lift = async (actorId: number, userId: number) =>
+    (await api.request(restrictionPath(actorId, userId), { method: 'DELETE' })).status;
+  const sendPoll = () =>
+    describeCall(otherBot, 'sendPoll', {
+      chat_id: supergroup.id,
+      question: 'Lunch?',
+      options: ['Pizza', 'Pasta'],
+    });
+  const describeAttributedUpdates = (updates: ReadonlyArray<Record<string, unknown>>) =>
+    updates.map((update) => {
+      const { from } = Object.values(update)[0] as { from: { id: number } };
+      return `${describeMembershipUpdates([update])[0]} by ${from.id}`;
+    });
+
+  // Grace restricts the other bot to text, which every surface shows and its sends obey.
+  const restriction = await restrict(grace.id, otherBot.bot.id, { can_send_messages: true });
+  const restricted = await getChatMember(otherBot.bot.id);
+  const pollWhileRestricted = await sendPoll();
+  const restrictionUpdates = [
+    describeAttributedUpdates(await readUpdates(moderatorBot.botApiPath)),
+    describeAttributedUpdates(await readUpdates(otherBot.botApiPath)),
+  ];
+
+  // An administrator the owner promoted, the owner, Grace herself, and accounts without the
+  // right are refused without changes.
+  const refusals = [
+    await restrict(grace.id, moderatorBot.bot.id, {}),
+    // Keeping every permission would demote the bot, which needs the right to promote.
+    await restrict(grace.id, moderatorBot.bot.id, everyEmulationApiPermission),
+    await lift(grace.id, ada.id),
+    await restrict(grace.id, grace.id, {}),
+    await restrict(linus.id, otherBot.bot.id, {}),
+    await lift(linus.id, otherBot.bot.id),
+    await restrict(grace.id, 999_999, {}),
+  ];
+  const afterRefusals = [
+    await getChatMember(otherBot.bot.id),
+    (await getChatMember(moderatorBot.bot.id)).status,
+    await readUpdates(moderatorBot.botApiPath),
+    await readUpdates(otherBot.botApiPath),
+  ];
+
+  // Grace lifts the restriction; lifting it again changes nothing.
+  const lifts = [await lift(grace.id, otherBot.bot.id), await lift(grace.id, otherBot.bot.id)];
+  const pollAfterLifting = (await sendPoll())[0];
+  const liftUpdates = [
+    await readUpdates(moderatorBot.botApiPath),
+    await readUpdates(otherBot.botApiPath),
+  ];
+
+  expectEqual(
+    [restriction, restricted, pollWhileRestricted],
+    [
+      204,
+      restrictedMember(
+        { id: otherBot.bot.id, is_bot: true, first_name: 'Test Bot', username: 'other_bot' },
+        ['can_send_messages'],
+      ),
+      [400, 'Bad Request: not enough rights to send polls to the chat'],
+    ],
+    'Expected the restriction to show and to bind the bot',
+  );
+  expectEqual(
+    restrictionUpdates,
+    [
+      [`chat_member ${otherBot.bot.id}: member -> restricted by ${grace.id}`],
+      [`my_chat_member ${otherBot.bot.id}: member -> restricted by ${grace.id}`],
+    ],
+    'Expected each bot to observe the restriction once, from Grace',
+  );
+  expectEqual(
+    refusals,
+    [403, 403, 409, 403, 403, 403, 404],
+    'Expected each refusal',
+  );
+  expectEqual(
+    afterRefusals,
+    [restricted, 'administrator', [], []],
+    'Expected refusals to change nothing and to send no update',
+  );
+  expectEqual(
+    [lifts, pollAfterLifting],
+    [[204, 204], 200],
+    'Expected Grace to lift the restriction once',
+  );
+  expectEqual(
+    liftUpdates.map(describeAttributedUpdates),
+    [
+      [`chat_member ${otherBot.bot.id}: restricted -> member by ${grace.id}`],
+      [`my_chat_member ${otherBot.bot.id}: restricted -> member by ${grace.id}`],
+    ],
+    'Expected each bot to observe the lifted restriction once, from Grace',
+  );
 });
 
 Deno.test('tests end temporary restrictions explicitly, as their dates normalize', async () => {

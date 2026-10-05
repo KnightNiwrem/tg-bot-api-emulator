@@ -2,10 +2,11 @@
 
 [Guide index](README.md) · [Feature reference: Supergroups](../../features/supergroups.md)
 
-This page shows how a supergroup's owner makes a bot an administrator, restricts members, and sets
-what members may do by default, and how a test asserts what an administrator bot does and what a
-restricted bot is refused. It builds on [Supergroups](supergroups.md); the examples use the
-[shared fixture](sessions-and-fixtures.md) and the [waiting pattern](observing-bot-behavior.md).
+This page shows how a supergroup's owner and its administrator accounts make a bot an administrator,
+restrict members, and set what members may do by default, and how a test asserts what an
+administrator bot does and what a restricted bot is refused. It builds on
+[Supergroups](supergroups.md); the examples use the [shared fixture](sessions-and-fixtures.md) and
+the [waiting pattern](observing-bot-behavior.md).
 
 ## A moderator bot
 
@@ -154,6 +155,75 @@ Deno.test('the owner promotes, titles and demotes the bot', () =>
   }));
 ```
 
+## Administrator accounts
+
+An account the owner promotes administers the supergroup within its own rights, as Telegram lets it.
+`account.promoteChatMember` and `account.demoteChatMember` need `can_promote_members`, grant only
+rights the account holds, and change only administrators the account may edit, as `can_be_edited`
+shows: those it promoted, directly or indirectly. `account.restrictChatMember` and
+`account.liftChatMemberRestriction` need `can_restrict_members`. No account changes the owner or
+itself. Bots receive each change from the account that made it, and a refused change fails with
+status 403 or 409 and changes nothing.
+[Account administrators](../../features/supergroups.md#account-administrators) lists the rules.
+
+```ts
+import { assert, assertEquals, assertRejects } from 'jsr:@std/assert@^1';
+import { EmulationClientError } from '../../../clients/typescript/mod.ts';
+import { withBotFixture } from './bot_fixture.ts';
+
+Deno.test('an administrator account promotes the bot within her own rights', () =>
+  withBotFixture({
+    handlers: (bot) => {
+      bot.on('my_chat_member', async (ctx) => {
+        if (ctx.myChatMember.new_chat_member.status !== 'administrator') return;
+        await ctx.reply(`Thanks for the promotion, ${ctx.from.first_name}!`);
+      });
+    },
+  }, async ({ session, botProfile, account, activity }) => {
+    const supergroup = await account.createSupergroup({ title: 'Team' });
+    const groupChat = { type: 'supergroup', chatId: supergroup.id } as const;
+    await account.addChatMember({ chat: groupChat, userId: botProfile.id });
+    const { account: grace } = await session.createAccount({ first_name: 'Grace' });
+    await account.addChatMember({ chat: groupChat, userId: grace.id });
+    await account.promoteChatMember({
+      chat: groupChat,
+      userId: grace.id,
+      rights: { can_promote_members: true, can_delete_messages: true },
+    });
+
+    // Grace may not grant a right she lacks, and the refusal changes nothing.
+    const refusal = await assertRejects(
+      () =>
+        grace.promoteChatMember({
+          chat: groupChat,
+          userId: botProfile.id,
+          rights: { can_pin_messages: true },
+        }),
+      EmulationClientError,
+    );
+    assertEquals(refusal.status, 403);
+
+    const beforePromoting = await activity.position();
+    await grace.promoteChatMember({
+      chat: groupChat,
+      userId: botProfile.id,
+      rights: { can_delete_messages: true },
+    });
+    const thanks = await activity.waitFor({
+      method: 'sendMessage',
+      chat_id: supergroup.id,
+      ok: true,
+    }, { after: beforePromoting });
+    assertEquals(thanks.parameters.text, 'Thanks for the promotion, Grace!');
+
+    const administrator = (await grace.getChatAdministrators({ chat: groupChat }))
+      .find(({ user_id }) => user_id === botProfile.id);
+    assert(administrator?.status === 'administrator');
+    assertEquals(administrator.promoted_by_user_id, grace.id);
+    assertEquals(administrator.can_be_edited, true);
+  }));
+```
+
 ## Restricting a member
 
 `account.restrictChatMember` restricts an account or a bot, member or not, to the permissions it
@@ -251,7 +321,7 @@ Deno.test('a bot restricted to text is refused photos until the restriction ends
   }));
 ```
 
-A restriction without `untilDate` lasts until the owner lifts it with
+A restriction without `untilDate` lasts until the owner or an administrator account lifts it with
 `account.liftChatMemberRestriction`. An account's message that its restriction withholds is refused
 with status 403, so the supergroup's bots never receive it.
 

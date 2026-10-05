@@ -604,13 +604,13 @@ Deno.test('SharedChatAdministrationService lets the owner promote and demote mem
       'changed',
       'changed',
       'changed',
-      'actor_not_authorized',
+      'not_enough_rights',
       'member_is_owner',
       'member_not_found',
       'no_rights_granted',
     ])
   ) {
-    throw new Error(`Expected the owner alone to change roles, received ${outcomes.join()}`);
+    throw new Error(`Expected the owner to change roles, received ${outcomes.join()}`);
   }
 
   // Repeating a promotion or a demotion publishes nothing; any right includes can_manage_chat.
@@ -645,6 +645,354 @@ Deno.test('SharedChatAdministrationService lets the owner promote and demote mem
   ) {
     throw new Error(`Expected the administrator to leave, received ${JSON.stringify(departure)}`);
   }
+});
+
+Deno.test('SharedChatAdministrationService lets administrator accounts promote within their rights and appointees', () => {
+  const fixture = createModerationFixture();
+  const {
+    owner,
+    member: grace,
+    stranger,
+    moderatorBot,
+    otherBot,
+    supergroup,
+    sharedChats,
+    publishedEvents,
+    sharedChatAdministration,
+  } = fixture;
+  const hopper = createAccount(fixture.virtualUsers, 'Hopper');
+  assertMemberAdded(sharedChatAdministration.addChatMember({
+    actorAccountId: owner.profile.id,
+    chatId: supergroup.id,
+    memberId: hopper.profile.id,
+  }));
+  const changeRole = (
+    actorAccountId: number,
+    memberId: number,
+    rights?: readonly SupergroupAdministratorRight[],
+  ) => {
+    const input = { actorAccountId, chatId: supergroup.id, memberId };
+    if (rights === undefined) {
+      const demotion = sharedChatAdministration.demoteChatMember(input);
+      return demotion.demoted ? 'changed' : demotion.reason;
+    }
+    const promotion = sharedChatAdministration.promoteChatMember({
+      ...input,
+      rights: grantSupergroupAdministratorRights(rights),
+    });
+    return promotion.promoted ? 'changed' : promotion.reason;
+  };
+  const delegationOf = (userId: number) => {
+    const membership = sharedChats.getChatMembership(supergroup.id, userId);
+    return membership?.status === 'administrator'
+      ? [membership.promotedById, membership.promoterTenureId ?? 'owner']
+      : membership?.status;
+  };
+  const tenureOf = (userId: number) => {
+    const membership = sharedChats.getChatMembership(supergroup.id, userId);
+    return membership?.status === 'administrator' ? membership.tenureId : undefined;
+  };
+  const describeChanges = () =>
+    publishedEvents.splice(0).map((event) =>
+      event.type === 'chat_member_status_changed'
+        ? `${event.actorId} ${event.memberId}: ${describeStatus(event.oldStatus)} -> ${
+          describeStatus(event.newStatus)
+        }`
+        : event.type
+    );
+  const snapshotStandings = () =>
+    JSON.stringify(
+      [owner, grace, hopper, stranger, moderatorBot, otherBot].map((user) =>
+        sharedChats.getChatMembership(supergroup.id, user.profile.id) ?? null
+      ),
+      (_key, value: unknown) => value instanceof Set ? [...value].sort() : value,
+    );
+  /** Expects each attempt's outcome, with no standing changed and no event published. */
+  const expectNoChanges = (
+    attempts: ReadonlyArray<readonly [() => string, string]>,
+    message: string,
+  ) => {
+    const standingsBefore = snapshotStandings();
+    expectEqual(
+      attempts.map(([attempt]) => attempt()),
+      attempts.map(([, outcome]) => outcome),
+      message,
+    );
+    expectEqual(describeChanges(), [], `${message}, publishing nothing`);
+    expectEqual(snapshotStandings(), standingsBefore, `${message}, changing no standing`);
+  };
+
+  changeRole(owner.profile.id, grace.profile.id, ['can_promote_members', 'can_delete_messages']);
+  changeRole(owner.profile.id, otherBot.profile.id, ['can_delete_messages']);
+  describeChanges();
+  const graceId = grace.profile.id;
+
+  // Grace promotes within her rights and becomes the promoter, in her tenure.
+  expectEqual(
+    [
+      changeRole(graceId, moderatorBot.profile.id, ['can_delete_messages']),
+      changeRole(graceId, moderatorBot.profile.id, ['can_delete_messages']),
+      delegationOf(moderatorBot.profile.id),
+    ],
+    ['changed', 'changed', [graceId, tenureOf(graceId)]],
+    'Expected Grace to promote the bot once, linked to her tenure',
+  );
+  expectEqual(
+    describeChanges(),
+    [`${graceId} ${moderatorBot.profile.id}: member -> administrator(can_delete_messages,can_manage_chat)`],
+    'Expected the promotion to be published once, from Grace',
+  );
+
+  // Refusals change nothing, and neither do changes that change nothing.
+  expectNoChanges([
+    [() => changeRole(graceId, hopper.profile.id, ['can_pin_messages']), 'rights_not_held'],
+    [
+      () =>
+        changeRole(graceId, moderatorBot.profile.id, ['can_delete_messages', 'can_pin_messages']),
+      'rights_not_held',
+    ],
+    [() => changeRole(graceId, otherBot.profile.id), 'administrator_not_promoted_by_actor'],
+    [
+      () => changeRole(graceId, otherBot.profile.id, ['can_delete_messages']),
+      'administrator_not_promoted_by_actor',
+    ],
+    [() => changeRole(graceId, graceId), 'cannot_manage_self'],
+    [() => changeRole(graceId, graceId, ['can_promote_members']), 'cannot_manage_self'],
+    [() => changeRole(graceId, owner.profile.id), 'member_is_owner'],
+    [() => changeRole(graceId, stranger.profile.id, ['can_delete_messages']), 'not_a_member'],
+    [
+      () => changeRole(stranger.profile.id, hopper.profile.id, ['can_delete_messages']),
+      'actor_not_a_member',
+    ],
+    [() => changeRole(hopper.profile.id, moderatorBot.profile.id), 'not_enough_rights'],
+    [
+      () => changeRole(hopper.profile.id, otherBot.profile.id, ['can_delete_messages']),
+      'not_enough_rights',
+    ],
+    [() => changeRole(hopper.profile.id, stranger.profile.id), 'not_a_member'],
+    // Demoting a user that is no administrator changes nothing, which needs no right.
+    [() => changeRole(hopper.profile.id, hopper.profile.id), 'changed'],
+  ], 'Expected refusals for missing rights, excessive grants, and protected targets');
+
+  // Grace edits the bot she promoted, and a delegate she lets promote edits its own appointee.
+  expectEqual(
+    [
+      changeRole(graceId, moderatorBot.profile.id, ['can_promote_members']),
+      changeRole(graceId, hopper.profile.id, ['can_promote_members', 'can_delete_messages']),
+      changeRole(hopper.profile.id, stranger.profile.id, ['can_delete_messages']),
+      changeRole(graceId, hopper.profile.id, ['can_delete_messages']),
+      changeRole(hopper.profile.id, moderatorBot.profile.id),
+    ],
+    ['changed', 'changed', 'not_a_member', 'changed', 'not_enough_rights'],
+    'Expected Grace to edit her appointees, whose rights she bounds',
+  );
+  expectEqual(
+    describeChanges(),
+    [
+      `${graceId} ${moderatorBot.profile.id}: administrator(can_delete_messages,can_manage_chat) -> ` +
+      'administrator(can_manage_chat,can_promote_members)',
+      `${graceId} ${hopper.profile.id}: member -> ` +
+      'administrator(can_delete_messages,can_manage_chat,can_promote_members)',
+      `${graceId} ${hopper.profile.id}: administrator(can_delete_messages,can_manage_chat,` +
+      'can_promote_members) -> administrator(can_delete_messages,can_manage_chat)',
+    ],
+    'Expected each change from Grace',
+  );
+
+  // Once the owner sets Hopper's rights, the owner is his promoter, and Grace no longer edits him.
+  expectEqual(
+    [
+      changeRole(owner.profile.id, hopper.profile.id, ['can_pin_messages']),
+      delegationOf(hopper.profile.id),
+      changeRole(graceId, hopper.profile.id),
+    ],
+    ['changed', [owner.profile.id, 'owner'], 'administrator_not_promoted_by_actor'],
+    'Expected the owner to take over Hopper',
+  );
+
+  // Demoted and promoted again, Grace starts a new tenure and edits none of her earlier appointees.
+  const graceTenureBefore = tenureOf(graceId);
+  changeRole(owner.profile.id, graceId);
+  changeRole(owner.profile.id, graceId, ['can_promote_members', 'can_delete_messages']);
+  describeChanges();
+  expectEqual(
+    [tenureOf(graceId) === graceTenureBefore, delegationOf(moderatorBot.profile.id)],
+    [false, [graceId, graceTenureBefore]],
+    'Expected a new tenure, while the bot still names Grace as its promoter',
+  );
+  expectNoChanges(
+    [[() => changeRole(graceId, moderatorBot.profile.id), 'administrator_not_promoted_by_actor']],
+    'Expected Grace to edit no appointee of her earlier tenure',
+  );
+  expectEqual(
+    [changeRole(owner.profile.id, moderatorBot.profile.id), describeChanges()],
+    [
+      'changed',
+      [
+        `${owner.profile.id} ${moderatorBot.profile.id}: ` +
+        'administrator(can_manage_chat,can_promote_members) -> member',
+      ],
+    ],
+    'Expected the owner to demote the bot',
+  );
+});
+
+Deno.test('SharedChatAdministrationService lets administrator accounts restrict and lift restrictions', () => {
+  const fixture = createModerationFixture();
+  const {
+    owner,
+    member: grace,
+    stranger,
+    moderatorBot,
+    otherBot,
+    supergroup,
+    sharedChats,
+    publishedEvents,
+    sharedChatAdministration,
+  } = fixture;
+  const hopper = createAccount(fixture.virtualUsers, 'Hopper');
+  assertMemberAdded(sharedChatAdministration.addChatMember({
+    actorAccountId: owner.profile.id,
+    chatId: supergroup.id,
+    memberId: hopper.profile.id,
+  }));
+  const graceId = grace.profile.id;
+  const sendingOnly: ChatPermissions = new Set(['can_send_messages']);
+  const restrict = (
+    actorAccountId: number,
+    memberId: number,
+    permissions: ChatPermissions = sendingOnly,
+  ) => {
+    const result = sharedChatAdministration.restrictChatMemberAsAccount({
+      actorAccountId,
+      chatId: supergroup.id,
+      memberId,
+      permissions,
+    });
+    return result.changed ? 'changed' : result.reason;
+  };
+  const lift = (actorAccountId: number, memberId: number) => {
+    const result = sharedChatAdministration.liftRestrictionAsAccount({
+      actorAccountId,
+      chatId: supergroup.id,
+      memberId,
+    });
+    return result.changed ? 'changed' : result.reason;
+  };
+  const promote = (
+    actorAccountId: number,
+    memberId: number,
+    rights: SupergroupAdministratorRight[],
+  ) =>
+    sharedChatAdministration.promoteChatMember({
+      actorAccountId,
+      chatId: supergroup.id,
+      memberId,
+      rights: grantSupergroupAdministratorRights(rights),
+    });
+  const statusOf = (userId: number) =>
+    describeStatus(
+      sharedChats.getChatMembership(supergroup.id, userId) ??
+        sharedChats.getFormerMemberStatus(supergroup.id, userId) ?? { status: 'left' },
+    );
+  const describeChanges = () =>
+    publishedEvents.splice(0).map((event) =>
+      event.type === 'chat_member_status_changed'
+        ? `${event.actorId} ${event.memberId}: ${describeStatus(event.oldStatus)} -> ${
+          describeStatus(event.newStatus)
+        }`
+        : event.type
+    );
+
+  // Without the right, Grace only makes changes that change nothing.
+  const withoutRights = [
+    restrict(graceId, hopper.profile.id),
+    lift(graceId, hopper.profile.id),
+    restrict(graceId, hopper.profile.id, ALL_CHAT_PERMISSIONS),
+  ];
+  promote(owner.profile.id, graceId, ['can_restrict_members']);
+  promote(owner.profile.id, moderatorBot.profile.id, ['can_delete_messages']);
+  describeChanges();
+
+  const withRestrictionRight = [
+    restrict(graceId, hopper.profile.id),
+    statusOf(hopper.profile.id),
+    restrict(graceId, hopper.profile.id),
+    // A user that is not a member is restricted before it joins.
+    restrict(graceId, stranger.profile.id),
+    statusOf(stranger.profile.id),
+    lift(graceId, hopper.profile.id),
+    lift(graceId, hopper.profile.id),
+    statusOf(hopper.profile.id),
+  ];
+  const changesWithRestrictionRight = describeChanges();
+  const refusals = [
+    restrict(graceId, owner.profile.id),
+    lift(graceId, owner.profile.id),
+    restrict(graceId, graceId),
+    restrict(graceId, moderatorBot.profile.id),
+    restrict(graceId, moderatorBot.profile.id, ALL_CHAT_PERMISSIONS),
+    restrict(stranger.profile.id, hopper.profile.id),
+    restrict(graceId, 999),
+    statusOf(moderatorBot.profile.id),
+  ];
+  const changesFromRefusals = describeChanges();
+
+  // With the right to promote too, Grace restricts and demotes an administrator she promoted.
+  promote(owner.profile.id, graceId, ['can_restrict_members', 'can_promote_members']);
+  promote(graceId, otherBot.profile.id, ['can_restrict_members']);
+  promote(graceId, hopper.profile.id, ['can_restrict_members']);
+  describeChanges();
+  const withPromotionRight = [
+    restrict(graceId, otherBot.profile.id),
+    statusOf(otherBot.profile.id),
+    restrict(graceId, hopper.profile.id, ALL_CHAT_PERMISSIONS),
+    statusOf(hopper.profile.id),
+    restrict(graceId, moderatorBot.profile.id, ALL_CHAT_PERMISSIONS),
+  ];
+
+  expectEqual(
+    [...withoutRights, ...withRestrictionRight, ...refusals, ...withPromotionRight],
+    [
+      'not_enough_rights',
+      'changed',
+      'changed',
+      'changed',
+      'restricted member(can_send_messages)',
+      'changed',
+      'changed',
+      'restricted non-member(can_send_messages)',
+      'changed',
+      'changed',
+      'member',
+      'member_is_owner',
+      'member_is_owner',
+      'cannot_manage_self',
+      'administrator_not_promoted_by_actor',
+      'not_enough_rights_to_promote',
+      'actor_not_a_member',
+      'member_not_found',
+      'administrator(can_delete_messages,can_manage_chat)',
+      'changed',
+      'restricted member(can_send_messages)',
+      'changed',
+      'member',
+      'administrator_not_promoted_by_actor',
+    ],
+    'Expected restrictions as the account rights and appointees allow',
+  );
+  expectEqual(
+    [...changesWithRestrictionRight, ...changesFromRefusals, ...describeChanges()],
+    [
+      `${graceId} ${hopper.profile.id}: member -> restricted member(can_send_messages)`,
+      `${graceId} ${stranger.profile.id}: left -> restricted non-member(can_send_messages)`,
+      `${graceId} ${hopper.profile.id}: restricted member(can_send_messages) -> member`,
+      `${graceId} ${otherBot.profile.id}: administrator(can_manage_chat,can_restrict_members) -> ` +
+      'restricted member(can_send_messages)',
+      `${graceId} ${hopper.profile.id}: administrator(can_manage_chat,can_restrict_members) -> member`,
+    ],
+    'Expected each change, and only changes, to be published from Grace',
+  );
 });
 
 Deno.test('SharedChatAdministrationService lets bots ban and unban users in TDLib order', () => {

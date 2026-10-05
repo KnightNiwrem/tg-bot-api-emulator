@@ -671,6 +671,78 @@ Deno.test('TypeScript client restricts members and changes what members may do b
   await session.end();
 });
 
+Deno.test('TypeScript client lets administrator accounts promote and restrict within their rights', async () => {
+  const { client } = createInProcessClient();
+  const session = await client.createSession();
+  const { account: owner } = await session.createAccount({ first_name: 'Ada' });
+  const { account: grace } = await session.createAccount({ first_name: 'Grace' });
+  const { account: hopper } = await session.createAccount({ first_name: 'Hopper' });
+  const { account: linus } = await session.createAccount({ first_name: 'Linus' });
+  const supergroup = await owner.createSupergroup({ title: 'Team' });
+  const chat = { type: 'supergroup', chatId: supergroup.id } as const;
+  for (const userId of [grace.id, hopper.id, linus.id]) {
+    await owner.addChatMember({ chat, userId });
+  }
+  await owner.promoteChatMember({
+    chat,
+    userId: grace.id,
+    rights: { can_promote_members: true, can_restrict_members: true },
+  });
+  const statusOf = async (attempt: () => Promise<void>) => {
+    try {
+      await attempt();
+      return 204;
+    } catch (error) {
+      if (error instanceof EmulationClientError && error.status !== undefined) {
+        return error.status;
+      }
+      throw error;
+    }
+  };
+
+  const outcomes = [
+    await statusOf(() =>
+      grace.promoteChatMember({ chat, userId: hopper.id, rights: { can_restrict_members: true } })
+    ),
+    // Grace grants only rights she holds, and edits neither the owner nor herself.
+    await statusOf(() =>
+      grace.promoteChatMember({ chat, userId: hopper.id, rights: { can_pin_messages: true } })
+    ),
+    await statusOf(() => grace.demoteChatMember({ chat, userId: owner.id })),
+    await statusOf(() => grace.demoteChatMember({ chat, userId: grace.id })),
+    // Hopper, an administrator without the right to promote, edits nobody.
+    await statusOf(() => hopper.demoteChatMember({ chat, userId: grace.id })),
+    await statusOf(() =>
+      grace.restrictChatMember({ chat, userId: linus.id, permissions: { can_send_photos: true } })
+    ),
+    // Hopper restricts only administrators he promoted, and Linus holds no right.
+    await statusOf(() => hopper.restrictChatMember({ chat, userId: grace.id, permissions: {} })),
+    await statusOf(() => linus.liftChatMemberRestriction({ chat, userId: linus.id })),
+    await statusOf(() => grace.liftChatMemberRestriction({ chat, userId: linus.id })),
+  ];
+  const hopperAsGraceSees = (await grace.getChatAdministrators({ chat }))
+    .find(({ user_id }) => user_id === hopper.id);
+  const demotion = await statusOf(() => grace.demoteChatMember({ chat, userId: hopper.id }));
+  const administratorIds = (await owner.getChatAdministrators({ chat })).map(({ user_id }) =>
+    user_id
+  );
+
+  if (
+    JSON.stringify(outcomes) !==
+      JSON.stringify([204, 403, 409, 403, 403, 204, 403, 403, 204]) ||
+    hopperAsGraceSees?.status !== 'administrator' ||
+    hopperAsGraceSees.promoted_by_user_id !== grace.id || !hopperAsGraceSees.can_be_edited ||
+    demotion !== 204 || JSON.stringify(administratorIds) !== JSON.stringify([owner.id, grace.id])
+  ) {
+    throw new Error(
+      `Expected Grace to administer within her rights, received ${
+        JSON.stringify({ outcomes, hopperAsGraceSees, demotion, administratorIds })
+      }`,
+    );
+  }
+  await session.end();
+});
+
 Deno.test('TypeScript client joins supergroups through invite links and by username', async () => {
   const { api, client } = createInProcessClient();
   const session = await client.createSession();

@@ -6,12 +6,12 @@
 
 ## Membership and messages
 
-An account creates a supergroup and becomes its owner. The owner adds accounts and bots, removes
-members, and promotes/demotes administrators through the emulation API; administrator bots promote
-and demote with `promoteChatMember`. Accounts also join by themselves, through an administrator
-bot's [invite link](invite-links.md), or a public supergroup by its username. Members can leave;
-bots leave through `leaveChat`. Removed members are banned until unbanned or added back by the
-owner.
+An account creates a supergroup and becomes its owner. The owner adds accounts and bots and removes
+members through the emulation API. The owner and [administrator accounts](#account-administrators)
+promote, demote and restrict members there, as administrator bots do with `promoteChatMember` and
+`restrictChatMember`. Accounts also join by themselves, through an administrator bot's
+[invite link](invite-links.md), or a public supergroup by its username. Members can leave; bots
+leave through `leaveChat`. Removed members are banned until unbanned or added back by the owner.
 
 Text, photos, documents, replies, inline keyboards, callbacks, forwarding and edits use the same Bot
 API methods as private chats, with a negative supergroup chat ID. Message IDs belong to the
@@ -55,18 +55,19 @@ unsubscribed recipient from redirecting a reply to another privacy-enabled bot.
 
 ## Administrator operations
 
-Owners, and administrator bots with `can_promote_members`, grant administrator rights by their Bot
-API names. Promotion and demotion update an affected bot's `my_chat_member` status, and
-administrator status bypasses privacy mode. The implemented rights with behavioral effects are:
+Owners, and administrators with `can_promote_members`, accounts and bots alike, grant administrator
+rights by their Bot API names. Promotion and demotion update an affected bot's `my_chat_member`
+status, and administrator status bypasses privacy mode. The implemented rights with behavioral
+effects are:
 
 | Right                  | Effect                                                                                                               |
 | ---------------------- | -------------------------------------------------------------------------------------------------------------------- |
 | `can_change_info`      | Call `setChatTitle` and `setChatDescription`                                                                         |
 | `can_delete_messages`  | Delete other members' content and service messages                                                                   |
 | `can_invite_users`     | Call `createChatInviteLink`, decide join requests, and receive `chat_join_request` updates when subscribed           |
-| `can_restrict_members` | Call `banChatMember`, `unbanChatMember`, `restrictChatMember` and `setChatPermissions`                               |
+| `can_restrict_members` | Call `banChatMember`, `unbanChatMember`, `restrictChatMember` and `setChatPermissions`, or restrict as an account    |
 | `can_pin_messages`     | Call `pinChatMessage` and `unpinChatMessage`, under the [pinning rules](pinned-messages.md#pinning-with-the-bot-api) |
-| `can_promote_members`  | Call `promoteChatMember`, granting the rights the bot holds, and `setChatAdministratorCustomTitle`                   |
+| `can_promote_members`  | Call `promoteChatMember` and `setChatAdministratorCustomTitle`, or promote as an account, granting held rights       |
 
 ### Administrator delegation
 
@@ -88,6 +89,44 @@ Members inspect the owner and administrators with
 `GET /sessions/{sessionId}/accounts/{accountId}/conversations/supergroup/{chatId}/administrators`,
 or the TypeScript client's `getChatAdministrators`: each administrator shows its rights, custom
 title, `promoted_by_user_id`, and `can_be_edited` as decided for the inspecting account.
+
+### Account administrators
+
+Accounts promote, demote and restrict through the emulation API under the delegation rules bots
+follow. Telegram's servers receive both through the same methods: TDLib's
+[`promote_channel_participant`][promote-participant] and
+[`restrict_channel_participant`][restrict-participant] check `can_promote_members` and
+`can_restrict_members` for users and bots alike, then call [`channels.editAdmin`][edit-admin] and
+[`channels.editBanned`][edit-banned], which "both users and bots can use". Telegram Desktop shows
+the rules its users meet: its [`canEditAdmin` and `canRestrictParticipant`][desktop-admin-checks]
+let an administrator other than the owner act only with `add_admins` or `ban_users`, never on
+itself, and on another administrator only when the servers mark it editable; its
+[rights editor][desktop-rights-editor] withholds the rights the editing administrator lacks, as
+[`chatAdminRights`][admin-rights] documents `add_admins`: others get "the same (or more limited)
+permissions".
+
+| Operation                                                | Owner             | Administrator account                                                                             | Other member |
+| -------------------------------------------------------- | ----------------- | ------------------------------------------------------------------------------------------------- | ------------ |
+| Promote a member, or change an administrator's rights    | Anyone but itself | With `can_promote_members`, granting only rights it holds, to members and editable administrators | Refused      |
+| Demote an administrator                                  | Anyone but itself | With `can_promote_members`, administrators it may edit                                            | Refused      |
+| Restrict a user, member or not, or lift its restriction  | Anyone but itself | With `can_restrict_members`, users other than itself and administrators it promoted               | Refused      |
+| Keep an administrator every permission, which demotes it | Anyone but itself | With `can_promote_members`, administrators it promoted                                            | Refused      |
+
+An account may edit an administrator as `can_be_edited` shows it: it holds `can_promote_members` and
+promoted the administrator, directly or through administrators it promoted, as described under
+[administrator delegation](#administrator-delegation); the chain may run through bots. Restricting
+an administrator follows the same chain, as for a bot's ban or restriction. Whoever changes an
+administrator's rights becomes its promoter, so the owner, by changing an appointee's rights, takes
+it out of its promoter's reach.
+
+Checks run in this order: the account and supergroup must exist (`404`), and the account must be a
+member (`403`); the user must exist (`404`). The owner is refused (`409`), and so is a user that is
+not a member for a promotion or demotion. An operation that changes nothing then succeeds without
+rights; for an administrator, only one the account may edit counts as unchanged, as TDLib compares
+`can_be_edited` too. Otherwise the account must not act on itself, must hold the right, must have
+promoted an administrator it changes, and must hold every right it grants; each refusal answers
+`403` and changes nothing. Changes reach bots as `chat_member` and `my_chat_member` updates from the
+account, and no service message records them.
 
 ### Bot promotion
 
@@ -332,12 +371,13 @@ No service message records a restriction. A change reaches administrator bots su
 `chat_member`, and a restricted bot subscribed to `my_chat_member`, with its old and new standing;
 `getChatMember` shows a `restricted` user with `until_date`, every permission, and `is_member`.
 
-The owner restricts users through the emulation API with
+The owner and [administrator accounts](#account-administrators) with `can_restrict_members` restrict
+users through the emulation API with
 `PUT /sessions/{sessionId}/accounts/{accountId}/conversations/supergroup/{chatId}/restrictions/{userId}`
-and lifts a restriction with `DELETE` on the same path, or the TypeScript client's
+and lift a restriction with `DELETE` on the same path, or the TypeScript client's
 `restrictChatMember` and `liftChatMemberRestriction`. The request lists the kept permissions, none
-implying another, and an optional `until_date`. As Telegram lets an owner do, a restricted
-administrator loses its rights and custom title.
+implying another, and an optional `until_date`. A restricted administrator loses its rights and
+custom title.
 
 ### Restriction ends
 
@@ -412,10 +452,6 @@ production read permissions.
   `can_manage_video_chats` and the story rights, are stored without corresponding enforcement. Tests
   need their behavioral effects as the associated features are supported.
 
-- **Restrictions by administrator accounts.** Only the owner restricts users through the emulation
-  API; an administrator account with `can_restrict_members` cannot.
-- **Promotions by administrator accounts.** Only the owner promotes and demotes through the
-  emulation API; an administrator account with `can_promote_members` cannot.
 - **Anonymous administrators.** Anonymous administration and its message attribution are absent.
 - **The invite link lifecycle.** [Invite links](invite-links.md#real-gaps) cannot be edited, revoked
   or exported.
@@ -458,6 +494,14 @@ not show. The emulator chooses where they are not visible:
   owner then edits, even after the promoter is promoted again. `promoted_by` is all Telegram exposes
   of a promotion; tying it to the tenure keeps a promoter that its old appointee promotes back from
   editing that appointee, which would let two administrators edit each other.
+- An account never changes its own standing through the emulation API, as Telegram Desktop never
+  offers it, although TDLib lets a user ask to demote itself.
+- Telegram Desktop decides whether a non-owner may restrict an administrator from the servers'
+  `can_edit` mark, whose rule is not public; the emulator lets an account with
+  `can_restrict_members` restrict the administrators it promoted, directly or indirectly, as it lets
+  bots, without also asking for `can_promote_members`.
+- Telegram Desktop drops rights its user lacks before it asks the servers, which refuse the rest
+  with `RIGHT_FORBIDDEN`; the emulator refuses a promotion that grants a right the account lacks.
 
 ## Local evidence
 
@@ -494,6 +538,10 @@ not show. The emulator chooses where they are not visible:
 [promote-method]: https://github.com/tdlib/telegram-bot-api/blob/e3e9dd8e5b3d7ab8537cd5a10dc31d5ffa8f82d1/telegram-bot-api/Client.cpp#L16397-L16449
 [administrator-rights]: https://github.com/tdlib/td/blob/bc9c263e2bfee06aaab41e82db51a103376030bc/td/telegram/DialogParticipant.cpp#L69-L115
 [edit-admin]: https://core.telegram.org/method/channels.editAdmin
+[edit-banned]: https://core.telegram.org/method/channels.editBanned
+[admin-rights]: https://core.telegram.org/constructor/chatAdminRights
+[desktop-admin-checks]: https://github.com/telegramdesktop/tdesktop/blob/d8594c011756265de4385408540bd9f7c787a003/Telegram/SourceFiles/data/data_channel.cpp#L835-L872
+[desktop-rights-editor]: https://github.com/telegramdesktop/tdesktop/blob/d8594c011756265de4385408540bd9f7c787a003/Telegram/SourceFiles/boxes/peers/edit_participant_box.cpp#L543-L581
 [add-participant]: https://github.com/tdlib/td/blob/bc9c263e2bfee06aaab41e82db51a103376030bc/td/telegram/DialogParticipantManager.cpp#L2670-L2676
 [promote-participant]: https://github.com/tdlib/td/blob/bc9c263e2bfee06aaab41e82db51a103376030bc/td/telegram/DialogParticipantManager.cpp#L2937-L2965
 [ban-expiry]: https://github.com/tdlib/td/blob/bc9c263e2bfee06aaab41e82db51a103376030bc/td/telegram/DialogParticipant.cpp#L595-L715

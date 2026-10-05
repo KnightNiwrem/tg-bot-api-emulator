@@ -1,6 +1,7 @@
 import { Bot } from 'https://cdn.jsdelivr.net/gh/grammyjs/grammY@^1.46.0/src/bot.ts';
 import { webhookCallback } from 'https://cdn.jsdelivr.net/gh/grammyjs/grammY@^1.46.0/src/convenience/webhook.ts';
 import {
+  createSession,
   createTestSession,
   type EmulationApi,
   requestJson,
@@ -40,10 +41,13 @@ const SUPERGROUP_ADMINISTRATOR_RIGHTS = [
 /**
  * Creates a session where Ada owns a supergroup with Grace and Hopper, accounts, and two bots
  * subscribed to membership updates. Ada promotes the delegating bot and Grace, both with
- * `can_promote_members`; Linus is an account outside the supergroup.
+ * `can_promote_members`; Linus is an account outside the supergroup. The session is created on
+ * `existingApi` when given, or on an API of its own.
  */
-async function createPromotionFixture() {
-  const { api, sessionPath } = await createTestSession();
+async function createPromotionFixture(existingApi?: EmulationApi) {
+  const { api, sessionPath } = existingApi === undefined
+    ? await createTestSession()
+    : { api: existingApi, sessionPath: await createSession(existingApi) };
   const createAccount = async (firstName: string) =>
     (await requestJson<{ account: { id: number; first_name: string } }>(
       api,
@@ -704,6 +708,241 @@ Deno.test('promoteChatMember refuses what Telegram refuses, without changing any
     ],
     [[200, true], { user: grace, status: 'member' }],
     'Expected the demotion of a restricted member to lift its restriction',
+  );
+});
+
+/** Describes membership updates as their kind, actor, member, and old and new status. */
+function describeAttributedUpdates(updates: ReadonlyArray<Record<string, unknown>>): string[] {
+  return updates.map((update) => {
+    const [kind, change] = Object.entries(update)[0];
+    const { from, old_chat_member, new_chat_member } = change as {
+      from: { id: number };
+      old_chat_member: { status: string };
+      new_chat_member: { user: { id: number }; status: string };
+    };
+    return `${kind} by ${from.id} ${new_chat_member.user.id}: ${old_chat_member.status} -> ${new_chat_member.status}`;
+  });
+}
+
+Deno.test('an administrator account promotes and demotes within its rights, as bots observe', async () => {
+  const {
+    api,
+    ada,
+    grace,
+    hopper,
+    linus,
+    delegatingBot,
+    otherBot,
+    supergroupPath,
+    promoteAsOwner,
+    readUpdates,
+    getChatMember,
+    getAdministratorsAsAccount,
+  } = await createPromotionFixture();
+  await promoteAsOwner(grace.id, { can_promote_members: true, can_delete_messages: true });
+  for (const bot of [delegatingBot, otherBot]) {
+    await readUpdates(bot);
+  }
+  const administratorPath = (actorId: number, userId: number) =>
+    `${supergroupPath(actorId)}/administrators/${userId}`;
+  const promote = async (actorId: number, userId: number, rights: Record<string, boolean>) =>
+    (await api.request(administratorPath(actorId, userId), jsonRequest('PUT', rights))).status;
+  const demote = async (actorId: number, userId: number) =>
+    (await api.request(administratorPath(actorId, userId), { method: 'DELETE' })).status;
+
+  // Grace promotes the other bot, and promoting it with the same rights again changes nothing.
+  const promotions = [
+    await promote(grace.id, otherBot.bot.id, { can_delete_messages: true }),
+    await promote(grace.id, otherBot.bot.id, { can_delete_messages: true }),
+  ];
+  const promotedAsDelegatingBotSees = await getChatMember(delegatingBot, otherBot.bot.id);
+  const promotedAsOwnerSees = (await getAdministratorsAsAccount(ada.id)).body.administrators;
+  const promotedAsGraceSees = (await getAdministratorsAsAccount(grace.id)).body.administrators;
+  const promotionUpdates = [await readUpdates(delegatingBot), await readUpdates(otherBot)];
+
+  // Excessive grants, protected administrators, and the owner are refused without changes.
+  const refusals = [
+    await promote(grace.id, hopper.id, { can_restrict_members: true }),
+    await promote(grace.id, otherBot.bot.id, { can_delete_messages: true, can_pin_messages: true }),
+    await promote(grace.id, delegatingBot.bot.id, { can_delete_messages: true }),
+    await demote(grace.id, delegatingBot.bot.id),
+    await demote(grace.id, grace.id),
+    await demote(grace.id, ada.id),
+    await promote(grace.id, linus.id, { can_delete_messages: true }),
+    await promote(linus.id, hopper.id, { can_delete_messages: true }),
+    await demote(hopper.id, otherBot.bot.id),
+    await promote(grace.id, 999_999, { can_delete_messages: true }),
+    await promote(grace.id, hopper.id, {}),
+  ];
+  const administratorsAfterRefusals = await getAdministratorsAsAccount(ada.id);
+  const refusalUpdates = [await readUpdates(delegatingBot), await readUpdates(otherBot)];
+
+  // Grace demotes the bot she promoted; demoting it again changes nothing.
+  const demotions = [
+    await demote(grace.id, otherBot.bot.id),
+    await demote(grace.id, otherBot.bot.id),
+  ];
+
+  expectEqual(promotions, [204, 204], 'Expected Grace to promote the bot');
+  expectEqual(
+    promotedAsDelegatingBotSees,
+    administratorMember(botUser(otherBot, 'other_bot'), ['can_delete_messages'], {
+      canBeEdited: false,
+    }),
+    'Expected an administrator bot that did not promote it to see it as fixed',
+  );
+  const findOtherBot = (administrators: ReadonlyArray<Record<string, unknown>>) =>
+    administrators.find(({ user_id }) => user_id === otherBot.bot.id);
+  expectEqual(
+    [findOtherBot(promotedAsOwnerSees), findOtherBot(promotedAsGraceSees)],
+    [true, true].map((canBeEdited) =>
+      administratorForAccount(otherBot.bot.id, ['can_delete_messages'], {
+        promotedById: grace.id,
+        canBeEdited,
+      })
+    ),
+    'Expected Grace to be the promoter, whom the owner and Grace may edit',
+  );
+  expectEqual(
+    promotionUpdates.map(describeAttributedUpdates),
+    [
+      [`chat_member by ${grace.id} ${otherBot.bot.id}: member -> administrator`],
+      [`my_chat_member by ${grace.id} ${otherBot.bot.id}: member -> administrator`],
+    ],
+    'Expected the promotion to reach both bots once, from Grace',
+  );
+  expectEqual(
+    refusals,
+    [403, 403, 403, 403, 403, 409, 409, 403, 403, 404, 400],
+    'Expected each refusal',
+  );
+  expectEqual(
+    [administratorsAfterRefusals.body.administrators, refusalUpdates],
+    [promotedAsOwnerSees, [[], []]],
+    'Expected refusals to change nothing and to send no update',
+  );
+  expectEqual(demotions, [204, 204], 'Expected Grace to demote the bot');
+  expectEqual(
+    [
+      describeAttributedUpdates(await readUpdates(delegatingBot)),
+      describeAttributedUpdates(await readUpdates(otherBot)),
+    ],
+    [
+      [`chat_member by ${grace.id} ${otherBot.bot.id}: administrator -> member`],
+      [`my_chat_member by ${grace.id} ${otherBot.bot.id}: administrator -> member`],
+    ],
+    'Expected the demotion to reach both bots once, from Grace',
+  );
+});
+
+Deno.test('accounts and bots edit administrators along one chain of promotions', async () => {
+  const {
+    api,
+    ada,
+    grace,
+    hopper,
+    otherBot,
+    supergroup,
+    supergroupPath,
+    promoteAsOwner,
+    callBot,
+    getAdministratorsAsAccount,
+  } = await createPromotionFixture();
+  const accountChange = async (
+    actorId: number,
+    userId: number,
+    rights?: Record<string, boolean>,
+  ) =>
+    (await api.request(
+      `${supergroupPath(actorId)}/administrators/${userId}`,
+      rights === undefined ? { method: 'DELETE' } : jsonRequest('PUT', rights),
+    )).status;
+  const promoteAsBot = (userId: number, rights: Record<string, boolean>) =>
+    callBot(otherBot, 'promoteChatMember', { chat_id: supergroup.id, user_id: userId, ...rights })
+      .then(({ body }) => body.ok ? body.result : body.description);
+  const hopperAs = async (observerId: number) =>
+    (await getAdministratorsAsAccount(observerId)).body.administrators
+      .find(({ user_id }) => user_id === hopper.id);
+
+  // Grace promotes the bot, which promotes Hopper; Grace edits Hopper through the bot.
+  const chain = [
+    await accountChange(grace.id, otherBot.bot.id, { can_promote_members: true }),
+    await promoteAsBot(hopper.id, { can_promote_members: true }),
+  ];
+  const hopperInChain = await hopperAs(grace.id);
+  const indirectChange = await accountChange(grace.id, hopper.id, { can_manage_chat: true });
+  const hopperAfterGraceChange = await hopperAs(ada.id);
+  // The bot no longer edits Hopper, whose promoter is now Grace; Hopper never edits Grace.
+  const botAfterGraceChange = await promoteAsBot(hopper.id, {});
+  const hopperOnGrace = await accountChange(hopper.id, grace.id);
+
+  // Once the owner demotes Grace, her appointees are left to the owner.
+  await accountChange(ada.id, grace.id);
+  await promoteAsOwner(grace.id, { can_promote_members: true });
+  const afterNewTenure = [
+    await accountChange(grace.id, hopper.id),
+    await accountChange(grace.id, otherBot.bot.id),
+    (await hopperAs(ada.id))?.promoted_by_user_id,
+  ];
+
+  expectEqual(chain, [204, true], 'Expected the chain to be built');
+  expectEqual(
+    hopperInChain,
+    administratorForAccount(hopper.id, ['can_promote_members'], {
+      promotedById: otherBot.bot.id,
+      canBeEdited: true,
+    }),
+    'Expected Grace to edit the appointee of the bot she promoted',
+  );
+  expectEqual(
+    [indirectChange, hopperAfterGraceChange],
+    [
+      204,
+      administratorForAccount(hopper.id, [], { promotedById: grace.id, canBeEdited: true }),
+    ],
+    'Expected Grace to become the promoter of Hopper',
+  );
+  expectEqual(
+    [botAfterGraceChange, hopperOnGrace],
+    ['Bad Request: user is an administrator of the chat', 403],
+    'Expected neither the bot nor Hopper to edit what Grace promoted or Grace herself',
+  );
+  expectEqual(
+    afterNewTenure,
+    [403, 403, grace.id],
+    'Expected Grace to edit none of the appointees of her earlier tenure',
+  );
+});
+
+Deno.test('administrator accounts act only within their own session', async () => {
+  const first = await createPromotionFixture();
+  const second = await createPromotionFixture(first.api);
+  for (const bot of [second.delegatingBot, second.otherBot]) {
+    await second.readUpdates(bot);
+  }
+  const administratorsBefore = await second.getAdministratorsAsAccount(second.ada.id);
+
+  // The fixtures' sessions issue the same identifiers, so Grace and Hopper share them too.
+  await expectStatus(
+    first.api.request(
+      `${first.supergroupPath(first.grace.id)}/administrators/${first.hopper.id}`,
+      jsonRequest('PUT', { can_promote_members: true }),
+    ),
+    204,
+    'Expected Grace to promote Hopper in the first session',
+  );
+
+  expectEqual(
+    [
+      second.grace.id === first.grace.id && second.hopper.id === first.hopper.id,
+      (await second.getAdministratorsAsAccount(second.ada.id)).body,
+      await second.readUpdates(second.delegatingBot),
+      await second.readUpdates(second.otherBot),
+      (await second.getChatMember(second.delegatingBot, second.hopper.id)).status,
+      (await first.getChatMember(first.delegatingBot, first.hopper.id)).status,
+    ],
+    [true, administratorsBefore.body, [], [], 'member', 'administrator'],
+    'Expected the promotion to stay in the first session',
   );
 });
 
