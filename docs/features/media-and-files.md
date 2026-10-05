@@ -8,12 +8,12 @@
 Bots send photos and documents with `sendPhoto` and `sendDocument`, [videos](#videos) with
 `sendVideo`, [voice notes](#voice-notes) with `sendVoice`, [audio files](#audio-files) with
 `sendAudio`, photos and videos, documents, or audio files as [albums](#albums) with
-`sendMediaGroup`, and photos and documents in the blocks of [rich messages](rich-messages.md). Files
-can be multipart uploads, either in the part named for the parameter or referenced with
-`attach://<part-name>`, an existing `file_id` known to that bot, or an HTTP URL that Telegram
-downloads, as described in [files sent by URL](#files-sent-by-url). Accounts upload base64 content
-through the emulation API; the TypeScript client accepts bytes and performs the encoding. Both sides
-can supply captions and caption entities.
+`sendMediaGroup`, and photos, documents, videos and voice notes in the blocks of
+[rich messages](rich-messages.md). Files can be multipart uploads, either in the part named for the
+parameter or referenced with `attach://<part-name>`, an existing `file_id` known to that bot, or an
+HTTP URL that Telegram downloads, as described in [files sent by URL](#files-sent-by-url). Accounts
+upload base64 content through the emulation API; the TypeScript client accepts bytes and performs
+the encoding. Both sides can supply captions and caption entities.
 
 Photos expose dimensions, `has_media_spoiler` when requested and `show_caption_above_media` for a
 caption above the photo. Documents expose their cleaned filename and a MIME type derived from its
@@ -53,13 +53,13 @@ register what each URL serves with `POST /sessions/{sessionId}/web-resources` or
 client's `registerWebResource`, giving a status, `Content-Type`, body, or redirect `location`. A URL
 without a registered resource is unreachable, and the emulator never reaches the network.
 `sendPhoto`, `sendDocument`, `sendVideo`, `sendVoice`, `sendAudio` and `editMessageMedia` accept
-URLs, as do the photo and document blocks of [rich messages](rich-messages.md#sending-and-editing)
-that `sendRichMessage` sends or `editMessageText` puts in place, including for inline messages.
-Photo, document, video, voice and audio results of `answerInlineQuery` also accept them, with
-contracts of their own; the file is downloaded when an account sends a result as its media, and
-never when `input_message_content` replaces it, as [inline mode](inline-mode.md#media-named-by-url)
-describes. A rich message in a result's `input_message_content`
-[does not](#files-sent-by-url-in-inline-query-results) accept them.
+URLs, as do the media blocks of [rich messages](rich-messages.md#sending-and-editing) that
+`sendRichMessage` sends or `editMessageText` puts in place, including for inline messages. Photo,
+document, video, voice and audio results of `answerInlineQuery` also accept them, with contracts of
+their own; the file is downloaded when an account sends a result as its media, and never when
+`input_message_content` replaces it, as [inline mode](inline-mode.md#media-named-by-url) describes.
+A rich message in a result's `input_message_content` does not accept them, as
+[Telegram refuses them](rich-messages.md#sending-and-editing) there.
 
 The URL is read as TDLib's [`parse_url`][parse-url] reads it, so a URL without a protocol is an HTTP
 one, and a resource answers every spelling that TDLib reads alike; a URL TDLib refuses fails with
@@ -151,7 +151,7 @@ A voice note has a caption, which `editMessageCaption` and the account client ed
 decide, it never forms [albums](#albums), and its media cannot be replaced: `editMessageMedia` fails
 with `Bad Request: message media can't be edited`. An `InputMediaVoiceNote` is refused for albums
 and new media alike, as the official server's [`get_input_media`][input-media-album] reads it only
-in rich messages, whose voice note blocks the emulator [lacks](rich-messages.md#real-gaps).
+in [rich messages](rich-messages.md#sending-and-editing).
 
 ### Audio files
 
@@ -437,25 +437,19 @@ Classifying documents needs the animation media the emulator lacks, and rules fo
 observed rather than documented server behavior. Tests need media classification, through which the
 flag would take effect.
 
-### Files sent by URL in inline query results
-
-A rich message that an inline query result sends must reuse its files by `file_id`: one naming a
-file by URL fails, as an upload does, with `Bad Request: invalid inline message content specified`.
-Telegram downloads such files; tests need inline rich messages that send files by URL, as media
-results [already do](inline-mode.md#media-named-by-url).
-
 ### Video covers
 
 `sendVideo` rejects a `cover` as an unsupported parameter, so messages never show a video's cover, a
-photo that Telegram shows in its place; `start_timestamp` is supported. Tests need covers sent by
-upload, `file_id` and URL.
+photo that Telegram shows in its place; `start_timestamp` is supported. `InputMediaVideo` rejects a
+`cover` too, in albums, new media and rich message blocks. Tests need covers sent by upload,
+`file_id` and URL.
 
 ### Additional media types and methods
 
 Media types other than photos, documents, videos, voice notes and audio files, stickers and sticker
 sets are missing, so `editMessageMedia` replaces media only with photos, documents, videos and audio
 files, and albums hold only photos and videos, documents, or audio files. Rich message blocks hold
-no videos, voice notes or audio files. Voice notes keep no waveform and are never transcribed.
+no audio files. Voice notes keep no waveform and are never transcribed.
 
 ## Local evidence
 

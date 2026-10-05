@@ -281,18 +281,18 @@ The default permissions grant everything until they are [changed](#default-permi
 accounts and bots are refused what they may not send, as TDLib's
 [`can_send_message_content`][send-permission] checks each message after reading its content:
 
-| Content                                         | Permission needed                                           | Bot API error, after `Bad Request:`                      |
-| ----------------------------------------------- | ----------------------------------------------------------- | -------------------------------------------------------- |
-| Text, including a pressed reply keyboard button | `can_send_messages`                                         | `not enough rights to send text messages to the chat`    |
-| Photo                                           | `can_send_photos`                                           | `not enough rights to send photos to the chat`           |
-| Document                                        | `can_send_documents`                                        | `not enough rights to send documents to the chat`        |
-| Video                                           | `can_send_videos`                                           | `not enough rights to send videos to the chat`           |
-| Voice note                                      | `can_send_voice_notes`                                      | `not enough rights to send voice notes to the chat`      |
-| Audio file                                      | `can_send_audios`                                           | `not enough rights to send music to the chat`            |
-| Poll                                            | `can_send_polls`                                            | `not enough rights to send polls to the chat`            |
-| Contact                                         | `can_send_messages`                                         | `not enough rights to send contacts to the chat`         |
-| Location                                        | `can_send_messages`                                         | `not enough rights to send locations to the chat`        |
-| Rich message                                    | `can_send_messages`, and each photo's and file's permission | `not enough rights to send the rich message to the chat` |
+| Content                                         | Permission needed                                      | Bot API error, after `Bad Request:`                      |
+| ----------------------------------------------- | ------------------------------------------------------ | -------------------------------------------------------- |
+| Text, including a pressed reply keyboard button | `can_send_messages`                                    | `not enough rights to send text messages to the chat`    |
+| Photo                                           | `can_send_photos`                                      | `not enough rights to send photos to the chat`           |
+| Document                                        | `can_send_documents`                                   | `not enough rights to send documents to the chat`        |
+| Video                                           | `can_send_videos`                                      | `not enough rights to send videos to the chat`           |
+| Voice note                                      | `can_send_voice_notes`                                 | `not enough rights to send voice notes to the chat`      |
+| Audio file                                      | `can_send_audios`                                      | `not enough rights to send music to the chat`            |
+| Poll                                            | `can_send_polls`                                       | `not enough rights to send polls to the chat`            |
+| Contact                                         | `can_send_messages`                                    | `not enough rights to send contacts to the chat`         |
+| Location                                        | `can_send_messages`                                    | `not enough rights to send locations to the chat`        |
+| Rich message                                    | `can_send_messages`, and each media block's permission | `not enough rights to send the rich message to the chat` |
 
 An album fails for its first item that may not be sent. As TDLib's `edit_message_media` and
 `edit_message_text` check new media and rich messages, a bot's edit that puts such content into a

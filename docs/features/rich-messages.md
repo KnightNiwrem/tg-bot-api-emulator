@@ -9,9 +9,9 @@
 Bots send rich messages with `sendRichMessage` to private chats and supergroups. A rich message is
 text laid out in blocks: paragraphs, headings, preformatted text, footers, dividers, mathematical
 expressions, anchors, lists, quotations, collages, slideshows, tables, details, maps, rows of
-buttons, photos and documents. Its text nests formatting, dates, links, text mentions, custom emoji,
-references and buttons. The other parameters work as for `sendMessage`. The emulator supports rich
-messages described as `blocks`; messages written in HTML or Markdown are an
+buttons, photos, documents, videos and voice notes. Its text nests formatting, dates, links, text
+mentions, custom emoji, references and buttons. The other parameters work as for `sendMessage`. The
+emulator supports rich messages described as `blocks`; messages written in HTML or Markdown are an
 [intentional deviation](#intentional-deviations).
 
 The official server's [`get_input_rich_message`][input-rich-message],
@@ -67,17 +67,37 @@ buttons are the exception: a forward keeps them, showing their `forward_text` as
 they have one, and a copy turns them into URL buttons. As for text, `copyMessage` ignores a
 `caption` for a rich message.
 
-Photo and document blocks hold an `InputMediaPhoto` or `InputMediaDocument`, whose `media` is a
-`file_id` the bot knows, `attach://<part name>` for a file uploaded with the request, or an HTTP or
-HTTPS URL. A document's thumbnail works as for `sendDocument`, and the media's caption is ignored.
-Uploads are checked as for `sendPhoto` and `sendDocument`, and are stored only with the message. A
-URL is read and downloaded as for `sendPhoto` and `sendDocument`, as
+Photo, document, video and voice note blocks hold an `InputMediaPhoto`, `InputMediaDocument`,
+`InputMediaVideo` or `InputMediaVoiceNote`, whose `media` is a `file_id` the bot knows,
+`attach://<part name>` for a file uploaded with the request, or an HTTP or HTTPS URL. A block's
+media must be of the block's type, such as
+`Bad Request: unexpected media type "photo" for block "video"`, and its caption is ignored. A
+document's or video's thumbnail works as for `sendDocument` and `sendVideo`, and a video's duration
+and dimensions and a voice note's duration are clamped as for `sendVideo` and `sendVoice`. TDLib's
+[`get_web_page_blocks`][input-blocks] keeps only a video's file and spoiler, so a video's
+`start_timestamp` and `supports_streaming` are validated and ignored; a `cover` is refused, as
+[video covers](media-and-files.md#video-covers) are missing. A file reused by `file_id` keeps its
+own attributes, and one of another type or that the bot does not know fails as for the send methods,
+such as `Bad Request: can't use file of type Photo as VoiceNote` or
+`Bad Request: wrong file identifier/HTTP URL specified`. Uploads are checked as for `sendPhoto`,
+`sendDocument`, `sendVideo` and `sendVoice`. A URL is read and downloaded as for those methods, as
 [files sent by URL](media-and-files.md#files-sent-by-url) describes: the emulator downloads it from
 the session's emulated web, where tests register what each URL serves, and never from the network. A
-photo must be served as an image of at most 5 MB, and a document as a PDF or ZIP file of at most 20
+photo must be served as an image of at most 5 MB, a document as a PDF or ZIP file, a video as
+`video/mp4` and a voice note as `audio/ogg`, each of at most 20 MB. A voice note stays a voice note
+however large, as a block has no document to become, which `sendVoice` makes of one larger than 1
 MB. The files are downloaded in the order the message shows them, and the first that fails fails the
-message with its download error, such as `Bad Request: failed to get HTTP URL content`. A photo
-shows its one kept size, and `has_spoiler` when the media covers it.
+message with its download error, such as `Bad Request: failed to get HTTP URL content`.
+
+Every file of a message is resolved before anything is sent or edited, so a message that fails for
+any of its files, however deeply nested, sends nothing, leaves an edited message as it was, and
+stores none of its uploads or downloads: a file is stored only with the message that shows it. A
+photo shows its one kept size, and `has_spoiler` when the media covers it. A video shows its `Video`
+without a start timestamp, and `has_spoiler` likewise; TDLib never plays a block's video
+automatically or loops it, so the server's `need_autoplay` and `is_looped` never appear. A voice
+note shows its `Voice`. As for [other media](media-and-files.md#supported-behavior), each observer
+receives its own `file_id` for each file, in forwards and copies too, and bots download the files
+with `getFile`.
 
 `editMessageText` with a `rich_message` replaces the content of a text or rich message with a rich
 message, and any `text` is ignored, as in the server's
@@ -92,10 +112,12 @@ message.
 
 A rich message that an [inline query result](inline-mode.md#supported-behavior) sends as its
 `input_message_content` cannot name files by URL, unlike an edit of the inline message it becomes:
-its photos and documents must be files the bot knows by `file_id`. An upload or a URL fails
-`answerInlineQuery` with `Bad Request: invalid inline message content specified`; files named by URL
-there are a [real gap](media-and-files.md#files-sent-by-url-in-inline-query-results). Photo,
-document, video, voice and audio results themselves can
+its photos, documents, videos and voice notes must be files the bot knows by `file_id`. TDLib's
+[`get_inline_message`][inline-rich-message] passes the message on only when
+[`get_input_rich_message`][tdlib-input-rich-message] finds every file already on Telegram's servers,
+so an upload or a URL fails `answerInlineQuery` with
+`Bad Request: invalid inline message content specified`. An account's choice of the result sends
+those same files each time. Photo, document, video, voice and audio results themselves can
 [name their files by URL](inline-mode.md#media-named-by-url), which an account's choice downloads,
 unless the result's `input_message_content` replaces them.
 
@@ -125,12 +147,11 @@ unless the result's `input_message_content` replaces them.
 - **Drafts.** `sendRichMessageDraft` and `sendMessageDraft` are missing, along with the
   `stopped_message_generation` updates of drafts that users stop. Tests cannot observe streamed
   drafts.
-- **Other media blocks.** Animation, audio, video and voice note blocks fail with
-  `Bad Request: rich message blocks with an animation, audio, video, or voice note are not supported`,
-  as animations are [missing](media-and-files.md#additional-media-types-and-methods), and the
-  emulator's [videos](media-and-files.md#videos), [voice notes](media-and-files.md#voice-notes) and
-  [audio files](media-and-files.md#audio-files) have no blocks yet. Tests need rich messages that
-  show them.
+- **Other media blocks.** Animation and audio blocks fail with
+  `Bad Request: rich message blocks with an animation or an audio file are not supported`, as
+  animations are [missing](media-and-files.md#additional-media-types-and-methods), and the
+  emulator's [audio files](media-and-files.md#audio-files) have no blocks yet. Tests need rich
+  messages that show them.
 - **Accounts' rich messages.** Accounts cannot send or copy rich messages; they forward them as
   other messages. [Inline query results](inline-mode.md#supported-behavior) can send rich messages
   on an account's behalf.
@@ -152,7 +173,8 @@ dimensions it fills in, which the emulator does not.
 [normalization](../../src/services/rich_message_normalization.ts),
 [projection](../../src/projections/bot_api_rich_message.ts),
 [URL downloads](../../src/api/sessions/bot_api/web_file_parameter.ts),
-[unit tests](../../tests/rich_message_test.ts), [HTTP tests](../../tests/emulation_api_test.ts) and
+[unit tests](../../tests/rich_message_test.ts), [HTTP tests](../../tests/emulation_api_test.ts),
+[video and voice note block tests](../../tests/rich_video_voice_blocks_api_test.ts) and
 [inline URL media tests](../../tests/inline_result_media_api_test.ts).
 
 [input-rich-message]: https://github.com/tdlib/telegram-bot-api/blob/e3e9dd8e5b3d7ab8537cd5a10dc31d5ffa8f82d1/telegram-bot-api/Client.cpp#L12462-L12486
@@ -176,3 +198,4 @@ dimensions it fills in, which the emulator does not.
 [content-text]: https://github.com/tdlib/td/blob/bc9c263e2bfee06aaab41e82db51a103376030bc/td/telegram/MessageContent.cpp#L12268-L12286
 [edit-text]: https://github.com/tdlib/td/blob/bc9c263e2bfee06aaab41e82db51a103376030bc/td/telegram/MessagesManager.cpp#L23493-L23539
 [edit-inline-text]: https://github.com/tdlib/td/blob/bc9c263e2bfee06aaab41e82db51a103376030bc/td/telegram/InlineMessageManager.cpp#L219-L261
+[inline-rich-message]: https://github.com/tdlib/td/blob/bc9c263e2bfee06aaab41e82db51a103376030bc/td/telegram/InlineQueriesManager.cpp#L584-L598

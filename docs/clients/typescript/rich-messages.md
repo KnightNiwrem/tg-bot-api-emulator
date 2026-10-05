@@ -20,6 +20,10 @@ blocks and expandable blockquotes is included whether or not they are open. `ric
 does the same for one piece of rich text, such as a heading's `text`. grammY sends rich messages
 with `ctx.replyWithRichMessage` or `bot.api.sendRichMessage`.
 
+Photo, document, video and voice note blocks show their files as `photo`, `document`, `video` and
+`voice_note`, typed as the client's `PhotoSize`, `Document`, `Video` and `Voice`; a block's video
+has no `start_timestamp`. `richMessageToPlainText` shows only their captions.
+
 ```ts
 import { assert, assertEquals, assertExists } from 'jsr:@std/assert@^1';
 import { richMessageToPlainText, richTextToPlainText } from '../../../clients/typescript/mod.ts';
