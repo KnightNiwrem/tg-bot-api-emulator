@@ -4,13 +4,9 @@ import { z } from 'zod';
 import type { EmulationSession } from '../../../types/emulation_session.ts';
 import { readJsonRequestBody } from '../json_request_body.ts';
 import type { SessionRouteContextTypes } from '../session_route_context_types.ts';
-import {
-  PRIVATE_MESSAGE_PATH,
-  privateMessagePathSchema,
-  SUPERGROUP_MESSAGE_PATH,
-  supergroupMessagePathSchema,
-} from './account_paths.ts';
+import { PRIVATE_MESSAGE_PATH, SUPERGROUP_MESSAGE_PATH } from './account_paths.ts';
 import { viewChatMessageForAccount } from './chat_message_view.ts';
+import { type AccountPollMessageKey, readPollMessageKey } from './poll_message_key.ts';
 
 const PRIVATE_MESSAGE_POLL_ANSWER_PATH = `${PRIVATE_MESSAGE_PATH}/poll-answer` as const;
 const SUPERGROUP_MESSAGE_POLL_ANSWER_PATH = `${SUPERGROUP_MESSAGE_PATH}/poll-answer` as const;
@@ -88,9 +84,6 @@ export function createPollAnswerRoutes(): Hono<SessionRouteContextTypes> {
   return accountRoutes;
 }
 
-/** A message showing a poll, as an account addresses it. */
-type AccountPollMessageKey = Parameters<EmulationSession['polls']['getAccountPollAnswer']>[0];
-
 /** A poll an account found, with its own answer. */
 type AccountPollAnswer = Omit<
   Extract<
@@ -99,34 +92,6 @@ type AccountPollAnswer = Omit<
   >,
   'found'
 >;
-
-/**
- * Reads the message of a poll answer route, in an account's private chat with a bot or in a
- * supergroup; `undefined` for path parameters that identify none.
- */
-function readPollMessageKey(
-  pathParameters: Record<string, string>,
-  chatType: AccountPollMessageKey['chat']['type'],
-): AccountPollMessageKey | undefined {
-  if (chatType === 'private') {
-    const messagePath = privateMessagePathSchema.safeParse(pathParameters);
-    return messagePath.success
-      ? {
-        accountId: messagePath.data.accountId,
-        chat: { type: 'private', botId: messagePath.data.botId },
-        messageId: messagePath.data.messageId,
-      }
-      : undefined;
-  }
-  const messagePath = supergroupMessagePathSchema.safeParse(pathParameters);
-  return messagePath.success
-    ? {
-      accountId: messagePath.data.accountId,
-      chat: { type: 'supergroup', chatId: messagePath.data.chatId },
-      messageId: messagePath.data.messageId,
-    }
-    : undefined;
-}
 
 /**
  * Shows an account's answer to a poll, with the message showing the poll as these routes show

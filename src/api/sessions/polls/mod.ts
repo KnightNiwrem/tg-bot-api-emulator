@@ -18,7 +18,7 @@ export function createPollRoutes(): Hono<SessionRouteContextTypes> {
     if (!result.expired) {
       return context.body(null, result.reason === 'poll_not_found' ? 404 : 409);
     }
-    return context.json({ poll: botMessageViews.viewPollForBot(result.poll) });
+    return context.json({ poll: botMessageViews.viewPollForCreator(result.poll) });
   });
 
   return pollRoutes;

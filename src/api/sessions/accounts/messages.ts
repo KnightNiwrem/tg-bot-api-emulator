@@ -6,7 +6,6 @@ import type { EmulationSession } from '../../../types/emulation_session.ts';
 import { MAX_MEDIA_DURATION_SECONDS, MAX_VIDEO_SIDE_LENGTH } from '../../../types/stored_file.ts';
 import { countTextCharacters, MAX_TEXT_MESSAGE_LENGTH } from '../../../types/virtual_message.ts';
 import { base64ContentSchema } from '../base64_content.ts';
-import { readMessageEntitiesParameter } from '../bot_api/message_entities_parameter.ts';
 import { readJsonRequestBody } from '../json_request_body.ts';
 import type { SessionRouteContextTypes } from '../session_route_context_types.ts';
 import {
@@ -22,7 +21,12 @@ import {
   accountMessageFailureStatus,
   supergroupMemberFailureStatus,
 } from './messaging_failure_statuses.ts';
-import { accountLocationSchema, chatSchema } from './request_fields.ts';
+import {
+  accountLocationSchema,
+  accountPollSchema,
+  chatSchema,
+  messageEntitiesSchema,
+} from './request_fields.ts';
 
 const ACCOUNT_MESSAGE_COLLECTION_PATH = `/:${ACCOUNT_ID_PARAMETER}/messages` as const;
 const ACCOUNT_MEDIA_GROUP_COLLECTION_PATH = `/:${ACCOUNT_ID_PARAMETER}/media-groups` as const;
@@ -36,19 +40,6 @@ const sentMessageTargetShape = {
 
 /** A caption, which Telegram's service limits, so its length is checked when sending. */
 const captionSchema = z.string().default('');
-
-/**
- * Formatting an account specifies for its text or caption, as the Bot API's `MessageEntity`
- * objects, which are read as for bots: entity types Telegram detects by itself are ignored.
- */
-const messageEntitiesSchema = z.array(z.unknown()).transform((entityValues, context) => {
-  const reading = readMessageEntitiesParameter(entityValues, 'Invalid message entities');
-  if (!reading.read) {
-    context.issues.push({ code: 'custom', message: reading.description, input: entityValues });
-    return z.NEVER;
-  }
-  return reading.entities;
-}).optional();
 
 /** Message text, whose length counts characters as Telegram's limit does, not UTF-16 code units. */
 const messageTextSchema = z.string().min(1).refine(
@@ -126,8 +117,8 @@ const accountContactShape = {
 /**
  * A text message, a photo, a document, a video, or a voice note, each with an optional caption; a
  * contact the account writes, or its own contact, which Telegram shows as the account's user; a
- * static location; or a forward of a message of one of the account's chats, which, as in
- * Telegram's clients, replies to none.
+ * static location; a new poll; or a forward of a message of one of the account's chats, which, as
+ * in Telegram's clients, replies to none.
  */
 const sendMessageRequestSchema = z.union([
   z.strictObject({
@@ -150,6 +141,7 @@ const sendMessageRequestSchema = z.union([
   z.strictObject({ ...sentMessageTargetShape, ...accountContactShape }),
   z.strictObject({ ...sentMessageTargetShape, own_contact: z.literal(true) }),
   z.strictObject({ ...sentMessageTargetShape, location: accountLocationSchema }),
+  z.strictObject({ ...sentMessageTargetShape, poll: accountPollSchema }),
 ]);
 
 /**
@@ -434,6 +426,9 @@ function readAccountMessageContent(
   }
   if ('location' in request) {
     return { kind: 'location', location: request.location };
+  }
+  if ('poll' in request) {
+    return { kind: 'poll', poll: request.poll };
   }
   if ('contact' in request) {
     const { phone_number, first_name, last_name, vcard } = request.contact;
