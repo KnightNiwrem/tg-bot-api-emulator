@@ -336,11 +336,9 @@ sees.
 Each `file_id` sends only a file of its own kind: a photo's only a photo, a document's only a
 document, a video's only a video, a voice note's only a voice note, and an audio file's only an
 audio file, failing with TDLib's wording, such as
-`Bad Request: can't use file of type Video as
-Document`,
+`Bad Request: can't use file of type Video as Document`,
 `Bad Request: can't use file of type VoiceNote as Document` or
-`Bad Request: can't use
-file of type Document as Audio`. TDLib's
+`Bad Request: can't use file of type Document as Audio`. TDLib's
 [`check_input_file_id`][file-type-check] refuses a photo's `file_id` for other media, but treats
 documents, videos, voice notes, audio files and other document-class files as one class and leaves
 Telegram's servers to decide what the message shows, which is not in the source. Refusing them keeps
