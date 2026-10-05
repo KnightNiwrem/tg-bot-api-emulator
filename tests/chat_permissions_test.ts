@@ -14,7 +14,7 @@ import {
   type ChatPermissions,
   getContentSendPermissions,
 } from '../src/types/chat_permissions.ts';
-import type { RichBlock } from '../src/types/rich_message.ts';
+import { EMPTY_RICH_TEXT, type RichBlock } from '../src/types/rich_message.ts';
 
 /** The owner that promoted the administrators here, which changes nothing they may do. */
 const OWNER_ID = 1_000_001;
@@ -120,15 +120,20 @@ Deno.test('getEffectiveChatPermissions grants a restricted member what both its 
 });
 
 Deno.test('getContentSendPermissions requires a permission per kind and every rich message file', () => {
-  const photoBlock: RichBlock<{ readonly photo: string; readonly document: string }> = {
+  type FileNames = {
+    readonly photo: string;
+    readonly document: string;
+    readonly video: string;
+    readonly voice: string;
+  };
+  const photoBlock: RichBlock<FileNames> = {
     kind: 'photo',
     photo: 'photo-file',
     hasSpoiler: false,
   };
-  const documentBlock: RichBlock<{ readonly photo: string; readonly document: string }> = {
-    kind: 'document',
-    document: 'document-file',
-  };
+  const documentBlock: RichBlock<FileNames> = { kind: 'document', document: 'document-file' };
+  const videoBlock: RichBlock<FileNames> = { kind: 'video', video: 'video-file', hasSpoiler: true };
+  const voiceNoteBlock: RichBlock<FileNames> = { kind: 'voice_note', voiceNote: 'voice-file' };
   const cases: Array<[Parameters<typeof getContentSendPermissions>[0], ChatPermission[]]> = [
     [{ kind: 'text' }, ['can_send_messages']],
     [{ kind: 'photo' }, ['can_send_photos']],
@@ -145,6 +150,19 @@ Deno.test('getContentSendPermissions requires a permission per kind and every ri
         richMessage: { blocks: [photoBlock, documentBlock, photoBlock], isRightToLeft: false },
       },
       ['can_send_messages', 'can_send_photos', 'can_send_documents'],
+    ],
+    [
+      {
+        kind: 'rich_message',
+        richMessage: {
+          blocks: [
+            { kind: 'details', summary: EMPTY_RICH_TEXT, blocks: [videoBlock], isOpen: false },
+            { kind: 'collage', blocks: [voiceNoteBlock, videoBlock] },
+          ],
+          isRightToLeft: false,
+        },
+      },
+      ['can_send_messages', 'can_send_videos', 'can_send_voice_notes'],
     ],
   ];
   const received = cases.map(([content]) => getContentSendPermissions(content));

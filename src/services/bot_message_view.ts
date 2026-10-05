@@ -880,7 +880,7 @@ export class BotMessageViewService {
     });
   }
 
-  /** Observes the files of a rich message's photo and document blocks, by stored file. */
+  /** Observes the files of a rich message's media blocks, by stored file. */
   #observeRichMessageFiles(
     richMessage: RichMessage,
     observerId: number,

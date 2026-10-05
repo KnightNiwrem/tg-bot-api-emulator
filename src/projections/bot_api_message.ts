@@ -100,10 +100,7 @@ interface MessageProjectionContext {
   readonly mentionedUsers: ReadonlyMap<number, BotApiUser>;
   /** The file of a captioned media message; omitted for other messages. */
   readonly contentFile?: ObservedFile;
-  /**
-   * The files of a rich message's photo and document blocks, by stored file; omitted for other
-   * messages.
-   */
+  /** The files of a rich message's media blocks, by stored file; omitted for other messages. */
   readonly richMessageFiles?: ReadonlyMap<StoredFileId, ObservedFile>;
   /** The poll a poll message shows, as it is now; omitted for other messages. */
   readonly poll?: ObservedPoll;

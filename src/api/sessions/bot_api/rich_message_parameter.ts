@@ -22,7 +22,9 @@ import {
   type RichTextStyle,
   type VerticalAlignment,
 } from '../../../types/rich_message.ts';
+import { MAX_MEDIA_DURATION_SECONDS, MAX_VIDEO_SIDE_LENGTH } from '../../../types/stored_file.ts';
 import { readInputFileParameter, readThumbnailParameter } from './input_file_parameter.ts';
+import { clampedIntegerField } from './input_media_parameter.ts';
 import { readDateTimeFormat } from './message_entities_parameter.ts';
 import { buttonSchema } from './reply_markup_parameter.ts';
 import type { BotApiUploadedFiles } from './request_parameters.ts';
@@ -81,8 +83,7 @@ const MEDIA_NOT_FOUND_DESCRIPTION = 'Bad Request: media not found';
 const MARKUP_RICH_MESSAGE_UNSUPPORTED_DESCRIPTION =
   'Bad Request: rich messages written in HTML or Markdown are not supported';
 const MEDIA_BLOCK_UNSUPPORTED_DESCRIPTION =
-  'Bad Request: rich message blocks with an animation, audio, video, or voice note are not ' +
-  'supported';
+  'Bad Request: rich message blocks with an animation or an audio file are not supported';
 
 /**
  * The emulator's descriptions for rich messages that break rules the Bot API documents and
@@ -117,7 +118,7 @@ const RICH_TEXT_STYLES: ReadonlyMap<string, RichTextStyle> = new Map([
   ['code', 'code'],
 ]);
 
-const MEDIA_BLOCK_TYPES_UNSUPPORTED = ['animation', 'audio', 'video', 'voice_note'] as const;
+const MEDIA_BLOCK_TYPES_UNSUPPORTED = ['animation', 'audio'] as const;
 
 const ORDERED_LIST_ITEM_LABEL_TYPES = [
   'a',
@@ -284,6 +285,36 @@ const documentBlockSchema = z.strictObject({
     thumbnail: z.string().optional(),
     ...inputMediaCaptionShape,
     disable_content_type_detection: z.boolean().optional(),
+  }),
+  caption: z.unknown().optional(),
+});
+// As for `sendVideo`, `supports_streaming` is validated and ignored, and a cover is not supported.
+// TDLib's `WebPageBlockVideo` keeps only the video, so the start timestamp is validated and
+// ignored as well.
+const videoBlockSchema = z.strictObject({
+  type: z.string(),
+  video: z.strictObject({
+    type: z.string(),
+    media: z.string().default(''),
+    thumbnail: z.string().optional(),
+    start_timestamp: z.int().optional(),
+    ...inputMediaCaptionShape,
+    show_caption_above_media: z.boolean().optional(),
+    width: clampedIntegerField(0, MAX_VIDEO_SIDE_LENGTH),
+    height: clampedIntegerField(0, MAX_VIDEO_SIDE_LENGTH),
+    duration: clampedIntegerField(0, MAX_MEDIA_DURATION_SECONDS),
+    supports_streaming: z.boolean().optional(),
+    has_spoiler: z.boolean().default(false),
+  }),
+  caption: z.unknown().optional(),
+});
+const voiceNoteBlockSchema = z.strictObject({
+  type: z.string(),
+  voice_note: z.strictObject({
+    type: z.string(),
+    media: z.string().default(''),
+    ...inputMediaCaptionShape,
+    duration: clampedIntegerField(0, MAX_MEDIA_DURATION_SECONDS),
   }),
   caption: z.unknown().optional(),
 });
@@ -512,6 +543,10 @@ class RichMessageReader {
         return this.#readPhotoBlock(this.#parse(photoBlockSchema, value));
       case 'document':
         return this.#readDocumentBlock(this.#parse(documentBlockSchema, value));
+      case 'video':
+        return this.#readVideoBlock(this.#parse(videoBlockSchema, value));
+      case 'voice_note':
+        return this.#readVoiceNoteBlock(this.#parse(voiceNoteBlockSchema, value));
       case 'thinking':
         throw new RichMessageParameterError(THINKING_BLOCK_NOT_ALLOWED_DESCRIPTION);
       default:
@@ -718,6 +753,42 @@ class RichMessageReader {
   }
 
   /**
+   * Reads a video block as the Bot API server's `get_input_video` reads its media: the duration and
+   * dimensions are clamped, and the thumbnail is read as for `sendVideo`.
+   */
+  #readVideoBlock(block: z.output<typeof videoBlockSchema>): SpecifiedRichBlock {
+    const { video } = block;
+    checkMediaType(video.type, 'video');
+    const videoFile = this.#readMediaFile(video.media);
+    const thumbnail = readThumbnailParameter(video, this.#uploadedFiles);
+    return {
+      kind: 'video',
+      video: {
+        video: videoFile,
+        attributes: { durationSeconds: video.duration, width: video.width, height: video.height },
+        ...(thumbnail === undefined ? {} : { thumbnail }),
+      },
+      hasSpoiler: video.has_spoiler,
+      ...this.#readCaption(block.caption),
+    };
+  }
+
+  /**
+   * Reads a voice note block as the Bot API server's `get_input_voice_note` reads its media, whose
+   * duration is clamped.
+   */
+  #readVoiceNoteBlock(block: z.output<typeof voiceNoteBlockSchema>): SpecifiedRichBlock {
+    const { voice_note: voiceNote } = block;
+    checkMediaType(voiceNote.type, 'voice_note');
+    const voiceFile = this.#readMediaFile(voiceNote.media);
+    return {
+      kind: 'voice_note',
+      voiceNote: { voice: voiceFile, durationSeconds: voiceNote.duration },
+      ...this.#readCaption(block.caption),
+    };
+  }
+
+  /**
    * Reads the file of a block's media as the Bot API server's `get_input_media` does: a part named
    * by `attach://<name>`, a `file_id`, or an HTTP URL, which is downloaded once the message is
    * read.
@@ -913,7 +984,10 @@ class RichMessageReader {
  * Checks that a block's media is of the block's type, as the Bot API server's
  * `get_input_page_block` does.
  */
-function checkMediaType(mediaType: string, blockType: 'photo' | 'document'): void {
+function checkMediaType(
+  mediaType: string,
+  blockType: 'photo' | 'document' | 'video' | 'voice_note',
+): void {
   if (mediaType !== blockType) {
     throw new RichMessageParameterError(
       `Bad Request: unexpected media type "${mediaType}" for block "${blockType}"`,

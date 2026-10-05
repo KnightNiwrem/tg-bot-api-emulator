@@ -5,6 +5,8 @@ import type {
   BotApiLocation,
   BotApiPhotoSize,
   BotApiUser,
+  BotApiVideo,
+  BotApiVoice,
 } from './bot_api.ts';
 import type {
   HorizontalAlignment,
@@ -178,5 +180,17 @@ export type BotApiRichBlock =
   | {
     readonly type: 'document';
     readonly document: BotApiDocument;
+    readonly caption?: BotApiRichBlockCaption;
+  }
+  | {
+    readonly type: 'video';
+    /** The video without a cover or start timestamp, which the block does not keep. */
+    readonly video: BotApiVideo;
+    readonly caption?: BotApiRichBlockCaption;
+    readonly has_spoiler?: true;
+  }
+  | {
+    readonly type: 'voice_note';
+    readonly voice_note: BotApiVoice;
     readonly caption?: BotApiRichBlockCaption;
   };

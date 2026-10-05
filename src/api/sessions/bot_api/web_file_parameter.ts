@@ -3,7 +3,9 @@ import {
   convertRichMessageFiles,
   listRichMessageFiles,
   type RichMessage,
+  type RichMessageFile,
 } from '../../../types/rich_message.ts';
+import type { VideoAttributes } from '../../../types/stored_file.ts';
 import type { BotApiInputFile, RequestedInputFile } from './input_file_parameter.ts';
 import {
   albumMessageNotSentError,
@@ -12,26 +14,32 @@ import {
   type BotApiMethodContext,
 } from './method_call.ts';
 
-/** A document of a rich message as a request names it, with the thumbnail uploaded for it. */
-interface RequestedRichMessageDocument {
-  readonly document: RequestedInputFile;
-  readonly thumbnail?: Uint8Array<ArrayBuffer>;
-}
-
-/** The files of a rich message's photo and document blocks, as a request names them. */
-export interface RequestedRichMessageFileTypes {
-  readonly photo: RequestedInputFile;
-  readonly document: RequestedRichMessageDocument;
-}
-
-/** The files of a rich message's blocks, with every URL downloaded. */
-interface ResolvedRichMessageFileTypes {
-  readonly photo: BotApiInputFile;
+/**
+ * The files of a rich message's media blocks in the shapes the service takes, each named as an
+ * `InputFile` along with what the request specifies for it.
+ */
+interface RichMessageFileRequests<InputFile> {
+  readonly photo: InputFile;
   readonly document: {
-    readonly document: BotApiInputFile;
+    readonly document: InputFile;
     readonly thumbnail?: Uint8Array<ArrayBuffer>;
   };
+  readonly video: {
+    readonly video: InputFile;
+    readonly attributes: VideoAttributes;
+    readonly thumbnail?: Uint8Array<ArrayBuffer>;
+  };
+  readonly voice: {
+    readonly voice: InputFile;
+    readonly durationSeconds: number;
+  };
 }
+
+/** The files of a rich message's media blocks, as a request names them. */
+export type RequestedRichMessageFileTypes = RichMessageFileRequests<RequestedInputFile>;
+
+/** The files of a rich message's media blocks, with every URL downloaded. */
+type ResolvedRichMessageFileTypes = RichMessageFileRequests<BotApiInputFile>;
 
 export type WebFileResolution<Resolved> =
   | { readonly resolved: true; readonly value: Resolved }
@@ -124,47 +132,32 @@ export async function resolveRequestedInputFile(
 
 /**
  * Downloads the files that a rich message's blocks name by URL, in the order the message shows
- * them, as `resolveRequestedInputFile` downloads one; the first that fails fails the message.
+ * them, as `resolveRequestedInputFile` downloads one, each as the kind of file its block shows;
+ * the first that fails fails the message.
  */
 export async function resolveRichMessageWebFiles(
   context: BotApiMethodContext,
   richMessage: RichMessage<RequestedRichMessageFileTypes>,
 ): Promise<WebFileResolution<RichMessage<ResolvedRichMessageFileTypes>>> {
-  const photos = new Map<RequestedInputFile, BotApiInputFile>();
-  const documents = new Map<
-    RequestedRichMessageDocument,
-    ResolvedRichMessageFileTypes['document']
-  >();
+  const resolvedFiles = new Map<RequestedInputFile, BotApiInputFile>();
   for (const file of listRichMessageFiles(richMessage)) {
-    const requested = file.kind === 'photo' ? file.file : file.file.document;
+    const requested = getRequestedRichMessageFile(file);
     const resolution = await resolveRequestedInputFile(context, requested, file.kind);
     if (!resolution.resolved) {
       return resolution;
     }
-    if (file.kind === 'photo') {
-      photos.set(file.file, resolution.value);
-    } else {
-      documents.set(file.file, { ...file.file, document: resolution.value });
-    }
+    resolvedFiles.set(requested, resolution.value);
   }
   return {
     resolved: true,
-    value: convertRichMessageFiles(richMessage, {
-      photo: (photo) => getResolvedFile(photos, photo),
-      document: (document) => getResolvedFile(documents, document),
+    value: replaceRichMessageInputFiles(richMessage, (requested) => {
+      const resolved = resolvedFiles.get(requested);
+      if (resolved === undefined) {
+        throw new Error('Every file of a rich message is resolved before the message is converted');
+      }
+      return resolved;
     }),
   };
-}
-
-function getResolvedFile<Requested, Resolved>(
-  resolvedFiles: ReadonlyMap<Requested, Resolved>,
-  requested: Requested,
-): Resolved {
-  const resolved = resolvedFiles.get(requested);
-  if (resolved === undefined) {
-    throw new Error('Every file of a rich message is resolved before the message is converted');
-  }
-  return resolved;
 }
 
 /**
@@ -175,12 +168,9 @@ export function excludeRichMessageWebFiles(
   richMessage: RichMessage<RequestedRichMessageFileTypes>,
 ): RichMessage<ResolvedRichMessageFileTypes> | undefined {
   const namesWebFile = listRichMessageFiles(richMessage).some((file) =>
-    (file.kind === 'photo' ? file.file : file.file.document).kind === 'url'
+    getRequestedRichMessageFile(file).kind === 'url'
   );
-  return namesWebFile ? undefined : convertRichMessageFiles(richMessage, {
-    photo: excludeWebFile,
-    document: (document) => ({ ...document, document: excludeWebFile(document.document) }),
-  });
+  return namesWebFile ? undefined : replaceRichMessageInputFiles(richMessage, excludeWebFile);
 }
 
 function excludeWebFile(inputFile: RequestedInputFile): BotApiInputFile {
@@ -188,4 +178,37 @@ function excludeWebFile(inputFile: RequestedInputFile): BotApiInputFile {
     throw new Error('A rich message without files named by URL was checked for them first');
   }
   return inputFile;
+}
+
+/** The file that a media block of a rich message sends, as the request names it. */
+function getRequestedRichMessageFile(
+  file: RichMessageFile<RequestedRichMessageFileTypes>,
+): RequestedInputFile {
+  switch (file.kind) {
+    case 'photo':
+      return file.file;
+    case 'document':
+      return file.file.document;
+    case 'video':
+      return file.file.video;
+    case 'voice':
+      return file.file.voice;
+    default: {
+      const unhandledFile: never = file;
+      throw new Error(`Unhandled rich message file: ${JSON.stringify(unhandledFile)}`);
+    }
+  }
+}
+
+/** Returns a rich message whose media blocks send the files `replace` gives for theirs. */
+function replaceRichMessageInputFiles(
+  richMessage: RichMessage<RequestedRichMessageFileTypes>,
+  replace: (requested: RequestedInputFile) => BotApiInputFile,
+): RichMessage<ResolvedRichMessageFileTypes> {
+  return convertRichMessageFiles(richMessage, {
+    photo: replace,
+    document: (document) => ({ ...document, document: replace(document.document) }),
+    video: (video) => ({ ...video, video: replace(video.video) }),
+    voice: (voiceNote) => ({ ...voiceNote, voice: replace(voiceNote.voice) }),
+  });
 }

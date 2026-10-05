@@ -64,7 +64,7 @@ export function isSameChatPermissions(first: ChatPermissions, second: ChatPermis
 
 /**
  * Content whose sending a permission governs: the kinds of message content the emulator supports,
- * with a rich message's blocks, whose photos and documents need their own permissions.
+ * with a rich message's blocks, whose media need their own permissions.
  */
 export type PermissionGovernedContent =
   | {
@@ -85,7 +85,7 @@ export type PermissionGovernedContent =
  * The permissions a member needs to send content, as TDLib's `can_send_message_content` requires
  * them: one per media kind, `can_send_messages` for text, contacts, and locations, and, as
  * `RichMessage::can_send` and each block's `can_send` require, `can_send_messages` and the
- * permission of every photo and document a rich message shows.
+ * permission of every photo, document, video and voice note a rich message shows.
  */
 export function getContentSendPermissions(
   content: PermissionGovernedContent,
@@ -110,7 +110,9 @@ export function getContentSendPermissions(
     case 'rich_message': {
       const permissions = new Set<ChatPermission>(['can_send_messages']);
       for (const file of listRichMessageFiles(content.richMessage)) {
-        permissions.add(file.kind === 'photo' ? 'can_send_photos' : 'can_send_documents');
+        for (const permission of getContentSendPermissions({ kind: file.kind })) {
+          permissions.add(permission);
+        }
       }
       return [...permissions];
     }
