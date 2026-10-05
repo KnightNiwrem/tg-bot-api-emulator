@@ -384,7 +384,8 @@ Deno.test('a link with a member limit admits one member at a time', async () => 
 
 The emulator never lets a link's `expire_date` arrive by itself. A test makes it arrive with
 `session.expireChatInviteLink`, naming the supergroup's chat ID and the whole link, which answers
-the link as the owner sees it, with `is_expired` set. The link then refuses every user with `410`;
+the link as the owner sees it, with `is_expired` set. The link then refuses every user with `410`
+until the bot [edits](#editing-and-revoking-links) it, which gives it a new expiry date or none;
 members who joined through it stay, and no bot receives an update. [Test controls](test-controls.md)
 lists the other moments a test controls this way.
 
@@ -435,6 +436,106 @@ Deno.test('a link stops admitting users once the test makes its expiry date arri
       EmulationClientError,
     );
     assertEquals(refusal.status, 410);
+  });
+});
+```
+
+## Editing and revoking links
+
+The bot that created a link changes it with `editChatInviteLink` and ends it with
+`revokeChatInviteLink`; both answer the link as a `ChatInviteLink`. An edit replaces every setting,
+so a bot that changes one setting passes the others again. The new settings apply to later uses of
+the link only. A revoked link refuses every user with `410` and has `is_revoked` set in the owner's
+`getChatInviteLinks`. Members who joined through a link stay after either, and pending join requests
+stay pending for the bot to decide.
+[Editing and revoking links](../../features/invite-links.md#editing-and-revoking-links) lists the
+errors and what happens to requests sent through a changed link.
+
+In this example, the owner switches the bot's open link to approval and later closes it with
+commands in the supergroup:
+
+```ts
+import { assert, assertEquals, assertRejects } from 'jsr:@std/assert@^1';
+import type { ChatInviteLink } from 'npm:grammy@^1.46.0/types';
+import { EmulationClientError } from '../../../clients/typescript/mod.ts';
+import { withBotFixture } from './bot_fixture.ts';
+
+Deno.test('the bot switches its link to approval, then revokes it', async () => {
+  let inviteLink: string | undefined;
+  await withBotFixture({
+    handlers: (bot) => {
+      bot.on('my_chat_member', async (ctx) => {
+        const member = ctx.myChatMember.new_chat_member;
+        if (member.status === 'administrator' && member.can_invite_users) {
+          inviteLink = (await ctx.createChatInviteLink({ name: 'Open door' })).invite_link;
+        }
+      });
+      bot.command('approval', async (ctx) => {
+        if (inviteLink !== undefined) {
+          await ctx.editChatInviteLink(inviteLink, { name: 'Apply', creates_join_request: true });
+        }
+      });
+      bot.command('close', async (ctx) => {
+        if (inviteLink !== undefined) {
+          await ctx.revokeChatInviteLink(inviteLink);
+        }
+      });
+    },
+  }, async ({ session, botProfile, account, activity }) => {
+    const supergroup = await account.createSupergroup({ title: 'Book club' });
+    const groupChat = { type: 'supergroup', chatId: supergroup.id } as const;
+    await account.addChatMember({ chat: groupChat, userId: botProfile.id });
+    const beforePromotion = await activity.position();
+    await account.promoteChatMember({
+      chat: groupChat,
+      userId: botProfile.id,
+      rights: { can_invite_users: true },
+    });
+    const created = await activity.waitFor(
+      { method: 'createChatInviteLink', chat_id: supergroup.id, ok: true },
+      { after: beforePromotion },
+    );
+    assert(created.answer.ok);
+    const link = (created.answer.result as ChatInviteLink).invite_link;
+
+    const { account: grace } = await session.createAccount({ first_name: 'Grace' });
+    assertEquals((await grace.joinChatByInviteLink({ inviteLink: link })).outcome, 'joined');
+
+    const beforeEdit = await activity.position();
+    await account.sendMessage({ to: groupChat, text: '/approval@test_bot' });
+    await activity.waitFor(
+      { method: 'editChatInviteLink', chat_id: supergroup.id, ok: true },
+      { after: beforeEdit },
+    );
+    const { account: heidi } = await session.createAccount({ first_name: 'Heidi' });
+    const request = await heidi.joinChatByInviteLink({ inviteLink: link });
+    assertEquals(request.outcome, 'join_request_sent');
+
+    const beforeRevocation = await activity.position();
+    await account.sendMessage({ to: groupChat, text: '/close@test_bot' });
+    const revocation = await activity.waitFor(
+      { method: 'revokeChatInviteLink', chat_id: supergroup.id, ok: true },
+      { after: beforeRevocation },
+    );
+    assert(revocation.answer.ok);
+    assertEquals((revocation.answer.result as ChatInviteLink).is_revoked, true);
+
+    const { account: ivan } = await session.createAccount({ first_name: 'Ivan' });
+    const refusal = await assertRejects(
+      () => ivan.joinChatByInviteLink({ inviteLink: link }),
+      EmulationClientError,
+    );
+    assertEquals(refusal.status, 410);
+
+    // Grace stays a member, and Heidi's request waits for the bot's decision.
+    const [ownerView] = await account.getChatInviteLinks({ chat: groupChat });
+    assertEquals(
+      [ownerView?.name, ownerView?.member_count, ownerView?.pending_join_request_count],
+      ['Apply', 1, 1],
+    );
+    assertEquals(ownerView?.is_revoked, true);
+    const pending = await account.getChatJoinRequests({ chat: groupChat });
+    assertEquals(pending.map(({ user_id }) => user_id), [heidi.id]);
   });
 });
 ```
