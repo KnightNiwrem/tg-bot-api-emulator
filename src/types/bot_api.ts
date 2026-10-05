@@ -354,15 +354,63 @@ export interface BotApiRepliedPinServiceContent<PinnedMessage> {
   readonly pinned_message?: PinnedMessage;
 }
 
-/** What a private message shows: content, or a pin. */
+/**
+ * A user an account shared with a bot, as the official server's `JsonSharedUser` shows it: the
+ * details the bot's request asked for, each omitted when the user lacks it.
+ */
+export interface BotApiSharedUser {
+  readonly user_id: number;
+  readonly first_name?: string;
+  readonly last_name?: string;
+  readonly username?: string;
+}
+
+/**
+ * The fields of a service message about users an account shared with the bot, which take the place
+ * of content, as the official server's `JsonMessage` writes them: the legacy `user_shared` when one
+ * user was shared, then `users_shared`, which also keeps the legacy `user_ids`.
+ */
+export interface BotApiUsersSharedServiceContent {
+  /** Legacy form of a single shared user; omitted when several were shared. */
+  readonly user_shared?: { readonly user_id: number; readonly request_id: number };
+  readonly users_shared: {
+    /** Legacy: the IDs of `users`. */
+    readonly user_ids: readonly number[];
+    readonly users: readonly BotApiSharedUser[];
+    readonly request_id: number;
+  };
+}
+
+/**
+ * The field of a service message about a chat an account shared with the bot, which takes the
+ * place of content, as the official server's `JsonChatShared` writes it: the details the bot's
+ * request asked for, each omitted when the chat lacks it.
+ */
+export interface BotApiChatSharedServiceContent {
+  readonly chat_shared: {
+    readonly chat_id: number;
+    readonly title?: string;
+    readonly username?: string;
+    readonly request_id: number;
+  };
+}
+
+/** What a private message shows: content, a pin, or the users or chat an account shared. */
 export type BotApiPrivateMessageContent =
   | BotApiMessageContent
-  | BotApiPinServiceContent<BotApiPinnedPrivateMessage, BotApiPrivateChat>;
+  | BotApiPinServiceContent<BotApiPinnedPrivateMessage, BotApiPrivateChat>
+  | BotApiUsersSharedServiceContent
+  | BotApiChatSharedServiceContent;
 
-/** What a private message shows as a replied message: content, or a pin. */
+/**
+ * What a private message shows as a replied message: content, a pin, or the users or chat an
+ * account shared.
+ */
 export type BotApiRepliedPrivateMessageContent =
   | BotApiMessageContent
-  | BotApiRepliedPinServiceContent<BotApiPinnedPrivateMessage>;
+  | BotApiRepliedPinServiceContent<BotApiPinnedPrivateMessage>
+  | BotApiUsersSharedServiceContent
+  | BotApiChatSharedServiceContent;
 
 /** What a supergroup message shows: content, or a change of the supergroup. */
 export type BotApiSupergroupMessageContent =

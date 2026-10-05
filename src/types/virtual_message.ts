@@ -312,24 +312,74 @@ export type SupergroupServiceContent =
 /** What a supergroup message shows: content its author wrote, or a change of the supergroup. */
 export type SupergroupMessageContent = MessageContent | SupergroupServiceContent;
 
-/** What a private service message shows instead of content: a pin, the one change it records. */
-export type PrivateServiceContent = MessagePinnedContent;
-
-/** What a private message shows: content its author wrote, or a pin. */
-export type PrivateMessageContent = MessageContent | PrivateServiceContent;
+/**
+ * A user an account shared with a bot, with the details of the user that the bot's request asked
+ * for, as they were when the account shared it. A detail the request did not ask for, or that the
+ * user lacks, is omitted.
+ */
+export interface SharedUser {
+  readonly userId: number;
+  readonly firstName?: string;
+  readonly lastName?: string;
+  readonly username?: string;
+}
 
 /**
- * Whether a message's content records a change of its chat, as a service message, rather than
- * content its author wrote. Every private service content is also a supergroup's.
+ * A service message's record that an account shared users with the bot of its private chat, in
+ * answer to a reply keyboard button's `request_users`.
  */
-function isSupergroupServiceContent(
-  content: SupergroupMessageContent,
-): content is SupergroupServiceContent {
+export interface UsersSharedMessageContent {
+  readonly kind: 'users_shared';
+  /** The `request_id` of the button's request. */
+  readonly requestId: number;
+  /** The shared users, in the order the account chose them; never empty. */
+  readonly users: readonly SharedUser[];
+}
+
+/**
+ * A service message's record that an account shared a chat with the bot of its private chat, in
+ * answer to a reply keyboard button's `request_chat`, with the details of the chat that the
+ * request asked for, as they were when the account shared it. A detail the request did not ask
+ * for, or that the chat lacks, is omitted.
+ */
+export interface ChatSharedMessageContent {
+  readonly kind: 'chat_shared';
+  /** The `request_id` of the button's request. */
+  readonly requestId: number;
+  readonly chatId: number;
+  readonly title?: string;
+  readonly username?: string;
+}
+
+/**
+ * What a private service message shows instead of content: a pin, or the users or chat an account
+ * shared with the bot.
+ */
+export type PrivateServiceContent =
+  | MessagePinnedContent
+  | UsersSharedMessageContent
+  | ChatSharedMessageContent;
+
+/** What a private message shows: content its author wrote, or a service message's record. */
+export type PrivateMessageContent = MessageContent | PrivateServiceContent;
+
+/** What a message of any chat shows: content its author wrote, or a service message's record. */
+export type ChatMessageContent = SupergroupMessageContent | PrivateMessageContent;
+
+/**
+ * Whether a message's content records a change of its chat, or what an account shared, as a
+ * service message, rather than content its author wrote.
+ */
+function isServiceContent(
+  content: ChatMessageContent,
+): content is SupergroupServiceContent | PrivateServiceContent {
   switch (content.kind) {
     case 'members_joined':
     case 'member_left':
     case 'title_changed':
     case 'message_pinned':
+    case 'users_shared':
+    case 'chat_shared':
       return true;
     case 'text':
     case 'photo':
@@ -353,7 +403,7 @@ function isSupergroupServiceContent(
  * contact, a location, or a service message.
  */
 export function isCaptionedMediaContent(
-  content: SupergroupMessageContent,
+  content: ChatMessageContent,
 ): content is CaptionedMediaContent {
   switch (content.kind) {
     case 'photo':
@@ -370,6 +420,8 @@ export function isCaptionedMediaContent(
     case 'member_left':
     case 'title_changed':
     case 'message_pinned':
+    case 'users_shared':
+    case 'chat_shared':
       return false;
     default: {
       const unhandledContent: never = content;
@@ -384,7 +436,7 @@ export function isCaptionedMediaContent(
  * them, a rich message, a contact, a location, and a service message carry no text; it reads only
  * the description of a poll, which the emulator does not support, so a poll carries none either.
  */
-export function getContentText(content: SupergroupMessageContent): FormattedText {
+export function getContentText(content: ChatMessageContent): FormattedText {
   if (isCaptionedMediaContent(content)) {
     return content.caption;
   }
@@ -399,6 +451,8 @@ export function getContentText(content: SupergroupMessageContent): FormattedText
     case 'member_left':
     case 'title_changed':
     case 'message_pinned':
+    case 'users_shared':
+    case 'chat_shared':
       return { text: '', entities: [] };
     default: {
       const unhandledContent: never = content;
@@ -487,7 +541,7 @@ export type ExternalReplyMedia =
 
 /**
  * A canonical message of a private conversation: one either participant wrote, or a service
- * message recording a pin that either participant made.
+ * message recording a pin that either participant made, or the users or chat the account shared.
  */
 export interface PrivateMessage {
   readonly kind: 'private_message';
@@ -690,7 +744,7 @@ export type SupergroupContentMessage = SupergroupMessage & { readonly content: M
 export function isSupergroupContentMessage(
   message: SupergroupMessage,
 ): message is SupergroupContentMessage {
-  return !isSupergroupServiceContent(message.content);
+  return !isServiceContent(message.content);
 }
 
 /** A private message that shows content its author wrote, rather than a service message. */
@@ -700,7 +754,7 @@ export type PrivateContentMessage = PrivateMessage & { readonly content: Message
 export function isPrivateContentMessage(
   message: PrivateMessage,
 ): message is PrivateContentMessage {
-  return !isSupergroupServiceContent(message.content);
+  return !isServiceContent(message.content);
 }
 
 /** A message of any chat that shows content its author wrote, rather than a service message. */

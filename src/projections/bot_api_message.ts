@@ -5,6 +5,7 @@ import {
   type BotApiChatJoinRequest,
   type BotApiChatMember,
   type BotApiChatMemberUpdated,
+  type BotApiChatSharedServiceContent,
   type BotApiChosenInlineResult,
   type BotApiExternalReplyInfo,
   type BotApiExternalReplyMedia,
@@ -34,6 +35,7 @@ import {
   type BotApiSupergroupMessageContent,
   type BotApiTextQuote,
   type BotApiUser,
+  type BotApiUsersSharedServiceContent,
   toBotApiContact,
   toBotApiLocation,
 } from '../types/bot_api.ts';
@@ -59,6 +61,7 @@ import type { VirtualBotProfile } from '../types/virtual_bot.ts';
 import type { BasicGroup, Supergroup } from '../types/virtual_chat.ts';
 import {
   type ChatMessage,
+  type ChatSharedMessageContent,
   type ExternalReply,
   type FormattedText,
   hasProtectedContent,
@@ -74,6 +77,7 @@ import {
   type SupergroupMessageContent,
   type TextEntity,
   type TextQuote,
+  type UsersSharedMessageContent,
 } from '../types/virtual_message.ts';
 import { projectChatPermissions } from './bot_api_chat_permissions.ts';
 import { writeDateTimeFormat } from './bot_api_date_time_format.ts';
@@ -194,7 +198,7 @@ export function projectPrivateMessageForBot(
   const { message, context } = observed;
   const content: BotApiPrivateMessageContent = message.content.kind === 'message_pinned'
     ? { pinned_message: requirePinnedMessage(pinnedMessage, message) }
-    : projectMessageContent(message.content, context);
+    : projectPrivateMessageContent(message.content, context);
   return {
     ...projectPrivateMessageHeader(observed),
     ...projectMessageBody(message, content, context, repliedMessage, false),
@@ -544,9 +548,67 @@ function projectRepliedPrivateMessageContent(
   pinnedMessage: BotApiPinnedPrivateMessage | undefined,
 ): BotApiRepliedPrivateMessageContent {
   if (content.kind !== 'message_pinned') {
-    return projectMessageContent(content, context);
+    return projectPrivateMessageContent(content, context);
   }
   return pinnedMessage === undefined ? {} : { pinned_message: pinnedMessage };
+}
+
+/** Projects what a private message shows other than a pin: content, or what an account shared. */
+function projectPrivateMessageContent(
+  content: Exclude<PrivateMessageContent, MessagePinnedContent>,
+  context: MessageProjectionContext,
+): BotApiMessageContent | BotApiUsersSharedServiceContent | BotApiChatSharedServiceContent {
+  switch (content.kind) {
+    case 'users_shared':
+      return projectUsersSharedContent(content);
+    case 'chat_shared':
+      return projectChatSharedContent(content);
+    default:
+      return projectMessageContent(content, context);
+  }
+}
+
+/**
+ * Projects the users an account shared, as the official server's `JsonMessage` writes them: the
+ * legacy `user_shared` for a single user, then `JsonUsersShared`, whose `JsonSharedUser` shows
+ * only the details the request asked for.
+ */
+function projectUsersSharedContent(
+  { requestId, users }: UsersSharedMessageContent,
+): BotApiUsersSharedServiceContent {
+  const [onlyUser] = users.length === 1 ? users : [];
+  return {
+    ...(onlyUser === undefined
+      ? {}
+      : { user_shared: { user_id: onlyUser.userId, request_id: requestId } }),
+    users_shared: {
+      user_ids: users.map(({ userId }) => userId),
+      users: users.map(({ userId, firstName, lastName, username }) => ({
+        user_id: userId,
+        ...(firstName === undefined ? {} : { first_name: firstName }),
+        ...(lastName === undefined ? {} : { last_name: lastName }),
+        ...(username === undefined ? {} : { username }),
+      })),
+      request_id: requestId,
+    },
+  };
+}
+
+/**
+ * Projects the chat an account shared, as the official server's `JsonChatShared` writes it, with
+ * only the details the request asked for.
+ */
+function projectChatSharedContent(
+  { requestId, chatId, title, username }: ChatSharedMessageContent,
+): BotApiChatSharedServiceContent {
+  return {
+    chat_shared: {
+      chat_id: chatId,
+      ...(title === undefined ? {} : { title }),
+      ...(username === undefined ? {} : { username }),
+      request_id: requestId,
+    },
+  };
 }
 
 /** Projects what a supergroup message shows other than a pin: content, or a change of it. */

@@ -16,6 +16,7 @@ import {
   type BotMessageReplyTarget,
   type DeleteMessagesByBotFailureReason,
   type EditBotMessageTextFailureReason,
+  type PressReplyKeyboardButtonResult,
   PrivateMessagingService,
   type SendBotMessageResult,
 } from '../src/services/private_messaging.ts';
@@ -24,7 +25,11 @@ import { VirtualUserService } from '../src/services/virtual_user.ts';
 import type { BotApiMessage, BotApiUpdate } from '../src/types/bot_api.ts';
 import type { ChatDomainEvent } from '../src/types/chat_domain_event.ts';
 import type { InlineKeyboard } from '../src/types/inline_keyboard.ts';
-import type { BotMessageReplyMarkup, ReplyInterfaceMarkup } from '../src/types/reply_interface.ts';
+import type {
+  BotMessageReplyMarkup,
+  ReplyInterfaceMarkup,
+  ReplyKeyboardRequestAnswer,
+} from '../src/types/reply_interface.ts';
 import type { DocumentUpload, FileUpload, PhotoUpload } from '../src/types/stored_file.ts';
 import {
   getContentText,
@@ -2130,6 +2135,125 @@ Deno.test('PrivateMessagingService lets a join request contact grant send messag
   );
 });
 
+Deno.test('PrivateMessagingService shares chosen users as a service message of the account', () => {
+  const { virtualUsers, botUpdates, publishedEvents, privateMessaging } =
+    createPrivateMessagingFixture();
+  const account = createAccount(virtualUsers, 'Ada');
+  const grace = createAccount(virtualUsers, 'Grace');
+  const bot = createBot(virtualUsers, 'Test Bot', 'test_bot');
+  sendPrivateText(privateMessaging, account.profile.id, bot);
+  const keyboard = privateMessaging.sendBotMessage({
+    fromBotId: bot.profile.id,
+    to: { type: 'private', accountId: account.profile.id },
+    replyInterfaceMarkup: {
+      kind: 'reply_keyboard',
+      rows: [[
+        {
+          text: 'Friends',
+          request: {
+            kind: 'users',
+            requestId: 3,
+            maxQuantity: 1,
+            requestsName: true,
+            requestsUsername: false,
+            requestsPhoto: false,
+          },
+        },
+        {
+          text: 'Group',
+          request: {
+            kind: 'chat',
+            requestId: 4,
+            chatIsChannel: false,
+            chatIsCreated: false,
+            botIsMember: false,
+            requestsTitle: false,
+            requestsUsername: false,
+            requestsPhoto: false,
+          },
+        },
+        { text: 'Plain' },
+      ]],
+      isPersistent: false,
+      resizesToFit: false,
+      isOneTime: false,
+      isSelective: false,
+    },
+    content: { kind: 'text', text: 'Choose' },
+  });
+  if (!keyboard.sent) {
+    throw new Error(`Expected the keyboard to be sent, received ${keyboard.reason}`);
+  }
+  const eventCountBeforePresses = publishedEvents.length;
+  const press = (text: string, answer?: ReplyKeyboardRequestAnswer) =>
+    privateMessaging.pressReplyKeyboardButton({
+      fromAccountId: account.profile.id,
+      chat: { type: 'private', botId: bot.profile.id },
+      text,
+      ...(answer === undefined ? {} : { answer }),
+    });
+  const graceAnswer: ReplyKeyboardRequestAnswer = { kind: 'users', userIds: [grace.profile.id] };
+  const refusals: Array<[PressReplyKeyboardButtonResult, string]> = [
+    [press('Friends'), 'reply_keyboard_button_answer_missing'],
+    [press('Group'), 'reply_keyboard_button_answer_missing'],
+    [press('Plain', graceAnswer), 'reply_keyboard_button_answer_not_requested'],
+    [
+      press('Friends', { kind: 'chat', chatId: -1_000_000_000_001 }),
+      'reply_keyboard_button_answer_not_requested',
+    ],
+    [press('Group', { kind: 'chat', chatId: -1_000_000_000_001 }), 'shared_chat_not_found'],
+    [
+      press('Friends', { kind: 'users', userIds: [grace.profile.id, account.profile.id] }),
+      'shared_users_too_many',
+    ],
+  ];
+  for (const [result, expectedReason] of refusals) {
+    if (result.sent || result.reason !== expectedReason) {
+      throw new Error(`Expected ${expectedReason}, received ${JSON.stringify(result)}`);
+    }
+  }
+  if (publishedEvents.length !== eventCountBeforePresses) {
+    throw new Error('Expected refused presses to publish nothing');
+  }
+
+  const shared = press('Friends', graceAnswer);
+  if (!shared.sent) {
+    throw new Error(`Expected the users to be shared, received ${shared.reason}`);
+  }
+  const expectedContent = {
+    kind: 'users_shared',
+    requestId: 3,
+    users: [{ userId: grace.profile.id, firstName: 'Grace' }],
+  };
+  if (
+    shared.message.authorRole !== 'account' ||
+    JSON.stringify(shared.message.content) !== JSON.stringify(expectedContent) ||
+    shared.message.replyToMessageId !== undefined
+  ) {
+    throw new Error(
+      `Expected a service message of the account, received ${JSON.stringify(shared)}`,
+    );
+  }
+  const sharedMessage = messageFromUpdate(
+    botUpdates.confirmAndReadPendingUpdates(bot.profile.id, { limit: 100 }).at(-1),
+  );
+  if (
+    sharedMessage === undefined || !('users_shared' in sharedMessage) ||
+    JSON.stringify(sharedMessage.users_shared) !==
+      JSON.stringify({
+        user_ids: [grace.profile.id],
+        users: [{ user_id: grace.profile.id, first_name: 'Grace' }],
+        request_id: 3,
+      }) ||
+    JSON.stringify(sharedMessage.user_shared) !==
+      JSON.stringify({ user_id: grace.profile.id, request_id: 3 })
+  ) {
+    throw new Error(
+      `Expected the bot to receive the shared user: ${JSON.stringify(sharedMessage)}`,
+    );
+  }
+});
+
 const COLOR_KEYBOARD: ReplyInterfaceMarkup = {
   kind: 'reply_keyboard',
   rows: [[{ text: 'Red' }, { text: 'Green' }]],
@@ -2214,6 +2338,7 @@ function createPrivateMessagingFixture() {
   const privateMessaging = new PrivateMessagingService({
     accounts,
     bots,
+    sharedChats,
     privateConversations,
     messages,
     files: {

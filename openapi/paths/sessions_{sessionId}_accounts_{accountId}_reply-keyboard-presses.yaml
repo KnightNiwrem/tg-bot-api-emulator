@@ -16,7 +16,13 @@ post:
     Telegram for Android's `shareMyContact` do once the user confirms; the bot receives an
     ordinary contact message whose `user_id` is the account's. A `request_location` button
     likewise shares the `location` the request reports, as Telegram for Android's
-    `sendLocation` replies with the device's location; no other button takes a location.
+    `sendLocation` replies with the device's location; no other button takes a location. A
+    `request_users` or `request_chat` button shares the `shared_user_ids` or `shared_chat_id`
+    the request chooses, as TDLib's `shareUsersWithBot` and `shareChatWithBot` do, in a
+    `users_shared` or `chat_shared` service message of the account that replies to nothing.
+    The choice must meet the button's criteria as TDLib's `RequestedDialogType` checks them;
+    the bot must already be a member that holds the rights the request requires of it, and
+    sharing grants nobody membership or rights. A failed press creates no message.
   requestBody:
     required: true
     content:
@@ -26,8 +32,8 @@ post:
   responses:
     '201':
       description: >-
-        The button's text, the account's own contact, or the reported location was sent as the
-        account's message, and, unless the bot's allowed_updates subscription excludes message
+        The button's text, the account's own contact, the reported location, or the chosen users
+        or supergroup were sent as the account's message, and, unless the bot's allowed_updates subscription excludes message
         updates, an update was enqueued for the bot.
       content:
         application/json:
@@ -37,16 +43,21 @@ post:
               - $ref: ../components/schemas/SentSupergroupMessage.yaml
     '400':
       description: >-
-        The request is invalid, the chat shows no reply keyboard with a button of that text, the
-        button has a request other than for the user's contact or location, which the emulator
-        cannot answer, or a location is missing for a `request_location` button or given for
-        any other button.
+        The request is invalid or answers more than one request, the chat shows no reply
+        keyboard with a button of that text, the button has a request for a poll or a Web App,
+        which the emulator cannot answer, an answer is missing for the button's request or given
+        for a button without that request, or the chosen users or supergroup do not meet the
+        button's criteria. A request that requires Premium users, a channel, a forum, or an
+        anonymous administrator cannot be answered, as the emulator models none of them.
     '403':
       description: >-
-        The account is not a member of the supergroup, or may not send text there, as its
-        restriction or the supergroup's default permissions decide.
+        The account is not a member of the supergroup it presses a button in, or may not send
+        text there, as its restriction or the supergroup's default permissions decide, or is not
+        a member of the supergroup it chooses to share.
     '404':
-      description: The session, account, bot, or supergroup does not exist.
+      description: >-
+        The session, account, bot, or supergroup does not exist, or no account or bot of the
+        session has a chosen user ID, or no supergroup of the session the chosen chat ID.
     '409':
       description: >-
         The account blocks the bot and must unblock it before writing to it, or presses a

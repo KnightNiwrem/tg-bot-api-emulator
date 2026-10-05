@@ -15,14 +15,21 @@ type AccountMessageFailureReason =
   >['reason'];
 
 /**
- * A missing participant is not found; a block conflicts with writing to the bot, and an account
- * without a phone number conflicts with sharing its own contact.
+ * A missing participant, or a missing user or supergroup to share, is not found; a supergroup the
+ * account is not a member of is forbidden to share; a block conflicts with writing to the bot, and
+ * an account without a phone number conflicts with sharing its own contact.
  */
-export function accountMessageFailureStatus(reason: AccountMessageFailureReason): 400 | 404 | 409 {
+export function accountMessageFailureStatus(
+  reason: AccountMessageFailureReason,
+): 400 | 403 | 404 | 409 {
   switch (reason) {
     case 'account_not_found':
     case 'bot_not_found':
+    case 'shared_user_not_found':
+    case 'shared_chat_not_found':
       return 404;
+    case 'shared_chat_not_joined':
+      return 403;
     case 'bot_blocked':
     case 'account_phone_number_missing':
       return 409;
