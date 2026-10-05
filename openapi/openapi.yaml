@@ -55,6 +55,8 @@ paths:
     $ref: paths/sessions_{sessionId}_bots_{botId}.yaml
   /sessions/{sessionId}/bots/{botId}/rate-limit-responses:
     $ref: paths/sessions_{sessionId}_bots_{botId}_rate-limit-responses.yaml
+  /sessions/{sessionId}/bots/{botId}/server-error-responses:
+    $ref: paths/sessions_{sessionId}_bots_{botId}_server-error-responses.yaml
   /sessions/{sessionId}/bots/{botId}/webhook-delivery:
     $ref: paths/sessions_{sessionId}_bots_{botId}_webhook-delivery.yaml
   /sessions/{sessionId}/bots/{botId}/webhook-attempts:

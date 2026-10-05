@@ -1,0 +1,10 @@
+description: >-
+  A test queued a server error answer for this call with `queueServerErrorResponses`, so the
+  call failed before the method ran and changed nothing. The emulator never fails a call this
+  way by itself. The body is Telegram's error envelope with `error_code` equal to the HTTP
+  status, described as `Internal Server Error` for `500` or `Service Unavailable` for `503`, and
+  without `parameters` or a `Retry-After` header.
+content:
+  application/json:
+    schema:
+      $ref: ../schemas/BotApiErrorResponse.yaml

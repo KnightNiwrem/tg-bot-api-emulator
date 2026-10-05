@@ -1,0 +1,17 @@
+type: object
+additionalProperties: false
+required:
+  - error_code
+  - remaining_count
+properties:
+  method:
+    type: string
+    description: >-
+      The Bot API method whose calls receive the answers, by its current name, such as
+      `banChatMember` for `kickChatMember`; omitted for calls of every method.
+  error_code:
+    $ref: ServerErrorCode.yaml
+  remaining_count:
+    type: integer
+    minimum: 1
+    description: How many of the bot's next matching calls still receive an answer.

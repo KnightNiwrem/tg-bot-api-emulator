@@ -1,0 +1,55 @@
+description: >-
+  Server error answers queued for a bot's next Bot API calls, for testing how the bot retries
+  or falls back when a call fails. This is emulator fault injection: the emulator never fails a
+  call by itself, and the answers do not reproduce when Telegram fails calls. Each call of an
+  implemented method takes one answer from the earliest queued answers that apply to its
+  method, whatever its parameters, before the method reads them or changes anything; webhook
+  replies that call methods take them too. A call takes at most one queued answer, and queued
+  rate limit answers apply before server error answers. Unknown methods, undecodable requests
+  and invalid tokens are answered as without queued answers and take none. Answers that no call
+  takes end with the session.
+parameters:
+  - $ref: ../components/parameters/SessionId.yaml
+  - $ref: ../components/parameters/BotId.yaml
+post:
+  operationId: queueServerErrorResponses
+  summary: Queue server error answers for a bot's next calls
+  requestBody:
+    required: true
+    content:
+      application/json:
+        schema:
+          $ref: ../components/schemas/QueueServerErrorResponsesRequest.yaml
+  responses:
+    '201':
+      description: The answers were queued.
+      content:
+        application/json:
+          schema:
+            $ref: ../components/schemas/ServerErrorResponses.yaml
+    '400':
+      description: >-
+        The request body is malformed, `error_code` is neither `500` nor `503`, or `method`
+        names no Bot API method the emulator implements. Answers already queued are kept.
+    '404':
+      description: No active test session or virtual bot has the supplied identifier.
+get:
+  operationId: listServerErrorResponses
+  summary: List the server error answers still queued for a bot
+  responses:
+    '200':
+      description: The queued answers, earliest first.
+      content:
+        application/json:
+          schema:
+            type: object
+            additionalProperties: false
+            required:
+              - server_error_responses
+            properties:
+              server_error_responses:
+                type: array
+                items:
+                  $ref: ../components/schemas/ServerErrorResponses.yaml
+    '404':
+      description: No active test session or virtual bot has the supplied identifier.

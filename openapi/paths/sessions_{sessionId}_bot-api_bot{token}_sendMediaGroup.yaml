@@ -90,3 +90,7 @@ post:
       $ref: ../components/responses/BotApiUploadTooLarge.yaml
     '429':
       $ref: ../components/responses/BotApiRateLimited.yaml
+    '500':
+      $ref: ../components/responses/BotApiServerError.yaml
+    '503':
+      $ref: ../components/responses/BotApiServerError.yaml
