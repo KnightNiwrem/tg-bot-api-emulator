@@ -262,6 +262,19 @@ export function holdsSupergroupAdministratorRight(
   }
 }
 
+/**
+ * Whether a supergroup member holds every one of the rights, as a promoter must to grant them: the
+ * Bot API documents `can_promote_members` as adding administrators "with a subset of their own
+ * privileges", and Telegram's `chatAdminRights.add_admins` as adding them "with the same (or more
+ * limited) permissions". The owner holds every right.
+ */
+export function holdsEverySupergroupAdministratorRight(
+  membership: ChatMembership | undefined,
+  rights: SupergroupAdministratorRights,
+): boolean {
+  return [...rights].every((right) => holdsSupergroupAdministratorRight(membership, right));
+}
+
 /** Finds the standing of a current member of one supergroup; `undefined` for a non-member. */
 export type SupergroupMembershipReader = (userId: number) => ChatMembership | undefined;
 

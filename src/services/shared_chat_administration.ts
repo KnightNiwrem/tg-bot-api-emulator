@@ -32,6 +32,7 @@ import {
   type FormerChatMemberStatus,
   getEffectiveChatPermissions,
   getSupergroupNonMemberFailureReason,
+  holdsEverySupergroupAdministratorRight,
   holdsSupergroupAdministratorRight,
   isAdministratorPromotedBy,
   isChatMember,
@@ -208,11 +209,14 @@ export type RemoveChatMemberResult =
   };
 
 export interface PromoteChatMemberInput {
-  /** The owner, who alone promotes administrators here. */
+  /** The owner, or an administrator with `can_promote_members`. */
   readonly actorAccountId: number;
   readonly chatId: number;
   readonly memberId: number;
-  /** The rights the administrator holds from now on, which must include at least one. */
+  /**
+   * The rights the administrator holds from now on, which must include at least one, and which an
+   * administrator that promotes must hold itself.
+   */
   readonly rights: SupergroupAdministratorRights;
 }
 
@@ -224,13 +228,45 @@ type OwnerMemberManagementFailureReason =
   | 'member_not_found'
   | 'not_a_member';
 
+/**
+ * Why an account cannot find the supergroup and the user it would administer, in the order they
+ * are checked: the account, the supergroup, the account's membership, then the user.
+ */
+type AccountAdministrationTargetFailureReason =
+  | 'actor_account_not_found'
+  | 'chat_not_found'
+  | 'actor_not_a_member'
+  | 'member_not_found';
+
+/** Why an account may not change a user's standing, once it found the user. */
+type AccountAdministrationRefusal =
+  /** Nobody changes the owner's standing. */
+  | 'member_is_owner'
+  /**
+   * The account would change its own standing, which Telegram Desktop never offers: its
+   * `canEditAdmin` and `canRestrictParticipant` refuse the account itself.
+   */
+  | 'cannot_manage_self'
+  /** The user is an administrator that the account did not promote, directly or indirectly. */
+  | 'administrator_not_promoted_by_actor';
+
+/**
+ * Why an account cannot promote a member, change an administrator's rights, or demote one, in the
+ * order they are checked.
+ */
 export type ChatMemberRoleChangeFailureReason =
-  | OwnerMemberManagementFailureReason
-  | 'member_is_owner';
+  | AccountAdministrationTargetFailureReason
+  /** The user is not a member of the supergroup. */
+  | 'not_a_member'
+  | AccountAdministrationRefusal
+  /** The account lacks `can_promote_members`, which TDLib's `promote_channel_participant` requires. */
+  | 'not_enough_rights';
 
 export type PromoteChatMemberFailureReason =
+  | 'no_rights_granted'
   | ChatMemberRoleChangeFailureReason
-  | 'no_rights_granted';
+  /** The account would grant a right it does not hold, which Telegram refuses as `RIGHT_FORBIDDEN`. */
+  | 'rights_not_held';
 
 export type PromoteChatMemberResult =
   | { readonly promoted: true }
@@ -370,7 +406,7 @@ export type ChangeDefaultPermissionsResult =
   };
 
 export interface DemoteChatMemberInput {
-  /** The owner, who alone demotes administrators here. */
+  /** The owner, or an administrator with `can_promote_members` that promoted the administrator. */
   readonly actorAccountId: number;
   readonly chatId: number;
   readonly memberId: number;
@@ -490,8 +526,8 @@ type BotPromotionFailureReason = Extract<
   | 'rights_not_held'
 >;
 
-export interface RestrictChatMemberAsOwnerInput {
-  /** The owner, who alone restricts users through the emulation API. */
+export interface RestrictChatMemberAsAccountInput {
+  /** The owner, or an administrator with `can_restrict_members`. */
   readonly actorAccountId: number;
   readonly chatId: number;
   /** The account or bot to restrict, whether it is a member or not. */
@@ -502,24 +538,31 @@ export interface RestrictChatMemberAsOwnerInput {
   readonly requestedRestrictionEndUnixSeconds?: number;
 }
 
-export interface LiftRestrictionAsOwnerInput {
-  /** The owner, who alone lifts restrictions through the emulation API. */
+export interface LiftRestrictionAsAccountInput {
+  /** The owner, or an administrator with `can_restrict_members`. */
   readonly actorAccountId: number;
   readonly chatId: number;
   readonly memberId: number;
 }
 
-/** Why the owner cannot restrict a user of its supergroup, or lift the user's restriction. */
-export type OwnerRestrictionFailureReason =
-  | 'actor_account_not_found'
-  | 'chat_not_found'
-  | 'actor_not_authorized'
-  | 'member_not_found'
-  | 'member_is_owner';
+/**
+ * Why an account cannot restrict a user of a supergroup, or lift the user's restriction, in the
+ * order they are checked.
+ */
+export type AccountRestrictionFailureReason =
+  | AccountAdministrationTargetFailureReason
+  | AccountAdministrationRefusal
+  /**
+   * Keeping every permission would make an administrator a plain member, which needs
+   * `can_promote_members`, as TDLib's `promote_channel_participant` requires.
+   */
+  | 'not_enough_rights_to_promote'
+  /** The account lacks `can_restrict_members`, as TDLib's `restrict_channel_participant` requires. */
+  | 'not_enough_rights';
 
-export type OwnerRestrictionResult =
+export type AccountRestrictionResult =
   | { readonly changed: true }
-  | { readonly changed: false; readonly reason: OwnerRestrictionFailureReason };
+  | { readonly changed: false; readonly reason: AccountRestrictionFailureReason };
 
 export interface ExpireRestrictionInput {
   readonly chatId: number;
@@ -624,6 +667,15 @@ interface ModerationTarget {
   readonly chat: Supergroup;
   readonly botId: number;
   readonly botMembership: ChatMembership;
+  readonly memberId: number;
+  readonly memberStatus: ChatMemberStatus;
+}
+
+/** An account administering a supergroup it is a member of, and the user it administers. */
+interface AccountAdministrationTarget {
+  readonly chat: Supergroup;
+  readonly actorAccountId: number;
+  readonly actorMembership: ChatMembership;
   readonly memberId: number;
   readonly memberStatus: ChatMemberStatus;
 }
@@ -752,17 +804,22 @@ function getJoiningMemberStatus(statusBeforeJoining: FormerChatMemberStatus): Jo
 }
 
 /**
- * The tenure of an administrator bot that promotes someone. Only the owner, which no bot is,
- * promotes without a tenure.
+ * The delegation link a promoter gives the administrator whose rights it sets: the owner links
+ * without a tenure, since its standing never ends, and an administrator links with its current
+ * tenure.
  */
-function getAdministratorTenureId(
+function createDelegationLink(
   promoterId: number,
   promoterMembership: ChatMembership,
-): AdministratorTenureId {
-  if (promoterMembership.status !== 'administrator') {
-    throw new Error(`User ${promoterId} promotes someone without being an administrator`);
+): Pick<AdministratorMembership, 'promotedById' | 'promoterTenureId'> {
+  switch (promoterMembership.status) {
+    case 'owner':
+      return { promotedById: promoterId };
+    case 'administrator':
+      return { promotedById: promoterId, promoterTenureId: promoterMembership.tenureId };
+    default:
+      throw new Error(`User ${promoterId} promotes someone without being an administrator`);
   }
-  return promoterMembership.tenureId;
 }
 
 /**
@@ -786,7 +843,8 @@ function canChangeSupergroupInfo(
 
 /**
  * Establishes and changes who takes part in basic groups, supergroups, and channels, and in what
- * standing: supergroup owners promote administrators, and administrator bots ban users. Each
+ * standing: supergroup owners and administrators, accounts and bots, promote administrators and
+ * restrict users within their rights and promotions, and administrator bots ban users. Each
  * change of a standing is published, so that a bot learns of changes of its own, and a member's
  * arrival or departure is recorded in a supergroup as a service message, as Telegram does. Service
  * messages of basic groups and channels, whose messages are not supported, are not recorded.
@@ -1076,39 +1134,34 @@ export class SharedChatAdministrationService {
   }
 
   /**
-   * Promotes a member of a supergroup to administrator as its owner, or changes the rights of an
-   * administrator, who keeps its custom title. The owner then counts as the administrator's
-   * promoter, as Telegram records whoever last set an administrator's rights. A promotion that
-   * changes nothing succeeds without effect and keeps the promoter.
+   * Promotes a member of a supergroup to administrator as an account, or changes the rights of an
+   * administrator, who keeps its custom title, as `#setAdministratorRightsAsAccount` allows. The
+   * account then counts as the administrator's promoter, as Telegram records whoever last set an
+   * administrator's rights. A promotion that changes nothing succeeds without effect and keeps the
+   * promoter.
    */
   promoteChatMember(input: PromoteChatMemberInput): PromoteChatMemberResult {
     if (input.rights.size === 0) {
       return { promoted: false, reason: 'no_rights_granted' };
     }
-    const change = this.#changeMemberRoleAsOwner(
-      input,
-      (membership) =>
-        membership.status === 'administrator' &&
-          isSameSupergroupAdministratorRights(membership.rights, input.rights)
-          ? membership
-          : this.#createAdministratorStatus(membership, input.rights, {
-            promotedById: input.actorAccountId,
-          }),
-    );
+    const change = this.#setAdministratorRightsAsAccount(input, input.rights);
     return change.changed ? { promoted: true } : { promoted: false, reason: change.reason };
   }
 
   /**
-   * Demotes an administrator of a supergroup to a member as its owner, which drops its custom
-   * title. Demoting a member that is no administrator succeeds without effect, and a restricted
-   * member stays restricted.
+   * Demotes an administrator of a supergroup to a member as an account, which drops its custom
+   * title, as `#setAdministratorRightsAsAccount` allows. Demoting a member that is no
+   * administrator succeeds without effect, and a restricted member stays restricted.
    */
   demoteChatMember(input: DemoteChatMemberInput): DemoteChatMemberResult {
-    const change = this.#changeMemberRoleAsOwner(
-      input,
-      (membership) => membership.status === 'administrator' ? { status: 'member' } : membership,
-    );
-    return change.changed ? { demoted: true } : { demoted: false, reason: change.reason };
+    const change = this.#setAdministratorRightsAsAccount(input, new Set());
+    if (change.changed) {
+      return { demoted: true };
+    }
+    if (change.reason === 'rights_not_held') {
+      throw new Error(`Demoting member ${input.memberId} of chat ${input.chatId} granted rights`);
+    }
+    return { demoted: false, reason: change.reason };
   }
 
   /**
@@ -1377,28 +1430,32 @@ export class SharedChatAdministrationService {
   }
 
   /**
-   * Restricts what a user may do in a supergroup as its owner, whether the user is a member or not,
-   * as `restrictChatMember` does for a bot. The owner may restrict an administrator, which then
-   * loses its rights and custom title, as Telegram lets the owner do.
+   * Restricts what a user may do in a supergroup as an account, whether the user is a member or
+   * not, as `restrictChatMember` does for a bot and `#changeRestrictionAsAccount` allows. A
+   * restricted administrator loses its rights and custom title.
    */
-  restrictChatMemberAsOwner(input: RestrictChatMemberAsOwnerInput): OwnerRestrictionResult {
-    return this.#changeRestrictionAsOwner(input, (isMember) =>
-      createRestrictedStatus(isMember, {
-        permissions: input.permissions,
-        ...this.#normalizeRestrictionEnd(input.requestedRestrictionEndUnixSeconds),
-      }));
+  restrictChatMemberAsAccount(input: RestrictChatMemberAsAccountInput): AccountRestrictionResult {
+    return this.#changeRestrictionAsAccount(
+      input,
+      (status) =>
+        createRestrictedStatus(isChatMember(status), {
+          permissions: input.permissions,
+          ...this.#normalizeRestrictionEnd(input.requestedRestrictionEndUnixSeconds),
+        }),
+    );
   }
 
   /**
-   * Lifts a user's restriction in a supergroup as its owner, which leaves a member a plain member
-   * and a non-member as having left. A user that is not restricted stays as it is.
+   * Lifts a user's restriction in a supergroup as an account, as `#changeRestrictionAsAccount`
+   * allows, which leaves a member a plain member and a non-member as having left. A user that is
+   * not restricted stays as it is.
    */
-  liftRestrictionAsOwner(input: LiftRestrictionAsOwnerInput): OwnerRestrictionResult {
-    return this.#changeRestrictionAsOwner(
+  liftRestrictionAsAccount(input: LiftRestrictionAsAccountInput): AccountRestrictionResult {
+    return this.#changeRestrictionAsAccount(
       input,
-      (isMember, status) =>
+      (status) =>
         status.status === 'restricted'
-          ? createRestrictedStatus(isMember, { permissions: ALL_CHAT_PERMISSIONS })
+          ? createRestrictedStatus(status.isMember, { permissions: ALL_CHAT_PERMISSIONS })
           : status,
     );
   }
@@ -1515,7 +1572,6 @@ export class SharedChatAdministrationService {
     return { found: false, reason: getSupergroupNonMemberFailureReason(formerStatus) };
   }
 
-  /** Changes the role of a supergroup member that is not the owner, as the owner. */
   /**
    * Protects all messages of a supergroup from forwarding and saving, or lifts that protection, as
    * its owner, who alone may, as TDLib's `toggle_dialog_has_protected_content` requires. It applies
@@ -1720,44 +1776,118 @@ export class SharedChatAdministrationService {
     return { resolved: true, chat, membership };
   }
 
-  #changeMemberRoleAsOwner(
+  /**
+   * Resolves an account that administers a supergroup it is a member of, and the standing of the
+   * user it administers, member or not.
+   */
+  #resolveAccountAdministrationTarget(
+    { actorAccountId, chatId, memberId }: {
+      readonly actorAccountId: number;
+      readonly chatId: number;
+      readonly memberId: number;
+    },
+  ):
+    | ({ readonly resolved: true } & AccountAdministrationTarget)
+    | { readonly resolved: false; readonly reason: AccountAdministrationTargetFailureReason } {
+    if (this.#accounts.getById(actorAccountId) === undefined) {
+      return { resolved: false, reason: 'actor_account_not_found' };
+    }
+    const chat = this.#sharedChats.getSharedChat(chatId);
+    if (chat?.kind !== 'supergroup') {
+      return { resolved: false, reason: 'chat_not_found' };
+    }
+    const actorMembership = this.#sharedChats.getChatMembership(chatId, actorAccountId);
+    if (actorMembership === undefined) {
+      return { resolved: false, reason: 'actor_not_a_member' };
+    }
+    if (this.#identifyUser(memberId) === undefined) {
+      return { resolved: false, reason: 'member_not_found' };
+    }
+    return {
+      resolved: true,
+      chat,
+      actorAccountId,
+      actorMembership,
+      memberId,
+      memberStatus: this.#lookUpChatMemberStatus(chatId, memberId),
+    };
+  }
+
+  /**
+   * Sets the administrator rights of a supergroup member as an account: some rights promote a
+   * member or change an administrator's rights, and none demote an administrator. Checks follow
+   * TDLib's `set_channel_participant_status_impl` and `promote_channel_participant` and Telegram
+   * Desktop's `canEditAdmin`:
+   *
+   * 1. The user must be a member other than the owner.
+   * 2. A change that changes nothing succeeds without rights; for an administrator, only one the
+   *    account may edit counts as unchanged, as TDLib compares `can_be_edited` too.
+   * 3. The account changes no standing of its own.
+   * 4. The account needs `can_promote_members`, which the owner holds.
+   * 5. An administrator must be one the account promoted, directly or indirectly, as
+   *    `canEditSupergroupAdministrator` decides with the right.
+   * 6. The account grants only rights it holds, as `holdsEverySupergroupAdministratorRight` decides.
+   *
+   * The account becomes the administrator's promoter through its delegation link.
+   */
+  #setAdministratorRightsAsAccount(
     input: {
       readonly actorAccountId: number;
       readonly chatId: number;
       readonly memberId: number;
     },
-    getNewStatus: (membership: NonOwnerMemberStatus) => NonOwnerMemberStatus,
+    rights: SupergroupAdministratorRights,
   ):
     | { readonly changed: true }
-    | { readonly changed: false; readonly reason: ChatMemberRoleChangeFailureReason } {
-    const target = this.#resolveMemberAsOwner(input);
+    | {
+      readonly changed: false;
+      readonly reason: ChatMemberRoleChangeFailureReason | 'rights_not_held';
+    } {
+    const target = this.#resolveAccountAdministrationTarget(input);
     if (!target.resolved) {
       return { changed: false, reason: target.reason };
     }
-    const { actorAccountId, chatId, memberId } = input;
-    const { chat, membership } = target;
-    if (membership.status === 'owner') {
+    const { chat, actorAccountId, actorMembership, memberId, memberStatus } = target;
+    if (!isChatMember(memberStatus)) {
+      return { changed: false, reason: 'not_a_member' };
+    }
+    if (memberStatus.status === 'owner') {
       return { changed: false, reason: 'member_is_owner' };
     }
-    const newStatus = getNewStatus(membership);
-    if (isSameChatMemberStatus(membership, newStatus)) {
+    const isEditableAdministrator = memberStatus.status === 'administrator' &&
+      canEditSupergroupAdministrator(this.#readMembership(chat.id), actorAccountId, {
+        userId: memberId,
+        membership: memberStatus,
+      });
+    const isUnchanged = rights.size === 0
+      ? memberStatus.status !== 'administrator'
+      : isEditableAdministrator && memberStatus.status === 'administrator' &&
+        isSameSupergroupAdministratorRights(memberStatus.rights, rights);
+    if (isUnchanged) {
       return { changed: true };
     }
-
-    const update = this.#sharedChats.updateChatMemberStatus(chatId, memberId, newStatus);
-    if (!update.updated) {
-      throw new Error(
-        `Member ${memberId} of chat ${chatId} could not be updated: ${update.reason}`,
-      );
+    if (memberId === actorAccountId) {
+      return { changed: false, reason: 'cannot_manage_self' };
     }
-    this.#events.publish({
-      type: 'chat_member_status_changed',
-      chat,
+    if (!holdsSupergroupAdministratorRight(actorMembership, 'can_promote_members')) {
+      return { changed: false, reason: 'not_enough_rights' };
+    }
+    if (memberStatus.status === 'administrator' && !isEditableAdministrator) {
+      return { changed: false, reason: 'administrator_not_promoted_by_actor' };
+    }
+    if (!holdsEverySupergroupAdministratorRight(actorMembership, rights)) {
+      return { changed: false, reason: 'rights_not_held' };
+    }
+
+    this.#changeStatusOfUser(chat, {
       actorId: actorAccountId,
       memberId,
-      oldStatus: membership,
-      newStatus,
-      changedAtUnixSeconds: this.#currentUnixTimeSeconds(),
+      oldStatus: memberStatus,
+      newStatus: rights.size === 0 ? { status: 'member' } : this.#createAdministratorStatus(
+        memberStatus,
+        rights,
+        createDelegationLink(actorAccountId, actorMembership),
+      ),
     });
     return { changed: true };
   }
@@ -1800,7 +1930,7 @@ export class SharedChatAdministrationService {
       ) {
         return { promoted: false, reason: 'member_is_administrator' };
       }
-      if (![...rights].every((right) => holdsSupergroupAdministratorRight(botMembership, right))) {
+      if (!holdsEverySupergroupAdministratorRight(botMembership, rights)) {
         return { promoted: false, reason: 'rights_not_held' };
       }
     }
@@ -1809,12 +1939,11 @@ export class SharedChatAdministrationService {
       actorId: botId,
       memberId,
       oldStatus: memberStatus,
-      newStatus: rights.size === 0
-        ? { status: 'member' }
-        : this.#createAdministratorStatus(memberStatus, rights, {
-          promotedById: botId,
-          promoterTenureId: getAdministratorTenureId(botId, botMembership),
-        }),
+      newStatus: rights.size === 0 ? { status: 'member' } : this.#createAdministratorStatus(
+        memberStatus,
+        rights,
+        createDelegationLink(botId, botMembership),
+      ),
     });
     return { promoted: true };
   }
@@ -1933,40 +2062,64 @@ export class SharedChatAdministrationService {
   }
 
   /**
-   * Changes a user's restriction as the owner of its supergroup, to the standing `getNewStatus`
-   * gives the user from whether it is a member and its standing. The owner itself is refused even
-   * when nothing would change; any other change that changes nothing succeeds without effect.
+   * Changes a user's restriction as an account, to the standing `getNewStatus` gives the user from
+   * its standing. Checks follow TDLib's `set_channel_participant_status_impl` and
+   * `restrict_channel_participant` and Telegram Desktop's `canRestrictParticipant`:
+   *
+   * 1. Nobody changes the owner's standing, even when nothing would change.
+   * 2. Any other change that changes nothing succeeds without rights.
+   * 3. The account changes no standing of its own.
+   * 4. Keeping an administrator every permission makes it a plain member, which demotes it and so
+   *    needs `can_promote_members`; any other change needs `can_restrict_members`. The owner holds
+   *    both.
+   * 5. An administrator must be one the account promoted, directly or indirectly, as
+   *    `isAdministratorPromotedBy` decides, as for a bot's ban or restriction.
    */
-  #changeRestrictionAsOwner(
-    { actorAccountId, chatId, memberId }: {
+  #changeRestrictionAsAccount(
+    input: {
       readonly actorAccountId: number;
       readonly chatId: number;
       readonly memberId: number;
     },
-    getNewStatus: (isMember: boolean, status: ChatMemberStatus) => ChatMemberStatus,
-  ): OwnerRestrictionResult {
-    if (this.#accounts.getById(actorAccountId) === undefined) {
-      return { changed: false, reason: 'actor_account_not_found' };
+    getNewStatus: (status: ChatMemberStatus) => ChatMemberStatus,
+  ): AccountRestrictionResult {
+    const target = this.#resolveAccountAdministrationTarget(input);
+    if (!target.resolved) {
+      return { changed: false, reason: target.reason };
     }
-    const chat = this.#sharedChats.getSharedChat(chatId);
-    if (chat?.kind !== 'supergroup') {
-      return { changed: false, reason: 'chat_not_found' };
-    }
-    if (this.#sharedChats.getChatMembership(chatId, actorAccountId)?.status !== 'owner') {
-      return { changed: false, reason: 'actor_not_authorized' };
-    }
-    if (this.#identifyUser(memberId) === undefined) {
-      return { changed: false, reason: 'member_not_found' };
-    }
-    const oldStatus = this.#lookUpChatMemberStatus(chatId, memberId);
-    if (oldStatus.status === 'owner') {
+    const { chat, actorAccountId, actorMembership, memberId, memberStatus } = target;
+    if (memberStatus.status === 'owner') {
       return { changed: false, reason: 'member_is_owner' };
     }
-    const newStatus = getNewStatus(isChatMember(oldStatus), oldStatus);
-    if (isSameChatMemberStatus(oldStatus, newStatus)) {
+    const newStatus = getNewStatus(memberStatus);
+    if (isSameChatMemberStatus(memberStatus, newStatus)) {
       return { changed: true };
     }
-    this.#changeStatusOfUser(chat, { actorId: actorAccountId, memberId, oldStatus, newStatus });
+    if (memberId === actorAccountId) {
+      return { changed: false, reason: 'cannot_manage_self' };
+    }
+    if (memberStatus.status === 'administrator' && newStatus.status === 'member') {
+      if (!holdsSupergroupAdministratorRight(actorMembership, 'can_promote_members')) {
+        return { changed: false, reason: 'not_enough_rights_to_promote' };
+      }
+    } else if (!holdsSupergroupAdministratorRight(actorMembership, 'can_restrict_members')) {
+      return { changed: false, reason: 'not_enough_rights' };
+    }
+    if (
+      memberStatus.status === 'administrator' &&
+      !isAdministratorPromotedBy(this.#readMembership(chat.id), actorAccountId, {
+        userId: memberId,
+        membership: memberStatus,
+      })
+    ) {
+      return { changed: false, reason: 'administrator_not_promoted_by_actor' };
+    }
+    this.#changeStatusOfUser(chat, {
+      actorId: actorAccountId,
+      memberId,
+      oldStatus: memberStatus,
+      newStatus,
+    });
     return { changed: true };
   }
 
