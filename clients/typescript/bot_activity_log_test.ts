@@ -110,7 +110,10 @@ Deno.test('BotActivityLog finds the confirmation of a delivered update by its ID
   if (confirmed.update_id !== 2 || confirmed.position !== 4) {
     throw new Error('Expected to skip the confirmation of the first update and find the second');
   }
-  if (firstOfUpdate.position !== delivered.position || firstOfUpdate.via !== 'polling') {
+  if (
+    firstOfUpdate.position !== delivered.position || firstOfUpdate.kind !== 'update_delivered' ||
+    firstOfUpdate.via !== 'polling'
+  ) {
     throw new Error('Expected the update ID alone to find the delivery first');
   }
   await session.end();

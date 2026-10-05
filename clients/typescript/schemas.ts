@@ -32,6 +32,9 @@ import type {
   SupergroupMessage,
   VirtualAccountProfile,
   VirtualBotProfile,
+  WebhookAttempt,
+  WebhookAttemptFailure,
+  WebhookDelivery,
   WebResource,
 } from './types.ts';
 
@@ -100,6 +103,56 @@ export const rateLimitResponsesSchema: z.ZodType<RateLimitResponses> = z.strictO
 
 export const rateLimitResponsesListSchema = z.strictObject({
   rate_limit_responses: z.array(rateLimitResponsesSchema),
+});
+
+const webhookSchedulingSchema = z.enum(['automatic', 'manual']);
+
+export const webhookDeliverySchema: z.ZodType<WebhookDelivery> = z.strictObject({
+  scheduling: webhookSchedulingSchema,
+});
+
+const webhookAttemptFailureSchema: z.ZodType<WebhookAttemptFailure> = z.discriminatedUnion(
+  'reason',
+  [
+    z.strictObject({
+      reason: z.literal('http_error'),
+      status_code: z.int().min(100).max(599),
+      error_message: z.string().min(1),
+    }),
+    z.strictObject({
+      reason: z.enum(['connection_failed', 'timed_out']),
+      error_message: z.string().min(1),
+    }),
+    z.strictObject({ reason: z.literal('response_interrupted') }),
+  ],
+);
+
+const webhookAttemptIdSchema = z.int().positive();
+
+const webhookAttemptIdentityShape = {
+  id: webhookAttemptIdSchema,
+  update_id: z.int(),
+  scheduling: webhookSchedulingSchema,
+};
+
+export const webhookAttemptSchema: z.ZodType<WebhookAttempt> = z.discriminatedUnion('status', [
+  z.strictObject({
+    ...webhookAttemptIdentityShape,
+    status: z.enum(['in_flight', 'accepted', 'cancelled']),
+  }),
+  z.strictObject({
+    ...webhookAttemptIdentityShape,
+    status: z.literal('failed'),
+    failure: webhookAttemptFailureSchema,
+    retry: z.strictObject({
+      delay_seconds: z.int().nonnegative(),
+      status: z.enum(['waiting', 'released', 'cancelled']),
+    }),
+  }),
+]);
+
+export const webhookAttemptListSchema = z.strictObject({
+  webhook_attempts: z.array(webhookAttemptSchema),
 });
 
 export const createdVirtualAccountSchema: z.ZodType<CreatedVirtualAccountResponse> = z.strictObject(
@@ -1140,6 +1193,7 @@ const updateDeliveredEntrySchema = z.strictObject({
   update: z.looseObject({ update_id: z.int() }),
   chat_id: z.int().optional(),
   user_id: z.int().optional(),
+  webhook_attempt_id: webhookAttemptIdSchema.optional(),
 });
 
 const updateConfirmedEntrySchema = z.strictObject({
@@ -1150,12 +1204,26 @@ const updateConfirmedEntrySchema = z.strictObject({
   update_id: z.int(),
   chat_id: z.int().optional(),
   user_id: z.int().optional(),
+  webhook_attempt_id: webhookAttemptIdSchema.optional(),
+});
+
+const webhookAttemptFailedEntrySchema = z.strictObject({
+  position: botActivityPositionSchema,
+  kind: z.literal('webhook_attempt_failed'),
+  bot_id: telegramUserIdSchema,
+  update_id: z.int(),
+  chat_id: z.int().optional(),
+  user_id: z.int().optional(),
+  webhook_attempt_id: webhookAttemptIdSchema,
+  failure: webhookAttemptFailureSchema,
+  retry_delay_seconds: z.int().nonnegative(),
 });
 
 const botActivityEntrySchema: z.ZodType<BotActivityEntry> = z.discriminatedUnion('kind', [
   botApiCallEntrySchema,
   updateDeliveredEntrySchema,
   updateConfirmedEntrySchema,
+  webhookAttemptFailedEntrySchema,
 ]);
 
 export const botActivityReadResponseSchema = z.strictObject({
