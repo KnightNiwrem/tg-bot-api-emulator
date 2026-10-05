@@ -6,13 +6,14 @@
 ## Supported behavior
 
 Bots send photos and documents with `sendPhoto` and `sendDocument`, [videos](#videos) with
-`sendVideo`, [voice notes](#voice-notes) with `sendVoice`, photos, videos and documents as
-[albums](#albums) with `sendMediaGroup`, and photos and documents in the blocks of
-[rich messages](rich-messages.md). Files can be multipart uploads, either in the part named for the
-parameter or referenced with `attach://<part-name>`, an existing `file_id` known to that bot, or an
-HTTP URL that Telegram downloads, as described in [files sent by URL](#files-sent-by-url). Accounts
-upload base64 content through the emulation API; the TypeScript client accepts bytes and performs
-the encoding. Both sides can supply captions and caption entities.
+`sendVideo`, [voice notes](#voice-notes) with `sendVoice`, [audio files](#audio-files) with
+`sendAudio`, photos and videos, documents, or audio files as [albums](#albums) with
+`sendMediaGroup`, and photos and documents in the blocks of [rich messages](rich-messages.md). Files
+can be multipart uploads, either in the part named for the parameter or referenced with
+`attach://<part-name>`, an existing `file_id` known to that bot, or an HTTP URL that Telegram
+downloads, as described in [files sent by URL](#files-sent-by-url). Accounts upload base64 content
+through the emulation API; the TypeScript client accepts bytes and performs the encoding. Both sides
+can supply captions and caption entities.
 
 Photos expose dimensions, `has_media_spoiler` when requested and `show_caption_above_media` for a
 caption above the photo. Documents expose their cleaned filename and a MIME type derived from its
@@ -23,7 +24,7 @@ receive
 `Bad Request: file of size <size> bytes is too big for a photo; the maximum size is 10485760 bytes`.
 Bot uploads must also fit the session's [upload profile](#upload-profiles). Captions can be edited
 with `editMessageCaption` or the account client, and bots replace a message's media with a photo,
-document or video with [`editMessageMedia`](messages.md#editing-and-deleting).
+document, video or audio file with [`editMessageMedia`](messages.md#editing-and-deleting).
 
 A bot can upload a thumbnail with `sendDocument`: the part that `thumbnail` names with
 `attach://<part-name>`, or else the part named `thumbnail`, and failing both, likewise for the
@@ -38,11 +39,11 @@ photo or document (`Bad Request: can't use file of type Thumbnail as Photo`).
 
 Each observer receives a different `file_id` for the same stored file. `file_unique_id` identifies
 it across observers in that session. Reusing another bot's `file_id`, or sending a document ID as a
-photo, video or voice note, fails; see [file IDs of other kinds](#file-ids-of-other-kinds).
-`getFile` returns a `file_path`; download the bytes at `<botApiRoot>/file/bot<token>/<file_path>`. A
-path is available after `getFile` assigns it, and remains valid for the session. Tests can bypass
-bot downloads with `session.downloadFile(file_unique_id)`; that is an emulation API convenience, not
-a Telegram API.
+photo, video, voice note or audio file, fails; see
+[file IDs of other kinds](#file-ids-of-other-kinds). `getFile` returns a `file_path`; download the
+bytes at `<botApiRoot>/file/bot<token>/<file_path>`. A path is available after `getFile` assigns it,
+and remains valid for the session. Tests can bypass bot downloads with
+`session.downloadFile(file_unique_id)`; that is an emulation API convenience, not a Telegram API.
 
 ### Files sent by URL
 
@@ -51,13 +52,13 @@ downloads before it sends the file. The emulator downloads it from the session's
 register what each URL serves with `POST /sessions/{sessionId}/web-resources` or the TypeScript
 client's `registerWebResource`, giving a status, `Content-Type`, body, or redirect `location`. A URL
 without a registered resource is unreachable, and the emulator never reaches the network.
-`sendPhoto`, `sendDocument`, `sendVideo`, `sendVoice` and `editMessageMedia` accept URLs, as do the
-photo and document blocks of [rich messages](rich-messages.md#sending-and-editing) that
-`sendRichMessage` sends or `editMessageText` puts in place, including for inline messages. Photo,
-document, video and voice results of `answerInlineQuery` also accept them, with contracts of their
-own; the file is downloaded when an account sends a result as its media, and never when
-`input_message_content` replaces it, as [inline mode](inline-mode.md#media-named-by-url) describes.
-A rich message in a result's `input_message_content`
+`sendPhoto`, `sendDocument`, `sendVideo`, `sendVoice`, `sendAudio` and `editMessageMedia` accept
+URLs, as do the photo and document blocks of [rich messages](rich-messages.md#sending-and-editing)
+that `sendRichMessage` sends or `editMessageText` puts in place, including for inline messages.
+Photo, document, video, voice and audio results of `answerInlineQuery` also accept them, with
+contracts of their own; the file is downloaded when an account sends a result as its media, and
+never when `input_message_content` replaces it, as [inline mode](inline-mode.md#media-named-by-url)
+describes. A rich message in a result's `input_message_content`
 [does not](#files-sent-by-url-in-inline-query-results) accept them.
 
 The URL is read as TDLib's [`parse_url`][parse-url] reads it, so a URL without a protocol is an HTTP
@@ -72,8 +73,9 @@ only PDF and ZIP files can be sent as documents, a document must be served as `a
 documents only MPEG-4 videos as playable, so a video must be served as `video/mp4`. As the reference
 says for `sendVoice`, a voice note must be served as `audio/ogg`; one of at most 1 MB, read as
 1,048,576 bytes, is sent as a voice note, and a larger one, up to 20 MB, as a file, which the
-emulator sends as a document named after the URL. The content of a document, video or voice note is
-not inspected.
+emulator sends as a document named after the URL. As the reference names `audio/mpeg` for
+`sendAudio`, an audio file must be served as `audio/mpeg`. The content of a document, video, voice
+note or audio file is not inspected.
 
 | Download outcome                                                                         | Error                                             |
 | ---------------------------------------------------------------------------------------- | ------------------------------------------------- |
@@ -84,9 +86,9 @@ These are the server's descriptions of Telegram's `WEBPAGE_CURL_FAILED` and `WEB
 [`Client::fail_query_with_error`][error-rewriting]. A downloaded photo is then checked as an
 uploaded one, so content that is not a readable image fails with `IMAGE_PROCESS_FAILED`. A document
 is named after the URL's last path segment, cleaned as an upload's name, keeps the type it was
-served as, and takes no thumbnail, as TDLib sends it as `inputMediaDocumentExternal`; a video sent
-by URL is named and typed alike, without a name when the URL's path ends in `/`, and takes no
-thumbnail either. A file sent by URL is stored as a new file, like an upload.
+served as, and takes no thumbnail, as TDLib sends it as `inputMediaDocumentExternal`; a video or
+audio file sent by URL is named and typed alike, without a name when the URL's path ends in `/`, and
+takes no thumbnail either. A file sent by URL is stored as a new file, like an upload.
 
 ### Videos
 
@@ -151,18 +153,61 @@ with `Bad Request: message media can't be edited`. An `InputMediaVoiceNote` is r
 and new media alike, as the official server's [`get_input_media`][input-media-album] reads it only
 in rich messages, whose voice note blocks the emulator [lacks](rich-messages.md#real-gaps).
 
+### Audio files
+
+Bots send audio files, such as music tracks, with `sendAudio`, and accounts with an `audio` in
+`POST /sessions/{sessionId}/accounts/{accountId}/messages` or the TypeScript client's `sendAudio`.
+As the Bot API's [`Audio`][audio-object] gives them, an audio file's duration, performer and title
+are those its sender defines: a bot's `duration` is clamped to 0–86,400 seconds, as the official
+server's [`process_send_audio_query`][send-audio] clamps it, and an account's must lie in that
+range; it defaults to 0. As TDLib's [`create_input_message_content`][audio-metadata] does, the title
+and then the performer are cleaned with `clean_input_string`, and text that is not well-formed
+Unicode fails with `Bad Request: audio title must be encoded in UTF-8` or
+`Bad Request: audio performer must be encoded in UTF-8`. A title or performer that is empty, or that
+cleaning empties, is omitted, as the official server's `JsonAudio` omits it. As for videos, the
+emulator reads no content, so it sends any non-empty content as an audio file and reads no tags from
+it, while Telegram documents that its clients play MP3 and M4A audio; see
+[sender-defined media attributes](#sender-defined-media-attributes).
+
+A bot's upload is named as a document's is. Its MIME type is the type the file name's extension
+decides when that is an `audio/` type, and `audio/mpeg` otherwise, as TDLib's
+[`AudiosManager::get_input_media`][audio-upload] uploads an audio file; an account may send one
+without a file name, which then shows none and is `audio/mpeg`. A bot can upload a thumbnail with
+the audio file, such as its album's cover, read and kept as for `sendDocument`, which the audio file
+shows as `thumbnail` and `thumb`; accounts upload no thumbnails. Audio files are limited only by the
+session's [upload profile](#upload-profiles). Bots download them with `getFile` from `music/`, under
+the extension of their file name when it is `ogg`, `oga`, `mp3`, `mpeg3` or `m4a`, compared exactly,
+and `mp3` otherwise, as TDLib's [`FileManager::get_file_name`][audio-file-name] names them.
+
+An audio file sent again by `file_id` keeps its duration, performer, title, name, type and
+thumbnail, whatever the request specifies, as [`AudiosManager::get_input_media`][audio-upload] sends
+it as `inputMediaDocument` without them, and takes the request's caption. An audio file sent by
+[URL](#files-sent-by-url) is `audio/mpeg`, is named after the URL, keeps the metadata the bot
+specified, and takes no thumbnail: TDLib sends it as `inputMediaDocumentExternal`, which carries
+neither, and how Telegram's servers determine the metadata of a downloaded audio file is not in the
+source. As TDLib's `inputMessageAudio` has neither, an audio file takes no `has_spoiler` or
+`show_caption_above_media`; `sendAudio` rejects them as unknown parameters, and `InputMediaAudio`,
+whose fields the official server reads and drops, rejects them as fields the Bot API does not
+document for it.
+
+Unlike a voice note, an audio file has media that `editMessageMedia` replaces and forms
+[albums](#albums), with other audio files only. In a supergroup, sending one needs the
+[`can_send_audios`](supergroups.md#member-restrictions) permission. Inline query results send audio
+files [by `file_id` or by URL](inline-mode.md#media-named-by-url).
+
 ### Albums
 
-Bots send photos, videos or documents as an album with `sendMediaGroup`, whose `media` is a JSON
-array of `InputMediaPhoto`, `InputMediaVideo` and `InputMediaDocument`. Each item names its file as
-`editMessageMedia` does: an upload, a `file_id`, or a [URL](#files-sent-by-url). Accounts send
-albums with `POST /sessions/{sessionId}/accounts/{accountId}/media-groups`, or the TypeScript
-client's `sendMediaGroup`, uploading each file as they upload a single photo, video or document.
+Bots send photos, videos, documents or audio files as an album with `sendMediaGroup`, whose `media`
+is a JSON array of `InputMediaPhoto`, `InputMediaVideo`, `InputMediaDocument` and `InputMediaAudio`.
+Each item names its file as `editMessageMedia` does: an upload, a `file_id`, or a
+[URL](#files-sent-by-url). Accounts send albums with
+`POST /sessions/{sessionId}/accounts/{accountId}/media-groups`, or the TypeScript client's
+`sendMediaGroup`, uploading each file as they upload a single photo, video, document or audio file.
 Each item has its own caption.
 
-The emulator's albums hold photos and videos together, or documents. Telegram also sends live photos
-and audio in albums, which the emulator's albums [lack](#additional-media-types-and-methods) and
-refuse by name, while it refuses other media itself, as the official server's
+The emulator's albums hold photos and videos together, documents, or audio files. Telegram also
+sends live photos in albums, which the emulator's albums [lack](#additional-media-types-and-methods)
+and refuse by name, while it refuses other media itself, as the official server's
 [`get_input_media`][input-media-album] reads it for an album:
 
 | `InputMedia` type | Telegram's albums                   | Emulator                                                                                             |
@@ -171,7 +216,7 @@ refuse by name, while it refuses other media itself, as the official server's
 | `document`        | With documents only                 | With documents only                                                                                  |
 | `video`           | With photos, live photos and videos | With photos and videos                                                                               |
 | `live_photo`      | With photos, live photos and videos | `Bad Request: InputMedia of type "live_photo" is not supported`                                      |
-| `audio`           | With audio only                     | `Bad Request: InputMedia of type "audio" is not supported`                                           |
+| `audio`           | With audio only                     | With audio only                                                                                      |
 | `animation`       | Refused                             | `Bad Request: can't parse InputMedia: type "animation" can't be used in sendMediaGroup`, as upstream |
 | `voice_note`      | Refused                             | `Bad Request: can't parse InputMedia: type "voice_note" is not allowed`, as upstream                 |
 | Any other type    | Refused                             | `Bad Request: can't parse InputMedia: type "<type>" is unsupported`, as upstream                     |
@@ -186,10 +231,13 @@ message replies to the same message, and `disable_notification`, `protect_conten
 emulator rejects one as an unknown parameter.
 
 As TDLib's [`check_message_group_message_contents`][album-checks] does, an album holds at most 10
-items, its photos and videos place their captions alike, and documents are sent only with documents,
-since TDLib's `is_homogenous_media_group_content` keeps them apart. As
-[`send_message_group`][send-message-group] does, a single item is sent as one message outside any
-album. A refused album sends and stores nothing.
+items, its photos and videos place their captions alike, and documents are sent only with documents
+and audio files only with audio files, since TDLib's
+[`is_homogenous_media_group_content`][album-homogeneous] keeps them apart. TDLib reports whichever
+such kind it meets first in an unordered set of the album's kinds, so for an album that mixes
+documents with audio files it is not defined which it names; the emulator names the kind of the
+first such item. As [`send_message_group`][send-message-group] does, a single item is sent as one
+message outside any album. A refused album sends and stores nothing.
 
 | Album                                                      | Error                                                                               |
 | ---------------------------------------------------------- | ----------------------------------------------------------------------------------- |
@@ -197,14 +245,15 @@ album. A refused album sends and stores nothing.
 | More than 10 items                                         | `Bad Request: too many messages to send as an album`                                |
 | Photos or videos with different `show_caption_above_media` | `Bad Request: parameter show_caption_above_media must be the same for all messages` |
 | Documents with photos or videos                            | `Bad Request: document can't be mixed with other media types`                       |
+| Audio files with other media                               | `Bad Request: audio can't be mixed with other media types`                          |
 | An item Telegram cannot read, such as a missing part       | `Bad Request: can't parse InputMedia: media not found`, as for `editMessageMedia`   |
 | A file Telegram's servers refuse, at item _position_       | `Bad Request: failed to send message #position with the error message "<error>"`    |
 
 Forwards and copies of an album's messages form [new albums](messages.md#forwarding-and-copying). As
 TDLib's [`edit_message_media`][album-media-edit] allows, `editMessageMedia` turns a photo of an
-album into a video and a video into a photo, but keeps a document a document, and no photo or video
-becomes one (`Bad Request: can't change media type in the album`). Deleting one message leaves the
-others in their album.
+album into a video and a video into a photo, but keeps a document a document and an audio file an
+audio file, and no other media becomes one (`Bad Request: can't change media type in the album`).
+Deleting one message leaves the others in their album.
 
 Telegram's servers, rather than TDLib, refuse content they cannot process as a photo
 (`IMAGE_PROCESS_FAILED`, `PHOTO_INVALID_DIMENSIONS`), a file they cannot download from a URL
@@ -213,25 +262,25 @@ larger than it allows. As the official server's [`on_message_send_failed`][album
 reports the first such item with its position and Telegram's error, unchanged. Other file failures,
 such as an empty upload, a photo larger than 10 MB, or an unknown `file_id`, and captions that
 Telegram cannot normalize or that are longer than 1024 characters fail as they do for `sendPhoto`,
-`sendVideo` and `sendDocument`, before the album is checked. As the official server reads it, every
-item's caption formatting, such as its `parse_mode` and entities, is parsed with the request, before
-any file. Then, as TDLib's `get_input_message_content` does, each item's file is read and its
-caption normalized and measured before the next item's, so the first item with either fault fails
-the album. As for `sendPhoto`, the emulator downloads files sent by URL, in the album's order, once
-the request's parameters are read and before it reads the other items' files, so an album with an
-unusable URL fails for its first such URL, whichever item holds it, rather than for an upload or
-`file_id` that fails.
+`sendVideo`, `sendDocument` and `sendAudio`, before the album is checked. As the official server
+reads it, every item's caption formatting, such as its `parse_mode` and entities, is parsed with the
+request, before any file. Then, as TDLib's `get_input_message_content` does, each item's file is
+read and its caption normalized and measured before the next item's, so the first item with either
+fault fails the album. As for `sendPhoto`, the emulator downloads files sent by URL, in the album's
+order, once the request's parameters are read and before it reads the other items' files, so an
+album with an unusable URL fails for its first such URL, whichever item holds it, rather than for an
+upload or `file_id` that fails.
 
 ### Upload profiles
 
 A session's [upload profile](sessions-and-requests.md#supported-behavior) names the official Bot API
 server deployment whose upload limits its bots meet: `cloud` for `api.telegram.org`, the default, or
-`local` for a server started with `--local`. Each photo, document, video or voice note a bot uploads
-with `multipart/form-data` must fit the profile's limit; a photo must also meet the 10 × 1024 × 1024
-byte photo limit, whatever the profile. The cloud limit is checked first, as `api.telegram.org`
-refuses an oversized request outright, and the local limit after the photo limit, as Telegram
-enforces it after TDLib's checks, so in practice the local limit binds only documents, videos and
-voice notes: a photo that large fails as too big for a photo.
+`local` for a server started with `--local`. Each photo, document, video, voice note or audio file a
+bot uploads with `multipart/form-data` must fit the profile's limit; a photo must also meet the 10 ×
+1024 × 1024 byte photo limit, whatever the profile. The cloud limit is checked first, as
+`api.telegram.org` refuses an oversized request outright, and the local limit after the photo limit,
+as Telegram enforces it after TDLib's checks, so in practice the local limit binds only documents,
+videos, voice notes and audio files: a photo that large fails as too big for a photo.
 
 | Profile | Largest bot upload                       | Larger uploads fail with                                                                   |
 | ------- | ---------------------------------------- | ------------------------------------------------------------------------------------------ |
@@ -244,9 +293,9 @@ oversized request before reading any parameter, so a request with another fault 
 there. Sending a file again by `file_id`, forwarding and copying are not uploads and meet no size
 limit. An uploaded thumbnail is checked only against TDLib's own thumbnail limit, described above.
 Accounts upload through their own client, so no profile limits them: their photos meet the photo
-limit, and their documents, videos and voice notes no limit, since a user's client uploads files of
-up to 2000 MB, or 4000 MB with Telegram Premium, which base64 fixtures in JSON requests are not
-meant to reach.
+limit, and their documents, videos, voice notes and audio files no limit, since a user's client
+uploads files of up to 2000 MB, or 4000 MB with Telegram Premium, which base64 fixtures in JSON
+requests are not meant to reach.
 
 The profile changes nothing else; see
 [the cloud server's other file handling](#the-cloud-servers-other-file-handling).
@@ -271,10 +320,11 @@ transformations Telegram will apply.
 
 ### Sender-defined media attributes
 
-A video's duration and dimensions and a voice note's duration are those their sender defines, as the
-Bot API documents them, and the emulator never reads video or audio content: it does not parse
-containers, check codecs, measure durations, generate thumbnails, covers, alternative qualities or
-waveforms, transcribe, or transcode. Telegram's servers do process uploaded media, and, as the
+A video's duration and dimensions, a voice note's duration, and an audio file's duration, performer
+and title are those their sender defines, as the Bot API documents them, and the emulator never
+reads video or audio content: it does not parse containers, check codecs, measure durations, read
+tags such as ID3, generate thumbnails, covers, alternative qualities or waveforms, transcribe, or
+transcode. Telegram's servers do process uploaded media, and, as the
 [`sendVideo`][send-video-reference] and [`sendVoice`][send-voice-reference] references say, may send
 videos other than MPEG-4 as documents and voice notes other than OGG/Opus, MP3 or M4A as audio or
 documents; which files they reclassify, and how, is not in the open-source server or TDLib. Keeping
@@ -284,13 +334,17 @@ sees.
 ### File IDs of other kinds
 
 Each `file_id` sends only a file of its own kind: a photo's only a photo, a document's only a
-document, a video's only a video, and a voice note's only a voice note, failing with TDLib's
-wording, such as `Bad Request: can't use file of type Video as Document` or
-`Bad Request: can't use file of type VoiceNote as Document`. TDLib's
+document, a video's only a video, a voice note's only a voice note, and an audio file's only an
+audio file, failing with TDLib's wording, such as
+`Bad Request: can't use file of type Video as
+Document`,
+`Bad Request: can't use file of type VoiceNote as Document` or
+`Bad Request: can't use
+file of type Document as Audio`. TDLib's
 [`check_input_file_id`][file-type-check] refuses a photo's `file_id` for other media, but treats
-documents, videos, voice notes and other document-class files as one class and leaves Telegram's
-servers to decide what the message shows, which is not in the source. Refusing them keeps a bot's
-mix-up of media kinds visible in tests.
+documents, videos, voice notes, audio files and other document-class files as one class and leaves
+Telegram's servers to decide what the message shows, which is not in the source. Refusing them keeps
+a bot's mix-up of media kinds visible in tests.
 
 ### No generated document previews
 
@@ -381,9 +435,9 @@ attributes, by which [`DocumentsManager`][documents] classifies the returned med
 returns the message as that media. Which files the server reclassifies, and how, is not in the
 source.
 
-Classifying documents needs the animation and audio media the emulator lacks, and rules for it would
-rest on observed rather than documented server behavior. Tests need media classification, through
-which the flag would take effect.
+Classifying documents needs the animation media the emulator lacks, and rules for it would rest on
+observed rather than documented server behavior. Tests need media classification, through which the
+flag would take effect.
 
 ### Files sent by URL in inline query results
 
@@ -400,10 +454,10 @@ upload, `file_id` and URL.
 
 ### Additional media types and methods
 
-Media types other than photos, documents, videos and voice notes, stickers and sticker sets are
-missing, so `editMessageMedia` replaces media only with photos, documents and videos, and albums
-hold only photos and videos, or documents. Rich message blocks hold no videos or voice notes. Voice
-notes keep no waveform and are never transcribed.
+Media types other than photos, documents, videos, voice notes and audio files, stickers and sticker
+sets are missing, so `editMessageMedia` replaces media only with photos, documents, videos and audio
+files, and albums hold only photos and videos, documents, or audio files. Rich message blocks hold
+no videos, voice notes or audio files. Voice notes keep no waveform and are never transcribed.
 
 ## Local evidence
 
@@ -411,6 +465,7 @@ notes keep no waveform and are never transcribed.
 [image header reader](../../src/media/image_dimensions.ts),
 [video MIME types](../../src/media/video_file.ts),
 [voice note MIME types](../../src/media/voice_file.ts),
+[audio MIME types and extensions](../../src/media/audio_file.ts),
 [file repository](../../src/repositories/file.ts),
 [URL downloads](../../src/services/web_file_download.ts),
 [web resources](../../src/services/web_resource.ts),
@@ -449,3 +504,9 @@ notes keep no waveform and are never transcribed.
 [send-video]: https://github.com/tdlib/telegram-bot-api/blob/e3e9dd8e5b3d7ab8537cd5a10dc31d5ffa8f82d1/telegram-bot-api/Client.cpp#L14120-L14143
 [video-upload]: https://github.com/tdlib/td/blob/bc9c263e2bfee06aaab41e82db51a103376030bc/td/telegram/VideosManager.cpp#L274-L377
 [file-type-check]: https://github.com/tdlib/td/blob/bc9c263e2bfee06aaab41e82db51a103376030bc/td/telegram/files/FileManager.cpp#L4140-L4165
+[audio-object]: https://core.telegram.org/bots/api#audio
+[send-audio]: https://github.com/tdlib/telegram-bot-api/blob/e3e9dd8e5b3d7ab8537cd5a10dc31d5ffa8f82d1/telegram-bot-api/Client.cpp#L14033-L14049
+[audio-metadata]: https://github.com/tdlib/td/blob/bc9c263e2bfee06aaab41e82db51a103376030bc/td/telegram/MessageContent.cpp#L4849-L4865
+[audio-upload]: https://github.com/tdlib/td/blob/bc9c263e2bfee06aaab41e82db51a103376030bc/td/telegram/AudiosManager.cpp#L256-L299
+[audio-file-name]: https://github.com/tdlib/td/blob/bc9c263e2bfee06aaab41e82db51a103376030bc/td/telegram/files/FileManager.cpp#L1386-L1391
+[album-homogeneous]: https://github.com/tdlib/td/blob/bc9c263e2bfee06aaab41e82db51a103376030bc/td/telegram/MessageContentType.cpp#L330-L332

@@ -2,13 +2,13 @@
 
 [Guide index](README.md) · [Feature reference: Media and files](../../features/media-and-files.md)
 
-This page shows how an account sends photos, documents, videos, voice notes and albums to a bot, and
-how a test reads the files the bot sends back. The examples use the
+This page shows how an account sends photos, documents, videos, voice notes, audio files and albums
+to a bot, and how a test reads the files the bot sends back. The examples use the
 [shared fixture](sessions-and-fixtures.md) and the [waiting pattern](observing-bot-behavior.md).
 
 Accounts upload bytes, so examples inline their fixtures. The emulator reads the header of a photo
 to find its dimensions and keeps the bytes unchanged, so a 13-byte GIF is a valid photo. It never
-reads the content of videos and voice notes, so any non-empty bytes do for those.
+reads the content of videos, voice notes and audio files, so any non-empty bytes do for those.
 
 ## Replying to a photo with a document
 
@@ -194,12 +194,70 @@ Deno.test('the bot sees the duration and dimensions the account gives', async ()
 });
 ```
 
+## Audio files
+
+`account.sendAudio` sends an audio file, such as a music track, with the duration, performer and
+title the input gives; the emulator reads no tags from the bytes. A file sent again by its `file_id`
+keeps that metadata, whatever the sending call says, so the bot below can answer with the account's
+own track. See [audio files](../../features/media-and-files.md#audio-files) for MIME types,
+thumbnails and files sent by URL.
+
+```ts
+import { assertEquals } from 'jsr:@std/assert@^1';
+import { withBotFixture } from './bot_fixture.ts';
+
+/** Placeholder content: the emulator stores audio bytes without reading them. */
+const PLACEHOLDER_TRACK = new TextEncoder().encode('not really a track');
+
+Deno.test('the bot sends a track back with the metadata the account gave it', async () => {
+  await withBotFixture({
+    handlers: (bot) => {
+      bot.on('message:audio', async (ctx) => {
+        await ctx.replyWithAudio(ctx.msg.audio.file_id, {
+          caption: `Now playing: ${ctx.msg.audio.performer} – ${ctx.msg.audio.title}`,
+          reply_parameters: { message_id: ctx.msg.message_id },
+        });
+      });
+    },
+  }, async ({ botProfile, account, privateChat, activity }) => {
+    const beforeTrack = await activity.position();
+    const track = await account.sendAudio({
+      to: privateChat,
+      audio: PLACEHOLDER_TRACK,
+      file_name: 'engines.mp3',
+      duration: 215,
+      performer: 'Ada',
+      title: 'Engines',
+    });
+    assertEquals(track.audio?.mime_type, 'audio/mpeg');
+    await activity.waitFor(
+      {
+        method: 'sendAudio',
+        chat_id: account.id,
+        ok: true,
+        parameters: { reply_parameters: JSON.stringify({ message_id: track.message_id }) },
+      },
+      { after: beforeTrack },
+    );
+
+    const reply = (await account.getMessages({ chat: privateChat })).find(
+      ({ from, reply_to_message }) =>
+        from.id === botProfile.id && reply_to_message?.message_id === track.message_id,
+    );
+    assertEquals(reply?.caption, 'Now playing: Ada – Engines');
+    assertEquals(reply?.audio?.file_unique_id, track.audio?.file_unique_id);
+    assertEquals(reply?.audio?.duration, 215);
+  });
+});
+```
+
 ## Albums
 
-`account.sendMediaGroup` sends photos and videos, or documents, as an album and returns its messages
-in order. They share a `media_group_id`, each item has its own caption, and the bot receives each
-item as a separate `message` update. The [albums](../../features/media-and-files.md#albums) section
-describes which media mix and the limits on an album.
+`account.sendMediaGroup` sends photos and videos, documents, or audio files, as an album and returns
+its messages in order. They share a `media_group_id`, each item has its own caption, and the bot
+receives each item as a separate `message` update. The
+[albums](../../features/media-and-files.md#albums) section describes which media mix and the limits
+on an album.
 
 The bot below replies to every photo with the album it belongs to, so the test waits for one reply
 per album message.
@@ -254,9 +312,9 @@ Deno.test('the bot receives each album item as an update in the same media group
 
 ## Editing a caption
 
-`account.editMessageCaption` changes the caption of a photo, document, video or voice note the
-account sent, and the bot receives an `edited_message` update. [Messages](messages.md) covers
-editing in general.
+`account.editMessageCaption` changes the caption of a photo, document, video, voice note or audio
+file the account sent, and the bot receives an `edited_message` update. [Messages](messages.md)
+covers editing in general.
 
 ```ts
 import { assertEquals } from 'jsr:@std/assert@^1';

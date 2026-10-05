@@ -32,7 +32,7 @@ Each topic page stands on its own once you know the core path.
 | ----------------------------------------------------------- | ---------------------------------------------------------------------------- |
 | [Buttons and menus](buttons-and-menus.md)                   | Inline keyboards, callback queries, reply keyboards, command menus           |
 | [Rich messages](rich-messages.md)                           | Reading rich messages as text and pressing their buttons                     |
-| [Media and files](media-and-files.md)                       | Photos, documents, videos, voice notes, albums, captions and file downloads  |
+| [Media and files](media-and-files.md)                       | Photos, documents, videos, voice notes, audio, albums, captions, downloads   |
 | [Polls](polls.md)                                           | Voting, retracting votes, poll updates and closing polls                     |
 | [Reactions](reactions.md)                                   | Reacting to supergroup messages, reaction updates and bots' reactions        |
 | [Contacts and locations](contacts-and-locations.md)         | Sharing contacts and locations, and the buttons that request them            |

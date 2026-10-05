@@ -35,7 +35,7 @@ thresholds, which tests replace with
 | [Pinned messages](pinned-messages.md)                 | Multiple pins per chat, pinning rights, service messages and `getChat`      |
 | [Reactions](reactions.md)                             | Emoji reactions in supergroups, `message_reaction` updates, albums          |
 | [Keyboards and callbacks](keyboards-and-callbacks.md) | Inline buttons, reply interfaces and callback answers                       |
-| [Media and files](media-and-files.md)                 | Photos, documents, videos, voice notes, albums, file IDs and downloads      |
+| [Media and files](media-and-files.md)                 | Photos, documents, videos, voice notes, audio, albums, file IDs, downloads  |
 | [Inline mode](inline-mode.md)                         | Queries, results, feedback and inline message editing                       |
 | [Supergroups](supergroups.md)                         | Privacy mode, membership, restrictions, service messages and administration |
 | [Invite links](invite-links.md)                       | Bots' invite links, edits, revocation, expiry, joining, join requests       |
@@ -51,7 +51,7 @@ The two legacy aliases below are also accepted.
 | ---------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
 | Identity         | `getMe`                                                                                                                                                                  |
 | Updates          | `getUpdates`, `setWebhook`, `deleteWebhook`, `getWebhookInfo`                                                                                                            |
-| Sending          | `sendMessage`, `sendRichMessage`, `sendPhoto`, `sendDocument`, `sendVideo`, `sendVoice`, `sendMediaGroup`, `sendContact`, `sendLocation`, `sendChatAction`               |
+| Sending          | `sendMessage`, `sendRichMessage`, `sendPhoto`, `sendDocument`, `sendVideo`, `sendVoice`, `sendAudio`, `sendMediaGroup`, `sendContact`, `sendLocation`, `sendChatAction`  |
 | Reusing messages | `forwardMessage`, `forwardMessages`, `copyMessage`, `copyMessages`                                                                                                       |
 | Editing          | `editMessageText`, `editMessageCaption`, `editMessageMedia`, `editMessageReplyMarkup`                                                                                    |
 | Deletion         | `deleteMessage`, `deleteMessages`                                                                                                                                        |
@@ -84,9 +84,9 @@ above determines whether an individual method is available.
 
 - Basic groups, channels, forum topics, direct messages of channels, and chat migration. Supergroups
   are the only shared chat kind exposed by the HTTP server.
-- Media other than photos, documents, videos and voice notes, stickers and sticker sets, dice, live
-  locations, venues, games, checklists, ephemeral messages, drafts and stories. Rich messages lack
-  [drafts and some blocks](rich-messages.md#real-gaps), and polls lack
+- Media other than photos, documents, videos, voice notes and audio files, stickers and sticker
+  sets, dice, live locations, venues, games, checklists, ephemeral messages, drafts and stories.
+  Rich messages lack [drafts and some blocks](rich-messages.md#real-gaps), and polls lack
   [Telegram's newest poll options](polls.md#real-gaps).
 - [Reactions outside supergroups, custom emoji and paid reactions, and removing other members'
   reactions](reactions.md#real-gaps), [unpinning all messages](pinned-messages.md#real-gaps), chat

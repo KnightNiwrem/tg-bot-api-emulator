@@ -265,10 +265,10 @@ Deno.test('the bot answers with the location the account shares', () =>
 
 ## Media results named by URL
 
-A photo, document, video, or voice note result can name its file by URL. The emulator downloads such
-a file only from the session's emulated web, each time an account sends the result, so a test
-registers the file with `session.registerWebResource` before choosing the result; choosing fails
-with status 502 when no resource serves it. [Media and files](media-and-files.md) and
+A photo, document, video, voice note, or audio result can name its file by URL. The emulator
+downloads such a file only from the session's emulated web, each time an account sends the result,
+so a test registers the file with `session.registerWebResource` before choosing the result; choosing
+fails with status 502 when no resource serves it. [Media and files](media-and-files.md) and
 [Test controls](test-controls.md) show how to register web resources, and
 [Media named by URL](../../features/inline-mode.md#media-named-by-url) describes what each result
 type requires.
