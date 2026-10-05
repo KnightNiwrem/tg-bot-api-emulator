@@ -15,6 +15,7 @@ import { createInlineQueryRoutes } from './inline_queries.ts';
 import { createMessageRoutes } from './messages.ts';
 import { createPinnedMessageRoutes } from './pinned_messages.ts';
 import { createPollAnswerRoutes } from './poll_answers.ts';
+import { createPollClosureRoutes } from './poll_closures.ts';
 import { createReplyKeyboardPressRoutes } from './reply_keyboard_presses.ts';
 import { createSupergroupAdministrationRoutes } from './supergroup_administration.ts';
 import { createSupergroupMembershipRoutes } from './supergroup_membership.ts';
@@ -79,6 +80,7 @@ export function createAccountRoutes(): Hono<SessionRouteContextTypes> {
   accountRoutes.route('/', createReplyKeyboardPressRoutes());
   accountRoutes.route('/', createCallbackQueryRoutes());
   accountRoutes.route('/', createPollAnswerRoutes());
+  accountRoutes.route('/', createPollClosureRoutes());
   accountRoutes.route('/', createInlineQueryRoutes());
 
   return accountRoutes;

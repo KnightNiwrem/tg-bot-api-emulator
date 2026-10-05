@@ -98,6 +98,8 @@ exact contract.
 
 | Operation                 | Purpose                                          | Guide                         |
 | ------------------------- | ------------------------------------------------ | ----------------------------- |
+| `sendPoll`                | Sends a poll the account owns                    | [Polls](polls.md)             |
+| `stopPoll`                | Stops a poll the account sent                    | [Polls](polls.md)             |
 | `answerPoll`              | Votes in a poll, or changes the vote             | [Polls](polls.md)             |
 | `getPollAnswer`           | Reads the account's vote with the poll's message | [Polls](polls.md)             |
 | `retractPollAnswer`       | Retracts the account's vote                      | [Polls](polls.md)             |

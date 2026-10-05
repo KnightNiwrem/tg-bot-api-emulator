@@ -1,0 +1,36 @@
+description: >-
+  The closure of the poll the account sent in a message of its private chat with a bot, addressed
+  by the message's ID as the bot sees it.
+parameters:
+  - $ref: ../components/parameters/SessionId.yaml
+  - $ref: ../components/parameters/AccountId.yaml
+  - $ref: ../components/parameters/BotId.yaml
+  - $ref: ../components/parameters/MessageId.yaml
+post:
+  operationId: stopAccountPoll
+  summary: Stop a poll the account sent to its private chat with a bot
+  description: >-
+    Stops the poll, as TDLib's `stopPoll` does for a user: only the account that sent the message
+    can edit it, as `can_edit_message` decides, so only it stops the poll, and not through a
+    forward. The poll keeps its votes and accepts no more answers; every message showing it shows
+    it closed. The message keeps its content and gains no edit date, and no bot receives an update
+    about the closure: which bots Telegram tells about manually stopped polls is not in the
+    open-source code.
+  responses:
+    '200':
+      description: The message, whose poll is closed.
+      content:
+        application/json:
+          schema:
+            $ref: ../components/schemas/SentMessage.yaml
+    '400':
+      description: A path identifier is invalid.
+    '403':
+      description: >-
+        The account did not send the message: another participant sent it, or it is a forward.
+    '404':
+      description: >-
+        The session, account, bot, or message of their private chat does not exist, or the
+        message shows no poll.
+    '409':
+      description: The poll is already closed.

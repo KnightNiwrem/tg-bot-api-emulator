@@ -2006,7 +2006,7 @@ interface BotCaptionNormalizer {
 }
 
 interface BotMessageViews {
-  viewPollForBot(poll: Poll): BotApiPoll;
+  viewPollForCreator(poll: Poll): BotApiPoll;
   viewPrivateMessageForBot(message: PrivateMessage): BotApiPrivateMessage;
   viewSupergroupMessage(message: SupergroupMessage, observerId: number): BotApiSupergroupMessage;
   viewChatMember(input: {
@@ -2668,7 +2668,7 @@ export class BotApiService {
     return this.#send(authenticatedBot, {
       kind: 'poll',
       poll: {
-        creatorBotId: authenticatedBot.id,
+        creator: { kind: 'bot', botId: authenticatedBot.id },
         question,
         options: pollOptions,
         isAnonymous,
@@ -2805,7 +2805,7 @@ export class BotApiService {
     }
     const content = getRepeatedContent(lookup.message.content, 'copy');
     const copiedContent: OutgoingMessageContent | undefined = content.kind === 'poll'
-      ? this.#createPollCopy(authenticatedBot, content.pollId)
+      ? this.#createPollCopy(authenticatedBot, content.pollId, lookup.message)
       : {
         kind: 'existing',
         content: videoStartTimestampSeconds === undefined
@@ -2877,7 +2877,7 @@ export class BotApiService {
         }
         const content = getRepeatedContent(message.content, 'copy');
         if (content.kind === 'poll') {
-          const pollCopy = this.#createPollCopy(authenticatedBot, content.pollId);
+          const pollCopy = this.#createPollCopy(authenticatedBot, content.pollId, message);
           return pollCopy === undefined ? undefined : { content: pollCopy };
         }
         return {
@@ -3033,25 +3033,29 @@ export class BotApiService {
    * Creates the content of a copy of a poll, as TDLib's `dup_poll` does: a new poll that the copying
    * bot owns, open and without votes, with the original's question, options, settings, and quiz
    * solution, and the original's open period counted from now. As TDLib's `has_input_media` and
-   * the Bot API require, a quiz can be copied only by a bot that sees its solution, as
-   * `showsQuizSolution` decides; returns `undefined` for any other quiz.
+   * the Bot API require, a quiz can be copied only by a bot that sees its solution through the
+   * copied message, as `showsQuizSolution` decides; returns `undefined` for any other quiz.
    */
   #createPollCopy(
     authenticatedBot: VirtualBotProfile,
     pollId: PollId,
+    pollMessage: ChatMessage,
   ): OutgoingMessageContent | undefined {
     const poll = this.#polls.getPoll(pollId);
     if (poll === undefined) {
       throw new Error(`Copied poll ${pollId} does not exist`);
     }
-    if (poll.type.kind === 'quiz' && !showsQuizSolution(poll, authenticatedBot.id)) {
+    if (
+      poll.type.kind === 'quiz' &&
+      !showsQuizSolution(poll, { observerId: authenticatedBot.id, pollMessage })
+    ) {
       return undefined;
     }
     const openPeriodSeconds = poll.closingTime?.openPeriodSeconds;
     return {
       kind: 'poll',
       poll: {
-        creatorBotId: authenticatedBot.id,
+        creator: { kind: 'bot', botId: authenticatedBot.id },
         question: poll.question,
         options: poll.options.map(({ text }) => text),
         isAnonymous: poll.isAnonymous,
@@ -4523,7 +4527,7 @@ export class BotApiService {
         inlineKeyboard,
       });
     if (result.stopped) {
-      return { stopped: true, poll: this.#botMessageViews.viewPollForBot(result.poll) };
+      return { stopped: true, poll: this.#botMessageViews.viewPollForCreator(result.poll) };
     }
     switch (result.reason) {
       case 'chat_not_found':

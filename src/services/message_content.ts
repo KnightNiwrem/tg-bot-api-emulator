@@ -35,7 +35,7 @@ import {
   type RichMessage,
   type RichMessageButtonAction,
 } from '../types/rich_message.ts';
-import type { NewPoll, Poll } from '../types/poll.ts';
+import type { NewPoll, Poll, SpecifiedAccountPoll, SpecifiedPoll } from '../types/poll.ts';
 import type {
   DocumentUpload,
   FileUpload,
@@ -66,11 +66,7 @@ import {
   type TextEntity,
   type TextQuote,
 } from '../types/virtual_message.ts';
-import {
-  normalizeNewPoll,
-  type PollLimitFailure,
-  type SpecifiedPoll,
-} from './poll_normalization.ts';
+import { normalizeNewPoll, type PollLimitFailure } from './poll_normalization.ts';
 import { normalizeRichMessage } from './rich_message_normalization.ts';
 
 // Telegram's rules for the content of messages, which apply alike in every chat type.
@@ -161,7 +157,7 @@ export type OutgoingMessageContent =
     readonly detectsEntities: boolean;
   }
   | {
-    /** A new poll, which only bots send. */
+    /** A new poll, which its sender creates. */
     readonly kind: 'poll';
     readonly poll: SpecifiedPoll;
   }
@@ -237,7 +233,7 @@ export type OutgoingContentNormalization<
   | { readonly normalized: true; readonly content: NormalizedOutgoingContent }
   | { readonly normalized: false; readonly failure: Failure };
 
-/** New content other than a poll, which only `sendPoll` and copies of polls carry. */
+/** New content other than a poll, which `sendPoll`, accounts' polls, and copies of polls carry. */
 export type OutgoingContentOtherThanPoll = Exclude<
   OutgoingMessageContent,
   { readonly kind: 'poll' }
@@ -583,7 +579,8 @@ export function normalizeCaption(
 /**
  * What an account sends: text; media with a caption, which is a photo, a document, a video, or a
  * voice note as its upload says, each with the formatting the account specified; a contact the
- * account writes, whose Telegram user stays unknown; the account's own contact; or a location.
+ * account writes, whose Telegram user stays unknown; the account's own contact; a location; or a
+ * new poll, which the account creates.
  */
 export type AccountMessageContent =
   | {
@@ -595,7 +592,8 @@ export type AccountMessageContent =
   | AccountMediaContent
   | { readonly kind: 'contact'; readonly contact: WrittenContact }
   | { readonly kind: 'own_contact' }
-  | LocationMessageContent;
+  | LocationMessageContent
+  | { readonly kind: 'poll'; readonly poll: SpecifiedAccountPoll };
 
 /** Media an account sends, of the kind its upload says, with its caption. */
 export type AccountMediaContent<Upload extends FileUpload = FileUpload> = SpecifiedCaption & {
@@ -628,6 +626,16 @@ export function toOutgoingAccountContent(
     }
     case 'media':
       return toOutgoingAccountMedia(content);
+    case 'poll':
+      // TDLib creates a poll a user sends open, whatever the client asks.
+      return {
+        kind: 'poll',
+        poll: {
+          ...content.poll,
+          creator: { kind: 'account', accountId: account.profile.id },
+          isClosed: false,
+        },
+      };
     default: {
       const unhandledContent: never = content;
       throw new Error(`Unhandled account content: ${JSON.stringify(unhandledContent)}`);

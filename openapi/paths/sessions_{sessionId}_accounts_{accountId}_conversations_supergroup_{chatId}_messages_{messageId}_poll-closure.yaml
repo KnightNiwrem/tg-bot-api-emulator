@@ -1,0 +1,34 @@
+description: >-
+  The closure of the poll the account sent in a message of a supergroup, addressed by the
+  message's ID in the supergroup, as for a private chat.
+parameters:
+  - $ref: ../components/parameters/SessionId.yaml
+  - $ref: ../components/parameters/AccountId.yaml
+  - $ref: ../components/parameters/SupergroupChatId.yaml
+  - $ref: ../components/parameters/SupergroupMessageId.yaml
+post:
+  operationId: stopSupergroupAccountPoll
+  summary: Stop a poll the account sent to a supergroup
+  description: >-
+    Stops the poll as for a private chat. As TDLib's `can_edit_message` decides for a supergroup
+    message that is not a channel post, only the account that sent it stops the poll, whatever
+    administrator rights another member holds.
+  responses:
+    '200':
+      description: The message, whose poll is closed, as the account sees it.
+      content:
+        application/json:
+          schema:
+            $ref: ../components/schemas/SentSupergroupMessage.yaml
+    '400':
+      description: A path identifier is invalid.
+    '403':
+      description: >-
+        The account is not a member of the supergroup, or did not send the message: another
+        member sent it, or it is a forward.
+    '404':
+      description: >-
+        The session, account, supergroup, or message of the supergroup does not exist, or the
+        message shows no poll.
+    '409':
+      description: The poll is already closed.

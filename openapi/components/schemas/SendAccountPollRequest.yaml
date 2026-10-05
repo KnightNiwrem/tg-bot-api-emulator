@@ -1,0 +1,15 @@
+type: object
+additionalProperties: false
+description: >-
+  A poll the account creates and owns. Bots see its message, but receive no `poll` or
+  `poll_answer` updates about it, which the Bot API sends a bot only about its own polls.
+required:
+  - to
+  - poll
+properties:
+  to:
+    $ref: ./MessageTarget.yaml
+  poll:
+    $ref: ./AccountPoll.yaml
+  reply_to_message_id:
+    $ref: ./AccountReplyToMessageId.yaml

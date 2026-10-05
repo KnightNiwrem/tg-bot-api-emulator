@@ -11,6 +11,7 @@ import {
 } from './messaging_failure_statuses.ts';
 import {
   accountLocationSchema,
+  accountPollSchema,
   chatSchema,
   supergroupChatIdSchema,
   telegramUserIdSchema,
@@ -22,8 +23,9 @@ const REPLY_KEYBOARD_PRESS_COLLECTION_PATH =
 /**
  * A press of a reply keyboard button, by its text, with at most one answer to the button's
  * request: the location the account's client reports for a `request_location` button, the users
- * the account chose for a `request_users` button, or the supergroup it chose for a `request_chat`
- * button. Only a button with that request takes the answer.
+ * the account chose for a `request_users` button, the supergroup it chose for a `request_chat`
+ * button, or the poll it created for a `request_poll` button. Only a button with that request
+ * takes the answer.
  */
 const pressReplyKeyboardButtonRequestSchema = z.strictObject({
   chat: chatSchema,
@@ -31,13 +33,15 @@ const pressReplyKeyboardButtonRequestSchema = z.strictObject({
   location: accountLocationSchema.optional(),
   shared_user_ids: z.array(telegramUserIdSchema).min(1).optional(),
   shared_chat_id: supergroupChatIdSchema.optional(),
-}).transform(({ chat, text, location, shared_user_ids, shared_chat_id }, context) => {
+  poll: accountPollSchema.optional(),
+}).transform(({ chat, text, location, shared_user_ids, shared_chat_id, poll }, context) => {
   const answers: ReplyKeyboardRequestAnswer[] = [
     ...(location === undefined ? [] : [{ kind: 'location' as const, location }]),
     ...(shared_user_ids === undefined
       ? []
       : [{ kind: 'users' as const, userIds: shared_user_ids }]),
     ...(shared_chat_id === undefined ? [] : [{ kind: 'chat' as const, chatId: shared_chat_id }]),
+    ...(poll === undefined ? [] : [{ kind: 'poll' as const, poll }]),
   ];
   if (answers.length > 1) {
     context.addIssue({ code: 'custom', message: 'A press answers at most one request' });

@@ -235,8 +235,9 @@ export type CaptionedMediaContent =
   | VoiceMessageContent;
 
 /**
- * A poll, which only bots send. The message shows the poll by its identifier: the question,
- * options, votes, and state belong to the poll, which every forward of the message shows alike.
+ * A poll, which the account or bot that sent it created. The message shows the poll by its
+ * identifier: the question, options, votes, and state belong to the poll, which every forward of
+ * the message shows alike.
  */
 export interface PollMessageContent {
   readonly kind: 'poll';
@@ -695,6 +696,30 @@ export function canBotEditMessage(message: ChatMessage, botId: number): boolean 
       return message.authorRole === 'bot' && message.conversation.botId === botId;
     case 'supergroup_message':
       return message.author.kind === 'bot' && message.author.botId === botId;
+    default: {
+      const unhandledMessage: never = message;
+      throw new Error(`Unhandled message: ${JSON.stringify(unhandledMessage)}`);
+    }
+  }
+}
+
+/**
+ * Whether an account may edit a message it has found, as TDLib's `can_edit_message` decides for a
+ * user: only a message the account wrote, other than a service message, a forward, or a message
+ * sent through an inline bot, which only that bot edits.
+ */
+export function canAccountEditMessage(message: ChatMessage, accountId: number): boolean {
+  if (
+    !isContentMessage(message) || message.forwardInfo !== undefined ||
+    message.viaBot !== undefined
+  ) {
+    return false;
+  }
+  switch (message.kind) {
+    case 'private_message':
+      return message.authorRole === 'account' && message.conversation.accountId === accountId;
+    case 'supergroup_message':
+      return message.author.kind === 'account' && message.author.accountId === accountId;
     default: {
       const unhandledMessage: never = message;
       throw new Error(`Unhandled message: ${JSON.stringify(unhandledMessage)}`);

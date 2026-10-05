@@ -3,6 +3,7 @@ import {
   type FormattedTextFixingContext,
 } from '../text_entities/formatted_text.ts';
 import {
+  MAX_ACCOUNT_POLL_QUESTION_LENGTH,
   MAX_POLL_OPTION_COUNT,
   MAX_POLL_OPTION_TEXT_LENGTH,
   MAX_POLL_QUESTION_LENGTH,
@@ -10,39 +11,13 @@ import {
   MAX_QUIZ_EXPLANATION_LINE_FEEDS,
   type NewPoll,
   type PollType,
+  type SpecifiedPoll,
+  type SpecifiedPollText,
+  type SpecifiedPollType,
 } from '../types/poll.ts';
-import {
-  countTextCharacters,
-  type FormattedText,
-  type TextEntity,
-} from '../types/virtual_message.ts';
+import { countTextCharacters, type FormattedText } from '../types/virtual_message.ts';
 
-// Telegram's rules for the polls bots send, which apply alike in every chat type.
-
-/** Text of a poll as its sender specified it, before Telegram's normalization. */
-export interface SpecifiedPollText {
-  readonly text: string;
-  /** Formatting the sender specified; omitted for none. */
-  readonly entities?: readonly TextEntity[];
-}
-
-/** A poll's type as its sender specified it: a quiz's explanation is not yet normalized. */
-export type SpecifiedPollType =
-  | { readonly kind: 'regular' }
-  | {
-    readonly kind: 'quiz';
-    /** The positions of the correct options, as the sender listed them. */
-    readonly correctOptionPositions: readonly number[];
-    /** Empty for no explanation. */
-    readonly explanation: SpecifiedPollText;
-  };
-
-/** A poll as the bot that sends it specified it, before Telegram's normalization. */
-export type SpecifiedPoll = Omit<NewPoll, 'question' | 'optionTexts' | 'type'> & {
-  readonly question: SpecifiedPollText;
-  readonly options: readonly SpecifiedPollText[];
-  readonly type: SpecifiedPollType;
-};
+// Telegram's rules for the polls accounts and bots send, which apply alike in every chat type.
 
 /**
  * Why Telegram refuses a poll whose text it accepts: the question or an option is too long, or the
@@ -79,11 +54,12 @@ export type PollNormalization =
   | { readonly normalized: false; readonly failure: PollNormalizationFailure };
 
 /**
- * Checks a poll a bot sends as TDLib does before creating it, in its order: the question is
- * normalized as `get_formatted_text` normalizes nonempty text and must be at most 300 characters;
- * the poll needs 1 to 12 options, each normalized likewise and at most 100 characters. As TDLib's
- * `create_poll` and `PollOption` keep them, only custom emoji remain of the question's and the
- * options' entities. A quiz's type is then checked as `normalizeQuizType` checks it.
+ * Checks a poll an account or a bot sends as TDLib does before creating it, in its order: the
+ * question is normalized as `get_formatted_text` normalizes nonempty text and must be at most 300
+ * characters from a bot, or 255 from an account; the poll needs 1 to 12 options, each normalized
+ * likewise and at most 100 characters. As TDLib's `create_poll` and `PollOption` keep them, only
+ * custom emoji remain of the question's and the options' entities. A quiz's type is then checked
+ * as `normalizeQuizType` checks it.
  */
 export function normalizeNewPoll(
   specifiedPoll: SpecifiedPoll,
@@ -97,7 +73,9 @@ export function normalizeNewPoll(
   } = specifiedPoll;
   const questionNormalization = normalizePollText(
     specifiedQuestion,
-    MAX_POLL_QUESTION_LENGTH,
+    settings.creator.kind === 'account'
+      ? MAX_ACCOUNT_POLL_QUESTION_LENGTH
+      : MAX_POLL_QUESTION_LENGTH,
     'poll_question_too_long',
     context,
   );

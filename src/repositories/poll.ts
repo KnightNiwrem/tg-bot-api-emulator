@@ -22,7 +22,7 @@ export class PollRepository {
 
     const poll: Poll = {
       id: pollId,
-      creatorBotId: newPoll.creatorBotId,
+      creator: { ...newPoll.creator },
       question: copyFormattedText(newPoll.question),
       options: newPoll.optionTexts.map((text, optionPosition) => ({
         persistentId: String(optionPosition),

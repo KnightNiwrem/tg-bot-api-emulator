@@ -71,7 +71,13 @@ import {
   type ChatMemberStatus,
 } from '../types/chat_membership.ts';
 import type { InlineQuery } from '../types/inline_query.ts';
-import { type Poll, type PollId, showsQuizSolution } from '../types/poll.ts';
+import {
+  getPollCreatorId,
+  type Poll,
+  type PollId,
+  type PollObservation,
+  showsQuizSolution,
+} from '../types/poll.ts';
 import {
   getRichMessageMentionedUserIds,
   listRichMessageFiles,
@@ -262,11 +268,11 @@ export class BotMessageViewService {
   }
 
   /**
-   * Returns a poll's state as the bot that sent it receives it in a `poll` update, which shows a
-   * quiz's solution.
+   * Returns a poll's state as its creator sees it apart from any message, as a bot that sent the
+   * poll receives it in a `poll` update, which shows a quiz's solution.
    */
-  viewPollForBot(poll: Poll): BotApiPoll {
-    return projectPoll(this.#observePoll(poll, poll.creatorBotId));
+  viewPollForCreator(poll: Poll): BotApiPoll {
+    return projectPoll(this.#observePoll(poll, { observerId: getPollCreatorId(poll.creator) }));
   }
 
   /** Returns an account's changed answer to a poll as the bot that sent the poll receives it. */
@@ -680,7 +686,10 @@ export class BotMessageViewService {
       case 'poll':
         return {
           ...context,
-          poll: this.#observePoll(this.#findPoll(content.pollId, message), observerId),
+          poll: this.#observePoll(this.#findPoll(content.pollId, message), {
+            observerId,
+            pollMessage: message,
+          }),
         };
       case 'members_joined':
         return { ...context, changedMembers: this.#findChangedMembers(content.memberIds, message) };
@@ -761,7 +770,7 @@ export class BotMessageViewService {
       case 'location':
         return {};
       case 'poll':
-        return { poll: this.#observePoll(this.#findPoll(media.pollId, message), observerId) };
+        return { poll: this.#observePoll(this.#findPoll(media.pollId, message), { observerId }) };
       case 'photo':
       case 'document':
       case 'video':
@@ -787,8 +796,8 @@ export class BotMessageViewService {
    * Resolves what an observer sees of a poll: a quiz's solution, as `showsQuizSolution` decides,
    * with the users its explanation mentions, which sending the quiz verified exist.
    */
-  #observePoll(poll: Poll, observerId: number): ObservedPoll {
-    const showsSolution = showsQuizSolution(poll, observerId);
+  #observePoll(poll: Poll, observation: PollObservation): ObservedPoll {
+    const showsSolution = showsQuizSolution(poll, observation);
     const explanationMentionedUsers = new Map<number, BotApiUser>();
     if (showsSolution && poll.type.kind === 'quiz') {
       for (const entity of poll.type.explanation.entities) {

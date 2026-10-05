@@ -2,7 +2,7 @@ type: object
 additionalProperties: false
 description: >-
   A press of a reply keyboard button by its text, with at most one answer to the button's request:
-  `location`, `shared_user_ids`, or `shared_chat_id`.
+  `location`, `shared_user_ids`, `shared_chat_id`, or `poll`.
 required:
   - chat
   - text
@@ -34,3 +34,8 @@ properties:
       button shares and requires; no other button takes one. It must meet the request's criteria,
       and the bot must already be a member and hold the rights the request requires of it, since
       the emulator does not add or promote it.
+  poll:
+    $ref: ./AccountPoll.yaml
+    description: >-
+      The poll the account creates, which a `request_poll` button sends and requires; no other
+      button takes one. It must be of the type the button requests, if any.

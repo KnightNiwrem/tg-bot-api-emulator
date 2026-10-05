@@ -11,17 +11,18 @@
 | `sendPoll` parameters | `chat_id`, `question`, `question_parse_mode`, `question_entities`, `options` (text with `text_parse_mode` or `text_entities`), `is_anonymous`, `type`, `allows_multiple_answers`, `allows_revoting`, `correct_option_ids`, `correct_option_id`, `explanation`, `explanation_parse_mode`, `explanation_entities`, `open_period`, `close_date`, `is_closed`, `disable_notification`, `protect_content`, `message_effect_id`, `reply_parameters`, `reply_to_message_id`, `allow_sending_without_reply`, `reply_markup` | `business_connection_id`, `message_thread_id`, `allow_adding_options`, `shuffle_options`, `hide_results_until_closes`, `members_only`, `country_codes`, `description` and its formatting, `media`, option media, `explanation_media`, `allow_paid_broadcast` |
 | `stopPoll` parameters | `chat_id`, `message_id`, `reply_markup`                                                                                                                                                                                                                                                                                                                                                                                                                                                                             | `business_connection_id`                                                                                                                                                                                                                                     |
 | `Poll` fields         | `id`, `question`, `question_entities`, `options` (`persistent_id`, `text`, `text_entities`, `voter_count`), `total_voter_count`, `open_period`, `close_date`, `is_closed`, `is_anonymous`, `allows_multiple_answers`, `allows_revoting`, `members_only` (always false), `type`, `correct_option_id`, `correct_option_ids`, `explanation`, `explanation_entities`                                                                                                                                                    | `country_codes`, `explanation_media`, `description`, `description_entities`, `media`, an option's `media`, `added_by_user`, `added_by_chat`, `addition_date`                                                                                                 |
-| Updates               | `poll` and `poll_answer` for the bot that sent the poll                                                                                                                                                                                                                                                                                                                                                                                                                                                             | Updates for other bots about polls they did not send; service messages about added or deleted options                                                                                                                                                        |
-| Account actions       | Answering, changing and retracting an answer; forwarding and replying                                                                                                                                                                                                                                                                                                                                                                                                                                               | Sending polls; adding or deleting options                                                                                                                                                                                                                    |
+| Updates               | `poll` and `poll_answer` for the bot that sent the poll                                                                                                                                                                                                                                                                                                                                                                                                                                                             | Updates for other bots about polls they did not send, including accounts' polls; service messages about added or deleted options                                                                                                                             |
+| Account actions       | [Sending](#accounts-polls) regular polls and quizzes, directly or for a `request_poll` button, and stopping them; answering, changing and retracting an answer; forwarding and replying                                                                                                                                                                                                                                                                                                                             | Closing times and closed previews of accounts' polls; adding or deleting options                                                                                                                                                                             |
 | Chats                 | Private chats with bots, supergroups                                                                                                                                                                                                                                                                                                                                                                                                                                                                                | Basic groups, channels, forum topics, business chats                                                                                                                                                                                                         |
 | Time                  | Closing times shown as Telegram shows them, and closed when a test [makes them arrive](#closing-times)                                                                                                                                                                                                                                                                                                                                                                                                              | Closing by elapsed time                                                                                                                                                                                                                                      |
 
 ## Sending polls
 
 Bots send regular polls and [quizzes](#quizzes) with [`sendPoll`][bot-api-send-poll] to private
-chats and supergroups. The bot that sends a poll owns it; accounts of the chat vote in it. The other
-parameters work as for `sendMessage`: replies, reply markup, `protect_content`,
-`disable_notification` and, in private chats, `message_effect_id`.
+chats and supergroups, and accounts [send their own](#accounts-polls). The account or bot that sends
+a poll owns it; accounts of the chat vote in it. The other parameters work as for `sendMessage`:
+replies, reply markup, `protect_content`, `disable_notification` and, in private chats,
+`message_effect_id`.
 
 The request is read as the official server's [`process_send_poll_query`][send-poll-query] reads it:
 the question with `question_parse_mode` or `question_entities`, then `options`, a JSON array of
@@ -84,11 +85,14 @@ check the explanation's documented limits:
 
 A quiz may have several correct options and allow several answers. Its solution, the
 `correct_option_ids`, `correct_option_id` when it has one correct option, and its explanation with
-`explanation_entities`, shows, as the Bot API documents and TDLib's [`get_poll_object`][poll-object]
-gives it, only to the bot that sent the quiz, to an account that answered it, and to everyone once
-it is closed. Other bots and accounts see `type: quiz` without the solution. Account history of a
-private chat shows the bot's view, which includes the solution. Answers to a quiz count as for a
-regular poll: the emulator records whether they are correct only through the options chosen.
+`explanation_entities`, shows, as the Bot API documents for [`Poll`][bot-api-poll] and TDLib's
+[`get_poll_object`][poll-object] gives it, only to the account or bot that sent the quiz, to an
+account that answered it, to everyone once it is closed, and to a bot through the message that sent
+the quiz, not a forward, to its private chat: the Bot API makes it available for quizzes
+`sent (not forwarded) by the bot or to the private chat with the bot`. Other bots and accounts see
+`type: quiz` without the solution. Account history of a private chat shows the bot's view, which
+includes the solution. Answers to a quiz count as for a regular poll: the emulator records whether
+they are correct only through the options chosen.
 
 ## Voting
 
@@ -140,6 +144,53 @@ The server's [`check_message`][check-message] finds the message, and TDLib's
 The keyboard is read before the chat, as for `editMessageReplyMarkup`, and the chat is found as for
 an edit. A refused stop changes nothing.
 
+## Accounts' polls
+
+Accounts create polls through the emulation API, as TDLib's `sendMessage` with `inputMessagePoll`
+does for a user: `POST .../messages` with `poll`, which the TypeScript client's `sendPoll` sends, to
+the account's private chat with a bot or to a supergroup it is a member of. The account owns the
+poll, which takes the settings and defaults of `sendPoll` without its closing times:
+
+| Field                                                       | Default                                       |
+| ----------------------------------------------------------- | --------------------------------------------- |
+| `question`, `question_entities`                             | Required                                      |
+| `options`, each `text` with `text_entities`                 | Required                                      |
+| `is_anonymous`                                              | `true`                                        |
+| `type`                                                      | `regular`                                     |
+| `allows_multiple_answers`                                   | `false`                                       |
+| `allows_revoting`                                           | `true` for a regular poll, `false` for quiz   |
+| `correct_option_ids`, `explanation`, `explanation_entities` | Only for a quiz, which needs a correct option |
+
+The poll is checked as a bot's, with the same reasons and order, except that, as TDLib's
+[`create_input_message_content`][create-poll-content] limits a user's question, the question has at
+most 255 characters. TDLib creates a user's poll open, so an account cannot send a closed preview. A
+refused poll is `400` and stores no message, no poll and no update. In a supergroup, the account
+then needs `can_send_polls`, as TDLib's [`can_send_message_content`][send-poll-rights] checks it, or
+the send is `403`; a private chat with a bot always accepts polls, and an account that blocks the
+bot is refused with `409`, as for any message. The bot receives an ordinary `message` with the poll,
+from the account, as it receives other messages of the chat.
+
+A [`request_poll` button](keyboards-and-callbacks.md#answering-poll-requests) of a private chat
+sends the same poll, of the type the button requests, as the TypeScript client's
+`pressReplyKeyboardButton` with `poll` does.
+
+The account that sent a poll stops it with `POST .../messages/{messageId}/poll-closure`, or the
+TypeScript client's `stopPoll`, as TDLib's `stopPoll` does for a user. TDLib's
+[`can_edit_message`][can-edit-message] lets a user edit only its own messages, and no forward, so
+another account, a supergroup administrator, or the owner through a forward is refused with `403`,
+and a bot's `stopPoll` fails with `Bad Request: poll can't be stopped`. A closed poll is `409`. The
+stopped poll keeps its votes and refuses further answers through every message showing it, whose
+content stays as it was without an edit date. Accounts cannot stop a bot's poll either.
+
+No bot receives a `poll` or `poll_answer` update about an account's poll, whoever votes and however
+it closes. The Bot API documents for [`Update`][bot-api-update] that bots receive votes only in
+polls they sent, and poll states only about those polls and manually stopped polls. The official
+server relays every `updatePoll` TDLib gives it, as [`add_update_poll`][add-update-poll] shows, and
+TDLib gives a bot one for each change Telegram's servers report, as [`on_get_poll`][on-get-poll]
+shows; which bots those servers tell about a stopped poll is not in the open-source code, so the
+emulator tells none, as for [other bots' stopped polls](#real-gaps). Votes, forwards and copies work
+as for a bot's poll; a bot that copies an account's poll owns the copy.
+
 ## Closing times
 
 `open_period`, 5 to 2628000 seconds, or `close_date`, a Unix time 5 to 2628000 seconds from now,
@@ -166,6 +217,7 @@ not, as its [real gaps](#real-gaps) explain:
 | An account answers, changes or retracts its answer  | `poll_answer`, for a poll that is not anonymous, then `poll` with new counts |
 | The bot stops the poll, or its closing time arrives | `poll` with the closed poll                                                  |
 | An answer that changes nothing, or a refused one    | None                                                                         |
+| Any vote in or closure of an account's poll         | None                                                                         |
 | A refused or repeated `stopPoll`                    | None                                                                         |
 
 `poll_answer` shows the voter in `user`, the chosen `option_ids` and `option_persistent_ids`, both
@@ -211,13 +263,14 @@ another chat to a poll's message shows the poll in `external_reply.poll`, as it 
 
 - **Other bots' stopped polls.** The Bot API documents that bots also receive updates about manually
   stopped polls they did not send. Which bots Telegram's servers tell is not in the open-source
-  code, so a bot that has only a forward of a poll receives no update when it stops.
+  code, so a bot that has only a forward of a poll receives no update when it stops, and no bot
+  receives one when an account stops its own poll.
 - **Telegram 10.x poll features.** Options added after creation (`allow_adding_options`),
   restrictions on who may vote (`members_only`, `country_codes`), `shuffle_options`,
   `hide_results_until_closes`, descriptions (`description` and its formatting), and media (`media`,
   option media and `explanation_media`) are rejected as unsupported.
-- **Accounts' polls.** Accounts cannot send polls, which Telegram allows them in groups and in
-  private chats with bots; they vote, forward and reply.
+- **Accounts' closing times.** Accounts send polls without `open_period` or `close_date`, which only
+  bots set here.
 - **Replies to options.** `reply_parameters.poll_option_id` is not supported, as for
   [messages](messages.md#real-gaps).
 
@@ -229,7 +282,9 @@ unchanged answer, and the order in which they send a vote's `poll_answer` and `p
 emulator keeps every account's answer itself and counts votes from them, so counts always agree with
 the answers, and sends `poll_answer` first. Whether Telegram's servers give an account the solution
 of a quiz it has not answered in a private chat with the quiz's bot is not visible either; account
-history shows the bot's view there.
+history shows the bot's view there. Whether stopping an account's poll gives its message an edit
+date, or sends the chat's bots an `edited_message`, is decided by those servers too; the emulator
+does neither, as for a bot's stop.
 
 ## Local evidence
 
@@ -237,13 +292,19 @@ history shows the bot's view there.
 [quiz parameters](../../src/api/sessions/bot_api/quiz_parameters.ts),
 [domain model](../../src/types/poll.ts), [normalization](../../src/services/poll_normalization.ts),
 [voting and stopping](../../src/services/poll.ts), [storage](../../src/repositories/poll.ts),
+[account poll requests](../../src/api/sessions/accounts/request_fields.ts) and
+[closure routes](../../src/api/sessions/accounts/poll_closures.ts),
 [update delivery](../../src/services/bot_update_delivery.ts),
-[projection](../../src/projections/bot_api_message.ts), [unit tests](../../tests/poll_test.ts) and
-[HTTP tests](../../tests/poll_api_test.ts).
+[projection](../../src/projections/bot_api_message.ts), [unit tests](../../tests/poll_test.ts),
+[HTTP tests](../../tests/poll_api_test.ts) and
+[account poll tests](../../tests/account_poll_api_test.ts).
 
 [bot-api-send-poll]: https://core.telegram.org/bots/api#sendpoll
 [bot-api-stop-poll]: https://core.telegram.org/bots/api#stoppoll
 [bot-api-update]: https://core.telegram.org/bots/api#update
+[bot-api-poll]: https://core.telegram.org/bots/api#poll
+[send-poll-rights]: https://github.com/tdlib/td/blob/bc9c263e2bfee06aaab41e82db51a103376030bc/td/telegram/MessageContent.cpp#L6318-L6337
+[can-edit-message]: https://github.com/tdlib/td/blob/bc9c263e2bfee06aaab41e82db51a103376030bc/td/telegram/MessagesManager.cpp#L23183-L23292
 [stop-poll-query]: https://github.com/tdlib/telegram-bot-api/blob/e3e9dd8e5b3d7ab8537cd5a10dc31d5ffa8f82d1/telegram-bot-api/Client.cpp#L14326-L14357
 [check-message]: https://github.com/tdlib/telegram-bot-api/blob/e3e9dd8e5b3d7ab8537cd5a10dc31d5ffa8f82d1/telegram-bot-api/Client.cpp#L9084-L9104
 [json-poll-answer]: https://github.com/tdlib/telegram-bot-api/blob/e3e9dd8e5b3d7ab8537cd5a10dc31d5ffa8f82d1/telegram-bot-api/Client.cpp#L2843-L2861

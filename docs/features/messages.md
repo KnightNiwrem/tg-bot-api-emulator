@@ -9,13 +9,13 @@
 Accounts and bots exchange text, photos, documents, [videos](media-and-files.md#videos),
 [voice notes](media-and-files.md#voice-notes) and [albums](media-and-files.md#albums) of photos and
 videos, or documents, [contacts](contacts-and-locations.md#contacts) and static
-[locations](contacts-and-locations.md#locations), in private chats and supergroups, and bots also
-send [rich messages](rich-messages.md) and [polls](polls.md). A private conversation must first be
-started by the account before the bot can send to it. `sendMessage`, `sendRichMessage`, `sendPoll`,
-`sendPhoto`, `sendDocument`, `sendVideo`, `sendVoice`, `sendContact` and `sendLocation` accept
-`protect_content` and supported [reply markup](keyboards-and-callbacks.md); `sendMediaGroup` accepts
-`protect_content` and no reply markup. Bot messages appear in account history; bots receive no
-updates for their own sends or edits.
+[locations](contacts-and-locations.md#locations) and [polls](polls.md), in private chats and
+supergroups, and bots also send [rich messages](rich-messages.md). A private conversation must first
+be started by the account before the bot can send to it. `sendMessage`, `sendRichMessage`,
+`sendPoll`, `sendPhoto`, `sendDocument`, `sendVideo`, `sendVoice`, `sendContact` and `sendLocation`
+accept `protect_content` and supported [reply markup](keyboards-and-callbacks.md); `sendMediaGroup`
+accepts `protect_content` and no reply markup. Bot messages appear in account history; bots receive
+no updates for their own sends or edits.
 
 Both sides can reply to a message in the same chat. Bots use `reply_parameters` or the legacy
 `reply_to_message_id` and `allow_sending_without_reply` parameters. `reply_parameters` takes

@@ -8,7 +8,11 @@ import {
   toChosenOptionPositions,
 } from '../types/poll.ts';
 import type { VirtualAccount } from '../types/virtual_account.ts';
-import { canBotEditMessage, type ChatMessage } from '../types/virtual_message.ts';
+import {
+  canAccountEditMessage,
+  canBotEditMessage,
+  type ChatMessage,
+} from '../types/virtual_message.ts';
 import {
   type AccountChatMessageLookupFailureReason,
   type AccountChatMessageLookups,
@@ -69,6 +73,19 @@ export type ExpirePollResult =
     readonly reason: 'poll_not_found' | 'poll_without_closing_time' | 'poll_already_closed';
   };
 
+/**
+ * Why an account cannot stop the poll of a message it found: the account did not send the
+ * message, as `canAccountEditMessage` decides, or the poll is already closed.
+ */
+export type AccountPollStopFailureReason = 'poll_not_stoppable' | 'poll_already_closed';
+
+export type StopAccountPollResult =
+  | { readonly stopped: true; readonly poll: Poll; readonly message: ChatMessage }
+  | {
+    readonly stopped: false;
+    readonly reason: PollMessageLookupFailureReason | AccountPollStopFailureReason;
+  };
+
 export type SetAccountPollAnswerResult =
   | ({ readonly answered: true } & AccountPollAnswer)
   | {
@@ -105,7 +122,8 @@ type PollMessageResolution =
  * answers a poll shown by a message of its private chat with a bot or of a supergroup it is a
  * member of, changes its answer, or retracts it, as the poll allows. A forward shows the same
  * poll as the message it repeats, so a vote through either counts once in that poll. Each changed
- * answer is published, for the bot that sent the poll to observe.
+ * answer is published, for a bot that sent the poll to observe. An account also stops the polls it
+ * sent, as TDLib's `stopPoll` does for a user.
  */
 export class PollService {
   readonly #accounts: AccountLookup;
@@ -187,6 +205,30 @@ export class PollService {
       chosenOptionPositions,
     });
     return { answered: true, poll: answeredPoll, message, chosenOptionPositions };
+  }
+
+  /**
+   * Stops the poll a message shows, as TDLib's `stop_poll` does for a user once
+   * `get_message_poll_id` has found the poll: the account must be able to edit the message, which
+   * only the account that sent it can, and not through a forward, and the poll must be open. The
+   * poll keeps its votes and accepts no more answers; the message keeps its content and gains no
+   * edit date. The closure is published as a bot's stop is; no bot observes an account's poll.
+   */
+  stopAccountPoll(key: AccountPollMessageKey): StopAccountPollResult {
+    const resolution = this.#resolvePollMessage(key);
+    if (!resolution.resolved) {
+      return { stopped: false, reason: resolution.reason };
+    }
+    const { message, poll } = resolution;
+    if (!canAccountEditMessage(message, key.accountId)) {
+      return { stopped: false, reason: 'poll_not_stoppable' };
+    }
+    if (poll.isClosed) {
+      return { stopped: false, reason: 'poll_already_closed' };
+    }
+    const closedPoll = this.#polls.closePoll(poll.id);
+    this.#events.publish({ type: 'poll_closed', poll: closedPoll });
+    return { stopped: true, poll: closedPoll, message };
   }
 
   /**
