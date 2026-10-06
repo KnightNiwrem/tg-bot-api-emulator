@@ -185,7 +185,7 @@ export type BotApiRichBlock =
   | {
     readonly type: 'video';
     /** The video without a cover or start timestamp, which the block does not keep. */
-    readonly video: BotApiVideo;
+    readonly video: Omit<BotApiVideo, 'start_timestamp'>;
     readonly caption?: BotApiRichBlockCaption;
     readonly has_spoiler?: true;
   }
