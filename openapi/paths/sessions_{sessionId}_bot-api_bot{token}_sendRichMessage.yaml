@@ -2,11 +2,12 @@ description: >-
   Telegram Bot API method for sending a rich message: text laid out in blocks, such as
   paragraphs, headings, lists, tables, quotations, maps, rows of buttons, photos, and
   documents, whose text nests formatting, links, and buttons. The emulator supports messages
-  described as blocks; messages written in HTML or Markdown, blocks with animations, audio,
-  videos, or voice notes, and drafts are not supported. The blocks are read as the official Bot
+  described as blocks; messages written in HTML or Markdown, blocks with animations or audio
+  files, and drafts are not supported. The blocks are read as the official Bot
   API server and TDLib read them, their strings are cleaned as TDLib cleans them, and Telegram's
-  detected entities are marked in their plain text. Photos and documents are uploaded with the
-  request or reused by `file_id`, as for `sendPhoto` and `sendDocument`. The other parameters
+  detected entities are marked in their plain text. Photos, documents, videos, and voice notes
+  are uploaded with the request, reused by `file_id`, or downloaded from a URL, as for
+  `sendPhoto`, `sendDocument`, `sendVideo`, and `sendVoice`. The other parameters
   work as for `sendMessage`. The message shows the blocks in `rich_message`, as accounts see it
   too; accounts press its callback buttons as they press those of an inline keyboard.
 parameters:
@@ -66,13 +67,14 @@ post:
         link style`), or a button's text holds formatting other than custom emoji and dates
         (`Bad Request: button text can have only custom emoji and dates`); a button's link
         cannot be read, as for an inline keyboard; `chat_id` is missing (`Bad Request: chat_id
-        is empty`); a file cannot be sent, as for `sendPhoto` and `sendDocument`; the chat, the
-        reply, and the message effect fail as for `sendMessage`; a string is not well-formed
-        Unicode (for example `Bad Request: rich text must be encoded in UTF-8`) or a text
-        mention names a user the session does not know (`Bad Request: user not found`); the bot
+        is empty`); a file cannot be sent, as for `sendPhoto`, `sendDocument`, `sendVideo`, and
+        `sendVoice`; the chat, the reply, and the message effect fail as for `sendMessage`; a
+        string is not well-formed Unicode (for example `Bad Request: rich text must be encoded
+        in UTF-8`) or a text mention names a user the session does not know (`Bad Request: user
+        not found`); the bot
         may not send the rich message to a supergroup, which needs `can_send_messages` and the
-        permission of each photo and document it shows (`Bad Request: not enough rights to send
-        the rich message to the chat`); or a button's callback data exceeds 64 bytes (`Bad Request: BUTTON_DATA_INVALID`). Telegram
+        permission of each photo, document, video, and voice note it shows (`Bad Request: not
+        enough rights to send the rich message to the chat`); or a button's callback data exceeds 64 bytes (`Bad Request: BUTTON_DATA_INVALID`). Telegram
         checks the chat before the blocks and files, which the emulator reads first.
       content:
         application/json:

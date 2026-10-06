@@ -112,8 +112,8 @@ properties:
     $ref: ./RichText.yaml
   caption:
     description: >-
-      A `RichBlockCaption` of a collage, slideshow, map, photo, or document; the `RichText`
-      caption of a table.
+      A `RichBlockCaption` of a collage, slideshow, map, photo, document, video, or voice note;
+      the `RichText` caption of a table.
     oneOf:
       - $ref: ./RichBlockCaption.yaml
       - $ref: ./RichText.yaml

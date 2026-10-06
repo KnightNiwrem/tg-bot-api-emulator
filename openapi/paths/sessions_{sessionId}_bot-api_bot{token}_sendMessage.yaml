@@ -77,7 +77,7 @@ post:
         supergroup's default permissions decide (`Bad Request: not enough rights to send text
         messages to the chat`; the other send methods name their content instead: `photos`,
         `documents`, `videos`, `voice notes`, `polls`, or `the rich message`, which needs
-        `can_send_messages` and the permissions of its photos and documents); or a button's
+        `can_send_messages` and the permissions of its media blocks); or a button's
         callback data exceeds 64 bytes (`Bad Request: BUTTON_DATA_INVALID`). A reply to a message of another chat is checked before all of
         these, while Telegram checks the text and the chat first: the replied message's chat is
         not one the bot can read (`Bad Request: chat not found`, or the membership errors of
