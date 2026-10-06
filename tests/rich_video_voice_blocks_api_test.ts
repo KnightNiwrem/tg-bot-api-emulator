@@ -268,7 +268,8 @@ Deno.test('a bot sends nested video and voice note blocks that accounts see and 
             video: {
               type: 'video',
               media: 'attach://clip',
-              thumbnail: 'attach://still',
+              // The legacy name of `thumbnail`, which the official server reads for blocks too.
+              thumb: 'attach://still',
               // The duration and dimensions are clamped, and a block keeps no start.
               duration: 100_000,
               width: 20_000,
@@ -306,15 +307,20 @@ Deno.test('a bot sends nested video and voice note blocks that accounts see and 
             { type: 'voice_note', voice_note: { type: 'voice_note', media: 'attach://note' } },
           ],
         },
+        {
+          type: 'document',
+          document: { type: 'document', media: 'attach://notes', thumb: 'attach://still' },
+        },
       ],
     }),
   }, {
     clip: new File([CLIP_BYTES], 'launch.mp4'),
     still: new File([gifImage(32, 18)], 'still.gif'),
     note: new File([MEMO_BYTES], 'note.mp3'),
+    notes: new File(['%PDF-1.7'], 'notes.pdf'),
   });
   const message = sent.body.result;
-  const [details, list, collage] = message?.rich_message?.blocks ?? [];
+  const [details, list, collage, documentBlock] = message?.rich_message?.blocks ?? [];
   const uploadedVideoBlock = details?.blocks?.[0];
   const uploadedVideo = mediaOf(uploadedVideoBlock?.video);
   const [memoBlock, longMemoBlock] = (list?.items ?? []).map((item) => item.blocks[0]);
@@ -343,6 +349,7 @@ Deno.test('a bot sends nested video and voice note blocks that accounts see and 
       without(urlVideoBlock?.video, ...fileKeys),
       Object.keys(urlVideoBlock ?? {}),
       without(uploadedVoiceBlock?.voice_note, ...fileKeys),
+      (documentBlock?.document as { thumbnail?: { width: number } } | undefined)?.thumbnail?.width,
     ],
     [
       200,
@@ -377,6 +384,7 @@ Deno.test('a bot sends nested video and voice note blocks that accounts see and 
       { duration: 3, width: 0, height: 0, file_name: 'launch.mp4', mime_type: 'video/mp4' },
       ['type', 'video'],
       { duration: 0, mime_type: 'audio/mpeg' },
+      32,
     ],
     'Expected the blocks to show the videos and voice notes as the bot specified them',
   );

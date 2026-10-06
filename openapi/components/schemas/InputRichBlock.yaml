@@ -17,8 +17,9 @@ description: >-
   media's `media` is the `file_id` of a file of that type the bot knows, `attach://<part name>`
   for a file uploaded in that part, or an HTTP or HTTPS URL, which is downloaded the same way as
   for `sendPhoto`, `sendDocument`, `sendVideo`, and `sendVoice`. A document's or video's
-  `thumbnail` works as for `sendDocument` and `sendVideo`. A video's `duration`, `width`, and
-  `height` and a voice note's `duration` are clamped as for `sendVideo` and `sendVoice`; a
+  `thumbnail`, or the legacy `thumb`, works as for `sendDocument` and `sendVideo`. A video's
+  `duration`, `width`, and `height` and a voice note's `duration` are clamped as for
+  `sendVideo` and `sendVoice`; a
   video's `start_timestamp` and `supports_streaming` are ignored, as the block keeps neither,
   and a video `cover` is not supported. A voice note sent by URL stays a voice note whatever its
   size. In an inline query result's `input_message_content`, the media must be files the bot
@@ -245,6 +246,9 @@ properties:
         type: string
       thumbnail:
         type: string
+      thumb:
+        type: string
+        description: Legacy name of `thumbnail`, read when `thumbnail` is empty.
       caption:
         type: string
       parse_mode:
@@ -269,6 +273,9 @@ properties:
         type: string
       thumbnail:
         type: string
+      thumb:
+        type: string
+        description: Legacy name of `thumbnail`, read when `thumbnail` is empty.
       start_timestamp:
         type: integer
         description: Ignored, as the block keeps no start.
