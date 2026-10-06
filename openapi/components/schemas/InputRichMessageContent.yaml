@@ -2,9 +2,9 @@ type: object
 additionalProperties: false
 description: >-
   A rich message that sending an inline query result writes, read as the `rich_message` of
-  `sendRichMessage`. As TDLib requires of an inline message, its photos and documents must be
-  files the bot knows by `file_id`; an uploaded file fails with `Bad Request: invalid inline
-  message content specified`. Telegram also reads text alongside a `rich_message`, which it
+  `sendRichMessage`. As TDLib requires of an inline message, its photos, documents, videos, and
+  voice notes must be files the bot knows by `file_id`; an uploaded file or one named by URL
+  fails with `Bad Request: invalid inline message content specified`. Telegram also reads text alongside a `rich_message`, which it
   ignores; the emulator rejects such content.
 required:
   - rich_message

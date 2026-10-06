@@ -78,6 +78,7 @@ import {
   mapRichMessageButtons,
   type RichMessage,
   type RichMessageButtonAction,
+  type RichMessageFile,
   type RichMessageFileTypes,
 } from '../types/rich_message.ts';
 import {
@@ -374,10 +375,28 @@ export interface BotApiRichMessageDocument {
   readonly thumbnail?: Uint8Array<ArrayBuffer>;
 }
 
-/** The files of a rich message's photo and document blocks, as a request names them. */
+/** A video a request sends in a rich message, with the attributes the bot specified for it. */
+export interface BotApiRichMessageVideo {
+  readonly video: BotApiInputFile;
+  /** As `SpecifiedVideo` describes them. */
+  readonly attributes: VideoAttributes;
+  /** As `SpecifiedVideo` describes it. */
+  readonly thumbnail?: Uint8Array<ArrayBuffer>;
+}
+
+/** A voice note a request sends in a rich message, with the duration the bot specified for it. */
+export interface BotApiRichMessageVoiceNote {
+  readonly voice: BotApiInputFile;
+  /** As `SendVoiceRequest` describes it. */
+  readonly durationSeconds: number;
+}
+
+/** The files of a rich message's media blocks, as a request names them. */
 export interface BotApiRichMessageFileTypes {
   readonly photo: BotApiInputFile;
   readonly document: BotApiRichMessageDocument;
+  readonly video: BotApiRichMessageVideo;
+  readonly voice: BotApiRichMessageVoiceNote;
 }
 
 /** A rich message as a bot specified it. */
@@ -2502,9 +2521,10 @@ export class BotApiService {
   }
 
   /**
-   * Sends a rich message, laid out in blocks, as `sendMessage` sends text. Its photos and
-   * documents are uploaded with the request or reused by the `file_id` the bot knows them by, as
-   * `sendPhoto` and `sendDocument` send theirs, and are resolved before the chat, as theirs are.
+   * Sends a rich message, laid out in blocks, as `sendMessage` sends text. The files of its media
+   * blocks are uploaded with the request or reused by the `file_id` the bot knows them by, as
+   * `sendPhoto`, `sendDocument`, `sendVideo` and `sendVoice` send theirs, and are resolved before
+   * the chat, as theirs are.
    */
   sendRichMessage(
     authenticatedBot: VirtualBotProfile,
@@ -3839,8 +3859,12 @@ export class BotApiService {
   }
 
   /**
-   * Resolves the files of a rich message's photo and document blocks, in the order the message
-   * shows them, as `#resolvePhoto` and `#resolveDocument` resolve the file of a photo or document.
+   * Resolves the files of a rich message's media blocks, in the order the message shows them, as
+   * `#resolvePhoto`, `#resolveDocument`, `#resolveVideo` and `#resolveVoice` resolve the file of a
+   * photo, document, video or voice note. Nothing is stored, so a file that fails leaves no trace
+   * of those resolved before it. A voice note sent by URL stays a voice note whatever its size, as
+   * nothing documents the conversion `sendVoice` makes for a block, which has no document to
+   * become.
    */
   #resolveRichMessageFiles(
     authenticatedBot: VirtualBotProfile,
@@ -3850,20 +3874,49 @@ export class BotApiService {
     | { readonly resolved: false; readonly failure: FileResolutionFailure } {
     const photos = new Map<BotApiInputFile, OutgoingPhoto>();
     const documents = new Map<BotApiRichMessageDocument, OutgoingDocument>();
+    const videos = new Map<BotApiRichMessageVideo, OutgoingVideo>();
+    const voiceNotes = new Map<BotApiRichMessageVoiceNote, OutgoingVoice>();
     for (const file of listRichMessageFiles(richMessage)) {
-      if (file.kind === 'photo') {
-        const resolution = this.#resolvePhoto(authenticatedBot, file.file);
-        if (!resolution.resolved) {
-          return resolution;
+      switch (file.kind) {
+        case 'photo': {
+          const resolution = this.#resolvePhoto(authenticatedBot, file.file);
+          if (!resolution.resolved) {
+            return resolution;
+          }
+          photos.set(file.file, resolution.file);
+          break;
         }
-        photos.set(file.file, resolution.file);
-      } else {
-        const { document, thumbnail } = file.file;
-        const resolution = this.#resolveDocument(authenticatedBot, document, thumbnail);
-        if (!resolution.resolved) {
-          return resolution;
+        case 'document': {
+          const { document, thumbnail } = file.file;
+          const resolution = this.#resolveDocument(authenticatedBot, document, thumbnail);
+          if (!resolution.resolved) {
+            return resolution;
+          }
+          documents.set(file.file, resolution.file);
+          break;
         }
-        documents.set(file.file, resolution.file);
+        case 'video': {
+          const { video, attributes, thumbnail } = file.file;
+          const resolution = this.#resolveVideo(authenticatedBot, video, attributes, thumbnail);
+          if (!resolution.resolved) {
+            return resolution;
+          }
+          videos.set(file.file, resolution.file);
+          break;
+        }
+        case 'voice': {
+          const { voice, durationSeconds } = file.file;
+          const resolution = this.#resolveVoice(authenticatedBot, voice, durationSeconds);
+          if (!resolution.resolved) {
+            return resolution;
+          }
+          voiceNotes.set(file.file, resolution.file);
+          break;
+        }
+        default: {
+          const unhandledFile: never = file;
+          throw new Error(`Unhandled rich message file: ${JSON.stringify(unhandledFile)}`);
+        }
       }
     }
     return {
@@ -3871,6 +3924,8 @@ export class BotApiService {
       richMessage: convertRichMessageFiles(richMessage, {
         photo: (photo) => getResolvedFile(photos, photo),
         document: (document) => getResolvedFile(documents, document),
+        video: (video) => getResolvedFile(videos, video),
+        voice: (voiceNote) => getResolvedFile(voiceNotes, voiceNote),
       }),
     };
   }
@@ -4887,9 +4942,7 @@ export class BotApiService {
     }
     if (
       content.kind === 'rich_message' &&
-      listRichMessageFiles(content.richMessage).some((file) =>
-        (file.kind === 'photo' ? file.file : file.file.document).kind === 'upload'
-      )
+      richMessageUploadsFile(content.richMessage)
     ) {
       return { edited: false, reason: 'inline_message_upload_unsupported' };
     }
@@ -5422,11 +5475,7 @@ export class BotApiService {
     if (content.kind === 'location') {
       return { resolved: true, content };
     }
-    if (
-      listRichMessageFiles(content.richMessage).some((file) =>
-        (file.kind === 'photo' ? file.file : file.file.document).kind === 'upload'
-      )
-    ) {
+    if (richMessageUploadsFile(content.richMessage)) {
       return { resolved: false, failure: { reason: 'inline_message_content_invalid' } };
     }
     const resolution = this.#resolveRichMessageFiles(authenticatedBot, content.richMessage);
@@ -5797,6 +5846,33 @@ function describeInlineResultLocation({ latitude, longitude }: GeoLocation): str
   return `${latitude.toFixed(INLINE_RESULT_LOCATION_DECIMAL_PLACES)} ${
     longitude.toFixed(INLINE_RESULT_LOCATION_DECIMAL_PLACES)
   }`;
+}
+
+/** Whether a rich message a request specifies uploads a file for one of its media blocks. */
+function richMessageUploadsFile(richMessage: RichMessage<BotApiRichMessageFileTypes>): boolean {
+  return listRichMessageFiles(richMessage).some((file) =>
+    getRichMessageInputFile(file).kind === 'upload'
+  );
+}
+
+/** The file that a media block of a rich message a request specifies sends, as the request names it. */
+function getRichMessageInputFile(
+  file: RichMessageFile<BotApiRichMessageFileTypes>,
+): BotApiInputFile {
+  switch (file.kind) {
+    case 'photo':
+      return file.file;
+    case 'document':
+      return file.file.document;
+    case 'video':
+      return file.file.video;
+    case 'voice':
+      return file.file.voice;
+    default: {
+      const unhandledFile: never = file;
+      throw new Error(`Unhandled rich message file: ${JSON.stringify(unhandledFile)}`);
+    }
+  }
 }
 
 /** Looks up what a file of a request resolved to, which must have been resolved before. */

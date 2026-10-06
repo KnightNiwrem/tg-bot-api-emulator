@@ -92,10 +92,10 @@ const inputMediaDocumentSchema = z.strictObject({
 });
 
 /**
- * An integer field that the official server's `get_input_video` clamps to a range; a missing one
- * is 0.
+ * An integer field of media that the official server's `get_input_video`, `get_input_voice_note`
+ * and `get_input_audio` clamp to a range; a missing one is 0.
  */
-function clampedIntegerField(min: number, max: number) {
+export function clampedIntegerField(min: number, max: number) {
   return z.int().transform((value) => Math.min(Math.max(value, min), max)).default(0);
 }
 

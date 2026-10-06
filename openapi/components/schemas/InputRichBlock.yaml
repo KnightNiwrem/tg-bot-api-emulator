@@ -12,17 +12,24 @@ description: >-
   holds a `summary`, `blocks`, and `is_open`. `map` holds a `location` whose latitude is at most
   90 degrees and longitude at most 180 either way, a `zoom` from 0 to 24, and optional
   dimensions of at most 10,000 together, neither more than 20 times the other. `buttons` holds
-  from 1 to 8 `buttons` and an optional `align`. `photo` and `document` hold their media, whose
-  captions are ignored, and an optional `caption`; the media's `media` is the `file_id` of a
-  file of that type the bot knows, `attach://<part name>` for a file uploaded in that part, or an
-  HTTP or HTTPS URL, which is downloaded the same way as for `sendPhoto` and `sendDocument`, and
-  a document's `thumbnail` works as
-  for `sendDocument`.
+  from 1 to 8 `buttons` and an optional `align`. `photo`, `document`, `video`, and
+  `voice_note` hold their media, whose captions are ignored, and an optional `caption`; the
+  media's `media` is the `file_id` of a file of that type the bot knows, `attach://<part name>`
+  for a file uploaded in that part, or an HTTP or HTTPS URL, which is downloaded the same way as
+  for `sendPhoto`, `sendDocument`, `sendVideo`, and `sendVoice`. A document's or video's
+  `thumbnail`, or the legacy `thumb`, works as for `sendDocument` and `sendVideo`. A video's
+  `duration`, `width`, and `height` and a voice note's `duration` are clamped as for
+  `sendVideo` and `sendVoice`; a
+  video's `start_timestamp` and `supports_streaming` are ignored, as the block keeps neither,
+  and a video `cover` is not supported. A voice note sent by URL stays a voice note whatever its
+  size. In an inline query result's `input_message_content`, the media must be files the bot
+  knows by `file_id`: Telegram refuses uploads and URLs there (`Bad Request: invalid inline
+  message content specified`).
 
-  Telegram's `animation`, `audio`, `video`, and `voice_note` blocks are not supported (`Bad
-  Request: rich message blocks with an animation, audio, video, or voice note are not
-  supported`), and a `thinking` block, which only drafts may hold, is refused (`Bad Request:
-  thinking blocks can be used only in rich message drafts`).
+  Telegram's `animation` and `audio` blocks are not supported (`Bad Request: rich message
+  blocks with an animation or an audio file are not supported`), and a `thinking` block, which
+  only drafts may hold, is refused (`Bad Request: thinking blocks can be used only in rich
+  message drafts`).
 required:
   - type
 properties:
@@ -48,6 +55,8 @@ properties:
       - buttons
       - photo
       - document
+      - video
+      - voice_note
   text:
     $ref: ./RichText.yaml
   size:
@@ -104,8 +113,8 @@ properties:
     $ref: ./RichText.yaml
   caption:
     description: >-
-      A `RichBlockCaption` of a collage, slideshow, map, photo, or document; the `RichText`
-      caption of a table.
+      A `RichBlockCaption` of a collage, slideshow, map, photo, document, video, or voice note;
+      the `RichText` caption of a table.
     oneOf:
       - $ref: ./RichBlockCaption.yaml
       - $ref: ./RichText.yaml
@@ -237,6 +246,9 @@ properties:
         type: string
       thumbnail:
         type: string
+      thumb:
+        type: string
+        description: Legacy name of `thumbnail`, read when `thumbnail` is empty.
       caption:
         type: string
       parse_mode:
@@ -247,3 +259,75 @@ properties:
           $ref: ./MessageEntityParameter.yaml
       disable_content_type_detection:
         type: boolean
+  video:
+    type: object
+    additionalProperties: false
+    required:
+      - type
+      - media
+    properties:
+      type:
+        type: string
+        const: video
+      media:
+        type: string
+      thumbnail:
+        type: string
+      thumb:
+        type: string
+        description: Legacy name of `thumbnail`, read when `thumbnail` is empty.
+      start_timestamp:
+        type: integer
+        description: Ignored, as the block keeps no start.
+      caption:
+        type: string
+      parse_mode:
+        type: string
+      caption_entities:
+        type: array
+        items:
+          $ref: ./MessageEntityParameter.yaml
+      show_caption_above_media:
+        type: boolean
+      width:
+        type: integer
+        default: 0
+        description: Clamped to 0–10,000 pixels.
+      height:
+        type: integer
+        default: 0
+        description: Clamped to 0–10,000 pixels.
+      duration:
+        type: integer
+        default: 0
+        description: Clamped to 0–86,400 seconds.
+      supports_streaming:
+        type: boolean
+      has_spoiler:
+        type: boolean
+        default: false
+        description: Covers the video until the user reveals it.
+  voice_note:
+    type: object
+    additionalProperties: false
+    required:
+      - type
+      - media
+    properties:
+      type:
+        type: string
+        const: voice_note
+      media:
+        type: string
+      caption:
+        type: string
+      parse_mode:
+        type: string
+      caption_entities:
+        type: array
+        items:
+          $ref: ./MessageEntityParameter.yaml
+      duration:
+        type: integer
+        default: 0
+        description: Clamped to 0–86,400 seconds.

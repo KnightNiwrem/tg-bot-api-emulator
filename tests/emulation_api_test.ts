@@ -3243,8 +3243,8 @@ Deno.test('sendRichMessage refuses rich messages as Telegram does', async () => 
     [{ blocks: [1] }, 'Bad Request: object expected as InputRichMessageBlock'],
     [{ blocks: [{ type: 'marquee' }] }, 'Bad Request: type "marquee" is unsupported'],
     [
-      { blocks: [{ type: 'video', video: { type: 'video', media: 'attach://clip' } }] },
-      'Bad Request: rich message blocks with an animation, audio, video, or voice note are not supported',
+      { blocks: [{ type: 'audio', audio: { type: 'audio', media: 'attach://song' } }] },
+      'Bad Request: rich message blocks with an animation or an audio file are not supported',
     ],
     [
       { blocks: [{ type: 'thinking', text: 'Thinking' }] },
@@ -9994,7 +9994,7 @@ Deno.test('sendVoice follows Telegram checks and sends long voice notes by URL a
   }
 });
 
-Deno.test('voice notes stay out of albums and media replacement, rich messages aside', async () => {
+Deno.test('voice notes stay out of albums and media replacement', async () => {
   const { api, sessionPath, botApiPath, createdBot, createdAccount, sendText } =
     await createPrivateConversationFixture();
   await sendText('/start');
@@ -10036,13 +10036,6 @@ Deno.test('voice notes stay out of albums and media replacement, rich messages a
       message_id: voiceMessage?.message_id,
       text: 'Not text',
     }),
-    // The official server reads voice notes in rich messages, which the emulator lacks.
-    await callBotApi(api, `${botApiPath}/sendRichMessage`, {
-      chat_id: chatId,
-      rich_message: {
-        blocks: [{ type: 'voice_note', voice_note: { type: 'voice_note', media: voiceFileId } }],
-      },
-    }),
   ].map(describe);
   const accountAlbum = await api.request(
     `${sessionPath}/accounts/${chatId}/media-groups`,
@@ -10065,7 +10058,6 @@ Deno.test('voice notes stay out of albums and media replacement, rich messages a
     'Bad Request: can\'t parse InputMedia: type "voice_note" is not allowed',
     "Bad Request: message media can't be edited",
     'Bad Request: there is no text in the message to edit',
-    'Bad Request: rich message blocks with an animation, audio, video, or voice note are not supported',
   ];
   const editedMessage = botApiResult(captionEdit.body);
   if (

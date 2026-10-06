@@ -111,6 +111,8 @@ export function richBlockParts(block: RichBlock): readonly RichBlockPart[] {
     case 'map':
     case 'photo':
     case 'document':
+    case 'video':
+    case 'voice_note':
       return captionParts(block.caption);
   }
 }

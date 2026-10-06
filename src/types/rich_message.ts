@@ -16,18 +16,23 @@ export interface RichMessage<Files extends RichMessageFileTypes = StoredRichMess
 }
 
 /**
- * How the photo and document blocks of a rich message refer to their files, which changes as the
- * message is sent: from the files a request names, to files ready to store, to stored files.
+ * How the media blocks of a rich message refer to their files, by the kind of file each block
+ * shows, which changes as the message is sent: from the files a request names, to files ready to
+ * store, to stored files.
  */
 export interface RichMessageFileTypes {
   readonly photo: unknown;
   readonly document: unknown;
+  readonly video: unknown;
+  readonly voice: unknown;
 }
 
 /** The files of a rich message that a message holds. */
 export interface StoredRichMessageFileTypes {
   readonly photo: StoredFileId;
   readonly document: StoredFileId;
+  readonly video: StoredFileId;
+  readonly voice: StoredFileId;
 }
 
 /** Formatting that shows rich text differently without attaching anything to it. */
@@ -400,6 +405,29 @@ export interface RichDocumentBlock<
   readonly caption?: RichBlockCaption;
 }
 
+/**
+ * A video block. As TDLib's `WebPageBlockVideo` keeps it, the block holds only the video: the
+ * start timestamp of the sender's media is dropped, and clients neither play it automatically nor
+ * loop it.
+ */
+export interface RichVideoBlock<Files extends RichMessageFileTypes = StoredRichMessageFileTypes> {
+  readonly kind: 'video';
+  readonly video: Files['video'];
+  /** Whether clients cover the video until the user reveals it. */
+  readonly hasSpoiler: boolean;
+  /** Omitted for no caption. */
+  readonly caption?: RichBlockCaption;
+}
+
+export interface RichVoiceNoteBlock<
+  Files extends RichMessageFileTypes = StoredRichMessageFileTypes,
+> {
+  readonly kind: 'voice_note';
+  readonly voiceNote: Files['voice'];
+  /** Omitted for no caption. */
+  readonly caption?: RichBlockCaption;
+}
+
 /** A block of a rich message. */
 export type RichBlock<Files extends RichMessageFileTypes = StoredRichMessageFileTypes> =
   | RichParagraphBlock
@@ -419,14 +447,18 @@ export type RichBlock<Files extends RichMessageFileTypes = StoredRichMessageFile
   | RichMapBlock
   | RichButtonRowBlock
   | RichPhotoBlock<Files>
-  | RichDocumentBlock<Files>;
+  | RichDocumentBlock<Files>
+  | RichVideoBlock<Files>
+  | RichVoiceNoteBlock<Files>;
 
-/** A file of a rich message's photo or document block. */
+/** A file of a rich message's media block, with the kind of file the block shows. */
 export type RichMessageFile<Files extends RichMessageFileTypes = StoredRichMessageFileTypes> =
   | { readonly kind: 'photo'; readonly file: Files['photo'] }
-  | { readonly kind: 'document'; readonly file: Files['document'] };
+  | { readonly kind: 'document'; readonly file: Files['document'] }
+  | { readonly kind: 'video'; readonly file: Files['video'] }
+  | { readonly kind: 'voice'; readonly file: Files['voice'] };
 
-/** Lists the files of a rich message's photo and document blocks in the order the message shows. */
+/** Lists the files of a rich message's media blocks in the order the message shows them. */
 export function listRichMessageFiles<Files extends RichMessageFileTypes>(
   richMessage: RichMessage<Files>,
 ): RichMessageFile<Files>[] {
@@ -440,6 +472,12 @@ export function listRichMessageFiles<Files extends RichMessageFileTypes>(
         case 'document':
           files.push({ kind: 'document', file: block.document });
           break;
+        case 'video':
+          files.push({ kind: 'video', file: block.video });
+          break;
+        case 'voice_note':
+          files.push({ kind: 'voice', file: block.voiceNote });
+          break;
         default:
           forEachNestedBlockList(block, visitBlocks);
       }
@@ -449,16 +487,18 @@ export function listRichMessageFiles<Files extends RichMessageFileTypes>(
   return files;
 }
 
-/** Converts the files of a rich message's photo and document blocks, keeping everything else. */
+/** Converts the files of a rich message's media blocks, keeping everything else. */
 export interface RichMessageFileConversion<
   From extends RichMessageFileTypes,
   To extends RichMessageFileTypes,
 > {
   photo(file: From['photo']): To['photo'];
   document(file: From['document']): To['document'];
+  video(file: From['video']): To['video'];
+  voice(file: From['voice']): To['voice'];
 }
 
-/** Returns a rich message whose photo and document blocks hold converted files. */
+/** Returns a rich message whose media blocks hold converted files. */
 export function convertRichMessageFiles<
   From extends RichMessageFileTypes,
   To extends RichMessageFileTypes,
@@ -473,6 +513,10 @@ export function convertRichMessageFiles<
           return { ...block, photo: conversion.photo(block.photo) };
         case 'document':
           return { ...block, document: conversion.document(block.document) };
+        case 'video':
+          return { ...block, video: conversion.video(block.video) };
+        case 'voice_note':
+          return { ...block, voiceNote: conversion.voice(block.voiceNote) };
         case 'list':
           return {
             ...block,
@@ -587,6 +631,8 @@ export function mapRichMessageTexts<Files extends RichMessageFileTypes>(
         case 'map':
         case 'photo':
         case 'document':
+        case 'video':
+        case 'voice_note':
           return block.caption === undefined
             ? block
             : { ...block, caption: mapCaption(block.caption) };

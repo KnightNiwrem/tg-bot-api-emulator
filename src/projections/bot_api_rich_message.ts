@@ -25,14 +25,20 @@ import {
 } from '../types/rich_message.ts';
 import type { StoredFileId } from '../types/stored_file.ts';
 import { writeDateTimeFormat } from './bot_api_date_time_format.ts';
-import { type ObservedFile, projectDocument, projectPhotoSize } from './bot_api_file.ts';
+import {
+  type ObservedFile,
+  projectDocument,
+  projectPhotoSize,
+  projectVideo,
+  projectVoice,
+} from './bot_api_file.ts';
 import { projectInlineButtonAction } from './bot_api_inline_keyboard.ts';
 
 /** What a rich message's projection shows beyond the message itself, resolved for the observer. */
 export interface RichMessageProjectionContext {
   /** Every user the message's text mentions, by ID. */
   readonly mentionedUsers: ReadonlyMap<number, BotApiUser>;
-  /** The files of the message's photo and document blocks, as the observer knows them. */
+  /** The files of the message's media blocks, as the observer knows them. */
   readonly files: ReadonlyMap<StoredFileId, ObservedFile>;
 }
 
@@ -179,6 +185,21 @@ class RichMessageProjection {
         return {
           type: 'document',
           document: projectDocument(this.#context.files.get(block.document)),
+          ...this.#projectCaption(block.caption),
+        };
+      // TDLib's `WebPageBlockVideo` neither plays a sent video automatically nor loops it, so the
+      // server's `need_autoplay` and `is_looped` are never shown.
+      case 'video':
+        return {
+          type: 'video',
+          video: projectVideo(this.#context.files.get(block.video), 0),
+          ...this.#projectCaption(block.caption),
+          ...(block.hasSpoiler ? { has_spoiler: true as const } : {}),
+        };
+      case 'voice_note':
+        return {
+          type: 'voice_note',
+          voice_note: projectVoice(this.#context.files.get(block.voiceNote)),
           ...this.#projectCaption(block.caption),
         };
       default: {

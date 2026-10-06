@@ -113,6 +113,8 @@ type OutgoingMediaFile =
 export interface OutgoingRichMessageFileTypes {
   readonly photo: OutgoingPhoto;
   readonly document: OutgoingDocument;
+  readonly video: OutgoingVideo;
+  readonly voice: OutgoingVoice;
 }
 
 export type OutgoingRichMessage = RichMessage<OutgoingRichMessageFileTypes>;
@@ -1021,6 +1023,8 @@ export function storeOutgoingContent(
         ...convertRichMessageFiles(content.richMessage, {
           photo: (photo) => storeOutgoingFile(photo, files),
           document: (document) => storeOutgoingFile(document, files),
+          video: (video) => storeOutgoingFile(video, files),
+          voice: (voice) => storeOutgoingFile(voice, files),
         }),
       };
     case 'poll':
@@ -1082,6 +1086,8 @@ export function toContentOfStoredFile(content: NormalizedOutgoingContent): Messa
         ...convertRichMessageFiles(content.richMessage, {
           photo: getStoredFileId,
           document: getStoredFileId,
+          video: getStoredFileId,
+          voice: getStoredFileId,
         }),
       };
     case 'poll':

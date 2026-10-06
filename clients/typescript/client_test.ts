@@ -5,6 +5,7 @@ import {
   type Audio,
   ButtonSelectionError,
   EmulationClientError,
+  richMessageToPlainText,
   TelegramEmulationClient,
 } from './mod.ts';
 import { virtualAccountProfileSchema } from './schemas.ts';
@@ -1506,6 +1507,61 @@ Deno.test('TypeScript client sends albums to private chats and supergroups', asy
     throw new Error(`Expected the supergroup album, received ${JSON.stringify(supergroupAlbum)}`);
   }
   await session.end();
+});
+
+Deno.test('TypeScript client reads video and voice note blocks of rich messages', async () => {
+  const { api, client } = createInProcessClient();
+  const session = await client.createSession();
+  const { token, bot } = await session.createBot({ first_name: 'Clip Bot', username: 'clip_bot' });
+  const { account } = await session.createAccount({ first_name: 'Ada' });
+  const to = { type: 'private', botId: bot.id } as const;
+  await account.sendMessage({ to, text: 'Hello' });
+
+  const form = new FormData();
+  form.append('chat_id', String(account.id));
+  form.append(
+    'rich_message',
+    JSON.stringify({
+      blocks: [{
+        type: 'collage',
+        blocks: [
+          {
+            type: 'video',
+            video: { type: 'video', media: 'attach://clip', thumbnail: 'attach://still' },
+            caption: { text: 'Launch', credit: 'Ada' },
+          },
+          {
+            type: 'voice_note',
+            voice_note: { type: 'voice_note', media: 'attach://memo', duration: 3 },
+            caption: { text: 'Memo' },
+          },
+        ],
+      }],
+    }),
+  );
+  form.append('clip', new File([new Uint8Array([0, 0, 0, 24])], 'launch.mp4'));
+  form.append('still', new File([gifHeader(32, 18)], 'still.gif'));
+  form.append('memo', new File(['OggS'], 'memo.ogg'));
+  const sendResponse = await api.request(
+    `/sessions/${session.id}/bot-api/bot${token}/sendRichMessage`,
+    { method: 'POST', body: form },
+  );
+  const { result: sentMessage } = await sendResponse.json() as {
+    result: { rich_message: unknown };
+  };
+  const shownMessage = (await account.getMessages({ chat: to })).at(-1);
+  const [videoBlock, voiceNoteBlock] = shownMessage?.rich_message?.blocks[0]?.type === 'collage'
+    ? shownMessage.rich_message.blocks[0].blocks
+    : [];
+  if (
+    shownMessage?.rich_message === undefined ||
+    JSON.stringify(shownMessage.rich_message) !== JSON.stringify(sentMessage.rich_message) ||
+    videoBlock?.type !== 'video' || videoBlock.video.thumbnail?.width !== 32 ||
+    voiceNoteBlock?.type !== 'voice_note' || voiceNoteBlock.voice_note.duration !== 3 ||
+    richMessageToPlainText(shownMessage.rich_message) !== 'Launch\nAda\nMemo'
+  ) {
+    throw new Error(`Expected the client to read the blocks, got ${JSON.stringify(shownMessage)}`);
+  }
 });
 
 Deno.test('TypeScript client reads rich messages and presses their buttons', async () => {
