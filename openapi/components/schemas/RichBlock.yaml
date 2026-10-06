@@ -176,6 +176,10 @@ properties:
   document:
     $ref: ./Document.yaml
   video:
-    $ref: ./Video.yaml
+    description: The video, without a `start_timestamp`, as the block keeps no start.
+    allOf:
+      - $ref: ./Video.yaml
+      - properties:
+          start_timestamp: false
   voice_note:
     $ref: ./Voice.yaml

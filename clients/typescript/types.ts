@@ -1406,8 +1406,8 @@ export type RichBlock =
   | { readonly type: 'document'; readonly document: Document; readonly caption?: RichBlockCaption }
   | {
     readonly type: 'video';
-    /** The video, which a block shows without a `start_timestamp`. */
-    readonly video: Video;
+    /** The video; a block keeps no start, so it never shows a `start_timestamp`. */
+    readonly video: Omit<Video, 'start_timestamp'>;
     readonly caption?: RichBlockCaption;
     readonly has_spoiler?: true;
   }
