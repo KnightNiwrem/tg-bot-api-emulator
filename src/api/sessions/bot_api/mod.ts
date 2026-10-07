@@ -2,10 +2,6 @@ import { type Context, Hono } from 'hono';
 import { z } from 'zod';
 
 import { toCurrentBotApiMethodName } from '../../../types/bot_api_method_name.ts';
-import {
-  MAX_BOT_COMMAND_DESCRIPTION_LENGTH,
-  MAX_BOT_COMMAND_LENGTH,
-} from '../../../types/bot_command.ts';
 import { MAX_CALLBACK_QUERY_ANSWER_TEXT_LENGTH } from '../../../types/callback_query.ts';
 import {
   grantSupergroupAdministratorRights,
@@ -37,18 +33,12 @@ import {
   MAX_VIDEO_SIDE_LENGTH,
   type StoredFile,
 } from '../../../types/stored_file.ts';
-import type { BotUploadTooBigFailure } from '../../../types/upload_profile.ts';
 import { isUserId } from '../../../types/telegram_identity.ts';
+import type { BotUploadTooBigFailure } from '../../../types/upload_profile.ts';
 import type { VirtualBotProfile } from '../../../types/virtual_bot.ts';
 import type { ChatAction } from '../../../types/virtual_chat.ts';
 import { fileDownloadResponse } from '../file_download.ts';
 import type { SessionRouteContextTypes } from '../session_route_context_types.ts';
-import {
-  botCommandScopeParameter,
-  botCommandsParameter,
-  readBotCommandScopeParameter,
-} from './bot_command_parameters.ts';
-import { readChatAdministratorRightsParameter } from './chat_administrator_rights_parameter.ts';
 import {
   BOT_BLOCKED_DESCRIPTION,
   CHAT_ID_EMPTY_DESCRIPTION,
@@ -58,11 +48,6 @@ import {
 } from './chat_access.ts';
 import { readChatPermissionsParameter } from './chat_permissions_parameter.ts';
 import { contactNameSchema, contactVcardSchema } from './contact_parameter.ts';
-import { readMenuButtonParameter } from './menu_button_parameter.ts';
-import {
-  messageEntitiesParameter,
-  readMessageEntitiesParameter,
-} from './message_entities_parameter.ts';
 import {
   type InlineQueryResultParameter,
   inlineQueryResultsButtonParameter,
@@ -82,28 +67,11 @@ import {
   describeInputPollOptionTextError,
   readInputPollOptionsParameter,
 } from './input_poll_option_parameter.ts';
-import { readCorrectOptionIdsParameter } from './quiz_parameters.ts';
-import { readReactionTypesParameter } from './reaction_type_parameter.ts';
 import { linkPreviewOptionsParameter } from './link_preview_options_parameter.ts';
 import {
-  replyParametersParameter,
-  selectSpecifiedReplyTarget,
-} from './reply_parameters_parameter.ts';
-import {
-  LOCATION_INVALID_DESCRIPTION,
-  readRichMessageParameter,
-} from './rich_message_parameter.ts';
-import {
-  excludeRichMessageWebFiles,
-  type RequestedRichMessageFileTypes,
-  resolveRequestedInputFile,
-  resolveRichMessageWebFiles,
-  type WebFileResolution,
-} from './web_file_parameter.ts';
-import {
-  inlineKeyboardMarkupParameter,
-  messageReplyMarkupParameter,
-} from './reply_markup_parameter.ts';
+  messageEntitiesParameter,
+  readMessageEntitiesParameter,
+} from './message_entities_parameter.ts';
 import {
   albumMessageNotSentError,
   BAD_REQUEST_PREFIX,
@@ -120,6 +88,19 @@ import {
   rejectUndecodableBotApiCall,
   rejectUnknownBotApiMethod,
 } from './method_invocation.ts';
+import { BOT_PROFILE_METHODS } from './methods/bot_profile.ts';
+import { FILE_METHODS } from './methods/files.ts';
+import { UPDATE_DELIVERY_METHODS } from './methods/update_delivery.ts';
+import { readCorrectOptionIdsParameter } from './quiz_parameters.ts';
+import { readReactionTypesParameter } from './reaction_type_parameter.ts';
+import {
+  inlineKeyboardMarkupParameter,
+  messageReplyMarkupParameter,
+} from './reply_markup_parameter.ts';
+import {
+  replyParametersParameter,
+  selectSpecifiedReplyTarget,
+} from './reply_parameters_parameter.ts';
 import {
   booleanParameter,
   type BotApiRequestParameters,
@@ -131,6 +112,17 @@ import {
   numberParameter,
   optionalInt64Identifier,
 } from './request_parameters.ts';
+import {
+  LOCATION_INVALID_DESCRIPTION,
+  readRichMessageParameter,
+} from './rich_message_parameter.ts';
+import {
+  excludeRichMessageWebFiles,
+  type RequestedRichMessageFileTypes,
+  resolveRequestedInputFile,
+  resolveRichMessageWebFiles,
+  type WebFileResolution,
+} from './web_file_parameter.ts';
 
 const BOT_TOKEN_PATH_PARAMETER = 'botTokenPathSegment';
 const BOT_TOKEN_PATH_PREFIX = 'bot';
@@ -144,50 +136,17 @@ const FILE_PATH_PARAMETER = 'filePath';
 const BOT_FILE_DOWNLOAD_PATH =
   `/file/:${BOT_TOKEN_PATH_PARAMETER}{${BOT_TOKEN_PATH_PREFIX}[^/]+}/:${FILE_PATH_PARAMETER}{.+}` as const;
 
-/** Telegram's wording, from `abort_long_poll` in the official Bot API server. */
-const TERMINATED_BY_OTHER_LONG_POLL_DESCRIPTION =
-  'Conflict: terminated by other getUpdates request; make sure that only one bot instance is running';
-const TERMINATED_BY_WEBHOOK_DESCRIPTION = 'Conflict: terminated by setWebhook request';
-const WEBHOOK_ACTIVE_DESCRIPTION =
-  "Conflict: can't use getUpdates method while webhook is active; use deleteWebhook to delete the webhook first";
-
-/** Telegram's answers to setWebhook and deleteWebhook, by what the request did. */
-const SET_WEBHOOK_OUTCOME_DESCRIPTIONS = {
-  webhook_set: 'Webhook was set',
-  webhook_already_set: 'Webhook is already set',
-  webhook_deleted: 'Webhook was deleted',
-  webhook_already_deleted: 'Webhook is already deleted',
-} as const;
-
-/** Telegram's descriptions for rejected setWebhook requests. */
-const SET_WEBHOOK_REJECTION_DESCRIPTIONS = {
-  url_invalid: 'Bad Request: invalid webhook URL specified',
-  secret_token_too_long: 'Bad Request: secret token is too long',
-  secret_token_invalid: 'Bad Request: secret token contains illegal characters',
-} as const;
-
-/**
- * The emulator's descriptions for webhook options it does not support: Telegram connects to a
- * webhook at a given IP address, or trusts its self-signed certificate.
- */
-const WEBHOOK_IP_ADDRESS_UNSUPPORTED_DESCRIPTION =
-  'Bad Request: webhook IP addresses are not supported';
-const WEBHOOK_CERTIFICATE_UNSUPPORTED_DESCRIPTION =
-  'Bad Request: custom webhook certificates are not supported';
-
-/** Telegram's default and range for `max_connections`, to which it clamps other values. */
-const DEFAULT_WEBHOOK_MAX_CONNECTIONS = 40;
-const MIN_WEBHOOK_MAX_CONNECTIONS = 1;
-const MAX_WEBHOOK_MAX_CONNECTIONS = 100;
-
-/** Telegram's descriptions for rejected sendMessage requests. */
+/** Telegram's descriptions for message text and buttons it refuses to send. */
 const MESSAGE_TEXT_EMPTY_DESCRIPTION = 'Bad Request: message text is empty';
+/** Telegram's description for a reply to a message it cannot find. */
 const REPLY_MESSAGE_NOT_FOUND_DESCRIPTION = 'Bad Request: message to be replied not found';
 const MESSAGE_TEXT_TOO_LONG_DESCRIPTION = 'Bad Request: message is too long';
 const BUTTON_DATA_INVALID_DESCRIPTION = 'Bad Request: BUTTON_DATA_INVALID';
 /** Telegram's description for a button its servers do not allow in the chat, such as a Web App. */
 const BUTTON_TYPE_INVALID_DESCRIPTION = 'Bad Request: BUTTON_TYPE_INVALID';
+/** Telegram's description for a reply quote that the replied message does not contain. */
 const QUOTE_TEXT_INVALID_DESCRIPTION = 'Bad Request: QUOTE_TEXT_INVALID';
+/** Telegram's description for a callback query answer whose URL its servers refuse. */
 const URL_INVALID_DESCRIPTION = 'Bad Request: URL_INVALID';
 
 /** TDLib's descriptions for polls it refuses to create. */
@@ -217,9 +176,10 @@ const POLL_OPEN_PERIOD_INVALID_DESCRIPTION =
 const POLL_CLOSE_DATE_INVALID_DESCRIPTION =
   `Bad Request: close_date must be from ${MIN_POLL_OPEN_PERIOD_SECONDS} to ${MAX_POLL_OPEN_PERIOD_SECONDS} seconds in the future`;
 
-/** TDLib's descriptions for message effects in chats or requests that cannot use them. */
+/** TDLib's description for a message effect in a chat that cannot use one. */
 const MESSAGE_EFFECT_NOT_ALLOWED_IN_CHAT_DESCRIPTION =
   "Bad Request: can't use message effects in the chat";
+/** TDLib's description for a message effect in a request that cannot use one. */
 const MESSAGE_EFFECT_NOT_ALLOWED_IN_METHOD_DESCRIPTION =
   "Bad Request: can't use message effects in the method";
 
@@ -240,11 +200,6 @@ const TDLIB_FILE_TYPE_NAMES = {
   audio: 'Audio',
   thumbnail: 'Thumbnail',
 } as const;
-
-/** Telegram's descriptions for rejected getFile requests. */
-const FILE_ID_NOT_SPECIFIED_DESCRIPTION = 'Bad Request: file_id not specified';
-const GET_FILE_ID_INVALID_DESCRIPTION = 'Bad Request: invalid file_id';
-const FILE_TOO_BIG_DESCRIPTION = 'Bad Request: file is too big';
 
 /** Telegram's descriptions for message text or formatting it cannot read. */
 const FORMATTED_TEXT_TOO_LONG_DESCRIPTION = 'Bad Request: text is too long';
@@ -289,7 +244,7 @@ const NOT_ENOUGH_RIGHTS_TO_PIN_DESCRIPTION =
 const SERVICE_MESSAGE_NOT_PINNABLE_DESCRIPTION = "Bad Request: service messages can't be pinned";
 const PINNED_MESSAGE_NOT_MODIFIED_DESCRIPTION = 'Bad Request: CHAT_NOT_MODIFIED';
 
-/** Telegram's descriptions for rejected message deletions. */
+/** Telegram's descriptions for rejected setMessageReaction requests. */
 const SET_MESSAGE_REACTION_PARAMETERS_INVALID_DESCRIPTION =
   'Bad Request: invalid setMessageReaction parameters';
 const MESSAGE_TO_REACT_NOT_FOUND_DESCRIPTION = 'Bad Request: message to react not found';
@@ -303,8 +258,10 @@ const REACTIONS_TOO_MANY_DESCRIPTION = 'Bad Request: REACTIONS_TOO_MANY';
 const REACTION_NOT_PERMITTED_DESCRIPTION = 'Forbidden: CHAT_WRITE_FORBIDDEN';
 const PRIVATE_CHAT_REACTIONS_UNSUPPORTED_DESCRIPTION =
   'Bad Request: reactions in private chats are not supported';
+/** Telegram's descriptions for rejected message deletions. */
 const MESSAGE_TO_DELETE_NOT_FOUND_DESCRIPTION = 'Bad Request: message to delete not found';
 const MESSAGE_NOT_DELETABLE_DESCRIPTION = "Bad Request: message can't be deleted";
+/** Telegram's descriptions for a list of message identifiers it rejects. */
 const MESSAGE_IDENTIFIERS_NOT_SPECIFIED_DESCRIPTION =
   'Bad Request: message identifiers are not specified';
 const TOO_MANY_MESSAGE_IDENTIFIERS_DESCRIPTION =
@@ -396,32 +353,6 @@ const CHAT_ACTIONS_BY_NAME: ReadonlyMap<string, ChatAction> = new Map([
   ['upload_video_note', 'upload_video_note'],
 ]);
 
-/** Telegram's descriptions for rejected command list changes. */
-const SCOPE_NOT_ALLOWED_IN_PRIVATE_CHATS_DESCRIPTION =
-  "Bad Request: can't use specified scope in private chats";
-const LANGUAGE_CODE_INVALID_DESCRIPTION = 'Bad Request: invalid language code specified';
-const BOT_COMMAND_FAILURE_DESCRIPTIONS = {
-  command_not_utf8: 'Bad Request: command must be encoded in UTF-8',
-  command_description_not_utf8: 'Bad Request: command description must be encoded in UTF-8',
-  command_empty: 'Bad Request: command must be non-empty',
-  command_too_long: `Bad Request: command length must not exceed ${MAX_BOT_COMMAND_LENGTH}`,
-  command_description_empty: 'Bad Request: command description must be non-empty',
-  command_description_too_long:
-    `Bad Request: command description length must not exceed ${MAX_BOT_COMMAND_DESCRIPTION_LENGTH}`,
-  too_many_commands: 'Bad Request: BOT_COMMANDS_TOO_MUCH',
-  command_invalid: 'Bad Request: BOT_COMMAND_INVALID',
-} as const;
-
-/** Telegram's descriptions for rejected menu buttons and the users they are for. */
-const CHAT_ID_INVALID_DESCRIPTION = 'Bad Request: invalid chat_id specified';
-const USER_NOT_FOUND_DESCRIPTION = 'Bad Request: user not found';
-const MENU_BUTTON_FAILURE_DESCRIPTIONS = {
-  user_not_found: USER_NOT_FOUND_DESCRIPTION,
-  menu_button_text_empty: 'Bad Request: menu button text must be non-empty',
-  menu_button_text_not_utf8: 'Bad Request: menu button text must be encoded in UTF-8',
-  menu_button_url_not_utf8: 'Bad Request: menu button URL must be encoded in UTF-8',
-} as const;
-
 /**
  * TDLib's `can_send_message_content` errors, as the official Bot API server reports them, for each
  * kind of content a member lacks the permission to send.
@@ -456,6 +387,7 @@ const CANNOT_UNRESTRICT_SELF_DESCRIPTION = "Bad Request: can't unrestrict self";
 const METHOD_UNAVAILABLE_OUTSIDE_SUPERGROUPS_DESCRIPTION =
   'Bad Request: method is available only in supergroups';
 const NOT_ENOUGH_RIGHTS_DESCRIPTION = 'Bad Request: not enough rights';
+/** Telegram's descriptions for rejected requests about chat members. */
 const METHOD_UNAVAILABLE_OUTSIDE_GROUPS_DESCRIPTION =
   'Bad Request: method is available only in groups and supergroups';
 const OWNER_CUSTOM_TITLE_DESCRIPTION = 'Bad Request: only the owner can edit their custom title';
@@ -472,6 +404,7 @@ const MEMBER_IS_OWNER_DESCRIPTION = "Bad Request: can't remove chat owner";
 const NOT_ENOUGH_RIGHTS_TO_RESTRICT_DESCRIPTION =
   'Bad Request: not enough rights to restrict/unrestrict chat member';
 const MEMBER_IS_ADMINISTRATOR_DESCRIPTION = 'Bad Request: user is an administrator of the chat';
+/** Telegram's description for a bot that tries to promote itself. */
 const CANNOT_PROMOTE_SELF_DESCRIPTION = "Bad Request: can't promote self";
 /** Telegram's servers' errors for promotions, which the official server passes on. */
 const MEMBER_NOT_IN_CHAT_DESCRIPTION = 'Bad Request: USER_NOT_MUTUAL_CONTACT';
@@ -487,6 +420,7 @@ const MEMBER_LIMIT_WITH_JOIN_REQUEST_DESCRIPTION =
   "Bad Request: member limit can't be specified for links requiring administrator approval";
 const NOT_ENOUGH_RIGHTS_TO_MANAGE_INVITE_LINKS_DESCRIPTION =
   'Bad Request: not enough rights to manage chat invite link';
+/** Telegram's descriptions for rejected join request decisions. */
 const PRIVATE_CHAT_HAS_NO_JOIN_REQUESTS_DESCRIPTION =
   "Bad Request: the chat can't have join requests";
 const NOT_ENOUGH_RIGHTS_TO_MANAGE_JOIN_REQUESTS_DESCRIPTION =
@@ -508,28 +442,6 @@ const INVITE_LINK_OF_ANOTHER_ADMINISTRATOR_DESCRIPTION = 'Bad Request: CHAT_ADMI
 
 /** Telegram caps how long a client may cache a callback query answer at 30 days. */
 const MAX_CALLBACK_QUERY_ANSWER_CACHE_TIME_SECONDS = 30 * 24 * 60 * 60;
-
-const getMeParametersSchema = z.strictObject({});
-
-const deleteWebhookParametersSchema = z.strictObject({
-  drop_pending_updates: booleanParameter().default(false),
-});
-
-const setWebhookParametersSchema = z.strictObject({
-  url: z.string().default(''),
-  certificate: z.string().optional(),
-  ip_address: z.string().default(''),
-  max_connections: clampedIntegerParameter(
-    MIN_WEBHOOK_MAX_CONNECTIONS,
-    MAX_WEBHOOK_MAX_CONNECTIONS,
-  ).default(DEFAULT_WEBHOOK_MAX_CONNECTIONS),
-  // As for getUpdates, a malformed value is rejected rather than ignored.
-  allowed_updates: jsonParameter(z.array(z.string())).optional(),
-  drop_pending_updates: booleanParameter().default(false),
-  secret_token: z.string().default(''),
-});
-
-const getWebhookInfoParametersSchema = z.strictObject({});
 
 /**
  * Link preview parameters, which the emulator validates and ignores because it generates no link
@@ -899,55 +811,6 @@ const sendChatActionParametersSchema = z.strictObject({
   action: z.string().default(''),
 });
 
-// Telegram treats a missing commands parameter as an empty list, which deletes the list.
-const setMyCommandsParametersSchema = z.strictObject({
-  commands: botCommandsParameter().default([]),
-  scope: botCommandScopeParameter().optional(),
-  language_code: z.string().default(''),
-});
-
-/** Parameters of getMyCommands and deleteMyCommands, which address one command list. */
-const myCommandsTargetParametersSchema = z.strictObject({
-  scope: botCommandScopeParameter().optional(),
-  language_code: z.string().default(''),
-});
-
-const setMyDescriptionParametersSchema = z.strictObject({
-  description: z.string().default(''),
-  language_code: z.string().default(''),
-});
-
-const setMyShortDescriptionParametersSchema = z.strictObject({
-  short_description: z.string().default(''),
-  language_code: z.string().default(''),
-});
-
-/** Parameters of getMyDescription and getMyShortDescription, which address one language. */
-const myDescriptionTargetParametersSchema = z.strictObject({
-  language_code: z.string().default(''),
-});
-
-const setMyDefaultAdministratorRightsParametersSchema = z.strictObject({
-  rights: z.string().optional(),
-  for_channels: booleanParameter().default(false),
-});
-
-const getMyDefaultAdministratorRightsParametersSchema = z.strictObject({
-  for_channels: booleanParameter().default(false),
-});
-
-// `chat_id` names a private chat by its user's ID. Telegram answers `@username` there as an invalid
-// chat_id; the emulator resolves every method's usernames first, so such a request fails as for the
-// chat the username names instead.
-const setChatMenuButtonParametersSchema = z.strictObject({
-  chat_id: integerParameter(z.int()).optional(),
-  menu_button: z.string().optional(),
-});
-
-const getChatMenuButtonParametersSchema = z.strictObject({
-  chat_id: integerParameter(z.int()).optional(),
-});
-
 const getChatMemberParametersSchema = z.strictObject({
   chat_id: integerParameter(z.int()).optional(),
   user_id: integerParameter(z.int()).optional(),
@@ -1055,19 +918,6 @@ const unbanChatMemberParametersSchema = z.strictObject({
   chat_id: integerParameter(z.int()).optional(),
   user_id: integerParameter(z.int()).optional(),
   only_if_banned: booleanParameter().default(false),
-});
-
-const getFileParametersSchema = z.strictObject({
-  file_id: z.string().default(''),
-});
-
-const getUpdatesParametersSchema = z.strictObject({
-  offset: integerParameter(z.int()).optional(),
-  limit: integerParameter(z.int().min(1).max(100)).default(100),
-  timeout: integerParameter(z.int().min(0).max(50)).default(0),
-  // Telegram ignores a malformed value and keeps the current subscription; rejecting it instead
-  // surfaces the bot's mistake in tests.
-  allowed_updates: jsonParameter(z.array(z.string())).optional(),
 });
 
 type BotApiRouteVariables = SessionRouteContextTypes['Variables'] & {
@@ -1183,8 +1033,6 @@ type SendOptionsParameters =
   & z.infer<z.ZodObject<typeof sendOptionsParametersShape>>
   & Partial<z.infer<z.ZodObject<typeof replyMarkupParametersShape>>>;
 
-type MyCommandsTarget = Parameters<EmulationSession['botApi']['getMyCommands']>[1];
-
 /** Why a request about a chat's members, or a moderation of them, can fail. */
 type ChatMemberFailureReason =
   | Extract<
@@ -1219,11 +1067,6 @@ type ChatMemberFailureReason =
     | 'bots_cannot_add_members'
   >;
 
-type MyCommandsTargetFailureReason = Extract<
-  ReturnType<EmulationSession['botApi']['getMyCommands']>,
-  { readonly found: false }
->['reason'];
-
 type FormattedTextReadingResult = ReturnType<EmulationSession['botApi']['readFormattedText']>;
 
 /** Message text with the entities its bot specified, or the error answer for reading it. */
@@ -1247,6 +1090,9 @@ type EditedMessageTargetReading =
   | { readonly read: false; readonly errorAnswer: BotApiMethodAnswer };
 
 const BOT_API_METHODS: readonly BotApiMethod[] = [
+  ...UPDATE_DELIVERY_METHODS,
+  ...BOT_PROFILE_METHODS,
+  ...FILE_METHODS,
   { name: 'answerCallbackQuery', handler: handleAnswerCallbackQuery },
   { name: 'answerInlineQuery', handler: handleAnswerInlineQuery },
   { name: 'approveChatJoinRequest', handler: handleApproveChatJoinRequest },
@@ -1257,8 +1103,6 @@ const BOT_API_METHODS: readonly BotApiMethod[] = [
   { name: 'copyMessages', handler: handleCopyMessages },
   { name: 'deleteMessage', handler: handleDeleteMessage },
   { name: 'deleteMessages', handler: handleDeleteMessages },
-  { name: 'deleteMyCommands', handler: handleDeleteMyCommands },
-  { name: 'deleteWebhook', handler: handleDeleteWebhook },
   { name: 'editChatInviteLink', handler: handleEditChatInviteLink },
   { name: 'editMessageCaption', handler: handleEditMessageCaption },
   { name: 'editMessageMedia', handler: handleEditMessageMedia },
@@ -1270,15 +1114,6 @@ const BOT_API_METHODS: readonly BotApiMethod[] = [
   { name: 'getChatAdministrators', handler: handleGetChatAdministrators },
   { name: 'getChatMember', handler: handleGetChatMember },
   { name: 'getChatMemberCount', handler: handleGetChatMemberCount },
-  { name: 'getChatMenuButton', handler: handleGetChatMenuButton },
-  { name: 'getFile', handler: handleGetFile },
-  { name: 'getMe', handler: handleGetMe },
-  { name: 'getMyCommands', handler: handleGetMyCommands },
-  { name: 'getMyDefaultAdministratorRights', handler: handleGetMyDefaultAdministratorRights },
-  { name: 'getMyDescription', handler: handleGetMyDescription },
-  { name: 'getMyShortDescription', handler: handleGetMyShortDescription },
-  { name: 'getUpdates', handler: handleGetUpdates },
-  { name: 'getWebhookInfo', handler: handleGetWebhookInfo },
   { name: 'leaveChat', handler: handleLeaveChat },
   { name: 'pinChatMessage', handler: handlePinChatMessage },
   { name: 'promoteChatMember', handler: handlePromoteChatMember },
@@ -1296,20 +1131,11 @@ const BOT_API_METHODS: readonly BotApiMethod[] = [
   { name: 'sendRichMessage', handler: handleSendRichMessage },
   { name: 'sendVideo', handler: handleSendVideo },
   { name: 'sendVoice', handler: handleSendVoice },
-  {
-    name: 'setChatAdministratorCustomTitle',
-    handler: handleSetChatAdministratorCustomTitle,
-  },
+  { name: 'setChatAdministratorCustomTitle', handler: handleSetChatAdministratorCustomTitle },
   { name: 'setChatDescription', handler: handleSetChatDescription },
-  { name: 'setChatMenuButton', handler: handleSetChatMenuButton },
   { name: 'setChatPermissions', handler: handleSetChatPermissions },
   { name: 'setChatTitle', handler: handleSetChatTitle },
   { name: 'setMessageReaction', handler: handleSetMessageReaction },
-  { name: 'setMyCommands', handler: handleSetMyCommands },
-  { name: 'setMyDefaultAdministratorRights', handler: handleSetMyDefaultAdministratorRights },
-  { name: 'setMyDescription', handler: handleSetMyDescription },
-  { name: 'setMyShortDescription', handler: handleSetMyShortDescription },
-  { name: 'setWebhook', handler: handleSetWebhook },
   { name: 'stopPoll', handler: handleStopPoll },
   { name: 'unbanChatMember', handler: handleUnbanChatMember },
   { name: 'unpinChatMessage', handler: handleUnpinChatMessage },
@@ -1412,117 +1238,6 @@ export function createBotApiRoutes(): Hono<BotApiRouteContextTypes> {
   botApiRoutes.all('*', (context) => botApiResponse(context, botApiError(404, 'Not Found')));
 
   return botApiRoutes;
-}
-
-function handleGetMe(
-  context: BotApiMethodContext,
-  parameters: BotApiRequestParameters,
-): BotApiMethodAnswer {
-  if (!getMeParametersSchema.safeParse(parameters).success) {
-    return botApiError(400, 'Bad Request: invalid getMe parameters');
-  }
-  return botApiResult(context.bot);
-}
-
-async function handleGetUpdates(
-  context: BotApiMethodContext,
-  parameters: BotApiRequestParameters,
-): Promise<BotApiMethodAnswer> {
-  const parsedParameters = getUpdatesParametersSchema.safeParse(parameters);
-  if (!parsedParameters.success) {
-    return botApiError(400, 'Bad Request: invalid getUpdates parameters');
-  }
-
-  const result = await context.session.botApi.getUpdates(
-    context.bot,
-    {
-      offset: parsedParameters.data.offset,
-      limit: parsedParameters.data.limit,
-      timeoutSeconds: parsedParameters.data.timeout,
-      allowedUpdates: parsedParameters.data.allowed_updates,
-      signal: context.signal,
-    },
-  );
-  if (!result.retrieved) {
-    // Telegram delays a conflict by 3 seconds when another occurred within the previous 3
-    // seconds; the emulator answers immediately to keep tests fast.
-    const { reason } = result;
-    switch (reason) {
-      case 'terminated_by_other_long_poll':
-        return botApiError(409, TERMINATED_BY_OTHER_LONG_POLL_DESCRIPTION);
-      case 'terminated_by_webhook':
-        return botApiError(409, TERMINATED_BY_WEBHOOK_DESCRIPTION);
-      case 'webhook_active':
-        return botApiError(409, WEBHOOK_ACTIVE_DESCRIPTION);
-      default: {
-        const unhandledReason: never = reason;
-        throw new Error(`Unhandled getUpdates failure: ${unhandledReason}`);
-      }
-    }
-  }
-  return botApiResult(result.updates);
-}
-
-function handleSetWebhook(
-  context: BotApiMethodContext,
-  parameters: BotApiRequestParameters,
-  uploadedFiles: BotApiUploadedFiles,
-): BotApiMethodAnswer {
-  const parsedParameters = setWebhookParametersSchema.safeParse(parameters);
-  if (!parsedParameters.success) {
-    return botApiError(400, 'Bad Request: invalid setWebhook parameters');
-  }
-  const { data } = parsedParameters;
-  if (data.ip_address.length > 0) {
-    return botApiError(400, WEBHOOK_IP_ADDRESS_UNSUPPORTED_DESCRIPTION);
-  }
-  // Telegram reads the certificate from a part of that name or through `attach://`.
-  const specifiesCertificate = (data.certificate !== undefined && data.certificate.length > 0) ||
-    uploadedFiles.has('certificate');
-  if (specifiesCertificate) {
-    return botApiError(400, WEBHOOK_CERTIFICATE_UNSUPPORTED_DESCRIPTION);
-  }
-
-  const result = context.session.botApi.setWebhook(
-    context.bot,
-    {
-      url: data.url,
-      secretToken: data.secret_token,
-      maxConnections: data.max_connections,
-      allowedUpdates: data.allowed_updates,
-      dropPendingUpdates: data.drop_pending_updates,
-    },
-  );
-  if (!result.accepted) {
-    return botApiError(400, SET_WEBHOOK_REJECTION_DESCRIPTIONS[result.reason]);
-  }
-  return botApiResult(true, SET_WEBHOOK_OUTCOME_DESCRIPTIONS[result.outcome]);
-}
-
-function handleGetWebhookInfo(
-  context: BotApiMethodContext,
-  parameters: BotApiRequestParameters,
-): BotApiMethodAnswer {
-  if (!getWebhookInfoParametersSchema.safeParse(parameters).success) {
-    return botApiError(400, 'Bad Request: invalid getWebhookInfo parameters');
-  }
-  return botApiResult(context.session.botApi.getWebhookInfo(context.bot));
-}
-
-function handleDeleteWebhook(
-  context: BotApiMethodContext,
-  parameters: BotApiRequestParameters,
-): BotApiMethodAnswer {
-  const parsedParameters = deleteWebhookParametersSchema.safeParse(parameters);
-  if (!parsedParameters.success) {
-    return botApiError(400, 'Bad Request: invalid deleteWebhook parameters');
-  }
-
-  const outcome = context.session.botApi.deleteWebhook(
-    context.bot,
-    { dropPendingUpdates: parsedParameters.data.drop_pending_updates },
-  );
-  return botApiResult(true, SET_WEBHOOK_OUTCOME_DESCRIPTIONS[outcome]);
 }
 
 function handleSendMessage(
@@ -3388,38 +3103,6 @@ function handleDeleteMessages(
   }
 }
 
-function handleGetFile(
-  context: BotApiMethodContext,
-  parameters: BotApiRequestParameters,
-): BotApiMethodAnswer {
-  const parsedParameters = getFileParametersSchema.safeParse(parameters);
-  if (!parsedParameters.success) {
-    return botApiError(400, 'Bad Request: invalid getFile parameters');
-  }
-  const { file_id: fileId } = parsedParameters.data;
-  if (fileId.length === 0) {
-    return botApiError(400, FILE_ID_NOT_SPECIFIED_DESCRIPTION);
-  }
-
-  const result = context.session.botApi.getFile(
-    context.bot,
-    fileId,
-  );
-  if (result.found) {
-    return botApiResult(result.file);
-  }
-  switch (result.reason) {
-    case 'file_id_invalid':
-      return botApiError(400, GET_FILE_ID_INVALID_DESCRIPTION);
-    case 'file_too_big':
-      return botApiError(400, FILE_TOO_BIG_DESCRIPTION);
-    default: {
-      const unhandledReason: never = result.reason;
-      throw new Error(`Unhandled getFile failure: ${unhandledReason}`);
-    }
-  }
-}
-
 function handleAnswerCallbackQuery(
   context: BotApiMethodContext,
   parameters: BotApiRequestParameters,
@@ -4176,308 +3859,6 @@ function chatMemberFailureAnswer(reason: ChatMemberFailureReason): BotApiMethodA
       throw new Error(`Unhandled chat member failure: ${unhandledReason}`);
     }
   }
-}
-
-function handleSetMyCommands(
-  context: BotApiMethodContext,
-  parameters: BotApiRequestParameters,
-): BotApiMethodAnswer {
-  const invalidParametersDescription = 'Bad Request: invalid setMyCommands parameters';
-  const parsedParameters = setMyCommandsParametersSchema.safeParse(parameters);
-  if (!parsedParameters.success) {
-    return botApiError(400, invalidParametersDescription);
-  }
-  const { commands, scope, language_code: languageCode } = parsedParameters.data;
-  const targetReading = readMyCommandsTarget(
-    context,
-    { scope, languageCode },
-    invalidParametersDescription,
-  );
-  if (!targetReading.read) {
-    return targetReading.errorAnswer;
-  }
-
-  const result = context.session.botApi.setMyCommands(
-    context.bot,
-    { commands, ...targetReading.target },
-  );
-  if (result.set) {
-    return botApiResult(true);
-  }
-  switch (result.reason) {
-    case 'chat_not_found':
-    case 'bot_not_a_member':
-    case 'bot_kicked':
-    case 'scope_not_allowed_in_private_chats':
-    case 'language_code_invalid':
-      return myCommandsTargetError(result.reason);
-    default:
-      return botApiError(400, BOT_COMMAND_FAILURE_DESCRIPTIONS[result.reason]);
-  }
-}
-
-function handleGetMyCommands(
-  context: BotApiMethodContext,
-  parameters: BotApiRequestParameters,
-): BotApiMethodAnswer {
-  const invalidParametersDescription = 'Bad Request: invalid getMyCommands parameters';
-  const parsedParameters = myCommandsTargetParametersSchema.safeParse(parameters);
-  if (!parsedParameters.success) {
-    return botApiError(400, invalidParametersDescription);
-  }
-  const targetReading = readMyCommandsTarget(context, {
-    scope: parsedParameters.data.scope,
-    languageCode: parsedParameters.data.language_code,
-  }, invalidParametersDescription);
-  if (!targetReading.read) {
-    return targetReading.errorAnswer;
-  }
-
-  const result = context.session.botApi.getMyCommands(
-    context.bot,
-    targetReading.target,
-  );
-  return result.found ? botApiResult(result.commands) : myCommandsTargetError(result.reason);
-}
-
-function handleDeleteMyCommands(
-  context: BotApiMethodContext,
-  parameters: BotApiRequestParameters,
-): BotApiMethodAnswer {
-  const invalidParametersDescription = 'Bad Request: invalid deleteMyCommands parameters';
-  const parsedParameters = myCommandsTargetParametersSchema.safeParse(parameters);
-  if (!parsedParameters.success) {
-    return botApiError(400, invalidParametersDescription);
-  }
-  const targetReading = readMyCommandsTarget(context, {
-    scope: parsedParameters.data.scope,
-    languageCode: parsedParameters.data.language_code,
-  }, invalidParametersDescription);
-  if (!targetReading.read) {
-    return targetReading.errorAnswer;
-  }
-
-  const result = context.session.botApi.deleteMyCommands(
-    context.bot,
-    targetReading.target,
-  );
-  return result.deleted ? botApiResult(true) : myCommandsTargetError(result.reason);
-}
-
-/** Reads the scope and language that address one of the bot's command lists. */
-function readMyCommandsTarget(
-  context: BotApiMethodContext,
-  { scope, languageCode }: { readonly scope: unknown; readonly languageCode: string },
-  invalidParametersDescription: string,
-):
-  | { readonly read: true; readonly target: MyCommandsTarget }
-  | { readonly read: false; readonly errorAnswer: BotApiMethodAnswer } {
-  const scopeReading = readBotCommandScopeParameter(
-    scope,
-    invalidParametersDescription,
-    (chatIdentifier) => resolveChatIdentifier(context, chatIdentifier),
-  );
-  if (!scopeReading.read) {
-    return { read: false, errorAnswer: botApiError(400, scopeReading.description) };
-  }
-  return { read: true, target: { scope: scopeReading.scope, languageCode } };
-}
-
-function myCommandsTargetError(reason: MyCommandsTargetFailureReason): BotApiMethodAnswer {
-  switch (reason) {
-    case 'chat_not_found':
-    case 'bot_not_a_member':
-    case 'bot_kicked':
-      return supergroupBotAccessFailureAnswer(reason);
-    case 'scope_not_allowed_in_private_chats':
-      return botApiError(400, SCOPE_NOT_ALLOWED_IN_PRIVATE_CHATS_DESCRIPTION);
-    case 'language_code_invalid':
-      return botApiError(400, LANGUAGE_CODE_INVALID_DESCRIPTION);
-    default: {
-      const unhandledReason: never = reason;
-      throw new Error(`Unhandled command list failure: ${unhandledReason}`);
-    }
-  }
-}
-
-function handleSetMyDefaultAdministratorRights(
-  context: BotApiMethodContext,
-  parameters: BotApiRequestParameters,
-): BotApiMethodAnswer {
-  const invalidParametersDescription =
-    'Bad Request: invalid setMyDefaultAdministratorRights parameters';
-  const parsedParameters = setMyDefaultAdministratorRightsParametersSchema.safeParse(parameters);
-  if (!parsedParameters.success) {
-    return botApiError(400, invalidParametersDescription);
-  }
-  const rightsReading = readChatAdministratorRightsParameter(
-    parsedParameters.data.rights,
-    invalidParametersDescription,
-  );
-  if (!rightsReading.read) {
-    return botApiError(400, rightsReading.description);
-  }
-  context.session.botApi.setMyDefaultAdministratorRights(context.bot, {
-    kind: parsedParameters.data.for_channels ? 'channel' : 'group',
-    requestedRights: rightsReading.requestedRights,
-  });
-  return botApiResult(true);
-}
-
-function handleGetMyDefaultAdministratorRights(
-  context: BotApiMethodContext,
-  parameters: BotApiRequestParameters,
-): BotApiMethodAnswer {
-  const parsedParameters = getMyDefaultAdministratorRightsParametersSchema.safeParse(parameters);
-  if (!parsedParameters.success) {
-    return botApiError(400, 'Bad Request: invalid getMyDefaultAdministratorRights parameters');
-  }
-  return botApiResult(
-    context.session.botApi.getMyDefaultAdministratorRights(
-      context.bot,
-      parsedParameters.data.for_channels ? 'channel' : 'group',
-    ),
-  );
-}
-
-/**
- * Sets the bot's menu button for all its private chats, or with `chat_id` for its chat with that
- * user. The button is read before the chat, as the official server's
- * `process_set_chat_menu_button_query` does.
- */
-function handleSetChatMenuButton(
-  context: BotApiMethodContext,
-  parameters: BotApiRequestParameters,
-): BotApiMethodAnswer {
-  const invalidParametersDescription = 'Bad Request: invalid setChatMenuButton parameters';
-  const parsedParameters = setChatMenuButtonParametersSchema.safeParse(parameters);
-  if (!parsedParameters.success) {
-    return botApiError(400, invalidParametersDescription);
-  }
-  const menuButtonReading = readMenuButtonParameter(
-    parsedParameters.data.menu_button,
-    invalidParametersDescription,
-  );
-  if (!menuButtonReading.read) {
-    return botApiError(400, menuButtonReading.description);
-  }
-  const { chat_id: userId } = parsedParameters.data;
-  if (userId !== undefined && userId <= 0) {
-    return botApiError(400, CHAT_ID_INVALID_DESCRIPTION);
-  }
-
-  const result = context.session.botApi.setChatMenuButton(context.bot, {
-    userId,
-    menuButton: menuButtonReading.menuButton,
-  });
-  if (result.set) {
-    return botApiResult(true);
-  }
-  return result.reason === 'web_app_url_invalid'
-    ? botApiError(400, `${BAD_REQUEST_PREFIX}menu button Web App ${result.urlError}`)
-    : botApiError(400, MENU_BUTTON_FAILURE_DESCRIPTIONS[result.reason]);
-}
-
-function handleGetChatMenuButton(
-  context: BotApiMethodContext,
-  parameters: BotApiRequestParameters,
-): BotApiMethodAnswer {
-  const parsedParameters = getChatMenuButtonParametersSchema.safeParse(parameters);
-  if (!parsedParameters.success) {
-    return botApiError(400, 'Bad Request: invalid getChatMenuButton parameters');
-  }
-  const { chat_id: userId } = parsedParameters.data;
-  if (userId !== undefined && userId <= 0) {
-    return botApiError(400, CHAT_ID_INVALID_DESCRIPTION);
-  }
-  const result = context.session.botApi.getChatMenuButton(context.bot, userId);
-  return result.found
-    ? botApiResult(result.menuButton)
-    : botApiError(400, USER_NOT_FOUND_DESCRIPTION);
-}
-
-function handleSetMyDescription(
-  context: BotApiMethodContext,
-  parameters: BotApiRequestParameters,
-): BotApiMethodAnswer {
-  const parsedParameters = setMyDescriptionParametersSchema.safeParse(parameters);
-  if (!parsedParameters.success) {
-    return botApiError(400, 'Bad Request: invalid setMyDescription parameters');
-  }
-  return setMyDescription(context, {
-    kind: 'description',
-    text: parsedParameters.data.description,
-    languageCode: parsedParameters.data.language_code,
-  });
-}
-
-function handleSetMyShortDescription(
-  context: BotApiMethodContext,
-  parameters: BotApiRequestParameters,
-): BotApiMethodAnswer {
-  const parsedParameters = setMyShortDescriptionParametersSchema.safeParse(parameters);
-  if (!parsedParameters.success) {
-    return botApiError(400, 'Bad Request: invalid setMyShortDescription parameters');
-  }
-  return setMyDescription(context, {
-    kind: 'short_description',
-    text: parsedParameters.data.short_description,
-    languageCode: parsedParameters.data.language_code,
-  });
-}
-
-function setMyDescription(
-  context: BotApiMethodContext,
-  request: Parameters<EmulationSession['botApi']['setMyDescription']>[1],
-): BotApiMethodAnswer {
-  const result = context.session.botApi.setMyDescription(context.bot, request);
-  if (result.set) {
-    return botApiResult(true);
-  }
-  switch (result.reason) {
-    case 'text_not_utf8':
-      return botApiError(400, STRINGS_NOT_UTF8_DESCRIPTION);
-    case 'language_code_invalid':
-      return botApiError(400, LANGUAGE_CODE_INVALID_DESCRIPTION);
-    default: {
-      const unhandledReason: never = result.reason;
-      throw new Error(`Unhandled description failure: ${unhandledReason}`);
-    }
-  }
-}
-
-function handleGetMyDescription(
-  context: BotApiMethodContext,
-  parameters: BotApiRequestParameters,
-): BotApiMethodAnswer {
-  const parsedParameters = myDescriptionTargetParametersSchema.safeParse(parameters);
-  if (!parsedParameters.success) {
-    return botApiError(400, 'Bad Request: invalid getMyDescription parameters');
-  }
-  const result = context.session.botApi.getMyDescription(context.bot, {
-    kind: 'description',
-    languageCode: parsedParameters.data.language_code,
-  });
-  return result.found
-    ? botApiResult({ description: result.text })
-    : botApiError(400, LANGUAGE_CODE_INVALID_DESCRIPTION);
-}
-
-function handleGetMyShortDescription(
-  context: BotApiMethodContext,
-  parameters: BotApiRequestParameters,
-): BotApiMethodAnswer {
-  const parsedParameters = myDescriptionTargetParametersSchema.safeParse(parameters);
-  if (!parsedParameters.success) {
-    return botApiError(400, 'Bad Request: invalid getMyShortDescription parameters');
-  }
-  const result = context.session.botApi.getMyDescription(context.bot, {
-    kind: 'short_description',
-    languageCode: parsedParameters.data.language_code,
-  });
-  return result.found
-    ? botApiResult({ short_description: result.text })
-    : botApiError(400, LANGUAGE_CODE_INVALID_DESCRIPTION);
 }
 
 function handleAnswerInlineQuery(
