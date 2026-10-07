@@ -1,7 +1,7 @@
 import { z } from 'zod';
 
 import { recordBotApiCall } from './call_recording.ts';
-import { CHAT_NOT_FOUND_DESCRIPTION, resolveChatIdentifier } from './chat_identifier_resolution.ts';
+import { CHAT_NOT_FOUND_DESCRIPTION, resolveChatIdentifier } from './chat_access.ts';
 import {
   botApiError,
   type BotApiMethod,

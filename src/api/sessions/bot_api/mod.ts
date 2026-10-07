@@ -49,7 +49,13 @@ import {
   readBotCommandScopeParameter,
 } from './bot_command_parameters.ts';
 import { readChatAdministratorRightsParameter } from './chat_administrator_rights_parameter.ts';
-import { CHAT_NOT_FOUND_DESCRIPTION, resolveChatIdentifier } from './chat_identifier_resolution.ts';
+import {
+  BOT_BLOCKED_DESCRIPTION,
+  CHAT_ID_EMPTY_DESCRIPTION,
+  CHAT_NOT_FOUND_DESCRIPTION,
+  resolveChatIdentifier,
+  supergroupBotAccessFailureAnswer,
+} from './chat_access.ts';
 import { readChatPermissionsParameter } from './chat_permissions_parameter.ts';
 import { contactNameSchema, contactVcardSchema } from './contact_parameter.ts';
 import { readMenuButtonParameter } from './menu_button_parameter.ts';
@@ -100,11 +106,14 @@ import {
 } from './reply_markup_parameter.ts';
 import {
   albumMessageNotSentError,
+  BAD_REQUEST_PREFIX,
+  badRequestDescription,
   botApiError,
   type BotApiMethod,
   type BotApiMethodAnswer,
   type BotApiMethodContext,
   botApiResult,
+  STRINGS_NOT_UTF8_DESCRIPTION,
 } from './method_call.ts';
 import {
   callBotApiMethod,
@@ -115,6 +124,7 @@ import {
   booleanParameter,
   type BotApiRequestParameters,
   type BotApiUploadedFiles,
+  clampedIntegerParameter,
   decodeBotApiRequestParameters,
   integerParameter,
   jsonParameter,
@@ -172,7 +182,6 @@ const MAX_WEBHOOK_MAX_CONNECTIONS = 100;
 
 /** Telegram's descriptions for rejected sendMessage requests. */
 const MESSAGE_TEXT_EMPTY_DESCRIPTION = 'Bad Request: message text is empty';
-const CHAT_ID_EMPTY_DESCRIPTION = 'Bad Request: chat_id is empty';
 const REPLY_MESSAGE_NOT_FOUND_DESCRIPTION = 'Bad Request: message to be replied not found';
 const MESSAGE_TEXT_TOO_LONG_DESCRIPTION = 'Bad Request: message is too long';
 const BUTTON_DATA_INVALID_DESCRIPTION = 'Bad Request: BUTTON_DATA_INVALID';
@@ -213,14 +222,6 @@ const MESSAGE_EFFECT_NOT_ALLOWED_IN_CHAT_DESCRIPTION =
   "Bad Request: can't use message effects in the chat";
 const MESSAGE_EFFECT_NOT_ALLOWED_IN_METHOD_DESCRIPTION =
   "Bad Request: can't use message effects in the method";
-
-/** Telegram's description for a message or chat action to a user who blocked the bot. */
-const BOT_BLOCKED_DESCRIPTION = 'Forbidden: bot was blocked by the user';
-
-/** Telegram's descriptions for a request to a supergroup that the bot left or was removed from. */
-const BOT_NOT_SUPERGROUP_MEMBER_DESCRIPTION =
-  'Forbidden: bot is not a member of the supergroup chat';
-const BOT_KICKED_FROM_SUPERGROUP_DESCRIPTION = 'Forbidden: bot was kicked from the supergroup chat';
 
 /** Telegram's descriptions for files a message cannot send. */
 const FILE_EMPTY_DESCRIPTION = 'Bad Request: file must be non-empty';
@@ -373,9 +374,6 @@ const MAX_INLINE_QUERY_CACHE_TIME_SECONDS = 24 * 60 * 60;
 /** Telegram's description for an edit of an unknown, deleted, or other bot's inline message. */
 const INLINE_MESSAGE_ID_INVALID_DESCRIPTION = 'Bad Request: MESSAGE_ID_INVALID';
 
-/** The prefix of Telegram's descriptions of bad requests. */
-const BAD_REQUEST_PREFIX = 'Bad Request: ';
-
 /** Telegram's description for a missing or unknown chat action. */
 const CHAT_ACTION_INVALID_DESCRIPTION = 'Bad Request: wrong parameter action in request';
 
@@ -413,9 +411,6 @@ const BOT_COMMAND_FAILURE_DESCRIPTIONS = {
   too_many_commands: 'Bad Request: BOT_COMMANDS_TOO_MUCH',
   command_invalid: 'Bad Request: BOT_COMMAND_INVALID',
 } as const;
-
-/** TDLib's description of text that is not well-formed Unicode, which it rejects first. */
-const STRINGS_NOT_UTF8_DESCRIPTION = 'Bad Request: strings must be encoded in UTF-8';
 
 /** Telegram's descriptions for rejected menu buttons and the users they are for. */
 const CHAT_ID_INVALID_DESCRIPTION = 'Bad Request: invalid chat_id specified';
@@ -513,14 +508,6 @@ const INVITE_LINK_OF_ANOTHER_ADMINISTRATOR_DESCRIPTION = 'Bad Request: CHAT_ADMI
 
 /** Telegram caps how long a client may cache a callback query answer at 30 days. */
 const MAX_CALLBACK_QUERY_ANSWER_CACHE_TIME_SECONDS = 30 * 24 * 60 * 60;
-
-/**
- * An integer parameter that the official Bot API server clamps to a range, as its
- * `get_integer_arg` does.
- */
-function clampedIntegerParameter(min: number, max: number) {
-  return integerParameter(z.int().transform((value) => Math.min(Math.max(value, min), max)));
-}
 
 const getMeParametersSchema = z.strictObject({});
 
@@ -3357,27 +3344,6 @@ function pinChangeFailureAnswer(
   }
 }
 
-/**
- * Telegram's error for a request to a chat the bot cannot reach as a supergroup member, whichever
- * method made it.
- */
-function supergroupBotAccessFailureAnswer(
-  reason: SupergroupBotAccessFailureReason,
-): BotApiMethodAnswer {
-  switch (reason) {
-    case 'chat_not_found':
-      return botApiError(400, CHAT_NOT_FOUND_DESCRIPTION);
-    case 'bot_not_a_member':
-      return botApiError(403, BOT_NOT_SUPERGROUP_MEMBER_DESCRIPTION);
-    case 'bot_kicked':
-      return botApiError(403, BOT_KICKED_FROM_SUPERGROUP_DESCRIPTION);
-    default: {
-      const unhandledReason: never = reason;
-      throw new Error(`Unhandled supergroup bot access failure: ${unhandledReason}`);
-    }
-  }
-}
-
 function handleDeleteMessages(
   context: BotApiMethodContext,
   parameters: BotApiRequestParameters,
@@ -4830,19 +4796,6 @@ function readEmbeddedFormattedText(
       telegramError.charAt(0).toUpperCase()
     }${telegramError.slice(1)}`,
   };
-}
-
-/**
- * Words a TDLib error message as the Bot API server's `fail_query_with_error` does for a bad
- * request: prefixed, with its first letter lowercased unless it begins an error code or acronym.
- */
-function badRequestDescription(tdlibErrorMessage: string): string {
-  const secondCharacter = tdlibErrorMessage[1] ?? '';
-  const keepsCase = secondCharacter === '_' || /[A-Z]/.test(secondCharacter);
-  const message = keepsCase
-    ? tdlibErrorMessage
-    : tdlibErrorMessage.charAt(0).toLowerCase() + tdlibErrorMessage.slice(1);
-  return `${BAD_REQUEST_PREFIX}${message}`;
 }
 
 /** Sends a Bot API method's answer as the JSON body of an HTTP response. */
