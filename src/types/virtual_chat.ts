@@ -1,4 +1,5 @@
 import type { ChatPermissions } from './chat_permissions.ts';
+import { isUserId } from './telegram_identity.ts';
 
 export interface PrivateConversationKey {
   readonly accountId: number;
@@ -42,6 +43,16 @@ export interface VisibleChatAction {
 export type ChatActionChat =
   | { readonly type: 'private'; readonly accountId: number; readonly botId: number }
   | { readonly type: 'supergroup'; readonly chatId: number };
+
+/**
+ * The chat a bot shows its chat actions in when it addresses a chat by a Bot API `chat_id`: its
+ * private conversation with the user, or the supergroup.
+ */
+export function getBotChatActionChat(botId: number, chatId: number): ChatActionChat {
+  return isUserId(chatId)
+    ? { type: 'private', accountId: chatId, botId }
+    : { type: 'supergroup', chatId };
+}
 
 /** Which participant of a private conversation, identified relative to its key. */
 export type PrivateConversationRole = 'account' | 'bot';

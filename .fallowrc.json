@@ -300,6 +300,18 @@
         ]
       },
       {
+        "name": "bot-message-sending",
+        "patterns": [
+          "src/services/bot_message_sending.ts"
+        ]
+      },
+      {
+        "name": "bot-message-repetition",
+        "patterns": [
+          "src/services/bot_message_repetition.ts"
+        ]
+      },
+      {
         "name": "bot-activity",
         "patterns": [
           "src/services/bot_activity.ts"
@@ -578,6 +590,27 @@
         ]
       },
       {
+        "from": "bot-message-sending",
+        "allow": [
+          "domain"
+        ],
+        "allowTypeOnly": [
+          "domain-services",
+          "bot-api-service"
+        ]
+      },
+      {
+        "from": "bot-message-repetition",
+        "allow": [
+          "domain"
+        ],
+        "allowTypeOnly": [
+          "domain-services",
+          "bot-api-service",
+          "bot-message-sending"
+        ]
+      },
+      {
         "from": "bot-activity",
         "allow": [
           "domain"
@@ -627,6 +660,8 @@
           "webhook-delivery",
           "bot-api-service",
           "bot-media-resolution",
+          "bot-message-sending",
+          "bot-message-repetition",
           "bot-activity",
           "application-services",
           "session",

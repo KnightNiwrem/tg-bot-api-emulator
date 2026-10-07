@@ -255,6 +255,8 @@ Other origins are users. Channel and chat origins are [real gaps](#real-gaps).
 ## Local evidence
 
 [Bot API service](../../src/services/bot_api.ts),
+[bot message sending](../../src/services/bot_message_sending.ts),
+[forwarding and copying](../../src/services/bot_message_repetition.ts),
 [private messaging](../../src/services/private_messaging.ts),
 [message projection](../../src/projections/bot_api_message.ts),
 [forward rules](../../src/types/message_forward.ts),
