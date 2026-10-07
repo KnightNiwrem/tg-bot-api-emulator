@@ -577,6 +577,19 @@ export function mapRichMessageTexts<Files extends RichMessageFileTypes>(
   richMessage: RichMessage<Files>,
   replaceText: (text: RichText, placement: RichTextPlacement) => RichText,
 ): RichMessage<Files> {
+  return mapRichMessageTextsVisitingBlocks(richMessage, replaceText, () => {});
+}
+
+/**
+ * Returns a rich message whose rich texts are replaced as `mapRichMessageTexts` replaces them, and
+ * calls `visitBlock` with every block, nested ones included, before the texts and blocks it holds
+ * pass through.
+ */
+function mapRichMessageTextsVisitingBlocks<Files extends RichMessageFileTypes>(
+  richMessage: RichMessage<Files>,
+  replaceText: (text: RichText, placement: RichTextPlacement) => RichText,
+  visitBlock: (block: RichBlock<Files>) => void,
+): RichMessage<Files> {
   const mapText = (text: RichText) => replaceText(text, 'other');
   const mapCaption = (caption: RichBlockCaption): RichBlockCaption => ({
     text: mapText(caption.text),
@@ -584,6 +597,7 @@ export function mapRichMessageTexts<Files extends RichMessageFileTypes>(
   });
   const mapBlocks = (blocks: readonly RichBlock<Files>[]): RichBlock<Files>[] =>
     blocks.map((block): RichBlock<Files> => {
+      visitBlock(block);
       switch (block.kind) {
         case 'paragraph':
         case 'heading':
@@ -665,12 +679,30 @@ export function forEachRichText<Files extends RichMessageFileTypes>(
   richMessage: RichMessage<Files>,
   visit: (text: RichText) => void,
 ): void {
-  const visitText = (text: RichText): RichText => {
-    visit(text);
-    forEachNestedRichText(text, visitText);
+  forEachRichBlockAndText(richMessage, { visitBlock: () => {}, visitText: visit });
+}
+
+/** What `forEachRichBlockAndText` calls with each block and each rich text of a rich message. */
+export interface RichBlockAndTextVisitor<Files extends RichMessageFileTypes> {
+  visitBlock(block: RichBlock<Files>): void;
+  visitText(text: RichText): void;
+}
+
+/**
+ * Calls the visitor with every block of a rich message and every rich text, nested ones included,
+ * in the order the message shows them: a block before the texts and blocks it holds, and a text
+ * before its parts.
+ */
+export function forEachRichBlockAndText<Files extends RichMessageFileTypes>(
+  richMessage: RichMessage<Files>,
+  { visitBlock, visitText }: RichBlockAndTextVisitor<Files>,
+): void {
+  const visitTextAndParts = (text: RichText): RichText => {
+    visitText(text);
+    forEachNestedRichText(text, visitTextAndParts);
     return text;
   };
-  mapRichMessageTexts(richMessage, visitText);
+  mapRichMessageTextsVisitingBlocks(richMessage, visitTextAndParts, visitBlock);
 }
 
 /** Calls `visit` with the texts a rich text directly holds, including a button's text. */

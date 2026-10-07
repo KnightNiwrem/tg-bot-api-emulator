@@ -12,6 +12,7 @@ import type {
 } from '../types/bot_api_rich_message.ts';
 import {
   type DetectedRichTextEntityType,
+  forEachRichBlockAndText,
   getRichMessageAnchorLinkUrl,
   getRichTextFullText,
   type OrderedListItemNumber,
@@ -48,6 +49,12 @@ const UNORDERED_LIST_ITEM_LABEL = '•';
 /** The URL prefix of links to an anchor or a reference of the rich message itself. */
 const ANCHOR_LINK_URL_PREFIX = '#';
 
+/**
+ * The name that a link to `#` alone gives: the top of the rich message, unless an anchor or a
+ * reference of the message has that name.
+ */
+const MESSAGE_TOP_ANCHOR_NAME = '';
+
 /** What an anchor name of a rich message marks: an invisible anchor, or a reference's text. */
 type AnchorTarget = 'anchor' | 'reference';
 
@@ -55,22 +62,16 @@ type AnchorTarget = 'anchor' | 'reference';
  * Projects a rich message as the official Bot API server's `JsonRichMessage` shows the message
  * TDLib's `RichMessage::get_rich_message_object` gives it.
  *
- * As TDLib's `get_page_blocks_object` does, a first pass collects the names of the message's
- * anchors and references, and the second shows a link to `#` and one of the names, raw or
- * URL-decoded, as a link to that anchor or reference; `#` alone links back to the top of the
- * message. Other links, including those to names the message lacks, stay URLs.
+ * A link to `#` and the name of one of the message's anchor targets, raw or URL-decoded, is shown
+ * as a link to that anchor or reference; `#` alone links back to the top of the message. Other
+ * links, including those to names the message lacks, stay URLs.
  */
 export function projectRichMessage(
   richMessage: RichMessage,
   context: RichMessageProjectionContext,
 ): BotApiRichMessage {
-  const anchorTargets = new Map<string, AnchorTarget>();
-  new RichMessageProjection(context, anchorTargets, undefined).projectBlocks(richMessage.blocks);
-  if (!anchorTargets.has('')) {
-    anchorTargets.set('', 'anchor');
-  }
   return {
-    blocks: new RichMessageProjection(context, undefined, anchorTargets).projectBlocks(
+    blocks: new RichMessageProjection(context, collectAnchorTargets(richMessage)).projectBlocks(
       richMessage.blocks,
     ),
     ...(richMessage.isRightToLeft ? { is_rtl: true as const } : {}),
@@ -78,21 +79,43 @@ export function projectRichMessage(
 }
 
 /**
- * One pass of `projectRichMessage`: collecting the anchor targets it meets, the first of each name
- * counting, or resolving links with the targets collected before.
+ * The targets that links to a rich message itself can name, as TDLib's `get_page_blocks_object`
+ * collects them before it shows any link: the first anchor block, anchor, or reference of each
+ * name in the order the message shows them, and the top of the message.
  */
+function collectAnchorTargets(richMessage: RichMessage): ReadonlyMap<string, AnchorTarget> {
+  const anchorTargets = new Map<string, AnchorTarget>();
+  const addFirstAnchorTarget = (name: string, target: AnchorTarget): void => {
+    if (!anchorTargets.has(name)) {
+      anchorTargets.set(name, target);
+    }
+  };
+  forEachRichBlockAndText(richMessage, {
+    visitBlock: (block) => {
+      if (block.kind === 'anchor') {
+        addFirstAnchorTarget(block.name, 'anchor');
+      }
+    },
+    visitText: (text) => {
+      if (text.kind === 'anchor' || text.kind === 'reference') {
+        addFirstAnchorTarget(text.name, text.kind);
+      }
+    },
+  });
+  addFirstAnchorTarget(MESSAGE_TOP_ANCHOR_NAME, 'anchor');
+  return anchorTargets;
+}
+
+/** Projects the blocks of a rich message, showing links with the message's anchor targets. */
 class RichMessageProjection {
   readonly #context: RichMessageProjectionContext;
-  readonly #collectedAnchorTargets: Map<string, AnchorTarget> | undefined;
-  readonly #anchorTargets: ReadonlyMap<string, AnchorTarget> | undefined;
+  readonly #anchorTargets: ReadonlyMap<string, AnchorTarget>;
 
   constructor(
     context: RichMessageProjectionContext,
-    collectedAnchorTargets: Map<string, AnchorTarget> | undefined,
-    anchorTargets: ReadonlyMap<string, AnchorTarget> | undefined,
+    anchorTargets: ReadonlyMap<string, AnchorTarget>,
   ) {
     this.#context = context;
-    this.#collectedAnchorTargets = collectedAnchorTargets;
     this.#anchorTargets = anchorTargets;
   }
 
@@ -119,7 +142,6 @@ class RichMessageProjection {
       case 'mathematical_expression':
         return { type: 'mathematical_expression', expression: block.expression };
       case 'anchor':
-        this.#collectAnchorTarget(block.name, 'anchor');
         return { type: 'anchor', name: block.name };
       case 'list':
         return { type: 'list', items: block.items.map((item) => this.#projectListItem(item)) };
@@ -316,10 +338,8 @@ class RichMessageProjection {
       case 'mathematical_expression':
         return { type: 'mathematical_expression', expression: text.expression };
       case 'anchor':
-        this.#collectAnchorTarget(text.name, 'anchor');
         return { type: 'anchor', name: text.name };
       case 'reference':
-        this.#collectAnchorTarget(text.name, 'reference');
         return { type: 'reference', text: this.#projectText(text.text), name: text.name };
       case 'detected_entity':
         return this.#projectDetectedEntity(text.entityType, text.text);
@@ -368,11 +388,10 @@ class RichMessageProjection {
   /** Shows a link, which links to an anchor or a reference of the message when it names one. */
   #projectLink(linkText: RichText, url: string): BotApiRichTextObject {
     const text = this.#projectText(linkText);
-    const anchorTargets = this.#anchorTargets;
-    if (anchorTargets !== undefined && url.startsWith(ANCHOR_LINK_URL_PREFIX)) {
+    if (url.startsWith(ANCHOR_LINK_URL_PREFIX)) {
       const encodedName = url.slice(ANCHOR_LINK_URL_PREFIX.length);
       for (const name of [encodedName, decodeTdlibUrl(encodedName)]) {
-        switch (anchorTargets.get(name)) {
+        switch (this.#anchorTargets.get(name)) {
           case 'anchor':
             return { type: 'anchor_link', text, anchor_name: name };
           case 'reference':
@@ -383,12 +402,6 @@ class RichMessageProjection {
       }
     }
     return { type: 'url', text, url };
-  }
-
-  #collectAnchorTarget(name: string, target: AnchorTarget): void {
-    if (this.#collectedAnchorTargets !== undefined && !this.#collectedAnchorTargets.has(name)) {
-      this.#collectedAnchorTargets.set(name, target);
-    }
   }
 }
 
