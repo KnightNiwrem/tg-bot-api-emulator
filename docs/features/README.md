@@ -44,8 +44,8 @@ thresholds, which tests replace with
 ## Implemented Bot API methods
 
 This is the complete inventory from the
-[HTTP method registry](../../src/api/sessions/bot_api/mod.ts). Method names are case-insensitive.
-The two legacy aliases below are also accepted.
+[method catalogue](../../src/api/sessions/bot_api/method_catalogue.ts). Method names are
+case-insensitive. The two legacy aliases below are also accepted.
 
 | Area             | Methods                                                                                                                                                                  |
 | ---------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
