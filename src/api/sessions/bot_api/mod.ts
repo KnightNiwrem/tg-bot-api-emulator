@@ -2,7 +2,6 @@ import { type Context, Hono } from 'hono';
 import { z } from 'zod';
 
 import { toCurrentBotApiMethodName } from '../../../types/bot_api_method_name.ts';
-import type { SupergroupBotAccessFailureReason } from '../../../types/chat_membership.ts';
 import type { EmulationSession } from '../../../types/emulation_session.ts';
 import {
   createGeoLocation,
@@ -65,6 +64,13 @@ import {
 } from './message_content_answers.ts';
 import { messageEntitiesParameter } from './message_entities_parameter.ts';
 import {
+  INVALID_MESSAGE_IDENTIFIER_DESCRIPTION,
+  MESSAGE_IDENTIFIERS_NOT_SPECIFIED_DESCRIPTION,
+  messageIdOrNone,
+  NO_MESSAGE_ID,
+  TOO_MANY_MESSAGE_IDENTIFIERS_DESCRIPTION,
+} from './message_identifiers.ts';
+import {
   albumMessageNotSentError,
   badRequestDescription,
   botApiError,
@@ -84,10 +90,12 @@ import { CHAT_INVITE_LINK_METHODS } from './methods/chat_invite_links.ts';
 import { CHAT_JOIN_REQUEST_METHODS } from './methods/chat_join_requests.ts';
 import { CHAT_MEMBER_METHODS } from './methods/chat_members.ts';
 import { FILE_METHODS } from './methods/files.ts';
+import { MESSAGE_DELETION_METHODS } from './methods/message_deletion.ts';
+import { MESSAGE_PINNING_METHODS } from './methods/message_pinning.ts';
+import { MESSAGE_REACTION_METHODS } from './methods/message_reactions.ts';
 import { QUERY_ANSWER_METHODS } from './methods/query_answers.ts';
 import { UPDATE_DELIVERY_METHODS } from './methods/update_delivery.ts';
 import { readCorrectOptionIdsParameter } from './quiz_parameters.ts';
-import { readReactionTypesParameter } from './reaction_type_parameter.ts';
 import {
   inlineKeyboardMarkupParameter,
   messageReplyMarkupParameter,
@@ -210,42 +218,6 @@ const ALBUM_MEDIA_TYPE_UNCHANGEABLE_DESCRIPTION =
 const MESSAGE_NOT_MODIFIED_DESCRIPTION =
   'Bad Request: message is not modified: specified new message content and reply markup are exactly the same as a current content and reply markup of the message';
 
-/**
- * Telegram's descriptions for rejected pins: the official server's `check_message` and
- * `getChatPinnedMessage` failure, TDLib's `can_pin_message` errors, and Telegram's refusal of a pin
- * that changes nothing, which the server passes on.
- */
-const MESSAGE_TO_PIN_NOT_FOUND_DESCRIPTION = 'Bad Request: message to pin not found';
-const MESSAGE_TO_UNPIN_NOT_FOUND_DESCRIPTION = 'Bad Request: message to unpin not found';
-const NOT_ENOUGH_RIGHTS_TO_PIN_DESCRIPTION =
-  'Bad Request: not enough rights to manage pinned messages in the chat';
-const SERVICE_MESSAGE_NOT_PINNABLE_DESCRIPTION = "Bad Request: service messages can't be pinned";
-const PINNED_MESSAGE_NOT_MODIFIED_DESCRIPTION = 'Bad Request: CHAT_NOT_MODIFIED';
-
-/** Telegram's descriptions for rejected setMessageReaction requests. */
-const SET_MESSAGE_REACTION_PARAMETERS_INVALID_DESCRIPTION =
-  'Bad Request: invalid setMessageReaction parameters';
-const MESSAGE_TO_REACT_NOT_FOUND_DESCRIPTION = 'Bad Request: message to react not found';
-/**
- * Telegram's servers refuse reactions as `messages.sendReaction` documents its errors, which the
- * official server reports under these names: a reaction that is not allowed on the message, more
- * reactions than a user may choose or than a message may show, and a member that may not react.
- */
-const REACTION_INVALID_DESCRIPTION = 'Bad Request: REACTION_INVALID';
-const REACTIONS_TOO_MANY_DESCRIPTION = 'Bad Request: REACTIONS_TOO_MANY';
-const REACTION_NOT_PERMITTED_DESCRIPTION = 'Forbidden: CHAT_WRITE_FORBIDDEN';
-const PRIVATE_CHAT_REACTIONS_UNSUPPORTED_DESCRIPTION =
-  'Bad Request: reactions in private chats are not supported';
-/** Telegram's descriptions for rejected message deletions. */
-const MESSAGE_TO_DELETE_NOT_FOUND_DESCRIPTION = 'Bad Request: message to delete not found';
-const MESSAGE_NOT_DELETABLE_DESCRIPTION = "Bad Request: message can't be deleted";
-/** Telegram's descriptions for a list of message identifiers it rejects. */
-const MESSAGE_IDENTIFIERS_NOT_SPECIFIED_DESCRIPTION =
-  'Bad Request: message identifiers are not specified';
-const TOO_MANY_MESSAGE_IDENTIFIERS_DESCRIPTION =
-  'Bad Request: too many message identifiers specified';
-const INVALID_MESSAGE_IDENTIFIER_DESCRIPTION = 'Bad Request: invalid message identifier specified';
-
 /** Telegram's descriptions for rejected forwards and copies of messages. */
 const FROM_CHAT_ID_REQUIRED_DESCRIPTION = 'Bad Request: parameter "from_chat_id" is required';
 const MESSAGE_TO_FORWARD_NOT_FOUND_DESCRIPTION = 'Bad Request: message to forward not found';
@@ -260,12 +232,6 @@ const MESSAGES_NOT_FORWARDABLE_DESCRIPTION = "Bad Request: messages can't be for
 
 /** Telegram forwards or copies at most 100 messages in one request. */
 const MAX_REPEATED_MESSAGES_COUNT = 100;
-
-/** Telegram deletes at most 100 messages in one deleteMessages request. */
-const MAX_DELETE_MESSAGES_COUNT = 100;
-
-/** Telegram reads a missing or non-positive `message_id` as 0, which identifies no message. */
-const NO_MESSAGE_ID = 0;
 
 /** How the Bot API server reports that it cannot read the `InputMedia` of `editMessageMedia`. */
 const INPUT_MEDIA_ERROR_PREFIX = "can't parse InputMedia: ";
@@ -593,40 +559,6 @@ const stopPollParametersSchema = z.strictObject({
   reply_markup: inlineKeyboardMarkupParameter().optional(),
 });
 
-const deleteMessageParametersSchema = z.strictObject({
-  chat_id: integerParameter(z.int()).optional(),
-  message_id: integerParameter(z.int()).optional(),
-});
-
-// Telegram also accepts message identifiers written as strings; rejecting them instead surfaces
-// the bot's mistake in tests.
-const deleteMessagesParametersSchema = z.strictObject({
-  chat_id: integerParameter(z.int()).optional(),
-  message_ids: jsonParameter(z.array(z.int())).optional(),
-});
-
-// Business connections are not supported.
-const pinChatMessageParametersSchema = z.strictObject({
-  chat_id: integerParameter(z.int()).optional(),
-  message_id: integerParameter(z.int()).optional(),
-  disable_notification: booleanParameter().default(false),
-});
-
-// Telegram reads a missing or zero `message_id` as no target, which unpins the newest pinned
-// message; it reads a negative one so too, which the emulator rejects to surface the bot's mistake.
-const unpinChatMessageParametersSchema = z.strictObject({
-  chat_id: integerParameter(z.int()).optional(),
-  message_id: integerParameter(z.int().nonnegative()).optional(),
-});
-
-// Business connections are not supported. `is_big` changes only how clients animate the reaction.
-const setMessageReactionParametersSchema = z.strictObject({
-  chat_id: integerParameter(z.int()).optional(),
-  message_id: integerParameter(z.int()).optional(),
-  reaction: z.string().optional(),
-  is_big: booleanParameter().default(false),
-});
-
 // Topics and business connections are not supported.
 const sendChatActionParametersSchema = z.strictObject({
   chat_id: integerParameter(z.int()).optional(),
@@ -757,17 +689,17 @@ const BOT_API_METHODS: readonly BotApiMethod[] = [
   ...CHAT_INVITE_LINK_METHODS,
   ...CHAT_JOIN_REQUEST_METHODS,
   ...QUERY_ANSWER_METHODS,
+  ...MESSAGE_DELETION_METHODS,
+  ...MESSAGE_PINNING_METHODS,
+  ...MESSAGE_REACTION_METHODS,
   { name: 'copyMessage', handler: handleCopyMessage },
   { name: 'copyMessages', handler: handleCopyMessages },
-  { name: 'deleteMessage', handler: handleDeleteMessage },
-  { name: 'deleteMessages', handler: handleDeleteMessages },
   { name: 'editMessageCaption', handler: handleEditMessageCaption },
   { name: 'editMessageMedia', handler: handleEditMessageMedia },
   { name: 'editMessageReplyMarkup', handler: handleEditMessageReplyMarkup },
   { name: 'editMessageText', handler: handleEditMessageText },
   { name: 'forwardMessage', handler: handleForwardMessage },
   { name: 'forwardMessages', handler: handleForwardMessages },
-  { name: 'pinChatMessage', handler: handlePinChatMessage },
   { name: 'sendAudio', handler: handleSendAudio },
   { name: 'sendChatAction', handler: handleSendChatAction },
   { name: 'sendContact', handler: handleSendContact },
@@ -780,9 +712,7 @@ const BOT_API_METHODS: readonly BotApiMethod[] = [
   { name: 'sendRichMessage', handler: handleSendRichMessage },
   { name: 'sendVideo', handler: handleSendVideo },
   { name: 'sendVoice', handler: handleSendVoice },
-  { name: 'setMessageReaction', handler: handleSetMessageReaction },
   { name: 'stopPoll', handler: handleStopPoll },
-  { name: 'unpinChatMessage', handler: handleUnpinChatMessage },
 ];
 
 /** Keyed by lowercase name, because Telegram matches method names case-insensitively. */
@@ -2341,10 +2271,6 @@ function readEditedMessageTarget(
   };
 }
 
-function messageIdOrNone(messageId: number | undefined): number {
-  return messageId === undefined || messageId <= 0 ? NO_MESSAGE_ID : messageId;
-}
-
 function editMessageAnswer(result: MessageEditResult): BotApiMethodAnswer {
   if (result.edited) {
     return botApiResult(result.message);
@@ -2440,237 +2366,6 @@ function inlineMessageEditAnswer(result: InlineMessageEditResult): BotApiMethodA
     default: {
       const unhandledFailure: never = result;
       throw new Error(`Unhandled inline message edit failure: ${JSON.stringify(unhandledFailure)}`);
-    }
-  }
-}
-
-function handleDeleteMessage(
-  context: BotApiMethodContext,
-  parameters: BotApiRequestParameters,
-): BotApiMethodAnswer {
-  const parsedParameters = deleteMessageParametersSchema.safeParse(parameters);
-  if (!parsedParameters.success) {
-    return botApiError(400, 'Bad Request: invalid deleteMessage parameters');
-  }
-  const { chat_id: chatId, message_id: messageId } = parsedParameters.data;
-  // Telegram looks at the chat before the message.
-  if (chatId === undefined) {
-    return botApiError(400, CHAT_ID_EMPTY_DESCRIPTION);
-  }
-
-  const result = context.session.botApi.deleteMessage(
-    context.bot,
-    { chatId, messageId: messageIdOrNone(messageId) },
-  );
-  if (result.deleted) {
-    return botApiResult(true);
-  }
-  switch (result.reason) {
-    case 'chat_not_found':
-    case 'bot_not_a_member':
-    case 'bot_kicked':
-      return supergroupBotAccessFailureAnswer(result.reason);
-    case 'message_not_found':
-      return botApiError(400, MESSAGE_TO_DELETE_NOT_FOUND_DESCRIPTION);
-    case 'message_not_deletable':
-      return botApiError(400, MESSAGE_NOT_DELETABLE_DESCRIPTION);
-    default: {
-      const unhandledReason: never = result.reason;
-      throw new Error(`Unhandled deleteMessage failure: ${unhandledReason}`);
-    }
-  }
-}
-
-function handlePinChatMessage(
-  context: BotApiMethodContext,
-  parameters: BotApiRequestParameters,
-): BotApiMethodAnswer {
-  const parsedParameters = pinChatMessageParametersSchema.safeParse(parameters);
-  if (!parsedParameters.success) {
-    return botApiError(400, 'Bad Request: invalid pinChatMessage parameters');
-  }
-  const { chat_id: chatId, message_id: messageId, disable_notification: isSilent } =
-    parsedParameters.data;
-  // Telegram looks at the chat before the message.
-  if (chatId === undefined) {
-    return botApiError(400, CHAT_ID_EMPTY_DESCRIPTION);
-  }
-
-  const result = context.session.botApi.pinChatMessage(context.bot, {
-    chatId,
-    messageId: messageIdOrNone(messageId),
-    isSilent,
-  });
-  if (result.pinned) {
-    return botApiResult(true);
-  }
-  switch (result.reason) {
-    case 'message_not_found':
-      return botApiError(400, MESSAGE_TO_PIN_NOT_FOUND_DESCRIPTION);
-    case 'message_already_pinned':
-      return botApiError(400, PINNED_MESSAGE_NOT_MODIFIED_DESCRIPTION);
-    default:
-      return pinChangeFailureAnswer(result.reason);
-  }
-}
-
-function handleUnpinChatMessage(
-  context: BotApiMethodContext,
-  parameters: BotApiRequestParameters,
-): BotApiMethodAnswer {
-  const parsedParameters = unpinChatMessageParametersSchema.safeParse(parameters);
-  if (!parsedParameters.success) {
-    return botApiError(400, 'Bad Request: invalid unpinChatMessage parameters');
-  }
-  const { chat_id: chatId, message_id: messageId } = parsedParameters.data;
-  if (chatId === undefined) {
-    return botApiError(400, CHAT_ID_EMPTY_DESCRIPTION);
-  }
-
-  const result = context.session.botApi.unpinChatMessage(context.bot, {
-    chatId,
-    ...(messageId === undefined || messageId === NO_MESSAGE_ID ? {} : { messageId }),
-  });
-  if (result.unpinned) {
-    return botApiResult(true);
-  }
-  switch (result.reason) {
-    case 'message_not_found':
-      return botApiError(400, MESSAGE_TO_UNPIN_NOT_FOUND_DESCRIPTION);
-    case 'message_not_pinned':
-      return botApiError(400, PINNED_MESSAGE_NOT_MODIFIED_DESCRIPTION);
-    default:
-      return pinChangeFailureAnswer(result.reason);
-  }
-}
-
-/**
- * Sets the bot's reactions to a supergroup message, checking in the official server's order: the
- * `reaction` parameter is read first, then the chat and the message, as `check_message` finds them,
- * and Telegram's servers check the reactions last. A custom emoji is refused right after reading,
- * since no emulated chat allows one.
- */
-function handleSetMessageReaction(
-  context: BotApiMethodContext,
-  parameters: BotApiRequestParameters,
-): BotApiMethodAnswer {
-  const parsedParameters = setMessageReactionParametersSchema.safeParse(parameters);
-  if (!parsedParameters.success) {
-    return botApiError(400, SET_MESSAGE_REACTION_PARAMETERS_INVALID_DESCRIPTION);
-  }
-  const { chat_id: chatId, message_id: messageId, reaction } = parsedParameters.data;
-  const reactionTypes = readReactionTypesParameter(
-    reaction,
-    SET_MESSAGE_REACTION_PARAMETERS_INVALID_DESCRIPTION,
-  );
-  if (!reactionTypes.read) {
-    return botApiError(400, reactionTypes.description);
-  }
-  if (reactionTypes.hasCustomEmoji) {
-    return botApiError(400, REACTION_INVALID_DESCRIPTION);
-  }
-  if (chatId === undefined) {
-    return botApiError(400, CHAT_ID_EMPTY_DESCRIPTION);
-  }
-
-  const result = context.session.botApi.setMessageReaction(context.bot, {
-    chatId,
-    messageId: messageIdOrNone(messageId),
-    emojis: reactionTypes.emojis,
-  });
-  if (result.set) {
-    return botApiResult(true);
-  }
-  switch (result.reason) {
-    case 'chat_not_found':
-    case 'bot_not_a_member':
-    case 'bot_kicked':
-      return supergroupBotAccessFailureAnswer(result.reason);
-    case 'private_chat_reactions_unsupported':
-      return botApiError(400, PRIVATE_CHAT_REACTIONS_UNSUPPORTED_DESCRIPTION);
-    case 'message_not_found':
-      return botApiError(400, MESSAGE_TO_REACT_NOT_FOUND_DESCRIPTION);
-    case 'message_not_reactable':
-    case 'reaction_emoji_unsupported':
-      return botApiError(400, REACTION_INVALID_DESCRIPTION);
-    case 'reaction_not_permitted':
-      return botApiError(403, REACTION_NOT_PERMITTED_DESCRIPTION);
-    case 'too_many_reactions':
-    case 'too_many_distinct_reactions':
-      return botApiError(400, REACTIONS_TOO_MANY_DESCRIPTION);
-    default: {
-      const unhandledReason: never = result.reason;
-      throw new Error(`Unhandled setMessageReaction failure: ${unhandledReason}`);
-    }
-  }
-}
-
-/** Telegram's error for a pin or unpin refused for the chat, the bot's rights, or the message. */
-function pinChangeFailureAnswer(
-  reason:
-    | SupergroupBotAccessFailureReason
-    | 'bot_blocked'
-    | 'not_enough_rights'
-    | 'service_message_not_pinnable',
-): BotApiMethodAnswer {
-  switch (reason) {
-    case 'chat_not_found':
-    case 'bot_not_a_member':
-    case 'bot_kicked':
-      return supergroupBotAccessFailureAnswer(reason);
-    case 'bot_blocked':
-      return botApiError(403, BOT_BLOCKED_DESCRIPTION);
-    case 'not_enough_rights':
-      return botApiError(400, NOT_ENOUGH_RIGHTS_TO_PIN_DESCRIPTION);
-    case 'service_message_not_pinnable':
-      return botApiError(400, SERVICE_MESSAGE_NOT_PINNABLE_DESCRIPTION);
-    default: {
-      const unhandledReason: never = reason;
-      throw new Error(`Unhandled pin failure: ${unhandledReason}`);
-    }
-  }
-}
-
-function handleDeleteMessages(
-  context: BotApiMethodContext,
-  parameters: BotApiRequestParameters,
-): BotApiMethodAnswer {
-  const parsedParameters = deleteMessagesParametersSchema.safeParse(parameters);
-  if (!parsedParameters.success) {
-    return botApiError(400, 'Bad Request: invalid deleteMessages parameters');
-  }
-  const { chat_id: chatId, message_ids: messageIds } = parsedParameters.data;
-  // Telegram checks the message identifiers before it looks at the chat.
-  if (messageIds === undefined) {
-    return botApiError(400, MESSAGE_IDENTIFIERS_NOT_SPECIFIED_DESCRIPTION);
-  }
-  if (messageIds.length > MAX_DELETE_MESSAGES_COUNT) {
-    return botApiError(400, TOO_MANY_MESSAGE_IDENTIFIERS_DESCRIPTION);
-  }
-  if (messageIds.some((messageId) => messageId <= 0)) {
-    return botApiError(400, INVALID_MESSAGE_IDENTIFIER_DESCRIPTION);
-  }
-  if (chatId === undefined) {
-    return botApiError(400, CHAT_ID_EMPTY_DESCRIPTION);
-  }
-
-  const result = context.session.botApi.deleteMessages(
-    context.bot,
-    { chatId, messageIds },
-  );
-  if (result.deleted) {
-    return botApiResult(true);
-  }
-  switch (result.reason) {
-    case 'chat_not_found':
-    case 'bot_not_a_member':
-    case 'bot_kicked':
-      return supergroupBotAccessFailureAnswer(result.reason);
-    case 'message_not_deletable':
-      return botApiError(400, MESSAGE_NOT_DELETABLE_DESCRIPTION);
-    default: {
-      const unhandledReason: never = result.reason;
-      throw new Error(`Unhandled deleteMessages failure: ${unhandledReason}`);
     }
   }
 }
