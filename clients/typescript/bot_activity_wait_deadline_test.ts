@@ -1,120 +1,79 @@
-import { type BotActivityWaitClock, createBotActivityLog } from './bot_activity_log.ts';
+import {
+  type BotActivityPage,
+  type BotActivityPageReader,
+  type BotActivityPageRequest,
+  type BotActivityWaitClock,
+  createBotActivityLog,
+} from './bot_activity_log.ts';
 import {
   BotActivityTimeoutError,
   EmulationClientError,
   UnexpectedBotActivityError,
 } from './mod.ts';
 import type { BotActivityEntry, BotActivityLog, BotApiCallEntry } from './mod.ts';
+import {
+  assert,
+  ManualWaitClock,
+  rejectionOf,
+  sendMessageCall,
+} from './test_support/bot_activity_waits.ts';
 
-// These tests answer the client's activity reads from a scripted transport instead of a server, so
-// that a read can stall, or be answered only once the client has abandoned it, at a known point.
-// Waits measure their time on a manual clock, which moves only when a test advances it, so a read
-// settles at a known time whatever the test runner's speed.
+// These tests answer a wait's page reads from a scripted page reader instead of the emulator, so
+// that a read can hold, settle late, or fail at a known point. Waits measure their time on a
+// manual clock, which moves only when a test advances it, so a read settles at a known time
+// whatever the test runner's speed. How the HTTP page reader abandons a read its transport leaves
+// unanswered is tested with it.
 
-const ACTIVITY_URL = 'http://emulator.example/sessions/session/bot-activity';
 const READ_LIMIT = 1_000;
 const RECORDED_READ_ALLOWANCE_MILLISECONDS = 1_000;
 const MAX_TIMER_DELAY_MILLISECONDS = 2 ** 31 - 1;
 const SHORT_TIMEOUT_MILLISECONDS = 10;
+/** The URL the scripted reader's errors name, as an HTTP page reader's name the read's. */
+const READ_URL = 'http://emulator.example/sessions/session/bot-activity';
 
-Deno.test('A wait abandons a read its transport leaves unanswered at the deadline', async () => {
-  for (const unanswered of [neverAnswered, rejectedWhenAbandoned]) {
-    const clock = new ManualWaitClock();
-    const transport = createScriptedTransport(unanswered);
-
-    const wait = startShortWait(transport, clock);
-    await transport.untilReadsSent(1);
-    endShortWait(clock);
-    const error = await wait;
-
-    const [read] = transport.reads;
-    assertTimeoutAbandoning(error, read);
-    assert(
-      read.query.get('wait_ms') === String(SHORT_TIMEOUT_MILLISECONDS),
-      'Expected a read that holds for the whole wait',
-    );
-    assert(read.signal?.aborted === true, 'Expected the transport to be told to release the read');
-    assert(transport.reads.length === 1, 'Expected no read after the deadline');
-    assert(clock.pendingCallbackCount === 0, "Expected the wait's timers to be stopped");
-  }
-});
-
-Deno.test('A wait abandons a response body that stalls at the deadline and cancels it', async () => {
-  const bodyCancellations = [() => {}, () => new Promise<void>(() => {})];
-  for (const cancelBody of bodyCancellations) {
-    const clock = new ManualWaitClock();
-    const bodyReadStarted = Promise.withResolvers<void>();
-    let cancelledBodies = 0;
-    const stalledBody = new ReadableStream({
-      pull: () => {
-        bodyReadStarted.resolve();
-        return new Promise<void>(() => {});
-      },
-      cancel: () => {
-        cancelledBodies++;
-        return cancelBody();
-      },
-    }, { highWaterMark: 0 });
-    const transport = createScriptedTransport(() =>
-      Promise.resolve(new Response(stalledBody, { status: 200 }))
-    );
-
-    const wait = startShortWait(transport, clock);
-    await bodyReadStarted.promise;
-    endShortWait(clock);
-    const error = await wait;
-
-    assertTimeoutAbandoning(error, transport.reads[0]);
-    assert(cancelledBodies === 1, 'Expected the stalled body to be cancelled');
-  }
-});
-
-Deno.test('A wait does not count an answer received after its deadline, and cancels its body', async () => {
+Deno.test('A wait abandons a read that holds at its deadline', async () => {
   const clock = new ManualWaitClock();
-  const lateBodyCancelled = Promise.withResolvers<void>();
-  const transport = createScriptedTransport((read) =>
-    new Promise((resolve) => {
-      // The transport ignores the abandonment, and answers with a match right after it.
-      read.signal?.addEventListener('abort', () => {
-        const lateBody = new ReadableStream({
-          start: (controller) => {
-            const answer = { entries: [sendMessageCall(1, 'late')], head_position: 1 };
-            controller.enqueue(new TextEncoder().encode(JSON.stringify(answer)));
-          },
-          cancel: () => lateBodyCancelled.resolve(),
-        });
-        resolve(new Response(lateBody, { status: 200 }));
-      });
-    })
-  );
+  const pageReader = createScriptedPageReader(heldUntilAbandoned);
 
-  const wait = startShortWait(transport, clock);
-  await transport.untilReadsSent(1);
-  endShortWait(clock);
+  const wait = rejectionOf(
+    createActivityLog(pageReader, clock).waitFor({ method: 'sendMessage' }, {
+      after: 0,
+      timeoutMs: SHORT_TIMEOUT_MILLISECONDS,
+    }),
+  );
+  await pageReader.untilReadsSent(1);
+  clock.advance(SHORT_TIMEOUT_MILLISECONDS);
+  clock.runDueCallbacks();
   const error = await wait;
 
-  assertTimeoutAbandoning(error, transport.reads[0]);
-  await lateBodyCancelled.promise;
+  const [read] = pageReader.reads;
+  assertTimeoutAbandoning(error, read);
+  assert(
+    read.request.waitMilliseconds === SHORT_TIMEOUT_MILLISECONDS,
+    'Expected a read that holds for the whole wait',
+  );
+  assert(pageReader.reads.length === 1, 'Expected no read after the deadline');
+  assert(clock.pendingCallbackCount === 0, "Expected the wait's timers to be stopped");
 });
 
 Deno.test('A wait counts a holding read only if it settles before the deadline, by the clock', async () => {
   const timeoutMs = 100;
   const lateAnswers = [
     { answer: () => page([sendMessageCall(1, 'match')], 1), failedStatus: undefined },
-    { answer: () => Promise.resolve(new Response(null, { status: 500 })), failedStatus: 500 },
+    { answer: () => failedRead(500), failedStatus: 500 },
   ];
-  // The transport moves the clock without delivering timers, as one that blocks the event loop
-  // keeps the deadline's timer from running until it settles.
+  // The reader moves the clock without delivering timers, as one that blocks the event loop keeps
+  // the deadline's timer from running until it settles.
   for (const { answer, failedStatus } of lateAnswers) {
     for (const elapsedMilliseconds of [timeoutMs - 1, timeoutMs, timeoutMs + 20]) {
       const clock = new ManualWaitClock();
-      const transport = createScriptedTransport(() => {
+      const pageReader = createScriptedPageReader(() => {
         clock.advance(elapsedMilliseconds);
         return answer();
       });
 
       const outcome = await outcomeOf(
-        createActivityLog(transport, clock).waitFor({ method: 'sendMessage' }, {
+        createActivityLog(pageReader, clock).waitFor({ method: 'sendMessage' }, {
           after: 0,
           timeoutMs,
         }),
@@ -124,7 +83,7 @@ Deno.test('A wait counts a holding read only if it settles before the deadline, 
         failedStatus === undefined ? 'a match' : `HTTP ${failedStatus}`
       } after ${elapsedMilliseconds} ms`;
       assert(
-        transport.reads[0].query.get('wait_ms') === String(timeoutMs),
+        pageReader.reads[0].request.waitMilliseconds === timeoutMs,
         `Expected a read that holds, for ${scenario}`,
       );
       if (elapsedMilliseconds >= timeoutMs) {
@@ -172,10 +131,10 @@ Deno.test('A wait counts recorded reads only if they settle within one allowance
   for (const [scriptIndex, script] of scripts.entries()) {
     for (const elapsedMilliseconds of [allowance - 2, allowance, allowance + 20]) {
       const clock = new ManualWaitClock();
-      const transport = createScriptedTransport(...script(clock, elapsedMilliseconds));
+      const pageReader = createScriptedPageReader(...script(clock, elapsedMilliseconds));
 
       const outcome = await outcomeOf(
-        createActivityLog(transport, clock).waitFor(filter, { after: 0, timeoutMs: 0 }),
+        createActivityLog(pageReader, clock).waitFor(filter, { after: 0, timeoutMs: 0 }),
       );
 
       const scenario = `script ${scriptIndex} after ${elapsedMilliseconds} ms`;
@@ -192,25 +151,23 @@ Deno.test('A wait counts recorded reads only if they settle within one allowance
 });
 
 Deno.test('A cancelled wait rejects with the reason and releases its read', async () => {
-  for (const unanswered of [neverAnswered, rejectedWhenAbandoned]) {
-    const clock = new ManualWaitClock();
-    const transport = createScriptedTransport(unanswered);
-    const cursor = createActivityLog(transport, clock).cursor({ after: 0 });
-    const cancellation = new AbortController();
-    const reason = new Error('The test ended');
+  const clock = new ManualWaitClock();
+  const pageReader = createScriptedPageReader(heldUntilAbandoned);
+  const cursor = createActivityLog(pageReader, clock).cursor({ after: 0 });
+  const cancellation = new AbortController();
+  const reason = new Error('The test ended');
 
-    const next = rejectionOf(cursor.next({ method: 'sendMessage' }, {
-      timeoutMs: 60_000,
-      signal: cancellation.signal,
-    }));
-    await transport.untilReadsSent(1);
-    cancellation.abort(reason);
+  const next = rejectionOf(cursor.next({ method: 'sendMessage' }, {
+    timeoutMs: 60_000,
+    signal: cancellation.signal,
+  }));
+  await pageReader.untilReadsSent(1);
+  cancellation.abort(reason);
 
-    assert(await next === reason, 'Expected the wait to reject with the cancellation reason');
-    assert(transport.reads[0].signal?.aborted === true, 'Expected the read to be released');
-    assert(cursor.position === 0, 'Expected a cancelled wait to leave the cursor in place');
-    assert(clock.pendingCallbackCount === 0, "Expected the wait's timers to be stopped");
-  }
+  assert(await next === reason, 'Expected the wait to reject with the cancellation reason');
+  assert(pageReader.reads[0].signal?.aborted === true, 'Expected the read to be released');
+  assert(cursor.position === 0, 'Expected a cancelled wait to leave the cursor in place');
+  assert(clock.pendingCallbackCount === 0, "Expected the wait's timers to be stopped");
 });
 
 Deno.test('A wait cancelled by its where predicate rejects with the reason', async () => {
@@ -237,8 +194,8 @@ Deno.test('A wait cancelled by its where predicate rejects with the reason', asy
   for (const { description, abortingText, answers } of scenarios) {
     for (const waiter of ['waitFor', 'cursor'] as const) {
       const clock = new ManualWaitClock();
-      const transport = createScriptedTransport(...answers);
-      const activity = createActivityLog(transport, clock);
+      const pageReader = createScriptedPageReader(...answers);
+      const activity = createActivityLog(pageReader, clock);
       const cursor = activity.cursor({ after: 0 });
       const cancellation = new AbortController();
       const reason = new Error('Cancelled while inspecting an entry');
@@ -268,7 +225,7 @@ Deno.test('A wait cancelled by its where predicate rejects with the reason', asy
         `Expected the cancellation reason, ${scenario}, got ${describeOutcome(outcome)}`,
       );
       assert(entriesInspectedAfterCancellation === 0, `Expected no entry inspected, ${scenario}`);
-      assert(transport.reads.length === answers.length, `Expected no further read, ${scenario}`);
+      assert(pageReader.reads.length === answers.length, `Expected no further read, ${scenario}`);
       assert(cursor.position === 0, `Expected the cursor to stay in place, ${scenario}`);
       assert(clock.pendingCallbackCount === 0, `Expected the timers to be stopped, ${scenario}`);
     }
@@ -277,12 +234,11 @@ Deno.test('A wait cancelled by its where predicate rejects with the reason', asy
 
 Deno.test("A wait cancelled by its view's where predicate runs no other predicate", async () => {
   const clock = new ManualWaitClock();
-  const transport = createScriptedTransport(() => page([sendMessageCall(1, 'match')], 1));
+  const pageReader = createScriptedPageReader(() => page([sendMessageCall(1, 'match')], 1));
   const cancellation = new AbortController();
   const reason = new Error('Cancelled while inspecting an entry');
   const activity = createBotActivityLog(
-    ACTIVITY_URL,
-    transport.fetch,
+    pageReader,
     {
       where: () => {
         cancellation.abort(reason);
@@ -312,12 +268,12 @@ Deno.test("A wait cancelled by its view's where predicate runs no other predicat
 
 Deno.test('A wait cancelled by a where predicate that then throws rejects with the reason', async () => {
   const clock = new ManualWaitClock();
-  const transport = createScriptedTransport(() => page([sendMessageCall(1, 'match')], 1));
+  const pageReader = createScriptedPageReader(() => page([sendMessageCall(1, 'match')], 1));
   const cancellation = new AbortController();
   const reason = new Error('Cancelled while inspecting an entry');
 
   const outcome = await outcomeOf(
-    createActivityLog(transport, clock).waitFor({
+    createActivityLog(pageReader, clock).waitFor({
       method: 'sendMessage',
       where: () => {
         cancellation.abort(reason);
@@ -340,20 +296,20 @@ Deno.test('A read outlasts a timer that runs before its cutoff', async () => {
   ];
   for (const { kind, timeoutMs, cutoffMilliseconds } of cases) {
     const clock = new ManualWaitClock();
-    const transport = createScriptedTransport(neverAnswered);
+    const pageReader = createScriptedPageReader(heldUntilAbandoned);
 
     const wait = rejectionOf(
-      createActivityLog(transport, clock).waitFor({ method: 'sendMessage' }, {
+      createActivityLog(pageReader, clock).waitFor({ method: 'sendMessage' }, {
         after: 0,
         timeoutMs,
       }),
     );
-    await transport.untilReadsSent(1);
+    await pageReader.untilReadsSent(1);
     // A native timer set for a fractional delay runs once its whole milliseconds are up.
     clock.advance(cutoffMilliseconds - 0.5);
     clock.runCallbacksEarly();
 
-    const [read] = transport.reads;
+    const [read] = pageReader.reads;
     assert(read.signal?.aborted === false, `Expected the ${kind} read to hold until its cutoff`);
     // The timer that replaced it is due a whole millisecond later, but one that runs exactly at the
     // cutoff ends the read.
@@ -366,17 +322,17 @@ Deno.test('A read outlasts a timer that runs before its cutoff', async () => {
 
 Deno.test('A wait rounds the delays of its timers up to whole milliseconds', async () => {
   const clock = new ManualWaitClock();
-  const transport = createScriptedTransport(neverAnswered);
+  const pageReader = createScriptedPageReader(heldUntilAbandoned);
   const cancellation = new AbortController();
 
   const wait = rejectionOf(
-    createActivityLog(transport, clock).waitFor({ method: 'sendMessage' }, {
+    createActivityLog(pageReader, clock).waitFor({ method: 'sendMessage' }, {
       after: 0,
       timeoutMs: 10.9,
       signal: cancellation.signal,
     }),
   );
-  await transport.untilReadsSent(1);
+  await pageReader.untilReadsSent(1);
   clock.advance(10.5);
   clock.runCallbacksEarly();
   cancellation.abort(new Error('The test ended'));
@@ -391,18 +347,18 @@ Deno.test('A wait rounds the delays of its timers up to whole milliseconds', asy
 
 Deno.test('A wait cancelled after its timers ran early stops the timers that replaced them', async () => {
   const clock = new ManualWaitClock();
-  const transport = createScriptedTransport(rejectedWhenAbandoned);
+  const pageReader = createScriptedPageReader(heldUntilAbandoned);
   const cancellation = new AbortController();
   const reason = new Error('The test ended');
 
   const wait = rejectionOf(
-    createActivityLog(transport, clock).waitFor({ method: 'sendMessage' }, {
+    createActivityLog(pageReader, clock).waitFor({ method: 'sendMessage' }, {
       after: 0,
       timeoutMs: 10,
       signal: cancellation.signal,
     }),
   );
-  await transport.untilReadsSent(1);
+  await pageReader.untilReadsSent(1);
   clock.advance(5);
   clock.runCallbacksEarly();
   const replacementTimerCount = clock.pendingCallbackCount;
@@ -415,17 +371,17 @@ Deno.test('A wait cancelled after its timers ran early stops the timers that rep
 
 Deno.test('A wait longer than a timer can hold lasts until its deadline', async () => {
   const clock = new ManualWaitClock();
-  const transport = createScriptedTransport(neverAnswered);
+  const pageReader = createScriptedPageReader(heldUntilAbandoned);
   const timeoutMs = 2 ** 31;
 
   const wait = rejectionOf(
-    createActivityLog(transport, clock).waitFor({}, { after: 0, timeoutMs }),
+    createActivityLog(pageReader, clock).waitFor({}, { after: 0, timeoutMs }),
   );
-  await transport.untilReadsSent(1);
+  await pageReader.untilReadsSent(1);
   clock.advance(MAX_TIMER_DELAY_MILLISECONDS);
   clock.runDueCallbacks();
 
-  const [read] = transport.reads;
+  const [read] = pageReader.reads;
   assert(read.signal?.aborted === false, 'Expected the read to hold past the longest timer');
   assert(
     clock.scheduledDelays.every((delay) => delay <= MAX_TIMER_DELAY_MILLISECONDS),
@@ -438,25 +394,25 @@ Deno.test('A wait longer than a timer can hold lasts until its deadline', async 
 
 Deno.test('A wait whose signal has already aborted sends no read', async () => {
   const clock = new ManualWaitClock();
-  const transport = createScriptedTransport();
+  const pageReader = createScriptedPageReader();
   const reason = new Error('Cancelled before the wait');
 
   const error = await rejectionOf(
-    createActivityLog(transport, clock).waitFor({}, {
+    createActivityLog(pageReader, clock).waitFor({}, {
       after: 0,
       signal: AbortSignal.abort(reason),
     }),
   );
 
   assert(error === reason, 'Expected the wait to reject with the cancellation reason');
-  assert(transport.reads.length === 0, 'Expected no read');
+  assert(pageReader.reads.length === 0, 'Expected no read');
   assert(clock.pendingCallbackCount === 0, "Expected the wait's timers to be stopped");
 });
 
 Deno.test('Concurrent waits on one log end at their own deadlines', async () => {
   const clock = new ManualWaitClock();
-  const transport = createScriptedTransport(rejectedWhenAbandoned, rejectedWhenAbandoned);
-  const activity = createActivityLog(transport, clock);
+  const pageReader = createScriptedPageReader(heldUntilAbandoned, heldUntilAbandoned);
+  const activity = createActivityLog(pageReader, clock);
 
   const shortWait = rejectionOf(
     activity.waitFor({ method: 'sendMessage' }, { after: 0, timeoutMs: 10 }),
@@ -464,11 +420,11 @@ Deno.test('Concurrent waits on one log end at their own deadlines', async () => 
   const longWait = rejectionOf(
     activity.waitFor({ method: 'sendMessage' }, { after: 0, timeoutMs: 20 }),
   );
-  await transport.untilReadsSent(2);
+  await pageReader.untilReadsSent(2);
   clock.advance(10);
   clock.runDueCallbacks();
 
-  const [shortRead, longRead] = transport.reads;
+  const [shortRead, longRead] = pageReader.reads;
   assert(shortRead.signal?.aborted === true, "Expected the short wait's read to be released");
   assert(longRead.signal?.aborted === false, "Expected the long wait's read to keep holding");
   const shortError = await shortWait;
@@ -484,17 +440,17 @@ Deno.test('Concurrent waits on one log end at their own deadlines', async () => 
   );
 });
 
-Deno.test('A wait with the system clock abandons an unanswered read only once its time is up', async () => {
+Deno.test('A wait with the system clock abandons a holding read only once its time is up', async () => {
   const timeoutMs = 10.9;
   let abandonedAt: number | undefined;
-  const transport = createScriptedTransport((read) => {
+  const pageReader = createScriptedPageReader((read) => {
     read.signal?.addEventListener('abort', () => abandonedAt = performance.now());
-    return neverAnswered();
+    return heldUntilAbandoned(read);
   });
 
   const waitStart = performance.now();
   const error = await rejectionOf(
-    createBotActivityLog(ACTIVITY_URL, transport.fetch, undefined, {}).waitFor(
+    createBotActivityLog(pageReader, undefined, {}).waitFor(
       { method: 'sendMessage' },
       { after: 0, timeoutMs },
     ),
@@ -502,7 +458,7 @@ Deno.test('A wait with the system clock abandons an unanswered read only once it
 
   // Whether the read holds depends on how long the runner takes to send it, so either kind is
   // abandoned, no sooner than the deadline.
-  assertTimeoutAbandoning(error, transport.reads[0]);
+  assertTimeoutAbandoning(error, pageReader.reads[0]);
   assert(
     abandonedAt !== undefined && abandonedAt - waitStart >= timeoutMs,
     `Expected the read to be abandoned no sooner than ${timeoutMs} ms, got ${
@@ -512,18 +468,19 @@ Deno.test('A wait with the system clock abandons an unanswered read only once it
 });
 
 Deno.test('A wait of 0 ms reads once what is recorded', async () => {
-  const buffered = createScriptedTransport(() => page([sendMessageCall(2, 'A')], 2));
+  const buffered = createScriptedPageReader(() => page([sendMessageCall(2, 'A')], 2));
   const entry = await createActivityLog(buffered, new ManualWaitClock()).waitFor(
     { method: 'sendMessage' },
     { after: 1, timeoutMs: 0 },
   );
   assert(entry.position === 2, 'Expected the recorded entry');
+  const { request } = buffered.reads[0];
   assert(
-    buffered.reads[0].query.get('after') === '1' && buffered.reads[0].query.get('wait_ms') === '0',
+    request.after === 1 && request.waitMilliseconds === 0,
     'Expected a read that does not hold',
   );
 
-  const empty = createScriptedTransport(() => page([], 1));
+  const empty = createScriptedPageReader(() => page([], 1));
   const error = await rejectionOf(
     createActivityLog(empty, new ManualWaitClock()).waitFor({ method: 'sendMessage' }, {
       after: 1,
@@ -539,49 +496,50 @@ Deno.test('A wait of 0 ms reads once what is recorded', async () => {
 
 Deno.test('A wait of 0 ms abandons its read once the allowance after the deadline is up', async () => {
   const clock = new ManualWaitClock();
-  const transport = createScriptedTransport(neverAnswered);
+  const pageReader = createScriptedPageReader(heldUntilAbandoned);
 
   const wait = rejectionOf(
-    createActivityLog(transport, clock).waitFor({ method: 'sendMessage' }, {
+    createActivityLog(pageReader, clock).waitFor({ method: 'sendMessage' }, {
       after: 0,
       timeoutMs: 0,
     }),
   );
-  await transport.untilReadsSent(1);
+  await pageReader.untilReadsSent(1);
   // The deadline's timer runs at once, and leaves a read of entries already recorded holding.
   clock.runDueCallbacks();
-  assert(transport.reads[0].signal?.aborted === false, 'Expected the read to outlast the deadline');
+  const [read] = pageReader.reads;
+  assert(read.signal?.aborted === false, 'Expected the read to outlast the deadline');
   clock.advance(RECORDED_READ_ALLOWANCE_MILLISECONDS);
   clock.runDueCallbacks();
   const error = await wait;
 
-  assertTimeoutAbandoning(error, transport.reads[0]);
-  assert(transport.reads[0].query.get('wait_ms') === '0', 'Expected a read that does not hold');
+  assertTimeoutAbandoning(error, read);
+  assert(read.request.waitMilliseconds === 0, 'Expected a read that does not hold');
 });
 
 Deno.test('A wait checks a full page up to the head it reports, even after the deadline', async () => {
-  const transport = createScriptedTransport(
+  const pageReader = createScriptedPageReader(
     () => page(skippedCalls(1, READ_LIMIT), READ_LIMIT + 1),
     () => page([sendMessageCall(READ_LIMIT + 1, 'match')], READ_LIMIT + 1),
   );
 
-  const entry = await createActivityLog(transport, new ManualWaitClock()).waitFor(
+  const entry = await createActivityLog(pageReader, new ManualWaitClock()).waitFor(
     { method: 'sendMessage', where: (call) => call.parameters.text === 'match' },
     { after: 0, timeoutMs: 0 },
   );
 
   assert(entry.position === READ_LIMIT + 1, 'Expected the match on the second page');
-  const rest = transport.reads[1].query;
+  const rest = pageReader.reads[1].request;
   assert(
-    rest.get('after') === String(READ_LIMIT) && rest.get('before') === String(READ_LIMIT + 2) &&
-      !rest.has('wait_ms'),
-    `Expected the rest of the page to be read up to the head, got ${rest}`,
+    rest.after === READ_LIMIT && rest.before === READ_LIMIT + 2 &&
+      rest.waitMilliseconds === undefined,
+    `Expected the rest of the page to be read up to the head, got ${JSON.stringify(rest)}`,
   );
 });
 
 Deno.test('A wait skips rejected entries, holds again from the head, and moves a cursor', async () => {
   const clock = new ManualWaitClock();
-  const transport = createScriptedTransport(
+  const pageReader = createScriptedPageReader(
     () => {
       clock.advance(1_000.4);
       return page([sendMessageCall(1, 'skip')], 3);
@@ -589,7 +547,7 @@ Deno.test('A wait skips rejected entries, holds again from the head, and moves a
     () => page([sendMessageCall(4, 'skip'), sendMessageCall(5, 'match')], 5),
     () => page([sendMessageCall(6, 'match')], 6),
   );
-  const cursor = createActivityLog(transport, clock).cursor({ after: 0 });
+  const cursor = createActivityLog(pageReader, clock).cursor({ after: 0 });
   const filter = {
     method: 'sendMessage',
     where: (call: BotApiCallEntry) => call.parameters.text === 'match',
@@ -600,28 +558,51 @@ Deno.test('A wait skips rejected entries, holds again from the head, and moves a
 
   assert(first.position === 5 && second.position === 6, 'Expected the matches in order');
   assert(cursor.position === 6, 'Expected the cursor to move to the last match');
-  const [afterStart, afterHead, afterFirst] = transport.reads.map(({ query }) => query);
+  const requests = pageReader.reads.map(({ request }) => request);
   assert(
-    afterStart.get('after') === '0' && afterHead.get('after') === '3' &&
-      afterFirst.get('after') === '5',
+    requests.map(({ after }) => after).join() === '0,3,5',
     'Expected each read to start after the head or the cursor',
   );
   // The read from the head holds for the whole milliseconds left of the first wait, rounded up.
-  const waitMilliseconds = transport.reads.map(({ query }) => query.get('wait_ms'));
+  const waitMilliseconds = requests.map((request) => request.waitMilliseconds);
   assert(
     waitMilliseconds.join() === '5000,4000,5000',
     `Expected each read to hold for the time its wait has left, got ${waitMilliseconds}`,
   );
 });
 
+Deno.test('Reads take the criteria of a filter but not its where predicate', async () => {
+  const filter = {
+    method: 'sendMessage',
+    where: (call: BotApiCallEntry) => call.parameters.text === 'match',
+  };
+  const pageReader = createScriptedPageReader(
+    () => page(skippedCalls(1, READ_LIMIT), READ_LIMIT + 1),
+    () => page([sendMessageCall(READ_LIMIT + 1, 'match')], READ_LIMIT + 1),
+    () => page([], READ_LIMIT + 1),
+  );
+  const activity = createActivityLog(pageReader, new ManualWaitClock());
+
+  await activity.waitFor(filter, { after: 0, timeoutMs: 0 });
+  await activity.assertNone(filter, { after: READ_LIMIT + 1, before: READ_LIMIT + 2 });
+
+  // A request a reader may clone or serialize holds no function.
+  const requests = pageReader.reads.map(({ request }) => structuredClone(request));
+  assert(
+    requests.length === 3 &&
+      requests.every(({ criteria }) => criteria.method === 'sendMessage' && !('where' in criteria)),
+    `Expected criteria without a predicate, got ${JSON.stringify(requests)}`,
+  );
+});
+
 Deno.test('assertNone reads a recorded range a page at a time', async () => {
-  const transport = createScriptedTransport(
+  const pageReader = createScriptedPageReader(
     () => page(skippedCalls(1, READ_LIMIT), READ_LIMIT + 5),
     () => page([sendMessageCall(READ_LIMIT + 2, 'match')], READ_LIMIT + 5),
   );
 
   const error = await rejectionOf(
-    createActivityLog(transport, new ManualWaitClock()).assertNone(
+    createActivityLog(pageReader, new ManualWaitClock()).assertNone(
       { method: 'sendMessage', where: (call) => call.parameters.text === 'match' },
       { after: 0, before: READ_LIMIT + 3 },
     ),
@@ -632,104 +613,39 @@ Deno.test('assertNone reads a recorded range a page at a time', async () => {
       error.entries[0].position === READ_LIMIT + 2,
     `Expected the match on the second page, got ${error}`,
   );
-  const rest = transport.reads[1].query;
+  const rest = pageReader.reads[1].request;
   assert(
-    rest.get('after') === String(READ_LIMIT) && rest.get('before') === String(READ_LIMIT + 3),
-    `Expected the second page to continue the range, got ${rest}`,
+    rest.after === READ_LIMIT && rest.before === READ_LIMIT + 3,
+    `Expected the second page to continue the range, got ${JSON.stringify(rest)}`,
   );
 });
 
-interface ScheduledCallback {
-  readonly dueAt: number;
-  readonly callback: () => void;
-}
-
-/**
- * A wait clock whose time moves only when a test advances it, and whose callbacks run only when the
- * test delivers them, as a busy event loop keeps native timers from running when they are due.
- */
-class ManualWaitClock implements BotActivityWaitClock {
-  #now = 0;
-  readonly #pendingCallbacks = new Set<ScheduledCallback>();
-  /** The delay of each callback scheduled, in order. */
-  readonly scheduledDelays: number[] = [];
-
-  now(): number {
-    return this.#now;
-  }
-
-  schedule(callback: () => void, delayMilliseconds: number): () => void {
-    this.scheduledDelays.push(delayMilliseconds);
-    const scheduled = { dueAt: this.#now + delayMilliseconds, callback };
-    this.#pendingCallbacks.add(scheduled);
-    return () => void this.#pendingCallbacks.delete(scheduled);
-  }
-
-  get pendingCallbackCount(): number {
-    return this.#pendingCallbacks.size;
-  }
-
-  /** Moves time forward without running the callbacks that come due. */
-  advance(milliseconds: number): void {
-    this.#now += milliseconds;
-  }
-
-  /**
-   * Runs every pending callback, even one not yet due, as a native timer may run before the time
-   * it was set for. Callbacks they schedule stay pending.
-   */
-  runCallbacksEarly(): void {
-    const pendingCallbacks = [...this.#pendingCallbacks];
-    this.#pendingCallbacks.clear();
-    for (const { callback } of pendingCallbacks) {
-      callback();
-    }
-  }
-
-  /** Runs the callbacks that are due, earliest first. */
-  runDueCallbacks(): void {
-    for (;;) {
-      const [earliestDue] = [...this.#pendingCallbacks]
-        .filter(({ dueAt }) => dueAt <= this.#now)
-        .sort((first, second) => first.dueAt - second.dueAt);
-      if (earliestDue === undefined) {
-        return;
-      }
-      this.#pendingCallbacks.delete(earliestDue);
-      earliestDue.callback();
-    }
-  }
-}
-
 interface ScriptedRead {
-  readonly url: string;
-  readonly query: URLSearchParams;
+  readonly request: BotActivityPageRequest;
   readonly signal?: AbortSignal;
 }
 
-type ScriptedAnswer = (read: ScriptedRead) => Promise<Response>;
+type ScriptedAnswer = (read: ScriptedRead) => Promise<BotActivityPage>;
 
-interface ScriptedTransport {
-  readonly fetch: typeof globalThis.fetch;
+interface ScriptedPageReader extends BotActivityPageReader {
   readonly reads: readonly ScriptedRead[];
-  /** Settles once the client has sent `count` reads, each already given its answer. */
+  /** Settles once the log has sent `count` reads, each already given its answer. */
   untilReadsSent(count: number): Promise<void>;
 }
 
-/** A transport that answers each read with the next scripted answer and records the reads. */
-function createScriptedTransport(...answers: ScriptedAnswer[]): ScriptedTransport {
+/** A page reader that answers each read with the next scripted answer and records the reads. */
+function createScriptedPageReader(...answers: ScriptedAnswer[]): ScriptedPageReader {
   const reads: ScriptedRead[] = [];
   const readCountWaiters: { readonly count: number; readonly resolve: () => void }[] = [];
-  const fetch: typeof globalThis.fetch = (input, init) => {
-    const url = String(input);
-    const read = { url, query: new URL(url).searchParams, signal: init?.signal ?? undefined };
+  const readPage = (request: BotActivityPageRequest, signal?: AbortSignal) => {
+    const read = { request, signal };
     reads.push(read);
     for (const waiter of readCountWaiters.filter(({ count }) => count <= reads.length)) {
       waiter.resolve();
     }
     const answer = answers.shift();
     if (answer === undefined) {
-      throw new Error(`Unexpected read: ${read.query}`);
+      return Promise.reject(new Error(`Unexpected read: ${JSON.stringify(request)}`));
     }
     return answer(read);
   };
@@ -741,61 +657,47 @@ function createScriptedTransport(...answers: ScriptedAnswer[]): ScriptedTranspor
     readCountWaiters.push({ count, resolve });
     return promise;
   };
-  return { fetch, reads, untilReadsSent };
+  return { readPage, reads, untilReadsSent };
 }
 
 function createActivityLog(
-  transport: ScriptedTransport,
+  pageReader: BotActivityPageReader,
   clock: BotActivityWaitClock,
 ): BotActivityLog {
-  return createBotActivityLog(ACTIVITY_URL, transport.fetch, undefined, {}, clock);
+  return createBotActivityLog(pageReader, undefined, {}, clock);
 }
 
-/** Starts a short wait for a sendMessage call, and returns the error the wait fails with. */
-function startShortWait(transport: ScriptedTransport, clock: ManualWaitClock): Promise<unknown> {
-  return rejectionOf(
-    createActivityLog(transport, clock).waitFor({ method: 'sendMessage' }, {
-      after: 0,
-      timeoutMs: SHORT_TIMEOUT_MILLISECONDS,
+/**
+ * A read that holds until the log abandons it, then fails as a page reader's abandoned read does:
+ * with an `EmulationClientError` whose `cause` is the reason it was abandoned.
+ */
+function heldUntilAbandoned(read: ScriptedRead): Promise<BotActivityPage> {
+  return new Promise((_resolve, reject) => {
+    read.signal?.addEventListener('abort', () =>
+      reject(
+        new EmulationClientError('GET bot activity was abandoned', {
+          method: 'GET',
+          url: READ_URL,
+        }, { cause: read.signal?.reason }),
+      ));
+  });
+}
+
+function failedRead(status: number): Promise<BotActivityPage> {
+  return Promise.reject(
+    new EmulationClientError(`GET bot activity returned ${status}`, {
+      method: 'GET',
+      url: READ_URL,
+      status,
     }),
   );
 }
 
-/** Moves the clock to a short wait's deadline, and runs the timer that ends it. */
-function endShortWait(clock: ManualWaitClock): void {
-  clock.advance(SHORT_TIMEOUT_MILLISECONDS);
-  clock.runDueCallbacks();
-}
-
-/** A transport that never answers, whatever its signal does. */
-function neverAnswered(): Promise<Response> {
-  return new Promise(() => {});
-}
-
-/** A transport that answers only by failing once the client abandons the read, as `fetch` does. */
-function rejectedWhenAbandoned(read: ScriptedRead): Promise<Response> {
-  return new Promise((_resolve, reject) => {
-    read.signal?.addEventListener('abort', () => reject(read.signal?.reason));
-  });
-}
-
-function page(entries: readonly BotApiCallEntry[], headPosition: number): Promise<Response> {
-  return Promise.resolve(Response.json({ entries, head_position: headPosition }));
-}
-
-function sendMessageCall(position: number, text: string): BotApiCallEntry {
-  return {
-    position,
-    kind: 'bot_api_call',
-    bot_id: 1001,
-    method: 'sendMessage',
-    requested_method: 'sendMessage',
-    via: 'http',
-    parameters: { text },
-    uploaded_files: [],
-    chat_id: 2002,
-    answer: { ok: true, result: true },
-  };
+function page(
+  entries: readonly BotActivityEntry[],
+  headPosition: number,
+): Promise<BotActivityPage> {
+  return Promise.resolve({ entries, headPosition });
 }
 
 function skippedCalls(firstPosition: number, count: number): BotApiCallEntry[] {
@@ -805,6 +707,7 @@ function skippedCalls(firstPosition: number, count: number): BotApiCallEntry[] {
   );
 }
 
+/** Checks that a wait timed out naming the read it abandoned for the wait's time. */
 function assertTimeoutAbandoning(
   error: unknown,
   read: ScriptedRead,
@@ -812,8 +715,8 @@ function assertTimeoutAbandoning(
   assert(error instanceof BotActivityTimeoutError, `Expected a timeout, got ${error}`);
   const abandonedRead = error.cause;
   assert(
-    abandonedRead instanceof EmulationClientError && abandonedRead.method === 'GET' &&
-      abandonedRead.url === read.url,
+    abandonedRead instanceof EmulationClientError && read.signal?.aborted === true &&
+      abandonedRead.cause === read.signal.reason,
     `Expected the timeout to name the abandoned read, got ${abandonedRead}`,
   );
   assert(
@@ -857,19 +760,4 @@ async function outcomeOf(wait: Promise<BotActivityEntry>): Promise<WaitOutcome> 
 
 function describeOutcome(outcome: WaitOutcome): string {
   return 'entry' in outcome ? `entry ${outcome.entry.position}` : String(outcome.error);
-}
-
-async function rejectionOf(promise: Promise<unknown>): Promise<unknown> {
-  try {
-    await promise;
-  } catch (error) {
-    return error;
-  }
-  throw new Error('Expected a rejection');
-}
-
-function assert(condition: boolean, message: string): asserts condition {
-  if (!condition) {
-    throw new Error(message);
-  }
 }

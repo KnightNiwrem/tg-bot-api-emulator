@@ -1,10 +1,6 @@
-import type { z } from 'zod';
-
 import { BOT_ACTIVITY_KINDS } from '../../src/types/bot_activity_kind.ts';
 import { toCurrentBotApiMethodName } from '../../src/types/bot_api_method_name.ts';
-import { HTTP_STATUS_OK } from './constants.ts';
 import { EmulationClientError } from './emulation_client_error.ts';
-import { botActivityReadResponseSchema } from './schemas.ts';
 import type {
   BotActivityCriteria,
   BotActivityCursor,
@@ -19,7 +15,6 @@ import type {
   BotActivityRange,
   WaitForBotActivityOptions,
 } from './types.ts';
-import { requestJson } from './utils.ts';
 
 const DEFAULT_TIMEOUT_MILLISECONDS = 5_000;
 /**
@@ -118,34 +113,51 @@ const SYSTEM_WAIT_CLOCK: BotActivityWaitClock = {
   },
 };
 
+/** A read of the entries after a position that match criteria, in position order. */
+export interface BotActivityPageRequest {
+  readonly after: number;
+  /** The position the entries come before; the read is not bounded when it is absent. */
+  readonly before?: number;
+  /** What the entries match; a `where` predicate is not part of a read. */
+  readonly criteria: BotActivityCriteria;
+  /** The most entries the page holds. */
+  readonly limit: number;
+  /**
+   * How long a read that finds no entry holds until one is recorded; it takes what is recorded
+   * when this is absent or 0.
+   */
+  readonly waitMilliseconds?: number;
+}
+
+/** The entries a read found, and the position of the log's latest entry when it was answered. */
+export interface BotActivityPage {
+  readonly entries: readonly BotActivityEntry[];
+  readonly headPosition: number;
+}
+
+/**
+ * Reads a bot activity log a page at a time. A read that fails rejects with an
+ * `EmulationClientError`. A read abandoned when its signal aborts, unanswered or with its answer
+ * unread, rejects with one whose `cause` is the signal's reason.
+ */
+export interface BotActivityPageReader {
+  readPage(request: BotActivityPageRequest, signal?: AbortSignal): Promise<BotActivityPage>;
+}
+
 export function createBotActivityLog<Criteria extends BotActivityCriteria>(
-  activityUrl: string,
-  fetchImplementation: typeof globalThis.fetch,
+  pageReader: BotActivityPageReader,
   baseFilter: BotActivityFilterFor<Criteria> | undefined,
   { timeoutMs = DEFAULT_TIMEOUT_MILLISECONDS }: BotActivityLogOptions,
   waitClock: BotActivityWaitClock = SYSTEM_WAIT_CLOCK,
 ): BotActivityLog {
   validateTimeout(timeoutMs);
-  return new HttpBotActivityLog(
-    activityUrl,
-    fetchImplementation,
+  return new PagedBotActivityLog(
+    pageReader,
     baseFilter === undefined ? {} : acceptingAnyEntry(baseFilter),
     timeoutMs,
     waitClock,
   );
 }
-
-interface BotActivityRead {
-  readonly after: number;
-  readonly before?: number;
-  readonly filter: BotActivityFilter;
-  readonly limit: number;
-  readonly waitMilliseconds?: number;
-  /** Abandons the read, unanswered or with its response unread, when it aborts. */
-  readonly signal?: AbortSignal;
-}
-
-type BotActivityReadAnswer = z.output<typeof botActivityReadResponseSchema>;
 
 /**
  * A wait's reads: one that holds until an entry is recorded, which must settle by the deadline, or
@@ -172,33 +184,31 @@ class BotActivityWaitTimeUp extends Error {
 interface RecordedRange {
   readonly after: number;
   readonly before: number;
-  readonly filter: BotActivityFilter;
+  readonly criteria: BotActivityCriteria;
 }
 
-class HttpBotActivityLog implements BotActivityLog {
-  readonly #activityUrl: string;
-  readonly #fetch: typeof globalThis.fetch;
+/** A bot activity log that finds entries in the pages a page reader reads. */
+class PagedBotActivityLog implements BotActivityLog {
+  readonly #pageReader: BotActivityPageReader;
   readonly #baseFilter: BotActivityFilter;
   readonly #defaultTimeoutMilliseconds: number;
   readonly #waitClock: BotActivityWaitClock;
 
   constructor(
-    activityUrl: string,
-    fetchImplementation: typeof globalThis.fetch,
+    pageReader: BotActivityPageReader,
     baseFilter: BotActivityFilter,
     defaultTimeoutMilliseconds: number,
     waitClock: BotActivityWaitClock,
   ) {
-    this.#activityUrl = activityUrl;
-    this.#fetch = fetchImplementation;
+    this.#pageReader = pageReader;
     this.#baseFilter = baseFilter;
     this.#defaultTimeoutMilliseconds = defaultTimeoutMilliseconds;
     this.#waitClock = waitClock;
   }
 
   async position(): Promise<number> {
-    const { head_position } = await this.#read({ after: 0, filter: {}, limit: 0 });
-    return head_position;
+    const { headPosition } = await this.#pageReader.readPage({ after: 0, criteria: {}, limit: 0 });
+    return headPosition;
   }
 
   async waitFor<const Criteria extends BotActivityCriteria>(
@@ -209,11 +219,13 @@ class HttpBotActivityLog implements BotActivityLog {
     const readFilter = acceptingAnyEntry(filter);
     const combinedFilter = combineFilters(this.#baseFilter, readFilter);
     const afterPosition = toPositionNumber(after);
+    // A wait the caller has already cancelled reads nothing.
+    signal?.throwIfAborted();
     const waitTime = new BotActivityWaitTime(timeoutMs, signal, this.#waitClock);
     let match: BotActivityEntry | undefined;
     try {
       match = await this.#findFirstMatch(
-        combinedFilter,
+        toCriteria(combinedFilter),
         wherePredicates(this.#baseFilter, readFilter),
         afterPosition,
         waitTime,
@@ -242,12 +254,13 @@ class HttpBotActivityLog implements BotActivityLog {
   }
 
   /**
-   * Finds the first entry after a position that the filter's `where` predicates all accept, among
-   * the entries the emulator reports in the wait's time, or `undefined` once the deadline has
-   * passed. The predicates run one at a time, so that one that cancels the wait is the last to run.
+   * Finds the first entry after a position that matches the criteria and that the `where`
+   * predicates all accept, among the entries the emulator reports in the wait's time, or
+   * `undefined` once the deadline has passed. The predicates run one at a time, so that one that
+   * cancels the wait is the last to run.
    */
   async #findFirstMatch(
-    filter: BotActivityFilter,
+    criteria: BotActivityCriteria,
     predicates: readonly BotActivityEntryPredicate[],
     after: number,
     waitTime: BotActivityWaitTime,
@@ -268,14 +281,20 @@ class HttpBotActivityLog implements BotActivityLog {
       }
       return true;
     };
-    const readRecorded = (read: BotActivityRead) => this.#readForWait(read, 'recorded', waitTime);
+    const readRecorded = (request: BotActivityPageRequest) =>
+      this.#readForWait(request, 'recorded', waitTime);
     let unreadAfter = after;
     let remainingMilliseconds = waitTime.remainingMilliseconds();
     for (;;) {
       // A read with time left holds until an entry is recorded; one without, as in a wait of 0 ms,
       // takes what is recorded.
-      const { entries, head_position } = await this.#readForWait(
-        { after: unreadAfter, filter, limit: READ_LIMIT, waitMilliseconds: remainingMilliseconds },
+      const { entries, headPosition } = await this.#readForWait(
+        {
+          after: unreadAfter,
+          criteria,
+          limit: READ_LIMIT,
+          waitMilliseconds: remainingMilliseconds,
+        },
         remainingMilliseconds > 0 ? 'holding' : 'recorded',
         waitTime,
       );
@@ -285,8 +304,8 @@ class HttpBotActivityLog implements BotActivityLog {
         // before it was answered and are checked even after the deadline.
         const unreadRange = {
           after: entries[entries.length - 1].position,
-          before: head_position + 1,
-          filter,
+          before: headPosition + 1,
+          criteria,
         };
         for await (const recordedEntries of this.#readRecordedPages(unreadRange, readRecorded)) {
           match = recordedEntries.find(isMatch);
@@ -302,7 +321,7 @@ class HttpBotActivityLog implements BotActivityLog {
       if (remainingMilliseconds === 0) {
         return undefined;
       }
-      unreadAfter = Math.max(unreadAfter, head_position);
+      unreadAfter = Math.max(unreadAfter, headPosition);
     }
   }
 
@@ -312,13 +331,13 @@ class HttpBotActivityLog implements BotActivityLog {
    * the clock decides too whether a read settled in time, whether it was answered or failed.
    */
   async #readForWait(
-    read: BotActivityRead,
+    request: BotActivityPageRequest,
     kind: BotActivityWaitReadKind,
     waitTime: BotActivityWaitTime,
-  ): Promise<BotActivityReadAnswer> {
-    let answer: BotActivityReadAnswer;
+  ): Promise<BotActivityPage> {
+    let page: BotActivityPage;
     try {
-      answer = await this.#read({ ...read, signal: waitTime.signalFor(kind) });
+      page = await this.#pageReader.readPage(request, waitTime.signalFor(kind));
     } catch (error) {
       if (
         error instanceof EmulationClientError && !waitTime.isCancellationReason(error.cause) &&
@@ -331,7 +350,7 @@ class HttpBotActivityLog implements BotActivityLog {
     if (waitTime.isOverFor(kind)) {
       throw new BotActivityWaitTimeUp();
     }
-    return answer;
+    return page;
   }
 
   async assertNone<const Criteria extends BotActivityCriteria>(
@@ -342,8 +361,13 @@ class HttpBotActivityLog implements BotActivityLog {
     const afterPosition = toPositionNumber(after);
     const beforePosition = toPositionNumber(before);
     const matchingEntries: BotActivityEntry[] = [];
-    const range = { after: afterPosition, before: beforePosition, filter: combinedFilter };
-    for await (const entries of this.#readRecordedPages(range, (read) => this.#read(read))) {
+    const range = {
+      after: afterPosition,
+      before: beforePosition,
+      criteria: toCriteria(combinedFilter),
+    };
+    const readPage = (request: BotActivityPageRequest) => this.#pageReader.readPage(request);
+    for await (const entries of this.#readRecordedPages(range, readPage)) {
       matchingEntries.push(...entries.filter((entry) => combinedFilter.where?.(entry) ?? true));
     }
     if (matchingEntries.length > 0) {
@@ -376,47 +400,23 @@ class HttpBotActivityLog implements BotActivityLog {
 
   /** Reads the entries in a range that is already recorded, a page at a time, with `readPage`. */
   async *#readRecordedPages(
-    { after, before, filter }: RecordedRange,
-    readPage: (read: BotActivityRead) => Promise<BotActivityReadAnswer>,
+    { after, before, criteria }: RecordedRange,
+    readPage: (request: BotActivityPageRequest) => Promise<BotActivityPage>,
   ): AsyncGenerator<readonly BotActivityEntry[]> {
     let unreadAfter = after;
     for (;;) {
-      const { entries } = await readPage({ after: unreadAfter, before, filter, limit: READ_LIMIT });
+      const { entries } = await readPage({
+        after: unreadAfter,
+        before,
+        criteria,
+        limit: READ_LIMIT,
+      });
       yield entries;
       if (entries.length < READ_LIMIT) {
         return;
       }
       unreadAfter = entries[entries.length - 1].position;
     }
-  }
-
-  #read(
-    { after, before, filter, limit, waitMilliseconds, signal }: BotActivityRead,
-  ): Promise<BotActivityReadAnswer> {
-    const query = new URLSearchParams({ after: String(after), limit: String(limit) });
-    if (before !== undefined) {
-      query.set('before', String(before));
-    }
-    if (waitMilliseconds !== undefined) {
-      query.set('wait_ms', String(waitMilliseconds));
-    }
-    const { bot_id, method, chat_id, user_id, update_id, ok, parameters } = filter;
-    const criteria = { bot_id, kind: toReadKind(filter), method, chat_id, user_id, update_id, ok };
-    for (const [name, value] of Object.entries(criteria)) {
-      if (value !== undefined) {
-        query.set(name, String(value));
-      }
-    }
-    for (const [name, text] of Object.entries(parameters ?? {})) {
-      query.set(`parameters[${name}]`, text);
-    }
-    return requestJson(this.#fetch, {
-      method: 'GET',
-      url: `${this.#activityUrl}?${query}`,
-      expectedStatus: HTTP_STATUS_OK,
-      responseSchema: botActivityReadResponseSchema,
-      signal,
-    });
   }
 }
 
@@ -689,7 +689,7 @@ function isEntryMatching(entry: BotActivityEntry, criteria: BotActivityCriteria)
  * that only calls have, `method`, `ok` and `parameters`, even an empty map, and those that only
  * updates have, `user_id` and `update_id`.
  */
-function kindsMatchableBy(criteria: BotActivityCriteria): readonly BotActivityKind[] {
+export function kindsMatchableBy(criteria: BotActivityCriteria): readonly BotActivityKind[] {
   const hasCallCriteria = criteria.method !== undefined || criteria.ok !== undefined ||
     criteria.parameters !== undefined;
   const hasUpdateCriteria = criteria.user_id !== undefined || criteria.update_id !== undefined;
@@ -699,13 +699,9 @@ function kindsMatchableBy(criteria: BotActivityCriteria): readonly BotActivityKi
   );
 }
 
-/**
- * The kind a read sends: the only kind its criteria can match, if just one. Empty parameter
- * criteria limit a read to calls but put nothing on the wire, which the kind then expresses.
- */
-function toReadKind(criteria: BotActivityCriteria): BotActivityKind | undefined {
-  const matchableKinds = kindsMatchableBy(criteria);
-  return matchableKinds.length === 1 ? matchableKinds[0] : undefined;
+/** A filter's criteria without its `where` predicate, which no page read takes. */
+function toCriteria({ where: _where, ...criteria }: BotActivityFilter): BotActivityCriteria {
+  return criteria;
 }
 
 function toPositionNumber(position: BotActivityPosition): number {
