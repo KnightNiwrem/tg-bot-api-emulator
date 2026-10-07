@@ -571,6 +571,30 @@ Deno.test('A wait skips rejected entries, holds again from the head, and moves a
   );
 });
 
+Deno.test('Reads take the criteria of a filter but not its where predicate', async () => {
+  const filter = {
+    method: 'sendMessage',
+    where: (call: BotApiCallEntry) => call.parameters.text === 'match',
+  };
+  const pageReader = createScriptedPageReader(
+    () => page(skippedCalls(1, READ_LIMIT), READ_LIMIT + 1),
+    () => page([sendMessageCall(READ_LIMIT + 1, 'match')], READ_LIMIT + 1),
+    () => page([], READ_LIMIT + 1),
+  );
+  const activity = createActivityLog(pageReader, new ManualWaitClock());
+
+  await activity.waitFor(filter, { after: 0, timeoutMs: 0 });
+  await activity.assertNone(filter, { after: READ_LIMIT + 1, before: READ_LIMIT + 2 });
+
+  // A request a reader may clone or serialize holds no function.
+  const requests = pageReader.reads.map(({ request }) => structuredClone(request));
+  assert(
+    requests.length === 3 &&
+      requests.every(({ criteria }) => criteria.method === 'sendMessage' && !('where' in criteria)),
+    `Expected criteria without a predicate, got ${JSON.stringify(requests)}`,
+  );
+});
+
 Deno.test('assertNone reads a recorded range a page at a time', async () => {
   const pageReader = createScriptedPageReader(
     () => page(skippedCalls(1, READ_LIMIT), READ_LIMIT + 5),

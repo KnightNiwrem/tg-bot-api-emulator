@@ -225,7 +225,7 @@ class PagedBotActivityLog implements BotActivityLog {
     let match: BotActivityEntry | undefined;
     try {
       match = await this.#findFirstMatch(
-        combinedFilter,
+        toCriteria(combinedFilter),
         wherePredicates(this.#baseFilter, readFilter),
         afterPosition,
         waitTime,
@@ -254,12 +254,13 @@ class PagedBotActivityLog implements BotActivityLog {
   }
 
   /**
-   * Finds the first entry after a position that the filter's `where` predicates all accept, among
-   * the entries the emulator reports in the wait's time, or `undefined` once the deadline has
-   * passed. The predicates run one at a time, so that one that cancels the wait is the last to run.
+   * Finds the first entry after a position that matches the criteria and that the `where`
+   * predicates all accept, among the entries the emulator reports in the wait's time, or
+   * `undefined` once the deadline has passed. The predicates run one at a time, so that one that
+   * cancels the wait is the last to run.
    */
   async #findFirstMatch(
-    filter: BotActivityFilter,
+    criteria: BotActivityCriteria,
     predicates: readonly BotActivityEntryPredicate[],
     after: number,
     waitTime: BotActivityWaitTime,
@@ -290,7 +291,7 @@ class PagedBotActivityLog implements BotActivityLog {
       const { entries, headPosition } = await this.#readForWait(
         {
           after: unreadAfter,
-          criteria: filter,
+          criteria,
           limit: READ_LIMIT,
           waitMilliseconds: remainingMilliseconds,
         },
@@ -304,7 +305,7 @@ class PagedBotActivityLog implements BotActivityLog {
         const unreadRange = {
           after: entries[entries.length - 1].position,
           before: headPosition + 1,
-          criteria: filter,
+          criteria,
         };
         for await (const recordedEntries of this.#readRecordedPages(unreadRange, readRecorded)) {
           match = recordedEntries.find(isMatch);
@@ -360,7 +361,11 @@ class PagedBotActivityLog implements BotActivityLog {
     const afterPosition = toPositionNumber(after);
     const beforePosition = toPositionNumber(before);
     const matchingEntries: BotActivityEntry[] = [];
-    const range = { after: afterPosition, before: beforePosition, criteria: combinedFilter };
+    const range = {
+      after: afterPosition,
+      before: beforePosition,
+      criteria: toCriteria(combinedFilter),
+    };
     const readPage = (request: BotActivityPageRequest) => this.#pageReader.readPage(request);
     for await (const entries of this.#readRecordedPages(range, readPage)) {
       matchingEntries.push(...entries.filter((entry) => combinedFilter.where?.(entry) ?? true));
@@ -692,6 +697,11 @@ export function kindsMatchableBy(criteria: BotActivityCriteria): readonly BotAct
     (criteria.kind === undefined || kind === criteria.kind) &&
     (kind === 'bot_api_call' ? !hasUpdateCriteria : !hasCallCriteria)
   );
+}
+
+/** A filter's criteria without its `where` predicate, which no page read takes. */
+function toCriteria({ where: _where, ...criteria }: BotActivityFilter): BotActivityCriteria {
+  return criteria;
 }
 
 function toPositionNumber(position: BotActivityPosition): number {
