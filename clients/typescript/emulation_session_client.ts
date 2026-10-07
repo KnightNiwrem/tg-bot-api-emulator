@@ -1,5 +1,6 @@
 import type { z } from 'zod';
 
+import { createHttpBotActivityPageReader } from './bot_activity_http_page_reader.ts';
 import { createBotActivityLog } from './bot_activity_log.ts';
 import { HTTP_STATUS_CREATED, HTTP_STATUS_NO_CONTENT, HTTP_STATUS_OK } from './constants.ts';
 import { ButtonSelectionError, findButton } from './message_buttons.ts';
@@ -480,7 +481,11 @@ class HttpEmulationSessionClient implements EmulationSessionClient {
     filter?: BotActivityFilterFor<Criteria>,
     options: BotActivityLogOptions = {},
   ): BotActivityLog {
-    return createBotActivityLog(`${this.#sessionUrl}/bot-activity`, this.#fetch, filter, options);
+    const pageReader = createHttpBotActivityPageReader(
+      `${this.#sessionUrl}/bot-activity`,
+      this.#fetch,
+    );
+    return createBotActivityLog(pageReader, filter, options);
   }
 }
 
