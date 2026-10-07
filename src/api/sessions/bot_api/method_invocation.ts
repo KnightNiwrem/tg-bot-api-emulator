@@ -3,6 +3,7 @@ import { z } from 'zod';
 import { recordBotApiCall } from './call_recording.ts';
 import { CHAT_NOT_FOUND_DESCRIPTION, resolveChatIdentifier } from './chat_access.ts';
 import {
+  type BotApiCallContext,
   botApiError,
   type BotApiMethod,
   type BotApiMethodAnswer,
@@ -31,7 +32,7 @@ export interface BotApiMethodCall {
  * parameters or changes anything. The call and its answer are recorded as bot activity.
  */
 export async function callBotApiMethod(
-  context: BotApiMethodContext,
+  context: BotApiCallContext,
   { method, requestedMethodName, parameters, uploadedFiles }: BotApiMethodCall,
 ): Promise<BotApiMethodAnswer> {
   const answer = await answerBotApiMethodCall(context, method, parameters, uploadedFiles);
@@ -50,7 +51,7 @@ export async function callBotApiMethod(
  * records it as bot activity.
  */
 export function rejectUnknownBotApiMethod(
-  context: BotApiMethodContext,
+  context: BotApiCallContext,
   requestedMethodName: string,
   parameters: BotApiRequestParameters,
   uploadedFiles: BotApiUploadedFiles,
@@ -71,7 +72,7 @@ export function rejectUnknownBotApiMethod(
  * bot activity without parameters.
  */
 export function rejectUndecodableBotApiCall(
-  context: BotApiMethodContext,
+  context: BotApiCallContext,
   { name }: BotApiMethod,
   requestedMethodName: string,
   description: string,
@@ -88,7 +89,7 @@ export function rejectUndecodableBotApiCall(
 }
 
 async function answerBotApiMethodCall(
-  context: BotApiMethodContext,
+  context: BotApiCallContext,
   { name, handler }: BotApiMethod,
   parameters: BotApiRequestParameters,
   uploadedFiles: BotApiUploadedFiles,

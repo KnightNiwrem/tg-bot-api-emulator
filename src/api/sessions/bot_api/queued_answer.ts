@@ -1,8 +1,8 @@
 import type { QueueableServerErrorCode } from '../../../types/bot_server_error.ts';
 import {
+  type BotApiCallContext,
   botApiError,
   type BotApiMethodAnswer,
-  type BotApiMethodContext,
   botApiRetryAfterError,
 } from './method_call.ts';
 
@@ -26,7 +26,7 @@ const SERVER_ERROR_DESCRIPTIONS: Readonly<Record<QueueableServerErrorCode, strin
  * leaves the server error answer for a later call.
  */
 export function takeQueuedAnswer(
-  { session, bot }: BotApiMethodContext,
+  { session, bot }: BotApiCallContext,
   methodName: string,
 ): BotApiMethodAnswer | undefined {
   const retryAfterSeconds = session.botRateLimits.takeRateLimitResponse(bot.id, methodName);

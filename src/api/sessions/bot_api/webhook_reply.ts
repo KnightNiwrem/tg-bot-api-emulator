@@ -1,4 +1,4 @@
-import type { BotApiMethodContext } from './method_call.ts';
+import type { BotApiCallContext } from './method_call.ts';
 import { findBotApiMethod } from './method_catalogue.ts';
 import { callBotApiMethod, rejectUnknownBotApiMethod } from './method_invocation.ts';
 import { decodeBotApiBodyParameters } from './request_parameters.ts';
@@ -27,7 +27,7 @@ const WEBHOOK_REPLY_EXCLUDED_METHODS: ReadonlySet<string> = new Set([
  * cannot be decoded, runs nothing.
  */
 export async function runWebhookReply(
-  context: BotApiMethodContext,
+  context: BotApiCallContext,
   reply: Response,
 ): Promise<void> {
   const decoding = await decodeBotApiBodyParameters(reply);
