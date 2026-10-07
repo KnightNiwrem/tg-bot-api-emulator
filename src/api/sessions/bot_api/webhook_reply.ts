@@ -1,5 +1,6 @@
 import type { BotApiMethodContext } from './method_call.ts';
-import { callBotApiMethod, findBotApiMethod, rejectUnknownBotApiMethod } from './mod.ts';
+import { callBotApiMethod, rejectUnknownBotApiMethod } from './method_invocation.ts';
+import { findBotApiMethod } from './mod.ts';
 import { decodeBotApiBodyParameters } from './request_parameters.ts';
 
 /** The parameter naming the method that a webhook's response asks Telegram to run. */

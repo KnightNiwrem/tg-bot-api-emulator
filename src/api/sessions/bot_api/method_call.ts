@@ -3,6 +3,7 @@ import type { ContentfulStatusCode } from 'hono/utils/http-status';
 import type { BotApiCallTransport } from '../../../types/bot_activity.ts';
 import type { EmulationSession } from '../../../types/emulation_session.ts';
 import type { VirtualBotProfile } from '../../../types/virtual_bot.ts';
+import type { BotApiRequestParameters, BotApiUploadedFiles } from './request_parameters.ts';
 
 /**
  * Who calls a Bot API method, whichever way the call arrived: as an HTTP request, or in a
@@ -15,6 +16,18 @@ export interface BotApiMethodContext {
   /** Aborts when the caller stops waiting for the answer, as a closed HTTP request does. */
   readonly signal: AbortSignal;
   readonly via: BotApiCallTransport;
+}
+
+export type BotApiMethodHandler = (
+  context: BotApiMethodContext,
+  parameters: BotApiRequestParameters,
+  uploadedFiles: BotApiUploadedFiles,
+) => BotApiMethodAnswer | Promise<BotApiMethodAnswer>;
+
+/** A Bot API method the emulator implements, under its current name. */
+export interface BotApiMethod {
+  readonly name: string;
+  readonly handler: BotApiMethodHandler;
 }
 
 /** Telegram's JSON answer to a Bot API method, with the HTTP status that carries it. */
