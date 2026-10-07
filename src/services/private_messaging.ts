@@ -576,21 +576,6 @@ export type GetMessageForBotResult =
       | 'message_not_found';
   };
 
-export interface GetMessageForAccountInput {
-  readonly accountId: number;
-  /** The bot at the other end of the account's private chat. */
-  readonly botId: number;
-  /** The message's ID in the bot's message box, which is how accounts address messages. */
-  readonly botMessageId: number;
-}
-
-export type GetMessageForAccountResult =
-  | { readonly found: true; readonly message: PrivateMessage }
-  | {
-    readonly found: false;
-    readonly reason: 'account_not_found' | 'bot_not_found' | 'message_not_found';
-  };
-
 export interface GetPrivateMessageHistoryInput {
   readonly accountId: number;
   readonly botId: number;
@@ -1571,25 +1556,6 @@ export class PrivateMessagingService {
       return { found: false, reason: 'conversation_not_started' };
     }
     const message = this.getPrivateMessageByBotMessageId(conversation, botMessageId);
-    return message === undefined
-      ? { found: false, reason: 'message_not_found' }
-      : { found: true, message };
-  }
-
-  /**
-   * Finds a message of the account's private chat with a bot, as the account addresses a message
-   * it forwards: by the message's ID in the bot's message box.
-   */
-  getMessageForAccount(
-    { accountId, botId, botMessageId }: GetMessageForAccountInput,
-  ): GetMessageForAccountResult {
-    if (this.#accounts.getById(accountId) === undefined) {
-      return { found: false, reason: 'account_not_found' };
-    }
-    if (this.#bots.getById(botId) === undefined) {
-      return { found: false, reason: 'bot_not_found' };
-    }
-    const message = this.getPrivateMessageByBotMessageId({ accountId, botId }, botMessageId);
     return message === undefined
       ? { found: false, reason: 'message_not_found' }
       : { found: true, message };

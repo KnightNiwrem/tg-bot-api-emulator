@@ -1,75 +1,126 @@
 import { AccountRepository } from '../src/repositories/account.ts';
+import { BlockedUserRepository } from '../src/repositories/blocked_user.ts';
 import { BotRepository } from '../src/repositories/bot.ts';
+import { FileRepository } from '../src/repositories/file.ts';
+import { MessageBoxRepository } from '../src/repositories/message_box.ts';
 import { MessageRepository } from '../src/repositories/message.ts';
+import { PollRepository } from '../src/repositories/poll.ts';
 import { PrivateConversationRepository } from '../src/repositories/private_conversation.ts';
 import { SharedChatRepository } from '../src/repositories/shared_chat.ts';
 import { TelegramIdentityRepository } from '../src/repositories/telegram_identity.ts';
 import {
   type AccountChatMessageLookupResult,
   type AccountMessageChat,
-  findAccountChatMessage,
+  createAccountChatMessageReader,
 } from '../src/services/account_chat_message.ts';
+import { PrivateMessagingService } from '../src/services/private_messaging.ts';
+import { SupergroupMessagingService } from '../src/services/supergroup_messaging.ts';
 import { VirtualUserService } from '../src/services/virtual_user.ts';
 import { ALL_CHAT_PERMISSIONS } from '../src/types/chat_permissions.ts';
+import type { ChatMessage } from '../src/types/virtual_message.ts';
 
-const BOT_MESSAGE_ID = 1;
-const SUPERGROUP_MESSAGE_ID = 1;
-
-Deno.test('findAccountChatMessage finds a private chat message once the account started the chat', () => {
-  const { find, account, stranger, bot, conversation, privateMessage } = createLookupFixture();
+Deno.test('the account chat-message reader finds private chat messages by their ID in the bot message box', () => {
+  const { reader, ada, stranger, bot, adaConversation, adaMessages } = createReaderFixture();
   const privateChat: AccountMessageChat = { type: 'private', botId: bot.profile.id };
+  const find = (accountId: number, chat: AccountMessageChat, messageId: number) =>
+    reader.findMessage({ accountId, chat, messageId });
 
-  const failures = [
-    find(account.profile.id, { type: 'private', botId: 999 }, BOT_MESSAGE_ID),
-    find(stranger.profile.id, privateChat, BOT_MESSAGE_ID),
-    find(account.profile.id, privateChat, 99),
-  ].map(describeLookup);
-  assertSameReasons(failures, ['bot_not_found', 'message_not_found', 'message_not_found']);
+  assertSameReasons(
+    [
+      find(999, privateChat, adaMessages.botReply.id),
+      find(ada.profile.id, { type: 'private', botId: 999 }, adaMessages.botReply.id),
+      find(stranger.profile.id, privateChat, adaMessages.botReply.id),
+      find(ada.profile.id, privateChat, 99),
+    ].map(describeLookup),
+    ['account_not_found', 'bot_not_found', 'message_not_found', 'message_not_found'],
+  );
 
-  const result = find(account.profile.id, privateChat, BOT_MESSAGE_ID);
-  if (!result.found || result.message !== privateMessage || result.chat !== conversation) {
+  const result = find(ada.profile.id, privateChat, adaMessages.botReply.id);
+  if (
+    !result.found || result.message !== adaMessages.botReply.message ||
+    result.chat !== adaConversation
+  ) {
     throw new Error('Expected the message with the conversation that holds it');
   }
 });
 
-Deno.test('findAccountChatMessage finds a supergroup message only for current members', () => {
-  const { find, account, stranger, basicGroupId, supergroup, supergroupMessage } =
-    createLookupFixture();
+Deno.test('the account chat-message reader finds messages in a conversation a join request opened', () => {
+  const { reader, privateConversations, grace, bot, adaMessages, gracePrompt } =
+    createReaderFixture();
+  const privateChat: AccountMessageChat = { type: 'private', botId: bot.profile.id };
+  const graceConversation = { accountId: grace.profile.id, botId: bot.profile.id };
+
+  const result = reader.findMessage({
+    accountId: grace.profile.id,
+    chat: privateChat,
+    messageId: gracePrompt.id,
+  });
+  if (
+    privateConversations.isPrivateConversationStarted(graceConversation) ||
+    !result.found || result.message !== gracePrompt.message ||
+    result.chat !== privateConversations.getPrivateConversation(graceConversation)
+  ) {
+    throw new Error("Expected the bot's prompt in Grace's opened, unstarted conversation");
+  }
+  // The bot's message box numbers the messages of all its private chats, so Ada's IDs name no
+  // message of Grace's.
+  assertSameReasons(
+    [describeLookup(reader.findMessage({
+      accountId: grace.profile.id,
+      chat: privateChat,
+      messageId: adaMessages.botReply.id,
+    }))],
+    ['message_not_found'],
+  );
+});
+
+Deno.test('the account chat-message reader finds supergroup messages only for current members', () => {
+  const { reader, ada, stranger, bot, basicGroupId, supergroup, adaMessages, supergroupMessage } =
+    createReaderFixture();
   const supergroupChat: AccountMessageChat = { type: 'supergroup', chatId: supergroup.id };
+  const find = (accountId: number, chat: AccountMessageChat, messageId: number) =>
+    reader.findMessage({ accountId, chat, messageId });
 
-  const failures = [
-    find(account.profile.id, { type: 'supergroup', chatId: -1_000_000_009_999 }, 1),
-    find(account.profile.id, { type: 'supergroup', chatId: basicGroupId }, 1),
-    find(stranger.profile.id, supergroupChat, 99),
-    find(account.profile.id, supergroupChat, 99),
-  ].map(describeLookup);
-  assertSameReasons(failures, [
-    'chat_not_found',
-    'chat_not_found',
-    'not_a_member',
-    'message_not_found',
-  ]);
+  assertSameReasons(
+    [
+      find(999, supergroupChat, supergroupMessage.id),
+      find(ada.profile.id, { type: 'supergroup', chatId: -1_000_000_009_999 }, 1),
+      find(ada.profile.id, { type: 'supergroup', chatId: basicGroupId }, 1),
+      find(stranger.profile.id, supergroupChat, 99),
+      find(ada.profile.id, supergroupChat, 99),
+    ].map(describeLookup),
+    ['account_not_found', 'chat_not_found', 'chat_not_found', 'not_a_member', 'message_not_found'],
+  );
 
-  const result = find(account.profile.id, supergroupChat, SUPERGROUP_MESSAGE_ID);
-  if (!result.found || result.message !== supergroupMessage || result.chat !== supergroup) {
-    throw new Error('Expected the message with the supergroup that holds it');
+  // The supergroup numbers its own messages, apart from the bot's private chats.
+  const privateResult = find(
+    ada.profile.id,
+    { type: 'private', botId: bot.profile.id },
+    supergroupMessage.id,
+  );
+  const result = find(ada.profile.id, supergroupChat, supergroupMessage.id);
+  if (
+    supergroupMessage.id !== adaMessages.start.id ||
+    !privateResult.found || privateResult.message !== adaMessages.start.message ||
+    !result.found || result.message !== supergroupMessage.message || result.chat !== supergroup
+  ) {
+    throw new Error('Expected each chat to find its own message by the same ID');
   }
 });
 
 /**
- * Ada has started a private chat with a bot, which sent her one message, and owns a supergroup
- * with one message; Grace has neither. Message stores find their message by its ID alone, so only
- * the lookup's own checks keep Grace from reaching them.
+ * Ada started a private chat with a bot, which answered her, and owns a supergroup with one
+ * message. Grace has a pending join request whose contact grant let the bot prompt her, which
+ * opens her conversation without starting it. Hopper has neither chat.
  */
-function createLookupFixture() {
+function createReaderFixture() {
+  const identities = new TelegramIdentityRepository();
+  const accounts = new AccountRepository();
   const bots = new BotRepository();
-  const virtualUsers = new VirtualUserService({
-    identities: new TelegramIdentityRepository(),
-    accounts: new AccountRepository(),
-    bots,
-  });
-  const account = createAccount(virtualUsers, 'Ada');
-  const stranger = createAccount(virtualUsers, 'Grace');
+  const virtualUsers = new VirtualUserService({ identities, accounts, bots });
+  const ada = createAccount(virtualUsers, 'Ada');
+  const grace = createAccount(virtualUsers, 'Grace');
+  const stranger = createAccount(virtualUsers, 'Hopper');
   const botCreation = virtualUsers.createBot({ first_name: 'Test Bot', username: 'test_bot' });
   if (!botCreation.created) {
     throw new Error(`Expected bot creation to succeed, received ${botCreation.reason}`);
@@ -77,23 +128,69 @@ function createLookupFixture() {
   const { bot } = botCreation;
 
   const privateConversations = new PrivateConversationRepository();
-  const conversation = privateConversations.startPrivateConversation({
-    accountId: account.profile.id,
-    botId: bot.profile.id,
-  });
+  const sharedChats = new SharedChatRepository();
   const messages = new MessageRepository();
-  const privateMessage = messages.addPrivateMessage({
-    conversation,
-    authorRole: 'bot',
-    sentAtUnixSeconds: 1_700_000_000,
-    content: { kind: 'text', text: 'Hello', entities: [] },
+  const files = new FileRepository();
+  const polls = new PollRepository();
+  const messageBoxes = new MessageBoxRepository();
+  const events = { publish: () => {} };
+  const currentUnixTimeSeconds = () => 1_700_000_000;
+  const privateMessaging = new PrivateMessagingService({
+    accounts,
+    bots,
+    sharedChats,
+    privateConversations,
+    messages,
+    files,
+    polls,
+    messageBoxes,
+    blockedUsers: new BlockedUserRepository(),
+    joinRequesterContacts: {
+      mayContactJoinRequester: (_botId, accountId) => accountId === grace.profile.id,
+      claimJoinRequesterContact: () => {},
+    },
+    events,
+    currentUnixTimeSeconds,
+  });
+  const supergroupMessaging = new SupergroupMessagingService({
+    accounts,
+    bots,
+    sharedChats,
+    messages,
+    files,
+    polls,
+    messageBoxes,
+    events,
+    currentUnixTimeSeconds,
   });
 
-  const sharedChats = new SharedChatRepository();
+  const adaStart = privateMessaging.sendAccountMessage({
+    fromAccountId: ada.profile.id,
+    to: { type: 'private', botId: bot.profile.id },
+    content: { kind: 'text', text: '/start' },
+  });
+  const adaBotReply = privateMessaging.sendBotMessage({
+    fromBotId: bot.profile.id,
+    to: { type: 'private', accountId: ada.profile.id },
+    content: { kind: 'text', text: 'Hello' },
+  });
+  const gracePrompt = privateMessaging.sendBotMessage({
+    fromBotId: bot.profile.id,
+    to: { type: 'private', accountId: grace.profile.id },
+    content: { kind: 'text', text: 'Press the button to join' },
+  });
+  if (!adaStart.sent || !adaBotReply.sent || !gracePrompt.sent) {
+    throw new Error('Expected the fixture private messages to be sent');
+  }
+  const adaConversation = privateConversations.getPrivateConversation({
+    accountId: ada.profile.id,
+    botId: bot.profile.id,
+  });
+
   const basicGroupId = -1;
   const basicGroupRegistration = sharedChats.registerBasicGroup(
     { kind: 'basic_group', id: basicGroupId, title: 'Friends' },
-    account.profile.id,
+    ada.profile.id,
     [],
   );
   const supergroup = {
@@ -104,41 +201,51 @@ function createLookupFixture() {
     hasProtectedContent: false,
     defaultPermissions: ALL_CHAT_PERMISSIONS,
   } as const;
-  const supergroupRegistration = sharedChats.registerSupergroup(supergroup, account.profile.id);
+  const supergroupRegistration = sharedChats.registerSupergroup(supergroup, ada.profile.id);
   if (!basicGroupRegistration.registered || !supergroupRegistration.registered) {
     throw new Error('Expected the fixture chats to be registered');
   }
-  const supergroupMessage = messages.addSupergroupMessage({
+  const supergroupMessage = supergroupMessaging.sendAccountMessage({
+    fromAccountId: ada.profile.id,
     chatId: supergroup.id,
-    author: { kind: 'account', accountId: account.profile.id },
-    sentAtUnixSeconds: 1_700_000_000,
-    content: { kind: 'text', text: 'Welcome', entities: [] },
+    content: { kind: 'text', text: 'Welcome' },
   });
+  if (!supergroupMessage.sent) {
+    throw new Error('Expected the fixture supergroup message to be sent');
+  }
 
-  const lookups = {
-    bots,
-    privateConversations,
-    privateMessages: {
-      getPrivateMessageByBotMessageId: (_conversation: unknown, botMessageId: number) =>
-        botMessageId === BOT_MESSAGE_ID ? privateMessage : undefined,
-    },
-    sharedChats,
-    supergroupMessages: {
-      getMessageByChatMessageId: (_chatId: number, messageId: number) =>
-        messageId === SUPERGROUP_MESSAGE_ID ? supergroupMessage : undefined,
-    },
+  /** A message with the ID that its chat's message box gave it: the bot's, or the supergroup's. */
+  const numbered = (boxId: number, message: ChatMessage) => {
+    const id = messageBoxes.getMessageId(boxId, message.id);
+    if (id === undefined) {
+      throw new Error(`Expected message ${message.id} in message box ${boxId}`);
+    }
+    return { id, message };
   };
+
   return {
-    find: (accountId: number, chat: AccountMessageChat, messageId: number) =>
-      findAccountChatMessage(lookups, accountId, chat, messageId),
-    account,
+    reader: createAccountChatMessageReader({
+      accounts,
+      bots,
+      privateConversations,
+      privateMessages: privateMessaging,
+      sharedChats,
+      supergroupMessages: supergroupMessaging,
+    }),
+    privateConversations,
+    ada,
+    grace,
     stranger,
     bot,
-    conversation,
-    privateMessage,
+    adaConversation,
+    adaMessages: {
+      start: numbered(bot.profile.id, adaStart.message),
+      botReply: numbered(bot.profile.id, adaBotReply.message),
+    },
+    gracePrompt: numbered(bot.profile.id, gracePrompt.message),
     basicGroupId,
     supergroup,
-    supergroupMessage,
+    supergroupMessage: numbered(supergroup.id, supergroupMessage.message),
   };
 }
 

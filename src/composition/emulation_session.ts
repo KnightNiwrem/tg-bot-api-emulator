@@ -25,6 +25,7 @@ import { SharedChatRepository } from '../repositories/shared_chat.ts';
 import { TelegramIdentityRepository } from '../repositories/telegram_identity.ts';
 import { WebResourceRepository } from '../repositories/web_resource.ts';
 import { MessageBoxRepository } from '../repositories/message_box.ts';
+import { createAccountChatMessageReader } from '../services/account_chat_message.ts';
 import { BotActivityService } from '../services/bot_activity.ts';
 import { BotApiService } from '../services/bot_api.ts';
 import { BotBlockingService } from '../services/bot_blocking.ts';
@@ -170,7 +171,16 @@ export function createEmulationSession(
     events: botUpdateDelivery,
     currentUnixTimeSeconds,
   });
+  const accountChatMessages = createAccountChatMessageReader({
+    accounts,
+    bots,
+    privateConversations,
+    privateMessages: privateMessaging,
+    sharedChats,
+    supergroupMessages: supergroupMessaging,
+  });
   const messageForwarding = new MessageForwardingService({
+    accountChatMessages,
     privateMessages: privateMessaging,
     supergroupMessages: supergroupMessaging,
     getPrivateForwardName: getAccountPrivateForwardName,
@@ -193,22 +203,13 @@ export function createEmulationSession(
     currentUnixTimeSeconds,
   });
   const callbackQueries = new CallbackQueryService({
-    accounts,
+    accountChatMessages,
     bots,
-    privateConversations,
-    privateMessages: privateMessaging,
-    sharedChats,
-    supergroupMessages: supergroupMessaging,
     callbackQueries: new CallbackQueryRepository(),
     events: botUpdateDelivery,
   });
   const pollService = new PollService({
-    accounts,
-    bots,
-    privateConversations,
-    privateMessages: privateMessaging,
-    sharedChats,
-    supergroupMessages: supergroupMessaging,
+    accountChatMessages,
     polls,
     events: botUpdateDelivery,
   });

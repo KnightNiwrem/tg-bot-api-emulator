@@ -7,29 +7,19 @@ import {
   type PollId,
   toChosenOptionPositions,
 } from '../types/poll.ts';
-import type { VirtualAccount } from '../types/virtual_account.ts';
 import {
   canAccountEditMessage,
   canBotEditMessage,
   type ChatMessage,
 } from '../types/virtual_message.ts';
-import {
-  type AccountChatMessageLookupFailureReason,
-  type AccountChatMessageLookups,
-  type AccountMessageChat,
-  findAccountChatMessage,
+import type {
+  AccountChatMessageKey,
+  AccountChatMessageLookupFailureReason,
+  AccountChatMessageReader,
 } from './account_chat_message.ts';
 
-/** The chat of a poll message, as an account addresses it. */
-export type PollMessageChat = AccountMessageChat;
-
 /** A message showing a poll, as an account that can read its chat addresses it. */
-export interface AccountPollMessageKey {
-  readonly accountId: number;
-  readonly chat: PollMessageChat;
-  /** The ID of the message, as the chat numbers it for its bots. */
-  readonly messageId: number;
-}
+export type AccountPollMessageKey = AccountChatMessageKey;
 
 export interface SetAccountPollAnswerInput extends AccountPollMessageKey {
   /**
@@ -45,7 +35,6 @@ export interface SetAccountPollAnswerInput extends AccountPollMessageKey {
  * shows no poll.
  */
 export type PollMessageLookupFailureReason =
-  | 'account_not_found'
   | AccountChatMessageLookupFailureReason
   | 'message_has_no_poll';
 
@@ -93,10 +82,6 @@ export type SetAccountPollAnswerResult =
     readonly reason: PollMessageLookupFailureReason | PollAnswerFailureReason;
   };
 
-interface AccountLookup {
-  getById(accountId: number): VirtualAccount | undefined;
-}
-
 interface PollStore {
   getPoll(pollId: PollId): Poll | undefined;
   setVoterAnswer(pollId: PollId, voterId: number, chosenOptionPositions: readonly number[]): Poll;
@@ -107,8 +92,8 @@ interface ChatDomainEventSink {
   publish(event: ChatDomainEvent): void;
 }
 
-interface PollServiceDependencies extends AccountChatMessageLookups {
-  readonly accounts: AccountLookup;
+interface PollServiceDependencies {
+  readonly accountChatMessages: AccountChatMessageReader;
   readonly polls: PollStore;
   readonly events: ChatDomainEventSink;
 }
@@ -126,31 +111,12 @@ type PollMessageResolution =
  * sent, as TDLib's `stopPoll` does for a user.
  */
 export class PollService {
-  readonly #accounts: AccountLookup;
-  readonly #chatMessageLookups: AccountChatMessageLookups;
+  readonly #accountChatMessages: AccountChatMessageReader;
   readonly #polls: PollStore;
   readonly #events: ChatDomainEventSink;
 
-  constructor(
-    {
-      accounts,
-      bots,
-      privateConversations,
-      privateMessages,
-      sharedChats,
-      supergroupMessages,
-      polls,
-      events,
-    }: PollServiceDependencies,
-  ) {
-    this.#accounts = accounts;
-    this.#chatMessageLookups = {
-      bots,
-      privateConversations,
-      privateMessages,
-      sharedChats,
-      supergroupMessages,
-    };
+  constructor({ accountChatMessages, polls, events }: PollServiceDependencies) {
+    this.#accountChatMessages = accountChatMessages;
     this.#polls = polls;
     this.#events = events;
   }
@@ -253,16 +219,11 @@ export class PollService {
   }
 
   /**
-   * Finds a message of a chat the account can reach, by `findAccountChatMessage` as for a callback
-   * button, and the poll it shows, as TDLib's `get_message_poll_id` does.
+   * Finds a message the account can read, and the poll it shows, as TDLib's `get_message_poll_id`
+   * does.
    */
-  #resolvePollMessage(
-    { accountId, chat, messageId }: AccountPollMessageKey,
-  ): PollMessageResolution {
-    if (this.#accounts.getById(accountId) === undefined) {
-      return { resolved: false, reason: 'account_not_found' };
-    }
-    const lookup = findAccountChatMessage(this.#chatMessageLookups, accountId, chat, messageId);
+  #resolvePollMessage(key: AccountPollMessageKey): PollMessageResolution {
+    const lookup = this.#accountChatMessages.findMessage(key);
     if (!lookup.found) {
       return { resolved: false, reason: lookup.reason };
     }

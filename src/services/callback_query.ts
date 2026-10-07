@@ -6,7 +6,6 @@ import type {
   CallbackQueryId,
 } from '../types/callback_query.ts';
 import type { ChatDomainEvent } from '../types/chat_domain_event.ts';
-import type { VirtualAccount } from '../types/virtual_account.ts';
 import type { VirtualBot } from '../types/virtual_bot.ts';
 import { listRichMessageButtons, type RichMessageButtonAction } from '../types/rich_message.ts';
 import {
@@ -15,11 +14,10 @@ import {
   getInlineKeyboardOwnerId,
   type InlineMessageId,
 } from '../types/virtual_message.ts';
-import {
-  type AccountChatMessageLookupFailureReason,
-  type AccountChatMessageLookups,
-  type AccountMessageChat,
-  findAccountChatMessage,
+import type {
+  AccountChatMessageLookupFailureReason,
+  AccountChatMessageReader,
+  AccountMessageChat,
 } from './account_chat_message.ts';
 
 /** The chat of the message carrying a pressed button, as the pressing account addresses it. */
@@ -39,7 +37,6 @@ export interface PressCallbackButtonInput {
 }
 
 export type PressCallbackButtonFailureReason =
-  | 'account_not_found'
   | AccountChatMessageLookupFailureReason
   | 'callback_button_not_found';
 
@@ -71,10 +68,6 @@ export interface AccountCallbackQueryKey {
   readonly callbackQueryId: CallbackQueryId;
 }
 
-interface AccountLookup {
-  getById(accountId: number): VirtualAccount | undefined;
-}
-
 interface BotLookup {
   getById(botId: number): VirtualBot | undefined;
 }
@@ -97,8 +90,10 @@ interface ChatDomainEventSink {
   publish(event: ChatDomainEvent): void;
 }
 
-interface CallbackQueryServiceDependencies extends AccountChatMessageLookups {
-  readonly accounts: AccountLookup;
+interface CallbackQueryServiceDependencies {
+  readonly accountChatMessages: AccountChatMessageReader;
+  /** Finds the username of an answering bot, whose start links an answer's URL may open. */
+  readonly bots: BotLookup;
   readonly callbackQueries: CallbackQueryStore;
   readonly events: ChatDomainEventSink;
 }
@@ -110,33 +105,16 @@ interface CallbackQueryServiceDependencies extends AccountChatMessageLookups {
  * expire queries by time.
  */
 export class CallbackQueryService {
-  readonly #accounts: AccountLookup;
+  readonly #accountChatMessages: AccountChatMessageReader;
   readonly #bots: BotLookup;
-  readonly #chatMessageLookups: AccountChatMessageLookups;
   readonly #callbackQueries: CallbackQueryStore;
   readonly #events: ChatDomainEventSink;
 
   constructor(
-    {
-      accounts,
-      bots,
-      privateConversations,
-      privateMessages,
-      sharedChats,
-      supergroupMessages,
-      callbackQueries,
-      events,
-    }: CallbackQueryServiceDependencies,
+    { accountChatMessages, bots, callbackQueries, events }: CallbackQueryServiceDependencies,
   ) {
-    this.#accounts = accounts;
+    this.#accountChatMessages = accountChatMessages;
     this.#bots = bots;
-    this.#chatMessageLookups = {
-      bots,
-      privateConversations,
-      privateMessages,
-      sharedChats,
-      supergroupMessages,
-    };
     this.#callbackQueries = callbackQueries;
     this.#events = events;
   }
@@ -148,15 +126,11 @@ export class CallbackQueryService {
    * message sent through it knows the message only by its inline message identifier.
    */
   pressCallbackButton(input: PressCallbackButtonInput): PressCallbackButtonResult {
-    if (this.#accounts.getById(input.fromAccountId) === undefined) {
-      return { pressed: false, reason: 'account_not_found' };
-    }
-    const lookup = findAccountChatMessage(
-      this.#chatMessageLookups,
-      input.fromAccountId,
-      input.chat,
-      input.messageId,
-    );
+    const lookup = this.#accountChatMessages.findMessage({
+      accountId: input.fromAccountId,
+      chat: input.chat,
+      messageId: input.messageId,
+    });
     if (!lookup.found) {
       return { pressed: false, reason: lookup.reason };
     }

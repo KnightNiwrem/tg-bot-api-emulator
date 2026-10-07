@@ -1,4 +1,5 @@
 import type { ChatMembership } from '../types/chat_membership.ts';
+import type { VirtualAccount } from '../types/virtual_account.ts';
 import type { VirtualBot } from '../types/virtual_bot.ts';
 import type {
   PrivateConversation,
@@ -16,12 +17,21 @@ export type AccountMessageChat =
   | { readonly type: 'private'; readonly botId: number }
   | { readonly type: 'supergroup'; readonly chatId: number };
 
+/** A message as an account addresses it. */
+export interface AccountChatMessageKey {
+  readonly accountId: number;
+  readonly chat: AccountMessageChat;
+  /** The ID of the message, as the chat numbers it for its bots. */
+  readonly messageId: number;
+}
+
 /**
- * Why an account cannot reach a message: the bot of a private chat does not exist, the supergroup
- * does not exist or the account is no member of it, or the chat has no such message for the
- * account, as its private chat with a bot it has not started has none.
+ * Why an account cannot reach a message: the account or the bot of a private chat does not exist,
+ * the supergroup does not exist or the account is no member of it, or the chat has no such message
+ * for the account, as a private chat with a bot that never wrote to the account has none.
  */
 export type AccountChatMessageLookupFailureReason =
+  | 'account_not_found'
   | 'bot_not_found'
   | 'chat_not_found'
   | 'not_a_member'
@@ -35,6 +45,19 @@ export type AccountChatMessageLookupResult =
     readonly chat: PrivateConversation | Supergroup;
   }
   | { readonly found: false; readonly reason: AccountChatMessageLookupFailureReason };
+
+/**
+ * Reads messages as an account reads them: a message of its private chat with a bot, or of a
+ * supergroup it is a member of. The features that act on a message, such as pressing its buttons,
+ * voting in its poll or forwarding it, apply their own rules to what the reader finds.
+ */
+export interface AccountChatMessageReader {
+  findMessage(key: AccountChatMessageKey): AccountChatMessageLookupResult;
+}
+
+interface AccountLookup {
+  getById(accountId: number): VirtualAccount | undefined;
+}
 
 interface BotLookup {
   getById(botId: number): VirtualBot | undefined;
@@ -60,8 +83,9 @@ interface SupergroupMessageLookup {
   getMessageByChatMessageId(chatId: number, messageId: number): SupergroupMessage | undefined;
 }
 
-/** The stores in which an account's message lookup finds chats, memberships and messages. */
-export interface AccountChatMessageLookups {
+/** The stores in which an account's message lookup finds accounts, chats and messages. */
+export interface AccountChatMessageStores {
+  readonly accounts: AccountLookup;
   readonly bots: BotLookup;
   readonly privateConversations: PrivateConversationLookup;
   readonly privateMessages: PrivateMessageLookup;
@@ -70,24 +94,29 @@ export interface AccountChatMessageLookups {
 }
 
 /**
- * Finds a message of a chat an account can reach, by the ID the chat numbers it with for its bots.
- * In a private chat, the bot must exist, and the account finds messages only once it has started
- * the chat. In a supergroup, the account must be a current member. The account itself is assumed
- * to exist.
+ * Creates the reader of a session's messages for its accounts. The account must exist. In a
+ * private chat, the bot must exist, and the account finds messages once the conversation exists:
+ * once the account started it, or once the bot wrote to it under a join request's contact grant,
+ * which opens the conversation without starting it. In a supergroup, the account must be a current
+ * member.
  */
-export function findAccountChatMessage(
-  lookups: AccountChatMessageLookups,
-  accountId: number,
-  chat: AccountMessageChat,
-  messageId: number,
-): AccountChatMessageLookupResult {
-  return chat.type === 'private'
-    ? findPrivateChatMessage(lookups, { accountId, botId: chat.botId }, messageId)
-    : findSupergroupMessage(lookups, accountId, chat.chatId, messageId);
+export function createAccountChatMessageReader(
+  stores: AccountChatMessageStores,
+): AccountChatMessageReader {
+  return {
+    findMessage: ({ accountId, chat, messageId }) => {
+      if (stores.accounts.getById(accountId) === undefined) {
+        return { found: false, reason: 'account_not_found' };
+      }
+      return chat.type === 'private'
+        ? findPrivateChatMessage(stores, { accountId, botId: chat.botId }, messageId)
+        : findSupergroupMessage(stores, accountId, chat.chatId, messageId);
+    },
+  };
 }
 
 function findPrivateChatMessage(
-  { bots, privateConversations, privateMessages }: AccountChatMessageLookups,
+  { bots, privateConversations, privateMessages }: AccountChatMessageStores,
   conversationKey: PrivateConversationKey,
   botMessageId: number,
 ): AccountChatMessageLookupResult {
@@ -105,7 +134,7 @@ function findPrivateChatMessage(
 }
 
 function findSupergroupMessage(
-  { sharedChats, supergroupMessages }: AccountChatMessageLookups,
+  { sharedChats, supergroupMessages }: AccountChatMessageStores,
   accountId: number,
   chatId: number,
   messageId: number,
