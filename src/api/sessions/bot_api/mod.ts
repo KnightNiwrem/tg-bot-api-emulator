@@ -49,6 +49,7 @@ import {
   readBotCommandScopeParameter,
 } from './bot_command_parameters.ts';
 import { readChatAdministratorRightsParameter } from './chat_administrator_rights_parameter.ts';
+import { CHAT_NOT_FOUND_DESCRIPTION, resolveChatIdentifier } from './chat_identifier_resolution.ts';
 import { readChatPermissionsParameter } from './chat_permissions_parameter.ts';
 import { contactNameSchema, contactVcardSchema } from './contact_parameter.ts';
 import { readMenuButtonParameter } from './menu_button_parameter.ts';
@@ -97,21 +98,23 @@ import {
   inlineKeyboardMarkupParameter,
   messageReplyMarkupParameter,
 } from './reply_markup_parameter.ts';
-import { recordBotApiCall } from './call_recording.ts';
 import {
   albumMessageNotSentError,
   botApiError,
+  type BotApiMethod,
   type BotApiMethodAnswer,
   type BotApiMethodContext,
   botApiResult,
 } from './method_call.ts';
-import { takeQueuedAnswer } from './queued_answer.ts';
+import {
+  callBotApiMethod,
+  rejectUndecodableBotApiCall,
+  rejectUnknownBotApiMethod,
+} from './method_invocation.ts';
 import {
   booleanParameter,
   type BotApiRequestParameters,
   type BotApiUploadedFiles,
-  CHAT_USERNAME_PREFIX,
-  type ChatIdentifier,
   decodeBotApiRequestParameters,
   integerParameter,
   jsonParameter,
@@ -170,7 +173,6 @@ const MAX_WEBHOOK_MAX_CONNECTIONS = 100;
 /** Telegram's descriptions for rejected sendMessage requests. */
 const MESSAGE_TEXT_EMPTY_DESCRIPTION = 'Bad Request: message text is empty';
 const CHAT_ID_EMPTY_DESCRIPTION = 'Bad Request: chat_id is empty';
-const CHAT_NOT_FOUND_DESCRIPTION = 'Bad Request: chat not found';
 const REPLY_MESSAGE_NOT_FOUND_DESCRIPTION = 'Bad Request: message to be replied not found';
 const MESSAGE_TEXT_TOO_LONG_DESCRIPTION = 'Bad Request: message is too long';
 const BUTTON_DATA_INVALID_DESCRIPTION = 'Bad Request: BUTTON_DATA_INVALID';
@@ -1257,18 +1259,6 @@ type EditedMessageTargetReading =
   }
   | { readonly read: false; readonly errorAnswer: BotApiMethodAnswer };
 
-export type BotApiMethodHandler = (
-  context: BotApiMethodContext,
-  parameters: BotApiRequestParameters,
-  uploadedFiles: BotApiUploadedFiles,
-) => BotApiMethodAnswer | Promise<BotApiMethodAnswer>;
-
-/** A Bot API method the emulator implements, under its current name. */
-export interface BotApiMethod {
-  readonly name: string;
-  readonly handler: BotApiMethodHandler;
-}
-
 const BOT_API_METHODS: readonly BotApiMethod[] = [
   { name: 'answerCallbackQuery', handler: handleAnswerCallbackQuery },
   { name: 'answerInlineQuery', handler: handleAnswerInlineQuery },
@@ -1349,160 +1339,6 @@ const BOT_API_METHODS_BY_LOWERCASE_NAME: ReadonlyMap<string, BotApiMethod> = new
  */
 export function findBotApiMethod(methodName: string): BotApiMethod | undefined {
   return BOT_API_METHODS_BY_LOWERCASE_NAME.get(toCurrentBotApiMethodName(methodName).toLowerCase());
-}
-
-/** A bot's call of a method the emulator implements, as it arrived. */
-export interface BotApiMethodCall {
-  readonly method: BotApiMethod;
-  /** The method name as the bot called it, which may be an older name or differ in case. */
-  readonly requestedMethodName: string;
-  readonly parameters: BotApiRequestParameters;
-  readonly uploadedFiles: BotApiUploadedFiles;
-}
-
-/**
- * Runs a bot's call of a method, however the call arrived, unless a test queued a rate limit or
- * server error answer for it, which the call receives instead, before the method reads its
- * parameters or changes anything. The call and its answer are recorded as bot activity.
- */
-export async function callBotApiMethod(
-  context: BotApiMethodContext,
-  { method, requestedMethodName, parameters, uploadedFiles }: BotApiMethodCall,
-): Promise<BotApiMethodAnswer> {
-  const answer = await answerBotApiMethodCall(context, method, parameters, uploadedFiles);
-  recordBotApiCall(context, {
-    methodName: method.name,
-    requestedMethodName,
-    parameters,
-    uploadedFiles,
-    chatId: findNamedChatId(context, parameters),
-  }, answer);
-  return answer;
-}
-
-/**
- * Answers a call that names no method the emulator implements, however the call arrived, and
- * records it as bot activity.
- */
-export function rejectUnknownBotApiMethod(
-  context: BotApiMethodContext,
-  requestedMethodName: string,
-  parameters: BotApiRequestParameters,
-  uploadedFiles: BotApiUploadedFiles,
-): BotApiMethodAnswer {
-  const answer = botApiError(404, 'Not Found: method not found');
-  recordBotApiCall(context, {
-    methodName: requestedMethodName,
-    requestedMethodName,
-    parameters,
-    uploadedFiles,
-    chatId: findNamedChatId(context, parameters),
-  }, answer);
-  return answer;
-}
-
-/**
- * Answers a call of an implemented method whose request could not be decoded, and records it as
- * bot activity without parameters.
- */
-function rejectUndecodableBotApiCall(
-  context: BotApiMethodContext,
-  { name }: BotApiMethod,
-  requestedMethodName: string,
-  description: string,
-): BotApiMethodAnswer {
-  const answer = botApiError(400, description);
-  recordBotApiCall(context, {
-    methodName: name,
-    requestedMethodName,
-    parameters: {},
-    uploadedFiles: new Map(),
-    chatId: undefined,
-  }, answer);
-  return answer;
-}
-
-async function answerBotApiMethodCall(
-  context: BotApiMethodContext,
-  { name, handler }: BotApiMethod,
-  parameters: BotApiRequestParameters,
-  uploadedFiles: BotApiUploadedFiles,
-): Promise<BotApiMethodAnswer> {
-  const queuedAnswer = takeQueuedAnswer(context, name);
-  if (queuedAnswer !== undefined) {
-    return queuedAnswer;
-  }
-  const chatResolution = resolveChatUsernameParameters(context, parameters);
-  return chatResolution.resolved
-    ? await handler(context, chatResolution.parameters, uploadedFiles)
-    : chatResolution.errorAnswer;
-}
-
-const namedChatIdSchema = integerParameter(z.int());
-
-/**
- * Finds the chat a call's `chat_id` names, by its ID or by a public username, for the call's bot
- * activity record; `undefined` when it names no chat.
- */
-function findNamedChatId(
-  context: BotApiMethodContext,
-  parameters: BotApiRequestParameters,
-): number | undefined {
-  const chatIdentifier = parameters.chat_id;
-  if (chatIdentifier === undefined) {
-    return undefined;
-  }
-  if (chatIdentifier.startsWith(CHAT_USERNAME_PREFIX)) {
-    return resolveChatIdentifier(context, chatIdentifier);
-  }
-  const chatId = namedChatIdSchema.safeParse(chatIdentifier);
-  return chatId.success ? chatId.data : undefined;
-}
-
-/** The parameters that name a chat, which the official Bot API server reads with `check_chat`. */
-const CHAT_PARAMETER_NAMES = ['chat_id', 'from_chat_id'] as const;
-
-/**
- * Replaces a public username after `@` in the parameters that name a chat with the ID of the chat
- * it names, as the official Bot API server's `check_chat` resolves it before using the chat; a
- * username that names no chat a bot may address fails with `Bad Request: chat not found`.
- *
- * Telegram resolves the username when it checks the chat, after reading most other parameters;
- * the emulator resolves it first, so a request that has another fault too may fail for the
- * username instead.
- */
-function resolveChatUsernameParameters(
-  context: BotApiMethodContext,
-  parameters: BotApiRequestParameters,
-):
-  | { readonly resolved: true; readonly parameters: BotApiRequestParameters }
-  | { readonly resolved: false; readonly errorAnswer: BotApiMethodAnswer } {
-  let resolvedParameters = parameters;
-  for (const parameterName of CHAT_PARAMETER_NAMES) {
-    const chatIdentifier = parameters[parameterName];
-    if (!chatIdentifier?.startsWith(CHAT_USERNAME_PREFIX)) {
-      continue;
-    }
-    const chatId = resolveChatIdentifier(context, chatIdentifier);
-    if (chatId === undefined) {
-      return { resolved: false, errorAnswer: botApiError(400, CHAT_NOT_FOUND_DESCRIPTION) };
-    }
-    resolvedParameters = { ...resolvedParameters, [parameterName]: String(chatId) };
-  }
-  return { resolved: true, parameters: resolvedParameters };
-}
-
-/**
- * Finds the ID of the chat a JSON field names by its ID or by a public username after `@`, as
- * `check_chat` does; `undefined` for a username that names no chat a bot may address.
- */
-function resolveChatIdentifier(
-  context: BotApiMethodContext,
-  chatIdentifier: ChatIdentifier,
-): number | undefined {
-  return typeof chatIdentifier === 'number'
-    ? chatIdentifier
-    : context.session.botApi.findPublicChatId(chatIdentifier.slice(CHAT_USERNAME_PREFIX.length));
 }
 
 export function createBotApiRoutes(): Hono<BotApiRouteContextTypes> {
@@ -5008,8 +4844,6 @@ function badRequestDescription(tdlibErrorMessage: string): string {
     : tdlibErrorMessage.charAt(0).toLowerCase() + tdlibErrorMessage.slice(1);
   return `${BAD_REQUEST_PREFIX}${message}`;
 }
-
-/** Telegram's error body, whose `error_code` repeats the HTTP status. */
 
 /** Sends a Bot API method's answer as the JSON body of an HTTP response. */
 function botApiResponse(context: Context, { status, body }: BotApiMethodAnswer): Response {
