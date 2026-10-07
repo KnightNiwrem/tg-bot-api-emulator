@@ -454,6 +454,7 @@ no audio files. Voice notes keep no waveform and are never transcribed.
 ## Local evidence
 
 [Media service](../../src/services/media_file.ts),
+[Bot API media resolution](../../src/services/bot_media_resolution.ts),
 [image header reader](../../src/media/image_dimensions.ts),
 [video MIME types](../../src/media/video_file.ts),
 [voice note MIME types](../../src/media/voice_file.ts),
@@ -461,7 +462,8 @@ no audio files. Voice notes keep no waveform and are never transcribed.
 [file repository](../../src/repositories/file.ts),
 [URL downloads](../../src/services/web_file_download.ts),
 [web resources](../../src/services/web_resource.ts),
-[media tests](../../tests/media_file_service_test.ts) and
+[media tests](../../tests/media_file_service_test.ts),
+[media resolution tests](../../tests/bot_media_resolution_test.ts) and
 [image tests](../../tests/image_dimensions_test.ts).
 
 [thumbnail-input]: https://github.com/tdlib/telegram-bot-api/blob/e3e9dd8e5b3d7ab8537cd5a10dc31d5ffa8f82d1/telegram-bot-api/Client.cpp#L10778-L10813
