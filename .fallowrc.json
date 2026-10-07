@@ -294,6 +294,12 @@
         ]
       },
       {
+        "name": "bot-media-resolution",
+        "patterns": [
+          "src/services/bot_media_resolution.ts"
+        ]
+      },
+      {
         "name": "bot-activity",
         "patterns": [
           "src/services/bot_activity.ts"
@@ -561,6 +567,17 @@
         ]
       },
       {
+        "from": "bot-media-resolution",
+        "allow": [
+          "domain",
+          "media-inspection"
+        ],
+        "allowTypeOnly": [
+          "domain-services",
+          "bot-api-service"
+        ]
+      },
+      {
         "from": "bot-activity",
         "allow": [
           "domain"
@@ -609,6 +626,7 @@
           "update-polling",
           "webhook-delivery",
           "bot-api-service",
+          "bot-media-resolution",
           "bot-activity",
           "application-services",
           "session",

@@ -1,4 +1,3 @@
-import { cleanUploadedFileName } from '../media/document_file.ts';
 import { cleanInputString, trimTdlibSpaces } from '../text_entities/input_string.ts';
 import { isParseMode, parseMarkup } from '../text_entities/parse_mode.ts';
 import { checkLink, getLinkUserId } from '../text_entities/telegram_link.ts';
@@ -73,7 +72,6 @@ import {
   type ReplyKeyboardButton,
 } from '../types/reply_interface.ts';
 import {
-  convertRichMessageFiles,
   listRichMessageFiles,
   mapRichMessageButtons,
   type RichMessage,
@@ -83,7 +81,6 @@ import {
 } from '../types/rich_message.ts';
 import {
   type AudioAttributes,
-  isWebVoiceNoteSentAsVoiceNote,
   type StoredAudioFile,
   type StoredDocumentFile,
   type StoredFile,
@@ -127,19 +124,7 @@ import type {
   RevokeInviteLinkAsBotInput,
   RevokeInviteLinkAsBotResult,
 } from './chat_admission.ts';
-import type {
-  AudioUploadPreparation,
-  AudioUploadRequest,
-  DocumentUploadPreparation,
-  DocumentUploadRequest,
-  PhotoTooBigFailure,
-  PhotoUploadPreparation,
-  PhotoUploadRequest,
-  VideoUploadPreparation,
-  VideoUploadRequest,
-  VoiceUploadPreparation,
-  VoiceUploadRequest,
-} from './media_file.ts';
+import type { PhotoTooBigFailure } from './media_file.ts';
 import type {
   DeleteWebhookOutcome,
   DeleteWebhookRequest,
@@ -176,15 +161,10 @@ import type {
   ContentNormalizationFailure,
   ContentTextNormalizationFailure,
   MediaContent,
-  OutgoingAudio,
   OutgoingCaptionedMedia,
   OutgoingContentOtherThanPoll,
-  OutgoingDocument,
   OutgoingMessageContent,
-  OutgoingPhoto,
   OutgoingRichMessage,
-  OutgoingVideo,
-  OutgoingVoice,
   SpecifiedCaption,
   SpecifiedQuote,
   TextInvalidFailure,
@@ -487,7 +467,8 @@ export interface SpecifiedVideo {
 
 export type SendVideoRequest = SendRequestOptions & SpecifiedVideo;
 
-export type SendVoiceRequest = SendRequestOptions & {
+/** A voice note and its caption, as `sendVoice` specifies them. */
+export interface SpecifiedVoice {
   readonly voice: BotApiInputFile;
   /**
    * The duration, in seconds, that the bot specified, which a voice note sent by `file_id` ignores
@@ -496,7 +477,9 @@ export type SendVoiceRequest = SendRequestOptions & {
   readonly durationSeconds: number;
   /** Empty text for no caption. */
   readonly caption: SpecifiedFormattedText;
-};
+}
+
+export type SendVoiceRequest = SendRequestOptions & SpecifiedVoice;
 
 /** An audio file and its caption, as `sendAudio` and `InputMediaAudio` specify them. */
 export interface SpecifiedAudio {
@@ -1881,18 +1864,24 @@ interface ChatMemberships {
   }): ChangeDefaultPermissionsResult;
 }
 
+interface BotMediaResolution {
+  resolveMediaContent(botId: number, media: MediaReplacementRequest): FileResolution<MediaContent>;
+  resolveVoiceMedia(
+    botId: number,
+    voice: SpecifiedVoice,
+  ): FileResolution<Extract<OutgoingCaptionedMedia, { readonly kind: 'voice' | 'document' }>>;
+  resolveRichMessageFiles(
+    botId: number,
+    richMessage: RichMessage<BotApiRichMessageFileTypes>,
+  ): RichMessageFilesResolution;
+  resolveInlineResultFile<Type extends StoredFile['type']>(
+    botId: number,
+    file: InlineResultFileRequest,
+    expectedFileType: Type,
+  ): InlineResultFileResolution<Extract<StoredFile, { readonly type: Type }>>;
+}
+
 interface MediaFiles {
-  preparePhotoUpload(request: PhotoUploadRequest): PhotoUploadPreparation;
-  prepareDocumentUpload(request: DocumentUploadRequest): DocumentUploadPreparation;
-  prepareWebPhotoUpload(webFile: WebFile): PhotoUploadPreparation;
-  prepareWebDocumentUpload(webFile: WebFile): DocumentUploadPreparation;
-  prepareVideoUpload(request: VideoUploadRequest): VideoUploadPreparation;
-  prepareWebVideoUpload(webFile: WebFile, attributes: VideoAttributes): VideoUploadPreparation;
-  prepareVoiceUpload(request: VoiceUploadRequest): VoiceUploadPreparation;
-  prepareWebVoiceUpload(webFile: WebFile, durationSeconds: number): VoiceUploadPreparation;
-  prepareAudioUpload(request: AudioUploadRequest): AudioUploadPreparation;
-  prepareWebAudioUpload(webFile: WebFile, attributes: AudioAttributes): AudioUploadPreparation;
-  findObserverFile(observerId: number, fileId: string): StoredFile | undefined;
   getBotFile(botId: number, fileId: string):
     | {
       readonly found: true;
@@ -2157,6 +2146,12 @@ interface BotApiServiceDependencies {
   readonly messagePinning: MessagePinning;
   /** Sets the bot's reactions to supergroup messages. */
   readonly messageReactions: MessageReactions;
+  /**
+   * Turns the files that requests send, by `file_id`, upload or URL, into the files of the
+   * messages they send, without storing any.
+   */
+  readonly botMedia: BotMediaResolution;
+  /** Lets the bot download the files it knows, as `getFile` prepares them. */
   readonly mediaFiles: MediaFiles;
   readonly callbackQueries: CallbackQueryAnswering;
   readonly inlineQueries: InlineQueryAnswering;
@@ -2205,6 +2200,7 @@ export class BotApiService {
   readonly #botMessageViews: BotMessageViews;
   readonly #messagePinning: MessagePinning;
   readonly #messageReactions: MessageReactions;
+  readonly #botMedia: BotMediaResolution;
   readonly #mediaFiles: MediaFiles;
   readonly #callbackQueries: CallbackQueryAnswering;
   readonly #inlineQueries: InlineQueryAnswering;
@@ -2233,6 +2229,7 @@ export class BotApiService {
       botMessageViews,
       messagePinning,
       messageReactions,
+      botMedia,
       mediaFiles,
       callbackQueries,
       inlineQueries,
@@ -2260,6 +2257,7 @@ export class BotApiService {
     this.#botMessageViews = botMessageViews;
     this.#messagePinning = messagePinning;
     this.#messageReactions = messageReactions;
+    this.#botMedia = botMedia;
     this.#mediaFiles = mediaFiles;
     this.#callbackQueries = callbackQueries;
     this.#inlineQueries = inlineQueries;
@@ -2530,7 +2528,7 @@ export class BotApiService {
     authenticatedBot: VirtualBotProfile,
     { richMessage, detectsEntities, ...options }: SendRichMessageRequest,
   ): SendResult {
-    const resolution = this.#resolveRichMessageFiles(authenticatedBot, richMessage);
+    const resolution = this.#botMedia.resolveRichMessageFiles(authenticatedBot.id, richMessage);
     if (!resolution.resolved) {
       return { sent: false, ...resolution.failure };
     }
@@ -2552,18 +2550,17 @@ export class BotApiService {
     authenticatedBot: VirtualBotProfile,
     { photo, caption, hasSpoiler, showsCaptionAboveMedia, ...options }: SendPhotoRequest,
   ): SendResult {
-    const photoResolution = this.#resolvePhoto(authenticatedBot, photo);
-    if (!photoResolution.resolved) {
-      return { sent: false, ...photoResolution.failure };
-    }
-    return this.#send(authenticatedBot, {
+    const resolution = this.#botMedia.resolveMediaContent(authenticatedBot.id, {
       kind: 'photo',
-      photo: photoResolution.file,
-      caption: caption.text,
-      captionEntities: caption.entities,
+      photo,
+      caption,
       hasSpoiler,
       showsCaptionAboveMedia,
-    }, options);
+    });
+    if (!resolution.resolved) {
+      return { sent: false, ...resolution.failure };
+    }
+    return this.#send(authenticatedBot, resolution.file, options);
   }
 
   /**
@@ -2575,16 +2572,16 @@ export class BotApiService {
     authenticatedBot: VirtualBotProfile,
     { document, thumbnail, caption, ...options }: SendDocumentRequest,
   ): SendResult {
-    const documentResolution = this.#resolveDocument(authenticatedBot, document, thumbnail);
-    if (!documentResolution.resolved) {
-      return { sent: false, ...documentResolution.failure };
-    }
-    return this.#send(authenticatedBot, {
+    const resolution = this.#botMedia.resolveMediaContent(authenticatedBot.id, {
       kind: 'document',
-      document: documentResolution.file,
-      caption: caption.text,
-      captionEntities: caption.entities,
-    }, options);
+      document,
+      ...(thumbnail === undefined ? {} : { thumbnail }),
+      caption,
+    });
+    if (!resolution.resolved) {
+      return { sent: false, ...resolution.failure };
+    }
+    return this.#send(authenticatedBot, resolution.file, options);
   }
 
   /**
@@ -2605,7 +2602,8 @@ export class BotApiService {
       ...options
     }: SendVideoRequest,
   ): SendResult {
-    const resolution = this.#resolveVideoMedia(authenticatedBot, {
+    const resolution = this.#botMedia.resolveMediaContent(authenticatedBot.id, {
+      kind: 'video',
       video,
       attributes,
       ...(thumbnail === undefined ? {} : { thumbnail }),
@@ -2624,15 +2622,16 @@ export class BotApiService {
    * Sends a voice note with an optional caption, as `sendPhoto` sends a photo. Telegram documents
    * that its clients play OGG/Opus, MP3 and M4A voice notes and that it may send other formats as
    * audio or documents; the emulator inspects no content and always sends a voice note, apart from
-   * one sent by URL, which `#resolveVoiceMedia` may send as a document.
+   * one sent by URL, which the bot media resolver's `resolveVoiceMedia` may send as a document.
    */
   sendVoice(
     authenticatedBot: VirtualBotProfile,
     { voice, durationSeconds, caption, ...options }: SendVoiceRequest,
   ): SendResult {
-    const resolution = this.#resolveVoiceMedia(authenticatedBot, voice, durationSeconds, {
-      caption: caption.text,
-      captionEntities: caption.entities,
+    const resolution = this.#botMedia.resolveVoiceMedia(authenticatedBot.id, {
+      voice,
+      durationSeconds,
+      caption,
     });
     if (!resolution.resolved) {
       return { sent: false, ...resolution.failure };
@@ -2649,7 +2648,8 @@ export class BotApiService {
     authenticatedBot: VirtualBotProfile,
     { audio, attributes, thumbnail, caption, ...options }: SendAudioRequest,
   ): SendResult {
-    const resolution = this.#resolveAudioMedia(authenticatedBot, {
+    const resolution = this.#botMedia.resolveMediaContent(authenticatedBot.id, {
+      kind: 'audio',
       audio,
       attributes,
       ...(thumbnail === undefined ? {} : { thumbnail }),
@@ -2682,7 +2682,7 @@ export class BotApiService {
       | { readonly memberPosition: number; readonly failure: ServerRefusedUploadFailure }
       | undefined;
     for (const [memberIndex, member] of media.entries()) {
-      const resolution = this.#resolveMediaReplacement(authenticatedBot, member);
+      const resolution = this.#botMedia.resolveMediaContent(authenticatedBot.id, member);
       if (!resolution.resolved && !isRefusedByTelegramServers(resolution.failure)) {
         return { sent: false, ...resolution.failure };
       }
@@ -3570,272 +3570,9 @@ export class BotApiService {
   }
 
   /**
-   * Resolves the photo a request sends: an upload, a photo the bot knows by `file_id`, or an image
-   * downloaded from a URL, which is checked as an upload is.
+   * Resolves new content of a text or rich message: the files of a rich message, as
+   * `resolveRichMessageFiles` resolves them.
    */
-  #resolvePhoto(authenticatedBot: VirtualBotProfile, input: BotApiInputFile): FileResolution<
-    OutgoingPhoto
-  > {
-    if (input.kind === 'file_id') {
-      const file = this.#mediaFiles.findObserverFile(authenticatedBot.id, input.fileId);
-      if (file?.type === 'photo') {
-        return { resolved: true, file: { kind: 'stored', file } };
-      }
-      return { resolved: false, failure: fileIdFailure(file, 'photo') };
-    }
-    const preparation = input.kind === 'upload'
-      ? this.#mediaFiles.preparePhotoUpload({ content: input.content, source: 'bot_upload' })
-      : this.#mediaFiles.prepareWebPhotoUpload(input.webFile);
-    return preparation.prepared
-      ? { resolved: true, file: { kind: 'upload', upload: preparation.upload } }
-      : { resolved: false, failure: uploadPreparationFailure(preparation) };
-  }
-
-  /**
-   * Resolves the document a request sends: an upload, whose name the Bot API server cleans, with
-   * the thumbnail uploaded for it; a document the bot knows by `file_id`, which keeps its own
-   * thumbnail; or a file downloaded from a URL, named after the URL and typed as it was served.
-   * TDLib sends a URL document as `inputMediaDocumentExternal`, which takes no thumbnail, so an
-   * uploaded thumbnail is left out.
-   */
-  #resolveDocument(
-    authenticatedBot: VirtualBotProfile,
-    input: BotApiInputFile,
-    thumbnailContent: Uint8Array<ArrayBuffer> | undefined,
-  ): FileResolution<OutgoingDocument> {
-    if (input.kind === 'file_id') {
-      const file = this.#mediaFiles.findObserverFile(authenticatedBot.id, input.fileId);
-      if (file?.type === 'document') {
-        return { resolved: true, file: { kind: 'stored', file } };
-      }
-      return { resolved: false, failure: fileIdFailure(file, 'document') };
-    }
-    const preparation = input.kind === 'upload'
-      ? this.#mediaFiles.prepareDocumentUpload({
-        content: input.content,
-        fileName: cleanUploadedFileName(input.fileName),
-        ...(thumbnailContent === undefined ? {} : { thumbnailContent }),
-        source: 'bot_upload',
-      })
-      : this.#mediaFiles.prepareWebDocumentUpload(input.webFile);
-    return preparation.prepared
-      ? { resolved: true, file: { kind: 'upload', upload: preparation.upload } }
-      : { resolved: false, failure: uploadPreparationFailure(preparation) };
-  }
-
-  /**
-   * Resolves the video a request sends, as `#resolveDocument` resolves a document: an upload, whose
-   * name the Bot API server cleans, with the duration, dimensions and thumbnail the bot specified;
-   * a video the bot knows by `file_id`, which keeps its own; or a file downloaded from a URL, named
-   * after the URL's last path segment, if it has one, and typed as it was served. As for a
-   * document, TDLib sends a URL video as `inputMediaDocumentExternal`, which takes no thumbnail, so
-   * an uploaded thumbnail is left out. That media carries none of the bot's attributes either,
-   * which Telegram's servers determine themselves; the emulator, which reads no video content,
-   * keeps the ones the bot specified.
-   */
-  #resolveVideo(
-    authenticatedBot: VirtualBotProfile,
-    input: BotApiInputFile,
-    attributes: VideoAttributes,
-    thumbnailContent: Uint8Array<ArrayBuffer> | undefined,
-  ): FileResolution<OutgoingVideo> {
-    if (input.kind === 'file_id') {
-      const file = this.#mediaFiles.findObserverFile(authenticatedBot.id, input.fileId);
-      if (file?.type === 'video') {
-        return { resolved: true, file: { kind: 'stored', file } };
-      }
-      return { resolved: false, failure: fileIdFailure(file, 'video') };
-    }
-    const preparation = input.kind === 'upload'
-      ? this.#mediaFiles.prepareVideoUpload({
-        content: input.content,
-        fileName: cleanUploadedFileName(input.fileName),
-        attributes,
-        ...(thumbnailContent === undefined ? {} : { thumbnailContent }),
-        source: 'bot_upload',
-      })
-      : this.#mediaFiles.prepareWebVideoUpload(input.webFile, attributes);
-    return preparation.prepared
-      ? { resolved: true, file: { kind: 'upload', upload: preparation.upload } }
-      : { resolved: false, failure: uploadPreparationFailure(preparation) };
-  }
-
-  /**
-   * Resolves the voice note a request sends, as `#resolveVideo` resolves a video: an upload, whose
-   * MIME type its file name decides, with the duration the bot specified; a voice note the bot
-   * knows by `file_id`, which keeps its own; or a file downloaded from a URL, typed as it was
-   * served. As for a video, how Telegram's servers determine the duration of a downloaded voice
-   * note is not in the source, so the emulator keeps the one the bot specified.
-   */
-  #resolveVoice(
-    authenticatedBot: VirtualBotProfile,
-    input: BotApiInputFile,
-    durationSeconds: number,
-  ): FileResolution<OutgoingVoice> {
-    if (input.kind === 'file_id') {
-      const file = this.#mediaFiles.findObserverFile(authenticatedBot.id, input.fileId);
-      if (file?.type === 'voice') {
-        return { resolved: true, file: { kind: 'stored', file } };
-      }
-      return { resolved: false, failure: fileIdFailure(file, 'voice') };
-    }
-    const preparation = input.kind === 'upload'
-      ? this.#mediaFiles.prepareVoiceUpload({
-        content: input.content,
-        fileName: cleanUploadedFileName(input.fileName),
-        durationSeconds,
-        source: 'bot_upload',
-      })
-      : this.#mediaFiles.prepareWebVoiceUpload(input.webFile, durationSeconds);
-    return preparation.prepared
-      ? { resolved: true, file: { kind: 'upload', upload: preparation.upload } }
-      : { resolved: false, failure: uploadPreparationFailure(preparation) };
-  }
-
-  /**
-   * Resolves the media that `sendVoice` sends: a voice note, as `#resolveVoice` resolves it, or, as
-   * the Bot API documents for a voice note sent by URL that is larger than 1 MB, a document, which
-   * `#resolveDocument` resolves from the downloaded file.
-   */
-  #resolveVoiceMedia(
-    authenticatedBot: VirtualBotProfile,
-    voice: BotApiInputFile,
-    durationSeconds: number,
-    caption: SpecifiedCaption,
-  ): FileResolution<Extract<OutgoingCaptionedMedia, { readonly kind: 'voice' | 'document' }>> {
-    if (voice.kind === 'web_file' && !isWebVoiceNoteSentAsVoiceNote(voice.webFile.content.length)) {
-      const resolution = this.#resolveDocument(authenticatedBot, voice, undefined);
-      return resolution.resolved
-        ? { resolved: true, file: { kind: 'document', document: resolution.file, ...caption } }
-        : resolution;
-    }
-    const resolution = this.#resolveVoice(authenticatedBot, voice, durationSeconds);
-    return resolution.resolved
-      ? { resolved: true, file: { kind: 'voice', voice: resolution.file, ...caption } }
-      : resolution;
-  }
-
-  /**
-   * Resolves the audio file a request sends, as `#resolveVideo` resolves a video: an upload, whose
-   * name the Bot API server cleans and whose MIME type its name decides, with the duration,
-   * performer, title and thumbnail the bot specified; an audio file the bot knows by `file_id`,
-   * which keeps its own, since TDLib sends it as `inputMediaDocument` without them; or a file
-   * downloaded from a URL, named after the URL's last path segment, if it has one, and typed as it
-   * was served. TDLib sends a URL audio file as `inputMediaDocumentExternal`, which carries neither
-   * a thumbnail nor the bot's attributes; how Telegram's servers determine the attributes of a
-   * downloaded audio file is not in the source, so the emulator keeps the ones the bot specified.
-   */
-  #resolveAudio(
-    authenticatedBot: VirtualBotProfile,
-    input: BotApiInputFile,
-    attributes: AudioAttributes,
-    thumbnailContent: Uint8Array<ArrayBuffer> | undefined,
-  ): FileResolution<OutgoingAudio> {
-    if (input.kind === 'file_id') {
-      const file = this.#mediaFiles.findObserverFile(authenticatedBot.id, input.fileId);
-      if (file?.type === 'audio') {
-        return { resolved: true, file: { kind: 'stored', file } };
-      }
-      return { resolved: false, failure: fileIdFailure(file, 'audio') };
-    }
-    const preparation = input.kind === 'upload'
-      ? this.#mediaFiles.prepareAudioUpload({
-        content: input.content,
-        fileName: cleanUploadedFileName(input.fileName),
-        attributes,
-        ...(thumbnailContent === undefined ? {} : { thumbnailContent }),
-        source: 'bot_upload',
-      })
-      : this.#mediaFiles.prepareWebAudioUpload(input.webFile, attributes);
-    return preparation.prepared
-      ? { resolved: true, file: { kind: 'upload', upload: preparation.upload } }
-      : { resolved: false, failure: uploadPreparationFailure(preparation) };
-  }
-
-  /** Resolves the file of an audio file a request specifies, as `#resolveAudio` does. */
-  #resolveAudioMedia(
-    authenticatedBot: VirtualBotProfile,
-    { audio, attributes, thumbnail, caption }: SpecifiedAudio,
-  ): FileResolution<Extract<MediaContent, { readonly kind: 'audio' }>> {
-    const resolution = this.#resolveAudio(authenticatedBot, audio, attributes, thumbnail);
-    return resolution.resolved
-      ? {
-        resolved: true,
-        file: {
-          kind: 'audio',
-          audio: resolution.file,
-          caption: caption.text,
-          captionEntities: caption.entities,
-        },
-      }
-      : resolution;
-  }
-
-  /** Resolves the file of a video a request specifies, as `#resolveVideo` does. */
-  #resolveVideoMedia(
-    authenticatedBot: VirtualBotProfile,
-    { video, attributes, thumbnail, caption, ...presentation }: SpecifiedVideo,
-  ): FileResolution<Extract<MediaContent, { readonly kind: 'video' }>> {
-    const resolution = this.#resolveVideo(authenticatedBot, video, attributes, thumbnail);
-    return resolution.resolved
-      ? {
-        resolved: true,
-        file: {
-          kind: 'video',
-          video: resolution.file,
-          caption: caption.text,
-          captionEntities: caption.entities,
-          hasSpoiler: presentation.hasSpoiler,
-          showsCaptionAboveMedia: presentation.showsCaptionAboveMedia,
-          startTimestampSeconds: presentation.startTimestampSeconds,
-        },
-      }
-      : resolution;
-  }
-
-  /**
-   * Resolves the file of new media, as `#resolvePhoto`, `#resolveDocument`, `#resolveVideo` and
-   * `#resolveAudio` resolve a photo, a document, a video, and an audio file.
-   */
-  #resolveMediaReplacement(
-    authenticatedBot: VirtualBotProfile,
-    media: MediaReplacementRequest,
-  ): FileResolution<MediaContent> {
-    const caption = { caption: media.caption.text, captionEntities: media.caption.entities };
-    switch (media.kind) {
-      case 'photo': {
-        const resolution = this.#resolvePhoto(authenticatedBot, media.photo);
-        return resolution.resolved
-          ? {
-            resolved: true,
-            file: {
-              kind: 'photo',
-              photo: resolution.file,
-              ...caption,
-              hasSpoiler: media.hasSpoiler,
-              showsCaptionAboveMedia: media.showsCaptionAboveMedia,
-            },
-          }
-          : resolution;
-      }
-      case 'document': {
-        const resolution = this.#resolveDocument(authenticatedBot, media.document, media.thumbnail);
-        return resolution.resolved
-          ? { resolved: true, file: { kind: 'document', document: resolution.file, ...caption } }
-          : resolution;
-      }
-      case 'video':
-        return this.#resolveVideoMedia(authenticatedBot, media);
-      case 'audio':
-        return this.#resolveAudioMedia(authenticatedBot, media);
-      default: {
-        const unhandledMedia: never = media;
-        throw new Error(`Unhandled media replacement: ${JSON.stringify(unhandledMedia)}`);
-      }
-    }
-  }
-
-  /** Resolves new content of a text or rich message: the files of a rich message. */
   #resolveTextMessageReplacement(
     authenticatedBot: VirtualBotProfile,
     content: TextMessageReplacementRequest,
@@ -3845,7 +3582,10 @@ export class BotApiService {
     if (content.kind === 'text') {
       return { resolved: true, content };
     }
-    const resolution = this.#resolveRichMessageFiles(authenticatedBot, content.richMessage);
+    const resolution = this.#botMedia.resolveRichMessageFiles(
+      authenticatedBot.id,
+      content.richMessage,
+    );
     return resolution.resolved
       ? {
         resolved: true,
@@ -3856,78 +3596,6 @@ export class BotApiService {
         },
       }
       : resolution;
-  }
-
-  /**
-   * Resolves the files of a rich message's media blocks, in the order the message shows them, as
-   * `#resolvePhoto`, `#resolveDocument`, `#resolveVideo` and `#resolveVoice` resolve the file of a
-   * photo, document, video or voice note. Nothing is stored, so a file that fails leaves no trace
-   * of those resolved before it. A voice note sent by URL stays a voice note whatever its size, as
-   * nothing documents the conversion `sendVoice` makes for a block, which has no document to
-   * become.
-   */
-  #resolveRichMessageFiles(
-    authenticatedBot: VirtualBotProfile,
-    richMessage: RichMessage<BotApiRichMessageFileTypes>,
-  ):
-    | { readonly resolved: true; readonly richMessage: OutgoingRichMessage }
-    | { readonly resolved: false; readonly failure: FileResolutionFailure } {
-    const photos = new Map<BotApiInputFile, OutgoingPhoto>();
-    const documents = new Map<BotApiRichMessageDocument, OutgoingDocument>();
-    const videos = new Map<BotApiRichMessageVideo, OutgoingVideo>();
-    const voiceNotes = new Map<BotApiRichMessageVoiceNote, OutgoingVoice>();
-    for (const file of listRichMessageFiles(richMessage)) {
-      switch (file.kind) {
-        case 'photo': {
-          const resolution = this.#resolvePhoto(authenticatedBot, file.file);
-          if (!resolution.resolved) {
-            return resolution;
-          }
-          photos.set(file.file, resolution.file);
-          break;
-        }
-        case 'document': {
-          const { document, thumbnail } = file.file;
-          const resolution = this.#resolveDocument(authenticatedBot, document, thumbnail);
-          if (!resolution.resolved) {
-            return resolution;
-          }
-          documents.set(file.file, resolution.file);
-          break;
-        }
-        case 'video': {
-          const { video, attributes, thumbnail } = file.file;
-          const resolution = this.#resolveVideo(authenticatedBot, video, attributes, thumbnail);
-          if (!resolution.resolved) {
-            return resolution;
-          }
-          videos.set(file.file, resolution.file);
-          break;
-        }
-        case 'voice': {
-          const { voice, durationSeconds } = file.file;
-          const resolution = this.#resolveVoice(authenticatedBot, voice, durationSeconds);
-          if (!resolution.resolved) {
-            return resolution;
-          }
-          voiceNotes.set(file.file, resolution.file);
-          break;
-        }
-        default: {
-          const unhandledFile: never = file;
-          throw new Error(`Unhandled rich message file: ${JSON.stringify(unhandledFile)}`);
-        }
-      }
-    }
-    return {
-      resolved: true,
-      richMessage: convertRichMessageFiles(richMessage, {
-        photo: (photo) => getResolvedFile(photos, photo),
-        document: (document) => getResolvedFile(documents, document),
-        video: (video) => getResolvedFile(videos, video),
-        voice: (voiceNote) => getResolvedFile(voiceNotes, voiceNote),
-      }),
-    };
   }
 
   /**
@@ -4650,7 +4318,7 @@ export class BotApiService {
     authenticatedBot: VirtualBotProfile,
     { chatId, messageId, media, inlineKeyboard }: EditMessageMediaRequest,
   ): EditMessageMediaResult {
-    const mediaResolution = this.#resolveMediaReplacement(authenticatedBot, media);
+    const mediaResolution = this.#botMedia.resolveMediaContent(authenticatedBot.id, media);
     if (!mediaResolution.resolved) {
       return { edited: false, ...mediaResolution.failure };
     }
@@ -5039,7 +4707,7 @@ export class BotApiService {
     if (getMediaReplacementFile(media).kind === 'upload') {
       return { edited: false, reason: 'inline_message_upload_unsupported' };
     }
-    const mediaResolution = this.#resolveMediaReplacement(authenticatedBot, media);
+    const mediaResolution = this.#botMedia.resolveMediaContent(authenticatedBot.id, media);
     if (!mediaResolution.resolved) {
       return { edited: false, ...mediaResolution.failure };
     }
@@ -5418,9 +5086,10 @@ export class BotApiService {
   }
 
   /**
-   * Resolves a media result from its file: one the bot knows by `file_id`, which must be a file of
-   * the result's type, or one it names by URL, which keeps its URL for Telegram to download when the
-   * result is sent. `toResult` specifies the result with the resolved file.
+   * Resolves a media result from its file, as `resolveInlineResultFile` resolves it: one the bot
+   * knows by `file_id`, which must be a file of the result's type, or one it names by URL, which
+   * keeps its URL for Telegram to download when the result is sent. `toResult` specifies the result
+   * with the resolved file.
    */
   #resolveInlineMediaResult<Type extends StoredFile['type']>(
     authenticatedBot: VirtualBotProfile,
@@ -5431,17 +5100,13 @@ export class BotApiService {
     ) => SpecifiedInlineQueryResult,
   ):
     | { readonly resolved: true; readonly result: SpecifiedInlineQueryResult }
-    | {
-      readonly resolved: false;
-      readonly failure: { readonly reason: 'file_id_invalid' } | FileTypeMismatchFailure;
-    } {
-    if (file.kind === 'url') {
-      return { resolved: true, result: toResult({ source: 'web', url: file.url }) };
-    }
-    const storedFile = this.#mediaFiles.findObserverFile(authenticatedBot.id, file.fileId);
-    return isStoredFileOfType(storedFile, expectedFileType)
-      ? { resolved: true, result: toResult({ source: 'stored', file: storedFile }) }
-      : { resolved: false, failure: fileIdFailure(storedFile, expectedFileType) };
+    | { readonly resolved: false; readonly failure: FileIdFailure } {
+    const resolution = this.#botMedia.resolveInlineResultFile(
+      authenticatedBot.id,
+      file,
+      expectedFileType,
+    );
+    return resolution.resolved ? { resolved: true, result: toResult(resolution.file) } : resolution;
   }
 
   /**
@@ -5478,7 +5143,10 @@ export class BotApiService {
     if (richMessageUploadsFile(content.richMessage)) {
       return { resolved: false, failure: { reason: 'inline_message_content_invalid' } };
     }
-    const resolution = this.#resolveRichMessageFiles(authenticatedBot, content.richMessage);
+    const resolution = this.#botMedia.resolveRichMessageFiles(
+      authenticatedBot.id,
+      content.richMessage,
+    );
     if (resolution.resolved) {
       return {
         resolved: true,
@@ -5617,41 +5285,33 @@ export class BotApiService {
   }
 }
 
-/** A file a send method resolved to send, or why it cannot be sent. */
+/**
+ * Why a `file_id` cannot send a file of the expected type: it identifies no file the bot knows, or
+ * a file of another type.
+ */
+export type FileIdFailure = { readonly reason: 'file_id_invalid' } | FileTypeMismatchFailure;
+
 /** Why a file a request sends cannot be used: an upload Telegram refuses, or an unusable `file_id`. */
 export type FileResolutionFailure =
   | { readonly reason: 'file_empty' | 'image_invalid' | 'photo_dimensions_invalid' }
   | PhotoTooBigFailure
   | BotUploadTooBigFailure
-  | { readonly reason: 'file_id_invalid' }
-  | FileTypeMismatchFailure;
+  | FileIdFailure;
 
-type FileResolution<File> =
+/** A file a send method resolved to send, or why it cannot be sent. */
+export type FileResolution<File> =
   | { readonly resolved: true; readonly file: File }
   | { readonly resolved: false; readonly failure: FileResolutionFailure };
 
-/** Why Telegram refuses an uploaded file, as its preparation reports it. */
-function uploadPreparationFailure(
-  preparation: Extract<
-    | PhotoUploadPreparation
-    | DocumentUploadPreparation
-    | VideoUploadPreparation
-    | VoiceUploadPreparation
-    | AudioUploadPreparation,
-    { readonly prepared: false }
-  >,
-): FileResolutionFailure {
-  switch (preparation.reason) {
-    case 'photo_too_big':
-      return { reason: preparation.reason, fileSizeBytes: preparation.fileSizeBytes };
-    case 'bot_upload_too_big': {
-      const { reason, uploadProfile, fileSizeBytes, maxFileSizeBytes } = preparation;
-      return { reason, uploadProfile, fileSizeBytes, maxFileSizeBytes };
-    }
-    default:
-      return { reason: preparation.reason };
-  }
-}
+/** The files of a rich message's media blocks, resolved to send, or why one cannot be sent. */
+export type RichMessageFilesResolution =
+  | { readonly resolved: true; readonly richMessage: OutgoingRichMessage }
+  | { readonly resolved: false; readonly failure: FileResolutionFailure };
+
+/** The file of an inline query result, resolved to list, or why its `file_id` cannot be used. */
+export type InlineResultFileResolution<Stored extends StoredFile> =
+  | { readonly resolved: true; readonly file: SpecifiedInlineResultFile<Stored> }
+  | { readonly resolved: false; readonly failure: FileIdFailure };
 
 /**
  * Whether only Telegram's servers refuse a file, once they receive the message that sends it,
@@ -5875,25 +5535,6 @@ function getRichMessageInputFile(
   }
 }
 
-/** Looks up what a file of a request resolved to, which must have been resolved before. */
-function getResolvedFile<RequestedFile, ResolvedFile>(
-  resolvedFiles: ReadonlyMap<RequestedFile, ResolvedFile>,
-  requestedFile: RequestedFile,
-): ResolvedFile {
-  const resolvedFile = resolvedFiles.get(requestedFile);
-  if (resolvedFile === undefined) {
-    throw new Error('Expected every file of the rich message to be resolved');
-  }
-  return resolvedFile;
-}
-
-function isStoredFileOfType<Type extends StoredFile['type']>(
-  file: StoredFile | undefined,
-  type: Type,
-): file is Extract<StoredFile, { readonly type: Type }> {
-  return file?.type === type;
-}
-
 /** The caption a media result specified, as new content takes it. */
 function toSpecifiedCaption({ caption }: { readonly caption: SpecifiedFormattedText }) {
   return { caption: caption.text, captionEntities: caption.entities };
@@ -6013,19 +5654,6 @@ function toInlineResultAudioAttributes(
     ...(performer.length === 0 ? {} : { performer }),
     ...(title.length === 0 ? {} : { title }),
   };
-}
-
-/**
- * Why a `file_id` cannot send a file of the expected type. As on Telegram, an unknown `file_id`,
- * including one another bot knows a file by, identifies no file.
- */
-function fileIdFailure(
-  file: StoredFile | undefined,
-  expectedFileType: StoredFile['type'],
-): { readonly reason: 'file_id_invalid' } | FileTypeMismatchFailure {
-  return file === undefined
-    ? { reason: 'file_id_invalid' }
-    : { reason: 'file_type_mismatch', expectedFileType, actualFileType: file.type };
 }
 
 /** The chat a Bot API `chat_id` addresses, as chat actions identify it. */

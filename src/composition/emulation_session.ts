@@ -31,6 +31,7 @@ import { BotBlockingService } from '../services/bot_blocking.ts';
 import { BotCommandService } from '../services/bot_command.ts';
 import { BotDefaultAdministratorRightsService } from '../services/bot_default_administrator_rights.ts';
 import { BotDescriptionService } from '../services/bot_description.ts';
+import { BotMediaResolver } from '../services/bot_media_resolution.ts';
 import { BotMenuButtonService } from '../services/bot_menu_button.ts';
 import { BotMessageViewService } from '../services/bot_message_view.ts';
 import { BotRateLimitService } from '../services/bot_rate_limit.ts';
@@ -301,6 +302,7 @@ export function createEmulationSession(
     botMessageViews,
     messagePinning,
     messageReactions,
+    botMedia: new BotMediaResolver({ mediaFiles }),
     mediaFiles,
     callbackQueries,
     inlineQueries,
