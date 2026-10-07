@@ -9,6 +9,7 @@ import {
   readThumbnailParameter,
   type RequestedInputFile,
 } from './input_file_parameter.ts';
+import { BAD_REQUEST_PREFIX } from './method_call.ts';
 import type { BotApiUploadedFiles } from './request_parameters.ts';
 
 type MediaReplacementRequest = Parameters<
@@ -49,8 +50,12 @@ export type InputMediaGroupParameterReading =
 /** How the official Bot API server describes a request without media. */
 const MEDIA_REQUIRED_DESCRIPTION = 'Bad Request: parameter "media" is required';
 
-/** How the official Bot API server prefixes its description of `InputMedia` it cannot read. */
-const INPUT_MEDIA_ERROR_PREFIX = "Bad Request: can't parse InputMedia: ";
+/**
+ * How the official Bot API server prefixes its description of `InputMedia` it cannot read, after
+ * the prefix of every bad request.
+ */
+export const INPUT_MEDIA_ERROR_PREFIX = "can't parse InputMedia: ";
+const INPUT_MEDIA_BAD_REQUEST_PREFIX = `${BAD_REQUEST_PREFIX}${INPUT_MEDIA_ERROR_PREFIX}`;
 
 /**
  * Media types the official server reads but the emulator lacks. In albums, Telegram sends live
@@ -232,10 +237,10 @@ function readInputMedia(
     description,
   });
   if (typeof value !== 'object' || value === null || Array.isArray(value)) {
-    return failure(`${INPUT_MEDIA_ERROR_PREFIX}expected an Object`);
+    return failure(`${INPUT_MEDIA_BAD_REQUEST_PREFIX}expected an Object`);
   }
   if (!('type' in value)) {
-    return failure(`${INPUT_MEDIA_ERROR_PREFIX}Can't find field "type"`);
+    return failure(`${INPUT_MEDIA_BAD_REQUEST_PREFIX}Can't find field "type"`);
   }
   const typedValue = mediaTypeSchema.safeParse(value);
   if (!typedValue.success) {
@@ -243,14 +248,16 @@ function readInputMedia(
   }
   const { type } = typedValue.data;
   if (use === 'album' && type === 'animation') {
-    return failure(`${INPUT_MEDIA_ERROR_PREFIX}type "${type}" can't be used in sendMediaGroup`);
+    return failure(
+      `${INPUT_MEDIA_BAD_REQUEST_PREFIX}type "${type}" can't be used in sendMediaGroup`,
+    );
   }
   if (UNSUPPORTED_MEDIA_TYPES.has(type)) {
     return failure(`Bad Request: InputMedia of type "${type}" is not supported`);
   }
   if (!isReadMediaType(type)) {
     return failure(
-      `${INPUT_MEDIA_ERROR_PREFIX}type "${type}" is ${
+      `${INPUT_MEDIA_BAD_REQUEST_PREFIX}type "${type}" is ${
         type === 'voice_note' ? 'not allowed' : 'unsupported'
       }`,
     );
@@ -265,7 +272,7 @@ function readInputMedia(
   // names no uploaded part.
   const fileReading = readInputFileParameter('', data.media, uploadedFiles);
   if (!fileReading.read) {
-    return failure(`${INPUT_MEDIA_ERROR_PREFIX}media not found`);
+    return failure(`${INPUT_MEDIA_BAD_REQUEST_PREFIX}media not found`);
   }
   const caption: UnreadFormattedText = {
     text: data.caption,

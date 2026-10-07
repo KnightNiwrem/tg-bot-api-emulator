@@ -11,6 +11,7 @@ import {
 } from '../formatted_text_reading.ts';
 import {
   getRequestedMediaFile,
+  INPUT_MEDIA_ERROR_PREFIX,
   readInputMediaParameter,
   toMediaReplacementRequest,
 } from '../input_media_parameter.ts';
@@ -19,7 +20,6 @@ import {
   BUTTON_TYPE_INVALID_DESCRIPTION,
   CAPTION_TOO_LONG_DESCRIPTION,
   fileResolutionFailureAnswer,
-  INPUT_MEDIA_ERROR_PREFIX,
   MESSAGE_TEXT_EMPTY_DESCRIPTION,
   MESSAGE_TEXT_TOO_LONG_DESCRIPTION,
   SEND_PERMISSION_MISSING_DESCRIPTIONS,

@@ -12,10 +12,9 @@ export const CHAT_ID_EMPTY_DESCRIPTION = 'Bad Request: chat_id is empty';
 export const BOT_BLOCKED_DESCRIPTION = 'Forbidden: bot was blocked by the user';
 
 /** Telegram's descriptions for a request to a supergroup that the bot left or was removed from. */
-export const BOT_NOT_SUPERGROUP_MEMBER_DESCRIPTION =
+const BOT_NOT_SUPERGROUP_MEMBER_DESCRIPTION =
   'Forbidden: bot is not a member of the supergroup chat';
-export const BOT_KICKED_FROM_SUPERGROUP_DESCRIPTION =
-  'Forbidden: bot was kicked from the supergroup chat';
+const BOT_KICKED_FROM_SUPERGROUP_DESCRIPTION = 'Forbidden: bot was kicked from the supergroup chat';
 
 /**
  * Finds the ID of the chat a JSON field names by its ID or by a public username after `@`, as

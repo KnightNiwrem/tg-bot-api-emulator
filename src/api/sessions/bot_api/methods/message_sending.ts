@@ -29,6 +29,7 @@ import {
 import { readInputFileParameter, readThumbnailParameter } from '../input_file_parameter.ts';
 import {
   getRequestedMediaFile,
+  INPUT_MEDIA_ERROR_PREFIX,
   readInputMediaGroupParameter,
   toMediaReplacementRequest,
 } from '../input_media_parameter.ts';
@@ -36,7 +37,6 @@ import {
   describeInputPollOptionTextError,
   readInputPollOptionsParameter,
 } from '../input_poll_option_parameter.ts';
-import { INPUT_MEDIA_ERROR_PREFIX } from '../message_content_answers.ts';
 import { messageEntitiesParameter } from '../message_entities_parameter.ts';
 import {
   albumMessageNotSentError,

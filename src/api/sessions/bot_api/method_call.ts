@@ -18,6 +18,7 @@ export interface BotApiMethodContext {
   readonly via: BotApiCallTransport;
 }
 
+/** Runs a method with a call's parameters and uploaded files, and answers the call. */
 export type BotApiMethodHandler = (
   context: BotApiMethodContext,
   parameters: BotApiRequestParameters,

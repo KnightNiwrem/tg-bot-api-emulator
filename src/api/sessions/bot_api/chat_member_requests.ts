@@ -55,6 +55,10 @@ type ChatMemberFailureReason =
     | 'bots_cannot_add_members'
   >;
 
+/**
+ * Reads the chat and the member a request is about, answering Telegram's error for a missing or
+ * non-positive `user_id`, then for a missing `chat_id`.
+ */
 export function readChatMemberTarget(
   { chat_id: chatId, user_id: userId }: { readonly chat_id?: number; readonly user_id?: number },
 ):
@@ -69,6 +73,7 @@ export function readChatMemberTarget(
   return { read: true, target: { chatId, userId } };
 }
 
+/** Telegram's error for a request about a chat's members, or a moderation of them, that failed. */
 export function chatMemberFailureAnswer(reason: ChatMemberFailureReason): BotApiMethodAnswer {
   switch (reason) {
     case 'chat_not_found':

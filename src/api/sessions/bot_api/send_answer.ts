@@ -64,8 +64,10 @@ const MESSAGE_EFFECT_NOT_ALLOWED_IN_CHAT_DESCRIPTION =
 
 type SendResult = ReturnType<EmulationSession['botApi']['sendMessage']>;
 
-export type SendFailure = Extract<SendResult, { readonly sent: false }>;
+/** Why a send method sent no message. */
+type SendFailure = Extract<SendResult, { readonly sent: false }>;
 
+/** Telegram's answer to a send method: the message it sent, or its error for why none was sent. */
 export function sendMethodAnswer(result: SendResult | SendFailure): BotApiMethodAnswer {
   if (result.sent) {
     return botApiResult(result.message);

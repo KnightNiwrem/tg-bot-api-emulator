@@ -1,7 +1,7 @@
+import type { PermissionGovernedContent } from '../../../types/chat_permissions.ts';
 import { MAX_PHOTO_UPLOAD_BYTES, type StoredFile } from '../../../types/stored_file.ts';
 import type { BotUploadTooBigFailure } from '../../../types/upload_profile.ts';
 import { botApiError, type BotApiMethodAnswer } from './method_call.ts';
-import type { SendFailure } from './send_answer.ts';
 
 /** Telegram's descriptions for message text and buttons it refuses to send. */
 export const MESSAGE_TEXT_EMPTY_DESCRIPTION = 'Bad Request: message text is empty';
@@ -30,9 +30,6 @@ export const TDLIB_FILE_TYPE_NAMES = {
   thumbnail: 'Thumbnail',
 } as const;
 
-/** How the Bot API server reports that it cannot read the `InputMedia` of `editMessageMedia`. */
-export const INPUT_MEDIA_ERROR_PREFIX = "can't parse InputMedia: ";
-
 /**
  * TDLib's `can_send_message_content` errors, as the official Bot API server reports them, for each
  * kind of content a member lacks the permission to send.
@@ -48,10 +45,7 @@ export const SEND_PERMISSION_MISSING_DESCRIPTIONS = {
   rich_message: 'Bad Request: not enough rights to send the rich message to the chat',
   contact: 'Bad Request: not enough rights to send contacts to the chat',
   location: 'Bad Request: not enough rights to send locations to the chat',
-} as const satisfies Record<
-  Extract<SendFailure, { readonly reason: 'send_permission_missing' }>['contentKind'],
-  string
->;
+} as const satisfies Record<PermissionGovernedContent['kind'], string>;
 
 /** Why a file a request sends cannot be used: an upload Telegram refuses, or its `file_id`. */
 type FileResolutionFailure =
