@@ -2,7 +2,6 @@ import { type Context, Hono } from 'hono';
 import { z } from 'zod';
 
 import { toCurrentBotApiMethodName } from '../../../types/bot_api_method_name.ts';
-import { MAX_CALLBACK_QUERY_ANSWER_TEXT_LENGTH } from '../../../types/callback_query.ts';
 import type { SupergroupBotAccessFailureReason } from '../../../types/chat_membership.ts';
 import type { EmulationSession } from '../../../types/emulation_session.ts';
 import {
@@ -10,7 +9,6 @@ import {
   isPointOnEarth,
   MAX_HORIZONTAL_ACCURACY_METERS,
 } from '../../../types/geo_location.ts';
-import type { InlineKeyboard } from '../../../types/inline_keyboard.ts';
 import {
   MAX_POLL_OPEN_PERIOD_SECONDS,
   MAX_POLL_OPTION_COUNT,
@@ -43,13 +41,12 @@ import {
 } from './chat_access.ts';
 import { contactNameSchema, contactVcardSchema } from './contact_parameter.ts';
 import {
-  type InlineQueryResultParameter,
-  inlineQueryResultsButtonParameter,
-  readInlineQueryResultsParameter,
-  readUnreadLocation,
-  type UnreadFormattedText,
-  type UnreadInputMessageContent,
-} from './inline_query_answer_parameters.ts';
+  type FormattedTextParametersReading,
+  type FormattedTextReadingResult,
+  readEmbeddedFormattedText,
+  readFormattedTextParameters,
+  type SpecifiedFormattedText,
+} from './formatted_text_reading.ts';
 import { readInputFileParameter, readThumbnailParameter } from './input_file_parameter.ts';
 import {
   getRequestedMediaFile,
@@ -63,12 +60,12 @@ import {
 } from './input_poll_option_parameter.ts';
 import { linkPreviewOptionsParameter } from './link_preview_options_parameter.ts';
 import {
-  messageEntitiesParameter,
-  readMessageEntitiesParameter,
-} from './message_entities_parameter.ts';
+  BUTTON_DATA_INVALID_DESCRIPTION,
+  TDLIB_FILE_TYPE_NAMES,
+} from './message_content_answers.ts';
+import { messageEntitiesParameter } from './message_entities_parameter.ts';
 import {
   albumMessageNotSentError,
-  BAD_REQUEST_PREFIX,
   badRequestDescription,
   botApiError,
   type BotApiMethod,
@@ -87,6 +84,7 @@ import { CHAT_INVITE_LINK_METHODS } from './methods/chat_invite_links.ts';
 import { CHAT_JOIN_REQUEST_METHODS } from './methods/chat_join_requests.ts';
 import { CHAT_MEMBER_METHODS } from './methods/chat_members.ts';
 import { FILE_METHODS } from './methods/files.ts';
+import { QUERY_ANSWER_METHODS } from './methods/query_answers.ts';
 import { UPDATE_DELIVERY_METHODS } from './methods/update_delivery.ts';
 import { readCorrectOptionIdsParameter } from './quiz_parameters.ts';
 import { readReactionTypesParameter } from './reaction_type_parameter.ts';
@@ -94,6 +92,7 @@ import {
   inlineKeyboardMarkupParameter,
   messageReplyMarkupParameter,
 } from './reply_markup_parameter.ts';
+import { readInlineKeyboardParameter } from './reply_markup_reading.ts';
 import {
   replyParametersParameter,
   selectSpecifiedReplyTarget,
@@ -114,7 +113,6 @@ import {
   readRichMessageParameter,
 } from './rich_message_parameter.ts';
 import {
-  excludeRichMessageWebFiles,
   type RequestedRichMessageFileTypes,
   resolveRequestedInputFile,
   resolveRichMessageWebFiles,
@@ -138,13 +136,11 @@ const MESSAGE_TEXT_EMPTY_DESCRIPTION = 'Bad Request: message text is empty';
 /** Telegram's description for a reply to a message it cannot find. */
 const REPLY_MESSAGE_NOT_FOUND_DESCRIPTION = 'Bad Request: message to be replied not found';
 const MESSAGE_TEXT_TOO_LONG_DESCRIPTION = 'Bad Request: message is too long';
-const BUTTON_DATA_INVALID_DESCRIPTION = 'Bad Request: BUTTON_DATA_INVALID';
+
 /** Telegram's description for a button its servers do not allow in the chat, such as a Web App. */
 const BUTTON_TYPE_INVALID_DESCRIPTION = 'Bad Request: BUTTON_TYPE_INVALID';
 /** Telegram's description for a reply quote that the replied message does not contain. */
 const QUOTE_TEXT_INVALID_DESCRIPTION = 'Bad Request: QUOTE_TEXT_INVALID';
-/** Telegram's description for a callback query answer whose URL its servers refuse. */
-const URL_INVALID_DESCRIPTION = 'Bad Request: URL_INVALID';
 
 /** TDLib's descriptions for polls it refuses to create. */
 const POLL_QUESTION_TOO_LONG_DESCRIPTION =
@@ -187,21 +183,6 @@ const PHOTO_DIMENSIONS_INVALID_DESCRIPTION = 'Bad Request: PHOTO_INVALID_DIMENSI
 const FILE_ID_INVALID_DESCRIPTION = 'Bad Request: wrong file identifier/HTTP URL specified';
 const REQUEST_ENTITY_TOO_LARGE_DESCRIPTION = 'Request Entity Too Large';
 const CAPTION_TOO_LONG_DESCRIPTION = 'Bad Request: message caption is too long';
-
-/** TDLib's names of file types in its errors about a file of the wrong type. */
-const TDLIB_FILE_TYPE_NAMES = {
-  photo: 'Photo',
-  document: 'Document',
-  video: 'Video',
-  voice: 'VoiceNote',
-  audio: 'Audio',
-  thumbnail: 'Thumbnail',
-} as const;
-
-/** Telegram's descriptions for message text or formatting it cannot read. */
-const FORMATTED_TEXT_TOO_LONG_DESCRIPTION = 'Bad Request: text is too long';
-const PARSE_MODE_UNSUPPORTED_DESCRIPTION = 'Bad Request: unsupported parse_mode';
-const TEXT_ENCODING_INVALID_DESCRIPTION = 'Bad Request: text must be encoded in UTF-8';
 
 /** TDLib's description for a rich message edit of an inline message that uploads a file. */
 const INLINE_MESSAGE_CONTENT_INVALID_DESCRIPTION = 'Bad Request: invalid message content specified';
@@ -286,44 +267,8 @@ const MAX_DELETE_MESSAGES_COUNT = 100;
 /** Telegram reads a missing or non-positive `message_id` as 0, which identifies no message. */
 const NO_MESSAGE_ID = 0;
 
-/** Telegram's description for an unknown, expired, or already answered callback query. */
-const QUERY_ID_INVALID_DESCRIPTION =
-  'Bad Request: query is too old and response timeout expired or query ID is invalid';
-
-/** Telegram's descriptions for rejected answerInlineQuery requests, by the failure's reason. */
-const ANSWER_INLINE_QUERY_FAILURE_DESCRIPTIONS = {
-  start_parameter_empty: "Bad Request: can't use empty start_parameter",
-  start_parameter_too_long: 'Bad Request: too long start_parameter specified',
-  start_parameter_invalid: 'Bad Request: unallowed characters in start_parameter are used',
-  too_many_results: 'Bad Request: too many inline query results specified',
-  query_id_invalid: QUERY_ID_INVALID_DESCRIPTION,
-  next_offset_invalid: 'Bad Request: NEXT_OFFSET_INVALID',
-  result_id_empty: 'Bad Request: RESULT_ID_EMPTY',
-  result_id_invalid: 'Bad Request: RESULT_ID_INVALID',
-  result_id_duplicate: 'Bad Request: RESULT_ID_DUPLICATE',
-  article_title_empty: 'Bad Request: ARTICLE_TITLE_EMPTY',
-  document_title_empty: 'Bad Request: FILE_TITLE_EMPTY',
-  video_title_empty: 'Bad Request: VIDEO_TITLE_EMPTY',
-  web_document_url_invalid: 'Bad Request: WEBDOCUMENT_URL_INVALID',
-  photo_thumbnail_url_empty: 'Bad Request: PHOTO_THUMB_URL_EMPTY',
-  callback_data_invalid: BUTTON_DATA_INVALID_DESCRIPTION,
-  message_text_too_long: 'Bad Request: MESSAGE_TOO_LONG',
-  caption_too_long: 'Bad Request: MEDIA_CAPTION_TOO_LONG',
-  file_id_invalid: "Bad Request: wrong remote file identifier specified: can't unserialize it",
-  inline_message_content_invalid: 'Bad Request: invalid inline message content specified',
-  contact_phone_number_empty: 'Bad Request: field "phone_number" must contain a valid phone number',
-  contact_first_name_empty: 'Bad Request: field "first_name" must be non-empty',
-} as const;
-
-/** How the Bot API server reports that it cannot read an inline query result. */
-const INLINE_QUERY_RESULT_ERROR_PREFIX = "can't parse InlineQueryResult: ";
-
 /** How the Bot API server reports that it cannot read the `InputMedia` of `editMessageMedia`. */
 const INPUT_MEDIA_ERROR_PREFIX = "can't parse InputMedia: ";
-
-/** Telegram's default and range for how long clients may cache an inline query's answer. */
-const DEFAULT_INLINE_QUERY_CACHE_TIME_SECONDS = 300;
-const MAX_INLINE_QUERY_CACHE_TIME_SECONDS = 24 * 60 * 60;
 
 /** Telegram's description for an edit of an unknown, deleted, or other bot's inline message. */
 const INLINE_MESSAGE_ID_INVALID_DESCRIPTION = 'Bad Request: MESSAGE_ID_INVALID';
@@ -369,9 +314,6 @@ const SEND_PERMISSION_MISSING_DESCRIPTIONS = {
   Extract<SendFailure, { readonly reason: 'send_permission_missing' }>['contentKind'],
   string
 >;
-
-/** Telegram caps how long a client may cache a callback query answer at 30 days. */
-const MAX_CALLBACK_QUERY_ANSWER_CACHE_TIME_SECONDS = 30 * 24 * 60 * 60;
 
 /**
  * Link preview parameters, which the emulator validates and ignores because it generates no link
@@ -663,34 +605,6 @@ const deleteMessagesParametersSchema = z.strictObject({
   message_ids: jsonParameter(z.array(z.int())).optional(),
 });
 
-// Telegram answers with a URL only for game buttons and bot links, neither of which the emulator
-// supports, so `url` is rejected as unsupported.
-const answerCallbackQueryParametersSchema = z.strictObject({
-  callback_query_id: z.string().default(''),
-  text: z.string().max(MAX_CALLBACK_QUERY_ANSWER_TEXT_LENGTH).optional(),
-  show_alert: booleanParameter().default(false),
-  url: z.string().optional(),
-  cache_time: integerParameter(z.int().min(0).max(MAX_CALLBACK_QUERY_ANSWER_CACHE_TIME_SECONDS))
-    .default(0),
-});
-
-// `switch_pm_text` and `switch_pm_parameter` are the older form of a `button` that opens the bot's
-// private chat, which Telegram still accepts.
-const answerInlineQueryParametersSchema = z.strictObject({
-  inline_query_id: z.string().default(''),
-  results: jsonParameter(z.array(z.unknown())).optional(),
-  cache_time: integerParameter(
-    z.int().transform((cacheTimeSeconds) =>
-      Math.min(Math.max(cacheTimeSeconds, 0), MAX_INLINE_QUERY_CACHE_TIME_SECONDS)
-    ),
-  ).default(DEFAULT_INLINE_QUERY_CACHE_TIME_SECONDS),
-  is_personal: booleanParameter().default(false),
-  next_offset: z.string().default(''),
-  button: inlineQueryResultsButtonParameter().optional(),
-  switch_pm_text: z.string().default(''),
-  switch_pm_parameter: z.string().default(''),
-});
-
 // Business connections are not supported.
 const pinChatMessageParametersSchema = z.strictObject({
   chat_id: integerParameter(z.int()).optional(),
@@ -764,13 +678,6 @@ type InlineMessageEditResult =
   | ReturnType<EmulationSession['botApi']['editInlineMessageCaption']>
   | ReturnType<EmulationSession['botApi']['editInlineMessageMedia']>;
 
-type InlineQueryResultRequest = Parameters<
-  EmulationSession['botApi']['answerInlineQuery']
->[1]['results'][number];
-
-/** What an inline query result's `input_message_content` sends, as the service reads it. */
-type InlineResultMessageContentRequest = NonNullable<InlineQueryResultRequest['messageContent']>;
-
 /** A rich message as the service sends it, with every file it names resolved. */
 type SendableRichMessage = Pick<
   Parameters<EmulationSession['botApi']['sendRichMessage']>[1],
@@ -809,12 +716,6 @@ type FileResolutionFailure =
     readonly actualFileType: StoredFile['type'];
   };
 
-/** Formatted text as a bot specified it, the result of reading its parse mode or entities. */
-type SpecifiedFormattedText = Extract<
-  FormattedTextReadingResult,
-  { readonly read: true }
->['formattedText'];
-
 /** A poll's type as `sendPoll` takes it. */
 type PollTypeRequest = Parameters<EmulationSession['botApi']['sendPoll']>[1]['type'];
 
@@ -832,17 +733,10 @@ type SendOptionsParameters =
   & z.infer<z.ZodObject<typeof sendOptionsParametersShape>>
   & Partial<z.infer<z.ZodObject<typeof replyMarkupParametersShape>>>;
 
-type FormattedTextReadingResult = ReturnType<EmulationSession['botApi']['readFormattedText']>;
-
 /** Message text with the entities its bot specified, or the error answer for reading it. */
 type SpecifiedFormattedTextReading =
   | Extract<FormattedTextReadingResult, { readonly read: true }>
   | { readonly read: false; readonly errorAnswer: BotApiMethodAnswer };
-
-/** Text with the entities its bot specified, or Telegram's description of why it is unreadable. */
-type FormattedTextParametersReading =
-  | Extract<FormattedTextReadingResult, { readonly read: true }>
-  | { readonly read: false; readonly description: string };
 
 /** Where an edit method finds the message it edits, or the error answer for its parameters. */
 type EditedMessageTargetReading =
@@ -862,8 +756,7 @@ const BOT_API_METHODS: readonly BotApiMethod[] = [
   ...CHAT_MEMBER_METHODS,
   ...CHAT_INVITE_LINK_METHODS,
   ...CHAT_JOIN_REQUEST_METHODS,
-  { name: 'answerCallbackQuery', handler: handleAnswerCallbackQuery },
-  { name: 'answerInlineQuery', handler: handleAnswerInlineQuery },
+  ...QUERY_ANSWER_METHODS,
   { name: 'copyMessage', handler: handleCopyMessage },
   { name: 'copyMessages', handler: handleCopyMessages },
   { name: 'deleteMessage', handler: handleDeleteMessage },
@@ -1967,26 +1860,6 @@ function readMessageReplyMarkupParameter(
   };
 }
 
-/**
- * Reads the inline keyboard a request attaches, as `BotApiService.readInlineKeyboard` does,
- * answering Telegram's error for a button it cannot read; a request without one reads none.
- */
-function readInlineKeyboardParameter(
-  context: BotApiMethodContext,
-  inlineKeyboard: InlineKeyboard | undefined,
-):
-  | { readonly read: true; readonly inlineKeyboard: InlineKeyboard | undefined }
-  | { readonly read: false; readonly errorAnswer: BotApiMethodAnswer } {
-  if (inlineKeyboard === undefined) {
-    return { read: true, inlineKeyboard };
-  }
-  const reading = context.session.botApi.readInlineKeyboard(inlineKeyboard);
-  return reading.read ? reading : {
-    read: false,
-    errorAnswer: botApiError(400, badRequestDescription(reading.keyboardError)),
-  };
-}
-
 /** The error for a file parameter that names no uploaded file. */
 function missingInputFileError(
   parameterName: 'photo' | 'document' | 'video' | 'voice' | 'audio',
@@ -2440,58 +2313,6 @@ function withErrorAnswer(reading: FormattedTextParametersReading): SpecifiedForm
 }
 
 /**
- * Reads text with the parse mode or entities that format it, answering Telegram's error for text
- * or formatting it cannot read.
- *
- * Entities are decoded even alongside a parse mode, which makes Telegram ignore them, so malformed
- * entities are rejected in either case to surface the bot's mistake in tests.
- */
-function readFormattedTextParameters(
-  context: BotApiMethodContext,
-  { text, parseMode, entities }: {
-    readonly text: string;
-    readonly parseMode: string | undefined;
-    readonly entities: readonly unknown[] | undefined;
-  },
-  invalidParametersDescription: string,
-): FormattedTextParametersReading {
-  const failure = (description: string): FormattedTextParametersReading => ({
-    read: false,
-    description,
-  });
-  const entitiesReading = readMessageEntitiesParameter(
-    entities ?? [],
-    invalidParametersDescription,
-  );
-  if (!entitiesReading.read) {
-    return failure(entitiesReading.description);
-  }
-
-  const result = context.session.botApi.readFormattedText({
-    text,
-    parseMode,
-    entities: entitiesReading.entities,
-  });
-  if (result.read) {
-    return result;
-  }
-  switch (result.reason) {
-    case 'text_too_long':
-      return failure(FORMATTED_TEXT_TOO_LONG_DESCRIPTION);
-    case 'parse_mode_unsupported':
-      return failure(PARSE_MODE_UNSUPPORTED_DESCRIPTION);
-    case 'text_encoding_invalid':
-      return failure(TEXT_ENCODING_INVALID_DESCRIPTION);
-    case 'markup_invalid':
-      return failure(`Bad Request: can't parse entities: ${result.markupError}`);
-    default: {
-      const unhandledFailure: never = result;
-      throw new Error(`Unhandled text reading failure: ${JSON.stringify(unhandledFailure)}`);
-    }
-  }
-}
-
-/**
  * Reads where an edit method finds the message, as the official Bot API server does: an edit
  * without `chat_id` and without a positive `message_id` addresses an inline message by its
  * `inline_message_id`, which it reports missing as an unspecified message identifier.
@@ -2854,40 +2675,6 @@ function handleDeleteMessages(
   }
 }
 
-function handleAnswerCallbackQuery(
-  context: BotApiMethodContext,
-  parameters: BotApiRequestParameters,
-): BotApiMethodAnswer {
-  const parsedParameters = answerCallbackQueryParametersSchema.safeParse(parameters);
-  if (!parsedParameters.success) {
-    return botApiError(400, 'Bad Request: invalid answerCallbackQuery parameters');
-  }
-
-  const result = context.session.botApi.answerCallbackQuery(
-    context.bot,
-    {
-      callbackQueryId: parsedParameters.data.callback_query_id,
-      text: parsedParameters.data.text,
-      showAlert: parsedParameters.data.show_alert,
-      cacheTimeSeconds: parsedParameters.data.cache_time,
-      url: parsedParameters.data.url,
-    },
-  );
-  if (result.answered) {
-    return botApiResult(true);
-  }
-  switch (result.reason) {
-    case 'query_id_invalid':
-      return botApiError(400, QUERY_ID_INVALID_DESCRIPTION);
-    case 'url_invalid':
-      return botApiError(400, URL_INVALID_DESCRIPTION);
-    default: {
-      const unhandledReason: never = result.reason;
-      throw new Error(`Unhandled answerCallbackQuery failure: ${unhandledReason}`);
-    }
-  }
-}
-
 function handleSendChatAction(
   context: BotApiMethodContext,
   parameters: BotApiRequestParameters,
@@ -2925,324 +2712,6 @@ function handleSendChatAction(
       throw new Error(`Unhandled sendChatAction failure: ${unhandledReason}`);
     }
   }
-}
-
-function handleAnswerInlineQuery(
-  context: BotApiMethodContext,
-  parameters: BotApiRequestParameters,
-  uploadedFiles: BotApiUploadedFiles,
-): BotApiMethodAnswer {
-  const invalidParametersDescription = 'Bad Request: invalid answerInlineQuery parameters';
-  const parsedParameters = answerInlineQueryParametersSchema.safeParse(parameters);
-  if (!parsedParameters.success) {
-    return botApiError(400, invalidParametersDescription);
-  }
-  const { data } = parsedParameters;
-  const resultsReading = readInlineQueryResultsParameter(
-    data.results ?? [],
-    invalidParametersDescription,
-  );
-  if (!resultsReading.read) {
-    return botApiError(400, resultsReading.description);
-  }
-  const results: InlineQueryResultRequest[] = [];
-  for (const result of resultsReading.results) {
-    const keyboardReading = readInlineKeyboardParameter(context, result.inlineKeyboard);
-    if (!keyboardReading.read) {
-      return keyboardReading.errorAnswer;
-    }
-    const resultReading = readInlineQueryResultContent(
-      context,
-      { ...result, inlineKeyboard: keyboardReading.inlineKeyboard },
-      uploadedFiles,
-      invalidParametersDescription,
-    );
-    if (!resultReading.read) {
-      return botApiError(400, resultReading.description);
-    }
-    results.push(resultReading.result);
-  }
-  const button = data.button ?? (data.switch_pm_text.length === 0 ? undefined : {
-    kind: 'start_bot' as const,
-    text: data.switch_pm_text,
-    startParameter: data.switch_pm_parameter,
-  });
-
-  const result = context.session.botApi.answerInlineQuery(
-    context.bot,
-    {
-      inlineQueryId: data.inline_query_id,
-      results,
-      cacheTimeSeconds: data.cache_time,
-      isPersonal: data.is_personal,
-      nextOffset: data.next_offset,
-      button,
-    },
-  );
-  if (result.answered) {
-    return botApiResult(true);
-  }
-  switch (result.reason) {
-    case 'text_invalid':
-      return botApiError(400, badRequestDescription(result.textError));
-    case 'file_type_mismatch':
-      return botApiError(
-        400,
-        `Bad Request: can't use file of type ${TDLIB_FILE_TYPE_NAMES[result.actualFileType]} as ${
-          TDLIB_FILE_TYPE_NAMES[result.expectedFileType]
-        }`,
-      );
-    default:
-      return botApiError(400, ANSWER_INLINE_QUERY_FAILURE_DESCRIPTIONS[result.reason]);
-  }
-}
-
-/**
- * Reads what an inline query result sends and shows: its `input_message_content`, whose text is
- * read with its parse mode or entities and whose rich message is read as `sendRichMessage` reads
- * one, and its caption.
- */
-function readInlineQueryResultContent(
-  context: BotApiMethodContext,
-  result: InlineQueryResultParameter,
-  uploadedFiles: BotApiUploadedFiles,
-  invalidParametersDescription: string,
-):
-  | { readonly read: true; readonly result: InlineQueryResultRequest }
-  | { readonly read: false; readonly description: string } {
-  const readText = (text: UnreadFormattedText) =>
-    readEmbeddedFormattedText(
-      context,
-      text,
-      invalidParametersDescription,
-      INLINE_QUERY_RESULT_ERROR_PREFIX,
-    );
-  const shared = {
-    id: result.id,
-    ...(result.inlineKeyboard === undefined ? {} : { inlineKeyboard: result.inlineKeyboard }),
-  };
-  const messageContentReading = result.messageContent === undefined
-    ? undefined
-    : readInlineResultMessageContent(
-      context,
-      result.messageContent,
-      uploadedFiles,
-      invalidParametersDescription,
-    );
-  if (messageContentReading?.read === false) {
-    return messageContentReading;
-  }
-  const messageContent = messageContentReading?.content;
-  if (result.kind === 'article') {
-    if (messageContent === undefined) {
-      throw new Error('Expected an article result to send its input message content');
-    }
-    return {
-      read: true,
-      result: {
-        ...shared,
-        kind: 'article',
-        description: result.description,
-        title: result.title,
-        url: result.url,
-        messageContent,
-      },
-    };
-  }
-  const optionalMessageContent = messageContent === undefined ? {} : { messageContent };
-  if (result.kind === 'contact') {
-    return {
-      read: true,
-      result: { ...shared, ...optionalMessageContent, kind: 'contact', contact: result.contact },
-    };
-  }
-  if (result.kind === 'location') {
-    const location = readUnreadLocation(result.location);
-    return location === undefined ? { read: false, description: LOCATION_INVALID_DESCRIPTION } : {
-      read: true,
-      result: {
-        ...shared,
-        ...optionalMessageContent,
-        kind: 'location',
-        title: result.title,
-        location,
-      },
-    };
-  }
-
-  const captionReading = readText(result.caption);
-  if (!captionReading.read) {
-    return captionReading;
-  }
-  const media = {
-    ...shared,
-    ...optionalMessageContent,
-    title: result.title,
-    caption: captionReading.formattedText,
-  };
-  switch (result.kind) {
-    case 'photo':
-      return {
-        read: true,
-        result: {
-          ...media,
-          kind: 'photo',
-          description: result.description,
-          photo: result.photo,
-          thumbnailUrl: result.thumbnailUrl,
-          showsCaptionAboveMedia: result.showsCaptionAboveMedia,
-        },
-      };
-    case 'document':
-      return {
-        read: true,
-        result: {
-          ...media,
-          kind: 'document',
-          description: result.description,
-          document: result.document,
-          thumbnailUrl: result.thumbnailUrl,
-        },
-      };
-    case 'video':
-      return {
-        read: true,
-        result: {
-          ...media,
-          kind: 'video',
-          description: result.description,
-          video: result.video,
-          thumbnailUrl: result.thumbnailUrl,
-          showsCaptionAboveMedia: result.showsCaptionAboveMedia,
-          attributes: result.attributes,
-        },
-      };
-    case 'voice':
-      return {
-        read: true,
-        result: {
-          ...media,
-          kind: 'voice',
-          voice: result.voice,
-          durationSeconds: result.durationSeconds,
-        },
-      };
-    case 'audio':
-      return {
-        read: true,
-        result: {
-          ...media,
-          kind: 'audio',
-          audio: result.audio,
-          performer: result.performer,
-          durationSeconds: result.durationSeconds,
-        },
-      };
-    default: {
-      const unhandledResult: never = result;
-      throw new Error(`Unhandled inline query result: ${JSON.stringify(unhandledResult)}`);
-    }
-  }
-}
-
-/**
- * Reads what a result's `input_message_content` sends: text with its parse mode or entities; a
- * rich message, read as `readSpecifiedRichMessage` reads the `rich_message` of `sendRichMessage`;
- * a contact, which the service cleans as `sendContact` does; or a static location, whose
- * coordinates must name a point on Earth, as TDLib's `process_input_message_location` requires.
- * A rich message's uploads are read so that answering can refuse them, as TDLib refuses an inline
- * message's uploads. The official server prefixes its own descriptions of a rich message it cannot
- * read with `can't parse InlineQueryResult: `, which the emulator words as for `sendRichMessage`.
- */
-function readInlineResultMessageContent(
-  context: BotApiMethodContext,
-  content: UnreadInputMessageContent,
-  uploadedFiles: BotApiUploadedFiles,
-  invalidParametersDescription: string,
-):
-  | { readonly read: true; readonly content: InlineResultMessageContentRequest }
-  | { readonly read: false; readonly description: string } {
-  if (content.kind === 'text') {
-    const textReading = readEmbeddedFormattedText(
-      context,
-      content.text,
-      invalidParametersDescription,
-      INLINE_QUERY_RESULT_ERROR_PREFIX,
-    );
-    return textReading.read
-      ? { read: true, content: { kind: 'text', text: textReading.formattedText } }
-      : textReading;
-  }
-  if (content.kind === 'contact') {
-    return { read: true, content };
-  }
-  if (content.kind === 'location') {
-    const location = readUnreadLocation(content.location);
-    return location === undefined
-      ? { read: false, description: LOCATION_INVALID_DESCRIPTION }
-      : { read: true, content: { kind: 'location', location } };
-  }
-  const richMessageReading = readRichMessageParameter(
-    JSON.stringify(content.richMessage),
-    uploadedFiles,
-    invalidParametersDescription,
-  );
-  if (!richMessageReading.read) {
-    return richMessageReading;
-  }
-  const buttonReading = context.session.botApi.readRichMessageButtons(
-    richMessageReading.richMessage,
-  );
-  if (!buttonReading.read) {
-    return { read: false, description: badRequestDescription(buttonReading.keyboardError) };
-  }
-  // An inline query result's rich message must reuse files by `file_id`, as for uploads.
-  const richMessage = excludeRichMessageWebFiles(buttonReading.richMessage);
-  return richMessage === undefined
-    ? {
-      read: false,
-      description: ANSWER_INLINE_QUERY_FAILURE_DESCRIPTIONS.inline_message_content_invalid,
-    }
-    : {
-      read: true,
-      content: {
-        kind: 'rich_message',
-        richMessage,
-        detectsEntities: richMessageReading.detectsEntities,
-      },
-    };
-}
-
-/**
- * Reads text of an object that a parameter holds as JSON, such as an inline query result, as
- * `readFormattedTextParameters` does. The Bot API server reports text it cannot read as an object
- * it cannot read, prefixing Telegram's own description with `objectErrorPrefix`.
- */
-function readEmbeddedFormattedText(
-  context: BotApiMethodContext,
-  { text, parseMode, entities }: UnreadFormattedText,
-  invalidParametersDescription: string,
-  objectErrorPrefix: string,
-): { readonly read: true; readonly formattedText: SpecifiedFormattedText } | {
-  readonly read: false;
-  readonly description: string;
-} {
-  const reading = readFormattedTextParameters(
-    context,
-    { text, parseMode, entities },
-    invalidParametersDescription,
-  );
-  if (reading.read || reading.description === invalidParametersDescription) {
-    return reading;
-  }
-  // Telegram's descriptions begin with a capital letter, which `badRequestDescription` lowered.
-  const telegramError = reading.description.slice(BAD_REQUEST_PREFIX.length);
-  return {
-    read: false,
-    description: `${BAD_REQUEST_PREFIX}${objectErrorPrefix}${
-      telegramError.charAt(0).toUpperCase()
-    }${telegramError.slice(1)}`,
-  };
 }
 
 /** Sends a Bot API method's answer as the JSON body of an HTTP response. */
