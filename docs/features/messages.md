@@ -263,6 +263,7 @@ Other origins are users. Channel and chat origins are [real gaps](#real-gaps).
 [reply rules](../../src/types/message_reply.ts), [chat actions](../../src/services/chat_action.ts),
 [private messaging tests](../../tests/private_messaging_service_test.ts),
 [forward tests](../../tests/message_forward_test.ts),
+[forwarding and copying tests](../../tests/bot_message_repetition_test.ts),
 [reply tests](../../tests/message_reply_test.ts) and
 [chat action tests](../../tests/chat_action_service_test.ts).
 
