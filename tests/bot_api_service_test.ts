@@ -25,6 +25,7 @@ import { BotApiService } from '../src/services/bot_api.ts';
 import { BotCommandService } from '../src/services/bot_command.ts';
 import { BotDefaultAdministratorRightsService } from '../src/services/bot_default_administrator_rights.ts';
 import { BotDescriptionService } from '../src/services/bot_description.ts';
+import { BotMediaResolver } from '../src/services/bot_media_resolution.ts';
 import { BotMenuButtonService } from '../src/services/bot_menu_button.ts';
 import { BotMessageViewService } from '../src/services/bot_message_view.ts';
 import { MediaFileService } from '../src/services/media_file.ts';
@@ -566,6 +567,7 @@ function createBotApiFixture() {
       events,
       currentUnixTimeSeconds: () => 1_700_000_000,
     }),
+    botMedia: new BotMediaResolver({ mediaFiles }),
     mediaFiles,
     callbackQueries,
     inlineQueries: new InlineQueryService({
