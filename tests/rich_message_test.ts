@@ -91,6 +91,135 @@ Deno.test('rich messages link to anchors and references by their raw or URL-deco
   }, 'links resolved in the order TDLib resolves them');
 });
 
+/**
+ * Projects the blocks followed by a paragraph that links to each name, and returns how the links
+ * are shown.
+ */
+function projectLinksAfter(blocks: readonly RichBlock[], names: readonly string[]): unknown {
+  const links: RichText[] = names.map((name) => ({
+    kind: 'link',
+    text: plain('go'),
+    url: `#${name}`,
+  }));
+  const projected = project({
+    blocks: [...blocks, { kind: 'paragraph', text: { kind: 'concatenation', texts: links } }],
+    isRightToLeft: false,
+  });
+  const linkParagraph = projected.blocks[projected.blocks.length - 1];
+  return linkParagraph.type === 'paragraph' ? linkParagraph.text : undefined;
+}
+
+function reference(name: string): RichText {
+  return { kind: 'reference', name, text: plain('Note') };
+}
+
+function paragraph(text: RichText): RichBlock {
+  return { kind: 'paragraph', text };
+}
+
+function listItem(blocks: readonly RichBlock[]) {
+  return { blocks, hasCheckbox: false, isChecked: false };
+}
+
+function tableCell(text: RichText) {
+  return {
+    text,
+    isHeader: false,
+    columnSpan: 1,
+    rowSpan: 1,
+    alignment: 'left',
+    verticalAlignment: 'top',
+  } as const;
+}
+
+Deno.test('an anchor block shadows a later reference of the same name, nested or not', () => {
+  const shown = projectLinksAfter([
+    { kind: 'anchor', name: 'top' },
+    paragraph(reference('top')),
+    // A blockquote shows its blocks before its credit.
+    {
+      kind: 'blockquote',
+      blocks: [{
+        kind: 'list',
+        items: [listItem([{ kind: 'anchor', name: 'quoted' }])],
+      }],
+      credit: reference('quoted'),
+    },
+    // A list shows its items in order.
+    {
+      kind: 'list',
+      items: [
+        listItem([{ kind: 'anchor', name: 'listed' }]),
+        listItem([paragraph(reference('listed'))]),
+      ],
+    },
+    // A details block shows its blocks before the blocks after it.
+    {
+      kind: 'details',
+      summary: plain('More'),
+      blocks: [{ kind: 'anchor', name: 'detailed' }],
+      isOpen: true,
+    },
+    paragraph(reference('detailed')),
+  ], ['top', 'quoted', 'listed', 'detailed']);
+
+  expectJson(
+    shown,
+    ['top', 'quoted', 'listed', 'detailed'].map((name) => ({
+      type: 'anchor_link',
+      text: 'go',
+      anchor_name: name,
+    })),
+    'links to the anchor blocks that come first',
+  );
+});
+
+Deno.test('a reference shadows a later anchor block of the same name, nested or not', () => {
+  const shown = projectLinksAfter([
+    paragraph(reference('top')),
+    { kind: 'anchor', name: 'top' },
+    // A details block shows its summary before its blocks.
+    {
+      kind: 'details',
+      summary: reference('summarized'),
+      blocks: [{ kind: 'anchor', name: 'summarized' }],
+      isOpen: false,
+    },
+    // A list shows its items in order, and a blockquote its blocks before its credit.
+    {
+      kind: 'list',
+      items: [
+        listItem([{
+          kind: 'blockquote',
+          blocks: [paragraph(reference('quoted'))],
+          credit: { kind: 'anchor', name: 'quoted' },
+        }]),
+        listItem([{ kind: 'anchor', name: 'quoted' }]),
+      ],
+    },
+    // A table shows its cells, row by row, before its caption.
+    {
+      kind: 'table',
+      rows: [[tableCell(plain('Name'))], [tableCell(reference('tabled'))]],
+      caption: { kind: 'anchor', name: 'tabled' },
+      isBordered: false,
+      isStriped: false,
+      isCompact: false,
+    },
+    { kind: 'anchor', name: 'tabled' },
+  ], ['top', 'summarized', 'quoted', 'tabled']);
+
+  expectJson(
+    shown,
+    ['top', 'summarized', 'quoted', 'tabled'].map((name) => ({
+      type: 'reference_link',
+      text: 'go',
+      reference_name: name,
+    })),
+    'links to the references that come first',
+  );
+});
+
 Deno.test('rich message list items show the labels TDLib gives them', () => {
   const labels: Array<readonly [OrderedListItemLabelType, number, string]> = [
     ['1', 3, '3.'],
