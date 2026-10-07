@@ -20,6 +20,7 @@ import { PrivateConversationRepository } from '../src/repositories/private_conve
 import { SharedChatRepository } from '../src/repositories/shared_chat.ts';
 import { TelegramIdentityRepository } from '../src/repositories/telegram_identity.ts';
 import { MessageBoxRepository } from '../src/repositories/message_box.ts';
+import { createAccountChatMessageReader } from '../src/services/account_chat_message.ts';
 import { BotActivityService } from '../src/services/bot_activity.ts';
 import { BotApiService } from '../src/services/bot_api.ts';
 import { BotCommandService } from '../src/services/bot_command.ts';
@@ -490,12 +491,15 @@ function createBotApiFixture() {
     currentUnixTimeSeconds: () => 1_700_000_000,
   });
   const callbackQueries = new CallbackQueryService({
-    accounts,
+    accountChatMessages: createAccountChatMessageReader({
+      accounts,
+      bots,
+      privateConversations,
+      privateMessages: privateMessaging,
+      sharedChats,
+      supergroupMessages: supergroupMessaging,
+    }),
     bots,
-    privateConversations,
-    privateMessages: privateMessaging,
-    sharedChats,
-    supergroupMessages: supergroupMessaging,
     callbackQueries: new CallbackQueryRepository(),
     events,
   });

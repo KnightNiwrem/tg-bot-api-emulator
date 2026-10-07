@@ -549,20 +549,6 @@ export type GetSupergroupMessageForBotResult =
     readonly reason: 'bot_not_found' | SupergroupBotAccessFailureReason | 'message_not_found';
   };
 
-export interface GetSupergroupMessageForAccountInput {
-  readonly accountId: number;
-  readonly chatId: number;
-  /** The supergroup's ID of the message. */
-  readonly messageId: number;
-}
-
-export type GetSupergroupMessageForAccountResult =
-  | { readonly found: true; readonly message: SupergroupMessage; readonly supergroup: Supergroup }
-  | {
-    readonly found: false;
-    readonly reason: 'account_not_found' | 'chat_not_found' | 'not_a_member' | 'message_not_found';
-  };
-
 export interface GetSupergroupMessageHistoryInput {
   readonly accountId: number;
   readonly chatId: number;
@@ -1399,23 +1385,6 @@ export class SupergroupMessagingService {
     return message === undefined
       ? { found: false, reason: 'message_not_found' }
       : { found: true, message, supergroup: access.supergroup };
-  }
-
-  /**
-   * Finds a message of a supergroup the account is a member of, as the account addresses a message
-   * it forwards.
-   */
-  getMessageForAccount(
-    { accountId, chatId, messageId }: GetSupergroupMessageForAccountInput,
-  ): GetSupergroupMessageForAccountResult {
-    const memberResolution = this.#resolveAccountMember(accountId, chatId);
-    if (!memberResolution.resolved) {
-      return { found: false, reason: memberResolution.reason };
-    }
-    const message = this.getMessageByChatMessageId(chatId, messageId);
-    return message === undefined
-      ? { found: false, reason: 'message_not_found' }
-      : { found: true, message, supergroup: memberResolution.supergroup };
   }
 
   /** Finds a message of a supergroup by the ID the supergroup's message box gave it. */
