@@ -4,7 +4,7 @@ import { z } from 'zod';
 
 import type { QueuedRateLimitResponses } from '../../../types/bot_rate_limit.ts';
 import { isTelegramUsername } from '../../../types/telegram_identity.ts';
-import { findBotApiMethod } from '../bot_api/mod.ts';
+import { findBotApiMethod } from '../bot_api/method_catalogue.ts';
 import { readJsonRequestBody } from '../json_request_body.ts';
 import type { SessionRouteContextTypes } from '../session_route_context_types.ts';
 import { BOT_ID_PARAMETER, botIdPathParameterSchema } from './bot_id_path_parameter.ts';

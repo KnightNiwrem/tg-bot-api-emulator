@@ -199,7 +199,8 @@ managing individual profiles is missing.
 
 [Session lifecycle](../../src/services/session_lifecycle.ts),
 [request decoding](../../src/api/sessions/bot_api/request_parameters.ts),
-[method schemas](../../src/api/sessions/bot_api/mod.ts),
+[method invocation](../../src/api/sessions/bot_api/method_invocation.ts),
+[method schemas](../../src/api/sessions/bot_api/methods/),
 [rate limit answers](../../src/services/bot_rate_limit.ts),
 [server error answers](../../src/services/bot_server_error.ts) and
 [their dispatch](../../src/api/sessions/bot_api/queued_answer.ts),

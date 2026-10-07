@@ -169,7 +169,7 @@ Pins are kept by Telegram's servers, whose decisions the open-source code shows 
 
 [Domain model](../../src/types/virtual_message.ts),
 [pinning](../../src/services/message_pinning.ts), [storage](../../src/repositories/message.ts),
-[Bot API handlers](../../src/api/sessions/bot_api/mod.ts),
+[Bot API handlers](../../src/api/sessions/bot_api/methods/message_pinning.ts),
 [Bot API service](../../src/services/bot_api.ts),
 [update delivery](../../src/services/bot_update_delivery.ts),
 [projection](../../src/projections/bot_api_message.ts),

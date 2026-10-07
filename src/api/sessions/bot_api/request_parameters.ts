@@ -179,6 +179,14 @@ export function integerParameter<Output>(integerSchema: z.ZodType<Output, number
 }
 
 /**
+ * An integer parameter that the official Bot API server clamps to a range, as its
+ * `get_integer_arg` does.
+ */
+export function clampedIntegerParameter(min: number, max: number) {
+  return integerParameter(z.int().transform((value) => Math.min(Math.max(value, min), max)));
+}
+
+/**
  * A parameter holding a decimal number, possibly with a fraction and an exponent, which may be too
  * large to be finite. Telegram reads any leading number and ignores the rest; rejecting other
  * text, such as `NaN`, instead surfaces the bot's mistake in tests.
