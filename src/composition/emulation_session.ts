@@ -33,6 +33,8 @@ import { BotDefaultAdministratorRightsService } from '../services/bot_default_ad
 import { BotDescriptionService } from '../services/bot_description.ts';
 import { BotMediaResolver } from '../services/bot_media_resolution.ts';
 import { BotMenuButtonService } from '../services/bot_menu_button.ts';
+import { BotMessageRepeater } from '../services/bot_message_repetition.ts';
+import { BotMessageSender } from '../services/bot_message_sending.ts';
 import { BotMessageViewService } from '../services/bot_message_view.ts';
 import { BotRateLimitService } from '../services/bot_rate_limit.ts';
 import { BotServerErrorService } from '../services/bot_server_error.ts';
@@ -291,12 +293,27 @@ export function createEmulationSession(
     currentUnixTimeSeconds,
   });
   const sessionTextFixingContext = createSessionUserMentionContext({ accounts, bots });
+  const botMessageSender = new BotMessageSender({
+    botMessages: privateMessaging,
+    supergroupBotMessages: supergroupMessaging,
+    botMessageViews,
+    chatActions,
+    getPrivateForwardName: getAccountPrivateForwardName,
+  });
   const botApi = new BotApiService({
     bots,
     updatePolling: botUpdatePolling,
     webhooks: botWebhooks,
     botMessages: privateMessaging,
     supergroupBotMessages: supergroupMessaging,
+    messageSender: botMessageSender,
+    messageRepeater: new BotMessageRepeater({
+      messageSender: botMessageSender,
+      mediaGroups: messages,
+      polls,
+      getPrivateForwardName: getAccountPrivateForwardName,
+      currentUnixTimeSeconds,
+    }),
     chatMemberships: sharedChatAdministration,
     chatAdmission,
     botMessageViews,
@@ -307,8 +324,6 @@ export function createEmulationSession(
     callbackQueries,
     inlineQueries,
     inlineMessages: messages,
-    mediaGroups: messages,
-    polls,
     botCaptions: {
       normalizeBotCaption: (caption) => normalizeCaption(caption, 'bot', sessionTextFixingContext),
     },
@@ -318,7 +333,6 @@ export function createEmulationSession(
     menuButtons: botMenuButtons,
     chatActions,
     publicChats: sharedChatAdministration,
-    getPrivateForwardName: getAccountPrivateForwardName,
     currentUnixTimeSeconds,
   });
 

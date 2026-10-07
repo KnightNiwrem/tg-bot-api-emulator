@@ -27,6 +27,8 @@ import { BotDefaultAdministratorRightsService } from '../src/services/bot_defaul
 import { BotDescriptionService } from '../src/services/bot_description.ts';
 import { BotMediaResolver } from '../src/services/bot_media_resolution.ts';
 import { BotMenuButtonService } from '../src/services/bot_menu_button.ts';
+import { BotMessageRepeater } from '../src/services/bot_message_repetition.ts';
+import { BotMessageSender } from '../src/services/bot_message_sending.ts';
 import { BotMessageViewService } from '../src/services/bot_message_view.ts';
 import { MediaFileService } from '../src/services/media_file.ts';
 import { normalizeCaption } from '../src/services/message_content.ts';
@@ -513,6 +515,20 @@ function createBotApiFixture() {
       download: () => Promise.resolve({ downloaded: false, reason: 'content_unavailable' }),
     },
   });
+  const chatActions = new ChatActionService({
+    accounts,
+    bots,
+    sharedChats,
+    chatActions: new ChatActionRepository(),
+    currentTimeMilliseconds: () => 1_700_000_000_000,
+  });
+  const messageSender = new BotMessageSender({
+    botMessages: privateMessaging,
+    supergroupBotMessages: supergroupMessaging,
+    botMessageViews,
+    chatActions,
+    getPrivateForwardName: () => undefined,
+  });
   const botApi = new BotApiService({
     bots,
     updatePolling: new BotUpdatePollingService({
@@ -536,6 +552,14 @@ function createBotApiFixture() {
     }),
     botMessages: privateMessaging,
     supergroupBotMessages: supergroupMessaging,
+    messageSender,
+    messageRepeater: new BotMessageRepeater({
+      messageSender,
+      mediaGroups: messages,
+      polls,
+      getPrivateForwardName: () => undefined,
+      currentUnixTimeSeconds: () => 1_700_000_000,
+    }),
     chatMemberships: sharedChatAdministration,
     chatAdmission: new ChatAdmissionService({
       accounts,
@@ -582,8 +606,6 @@ function createBotApiFixture() {
       currentTimeMilliseconds: () => 1_700_000_000_000,
     }),
     inlineMessages: messages,
-    mediaGroups: messages,
-    polls,
     botCaptions: {
       normalizeBotCaption: (caption) =>
         normalizeCaption(caption, 'bot', {
@@ -611,15 +633,8 @@ function createBotApiFixture() {
       bots,
       menuButtons: new BotMenuButtonRepository(),
     }),
-    chatActions: new ChatActionService({
-      accounts,
-      bots,
-      sharedChats,
-      chatActions: new ChatActionRepository(),
-      currentTimeMilliseconds: () => 1_700_000_000_000,
-    }),
+    chatActions,
     publicChats: sharedChatAdministration,
-    getPrivateForwardName: () => undefined,
     currentUnixTimeSeconds: () => 1_700_000_000,
   });
   return {

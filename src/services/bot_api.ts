@@ -43,8 +43,6 @@ import {
   MIN_POLL_OPEN_PERIOD_SECONDS,
   type Poll,
   type PollClosingTime,
-  type PollId,
-  showsQuizSolution,
 } from '../types/poll.ts';
 import {
   allowsSomeInlineQueryChat,
@@ -52,19 +50,10 @@ import {
   type InlineKeyboardButton,
 } from '../types/inline_keyboard.ts';
 import {
-  createMessageForward,
-  getRepeatedContent,
-  isForwardable,
-  type PrivateForwardNameLookup,
-  withVideoStartTimestamp,
-} from '../types/message_forward.ts';
-import {
   type AlbumCompositionFailureReason,
   checkAlbumComposition,
-  groupRepeatedAlbums,
   toAlbumMember,
 } from '../types/media_album.ts';
-import { createExternalReply, type ExternalReplyTarget } from '../types/message_reply.ts';
 import {
   type BotMessageReplyMarkup,
   getGroupReplyKeyboardRequestError,
@@ -93,17 +82,15 @@ import {
 import type { BotUploadTooBigFailure } from '../types/upload_profile.ts';
 import { isUserId } from '../types/telegram_identity.ts';
 import type { VirtualBot, VirtualBotProfile } from '../types/virtual_bot.ts';
-import type { ChatAction, ChatActionChat, Supergroup } from '../types/virtual_chat.ts';
 import {
-  type CanonicalMessageId,
+  type ChatAction,
+  type ChatActionChat,
+  getBotChatActionChat,
+} from '../types/virtual_chat.ts';
+import {
   type ChatMessage,
   type InlineMessageId,
-  isCaptionedMediaContent,
-  isContentMessage,
   type LocationMessageContent,
-  type MediaGroupId,
-  type MessageContent,
-  type MessageForwardInfo,
   type PrivateMessage,
   type SupergroupMessage,
   type SupergroupMessageAuthor,
@@ -158,7 +145,6 @@ import type {
 } from './inline_query.ts';
 import type {
   CaptionNormalization,
-  ContentNormalizationFailure,
   ContentTextNormalizationFailure,
   MediaContent,
   OutgoingCaptionedMedia,
@@ -185,16 +171,9 @@ import type {
 } from './message_reaction.ts';
 import type { PollStopFailureReason } from './poll.ts';
 import type { PollLimitFailure } from './poll_normalization.ts';
-import type {
-  SendBotAlbumInput,
-  SendBotAlbumResult,
-  StopBotPollInput,
-  StopBotPollResult,
-} from './private_messaging.ts';
+import type { StopBotPollInput, StopBotPollResult } from './private_messaging.ts';
 import type {
   SendPermissionMissingFailure,
-  SendSupergroupBotAlbumInput,
-  SendSupergroupBotAlbumResult,
   StopSupergroupBotPollInput,
   StopSupergroupBotPollResult,
 } from './supergroup_messaging.ts';
@@ -282,10 +261,10 @@ export interface ReplyTarget {
  * Where and how a send method sends its message, apart from what it replies to. The reply markup
  * is an inline keyboard or a change of the reply interface.
  */
-type SendDestinationOptions = BotMessageReplyMarkup & SendDeliveryOptions;
+export type SendDestinationOptions = BotMessageReplyMarkup & SendDeliveryOptions;
 
 /** Where and how a send method sends its messages, apart from their reply and reply markup. */
-interface SendDeliveryOptions {
+export interface SendDeliveryOptions {
   /**
    * The Bot API `chat_id`: for a private chat, the other user's ID, which is positive; for a
    * supergroup, its negative chat ID.
@@ -307,21 +286,6 @@ export type SendRequestOptions = SendDestinationOptions & {
   /** Omitted for a message that replies to none. */
   readonly replyTo?: ReplyTarget;
 };
-
-/**
- * What a message being sent replies to: a message of its own chat, which the chat's messaging
- * service looks up, or a resolved message of another chat; neither for a message that replies to
- * none. The messaging service finds the chosen quote in the replied message.
- */
-type OutgoingReply =
-  & (
-    | { readonly replyTo?: ReplyTarget; readonly externalReply?: never }
-    | { readonly externalReply: ExternalReplyTarget; readonly replyTo?: never }
-  )
-  & {
-    /** The part of the replied message the bot chose to quote; omitted for none. */
-    readonly quote?: SpecifiedQuote;
-  };
 
 export type SendMessageRequest = SpecifiedFormattedText & SendRequestOptions;
 
@@ -581,15 +545,6 @@ export interface ForwardMessageRequest {
   readonly messageEffectId?: string;
 }
 
-/**
- * Why the message that a forward or copy repeats cannot be read: its chat is unknown to the bot,
- * or the bot is no member of it, or the chat has no such message.
- */
-type RepeatedMessageFailureReason =
-  | 'chat_not_found'
-  | FormerSupergroupMemberFailureReason
-  | 'repeated_message_not_found';
-
 /** A failure of a forward or copy that a send cannot have. */
 type RepetitionFailure<NotRepeatableReason extends string> = {
   readonly sent: false;
@@ -611,6 +566,9 @@ export type CopyMessageRequest = SendRequestOptions & {
    */
   readonly showsCaptionAboveMedia: boolean;
 };
+
+/** A copy that `copyMessage` sent, with the new message, or why it was not sent. */
+export type CopyMessageSendResult = SendResult | RepetitionFailure<'message_not_copyable'>;
 
 /** The Bot API answers a copy with the new message's ID rather than the message. */
 export type CopyMessageResult =
@@ -658,27 +616,6 @@ export type RepeatMessagesResult =
       | 'repeated_message_ids_not_increasing'
       | 'messages_not_repeatable';
   };
-
-/** What a message sent by `forwardMessages` or `copyMessages` repeats of the original. */
-interface MessageRepetition {
-  /** The original's content, or, for a copy of a poll, a new poll like the original's. */
-  readonly content: OutgoingMessageContent;
-  /** Omitted for a copy, which does not show where it came from. */
-  readonly forwardInfo?: MessageForwardInfo;
-  /** Omitted when the repetition shows no inline keyboard. */
-  readonly inlineKeyboard?: InlineKeyboard;
-}
-
-/**
- * What a forward or copy shows beyond its content and reply markup: where a forward's content
- * first appeared, and the new album that a repeated message of an album belongs to.
- */
-interface RepetitionDetails {
-  /** Omitted for a message that is no forward. */
-  readonly forwardInfo?: MessageForwardInfo;
-  /** Omitted for a message sent outside any album. */
-  readonly mediaGroupId?: MediaGroupId;
-}
 
 export interface EditMessageTextRequest extends MessageTarget {
   readonly content: TextMessageReplacementRequest;
@@ -1511,22 +1448,6 @@ interface BotPrivateChat {
   readonly accountId: number;
 }
 
-type BotMessageSendingResult =
-  | { readonly sent: true; readonly message: PrivateMessage }
-  | {
-    readonly sent: false;
-    readonly reason:
-      | 'bot_not_found'
-      | 'message_text_empty'
-      | 'account_not_found'
-      | 'conversation_not_started'
-      | 'reply_message_not_found'
-      | 'callback_data_invalid'
-      | 'quote_invalid'
-      | 'bot_blocked';
-  }
-  | ({ readonly sent: false } & ContentNormalizationFailure);
-
 /** Why an edit of any kind can fail, apart from failures about the new content. */
 type BotMessageEditFailureReason =
   | 'bot_not_found'
@@ -1572,39 +1493,6 @@ interface BotMessaging {
   isPrivateConversationStarted(
     key: { readonly accountId: number; readonly botId: number },
   ): boolean;
-  getMessageForBot(input: {
-    readonly botId: number;
-    readonly accountId: number;
-    readonly botMessageId: number;
-  }):
-    | { readonly found: true; readonly message: PrivateMessage }
-    | {
-      readonly found: false;
-      readonly reason:
-        | 'bot_not_found'
-        | 'account_not_found'
-        | 'conversation_not_started'
-        | 'message_not_found';
-    };
-  sendBotMessage(
-    input: BotMessageReplyMarkup & {
-      readonly fromBotId: number;
-      readonly to: BotPrivateChat;
-      readonly content: OutgoingMessageContent;
-      readonly replyTo?: {
-        readonly botMessageId: number;
-        readonly allowSendingWithoutReply: boolean;
-      };
-      readonly externalReply?: ExternalReplyTarget;
-      readonly quote?: SpecifiedQuote;
-      readonly isContentProtected?: boolean;
-      readonly isSilent?: boolean;
-      readonly forwardInfo?: MessageForwardInfo;
-      readonly mediaGroupId?: MediaGroupId;
-      readonly messageEffectId?: string;
-    },
-  ): BotMessageSendingResult;
-  sendBotAlbum(input: SendBotAlbumInput): SendBotAlbumResult;
   editBotMessageText(
     input: PrivateMessageEditTarget & {
       readonly content: TextMessageReplacement;
@@ -1682,63 +1570,6 @@ type SupergroupBotMessageEditFailureReason =
   | 'message_not_modified';
 
 interface SupergroupBotMessaging {
-  getMessageForBot(input: {
-    readonly botId: number;
-    readonly chatId: number;
-    readonly messageId: number;
-  }):
-    | {
-      readonly found: true;
-      readonly message: SupergroupMessage;
-      readonly supergroup: Supergroup;
-    }
-    | {
-      readonly found: false;
-      readonly reason:
-        | 'bot_not_found'
-        | 'chat_not_found'
-        | FormerSupergroupMemberFailureReason
-        | 'message_not_found';
-    };
-  sendBotMessage(
-    input: BotMessageReplyMarkup & {
-      readonly fromBotId: number;
-      readonly chatId: number;
-      readonly content: OutgoingMessageContent;
-      readonly replyTo?: {
-        readonly messageId: number;
-        readonly allowSendingWithoutReply: boolean;
-      };
-      readonly externalReply?: ExternalReplyTarget;
-      readonly quote?: SpecifiedQuote;
-      readonly isContentProtected?: boolean;
-      readonly isSilent?: boolean;
-      readonly forwardInfo?: MessageForwardInfo;
-      readonly mediaGroupId?: MediaGroupId;
-      readonly messageEffectId?: string;
-    },
-  ):
-    | { readonly sent: true; readonly message: SupergroupMessage }
-    | {
-      readonly sent: false;
-      readonly reason:
-        | 'bot_not_found'
-        | 'message_text_empty'
-        | 'chat_not_found'
-        | FormerSupergroupMemberFailureReason
-        | 'reply_message_not_found'
-        | 'message_effect_not_allowed_in_chat'
-        | 'callback_data_invalid'
-        | 'button_type_invalid'
-        | 'quote_invalid';
-    }
-    | ({ readonly sent: false } & (ContentNormalizationFailure | SendPermissionMissingFailure));
-  sendBotAlbum(input: SendSupergroupBotAlbumInput): SendSupergroupBotAlbumResult;
-  lacksBotSendPermission(input: {
-    readonly botId: number;
-    readonly chatId: number;
-    readonly content: OutgoingMessageContent;
-  }): boolean;
   editBotMessageText(
     input: SupergroupMessageEditTarget & {
       readonly content: TextMessageReplacement;
@@ -1862,6 +1693,22 @@ interface ChatMemberships {
     readonly chatId: number;
     readonly permissions: ChatPermissions;
   }): ChangeDefaultPermissionsResult;
+}
+
+interface BotMessageSending {
+  send(botId: number, content: OutgoingMessageContent, options: SendRequestOptions): SendResult;
+  sendAlbum(
+    botId: number,
+    contents: readonly MediaContent[],
+    options: Omit<SendMediaGroupRequest, 'media'>,
+  ): SendMediaGroupResult;
+}
+
+interface BotMessageRepetition {
+  forwardMessage(botId: number, request: ForwardMessageRequest): ForwardMessageResult;
+  copyMessage(botId: number, request: CopyMessageRequest): CopyMessageSendResult;
+  forwardMessages(botId: number, request: RepeatMessagesRequest): RepeatMessagesResult;
+  copyMessages(botId: number, request: CopyMessagesRequest): RepeatMessagesResult;
 }
 
 interface BotMediaResolution {
@@ -2072,14 +1919,6 @@ interface InlineMessageLookup {
   getMessageByInlineMessageId(inlineMessageId: InlineMessageId): ChatMessage | undefined;
 }
 
-interface MediaGroupIdIssuer {
-  createMediaGroupId(): MediaGroupId;
-}
-
-interface PollLookup {
-  getPoll(pollId: PollId): Poll | undefined;
-}
-
 interface BotCaptionNormalizer {
   normalizeBotCaption(caption: SpecifiedCaption): CaptionNormalization;
 }
@@ -2126,7 +1965,6 @@ interface ChatActions {
     readonly chat: ChatActionChat;
     readonly action: ChatAction;
   }): void;
-  endBotChatAction(input: { readonly botId: number; readonly chat: ChatActionChat }): void;
 }
 
 interface BotApiServiceDependencies {
@@ -2135,6 +1973,13 @@ interface BotApiServiceDependencies {
   readonly webhooks: BotWebhooks;
   readonly botMessages: BotMessaging;
   readonly supergroupBotMessages: SupergroupBotMessaging;
+  /**
+   * Sends the bot's messages and albums to its chats, as every send method sends them, resolving
+   * what they reply to in other chats.
+   */
+  readonly messageSender: BotMessageSending;
+  /** Forwards and copies messages of the bot's chats, one or many at once. */
+  readonly messageRepeater: BotMessageRepetition;
   readonly chatMemberships: ChatMemberships;
   /**
    * Creates, edits and revokes the invite links that let accounts join supergroups, and decides
@@ -2156,10 +2001,6 @@ interface BotApiServiceDependencies {
   readonly callbackQueries: CallbackQueryAnswering;
   readonly inlineQueries: InlineQueryAnswering;
   readonly inlineMessages: InlineMessageLookup;
-  /** Issues the identifiers of the albums that forwards and copies of albums form. */
-  readonly mediaGroups: MediaGroupIdIssuer;
-  /** Finds the polls that copies of poll messages repeat. */
-  readonly polls: PollLookup;
   /**
    * Normalizes the captions of an album, which are checked before the album is handed to the
    * messaging services, as they normalize the caption of a bot's media.
@@ -2171,8 +2012,6 @@ interface BotApiServiceDependencies {
   readonly menuButtons: BotMenuButtons;
   readonly chatActions: ChatActions;
   readonly publicChats: PublicChatDirectory;
-  /** Hides the accounts whose privacy settings keep forwards from linking to them. */
-  readonly getPrivateForwardName: PrivateForwardNameLookup;
   /** The time that closing times of polls count from. */
   readonly currentUnixTimeSeconds: () => number;
 }
@@ -2195,6 +2034,8 @@ export class BotApiService {
   readonly #webhooks: BotWebhooks;
   readonly #botMessages: BotMessaging;
   readonly #supergroupBotMessages: SupergroupBotMessaging;
+  readonly #messageSender: BotMessageSending;
+  readonly #messageRepeater: BotMessageRepetition;
   readonly #chatMemberships: ChatMemberships;
   readonly #chatAdmission: ChatAdmission;
   readonly #botMessageViews: BotMessageViews;
@@ -2205,8 +2046,6 @@ export class BotApiService {
   readonly #callbackQueries: CallbackQueryAnswering;
   readonly #inlineQueries: InlineQueryAnswering;
   readonly #inlineMessages: InlineMessageLookup;
-  readonly #mediaGroups: MediaGroupIdIssuer;
-  readonly #polls: PollLookup;
   readonly #botCaptions: BotCaptionNormalizer;
   readonly #botCommands: BotCommandLists;
   readonly #botDescriptions: BotDescriptions;
@@ -2214,7 +2053,6 @@ export class BotApiService {
   readonly #menuButtons: BotMenuButtons;
   readonly #chatActions: ChatActions;
   readonly #publicChats: PublicChatDirectory;
-  readonly #getPrivateForwardName: PrivateForwardNameLookup;
   readonly #currentUnixTimeSeconds: () => number;
 
   constructor(
@@ -2224,6 +2062,8 @@ export class BotApiService {
       webhooks,
       botMessages,
       supergroupBotMessages,
+      messageSender,
+      messageRepeater,
       chatMemberships,
       chatAdmission,
       botMessageViews,
@@ -2234,8 +2074,6 @@ export class BotApiService {
       callbackQueries,
       inlineQueries,
       inlineMessages,
-      mediaGroups,
-      polls,
       botCaptions,
       botCommands,
       botDescriptions,
@@ -2243,7 +2081,6 @@ export class BotApiService {
       menuButtons,
       chatActions,
       publicChats,
-      getPrivateForwardName,
       currentUnixTimeSeconds,
     }: BotApiServiceDependencies,
   ) {
@@ -2252,6 +2089,8 @@ export class BotApiService {
     this.#webhooks = webhooks;
     this.#botMessages = botMessages;
     this.#supergroupBotMessages = supergroupBotMessages;
+    this.#messageSender = messageSender;
+    this.#messageRepeater = messageRepeater;
     this.#chatMemberships = chatMemberships;
     this.#chatAdmission = chatAdmission;
     this.#botMessageViews = botMessageViews;
@@ -2262,8 +2101,6 @@ export class BotApiService {
     this.#callbackQueries = callbackQueries;
     this.#inlineQueries = inlineQueries;
     this.#inlineMessages = inlineMessages;
-    this.#mediaGroups = mediaGroups;
-    this.#polls = polls;
     this.#botCaptions = botCaptions;
     this.#botCommands = botCommands;
     this.#botDescriptions = botDescriptions;
@@ -2271,7 +2108,6 @@ export class BotApiService {
     this.#menuButtons = menuButtons;
     this.#chatActions = chatActions;
     this.#publicChats = publicChats;
-    this.#getPrivateForwardName = getPrivateForwardName;
     this.#currentUnixTimeSeconds = currentUnixTimeSeconds;
   }
 
@@ -2515,7 +2351,7 @@ export class BotApiService {
     authenticatedBot: VirtualBotProfile,
     { text, entities, ...options }: SendMessageRequest,
   ): SendResult {
-    return this.#send(authenticatedBot, { kind: 'text', text, entities }, options);
+    return this.#messageSender.send(authenticatedBot.id, { kind: 'text', text, entities }, options);
   }
 
   /**
@@ -2532,7 +2368,7 @@ export class BotApiService {
     if (!resolution.resolved) {
       return { sent: false, ...resolution.failure };
     }
-    return this.#send(authenticatedBot, {
+    return this.#messageSender.send(authenticatedBot.id, {
       kind: 'rich_message',
       richMessage: resolution.richMessage,
       detectsEntities,
@@ -2560,7 +2396,7 @@ export class BotApiService {
     if (!resolution.resolved) {
       return { sent: false, ...resolution.failure };
     }
-    return this.#send(authenticatedBot, resolution.file, options);
+    return this.#messageSender.send(authenticatedBot.id, resolution.file, options);
   }
 
   /**
@@ -2581,7 +2417,7 @@ export class BotApiService {
     if (!resolution.resolved) {
       return { sent: false, ...resolution.failure };
     }
-    return this.#send(authenticatedBot, resolution.file, options);
+    return this.#messageSender.send(authenticatedBot.id, resolution.file, options);
   }
 
   /**
@@ -2615,7 +2451,7 @@ export class BotApiService {
     if (!resolution.resolved) {
       return { sent: false, ...resolution.failure };
     }
-    return this.#send(authenticatedBot, resolution.file, options);
+    return this.#messageSender.send(authenticatedBot.id, resolution.file, options);
   }
 
   /**
@@ -2636,7 +2472,7 @@ export class BotApiService {
     if (!resolution.resolved) {
       return { sent: false, ...resolution.failure };
     }
-    return this.#send(authenticatedBot, resolution.file, options);
+    return this.#messageSender.send(authenticatedBot.id, resolution.file, options);
   }
 
   /**
@@ -2658,7 +2494,7 @@ export class BotApiService {
     if (!resolution.resolved) {
       return { sent: false, ...resolution.failure };
     }
-    return this.#send(authenticatedBot, resolution.file, options);
+    return this.#messageSender.send(authenticatedBot.id, resolution.file, options);
   }
 
   /**
@@ -2710,21 +2546,7 @@ export class BotApiService {
       return { sent: false, reason: 'media_group_member_not_sent', ...firstRefusedUpload };
     }
 
-    const replyResolution = this.#resolveOutgoingReply(authenticatedBot, replyTo);
-    if (!replyResolution.resolved) {
-      return { sent: false, reason: replyResolution.reason };
-    }
-    const result = isUserId(options.chatId)
-      ? this.#sendPrivateAlbum(authenticatedBot, contents, options, replyResolution.reply)
-      : this.#sendSupergroupAlbum(authenticatedBot, contents, options, replyResolution.reply);
-    if (result.sent) {
-      // As for a single message, the album ends the bot's chat action.
-      this.#chatActions.endBotChatAction({
-        botId: authenticatedBot.id,
-        chat: getChatActionChat(authenticatedBot, options.chatId),
-      });
-    }
-    return result;
+    return this.#messageSender.sendAlbum(authenticatedBot.id, contents, { replyTo, ...options });
   }
 
   /**
@@ -2737,8 +2559,8 @@ export class BotApiService {
     authenticatedBot: VirtualBotProfile,
     { contact, ...options }: SendContactRequest,
   ): SendResult {
-    return this.#send(
-      authenticatedBot,
+    return this.#messageSender.send(
+      authenticatedBot.id,
       { kind: 'contact', contact: createWrittenContact(contact) },
       options,
     );
@@ -2754,7 +2576,7 @@ export class BotApiService {
     authenticatedBot: VirtualBotProfile,
     { location, ...options }: SendLocationRequest,
   ): SendResult {
-    return this.#send(authenticatedBot, { kind: 'location', location }, options);
+    return this.#messageSender.send(authenticatedBot.id, { kind: 'location', location }, options);
   }
 
   /**
@@ -2786,7 +2608,7 @@ export class BotApiService {
     if (closingTimeResolution?.resolved === false) {
       return { sent: false, reason: closingTimeResolution.reason };
     }
-    return this.#send(authenticatedBot, {
+    return this.#messageSender.send(authenticatedBot.id, {
       kind: 'poll',
       poll: {
         creator: { kind: 'bot', botId: authenticatedBot.id },
@@ -2839,176 +2661,48 @@ export class BotApiService {
   }
 
   /**
-   * Forwards a message of one of the bot's chats to a private chat or a supergroup, as TDLib does:
-   * the forward repeats the message's content and shows who first sent it and when. As on Telegram,
-   * a message whose sender protected it cannot be forwarded, nor can a service message. A request's
-   * video start timestamp replaces that of a forwarded video, as `withVideoStartTimestamp` does. A
-   * forward of a poll shows the same poll, whose votes it shares. As TDLib's `forward_messages_impl`
-   * skips content the bot may not send to a supergroup, such content cannot be forwarded there.
-   *
-   * The forwarded message is checked in full before the chat it goes to, while TDLib checks whether
-   * it can be forwarded only after that chat; a request that fails both ways fails for the message.
+   * Forwards a message of one of the bot's chats to a private chat or a supergroup, as the bot
+   * message repeater's `forwardMessage` does.
    */
   forwardMessage(
     authenticatedBot: VirtualBotProfile,
-    {
-      chatId,
-      forwardedMessage,
-      videoStartTimestampSeconds,
-      isContentProtected,
-      isSilent,
-      messageEffectId,
-    }: ForwardMessageRequest,
+    request: ForwardMessageRequest,
   ): ForwardMessageResult {
-    const lookup = this.#findRepeatedMessage(authenticatedBot, forwardedMessage);
-    if (!lookup.found) {
-      return { sent: false, reason: lookup.reason };
-    }
-    if (!isForwardable(lookup.message, lookup.chatProtectsContent)) {
-      return { sent: false, reason: 'message_not_forwardable' };
-    }
-    const { content, forwardInfo, inlineKeyboard } = createMessageForward(
-      lookup.message,
-      this.#getPrivateForwardName,
-    );
-    const result = this.#send(
-      authenticatedBot,
-      {
-        kind: 'existing',
-        content: videoStartTimestampSeconds === undefined
-          ? content
-          : withVideoStartTimestamp(content, videoStartTimestampSeconds),
-      },
-      {
-        chatId,
-        isContentProtected,
-        isSilent,
-        messageEffectId,
-        ...(inlineKeyboard === undefined ? {} : { inlineKeyboard }),
-      },
-      { forwardInfo },
-    );
-    // TDLib's `forward_messages_impl` skips content the bot may not send, which leaves nothing.
-    return !result.sent && result.reason === 'send_permission_missing'
-      ? { sent: false, reason: 'message_not_forwardable' }
-      : result;
+    return this.#messageRepeater.forwardMessage(authenticatedBot.id, request);
   }
 
   /**
-   * Copies a message of one of the bot's chats to a private chat or a supergroup as the bot's own
-   * message, which, unlike a forward, does not show where it came from, and which takes the reply
-   * and reply markup of the request instead of the original's. A new caption replaces the caption
-   * of copied media, while text and rich messages stay as they are, apart from the buttons of a
-   * rich message, which change as for a forward, and a video takes the request's start timestamp,
-   * if any, as for a forward. A copy of a poll is a new poll, as `#createPollCopy` creates it, which
-   * ignores a new caption; a quiz whose solution the bot does not see cannot be copied. As TDLib
-   * lets bots do, a bot may copy a message whose sender protected it; a service message cannot be
-   * copied, nor can content the bot may not send to a supergroup.
-   *
-   * As for `forwardMessage`, the copied message is checked in full before the chat it goes to.
+   * Copies a message of one of the bot's chats to a private chat or a supergroup, as the bot
+   * message repeater's `copyMessage` does. The Bot API answers with the new message's ID.
    */
   copyMessage(
     authenticatedBot: VirtualBotProfile,
-    {
-      copiedMessage,
-      videoStartTimestampSeconds,
-      caption,
-      showsCaptionAboveMedia,
-      ...options
-    }: CopyMessageRequest,
+    request: CopyMessageRequest,
   ): CopyMessageResult {
-    const lookup = this.#findRepeatedMessage(authenticatedBot, copiedMessage);
-    if (!lookup.found) {
-      return { sent: false, reason: lookup.reason };
-    }
-    if (!isContentMessage(lookup.message)) {
-      return { sent: false, reason: 'message_not_copyable' };
-    }
-    const content = getRepeatedContent(lookup.message.content, 'copy');
-    const copiedContent: OutgoingMessageContent | undefined = content.kind === 'poll'
-      ? this.#createPollCopy(authenticatedBot, content.pollId, lookup.message)
-      : {
-        kind: 'existing',
-        content: videoStartTimestampSeconds === undefined
-          ? content
-          : withVideoStartTimestamp(content, videoStartTimestampSeconds),
-        ...(caption === undefined ? {} : {
-          captionReplacement: {
-            caption: caption.text,
-            captionEntities: caption.entities,
-            showsCaptionAboveMedia,
-          },
-        }),
-      };
-    if (copiedContent === undefined) {
-      return { sent: false, reason: 'message_not_copyable' };
-    }
-    const result = this.#send(authenticatedBot, copiedContent, options);
-    if (result.sent) {
-      return { sent: true, messageId: result.message.message_id };
-    }
-    // As for `forwardMessage`, TDLib skips content the bot may not send.
-    return result.reason === 'send_permission_missing'
-      ? { sent: false, reason: 'message_not_copyable' }
-      : result;
+    const result = this.#messageRepeater.copyMessage(authenticatedBot.id, request);
+    return result.sent ? { sent: true, messageId: result.message.message_id } : result;
   }
 
   /**
-   * Forwards up to 100 messages of one of the bot's chats to a private chat or a supergroup, each
-   * as `forwardMessage` does, as TDLib's `forward_messages` does. A message that is not found, that
-   * cannot be forwarded, or whose content the bot may not send to the chat, is skipped; the request
-   * fails only when none is left.
+   * Forwards up to 100 messages of one of the bot's chats to a private chat or a supergroup, as the
+   * bot message repeater's `forwardMessages` does.
    */
   forwardMessages(
     authenticatedBot: VirtualBotProfile,
     request: RepeatMessagesRequest,
   ): RepeatMessagesResult {
-    return this.#repeatMessages(authenticatedBot, request, (message, chatProtectsContent) => {
-      if (!isForwardable(message, chatProtectsContent)) {
-        return undefined;
-      }
-      const { content, forwardInfo, inlineKeyboard } = createMessageForward(
-        message,
-        this.#getPrivateForwardName,
-      );
-      return {
-        content: { kind: 'existing', content },
-        forwardInfo,
-        ...(inlineKeyboard === undefined ? {} : { inlineKeyboard }),
-      };
-    });
+    return this.#messageRepeater.forwardMessages(authenticatedBot.id, request);
   }
 
   /**
-   * Copies up to 100 messages of one of the bot's chats to a private chat or a supergroup, as
-   * `forwardMessages` forwards them. As TDLib's `dup_reply_markup` does for copies, the copies keep
-   * no reply markup; `removesCaptions` sends media without their captions. As for `copyMessage`, a
-   * copy of a poll is a new poll.
+   * Copies up to 100 messages of one of the bot's chats to a private chat or a supergroup, as the
+   * bot message repeater's `copyMessages` does.
    */
   copyMessages(
     authenticatedBot: VirtualBotProfile,
-    { removesCaptions, ...request }: CopyMessagesRequest,
+    request: CopyMessagesRequest,
   ): RepeatMessagesResult {
-    return this.#repeatMessages(
-      authenticatedBot,
-      request,
-      (message) => {
-        if (!isContentMessage(message)) {
-          return undefined;
-        }
-        const content = getRepeatedContent(message.content, 'copy');
-        if (content.kind === 'poll') {
-          const pollCopy = this.#createPollCopy(authenticatedBot, content.pollId, message);
-          return pollCopy === undefined ? undefined : { content: pollCopy };
-        }
-        return {
-          content: {
-            kind: 'existing',
-            content: removesCaptions ? withoutCaption(content) : content,
-          },
-        };
-      },
-    );
+    return this.#messageRepeater.copyMessages(authenticatedBot.id, request);
   }
 
   /** Returns a file the bot knows by its `file_id`, with the `file_path` to download it from. */
@@ -3032,541 +2726,6 @@ export class BotApiService {
   /** Returns the file at a `file_path` that `getFile` gave the bot, for download. */
   downloadFile(authenticatedBot: VirtualBotProfile, filePath: string): StoredFile | undefined {
     return this.#mediaFiles.findBotFileByPath(authenticatedBot.id, filePath);
-  }
-
-  /**
-   * Sends the repetitions of messages of one of the bot's chats to a chat, in the order of their
-   * IDs, as TDLib's `forward_messages_impl` does: a message that `repeat` cannot repeat is skipped,
-   * and a message that replies to an earlier message of the request replies to that message's
-   * repetition.
-   *
-   * As for `forwardMessage`, the messages are checked before the chat they go to; every repetition
-   * goes to that chat, so a chat the bot cannot send to fails before any message is sent.
-   */
-  #repeatMessages(
-    authenticatedBot: VirtualBotProfile,
-    { chatId, fromChatId, messageIds, isContentProtected, isSilent, messageEffectId }:
-      RepeatMessagesRequest,
-    repeat: (message: ChatMessage, chatProtectsContent: boolean) => MessageRepetition | undefined,
-  ): RepeatMessagesResult {
-    const repeatedMessages: Array<{
-      readonly messageId: number;
-      readonly message: ChatMessage;
-      readonly chatProtectsContent: boolean;
-    }> = [];
-    for (const messageId of messageIds) {
-      const lookup = this.#findRepeatedMessage(authenticatedBot, { chatId: fromChatId, messageId });
-      if (lookup.found) {
-        const { message, chatProtectsContent } = lookup;
-        repeatedMessages.push({ messageId, message, chatProtectsContent });
-      } else if (lookup.reason !== 'repeated_message_not_found') {
-        return { sent: false, reason: lookup.reason };
-      }
-    }
-    if (repeatedMessages.length === 0) {
-      return { sent: false, reason: 'repeated_messages_not_found' };
-    }
-    if (messageEffectId !== undefined) {
-      if (!isUserId(chatId)) {
-        return { sent: false, reason: 'message_effect_not_allowed_in_chat' };
-      }
-      if (repeatedMessages.length > 1) {
-        return { sent: false, reason: 'message_effect_not_allowed_for_several_messages' };
-      }
-    }
-    if (
-      repeatedMessages.some(({ messageId }, index) =>
-        index > 0 && messageId <= repeatedMessages[index - 1].messageId
-      )
-    ) {
-      return { sent: false, reason: 'repeated_message_ids_not_increasing' };
-    }
-    const repetitions = repeatedMessages.flatMap(({ message, chatProtectsContent }) => {
-      const repetition = repeat(message, chatProtectsContent);
-      return repetition === undefined ||
-          this.#lacksSendPermission(authenticatedBot, chatId, repetition.content)
-        ? []
-        : [{ message, repetition }];
-    });
-    if (repetitions.length === 0) {
-      return { sent: false, reason: 'messages_not_repeatable' };
-    }
-
-    const { albumCount, albumIndexes } = groupRepeatedAlbums(
-      repetitions.map(({ message }) => message),
-    );
-    const newMediaGroupIds = Array.from(
-      { length: albumCount },
-      () => this.#mediaGroups.createMediaGroupId(),
-    );
-    const sentMessageIdsByRepeatedMessageId = new Map<CanonicalMessageId, number>();
-    for (const [repetitionIndex, { message, repetition }] of repetitions.entries()) {
-      const repliedMessageId = message.replyToMessageId === undefined
-        ? undefined
-        : sentMessageIdsByRepeatedMessageId.get(message.replyToMessageId);
-      const albumIndex = albumIndexes[repetitionIndex];
-      const { content, forwardInfo, inlineKeyboard } = repetition;
-      const result = this.#send(
-        authenticatedBot,
-        content,
-        {
-          chatId,
-          isContentProtected,
-          isSilent,
-          messageEffectId,
-          ...(inlineKeyboard === undefined ? {} : { inlineKeyboard }),
-          ...(repliedMessageId === undefined
-            ? {}
-            : { replyTo: { messageId: repliedMessageId, allowSendingWithoutReply: true } }),
-        },
-        {
-          forwardInfo,
-          mediaGroupId: albumIndex === undefined ? undefined : newMediaGroupIds[albumIndex],
-        },
-      );
-      if (!result.sent) {
-        return result;
-      }
-      sentMessageIdsByRepeatedMessageId.set(message.id, result.message.message_id);
-    }
-    return { sent: true, messageIds: [...sentMessageIdsByRepeatedMessageId.values()] };
-  }
-
-  /**
-   * Whether the bot lacks a permission it needs to send content to a supergroup it is a member of,
-   * as `SupergroupMessagingService.lacksBotSendPermission` decides; a private chat restricts no
-   * content.
-   */
-  #lacksSendPermission(
-    authenticatedBot: VirtualBotProfile,
-    chatId: number,
-    content: OutgoingMessageContent,
-  ): boolean {
-    return !isUserId(chatId) &&
-      this.#supergroupBotMessages.lacksBotSendPermission({
-        botId: authenticatedBot.id,
-        chatId,
-        content,
-      });
-  }
-
-  /**
-   * Creates the content of a copy of a poll, as TDLib's `dup_poll` does: a new poll that the copying
-   * bot owns, open and without votes, with the original's question, options, settings, and quiz
-   * solution, and the original's open period counted from now. As TDLib's `has_input_media` and
-   * the Bot API require, a quiz can be copied only by a bot that sees its solution through the
-   * copied message, as `showsQuizSolution` decides; returns `undefined` for any other quiz.
-   */
-  #createPollCopy(
-    authenticatedBot: VirtualBotProfile,
-    pollId: PollId,
-    pollMessage: ChatMessage,
-  ): OutgoingMessageContent | undefined {
-    const poll = this.#polls.getPoll(pollId);
-    if (poll === undefined) {
-      throw new Error(`Copied poll ${pollId} does not exist`);
-    }
-    if (
-      poll.type.kind === 'quiz' &&
-      !showsQuizSolution(poll, { observerId: authenticatedBot.id, pollMessage })
-    ) {
-      return undefined;
-    }
-    const openPeriodSeconds = poll.closingTime?.openPeriodSeconds;
-    return {
-      kind: 'poll',
-      poll: {
-        creator: { kind: 'bot', botId: authenticatedBot.id },
-        question: poll.question,
-        options: poll.options.map(({ text }) => text),
-        isAnonymous: poll.isAnonymous,
-        allowsMultipleAnswers: poll.allowsMultipleAnswers,
-        allowsRevoting: poll.allowsRevoting,
-        type: poll.type,
-        isClosed: false,
-        ...(openPeriodSeconds === undefined ? {} : {
-          closingTime: {
-            openPeriodSeconds,
-            closeDateUnixSeconds: this.#currentUnixTimeSeconds() + openPeriodSeconds,
-          },
-        }),
-      },
-    };
-  }
-
-  /**
-   * Finds the message of one of the bot's chats that a forward or copy repeats. As on Telegram, a
-   * chat the bot cannot address is not found.
-   */
-  /**
-   * Finds a message of one of the bot's chats for the bot to repeat or reply to, with whether its
-   * chat protects all content: only a supergroup can.
-   */
-  #findRepeatedMessage(
-    authenticatedBot: VirtualBotProfile,
-    { chatId, messageId }: MessageTarget,
-  ):
-    | {
-      readonly found: true;
-      readonly message: ChatMessage;
-      readonly chatProtectsContent: boolean;
-    }
-    | { readonly found: false; readonly reason: RepeatedMessageFailureReason } {
-    const lookup = isUserId(chatId)
-      ? this.#botMessages.getMessageForBot({
-        botId: authenticatedBot.id,
-        accountId: chatId,
-        botMessageId: messageId,
-      })
-      : this.#supergroupBotMessages.getMessageForBot({
-        botId: authenticatedBot.id,
-        chatId,
-        messageId,
-      });
-    if (lookup.found) {
-      return {
-        found: true,
-        message: lookup.message,
-        chatProtectsContent: 'supergroup' in lookup && lookup.supergroup.hasProtectedContent,
-      };
-    }
-
-    const { reason } = lookup;
-    switch (reason) {
-      case 'chat_not_found':
-      case 'bot_not_a_member':
-      case 'bot_kicked':
-        return { found: false, reason };
-      case 'account_not_found':
-      case 'conversation_not_started':
-        return { found: false, reason: 'chat_not_found' };
-      case 'message_not_found':
-        return { found: false, reason: 'repeated_message_not_found' };
-      case 'bot_not_found':
-        throw new Error(`Authenticated bot ${authenticatedBot.id} does not exist`);
-      default: {
-        const unhandledReason: never = reason;
-        throw new Error(`Unhandled repeated message lookup failure: ${unhandledReason}`);
-      }
-    }
-  }
-
-  /**
-   * Sends content to a private chat or a supergroup; a forward also shows where it came from, and
-   * a repeated message of an album belongs to the album its repetition forms.
-   *
-   * A reply to a message of another chat is resolved before the chat the message goes to, while
-   * Telegram checks that chat and the text first; a request that fails both ways fails for its
-   * reply.
-   */
-  #send(
-    authenticatedBot: VirtualBotProfile,
-    content: OutgoingMessageContent,
-    { replyTo, ...options }: SendRequestOptions,
-    repetitionDetails: RepetitionDetails = {},
-  ): SendResult {
-    const replyResolution = this.#resolveOutgoingReply(authenticatedBot, replyTo);
-    if (!replyResolution.resolved) {
-      return { sent: false, reason: replyResolution.reason };
-    }
-    const { reply } = replyResolution;
-    const result = isUserId(options.chatId)
-      ? this.#sendPrivateMessage(authenticatedBot, content, options, reply, repetitionDetails)
-      : this.#sendSupergroupMessage(authenticatedBot, content, options, reply, repetitionDetails);
-    if (result.sent) {
-      // As TDLib's `DialogActionManager` does, a bot's message ends its chat action.
-      this.#chatActions.endBotChatAction({
-        botId: authenticatedBot.id,
-        chat: getChatActionChat(authenticatedBot, options.chatId),
-      });
-    }
-    return result;
-  }
-
-  /**
-   * Resolves what a message being sent replies to. The chat's messaging service looks up a message
-   * of the chat itself. A message of another chat is resolved here, as the official Bot API
-   * server's `check_reply_parameters` does: the bot must be able to read that chat, and a message it
-   * does not find fails the send unless the bot allowed sending without a reply. As TDLib's
-   * `create_message_input_reply_to` does, a message that cannot be forwarded, such as protected
-   * content or a service message, is silently not replied to.
-   */
-  #resolveOutgoingReply(authenticatedBot: VirtualBotProfile, replyTo: ReplyTarget | undefined):
-    | { readonly resolved: true; readonly reply: OutgoingReply }
-    | {
-      readonly resolved: false;
-      readonly reason:
-        | 'chat_not_found'
-        | FormerSupergroupMemberFailureReason
-        | 'reply_message_not_found';
-    } {
-    if (replyTo?.chatId === undefined) {
-      return {
-        resolved: true,
-        reply: replyTo === undefined ? {} : { replyTo, quote: replyTo.quote },
-      };
-    }
-    const { chatId, messageId, allowSendingWithoutReply, quote } = replyTo;
-    const lookup = this.#findRepeatedMessage(authenticatedBot, { chatId, messageId });
-    if (!lookup.found) {
-      if (lookup.reason !== 'repeated_message_not_found') {
-        return { resolved: false, reason: lookup.reason };
-      }
-      return allowSendingWithoutReply
-        ? { resolved: true, reply: {} }
-        : { resolved: false, reason: 'reply_message_not_found' };
-    }
-    return {
-      resolved: true,
-      reply: isForwardable(lookup.message, lookup.chatProtectsContent)
-        ? {
-          externalReply: createExternalReply(
-            lookup.message,
-            messageId,
-            this.#getPrivateForwardName,
-          ),
-          quote,
-        }
-        : {},
-    };
-  }
-
-  #sendPrivateMessage(
-    authenticatedBot: VirtualBotProfile,
-    content: OutgoingMessageContent,
-    { chatId, isContentProtected, isSilent, messageEffectId, ...replyMarkup }:
-      SendDestinationOptions,
-    { replyTo, externalReply, quote }: OutgoingReply,
-    { forwardInfo, mediaGroupId }: RepetitionDetails,
-  ): SendResult {
-    const result = this.#botMessages.sendBotMessage({
-      ...replyMarkup,
-      fromBotId: authenticatedBot.id,
-      to: { type: 'private', accountId: chatId },
-      content,
-      replyTo: replyTo === undefined ? undefined : {
-        botMessageId: replyTo.messageId,
-        allowSendingWithoutReply: replyTo.allowSendingWithoutReply,
-      },
-      externalReply,
-      quote,
-      isContentProtected,
-      isSilent,
-      forwardInfo,
-      mediaGroupId,
-      messageEffectId,
-    });
-    if (result.sent) {
-      return {
-        sent: true,
-        message: this.#botMessageViews.viewPrivateMessageForBot(result.message),
-      };
-    }
-
-    switch (result.reason) {
-      case 'text_invalid':
-        return result;
-      case 'message_text_empty':
-      case 'reply_message_not_found':
-      case 'message_text_too_long':
-      case 'caption_too_long':
-      case 'callback_data_invalid':
-      case 'quote_invalid':
-      case 'poll_question_too_long':
-      case 'poll_options_missing':
-      case 'poll_has_too_many_options':
-      case 'poll_option_too_long':
-      case 'quiz_correct_options_missing':
-      case 'quiz_correct_options_not_increasing':
-      case 'quiz_correct_option_not_found':
-      case 'quiz_explanation_too_long':
-      case 'quiz_explanation_has_too_many_line_feeds':
-      case 'bot_blocked':
-        return { sent: false, reason: result.reason };
-      // A bot can address a user only after the user has written to it. Telegram reports any
-      // other user, like an unknown chat, as not found.
-      case 'account_not_found':
-      case 'conversation_not_started':
-        return { sent: false, reason: 'chat_not_found' };
-      case 'bot_not_found':
-        throw new Error(`Authenticated bot ${authenticatedBot.id} does not exist`);
-      default: {
-        const unhandledFailure: never = result;
-        throw new Error(`Unhandled bot message failure: ${JSON.stringify(unhandledFailure)}`);
-      }
-    }
-  }
-
-  #sendSupergroupMessage(
-    authenticatedBot: VirtualBotProfile,
-    content: OutgoingMessageContent,
-    { chatId, isContentProtected, isSilent, messageEffectId, ...replyMarkup }:
-      SendDestinationOptions,
-    { replyTo, externalReply, quote }: OutgoingReply,
-    { forwardInfo, mediaGroupId }: RepetitionDetails,
-  ): SendResult {
-    const result = this.#supergroupBotMessages.sendBotMessage({
-      ...replyMarkup,
-      fromBotId: authenticatedBot.id,
-      chatId,
-      content,
-      replyTo,
-      externalReply,
-      quote,
-      isContentProtected,
-      isSilent,
-      forwardInfo,
-      mediaGroupId,
-      messageEffectId,
-    });
-    if (result.sent) {
-      return {
-        sent: true,
-        message: this.#botMessageViews.viewSupergroupMessage(result.message, authenticatedBot.id),
-      };
-    }
-
-    switch (result.reason) {
-      case 'text_invalid':
-      case 'send_permission_missing':
-        return result;
-      case 'message_text_empty':
-      case 'chat_not_found':
-      case 'bot_not_a_member':
-      case 'bot_kicked':
-      case 'reply_message_not_found':
-      case 'message_effect_not_allowed_in_chat':
-      case 'message_text_too_long':
-      case 'caption_too_long':
-      case 'callback_data_invalid':
-      case 'button_type_invalid':
-      case 'quote_invalid':
-      case 'poll_question_too_long':
-      case 'poll_options_missing':
-      case 'poll_has_too_many_options':
-      case 'poll_option_too_long':
-      case 'quiz_correct_options_missing':
-      case 'quiz_correct_options_not_increasing':
-      case 'quiz_correct_option_not_found':
-      case 'quiz_explanation_too_long':
-      case 'quiz_explanation_has_too_many_line_feeds':
-        return { sent: false, reason: result.reason };
-      case 'bot_not_found':
-        throw new Error(`Authenticated bot ${authenticatedBot.id} does not exist`);
-      default: {
-        const unhandledFailure: never = result;
-        throw new Error(`Unhandled bot message failure: ${JSON.stringify(unhandledFailure)}`);
-      }
-    }
-  }
-
-  #sendPrivateAlbum(
-    authenticatedBot: VirtualBotProfile,
-    contents: readonly MediaContent[],
-    { chatId, isContentProtected, isSilent, messageEffectId }: SendDeliveryOptions,
-    { replyTo, externalReply, quote }: OutgoingReply,
-  ): SendMediaGroupResult {
-    const result = this.#botMessages.sendBotAlbum({
-      fromBotId: authenticatedBot.id,
-      to: { type: 'private', accountId: chatId },
-      contents,
-      replyTo: replyTo === undefined ? undefined : {
-        botMessageId: replyTo.messageId,
-        allowSendingWithoutReply: replyTo.allowSendingWithoutReply,
-      },
-      externalReply,
-      quote,
-      isContentProtected,
-      isSilent,
-      messageEffectId,
-    });
-    if (result.sent) {
-      return {
-        sent: true,
-        messages: result.messages.map((message) =>
-          this.#botMessageViews.viewPrivateMessageForBot(message)
-        ),
-      };
-    }
-
-    switch (result.reason) {
-      case 'text_invalid':
-        return result;
-      case 'reply_message_not_found':
-      case 'message_text_too_long':
-      case 'caption_too_long':
-      case 'quote_invalid':
-      case 'bot_blocked':
-      case 'album_empty':
-      case 'album_too_large':
-      case 'album_caption_placement_mixed':
-      case 'album_documents_mixed':
-      case 'album_audio_mixed':
-        return { sent: false, reason: result.reason };
-      // As for a single message, Telegram reports a user who has not started the bot as not found.
-      case 'account_not_found':
-      case 'conversation_not_started':
-        return { sent: false, reason: 'chat_not_found' };
-      case 'bot_not_found':
-        throw new Error(`Authenticated bot ${authenticatedBot.id} does not exist`);
-      default: {
-        const unhandledFailure: never = result;
-        throw new Error(`Unhandled bot album failure: ${JSON.stringify(unhandledFailure)}`);
-      }
-    }
-  }
-
-  #sendSupergroupAlbum(
-    authenticatedBot: VirtualBotProfile,
-    contents: readonly MediaContent[],
-    { chatId, isContentProtected, isSilent, messageEffectId }: SendDeliveryOptions,
-    { replyTo, externalReply, quote }: OutgoingReply,
-  ): SendMediaGroupResult {
-    const result = this.#supergroupBotMessages.sendBotAlbum({
-      fromBotId: authenticatedBot.id,
-      chatId,
-      contents,
-      replyTo,
-      externalReply,
-      quote,
-      isContentProtected,
-      isSilent,
-      messageEffectId,
-    });
-    if (result.sent) {
-      return {
-        sent: true,
-        messages: result.messages.map((message) =>
-          this.#botMessageViews.viewSupergroupMessage(message, authenticatedBot.id)
-        ),
-      };
-    }
-
-    switch (result.reason) {
-      case 'text_invalid':
-      case 'send_permission_missing':
-        return result;
-      case 'chat_not_found':
-      case 'bot_not_a_member':
-      case 'bot_kicked':
-      case 'reply_message_not_found':
-      case 'message_effect_not_allowed_in_chat':
-      case 'message_text_too_long':
-      case 'caption_too_long':
-      case 'quote_invalid':
-      case 'album_empty':
-      case 'album_too_large':
-      case 'album_caption_placement_mixed':
-      case 'album_documents_mixed':
-      case 'album_audio_mixed':
-        return { sent: false, reason: result.reason };
-      case 'bot_not_found':
-        throw new Error(`Authenticated bot ${authenticatedBot.id} does not exist`);
-      default: {
-        const unhandledFailure: never = result;
-        throw new Error(`Unhandled bot album failure: ${JSON.stringify(unhandledFailure)}`);
-      }
-    }
   }
 
   /**
@@ -3609,7 +2768,7 @@ export class BotApiService {
     const recordAction = () =>
       this.#chatActions.recordBotChatAction({
         botId: authenticatedBot.id,
-        chat: getChatActionChat(authenticatedBot, chatId),
+        chat: getBotChatActionChat(authenticatedBot.id, chatId),
         action,
       });
     if (!isUserId(chatId)) {
@@ -5657,12 +4816,6 @@ function toInlineResultAudioAttributes(
 }
 
 /** The chat a Bot API `chat_id` addresses, as chat actions identify it. */
-function getChatActionChat(authenticatedBot: VirtualBotProfile, chatId: number): ChatActionChat {
-  return isUserId(chatId)
-    ? { type: 'private', accountId: chatId, botId: authenticatedBot.id }
-    : { type: 'supergroup', chatId };
-}
-
 /** Shows a command as the Bot API does, with `is_ephemeral` only when set. */
 function projectBotCommand({ command, description, isEphemeral }: BotCommand): BotApiBotCommand {
   return { command, description, ...(isEphemeral ? { is_ephemeral: true as const } : {}) };
@@ -5778,14 +4931,4 @@ function toEditInlineMessageFailureReason(
       throw new Error(`Unhandled inline message edit failure: ${unhandledReason}`);
     }
   }
-}
-
-/**
- * Captioned media without its caption, as a copy that removes captions sends it; text and rich
- * messages are kept.
- */
-function withoutCaption(content: MessageContent): MessageContent {
-  return isCaptionedMediaContent(content)
-    ? { ...content, caption: { text: '', entities: [] } }
-    : content;
 }
