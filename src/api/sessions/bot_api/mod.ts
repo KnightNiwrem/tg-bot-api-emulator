@@ -3,7 +3,7 @@ import { type Context, Hono } from 'hono';
 import type { VirtualBotProfile } from '../../../types/virtual_bot.ts';
 import { fileDownloadResponse } from '../file_download.ts';
 import type { SessionRouteContextTypes } from '../session_route_context_types.ts';
-import { botApiError, type BotApiMethodAnswer, type BotApiMethodContext } from './method_call.ts';
+import { type BotApiCallContext, botApiError, type BotApiMethodAnswer } from './method_call.ts';
 import { findBotApiMethod } from './method_catalogue.ts';
 import {
   callBotApiMethod,
@@ -76,7 +76,7 @@ export function createBotApiRoutes(): Hono<BotApiRouteContextTypes> {
     const requestedMethodName = context.req.param(BOT_API_METHOD_NAME_PARAMETER);
     const method = findBotApiMethod(requestedMethodName);
     const parametersDecoding = await decodeBotApiRequestParameters(context.req.raw);
-    const methodContext: BotApiMethodContext = {
+    const callContext: BotApiCallContext = {
       session: context.get('emulationSession'),
       bot: context.get('authenticatedBot'),
       signal: context.req.raw.signal,
@@ -88,14 +88,14 @@ export function createBotApiRoutes(): Hono<BotApiRouteContextTypes> {
         : { parameters: {}, uploadedFiles: new Map() };
       return botApiResponse(
         context,
-        rejectUnknownBotApiMethod(methodContext, requestedMethodName, parameters, uploadedFiles),
+        rejectUnknownBotApiMethod(callContext, requestedMethodName, parameters, uploadedFiles),
       );
     }
     if (!parametersDecoding.decoded) {
       return botApiResponse(
         context,
         rejectUndecodableBotApiCall(
-          methodContext,
+          callContext,
           method,
           requestedMethodName,
           parametersDecoding.description,
@@ -104,7 +104,7 @@ export function createBotApiRoutes(): Hono<BotApiRouteContextTypes> {
     }
     return botApiResponse(
       context,
-      await callBotApiMethod(methodContext, {
+      await callBotApiMethod(callContext, {
         method,
         requestedMethodName,
         parameters: parametersDecoding.parameters,

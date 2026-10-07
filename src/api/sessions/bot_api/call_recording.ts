@@ -1,4 +1,4 @@
-import type { BotApiMethodAnswer, BotApiMethodContext } from './method_call.ts';
+import type { BotApiCallContext, BotApiMethodAnswer } from './method_call.ts';
 import type { BotApiRequestParameters, BotApiUploadedFiles } from './request_parameters.ts';
 
 /** The method whose calls are not recorded, since the updates they deliver are. */
@@ -18,7 +18,7 @@ export interface RecordedBotApiCallDetails {
 
 /** Records a call and the answer the bot receives, except a `getUpdates` call. */
 export function recordBotApiCall(
-  context: BotApiMethodContext,
+  context: BotApiCallContext,
   { methodName, requestedMethodName, parameters, uploadedFiles, chatId }: RecordedBotApiCallDetails,
   answer: BotApiMethodAnswer,
 ): void {

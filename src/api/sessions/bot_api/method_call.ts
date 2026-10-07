@@ -5,16 +5,25 @@ import type { EmulationSession } from '../../../types/emulation_session.ts';
 import type { VirtualBotProfile } from '../../../types/virtual_bot.ts';
 import type { BotApiRequestParameters, BotApiUploadedFiles } from './request_parameters.ts';
 
-/**
- * Who calls a Bot API method, whichever way the call arrived: as an HTTP request, or in a
- * webhook's response to an update.
- */
+/** Who calls a Bot API method, and the session services a method may use to answer. */
 export interface BotApiMethodContext {
-  readonly session: EmulationSession;
+  /** The Bot API itself, and the files that methods download from the web. */
+  readonly session: Pick<EmulationSession, 'botApi' | 'mediaFiles'>;
   /** The bot whose token authenticated the call. */
   readonly bot: VirtualBotProfile;
   /** Aborts when the caller stops waiting for the answer, as a closed HTTP request does. */
   readonly signal: AbortSignal;
+}
+
+/**
+ * A bot's call of a Bot API method, whichever way the call arrived: as an HTTP request, or in a
+ * webhook's response to an update. Running the call also takes the answers tests queued for it and
+ * records it as bot activity, which methods themselves cannot reach.
+ */
+export interface BotApiCallContext extends BotApiMethodContext {
+  readonly session:
+    & BotApiMethodContext['session']
+    & Pick<EmulationSession, 'botRateLimits' | 'botServerErrors' | 'botActivity'>;
   readonly via: BotApiCallTransport;
 }
 
