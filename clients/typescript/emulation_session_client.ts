@@ -1265,12 +1265,24 @@ function conversationUrl(accountUrl: string, chat: MessageTarget): string {
     : `${accountUrl}/conversations/supergroup/${encodeURIComponent(chat.chatId)}`;
 }
 
-/** The URL by which a test expires a bot's chat action in an account's chat. */
+/**
+ * The URL by which a test expires a bot's chat action in an account's chat: a private chat names
+ * its bot, and a supergroup takes the `botId` whose action expires.
+ */
 function chatActionExpiryUrl(accountUrl: string, input: ExpireChatActionInput): string {
   const chatActionsUrl = `${conversationUrl(accountUrl, input.chat)}/chat-actions`;
-  return 'botId' in input
-    ? `${chatActionsUrl}/${encodeURIComponent(input.botId)}/expiry`
-    : `${chatActionsUrl}/expiry`;
+  if (input.chat.type === 'private') {
+    if (input.botId !== undefined) {
+      throw new TypeError(
+        'expireChatAction takes no botId for a private chat, which names its bot',
+      );
+    }
+    return `${chatActionsUrl}/expiry`;
+  }
+  if (input.botId === undefined) {
+    throw new TypeError('expireChatAction needs the botId whose supergroup chat action expires');
+  }
+  return `${chatActionsUrl}/${encodeURIComponent(input.botId)}/expiry`;
 }
 
 /** Asks the emulator to act on the draft an account's private chat shows, as the test expects it. */

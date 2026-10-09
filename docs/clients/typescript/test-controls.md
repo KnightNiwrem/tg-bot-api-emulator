@@ -233,14 +233,14 @@ Deno.test('the bot answers a command its webhook failed the first time', async (
 Where Telegram acts when a date arrives or a timeout passes, the emulator waits for the test, which
 makes it happen with a control at the point in the scenario it chooses:
 
-| Control                                                   | Makes arrive                                   | The bot receives | Walkthrough                                                            |
-| --------------------------------------------------------- | ---------------------------------------------- | ---------------- | ---------------------------------------------------------------------- |
-| `session.expirePoll(pollId)`                              | A poll's `open_period` or `close_date`         | A `poll` update  | [Polls](polls.md)                                                      |
-| `session.expireChatMemberRestriction({ chatId, userId })` | A temporary restriction's `until_date`         | Nothing          | [Permissions and moderation](permissions-and-moderation.md)            |
-| `session.expireChatInviteLink({ chatId, inviteLink })`    | An invite link's `expire_date`                 | Nothing          | [Invite links](invite-links.md#expiry-dates)                           |
-| `session.expireJoinRequesterContact({ chatId, userId })`  | The end of a join request's contact window     | Nothing          | [Invite links](invite-links.md#prompting-requesters-before-a-decision) |
-| `account.expireMessageDraft({ chat })`                    | The 30 seconds after which a draft disappears  | Nothing          | [Messages](messages.md#streaming-drafts)                               |
-| `account.expireChatAction({ chat })`                      | The 5.5 seconds after which a chat action ends | Nothing          | [Messages](messages.md#notifications-and-chat-actions)                 |
+| Control                                                                      | Makes arrive                                   | The bot receives | Walkthrough                                                            |
+| ---------------------------------------------------------------------------- | ---------------------------------------------- | ---------------- | ---------------------------------------------------------------------- |
+| `session.expirePoll(pollId)`                                                 | A poll's `open_period` or `close_date`         | A `poll` update  | [Polls](polls.md)                                                      |
+| `session.expireChatMemberRestriction({ chatId, userId })`                    | A temporary restriction's `until_date`         | Nothing          | [Permissions and moderation](permissions-and-moderation.md)            |
+| `session.expireChatInviteLink({ chatId, inviteLink })`                       | An invite link's `expire_date`                 | Nothing          | [Invite links](invite-links.md#expiry-dates)                           |
+| `session.expireJoinRequesterContact({ chatId, userId })`                     | The end of a join request's contact window     | Nothing          | [Invite links](invite-links.md#prompting-requesters-before-a-decision) |
+| `account.expireMessageDraft({ chat })`                                       | The 30 seconds after which a draft disappears  | Nothing          | [Messages](messages.md#streaming-drafts)                               |
+| `account.expireChatAction({ chat })`, or `({ chat, botId })` in a supergroup | The 5.5 seconds after which a chat action ends | Nothing          | [Messages](messages.md#notifications-and-chat-actions)                 |
 
 Each session control answers the state that results: the closed poll as its bot sees it, the user's
 standing (`member`, or `left` for a non-member), the link as the owner sees it, or the still pending

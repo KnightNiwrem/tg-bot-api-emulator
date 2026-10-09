@@ -2718,7 +2718,7 @@ export interface AccountChatActionsInput {
 
 /** The chat action a test expires: the bot's in a private chat, or one bot's in a supergroup. */
 export type ExpireChatActionInput =
-  | { readonly chat: PrivateMessageTarget }
+  | { readonly chat: PrivateMessageTarget; readonly botId?: never }
   | { readonly chat: SupergroupMessageTarget; readonly botId: number };
 
 export interface AccountNotificationsInput {

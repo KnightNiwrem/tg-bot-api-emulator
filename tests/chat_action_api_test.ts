@@ -218,6 +218,44 @@ Deno.test('chat action expiry stays within its own chat, account and session', a
   }
 });
 
+Deno.test('the TypeScript client expires chat actions by the chat its input names', async () => {
+  const { session, bot, ada, privateChat, callBot } = await createChatActionFixture();
+  try {
+    const created = await ada.createSupergroup({ title: 'Study group' });
+    const supergroup: SupergroupMessageTarget = { type: 'supergroup', chatId: created.id };
+    await ada.addChatMember({ chat: supergroup, userId: bot.id });
+    await callBot('sendChatAction', { chat_id: ada.id, action: 'typing' });
+    await callBot('sendChatAction', { chat_id: supergroup.chatId, action: 'typing' });
+
+    const rejection = async (input: unknown) => {
+      try {
+        // Stands for a JavaScript caller, which the input's type does not check.
+        await ada.expireChatAction(input as ExpireChatActionInput);
+        return 'expired';
+      } catch (error) {
+        return error instanceof TypeError ? 'TypeError' : error;
+      }
+    };
+    // @ts-expect-error A private chat names its bot, so the input takes no `botId`.
+    const privateWithBotId: ExpireChatActionInput = { chat: privateChat, botId: bot.id };
+    // @ts-expect-error A supergroup's expiry names the bot whose action expires.
+    const supergroupWithoutBotId: ExpireChatActionInput = { chat: supergroup };
+
+    expectEqual(
+      [
+        await rejection(privateWithBotId),
+        await rejection(supergroupWithoutBotId),
+        await ada.getChatActions({ chat: privateChat }),
+        await ada.getChatActions({ chat: supergroup }),
+      ],
+      ['TypeError', 'TypeError', [shownAction(bot.id, 'typing')], [shownAction(bot.id, 'typing')]],
+      'Expected inputs that misname the bot to be refused before any request',
+    );
+  } finally {
+    await session.end();
+  }
+});
+
 // Follows "Notifications and chat actions" in docs/clients/typescript/messages.md, with grammY's
 // runner in place of the guide's fixture.
 Deno.test('a grammY bot types while a test inspects and expires the action', async () => {
