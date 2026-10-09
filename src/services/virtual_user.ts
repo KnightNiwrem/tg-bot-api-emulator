@@ -44,8 +44,8 @@ function isCleanAccountName(name: string): boolean {
  * A bot's profile and settings as its owner sets them up with BotFather, each off by default, as
  * for a new Telegram bot: `can_read_all_group_messages` turns off the bot's privacy mode in groups,
  * `supports_inline_queries` turns on inline mode, `receives_chosen_inline_results` turns on
- * inline feedback, and `requests_inline_location` asks accounts for their location with inline
- * queries.
+ * inline feedback, `requests_inline_location` asks accounts for their location with inline
+ * queries, and `enables_bot_to_bot_communication` turns on Bot-to-Bot Communication Mode.
  */
 export type CreateVirtualBotInput =
   & Pick<VirtualBotProfile, 'first_name' | 'username'>
@@ -53,6 +53,7 @@ export type CreateVirtualBotInput =
   & {
     readonly receives_chosen_inline_results?: boolean;
     readonly requests_inline_location?: boolean;
+    readonly enables_bot_to_bot_communication?: boolean;
   };
 
 export type BotCreationResult =
@@ -174,6 +175,7 @@ export class VirtualUserService {
       profile,
       receivesChosenInlineResults: input.receives_chosen_inline_results ?? false,
       requestsInlineLocation: input.requests_inline_location ?? false,
+      enablesBotToBotCommunication: input.enables_bot_to_bot_communication ?? false,
     };
     if (!this.#bots.add(bot)) {
       throw new Error(`Bot ID ${profile.id} or token is already registered`);

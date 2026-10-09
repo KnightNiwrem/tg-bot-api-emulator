@@ -47,6 +47,12 @@ export interface CreateVirtualBotInput {
    * which case accounts cannot share it.
    */
   readonly requests_inline_location?: boolean;
+  /**
+   * Turns on Bot-to-Bot Communication Mode. A bot's supergroup message then reaches another bot
+   * it addresses, through a leading command naming that bot or a direct reply to one of that
+   * bot's messages, when either of the two bots turned the mode on. Defaults to `false`.
+   */
+  readonly enables_bot_to_bot_communication?: boolean;
 }
 
 export interface VirtualBotProfile {

@@ -37,7 +37,7 @@ Each topic page stands on its own once you know the core path.
 | [Reactions](reactions.md)                                   | Reacting to supergroup messages, reaction updates and bots' reactions        |
 | [Contacts and locations](contacts-and-locations.md)         | Sharing contacts and locations, and the buttons that request them            |
 | [Inline mode](inline-mode.md)                               | Inline queries, their answers, chosen results and inline messages            |
-| [Supergroups](supergroups.md)                               | Creating groups, membership, privacy mode and group settings                 |
+| [Supergroups](supergroups.md)                               | Creating groups, membership, privacy mode, bot-to-bot messages and settings  |
 | [Permissions and moderation](permissions-and-moderation.md) | Administrators, rights, restrictions and default permissions                 |
 | [Invite links](invite-links.md)                             | Links bots create, joining through them and join requests                    |
 | [Test controls](test-controls.md)                           | Rate limits, server errors, webhook retries, expiries, emulated web, uploads |

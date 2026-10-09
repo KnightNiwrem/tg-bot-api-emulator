@@ -36,5 +36,6 @@ function createBot(): VirtualBot {
     },
     receivesChosenInlineResults: false,
     requestsInlineLocation: false,
+    enablesBotToBotCommunication: false,
   };
 }

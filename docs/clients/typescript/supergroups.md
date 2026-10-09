@@ -175,6 +175,72 @@ Deno.test('a bot without privacy mode receives every message', () =>
   }));
 ```
 
+## Bots talking to each other
+
+A bot created with `enables_bot_to_bot_communication: true` stands in for one that turned on
+BotFather's Bot-to-Bot Communication Mode. A bot's supergroup message then reaches another bot of
+the supergroup when it starts with a command naming that bot, such as `/translate@translator_bot`,
+or replies directly to one of that bot's messages, provided either bot turned the mode on. The
+message reaches only that bot, whatever its privacy mode, and no other.
+[Bot-to-bot communication](../../features/supergroups.md#bot-to-bot-communication) lists the
+messages that address no bot.
+
+A second bot in the session plays the helper the bot under test talks to. It runs its own grammY
+handlers with its own token:
+
+```ts
+import { assertEquals } from 'jsr:@std/assert@^1';
+import { Bot } from 'npm:grammy@^1.46.0';
+import { withBotFixture } from './bot_fixture.ts';
+
+Deno.test('the bot asks the translator bot and posts its answer', () =>
+  withBotFixture({
+    bot: { enables_bot_to_bot_communication: true },
+    handlers: (bot) => {
+      bot.command('ask', (ctx) => ctx.reply(`/translate@translator_bot ${ctx.match}`));
+      bot.on('message:text').filter(
+        (ctx) => ctx.from.is_bot && ctx.msg.reply_to_message?.from?.id === ctx.me.id,
+        (ctx) => ctx.reply(`Translation: ${ctx.msg.text}`),
+      );
+    },
+  }, async ({ session, botProfile, account, activity }) => {
+    const translator = await session.createBot({
+      first_name: 'Translator',
+      username: 'translator_bot',
+    });
+    const supergroup = await account.createSupergroup({ title: 'Team' });
+    const groupChat = { type: 'supergroup', chatId: supergroup.id } as const;
+    for (const userId of [botProfile.id, translator.bot.id]) {
+      await account.addChatMember({ chat: groupChat, userId });
+    }
+    const translatorBot = new Bot(translator.token, { client: { apiRoot: session.botApiRoot } });
+    translatorBot.command('translate', (ctx) =>
+      ctx.reply(ctx.match === 'hola' ? 'hello' : '?', {
+        reply_parameters: { message_id: ctx.msg.message_id },
+      }));
+    const translatorPolling = translatorBot.start();
+
+    try {
+      const beforeAsking = await activity.position();
+      await account.sendMessage({ to: groupChat, text: '/ask@test_bot hola' });
+      await activity.waitFor({
+        method: 'sendMessage',
+        chat_id: supergroup.id,
+        ok: true,
+        parameters: { text: 'Translation: hello' },
+      }, { after: beforeAsking });
+    } finally {
+      await translatorBot.stop();
+      await translatorPolling;
+    }
+
+    const botMessages = (await account.getMessages({ chat: groupChat }))
+      .filter(({ from }) => from.is_bot)
+      .map(({ text }) => text);
+    assertEquals(botMessages, ['/translate@translator_bot hola', 'hello', 'Translation: hello']);
+  }));
+```
+
 ## Members joining and leaving
 
 A supergroup with several people needs more accounts: `session.createAccount` returns another

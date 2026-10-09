@@ -1106,6 +1106,99 @@ Deno.test('BotUpdateDeliveryService delivers chat_member updates to subscribed a
   }
 });
 
+Deno.test('BotUpdateDeliveryService addresses a bot message only by its own reply or command', () => {
+  const { virtualUsers, sharedChats, messages, messageBoxes, botUpdates, botUpdateDelivery } =
+    createDeliveryFixture();
+  const owner = createAccount(virtualUsers);
+  const senderBot = virtualUsers.createBot({
+    first_name: 'Sender Bot',
+    username: 'sender_bot',
+    enables_bot_to_bot_communication: true,
+  });
+  if (!senderBot.created) {
+    throw new Error(`Expected bot creation to succeed, received ${senderBot.reason}`);
+  }
+  const inlineBot = createInlineBot(virtualUsers, 'inline_bot', false);
+  const supergroupIds = [-1_000_000_000_001, -1_000_000_000_002];
+  for (const id of supergroupIds) {
+    sharedChats.registerSupergroup({
+      kind: 'supergroup',
+      id,
+      title: 'Team',
+      chatInstance: `${id}`,
+      hasProtectedContent: false,
+      defaultPermissions: ALL_CHAT_PERMISSIONS,
+    }, owner.profile.id);
+    for (const bot of [senderBot.bot, inlineBot]) {
+      sharedChats.addChatMember(id, bot.profile.id);
+    }
+  }
+  const [teamId, otherTeamId] = supergroupIds;
+  const send = (
+    chatId: number,
+    authorBotId: number | undefined,
+    text: string,
+    options: { readonly replyToMessageId?: string; readonly viaBotId?: number } = {},
+  ) => {
+    const message = messages.addSupergroupMessage({
+      chatId,
+      author: authorBotId === undefined
+        ? { kind: 'account', accountId: owner.profile.id }
+        : { kind: 'bot', botId: authorBotId },
+      sentAtUnixSeconds: 1_700_000_000,
+      content: { kind: 'text', text, entities: findDetectedEntities(text) },
+      ...options,
+    });
+    messageBoxes.assignMessageId(chatId, message.id);
+    botUpdateDelivery.publish({ type: 'message_created', message });
+    return message;
+  };
+  let firstUnreadUpdateId: number | undefined;
+  const expectInlineBotToReceive = (expectedTexts: readonly string[]) => {
+    const updates = botUpdates.confirmAndReadPendingUpdates(inlineBot.profile.id, {
+      firstUnconfirmedUpdateId: firstUnreadUpdateId,
+      limit: 100,
+    });
+    const lastUpdate = updates.at(-1);
+    if (lastUpdate !== undefined) {
+      firstUnreadUpdateId = lastUpdate.update_id + 1;
+    }
+    const receivedTexts = updates.flatMap((update) =>
+      textContentOf(messageFromUpdate(update))?.text ?? []
+    );
+    if (JSON.stringify(receivedTexts) !== JSON.stringify(expectedTexts)) {
+      throw new Error(
+        `Expected the inline bot to receive ${JSON.stringify(expectedTexts)}, received ${
+          JSON.stringify(receivedTexts)
+        }`,
+      );
+    }
+  };
+  const senderBotId = senderBot.bot.profile.id;
+
+  // An account's message sent through the inline bot is not the inline bot's message.
+  const sentThroughInlineBot = send(teamId, undefined, 'Through the inline bot', {
+    viaBotId: inlineBot.profile.id,
+  });
+  expectInlineBotToReceive(['Through the inline bot']);
+  send(teamId, senderBotId, 'Reply to the account', {
+    replyToMessageId: sentThroughInlineBot.id,
+  });
+  send(teamId, senderBotId, 'Marked as through the inline bot', {
+    viaBotId: inlineBot.profile.id,
+  });
+  expectInlineBotToReceive([]);
+
+  // A reply to the inline bot's message of another supergroup addresses no bot.
+  const elsewhere = send(otherTeamId, inlineBot.profile.id, 'Elsewhere');
+  send(teamId, senderBotId, 'Reply across supergroups', { replyToMessageId: elsewhere.id });
+  expectInlineBotToReceive([]);
+  send(otherTeamId, senderBotId, 'Reply in the same supergroup', {
+    replyToMessageId: elsewhere.id,
+  });
+  expectInlineBotToReceive(['Reply in the same supergroup']);
+});
+
 function createDeliveryFixture() {
   const identities = new TelegramIdentityRepository();
   const accounts = new AccountRepository();
