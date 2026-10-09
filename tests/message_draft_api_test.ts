@@ -16,7 +16,7 @@ import { createTestApi, type EmulationApi, TEST_PUBLIC_ORIGIN } from './support/
 const MAX_TEXT_LENGTH = 4_096;
 
 Deno.test('a bot streams drafts that its account sees apart from the chat history', async () => {
-  const { session, bot, ada, privateChat, callBot } = await createDraftFixture();
+  const { api, session, bot, ada, privateChat, callBot } = await createDraftFixture();
   try {
     const historyBefore = await ada.getMessages({ chat: privateChat });
     const drafts: (MessageDraft | null)[] = [await ada.getMessageDraft({ chat: privateChat })];
@@ -83,6 +83,19 @@ Deno.test('a bot streams drafts that its account sees apart from the chat histor
         }],
       },
       'Expected a mention in the draft to show the mentioned user',
+    );
+    // A JSON number beyond JavaScript's safe integers keeps every digit, as Telegram reads it.
+    await fetchBot(
+      api,
+      session,
+      bot.token,
+      'sendMessageDraft',
+      `{"chat_id": ${ada.id}, "draft_id": 9007199254740993}`,
+    );
+    expectEqual(
+      (await ada.getMessageDraft({ chat: privateChat }))?.draft_id,
+      '9007199254740993',
+      'Expected a 64-bit draft ID sent as a JSON number to stay exact',
     );
     expectEqual(
       await ada.getMessages({ chat: privateChat }),
