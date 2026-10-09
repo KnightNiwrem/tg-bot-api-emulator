@@ -5,7 +5,8 @@ description: >-
   voice note, an audio file, a rich message, a poll, a contact, or a location, each with the fields
   Telegram shows for it, or a service message recording that a participant pinned a message (`pinned_message`),
   or that the account shared users (`users_shared`) or a supergroup (`chat_shared`) in answer to a
-  reply keyboard button's request.
+  reply keyboard button's request, or that the Web App of such a button sent data
+  (`web_app_data`).
 required:
   - message_id
   - from
@@ -55,6 +56,11 @@ oneOf:
     properties:
       chat_shared:
         $ref: ./ChatShared.yaml
+  - required:
+      - web_app_data
+    properties:
+      web_app_data:
+        $ref: ./WebAppData.yaml
 properties:
   message_id:
     type: integer
@@ -216,6 +222,11 @@ properties:
     description: >-
       The supergroup the account shared in answer to a `request_chat` button. The service message
       replies to nothing, as TDLib shows it.
+  web_app_data:
+    $ref: ./WebAppData.yaml
+    description: >-
+      The data the Web App of a `web_app` button sent. The service message replies to nothing, as
+      Telegram's `messages.sendWebViewData` takes no reply.
   reply_markup:
     $ref: ./InlineKeyboardMarkup.yaml
     description: >-

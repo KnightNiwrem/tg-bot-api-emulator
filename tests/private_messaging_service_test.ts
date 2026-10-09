@@ -2254,6 +2254,93 @@ Deno.test('PrivateMessagingService shares chosen users as a service message of t
   }
 });
 
+Deno.test('PrivateMessagingService sends Web App data as a service message of the account', () => {
+  const { virtualUsers, botUpdates, publishedEvents, privateMessaging } =
+    createPrivateMessagingFixture();
+  const account = createAccount(virtualUsers, 'Ada');
+  const bot = createBot(virtualUsers, 'Test Bot', 'test_bot');
+  sendPrivateText(privateMessaging, account.profile.id, bot);
+  const keyboard = privateMessaging.sendBotMessage({
+    fromBotId: bot.profile.id,
+    to: { type: 'private', accountId: account.profile.id },
+    replyInterfaceMarkup: {
+      kind: 'reply_keyboard',
+      rows: [[
+        { text: 'Choose dates', request: { kind: 'web_app', url: 'https://hotel.example/' } },
+        { text: 'Plain' },
+      ]],
+      isPersistent: false,
+      resizesToFit: false,
+      isOneTime: true,
+      isSelective: false,
+    },
+    content: { kind: 'text', text: 'When do you arrive?' },
+  });
+  if (!keyboard.sent) {
+    throw new Error(`Expected the keyboard to be sent, received ${keyboard.reason}`);
+  }
+  const pendingUpdates = () =>
+    botUpdates.confirmAndReadPendingUpdates(bot.profile.id, { limit: 100 });
+  const updateCountBeforePresses = pendingUpdates().length;
+  const eventCountBeforePresses = publishedEvents.length;
+  const press = (text: string, answer?: ReplyKeyboardRequestAnswer) =>
+    privateMessaging.pressReplyKeyboardButton({
+      fromAccountId: account.profile.id,
+      chat: { type: 'private', botId: bot.profile.id },
+      text,
+      ...(answer === undefined ? {} : { answer }),
+    });
+  const dates: ReplyKeyboardRequestAnswer = { kind: 'web_app', data: '{"nights":3}' };
+  const refusals: Array<[PressReplyKeyboardButtonResult, string]> = [
+    [press('Choose dates'), 'reply_keyboard_button_answer_missing'],
+    [press('Plain', dates), 'reply_keyboard_button_answer_not_requested'],
+    [
+      press('Choose dates', { kind: 'chat', chatId: -1_000_000_000_001 }),
+      'reply_keyboard_button_answer_not_requested',
+    ],
+    [press('Choose a room', dates), 'reply_keyboard_button_not_found'],
+  ];
+  for (const [result, expectedReason] of refusals) {
+    if (result.sent || result.reason !== expectedReason) {
+      throw new Error(`Expected ${expectedReason}, received ${JSON.stringify(result)}`);
+    }
+  }
+  if (
+    publishedEvents.length !== eventCountBeforePresses ||
+    pendingUpdates().length !== updateCountBeforePresses
+  ) {
+    throw new Error('Expected refused presses to publish nothing');
+  }
+
+  const sent = press('Choose dates', dates);
+  if (!sent.sent) {
+    throw new Error(`Expected the Web App data to be sent, received ${sent.reason}`);
+  }
+  const expectedContent = {
+    kind: 'web_app_data',
+    buttonText: 'Choose dates',
+    data: '{"nights":3}',
+  };
+  if (
+    sent.message.authorRole !== 'account' ||
+    JSON.stringify(sent.message.content) !== JSON.stringify(expectedContent) ||
+    sent.message.replyToMessageId !== undefined
+  ) {
+    throw new Error(`Expected a service message of the account, received ${JSON.stringify(sent)}`);
+  }
+  const updates = pendingUpdates();
+  const sentMessage = messageFromUpdate(updates.at(-1));
+  if (
+    updates.length !== updateCountBeforePresses + 1 || sentMessage === undefined ||
+    'text' in sentMessage ||
+    !('web_app_data' in sentMessage) ||
+    JSON.stringify(sentMessage.web_app_data) !==
+      JSON.stringify({ button_text: 'Choose dates', data: '{"nights":3}' })
+  ) {
+    throw new Error(`Expected the bot to receive the Web App data: ${JSON.stringify(updates)}`);
+  }
+});
+
 const COLOR_KEYBOARD: ReplyInterfaceMarkup = {
   kind: 'reply_keyboard',
   rows: [[{ text: 'Red' }, { text: 'Green' }]],

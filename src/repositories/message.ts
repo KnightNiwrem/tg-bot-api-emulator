@@ -458,6 +458,7 @@ function copyContent(content: ChatMessageContent): ChatMessageContent {
     case 'title_changed':
     case 'message_pinned':
     case 'chat_shared':
+    case 'web_app_data':
       return { ...content };
     default: {
       const unhandledContent: never = content;

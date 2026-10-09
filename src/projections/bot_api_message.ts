@@ -1,4 +1,5 @@
 import {
+  type BotApiAccountServiceContent,
   type BotApiBotUser,
   type BotApiCallbackQuery,
   type BotApiChatInviteLink,
@@ -553,16 +554,21 @@ function projectRepliedPrivateMessageContent(
   return pinnedMessage === undefined ? {} : { pinned_message: pinnedMessage };
 }
 
-/** Projects what a private message shows other than a pin: content, or what an account shared. */
+/**
+ * Projects what a private message shows other than a pin: content, what an account shared, or the
+ * data a Web App sent.
+ */
 function projectPrivateMessageContent(
   content: Exclude<PrivateMessageContent, MessagePinnedContent>,
   context: MessageProjectionContext,
-): BotApiMessageContent | BotApiUsersSharedServiceContent | BotApiChatSharedServiceContent {
+): BotApiMessageContent | BotApiAccountServiceContent {
   switch (content.kind) {
     case 'users_shared':
       return projectUsersSharedContent(content);
     case 'chat_shared':
       return projectChatSharedContent(content);
+    case 'web_app_data':
+      return { web_app_data: { button_text: content.buttonText, data: content.data } };
     default:
       return projectMessageContent(content, context);
   }

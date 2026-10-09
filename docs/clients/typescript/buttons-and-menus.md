@@ -405,8 +405,8 @@ text, but share the account's own contact, or the `location` passed to `pressRep
 in reply to the keyboard's message instead of sending the text.
 [Contacts and locations](contacts-and-locations.md) shows both. A `request_poll` button takes the
 `poll` the account creates, of the type the button requests, and sends it as the account's poll, as
-[Polls](polls.md#answering-a-poll-request) shows. Buttons with `web_app`
-[requests](../../features/keyboards-and-callbacks.md#request-buttons) cannot be pressed.
+[Polls](polls.md#answering-a-poll-request) shows. A `web_app` button takes the `web_app_data` its
+Web App sends, as [Sending Web App data](#sending-web-app-data) shows.
 
 ### Sharing users and chats
 
@@ -465,6 +465,64 @@ Deno.test('an account shares a teammate with the bot that asked for one', async 
       chat_id: account.id,
       parameters: { text: 'Inviting Grace' },
     }, { after: beforeShare });
+  });
+});
+```
+
+### Sending Web App data
+
+A `web_app` button takes `web_app_data`, the string its Web App would pass to
+`Telegram.WebApp.sendData`. The emulator does not load the Web App: the press opens it and sends the
+data at once, so the button must still be shown. The press returns the account's service message,
+whose `web_app_data` carries the button's text and the data exactly as given; the bot receives the
+same message, which grammY's `message:web_app_data` filter matches. Empty data, and data longer than
+4096 bytes in UTF-8, fail with an `EmulationClientError` and send nothing. The feature page
+describes
+[what the emulator models](../../features/keyboards-and-callbacks.md#sending-web-app-data).
+
+```ts
+import { assertEquals } from 'jsr:@std/assert@^1';
+import { Keyboard } from 'npm:grammy@^1.46.0';
+import { withBotFixture } from './bot_fixture.ts';
+
+Deno.test('an account books the dates its Web App chose', async () => {
+  await withBotFixture({
+    handlers: (bot) => {
+      bot.command('book', (ctx) =>
+        ctx.reply('When do you arrive?', {
+          reply_markup: new Keyboard().webApp('Choose dates', 'https://hotel.example/dates'),
+        }));
+      bot.on('message:web_app_data', (ctx) => {
+        const { from, nights } = JSON.parse(ctx.msg.web_app_data.data);
+        return ctx.reply(`Booked ${nights} nights from ${from}`, {
+          reply_markup: { remove_keyboard: true },
+        });
+      });
+    },
+  }, async ({ account, activity, privateChat }) => {
+    const beforeCommand = await activity.position();
+    await account.sendMessage({ to: privateChat, text: '/book' });
+    await activity.waitFor({
+      method: 'sendMessage',
+      chat_id: account.id,
+      parameters: { text: 'When do you arrive?' },
+    }, { after: beforeCommand });
+
+    const beforeSubmission = await activity.position();
+    const submitted = await account.pressReplyKeyboardButton({
+      chat: privateChat,
+      text: 'Choose dates',
+      web_app_data: JSON.stringify({ from: '2026-12-24', nights: 3 }),
+    });
+    assertEquals(submitted.web_app_data?.button_text, 'Choose dates');
+    await activity.waitFor({
+      method: 'sendMessage',
+      chat_id: account.id,
+      parameters: { text: 'Booked 3 nights from 2026-12-24' },
+    }, { after: beforeSubmission });
+
+    const history = await account.getMessages({ chat: privateChat });
+    assertEquals(history.at(-2)?.web_app_data, submitted.web_app_data);
   });
 });
 ```

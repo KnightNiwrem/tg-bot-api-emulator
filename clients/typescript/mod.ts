@@ -205,6 +205,7 @@ export type {
   VirtualBotProfile,
   Voice,
   WaitForBotActivityOptions,
+  WebAppDataContent,
   WebAppInlineKeyboardButton,
   WebhookAttempt,
   WebhookAttemptControlInput,

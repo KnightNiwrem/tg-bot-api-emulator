@@ -76,9 +76,9 @@ export type ReplyKeyboardButtonRequest =
 
 /**
  * What the user's client answers a reply keyboard button's request with, by the request's kind:
- * the location the client reports, the users the user chose, the chat the user chose, or the poll
- * the user created. A button that requests the user's contact takes no answer, as the client
- * shares the user's own contact.
+ * the location the client reports, the users the user chose, the chat the user chose, the poll
+ * the user created, or the data the Web App sent. A button that requests the user's contact takes
+ * no answer, as the client shares the user's own contact.
  */
 export type ReplyKeyboardRequestAnswer =
   | { readonly kind: 'location'; readonly location: GeoLocation }
@@ -88,7 +88,26 @@ export type ReplyKeyboardRequestAnswer =
     readonly userIds: readonly number[];
   }
   | { readonly kind: 'chat'; readonly chatId: number }
-  | { readonly kind: 'poll'; readonly poll: SpecifiedAccountPoll };
+  | { readonly kind: 'poll'; readonly poll: SpecifiedAccountPoll }
+  | {
+    readonly kind: 'web_app';
+    /** The string the Web App passed to `Telegram.WebApp.sendData`, as it passed it. */
+    readonly data: string;
+  };
+
+/** The most UTF-8 bytes of data a Web App may send, as `Telegram.WebApp.sendData` allows. */
+const MAX_WEB_APP_DATA_BYTES = 4_096;
+
+const utf8Encoder = new TextEncoder();
+
+/**
+ * Whether a Web App can send the data to the bot: Telegram's `telegram-web-app.js` throws
+ * `WebAppDataInvalid` from `sendData` for empty data and for data longer than 4096 bytes in UTF-8,
+ * so no message reaches the bot. What the data means is the Web App's and the bot's business.
+ */
+export function isSendableWebAppData(data: string): boolean {
+  return data.length > 0 && utf8Encoder.encode(data).length <= MAX_WEB_APP_DATA_BYTES;
+}
 
 /**
  * Whether a poll the user created is of the type a `request_poll` button allows, as Telegram's

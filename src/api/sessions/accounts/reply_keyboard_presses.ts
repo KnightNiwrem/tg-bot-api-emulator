@@ -1,7 +1,10 @@
 import { Hono } from 'hono';
 import { z } from 'zod';
 
-import type { ReplyKeyboardRequestAnswer } from '../../../types/reply_interface.ts';
+import {
+  isSendableWebAppData,
+  type ReplyKeyboardRequestAnswer,
+} from '../../../types/reply_interface.ts';
 import { readJsonRequestBody } from '../json_request_body.ts';
 import type { SessionRouteContextTypes } from '../session_route_context_types.ts';
 import { ACCOUNT_ID_PARAMETER, accountPathSchema } from './account_paths.ts';
@@ -24,8 +27,8 @@ const REPLY_KEYBOARD_PRESS_COLLECTION_PATH =
  * A press of a reply keyboard button, by its text, with at most one answer to the button's
  * request: the location the account's client reports for a `request_location` button, the users
  * the account chose for a `request_users` button, the supergroup it chose for a `request_chat`
- * button, or the poll it created for a `request_poll` button. Only a button with that request
- * takes the answer.
+ * button, the poll it created for a `request_poll` button, or the data the Web App of a `web_app`
+ * button sends. Only a button with that request takes the answer.
  */
 const pressReplyKeyboardButtonRequestSchema = z.strictObject({
   chat: chatSchema,
@@ -34,7 +37,11 @@ const pressReplyKeyboardButtonRequestSchema = z.strictObject({
   shared_user_ids: z.array(telegramUserIdSchema).min(1).optional(),
   shared_chat_id: supergroupChatIdSchema.optional(),
   poll: accountPollSchema.optional(),
-}).transform(({ chat, text, location, shared_user_ids, shared_chat_id, poll }, context) => {
+  web_app_data: z.string().refine(isSendableWebAppData).optional(),
+}).transform((
+  { chat, text, location, shared_user_ids, shared_chat_id, poll, web_app_data },
+  context,
+) => {
   const answers: ReplyKeyboardRequestAnswer[] = [
     ...(location === undefined ? [] : [{ kind: 'location' as const, location }]),
     ...(shared_user_ids === undefined
@@ -42,6 +49,7 @@ const pressReplyKeyboardButtonRequestSchema = z.strictObject({
       : [{ kind: 'users' as const, userIds: shared_user_ids }]),
     ...(shared_chat_id === undefined ? [] : [{ kind: 'chat' as const, chatId: shared_chat_id }]),
     ...(poll === undefined ? [] : [{ kind: 'poll' as const, poll }]),
+    ...(web_app_data === undefined ? [] : [{ kind: 'web_app' as const, data: web_app_data }]),
   ];
   if (answers.length > 1) {
     context.addIssue({ code: 'custom', message: 'A press answers at most one request' });

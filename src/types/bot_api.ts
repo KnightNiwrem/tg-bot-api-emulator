@@ -416,22 +416,40 @@ export interface BotApiChatSharedServiceContent {
   };
 }
 
-/** What a private message shows: content, a pin, or the users or chat an account shared. */
+/**
+ * The field of a service message about data a Web App sent the bot, which takes the place of
+ * content, as the official server's `JsonWebAppData` writes it.
+ */
+export interface BotApiWebAppDataServiceContent {
+  readonly web_app_data: {
+    readonly button_text: string;
+    readonly data: string;
+  };
+}
+
+/** The fields of a private service message about what an account sent the bot from its client. */
+export type BotApiAccountServiceContent =
+  | BotApiUsersSharedServiceContent
+  | BotApiChatSharedServiceContent
+  | BotApiWebAppDataServiceContent;
+
+/**
+ * What a private message shows: content, a pin, the users or chat an account shared, or the data
+ * a Web App sent.
+ */
 export type BotApiPrivateMessageContent =
   | BotApiMessageContent
   | BotApiPinServiceContent<BotApiPinnedPrivateMessage, BotApiPrivateChat>
-  | BotApiUsersSharedServiceContent
-  | BotApiChatSharedServiceContent;
+  | BotApiAccountServiceContent;
 
 /**
- * What a private message shows as a replied message: content, a pin, or the users or chat an
- * account shared.
+ * What a private message shows as a replied message: content, a pin, the users or chat an account
+ * shared, or the data a Web App sent.
  */
 export type BotApiRepliedPrivateMessageContent =
   | BotApiMessageContent
   | BotApiRepliedPinServiceContent<BotApiPinnedPrivateMessage>
-  | BotApiUsersSharedServiceContent
-  | BotApiChatSharedServiceContent;
+  | BotApiAccountServiceContent;
 
 /** What a supergroup message shows: content, or a change of the supergroup. */
 export type BotApiSupergroupMessageContent =

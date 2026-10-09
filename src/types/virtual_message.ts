@@ -367,13 +367,27 @@ export interface ChatSharedMessageContent {
 }
 
 /**
- * What a private service message shows instead of content: a pin, or the users or chat an account
- * shared with the bot.
+ * A service message's record that a Web App, which an account opened from a reply keyboard button
+ * of the bot of its private chat, sent data to the bot. Telegram does not vouch for either value:
+ * a client may send any data with any button text.
+ */
+export interface WebAppDataMessageContent {
+  readonly kind: 'web_app_data';
+  /** The text of the button that opened the Web App. */
+  readonly buttonText: string;
+  /** The data the Web App sent, as it sent it. */
+  readonly data: string;
+}
+
+/**
+ * What a private service message shows instead of content: a pin, the users or chat an account
+ * shared with the bot, or the data a Web App sent the bot.
  */
 export type PrivateServiceContent =
   | MessagePinnedContent
   | UsersSharedMessageContent
-  | ChatSharedMessageContent;
+  | ChatSharedMessageContent
+  | WebAppDataMessageContent;
 
 /** What a private message shows: content its author wrote, or a service message's record. */
 export type PrivateMessageContent = MessageContent | PrivateServiceContent;
@@ -395,6 +409,7 @@ function isServiceContent(
     case 'message_pinned':
     case 'users_shared':
     case 'chat_shared':
+    case 'web_app_data':
       return true;
     case 'text':
     case 'photo':
@@ -439,6 +454,7 @@ export function isCaptionedMediaContent(
     case 'message_pinned':
     case 'users_shared':
     case 'chat_shared':
+    case 'web_app_data':
       return false;
     default: {
       const unhandledContent: never = content;
@@ -470,6 +486,7 @@ export function getContentText(content: ChatMessageContent): FormattedText {
     case 'message_pinned':
     case 'users_shared':
     case 'chat_shared':
+    case 'web_app_data':
       return { text: '', entities: [] };
     default: {
       const unhandledContent: never = content;
