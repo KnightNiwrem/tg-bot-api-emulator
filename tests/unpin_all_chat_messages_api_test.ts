@@ -27,6 +27,11 @@ interface ShownMessage {
   readonly pinned_message?: { readonly text?: string };
 }
 
+/** A chat as `getChat` shows it, which omits `pinned_message` when the chat pins nothing. */
+interface ShownChat {
+  readonly pinned_message?: ShownMessage;
+}
+
 /**
  * Creates a session where Ada owns a supergroup with Grace, a reset bot that is an administrator
  * with `can_pin_messages`, and a member bot, and where Ada has started private chats with both
@@ -81,9 +86,20 @@ async function createUnpinAllFixture() {
   };
   const pinnedTexts = async (account: VirtualAccountClient, chat: MessageTarget) =>
     (await account.getPinnedMessages({ chat })).map((message) => (message as ShownMessage).text);
-  const shownPinnedMessage = async (bot: FixtureBot, chatId: number) => {
-    const [, chat] = await callBot(bot, 'getChat', { chat_id: chatId });
-    return (chat as { readonly pinned_message?: ShownMessage }).pinned_message?.text;
+  const getChatAsBot = async (bot: FixtureBot, chatId: number): Promise<ShownChat> => {
+    const [status, chat] = await callBot(bot, 'getChat', { chat_id: chatId });
+    if (status !== 200) {
+      throw new Error(`Expected getChat to succeed, received ${status}: ${chat}`);
+    }
+    return chat as ShownChat;
+  };
+  /** Sends a message as a bot and returns its ID. */
+  const sendAsBot = async (bot: FixtureBot, parameters: object) => {
+    const [status, message] = await callBot(bot, 'sendMessage', parameters);
+    if (status !== 200) {
+      throw new Error(`Expected sendMessage to succeed, received ${status}: ${message}`);
+    }
+    return (message as ShownMessage).message_id;
   };
 
   return {
@@ -99,7 +115,8 @@ async function createUnpinAllFixture() {
     callBot,
     takeUpdates,
     pinnedTexts,
-    shownPinnedMessage,
+    getChatAsBot,
+    sendAsBot,
   };
 }
 
@@ -107,8 +124,18 @@ type UnpinAllFixture = Awaited<ReturnType<typeof createUnpinAllFixture>>;
 
 Deno.test('a grammY bot clears every pin on /reset, then pins a fresh notice', async () => {
   const fixture = await createUnpinAllFixture();
-  const { session, fetch, ada, grace, resetBot, team, callBot, pinnedTexts, shownPinnedMessage } =
-    fixture;
+  const {
+    session,
+    fetch,
+    ada,
+    grace,
+    resetBot,
+    team,
+    callBot,
+    pinnedTexts,
+    getChatAsBot,
+    sendAsBot,
+  } = fixture;
   const rules = await ada.sendMessage({ to: team, text: 'rules' });
   const agenda = await grace.sendMessage({ to: team, text: 'agenda' });
   const reply = await grace.sendMessage({
@@ -125,6 +152,20 @@ Deno.test('a grammY bot clears every pin on /reset, then pins a fresh notice', a
     }),
     [200, true],
     'the bot pins too',
+  );
+  const earlierNotice = await sendAsBot(resetBot, {
+    chat_id: team.chatId,
+    text: 'Earlier notice',
+  });
+  expectEqual(
+    await callBot(resetBot, 'pinChatMessage', { chat_id: team.chatId, message_id: earlierNotice }),
+    [200, true],
+    'the bot pins its own earlier notice',
+  );
+  expectEqual(
+    await pinnedTexts(ada, team),
+    ['Earlier notice', 'noted', 'agenda', 'rules'],
+    'Expected messages by the bot and by accounts to be pinned before the reset',
   );
   const historyBeforeReset = await ada.getMessages({ chat: team });
 
@@ -147,7 +188,7 @@ Deno.test('a grammY bot clears every pin on /reset, then pins a fresh notice', a
       { after: start },
     );
     const pinsAfterClearing = await pinnedTexts(ada, team);
-    const shownAfterClearing = await shownPinnedMessage(resetBot, team.chatId);
+    const chatAfterClearing = await getChatAsBot(resetBot, team.chatId);
     clearingObserved.resolve();
     const notice = await activity.waitFor(
       { method: 'sendMessage', chat_id: team.chatId, ok: true },
@@ -162,12 +203,15 @@ Deno.test('a grammY bot clears every pin on /reset, then pins a fresh notice', a
     );
 
     expectEqual(
-      [pinsAfterClearing, shownAfterClearing],
-      [[], undefined],
-      'Expected no pin between clearing and repinning',
+      [pinsAfterClearing, 'pinned_message' in chatAfterClearing],
+      [[], false],
+      'Expected no pin, and getChat to omit pinned_message, between clearing and repinning',
     );
     expectEqual(
-      [await pinnedTexts(ada, team), await shownPinnedMessage(resetBot, team.chatId)],
+      [
+        await pinnedTexts(ada, team),
+        (await getChatAsBot(resetBot, team.chatId)).pinned_message?.text,
+      ],
       [['Fresh start'], 'Fresh start'],
       'Expected the fresh notice to be the only pin',
     );
@@ -193,24 +237,25 @@ Deno.test('a grammY bot clears every pin on /reset, then pins a fresh notice', a
 });
 
 /**
- * Pins, in the reset bot's private chat, a question by Ada and her reply to it by the bot, and one
- * message each in the member bot's private chat and the supergroup.
+ * Pins, in the reset bot's private chat, a question Ada sent, which the bot pins, and the bot's
+ * reply to it, which Ada pins. Ada also sends and pins one message each in the member bot's private
+ * chat and the supergroup.
  */
 async function pinInEveryChat(
-  { ada, resetBot, team, resetBotChat, memberBotChat, callBot }: UnpinAllFixture,
+  { ada, resetBot, team, resetBotChat, memberBotChat, callBot, sendAsBot }: UnpinAllFixture,
 ): Promise<void> {
   const question = await ada.sendMessage({ to: resetBotChat, text: 'question' });
-  const answer = await ada.sendMessage({
-    to: resetBotChat,
+  const answerId = await sendAsBot(resetBot, {
+    chat_id: ada.id,
     text: 'answer',
-    reply_to_message_id: question.message_id,
+    reply_parameters: { message_id: question.message_id },
   });
-  await ada.pinMessage({ chat: resetBotChat, message_id: question.message_id });
   expectEqual(
-    await callBot(resetBot, 'pinChatMessage', { chat_id: ada.id, message_id: answer.message_id }),
+    await callBot(resetBot, 'pinChatMessage', { chat_id: ada.id, message_id: question.message_id }),
     [200, true],
-    'the bot pins in its private chat',
+    "the bot pins Ada's question in its private chat",
   );
+  await ada.pinMessage({ chat: resetBotChat, message_id: answerId });
   const other = await ada.sendMessage({ to: memberBotChat, text: 'other bot' });
   await ada.pinMessage({ chat: memberBotChat, message_id: other.message_id });
   const teamMessage = await ada.sendMessage({ to: team, text: 'team' });
@@ -229,23 +274,31 @@ Deno.test('unpinAllChatMessages clears a private chat alone and keeps its histor
     callBot,
     takeUpdates,
     pinnedTexts,
-    shownPinnedMessage,
+    getChatAsBot,
   } = fixture;
   try {
     await pinInEveryChat(fixture);
     await pinInEveryChat(otherSession);
     const historyBefore = await ada.getMessages({ chat: resetBotChat });
     await takeUpdates(resetBot);
+    expectEqual(
+      (await getChatAsBot(resetBot, ada.id)).pinned_message?.text,
+      'answer',
+      "getChat shows the bot's pinned reply before the unpin",
+    );
 
     expectEqual(
       await callBot(resetBot, 'unpinAllChatMessages', { chat_id: ada.id }),
       [200, true],
-      'the bot unpins both pins of its private chat',
+      "the bot unpins Ada's question and its own reply in its private chat",
     );
     expectEqual(
-      [await pinnedTexts(ada, resetBotChat), await shownPinnedMessage(resetBot, ada.id)],
-      [[], undefined],
-      'the private chat pins nothing',
+      [
+        await pinnedTexts(ada, resetBotChat),
+        'pinned_message' in await getChatAsBot(resetBot, ada.id),
+      ],
+      [[], false],
+      'the private chat pins nothing, and getChat omits pinned_message',
     );
     expectEqual(
       await ada.getMessages({ chat: resetBotChat }),
