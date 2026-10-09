@@ -29,8 +29,13 @@ post:
     App's `Telegram.WebApp.sendData` does, in a `web_app_data` service message of the account
     that carries the button's text and replies to nothing. The press stands for opening the Web
     App and the Web App sending its data at once, so the button must be shown when the data is
-    sent; the emulator keeps no Web App open across later keyboards. A failed press creates no
-    message.
+    sent; the emulator keeps no Web App open across later keyboards. When buttons share the
+    pressed text, the answer selects among them: each answer selects the buttons whose request
+    takes it, in any order and row, and a press without an answer selects a text or
+    `request_contact` button. Buttons left that request the same thing act alike, and the first is
+    pressed; buttons left that request different things, such as `request_users` buttons with
+    different `request_id`s or `web_app` buttons with different links, make the press ambiguous.
+    A failed press creates no message.
   requestBody:
     required: true
     content:
@@ -54,11 +59,12 @@ post:
       description: >-
         The request is invalid or answers more than one request, the chat shows no reply
         keyboard with a button of that text, an answer is missing for the button's request or
-        given for a button without that request, the chosen users or supergroup do not meet the
-        button's criteria, the created poll is invalid or not of the requested type, or the Web
-        App data is empty or longer than 4096 bytes in UTF-8. A request that requires Premium
-        users, a channel, a forum, or an anonymous administrator cannot be answered, as the
-        emulator models none of them.
+        given for a button without that request, the text and answer leave buttons that request
+        different things, the chosen users or supergroup do not meet the button's criteria, the
+        created poll is invalid or not of the requested type, or the Web App data is empty or
+        longer than 4096 bytes in UTF-8. A request that requires Premium users, a channel, a
+        forum, or an anonymous administrator cannot be answered, as the emulator models none of
+        them.
     '403':
       description: >-
         The account is not a member of the supergroup it presses a button in, or may not send

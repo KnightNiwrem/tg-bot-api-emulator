@@ -2341,6 +2341,302 @@ Deno.test('PrivateMessagingService sends Web App data as a service message of th
   }
 });
 
+Deno.test('PrivateMessagingService answers the button that takes the answer among buttons that share a label', () => {
+  const { virtualUsers, botUpdates, publishedEvents, privateMessaging } =
+    createPrivateMessagingFixture();
+  const account = createAccount(virtualUsers, 'Ada');
+  const grace = createAccount(virtualUsers, 'Grace');
+  const bot = createBot(virtualUsers, 'Test Bot', 'test_bot');
+  sendPrivateText(privateMessaging, account.profile.id, bot);
+  const conversation = { accountId: account.profile.id, botId: bot.profile.id };
+  // The text button comes first, so a press that answers a request must look past it.
+  const keyboard = privateMessaging.sendBotMessage({
+    fromBotId: bot.profile.id,
+    to: { type: 'private', accountId: account.profile.id },
+    replyInterfaceMarkup: {
+      kind: 'reply_keyboard',
+      rows: [
+        [{ text: 'Answer' }],
+        [
+          { text: 'Answer', request: { kind: 'location' } },
+          {
+            text: 'Answer',
+            request: {
+              kind: 'users',
+              requestId: 3,
+              maxQuantity: 1,
+              requestsName: true,
+              requestsUsername: false,
+              requestsPhoto: false,
+            },
+          },
+          {
+            text: 'Answer',
+            request: {
+              kind: 'chat',
+              requestId: 4,
+              chatIsChannel: false,
+              chatIsCreated: false,
+              botIsMember: false,
+              requestsTitle: false,
+              requestsUsername: false,
+              requestsPhoto: false,
+            },
+          },
+        ],
+        [
+          { text: 'Answer', request: { kind: 'poll', pollType: 'quiz' } },
+          { text: 'Answer', request: { kind: 'web_app', url: 'https://hotel.example/' } },
+        ],
+      ],
+      isPersistent: false,
+      resizesToFit: false,
+      isOneTime: true,
+      isSelective: false,
+    },
+    content: { kind: 'text', text: 'Answer me' },
+  });
+  if (!keyboard.sent) {
+    throw new Error(`Expected the keyboard to be sent, received ${keyboard.reason}`);
+  }
+  const pendingUpdates = () =>
+    botUpdates.confirmAndReadPendingUpdates(bot.profile.id, { limit: 100 });
+  const readState = () => ({
+    history: privateMessaging.getPrivateMessageHistory(conversation),
+    replyInterface: privateMessaging.getPrivateChatReplyInterface(conversation),
+    updateCount: pendingUpdates().length,
+    eventCount: publishedEvents.length,
+  });
+  const press = (answer?: ReplyKeyboardRequestAnswer) =>
+    privateMessaging.pressReplyKeyboardButton({
+      fromAccountId: account.profile.id,
+      chat: { type: 'private', botId: bot.profile.id },
+      text: 'Answer',
+      ...(answer === undefined ? {} : { answer }),
+    });
+  const quiz = (kind: 'quiz' | 'regular'): ReplyKeyboardRequestAnswer => ({
+    kind: 'poll',
+    poll: {
+      question: { text: 'Which floor?' },
+      options: [{ text: 'First' }, { text: 'Second' }],
+      isAnonymous: true,
+      allowsMultipleAnswers: false,
+      allowsRevoting: false,
+      type: kind === 'quiz'
+        ? { kind: 'quiz', correctOptionPositions: [0], explanation: { text: '' } }
+        : { kind: 'regular' },
+    },
+  });
+
+  const stateBeforeRefusals = readState();
+  const refusals: Array<[PressReplyKeyboardButtonResult, string]> = [
+    [
+      press({ kind: 'users', userIds: [grace.profile.id, account.profile.id] }),
+      'shared_users_too_many',
+    ],
+    [press({ kind: 'chat', chatId: -1_000_000_000_001 }), 'shared_chat_not_found'],
+    [press(quiz('regular')), 'requested_poll_type_mismatch'],
+  ];
+  for (const [result, expectedReason] of refusals) {
+    if (result.sent || result.reason !== expectedReason) {
+      throw new Error(`Expected ${expectedReason}, received ${JSON.stringify(result)}`);
+    }
+  }
+  expectJsonEqual(readState(), stateBeforeRefusals, 'Expected refused presses to change nothing');
+
+  const sentMessages = new Map<string, PrivateMessage>();
+  const presses: Array<[string, ReplyKeyboardRequestAnswer | undefined, unknown]> = [
+    ['text', undefined, { kind: 'text', text: 'Answer', entities: [] }],
+    [
+      'location',
+      { kind: 'location', location: { latitude: 51.5, longitude: -0.1 } },
+      { kind: 'location', location: { latitude: 51.5, longitude: -0.1 } },
+    ],
+    [
+      'users',
+      { kind: 'users', userIds: [grace.profile.id] },
+      {
+        kind: 'users_shared',
+        requestId: 3,
+        users: [{ userId: grace.profile.id, firstName: 'Grace' }],
+      },
+    ],
+    [
+      'Web App data',
+      { kind: 'web_app', data: 'payload' },
+      { kind: 'web_app_data', buttonText: 'Answer', data: 'payload' },
+    ],
+    ['quiz', quiz('quiz'), { kind: 'poll' }],
+  ];
+  for (const [description, answer, expectedContent] of presses) {
+    const stateBeforePress = readState();
+    const result = press(answer);
+    if (!result.sent) {
+      throw new Error(`Expected the ${description} press to be sent, received ${result.reason}`);
+    }
+    expectJsonEqual(
+      result.message.content.kind === 'poll' ? { kind: 'poll' } : result.message.content,
+      expectedContent,
+      `Expected the ${description}`,
+    );
+    sentMessages.set(description, result.message);
+    const stateAfterPress = readState();
+    expectJsonEqual(
+      [
+        stateAfterPress.history.found && stateAfterPress.history.messages.length,
+        stateAfterPress.updateCount,
+        stateAfterPress.replyInterface,
+      ],
+      [
+        stateBeforePress.history.found && stateBeforePress.history.messages.length + 1,
+        stateBeforePress.updateCount + 1,
+        stateBeforePress.replyInterface,
+      ],
+      `Expected the ${description} press to add one message and one update and keep the keyboard`,
+    );
+  }
+  expectJsonEqual(
+    [...sentMessages].map(([description, message]) => [description, message.replyToMessageId]),
+    [
+      ['text', undefined],
+      ['location', keyboard.message.id],
+      ['users', undefined],
+      ['Web App data', undefined],
+      ['quiz', undefined],
+    ],
+    'Expected only the location to reply to the keyboard, as before labels repeated',
+  );
+
+  // A press answers the keyboard shown when it is sent.
+  privateMessaging.sendBotMessage({
+    fromBotId: bot.profile.id,
+    to: { type: 'private', accountId: account.profile.id },
+    replyInterfaceMarkup: {
+      kind: 'reply_keyboard',
+      rows: [[{ text: 'Answer', request: { kind: 'web_app', url: 'https://hotel.example/' } }]],
+      isPersistent: false,
+      resizesToFit: false,
+      isOneTime: false,
+      isSelective: false,
+    },
+    content: { kind: 'text', text: 'Only the Web App now' },
+  });
+  const textAfterReplacement = press();
+  if (textAfterReplacement.sent) {
+    throw new Error('Expected the replaced text button to be gone');
+  }
+  expectJsonEqual(
+    textAfterReplacement.reason,
+    'reply_keyboard_button_answer_missing',
+    'Expected the replacement keyboard to leave only the Web App button',
+  );
+  privateMessaging.sendBotMessage({
+    fromBotId: bot.profile.id,
+    to: { type: 'private', accountId: account.profile.id },
+    replyInterfaceMarkup: { kind: 'reply_keyboard_removal', isSelective: false },
+    content: { kind: 'text', text: 'Done' },
+  });
+  const afterRemoval = press({ kind: 'web_app', data: 'payload' });
+  expectJsonEqual(
+    afterRemoval.sent ? 'sent' : afterRemoval.reason,
+    'reply_keyboard_button_not_found',
+    'Expected a removed keyboard to answer nothing',
+  );
+});
+
+Deno.test('PrivateMessagingService refuses a press whose label leaves buttons that request different things', () => {
+  const { virtualUsers, botUpdates, publishedEvents, privateMessaging } =
+    createPrivateMessagingFixture();
+  const account = createAccount(virtualUsers, 'Ada');
+  const grace = createAccount(virtualUsers, 'Grace');
+  const bot = createBot(virtualUsers, 'Test Bot', 'test_bot');
+  sendPrivateText(privateMessaging, account.profile.id, bot);
+  const conversation = { accountId: account.profile.id, botId: bot.profile.id };
+  const usersRequest = (requestId: number) => ({
+    kind: 'users' as const,
+    requestId,
+    maxQuantity: 1,
+    requestsName: false,
+    requestsUsername: false,
+    requestsPhoto: false,
+  });
+  const keyboard = privateMessaging.sendBotMessage({
+    fromBotId: bot.profile.id,
+    to: { type: 'private', accountId: account.profile.id },
+    replyInterfaceMarkup: {
+      kind: 'reply_keyboard',
+      rows: [
+        [{ text: 'Share' }, { text: 'Share', request: { kind: 'contact' } }],
+        [
+          { text: 'Friends', request: usersRequest(1) },
+          { text: 'Friends', request: usersRequest(2) },
+        ],
+        [
+          { text: 'App', request: { kind: 'web_app', url: 'https://hotel.example/dates' } },
+          { text: 'App', request: { kind: 'web_app', url: 'https://hotel.example/rooms' } },
+        ],
+        [{ text: 'Same' }, { text: 'Same', style: 'primary' }],
+        [
+          { text: 'Open', request: { kind: 'web_app', url: 'https://hotel.example/' } },
+          { text: 'Open', request: { kind: 'web_app', url: 'https://hotel.example/' } },
+        ],
+      ],
+      isPersistent: false,
+      resizesToFit: false,
+      isOneTime: false,
+      isSelective: false,
+    },
+    content: { kind: 'text', text: 'Choose' },
+  });
+  if (!keyboard.sent) {
+    throw new Error(`Expected the keyboard to be sent, received ${keyboard.reason}`);
+  }
+  const readState = () => ({
+    history: privateMessaging.getPrivateMessageHistory(conversation),
+    replyInterface: privateMessaging.getPrivateChatReplyInterface(conversation),
+    updateCount: botUpdates.confirmAndReadPendingUpdates(bot.profile.id, { limit: 100 }).length,
+    eventCount: publishedEvents.length,
+  });
+  const press = (text: string, answer?: ReplyKeyboardRequestAnswer) =>
+    privateMessaging.pressReplyKeyboardButton({
+      fromAccountId: account.profile.id,
+      chat: { type: 'private', botId: bot.profile.id },
+      text,
+      ...(answer === undefined ? {} : { answer }),
+    });
+  const stateBeforeRefusals = readState();
+  const refusals: Array<[PressReplyKeyboardButtonResult, string]> = [
+    [press('Share'), 'reply_keyboard_button_ambiguous'],
+    [
+      press('Friends', { kind: 'users', userIds: [grace.profile.id] }),
+      'reply_keyboard_button_ambiguous',
+    ],
+    [press('Friends'), 'reply_keyboard_button_answer_missing'],
+    [
+      press('Friends', { kind: 'web_app', data: 'x' }),
+      'reply_keyboard_button_answer_not_requested',
+    ],
+    [press('App', { kind: 'web_app', data: 'x' }), 'reply_keyboard_button_ambiguous'],
+  ];
+  for (const [result, expectedReason] of refusals) {
+    if (result.sent || result.reason !== expectedReason) {
+      throw new Error(`Expected ${expectedReason}, received ${JSON.stringify(result)}`);
+    }
+  }
+  expectJsonEqual(readState(), stateBeforeRefusals, 'Expected ambiguous presses to change nothing');
+
+  const same = press('Same');
+  const open = press('Open', { kind: 'web_app', data: 'x' });
+  expectJsonEqual(
+    [same.sent && same.message.content, open.sent && open.message.content],
+    [
+      { kind: 'text', text: 'Same', entities: [] },
+      { kind: 'web_app_data', buttonText: 'Open', data: 'x' },
+    ],
+    'Expected buttons that request the same thing to act as one',
+  );
+});
+
 const COLOR_KEYBOARD: ReplyInterfaceMarkup = {
   kind: 'reply_keyboard',
   rows: [[{ text: 'Red' }, { text: 'Green' }]],

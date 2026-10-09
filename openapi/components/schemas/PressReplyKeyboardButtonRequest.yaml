@@ -12,7 +12,10 @@ properties:
   text:
     type: string
     minLength: 1
-    description: The text of the button to press.
+    description: >-
+      The text of the button to press. Of the buttons with this text, the press selects those that
+      take its answer, or, without an answer, a text or `request_contact` button; buttons left that
+      request different things make the press fail with `400`.
   location:
     $ref: ./Location.yaml
     description: >-

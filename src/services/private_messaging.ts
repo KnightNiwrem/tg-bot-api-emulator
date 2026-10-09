@@ -6,11 +6,12 @@ import type { ExternalReplyTarget } from '../types/message_reply.ts';
 import type { MessageForward } from '../types/message_forward.ts';
 import {
   type BotMessageReplyMarkup,
-  findReplyKeyboardButton,
   isRequestedPollType,
   type ReplyInterface,
   type ReplyInterfaceMarkup,
+  type ReplyKeyboardButtonSelectionFailureReason,
   type ReplyKeyboardRequestAnswer,
+  selectReplyKeyboardButton,
 } from '../types/reply_interface.ts';
 import type { VirtualAccount } from '../types/virtual_account.ts';
 import type { VirtualBot } from '../types/virtual_bot.ts';
@@ -522,7 +523,10 @@ export interface PressReplyKeyboardButtonInput {
     readonly type: 'private';
     readonly botId: number;
   };
-  /** The text of the button to press. */
+  /**
+   * The text of the button to press. Buttons may share it, so the answer's kind also selects the
+   * button, as `selectReplyKeyboardButton` describes.
+   */
   readonly text: string;
   /**
    * What the account's client answers the button's request with, which only a button with a
@@ -536,9 +540,7 @@ export type PressReplyKeyboardButtonResult =
   | {
     readonly sent: false;
     readonly reason:
-      | 'reply_keyboard_button_not_found'
-      | 'reply_keyboard_button_answer_missing'
-      | 'reply_keyboard_button_answer_not_requested'
+      | ReplyKeyboardButtonSelectionFailureReason
       | 'requested_poll_type_mismatch'
       | SharedUsersFailureReason
       | SharedChatFailureReason;
@@ -1429,19 +1431,23 @@ export class PrivateMessagingService {
       accountId: input.fromAccountId,
       botId: input.chat.botId,
     });
-    const replyInterface = shownReplyInterface?.replyInterface;
-    const button = replyInterface?.kind === 'reply_keyboard'
-      ? findReplyKeyboardButton(replyInterface, input.text)
-      : undefined;
-    if (shownReplyInterface === undefined || button === undefined) {
+    if (shownReplyInterface?.replyInterface.kind !== 'reply_keyboard') {
       return { sent: false, reason: 'reply_keyboard_button_not_found' };
     }
-    const { request } = button;
     const { answer } = input;
-    if (answer !== undefined && answer.kind !== request?.kind) {
-      return { sent: false, reason: 'reply_keyboard_button_answer_not_requested' };
+    const selection = selectReplyKeyboardButton(
+      shownReplyInterface.replyInterface,
+      input.text,
+      answer?.kind,
+    );
+    if (!selection.selected) {
+      return { sent: false, reason: selection.reason };
     }
+    const { button } = selection;
+    const { request } = button;
 
+    // The selection leaves only a button that takes the answer's kind, or no answer; each case
+    // narrows the answer to its request's kind.
     switch (request?.kind) {
       case undefined:
         return this.sendAccountMessage({
