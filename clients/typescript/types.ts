@@ -2542,10 +2542,18 @@ export interface VirtualAccountClient extends VirtualAccountProfile {
   ): Promise<readonly MessageIn<Target>[]>;
   /**
    * Returns the chat actions, such as typing, that this account's client shows in its private
-   * chat with a bot or in a supergroup it is a member of. A bot's action lasts 5.5 seconds unless
-   * the bot sends it again, and ends when the bot cancels it or sends a message to the chat.
+   * chat with a bot or in a supergroup it is a member of, in the order the bots last sent them. A
+   * bot's action shows until the bot cancels it or sends a message to the chat, and never expires
+   * as time passes: see `expireChatAction`.
    */
   getChatActions(input: AccountChatActionsInput): Promise<readonly ChatAction[]>;
+  /**
+   * Stops showing a bot's chat action in this account's private chat with the bot, or one bot's
+   * action in a supergroup, as Telegram's clients do 5.5 seconds after the bot last sent it. Other
+   * bots' actions stay. The bot is not told, and its next action shows again. Fails when the bot
+   * shows no action.
+   */
+  expireChatAction(input: ExpireChatActionInput): Promise<void>;
   /**
    * Returns the draft of a message the bot is generating, which this account's client shows in
    * its private chat with the bot, or `null` for none. A `sendMessageDraft` with the shown draft's
@@ -2706,6 +2714,11 @@ export interface VirtualAccountClient extends VirtualAccountProfile {
 export interface AccountChatActionsInput {
   readonly chat: MessageTarget;
 }
+
+/** The chat action a test expires: the bot's in a private chat, or one bot's in a supergroup. */
+export type ExpireChatActionInput =
+  | { readonly chat: PrivateMessageTarget }
+  | { readonly chat: SupergroupMessageTarget; readonly botId: number };
 
 export interface AccountNotificationsInput {
   readonly chat: MessageTarget;

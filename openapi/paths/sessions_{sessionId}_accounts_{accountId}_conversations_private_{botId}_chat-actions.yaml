@@ -7,9 +7,10 @@ get:
   operationId: getPrivateChatActions
   summary: Return the chat action the bot shows in its private chat with the account
   description: >-
-    As TDLib's `DialogActionManager` shows them, a bot's action from `sendChatAction` lasts
-    5.5 seconds unless the bot sends it again, and ends when the bot cancels it or sends a
-    message to the chat.
+    A bot's action from `sendChatAction` shows until the bot cancels it or sends a message to
+    the chat. Telegram's clients also stop showing it 5.5 seconds after the bot last sent it;
+    the emulator never ends it as time passes, and a test expires it through
+    `chat-actions/expiry` instead.
   responses:
     '200':
       description: The bot's action, or none.

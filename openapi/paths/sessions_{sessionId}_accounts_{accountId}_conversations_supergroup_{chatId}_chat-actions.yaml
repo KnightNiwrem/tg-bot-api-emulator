@@ -8,8 +8,8 @@ get:
   summary: Return the chat actions the supergroup's bots show
   description: >-
     Returns each bot's action in the order the bots last sent them. As for a private chat, an
-    action lasts 5.5 seconds unless the bot sends it again, and ends when the bot cancels it
-    or sends a message to the supergroup.
+    action shows until the bot cancels it or sends a message to the supergroup, or until a test
+    expires it through `chat-actions/{botId}/expiry`; it never ends as time passes.
   responses:
     '200':
       description: The bots' actions, which may be none.

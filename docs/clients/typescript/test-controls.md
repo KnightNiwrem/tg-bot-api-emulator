@@ -230,24 +230,35 @@ Deno.test('the bot answers a command its webhook failed the first time', async (
 
 ## Time controls
 
-The emulator never lets time end anything by itself. Where Telegram acts when a date arrives, the
-test makes that date arrive with a session control, at the point in the scenario it chooses:
+Where Telegram acts when a date arrives or a timeout passes, the emulator waits for the test, which
+makes it happen with a control at the point in the scenario it chooses:
 
-| Control                                                   | Makes arrive                               | The bot receives | Walkthrough                                                            |
-| --------------------------------------------------------- | ------------------------------------------ | ---------------- | ---------------------------------------------------------------------- |
-| `session.expirePoll(pollId)`                              | A poll's `open_period` or `close_date`     | A `poll` update  | [Polls](polls.md)                                                      |
-| `session.expireChatMemberRestriction({ chatId, userId })` | A temporary restriction's `until_date`     | Nothing          | [Permissions and moderation](permissions-and-moderation.md)            |
-| `session.expireChatInviteLink({ chatId, inviteLink })`    | An invite link's `expire_date`             | Nothing          | [Invite links](invite-links.md#expiry-dates)                           |
-| `session.expireJoinRequesterContact({ chatId, userId })`  | The end of a join request's contact window | Nothing          | [Invite links](invite-links.md#prompting-requesters-before-a-decision) |
+| Control                                                   | Makes arrive                                   | The bot receives | Walkthrough                                                            |
+| --------------------------------------------------------- | ---------------------------------------------- | ---------------- | ---------------------------------------------------------------------- |
+| `session.expirePoll(pollId)`                              | A poll's `open_period` or `close_date`         | A `poll` update  | [Polls](polls.md)                                                      |
+| `session.expireChatMemberRestriction({ chatId, userId })` | A temporary restriction's `until_date`         | Nothing          | [Permissions and moderation](permissions-and-moderation.md)            |
+| `session.expireChatInviteLink({ chatId, inviteLink })`    | An invite link's `expire_date`                 | Nothing          | [Invite links](invite-links.md#expiry-dates)                           |
+| `session.expireJoinRequesterContact({ chatId, userId })`  | The end of a join request's contact window     | Nothing          | [Invite links](invite-links.md#prompting-requesters-before-a-decision) |
+| `account.expireMessageDraft({ chat })`                    | The 30 seconds after which a draft disappears  | Nothing          | [Messages](messages.md#streaming-drafts)                               |
+| `account.expireChatAction({ chat })`                      | The 5.5 seconds after which a chat action ends | Nothing          | [Messages](messages.md#notifications-and-chat-actions)                 |
 
-Each control answers the state that results: the closed poll as its bot sees it, the user's standing
-(`member`, or `left` for a non-member), the link as the owner sees it, or the still pending join
-request with its contact `expired`. A control fails with an `EmulationClientError` whose `status` is
-`409` when there is no date to make arrive, such as for a poll without a closing time. The feature
-pages describe each: [closing times](../../features/polls.md#closing-times),
+Each session control answers the state that results: the closed poll as its bot sees it, the user's
+standing (`member`, or `left` for a non-member), the link as the owner sees it, or the still pending
+join request with its contact `expired`. A session control fails with an `EmulationClientError`
+whose `status` is `409` when there is no date to make arrive, such as for a poll without a closing
+time. The feature pages describe each: [closing times](../../features/polls.md#closing-times),
 [restriction ends](../../features/supergroups.md#restriction-ends),
 [expiry dates](../../features/invite-links.md#expiry-dates) and
 [contacting requesters](../../features/invite-links.md#contacting-requesters).
+
+The account controls answer nothing, and fail with `404` when the chat shows no draft or action. A
+supergroup's chat action expires per bot, given its `botId`.
+
+Some timing remains. A webhook attempt's deadline and retry backoff run on their own unless the test
+takes them over with [webhook delivery controls](#webhook-delivery-controls). An inline query's
+answer is reused for its `cache_time`, as
+[answer caching](../../features/inline-mode.md#answer-caching) describes. A bot's own long-poll
+`timeout` and timers in the bot's code are the bot's.
 
 ## The emulated web
 

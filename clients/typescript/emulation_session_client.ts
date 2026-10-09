@@ -101,6 +101,7 @@ import type {
   CreateVirtualBotInput,
   DemoteChatMemberInput,
   EmulationSession,
+  ExpireChatActionInput,
   ExpireChatInviteLinkInput,
   ExpireChatMemberRestrictionInput,
   ExpireJoinRequesterContactInput,
@@ -1001,6 +1002,13 @@ function createVirtualAccountClient(
       });
       return response.chat_actions;
     },
+    async expireChatAction(input: ExpireChatActionInput): Promise<void> {
+      await requestEmptyResponse(fetchImplementation, {
+        method: 'POST',
+        url: chatActionExpiryUrl(accountUrl, input),
+        expectedStatus: HTTP_STATUS_NO_CONTENT,
+      });
+    },
     async getMessageDraft(input: AccountMessageDraftInput): Promise<MessageDraft | null> {
       const response = await requestJson(fetchImplementation, {
         method: 'GET',
@@ -1255,6 +1263,14 @@ function conversationUrl(accountUrl: string, chat: MessageTarget): string {
   return chat.type === 'private'
     ? `${accountUrl}/conversations/private/${encodeURIComponent(chat.botId)}`
     : `${accountUrl}/conversations/supergroup/${encodeURIComponent(chat.chatId)}`;
+}
+
+/** The URL by which a test expires a bot's chat action in an account's chat. */
+function chatActionExpiryUrl(accountUrl: string, input: ExpireChatActionInput): string {
+  const chatActionsUrl = `${conversationUrl(accountUrl, input.chat)}/chat-actions`;
+  return 'botId' in input
+    ? `${chatActionsUrl}/${encodeURIComponent(input.botId)}/expiry`
+    : `${chatActionsUrl}/expiry`;
 }
 
 /** Asks the emulator to act on the draft an account's private chat shows, as the test expects it. */

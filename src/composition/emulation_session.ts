@@ -239,7 +239,6 @@ export function createEmulationSession(
     bots,
     sharedChats,
     chatActions: new ChatActionRepository(),
-    currentTimeMilliseconds: () => Date.now(),
   });
 
   const botCommands = new BotCommandService({

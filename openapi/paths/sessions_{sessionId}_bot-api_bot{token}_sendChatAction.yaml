@@ -1,9 +1,10 @@
 description: >-
   Telegram Bot API method for showing a chat action, such as typing, in a private chat with an
   account that has written to the bot or in a supergroup the bot is a member of. Accounts see
-  the action through their conversation's `chat-actions` for 5.5 seconds, until the bot
-  cancels it or sends a message to the chat. Topics and business connections are not
-  supported.
+  the action through their conversation's `chat-actions` until the bot cancels it or sends a
+  message to the chat, or a test expires it; it does not end after 5.5 seconds as on
+  Telegram. Sending the shown action again succeeds as any other. Topics and business
+  connections are not supported.
 parameters:
   - $ref: ../components/parameters/SessionId.yaml
   - $ref: ../components/parameters/BotToken.yaml

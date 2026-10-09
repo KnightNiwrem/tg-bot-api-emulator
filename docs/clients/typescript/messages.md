@@ -612,16 +612,21 @@ Deno.test('the bot sends its footnote silently', () =>
 ```
 
 `account.getChatActions` returns the actions, such as typing, that the account's client shows. A
-bot's action lasts 5.5 seconds unless the bot sends it again, and ends when the bot sends a message
-to the chat. The test below holds the bot's work on a promise it resolves itself, so it can read the
-action while the bot works, and resolves it in `finally` so the bot can stop even when an assertion
-fails.
+bot's action ends when the bot sends a message to the chat or `cancel`. Telegram's clients also stop
+showing it 5.5 seconds after the bot last sent it; the emulator never does so on its own, and
+`account.expireChatAction` stands in for that timeout. In a supergroup, it takes the `botId` whose
+action expires, and other bots' actions stay. The
+[chat actions reference](../../features/messages.md#intentional-deviations) describes the deviation.
+
+The test below holds the bot's work on a promise it resolves itself, so it can read the action while
+the bot works and expire it as if the work took too long. It resolves the promise in `finally` so
+the bot can stop even when an assertion fails.
 
 ```ts
 import { assertEquals } from 'jsr:@std/assert@^1';
 import { withBotFixture } from './bot_fixture.ts';
 
-Deno.test('the account sees the bot typing until its report arrives', async () => {
+Deno.test('the account sees the bot typing until the action expires', async () => {
   const { promise: reportFinished, resolve: finishReport } = Promise.withResolvers<void>();
   await withBotFixture({
     handlers: (bot) => {
@@ -644,6 +649,10 @@ Deno.test('the account sees the bot typing until its report arrives', async () =
       assertEquals(await account.getChatActions({ chat: privateChat }), [
         { bot_id: botProfile.id, action: 'typing' },
       ]);
+
+      // Stands in for Telegram's 5.5-second timeout; the bot is not told.
+      await account.expireChatAction({ chat: privateChat });
+      assertEquals(await account.getChatActions({ chat: privateChat }), []);
 
       finishReport();
       await activity.waitFor({
