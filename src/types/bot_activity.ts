@@ -84,7 +84,10 @@ export interface UpdateDeliveredEntry {
   readonly update: BotApiUpdate;
   /** The chat the update happened in; omitted for updates without one, such as inline queries. */
   readonly chatId?: number;
-  /** The user whose action caused the update; omitted for a poll's new state, which names none. */
+  /**
+   * The user whose action caused the update; omitted for a poll's new state and a stopped message
+   * generation, which name none.
+   */
   readonly userId?: number;
   /** The webhook attempt that handed the update over; present exactly when `via` is `webhook`. */
   readonly webhookAttemptId?: number;

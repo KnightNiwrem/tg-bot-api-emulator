@@ -1,6 +1,7 @@
 description: >-
   The expiry of the draft an account's client shows in its private chat with a bot, which stands
-  for the 30 seconds after the bot's last write after which Telegram's clients remove it.
+  for the 30 seconds after the bot's last write after which Telegram's clients remove it, or the
+  short time after which they remove a stopped draft kept with `keep_on_stop`.
 parameters:
   - $ref: ../components/parameters/SessionId.yaml
   - $ref: ../components/parameters/AccountId.yaml
@@ -16,7 +17,7 @@ post:
     content:
       application/json:
         schema:
-          $ref: ../components/schemas/MessageDraftExpirationRequest.yaml
+          $ref: ../components/schemas/MessageDraftActionRequest.yaml
   responses:
     '204':
       description: The draft expired.

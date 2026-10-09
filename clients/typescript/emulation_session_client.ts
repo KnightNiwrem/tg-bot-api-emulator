@@ -104,7 +104,6 @@ import type {
   ExpireChatInviteLinkInput,
   ExpireChatMemberRestrictionInput,
   ExpireJoinRequesterContactInput,
-  ExpireMessageDraftInput,
   InlineQuery,
   JoinChatByInviteLinkInput,
   JoinChatInput,
@@ -136,6 +135,7 @@ import type {
   SetCustomTitleInput,
   SetMessageReactionInput,
   SetWebhookDeliveryInput,
+  ShownMessageDraftInput,
   Supergroup,
   SupergroupAdministrator,
   SupergroupBotCommands,
@@ -1010,13 +1010,11 @@ function createVirtualAccountClient(
       });
       return response.message_draft;
     },
-    async expireMessageDraft({ chat, draft_id }: ExpireMessageDraftInput): Promise<void> {
-      await requestEmptyResponse(fetchImplementation, {
-        method: 'POST',
-        url: `${conversationUrl(accountUrl, chat)}/message-draft/expiration`,
-        expectedStatus: HTTP_STATUS_NO_CONTENT,
-        body: draft_id === undefined ? {} : { draft_id },
-      });
+    async expireMessageDraft(input: ShownMessageDraftInput): Promise<void> {
+      await requestShownMessageDraftAction(fetchImplementation, accountUrl, 'expiration', input);
+    },
+    async stopMessageDraft(input: ShownMessageDraftInput): Promise<void> {
+      await requestShownMessageDraftAction(fetchImplementation, accountUrl, 'stop', input);
     },
     async getNotifications(input: AccountNotificationsInput): Promise<readonly Notification[]> {
       const response = await requestJson(fetchImplementation, {
@@ -1257,6 +1255,21 @@ function conversationUrl(accountUrl: string, chat: MessageTarget): string {
   return chat.type === 'private'
     ? `${accountUrl}/conversations/private/${encodeURIComponent(chat.botId)}`
     : `${accountUrl}/conversations/supergroup/${encodeURIComponent(chat.chatId)}`;
+}
+
+/** Asks the emulator to act on the draft an account's private chat shows, as the test expects it. */
+async function requestShownMessageDraftAction(
+  fetchImplementation: typeof globalThis.fetch,
+  accountUrl: string,
+  action: 'expiration' | 'stop',
+  { chat, draft_id }: ShownMessageDraftInput,
+): Promise<void> {
+  await requestEmptyResponse(fetchImplementation, {
+    method: 'POST',
+    url: `${conversationUrl(accountUrl, chat)}/message-draft/${action}`,
+    expectedStatus: HTTP_STATUS_NO_CONTENT,
+    body: draft_id === undefined ? {} : { draft_id },
+  });
 }
 
 /** The URL by which an account pins or unpins a message of its chat. */

@@ -1,0 +1,35 @@
+description: >-
+  A press of the Stop button of the draft an account's client shows in its private chat with a
+  bot, which the bot asked for with `can_stop`.
+parameters:
+  - $ref: ../components/parameters/SessionId.yaml
+  - $ref: ../components/parameters/AccountId.yaml
+  - $ref: ../components/parameters/BotId.yaml
+post:
+  operationId: stopPrivateMessageDraft
+  summary: Press the Stop button of the draft the bot streams to its private chat with the account
+  description: >-
+    The bot receives a `stopped_message_generation` update naming the chat and the draft, unless
+    its subscription leaves the update out. The draft disappears, unless the bot wrote it with
+    `keep_on_stop`, which keeps it shown without a Stop button until it expires or the bot sends
+    a message. The emulator only reports the press: a later `sendMessageDraft` shows a draft
+    again. The body may be empty.
+  requestBody:
+    required: false
+    content:
+      application/json:
+        schema:
+          $ref: ../components/schemas/MessageDraftActionRequest.yaml
+  responses:
+    '204':
+      description: The draft stopped.
+    '400':
+      description: A path identifier or the body is invalid.
+    '403':
+      description: The draft has no Stop button; it stays shown.
+    '404':
+      description: The session, account, or bot does not exist, or the chat shows no draft.
+    '409':
+      description: >-
+        The chat shows a draft other than the one `draft_id` names, or a kept draft that was
+        already stopped; it stays shown.

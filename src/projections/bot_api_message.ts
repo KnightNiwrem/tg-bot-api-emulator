@@ -18,6 +18,7 @@ import {
   type BotApiMessage,
   type BotApiMessageContent,
   type BotApiMessageEntity,
+  type BotApiMessageGenerationStopped,
   type BotApiMessageOrigin,
   type BotApiMessageText,
   type BotApiMyChatMemberUpdated,
@@ -48,6 +49,7 @@ import type {
   ChatJoinRequestedEvent,
   ChatMemberStatusChangedEvent,
   InlineQueryResultChosenEvent,
+  MessageGenerationStoppedEvent,
   PollAnswerChangedEvent,
 } from '../types/chat_domain_event.ts';
 import type {
@@ -948,6 +950,18 @@ export function projectBotBlockChangeForBot(
     old_chat_member: event.isBlocked ? member : kicked,
     new_chat_member: event.isBlocked ? kicked : member,
   };
+}
+
+/**
+ * Projects an account's press of the Stop button of a bot's draft as the bot receives it, as the
+ * official Bot API server's `JsonMessageGenerationStopped` writes it: the draft ID as decimal text
+ * and no user.
+ */
+export function projectMessageGenerationStoppedForBot(
+  { draftId }: MessageGenerationStoppedEvent,
+  account: VirtualAccountProfile,
+): BotApiMessageGenerationStopped {
+  return { chat: projectPrivateChat(account), draft_id: draftId };
 }
 
 /**

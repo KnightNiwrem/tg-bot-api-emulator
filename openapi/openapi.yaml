@@ -139,6 +139,8 @@ paths:
     $ref: paths/sessions_{sessionId}_accounts_{accountId}_conversations_private_{botId}_message-draft.yaml
   /sessions/{sessionId}/accounts/{accountId}/conversations/private/{botId}/message-draft/expiration:
     $ref: paths/sessions_{sessionId}_accounts_{accountId}_conversations_private_{botId}_message-draft_expiration.yaml
+  /sessions/{sessionId}/accounts/{accountId}/conversations/private/{botId}/message-draft/stop:
+    $ref: paths/sessions_{sessionId}_accounts_{accountId}_conversations_private_{botId}_message-draft_stop.yaml
   /sessions/{sessionId}/accounts/{accountId}/conversations/private/{botId}/notifications:
     $ref: paths/sessions_{sessionId}_accounts_{accountId}_conversations_private_{botId}_notifications.yaml
   /sessions/{sessionId}/accounts/{accountId}/conversations/private/{botId}/reply-interface:

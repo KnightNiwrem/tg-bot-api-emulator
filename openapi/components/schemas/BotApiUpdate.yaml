@@ -11,3 +11,4 @@ oneOf:
   - $ref: ./ChatMemberUpdate.yaml
   - $ref: ./ChatJoinRequestUpdate.yaml
   - $ref: ./MessageReactionUpdate.yaml
+  - $ref: ./StoppedMessageGenerationUpdate.yaml

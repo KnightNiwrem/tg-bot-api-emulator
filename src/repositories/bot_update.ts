@@ -5,6 +5,7 @@ import type {
   BotApiChosenInlineResult,
   BotApiInlineQuery,
   BotApiMessage,
+  BotApiMessageGenerationStopped,
   BotApiMessageReactionUpdated,
   BotApiMyChatMemberUpdated,
   BotApiUpdate,
@@ -111,6 +112,16 @@ export class BotUpdateRepository {
     return this.#enqueueUpdate(
       botId,
       (update_id) => ({ update_id, message_reaction: messageReaction }),
+    );
+  }
+
+  enqueueStoppedMessageGenerationUpdate(
+    botId: number,
+    stoppedMessageGeneration: BotApiMessageGenerationStopped,
+  ): BotApiUpdate {
+    return this.#enqueueUpdate(
+      botId,
+      (update_id) => ({ update_id, stopped_message_generation: stoppedMessageGeneration }),
     );
   }
 

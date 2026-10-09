@@ -65,6 +65,7 @@ exact contract.
 | `getChatActions`             | Reads the chat actions, such as typing, the app shows | [Messages](messages.md)               |
 | `getMessageDraft`            | Reads the draft of a message the bot is generating    | [Messages](messages.md)               |
 | `expireMessageDraft`         | Removes a draft as Telegram's 30-second timeout does  | [Messages](messages.md)               |
+| `stopMessageDraft`           | Presses the Stop button of the bot's draft            | [Messages](messages.md)               |
 
 ## Account: media, contacts and locations
 

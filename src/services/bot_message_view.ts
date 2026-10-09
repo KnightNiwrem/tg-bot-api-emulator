@@ -19,6 +19,7 @@ import {
   projectChatMemberChange,
   projectChosenInlineResultForBot,
   projectInlineQueryForBot,
+  projectMessageGenerationStoppedForBot,
   projectMessageText,
   projectPinnedPrivateMessageForBot,
   projectPinnedSupergroupMessage,
@@ -43,6 +44,7 @@ import type {
   BotApiChosenInlineResult,
   BotApiInlineQuery,
   BotApiMessage,
+  BotApiMessageGenerationStopped,
   BotApiMessageReactionUpdated,
   BotApiMessageText,
   BotApiMyChatMemberUpdated,
@@ -67,6 +69,7 @@ import type {
   ChatJoinRequestedEvent,
   ChatMemberStatusChangedEvent,
   InlineQueryResultChosenEvent,
+  MessageGenerationStoppedEvent,
   MessageReactionChangedEvent,
   PollAnswerChangedEvent,
 } from '../types/chat_domain_event.ts';
@@ -328,6 +331,17 @@ export class BotMessageViewService {
       throw new Error(`Bot ${event.botId} whose block changed does not exist`);
     }
     return projectBotBlockChangeForBot({ event, account: account.profile, bot: bot.profile });
+  }
+
+  /** Returns an account's press of the Stop button of a bot's draft as the bot receives it. */
+  viewMessageGenerationStopForBot(
+    event: MessageGenerationStoppedEvent,
+  ): BotApiMessageGenerationStopped {
+    const account = this.#accounts.getById(event.accountId);
+    if (account === undefined) {
+      throw new Error(`Account ${event.accountId} that stopped a draft does not exist`);
+    }
+    return projectMessageGenerationStoppedForBot(event, account.profile);
   }
 
   /**

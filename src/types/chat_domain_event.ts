@@ -62,6 +62,18 @@ export interface InlineQueryResultChosenEvent {
   readonly message: ChatMessage;
 }
 
+/**
+ * An account pressed the Stop button of a draft a bot streamed to their private chat, asking the
+ * bot to stop generating the message.
+ */
+export interface MessageGenerationStoppedEvent {
+  readonly type: 'message_generation_stopped';
+  readonly accountId: number;
+  readonly botId: number;
+  /** Telegram's decimal text form of the stopped draft's 64-bit identifier. */
+  readonly draftId: string;
+}
+
 /** An account blocked a bot, which Telegram calls stopping it, or unblocked it. */
 export interface BotBlockChangedEvent {
   readonly type: 'bot_block_changed';
@@ -126,6 +138,7 @@ export type ChatDomainEvent =
   | InlineQueryCreatedEvent
   | InlineQueryResultChosenEvent
   | BotBlockChangedEvent
+  | MessageGenerationStoppedEvent
   | ChatMemberStatusChangedEvent
   | ChatJoinRequestedEvent
   | MessageReactionChangedEvent;

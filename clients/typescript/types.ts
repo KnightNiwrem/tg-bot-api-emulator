@@ -2121,6 +2121,12 @@ export interface MessageDraft {
   readonly text: string;
   /** Omitted when the text has no entities. */
   readonly entities?: readonly MessageEntity[];
+  /** Whether the bot asked for a Stop button, which `stopMessageDraft` presses. */
+  readonly can_stop: boolean;
+  /** Whether the draft stays shown once the account presses Stop. */
+  readonly keep_on_stop: boolean;
+  /** Whether the account pressed Stop; the client then shows no Stop button. */
+  readonly is_stopped: boolean;
 }
 
 /** The commands one bot of a supergroup suggests to an account. */
@@ -2550,11 +2556,20 @@ export interface VirtualAccountClient extends VirtualAccountProfile {
   getMessageDraft(input: AccountMessageDraftInput): Promise<MessageDraft | null>;
   /**
    * Removes the draft this account's client shows in its private chat with a bot, as Telegram's
-   * clients remove one 30 seconds after the bot's last write. The bot is not told, and a later
-   * write shows a draft again. With `draft_id`, fails unless the client shows that draft; fails
-   * when it shows none.
+   * clients remove one 30 seconds after the bot's last write, or a stopped draft kept with
+   * `keep_on_stop` after a short time. The bot is not told, and a later write shows a draft again.
+   * With `draft_id`, fails unless the client shows that draft; fails when it shows none.
    */
-  expireMessageDraft(input: ExpireMessageDraftInput): Promise<void>;
+  expireMessageDraft(input: ShownMessageDraftInput): Promise<void>;
+  /**
+   * Presses the Stop button of the draft this account's client shows in its private chat with a
+   * bot, which sends the bot a `stopped_message_generation` update naming the draft. The draft
+   * disappears, unless the bot kept it with `keep_on_stop`, which shows it without a Stop button
+   * until it expires or the bot sends a message. Stopping the generation is the bot's: a later
+   * write shows a draft again. With `draft_id`, fails unless the client shows that draft; fails
+   * when it shows none, shows no Stop button, or was already stopped.
+   */
+  stopMessageDraft(input: ShownMessageDraftInput): Promise<void>;
   /**
    * Returns the notifications this account's client shows for the messages other participants
    * sent to its private chat with a bot or to a supergroup it is a member of, oldest first. A
@@ -2700,9 +2715,10 @@ export interface AccountMessageDraftInput {
   readonly chat: PrivateMessageTarget;
 }
 
-export interface ExpireMessageDraftInput {
+/** The draft an action applies to: the one a private chat shows. */
+export interface ShownMessageDraftInput {
   readonly chat: PrivateMessageTarget;
-  /** The ID of the draft the test expects the chat to show; omitted to expire whichever it shows. */
+  /** The ID of the draft the test expects the chat to show; omitted for whichever it shows. */
   readonly draft_id?: string;
 }
 
@@ -2791,7 +2807,7 @@ export interface UpdateDeliveredEntry {
   readonly chat_id?: number;
   /**
    * The user whose action caused the update, as grammY's `ctx.from` finds it; omitted for a
-   * poll's new state, which names no user.
+   * poll's new state and a stopped message generation, which name no user.
    */
   readonly user_id?: number;
   /** The webhook attempt that handed the update over; present exactly when `via` is `webhook`. */

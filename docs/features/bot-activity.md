@@ -39,7 +39,8 @@ Parameters are recorded as text, as the Bot API reads them: `chat_id: 1` and `ch
 `"1"`, and structured parameters such as `reply_markup` are JSON text. A `chat_id` naming a public
 username is recorded with the chat it names. An update's chat and user are found as grammY's
 `ctx.chat` and `ctx.from` find them. Inline queries, chosen inline results, presses of buttons on
-inline messages, polls and poll answers have no chat, and a poll's new state has no user.
+inline messages, polls and poll answers have no chat, and a poll's new state and a stopped message
+generation have no user.
 
 A webhook attempt is recorded as an `update_delivered` entry when it starts, and as an
 `update_confirmed` or a `webhook_attempt_failed` entry when it ends, all naming the same

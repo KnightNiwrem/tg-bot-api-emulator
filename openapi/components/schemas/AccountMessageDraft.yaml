@@ -10,6 +10,9 @@ properties:
         required:
           - draft_id
           - text
+          - can_stop
+          - keep_on_stop
+          - is_stopped
         properties:
           draft_id:
             type: string
@@ -26,4 +29,13 @@ properties:
             description: The text's entities, as a text message shows them; omitted for none.
             items:
               $ref: ./MessageEntity.yaml
+          can_stop:
+            type: boolean
+            description: Whether the bot asked for a Stop button, which `message-draft/stop` presses.
+          keep_on_stop:
+            type: boolean
+            description: Whether the draft stays shown once the account presses Stop.
+          is_stopped:
+            type: boolean
+            description: Whether the account pressed Stop; the client then shows no Stop button.
       - type: 'null'

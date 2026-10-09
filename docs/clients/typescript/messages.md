@@ -701,6 +701,9 @@ Deno.test('the answer arrives after its draft timed out', async () => {
       assertEquals(await account.getMessageDraft({ chat: privateChat }), {
         draft_id,
         text: 'Looking it up',
+        can_stop: false,
+        keep_on_stop: false,
+        is_stopped: false,
       });
 
       await account.expireMessageDraft({ chat: privateChat, draft_id });
@@ -717,6 +720,110 @@ Deno.test('the answer arrives after its draft timed out', async () => {
       assertEquals(history.map(({ text }) => text), ['/ask', 'The answer is 42']);
     } finally {
       finishAnswer();
+    }
+  });
+});
+```
+
+## Stopping a streamed answer
+
+A bot that passes `can_stop: true` to `sendMessageDraft` gets a Stop button on its draft, which
+`account.stopMessageDraft` presses. The bot then receives a `stopped_message_generation` update
+naming the chat and the draft, and the draft disappears unless the bot passed `keep_on_stop: true`.
+Stopping the generation is up to the bot: the emulator only reports the press, and shows any draft
+the bot writes afterwards. The update's `draft_id` is decimal text, as the official Bot API server
+writes it, although the Bot API documentation describes an integer, so compare it as a string.
+
+The bot below streams its answer in the background, so it keeps reading updates while it writes, and
+aborts the generation when the account presses Stop. It then sends what it has as a message, since a
+draft never stays in the chat on its own. The test lets the generator produce each chunk only after
+it has seen the previous one, so the stop always lands after the second chunk.
+
+```ts
+import { assertEquals } from 'jsr:@std/assert@^1';
+import { withBotFixture } from './bot_fixture.ts';
+
+Deno.test('the account stops the answer and keeps what the bot wrote so far', async () => {
+  const chunks = ['The', ' answer', ' is', ' 42'];
+  const chunkReleases = chunks.map(() => Promise.withResolvers<void>());
+  const generations = new Map<string, AbortController>();
+
+  async function* generateAnswer(signal: AbortSignal): AsyncGenerator<string> {
+    const aborted = new Promise<void>((resolve) =>
+      signal.addEventListener('abort', () => resolve())
+    );
+    for (const [index, chunk] of chunks.entries()) {
+      await Promise.race([chunkReleases[index].promise, aborted]);
+      if (signal.aborted) return;
+      yield chunk;
+    }
+  }
+
+  await withBotFixture({
+    handlers: (bot) => {
+      bot.command('ask', (ctx) => {
+        const draftId = ctx.update.update_id;
+        const generation = new AbortController();
+        generations.set(String(draftId), generation);
+        // Streams in the background, so the bot keeps reading updates, the stop among them.
+        void (async () => {
+          let answer = '';
+          for await (const chunk of generateAnswer(generation.signal)) {
+            answer += chunk;
+            await ctx.api.sendMessageDraft(ctx.chat.id, draftId, answer, { can_stop: true });
+          }
+          await ctx.reply(generation.signal.aborted ? `${answer} (stopped)` : answer);
+        })().catch(console.error);
+      });
+      bot.on('stopped_message_generation', (ctx) => {
+        const { draft_id } = ctx.update.stopped_message_generation;
+        generations.get(String(draft_id))?.abort();
+      });
+    },
+  }, async ({ account, privateChat, activity }) => {
+    try {
+      const beforeQuestion = await activity.position();
+      await account.sendMessage({ to: privateChat, text: '/ask' });
+      chunkReleases[0].resolve();
+      const firstChunk = await activity.waitFor({
+        method: 'sendMessageDraft',
+        chat_id: account.id,
+        ok: true,
+        parameters: { text: 'The' },
+      }, { after: beforeQuestion });
+      chunkReleases[1].resolve();
+      await activity.waitFor({
+        method: 'sendMessageDraft',
+        chat_id: account.id,
+        ok: true,
+        parameters: { text: 'The answer' },
+      }, { after: firstChunk });
+      const draft_id = String(firstChunk.parameters.draft_id);
+      assertEquals(await account.getMessageDraft({ chat: privateChat }), {
+        draft_id,
+        text: 'The answer',
+        can_stop: true,
+        keep_on_stop: false,
+        is_stopped: false,
+      });
+
+      const beforeStop = await activity.position();
+      await account.stopMessageDraft({ chat: privateChat, draft_id });
+      await activity.waitFor({
+        kind: 'update_delivered',
+        chat_id: account.id,
+        where: (entry) => 'stopped_message_generation' in entry.update,
+      }, { after: beforeStop });
+      await activity.waitFor({
+        method: 'sendMessage',
+        chat_id: account.id,
+        ok: true,
+        parameters: { text: 'The answer (stopped)' },
+      }, { after: beforeStop });
+      assertEquals(await account.getMessageDraft({ chat: privateChat }), null);
+    } finally {
+      for (const release of chunkReleases) release.resolve();
+      for (const generation of generations.values()) generation.abort();
     }
   });
 });

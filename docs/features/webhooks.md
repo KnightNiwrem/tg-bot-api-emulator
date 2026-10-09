@@ -18,8 +18,9 @@ whole seconds, sets the wait before the next attempt instead, up to one hour, as
 Updates wait in queues, as in the official server's [`WebhookActor`][webhook-queues]: messages and
 their edits by chat, inline queries, chosen inline results and callback queries by the sending user,
 `poll` and `poll_answer` updates by poll, `my_chat_member` or `chat_member` updates by chat or by
-member, and `chat_join_request` updates by requester. The queue for each update is chosen by the
-[`Client::add_update`][webhook-queue-ids] calls, and for messages in
+member, `chat_join_request` updates by requester, and `message_reaction` and
+`stopped_message_generation` updates by chat, apart from the chat's messages. The queue for each
+update is chosen by the [`Client::add_update`][webhook-queue-ids] calls, and for messages in
 [`process_new_message_queue`][message-queue-id]. Each queue sends one update at a time, in order,
 and moves on only once that update is confirmed. Up to `max_connections` queues send at once, so a
 failing update holds back only the later updates of its queue. Updates are therefore confirmed
