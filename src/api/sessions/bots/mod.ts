@@ -24,6 +24,11 @@ const createBotRequestSchema = z.strictObject({
   receives_chosen_inline_results: z.boolean().optional(),
   /** Asks accounts to share their location with the bot's inline queries. */
   requests_inline_location: z.boolean().optional(),
+  /**
+   * Turns on Bot-to-Bot Communication Mode, so that the bot's supergroup messages reach the bots
+   * they address, and the messages other bots address to it reach it.
+   */
+  enables_bot_to_bot_communication: z.boolean().optional(),
 });
 
 const queueRateLimitResponsesRequestSchema = z.strictObject({

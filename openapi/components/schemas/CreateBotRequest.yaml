@@ -34,3 +34,11 @@ properties:
     description: >-
       Turns on the bot's inline location requests, as BotFather does, so that accounts can
       share their location with its inline queries. It has effect only with inline mode.
+  enables_bot_to_bot_communication:
+    type: boolean
+    default: false
+    description: >-
+      Turns on the bot's Bot-to-Bot Communication Mode, as BotFather does. A bot's supergroup
+      message then reaches another bot member it addresses, through a leading command naming that
+      bot or a direct reply to that bot's message, when either of the two bots turned the mode on.
+      `getMe` does not report it.

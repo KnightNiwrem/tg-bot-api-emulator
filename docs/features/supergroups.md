@@ -27,9 +27,9 @@ fails with `403 Forbidden: bot was kicked from the supergroup chat`. A bot that 
 ## Privacy mode
 
 Administrator bots and bots created with `can_read_all_group_messages: true` receive all account
-messages. A bot never receives its own messages. Nor does it receive other bots' messages: the
-emulator behaves as if no bot enabled Telegram's opt-in [bot-to-bot communication][bot-to-bot],
-which is a [real gap](#real-gaps). Privacy mode is enabled by default for other bots.
+messages. A bot never receives its own messages, and receives other bots' messages only through
+[bot-to-bot communication](#bot-to-bot-communication). Privacy mode is enabled by default for other
+bots.
 
 For an account message, the emulator first resolves an explicit recipient: replies to a bot's
 message or to a message meant for it, then `via_bot`, then a leading command naming a bot. Such a
@@ -52,6 +52,34 @@ addressed command is also an intentional routing rule.
 
 Changing subscriptions does not change which bot a message is addressed to. This prevents an
 unsubscribed recipient from redirecting a reply to another privacy-enabled bot.
+
+## Bot-to-bot communication
+
+Bots created with `enables_bot_to_bot_communication: true` stand in for bots that turned on
+Telegram's [Bot-to-Bot Communication Mode][bot-to-bot] in BotFather. As Telegram documents for group
+chats, a bot's new supergroup message reaches another bot of the supergroup that it addresses when
+either the sending or the receiving bot turned the mode on. A bot's message addresses another bot
+through:
+
+- a command naming that bot at the start of its text or caption, such as `/translate@other_bot`,
+  matching the username ignoring letter case; or
+- a direct reply to one of that bot's messages in the same supergroup.
+
+The message reaches only the bot it addresses, whatever its privacy mode or administrator status, as
+a `message` update whose `from` is the sending bot, with the message and reply IDs every observer
+shares. The receiving bot must be a current member and subscribed to `message` updates; otherwise no
+bot receives the message, and the send still succeeds and stays in the supergroup's history. A bot
+never receives its own message.
+
+A bot's message addresses no bot through a mention, a command without a username, a command after
+the start of the text or caption, or a reply to an account's message, even an account's message
+meant for a bot or sent through an inline bot. A message that replies to one bot and commands
+another reaches neither, an [intentional routing rule](#intentional-deviations). Bots' messages
+still decide which bot receives an account's unqualified command, and bots' service messages reach
+every bot as before. The setting is not part of the bot's `getMe` profile.
+
+Edits of bots' messages and bots' messages that address no bot reach no bot, a
+[real gap](#real-gaps).
 
 ## Administrator operations
 
@@ -403,6 +431,13 @@ addressed to another bot, giving tests a deterministic rule. Public Bot API/TDLi
 does not establish Telegram's ordering, so this is a deliberate emulator contract rather than a
 confirmed difference from Telegram.
 
+**One addressee for a bot's message.** Telegram documents that a bot's group message reaches the bot
+its command names or the bot whose message it replies to, but neither which of them receives a
+message that does both for different bots, nor whether a command after the start of the text counts.
+The emulator delivers a message that replies to one bot and commands another to neither, and counts
+only a command at the start, the position that addresses privacy-mode bots in account messages. A
+bot's message therefore never reaches competing bots at once.
+
 **Unqualified commands before any bot writes.** Telegram's documentation names no recipient for an
 unqualified command in a group where no bot has sent a message yet, and its servers decide it, not
 the public Bot API or TDLib source. The emulator delivers such a command to every privacy-enabled
@@ -441,12 +476,13 @@ production read permissions.
   privacy-enabled bots. Telegram's [Bot FAQ][privacy-faq] describes at most one such recipient and
   gives replies highest priority. Tests need single-recipient routing; the FAQ does not specify
   every tie-break, so the exact selection among competing mentions requires further verification.
-- **Bot-to-bot communication.** Telegram delivers a bot's group message to another bot that enabled
-  Bot-to-Bot Communication Mode in BotFather when it is a command addressed to that bot or a reply
-  to one of its messages, and every bot message to such a bot that is an administrator with privacy
-  mode disabled. Bots have no such setting in the emulator, which never delivers messages of bots to
-  other bots. Tests of cooperating bots need the setting and its routing. Telegram's servers apply
-  these rules; the Bot API and TDLib source at the comparison baseline show no trace of the setting.
+- **Unaddressed bot-to-bot messages and edits.** Telegram's [bot features][bot-to-bot-features]
+  document that a bot with Bot-to-Bot Communication Mode receives every other bot's group message,
+  addressed or not, when it is an administrator or has privacy mode disabled. The emulator delivers
+  only [addressed bot messages](#bot-to-bot-communication), and no edits of bots' messages. Tests of
+  bots that watch other bots' messages need both. Bot-to-bot messages in private chats, channels and
+  business connections are unsupported too. Telegram's servers apply these rules; the Bot API and
+  TDLib source at the comparison baseline show no trace of the setting.
 
 - **Administrator rights enforcement.** Rights that the
   [administrator operations](#administrator-operations) table does not list, such as
@@ -516,7 +552,9 @@ not show. The emulator chooses where they are not visible:
 [permission tests](../../tests/chat_permissions_test.ts),
 [privacy filtering](../../src/services/bot_update_delivery.ts),
 [administration tests](../../tests/shared_chat_administration_service_test.ts),
-[delivery tests](../../tests/bot_update_delivery_service_test.ts) and
+[delivery tests](../../tests/bot_update_delivery_service_test.ts),
+[bot-to-bot tests](../../tests/bot_to_bot_communication_api_test.ts),
+[grammY bot-to-bot exchange](../../tests/grammy_bot_to_bot_test.ts) and
 [supergroup messaging tests](../../tests/supergroup_messaging_service_test.ts).
 
 [privacy-faq]: https://core.telegram.org/bots/faq#what-messages-will-my-bot-get
@@ -524,6 +562,7 @@ not show. The emulator chooses where they are not visible:
 [chat-read-access]: https://github.com/tdlib/telegram-bot-api/blob/e3e9dd8e5b3d7ab8537cd5a10dc31d5ffa8f82d1/telegram-bot-api/Client.cpp#L8796-L8866
 [accent-color]: https://github.com/tdlib/td/blob/bc9c263e2bfee06aaab41e82db51a103376030bc/td/telegram/AccentColorId.h#L32-L39
 [bot-to-bot]: https://core.telegram.org/api/bots/bot-to-bot
+[bot-to-bot-features]: https://core.telegram.org/bots/features#bot-to-bot-communication
 [mention-matching]: https://github.com/tdlib/td/blob/bc9c263e2bfee06aaab41e82db51a103376030bc/td/telegram/MessageEntity.cpp#L267-L310
 [protected-content]: https://github.com/tdlib/td/blob/bc9c263e2bfee06aaab41e82db51a103376030bc/td/telegram/MessagesManager.cpp#L8145-L8148
 [protection-toggle]: https://github.com/tdlib/td/blob/bc9c263e2bfee06aaab41e82db51a103376030bc/td/telegram/DialogManager.cpp#L2721-L2745
