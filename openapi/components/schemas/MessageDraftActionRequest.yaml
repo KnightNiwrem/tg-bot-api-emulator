@@ -6,5 +6,5 @@ properties:
     pattern: '^-?[1-9][0-9]*$'
     description: >-
       The identifier of the draft the test expects the chat to show, in Telegram's decimal text
-      form without leading zeros; omitted to expire whichever draft it shows. It guards which
-      draft expires, not which write to it.
+      form without leading zeros; omitted to act on whichever draft it shows. It guards which
+      draft the action applies to, not which write to it.

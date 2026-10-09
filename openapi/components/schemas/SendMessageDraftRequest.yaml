@@ -36,11 +36,11 @@ properties:
     type: boolean
     default: false
     description: >-
-      The emulator shows no Stop button yet: `true` is refused (`Bad Request: can_stop and
-      keep_on_stop are not supported`).
+      Shows a Stop button, which the account presses through its conversation's
+      `message-draft/stop`; the bot then receives a `stopped_message_generation` update.
   keep_on_stop:
     type: boolean
     default: false
     description: >-
-      The emulator shows no Stop button yet: `true` is refused (`Bad Request: can_stop and
-      keep_on_stop are not supported`).
+      Keeps the draft shown, without a Stop button, once the account presses Stop, until it
+      expires or the bot sends a message; without it, the draft disappears.

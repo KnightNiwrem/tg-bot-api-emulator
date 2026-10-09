@@ -86,7 +86,7 @@ above determines whether an individual method is available.
   are the only shared chat kind exposed by the HTTP server.
 - Media other than photos, documents, videos, voice notes and audio files, stickers and sticker
   sets, dice, live locations, venues, games, checklists, ephemeral messages and stories. Drafts lack
-  [Stop buttons and topics](messages.md#real-gaps), rich messages lack
+  [topics](messages.md#real-gaps), rich messages lack
   [drafts and some blocks](rich-messages.md#real-gaps), and polls lack
   [Telegram's newest poll options](polls.md#real-gaps).
 - [Reactions outside supergroups, custom emoji and paid reactions, and removing other members'

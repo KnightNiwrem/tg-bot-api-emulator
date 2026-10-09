@@ -1088,6 +1088,9 @@ export const messageDraftResponseSchema = z.strictObject({
     draft_id: z.string().regex(/^-?[1-9][0-9]*$/),
     text: z.string(),
     entities: z.array(messageEntitySchema).min(1).optional(),
+    can_stop: z.boolean(),
+    keep_on_stop: z.boolean(),
+    is_stopped: z.boolean(),
   }).nullable(),
 });
 

@@ -2,7 +2,8 @@ description: >-
   Telegram Bot API method for streaming the draft of a message the bot is generating to a private
   chat with an account that has written to the bot. Accounts see the draft through their
   conversation's `message-draft`, apart from the chat's messages, until the bot sends a message to
-  the chat or a test expires it. Topics and Stop buttons are not supported.
+  the chat or a test expires it. A draft with `can_stop` shows a Stop button, whose press the bot
+  receives as a `stopped_message_generation` update. Topics are not supported.
 parameters:
   - $ref: ../components/parameters/SessionId.yaml
   - $ref: ../components/parameters/BotToken.yaml
@@ -30,8 +31,8 @@ post:
             $ref: ../components/schemas/TrueResultResponse.yaml
     '400':
       description: >-
-        The request cannot be decoded or has unsupported parameters, including `true` for
-        `can_stop` or `keep_on_stop`, or Telegram would reject it, checking in this order: the
+        The request cannot be decoded or has unsupported parameters, or Telegram would reject it,
+        checking in this order: the
         text's markup, parse mode, or entities cannot be read; `chat_id` is missing (`Bad Request:
         chat_id is empty`); the chat is not one the bot can address, as for `sendChatAction` (`Bad
         Request: chat not found`); TDLib refuses the entities, such as a mention of an unknown

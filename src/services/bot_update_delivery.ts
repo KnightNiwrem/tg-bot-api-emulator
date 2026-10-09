@@ -5,6 +5,7 @@ import type {
   BotApiChosenInlineResult,
   BotApiInlineQuery,
   BotApiMessage,
+  BotApiMessageGenerationStopped,
   BotApiMessageReactionUpdated,
   BotApiMyChatMemberUpdated,
   BotApiPrivateMessage,
@@ -21,6 +22,7 @@ import type {
   ChatMemberStatusChangedEvent,
   InlineQueryCreatedEvent,
   InlineQueryResultChosenEvent,
+  MessageGenerationStoppedEvent,
   MessageReactionChangedEvent,
   PollAnswerChangedEvent,
 } from '../types/chat_domain_event.ts';
@@ -52,6 +54,9 @@ interface BotMessageViews {
   viewInlineQueryForBot(inlineQuery: InlineQuery): BotApiInlineQuery;
   viewChosenInlineResultForBot(event: InlineQueryResultChosenEvent): BotApiChosenInlineResult;
   viewBotBlockChangeForBot(event: BotBlockChangedEvent): BotApiMyChatMemberUpdated;
+  viewMessageGenerationStopForBot(
+    event: MessageGenerationStoppedEvent,
+  ): BotApiMessageGenerationStopped;
   viewBotMembershipChangeForBot(event: ChatMemberStatusChangedEvent): BotApiMyChatMemberUpdated;
   viewChatMemberChange(
     event: ChatMemberStatusChangedEvent,
@@ -81,6 +86,10 @@ interface BotUpdateMailboxes {
   enqueueMessageReactionUpdate(
     botId: number,
     messageReaction: BotApiMessageReactionUpdated,
+  ): void;
+  enqueueStoppedMessageGenerationUpdate(
+    botId: number,
+    stoppedMessageGeneration: BotApiMessageGenerationStopped,
   ): void;
 }
 
@@ -180,6 +189,9 @@ export class BotUpdateDeliveryService {
         return;
       case 'bot_block_changed':
         this.#deliverBotBlockChange(event);
+        return;
+      case 'message_generation_stopped':
+        this.#deliverMessageGenerationStop(event);
         return;
       case 'chat_member_status_changed':
         this.#deliverChatMemberStatusChange(event);
@@ -405,6 +417,18 @@ export class BotUpdateDeliveryService {
     this.#botUpdates.enqueueMyChatMemberUpdate(
       event.botId,
       this.#botMessageViews.viewBotBlockChangeForBot(event),
+    );
+  }
+
+  /** A press of a draft's Stop button is observed only by the bot that streamed the draft. */
+  #deliverMessageGenerationStop(event: MessageGenerationStoppedEvent): void {
+    if (!this.#isSubscribed(event.botId, 'stopped_message_generation')) {
+      return;
+    }
+
+    this.#botUpdates.enqueueStoppedMessageGenerationUpdate(
+      event.botId,
+      this.#botMessageViews.viewMessageGenerationStopForBot(event),
     );
   }
 

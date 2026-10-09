@@ -7,12 +7,24 @@ import type { FormattedText } from './virtual_message.ts';
  * removes it.
  *
  * Telegram's clients also remove a preview 30 seconds after the bot's last write, TDLib's
- * `pending_text_message_period`. The emulator never removes one because time passes: a test
- * expires it explicitly.
+ * `pending_text_message_period`, and a stopped preview kept with `keepOnStop` after a short time.
+ * The emulator never removes one because time passes: a test expires it explicitly.
  */
 export interface MessageDraft {
   /** Telegram's decimal text form of the draft's nonzero 64-bit identifier. */
   readonly draftId: string;
   /** The preview's text; empty text shows a "Thinking…" placeholder. */
   readonly text: FormattedText;
+  /** Whether the bot asked for a Stop button, which asks it to stop generating the message. */
+  readonly canStop: boolean;
+  /** Whether the preview stays shown once the account presses Stop, instead of disappearing. */
+  readonly keepOnStop: boolean;
+  /**
+   * Whether the account pressed Stop, after which the client shows no Stop button; only a preview
+   * kept with `keepOnStop` is still shown then.
+   */
+  readonly isStopped: boolean;
 }
+
+/** A draft as a bot writes it, before the account can stop it. */
+export type WrittenMessageDraft = Omit<MessageDraft, 'isStopped'>;

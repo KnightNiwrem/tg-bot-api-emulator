@@ -143,6 +143,7 @@ export function createEmulationSession(
     accounts,
     bots,
     drafts: new MessageDraftRepository(),
+    events: botUpdateDelivery,
   });
   const privateMessaging = new PrivateMessagingService({
     accounts,

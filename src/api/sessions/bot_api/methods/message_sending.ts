@@ -92,10 +92,6 @@ export const MESSAGE_SENDING_METHODS: readonly BotApiMethod[] = [
 const DRAFT_ID_INVALID_DESCRIPTION = 'Bad Request: RANDOM_ID_INVALID';
 const DRAFT_CHAT_NOT_PRIVATE_DESCRIPTION = 'Bad Request: TEXTDRAFT_PEER_INVALID';
 
-/** The emulator's description for a draft that asks for a Stop button, which it cannot show yet. */
-const STOPPABLE_DRAFT_UNSUPPORTED_DESCRIPTION =
-  'Bad Request: can_stop and keep_on_stop are not supported';
-
 /** Telegram's description for a missing or unknown chat action. */
 const CHAT_ACTION_INVALID_DESCRIPTION = 'Bad Request: wrong parameter action in request';
 
@@ -266,8 +262,7 @@ const sendMediaGroupParametersSchema = z.strictObject({
   media: z.string().optional(),
 });
 
-// Topics are not supported. The emulator shows no Stop button yet, so `can_stop` and
-// `keep_on_stop` are accepted only when false.
+// Topics are not supported.
 const sendMessageDraftParametersSchema = z.strictObject({
   chat_id: integerParameter(z.int()).optional(),
   draft_id: optionalInt64Identifier().optional(),
@@ -952,9 +947,6 @@ function handleSendMessageDraft(
     return botApiError(400, invalidParametersDescription);
   }
   const { data } = parsedParameters;
-  if (data.can_stop || data.keep_on_stop) {
-    return botApiError(400, STOPPABLE_DRAFT_UNSUPPORTED_DESCRIPTION);
-  }
   const formattedTextReading = readFormattedTextParameters(
     context,
     { text: data.text, parseMode: data.parse_mode, entities: data.entities },
@@ -971,6 +963,8 @@ function handleSendMessageDraft(
     chatId: data.chat_id,
     draftId: data.draft_id,
     text: formattedTextReading.formattedText,
+    canStop: data.can_stop,
+    keepOnStop: data.keep_on_stop,
   });
   if (result.sent) {
     return botApiResult(true);

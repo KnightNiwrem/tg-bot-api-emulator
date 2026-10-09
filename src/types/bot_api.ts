@@ -960,6 +960,22 @@ export interface BotApiChatJoinRequestUpdate {
   readonly chat_join_request: BotApiChatJoinRequest;
 }
 
+/**
+ * A user's request that the bot stop generating a message it streamed as a draft, as the official
+ * Bot API server's `JsonMessageGenerationStopped` writes it. It names no user, and its `draft_id`
+ * is decimal text, although the Bot API documentation describes an integer.
+ */
+export interface BotApiMessageGenerationStopped {
+  readonly chat: BotApiPrivateChat;
+  readonly draft_id: string;
+}
+
+/** An account pressed the Stop button of a draft the bot streamed to their private chat. */
+export interface BotApiStoppedMessageGenerationUpdate {
+  readonly update_id: number;
+  readonly stopped_message_generation: BotApiMessageGenerationStopped;
+}
+
 /** An account's change of its reactions to a message of a supergroup the bot administers. */
 export interface BotApiMessageReactionUpdate {
   readonly update_id: number;
@@ -977,7 +993,8 @@ export type BotApiUpdate =
   | BotApiMyChatMemberUpdate
   | BotApiChatMemberUpdate
   | BotApiChatJoinRequestUpdate
-  | BotApiMessageReactionUpdate;
+  | BotApiMessageReactionUpdate
+  | BotApiStoppedMessageGenerationUpdate;
 
 /**
  * The ID of the chat an update happened in, as grammY's `ctx.chat` finds it; `undefined` for an
@@ -1006,12 +1023,15 @@ export function getBotApiUpdateChatId(update: BotApiUpdate): number | undefined 
   if ('message_reaction' in update) {
     return update.message_reaction.chat.id;
   }
+  if ('stopped_message_generation' in update) {
+    return update.stopped_message_generation.chat.id;
+  }
   return undefined;
 }
 
 /**
  * The ID of the user whose action caused an update, as grammY's `ctx.from` finds it; `undefined`
- * for a poll's new state, which names no user.
+ * for a poll's new state and a stopped message generation, which name no user.
  */
 export function getBotApiUpdateUserId(update: BotApiUpdate): number | undefined {
   if ('message' in update) {
@@ -1043,6 +1063,9 @@ export function getBotApiUpdateUserId(update: BotApiUpdate): number | undefined 
   }
   if ('message_reaction' in update) {
     return update.message_reaction.user.id;
+  }
+  if ('stopped_message_generation' in update) {
+    return undefined;
   }
   return update.chat_member.from.id;
 }

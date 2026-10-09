@@ -1,0 +1,31 @@
+type: object
+additionalProperties: false
+description: >-
+  An account's press of the Stop button of a draft the bot streamed to their private chat with
+  `can_stop`, which asks the bot to stop generating the message. Bots receive it by default.
+required:
+  - update_id
+  - stopped_message_generation
+properties:
+  update_id:
+    type: integer
+    minimum: 1
+  stopped_message_generation:
+    type: object
+    additionalProperties: false
+    description: >-
+      The Bot API's `MessageGenerationStopped`, as the official Bot API server's
+      `JsonMessageGenerationStopped` writes it. It names no user, and topics are not supported,
+      so it has no `message_thread_id`.
+    required:
+      - chat
+      - draft_id
+    properties:
+      chat:
+        $ref: ./PrivateChat.yaml
+      draft_id:
+        type: string
+        pattern: '^-?[1-9][0-9]*$'
+        description: >-
+          The stopped draft's 64-bit identifier in decimal text form, as the official server
+          writes it, although the Bot API documentation describes an integer.

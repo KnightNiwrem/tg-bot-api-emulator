@@ -98,8 +98,8 @@ Bots stream the text of a message they are still generating with `sendMessageDra
 official server's [`process_send_message_draft_query`][send-message-draft] passes to TDLib's
 [`sendTextMessageDraft`][text-draft-request]. Tests read the draft an account's client shows in its
 private chat with the bot through `account.getMessageDraft`, which returns `null` for none. A draft
-is never one of the chat's messages, and writing, replacing, expiring or removing one leaves the
-history and the bot's updates unchanged.
+is never one of the chat's messages: writing, replacing, expiring or removing one leaves the history
+unchanged and sends the bot no update. Only a press of its Stop button tells the bot.
 
 As TDLib's [`updatePendingMessage`][pending-message] tells clients to show drafts:
 
@@ -125,9 +125,26 @@ the entities, such as a mention of an unknown user. Telegram's servers then refu
 descriptions are the ones Telegram's servers return to bots; the open-source code does not contain
 them or the order in which the servers check, which the emulator takes as listed.
 
-Topics and Stop buttons are [real gaps](#real-gaps): `message_thread_id` is refused as an unknown
-parameter, and `can_stop` or `keep_on_stop` set to `true` with
-`Bad Request: can_stop and keep_on_stop are not supported`.
+A draft written with `can_stop: true` shows a Stop button, which `account.stopMessageDraft` presses,
+as TDLib's [`stopPendingMessage`][stop-pending-message] does. The bot then receives a
+`stopped_message_generation` update, as the official server's
+[`JsonMessageGenerationStopped`][generation-stopped] writes it: the private chat and the draft ID,
+without a user or a `message_thread_id`. The server writes `draft_id` as decimal text, although the
+Bot API documentation describes an integer, and the emulator follows the server. Bots receive the
+update by default, as they do on Telegram, and stop receiving it when their `allowed_updates` leave
+it out.
+
+As `updatePendingMessage` describes, the draft disappears when the account presses Stop, unless the
+bot wrote it with `keep_on_stop: true`. A kept draft stays shown without a Stop button until it
+expires or the bot sends a message, so pressing Stop again is refused. A draft without a Stop button
+cannot be stopped. Each accepted press reaches the bot once, and refused presses change nothing.
+
+Stopping the generation is the bot's job. The emulator reports the press but cannot stop a producer
+that keeps writing: a later `sendMessageDraft` shows a draft again, with any Stop button it asks
+for, so tests can detect a bot that ignores the stop. A draft never becomes a message on its own: a
+bot that wants to keep its partial answer sends it with `sendMessage`, which also removes the draft.
+
+Topics are a [real gap](#real-gaps): `message_thread_id` is refused as an unknown parameter.
 
 ## Editing and deleting
 
@@ -280,14 +297,13 @@ Other origins are users. Channel and chat origins are [real gaps](#real-gaps).
 - **Drafts expire only when a test says so.** Telegram's clients remove a draft 30 seconds after the
   bot's last write, TDLib's [`pending_text_message_period`][pending-period]. Results that depend on
   how long a test runs would be unreliable, so the emulator never removes a draft as time passes.
-  Tests stand in for the timeout with `account.expireMessageDraft`, which removes the draft without
-  telling the bot. Given a `draft_id`, it removes only that draft and fails while another is shown.
+  Clients also remove a stopped draft kept with `keep_on_stop` after a short time that TDLib does
+  not specify. Tests stand in for either timeout with `account.expireMessageDraft`, which removes
+  the draft without telling the bot. Given a `draft_id`, it removes only that draft and fails while
+  another is shown.
 
 ## Real gaps
 
-- **Stopping drafts.** Bots cannot offer a Stop button with `can_stop` and `keep_on_stop`, and
-  accounts cannot press one, so bots never receive `stopped_message_generation` updates. Tests
-  cannot exercise a bot that aborts its generation.
 - **Drafts in topics.** `message_thread_id` is refused, so tests cannot stream drafts to a topic of
   a private chat.
 - **Checklist and poll reply targets.** Replies cannot target an individual checklist task or poll
@@ -326,6 +342,8 @@ Other origins are users. Channel and chat origins are [real gaps](#real-gaps).
 [text-draft-request]: https://github.com/tdlib/td/blob/bc9c263e2bfee06aaab41e82db51a103376030bc/td/telegram/Requests.cpp#L4955-L4969
 [pending-message]: https://github.com/tdlib/td/blob/bc9c263e2bfee06aaab41e82db51a103376030bc/td/generate/scheme/td_api.tl#L10709-L10717
 [pending-period]: https://github.com/tdlib/td/blob/bc9c263e2bfee06aaab41e82db51a103376030bc/td/telegram/OptionManager.cpp#L203
+[stop-pending-message]: https://github.com/tdlib/td/blob/bc9c263e2bfee06aaab41e82db51a103376030bc/td/generate/scheme/td_api.tl#L13211-L13215
+[generation-stopped]: https://github.com/tdlib/telegram-bot-api/blob/e3e9dd8e5b3d7ab8537cd5a10dc31d5ffa8f82d1/telegram-bot-api/Client.cpp#L3980-L3997
 [external-reply-input]: https://github.com/tdlib/td/blob/bc9c263e2bfee06aaab41e82db51a103376030bc/td/telegram/MessagesManager.cpp#L21264-L21291
 [quote-entities]: https://github.com/tdlib/td/blob/bc9c263e2bfee06aaab41e82db51a103376030bc/td/telegram/MessageEntity.cpp#L4840-L4853
 [replied-message-info]: https://github.com/tdlib/td/blob/bc9c263e2bfee06aaab41e82db51a103376030bc/td/telegram/RepliedMessageInfo.cpp#L142-L200

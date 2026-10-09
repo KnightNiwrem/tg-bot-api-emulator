@@ -5,11 +5,11 @@
 ## Supported behavior
 
 The emulator generates `message`, `edited_message`, `callback_query`, `inline_query`,
-`chosen_inline_result`, `poll`, `poll_answer`, `my_chat_member`, `chat_member`, `chat_join_request`
-and `message_reaction` updates. Only the bot that sent a poll receives its
-[`poll` and `poll_answer` updates](polls.md#poll-updates). `chat_member` and
-[`message_reaction`](reactions.md#reaction-updates) require the observing bot to be a supergroup
-administrator and explicitly subscribe to them, and
+`chosen_inline_result`, `poll`, `poll_answer`, `my_chat_member`, `chat_member`, `chat_join_request`,
+`message_reaction` and [`stopped_message_generation`](messages.md#message-drafts) updates. Only the
+bot that sent a poll receives its [`poll` and `poll_answer` updates](polls.md#poll-updates).
+`chat_member` and [`message_reaction`](reactions.md#reaction-updates) require the observing bot to
+be a supergroup administrator and explicitly subscribe to them, and
 [`chat_join_request`](invite-links.md#join-requests) requires the observing bot to be an
 administrator with `can_invite_users`. Inline feedback also requires the bot's
 `receives_chosen_inline_results` creation setting.

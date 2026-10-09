@@ -467,6 +467,7 @@ function createBotApiFixture() {
     accounts,
     bots,
     drafts: new MessageDraftRepository(),
+    events: events,
   });
   const privateMessaging = new PrivateMessagingService({
     accounts,

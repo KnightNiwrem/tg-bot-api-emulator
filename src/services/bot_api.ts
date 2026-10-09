@@ -82,7 +82,7 @@ import {
 import type { BotUploadTooBigFailure } from '../types/upload_profile.ts';
 import { isUserId } from '../types/telegram_identity.ts';
 import type { VirtualBot, VirtualBotProfile } from '../types/virtual_bot.ts';
-import type { MessageDraft } from '../types/message_draft.ts';
+import type { WrittenMessageDraft } from '../types/message_draft.ts';
 import {
   type ChatAction,
   type ChatActionChat,
@@ -1050,6 +1050,10 @@ export interface SendMessageDraftRequest {
   readonly draftId?: string;
   /** The draft's text as the bot specified it, not yet normalized. */
   readonly text: SpecifiedFormattedText;
+  /** Whether the account's client shows a Stop button, which asks the bot to stop. */
+  readonly canStop: boolean;
+  /** Whether the draft stays shown once the account presses Stop. */
+  readonly keepOnStop: boolean;
 }
 
 export type SendMessageDraftResult =
@@ -2005,7 +2009,7 @@ interface ChatActions {
 }
 
 interface MessageDrafts {
-  showBotDraft(conversation: PrivateConversationKey, draft: MessageDraft): void;
+  showBotDraft(conversation: PrivateConversationKey, draft: WrittenMessageDraft): void;
 }
 
 interface BotApiServiceDependencies {
@@ -2840,7 +2844,7 @@ export class BotApiService {
    */
   sendMessageDraft(
     authenticatedBot: VirtualBotProfile,
-    { chatId, draftId, text }: SendMessageDraftRequest,
+    { chatId, draftId, text, canStop, keepOnStop }: SendMessageDraftRequest,
   ): SendMessageDraftResult {
     const access = this.#checkBotChatActionAccess(authenticatedBot.id, chatId);
     if (!access.allowed && access.reason !== 'bot_blocked') {
@@ -2867,7 +2871,7 @@ export class BotApiService {
     }
     this.#messageDrafts.showBotDraft(
       { accountId: chatId, botId: authenticatedBot.id },
-      { draftId, text: textNormalization.formattedText },
+      { draftId, text: textNormalization.formattedText, canStop, keepOnStop },
     );
     return { sent: true };
   }
