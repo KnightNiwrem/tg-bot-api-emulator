@@ -10,30 +10,31 @@ exact contract.
 
 ## Client and session
 
-| Operation                                      | Purpose                                                           | Guide                                                       |
-| ---------------------------------------------- | ----------------------------------------------------------------- | ----------------------------------------------------------- |
-| `new TelegramEmulationClient(url, { fetch? })` | Connects to an emulator                                           | [Getting started](getting-started.md)                       |
-| `createSession({ upload_profile? })`           | Creates an isolated session                                       | [Sessions and fixtures](sessions-and-fixtures.md)           |
-| `session.id`, `botApiRoot`, `uploadProfile`    | The session's identity, Bot API root and upload limits            | [Sessions and fixtures](sessions-and-fixtures.md)           |
-| `session.createBot(input)`                     | Registers a bot; returns its token and profile                    | [Sessions and fixtures](sessions-and-fixtures.md)           |
-| `session.createAccount(input)`                 | Registers an account; returns its client                          | [Sessions and fixtures](sessions-and-fixtures.md)           |
-| `session.getMe(token)`                         | Reads a bot's profile as `getMe` returns it                       | [Sessions and fixtures](sessions-and-fixtures.md)           |
-| `session.end()`                                | Discards the session and everything in it                         | [Sessions and fixtures](sessions-and-fixtures.md)           |
-| `session.downloadFile(fileUniqueId)`           | Reads the content of a file of the session's messages             | [Media and files](media-and-files.md)                       |
-| `session.registerWebResource(input)`           | Serves content at a URL of the session's emulated web             | [Test controls](test-controls.md)                           |
-| `session.queueRateLimitResponses(input)`       | Makes a bot's next calls fail with `429 Too Many Requests`        | [Test controls](test-controls.md)                           |
-| `session.getRateLimitResponses(botId)`         | Lists the rate limit answers still queued                         | [Test controls](test-controls.md)                           |
-| `session.queueServerErrorResponses(input)`     | Makes a bot's next calls fail with `500` or `503`                 | [Test controls](test-controls.md#server-error-answers)      |
-| `session.getServerErrorResponses(botId)`       | Lists the server error answers still queued                       | [Test controls](test-controls.md#server-error-answers)      |
-| `session.setWebhookDelivery(input)`            | Chooses automatic or manual webhook scheduling for a bot          | [Test controls](test-controls.md#webhook-delivery-controls) |
-| `session.getWebhookDelivery(botId)`            | Reads a bot's webhook scheduling                                  | [Test controls](test-controls.md#webhook-delivery-controls) |
-| `session.getWebhookAttempts(botId)`            | Lists a bot's webhook attempts and their outcomes                 | [Test controls](test-controls.md#webhook-delivery-controls) |
-| `session.releaseWebhookRetry(input)`           | Sends a failed webhook attempt's update again at once             | [Test controls](test-controls.md#webhook-delivery-controls) |
-| `session.expireWebhookAttempt(input)`          | Makes a webhook attempt's deadline arrive                         | [Test controls](test-controls.md#webhook-delivery-controls) |
-| `session.expirePoll(pollId)`                   | Closes a poll as its closing time arriving does                   | [Polls](polls.md)                                           |
-| `session.expireChatMemberRestriction(input)`   | Ends a temporary restriction                                      | [Permissions and moderation](permissions-and-moderation.md) |
-| `session.expireChatInviteLink(input)`          | Makes an invite link's expiry date arrive                         | [Invite links](invite-links.md)                             |
-| `session.expireJoinRequesterContact(input)`    | Ends a join request's contact window as five minutes passing does | [Invite links](invite-links.md)                             |
+| Operation                                        | Purpose                                                           | Guide                                                       |
+| ------------------------------------------------ | ----------------------------------------------------------------- | ----------------------------------------------------------- |
+| `new TelegramEmulationClient(url, { fetch? })`   | Connects to an emulator                                           | [Getting started](getting-started.md)                       |
+| `createSession({ upload_profile? })`             | Creates an isolated session                                       | [Sessions and fixtures](sessions-and-fixtures.md)           |
+| `session.id`, `botApiRoot`, `uploadProfile`      | The session's identity, Bot API root and upload limits            | [Sessions and fixtures](sessions-and-fixtures.md)           |
+| `session.createBot(input)`                       | Registers a bot; returns its token and profile                    | [Sessions and fixtures](sessions-and-fixtures.md)           |
+| `session.createAccount(input)`                   | Registers an account; returns its client                          | [Sessions and fixtures](sessions-and-fixtures.md)           |
+| `session.getMe(token)`                           | Reads a bot's profile as `getMe` returns it                       | [Sessions and fixtures](sessions-and-fixtures.md)           |
+| `session.end()`                                  | Discards the session and everything in it                         | [Sessions and fixtures](sessions-and-fixtures.md)           |
+| `session.downloadFile(fileUniqueId)`             | Reads the content of a file of the session's messages             | [Media and files](media-and-files.md)                       |
+| `session.registerWebResource(input)`             | Serves content at a URL of the session's emulated web             | [Test controls](test-controls.md)                           |
+| `session.queueRateLimitResponses(input)`         | Makes a bot's next calls fail with `429 Too Many Requests`        | [Test controls](test-controls.md)                           |
+| `session.getRateLimitResponses(botId)`           | Lists the rate limit answers still queued                         | [Test controls](test-controls.md)                           |
+| `session.queueServerErrorResponses(input)`       | Makes a bot's next calls fail with `500` or `503`                 | [Test controls](test-controls.md#server-error-answers)      |
+| `session.getServerErrorResponses(botId)`         | Lists the server error answers still queued                       | [Test controls](test-controls.md#server-error-answers)      |
+| `session.setWebhookDelivery(input)`              | Chooses automatic or manual webhook scheduling for a bot          | [Test controls](test-controls.md#webhook-delivery-controls) |
+| `session.getWebhookDelivery(botId)`              | Reads a bot's webhook scheduling                                  | [Test controls](test-controls.md#webhook-delivery-controls) |
+| `session.getWebhookAttempts(botId)`              | Lists a bot's webhook attempts and their outcomes                 | [Test controls](test-controls.md#webhook-delivery-controls) |
+| `session.releaseWebhookRetry(input)`             | Sends a failed webhook attempt's update again at once             | [Test controls](test-controls.md#webhook-delivery-controls) |
+| `session.expireWebhookAttempt(input)`            | Makes a webhook attempt's deadline arrive                         | [Test controls](test-controls.md#webhook-delivery-controls) |
+| `session.expirePoll(pollId)`                     | Closes a poll as its closing time arriving does                   | [Polls](polls.md)                                           |
+| `session.expireChatMemberRestriction(input)`     | Ends a temporary restriction                                      | [Permissions and moderation](permissions-and-moderation.md) |
+| `session.expireChatInviteLink(input)`            | Makes an invite link's expiry date arrive                         | [Invite links](invite-links.md)                             |
+| `session.expireJoinRequesterContact(input)`      | Ends a join request's contact window as five minutes passing does | [Invite links](invite-links.md)                             |
+| `session.expireInlineAnswerCache(inlineQueryId)` | Expires cached inline answers as their `cache_time` passing does  | [Inline mode](inline-mode.md#fresh-answers-after-the-cache) |
 
 ## Bot activity
 

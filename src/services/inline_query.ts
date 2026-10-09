@@ -261,6 +261,16 @@ export interface ChooseInlineQueryResultInput extends AccountInlineQueryKey {
   readonly signal?: AbortSignal;
 }
 
+/**
+ * Why a query's answers could not be expired from the cache: no query has the ID, or the cache
+ * holds no answer for its request.
+ */
+export type ExpireAnswerCacheFailureReason = 'inline_query_not_found' | 'answer_not_cached';
+
+export type ExpireAnswerCacheResult =
+  | { readonly expired: true }
+  | { readonly expired: false; readonly reason: ExpireAnswerCacheFailureReason };
+
 export type ChooseInlineQueryResultFailureReason =
   | 'inline_query_not_found'
   | 'inline_query_not_answered'
@@ -349,12 +359,13 @@ interface InlineQueryStore {
     readonly offset: string;
   }): InlineQuery;
   getInlineQuery(inlineQueryId: InlineQueryId): InlineQuery | undefined;
-  listAnsweredInlineQueries(botId: number): readonly InlineQuery[];
+  listQueriesWithCachedAnswers(botId: number): readonly InlineQuery[];
   recordAnswer(
     inlineQueryId: InlineQueryId,
     answer: InlineQueryAnswer,
-    answeredAtMilliseconds: number,
+    options: { readonly addsToCache: boolean },
   ): InlineQuery;
+  removeCachedAnswers(inlineQueryIds: readonly InlineQueryId[]): void;
 }
 
 interface ChatDomainEventSink {
@@ -382,7 +393,6 @@ interface InlineQueryServiceDependencies {
   readonly inlineQueries: InlineQueryStore;
   readonly webMediaFiles: InlineResultWebMediaFiles;
   readonly events: ChatDomainEventSink;
-  readonly currentTimeMilliseconds: () => number;
 }
 
 /** TDLib's `is_base64url_characters`, which a `start_parameter` must satisfy. */
@@ -408,7 +418,6 @@ export class InlineQueryService {
   readonly #inlineQueries: InlineQueryStore;
   readonly #webMediaFiles: InlineResultWebMediaFiles;
   readonly #events: ChatDomainEventSink;
-  readonly #currentTimeMilliseconds: () => number;
 
   constructor(
     {
@@ -420,7 +429,6 @@ export class InlineQueryService {
       inlineQueries,
       webMediaFiles,
       events,
-      currentTimeMilliseconds,
     }: InlineQueryServiceDependencies,
   ) {
     this.#accounts = accounts;
@@ -432,7 +440,6 @@ export class InlineQueryService {
     this.#inlineQueries = inlineQueries;
     this.#webMediaFiles = webMediaFiles;
     this.#events = events;
-    this.#currentTimeMilliseconds = currentTimeMilliseconds;
   }
 
   /**
@@ -440,8 +447,8 @@ export class InlineQueryService {
    * it is a member of, to a bot with inline mode turned on, and publishes it for that bot. The
    * account may share its location only with a bot that requests it.
    *
-   * A query answered within its cache time is not sent again: the new query receives the same
-   * answer at once, and the bot learns nothing of it. TDLib's
+   * A query whose answer the cache holds is not sent again: the new query receives the same answer
+   * at once, and the bot learns nothing of it. TDLib's
    * `InlineQueriesManager::send_inline_query` reuses an answer for the account that received it,
    * whatever `is_personal` says; Telegram's servers, as the Bot API describes `is_personal`, reuse
    * an answer that is not personal for any account.
@@ -474,15 +481,13 @@ export class InlineQueryService {
       offset: input.offset,
       ...(input.userLocation === undefined ? {} : { userLocation: input.userLocation }),
     });
-    const cachedState = this.#findCachedAnswer(inlineQuery);
-    if (cachedState !== undefined) {
+    const cachedAnswer = this.#findCachedAnswer(inlineQuery);
+    if (cachedAnswer !== undefined) {
       return {
         sent: true,
-        inlineQuery: this.#inlineQueries.recordAnswer(
-          inlineQuery.id,
-          cachedState.answer,
-          cachedState.answeredAtMilliseconds,
-        ),
+        inlineQuery: this.#inlineQueries.recordAnswer(inlineQuery.id, cachedAnswer, {
+          addsToCache: false,
+        }),
       };
     }
     this.#events.publish({ type: 'inline_query_created', inlineQuery });
@@ -539,9 +544,30 @@ export class InlineQueryService {
           nextOffset: input.nextOffset,
           ...(input.button === undefined ? {} : { button: input.button }),
         },
-        this.#currentTimeMilliseconds(),
+        { addsToCache: input.cacheTimeSeconds > 0 },
       ),
     };
+  }
+
+  /**
+   * Expires the cached answers to a query's request, as its `cache_time` passing does on Telegram,
+   * so that the next such query reaches the bot. The emulator keeps an answer with a positive
+   * cache time until a test expires it. Every answer the cache holds for the request expires,
+   * whichever account received it, and each query keeps its answer.
+   */
+  expireAnswerCache(inlineQueryId: InlineQueryId): ExpireAnswerCacheResult {
+    const inlineQuery = this.#inlineQueries.getInlineQuery(inlineQueryId);
+    if (inlineQuery === undefined) {
+      return { expired: false, reason: 'inline_query_not_found' };
+    }
+    const cachedQueryIds = this.#inlineQueries.listQueriesWithCachedAnswers(inlineQuery.botId)
+      .filter((cachedQuery) => isSameInlineQueryRequest(cachedQuery, inlineQuery))
+      .map((cachedQuery) => cachedQuery.id);
+    if (cachedQueryIds.length === 0) {
+      return { expired: false, reason: 'answer_not_cached' };
+    }
+    this.#inlineQueries.removeCachedAnswers(cachedQueryIds);
+    return { expired: true };
   }
 
   /** Returns an inline query the account sent, or `undefined` for any other query. */
@@ -598,21 +624,17 @@ export class InlineQueryService {
   }
 
   /**
-   * Finds the latest answer that can be reused for a query: one to the same request, still within
-   * its cache time, and given to the query's account unless it is not personal.
+   * Finds the latest cached answer that can be reused for a query: one to the same request, given
+   * to the query's account unless it is not personal.
    */
-  #findCachedAnswer(
-    inlineQuery: InlineQuery,
-  ): Extract<InlineQuery['state'], { readonly status: 'answered' }> | undefined {
-    const now = this.#currentTimeMilliseconds();
-    for (const answeredQuery of this.#inlineQueries.listAnsweredInlineQueries(inlineQuery.botId)) {
-      const { state } = answeredQuery;
+  #findCachedAnswer(inlineQuery: InlineQuery): InlineQueryAnswer | undefined {
+    for (const cachedQuery of this.#inlineQueries.listQueriesWithCachedAnswers(inlineQuery.botId)) {
+      const { state } = cachedQuery;
       if (
-        state.status === 'answered' && isSameInlineQueryRequest(answeredQuery, inlineQuery) &&
-        (!state.answer.isPersonal || answeredQuery.accountId === inlineQuery.accountId) &&
-        now < state.answeredAtMilliseconds + state.answer.cacheTimeSeconds * 1_000
+        state.status === 'answered' && isSameInlineQueryRequest(cachedQuery, inlineQuery) &&
+        (!state.answer.isPersonal || cachedQuery.accountId === inlineQuery.accountId)
       ) {
-        return state;
+        return state.answer;
       }
     }
     return undefined;

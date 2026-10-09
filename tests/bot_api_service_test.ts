@@ -617,7 +617,6 @@ function createBotApiFixture() {
       inlineQueries: new InlineQueryRepository(),
       webMediaFiles: mediaFiles,
       events,
-      currentTimeMilliseconds: () => 1_700_000_000_000,
     }),
     inlineMessages: messages,
     botCaptions: {

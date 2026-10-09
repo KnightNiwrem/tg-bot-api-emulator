@@ -206,7 +206,10 @@ export type InlineQueryResultsButton =
 /** How the bot answered an inline query, as the querying account's client shows it. */
 export interface InlineQueryAnswer {
   readonly results: readonly InlineQueryResult[];
-  /** How long the answer is reused for the same query instead of asking the bot again. */
+  /**
+   * How long Telegram reuses the answer for the same query instead of asking the bot again. The
+   * emulator reuses an answer with a positive cache time until a test expires it.
+   */
   readonly cacheTimeSeconds: number;
   /** Whether the answer is reused only for the account that sent the query. */
   readonly isPersonal: boolean;
@@ -222,15 +225,7 @@ export interface InlineQueryAnswer {
  */
 export type InlineQueryState =
   | { readonly status: 'awaiting_answer' }
-  | {
-    readonly status: 'answered';
-    readonly answer: InlineQueryAnswer;
-    /**
-     * When the bot gave the answer, which may be before the query for an answer reused from the
-     * cache; the answer is reused until `answer.cacheTimeSeconds` after it.
-     */
-    readonly answeredAtMilliseconds: number;
-  };
+  | { readonly status: 'answered'; readonly answer: InlineQueryAnswer };
 
 /** Text an account typed after a bot's username, which asks the bot for results to send. */
 export interface InlineQuery {

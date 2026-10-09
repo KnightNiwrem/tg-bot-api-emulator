@@ -149,17 +149,27 @@ account that sends a result from one downloads the file anew.
 
 ### Answer caching
 
-An answer is reused for `cache_time` seconds, 300 by default. A repeated query within that time is
-created already answered, and the bot receives no `inline_query` update. TDLib's
+An answer with a positive `cache_time`, 300 by default, is cached. A repeated query is created
+already answered with a cached answer, and the bot receives no `inline_query` update. TDLib's
 [`send_inline_query`][cache] identifies a repeated query by bot, chat type, offset and text without
 surrounding whitespace, and reuses the answer for the account that received it whatever
-`is_personal` says; it records the expiry when the [answer arrives][cache-expiry]. An answer that is
-not personal is also reused for other accounts, as the Bot API documents for Telegram's server
-cache. The server's cache key is not in the open-source code, so the emulator uses TDLib's. Reused
-answers expire with the original, and the bot cannot answer a query that received one. Bots that
-need a fresh answer every time answer with `cache_time: 0`. For a bot that requests locations,
-TDLib's key also includes a shared location's coordinates in whole ten-thousandths of a degree, so a
-query from elsewhere, or without a location, reaches the bot.
+`is_personal` says. An answer that is not personal is also reused for other accounts, as the Bot API
+documents for Telegram's server cache. The server's cache key is not in the open-source code, so the
+emulator uses TDLib's. The bot cannot answer a query that received a reused answer. Bots that need a
+fresh answer every time answer with `cache_time: 0`, which caches nothing and leaves answers cached
+before in place. For a bot that requests locations, TDLib's key also includes a shared location's
+coordinates in whole ten-thousandths of a degree, so a query from elsewhere, or without a location,
+reaches the bot.
+
+A cached answer stays cached until a test expires it, which stands in for its `cache_time` passing,
+as an [intentional deviation](#intentional-deviations) describes. `session.expireInlineAnswerCache`
+takes the ID of any query of the request, whichever account sent it, and expires every answer cached
+for that request, personal or not, so the next such query from any account reaches the bot. The key
+names no chat, so queries in two supergroups, or in the private chats of two other bots, share their
+cached answers and their expiry. Each query keeps its answer, from which the account can still send
+results, and the bot is not told; no message or update is sent. A later answer with a positive
+`cache_time`, including one to a query sent before the expiry, is cached again. Expiry fails with
+`409` when the cache holds no answer for the request, and with `404` for an unknown query.
 
 ## Intentional deviations
 
@@ -169,6 +179,14 @@ intentionally outside the emulator's scope.
 
 **No timed query expiry.** Test timing should not invalidate unanswered inline queries, so queries
 never expire with elapsed time. Unknown, wrong-bot and already answered query IDs still fail.
+
+**Cached answers expire only when a test says so.** Telegram reuses an answer for `cache_time`
+seconds, which TDLib counts from when the [answer arrives][cache-expiry]. Results that depend on how
+long a test runs would be unreliable, so the emulator never expires a cached answer as time passes,
+and `cache_time` only decides whether an answer is cached. Tests stand in for the period passing
+with `session.expireInlineAnswerCache`. Expiring the cache while the bot still owes an answer to the
+same request leaves that answer to be cached when it arrives, so ordering the two is the test's
+part.
 
 **Deterministic chosen-result feedback.** Feedback is an on/off switch: every choice generates
 feedback when enabled. BotFather sampling percentages are not modeled, so tests can rely on
@@ -220,6 +238,7 @@ public.
 [message edit permissions](../../src/types/virtual_message.ts),
 [inline tests](../../tests/inline_query_service_test.ts),
 [HTTP tests](../../tests/emulation_api_test.ts),
+[answer cache API tests](../../tests/inline_answer_cache_api_test.ts),
 [URL media tests](../../tests/inline_result_media_api_test.ts) and
 [contact and location result tests](../../tests/inline_result_contact_location_api_test.ts).
 

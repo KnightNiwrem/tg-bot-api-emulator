@@ -234,6 +234,14 @@ export interface EmulationSessionClient extends EmulationSession {
    */
   expireJoinRequesterContact(input: ExpireJoinRequesterContactInput): Promise<ChatJoinRequest>;
   /**
+   * Expires the answers the inline answer cache holds for the request of the inline query with
+   * this ID, as their `cache_time` passing does, so the next such query reaches the bot. The
+   * emulator reuses an answer with a positive `cache_time` until a test expires it. The answers
+   * expire for every account, and each query keeps its answer; the bot is not told. Fails with
+   * status `409` when the cache holds no answer for the request.
+   */
+  expireInlineAnswerCache(inlineQueryId: string): Promise<void>;
+  /**
    * A view of the session's bot activity log: the Bot API calls its bots make, with their answers,
    * and the updates delivered to and confirmed by them. `filter` applies to every read of the
    * view, such as `{ bot_id }` for one bot's activity.
@@ -471,6 +479,16 @@ class HttpEmulationSessionClient implements EmulationSessionClient {
       responseSchema: expiredRequesterContactResponseSchema,
     });
     return response.join_request;
+  }
+
+  async expireInlineAnswerCache(inlineQueryId: string): Promise<void> {
+    await requestEmptyResponse(this.#fetch, {
+      method: 'POST',
+      url: `${this.#sessionUrl}/inline-queries/${
+        encodeURIComponent(inlineQueryId)
+      }/answer-cache/expiry`,
+      expectedStatus: HTTP_STATUS_NO_CONTENT,
+    });
   }
 
   registerWebResource({ content, ...input }: RegisterWebResourceInput): Promise<WebResource> {

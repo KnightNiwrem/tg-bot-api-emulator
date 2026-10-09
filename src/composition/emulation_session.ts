@@ -231,7 +231,6 @@ export function createEmulationSession(
     inlineQueries: new InlineQueryRepository(),
     webMediaFiles: mediaFiles,
     events: botUpdateDelivery,
-    currentTimeMilliseconds: () => Date.now(),
   });
 
   const chatActions = new ChatActionService({

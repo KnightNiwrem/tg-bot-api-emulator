@@ -1,0 +1,29 @@
+description: >-
+  The expiry of the cached answers to an inline query's request, which stands for their
+  `cache_time` passing. The emulator does not expire cached answers as time passes, so a test
+  chooses when a repeated query reaches the bot again.
+parameters:
+  - $ref: ../components/parameters/SessionId.yaml
+  - $ref: ../components/parameters/InlineQueryId.yaml
+post:
+  operationId: expireInlineAnswerCache
+  summary: Expire the cached answers to an inline query's request
+  description: >-
+    Any query of the request selects it, whichever account sent it and in whichever chat: the
+    request names the bot, the kind of chat, the offset, the text without surrounding whitespace,
+    and a shared location in whole ten-thousandths of a degree, but not the chat. Every answer the
+    cache holds for the request expires, personal or not, whichever account received it, so the
+    next such query from any account reaches the bot. Each query keeps its answer, from which an
+    account can still send results, and a query answered from the cache still cannot be answered
+    by the bot. No bot is told, and no message or update is sent. A later answer to the request
+    with a positive `cache_time`, including one to a query sent before the expiry, is cached
+    again.
+  responses:
+    '204':
+      description: The cached answers to the request expired.
+    '404':
+      description: No active test session or inline query has the supplied identifier.
+    '409':
+      description: >-
+        The cache holds no answer for the query's request: none was given with a positive
+        `cache_time`, or the answers already expired.

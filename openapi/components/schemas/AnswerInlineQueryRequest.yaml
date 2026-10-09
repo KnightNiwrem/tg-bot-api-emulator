@@ -18,7 +18,8 @@ properties:
     default: 300
     description: >-
       Seconds for which the same query receives this answer again instead of reaching the
-      bot; Telegram clamps it to 0 through 86400.
+      bot; Telegram clamps it to 0 through 86400. The emulator reuses an answer with a positive
+      `cache_time` until a test expires it through the session's answer-cache expiry route.
   is_personal:
     type: boolean
     default: false

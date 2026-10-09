@@ -1,6 +1,8 @@
 name: inlineQueryId
 in: path
 required: true
-description: Identifier of an inline query sent by the addressed account.
+description: >-
+  Identifier of an inline query, unique in its session. An account route addresses only a query
+  the account sent.
 schema:
   type: string
