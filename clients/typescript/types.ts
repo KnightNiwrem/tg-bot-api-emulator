@@ -580,6 +580,13 @@ export interface AccountChatJoinRequestsInput {
   readonly chat: SupergroupMessageTarget;
 }
 
+/** A pending request to join a supergroup, which an administrator account approves or declines. */
+export interface AccountChatJoinRequestDecisionInput {
+  readonly chat: SupergroupMessageTarget;
+  /** The account whose pending request is decided. */
+  readonly userId: number;
+}
+
 /** A pending request to join a supergroup, as its owner inspects it. */
 export interface ChatJoinRequest {
   /** The account that wants to join. */
@@ -2369,10 +2376,27 @@ export interface VirtualAccountClient extends VirtualAccountProfile {
   getChatInviteLinks(input: AccountChatInviteLinksInput): Promise<readonly SupergroupInviteLink[]>;
   /**
    * Returns the pending requests to join a supergroup this account owns, in the order they were
-   * sent. A request ends when a bot approves or declines it, or when its account joins another way
-   * or is banned.
+   * sent. A request ends when an administrator bot or account approves or declines it, or when its
+   * account joins another way or is banned.
    */
   getChatJoinRequests(input: AccountChatJoinRequestsInput): Promise<readonly ChatJoinRequest[]>;
+  /**
+   * Approves a pending request to join a supergroup, whichever bot created the link it was sent
+   * through. This account must own the supergroup, or be an administrator holding
+   * `can_invite_users` when it decides. The requester joins, restricted if it was, through the
+   * request's link, which a `new_chat_members` service message from the requester records;
+   * administrator bots receive the change from this account as a `chat_member` update with the
+   * link. The request ends, and with it the bots' permission to write to the requester under it.
+   * A request is decided once: deciding it again, or after a bot or another account did, fails
+   * with an `EmulationClientError` whose `status` is `409` once the requester is a member, or
+   * `404` once it has no pending request.
+   */
+  approveChatJoinRequest(input: AccountChatJoinRequestDecisionInput): Promise<void>;
+  /**
+   * Declines a pending request to join a supergroup, as `approveChatJoinRequest` decides it: the
+   * requester stays outside, which no update reports, and may request again.
+   */
+  declineChatJoinRequest(input: AccountChatJoinRequestDecisionInput): Promise<void>;
   /**
    * Promotes a member of a supergroup to administrator with the given rights, which must include
    * at least one, or replaces an administrator's rights. This account must own the supergroup, or

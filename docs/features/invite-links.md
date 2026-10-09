@@ -6,15 +6,15 @@
 
 ## Capability matrix
 
-| Area                   | Supported                                                                                                                           | Not supported                                                             |
-| ---------------------- | ----------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------- |
-| `createChatInviteLink` | `chat_id`, `name`, `expire_date`, `member_limit`, `creates_join_request`, in supergroups                                            | Basic groups, channels                                                    |
-| Link management        | `editChatInviteLink` and `revokeChatInviteLink` on the links the bot created, [their effects](#editing-and-revoking-links)          | Links of other administrators, primary links                              |
-| Other Bot API          | `approveChatJoinRequest`, `declineChatJoinRequest`, `invite_link` in `chat_member` updates, `chat_join_request` updates             | `exportChatInviteLink`, subscription links, bios                          |
-| Account actions        | Joining or requesting to join through an invite link, joining a public supergroup by itself, inspecting a chat's links and requests | Creating, editing and revoking links as an account, primary links         |
-| Join requests          | One pending request per account and chat, decided once by any administrator bot with `can_invite_users`                             | Decisions by accounts, requests without a link, join request queries      |
-| Requester contact      | Messages from the bots that received a request to its requester [before a decision](#contacting-requesters)                         | Edits, deletions, chat actions and other uses of the chat under the grant |
-| Time                   | Expiry dates and contact windows that a test [makes end](#expiry-dates)                                                             | Expiry by elapsed time                                                    |
+| Area                   | Supported                                                                                                                                                                        | Not supported                                                               |
+| ---------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------- |
+| `createChatInviteLink` | `chat_id`, `name`, `expire_date`, `member_limit`, `creates_join_request`, in supergroups                                                                                         | Basic groups, channels                                                      |
+| Link management        | `editChatInviteLink` and `revokeChatInviteLink` on the links the bot created, [their effects](#editing-and-revoking-links)                                                       | Links of other administrators, primary links                                |
+| Other Bot API          | `approveChatJoinRequest`, `declineChatJoinRequest`, `invite_link` in `chat_member` updates, `chat_join_request` updates                                                          | `exportChatInviteLink`, subscription links, bios                            |
+| Account actions        | Joining or requesting to join through an invite link, joining a public supergroup by itself, inspecting a chat's links and requests, [deciding requests](#decisions-by-accounts) | Creating, editing and revoking links as an account, primary links           |
+| Join requests          | One pending request per account and chat, decided once by the owner or any administrator bot or account with `can_invite_users`                                                  | Requests without a link, join request queries, inspection by administrators |
+| Requester contact      | Messages from the bots that received a request to its requester [before a decision](#contacting-requesters)                                                                      | Edits, deletions, chat actions and other uses of the chat under the grant   |
+| Time                   | Expiry dates and contact windows that a test [makes end](#expiry-dates)                                                                                                          | Expiry by elapsed time                                                      |
 
 ## Creating invite links
 
@@ -76,12 +76,12 @@ omitted `creates_join_request` false. The settings are read, cleaned and checked
   [expiry control](#expiry-dates).
 - Pending [join requests](#join-requests) sent through the link stay pending, with their
   [requester contact](#contacting-requesters), whether or not the link still creates join requests.
-  Administrator bots decide them as before, and an approval admits the account even when the link's
+  Administrators decide them as before, and an approval admits the account even when the link's
   member limit is reached.
 
 A revoked link admits nobody, and can be neither edited nor revoked again. Its members stay. Its
-pending join requests stay pending with their contact until an administrator bot decides them, and
-an approval admits the account through the revoked link, which the `chat_member` update shows with
+pending join requests stay pending with their contact until an administrator decides them, and an
+approval admits the account through the revoked link, which the `chat_member` update shows with
 `is_revoked` true. A test can still make a revoked link's expiry date arrive.
 
 A request is checked in this order; a revocation makes the checks marked for both:
@@ -164,9 +164,10 @@ its chat and user, an account has one pending request per supergroup: using a re
 while its request is pending answers `409` and changes nothing, keeping the first request with its
 link and date, and sending no update. The expiry and standing checks of
 [joining through a link](#joining-through-a-link) come first. A request ends when its account joins,
-whichever way, is banned, or a bot [approves or declines](#approving-and-declining-requests) it; a
-restriction leaves it pending, as a restricted account may still join, and so do the edits, the
-revocation and the expiry of the link it was sent through.
+whichever way, is banned, or an administrator bot or account
+[approves or declines](#approving-and-declining-requests) it; a restriction leaves it pending, as a
+restricted account may still join, and so do the edits, the revocation and the expiry of the link it
+was sent through.
 
 The supergroup's administrator bots that hold `can_invite_users` receive the request as a
 `chat_join_request` update, as the Bot API documents: "The bot must have the can_invite_users
@@ -205,8 +206,9 @@ it was sent, whether or not their `allowed_updates` include `chat_join_request`:
   and claims nothing.
 - A bot must still hold `can_invite_users` when it writes, as deciding the request takes. A bot that
   gains the right after the request, or administers without it, may not write.
-- The permission ends with the request: when a bot approves or declines it, or the account joins
-  otherwise or is banned. A test ends it earlier, as five minutes passing does, with
+- The permission ends with the request: when an administrator bot or account approves or declines
+  it, or the account joins otherwise or is banned. A test ends it earlier, as five minutes passing
+  does, with
   `POST /sessions/{sessionId}/supergroups/{chatId}/join-requests/{userId}/requester-contact/expiry`,
   or the TypeScript client's `session.expireJoinRequesterContact`, which answers the request with
   its contact `expired`, and leaves it pending. An expired contact answers `409`, and an unknown
@@ -260,6 +262,40 @@ each call with its answer. Requests are checked in this order, after a `chat_id`
 The last two are errors [`messages.hideChatJoinRequest`][hide-join-request] documents, which the
 official server passes on; a refused call changes nothing.
 
+### Decisions by accounts
+
+The supergroup's owner, or an administrator account holding `can_invite_users`, decides a pending
+request with
+`POST /sessions/{sessionId}/accounts/{accountId}/conversations/supergroup/{chatId}/join-requests/{userId}/decision`
+and `{ "decision": "approve" }` or `{ "decision": "decline" }`, or the TypeScript client's
+`approveChatJoinRequest` and `declineChatJoinRequest`, naming the requester by its user ID. As for
+bots, TDLib's `process_dialog_join_request` checks the account's own standing with
+[`can_manage_dialog_join_requests`][manage-join-requests]: the owner holds every right, and an
+administrator needs `can_invite_users` explicitly granted, whichever bot created the link. The right
+is checked when the account decides, so an administrator that lost it, or was demoted, is refused.
+
+A decision has the effects of a bot's: approval admits the requester through the request's link,
+restricted if it was, and its join is its own service message. Administrator bots subscribed to
+`chat_member` receive the change from the deciding account, which `from` names, with the request's
+`invite_link`, whole only for the link's creator. Declining leaves the requester outside without an
+update. Either decision ends the request and its [requester contact](#contacting-requesters), so the
+bots that received it can no longer write to the requester under it, while a private chat the
+requester started with a bot stays open. A non-owner administrator decides requests it cannot
+[inspect](#join-requests), as only the owner inspects them, so a test names the requester itself.
+
+A decision answers `204` and consumes the request. Accounts and bots share it: once an account or a
+bot decided, a later decision by either finds the requester a member or the request gone, so a bot
+that approves after an account receives `USER_ALREADY_PARTICIPANT` or `HIDE_REQUESTER_MISSING` as
+above. A refused decision changes nothing and sends no update. Requests are checked in this order:
+
+| Case                                                                                       | Status |
+| ------------------------------------------------------------------------------------------ | ------ |
+| A path identifier or the body is malformed                                                 | `400`  |
+| The account or the supergroup is unknown, including a channel or a chat of another session | `404`  |
+| The account is neither the owner nor an administrator with `can_invite_users`              | `403`  |
+| The requester is a member, also once a request was approved                                | `409`  |
+| The requester has no pending request, including an unknown user or a declined request      | `404`  |
+
 ## Joining public supergroups
 
 An account joins a public supergroup by itself with
@@ -298,9 +334,12 @@ create links, any other account is answered `403`.
   deleting revoked links are not implemented.
 - **Requests without a link.** Public supergroups that require approval to join, and the join
   request queries of guard bots, are not supported.
-- **Account administrators.** Accounts cannot create, edit or revoke links or decide join requests,
-  even as the owner or administrators with `can_invite_users`. So no one manages a link of a bot
-  that left.
+- **Account administrators.** Accounts cannot create, edit or revoke links, even as the owner or
+  administrators with `can_invite_users`. So no one manages a link of a bot that left.
+- **Inspection by administrators.** Only the owner inspects pending requests, although TDLib's
+  `getChatJoinRequests` checks only [`can_manage_dialog_join_requests`][manage-join-requests], which
+  any administrator with `can_invite_users` passes; such an administrator account decides requests
+  without listing them.
 - **Other chat kinds.** Basic groups and channels have no invite links.
 
 ## Comparison limits
@@ -350,6 +389,14 @@ in part:
 - **Decision errors.** The order of the servers' `USER_ALREADY_PARTICIPANT` and
   `HIDE_REQUESTER_MISSING` checks is not public; the emulator checks membership first, and answers a
   user unknown to the session as one without a request.
+- **Account decisions.** The emulation API answers an account's decision with statuses rather than
+  Telegram's errors: `403` where TDLib refuses with "Not enough rights to manage chat join
+  requests", `409` and `404` where the servers raise `USER_ALREADY_PARTICIPANT` and
+  `HIDE_REQUESTER_MISSING`. An account that is not a member is refused as lacking the right; TDLib
+  first checks that it can write to the chat, which for a supergroup it does not belong to depends
+  on server state the emulator does not model. Which user the servers name as the actor of a human
+  administrator's approval is not public; the emulator names the approving account, as it names an
+  approving bot.
 
 ## Local evidence
 

@@ -23,11 +23,18 @@ const SUPERGROUP_INVITE_LINK_COLLECTION_PATH =
   `${SUPERGROUP_CONVERSATION_PATH}/invite-links` as const;
 const SUPERGROUP_JOIN_REQUEST_COLLECTION_PATH =
   `${SUPERGROUP_CONVERSATION_PATH}/join-requests` as const;
+const SUPERGROUP_JOIN_REQUEST_DECISION_PATH =
+  `${SUPERGROUP_JOIN_REQUEST_COLLECTION_PATH}/:${USER_ID_PARAMETER}/decision` as const;
 const CHAT_JOIN_COLLECTION_PATH = `/:${ACCOUNT_ID_PARAMETER}/chat-joins` as const;
 
 /** An invite link the account uses, as the bot that created it received it. */
 const joinChatByInviteLinkRequestSchema = z.strictObject({
   invite_link: z.string().min(1),
+});
+
+/** Whether the administrator lets the requester in or leaves it outside. */
+const decideJoinRequestRequestSchema = z.strictObject({
+  decision: z.enum(['approve', 'decline']),
 });
 
 const createSupergroupRequestSchema = z.strictObject({
@@ -39,8 +46,8 @@ const createSupergroupRequestSchema = z.strictObject({
 
 /**
  * Routes through which an account creates supergroups and changes or inspects who belongs to them:
- * members it adds or removes, chats it joins by invite link, and the owner's invite links and join
- * requests.
+ * members it adds or removes, chats it joins by invite link, the owner's invite links and join
+ * requests, and the join requests an administrator decides.
  */
 export function createSupergroupMembershipRoutes(): Hono<SessionRouteContextTypes> {
   const accountRoutes = new Hono<SessionRouteContextTypes>();
@@ -279,6 +286,45 @@ export function createSupergroupMembershipRoutes(): Hono<SessionRouteContextType
       return context.json({ join_requests: result.requests.map(presentChatJoinRequest) });
     }
     return context.body(null, ownerInspectionFailureStatus(result.reason));
+  });
+
+  // The owner or an administrator with `can_invite_users` approves or declines a pending request.
+  accountRoutes.post(SUPERGROUP_JOIN_REQUEST_DECISION_PATH, async (context) => {
+    const requestPath = supergroupMemberPathSchema.safeParse(context.req.param());
+    if (!requestPath.success) {
+      return context.body(null, 400);
+    }
+    const requestBody = await readJsonRequestBody(context.req, decideJoinRequestRequestSchema);
+    if (requestBody === undefined) {
+      return context.body(null, 400);
+    }
+    const { accountId, chatId, userId } = requestPath.data;
+
+    const result = context.get('emulationSession').chatAdmission.decideJoinRequestAsAccount({
+      deciderAccountId: accountId,
+      chatId,
+      userId,
+      decision: requestBody.decision,
+    });
+    if (result.decided) {
+      return context.body(null, 204);
+    }
+    switch (result.reason) {
+      // A user without a pending request has no request to decide, including once it was decided.
+      case 'account_not_found':
+      case 'chat_not_found':
+      case 'join_request_missing':
+        return context.body(null, 404);
+      case 'not_enough_rights':
+        return context.body(null, 403);
+      // An approved request made its user a member, which no decision changes.
+      case 'already_a_member':
+        return context.body(null, 409);
+      default: {
+        const unhandledReason: never = result.reason;
+        throw new Error(`Unhandled join request decision failure: ${unhandledReason}`);
+      }
+    }
   });
 
   return accountRoutes;

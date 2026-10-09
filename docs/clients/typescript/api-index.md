@@ -133,6 +133,8 @@ exact contract.
 | `joinChatByInviteLink`        | Joins, or asks to join, through an invite link    | [Invite links](invite-links.md)                             |
 | `getChatInviteLinks`          | Reads the supergroup's invite links               | [Invite links](invite-links.md)                             |
 | `getChatJoinRequests`         | Reads the pending join requests                   | [Invite links](invite-links.md)                             |
+| `approveChatJoinRequest`      | Lets a requester in as an administrator           | [Invite links](invite-links.md)                             |
+| `declineChatJoinRequest`      | Leaves a requester outside as an administrator    | [Invite links](invite-links.md)                             |
 
 ## Errors
 

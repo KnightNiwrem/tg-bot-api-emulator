@@ -81,7 +81,8 @@ export interface ChatMemberStatusChangedEvent {
   readonly chat: SharedChat;
   /**
    * The user that made the change: the account or bot that added, removed, promoted, demoted,
-   * banned, or unbanned the member, or the member itself when it joined by itself or left.
+   * banned, or unbanned the member, or approved its join request, or the member itself when it
+   * joined by itself or left.
    */
   readonly actorId: number;
   /** The account or bot whose standing changed. */

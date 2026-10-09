@@ -860,6 +860,64 @@ Deno.test('TypeScript client requests to join through a link and lists pending r
   await session.end();
 });
 
+Deno.test('TypeScript client approves and declines join requests as an administrator account', async () => {
+  const { api, client } = createInProcessClient();
+  const session = await client.createSession();
+  const { bot, token } = await session.createBot({
+    first_name: 'Inviter',
+    username: 'inviter_bot',
+  });
+  const { account: owner } = await session.createAccount({ first_name: 'Ada' });
+  const { account: kay } = await session.createAccount({ first_name: 'Kay' });
+  const { account: grace } = await session.createAccount({ first_name: 'Grace' });
+  const { account: hopper } = await session.createAccount({ first_name: 'Hopper' });
+  const supergroup = await owner.createSupergroup({ title: 'Team' });
+  const chat = { type: 'supergroup', chatId: supergroup.id } as const;
+  await owner.addChatMember({ chat, userId: bot.id });
+  await owner.promoteChatMember({ chat, userId: bot.id, rights: { can_invite_users: true } });
+  await owner.addChatMember({ chat, userId: kay.id });
+  await owner.promoteChatMember({ chat, userId: kay.id, rights: { can_invite_users: true } });
+  const creation = await api.request(
+    `/sessions/${session.id}/bot-api/bot${token}/createChatInviteLink`,
+    {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ chat_id: supergroup.id, creates_join_request: true }),
+    },
+  );
+  const { result: { invite_link: inviteLink } } = await creation.json() as {
+    result: { invite_link: string };
+  };
+  await grace.joinChatByInviteLink({ inviteLink });
+  await hopper.joinChatByInviteLink({ inviteLink });
+  const refusalStatus = async (decision: Promise<void>) => {
+    try {
+      await decision;
+      return 'decided';
+    } catch (error) {
+      return error instanceof EmulationClientError ? error.status : error;
+    }
+  };
+
+  await kay.approveChatJoinRequest({ chat, userId: grace.id });
+  await owner.declineChatJoinRequest({ chat, userId: hopper.id });
+  const outcomes = [
+    (await owner.getChatAdministrators({ chat })).length,
+    await owner.getChatJoinRequests({ chat }),
+    (await grace.getMessages({ chat })).at(-1)?.new_chat_members?.map(({ id }) => id),
+    await refusalStatus(owner.approveChatJoinRequest({ chat, userId: grace.id })),
+    await refusalStatus(kay.declineChatJoinRequest({ chat, userId: hopper.id })),
+    await refusalStatus(hopper.approveChatJoinRequest({ chat, userId: grace.id })),
+  ];
+  const expected = [3, [], [grace.id], 409, 404, 403];
+  if (JSON.stringify(outcomes) !== JSON.stringify(expected)) {
+    throw new Error(
+      `Expected each request to be decided once, received ${JSON.stringify(outcomes)}`,
+    );
+  }
+  await session.end();
+});
+
 Deno.test('TypeScript client follows an invite link through its edits and revocation', async () => {
   const { api, client } = createInProcessClient();
   const session = await client.createSession();
