@@ -435,26 +435,46 @@ Deno.test('findNewestPinnedMessage returns the pinned message sent last', () => 
   expectEqual(newestText(), 'older', 'unpinning the newest shows the next');
 });
 
-Deno.test('unpinning all clears every pin of one chat, whoever pinned it, and keeps its messages', () => {
+Deno.test('unpinning all clears every pin of one chat, whoever wrote or pinned it, and keeps its messages', () => {
   const { session, ada, grace, pinningBot, memberBot, chatId, sendToSupergroup, sendToPinningBot } =
     createPinningFixture();
   const supergroup: PinningChat = { type: 'supergroup', chatId };
   const pinningBotChat: PinningChat = { type: 'private', peerId: ada };
   const botPinner = { kind: 'bot', botId: pinningBot } as const;
+  const adaPinner = { kind: 'account', accountId: ada } as const;
   const pin = (pinner: MessagePinner, chat: PinningChat, messageId: number) =>
     expectEqual(
       session.messagePinning.pinMessage({ isSilent: false, pinner, chat, messageId }).pinned,
       true,
       `message ${messageId} is pinned`,
     );
-  pin({ kind: 'account', accountId: grace }, supergroup, sendToSupergroup(grace, 'by grace'));
-  pin({ kind: 'account', accountId: ada }, supergroup, sendToSupergroup(ada, 'by ada'));
-  pin(botPinner, supergroup, sendToSupergroup(grace, 'by bot'));
-  pin(
-    { kind: 'account', accountId: ada },
-    { type: 'private', peerId: pinningBot },
-    sendToPinningBot('private'),
+  const botNotice = session.supergroupMessaging.sendBotMessage({
+    fromBotId: pinningBot,
+    chatId,
+    content: { kind: 'text', text: 'bot notice' },
+  });
+  if (!botNotice.sent) {
+    throw new Error(`Supergroup bot message was not sent: ${botNotice.reason}`);
+  }
+  pin(botPinner, supergroup, messageIdIn(session, chatId, botNotice.message));
+  pin({ kind: 'account', accountId: grace }, supergroup, sendToSupergroup(grace, "grace's"));
+  pin(adaPinner, supergroup, sendToSupergroup(ada, "ada's"));
+  pin(botPinner, supergroup, sendToSupergroup(grace, "grace's, pinned by the bot"));
+  expectEqual(
+    pinnedTexts(session, ada, supergroup),
+    ["grace's, pinned by the bot", "ada's", "grace's", 'bot notice'],
+    'messages by the bot and by accounts are pinned in the supergroup',
   );
+  pin(adaPinner, { type: 'private', peerId: pinningBot }, sendToPinningBot("ada's"));
+  const botReply = session.privateMessaging.sendBotMessage({
+    fromBotId: pinningBot,
+    to: { type: 'private', accountId: ada },
+    content: { kind: 'text', text: 'bot reply' },
+  });
+  if (!botReply.sent) {
+    throw new Error(`Private bot message was not sent: ${botReply.reason}`);
+  }
+  pin(botPinner, pinningBotChat, messageIdIn(session, pinningBot, botReply.message));
   const otherBotMessage = session.privateMessaging.sendAccountMessage({
     fromAccountId: ada,
     to: { type: 'private', botId: memberBot },
@@ -477,7 +497,7 @@ Deno.test('unpinning all clears every pin of one chat, whoever pinned it, and ke
   expectEqual(
     session.messagePinning.unpinAllMessages({ pinner: botPinner, chat: supergroup }),
     { unpinned: true },
-    'the administrator unpins three pins',
+    'the administrator unpins four pins',
   );
   expectEqual(pinnedTexts(session, ada, supergroup), [], 'the supergroup pins nothing');
   expectEqual(
@@ -488,14 +508,14 @@ Deno.test('unpinning all clears every pin of one chat, whoever pinned it, and ke
   expectEqual(supergroupHistoryLength(), historyLengthBefore, 'no message is removed or recorded');
   expectEqual(
     pinnedTexts(session, ada, { type: 'private', peerId: pinningBot }),
-    ['private'],
-    "the bot's private chat keeps its pin",
+    ['bot reply', "ada's"],
+    "the bot's private chat keeps its pins",
   );
 
   expectEqual(
     session.messagePinning.unpinAllMessages({ pinner: botPinner, chat: pinningBotChat }),
     { unpinned: true },
-    "the bot unpins the account's one pin in their private chat",
+    "the bot unpins the account's message and its own in their private chat",
   );
   expectEqual(
     pinnedTexts(session, ada, { type: 'private', peerId: pinningBot }),
