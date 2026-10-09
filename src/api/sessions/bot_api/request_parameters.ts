@@ -150,21 +150,39 @@ async function decodeBodyParameterEntries(
   };
 }
 
+/**
+ * Reads a JSON object's members as parameters: strings as they are, numbers as their source text,
+ * as Telegram reads a number it receives, and other values as JSON text. Keeping a number's text
+ * keeps 64-bit identifiers, such as `draft_id`, exact beyond the integers a JavaScript number holds.
+ */
 function decodeJsonObjectParameterEntries(body: string): BodyParameterEntriesDecoding {
+  // The source text of each number, by the object or array that holds it and its key there.
+  const numberSourcesByHolder = new WeakMap<object, Map<string, string>>();
   let parsedBody: unknown;
   try {
-    parsedBody = JSON.parse(body);
+    parsedBody = JSON.parse(
+      body,
+      function (this: object, key: string, value: unknown, context?: { source?: string }) {
+        if (typeof value === 'number' && context?.source !== undefined) {
+          const numberSources = numberSourcesByHolder.get(this) ?? new Map<string, string>();
+          numberSources.set(key, context.source);
+          numberSourcesByHolder.set(this, numberSources);
+        }
+        return value;
+      },
+    );
   } catch {
     return { decoded: false, description: 'Bad Request: invalid JSON body' };
   }
   if (typeof parsedBody !== 'object' || parsedBody === null || Array.isArray(parsedBody)) {
     return { decoded: false, description: 'Bad Request: JSON object expected' };
   }
+  const numberSources = numberSourcesByHolder.get(parsedBody);
   return {
     decoded: true,
     parameterEntries: Object.entries(parsedBody).map(([name, value]) => [
       name,
-      typeof value === 'string' ? value : JSON.stringify(value),
+      typeof value === 'string' ? value : numberSources?.get(name) ?? JSON.stringify(value),
     ]),
     uploadedFiles: NO_UPLOADED_FILES,
   };

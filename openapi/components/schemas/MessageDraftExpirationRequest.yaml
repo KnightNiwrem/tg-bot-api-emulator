@@ -1,0 +1,10 @@
+type: object
+additionalProperties: false
+properties:
+  draft_id:
+    type: string
+    pattern: '^-?[1-9][0-9]*$'
+    description: >-
+      The identifier of the draft the test expects the chat to show, in Telegram's decimal text
+      form without leading zeros; omitted to expire whichever draft it shows. It guards which
+      draft expires, not which write to it.

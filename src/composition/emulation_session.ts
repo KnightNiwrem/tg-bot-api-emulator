@@ -18,6 +18,7 @@ import { ChatInviteLinkRepository } from '../repositories/chat_invite_link.ts';
 import { FileRepository } from '../repositories/file.ts';
 import { InlineQueryRepository } from '../repositories/inline_query.ts';
 import { MessageRepository } from '../repositories/message.ts';
+import { MessageDraftRepository } from '../repositories/message_draft.ts';
 import { PollRepository } from '../repositories/poll.ts';
 import { PrivateConversationRepository } from '../repositories/private_conversation.ts';
 import { QueuedBotApiAnswerRepository } from '../repositories/queued_bot_api_answer.ts';
@@ -47,7 +48,8 @@ import { ChatActionService } from '../services/chat_action.ts';
 import { ChatAdmissionService } from '../services/chat_admission.ts';
 import { InlineQueryService } from '../services/inline_query.ts';
 import { MediaFileService } from '../services/media_file.ts';
-import { normalizeCaption } from '../services/message_content.ts';
+import { normalizeBotDraftText, normalizeCaption } from '../services/message_content.ts';
+import { MessageDraftService } from '../services/message_draft.ts';
 import { MessageForwardingService } from '../services/message_forwarding.ts';
 import { MessagePinningService } from '../services/message_pinning.ts';
 import { MessageReactionService } from '../services/message_reaction.ts';
@@ -137,6 +139,11 @@ export function createEmulationSession(
   });
   const privateConversations = new PrivateConversationRepository();
   const blockedUsers = new BlockedUserRepository();
+  const messageDrafts = new MessageDraftService({
+    accounts,
+    bots,
+    drafts: new MessageDraftRepository(),
+  });
   const privateMessaging = new PrivateMessagingService({
     accounts,
     bots,
@@ -149,6 +156,7 @@ export function createEmulationSession(
     blockedUsers,
     joinRequesterContacts: chatAdmission,
     events: botUpdateDelivery,
+    messageDrafts,
     currentUnixTimeSeconds,
   });
   const messagePinning = new MessagePinningService({
@@ -333,6 +341,10 @@ export function createEmulationSession(
     defaultAdministratorRights,
     menuButtons: botMenuButtons,
     chatActions,
+    messageDrafts,
+    botDraftTexts: {
+      normalizeBotDraftText: (text) => normalizeBotDraftText(text, sessionTextFixingContext),
+    },
     publicChats: sharedChatAdministration,
     currentUnixTimeSeconds,
   });
@@ -355,6 +367,7 @@ export function createEmulationSession(
     botCommands,
     botMenuButtons,
     chatActions,
+    messageDrafts,
     botMessageViews,
     mediaFiles,
     webResources,

@@ -19,6 +19,7 @@ import {
   type BotApiMessageContent,
   type BotApiMessageEntity,
   type BotApiMessageOrigin,
+  type BotApiMessageText,
   type BotApiMyChatMemberUpdated,
   type BotApiPinnedPrivateMessage,
   type BotApiPinnedSupergroupMessage,
@@ -659,12 +660,7 @@ function projectMessageContent(
 ): BotApiMessageContent {
   switch (content.kind) {
     case 'text':
-      return {
-        text: content.text,
-        ...(content.entities.length === 0 ? {} : {
-          entities: content.entities.map((entity) => projectTextEntity(entity, mentionedUsers)),
-        }),
-      };
+      return projectMessageText(content, mentionedUsers);
     case 'photo': {
       const hasCaption = content.caption.text.length > 0;
       return {
@@ -825,6 +821,22 @@ function requireObservedPoll(observedPoll: ObservedPoll | undefined, pollId: str
     throw new Error(`Expected poll ${pollId} of the message to be provided`);
   }
   return observedPoll;
+}
+
+/**
+ * Shows message text with its entities, as a text message shows them; `mentionedUsers` holds the
+ * users its text mentions name.
+ */
+export function projectMessageText(
+  { text, entities }: FormattedText,
+  mentionedUsers: ReadonlyMap<number, BotApiUser>,
+): BotApiMessageText {
+  return {
+    text,
+    ...(entities.length === 0 ? {} : {
+      entities: entities.map((entity) => projectTextEntity(entity, mentionedUsers)),
+    }),
+  };
 }
 
 /** Telegram omits the caption fields of a media message without a caption. */

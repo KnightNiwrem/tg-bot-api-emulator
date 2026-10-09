@@ -1,0 +1,28 @@
+description: >-
+  The expiry of the draft an account's client shows in its private chat with a bot, which stands
+  for the 30 seconds after the bot's last write after which Telegram's clients remove it.
+parameters:
+  - $ref: ../components/parameters/SessionId.yaml
+  - $ref: ../components/parameters/AccountId.yaml
+  - $ref: ../components/parameters/BotId.yaml
+post:
+  operationId: expirePrivateMessageDraft
+  summary: Expire the draft the bot streams to its private chat with the account
+  description: >-
+    Removes the draft. The bot is not told, and no message is created; a later `sendMessageDraft`
+    shows a draft again, whatever its identifier. The body may be empty.
+  requestBody:
+    required: false
+    content:
+      application/json:
+        schema:
+          $ref: ../components/schemas/MessageDraftExpirationRequest.yaml
+  responses:
+    '204':
+      description: The draft expired.
+    '400':
+      description: A path identifier or the body is invalid.
+    '404':
+      description: The session, account, or bot does not exist, or the chat shows no draft.
+    '409':
+      description: The chat shows a draft other than the one `draft_id` names, which stays shown.

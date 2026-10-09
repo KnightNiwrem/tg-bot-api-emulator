@@ -65,6 +65,24 @@ Deno.test('decodeBotApiRequestParameters decodes every supported body encoding a
   }
 });
 
+Deno.test('decodeBotApiRequestParameters keeps the text of JSON numbers beyond safe integers', async () => {
+  const decoding = await decodeBotApiRequestParameters(
+    new Request(METHOD_URL, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: '{"draft_id": 9007199254740993, "message_effect_id": -9223372036854775808, ' +
+        '"latitude": 51.50, "reply_markup": {"inline_keyboard": []}}',
+    }),
+  );
+
+  assertDecodedParameters(decoding, {
+    draft_id: '9007199254740993',
+    message_effect_id: '-9223372036854775808',
+    latitude: '51.50',
+    reply_markup: '{"inline_keyboard":[]}',
+  });
+});
+
 Deno.test('decodeBotApiRequestParameters reads the query string, preferring it to the body', async () => {
   const queryOnlyDecoding = await decodeBotApiRequestParameters(
     new Request(`${METHOD_URL}?offset=2&allowed_updates=%5B%22message%22%5D`),

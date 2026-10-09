@@ -22,6 +22,7 @@ import {
   getMeResponseSchema,
   inlineQueryResponseSchema,
   menuButtonResponseSchema,
+  messageDraftResponseSchema,
   messageHistoryResponseSchema,
   messageReactionsResponseSchema,
   notificationsResponseSchema,
@@ -57,6 +58,7 @@ import type {
   AccountForwardMessageInput,
   AccountMediaGroupItem,
   AccountMenuButtonInput,
+  AccountMessageDraftInput,
   AccountMessageHistoryInput,
   AccountNotificationsInput,
   AccountPinMessageInput,
@@ -102,12 +104,14 @@ import type {
   ExpireChatInviteLinkInput,
   ExpireChatMemberRestrictionInput,
   ExpireJoinRequesterContactInput,
+  ExpireMessageDraftInput,
   InlineQuery,
   JoinChatByInviteLinkInput,
   JoinChatInput,
   LeaveChatInput,
   LiftChatMemberRestrictionInput,
   MenuButton,
+  MessageDraft,
   MessageIn,
   MessageReactions,
   MessageTarget,
@@ -996,6 +1000,23 @@ function createVirtualAccountClient(
         responseSchema: chatActionsResponseSchema,
       });
       return response.chat_actions;
+    },
+    async getMessageDraft(input: AccountMessageDraftInput): Promise<MessageDraft | null> {
+      const response = await requestJson(fetchImplementation, {
+        method: 'GET',
+        url: `${conversationUrl(accountUrl, input.chat)}/message-draft`,
+        expectedStatus: HTTP_STATUS_OK,
+        responseSchema: messageDraftResponseSchema,
+      });
+      return response.message_draft;
+    },
+    async expireMessageDraft({ chat, draft_id }: ExpireMessageDraftInput): Promise<void> {
+      await requestEmptyResponse(fetchImplementation, {
+        method: 'POST',
+        url: `${conversationUrl(accountUrl, chat)}/message-draft/expiration`,
+        expectedStatus: HTTP_STATUS_NO_CONTENT,
+        body: draft_id === undefined ? {} : { draft_id },
+      });
     },
     async getNotifications(input: AccountNotificationsInput): Promise<readonly Notification[]> {
       const response = await requestJson(fetchImplementation, {

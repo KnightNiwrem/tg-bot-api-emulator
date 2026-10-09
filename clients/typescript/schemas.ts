@@ -1083,6 +1083,14 @@ export const chatAdministratorsResponseSchema = z.strictObject({
   ),
 });
 
+export const messageDraftResponseSchema = z.strictObject({
+  message_draft: z.strictObject({
+    draft_id: z.string().regex(/^-?[1-9][0-9]*$/),
+    text: z.string(),
+    entities: z.array(messageEntitySchema).min(1).optional(),
+  }).nullable(),
+});
+
 export const chatActionsResponseSchema = z.strictObject({
   chat_actions: z.array(z.strictObject({
     bot_id: z.number().int().positive(),

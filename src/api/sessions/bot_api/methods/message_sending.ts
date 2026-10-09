@@ -37,9 +37,11 @@ import {
   describeInputPollOptionTextError,
   readInputPollOptionsParameter,
 } from '../input_poll_option_parameter.ts';
+import { MESSAGE_TEXT_TOO_LONG_DESCRIPTION } from '../message_content_answers.ts';
 import { messageEntitiesParameter } from '../message_entities_parameter.ts';
 import {
   albumMessageNotSentError,
+  badRequestDescription,
   botApiError,
   type BotApiMethod,
   type BotApiMethodAnswer,
@@ -54,6 +56,7 @@ import {
   clampedIntegerParameter,
   integerParameter,
   numberParameter,
+  optionalInt64Identifier,
 } from '../request_parameters.ts';
 import { LOCATION_INVALID_DESCRIPTION } from '../rich_message_parameter.ts';
 import { sendMethodAnswer } from '../send_answer.ts';
@@ -77,12 +80,21 @@ export const MESSAGE_SENDING_METHODS: readonly BotApiMethod[] = [
   { name: 'sendLocation', handler: handleSendLocation },
   { name: 'sendMediaGroup', handler: handleSendMediaGroup },
   { name: 'sendMessage', handler: handleSendMessage },
+  { name: 'sendMessageDraft', handler: handleSendMessageDraft },
   { name: 'sendPhoto', handler: handleSendPhoto },
   { name: 'sendPoll', handler: handleSendPoll },
   { name: 'sendRichMessage', handler: handleSendRichMessage },
   { name: 'sendVideo', handler: handleSendVideo },
   { name: 'sendVoice', handler: handleSendVoice },
 ];
+
+/** Telegram's descriptions for a message draft its servers refuse. */
+const DRAFT_ID_INVALID_DESCRIPTION = 'Bad Request: RANDOM_ID_INVALID';
+const DRAFT_CHAT_NOT_PRIVATE_DESCRIPTION = 'Bad Request: TEXTDRAFT_PEER_INVALID';
+
+/** The emulator's description for a draft that asks for a Stop button, which it cannot show yet. */
+const STOPPABLE_DRAFT_UNSUPPORTED_DESCRIPTION =
+  'Bad Request: can_stop and keep_on_stop are not supported';
 
 /** Telegram's description for a missing or unknown chat action. */
 const CHAT_ACTION_INVALID_DESCRIPTION = 'Bad Request: wrong parameter action in request';
@@ -252,6 +264,18 @@ const sendAudioParametersSchema = z.strictObject({
 const sendMediaGroupParametersSchema = z.strictObject({
   ...sendOptionsParametersShape,
   media: z.string().optional(),
+});
+
+// Topics are not supported. The emulator shows no Stop button yet, so `can_stop` and
+// `keep_on_stop` are accepted only when false.
+const sendMessageDraftParametersSchema = z.strictObject({
+  chat_id: integerParameter(z.int()).optional(),
+  draft_id: optionalInt64Identifier().optional(),
+  text: z.string().default(''),
+  parse_mode: z.string().optional(),
+  entities: messageEntitiesParameter().optional(),
+  can_stop: booleanParameter().default(false),
+  keep_on_stop: booleanParameter().default(false),
 });
 
 // Topics and business connections are not supported.
@@ -911,6 +935,66 @@ function missingInputFileError(
   parameterName: 'photo' | 'document' | 'video' | 'voice' | 'audio',
 ): BotApiMethodAnswer {
   return botApiError(400, `Bad Request: there is no ${parameterName} in the request`);
+}
+
+/**
+ * Shows a draft of a message the bot is generating, as the official Bot API server's
+ * `process_send_message_draft_query` reads it: the text and its formatting before the chat, and a
+ * missing or zero `draft_id` as none, which Telegram's servers refuse. Empty text is allowed.
+ */
+function handleSendMessageDraft(
+  context: BotApiMethodContext,
+  parameters: BotApiRequestParameters,
+): BotApiMethodAnswer {
+  const invalidParametersDescription = 'Bad Request: invalid sendMessageDraft parameters';
+  const parsedParameters = sendMessageDraftParametersSchema.safeParse(parameters);
+  if (!parsedParameters.success) {
+    return botApiError(400, invalidParametersDescription);
+  }
+  const { data } = parsedParameters;
+  if (data.can_stop || data.keep_on_stop) {
+    return botApiError(400, STOPPABLE_DRAFT_UNSUPPORTED_DESCRIPTION);
+  }
+  const formattedTextReading = readFormattedTextParameters(
+    context,
+    { text: data.text, parseMode: data.parse_mode, entities: data.entities },
+    invalidParametersDescription,
+  );
+  if (!formattedTextReading.read) {
+    return botApiError(400, formattedTextReading.description);
+  }
+  if (data.chat_id === undefined) {
+    return botApiError(400, CHAT_ID_EMPTY_DESCRIPTION);
+  }
+
+  const result = context.session.botApi.sendMessageDraft(context.bot, {
+    chatId: data.chat_id,
+    draftId: data.draft_id,
+    text: formattedTextReading.formattedText,
+  });
+  if (result.sent) {
+    return botApiResult(true);
+  }
+  switch (result.reason) {
+    case 'chat_not_found':
+    case 'bot_not_a_member':
+    case 'bot_kicked':
+      return supergroupBotAccessFailureAnswer(result.reason);
+    case 'text_invalid':
+      return botApiError(400, badRequestDescription(result.textError));
+    case 'draft_chat_not_private':
+      return botApiError(400, DRAFT_CHAT_NOT_PRIVATE_DESCRIPTION);
+    case 'bot_blocked':
+      return botApiError(403, BOT_BLOCKED_DESCRIPTION);
+    case 'draft_id_missing':
+      return botApiError(400, DRAFT_ID_INVALID_DESCRIPTION);
+    case 'message_text_too_long':
+      return botApiError(400, MESSAGE_TEXT_TOO_LONG_DESCRIPTION);
+    default: {
+      const unhandledReason: never = result;
+      throw new Error(`Unhandled sendMessageDraft failure: ${JSON.stringify(unhandledReason)}`);
+    }
+  }
 }
 
 function handleSendChatAction(

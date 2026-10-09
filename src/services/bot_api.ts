@@ -82,13 +82,16 @@ import {
 import type { BotUploadTooBigFailure } from '../types/upload_profile.ts';
 import { isUserId } from '../types/telegram_identity.ts';
 import type { VirtualBot, VirtualBotProfile } from '../types/virtual_bot.ts';
+import type { MessageDraft } from '../types/message_draft.ts';
 import {
   type ChatAction,
   type ChatActionChat,
   getBotChatActionChat,
+  type PrivateConversationKey,
 } from '../types/virtual_chat.ts';
 import {
   type ChatMessage,
+  type FormattedText,
   type InlineMessageId,
   type LocationMessageContent,
   type PrivateMessage,
@@ -147,6 +150,7 @@ import type {
   CaptionNormalization,
   ContentTextNormalizationFailure,
   MediaContent,
+  MessageTextNormalization,
   OutgoingCaptionedMedia,
   OutgoingContentOtherThanPoll,
   OutgoingMessageContent,
@@ -1028,10 +1032,41 @@ export interface SendChatActionRequest {
 
 export type SendChatActionResult =
   | { readonly sent: true }
-  | {
-    readonly sent: false;
-    readonly reason: 'chat_not_found' | FormerSupergroupMemberFailureReason | 'bot_blocked';
-  };
+  | { readonly sent: false; readonly reason: BotChatActionAccessFailureReason };
+
+/** Why a bot cannot show a chat action or a message draft in a chat. */
+type BotChatActionAccessFailureReason =
+  | 'chat_not_found'
+  | FormerSupergroupMemberFailureReason
+  | 'bot_blocked';
+
+export interface SendMessageDraftRequest {
+  /** The Bot API `chat_id`, as `SendRequestOptions` describes it. */
+  readonly chatId: number;
+  /**
+   * Telegram's decimal text form of the draft's 64-bit identifier; omitted for none, which a 0
+   * also means and Telegram refuses.
+   */
+  readonly draftId?: string;
+  /** The draft's text as the bot specified it, not yet normalized. */
+  readonly text: SpecifiedFormattedText;
+}
+
+export type SendMessageDraftResult =
+  | { readonly sent: true }
+  | (
+    & { readonly sent: false }
+    & (
+      | TextInvalidFailure
+      | {
+        readonly reason:
+          | BotChatActionAccessFailureReason
+          | 'draft_chat_not_private'
+          | 'draft_id_missing'
+          | 'message_text_too_long';
+      }
+    )
+  );
 
 export interface LeaveChatRequest {
   /** The Bot API `chat_id`, as `SendRequestOptions` describes it. */
@@ -1528,14 +1563,13 @@ interface BotMessaging {
     input: PrivateMessageEditTarget & { readonly inlineKeyboard?: InlineKeyboard },
   ): BotMessageEditingResult<BotMessageEditFailureReason>;
   stopBotPoll(input: StopBotPollInput): StopBotPollResult;
-  sendBotChatAction(input: {
+  checkBotChatActionAccess(input: {
     readonly fromBotId: number;
     readonly to: BotPrivateChat;
-    readonly action: ChatAction;
   }):
-    | { readonly sent: true }
+    | { readonly allowed: true }
     | {
-      readonly sent: false;
+      readonly allowed: false;
       readonly reason:
         | 'bot_not_found'
         | 'account_not_found'
@@ -1605,14 +1639,13 @@ interface SupergroupBotMessaging {
     input: SupergroupMessageEditTarget & { readonly inlineKeyboard?: InlineKeyboard },
   ): SupergroupBotMessageEditingResult<SupergroupBotMessageEditFailureReason>;
   stopBotPoll(input: StopSupergroupBotPollInput): StopSupergroupBotPollResult;
-  sendBotChatAction(input: {
+  checkBotChatActionAccess(input: {
     readonly fromBotId: number;
     readonly chatId: number;
-    readonly action: ChatAction;
   }):
-    | { readonly sent: true }
+    | { readonly allowed: true }
     | {
-      readonly sent: false;
+      readonly allowed: false;
       readonly reason: 'bot_not_found' | 'chat_not_found' | FormerSupergroupMemberFailureReason;
     };
   deleteMessagesByBot(input: {
@@ -1923,6 +1956,10 @@ interface BotCaptionNormalizer {
   normalizeBotCaption(caption: SpecifiedCaption): CaptionNormalization;
 }
 
+interface BotDraftTextNormalizer {
+  normalizeBotDraftText(text: FormattedText): MessageTextNormalization;
+}
+
 interface BotMessageViews {
   viewPollForCreator(poll: Poll): BotApiPoll;
   viewPrivateMessageForBot(message: PrivateMessage): BotApiPrivateMessage;
@@ -1965,6 +2002,10 @@ interface ChatActions {
     readonly chat: ChatActionChat;
     readonly action: ChatAction;
   }): void;
+}
+
+interface MessageDrafts {
+  showBotDraft(conversation: PrivateConversationKey, draft: MessageDraft): void;
 }
 
 interface BotApiServiceDependencies {
@@ -2011,6 +2052,10 @@ interface BotApiServiceDependencies {
   readonly defaultAdministratorRights: BotDefaultAdministratorRightsSettings;
   readonly menuButtons: BotMenuButtons;
   readonly chatActions: ChatActions;
+  /** Shows the message drafts bots stream to accounts' private chats. */
+  readonly messageDrafts: MessageDrafts;
+  /** Normalizes a draft's text as TDLib does before a draft is shown. */
+  readonly botDraftTexts: BotDraftTextNormalizer;
   readonly publicChats: PublicChatDirectory;
   /** The time that closing times of polls count from. */
   readonly currentUnixTimeSeconds: () => number;
@@ -2052,6 +2097,8 @@ export class BotApiService {
   readonly #defaultAdministratorRights: BotDefaultAdministratorRightsSettings;
   readonly #menuButtons: BotMenuButtons;
   readonly #chatActions: ChatActions;
+  readonly #messageDrafts: MessageDrafts;
+  readonly #botDraftTexts: BotDraftTextNormalizer;
   readonly #publicChats: PublicChatDirectory;
   readonly #currentUnixTimeSeconds: () => number;
 
@@ -2080,6 +2127,8 @@ export class BotApiService {
       defaultAdministratorRights,
       menuButtons,
       chatActions,
+      messageDrafts,
+      botDraftTexts,
       publicChats,
       currentUnixTimeSeconds,
     }: BotApiServiceDependencies,
@@ -2107,6 +2156,8 @@ export class BotApiService {
     this.#defaultAdministratorRights = defaultAdministratorRights;
     this.#menuButtons = menuButtons;
     this.#chatActions = chatActions;
+    this.#messageDrafts = messageDrafts;
+    this.#botDraftTexts = botDraftTexts;
     this.#publicChats = publicChats;
     this.#currentUnixTimeSeconds = currentUnixTimeSeconds;
   }
@@ -2765,48 +2816,104 @@ export class BotApiService {
     authenticatedBot: VirtualBotProfile,
     { chatId, action }: SendChatActionRequest,
   ): SendChatActionResult {
-    const recordAction = () =>
-      this.#chatActions.recordBotChatAction({
-        botId: authenticatedBot.id,
-        chat: getBotChatActionChat(authenticatedBot.id, chatId),
-        action,
-      });
-    if (!isUserId(chatId)) {
-      const supergroupResult = this.#supergroupBotMessages.sendBotChatAction({
-        fromBotId: authenticatedBot.id,
-        chatId,
-        action,
-      });
-      if (supergroupResult.sent) {
-        recordAction();
-        return supergroupResult;
-      }
-      if (supergroupResult.reason === 'bot_not_found') {
-        throw new Error(`Authenticated bot ${authenticatedBot.id} does not exist`);
-      }
-      return { sent: false, reason: supergroupResult.reason };
+    const access = this.#checkBotChatActionAccess(authenticatedBot.id, chatId);
+    if (!access.allowed) {
+      return { sent: false, reason: access.reason };
     }
-    const result = this.#botMessages.sendBotChatAction({
-      fromBotId: authenticatedBot.id,
-      to: { type: 'private', accountId: chatId },
+    this.#chatActions.recordBotChatAction({
+      botId: authenticatedBot.id,
+      chat: getBotChatActionChat(authenticatedBot.id, chatId),
       action,
     });
-    if (result.sent) {
-      recordAction();
-      return result;
+    return { sent: true };
+  }
+
+  /**
+   * Shows a draft of a message the bot is generating in its private chat with an account, as
+   * `MessageDraft` describes it, until the bot sends a message there or a test expires it.
+   *
+   * As the official Bot API server and TDLib check a draft, the bot must be able to address the
+   * chat before TDLib normalizes the text, which, like a bot's caption, may be empty. Telegram's
+   * servers then refuse a chat that is not private, a bot the account blocks, a missing draft ID,
+   * and text too long for a message; the emulator checks those in that order, which Telegram does
+   * not document.
+   */
+  sendMessageDraft(
+    authenticatedBot: VirtualBotProfile,
+    { chatId, draftId, text }: SendMessageDraftRequest,
+  ): SendMessageDraftResult {
+    const access = this.#checkBotChatActionAccess(authenticatedBot.id, chatId);
+    if (!access.allowed && access.reason !== 'bot_blocked') {
+      return { sent: false, reason: access.reason };
     }
-    switch (result.reason) {
+    const textNormalization = this.#botDraftTexts.normalizeBotDraftText({
+      text: text.text,
+      entities: text.entities ?? [],
+    });
+    if (!textNormalization.normalized && textNormalization.failure.reason === 'text_invalid') {
+      return { sent: false, ...textNormalization.failure };
+    }
+    if (!isUserId(chatId)) {
+      return { sent: false, reason: 'draft_chat_not_private' };
+    }
+    if (!access.allowed) {
+      return { sent: false, reason: access.reason };
+    }
+    if (draftId === undefined) {
+      return { sent: false, reason: 'draft_id_missing' };
+    }
+    if (!textNormalization.normalized) {
+      return { sent: false, ...textNormalization.failure };
+    }
+    this.#messageDrafts.showBotDraft(
+      { accountId: chatId, botId: authenticatedBot.id },
+      { draftId, text: textNormalization.formattedText },
+    );
+    return { sent: true };
+  }
+
+  /**
+   * Checks that the bot may show a chat action, or a message draft, which TDLib sends as one, in a
+   * private chat or a supergroup. As for sending, a private chat the bot cannot address is not
+   * found.
+   */
+  #checkBotChatActionAccess(
+    botId: number,
+    chatId: number,
+  ):
+    | { readonly allowed: true }
+    | { readonly allowed: false; readonly reason: BotChatActionAccessFailureReason } {
+    if (!isUserId(chatId)) {
+      const supergroupAccess = this.#supergroupBotMessages.checkBotChatActionAccess({
+        fromBotId: botId,
+        chatId,
+      });
+      if (supergroupAccess.allowed) {
+        return supergroupAccess;
+      }
+      if (supergroupAccess.reason === 'bot_not_found') {
+        throw new Error(`Authenticated bot ${botId} does not exist`);
+      }
+      return { allowed: false, reason: supergroupAccess.reason };
+    }
+    const privateAccess = this.#botMessages.checkBotChatActionAccess({
+      fromBotId: botId,
+      to: { type: 'private', accountId: chatId },
+    });
+    if (privateAccess.allowed) {
+      return privateAccess;
+    }
+    switch (privateAccess.reason) {
       case 'bot_blocked':
-        return { sent: false, reason: result.reason };
-      // As for sending, a chat the bot cannot address is not found.
+        return { allowed: false, reason: privateAccess.reason };
       case 'account_not_found':
       case 'conversation_not_started':
-        return { sent: false, reason: 'chat_not_found' };
+        return { allowed: false, reason: 'chat_not_found' };
       case 'bot_not_found':
-        throw new Error(`Authenticated bot ${authenticatedBot.id} does not exist`);
+        throw new Error(`Authenticated bot ${botId} does not exist`);
       default: {
-        const unhandledReason: never = result.reason;
-        throw new Error(`Unhandled chat action failure: ${unhandledReason}`);
+        const unhandledReason: never = privateAccess.reason;
+        throw new Error(`Unhandled chat action access failure: ${unhandledReason}`);
       }
     }
   }

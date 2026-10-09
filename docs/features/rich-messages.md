@@ -144,9 +144,9 @@ unless the result's `input_message_content` replaces them.
 
 ## Real gaps
 
-- **Drafts.** `sendRichMessageDraft` and `sendMessageDraft` are missing, along with the
-  `stopped_message_generation` updates of drafts that users stop. Tests cannot observe streamed
-  drafts.
+- **Drafts.** `sendRichMessageDraft` is missing, so tests cannot observe streamed rich messages.
+  [Plain-text drafts](messages.md#message-drafts) are supported, without the Stop button and the
+  `stopped_message_generation` updates of drafts that users stop.
 - **Other media blocks.** Animation and audio blocks fail with
   `Bad Request: rich message blocks with an animation or an audio file are not supported`, as
   animations are [missing](media-and-files.md#additional-media-types-and-methods), and the

@@ -1263,21 +1263,20 @@ Deno.test('PrivateMessagingService lets a bot show chat actions only in started 
   const strangerAccount = createAccount(virtualUsers, 'Grace');
   const bot = createBot(virtualUsers, 'Test Bot', 'test_bot');
   sendPrivateText(privateMessaging, account.profile.id, bot);
-  const sendAction = (fromBotId: number, accountId: number) =>
-    privateMessaging.sendBotChatAction({
+  const checkAccess = (fromBotId: number, accountId: number) =>
+    privateMessaging.checkBotChatActionAccess({
       fromBotId,
       to: { type: 'private', accountId },
-      action: 'typing',
     });
 
   const cases = [
-    [sendAction(bot.profile.id, account.profile.id), undefined],
-    [sendAction(999, account.profile.id), 'bot_not_found'],
-    [sendAction(bot.profile.id, 999), 'account_not_found'],
-    [sendAction(bot.profile.id, strangerAccount.profile.id), 'conversation_not_started'],
+    [checkAccess(bot.profile.id, account.profile.id), undefined],
+    [checkAccess(999, account.profile.id), 'bot_not_found'],
+    [checkAccess(bot.profile.id, 999), 'account_not_found'],
+    [checkAccess(bot.profile.id, strangerAccount.profile.id), 'conversation_not_started'],
   ] as const;
   for (const [result, expectedReason] of cases) {
-    const reason = result.sent ? undefined : result.reason;
+    const reason = result.allowed ? undefined : result.reason;
     if (reason !== expectedReason) {
       throw new Error(
         `Expected ${expectedReason ?? 'success'}, received ${JSON.stringify(result)}`,
@@ -1914,19 +1913,18 @@ Deno.test('PrivateMessagingService refuses writing either way while the account 
     // Telegram's servers refuse the message only after every other check passed.
     [sendBotText(''), 'message_text_empty'],
     [sendBotText('Still there?', 99), 'reply_message_not_found'],
-    [
-      privateMessaging.sendBotChatAction({
-        fromBotId: bot.profile.id,
-        to: { type: 'private', accountId: account.profile.id },
-        action: 'typing',
-      }),
-      'bot_blocked',
-    ],
   ] as const;
   for (const [result, expectedReason] of cases) {
     if (result.sent || result.reason !== expectedReason) {
       throw new Error(`Expected ${expectedReason}, received ${JSON.stringify(result)}`);
     }
+  }
+  const chatActionAccess = privateMessaging.checkBotChatActionAccess({
+    fromBotId: bot.profile.id,
+    to: { type: 'private', accountId: account.profile.id },
+  });
+  if (chatActionAccess.allowed || chatActionAccess.reason !== 'bot_blocked') {
+    throw new Error(`Expected bot_blocked, received ${JSON.stringify(chatActionAccess)}`);
   }
   if (publishedEvents.length !== publishedEventCount) {
     throw new Error('Expected refused messages not to be stored or published');
@@ -2096,10 +2094,9 @@ Deno.test('PrivateMessagingService lets a join request contact grant send messag
     chat: to,
     botMessageIds: [promptId],
   });
-  const chatAction = privateMessaging.sendBotChatAction({
+  const chatActionAccess = privateMessaging.checkBotChatActionAccess({
     fromBotId: bot.profile.id,
     to,
-    action: 'typing',
   });
   joinRequesterGrants.contactableBotIdsByAccountId.delete(accountId);
   const afterGrant = describeSend(sendText('Still there?'));
@@ -2108,7 +2105,7 @@ Deno.test('PrivateMessagingService lets a join request contact grant send messag
     [
       edit.edited ? 'edited' : edit.reason,
       deletion.deleted ? 'deleted' : deletion.reason,
-      chatAction.sent ? 'sent' : chatAction.reason,
+      chatActionAccess.allowed ? 'allowed' : chatActionAccess.reason,
       afterGrant,
     ],
     [
@@ -2746,6 +2743,8 @@ function createPrivateMessagingFixture() {
         botUpdateDelivery.publish(event);
       },
     },
+    // No draft is shown in these chats; a bot's message has none to remove.
+    messageDrafts: { clearBotDraft: () => {} },
     currentUnixTimeSeconds: () => currentUnixTimeSeconds,
   });
   const advanceClockSeconds = (seconds: number) => {

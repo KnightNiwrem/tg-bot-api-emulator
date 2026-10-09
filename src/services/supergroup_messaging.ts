@@ -27,7 +27,7 @@ import {
 } from '../types/reply_interface.ts';
 import type { VirtualAccount } from '../types/virtual_account.ts';
 import type { VirtualBot } from '../types/virtual_bot.ts';
-import type { ChatAction, Supergroup } from '../types/virtual_chat.ts';
+import type { Supergroup } from '../types/virtual_chat.ts';
 import {
   canBotEditMessage,
   type CanonicalMessageId,
@@ -513,15 +513,17 @@ export type DeleteSupergroupAccountMessageResult =
       | 'message_not_deletable';
   };
 
-export interface SendSupergroupBotChatActionInput {
+export interface CheckSupergroupBotChatActionAccessInput {
   readonly fromBotId: number;
   readonly chatId: number;
-  readonly action: ChatAction;
 }
 
-export type SendSupergroupBotChatActionResult =
-  | { readonly sent: true }
-  | { readonly sent: false; readonly reason: 'bot_not_found' | SupergroupBotAccessFailureReason };
+export type CheckSupergroupBotChatActionAccessResult =
+  | { readonly allowed: true }
+  | {
+    readonly allowed: false;
+    readonly reason: 'bot_not_found' | SupergroupBotAccessFailureReason;
+  };
 
 export interface RecordSupergroupServiceMessageInput {
   readonly chatId: number;
@@ -1285,17 +1287,19 @@ export class SupergroupMessagingService {
   }
 
   /**
-   * Shows a chat action, such as typing, from a bot to a supergroup it is a member of. This checks
-   * only that the bot may send it; the caller records the action members' clients show.
+   * Checks that a bot may show a chat action, such as typing, to a supergroup: it must be a member.
+   * The caller records the action members' clients show.
    */
-  sendBotChatAction(
-    { fromBotId, chatId }: SendSupergroupBotChatActionInput,
-  ): SendSupergroupBotChatActionResult {
+  checkBotChatActionAccess(
+    { fromBotId, chatId }: CheckSupergroupBotChatActionAccessInput,
+  ): CheckSupergroupBotChatActionAccessResult {
     if (this.#bots.getById(fromBotId) === undefined) {
-      return { sent: false, reason: 'bot_not_found' };
+      return { allowed: false, reason: 'bot_not_found' };
     }
     const accessFailure = this.#checkBotAccess(fromBotId, chatId);
-    return accessFailure === undefined ? { sent: true } : { sent: false, reason: accessFailure };
+    return accessFailure === undefined
+      ? { allowed: true }
+      : { allowed: false, reason: accessFailure };
   }
 
   /**

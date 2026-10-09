@@ -19,6 +19,7 @@ import {
   projectChatMemberChange,
   projectChosenInlineResultForBot,
   projectInlineQueryForBot,
+  projectMessageText,
   projectPinnedPrivateMessageForBot,
   projectPinnedSupergroupMessage,
   projectPoll,
@@ -43,6 +44,7 @@ import type {
   BotApiInlineQuery,
   BotApiMessage,
   BotApiMessageReactionUpdated,
+  BotApiMessageText,
   BotApiMyChatMemberUpdated,
   BotApiPinnedPrivateMessage,
   BotApiPinnedSupergroupMessage,
@@ -94,6 +96,7 @@ import {
   type CanonicalMessageId,
   type ChatMessage,
   type ExternalReply,
+  type FormattedText,
   getContentText,
   isCaptionedMediaContent,
   isPrivateContentMessage,
@@ -148,9 +151,9 @@ interface BotMessageViewServiceDependencies {
 }
 
 /**
- * Presents committed canonical messages, callback queries on them, inline queries and the results
- * sent from their answers, chats, the standing of users in groups, and changes of a bot's
- * membership in its chats, as the Bot API shows them to an observing bot.
+ * Presents committed canonical messages and other formatted text, callback queries on messages,
+ * inline queries and the results sent from their answers, chats, the standing of users in groups,
+ * and changes of a bot's membership in its chats, as the Bot API shows them to an observing bot.
  *
  * It reads the participants' profiles, the chats, and the observer's message numbering; it never
  * creates messages or decides whether sending one is permitted. As on Telegram, each observer
@@ -176,6 +179,17 @@ export class BotMessageViewService {
     this.#messages = messages;
     this.#files = files;
     this.#polls = polls;
+  }
+
+  /**
+   * Returns normalized text that is not a message's, such as a message draft's, as a text
+   * message shows it. Normalizing the text verified that the users it mentions exist.
+   */
+  viewMessageText(text: FormattedText): BotApiMessageText {
+    return projectMessageText(
+      text,
+      this.#findUsersMentionedIn(getTextMentionedUserIds(text), 'formatted text'),
+    );
   }
 
   /**
@@ -922,19 +936,32 @@ export class BotMessageViewService {
    */
   #findMentionedUsers(message: ChatMessage): ReadonlyMap<number, BotApiUser> {
     const { content } = message;
-    const mentionedUserIds = content.kind === 'rich_message'
-      ? getRichMessageMentionedUserIds(content)
-      : getContentText(content).entities.flatMap((entity) =>
-        entity.type === 'text_mention' ? [entity.userId] : []
-      );
+    return this.#findUsersMentionedIn(
+      content.kind === 'rich_message'
+        ? getRichMessageMentionedUserIds(content)
+        : getTextMentionedUserIds(getContentText(content)),
+      `message ${message.id}`,
+    );
+  }
+
+  /** Looks up users that text mentions by ID, which normalizing the text verified exist. */
+  #findUsersMentionedIn(
+    mentionedUserIds: readonly number[],
+    textDescription: string,
+  ): ReadonlyMap<number, BotApiUser> {
     const mentionedUsers = new Map<number, BotApiUser>();
     for (const userId of mentionedUserIds) {
       const user = this.#findUser(userId);
       if (user === undefined) {
-        throw new Error(`User ${userId} mentioned in message ${message.id} does not exist`);
+        throw new Error(`User ${userId} mentioned in ${textDescription} does not exist`);
       }
       mentionedUsers.set(userId, user);
     }
     return mentionedUsers;
   }
+}
+
+/** The IDs of the users that text mentions by ID, in the order of its entities. */
+function getTextMentionedUserIds({ entities }: FormattedText): readonly number[] {
+  return entities.flatMap((entity) => entity.type === 'text_mention' ? [entity.userId] : []);
 }

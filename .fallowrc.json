@@ -25,6 +25,7 @@
           "src/types/message_reply.ts",
           "src/types/media_album.ts",
           "src/types/message_reaction.ts",
+          "src/types/message_draft.ts",
           "src/types/stored_file.ts",
           "src/types/upload_profile.ts",
           "src/types/http_url.ts",
@@ -182,6 +183,12 @@
         ]
       },
       {
+        "name": "message-draft-repository",
+        "patterns": [
+          "src/repositories/message_draft.ts"
+        ]
+      },
+      {
         "name": "identity-repository",
         "patterns": [
           "src/repositories/telegram_identity.ts"
@@ -255,6 +262,7 @@
           "src/services/bot_menu_button.ts",
           "src/services/bot_blocking.ts",
           "src/services/chat_action.ts",
+          "src/services/message_draft.ts",
           "src/services/bot_rate_limit.ts",
           "src/services/bot_server_error.ts",
           "src/services/web_resource.ts",
@@ -471,6 +479,12 @@
         ]
       },
       {
+        "from": "message-draft-repository",
+        "allow": [
+          "domain"
+        ]
+      },
+      {
         "from": "identity-repository",
         "allow": [
           "domain"
@@ -648,6 +662,7 @@
           "bot-activity-log-repository",
           "blocked-user-repository",
           "chat-action-repository",
+          "message-draft-repository",
           "identity-repository",
           "web-resource-repository",
           "poll-repository",

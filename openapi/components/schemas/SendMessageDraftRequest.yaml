@@ -1,0 +1,46 @@
+type: object
+additionalProperties: false
+required:
+  - chat_id
+  - draft_id
+properties:
+  chat_id:
+    $ref: ./ChatIdentifier.yaml
+    description: >-
+      Identifier of the private chat: the account's user ID. Telegram refuses a supergroup the
+      bot can address (`Bad Request: TEXTDRAFT_PEER_INVALID`).
+  draft_id:
+    oneOf:
+      - type: integer
+      - type: string
+        pattern: '^-?\d+$'
+    description: >-
+      Nonzero 64-bit identifier of the draft. A write with the shown draft's identifier changes
+      it; one with another identifier replaces it. A missing or zero identifier is refused (`Bad
+      Request: RANDOM_ID_INVALID`).
+  text:
+    type: string
+    default: ''
+    description: >-
+      Draft text, at most 32768 bytes before formatting is applied and 4096 characters after,
+      normalized as message text is. Empty text, or text of nothing but spaces and line breaks,
+      shows a "Thinking…" placeholder.
+  parse_mode:
+    $ref: ./ParseMode.yaml
+  entities:
+    type: array
+    description: Entities marking the text; ignored when `parse_mode` formats it.
+    items:
+      $ref: ./MessageEntityParameter.yaml
+  can_stop:
+    type: boolean
+    default: false
+    description: >-
+      The emulator shows no Stop button yet: `true` is refused (`Bad Request: can_stop and
+      keep_on_stop are not supported`).
+  keep_on_stop:
+    type: boolean
+    default: false
+    description: >-
+      The emulator shows no Stop button yet: `true` is refused (`Bad Request: can_stop and
+      keep_on_stop are not supported`).

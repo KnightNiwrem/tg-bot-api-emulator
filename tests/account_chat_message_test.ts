@@ -150,6 +150,8 @@ function createReaderFixture() {
       claimJoinRequesterContact: () => {},
     },
     events,
+    // No draft is shown in these chats; a bot's message has none to remove.
+    messageDrafts: { clearBotDraft: () => {} },
     currentUnixTimeSeconds,
   });
   const supergroupMessaging = new SupergroupMessagingService({

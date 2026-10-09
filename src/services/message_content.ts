@@ -554,7 +554,7 @@ function normalizeExistingContent(
   };
 }
 
-type MessageTextNormalization =
+export type MessageTextNormalization =
   | { readonly normalized: true; readonly formattedText: FormattedText }
   | {
     readonly normalized: false;
@@ -569,8 +569,9 @@ function normalizeMessageText(
   text: string,
   entities: readonly TextEntity[],
   context: FormattedTextFixingContext,
+  emptyTextTreatment: EmptyTextTreatment = 'reject',
 ): MessageTextNormalization {
-  const fixing = fixFormattedText(text, entities, context);
+  const fixing = fixFormattedText(text, entities, context, emptyTextTreatment);
   if (!fixing.fixed) {
     return { normalized: false, failure: { reason: 'text_invalid', textError: fixing.error } };
   }
@@ -578,6 +579,18 @@ function normalizeMessageText(
     return { normalized: false, failure: { reason: 'message_text_too_long' } };
   }
   return { normalized: true, formattedText: fixing.formattedText };
+}
+
+/**
+ * Normalizes the text of a bot's message draft as TDLib's `sendTextMessageDraft` reads it: as
+ * message text, except that it may be empty, as a bot's caption may. Text of nothing but spaces and
+ * line breaks becomes empty, which shows a "Thinking…" placeholder.
+ */
+export function normalizeBotDraftText(
+  { text, entities }: FormattedText,
+  context: FormattedTextFixingContext,
+): MessageTextNormalization {
+  return normalizeMessageText(text, entities, context, 'keep_invisible_characters');
 }
 
 /** New content of a text or rich message: text with the entities its sender specified, or a rich message. */

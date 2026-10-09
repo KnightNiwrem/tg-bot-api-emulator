@@ -16,7 +16,6 @@ import {
 import type { VirtualAccount } from '../types/virtual_account.ts';
 import type { VirtualBot } from '../types/virtual_bot.ts';
 import type {
-  ChatAction,
   PrivateConversation,
   PrivateConversationKey,
   PrivateConversationRole,
@@ -486,16 +485,15 @@ export type DeleteAccountMessageResult =
     readonly reason: 'account_not_found' | 'bot_not_found' | 'message_not_found';
   };
 
-export interface SendBotChatActionInput {
+export interface CheckBotChatActionAccessInput {
   readonly fromBotId: number;
   readonly to: BotPrivateChat;
-  readonly action: ChatAction;
 }
 
-export type SendBotChatActionResult =
-  | { readonly sent: true }
+export type CheckBotChatActionAccessResult =
+  | { readonly allowed: true }
   | {
-    readonly sent: false;
+    readonly allowed: false;
     readonly reason:
       | 'bot_not_found'
       | 'account_not_found'
@@ -673,6 +671,10 @@ interface ChatDomainEventSink {
   publish(event: ChatDomainEvent): void;
 }
 
+interface MessageDraftClearing {
+  clearBotDraft(conversation: PrivateConversationKey): void;
+}
+
 /**
  * Decides whether a pending join request lets a bot write to an account that has not started a
  * private conversation with it, which chat admission grants to the bots that receive the request.
@@ -696,6 +698,8 @@ interface PrivateMessagingServiceDependencies {
   readonly blockedUsers: BlockedUserLookup;
   readonly joinRequesterContacts: JoinRequesterContactGrants;
   readonly events: ChatDomainEventSink;
+  /** Removes the message draft that any message from the bot removes from the chat. */
+  readonly messageDrafts: MessageDraftClearing;
   readonly currentUnixTimeSeconds: () => number;
 }
 
@@ -755,6 +759,7 @@ export class PrivateMessagingService {
   readonly #blockedUsers: BlockedUserLookup;
   readonly #joinRequesterContacts: JoinRequesterContactGrants;
   readonly #events: ChatDomainEventSink;
+  readonly #messageDrafts: MessageDraftClearing;
   readonly #currentUnixTimeSeconds: () => number;
 
   constructor(
@@ -770,6 +775,7 @@ export class PrivateMessagingService {
       blockedUsers,
       joinRequesterContacts,
       events,
+      messageDrafts,
       currentUnixTimeSeconds,
     }: PrivateMessagingServiceDependencies,
   ) {
@@ -785,6 +791,7 @@ export class PrivateMessagingService {
     this.#blockedUsers = blockedUsers;
     this.#joinRequesterContacts = joinRequesterContacts;
     this.#events = events;
+    this.#messageDrafts = messageDrafts;
     this.#currentUnixTimeSeconds = currentUnixTimeSeconds;
   }
 
@@ -1307,16 +1314,19 @@ export class PrivateMessagingService {
   }
 
   /**
-   * Shows a chat action, such as typing, from a bot to an account. As for messages, the account
-   * must have started a conversation with the bot and not block it. This checks only that the bot
-   * may send it; the caller records the action the account's client shows.
+   * Checks that a bot may show a chat action, such as typing, to an account. As for messages, the
+   * account must have started a conversation with the bot and not block it. TDLib sends a bot's
+   * message drafts as chat actions too, so they need the same access. The caller records what the
+   * account's client shows.
    */
-  sendBotChatAction({ fromBotId, to }: SendBotChatActionInput): SendBotChatActionResult {
+  checkBotChatActionAccess(
+    { fromBotId, to }: CheckBotChatActionAccessInput,
+  ): CheckBotChatActionAccessResult {
     if (this.#bots.getById(fromBotId) === undefined) {
-      return { sent: false, reason: 'bot_not_found' };
+      return { allowed: false, reason: 'bot_not_found' };
     }
     if (this.#accounts.getById(to.accountId) === undefined) {
-      return { sent: false, reason: 'account_not_found' };
+      return { allowed: false, reason: 'account_not_found' };
     }
     if (
       !this.#privateConversations.isPrivateConversationStarted({
@@ -1324,11 +1334,11 @@ export class PrivateMessagingService {
         botId: fromBotId,
       })
     ) {
-      return { sent: false, reason: 'conversation_not_started' };
+      return { allowed: false, reason: 'conversation_not_started' };
     }
     return this.#blockedUsers.isBlocked(to.accountId, fromBotId)
-      ? { sent: false, reason: 'bot_blocked' }
-      : { sent: true };
+      ? { allowed: false, reason: 'bot_blocked' }
+      : { allowed: true };
   }
 
   /**
@@ -1952,6 +1962,11 @@ export class PrivateMessagingService {
         conversation,
         replyInterfaceMarkup.kind === 'reply_keyboard_removal' ? undefined : storedMessage.id,
       );
+    }
+    // As TDLib's `updatePendingMessage` tells clients, any incoming message removes the bot's
+    // draft: a sent, forwarded or copied message, an album's, or a service message of its pin.
+    if (authorRole === 'bot') {
+      this.#messageDrafts.clearBotDraft(conversation);
     }
     this.#events.publish({ type: 'message_created', message: storedMessage });
 

@@ -313,13 +313,16 @@ type BotApiCaptionedMediaContent =
     | { readonly audio: BotApiAudio }
   );
 
+/** Message text with its entities, as a text message shows them. */
+export interface BotApiMessageText {
+  readonly text: string;
+  /** Omitted when the text has no entities, as Telegram does. */
+  readonly entities?: readonly BotApiMessageEntity[];
+}
+
 /** The fields that show what a message is, which follow its reply. */
 export type BotApiMessageContent =
-  | {
-    readonly text: string;
-    /** Omitted when the text has no entities, as Telegram does. */
-    readonly entities?: readonly BotApiMessageEntity[];
-  }
+  | BotApiMessageText
   | BotApiCaptionedMediaContent
   | { readonly rich_message: BotApiRichMessage }
   | { readonly poll: BotApiPoll }

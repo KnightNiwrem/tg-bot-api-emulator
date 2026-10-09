@@ -47,8 +47,10 @@ operations; use the profiles returned at creation.
 Bot API requests support GET and POST, case-insensitive method names, query parameters, and JSON,
 URL-encoded or multipart bodies. The first value of a parameter wins, with the query string before
 the body. Top-level JSON values are converted to parameter text: `chat_id: 123` and `chat_id: "123"`
-work alike, and structured parameters may be JSON values or JSON-encoded strings. This follows
-TDLib's [HTTP parameter reader][http-reader] and the Bot API's [query handling][query-source].
+work alike, and structured parameters may be JSON values or JSON-encoded strings. A number keeps its
+exact text, so 64-bit identifiers such as `draft_id` stay exact beyond JavaScript's safe integers.
+This follows TDLib's [HTTP parameter reader][http-reader] and the Bot API's
+[query handling][query-source].
 
 ### Chat usernames
 
