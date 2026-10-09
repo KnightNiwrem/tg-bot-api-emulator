@@ -2018,7 +2018,11 @@ export type ReplyInterface = ReplyKeyboardInterface | ForceReplyInterface;
 
 export interface PressReplyKeyboardButtonInput<Target extends MessageTarget = MessageTarget> {
   readonly chat: Target;
-  /** The text of the button to press, which the account then sends to the chat. */
+  /**
+   * The text of the button to press, which a text button sends to the chat. Of the buttons with
+   * this text, the press selects those that take its answer, or, without an answer, a text or
+   * `request_contact` button; buttons left that request different things make the press fail.
+   */
   readonly text: string;
   /**
    * The location the account's client reports, which a `request_location` button shares and no

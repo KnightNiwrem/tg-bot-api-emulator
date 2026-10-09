@@ -20,9 +20,10 @@ import type { MessageForward } from '../types/message_forward.ts';
 import {
   appliesReplyInterfaceTo,
   type BotMessageReplyMarkup,
-  findReplyKeyboardButton,
   type ReplyInterface,
   type ReplyInterfaceMarkup,
+  type ReplyKeyboardButtonSelectionFailureReason,
+  selectReplyKeyboardButton,
 } from '../types/reply_interface.ts';
 import type { VirtualAccount } from '../types/virtual_account.ts';
 import type { VirtualBot } from '../types/virtual_bot.ts';
@@ -333,7 +334,7 @@ export interface PressSupergroupReplyKeyboardButtonInput {
 
 export type PressSupergroupReplyKeyboardButtonResult =
   | SendSupergroupAccountMessageResult
-  | { readonly sent: false; readonly reason: 'reply_keyboard_button_not_found' };
+  | { readonly sent: false; readonly reason: ReplyKeyboardButtonSelectionFailureReason };
 
 /**
  * The message a bot edits: one it sent to a supergroup, or one an account sent to a supergroup
@@ -1332,7 +1333,9 @@ export class SupergroupMessagingService {
    * Presses a button of the reply keyboard a member's client shows, which sends the button's text
    * as the member's message. As Telegram Desktop's `HistoryWidget::sendBotCommand` does outside
    * private chats, the message replies to the keyboard's message, so that the bot that sent it
-   * receives it even in privacy mode. The keyboard stays shown, as in a private chat.
+   * receives it even in privacy mode. The keyboard stays shown, as in a private chat. The press
+   * answers no request, as only private chats show buttons with one, and selects its button as a
+   * private chat's press does.
    */
   pressReplyKeyboardButton(
     { fromAccountId, chatId, text }: PressSupergroupReplyKeyboardButtonInput,
@@ -1342,11 +1345,16 @@ export class SupergroupMessagingService {
       return { sent: false, reason: memberResolution.reason };
     }
     const shownReplyInterface = this.#findShownReplyInterface(chatId, fromAccountId);
-    if (
-      shownReplyInterface?.replyInterface.kind !== 'reply_keyboard' ||
-      findReplyKeyboardButton(shownReplyInterface.replyInterface, text) === undefined
-    ) {
+    if (shownReplyInterface?.replyInterface.kind !== 'reply_keyboard') {
       return { sent: false, reason: 'reply_keyboard_button_not_found' };
+    }
+    const selection = selectReplyKeyboardButton(
+      shownReplyInterface.replyInterface,
+      text,
+      undefined,
+    );
+    if (!selection.selected) {
+      return { sent: false, reason: selection.reason };
     }
     return this.sendAccountMessage({
       fromAccountId,

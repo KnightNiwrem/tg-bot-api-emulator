@@ -226,6 +226,10 @@ Deno.test('refused Web App submissions change nothing', async () => {
       keyboard: [
         [{ text: 'Choose dates', web_app: { url: DATES_APP_URL } }],
         [{ text: 'Here', request_location: true }, { text: 'Plain' }],
+        [
+          { text: 'Two apps', web_app: { url: DATES_APP_URL } },
+          { text: 'Two apps', web_app: { url: 'https://hotel.example/rooms' } },
+        ],
       ],
     },
   });
@@ -254,6 +258,11 @@ Deno.test('refused Web App submissions change nothing', async () => {
     ['a plain button', press({ text: 'Plain', web_app_data: 'today' }), 400],
     ['a location button', press({ text: 'Here', web_app_data: 'today' }), 400],
     ['a button not shown', press({ text: 'Choose a room', web_app_data: 'today' }), 400],
+    [
+      'Web Apps at different URLs under one label',
+      press({ text: 'Two apps', web_app_data: 'today' }),
+      400,
+    ],
     [
       'a supergroup',
       press({
@@ -388,6 +397,62 @@ Deno.test('a submission answers the keyboard shown when it is sent', async () =>
     'a button of a removed keyboard',
   );
   await session.end();
+});
+
+Deno.test('a submission selects the Web App button among buttons that share its label', async () => {
+  const plainButton = { text: 'Duplicate' };
+  const webAppButton = { text: 'Duplicate', web_app: { url: DATES_APP_URL } };
+  const keyboards: Array<[string, unknown[][]]> = [
+    ['the plain button first', [[plainButton, webAppButton]]],
+    ['the Web App button first', [[webAppButton, plainButton]]],
+    ['the plain button a row above', [[plainButton], [webAppButton]]],
+    ['the Web App button a row above', [[webAppButton], [plainButton]]],
+  ];
+  for (const [arrangement, keyboard] of keyboards) {
+    const { session, ada, privateChat, callBot } = await createWebAppFixture();
+    const shown = await callBot('sendMessage', {
+      chat_id: ada.id,
+      text: 'Which?',
+      reply_markup: { keyboard, one_time_keyboard: true },
+    });
+    if (!shown.ok) {
+      throw new Error(`Expected the keyboard with ${arrangement}: ${shown.description}`);
+    }
+    const offset = await readUpdatesOffset(callBot);
+    const historyLength = (await ada.getMessages({ chat: privateChat })).length;
+    const replyInterface = await ada.getReplyInterface({ chat: privateChat });
+
+    const submitted = await ada.pressReplyKeyboardButton({
+      chat: privateChat,
+      text: 'Duplicate',
+      web_app_data: 'payload',
+    });
+    expectEqual(
+      [submitted.web_app_data, submitted.text],
+      [{ button_text: 'Duplicate', data: 'payload' }, undefined],
+      `Expected the Web App data with ${arrangement}`,
+    );
+    const submissionUpdates = (await callBot('getUpdates', { offset })).result as Array<
+      { update_id: number; message?: PrivateMessage }
+    >;
+    expectEqual(
+      [
+        submissionUpdates.map(({ message }) => message?.web_app_data),
+        (await ada.getMessages({ chat: privateChat })).length,
+        await ada.getReplyInterface({ chat: privateChat }),
+      ],
+      [[{ button_text: 'Duplicate', data: 'payload' }], historyLength + 1, replyInterface],
+      `Expected one message and one update, with the keyboard still shown, with ${arrangement}`,
+    );
+
+    const pressed = await ada.pressReplyKeyboardButton({ chat: privateChat, text: 'Duplicate' });
+    expectEqual(
+      [pressed.text, pressed.web_app_data],
+      ['Duplicate', undefined],
+      `Expected a press without data to send the plain button's text with ${arrangement}`,
+    );
+    await session.end();
+  }
 });
 
 Deno.test('a submission is stored but not delivered when the bot excludes message updates', async () => {

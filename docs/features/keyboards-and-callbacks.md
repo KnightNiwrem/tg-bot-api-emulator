@@ -116,6 +116,26 @@ to the keyboard's message. Pressing a `request_users` or `request_chat` button
 server also reads, `request_phone_number` and `request_user`, and `request_managed_bot` for the
 missing managed bots, are rejected.
 
+### Buttons that share a label
+
+A Telegram user presses a button where the keyboard shows it, but a press names its button by text,
+which several buttons of one keyboard may share. Of the buttons with that text, the press selects
+those that take its answer: a `location` selects a `request_location` button, `shared_user_ids` a
+`request_users` button, `shared_chat_id` a `request_chat` button, `poll` a `request_poll` button,
+and `web_app_data` a `web_app` button, in any order and any row. A press without an answer selects a
+text button or a `request_contact` button. A text button before a `web_app` button with the same
+text therefore does not hide it, and the selected button checks the answer as it would alone.
+
+Buttons left that request the same thing, such as two text buttons, or two `web_app` buttons with
+the same link, act alike, and the press uses the first. Buttons left that request different things
+make the press [ambiguous](#intentional-deviations), and it fails with `400` and changes nothing: a
+text button and a `request_contact` button, `request_users` or `request_chat` buttons with different
+`request_id`s or criteria, `request_poll` buttons that allow different poll types, or `web_app`
+buttons with different links. The press does not try its answer against each of them to find one
+that accepts it: which button the user pressed decides what the bot learns, such as the `request_id`
+of shared users, so the emulator does not choose it for the test. A press for which no button with
+the text exists, or none takes its answer, also fails with `400`.
+
 ### Answering poll requests
 
 A press of a `request_poll` button carries `poll`, a poll the account creates with the fields an
@@ -260,6 +280,10 @@ no buttons, and it checks only the icon identifier's syntax, as it does for
   open, so a press sends data only through a `web_app` button the chat shows when the data is sent:
   once a later keyboard replaces or removes that button, its Web App can send nothing, although on
   Telegram a Web App opened earlier could.
+- **Presses name buttons by text.** A press names its button by text and answer, not by position, so
+  a press that leaves [buttons that request different things](#buttons-that-share-a-label) fails
+  instead of guessing which one the user meant. Tests cannot press one of them until the bot gives
+  them distinct labels.
 - **Stricter user and chat sharing.** TDLib passes a repeated user on to Telegram, whose handling of
   it is unknown; the emulator refuses a repeated user. A shared supergroup must be one the account
   is a member of, while TDLib only needs a chat the client knows. The bot's membership and rights
@@ -293,9 +317,11 @@ server behavior.
 [callback service](../../src/services/callback_query.ts),
 [start link parsing](../../src/text_entities/telegram_link.ts),
 [reply interface handling](../../src/services/private_messaging.ts),
+[reply keyboard button selection](../../src/types/reply_interface.ts),
 [user and chat sharing](../../src/services/requested_peer_sharing.ts),
 [callback tests](../../tests/callback_query_service_test.ts) and
 [private message tests](../../tests/private_messaging_service_test.ts),
+[button selection tests](../../tests/reply_keyboard_button_selection_test.ts),
 [sharing criteria tests](../../tests/requested_peer_sharing_test.ts),
 [sharing API tests](../../tests/requested_peer_sharing_api_test.ts),
 [poll request tests](../../tests/account_poll_api_test.ts) and

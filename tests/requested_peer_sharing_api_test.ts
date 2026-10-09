@@ -197,6 +197,67 @@ Deno.test('a grammY bot receives a supergroup that meets its request_chat criter
   }
 });
 
+Deno.test('shared users and chats answer their own buttons among buttons that share a label', async () => {
+  const fixture = await createSharingFixture();
+  const { session, bot, ada, grace, privateChat } = fixture;
+  const callBot = createBotApiCaller(fixture);
+  const team = await ada.createSupergroup({ title: 'Team' });
+  await ada.addChatMember({ chat: { type: 'supergroup', chatId: team.id }, userId: bot.id });
+  const shown = await callBot('sendMessage', {
+    chat_id: ada.id,
+    text: 'Share something',
+    reply_markup: {
+      keyboard: [
+        [{ text: 'Share' }],
+        [
+          { text: 'Share', request_users: { request_id: 7 } },
+          {
+            text: 'Share',
+            request_chat: { request_id: 8, chat_is_channel: false, bot_is_member: true },
+          },
+        ],
+        [
+          { text: 'Pick', request_users: { request_id: 1 } },
+          { text: 'Pick', request_users: { request_id: 2 } },
+        ],
+      ],
+    },
+  });
+  if (!shown.ok) {
+    throw new Error(`Expected the keyboard to be sent: ${shown.description}`);
+  }
+
+  const historyBeforeRefusal = await ada.getMessages({ chat: privateChat });
+  await expectRefused(
+    ada.pressReplyKeyboardButton({ chat: privateChat, text: 'Pick', shared_user_ids: [grace.id] }),
+    400,
+    'users requests with different IDs under one label',
+  );
+  expectEqual(
+    await ada.getMessages({ chat: privateChat }),
+    historyBeforeRefusal,
+    'Expected an ambiguous press to send nothing',
+  );
+
+  const chat = await ada.pressReplyKeyboardButton({
+    chat: privateChat,
+    text: 'Share',
+    shared_chat_id: team.id,
+  });
+  const users = await ada.pressReplyKeyboardButton({
+    chat: privateChat,
+    text: 'Share',
+    shared_user_ids: [grace.id],
+  });
+  const text = await ada.pressReplyKeyboardButton({ chat: privateChat, text: 'Share' });
+  expectEqual(
+    [chat.chat_shared, users.users_shared?.request_id, text.text],
+    [{ chat_id: team.id, request_id: 8 }, 7, 'Share'],
+    'Expected each answer to reach its own button, and no answer the text button',
+  );
+  await session.end();
+});
+
 Deno.test('refused selections create no message or update and leave the request in place', async () => {
   const fixture = await createSharingFixture();
   const { session, bot, ada, grace, privateChat } = fixture;

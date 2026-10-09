@@ -184,21 +184,106 @@ export interface ReplyKeyboardRemoval {
  */
 export type ReplyInterfaceMarkup = ReplyInterface | ReplyKeyboardRemoval;
 
+/** Why a press names no single button of a reply keyboard. */
+export type ReplyKeyboardButtonSelectionFailureReason =
+  /** No button has the press's text. */
+  | 'reply_keyboard_button_not_found'
+  /** Every button with the text requests something, and the press answers nothing. */
+  | 'reply_keyboard_button_answer_missing'
+  /** No button with the text has a request that takes the press's kind of answer. */
+  | 'reply_keyboard_button_answer_not_requested'
+  /** Buttons with the text that request different things all take the press's answer, or none. */
+  | 'reply_keyboard_button_ambiguous';
+
+export type ReplyKeyboardButtonSelection =
+  | { readonly selected: true; readonly button: ReplyKeyboardButton }
+  | { readonly selected: false; readonly reason: ReplyKeyboardButtonSelectionFailureReason };
+
 /**
- * Finds the button of a reply keyboard with the given text, which pressing it sends unless the
- * button has a request. Returns `undefined` if the keyboard has no such button.
+ * Selects the button of a reply keyboard that a press names by its text and the kind of its
+ * answer, `undefined` for a press that answers nothing. A Telegram user presses a button by its
+ * place on the keyboard, but a press names it by its text, which buttons may share, so of the
+ * buttons with the text it selects those that take the press's kind of answer: a button whose
+ * request takes an answer of that kind, or, for a press without an answer, a button that sends its
+ * text or shares the user's own contact.
+ *
+ * Buttons left that request the same thing act the same, so the first in row order is selected.
+ * Buttons left that request different things, such as a text button and a contact button, users
+ * requests with different IDs or criteria, poll requests of different types, or Web Apps at
+ * different URLs, are ambiguous: the press is refused rather than selecting one whose request the
+ * user may not have meant. The selected button's request still decides whether it accepts the
+ * answer.
  */
-export function findReplyKeyboardButton(
+export function selectReplyKeyboardButton(
   replyKeyboard: ReplyKeyboard,
   text: string,
-): ReplyKeyboardButton | undefined {
-  for (const row of replyKeyboard.rows) {
-    const button = row.find((candidate) => candidate.text === text);
-    if (button !== undefined) {
-      return button;
-    }
+  answerKind: ReplyKeyboardRequestAnswer['kind'] | undefined,
+): ReplyKeyboardButtonSelection {
+  const buttonsWithText = replyKeyboard.rows.flat().filter((button) => button.text === text);
+  if (buttonsWithText.length === 0) {
+    return { selected: false, reason: 'reply_keyboard_button_not_found' };
   }
-  return undefined;
+  const [button, ...otherButtons] = buttonsWithText.filter((candidate) =>
+    getTakenAnswerKind(candidate.request) === answerKind
+  );
+  if (button === undefined) {
+    return {
+      selected: false,
+      reason: answerKind === undefined
+        ? 'reply_keyboard_button_answer_missing'
+        : 'reply_keyboard_button_answer_not_requested',
+    };
+  }
+  if (
+    otherButtons.some((other) => !isSameReplyKeyboardButtonRequest(button.request, other.request))
+  ) {
+    return { selected: false, reason: 'reply_keyboard_button_ambiguous' };
+  }
+  return { selected: true, button };
+}
+
+/**
+ * The kind of answer a button's request takes; `undefined` for a button that takes none: one that
+ * sends its text, or one that shares the user's own contact.
+ */
+function getTakenAnswerKind(
+  request: ReplyKeyboardButtonRequest | undefined,
+): ReplyKeyboardRequestAnswer['kind'] | undefined {
+  return request?.kind === 'contact' ? undefined : request?.kind;
+}
+
+/**
+ * Whether two buttons request the same thing, so that pressing either with the same answer has
+ * the same outcome; `undefined` stands for a button that sends its text. Requests are compared
+ * field by field, so that a field a request kind gains is compared too: sets, such as
+ * administrator rights, by their elements, and other values by identity, under which distinct
+ * objects differ, so that buttons are refused as ambiguous rather than conflated.
+ */
+function isSameReplyKeyboardButtonRequest(
+  first: ReplyKeyboardButtonRequest | undefined,
+  second: ReplyKeyboardButtonRequest | undefined,
+): boolean {
+  if (first === undefined || second === undefined) {
+    return first === second;
+  }
+  const firstFields = getSpecifiedFields(first);
+  const secondFields = new Map(getSpecifiedFields(second));
+  return firstFields.length === secondFields.size &&
+    firstFields.every(([name, value]) =>
+      secondFields.has(name) && isSameRequestFieldValue(value, secondFields.get(name))
+    );
+}
+
+/** A request's fields, without those its kind leaves unspecified. */
+function getSpecifiedFields(request: ReplyKeyboardButtonRequest): [string, unknown][] {
+  return Object.entries(request).filter(([, value]) => value !== undefined);
+}
+
+function isSameRequestFieldValue(first: unknown, second: unknown): boolean {
+  if (first instanceof Set && second instanceof Set) {
+    return first.size === second.size && [...first].every((element) => second.has(element));
+  }
+  return first === second;
 }
 
 /**

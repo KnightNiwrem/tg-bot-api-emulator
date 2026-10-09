@@ -408,6 +408,13 @@ in reply to the keyboard's message instead of sending the text.
 [Polls](polls.md#answering-a-poll-request) shows. A `web_app` button takes the `web_app_data` its
 Web App sends, as [Sending Web App data](#sending-web-app-data) shows.
 
+When buttons share a label, the answer selects among them: `web_app_data` presses the `web_app`
+button with that text even after a text button with the same text, and a press without an answer
+presses the text button. A press that still leaves buttons that request different things, such as
+`web_app` buttons with different links or `request_users` buttons with different `request_id`s,
+fails with an `EmulationClientError` and sends nothing. The feature page describes
+[how presses select buttons that share a label](../../features/keyboards-and-callbacks.md#buttons-that-share-a-label).
+
 ### Sharing users and chats
 
 A `request_users` button takes the `shared_user_ids` of the session's accounts and bots the account
