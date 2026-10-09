@@ -9,6 +9,7 @@ import { createBotActivityRoutes } from './bot_activity/mod.ts';
 import { createBotApiRoutes } from './bot_api/mod.ts';
 import { createBotRoutes } from './bots/mod.ts';
 import { createFileRoutes } from './files/mod.ts';
+import { createInlineQueryCacheRoutes } from './inline_queries/mod.ts';
 import { readJsonRequestBody } from './json_request_body.ts';
 import { createPollRoutes } from './polls/mod.ts';
 import type { SessionRouteContextTypes } from './session_route_context_types.ts';
@@ -25,6 +26,7 @@ const BOT_ACTIVITY_PATH = `${SESSION_PATH}/bot-activity` as const;
 const FILE_COLLECTION_PATH = `${SESSION_PATH}/files` as const;
 const WEB_RESOURCE_COLLECTION_PATH = `${SESSION_PATH}/web-resources` as const;
 const POLL_COLLECTION_PATH = `${SESSION_PATH}/polls` as const;
+const INLINE_QUERY_COLLECTION_PATH = `${SESSION_PATH}/inline-queries` as const;
 const SUPERGROUP_COLLECTION_PATH = `${SESSION_PATH}/supergroups` as const;
 
 const createSessionRequestSchema = z.strictObject({
@@ -95,6 +97,7 @@ export function createSessionRoutes(
   sessionRoutes.route(FILE_COLLECTION_PATH, createFileRoutes());
   sessionRoutes.route(WEB_RESOURCE_COLLECTION_PATH, createWebResourceRoutes());
   sessionRoutes.route(POLL_COLLECTION_PATH, createPollRoutes());
+  sessionRoutes.route(INLINE_QUERY_COLLECTION_PATH, createInlineQueryCacheRoutes());
   sessionRoutes.route(SUPERGROUP_COLLECTION_PATH, createSupergroupRoutes());
 
   return sessionRoutes;

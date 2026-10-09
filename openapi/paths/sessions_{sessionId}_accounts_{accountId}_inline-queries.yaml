@@ -21,8 +21,10 @@ post:
     `requests_inline_location`, as Telegram's apps do; the bot receives it in the inline_query
     update and in the chosen_inline_result update of a result sent from the query.
 
-    A query that repeats one answered within the answer's `cache_time` is created already
-    answered with the same answer, and the bot receives no update for it. A query repeats
+    A query that repeats one whose answer is cached is created already answered with the same
+    answer, and the bot receives no update for it. An answer with a positive `cache_time` stays
+    cached until a test expires it through the session's answer-cache expiry route, rather than
+    for `cache_time` seconds. A query repeats
     another when it is sent to the same bot from the same kind of chat, with the same offset,
     the same text apart from surrounding whitespace, and, as TDLib compares them, a location
     with the same coordinates in whole ten-thousandths of a degree, or no location. A personal

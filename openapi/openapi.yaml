@@ -189,6 +189,8 @@ paths:
     $ref: paths/sessions_{sessionId}_web-resources.yaml
   /sessions/{sessionId}/polls/{pollId}/expiry:
     $ref: paths/sessions_{sessionId}_polls_{pollId}_expiry.yaml
+  /sessions/{sessionId}/inline-queries/{inlineQueryId}/answer-cache/expiry:
+    $ref: paths/sessions_{sessionId}_inline-queries_{inlineQueryId}_answer-cache_expiry.yaml
   /sessions/{sessionId}/supergroups/{chatId}/restrictions/{userId}/expiry:
     $ref: paths/sessions_{sessionId}_supergroups_{chatId}_restrictions_{userId}_expiry.yaml
   /sessions/{sessionId}/supergroups/{chatId}/invite-links/{inviteLinkHash}/expiry:

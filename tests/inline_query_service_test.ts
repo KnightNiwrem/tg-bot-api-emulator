@@ -12,6 +12,7 @@ import { TelegramIdentityRepository } from '../src/repositories/telegram_identit
 import {
   type AnswerInlineQueryInput,
   InlineQueryService,
+  type SendInlineQueryInput,
   type SpecifiedInlineQueryResult,
 } from '../src/services/inline_query.ts';
 import { MediaFileService } from '../src/services/media_file.ts';
@@ -562,49 +563,22 @@ Deno.test('InlineQueryService downloads media named by URL each time a result is
   }
 });
 
-Deno.test('InlineQueryService reuses an answer within its cache time', () => {
+Deno.test('InlineQueryService reuses an answer until a test expires its cache', () => {
   const {
     virtualUsers,
     sharedChats,
     inlineQueries,
     publishedEvents,
     account,
-    inlineBot,
-    sendQuery,
-    advanceClockMilliseconds,
+    send,
+    answer,
   } = createInlineQueryFixture();
   sharedChats.registerSupergroup(SUPERGROUP, account.profile.id);
-  const answered = sendQuery();
-  inlineQueries.answerInlineQuery({
-    fromBotId: inlineBot.profile.id,
-    inlineQueryId: answered.id,
-    results: [article('1')],
-    cacheTimeSeconds: 10,
-    isPersonal: false,
-    nextOffset: '',
-  });
+  const answered = send({});
+  answer(answered.id, { cacheTimeSeconds: 1 });
   const publishedQueryCount = () =>
     publishedEvents.filter((event) => event.type === 'inline_query_created').length;
-  const send = (input: {
-    readonly fromAccountId?: number;
-    readonly chat?: InlineQueryChat;
-    readonly query?: string;
-    readonly offset?: string;
-  }) => {
-    const result = inlineQueries.sendInlineQuery({
-      fromAccountId: input.fromAccountId ?? account.profile.id,
-      botId: inlineBot.profile.id,
-      chat: input.chat ?? { type: 'private', botId: inlineBot.profile.id },
-      query: input.query ?? 'cats',
-      offset: input.offset ?? '',
-    });
-    if (!result.sent) {
-      throw new Error(`Expected the query to be sent, received ${result.reason}`);
-    }
-    return result.inlineQuery;
-  };
 
-  advanceClockMilliseconds(9_000);
   const repeated = send({ query: ' cats\n' });
   const otherAccount = createAccount(virtualUsers, 'Grace');
   const fromOtherAccount = send({ fromAccountId: otherAccount.profile.id });
@@ -624,49 +598,175 @@ Deno.test('InlineQueryService reuses an answer within its cache time', () => {
     throw new Error('Expected other text, offsets and chat types to reach the bot');
   }
 
-  // A reused answer expires with the original, however recently it was reused.
-  advanceClockMilliseconds(1_000);
-  if (send({}).state.status !== 'awaiting_answer') {
-    throw new Error('Expected an expired answer to be asked for again');
+  // Expiry through a reused answer's query expires the original's answer for every account.
+  const expiry = inlineQueries.expireAnswerCache(fromOtherAccount.id);
+  const fresh = [send({}), send({ fromAccountId: otherAccount.profile.id })];
+  if (
+    !expiry.expired || fresh.some((inlineQuery) => inlineQuery.state.status !== 'awaiting_answer')
+  ) {
+    throw new Error('Expected queries after the expiry to reach the bot');
+  }
+});
+
+Deno.test('InlineQueryService expiry keeps every answer it removes from the cache', async () => {
+  const { virtualUsers, inlineQueries, publishedEvents, account, inlineBot, send, answer } =
+    createInlineQueryFixture();
+  const otherAccount = createAccount(virtualUsers, 'Grace');
+  const original = send({});
+  answer(original.id, {});
+  const ownCopy = send({});
+  const otherCopy = send({ fromAccountId: otherAccount.profile.id });
+  const eventCount = publishedEvents.length;
+
+  const expiry = inlineQueries.expireAnswerCache(original.id);
+  const eventsOfExpiry = publishedEvents.slice(eventCount);
+  const kept = [original, ownCopy, otherCopy].map((inlineQuery) =>
+    inlineQueries.getAccountInlineQuery({
+      accountId: inlineQuery.accountId,
+      inlineQueryId: inlineQuery.id,
+    })?.state.status
+  );
+  const reanswer = inlineQueries.answerInlineQuery({
+    fromBotId: inlineBot.profile.id,
+    inlineQueryId: ownCopy.id,
+    results: [article('2')],
+    cacheTimeSeconds: 300,
+    isPersonal: false,
+    nextOffset: '',
+  });
+  const chosen = await inlineQueries.chooseInlineQueryResult({
+    accountId: otherAccount.profile.id,
+    inlineQueryId: otherCopy.id,
+    resultId: '1',
+  });
+  if (
+    !expiry.expired || JSON.stringify(kept) !== '["answered","answered","answered"]' ||
+    reanswer.answered || reanswer.reason !== 'query_id_invalid' || !chosen.chosen ||
+    eventsOfExpiry.length !== 0
+  ) {
+    throw new Error('Expected expired answers to stay answered and selectable, and unannounced');
+  }
+  if (send({ fromAccountId: account.profile.id }).state.status !== 'awaiting_answer') {
+    throw new Error('Expected neither the original nor its copies to stay cached');
+  }
+});
+
+Deno.test('InlineQueryService expires every cached answer to a request, from any account', () => {
+  const { virtualUsers, sharedChats, inlineQueries, account, send, answer } =
+    createInlineQueryFixture();
+  const otherAccount = createAccount(virtualUsers, 'Grace');
+  const otherBot = createBot(virtualUsers, 'other_inline_bot', { supports_inline_queries: true });
+  const otherSupergroup = { ...SUPERGROUP, id: -1_000_000_000_002, chatInstance: '-43' };
+  sharedChats.registerSupergroup(SUPERGROUP, account.profile.id);
+  sharedChats.registerSupergroup(otherSupergroup, account.profile.id);
+  for (const chatId of [SUPERGROUP.id, otherSupergroup.id]) {
+    sharedChats.addChatMember(chatId, otherAccount.profile.id);
+  }
+  const inFirstGroup = { type: 'supergroup', chatId: SUPERGROUP.id } as const;
+  const inOtherGroup = { type: 'supergroup', chatId: otherSupergroup.id } as const;
+
+  // A personal answer for the account, and an independent one for the other account.
+  answer(send({ chat: inFirstGroup }).id, { isPersonal: true });
+  const otherQuery = send({ fromAccountId: otherAccount.profile.id, chat: inFirstGroup });
+  answer(otherQuery.id, { isPersonal: true });
+  // Answers to other requests, which the expiry leaves cached.
+  const unrelated = [
+    send({ chat: inFirstGroup, query: 'dogs' }),
+    send({ chat: inFirstGroup, offset: '10' }),
+    send({}),
+    send({ botId: otherBot.profile.id, chat: inFirstGroup }),
+  ];
+  for (const inlineQuery of unrelated) {
+    answer(inlineQuery.id, { fromBotId: inlineQuery.botId });
+  }
+
+  // The request names no chat, so a query typed in another supergroup selects the same answers.
+  const selector = send({ chat: inOtherGroup, query: '\tcats' });
+  const expiry = inlineQueries.expireAnswerCache(selector.id);
+  const afterExpiry = [
+    send({ chat: inFirstGroup }),
+    send({ fromAccountId: otherAccount.profile.id, chat: inOtherGroup }),
+  ].map((inlineQuery) => inlineQuery.state.status);
+  const stillCached = [
+    send({ chat: inFirstGroup, query: 'dogs' }),
+    send({ chat: inFirstGroup, offset: '10' }),
+    send({}),
+    send({ botId: otherBot.profile.id, chat: inFirstGroup }),
+  ].map((inlineQuery) => inlineQuery.state.status);
+  if (
+    selector.state.status !== 'answered' || !expiry.expired ||
+    JSON.stringify(afterExpiry) !== '["awaiting_answer","awaiting_answer"]' ||
+    stillCached.some((status) => status !== 'answered')
+  ) {
+    throw new Error(
+      `Expected only the request's answers to expire, received ${afterExpiry} and ${stillCached}`,
+    );
+  }
+});
+
+Deno.test('InlineQueryService refuses expiry when the cache holds no answer to expire', () => {
+  const { inlineQueries, send, answer } = createInlineQueryFixture();
+  const unanswered = send({});
+  const beforeAnswer = inlineQueries.expireAnswerCache(unanswered.id);
+  answer(unanswered.id, { cacheTimeSeconds: 0 });
+  const withoutCacheTime = inlineQueries.expireAnswerCache(unanswered.id);
+  const cachedQuery = send({ query: 'dogs' });
+  answer(cachedQuery.id, {});
+  const unknown = inlineQueries.expireAnswerCache('999');
+  const first = inlineQueries.expireAnswerCache(cachedQuery.id);
+  const repeated = inlineQueries.expireAnswerCache(cachedQuery.id);
+
+  const outcomes = [beforeAnswer, withoutCacheTime, unknown, first, repeated].map((result) =>
+    result.expired ? 'expired' : result.reason
+  );
+  if (
+    JSON.stringify(outcomes) !== JSON.stringify([
+      'answer_not_cached',
+      'answer_not_cached',
+      'inline_query_not_found',
+      'expired',
+      'answer_not_cached',
+    ])
+  ) {
+    throw new Error(`Expected expiry only of a cached answer, received ${outcomes}`);
+  }
+});
+
+Deno.test('InlineQueryService caches an answer given after an expiry, and none with no cache time', () => {
+  const { inlineQueries, send, answer } = createInlineQueryFixture();
+  answer(send({}).id, {});
+  const pending = send({ query: 'dogs' });
+  const zeroCacheQuery = send({ query: 'dogs' });
+  answer(zeroCacheQuery.id, { cacheTimeSeconds: 0 });
+  // An answer with no cache time leaves the cached one in place.
+  const reusedAfterZeroCache = send({}).state.status;
+
+  const expiry = inlineQueries.expireAnswerCache(zeroCacheQuery.id);
+  const cached = inlineQueries.expireAnswerCache(send({}).id);
+  answer(pending.id, { results: [article('late')] });
+  const afterLateAnswer = send({ query: 'dogs' });
+  if (
+    reusedAfterZeroCache !== 'answered' || expiry.expired || !cached.expired ||
+    afterLateAnswer.state.status !== 'answered' ||
+    afterLateAnswer.state.answer.results[0].id !== 'late'
+  ) {
+    throw new Error('Expected only answers with a cache time to be cached, whenever they arrive');
   }
 });
 
 Deno.test('InlineQueryService reuses a personal answer only for its account', () => {
-  const { virtualUsers, inlineQueries, account, inlineBot, sendQuery } = createInlineQueryFixture();
+  const { virtualUsers, account, send, answer } = createInlineQueryFixture();
   const otherAccount = createAccount(virtualUsers, 'Grace');
-  const answer = (inlineQueryId: string, input: Partial<AnswerInlineQueryInput>) =>
-    inlineQueries.answerInlineQuery({
-      fromBotId: inlineBot.profile.id,
-      inlineQueryId,
-      results: [article('1')],
-      cacheTimeSeconds: 300,
-      isPersonal: true,
-      nextOffset: '',
-      ...input,
-    });
-  answer(sendQuery().id, {});
-  const send = (fromAccountId: number) => {
-    const result = inlineQueries.sendInlineQuery({
-      fromAccountId,
-      botId: inlineBot.profile.id,
-      chat: { type: 'private', botId: inlineBot.profile.id },
-      query: 'cats',
-      offset: '',
-    });
-    if (!result.sent) {
-      throw new Error(`Expected the query to be sent, received ${result.reason}`);
-    }
-    return result.inlineQuery;
-  };
+  answer(send({}).id, { isPersonal: true });
 
-  const ownRepeat = send(account.profile.id);
-  const otherQuery = send(otherAccount.profile.id);
+  const ownRepeat = send({ fromAccountId: account.profile.id });
+  const otherQuery = send({ fromAccountId: otherAccount.profile.id });
   if (ownRepeat.state.status !== 'answered' || otherQuery.state.status !== 'awaiting_answer') {
     throw new Error('Expected a personal answer to be reused only for its own account');
   }
 
-  answer(otherQuery.id, { cacheTimeSeconds: 0, isPersonal: false });
-  if (send(otherAccount.profile.id).state.status !== 'awaiting_answer') {
+  answer(otherQuery.id, { cacheTimeSeconds: 0 });
+  if (send({ fromAccountId: otherAccount.profile.id }).state.status !== 'awaiting_answer') {
     throw new Error('Expected an answer with no cache time never to be reused');
   }
 });
@@ -738,7 +838,6 @@ function createInlineQueryFixture() {
     events,
     currentUnixTimeSeconds: () => 1_700_000_000,
   });
-  let currentTimeMilliseconds = 1_700_000_000_000;
   // What the emulated web serves at each URL, as `formatHttpUrl` spells it; other URLs fail.
   const webResources = new Map<string, WebFileDownload>();
   const downloadedUrls: string[] = [];
@@ -763,7 +862,6 @@ function createInlineQueryFixture() {
     inlineQueries: new InlineQueryRepository(),
     webMediaFiles: mediaFiles,
     events,
-    currentTimeMilliseconds: () => currentTimeMilliseconds,
   });
   const account = createAccount(virtualUsers, 'Ada');
   const inlineBot = createBot(virtualUsers, 'inline_bot', { supports_inline_queries: true });
@@ -784,6 +882,37 @@ function createInlineQueryFixture() {
     return result.inlineQuery;
   };
 
+  /** Sends Ada's query for `cats` to the inline bot in its private chat, unless told otherwise. */
+  const send = (input: Partial<SendInlineQueryInput>) => {
+    const result = inlineQueries.sendInlineQuery({
+      fromAccountId: account.profile.id,
+      botId: inlineBot.profile.id,
+      chat: { type: 'private', botId: inlineBot.profile.id },
+      query: 'cats',
+      offset: '',
+      ...input,
+    });
+    if (!result.sent) {
+      throw new Error(`Expected the query to be sent, received ${result.reason}`);
+    }
+    return result.inlineQuery;
+  };
+  /** Answers a query with one article, cached for 300 seconds and not personal, unless told otherwise. */
+  const answer = (inlineQueryId: string, input: Partial<AnswerInlineQueryInput>) => {
+    const result = inlineQueries.answerInlineQuery({
+      fromBotId: inlineBot.profile.id,
+      inlineQueryId,
+      results: [article('1')],
+      cacheTimeSeconds: 300,
+      isPersonal: false,
+      nextOffset: '',
+      ...input,
+    });
+    if (!result.answered) {
+      throw new Error(`Expected the answer to be recorded, received ${result.reason}`);
+    }
+  };
+
   return {
     virtualUsers,
     files,
@@ -797,9 +926,8 @@ function createInlineQueryFixture() {
     account,
     inlineBot,
     sendQuery,
-    advanceClockMilliseconds: (milliseconds: number) => {
-      currentTimeMilliseconds += milliseconds;
-    },
+    send,
+    answer,
   };
 }
 

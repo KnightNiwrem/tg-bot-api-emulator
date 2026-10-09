@@ -263,6 +263,64 @@ Deno.test('the bot answers with the location the account shares', () =>
   }));
 ```
 
+## Fresh answers after the cache
+
+An answer with a positive `cache_time`, 300 seconds by default, is cached: a repeated query is
+answered from it at once, as `status: 'answered'`, and the bot receives no `inline_query`. The
+emulator never lets `cache_time` pass by itself, so a test that needs the bot to answer again calls
+`session.expireInlineAnswerCache` with the ID of any query of the request. Every account's next such
+query then reaches the bot, while earlier queries keep their answers and the bot is not told.
+[Answer caching](../../features/inline-mode.md#answer-caching) describes which queries share a
+request.
+
+```ts
+import { withBotFixture } from './bot_fixture.ts';
+import { assertEquals } from 'jsr:@std/assert@^1';
+
+Deno.test('the bot answers again once its cached answer expires', () => {
+  let cakesInStock = 3;
+  return withBotFixture({
+    bot: { supports_inline_queries: true },
+    handlers: (bot) => {
+      bot.on('inline_query', (ctx) =>
+        ctx.answerInlineQuery([{
+          type: 'article',
+          id: 'cakes',
+          title: `Cakes in stock: ${cakesInStock}`,
+          input_message_content: { message_text: `Cakes in stock: ${cakesInStock}` },
+        }]));
+    },
+  }, async ({ session, account, activity, botProfile, privateChat }) => {
+    const askForCakes = () =>
+      account.sendInlineQuery({ bot_id: botProfile.id, chat: privateChat, query: 'cakes' });
+    const waitForAnswer = async (inlineQueryId: string, after: number) => {
+      await activity.waitFor(
+        { method: 'answerInlineQuery', ok: true, parameters: { inline_query_id: inlineQueryId } },
+        { after },
+      );
+      return (await account.getInlineQuery(inlineQueryId)).answer?.results[0]?.title;
+    };
+
+    const beforeFirst = await activity.position();
+    const first = await askForCakes();
+    assertEquals(await waitForAnswer(first.id, beforeFirst), 'Cakes in stock: 3');
+
+    // The stock changes, but the repeated query receives the cached answer.
+    cakesInStock = 1;
+    const repeated = await askForCakes();
+    assertEquals(repeated.status, 'answered');
+    assertEquals(repeated.answer?.results[0]?.title, 'Cakes in stock: 3');
+
+    // Stands in for the default 300-second cache_time passing.
+    await session.expireInlineAnswerCache(repeated.id);
+    const beforeFresh = await activity.position();
+    const fresh = await askForCakes();
+    assertEquals(fresh.status, 'awaiting_answer');
+    assertEquals(await waitForAnswer(fresh.id, beforeFresh), 'Cakes in stock: 1');
+  });
+});
+```
+
 ## Media results named by URL
 
 A photo, document, video, voice note, or audio result can name its file by URL. The emulator
