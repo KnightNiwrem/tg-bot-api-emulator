@@ -15,6 +15,7 @@ export type {
   AccountChatActionsInput,
   AccountChatAdministratorsInput,
   AccountChatInviteLinksInput,
+  AccountChatJoinRequestDecisionInput,
   AccountChatJoinRequestsInput,
   AccountDeleteMessageInput,
   AccountEditMessageCaptionInput,

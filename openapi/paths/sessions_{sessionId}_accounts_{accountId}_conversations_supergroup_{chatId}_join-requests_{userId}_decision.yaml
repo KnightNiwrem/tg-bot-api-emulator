@@ -1,0 +1,44 @@
+description: >-
+  The decision on an account's pending request to join a supergroup, which the supergroup's owner,
+  or an administrator account holding `can_invite_users`, makes as `approveChatJoinRequest` and
+  `declineChatJoinRequest` do for an administrator bot.
+parameters:
+  - $ref: ../components/parameters/SessionId.yaml
+  - $ref: ../components/parameters/AccountId.yaml
+  - $ref: ../components/parameters/SupergroupChatId.yaml
+  - $ref: ../components/parameters/UserId.yaml
+post:
+  operationId: decideSupergroupJoinRequest
+  summary: Approve or decline a pending join request as the owner or an administrator
+  description: >-
+    Decides the pending request of the account `userId`, whichever bot created the link it was
+    sent through. The deciding account must own the supergroup or be an administrator granted
+    `can_invite_users` when it decides. Approval lets the requester in, restricted if it was,
+    through the request's link, which counts it as a member that joined through the link; the
+    join is the requester's own `new_chat_members` service message, and administrator bots
+    subscribed to `chat_member` updates receive the change from the deciding account, with the
+    link. Declining leaves the requester outside, which no update reports. Either decision ends
+    the request and the bots' permission to write to the requester under it; a private chat the
+    requester started with a bot stays open. Each request is decided once, by an account or a bot,
+    and a refused decision changes nothing.
+  requestBody:
+    required: true
+    content:
+      application/json:
+        schema:
+          $ref: ../components/schemas/AccountJoinRequestDecisionRequest.yaml
+  responses:
+    '204':
+      description: The request ended with the decision.
+    '400':
+      description: A path identifier or the body is invalid.
+    '403':
+      description: >-
+        The account is neither the supergroup's owner nor an administrator holding
+        `can_invite_users`, including when it is not a member.
+    '404':
+      description: >-
+        The session, account, or supergroup does not exist, or the user has no pending request to
+        join it, including once its request was declined.
+    '409':
+      description: The user is a member of the supergroup, including once its request was approved.

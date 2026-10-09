@@ -218,6 +218,16 @@ export interface DecideJoinRequestAsBotInput {
 }
 
 /**
+ * Why the request an authorized administrator names cannot be decided, as Telegram's servers
+ * refuse it after TDLib checked the administrator.
+ */
+type JoinRequestTargetFailureReason =
+  /** The user is a member, which Telegram refuses as `USER_ALREADY_PARTICIPANT`. */
+  | 'already_a_member'
+  /** The user has no pending request, which Telegram refuses as `HIDE_REQUESTER_MISSING`. */
+  | 'join_request_missing';
+
+/**
  * Why a bot cannot approve or decline a join request, in the order the official Bot API server,
  * TDLib's `process_dialog_join_request`, and then Telegram's servers check them.
  */
@@ -226,14 +236,42 @@ export type DecideJoinRequestAsBotFailureReason =
   | SupergroupBotAccessFailureReason
   /** The bot lacks the `can_invite_users` administrator right. */
   | 'not_enough_rights'
-  /** The user is a member, which Telegram refuses as `USER_ALREADY_PARTICIPANT`. */
-  | 'already_a_member'
-  /** The user has no pending request, which Telegram refuses as `HIDE_REQUESTER_MISSING`. */
-  | 'join_request_missing';
+  | JoinRequestTargetFailureReason;
 
 export type DecideJoinRequestAsBotResult =
   | { readonly decided: true }
   | { readonly decided: false; readonly reason: DecideJoinRequestAsBotFailureReason };
+
+/** Whether an administrator lets the requester in or leaves it outside. */
+export type JoinRequestDecision = 'approve' | 'decline';
+
+export interface DecideJoinRequestAsAccountInput {
+  /** The owner, or an administrator account holding `can_invite_users`. */
+  readonly deciderAccountId: number;
+  readonly chatId: number;
+  /** The account whose request the decider approves or declines. */
+  readonly userId: number;
+  readonly decision: JoinRequestDecision;
+}
+
+/**
+ * Why an account cannot approve or decline a join request, in the order TDLib's
+ * `process_dialog_join_request` and then Telegram's servers check them.
+ */
+export type DecideJoinRequestAsAccountFailureReason =
+  | 'account_not_found'
+  /** No supergroup of the session has the chat ID. */
+  | 'chat_not_found'
+  /**
+   * The account is neither the owner nor an administrator holding `can_invite_users`, including
+   * when it is not a member, as TDLib's `can_manage_dialog_join_requests` refuses it.
+   */
+  | 'not_enough_rights'
+  | JoinRequestTargetFailureReason;
+
+export type DecideJoinRequestAsAccountResult =
+  | { readonly decided: true }
+  | { readonly decided: false; readonly reason: DecideJoinRequestAsAccountFailureReason };
 
 export interface GetJoinRequestsForAccountInput {
   /** The account that inspects the requests, which must own the supergroup. */
@@ -361,12 +399,12 @@ interface ChatAdmissionServiceDependencies {
  * Decides who may enter a supergroup without its owner adding them: administrator bots create,
  * edit and revoke additional invite links, and accounts join through them, or by the username of
  * a public supergroup. A link keeps its creator, its expiry date, its member limit, and whether it
- * creates join requests, which keep the account outside until an administrator bot with
- * `can_invite_users` approves or declines them. Until then, the bots that received a request may
- * contact its user, as `mayContactJoinRequester` decides. A link's edits, revocation and expiry
- * affect only its later uses, never the requests already sent through it. A link's expiry date,
- * like the end of a request's contact window, arrives only when a test makes it arrive, so tests
- * decide when a link stops working.
+ * creates join requests, which keep the account outside until the owner, or an administrator bot
+ * or account with `can_invite_users`, approves or declines them. Until then, the bots that
+ * received a request may contact its user, as `mayContactJoinRequester` decides. A link's edits,
+ * revocation and expiry affect only its later uses, never the requests already sent through it.
+ * A link's expiry date, like the end of a request's contact window, arrives only when a test makes
+ * it arrive, so tests decide when a link stops working.
  */
 export class ChatAdmissionService {
   readonly #accounts: AccountLookup;
@@ -603,52 +641,51 @@ export class ChatAdmissionService {
   }
 
   /**
-   * Approves an account's pending request to join a supergroup as an administrator bot: the
-   * account joins, restricted if it was, through the link it sent the request through, and the
-   * request ends. The join is the account's own service message, and administrator bots receive
-   * it from the approving bot with the link. Checks are as `#resolveJoinRequestDecision` makes them.
+   * Approves an account's pending request to join a supergroup as an administrator bot, as
+   * `#decideJoinRequest` does once `#authorizeBotJoinRequestDecider` lets the bot decide.
    */
-  approveJoinRequestAsBot(input: DecideJoinRequestAsBotInput): DecideJoinRequestAsBotResult {
-    const decision = this.#resolveJoinRequestDecision(input);
-    if (!decision.resolved) {
-      return { decided: false, reason: decision.reason };
-    }
-    const { request } = decision;
-    const inviteLink = this.#inviteLinks.findInviteLink(request.inviteLinkUrl);
-    if (inviteLink === undefined) {
-      throw new Error(
-        `Join request of user ${request.userId} names unknown link ${request.inviteLinkUrl}`,
-      );
-    }
-    this.#memberships.admitAccount({
-      accountId: request.userId,
-      chatId: request.chatId,
-      inviteLink,
-      approverId: input.deciderBotId,
-    });
-    return { decided: true };
+  approveJoinRequestAsBot(
+    { deciderBotId, chatId, userId }: DecideJoinRequestAsBotInput,
+  ): DecideJoinRequestAsBotResult {
+    return this.#decideJoinRequest(
+      this.#authorizeBotJoinRequestDecider(deciderBotId, chatId),
+      { deciderId: deciderBotId, chatId, userId, decision: 'approve' },
+    );
   }
 
   /**
-   * Declines an account's pending request to join a supergroup as an administrator bot: the
-   * request ends and the account stays outside, which no update reports. Checks are as
-   * `#resolveJoinRequestDecision` makes them.
+   * Declines an account's pending request to join a supergroup as an administrator bot, as
+   * `#decideJoinRequest` does once `#authorizeBotJoinRequestDecider` lets the bot decide.
    */
-  declineJoinRequestAsBot(input: DecideJoinRequestAsBotInput): DecideJoinRequestAsBotResult {
-    const decision = this.#resolveJoinRequestDecision(input);
-    if (!decision.resolved) {
-      return { decided: false, reason: decision.reason };
-    }
-    if (!this.#sharedChats.removeJoinRequest(input.chatId, input.userId)) {
-      throw new Error(`Join request of user ${input.userId} to chat ${input.chatId} vanished`);
-    }
-    return { decided: true };
+  declineJoinRequestAsBot(
+    { deciderBotId, chatId, userId }: DecideJoinRequestAsBotInput,
+  ): DecideJoinRequestAsBotResult {
+    return this.#decideJoinRequest(
+      this.#authorizeBotJoinRequestDecider(deciderBotId, chatId),
+      { deciderId: deciderBotId, chatId, userId, decision: 'decline' },
+    );
+  }
+
+  /**
+   * Approves or declines an account's pending request to join a supergroup as the owner or an
+   * administrator account, as `#decideJoinRequest` does once `#authorizeAccountJoinRequestDecider`
+   * lets the account decide. The account decides any request, whichever bot created the link it
+   * was sent through, and an approval's `chat_member` update comes from it.
+   */
+  decideJoinRequestAsAccount(
+    { deciderAccountId, chatId, userId, decision }: DecideJoinRequestAsAccountInput,
+  ): DecideJoinRequestAsAccountResult {
+    return this.#decideJoinRequest(
+      this.#authorizeAccountJoinRequestDecider(deciderAccountId, chatId),
+      { deciderId: deciderAccountId, chatId, userId, decision },
+    );
   }
 
   /**
    * Returns the pending join requests of a supergroup to its owner, in the order they were sent.
    * Requests reach administrator bots with `can_invite_users`; among accounts, only the owner
-   * inspects them, as for the invite links they were sent through.
+   * inspects them, as for the invite links they were sent through, although administrator accounts
+   * with the right decide them.
    */
   getJoinRequestsForAccount(
     { accountId, chatId }: GetJoinRequestsForAccountInput,
@@ -852,34 +889,122 @@ export class ChatAdmissionService {
   }
 
   /**
-   * Finds the pending request a bot decides on, as TDLib's `process_dialog_join_request` and then
-   * Telegram's servers check it: the bot must be able to write to the supergroup and, as TDLib's
-   * `can_manage_dialog_join_requests` requires, hold the `can_invite_users` administrator right,
-   * whoever created the link the request was sent through. A member has no request to decide,
-   * and neither has a user whose request was decided before.
+   * Returns why a bot may not decide a supergroup's join requests, or `undefined` when it may: as
+   * TDLib's `process_dialog_join_request` checks it, the bot must be able to write to the
+   * supergroup and, as `can_manage_dialog_join_requests` requires, hold the `can_invite_users`
+   * administrator right.
    */
-  #resolveJoinRequestDecision(
-    { deciderBotId, chatId, userId }: DecideJoinRequestAsBotInput,
-  ):
-    | { readonly resolved: true; readonly request: ChatJoinRequest }
-    | { readonly resolved: false; readonly reason: DecideJoinRequestAsBotFailureReason } {
-    if (this.#bots.getById(deciderBotId) === undefined) {
-      return { resolved: false, reason: 'bot_not_found' };
+  #authorizeBotJoinRequestDecider(
+    botId: number,
+    chatId: number,
+  ): Exclude<DecideJoinRequestAsBotFailureReason, JoinRequestTargetFailureReason> | undefined {
+    if (this.#bots.getById(botId) === undefined) {
+      return 'bot_not_found';
     }
-    const access = resolveSupergroupBotMembership(this.#sharedChats, deciderBotId, chatId);
+    const access = resolveSupergroupBotMembership(this.#sharedChats, botId, chatId);
     if (!access.resolved) {
-      return { resolved: false, reason: access.reason };
+      return access.reason;
     }
-    if (!holdsSupergroupAdministratorRight(access.membership, 'can_invite_users')) {
-      return { resolved: false, reason: 'not_enough_rights' };
+    return holdsSupergroupAdministratorRight(access.membership, 'can_invite_users')
+      ? undefined
+      : 'not_enough_rights';
+  }
+
+  /**
+   * Returns why an account may not decide a supergroup's join requests, or `undefined` when it
+   * may: as TDLib's `can_manage_dialog_join_requests` checks the account's own standing, it must
+   * own the supergroup or be an administrator explicitly granted `can_invite_users`. A member
+   * without the right, a restricted user and a non-member may not.
+   */
+  #authorizeAccountJoinRequestDecider(
+    accountId: number,
+    chatId: number,
+  ): Exclude<DecideJoinRequestAsAccountFailureReason, JoinRequestTargetFailureReason> | undefined {
+    if (this.#accounts.getById(accountId) === undefined) {
+      return 'account_not_found';
+    }
+    if (this.#sharedChats.getSharedChat(chatId)?.kind !== 'supergroup') {
+      return 'chat_not_found';
+    }
+    return holdsSupergroupAdministratorRight(
+        this.#sharedChats.getChatMembership(chatId, accountId),
+        'can_invite_users',
+      )
+      ? undefined
+      : 'not_enough_rights';
+  }
+
+  /**
+   * Decides an account's pending request to join a supergroup for an administrator whose
+   * authorization was just checked, which happens at decision time, so a lost right refuses it.
+   * The request must still be pending, as Telegram's servers check it: a member has no request to
+   * decide, and neither has a user whose request was decided before, by any administrator.
+   *
+   * Approval lets the account in, restricted if it was, through the link it sent the request
+   * through, which ends the request; the join is the account's own service message, and
+   * administrator bots receive it from the approver with the link. Declining ends the request and
+   * leaves the account outside, which no update reports. Either way the request's requester
+   * contact ends with it.
+   */
+  #decideJoinRequest<AuthorizationFailureReason extends string>(
+    authorizationFailure: AuthorizationFailureReason | undefined,
+    { deciderId, chatId, userId, decision }: {
+      readonly deciderId: number;
+      readonly chatId: number;
+      readonly userId: number;
+      readonly decision: JoinRequestDecision;
+    },
+  ):
+    | { readonly decided: true }
+    | {
+      readonly decided: false;
+      readonly reason: AuthorizationFailureReason | JoinRequestTargetFailureReason;
+    } {
+    if (authorizationFailure !== undefined) {
+      return { decided: false, reason: authorizationFailure };
     }
     if (this.#sharedChats.getChatMembership(chatId, userId) !== undefined) {
-      return { resolved: false, reason: 'already_a_member' };
+      return { decided: false, reason: 'already_a_member' };
     }
     const request = this.#sharedChats.getJoinRequest(chatId, userId);
-    return request === undefined
-      ? { resolved: false, reason: 'join_request_missing' }
-      : { resolved: true, request };
+    if (request === undefined) {
+      return { decided: false, reason: 'join_request_missing' };
+    }
+
+    switch (decision) {
+      case 'approve':
+        this.#memberships.admitAccount({
+          accountId: userId,
+          chatId,
+          inviteLink: this.#findRequestInviteLink(request),
+          approverId: deciderId,
+        });
+        break;
+      case 'decline':
+        if (!this.#sharedChats.removeJoinRequest(chatId, userId)) {
+          throw new Error(`Join request of user ${userId} to chat ${chatId} vanished`);
+        }
+        break;
+      default: {
+        const unhandledDecision: never = decision;
+        throw new Error(`Unhandled join request decision: ${unhandledDecision}`);
+      }
+    }
+    return { decided: true };
+  }
+
+  /**
+   * Finds the link a pending request was sent through, which the session keeps, revoked or
+   * expired.
+   */
+  #findRequestInviteLink(request: ChatJoinRequest): ChatInviteLink {
+    const inviteLink = this.#inviteLinks.findInviteLink(request.inviteLinkUrl);
+    if (inviteLink === undefined) {
+      throw new Error(
+        `Join request of user ${request.userId} names unknown link ${request.inviteLinkUrl}`,
+      );
+    }
+    return inviteLink;
   }
 
   /**

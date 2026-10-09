@@ -49,6 +49,7 @@ import type {
   AccountChatActionsInput,
   AccountChatAdministratorsInput,
   AccountChatInviteLinksInput,
+  AccountChatJoinRequestDecisionInput,
   AccountChatJoinRequestsInput,
   AccountDeleteMessageInput,
   AccountEditMessageCaptionInput,
@@ -838,6 +839,22 @@ function createVirtualAccountClient(
       });
       return response.join_requests;
     },
+    async approveChatJoinRequest(input: AccountChatJoinRequestDecisionInput): Promise<void> {
+      await requestEmptyResponse(fetchImplementation, {
+        method: 'POST',
+        url: joinRequestDecisionUrl(accountUrl, input),
+        expectedStatus: HTTP_STATUS_NO_CONTENT,
+        body: { decision: 'approve' },
+      });
+    },
+    async declineChatJoinRequest(input: AccountChatJoinRequestDecisionInput): Promise<void> {
+      await requestEmptyResponse(fetchImplementation, {
+        method: 'POST',
+        url: joinRequestDecisionUrl(accountUrl, input),
+        expectedStatus: HTTP_STATUS_NO_CONTENT,
+        body: { decision: 'decline' },
+      });
+    },
     async promoteChatMember(input: PromoteChatMemberInput): Promise<void> {
       await requestEmptyResponse(fetchImplementation, {
         method: 'PUT',
@@ -1227,6 +1244,16 @@ function pinnedMessageUrl(
   { chat, message_id }: AccountPinMessageInput,
 ): string {
   return `${conversationUrl(accountUrl, chat)}/pinned-messages/${encodeURIComponent(message_id)}`;
+}
+
+/** The URL by which an account approves or declines a pending request to join its supergroup. */
+function joinRequestDecisionUrl(
+  accountUrl: string,
+  { chat, userId }: AccountChatJoinRequestDecisionInput,
+): string {
+  return `${conversationUrl(accountUrl, chat)}/join-requests/${
+    encodeURIComponent(userId)
+  }/decision`;
 }
 
 /** The URL of a message of an account's chat that shows a poll. */

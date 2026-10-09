@@ -5,7 +5,7 @@
 [Feature reference: Supergroups](../../features/supergroups.md)
 
 This page shows how a test lets an administrator bot create invite links, has other accounts use
-them, and checks the join requests the bot decides. Examples use the
+them, and checks the join requests the bot, or an administrator account, decides. Examples use the
 [shared fixture](sessions-and-fixtures.md) and the [waiting pattern](observing-bot-behavior.md).
 
 ## Creating a link and joining through it
@@ -321,6 +321,96 @@ The emulator never ends the contact window by itself. A test ends it as five min
 with `session.expireJoinRequesterContact`, naming the supergroup's chat ID and the requester's
 `userId`, which answers the still pending request with its contact `expired`; the bots that never
 were started then fail with `chat not found` again.
+
+### Deciding requests as an administrator account
+
+A human administrator can decide a request before the bot does. The owner, or an administrator
+account holding `can_invite_users`, calls `approveChatJoinRequest` or `declineChatJoinRequest` with
+the supergroup and the requester's `userId`. Administrator bots receive an approval as a
+`chat_member` update from that account, and either decision ends the request with its requester
+contact. The bot's own decision then fails with `USER_ALREADY_PARTICIPANT` after an approval, or
+`HIDE_REQUESTER_MISSING` after a decline, which the activity log records with `ok: false`. A
+decision the account may not make, or one made already, rejects with an `EmulationClientError` whose
+`status` is `403`, `404` or `409`;
+[Decisions by accounts](../../features/invite-links.md#decisions-by-accounts) lists them.
+
+```ts
+import { assert, assertEquals } from 'jsr:@std/assert@^1';
+import type { ChatInviteLink } from 'npm:grammy@^1.46.0/types';
+import { withBotFixture } from './bot_fixture.ts';
+
+Deno.test('the owner approves a requester before the bot does', async () => {
+  const requestChatIds = new Map<number, number>();
+  await withBotFixture({
+    handlers: (bot) => {
+      bot.on('my_chat_member', async (ctx) => {
+        const member = ctx.myChatMember.new_chat_member;
+        if (member.status === 'administrator' && member.can_invite_users) {
+          await ctx.createChatInviteLink({ name: 'Apply', creates_join_request: true });
+        }
+      });
+      bot.on('chat_join_request', async (ctx) => {
+        requestChatIds.set(ctx.from.id, ctx.chat.id);
+        await ctx.api.sendMessage(ctx.chatJoinRequest.user_chat_id, 'Are you human?', {
+          reply_markup: { inline_keyboard: [[{ text: 'I am', callback_data: 'human' }]] },
+        });
+      });
+      bot.callbackQuery('human', async (ctx) => {
+        const chatId = requestChatIds.get(ctx.from.id);
+        if (chatId !== undefined) {
+          // The owner may have decided first, which makes this approval fail.
+          await ctx.api.approveChatJoinRequest(chatId, ctx.from.id).catch(() => {});
+        }
+        await ctx.answerCallbackQuery();
+      });
+    },
+  }, async ({ session, botProfile, account, activity }) => {
+    const supergroup = await account.createSupergroup({ title: 'Book club' });
+    const groupChat = { type: 'supergroup', chatId: supergroup.id } as const;
+    await account.addChatMember({ chat: groupChat, userId: botProfile.id });
+    const beforePromotion = await activity.position();
+    await account.promoteChatMember({
+      chat: groupChat,
+      userId: botProfile.id,
+      rights: { can_invite_users: true },
+    });
+    const created = await activity.waitFor(
+      { method: 'createChatInviteLink', chat_id: supergroup.id, ok: true },
+      { after: beforePromotion },
+    );
+    assert(created.answer.ok);
+    const { invite_link: inviteLink } = created.answer.result as ChatInviteLink;
+
+    const { account: grace } = await session.createAccount({ first_name: 'Grace' });
+    const beforeRequest = await activity.position();
+    await grace.joinChatByInviteLink({ inviteLink });
+    await activity.waitFor(
+      { method: 'sendMessage', chat_id: grace.id, ok: true },
+      { after: beforeRequest },
+    );
+
+    // The owner approves Grace while the bot waits for her answer.
+    await account.approveChatJoinRequest({ chat: groupChat, userId: grace.id });
+    assertEquals(await account.getChatJoinRequests({ chat: groupChat }), []);
+
+    // Grace answers the prompt afterwards, and the bot's own approval comes too late.
+    const botChat = { type: 'private', botId: botProfile.id } as const;
+    const [prompt] = await grace.getMessages({ chat: botChat });
+    assert(prompt !== undefined);
+    await grace.pressCallbackButton({
+      chat: botChat,
+      message_id: prompt.message_id,
+      callback_data: 'human',
+    });
+    const stale = await activity.waitFor(
+      { method: 'approveChatJoinRequest', chat_id: supergroup.id, ok: false },
+      { after: beforeRequest },
+    );
+    assert(!stale.answer.ok);
+    assertEquals(stale.answer.description, 'Bad Request: USER_ALREADY_PARTICIPANT');
+  });
+});
+```
 
 ## Member limits
 

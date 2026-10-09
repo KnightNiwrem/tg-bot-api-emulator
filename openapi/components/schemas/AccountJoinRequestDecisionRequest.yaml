@@ -1,0 +1,13 @@
+type: object
+additionalProperties: false
+required:
+  - decision
+properties:
+  decision:
+    type: string
+    enum:
+      - approve
+      - decline
+    description: >-
+      `approve` lets the requester in through the link it sent the request through; `decline`
+      leaves it outside.

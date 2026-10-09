@@ -91,6 +91,8 @@ paths:
     $ref: paths/sessions_{sessionId}_accounts_{accountId}_conversations_supergroup_{chatId}_invite-links.yaml
   /sessions/{sessionId}/accounts/{accountId}/conversations/supergroup/{chatId}/join-requests:
     $ref: paths/sessions_{sessionId}_accounts_{accountId}_conversations_supergroup_{chatId}_join-requests.yaml
+  /sessions/{sessionId}/accounts/{accountId}/conversations/supergroup/{chatId}/join-requests/{userId}/decision:
+    $ref: paths/sessions_{sessionId}_accounts_{accountId}_conversations_supergroup_{chatId}_join-requests_{userId}_decision.yaml
   /sessions/{sessionId}/accounts/{accountId}/chat-joins:
     $ref: paths/sessions_{sessionId}_accounts_{accountId}_chat-joins.yaml
   /sessions/{sessionId}/accounts/{accountId}/conversations/supergroup/{chatId}/administrators:

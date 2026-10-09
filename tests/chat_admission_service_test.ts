@@ -6,6 +6,7 @@ import { TelegramIdentityRepository } from '../src/repositories/telegram_identit
 import {
   ChatAdmissionService,
   type EditInviteLinkAsBotInput,
+  type JoinRequestDecision,
   type RequestedInviteLinkSettings,
 } from '../src/services/chat_admission.ts';
 import { SharedChatAdministrationService } from '../src/services/shared_chat_administration.ts';
@@ -456,6 +457,331 @@ Deno.test('ChatAdmissionService ends a requester contact with its request or whe
     ],
     [true, true, [], false],
     'Expected the decisions to end both requests and their contacts',
+  );
+});
+
+/**
+ * Extends the requester contact fixture for decisions by accounts: Kay, an administrator account
+ * holding `can_invite_users`; Ned, an administrator account without it; Pat, a plain member; Rae,
+ * a restricted member; and Linus, an account outside the supergroup. Grace and Hopper have pending
+ * requests, and the inviter bot claimed Grace's contact.
+ */
+function createAccountDecisionFixture() {
+  const fixture = createRequesterContactFixture();
+  const {
+    virtualUsers,
+    sharedChatAdministration,
+    chatAdmission,
+    publishedEvents,
+    chatId,
+    botId,
+    adaId,
+    graceId,
+    hopperId,
+    requestToJoin,
+  } = fixture;
+  const createAccount = (firstName: string) => {
+    const creation = virtualUsers.createAccount({ first_name: firstName });
+    if (!creation.created) {
+      throw new Error(`Expected ${firstName} to be created`);
+    }
+    return creation.account.profile.id;
+  };
+  const createMember = (firstName: string) => {
+    const memberId = createAccount(firstName);
+    sharedChatAdministration.addChatMember({ actorAccountId: adaId, chatId, memberId });
+    return memberId;
+  };
+  const setRights = (memberId: number, rights: readonly SupergroupAdministratorRight[]) =>
+    sharedChatAdministration.promoteChatMember({
+      actorAccountId: adaId,
+      chatId,
+      memberId,
+      rights: grantSupergroupAdministratorRights(rights),
+    });
+  const kayId = createMember('Kay');
+  setRights(kayId, ['can_invite_users']);
+  const nedId = createMember('Ned');
+  setRights(nedId, ['can_delete_messages']);
+  const patId = createMember('Pat');
+  const raeId = createMember('Rae');
+  sharedChatAdministration.restrictChatMemberAsAccount({
+    actorAccountId: adaId,
+    chatId,
+    memberId: raeId,
+    permissions: new Set(['can_send_messages']),
+  });
+  const linusId = createAccount('Linus');
+  requestToJoin(graceId);
+  requestToJoin(hopperId);
+  chatAdmission.claimJoinRequesterContact(botId, graceId);
+  publishedEvents.length = 0;
+
+  /** Decides as an account, answering `decided` or why the decision was refused. */
+  const decideAsAccount = (
+    deciderAccountId: number,
+    userId: number,
+    decision: JoinRequestDecision,
+    decidedChatId = chatId,
+  ) => {
+    const result = chatAdmission.decideJoinRequestAsAccount({
+      deciderAccountId,
+      chatId: decidedChatId,
+      userId,
+      decision,
+    });
+    return result.decided ? 'decided' : result.reason;
+  };
+  /** Describes the published membership changes as `actor: member old -> new via link`. */
+  const describeMembershipEvents = () =>
+    publishedEvents.map((event) =>
+      event.type === 'chat_member_status_changed'
+        ? `${event.actorId}: ${event.memberId} ${event.oldStatus.status} -> ${event.newStatus.status} via ${event.inviteLink?.url}`
+        : event.type
+    );
+  /** The request link's members and pending requests, as the owner inspects them. */
+  const describeLinkUsage = () => {
+    const inspection = chatAdmission.getInviteLinksForAccount({ accountId: adaId, chatId });
+    return inspection.found
+      ? inspection.links.map(({ memberCount, pendingJoinRequestCount }) => [
+        memberCount,
+        pendingJoinRequestCount,
+      ])
+      : inspection.reason;
+  };
+
+  return {
+    ...fixture,
+    kayId,
+    nedId,
+    patId,
+    raeId,
+    linusId,
+    setRights,
+    decideAsAccount,
+    describeMembershipEvents,
+    describeLinkUsage,
+  };
+}
+
+Deno.test('ChatAdmissionService lets the owner and administrator accounts with the right decide', () => {
+  const {
+    chatAdmission,
+    botId,
+    coInviterBotId,
+    adaId,
+    kayId,
+    graceId,
+    hopperId,
+    inviteLinkUrl,
+    decideAsAccount,
+    describeContacts,
+    describeMembershipEvents,
+    describeLinkUsage,
+  } = createAccountDecisionFixture();
+
+  // Kay, who administers with the right, approves Grace through the inviter bot's link.
+  const approval = decideAsAccount(kayId, graceId, 'approve');
+  const afterApproval = [
+    describeMembershipEvents(),
+    describeContacts(),
+    describeLinkUsage(),
+    chatAdmission.mayContactJoinRequester(botId, graceId),
+  ];
+  // Ada, the owner, declines Hopper, which publishes nothing.
+  const decline = decideAsAccount(adaId, hopperId, 'decline');
+
+  expectEqual(
+    [
+      approval,
+      afterApproval,
+      decline,
+      describeMembershipEvents(),
+      describeContacts(),
+      describeLinkUsage(),
+      [botId, coInviterBotId].map((candidateId) =>
+        chatAdmission.mayContactJoinRequester(candidateId, hopperId)
+      ),
+    ],
+    [
+      'decided',
+      [
+        [`${kayId}: ${graceId} left -> member via ${inviteLinkUrl}`],
+        [[hopperId, 'open', [botId, coInviterBotId]]],
+        [[1, 1]],
+        false,
+      ],
+      'decided',
+      [`${kayId}: ${graceId} left -> member via ${inviteLinkUrl}`],
+      [],
+      [[1, 0]],
+      [false, false],
+    ],
+    'Expected Kay to admit Grace as the actor, and Ada to decline Hopper, ending both contacts',
+  );
+
+  // Hopper may request again, with a new contact, after the decline.
+  chatAdmission.joinChatByInviteLink({ accountId: hopperId, inviteLinkUrl });
+  expectEqual(
+    describeContacts(),
+    [[hopperId, 'open', [botId, coInviterBotId]]],
+    'Expected a declined account to be able to request again',
+  );
+});
+
+Deno.test('ChatAdmissionService refuses account decisions by rights at decision time, changing nothing', () => {
+  const {
+    sharedChatAdministration,
+    publishedEvents,
+    chatId,
+    botId,
+    adaId,
+    kayId,
+    nedId,
+    patId,
+    raeId,
+    linusId,
+    graceId,
+    hopperId,
+    setRights,
+    decideAsAccount,
+    describeContacts,
+  } = createAccountDecisionFixture();
+  const basicGroup = sharedChatAdministration.createBasicGroup({
+    title: 'Basic',
+    creatorAccountId: adaId,
+    initialMemberIds: [kayId],
+  });
+  if (!basicGroup.created) {
+    throw new Error('Expected the basic group to be created');
+  }
+  const contactsBefore = describeContacts();
+
+  const refusals = [
+    decideAsAccount(999_999_999, graceId, 'approve'),
+    decideAsAccount(botId, graceId, 'approve'),
+    decideAsAccount(adaId, graceId, 'approve', -1_009_999_999_999),
+    decideAsAccount(adaId, graceId, 'decline', basicGroup.group.id),
+    decideAsAccount(linusId, graceId, 'approve'),
+    decideAsAccount(patId, graceId, 'decline'),
+    decideAsAccount(raeId, graceId, 'approve'),
+    decideAsAccount(nedId, graceId, 'decline'),
+    decideAsAccount(graceId, graceId, 'approve'),
+    decideAsAccount(kayId, linusId, 'approve'),
+    decideAsAccount(kayId, 999_999_999, 'decline'),
+    decideAsAccount(kayId, patId, 'approve'),
+    decideAsAccount(kayId, botId, 'decline'),
+  ];
+  // Rights count when the account decides: Kay loses `can_invite_users`, then her administration.
+  setRights(kayId, ['can_delete_messages']);
+  const afterLosingRight = decideAsAccount(kayId, graceId, 'approve');
+  sharedChatAdministration.demoteChatMember({ actorAccountId: adaId, chatId, memberId: kayId });
+  const afterDemotion = decideAsAccount(kayId, hopperId, 'decline');
+
+  expectEqual(
+    [refusals, afterLosingRight, afterDemotion],
+    [
+      [
+        'account_not_found',
+        'account_not_found',
+        'chat_not_found',
+        'chat_not_found',
+        'not_enough_rights',
+        'not_enough_rights',
+        'not_enough_rights',
+        'not_enough_rights',
+        'not_enough_rights',
+        'join_request_missing',
+        'join_request_missing',
+        'already_a_member',
+        'already_a_member',
+      ],
+      'not_enough_rights',
+      'not_enough_rights',
+    ],
+    'Expected each refusal in the order TDLib and then Telegram check them',
+  );
+  expectEqual(
+    [
+      describeContacts(),
+      publishedEvents.filter((event) =>
+        event.type !== 'chat_member_status_changed' || event.memberId !== kayId
+      ),
+    ],
+    [contactsBefore, []],
+    "Expected the refusals to keep both requests with their contacts, publishing only Kay's changes",
+  );
+});
+
+Deno.test('ChatAdmissionService decides each request once among accounts and bots', () => {
+  const {
+    chatAdmission,
+    publishedEvents,
+    chatId,
+    botId,
+    coInviterBotId,
+    adaId,
+    kayId,
+    graceId,
+    hopperId,
+    linusId,
+    inviteLinkUrl,
+    decideAsAccount,
+    describeContacts,
+    describeMembershipEvents,
+    describeLinkUsage,
+  } = createAccountDecisionFixture();
+  chatAdmission.joinChatByInviteLink({ accountId: linusId, inviteLinkUrl });
+  publishedEvents.length = 0;
+  const decideAsBot = (
+    deciderBotId: number,
+    userId: number,
+    decision: JoinRequestDecision,
+  ) => {
+    const input = { deciderBotId, chatId, userId };
+    const result = decision === 'approve'
+      ? chatAdmission.approveJoinRequestAsBot(input)
+      : chatAdmission.declineJoinRequestAsBot(input);
+    return result.decided ? 'decided' : result.reason;
+  };
+
+  const outcomes = [
+    // Kay approves Grace before the bots and Ada.
+    decideAsAccount(kayId, graceId, 'approve'),
+    decideAsBot(botId, graceId, 'approve'),
+    decideAsBot(coInviterBotId, graceId, 'decline'),
+    decideAsAccount(adaId, graceId, 'decline'),
+    // Ada declines Hopper before the bot and Kay.
+    decideAsAccount(adaId, hopperId, 'decline'),
+    decideAsBot(botId, hopperId, 'approve'),
+    decideAsAccount(kayId, hopperId, 'approve'),
+    // The bot approves Linus before Kay.
+    decideAsBot(botId, linusId, 'approve'),
+    decideAsAccount(kayId, linusId, 'decline'),
+  ];
+
+  expectEqual(
+    [outcomes, describeMembershipEvents(), describeContacts(), describeLinkUsage()],
+    [
+      [
+        'decided',
+        'already_a_member',
+        'already_a_member',
+        'already_a_member',
+        'decided',
+        'join_request_missing',
+        'join_request_missing',
+        'decided',
+        'already_a_member',
+      ],
+      [
+        `${kayId}: ${graceId} left -> member via ${inviteLinkUrl}`,
+        `${botId}: ${linusId} left -> member via ${inviteLinkUrl}`,
+      ],
+      [],
+      [[2, 0]],
+    ],
+    'Expected the first decision of each request to win, admitting each approved account once',
   );
 });
 
