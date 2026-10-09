@@ -1,0 +1,18 @@
+type: object
+additionalProperties: false
+description: >-
+  Data the Web App of a `web_app` reply keyboard button sent the bot, in the field order of the
+  official Bot API server's `JsonWebAppData`. Telegram does not vouch for either value: a client
+  may send any data with any button text.
+required:
+  - button_text
+  - data
+properties:
+  button_text:
+    type: string
+    minLength: 1
+    description: The text of the button that opened the Web App.
+  data:
+    type: string
+    minLength: 1
+    description: The data the Web App sent, as it sent it.

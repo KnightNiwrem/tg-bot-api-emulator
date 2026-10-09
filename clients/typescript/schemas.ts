@@ -784,11 +784,11 @@ const sharedUserSchema = z.strictObject({
 });
 
 /**
- * A service message about the users or the supergroup an account shared with the bot, as
- * `contentMessageSchemas` reads others: a single shared user also shows as the legacy
- * `user_shared`.
+ * A service message about what an account sent the bot from its client, as
+ * `contentMessageSchemas` reads others: the users or the supergroup it shared, a single shared user
+ * also showing as the legacy `user_shared`, or the data a Web App sent.
  */
-function sharedPeersMessageSchemas<Header extends z.ZodRawShape>(header: Header) {
+function accountServiceMessageSchemas<Header extends z.ZodRawShape>(header: Header) {
   return [
     z.strictObject({
       ...header,
@@ -813,6 +813,14 @@ function sharedPeersMessageSchemas<Header extends z.ZodRawShape>(header: Header)
       }),
       ...messageTrailerShape,
     }),
+    z.strictObject({
+      ...header,
+      web_app_data: z.strictObject({
+        button_text: z.string().min(1),
+        data: z.string().min(1),
+      }),
+      ...messageTrailerShape,
+    }),
   ] as const;
 }
 
@@ -830,8 +838,8 @@ const supergroupMessageHeader = {
   ...messageAlbumInfoShape,
 };
 
-// A private message, which may be a service message about a pin or about users or a chat an
-// account shared, with its replied message, which may be one too.
+// A private message, which may be a service message about a pin, about users or a chat an account
+// shared or about data a Web App sent, with its replied message, which may be one too.
 const privateMessageSchema: z.ZodType<PrivateMessage> = z.union([
   ...contentMessageSchemas({ ...privateMessageHeader, reply_to_message: repliedPrivateMessage() }),
   pinServiceMessageSchema(
@@ -839,7 +847,7 @@ const privateMessageSchema: z.ZodType<PrivateMessage> = z.union([
     privateMessageHeader,
     privateChatSchema,
   ),
-  ...sharedPeersMessageSchemas({
+  ...accountServiceMessageSchemas({
     ...privateMessageHeader,
     reply_to_message: repliedPrivateMessage(),
   }),
@@ -850,7 +858,7 @@ function repliedPrivateMessage() {
   return z.union([
     ...contentMessageSchemas(privateMessageHeader),
     repliedPinServiceMessageSchema(privateMessageHeader),
-    ...sharedPeersMessageSchemas(privateMessageHeader),
+    ...accountServiceMessageSchemas(privateMessageHeader),
   ]).optional();
 }
 

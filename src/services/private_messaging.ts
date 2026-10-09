@@ -35,6 +35,7 @@ import {
   type PrivateMessage,
   type PrivateMessageContent,
   type TextQuote,
+  type WebAppDataMessageContent,
 } from '../types/virtual_message.ts';
 import type { FormattedTextFixingContext } from '../text_entities/formatted_text.ts';
 import {
@@ -536,7 +537,6 @@ export type PressReplyKeyboardButtonResult =
     readonly sent: false;
     readonly reason:
       | 'reply_keyboard_button_not_found'
-      | 'reply_keyboard_button_request_unsupported'
       | 'reply_keyboard_button_answer_missing'
       | 'reply_keyboard_button_answer_not_requested'
       | 'requested_poll_type_mismatch'
@@ -544,13 +544,22 @@ export type PressReplyKeyboardButtonResult =
       | SharedChatFailureReason;
   };
 
+/**
+ * The service message content that an account's answer to a reply keyboard button's request
+ * resolves to, or why the answer is refused.
+ */
+type AccountServiceContentResolution =
+  | SharedUsersResolution
+  | SharedChatResolution
+  | { readonly resolved: true; readonly content: WebAppDataMessageContent };
+
 export interface RecordPrivateServiceMessageInput {
   readonly conversation: PrivateConversationKey;
   /** The participant who made the change: the one who pinned a message. */
   readonly authorRole: PrivateConversationRole;
   /**
-   * The pin, the one change a caller records; users and chats an account shares are recorded
-   * only through `pressReplyKeyboardButton`, which validates them.
+   * The pin, the one change a caller records; users and chats an account shares, and data a Web
+   * App sends, are recorded only through `pressReplyKeyboardButton`, which validates them.
    */
   readonly content: MessagePinnedContent;
   /** Whether the service message notifies the other participant without sound. */
@@ -1400,8 +1409,14 @@ export class PrivateMessagingService {
    * that carries the request's ID and replies to nothing, as TDLib shows it. A button that requests
    * a poll sends the poll the press answers with, as `sendAccountMessage` sends one, if it is of
    * the requested type; it replies to nothing, as Telegram Desktop's `ActivateBotCommand` opens
-   * poll creation without a reply. Buttons with other requests cannot be pressed, which the
-   * emulator does not model. A press that fails changes nothing.
+   * poll creation without a reply.
+   *
+   * A button that opens a Web App sends the data the press answers with, as the Web App's
+   * `Telegram.WebApp.sendData` does, in a service message of the account that carries the button's
+   * text and replies to nothing, as Telegram's `messages.sendWebViewData` takes no reply. The press
+   * stands for opening the Web App and the Web App sending its data at once, so the button must be
+   * shown when the data is sent; the emulator keeps no Web App open across later keyboards. A
+   * press that fails changes nothing.
    */
   pressReplyKeyboardButton(input: PressReplyKeyboardButtonInput): PressReplyKeyboardButtonResult {
     if (this.#accounts.getById(input.fromAccountId) === undefined) {
@@ -1461,7 +1476,7 @@ export class PrivateMessagingService {
         if (answer?.kind !== 'users') {
           return { sent: false, reason: 'reply_keyboard_button_answer_missing' };
         }
-        return this.#sharePeers(
+        return this.#sendAccountServiceMessage(
           input,
           () => resolveSharedUsers(request, answer.userIds, this.#sharedPeers),
         );
@@ -1469,7 +1484,7 @@ export class PrivateMessagingService {
         if (answer?.kind !== 'chat') {
           return { sent: false, reason: 'reply_keyboard_button_answer_missing' };
         }
-        return this.#sharePeers(
+        return this.#sendAccountServiceMessage(
           input,
           (conversation) =>
             resolveSharedChat(request, answer.chatId, conversation, this.#sharedPeers),
@@ -1486,21 +1501,29 @@ export class PrivateMessagingService {
           to: input.chat,
           content: { kind: 'poll', poll: answer.poll },
         });
-      default:
-        return { sent: false, reason: 'reply_keyboard_button_request_unsupported' };
+      case 'web_app':
+        if (answer?.kind !== 'web_app') {
+          return { sent: false, reason: 'reply_keyboard_button_answer_missing' };
+        }
+        return this.#sendAccountServiceMessage(input, () => ({
+          resolved: true,
+          content: { kind: 'web_app_data', buttonText: button.text, data: answer.data },
+        }));
+      default: {
+        const unhandledRequest: never = request;
+        throw new Error(`Unhandled reply keyboard request: ${JSON.stringify(unhandledRequest)}`);
+      }
     }
   }
 
   /**
-   * Shares the users or chat an account chose with the bot of its private chat, as a service
-   * message of the account that starts the chat, once the account may write to the bot and the
-   * choice is resolved.
+   * Sends what an account's client answered a reply keyboard button's request with to the bot of
+   * its private chat, as a service message of the account that starts the chat, once the account
+   * may write to the bot and the answer is resolved.
    */
-  #sharePeers(
+  #sendAccountServiceMessage(
     { fromAccountId, chat }: PressReplyKeyboardButtonInput,
-    resolve: (
-      conversation: PrivateConversationKey,
-    ) => SharedUsersResolution | SharedChatResolution,
+    resolve: (conversation: PrivateConversationKey) => AccountServiceContentResolution,
   ): PressReplyKeyboardButtonResult {
     const senderResolution = this.#resolveAccountSender(fromAccountId, chat.botId);
     if (!senderResolution.resolved) {
@@ -1515,7 +1538,8 @@ export class PrivateMessagingService {
     if (!resolution.resolved) {
       return { sent: false, reason: resolution.reason };
     }
-    // As any message the account writes does, sharing starts a chat the bot only opened.
+    // As any message the account writes does, the service message starts a chat the bot only
+    // opened.
     this.#privateConversations.startPrivateConversation(conversation);
     return {
       sent: true,

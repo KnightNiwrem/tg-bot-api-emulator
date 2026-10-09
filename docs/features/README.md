@@ -92,7 +92,9 @@ above determines whether an individual method is available.
   reactions](reactions.md#real-gaps), [unpinning all messages](pinned-messages.md#real-gaps), chat
   photos and other chat settings, and [primary invite links](invite-links.md#real-gaps).
 - Payments, invoices, shipping, Telegram Stars, gifts, paid broadcasts and paid media.
-- Business connections, managed bots, Mini Apps, login authorization, Passport and boosts.
+- Business connections, managed bots, Mini Apps other than the data a
+  [keyboard button's Web App sends](keyboards-and-callbacks.md#sending-web-app-data), login
+  authorization, Passport and boosts.
 - Other bot profile methods, such as names and profile photos, plus `getUserProfilePhotos`.
 
 ### Intentional exclusions

@@ -1634,13 +1634,14 @@ export type RepliedPinContent<PinnedMessage> =
   & { readonly pinned_message?: PinnedMessage };
 
 /**
- * The fields of a service message about users or a chat an account shared with a bot, which other
- * private messages never have.
+ * The fields of a service message about what an account sent a bot from its client, the users or
+ * chat it shared or the data a Web App sent, which other private messages never have.
  */
-interface NoSharedPeers {
+interface NoAccountServiceContent {
   readonly user_shared?: never;
   readonly users_shared?: never;
   readonly chat_shared?: never;
+  readonly web_app_data?: never;
 }
 
 /**
@@ -1674,6 +1675,7 @@ export type UsersSharedContent =
       readonly request_id: number;
     };
     readonly chat_shared?: never;
+    readonly web_app_data?: never;
   };
 
 /**
@@ -1694,24 +1696,50 @@ export type ChatSharedContent =
       /** The `request_id` of the button's request. */
       readonly request_id: number;
     };
+    readonly web_app_data?: never;
   };
 
-/** What a private message shows: content, a pin, or the users or chat an account shared. */
+/**
+ * The field of a service message about data that the Web App of a `web_app` reply keyboard button
+ * sent the bot, which takes the place of content. Telegram does not vouch for either value: a
+ * client may send any data with any button text.
+ */
+export type WebAppDataContent =
+  & NoContent
+  & NoServiceChange
+  & {
+    readonly user_shared?: never;
+    readonly users_shared?: never;
+    readonly chat_shared?: never;
+    readonly web_app_data: {
+      /** The text of the button that opened the Web App. */
+      readonly button_text: string;
+      /** The data the Web App sent, as it sent it. */
+      readonly data: string;
+    };
+  };
+
+/**
+ * What a private message shows: content, a pin, the users or chat an account shared, or the data
+ * a Web App sent.
+ */
 export type PrivateMessageContent =
-  | (MessageContent & NoServiceChange & NoSharedPeers)
-  | (PinContent<PrivateChat, PinnedPrivateMessage> & NoSharedPeers)
+  | (MessageContent & NoServiceChange & NoAccountServiceContent)
+  | (PinContent<PrivateChat, PinnedPrivateMessage> & NoAccountServiceContent)
   | UsersSharedContent
-  | ChatSharedContent;
+  | ChatSharedContent
+  | WebAppDataContent;
 
 /**
  * What a private message shows as a replied message, as `RepliedPinContent` shows a pin, or the
- * users or chat an account shared.
+ * users or chat an account shared, or the data a Web App sent.
  */
 export type RepliedPrivateMessageContent =
-  | (MessageContent & NoServiceChange & NoSharedPeers)
-  | (RepliedPinContent<PinnedPrivateMessage> & NoSharedPeers)
+  | (MessageContent & NoServiceChange & NoAccountServiceContent)
+  | (RepliedPinContent<PinnedPrivateMessage> & NoAccountServiceContent)
   | UsersSharedContent
-  | ChatSharedContent;
+  | ChatSharedContent
+  | WebAppDataContent;
 
 /**
  * What a supergroup message shows: content, or a change of the supergroup's members or title, or
@@ -2014,6 +2042,12 @@ export interface PressReplyKeyboardButtonInput<Target extends MessageTarget = Me
    * It must be of the type the button requests, if any.
    */
   readonly poll?: AccountPollInput;
+  /**
+   * The data the Web App of a `web_app` button sends, as `Telegram.WebApp.sendData` sends it,
+   * which such a button requires and no other button takes: 1 to 4096 bytes in UTF-8, kept as
+   * given. The press stands for opening the Web App and sending the data at once.
+   */
+  readonly web_app_data?: string;
 }
 
 export interface AccountReplyInterfaceInput {
@@ -2584,9 +2618,11 @@ export interface VirtualAccountClient extends VirtualAccountProfile {
    * which it requires and no other button takes, as a `users_shared` or `chat_shared` service
    * message that replies to nothing. A `request_poll` button sends the `poll` the input creates,
    * which it requires and no other button takes, as `sendPoll` sends one, without a reply; the
-   * poll must be of the type the button requests, if any. Fails when the chat shows no keyboard
-   * with such a button, for a choice the request's criteria refuse, or for a button with another
-   * request.
+   * poll must be of the type the button requests, if any. A `web_app` button sends the
+   * `web_app_data` the input gives, which it requires and no other button takes, as a
+   * `web_app_data` service message with the button's text that replies to nothing. Fails when the
+   * chat shows no keyboard with such a button, for a choice the request's criteria refuse, or for
+   * data a Web App cannot send.
    */
   pressReplyKeyboardButton<Target extends MessageTarget>(
     input: PressReplyKeyboardButtonInput<Target>,

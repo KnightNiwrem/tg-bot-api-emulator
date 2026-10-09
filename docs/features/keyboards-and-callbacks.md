@@ -111,9 +111,9 @@ account's [own contact](contacts-and-locations.md#answering-contact-requests), a
 [location the press reports](contacts-and-locations.md#answering-location-requests), each in reply
 to the keyboard's message. Pressing a `request_users` or `request_chat` button
 [shares the users or supergroup](#sharing-users-and-chats) the press chooses, and pressing a
-`request_poll` button [sends the poll](#answering-poll-requests) the press creates. The emulator
-[cannot answer](#real-gaps) `web_app` buttons, so pressing one fails with `400`. Legacy names that
-the server also reads, `request_phone_number` and `request_user`, and `request_managed_bot` for the
+`request_poll` button [sends the poll](#answering-poll-requests) the press creates, and pressing a
+`web_app` button [sends the data](#sending-web-app-data) its Web App sends. Legacy names that the
+server also reads, `request_phone_number` and `request_user`, and `request_managed_bot` for the
 missing managed bots, are rejected.
 
 ### Answering poll requests
@@ -171,6 +171,25 @@ Sharing grants nobody anything: the bot learns the identifiers, but can write to
 only once it starts a chat, and to a shared supergroup only once it is a member. The emulation API
 answers an unknown user or supergroup with `404`, a supergroup the account is not a member of with
 `403`, and any other refusal with `400`.
+
+### Sending Web App data
+
+A press of a `web_app` button carries `web_app_data`, the string the button's Web App passes to
+[`Telegram.WebApp.sendData`][web-app-send-data]. The emulator neither loads nor runs the Web App:
+the press stands for the account opening it and the Web App sending the data at once, which Telegram
+allows only for [Web Apps opened from a keyboard button][keyboard-web-apps]. As `sendData` throws
+`WebAppDataInvalid` for them, empty data and data longer than 4096 bytes in UTF-8 fail with `400`;
+the limit counts bytes, so 1366 euro signs exceed it. The data is kept exactly as given, whitespace
+and invalid JSON included, and its meaning is left to the bot.
+
+The bot receives a service message from the account with `web_app_data`, whose `button_text` is the
+pressed button's text and whose `data` is the press's, as the official server's
+[`JsonWebAppData`][web-app-data-json] writes them. As Telegram's
+[`messages.sendWebViewData`][send-web-view-data] takes no reply, the message replies to nothing. The
+account's history shows the same message, which starts the private chat as any message the account
+writes does, and the keyboard stays shown, as after any press. The press finds the button as any
+press does, a `web_app_data` belongs to a `web_app` button only, and a refused press creates no
+message or update and changes nothing.
 
 ### In supergroups
 
@@ -236,6 +255,11 @@ no buttons, and it checks only the icon identifier's syntax, as it does for
 - **Current button presses only.** Callback presses require a currently stored matching button
   because the intended tests only need those presses. Stale or arbitrary callback data and callbacks
   with inaccessible message payloads are not modeled.
+- **Web App data names a button the chat shows.** Telegram's clients send the button text with the
+  data, and Telegram does not check it, so a bot cannot rely on it. The emulator keeps no Web App
+  open, so a press sends data only through a `web_app` button the chat shows when the data is sent:
+  once a later keyboard replaces or removes that button, its Web App can send nothing, although on
+  Telegram a Web App opened earlier could.
 - **Stricter user and chat sharing.** TDLib passes a repeated user on to Telegram, whose handling of
   it is unknown; the emulator refuses a repeated user. A shared supergroup must be one the account
   is a member of, while TDLib only needs a chat the client knows. The bot's membership and rights
@@ -247,8 +271,11 @@ no buttons, and it checks only the icon identifier's syntax, as it does for
 - **Game and payment buttons.** These inline buttons need their
   [missing features](README.md#unimplemented-areas). Tests cannot exercise those button definitions
   or actions.
-- **Answering Web App requests.** Accounts cannot answer a `web_app`
-  [request button](#request-buttons): the `web_app_data` service message is missing.
+- **Running Web Apps.** The emulator neither loads nor runs a Web App and models no Web App session,
+  so tests cannot exercise a Web App's page, its `initData` or what it does besides
+  [sending data](#sending-web-app-data). Web Apps opened from inline buttons, the menu button or the
+  attachment menu, and `answerWebAppQuery`, need the missing
+  [Mini App support](README.md#unimplemented-areas).
 - **Premium users, channels, forums, anonymous administrators and photos.** The emulator models none
   of them, so a press refuses a request that requires Premium users, a channel, a forum, or
   `is_anonymous` among the account's or the bot's rights with `400`, and shared users and chats show
@@ -270,8 +297,9 @@ server behavior.
 [callback tests](../../tests/callback_query_service_test.ts) and
 [private message tests](../../tests/private_messaging_service_test.ts),
 [sharing criteria tests](../../tests/requested_peer_sharing_test.ts),
-[sharing API tests](../../tests/requested_peer_sharing_api_test.ts) and
-[poll request tests](../../tests/account_poll_api_test.ts).
+[sharing API tests](../../tests/requested_peer_sharing_api_test.ts),
+[poll request tests](../../tests/account_poll_api_test.ts) and
+[Web App data tests](../../tests/web_app_data_api_test.ts).
 
 [received-markup]: https://github.com/tdlib/td/blob/bc9c263e2bfee06aaab41e82db51a103376030bc/td/telegram/ReplyMarkup.cpp#L104-L198
 [dialog-markup]: https://github.com/tdlib/td/blob/bc9c263e2bfee06aaab41e82db51a103376030bc/td/telegram/MessagesManager.cpp#L31226-L31241
@@ -305,3 +333,7 @@ server behavior.
 [td-callback]: https://github.com/tdlib/td/blob/bc9c263e2bfee06aaab41e82db51a103376030bc/td/telegram/CallbackQueriesManager.cpp#L145-L188
 [link-manager]: https://github.com/tdlib/td/blob/bc9c263e2bfee06aaab41e82db51a103376030bc/td/telegram/LinkManager.cpp#L2055-L2084
 [desktop-request-poll]: https://github.com/telegramdesktop/tdesktop/blob/d8594c011756265de4385408540bd9f7c787a003/Telegram/SourceFiles/api/api_bot.cpp#L411-L430
+[web-app-send-data]: https://telegram.org/js/telegram-web-app.js
+[keyboard-web-apps]: https://core.telegram.org/bots/webapps#keyboard-button-mini-apps
+[web-app-data-json]: https://github.com/tdlib/telegram-bot-api/blob/e3e9dd8e5b3d7ab8537cd5a10dc31d5ffa8f82d1/telegram-bot-api/Client.cpp#L3720-L3732
+[send-web-view-data]: https://github.com/tdlib/td/blob/bc9c263e2bfee06aaab41e82db51a103376030bc/td/generate/scheme/telegram_api.tl#L2677
