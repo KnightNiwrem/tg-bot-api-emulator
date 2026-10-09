@@ -16,6 +16,7 @@ import { FileRepository } from '../src/repositories/file.ts';
 import { PollRepository } from '../src/repositories/poll.ts';
 import { InlineQueryRepository } from '../src/repositories/inline_query.ts';
 import { MessageRepository } from '../src/repositories/message.ts';
+import { MessageDraftRepository } from '../src/repositories/message_draft.ts';
 import { PrivateConversationRepository } from '../src/repositories/private_conversation.ts';
 import { SharedChatRepository } from '../src/repositories/shared_chat.ts';
 import { TelegramIdentityRepository } from '../src/repositories/telegram_identity.ts';
@@ -32,10 +33,12 @@ import { BotMessageRepeater } from '../src/services/bot_message_repetition.ts';
 import { BotMessageSender } from '../src/services/bot_message_sending.ts';
 import { BotMessageViewService } from '../src/services/bot_message_view.ts';
 import { MediaFileService } from '../src/services/media_file.ts';
-import { normalizeCaption } from '../src/services/message_content.ts';
+import { normalizeBotDraftText, normalizeCaption } from '../src/services/message_content.ts';
+import { MessageDraftService } from '../src/services/message_draft.ts';
 import { MessagePinningService } from '../src/services/message_pinning.ts';
 import { MessageReactionService } from '../src/services/message_reaction.ts';
 import { SharedChatAdministrationService } from '../src/services/shared_chat_administration.ts';
+import { createSessionUserMentionContext } from '../src/services/session_user_mention.ts';
 import { BotUpdateDeliveryService } from '../src/services/bot_update_delivery.ts';
 import { BotUpdatePollingService } from '../src/services/bot_update_polling.ts';
 import { BotWebhookService } from '../src/services/bot_webhook.ts';
@@ -526,11 +529,18 @@ function createBotApiFixture() {
     chatActions: new ChatActionRepository(),
     currentTimeMilliseconds: () => 1_700_000_000_000,
   });
+  const messageDrafts = new MessageDraftService({
+    accounts,
+    bots,
+    drafts: new MessageDraftRepository(),
+  });
+  const textFixingContext = createSessionUserMentionContext({ accounts, bots });
   const messageSender = new BotMessageSender({
     botMessages: privateMessaging,
     supergroupBotMessages: supergroupMessaging,
     botMessageViews,
     chatActions,
+    messageDrafts,
     getPrivateForwardName: () => undefined,
   });
   const botApi = new BotApiService({
@@ -611,11 +621,7 @@ function createBotApiFixture() {
     }),
     inlineMessages: messages,
     botCaptions: {
-      normalizeBotCaption: (caption) =>
-        normalizeCaption(caption, 'bot', {
-          isMentionableUser: (userId) =>
-            accounts.getById(userId) !== undefined || bots.getById(userId) !== undefined,
-        }),
+      normalizeBotCaption: (caption) => normalizeCaption(caption, 'bot', textFixingContext),
     },
     botCommands: new BotCommandService({
       accounts,
@@ -638,6 +644,10 @@ function createBotApiFixture() {
       menuButtons: new BotMenuButtonRepository(),
     }),
     chatActions,
+    messageDrafts,
+    botDraftTexts: {
+      normalizeBotDraftText: (text) => normalizeBotDraftText(text, textFixingContext),
+    },
     publicChats: sharedChatAdministration,
     currentUnixTimeSeconds: () => 1_700_000_000,
   });
@@ -647,6 +657,7 @@ function createBotApiFixture() {
     sharedChatAdministration,
     supergroupMessaging,
     privateMessaging,
+    messageDrafts,
     botApi,
   };
 }

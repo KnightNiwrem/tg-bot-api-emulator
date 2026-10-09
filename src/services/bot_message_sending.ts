@@ -3,7 +3,11 @@ import type { FormerSupergroupMemberFailureReason } from '../types/chat_membersh
 import { isForwardable, type PrivateForwardNameLookup } from '../types/message_forward.ts';
 import { createExternalReply, type ExternalReplyTarget } from '../types/message_reply.ts';
 import { isUserId } from '../types/telegram_identity.ts';
-import { type ChatActionChat, getBotChatActionChat } from '../types/virtual_chat.ts';
+import {
+  type ChatActionChat,
+  getBotChatActionChat,
+  type PrivateConversationKey,
+} from '../types/virtual_chat.ts';
 import type {
   ChatMessage,
   MediaGroupId,
@@ -65,6 +69,10 @@ interface ChatActionEnding {
   endBotChatAction(input: { readonly botId: number; readonly chat: ChatActionChat }): void;
 }
 
+interface MessageDraftClearing {
+  clearBotDraft(conversation: PrivateConversationKey): void;
+}
+
 interface BotMessageSenderDependencies {
   readonly botMessages: PrivateBotMessaging;
   readonly supergroupBotMessages: SupergroupBotMessaging;
@@ -72,6 +80,8 @@ interface BotMessageSenderDependencies {
   readonly botMessageViews: BotMessageViews;
   /** Ends the chat action that a bot's message ends. */
   readonly chatActions: ChatActionEnding;
+  /** Removes the message draft that a bot's message removes from a private chat. */
+  readonly messageDrafts: MessageDraftClearing;
   /** Hides the accounts whose privacy settings keep external replies from linking to them. */
   readonly getPrivateForwardName: PrivateForwardNameLookup;
 }
@@ -134,6 +144,7 @@ export class BotMessageSender {
   readonly #supergroupBotMessages: SupergroupBotMessaging;
   readonly #botMessageViews: BotMessageViews;
   readonly #chatActions: ChatActionEnding;
+  readonly #messageDrafts: MessageDraftClearing;
   readonly #getPrivateForwardName: PrivateForwardNameLookup;
 
   constructor(
@@ -142,6 +153,7 @@ export class BotMessageSender {
       supergroupBotMessages,
       botMessageViews,
       chatActions,
+      messageDrafts,
       getPrivateForwardName,
     }: BotMessageSenderDependencies,
   ) {
@@ -149,6 +161,7 @@ export class BotMessageSender {
     this.#supergroupBotMessages = supergroupBotMessages;
     this.#botMessageViews = botMessageViews;
     this.#chatActions = chatActions;
+    this.#messageDrafts = messageDrafts;
     this.#getPrivateForwardName = getPrivateForwardName;
   }
 
@@ -175,11 +188,7 @@ export class BotMessageSender {
       ? this.#sendPrivateMessage(botId, content, options, reply, repetitionDetails)
       : this.#sendSupergroupMessage(botId, content, options, reply, repetitionDetails);
     if (result.sent) {
-      // As TDLib's `DialogActionManager` does, a bot's message ends its chat action.
-      this.#chatActions.endBotChatAction({
-        botId,
-        chat: getBotChatActionChat(botId, options.chatId),
-      });
+      this.#clearBotPreparationIndicators(botId, options.chatId);
     }
     return result;
   }
@@ -202,11 +211,7 @@ export class BotMessageSender {
       ? this.#sendPrivateAlbum(botId, contents, options, replyResolution.reply)
       : this.#sendSupergroupAlbum(botId, contents, options, replyResolution.reply);
     if (result.sent) {
-      // As for a single message, the album ends the bot's chat action.
-      this.#chatActions.endBotChatAction({
-        botId,
-        chat: getBotChatActionChat(botId, options.chatId),
-      });
+      this.#clearBotPreparationIndicators(botId, options.chatId);
     }
     return result;
   }
@@ -254,6 +259,18 @@ export class BotMessageSender {
   lacksSendPermission(botId: number, chatId: number, content: OutgoingMessageContent): boolean {
     return !isUserId(chatId) &&
       this.#supergroupBotMessages.lacksBotSendPermission({ botId, chatId, content });
+  }
+
+  /**
+   * Ends what the bot showed in a chat while preparing the message it sent there: as TDLib's
+   * `DialogActionManager` does, its chat action, and, as `updatePendingMessage` tells clients to
+   * do on any incoming message, its message draft in a private chat.
+   */
+  #clearBotPreparationIndicators(botId: number, chatId: number): void {
+    this.#chatActions.endBotChatAction({ botId, chat: getBotChatActionChat(botId, chatId) });
+    if (isUserId(chatId)) {
+      this.#messageDrafts.clearBotDraft({ accountId: chatId, botId });
+    }
   }
 
   /**

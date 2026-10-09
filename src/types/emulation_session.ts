@@ -11,6 +11,7 @@ import type { ChatActionService } from '../services/chat_action.ts';
 import type { ChatAdmissionService } from '../services/chat_admission.ts';
 import type { InlineQueryService } from '../services/inline_query.ts';
 import type { MediaFileService } from '../services/media_file.ts';
+import type { MessageDraftService } from '../services/message_draft.ts';
 import type { MessageForwardingService } from '../services/message_forwarding.ts';
 import type { MessagePinningService } from '../services/message_pinning.ts';
 import type { MessageReactionService } from '../services/message_reaction.ts';
@@ -50,6 +51,7 @@ export interface EmulationSession extends EmulationSessionOptions {
   readonly botCommands: BotCommandService;
   readonly botMenuButtons: BotMenuButtonService;
   readonly chatActions: ChatActionService;
+  readonly messageDrafts: MessageDraftService;
   readonly botMessageViews: BotMessageViewService;
   readonly mediaFiles: MediaFileService;
   readonly webResources: WebResourceService;

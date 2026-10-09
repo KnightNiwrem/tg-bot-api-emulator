@@ -2107,6 +2107,22 @@ export interface ChatAction {
     | 'upload_video_note';
 }
 
+/**
+ * The draft of a message a bot is still generating, as an account's client shows it in its private
+ * chat with the bot.
+ */
+export interface MessageDraft {
+  /**
+   * The draft's 64-bit ID as the bot chose it, in Telegram's decimal text form, as the
+   * `stopped_message_generation` update of the official Bot API server writes it.
+   */
+  readonly draft_id: string;
+  /** The draft's text; empty while the client shows a "Thinking…" placeholder. */
+  readonly text: string;
+  /** Omitted when the text has no entities. */
+  readonly entities?: readonly MessageEntity[];
+}
+
 /** The commands one bot of a supergroup suggests to an account. */
 export interface SupergroupBotCommands {
   readonly bot_id: number;
@@ -2525,6 +2541,21 @@ export interface VirtualAccountClient extends VirtualAccountProfile {
    */
   getChatActions(input: AccountChatActionsInput): Promise<readonly ChatAction[]>;
   /**
+   * Returns the draft of a message the bot is generating, which this account's client shows in
+   * its private chat with the bot, or `null` for none. A `sendMessageDraft` with the shown draft's
+   * ID changes it and one with another ID replaces it; any message from the bot removes it. Drafts
+   * are never part of the chat's messages, and never expire as time passes: see
+   * `expireMessageDraft`.
+   */
+  getMessageDraft(input: AccountMessageDraftInput): Promise<MessageDraft | null>;
+  /**
+   * Removes the draft this account's client shows in its private chat with a bot, as Telegram's
+   * clients remove one 30 seconds after the bot's last write. The bot is not told, and a later
+   * write shows a draft again. With `draft_id`, fails unless the client shows that draft; fails
+   * when it shows none.
+   */
+  expireMessageDraft(input: ExpireMessageDraftInput): Promise<void>;
+  /**
    * Returns the notifications this account's client shows for the messages other participants
    * sent to its private chat with a bot or to a supergroup it is a member of, oldest first. A
    * notification is silent when a bot sent its message with `disable_notification`.
@@ -2663,6 +2694,16 @@ export interface AccountChatActionsInput {
 
 export interface AccountNotificationsInput {
   readonly chat: MessageTarget;
+}
+
+export interface AccountMessageDraftInput {
+  readonly chat: PrivateMessageTarget;
+}
+
+export interface ExpireMessageDraftInput {
+  readonly chat: PrivateMessageTarget;
+  /** The ID of the draft the test expects the chat to show; omitted to expire whichever it shows. */
+  readonly draft_id?: string;
 }
 
 export interface AccountBotCommandsInput {

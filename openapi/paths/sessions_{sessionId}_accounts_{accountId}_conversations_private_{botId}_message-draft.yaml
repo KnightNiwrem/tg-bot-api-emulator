@@ -1,0 +1,28 @@
+description: >-
+  The draft of a message a bot is generating, which an account's client shows in its private chat
+  with the bot.
+parameters:
+  - $ref: ../components/parameters/SessionId.yaml
+  - $ref: ../components/parameters/AccountId.yaml
+  - $ref: ../components/parameters/BotId.yaml
+get:
+  operationId: getPrivateMessageDraft
+  summary: Return the draft the bot streams to its private chat with the account
+  description: >-
+    As TDLib's `updatePendingMessage` tells clients to show it, a `sendMessageDraft` with the
+    shown draft's identifier changes the draft, one with another identifier replaces it, and any
+    message the bot sends to the chat, including a forward, a copy, or an album, removes it.
+    Drafts are never part of the chat's messages. Telegram's clients also remove a draft 30
+    seconds after the bot's last write; the emulator never removes one as time passes, so tests
+    expire it through `message-draft/expiration`.
+  responses:
+    '200':
+      description: The draft, or none.
+      content:
+        application/json:
+          schema:
+            $ref: ../components/schemas/AccountMessageDraft.yaml
+    '400':
+      description: A path identifier is invalid.
+    '404':
+      description: The session, account, or bot does not exist.

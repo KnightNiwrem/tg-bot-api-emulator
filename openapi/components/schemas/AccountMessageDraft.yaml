@@ -1,0 +1,29 @@
+type: object
+additionalProperties: false
+required:
+  - message_draft
+properties:
+  message_draft:
+    oneOf:
+      - type: object
+        additionalProperties: false
+        required:
+          - draft_id
+          - text
+        properties:
+          draft_id:
+            type: string
+            pattern: '^-?[1-9][0-9]*$'
+            description: >-
+              The draft's 64-bit identifier as the bot chose it, in Telegram's decimal text form,
+              as the official Bot API server writes it in `stopped_message_generation` updates.
+          text:
+            type: string
+            description: The draft's text; empty while the client shows a "Thinking…" placeholder.
+          entities:
+            type: array
+            minItems: 1
+            description: The text's entities, as a text message shows them; omitted for none.
+            items:
+              $ref: ./MessageEntity.yaml
+      - type: 'null'

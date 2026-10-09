@@ -92,6 +92,42 @@ messages do not show it.
 Accounts have no notification settings, so no chat is muted, and reading a message keeps its
 notification; a deleted message has none.
 
+## Message drafts
+
+Bots stream the text of a message they are still generating with `sendMessageDraft`, which the
+official server's [`process_send_message_draft_query`][send-message-draft] passes to TDLib's
+[`sendTextMessageDraft`][text-draft-request]. Tests read the draft an account's client shows in its
+private chat with the bot through `account.getMessageDraft`, which returns `null` for none. A draft
+is never one of the chat's messages, and writing, replacing, expiring or removing one leaves the
+history and the bot's updates unchanged.
+
+As TDLib's [`updatePendingMessage`][pending-message] tells clients to show drafts:
+
+- A write with the shown draft's `draft_id` changes the draft, and one with another ID replaces it.
+  Each chat shows at most one draft.
+- Any message from the bot to the chat removes the draft, including a forward, a copy or an album.
+  The account's own messages, the bot's messages to other chats, a send that fails, and chat actions
+  keep it. A draft also leaves the bot's chat action as it was.
+- The text is read as message text is, but may be empty, as a bot's caption may: empty text, or text
+  of nothing but spaces and line breaks, shows a "Thinking…" placeholder. It has at most 4,096
+  characters after formatting is applied.
+
+The draft ID is a nonzero 64-bit integer, which `getMessageDraft` returns in its decimal text form,
+as the official server writes it in `stopped_message_generation` updates.
+
+`sendMessageDraft` reads the text's markup, parse mode and entities before the chat, as the official
+server does. The chat must be one the bot can address, as for `sendChatAction`, before TDLib checks
+the entities, such as a mention of an unknown user. Telegram's servers then refuse a supergroup with
+`Bad Request: TEXTDRAFT_PEER_INVALID`, a bot the account blocks with
+`Forbidden: bot was blocked by the user`, a missing or zero `draft_id` with
+`Bad Request: RANDOM_ID_INVALID`, and longer text with `Bad Request: message is too long`. Those
+descriptions are the ones Telegram's servers return to bots; the open-source code does not contain
+them or the order in which the servers check, which the emulator takes as listed.
+
+Topics and Stop buttons are [real gaps](#real-gaps): `message_thread_id` is refused as an unknown
+parameter, and `can_stop` or `keep_on_stop` set to `true` with
+`Bad Request: can_stop and keep_on_stop are not supported`.
+
 ## Editing and deleting
 
 Bots edit text, captions, media and inline keyboards with `editMessageText`, `editMessageCaption`,
@@ -240,9 +276,19 @@ Other origins are users. Channel and chat origins are [real gaps](#real-gaps).
   need immediately sent messages, so scheduling is outside the intended account simulation.
 - **No automatic message deletion.** Message fixtures remain available until explicitly deleted or
   the session ends. Automatic deletion timers are intentionally absent to preserve those fixtures.
+- **Drafts expire only when a test says so.** Telegram's clients remove a draft 30 seconds after the
+  bot's last write, TDLib's [`pending_text_message_period`][pending-period]. Results that depend on
+  how long a test runs would be unreliable, so the emulator never removes a draft as time passes.
+  Tests stand in for the timeout with `account.expireMessageDraft`, which removes the draft without
+  telling the bot. Given a `draft_id`, it removes only that draft and fails while another is shown.
 
 ## Real gaps
 
+- **Stopping drafts.** Bots cannot offer a Stop button with `can_stop` and `keep_on_stop`, and
+  accounts cannot press one, so bots never receive `stopped_message_generation` updates. Tests
+  cannot exercise a bot that aborts its generation.
+- **Drafts in topics.** `message_thread_id` is refused, so tests cannot stream drafts to a topic of
+  a private chat.
 - **Checklist and poll reply targets.** Replies cannot target an individual checklist task or poll
   option. These targets are read by the upstream reply parser,
   [`Client::get_reply_parameters`][reply-parameters], and are missing from the emulator.
@@ -261,17 +307,24 @@ Other origins are users. Channel and chat origins are [real gaps](#real-gaps).
 [message projection](../../src/projections/bot_api_message.ts),
 [forward rules](../../src/types/message_forward.ts),
 [reply rules](../../src/types/message_reply.ts), [chat actions](../../src/services/chat_action.ts),
+[message drafts](../../src/services/message_draft.ts),
 [private messaging tests](../../tests/private_messaging_service_test.ts),
 [forward tests](../../tests/message_forward_test.ts),
 [forwarding and copying tests](../../tests/bot_message_repetition_test.ts),
-[reply tests](../../tests/message_reply_test.ts) and
-[chat action tests](../../tests/chat_action_service_test.ts).
+[reply tests](../../tests/message_reply_test.ts),
+[chat action tests](../../tests/chat_action_service_test.ts),
+[message draft tests](../../tests/message_draft_service_test.ts) and
+[message draft API tests](../../tests/message_draft_api_test.ts).
 
 [check-reply]: https://github.com/tdlib/telegram-bot-api/blob/e3e9dd8e5b3d7ab8537cd5a10dc31d5ffa8f82d1/telegram-bot-api/Client.cpp#L9144-L9207
 [forward-video-start]: https://github.com/tdlib/telegram-bot-api/blob/e3e9dd8e5b3d7ab8537cd5a10dc31d5ffa8f82d1/telegram-bot-api/Client.cpp#L14365-L14455
 [video-start-replacement]: https://github.com/tdlib/td/blob/bc9c263e2bfee06aaab41e82db51a103376030bc/td/telegram/MessageContent.cpp#L13180-L13189
 [message-quote]: https://github.com/tdlib/td/blob/bc9c263e2bfee06aaab41e82db51a103376030bc/td/telegram/MessageQuote.cpp#L54-L71
 [dialog-actions]: https://github.com/tdlib/td/blob/bc9c263e2bfee06aaab41e82db51a103376030bc/td/telegram/DialogActionManager.cpp#L240-L334
+[send-message-draft]: https://github.com/tdlib/telegram-bot-api/blob/e3e9dd8e5b3d7ab8537cd5a10dc31d5ffa8f82d1/telegram-bot-api/Client.cpp#L14598-L14615
+[text-draft-request]: https://github.com/tdlib/td/blob/bc9c263e2bfee06aaab41e82db51a103376030bc/td/telegram/Requests.cpp#L4955-L4969
+[pending-message]: https://github.com/tdlib/td/blob/bc9c263e2bfee06aaab41e82db51a103376030bc/td/generate/scheme/td_api.tl#L10709-L10717
+[pending-period]: https://github.com/tdlib/td/blob/bc9c263e2bfee06aaab41e82db51a103376030bc/td/telegram/OptionManager.cpp#L203
 [external-reply-input]: https://github.com/tdlib/td/blob/bc9c263e2bfee06aaab41e82db51a103376030bc/td/telegram/MessagesManager.cpp#L21264-L21291
 [quote-entities]: https://github.com/tdlib/td/blob/bc9c263e2bfee06aaab41e82db51a103376030bc/td/telegram/MessageEntity.cpp#L4840-L4853
 [replied-message-info]: https://github.com/tdlib/td/blob/bc9c263e2bfee06aaab41e82db51a103376030bc/td/telegram/RepliedMessageInfo.cpp#L142-L200

@@ -263,10 +263,9 @@ Deno.test('SupergroupMessagingService lets only members write and read', () => {
     }),
   ].map((result) => result.sent ? 'sent' : result.reason);
   const otherFailures = [
-    supergroupMessaging.sendBotChatAction({
+    supergroupMessaging.checkBotChatActionAccess({
       fromBotId: strangerBot.profile.id,
       chatId: supergroup.id,
-      action: 'typing',
     }),
     supergroupMessaging.getMessageHistory({
       accountId: stranger.profile.id,
@@ -588,7 +587,7 @@ Deno.test('SupergroupMessagingService turns away bots that left or were removed'
         chatId: supergroup.id,
         content: { kind: 'text', text: 'Hi' },
       }),
-      supergroupMessaging.sendBotChatAction({ fromBotId, chatId: supergroup.id, action: 'typing' }),
+      supergroupMessaging.checkBotChatActionAccess({ fromBotId, chatId: supergroup.id }),
       supergroupMessaging.editBotMessageInlineKeyboard({
         fromBotId,
         chatId: supergroup.id,

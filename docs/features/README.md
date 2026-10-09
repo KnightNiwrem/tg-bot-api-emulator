@@ -27,7 +27,7 @@ thresholds, which tests replace with
 | [Bot activity](bot-activity.md)                       | Recorded calls and updates, waiting for them and asserting their order      |
 | [Updates and polling](updates.md)                     | Generated update types, subscriptions, offsets, long polling and retention  |
 | [Webhooks](webhooks.md)                               | Delivery, replies, retry behavior, delivery controls and connection limits  |
-| [Messages](messages.md)                               | Sending, replies, edits, deletion, blocking, forwarding and copying         |
+| [Messages](messages.md)                               | Sending, drafts, replies, edits, deletion, blocking, forwarding and copying |
 | [Text formatting](text-formatting.md)                 | Parse modes, entities, normalization and limits                             |
 | [Rich messages](rich-messages.md)                     | Blocks, rich text, buttons, media and edits of rich messages                |
 | [Polls](polls.md)                                     | Polls, quizzes, votes, stopping, closing times, updates, forwards, copies   |
@@ -47,28 +47,28 @@ This is the complete inventory from the
 [method catalogue](../../src/api/sessions/bot_api/method_catalogue.ts). Method names are
 case-insensitive. The two legacy aliases below are also accepted.
 
-| Area             | Methods                                                                                                                                                                  |
-| ---------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| Identity         | `getMe`                                                                                                                                                                  |
-| Updates          | `getUpdates`, `setWebhook`, `deleteWebhook`, `getWebhookInfo`                                                                                                            |
-| Sending          | `sendMessage`, `sendRichMessage`, `sendPhoto`, `sendDocument`, `sendVideo`, `sendVoice`, `sendAudio`, `sendMediaGroup`, `sendContact`, `sendLocation`, `sendChatAction`  |
-| Reusing messages | `forwardMessage`, `forwardMessages`, `copyMessage`, `copyMessages`                                                                                                       |
-| Editing          | `editMessageText`, `editMessageCaption`, `editMessageMedia`, `editMessageReplyMarkup`                                                                                    |
-| Deletion         | `deleteMessage`, `deleteMessages`                                                                                                                                        |
-| Pins             | `pinChatMessage`, `unpinChatMessage`                                                                                                                                     |
-| Reactions        | `setMessageReaction`                                                                                                                                                     |
-| Files            | `getFile`, plus HTTP file downloads                                                                                                                                      |
-| Interaction      | `answerCallbackQuery`, `answerInlineQuery`                                                                                                                               |
-| Polls            | `sendPoll`, `stopPoll`                                                                                                                                                   |
-| Commands         | `setMyCommands`, `getMyCommands`, `deleteMyCommands`                                                                                                                     |
-| Bot profile      | `setMyDescription`, `getMyDescription`, `setMyShortDescription`, `getMyShortDescription`                                                                                 |
-| Bot settings     | `setChatMenuButton`, `getChatMenuButton`, `setMyDefaultAdministratorRights`, `getMyDefaultAdministratorRights`                                                           |
-| Chat information | `getChat`                                                                                                                                                                |
-| Chat settings    | `setChatTitle`, `setChatDescription`, `setChatPermissions`                                                                                                               |
-| Membership       | `leaveChat`, `getChatMember`, `getChatAdministrators`, `getChatMemberCount`, `banChatMember`, `unbanChatMember`, `restrictChatMember`, `setChatAdministratorCustomTitle` |
-| Administration   | `promoteChatMember`                                                                                                                                                      |
-| Invitations      | `createChatInviteLink`, `editChatInviteLink`, `revokeChatInviteLink`, `approveChatJoinRequest`, `declineChatJoinRequest`                                                 |
-| Legacy aliases   | `getChatMembersCount` → `getChatMemberCount`, `kickChatMember` → `banChatMember`                                                                                         |
+| Area             | Methods                                                                                                                                                                                     |
+| ---------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Identity         | `getMe`                                                                                                                                                                                     |
+| Updates          | `getUpdates`, `setWebhook`, `deleteWebhook`, `getWebhookInfo`                                                                                                                               |
+| Sending          | `sendMessage`, `sendRichMessage`, `sendPhoto`, `sendDocument`, `sendVideo`, `sendVoice`, `sendAudio`, `sendMediaGroup`, `sendContact`, `sendLocation`, `sendChatAction`, `sendMessageDraft` |
+| Reusing messages | `forwardMessage`, `forwardMessages`, `copyMessage`, `copyMessages`                                                                                                                          |
+| Editing          | `editMessageText`, `editMessageCaption`, `editMessageMedia`, `editMessageReplyMarkup`                                                                                                       |
+| Deletion         | `deleteMessage`, `deleteMessages`                                                                                                                                                           |
+| Pins             | `pinChatMessage`, `unpinChatMessage`                                                                                                                                                        |
+| Reactions        | `setMessageReaction`                                                                                                                                                                        |
+| Files            | `getFile`, plus HTTP file downloads                                                                                                                                                         |
+| Interaction      | `answerCallbackQuery`, `answerInlineQuery`                                                                                                                                                  |
+| Polls            | `sendPoll`, `stopPoll`                                                                                                                                                                      |
+| Commands         | `setMyCommands`, `getMyCommands`, `deleteMyCommands`                                                                                                                                        |
+| Bot profile      | `setMyDescription`, `getMyDescription`, `setMyShortDescription`, `getMyShortDescription`                                                                                                    |
+| Bot settings     | `setChatMenuButton`, `getChatMenuButton`, `setMyDefaultAdministratorRights`, `getMyDefaultAdministratorRights`                                                                              |
+| Chat information | `getChat`                                                                                                                                                                                   |
+| Chat settings    | `setChatTitle`, `setChatDescription`, `setChatPermissions`                                                                                                                                  |
+| Membership       | `leaveChat`, `getChatMember`, `getChatAdministrators`, `getChatMemberCount`, `banChatMember`, `unbanChatMember`, `restrictChatMember`, `setChatAdministratorCustomTitle`                    |
+| Administration   | `promoteChatMember`                                                                                                                                                                         |
+| Invitations      | `createChatInviteLink`, `editChatInviteLink`, `revokeChatInviteLink`, `approveChatJoinRequest`, `declineChatJoinRequest`                                                                    |
+| Legacy aliases   | `getChatMembersCount` → `getChatMemberCount`, `kickChatMember` → `banChatMember`                                                                                                            |
 
 Methods outside this inventory return `404` with a Bot API error body. For supported methods,
 unknown parameters usually produce `400`, including parameters that the official method supports but
@@ -85,8 +85,9 @@ above determines whether an individual method is available.
 - Basic groups, channels, forum topics, direct messages of channels, and chat migration. Supergroups
   are the only shared chat kind exposed by the HTTP server.
 - Media other than photos, documents, videos, voice notes and audio files, stickers and sticker
-  sets, dice, live locations, venues, games, checklists, ephemeral messages, drafts and stories.
-  Rich messages lack [drafts and some blocks](rich-messages.md#real-gaps), and polls lack
+  sets, dice, live locations, venues, games, checklists, ephemeral messages and stories. Drafts lack
+  [Stop buttons and topics](messages.md#real-gaps), rich messages lack
+  [drafts and some blocks](rich-messages.md#real-gaps), and polls lack
   [Telegram's newest poll options](polls.md#real-gaps).
 - [Reactions outside supergroups, custom emoji and paid reactions, and removing other members'
   reactions](reactions.md#real-gaps), [unpinning all messages](pinned-messages.md#real-gaps), chat

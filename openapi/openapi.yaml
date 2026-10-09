@@ -135,6 +135,10 @@ paths:
     $ref: paths/sessions_{sessionId}_accounts_{accountId}_conversations_private_{botId}_menu-button.yaml
   /sessions/{sessionId}/accounts/{accountId}/conversations/private/{botId}/chat-actions:
     $ref: paths/sessions_{sessionId}_accounts_{accountId}_conversations_private_{botId}_chat-actions.yaml
+  /sessions/{sessionId}/accounts/{accountId}/conversations/private/{botId}/message-draft:
+    $ref: paths/sessions_{sessionId}_accounts_{accountId}_conversations_private_{botId}_message-draft.yaml
+  /sessions/{sessionId}/accounts/{accountId}/conversations/private/{botId}/message-draft/expiration:
+    $ref: paths/sessions_{sessionId}_accounts_{accountId}_conversations_private_{botId}_message-draft_expiration.yaml
   /sessions/{sessionId}/accounts/{accountId}/conversations/private/{botId}/notifications:
     $ref: paths/sessions_{sessionId}_accounts_{accountId}_conversations_private_{botId}_notifications.yaml
   /sessions/{sessionId}/accounts/{accountId}/conversations/private/{botId}/reply-interface:
@@ -243,6 +247,8 @@ paths:
     $ref: paths/sessions_{sessionId}_bot-api_bot{token}_answerInlineQuery.yaml
   /sessions/{sessionId}/bot-api/bot{token}/sendChatAction:
     $ref: paths/sessions_{sessionId}_bot-api_bot{token}_sendChatAction.yaml
+  /sessions/{sessionId}/bot-api/bot{token}/sendMessageDraft:
+    $ref: paths/sessions_{sessionId}_bot-api_bot{token}_sendMessageDraft.yaml
   /sessions/{sessionId}/bot-api/bot{token}/leaveChat:
     $ref: paths/sessions_{sessionId}_bot-api_bot{token}_leaveChat.yaml
   /sessions/{sessionId}/bot-api/bot{token}/setChatTitle:

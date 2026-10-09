@@ -5,9 +5,9 @@
 [Feature reference: Text formatting](../../features/text-formatting.md)
 
 This page teaches the conversation flows most bot tests start with: replying, formatting, editing,
-deleting, forwarding, pinning, and blocking, from the account's side and from the bot's. Every
-example is a complete test module that uses the [shared fixture](sessions-and-fixtures.md) and the
-[waiting pattern](observing-bot-behavior.md).
+deleting, forwarding, pinning, blocking, and streaming drafts, from the account's side and from the
+bot's. Every example is a complete test module that uses the
+[shared fixture](sessions-and-fixtures.md) and the [waiting pattern](observing-bot-behavior.md).
 
 ## Replying to messages
 
@@ -655,6 +655,68 @@ Deno.test('the account sees the bot typing until its report arrives', async () =
       assertEquals(await account.getChatActions({ chat: privateChat }), []);
     } finally {
       finishReport();
+    }
+  });
+});
+```
+
+## Streaming drafts
+
+`account.getMessageDraft` returns the draft of a message the bot is still generating, which the
+account's client shows apart from the chat's messages, or `null` for none. Each `sendMessageDraft`
+with the same `draft_id` changes the draft, and the bot's next message to the chat removes it.
+Telegram's clients also drop a draft 30 seconds after the bot's last write; the emulator never does
+so on its own, and `account.expireMessageDraft` stands in for that timeout. The
+[message drafts reference](../../features/messages.md#message-drafts) lists the checks and limits.
+
+The test below holds the bot's answer on a promise, reads the draft while the bot waits, and expires
+it as if the answer took too long, before the answer arrives anyway.
+
+```ts
+import { assertEquals } from 'jsr:@std/assert@^1';
+import { withBotFixture } from './bot_fixture.ts';
+
+Deno.test('the answer arrives after its draft timed out', async () => {
+  const { promise: answerReady, resolve: finishAnswer } = Promise.withResolvers<void>();
+  await withBotFixture({
+    handlers: (bot) => {
+      bot.command('ask', async (ctx) => {
+        // grammY's `replyWithDraft` names a draft after the update that asked for it.
+        const draftId = ctx.update.update_id;
+        await ctx.api.sendMessageDraft(ctx.chat.id, draftId, 'Looking it up');
+        await answerReady;
+        await ctx.reply('The answer is 42');
+      });
+    },
+  }, async ({ account, privateChat, activity }) => {
+    try {
+      const beforeQuestion = await activity.position();
+      await account.sendMessage({ to: privateChat, text: '/ask' });
+      const drafted = await activity.waitFor({
+        method: 'sendMessageDraft',
+        chat_id: account.id,
+        ok: true,
+      }, { after: beforeQuestion });
+      const draft_id = String(drafted.parameters.draft_id);
+      assertEquals(await account.getMessageDraft({ chat: privateChat }), {
+        draft_id,
+        text: 'Looking it up',
+      });
+
+      await account.expireMessageDraft({ chat: privateChat, draft_id });
+      assertEquals(await account.getMessageDraft({ chat: privateChat }), null);
+
+      finishAnswer();
+      await activity.waitFor({
+        method: 'sendMessage',
+        chat_id: account.id,
+        ok: true,
+        parameters: { text: 'The answer is 42' },
+      }, { after: drafted });
+      const history = await account.getMessages({ chat: privateChat });
+      assertEquals(history.map(({ text }) => text), ['/ask', 'The answer is 42']);
+    } finally {
+      finishAnswer();
     }
   });
 });
