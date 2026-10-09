@@ -405,8 +405,8 @@ text, but share the account's own contact, or the `location` passed to `pressRep
 in reply to the keyboard's message instead of sending the text.
 [Contacts and locations](contacts-and-locations.md) shows both. A `request_poll` button takes the
 `poll` the account creates, of the type the button requests, and sends it as the account's poll, as
-[Polls](polls.md#answering-a-poll-request) shows. Buttons with `web_app`
-[requests](../../features/keyboards-and-callbacks.md#request-buttons) cannot be pressed.
+[Polls](polls.md#answering-a-poll-request) shows. A `web_app` button takes the `web_app_data` its
+Web App sends, as [Sending Web App data](#sending-web-app-data) shows.
 
 ### Sharing users and chats
 
