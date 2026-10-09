@@ -24,6 +24,7 @@ import {
 export const MESSAGE_PINNING_METHODS: readonly BotApiMethod[] = [
   { name: 'pinChatMessage', handler: handlePinChatMessage },
   { name: 'unpinChatMessage', handler: handleUnpinChatMessage },
+  { name: 'unpinAllChatMessages', handler: handleUnpinAllChatMessages },
 ];
 
 /**
@@ -50,6 +51,10 @@ const pinChatMessageParametersSchema = z.strictObject({
 const unpinChatMessageParametersSchema = z.strictObject({
   chat_id: integerParameter(z.int()).optional(),
   message_id: integerParameter(z.int().nonnegative()).optional(),
+});
+
+const unpinAllChatMessagesParametersSchema = z.strictObject({
+  chat_id: integerParameter(z.int()).optional(),
 });
 
 function handlePinChatMessage(
@@ -113,6 +118,23 @@ function handleUnpinChatMessage(
     default:
       return pinChangeFailureAnswer(result.reason);
   }
+}
+
+function handleUnpinAllChatMessages(
+  context: BotApiMethodContext,
+  parameters: BotApiRequestParameters,
+): BotApiMethodAnswer {
+  const parsedParameters = unpinAllChatMessagesParametersSchema.safeParse(parameters);
+  if (!parsedParameters.success) {
+    return botApiError(400, 'Bad Request: invalid unpinAllChatMessages parameters');
+  }
+  const { chat_id: chatId } = parsedParameters.data;
+  if (chatId === undefined) {
+    return botApiError(400, CHAT_ID_EMPTY_DESCRIPTION);
+  }
+
+  const result = context.session.botApi.unpinAllChatMessages(context.bot, { chatId });
+  return result.unpinned ? botApiResult(true) : pinChangeFailureAnswer(result.reason);
 }
 
 /** Telegram's error for a pin or unpin refused for the chat, the bot's rights, or the message. */

@@ -66,7 +66,7 @@ effects are:
 | `can_delete_messages`  | Delete other members' content and service messages                                                                                                                                      |
 | `can_invite_users`     | Manage the bot's invite links, [decide join requests](invite-links.md#approving-and-declining-requests) as a bot or an account, and receive `chat_join_request` updates when subscribed |
 | `can_restrict_members` | Call `banChatMember`, `unbanChatMember`, `restrictChatMember` and `setChatPermissions`, or restrict as an account                                                                       |
-| `can_pin_messages`     | Call `pinChatMessage` and `unpinChatMessage`, under the [pinning rules](pinned-messages.md#pinning-with-the-bot-api)                                                                    |
+| `can_pin_messages`     | Call `pinChatMessage`, `unpinChatMessage` and `unpinAllChatMessages`, under the [pinning rules](pinned-messages.md#pinning-with-the-bot-api)                                            |
 | `can_promote_members`  | Call `promoteChatMember` and `setChatAdministratorCustomTitle`, or promote as an account, granting held rights                                                                          |
 
 ### Administrator delegation

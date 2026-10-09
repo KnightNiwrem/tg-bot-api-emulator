@@ -69,6 +69,11 @@ export interface UnpinMessageInput {
   readonly messageId?: number;
 }
 
+export interface UnpinAllMessagesInput {
+  readonly pinner: MessagePinner;
+  readonly chat: PinningChat;
+}
+
 /** Why an account or a bot cannot reach a chat to manage its pinned messages. */
 type PinningChatAccessFailureReason =
   | 'pinner_not_found'
@@ -108,6 +113,15 @@ export type UnpinMessageResult =
   | {
     readonly unpinned: false;
     readonly reason: PinChangeFailureReason | 'message_not_pinned';
+  };
+
+export type UnpinAllMessagesResult =
+  /** The chat pins nothing now, including when it pinned nothing before. */
+  | { readonly unpinned: true }
+  | {
+    readonly unpinned: false;
+    /** As for a single unpin, except that no message is looked up. */
+    readonly reason: PinningChatAccessFailureReason | 'not_enough_rights';
   };
 
 export interface GetPinnedMessagesInput {
@@ -300,6 +314,28 @@ export class MessagePinningService {
       return { unpinned: false, reason: 'message_not_pinned' };
     }
     return { unpinned: true, message: this.#messages.setMessagePinned(message.id, false) };
+  }
+
+  /**
+   * Removes every message of a chat from its pinned messages, whoever wrote or pinned it, as
+   * TDLib's `unpin_all_dialog_messages` checks it: the pinner must reach the chat and hold the
+   * right to pin, both checked before any pin changes, whether the chat pins messages or none. A
+   * chat that pins nothing is left as it is and the call succeeds, an emulator policy: Telegram's
+   * answer there is not established, and a bot that resets a chat's pins need not know whether any
+   * are left. As for a single unpin, no service message records it.
+   */
+  unpinAllMessages({ pinner, chat }: UnpinAllMessagesInput): UnpinAllMessagesResult {
+    const access = this.#reachChatToWrite(pinner, chat);
+    if (!access.reached) {
+      return { unpinned: false, reason: access.reason };
+    }
+    if (!holdsPinRight(access.chat)) {
+      return { unpinned: false, reason: 'not_enough_rights' };
+    }
+    for (const message of this.#listPinnedMessages(access.chat)) {
+      this.#messages.setMessagePinned(message.id, false);
+    }
+    return { unpinned: true };
   }
 
   /**
@@ -526,8 +562,16 @@ function findPinChangeRefusal(
   chat: ReachedPinningChat,
   message: ChatMessage,
 ): 'not_enough_rights' | 'service_message_not_pinnable' | undefined {
-  if (chat.type === 'supergroup' && !chat.canPinMessages) {
+  if (!holdsPinRight(chat)) {
     return 'not_enough_rights';
   }
   return isContentMessage(message) ? undefined : 'service_message_not_pinnable';
+}
+
+/**
+ * Whether a pinner may manage a reached chat's pinned messages: either participant of a private
+ * chat may, and a supergroup member with the `can_pin_messages` permission.
+ */
+function holdsPinRight(chat: ReachedPinningChat): boolean {
+  return chat.type === 'private' || chat.canPinMessages;
 }

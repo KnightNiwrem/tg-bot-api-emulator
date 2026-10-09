@@ -6,14 +6,15 @@
 
 ## Capability matrix
 
-| Area               | Supported                                                                                                 | Not supported                                                                         |
-| ------------------ | --------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------- |
-| Pinned messages    | Any number per chat, in private chats with bots and supergroups                                           | Basic groups, channels, forum topics, business chats                                  |
-| `pinChatMessage`   | `chat_id`, `message_id`, `disable_notification`                                                           | `business_connection_id`                                                              |
-| `unpinChatMessage` | `chat_id`, `message_id`, which may be omitted to unpin the newest pin                                     | `business_connection_id`                                                              |
-| Other Bot API      | `pinned_message` in `getChat`, service messages with `pinned_message`                                     | `unpinAllChatMessages`, `unpinAllForumTopicMessages`                                  |
-| Account actions    | Pinning and unpinning messages, reading the pinned messages newest first                                  | Pinning only for itself in a private chat, choosing whether a supergroup pin notifies |
-| Permissions        | `can_pin_messages` in supergroups, as the [permission evaluator](supergroups.md#member-restrictions) sets | Pinning rights of channels and basic groups                                           |
+| Area                   | Supported                                                                                                 | Not supported                                                                                                 |
+| ---------------------- | --------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------- |
+| Pinned messages        | Any number per chat, in private chats with bots and supergroups                                           | Basic groups, channels, forum topics, business chats                                                          |
+| `pinChatMessage`       | `chat_id`, `message_id`, `disable_notification`                                                           | `business_connection_id`                                                                                      |
+| `unpinChatMessage`     | `chat_id`, `message_id`, which may be omitted to unpin the newest pin                                     | `business_connection_id`                                                                                      |
+| `unpinAllChatMessages` | `chat_id` of a private chat or supergroup                                                                 | Channels, basic groups                                                                                        |
+| Other Bot API          | `pinned_message` in `getChat`, service messages with `pinned_message`                                     | `unpinAllForumTopicMessages`                                                                                  |
+| Account actions        | Pinning and unpinning messages, reading the pinned messages newest first                                  | Pinning only for itself in a private chat, choosing whether a supergroup pin notifies, unpinning all messages |
+| Permissions            | `can_pin_messages` in supergroups, as the [permission evaluator](supergroups.md#member-restrictions) sets | Pinning rights of channels and basic groups                                                                   |
 
 ## Pinned messages of a chat
 
@@ -56,6 +57,23 @@ an unpin passes through too:
 | The bot lacks `can_pin_messages` in a supergroup                     | `not enough rights to manage pinned messages in the chat`           |
 | The message is a service message, also for an unpin                  | `service messages can't be pinned`                                  |
 | The message is already pinned, or, for an unpin, not pinned          | `CHAT_NOT_MODIFIED` (see [comparison limits](#comparison-limits))   |
+
+### Unpinning all messages
+
+`unpinAllChatMessages` unpins every pinned message of the bot's private chat or supergroup, whoever
+wrote or pinned it, and answers `True`. As the official server's
+[`process_unpin_all_chat_messages_query`][unpin-all-query] and TDLib's
+[`unpin_all_dialog_messages`][unpin-all-dialog-messages] check it, the request needs only the checks
+above that concern the chat and the bot's rights: `chat_id is empty`, `chat not found` or a `403`,
+and, in a supergroup, `not enough rights to manage pinned messages in the chat`. They are made
+before any pin changes, also in a chat that pins nothing, so a refused request unpins nothing.
+
+The chat's messages, replies and earlier pin service messages are kept, `getChat` omits
+`pinned_message`, and the account's pinned messages are empty. As for a single unpin, no service
+message or update records it. Pinning a message afterwards records a service message as before.
+
+A chat that already pins nothing answers `True` as well, so a bot can clear a chat's pins without
+knowing whether any are left; see [comparison limits](#comparison-limits).
 
 ## Account pins
 
@@ -141,7 +159,8 @@ newest shows the next newest. As [`JsonChat`][json-chat-pinned] shows it, the pi
 
 ## Real gaps
 
-- **Unpinning all messages.** `unpinAllChatMessages` is not implemented.
+- **Unpinning all messages as an account.** Accounts unpin messages one at a time; only bots unpin a
+  chat's messages at once.
 - **One-sided pins.** Accounts cannot pin a message of a private chat only for themselves, which
   Telegram's clients allow and the Bot API never does.
 - **Pin notifications.** Accounts cannot choose whether a supergroup pin notifies its members.
@@ -156,6 +175,14 @@ Pins are kept by Telegram's servers, whose decisions the open-source code shows 
   the queries that treat an unchanged chat setting as success; the official server keeps the
   uppercase error text. The server's decision itself is not visible, so the emulator refuses a pin
   of a pinned message and an unpin of a message that is not pinned.
+- **Unpinning all in a chat that pins nothing.** The official
+  [`messages.unpinAllMessages`][unpin-all-messages-errors] reference lists `CHAT_NOT_MODIFIED` among
+  its errors without stating what raises it, and its result, an `AffectedHistory` that TDLib's
+  [`UnpinAllMessagesQuery`][unpin-all-messages-query] reads, can report zero affected messages.
+  Whether Telegram refuses an unpin of all messages in a chat that pins nothing is not established,
+  so the emulator answers `True` there, unlike its refusal of an unchanged single pin or unpin
+  above: a bot that resets a chat, such as with a `/reset` command, commonly finds it without pins.
+  The rights are checked first all the same.
 - **Service messages in private chats.** Telegram's servers create the service message of a pin. The
   official server delivers a bot's outgoing pin messages in any chat, and TDLib documents pin
   notifications as disabled in private chats rather than absent, so the emulator records pins in
@@ -177,13 +204,16 @@ Pins are kept by Telegram's servers, whose decisions the open-source code shows 
 [account routes](../../src/api/sessions/accounts/mod.ts),
 [service tests](../../tests/message_pinning_service_test.ts),
 [account HTTP tests](../../tests/pinned_messages_api_test.ts),
-[Bot API HTTP tests](../../tests/pin_chat_message_api_test.ts) and
+[Bot API HTTP tests](../../tests/pin_chat_message_api_test.ts),
+[unpin-all tests](../../tests/unpin_all_chat_messages_api_test.ts) and
 [edit and deletion tests](../../tests/pin_reconciliation_api_test.ts).
 
 [api-pin]: https://core.telegram.org/api/pin
 [update-pinned-message-errors]: https://core.telegram.org/method/messages.updatePinnedMessage
 [pin-query]: https://github.com/tdlib/telegram-bot-api/blob/e3e9dd8e5b3d7ab8537cd5a10dc31d5ffa8f82d1/telegram-bot-api/Client.cpp#L16043-L16065
 [unpin-query]: https://github.com/tdlib/telegram-bot-api/blob/e3e9dd8e5b3d7ab8537cd5a10dc31d5ffa8f82d1/telegram-bot-api/Client.cpp#L16067-L16096
+[unpin-all-query]: https://github.com/tdlib/telegram-bot-api/blob/e3e9dd8e5b3d7ab8537cd5a10dc31d5ffa8f82d1/telegram-bot-api/Client.cpp#L16098-L16106
+[unpin-all-messages-errors]: https://core.telegram.org/method/messages.unpinAllMessages
 [unpin-target]: https://github.com/tdlib/telegram-bot-api/blob/e3e9dd8e5b3d7ab8537cd5a10dc31d5ffa8f82d1/telegram-bot-api/Client.cpp#L7712-L7739
 [check-message]: https://github.com/tdlib/telegram-bot-api/blob/e3e9dd8e5b3d7ab8537cd5a10dc31d5ffa8f82d1/telegram-bot-api/Client.cpp#L9084-L9104
 [get-message-id]: https://github.com/tdlib/telegram-bot-api/blob/e3e9dd8e5b3d7ab8537cd5a10dc31d5ffa8f82d1/telegram-bot-api/Client.cpp#L13486-L13498
@@ -196,6 +226,8 @@ Pins are kept by Telegram's servers, whose decisions the open-source code shows 
 [can-pin-messages]: https://github.com/tdlib/td/blob/bc9c263e2bfee06aaab41e82db51a103376030bc/td/telegram/DialogManager.cpp#L2902-L2937
 [can-pin-message]: https://github.com/tdlib/td/blob/bc9c263e2bfee06aaab41e82db51a103376030bc/td/telegram/MessagesManager.cpp#L23322-L23336
 [pin-dialog-message]: https://github.com/tdlib/td/blob/bc9c263e2bfee06aaab41e82db51a103376030bc/td/telegram/MessagesManager.cpp#L30527-L30547
+[unpin-all-dialog-messages]: https://github.com/tdlib/td/blob/bc9c263e2bfee06aaab41e82db51a103376030bc/td/telegram/MessagesManager.cpp#L30578-L30599
+[unpin-all-messages-query]: https://github.com/tdlib/td/blob/bc9c263e2bfee06aaab41e82db51a103376030bc/td/telegram/MessageQueryManager.cpp#L2291-L2337
 [update-pinned-message-query]: https://github.com/tdlib/td/blob/bc9c263e2bfee06aaab41e82db51a103376030bc/td/telegram/MessagesManager.cpp#L352-L402
 [update-message-is-pinned]: https://github.com/tdlib/td/blob/bc9c263e2bfee06aaab41e82db51a103376030bc/td/telegram/MessagesManager.cpp#L8103-L8136
 [get-dialog-pinned-message]: https://github.com/tdlib/td/blob/bc9c263e2bfee06aaab41e82db51a103376030bc/td/telegram/MessagesManager.cpp#L15211-L15240

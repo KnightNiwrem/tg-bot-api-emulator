@@ -165,6 +165,8 @@ import type {
   PinMessageResult,
   PinnedMessagesChat,
   PinningChat,
+  UnpinAllMessagesInput,
+  UnpinAllMessagesResult,
   UnpinMessageInput,
   UnpinMessageResult,
 } from './message_pinning.ts';
@@ -1183,6 +1185,23 @@ export type BotApiUnpinChatMessageResult =
     readonly reason: BotPinChangeFailureReason | 'message_not_pinned';
   };
 
+export interface UnpinAllChatMessagesRequest {
+  /** The Bot API `chat_id`, as `SendRequestOptions` describes it. */
+  readonly chatId: number;
+}
+
+export type BotApiUnpinAllChatMessagesResult =
+  /** The chat pins nothing now, including when it pinned nothing before. */
+  | { readonly unpinned: true }
+  | {
+    readonly unpinned: false;
+    /** As for a single unpin, except that no message is looked up. */
+    readonly reason: Exclude<
+      BotPinChangeFailureReason,
+      'message_not_found' | 'service_message_not_pinnable'
+    >;
+  };
+
 export interface SetMessageReactionRequest {
   /** The Bot API `chat_id`, as `SendRequestOptions` describes it. */
   readonly chatId: number;
@@ -1993,6 +2012,7 @@ interface ChatAdmission {
 interface MessagePinning {
   pinMessage(input: PinMessageInput): PinMessageResult;
   unpinMessage(input: UnpinMessageInput): UnpinMessageResult;
+  unpinAllMessages(input: UnpinAllMessagesInput): UnpinAllMessagesResult;
   findNewestPinnedMessage(chat: PinnedMessagesChat): ChatMessage | undefined;
 }
 
@@ -3739,6 +3759,24 @@ export class BotApiService {
       pinner: { kind: 'bot', botId: authenticatedBot.id },
       chat: toPinningChat(chatId),
       messageId,
+    });
+    return result.unpinned ? { unpinned: true } : {
+      unpinned: false,
+      reason: excludeAccountPinChangeFailure(authenticatedBot, result.reason),
+    };
+  }
+
+  /**
+   * Unpins every message of a bot's chat, as `MessagePinningService.unpinAllMessages` unpins them
+   * for the bot. No service message records it.
+   */
+  unpinAllChatMessages(
+    authenticatedBot: VirtualBotProfile,
+    { chatId }: UnpinAllChatMessagesRequest,
+  ): BotApiUnpinAllChatMessagesResult {
+    const result = this.#messagePinning.unpinAllMessages({
+      pinner: { kind: 'bot', botId: authenticatedBot.id },
+      chat: toPinningChat(chatId),
     });
     return result.unpinned ? { unpinned: true } : {
       unpinned: false,
