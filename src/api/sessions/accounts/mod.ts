@@ -10,6 +10,7 @@ import { readJsonRequestBody } from '../json_request_body.ts';
 import type { SessionRouteContextTypes } from '../session_route_context_types.ts';
 import { createBlockedBotRoutes } from './blocked_bots.ts';
 import { createCallbackQueryRoutes } from './callback_queries.ts';
+import { createChatActionRoutes } from './chat_actions.ts';
 import { createConversationReadRoutes } from './conversation_reads.ts';
 import { createInlineQueryRoutes } from './inline_queries.ts';
 import { createMessageDraftRoutes } from './message_drafts.ts';
@@ -77,6 +78,7 @@ export function createAccountRoutes(): Hono<SessionRouteContextTypes> {
   accountRoutes.route('/', createSupergroupMembershipRoutes());
   accountRoutes.route('/', createSupergroupAdministrationRoutes());
   accountRoutes.route('/', createConversationReadRoutes());
+  accountRoutes.route('/', createChatActionRoutes());
   accountRoutes.route('/', createMessageDraftRoutes());
   accountRoutes.route('/', createPinnedMessageRoutes());
   accountRoutes.route('/', createBlockedBotRoutes());

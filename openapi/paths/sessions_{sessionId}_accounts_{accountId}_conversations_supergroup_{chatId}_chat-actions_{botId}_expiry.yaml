@@ -1,0 +1,26 @@
+description: >-
+  The expiry of the chat action, such as typing, one bot shows in a supergroup, which stands for
+  the 5.5 seconds after the bot last sent it after which members' clients stop showing it.
+parameters:
+  - $ref: ../components/parameters/SessionId.yaml
+  - $ref: ../components/parameters/AccountId.yaml
+  - $ref: ../components/parameters/SupergroupChatId.yaml
+  - $ref: ../components/parameters/BotId.yaml
+post:
+  operationId: expireSupergroupChatAction
+  summary: Expire the chat action one bot shows in a supergroup the account is a member of
+  description: >-
+    Stops showing the bot's action to every member, as the timeout ends it on every member's
+    client; other bots' actions stay, in their order. The bot is not told, and the chat's messages stay as they were; the bot's next `sendChatAction` shows an
+    action again, as its latest.
+  responses:
+    '204':
+      description: The action expired.
+    '400':
+      description: A path identifier is invalid.
+    '403':
+      description: The account is not a member of the supergroup.
+    '404':
+      description: >-
+        The session, account, supergroup, or bot does not exist, or the bot shows no action in
+        the supergroup.

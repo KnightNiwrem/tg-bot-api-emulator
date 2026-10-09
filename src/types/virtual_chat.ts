@@ -27,12 +27,6 @@ export type ChatAction =
 /** A chat action a bot shows, which `cancel` is not. */
 export type ShownChatActionType = Exclude<ChatAction, 'cancel'>;
 
-/**
- * How long clients show a bot's chat action unless the bot renews it, as TDLib's
- * `DialogActionManager::DIALOG_ACTION_TIMEOUT` sets it.
- */
-export const CHAT_ACTION_TIMEOUT_MILLISECONDS = 5_500;
-
 /** A chat action an account's client shows: which bot shows it, and what the bot is doing. */
 export interface VisibleChatAction {
   readonly botId: number;

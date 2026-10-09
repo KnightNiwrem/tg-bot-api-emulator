@@ -93,6 +93,7 @@ export type {
   DisabledInlineKeyboardButton,
   Document,
   EmulationSession,
+  ExpireChatActionInput,
   ExpireChatInviteLinkInput,
   ExpireChatMemberRestrictionInput,
   ExpireJoinRequesterContactInput,

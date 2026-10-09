@@ -63,6 +63,7 @@ exact contract.
 | `blockBot`, `unblockBot`     | Stops and restarts a bot                              | [Messages](messages.md)               |
 | `getNotifications`           | Reads the notifications the account's app shows       | [Messages](messages.md)               |
 | `getChatActions`             | Reads the chat actions, such as typing, the app shows | [Messages](messages.md)               |
+| `expireChatAction`           | Ends a chat action as its 5.5-second timeout does     | [Messages](messages.md)               |
 | `getMessageDraft`            | Reads the draft of a message the bot is generating    | [Messages](messages.md)               |
 | `expireMessageDraft`         | Removes a draft as Telegram's 30-second timeout does  | [Messages](messages.md)               |
 | `stopMessageDraft`           | Presses the Stop button of the bot's draft            | [Messages](messages.md)               |

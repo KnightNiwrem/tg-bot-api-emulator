@@ -68,9 +68,11 @@ Replies to checklist tasks or poll options are [real gaps](#real-gaps). Text and
 
 Bots show chat actions, such as typing, with `sendChatAction`. Tests read the actions an account's
 client shows through `account.getChatActions` for a private chat or a supergroup. As TDLib's
-[`DialogActionManager`][dialog-actions] shows them, an action lasts 5.5 seconds unless the bot sends
-it again. It ends when the bot sends `cancel` or a message to the chat, and a supergroup lists each
-bot's latest action.
+[`DialogActionManager`][dialog-actions] shows them, an action ends when the bot sends `cancel` or a
+message to the chat, and a supergroup lists each bot's latest action, in the order the bots last
+sent them. Sending an action again succeeds and records another call, whether or not it is the
+action shown. An action never ends as time passes: `account.expireChatAction` stands in for the
+timeout, as an [intentional deviation](#intentional-deviations) describes.
 
 Private message IDs come from each observer's message box; a supergroup has one sequence shared by
 all members. Private conversation history in the emulation API uses the **bot's** message IDs, so a
@@ -301,6 +303,15 @@ Other origins are users. Channel and chat origins are [real gaps](#real-gaps).
   not specify. Tests stand in for either timeout with `account.expireMessageDraft`, which removes
   the draft without telling the bot. Given a `draft_id`, it removes only that draft and fails while
   another is shown.
+- **Chat actions expire only when a test says so.** Telegram's clients stop showing a bot's chat
+  action 5.5 seconds after the bot last sent it, TDLib's [`DIALOG_ACTION_TIMEOUT`][dialog-actions].
+  Results that depend on how long a test runs would be unreliable, so the emulator never ends an
+  action as time passes. An action the bot stops renewing therefore stays until the bot sends a
+  message or `cancel`, and one the bot sends after its last message stays too. Tests stand in for
+  the timeout with `account.expireChatAction`, which removes one bot's action from a private chat or
+  a supergroup without telling the bot. A supergroup's action ends for every member, as the timeout
+  ends it on every member's client; other bots' actions stay, and the bot's next action shows again.
+  Keeping the bot's actions and expiries in the intended order is the test's part.
 
 ## Real gaps
 
@@ -330,6 +341,7 @@ Other origins are users. Channel and chat origins are [real gaps](#real-gaps).
 [forwarding and copying tests](../../tests/bot_message_repetition_test.ts),
 [reply tests](../../tests/message_reply_test.ts),
 [chat action tests](../../tests/chat_action_service_test.ts),
+[chat action API tests](../../tests/chat_action_api_test.ts),
 [message draft tests](../../tests/message_draft_service_test.ts) and
 [message draft API tests](../../tests/message_draft_api_test.ts).
 

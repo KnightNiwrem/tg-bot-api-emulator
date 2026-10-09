@@ -1,0 +1,21 @@
+description: >-
+  The expiry of the chat action, such as typing, an account's client shows in its private chat
+  with a bot, which stands for the 5.5 seconds after the bot last sent it after which Telegram's
+  clients stop showing it.
+parameters:
+  - $ref: ../components/parameters/SessionId.yaml
+  - $ref: ../components/parameters/AccountId.yaml
+  - $ref: ../components/parameters/BotId.yaml
+post:
+  operationId: expirePrivateChatAction
+  summary: Expire the chat action the bot shows in its private chat with the account
+  description: >-
+    Stops showing the action. The bot is not told, and the chat's messages and draft stay as they
+    were; the bot's next `sendChatAction` shows an action again.
+  responses:
+    '204':
+      description: The action expired.
+    '400':
+      description: A path identifier is invalid.
+    '404':
+      description: The session, account, or bot does not exist, or the bot shows no action.

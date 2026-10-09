@@ -47,3 +47,7 @@ export const supergroupMessagePathSchema = supergroupConversationPathSchema.exte
 export const supergroupMemberPathSchema = supergroupConversationPathSchema.extend({
   [USER_ID_PARAMETER]: telegramUserIdPathParameterSchema,
 });
+/** The path parameters of a bot in a supergroup as an account addresses it. */
+export const supergroupBotPathSchema = supergroupConversationPathSchema.extend({
+  [BOT_ID_PARAMETER]: telegramUserIdPathParameterSchema,
+});

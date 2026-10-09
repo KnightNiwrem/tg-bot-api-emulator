@@ -117,6 +117,8 @@ paths:
     $ref: paths/sessions_{sessionId}_accounts_{accountId}_conversations_supergroup_{chatId}_commands.yaml
   /sessions/{sessionId}/accounts/{accountId}/conversations/supergroup/{chatId}/chat-actions:
     $ref: paths/sessions_{sessionId}_accounts_{accountId}_conversations_supergroup_{chatId}_chat-actions.yaml
+  /sessions/{sessionId}/accounts/{accountId}/conversations/supergroup/{chatId}/chat-actions/{botId}/expiry:
+    $ref: paths/sessions_{sessionId}_accounts_{accountId}_conversations_supergroup_{chatId}_chat-actions_{botId}_expiry.yaml
   /sessions/{sessionId}/accounts/{accountId}/conversations/supergroup/{chatId}/reply-interface:
     $ref: paths/sessions_{sessionId}_accounts_{accountId}_conversations_supergroup_{chatId}_reply-interface.yaml
   /sessions/{sessionId}/accounts/{accountId}/conversations/supergroup/{chatId}/notifications:
@@ -135,6 +137,8 @@ paths:
     $ref: paths/sessions_{sessionId}_accounts_{accountId}_conversations_private_{botId}_menu-button.yaml
   /sessions/{sessionId}/accounts/{accountId}/conversations/private/{botId}/chat-actions:
     $ref: paths/sessions_{sessionId}_accounts_{accountId}_conversations_private_{botId}_chat-actions.yaml
+  /sessions/{sessionId}/accounts/{accountId}/conversations/private/{botId}/chat-actions/expiry:
+    $ref: paths/sessions_{sessionId}_accounts_{accountId}_conversations_private_{botId}_chat-actions_expiry.yaml
   /sessions/{sessionId}/accounts/{accountId}/conversations/private/{botId}/message-draft:
     $ref: paths/sessions_{sessionId}_accounts_{accountId}_conversations_private_{botId}_message-draft.yaml
   /sessions/{sessionId}/accounts/{accountId}/conversations/private/{botId}/message-draft/expiration:

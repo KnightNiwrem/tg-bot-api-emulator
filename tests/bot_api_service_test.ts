@@ -534,7 +534,6 @@ function createBotApiFixture() {
     bots,
     sharedChats,
     chatActions: new ChatActionRepository(),
-    currentTimeMilliseconds: () => 1_700_000_000_000,
   });
   const textFixingContext = createSessionUserMentionContext({ accounts, bots });
   const messageSender = new BotMessageSender({

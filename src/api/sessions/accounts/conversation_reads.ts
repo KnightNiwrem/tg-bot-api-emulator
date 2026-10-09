@@ -8,7 +8,6 @@ import type {
   ReplyKeyboardButton,
   ReplyKeyboardButtonRequest,
 } from '../../../types/reply_interface.ts';
-import type { VisibleChatAction } from '../../../types/virtual_chat.ts';
 import { type ChatMessage, getMessageNotification } from '../../../types/virtual_message.ts';
 import type { SessionRouteContextTypes } from '../session_route_context_types.ts';
 import {
@@ -24,17 +23,15 @@ import { supergroupMemberFailureStatus } from './messaging_failure_statuses.ts';
 const PRIVATE_CHAT_COMMANDS_PATH = `${PRIVATE_CONVERSATION_PATH}/commands` as const;
 const PRIVATE_CHAT_MENU_BUTTON_PATH = `${PRIVATE_CONVERSATION_PATH}/menu-button` as const;
 const PRIVATE_CHAT_REPLY_INTERFACE_PATH = `${PRIVATE_CONVERSATION_PATH}/reply-interface` as const;
-const PRIVATE_CHAT_ACTIONS_PATH = `${PRIVATE_CONVERSATION_PATH}/chat-actions` as const;
 const PRIVATE_CHAT_NOTIFICATIONS_PATH = `${PRIVATE_CONVERSATION_PATH}/notifications` as const;
 const SUPERGROUP_COMMANDS_PATH = `${SUPERGROUP_CONVERSATION_PATH}/commands` as const;
-const SUPERGROUP_CHAT_ACTIONS_PATH = `${SUPERGROUP_CONVERSATION_PATH}/chat-actions` as const;
 const SUPERGROUP_NOTIFICATIONS_PATH = `${SUPERGROUP_CONVERSATION_PATH}/notifications` as const;
 const SUPERGROUP_REPLY_INTERFACE_PATH = `${SUPERGROUP_CONVERSATION_PATH}/reply-interface` as const;
 
 /**
  * Routes through which an account reads what its client shows of a private chat or supergroup: the
- * messages and their notifications, the bots' commands, menu button and chat actions, and the reply
- * interface a bot asked for.
+ * messages and their notifications, the bots' commands and menu button, and the reply interface a
+ * bot asked for.
  */
 export function createConversationReadRoutes(): Hono<SessionRouteContextTypes> {
   const accountRoutes = new Hono<SessionRouteContextTypes>();
@@ -81,23 +78,6 @@ export function createConversationReadRoutes(): Hono<SessionRouteContextTypes> {
         commands: commands.map(presentBotCommandForAccount),
       })),
     });
-  });
-
-  accountRoutes.get(SUPERGROUP_CHAT_ACTIONS_PATH, (context) => {
-    const conversationPath = supergroupConversationPathSchema.safeParse(context.req.param());
-    if (!conversationPath.success) {
-      return context.body(null, 400);
-    }
-    const { accountId, chatId } = conversationPath.data;
-
-    const result = context.get('emulationSession').chatActions.getSupergroupChatActions({
-      accountId,
-      chatId,
-    });
-    if (!result.found) {
-      return context.body(null, result.reason === 'not_a_member' ? 403 : 404);
-    }
-    return context.json({ chat_actions: result.chatActions.map(presentChatActionForAccount) });
   });
 
   accountRoutes.get(SUPERGROUP_NOTIFICATIONS_PATH, (context) => {
@@ -204,23 +184,6 @@ export function createConversationReadRoutes(): Hono<SessionRouteContextTypes> {
     return context.json({ menu_button: toBotApiMenuButton(result.menuButton) });
   });
 
-  accountRoutes.get(PRIVATE_CHAT_ACTIONS_PATH, (context) => {
-    const conversationPath = privateConversationPathSchema.safeParse(context.req.param());
-    if (!conversationPath.success) {
-      return context.body(null, 400);
-    }
-    const { accountId, botId } = conversationPath.data;
-
-    const result = context.get('emulationSession').chatActions.getPrivateChatActions({
-      accountId,
-      botId,
-    });
-    if (!result.found) {
-      return context.body(null, 404);
-    }
-    return context.json({ chat_actions: result.chatActions.map(presentChatActionForAccount) });
-  });
-
   accountRoutes.get(PRIVATE_CHAT_NOTIFICATIONS_PATH, (context) => {
     const conversationPath = privateConversationPathSchema.safeParse(context.req.param());
     if (!conversationPath.success) {
@@ -270,11 +233,6 @@ export function createConversationReadRoutes(): Hono<SessionRouteContextTypes> {
   });
 
   return accountRoutes;
-}
-
-/** Shows a chat action as the account's client shows it: the bot and what it is doing. */
-function presentChatActionForAccount({ botId, action }: VisibleChatAction) {
-  return { bot_id: botId, action };
 }
 
 /**
