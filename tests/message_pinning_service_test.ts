@@ -129,6 +129,7 @@ function pinnedTexts(session: EmulationSession, accountId: number, chat: Pinning
 }
 
 type PinningChat = Parameters<EmulationSession['messagePinning']['pinMessage']>[0]['chat'];
+type MessagePinner = Parameters<EmulationSession['messagePinning']['pinMessage']>[0]['pinner'];
 
 Deno.test('a chat pins several messages, lists them newest first, and unpins the newest by default', () => {
   const { session, ada, pinningBot, sendToPinningBot } = createPinningFixture();
@@ -432,6 +433,167 @@ Deno.test('findNewestPinnedMessage returns the pinned message sent last', () => 
   expectEqual(newestText(), 'newer', 'pinning an older message keeps the newest');
   session.messagePinning.unpinMessage({ pinner, chat, messageId: newerId });
   expectEqual(newestText(), 'older', 'unpinning the newest shows the next');
+});
+
+Deno.test('unpinning all clears every pin of one chat, whoever pinned it, and keeps its messages', () => {
+  const { session, ada, grace, pinningBot, memberBot, chatId, sendToSupergroup, sendToPinningBot } =
+    createPinningFixture();
+  const supergroup: PinningChat = { type: 'supergroup', chatId };
+  const pinningBotChat: PinningChat = { type: 'private', peerId: ada };
+  const botPinner = { kind: 'bot', botId: pinningBot } as const;
+  const pin = (pinner: MessagePinner, chat: PinningChat, messageId: number) =>
+    expectEqual(
+      session.messagePinning.pinMessage({ isSilent: false, pinner, chat, messageId }).pinned,
+      true,
+      `message ${messageId} is pinned`,
+    );
+  pin({ kind: 'account', accountId: grace }, supergroup, sendToSupergroup(grace, 'by grace'));
+  pin({ kind: 'account', accountId: ada }, supergroup, sendToSupergroup(ada, 'by ada'));
+  pin(botPinner, supergroup, sendToSupergroup(grace, 'by bot'));
+  pin(
+    { kind: 'account', accountId: ada },
+    { type: 'private', peerId: pinningBot },
+    sendToPinningBot('private'),
+  );
+  const otherBotMessage = session.privateMessaging.sendAccountMessage({
+    fromAccountId: ada,
+    to: { type: 'private', botId: memberBot },
+    content: { kind: 'text', text: 'other bot' },
+  });
+  if (!otherBotMessage.sent) {
+    throw new Error(`Private message was not sent: ${otherBotMessage.reason}`);
+  }
+  pin(
+    { kind: 'bot', botId: memberBot },
+    { type: 'private', peerId: ada },
+    messageIdIn(session, memberBot, otherBotMessage.message),
+  );
+  const supergroupHistoryLength = () => {
+    const history = session.supergroupMessaging.getMessageHistory({ accountId: ada, chatId });
+    return history.found ? history.messages.length : undefined;
+  };
+  const historyLengthBefore = supergroupHistoryLength();
+
+  expectEqual(
+    session.messagePinning.unpinAllMessages({ pinner: botPinner, chat: supergroup }),
+    { unpinned: true },
+    'the administrator unpins three pins',
+  );
+  expectEqual(pinnedTexts(session, ada, supergroup), [], 'the supergroup pins nothing');
+  expectEqual(
+    session.messagePinning.findNewestPinnedMessage({ type: 'supergroup', chatId }),
+    undefined,
+    'no newest pin is left',
+  );
+  expectEqual(supergroupHistoryLength(), historyLengthBefore, 'no message is removed or recorded');
+  expectEqual(
+    pinnedTexts(session, ada, { type: 'private', peerId: pinningBot }),
+    ['private'],
+    "the bot's private chat keeps its pin",
+  );
+
+  expectEqual(
+    session.messagePinning.unpinAllMessages({ pinner: botPinner, chat: pinningBotChat }),
+    { unpinned: true },
+    "the bot unpins the account's one pin in their private chat",
+  );
+  expectEqual(
+    pinnedTexts(session, ada, { type: 'private', peerId: pinningBot }),
+    [],
+    'the private chat pins nothing',
+  );
+  expectEqual(
+    pinnedTexts(session, ada, { type: 'private', peerId: memberBot }),
+    ['other bot'],
+    "another bot's private chat with the account keeps its pin",
+  );
+  expectEqual(
+    session.messagePinning.unpinAllMessages({ pinner: botPinner, chat: pinningBotChat }),
+    { unpinned: true },
+    'a chat that pins nothing is unpinned again without error',
+  );
+});
+
+Deno.test('unpinning all checks access and the right to pin first, even when nothing is pinned', () => {
+  const {
+    session,
+    ada,
+    grace,
+    outsider,
+    pinningBot,
+    memberBot,
+    removedBot,
+    chatId,
+    sendToSupergroup,
+    sendToPinningBot,
+  } = createPinningFixture();
+  const supergroup: PinningChat = { type: 'supergroup', chatId };
+  const pinningBotChat: PinningChat = { type: 'private', peerId: ada };
+  const unpinAll = (pinner: MessagePinner, chat: PinningChat) =>
+    session.messagePinning.unpinAllMessages({ pinner, chat });
+  const expectRefusals = (pinsState: string) => {
+    const refusals: Array<[MessagePinner, PinningChat, string]> = [
+      [{ kind: 'bot', botId: memberBot }, supergroup, 'not_enough_rights'],
+      [{ kind: 'bot', botId: removedBot }, supergroup, 'bot_kicked'],
+      [{ kind: 'account', accountId: outsider }, supergroup, 'not_a_member'],
+      [{ kind: 'bot', botId: pinningBot }, { type: 'private', peerId: grace }, 'chat_not_found'],
+    ];
+    for (const [pinner, chat, reason] of refusals) {
+      expectEqual(
+        unpinAll(pinner, chat),
+        { unpinned: false, reason },
+        `${JSON.stringify(pinner)} is refused with ${pinsState}`,
+      );
+    }
+  };
+  sendToPinningBot('hello');
+
+  expectRefusals('nothing pinned');
+  const messageId = sendToSupergroup(grace, 'rules');
+  session.messagePinning.pinMessage({
+    isSilent: false,
+    pinner: { kind: 'bot', botId: pinningBot },
+    chat: supergroup,
+    messageId,
+  });
+  session.messagePinning.pinMessage({
+    isSilent: false,
+    pinner: { kind: 'account', accountId: ada },
+    chat: { type: 'private', peerId: pinningBot },
+    messageId: sendToPinningBot('pinned'),
+  });
+  expectRefusals('a pin');
+
+  expectEqual(
+    session.sharedChatAdministration.demoteChatMember({
+      actorAccountId: ada,
+      chatId,
+      memberId: pinningBot,
+    }).demoted,
+    true,
+    'the pinning bot is demoted',
+  );
+  expectEqual(
+    unpinAll({ kind: 'bot', botId: pinningBot }, supergroup),
+    { unpinned: false, reason: 'not_enough_rights' },
+    'a demoted bot lost the right',
+  );
+  session.botBlocking.blockBot({ accountId: ada, botId: pinningBot });
+  expectEqual(
+    unpinAll({ kind: 'bot', botId: pinningBot }, pinningBotChat),
+    { unpinned: false, reason: 'bot_blocked' },
+    'a blocked bot cannot unpin in the private chat',
+  );
+  expectEqual(
+    pinnedTexts(session, ada, supergroup),
+    ['rules'],
+    'refusals keep the supergroup pin',
+  );
+  expectEqual(
+    pinnedTexts(session, ada, { type: 'private', peerId: pinningBot }),
+    ['pinned'],
+    'refusals keep the private pin',
+  );
 });
 
 function expectEqual(actual: unknown, expected: unknown, message: string): void {

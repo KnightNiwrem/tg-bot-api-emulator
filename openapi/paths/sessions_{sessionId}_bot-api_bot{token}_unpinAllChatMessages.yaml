@@ -1,0 +1,65 @@
+description: >-
+  Telegram Bot API method for removing every message of a chat from its pinned messages,
+  whoever wrote or pinned them, with the rights `pinChatMessage` needs, which are checked
+  before any pin changes. Messages, replies and earlier pin service messages are kept. No
+  service message records the unpin, and no bot receives an update for it. A chat that pins
+  nothing is answered with `True` too, an emulator policy.
+parameters:
+  - $ref: ../components/parameters/SessionId.yaml
+  - $ref: ../components/parameters/BotToken.yaml
+post:
+  operationId: unpinAllChatMessages
+  summary: Unpin every message of one of the authenticated virtual bot's chats
+  requestBody:
+    required: true
+    content:
+      application/json:
+        schema:
+          $ref: ../components/schemas/UnpinAllChatMessagesRequest.yaml
+      application/x-www-form-urlencoded:
+        schema:
+          $ref: ../components/schemas/UnpinAllChatMessagesRequest.yaml
+      multipart/form-data:
+        schema:
+          $ref: ../components/schemas/UnpinAllChatMessagesRequest.yaml
+  responses:
+    '200':
+      description: The chat pins no message, including when it pinned none before.
+      content:
+        application/json:
+          schema:
+            $ref: ../components/schemas/TrueResultResponse.yaml
+    '400':
+      description: >-
+        The request cannot be decoded or has unsupported parameters, or Telegram would reject
+        it, checking in this order: `chat_id` is missing (`Bad Request: chat_id is empty`); the
+        chat is not one the bot can address (`Bad Request: chat not found`); or the bot lacks
+        the right in a supergroup (`Bad Request: not enough rights to manage pinned messages in
+        the chat`).
+      content:
+        application/json:
+          schema:
+            $ref: ../components/schemas/BotApiErrorResponse.yaml
+    '401':
+      description: The token does not belong to a virtual bot in the addressed session.
+      content:
+        application/json:
+          schema:
+            $ref: ../components/schemas/BotApiErrorResponse.yaml
+    '403':
+      description: >-
+        The bot left the supergroup (`Forbidden: bot is not a member of the supergroup chat`) or
+        was removed from it (`Forbidden: bot was kicked from the supergroup chat`), or the account
+        of the private chat blocks it (`Forbidden: bot was blocked by the user`).
+      content:
+        application/json:
+          schema:
+            $ref: ../components/schemas/BotApiErrorResponse.yaml
+    '404':
+      description: No active test session has the supplied identifier.
+    '429':
+      $ref: ../components/responses/BotApiRateLimited.yaml
+    '500':
+      $ref: ../components/responses/BotApiServerError.yaml
+    '503':
+      $ref: ../components/responses/BotApiServerError.yaml

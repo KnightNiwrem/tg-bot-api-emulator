@@ -55,7 +55,7 @@ case-insensitive. The two legacy aliases below are also accepted.
 | Reusing messages | `forwardMessage`, `forwardMessages`, `copyMessage`, `copyMessages`                                                                                                                          |
 | Editing          | `editMessageText`, `editMessageCaption`, `editMessageMedia`, `editMessageReplyMarkup`                                                                                                       |
 | Deletion         | `deleteMessage`, `deleteMessages`                                                                                                                                                           |
-| Pins             | `pinChatMessage`, `unpinChatMessage`                                                                                                                                                        |
+| Pins             | `pinChatMessage`, `unpinChatMessage`, `unpinAllChatMessages`                                                                                                                                |
 | Reactions        | `setMessageReaction`                                                                                                                                                                        |
 | Files            | `getFile`, plus HTTP file downloads                                                                                                                                                         |
 | Interaction      | `answerCallbackQuery`, `answerInlineQuery`                                                                                                                                                  |
