@@ -2549,9 +2549,10 @@ export interface VirtualAccountClient extends VirtualAccountProfile {
   getChatActions(input: AccountChatActionsInput): Promise<readonly ChatAction[]>;
   /**
    * Stops showing a bot's chat action in this account's private chat with the bot, or one bot's
-   * action in a supergroup, as Telegram's clients do 5.5 seconds after the bot last sent it. Other
-   * bots' actions stay. The bot is not told, and its next action shows again. Fails when the bot
-   * shows no action.
+   * action in a supergroup this account is a member of, as Telegram's clients do 5.5 seconds after
+   * the bot last sent it. In a supergroup the action ends for every member, as the timeout ends it
+   * on every member's client, and other bots' actions stay. The bot is not told, and its next
+   * action shows again. Fails when the bot shows no action.
    */
   expireChatAction(input: ExpireChatActionInput): Promise<void>;
   /**

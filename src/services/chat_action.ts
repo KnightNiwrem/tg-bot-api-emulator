@@ -135,8 +135,9 @@ export class ChatActionService {
   }
 
   /**
-   * Stops showing one bot's chat action in a supergroup, as a member's client does once the action
-   * times out. Other bots' actions stay; the bot is not told, and its next action shows again.
+   * Stops showing one bot's chat action in a supergroup, for every member, as their clients do once
+   * the action times out. The account only needs to be a member. Other bots' actions stay; the bot
+   * is not told, and its next action shows again.
    */
   expireSupergroupChatAction(
     { accountId, chatId, botId }: SupergroupBotChatActionKey,

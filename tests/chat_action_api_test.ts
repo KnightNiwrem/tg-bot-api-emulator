@@ -131,6 +131,8 @@ Deno.test("a test expires one bot's chat action in a supergroup and leaves the o
     const chat: SupergroupMessageTarget = { type: 'supergroup', chatId: created.id };
     await ada.addChatMember({ chat, userId: bot.id });
     await ada.addChatMember({ chat, userId: otherBot.id });
+    const { account: linus } = await session.createAccount({ first_name: 'Linus' });
+    await ada.addChatMember({ chat, userId: linus.id });
     const { account: grace } = await session.createAccount({ first_name: 'Grace' });
     const shown = () => ada.getChatActions({ chat });
 
@@ -148,8 +150,9 @@ Deno.test("a test expires one bot's chat action in a supergroup and leaves the o
       }),
     ];
     const afterRefusals = await shown();
-    const expiry = await expiryOutcome(ada, { chat, botId: bot.id });
-    const afterExpiry = await shown();
+    // As the timeout ends an action on every member's client at once, any member's expiry does.
+    const expiry = await expiryOutcome(linus, { chat, botId: bot.id });
+    const afterExpiry = [await shown(), await linus.getChatActions({ chat })];
     const repeated = await expiryOutcome(ada, { chat, botId: bot.id });
     await callBot('sendChatAction', { chat_id: chat.chatId, action: 'typing' });
 
@@ -160,11 +163,12 @@ Deno.test("a test expires one bot's chat action in a supergroup and leaves the o
         [403, 404, 404, 404],
         [shownAction(otherBot.id, 'find_location'), shownAction(bot.id, 'choose_sticker')],
         'expired',
-        [shownAction(otherBot.id, 'find_location')],
+        [[shownAction(otherBot.id, 'find_location')], [shownAction(otherBot.id, 'find_location')]],
         404,
         [shownAction(otherBot.id, 'find_location'), shownAction(bot.id, 'typing')],
       ],
-      "Expected expiry to remove only the bot's action, and refused expiries to remove none",
+      "Expected expiry to remove only the bot's action for every member, and refused expiries to " +
+        'remove none',
     );
   } finally {
     await session.end();

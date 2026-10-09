@@ -615,7 +615,7 @@ Deno.test('the bot sends its footnote silently', () =>
 bot's action ends when the bot sends a message to the chat or `cancel`. Telegram's clients also stop
 showing it 5.5 seconds after the bot last sent it; the emulator never does so on its own, and
 `account.expireChatAction` stands in for that timeout. In a supergroup, it takes the `botId` whose
-action expires, and other bots' actions stay. The
+action expires for every member, and other bots' actions stay. The
 [chat actions reference](../../features/messages.md#intentional-deviations) describes the deviation.
 
 The test below holds the bot's work on a promise it resolves itself, so it can read the action while

@@ -309,8 +309,9 @@ Other origins are users. Channel and chat origins are [real gaps](#real-gaps).
   action as time passes. An action the bot stops renewing therefore stays until the bot sends a
   message or `cancel`, and one the bot sends after its last message stays too. Tests stand in for
   the timeout with `account.expireChatAction`, which removes one bot's action from a private chat or
-  a supergroup without telling the bot; other bots' actions stay, and the bot's next action shows
-  again. Keeping the bot's actions and expiries in the intended order is the test's part.
+  a supergroup without telling the bot. A supergroup's action ends for every member, as the timeout
+  ends it on every member's client; other bots' actions stay, and the bot's next action shows again.
+  Keeping the bot's actions and expiries in the intended order is the test's part.
 
 ## Real gaps
 

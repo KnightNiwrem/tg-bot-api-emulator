@@ -10,8 +10,8 @@ post:
   operationId: expireSupergroupChatAction
   summary: Expire the chat action one bot shows in a supergroup the account is a member of
   description: >-
-    Stops showing the bot's action; other bots' actions stay, in their order. The bot is not
-    told, and the chat's messages stay as they were; the bot's next `sendChatAction` shows an
+    Stops showing the bot's action to every member, as the timeout ends it on every member's
+    client; other bots' actions stay, in their order. The bot is not told, and the chat's messages stay as they were; the bot's next `sendChatAction` shows an
     action again, as its latest.
   responses:
     '204':
