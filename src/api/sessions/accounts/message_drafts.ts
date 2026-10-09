@@ -9,10 +9,15 @@ import { PRIVATE_CONVERSATION_PATH, privateConversationPathSchema } from './acco
 const PRIVATE_MESSAGE_DRAFT_PATH = `${PRIVATE_CONVERSATION_PATH}/message-draft` as const;
 const PRIVATE_MESSAGE_DRAFT_EXPIRATION_PATH = `${PRIVATE_MESSAGE_DRAFT_PATH}/expiration` as const;
 
-/** Telegram's decimal text form of a nonzero 64-bit draft ID, without leading zeros. */
-const draftIdSchema = z.string()
-  .regex(/^-?[1-9][0-9]*$/)
-  .refine((draftId) => BigInt(draftId) >= -(2n ** 63n) && BigInt(draftId) < 2n ** 63n);
+/** Telegram's decimal text form of a nonzero 64-bit integer, without leading zeros. */
+const NONZERO_DECIMAL_INTEGER_PATTERN = /^-?[1-9][0-9]*$/;
+
+/** The range of Telegram's 64-bit identifiers. */
+const MIN_INT64 = -(2n ** 63n);
+const MAX_INT64 = 2n ** 63n - 1n;
+
+/** A draft ID in Telegram's decimal text form, which a draft action compares as written. */
+const draftIdSchema = z.string().refine(isDraftIdText);
 
 const draftExpirationRequestSchema = z.strictObject({
   /** The draft the test expects the chat to show; omitted to expire whichever draft it shows. */
@@ -88,4 +93,16 @@ function draftExpirationFailureStatus(
       throw new Error(`Unhandled message draft expiration failure: ${unhandledReason}`);
     }
   }
+}
+
+/**
+ * Whether text is a nonzero 64-bit draft ID in Telegram's decimal text form. Only text of that
+ * form is parsed as a number, so other text is refused without throwing.
+ */
+function isDraftIdText(text: string): boolean {
+  if (!NONZERO_DECIMAL_INTEGER_PATTERN.test(text)) {
+    return false;
+  }
+  const draftId = BigInt(text);
+  return draftId >= MIN_INT64 && draftId <= MAX_INT64;
 }

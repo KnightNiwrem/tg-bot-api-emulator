@@ -310,13 +310,15 @@ Deno.test('a test expires the draft an account sees, which the bot can show agai
         await rawExpiryStatus(JSON.stringify({ draft_id: 5 })),
         await rawExpiryStatus(JSON.stringify({ draft_id: '05' })),
         await rawExpiryStatus(JSON.stringify({ draft_id: '0' })),
+        await rawExpiryStatus(JSON.stringify({ draft_id: 'abc' })),
+        await rawExpiryStatus(JSON.stringify({ draft_id: '9223372036854775808' })),
         await rawExpiryStatus(JSON.stringify({ draft_id: '5', reason: 'timeout' })),
         await rawExpiryStatus('not JSON'),
         await shownDraft(),
         await rawExpiryStatus(''),
         await shownDraft(),
       ],
-      [400, 400, 400, 400, 400, { draft_id: '5', text: 'Partial' }, 204, null],
+      [400, 400, 400, 400, 400, 400, 400, { draft_id: '5', text: 'Partial' }, 204, null],
       'Expected malformed expiries to be rejected and an empty body to expire any draft',
     );
   } finally {
@@ -387,6 +389,7 @@ Deno.test("only the bot's messages that reach the chat remove its draft", async 
       userId: bot.id,
     });
     const adaMessage = await ada.sendMessage({ to: privateChat, text: 'Question' });
+    const followUp = await ada.sendMessage({ to: privateChat, text: 'Follow-up' });
     await callBot('sendMessageDraft', { chat_id: ada.id, draft_id: 1, text: 'Thinking' });
 
     const keptAfter = async (action: () => Promise<unknown>) => {
@@ -397,6 +400,9 @@ Deno.test("only the bot's messages that reach the chat remove its draft", async 
     expectEqual(
       [
         await keptAfter(() => ada.sendMessage({ to: privateChat, text: 'Still there?' })),
+        await keptAfter(() =>
+          ada.pinMessage({ chat: privateChat, message_id: adaMessage.message_id })
+        ),
         await keptAfter(() => callBot('sendChatAction', { chat_id: ada.id, action: 'typing' })),
         await ada.getChatActions({ chat: privateChat }),
         await keptAfter(() => callBot('sendChatAction', { chat_id: ada.id, action: 'cancel' })),
@@ -410,7 +416,7 @@ Deno.test("only the bot's messages that reach the chat remove its draft", async 
         await keptAfter(() => callBot('sendMessage', { chat_id: grace.id, text: 'Hi Grace' })),
         await keptAfter(() => callBot('sendMessage', { chat_id: supergroup.id, text: 'Hi all' })),
       ],
-      [kept, kept, [{ bot_id: bot.id, action: 'typing' }], kept, kept, kept, kept],
+      [kept, kept, kept, [{ bot_id: bot.id, action: 'typing' }], kept, kept, kept, kept],
       'Expected messages and actions that do not reach the chat from the bot to keep its draft',
     );
 
@@ -442,14 +448,16 @@ Deno.test("only the bot's messages that reach the chat remove its draft", async 
           from_chat_id: ada.id,
           message_id: adaMessage.message_id,
         }),
+        // The pin's service message is the bot's, which reaches the chat as any message does.
+        await clearedBy('pinChatMessage', { chat_id: ada.id, message_id: followUp.message_id }),
         await (async () => {
           await callBot('sendMessageDraft', { chat_id: ada.id, draft_id: 1, text: 'Thinking' });
           const { status } = await fetchBot(api, session, bot.token, 'sendMediaGroup', photoAlbum);
           return [status, await ada.getMessageDraft({ chat: privateChat })];
         })(),
       ],
-      [[200, null], [200, null], [200, null]],
-      "Expected forwards, copies and albums in the chat to remove the bot's draft",
+      [[200, null], [200, null], [200, null], [200, null]],
+      "Expected forwards, copies, albums and pins in the chat to remove the bot's draft",
     );
   } finally {
     await session.end();

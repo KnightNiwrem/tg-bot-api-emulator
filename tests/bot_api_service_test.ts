@@ -463,6 +463,11 @@ function createBotApiFixture() {
   });
   const privateConversations = new PrivateConversationRepository();
   const blockedUsers = new BlockedUserRepository();
+  const messageDrafts = new MessageDraftService({
+    accounts,
+    bots,
+    drafts: new MessageDraftRepository(),
+  });
   const privateMessaging = new PrivateMessagingService({
     accounts,
     bots,
@@ -480,6 +485,7 @@ function createBotApiFixture() {
       },
     },
     events,
+    messageDrafts,
     currentUnixTimeSeconds: () => 1_700_000_000,
   });
   const supergroupMessaging = new SupergroupMessagingService({
@@ -529,18 +535,12 @@ function createBotApiFixture() {
     chatActions: new ChatActionRepository(),
     currentTimeMilliseconds: () => 1_700_000_000_000,
   });
-  const messageDrafts = new MessageDraftService({
-    accounts,
-    bots,
-    drafts: new MessageDraftRepository(),
-  });
   const textFixingContext = createSessionUserMentionContext({ accounts, bots });
   const messageSender = new BotMessageSender({
     botMessages: privateMessaging,
     supergroupBotMessages: supergroupMessaging,
     botMessageViews,
     chatActions,
-    messageDrafts,
     getPrivateForwardName: () => undefined,
   });
   const botApi = new BotApiService({

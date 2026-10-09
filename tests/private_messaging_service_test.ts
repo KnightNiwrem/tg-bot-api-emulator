@@ -2743,6 +2743,8 @@ function createPrivateMessagingFixture() {
         botUpdateDelivery.publish(event);
       },
     },
+    // No draft is shown in these chats; a bot's message has none to remove.
+    messageDrafts: { clearBotDraft: () => {} },
     currentUnixTimeSeconds: () => currentUnixTimeSeconds,
   });
   const advanceClockSeconds = (seconds: number) => {

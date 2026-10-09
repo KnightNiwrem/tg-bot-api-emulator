@@ -105,9 +105,10 @@ As TDLib's [`updatePendingMessage`][pending-message] tells clients to show draft
 
 - A write with the shown draft's `draft_id` changes the draft, and one with another ID replaces it.
   Each chat shows at most one draft.
-- Any message from the bot to the chat removes the draft, including a forward, a copy or an album.
-  The account's own messages, the bot's messages to other chats, a send that fails, and chat actions
-  keep it. A draft also leaves the bot's chat action as it was.
+- Any message from the bot to the chat removes the draft, including a forward, a copy, an album or
+  the service message of the bot's pin. The account's own messages, the bot's messages to other
+  chats, a send that fails, and chat actions keep it. A draft also leaves the bot's chat action as
+  it was.
 - The text is read as message text is, but may be empty, as a bot's caption may: empty text, or text
   of nothing but spaces and line breaks, shows a "Thinking…" placeholder. It has at most 4,096
   characters after formatting is applied.

@@ -139,6 +139,11 @@ export function createEmulationSession(
   });
   const privateConversations = new PrivateConversationRepository();
   const blockedUsers = new BlockedUserRepository();
+  const messageDrafts = new MessageDraftService({
+    accounts,
+    bots,
+    drafts: new MessageDraftRepository(),
+  });
   const privateMessaging = new PrivateMessagingService({
     accounts,
     bots,
@@ -151,6 +156,7 @@ export function createEmulationSession(
     blockedUsers,
     joinRequesterContacts: chatAdmission,
     events: botUpdateDelivery,
+    messageDrafts,
     currentUnixTimeSeconds,
   });
   const messagePinning = new MessagePinningService({
@@ -235,12 +241,6 @@ export function createEmulationSession(
     currentTimeMilliseconds: () => Date.now(),
   });
 
-  const messageDrafts = new MessageDraftService({
-    accounts,
-    bots,
-    drafts: new MessageDraftRepository(),
-  });
-
   const botCommands = new BotCommandService({
     accounts,
     bots,
@@ -307,7 +307,6 @@ export function createEmulationSession(
     supergroupBotMessages: supergroupMessaging,
     botMessageViews,
     chatActions,
-    messageDrafts,
     getPrivateForwardName: getAccountPrivateForwardName,
   });
   const botApi = new BotApiService({

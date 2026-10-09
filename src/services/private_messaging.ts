@@ -671,6 +671,10 @@ interface ChatDomainEventSink {
   publish(event: ChatDomainEvent): void;
 }
 
+interface MessageDraftClearing {
+  clearBotDraft(conversation: PrivateConversationKey): void;
+}
+
 /**
  * Decides whether a pending join request lets a bot write to an account that has not started a
  * private conversation with it, which chat admission grants to the bots that receive the request.
@@ -694,6 +698,8 @@ interface PrivateMessagingServiceDependencies {
   readonly blockedUsers: BlockedUserLookup;
   readonly joinRequesterContacts: JoinRequesterContactGrants;
   readonly events: ChatDomainEventSink;
+  /** Removes the message draft that any message from the bot removes from the chat. */
+  readonly messageDrafts: MessageDraftClearing;
   readonly currentUnixTimeSeconds: () => number;
 }
 
@@ -753,6 +759,7 @@ export class PrivateMessagingService {
   readonly #blockedUsers: BlockedUserLookup;
   readonly #joinRequesterContacts: JoinRequesterContactGrants;
   readonly #events: ChatDomainEventSink;
+  readonly #messageDrafts: MessageDraftClearing;
   readonly #currentUnixTimeSeconds: () => number;
 
   constructor(
@@ -768,6 +775,7 @@ export class PrivateMessagingService {
       blockedUsers,
       joinRequesterContacts,
       events,
+      messageDrafts,
       currentUnixTimeSeconds,
     }: PrivateMessagingServiceDependencies,
   ) {
@@ -783,6 +791,7 @@ export class PrivateMessagingService {
     this.#blockedUsers = blockedUsers;
     this.#joinRequesterContacts = joinRequesterContacts;
     this.#events = events;
+    this.#messageDrafts = messageDrafts;
     this.#currentUnixTimeSeconds = currentUnixTimeSeconds;
   }
 
@@ -1953,6 +1962,11 @@ export class PrivateMessagingService {
         conversation,
         replyInterfaceMarkup.kind === 'reply_keyboard_removal' ? undefined : storedMessage.id,
       );
+    }
+    // As TDLib's `updatePendingMessage` tells clients, any incoming message removes the bot's
+    // draft: a sent, forwarded or copied message, an album's, or a service message of its pin.
+    if (authorRole === 'bot') {
+      this.#messageDrafts.clearBotDraft(conversation);
     }
     this.#events.publish({ type: 'message_created', message: storedMessage });
 

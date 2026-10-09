@@ -457,6 +457,8 @@ function createCallbackQueryFixture() {
       },
     },
     events,
+    // No draft is shown in these chats; a bot's message has none to remove.
+    messageDrafts: { clearBotDraft: () => {} },
     currentUnixTimeSeconds: () => 1_700_000_000,
   });
   const supergroupMessaging = new SupergroupMessagingService({
