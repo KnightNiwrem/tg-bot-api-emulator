@@ -99,13 +99,15 @@ type OnlyUndefined<Type> = [Type] extends [undefined] ? [undefined] extends [Typ
  * `[]` to the path.
  */
 export type UnknownKeyPaths<Local, Reference, Path extends string = '', Enclosing = never> =
-  IsEnclosed<Local, Enclosing> extends true ? never
-    : EachMemberUnknownKeyPaths<Local, Reference, Path, Enclosing | readonly [Local]>;
-
-type EachMemberUnknownKeyPaths<Local, Reference, Path extends string, Enclosing> =
-  ComparedMembers<Local, Reference> extends infer LocalMember
-    ? LocalMember extends unknown ? MemberUnknownKeyPaths<LocalMember, Reference, Path, Enclosing>
-    : never
+  IsEnclosed<Local, Reference, Enclosing> extends true ? never
+    : ComparedMembers<Local, Reference> extends infer LocalMember
+      ? LocalMember extends unknown ? MemberUnknownKeyPaths<
+          LocalMember,
+          Reference,
+          Path,
+          Enclosing | readonly [Local, Reference]
+        >
+      : never
     : never;
 
 type MemberUnknownKeyPaths<LocalMember, Reference, Path extends string, Enclosing> =
@@ -126,8 +128,8 @@ type MemberUnknownKeyPaths<LocalMember, Reference, Path extends string, Enclosin
 type ObjectUnknownKeyPaths<LocalObject, ReferenceObjects, Path extends string, Enclosing> = {
   [Key in DeclaredKeys<LocalObject>]-?: Key extends KeysOfAnyMember<ReferenceObjects>
     ? UnknownKeyPaths<
-      NonNullable<LocalObject[Key]>,
-      NonNullable<ValuesOfAnyMember<ReferenceObjects, Key>>,
+      Exclude<LocalObject[Key], undefined>,
+      Exclude<ValuesOfAnyMember<ReferenceObjects, Key>, undefined>,
       KeyPath<Path, Key>,
       Enclosing
     >
@@ -150,8 +152,13 @@ type KeyComparedMembers<LocalObject, ReferenceObjects> =
  * member, and ends when there is no single one.
  */
 export type IncompatibleValuePaths<Local, Reference, Path extends string = '', Enclosing = never> =
-  IsEnclosed<Local, Enclosing> extends true ? never
-    : EachMemberIncompatibleValuePaths<Local, Reference, Path, Enclosing | readonly [Local]>;
+  IsEnclosed<Local, Reference, Enclosing> extends true ? never
+    : EachMemberIncompatibleValuePaths<
+      Local,
+      Reference,
+      Path,
+      Enclosing | readonly [Local, Reference]
+    >;
 
 type EachMemberIncompatibleValuePaths<Local, Reference, Path extends string, Enclosing> =
   ComparedMembers<Local, Reference> extends infer LocalMember
@@ -292,11 +299,15 @@ type IsUnion<Type, Whole = Type> = Type extends unknown ? [Whole] extends [Type]
   : never;
 
 /**
- * Whether a local type already encloses itself on the path being compared, as a recursive type
- * does; its counterpart there is then the same reference type, already being compared.
+ * Whether the same local type is already being compared with the same reference type on the path,
+ * as happens where both are recursive. A recursive local type met again with another reference
+ * type, whose shape may differ, is compared again.
  */
-type IsEnclosed<Local, Enclosing> = true extends (
-  Enclosing extends readonly [infer EnclosingType] ? IsExactly<EnclosingType, Local>
+type IsEnclosed<Local, Reference, Enclosing> = true extends (
+  Enclosing extends readonly [infer EnclosingLocal, infer EnclosingReference]
+    ? [IsExactly<EnclosingLocal, Local>, IsExactly<EnclosingReference, Reference>] extends
+      [true, true] ? true
+    : false
     : never
 ) ? true
   : false;

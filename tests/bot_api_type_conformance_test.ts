@@ -64,6 +64,7 @@ import type {
   BotApiEditedMessageUpdate,
   BotApiInlineQueryUpdate,
   BotApiMenuButton,
+  BotApiMessage,
   BotApiMessageEntity,
   BotApiMessageGenerationStopped,
   BotApiMessageReactionUpdate,
@@ -73,9 +74,11 @@ import type {
   BotApiPinnedPrivateMessage,
   BotApiPollAnswerUpdate,
   BotApiPollUpdate,
+  BotApiPrivateChat,
   BotApiPrivateChatFullInfo,
   BotApiPrivateMessage,
   BotApiStoppedMessageGenerationUpdate,
+  BotApiSupergroupChat,
   BotApiSupergroupChatFullInfo,
   BotApiSupergroupMessage,
   BotApiUpdate,
@@ -342,6 +345,21 @@ type GrammyEditedSupergroupMessage = Update.Edited & GrammySupergroupMessage;
 /** grammY's update that carries the field, which its `Update` leaves optional, as the payload. */
 type GrammyUpdateCarrying<Field extends keyof Update, Payload> = Update & Record<Field, Payload>;
 
+/**
+ * A local message update with its message narrowed to one kind of chat. Message updates are
+ * checked once for each kind of chat: checking both kinds at once, against the union of their
+ * grammY variants, exceeds TypeScript's instantiation limit.
+ */
+type MessageUpdateInChat<
+  MessageUpdate,
+  Field extends keyof MessageUpdate,
+  Chat,
+> =
+  & Omit<MessageUpdate, Field>
+  & {
+    readonly [Key in Field]: Extract<MessageUpdate[Field], { readonly chat: Chat }>;
+  };
+
 // ## Conformance
 
 interface BotApiWireTypeConformance {
@@ -351,10 +369,16 @@ interface BotApiWireTypeConformance {
   richMessage: ExpectTrue<
     ConformsToGrammy<BotApiRichMessage, NonNullable<Message['rich_message']>>
   >;
-  messageUpdate: ExpectTrue<
+  privateMessageUpdate: ExpectTrue<
     ConformsToGrammy<
-      BotApiMessageUpdate,
-      GrammyUpdateCarrying<'message', GrammyPrivateMessage | GrammySupergroupMessage>
+      MessageUpdateInChat<BotApiMessageUpdate, 'message', BotApiPrivateChat>,
+      GrammyUpdateCarrying<'message', GrammyPrivateMessage>
+    >
+  >;
+  supergroupMessageUpdate: ExpectTrue<
+    ConformsToGrammy<
+      MessageUpdateInChat<BotApiMessageUpdate, 'message', BotApiSupergroupChat>,
+      GrammyUpdateCarrying<'message', GrammySupergroupMessage>
     >
   >;
   editedPrivateMessage: ExpectTrue<
@@ -363,13 +387,16 @@ interface BotApiWireTypeConformance {
   editedSupergroupMessage: ExpectTrue<
     ConformsToGrammy<BotApiSupergroupMessage, GrammyEditedSupergroupMessage>
   >;
-  editedMessageUpdate: ExpectTrue<
+  editedPrivateMessageUpdate: ExpectTrue<
     ConformsToGrammy<
-      BotApiEditedMessageUpdate,
-      GrammyUpdateCarrying<
-        'edited_message',
-        GrammyEditedPrivateMessage | GrammyEditedSupergroupMessage
-      >
+      MessageUpdateInChat<BotApiEditedMessageUpdate, 'edited_message', BotApiPrivateChat>,
+      GrammyUpdateCarrying<'edited_message', GrammyEditedPrivateMessage>
+    >
+  >;
+  editedSupergroupMessageUpdate: ExpectTrue<
+    ConformsToGrammy<
+      MessageUpdateInChat<BotApiEditedMessageUpdate, 'edited_message', BotApiSupergroupChat>,
+      GrammyUpdateCarrying<'edited_message', GrammyEditedSupergroupMessage>
     >
   >;
   callbackQueryUpdate: ExpectTrue<
@@ -455,6 +482,11 @@ interface BotApiWireTypeConformance {
   >;
   webhookInfo: ExpectTrue<ConformsToGrammy<BotApiWebhookInfo, WebhookInfo>>;
 }
+
+/** Every message is of one of the kinds of chat its updates are checked for above. */
+type EveryMessageChatChecked = ExpectTrue<
+  IsExactly<BotApiMessage, BotApiPrivateMessage | BotApiSupergroupMessage>
+>;
 
 /** Every update the emulator emits is one of the variants checked above. */
 type EveryUpdateVariantChecked = ExpectTrue<
@@ -622,7 +654,29 @@ type FileWithIncompatibleValue =
 /** An invite link without whether it is revoked, which grammY requires. */
 type InviteLinkWithoutRequiredField = Omit<BotApiChatInviteLink, 'is_revoked'>;
 
+/** A recursive local type that allows `rootOnly` at every depth. */
+interface RecursiveLocalNode {
+  readonly rootOnly?: string;
+  readonly child?: RecursiveLocalNode;
+}
+
+/** A reference that allows `rootOnly` only at the root, so a nested one is an unknown key. */
+interface ReferenceRootNode {
+  rootOnly?: string;
+  child?: ReferenceChildNode;
+}
+
+interface ReferenceChildNode {
+  child?: ReferenceChildNode;
+}
+
 interface NegativeCaseFailures {
+  recursiveTypeIsComparedAtEachReferenceShape: ExpectTrue<
+    IsExactly<
+      FailingPaths<Conformance<RecursiveLocalNode, ReferenceRootNode>>,
+      'child.rootOnly'
+    >
+  >;
   misspelledKeyIsUnknown: ExpectTrue<
     IsExactly<
       FailingPaths<ConformsToGrammy<DocumentMessageWithMisspelledKey, GrammyPrivateMessage>>,
@@ -644,6 +698,10 @@ interface NegativeCaseFailures {
 }
 
 interface NegativeCasesFail {
+  recursiveTypeAtAnotherReferenceShape: ExpectTrue<
+    // @ts-expect-error A recursive type is compared again where the reference's shape changes.
+    Conformance<RecursiveLocalNode, ReferenceRootNode>
+  >;
   misspelledKey: ExpectTrue<
     // @ts-expect-error A misspelled optional key is a key grammY's message does not declare.
     ConformsToGrammy<DocumentMessageWithMisspelledKey, GrammyPrivateMessage>
