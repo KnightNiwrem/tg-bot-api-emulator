@@ -33,10 +33,10 @@ import {
 
 /** The methods that forward or copy existing messages. */
 export const MESSAGE_REPETITION_METHODS: readonly BotApiMethod[] = [
-  { name: 'copyMessage', handler: handleCopyMessage },
-  { name: 'copyMessages', handler: handleCopyMessages },
-  { name: 'forwardMessage', handler: handleForwardMessage },
-  { name: 'forwardMessages', handler: handleForwardMessages },
+  { name: 'copyMessage', recordsActivity: true, handler: handleCopyMessage },
+  { name: 'copyMessages', recordsActivity: true, handler: handleCopyMessages },
+  { name: 'forwardMessage', recordsActivity: true, handler: handleForwardMessage },
+  { name: 'forwardMessages', recordsActivity: true, handler: handleForwardMessages },
 ];
 
 /** TDLib's description for a message effect in a request that cannot use one. */

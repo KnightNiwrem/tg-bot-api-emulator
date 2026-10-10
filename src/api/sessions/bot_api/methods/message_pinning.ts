@@ -22,9 +22,9 @@ import {
 
 /** The methods that pin or unpin a chat's messages. */
 export const MESSAGE_PINNING_METHODS: readonly BotApiMethod[] = [
-  { name: 'pinChatMessage', handler: handlePinChatMessage },
-  { name: 'unpinChatMessage', handler: handleUnpinChatMessage },
-  { name: 'unpinAllChatMessages', handler: handleUnpinAllChatMessages },
+  { name: 'pinChatMessage', recordsActivity: true, handler: handlePinChatMessage },
+  { name: 'unpinChatMessage', recordsActivity: true, handler: handleUnpinChatMessage },
+  { name: 'unpinAllChatMessages', recordsActivity: true, handler: handleUnpinAllChatMessages },
 ];
 
 /**

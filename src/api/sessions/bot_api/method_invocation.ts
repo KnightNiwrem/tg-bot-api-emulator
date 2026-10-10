@@ -1,6 +1,6 @@
 import { z } from 'zod';
 
-import { recordBotApiCall } from './call_recording.ts';
+import { recordBotApiCall, type RecordedBotApiCallDetails } from './call_recording.ts';
 import { CHAT_NOT_FOUND_DESCRIPTION, resolveChatIdentifier } from './chat_access.ts';
 import {
   type BotApiCallContext,
@@ -29,15 +29,15 @@ export interface BotApiMethodCall {
 /**
  * Runs a bot's call of a method, however the call arrived, unless a test queued a rate limit or
  * server error answer for it, which the call receives instead, before the method reads its
- * parameters or changes anything. The call and its answer are recorded as bot activity.
+ * parameters or changes anything. The call and its answer are recorded as bot activity if the
+ * method's calls are.
  */
 export async function callBotApiMethod(
   context: BotApiCallContext,
   { method, requestedMethodName, parameters, uploadedFiles }: BotApiMethodCall,
 ): Promise<BotApiMethodAnswer> {
   const answer = await answerBotApiMethodCall(context, method, parameters, uploadedFiles);
-  recordBotApiCall(context, {
-    methodName: method.name,
+  recordImplementedMethodCall(context, method, {
     requestedMethodName,
     parameters,
     uploadedFiles,
@@ -69,23 +69,37 @@ export function rejectUnknownBotApiMethod(
 
 /**
  * Answers a call of an implemented method whose request could not be decoded, and records it as
- * bot activity without parameters.
+ * bot activity without parameters if the method's calls are recorded.
  */
 export function rejectUndecodableBotApiCall(
   context: BotApiCallContext,
-  { name }: BotApiMethod,
+  method: BotApiMethod,
   requestedMethodName: string,
   description: string,
 ): BotApiMethodAnswer {
   const answer = botApiError(400, description);
-  recordBotApiCall(context, {
-    methodName: name,
+  recordImplementedMethodCall(context, method, {
     requestedMethodName,
     parameters: {},
     uploadedFiles: new Map(),
     chatId: undefined,
   }, answer);
   return answer;
+}
+
+/**
+ * Records a call of an implemented method under the method's current name, unless the method's
+ * record declares that its calls are not recorded.
+ */
+function recordImplementedMethodCall(
+  context: BotApiCallContext,
+  { name, recordsActivity }: BotApiMethod,
+  call: Omit<RecordedBotApiCallDetails, 'methodName'>,
+  answer: BotApiMethodAnswer,
+): void {
+  if (recordsActivity) {
+    recordBotApiCall(context, { methodName: name, ...call }, answer);
+  }
 }
 
 async function answerBotApiMethodCall(

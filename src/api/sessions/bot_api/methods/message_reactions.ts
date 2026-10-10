@@ -18,7 +18,7 @@ import {
 
 /** The methods that set the bot's reactions to a message. */
 export const MESSAGE_REACTION_METHODS: readonly BotApiMethod[] = [
-  { name: 'setMessageReaction', handler: handleSetMessageReaction },
+  { name: 'setMessageReaction', recordsActivity: true, handler: handleSetMessageReaction },
 ];
 
 /** Telegram's descriptions for rejected setMessageReaction requests. */

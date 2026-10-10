@@ -22,8 +22,8 @@ import {
 
 /** The methods that delete messages. */
 export const MESSAGE_DELETION_METHODS: readonly BotApiMethod[] = [
-  { name: 'deleteMessage', handler: handleDeleteMessage },
-  { name: 'deleteMessages', handler: handleDeleteMessages },
+  { name: 'deleteMessage', recordsActivity: true, handler: handleDeleteMessage },
+  { name: 'deleteMessages', recordsActivity: true, handler: handleDeleteMessages },
 ];
 
 /** Telegram's descriptions for rejected message deletions. */

@@ -206,6 +206,7 @@ for the handler. Work that a handler starts without awaiting it falls outside ev
 [client HTTP reads](../../clients/typescript/bot_activity_http_page_reader.ts),
 [service tests](../../tests/bot_activity_service_test.ts),
 [HTTP tests](../../tests/bot_activity_api_test.ts),
+[call recording tests](../../tests/bot_api_call_recording_test.ts),
 [client tests](../../clients/typescript/bot_activity_log_test.ts),
 [client wait tests](../../clients/typescript/bot_activity_wait_deadline_test.ts) and
 [grammY runner tests](../../tests/grammy_runner_bot_activity_test.ts).

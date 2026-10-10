@@ -20,10 +20,10 @@ import {
 
 /** The methods that read a chat, or change its title, description or permissions. */
 export const CHAT_INFO_METHODS: readonly BotApiMethod[] = [
-  { name: 'getChat', handler: handleGetChat },
-  { name: 'setChatDescription', handler: handleSetChatDescription },
-  { name: 'setChatPermissions', handler: handleSetChatPermissions },
-  { name: 'setChatTitle', handler: handleSetChatTitle },
+  { name: 'getChat', recordsActivity: true, handler: handleGetChat },
+  { name: 'setChatDescription', recordsActivity: true, handler: handleSetChatDescription },
+  { name: 'setChatPermissions', recordsActivity: true, handler: handleSetChatPermissions },
+  { name: 'setChatTitle', recordsActivity: true, handler: handleSetChatTitle },
 ];
 
 // Telegram reads a missing title or description as empty text.

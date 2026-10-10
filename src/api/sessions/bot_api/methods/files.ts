@@ -11,7 +11,7 @@ import type { BotApiRequestParameters } from '../request_parameters.ts';
 
 /** The methods that prepare a file for the bot to download. */
 export const FILE_METHODS: readonly BotApiMethod[] = [
-  { name: 'getFile', handler: handleGetFile },
+  { name: 'getFile', recordsActivity: true, handler: handleGetFile },
 ];
 
 /** Telegram's descriptions for rejected getFile requests. */
