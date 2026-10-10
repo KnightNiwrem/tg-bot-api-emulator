@@ -1,16 +1,19 @@
-import { createTestApi } from '../../tests/support/emulation_api.ts';
+import {
+  createTestInProcessEmulator,
+  type TestInProcessEmulator,
+} from '../../tests/support/in_process_emulator.ts';
 import {
   BotActivityTimeoutError,
   EmulationClientError,
   latest,
-  TelegramEmulationClient,
   UnexpectedBotActivityError,
 } from './mod.ts';
 import type { BotActivityCriteria, BotActivityLog } from './mod.ts';
 
 Deno.test('BotActivityLog waits for entries after the same position in either order', async () => {
   for (const order of [['B', 'C'], ['C', 'B']]) {
-    const { session, bot, callBot } = await createFixture();
+    await using emulator = createTestInProcessEmulator();
+    const { session, bot, callBot } = await createFixture(emulator);
     const activity = session.botActivity({ bot_id: bot.id });
     const start = await activity.position();
 
@@ -32,7 +35,8 @@ Deno.test('BotActivityLog waits for entries after the same position in either or
 });
 
 Deno.test('BotActivityLog waits for an entry that is recorded later', async () => {
-  const { session, callBot } = await createFixture();
+  await using emulator = createTestInProcessEmulator();
+  const { session, callBot } = await createFixture(emulator);
   const activity = session.botActivity();
   const start = await activity.position();
 
@@ -48,7 +52,8 @@ Deno.test('BotActivityLog waits for an entry that is recorded later', async () =
 });
 
 Deno.test('BotActivityLog keeps waiting past entries its where predicate rejects', async () => {
-  const { session, callBot } = await createFixture();
+  await using emulator = createTestInProcessEmulator();
+  const { session, callBot } = await createFixture(emulator);
   const activity = session.botActivity();
   const start = await activity.position();
   await callBot('sendMessage', { text: 'first' });
@@ -70,7 +75,8 @@ Deno.test('BotActivityLog keeps waiting past entries its where predicate rejects
 });
 
 Deno.test('BotActivityLog gives a view where predicate the entries its criteria can match', async () => {
-  const { session, callBot } = await createFixture();
+  await using emulator = createTestInProcessEmulator();
+  const { session, callBot } = await createFixture(emulator);
   const activity = session.botActivity({
     kind: 'bot_api_call',
     where: (entry) => entry.method !== 'sendChatAction',
@@ -86,7 +92,8 @@ Deno.test('BotActivityLog gives a view where predicate the entries its criteria 
 });
 
 Deno.test('BotActivityLog finds the confirmation of a delivered update by its ID', async () => {
-  const { session, bot, account, getUpdates } = await createFixture();
+  await using emulator = createTestInProcessEmulator();
+  const { session, bot, account, getUpdates } = await createFixture(emulator);
   await account.sendMessage({ to: { type: 'private', botId: bot.id }, text: 'Second' });
   await getUpdates({});
   await getUpdates({ offset: 3 });
@@ -119,7 +126,8 @@ Deno.test('BotActivityLog finds the confirmation of a delivered update by its ID
 });
 
 Deno.test('BotActivityLog cursors move independently of each other', async () => {
-  const { session, callBot } = await createFixture();
+  await using emulator = createTestInProcessEmulator();
+  const { session, callBot } = await createFixture(emulator);
   const activity = session.botActivity();
   await callBot('sendMessage', { text: 'A' });
   await callBot('sendMessage', { text: 'C' });
@@ -141,7 +149,8 @@ Deno.test('BotActivityLog cursors move independently of each other', async () =>
 });
 
 Deno.test('BotActivityLog fails a wait that finds no entry in time', async () => {
-  const { session, bot, callBot } = await createFixture();
+  await using emulator = createTestInProcessEmulator();
+  const { session, bot, callBot } = await createFixture(emulator);
   const activity = session.botActivity({ bot_id: bot.id }, { timeoutMs: 20 });
   await callBot('sendMessage', { text: 'Before' });
   const start = await activity.position();
@@ -163,7 +172,8 @@ Deno.test('BotActivityLog fails a wait that finds no entry in time', async () =>
 });
 
 Deno.test('BotActivityLog asserts that a range holds no matching entry', async () => {
-  const { session, callBot } = await createFixture();
+  await using emulator = createTestInProcessEmulator();
+  const { session, callBot } = await createFixture(emulator);
   const activity = session.botActivity();
   const start = await activity.position();
   await callBot('sendMessage', { text: 'One' });
@@ -189,7 +199,8 @@ Deno.test('BotActivityLog asserts that a range holds no matching entry', async (
 });
 
 Deno.test('BotActivityLog rejects a read whose filter conflicts with the log filter', async () => {
-  const { session, bot } = await createFixture();
+  await using emulator = createTestInProcessEmulator();
+  const { session, bot } = await createFixture(emulator);
   const activity = session.botActivity({ bot_id: bot.id, method: 'sendMessage' });
 
   await activity.assertNone({ method: 'SENDMESSAGE' }, { after: 0, before: 1 });
@@ -212,7 +223,8 @@ Deno.test('BotActivityLog rejects a read whose filter conflicts with the log fil
 });
 
 Deno.test('BotActivityLog matches only calls for empty parameters, in a view or a read', async () => {
-  const { session, getUpdates } = await createFixture();
+  await using emulator = createTestInProcessEmulator();
+  const { session, getUpdates } = await createFixture(emulator);
   await getUpdates({});
   await getUpdates({ offset: 2 });
   const noParameters: Record<string, string> = Object.fromEntries([]);
@@ -246,7 +258,8 @@ Deno.test('BotActivityLog matches only calls for empty parameters, in a view or 
 });
 
 Deno.test('BotActivityLog finds the calls among updates for empty and nonempty parameters', async () => {
-  const { session, callBot, getUpdates } = await createFixture();
+  await using emulator = createTestInProcessEmulator();
+  const { session, callBot, getUpdates } = await createFixture(emulator);
   await getUpdates({});
   await callBot('sendMessage', { text: 'A' });
   await getUpdates({ offset: 2 });
@@ -281,7 +294,8 @@ Deno.test('BotActivityLog finds the calls among updates for empty and nonempty p
 });
 
 Deno.test('BotActivityLog combines older and current names of a method in either order', async () => {
-  const { session, callBot } = await createFixture();
+  await using emulator = createTestInProcessEmulator();
+  const { session, callBot } = await createFixture(emulator);
   await callBot('banChatMember', { user_id: 1 });
   await callBot('sendMessage', { text: 'After' });
 
@@ -311,7 +325,8 @@ Deno.test('BotActivityLog combines older and current names of a method in either
 });
 
 Deno.test('BotActivityLog rejects criteria that only calls have with those of updates', async () => {
-  const { session, account } = await createFixture();
+  await using emulator = createTestInProcessEmulator();
+  const { session, account } = await createFixture(emulator);
   const contradictions: {
     readonly view: BotActivityCriteria;
     readonly read: BotActivityCriteria;
@@ -332,7 +347,8 @@ Deno.test('BotActivityLog rejects criteria that only calls have with those of up
 });
 
 Deno.test('BotActivityLog reports positions the server rejects', async () => {
-  const { session } = await createFixture();
+  await using emulator = createTestInProcessEmulator();
+  const { session } = await createFixture(emulator);
   try {
     await session.botActivity().waitFor({}, { after: 5 });
   } catch (error) {
@@ -361,11 +377,7 @@ async function assertRejects(
   throw new Error(message);
 }
 
-async function createFixture() {
-  const publicOrigin = 'http://emulator.example:9000';
-  const api = createTestApi(publicOrigin);
-  const fetch = createInProcessFetch(api.fetch);
-  const client = new TelegramEmulationClient(publicOrigin, { fetch });
+async function createFixture({ client, fetch }: TestInProcessEmulator) {
   const session = await client.createSession();
   const { token, bot } = await session.createBot({ first_name: 'Test Bot', username: 'test_bot' });
   const { account } = await session.createAccount({ first_name: 'Ada' });
@@ -388,10 +400,4 @@ async function createFixture() {
     });
   };
   return { session, bot, account, callBot, getUpdates };
-}
-
-function createInProcessFetch(
-  handler: (request: Request) => Response | Promise<Response>,
-): typeof globalThis.fetch {
-  return async (input, init) => await handler(new Request(input, init));
 }

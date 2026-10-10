@@ -2,6 +2,7 @@
   "$schema": "https://raw.githubusercontent.com/fallow-rs/fallow/main/schema.json",
   "entry": [
     "clients/typescript/mod.ts",
+    "in_process/mod.ts",
     "src/main.ts",
     "tests/support/openapi_conformance/coverage_report.ts"
   ],
@@ -367,6 +368,25 @@
           "src/api/**/*.ts",
           "src/config.ts",
           "src/server.ts"
+        ]
+      },
+      {
+        "name": "typescript-client-tests",
+        "patterns": [
+          "clients/typescript/**/*_test.ts",
+          "clients/typescript/test_support/**/*.ts"
+        ]
+      },
+      {
+        "name": "typescript-client",
+        "patterns": [
+          "clients/typescript/**/*.ts"
+        ]
+      },
+      {
+        "name": "in-process-emulator",
+        "patterns": [
+          "in_process/**/*.ts"
         ]
       }
     ],
@@ -747,13 +767,24 @@
         "allowTypeOnly": [
           "session"
         ]
+      },
+      {
+        "from": "typescript-client",
+        "allow": []
+      },
+      {
+        "from": "in-process-emulator",
+        "allow": [
+          "composition",
+          "transport",
+          "typescript-client"
+        ]
       }
     ],
     "coverage": {
       "requireAllFiles": true,
       "allowUnmatched": [
         "tests/**",
-        "clients/**",
         "docs/**"
       ]
     }

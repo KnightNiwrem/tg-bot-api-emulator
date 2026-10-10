@@ -15,7 +15,8 @@ deno task start
 ```
 
 It listens on `http://localhost:8081`. The [project README](../../../README.md#environment) lists
-the settings that change the address.
+the settings that change the address. When the bot under test runs in the test's own process, the
+[in-process emulator](in-process-emulator.md) can run there too, with no server to start.
 
 ## Write the test
 

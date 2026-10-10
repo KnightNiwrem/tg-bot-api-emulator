@@ -1,10 +1,12 @@
 import { Bot } from 'https://cdn.jsdelivr.net/gh/grammyjs/grammY@^1.46.0/src/bot.ts';
 import { webhookCallback } from 'https://cdn.jsdelivr.net/gh/grammyjs/grammY@^1.46.0/src/convenience/webhook.ts';
-import {
-  createTestSession,
-  type EmulationApi,
-  TEST_PUBLIC_ORIGIN,
-} from './support/emulation_api.ts';
+import { createTestApi, TEST_PUBLIC_ORIGIN } from './support/emulation_api.ts';
+import { createTestInProcessEmulator } from './support/in_process_emulator.ts';
+
+/** What the tests send requests to by path: the emulation API, or an in-process emulator. */
+interface RequestRecipient {
+  request(path: string, init?: RequestInit): Response | Promise<Response>;
+}
 
 interface BotActivityReadBody {
   readonly entries: ReadonlyArray<Record<string, unknown>>;
@@ -272,11 +274,14 @@ Deno.test('DELETE /sessions/:sessionId answers held bot activity reads', async (
 });
 
 Deno.test('GET bot-activity records a webhook reply before the confirmation of its update', async () => {
-  const { api, sessionPath, activityPath, createdBot, account, sendText } = await createFixture();
+  await using emulator = createTestInProcessEmulator();
+  const { api, sessionPath, activityPath, createdBot, account, sendText } = await createFixture(
+    emulator,
+  );
   const grammyBot = new Bot(createdBot.token, {
     client: {
       apiRoot: `${TEST_PUBLIC_ORIGIN}${sessionPath}/bot-api`,
-      fetch: createInProcessFetch(api.fetch),
+      fetch: emulator.fetch,
       canUseWebhookReply: (method) => method === 'sendMessage',
     },
   });
@@ -314,9 +319,9 @@ Deno.test('GET bot-activity records a webhook reply before the confirmation of i
   }
 });
 
-/** Creates a session holding a bot and an account that can message it. */
-async function createFixture() {
-  const { api, sessionPath } = await createTestSession();
+/** Creates a session on `api` holding a bot and an account that can message it. */
+async function createFixture(api: RequestRecipient = createTestApi()) {
+  const sessionPath = await createSession(api);
   const createdBot = await postJson(api, `${sessionPath}/bots`, {
     first_name: 'Test Bot',
     username: 'test_bot',
@@ -344,7 +349,16 @@ async function createFixture() {
   };
 }
 
-async function postJson(api: EmulationApi, path: string, body: unknown): Promise<unknown> {
+async function createSession(api: RequestRecipient): Promise<string> {
+  const response = await api.request('/sessions', { method: 'POST' });
+  const sessionPath = response.headers.get('Location');
+  if (response.status !== 201 || sessionPath === null) {
+    throw new Error(`Expected POST /sessions to create a session, received ${response.status}`);
+  }
+  return sessionPath;
+}
+
+async function postJson(api: RequestRecipient, path: string, body: unknown): Promise<unknown> {
   const response = await api.request(path, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
@@ -357,7 +371,7 @@ async function postJson(api: EmulationApi, path: string, body: unknown): Promise
 }
 
 async function callBotApi(
-  api: EmulationApi,
+  api: RequestRecipient,
   methodPath: string,
   parameters: Record<string, unknown>,
 ): Promise<{ status: number; body: unknown }> {
@@ -369,7 +383,7 @@ async function callBotApi(
   return { status: response.status, body: await response.json() };
 }
 
-async function readActivity(api: EmulationApi, path: string): Promise<BotActivityReadBody> {
+async function readActivity(api: RequestRecipient, path: string): Promise<BotActivityReadBody> {
   const response = await api.request(path);
   if (response.status !== 200) {
     throw new Error(`Expected GET ${path} to succeed, received ${response.status}`);
@@ -397,10 +411,4 @@ async function expectSettlementWithin<T>(
   } finally {
     clearTimeout(timeoutId);
   }
-}
-
-function createInProcessFetch(
-  handler: (request: Request) => Response | Promise<Response>,
-): typeof globalThis.fetch {
-  return async (input, init) => await handler(new Request(input, init));
 }

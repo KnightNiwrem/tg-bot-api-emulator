@@ -41,6 +41,7 @@ Each topic page stands on its own once you know the core path.
 | [Permissions and moderation](permissions-and-moderation.md) | Administrators, rights, restrictions and default permissions                 |
 | [Invite links](invite-links.md)                             | Links bots create, joining through them and join requests                    |
 | [Test controls](test-controls.md)                           | Rate limits, server errors, webhook retries, expiries, emulated web, uploads |
+| [In-process emulator](in-process-emulator.md)               | Running the emulator inside the test process, next to the bot under test     |
 
 ## Reference
 
@@ -52,4 +53,5 @@ Each topic page stands on its own once you know the core path.
 Every example is a complete Deno test whose imports are relative to this directory, where the
 fixture, [`bot_fixture.ts`](bot_fixture.ts), already is. Start the emulator with `deno task start`
 from the repository root, save an example here, and run it with
-`deno test --allow-net --allow-env <file>`.
+`deno test --allow-net --allow-env <file>`. The [in-process emulator](in-process-emulator.md) runs
+the same tests without the separate server.

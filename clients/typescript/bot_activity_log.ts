@@ -1,5 +1,5 @@
-import { BOT_ACTIVITY_KINDS } from '../../src/types/bot_activity_kind.ts';
-import { toCurrentBotApiMethodName } from '../../src/types/bot_api_method_name.ts';
+import { toCurrentBotApiMethodName } from './bot_api_method_name.ts';
+import { BOT_ACTIVITY_KINDS } from './constants.ts';
 import { EmulationClientError } from './emulation_client_error.ts';
 import type {
   BotActivityCriteria,

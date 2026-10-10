@@ -1,13 +1,12 @@
 import { Bot } from 'https://cdn.jsdelivr.net/gh/grammyjs/grammY@^1.46.0/src/bot.ts';
 
-import { EmulationClientError, TelegramEmulationClient } from '../clients/typescript/mod.ts';
-import { createTestApi } from './support/emulation_api.ts';
+import { EmulationClientError } from '../clients/typescript/mod.ts';
+import { createTestInProcessEmulator } from './support/in_process_emulator.ts';
 
 Deno.test('a grammY bot publishes, rotates and revokes its primary invite link', async () => {
-  const publicOrigin = 'http://emulator.example:9000';
-  const api = createTestApi(publicOrigin);
-  const fetch = createInProcessFetch(api.fetch);
-  const session = await new TelegramEmulationClient(publicOrigin, { fetch }).createSession();
+  await using emulator = createTestInProcessEmulator();
+  const { fetch } = emulator;
+  const session = await emulator.client.createSession();
   try {
     const gatekeeper = await session.createBot({
       first_name: 'Gatekeeper',
@@ -102,12 +101,6 @@ Deno.test('a grammY bot publishes, rotates and revokes its primary invite link',
     await session.end();
   }
 });
-
-function createInProcessFetch(
-  handler: (request: Request) => Response | Promise<Response>,
-): typeof globalThis.fetch {
-  return async (input, init) => await handler(new Request(input, init));
-}
 
 function assertJson(actual: unknown, expected: unknown, message: string): void {
   if (JSON.stringify(actual) !== JSON.stringify(expected)) {

@@ -13,6 +13,7 @@ exact contract.
 | Operation                                        | Purpose                                                           | Guide                                                       |
 | ------------------------------------------------ | ----------------------------------------------------------------- | ----------------------------------------------------------- |
 | `new TelegramEmulationClient(url, { fetch? })`   | Connects to an emulator                                           | [Getting started](getting-started.md)                       |
+| `createInProcessEmulator({ publicOrigin? })`     | Runs an emulator in the test process, with `client` and `fetch`   | [In-process emulator](in-process-emulator.md)               |
 | `createSession({ upload_profile? })`             | Creates an isolated session                                       | [Sessions and fixtures](sessions-and-fixtures.md)           |
 | `session.id`, `botApiRoot`, `uploadProfile`      | The session's identity, Bot API root and upload limits            | [Sessions and fixtures](sessions-and-fixtures.md)           |
 | `session.createBot(input)`                       | Registers a bot; returns its token and profile                    | [Sessions and fixtures](sessions-and-fixtures.md)           |

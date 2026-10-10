@@ -74,6 +74,40 @@ Deno.test('SessionLifecycleService ends a session once, after it can no longer b
   }
 });
 
+Deno.test('SessionLifecycleService ends every open session once when ending them all', () => {
+  const endedSessionIds: string[] = [];
+  const generatedSessionIds = ['first-session', 'second-session', 'third-session'];
+  const sessionLifecycle = new SessionLifecycleService({
+    sessionRepository: new SessionRepository(),
+    createEmulationSession: (sessionId) => ({
+      ...createEmulationSession(sessionId, CLOUD_SESSION_OPTIONS, createSystemSessionTiming()),
+      end: () => {
+        endedSessionIds.push(sessionId);
+      },
+    }),
+    generateSessionId: () => {
+      const sessionId = generatedSessionIds.shift();
+      if (sessionId === undefined) {
+        throw new Error('Expected another generated session ID');
+      }
+      return sessionId;
+    },
+  });
+  const sessionIds = [1, 2, 3].map(() => sessionLifecycle.createSession(CLOUD_SESSION_OPTIONS).id);
+  sessionLifecycle.endSession('second-session');
+
+  sessionLifecycle.endAllSessions();
+  sessionLifecycle.endAllSessions();
+
+  const expectedEndOrder = ['second-session', 'first-session', 'third-session'];
+  if (JSON.stringify(endedSessionIds) !== JSON.stringify(expectedEndOrder)) {
+    throw new Error(`Expected each session to end once, ended ${JSON.stringify(endedSessionIds)}`);
+  }
+  if (sessionIds.some((sessionId) => sessionLifecycle.getSessionById(sessionId) !== undefined)) {
+    throw new Error('Expected no ended session to be retrievable');
+  }
+});
+
 Deno.test('SessionLifecycleService rejects a factory result with the wrong ID', () => {
   const sessionLifecycle = new SessionLifecycleService({
     sessionRepository: new SessionRepository(),

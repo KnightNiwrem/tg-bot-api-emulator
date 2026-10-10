@@ -6,6 +6,7 @@ interface SessionStore {
   add(session: EmulationSession): boolean;
   deleteById(sessionId: string): boolean;
   getById(sessionId: string): EmulationSession | undefined;
+  listIds(): readonly string[];
 }
 
 interface SessionLifecycleServiceDependencies {
@@ -66,6 +67,13 @@ export class SessionLifecycleService {
 
     session.end();
     return true;
+  }
+
+  /** Ends every session, each as `endSession` ends it, for a server that stops serving them all. */
+  endAllSessions(): void {
+    for (const sessionId of this.#sessionRepository.listIds()) {
+      this.endSession(sessionId);
+    }
   }
 
   getSessionById(sessionId: string): EmulationSession | undefined {
