@@ -1,7 +1,14 @@
 import { z } from 'zod';
 
 import type { EmulationSession } from '../../../../types/emulation_session.ts';
-import { CHAT_ID_EMPTY_DESCRIPTION, supergroupBotAccessFailureAnswer } from '../chat_access.ts';
+import { CHAT_ID_EMPTY_DESCRIPTION } from '../chat_access.ts';
+import { BOT_API_ERRORS } from '../errors/error_catalogue.ts';
+import { presentFixedBotApiError } from '../errors/error_template.ts';
+import {
+  describeInvalidMethodParameters,
+  invalidMethodParametersAnswer,
+} from '../errors/invalid_parameters.ts';
+import { presentMessageEditingFailure } from '../errors/message_editing_failure_presenter.ts';
 import {
   captionParametersShape,
   linkPreviewParametersShape,
@@ -15,19 +22,9 @@ import {
   readInputMediaParameter,
   toMediaReplacementRequest,
 } from '../input_media_parameter.ts';
-import {
-  BUTTON_DATA_INVALID_DESCRIPTION,
-  BUTTON_TYPE_INVALID_DESCRIPTION,
-  CAPTION_TOO_LONG_DESCRIPTION,
-  fileResolutionFailureAnswer,
-  MESSAGE_TEXT_EMPTY_DESCRIPTION,
-  MESSAGE_TEXT_TOO_LONG_DESCRIPTION,
-  SEND_PERMISSION_MISSING_DESCRIPTIONS,
-} from '../message_content_answers.ts';
 import { messageEntitiesParameter } from '../message_entities_parameter.ts';
 import { messageIdOrNone, NO_MESSAGE_ID } from '../message_identifiers.ts';
 import {
-  badRequestDescription,
   botApiError,
   type BotApiMethod,
   type BotApiMethodAnswer,
@@ -57,38 +54,6 @@ export const MESSAGE_EDITING_METHODS: readonly BotApiMethod[] = [
   { name: 'editMessageText', recordsActivity: true, handler: handleEditMessageText },
   { name: 'stopPoll', recordsActivity: true, handler: handleStopPoll },
 ];
-
-/** TDLib's description for a rich message edit of an inline message that uploads a file. */
-const INLINE_MESSAGE_CONTENT_INVALID_DESCRIPTION = 'Bad Request: invalid message content specified';
-
-/** Telegram's descriptions for rejected message edits. */
-const MESSAGE_IDENTIFIER_NOT_SPECIFIED_DESCRIPTION =
-  'Bad Request: message identifier is not specified';
-const MESSAGE_TO_EDIT_NOT_FOUND_DESCRIPTION = 'Bad Request: message to edit not found';
-const MESSAGE_HAS_NO_TEXT_DESCRIPTION = 'Bad Request: there is no text in the message to edit';
-const MESSAGE_HAS_NO_CAPTION_DESCRIPTION =
-  'Bad Request: there is no caption in the message to edit';
-const MESSAGE_NOT_EDITABLE_DESCRIPTION = "Bad Request: message can't be edited";
-/**
- * TDLib's `can_edit_message_media` refuses to edit the media of a voice note, a poll, a contact, or
- * a location.
- */
-const MESSAGE_MEDIA_NOT_EDITABLE_DESCRIPTION = "Bad Request: message media can't be edited";
-
-/** The descriptions of the Bot API server's `check_message` and TDLib's `stop_poll`. */
-const MESSAGE_WITH_POLL_TO_STOP_NOT_FOUND_DESCRIPTION =
-  'Bad Request: message with poll to stop not found';
-const MESSAGE_HAS_NO_POLL_DESCRIPTION = 'Bad Request: message is not a poll';
-const POLL_NOT_STOPPABLE_DESCRIPTION = "Bad Request: poll can't be stopped";
-const POLL_ALREADY_CLOSED_DESCRIPTION = 'Bad Request: poll has already been closed';
-/** TDLib's `edit_message_media` keeps a message of an album to its kind of media. */
-const ALBUM_MEDIA_TYPE_UNCHANGEABLE_DESCRIPTION =
-  "Bad Request: can't change media type in the album";
-const MESSAGE_NOT_MODIFIED_DESCRIPTION =
-  'Bad Request: message is not modified: specified new message content and reply markup are exactly the same as a current content and reply markup of the message';
-
-/** Telegram's description for an edit of an unknown, deleted, or other bot's inline message. */
-const INLINE_MESSAGE_ID_INVALID_DESCRIPTION = 'Bad Request: MESSAGE_ID_INVALID';
 
 /** Where an edit method finds the message: in a chat, or sent through the bot's inline mode. */
 const editedMessageParametersShape = {
@@ -133,17 +98,22 @@ const stopPollParametersSchema = z.strictObject({
   reply_markup: inlineKeyboardMarkupParameter().optional(),
 });
 
-/** The outcome of any edit method; each fails for a subset of the reasons. */
-type MessageEditResult =
+/**
+ * The outcome of any edit method for a message addressed by its chat; each fails for a subset of
+ * the reasons.
+ */
+type ChatMessageEditResult =
   | ReturnType<EmulationSession['botApi']['editMessageText']>
   | ReturnType<EmulationSession['botApi']['editMessageCaption']>
-  | ReturnType<EmulationSession['botApi']['editMessageMedia']>;
+  | ReturnType<EmulationSession['botApi']['editMessageMedia']>
+  | ReturnType<EmulationSession['botApi']['editMessageReplyMarkup']>;
 
 /** The outcome of any edit method for an inline message; each fails for a subset of the reasons. */
 type InlineMessageEditResult =
   | ReturnType<EmulationSession['botApi']['editInlineMessageText']>
   | ReturnType<EmulationSession['botApi']['editInlineMessageCaption']>
-  | ReturnType<EmulationSession['botApi']['editInlineMessageMedia']>;
+  | ReturnType<EmulationSession['botApi']['editInlineMessageMedia']>
+  | ReturnType<EmulationSession['botApi']['editInlineMessageReplyMarkup']>;
 
 /** New content of a text or rich message, as the service edits a message with it. */
 type SendableTextMessageReplacement = Parameters<
@@ -170,10 +140,10 @@ async function handleEditMessageText(
   parameters: BotApiRequestParameters,
   uploadedFiles: BotApiUploadedFiles,
 ): Promise<BotApiMethodAnswer> {
-  const invalidParametersDescription = 'Bad Request: invalid editMessageText parameters';
+  const invalidParametersDescription = describeInvalidMethodParameters('editMessageText');
   const parsedParameters = editMessageTextParametersSchema.safeParse(parameters);
   if (!parsedParameters.success) {
-    return botApiError(400, invalidParametersDescription);
+    return invalidMethodParametersAnswer('editMessageText', parsedParameters.error);
   }
   // Telegram reads the new content before it looks for the message.
   const contentReading = readTextMessageReplacement(
@@ -205,7 +175,7 @@ async function handleEditMessageText(
   const edit = { content: contentResolution.value, inlineKeyboard: keyboardReading.inlineKeyboard };
   return target.kind === 'inline_message'
     ? inlineMessageEditAnswer(botApi.editInlineMessageText(context.bot, { ...target, ...edit }))
-    : editMessageAnswer(botApi.editMessageText(context.bot, { ...target, ...edit }));
+    : chatMessageEditAnswer(botApi.editMessageText(context.bot, { ...target, ...edit }));
 }
 
 /** Downloads the files that new rich message content names by URL; text has none. */
@@ -262,10 +232,10 @@ function handleEditMessageCaption(
   context: BotApiMethodContext,
   parameters: BotApiRequestParameters,
 ): BotApiMethodAnswer {
-  const invalidParametersDescription = 'Bad Request: invalid editMessageCaption parameters';
+  const invalidParametersDescription = describeInvalidMethodParameters('editMessageCaption');
   const parsedParameters = editMessageCaptionParametersSchema.safeParse(parameters);
   if (!parsedParameters.success) {
-    return botApiError(400, invalidParametersDescription);
+    return invalidMethodParametersAnswer('editMessageCaption', parsedParameters.error);
   }
   const { data } = parsedParameters;
   // Telegram reads the caption and its formatting before it looks for the message.
@@ -293,7 +263,7 @@ function handleEditMessageCaption(
     ? inlineMessageEditAnswer(
       botApi.editInlineMessageCaption(context.bot, { ...target, ...edit }),
     )
-    : editMessageAnswer(botApi.editMessageCaption(context.bot, { ...target, ...edit }));
+    : chatMessageEditAnswer(botApi.editMessageCaption(context.bot, { ...target, ...edit }));
 }
 
 /**
@@ -306,10 +276,10 @@ async function handleEditMessageMedia(
   parameters: BotApiRequestParameters,
   uploadedFiles: BotApiUploadedFiles,
 ): Promise<BotApiMethodAnswer> {
-  const invalidParametersDescription = 'Bad Request: invalid editMessageMedia parameters';
+  const invalidParametersDescription = describeInvalidMethodParameters('editMessageMedia');
   const parsedParameters = editMessageMediaParametersSchema.safeParse(parameters);
   if (!parsedParameters.success) {
-    return botApiError(400, invalidParametersDescription);
+    return invalidMethodParametersAnswer('editMessageMedia', parsedParameters.error);
   }
   const { data } = parsedParameters;
   const mediaReading = readInputMediaParameter(
@@ -356,7 +326,7 @@ async function handleEditMessageMedia(
   };
   return target.kind === 'inline_message'
     ? inlineMessageEditAnswer(botApi.editInlineMessageMedia(context.bot, { ...target, ...edit }))
-    : editMessageAnswer(botApi.editMessageMedia(context.bot, { ...target, ...edit }));
+    : chatMessageEditAnswer(botApi.editMessageMedia(context.bot, { ...target, ...edit }));
 }
 
 function handleEditMessageReplyMarkup(
@@ -365,7 +335,7 @@ function handleEditMessageReplyMarkup(
 ): BotApiMethodAnswer {
   const parsedParameters = editMessageReplyMarkupParametersSchema.safeParse(parameters);
   if (!parsedParameters.success) {
-    return botApiError(400, 'Bad Request: invalid editMessageReplyMarkup parameters');
+    return invalidMethodParametersAnswer('editMessageReplyMarkup', parsedParameters.error);
   }
   const targetReading = readEditedMessageTarget(parsedParameters.data);
   if (!targetReading.read) {
@@ -385,7 +355,7 @@ function handleEditMessageReplyMarkup(
       ...target,
       inlineKeyboard,
     }))
-    : editMessageAnswer(
+    : chatMessageEditAnswer(
       botApi.editMessageReplyMarkup(context.bot, { ...target, inlineKeyboard }),
     );
 }
@@ -400,7 +370,7 @@ function handleStopPoll(
 ): BotApiMethodAnswer {
   const parsedParameters = stopPollParametersSchema.safeParse(parameters);
   if (!parsedParameters.success) {
-    return botApiError(400, 'Bad Request: invalid stopPoll parameters');
+    return invalidMethodParametersAnswer('stopPoll', parsedParameters.error);
   }
   const { chat_id: chatId, message_id: messageId, reply_markup: replyMarkup } =
     parsedParameters.data;
@@ -417,31 +387,9 @@ function handleStopPoll(
     messageId: messageIdOrNone(messageId),
     inlineKeyboard: keyboardReading.inlineKeyboard,
   });
-  if (result.stopped) {
-    return botApiResult(result.poll);
-  }
-  switch (result.reason) {
-    case 'chat_not_found':
-    case 'bot_not_a_member':
-    case 'bot_kicked':
-      return supergroupBotAccessFailureAnswer(result.reason);
-    case 'message_not_found':
-      return botApiError(400, MESSAGE_WITH_POLL_TO_STOP_NOT_FOUND_DESCRIPTION);
-    case 'message_has_no_poll':
-      return botApiError(400, MESSAGE_HAS_NO_POLL_DESCRIPTION);
-    case 'poll_not_stoppable':
-      return botApiError(400, POLL_NOT_STOPPABLE_DESCRIPTION);
-    case 'poll_already_closed':
-      return botApiError(400, POLL_ALREADY_CLOSED_DESCRIPTION);
-    case 'callback_data_invalid':
-      return botApiError(400, BUTTON_DATA_INVALID_DESCRIPTION);
-    case 'button_type_invalid':
-      return botApiError(400, BUTTON_TYPE_INVALID_DESCRIPTION);
-    default: {
-      const unhandledReason: never = result.reason;
-      throw new Error(`Unhandled poll stop failure: ${unhandledReason}`);
-    }
-  }
+  return result.stopped
+    ? botApiResult(result.poll)
+    : presentMessageEditingFailure('poll_stop', result);
 }
 
 /**
@@ -460,7 +408,7 @@ function readEditedMessageTarget(
     return inlineMessageId.length === 0
       ? {
         read: false,
-        errorAnswer: botApiError(400, MESSAGE_IDENTIFIER_NOT_SPECIFIED_DESCRIPTION),
+        errorAnswer: presentFixedBotApiError(BOT_API_ERRORS.messageIdentifierNotSpecified),
       }
       : { read: true, target: { kind: 'inline_message', inlineMessageId } };
   }
@@ -473,101 +421,16 @@ function readEditedMessageTarget(
   };
 }
 
-function editMessageAnswer(result: MessageEditResult): BotApiMethodAnswer {
-  if (result.edited) {
-    return botApiResult(result.message);
-  }
-  switch (result.reason) {
-    case 'message_text_empty':
-      return botApiError(400, MESSAGE_TEXT_EMPTY_DESCRIPTION);
-    case 'text_invalid':
-      return botApiError(400, badRequestDescription(result.textError));
-    case 'chat_not_found':
-    case 'bot_not_a_member':
-    case 'bot_kicked':
-      return supergroupBotAccessFailureAnswer(result.reason);
-    case 'message_not_found':
-      return botApiError(400, MESSAGE_TO_EDIT_NOT_FOUND_DESCRIPTION);
-    case 'message_not_editable':
-      return botApiError(400, MESSAGE_NOT_EDITABLE_DESCRIPTION);
-    case 'message_has_no_text':
-      return botApiError(400, MESSAGE_HAS_NO_TEXT_DESCRIPTION);
-    case 'message_has_no_caption':
-      return botApiError(400, MESSAGE_HAS_NO_CAPTION_DESCRIPTION);
-    case 'message_text_too_long':
-      return botApiError(400, MESSAGE_TEXT_TOO_LONG_DESCRIPTION);
-    case 'caption_too_long':
-      return botApiError(400, CAPTION_TOO_LONG_DESCRIPTION);
-    case 'message_media_not_editable':
-      return botApiError(400, MESSAGE_MEDIA_NOT_EDITABLE_DESCRIPTION);
-    case 'album_media_kind_changed':
-      return botApiError(400, ALBUM_MEDIA_TYPE_UNCHANGEABLE_DESCRIPTION);
-    case 'callback_data_invalid':
-      return botApiError(400, BUTTON_DATA_INVALID_DESCRIPTION);
-    case 'button_type_invalid':
-      return botApiError(400, BUTTON_TYPE_INVALID_DESCRIPTION);
-    case 'message_not_modified':
-      return botApiError(400, MESSAGE_NOT_MODIFIED_DESCRIPTION);
-    case 'send_permission_missing':
-      return botApiError(400, SEND_PERMISSION_MISSING_DESCRIPTIONS[result.contentKind]);
-    case 'file_empty':
-    case 'image_invalid':
-    case 'photo_dimensions_invalid':
-    case 'file_id_invalid':
-      return fileResolutionFailureAnswer({ reason: result.reason });
-    case 'photo_too_big':
-    case 'bot_upload_too_big':
-    case 'file_type_mismatch':
-      return fileResolutionFailureAnswer(result);
-    default: {
-      const unhandledFailure: never = result;
-      throw new Error(`Unhandled message edit failure: ${JSON.stringify(unhandledFailure)}`);
-    }
-  }
+/** Answers a successful edit of a message addressed by its chat with the edited message. */
+function chatMessageEditAnswer(result: ChatMessageEditResult): BotApiMethodAnswer {
+  return result.edited
+    ? botApiResult(result.message)
+    : presentMessageEditingFailure('chat_message_edit', result);
 }
 
 /** Answers a successful edit of an inline message with `true`, as Telegram does. */
 function inlineMessageEditAnswer(result: InlineMessageEditResult): BotApiMethodAnswer {
-  if (result.edited) {
-    return botApiResult(true);
-  }
-  switch (result.reason) {
-    case 'inline_message_not_found':
-      return botApiError(400, INLINE_MESSAGE_ID_INVALID_DESCRIPTION);
-    case 'message_text_empty':
-      return botApiError(400, MESSAGE_TEXT_EMPTY_DESCRIPTION);
-    case 'text_invalid':
-      return botApiError(400, badRequestDescription(result.textError));
-    case 'message_has_no_text':
-      return botApiError(400, MESSAGE_HAS_NO_TEXT_DESCRIPTION);
-    case 'message_has_no_caption':
-      return botApiError(400, MESSAGE_HAS_NO_CAPTION_DESCRIPTION);
-    case 'message_text_too_long':
-      return botApiError(400, MESSAGE_TEXT_TOO_LONG_DESCRIPTION);
-    case 'caption_too_long':
-      return botApiError(400, CAPTION_TOO_LONG_DESCRIPTION);
-    case 'callback_data_invalid':
-      return botApiError(400, BUTTON_DATA_INVALID_DESCRIPTION);
-    case 'button_type_invalid':
-      return botApiError(400, BUTTON_TYPE_INVALID_DESCRIPTION);
-    case 'message_not_modified':
-      return botApiError(400, MESSAGE_NOT_MODIFIED_DESCRIPTION);
-    case 'inline_message_upload_unsupported':
-      return botApiError(400, INLINE_MESSAGE_CONTENT_INVALID_DESCRIPTION);
-    case 'message_media_not_editable':
-      return botApiError(400, MESSAGE_MEDIA_NOT_EDITABLE_DESCRIPTION);
-    case 'file_empty':
-    case 'image_invalid':
-    case 'photo_dimensions_invalid':
-    case 'file_id_invalid':
-      return fileResolutionFailureAnswer({ reason: result.reason });
-    case 'photo_too_big':
-    case 'bot_upload_too_big':
-    case 'file_type_mismatch':
-      return fileResolutionFailureAnswer(result);
-    default: {
-      const unhandledFailure: never = result;
-      throw new Error(`Unhandled inline message edit failure: ${JSON.stringify(unhandledFailure)}`);
-    }
-  }
+  return result.edited
+    ? botApiResult(true)
+    : presentMessageEditingFailure('inline_message_edit', result);
 }

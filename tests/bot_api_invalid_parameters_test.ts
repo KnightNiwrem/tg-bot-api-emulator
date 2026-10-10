@@ -1,0 +1,104 @@
+import { createTestSession, type EmulationApi, requestJson } from './support/emulation_api.ts';
+
+const keyboardWithActionlessButton = JSON.stringify({
+  inline_keyboard: [[{ text: 'Yes', callback_data: 'yes' }, { text: 'No' }]],
+});
+
+Deno.test('the editing methods name the parameter that does not fit their schema', async () => {
+  const { api, botApiPath } = await createFixture();
+  const cases: readonly [method: string, parameters: object, description: string][] = [
+    [
+      'editMessageText',
+      { chat_id: 1, message_id: 1, text: 'Hi', disable_web_page_preview_now: true },
+      'Bad Request: invalid editMessageText parameters: disable_web_page_preview_now',
+    ],
+    [
+      'editMessageText',
+      { chat_id: 1, message_id: 1, text: 'Hi', 'odd key': 1, other_key: 2 },
+      'Bad Request: invalid editMessageText parameters: ["odd key"]',
+    ],
+    [
+      'editMessageCaption',
+      { chat_id: 'secret-chat', message_id: 1, caption: 'Hi' },
+      'Bad Request: invalid editMessageCaption parameters: chat_id',
+    ],
+    [
+      'editMessageReplyMarkup',
+      { chat_id: 1, message_id: 1, reply_markup: keyboardWithActionlessButton },
+      'Bad Request: invalid editMessageReplyMarkup parameters: reply_markup.inline_keyboard[0][1]',
+    ],
+    [
+      'editMessageReplyMarkup',
+      { chat_id: 1, message_id: 1, reply_markup: { inline_keyboard: [], resize_keyboard: true } },
+      'Bad Request: invalid editMessageReplyMarkup parameters: reply_markup.resize_keyboard',
+    ],
+    [
+      'editMessageMedia',
+      { chat_id: 1, message_id: 1, reply_markup: 'not JSON' },
+      'Bad Request: invalid editMessageMedia parameters: reply_markup',
+    ],
+    [
+      'stopPoll',
+      { chat_id: 1, message_id: 1, open_period: 5 },
+      'Bad Request: invalid stopPoll parameters: open_period',
+    ],
+  ];
+
+  const answers = [];
+  for (const [method, parameters] of cases) {
+    answers.push(await callBotApi(api, `${botApiPath}/${method}`, parameters));
+  }
+  assertJson(
+    answers,
+    cases.map(([, , description]) => [400, description]),
+    'Expected each refusal to name the first offending parameter path, without its value',
+  );
+});
+
+Deno.test('parameters a reader refuses after the schema keep the description without a path', async () => {
+  const { api, botApiPath } = await createFixture();
+  // `media` is text to the schema; its reader refuses JSON it cannot read.
+  const answer = await callBotApi(api, `${botApiPath}/editMessageMedia`, {
+    chat_id: 1,
+    message_id: 1,
+    media: JSON.stringify({ type: 'document', media: 'attach://file', has_spoiler: true }),
+  });
+  assertJson(
+    answer,
+    [400, 'Bad Request: invalid editMessageMedia parameters'],
+    'Expected the reader to keep its description',
+  );
+});
+
+/** Creates a session holding a bot. */
+async function createFixture() {
+  const { api, sessionPath } = await createTestSession();
+  const { body: createdBot } = await requestJson<{ token: string }>(
+    api,
+    'POST',
+    `${sessionPath}/bots`,
+    { first_name: 'Test Bot', username: 'test_bot' },
+  );
+  return { api, botApiPath: `${sessionPath}/bot-api/bot${createdBot.token}` };
+}
+
+/** Calls a Bot API method with JSON parameters, answering with the status and description. */
+async function callBotApi(
+  api: EmulationApi,
+  path: string,
+  parameters: object,
+): Promise<readonly [number, string | undefined]> {
+  const response = await api.request(path, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(parameters),
+  });
+  const answer = await response.json() as { readonly description?: string };
+  return [response.status, answer.description];
+}
+
+function assertJson(actual: unknown, expected: unknown, message: string): void {
+  if (JSON.stringify(actual) !== JSON.stringify(expected)) {
+    throw new Error(`${message}: received ${JSON.stringify(actual)}`);
+  }
+}

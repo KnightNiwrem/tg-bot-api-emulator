@@ -5,7 +5,7 @@ import {
   SUPERGROUP_ADMINISTRATOR_RIGHTS,
   type SupergroupAdministratorRights,
 } from '../../../../types/chat_membership.ts';
-import { CHAT_ID_EMPTY_DESCRIPTION, supergroupBotAccessFailureAnswer } from '../chat_access.ts';
+import { botChatAccessFailureAnswer, CHAT_ID_EMPTY_DESCRIPTION } from '../chat_access.ts';
 import {
   chatMemberFailureAnswer,
   readChatMemberTarget,
@@ -169,7 +169,7 @@ function handleLeaveChat(
     case 'chat_not_found':
     case 'bot_not_a_member':
     case 'bot_kicked':
-      return supergroupBotAccessFailureAnswer(result.reason);
+      return botChatAccessFailureAnswer(result.reason);
     case 'private_chat_not_leavable':
       return botApiError(400, badRequestDescription("Can't leave private chats"));
     default: {

@@ -1,11 +1,9 @@
 import { z } from 'zod';
 
 import type { EmulationSession } from '../../../types/emulation_session.ts';
-import {
-  CHAT_ID_EMPTY_DESCRIPTION,
-  CHAT_NOT_FOUND_DESCRIPTION,
-  resolveChatIdentifier,
-} from './chat_access.ts';
+import { CHAT_ID_EMPTY_DESCRIPTION, resolveChatIdentifier } from './chat_access.ts';
+import { BOT_API_ERRORS } from './errors/error_catalogue.ts';
+import { presentFixedBotApiError } from './errors/error_template.ts';
 import { readFormattedTextParameters } from './formatted_text_reading.ts';
 import { botApiError, type BotApiMethodAnswer, type BotApiMethodContext } from './method_call.ts';
 import { messageReplyMarkupParameter } from './reply_markup_parameter.ts';
@@ -93,7 +91,7 @@ export function readSendOptions(
     ? undefined
     : resolveChatIdentifier(context, replyTarget.chatId);
   if (replyTarget?.chatId !== undefined && replyChatId === undefined) {
-    return { read: false, errorAnswer: botApiError(400, CHAT_NOT_FOUND_DESCRIPTION) };
+    return { read: false, errorAnswer: presentFixedBotApiError(BOT_API_ERRORS.chatNotFound) };
   }
   return {
     read: true,

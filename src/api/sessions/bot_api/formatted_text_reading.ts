@@ -1,9 +1,10 @@
 import { z } from 'zod';
 
 import type { EmulationSession } from '../../../types/emulation_session.ts';
+import { BOT_API_ERRORS } from './errors/error_catalogue.ts';
+import { presentFixedBotApiError } from './errors/error_template.ts';
 import type { UnreadFormattedText } from './inline_query_answer_parameters.ts';
 import { linkPreviewOptionsParameter } from './link_preview_options_parameter.ts';
-import { MESSAGE_TEXT_EMPTY_DESCRIPTION } from './message_content_answers.ts';
 import {
   messageEntitiesParameter,
   readMessageEntitiesParameter,
@@ -69,7 +70,7 @@ export function readSpecifiedFormattedText(
   invalidParametersDescription: string,
 ): SpecifiedFormattedTextReading {
   if (specifiedText.text.length === 0) {
-    return { read: false, errorAnswer: botApiError(400, MESSAGE_TEXT_EMPTY_DESCRIPTION) };
+    return { read: false, errorAnswer: presentFixedBotApiError(BOT_API_ERRORS.messageTextEmpty) };
   }
   return withErrorAnswer(
     readFormattedTextParameters(context, specifiedText, invalidParametersDescription),

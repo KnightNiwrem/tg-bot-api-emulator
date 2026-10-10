@@ -1,7 +1,9 @@
 import { z } from 'zod';
 
 import { recordBotApiCall, type RecordedBotApiCallDetails } from './call_recording.ts';
-import { CHAT_NOT_FOUND_DESCRIPTION, resolveChatIdentifier } from './chat_access.ts';
+import { resolveChatIdentifier } from './chat_access.ts';
+import { BOT_API_ERRORS } from './errors/error_catalogue.ts';
+import { presentFixedBotApiError } from './errors/error_template.ts';
 import {
   type BotApiCallContext,
   botApiError,
@@ -165,7 +167,7 @@ function resolveChatUsernameParameters(
     }
     const chatId = resolveChatIdentifier(context, chatIdentifier);
     if (chatId === undefined) {
-      return { resolved: false, errorAnswer: botApiError(400, CHAT_NOT_FOUND_DESCRIPTION) };
+      return { resolved: false, errorAnswer: presentFixedBotApiError(BOT_API_ERRORS.chatNotFound) };
     }
     resolvedParameters = { ...resolvedParameters, [parameterName]: String(chatId) };
   }

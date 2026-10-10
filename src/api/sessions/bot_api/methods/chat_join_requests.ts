@@ -1,7 +1,7 @@
 import { z } from 'zod';
 
 import type { EmulationSession } from '../../../../types/emulation_session.ts';
-import { supergroupBotAccessFailureAnswer } from '../chat_access.ts';
+import { botChatAccessFailureAnswer } from '../chat_access.ts';
 import { readChatMemberTarget } from '../chat_member_requests.ts';
 import {
   botApiError,
@@ -84,7 +84,7 @@ function answerChatJoinRequestDecision(
     case 'chat_not_found':
     case 'bot_not_a_member':
     case 'bot_kicked':
-      return supergroupBotAccessFailureAnswer(result.reason);
+      return botChatAccessFailureAnswer(result.reason);
     case 'private_chat_has_no_join_requests':
       return botApiError(400, PRIVATE_CHAT_HAS_NO_JOIN_REQUESTS_DESCRIPTION);
     case 'not_enough_rights':

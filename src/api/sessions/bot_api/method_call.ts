@@ -108,10 +108,12 @@ export function albumMessageNotSentError(
   memberPosition: number,
   telegramError: string,
 ): BotApiMethodAnswer {
-  return botApiError(
-    400,
-    `Bad Request: failed to send message #${memberPosition} with the error message "${telegramError}"`,
-  );
+  return botApiError(400, describeAlbumMessageNotSent(memberPosition, telegramError));
+}
+
+/** The description of `albumMessageNotSentError`. */
+export function describeAlbumMessageNotSent(memberPosition: number, telegramError: string): string {
+  return `Bad Request: failed to send message #${memberPosition} with the error message "${telegramError}"`;
 }
 
 /** The prefix of Telegram's descriptions of bad requests. */

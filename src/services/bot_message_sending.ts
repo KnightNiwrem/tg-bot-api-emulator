@@ -12,6 +12,7 @@ import type {
   SupergroupMessage,
 } from '../types/virtual_message.ts';
 import type {
+  BotPrivateChatAccessFailureReason,
   MessageTarget,
   ReplyTarget,
   SendDeliveryOptions,
@@ -89,10 +90,11 @@ export interface RepetitionDetails {
 
 /**
  * Why a message of one of the bot's chats cannot be read: its chat is unknown to the bot, or the
- * bot is no member of it, or the chat has no such message.
+ * bot cannot address it, or the chat has no such message.
  */
 type BotChatMessageLookupFailureReason =
   | 'chat_not_found'
+  | BotPrivateChatAccessFailureReason
   | FormerSupergroupMemberFailureReason
   | 'message_not_found';
 
@@ -211,10 +213,7 @@ export class BotMessageSender {
     return result;
   }
 
-  /**
-   * Finds a message of one of the bot's chats, which the bot may repeat or reply to from another
-   * chat. As on Telegram, a chat the bot cannot address is not found.
-   */
+  /** Finds a message of one of the bot's chats, which the bot may repeat or reply to from another chat. */
   findBotChatMessage(botId: number, { chatId, messageId }: MessageTarget): BotChatMessageLookup {
     const lookup = isUserId(chatId)
       ? this.#botMessages.getMessageForBot({ botId, accountId: chatId, botMessageId: messageId })
@@ -227,23 +226,7 @@ export class BotMessageSender {
       };
     }
 
-    const { reason } = lookup;
-    switch (reason) {
-      case 'chat_not_found':
-      case 'bot_not_a_member':
-      case 'bot_kicked':
-      case 'message_not_found':
-        return { found: false, reason };
-      case 'account_not_found':
-      case 'conversation_not_started':
-        return { found: false, reason: 'chat_not_found' };
-      case 'bot_not_found':
-        throw new Error(`Authenticated bot ${botId} does not exist`);
-      default: {
-        const unhandledReason: never = reason;
-        throw new Error(`Unhandled bot chat message lookup failure: ${unhandledReason}`);
-      }
-    }
+    return { found: false, reason: excludeMissingSenderFailure(botId, lookup.reason) };
   }
 
   /**
@@ -270,6 +253,7 @@ export class BotMessageSender {
       readonly resolved: false;
       readonly reason:
         | 'chat_not_found'
+        | BotPrivateChatAccessFailureReason
         | FormerSupergroupMemberFailureReason
         | 'reply_message_not_found';
     } {
@@ -336,38 +320,9 @@ export class BotMessageSender {
       };
     }
 
-    switch (result.reason) {
-      case 'text_invalid':
-        return result;
-      case 'message_text_empty':
-      case 'reply_message_not_found':
-      case 'message_text_too_long':
-      case 'caption_too_long':
-      case 'callback_data_invalid':
-      case 'quote_invalid':
-      case 'poll_question_too_long':
-      case 'poll_options_missing':
-      case 'poll_has_too_many_options':
-      case 'poll_option_too_long':
-      case 'quiz_correct_options_missing':
-      case 'quiz_correct_options_not_increasing':
-      case 'quiz_correct_option_not_found':
-      case 'quiz_explanation_too_long':
-      case 'quiz_explanation_has_too_many_line_feeds':
-      case 'bot_blocked':
-        return { sent: false, reason: result.reason };
-      // A bot can address a user only after the user has written to it. Telegram reports any
-      // other user, like an unknown chat, as not found.
-      case 'account_not_found':
-      case 'conversation_not_started':
-        return { sent: false, reason: 'chat_not_found' };
-      case 'bot_not_found':
-        throw new Error(`Authenticated bot ${botId} does not exist`);
-      default: {
-        const unhandledFailure: never = result;
-        throw new Error(`Unhandled bot message failure: ${JSON.stringify(unhandledFailure)}`);
-      }
-    }
+    return result.reason === 'text_invalid'
+      ? result
+      : { sent: false, reason: excludeMissingSenderFailure(botId, result.reason) };
   }
 
   #sendSupergroupMessage(
@@ -399,38 +354,9 @@ export class BotMessageSender {
       };
     }
 
-    switch (result.reason) {
-      case 'text_invalid':
-      case 'send_permission_missing':
-        return result;
-      case 'message_text_empty':
-      case 'chat_not_found':
-      case 'bot_not_a_member':
-      case 'bot_kicked':
-      case 'reply_message_not_found':
-      case 'message_effect_not_allowed_in_chat':
-      case 'message_text_too_long':
-      case 'caption_too_long':
-      case 'callback_data_invalid':
-      case 'button_type_invalid':
-      case 'quote_invalid':
-      case 'poll_question_too_long':
-      case 'poll_options_missing':
-      case 'poll_has_too_many_options':
-      case 'poll_option_too_long':
-      case 'quiz_correct_options_missing':
-      case 'quiz_correct_options_not_increasing':
-      case 'quiz_correct_option_not_found':
-      case 'quiz_explanation_too_long':
-      case 'quiz_explanation_has_too_many_line_feeds':
-        return { sent: false, reason: result.reason };
-      case 'bot_not_found':
-        throw new Error(`Authenticated bot ${botId} does not exist`);
-      default: {
-        const unhandledFailure: never = result;
-        throw new Error(`Unhandled bot message failure: ${JSON.stringify(unhandledFailure)}`);
-      }
-    }
+    return result.reason === 'text_invalid' || result.reason === 'send_permission_missing'
+      ? result
+      : { sent: false, reason: excludeMissingSenderFailure(botId, result.reason) };
   }
 
   #sendPrivateAlbum(
@@ -462,31 +388,9 @@ export class BotMessageSender {
       };
     }
 
-    switch (result.reason) {
-      case 'text_invalid':
-        return result;
-      case 'reply_message_not_found':
-      case 'message_text_too_long':
-      case 'caption_too_long':
-      case 'quote_invalid':
-      case 'bot_blocked':
-      case 'album_empty':
-      case 'album_too_large':
-      case 'album_caption_placement_mixed':
-      case 'album_documents_mixed':
-      case 'album_audio_mixed':
-        return { sent: false, reason: result.reason };
-      // As for a single message, Telegram reports a user who has not started the bot as not found.
-      case 'account_not_found':
-      case 'conversation_not_started':
-        return { sent: false, reason: 'chat_not_found' };
-      case 'bot_not_found':
-        throw new Error(`Authenticated bot ${botId} does not exist`);
-      default: {
-        const unhandledFailure: never = result;
-        throw new Error(`Unhandled bot album failure: ${JSON.stringify(unhandledFailure)}`);
-      }
-    }
+    return result.reason === 'text_invalid'
+      ? result
+      : { sent: false, reason: excludeMissingSenderFailure(botId, result.reason) };
   }
 
   #sendSupergroupAlbum(
@@ -515,30 +419,22 @@ export class BotMessageSender {
       };
     }
 
-    switch (result.reason) {
-      case 'text_invalid':
-      case 'send_permission_missing':
-        return result;
-      case 'chat_not_found':
-      case 'bot_not_a_member':
-      case 'bot_kicked':
-      case 'reply_message_not_found':
-      case 'message_effect_not_allowed_in_chat':
-      case 'message_text_too_long':
-      case 'caption_too_long':
-      case 'quote_invalid':
-      case 'album_empty':
-      case 'album_too_large':
-      case 'album_caption_placement_mixed':
-      case 'album_documents_mixed':
-      case 'album_audio_mixed':
-        return { sent: false, reason: result.reason };
-      case 'bot_not_found':
-        throw new Error(`Authenticated bot ${botId} does not exist`);
-      default: {
-        const unhandledFailure: never = result;
-        throw new Error(`Unhandled bot album failure: ${JSON.stringify(unhandledFailure)}`);
-      }
-    }
+    return result.reason === 'text_invalid' || result.reason === 'send_permission_missing'
+      ? result
+      : { sent: false, reason: excludeMissingSenderFailure(botId, result.reason) };
   }
+}
+
+/**
+ * Leaves out the failure a sending bot never meets: the bot the Bot API authenticated exists. A
+ * bot's other failures stay as the messaging services report them, for the Bot API to present.
+ */
+function excludeMissingSenderFailure<Reason extends string>(
+  botId: number,
+  reason: Reason | 'bot_not_found',
+): Reason {
+  if (reason === 'bot_not_found') {
+    throw new Error(`Authenticated bot ${botId} does not exist`);
+  }
+  return reason;
 }

@@ -1,6 +1,7 @@
 import { z } from 'zod';
 
 import type { BotCommandScope } from '../../../types/bot_command.ts';
+import { BOT_API_ERRORS } from './errors/error_catalogue.ts';
 import { type ChatIdentifier, chatIdentifierSchema, jsonParameter } from './request_parameters.ts';
 
 const botCommandParameterSchema = z.strictObject({
@@ -45,7 +46,7 @@ const chatMemberScopeSchema = z.strictObject({
 });
 
 /** The description Telegram gives for a scope whose `@username` names no chat. */
-const CHAT_NOT_FOUND_DESCRIPTION = 'Bad Request: chat not found';
+const CHAT_NOT_FOUND_DESCRIPTION = BOT_API_ERRORS.chatNotFound.description();
 
 /**
  * Reads a `scope` parameter as the official Bot API server's `get_bot_command_scope` does, with

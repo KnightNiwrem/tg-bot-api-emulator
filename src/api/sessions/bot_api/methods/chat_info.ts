@@ -1,7 +1,7 @@
 import { z } from 'zod';
 
 import type { SupergroupBotAccessFailureReason } from '../../../../types/chat_membership.ts';
-import { CHAT_ID_EMPTY_DESCRIPTION, supergroupBotAccessFailureAnswer } from '../chat_access.ts';
+import { botChatAccessFailureAnswer, CHAT_ID_EMPTY_DESCRIPTION } from '../chat_access.ts';
 import { chatMemberFailureAnswer } from '../chat_member_requests.ts';
 import { readChatPermissionsParameter } from '../chat_permissions_parameter.ts';
 import {
@@ -166,7 +166,7 @@ function chatInfoChangeFailureAnswer(
     case 'chat_not_found':
     case 'bot_not_a_member':
     case 'bot_kicked':
-      return supergroupBotAccessFailureAnswer(reason);
+      return botChatAccessFailureAnswer(reason);
     case 'text_encoding_invalid':
       return botApiError(400, STRINGS_NOT_UTF8_DESCRIPTION);
     default: {

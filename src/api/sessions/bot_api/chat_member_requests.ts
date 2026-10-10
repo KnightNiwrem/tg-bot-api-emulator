@@ -1,5 +1,5 @@
 import type { EmulationSession } from '../../../types/emulation_session.ts';
-import { CHAT_ID_EMPTY_DESCRIPTION, supergroupBotAccessFailureAnswer } from './chat_access.ts';
+import { botChatAccessFailureAnswer, CHAT_ID_EMPTY_DESCRIPTION } from './chat_access.ts';
 import { botApiError, type BotApiMethodAnswer } from './method_call.ts';
 
 /** Telegram's descriptions for rejected requests about chat members. */
@@ -79,7 +79,7 @@ export function chatMemberFailureAnswer(reason: ChatMemberFailureReason): BotApi
     case 'chat_not_found':
     case 'bot_not_a_member':
     case 'bot_kicked':
-      return supergroupBotAccessFailureAnswer(reason);
+      return botChatAccessFailureAnswer(reason);
     case 'member_not_found':
       return botApiError(400, MEMBER_NOT_FOUND_DESCRIPTION);
     case 'private_chat_has_no_administrators':
