@@ -1,4 +1,5 @@
 import type {
+  BotApiDateTimeFormat,
   BotApiDocument,
   BotApiInlineKeyboardButton,
   BotApiKeyboardButtonFace,
@@ -11,6 +12,7 @@ import type {
 import type {
   HorizontalAlignment,
   OrderedListItemLabelType,
+  RichHeadingSize,
   RichMessageButtonStyle,
   RichTextStyle,
   VerticalAlignment,
@@ -35,7 +37,7 @@ export type BotApiRichTextObject =
     readonly text: BotApiRichText;
     readonly unix_time: number;
     /** Empty when the sender chose no format, which Telegram reports all the same. */
-    readonly date_time_format: string;
+    readonly date_time_format: BotApiDateTimeFormat;
   }
   | { readonly type: 'mention'; readonly text: BotApiRichText; readonly username: string }
   | { readonly type: 'hashtag'; readonly text: BotApiRichText; readonly hashtag: string }
@@ -122,7 +124,7 @@ export type BotApiRichBlock =
     readonly type: 'paragraph' | 'footer';
     readonly text: BotApiRichText;
   }
-  | { readonly type: 'heading'; readonly text: BotApiRichText; readonly size: number }
+  | { readonly type: 'heading'; readonly text: BotApiRichText; readonly size: RichHeadingSize }
   | { readonly type: 'pre'; readonly text: BotApiRichText; readonly language?: string }
   | { readonly type: 'divider' }
   | { readonly type: 'mathematical_expression'; readonly expression: string }

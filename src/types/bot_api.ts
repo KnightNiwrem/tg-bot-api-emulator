@@ -5,6 +5,7 @@ import type { ButtonStyle } from './button_appearance.ts';
 import type { SupergroupAdministratorRight } from './chat_membership.ts';
 import type { Contact } from './contact.ts';
 import type { GeoLocation } from './geo_location.ts';
+import type { ReactionEmoji } from './message_reaction.ts';
 import type { VirtualAccountProfile } from './virtual_account.ts';
 import type { PlainTextEntityType } from './virtual_message.ts';
 
@@ -129,6 +130,13 @@ interface BotApiTextSpan {
   readonly length: number;
 }
 
+/**
+ * A date and time format as the official Bot API server's `get_date_time_format` writes it: `r`
+ * for relative time, otherwise `w` for the day of the week, then `d` or `D` for the date and `t` or
+ * `T` for the time; empty for no format.
+ */
+export type BotApiDateTimeFormat = 'r' | `${'w' | ''}${'d' | 'D' | ''}${'t' | 'T' | ''}`;
+
 export type BotApiMessageEntity =
   | (BotApiTextSpan & { readonly type: PlainTextEntityType })
   | (BotApiTextSpan & { readonly type: 'pre'; readonly language?: string })
@@ -139,7 +147,7 @@ export type BotApiMessageEntity =
     readonly type: 'date_time';
     readonly unix_time: number;
     /** Empty when the sender chose no format, which Telegram reports all the same. */
-    readonly date_time_format: string;
+    readonly date_time_format: BotApiDateTimeFormat;
   });
 
 /** A button's text and appearance, in the field order Telegram uses. */
@@ -895,7 +903,7 @@ export interface BotApiChatJoinRequest {
 /** An ordinary emoji reaction, as the Bot API's `ReactionTypeEmoji` shows it. */
 export interface BotApiReactionTypeEmoji {
   readonly type: 'emoji';
-  readonly emoji: string;
+  readonly emoji: ReactionEmoji;
 }
 
 /**
@@ -1115,6 +1123,29 @@ export const BOT_API_UPDATE_TYPES = [
 
 export type BotApiUpdateType = typeof BOT_API_UPDATE_TYPES[number];
 
+/**
+ * Update types that `getWebhookInfo` never lists, although a bot may request them, as the official
+ * Bot API server's `JsonUpdateTypes` leaves them out.
+ */
+const UNLISTED_UPDATE_TYPES = [
+  'custom_event',
+  'custom_query',
+] as const satisfies readonly BotApiUpdateType[];
+
+const UNLISTED_UPDATE_TYPE_SET: ReadonlySet<BotApiUpdateType> = new Set(UNLISTED_UPDATE_TYPES);
+
+/** An update type that `getWebhookInfo` lists when the bot requested it. */
+export type BotApiListedUpdateType = Exclude<
+  BotApiUpdateType,
+  typeof UNLISTED_UPDATE_TYPES[number]
+>;
+
+export function isListedUpdateType(
+  updateType: BotApiUpdateType,
+): updateType is BotApiListedUpdateType {
+  return !UNLISTED_UPDATE_TYPE_SET.has(updateType);
+}
+
 /** Update types a bot receives only after requesting them explicitly in `allowed_updates`. */
 const OPT_IN_UPDATE_TYPES: readonly BotApiUpdateType[] = [
   'chat_member',
@@ -1157,5 +1188,5 @@ export interface BotApiWebhookInfo {
   /** Reported only while a webhook is set. */
   readonly max_connections?: number;
   /** Reported only for a subscription other than the default. */
-  readonly allowed_updates?: readonly BotApiUpdateType[];
+  readonly allowed_updates?: readonly BotApiListedUpdateType[];
 }

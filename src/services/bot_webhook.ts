@@ -4,6 +4,7 @@ import {
   type BotApiUpdateType,
   type BotApiWebhookInfo,
   DEFAULT_ALLOWED_UPDATE_TYPES,
+  isListedUpdateType,
   resolveAllowedUpdateTypes,
 } from '../types/bot_api.ts';
 import {
@@ -44,9 +45,6 @@ const MAX_READABLE_RETRY_AFTER_SECONDS = 2 ** 31 - 1;
 
 /** Telegram's description of a webhook that answered nothing in time. */
 const READ_TIMEOUT_ERROR_MESSAGE = 'Read timeout expired';
-
-/** Update types that `getWebhookInfo` never lists, as the official Bot API server's `JsonUpdateTypes`. */
-const UNLISTED_UPDATE_TYPES: readonly BotApiUpdateType[] = ['custom_event', 'custom_query'];
 
 export interface SetWebhookRequest {
   /** Where to deliver updates; empty deletes the webhook. */
@@ -281,8 +279,8 @@ export class BotWebhookService {
         ? {}
         : { max_connections: registration.webhook.maxConnections }),
       ...(isDefaultSubscription(allowedUpdateTypes) ? {} : {
-        allowed_updates: BOT_API_UPDATE_TYPES.filter((updateType) =>
-          allowedUpdateTypes.has(updateType) && !UNLISTED_UPDATE_TYPES.includes(updateType)
+        allowed_updates: BOT_API_UPDATE_TYPES.filter(isListedUpdateType).filter((updateType) =>
+          allowedUpdateTypes.has(updateType)
         ),
       }),
     };
