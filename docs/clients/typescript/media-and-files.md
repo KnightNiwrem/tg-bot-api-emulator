@@ -56,7 +56,7 @@ Deno.test('the bot replies to a photo with a document', async () => {
         method: 'sendDocument',
         chat_id: account.id,
         ok: true,
-        parameters: { reply_parameters: JSON.stringify({ message_id: photo.message_id }) },
+        parameters_json: { reply_parameters: { message_id: photo.message_id } },
       },
       { after: beforePhoto },
     );
@@ -108,7 +108,7 @@ Deno.test('the bot sees the name and type of a document', async () => {
         method: 'sendMessage',
         chat_id: account.id,
         ok: true,
-        parameters: { reply_parameters: JSON.stringify({ message_id: notes.message_id }) },
+        parameters_json: { reply_parameters: { message_id: notes.message_id } },
       },
       { after: beforeDocument },
     );
@@ -161,7 +161,7 @@ Deno.test('the bot sees the duration and dimensions the account gives', async ()
           method: 'sendMessage',
           chat_id: account.id,
           ok: true,
-          parameters: { reply_parameters: JSON.stringify({ message_id: messageId }) },
+          parameters_json: { reply_parameters: { message_id: messageId } },
         },
         { after },
       );
@@ -235,7 +235,7 @@ Deno.test('the bot sends a track back with the metadata the account gave it', as
         method: 'sendAudio',
         chat_id: account.id,
         ok: true,
-        parameters: { reply_parameters: JSON.stringify({ message_id: track.message_id }) },
+        parameters_json: { reply_parameters: { message_id: track.message_id } },
       },
       { after: beforeTrack },
     );
@@ -294,7 +294,7 @@ Deno.test('the bot receives each album item as an update in the same media group
           method: 'sendMessage',
           chat_id: account.id,
           ok: true,
-          parameters: { reply_parameters: JSON.stringify({ message_id }) },
+          parameters_json: { reply_parameters: { message_id } },
         },
         { after: beforeAlbum },
       )
@@ -395,7 +395,7 @@ Deno.test('the bot sends a photo by URL', async () => {
         method: 'sendPhoto',
         chat_id: account.id,
         ok: true,
-        parameters: { reply_parameters: JSON.stringify({ message_id: command.message_id }) },
+        parameters_json: { reply_parameters: { message_id: command.message_id } },
       },
       { after: beforeCommand },
     );

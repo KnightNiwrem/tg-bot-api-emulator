@@ -278,11 +278,11 @@ Deno.test('a bot restricted to text is refused photos until the restriction ends
 
     const beforeRestrictedRequest = await activity.position();
     const restrictedRequest = await account.sendMessage({ to: groupChat, text: '/cat@test_bot' });
-    const repliesTo = (message_id: number) => JSON.stringify({ message_id });
+    const repliesToRequest = { reply_parameters: { message_id: restrictedRequest.message_id } };
     const refusedPhoto = await activity.waitFor({
       method: 'sendPhoto',
       chat_id: supergroup.id,
-      parameters: { reply_parameters: repliesTo(restrictedRequest.message_id) },
+      parameters_json: repliesToRequest,
     }, { after: beforeRestrictedRequest });
     assertEquals(refusedPhoto.answer, {
       ok: false,
@@ -293,10 +293,8 @@ Deno.test('a bot restricted to text is refused photos until the restriction ends
       method: 'sendMessage',
       chat_id: supergroup.id,
       ok: true,
-      parameters: {
-        text: 'No pictures allowed here.',
-        reply_parameters: repliesTo(restrictedRequest.message_id),
-      },
+      parameters: { text: 'No pictures allowed here.' },
+      parameters_json: repliesToRequest,
     }, { after: refusedPhoto });
 
     const standing = await session.expireChatMemberRestriction({
@@ -311,7 +309,7 @@ Deno.test('a bot restricted to text is refused photos until the restriction ends
       method: 'sendPhoto',
       chat_id: supergroup.id,
       ok: true,
-      parameters: { reply_parameters: repliesTo(request.message_id) },
+      parameters_json: { reply_parameters: { message_id: request.message_id } },
     }, { after: beforeRequest });
     const photo = (await account.getMessages({ chat: groupChat })).find((message) =>
       message.from.id === botProfile.id &&
@@ -360,7 +358,7 @@ Deno.test('a muted member is heard again once the owner lifts the restriction', 
       method: 'sendMessage',
       chat_id: supergroup.id,
       ok: true,
-      parameters: { reply_parameters: JSON.stringify({ message_id: message.message_id }) },
+      parameters_json: { reply_parameters: { message_id: message.message_id } },
     }, { after: beforeSending });
     assertEquals(reply.parameters.text, 'Noted, Grace.');
   }));
@@ -411,7 +409,7 @@ Deno.test('text-only defaults bind members but not the owner or administrators',
       method: 'sendMessage',
       chat_id: supergroup.id,
       ok: true,
-      parameters: { reply_parameters: JSON.stringify({ message_id: question.message_id }) },
+      parameters_json: { reply_parameters: { message_id: question.message_id } },
     }, { after: beforeAsking });
     assertEquals(answer.parameters.text, 'Text only, please.');
 

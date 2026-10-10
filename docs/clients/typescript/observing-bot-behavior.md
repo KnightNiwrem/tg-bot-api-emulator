@@ -72,20 +72,22 @@ A wait that matches only on the method accepts the first call of that method, wh
 another step of the scenario: the "Checking stock…" message above would satisfy
 `{ method: 'sendMessage' }`. Give criteria that only the call the test is about meets:
 
-| The bot's call is identified by           | Criteria                                                                               |
-| ----------------------------------------- | -------------------------------------------------------------------------------------- |
-| Its exact text                            | `parameters: { text: 'Order of tea confirmed. Total: 12.50' }`                         |
-| The message it replies to                 | `parameters: { reply_parameters: JSON.stringify({ message_id: trigger.message_id }) }` |
-| The query it answers                      | `parameters: { callback_query_id: query.id }` or `{ inline_query_id: query.id }`       |
-| The chat it went to                       | `chat_id: account.id`, or a supergroup's ID                                            |
-| Its success                               | `ok: true` for calls that succeeded, `ok: false` for calls Telegram refused            |
-| Anything else in the entry, on the client | `where: (entry) => ...`, checked after the criteria above                              |
+| The bot's call is identified by           | Criteria                                                                         |
+| ----------------------------------------- | -------------------------------------------------------------------------------- |
+| Its exact text                            | `parameters: { text: 'Order of tea confirmed. Total: 12.50' }`                   |
+| The message it replies to                 | `parameters_json: { reply_parameters: { message_id: trigger.message_id } }`      |
+| The query it answers                      | `parameters: { callback_query_id: query.id }` or `{ inline_query_id: query.id }` |
+| The chat it went to                       | `chat_id: account.id`, or a supergroup's ID                                      |
+| Its success                               | `ok: true` for calls that succeeded, `ok: false` for calls Telegram refused      |
+| Anything else in the entry, on the client | `where: (entry) => ...`, checked after the criteria above                        |
 
-Parameters are recorded as text, as the Bot API reads them, so structured parameters such as
-`reply_parameters` and `reply_markup` are JSON text, compared exactly. Exact matching on
-`reply_parameters` works when the bot sends nothing but the replied message's ID, as grammY does for
-`{ message_id: ctx.msg.message_id }`. For anything less exact, use `where`, which receives the
-entries the other criteria let through:
+Parameters are recorded as text, as the Bot API reads them, and `parameters` compares that text
+exactly. Structured parameters such as `reply_parameters` and `reply_markup` are JSON text, which
+`parameters_json` compares by structure instead: an object pattern names only the members the test
+cares about, in any order, and an array pattern lists every element in order. Its rules are in
+[Bot activity](../../features/bot-activity.md#matching-parameters). Here the wait finds the question
+whose keyboard has one row of two buttons, the second choosing the large size, whatever the first
+button and the buttons' other fields hold:
 
 ```ts
 import { assertEquals } from 'jsr:@std/assert@^1';
@@ -112,7 +114,9 @@ Deno.test('the bot offers a choice of sizes', () =>
         method: 'sendMessage',
         chat_id: account.id,
         ok: true,
-        where: (entry) => entry.parameters.reply_markup?.includes('"size:l"') ?? false,
+        parameters_json: {
+          reply_markup: { inline_keyboard: [[{}, { callback_data: 'size:l' }]] },
+        },
       },
       { after: beforeCommand },
     );
@@ -126,8 +130,9 @@ Deno.test('the bot offers a choice of sizes', () =>
   }));
 ```
 
-A `where` predicate on criteria that name a `method` receives a call's entry, so its `parameters`
-type-check without casts.
+For anything the criteria cannot express, use `where`, which receives the entries the other criteria
+let through. A `where` predicate on criteria that name a `method` receives a call's entry, so its
+`parameters` type-check without casts.
 
 ## Selecting the resulting message
 

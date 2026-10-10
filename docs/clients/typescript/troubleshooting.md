@@ -31,10 +31,11 @@ error names the filter and the position the wait started after. The usual causes
   [fixture](sessions-and-fixtures.md#a-reusable-fixture) reports that error when the test ends. A
   call Telegram would refuse is recorded with `ok: false`, so a wait for `ok: true` does not match
   it: wait for the same call with `ok: false` to see its `answer.description`.
-- **The criteria do not describe the call the bot made.** Parameters are compared exactly, as the
+- **The criteria do not describe the call the bot made.** `parameters` are compared exactly, as the
   text the bot sent: a different text, an extra field in `reply_parameters`, or a `parse_mode` the
-  test did not expect each prevent a match. Loosen the criteria to the method and chat, and inspect
-  the entry the wait then finds.
+  test did not expect each prevent a match. Match JSON parameters such as `reply_parameters` with
+  `parameters_json`, which ignores members its patterns do not name. Loosen the criteria to the
+  method and chat, and inspect the entry the wait then finds.
 - **The position was taken too late.** A position taken after the account acted can already be past
   the bot's call. Take it immediately before the action that triggers the call.
 - **The bot is slow.** A bot that legitimately needs more than 5 seconds needs a longer `timeoutMs`,

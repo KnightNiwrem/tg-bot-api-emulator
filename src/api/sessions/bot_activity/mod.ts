@@ -4,6 +4,7 @@ import { z } from 'zod';
 import type { BotActivityEntry, BotActivityFilter } from '../../../types/bot_activity.ts';
 import { BOT_ACTIVITY_KINDS } from '../../../types/bot_activity_kind.ts';
 import { toCurrentBotApiMethodName } from '../../../types/bot_api_method_name.ts';
+import type { JsonStructure } from '../../../types/json_pattern.ts';
 import {
   controlErrorResponse,
   type ControlRequestIssue,
@@ -16,6 +17,7 @@ import {
 } from '../control_request_input.ts';
 import type { SessionRouteContextTypes } from '../session_route_context_types.ts';
 import { presentWebhookAttemptFailure } from '../webhook_attempt_presentation.ts';
+import { PARAMETER_PATTERNS_QUERY_KEY, readParameterPatterns } from './parameter_patterns_query.ts';
 
 /**
  * The wrapper of a query parameter naming, in OpenAPI's `deepObject` style, a parameter that a
@@ -39,6 +41,7 @@ const readBotActivityQuerySchema = z.strictObject({
   user_id: integerParameter(z.int()).optional(),
   update_id: integerParameter(z.int()).optional(),
   ok: z.enum(['true', 'false']).transform((text) => text === 'true').optional(),
+  [PARAMETER_PATTERNS_QUERY_KEY]: z.string().optional(),
   limit: integerParameter(z.int().min(0).max(MAX_READ_LIMIT)).default(DEFAULT_READ_LIMIT),
   wait_ms: integerParameter(z.int().min(0).max(MAX_WAIT_MILLISECONDS)).default(0),
 }).refine(({ after, before }) => before === undefined || before > after, {
@@ -49,9 +52,15 @@ const readBotActivityQuerySchema = z.strictObject({
   path: ['wait_ms'],
 });
 
-type ReadBotActivityQuery = z.output<typeof readBotActivityQuerySchema> & {
-  readonly parameters: Readonly<Record<string, string>>;
-};
+type ReadBotActivityQuery =
+  & Omit<
+    z.output<typeof readBotActivityQuerySchema>,
+    typeof PARAMETER_PATTERNS_QUERY_KEY
+  >
+  & {
+    readonly parameters: Readonly<Record<string, string>>;
+    readonly parameterPatterns: ReadonlyMap<string, JsonStructure> | undefined;
+  };
 
 export function createBotActivityRoutes(): Hono<SessionRouteContextTypes> {
   const botActivityRoutes = new Hono<SessionRouteContextTypes>();
@@ -85,7 +94,8 @@ export function createBotActivityRoutes(): Hono<SessionRouteContextTypes> {
 
 /**
  * Reads the query of a bot activity read, reporting each repeated parameter, each unknown one, and
- * each value the schema rejects, by the query key the request sent.
+ * each value the schema rejects, by the query key the request sent, and each problem with the
+ * parameter patterns, within the JSON that `parameters_json` holds.
  */
 function readBotActivityQuery(
   searchParams: URLSearchParams,
@@ -116,12 +126,29 @@ function readBotActivityQuery(
     Object.fromEntries(queryValues),
     'query',
   );
-  if (!query.valid) {
-    return { valid: false, issues: [...repetitionIssues, ...query.issues] };
+  const parameterPatternsText = queryValues.get(PARAMETER_PATTERNS_QUERY_KEY);
+  const parameterPatterns = parameterPatternsText === undefined
+    ? undefined
+    : readParameterPatterns(parameterPatternsText);
+  if (!query.valid || parameterPatterns?.valid === false || repetitionIssues.length > 0) {
+    return {
+      valid: false,
+      issues: [
+        ...repetitionIssues,
+        ...(query.valid ? [] : query.issues),
+        ...(parameterPatterns?.valid === false ? parameterPatterns.issues : []),
+      ],
+    };
   }
-  return repetitionIssues.length > 0
-    ? { valid: false, issues: repetitionIssues }
-    : { valid: true, value: { ...query.value, parameters: Object.fromEntries(parameterFilters) } };
+  const { [PARAMETER_PATTERNS_QUERY_KEY]: _parameterPatternsText, ...criteria } = query.value;
+  return {
+    valid: true,
+    value: {
+      ...criteria,
+      parameters: Object.fromEntries(parameterFilters),
+      parameterPatterns: parameterPatterns?.valid ? parameterPatterns.value : undefined,
+    },
+  };
 }
 
 /**
@@ -153,6 +180,9 @@ function toBotActivityFilter(query: ReadBotActivityQuery): BotActivityFilter {
     ...(query.update_id === undefined ? {} : { updateId: query.update_id }),
     ...(query.ok === undefined ? {} : { ok: query.ok }),
     ...(Object.keys(query.parameters).length === 0 ? {} : { parameters: query.parameters }),
+    ...(query.parameterPatterns === undefined
+      ? {}
+      : { parameterPatterns: query.parameterPatterns }),
   };
 }
 

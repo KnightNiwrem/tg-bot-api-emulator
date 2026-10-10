@@ -41,7 +41,7 @@ Deno.test('a written contact names no user', async () => {
         method: 'sendMessage',
         chat_id: account.id,
         ok: true,
-        parameters: { reply_parameters: JSON.stringify({ message_id: contact.message_id }) },
+        parameters_json: { reply_parameters: { message_id: contact.message_id } },
       },
       { after: beforeContact },
     );
@@ -87,7 +87,7 @@ Deno.test('the bot verifies an account that shares its own contact', async () =>
         method: 'sendMessage',
         chat_id: account.id,
         ok: true,
-        parameters: { reply_parameters: JSON.stringify({ message_id: contact.message_id }) },
+        parameters_json: { reply_parameters: { message_id: contact.message_id } },
       },
       { after: beforeContact },
     );
@@ -135,7 +135,7 @@ Deno.test('the bot receives a static location', async () => {
         method: 'sendMessage',
         chat_id: account.id,
         ok: true,
-        parameters: { reply_parameters: JSON.stringify({ message_id: location.message_id }) },
+        parameters_json: { reply_parameters: { message_id: location.message_id } },
       },
       { after: beforeLocation },
     );
@@ -201,7 +201,7 @@ Deno.test('request buttons share the contact and location the bot asks for', asy
           method: 'sendMessage',
           chat_id: account.id,
           ok: true,
-          parameters: { reply_parameters: JSON.stringify({ message_id: messageId }) },
+          parameters_json: { reply_parameters: { message_id: messageId } },
         },
         { after },
       );

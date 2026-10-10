@@ -41,7 +41,7 @@ function toReadQuery(
   if (waitMilliseconds !== undefined) {
     query.set('wait_ms', String(waitMilliseconds));
   }
-  const { bot_id, method, chat_id, user_id, update_id, ok, parameters } = criteria;
+  const { bot_id, method, chat_id, user_id, update_id, ok, parameters, parameters_json } = criteria;
   const queryCriteria = {
     bot_id,
     kind: toReadKind(criteria),
@@ -58,6 +58,9 @@ function toReadQuery(
   }
   for (const [name, text] of Object.entries(parameters ?? {})) {
     query.set(`parameters[${name}]`, text);
+  }
+  if (parameters_json !== undefined) {
+    query.set('parameters_json', JSON.stringify(parameters_json));
   }
   return query;
 }

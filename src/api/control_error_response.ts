@@ -18,7 +18,8 @@ export type ControlRequestIssueCode = typeof CONTROL_REQUEST_ISSUE_CODES[number]
 
 /**
  * One problem with a control request's input: where it is, as the field names and list indexes
- * from the part's root, what kind of problem it is, and an explanation that names no input value.
+ * from the part's root, continuing into the JSON of a query parameter that holds JSON, what kind of
+ * problem it is, and an explanation that names no input value.
  */
 export interface ControlRequestIssue {
   readonly source: ControlRequestIssueSource;

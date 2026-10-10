@@ -120,6 +120,8 @@ export type {
   JoinChatByInviteLinkInput,
   JoinChatInput,
   JoinRequesterContact,
+  JsonStructure,
+  JsonValue,
   KeyboardButtonFace,
   LeaveChatInput,
   LiftChatMemberRestrictionInput,

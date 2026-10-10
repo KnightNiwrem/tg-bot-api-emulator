@@ -63,7 +63,7 @@ Deno.test('the bot greets the supergroup that adds it', () =>
       method: 'sendMessage',
       chat_id: supergroup.id,
       ok: true,
-      parameters: { reply_parameters: JSON.stringify({ message_id: addition.message_id }) },
+      parameters_json: { reply_parameters: { message_id: addition.message_id } },
     }, { after: beforeAdding });
     const greeting = (await account.getMessages({ chat: groupChat })).find((message) =>
       message.from.id === botProfile.id &&
@@ -114,7 +114,7 @@ Deno.test('a bot in privacy mode receives commands but not chatter', () =>
       method: 'sendMessage',
       chat_id: supergroup.id,
       ok: true,
-      parameters: { reply_parameters: JSON.stringify({ message_id: command.message_id }) },
+      parameters_json: { reply_parameters: { message_id: command.message_id } },
     }, { after: beforeSending });
 
     // Chatter sent first would be delivered no later than the command the reply answers.
@@ -164,7 +164,7 @@ Deno.test('a bot without privacy mode receives every message', () =>
       method: 'sendMessage',
       chat_id: supergroup.id,
       ok: true,
-      parameters: { reply_parameters: JSON.stringify({ message_id: chatter.message_id }) },
+      parameters_json: { reply_parameters: { message_id: chatter.message_id } },
     }, { after: beforeSending });
 
     const reply = (await account.getMessages({ chat: groupChat })).find((message) =>
@@ -296,7 +296,7 @@ Deno.test('the bot welcomes members who join and says goodbye to those who leave
       method: 'sendMessage',
       chat_id: supergroup.id,
       ok: true,
-      parameters: { reply_parameters: JSON.stringify({ message_id: join.message_id }) },
+      parameters_json: { reply_parameters: { message_id: join.message_id } },
     }, { after: beforeJoining });
     assertEquals(welcome.parameters.text, 'Welcome, Grace!');
 
@@ -310,7 +310,7 @@ Deno.test('the bot welcomes members who join and says goodbye to those who leave
       method: 'sendMessage',
       chat_id: supergroup.id,
       ok: true,
-      parameters: { reply_parameters: JSON.stringify({ message_id: departure.message_id }) },
+      parameters_json: { reply_parameters: { message_id: departure.message_id } },
     }, { after: beforeLeaving });
     assertEquals(goodbye.parameters.text, 'Goodbye, Grace.');
 
@@ -444,10 +444,8 @@ Deno.test('the bot sees the title and description members set', () =>
       method: 'sendMessage',
       chat_id: supergroup.id,
       ok: true,
-      parameters: {
-        text: 'New title noted: Platform Team',
-        reply_parameters: JSON.stringify({ message_id: titleChange.message_id }),
-      },
+      parameters: { text: 'New title noted: Platform Team' },
+      parameters_json: { reply_parameters: { message_id: titleChange.message_id } },
     }, { after: beforeRenaming });
 
     await account.changeSupergroupDescription({
@@ -460,7 +458,7 @@ Deno.test('the bot sees the title and description members set', () =>
       method: 'sendMessage',
       chat_id: supergroup.id,
       ok: true,
-      parameters: { reply_parameters: JSON.stringify({ message_id: question.message_id }) },
+      parameters_json: { reply_parameters: { message_id: question.message_id } },
     }, { after: beforeAsking });
     assertEquals(answer.parameters.text, 'Release coordination');
   }));
@@ -502,7 +500,7 @@ Deno.test('content protection covers every message of the supergroup', () =>
       method: 'sendMessage',
       chat_id: supergroup.id,
       ok: true,
-      parameters: { reply_parameters: JSON.stringify({ message_id: question.message_id }) },
+      parameters_json: { reply_parameters: { message_id: question.message_id } },
     }, { after: beforeAsking });
     assertEquals(answer.parameters.text, 'Protected.');
 

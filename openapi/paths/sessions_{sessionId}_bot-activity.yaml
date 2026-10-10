@@ -12,8 +12,9 @@ get:
   summary: Read, or wait for, entries of the session's bot activity log
   description: >-
     Answers with the earliest entries after `after`, and before `before` if given, that match
-    every filter given. Filters that only calls have, `method`, `ok`, and `parameters`, match no
-    update entry, and filters that only updates have, `user_id` and `update_id`, match no call. A
+    every filter given. Filters that only calls have, `method`, `ok`, `parameters` and
+    `parameters_json`, match no update entry, and filters that only updates have, `user_id` and
+    `update_id`, match no call. A
     read without `before` that finds no matching entry is held until one is recorded, `wait_ms`
     elapses, or the session ends. A read with `before` covers a range that is already complete and
     is answered at once.
@@ -80,11 +81,37 @@ get:
       explode: true
       description: >-
         Parameter text a call must have sent, by parameter name, compared exactly with the text
-        the call sent: `parameters[callback_query_id]=123`.
+        the call sent: `parameters[callback_query_id]=123`. Text that happens to be JSON is
+        compared as text, so `parameters[reply_parameters]={"message_id":5}` finds only calls
+        that sent those exact characters; `parameters_json` compares JSON by its structure.
       schema:
         type: object
         additionalProperties:
           type: string
+    - name: parameters_json
+      in: query
+      description: >-
+        A JSON object of patterns, by parameter name, that the JSON a call sent in each named
+        parameter must match: `parameters_json={"reply_parameters":{"message_id":5}}`, URL-encoded.
+        A call matches when, for every member, it sent that parameter, the parameter's text is
+        JSON, and that JSON matches the member's pattern, which must be an object or an array.
+        Within a pattern, a string, number or boolean matches the same value of the same type, so
+        `5` matches neither `"5"` nor `true`, and `1` matches `1.0`; `null` matches only `null`,
+        not a missing member; an object matches an object that has every member the pattern
+        names, with a matching value, whatever other members it has and in any order, so no
+        pattern requires a member to be missing; an array matches an array of the same length
+        whose elements match the pattern's in order. A parameter a bot sent as a JSON body's
+        object or array is matched just as one it sent as that JSON's text. The value is rejected
+        when it is not JSON, is not an object, has a member that is not an object or an array, or
+        has an object that names a member more than once.
+      content:
+        application/json:
+          schema:
+            type: object
+            additionalProperties:
+              type:
+                - object
+                - array
     - name: limit
       in: query
       description: The most entries to answer with; 0 answers only with the head position.
@@ -127,8 +154,9 @@ get:
                   empty.
     '400':
       description: >-
-        The query has an unknown, repeated, or malformed parameter, `before` is not greater than
-        `after`, `wait_ms` is given with `before`, or a position is beyond the head of the log.
+        The query has an unknown, repeated, or malformed parameter, `parameters_json` is not an
+        object of patterns or names a member twice, `before` is not greater than `after`,
+        `wait_ms` is given with `before`, or a position is beyond the head of the log.
       content:
         application/json:
           schema:

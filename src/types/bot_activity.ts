@@ -1,5 +1,6 @@
 import type { BotApiUpdate } from './bot_api.ts';
 import type { WebhookAttemptFailure } from './bot_webhook.ts';
+import { type JsonStructure, type JsonValue, matchesJsonPattern } from './json_pattern.ts';
 
 /**
  * What passes between the emulator and a session's bots, in the order the emulator decided each
@@ -137,8 +138,8 @@ export type UnpositionedBotActivityEntry =
 
 /**
  * Which entries a reader looks for; an entry must satisfy every criterion given. Criteria that
- * only calls have, `method`, `ok` and `parameters`, match no update entry, and criteria that only
- * updates have, `userId` and `updateId`, match no call.
+ * only calls have, `method`, `ok`, `parameters` and `parameterPatterns`, match no update entry, and
+ * criteria that only updates have, `userId` and `updateId`, match no call.
  */
 export interface BotActivityFilter {
   readonly botId?: number;
@@ -156,6 +157,11 @@ export interface BotActivityFilter {
   readonly ok?: boolean;
   /** Parameter text the call must have sent, by parameter name, compared exactly. */
   readonly parameters?: Readonly<Record<string, string>>;
+  /**
+   * Patterns, by parameter name, that the JSON the call sent in each parameter must match, as
+   * `matchesJsonPattern` matches them. A parameter whose text is not JSON matches no pattern.
+   */
+  readonly parameterPatterns?: ReadonlyMap<string, JsonStructure>;
 }
 
 export function matchesBotActivityFilter(
@@ -178,6 +184,7 @@ export function matchesBotActivityFilter(
   const updateId = entry.kind === 'update_delivered' ? entry.update.update_id : entry.updateId;
   return (
     filter.method === undefined && filter.ok === undefined && filter.parameters === undefined &&
+    filter.parameterPatterns === undefined &&
     (filter.userId === undefined || entry.userId === filter.userId) &&
     (filter.updateId === undefined || updateId === filter.updateId)
   );
@@ -192,7 +199,27 @@ function matchesBotApiCallCriteria(entry: BotApiCallEntry, filter: BotActivityFi
   if (filter.ok !== undefined && entry.answer.ok !== filter.ok) {
     return false;
   }
-  return Object.entries(filter.parameters ?? {}).every(([name, text]) =>
-    Object.hasOwn(entry.parameters, name) && entry.parameters[name] === text
+  const sentEveryParameterText = Object.entries(filter.parameters ?? {}).every(([name, text]) =>
+    sentParameterText(entry, name) === text
   );
+  return sentEveryParameterText &&
+    [...filter.parameterPatterns ?? []].every(([name, pattern]) => {
+      const text = sentParameterText(entry, name);
+      const value = text === undefined ? undefined : parseJsonText(text);
+      return value !== undefined && matchesJsonPattern(value, pattern);
+    });
+}
+
+/** The text a call sent in a parameter; `undefined` when it sent none of that name. */
+function sentParameterText(entry: BotApiCallEntry, name: string): string | undefined {
+  return Object.hasOwn(entry.parameters, name) ? entry.parameters[name] : undefined;
+}
+
+/** The value JSON text holds; `undefined` for text that is not JSON. */
+function parseJsonText(text: string): JsonValue | undefined {
+  try {
+    return JSON.parse(text);
+  } catch {
+    return undefined;
+  }
 }

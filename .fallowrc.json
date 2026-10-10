@@ -56,7 +56,8 @@
           "src/types/bot_rate_limit.ts",
           "src/types/bot_server_error.ts",
           "src/types/bot_activity.ts",
-          "src/types/bot_activity_kind.ts"
+          "src/types/bot_activity_kind.ts",
+          "src/types/json_pattern.ts"
         ]
       },
       {

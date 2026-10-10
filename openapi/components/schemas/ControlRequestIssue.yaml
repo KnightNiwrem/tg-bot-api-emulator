@@ -28,7 +28,9 @@ properties:
     description: >-
       Where the problem is within its source: the field names and list indexes from the JSON
       body's root, the path parameter's name, or the query parameter's key as the request sent
-      it, such as `parameters[text]`. An empty path names the whole body.
+      it, such as `parameters[text]`, followed, for a query parameter whose value is JSON, such as
+      `parameters_json`, by the member names and list indexes within that JSON. An empty path
+      names the whole body.
   code:
     type: string
     enum:
@@ -42,15 +44,16 @@ properties:
       - duplicate_field
       - no_matching_variant
     description: >-
-      The kind of problem. `invalid_json`: the body is not JSON. `invalid_type`: a value is
-      missing or of the wrong type. `too_small` and `too_big`: a number, text, or list is outside
-      its bounds. `invalid_format`: text does not have the required form. `invalid_value`: a
-      value is not one of those allowed, or breaks a rule its field states. `unknown_field`: the
-      operation takes no field or query parameter of that name. `duplicate_field`: a query
-      parameter is repeated. `no_matching_variant`: a value that takes one of several forms
-      matches none of them. When exactly one form accepts the value's type and every field it
-      has, that form's problems are listed instead; a value whose form is chosen by a field, such
-      as a chat's `type`, has an `invalid_value` problem at that field when it names no form.
+      The kind of problem. `invalid_json`: the body, or a query parameter whose value must be JSON,
+      is not JSON. `invalid_type`: a value is missing or of the wrong type. `too_small` and
+      `too_big`: a number, text, or list is outside its bounds. `invalid_format`: text does not have
+      the required form. `invalid_value`: a value is not one of those allowed, or breaks a rule its
+      field states. `unknown_field`: the operation takes no field or query parameter of that name.
+      `duplicate_field`: a query parameter is repeated, or a JSON query parameter's object names a
+      member more than once. `no_matching_variant`: a value that takes one of several forms matches
+      none of them. When exactly one form accepts the value's type and every field it has, that
+      form's problems are listed instead; a value whose form is chosen by a field, such as a chat's
+      `type`, has an `invalid_value` problem at that field when it names no form.
   message:
     type: string
     description: A human-readable explanation of the problem.
