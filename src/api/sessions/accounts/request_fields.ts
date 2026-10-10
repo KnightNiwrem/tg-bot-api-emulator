@@ -3,6 +3,7 @@ import { z } from 'zod';
 import { createGeoLocation, MAX_HORIZONTAL_ACCURACY_METERS } from '../../../types/geo_location.ts';
 import type { SpecifiedAccountPoll } from '../../../types/poll.ts';
 import {
+  isTelegramUsername,
   MAX_SUPERGROUP_OR_CHANNEL_ID,
   MAX_TELEGRAM_USER_ID,
   MIN_SUPERGROUP_OR_CHANNEL_ID,
@@ -16,6 +17,11 @@ export const telegramUserIdSchema = z.number().int()
 export const supergroupChatIdSchema = z.number().int()
   .min(MIN_SUPERGROUP_OR_CHANNEL_ID)
   .max(MAX_SUPERGROUP_OR_CHANNEL_ID);
+
+/** A username of Telegram's syntax, such as an account, bot, or public supergroup takes. */
+export const telegramUsernameSchema = z.string().refine(isTelegramUsername, {
+  message: "Expected a username of Telegram's syntax",
+});
 
 /**
  * The chat a message goes to or a button is on: a private chat with a bot, or a supergroup the

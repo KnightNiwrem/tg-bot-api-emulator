@@ -5,10 +5,18 @@ import {
   QUEUEABLE_SERVER_ERROR_CODES,
   type QueuedServerErrorResponses,
 } from '../../../types/bot_server_error.ts';
-import { findBotApiMethod } from '../bot_api/method_catalogue.ts';
+import {
+  controlErrorResponse,
+  invalidControlRequestResponse,
+} from '../../control_error_response.ts';
 import { readJsonRequestBody } from '../json_request_body.ts';
 import type { SessionRouteContextTypes } from '../session_route_context_types.ts';
-import { BOT_ID_PARAMETER, botIdPathParameterSchema } from './bot_id_path_parameter.ts';
+import {
+  BOT_ID_PARAMETER,
+  BOT_NOT_FOUND_REASON,
+  botIdPathParameterSchema,
+} from './bot_id_path_parameter.ts';
+import { readQueuedAnswerMethodName } from './queued_answer_method.ts';
 
 const SERVER_ERROR_RESPONSES_PATH = `/:${BOT_ID_PARAMETER}/server-error-responses` as const;
 
@@ -30,45 +38,45 @@ export function createServerErrorResponseRoutes(): Hono<SessionRouteContextTypes
   serverErrorResponseRoutes.post(SERVER_ERROR_RESPONSES_PATH, async (context) => {
     const botId = botIdPathParameterSchema.safeParse(context.req.param(BOT_ID_PARAMETER));
     if (!botId.success) {
-      return context.body(null, 404);
+      return controlErrorResponse(context, 404, BOT_NOT_FOUND_REASON);
     }
-    const requestBody = await readJsonRequestBody(
+    const requestBodyReading = await readJsonRequestBody(
       context.req,
       queueServerErrorResponsesRequestSchema,
     );
-    if (requestBody === undefined) {
-      return context.body(null, 400);
+    if (!requestBodyReading.valid) {
+      return invalidControlRequestResponse(context, requestBodyReading.issues);
     }
-    const { method: methodName, error_code: errorCode, count } = requestBody;
-    const method = methodName === undefined ? undefined : findBotApiMethod(methodName);
-    if (methodName !== undefined && method === undefined) {
-      return context.body(null, 400);
+    const requestBody = requestBodyReading.value;
+    const methodName = readQueuedAnswerMethodName(requestBody.method);
+    if (!methodName.valid) {
+      return invalidControlRequestResponse(context, methodName.issues);
     }
 
     const result = context.get('emulationSession').botServerErrors.queueServerErrorResponses(
       botId.data,
       {
-        ...(method === undefined ? {} : { methodName: method.name }),
-        errorCode,
-        remainingCount: count,
+        ...(methodName.value === undefined ? {} : { methodName: methodName.value }),
+        errorCode: requestBody.error_code,
+        remainingCount: requestBody.count,
       },
     );
     return result.queued
       ? context.json(presentServerErrorResponses(result.responses), 201)
-      : context.body(null, 404);
+      : controlErrorResponse(context, 404, result.reason);
   });
 
   serverErrorResponseRoutes.get(SERVER_ERROR_RESPONSES_PATH, (context) => {
     const botId = botIdPathParameterSchema.safeParse(context.req.param(BOT_ID_PARAMETER));
     if (!botId.success) {
-      return context.body(null, 404);
+      return controlErrorResponse(context, 404, BOT_NOT_FOUND_REASON);
     }
     const result = context.get('emulationSession').botServerErrors.listServerErrorResponses(
       botId.data,
     );
     return result.found
       ? context.json({ server_error_responses: result.responses.map(presentServerErrorResponses) })
-      : context.body(null, 404);
+      : controlErrorResponse(context, 404, result.reason);
   });
 
   return serverErrorResponseRoutes;

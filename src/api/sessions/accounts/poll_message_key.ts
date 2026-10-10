@@ -1,4 +1,5 @@
 import type { EmulationSession } from '../../../types/emulation_session.ts';
+import { type ControlRequestInputReading, readPathParameters } from '../control_request_input.ts';
 import { privateMessagePathSchema, supergroupMessagePathSchema } from './account_paths.ts';
 
 /** A message showing a poll, as an account addresses it. */
@@ -7,29 +8,25 @@ export type AccountPollMessageKey = Parameters<
 >[0];
 
 /**
- * Reads the message of a poll route, in an account's private chat with a bot or in a supergroup;
- * `undefined` for path parameters that identify none.
+ * Reads the message of a poll route, in an account's private chat with a bot or in a supergroup,
+ * from its path parameters.
  */
 export function readPollMessageKey(
   pathParameters: Record<string, string>,
   chatType: AccountPollMessageKey['chat']['type'],
-): AccountPollMessageKey | undefined {
+): ControlRequestInputReading<AccountPollMessageKey> {
   if (chatType === 'private') {
-    const messagePath = privateMessagePathSchema.safeParse(pathParameters);
-    return messagePath.success
-      ? {
-        accountId: messagePath.data.accountId,
-        chat: { type: 'private', botId: messagePath.data.botId },
-        messageId: messagePath.data.messageId,
-      }
-      : undefined;
-  }
-  const messagePath = supergroupMessagePathSchema.safeParse(pathParameters);
-  return messagePath.success
-    ? {
-      accountId: messagePath.data.accountId,
-      chat: { type: 'supergroup', chatId: messagePath.data.chatId },
-      messageId: messagePath.data.messageId,
+    const messagePath = readPathParameters(privateMessagePathSchema, pathParameters);
+    if (!messagePath.valid) {
+      return messagePath;
     }
-    : undefined;
+    const { accountId, botId, messageId } = messagePath.value;
+    return { valid: true, value: { accountId, chat: { type: 'private', botId }, messageId } };
+  }
+  const messagePath = readPathParameters(supergroupMessagePathSchema, pathParameters);
+  if (!messagePath.valid) {
+    return messagePath;
+  }
+  const { accountId, chatId, messageId } = messagePath.value;
+  return { valid: true, value: { accountId, chat: { type: 'supergroup', chatId }, messageId } };
 }

@@ -4,7 +4,16 @@ import { z } from 'zod';
 import type { BotActivityEntry, BotActivityFilter } from '../../../types/bot_activity.ts';
 import { BOT_ACTIVITY_KINDS } from '../../../types/bot_activity_kind.ts';
 import { toCurrentBotApiMethodName } from '../../../types/bot_api_method_name.ts';
+import {
+  controlErrorResponse,
+  type ControlRequestIssue,
+  invalidControlRequestResponse,
+} from '../../control_error_response.ts';
 import { integerParameter } from '../bot_api/request_parameters.ts';
+import {
+  type ControlRequestInputReading,
+  readControlRequestInput,
+} from '../control_request_input.ts';
 import type { SessionRouteContextTypes } from '../session_route_context_types.ts';
 import { presentWebhookAttemptFailure } from '../webhook_attempt_presentation.ts';
 
@@ -32,8 +41,13 @@ const readBotActivityQuerySchema = z.strictObject({
   ok: z.enum(['true', 'false']).transform((text) => text === 'true').optional(),
   limit: integerParameter(z.int().min(0).max(MAX_READ_LIMIT)).default(DEFAULT_READ_LIMIT),
   wait_ms: integerParameter(z.int().min(0).max(MAX_WAIT_MILLISECONDS)).default(0),
-}).refine(({ after, before }) => before === undefined || before > after)
-  .refine(({ before, wait_ms }) => before === undefined || wait_ms === 0);
+}).refine(({ after, before }) => before === undefined || before > after, {
+  message: 'A range must end after it starts',
+  path: ['before'],
+}).refine(({ before, wait_ms }) => before === undefined || wait_ms === 0, {
+  message: 'A read of a range that ends does not wait',
+  path: ['wait_ms'],
+});
 
 type ReadBotActivityQuery = z.output<typeof readBotActivityQuerySchema> & {
   readonly parameters: Readonly<Record<string, string>>;
@@ -43,10 +57,11 @@ export function createBotActivityRoutes(): Hono<SessionRouteContextTypes> {
   const botActivityRoutes = new Hono<SessionRouteContextTypes>();
 
   botActivityRoutes.get('/', async (context) => {
-    const query = readBotActivityQuery(new URL(context.req.url).searchParams);
-    if (query === undefined) {
-      return context.body(null, 400);
+    const queryReading = readBotActivityQuery(new URL(context.req.url).searchParams);
+    if (!queryReading.valid) {
+      return invalidControlRequestResponse(context, queryReading.issues);
     }
+    const query = queryReading.value;
 
     const result = await context.get('emulationSession').botActivity.readEntries({
       after: query.after,
@@ -57,7 +72,7 @@ export function createBotActivityRoutes(): Hono<SessionRouteContextTypes> {
       signal: context.req.raw.signal,
     });
     if (!result.read) {
-      return context.body(null, 400);
+      return controlErrorResponse(context, 400, result.reason);
     }
     return context.json({
       entries: result.entries.map(presentBotActivityEntry),
@@ -69,23 +84,38 @@ export function createBotActivityRoutes(): Hono<SessionRouteContextTypes> {
 }
 
 /**
- * Reads the query of a bot activity read; `undefined` for an unknown or repeated parameter, or a
- * value the schema rejects.
+ * Reads the query of a bot activity read, reporting each repeated parameter, each unknown one, and
+ * each value the schema rejects, by the query key the request sent.
  */
-function readBotActivityQuery(searchParams: URLSearchParams): ReadBotActivityQuery | undefined {
+function readBotActivityQuery(
+  searchParams: URLSearchParams,
+): ControlRequestInputReading<ReadBotActivityQuery> {
   const queryValues: Record<string, string> = {};
   const parameters: Record<string, string> = {};
+  const repeatedQueryKeys = new Set<string>();
   for (const [name, value] of searchParams) {
     const parameterName = readParameterFilterName(name);
     const values = parameterName === undefined ? queryValues : parameters;
     const key = parameterName ?? name;
     if (Object.hasOwn(values, key)) {
-      return undefined;
+      repeatedQueryKeys.add(name);
+      continue;
     }
     values[key] = value;
   }
-  const parsedQuery = readBotActivityQuerySchema.safeParse(queryValues);
-  return parsedQuery.success ? { ...parsedQuery.data, parameters } : undefined;
+  const repetitionIssues = [...repeatedQueryKeys].map((queryKey): ControlRequestIssue => ({
+    source: 'query',
+    path: [queryKey],
+    code: 'duplicate_field',
+    message: 'The query parameter is repeated',
+  }));
+  const query = readControlRequestInput(readBotActivityQuerySchema, queryValues, 'query');
+  if (!query.valid) {
+    return { valid: false, issues: [...repetitionIssues, ...query.issues] };
+  }
+  return repetitionIssues.length > 0
+    ? { valid: false, issues: repetitionIssues }
+    : { valid: true, value: { ...query.value, parameters } };
 }
 
 /**

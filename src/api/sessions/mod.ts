@@ -1,9 +1,10 @@
-import { Hono } from 'hono';
+import { type Context, Hono, type MiddlewareHandler } from 'hono';
 import { basePath } from 'hono/route';
 import { z } from 'zod';
 
 import type { EmulationSession, EmulationSessionOptions } from '../../types/emulation_session.ts';
 import { DEFAULT_UPLOAD_PROFILE, UPLOAD_PROFILES } from '../../types/upload_profile.ts';
+import { controlErrorResponse, invalidControlRequestResponse } from '../control_error_response.ts';
 import { createAccountRoutes } from './accounts/mod.ts';
 import { createBotActivityRoutes } from './bot_activity/mod.ts';
 import { createBotApiRoutes } from './bot_api/mod.ts';
@@ -18,7 +19,6 @@ import { createWebResourceRoutes } from './web_resources/mod.ts';
 
 const SESSION_ID_PARAMETER = 'sessionId';
 const SESSION_PATH = `/:${SESSION_ID_PARAMETER}` as const;
-const SESSION_SUBRESOURCE_PATH = `${SESSION_PATH}/*` as const;
 const ACCOUNT_COLLECTION_PATH = `${SESSION_PATH}/accounts` as const;
 const BOT_COLLECTION_PATH = `${SESSION_PATH}/bots` as const;
 const BOT_API_PATH = `${SESSION_PATH}/bot-api` as const;
@@ -28,6 +28,9 @@ const WEB_RESOURCE_COLLECTION_PATH = `${SESSION_PATH}/web-resources` as const;
 const POLL_COLLECTION_PATH = `${SESSION_PATH}/polls` as const;
 const INLINE_QUERY_COLLECTION_PATH = `${SESSION_PATH}/inline-queries` as const;
 const SUPERGROUP_COLLECTION_PATH = `${SESSION_PATH}/supergroups` as const;
+
+/** The reason a control route gives for a session that does not exist or has ended. */
+const SESSION_NOT_FOUND_REASON = 'session_not_found';
 
 const createSessionRequestSchema = z.strictObject({
   upload_profile: z.enum(UPLOAD_PROFILES).default(DEFAULT_UPLOAD_PROFILE),
@@ -54,10 +57,12 @@ export function createSessionRoutes(
     const requestBody = await readJsonRequestBody(context.req, createSessionRequestSchema, {
       allowsEmptyBody: true,
     });
-    if (requestBody === undefined) {
-      return context.body(null, 400);
+    if (!requestBody.valid) {
+      return invalidControlRequestResponse(context, requestBody.issues);
     }
-    const session = sessionLifecycle.createSession({ uploadProfile: requestBody.upload_profile });
+    const session = sessionLifecycle.createSession({
+      uploadProfile: requestBody.value.upload_profile,
+    });
     const sessionPath = `${basePath(context)}/${session.id}`;
 
     return context.json(
@@ -75,30 +80,63 @@ export function createSessionRoutes(
     const sessionWasDeleted = sessionLifecycle.endSession(
       context.req.param(SESSION_ID_PARAMETER),
     );
-    return context.body(null, sessionWasDeleted ? 204 : 404);
+    return sessionWasDeleted
+      ? context.body(null, 204)
+      : controlErrorResponse(context, 404, SESSION_NOT_FOUND_REASON);
   });
 
-  sessionRoutes.use(SESSION_SUBRESOURCE_PATH, async (context, next) => {
-    const session = sessionLifecycle.getSessionById(
-      context.req.param(SESSION_ID_PARAMETER),
-    );
+  // The Bot API's responses are Telegram's, so a bot of an unknown session gets a 404 without the
+  // control API's error body, and without a Bot API envelope, as no bot is authenticated yet.
+  const requireBotApiSession = createSessionRequirement(
+    sessionLifecycle,
+    (context) => context.body(null, 404),
+  );
+  const requireControlSession = createSessionRequirement(
+    sessionLifecycle,
+    (context) => controlErrorResponse(context, 404, SESSION_NOT_FOUND_REASON),
+  );
+  sessionRoutes.use(`${BOT_API_PATH}/*`, requireBotApiSession);
+  sessionRoutes.route(BOT_API_PATH, createBotApiRoutes());
+
+  const controlSubresourceRoutes: readonly (readonly [
+    path: string,
+    routes: Hono<SessionRouteContextTypes>,
+  ])[] = [
+    [ACCOUNT_COLLECTION_PATH, createAccountRoutes()],
+    [BOT_COLLECTION_PATH, createBotRoutes()],
+    [BOT_ACTIVITY_PATH, createBotActivityRoutes()],
+    [FILE_COLLECTION_PATH, createFileRoutes()],
+    [WEB_RESOURCE_COLLECTION_PATH, createWebResourceRoutes()],
+    [POLL_COLLECTION_PATH, createPollRoutes()],
+    [INLINE_QUERY_COLLECTION_PATH, createInlineQueryCacheRoutes()],
+    [SUPERGROUP_COLLECTION_PATH, createSupergroupRoutes()],
+  ];
+  for (const [path, routes] of controlSubresourceRoutes) {
+    sessionRoutes.use(`${path}/*`, requireControlSession);
+    sessionRoutes.route(path, routes);
+  }
+
+  return sessionRoutes;
+}
+
+/**
+ * Creates middleware that resolves the session a route's path names, answering a request for an
+ * unknown session as `answerUnknownSession` does.
+ */
+function createSessionRequirement(
+  sessionLifecycle: SessionLifecycle,
+  answerUnknownSession: (context: Context) => Response,
+): MiddlewareHandler<SessionRouteContextTypes> {
+  return async (context, next) => {
+    const sessionId = context.req.param(SESSION_ID_PARAMETER);
+    const session = sessionId === undefined
+      ? undefined
+      : sessionLifecycle.getSessionById(sessionId);
     if (session === undefined) {
-      return context.body(null, 404);
+      return answerUnknownSession(context);
     }
 
     context.set('emulationSession', session);
     await next();
-  });
-
-  sessionRoutes.route(ACCOUNT_COLLECTION_PATH, createAccountRoutes());
-  sessionRoutes.route(BOT_COLLECTION_PATH, createBotRoutes());
-  sessionRoutes.route(BOT_API_PATH, createBotApiRoutes());
-  sessionRoutes.route(BOT_ACTIVITY_PATH, createBotActivityRoutes());
-  sessionRoutes.route(FILE_COLLECTION_PATH, createFileRoutes());
-  sessionRoutes.route(WEB_RESOURCE_COLLECTION_PATH, createWebResourceRoutes());
-  sessionRoutes.route(POLL_COLLECTION_PATH, createPollRoutes());
-  sessionRoutes.route(INLINE_QUERY_COLLECTION_PATH, createInlineQueryCacheRoutes());
-  sessionRoutes.route(SUPERGROUP_COLLECTION_PATH, createSupergroupRoutes());
-
-  return sessionRoutes;
+  };
 }

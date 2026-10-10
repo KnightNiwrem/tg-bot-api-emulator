@@ -3,9 +3,12 @@ import { basePath } from 'hono/route';
 import { z } from 'zod';
 
 import type { EmulationSession } from '../../../types/emulation_session.ts';
-import { isTelegramUsername } from '../../../types/telegram_identity.ts';
 import { MAX_ACCOUNT_NAME_LENGTH } from '../../../types/virtual_account.ts';
 import { countTextCharacters } from '../../../types/virtual_message.ts';
+import {
+  controlErrorResponse,
+  invalidControlRequestResponse,
+} from '../../control_error_response.ts';
 import { readJsonRequestBody } from '../json_request_body.ts';
 import type { SessionRouteContextTypes } from '../session_route_context_types.ts';
 import { createBlockedBotRoutes } from './blocked_bots.ts';
@@ -21,6 +24,7 @@ import { createPollAnswerRoutes } from './poll_answers.ts';
 import { createPollClosureRoutes } from './poll_closures.ts';
 import { createReplyKeyboardPressRoutes } from './reply_keyboard_presses.ts';
 import { createSupergroupAdministrationRoutes } from './supergroup_administration.ts';
+import { telegramUsernameSchema } from './request_fields.ts';
 import { createSupergroupMembershipRoutes } from './supergroup_membership.ts';
 
 /** An E.164 phone number's digits: a country code that never starts with 0, and at most 15 digits. */
@@ -35,7 +39,7 @@ const accountNameSchema = z.string().min(1).refine(
 const createAccountRequestSchema = z.strictObject({
   first_name: accountNameSchema,
   last_name: accountNameSchema.optional(),
-  username: z.string().refine(isTelegramUsername).optional(),
+  username: telegramUsernameSchema.optional(),
   language_code: z.string().min(1).optional(),
   /** Keeps forwards of the account's messages from linking to it; they show only its name. */
   has_private_forwards: z.boolean().optional(),
@@ -56,14 +60,19 @@ export function createAccountRoutes(): Hono<SessionRouteContextTypes> {
   const accountRoutes = new Hono<SessionRouteContextTypes>();
 
   accountRoutes.post('/', async (context) => {
-    const requestBody = await readJsonRequestBody(context.req, createAccountRequestSchema);
-    if (requestBody === undefined) {
-      return context.body(null, 400);
+    const requestBodyReading = await readJsonRequestBody(context.req, createAccountRequestSchema);
+    if (!requestBodyReading.valid) {
+      return invalidControlRequestResponse(context, requestBodyReading.issues);
     }
+    const requestBody = requestBodyReading.value;
 
     const result = context.get('emulationSession').virtualUsers.createAccount(requestBody);
     if (!result.created) {
-      return context.body(null, accountCreationFailureStatus(result.reason));
+      return controlErrorResponse(
+        context,
+        accountCreationFailureStatus(result.reason),
+        result.reason,
+      );
     }
 
     const accountPath = `${basePath(context)}/${result.account.profile.id}`;
