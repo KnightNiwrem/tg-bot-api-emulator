@@ -11,6 +11,7 @@ import { readRichMessageParameter } from './rich_message_parameter.ts';
 import {
   type RequestedRichMessageFileTypes,
   resolveRichMessageWebFiles,
+  SESSION_ENDED_RESOLUTION,
   type WebFileResolution,
 } from './web_file_parameter.ts';
 
@@ -31,6 +32,9 @@ export async function resolveSpecifiedRichMessage(
   { richMessage, detectsEntities }: SpecifiedRichMessage,
 ): Promise<WebFileResolution<SendableRichMessage>> {
   const resolution = await resolveRichMessageWebFiles(context, richMessage);
+  if (!context.session.lifetime.admitsCommits) {
+    return SESSION_ENDED_RESOLUTION;
+  }
   return resolution.resolved
     ? { resolved: true, value: { richMessage: resolution.value, detectsEntities } }
     : resolution;

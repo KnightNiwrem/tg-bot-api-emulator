@@ -10,8 +10,9 @@ import type { BotApiInputFile, RequestedInputFile } from './input_file_parameter
 import {
   albumMessageNotSentError,
   botApiError,
-  type BotApiMethodAnswer,
   type BotApiMethodContext,
+  type BotApiMethodOutcome,
+  SESSION_ENDED,
 } from './method_call.ts';
 
 /**
@@ -41,9 +42,20 @@ export type RequestedRichMessageFileTypes = RichMessageFileRequests<RequestedInp
 /** The files of a rich message's media blocks, with every URL downloaded. */
 type ResolvedRichMessageFileTypes = RichMessageFileRequests<BotApiInputFile>;
 
+/**
+ * The files a request names by URL, downloaded, or the answer the request gets instead:
+ * Telegram's error for a download that failed, or `SESSION_ENDED` once the session has ended.
+ */
 export type WebFileResolution<Resolved> =
   | { readonly resolved: true; readonly value: Resolved }
-  | { readonly resolved: false; readonly errorAnswer: BotApiMethodAnswer };
+  | { readonly resolved: false; readonly errorAnswer: BotApiMethodOutcome };
+
+/**
+ * The resolution of files whose session ended while they were downloaded. Every resolver checks
+ * for it after each of its waits, so no download starts and nothing is reported as failed once the
+ * session has ended.
+ */
+export const SESSION_ENDED_RESOLUTION = { resolved: false, errorAnswer: SESSION_ENDED } as const;
 
 /** What a request sends a file named by URL as, which decides how Telegram downloads it. */
 type WebFileKind = Parameters<EmulationSession['mediaFiles']['downloadWebFile']>[0]['fileKind'];
@@ -101,6 +113,9 @@ export async function resolveRequestedInputFile(
     fileKind,
     signal: context.signal,
   });
+  if (!context.session.lifetime.admitsCommits) {
+    return SESSION_ENDED_RESOLUTION;
+  }
   if (download.downloaded) {
     return { resolved: true, value: { kind: 'web_file', webFile: download.webFile } };
   }
@@ -143,6 +158,9 @@ export async function resolveRichMessageWebFiles(
   for (const file of listRichMessageFiles(richMessage)) {
     const requested = getRequestedRichMessageFile(file);
     const resolution = await resolveRequestedInputFile(context, requested, file.kind);
+    if (!context.session.lifetime.admitsCommits) {
+      return SESSION_ENDED_RESOLUTION;
+    }
     if (!resolution.resolved) {
       return resolution;
     }

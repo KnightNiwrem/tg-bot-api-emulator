@@ -46,7 +46,11 @@ import {
   resolveSpecifiedRichMessage,
   type SpecifiedRichMessage,
 } from '../specified_rich_message.ts';
-import { resolveRequestedInputFile, type WebFileResolution } from '../web_file_parameter.ts';
+import {
+  resolveRequestedInputFile,
+  SESSION_ENDED_RESOLUTION,
+  type WebFileResolution,
+} from '../web_file_parameter.ts';
 
 /** The methods that edit a sent message, or stop its poll. */
 export const MESSAGE_EDITING_METHODS: readonly BotApiMethod[] = [
@@ -192,6 +196,9 @@ async function resolveTextMessageReplacement(
     return { resolved: true, value: content };
   }
   const resolution = await resolveSpecifiedRichMessage(context, content);
+  if (!context.session.lifetime.admitsCommits) {
+    return SESSION_ENDED_RESOLUTION;
+  }
   return resolution.resolved
     ? { resolved: true, value: { kind: 'rich_message', ...resolution.value } }
     : resolution;

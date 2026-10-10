@@ -50,10 +50,11 @@ function endedSessionCallOutcome({ answerOnceSessionEnded }: BotApiMethod): BotA
  * parameters or changes anything. The call and its answer are recorded as bot activity if the
  * method's calls are.
  *
- * A call is refused, changing and recording nothing, if its session has ended by the time it
- * starts; a method that waits checks the session itself before it changes anything, and is refused
- * the same way. A method may give such calls an answer instead, as `getUpdates` does. A call whose
- * session ends after the method committed is still answered, but no longer recorded.
+ * Once the session has ended, a call changes and records nothing, and gets its method's
+ * ended-session outcome, whatever it would otherwise have been answered: a refusal, or, for a
+ * method that declares one, such as `getUpdates`, its answer for that case. The session is checked
+ * when the call starts and once its method has answered; a method that waits checks it itself
+ * after each wait, before it changes anything.
  */
 export async function callBotApiMethod(
   context: BotApiCallContext,
@@ -63,17 +64,15 @@ export async function callBotApiMethod(
     return endedSessionCallOutcome(method);
   }
   const outcome = await answerBotApiMethodCall(context, method, parameters, uploadedFiles);
-  if (outcome === SESSION_ENDED) {
+  if (outcome === SESSION_ENDED || !context.session.lifetime.admitsCommits) {
     return endedSessionCallOutcome(method);
   }
-  if (context.session.lifetime.admitsCommits) {
-    recordImplementedMethodCall(context, method, {
-      requestedMethodName,
-      parameters,
-      uploadedFiles,
-      chatId: findNamedChatId(context, parameters),
-    }, outcome);
-  }
+  recordImplementedMethodCall(context, method, {
+    requestedMethodName,
+    parameters,
+    uploadedFiles,
+    chatId: findNamedChatId(context, parameters),
+  }, outcome);
   return { answered: true, answer: outcome };
 }
 
@@ -103,8 +102,8 @@ export function rejectUnknownBotApiMethod(
 
 /**
  * Answers a call of an implemented method whose request could not be decoded, and records it as
- * bot activity without parameters if the method's calls are recorded, unless its session has
- * ended.
+ * bot activity without parameters if the method's calls are recorded. Once the session has ended,
+ * the call gets its method's ended-session outcome instead.
  */
 export function rejectUndecodableBotApiCall(
   context: BotApiCallContext,
@@ -113,7 +112,7 @@ export function rejectUndecodableBotApiCall(
   description: string,
 ): BotApiCallOutcome {
   if (!context.session.lifetime.admitsCommits) {
-    return SESSION_ENDED_CALL_OUTCOME;
+    return endedSessionCallOutcome(method);
   }
   const answer = botApiError(400, description);
   recordImplementedMethodCall(context, method, {

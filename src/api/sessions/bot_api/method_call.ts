@@ -9,9 +9,9 @@ import type { BotApiRequestParameters, BotApiUploadedFiles } from './request_par
  * Who calls a Bot API method, and the session services a method may use to answer.
  *
  * A method that waits, as a download does, checks the session's commit gate as soon as each wait
- * ends, before it acts on the wait's result, and returns `SESSION_ENDED` once the session has
- * ended. The last check falls in the same synchronous step as the change it guards, so a method
- * never changes an ended session, and a download the end stopped is not reported as failed.
+ * ends, in the function that awaited, before it acts on the wait's result, and returns
+ * `SESSION_ENDED` once the session has ended. The last check falls in the same synchronous step as
+ * the change it guards, so a method never changes an ended session, and no later wait starts.
  */
 export interface BotApiMethodContext {
   /**
