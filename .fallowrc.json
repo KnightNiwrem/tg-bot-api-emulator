@@ -230,6 +230,12 @@
         ]
       },
       {
+        "name": "session-lifetime",
+        "patterns": [
+          "src/services/session_lifetime.ts"
+        ]
+      },
+      {
         "name": "session",
         "patterns": [
           "src/types/emulation_session.ts"
@@ -572,9 +578,14 @@
         ]
       },
       {
+        "from": "session-lifetime",
+        "allow": []
+      },
+      {
         "from": "session",
         "allow": [],
         "allowTypeOnly": [
+          "session-lifetime",
           "domain",
           "domain-services",
           "bot-api-service",
@@ -722,6 +733,7 @@
           "domain",
           "session-timing",
           "system-timing",
+          "session-lifetime",
           "account-repository",
           "bot-repository",
           "private-conversation-repository",

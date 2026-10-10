@@ -42,6 +42,7 @@ import { SharedChatAdministrationService } from '../src/services/shared_chat_adm
 import { createSessionUserMentionContext } from '../src/services/session_user_mention.ts';
 import { BotUpdateDeliveryService } from '../src/services/bot_update_delivery.ts';
 import { BotUpdatePollingService } from '../src/services/bot_update_polling.ts';
+import { SessionLifetime } from '../src/services/session_lifetime.ts';
 import { BotWebhookService } from '../src/services/bot_webhook.ts';
 import {
   WEBHOOK_ATTEMPT_TIMEOUT_MILLISECONDS,
@@ -582,6 +583,7 @@ function createBotApiFixture() {
       updateSubscriptions,
       updateActivity: botActivity,
       scheduler: createRealTimeScheduler(),
+      sessionLifetime: new SessionLifetime(new AbortController().signal),
     }),
     webhooks: new BotWebhookService({
       webhooks: new BotWebhookRepository(),

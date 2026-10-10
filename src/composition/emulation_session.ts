@@ -57,6 +57,7 @@ import { MessageReactionService } from '../services/message_reaction.ts';
 import { PollService } from '../services/poll.ts';
 import { PrivateChatPolicy } from '../services/private_chat_policy.ts';
 import { PrivateMessagingService } from '../services/private_messaging.ts';
+import { SessionLifetime } from '../services/session_lifetime.ts';
 import { createSessionUserMentionContext } from '../services/session_user_mention.ts';
 import { SharedChatAdministrationService } from '../services/shared_chat_administration.ts';
 import { SupergroupChatPolicy } from '../services/supergroup_chat_policy.ts';
@@ -83,6 +84,8 @@ export function createEmulationSession(
   { uploadProfile }: EmulationSessionOptions,
   { wallClock, scheduler }: SessionTiming,
 ): EmulationSession {
+  const sessionEnd = new AbortController();
+  const lifetime = new SessionLifetime(sessionEnd.signal);
   const identities = new TelegramIdentityRepository();
   const accounts = new AccountRepository();
   const bots = new BotRepository();
@@ -294,6 +297,7 @@ export function createEmulationSession(
     updateSubscriptions,
     updateActivity: botActivity,
     scheduler,
+    sessionLifetime: lifetime,
   });
   const webhookAttempts = new WebhookAttemptScheduler({
     bots,
@@ -309,7 +313,12 @@ export function createEmulationSession(
     runWebhookReply: async (botId, reply, signal) => {
       const bot = bots.getById(botId);
       if (bot !== undefined) {
-        await runWebhookReply({ session, bot: bot.profile, signal, via: 'webhook_reply' }, reply);
+        await runWebhookReply({
+          session,
+          bot: bot.profile,
+          signal: lifetime.bind(signal),
+          via: 'webhook_reply',
+        }, reply);
       }
     },
     attempts: webhookAttempts,
@@ -390,8 +399,10 @@ export function createEmulationSession(
     botApi,
     botActivity,
     webhookAttempts,
+    lifetime,
     end: () => {
-      botUpdatePolling.endLongPolling();
+      // The commit gate closes first, so that nothing the rest of the teardown wakes can commit.
+      sessionEnd.abort(new DOMException('The session ended', 'AbortError'));
       botWebhooks.endDelivery();
       botActivity.endReading();
     },

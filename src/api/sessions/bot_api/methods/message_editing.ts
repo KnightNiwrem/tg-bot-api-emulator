@@ -29,7 +29,9 @@ import {
   type BotApiMethod,
   type BotApiMethodAnswer,
   type BotApiMethodContext,
+  type BotApiMethodOutcome,
   botApiResult,
+  SESSION_ENDED,
 } from '../method_call.ts';
 import { inlineKeyboardMarkupParameter } from '../reply_markup_parameter.ts';
 import { readInlineKeyboardParameter } from '../reply_markup_reading.ts';
@@ -44,7 +46,11 @@ import {
   resolveSpecifiedRichMessage,
   type SpecifiedRichMessage,
 } from '../specified_rich_message.ts';
-import { resolveRequestedInputFile, type WebFileResolution } from '../web_file_parameter.ts';
+import {
+  resolveRequestedInputFile,
+  SESSION_ENDED_RESOLUTION,
+  type WebFileResolution,
+} from '../web_file_parameter.ts';
 
 /** The methods that edit a sent message, or stop its poll. */
 export const MESSAGE_EDITING_METHODS: readonly BotApiMethod[] = [
@@ -139,7 +145,7 @@ async function handleEditMessageText(
   context: BotApiMethodContext,
   parameters: BotApiRequestParameters,
   uploadedFiles: BotApiUploadedFiles,
-): Promise<BotApiMethodAnswer> {
+): Promise<BotApiMethodOutcome> {
   const invalidParametersDescription = describeInvalidMethodParameters('editMessageText');
   const parsedParameters = editMessageTextParametersSchema.safeParse(parameters);
   if (!parsedParameters.success) {
@@ -166,6 +172,9 @@ async function handleEditMessageText(
   }
 
   const contentResolution = await resolveTextMessageReplacement(context, contentReading.content);
+  if (!context.session.lifetime.admitsCommits) {
+    return SESSION_ENDED;
+  }
   if (!contentResolution.resolved) {
     return contentResolution.errorAnswer;
   }
@@ -187,6 +196,9 @@ async function resolveTextMessageReplacement(
     return { resolved: true, value: content };
   }
   const resolution = await resolveSpecifiedRichMessage(context, content);
+  if (!context.session.lifetime.admitsCommits) {
+    return SESSION_ENDED_RESOLUTION;
+  }
   return resolution.resolved
     ? { resolved: true, value: { kind: 'rich_message', ...resolution.value } }
     : resolution;
@@ -275,7 +287,7 @@ async function handleEditMessageMedia(
   context: BotApiMethodContext,
   parameters: BotApiRequestParameters,
   uploadedFiles: BotApiUploadedFiles,
-): Promise<BotApiMethodAnswer> {
+): Promise<BotApiMethodOutcome> {
   const invalidParametersDescription = describeInvalidMethodParameters('editMessageMedia');
   const parsedParameters = editMessageMediaParametersSchema.safeParse(parameters);
   if (!parsedParameters.success) {
@@ -314,6 +326,9 @@ async function handleEditMessageMedia(
     getRequestedMediaFile(media),
     media.kind,
   );
+  if (!context.session.lifetime.admitsCommits) {
+    return SESSION_ENDED;
+  }
   if (!fileResolution.resolved) {
     return fileResolution.errorAnswer;
   }

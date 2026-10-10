@@ -17,6 +17,7 @@ import type { MessagePinningService } from '../services/message_pinning.ts';
 import type { MessageReactionService } from '../services/message_reaction.ts';
 import type { PollService } from '../services/poll.ts';
 import type { PrivateMessagingService } from '../services/private_messaging.ts';
+import type { SessionLifetime } from '../services/session_lifetime.ts';
 import type { SharedChatAdministrationService } from '../services/shared_chat_administration.ts';
 import type { SupergroupMessagingService } from '../services/supergroup_messaging.ts';
 import type { VirtualUserService } from '../services/virtual_user.ts';
@@ -60,11 +61,14 @@ export interface EmulationSession extends EmulationSessionOptions {
   readonly botApi: BotApiService;
   readonly botActivity: BotActivityService;
   readonly webhookAttempts: WebhookAttemptScheduler;
+  /** When the session ends, and whether work may still change it. */
+  readonly lifetime: SessionLifetime;
   /**
-   * Stops the session from keeping requests waiting and from delivering updates: held long polls
-   * and bot activity reads are answered, later ones do not wait, and webhooks stop, including
-   * requests in flight and retry waits, which are cancelled. Requests that are already running
-   * complete against the session's state.
+   * Ends the session for good. Its lifetime's signal aborts and its commit gate closes, so Bot API
+   * calls still running, webhook replies included, change nothing more: their downloads stop, and
+   * a call that outlives the end is refused before it commits or is recorded. Held long polls and
+   * bot activity reads are answered, later ones do not wait, and webhooks stop, including requests
+   * in flight and retry waits, which are cancelled.
    */
   end(): void;
 }
