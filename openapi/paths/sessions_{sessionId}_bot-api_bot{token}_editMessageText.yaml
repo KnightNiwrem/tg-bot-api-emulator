@@ -72,7 +72,7 @@ post:
         edit the message, because another user wrote it and it was not sent through the bot's
         inline mode, another bot's inline mode sent it, it is a forward, or it carries a reply
         keyboard, a forced reply, or a keyboard removal (`Bad Request: message can't be
-        edited`); the message is a photo, document, or video (`Bad
+        edited`); the message is neither a text nor a rich message (`Bad
         Request: there is no text in the message to edit`); the text and its entities
         cannot be normalized, as for `sendMessage`, or the rich message's strings and text
         mentions fail as for `sendRichMessage`; the normalized text is longer than 4096

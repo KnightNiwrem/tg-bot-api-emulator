@@ -1,9 +1,11 @@
 description: >-
   Telegram Bot API method for leaving a supergroup the bot is a member of. The bot receives a
-  my_chat_member update, from `member` to `left`, from itself, and then the service message
-  from itself that records the change with `left_chat_member`, which, as a service message,
-  the supergroup's other bots receive too. The bot's later requests to
-  the supergroup fail with `403 Forbidden: bot is not a member of the supergroup chat`.
+  my_chat_member update from itself, from its status to `left`, or, as TDLib's `leave_dialog`
+  asks, from `restricted` to `restricted` with `is_member` false for a restricted bot, and then
+  the service message from itself that records the change with `left_chat_member`, which, as a
+  service message, the supergroup's other bots receive too. The bot's later requests to the
+  supergroup fail with `403 Forbidden: bot is not a member of the supergroup chat`, except that
+  it may still read a public supergroup, as for getChat.
 parameters:
   - $ref: ../components/parameters/SessionId.yaml
   - $ref: ../components/parameters/BotToken.yaml

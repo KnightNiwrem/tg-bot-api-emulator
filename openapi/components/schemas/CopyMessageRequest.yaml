@@ -23,7 +23,8 @@ properties:
     type: string
     maxLength: 1024
     description: >-
-      A caption that replaces the caption of a copied photo, document, or video; an empty
+      A caption that replaces the caption of a copied photo, document, video, voice note, or audio
+      file; an empty
       caption removes it. Omitted, the caption is kept. Text messages ignore it.
   parse_mode:
     $ref: ./ParseMode.yaml

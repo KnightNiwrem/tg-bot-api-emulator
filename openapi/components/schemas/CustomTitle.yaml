@@ -3,4 +3,4 @@ minLength: 1
 maxLength: 16
 description: >-
   The title that clients show for the owner or an administrator in place of its role, which
-  the owner sets; omitted for none.
+  the owner sets, or a bot with `setChatAdministratorCustomTitle`; omitted for none.

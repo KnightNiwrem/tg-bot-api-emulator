@@ -1,9 +1,8 @@
 type: object
 additionalProperties: false
 description: >-
-  A supergroup, as getChat shows it. New members see earlier messages, and members have no
-  default restrictions, which the emulator does not model, so every permission is granted.
-  Gifts cannot be sent to it, so it accepts none.
+  A supergroup, as getChat shows it. New members see earlier messages, and members hold its
+  default permissions. Gifts cannot be sent to it, so it accepts none.
 required:
   - id
   - title

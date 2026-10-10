@@ -1,11 +1,13 @@
 description: >-
   Telegram Bot API method for sending a text message. The emulator supports text sent to a
   private chat with an account that has written to the bot, or whose pending join request the
-  bot received and may still contact it, formatted with `parse_mode` or
-  `entities`, optionally as a reply to a message of the chat, protected from forwarding and
-  saving, and with reply markup: an inline keyboard of callback, URL, copy-text, switch-inline
-  and disabled buttons, a reply keyboard of text buttons, a reply keyboard removal, or a forced
-  reply. As on Telegram, the
+  bot received and may still contact it, or to a supergroup the bot is a member of, formatted
+  with `parse_mode` or `entities`, optionally as a reply to a message of the chat, protected
+  from forwarding and saving, and with reply markup: an inline keyboard of callback, URL,
+  login, Web App, copy-text, switch-inline and disabled buttons, a reply keyboard of text
+  buttons and, in private chats only, buttons that request a contact, a location, a poll,
+  users, or a chat or open a Web App, a reply keyboard removal, or a forced reply. As on
+  Telegram, the
   message a bot receives in the response never shows reply markup other than an inline
   keyboard; a test reads the reply interface the account's client shows instead. Link preview
   options are validated and have no effect, because the emulator generates no link previews.
@@ -76,7 +78,8 @@ post:
         too long`); the bot may not send the content to a supergroup, as its restriction or the
         supergroup's default permissions decide (`Bad Request: not enough rights to send text
         messages to the chat`; the other send methods name their content instead: `photos`,
-        `documents`, `videos`, `voice notes`, `polls`, or `the rich message`, which needs
+        `documents`, `videos`, `voice notes`, `music`, `polls`, `contacts`, `locations`, or
+        `the rich message`, which needs
         `can_send_messages` and the permissions of its media blocks); or a button's
         callback data exceeds 64 bytes (`Bad Request: BUTTON_DATA_INVALID`). A reply to a message of another chat is checked before all of
         these, while Telegram checks the text and the chat first: the replied message's chat is

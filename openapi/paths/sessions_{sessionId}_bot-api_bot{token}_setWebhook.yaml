@@ -4,11 +4,14 @@ description: >-
   `X-Telegram-Bot-Api-Secret-Token` header when a secret token is set, and confirms it once the
   webhook answers with a 2xx status. As the official server's `WebhookActor` does, updates
   wait in queues: messages and their edits by chat, inline queries, chosen inline results, and
-  callback queries by the sending user, and membership updates by chat or by member. Each
+  callback queries by the sending user, poll updates by poll, membership updates by chat or by
+  member, join requests by requester, and reaction and stopped generation updates by chat,
+  apart from the chat's messages. Each
   queue sends one update at a time and in order, and up to `max_connections` queues send at
   once. An update the webhook has not answered after 60 seconds fails with `Read timeout
   expired`. A failed update is sent again at once, then after delays doubling from 2 up to 60
-  seconds, and holds back the later updates of its queue. As on Telegram, a 2xx response may
+  seconds, unless the failed response's `Retry-After` header sets the wait, up to an hour, and
+  holds back the later updates of its queue. As on Telegram, a 2xx response may
   call a Bot API method, named by its `method` parameter, with the response's other
   parameters in any encoding a request may use; the method runs before the queue sends its
   next update, and nothing receives its answer.

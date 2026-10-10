@@ -1,8 +1,8 @@
 type: object
 additionalProperties: false
 description: >-
-  A new state of a poll the bot sent, with its counts after an account's answer changed or after
-  the bot stopped it.
+  A new state of a poll the bot sent, with its counts after an account's answer changed, after
+  the bot stopped it, or after its closing time arrived.
 required:
   - update_id
   - poll

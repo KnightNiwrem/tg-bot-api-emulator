@@ -9,8 +9,9 @@ post:
   description: >-
     Sends a result of the bot's answer to the chat where the account typed the query, as the
     account's own message sent through the inline bot, which its `via_bot` shows. The message
-    holds the text of the result's `input_message_content`, or else its media with
-    its caption, and the result's inline keyboard. The chat's bots receive it as they receive
+    holds the result's `input_message_content`, which is text, a rich message, a contact, or a
+    static location, or else the result's own contact, location, or media with its caption, and
+    the result's inline keyboard. The chat's bots receive it as they receive
     the account's other messages; in a supergroup, the inline bot receives it in privacy mode
     too when it is a member. Then, if the inline bot was created with
     `receives_chosen_inline_results`, it receives a chosen_inline_result update, which carries

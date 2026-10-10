@@ -1,8 +1,9 @@
 type: object
 additionalProperties: false
 description: >-
-  The users and chats a command list applies to; a missing scope is the default scope.
-  Chat IDs must be numbers, and chat scopes can name only private chats.
+  The users and chats a command list applies to; a missing scope is the default scope. A
+  `chat` scope names a private chat already started with the bot or a supergroup the bot is a
+  member of, and `chat_administrators` and `chat_member` scopes name only such a supergroup.
 required:
   - type
 properties:

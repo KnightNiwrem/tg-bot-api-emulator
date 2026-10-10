@@ -1,6 +1,6 @@
 description: >-
-  Telegram Bot API method for editing the caption of a photo, document, or video the bot sent to
-  a private chat or a supergroup; an empty caption removes it. The caption is formatted and
+  Telegram Bot API method for editing the caption of a photo, document, video, voice note, or
+  audio file the bot sent to a private chat or a supergroup; an empty caption removes it. The caption is formatted and
   normalized as by `sendPhoto`, `show_caption_above_media` applies only to photos and videos,
   and, as on
   Telegram, the edited message keeps only the inline keyboard given in `reply_markup` and the
@@ -49,8 +49,8 @@ post:
       description: >-
         The request cannot be decoded or has unsupported parameters, or Telegram would reject
         it for the reasons `editMessageText` gives, with the caption in place of the text: the
-        caption or its formatting cannot be read or normalized, the message is a text message
-        (`Bad Request: there is no caption in the message to edit`), or the caption is longer
+        caption or its formatting cannot be read or normalized, the message is not a photo, document, video, voice
+        note, or audio file (`Bad Request: there is no caption in the message to edit`), or the caption is longer
         than 1024 characters (`Bad Request: message caption is too long`).
       content:
         application/json:

@@ -3,9 +3,11 @@ description: >-
   client to share something instead. As TDLib does, only a private chat allows buttons with a
   request; elsewhere sending fails with TDLib's error, such as `Bad Request: phone number can be
   requested in private chats only`. Responses show every field of a request. Pressing a
-  `request_contact` button shares the account's own contact, and pressing a `request_location`
-  button shares the location the press reports; the emulator cannot answer other requests, so
-  accounts cannot press such buttons. Telegram also reads legacy request
+  `request_contact` button shares the account's own contact, pressing a `request_location`
+  button shares the location the press reports, pressing a `request_users` or `request_chat`
+  button shares the users or supergroup the press chooses, pressing a `request_poll` button
+  sends the poll the press creates, and pressing a `web_app` button sends the data its Web App
+  sends. Telegram also reads legacy request
   names, managed bot requests, and buttons with several requests, using the first it
   recognizes; the emulator rejects them.
 oneOf:
