@@ -17,6 +17,7 @@
     "@std/yaml": "jsr:@std/yaml@^1.3.0",
     "fallow": "npm:fallow@3.31.0",
     "grammy/types": "https://cdn.jsdelivr.net/gh/grammyjs/grammY@^1.46.0/src/types.ts",
+    "grammy-types-reference": "https://cdn.jsdelivr.net/gh/grammyjs/types@5.0.0/mod.ts",
     "https://lib.deno.dev/x/grammy@v1/": "https://cdn.jsdelivr.net/gh/grammyjs/grammY@^1.46.0/src/",
     "hono": "jsr:@hono/hono@^4.13.7",
     "hono/route": "jsr:@hono/hono@^4.13.7/route",
