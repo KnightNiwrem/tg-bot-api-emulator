@@ -150,3 +150,7 @@ exact contract.
 | `BotActivityTimeoutError`    | A wait finds no matching entry in time                                     | [Troubleshooting](troubleshooting.md) |
 | `UnexpectedBotActivityError` | `assertNone` finds matching entries                                        | [Troubleshooting](troubleshooting.md) |
 | `ButtonSelectionError`       | A button selector matches no button, or several                            | [Troubleshooting](troubleshooting.md) |
+
+`CONTROL_REFUSAL_REASONS` lists every `reason` an `EmulationControlError` can carry besides
+`invalid_request`; [Troubleshooting](troubleshooting.md#the-emulator-refuses-a-request) explains
+them.

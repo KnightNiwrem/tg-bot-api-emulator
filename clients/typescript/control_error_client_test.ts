@@ -2,6 +2,8 @@ import { createEmulationApi } from '../../src/api/mod.ts';
 import { createSessionLifecycleService } from '../../src/composition/session_lifecycle.ts';
 import {
   type ControlErrorBody,
+  type ControlRefusalReason,
+  type ControlRequestIssue,
   type ControlValidationErrorBody,
   EmulationClientError,
   EmulationControlError,
@@ -118,24 +120,47 @@ Deno.test('A refusal whose body is not a control error keeps its status and raw 
   }
 });
 
+Deno.test('The body type admits only the shapes the emulator sends', () => {
+  // Each constant only type-checks while its shape is not a `ControlErrorBody`.
+  const validationFailureNeedsIssues: IsNotControlErrorBody<{ reason: 'invalid_request' }> = true;
+  const refusalHasNoIssues: IsNotControlErrorBody<
+    { reason: 'bot_blocked'; issues: [ControlRequestIssue] }
+  > = true;
+  const reasonIsDocumented: IsNotControlErrorBody<{ reason: 'Bot Blocked' }> = true;
+  const invalidRequestIsNoRefusal: 'invalid_request' extends ControlRefusalReason ? false : true =
+    true;
+
+  assertJson(
+    [
+      validationFailureNeedsIssues,
+      refusalHasNoIssues,
+      reasonIsDocumented,
+      invalidRequestIsNoRefusal,
+    ],
+    [true, true, true, true],
+    'Expected every malformed shape to be excluded',
+  );
+});
+
 Deno.test('A control error refuses a body its contract does not allow', () => {
   const request = { method: 'POST', url: `${PUBLIC_ORIGIN}/sessions`, status: 400 } as const;
-  const malformedBodies: readonly ControlErrorBody[] = [
-    { reason: 'invalid_request' },
-    { reason: 'Bot Blocked' },
-  ];
-  for (const body of malformedBodies) {
+  for (const responseBody of ['{"reason":"invalid_request"}', '{"reason":"Bot Blocked"}']) {
+    // A JavaScript caller can pass a body its type does not describe, as parsed JSON shows.
+    const body: ControlErrorBody = JSON.parse(responseBody);
     let constructionError: unknown;
     try {
-      new EmulationControlError('refused', { ...request, responseBody: '', body });
+      new EmulationControlError('refused', { ...request, responseBody, body });
     } catch (error) {
       constructionError = error;
     }
     if (!(constructionError instanceof TypeError)) {
-      throw new Error(`Expected ${JSON.stringify(body)} to be refused as a control error body`);
+      throw new Error(`Expected ${responseBody} to be refused as a control error body`);
     }
   }
 });
+
+/** `true` when no value of `Value` is a `ControlErrorBody`. */
+type IsNotControlErrorBody<Value> = Value extends ControlErrorBody ? false : true;
 
 function createInProcessClient() {
   const api = createEmulationApi({

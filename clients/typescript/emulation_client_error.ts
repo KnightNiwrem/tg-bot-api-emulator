@@ -46,7 +46,8 @@ export interface EmulationControlErrorDetails extends RequestDetails {
  * The emulator refused a control request, answering with its JSON error body. `reason` is the
  * refusal's stable code, such as `bot_blocked`, `session_not_found`, or, for input that breaks the
  * operation's contract, `invalid_request`. Only that body has `issues`, which say what is wrong and
- * where, so `error.body.issues !== undefined` narrows `body` to a `ControlValidationErrorBody`.
+ * where, so `error.body.reason === 'invalid_request'` narrows `body` to a
+ * `ControlValidationErrorBody`.
  */
 export class EmulationControlError extends EmulationClientError {
   override readonly name: string = 'EmulationControlError';
@@ -55,8 +56,8 @@ export class EmulationControlError extends EmulationClientError {
   readonly body: ControlErrorBody;
 
   /**
-   * @throws {TypeError} when `body` is not a control error body: a validation failure without
-   * issues, or a reason that is `invalid_request` or not a snake_case code.
+   * @throws {TypeError} when `body` is not a control error body, such as a validation failure
+   * without issues, which only a value its type does not describe can be.
    */
   constructor(message: string, details: EmulationControlErrorDetails) {
     const body = controlErrorBodySchema.safeParse(details.body);
@@ -70,7 +71,7 @@ export class EmulationControlError extends EmulationClientError {
   }
 
   /** The refusal's stable code. */
-  get reason(): string {
+  get reason(): ControlErrorBody['reason'] {
     return this.body.reason;
   }
 }

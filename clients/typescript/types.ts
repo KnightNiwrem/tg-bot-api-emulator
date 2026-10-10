@@ -1,3 +1,5 @@
+import type { ControlRefusalReason } from './control_refusal_reasons.ts';
+
 /**
  * The deployment of the official Bot API server whose upload limits a session's bots meet:
  * `cloud` for the server Telegram hosts at `api.telegram.org`, `local` for a self-hosted server
@@ -3072,16 +3074,16 @@ export interface ControlValidationErrorBody {
 
 /**
  * The body of any other refusal of a control request: only its stable `reason`, such as
- * `bot_blocked` or `session_not_found`, which is never `invalid_request`.
+ * `bot_blocked` or `session_not_found`.
  */
 export interface ControlRefusalBody {
-  readonly reason: string;
+  readonly reason: ControlRefusalReason;
   readonly issues?: never;
 }
 
 /**
- * The JSON body with which the emulator refuses a control request. Only a body whose reason is
- * `invalid_request` has `issues`, so checking for them tells the two apart.
+ * The JSON body with which the emulator refuses a control request, told apart by its `reason`:
+ * only an `invalid_request` body has `issues`.
  */
 export type ControlErrorBody = ControlValidationErrorBody | ControlRefusalBody;
 

@@ -7,6 +7,7 @@ import {
   MIN_SUPERGROUP_OR_CHANNEL_ID,
   MIN_TELEGRAM_USER_ID,
 } from './constants.ts';
+import { CONTROL_REFUSAL_REASONS } from './control_refusal_reasons.ts';
 import type {
   BotActivityEntry,
   CallbackQuery,
@@ -1345,6 +1346,6 @@ export const controlErrorBodySchema: z.ZodType<ControlErrorBody> = z.union([
     issues: z.tuple([controlRequestIssueSchema], controlRequestIssueSchema),
   }),
   z.strictObject({
-    reason: z.string().regex(/^[a-z][a-z0-9_]*$/).refine((reason) => reason !== 'invalid_request'),
+    reason: z.enum(CONTROL_REFUSAL_REASONS),
   }),
 ]);
