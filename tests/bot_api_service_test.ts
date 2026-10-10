@@ -8,7 +8,6 @@ import { BotDescriptionRepository } from '../src/repositories/bot_description.ts
 import { BotMenuButtonRepository } from '../src/repositories/bot_menu_button.ts';
 import { BotUpdateRepository } from '../src/repositories/bot_update.ts';
 import { BotUpdateSubscriptionRepository } from '../src/repositories/bot_update_subscription.ts';
-import { BotWebhookRepository } from '../src/repositories/bot_webhook.ts';
 import { CallbackQueryRepository } from '../src/repositories/callback_query.ts';
 import { ChatActionRepository } from '../src/repositories/chat_action.ts';
 import { ChatInviteLinkRepository } from '../src/repositories/chat_invite_link.ts';
@@ -41,9 +40,6 @@ import { MessageReactionService } from '../src/services/message_reaction.ts';
 import { SharedChatAdministrationService } from '../src/services/shared_chat_administration.ts';
 import { createSessionUserMentionContext } from '../src/services/session_user_mention.ts';
 import { BotUpdateDeliveryService } from '../src/services/bot_update_delivery.ts';
-import { BotUpdatePollingService } from '../src/services/bot_update_polling.ts';
-import { SessionLifetime } from '../src/services/session_lifetime.ts';
-import { BotWebhookService } from '../src/services/bot_webhook.ts';
 import {
   WEBHOOK_ATTEMPT_TIMEOUT_MILLISECONDS,
   WebhookAttemptScheduler,
@@ -59,6 +55,7 @@ import { SupergroupMessagingService } from '../src/services/supergroup_messaging
 import { VirtualUserService } from '../src/services/virtual_user.ts';
 import type { PhotoUpload } from '../src/types/stored_file.ts';
 import { createRealTimeScheduler, createRetryScheduler } from './support/scheduler.ts';
+import { createUpdateConsumers } from './support/webhook_delivery.ts';
 
 Deno.test('BotApiService reports why a bot cannot address a private chat, for the Bot API to present', () => {
   const { virtualUsers, privateMessaging, botApi } = createBotApiFixture();
@@ -578,16 +575,8 @@ function createBotApiFixture() {
   });
   const botApi = new BotApiService({
     bots,
-    updatePolling: new BotUpdatePollingService({
+    updateConsumers: createUpdateConsumers({
       botUpdates,
-      updateSubscriptions,
-      updateActivity: botActivity,
-      scheduler: createRealTimeScheduler(),
-      sessionLifetime: new SessionLifetime(new AbortController().signal),
-    }),
-    webhooks: new BotWebhookService({
-      webhooks: new BotWebhookRepository(),
-      pendingUpdates: botUpdates,
       updateSubscriptions,
       updateActivity: botActivity,
       sendWebhookRequest: () => Promise.reject(new Error('Unexpected webhook request')),
@@ -601,8 +590,7 @@ function createBotApiFixture() {
           Promise.reject(new Error('Unexpected webhook retry'))
         ),
       }),
-      currentUnixTimeSeconds: () => 1_700_000_000,
-    }),
+    }).updateConsumers,
     botMessages: privateMessaging,
     supergroupBotMessages: supergroupMessaging,
     messageSender,

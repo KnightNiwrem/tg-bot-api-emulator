@@ -42,8 +42,8 @@ import { BotMessageViewService } from '../services/bot_message_view.ts';
 import { BotRateLimitService } from '../services/bot_rate_limit.ts';
 import { BotServerErrorService } from '../services/bot_server_error.ts';
 import { BotUpdateDeliveryService } from '../services/bot_update_delivery.ts';
+import { BotUpdateConsumerService } from '../services/bot_update_consumer.ts';
 import { BotUpdatePollingService } from '../services/bot_update_polling.ts';
-import { BotWebhookService } from '../services/bot_webhook.ts';
 import { CallbackQueryService } from '../services/callback_query.ts';
 import { ChatActionService } from '../services/chat_action.ts';
 import { ChatAdmissionService } from '../services/chat_admission.ts';
@@ -73,6 +73,7 @@ import {
   WebFileDownloader,
 } from '../services/web_file_download.ts';
 import { WebResourceService } from '../services/web_resource.ts';
+import { WebhookDeliveryService } from '../services/webhook_delivery.ts';
 import type { SessionTiming } from '../timing/session_timing.ts';
 
 /**
@@ -294,7 +295,6 @@ export function createEmulationSession(
   const botActivity = new BotActivityService({ log: new BotActivityLogRepository(), scheduler });
   const botUpdatePolling = new BotUpdatePollingService({
     botUpdates,
-    updateSubscriptions,
     updateActivity: botActivity,
     scheduler,
     sessionLifetime: lifetime,
@@ -304,10 +304,10 @@ export function createEmulationSession(
     attemptTimeoutMilliseconds: WEBHOOK_ATTEMPT_TIMEOUT_MILLISECONDS,
     scheduler,
   });
-  const botWebhooks = new BotWebhookService({
-    webhooks: new BotWebhookRepository(),
+  const webhooks = new BotWebhookRepository();
+  const webhookDelivery = new WebhookDeliveryService({
     pendingUpdates: botUpdates,
-    updateSubscriptions,
+    deliveryErrors: webhooks,
     updateActivity: botActivity,
     sendWebhookRequest: (request) => fetch(request),
     startWebhookReply: (botId, reply) => {
@@ -328,6 +328,14 @@ export function createEmulationSession(
     attempts: webhookAttempts,
     currentUnixTimeSeconds,
   });
+  const updateConsumers = new BotUpdateConsumerService({
+    webhooks,
+    pendingUpdates: botUpdates,
+    updateSubscriptions,
+    polling: botUpdatePolling,
+    webhookDelivery,
+    sessionLifetime: lifetime,
+  });
   const sessionTextFixingContext = createSessionUserMentionContext({ accounts, bots });
   const botMessageSender = new BotMessageSender({
     botMessages: privateMessaging,
@@ -338,8 +346,7 @@ export function createEmulationSession(
   });
   const botApi = new BotApiService({
     bots,
-    updatePolling: botUpdatePolling,
-    webhooks: botWebhooks,
+    updateConsumers,
     botMessages: privateMessaging,
     supergroupBotMessages: supergroupMessaging,
     messageSender: botMessageSender,
@@ -406,8 +413,8 @@ export function createEmulationSession(
     lifetime,
     end: () => {
       // The commit gate closes first, so that nothing the rest of the teardown wakes can commit.
+      // Long polls and webhook deliveries follow the session's end themselves.
       sessionEnd.abort(new DOMException('The session ended', 'AbortError'));
-      botWebhooks.endDelivery();
       botActivity.endReading();
     },
   };

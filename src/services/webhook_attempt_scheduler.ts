@@ -1,9 +1,11 @@
 import type { BotApiUpdate } from '../types/bot_api.ts';
-import type {
-  WebhookAttempt,
-  WebhookAttemptFailure,
-  WebhookRetryStatus,
-  WebhookScheduling,
+import {
+  endWebhookAttempt,
+  endWebhookRetry,
+  type WebhookAttempt,
+  type WebhookAttemptEnd,
+  type WebhookAttemptFailure,
+  type WebhookScheduling,
 } from '../types/bot_webhook.ts';
 import type { VirtualBot } from '../types/virtual_bot.ts';
 import type { Scheduler } from '../timing/session_timing.ts';
@@ -178,15 +180,13 @@ export class WebhookAttemptScheduler {
       return { released: false, reason: 'attempt_not_found' };
     }
     const openAttempt = this.#openAttemptsById.get(attemptId);
-    if (
-      attempt.status !== 'failed' || attempt.retry.status !== 'waiting' ||
-      openAttempt === undefined
-    ) {
+    const releasedAttempt = endWebhookRetry(attempt, 'released');
+    if (releasedAttempt === undefined || openAttempt === undefined) {
       return { released: false, reason: 'retry_not_waiting' };
     }
-    this.#setRetryStatus(attemptId, 'released');
+    this.#attemptsById.set(attemptId, releasedAttempt);
     openAttempt.retryRelease.abort();
-    return { released: true, attempt: this.#getAttempt(attemptId) };
+    return { released: true, attempt: releasedAttempt };
   }
 
   /**
@@ -246,11 +246,23 @@ export class WebhookAttemptScheduler {
       timeout.signal.addEventListener('abort', () => openAttempt.deadline.abort(), { once: true });
     }
 
-    const isInFlight = () => this.#getAttempt(identity.id).status === 'in_flight';
-    const settle = (attempt: WebhookAttempt) => {
+    /** Ends the attempt as its state machine allows, and answers whether it ended it. */
+    const end = (attemptEnd: WebhookAttemptEnd): boolean => {
+      const endedAttempt = endWebhookAttempt(this.#getAttempt(identity.id), attemptEnd);
+      if (endedAttempt === undefined) {
+        return false;
+      }
       attemptSettlement.abort();
-      this.#attemptsById.set(identity.id, attempt);
+      this.#attemptsById.set(identity.id, endedAttempt);
       openAttempt.settled.resolve();
+      return true;
+    };
+    /** Ends the attempt's waiting retry as its state machine allows. */
+    const endRetry = (status: 'released' | 'cancelled') => {
+      const endedAttempt = endWebhookRetry(this.#getAttempt(identity.id), status);
+      if (endedAttempt !== undefined) {
+        this.#attemptsById.set(identity.id, endedAttempt);
+      }
     };
     const close = () => {
       deliverySignal.removeEventListener('abort', cancelWaitingRetry);
@@ -259,49 +271,33 @@ export class WebhookAttemptScheduler {
     // A waiting retry is cancelled as soon as delivery stops, so that no test can release it; the
     // retry wait then ends, and closes the attempt. An attempt in flight is cancelled by its
     // delivery, which alone knows whether the webhook's complete response arrived first.
-    const cancelWaitingRetry = () => {
-      const attempt = this.#getAttempt(identity.id);
-      if (attempt.status === 'failed' && attempt.retry.status === 'waiting') {
-        this.#setRetryStatus(identity.id, 'cancelled');
-      }
-    };
+    const cancelWaitingRetry = () => endRetry('cancelled');
     deliverySignal.addEventListener('abort', cancelWaitingRetry, { once: true });
 
     return {
       id: identity.id,
       deadlineSignal: openAttempt.deadline.signal,
       accept: () => {
-        if (isInFlight()) {
-          settle({ ...identity, status: 'accepted' });
+        if (end({ status: 'accepted' })) {
           close();
         }
       },
       cancel: () => {
-        if (isInFlight()) {
-          settle({ ...identity, status: 'cancelled' });
+        if (end({ status: 'cancelled' })) {
           close();
         }
       },
       failAndAwaitRetry: async (failure, retryDelaySeconds) => {
-        if (!isInFlight()) {
+        if (!end({ status: 'failed', failure, retryDelaySeconds })) {
           return;
         }
-        settle({
-          ...identity,
-          status: 'failed',
-          failure,
-          retry: { delaySeconds: retryDelaySeconds, status: 'waiting' },
-        });
         const retryEnd = AbortSignal.any([deliverySignal, openAttempt.retryRelease.signal]);
         try {
           await (identity.scheduling === 'automatic'
             ? this.#scheduler.sleep(retryDelaySeconds * 1_000, retryEnd)
             : waitForAbort(retryEnd));
         } finally {
-          const attempt = this.#getAttempt(identity.id);
-          if (attempt.status === 'failed' && attempt.retry.status === 'waiting') {
-            this.#setRetryStatus(identity.id, deliverySignal.aborted ? 'cancelled' : 'released');
-          }
+          endRetry(deliverySignal.aborted ? 'cancelled' : 'released');
           close();
         }
       },
@@ -324,14 +320,6 @@ export class WebhookAttemptScheduler {
       throw new Error(`Webhook attempt ${attemptId} was begun but is not recorded`);
     }
     return attempt;
-  }
-
-  #setRetryStatus(attemptId: number, status: WebhookRetryStatus): void {
-    const attempt = this.#getAttempt(attemptId);
-    if (attempt.status !== 'failed') {
-      throw new Error(`Webhook attempt ${attemptId} has no retry, as it has not failed`);
-    }
-    this.#attemptsById.set(attemptId, { ...attempt, retry: { ...attempt.retry, status } });
   }
 }
 

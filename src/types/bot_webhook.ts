@@ -88,8 +88,8 @@ interface WebhookAttemptIdentity {
 export type WebhookAttempt =
   | WebhookAttemptIdentity & {
     /**
-     * `in_flight` while the request runs, `accepted` once the webhook accepted the update, or
-     * `cancelled` when delivery stopped before an outcome, which leaves the update pending.
+     * `in_flight` while the request runs, `accepted` once the webhook's complete 2xx response
+     * arrived, or `cancelled` when delivery stopped before it, which leaves the update pending.
      */
     readonly status: 'in_flight' | 'accepted' | 'cancelled';
   }
@@ -98,6 +98,55 @@ export type WebhookAttempt =
     readonly failure: WebhookAttemptFailure;
     readonly retry: WebhookRetry;
   };
+
+/** How an attempt in flight ends. */
+export type WebhookAttemptEnd =
+  | { readonly status: 'accepted' | 'cancelled' }
+  | {
+    readonly status: 'failed';
+    readonly failure: WebhookAttemptFailure;
+    /** The wait before the update is sent again, which the failure's retry waits for. */
+    readonly retryDelaySeconds: number;
+  };
+
+/**
+ * Ends an attempt in flight: `in_flight → accepted | failed | cancelled`. A failed attempt's retry
+ * starts `waiting`. Each end is final, so an attempt that has already ended has no transition, and
+ * `undefined` is returned.
+ */
+export function endWebhookAttempt(
+  attempt: WebhookAttempt,
+  end: WebhookAttemptEnd,
+): WebhookAttempt | undefined {
+  if (attempt.status !== 'in_flight') {
+    return undefined;
+  }
+  const { id, botId, updateId, scheduling } = attempt;
+  const identity: WebhookAttemptIdentity = { id, botId, updateId, scheduling };
+  return end.status === 'failed'
+    ? {
+      ...identity,
+      status: 'failed',
+      failure: end.failure,
+      retry: { delaySeconds: end.retryDelaySeconds, status: 'waiting' },
+    }
+    : { ...identity, status: end.status };
+}
+
+/**
+ * Ends a failed attempt's waiting retry: `waiting → released | cancelled`. Each end is final, so a
+ * retry that is no longer waiting, or an attempt that has none, has no transition, and `undefined`
+ * is returned.
+ */
+export function endWebhookRetry(
+  attempt: WebhookAttempt,
+  status: Exclude<WebhookRetryStatus, 'waiting'>,
+): WebhookAttempt | undefined {
+  if (attempt.status !== 'failed' || attempt.retry.status !== 'waiting') {
+    return undefined;
+  }
+  return { ...attempt, retry: { ...attempt.retry, status } };
+}
 
 /**
  * Reads a webhook URL as TDLib's `parse_url` does: `http` and `https` URLs, with a missing scheme

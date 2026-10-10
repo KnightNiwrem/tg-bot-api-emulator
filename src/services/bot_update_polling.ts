@@ -1,16 +1,10 @@
-import {
-  type BotApiUpdate,
-  type BotApiUpdateType,
-  resolveAllowedUpdateTypes,
-} from '../types/bot_api.ts';
+import type { BotApiUpdate } from '../types/bot_api.ts';
 import type { Deadline, Scheduler } from '../timing/session_timing.ts';
 
 export interface GetUpdatesRequest {
   readonly offset?: number;
   readonly limit: number;
   readonly timeoutSeconds: number;
-  /** Requested update type names; omitting them keeps the bot's current subscription. */
-  readonly allowedUpdates?: readonly string[];
   readonly signal?: AbortSignal;
 }
 
@@ -46,10 +40,6 @@ interface PendingUpdateQueue {
   ): Promise<unknown>;
 }
 
-interface BotUpdateSubscriptionStore {
-  setAllowedUpdateTypes(botId: number, allowedUpdateTypes: ReadonlySet<BotApiUpdateType>): void;
-}
-
 interface HeldLongPoll {
   /** Aborted to terminate the long poll. */
   readonly controller: AbortController;
@@ -70,7 +60,6 @@ interface SessionCommitGate {
 
 interface BotUpdatePollingServiceDependencies {
   readonly botUpdates: PendingUpdateQueue;
-  readonly updateSubscriptions: BotUpdateSubscriptionStore;
   readonly updateActivity: UpdateActivityRecorder;
   /** Measures how long a long poll is held. */
   readonly scheduler: Pick<Scheduler, 'deadline'>;
@@ -78,12 +67,12 @@ interface BotUpdatePollingServiceDependencies {
 }
 
 /**
- * Coordinates each bot's `getUpdates` requests against its subscription and pending update queue,
- * including request cancellation, competing held requests, and the end of long polling.
+ * Answers each bot's `getUpdates` requests from its pending update queue, and confirms the updates
+ * their offsets acknowledge, including request cancellation, competing held requests, and the end
+ * of the session. Whether a bot may poll, and its subscription, are `BotUpdateConsumerService`'s.
  */
 export class BotUpdatePollingService {
   readonly #botUpdates: PendingUpdateQueue;
-  readonly #updateSubscriptions: BotUpdateSubscriptionStore;
   readonly #updateActivity: UpdateActivityRecorder;
   readonly #scheduler: Pick<Scheduler, 'deadline'>;
   /**
@@ -94,21 +83,17 @@ export class BotUpdatePollingService {
   readonly #heldLongPollsByBotId = new Map<number, HeldLongPoll>();
 
   constructor(
-    { botUpdates, updateSubscriptions, updateActivity, scheduler, sessionLifetime }:
-      BotUpdatePollingServiceDependencies,
+    { botUpdates, updateActivity, scheduler, sessionLifetime }: BotUpdatePollingServiceDependencies,
   ) {
     this.#botUpdates = botUpdates;
-    this.#updateSubscriptions = updateSubscriptions;
     this.#updateActivity = updateActivity;
     this.#scheduler = scheduler;
     this.#sessionLifetime = sessionLifetime;
   }
 
   /**
-   * Changes the bot's subscription before reading its queue, as Telegram does. The new
-   * subscription applies only to updates created afterward; pending updates are still returned.
-   *
-   * A request that finds no updates and has a timeout is held until an update arrives. Like
+   * Reads the bot's pending updates, after confirming those before the request's offset. A request
+   * that finds no updates and has a timeout is held until an update arrives. Like
    * Telegram, a bot has at most one held request: holding a new one terminates the previous one.
    * Requests answered immediately never terminate a held one.
    *
@@ -121,16 +106,10 @@ export class BotUpdatePollingService {
    */
   async getUpdates(
     botId: number,
-    { offset, limit, timeoutSeconds, allowedUpdates, signal }: GetUpdatesRequest,
+    { offset, limit, timeoutSeconds, signal }: GetUpdatesRequest,
   ): Promise<GetUpdatesResult> {
     if (!this.#sessionLifetime.admitsCommits) {
       return { retrieved: false, reason: 'session_ended' };
-    }
-    if (allowedUpdates !== undefined) {
-      this.#updateSubscriptions.setAllowedUpdateTypes(
-        botId,
-        resolveAllowedUpdateTypes(allowedUpdates),
-      );
     }
 
     // Telegram resolves a negative offset once, when the request arrives, so updates enqueued while
