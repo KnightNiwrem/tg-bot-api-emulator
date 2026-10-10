@@ -7,7 +7,8 @@ get:
   operationId: getSupergroupInviteLinks
   summary: Return the invite links of the supergroup, as its owner sees them
   description: >-
-    Lists the supergroup's additional invite links in the order bots created them, each whole,
+    Lists the supergroup's invite links, primary and additional, in the order bots created
+    them, each whole,
     with its settings, how many members joined through it and still are, and whether a test
     made its expiry date arrive. As TDLib requires the owner for links that other
     administrators created, and only bots create links, only the owner sees them.

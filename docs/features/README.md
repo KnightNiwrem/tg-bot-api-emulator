@@ -45,7 +45,7 @@ thresholds, which tests replace with
 
 This is the complete inventory from the
 [method catalogue](../../src/api/sessions/bot_api/method_catalogue.ts). Method names are
-case-insensitive. The two legacy aliases below are also accepted.
+case-insensitive. The legacy aliases below are also accepted.
 
 | Area             | Methods                                                                                                                                                                                     |
 | ---------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
@@ -90,8 +90,8 @@ above determines whether an individual method is available.
   [drafts and some blocks](rich-messages.md#real-gaps), and polls lack
   [Telegram's newest poll options](polls.md#real-gaps).
 - [Reactions outside supergroups, custom emoji and paid reactions, and removing other members'
-  reactions](reactions.md#real-gaps), [unpinning all messages](pinned-messages.md#real-gaps), chat
-  photos and other chat settings, and [subscription invite links](invite-links.md#real-gaps).
+  reactions](reactions.md#real-gaps), chat photos and other chat settings, and
+  [subscription invite links](invite-links.md#real-gaps).
 - Payments, invoices, shipping, Telegram Stars, gifts, paid broadcasts and paid media.
 - Business connections, managed bots, Mini Apps other than the data a
   [keyboard button's Web App sends](keyboards-and-callbacks.md#sending-web-app-data), login

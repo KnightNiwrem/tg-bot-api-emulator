@@ -281,7 +281,10 @@ const sendChatActionParametersSchema = z.strictObject({
 
 type SendMediaGroupResult = ReturnType<EmulationSession['botApi']['sendMediaGroup']>;
 
-/** An album's photo, video, or document as the service sends it, with its file resolved. */
+/**
+ * An album's photo, video, document, or audio file as the service sends it, with its file
+ * resolved.
+ */
 type MediaReplacementRequest = Parameters<
   EmulationSession['botApi']['sendMediaGroup']
 >[1]['media'][number];

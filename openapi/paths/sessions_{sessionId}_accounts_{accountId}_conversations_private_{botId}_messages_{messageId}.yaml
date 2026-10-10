@@ -8,7 +8,8 @@ patch:
   operationId: editAccountMessage
   summary: Edit the text or caption of a message the account sent
   description: >-
-    Replaces the text of the account's text message, or the caption of its photo, document, or video,
+    Replaces the text of the account's text message, or the caption of its photo, document, video,
+    voice note, or audio file,
     normalized as when sending it, and dates the edit. Unless the bot's allowed_updates subscription excludes edited_message updates, the
     bot receives an edited_message update carrying the edited message.
   requestBody:

@@ -45,9 +45,9 @@ post:
         enough rights to manage chat invite link`); the link creates join requests and has a
         member limit (`Bad Request: member limit can't be specified for links requiring
         administrator approval`); `invite_link` is missing or empty (`Bad Request: invite link
-        must be non-empty`); no link of the supergroup has this URL, or the link was revoked
-        (`Bad Request: INVITE_HASH_EXPIRED`); another administrator created the link
-        (`Bad Request: CHAT_ADMIN_REQUIRED`); the link is a primary link, whatever the edit
+        must be non-empty`); no link of the supergroup has this URL (`Bad Request:
+        INVITE_HASH_EXPIRED`); another administrator created the link (`Bad Request:
+        CHAT_ADMIN_REQUIRED`); the link was revoked (`Bad Request: INVITE_HASH_EXPIRED`); the link is a primary link, whatever the edit
         requests (`Bad Request: CHAT_INVITE_PERMANENT`); the expiry date is not in the future (`Bad Request:
         EXPIRE_DATE_INVALID`); or the member limit exceeds 99999 (`Bad Request:
         USAGE_LIMIT_INVALID`). A refused request changes nothing.

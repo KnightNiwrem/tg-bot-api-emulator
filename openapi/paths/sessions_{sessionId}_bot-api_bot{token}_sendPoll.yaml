@@ -64,10 +64,11 @@ post:
         it, checking in this order: the question's formatting cannot be read, as for
         `sendMessage`; `options` is missing or not JSON (`Bad Request: can't parse options JSON
         object`), not an array (`Bad Request: expected an Array of InputPollOption`), or an
-        option cannot be read (`Bad Request: can't parse InputPollOption: …`, such as `Expected
-        InputPollOption to be an Object`, `Can't find field "text"`, or the description of its
-        formatting); an option has media (`Bad Request: media of poll options is not
-        supported`); `type` is unknown (`Bad Request: unsupported poll type specified`); a quiz's
+        option, checked one by one, cannot be read (`Bad Request: can't parse InputPollOption:
+        …`, such as `Expected InputPollOption to be an Object` or `Can't find field "text"`) or
+        has media (`Bad Request: media of poll options is not supported`); an option's formatting
+        cannot be read (`Bad Request: can't parse InputPollOption: …` with the description of its
+        formatting); `type` is unknown (`Bad Request: unsupported poll type specified`); a quiz's
         explanation cannot be read, as for text, or `correct_option_ids` is not JSON (`Bad
         Request: can't parse correct option identifiers JSON object`), not an array (`Bad
         Request: expected an Array of correct option identifiers`), or holds a value that is not a

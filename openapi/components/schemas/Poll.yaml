@@ -85,8 +85,9 @@ properties:
     type: integer
     minimum: 0
     description: >-
-      The correct option of a quiz with exactly one, shown to the bot that sent the quiz, to an
-      account that answered it, and to everyone once it is closed.
+      The correct option of a quiz with exactly one, shown to the bot or account that sent the
+      quiz, to the bot of the private chat it was sent to, to an account that answered it, and to
+      everyone once it is closed.
   correct_option_ids:
     type: array
     minItems: 1

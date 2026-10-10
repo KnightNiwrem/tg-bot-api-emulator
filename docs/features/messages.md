@@ -24,11 +24,11 @@ precedence, and a missing/non-positive message ID means no reply. If a target is
 `allow_sending_without_reply` permits a normal send. Returned messages include `reply_to_message`
 without recursively nesting the replied message's own reply.
 
-Bots can add a message effect with `message_effect_id` to `sendMessage`, `sendPhoto`,
-`sendDocument`, `sendVideo`, `sendVoice`, `sendAudio`, `sendContact`, `sendLocation`,
-`sendMediaGroup`, `forwardMessage` and `copyMessage`, which gives it to every message of an album,
-as TDLib's `send_message_group` does. The message then reports it as `effect_id`, including in
-account history. `0` means no effect. As in TDLib's
+Bots can add a message effect with `message_effect_id` to `sendMessage`, `sendRichMessage`,
+`sendPhoto`, `sendDocument`, `sendVideo`, `sendVoice`, `sendAudio`, `sendContact`, `sendLocation`,
+`sendPoll`, `sendMediaGroup`, `forwardMessage` and `copyMessage`, which gives it to every message of
+an album, as TDLib's `send_message_group` does. The message then reports it as `effect_id`,
+including in account history. `0` means no effect. As in TDLib's
 [`MessageSendOptions::get_message_send_options`][effect-rules], effects are refused in supergroups,
 and `forwardMessages` or `copyMessages` accept one only when a single message is found. Telegram's
 servers decide which effect identifiers exist; that check is not in the open-source code, and the
@@ -83,10 +83,10 @@ pagination or deleted entries; it is a test inspection API, not a Telegram histo
 
 Tests read the notifications an account's client shows through `account.getNotifications` for a
 private chat or a supergroup. Every message another participant sent to the chat notifies, in order,
-and the account's own messages do not. `disable_notification` on `sendMessage`, `sendPhoto`,
-`sendDocument`, `sendVideo`, `sendVoice`, `sendAudio`, `sendContact`, `sendLocation`,
-`sendMediaGroup`, `forwardMessage(s)` and `copyMessage(s)` makes the notification silent. The
-official server passes the option to TDLib's send options. As TDLib's
+and the account's own messages do not. `disable_notification` on `sendMessage`, `sendRichMessage`,
+`sendPhoto`, `sendDocument`, `sendVideo`, `sendVoice`, `sendAudio`, `sendContact`, `sendLocation`,
+`sendPoll`, `sendMediaGroup`, `forwardMessage(s)` and `copyMessage(s)` makes the notification
+silent. The official server passes the option to TDLib's send options. As TDLib's
 [`Message::disable_notification`][silent-message] carries it to the recipient, the notification
 reports it as `is_silent`, as TDLib's [`notification`][notification-object] object does. Bot API
 messages do not show it.

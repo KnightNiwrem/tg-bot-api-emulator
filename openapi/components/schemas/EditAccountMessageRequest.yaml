@@ -1,4 +1,6 @@
-description: New text for a text message, or a new caption for a photo, document, or video.
+description: >-
+  New text for a text message, or a new caption for a photo, document, video, voice note, or audio
+  file.
 oneOf:
   - type: object
     additionalProperties: false

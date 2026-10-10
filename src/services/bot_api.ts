@@ -758,8 +758,8 @@ export type EditMessageCaptionFailureReason =
 export type EditMessageMediaFailureReason =
   | EditMessageReplyMarkupFailureReason
   /**
-   * The message is a voice note or a poll, whose media TDLib's `can_edit_message_media` refuses to
-   * edit.
+   * The message is a voice note, a poll, a contact, or a location, whose media TDLib's
+   * `can_edit_message_media` refuses to edit.
    */
   | 'message_media_not_editable'
   | 'caption_too_long'
@@ -849,7 +849,10 @@ export type EditInlineMessageCaptionFailureReason =
 export type EditInlineMessageMediaFailureReason =
   | EditInlineMessageReplyMarkupFailureReason
   | 'caption_too_long'
-  /** The message is a voice note, which an inline query result can send but no edit replaces. */
+  /**
+   * The message is a voice note, a contact, or a location, which an inline query result can send
+   * but no edit replaces.
+   */
   | 'message_media_not_editable'
   /** The new media is uploaded, which an inline message cannot receive. */
   | 'inline_message_upload_unsupported';
@@ -2270,8 +2273,6 @@ export class BotApiService {
    * `Client::get_formatted_text` does before it looks at the chat: a parse mode other than `none`
    * turns markup into entities and overrides `entities`. The result still has to pass the checks
    * that sending or editing applies.
-   *
-   * Date and time entities, which Telegram's markup can produce, are not supported.
    */
   readFormattedText(
     { text, parseMode, entities }: ReadFormattedTextRequest,
@@ -2445,9 +2446,8 @@ export class BotApiService {
 
   /**
    * Sends text to a private chat or a supergroup, optionally as a reply to one of the chat's
-   * messages and with an inline keyboard. A message to a private chat can instead change the
-   * account's reply interface. Telegram also shows a reply interface to chosen members of a group,
-   * which the emulator does not support.
+   * messages and with an inline keyboard. A message can instead change the reply interface the
+   * account of a private chat sees, or the one the chosen members of a supergroup see.
    */
   sendMessage(
     authenticatedBot: VirtualBotProfile,
@@ -3872,8 +3872,9 @@ export class BotApiService {
 
   /**
    * Deletes a message of a chat: in a private chat, a message of either participant; in a
-   * supergroup, one of the bot's own messages. Unlike `deleteMessages`, it fails when the ID
-   * identifies no message of the chat, as on Telegram.
+   * supergroup, one of the bot's own messages, or any message as an administrator with the
+   * `can_delete_messages` right. Unlike `deleteMessages`, it fails when the ID identifies no
+   * message of the chat, as on Telegram.
    */
   deleteMessage(
     authenticatedBot: VirtualBotProfile,
@@ -3927,7 +3928,7 @@ export class BotApiService {
 
   /**
    * Answers an inline query that an account sent to the bot, with results whose files the bot
-   * knows by `file_id`.
+   * knows by `file_id` or names by URL.
    *
    * Every result's file is resolved before the other checks, while TDLib checks the button and
    * the number of results first, and resolves each result's file after its message content and
@@ -4477,9 +4478,9 @@ export class BotApiService {
   }
 
   /**
-   * Resolves what a result's `input_message_content` sends: its text, or a rich message, whose
-   * files must be reused by `file_id`, as TDLib's `get_input_rich_message` requires of an inline
-   * message.
+   * Resolves what a result's `input_message_content` sends: its text, a contact, a location, or a
+   * rich message, whose files must be reused by `file_id`, as TDLib's `get_input_rich_message`
+   * requires of an inline message.
    */
   #resolveInlineResultMessageContent(
     authenticatedBot: VirtualBotProfile,
@@ -5023,7 +5024,6 @@ function toInlineResultAudioAttributes(
   };
 }
 
-/** The chat a Bot API `chat_id` addresses, as chat actions identify it. */
 /** Shows a command as the Bot API does, with `is_ephemeral` only when set. */
 function projectBotCommand({ command, description, isEphemeral }: BotCommand): BotApiBotCommand {
   return { command, description, ...(isEphemeral ? { is_ephemeral: true as const } : {}) };

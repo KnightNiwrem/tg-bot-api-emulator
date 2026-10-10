@@ -39,7 +39,7 @@ export interface PollAnswerChangedEvent {
   readonly chosenOptionPositions: readonly number[];
 }
 
-/** A poll closed: the bot that owns it stopped it, or its closing time arrived. */
+/** A poll closed: its creator, a bot or an account, stopped it, or its closing time arrived. */
 export interface PollClosedEvent {
   readonly type: 'poll_closed';
   /** The poll as closing it left it: closed, with its votes. */

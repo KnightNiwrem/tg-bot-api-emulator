@@ -772,8 +772,7 @@ export type BotApiSupergroupAdministratorRights =
   & { readonly is_anonymous: false };
 
 /**
- * A user's standing in a group, in the field order Telegram uses. Custom titles and member tags
- * are not supported.
+ * A user's standing in a group, in the field order Telegram uses. Member tags are not supported.
  */
 export type BotApiChatMember<User extends BotApiUser = BotApiUser> =
   | {
@@ -819,7 +818,8 @@ export type BotApiChatMember<User extends BotApiUser = BotApiUser> =
 
 /**
  * The bot's membership in a group: `left` before it joins and after it leaves, `kicked` while it is
- * banned, and `administrator` while the owner grants it rights. A bot never owns a group.
+ * banned, and `administrator` while it holds rights a promoter granted it. A bot never owns a
+ * group.
  */
 export type BotApiGroupChatBotMember = Exclude<
   BotApiChatMember<BotApiBotUser>,

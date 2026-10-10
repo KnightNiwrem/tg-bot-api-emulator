@@ -85,8 +85,8 @@ const MAX_INLINE_QUERY_CACHE_TIME_SECONDS = 24 * 60 * 60;
 /** Telegram caps how long a client may cache a callback query answer at 30 days. */
 const MAX_CALLBACK_QUERY_ANSWER_CACHE_TIME_SECONDS = 30 * 24 * 60 * 60;
 
-// Telegram answers with a URL only for game buttons and bot links, neither of which the emulator
-// supports, so `url` is rejected as unsupported.
+// Telegram answers with a URL only for game buttons and bot links. The emulator has no game
+// buttons, so the callback query service accepts only a link that starts the answering bot.
 const answerCallbackQueryParametersSchema = z.strictObject({
   callback_query_id: z.string().default(''),
   text: z.string().max(MAX_CALLBACK_QUERY_ANSWER_TEXT_LENGTH).optional(),

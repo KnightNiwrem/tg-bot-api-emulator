@@ -374,10 +374,6 @@ function handleUnbanChatMember(
 }
 
 /**
- * Reads the chat and the user a member method addresses. Telegram reads the user first, and reads
- * a missing or non-positive `user_id` as 0, which identifies no user.
- */
-/**
  * Answers `setChatAdministratorCustomTitle`. As the official server reads it, a missing
  * `custom_title` is empty, which removes the title.
  */

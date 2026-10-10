@@ -78,7 +78,7 @@ const MEDIA_NOT_FOUND_DESCRIPTION = 'Bad Request: media not found';
 /**
  * The emulator's descriptions for rich messages it does not support: messages written in HTML or
  * Markdown, which Telegram's servers parse by rules the open-source code does not contain, and
- * blocks with media the emulator lacks.
+ * blocks with animations, which the emulator lacks, or audio files, which it has no blocks for.
  */
 const MARKUP_RICH_MESSAGE_UNSUPPORTED_DESCRIPTION =
   'Bad Request: rich messages written in HTML or Markdown are not supported';

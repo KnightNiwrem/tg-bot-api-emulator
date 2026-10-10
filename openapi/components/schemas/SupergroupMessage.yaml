@@ -192,7 +192,7 @@ properties:
   poll:
     $ref: ./Poll.yaml
     description: >-
-      The poll of a poll message, which only bots send, with its votes as they are now.
+      The poll of a poll message, with its votes as they are now.
   contact:
     $ref: ./Contact.yaml
     description: The phone contact of a contact message.

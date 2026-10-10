@@ -43,9 +43,10 @@ post:
         members to a private chat`); the link is not well-formed Unicode (`Bad Request: strings
         must be encoded in UTF-8`); the bot lacks `can_invite_users` (`Bad Request: not enough
         rights to manage chat invite link`); `invite_link` is missing or empty (`Bad Request:
-        invite link must be non-empty`); no link of the supergroup has this URL, or the link was
-        revoked before (`Bad Request: INVITE_HASH_EXPIRED`); or another administrator created the
-        link (`Bad Request: CHAT_ADMIN_REQUIRED`). A refused request changes nothing.
+        invite link must be non-empty`); no link of the supergroup has this URL (`Bad Request:
+        INVITE_HASH_EXPIRED`); another administrator created the link (`Bad Request:
+        CHAT_ADMIN_REQUIRED`); or the link was revoked before (`Bad Request:
+        INVITE_HASH_EXPIRED`). A refused request changes nothing.
       content:
         application/json:
           schema:

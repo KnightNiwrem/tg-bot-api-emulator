@@ -131,10 +131,10 @@ properties:
     type: array
     minItems: 1
     description: >-
-      Entities marked in the text, omitted when there are none: formatting the bot applied,
-      and bot commands, which, as Telegram does in chats with bots, the emulator marks in text
-      written by either participant. Other entity types Telegram detects, such
-      as URLs and mentions, are not detected.
+      Entities marked in the text, omitted when there are none: formatting the sender applied,
+      and the entities Telegram detects by itself, which the emulator marks in text written by
+      either participant: mentions, hashtags, cashtags, bot commands, URLs, email addresses, and
+      bank card numbers. Phone numbers are not detected.
     items:
       $ref: ./MessageEntity.yaml
   photo:
@@ -181,7 +181,7 @@ properties:
   poll:
     $ref: ./Poll.yaml
     description: >-
-      The poll of a poll message, which only bots send, with its votes as they are now.
+      The poll of a poll message, with its votes as they are now.
   contact:
     $ref: ./Contact.yaml
     description: The phone contact of a contact message.

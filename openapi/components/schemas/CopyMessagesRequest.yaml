@@ -31,4 +31,4 @@ properties:
   remove_caption:
     type: boolean
     default: false
-    description: Sends copies of photos and documents without their captions.
+    description: Sends copies of photos, documents, videos, voice notes, and audio files without their captions.
