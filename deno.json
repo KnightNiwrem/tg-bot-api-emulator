@@ -30,6 +30,7 @@
     "hono": "jsr:@hono/hono@4.13.13",
     "hono/route": "jsr:@hono/hono@4.13.13/route",
     "hono/utils/http-status": "jsr:@hono/hono@4.13.13/utils/http-status",
+    "mdast-util-from-markdown": "npm:mdast-util-from-markdown@2.0.2",
     "zod": "npm:zod@4.6.5"
   },
   "fmt": {
