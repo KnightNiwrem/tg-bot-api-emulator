@@ -29,10 +29,51 @@ put:
       description: The supergroup has the description.
     '400':
       description: A path identifier or the body is invalid, or the text is not well-formed Unicode.
+      content:
+        application/json:
+          schema:
+            oneOf:
+              - $ref: ../components/schemas/ControlValidationError.yaml
+              - allOf:
+                  - $ref: ../components/schemas/ControlError.yaml
+                  - properties:
+                      reason:
+                        enum:
+                          - text_encoding_invalid
     '403':
       description: >-
         The account is not a member of the supergroup, or may not change its information.
+      content:
+        application/json:
+          schema:
+            allOf:
+              - $ref: ../components/schemas/ControlError.yaml
+              - properties:
+                  reason:
+                    enum:
+                      - not_a_member
+                      - not_enough_rights
     '404':
       description: The session, account, or supergroup does not exist.
+      content:
+        application/json:
+          schema:
+            allOf:
+              - $ref: ../components/schemas/ControlError.yaml
+              - properties:
+                  reason:
+                    enum:
+                      - actor_not_found
+                      - chat_not_found
+                      - session_not_found
     '409':
       description: The supergroup already has the description, which Telegram's servers refuse.
+      content:
+        application/json:
+          schema:
+            allOf:
+              - $ref: ../components/schemas/ControlError.yaml
+              - properties:
+                  reason:
+                    enum:
+                      - description_not_modified

@@ -25,3 +25,13 @@ get:
                   $ref: ../components/schemas/WebhookAttempt.yaml
     '404':
       description: No active test session or virtual bot has the supplied identifier.
+      content:
+        application/json:
+          schema:
+            allOf:
+              - $ref: ../components/schemas/ControlError.yaml
+              - properties:
+                  reason:
+                    enum:
+                      - bot_not_found
+                      - session_not_found

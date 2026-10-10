@@ -28,12 +28,40 @@ put:
       description: The user is a member of the supergroup.
     '400':
       description: A path identifier is invalid.
+      content:
+        application/json:
+          schema:
+            $ref: ../components/schemas/ControlValidationError.yaml
     '403':
       description: >-
         The account adds another user to a supergroup it does not own, or joins a supergroup
         that has no username or that bans it.
+      content:
+        application/json:
+          schema:
+            allOf:
+              - $ref: ../components/schemas/ControlError.yaml
+              - properties:
+                  reason:
+                    enum:
+                      - actor_not_authorized
+                      - banned
+                      - chat_not_public
     '404':
       description: The session, account, supergroup, or user to add does not exist.
+      content:
+        application/json:
+          schema:
+            allOf:
+              - $ref: ../components/schemas/ControlError.yaml
+              - properties:
+                  reason:
+                    enum:
+                      - account_not_found
+                      - actor_account_not_found
+                      - chat_not_found
+                      - member_not_found
+                      - session_not_found
 delete:
   operationId: removeSupergroupMember
   summary: Leave a supergroup, or remove a member from a supergroup the account owns
@@ -52,9 +80,43 @@ delete:
       description: The user is not a member of the supergroup.
     '400':
       description: A path identifier is invalid.
+      content:
+        application/json:
+          schema:
+            $ref: ../components/schemas/ControlValidationError.yaml
     '403':
       description: The account removes another user from a supergroup it does not own.
+      content:
+        application/json:
+          schema:
+            allOf:
+              - $ref: ../components/schemas/ControlError.yaml
+              - properties:
+                  reason:
+                    enum:
+                      - actor_not_authorized
     '404':
       description: The session, account, supergroup, or user to remove does not exist.
+      content:
+        application/json:
+          schema:
+            allOf:
+              - $ref: ../components/schemas/ControlError.yaml
+              - properties:
+                  reason:
+                    enum:
+                      - actor_account_not_found
+                      - chat_not_found
+                      - member_not_found
+                      - session_not_found
     '409':
       description: The account owns the supergroup and cannot leave it.
+      content:
+        application/json:
+          schema:
+            allOf:
+              - $ref: ../components/schemas/ControlError.yaml
+              - properties:
+                  reason:
+                    enum:
+                      - owner_cannot_leave

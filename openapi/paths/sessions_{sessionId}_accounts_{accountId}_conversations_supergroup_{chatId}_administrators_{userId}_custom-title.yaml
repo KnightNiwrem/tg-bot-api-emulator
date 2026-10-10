@@ -30,9 +30,53 @@ put:
         A path identifier or the body is invalid, or the title is not well-formed Unicode, is
         longer than 16 Unicode code points, or has emoji. These title checks follow the account's
         ownership of the supergroup and the user's standing.
+      content:
+        application/json:
+          schema:
+            oneOf:
+              - $ref: ../components/schemas/ControlValidationError.yaml
+              - allOf:
+                  - $ref: ../components/schemas/ControlError.yaml
+                  - properties:
+                      reason:
+                        enum:
+                          - custom_title_contains_emoji
+                          - custom_title_too_long
+                          - text_encoding_invalid
     '403':
       description: The account does not own the supergroup.
+      content:
+        application/json:
+          schema:
+            allOf:
+              - $ref: ../components/schemas/ControlError.yaml
+              - properties:
+                  reason:
+                    enum:
+                      - actor_not_authorized
     '404':
       description: The session, account, supergroup, or user does not exist.
+      content:
+        application/json:
+          schema:
+            allOf:
+              - $ref: ../components/schemas/ControlError.yaml
+              - properties:
+                  reason:
+                    enum:
+                      - actor_account_not_found
+                      - chat_not_found
+                      - member_not_found
+                      - session_not_found
     '409':
       description: The user is not the owner or an administrator of the supergroup.
+      content:
+        application/json:
+          schema:
+            allOf:
+              - $ref: ../components/schemas/ControlError.yaml
+              - properties:
+                  reason:
+                    enum:
+                      - not_a_member
+                      - not_an_administrator

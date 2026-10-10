@@ -53,13 +53,48 @@ post:
       description: >-
         The request is invalid, such as a query longer than 256 characters or a location
         outside the valid coordinates.
+      content:
+        application/json:
+          schema:
+            $ref: ../components/schemas/ControlValidationError.yaml
     '403':
       description: The account is not a member of the supergroup.
+      content:
+        application/json:
+          schema:
+            allOf:
+              - $ref: ../components/schemas/ControlError.yaml
+              - properties:
+                  reason:
+                    enum:
+                      - not_a_member
     '404':
       description: >-
         The session, account, inline bot, supergroup, or bot of the private chat does not
         exist.
+      content:
+        application/json:
+          schema:
+            allOf:
+              - $ref: ../components/schemas/ControlError.yaml
+              - properties:
+                  reason:
+                    enum:
+                      - account_not_found
+                      - bot_not_found
+                      - chat_not_found
+                      - session_not_found
     '409':
       description: >-
         The bot was not created with inline mode turned on, or the query shares a location
         with a bot not created with `requests_inline_location`.
+      content:
+        application/json:
+          schema:
+            allOf:
+              - $ref: ../components/schemas/ControlError.yaml
+              - properties:
+                  reason:
+                    enum:
+                      - inline_location_not_requested
+                      - inline_mode_disabled

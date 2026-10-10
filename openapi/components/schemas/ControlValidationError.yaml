@@ -1,0 +1,19 @@
+type: object
+description: >-
+  Why the emulator rejected a control request whose input breaks the operation's contract: a body
+  that is not JSON, or a field, path parameter, or query parameter that is missing, unknown,
+  repeated, or of the wrong type or form. Each problem is listed in `issues`. The request changed
+  nothing.
+additionalProperties: false
+required:
+  - reason
+  - issues
+properties:
+  reason:
+    type: string
+    const: invalid_request
+  issues:
+    type: array
+    minItems: 1
+    items:
+      $ref: ./ControlRequestIssue.yaml

@@ -22,7 +22,27 @@ post:
       description: >-
         No active test session or virtual bot has the supplied identifier, or the bot has no such
         attempt.
+      content:
+        application/json:
+          schema:
+            allOf:
+              - $ref: ../components/schemas/ControlError.yaml
+              - properties:
+                  reason:
+                    enum:
+                      - attempt_not_found
+                      - bot_not_found
+                      - session_not_found
     '409':
       description: >-
         The attempt's retry is not waiting: the attempt is in flight or was accepted or cancelled,
         or its retry was already released or cancelled.
+      content:
+        application/json:
+          schema:
+            allOf:
+              - $ref: ../components/schemas/ControlError.yaml
+              - properties:
+                  reason:
+                    enum:
+                      - retry_not_waiting

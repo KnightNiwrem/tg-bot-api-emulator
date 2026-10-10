@@ -29,9 +29,47 @@ post:
         The request body is malformed or does not match the account creation schema, or a name
         is not well-formed Unicode or would be changed by the cleanup Telegram applies to the
         account's own contact.
+      content:
+        application/json:
+          schema:
+            oneOf:
+              - $ref: ../components/schemas/ControlValidationError.yaml
+              - allOf:
+                  - $ref: ../components/schemas/ControlError.yaml
+                  - properties:
+                      reason:
+                        enum:
+                          - name_invalid
     '404':
       description: No active test session has the supplied identifier.
+      content:
+        application/json:
+          schema:
+            allOf:
+              - $ref: ../components/schemas/ControlError.yaml
+              - properties:
+                  reason:
+                    enum:
+                      - session_not_found
     '409':
       description: The username is already assigned within the test session.
+      content:
+        application/json:
+          schema:
+            allOf:
+              - $ref: ../components/schemas/ControlError.yaml
+              - properties:
+                  reason:
+                    enum:
+                      - username_taken
     '507':
       description: The test session cannot allocate another Telegram user identifier.
+      content:
+        application/json:
+          schema:
+            allOf:
+              - $ref: ../components/schemas/ControlError.yaml
+              - properties:
+                  reason:
+                    enum:
+                      - identity_limit_reached

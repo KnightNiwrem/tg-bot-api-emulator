@@ -1,0 +1,17 @@
+type: object
+description: >-
+  Why the emulator refused a control request whose input it accepted: a resource the request
+  names does not exist, or the session's state does not allow the operation. `reason` is a stable
+  snake_case code; each operation lists the codes each of its error statuses can carry. A request
+  whose input breaks the operation's contract is answered with a `ControlValidationError`
+  instead. Bot API routes keep Telegram's responses and never answer with this body.
+additionalProperties: false
+required:
+  - reason
+properties:
+  reason:
+    type: string
+    pattern: '^[a-z][a-z0-9_]*$'
+    not:
+      const: invalid_request
+    description: The refusal's stable code, such as `session_not_found` or `bot_blocked`.

@@ -33,14 +33,52 @@ put:
         member or a user that left.
     '400':
       description: A path identifier or the body is invalid.
+      content:
+        application/json:
+          schema:
+            $ref: ../components/schemas/ControlValidationError.yaml
     '403':
       description: >-
         The account is not a member of the supergroup, lacks the right the change needs, or would
         restrict itself or an administrator it did not promote.
+      content:
+        application/json:
+          schema:
+            allOf:
+              - $ref: ../components/schemas/ControlError.yaml
+              - properties:
+                  reason:
+                    enum:
+                      - actor_not_a_member
+                      - administrator_not_promoted_by_actor
+                      - cannot_manage_self
+                      - not_enough_rights
+                      - not_enough_rights_to_promote
     '404':
       description: The session, account, supergroup, or user to restrict does not exist.
+      content:
+        application/json:
+          schema:
+            allOf:
+              - $ref: ../components/schemas/ControlError.yaml
+              - properties:
+                  reason:
+                    enum:
+                      - actor_account_not_found
+                      - chat_not_found
+                      - member_not_found
+                      - session_not_found
     '409':
       description: The user is the supergroup's owner.
+      content:
+        application/json:
+          schema:
+            allOf:
+              - $ref: ../components/schemas/ControlError.yaml
+              - properties:
+                  reason:
+                    enum:
+                      - member_is_owner
 delete:
   operationId: liftSupergroupMemberRestriction
   summary: Lift a user's restriction in a supergroup as its owner or an administrator
@@ -54,11 +92,49 @@ delete:
       description: The user is not restricted.
     '400':
       description: A path identifier is invalid.
+      content:
+        application/json:
+          schema:
+            $ref: ../components/schemas/ControlValidationError.yaml
     '403':
       description: >-
         The account is not a member of the supergroup, lacks `can_restrict_members`, or would
         lift its own restriction.
+      content:
+        application/json:
+          schema:
+            allOf:
+              - $ref: ../components/schemas/ControlError.yaml
+              - properties:
+                  reason:
+                    enum:
+                      - actor_not_a_member
+                      - administrator_not_promoted_by_actor
+                      - cannot_manage_self
+                      - not_enough_rights
+                      - not_enough_rights_to_promote
     '404':
       description: The session, account, supergroup, or user does not exist.
+      content:
+        application/json:
+          schema:
+            allOf:
+              - $ref: ../components/schemas/ControlError.yaml
+              - properties:
+                  reason:
+                    enum:
+                      - actor_account_not_found
+                      - chat_not_found
+                      - member_not_found
+                      - session_not_found
     '409':
       description: The user is the supergroup's owner.
+      content:
+        application/json:
+          schema:
+            allOf:
+              - $ref: ../components/schemas/ControlError.yaml
+              - properties:
+                  reason:
+                    enum:
+                      - member_is_owner

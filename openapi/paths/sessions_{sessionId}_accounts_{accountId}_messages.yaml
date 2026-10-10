@@ -46,16 +46,79 @@ post:
         The request, message text, caption, or poll is invalid, the photo is not an image
         Telegram accepts, the file is empty, the replied message is not a message of the chat, or
         the forwarded message cannot be forwarded.
+      content:
+        application/json:
+          schema:
+            oneOf:
+              - $ref: ../components/schemas/ControlValidationError.yaml
+              - allOf:
+                  - $ref: ../components/schemas/ControlError.yaml
+                  - properties:
+                      reason:
+                        enum:
+                          - bot_upload_too_big
+                          - caption_too_long
+                          - file_empty
+                          - image_invalid
+                          - message_not_forwardable
+                          - message_text_empty
+                          - message_text_too_long
+                          - photo_dimensions_invalid
+                          - photo_too_big
+                          - poll_has_too_many_options
+                          - poll_option_too_long
+                          - poll_options_missing
+                          - poll_question_too_long
+                          - quiz_correct_option_not_found
+                          - quiz_correct_options_missing
+                          - quiz_correct_options_not_increasing
+                          - quiz_explanation_has_too_many_line_feeds
+                          - quiz_explanation_too_long
+                          - reply_message_not_found
+                          - text_invalid
     '403':
       description: >-
         The account is not a member of a supergroup of the request, or may not send the content,
         or the forwarded message's content, there, as its restriction or the supergroup's
         default permissions decide.
+      content:
+        application/json:
+          schema:
+            allOf:
+              - $ref: ../components/schemas/ControlError.yaml
+              - properties:
+                  reason:
+                    enum:
+                      - not_a_member
+                      - send_permission_missing
     '404':
       description: >-
         The session, sending account, a bot or supergroup of the request, or the forwarded
         message does not exist.
+      content:
+        application/json:
+          schema:
+            allOf:
+              - $ref: ../components/schemas/ControlError.yaml
+              - properties:
+                  reason:
+                    enum:
+                      - account_not_found
+                      - bot_not_found
+                      - chat_not_found
+                      - message_not_found
+                      - session_not_found
     '409':
       description: >-
         The account blocks the target bot and must unblock it before writing to it, or shares its
         own contact without having a phone number.
+      content:
+        application/json:
+          schema:
+            allOf:
+              - $ref: ../components/schemas/ControlError.yaml
+              - properties:
+                  reason:
+                    enum:
+                      - account_phone_number_missing
+                      - bot_blocked

@@ -19,3 +19,13 @@ get:
             description: The file's bytes, in the media type that `Content-Type` names.
     '404':
       description: The session or the file does not exist.
+      content:
+        application/json:
+          schema:
+            allOf:
+              - $ref: ../components/schemas/ControlError.yaml
+              - properties:
+                  reason:
+                    enum:
+                      - file_not_found
+                      - session_not_found

@@ -39,14 +39,59 @@ post:
             $ref: ../components/schemas/ChatJoinResponse.yaml
     '400':
       description: The account path identifier or the request body is invalid.
+      content:
+        application/json:
+          schema:
+            $ref: ../components/schemas/ControlValidationError.yaml
     '403':
       description: The account is banned from the supergroup.
+      content:
+        application/json:
+          schema:
+            allOf:
+              - $ref: ../components/schemas/ControlError.yaml
+              - properties:
+                  reason:
+                    enum:
+                      - banned
     '404':
       description: The session, the account, or an invite link of the session does not exist.
+      content:
+        application/json:
+          schema:
+            allOf:
+              - $ref: ../components/schemas/ControlError.yaml
+              - properties:
+                  reason:
+                    enum:
+                      - account_not_found
+                      - invite_link_not_found
+                      - session_not_found
     '409':
       description: >-
         The account is a member of the supergroup already, or its request to join it is pending.
+      content:
+        application/json:
+          schema:
+            allOf:
+              - $ref: ../components/schemas/ControlError.yaml
+              - properties:
+                  reason:
+                    enum:
+                      - already_a_member
+                      - join_request_pending
     '410':
       description: >-
         The bot that created the link revoked it, a test made its expiry date arrive, or as many
         users as its member limit allows joined through it and are members.
+      content:
+        application/json:
+          schema:
+            allOf:
+              - $ref: ../components/schemas/ControlError.yaml
+              - properties:
+                  reason:
+                    enum:
+                      - invite_link_expired
+                      - invite_link_member_limit_reached
+                      - invite_link_revoked

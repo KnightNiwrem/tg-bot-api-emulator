@@ -1,0 +1,56 @@
+type: object
+description: >-
+  One problem with a control request's input. Its `message` explains the problem to a person and
+  is not part of the contract; it never repeats an input value.
+additionalProperties: false
+required:
+  - source
+  - path
+  - code
+  - message
+properties:
+  source:
+    type: string
+    enum:
+      - body
+      - path
+      - query
+    description: >-
+      The part of the request the problem is in: the JSON body, a path parameter, or a query
+      parameter.
+  path:
+    type: array
+    items:
+      oneOf:
+        - type: string
+        - type: integer
+          minimum: 0
+    description: >-
+      Where the problem is within its source: the field names and list indexes from the JSON
+      body's root, the path parameter's name, or the query parameter's key as the request sent
+      it, such as `parameters[text]`. An empty path names the whole body.
+  code:
+    type: string
+    enum:
+      - invalid_json
+      - invalid_type
+      - too_small
+      - too_big
+      - invalid_format
+      - invalid_value
+      - unknown_field
+      - duplicate_field
+      - no_matching_variant
+    description: >-
+      The kind of problem. `invalid_json`: the body is not JSON. `invalid_type`: a value is
+      missing or of the wrong type. `too_small` and `too_big`: a number, text, or list is outside
+      its bounds. `invalid_format`: text does not have the required form. `invalid_value`: a
+      value is not one of those allowed, or breaks a rule its field states. `unknown_field`: the
+      operation takes no field or query parameter of that name. `duplicate_field`: a query
+      parameter is repeated. `no_matching_variant`: a value that takes one of several forms
+      matches none of them. When exactly one form accepts the value's type and every field it
+      has, that form's problems are listed instead; a value whose form is chosen by a field, such
+      as a chat's `type`, has an `invalid_value` problem at that field when it names no form.
+  message:
+    type: string
+    description: A human-readable explanation of the problem.

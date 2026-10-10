@@ -37,14 +37,60 @@ put:
       description: The member is an administrator with the given rights.
     '400':
       description: A path identifier or the body is invalid, or the body grants no right.
+      content:
+        application/json:
+          schema:
+            oneOf:
+              - $ref: ../components/schemas/ControlValidationError.yaml
+              - allOf:
+                  - $ref: ../components/schemas/ControlError.yaml
+                  - properties:
+                      reason:
+                        enum:
+                          - no_rights_granted
     '403':
       description: >-
         The account is not a member of the supergroup, lacks `can_promote_members`, grants a
         right it does not hold, or would change itself or an administrator it may not edit.
+      content:
+        application/json:
+          schema:
+            allOf:
+              - $ref: ../components/schemas/ControlError.yaml
+              - properties:
+                  reason:
+                    enum:
+                      - actor_not_a_member
+                      - administrator_not_promoted_by_actor
+                      - cannot_manage_self
+                      - not_enough_rights
+                      - rights_not_held
     '404':
       description: The session, account, supergroup, or user to promote does not exist.
+      content:
+        application/json:
+          schema:
+            allOf:
+              - $ref: ../components/schemas/ControlError.yaml
+              - properties:
+                  reason:
+                    enum:
+                      - actor_account_not_found
+                      - chat_not_found
+                      - member_not_found
+                      - session_not_found
     '409':
       description: The user is not a member of the supergroup, or is its owner.
+      content:
+        application/json:
+          schema:
+            allOf:
+              - $ref: ../components/schemas/ControlError.yaml
+              - properties:
+                  reason:
+                    enum:
+                      - member_is_owner
+                      - not_a_member
 delete:
   operationId: demoteSupergroupMember
   summary: Demote an administrator of a supergroup to a member as its owner or an administrator
@@ -59,11 +105,49 @@ delete:
       description: The user is a member of the supergroup without administrator rights.
     '400':
       description: A path identifier is invalid.
+      content:
+        application/json:
+          schema:
+            $ref: ../components/schemas/ControlValidationError.yaml
     '403':
       description: >-
         The account is not a member of the supergroup, lacks `can_promote_members`, or would
         demote itself or an administrator it may not edit.
+      content:
+        application/json:
+          schema:
+            allOf:
+              - $ref: ../components/schemas/ControlError.yaml
+              - properties:
+                  reason:
+                    enum:
+                      - actor_not_a_member
+                      - administrator_not_promoted_by_actor
+                      - cannot_manage_self
+                      - not_enough_rights
     '404':
       description: The session, account, supergroup, or user to demote does not exist.
+      content:
+        application/json:
+          schema:
+            allOf:
+              - $ref: ../components/schemas/ControlError.yaml
+              - properties:
+                  reason:
+                    enum:
+                      - actor_account_not_found
+                      - chat_not_found
+                      - member_not_found
+                      - session_not_found
     '409':
       description: The user is not a member of the supergroup, or is its owner.
+      content:
+        application/json:
+          schema:
+            allOf:
+              - $ref: ../components/schemas/ControlError.yaml
+              - properties:
+                  reason:
+                    enum:
+                      - member_is_owner
+                      - not_a_member

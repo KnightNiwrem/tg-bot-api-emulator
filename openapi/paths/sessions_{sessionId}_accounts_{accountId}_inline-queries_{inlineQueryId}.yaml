@@ -15,5 +15,19 @@ get:
             $ref: ../components/schemas/InlineQueryResponse.yaml
     '400':
       description: The account path identifier is invalid.
+      content:
+        application/json:
+          schema:
+            $ref: ../components/schemas/ControlValidationError.yaml
     '404':
       description: The session does not exist, or the account sent no such inline query.
+      content:
+        application/json:
+          schema:
+            allOf:
+              - $ref: ../components/schemas/ControlError.yaml
+              - properties:
+                  reason:
+                    enum:
+                      - inline_query_not_found
+                      - session_not_found

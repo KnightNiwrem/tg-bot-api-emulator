@@ -25,9 +25,41 @@ post:
             $ref: ../components/schemas/CreatedSupergroup.yaml
     '400':
       description: The request body is malformed or does not match the supergroup schema.
+      content:
+        application/json:
+          schema:
+            $ref: ../components/schemas/ControlValidationError.yaml
     '404':
       description: The session or account does not exist.
+      content:
+        application/json:
+          schema:
+            allOf:
+              - $ref: ../components/schemas/ControlError.yaml
+              - properties:
+                  reason:
+                    enum:
+                      - creator_account_not_found
+                      - session_not_found
     '409':
       description: Another account, bot, or supergroup of the session has the username.
+      content:
+        application/json:
+          schema:
+            allOf:
+              - $ref: ../components/schemas/ControlError.yaml
+              - properties:
+                  reason:
+                    enum:
+                      - username_taken
     '507':
       description: The test session cannot allocate another supergroup identifier.
+      content:
+        application/json:
+          schema:
+            allOf:
+              - $ref: ../components/schemas/ControlError.yaml
+              - properties:
+                  reason:
+                    enum:
+                      - identity_limit_reached

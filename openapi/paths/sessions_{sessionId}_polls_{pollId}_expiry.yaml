@@ -20,7 +20,27 @@ post:
             $ref: ../components/schemas/ExpiredPollResponse.yaml
     '404':
       description: No active test session has the supplied identifier, or the session has no such poll.
+      content:
+        application/json:
+          schema:
+            allOf:
+              - $ref: ../components/schemas/ControlError.yaml
+              - properties:
+                  reason:
+                    enum:
+                      - poll_not_found
+                      - session_not_found
     '409':
       description: >-
         The poll has no closing time, so it stays open until its bot stops it, or it is already
         closed.
+      content:
+        application/json:
+          schema:
+            allOf:
+              - $ref: ../components/schemas/ControlError.yaml
+              - properties:
+                  reason:
+                    enum:
+                      - poll_already_closed
+                      - poll_without_closing_time
