@@ -39,8 +39,8 @@ import { excludeRichMessageWebFiles } from '../web_file_parameter.ts';
 
 /** The methods that answer a user's callback query or inline query. */
 export const QUERY_ANSWER_METHODS: readonly BotApiMethod[] = [
-  { name: 'answerCallbackQuery', handler: handleAnswerCallbackQuery },
-  { name: 'answerInlineQuery', handler: handleAnswerInlineQuery },
+  { name: 'answerCallbackQuery', recordsActivity: true, handler: handleAnswerCallbackQuery },
+  { name: 'answerInlineQuery', recordsActivity: true, handler: handleAnswerInlineQuery },
 ];
 
 /** Telegram's description for a callback query answer whose URL its servers refuse. */

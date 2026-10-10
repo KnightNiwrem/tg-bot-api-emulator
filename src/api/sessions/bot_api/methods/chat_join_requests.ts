@@ -14,8 +14,8 @@ import { type BotApiRequestParameters, integerParameter } from '../request_param
 
 /** The methods that decide a user's request to join a chat. */
 export const CHAT_JOIN_REQUEST_METHODS: readonly BotApiMethod[] = [
-  { name: 'approveChatJoinRequest', handler: handleApproveChatJoinRequest },
-  { name: 'declineChatJoinRequest', handler: handleDeclineChatJoinRequest },
+  { name: 'approveChatJoinRequest', recordsActivity: true, handler: handleApproveChatJoinRequest },
+  { name: 'declineChatJoinRequest', recordsActivity: true, handler: handleDeclineChatJoinRequest },
 ];
 
 /** Telegram's descriptions for rejected join request decisions. */

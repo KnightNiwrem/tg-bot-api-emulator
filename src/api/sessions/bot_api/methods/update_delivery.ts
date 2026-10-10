@@ -18,10 +18,10 @@ import {
 
 /** The methods by which a bot receives updates: polling with `getUpdates`, or a webhook. */
 export const UPDATE_DELIVERY_METHODS: readonly BotApiMethod[] = [
-  { name: 'deleteWebhook', handler: handleDeleteWebhook },
-  { name: 'getUpdates', handler: handleGetUpdates },
-  { name: 'getWebhookInfo', handler: handleGetWebhookInfo },
-  { name: 'setWebhook', handler: handleSetWebhook },
+  { name: 'deleteWebhook', recordsActivity: true, handler: handleDeleteWebhook },
+  { name: 'getUpdates', recordsActivity: false, handler: handleGetUpdates },
+  { name: 'getWebhookInfo', recordsActivity: true, handler: handleGetWebhookInfo },
+  { name: 'setWebhook', recordsActivity: true, handler: handleSetWebhook },
 ];
 
 /** Telegram's wording, from `abort_long_poll` in the official Bot API server. */

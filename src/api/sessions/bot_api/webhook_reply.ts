@@ -7,16 +7,33 @@ import { decodeBotApiBodyParameters } from './request_parameters.ts';
 const METHOD_PARAMETER = 'method';
 
 /**
- * Methods, by lowercase name, that a webhook's response cannot run, as the official Bot API
- * server's `WebhookActor` ignores them: those that change the webhook or end the bot's session.
- * Methods whose names start with `get` are ignored too, since nothing would receive their result.
+ * Methods, by lowercase name, that change the webhook or end the bot's session, which a webhook's
+ * response cannot run.
  */
-const WEBHOOK_REPLY_EXCLUDED_METHODS: ReadonlySet<string> = new Set([
+const WEBHOOK_REPLY_EXCLUDED_METHOD_NAMES: ReadonlySet<string> = new Set([
   'deletewebhook',
   'setwebhook',
   'close',
   'logout',
 ]);
+
+/** The lowercase prefix of the names of methods whose result no one would receive. */
+const WEBHOOK_REPLY_EXCLUDED_METHOD_NAME_PREFIX = 'get';
+
+/**
+ * Whether a webhook's response that names a method runs nothing, as the official Bot API server's
+ * `WebhookActor` ignores it: a method that changes the webhook or ends the bot's session, or one
+ * whose name starts with `get`, in any letter case.
+ *
+ * The rule reads the name as the response gives it, before the method is looked up, so it covers
+ * methods the emulator does not implement too, such as `close` and `logOut`, and nothing a method's
+ * record declares can let a response run a method it excludes.
+ */
+function isExcludedFromWebhookReply(methodName: string): boolean {
+  const lowercaseMethodName = methodName.toLowerCase();
+  return WEBHOOK_REPLY_EXCLUDED_METHOD_NAMES.has(lowercaseMethodName) ||
+    lowercaseMethodName.startsWith(WEBHOOK_REPLY_EXCLUDED_METHOD_NAME_PREFIX);
+}
 
 /**
  * Runs the Bot API method that a webhook names in its successful response to an update, with the
@@ -35,11 +52,7 @@ export async function runWebhookReply(
     return;
   }
   const { [METHOD_PARAMETER]: methodName = '', ...parameters } = decoding.parameters;
-  const lowercaseMethodName = methodName.toLowerCase();
-  if (
-    methodName.length === 0 || WEBHOOK_REPLY_EXCLUDED_METHODS.has(lowercaseMethodName) ||
-    lowercaseMethodName.startsWith('get')
-  ) {
+  if (methodName.length === 0 || isExcludedFromWebhookReply(methodName)) {
     return;
   }
   const method = findBotApiMethod(methodName);

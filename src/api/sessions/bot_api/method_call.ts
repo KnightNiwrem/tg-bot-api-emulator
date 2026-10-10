@@ -37,6 +37,11 @@ export type BotApiMethodHandler = (
 /** A Bot API method the emulator implements, under its current name. */
 export interface BotApiMethod {
   readonly name: string;
+  /**
+   * Whether the session's bot activity records the method's calls, however they arrived and
+   * whatever they were answered: `getUpdates` calls are not, since the updates they deliver are.
+   */
+  readonly recordsActivity: boolean;
   readonly handler: BotApiMethodHandler;
 }
 

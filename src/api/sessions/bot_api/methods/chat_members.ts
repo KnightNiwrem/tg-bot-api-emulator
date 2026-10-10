@@ -29,15 +29,19 @@ import {
 
 /** The methods that read a chat's members, moderate or promote them, or make the bot leave. */
 export const CHAT_MEMBER_METHODS: readonly BotApiMethod[] = [
-  { name: 'banChatMember', handler: handleBanChatMember },
-  { name: 'getChatAdministrators', handler: handleGetChatAdministrators },
-  { name: 'getChatMember', handler: handleGetChatMember },
-  { name: 'getChatMemberCount', handler: handleGetChatMemberCount },
-  { name: 'leaveChat', handler: handleLeaveChat },
-  { name: 'promoteChatMember', handler: handlePromoteChatMember },
-  { name: 'restrictChatMember', handler: handleRestrictChatMember },
-  { name: 'setChatAdministratorCustomTitle', handler: handleSetChatAdministratorCustomTitle },
-  { name: 'unbanChatMember', handler: handleUnbanChatMember },
+  { name: 'banChatMember', recordsActivity: true, handler: handleBanChatMember },
+  { name: 'getChatAdministrators', recordsActivity: true, handler: handleGetChatAdministrators },
+  { name: 'getChatMember', recordsActivity: true, handler: handleGetChatMember },
+  { name: 'getChatMemberCount', recordsActivity: true, handler: handleGetChatMemberCount },
+  { name: 'leaveChat', recordsActivity: true, handler: handleLeaveChat },
+  { name: 'promoteChatMember', recordsActivity: true, handler: handlePromoteChatMember },
+  { name: 'restrictChatMember', recordsActivity: true, handler: handleRestrictChatMember },
+  {
+    name: 'setChatAdministratorCustomTitle',
+    recordsActivity: true,
+    handler: handleSetChatAdministratorCustomTitle,
+  },
+  { name: 'unbanChatMember', recordsActivity: true, handler: handleUnbanChatMember },
 ];
 
 /** Telegram's descriptions for rejected requests about chat members. */

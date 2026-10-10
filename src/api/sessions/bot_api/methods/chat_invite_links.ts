@@ -18,10 +18,10 @@ import {
 
 /** The methods that manage a chat's invite links: the bot's primary link and additional links. */
 export const CHAT_INVITE_LINK_METHODS: readonly BotApiMethod[] = [
-  { name: 'exportChatInviteLink', handler: handleExportChatInviteLink },
-  { name: 'createChatInviteLink', handler: handleCreateChatInviteLink },
-  { name: 'editChatInviteLink', handler: handleEditChatInviteLink },
-  { name: 'revokeChatInviteLink', handler: handleRevokeChatInviteLink },
+  { name: 'exportChatInviteLink', recordsActivity: true, handler: handleExportChatInviteLink },
+  { name: 'createChatInviteLink', recordsActivity: true, handler: handleCreateChatInviteLink },
+  { name: 'editChatInviteLink', recordsActivity: true, handler: handleEditChatInviteLink },
+  { name: 'revokeChatInviteLink', recordsActivity: true, handler: handleRevokeChatInviteLink },
 ];
 
 const PRIVATE_CHAT_HAS_NO_INVITE_LINKS_DESCRIPTION =

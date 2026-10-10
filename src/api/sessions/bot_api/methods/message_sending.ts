@@ -73,19 +73,19 @@ import { resolveRequestedInputFile } from '../web_file_parameter.ts';
 
 /** The methods that send a new message, or show a chat action before one. */
 export const MESSAGE_SENDING_METHODS: readonly BotApiMethod[] = [
-  { name: 'sendAudio', handler: handleSendAudio },
-  { name: 'sendChatAction', handler: handleSendChatAction },
-  { name: 'sendContact', handler: handleSendContact },
-  { name: 'sendDocument', handler: handleSendDocument },
-  { name: 'sendLocation', handler: handleSendLocation },
-  { name: 'sendMediaGroup', handler: handleSendMediaGroup },
-  { name: 'sendMessage', handler: handleSendMessage },
-  { name: 'sendMessageDraft', handler: handleSendMessageDraft },
-  { name: 'sendPhoto', handler: handleSendPhoto },
-  { name: 'sendPoll', handler: handleSendPoll },
-  { name: 'sendRichMessage', handler: handleSendRichMessage },
-  { name: 'sendVideo', handler: handleSendVideo },
-  { name: 'sendVoice', handler: handleSendVoice },
+  { name: 'sendAudio', recordsActivity: true, handler: handleSendAudio },
+  { name: 'sendChatAction', recordsActivity: true, handler: handleSendChatAction },
+  { name: 'sendContact', recordsActivity: true, handler: handleSendContact },
+  { name: 'sendDocument', recordsActivity: true, handler: handleSendDocument },
+  { name: 'sendLocation', recordsActivity: true, handler: handleSendLocation },
+  { name: 'sendMediaGroup', recordsActivity: true, handler: handleSendMediaGroup },
+  { name: 'sendMessage', recordsActivity: true, handler: handleSendMessage },
+  { name: 'sendMessageDraft', recordsActivity: true, handler: handleSendMessageDraft },
+  { name: 'sendPhoto', recordsActivity: true, handler: handleSendPhoto },
+  { name: 'sendPoll', recordsActivity: true, handler: handleSendPoll },
+  { name: 'sendRichMessage', recordsActivity: true, handler: handleSendRichMessage },
+  { name: 'sendVideo', recordsActivity: true, handler: handleSendVideo },
+  { name: 'sendVoice', recordsActivity: true, handler: handleSendVoice },
 ];
 
 /** Telegram's descriptions for a message draft its servers refuse. */

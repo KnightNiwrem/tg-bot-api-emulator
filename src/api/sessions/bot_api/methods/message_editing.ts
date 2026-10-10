@@ -51,11 +51,11 @@ import { resolveRequestedInputFile, type WebFileResolution } from '../web_file_p
 
 /** The methods that edit a sent message, or stop its poll. */
 export const MESSAGE_EDITING_METHODS: readonly BotApiMethod[] = [
-  { name: 'editMessageCaption', handler: handleEditMessageCaption },
-  { name: 'editMessageMedia', handler: handleEditMessageMedia },
-  { name: 'editMessageReplyMarkup', handler: handleEditMessageReplyMarkup },
-  { name: 'editMessageText', handler: handleEditMessageText },
-  { name: 'stopPoll', handler: handleStopPoll },
+  { name: 'editMessageCaption', recordsActivity: true, handler: handleEditMessageCaption },
+  { name: 'editMessageMedia', recordsActivity: true, handler: handleEditMessageMedia },
+  { name: 'editMessageReplyMarkup', recordsActivity: true, handler: handleEditMessageReplyMarkup },
+  { name: 'editMessageText', recordsActivity: true, handler: handleEditMessageText },
+  { name: 'stopPoll', recordsActivity: true, handler: handleStopPoll },
 ];
 
 /** TDLib's description for a rich message edit of an inline message that uploads a file. */

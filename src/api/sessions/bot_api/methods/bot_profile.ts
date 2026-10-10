@@ -30,18 +30,26 @@ import {
 
 /** The methods that read or change how the bot presents itself: its identity, commands, default administrator rights, menu button and descriptions. */
 export const BOT_PROFILE_METHODS: readonly BotApiMethod[] = [
-  { name: 'deleteMyCommands', handler: handleDeleteMyCommands },
-  { name: 'getChatMenuButton', handler: handleGetChatMenuButton },
-  { name: 'getMe', handler: handleGetMe },
-  { name: 'getMyCommands', handler: handleGetMyCommands },
-  { name: 'getMyDefaultAdministratorRights', handler: handleGetMyDefaultAdministratorRights },
-  { name: 'getMyDescription', handler: handleGetMyDescription },
-  { name: 'getMyShortDescription', handler: handleGetMyShortDescription },
-  { name: 'setChatMenuButton', handler: handleSetChatMenuButton },
-  { name: 'setMyCommands', handler: handleSetMyCommands },
-  { name: 'setMyDefaultAdministratorRights', handler: handleSetMyDefaultAdministratorRights },
-  { name: 'setMyDescription', handler: handleSetMyDescription },
-  { name: 'setMyShortDescription', handler: handleSetMyShortDescription },
+  { name: 'deleteMyCommands', recordsActivity: true, handler: handleDeleteMyCommands },
+  { name: 'getChatMenuButton', recordsActivity: true, handler: handleGetChatMenuButton },
+  { name: 'getMe', recordsActivity: true, handler: handleGetMe },
+  { name: 'getMyCommands', recordsActivity: true, handler: handleGetMyCommands },
+  {
+    name: 'getMyDefaultAdministratorRights',
+    recordsActivity: true,
+    handler: handleGetMyDefaultAdministratorRights,
+  },
+  { name: 'getMyDescription', recordsActivity: true, handler: handleGetMyDescription },
+  { name: 'getMyShortDescription', recordsActivity: true, handler: handleGetMyShortDescription },
+  { name: 'setChatMenuButton', recordsActivity: true, handler: handleSetChatMenuButton },
+  { name: 'setMyCommands', recordsActivity: true, handler: handleSetMyCommands },
+  {
+    name: 'setMyDefaultAdministratorRights',
+    recordsActivity: true,
+    handler: handleSetMyDefaultAdministratorRights,
+  },
+  { name: 'setMyDescription', recordsActivity: true, handler: handleSetMyDescription },
+  { name: 'setMyShortDescription', recordsActivity: true, handler: handleSetMyShortDescription },
 ];
 
 /** Telegram's descriptions for rejected command list changes. */
