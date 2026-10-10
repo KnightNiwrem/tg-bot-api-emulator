@@ -68,7 +68,9 @@ lives in `openapi/components/`, named after the component.
 - `deno task fmt` — format files
 - `deno task fmt:check` — check formatting
 - `deno task check` — type-check source and test files, and the TypeScript examples of this README
-  and the [TypeScript client guide](docs/clients/typescript/README.md)
+  and the [TypeScript client guide](docs/clients/typescript/README.md). This includes
+  [checking the emitted Bot API objects' types](tests/bot_api_type_conformance_test.ts) against
+  grammY's types at a pinned version, with the known deviations listed there.
 - `deno task openapi:lint` — lint the OpenAPI description with Redocly's recommended rules
 - `deno task architecture:check` — check that imports respect the layer boundaries set in
   `.fallowrc.json`

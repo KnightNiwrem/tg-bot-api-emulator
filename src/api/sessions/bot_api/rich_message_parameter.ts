@@ -10,6 +10,7 @@ import {
   EMPTY_RICH_TEXT,
   type HorizontalAlignment,
   isEmptyRichText,
+  isRichHeadingSize,
   type OrderedListItemLabelType,
   type RichBlock,
   type RichBlockCaption,
@@ -475,7 +476,7 @@ class RichMessageReader {
       case 'heading': {
         const block = this.#parse(headingBlockSchema, value);
         const text = this.#readRichText(block.text);
-        if (block.size < 1 || block.size > 6) {
+        if (!isRichHeadingSize(block.size)) {
           throw new RichMessageParameterError(HEADING_SIZE_INVALID_DESCRIPTION);
         }
         return { kind: 'heading', text, size: block.size };

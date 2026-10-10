@@ -269,11 +269,21 @@ export interface RichParagraphBlock {
   readonly text: RichText;
 }
 
+/** The relative font sizes of a section heading, from 1, the largest, to 6. */
+const RICH_HEADING_SIZES = [1, 2, 3, 4, 5, 6] as const;
+
+export type RichHeadingSize = typeof RICH_HEADING_SIZES[number];
+
+const RICH_HEADING_SIZE_SET: ReadonlySet<number> = new Set(RICH_HEADING_SIZES);
+
+export function isRichHeadingSize(size: number): size is RichHeadingSize {
+  return RICH_HEADING_SIZE_SET.has(size);
+}
+
 export interface RichHeadingBlock {
   readonly kind: 'heading';
   readonly text: RichText;
-  /** The relative font size, from 1, the largest, to 6. */
-  readonly size: number;
+  readonly size: RichHeadingSize;
 }
 
 export interface RichPreformattedBlock {
