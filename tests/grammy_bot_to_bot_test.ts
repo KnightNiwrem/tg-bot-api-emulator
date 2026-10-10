@@ -1,7 +1,6 @@
 import { Bot } from 'https://cdn.jsdelivr.net/gh/grammyjs/grammY@^1.46.0/src/bot.ts';
 
-import { TelegramEmulationClient } from '../clients/typescript/mod.ts';
-import { createTestApi } from './support/emulation_api.ts';
+import { createTestInProcessEmulator } from './support/in_process_emulator.ts';
 
 for (
   const { optedIn, coordinatorEnables, translatorEnables } of [
@@ -10,10 +9,9 @@ for (
   ]
 ) {
   Deno.test(`grammY bots complete a supergroup command-and-reply exchange when ${optedIn} opts in`, async () => {
-    const publicOrigin = 'http://emulator.example:9000';
-    const api = createTestApi(publicOrigin);
-    const fetch = createInProcessFetch(api.fetch);
-    const session = await new TelegramEmulationClient(publicOrigin, { fetch }).createSession();
+    await using emulator = createTestInProcessEmulator();
+    const { fetch } = emulator;
+    const session = await emulator.client.createSession();
     try {
       const coordinator = await session.createBot({
         first_name: 'Coordinator',
@@ -90,12 +88,6 @@ for (
       await session.end();
     }
   });
-}
-
-function createInProcessFetch(
-  handler: (request: Request) => Response | Promise<Response>,
-): typeof globalThis.fetch {
-  return async (input, init) => await handler(new Request(input, init));
 }
 
 function assertJson(actual: unknown, expected: unknown, message: string): void {

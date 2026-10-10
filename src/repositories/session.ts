@@ -18,4 +18,9 @@ export class SessionRepository {
   getById(sessionId: string): EmulationSession | undefined {
     return this.#sessions.get(sessionId);
   }
+
+  /** The IDs of the stored sessions, as they are when called. */
+  listIds(): readonly string[] {
+    return [...this.#sessions.keys()];
+  }
 }

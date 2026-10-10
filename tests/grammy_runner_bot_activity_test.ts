@@ -2,11 +2,16 @@ import { Bot } from 'https://cdn.jsdelivr.net/gh/grammyjs/grammY@^1.46.0/src/bot
 import { run } from '@grammyjs/runner/runner.ts';
 import { sequentialize } from '@grammyjs/runner/sequentialize.ts';
 
-import { latest, TelegramEmulationClient } from '../clients/typescript/mod.ts';
-import { createTestApi } from './support/emulation_api.ts';
+import { latest } from '../clients/typescript/mod.ts';
+import {
+  createTestInProcessEmulator,
+  type TestInProcessEmulator,
+} from './support/in_process_emulator.ts';
 
 Deno.test('a sequentialized grammY runner keeps each chat in order while chats interleave', async () => {
-  const { session, fetch, createdBot, ada, grace } = await createFixture();
+  await using emulator = createTestInProcessEmulator();
+  const { fetch } = emulator;
+  const { session, createdBot, ada, grace } = await createFixture(emulator);
   const grammyBot = new Bot(createdBot.token, {
     client: { apiRoot: session.botApiRoot, fetch },
   });
@@ -61,7 +66,9 @@ Deno.test('a sequentialized grammY runner keeps each chat in order while chats i
 });
 
 Deno.test('a grammY runner without sequentialize keeps the order each handler awaits', async () => {
-  const { session, fetch, createdBot, ada, grace } = await createFixture();
+  await using emulator = createTestInProcessEmulator();
+  const { fetch } = emulator;
+  const { session, createdBot, ada, grace } = await createFixture(emulator);
   const grammyBot = new Bot(createdBot.token, {
     client: { apiRoot: session.botApiRoot, fetch },
   });
@@ -98,23 +105,14 @@ Deno.test('a grammY runner without sequentialize keeps the order each handler aw
   }
 });
 
-async function createFixture() {
-  const publicOrigin = 'http://emulator.example:9000';
-  const api = createTestApi(publicOrigin);
-  const fetch = createInProcessFetch(api.fetch);
-  const session = await new TelegramEmulationClient(publicOrigin, { fetch }).createSession();
+async function createFixture({ client }: TestInProcessEmulator) {
+  const session = await client.createSession();
   const createdBot = await session.createBot({ first_name: 'Shop Bot', username: 'shop_bot' });
   const { account: ada } = await session.createAccount({ first_name: 'Ada' });
   const { account: grace } = await session.createAccount({ first_name: 'Grace' });
-  return { session, fetch, createdBot, ada, grace };
+  return { session, createdBot, ada, grace };
 }
 
 function delay(milliseconds: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, milliseconds));
-}
-
-function createInProcessFetch(
-  handler: (request: Request) => Response | Promise<Response>,
-): typeof globalThis.fetch {
-  return async (input, init) => await handler(new Request(input, init));
 }

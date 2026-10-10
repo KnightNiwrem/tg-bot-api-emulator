@@ -1,4 +1,5 @@
-import { createTestApi } from '../../tests/support/emulation_api.ts';
+import { TEST_PUBLIC_ORIGIN } from '../../tests/support/emulation_api.ts';
+import { createTestInProcessEmulator } from '../../tests/support/in_process_emulator.ts';
 import { MAX_TELEGRAM_USER_ID } from './constants.ts';
 import {
   type Audio,
@@ -30,10 +31,11 @@ Deno.test('TypeScript client validates the official Telegram user ID range', () 
 });
 
 Deno.test('TypeScript client manages all currently implemented session resources', async () => {
-  const { api, client, publicOrigin } = createInProcessClient();
+  await using emulator = createTestInProcessEmulator();
+  const { client } = emulator;
 
   const session = await client.createSession();
-  if (session.botApiRoot !== `${publicOrigin}/sessions/${session.id}/bot-api`) {
+  if (session.botApiRoot !== `${TEST_PUBLIC_ORIGIN}/sessions/${session.id}/bot-api`) {
     throw new Error('Expected the session client to expose its Bot API root');
   }
   if (session.uploadProfile !== 'cloud') {
@@ -94,7 +96,7 @@ Deno.test('TypeScript client manages all currently implemented session resources
     throw new Error('Expected the client to return bot command entities only where present');
   }
 
-  const replyResponse = await api.request(
+  const replyResponse = await emulator.request(
     `/sessions/${session.id}/bot-api/bot${createdBot.token}/sendMessage`,
     {
       method: 'POST',
@@ -154,7 +156,7 @@ Deno.test('TypeScript client manages all currently implemented session resources
   }
 
   const botApiPath = `/sessions/${session.id}/bot-api/bot${createdBot.token}`;
-  const menuResponse = await api.request(`${botApiPath}/sendMessage`, {
+  const menuResponse = await emulator.request(`${botApiPath}/sendMessage`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({
@@ -215,7 +217,7 @@ Deno.test('TypeScript client manages all currently implemented session resources
   ) {
     throw new Error('Expected the client to return the unanswered callback query');
   }
-  const answerResponse = await api.request(`${botApiPath}/answerCallbackQuery`, {
+  const answerResponse = await emulator.request(`${botApiPath}/answerCallbackQuery`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ callback_query_id: callbackQuery.id, text: 'Saved' }),
@@ -242,7 +244,7 @@ Deno.test('TypeScript client manages all currently implemented session resources
     throw new Error('Expected the client to create an expired callback query');
   }
 
-  const setCommandsResponse = await api.request(`${botApiPath}/setMyCommands`, {
+  const setCommandsResponse = await emulator.request(`${botApiPath}/setMyCommands`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ commands: [{ command: 'start', description: 'Start over' }] }),
@@ -262,7 +264,7 @@ Deno.test('TypeScript client manages all currently implemented session resources
     );
   }
 
-  const setMenuButtonResponse = await api.request(`${botApiPath}/setChatMenuButton`, {
+  const setMenuButtonResponse = await emulator.request(`${botApiPath}/setChatMenuButton`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ menu_button: { type: 'commands' } }),
@@ -283,7 +285,7 @@ Deno.test('TypeScript client manages all currently implemented session resources
   if (await createdAccount.account.getReplyInterface({ chat }) !== null) {
     throw new Error('Expected no reply interface before the bot sends one');
   }
-  const keyboardResponse = await api.request(`${botApiPath}/sendMessage`, {
+  const keyboardResponse = await emulator.request(`${botApiPath}/sendMessage`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({
@@ -332,13 +334,13 @@ Deno.test('TypeScript client manages all currently implemented session resources
   }
 
   await createdAccount.account.blockBot({ botId: createdBot.bot.id });
-  const blockedReplyResponse = await api.request(`${botApiPath}/sendMessage`, {
+  const blockedReplyResponse = await emulator.request(`${botApiPath}/sendMessage`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ chat_id: createdAccount.account.id, text: 'Hello?' }),
   });
   await createdAccount.account.unblockBot({ botId: createdBot.bot.id });
-  const unblockedReplyResponse = await api.request(`${botApiPath}/sendMessage`, {
+  const unblockedReplyResponse = await emulator.request(`${botApiPath}/sendMessage`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ chat_id: createdAccount.account.id, text: 'Hello again' }),
@@ -351,7 +353,8 @@ Deno.test('TypeScript client manages all currently implemented session resources
 });
 
 Deno.test('TypeScript client runs supergroups with members, messages, and buttons', async () => {
-  const { api, client } = createInProcessClient();
+  await using emulator = createTestInProcessEmulator();
+  const { client } = emulator;
   const session = await client.createSession();
   const { token, bot } = await session.createBot({
     first_name: 'Test Bot',
@@ -383,7 +386,7 @@ Deno.test('TypeScript client runs supergroups with members, messages, and button
   }
 
   const botApiPath = `/sessions/${session.id}/bot-api/bot${token}`;
-  const menuResponse = await api.request(`${botApiPath}/sendMessage`, {
+  const menuResponse = await emulator.request(`${botApiPath}/sendMessage`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({
@@ -431,7 +434,7 @@ Deno.test('TypeScript client runs supergroups with members, messages, and button
     throw new Error('Expected the client to exchange messages and press buttons in the supergroup');
   }
 
-  const chatActionResponse = await api.request(`${botApiPath}/sendChatAction`, {
+  const chatActionResponse = await emulator.request(`${botApiPath}/sendChatAction`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ chat_id: supergroup.id, action: 'typing' }),
@@ -446,7 +449,7 @@ Deno.test('TypeScript client runs supergroups with members, messages, and button
     throw new Error(`Expected the client to see the bot typing, received ${chatActions}`);
   }
 
-  const groupCommandsResponse = await api.request(`${botApiPath}/setMyCommands`, {
+  const groupCommandsResponse = await emulator.request(`${botApiPath}/setMyCommands`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({
@@ -485,7 +488,7 @@ Deno.test('TypeScript client runs supergroups with members, messages, and button
     );
   }
 
-  const externalReplyResponse = await api.request(`${botApiPath}/sendMessage`, {
+  const externalReplyResponse = await emulator.request(`${botApiPath}/sendMessage`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({
@@ -518,7 +521,7 @@ Deno.test('TypeScript client runs supergroups with members, messages, and button
 
   // Only an administrator with the right deletes another member's message.
   const deleteGreeting = () =>
-    api.request(`${botApiPath}/deleteMessage`, {
+    emulator.request(`${botApiPath}/deleteMessage`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ chat_id: supergroup.id, message_id: greeting.message_id }),
@@ -543,7 +546,7 @@ Deno.test('TypeScript client runs supergroups with members, messages, and button
   const protectedGreeting = (await owner.getMessages({ chat }))
     .find(({ message_id }) => message_id === greeting.message_id);
   await owner.setContentProtection({ chat, hasProtectedContent: false });
-  const titledMemberResponse = await api.request(`${botApiPath}/getChatMember`, {
+  const titledMemberResponse = await emulator.request(`${botApiPath}/getChatMember`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ chat_id: supergroup.id, user_id: bot.id }),
@@ -566,7 +569,7 @@ Deno.test('TypeScript client runs supergroups with members, messages, and button
     );
   }
 
-  const keyboardResponse = await api.request(`${botApiPath}/sendMessage`, {
+  const keyboardResponse = await emulator.request(`${botApiPath}/sendMessage`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({
@@ -618,7 +621,8 @@ Deno.test('TypeScript client runs supergroups with members, messages, and button
 });
 
 Deno.test('TypeScript client restricts members and changes what members may do by default', async () => {
-  const { client } = createInProcessClient();
+  await using emulator = createTestInProcessEmulator();
+  const { client } = emulator;
   const session = await client.createSession();
   const { account: owner } = await session.createAccount({ first_name: 'Ada' });
   const { account: member } = await session.createAccount({ first_name: 'Grace' });
@@ -677,7 +681,8 @@ Deno.test('TypeScript client restricts members and changes what members may do b
 });
 
 Deno.test('TypeScript client lets administrator accounts promote and restrict within their rights', async () => {
-  const { client } = createInProcessClient();
+  await using emulator = createTestInProcessEmulator();
+  const { client } = emulator;
   const session = await client.createSession();
   const { account: owner } = await session.createAccount({ first_name: 'Ada' });
   const { account: grace } = await session.createAccount({ first_name: 'Grace' });
@@ -749,7 +754,8 @@ Deno.test('TypeScript client lets administrator accounts promote and restrict wi
 });
 
 Deno.test('TypeScript client joins supergroups through invite links and by username', async () => {
-  const { api, client } = createInProcessClient();
+  await using emulator = createTestInProcessEmulator();
+  const { client } = emulator;
   const session = await client.createSession();
   const { bot, token } = await session.createBot({
     first_name: 'Inviter',
@@ -763,7 +769,7 @@ Deno.test('TypeScript client joins supergroups through invite links and by usern
   const chat = { type: 'supergroup', chatId: supergroup.id } as const;
   await owner.addChatMember({ chat, userId: bot.id });
   await owner.promoteChatMember({ chat, userId: bot.id, rights: { can_invite_users: true } });
-  const creation = await api.request(
+  const creation = await emulator.request(
     `/sessions/${session.id}/bot-api/bot${token}/createChatInviteLink`,
     {
       method: 'POST',
@@ -818,7 +824,8 @@ Deno.test('TypeScript client joins supergroups through invite links and by usern
 });
 
 Deno.test('TypeScript client requests to join through a link and lists pending requests', async () => {
-  const { api, client } = createInProcessClient();
+  await using emulator = createTestInProcessEmulator();
+  const { client } = emulator;
   const session = await client.createSession();
   const { bot, token } = await session.createBot({
     first_name: 'Inviter',
@@ -830,7 +837,7 @@ Deno.test('TypeScript client requests to join through a link and lists pending r
   const chat = { type: 'supergroup', chatId: supergroup.id } as const;
   await owner.addChatMember({ chat, userId: bot.id });
   await owner.promoteChatMember({ chat, userId: bot.id, rights: { can_invite_users: true } });
-  const creation = await api.request(
+  const creation = await emulator.request(
     `/sessions/${session.id}/bot-api/bot${token}/createChatInviteLink`,
     {
       method: 'POST',
@@ -860,7 +867,8 @@ Deno.test('TypeScript client requests to join through a link and lists pending r
 });
 
 Deno.test('TypeScript client approves and declines join requests as an administrator account', async () => {
-  const { api, client } = createInProcessClient();
+  await using emulator = createTestInProcessEmulator();
+  const { client } = emulator;
   const session = await client.createSession();
   const { bot, token } = await session.createBot({
     first_name: 'Inviter',
@@ -876,7 +884,7 @@ Deno.test('TypeScript client approves and declines join requests as an administr
   await owner.promoteChatMember({ chat, userId: bot.id, rights: { can_invite_users: true } });
   await owner.addChatMember({ chat, userId: kay.id });
   await owner.promoteChatMember({ chat, userId: kay.id, rights: { can_invite_users: true } });
-  const creation = await api.request(
+  const creation = await emulator.request(
     `/sessions/${session.id}/bot-api/bot${token}/createChatInviteLink`,
     {
       method: 'POST',
@@ -918,7 +926,8 @@ Deno.test('TypeScript client approves and declines join requests as an administr
 });
 
 Deno.test('TypeScript client follows an invite link through its edits and revocation', async () => {
-  const { api, client } = createInProcessClient();
+  await using emulator = createTestInProcessEmulator();
+  const { client } = emulator;
   const session = await client.createSession();
   const { bot, token } = await session.createBot({
     first_name: 'Inviter',
@@ -933,7 +942,7 @@ Deno.test('TypeScript client follows an invite link through its edits and revoca
   await owner.addChatMember({ chat, userId: bot.id });
   await owner.promoteChatMember({ chat, userId: bot.id, rights: { can_invite_users: true } });
   const callBot = async (method: string, parameters: object) =>
-    await (await api.request(`/sessions/${session.id}/bot-api/bot${token}/${method}`, {
+    await (await emulator.request(`/sessions/${session.id}/bot-api/bot${token}/${method}`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(parameters),
@@ -1007,7 +1016,8 @@ Deno.test('TypeScript client follows an invite link through its edits and revoca
 });
 
 Deno.test('TypeScript client shows and expires the contact of a pending join request', async () => {
-  const { api, client } = createInProcessClient();
+  await using emulator = createTestInProcessEmulator();
+  const { client } = emulator;
   const session = await client.createSession();
   const { bot, token } = await session.createBot({
     first_name: 'Gatekeeper',
@@ -1020,12 +1030,12 @@ Deno.test('TypeScript client shows and expires the contact of a pending join req
   await owner.addChatMember({ chat, userId: bot.id });
   await owner.promoteChatMember({ chat, userId: bot.id, rights: { can_invite_users: true } });
   const callBot = async (method: string, parameters: object) =>
-    (await api.request(`/sessions/${session.id}/bot-api/bot${token}/${method}`, {
+    (await emulator.request(`/sessions/${session.id}/bot-api/bot${token}/${method}`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(parameters),
     })).status;
-  const creation = await api.request(
+  const creation = await emulator.request(
     `/sessions/${session.id}/bot-api/bot${token}/createChatInviteLink`,
     {
       method: 'POST',
@@ -1076,7 +1086,8 @@ Deno.test('TypeScript client shows and expires the contact of a pending join req
 });
 
 Deno.test('TypeScript client changes a supergroup title and reads its service message', async () => {
-  const { client } = createInProcessClient();
+  await using emulator = createTestInProcessEmulator();
+  const { client } = emulator;
   const session = await client.createSession();
   const { account: owner } = await session.createAccount({ first_name: 'Ada' });
   const supergroup = await owner.createSupergroup({ title: 'Team' });
@@ -1100,7 +1111,8 @@ Deno.test('TypeScript client changes a supergroup title and reads its service me
 });
 
 Deno.test('TypeScript client pins and unpins messages and reads the pinned ones', async () => {
-  const { client } = createInProcessClient();
+  await using emulator = createTestInProcessEmulator();
+  const { client } = emulator;
   const session = await client.createSession();
   const { bot } = await session.createBot({ first_name: 'Test Bot', username: 'test_bot' });
   const { account } = await session.createAccount({ first_name: 'Ada' });
@@ -1169,7 +1181,8 @@ Deno.test('TypeScript client pins and unpins messages and reads the pinned ones'
 });
 
 Deno.test('TypeScript client sends, edits, and downloads photos and documents', async () => {
-  const { api, client } = createInProcessClient();
+  await using emulator = createTestInProcessEmulator();
+  const { client } = emulator;
   const session = await client.createSession();
   const { token, bot } = await session.createBot({ first_name: 'Test Bot', username: 'test_bot' });
   const { account } = await session.createAccount({ first_name: 'Ada' });
@@ -1230,15 +1243,18 @@ Deno.test('TypeScript client sends, edits, and downloads photos and documents', 
     throw new Error('Expected the client to send, edit, and download media');
   }
 
-  const botReply = await api.request(`/sessions/${session.id}/bot-api/bot${token}/sendDocument`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({
-      chat_id: account.id,
-      document: document.document?.file_id,
-      caption: 'Back to you',
-    }),
-  });
+  const botReply = await emulator.request(
+    `/sessions/${session.id}/bot-api/bot${token}/sendDocument`,
+    {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        chat_id: account.id,
+        document: document.document?.file_id,
+        caption: 'Back to you',
+      }),
+    },
+  );
   const history = await account.getMessages({ chat: to });
   if (
     botReply.status !== 200 ||
@@ -1261,7 +1277,8 @@ Deno.test('TypeScript client sends, edits, and downloads photos and documents', 
 });
 
 Deno.test('TypeScript client sends videos and voice notes that bots receive and send back', async () => {
-  const { api, client } = createInProcessClient();
+  await using emulator = createTestInProcessEmulator();
+  const { client } = emulator;
   const session = await client.createSession();
   const { token, bot } = await session.createBot({ first_name: 'Test Bot', username: 'test_bot' });
   const { account } = await session.createAccount({ first_name: 'Ada' });
@@ -1306,7 +1323,7 @@ Deno.test('TypeScript client sends videos and voice notes that bots receive and 
     throw new Error(`Expected the client to send videos, received ${JSON.stringify(video)}`);
   }
 
-  const botReply = await api.request(`/sessions/${session.id}/bot-api/bot${token}/sendVideo`, {
+  const botReply = await emulator.request(`/sessions/${session.id}/bot-api/bot${token}/sendVideo`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({
@@ -1344,11 +1361,14 @@ Deno.test('TypeScript client sends videos and voice notes that bots receive and 
   ) {
     throw new Error(`Expected the client to send a voice note, received ${JSON.stringify(voice)}`);
   }
-  const botVoiceReply = await api.request(`/sessions/${session.id}/bot-api/bot${token}/sendVoice`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ chat_id: account.id, voice: voice.voice?.file_id, caption: 'Noted' }),
-  });
+  const botVoiceReply = await emulator.request(
+    `/sessions/${session.id}/bot-api/bot${token}/sendVoice`,
+    {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ chat_id: account.id, voice: voice.voice?.file_id, caption: 'Noted' }),
+    },
+  );
   const voiceReply = (await account.getMessages({ chat: to })).at(-1);
   if (
     botVoiceReply.status !== 200 ||
@@ -1373,7 +1393,8 @@ Deno.test('TypeScript client sends videos and voice notes that bots receive and 
 });
 
 Deno.test("TypeScript client sends audio files and albums, and reads the bot's audio and results", async () => {
-  const { api, client } = createInProcessClient();
+  await using emulator = createTestInProcessEmulator();
+  const { client } = emulator;
   const session = await client.createSession();
   const { token, bot } = await session.createBot({
     first_name: 'Music Bot',
@@ -1427,7 +1448,7 @@ Deno.test("TypeScript client sends audio files and albums, and reads the bot's a
   form.append('chat_id', String(account.id));
   form.append('audio', sent.audio?.file_id ?? '');
   form.append('caption', 'Thanks');
-  const botAudio = await api.request(`/sessions/${session.id}/bot-api/bot${token}/sendAudio`, {
+  const botAudio = await emulator.request(`/sessions/${session.id}/bot-api/bot${token}/sendAudio`, {
     method: 'POST',
     body: form,
   });
@@ -1436,7 +1457,7 @@ Deno.test("TypeScript client sends audio files and albums, and reads the bot's a
   coverForm.append('title', 'Cover');
   coverForm.append('audio', new File([track], 'cover.mp3'));
   coverForm.append('thumbnail', new File([gifHeader(32, 32)], 'cover.gif'));
-  const botCover = await api.request(`/sessions/${session.id}/bot-api/bot${token}/sendAudio`, {
+  const botCover = await emulator.request(`/sessions/${session.id}/bot-api/bot${token}/sendAudio`, {
     method: 'POST',
     body: coverForm,
   });
@@ -1451,7 +1472,7 @@ Deno.test("TypeScript client sends audio files and albums, and reads the bot's a
 
   // An inline audio result lists its title and performer.
   const inlineQuery = await account.sendInlineQuery({ bot_id: bot.id, chat: to, query: 'music' });
-  await api.request(`/sessions/${session.id}/bot-api/bot${token}/answerInlineQuery`, {
+  await emulator.request(`/sessions/${session.id}/bot-api/bot${token}/answerInlineQuery`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({
@@ -1491,7 +1512,8 @@ function gifHeader(width: number, height: number): Uint8Array<ArrayBuffer> {
 }
 
 Deno.test('TypeScript client sends albums to private chats and supergroups', async () => {
-  const { client } = createInProcessClient();
+  await using emulator = createTestInProcessEmulator();
+  const { client } = emulator;
   const session = await client.createSession();
   const { bot } = await session.createBot({ first_name: 'Test Bot', username: 'test_bot' });
   const { account } = await session.createAccount({ first_name: 'Ada' });
@@ -1567,7 +1589,8 @@ Deno.test('TypeScript client sends albums to private chats and supergroups', asy
 });
 
 Deno.test('TypeScript client reads video and voice note blocks of rich messages', async () => {
-  const { api, client } = createInProcessClient();
+  await using emulator = createTestInProcessEmulator();
+  const { client } = emulator;
   const session = await client.createSession();
   const { token, bot } = await session.createBot({ first_name: 'Clip Bot', username: 'clip_bot' });
   const { account } = await session.createAccount({ first_name: 'Ada' });
@@ -1599,7 +1622,7 @@ Deno.test('TypeScript client reads video and voice note blocks of rich messages'
   form.append('clip', new File([new Uint8Array([0, 0, 0, 24])], 'launch.mp4'));
   form.append('still', new File([gifHeader(32, 18)], 'still.gif'));
   form.append('memo', new File(['OggS'], 'memo.ogg'));
-  const sendResponse = await api.request(
+  const sendResponse = await emulator.request(
     `/sessions/${session.id}/bot-api/bot${token}/sendRichMessage`,
     { method: 'POST', body: form },
   );
@@ -1622,14 +1645,15 @@ Deno.test('TypeScript client reads video and voice note blocks of rich messages'
 });
 
 Deno.test('TypeScript client reads rich messages and presses their buttons', async () => {
-  const { api, client } = createInProcessClient();
+  await using emulator = createTestInProcessEmulator();
+  const { client } = emulator;
   const session = await client.createSession();
   const { token, bot } = await session.createBot({ first_name: 'Test Bot', username: 'test_bot' });
   const { account } = await session.createAccount({ first_name: 'Ada' });
   const to = { type: 'private', botId: bot.id } as const;
   await account.sendMessage({ to, text: 'Hello' });
 
-  const sendResponse = await api.request(
+  const sendResponse = await emulator.request(
     `/sessions/${session.id}/bot-api/bot${token}/sendRichMessage`,
     {
       method: 'POST',
@@ -1729,7 +1753,8 @@ Deno.test('TypeScript client reads rich messages and presses their buttons', asy
 });
 
 Deno.test('TypeScript client votes in polls of private chats and supergroups', async () => {
-  const { api, client } = createInProcessClient();
+  await using emulator = createTestInProcessEmulator();
+  const { client } = emulator;
   const session = await client.createSession();
   const { token, bot } = await session.createBot({ first_name: 'Test Bot', username: 'test_bot' });
   const { account } = await session.createAccount({ first_name: 'Ada' });
@@ -1739,11 +1764,14 @@ Deno.test('TypeScript client votes in polls of private chats and supergroups', a
   const groupChat = { type: 'supergroup', chatId: supergroup.id } as const;
   await account.addChatMember({ chat: groupChat, userId: bot.id });
   const sendPoll = async (chatId: number, parameters: Record<string, unknown> = {}) => {
-    const response = await api.request(`/sessions/${session.id}/bot-api/bot${token}/sendPoll`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ chat_id: chatId, question: 'Lunch?', ...parameters }),
-    });
+    const response = await emulator.request(
+      `/sessions/${session.id}/bot-api/bot${token}/sendPoll`,
+      {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ chat_id: chatId, question: 'Lunch?', ...parameters }),
+      },
+    );
     return (await response.json() as { result: { message_id: number } }).result.message_id;
   };
 
@@ -1816,7 +1844,8 @@ Deno.test('TypeScript client votes in polls of private chats and supergroups', a
 });
 
 Deno.test('TypeScript client sends inline queries and results through an inline bot', async () => {
-  const { api, client } = createInProcessClient();
+  await using emulator = createTestInProcessEmulator();
+  const { client } = emulator;
   const session = await client.createSession();
   const { token, bot } = await session.createBot({
     first_name: 'Cats Bot',
@@ -1834,7 +1863,7 @@ Deno.test('TypeScript client sends inline queries and results through an inline 
     query: 'cats',
     location: { latitude: 51.5, longitude: -0.12, horizontal_accuracy: 20 },
   });
-  const answerResponse = await api.request(
+  const answerResponse = await emulator.request(
     `/sessions/${session.id}/bot-api/bot${token}/answerInlineQuery`,
     {
       method: 'POST',
@@ -1871,7 +1900,8 @@ Deno.test('TypeScript client sends inline queries and results through an inline 
 });
 
 Deno.test('TypeScript client queues rate limit answers for a bot', async () => {
-  const { api, client } = createInProcessClient();
+  await using emulator = createTestInProcessEmulator();
+  const { client } = emulator;
   const session = await client.createSession();
   const createdBot = await session.createBot({ first_name: 'Test Bot', username: 'test_bot' });
 
@@ -1880,7 +1910,7 @@ Deno.test('TypeScript client queues rate limit answers for a bot', async () => {
     method: 'getme',
     retry_after: 2,
   });
-  const limitedResponse = await api.request(
+  const limitedResponse = await emulator.request(
     `/sessions/${session.id}/bot-api/bot${createdBot.token}/getMe`,
   );
   const remaining = await session.getRateLimitResponses(createdBot.bot.id);
@@ -1895,7 +1925,8 @@ Deno.test('TypeScript client queues rate limit answers for a bot', async () => {
 });
 
 Deno.test('TypeScript client reports HTTP failures with request details', async () => {
-  const { client } = createInProcessClient();
+  await using emulator = createTestInProcessEmulator();
+  const { client } = emulator;
   const session = await client.createSession();
   await session.end();
 
@@ -1938,7 +1969,8 @@ Deno.test('TypeScript client rejects a successful response that violates the con
 });
 
 Deno.test('TypeScript client shares contacts and locations and answers their requests', async () => {
-  const { api, client } = createInProcessClient();
+  await using emulator = createTestInProcessEmulator();
+  const { client } = emulator;
   const session = await client.createSession();
   const { token, bot } = await session.createBot({ first_name: 'Test Bot', username: 'test_bot' });
   const { account } = await session.createAccount({ first_name: 'Ada', phone_number: '15550100' });
@@ -1968,15 +2000,18 @@ Deno.test('TypeScript client shares contacts and locations and answers their req
     );
   }
 
-  const keyboard = await api.request(`/sessions/${session.id}/bot-api/bot${token}/sendMessage`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({
-      chat_id: account.id,
-      text: 'Your number?',
-      reply_markup: { keyboard: [[{ text: 'Share', request_contact: true }]] },
-    }),
-  });
+  const keyboard = await emulator.request(
+    `/sessions/${session.id}/bot-api/bot${token}/sendMessage`,
+    {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        chat_id: account.id,
+        text: 'Your number?',
+        reply_markup: { keyboard: [[{ text: 'Share', request_contact: true }]] },
+      }),
+    },
+  );
   const keyboardMessageId =
     (await keyboard.json() as { result: { message_id: number } }).result.message_id;
   const replyInterface = await account.getReplyInterface({ chat: to });
@@ -2000,7 +2035,7 @@ Deno.test('TypeScript client shares contacts and locations and answers their req
     to,
     location: { latitude: 51.5007, longitude: -0.1246, horizontal_accuracy: 7.5 },
   });
-  await api.request(`/sessions/${session.id}/bot-api/bot${token}/sendMessage`, {
+  await emulator.request(`/sessions/${session.id}/bot-api/bot${token}/sendMessage`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({
@@ -2031,7 +2066,7 @@ Deno.test('TypeScript client shares contacts and locations and answers their req
   const groupChat = { type: 'supergroup', chatId: supergroup.id } as const;
   await account.addChatMember({ chat: groupChat, userId: bot.id });
   for (const repliedMessageId of [own.message_id, location.message_id]) {
-    await api.request(`/sessions/${session.id}/bot-api/bot${token}/sendMessage`, {
+    await emulator.request(`/sessions/${session.id}/bot-api/bot${token}/sendMessage`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
@@ -2066,25 +2101,9 @@ Deno.test('TypeScript client shares contacts and locations and answers their req
   throw new Error('Expected an account without a phone number to have no contact to share');
 });
 
-/** Creates an in-process emulation API and a client that reaches it without a network. */
-function createInProcessClient() {
-  const publicOrigin = 'http://emulator.example:9000';
-  const api = createTestApi(publicOrigin);
-  const client = new TelegramEmulationClient(publicOrigin, {
-    fetch: createInProcessFetch(api.fetch),
-  });
-  return { api, client, publicOrigin };
-}
-
-function createInProcessFetch(
-  handler: (request: Request) => Response | Promise<Response>,
-): typeof globalThis.fetch {
-  return async (input, init) => await handler(new Request(input, init));
-}
-
 Deno.test('TypeScript client registers web resources that bots send files from', async () => {
-  const { api, client } = createInProcessClient();
-  const fetch = createInProcessFetch(api.fetch);
+  await using emulator = createTestInProcessEmulator();
+  const { client, fetch } = emulator;
   const session = await client.createSession();
   const { token, bot } = await session.createBot({ first_name: 'Files', username: 'files_bot' });
   const { account } = await session.createAccount({ first_name: 'Ada' });

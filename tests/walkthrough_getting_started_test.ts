@@ -1,16 +1,13 @@
 import { Bot } from 'https://cdn.jsdelivr.net/gh/grammyjs/grammY@^1.46.0/src/bot.ts';
 
-import { TelegramEmulationClient } from '../clients/typescript/mod.ts';
-import { createTestApi } from './support/emulation_api.ts';
+import { createTestInProcessEmulator } from './support/in_process_emulator.ts';
 
 // Follows docs/clients/typescript/getting-started.md, whose snippet `deno task check` type-checks,
 // with an in-process emulator in place of the one `deno task start` serves.
 Deno.test('the getting-started test: the bot greets an account that sends /start', async () => {
-  const publicOrigin = 'http://emulator.example:9000';
-  const api = createTestApi(publicOrigin);
-  const fetch = createInProcessFetch(api.fetch);
-  const emulator = new TelegramEmulationClient(publicOrigin, { fetch });
-  const session = await emulator.createSession();
+  await using emulator = createTestInProcessEmulator();
+  const { fetch } = emulator;
+  const session = await emulator.client.createSession();
   try {
     const { token, bot: botProfile } = await session.createBot({
       first_name: 'Greeter',
@@ -57,9 +54,3 @@ Deno.test('the getting-started test: the bot greets an account that sends /start
     await session.end();
   }
 });
-
-function createInProcessFetch(
-  handler: (request: Request) => Response | Promise<Response>,
-): typeof globalThis.fetch {
-  return async (input, init) => await handler(new Request(input, init));
-}

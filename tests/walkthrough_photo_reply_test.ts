@@ -3,8 +3,10 @@ import { GrammyError } from 'https://cdn.jsdelivr.net/gh/grammyjs/grammY@^1.46.0
 import { InputFile } from 'https://cdn.jsdelivr.net/gh/grammyjs/grammY@^1.46.0/src/types.ts';
 import { run } from '@grammyjs/runner/runner.ts';
 
-import { TelegramEmulationClient } from '../clients/typescript/mod.ts';
-import { createTestApi } from './support/emulation_api.ts';
+import {
+  createTestInProcessEmulator,
+  type TestInProcessEmulator,
+} from './support/in_process_emulator.ts';
 
 /** A 2×1 GIF, small enough to spell out and an image the emulator reads dimensions from. */
 const RECEIPT_IMAGE = new Uint8Array([0x47, 0x49, 0x46, 0x38, 0x39, 0x61, 2, 0, 1, 0, 0, 0, 0]);
@@ -13,7 +15,9 @@ const PROCESSED_RECEIPT = new TextEncoder().encode('Receipt total: 12.50');
 // Follows "Replying to a photo with a document" in docs/clients/typescript/media-and-files.md,
 // whose snippet `deno task check` type-checks.
 Deno.test('the walkthrough photo step reads the delayed bot reply, not the upload or other activity', async () => {
-  const { session, fetch, createdBot, ada, grace } = await createFixture();
+  await using emulator = createTestInProcessEmulator();
+  const { fetch } = emulator;
+  const { session, createdBot, ada, grace } = await createFixture(emulator);
   const botId = createdBot.bot.id;
   const chat = { type: 'private', botId } as const;
   const photoHandling = Promise.withResolvers<void>();
@@ -105,22 +109,13 @@ Deno.test('the walkthrough photo step reads the delayed bot reply, not the uploa
   }
 });
 
-async function createFixture() {
-  const publicOrigin = 'http://emulator.example:9000';
-  const api = createTestApi(publicOrigin);
-  const fetch = createInProcessFetch(api.fetch);
-  const session = await new TelegramEmulationClient(publicOrigin, { fetch }).createSession();
+async function createFixture({ client }: TestInProcessEmulator) {
+  const session = await client.createSession();
   const createdBot = await session.createBot({
     first_name: 'Receipt Bot',
     username: 'receipt_bot',
   });
   const { account: ada } = await session.createAccount({ first_name: 'Ada' });
   const { account: grace } = await session.createAccount({ first_name: 'Grace' });
-  return { session, fetch, createdBot, ada, grace };
-}
-
-function createInProcessFetch(
-  handler: (request: Request) => Response | Promise<Response>,
-): typeof globalThis.fetch {
-  return async (input, init) => await handler(new Request(input, init));
+  return { session, createdBot, ada, grace };
 }
