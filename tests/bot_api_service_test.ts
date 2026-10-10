@@ -15,6 +15,7 @@ import { ChatInviteLinkRepository } from '../src/repositories/chat_invite_link.t
 import { FileRepository } from '../src/repositories/file.ts';
 import { PollRepository } from '../src/repositories/poll.ts';
 import { InlineQueryRepository } from '../src/repositories/inline_query.ts';
+import { LastMessageSendingBotRepository } from '../src/repositories/last_message_sending_bot.ts';
 import { MessageRepository } from '../src/repositories/message.ts';
 import { MessageDraftRepository } from '../src/repositories/message_draft.ts';
 import { PrivateConversationRepository } from '../src/repositories/private_conversation.ts';
@@ -460,6 +461,7 @@ function createBotApiFixture() {
     bots,
     sharedChats,
     messages,
+    lastMessageSendingBots: new LastMessageSendingBotRepository(),
   });
   const privateConversations = new PrivateConversationRepository();
   const blockedUsers = new BlockedUserRepository();

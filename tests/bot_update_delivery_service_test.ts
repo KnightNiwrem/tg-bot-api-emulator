@@ -3,6 +3,7 @@ import { BotRepository } from '../src/repositories/bot.ts';
 import { BotUpdateRepository } from '../src/repositories/bot_update.ts';
 import { BotUpdateSubscriptionRepository } from '../src/repositories/bot_update_subscription.ts';
 import { FileRepository } from '../src/repositories/file.ts';
+import { LastMessageSendingBotRepository } from '../src/repositories/last_message_sending_bot.ts';
 import { PollRepository } from '../src/repositories/poll.ts';
 import { MessageRepository } from '../src/repositories/message.ts';
 import { SharedChatRepository } from '../src/repositories/shared_chat.ts';
@@ -889,8 +890,15 @@ Deno.test('BotUpdateDeliveryService lets a message reach only the privacy-mode b
 });
 
 Deno.test('BotUpdateDeliveryService sends general commands to the bot that last wrote to the group', () => {
-  const { virtualUsers, sharedChats, messages, messageBoxes, botUpdates, botUpdateDelivery } =
-    createDeliveryFixture();
+  const {
+    virtualUsers,
+    sharedChats,
+    messages,
+    messageBoxes,
+    botUpdates,
+    lastMessageSendingBots,
+    botUpdateDelivery,
+  } = createDeliveryFixture();
   const owner = createAccount(virtualUsers);
   const botA = createBot(virtualUsers, 'a_bot');
   const botB = createBot(virtualUsers, 'b_bot');
@@ -956,16 +964,32 @@ Deno.test('BotUpdateDeliveryService sends general commands to the bot that last 
     }
   };
 
+  const expectLastMessageSendingBot = (expectedBotId: number | undefined) => {
+    const lastMessageSendingBotId = lastMessageSendingBots.getLastMessageSendingBotId(
+      supergroup.id,
+    );
+    if (lastMessageSendingBotId !== expectedBotId) {
+      throw new Error(
+        `Expected the last message-sending bot ${expectedBotId}, received ${lastMessageSendingBotId}`,
+      );
+    }
+  };
+
   // Before any bot writes to the group, every bot in privacy mode receives general commands.
   send(byAccount, '/start first');
   expectRecipients('/start first', ['a', 'b', 'inline', 'admin']);
+  expectLastMessageSendingBot(undefined);
 
-  send({ kind: 'bot', botId: botA.profile.id }, 'A speaks');
+  const messageOfA = send({ kind: 'bot', botId: botA.profile.id }, 'A speaks');
+  expectLastMessageSendingBot(botA.profile.id);
   send(byAccount, 'Chatter of the account');
   send(byAccount, '/start after A');
   expectRecipients('/start after A', ['a', 'admin']);
 
   send({ kind: 'bot', botId: botB.profile.id }, 'B speaks');
+  // A bot's edit of its earlier message does not make it the last bot to write to the group.
+  botUpdateDelivery.publish({ type: 'message_edited', message: messageOfA });
+  expectLastMessageSendingBot(botB.profile.id);
   send(byAccount, '/start after B');
   expectRecipients('/start after B', ['b', 'admin']);
   // Mentions and commands naming a bot still reach other bots.
@@ -976,6 +1000,7 @@ Deno.test('BotUpdateDeliveryService sends general commands to the bot that last 
 
   // An account's message sent through an inline bot is not written by that bot.
   send(byAccount, 'Through the inline bot', inlineBot.profile.id);
+  expectLastMessageSendingBot(botB.profile.id);
   send(byAccount, '/start after the inline message');
   expectRecipients('/start after the inline message', ['b', 'admin']);
 
@@ -1210,6 +1235,7 @@ function createDeliveryFixture() {
   const botUpdates = new BotUpdateRepository();
   const updateSubscriptions = new BotUpdateSubscriptionRepository();
   const sharedChats = new SharedChatRepository();
+  const lastMessageSendingBots = new LastMessageSendingBotRepository();
   const botUpdateDelivery = new BotUpdateDeliveryService({
     botMessageViews: new BotMessageViewService({
       accounts,
@@ -1225,6 +1251,7 @@ function createDeliveryFixture() {
     bots,
     sharedChats,
     messages,
+    lastMessageSendingBots,
   });
   return {
     virtualUsers,
@@ -1234,6 +1261,7 @@ function createDeliveryFixture() {
     messageBoxes,
     botUpdates,
     updateSubscriptions,
+    lastMessageSendingBots,
     botUpdateDelivery,
   };
 }
