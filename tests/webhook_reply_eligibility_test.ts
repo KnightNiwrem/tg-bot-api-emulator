@@ -3,6 +3,7 @@ import { findBotApiMethod } from '../src/api/sessions/bot_api/method_catalogue.t
 import { callBotApiMethod } from '../src/api/sessions/bot_api/method_invocation.ts';
 import { runWebhookReply } from '../src/api/sessions/bot_api/webhook_reply.ts';
 import { createEmulationSession } from '../src/composition/emulation_session.ts';
+import { createSystemSessionTiming } from '../src/timing/system_timing.ts';
 
 const WEBHOOK_URL = 'http://127.0.0.1:9/webhook';
 
@@ -94,7 +95,11 @@ interface WebhookBotFixture {
 
 /** Runs `test` against a fresh session holding a bot with a webhook, and ends the session. */
 async function withWebhookBot(test: (fixture: WebhookBotFixture) => Promise<void>): Promise<void> {
-  const session = createEmulationSession('webhook-reply-eligibility', { uploadProfile: 'cloud' });
+  const session = createEmulationSession(
+    'webhook-reply-eligibility',
+    { uploadProfile: 'cloud' },
+    createSystemSessionTiming(),
+  );
   try {
     const creation = session.virtualUsers.createBot({
       first_name: 'Test Bot',
