@@ -934,16 +934,11 @@ Deno.test('getChat shows private chats and supergroups as the official server do
     const { status, body } = await callBotApi(api, `${botApiPath}/getChat`, { chat_id: chatId });
     return { status, body: body as { result?: unknown; description?: string } };
   };
-  const createdAccountResponse = await api.request(
-    `${sessionPath}/accounts`,
-    jsonRequest('POST', {
-      first_name: 'Linus',
-      last_name: 'Torvalds',
-      username: 'linus',
-      has_private_forwards: true,
-    }),
-  );
-  const { account: linus } = await createdAccountResponse.json() as { account: { id: number } };
+  const linus = await createAccount(api, sessionPath, 'Linus', {
+    last_name: 'Torvalds',
+    username: 'linus',
+    has_private_forwards: true,
+  });
   for (const accountId of [owner.id, linus.id]) {
     await api.request(
       `${sessionPath}/accounts/${accountId}/messages`,
@@ -1457,10 +1452,7 @@ Deno.test('the owner protects all supergroup content from forwarding and saving'
 Deno.test('bots address public supergroups by their usernames', async () => {
   const { api, sessionPath } = await createTestSession();
   const owner = await createAccount(api, sessionPath, 'Ada');
-  await api.request(
-    `${sessionPath}/accounts`,
-    jsonRequest('POST', { first_name: 'Grace', username: 'grace' }),
-  );
+  await createAccount(api, sessionPath, 'Grace', { username: 'grace' });
   const bot = await createBot(api, sessionPath, 'team_bot');
   const createSupergroup = (body: Record<string, unknown>) =>
     api.request(`${sessionPath}/accounts/${owner.id}/supergroups`, jsonRequest('POST', body));

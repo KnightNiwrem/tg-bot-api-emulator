@@ -1,18 +1,13 @@
 /** Calls to a session's Bot API, and readers of the results and updates they return. */
-import { type EmulationApi } from './emulation_api.ts';
+import { type EmulationApi, requestJson } from './emulation_api.ts';
 
 /** Calls a Bot API method with JSON parameters and returns the status and decoded body. */
-export async function callBotApi(
+export function callBotApi(
   api: EmulationApi,
   methodPath: string,
   parameters: Record<string, unknown>,
 ): Promise<{ status: number; body: unknown }> {
-  const response = await api.request(methodPath, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(parameters),
-  });
-  return { status: response.status, body: await response.json() };
+  return requestJson<unknown>(api, 'POST', methodPath, parameters);
 }
 
 /**

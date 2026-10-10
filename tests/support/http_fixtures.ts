@@ -18,33 +18,13 @@ import {
 /** Creates a session holding a bot and an account that can message it. */
 export async function createPrivateConversationFixture(sessionSettings?: SessionSettings) {
   const { api, sessionPath } = await createTestSession(sessionSettings);
-  const createBotResponse = await api.request(`${sessionPath}/bots`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ first_name: 'Test Bot', username: 'test_bot' }),
-  });
-  const createdBot: unknown = await createBotResponse.json();
-  if (!isCreatedBotResponse(createdBot)) {
-    throw new Error('Expected a created bot response');
-  }
-  const createAccountResponse = await api.request(`${sessionPath}/accounts`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ first_name: 'Ada' }),
-  });
-  const createdAccount: unknown = await createAccountResponse.json();
-  if (!isCreatedAccountResponse(createdAccount)) {
-    throw new Error('Expected a created account response');
-  }
+  const { botApiPath, ...createdBot } = await createBot(api, sessionPath, 'test_bot');
+  const createdAccount = { account: await createAccount(api, sessionPath, 'Ada') };
 
   const sendText = async (text: string) => {
     const response = await api.request(
       `${sessionPath}/accounts/${createdAccount.account.id}/messages`,
-      {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ to: { type: 'private', botId: createdBot.bot.id }, text }),
-      },
+      jsonRequest('POST', { to: { type: 'private', botId: createdBot.bot.id }, text }),
     );
     if (response.status !== 201) {
       throw new Error(`Expected "${text}" to be accepted, received ${response.status}`);
@@ -54,7 +34,7 @@ export async function createPrivateConversationFixture(sessionSettings?: Session
   return {
     api,
     sessionPath,
-    botApiPath: `${sessionPath}/bot-api/bot${createdBot.token}`,
+    botApiPath,
     createdBot,
     createdAccount,
     sendText,
@@ -124,15 +104,19 @@ export async function createSupergroupFixture() {
   };
 }
 
-/** Creates the account `firstName` through `POST accounts`, returning its user profile. */
+/**
+ * Creates the account `firstName` through `POST accounts` with the rest of its `profile`, returning
+ * its user profile.
+ */
 export async function createAccount(
   api: EmulationApi,
   sessionPath: string,
   firstName: string,
+  profile: { last_name?: string; username?: string; has_private_forwards?: boolean } = {},
 ) {
   const response = await api.request(
     `${sessionPath}/accounts`,
-    jsonRequest('POST', { first_name: firstName }),
+    jsonRequest('POST', { first_name: firstName, ...profile }),
   );
   const body: unknown = await response.json();
   if (!isCreatedAccountResponse(body)) {

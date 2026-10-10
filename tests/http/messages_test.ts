@@ -10,7 +10,6 @@ import { expectSettlementWithin } from '../support/settlement.ts';
 import { createInProcessFetch } from '../support/in_process_fetch.ts';
 import {
   isBadRequestResponse,
-  isCreatedAccountResponse,
   isGetUpdatesResponse,
   isMessageHistoryResponse,
   isPrivateMessage,
@@ -328,18 +327,10 @@ Deno.test('a grammY bot deletes an incoming secret and its menu after a button p
 
 Deno.test('private message routes validate participants and request bodies', async () => {
   const { api, sessionPath } = await createTestSession();
-  const createAccountResponse = await api.request(`${sessionPath}/accounts`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ first_name: 'Ada' }),
-  });
-  const createdAccount: unknown = await createAccountResponse.json();
-  if (!isCreatedAccountResponse(createdAccount)) {
-    throw new Error('Expected a created account response');
-  }
+  const account = await createAccount(api, sessionPath, 'Ada');
 
   const missingBotResponse = await api.request(
-    `${sessionPath}/accounts/${createdAccount.account.id}/messages`,
+    `${sessionPath}/accounts/${account.id}/messages`,
     {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -347,7 +338,7 @@ Deno.test('private message routes validate participants and request bodies', asy
     },
   );
   const emptyTextResponse = await api.request(
-    `${sessionPath}/accounts/${createdAccount.account.id}/messages`,
+    `${sessionPath}/accounts/${account.id}/messages`,
     {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -356,7 +347,7 @@ Deno.test('private message routes validate participants and request bodies', asy
   );
   // The text limit counts characters, so 4,096 emoji fit though they take 8,192 UTF-16 code units.
   const sendEmojiText = (emojiCount: number) =>
-    api.request(`${sessionPath}/accounts/${createdAccount.account.id}/messages`, {
+    api.request(`${sessionPath}/accounts/${account.id}/messages`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ to: { type: 'private', botId: 999 }, text: '😀'.repeat(emojiCount) }),
@@ -383,7 +374,7 @@ Deno.test('private message routes validate participants and request bodies', asy
     },
   );
   const excessiveBotIdResponse = await api.request(
-    `${sessionPath}/accounts/${createdAccount.account.id}/messages`,
+    `${sessionPath}/accounts/${account.id}/messages`,
     {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
