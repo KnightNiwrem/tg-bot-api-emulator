@@ -1,4 +1,9 @@
-import { isJsonObject, type JsonStructure, type JsonValue } from '../../../types/json_pattern.ts';
+import {
+  isJsonObject,
+  type JsonStructure,
+  MAX_JSON_NESTING_DEPTH,
+  readJsonText,
+} from '../../../types/json_pattern.ts';
 import type { ControlRequestIssue } from '../../control_error_response.ts';
 import type { ControlRequestInputReading } from '../control_request_input.ts';
 
@@ -8,54 +13,43 @@ import type { ControlRequestInputReading } from '../control_request_input.ts';
  */
 export const PARAMETER_PATTERNS_QUERY_KEY = 'parameters_json';
 
-/**
- * The most levels of objects and arrays a `parameters_json` value may nest, its own object
- * included. The JSON of a Bot API parameter nests a few levels, such as an inline keyboard's
- * four, so no call matches a much deeper pattern. The limit also bounds the path each reported
- * issue names, so that the issues about a value stay proportionate to its length.
- */
-export const MAX_PARAMETER_PATTERNS_NESTING_DEPTH = 100;
-
 type JsonPathSegment = string | number;
 type JsonPath = readonly JsonPathSegment[];
 
 /**
  * Reads the value of a `parameters_json` query parameter: a JSON object, nested at most
- * `MAX_PARAMETER_PATTERNS_NESTING_DEPTH` levels, whose members are each a JSON object or array,
- * the pattern for the parameter the member names. A member named twice in any object is reported,
- * as `JSON.parse` would otherwise keep only its last value.
+ * `MAX_JSON_NESTING_DEPTH` levels, its own object included, whose members are each a JSON object
+ * or array, the pattern for the parameter the member names. Numbers are kept as the exact values
+ * their text spells, as recorded parameters are read. A member named twice in any object is
+ * reported, as `JSON.parse` would otherwise keep only its last value.
  */
 export function readParameterPatterns(
   queryValue: string,
 ): ControlRequestInputReading<ReadonlyMap<string, JsonStructure>> {
-  let patternsByParameterName: JsonValue;
-  try {
-    patternsByParameterName = JSON.parse(queryValue);
-  } catch {
+  const reading = readJsonText(queryValue);
+  if (!reading.read) {
     return {
       valid: false,
-      issues: [{
-        source: 'query',
-        path: [PARAMETER_PATTERNS_QUERY_KEY],
-        code: 'invalid_json',
-        message: 'The query parameter is not JSON',
-      }],
+      issues: [
+        reading.reason === 'not_json'
+          ? {
+            source: 'query',
+            path: [PARAMETER_PATTERNS_QUERY_KEY],
+            code: 'invalid_json',
+            message: 'The query parameter is not JSON',
+          }
+          : {
+            source: 'query',
+            path: [PARAMETER_PATTERNS_QUERY_KEY],
+            code: 'too_big',
+            message:
+              `The JSON nests objects and arrays more than ${MAX_JSON_NESTING_DEPTH} levels deep`,
+          },
+      ],
     };
   }
-  const scan = scanJsonContainers(queryValue, MAX_PARAMETER_PATTERNS_NESTING_DEPTH);
-  if (scan.exceedsMaxDepth) {
-    return {
-      valid: false,
-      issues: [{
-        source: 'query',
-        path: [PARAMETER_PATTERNS_QUERY_KEY],
-        code: 'too_big',
-        message:
-          `The JSON nests objects and arrays more than ${MAX_PARAMETER_PATTERNS_NESTING_DEPTH} levels deep`,
-      }],
-    };
-  }
-  const issues: ControlRequestIssue[] = scan.repeatedMemberPaths.map((path) => ({
+  const patternsByParameterName = reading.value;
+  const issues: ControlRequestIssue[] = findRepeatedMemberPaths(queryValue).map((path) => ({
     source: 'query',
     path: [PARAMETER_PATTERNS_QUERY_KEY, ...path],
     code: 'duplicate_field',
@@ -99,8 +93,6 @@ type OpenJsonContainer =
     readonly holder: OpenJsonContainer | undefined;
     /** This container's member name or index in its holder; `undefined` for the outermost. */
     readonly segment: JsonPathSegment | undefined;
-    /** How many containers hold this one, itself included: 1 for the outermost. */
-    readonly depth: number;
   }
   & (
     | {
@@ -113,22 +105,14 @@ type OpenJsonContainer =
     | { readonly kind: 'array'; currentElementIndex: number }
   );
 
-type JsonContainerScan =
-  | { readonly exceedsMaxDepth: true }
-  | {
-    readonly exceedsMaxDepth: false;
-    /** The paths of the members an object names more than once, each listed once. */
-    readonly repeatedMemberPaths: readonly JsonPath[];
-  };
-
 /**
- * Scans `jsonText`, which must be valid JSON, for objects and arrays nested more than `maxDepth`
- * levels deep and for members an object names more than once. The text is scanned rather than
- * parsed, as parsing keeps a single value for each name. The scan takes time and memory in
- * proportion to the text's length, as each reported path is at most `maxDepth` long, and it uses
- * no recursion, so no nesting depth can overflow the call stack.
+ * The paths of the members that an object in `jsonText`, which must be JSON nested at most
+ * `MAX_JSON_NESTING_DEPTH` levels, names more than once, each listed once. The text is scanned
+ * rather than parsed, as parsing keeps a single value for each name. The scan takes time and
+ * memory in proportion to the text's length, as each reported path is at most the nesting limit
+ * long, and it uses no recursion.
  */
-function scanJsonContainers(jsonText: string, maxDepth: number): JsonContainerScan {
+function findRepeatedMemberPaths(jsonText: string): JsonPath[] {
   const repeatedMemberPaths: JsonPath[] = [];
   let container: OpenJsonContainer | undefined;
   for (let index = 0; index < jsonText.length; index++) {
@@ -141,11 +125,7 @@ function scanJsonContainers(jsonText: string, maxDepth: number): JsonContainerSc
           segment: container?.kind === 'array'
             ? container.currentElementIndex
             : container?.currentMemberName,
-          depth: (container?.depth ?? 0) + 1,
         };
-        if (place.depth > maxDepth) {
-          return { exceedsMaxDepth: true };
-        }
         container = character === '{'
           ? {
             ...place,
@@ -185,7 +165,7 @@ function scanJsonContainers(jsonText: string, maxDepth: number): JsonContainerSc
       }
     }
   }
-  return { exceedsMaxDepth: false, repeatedMemberPaths };
+  return repeatedMemberPaths;
 }
 
 /** The member names and indexes that lead from the outermost container to `container`. */

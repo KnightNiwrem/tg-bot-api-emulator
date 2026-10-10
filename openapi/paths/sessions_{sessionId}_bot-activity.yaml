@@ -94,14 +94,18 @@ get:
         A JSON object of patterns, by parameter name, that the JSON a call sent in each named
         parameter must match: `parameters_json={"reply_parameters":{"message_id":5}}`, URL-encoded.
         A call matches when, for every member, it sent that parameter, the parameter's text is
-        JSON, and that JSON matches the member's pattern, which must be an object or an array.
-        Within a pattern, a string, number or boolean matches the same value of the same type, so
-        `5` matches neither `"5"` nor `true`, and `1` matches `1.0`; `null` matches only `null`,
-        not a missing member; an object matches an object that has every member the pattern
-        names, with a matching value, whatever other members it has and in any order, so no
-        pattern requires a member to be missing; an array matches an array of the same length
-        whose elements match the pattern's in order. A parameter a bot sent as a JSON body's
-        object or array is matched just as one it sent as that JSON's text. The value is rejected
+        JSON nested at most 100 levels, and that JSON matches the member's pattern, which must be
+        an object or an array. Within a pattern, a string, number or boolean matches the same
+        value of the same type, so `5` matches neither `"5"` nor `true`. Numbers compare by the
+        exact decimal value their text spells, not as the nearest floating-point number: `1`
+        matches `1.0` and `1e0`, and `-0` matches `0`, but `9007199254740993` does not match
+        `9007199254740992`, nor `1e400` match `1e500`. `null` matches only `null`, not a missing
+        member; an object matches an object that has every member the pattern names, with a
+        matching value, whatever other members it has and in any order, so no pattern requires a
+        member to be missing; an array matches an array of the same length whose elements match
+        the pattern's in order. A parameter a bot sent as a JSON body's object or array is
+        recorded, and matched, as the emulator writes that value again after reading it, so its
+        numbers are as JavaScript holds them. The value is rejected
         when it is not JSON, nests objects and arrays more than 100 levels deep, its own object
         included, is not an object, has a member that is not an object or an array, or has an
         object that names a member more than once.

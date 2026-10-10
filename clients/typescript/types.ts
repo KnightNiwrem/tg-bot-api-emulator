@@ -2869,7 +2869,11 @@ export interface BotActivityCriteria {
    * pattern. Within a pattern:
    *
    * - a string, number or boolean matches the same value of the same type, so `5` matches neither
-   *   `'5'` nor `true`;
+   *   `'5'` nor `true`. The emulator compares numbers by the exact decimal value their JSON text
+   *   spells, and the client writes a number as `JSON.stringify` does, the shortest spelling that
+   *   reads back as the same JavaScript number, so `0.1` is sent as `0.1` and matches `0.10`. An
+   *   integer beyond `Number.MAX_SAFE_INTEGER` cannot be written exactly from JavaScript, so match
+   *   such a parameter by its text in `parameters`;
    * - `null` matches only `null`, not a missing member;
    * - an object matches an object that has every member the pattern names, with a matching value,
    *   whatever other members it has and in whatever order, so no pattern requires a member to be

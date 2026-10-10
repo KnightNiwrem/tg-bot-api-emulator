@@ -120,15 +120,55 @@ Deno.test('parameters_json applies its rules to nested values and arrays', async
   }
 });
 
-Deno.test('parameters_json compares numbers as values, so 1.0 matches 1', async () => {
+Deno.test('parameters_json compares numbers by the exact decimal value their text spells', async () => {
   const { api, activityPath, botApiPath } = await createFixture();
-  await callBotApiWithJson(api, `${botApiPath}/recordShapes`, { point: { x: 1, y: -0 } });
+  // Sent as form text, which is recorded as it is, so that the numbers keep spellings JavaScript
+  // would not keep.
+  await callBotApiWithForm(api, `${botApiPath}/recordShapes`, {
+    point:
+      '{"x":1,"y":-0,"big":1e500,"small":-1e500,"id":9007199254740993,"ratio":0.30000000000000001}',
+  });
+  await callBotApiWithForm(api, `${botApiPath}/recordShapes`, {
+    point: '{"big":1e400,"small":-1e400,"id":9007199254740992,"ratio":0.3}',
+  });
+
+  const cases: ReadonlyArray<readonly [string, readonly number[]]> = [
+    ['{"point":{"x":1.0,"y":0}}', [1]],
+    ['{"point":{"x":1e0,"y":-0.0}}', [1]],
+    ['{"point":{"big":1e500}}', [1]],
+    ['{"point":{"big":1e400}}', [2]],
+    ['{"point":{"big":10e399}}', [2]],
+    ['{"point":{"small":-1e400}}', [2]],
+    ['{"point":{"small":1e400}}', []],
+    ['{"point":{"id":9007199254740993}}', [1]],
+    ['{"point":{"id":9007199254740992}}', [2]],
+    ['{"point":{"ratio":0.3}}', [2]],
+    ['{"point":{"ratio":0.30000000000000001}}', [1]],
+  ];
+  for (const [patterns, expected] of cases) {
+    await assertPositions(
+      api,
+      `${activityPath}?parameters_json=${encodeURIComponent(patterns)}`,
+      expected,
+      `Expected ${patterns} to find ${JSON.stringify(expected)}`,
+    );
+  }
+});
+
+Deno.test('A parameter nested beyond the limit matches no pattern', async () => {
+  const { api, activityPath, botApiPath } = await createFixture();
+  const depth = 100_000;
+  await callBotApiWithRawJsonBody(
+    api,
+    `${botApiPath}/recordShapes`,
+    `{"deep":${'['.repeat(depth)}${']'.repeat(depth)}}`,
+  );
 
   await assertPositions(
     api,
-    `${activityPath}?parameters_json=${encodeURIComponent('{"point":{"x":1.0,"y":0}}')}`,
-    [1],
-    'Expected numbers to be compared by value',
+    `${activityPath}?parameters_json=${encodeURIComponent('{"deep":[[]]}')}`,
+    [],
+    'Expected a parameter nested beyond the limit to match no pattern',
   );
 });
 

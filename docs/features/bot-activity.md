@@ -84,10 +84,14 @@ pattern for each parameter it names, such as
 `parameters_json={"reply_parameters":{"message_id":5}}`. Each pattern must be a JSON object or
 array, the shapes of the parameters Telegram reads as JSON, such as `reply_parameters`,
 `reply_markup` or `entities`. A call matches when it sent every named parameter, the parameter's
-text is JSON, and that JSON matches the pattern:
+text is JSON nested at most 100 levels, and that JSON matches the pattern:
 
 - a string, number or boolean matches the same value of the same type, so `5` matches neither `"5"`
-  nor `true`; numbers compare by value, so `1.0` matches `1`
+  nor `true`
+- numbers compare by the exact decimal value their text spells, not as the nearest floating-point
+  number: `1` matches `1.0` and `1e0`, and `-0` matches `0`, but `9007199254740993` does not match
+  `9007199254740992`, `0.30000000000000001` does not match `0.3`, and `1e400` does not match
+  `1e500`, though JavaScript reads each of those pairs as one number
 - `null` matches only `null`, not a missing member
 - an object matches an object that has every member the pattern names, each with a matching value;
   other members and member order do not matter, so no pattern can require a member to be missing
@@ -96,7 +100,10 @@ text is JSON, and that JSON matches the pattern:
 
 So `{"reply_markup":{"inline_keyboard":[[{"text":"Yes"},{"text":"No"}]]}}` finds a keyboard of one
 row with those two buttons, whatever their callback data. A parameter sent as a JSON body's object
-matches just as one sent as form text holding the same JSON. Only the parameters `parameters_json`
+matches just as one sent as form text holding the same JSON. The emulator records such an object as
+it writes it again after reading it, so a number in it that JavaScript cannot hold exactly is
+recorded as JavaScript holds it: `9007199254740993` as `9007199254740992`, and `1e500` as `null`.
+Form text, and a JSON body's string, are recorded exactly. Only the parameters `parameters_json`
 names are read as JSON, and both filters can be given together.
 
 A `parameters_json` value that is not JSON is an `invalid_json` issue, one that nests objects and

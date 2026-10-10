@@ -2,10 +2,8 @@
  * The reading of a `parameters_json` query value: its nesting limit, and the cost of scanning it,
  * which must stay in proportion to the value's length however the value nests or repeats members.
  */
-import {
-  MAX_PARAMETER_PATTERNS_NESTING_DEPTH,
-  readParameterPatterns,
-} from '../src/api/sessions/bot_activity/parameter_patterns_query.ts';
+import { readParameterPatterns } from '../src/api/sessions/bot_activity/parameter_patterns_query.ts';
+import { MAX_JSON_NESTING_DEPTH } from '../src/types/json_pattern.ts';
 
 /**
  * Far longer than reading the values below takes, a few tens of milliseconds, and far shorter than
@@ -20,13 +18,13 @@ function nestedArrayPatterns(depth: number): string {
 }
 
 Deno.test('parameters_json may nest objects and arrays up to the limit', () => {
-  const atLimit = readParameterPatterns(nestedArrayPatterns(MAX_PARAMETER_PATTERNS_NESTING_DEPTH));
+  const atLimit = readParameterPatterns(nestedArrayPatterns(MAX_JSON_NESTING_DEPTH));
   if (!atLimit.valid) {
     throw new Error(`Expected a value at the limit to be read: ${JSON.stringify(atLimit.issues)}`);
   }
 
   const beyondLimit = readParameterPatterns(
-    nestedArrayPatterns(MAX_PARAMETER_PATTERNS_NESTING_DEPTH + 1),
+    nestedArrayPatterns(MAX_JSON_NESTING_DEPTH + 1),
   );
   const issues = beyondLimit.valid
     ? []
@@ -55,7 +53,7 @@ Deno.test('A parameters_json nested far beyond the limit is refused in linear ti
 });
 
 Deno.test('Members repeated at the deepest level are each reported once, at their path', () => {
-  const holderDepth = MAX_PARAMETER_PATTERNS_NESTING_DEPTH - 1;
+  const holderDepth = MAX_JSON_NESTING_DEPTH - 1;
   const repeatCount = 20_000;
   const members = Array.from(
     { length: repeatCount },

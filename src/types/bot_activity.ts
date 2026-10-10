@@ -1,6 +1,6 @@
 import type { BotApiUpdate } from './bot_api.ts';
 import type { WebhookAttemptFailure } from './bot_webhook.ts';
-import { type JsonStructure, type JsonValue, matchesJsonPattern } from './json_pattern.ts';
+import { type JsonStructure, matchesJsonPattern, readJsonText } from './json_pattern.ts';
 
 /**
  * What passes between the emulator and a session's bots, in the order the emulator decided each
@@ -159,7 +159,8 @@ export interface BotActivityFilter {
   readonly parameters?: Readonly<Record<string, string>>;
   /**
    * Patterns, by parameter name, that the JSON the call sent in each parameter must match, as
-   * `matchesJsonPattern` matches them. A parameter whose text is not JSON matches no pattern.
+   * `matchesJsonPattern` matches them. A parameter whose text is not JSON, or nests more than
+   * `MAX_JSON_NESTING_DEPTH` levels, matches no pattern.
    */
   readonly parameterPatterns?: ReadonlyMap<string, JsonStructure>;
 }
@@ -205,21 +206,12 @@ function matchesBotApiCallCriteria(entry: BotApiCallEntry, filter: BotActivityFi
   return sentEveryParameterText &&
     [...filter.parameterPatterns ?? []].every(([name, pattern]) => {
       const text = sentParameterText(entry, name);
-      const value = text === undefined ? undefined : parseJsonText(text);
-      return value !== undefined && matchesJsonPattern(value, pattern);
+      const reading = text === undefined ? undefined : readJsonText(text);
+      return reading?.read === true && matchesJsonPattern(reading.value, pattern);
     });
 }
 
 /** The text a call sent in a parameter; `undefined` when it sent none of that name. */
 function sentParameterText(entry: BotApiCallEntry, name: string): string | undefined {
   return Object.hasOwn(entry.parameters, name) ? entry.parameters[name] : undefined;
-}
-
-/** The value JSON text holds; `undefined` for text that is not JSON. */
-function parseJsonText(text: string): JsonValue | undefined {
-  try {
-    return JSON.parse(text);
-  } catch {
-    return undefined;
-  }
 }
