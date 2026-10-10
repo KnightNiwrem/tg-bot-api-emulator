@@ -273,7 +273,7 @@ Deno.test('DELETE /sessions/:sessionId answers held bot activity reads', async (
   }
 });
 
-Deno.test('GET bot-activity records a webhook reply before the confirmation of its update', async () => {
+Deno.test('GET bot-activity records a webhook reply after the confirmation of its update', async () => {
   await using emulator = createTestInProcessEmulator();
   const { api, sessionPath, activityPath, createdBot, account, sendText } = await createFixture(
     emulator,
@@ -297,10 +297,11 @@ Deno.test('GET bot-activity records a webhook reply before the confirmation of i
     await grammyBot.api.setWebhook(`http://127.0.0.1:${webhookServer.addr.port}/webhook`);
     const { head_position: start } = await readActivity(api, `${activityPath}?limit=0`);
     await sendText('/start');
+    // The complete answer confirms the update; the method it names runs afterwards.
     await expectSettlementWithin(
-      readActivity(api, `${activityPath}?after=${start}&kind=update_confirmed&wait_ms=5000`),
+      readActivity(api, `${activityPath}?after=${start}&kind=bot_api_call&wait_ms=5000`),
       5_000,
-      'Expected the webhook to accept the update',
+      "Expected the webhook answer's method to run",
     );
 
     const { entries } = await readActivity(api, `${activityPath}?after=${start}`);
@@ -308,10 +309,10 @@ Deno.test('GET bot-activity records a webhook reply before the confirmation of i
       entries.map(({ kind, via, method, chat_id }) => [kind, via, method, chat_id]),
       [
         ['update_delivered', 'webhook', undefined, account.id],
-        ['bot_api_call', 'webhook_reply', 'sendMessage', account.id],
         ['update_confirmed', 'webhook', undefined, account.id],
+        ['bot_api_call', 'webhook_reply', 'sendMessage', account.id],
       ],
-      'Expected the reply to be recorded between the delivery and the confirmation',
+      'Expected the reply to be recorded after the confirmation it does not hold up',
     );
   } finally {
     await api.request(sessionPath, { method: 'DELETE' });

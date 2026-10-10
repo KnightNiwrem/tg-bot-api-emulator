@@ -6,9 +6,9 @@
 
 `setWebhook` registers or replaces a bot's webhook. The emulator posts updates as JSON and adds
 `X-Telegram-Bot-Api-Secret-Token` when `secret_token` is set. URL credentials become HTTP Basic
-authorization. Redirects are treated as delivery failures. A 2xx response confirms the update once
-its whole body has arrived. Other statuses, connection failures and responses whose body fails or
-misses the attempt deadline leave it pending for another attempt. As in
+authorization. Redirects are treated as delivery failures. A 2xx response confirms the update as
+soon as its whole body has arrived. Other statuses, connection failures and responses whose body
+fails or misses the attempt deadline leave it pending for another attempt. As in
 [`WebhookActor::handle`][webhook-response], a connection that closes mid-response is not reported as
 a delivery error. The first retry is immediate, and later ones back off as described under
 [intentional deviations](#intentional-deviations). A failed response's `Retry-After` header, in
@@ -22,11 +22,11 @@ member, `chat_join_request` updates by requester, and `message_reaction` and
 `stopped_message_generation` updates by chat, apart from the chat's messages. The queue for each
 update is chosen by the [`Client::add_update`][webhook-queue-ids] calls, and for messages in
 [`process_new_message_queue`][message-queue-id]. Each queue sends one update at a time, in order,
-and moves on only once that update is confirmed. Up to `max_connections` queues send at once, so a
-failing update holds back only the later updates of its queue. Updates are therefore confirmed
-individually, as [`TQueue::forget`][webhook-forget] does, and a bot that switches to `getUpdates`
-receives the rest. The official server also opens connections gradually under flood control, which
-the emulator does not reproduce.
+and moves on only once that update is confirmed, which a complete 2xx response does at once. Up to
+`max_connections` queues send at once, so a failing update holds back only the later updates of its
+queue. Updates are therefore confirmed individually, as [`TQueue::forget`][webhook-forget] does, and
+a bot that switches to `getUpdates` receives the rest. The official server also opens connections
+gradually under flood control, which the emulator does not reproduce.
 
 `deleteWebhook`, or `setWebhook` with an empty URL, removes the registration. Both support
 `drop_pending_updates`. `setWebhook` also accepts `allowed_updates`. `getWebhookInfo` reports the
@@ -34,10 +34,16 @@ URL, pending count, configured maximum connections, non-default subscription and
 delivery error. Ending a session aborts its webhook requests.
 
 A webhook can answer with a Bot API method call in a JSON, URL-encoded or multipart 2xx response.
-The emulator executes its `method` using the receiving bot's identity and discards the result.
-Methods starting with `get`, plus `setWebhook`, `deleteWebhook`, `close` and `logOut`, are excluded,
-following [`WebhookActor::handle`][webhook-response]. A failed or unimplemented method does not make
-the delivered update pending again. This supports framework webhook replies, including those used by
+The emulator executes its `method` using the receiving bot's identity and discards the result. As in
+[`WebhookActor::handle`][webhook-response], the method runs apart from the delivery: the update is
+confirmed when the response arrives, before the method runs, and its queue sends the next update
+without waiting for the method, which may still be downloading a file. The attempt's deadline does
+not bound the method, and replacing or deleting the webhook does not stop it; ending the session
+does, before the method changes anything. The [bot activity log](bot-activity.md#entries) records
+the method's call after the update's confirmation. Methods starting with `get`, plus `setWebhook`,
+`deleteWebhook`, `close` and `logOut`, are excluded, following
+[`WebhookActor::handle`][webhook-response]. A failed or unimplemented method does not make the
+delivered update pending again. This supports framework webhook replies, including those used by
 grammY and Telegraf.
 
 ## Delivery controls
@@ -51,12 +57,13 @@ described above.
 Each request that delivers an update is an attempt with an `id` that is unique in the session.
 `GET /sessions/{sessionId}/bots/{botId}/webhook-attempts` lists a bot's attempts with their
 `status`: `in_flight`, `accepted`, `failed`, or `cancelled` when the webhook was replaced or deleted
-or the session ended before an outcome, which leaves the update pending. A failed attempt shows its
-`failure` and its `retry`: the `delay_seconds` Telegram's backoff or the webhook's `Retry-After`
-sets, and whether the retry is `waiting`, `released` or `cancelled`. The
-[bot activity log](bot-activity.md#entries) records each attempt's delivery and confirmation with
-its `webhook_attempt_id`, and each failure as a `webhook_attempt_failed` entry, so a test waits for
-an outcome there.
+or the session ended before the webhook's complete response arrived, which leaves the update
+pending. An attempt is `accepted` as soon as its complete 2xx response arrives, so nothing that
+happens to the webhook afterwards changes its outcome. A failed attempt shows its `failure` and its
+`retry`: the `delay_seconds` Telegram's backoff or the webhook's `Retry-After` sets, and whether the
+retry is `waiting`, `released` or `cancelled`. The [bot activity log](bot-activity.md#entries)
+records each attempt's delivery and confirmation with its `webhook_attempt_id`, and each failure as
+a `webhook_attempt_failed` entry, so a test waits for an outcome there.
 
 `PUT /sessions/{sessionId}/bots/{botId}/webhook-delivery` with `{"scheduling":"manual"}` makes the
 emulator end nothing by itself for that bot: an attempt waits for the webhook's answer without a
@@ -69,14 +76,15 @@ attempt of one bot, under either scheduling:
   at once. Later updates of its queue still wait behind it, and other queues are unaffected.
 - `POST .../webhook-attempts/{webhookAttemptId}/expiry` makes the deadline of an attempt in flight
   arrive. The request is aborted and the attempt fails as `timed_out` with `Read timeout expired`,
-  as its timeout passing would. An attempt whose webhook has already answered completely is still
-  accepted.
+  as its timeout passing would. An attempt whose webhook has already answered completely is already
+  accepted, and is no longer in flight.
 
 Each control applies once: releasing a retry that is not waiting, or expiring an attempt that is no
 longer in flight, is refused with `409`, so a repeated or concurrent control cannot send an update
 twice or record a second outcome. An attempt of another bot or session is not found. Replacing or
 deleting the webhook, or ending the session, cancels the bot's attempt in flight and its waiting
-retry, along with their timers and requests. The TypeScript client's
+retry, along with their timers and requests, but not the method an accepted update's response names.
+The TypeScript client's
 [test controls](../clients/typescript/test-controls.md#webhook-delivery-controls) show a webhook
 that fails twice and recovers.
 
@@ -142,6 +150,7 @@ There is no Telegram synchronization error state because sessions have no Telegr
 [attempt scheduler](../../src/services/webhook_attempt_scheduler.ts),
 [webhook tests](../../tests/bot_webhook_service_test.ts),
 [response method eligibility tests](../../tests/webhook_reply_eligibility_test.ts),
+[response acceptance tests](../../tests/webhook_reply_acceptance_test.ts),
 [delivery control tests](../../tests/webhook_attempt_scheduler_test.ts),
 [HTTP tests](../../tests/http/webhooks_test.ts) and
 [local webhook control tests](../../clients/typescript/webhook_delivery_client_test.ts).

@@ -591,7 +591,9 @@ function createBotApiFixture() {
       updateSubscriptions,
       updateActivity: botActivity,
       sendWebhookRequest: () => Promise.reject(new Error('Unexpected webhook request')),
-      runWebhookReply: () => Promise.reject(new Error('Unexpected webhook reply')),
+      startWebhookReply: () => {
+        throw new Error('Unexpected webhook reply');
+      },
       attempts: new WebhookAttemptScheduler({
         bots,
         attemptTimeoutMilliseconds: WEBHOOK_ATTEMPT_TIMEOUT_MILLISECONDS,

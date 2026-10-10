@@ -137,23 +137,32 @@ interface BotWebhookServiceDependencies {
   /** Sends a webhook request over the network, as `fetch` does. */
   readonly sendWebhookRequest: (request: Request) => Promise<Response>;
   /**
-   * Runs the Bot API method, if any, that the bot's webhook names in its successful response to
-   * an update, reading the response body. `signal` aborts when the delivery attempt ends.
+   * Starts running the Bot API method, if any, that the bot's webhook names in its complete
+   * successful response to an update, as work of the session apart from the delivery: nothing
+   * awaits it, the attempt's deadline does not bound it, and a replaced or deleted webhook does not
+   * stop it. The session's end stops it from changing anything. The work is under way when this
+   * returns.
    */
-  readonly runWebhookReply: (botId: number, reply: Response, signal: AbortSignal) => Promise<void>;
+  readonly startWebhookReply: (botId: number, reply: Response) => void;
   readonly attempts: WebhookAttemptTracker;
   readonly currentUnixTimeSeconds: () => number;
 }
 
 /** How an attempt to deliver an update to a webhook ended. */
 type UpdateDeliveryOutcome =
-  | { readonly accepted: true }
   | {
-    readonly accepted: false;
+    readonly outcome: 'accepted';
+    /** The webhook's complete response, which may name a Bot API method to run. */
+    readonly reply: Response;
+  }
+  | {
+    readonly outcome: 'failed';
     readonly failure: WebhookAttemptFailure;
     /** The wait the webhook asked for in its `Retry-After` header, or 0 when it asked for none. */
     readonly retryAfterSeconds: number;
-  };
+  }
+  /** Delivery stopped before the webhook's complete response arrived. */
+  | { readonly outcome: 'cancelled' };
 
 /** How the retries of a failing update stand, as `WebhookActor` keeps them for each update. */
 interface UpdateRetryBackoff {
@@ -175,6 +184,12 @@ const INITIAL_UPDATE_RETRY_BACKOFF: UpdateRetryBackoff = { failureCount: 0, dela
  * so a failing update holds back only the later updates of its queue, and up to `max_connections`
  * queues send at once. Telegram also opens its connections gradually, which the emulator does not.
  *
+ * A complete 2xx response accepts the update at once, as `WebhookActor` acknowledges it on receipt:
+ * the update is confirmed, and the queue moves on to its next update, while the method the response
+ * names runs separately. So the next update of a queue may be sent, and even confirmed, before the
+ * previous update's reply method has run. Replacing or deleting the webhook, and the attempt's
+ * deadline, end only attempts still waiting for their complete response.
+ *
  * An attempt whose deadline arrives fails as Telegram's read timeout does. Telegram times out a
  * connection that receives no data for a while; the emulator bounds each attempt as a whole,
  * whatever the sender of its requests does, so a webhook that never answers cannot stall delivery.
@@ -187,7 +202,7 @@ export class BotWebhookService {
   readonly #updateSubscriptions: BotUpdateSubscriptionStore;
   readonly #updateActivity: UpdateActivityRecorder;
   readonly #sendWebhookRequest: (request: Request) => Promise<Response>;
-  readonly #runWebhookReply: (botId: number, reply: Response, signal: AbortSignal) => Promise<void>;
+  readonly #startWebhookReply: (botId: number, reply: Response) => void;
   readonly #attempts: WebhookAttemptTracker;
   readonly #currentUnixTimeSeconds: () => number;
   /** Aborting a bot's controller stops delivery to its webhook, including a request in flight. */
@@ -202,7 +217,7 @@ export class BotWebhookService {
       updateSubscriptions,
       updateActivity,
       sendWebhookRequest,
-      runWebhookReply,
+      startWebhookReply,
       attempts,
       currentUnixTimeSeconds,
     }: BotWebhookServiceDependencies,
@@ -212,7 +227,7 @@ export class BotWebhookService {
     this.#updateSubscriptions = updateSubscriptions;
     this.#updateActivity = updateActivity;
     this.#sendWebhookRequest = sendWebhookRequest;
-    this.#runWebhookReply = runWebhookReply;
+    this.#startWebhookReply = startWebhookReply;
     this.#attempts = attempts;
     this.#currentUnixTimeSeconds = currentUnixTimeSeconds;
   }
@@ -391,8 +406,9 @@ export class BotWebhookService {
    * Sends the pending updates of one queue to the webhook one at a time, each over a connection
    * of `connections`, until the queue has none left or `signal` aborts. An update is confirmed, and
    * its confirmation recorded as bot activity, once the webhook accepts it; a failed update is sent
-   * again once its retry is released, and the queue uses no connection until then. Aborting leaves
-   * the update in flight pending.
+   * again once its retry is released, and the queue uses no connection until then. Aborting before
+   * the webhook's complete response cancels the attempt and leaves its update pending; a complete
+   * response received first still accepts it.
    */
   async #deliverQueue(
     botId: number,
@@ -429,10 +445,14 @@ export class BotWebhookService {
       } finally {
         releaseConnection();
       }
-      if (signal.aborted) {
+      if (outcome.outcome === 'cancelled') {
+        attempt.cancel();
         return;
       }
-      if (outcome.accepted) {
+      if (outcome.outcome === 'accepted') {
+        // The reply's work is under way before the confirmation is published, so no reader sees
+        // the update confirmed while the method its webhook named has not started.
+        this.#startWebhookReply(botId, outcome.reply);
         this.#pendingUpdates.confirmPendingUpdate(botId, update.update_id);
         attempt.accept();
         this.#updateActivity.recordWebhookUpdateConfirmation(botId, update, attempt.id);
@@ -468,13 +488,15 @@ export class BotWebhookService {
 
   /**
    * Posts the update to the webhook as the official Bot API server's `WebhookActor` does, and
-   * returns whether the webhook accepted it. The attempt ends when `deliverySignal` aborts, or
-   * fails once its deadline arrives.
+   * returns how the attempt ended. The attempt is cancelled when `deliverySignal` aborts, or fails
+   * once its deadline arrives, unless the webhook's complete response arrived first.
    *
    * As on Telegram, the webhook answers only once its whole response has arrived, so a response
    * whose body fails or does not arrive in time fails the attempt, whatever its status. A complete
-   * successful response may name a Bot API method, which runs before the update's queue sends its
-   * next update; the method's failure leaves the update delivered.
+   * successful response accepts the update; the method it may name runs apart from the delivery.
+   *
+   * A sender that ignores the attempt's signal cannot hold the attempt: its late response is
+   * disposed of, and its late failure observed and ignored.
    *
    * Each attempt is recorded as a delivery of the update in the session's bot activity.
    */
@@ -490,35 +512,30 @@ export class BotWebhookService {
     const attemptSignal = AbortSignal.any([deliverySignal, attempt.deadlineSignal]);
     const request = createWebhookRequest(webhook, update, attemptSignal);
     this.#updateActivity.recordWebhookUpdateDelivery(botId, update, attempt.id);
-    let response: Response;
-    try {
-      response = await settleUnlessAborted(this.#sendWebhookRequest(request), attemptSignal);
-    } catch {
+    const responseArrival = await settleUnlessAborted(
+      this.#sendWebhookRequest(request),
+      attemptSignal,
+      disposeResponse,
+    );
+    if (responseArrival.settlement !== 'fulfilled') {
       // Telegram reports other failures to connect without their cause.
-      return {
-        accepted: false,
-        failure: attempt.deadlineSignal.aborted
-          ? { reason: 'timed_out', errorMessage: READ_TIMEOUT_ERROR_MESSAGE }
-          : { reason: 'connection_failed', errorMessage: "Can't connect to the webhook" },
-        retryAfterSeconds: 0,
-      };
+      return describeUnfinishedAttempt(responseArrival, deliverySignal, {
+        reason: 'connection_failed',
+        errorMessage: "Can't connect to the webhook",
+      });
     }
-    let body: ArrayBuffer;
-    try {
-      body = await settleUnlessAborted(response.arrayBuffer(), attemptSignal);
-    } catch {
+    const response = responseArrival.value;
+    const bodyArrival = await settleUnlessAborted(response.arrayBuffer(), attemptSignal);
+    if (bodyArrival.settlement !== 'fulfilled') {
       // Telegram reports a response cut short by its connection closing without a description.
-      return {
-        accepted: false,
-        failure: attempt.deadlineSignal.aborted
-          ? { reason: 'timed_out', errorMessage: READ_TIMEOUT_ERROR_MESSAGE }
-          : { reason: 'response_interrupted' },
-        retryAfterSeconds: 0,
-      };
+      return describeUnfinishedAttempt(bodyArrival, deliverySignal, {
+        reason: 'response_interrupted',
+      });
     }
+    const body = bodyArrival.value;
     if (response.status < 200 || response.status > 299) {
       return {
-        accepted: false,
+        outcome: 'failed',
         failure: {
           reason: 'http_error',
           statusCode: response.status,
@@ -530,20 +547,10 @@ export class BotWebhookService {
     }
 
     const { status, statusText, headers } = response;
-    const reply = new Response(body.byteLength === 0 ? null : body, {
-      status,
-      statusText,
-      headers,
-    });
-    try {
-      await settleUnlessAborted(
-        this.#runWebhookReply(botId, reply, attemptSignal),
-        attemptSignal,
-      );
-    } catch {
-      // The complete response decides the outcome, so the method it names cannot change it.
-    }
-    return { accepted: true };
+    return {
+      outcome: 'accepted',
+      reply: new Response(body.byteLength === 0 ? null : body, { status, statusText, headers }),
+    };
   }
 }
 
@@ -699,19 +706,77 @@ function createWebhookRequest(
   });
 }
 
+/** How a step of an attempt settled: with its value, by failing, or by its signal aborting first. */
+type AttemptStepSettlement<T> =
+  | { readonly settlement: 'fulfilled'; readonly value: T }
+  | { readonly settlement: 'rejected' }
+  | { readonly settlement: 'aborted'; readonly abortReason: unknown };
+
 /**
- * Settles as `promise` does, unless `signal` aborts first, which rejects with its reason. The
- * promise may keep running; its later outcome is ignored.
+ * Settles as `promise` does, unless `signal` aborts first. Whichever happens first decides the
+ * settlement, at that moment, so a later abort cannot overturn a value that already arrived. The
+ * promise may keep running: a value it yields after the abort is passed to `disposeLateValue`, and a
+ * later failure is observed and ignored.
  */
-function settleUnlessAborted<T>(promise: Promise<T>, signal: AbortSignal): Promise<T> {
-  if (signal.aborted) {
-    return Promise.reject(signal.reason);
-  }
-  return new Promise((resolve, reject) => {
-    const rejectOnAbort = () => reject(signal.reason);
-    signal.addEventListener('abort', rejectOnAbort, { once: true });
-    promise.then(resolve, reject).finally(() => {
-      signal.removeEventListener('abort', rejectOnAbort);
-    });
+function settleUnlessAborted<T>(
+  promise: Promise<T>,
+  signal: AbortSignal,
+  disposeLateValue: (value: T) => void = () => {},
+): Promise<AttemptStepSettlement<T>> {
+  return new Promise((resolve) => {
+    let isSettled = false;
+    const settle = (settlement: AttemptStepSettlement<T>) => {
+      isSettled = true;
+      signal.removeEventListener('abort', settleByAbort);
+      resolve(settlement);
+    };
+    const settleByAbort = () => settle({ settlement: 'aborted', abortReason: signal.reason });
+    promise.then(
+      (value) => {
+        if (isSettled) {
+          disposeLateValue(value);
+        } else {
+          settle({ settlement: 'fulfilled', value });
+        }
+      },
+      () => {
+        if (!isSettled) {
+          settle({ settlement: 'rejected' });
+        }
+      },
+    );
+    if (signal.aborted) {
+      settleByAbort();
+    } else {
+      signal.addEventListener('abort', settleByAbort, { once: true });
+    }
   });
+}
+
+/**
+ * Describes an attempt that ended before the webhook's complete response: cancelled if delivery
+ * stopped first, timed out if its deadline arrived first, and otherwise failed with `failure`.
+ */
+function describeUnfinishedAttempt(
+  settlement: Exclude<AttemptStepSettlement<unknown>, { readonly settlement: 'fulfilled' }>,
+  deliverySignal: AbortSignal,
+  failure: WebhookAttemptFailure,
+): UpdateDeliveryOutcome {
+  if (settlement.settlement === 'rejected') {
+    return { outcome: 'failed', failure, retryAfterSeconds: 0 };
+  }
+  // The attempt's signal aborts with the reason of whichever of its signals aborted first.
+  if (deliverySignal.aborted && settlement.abortReason === deliverySignal.reason) {
+    return { outcome: 'cancelled' };
+  }
+  return {
+    outcome: 'failed',
+    failure: { reason: 'timed_out', errorMessage: READ_TIMEOUT_ERROR_MESSAGE },
+    retryAfterSeconds: 0,
+  };
+}
+
+/** Releases a response nobody will read, so that its sender's connection is not left open. */
+function disposeResponse(response: Response): void {
+  response.body?.cancel().catch(() => {});
 }

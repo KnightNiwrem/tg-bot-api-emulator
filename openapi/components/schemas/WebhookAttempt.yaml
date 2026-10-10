@@ -30,9 +30,10 @@ properties:
       - failed
       - cancelled
     description: >-
-      `in_flight` while the request runs; `accepted` once the webhook accepted the update; `failed`
-      once it failed; `cancelled` when delivery stopped before an outcome, because the webhook was
-      replaced or deleted or the session ended, which leaves the update pending.
+      `in_flight` while the request runs; `accepted` once the webhook's complete 2xx response
+      arrived, before any method it names runs; `failed` once it failed; `cancelled` when delivery
+      stopped before the complete response, because the webhook was replaced or deleted or the
+      session ended, which leaves the update pending.
   failure:
     $ref: ./WebhookAttemptFailure.yaml
   retry:

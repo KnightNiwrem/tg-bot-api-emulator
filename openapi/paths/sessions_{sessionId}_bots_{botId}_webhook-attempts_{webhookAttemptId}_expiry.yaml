@@ -12,7 +12,8 @@ post:
     Aborts the attempt's request and answers once its outcome is decided. An attempt still waiting
     for the webhook's complete answer fails as `timed_out` with `Read timeout expired`, which
     `getWebhookInfo` reports, and schedules its retry. An attempt whose webhook already answered
-    completely, and whose answer's method is running, is accepted as Telegram would accept it.
+    completely is accepted on that answer, as Telegram accepts it, so it is no longer in flight,
+    even while the method its answer names runs.
   responses:
     '200':
       description: The deadline arrived; the attempt is shown with its outcome.
@@ -37,7 +38,8 @@ post:
                       - session_not_found
     '409':
       description: >-
-        The attempt is no longer in flight, or its deadline has already arrived.
+        The attempt is no longer in flight, or its deadline has already arrived, or its delivery
+        stopped and it is being cancelled.
       content:
         application/json:
           schema:

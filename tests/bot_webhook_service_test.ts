@@ -457,7 +457,7 @@ Deno.test('BotWebhookService runs the reply of an accepted update only', async (
     botUpdates.enqueueMessageUpdate(BOT_ID, createPrivateMessage(1));
     botWebhooks.setWebhook(BOT_ID, webhookRequest());
     await waitForRequestCount(2);
-    await waitUntil(() => botWebhooks.getWebhookInfo(BOT_ID).pending_update_count === 0);
+    await waitUntil(() => receivedReplies.length > 0);
 
     if (JSON.stringify(receivedReplies) !== JSON.stringify([{ botId: BOT_ID, body: replyBody }])) {
       throw new Error(
@@ -471,11 +471,12 @@ Deno.test('BotWebhookService runs the reply of an accepted update only', async (
   }
 });
 
-Deno.test('BotWebhookService confirms an accepted update whose reply fails', async () => {
+Deno.test('BotWebhookService confirms an accepted update whose reply never finishes', async () => {
   const { botUpdates, botWebhooks, receivedRequests, waitForRequestCount } = createWebhookFixture(
     () =>
       new Response('{"method":"sendMessage"}', { headers: { 'Content-Type': 'application/json' } }),
-    { runWebhookReply: () => Promise.reject(new Error('The reply method failed')) },
+    // The reply's method is started and left running; nothing waits for it.
+    { startWebhookReply: () => {} },
   );
 
   try {
@@ -491,7 +492,7 @@ Deno.test('BotWebhookService confirms an accepted update whose reply fails', asy
         JSON.stringify([1, 2]) ||
       'last_error_message' in webhookInfo
     ) {
-      throw new Error('Expected a failing reply to leave its update delivered without an error');
+      throw new Error('Expected a running reply to leave its update delivered without an error');
     }
   } finally {
     botWebhooks.endDelivery();
@@ -667,12 +668,12 @@ function createWebhookFixture(
     /** Waits for real when omitted. */
     readonly waitBeforeRetry?: (delaySeconds: number, signal: AbortSignal) => Promise<void>;
     /** Records each reply's body when omitted. */
-    readonly runWebhookReply?: (botId: number, reply: Response) => Promise<void>;
+    readonly startWebhookReply?: (botId: number, reply: Response) => void;
   } = {},
 ) {
   const receivedReplies: Array<{ readonly botId: number; readonly body: string }> = [];
-  const runWebhookReply = options.runWebhookReply ?? (async (botId: number, reply: Response) => {
-    receivedReplies.push({ botId, body: await reply.text() });
+  const startWebhookReply = options.startWebhookReply ?? ((botId: number, reply: Response) => {
+    void reply.text().then((body) => receivedReplies.push({ botId, body }));
   });
   const botUpdates = new BotUpdateRepository();
   const receivedRequests: ReceivedWebhookRequest[] = [];
@@ -694,7 +695,7 @@ function createWebhookFixture(
       requestCounter.countRequest();
       return await respond(request, receivedRequests.length - 1);
     },
-    runWebhookReply,
+    startWebhookReply,
     attempts: new WebhookAttemptScheduler({
       // These tests control no attempt, so they need no bot.
       bots: { getById: () => undefined },

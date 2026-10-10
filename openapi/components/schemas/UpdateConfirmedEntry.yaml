@@ -1,8 +1,8 @@
 type: object
 additionalProperties: false
 description: >-
-  An update the bot confirmed: by a `getUpdates` offset beyond it, or by its webhook's successful
-  answer to it, recorded after any method the answer names has run.
+  An update the bot confirmed: by a `getUpdates` offset beyond it, or by its webhook's complete
+  successful answer to it, recorded when the answer arrives, before any method it names runs.
 required:
   - position
   - kind
