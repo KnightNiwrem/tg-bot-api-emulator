@@ -13,35 +13,63 @@ export function assertJsonStructure(
   if (!Array.isArray(pattern) && !isPlainObject(pattern)) {
     throw new TypeError(`${subject} must be a JSON object or array`);
   }
-  // Values still to check, with where each is in the pattern and the objects and arrays that hold
-  // it, by which a cycle is found.
-  const pendingValues: Array<
-    { readonly value: unknown; readonly path: string; readonly holders: readonly object[] }
-  > = [{ value: pattern, path: '', holders: [] }];
-  for (let pending = pendingValues.pop(); pending !== undefined; pending = pendingValues.pop()) {
-    const { value, path, holders } = pending;
-    const location = path === '' ? subject : `${subject} at ${path}`;
+  // A depth-first walk of the pattern: each step checks a value, or leaves the object or array
+  // entered last. The objects and arrays entered and not yet left hold the value being checked, so
+  // meeting one of them again is a cycle.
+  const steps: PatternCheckStep[] = [{ kind: 'check', value: pattern, segment: '' }];
+  const enteredContainers = new Set<object>();
+  const enteredContainerStack: object[] = [];
+  const enteredSegments: string[] = [];
+  for (let step = steps.pop(); step !== undefined; step = steps.pop()) {
+    if (step.kind === 'leave') {
+      const leftContainer = enteredContainerStack.pop();
+      if (leftContainer !== undefined) {
+        enteredContainers.delete(leftContainer);
+      }
+      enteredSegments.pop();
+      continue;
+    }
+    const { value, segment } = step;
     if (
       value === null || typeof value === 'boolean' || typeof value === 'string' ||
       (typeof value === 'number' && Number.isFinite(value))
     ) {
       continue;
     }
+    // Assembled only for a fault, so that checking a value costs the same at any depth.
+    const location = () => {
+      const path = `${enteredSegments.join('')}${segment}`;
+      return path === '' ? subject : `${subject} at ${path}`;
+    };
     if (!Array.isArray(value) && !isPlainObject(value)) {
-      throw new TypeError(`${location} must hold only JSON values, not ${describeValue(value)}`);
+      throw new TypeError(`${location()} must hold only JSON values, not ${describeValue(value)}`);
     }
-    if (holders.includes(value)) {
-      throw new TypeError(`${location} must not contain itself`);
+    if (enteredContainers.has(value)) {
+      throw new TypeError(`${location()} must not contain itself`);
     }
-    const memberHolders = [...holders, value];
+    enteredContainers.add(value);
+    enteredContainerStack.push(value);
+    enteredSegments.push(segment);
+    steps.push({ kind: 'leave' });
     const members: Array<readonly [string, unknown]> = Array.isArray(value)
       ? Array.from(value, (element, index) => [`[${index}]`, element])
       : Object.entries(value).map(([name, member]) => [`.${name}`, member]);
-    for (const [memberPath, member] of members) {
-      pendingValues.push({ value: member, path: `${path}${memberPath}`, holders: memberHolders });
+    // Pushed last first, so that members are checked in order and the first fault is reported.
+    for (const [memberSegment, member] of members.reverse()) {
+      steps.push({ kind: 'check', value: member, segment: memberSegment });
     }
   }
 }
+
+/** A step of `assertJsonStructure`'s walk of a pattern. */
+type PatternCheckStep =
+  | {
+    readonly kind: 'check';
+    readonly value: unknown;
+    /** Where the value is in the object or array entered last, such as `.name` or `[0]`. */
+    readonly segment: string;
+  }
+  | { readonly kind: 'leave' };
 
 /**
  * The JSON text of a value with every object's members in one order, so that values that differ

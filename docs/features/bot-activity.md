@@ -99,10 +99,12 @@ row with those two buttons, whatever their callback data. A parameter sent as a 
 matches just as one sent as form text holding the same JSON. Only the parameters `parameters_json`
 names are read as JSON, and both filters can be given together.
 
-A `parameters_json` value that is not JSON is an `invalid_json` issue, one that is not an object, or
-has a pattern that is not an object or array, is an `invalid_type` issue, and a member that an
-object in it names twice is a `duplicate_field` issue. Each issue's path continues into the JSON, as
-in `["parameters_json", "reply_markup", "inline_keyboard"]`.
+A `parameters_json` value that is not JSON is an `invalid_json` issue, one that nests objects and
+arrays more than 100 levels deep, its own object included, is a `too_big` issue, one that is not an
+object, or has a pattern that is not an object or array, is an `invalid_type` issue, and a member
+that an object in it names twice is a `duplicate_field` issue. No Bot API parameter's JSON nests
+nearly as deep as the limit allows. Each issue's path continues into the JSON, as in
+`["parameters_json", "reply_markup", "inline_keyboard"]`.
 
 A read without `before` that finds nothing is held for up to `wait_ms` milliseconds, at most 10
 minutes, until a matching entry is recorded or the session ends. A read with `before` covers a range

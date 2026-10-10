@@ -204,6 +204,9 @@ Deno.test('A malformed parameters_json is an issue at its place in the JSON', as
     readonly [string, ReadonlyArray<readonly [readonly (string | number)[], string]>]
   > = [
     ['{', [[['parameters_json'], 'invalid_json']]],
+    // 101 levels: the outer object and 100 arrays, one more than the limit.
+    [`{"p":${'['.repeat(100)}${']'.repeat(100)}}`, [[['parameters_json'], 'too_big']]],
+    [`{"p":${'['.repeat(99)}${']'.repeat(99)}}`, []],
     ['', [[['parameters_json'], 'invalid_json']]],
     ['[]', [[['parameters_json'], 'invalid_type']]],
     ['null', [[['parameters_json'], 'invalid_type']]],

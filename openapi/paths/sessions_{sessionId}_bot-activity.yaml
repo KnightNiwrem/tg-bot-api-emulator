@@ -102,8 +102,9 @@ get:
         pattern requires a member to be missing; an array matches an array of the same length
         whose elements match the pattern's in order. A parameter a bot sent as a JSON body's
         object or array is matched just as one it sent as that JSON's text. The value is rejected
-        when it is not JSON, is not an object, has a member that is not an object or an array, or
-        has an object that names a member more than once.
+        when it is not JSON, nests objects and arrays more than 100 levels deep, its own object
+        included, is not an object, has a member that is not an object or an array, or has an
+        object that names a member more than once.
       content:
         application/json:
           schema:
@@ -155,8 +156,9 @@ get:
     '400':
       description: >-
         The query has an unknown, repeated, or malformed parameter, `parameters_json` is not an
-        object of patterns or names a member twice, `before` is not greater than `after`,
-        `wait_ms` is given with `before`, or a position is beyond the head of the log.
+        object of patterns, nests more than 100 levels deep or names a member twice, `before` is
+        not greater than `after`, `wait_ms` is given with `before`, or a position is beyond the
+        head of the log.
       content:
         application/json:
           schema:
