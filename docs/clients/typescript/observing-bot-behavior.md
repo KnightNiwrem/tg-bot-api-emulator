@@ -26,7 +26,7 @@ current position _before_ it acts, then waits for a matching entry _after_ that 
 entry from earlier in the test can never satisfy the wait:
 
 ```ts
-import { assertEquals } from 'jsr:@std/assert@^1';
+import { assertEquals } from 'jsr:@std/assert@1.0.19';
 import { withBotFixture } from './bot_fixture.ts';
 
 Deno.test('the bot confirms an order with its total', () =>
@@ -88,7 +88,7 @@ Parameters are recorded as text, as the Bot API reads them, so structured parame
 entries the other criteria let through:
 
 ```ts
-import { assertEquals } from 'jsr:@std/assert@^1';
+import { assertEquals } from 'jsr:@std/assert@1.0.19';
 import { withBotFixture } from './bot_fixture.ts';
 
 Deno.test('the bot offers a choice of sizes', () =>
@@ -146,7 +146,7 @@ it ignores. `where` on `kind: 'update_delivered'` receives a delivery entry, who
 update as the bot received it:
 
 ```ts
-import { assertObjectMatch } from 'jsr:@std/assert@^1';
+import { assertObjectMatch } from 'jsr:@std/assert@1.0.19';
 import { withBotFixture } from './bot_fixture.ts';
 
 Deno.test('the bot receives the edit of a message', () =>

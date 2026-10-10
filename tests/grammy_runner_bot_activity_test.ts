@@ -1,6 +1,5 @@
-import { Bot } from 'https://cdn.jsdelivr.net/gh/grammyjs/grammY@^1.46.0/src/bot.ts';
-import { run } from '@grammyjs/runner/runner.ts';
-import { sequentialize } from '@grammyjs/runner/sequentialize.ts';
+import { Bot } from 'grammy';
+import { run, sequentialize } from '@grammyjs/runner';
 
 import { latest, TelegramEmulationClient } from '../clients/typescript/mod.ts';
 import { createTestApi } from './support/emulation_api.ts';

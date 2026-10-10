@@ -25,7 +25,7 @@ Photo, document, video and voice note blocks show their files as `photo`, `docum
 has no `start_timestamp`. `richMessageToPlainText` shows only their captions.
 
 ```ts
-import { assert, assertEquals, assertExists } from 'jsr:@std/assert@^1';
+import { assert, assertEquals, assertExists } from 'jsr:@std/assert@1.0.19';
 import { richMessageToPlainText, richTextToPlainText } from '../../../clients/typescript/mod.ts';
 import { withBotFixture } from './bot_fixture.ts';
 
@@ -98,7 +98,7 @@ receives a `callback_query` update, and the test reads its answer as
 [Buttons and menus](buttons-and-menus.md) shows.
 
 ```ts
-import { assertEquals, assertExists } from 'jsr:@std/assert@^1';
+import { assertEquals, assertExists } from 'jsr:@std/assert@1.0.19';
 import { listButtons } from '../../../clients/typescript/mod.ts';
 import { withBotFixture } from './bot_fixture.ts';
 

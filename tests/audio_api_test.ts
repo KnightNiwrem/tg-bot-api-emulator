@@ -1,5 +1,4 @@
-import { Bot } from 'https://cdn.jsdelivr.net/gh/grammyjs/grammY@^1.46.0/src/bot.ts';
-import { InputFile } from 'https://cdn.jsdelivr.net/gh/grammyjs/grammY@^1.46.0/src/types.ts';
+import { Bot, InputFile } from 'grammy';
 import {
   createTestSession,
   type EmulationApi,

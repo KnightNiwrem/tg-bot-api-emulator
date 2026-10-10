@@ -20,7 +20,7 @@ history by its sender and by the message it answers, never by its position in th
 reply parameters and message IDs.
 
 ```ts
-import { assertEquals, assertExists } from 'jsr:@std/assert@^1';
+import { assertEquals, assertExists } from 'jsr:@std/assert@1.0.19';
 import { withBotFixture } from './bot_fixture.ts';
 
 Deno.test('the bot greets the name the account gives in reply to its question', () =>
@@ -83,7 +83,7 @@ message. A bot's `parse_mode` formatting reaches the account's history as entiti
 types and limits.
 
 ```ts
-import { assertEquals } from 'jsr:@std/assert@^1';
+import { assertEquals } from 'jsr:@std/assert@1.0.19';
 import { withBotFixture } from './bot_fixture.ts';
 
 Deno.test('the bot repeats the bold part of a message in bold', () =>
@@ -132,7 +132,7 @@ new text or caption must differ from the current one. The
 [editing reference](../../features/messages.md#editing-and-deleting) lists what can be edited.
 
 ```ts
-import { assertEquals, assertExists } from 'jsr:@std/assert@^1';
+import { assertEquals, assertExists } from 'jsr:@std/assert@1.0.19';
 import { withBotFixture } from './bot_fixture.ts';
 
 Deno.test('the bot notices when the account edits its message', () =>
@@ -182,7 +182,7 @@ A caption edit works the same way. The photo below is a 2×1 GIF inlined as byte
 accepts as a photo.
 
 ```ts
-import { assertEquals } from 'jsr:@std/assert@^1';
+import { assertEquals } from 'jsr:@std/assert@1.0.19';
 import { withBotFixture } from './bot_fixture.ts';
 
 const TINY_GIF = new Uint8Array([0x47, 0x49, 0x46, 0x38, 0x39, 0x61, 2, 0, 1, 0, 0, 0, 0]);
@@ -228,7 +228,7 @@ update the deletion caused. The
 and [Observing bot behavior](observing-bot-behavior.md) explains fences.
 
 ```ts
-import { assertEquals } from 'jsr:@std/assert@^1';
+import { assertEquals } from 'jsr:@std/assert@1.0.19';
 import { withBotFixture } from './bot_fixture.ts';
 
 Deno.test('deleting a message sends the bot no update', () =>
@@ -276,7 +276,7 @@ bot's earlier call returned, and then reads the history. Parameters are recorded
 numeric `message_id` is matched as a string.
 
 ```ts
-import { assert, assertEquals, assertExists } from 'jsr:@std/assert@^1';
+import { assert, assertEquals, assertExists } from 'jsr:@std/assert@1.0.19';
 import { withBotFixture } from './bot_fixture.ts';
 
 Deno.test('the bot reports progress by editing its status message', () =>
@@ -333,7 +333,7 @@ from linking to it: their origin is a `hidden_user` that shows only its name. Th
 forwarded.
 
 ```ts
-import { assertEquals, assertExists } from 'jsr:@std/assert@^1';
+import { assertEquals, assertExists } from 'jsr:@std/assert@1.0.19';
 import { withBotFixture } from './bot_fixture.ts';
 
 Deno.test('the bot names the origin of forwarded messages', () =>
@@ -420,7 +420,7 @@ records nothing. In a private chat, either participant pins any message. The
 errors.
 
 ```ts
-import { assertEquals, assertExists } from 'jsr:@std/assert@^1';
+import { assertEquals, assertExists } from 'jsr:@std/assert@1.0.19';
 import { withBotFixture } from './bot_fixture.ts';
 
 Deno.test('the bot acknowledges a pinned message', () =>
@@ -466,7 +466,7 @@ receives a pin's service message, privacy mode notwithstanding. [Supergroups](su
 creating one and adding members.
 
 ```ts
-import { assertEquals } from 'jsr:@std/assert@^1';
+import { assertEquals } from 'jsr:@std/assert@1.0.19';
 import { withBotFixture } from './bot_fixture.ts';
 
 Deno.test('the bot acknowledges a pin in a supergroup', () =>
@@ -504,9 +504,9 @@ with an `EmulationClientError` of status 409. The
 as the bot directly through the fixture's `bot.api`.
 
 ```ts
-import { assertEquals, assertRejects } from 'jsr:@std/assert@^1';
-import { GrammyError } from 'npm:grammy@^1.46.0';
-import type { ChatMemberUpdated } from 'npm:grammy@^1.46.0/types';
+import { assertEquals, assertRejects } from 'jsr:@std/assert@1.0.19';
+import { GrammyError } from 'npm:grammy@1.46.0';
+import type { ChatMemberUpdated } from 'npm:grammy@1.46.0/types';
 import { EmulationClientError } from '../../../clients/typescript/mod.ts';
 import { withBotFixture } from './bot_fixture.ts';
 
@@ -571,7 +571,7 @@ messages do not notify. The [notifications reference](../../features/messages.md
 describes them.
 
 ```ts
-import { assertEquals, assertExists } from 'jsr:@std/assert@^1';
+import { assertEquals, assertExists } from 'jsr:@std/assert@1.0.19';
 import { withBotFixture } from './bot_fixture.ts';
 
 Deno.test('the bot sends its footnote silently', () =>
@@ -623,7 +623,7 @@ the bot works and expire it as if the work took too long. It resolves the promis
 the bot can stop even when an assertion fails.
 
 ```ts
-import { assertEquals } from 'jsr:@std/assert@^1';
+import { assertEquals } from 'jsr:@std/assert@1.0.19';
 import { withBotFixture } from './bot_fixture.ts';
 
 Deno.test('the account sees the bot typing until the action expires', async () => {
@@ -682,7 +682,7 @@ The test below holds the bot's answer on a promise, reads the draft while the bo
 it as if the answer took too long, before the answer arrives anyway.
 
 ```ts
-import { assertEquals } from 'jsr:@std/assert@^1';
+import { assertEquals } from 'jsr:@std/assert@1.0.19';
 import { withBotFixture } from './bot_fixture.ts';
 
 Deno.test('the answer arrives after its draft timed out', async () => {
@@ -749,7 +749,7 @@ draft never stays in the chat on its own. The test lets the generator produce ea
 it has seen the previous one, so the stop always lands after the second chunk.
 
 ```ts
-import { assertEquals } from 'jsr:@std/assert@^1';
+import { assertEquals } from 'jsr:@std/assert@1.0.19';
 import { withBotFixture } from './bot_fixture.ts';
 
 Deno.test('the account stops the answer and keeps what the bot wrote so far', async () => {

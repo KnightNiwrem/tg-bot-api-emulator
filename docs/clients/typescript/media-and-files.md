@@ -23,8 +23,8 @@ file in the session, including the ones bots send; it is an emulation API conven
 Telegram API.
 
 ```ts
-import { assertEquals, assertExists } from 'jsr:@std/assert@^1';
-import { InputFile } from 'npm:grammy@^1.46.0';
+import { assertEquals, assertExists } from 'jsr:@std/assert@1.0.19';
+import { InputFile } from 'npm:grammy@1.46.0';
 import { withBotFixture } from './bot_fixture.ts';
 
 /** A 2×1 GIF, small enough to spell out and an image the emulator reads dimensions from. */
@@ -82,7 +82,7 @@ MIME type the bot sees. The
 thumbnails.
 
 ```ts
-import { assertEquals, assertExists } from 'jsr:@std/assert@^1';
+import { assertEquals, assertExists } from 'jsr:@std/assert@1.0.19';
 import { withBotFixture } from './bot_fixture.ts';
 
 Deno.test('the bot sees the name and type of a document', async () => {
@@ -133,7 +133,7 @@ explains. The placeholder bytes below are not a real video or recording. See
 [voice notes](../../features/media-and-files.md#voice-notes) for ranges, defaults and MIME types.
 
 ```ts
-import { assertEquals } from 'jsr:@std/assert@^1';
+import { assertEquals } from 'jsr:@std/assert@1.0.19';
 import { withBotFixture } from './bot_fixture.ts';
 
 /** Placeholder content: the emulator stores video and voice bytes without reading them. */
@@ -203,7 +203,7 @@ own track. See [audio files](../../features/media-and-files.md#audio-files) for 
 thumbnails and files sent by URL.
 
 ```ts
-import { assertEquals } from 'jsr:@std/assert@^1';
+import { assertEquals } from 'jsr:@std/assert@1.0.19';
 import { withBotFixture } from './bot_fixture.ts';
 
 /** Placeholder content: the emulator stores audio bytes without reading them. */
@@ -263,7 +263,7 @@ The bot below replies to every photo with the album it belongs to, so the test w
 per album message.
 
 ```ts
-import { assertEquals, assertExists } from 'jsr:@std/assert@^1';
+import { assertEquals, assertExists } from 'jsr:@std/assert@1.0.19';
 import { withBotFixture } from './bot_fixture.ts';
 
 const RECEIPT_IMAGE = new Uint8Array([0x47, 0x49, 0x46, 0x38, 0x39, 0x61, 2, 0, 1, 0, 0, 0, 0]);
@@ -317,7 +317,7 @@ file the account sent, and the bot receives an `edited_message` update. [Message
 covers editing in general.
 
 ```ts
-import { assertEquals } from 'jsr:@std/assert@^1';
+import { assertEquals } from 'jsr:@std/assert@1.0.19';
 import { withBotFixture } from './bot_fixture.ts';
 
 const RECEIPT_IMAGE = new Uint8Array([0x47, 0x49, 0x46, 0x38, 0x39, 0x61, 2, 0, 1, 0, 0, 0, 0]);
@@ -366,7 +366,7 @@ content types and errors each method expects; [test controls](test-controls.md) 
 session's other controls, such as the `upload_profile` that limits the size of bot uploads.
 
 ```ts
-import { assertEquals, assertExists } from 'jsr:@std/assert@^1';
+import { assertEquals, assertExists } from 'jsr:@std/assert@1.0.19';
 import { withBotFixture } from './bot_fixture.ts';
 
 const RECEIPT_IMAGE = new Uint8Array([0x47, 0x49, 0x46, 0x38, 0x39, 0x61, 2, 0, 1, 0, 0, 0, 0]);

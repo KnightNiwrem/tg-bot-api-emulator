@@ -3,7 +3,7 @@
  * step with the method catalogue and Telegram's legacy method names, which decide what the
  * emulator answers. The inventory's grouping into areas is authored and is not checked.
  */
-import { assertEquals } from 'jsr:@std/assert@^1.0.19';
+import { assertEquals } from '@std/assert';
 import {
   findBotApiMethod,
   listBotApiMethodNames,
