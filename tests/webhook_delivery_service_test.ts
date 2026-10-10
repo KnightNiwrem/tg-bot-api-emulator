@@ -1,9 +1,7 @@
 import { BotActivityLogRepository } from '../src/repositories/bot_activity_log.ts';
 import { BotUpdateRepository } from '../src/repositories/bot_update.ts';
-import { BotUpdateSubscriptionRepository } from '../src/repositories/bot_update_subscription.ts';
-import { BotWebhookRepository } from '../src/repositories/bot_webhook.ts';
 import { BotActivityService } from '../src/services/bot_activity.ts';
-import { BotWebhookService, type SetWebhookRequest } from '../src/services/bot_webhook.ts';
+import type { SetWebhookRequest } from '../src/services/bot_update_consumer.ts';
 import {
   WEBHOOK_ATTEMPT_TIMEOUT_MILLISECONDS,
   WebhookAttemptScheduler,
@@ -12,6 +10,7 @@ import { createRealTimeScheduler, createRetryScheduler } from './support/schedul
 import {
   ADA_ID,
   createPrivateMessage,
+  createUpdateConsumers,
   NOW_UNIX_SECONDS,
   ReceivedRequestCounter,
   respondOnlyByAborting,
@@ -25,10 +24,10 @@ const BOT_ID = 10;
 const GRACE_ID = 2;
 const LINUS_ID = 3;
 
-Deno.test('BotWebhookService sets, keeps, replaces, and deletes webhooks as Telegram does', () => {
-  const { botWebhooks } = createWebhookFixture(() => new Response(null));
+Deno.test('Webhook delivery sets, keeps, replaces, and deletes webhooks as Telegram does', () => {
+  const { updateConsumers, endSession } = createWebhookFixture(() => new Response(null));
   const setWebhook = (request: Partial<SetWebhookRequest>) =>
-    botWebhooks.setWebhook(BOT_ID, { ...webhookRequest(), ...request });
+    updateConsumers.setWebhook(BOT_ID, { ...webhookRequest(), ...request });
 
   try {
     const outcomes = [
@@ -55,8 +54,8 @@ Deno.test('BotWebhookService sets, keeps, replaces, and deletes webhooks as Tele
 
     setWebhook({});
     const deleteOutcomes = [
-      botWebhooks.deleteWebhook(BOT_ID, { dropPendingUpdates: false }),
-      botWebhooks.deleteWebhook(BOT_ID, { dropPendingUpdates: true }),
+      updateConsumers.deleteWebhook(BOT_ID, { dropPendingUpdates: false }),
+      updateConsumers.deleteWebhook(BOT_ID, { dropPendingUpdates: true }),
     ];
     if (
       JSON.stringify(deleteOutcomes) !==
@@ -67,26 +66,26 @@ Deno.test('BotWebhookService sets, keeps, replaces, and deletes webhooks as Tele
 
     // A URL without a scheme is an HTTPS URL, and is reported as the bot specified it.
     setWebhook({ url: 'bot.example/webhook' });
-    if (botWebhooks.getWebhookInfo(BOT_ID).url !== 'bot.example/webhook') {
+    if (updateConsumers.getWebhookInfo(BOT_ID).url !== 'bot.example/webhook') {
       throw new Error('Expected a URL without a scheme to be accepted and reported unchanged');
     }
   } finally {
-    botWebhooks.endDelivery();
+    endSession();
   }
 });
 
-Deno.test('BotWebhookService rejects invalid URLs and secret tokens without changing the webhook', () => {
-  const { botWebhooks } = createWebhookFixture(() => new Response(null));
+Deno.test('Webhook delivery rejects invalid URLs and secret tokens without changing the webhook', () => {
+  const { updateConsumers, endSession } = createWebhookFixture(() => new Response(null));
 
   try {
-    botWebhooks.setWebhook(BOT_ID, webhookRequest());
+    updateConsumers.setWebhook(BOT_ID, webhookRequest());
     const rejections = [
       { url: 'https://bot example/webhook' },
       { url: 'ftp://bot.example/webhook' },
       { secretToken: 'a'.repeat(257) },
       { secretToken: 'not allowed!' },
     ].map((request) => {
-      const result = botWebhooks.setWebhook(BOT_ID, { ...webhookRequest(), ...request });
+      const result = updateConsumers.setWebhook(BOT_ID, { ...webhookRequest(), ...request });
       return result.accepted ? result.outcome : result.reason;
     });
     if (
@@ -100,11 +99,11 @@ Deno.test('BotWebhookService rejects invalid URLs and secret tokens without chan
     ) {
       throw new Error(`Expected Telegram's setWebhook rejections, received ${rejections}`);
     }
-    if (botWebhooks.getWebhookInfo(BOT_ID).url !== WEBHOOK_URL) {
+    if (updateConsumers.getWebhookInfo(BOT_ID).url !== WEBHOOK_URL) {
       throw new Error('Expected a rejected request to keep the current webhook');
     }
 
-    const longestSecretToken = botWebhooks.setWebhook(BOT_ID, {
+    const longestSecretToken = updateConsumers.setWebhook(BOT_ID, {
       ...webhookRequest(),
       secretToken: 'a'.repeat(256),
     });
@@ -112,19 +111,20 @@ Deno.test('BotWebhookService rejects invalid URLs and secret tokens without chan
       throw new Error('Expected a secret token of 256 characters to be accepted');
     }
   } finally {
-    botWebhooks.endDelivery();
+    endSession();
   }
 });
 
-Deno.test('BotWebhookService posts pending updates in order and confirms accepted ones', async () => {
-  const { botUpdates, botWebhooks, receivedRequests, waitForRequestCount } = createWebhookFixture(
-    () => new Response('ignored body'),
-  );
+Deno.test('Webhook delivery posts pending updates in order and confirms accepted ones', async () => {
+  const { botUpdates, updateConsumers, receivedRequests, waitForRequestCount, endSession } =
+    createWebhookFixture(
+      () => new Response('ignored body'),
+    );
 
   try {
     botUpdates.enqueueMessageUpdate(BOT_ID, createPrivateMessage(1));
     botUpdates.enqueueMessageUpdate(BOT_ID, createPrivateMessage(2));
-    botWebhooks.setWebhook(BOT_ID, {
+    updateConsumers.setWebhook(BOT_ID, {
       ...webhookRequest(),
       url: 'https://user:pass@bot.example/webhook?token=1',
       secretToken: 'secret_1',
@@ -151,25 +151,26 @@ Deno.test('BotWebhookService posts pending updates in order and confirms accepte
       throw new Error('Expected a JSON POST with the secret token and URL credentials as headers');
     }
     // Only the update in flight is still pending.
-    if (botWebhooks.getWebhookInfo(BOT_ID).pending_update_count !== 1) {
+    if (updateConsumers.getWebhookInfo(BOT_ID).pending_update_count !== 1) {
       throw new Error('Expected accepted updates to be confirmed');
     }
   } finally {
-    botWebhooks.endDelivery();
+    endSession();
   }
 });
 
-Deno.test('BotWebhookService retries a failed update and reports the latest failure', async () => {
-  const { botUpdates, botWebhooks, receivedRequests, waitForRequestCount } = createWebhookFixture(
-    (_request, requestIndex) =>
-      requestIndex === 0
-        ? new Response(null, { status: 500, statusText: 'Internal Server Error' })
-        : new Response(null),
-  );
+Deno.test('Webhook delivery retries a failed update and reports the latest failure', async () => {
+  const { botUpdates, updateConsumers, receivedRequests, waitForRequestCount, endSession } =
+    createWebhookFixture(
+      (_request, requestIndex) =>
+        requestIndex === 0
+          ? new Response(null, { status: 500, statusText: 'Internal Server Error' })
+          : new Response(null),
+    );
 
   try {
     botUpdates.enqueueMessageUpdate(BOT_ID, createPrivateMessage(1));
-    botWebhooks.setWebhook(BOT_ID, webhookRequest());
+    updateConsumers.setWebhook(BOT_ID, webhookRequest());
     await waitForRequestCount(2);
     botUpdates.enqueueMessageUpdate(BOT_ID, createPrivateMessage(2));
     await waitForRequestCount(3);
@@ -180,7 +181,7 @@ Deno.test('BotWebhookService retries a failed update and reports the latest fail
     ) {
       throw new Error('Expected a failed update to be sent again at once, before later ones');
     }
-    const webhookInfo = botWebhooks.getWebhookInfo(BOT_ID);
+    const webhookInfo = updateConsumers.getWebhookInfo(BOT_ID);
     if (
       webhookInfo.last_error_date !== NOW_UNIX_SECONDS ||
       webhookInfo.last_error_message !==
@@ -189,28 +190,29 @@ Deno.test('BotWebhookService retries a failed update and reports the latest fail
       throw new Error('Expected the failure to be reported after later successes');
     }
 
-    botWebhooks.setWebhook(BOT_ID, { ...webhookRequest(), url: `${WEBHOOK_URL}/new` });
-    if ('last_error_message' in botWebhooks.getWebhookInfo(BOT_ID)) {
+    updateConsumers.setWebhook(BOT_ID, { ...webhookRequest(), url: `${WEBHOOK_URL}/new` });
+    if ('last_error_message' in updateConsumers.getWebhookInfo(BOT_ID)) {
       throw new Error('Expected a new webhook to forget the failure of the previous one');
     }
   } finally {
-    botWebhooks.endDelivery();
+    endSession();
   }
 });
 
-Deno.test('BotWebhookService records each attempt as a delivery, a failure as such, and the acceptance as a confirmation', async () => {
-  const { botUpdates, botActivity, botWebhooks, waitForRequestCount } = createWebhookFixture(
-    (_request, requestIndex) =>
-      requestIndex === 0
-        ? new Response(null, { status: 500, statusText: 'Internal Server Error' })
-        : new Response(null),
-  );
+Deno.test('Webhook delivery records each attempt as a delivery, a failure as such, and the acceptance as a confirmation', async () => {
+  const { botUpdates, botActivity, updateConsumers, waitForRequestCount, endSession } =
+    createWebhookFixture(
+      (_request, requestIndex) =>
+        requestIndex === 0
+          ? new Response(null, { status: 500, statusText: 'Internal Server Error' })
+          : new Response(null),
+    );
 
   try {
     botUpdates.enqueueMessageUpdate(BOT_ID, createPrivateMessage(1));
-    botWebhooks.setWebhook(BOT_ID, webhookRequest());
+    updateConsumers.setWebhook(BOT_ID, webhookRequest());
     await waitForRequestCount(2);
-    await waitUntil(() => botWebhooks.getWebhookInfo(BOT_ID).pending_update_count === 0);
+    await waitUntil(() => updateConsumers.getWebhookInfo(BOT_ID).pending_update_count === 0);
 
     const recorded = await botActivity.readEntries({
       after: 0,
@@ -253,11 +255,11 @@ Deno.test('BotWebhookService records each attempt as a delivery, a failure as su
       throw new Error(`Expected the failure and its immediate retry, received ${failure}`);
     }
   } finally {
-    botWebhooks.endDelivery();
+    endSession();
   }
 });
 
-Deno.test('BotWebhookService keeps delivering other chats while one chat keeps failing', async () => {
+Deno.test('Webhook delivery keeps delivering other chats while one chat keeps failing', async () => {
   // Update 1 always fails, and its retry waits until delivery ends.
   let receivedRequests: readonly ReceivedWebhookRequest[] = [];
   const fixture = createWebhookFixture(
@@ -267,18 +269,18 @@ Deno.test('BotWebhookService keeps delivering other chats while one chat keeps f
         : new Response(null),
     { waitBeforeRetry: (_delaySeconds, signal) => waitForAbort(signal) },
   );
-  const { botUpdates, botWebhooks, waitForRequestCount } = fixture;
+  const { botUpdates, updateConsumers, waitForRequestCount, endSession } = fixture;
   receivedRequests = fixture.receivedRequests;
 
   try {
     botUpdates.enqueueMessageUpdate(BOT_ID, createPrivateMessage(1, ADA_ID));
     botUpdates.enqueueMessageUpdate(BOT_ID, createPrivateMessage(2, ADA_ID));
     botUpdates.enqueueMessageUpdate(BOT_ID, createPrivateMessage(3, GRACE_ID));
-    botWebhooks.setWebhook(BOT_ID, webhookRequest());
+    updateConsumers.setWebhook(BOT_ID, webhookRequest());
     await waitForRequestCount(2);
     botUpdates.enqueueMessageUpdate(BOT_ID, createPrivateMessage(4, GRACE_ID));
     await waitForRequestCount(3);
-    await waitUntil(() => botWebhooks.getWebhookInfo(BOT_ID).pending_update_count === 2);
+    await waitUntil(() => updateConsumers.getWebhookInfo(BOT_ID).pending_update_count === 2);
 
     // Ada's update 2 waits behind her failing update 1, while Grace's updates are delivered.
     const sentUpdateIds = receivedRequests.map(({ body }) => body.update_id);
@@ -288,22 +290,23 @@ Deno.test('BotWebhookService keeps delivering other chats while one chat keeps f
       );
     }
   } finally {
-    botWebhooks.endDelivery();
+    endSession();
   }
 });
 
-Deno.test('BotWebhookService sends at most max_connections updates at once, one per chat', async () => {
+Deno.test('Webhook delivery sends at most max_connections updates at once, one per chat', async () => {
   const responses: Array<(response: Response) => void> = [];
-  const { botUpdates, botWebhooks, receivedRequests, waitForRequestCount } = createWebhookFixture(
-    () => new Promise<Response>((resolve) => responses.push(resolve)),
-  );
+  const { botUpdates, updateConsumers, receivedRequests, waitForRequestCount, endSession } =
+    createWebhookFixture(
+      () => new Promise<Response>((resolve) => responses.push(resolve)),
+    );
 
   try {
     botUpdates.enqueueMessageUpdate(BOT_ID, createPrivateMessage(1, ADA_ID));
     botUpdates.enqueueMessageUpdate(BOT_ID, createPrivateMessage(2, GRACE_ID));
     botUpdates.enqueueMessageUpdate(BOT_ID, createPrivateMessage(3, LINUS_ID));
     botUpdates.enqueueMessageUpdate(BOT_ID, createPrivateMessage(4, ADA_ID));
-    botWebhooks.setWebhook(BOT_ID, { ...webhookRequest(), maxConnections: 2 });
+    updateConsumers.setWebhook(BOT_ID, { ...webhookRequest(), maxConnections: 2 });
     await waitForRequestCount(2);
     await new Promise((resolve) => setTimeout(resolve, 10));
     const inFlightAtFirst = receivedRequests.map(({ body }) => body.update_id);
@@ -325,11 +328,11 @@ Deno.test('BotWebhookService sends at most max_connections updates at once, one 
       );
     }
   } finally {
-    botWebhooks.endDelivery();
+    endSession();
   }
 });
 
-Deno.test('BotWebhookService waits as long as a failed response asks with Retry-After', async () => {
+Deno.test('Webhook delivery waits as long as a failed response asks with Retry-After', async () => {
   // Each failed response asks for a wait as Telegram reads its header, or for none.
   const failedResponseRetryAfters = [
     undefined,
@@ -341,7 +344,7 @@ Deno.test('BotWebhookService waits as long as a failed response asks with Retry-
     '2147483648',
   ];
   const requestedDelaysSeconds: number[] = [];
-  const { botUpdates, botWebhooks, waitForRequestCount } = createWebhookFixture(
+  const { botUpdates, updateConsumers, waitForRequestCount, endSession } = createWebhookFixture(
     (_request, requestIndex) => {
       const retryAfter = failedResponseRetryAfters[requestIndex];
       if (requestIndex >= failedResponseRetryAfters.length) {
@@ -363,9 +366,9 @@ Deno.test('BotWebhookService waits as long as a failed response asks with Retry-
 
   try {
     botUpdates.enqueueMessageUpdate(BOT_ID, createPrivateMessage(1));
-    botWebhooks.setWebhook(BOT_ID, webhookRequest());
+    updateConsumers.setWebhook(BOT_ID, webhookRequest());
     await waitForRequestCount(failedResponseRetryAfters.length + 1);
-    await waitUntil(() => botWebhooks.getWebhookInfo(BOT_ID).pending_update_count === 0);
+    await waitUntil(() => updateConsumers.getWebhookInfo(BOT_ID).pending_update_count === 0);
 
     // A requested wait, capped at an hour, replaces the backoff delay without doubling it.
     if (JSON.stringify(requestedDelaysSeconds) !== JSON.stringify([0, 5, 2, 3600, 4, 8, 16])) {
@@ -376,27 +379,28 @@ Deno.test('BotWebhookService waits as long as a failed response asks with Retry-
       );
     }
   } finally {
-    botWebhooks.endDelivery();
+    endSession();
   }
 });
 
-Deno.test('BotWebhookService reports a webhook it cannot connect to', async () => {
-  const { botUpdates, botWebhooks, receivedRequests, waitForRequestCount } = createWebhookFixture(
-    () => {
-      throw new TypeError('fetch failed');
-    },
-  );
+Deno.test('Webhook delivery reports a webhook it cannot connect to', async () => {
+  const { botUpdates, updateConsumers, receivedRequests, waitForRequestCount, endSession } =
+    createWebhookFixture(
+      () => {
+        throw new TypeError('fetch failed');
+      },
+    );
 
   try {
     botUpdates.enqueueMessageUpdate(BOT_ID, createPrivateMessage(1));
-    botWebhooks.setWebhook(BOT_ID, webhookRequest());
+    updateConsumers.setWebhook(BOT_ID, webhookRequest());
     // The first failure is retried at once; the second waits 2 seconds.
     await waitForRequestCount(2);
 
     if (receivedRequests.some(({ body }) => body.update_id !== 1)) {
       throw new Error('Expected the failed update to be sent again');
     }
-    const webhookInfo = botWebhooks.getWebhookInfo(BOT_ID);
+    const webhookInfo = updateConsumers.getWebhookInfo(BOT_ID);
     if (
       webhookInfo.last_error_message !== "Can't connect to the webhook" ||
       webhookInfo.pending_update_count !== 1
@@ -404,28 +408,34 @@ Deno.test('BotWebhookService reports a webhook it cannot connect to', async () =
       throw new Error("Expected Telegram's connection failure and the update to stay pending");
     }
   } finally {
-    botWebhooks.endDelivery();
+    endSession();
   }
 });
 
-Deno.test('BotWebhookService fails an attempt that outlasts its timeout and retries the update', async () => {
-  const { botUpdates, botWebhooks, receivedRequests, receivedSignals, waitForRequestCount } =
-    createWebhookFixture(
-      // The first request ignores its abort, as a sender might; the second hangs until aborted.
-      (request, requestIndex) =>
-        requestIndex === 0 ? new Promise<Response>(() => {}) : respondOnlyByAborting(request),
-      { attemptTimeoutMilliseconds: 20 },
-    );
+Deno.test('Webhook delivery fails an attempt that outlasts its timeout and retries the update', async () => {
+  const {
+    botUpdates,
+    updateConsumers,
+    receivedRequests,
+    receivedSignals,
+    waitForRequestCount,
+    endSession,
+  } = createWebhookFixture(
+    // The first request ignores its abort, as a sender might; the second hangs until aborted.
+    (request, requestIndex) =>
+      requestIndex === 0 ? new Promise<Response>(() => {}) : respondOnlyByAborting(request),
+    { attemptTimeoutMilliseconds: 20 },
+  );
 
   try {
     botUpdates.enqueueMessageUpdate(BOT_ID, createPrivateMessage(1));
     botUpdates.enqueueMessageUpdate(BOT_ID, createPrivateMessage(2));
-    botWebhooks.setWebhook(BOT_ID, webhookRequest());
+    updateConsumers.setWebhook(BOT_ID, webhookRequest());
     // The first failure is retried at once; the second waits 2 seconds.
     await waitForRequestCount(2);
     await new Promise((resolve) => setTimeout(resolve, 40));
 
-    const webhookInfo = botWebhooks.getWebhookInfo(BOT_ID);
+    const webhookInfo = updateConsumers.getWebhookInfo(BOT_ID);
     if (
       JSON.stringify(receivedRequests.map(({ body }) => body.update_id)) !==
         JSON.stringify([1, 1]) ||
@@ -440,22 +450,23 @@ Deno.test('BotWebhookService fails an attempt that outlasts its timeout and retr
       );
     }
   } finally {
-    botWebhooks.endDelivery();
+    endSession();
   }
 });
 
-Deno.test('BotWebhookService runs the reply of an accepted update only', async () => {
+Deno.test('Webhook delivery runs the reply of an accepted update only', async () => {
   const replyBody = JSON.stringify({ method: 'sendMessage', chat_id: 1, text: 'Hi' });
-  const { botUpdates, botWebhooks, receivedReplies, waitForRequestCount } = createWebhookFixture(
-    (_request, requestIndex) =>
-      requestIndex === 0
-        ? new Response(replyBody, { status: 500, statusText: 'Internal Server Error' })
-        : new Response(replyBody, { headers: { 'Content-Type': 'application/json' } }),
-  );
+  const { botUpdates, updateConsumers, receivedReplies, waitForRequestCount, endSession } =
+    createWebhookFixture(
+      (_request, requestIndex) =>
+        requestIndex === 0
+          ? new Response(replyBody, { status: 500, statusText: 'Internal Server Error' })
+          : new Response(replyBody, { headers: { 'Content-Type': 'application/json' } }),
+    );
 
   try {
     botUpdates.enqueueMessageUpdate(BOT_ID, createPrivateMessage(1));
-    botWebhooks.setWebhook(BOT_ID, webhookRequest());
+    updateConsumers.setWebhook(BOT_ID, webhookRequest());
     await waitForRequestCount(2);
     await waitUntil(() => receivedReplies.length > 0);
 
@@ -467,26 +478,29 @@ Deno.test('BotWebhookService runs the reply of an accepted update only', async (
       );
     }
   } finally {
-    botWebhooks.endDelivery();
+    endSession();
   }
 });
 
-Deno.test('BotWebhookService confirms an accepted update whose reply never finishes', async () => {
-  const { botUpdates, botWebhooks, receivedRequests, waitForRequestCount } = createWebhookFixture(
-    () =>
-      new Response('{"method":"sendMessage"}', { headers: { 'Content-Type': 'application/json' } }),
-    // The reply's method is started and left running; nothing waits for it.
-    { startWebhookReply: () => {} },
-  );
+Deno.test('Webhook delivery confirms an accepted update whose reply never finishes', async () => {
+  const { botUpdates, updateConsumers, receivedRequests, waitForRequestCount, endSession } =
+    createWebhookFixture(
+      () =>
+        new Response('{"method":"sendMessage"}', {
+          headers: { 'Content-Type': 'application/json' },
+        }),
+      // The reply's method is started and left running; nothing waits for it.
+      { startWebhookReply: () => {} },
+    );
 
   try {
     botUpdates.enqueueMessageUpdate(BOT_ID, createPrivateMessage(1));
     botUpdates.enqueueMessageUpdate(BOT_ID, createPrivateMessage(2));
-    botWebhooks.setWebhook(BOT_ID, webhookRequest());
+    updateConsumers.setWebhook(BOT_ID, webhookRequest());
     await waitForRequestCount(2);
-    await waitUntil(() => botWebhooks.getWebhookInfo(BOT_ID).pending_update_count === 0);
+    await waitUntil(() => updateConsumers.getWebhookInfo(BOT_ID).pending_update_count === 0);
 
-    const webhookInfo = botWebhooks.getWebhookInfo(BOT_ID);
+    const webhookInfo = updateConsumers.getWebhookInfo(BOT_ID);
     if (
       JSON.stringify(receivedRequests.map(({ body }) => body.update_id)) !==
         JSON.stringify([1, 2]) ||
@@ -495,33 +509,39 @@ Deno.test('BotWebhookService confirms an accepted update whose reply never finis
       throw new Error('Expected a running reply to leave its update delivered without an error');
     }
   } finally {
-    botWebhooks.endDelivery();
+    endSession();
   }
 });
 
-Deno.test('BotWebhookService retries an accepted update whose response is cut short', async () => {
+Deno.test('Webhook delivery retries an accepted update whose response is cut short', async () => {
   const replyBody = '{"method":"sendMessage","chat_id":1,"text":"Hi"}';
-  const { botUpdates, botWebhooks, receivedRequests, receivedReplies, waitForRequestCount } =
-    createWebhookFixture(
-      (_request, requestIndex) =>
-        new Response(
-          requestIndex === 0
-            ? new ReadableStream<Uint8Array>({
-              start(controller) {
-                controller.enqueue(new TextEncoder().encode(replyBody.slice(0, 10)));
-                controller.error(new Error('The connection closed'));
-              },
-            })
-            : replyBody,
-          { headers: { 'Content-Type': 'application/json' } },
-        ),
-    );
+  const {
+    botUpdates,
+    updateConsumers,
+    receivedRequests,
+    receivedReplies,
+    waitForRequestCount,
+    endSession,
+  } = createWebhookFixture(
+    (_request, requestIndex) =>
+      new Response(
+        requestIndex === 0
+          ? new ReadableStream<Uint8Array>({
+            start(controller) {
+              controller.enqueue(new TextEncoder().encode(replyBody.slice(0, 10)));
+              controller.error(new Error('The connection closed'));
+            },
+          })
+          : replyBody,
+        { headers: { 'Content-Type': 'application/json' } },
+      ),
+  );
 
   try {
     botUpdates.enqueueMessageUpdate(BOT_ID, createPrivateMessage(1));
-    botWebhooks.setWebhook(BOT_ID, webhookRequest());
+    updateConsumers.setWebhook(BOT_ID, webhookRequest());
     await waitForRequestCount(2);
-    await waitUntil(() => botWebhooks.getWebhookInfo(BOT_ID).pending_update_count === 0);
+    await waitUntil(() => updateConsumers.getWebhookInfo(BOT_ID).pending_update_count === 0);
 
     if (
       JSON.stringify(receivedRequests.map(({ body }) => body.update_id)) !==
@@ -530,37 +550,38 @@ Deno.test('BotWebhookService retries an accepted update whose response is cut sh
     ) {
       throw new Error('Expected an incomplete response to leave its update pending, unreplied');
     }
-    if ('last_error_message' in botWebhooks.getWebhookInfo(BOT_ID)) {
+    if ('last_error_message' in updateConsumers.getWebhookInfo(BOT_ID)) {
       throw new Error('Expected a closed connection to be retried without a reported error');
     }
   } finally {
-    botWebhooks.endDelivery();
+    endSession();
   }
 });
 
-Deno.test('BotWebhookService fails an accepted update whose response body outlasts its timeout', async () => {
-  const { botUpdates, botWebhooks, receivedReplies, waitForRequestCount } = createWebhookFixture(
-    (_request, requestIndex) =>
-      requestIndex === 0
-        ? new Response(
-          new ReadableStream<Uint8Array>({
-            start(controller) {
-              controller.enqueue(new TextEncoder().encode('{"method":'));
-            },
-          }),
-          { headers: { 'Content-Type': 'application/json' } },
-        )
-        : new Response(null),
-    { attemptTimeoutMilliseconds: 20 },
-  );
+Deno.test('Webhook delivery fails an accepted update whose response body outlasts its timeout', async () => {
+  const { botUpdates, updateConsumers, receivedReplies, waitForRequestCount, endSession } =
+    createWebhookFixture(
+      (_request, requestIndex) =>
+        requestIndex === 0
+          ? new Response(
+            new ReadableStream<Uint8Array>({
+              start(controller) {
+                controller.enqueue(new TextEncoder().encode('{"method":'));
+              },
+            }),
+            { headers: { 'Content-Type': 'application/json' } },
+          )
+          : new Response(null),
+      { attemptTimeoutMilliseconds: 20 },
+    );
 
   try {
     botUpdates.enqueueMessageUpdate(BOT_ID, createPrivateMessage(1));
-    botWebhooks.setWebhook(BOT_ID, webhookRequest());
+    updateConsumers.setWebhook(BOT_ID, webhookRequest());
     await waitForRequestCount(2);
-    await waitUntil(() => botWebhooks.getWebhookInfo(BOT_ID).pending_update_count === 0);
+    await waitUntil(() => updateConsumers.getWebhookInfo(BOT_ID).pending_update_count === 0);
 
-    const webhookInfo = botWebhooks.getWebhookInfo(BOT_ID);
+    const webhookInfo = updateConsumers.getWebhookInfo(BOT_ID);
     if (
       webhookInfo.last_error_message !== 'Read timeout expired' ||
       JSON.stringify(receivedReplies) !== JSON.stringify([{ botId: BOT_ID, body: '' }])
@@ -572,38 +593,39 @@ Deno.test('BotWebhookService fails an accepted update whose response body outlas
       );
     }
   } finally {
-    botWebhooks.endDelivery();
+    endSession();
   }
 });
 
-Deno.test('BotWebhookService ends delivery and keeps the update in flight pending', async () => {
-  const { botUpdates, botWebhooks, receivedRequests, waitForRequestCount } = createWebhookFixture(
-    respondOnlyByAborting,
-  );
+Deno.test('Webhook delivery ends delivery and keeps the update in flight pending', async () => {
+  const { botUpdates, updateConsumers, receivedRequests, waitForRequestCount, endSession } =
+    createWebhookFixture(
+      respondOnlyByAborting,
+    );
 
   botUpdates.enqueueMessageUpdate(BOT_ID, createPrivateMessage(1));
-  botWebhooks.setWebhook(BOT_ID, webhookRequest());
+  updateConsumers.setWebhook(BOT_ID, webhookRequest());
   await waitForRequestCount(1);
-  botWebhooks.endDelivery();
-  botWebhooks.setWebhook(BOT_ID, { ...webhookRequest(), url: `${WEBHOOK_URL}/new` });
+  endSession();
+  updateConsumers.setWebhook(BOT_ID, { ...webhookRequest(), url: `${WEBHOOK_URL}/new` });
   botUpdates.enqueueMessageUpdate(BOT_ID, createPrivateMessage(2));
   await new Promise((resolve) => setTimeout(resolve, 10));
 
   if (receivedRequests.length !== 1) {
     throw new Error('Expected no delivery after delivery ended');
   }
-  const webhookInfo = botWebhooks.getWebhookInfo(BOT_ID);
+  const webhookInfo = updateConsumers.getWebhookInfo(BOT_ID);
   if (webhookInfo.pending_update_count !== 2 || 'last_error_message' in webhookInfo) {
     throw new Error('Expected the interrupted update to stay pending without a failure');
   }
 });
 
-Deno.test('BotWebhookService reports getWebhookInfo fields in Telegram order', () => {
-  const { botUpdates, botWebhooks } = createWebhookFixture(respondOnlyByAborting);
+Deno.test('Webhook delivery reports getWebhookInfo fields in Telegram order', () => {
+  const { botUpdates, updateConsumers, endSession } = createWebhookFixture(respondOnlyByAborting);
 
   try {
     if (
-      JSON.stringify(botWebhooks.getWebhookInfo(BOT_ID)) !==
+      JSON.stringify(updateConsumers.getWebhookInfo(BOT_ID)) !==
         JSON.stringify({ url: '', has_custom_certificate: false, pending_update_count: 0 })
     ) {
       throw new Error('Expected only the URL, certificate, and pending count without a webhook');
@@ -611,7 +633,7 @@ Deno.test('BotWebhookService reports getWebhookInfo fields in Telegram order', (
 
     botUpdates.enqueueMessageUpdate(BOT_ID, createPrivateMessage(1));
     botUpdates.enqueueMessageUpdate(BOT_ID, createPrivateMessage(2));
-    botWebhooks.setWebhook(BOT_ID, {
+    updateConsumers.setWebhook(BOT_ID, {
       ...webhookRequest(),
       allowedUpdates: ['CALLBACK_QUERY', 'message', 'custom_event'],
     });
@@ -622,20 +644,20 @@ Deno.test('BotWebhookService reports getWebhookInfo fields in Telegram order', (
       max_connections: 40,
       allowed_updates: ['message', 'callback_query'],
     };
-    if (JSON.stringify(botWebhooks.getWebhookInfo(BOT_ID)) !== JSON.stringify(expectedInfo)) {
+    if (JSON.stringify(updateConsumers.getWebhookInfo(BOT_ID)) !== JSON.stringify(expectedInfo)) {
       throw new Error('Expected the webhook, its pending updates, and the listed subscription');
     }
 
     // A request that changes no webhook still changes the subscription.
-    const unchanged = botWebhooks.setWebhook(BOT_ID, {
+    const unchanged = updateConsumers.setWebhook(BOT_ID, {
       ...webhookRequest(),
       allowedUpdates: ['message'],
     });
-    const dropping = botWebhooks.setWebhook(BOT_ID, {
+    const dropping = updateConsumers.setWebhook(BOT_ID, {
       ...webhookRequest(),
       dropPendingUpdates: true,
     });
-    const webhookInfo = botWebhooks.getWebhookInfo(BOT_ID);
+    const webhookInfo = updateConsumers.getWebhookInfo(BOT_ID);
     if (
       !unchanged.accepted || unchanged.outcome !== 'webhook_already_set' ||
       !dropping.accepted || dropping.outcome !== 'webhook_set' ||
@@ -645,7 +667,7 @@ Deno.test('BotWebhookService reports getWebhookInfo fields in Telegram order', (
       throw new Error('Expected allowed updates to apply and dropped updates to be discarded');
     }
   } finally {
-    botWebhooks.endDelivery();
+    endSession();
   }
 });
 
@@ -683,10 +705,8 @@ function createWebhookFixture(
     log: new BotActivityLogRepository(),
     scheduler: createRealTimeScheduler(),
   });
-  const botWebhooks = new BotWebhookService({
-    webhooks: new BotWebhookRepository(),
-    pendingUpdates: botUpdates,
-    updateSubscriptions: new BotUpdateSubscriptionRepository(),
+  const { updateConsumers, endSession } = createUpdateConsumers({
+    botUpdates,
     updateActivity: botActivity,
     sendWebhookRequest: async (request) => {
       receivedSignals.push(request.signal);
@@ -703,13 +723,13 @@ function createWebhookFixture(
         WEBHOOK_ATTEMPT_TIMEOUT_MILLISECONDS,
       scheduler: createRetryScheduler(options.waitBeforeRetry),
     }),
-    currentUnixTimeSeconds: () => NOW_UNIX_SECONDS,
   });
 
   return {
     botUpdates,
     botActivity,
-    botWebhooks,
+    updateConsumers,
+    endSession,
     receivedRequests,
     receivedSignals,
     receivedReplies,

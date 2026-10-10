@@ -1,6 +1,5 @@
 import { BotActivityLogRepository } from '../src/repositories/bot_activity_log.ts';
 import { BotUpdateRepository } from '../src/repositories/bot_update.ts';
-import { BotUpdateSubscriptionRepository } from '../src/repositories/bot_update_subscription.ts';
 import { BotActivityService } from '../src/services/bot_activity.ts';
 import { BotUpdatePollingService } from '../src/services/bot_update_polling.ts';
 import { SessionLifetime } from '../src/services/session_lifetime.ts';
@@ -89,7 +88,6 @@ Deno.test('BotUpdatePollingService answers a long poll with an update enqueued a
   const botUpdates = new BotUpdateRepository();
   const botUpdatePolling = new BotUpdatePollingService({
     botUpdates,
-    updateSubscriptions: new BotUpdateSubscriptionRepository(),
     updateActivity: new BotActivityService({ log: new BotActivityLogRepository(), scheduler }),
     scheduler,
     sessionLifetime: new SessionLifetime(new AbortController().signal),

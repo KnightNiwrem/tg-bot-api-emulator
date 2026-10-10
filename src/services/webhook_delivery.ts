@@ -1,17 +1,7 @@
-import {
-  BOT_API_UPDATE_TYPES,
-  type BotApiUpdate,
-  type BotApiUpdateType,
-  type BotApiWebhookInfo,
-  DEFAULT_ALLOWED_UPDATE_TYPES,
-  isListedUpdateType,
-  resolveAllowedUpdateTypes,
-} from '../types/bot_api.ts';
+import type { BotApiUpdate } from '../types/bot_api.ts';
 import {
   type BotWebhook,
   getWebhookUpdateQueueKey,
-  hasOnlyWebhookSecretTokenCharacters,
-  MAX_WEBHOOK_SECRET_TOKEN_LENGTH,
   parseWebhookUrl,
   type WebhookAttemptFailure,
   type WebhookDeliveryError,
@@ -46,50 +36,6 @@ const MAX_READABLE_RETRY_AFTER_SECONDS = 2 ** 31 - 1;
 /** Telegram's description of a webhook that answered nothing in time. */
 const READ_TIMEOUT_ERROR_MESSAGE = 'Read timeout expired';
 
-export interface SetWebhookRequest {
-  /** Where to deliver updates; empty deletes the webhook. */
-  readonly url: string;
-  /** Ignored when `url` is empty. */
-  readonly secretToken: string;
-  /** Ignored when `url` is empty. */
-  readonly maxConnections: number;
-  /** Requested update type names; omitting them keeps the bot's current subscription. */
-  readonly allowedUpdates?: readonly string[];
-  readonly dropPendingUpdates: boolean;
-}
-
-export type SetWebhookResult =
-  | {
-    readonly accepted: true;
-    readonly outcome:
-      | 'webhook_set'
-      | 'webhook_already_set'
-      | 'webhook_deleted'
-      | 'webhook_already_deleted';
-  }
-  | {
-    readonly accepted: false;
-    readonly reason: 'url_invalid' | 'secret_token_too_long' | 'secret_token_invalid';
-  };
-
-export interface DeleteWebhookRequest {
-  readonly dropPendingUpdates: boolean;
-}
-
-export type DeleteWebhookOutcome = 'webhook_deleted' | 'webhook_already_deleted';
-
-interface WebhookRegistration {
-  readonly webhook: BotWebhook;
-  readonly lastDeliveryError?: WebhookDeliveryError;
-}
-
-interface BotWebhookStore {
-  get(botId: number): WebhookRegistration | undefined;
-  set(botId: number, webhook: BotWebhook): void;
-  delete(botId: number): void;
-  recordDeliveryError(botId: number, error: WebhookDeliveryError): void;
-}
-
 interface PendingUpdateQueue {
   readPendingUpdates(botId: number): readonly BotApiUpdate[];
   confirmPendingUpdate(botId: number, updateId: number): void;
@@ -98,13 +44,11 @@ interface PendingUpdateQueue {
     botId: number,
     input: { readonly awaitedUpdateId: number; readonly signal: AbortSignal },
   ): Promise<unknown>;
-  countPendingUpdates(botId: number): number;
-  discardPendingUpdates(botId: number): void;
 }
 
-interface BotUpdateSubscriptionStore {
-  getAllowedUpdateTypes(botId: number): ReadonlySet<BotApiUpdateType>;
-  setAllowedUpdateTypes(botId: number, allowedUpdateTypes: ReadonlySet<BotApiUpdateType>): void;
+/** Keeps the latest error delivering to each bot's webhook, which `getWebhookInfo` reports. */
+interface WebhookDeliveryErrorStore {
+  recordDeliveryError(botId: number, error: WebhookDeliveryError): void;
 }
 
 /** Records each attempt to deliver an update to a webhook, and its outcome, as bot activity. */
@@ -129,10 +73,9 @@ interface WebhookAttemptTracker {
   beginAttempt(input: BeginWebhookAttemptInput): WebhookAttemptHandle;
 }
 
-interface BotWebhookServiceDependencies {
-  readonly webhooks: BotWebhookStore;
+interface WebhookDeliveryServiceDependencies {
   readonly pendingUpdates: PendingUpdateQueue;
-  readonly updateSubscriptions: BotUpdateSubscriptionStore;
+  readonly deliveryErrors: WebhookDeliveryErrorStore;
   readonly updateActivity: UpdateActivityRecorder;
   /** Sends a webhook request over the network, as `fetch` does. */
   readonly sendWebhookRequest: (request: Request) => Promise<Response>;
@@ -146,6 +89,20 @@ interface BotWebhookServiceDependencies {
   readonly startWebhookReply: (botId: number, reply: Response) => void;
   readonly attempts: WebhookAttemptTracker;
   readonly currentUnixTimeSeconds: () => number;
+}
+
+/**
+ * The delivery to one webhook a bot registered, from its registration until it is replaced or
+ * deleted or the session ends.
+ */
+export interface WebhookGeneration {
+  /**
+   * Stops the delivery for good, including a request in flight: an attempt still waiting for its
+   * complete response is cancelled and its update stays pending, and a waiting retry is
+   * cancelled. Nothing the stopped generation still has running can change the bot's delivery
+   * afterwards.
+   */
+  stop(): void;
 }
 
 /** How an attempt to deliver an update to a webhook ended. */
@@ -171,7 +128,7 @@ interface UpdateRetryBackoff {
 const INITIAL_UPDATE_RETRY_BACKOFF: UpdateRetryBackoff = { failureCount: 0, delaySeconds: 1 };
 
 /**
- * Keeps each bot's webhook and delivers the bot's pending updates to it.
+ * Delivers each bot's pending updates to its webhook, one generation of the webhook at a time.
  *
  * As on Telegram, an update stays pending until its webhook answers it with a 2xx status, and a
  * failed update is sent again after a growing delay, or after the delay the webhook asks for in a
@@ -183,8 +140,13 @@ const INITIAL_UPDATE_RETRY_BACKOFF: UpdateRetryBackoff = { failureCount: 0, dela
  * A complete 2xx response accepts the update at once, as `WebhookActor` acknowledges it on receipt:
  * the update is confirmed, and the queue moves on to its next update, while the method the response
  * names runs separately. So the next update of a queue may be sent, and even confirmed, before the
- * previous update's reply method has run. Replacing or deleting the webhook, and the attempt's
- * deadline, end only attempts still waiting for their complete response.
+ * previous update's reply method has run. Stopping the generation, and the attempt's deadline, end
+ * only attempts still waiting for their complete response.
+ *
+ * Each update, attempt and retry follows its own state machine. An update is pending until it is
+ * confirmed, or discarded by `drop_pending_updates`. An attempt is in flight until it is accepted,
+ * fails or is cancelled, and a failed attempt's retry waits until it is released or cancelled; the
+ * `attempts` tracker keeps both, and each of their ends is final.
  *
  * An attempt whose deadline arrives fails as Telegram's read timeout does. Telegram times out a
  * connection that receives no data for a while; the emulator bounds each attempt as a whole,
@@ -192,35 +154,28 @@ const INITIAL_UPDATE_RETRY_BACKOFF: UpdateRetryBackoff = { failureCount: 0, dela
  * `attempts` decides when each attempt's deadline arrives and when each failed update's retry is
  * released.
  */
-export class BotWebhookService {
-  readonly #webhooks: BotWebhookStore;
+export class WebhookDeliveryService {
   readonly #pendingUpdates: PendingUpdateQueue;
-  readonly #updateSubscriptions: BotUpdateSubscriptionStore;
+  readonly #deliveryErrors: WebhookDeliveryErrorStore;
   readonly #updateActivity: UpdateActivityRecorder;
   readonly #sendWebhookRequest: (request: Request) => Promise<Response>;
   readonly #startWebhookReply: (botId: number, reply: Response) => void;
   readonly #attempts: WebhookAttemptTracker;
   readonly #currentUnixTimeSeconds: () => number;
-  /** Aborting a bot's controller stops delivery to its webhook, including a request in flight. */
-  readonly #deliveriesByBotId = new Map<number, AbortController>();
-  /** Aborted when delivery ends for good, after which no webhook delivers again. */
-  readonly #deliveryEnd = new AbortController();
 
   constructor(
     {
-      webhooks,
       pendingUpdates,
-      updateSubscriptions,
+      deliveryErrors,
       updateActivity,
       sendWebhookRequest,
       startWebhookReply,
       attempts,
       currentUnixTimeSeconds,
-    }: BotWebhookServiceDependencies,
+    }: WebhookDeliveryServiceDependencies,
   ) {
-    this.#webhooks = webhooks;
     this.#pendingUpdates = pendingUpdates;
-    this.#updateSubscriptions = updateSubscriptions;
+    this.#deliveryErrors = deliveryErrors;
     this.#updateActivity = updateActivity;
     this.#sendWebhookRequest = sendWebhookRequest;
     this.#startWebhookReply = startWebhookReply;
@@ -228,133 +183,11 @@ export class BotWebhookService {
     this.#currentUnixTimeSeconds = currentUnixTimeSeconds;
   }
 
-  hasWebhook(botId: number): boolean {
-    return this.#webhooks.get(botId) !== undefined;
-  }
-
-  /**
-   * Sets, replaces, or, with an empty URL, deletes the bot's webhook, as the official Bot API
-   * server's `process_set_webhook_query` does. A request that changes nothing keeps the webhook
-   * and its delivery error, and only changes the subscription. Otherwise delivery restarts, and
-   * the previous webhook's delivery error is forgotten.
-   *
-   * Telegram validates the URL and secret token only after it has removed the previous webhook
-   * and dropped pending updates; the emulator rejects them before changing anything.
-   */
-  setWebhook(botId: number, request: SetWebhookRequest): SetWebhookResult {
-    if (request.url.length === 0) {
-      return { accepted: true, outcome: this.#removeWebhook(botId, request) };
-    }
-    const requestedWebhook: BotWebhook = {
-      url: request.url,
-      secretToken: request.secretToken,
-      maxConnections: request.maxConnections,
-    };
-    const rejectionReason = findWebhookRejectionReason(requestedWebhook);
-    if (rejectionReason !== undefined) {
-      return { accepted: false, reason: rejectionReason };
-    }
-
-    const currentWebhook = this.#webhooks.get(botId)?.webhook;
-    if (
-      currentWebhook !== undefined && isSameWebhook(currentWebhook, requestedWebhook) &&
-      !request.dropPendingUpdates
-    ) {
-      this.#updateSubscription(botId, request.allowedUpdates);
-      return { accepted: true, outcome: 'webhook_already_set' };
-    }
-
-    this.#stopDelivery(botId);
-    if (request.dropPendingUpdates) {
-      this.#pendingUpdates.discardPendingUpdates(botId);
-    }
-    this.#webhooks.set(botId, requestedWebhook);
-    this.#updateSubscription(botId, request.allowedUpdates);
-    this.#startDelivery(botId, requestedWebhook);
-    return { accepted: true, outcome: 'webhook_set' };
-  }
-
-  /** Deletes the bot's webhook, as `setWebhook` with an empty URL does. */
-  deleteWebhook(botId: number, { dropPendingUpdates }: DeleteWebhookRequest): DeleteWebhookOutcome {
-    return this.#removeWebhook(botId, { dropPendingUpdates });
-  }
-
-  getWebhookInfo(botId: number): BotApiWebhookInfo {
-    const registration = this.#webhooks.get(botId);
-    const allowedUpdateTypes = this.#updateSubscriptions.getAllowedUpdateTypes(botId);
-    return {
-      url: registration?.webhook.url ?? '',
-      has_custom_certificate: false,
-      pending_update_count: this.#pendingUpdates.countPendingUpdates(botId),
-      ...(registration?.lastDeliveryError === undefined ? {} : {
-        last_error_date: registration.lastDeliveryError.dateUnixSeconds,
-        last_error_message: registration.lastDeliveryError.message,
-      }),
-      ...(registration === undefined
-        ? {}
-        : { max_connections: registration.webhook.maxConnections }),
-      ...(isDefaultSubscription(allowedUpdateTypes) ? {} : {
-        allowed_updates: BOT_API_UPDATE_TYPES.filter(isListedUpdateType).filter((updateType) =>
-          allowedUpdateTypes.has(updateType)
-        ),
-      }),
-    };
-  }
-
-  /**
-   * Stops every delivery, including requests in flight, whose updates stay pending. Webhooks set
-   * afterward deliver nothing.
-   */
-  endDelivery(): void {
-    this.#deliveryEnd.abort();
-    for (const botId of [...this.#deliveriesByBotId.keys()]) {
-      this.#stopDelivery(botId);
-    }
-  }
-
-  #removeWebhook(
-    botId: number,
-    { allowedUpdates, dropPendingUpdates }: {
-      readonly allowedUpdates?: readonly string[];
-      readonly dropPendingUpdates: boolean;
-    },
-  ): DeleteWebhookOutcome {
-    const hadWebhook = this.hasWebhook(botId);
-    if (!hadWebhook && !dropPendingUpdates) {
-      // Like any request that changes no webhook, this one changes the subscription on Telegram.
-      this.#updateSubscription(botId, allowedUpdates);
-      return 'webhook_already_deleted';
-    }
-
-    this.#stopDelivery(botId);
-    if (dropPendingUpdates) {
-      this.#pendingUpdates.discardPendingUpdates(botId);
-    }
-    this.#webhooks.delete(botId);
-    return hadWebhook ? 'webhook_deleted' : 'webhook_already_deleted';
-  }
-
-  #updateSubscription(botId: number, allowedUpdates: readonly string[] | undefined): void {
-    if (allowedUpdates !== undefined) {
-      this.#updateSubscriptions.setAllowedUpdateTypes(
-        botId,
-        resolveAllowedUpdateTypes(allowedUpdates),
-      );
-    }
-  }
-
-  #startDelivery(botId: number, webhook: BotWebhook): void {
-    if (this.#deliveryEnd.signal.aborted) {
-      return;
-    }
+  /** Starts delivering the bot's pending updates to `webhook`, until the generation is stopped. */
+  startGeneration(botId: number, webhook: BotWebhook): WebhookGeneration {
     const delivery = new AbortController();
-    this.#deliveriesByBotId.set(botId, delivery);
     void this.#deliverPendingUpdates(botId, webhook, delivery.signal);
-  }
-
-  #stopDelivery(botId: number): void {
-    this.#deliveriesByBotId.get(botId)?.abort();
-    this.#deliveriesByBotId.delete(botId);
+    return { stop: () => delivery.abort() };
   }
 
   /**
@@ -461,7 +294,7 @@ export class BotWebhookService {
       // A failure decided just before the webhook was replaced or deleted belongs to a webhook that
       // is no longer the bot's, so it must not become the current webhook's delivery error.
       if ('errorMessage' in failure && !signal.aborted) {
-        this.#webhooks.recordDeliveryError(botId, {
+        this.#deliveryErrors.recordDeliveryError(botId, {
           dateUnixSeconds: this.#currentUnixTimeSeconds(),
           message: failure.errorMessage,
         });
@@ -617,26 +450,6 @@ class WebhookConnectionLimit {
   }
 }
 
-function findWebhookRejectionReason(
-  webhook: BotWebhook,
-): Extract<SetWebhookResult, { readonly accepted: false }>['reason'] | undefined {
-  if (parseWebhookUrl(webhook.url) === undefined) {
-    return 'url_invalid';
-  }
-  if (webhook.secretToken.length > MAX_WEBHOOK_SECRET_TOKEN_LENGTH) {
-    return 'secret_token_too_long';
-  }
-  if (!hasOnlyWebhookSecretTokenCharacters(webhook.secretToken)) {
-    return 'secret_token_invalid';
-  }
-  return undefined;
-}
-
-function isSameWebhook(first: BotWebhook, second: BotWebhook): boolean {
-  return first.url === second.url && first.secretToken === second.secretToken &&
-    first.maxConnections === second.maxConnections;
-}
-
 /**
  * Counts another failure of an update and returns how long to wait before sending it again, as
  * the official Bot API server's `WebhookActor::on_update_error` does. A positive `Retry-After`
@@ -674,11 +487,6 @@ function readRetryAfterSeconds(response: Response): number {
   }
   const retryAfterSeconds = Number(retryAfter);
   return retryAfterSeconds <= MAX_READABLE_RETRY_AFTER_SECONDS ? retryAfterSeconds : 0;
-}
-
-function isDefaultSubscription(allowedUpdateTypes: ReadonlySet<BotApiUpdateType>): boolean {
-  return allowedUpdateTypes.size === DEFAULT_ALLOWED_UPDATE_TYPES.size &&
-    [...allowedUpdateTypes].every((updateType) => DEFAULT_ALLOWED_UPDATE_TYPES.has(updateType));
 }
 
 /**

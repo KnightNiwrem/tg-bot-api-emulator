@@ -68,7 +68,8 @@ differences.
 
 ## Local evidence
 
-[Polling service](../../src/services/bot_update_polling.ts),
+[Delivery owner](../../src/services/bot_update_consumer.ts),
+[polling service](../../src/services/bot_update_polling.ts),
 [queue](../../src/repositories/bot_update.ts),
 [delivery/subscription filtering](../../src/services/bot_update_delivery.ts),
 [polling tests](../../tests/bot_update_polling_service_test.ts) and

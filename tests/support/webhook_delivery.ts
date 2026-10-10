@@ -1,8 +1,19 @@
 /**
  * Helpers for tests of webhook delivery that answer webhook requests in place of the network.
  */
-import type { SetWebhookRequest } from '../../src/services/bot_webhook.ts';
+import { BotUpdateRepository } from '../../src/repositories/bot_update.ts';
+import { BotUpdateSubscriptionRepository } from '../../src/repositories/bot_update_subscription.ts';
+import { BotWebhookRepository } from '../../src/repositories/bot_webhook.ts';
+import {
+  BotUpdateConsumerService,
+  type SetWebhookRequest,
+} from '../../src/services/bot_update_consumer.ts';
+import { BotUpdatePollingService } from '../../src/services/bot_update_polling.ts';
+import { SessionLifetime } from '../../src/services/session_lifetime.ts';
+import type { WebhookAttemptScheduler } from '../../src/services/webhook_attempt_scheduler.ts';
+import { WebhookDeliveryService } from '../../src/services/webhook_delivery.ts';
 import type { BotApiPrivateMessage } from '../../src/types/bot_api.ts';
+import { createRealTimeScheduler } from './scheduler.ts';
 
 export const WEBHOOK_URL = 'https://bot.example/webhook';
 /** The time the tests' clocks tell, and the date of their messages. */
@@ -96,4 +107,59 @@ export class ReceivedRequestCounter {
     });
     return Promise.race([received, timeout]).finally(() => clearTimeout(timeoutId));
   }
+}
+
+/** What a test supplies to deliver a session's updates to webhooks in place of the network. */
+export interface UpdateConsumersOptions {
+  readonly botUpdates: BotUpdateRepository;
+  /** Records what polling and webhook delivery observe, as the session's bot activity does. */
+  readonly updateActivity:
+    & ConstructorParameters<typeof BotUpdatePollingService>[0]['updateActivity']
+    & ConstructorParameters<typeof WebhookDeliveryService>[0]['updateActivity'];
+  readonly attempts: WebhookAttemptScheduler;
+  readonly sendWebhookRequest: (request: Request) => Promise<Response>;
+  readonly startWebhookReply: (botId: number, reply: Response) => void;
+  /** A fresh subscription repository when omitted. */
+  readonly updateSubscriptions?: BotUpdateSubscriptionRepository;
+}
+
+/**
+ * Creates the delivery owner of a session's bots, with polling and webhook delivery, and the end
+ * of its session, which stops every webhook generation as `session.end()` does.
+ */
+export function createUpdateConsumers(
+  {
+    botUpdates,
+    updateActivity,
+    attempts,
+    sendWebhookRequest,
+    startWebhookReply,
+    updateSubscriptions = new BotUpdateSubscriptionRepository(),
+  }: UpdateConsumersOptions,
+): { readonly updateConsumers: BotUpdateConsumerService; readonly endSession: () => void } {
+  const sessionEnd = new AbortController();
+  const sessionLifetime = new SessionLifetime(sessionEnd.signal);
+  const webhooks = new BotWebhookRepository();
+  const updateConsumers = new BotUpdateConsumerService({
+    webhooks,
+    pendingUpdates: botUpdates,
+    updateSubscriptions,
+    polling: new BotUpdatePollingService({
+      botUpdates,
+      updateActivity,
+      scheduler: createRealTimeScheduler(),
+      sessionLifetime,
+    }),
+    webhookDelivery: new WebhookDeliveryService({
+      pendingUpdates: botUpdates,
+      deliveryErrors: webhooks,
+      updateActivity,
+      sendWebhookRequest,
+      startWebhookReply,
+      attempts,
+      currentUnixTimeSeconds: () => NOW_UNIX_SECONDS,
+    }),
+    sessionLifetime,
+  });
+  return { updateConsumers, endSession: () => sessionEnd.abort() };
 }

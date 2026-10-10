@@ -100,7 +100,14 @@ import {
   type SupergroupMessage,
   type TextEntity,
 } from '../types/virtual_message.ts';
-import type { GetUpdatesRequest, GetUpdatesResult } from './bot_update_polling.ts';
+import type {
+  DeleteWebhookOutcome,
+  DeleteWebhookRequest,
+  GetUpdatesRequest,
+  GetUpdatesResult,
+  SetWebhookRequest,
+  SetWebhookResult,
+} from './bot_update_consumer.ts';
 import type {
   CreateInviteLinkAsBotFailureReason,
   CreateInviteLinkAsBotInput,
@@ -120,12 +127,6 @@ import type {
   RevokeInviteLinkAsBotResult,
 } from './chat_admission.ts';
 import type { PhotoTooBigFailure } from './media_file.ts';
-import type {
-  DeleteWebhookOutcome,
-  DeleteWebhookRequest,
-  SetWebhookRequest,
-  SetWebhookResult,
-} from './bot_webhook.ts';
 import type {
   BanChatMemberResult,
   ChangeDefaultPermissionsResult,
@@ -1518,22 +1519,13 @@ interface BotCredentialLookup {
   getByToken(token: string): VirtualBot | undefined;
 }
 
-interface BotUpdatePolling {
+/** How each bot receives its updates: by polling, or through its webhook. */
+interface BotUpdateConsumers {
   getUpdates(botId: number, request: GetUpdatesRequest): Promise<GetUpdatesResult>;
-  terminateLongPollForWebhook(botId: number): void;
-}
-
-interface BotWebhooks {
-  hasWebhook(botId: number): boolean;
   setWebhook(botId: number, request: SetWebhookRequest): SetWebhookResult;
   deleteWebhook(botId: number, request: DeleteWebhookRequest): DeleteWebhookOutcome;
   getWebhookInfo(botId: number): BotApiWebhookInfo;
 }
-
-/** The result of `getUpdates`, which fails while the bot has a webhook. */
-export type BotApiGetUpdatesResult =
-  | GetUpdatesResult
-  | { readonly retrieved: false; readonly reason: 'webhook_active' };
 
 interface BotPrivateChat {
   readonly type: 'private';
@@ -2073,8 +2065,7 @@ interface MessageDrafts {
 
 interface BotApiServiceDependencies {
   readonly bots: BotCredentialLookup;
-  readonly updatePolling: BotUpdatePolling;
-  readonly webhooks: BotWebhooks;
+  readonly updateConsumers: BotUpdateConsumers;
   readonly botMessages: BotMessaging;
   readonly supergroupBotMessages: SupergroupBotMessaging;
   /**
@@ -2138,8 +2129,7 @@ interface PublicChatDirectory {
  */
 export class BotApiService {
   readonly #bots: BotCredentialLookup;
-  readonly #updatePolling: BotUpdatePolling;
-  readonly #webhooks: BotWebhooks;
+  readonly #updateConsumers: BotUpdateConsumers;
   readonly #botMessages: BotMessaging;
   readonly #supergroupBotMessages: SupergroupBotMessaging;
   readonly #messageSender: BotMessageSending;
@@ -2168,8 +2158,7 @@ export class BotApiService {
   constructor(
     {
       bots,
-      updatePolling,
-      webhooks,
+      updateConsumers,
       botMessages,
       supergroupBotMessages,
       messageSender,
@@ -2197,8 +2186,7 @@ export class BotApiService {
     }: BotApiServiceDependencies,
   ) {
     this.#bots = bots;
-    this.#updatePolling = updatePolling;
-    this.#webhooks = webhooks;
+    this.#updateConsumers = updateConsumers;
     this.#botMessages = botMessages;
     this.#supergroupBotMessages = supergroupBotMessages;
     this.#messageSender = messageSender;
@@ -2239,42 +2227,28 @@ export class BotApiService {
     return this.#bots.getByToken(token)?.profile;
   }
 
-  /**
-   * Polls the authenticated bot's pending updates. As on Telegram, a bot with a webhook cannot
-   * poll, and its subscription is left unchanged.
-   */
+  /** Polls the authenticated bot's pending updates, as `BotUpdateConsumerService` decides. */
   async getUpdates(
     authenticatedBot: VirtualBotProfile,
     request: GetUpdatesRequest,
-  ): Promise<BotApiGetUpdatesResult> {
-    if (this.#webhooks.hasWebhook(authenticatedBot.id)) {
-      return { retrieved: false, reason: 'webhook_active' };
-    }
-    return await this.#updatePolling.getUpdates(authenticatedBot.id, request);
+  ): Promise<GetUpdatesResult> {
+    return await this.#updateConsumers.getUpdates(authenticatedBot.id, request);
   }
 
-  /**
-   * Sets the authenticated bot's webhook, or deletes it for an empty URL. As on Telegram, setting
-   * a new webhook terminates the bot's held long poll.
-   */
+  /** Sets the authenticated bot's webhook, or deletes it for an empty URL. */
   setWebhook(authenticatedBot: VirtualBotProfile, request: SetWebhookRequest): SetWebhookResult {
-    const result = this.#webhooks.setWebhook(authenticatedBot.id, request);
-    if (result.accepted && result.outcome === 'webhook_set') {
-      this.#updatePolling.terminateLongPollForWebhook(authenticatedBot.id);
-    }
-    return result;
+    return this.#updateConsumers.setWebhook(authenticatedBot.id, request);
   }
 
-  /** Deletes the authenticated bot's webhook. A held long poll is left running, as on Telegram. */
   deleteWebhook(
     authenticatedBot: VirtualBotProfile,
     request: DeleteWebhookRequest,
   ): DeleteWebhookOutcome {
-    return this.#webhooks.deleteWebhook(authenticatedBot.id, request);
+    return this.#updateConsumers.deleteWebhook(authenticatedBot.id, request);
   }
 
   getWebhookInfo(authenticatedBot: VirtualBotProfile): BotApiWebhookInfo {
-    return this.#webhooks.getWebhookInfo(authenticatedBot.id);
+    return this.#updateConsumers.getWebhookInfo(authenticatedBot.id);
   }
 
   /**

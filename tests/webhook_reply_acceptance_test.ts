@@ -8,11 +8,8 @@ import { AccountRepository } from '../src/repositories/account.ts';
 import { BotRepository } from '../src/repositories/bot.ts';
 import { BotActivityLogRepository } from '../src/repositories/bot_activity_log.ts';
 import { BotUpdateRepository } from '../src/repositories/bot_update.ts';
-import { BotUpdateSubscriptionRepository } from '../src/repositories/bot_update_subscription.ts';
-import { BotWebhookRepository } from '../src/repositories/bot_webhook.ts';
 import { TelegramIdentityRepository } from '../src/repositories/telegram_identity.ts';
 import { BotActivityService } from '../src/services/bot_activity.ts';
-import { BotWebhookService } from '../src/services/bot_webhook.ts';
 import { VirtualUserService } from '../src/services/virtual_user.ts';
 import {
   WEBHOOK_ATTEMPT_TIMEOUT_MILLISECONDS,
@@ -24,7 +21,7 @@ import type { WebhookAttempt } from '../src/types/bot_webhook.ts';
 import { createRealTimeScheduler } from './support/scheduler.ts';
 import {
   createPrivateMessage,
-  NOW_UNIX_SECONDS,
+  createUpdateConsumers,
   ReceivedRequestCounter,
   respondOnlyByAborting,
   waitUntil,
@@ -40,19 +37,19 @@ Deno.test('the next update of a queue is delivered while the previous reply is s
   const fixture = createAcceptanceFixture((request) =>
     new Response(request.url === REPLACEMENT_WEBHOOK_URL ? null : REPLY_BODY)
   );
-  const { botId, botUpdates, botWebhooks, webhookAttempts, heldReplies } = fixture;
+  const { botId, botUpdates, updateConsumers, webhookAttempts, heldReplies, endSession } = fixture;
 
   try {
     webhookAttempts.setScheduling(botId, 'manual');
     botUpdates.enqueueMessageUpdate(botId, createPrivateMessage(1));
     botUpdates.enqueueMessageUpdate(botId, createPrivateMessage(2));
-    botWebhooks.setWebhook(botId, webhookRequest());
+    updateConsumers.setWebhook(botId, webhookRequest());
     await fixture.waitForEntry({ kind: 'update_confirmed', updateId: 2 });
     const deliveredBeforeRelease = fixture.receivedRequests.map(({ updateId }) => updateId);
 
     // Neither expiry nor a replacement webhook sends the accepted update again.
     const expiry = await webhookAttempts.expireAttempt(botId, 1);
-    botWebhooks.setWebhook(botId, { ...webhookRequest(), url: REPLACEMENT_WEBHOOK_URL });
+    updateConsumers.setWebhook(botId, { ...webhookRequest(), url: REPLACEMENT_WEBHOOK_URL });
     heldReplies.releaseAll();
     await heldReplies.waitForFinishedCount(2);
 
@@ -63,7 +60,7 @@ Deno.test('the next update of a queue is delivered while the previous reply is s
         expiry,
         listAttempts(webhookAttempts, botId).map(({ updateId, status }) => [updateId, status]),
         fixture.receivedRequests.map(({ url }) => url === REPLACEMENT_WEBHOOK_URL),
-        botWebhooks.getWebhookInfo(botId).pending_update_count,
+        updateConsumers.getWebhookInfo(botId).pending_update_count,
       ],
       [
         [1, 2],
@@ -76,17 +73,17 @@ Deno.test('the next update of a queue is delivered while the previous reply is s
       'Expected the queue to move on while the replies were held, and nothing to be sent again',
     );
   } finally {
-    botWebhooks.endDelivery();
+    endSession();
   }
 });
 
 Deno.test("an accepted update's reply is started before its confirmation is recorded", async () => {
   const fixture = createAcceptanceFixture(() => new Response(REPLY_BODY));
-  const { botId, botUpdates, botWebhooks, publications } = fixture;
+  const { botId, botUpdates, updateConsumers, publications, endSession } = fixture;
 
   try {
     botUpdates.enqueueMessageUpdate(botId, createPrivateMessage(1));
-    botWebhooks.setWebhook(botId, webhookRequest());
+    updateConsumers.setWebhook(botId, webhookRequest());
     await fixture.waitForEntry({ kind: 'update_confirmed' });
     assertJson(
       publications,
@@ -94,7 +91,7 @@ Deno.test("an accepted update's reply is started before its confirmation is reco
       'Expected the reply to be under way before anyone could read the confirmation',
     );
   } finally {
-    botWebhooks.endDelivery();
+    endSession();
   }
 });
 
@@ -163,12 +160,13 @@ for (const stage of Object.keys(EXPECTED_OUTCOMES) as AnswerStage[]) {
             return new Response(REPLY_BODY);
         }
       });
-      const { botId, botUpdates, botWebhooks, webhookAttempts, heldReplies } = fixture;
+      const { botId, botUpdates, updateConsumers, webhookAttempts, heldReplies, endSession } =
+        fixture;
 
       try {
         webhookAttempts.setScheduling(botId, 'manual');
         botUpdates.enqueueMessageUpdate(botId, createPrivateMessage(1));
-        botWebhooks.setWebhook(botId, webhookRequest());
+        updateConsumers.setWebhook(botId, webhookRequest());
         await reachStage(stage, fixture, bodyBeingRead.promise);
 
         const expiry = await applyControl(control, fixture);
@@ -186,7 +184,7 @@ for (const stage of Object.keys(EXPECTED_OUTCOMES) as AnswerStage[]) {
           [
             describeAttemptState(firstAttempt),
             fixture.receivedRequests.some(({ url }) => url === REPLACEMENT_WEBHOOK_URL),
-            botWebhooks.getWebhookInfo(botId).pending_update_count,
+            updateConsumers.getWebhookInfo(botId).pending_update_count,
             expiry?.expired === false ? expiry.reason : undefined,
           ],
           EXPECTED_OUTCOMES[stage][control],
@@ -200,7 +198,7 @@ for (const stage of Object.keys(EXPECTED_OUTCOMES) as AnswerStage[]) {
           );
         }
       } finally {
-        botWebhooks.endDelivery();
+        endSession();
       }
     });
   }
@@ -217,11 +215,11 @@ Deno.test('a replacement right after the complete response arrives does not send
   const fixture = createAcceptanceFixture((request) =>
     request.url === REPLACEMENT_WEBHOOK_URL ? new Response(null) : new ControlledBodyResponse(null)
   );
-  const { botId, botUpdates, botWebhooks, webhookAttempts } = fixture;
+  const { botId, botUpdates, updateConsumers, webhookAttempts, endSession } = fixture;
 
   try {
     botUpdates.enqueueMessageUpdate(botId, createPrivateMessage(1));
-    botWebhooks.setWebhook(botId, webhookRequest());
+    updateConsumers.setWebhook(botId, webhookRequest());
     await fixture.waitForRequestCount(1);
     await new Promise((resolve) => setTimeout(resolve, 0));
 
@@ -229,7 +227,7 @@ Deno.test('a replacement right after the complete response arrives does not send
     // The emulator sees the complete body in the first microtask; the replacement comes next,
     // before the delivery has done anything else.
     await Promise.resolve();
-    botWebhooks.setWebhook(botId, { ...webhookRequest(), url: REPLACEMENT_WEBHOOK_URL });
+    updateConsumers.setWebhook(botId, { ...webhookRequest(), url: REPLACEMENT_WEBHOOK_URL });
     await waitUntil(() => listAttempts(webhookAttempts, botId)[0].status !== 'in_flight');
     await new Promise((resolve) => setTimeout(resolve, 0));
 
@@ -237,13 +235,13 @@ Deno.test('a replacement right after the complete response arrives does not send
       [
         listAttempts(webhookAttempts, botId).map(describeAttemptState),
         fixture.receivedRequests.map(({ url }) => url === REPLACEMENT_WEBHOOK_URL),
-        botWebhooks.getWebhookInfo(botId).pending_update_count,
+        updateConsumers.getWebhookInfo(botId).pending_update_count,
       ],
       [['accepted'], [false], 0],
       'Expected the complete response to accept the update before the replacement could cancel it',
     );
   } finally {
-    botWebhooks.endDelivery();
+    endSession();
   }
 });
 
@@ -260,12 +258,12 @@ Deno.test("a failure decided just before a replacement is not the replacement we
       ? new Response(null)
       : new ControlledBodyResponse(null, { status: 500, statusText: 'Internal Server Error' })
   );
-  const { botId, botUpdates, botWebhooks, webhookAttempts } = fixture;
+  const { botId, botUpdates, updateConsumers, webhookAttempts, endSession } = fixture;
 
   try {
     webhookAttempts.setScheduling(botId, 'manual');
     botUpdates.enqueueMessageUpdate(botId, createPrivateMessage(1));
-    botWebhooks.setWebhook(botId, webhookRequest());
+    updateConsumers.setWebhook(botId, webhookRequest());
     await fixture.waitForRequestCount(1);
     await new Promise((resolve) => setTimeout(resolve, 0));
 
@@ -273,12 +271,12 @@ Deno.test("a failure decided just before a replacement is not the replacement we
     // The failed response wins the attempt in the first microtask; the replacement comes next,
     // before the old delivery has handled the failure.
     await Promise.resolve();
-    botWebhooks.setWebhook(botId, { ...webhookRequest(), url: REPLACEMENT_WEBHOOK_URL });
+    updateConsumers.setWebhook(botId, { ...webhookRequest(), url: REPLACEMENT_WEBHOOK_URL });
     await fixture.waitForEntry({ kind: 'update_confirmed' });
     await waitUntil(() => listAttempts(webhookAttempts, botId)[0].status !== 'in_flight');
     await new Promise((resolve) => setTimeout(resolve, 0));
 
-    const webhookInfo = botWebhooks.getWebhookInfo(botId);
+    const webhookInfo = updateConsumers.getWebhookInfo(botId);
     assertJson(
       [
         listAttempts(webhookAttempts, botId).map(describeAttemptState),
@@ -290,7 +288,7 @@ Deno.test("a failure decided just before a replacement is not the replacement we
       "Expected the old webhook's failure to leave the replacement without a delivery error",
     );
   } finally {
-    botWebhooks.endDelivery();
+    endSession();
   }
 });
 
@@ -301,13 +299,13 @@ Deno.test('a response that arrives after its attempt was cancelled is disposed o
   const fixture = createAcceptanceFixture((request) =>
     request.url === REPLACEMENT_WEBHOOK_URL ? new Response(null) : lateResponse.promise
   );
-  const { botId, botUpdates, botWebhooks, webhookAttempts } = fixture;
+  const { botId, botUpdates, updateConsumers, webhookAttempts, endSession } = fixture;
 
   try {
     botUpdates.enqueueMessageUpdate(botId, createPrivateMessage(1));
-    botWebhooks.setWebhook(botId, webhookRequest());
+    updateConsumers.setWebhook(botId, webhookRequest());
     await fixture.waitForRequestCount(1);
-    botWebhooks.setWebhook(botId, { ...webhookRequest(), url: REPLACEMENT_WEBHOOK_URL });
+    updateConsumers.setWebhook(botId, { ...webhookRequest(), url: REPLACEMENT_WEBHOOK_URL });
     await fixture.waitForEntry({ kind: 'update_confirmed' });
 
     lateResponse.resolve(
@@ -320,7 +318,7 @@ Deno.test('a response that arrives after its attempt was cancelled is disposed o
       'Expected the late response to change nothing and to have its body cancelled',
     );
   } finally {
-    botWebhooks.endDelivery();
+    endSession();
   }
 });
 
@@ -329,13 +327,13 @@ Deno.test('a sender that fails after its attempt was cancelled changes nothing',
   const fixture = createAcceptanceFixture((request) =>
     request.url === REPLACEMENT_WEBHOOK_URL ? new Response(null) : lateFailure.promise
   );
-  const { botId, botUpdates, botWebhooks, webhookAttempts } = fixture;
+  const { botId, botUpdates, updateConsumers, webhookAttempts, endSession } = fixture;
 
   try {
     botUpdates.enqueueMessageUpdate(botId, createPrivateMessage(1));
-    botWebhooks.setWebhook(botId, webhookRequest());
+    updateConsumers.setWebhook(botId, webhookRequest());
     await fixture.waitForRequestCount(1);
-    botWebhooks.deleteWebhook(botId, { dropPendingUpdates: false });
+    updateConsumers.deleteWebhook(botId, { dropPendingUpdates: false });
     // An unobserved rejection would fail the test.
     lateFailure.reject(new Error('The connection broke after the attempt ended'));
     await new Promise((resolve) => setTimeout(resolve, 0));
@@ -343,14 +341,14 @@ Deno.test('a sender that fails after its attempt was cancelled changes nothing',
     assertJson(
       [
         listAttempts(webhookAttempts, botId).map(describeAttemptState),
-        botWebhooks.getWebhookInfo(botId).last_error_message,
-        botWebhooks.getWebhookInfo(botId).pending_update_count,
+        updateConsumers.getWebhookInfo(botId).last_error_message,
+        updateConsumers.getWebhookInfo(botId).pending_update_count,
       ],
       [['cancelled'], undefined, 1],
       'Expected the late failure to be observed and ignored',
     );
   } finally {
-    botWebhooks.endDelivery();
+    endSession();
   }
 });
 
@@ -381,13 +379,13 @@ async function reachStage(
 
 /** Stops the first attempt as `control` does, answering with the expiry's result for an expiry. */
 async function applyControl(control: AttemptControl, fixture: AcceptanceFixture) {
-  const { botId, botWebhooks, webhookAttempts } = fixture;
+  const { botId, updateConsumers, webhookAttempts } = fixture;
   switch (control) {
     case 'replacement':
-      botWebhooks.setWebhook(botId, { ...webhookRequest(), url: REPLACEMENT_WEBHOOK_URL });
+      updateConsumers.setWebhook(botId, { ...webhookRequest(), url: REPLACEMENT_WEBHOOK_URL });
       return undefined;
     case 'deletion':
-      botWebhooks.deleteWebhook(botId, { dropPendingUpdates: false });
+      updateConsumers.deleteWebhook(botId, { dropPendingUpdates: false });
       return undefined;
     case 'expiry':
       return await webhookAttempts.expireAttempt(botId, 1);
@@ -485,10 +483,8 @@ function createAcceptanceFixture(
   const publications: Array<'reply_started' | 'update_confirmed'> = [];
   const receivedRequests: Array<{ readonly url: string; readonly updateId: number }> = [];
   const requestCounter = new ReceivedRequestCounter();
-  const botWebhooks = new BotWebhookService({
-    webhooks: new BotWebhookRepository(),
-    pendingUpdates: botUpdates,
-    updateSubscriptions: new BotUpdateSubscriptionRepository(),
+  const { updateConsumers, endSession } = createUpdateConsumers({
+    botUpdates,
     updateActivity: {
       recordWebhookUpdateDelivery: (deliveryBotId, update, webhookAttemptId) =>
         botActivity.recordWebhookUpdateDelivery(deliveryBotId, update, webhookAttemptId),
@@ -501,6 +497,10 @@ function createAcceptanceFixture(
         botActivity.recordWebhookUpdateConfirmation(deliveryBotId, update, webhookAttemptId);
       },
       recordWebhookAttemptFailure: (failure) => botActivity.recordWebhookAttemptFailure(failure),
+      recordUpdateDeliveries: (deliveryBotId, updates, via) =>
+        botActivity.recordUpdateDeliveries(deliveryBotId, updates, via),
+      recordUpdateConfirmations: (deliveryBotId, updates, via) =>
+        botActivity.recordUpdateConfirmations(deliveryBotId, updates, via),
     },
     sendWebhookRequest: async (request) => {
       const { update_id: updateId } = await request.json();
@@ -513,7 +513,6 @@ function createAcceptanceFixture(
       heldReplies.start(reply);
     },
     attempts: webhookAttempts,
-    currentUnixTimeSeconds: () => NOW_UNIX_SECONDS,
   });
 
   /** Resolves with the first matching entry, waiting up to a second for one to be recorded. */
@@ -534,7 +533,8 @@ function createAcceptanceFixture(
   return {
     botId,
     botUpdates,
-    botWebhooks,
+    updateConsumers,
+    endSession,
     webhookAttempts,
     heldReplies,
     publications,

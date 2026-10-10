@@ -322,8 +322,14 @@
       {
         "name": "webhook-delivery",
         "patterns": [
-          "src/services/bot_webhook.ts",
+          "src/services/webhook_delivery.ts",
           "src/services/webhook_attempt_scheduler.ts"
+        ]
+      },
+      {
+        "name": "update-consumers",
+        "patterns": [
+          "src/services/bot_update_consumer.ts"
         ]
       },
       {
@@ -667,6 +673,16 @@
         ]
       },
       {
+        "from": "update-consumers",
+        "allow": [
+          "domain"
+        ],
+        "allowTypeOnly": [
+          "update-polling",
+          "webhook-delivery"
+        ]
+      },
+      {
         "from": "bot-api-service",
         "allow": [
           "domain",
@@ -674,8 +690,7 @@
           "media-inspection"
         ],
         "allowTypeOnly": [
-          "update-polling",
-          "webhook-delivery",
+          "update-consumers",
           "domain-services"
         ]
       },
@@ -767,6 +782,7 @@
           "update-delivery",
           "update-polling",
           "webhook-delivery",
+          "update-consumers",
           "bot-api-service",
           "bot-media-resolution",
           "bot-message-sending",

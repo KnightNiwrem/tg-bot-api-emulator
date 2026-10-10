@@ -6,6 +6,8 @@ import {
   BotUpdatePollingService,
   type GetUpdatesResult,
 } from '../src/services/bot_update_polling.ts';
+import { BotUpdateConsumerService } from '../src/services/bot_update_consumer.ts';
+import { BotWebhookRepository } from '../src/repositories/bot_webhook.ts';
 import { SessionLifetime } from '../src/services/session_lifetime.ts';
 import {
   type BotApiMessage,
@@ -19,8 +21,8 @@ import { createRealTimeScheduler } from './support/scheduler.ts';
 const BOT_ID = 10;
 const OTHER_BOT_ID = 20;
 
-Deno.test('BotUpdatePollingService resolves and keeps allowed updates per bot as Telegram does', async () => {
-  const { updateSubscriptions, botUpdatePolling } = createPollingFixture();
+Deno.test('BotUpdateConsumerService resolves and keeps allowed updates per bot as Telegram does', async () => {
+  const { updateSubscriptions, updateConsumers } = createPollingFixture();
   const cases: { allowedUpdates: string[]; expected: readonly BotApiUpdateType[] }[] = [
     { allowedUpdates: ['MESSAGE', 'not_an_update_type'], expected: ['message'] },
     { allowedUpdates: ['chat_member'], expected: ['chat_member'] },
@@ -30,16 +32,16 @@ Deno.test('BotUpdatePollingService resolves and keeps allowed updates per bot as
   ];
 
   for (const { allowedUpdates, expected } of cases) {
-    await botUpdatePolling.getUpdates(BOT_ID, { limit: 100, timeoutSeconds: 0, allowedUpdates });
+    await updateConsumers.getUpdates(BOT_ID, { limit: 100, timeoutSeconds: 0, allowedUpdates });
     assertAllowedUpdateTypes(updateSubscriptions.getAllowedUpdateTypes(BOT_ID), expected);
   }
   // A request without allowed updates keeps the subscription, which is kept per bot.
-  await botUpdatePolling.getUpdates(BOT_ID, {
+  await updateConsumers.getUpdates(BOT_ID, {
     limit: 100,
     timeoutSeconds: 0,
     allowedUpdates: ['callback_query'],
   });
-  await botUpdatePolling.getUpdates(BOT_ID, { limit: 100, timeoutSeconds: 0 });
+  await updateConsumers.getUpdates(BOT_ID, { limit: 100, timeoutSeconds: 0 });
   assertAllowedUpdateTypes(updateSubscriptions.getAllowedUpdateTypes(BOT_ID), ['callback_query']);
   assertAllowedUpdateTypes(
     updateSubscriptions.getAllowedUpdateTypes(OTHER_BOT_ID),
@@ -159,8 +161,14 @@ Deno.test('BotUpdatePollingService ends a cancelled long poll without terminatin
 });
 
 Deno.test('BotUpdatePollingService ends held long polls and changes nothing once the session ends', async () => {
-  const { botUpdates, updateSubscriptions, botActivity, botUpdatePolling, endSession } =
-    createPollingFixture();
+  const {
+    botUpdates,
+    updateSubscriptions,
+    botActivity,
+    botUpdatePolling,
+    updateConsumers,
+    endSession,
+  } = createPollingFixture();
   botUpdates.enqueueMessageUpdate(BOT_ID, createPrivateMessage(1));
   const heldResults = [BOT_ID, OTHER_BOT_ID].map((botId) =>
     botUpdatePolling.getUpdates(botId, {
@@ -179,7 +187,7 @@ Deno.test('BotUpdatePollingService ends held long polls and changes nothing once
     1_000,
     'Expected the end of the session to end every held long poll at once',
   );
-  const laterResult = await botUpdatePolling.getUpdates(BOT_ID, {
+  const laterResult = await updateConsumers.getUpdates(BOT_ID, {
     limit: 100,
     timeoutSeconds: 50,
     allowedUpdates: ['callback_query'],
@@ -297,18 +305,32 @@ function createPollingFixture() {
     scheduler: createRealTimeScheduler(),
   });
   const sessionEnd = new AbortController();
+  const sessionLifetime = new SessionLifetime(sessionEnd.signal);
   const botUpdatePolling = new BotUpdatePollingService({
     botUpdates,
-    updateSubscriptions,
     updateActivity: botActivity,
     scheduler: createRealTimeScheduler(),
-    sessionLifetime: new SessionLifetime(sessionEnd.signal),
+    sessionLifetime,
+  });
+  // The bots poll and set no webhook, so their subscriptions change only through getUpdates.
+  const updateConsumers = new BotUpdateConsumerService({
+    webhooks: new BotWebhookRepository(),
+    pendingUpdates: botUpdates,
+    updateSubscriptions,
+    polling: botUpdatePolling,
+    webhookDelivery: {
+      startGeneration: () => {
+        throw new Error('Unexpected webhook delivery');
+      },
+    },
+    sessionLifetime,
   });
   return {
     botUpdates,
     updateSubscriptions,
     botActivity,
     botUpdatePolling,
+    updateConsumers,
     endSession: () => sessionEnd.abort(),
   };
 }
