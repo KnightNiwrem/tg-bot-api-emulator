@@ -676,7 +676,8 @@ export interface SupergroupMessage {
   readonly isContentProtected: boolean;
   /**
    * Whether the sender asked for the message to notify its recipients without sound, as the Bot
-   * API's `disable_notification` does. Only bots send silently.
+   * API's `disable_notification` does. Only bots send silently, except that a pin in a private
+   * chat is always silent.
    */
   readonly isSilent: boolean;
   /**

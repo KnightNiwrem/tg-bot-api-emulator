@@ -69,7 +69,10 @@ const MESSAGE_HAS_NO_TEXT_DESCRIPTION = 'Bad Request: there is no text in the me
 const MESSAGE_HAS_NO_CAPTION_DESCRIPTION =
   'Bad Request: there is no caption in the message to edit';
 const MESSAGE_NOT_EDITABLE_DESCRIPTION = "Bad Request: message can't be edited";
-/** TDLib's `can_edit_message_media` refuses to edit the media of a voice note or a poll. */
+/**
+ * TDLib's `can_edit_message_media` refuses to edit the media of a voice note, a poll, a contact, or
+ * a location.
+ */
 const MESSAGE_MEDIA_NOT_EDITABLE_DESCRIPTION = "Bad Request: message media can't be edited";
 
 /** The descriptions of the Bot API server's `check_message` and TDLib's `stop_poll`. */

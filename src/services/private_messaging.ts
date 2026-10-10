@@ -393,7 +393,10 @@ export type EditBotMessageCaptionFailureReason =
 
 export type EditBotMessageMediaFailureReason =
   | EditBotMessageInlineKeyboardFailureReason
-  /** The message is a voice note, whose media TDLib does not let anyone edit. */
+  /**
+   * The message is a voice note, a poll, a contact, or a location, whose media TDLib does not let
+   * anyone edit.
+   */
   | 'message_media_not_editable'
   | 'caption_too_long'
   | 'album_media_kind_changed'

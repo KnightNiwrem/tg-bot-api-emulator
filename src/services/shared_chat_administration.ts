@@ -238,7 +238,7 @@ type AccountAdministrationTargetFailureReason =
   | 'actor_not_a_member'
   | 'member_not_found';
 
-/** Why an account may not change a user's standing, once it found the user. */
+/** Why an account may not change a user's standing whatever its rights, once it found the user. */
 type AccountAdministrationRefusal =
   /** Nobody changes the owner's standing. */
   | 'member_is_owner'
@@ -246,9 +246,13 @@ type AccountAdministrationRefusal =
    * The account would change its own standing, which Telegram Desktop never offers: its
    * `canEditAdmin` and `canRestrictParticipant` refuse the account itself.
    */
-  | 'cannot_manage_self'
-  /** The user is an administrator that the account did not promote, directly or indirectly. */
-  | 'administrator_not_promoted_by_actor';
+  | 'cannot_manage_self';
+
+/**
+ * The user is an administrator that the account did not promote, directly or indirectly, which is
+ * checked after the account's rights.
+ */
+type AdministratorNotPromotedByActor = 'administrator_not_promoted_by_actor';
 
 /**
  * Why an account cannot promote a member, change an administrator's rights, or demote one, in the
@@ -260,7 +264,8 @@ export type ChatMemberRoleChangeFailureReason =
   | 'not_a_member'
   | AccountAdministrationRefusal
   /** The account lacks `can_promote_members`, which TDLib's `promote_channel_participant` requires. */
-  | 'not_enough_rights';
+  | 'not_enough_rights'
+  | AdministratorNotPromotedByActor;
 
 export type PromoteChatMemberFailureReason =
   | 'no_rights_granted'
@@ -558,7 +563,8 @@ export type AccountRestrictionFailureReason =
    */
   | 'not_enough_rights_to_promote'
   /** The account lacks `can_restrict_members`, as TDLib's `restrict_channel_participant` requires. */
-  | 'not_enough_rights';
+  | 'not_enough_rights'
+  | AdministratorNotPromotedByActor;
 
 export type AccountRestrictionResult =
   | { readonly changed: true }

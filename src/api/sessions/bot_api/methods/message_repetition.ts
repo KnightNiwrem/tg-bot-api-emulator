@@ -67,8 +67,8 @@ const videoStartTimestampParametersShape = {
     .optional(),
 };
 
-// As for sending, Telegram accepts only numeric chat IDs of the emulator's chats. Topics, paid
-// broadcasts, and suggested posts are not supported.
+// As for sending, an `@username` chat_id or from_chat_id reaches here already resolved by
+// `resolveChatUsernameParameters`. Topics, paid broadcasts, and suggested posts are not supported.
 const forwardMessageParametersSchema = z.strictObject({
   chat_id: integerParameter(z.int()).optional(),
   from_chat_id: integerParameter(z.int()).optional(),

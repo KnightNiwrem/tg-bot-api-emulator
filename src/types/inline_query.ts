@@ -107,7 +107,10 @@ interface InlineQueryResultBase {
   readonly inlineKeyboard?: InlineKeyboard;
 }
 
-/** A result that the account's client lists by its title, with a text or rich message to send. */
+/**
+ * A result that the account's client lists by its title, with text, a rich message, a contact, or
+ * a location to send.
+ */
 export interface ArticleInlineQueryResult extends InlineQueryResultBase {
   readonly kind: 'article';
   /** Never empty. */

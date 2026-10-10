@@ -1458,7 +1458,7 @@ export interface PollOption {
   readonly voter_count: number;
 }
 
-/** A regular poll or a quiz a bot sent, with its votes as they are now. */
+/** A regular poll or a quiz a bot or an account sent, with its votes as they are now. */
 export interface Poll {
   readonly id: string;
   readonly question: string;
@@ -1566,7 +1566,7 @@ interface MessageContentFields {
     readonly rich_message: RichMessage;
   };
   readonly poll: {
-    /** A poll a bot sent, with its votes as they are now. */
+    /** A poll a bot or an account sent, with its votes as they are now. */
     readonly poll: Poll;
   };
   readonly contact: { readonly contact: Contact };
@@ -1947,7 +1947,8 @@ export type RepliedSupergroupMessage =
  * A supergroup message as the requesting account sees it: numbered once by the supergroup, and
  * written by an account or a bot, or a service message about members joining or leaving, a new
  * title, or a pin, from the member who made the change. Members see the same message, apart from
- * the `file_id` of its file and the legacy `new_chat_member` of a service message.
+ * the `file_id` of its file, whether a quiz shows its solution, and the legacy `new_chat_member`
+ * of a service message.
  */
 export type SupergroupMessage =
   & MessageHeader<SupergroupChat>
@@ -1969,9 +1970,10 @@ export type RequiredChatAdministratorRights = Readonly<Record<string, boolean>>;
 /**
  * What a reply keyboard button asks the client to share instead of sending its text, in the
  * fields of a Bot API `KeyboardButton`. Pressing a `request_contact` button shares the account's
- * own contact, pressing a `request_location` button shares the location the press reports, and
+ * own contact, pressing a `request_location` button shares the location the press reports,
  * pressing a `request_users` or `request_chat` button shares the users or supergroup the press
- * chooses; the emulator cannot answer the other requests, so such buttons cannot be pressed.
+ * chooses, pressing a `request_poll` button sends the poll the press creates, and pressing a
+ * `web_app` button sends the data the press gives.
  */
 export type ReplyKeyboardButtonRequest =
   | { readonly request_contact: true }
