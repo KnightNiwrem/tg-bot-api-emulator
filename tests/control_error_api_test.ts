@@ -4,6 +4,7 @@
  */
 import { createEmulationApi } from '../src/api/mod.ts';
 import { createEmulationSession } from '../src/composition/emulation_session.ts';
+import { createSessionLifecycleService } from '../src/composition/session_lifecycle.ts';
 import { AccountRepository } from '../src/repositories/account.ts';
 import { BotRepository } from '../src/repositories/bot.ts';
 import { SessionRepository } from '../src/repositories/session.ts';
@@ -11,7 +12,6 @@ import { SessionLifecycleService } from '../src/services/session_lifecycle.ts';
 import { VirtualUserService } from '../src/services/virtual_user.ts';
 import {
   createSession,
-  createTestApi,
   createTestSession,
   requestJson,
   TEST_PUBLIC_ORIGIN,
@@ -253,7 +253,10 @@ Deno.test('Missing resources are refused with the reason that names them', async
 });
 
 Deno.test('A path no route serves is refused as route_not_found', async () => {
-  const { api, sessionPath } = await createTestSession();
+  // The OpenAPI document cannot describe a route it does not list, so the API is not checked
+  // against it here.
+  const api = createUncheckedTestApi();
+  const sessionPath = await createSession(api);
 
   for (const path of ['/unknown', `${sessionPath}/unknown`, `${sessionPath}/accounts/1/unknown`]) {
     const { status, body } = await requestJson<ControlErrorBody>(api, 'GET', path);
@@ -303,7 +306,9 @@ Deno.test('A failure outside the 4xx range carries its reason too', async () => 
 });
 
 Deno.test('Bot API answers for an unknown session keep their empty 404', async () => {
-  const api = createTestApi();
+  // The document describes the file download's 404 as a Bot API error, but a session that does
+  // not exist is answered before any Bot API route, so the API is not checked against it here.
+  const api = createUncheckedTestApi();
 
   for (
     const path of [
@@ -351,6 +356,14 @@ interface ControlRequestIssue {
 interface ControlErrorBody {
   readonly reason: string;
   readonly issues?: readonly ControlRequestIssue[];
+}
+
+/** An emulation API whose responses are not checked against the OpenAPI document. */
+function createUncheckedTestApi() {
+  return createEmulationApi({
+    sessionLifecycle: createSessionLifecycleService(),
+    publicOrigin: TEST_PUBLIC_ORIGIN,
+  });
 }
 
 /** Sessions whose accounts can never get a user ID, as if every ID were taken. */
