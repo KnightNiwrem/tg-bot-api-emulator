@@ -59,6 +59,14 @@ emulator and asserts its reply, and its topic pages cover more involved interact
 named after its URL path with `/` replaced by `_`, and each reusable schema, parameter, and response
 lives in `openapi/components/`, named after the component.
 
+Tests hold the server to that description: every response an in-process test API gives is checked
+against the operation and status the description documents for it, its headers, media type, and
+body, and a departure fails the test. Requests are only classified as valid or invalid, because
+tests send invalid ones on purpose; Bot API requests stay unclassified, because Telegram's parameter
+conventions are more than the schemas model. A request to an undocumented route fails too, unless
+`tests/support/openapi_conformance/undocumented_route_allowances.ts` lists it as one tests send on
+purpose.
+
 ## Commands
 
 - `deno task start` — start the server using the environment described below
@@ -72,6 +80,8 @@ lives in `openapi/components/`, named after the component.
   [checking the emitted Bot API objects' types](tests/bot_api_type_conformance_test.ts) against
   grammY's types at a pinned version, with the known deviations listed there.
 - `deno task openapi:lint` — lint the OpenAPI description with Redocly's recommended rules
+- `deno task openapi:coverage` — run the tests and report which documented operations and statuses
+  they exercised
 - `deno task architecture:check` — check that imports respect the layer boundaries set in
   `.fallowrc.json`
 

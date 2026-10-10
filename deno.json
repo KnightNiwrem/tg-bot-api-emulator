@@ -9,12 +9,15 @@
     "check": "deno check --allow-import=cdn.jsdelivr.net,cdn.skypack.dev,jsr.io src/ tests/ clients/ docs/clients/ && deno check --doc-only --allow-import=cdn.jsdelivr.net,cdn.skypack.dev,jsr.io README.md docs/clients/**/*.md",
     "architecture:check": "deno run -A fallow dead-code --boundary-violations",
     "openapi:lint": "npx --yes @redocly/cli@2.54.2 lint openapi/openapi.yaml",
+    "openapi:coverage": "rm -f .openapi-conformance-records.jsonl && OPENAPI_CONFORMANCE_RECORD_FILE=.openapi-conformance-records.jsonl deno test --allow-net=127.0.0.1 --allow-read=. --allow-write=.openapi-conformance-records.jsonl --allow-env=OPENAPI_CONFORMANCE_RECORD_FILE --allow-import=cdn.jsdelivr.net,cdn.skypack.dev,jsr.io && deno run --allow-read=. tests/support/openapi_conformance/coverage_report.ts .openapi-conformance-records.jsonl",
     "test": "deno test --allow-net=127.0.0.1 --allow-read=. --allow-import=cdn.jsdelivr.net,cdn.skypack.dev,jsr.io"
   },
   "imports": {
     "@grammyjs/auto-retry/": "https://cdn.jsdelivr.net/gh/grammyjs/auto-retry@^2.0.2/src/",
     "@grammyjs/runner/": "https://cdn.jsdelivr.net/gh/grammyjs/runner@^2.0.3/src/",
     "@std/yaml": "jsr:@std/yaml@^1.3.0",
+    "ajv": "npm:ajv@8.17.1",
+    "ajv-formats": "npm:ajv-formats@3.0.1",
     "fallow": "npm:fallow@3.31.0",
     "grammy/types": "https://cdn.jsdelivr.net/gh/grammyjs/grammY@^1.46.0/src/types.ts",
     "grammy-types-reference": "https://cdn.jsdelivr.net/gh/grammyjs/types@5.0.0/mod.ts",

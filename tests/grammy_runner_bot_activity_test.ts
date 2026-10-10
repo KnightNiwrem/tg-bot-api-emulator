@@ -2,9 +2,8 @@ import { Bot } from 'https://cdn.jsdelivr.net/gh/grammyjs/grammY@^1.46.0/src/bot
 import { run } from '@grammyjs/runner/runner.ts';
 import { sequentialize } from '@grammyjs/runner/sequentialize.ts';
 
-import { createEmulationApi } from '../src/api/mod.ts';
-import { createSessionLifecycleService } from '../src/composition/session_lifecycle.ts';
 import { latest, TelegramEmulationClient } from '../clients/typescript/mod.ts';
+import { createTestApi } from './support/emulation_api.ts';
 
 Deno.test('a sequentialized grammY runner keeps each chat in order while chats interleave', async () => {
   const { session, fetch, createdBot, ada, grace } = await createFixture();
@@ -101,10 +100,7 @@ Deno.test('a grammY runner without sequentialize keeps the order each handler aw
 
 async function createFixture() {
   const publicOrigin = 'http://emulator.example:9000';
-  const api = createEmulationApi({
-    sessionLifecycle: createSessionLifecycleService(),
-    publicOrigin,
-  });
+  const api = createTestApi(publicOrigin);
   const fetch = createInProcessFetch(api.fetch);
   const session = await new TelegramEmulationClient(publicOrigin, { fetch }).createSession();
   const createdBot = await session.createBot({ first_name: 'Shop Bot', username: 'shop_bot' });

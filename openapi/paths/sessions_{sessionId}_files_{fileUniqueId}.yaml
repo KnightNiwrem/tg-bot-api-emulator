@@ -14,9 +14,8 @@ get:
         The file's content, as it was sent, with its document's, video's, voice note's, or
         audio file's MIME type, or the image type its photo or thumbnail was sent in.
       content:
-        application/octet-stream:
+        '*/*':
           schema:
-            type: string
-            contentMediaType: application/octet-stream
+            description: The file's bytes, in the media type that `Content-Type` names.
     '404':
       description: The session or the file does not exist.

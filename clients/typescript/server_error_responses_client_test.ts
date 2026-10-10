@@ -2,8 +2,7 @@ import { Bot } from 'https://cdn.jsdelivr.net/gh/grammyjs/grammY@^1.46.0/src/bot
 import { GrammyError } from 'https://cdn.jsdelivr.net/gh/grammyjs/grammY@^1.46.0/src/core/error.ts';
 import { autoRetry } from '@grammyjs/auto-retry/mod.ts';
 
-import { createEmulationApi } from '../../src/api/mod.ts';
-import { createSessionLifecycleService } from '../../src/composition/session_lifecycle.ts';
+import { createTestApi } from '../../tests/support/emulation_api.ts';
 import { EmulationClientError, TelegramEmulationClient } from './mod.ts';
 
 const PUBLIC_ORIGIN = 'http://emulator.example:9000';
@@ -141,10 +140,7 @@ Deno.test('Server error queue controls reject what they cannot apply to', async 
 });
 
 function createInProcessClient() {
-  const api = createEmulationApi({
-    sessionLifecycle: createSessionLifecycleService(),
-    publicOrigin: PUBLIC_ORIGIN,
-  });
+  const api = createTestApi(PUBLIC_ORIGIN);
   const fetch: typeof globalThis.fetch = async (input, init) =>
     await api.fetch(new Request(input, init));
   return { client: new TelegramEmulationClient(PUBLIC_ORIGIN, { fetch }), fetch };

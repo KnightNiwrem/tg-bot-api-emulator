@@ -23,6 +23,8 @@ jobs:
             task: test
           - task_name: openapi:lint
             task: openapi:lint
+          - task_name: openapi:coverage
+            task: openapi:coverage
           - task_name: architecture:check
             task: architecture:check
     steps:

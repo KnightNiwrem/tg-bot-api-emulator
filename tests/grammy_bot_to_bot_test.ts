@@ -1,8 +1,7 @@
 import { Bot } from 'https://cdn.jsdelivr.net/gh/grammyjs/grammY@^1.46.0/src/bot.ts';
 
-import { createEmulationApi } from '../src/api/mod.ts';
-import { createSessionLifecycleService } from '../src/composition/session_lifecycle.ts';
 import { TelegramEmulationClient } from '../clients/typescript/mod.ts';
+import { createTestApi } from './support/emulation_api.ts';
 
 for (
   const { optedIn, coordinatorEnables, translatorEnables } of [
@@ -12,10 +11,7 @@ for (
 ) {
   Deno.test(`grammY bots complete a supergroup command-and-reply exchange when ${optedIn} opts in`, async () => {
     const publicOrigin = 'http://emulator.example:9000';
-    const api = createEmulationApi({
-      sessionLifecycle: createSessionLifecycleService(),
-      publicOrigin,
-    });
+    const api = createTestApi(publicOrigin);
     const fetch = createInProcessFetch(api.fetch);
     const session = await new TelegramEmulationClient(publicOrigin, { fetch }).createSession();
     try {

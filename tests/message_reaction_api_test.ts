@@ -6,8 +6,6 @@ import reactionTypeEmojiYaml from '../openapi/components/schemas/ReactionTypeEmo
   type: 'text',
 };
 
-import { createEmulationApi } from '../src/api/mod.ts';
-import { createSessionLifecycleService } from '../src/composition/session_lifecycle.ts';
 import { REACTION_EMOJIS } from '../src/types/message_reaction.ts';
 import {
   EmulationClientError,
@@ -16,6 +14,7 @@ import {
   TelegramEmulationClient,
   type VirtualAccountClient,
 } from '../clients/typescript/mod.ts';
+import { createTestApi } from './support/emulation_api.ts';
 
 const PUBLIC_ORIGIN = 'http://emulator.example:9000';
 /** A 2 by 1 GIF image, whose header is all the emulator reads. */
@@ -458,10 +457,7 @@ Deno.test("an account's poll takes reactions, which stopping the poll keeps", as
 });
 
 Deno.test('reactions stay inside their session', async () => {
-  const api = createEmulationApi({
-    sessionLifecycle: createSessionLifecycleService(),
-    publicOrigin: PUBLIC_ORIGIN,
-  });
+  const api = createTestApi(PUBLIC_ORIGIN);
   const first = await createReactionFixture(api);
   const second = await createReactionFixture(api);
   try {
@@ -559,10 +555,7 @@ interface ReactionFixture {
 
 /** A supergroup owned by an account, with a second account and an administrator bot. */
 async function createReactionFixture(
-  api = createEmulationApi({
-    sessionLifecycle: createSessionLifecycleService(),
-    publicOrigin: PUBLIC_ORIGIN,
-  }),
+  api = createTestApi(PUBLIC_ORIGIN),
 ): Promise<ReactionFixture> {
   const fetch: typeof globalThis.fetch = async (input, init) =>
     await api.fetch(new Request(input, init));
