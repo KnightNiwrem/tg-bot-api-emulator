@@ -35,6 +35,16 @@ export interface BotApiMethodCall {
 const SESSION_ENDED_CALL_OUTCOME: BotApiCallOutcome = { answered: false, reason: 'session_ended' };
 
 /**
+ * The outcome of a call of `method` that its session's end stopped before it changed anything: the
+ * method's answer for that case, if it has one, and otherwise a refusal.
+ */
+function endedSessionCallOutcome({ answerOnceSessionEnded }: BotApiMethod): BotApiCallOutcome {
+  return answerOnceSessionEnded === undefined
+    ? SESSION_ENDED_CALL_OUTCOME
+    : { answered: true, answer: answerOnceSessionEnded };
+}
+
+/**
  * Runs a bot's call of a method, however the call arrived, unless a test queued a rate limit or
  * server error answer for it, which the call receives instead, before the method reads its
  * parameters or changes anything. The call and its answer are recorded as bot activity if the
@@ -42,19 +52,19 @@ const SESSION_ENDED_CALL_OUTCOME: BotApiCallOutcome = { answered: false, reason:
  *
  * A call is refused, changing and recording nothing, if its session has ended by the time it
  * starts; a method that waits checks the session itself before it changes anything, and is refused
- * the same way. A call whose session ends after the method committed is still answered, but no
- * longer recorded.
+ * the same way. A method may give such calls an answer instead, as `getUpdates` does. A call whose
+ * session ends after the method committed is still answered, but no longer recorded.
  */
 export async function callBotApiMethod(
   context: BotApiCallContext,
   { method, requestedMethodName, parameters, uploadedFiles }: BotApiMethodCall,
 ): Promise<BotApiCallOutcome> {
   if (!context.session.lifetime.admitsCommits) {
-    return SESSION_ENDED_CALL_OUTCOME;
+    return endedSessionCallOutcome(method);
   }
   const outcome = await answerBotApiMethodCall(context, method, parameters, uploadedFiles);
   if (outcome === SESSION_ENDED) {
-    return SESSION_ENDED_CALL_OUTCOME;
+    return endedSessionCallOutcome(method);
   }
   if (context.session.lifetime.admitsCommits) {
     recordImplementedMethodCall(context, method, {

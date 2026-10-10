@@ -8,9 +8,10 @@ import type { BotApiRequestParameters, BotApiUploadedFiles } from './request_par
 /**
  * Who calls a Bot API method, and the session services a method may use to answer.
  *
- * A method that waits, as a download does, checks the session's commit gate after its last wait,
- * in the same synchronous step as the change it makes, and returns `SESSION_ENDED` instead of
- * changing an ended session.
+ * A method that waits, as a download does, checks the session's commit gate as soon as each wait
+ * ends, before it acts on the wait's result, and returns `SESSION_ENDED` once the session has
+ * ended. The last check falls in the same synchronous step as the change it guards, so a method
+ * never changes an ended session, and a download the end stopped is not reported as failed.
  */
 export interface BotApiMethodContext {
   /**
@@ -72,6 +73,12 @@ export interface BotApiMethod {
    */
   readonly recordsActivity: boolean;
   readonly handler: BotApiMethodHandler;
+  /**
+   * The answer a call receives instead of running when its session has ended before the call
+   * could change anything, for a method whose callers wait on it: a long poll finds no updates.
+   * A call of any other method is then refused without an answer.
+   */
+  readonly answerOnceSessionEnded?: BotApiMethodAnswer;
 }
 
 /** Telegram's JSON answer to a Bot API method, with the HTTP status that carries it. */

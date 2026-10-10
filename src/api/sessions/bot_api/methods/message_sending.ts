@@ -422,11 +422,11 @@ async function handleSendRichMessage(
     context,
     richMessageReading.richMessage,
   );
-  if (!richMessageResolution.resolved) {
-    return richMessageResolution.errorAnswer;
-  }
   if (!context.session.lifetime.admitsCommits) {
     return SESSION_ENDED;
+  }
+  if (!richMessageResolution.resolved) {
+    return richMessageResolution.errorAnswer;
   }
 
   return sendMethodAnswer(context.session.botApi.sendRichMessage(context.bot, {
@@ -607,11 +607,11 @@ async function handleSendPhoto(
   }
 
   const photoResolution = await resolveRequestedInputFile(context, photoReading.inputFile, 'photo');
-  if (!photoResolution.resolved) {
-    return photoResolution.errorAnswer;
-  }
   if (!context.session.lifetime.admitsCommits) {
     return SESSION_ENDED;
+  }
+  if (!photoResolution.resolved) {
+    return photoResolution.errorAnswer;
   }
 
   return sendMethodAnswer(context.session.botApi.sendPhoto(context.bot, {
@@ -653,11 +653,11 @@ async function handleSendDocument(
     documentReading.inputFile,
     'document',
   );
-  if (!documentResolution.resolved) {
-    return documentResolution.errorAnswer;
-  }
   if (!context.session.lifetime.admitsCommits) {
     return SESSION_ENDED;
+  }
+  if (!documentResolution.resolved) {
+    return documentResolution.errorAnswer;
   }
 
   const thumbnail = readThumbnailParameter(data, uploadedFiles);
@@ -699,11 +699,11 @@ async function handleSendVideo(
     videoReading.inputFile,
     'video',
   );
-  if (!videoResolution.resolved) {
-    return videoResolution.errorAnswer;
-  }
   if (!context.session.lifetime.admitsCommits) {
     return SESSION_ENDED;
+  }
+  if (!videoResolution.resolved) {
+    return videoResolution.errorAnswer;
   }
 
   const thumbnail = readThumbnailParameter(data, uploadedFiles);
@@ -749,11 +749,11 @@ async function handleSendVoice(
     voiceReading.inputFile,
     'voice',
   );
-  if (!voiceResolution.resolved) {
-    return voiceResolution.errorAnswer;
-  }
   if (!context.session.lifetime.admitsCommits) {
     return SESSION_ENDED;
+  }
+  if (!voiceResolution.resolved) {
+    return voiceResolution.errorAnswer;
   }
 
   return sendMethodAnswer(context.session.botApi.sendVoice(context.bot, {
@@ -794,11 +794,11 @@ async function handleSendAudio(
     audioReading.inputFile,
     'audio',
   );
-  if (!audioResolution.resolved) {
-    return audioResolution.errorAnswer;
-  }
   if (!context.session.lifetime.admitsCommits) {
     return SESSION_ENDED;
+  }
+  if (!audioResolution.resolved) {
+    return audioResolution.errorAnswer;
   }
 
   const thumbnail = readThumbnailParameter(data, uploadedFiles);
@@ -861,13 +861,13 @@ async function handleSendMediaGroup(
       member.kind,
       memberIndex + 1,
     );
+    if (!context.session.lifetime.admitsCommits) {
+      return SESSION_ENDED;
+    }
     if (!fileResolution.resolved) {
       return fileResolution.errorAnswer;
     }
     media.push(toMediaReplacementRequest(member, fileResolution.value, captions[memberIndex]));
-  }
-  if (!context.session.lifetime.admitsCommits) {
-    return SESSION_ENDED;
   }
 
   const { chatId, replyTo, isContentProtected, isSilent, messageEffectId } = optionsReading.options;

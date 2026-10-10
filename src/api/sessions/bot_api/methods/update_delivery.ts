@@ -5,7 +5,9 @@ import {
   type BotApiMethod,
   type BotApiMethodAnswer,
   type BotApiMethodContext,
+  type BotApiMethodOutcome,
   botApiResult,
+  SESSION_ENDED,
 } from '../method_call.ts';
 import {
   booleanParameter,
@@ -19,7 +21,14 @@ import {
 /** The methods by which a bot receives updates: polling with `getUpdates`, or a webhook. */
 export const UPDATE_DELIVERY_METHODS: readonly BotApiMethod[] = [
   { name: 'deleteWebhook', recordsActivity: true, handler: handleDeleteWebhook },
-  { name: 'getUpdates', recordsActivity: false, handler: handleGetUpdates },
+  {
+    name: 'getUpdates',
+    recordsActivity: false,
+    handler: handleGetUpdates,
+    // A long poll held or still arriving when its session ends finds nothing, as one whose timeout
+    // passes does; it confirms nothing.
+    answerOnceSessionEnded: botApiResult([]),
+  },
   { name: 'getWebhookInfo', recordsActivity: true, handler: handleGetWebhookInfo },
   { name: 'setWebhook', recordsActivity: true, handler: handleSetWebhook },
 ];
@@ -92,7 +101,7 @@ const getUpdatesParametersSchema = z.strictObject({
 async function handleGetUpdates(
   context: BotApiMethodContext,
   parameters: BotApiRequestParameters,
-): Promise<BotApiMethodAnswer> {
+): Promise<BotApiMethodOutcome> {
   const parsedParameters = getUpdatesParametersSchema.safeParse(parameters);
   if (!parsedParameters.success) {
     return botApiError(400, 'Bad Request: invalid getUpdates parameters');
@@ -120,9 +129,7 @@ async function handleGetUpdates(
       case 'webhook_active':
         return botApiError(409, WEBHOOK_ACTIVE_DESCRIPTION);
       case 'session_ended':
-        // A long poll the session's end interrupts is a passive wait, which committed nothing
-        // since it began; it is answered as one that found nothing.
-        return botApiResult([]);
+        return SESSION_ENDED;
       default: {
         const unhandledReason: never = reason;
         throw new Error(`Unhandled getUpdates failure: ${unhandledReason}`);

@@ -168,11 +168,11 @@ async function handleEditMessageText(
   }
 
   const contentResolution = await resolveTextMessageReplacement(context, contentReading.content);
-  if (!contentResolution.resolved) {
-    return contentResolution.errorAnswer;
-  }
   if (!context.session.lifetime.admitsCommits) {
     return SESSION_ENDED;
+  }
+  if (!contentResolution.resolved) {
+    return contentResolution.errorAnswer;
   }
 
   const { target } = targetReading;
@@ -319,11 +319,11 @@ async function handleEditMessageMedia(
     getRequestedMediaFile(media),
     media.kind,
   );
-  if (!fileResolution.resolved) {
-    return fileResolution.errorAnswer;
-  }
   if (!context.session.lifetime.admitsCommits) {
     return SESSION_ENDED;
+  }
+  if (!fileResolution.resolved) {
+    return fileResolution.errorAnswer;
   }
 
   const { target } = targetReading;

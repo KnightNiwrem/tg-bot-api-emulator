@@ -70,6 +70,30 @@ Deno.test('a Bot API call held in preparation is refused once its session ends',
   );
 });
 
+Deno.test('a Bot API call whose download the session end stops is refused, not failed', async () => {
+  const fixture = createGateFixture();
+  fixture.downloads.honorsSignal = true;
+  const method = findBotApiMethod('sendDocument');
+  if (method === undefined) {
+    throw new Error('Expected sendDocument to be implemented');
+  }
+
+  const call = callBotApiMethod({ ...fixture.replyContext, via: 'http' }, {
+    method,
+    requestedMethodName: 'sendDocument',
+    parameters: { chat_id: String(fixture.adaId), document: DOCUMENT_URL },
+    uploadedFiles: new Map(),
+  });
+  await fixture.downloads.waitForHeldDownload();
+  fixture.session.end();
+
+  assertJson(
+    [await call, fixture.readState()],
+    [{ answered: false, reason: 'session_ended' }, { messageCount: 1, activityHead: 0 }],
+    'Expected the stopped download to refuse the call rather than answer it as failed',
+  );
+});
+
 Deno.test('a Bot API call that starts after its session ended changes nothing', async () => {
   const fixture = createGateFixture();
   const method = findBotApiMethod('setMyDescription');
@@ -95,6 +119,29 @@ Deno.test('a Bot API call that starts after its session ended changes nothing', 
     ],
     [{ answered: false, reason: 'session_ended' }, { found: true, text: '' }, 0],
     'Expected the call to be refused before it changed or recorded anything',
+  );
+});
+
+Deno.test('a long poll that starts after its session ended finds no updates and confirms none', async () => {
+  const fixture = createGateFixture();
+  const method = findBotApiMethod('getUpdates');
+  if (method === undefined) {
+    throw new Error('Expected getUpdates to be implemented');
+  }
+  fixture.session.end();
+
+  const outcome = await callBotApiMethod({ ...fixture.replyContext, via: 'http' }, {
+    method,
+    requestedMethodName: 'getUpdates',
+    // The offset would confirm Ada's message, which is pending, and a live poll would return it.
+    parameters: { offset: '2', timeout: '50' },
+    uploadedFiles: new Map(),
+  });
+  const webhookInfo = fixture.session.botApi.getWebhookInfo(fixture.bot);
+  assertJson(
+    [outcome, webhookInfo.pending_update_count],
+    [{ answered: true, answer: { status: 200, body: { ok: true, result: [] } } }, 1],
+    'Expected the poll to be answered at once without reading or confirming its update',
   );
 });
 
@@ -159,11 +206,16 @@ Deno.test('ending a session answers its held long poll with no updates, and a la
   );
 });
 
-/** Web file downloads that each wait for the test to release them, ignoring their signal. */
+/**
+ * Web file downloads that each wait for the test to release them. They ignore their signal, as an
+ * uncooperative download would, unless `honorsSignal` is set: then an aborted download fails as
+ * `WebFileDownloader` fails one, with its content unavailable.
+ */
 class HeldWebFileDownloads extends MediaFileService {
   readonly #source: MediaFileService;
   #heldDownload = Promise.withResolvers<AbortSignal | undefined>();
   #release = Promise.withResolvers<void>();
+  honorsSignal = false;
 
   constructor(source: MediaFileService) {
     super({
@@ -176,8 +228,17 @@ class HeldWebFileDownloads extends MediaFileService {
 
   override async downloadWebFile(request: WebFileDownloadRequest): Promise<WebFileDownloadResult> {
     this.#heldDownload.resolve(request.signal);
-    await this.#release.promise;
-    return await this.#source.downloadWebFile({ ...request, signal: undefined });
+    const abort = Promise.withResolvers<void>();
+    if (this.honorsSignal) {
+      request.signal?.addEventListener('abort', () => abort.resolve(), { once: true });
+    }
+    const isReleased = await Promise.race([
+      this.#release.promise.then(() => true),
+      abort.promise.then(() => false),
+    ]);
+    return isReleased
+      ? await this.#source.downloadWebFile({ ...request, signal: undefined })
+      : { downloaded: false, reason: 'web_content_unavailable' };
   }
 
   /** Resolves with the signal of the next held download once it starts. */
