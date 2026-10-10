@@ -90,18 +90,20 @@ export function createBotActivityRoutes(): Hono<SessionRouteContextTypes> {
 function readBotActivityQuery(
   searchParams: URLSearchParams,
 ): ControlRequestInputReading<ReadBotActivityQuery> {
-  const queryValues: Record<string, string> = {};
-  const parameters: Record<string, string> = {};
+  // Query keys are the client's, so they are collected in maps and made own properties with
+  // `Object.fromEntries`, which no key such as `__proto__` can turn into a prototype change.
+  const queryValues = new Map<string, string>();
+  const parameterFilters = new Map<string, string>();
   const repeatedQueryKeys = new Set<string>();
   for (const [name, value] of searchParams) {
     const parameterName = readParameterFilterName(name);
-    const values = parameterName === undefined ? queryValues : parameters;
+    const values = parameterName === undefined ? queryValues : parameterFilters;
     const key = parameterName ?? name;
-    if (Object.hasOwn(values, key)) {
+    if (values.has(key)) {
       repeatedQueryKeys.add(name);
       continue;
     }
-    values[key] = value;
+    values.set(key, value);
   }
   const repetitionIssues = [...repeatedQueryKeys].map((queryKey): ControlRequestIssue => ({
     source: 'query',
@@ -109,13 +111,17 @@ function readBotActivityQuery(
     code: 'duplicate_field',
     message: 'The query parameter is repeated',
   }));
-  const query = readControlRequestInput(readBotActivityQuerySchema, queryValues, 'query');
+  const query = readControlRequestInput(
+    readBotActivityQuerySchema,
+    Object.fromEntries(queryValues),
+    'query',
+  );
   if (!query.valid) {
     return { valid: false, issues: [...repetitionIssues, ...query.issues] };
   }
   return repetitionIssues.length > 0
     ? { valid: false, issues: repetitionIssues }
-    : { valid: true, value: { ...query.value, parameters } };
+    : { valid: true, value: { ...query.value, parameters: Object.fromEntries(parameterFilters) } };
 }
 
 /**

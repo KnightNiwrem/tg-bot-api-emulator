@@ -173,6 +173,66 @@ Deno.test('A malformed path parameter is an issue of the path', async () => {
   );
 });
 
+Deno.test('Query keys named like object properties are read as any other key', async () => {
+  const { api, sessionPath } = await createTestSession();
+  const activityPath = `${sessionPath}/bot-activity`;
+
+  const cases: readonly (readonly [query: string, issues: readonly unknown[]])[] = [
+    ['__proto__=1', [{ path: ['__proto__'], code: 'unknown_field' }]],
+    ['constructor=1', [{ path: ['constructor'], code: 'unknown_field' }]],
+    ['__proto__=1&__proto__=2', [
+      { path: ['__proto__'], code: 'duplicate_field' },
+      { path: ['__proto__'], code: 'unknown_field' },
+    ]],
+    ['parameters[__proto__]=a&parameters[__proto__]=b', [
+      { path: ['parameters[__proto__]'], code: 'duplicate_field' },
+    ]],
+    ['parameters[constructor]=a&parameters[constructor]=b', [
+      { path: ['parameters[constructor]'], code: 'duplicate_field' },
+    ]],
+  ];
+  for (const [query, issues] of cases) {
+    const { status, body } = await requestJson<ControlErrorBody>(
+      api,
+      'GET',
+      `${activityPath}?${query}`,
+    );
+    assertStatus(status, 400, query);
+    assertJson(
+      body.issues?.map(({ path, code }) => ({ path, code })),
+      issues,
+      `Expected the issues of ${query}`,
+    );
+  }
+});
+
+Deno.test('A parameter filter named __proto__ filters by that parameter', async () => {
+  const { api, sessionPath } = await createTestSession();
+  const { body: { token } } = await requestJson<{ token: string }>(
+    api,
+    'POST',
+    `${sessionPath}/bots`,
+    { first_name: 'Helper', username: 'helper_bot' },
+  );
+  await api.request(`${sessionPath}/bot-api/bot${token}/getMe?__proto__=x`);
+  const activityPath = `${sessionPath}/bot-activity?method=getMe&parameters[__proto__]=`;
+
+  const matching = await requestJson<{ entries: readonly unknown[] }>(
+    api,
+    'GET',
+    `${activityPath}x`,
+  );
+  const other = await requestJson<{ entries: readonly unknown[] }>(api, 'GET', `${activityPath}y`);
+
+  assertStatus(matching.status, 200);
+  assertStatus(other.status, 200);
+  assertJson(
+    [matching.body.entries.length, other.body.entries.length],
+    [1, 0],
+    'Expected the filter to match only the call that sent __proto__ as x',
+  );
+});
+
 Deno.test('Unknown and repeated query parameters are issues of the query', async () => {
   const { api, sessionPath } = await createTestSession();
 
