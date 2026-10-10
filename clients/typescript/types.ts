@@ -567,7 +567,10 @@ export interface JoinChatInput {
 }
 
 export interface JoinChatByInviteLinkInput {
-  /** The whole link, as the bot that created it received it from `createChatInviteLink`. */
+  /**
+   * The whole link, as the bot that created it received it from `createChatInviteLink`,
+   * `exportChatInviteLink` or `getChat`.
+   */
   readonly inviteLink: string;
 }
 
@@ -653,11 +656,19 @@ export interface SupergroupInviteLink {
   /** Whether users who use the link send a join request instead of joining. */
   readonly creates_join_request: boolean;
   /**
+   * Whether the link is its creator's primary link, from `exportChatInviteLink` or the
+   * replacement that revoking the previous one created, rather than an additional link.
+   */
+  readonly is_primary: boolean;
+  /**
    * Whether `session.expireChatInviteLink` made the link's current expiry date arrive; an edit
    * that gives the link another expiry date, or none, makes it false again.
    */
   readonly is_expired: boolean;
-  /** Whether the bot that created the link revoked it with `revokeChatInviteLink`, for good. */
+  /**
+   * Whether the bot that created the link revoked it, for good: with `revokeChatInviteLink`, or,
+   * for a primary link, by exporting a new one with `exportChatInviteLink`.
+   */
   readonly is_revoked: boolean;
 }
 

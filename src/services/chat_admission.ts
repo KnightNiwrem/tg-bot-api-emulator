@@ -1,4 +1,8 @@
-import type { NewChatInviteLink } from '../repositories/chat_invite_link.ts';
+import type {
+  NewChatInviteLink,
+  NewPrimaryChatInviteLink,
+  PrimaryChatInviteLinkReplacement,
+} from '../repositories/chat_invite_link.ts';
 import { cleanInputString, cleanName } from '../text_entities/input_string.ts';
 import {
   type ChatInviteLink,
@@ -69,6 +73,29 @@ export type CreateInviteLinkAsBotResult =
   | { readonly created: true; readonly link: ChatInviteLink }
   | { readonly created: false; readonly reason: CreateInviteLinkAsBotFailureReason };
 
+export interface ExportPrimaryInviteLinkAsBotInput {
+  readonly exporterBotId: number;
+  readonly chatId: number;
+}
+
+/**
+ * Why a bot cannot export a new primary invite link, in the order the official Bot API server and
+ * TDLib's `export_dialog_invite_link` check them: the bot and the chat, then the bot's right.
+ */
+export type ExportPrimaryInviteLinkAsBotFailureReason = Exclude<
+  InviteLinkManagerFailureReason,
+  'text_encoding_invalid'
+>;
+
+export type ExportPrimaryInviteLinkAsBotResult =
+  | { readonly exported: true; readonly link: ChatInviteLink }
+  | { readonly exported: false; readonly reason: ExportPrimaryInviteLinkAsBotFailureReason };
+
+export interface FindPrimaryInviteLinkOfBotInput {
+  readonly botId: number;
+  readonly chatId: number;
+}
+
 export interface EditInviteLinkAsBotInput extends RequestedInviteLinkSettings {
   readonly editorBotId: number;
   readonly chatId: number;
@@ -91,12 +118,17 @@ type ManagedInviteLinkFailureReason =
  * Why a bot cannot edit an invite link, in the order the official Bot API server, TDLib's
  * `edit_dialog_invite_link`, and then Telegram's servers check them: the bot and the chat, the
  * encoding of the name and link, the bot's right, the member limit of a link that creates join
- * requests, the link, and the settings.
+ * requests, the link, whether it is a primary link, and the settings.
  */
 export type EditInviteLinkAsBotFailureReason =
   | InviteLinkManagerFailureReason
   | 'member_limit_with_join_request'
   | ManagedInviteLinkFailureReason
+  /**
+   * The link is a primary link, which only exporting or revoking replaces, as Telegram's servers
+   * refuse to change a permanent link with `CHAT_INVITE_PERMANENT`.
+   */
+  | 'primary_invite_link_not_editable'
   | InviteLinkSettingsFailureReason;
 
 export type EditInviteLinkAsBotResult =
@@ -364,7 +396,9 @@ interface ChatDomainEventSink {
 
 interface ChatInviteLinkStore {
   createInviteLink(newLink: NewChatInviteLink): ChatInviteLink;
+  replacePrimaryInviteLink(newLink: NewPrimaryChatInviteLink): PrimaryChatInviteLinkReplacement;
   findInviteLink(url: string): ChatInviteLink | undefined;
+  findPrimaryInviteLink(chatId: number, creatorId: number): ChatInviteLink | undefined;
   listChatInviteLinks(chatId: number): readonly ChatInviteLink[];
   markInviteLinkExpired(url: string): ChatInviteLink;
   replaceInviteLinkSettings(url: string, settings: ChatInviteLinkSettings): ChatInviteLink;
@@ -397,12 +431,13 @@ interface ChatAdmissionServiceDependencies {
 
 /**
  * Decides who may enter a supergroup without its owner adding them: administrator bots create,
- * edit and revoke additional invite links, and accounts join through them, or by the username of
- * a public supergroup. A link keeps its creator, its expiry date, its member limit, and whether it
- * creates join requests, which keep the account outside until the owner, or an administrator bot
- * or account with `can_invite_users`, approves or declines them. Until then, the bots that
- * received a request may contact its user, as `mayContactJoinRequester` decides. A link's edits,
- * revocation and expiry affect only its later uses, never the requests already sent through it.
+ * edit and revoke additional invite links, export and revoke their own primary link, and accounts
+ * join through them, or by the username of a public supergroup. A link keeps its creator, its
+ * expiry date, its member limit, and whether it creates join requests, which keep the account
+ * outside until the owner, or an administrator bot or account with `can_invite_users`, approves or
+ * declines them. Until then, the bots that received a request may contact its user, as
+ * `mayContactJoinRequester` decides. A link's edits, revocation and expiry affect only its later
+ * uses, never the requests already sent through it.
  * A link's expiry date, like the end of a request's contact window, arrives only when a test makes
  * it arrive, so tests decide when a link stops working.
  */
@@ -467,13 +502,55 @@ export class ChatAdmissionService {
   }
 
   /**
+   * Replaces the primary invite link of an administrator bot in a supergroup with a new one, as
+   * TDLib's `replacePrimaryChatInviteLink` does for the official server's `exportChatInviteLink`:
+   * the bot's previous primary link, if any, is revoked, and keeps its members and history. The
+   * bot needs the `can_invite_users` administrator right, as for creating a link. Other
+   * administrators' primary links and every additional link stay as they are.
+   */
+  exportPrimaryInviteLinkAsBot(
+    { exporterBotId, chatId }: ExportPrimaryInviteLinkAsBotInput,
+  ): ExportPrimaryInviteLinkAsBotResult {
+    const manager = this.#resolveInviteLinkManager(exporterBotId, chatId);
+    if (!manager.resolved) {
+      return { exported: false, reason: manager.reason };
+    }
+    if (!holdsSupergroupAdministratorRight(manager.membership, 'can_invite_users')) {
+      return { exported: false, reason: 'not_enough_rights' };
+    }
+
+    const { primaryLink } = this.#inviteLinks.replacePrimaryInviteLink({
+      chatId,
+      creatorId: exporterBotId,
+      createdAtUnixSeconds: this.#currentUnixTimeSeconds(),
+    });
+    return { exported: true, link: primaryLink };
+  }
+
+  /**
+   * Finds the primary invite link that `getChat` shows a bot: its own primary link of the
+   * supergroup that is not revoked, while it holds the `can_invite_users` administrator right.
+   * Reading never creates or replaces a primary link; only exporting or revoking one does.
+   */
+  findPrimaryInviteLinkOfBot(
+    { botId, chatId }: FindPrimaryInviteLinkOfBotInput,
+  ): ChatInviteLink | undefined {
+    return holdsSupergroupAdministratorRight(
+        this.#sharedChats.getChatMembership(chatId, botId),
+        'can_invite_users',
+      )
+      ? this.#inviteLinks.findPrimaryInviteLink(chatId, botId)
+      : undefined;
+  }
+
+  /**
    * Edits an invite link as the administrator bot that created it, as TDLib's
    * `editChatInviteLink` does: the edit replaces every setting, so an omitted name, expiry date or
    * member limit becomes none, and the settings are cleaned and checked as for a new link. As
    * TDLib's `edit_dialog_invite_link` checks them, the bot needs `can_invite_users` before a
    * link that creates join requests is refused a member limit, and the link must be named. Telegram's
    * servers then find the link among the chat's, let only its creator edit it, and refuse a
-   * revoked link.
+   * revoked link and a primary link, whatever settings the edit requests.
    *
    * The edited link applies to later uses only: members that joined through it stay, and pending
    * join requests sent through it stay pending with their requester contact, however the edit
@@ -504,6 +581,9 @@ export class ChatAdmissionService {
     if (!managedLink.found) {
       return { edited: false, reason: managedLink.reason };
     }
+    if (managedLink.link.isPrimary) {
+      return { edited: false, reason: 'primary_invite_link_not_editable' };
+    }
     const settings = this.#resolveInviteLinkSettings(
       input,
       cleanedName,
@@ -524,7 +604,9 @@ export class ChatAdmissionService {
    * `revokeChatInviteLink` does, with the checks of `editInviteLinkAsBot` that apply to it: the
    * link admits nobody from then on, and can be neither edited nor revoked again. Members that
    * joined through it stay, and pending join requests sent through it stay pending with their
-   * requester contact, for an administrator to decide.
+   * requester contact, for an administrator to decide. Revoking the bot's primary link gives the
+   * bot a new primary link in the same step, as Telegram's servers do; the result is still the
+   * revoked link, as the official server answers it.
    */
   revokeInviteLinkAsBot(
     { revokerBotId, chatId, inviteLinkUrl }: RevokeInviteLinkAsBotInput,
@@ -544,8 +626,24 @@ export class ChatAdmissionService {
     if (!managedLink.found) {
       return { revoked: false, reason: managedLink.reason };
     }
+    if (!managedLink.link.isPrimary) {
+      return {
+        revoked: true,
+        link: this.#inviteLinks.markInviteLinkRevoked(managedLink.link.url),
+      };
+    }
 
-    return { revoked: true, link: this.#inviteLinks.markInviteLinkRevoked(managedLink.link.url) };
+    const { revokedLink } = this.#inviteLinks.replacePrimaryInviteLink({
+      chatId,
+      creatorId: revokerBotId,
+      createdAtUnixSeconds: this.#currentUnixTimeSeconds(),
+    });
+    if (revokedLink?.url !== managedLink.link.url) {
+      throw new Error(
+        `Bot ${revokerBotId} revoked primary link ${managedLink.link.url}, which was not current`,
+      );
+    }
+    return { revoked: true, link: revokedLink };
   }
 
   /**

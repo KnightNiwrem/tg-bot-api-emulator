@@ -898,12 +898,14 @@ Deno.test('ChatAdmissionService replaces every setting of a link its creator edi
     expiresAtUnixSeconds: CREATION_TIME_UNIX_SECONDS + 7_200,
     memberLimit: 3,
     createsJoinRequest: false,
+    isPrimary: false,
     hasExpired: false,
     isRevoked: false,
   };
   const clearedLink = {
     ...unchangedFields,
     createsJoinRequest: true,
+    isPrimary: false,
     hasExpired: false,
     isRevoked: false,
   };
@@ -1191,3 +1193,115 @@ function toCanonicalJson(value: unknown): string {
         : nestedValue,
   );
 }
+
+Deno.test('ChatAdmissionService replaces a bot primary link in one step when it exports or revokes it', () => {
+  const { clock, chatAdmission, chatId, botId, adaId } = createAdmissionFixture();
+  const exportLink = () => {
+    const result = chatAdmission.exportPrimaryInviteLinkAsBot({ exporterBotId: botId, chatId });
+    if (!result.exported) {
+      throw new Error(`Expected the primary link to be exported, received ${result.reason}`);
+    }
+    return result.link;
+  };
+  const currentPrimaryUrl = () => chatAdmission.findPrimaryInviteLinkOfBot({ botId, chatId })?.url;
+  /** Each link of the chat as `[url, created at, primary, revoked]`. */
+  const describeLinks = () => {
+    const inspection = chatAdmission.getInviteLinksForAccount({ accountId: adaId, chatId });
+    return inspection.found
+      ? inspection.links.map(({ link }) => [
+        link.url,
+        link.createdAtUnixSeconds,
+        link.isPrimary,
+        link.isRevoked,
+      ])
+      : inspection.reason;
+  };
+
+  const first = exportLink();
+  clock.nowUnixSeconds += 60;
+  const second = exportLink();
+  const afterSecondExport = currentPrimaryUrl();
+  clock.nowUnixSeconds += 60;
+  const revocation = chatAdmission.revokeInviteLinkAsBot({
+    revokerBotId: botId,
+    chatId,
+    inviteLinkUrl: second.url,
+  });
+  const replacementUrl = currentPrimaryUrl();
+  const edit = chatAdmission.editInviteLinkAsBot({
+    editorBotId: botId,
+    chatId,
+    inviteLinkUrl: replacementUrl ?? '',
+    name: 'Main',
+    createsJoinRequest: false,
+  });
+
+  expectEqual(
+    [
+      { ...first, url: '' },
+      afterSecondExport === second.url,
+      revocation.revoked ? [revocation.link.url, revocation.link.isRevoked] : revocation.reason,
+      edit.edited ? 'edited' : edit.reason,
+      describeLinks(),
+    ],
+    [
+      {
+        chatId,
+        creatorId: botId,
+        createdAtUnixSeconds: CREATION_TIME_UNIX_SECONDS,
+        isPrimary: true,
+        createsJoinRequest: false,
+        url: '',
+        hasExpired: false,
+        isRevoked: false,
+      },
+      true,
+      [second.url, true],
+      'primary_invite_link_not_editable',
+      [
+        [first.url, CREATION_TIME_UNIX_SECONDS, true, true],
+        [second.url, CREATION_TIME_UNIX_SECONDS + 60, true, true],
+        [replacementUrl, CREATION_TIME_UNIX_SECONDS + 120, true, false],
+      ],
+    ],
+    'Expected each export and revocation to leave one current primary link without settings',
+  );
+});
+
+Deno.test('ChatAdmissionService shows a primary link while its creator holds can_invite_users', () => {
+  const { sharedChatAdministration, chatAdmission, chatId, botId, adaId, graceId } =
+    createAdmissionFixture();
+  const exportation = chatAdmission.exportPrimaryInviteLinkAsBot({ exporterBotId: botId, chatId });
+  if (!exportation.exported) {
+    throw new Error(`Expected the primary link to be exported, received ${exportation.reason}`);
+  }
+  const promote = (right: SupergroupAdministratorRight) =>
+    sharedChatAdministration.promoteChatMember({
+      actorAccountId: adaId,
+      chatId,
+      memberId: botId,
+      rights: grantSupergroupAdministratorRights([right]),
+    });
+
+  promote('can_delete_messages');
+  const whileDemoted = [
+    chatAdmission.findPrimaryInviteLinkOfBot({ botId, chatId })?.url,
+    chatAdmission.exportPrimaryInviteLinkAsBot({ exporterBotId: botId, chatId }),
+    chatAdmission.joinChatByInviteLink({ accountId: graceId, inviteLinkUrl: exportation.link.url }),
+  ];
+  promote('can_invite_users');
+  const afterRepromotion = chatAdmission.findPrimaryInviteLinkOfBot({ botId, chatId })?.url;
+
+  expectEqual(
+    [whileDemoted, afterRepromotion],
+    [
+      [
+        undefined,
+        { exported: false, reason: 'not_enough_rights' },
+        { used: true, chatId, outcome: 'joined' },
+      ],
+      exportation.link.url,
+    ],
+    'Expected the link to keep admitting accounts while only its visibility follows the right',
+  );
+});

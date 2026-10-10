@@ -32,6 +32,13 @@ properties:
       type: string
   description:
     type: string
+  invite_link:
+    type: string
+    description: >-
+      The reading bot's own primary invite link, whole, from `exportChatInviteLink` or the
+      replacement that revoking the previous one created. Omitted while the bot has none, or lacks
+      the `can_invite_users` administrator right; reading never creates or replaces one, and
+      never shows another administrator's link.
   has_visible_history:
     type: boolean
     const: true

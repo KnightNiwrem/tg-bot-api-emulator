@@ -111,6 +111,22 @@ async function createInviteLinkFixture() {
     }
     return body.result as CreatedInviteLink;
   };
+  /** Replaces the bot's primary link with `exportChatInviteLink`; returns the new link. */
+  const exportLink = async (bot = inviterBot) => {
+    const { status, body } = await callBot(bot, 'exportChatInviteLink', { chat_id: supergroup.id });
+    if (status !== 200 || typeof body.result !== 'string') {
+      throw new Error(`Expected the primary link to be exported: ${body.description}`);
+    }
+    return body.result;
+  };
+  /** The primary link `getChat` shows the bot; `undefined` when it shows none. */
+  const getChatInviteLink = async (bot = inviterBot) => {
+    const { status, body } = await callBot(bot, 'getChat', { chat_id: supergroup.id });
+    if (status !== 200) {
+      throw new Error(`Expected the bot to read the chat: ${body.description}`);
+    }
+    return (body.result as { invite_link?: string }).invite_link;
+  };
   const joinByLink = (account: FixtureAccount, inviteLink: string) =>
     requestJson<{ chat_id: number; outcome: string }>(
       api,
@@ -147,6 +163,8 @@ async function createInviteLinkFixture() {
     readUpdates,
     callBot,
     createLink,
+    exportLink,
+    getChatInviteLink,
     joinByLink,
     getInviteLinks,
     getMemberStatus,
@@ -354,6 +372,7 @@ Deno.test('an administrator bot creates invite links that keep the settings it c
             member_count: 0,
             pending_join_request_count: 0,
             creates_join_request: false,
+            is_primary: false,
             is_expired: false,
             is_revoked: false,
           },
@@ -363,6 +382,7 @@ Deno.test('an administrator bot creates invite links that keep the settings it c
             member_count: 0,
             pending_join_request_count: 0,
             creates_join_request: false,
+            is_primary: false,
             is_expired: false,
             is_revoked: false,
           },
@@ -373,6 +393,7 @@ Deno.test('an administrator bot creates invite links that keep the settings it c
             member_count: 0,
             pending_join_request_count: 0,
             creates_join_request: true,
+            is_primary: false,
             is_expired: false,
             is_revoked: false,
           },
@@ -739,6 +760,7 @@ Deno.test('a test makes an invite link expire, after which it admits nobody', as
           member_count: 1,
           pending_join_request_count: 0,
           creates_join_request: false,
+          is_primary: false,
           is_expired: true,
           is_revoked: false,
         },
@@ -992,6 +1014,7 @@ Deno.test('editChatInviteLink replaces the settings of a link, which its later u
         member_count: 2,
         pending_join_request_count: 1,
         creates_join_request: true,
+        is_primary: false,
         is_expired: false,
         is_revoked: false,
       },
@@ -1288,16 +1311,18 @@ Deno.test('editChatInviteLink and revokeChatInviteLink refuse invalid calls with
   );
 });
 
-Deno.test('a session edits and revokes only its own invite links', async () => {
+Deno.test('a session edits and revokes only its own invite links, primary or additional', async () => {
   const first = await createInviteLinkLifecycleFixture();
   const second = await createInviteLinkLifecycleFixture();
   const link = await first.createLink({ name: 'First' });
+  const primaryLink = await first.exportLink();
   const linksBefore = await first.getInviteLinks();
 
-  // The second session's inviter, in its own supergroup, names the first session's link.
+  // The second session's inviter, in its own supergroup, names the first session's links.
   const fromSecondSession = [
     await second.editLink(link.invite_link, { name: 'Taken' }),
     await second.revokeLink(link.invite_link),
+    await second.revokeLink(primaryLink),
   ].map(({ status, body }) => [status, body.description]);
   // The first session's inviter token is unknown to the second session.
   const { status: foreignTokenStatus } = await requestJson(
@@ -1310,10 +1335,363 @@ Deno.test('a session edits and revokes only its own invite links', async () => {
   expectEqual(
     [fromSecondSession, foreignTokenStatus, await first.getInviteLinks()],
     [
-      [[400, 'Bad Request: INVITE_HASH_EXPIRED'], [400, 'Bad Request: INVITE_HASH_EXPIRED']],
+      [
+        [400, 'Bad Request: INVITE_HASH_EXPIRED'],
+        [400, 'Bad Request: INVITE_HASH_EXPIRED'],
+        [400, 'Bad Request: INVITE_HASH_EXPIRED'],
+      ],
       401,
       linksBefore,
     ],
     "Expected another session's bot to find no such link, leaving it as it was",
+  );
+  expectEqual(
+    [await first.getChatInviteLink(), await second.getChatInviteLink()],
+    [primaryLink, undefined],
+    "Expected getChat to show each session's bot only its own primary link",
+  );
+});
+
+/** A link as the owner inspects it, briefly: the link, its creator, and its kind and state. */
+function describeInspectedLink(link: Record<string, unknown>) {
+  return [link.invite_link, link.creator_user_id, link.is_primary, link.is_revoked];
+}
+
+Deno.test('exportChatInviteLink replaces the primary link of the bot, whose members stay', async () => {
+  const {
+    grace,
+    hopper,
+    inviterBot,
+    observerBot,
+    readUpdates,
+    exportLink,
+    getChatInviteLink,
+    joinByLink,
+    getInviteLinks,
+    getMemberStatus,
+  } = await createInviteLinkFixture();
+
+  const beforeExport = await getChatInviteLink();
+  const firstLink = await exportLink();
+  const afterFirstExport = await getChatInviteLink();
+  const graceJoining = await joinByLink(grace, firstLink);
+  const inviterUpdates = await readUpdates(inviterBot);
+  const observerUpdates = await readUpdates(observerBot);
+  const secondLink = await exportLink();
+  const hopperThroughFirst = await joinByLink(hopper, firstLink);
+  const hopperThroughSecond = await joinByLink(hopper, secondLink);
+
+  expectEqual(
+    [
+      beforeExport,
+      INVITE_LINK_PATTERN.test(firstLink),
+      afterFirstExport,
+      INVITE_LINK_PATTERN.test(secondLink),
+      secondLink === firstLink,
+    ],
+    [undefined, true, firstLink, true, false],
+    'Expected each export to answer a new whole link, which getChat shows from then on',
+  );
+  const graceChatMemberUpdate = inviterUpdates.find((update) => 'chat_member' in update)
+    ?.chat_member as { invite_link?: Record<string, unknown> } | undefined;
+  expectEqual(
+    graceChatMemberUpdate?.invite_link,
+    {
+      invite_link: firstLink,
+      creator: botUser(inviterBot),
+      creates_join_request: false,
+      is_primary: true,
+      is_revoked: false,
+    },
+    'Expected the creator to see the whole primary link Grace joined through',
+  );
+  expectEqual(
+    [
+      describeUpdates(observerUpdates),
+      [graceJoining.status, hopperThroughFirst.status, hopperThroughSecond.status],
+      [await getMemberStatus(grace.id), await getMemberStatus(hopper.id)],
+      [await getChatInviteLink(), await getChatInviteLink()],
+      (await getInviteLinks()).body.invite_links.map((link) => [
+        ...describeInspectedLink(link),
+        link.member_count,
+      ]),
+    ],
+    [
+      [
+        `chat_member ${grace.id} by ${grace.id}: left -> member via ${hiddenInviteLink(firstLink)}`,
+        `joined ${grace.id} by ${grace.id}`,
+      ],
+      [200, 410, 200],
+      ['member', 'member'],
+      [secondLink, secondLink],
+      [
+        [firstLink, inviterBot.bot.id, true, true, 1],
+        [secondLink, inviterBot.bot.id, true, false, 1],
+      ],
+    ],
+    'Expected the replaced link to admit nobody new, its member to stay, and reads to keep the link',
+  );
+});
+
+Deno.test('revoking the primary link answers it revoked and gives the bot a replacement', async () => {
+  const {
+    grace,
+    hopper,
+    inviterBot,
+    supergroup,
+    callBot,
+    exportLink,
+    getChatInviteLink,
+    joinByLink,
+    getMemberStatus,
+  } = await createInviteLinkFixture();
+  const revokedLink = await exportLink();
+  await joinByLink(grace, revokedLink);
+
+  const revocation = await callBot(inviterBot, 'revokeChatInviteLink', {
+    chat_id: supergroup.id,
+    invite_link: revokedLink,
+  });
+  const replacement = await getChatInviteLink();
+  const repeatedRead = await getChatInviteLink();
+  const hopperThroughRevoked = await joinByLink(hopper, revokedLink);
+  const hopperThroughReplacement = await joinByLink(hopper, replacement ?? '');
+  const repeatedRevocation = await callBot(inviterBot, 'revokeChatInviteLink', {
+    chat_id: supergroup.id,
+    invite_link: revokedLink,
+  });
+
+  expectEqual(
+    Object.keys(revocation.body.result as object),
+    ['invite_link', 'creator', 'creates_join_request', 'is_primary', 'is_revoked'],
+    'Expected a primary link in the field order of the official server, without settings',
+  );
+  expectEqual(
+    [revocation.status, revocation.body.result],
+    [
+      200,
+      {
+        invite_link: revokedLink,
+        creator: botUser(inviterBot),
+        creates_join_request: false,
+        is_primary: true,
+        is_revoked: true,
+      },
+    ],
+    'Expected the revocation to answer the revoked primary link, not its replacement',
+  );
+  expectEqual(
+    [
+      replacement !== undefined && INVITE_LINK_PATTERN.test(replacement),
+      replacement === revokedLink,
+      repeatedRead === replacement,
+      [hopperThroughRevoked.status, hopperThroughReplacement.status],
+      [await getMemberStatus(grace.id), await getMemberStatus(hopper.id)],
+      [repeatedRevocation.status, repeatedRevocation.body.description],
+    ],
+    [
+      true,
+      false,
+      true,
+      [410, 200],
+      ['member', 'member'],
+      [400, 'Bad Request: INVITE_HASH_EXPIRED'],
+    ],
+    'Expected getChat to keep showing one new primary link, which admits accounts in its place',
+  );
+});
+
+Deno.test('each administrator bot replaces only its own primary link', async () => {
+  const {
+    grace,
+    inviterBot,
+    observerBot,
+    supergroup,
+    promote,
+    callBot,
+    createLink,
+    exportLink,
+    getChatInviteLink,
+    joinByLink,
+    getInviteLinks,
+  } = await createInviteLinkFixture();
+  await promote(observerBot.bot.id, INVITER_RIGHTS);
+  const additionalLink = await createLink({ name: 'Extra' });
+  const inviterFirst = await exportLink();
+  const observerFirst = await exportLink(observerBot);
+
+  const inviterSecond = await exportLink();
+  const observerAfterInviterExport = await getChatInviteLink(observerBot);
+  await callBot(observerBot, 'revokeChatInviteLink', {
+    chat_id: supergroup.id,
+    invite_link: observerFirst,
+  });
+  const observerReplacement = await getChatInviteLink(observerBot);
+  const inviterAfterObserverRevocation = await getChatInviteLink();
+  const crossRevocation = await callBot(inviterBot, 'revokeChatInviteLink', {
+    chat_id: supergroup.id,
+    invite_link: observerReplacement,
+  });
+  const graceThroughAdditional = await joinByLink(grace, additionalLink.invite_link);
+
+  expectEqual(
+    [
+      observerAfterInviterExport,
+      inviterAfterObserverRevocation,
+      [crossRevocation.status, crossRevocation.body.description],
+      graceThroughAdditional.status,
+      (await getInviteLinks()).body.invite_links.map(describeInspectedLink),
+    ],
+    [
+      observerFirst,
+      inviterSecond,
+      [400, 'Bad Request: CHAT_ADMIN_REQUIRED'],
+      200,
+      [
+        [additionalLink.invite_link, inviterBot.bot.id, false, false],
+        [inviterFirst, inviterBot.bot.id, true, true],
+        [observerFirst, observerBot.bot.id, true, true],
+        [inviterSecond, inviterBot.bot.id, true, false],
+        [observerReplacement, observerBot.bot.id, true, false],
+      ],
+    ],
+    "Expected each bot's rotation to leave the other's primary link and additional links working",
+  );
+});
+
+Deno.test('exportChatInviteLink and primary link edits refuse invalid calls without a change', async () => {
+  const {
+    api,
+    sessionPath,
+    grace,
+    inviterBot,
+    observerBot,
+    memberBot,
+    supergroup,
+    promote,
+    callBot,
+    exportLink,
+    getChatInviteLink,
+    getInviteLinks,
+    getMemberCount,
+  } = await createInviteLinkFixture();
+  // Grace starts a private chat with the inviter, which has no invite links.
+  await expectStatus(
+    api.request(
+      `${sessionPath}/accounts/${grace.id}/messages`,
+      jsonRequest('POST', { to: { type: 'private', botId: inviterBot.bot.id }, text: 'hi' }),
+    ),
+    201,
+    'Expected Grace to write to the inviter',
+  );
+  const primaryLink = await exportLink();
+  const linksBefore = await getInviteLinks();
+  const memberCountBefore = await getMemberCount();
+  const answer = async (call: Promise<{ status: number; body: BotApiResponse }>) => {
+    const { status, body } = await call;
+    return [status, body.description];
+  };
+  const exportAs = (bot: FixtureBot, parameters: object) =>
+    answer(callBot(bot, 'exportChatInviteLink', parameters));
+  const editPrimary = (parameters: object) =>
+    answer(callBot(inviterBot, 'editChatInviteLink', {
+      chat_id: supergroup.id,
+      invite_link: primaryLink,
+      ...parameters,
+    }));
+  const noRights = [400, 'Bad Request: not enough rights to manage chat invite link'];
+  const permanent = [400, 'Bad Request: CHAT_INVITE_PERMANENT'];
+  const { status: expiryStatus } = await api.request(
+    `${sessionPath}/supergroups/${supergroup.id}/invite-links/${
+      inviteLinkHash(primaryLink)
+    }/expiry`,
+    { method: 'POST' },
+  );
+
+  expectEqual(
+    [
+      await exportAs(inviterBot, {}),
+      await exportAs(inviterBot, { chat_id: supergroup.id, name: 'Main' }),
+      await exportAs(inviterBot, { chat_id: -1_009_999_999_999 }),
+      await exportAs(inviterBot, { chat_id: grace.id }),
+      await exportAs(memberBot, { chat_id: supergroup.id }),
+      await exportAs(observerBot, { chat_id: supergroup.id }),
+      await editPrimary({ name: 'Main' }),
+      await editPrimary({}),
+      await editPrimary({ expire_date: nowUnixSeconds() - 10 }),
+      // TDLib refuses this combination before Telegram's servers see the edit or the link.
+      await editPrimary({ creates_join_request: true, member_limit: 1 }),
+      expiryStatus,
+    ],
+    [
+      [400, 'Bad Request: chat_id is empty'],
+      [400, 'Bad Request: invalid exportChatInviteLink parameters'],
+      [400, 'Bad Request: chat not found'],
+      [400, "Bad Request: can't invite members to a private chat"],
+      noRights,
+      noRights,
+      permanent,
+      permanent,
+      permanent,
+      [
+        400,
+        "Bad Request: member limit can't be specified for links requiring administrator approval",
+      ],
+      409,
+    ],
+    'Expected each refused export and primary link edit, and a primary link to have no expiry',
+  );
+  expectEqual(
+    [
+      await getChatInviteLink(),
+      await getChatInviteLink(observerBot),
+      await getChatInviteLink(memberBot),
+    ],
+    [primaryLink, undefined, undefined],
+    "Expected getChat to show the primary link only to its creator, never another bot's",
+  );
+
+  // The creator loses its right to manage links, regains it, then leaves.
+  await promote(inviterBot.bot.id, { can_delete_messages: true });
+  const afterDemotion = [
+    await exportAs(inviterBot, { chat_id: supergroup.id }),
+    await getChatInviteLink(),
+  ];
+  await promote(inviterBot.bot.id, INVITER_RIGHTS);
+  const afterRepromotion = [await getChatInviteLink(), await getMemberCount()];
+  await callBot(inviterBot, 'leaveChat', { chat_id: supergroup.id });
+  const afterLeaving = await exportAs(inviterBot, { chat_id: supergroup.id });
+
+  expectEqual(
+    [afterDemotion, afterRepromotion, afterLeaving, await getInviteLinks()],
+    [
+      [noRights, undefined],
+      [primaryLink, memberCountBefore],
+      [403, 'Forbidden: bot is not a member of the supergroup chat'],
+      linksBefore,
+    ],
+    'Expected getChat to hide the link without the right, and refusals to change no link',
+  );
+});
+
+Deno.test('concurrent exports leave the bot exactly one primary link that is not revoked', async () => {
+  const { exportLink, getChatInviteLink, getInviteLinks } = await createInviteLinkFixture();
+
+  const exportedLinks = await Promise.all(Array.from({ length: 5 }, () => exportLink()));
+  const inspectedLinks = (await getInviteLinks()).body.invite_links;
+  const currentLinks = inspectedLinks
+    .filter(({ is_primary, is_revoked }) => is_primary === true && is_revoked === false)
+    .map(({ invite_link }) => invite_link);
+
+  expectEqual(
+    [
+      new Set(exportedLinks).size,
+      inspectedLinks.length,
+      currentLinks.length,
+      exportedLinks.includes(currentLinks[0] as string),
+      await getChatInviteLink(),
+    ],
+    [5, 5, 1, true, currentLinks[0]],
+    'Expected every export but the last to be revoked, and getChat to show the current one',
   );
 });

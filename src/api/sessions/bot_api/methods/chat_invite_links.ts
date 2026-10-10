@@ -16,8 +16,9 @@ import {
   integerParameter,
 } from '../request_parameters.ts';
 
-/** The methods that manage a chat's additional invite links. */
+/** The methods that manage a chat's invite links: the bot's primary link and additional links. */
 export const CHAT_INVITE_LINK_METHODS: readonly BotApiMethod[] = [
+  { name: 'exportChatInviteLink', handler: handleExportChatInviteLink },
   { name: 'createChatInviteLink', handler: handleCreateChatInviteLink },
   { name: 'editChatInviteLink', handler: handleEditChatInviteLink },
   { name: 'revokeChatInviteLink', handler: handleRevokeChatInviteLink },
@@ -41,6 +42,12 @@ const INVITE_LINK_EMPTY_DESCRIPTION = 'Bad Request: invite link must be non-empt
  */
 const INVITE_LINK_UNAVAILABLE_DESCRIPTION = 'Bad Request: INVITE_HASH_EXPIRED';
 const INVITE_LINK_OF_ANOTHER_ADMINISTRATOR_DESCRIPTION = 'Bad Request: CHAT_ADMIN_REQUIRED';
+/**
+ * The error Telegram's servers answer for a change to a permanent link, a primary link, which
+ * TDLib's `edit_dialog_invite_link` passes on unchecked. The emulator answers it for every edit of
+ * a primary link, which the Bot API documents `editChatInviteLink` not to edit.
+ */
+const PRIMARY_INVITE_LINK_NOT_EDITABLE_DESCRIPTION = 'Bad Request: CHAT_INVITE_PERMANENT';
 
 // Telegram reads a missing name as empty, and a missing or zero `expire_date` or `member_limit` as
 // none; it clamps a negative one to zero, which the emulator rejects to surface the bot's mistake.
@@ -50,6 +57,10 @@ const inviteLinkSettingsParametersShape = {
   member_limit: integerParameter(z.int().nonnegative()).optional(),
   creates_join_request: booleanParameter().default(false),
 };
+
+const exportChatInviteLinkParametersSchema = z.strictObject({
+  chat_id: integerParameter(z.int()).optional(),
+});
 
 const createChatInviteLinkParametersSchema = z.strictObject({
   chat_id: integerParameter(z.int()).optional(),
@@ -67,6 +78,31 @@ const revokeChatInviteLinkParametersSchema = z.strictObject({
   chat_id: integerParameter(z.int()).optional(),
   invite_link: z.string().default(''),
 });
+
+/**
+ * Answers `exportChatInviteLink` with the bot's new primary link as a bare string, as the official
+ * server's `TdOnReplacePrimaryChatInviteLinkCallback` answers it.
+ */
+function handleExportChatInviteLink(
+  context: BotApiMethodContext,
+  parameters: BotApiRequestParameters,
+): BotApiMethodAnswer {
+  const parsedParameters = exportChatInviteLinkParametersSchema.safeParse(parameters);
+  if (!parsedParameters.success) {
+    return botApiError(400, 'Bad Request: invalid exportChatInviteLink parameters');
+  }
+  const { data } = parsedParameters;
+  if (data.chat_id === undefined) {
+    return botApiError(400, CHAT_ID_EMPTY_DESCRIPTION);
+  }
+
+  const result = context.session.botApi.exportChatInviteLink(context.bot, {
+    chatId: data.chat_id,
+  });
+  return result.exported
+    ? botApiResult(result.inviteLink)
+    : inviteLinkMethodFailureAnswer('exportChatInviteLink', result.reason);
+}
 
 /** Answers `createChatInviteLink` with the new link as its creator sees it. */
 function handleCreateChatInviteLink(
@@ -119,7 +155,11 @@ function handleEditChatInviteLink(
     : inviteLinkMethodFailureAnswer('editChatInviteLink', result.reason);
 }
 
-/** Answers `revokeChatInviteLink` with the revoked link as its creator sees it. */
+/**
+ * Answers `revokeChatInviteLink` with the revoked link as its creator sees it, as the official
+ * server's `TdOnGetChatInviteLinkCallback` answers the first link TDLib returns, even when
+ * revoking a primary link also returned its replacement.
+ */
 function handleRevokeChatInviteLink(
   context: BotApiMethodContext,
   parameters: BotApiRequestParameters,
@@ -161,8 +201,12 @@ function readInviteLinkSettingsParameters(
   };
 }
 
-/** Why a bot cannot create, edit or revoke an invite link. */
+/** Why a bot cannot export, create, edit or revoke an invite link. */
 type InviteLinkMethodFailureReason =
+  | Extract<
+    ReturnType<EmulationSession['botApi']['exportChatInviteLink']>,
+    { readonly exported: false }
+  >['reason']
   | Extract<
     ReturnType<EmulationSession['botApi']['createChatInviteLink']>,
     { readonly created: false }
@@ -178,7 +222,11 @@ type InviteLinkMethodFailureReason =
 
 /** Answers a refused invite link method with the error the official server answers for it. */
 function inviteLinkMethodFailureAnswer(
-  methodName: 'createChatInviteLink' | 'editChatInviteLink' | 'revokeChatInviteLink',
+  methodName:
+    | 'exportChatInviteLink'
+    | 'createChatInviteLink'
+    | 'editChatInviteLink'
+    | 'revokeChatInviteLink',
   reason: InviteLinkMethodFailureReason,
 ): BotApiMethodAnswer {
   switch (reason) {
@@ -201,6 +249,8 @@ function inviteLinkMethodFailureAnswer(
       return botApiError(400, INVITE_LINK_UNAVAILABLE_DESCRIPTION);
     case 'not_the_link_creator':
       return botApiError(400, INVITE_LINK_OF_ANOTHER_ADMINISTRATOR_DESCRIPTION);
+    case 'primary_invite_link_not_editable':
+      return botApiError(400, PRIMARY_INVITE_LINK_NOT_EDITABLE_DESCRIPTION);
     case 'expiry_date_invalid':
       return botApiError(400, INVITE_LINK_EXPIRY_DATE_INVALID_DESCRIPTION);
     case 'member_limit_invalid':

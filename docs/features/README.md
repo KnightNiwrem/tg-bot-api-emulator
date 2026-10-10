@@ -67,7 +67,7 @@ case-insensitive. The two legacy aliases below are also accepted.
 | Chat settings    | `setChatTitle`, `setChatDescription`, `setChatPermissions`                                                                                                                                  |
 | Membership       | `leaveChat`, `getChatMember`, `getChatAdministrators`, `getChatMemberCount`, `banChatMember`, `unbanChatMember`, `restrictChatMember`, `setChatAdministratorCustomTitle`                    |
 | Administration   | `promoteChatMember`                                                                                                                                                                         |
-| Invitations      | `createChatInviteLink`, `editChatInviteLink`, `revokeChatInviteLink`, `approveChatJoinRequest`, `declineChatJoinRequest`                                                                    |
+| Invitations      | `exportChatInviteLink`, `createChatInviteLink`, `editChatInviteLink`, `revokeChatInviteLink`, `approveChatJoinRequest`, `declineChatJoinRequest`                                            |
 | Legacy aliases   | `getChatMembersCount` → `getChatMemberCount`, `kickChatMember` → `banChatMember`                                                                                                            |
 
 Methods outside this inventory return `404` with a Bot API error body. For supported methods,
@@ -91,7 +91,7 @@ above determines whether an individual method is available.
   [Telegram's newest poll options](polls.md#real-gaps).
 - [Reactions outside supergroups, custom emoji and paid reactions, and removing other members'
   reactions](reactions.md#real-gaps), [unpinning all messages](pinned-messages.md#real-gaps), chat
-  photos and other chat settings, and [primary invite links](invite-links.md#real-gaps).
+  photos and other chat settings, and [subscription invite links](invite-links.md#real-gaps).
 - Payments, invoices, shipping, Telegram Stars, gifts, paid broadcasts and paid media.
 - Business connections, managed bots, Mini Apps other than the data a
   [keyboard button's Web App sends](keyboards-and-callbacks.md#sending-web-app-data), login

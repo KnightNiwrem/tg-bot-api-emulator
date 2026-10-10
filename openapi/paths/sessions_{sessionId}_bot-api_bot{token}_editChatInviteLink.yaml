@@ -5,7 +5,8 @@ description: >-
   even beyond a lower member limit, and pending join requests sent through it stay pending with
   their requester contact, whether or not the link still creates join requests. The new expiry
   date has not arrived, so an edit makes a link whose expiry date a test made arrive work again.
-  A revoked link cannot be edited.
+  A revoked link cannot be edited, and neither can a primary link, which only
+  `exportChatInviteLink` and `revokeChatInviteLink` replace.
 parameters:
   - $ref: ../components/parameters/SessionId.yaml
   - $ref: ../components/parameters/BotToken.yaml
@@ -46,7 +47,8 @@ post:
         administrator approval`); `invite_link` is missing or empty (`Bad Request: invite link
         must be non-empty`); no link of the supergroup has this URL, or the link was revoked
         (`Bad Request: INVITE_HASH_EXPIRED`); another administrator created the link
-        (`Bad Request: CHAT_ADMIN_REQUIRED`); the expiry date is not in the future (`Bad Request:
+        (`Bad Request: CHAT_ADMIN_REQUIRED`); the link is a primary link, whatever the edit
+        requests (`Bad Request: CHAT_INVITE_PERMANENT`); the expiry date is not in the future (`Bad Request:
         EXPIRE_DATE_INVALID`); or the member limit exceeds 99999 (`Bad Request:
         USAGE_LIMIT_INVALID`). A refused request changes nothing.
       content:

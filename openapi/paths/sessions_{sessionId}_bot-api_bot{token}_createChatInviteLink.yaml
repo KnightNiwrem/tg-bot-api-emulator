@@ -6,8 +6,8 @@ description: >-
   see it in the update for a member that joined through it, the whole link only if they created
   it. A link that creates join requests sends administrator bots holding `can_invite_users` a
   `chat_join_request` update for each account that uses it. The bot that created a link edits
-  it with `editChatInviteLink` and revokes it with `revokeChatInviteLink`; exporting primary
-  links is not supported.
+  it with `editChatInviteLink` and revokes it with `revokeChatInviteLink`. The bot's primary
+  link is replaced with `exportChatInviteLink` instead.
 parameters:
   - $ref: ../components/parameters/SessionId.yaml
   - $ref: ../components/parameters/BotToken.yaml

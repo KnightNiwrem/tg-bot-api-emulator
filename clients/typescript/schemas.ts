@@ -1015,6 +1015,7 @@ const supergroupInviteLinkSchema = z.strictObject({
   member_count: z.number().int().nonnegative(),
   pending_join_request_count: z.number().int().nonnegative(),
   creates_join_request: z.boolean(),
+  is_primary: z.boolean(),
   is_expired: z.boolean(),
   is_revoked: z.boolean(),
 });
