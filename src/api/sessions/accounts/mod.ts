@@ -1,15 +1,11 @@
 import { Hono } from 'hono';
 import { basePath } from 'hono/route';
-import { z } from 'zod';
 
+import { createAccountContract } from '../../../../control_contracts/accounts.ts';
+import type { ControlOperationResponse } from '../../../../control_contracts/operation_contract.ts';
 import type { EmulationSession } from '../../../types/emulation_session.ts';
-import { MAX_ACCOUNT_NAME_LENGTH } from '../../../types/virtual_account.ts';
-import { countTextCharacters } from '../../../types/virtual_message.ts';
-import {
-  controlErrorResponse,
-  invalidControlRequestResponse,
-} from '../../control_error_response.ts';
-import { readJsonRequestBody } from '../json_request_body.ts';
+import type { VirtualAccountProfile } from '../../../types/virtual_account.ts';
+import { registerControlOperation } from '../../control_operation_route.ts';
 import type { SessionRouteContextTypes } from '../session_route_context_types.ts';
 import { createBlockedBotRoutes } from './blocked_bots.ts';
 import { createCallbackQueryRoutes } from './callback_queries.ts';
@@ -24,31 +20,12 @@ import { createPollAnswerRoutes } from './poll_answers.ts';
 import { createPollClosureRoutes } from './poll_closures.ts';
 import { createReplyKeyboardPressRoutes } from './reply_keyboard_presses.ts';
 import { createSupergroupAdministrationRoutes } from './supergroup_administration.ts';
-import { telegramUsernameSchema } from './request_fields.ts';
 import { createSupergroupMembershipRoutes } from './supergroup_membership.ts';
 
-/** An E.164 phone number's digits: a country code that never starts with 0, and at most 15 digits. */
-const ACCOUNT_PHONE_NUMBER_PATTERN = /^[1-9][0-9]{0,14}$/;
+/** Where the account routes are mounted within the server, as a contract path template. */
+const ACCOUNT_COLLECTION_MOUNT_PATH = '/sessions/{sessionId}/accounts';
 
-/** An account's first or last name, of at most as many characters as Telegram's servers allow. */
-const accountNameSchema = z.string().min(1).refine(
-  (name) => countTextCharacters(name) <= MAX_ACCOUNT_NAME_LENGTH,
-  { message: `A name must have at most ${MAX_ACCOUNT_NAME_LENGTH} characters` },
-);
-
-const createAccountRequestSchema = z.strictObject({
-  first_name: accountNameSchema,
-  last_name: accountNameSchema.optional(),
-  username: telegramUsernameSchema.optional(),
-  language_code: z.string().min(1).optional(),
-  /** Keeps forwards of the account's messages from linking to it; they show only its name. */
-  has_private_forwards: z.boolean().optional(),
-  /**
-   * The number the account signed up with, which it shares as its own contact: the digits of an
-   * E.164 number without its `+`, as Telegram's `user.phone` holds it.
-   */
-  phone_number: z.string().regex(ACCOUNT_PHONE_NUMBER_PATTERN).optional(),
-});
+type AccountCreationResponse = ControlOperationResponse<typeof createAccountContract>;
 
 /**
  * Account-facing routes. Private messages they return are shown as the conversation's bot sees
@@ -59,29 +36,29 @@ const createAccountRequestSchema = z.strictObject({
 export function createAccountRoutes(): Hono<SessionRouteContextTypes> {
   const accountRoutes = new Hono<SessionRouteContextTypes>();
 
-  accountRoutes.post('/', async (context) => {
-    const requestBodyReading = await readJsonRequestBody(context.req, createAccountRequestSchema);
-    if (!requestBodyReading.valid) {
-      return invalidControlRequestResponse(context, requestBodyReading.issues);
-    }
-    const requestBody = requestBodyReading.value;
-
-    const result = context.get('emulationSession').virtualUsers.createAccount(requestBody);
-    if (!result.created) {
-      return controlErrorResponse(
-        context,
-        accountCreationFailureStatus(result.reason),
-        result.reason,
-      );
-    }
-
-    const accountPath = `${basePath(context)}/${result.account.profile.id}`;
-    return context.json(
-      { account: result.account.profile },
-      201,
-      { Location: accountPath },
-    );
-  });
+  registerControlOperation(
+    accountRoutes,
+    ACCOUNT_COLLECTION_MOUNT_PATH,
+    createAccountContract,
+    ({ body }, context) => {
+      const result = context.get('emulationSession').virtualUsers.createAccount({
+        first_name: body.first_name,
+        ...(body.last_name === undefined ? {} : { last_name: body.last_name }),
+        ...(body.username === undefined ? {} : { username: body.username }),
+        ...(body.language_code === undefined ? {} : { language_code: body.language_code }),
+        has_private_forwards: body.has_private_forwards,
+        ...(body.phone_number === undefined ? {} : { phone_number: body.phone_number }),
+      });
+      if (!result.created) {
+        return refuseAccountCreation(result.reason);
+      }
+      return {
+        status: 201,
+        headers: { Location: `${basePath(context)}/${result.account.profile.id}` },
+        body: { account: presentAccountProfile(result.account.profile) },
+      };
+    },
+  );
 
   accountRoutes.route('/', createMessageRoutes());
   accountRoutes.route('/', createSupergroupMembershipRoutes());
@@ -102,25 +79,40 @@ export function createAccountRoutes(): Hono<SessionRouteContextTypes> {
 }
 
 /**
- * A name Telegram's cleanup would empty or refuse rejects the request; a taken username conflicts
- * with the session's usernames; and a session out of user IDs has no room for the account.
+ * A name Telegram's cleanup would change rejects the request; a taken username conflicts with the
+ * session's usernames; and a session out of user IDs has no room for the account.
  */
-function accountCreationFailureStatus(
+function refuseAccountCreation(
   reason: Extract<
     ReturnType<EmulationSession['virtualUsers']['createAccount']>,
     { readonly created: false }
   >['reason'],
-): 400 | 409 | 507 {
+): AccountCreationResponse {
   switch (reason) {
     case 'name_invalid':
-      return 400;
+      return { status: 400, body: { reason } };
     case 'username_taken':
-      return 409;
+      return { status: 409, body: { reason } };
     case 'identity_limit_reached':
-      return 507;
+      return { status: 507, body: { reason } };
     default: {
       const unhandledReason: never = reason;
       throw new Error(`Unhandled account creation failure: ${unhandledReason}`);
     }
   }
+}
+
+/**
+ * An account's profile as the control API shows it, which is how bots see the account, with its
+ * fields in the order Bot API objects show them.
+ */
+function presentAccountProfile(profile: VirtualAccountProfile) {
+  return {
+    first_name: profile.first_name,
+    ...(profile.last_name === undefined ? {} : { last_name: profile.last_name }),
+    ...(profile.username === undefined ? {} : { username: profile.username }),
+    ...(profile.language_code === undefined ? {} : { language_code: profile.language_code }),
+    id: profile.id,
+    is_bot: profile.is_bot,
+  };
 }

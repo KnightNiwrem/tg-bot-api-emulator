@@ -1,11 +1,11 @@
-import { HTTP_STATUS_CREATED } from './constants.ts';
+import { createSessionContract } from '../../control_contracts/sessions.ts';
+import { callJsonOperation } from './control_operation_caller.ts';
 import {
   createEmulationSessionClient,
   type EmulationSessionClient,
 } from './emulation_session_client.ts';
-import { emulationSessionSchema } from './schemas.ts';
 import type { CreateSessionInput } from './types.ts';
-import { normalizeUrlRoot, requestJson } from './utils.ts';
+import { normalizeUrlRoot } from './utils.ts';
 
 export interface TelegramEmulationClientOptions {
   /** Overrides the global fetch implementation, primarily for in-process tests. */
@@ -27,13 +27,11 @@ export class TelegramEmulationClient {
   }
 
   async createSession(input: CreateSessionInput = {}): Promise<EmulationSessionClient> {
-    const session = await requestJson(this.#fetch, {
-      method: 'POST',
-      url: new URL('sessions', this.#serverRoot).href,
-      expectedStatus: HTTP_STATUS_CREATED,
-      responseSchema: emulationSessionSchema,
-      body: input,
-    });
+    const session = await callJsonOperation(
+      { serverRoot: this.#serverRoot, fetch: this.#fetch },
+      createSessionContract,
+      { body: input },
+    );
 
     return createEmulationSessionClient(this.#serverRoot, session, this.#fetch);
   }

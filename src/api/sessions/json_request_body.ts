@@ -15,7 +15,7 @@ interface JsonRequestBodyOptions {
  * Reads a request's JSON body as the schema describes it. A body that is not JSON is reported as
  * one `invalid_json` issue, and one the schema rejects as the issues it has.
  */
-export async function readJsonRequestBody<Schema extends z.ZodType<object>>(
+export async function readJsonRequestBody<Schema extends z.ZodType>(
   request: HonoRequest,
   schema: Schema,
   { allowsEmptyBody = false }: JsonRequestBodyOptions = {},

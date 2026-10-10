@@ -1,3 +1,4 @@
+import { accountProfileSchema } from '../../control_contracts/accounts.ts';
 import { TEST_PUBLIC_ORIGIN } from '../../tests/support/emulation_api.ts';
 import { createTestInProcessEmulator } from '../../tests/support/in_process_emulator.ts';
 import { MAX_TELEGRAM_USER_ID } from './constants.ts';
@@ -8,7 +9,6 @@ import {
   richMessageToPlainText,
   TelegramEmulationClient,
 } from './mod.ts';
-import { virtualAccountProfileSchema } from './schemas.ts';
 
 Deno.test('TypeScript client validates the official Telegram user ID range', () => {
   const accountProfile = {
@@ -17,11 +17,11 @@ Deno.test('TypeScript client validates the official Telegram user ID range', () 
     first_name: 'Ada',
   };
 
-  if (!virtualAccountProfileSchema.safeParse(accountProfile).success) {
+  if (!accountProfileSchema.safeParse(accountProfile).success) {
     throw new Error('Expected the maximum Telegram user ID to be valid');
   }
   if (
-    virtualAccountProfileSchema.safeParse({
+    accountProfileSchema.safeParse({
       ...accountProfile,
       id: MAX_TELEGRAM_USER_ID + 1,
     }).success

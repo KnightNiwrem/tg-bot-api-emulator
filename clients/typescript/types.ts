@@ -1,4 +1,23 @@
+import type { z } from 'zod';
+
+import type {
+  accountProfileSchema,
+  createAccountContract,
+} from '../../control_contracts/accounts.ts';
+import type { botProfileSchema, createBotContract } from '../../control_contracts/bots.ts';
+import type {
+  CONTROL_REQUEST_ISSUE_CODES,
+  CONTROL_REQUEST_ISSUE_SOURCES,
+} from '../../control_contracts/control_errors.ts';
+import type {
+  ControlOperationRequest,
+  ControlOperationResult,
+} from '../../control_contracts/operation_contract.ts';
+import type { createSessionContract } from '../../control_contracts/sessions.ts';
 import type { ControlRefusalReason } from './control_refusal_reasons.ts';
+
+/** The server-assigned identity, Bot API location, and settings of an emulation session. */
+export type EmulationSession = Readonly<ControlOperationResult<typeof createSessionContract>>;
 
 /**
  * The deployment of the official Bot API server whose upload limits a session's bots meet:
@@ -6,78 +25,23 @@ import type { ControlRefusalReason } from './control_refusal_reasons.ts';
  * started with `--local`. The profile changes only upload limits; every other behavior stays that
  * of the cloud server.
  */
-export type UploadProfile = 'cloud' | 'local';
+export type UploadProfile = EmulationSession['uploadProfile'];
 
 /** Settings of a new session, which stay fixed for its lifetime. */
-export interface CreateSessionInput {
-  /** Defaults to `cloud`. */
-  readonly upload_profile?: UploadProfile;
-}
+export type CreateSessionInput = Readonly<
+  NonNullable<ControlOperationRequest<typeof createSessionContract>['body']>
+>;
 
-/** The server-assigned identity, Bot API location, and settings of an emulation session. */
-export interface EmulationSession {
-  readonly id: string;
-  readonly botApiRoot: string;
-  readonly uploadProfile: UploadProfile;
-}
+/** A bot's profile and the settings its owner would choose with BotFather, each off by default. */
+export type CreateVirtualBotInput = Readonly<
+  ControlOperationRequest<typeof createBotContract>['body']
+>;
 
-export interface CreateVirtualBotInput {
-  readonly first_name: string;
-  /**
-   * From 1 to 32 ASCII letters, digits, and underscores, beginning with a letter, without a
-   * trailing or doubled underscore, as Telegram's username syntax allows; unique among the
-   * session's usernames, compared without case.
-   */
-  readonly username: string;
-  /**
-   * Turns off the bot's privacy mode, so that it receives every message of its groups. Defaults to
-   * `false`: the bot receives only commands, replies to its messages, and mentions of it.
-   */
-  readonly can_read_all_group_messages?: boolean;
-  /**
-   * Turns on inline mode, so that accounts send the bot inline queries. Defaults to `false`, as
-   * for a new Telegram bot.
-   */
-  readonly supports_inline_queries?: boolean;
-  /**
-   * Turns on inline feedback, so that the bot receives a `chosen_inline_result` update for each
-   * result of its inline queries that an account sends. Defaults to `false`.
-   */
-  readonly receives_chosen_inline_results?: boolean;
-  /**
-   * Asks accounts to share their location with the bot's inline queries. Defaults to `false`, in
-   * which case accounts cannot share it.
-   */
-  readonly requests_inline_location?: boolean;
-  /**
-   * Turns on Bot-to-Bot Communication Mode. A bot's supergroup message then reaches another bot
-   * it addresses, through a leading command naming that bot or a direct reply to one of that
-   * bot's messages, when either of the two bots turned the mode on. Defaults to `false`.
-   */
-  readonly enables_bot_to_bot_communication?: boolean;
-}
+/** A bot's profile, as `getMe` returns it. */
+export type VirtualBotProfile = Readonly<z.output<typeof botProfileSchema>>;
 
-export interface VirtualBotProfile {
-  readonly id: number;
-  readonly is_bot: true;
-  readonly first_name: string;
-  readonly username: string;
-  readonly can_join_groups: boolean;
-  readonly can_read_all_group_messages: boolean;
-  readonly supports_guest_queries?: boolean;
-  readonly supports_inline_queries: boolean;
-  readonly can_connect_to_business: boolean;
-  readonly has_main_web_app: boolean;
-  readonly has_topics_enabled: boolean;
-  readonly allows_users_to_create_topics: boolean;
-  readonly can_manage_bots: boolean;
-  readonly supports_join_request_queries: boolean;
-}
-
-export interface CreatedVirtualBot {
-  readonly token: string;
-  readonly bot: VirtualBotProfile;
-}
+/** A created bot: the token that authenticates its Bot API calls, and its profile. */
+export type CreatedVirtualBot = Readonly<ControlOperationResult<typeof createBotContract>>;
 
 /**
  * `429 Too Many Requests` answers queued for a bot's next Bot API calls, which receive them
@@ -239,39 +203,16 @@ export interface WebhookAttemptControlInput {
   readonly attemptId: number;
 }
 
-export interface CreateVirtualAccountInput {
-  /** From 1 to 64 characters, as Telegram's servers limit a user's names. */
-  readonly first_name: string;
-  /** From 1 to 64 characters; omitted for none. */
-  readonly last_name?: string;
-  /**
-   * From 1 to 32 ASCII letters, digits, and underscores, beginning with a letter, without a
-   * trailing or doubled underscore, as Telegram's username syntax allows; unique among the
-   * session's usernames, compared without case; omitted for none.
-   */
-  readonly username?: string;
-  readonly language_code?: string;
-  /**
-   * Keeps forwards of the account's messages, and replies to them from other chats, from linking
-   * to the account: their origin is a hidden user that shows only its name. Defaults to `false`.
-   */
-  readonly has_private_forwards?: boolean;
-  /**
-   * The number the account signed up with, which it shares as its own contact: the digits of an
-   * E.164 number without its `+`, such as `15550100`. Omitted for an account that has no contact
-   * of its own to share.
-   */
-  readonly phone_number?: string;
-}
+/**
+ * An account's profile, privacy settings, and phone number. Each name must also be text that
+ * Telegram's cleanup of the account's own contact leaves unchanged.
+ */
+export type CreateVirtualAccountInput = Readonly<
+  ControlOperationRequest<typeof createAccountContract>['body']
+>;
 
-export interface VirtualAccountProfile {
-  readonly id: number;
-  readonly is_bot: false;
-  readonly first_name: string;
-  readonly last_name?: string;
-  readonly username?: string;
-  readonly language_code?: string;
-}
+/** An account's profile, as bots see the account as a user. */
+export type VirtualAccountProfile = Readonly<z.output<typeof accountProfileSchema>>;
 
 export interface PrivateMessageTarget {
   readonly type: 'private';
@@ -3033,7 +2974,7 @@ export interface BotActivityCursor {
 export type HttpMethod = 'DELETE' | 'GET' | 'PATCH' | 'POST' | 'PUT';
 
 /** The part of a control request an input issue is in. */
-export type ControlRequestIssueSource = 'body' | 'path' | 'query';
+export type ControlRequestIssueSource = typeof CONTROL_REQUEST_ISSUE_SOURCES[number];
 
 /**
  * What is wrong with one input value of a control request: a body that is not JSON
@@ -3043,16 +2984,7 @@ export type ControlRequestIssueSource = 'body' | 'path' | 'query';
  * repeated query parameter (`duplicate_field`), or a value that matches none of the forms it may
  * take (`no_matching_variant`).
  */
-export type ControlRequestIssueCode =
-  | 'invalid_json'
-  | 'invalid_type'
-  | 'too_small'
-  | 'too_big'
-  | 'invalid_format'
-  | 'invalid_value'
-  | 'unknown_field'
-  | 'duplicate_field'
-  | 'no_matching_variant';
+export type ControlRequestIssueCode = typeof CONTROL_REQUEST_ISSUE_CODES[number];
 
 /**
  * One problem with a control request's input: the part of the request it is in, the field names

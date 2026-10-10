@@ -1,6 +1,10 @@
-import { isTelegramUsername } from '../src/types/telegram_identity.ts';
+import { telegramUsernameSchema } from '../control_contracts/wire_fields.ts';
 
-Deno.test('isTelegramUsername admits the usernames TDLib is_valid_username admits', () => {
+function isTelegramUsername(username: string): boolean {
+  return telegramUsernameSchema.safeParse(username).success;
+}
+
+Deno.test('The username wire field admits the usernames TDLib is_valid_username admits', () => {
   const validUsernames = [
     'a',
     'Z',
@@ -20,7 +24,7 @@ Deno.test('isTelegramUsername admits the usernames TDLib is_valid_username admit
   }
 });
 
-Deno.test('isTelegramUsername refuses usernames TDLib is_valid_username refuses', () => {
+Deno.test('The username wire field refuses usernames TDLib is_valid_username refuses', () => {
   const invalidUsernames = [
     '',
     'x'.repeat(33),

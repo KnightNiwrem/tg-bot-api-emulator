@@ -14,13 +14,13 @@ interface AbortableRequest extends RequestDetails {
   readonly signal?: AbortSignal;
 }
 
-interface JsonRequest<T> extends SerializableRequest, AbortableRequest {
+interface JsonRequest<Schema extends z.ZodType> extends SerializableRequest, AbortableRequest {
   readonly expectedStatus: number;
-  readonly responseSchema: z.ZodType<T>;
+  readonly responseSchema: Schema;
 }
 
-/** A request whose response is read as it is, rather than as JSON. */
-interface RawResponseRequest extends RequestDetails {
+/** A request, optionally with a JSON body, whose response is read as it is, rather than as JSON. */
+interface RawResponseRequest extends SerializableRequest {
   readonly expectedStatus: number;
 }
 
@@ -33,10 +33,10 @@ interface EmptyResponseRequest extends SerializableRequest {
   readonly expectedStatus: number;
 }
 
-export async function requestJson<T>(
+export async function requestJson<Schema extends z.ZodType>(
   fetchImplementation: typeof globalThis.fetch,
-  request: JsonRequest<T>,
-): Promise<T> {
+  request: JsonRequest<Schema>,
+): Promise<z.output<Schema>> {
   const response = await sendRequest(fetchImplementation, request);
   const responseBody = await readResponseBody(response, request);
   assertResponseStatus(response, responseBody, request);
@@ -251,7 +251,7 @@ function createAbandonedRequestError(
 function assertResponseStatus(
   response: Response,
   responseBody: string,
-  request: JsonRequest<unknown> | RawResponseRequest,
+  request: JsonRequest<z.ZodType> | RawResponseRequest,
 ): void {
   if (response.status === request.expectedStatus) {
     return;

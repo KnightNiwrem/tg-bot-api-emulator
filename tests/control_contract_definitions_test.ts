@@ -1,0 +1,33 @@
+/**
+ * The control contracts keep their own copies of facts they share with the emulator's domain, so
+ * that the TypeScript client can use them without depending on the emulator's source. These tests
+ * check each copy against the domain's value.
+ */
+import { uploadProfileSchema } from '../control_contracts/sessions.ts';
+import { telegramUserIdSchema } from '../control_contracts/wire_fields.ts';
+import { MAX_TELEGRAM_USER_ID, MIN_TELEGRAM_USER_ID } from '../src/types/telegram_identity.ts';
+import { UPLOAD_PROFILES } from '../src/types/upload_profile.ts';
+
+Deno.test('The contracts take exactly the upload profiles the emulator has', () => {
+  assertJson(uploadProfileSchema.options, UPLOAD_PROFILES, 'Expected the same profiles, in order');
+});
+
+Deno.test('The contracts take exactly the user IDs the emulator assigns', () => {
+  const accepted = [MIN_TELEGRAM_USER_ID, MAX_TELEGRAM_USER_ID].map((id) =>
+    telegramUserIdSchema.safeParse(id).success
+  );
+  const refused = [MIN_TELEGRAM_USER_ID - 1, MAX_TELEGRAM_USER_ID + 1].map((id) =>
+    telegramUserIdSchema.safeParse(id).success
+  );
+
+  assertJson(accepted, [true, true], 'Expected the bounds of the range accepted');
+  assertJson(refused, [false, false], 'Expected the IDs just outside the range refused');
+});
+
+function assertJson(actual: unknown, expected: unknown, message: string): void {
+  if (JSON.stringify(actual) !== JSON.stringify(expected)) {
+    throw new Error(
+      `${message}: expected ${JSON.stringify(expected)}, received ${JSON.stringify(actual)}`,
+    );
+  }
+}

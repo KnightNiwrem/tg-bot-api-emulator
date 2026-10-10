@@ -104,8 +104,8 @@ Deno.test('Issues name list positions and never repeat an input value', async ()
   }
   assertJson(
     JSON.parse(text).issues.map(({ path, code }: ControlRequestIssue) => ({ path, code })),
-    [{ path: ['username'], code: 'invalid_value' }],
-    'Expected the username refused as an invalid value',
+    [{ path: ['username'], code: 'invalid_format' }],
+    'Expected the username refused for its form',
   );
   assertStatus(media.status, 400);
   assertJson(

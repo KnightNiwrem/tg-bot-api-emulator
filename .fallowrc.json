@@ -363,6 +363,12 @@
         ]
       },
       {
+        "name": "control-contracts",
+        "patterns": [
+          "control_contracts/**/*.ts"
+        ]
+      },
+      {
         "name": "transport",
         "patterns": [
           "src/api/**/*.ts",
@@ -759,9 +765,14 @@
         ]
       },
       {
+        "from": "control-contracts",
+        "allow": []
+      },
+      {
         "from": "transport",
         "allow": [
           "domain",
+          "control-contracts",
           "transport"
         ],
         "allowTypeOnly": [
@@ -770,7 +781,9 @@
       },
       {
         "from": "typescript-client",
-        "allow": []
+        "allow": [
+          "control-contracts"
+        ]
       },
       {
         "from": "in-process-emulator",

@@ -1,17 +1,19 @@
 import { type Context, Hono, type MiddlewareHandler } from 'hono';
 import { basePath, matchedRoutes } from 'hono/route';
-import { z } from 'zod';
 
+import {
+  createSessionContract,
+  deleteSessionContract,
+} from '../../../control_contracts/sessions.ts';
 import type { EmulationSession, EmulationSessionOptions } from '../../types/emulation_session.ts';
-import { DEFAULT_UPLOAD_PROFILE, UPLOAD_PROFILES } from '../../types/upload_profile.ts';
-import { controlErrorResponse, invalidControlRequestResponse } from '../control_error_response.ts';
+import { controlErrorResponse } from '../control_error_response.ts';
+import { registerControlOperation } from '../control_operation_route.ts';
 import { createAccountRoutes } from './accounts/mod.ts';
 import { createBotActivityRoutes } from './bot_activity/mod.ts';
 import { createBotApiRoutes } from './bot_api/mod.ts';
 import { createBotRoutes } from './bots/mod.ts';
 import { createFileRoutes } from './files/mod.ts';
 import { createInlineQueryCacheRoutes } from './inline_queries/mod.ts';
-import { readJsonRequestBody } from './json_request_body.ts';
 import { createPollRoutes } from './polls/mod.ts';
 import type { SessionRouteContextTypes } from './session_route_context_types.ts';
 import { createSupergroupRoutes } from './supergroups/mod.ts';
@@ -35,9 +37,8 @@ const MIDDLEWARE_METHOD = 'ALL';
 /** The reason a control route gives for a session that does not exist or has ended. */
 const SESSION_NOT_FOUND_REASON = 'session_not_found';
 
-const createSessionRequestSchema = z.strictObject({
-  upload_profile: z.enum(UPLOAD_PROFILES).default(DEFAULT_UPLOAD_PROFILE),
-});
+/** Where the session routes are mounted within the server, as a contract path template. */
+const SESSION_COLLECTION_MOUNT_PATH = '/sessions';
 
 export interface SessionLifecycle {
   createSession(options: EmulationSessionOptions): EmulationSession;
@@ -55,38 +56,34 @@ export function createSessionRoutes(
 ): Hono<SessionRouteContextTypes> {
   const sessionRoutes = new Hono<SessionRouteContextTypes>();
 
-  sessionRoutes.post('/', async (context) => {
-    // The body is optional: without one, every setting has its default.
-    const requestBody = await readJsonRequestBody(context.req, createSessionRequestSchema, {
-      allowsEmptyBody: true,
-    });
-    if (!requestBody.valid) {
-      return invalidControlRequestResponse(context, requestBody.issues);
-    }
-    const session = sessionLifecycle.createSession({
-      uploadProfile: requestBody.value.upload_profile,
-    });
-    const sessionPath = `${basePath(context)}/${session.id}`;
+  registerControlOperation(
+    sessionRoutes,
+    SESSION_COLLECTION_MOUNT_PATH,
+    createSessionContract,
+    ({ body }, context) => {
+      const session = sessionLifecycle.createSession({ uploadProfile: body.upload_profile });
+      const sessionPath = `${basePath(context)}/${session.id}`;
+      return {
+        status: 201,
+        headers: { Location: sessionPath },
+        body: {
+          id: session.id,
+          botApiRoot: new URL(`${sessionPath}/bot-api`, publicOrigin).href,
+          uploadProfile: session.uploadProfile,
+        },
+      };
+    },
+  );
 
-    return context.json(
-      {
-        id: session.id,
-        botApiRoot: new URL(`${sessionPath}/bot-api`, publicOrigin).href,
-        uploadProfile: session.uploadProfile,
-      },
-      201,
-      { Location: sessionPath },
-    );
-  });
-
-  sessionRoutes.delete(SESSION_PATH, (context) => {
-    const sessionWasDeleted = sessionLifecycle.endSession(
-      context.req.param(SESSION_ID_PARAMETER),
-    );
-    return sessionWasDeleted
-      ? context.body(null, 204)
-      : controlErrorResponse(context, 404, SESSION_NOT_FOUND_REASON);
-  });
+  registerControlOperation(
+    sessionRoutes,
+    SESSION_COLLECTION_MOUNT_PATH,
+    deleteSessionContract,
+    ({ params }) =>
+      sessionLifecycle.endSession(params.sessionId)
+        ? { status: 204 }
+        : { status: 404, body: { reason: SESSION_NOT_FOUND_REASON } },
+  );
 
   // The Bot API's responses are Telegram's, so a bot of an unknown session gets a 404 without the
   // control API's error body, and without a Bot API envelope, as no bot is authenticated yet.
