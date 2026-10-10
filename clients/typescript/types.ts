@@ -3030,6 +3030,50 @@ export interface BotActivityCursor {
 
 export type HttpMethod = 'DELETE' | 'GET' | 'PATCH' | 'POST' | 'PUT';
 
+/** The part of a control request an input issue is in. */
+export type ControlRequestIssueSource = 'body' | 'path' | 'query';
+
+/**
+ * What is wrong with one input value of a control request: a body that is not JSON
+ * (`invalid_json`), a value that is missing or of the wrong type (`invalid_type`), outside its
+ * bounds (`too_small`, `too_big`), not of the required form (`invalid_format`), or not allowed
+ * (`invalid_value`), a field or query parameter the operation does not take (`unknown_field`), a
+ * repeated query parameter (`duplicate_field`), or a value that matches none of the forms it may
+ * take (`no_matching_variant`).
+ */
+export type ControlRequestIssueCode =
+  | 'invalid_json'
+  | 'invalid_type'
+  | 'too_small'
+  | 'too_big'
+  | 'invalid_format'
+  | 'invalid_value'
+  | 'unknown_field'
+  | 'duplicate_field'
+  | 'no_matching_variant';
+
+/**
+ * One problem with a control request's input: the part of the request it is in, the field names
+ * and list indexes that lead to it from that part's root (a path or query parameter's name), its
+ * stable code, and an explanation for a person, which never repeats an input value.
+ */
+export interface ControlRequestIssue {
+  readonly source: ControlRequestIssueSource;
+  readonly path: readonly (string | number)[];
+  readonly code: ControlRequestIssueCode;
+  readonly message: string;
+}
+
+/**
+ * The JSON body with which the emulator refuses a control request: a stable `reason` code, such
+ * as `bot_blocked` or `session_not_found`, and, for input that breaks the operation's contract,
+ * whose reason is `invalid_request`, the issues it has.
+ */
+export interface ControlErrorBody {
+  readonly reason: string;
+  readonly issues?: readonly ControlRequestIssue[];
+}
+
 export interface RequestDetails {
   readonly method: HttpMethod;
   readonly url: string;

@@ -73,18 +73,35 @@ A failed call is recorded with its answer, as Telegram would send it:
 - `500 Internal Server Error` or `503 Service Unavailable`: the test queued server error answers for
   the bot. See [Test controls](test-controls.md#server-error-answers).
 
-## An account's action is refused
+## The emulator refuses a request
 
-The account's operation rejects with an `EmulationClientError` whose `status` gives the reason:
+A client operation the emulator refuses rejects with an `EmulationControlError`, a kind of
+`EmulationClientError`. Its `status` is the HTTP status, and its `reason` is a stable code that says
+why, which its message also names:
 
-- `404`: the session has ended, or the chat, message or user the input names does not exist in it.
-  Using a session after `session.end()` is the usual cause.
-- `409`: the action is not allowed in the current state, such as writing to a bot the account has
-  blocked, or voting again in a poll that does not allow it.
-- `400`: the input is malformed, such as a username Telegram's syntax does not allow.
+- `404`: something the input names does not exist, such as `session_not_found` for a session used
+  after `session.end()`, or `account_not_found`, `bot_not_found` or `message_not_found`.
+- `409`: the action is not allowed in the current state, such as `bot_blocked` for writing to a bot
+  the account has blocked, or `answer_change_not_allowed` for voting again in a poll that does not
+  allow it.
+- `403`: the account may not act there, such as `not_a_member` for a supergroup it has not joined.
+- `400`: the request is not one Telegram would accept, such as `message_text_too_long`, or its input
+  is malformed, which is `invalid_request`.
+
+For `invalid_request`, `issues` lists each problem: where it is (`source` and `path`), its `code`,
+and a `message`. The error's message lists them too, as in
+`POST …/accounts/1/messages returned HTTP 400; expected 201: invalid_request; body.text: invalid_type (Invalid input: expected string, received number)`.
+Input the client's types allow can still be refused here, such as a username Telegram's syntax does
+not allow or text longer than Telegram's limit. A test that expects a refusal can assert on the
+reason, as the [blocking example](messages.md#blocking-the-bot) does.
+
+A response that is not the emulator's JSON error body, such as one from a proxy in front of it, is
+reported as a plain `EmulationClientError` with the `status` and the raw `responseBody`.
 
 Each operation's documentation comment states when it fails, and the
-[OpenAPI description](../../../openapi/openapi.yaml) lists every status of every route.
+[OpenAPI description](../../../openapi/openapi.yaml) lists the reasons each status of each operation
+can carry. The [sessions reference](../../features/sessions-and-requests.md#control-api-errors)
+describes the error bodies.
 
 ## The wrong message is selected
 
