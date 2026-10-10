@@ -13,9 +13,9 @@ promote, demote and restrict members there, as administrator bots do with `promo
 [invite link](invite-links.md), or a public supergroup by its username. Members can leave; bots
 leave through `leaveChat`. Removed members are banned until unbanned or added back by the owner.
 
-Text, photos, documents, replies, inline keyboards, callbacks, forwarding and edits use the same Bot
-API methods as private chats, with a negative supergroup chat ID. Message IDs belong to the
-supergroup and are shared by all observers.
+Text, media, albums, polls, contacts, locations, rich messages, replies, inline keyboards,
+callbacks, forwarding and edits use the same Bot API methods as private chats, with a negative
+supergroup chat ID. Message IDs belong to the supergroup and are shared by all observers.
 
 Additions and departures create membership service messages containing `new_chat_members` or
 `left_chat_member` and legacy aliases. Bots receive these despite privacy mode, subject to their
@@ -336,13 +336,13 @@ then the permission of its content. The emulation API answers an account's refus
 forward, button press or inline result with `403`. `can_change_info` decides
 [title and description](#title-and-description) changes, and `can_pin_messages` decides
 [pins](pinned-messages.md), except that a public supergroup ignores its default permissions for
-them, so only the owner and administrators with the right pin there.
+them, so only the owner and administrators with the right pin there. `can_react_to_messages` decides
+[reactions](reactions.md).
 
 The other permissions are stored and shown but enforce nothing, because the emulator lacks what they
 govern: `can_send_video_notes` (video notes), `can_send_other_messages` beyond inline results
-(stickers, GIFs, games), `can_add_web_page_previews` (link previews), `can_react_to_messages`
-(reactions), `can_edit_tag` (member tags), `can_invite_users` (invitations by members) and
-`can_manage_topics` (topics).
+(stickers, GIFs, games), `can_add_web_page_previews` (link previews), `can_edit_tag` (member tags),
+`can_invite_users` (invitations by members) and `can_manage_topics` (topics).
 
 ### Default permissions
 
