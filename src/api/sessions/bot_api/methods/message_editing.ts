@@ -29,7 +29,9 @@ import {
   type BotApiMethod,
   type BotApiMethodAnswer,
   type BotApiMethodContext,
+  type BotApiMethodOutcome,
   botApiResult,
+  SESSION_ENDED,
 } from '../method_call.ts';
 import { inlineKeyboardMarkupParameter } from '../reply_markup_parameter.ts';
 import { readInlineKeyboardParameter } from '../reply_markup_reading.ts';
@@ -139,7 +141,7 @@ async function handleEditMessageText(
   context: BotApiMethodContext,
   parameters: BotApiRequestParameters,
   uploadedFiles: BotApiUploadedFiles,
-): Promise<BotApiMethodAnswer> {
+): Promise<BotApiMethodOutcome> {
   const invalidParametersDescription = describeInvalidMethodParameters('editMessageText');
   const parsedParameters = editMessageTextParametersSchema.safeParse(parameters);
   if (!parsedParameters.success) {
@@ -168,6 +170,9 @@ async function handleEditMessageText(
   const contentResolution = await resolveTextMessageReplacement(context, contentReading.content);
   if (!contentResolution.resolved) {
     return contentResolution.errorAnswer;
+  }
+  if (!context.session.lifetime.admitsCommits) {
+    return SESSION_ENDED;
   }
 
   const { target } = targetReading;
@@ -275,7 +280,7 @@ async function handleEditMessageMedia(
   context: BotApiMethodContext,
   parameters: BotApiRequestParameters,
   uploadedFiles: BotApiUploadedFiles,
-): Promise<BotApiMethodAnswer> {
+): Promise<BotApiMethodOutcome> {
   const invalidParametersDescription = describeInvalidMethodParameters('editMessageMedia');
   const parsedParameters = editMessageMediaParametersSchema.safeParse(parameters);
   if (!parsedParameters.success) {
@@ -316,6 +321,9 @@ async function handleEditMessageMedia(
   );
   if (!fileResolution.resolved) {
     return fileResolution.errorAnswer;
+  }
+  if (!context.session.lifetime.admitsCommits) {
+    return SESSION_ENDED;
   }
 
   const { target } = targetReading;

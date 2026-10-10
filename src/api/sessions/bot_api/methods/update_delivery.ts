@@ -119,6 +119,10 @@ async function handleGetUpdates(
         return botApiError(409, TERMINATED_BY_WEBHOOK_DESCRIPTION);
       case 'webhook_active':
         return botApiError(409, WEBHOOK_ACTIVE_DESCRIPTION);
+      case 'session_ended':
+        // A long poll the session's end interrupts is a passive wait, which committed nothing
+        // since it began; it is answered as one that found nothing.
+        return botApiResult([]);
       default: {
         const unhandledReason: never = reason;
         throw new Error(`Unhandled getUpdates failure: ${unhandledReason}`);

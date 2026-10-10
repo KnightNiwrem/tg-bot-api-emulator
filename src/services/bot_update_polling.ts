@@ -19,7 +19,14 @@ type LongPollTerminationReason = 'terminated_by_other_long_poll' | 'terminated_b
 
 export type GetUpdatesResult =
   | { readonly retrieved: true; readonly updates: readonly BotApiUpdate[] }
-  | { readonly retrieved: false; readonly reason: LongPollTerminationReason };
+  | {
+    readonly retrieved: false;
+    /**
+     * `session_ended` when the session ended before the request arrived, or while it was held:
+     * the request read, confirmed and recorded nothing.
+     */
+    readonly reason: LongPollTerminationReason | 'session_ended';
+  };
 
 interface PendingUpdateQueue {
   resolveFirstUnconfirmedUpdateId(botId: number, offset: number | undefined): number | undefined;
@@ -55,12 +62,19 @@ interface UpdateActivityRecorder {
   recordUpdateConfirmations(botId: number, updates: readonly BotApiUpdate[], via: 'polling'): void;
 }
 
+/** The session's end, which stops held long polls, and its commit gate. */
+interface SessionCommitGate {
+  readonly endSignal: AbortSignal;
+  readonly admitsCommits: boolean;
+}
+
 interface BotUpdatePollingServiceDependencies {
   readonly botUpdates: PendingUpdateQueue;
   readonly updateSubscriptions: BotUpdateSubscriptionStore;
   readonly updateActivity: UpdateActivityRecorder;
   /** Measures how long a long poll is held. */
   readonly scheduler: Pick<Scheduler, 'deadline'>;
+  readonly sessionLifetime: SessionCommitGate;
 }
 
 /**
@@ -72,21 +86,22 @@ export class BotUpdatePollingService {
   readonly #updateSubscriptions: BotUpdateSubscriptionStore;
   readonly #updateActivity: UpdateActivityRecorder;
   readonly #scheduler: Pick<Scheduler, 'deadline'>;
-  readonly #heldLongPollsByBotId = new Map<number, HeldLongPoll>();
   /**
-   * Aborted when long polling ends. Kept apart from the held long poll controllers so that the end
-   * of polling is never reported as a conflict with another long poll.
+   * Kept apart from the held long poll controllers, so that the session's end is never reported as
+   * a conflict with another long poll.
    */
-  readonly #longPollingEnd = new AbortController();
+  readonly #sessionLifetime: SessionCommitGate;
+  readonly #heldLongPollsByBotId = new Map<number, HeldLongPoll>();
 
   constructor(
-    { botUpdates, updateSubscriptions, updateActivity, scheduler }:
+    { botUpdates, updateSubscriptions, updateActivity, scheduler, sessionLifetime }:
       BotUpdatePollingServiceDependencies,
   ) {
     this.#botUpdates = botUpdates;
     this.#updateSubscriptions = updateSubscriptions;
     this.#updateActivity = updateActivity;
     this.#scheduler = scheduler;
+    this.#sessionLifetime = sessionLifetime;
   }
 
   /**
@@ -95,16 +110,22 @@ export class BotUpdatePollingService {
    *
    * A request that finds no updates and has a timeout is held until an update arrives. Like
    * Telegram, a bot has at most one held request: holding a new one terminates the previous one.
-   * Requests answered immediately never terminate a held one. Once long polling has ended, no
-   * request is held.
+   * Requests answered immediately never terminate a held one.
    *
    * The updates the offset confirms and the updates the answer delivers are recorded as bot
    * activity, confirmations first.
+   *
+   * The request changes the session twice: once when it arrives, and once more if it was held,
+   * when its wait ends. Once the session has ended, neither happens: the request reads, confirms
+   * and records nothing, and a held one ends at once.
    */
   async getUpdates(
     botId: number,
     { offset, limit, timeoutSeconds, allowedUpdates, signal }: GetUpdatesRequest,
   ): Promise<GetUpdatesResult> {
+    if (!this.#sessionLifetime.admitsCommits) {
+      return { retrieved: false, reason: 'session_ended' };
+    }
     if (allowedUpdates !== undefined) {
       this.#updateSubscriptions.setAllowedUpdateTypes(
         botId,
@@ -120,15 +141,12 @@ export class BotUpdatePollingService {
     );
     const nextUpdateId = this.#botUpdates.getNextUpdateId(botId);
     const updates = this.#confirmAndReadPendingUpdates(botId, firstUnconfirmedUpdateId, limit);
-    if (
-      updates.length > 0 || timeoutSeconds === 0 || signal?.aborted === true ||
-      this.#longPollingEnd.signal.aborted
-    ) {
+    if (updates.length > 0 || timeoutSeconds === 0 || signal?.aborted === true) {
       return this.#deliverUpdates(botId, updates);
     }
 
     const heldLongPoll = this.#holdLongPoll(botId);
-    const waitEndingSignals = [heldLongPoll.controller.signal, this.#longPollingEnd.signal];
+    const waitEndingSignals = [heldLongPoll.controller.signal, this.#sessionLifetime.endSignal];
     if (signal !== undefined) {
       waitEndingSignals.push(signal);
     }
@@ -149,18 +167,13 @@ export class BotUpdatePollingService {
     if (heldLongPoll.terminationReason !== undefined) {
       return { retrieved: false, reason: heldLongPoll.terminationReason };
     }
+    if (!this.#sessionLifetime.admitsCommits) {
+      return { retrieved: false, reason: 'session_ended' };
+    }
     return this.#deliverUpdates(
       botId,
       this.#confirmAndReadPendingUpdates(botId, firstUnconfirmedUpdateId, limit),
     );
-  }
-
-  /**
-   * Answers every held long poll with the updates it can read, as its timeout would, and stops
-   * holding later ones, which are answered at once with the updates they can read.
-   */
-  endLongPolling(): void {
-    this.#longPollingEnd.abort();
   }
 
   /** Terminates the bot's held long poll, as setting a webhook does on Telegram. */

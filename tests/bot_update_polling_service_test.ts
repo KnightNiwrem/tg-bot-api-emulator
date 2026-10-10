@@ -6,6 +6,7 @@ import {
   BotUpdatePollingService,
   type GetUpdatesResult,
 } from '../src/services/bot_update_polling.ts';
+import { SessionLifetime } from '../src/services/session_lifetime.ts';
 import {
   type BotApiMessage,
   type BotApiPrivateMessage,
@@ -157,38 +158,53 @@ Deno.test('BotUpdatePollingService ends a cancelled long poll without terminatin
   }
 });
 
-Deno.test('BotUpdatePollingService answers held and later long polls at once when polling ends', async () => {
-  const { botUpdates, botUpdatePolling } = createPollingFixture();
+Deno.test('BotUpdatePollingService ends held long polls and changes nothing once the session ends', async () => {
+  const { botUpdates, updateSubscriptions, botActivity, botUpdatePolling, endSession } =
+    createPollingFixture();
+  botUpdates.enqueueMessageUpdate(BOT_ID, createPrivateMessage(1));
   const heldResults = [BOT_ID, OTHER_BOT_ID].map((botId) =>
-    botUpdatePolling.getUpdates(botId, { limit: 100, timeoutSeconds: 50 })
+    botUpdatePolling.getUpdates(botId, {
+      offset: botId === BOT_ID ? 2 : undefined,
+      limit: 100,
+      timeoutSeconds: 50,
+    })
   );
+  const headBeforeEnd = botActivity.getHeadPosition();
 
-  botUpdatePolling.endLongPolling();
+  endSession();
+  // An update enqueued as the session ends would wake the held poll; it reads nothing.
+  botUpdates.enqueueMessageUpdate(BOT_ID, createPrivateMessage(2));
   const results = await expectSettlementWithin(
     Promise.all(heldResults),
     1_000,
-    'Expected ending long polling to answer every held long poll at once',
+    'Expected the end of the session to end every held long poll at once',
   );
-  if (!results.every((result) => expectRetrievedUpdates(result).length === 0)) {
-    throw new Error('Expected each held long poll to end without a conflict or updates');
-  }
-
-  const emptyResult = await expectSettlementWithin(
-    botUpdatePolling.getUpdates(BOT_ID, { limit: 100, timeoutSeconds: 50 }),
-    1_000,
-    'Expected a long poll after polling ended not to be held',
+  const laterResult = await botUpdatePolling.getUpdates(BOT_ID, {
+    limit: 100,
+    timeoutSeconds: 50,
+    allowedUpdates: ['callback_query'],
+  });
+  assertJsonEqual(
+    [
+      results,
+      laterResult,
+      botActivity.getHeadPosition() - headBeforeEnd,
+      botUpdates.readPendingUpdates(BOT_ID).map(({ update_id: updateId }) => updateId),
+      // The later request asked for callback queries alone; the bot still receives messages.
+      updateSubscriptions.getAllowedUpdateTypes(BOT_ID).has('message'),
+    ],
+    [
+      [
+        { retrieved: false, reason: 'session_ended' },
+        { retrieved: false, reason: 'session_ended' },
+      ],
+      { retrieved: false, reason: 'session_ended' },
+      0,
+      [2],
+      true,
+    ],
+    'Expected no long poll to read, confirm, record or subscribe after the session ended',
   );
-  if (expectRetrievedUpdates(emptyResult).length !== 0) {
-    throw new Error('Expected the unheld long poll to find no updates');
-  }
-
-  botUpdates.enqueueMessageUpdate(BOT_ID, createPrivateMessage(1));
-  const pendingUpdates = expectRetrievedUpdates(
-    await botUpdatePolling.getUpdates(BOT_ID, { limit: 100, timeoutSeconds: 50 }),
-  );
-  if (pendingUpdates.length !== 1) {
-    throw new Error('Expected pending updates to remain readable after polling ended');
-  }
 });
 
 Deno.test('BotUpdatePollingService records the updates each answer confirms and delivers', async () => {
@@ -250,13 +266,21 @@ function createPollingFixture() {
     log: new BotActivityLogRepository(),
     scheduler: createRealTimeScheduler(),
   });
+  const sessionEnd = new AbortController();
   const botUpdatePolling = new BotUpdatePollingService({
     botUpdates,
     updateSubscriptions,
     updateActivity: botActivity,
     scheduler: createRealTimeScheduler(),
+    sessionLifetime: new SessionLifetime(sessionEnd.signal),
   });
-  return { botUpdates, updateSubscriptions, botActivity, botUpdatePolling };
+  return {
+    botUpdates,
+    updateSubscriptions,
+    botActivity,
+    botUpdatePolling,
+    endSession: () => sessionEnd.abort(),
+  };
 }
 
 function createPrivateMessage(messageId: number): BotApiPrivateMessage {
@@ -309,4 +333,10 @@ function assertAllowedUpdateTypes(
 
 function messageFromUpdate(update: BotApiUpdate | undefined): BotApiMessage | undefined {
   return update !== undefined && 'message' in update ? update.message : undefined;
+}
+
+function assertJsonEqual(actual: unknown, expected: unknown, message: string): void {
+  if (JSON.stringify(actual) !== JSON.stringify(expected)) {
+    throw new Error(`${message}: received ${JSON.stringify(actual)}`);
+  }
 }

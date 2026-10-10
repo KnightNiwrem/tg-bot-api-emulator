@@ -3,6 +3,7 @@ import { BotUpdateRepository } from '../src/repositories/bot_update.ts';
 import { BotUpdateSubscriptionRepository } from '../src/repositories/bot_update_subscription.ts';
 import { BotActivityService } from '../src/services/bot_activity.ts';
 import { BotUpdatePollingService } from '../src/services/bot_update_polling.ts';
+import { SessionLifetime } from '../src/services/session_lifetime.ts';
 import type { BotApiUpdate } from '../src/types/bot_api.ts';
 import { ControlledDeadline, ControlledScheduler } from './support/scheduler.ts';
 import { createPrivateMessage } from './support/webhook_delivery.ts';
@@ -91,6 +92,7 @@ Deno.test('BotUpdatePollingService answers a long poll with an update enqueued a
     updateSubscriptions: new BotUpdateSubscriptionRepository(),
     updateActivity: new BotActivityService({ log: new BotActivityLogRepository(), scheduler }),
     scheduler,
+    sessionLifetime: new SessionLifetime(new AbortController().signal),
   });
   scheduler.onDeadlineStart = () => {
     botUpdates.enqueueMessageUpdate(BOT_ID, createPrivateMessage(1));

@@ -119,12 +119,16 @@ async function withWebhookBot(test: (fixture: WebhookBotFixture) => Promise<void
       if (method === undefined) {
         throw new Error(`Expected ${methodName} to be implemented`);
       }
-      const { body } = await callBotApiMethod({ ...replyContext, via: 'http' }, {
+      const outcome = await callBotApiMethod({ ...replyContext, via: 'http' }, {
         method,
         requestedMethodName: methodName,
         parameters,
         uploadedFiles: new Map(),
       });
+      if (!outcome.answered) {
+        throw new Error(`Expected ${methodName} to be answered: ${outcome.reason}`);
+      }
+      const { body } = outcome.answer;
       if (!body.ok) {
         throw new Error(`Expected ${methodName} to succeed: ${body.description}`);
       }

@@ -5,13 +5,25 @@ import type { EmulationSession } from '../../../types/emulation_session.ts';
 import type { VirtualBotProfile } from '../../../types/virtual_bot.ts';
 import type { BotApiRequestParameters, BotApiUploadedFiles } from './request_parameters.ts';
 
-/** Who calls a Bot API method, and the session services a method may use to answer. */
+/**
+ * Who calls a Bot API method, and the session services a method may use to answer.
+ *
+ * A method that waits, as a download does, checks the session's commit gate after its last wait,
+ * in the same synchronous step as the change it makes, and returns `SESSION_ENDED` instead of
+ * changing an ended session.
+ */
 export interface BotApiMethodContext {
-  /** The Bot API itself, and the files that methods download from the web. */
-  readonly session: Pick<EmulationSession, 'botApi' | 'mediaFiles'>;
+  /**
+   * The Bot API itself, the files that methods download from the web, and the session's lifetime,
+   * whose commit gate closes when the session ends.
+   */
+  readonly session: Pick<EmulationSession, 'botApi' | 'mediaFiles' | 'lifetime'>;
   /** The bot whose token authenticated the call. */
   readonly bot: VirtualBotProfile;
-  /** Aborts when the caller stops waiting for the answer, as a closed HTTP request does. */
+  /**
+   * Aborts when the caller stops waiting for the answer, as a closed HTTP request does, or when
+   * the session ends.
+   */
   readonly signal: AbortSignal;
 }
 
@@ -27,12 +39,29 @@ export interface BotApiCallContext extends BotApiMethodContext {
   readonly via: BotApiCallTransport;
 }
 
+/**
+ * What a method returns instead of an answer when its session ended before the method could change
+ * it: the method changed nothing, and nobody receives an answer from an ended session.
+ */
+export const SESSION_ENDED: unique symbol = Symbol('session ended');
+
+/** How a method ends: with its answer, or refused by its ended session. */
+export type BotApiMethodOutcome = BotApiMethodAnswer | typeof SESSION_ENDED;
+
 /** Runs a method with a call's parameters and uploaded files, and answers the call. */
 export type BotApiMethodHandler = (
   context: BotApiMethodContext,
   parameters: BotApiRequestParameters,
   uploadedFiles: BotApiUploadedFiles,
-) => BotApiMethodAnswer | Promise<BotApiMethodAnswer>;
+) => BotApiMethodOutcome | Promise<BotApiMethodOutcome>;
+
+/**
+ * How a call ends, however it arrived: answered, or refused because its session had ended before
+ * the call could change it or be recorded.
+ */
+export type BotApiCallOutcome =
+  | { readonly answered: true; readonly answer: BotApiMethodAnswer }
+  | { readonly answered: false; readonly reason: 'session_ended' };
 
 /** A Bot API method the emulator implements, under its current name. */
 export interface BotApiMethod {

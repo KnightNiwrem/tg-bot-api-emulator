@@ -6,10 +6,13 @@ import { BOT_API_ERRORS } from './errors/error_catalogue.ts';
 import { presentFixedBotApiError } from './errors/error_template.ts';
 import {
   type BotApiCallContext,
+  type BotApiCallOutcome,
   botApiError,
   type BotApiMethod,
   type BotApiMethodAnswer,
   type BotApiMethodContext,
+  type BotApiMethodOutcome,
+  SESSION_ENDED,
 } from './method_call.ts';
 import { takeQueuedAnswer } from './queued_answer.ts';
 import {
@@ -28,36 +31,55 @@ export interface BotApiMethodCall {
   readonly uploadedFiles: BotApiUploadedFiles;
 }
 
+/** The outcome of a call that its ended session refused. */
+const SESSION_ENDED_CALL_OUTCOME: BotApiCallOutcome = { answered: false, reason: 'session_ended' };
+
 /**
  * Runs a bot's call of a method, however the call arrived, unless a test queued a rate limit or
  * server error answer for it, which the call receives instead, before the method reads its
  * parameters or changes anything. The call and its answer are recorded as bot activity if the
  * method's calls are.
+ *
+ * A call is refused, changing and recording nothing, if its session has ended by the time it
+ * starts; a method that waits checks the session itself before it changes anything, and is refused
+ * the same way. A call whose session ends after the method committed is still answered, but no
+ * longer recorded.
  */
 export async function callBotApiMethod(
   context: BotApiCallContext,
   { method, requestedMethodName, parameters, uploadedFiles }: BotApiMethodCall,
-): Promise<BotApiMethodAnswer> {
-  const answer = await answerBotApiMethodCall(context, method, parameters, uploadedFiles);
-  recordImplementedMethodCall(context, method, {
-    requestedMethodName,
-    parameters,
-    uploadedFiles,
-    chatId: findNamedChatId(context, parameters),
-  }, answer);
-  return answer;
+): Promise<BotApiCallOutcome> {
+  if (!context.session.lifetime.admitsCommits) {
+    return SESSION_ENDED_CALL_OUTCOME;
+  }
+  const outcome = await answerBotApiMethodCall(context, method, parameters, uploadedFiles);
+  if (outcome === SESSION_ENDED) {
+    return SESSION_ENDED_CALL_OUTCOME;
+  }
+  if (context.session.lifetime.admitsCommits) {
+    recordImplementedMethodCall(context, method, {
+      requestedMethodName,
+      parameters,
+      uploadedFiles,
+      chatId: findNamedChatId(context, parameters),
+    }, outcome);
+  }
+  return { answered: true, answer: outcome };
 }
 
 /**
  * Answers a call that names no method the emulator implements, however the call arrived, and
- * records it as bot activity.
+ * records it as bot activity, unless its session has ended.
  */
 export function rejectUnknownBotApiMethod(
   context: BotApiCallContext,
   requestedMethodName: string,
   parameters: BotApiRequestParameters,
   uploadedFiles: BotApiUploadedFiles,
-): BotApiMethodAnswer {
+): BotApiCallOutcome {
+  if (!context.session.lifetime.admitsCommits) {
+    return SESSION_ENDED_CALL_OUTCOME;
+  }
   const answer = botApiError(404, 'Not Found: method not found');
   recordBotApiCall(context, {
     methodName: requestedMethodName,
@@ -66,19 +88,23 @@ export function rejectUnknownBotApiMethod(
     uploadedFiles,
     chatId: findNamedChatId(context, parameters),
   }, answer);
-  return answer;
+  return { answered: true, answer };
 }
 
 /**
  * Answers a call of an implemented method whose request could not be decoded, and records it as
- * bot activity without parameters if the method's calls are recorded.
+ * bot activity without parameters if the method's calls are recorded, unless its session has
+ * ended.
  */
 export function rejectUndecodableBotApiCall(
   context: BotApiCallContext,
   method: BotApiMethod,
   requestedMethodName: string,
   description: string,
-): BotApiMethodAnswer {
+): BotApiCallOutcome {
+  if (!context.session.lifetime.admitsCommits) {
+    return SESSION_ENDED_CALL_OUTCOME;
+  }
   const answer = botApiError(400, description);
   recordImplementedMethodCall(context, method, {
     requestedMethodName,
@@ -86,7 +112,7 @@ export function rejectUndecodableBotApiCall(
     uploadedFiles: new Map(),
     chatId: undefined,
   }, answer);
-  return answer;
+  return { answered: true, answer };
 }
 
 /**
@@ -109,7 +135,7 @@ async function answerBotApiMethodCall(
   { name, handler }: BotApiMethod,
   parameters: BotApiRequestParameters,
   uploadedFiles: BotApiUploadedFiles,
-): Promise<BotApiMethodAnswer> {
+): Promise<BotApiMethodOutcome> {
   const queuedAnswer = takeQueuedAnswer(context, name);
   if (queuedAnswer !== undefined) {
     return queuedAnswer;

@@ -40,11 +40,15 @@ in for the ["Forwarded messages" privacy setting](messages.md#forwarding-and-cop
 [own contact](contacts-and-locations.md#whose-contact-it-is).
 
 `DELETE /sessions/{sessionId}` or `session.end()` discards the session and stops webhook delivery
-and waiting long polls. State lives in memory and is lost on process restart. There is no account
-login, Telegram connection, persistence, clock advancement API, or snapshot/restore facility.
-Individual bot/account resource paths marked unimplemented in
-[the OpenAPI description](../../openapi/openapi.yaml) have no profile read, update or deletion
-operations; use the profiles returned at creation.
+and waiting long polls. Nothing changes the session after it ends. A held long poll is answered at
+once with no updates, and confirms nothing. Any other Bot API call still in progress at that moment,
+whether its request body is still arriving, its download is running, or it is a webhook reply's
+method, has its downloads stopped and is refused before it changes or records anything: an HTTP call
+is answered with a bodyless `404`, as a request to a session that does not exist is. State lives in
+memory and is lost on process restart. There is no account login, Telegram connection, persistence,
+clock advancement API, or snapshot/restore facility. Individual bot/account resource paths marked
+unimplemented in [the OpenAPI description](../../openapi/openapi.yaml) have no profile read, update
+or deletion operations; use the profiles returned at creation.
 
 Bot API requests support GET and POST, case-insensitive method names, query parameters, and JSON,
 URL-encoded or multipart bodies. The first value of a parameter wins, with the query string before

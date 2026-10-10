@@ -42,7 +42,9 @@ import {
   type BotApiMethod,
   type BotApiMethodAnswer,
   type BotApiMethodContext,
+  type BotApiMethodOutcome,
   botApiResult,
+  SESSION_ENDED,
 } from '../method_call.ts';
 import { readCorrectOptionIdsParameter } from '../quiz_parameters.ts';
 import {
@@ -394,7 +396,7 @@ async function handleSendRichMessage(
   context: BotApiMethodContext,
   parameters: BotApiRequestParameters,
   uploadedFiles: BotApiUploadedFiles,
-): Promise<BotApiMethodAnswer> {
+): Promise<BotApiMethodOutcome> {
   const invalidParametersDescription = 'Bad Request: invalid sendRichMessage parameters';
   const parsedParameters = sendRichMessageParametersSchema.safeParse(parameters);
   if (!parsedParameters.success) {
@@ -422,6 +424,9 @@ async function handleSendRichMessage(
   );
   if (!richMessageResolution.resolved) {
     return richMessageResolution.errorAnswer;
+  }
+  if (!context.session.lifetime.admitsCommits) {
+    return SESSION_ENDED;
   }
 
   return sendMethodAnswer(context.session.botApi.sendRichMessage(context.bot, {
@@ -580,7 +585,7 @@ async function handleSendPhoto(
   context: BotApiMethodContext,
   parameters: BotApiRequestParameters,
   uploadedFiles: BotApiUploadedFiles,
-): Promise<BotApiMethodAnswer> {
+): Promise<BotApiMethodOutcome> {
   const invalidParametersDescription = 'Bad Request: invalid sendPhoto parameters';
   const parsedParameters = sendPhotoParametersSchema.safeParse(parameters);
   if (!parsedParameters.success) {
@@ -605,6 +610,9 @@ async function handleSendPhoto(
   if (!photoResolution.resolved) {
     return photoResolution.errorAnswer;
   }
+  if (!context.session.lifetime.admitsCommits) {
+    return SESSION_ENDED;
+  }
 
   return sendMethodAnswer(context.session.botApi.sendPhoto(context.bot, {
     ...optionsReading.options,
@@ -619,7 +627,7 @@ async function handleSendDocument(
   context: BotApiMethodContext,
   parameters: BotApiRequestParameters,
   uploadedFiles: BotApiUploadedFiles,
-): Promise<BotApiMethodAnswer> {
+): Promise<BotApiMethodOutcome> {
   const invalidParametersDescription = 'Bad Request: invalid sendDocument parameters';
   const parsedParameters = sendDocumentParametersSchema.safeParse(parameters);
   if (!parsedParameters.success) {
@@ -648,6 +656,9 @@ async function handleSendDocument(
   if (!documentResolution.resolved) {
     return documentResolution.errorAnswer;
   }
+  if (!context.session.lifetime.admitsCommits) {
+    return SESSION_ENDED;
+  }
 
   const thumbnail = readThumbnailParameter(data, uploadedFiles);
   return sendMethodAnswer(context.session.botApi.sendDocument(context.bot, {
@@ -662,7 +673,7 @@ async function handleSendVideo(
   context: BotApiMethodContext,
   parameters: BotApiRequestParameters,
   uploadedFiles: BotApiUploadedFiles,
-): Promise<BotApiMethodAnswer> {
+): Promise<BotApiMethodOutcome> {
   const invalidParametersDescription = 'Bad Request: invalid sendVideo parameters';
   const parsedParameters = sendVideoParametersSchema.safeParse(parameters);
   if (!parsedParameters.success) {
@@ -691,6 +702,9 @@ async function handleSendVideo(
   if (!videoResolution.resolved) {
     return videoResolution.errorAnswer;
   }
+  if (!context.session.lifetime.admitsCommits) {
+    return SESSION_ENDED;
+  }
 
   const thumbnail = readThumbnailParameter(data, uploadedFiles);
   return sendMethodAnswer(context.session.botApi.sendVideo(context.bot, {
@@ -709,7 +723,7 @@ async function handleSendVoice(
   context: BotApiMethodContext,
   parameters: BotApiRequestParameters,
   uploadedFiles: BotApiUploadedFiles,
-): Promise<BotApiMethodAnswer> {
+): Promise<BotApiMethodOutcome> {
   const invalidParametersDescription = 'Bad Request: invalid sendVoice parameters';
   const parsedParameters = sendVoiceParametersSchema.safeParse(parameters);
   if (!parsedParameters.success) {
@@ -738,6 +752,9 @@ async function handleSendVoice(
   if (!voiceResolution.resolved) {
     return voiceResolution.errorAnswer;
   }
+  if (!context.session.lifetime.admitsCommits) {
+    return SESSION_ENDED;
+  }
 
   return sendMethodAnswer(context.session.botApi.sendVoice(context.bot, {
     ...optionsReading.options,
@@ -751,7 +768,7 @@ async function handleSendAudio(
   context: BotApiMethodContext,
   parameters: BotApiRequestParameters,
   uploadedFiles: BotApiUploadedFiles,
-): Promise<BotApiMethodAnswer> {
+): Promise<BotApiMethodOutcome> {
   const invalidParametersDescription = 'Bad Request: invalid sendAudio parameters';
   const parsedParameters = sendAudioParametersSchema.safeParse(parameters);
   if (!parsedParameters.success) {
@@ -780,6 +797,9 @@ async function handleSendAudio(
   if (!audioResolution.resolved) {
     return audioResolution.errorAnswer;
   }
+  if (!context.session.lifetime.admitsCommits) {
+    return SESSION_ENDED;
+  }
 
   const thumbnail = readThumbnailParameter(data, uploadedFiles);
   return sendMethodAnswer(context.session.botApi.sendAudio(context.bot, {
@@ -800,7 +820,7 @@ async function handleSendMediaGroup(
   context: BotApiMethodContext,
   parameters: BotApiRequestParameters,
   uploadedFiles: BotApiUploadedFiles,
-): Promise<BotApiMethodAnswer> {
+): Promise<BotApiMethodOutcome> {
   const invalidParametersDescription = 'Bad Request: invalid sendMediaGroup parameters';
   const parsedParameters = sendMediaGroupParametersSchema.safeParse(parameters);
   if (!parsedParameters.success) {
@@ -845,6 +865,9 @@ async function handleSendMediaGroup(
       return fileResolution.errorAnswer;
     }
     media.push(toMediaReplacementRequest(member, fileResolution.value, captions[memberIndex]));
+  }
+  if (!context.session.lifetime.admitsCommits) {
+    return SESSION_ENDED;
   }
 
   const { chatId, replyTo, isContentProtected, isSilent, messageEffectId } = optionsReading.options;
