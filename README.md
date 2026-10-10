@@ -84,7 +84,8 @@ purpose.
   they exercised
 - `deno task architecture:check` — check that imports respect the layer boundaries set in
   `.fallowrc.json`
-- `deno task lock:update` — resolve `deno.lock` again after a dependency changes in `deno.json`
+- `deno task --frozen=false lock:update` — resolve `deno.lock` again after a dependency changes in
+  `deno.json`
 
 ## Dependencies
 
@@ -102,8 +103,10 @@ examples are meant to be copied, so they name registry packages in full, such as
 [`tests/dependency_specifiers_test.ts`](tests/dependency_specifiers_test.ts) checks these rules.
 
 To add or bump a dependency, set its exact version in `deno.json` and in any guide examples that
-name it, run `deno task lock:update`, and commit the `deno.lock` diff with the change. The task
-resolves the whole graph again, so review the diff for transitive changes too.
+name it, run `deno task --frozen=false lock:update`, and commit the `deno.lock` diff with the
+change. Deno checks the lockfile against `deno.json` before it starts any task, hence
+`--frozen=false`. The task resolves the whole graph again, so review the diff for transitive changes
+too.
 
 ## Environment
 
