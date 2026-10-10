@@ -22,31 +22,29 @@ import {
   appliesReplyInterfaceTo,
   type BotMessageReplyMarkup,
   type ReplyInterface,
-  type ReplyInterfaceMarkup,
   type ReplyKeyboardButtonSelectionFailureReason,
   selectReplyKeyboardButton,
 } from '../types/reply_interface.ts';
 import type { VirtualAccount } from '../types/virtual_account.ts';
 import type { VirtualBot } from '../types/virtual_bot.ts';
-import type { Supergroup } from '../types/virtual_chat.ts';
+import type { ChatActor, Supergroup, SupergroupChatKey } from '../types/virtual_chat.ts';
 import {
   canBotEditMessage,
   type CanonicalMessageId,
   type ChatMessage,
-  type ExternalReply,
-  getMessageAuthorId,
+  getMessageSenderId,
   type InlineMessageId,
   isSupergroupContentMessage,
   type MediaGroupId,
   mentionsUser,
   type MessageContent,
+  type MessageEdit,
   type MessageForwardInfo,
+  type NewSupergroupMessage,
   type SupergroupContentMessage,
   type SupergroupMessage,
-  type SupergroupMessageAuthor,
-  type SupergroupMessageContent,
+  type SupergroupMessageSender,
   type SupergroupServiceContent,
-  type TextQuote,
 } from '../types/virtual_message.ts';
 import type { FormattedTextFixingContext } from '../text_entities/formatted_text.ts';
 import {
@@ -529,10 +527,10 @@ export type CheckSupergroupBotChatActionAccessResult =
 export interface RecordSupergroupServiceMessageInput {
   readonly chatId: number;
   /**
-   * The member who made the change: the one who added members, left, removed a member, changed
-   * the title, or pinned a message.
+   * The member shown as having made the change: the one who added members, left, removed a
+   * member, changed the title, or pinned a message.
    */
-  readonly author: SupergroupMessageAuthor;
+  readonly sender: SupergroupMessageSender;
   readonly content: SupergroupServiceContent;
   readonly changedAtUnixSeconds: number;
   /** Notifies the members without sound; omitted for a service message that notifies with sound. */
@@ -573,24 +571,6 @@ interface BotLookup {
   getById(botId: number): VirtualBot | undefined;
 }
 
-/** A message to store, before the store gives it an identity. */
-interface NewSupergroupMessage {
-  readonly chatId: number;
-  readonly author: SupergroupMessageAuthor;
-  readonly sentAtUnixSeconds: number;
-  readonly content: SupergroupMessageContent;
-  readonly replyToMessageId?: CanonicalMessageId;
-  readonly externalReply?: ExternalReply;
-  readonly quote?: TextQuote;
-  readonly mediaGroupId?: MediaGroupId;
-  readonly inlineKeyboard?: InlineKeyboard;
-  readonly viaBotId?: number;
-  readonly forwardInfo?: MessageForwardInfo;
-  readonly replyInterfaceMarkup?: ReplyInterfaceMarkup;
-  readonly isContentProtected?: boolean;
-  readonly isSilent?: boolean;
-}
-
 /**
  * The members of supergroups, and the reply interface each account member's client shows there,
  * which the store records by the message that set it.
@@ -607,16 +587,19 @@ interface SupergroupMemberStore extends SupergroupMembershipLookup {
 
 interface SupergroupMessageStore {
   createMediaGroupId(): MediaGroupId;
-  addSupergroupMessage(input: NewSupergroupMessage): SupergroupMessage;
-  getSupergroupMessage(messageId: CanonicalMessageId): SupergroupMessage | undefined;
+  addMessage(message: NewSupergroupMessage): SupergroupMessage;
+  findChatMessage(
+    chat: SupergroupChatKey,
+    messageId: CanonicalMessageId,
+  ): SupergroupMessage | undefined;
   getMessageByInlineMessageId(inlineMessageId: InlineMessageId): ChatMessage | undefined;
-  editSupergroupMessage(messageId: CanonicalMessageId, edit: {
-    readonly content: MessageContent;
-    readonly inlineKeyboard: InlineKeyboard | undefined;
-    readonly contentEditedAtUnixSeconds: number | undefined;
-  }): SupergroupMessage;
-  deleteSupergroupMessage(messageId: CanonicalMessageId): void;
-  getSupergroupMessages(chatId: number): readonly SupergroupMessage[];
+  editMessage(
+    chat: SupergroupChatKey,
+    messageId: CanonicalMessageId,
+    edit: MessageEdit,
+  ): SupergroupMessage;
+  deleteMessage(messageId: CanonicalMessageId): void;
+  getChatMessages(chat: SupergroupChatKey): readonly SupergroupMessage[];
 }
 
 /** Stores the polls bots send and closes the polls they stop. */
@@ -740,8 +723,8 @@ export class SupergroupMessagingService {
     return {
       sent: true,
       message: this.#storeMessage({
-        chatId: input.chatId,
-        author: { kind: 'account', accountId: input.fromAccountId },
+        chat: { type: 'supergroup', chatId: input.chatId },
+        sender: { kind: 'account', accountId: input.fromAccountId },
         content: contentNormalization.content,
         replyToMessageId: repliedMessage?.id,
       }),
@@ -786,8 +769,8 @@ export class SupergroupMessagingService {
     return {
       sent: true,
       messages: this.#storeAlbum(albumNormalization.contents, {
-        chatId: input.chatId,
-        author: { kind: 'account', accountId: input.fromAccountId },
+        chat: { type: 'supergroup', chatId: input.chatId },
+        sender: { kind: 'account', accountId: input.fromAccountId },
         replyToMessageId: repliedMessage?.id,
       }, repliedMessage),
     };
@@ -806,11 +789,11 @@ export class SupergroupMessagingService {
     if (!memberResolution.resolved) {
       return { sent: false, reason: memberResolution.reason };
     }
-    const author: SupergroupMessageAuthor = { kind: 'account', accountId: input.fromAccountId };
-    if (!this.#getEffectivePermissions(memberResolution, author).has('can_send_other_messages')) {
+    const actor: ChatActor = { kind: 'account', accountId: input.fromAccountId };
+    if (!this.#getEffectivePermissions(memberResolution, actor).has('can_send_other_messages')) {
       return { sent: false, reason: 'inline_bots_not_permitted' };
     }
-    const permissionFailure = this.#findMissingSendPermission(memberResolution, author, [
+    const permissionFailure = this.#findMissingSendPermission(memberResolution, actor, [
       input.content,
     ]);
     if (permissionFailure !== undefined) {
@@ -819,8 +802,8 @@ export class SupergroupMessagingService {
     return {
       sent: true,
       message: this.#storeMessage({
-        chatId: input.chatId,
-        author,
+        chat: { type: 'supergroup', chatId: input.chatId },
+        sender: actor,
         content: input.content,
         inlineKeyboard: input.inlineKeyboard,
         viaBotId: input.viaBotId,
@@ -851,8 +834,8 @@ export class SupergroupMessagingService {
       sent: true,
       message: this.#commitMessage({
         ...forward,
-        chatId,
-        author: { kind: 'account', accountId: fromAccountId },
+        chat: { type: 'supergroup', chatId },
+        sender: { kind: 'account', accountId: fromAccountId },
         sentAtUnixSeconds: this.#currentUnixTimeSeconds(),
       }),
     };
@@ -923,8 +906,8 @@ export class SupergroupMessagingService {
     return {
       sent: true,
       message: this.#storeMessage({
-        chatId: input.chatId,
-        author: { kind: 'bot', botId: input.fromBotId },
+        chat: { type: 'supergroup', chatId: input.chatId },
+        sender: { kind: 'bot', botId: input.fromBotId },
         content: contentNormalization.content,
         replyToMessageId: repliedMessage?.id,
         externalReply: input.externalReply?.externalReply,
@@ -1012,8 +995,8 @@ export class SupergroupMessagingService {
     return {
       sent: true,
       messages: this.#storeAlbum(albumNormalization.contents, {
-        chatId: input.chatId,
-        author: { kind: 'bot', botId: input.fromBotId },
+        chat: { type: 'supergroup', chatId: input.chatId },
+        sender: { kind: 'bot', botId: input.fromBotId },
         replyToMessageId: repliedMessage?.id,
         externalReply: input.externalReply?.externalReply,
         quote: quoteResolution.quote,
@@ -1157,7 +1140,7 @@ export class SupergroupMessagingService {
     }
 
     const stoppedPoll = this.#polls.closePoll(pollLookup.poll.id);
-    const editedMessage = this.#messages.editSupergroupMessage(message.id, {
+    const editedMessage = this.#messages.editMessage(message.chat, message.id, {
       content: message.content,
       inlineKeyboard,
       contentEditedAtUnixSeconds: message.contentEditedAtUnixSeconds,
@@ -1182,8 +1165,8 @@ export class SupergroupMessagingService {
     }
     // As in TDLib, only the inline bot edits a message sent through it, and no one edits a forward.
     if (
-      !isSupergroupContentMessage(message) || message.author.kind !== 'account' ||
-      message.author.accountId !== input.fromAccountId || message.viaBot !== undefined ||
+      !isSupergroupContentMessage(message) || message.sender.kind !== 'account' ||
+      message.sender.accountId !== input.fromAccountId || message.viaBot !== undefined ||
       message.forwardInfo !== undefined
     ) {
       return { edited: false, reason: 'message_not_editable' };
@@ -1202,7 +1185,7 @@ export class SupergroupMessagingService {
       return { edited: false, reason: 'message_not_modified' };
     }
 
-    const editedMessage = this.#messages.editSupergroupMessage(message.id, {
+    const editedMessage = this.#messages.editMessage(message.chat, message.id, {
       content,
       inlineKeyboard: message.inlineKeyboard,
       contentEditedAtUnixSeconds: this.#currentUnixTimeSeconds(),
@@ -1243,15 +1226,15 @@ export class SupergroupMessagingService {
       if (message === undefined) {
         continue;
       }
-      const isOwnMessage = message.author.kind === 'bot' &&
-        message.author.botId === input.fromBotId;
+      const isOwnMessage = message.sender.kind === 'bot' &&
+        message.sender.botId === input.fromBotId;
       if (!isOwnMessage && !deletesAnyMessage) {
         return { deleted: false, reason: 'message_not_deletable' };
       }
       messages.set(message.id, message);
     }
     for (const messageId of messages.keys()) {
-      this.#messages.deleteSupergroupMessage(messageId);
+      this.#messages.deleteMessage(messageId);
     }
     return { deleted: true, deletedMessageCount: messages.size };
   }
@@ -1279,11 +1262,11 @@ export class SupergroupMessagingService {
       'can_delete_messages',
     );
     const isOwnContentMessage = isSupergroupContentMessage(message) &&
-      message.author.kind === 'account' && message.author.accountId === fromAccountId;
+      message.sender.kind === 'account' && message.sender.accountId === fromAccountId;
     if (!isOwnContentMessage && !deletesAnyMessage) {
       return { deleted: false, reason: 'message_not_deletable' };
     }
-    this.#messages.deleteSupergroupMessage(message.id);
+    this.#messages.deleteMessage(message.id);
     return { deleted: true };
   }
 
@@ -1308,12 +1291,12 @@ export class SupergroupMessagingService {
    * who made it. As on Telegram, the service message is numbered like any message.
    */
   recordServiceMessage(
-    { chatId, author, content, changedAtUnixSeconds, isSilent }:
+    { chatId, sender, content, changedAtUnixSeconds, isSilent }:
       RecordSupergroupServiceMessageInput,
   ): SupergroupMessage {
     return this.#commitMessage({
-      chatId,
-      author,
+      chat: { type: 'supergroup', chatId },
+      sender,
       sentAtUnixSeconds: changedAtUnixSeconds,
       content,
       isSilent,
@@ -1377,7 +1360,10 @@ export class SupergroupMessagingService {
     if (!memberResolution.resolved) {
       return { found: false, reason: memberResolution.reason };
     }
-    return { found: true, messages: this.#messages.getSupergroupMessages(chatId) };
+    return {
+      found: true,
+      messages: this.#messages.getChatMessages({ type: 'supergroup', chatId }),
+    };
   }
 
   /**
@@ -1408,7 +1394,7 @@ export class SupergroupMessagingService {
     const canonicalMessageId = this.#messageBoxes.getCanonicalMessageId(chatId, messageId);
     return canonicalMessageId === undefined
       ? undefined
-      : this.#messages.getSupergroupMessage(canonicalMessageId);
+      : this.#messages.findChatMessage({ type: 'supergroup', chatId }, canonicalMessageId);
   }
 
   /**
@@ -1466,7 +1452,7 @@ export class SupergroupMessagingService {
       readonly supergroup: Supergroup;
       readonly membership: ChatMembership;
     },
-    member: SupergroupMessageAuthor,
+    member: ChatActor,
   ): ChatPermissions {
     return getEffectiveChatPermissions(membership, {
       defaultPermissions: supergroup.defaultPermissions,
@@ -1484,7 +1470,7 @@ export class SupergroupMessagingService {
       readonly supergroup: Supergroup;
       readonly membership: ChatMembership;
     },
-    member: SupergroupMessageAuthor,
+    member: ChatActor,
     contents: readonly (OutgoingMessageContent | NormalizedOutgoingContent)[],
   ): SendPermissionMissingFailure | undefined {
     const permissions = this.#getEffectivePermissions(memberResolution, member);
@@ -1637,7 +1623,7 @@ export class SupergroupMessagingService {
       return { edited: false, reason: editFailure };
     }
 
-    const editedMessage = this.#messages.editSupergroupMessage(message.id, {
+    const editedMessage = this.#messages.editMessage(message.chat, message.id, {
       ...edit,
       content: storeOutgoingContent(content, this.#files, this.#polls),
     });
@@ -1651,7 +1637,7 @@ export class SupergroupMessagingService {
    */
   #normalizeContent(
     content: OutgoingMessageContent,
-    sender: SupergroupMessageAuthor['kind'],
+    sender: ChatActor['kind'],
   ): OutgoingContentNormalization {
     return normalizeOutgoingContent(content, sender, this.#textFixingContext);
   }
@@ -1700,13 +1686,8 @@ export class SupergroupMessagingService {
     message: NewSupergroupMessage,
     repliedMessage?: SupergroupMessage,
   ): SupergroupMessage {
-    const storedMessage = this.#messages.addSupergroupMessage(message);
-    for (
-      const boxOwnerId of supergroupMessagePolicy.getNumberingBoxOwnerIds({
-        type: 'supergroup',
-        chatId: message.chatId,
-      })
-    ) {
+    const storedMessage = this.#messages.addMessage(message);
+    for (const boxOwnerId of supergroupMessagePolicy.getNumberingBoxOwnerIds(message.chat)) {
       this.#messageBoxes.assignMessageId(boxOwnerId, storedMessage.id);
     }
     this.#events.publish({ type: 'message_created', message: storedMessage });
@@ -1729,29 +1710,30 @@ export class SupergroupMessagingService {
     if (markup === undefined && message.content.kind !== 'member_left') {
       return;
     }
-    for (const memberId of this.#sharedChats.getChatMemberIds(message.chatId)) {
+    const { chatId } = message.chat;
+    for (const memberId of this.#sharedChats.getChatMemberIds(chatId)) {
       const account = this.#accounts.getById(memberId);
       // Bots' clients show no reply interface.
       if (account === undefined) {
         continue;
       }
       if (message.content.kind === 'member_left') {
-        this.#removeReplyInterfaceSetBy(message.chatId, memberId, message.content.memberId);
+        this.#removeReplyInterfaceSetBy(chatId, memberId, message.content.memberId);
         continue;
       }
       if (
         markup === undefined || !appliesReplyInterfaceTo(markup, {
           mentionsMember: mentionsUser(message.content, account.profile),
           repliesToMember: repliedMessage !== undefined &&
-            getMessageAuthorId(repliedMessage) === memberId,
+            getMessageSenderId(repliedMessage) === memberId,
         })
       ) {
         continue;
       }
       if (markup.kind === 'reply_keyboard_removal') {
-        this.#removeReplyInterfaceSetBy(message.chatId, memberId, getMessageAuthorId(message));
+        this.#removeReplyInterfaceSetBy(chatId, memberId, getMessageSenderId(message));
       } else {
-        this.#sharedChats.setReplyInterfaceMessageId(message.chatId, memberId, message.id);
+        this.#sharedChats.setReplyInterfaceMessageId(chatId, memberId, message.id);
       }
     }
   }
@@ -1765,8 +1747,11 @@ export class SupergroupMessagingService {
     if (shownMessageId === undefined) {
       return;
     }
-    const shownMessage = this.#messages.getSupergroupMessage(shownMessageId);
-    if (shownMessage === undefined || getMessageAuthorId(shownMessage) === setterId) {
+    const shownMessage = this.#messages.findChatMessage(
+      { type: 'supergroup', chatId },
+      shownMessageId,
+    );
+    if (shownMessage === undefined || getMessageSenderId(shownMessage) === setterId) {
       this.#sharedChats.setReplyInterfaceMessageId(chatId, accountId, undefined);
     }
   }
@@ -1782,7 +1767,7 @@ export class SupergroupMessagingService {
     const messageId = this.#sharedChats.getReplyInterfaceMessageId(chatId, accountId);
     const message = messageId === undefined
       ? undefined
-      : this.#messages.getSupergroupMessage(messageId);
+      : this.#messages.findChatMessage({ type: 'supergroup', chatId }, messageId);
     const replyInterface = message?.replyInterfaceMarkup;
     if (
       message === undefined || replyInterface === undefined ||

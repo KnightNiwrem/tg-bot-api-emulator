@@ -309,8 +309,8 @@ Deno.test("InlineQueryService sends a chosen result as the account's message thr
   }
   const { message } = chosenArticle;
   if (
-    message.kind !== 'private_message' || message.authorRole !== 'account' ||
-    message.conversation.botId !== chatBot.profile.id ||
+    message.kind !== 'private_message' || message.sender !== 'account' ||
+    message.chat.conversation.botId !== chatBot.profile.id ||
     message.viaBot?.botId !== inlineBot.profile.id || message.content.kind !== 'text' ||
     message.content.text !== 'Result 1' || message.inlineKeyboard?.[0]?.[0]?.text !== 'Like'
   ) {
@@ -361,7 +361,7 @@ Deno.test('InlineQueryService sends results to supergroups the inline bot is not
   });
   if (
     !chosen.chosen || chosen.message.kind !== 'supergroup_message' ||
-    chosen.message.author.kind !== 'account' ||
+    chosen.message.sender.kind !== 'account' ||
     chosen.message.viaBot?.botId !== inlineBot.profile.id
   ) {
     throw new Error('Expected the result to be sent to the supergroup through the bot');

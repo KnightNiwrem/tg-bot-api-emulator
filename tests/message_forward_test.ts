@@ -25,8 +25,8 @@ function accountMessage(
   return {
     kind: 'private_message',
     id: 'message',
-    conversation: { accountId: ACCOUNT_ID, botId: BOT_ID },
-    authorRole: 'account',
+    chat: { type: 'private', conversation: { accountId: ACCOUNT_ID, botId: BOT_ID } },
+    sender: 'account',
     sentAtUnixSeconds: 1_700_000_000,
     content: { kind: 'text', text: 'Hello', entities: [] },
     isContentProtected: false,
@@ -62,12 +62,12 @@ Deno.test('createMessageForward keeps the origin of a forward and only URL keybo
   };
   const urlKeyboard = [[{ kind: 'url', text: 'Open', url: 'https://example.com/' }] as const];
   const botForward: PrivateContentMessage = accountMessage({
-    authorRole: 'bot',
+    sender: 'bot',
     forwardInfo: originalForwardInfo,
     inlineKeyboard: urlKeyboard,
   });
   const callbackKeyboardMessage = accountMessage({
-    authorRole: 'bot',
+    sender: 'bot',
     inlineKeyboard: [[{ kind: 'callback', text: 'Go', callbackData: 'go' }], ...urlKeyboard],
   });
 
@@ -94,13 +94,13 @@ Deno.test('createMessageForward keeps the origin of a forward and only URL keybo
 Deno.test('createMessageForward shows only the name of a sender with private forwards', () => {
   const forward = createMessageForward(accountMessage(), accountHasPrivateForwards);
   const forwardOfBotMessage = createMessageForward(
-    accountMessage({ authorRole: 'bot' }),
+    accountMessage({ sender: 'bot' }),
     accountHasPrivateForwards,
   );
   // As TDLib's copy_message_forward_info does, a forward of a forward hides its sender too.
   const forwardOfForward = createMessageForward(
     accountMessage({
-      authorRole: 'bot',
+      sender: 'bot',
       forwardInfo: {
         originalSender: { kind: 'user', userId: ACCOUNT_ID },
         originalSentAtUnixSeconds: 1_600_000_000,
@@ -158,8 +158,8 @@ Deno.test('isForwardable refuses content its sender or chat protects, and servic
   const serviceMessage: SupergroupMessage = {
     kind: 'supergroup_message',
     id: 'service',
-    chatId: -1_000_000_000_001,
-    author: { kind: 'account', accountId: ACCOUNT_ID },
+    chat: { type: 'supergroup', chatId: -1_000_000_000_001 },
+    sender: { kind: 'account', accountId: ACCOUNT_ID },
     sentAtUnixSeconds: 1_700_000_000,
     content: { kind: 'members_joined', memberIds: [BOT_ID] },
     isContentProtected: false,
@@ -169,7 +169,7 @@ Deno.test('isForwardable refuses content its sender or chat protects, and servic
 
   const forwardability = [
     isForwardable(accountMessage(), false),
-    isForwardable(accountMessage({ authorRole: 'bot', isContentProtected: true }), false),
+    isForwardable(accountMessage({ sender: 'bot', isContentProtected: true }), false),
     isForwardable(accountMessage(), true),
     isForwardable(serviceMessage, false),
   ];

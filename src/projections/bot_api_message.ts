@@ -192,7 +192,7 @@ export interface RepliedPrivateMessageForBotProjectionInput
  * Projects a canonical private message as seen by the bot of its conversation, in the field
  * order Telegram uses.
  *
- * The chat is always the account, whoever wrote the message; the sender follows the author.
+ * The chat is always the account, whoever wrote the message; `from` is the message's sender.
  */
 export function projectPrivateMessageForBot(
   { repliedMessage, pinnedMessage, ...observed }: PrivateMessageForBotProjectionInput,
@@ -253,7 +253,7 @@ function projectPrivateMessageHeader(
 ) {
   return {
     message_id: observerMessageId,
-    from: message.authorRole === 'account' ? account : projectBotAsUser(bot),
+    from: message.sender === 'account' ? account : projectBotAsUser(bot),
     chat: projectPrivateChat(account),
     date: message.sentAtUnixSeconds,
   };
@@ -263,8 +263,8 @@ function projectPrivateMessageHeader(
 export interface ObservedSupergroupMessage<Message extends SupergroupMessage> {
   readonly message: Message;
   readonly supergroup: Supergroup;
-  /** The member who wrote the message. */
-  readonly author: BotApiUser;
+  /** The member the message shows as its sender. */
+  readonly sender: BotApiUser;
   /** The message's ID in the supergroup's message box, which every member sees. */
   readonly messageId: number;
   readonly context: MessageProjectionContext;
@@ -360,11 +360,11 @@ export function projectPinnedSupergroupMessage(
 }
 
 function projectSupergroupMessageHeader(
-  { message, supergroup, author, messageId }: ObservedSupergroupMessage<SupergroupMessage>,
+  { message, supergroup, sender, messageId }: ObservedSupergroupMessage<SupergroupMessage>,
 ) {
   return {
     message_id: messageId,
-    from: author,
+    from: sender,
     chat: projectSupergroupChat(supergroup),
     date: message.sentAtUnixSeconds,
   };

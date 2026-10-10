@@ -9,7 +9,6 @@ import {
   type BotMessageReplyMarkup,
   isRequestedPollType,
   type ReplyInterface,
-  type ReplyInterfaceMarkup,
   type ReplyKeyboardButtonSelectionFailureReason,
   type ReplyKeyboardRequestAnswer,
   selectReplyKeyboardButton,
@@ -18,6 +17,7 @@ import type { VirtualAccount } from '../types/virtual_account.ts';
 import type { VirtualBot } from '../types/virtual_bot.ts';
 import type {
   AccountPrivateChatAddress,
+  PrivateChatKey,
   PrivateConversation,
   PrivateConversationKey,
   PrivateConversationRole,
@@ -26,17 +26,15 @@ import {
   canBotEditMessage,
   type CanonicalMessageId,
   type ChatMessage,
-  type ExternalReply,
   type InlineMessageId,
   isPrivateContentMessage,
   type MediaGroupId,
-  type MessageContent,
+  type MessageEdit,
   type MessageForwardInfo,
   type MessagePinnedContent,
+  type NewPrivateMessage,
   type PrivateContentMessage,
   type PrivateMessage,
-  type PrivateMessageContent,
-  type TextQuote,
   type WebAppDataMessageContent,
 } from '../types/virtual_message.ts';
 import type { FormattedTextFixingContext } from '../text_entities/formatted_text.ts';
@@ -542,8 +540,8 @@ type AccountServiceContentResolution =
 
 export interface RecordPrivateServiceMessageInput {
   readonly conversation: PrivateConversationKey;
-  /** The participant who made the change: the one who pinned a message. */
-  readonly authorRole: PrivateConversationRole;
+  /** The participant shown as having made the change: the one who pinned a message. */
+  readonly sender: PrivateConversationRole;
   /**
    * The pin, the one change a caller records; users and chats an account shares, and data a Web
    * App sends, are recorded only through `pressReplyKeyboardButton`, which validates them.
@@ -608,34 +606,16 @@ interface PrivateConversationStore {
 
 interface PrivateMessageStore {
   createMediaGroupId(): MediaGroupId;
-  addPrivateMessage(input: {
-    readonly conversation: PrivateConversationKey;
-    readonly authorRole: PrivateConversationRole;
-    readonly sentAtUnixSeconds: number;
-    readonly content: PrivateMessageContent;
-    readonly replyToMessageId?: CanonicalMessageId;
-    readonly externalReply?: ExternalReply;
-    readonly quote?: TextQuote;
-    readonly mediaGroupId?: MediaGroupId;
-    readonly inlineKeyboard?: InlineKeyboard;
-    readonly replyInterfaceMarkup?: ReplyInterfaceMarkup;
-    readonly viaBotId?: number;
-    readonly forwardInfo?: MessageForwardInfo;
-    readonly isContentProtected?: boolean;
-    readonly isSilent?: boolean;
-    readonly messageEffectId?: string;
-  }): PrivateMessage;
-  getPrivateMessage(messageId: CanonicalMessageId): PrivateMessage | undefined;
+  addMessage(message: NewPrivateMessage): PrivateMessage;
+  findChatMessage(chat: PrivateChatKey, messageId: CanonicalMessageId): PrivateMessage | undefined;
   getMessageByInlineMessageId(inlineMessageId: InlineMessageId): ChatMessage | undefined;
-  editPrivateMessage(messageId: CanonicalMessageId, edit: {
-    readonly content: MessageContent;
-    readonly inlineKeyboard: InlineKeyboard | undefined;
-    readonly contentEditedAtUnixSeconds: number | undefined;
-  }): PrivateMessage;
-  deletePrivateMessage(messageId: CanonicalMessageId): void;
-  getPrivateConversationMessages(
-    conversation: PrivateConversationKey,
-  ): readonly PrivateMessage[];
+  editMessage(
+    chat: PrivateChatKey,
+    messageId: CanonicalMessageId,
+    edit: MessageEdit,
+  ): PrivateMessage;
+  deleteMessage(messageId: CanonicalMessageId): void;
+  getChatMessages(chat: PrivateChatKey): readonly PrivateMessage[];
 }
 
 /** Stores the polls bots send and closes the polls they stop. */
@@ -697,25 +677,12 @@ interface PrivateMessagingServiceDependencies {
 type BotRecipientAccess = 'started_conversation' | 'join_request_contact';
 
 /**
- * A message of an existing private conversation to store, written by one of its participants,
- * whose file the caller stored.
+ * A message of an existing private conversation to store, sent by one of its participants, whose
+ * file the caller stored. The participants name its chat, and it is sent when it is stored.
  */
-interface NewPrivateMessage {
+interface ParticipantMessage extends Omit<NewPrivateMessage, 'chat' | 'sentAtUnixSeconds'> {
   readonly account: VirtualAccount;
   readonly bot: VirtualBot;
-  readonly authorRole: PrivateConversationRole;
-  readonly content: PrivateMessageContent;
-  readonly replyToMessageId?: CanonicalMessageId;
-  readonly externalReply?: ExternalReply;
-  readonly quote?: TextQuote;
-  readonly mediaGroupId?: MediaGroupId;
-  readonly inlineKeyboard?: InlineKeyboard;
-  readonly replyInterfaceMarkup?: ReplyInterfaceMarkup;
-  readonly viaBotId?: number;
-  readonly forwardInfo?: MessageForwardInfo;
-  readonly isContentProtected?: boolean;
-  readonly isSilent?: boolean;
-  readonly messageEffectId?: string;
 }
 
 /**
@@ -846,7 +813,7 @@ export class PrivateMessagingService {
       message: this.#storePrivateMessage({
         account,
         bot,
-        authorRole: 'account',
+        sender: 'account',
         content: storeOutgoingContent(contentNormalization.content, this.#files, this.#polls),
         replyToMessageId: repliedMessage?.id,
       }),
@@ -890,7 +857,7 @@ export class PrivateMessagingService {
       messages: this.#storePrivateAlbum(albumNormalization.contents, {
         account,
         bot,
-        authorRole: 'account',
+        sender: 'account',
         replyToMessageId: repliedMessage?.id,
       }),
     };
@@ -976,7 +943,7 @@ export class PrivateMessagingService {
       message: this.#storePrivateMessage({
         account,
         bot,
-        authorRole: 'bot',
+        sender: 'bot',
         content: storeOutgoingContent(contentNormalization.content, this.#files, this.#polls),
         replyToMessageId: replyResolution.repliedMessage?.id,
         externalReply: input.externalReply?.externalReply,
@@ -1038,7 +1005,7 @@ export class PrivateMessagingService {
       messages: this.#storePrivateAlbum(albumNormalization.contents, {
         account,
         bot,
-        authorRole: 'bot',
+        sender: 'bot',
         replyToMessageId: replyResolution.repliedMessage?.id,
         externalReply: input.externalReply?.externalReply,
         quote: quoteResolution.quote,
@@ -1171,7 +1138,7 @@ export class PrivateMessagingService {
     }
 
     const stoppedPoll = this.#polls.closePoll(pollLookup.poll.id);
-    const message = this.#messages.editPrivateMessage(pollMessage.id, {
+    const message = this.#messages.editMessage(pollMessage.chat, pollMessage.id, {
       content: pollMessage.content,
       inlineKeyboard: input.inlineKeyboard,
       contentEditedAtUnixSeconds: pollMessage.contentEditedAtUnixSeconds,
@@ -1202,7 +1169,7 @@ export class PrivateMessagingService {
     // As in TDLib, only the inline bot edits a message sent through it, and no one edits a forward
     // or a service message.
     if (
-      !isPrivateContentMessage(message) || message.authorRole !== 'account' ||
+      !isPrivateContentMessage(message) || message.sender !== 'account' ||
       message.viaBot !== undefined || message.forwardInfo !== undefined
     ) {
       return { edited: false, reason: 'message_not_editable' };
@@ -1221,7 +1188,7 @@ export class PrivateMessagingService {
       return { edited: false, reason: 'message_not_modified' };
     }
 
-    const editedMessage = this.#messages.editPrivateMessage(message.id, {
+    const editedMessage = this.#messages.editMessage(message.chat, message.id, {
       content,
       inlineKeyboard: message.inlineKeyboard,
       contentEditedAtUnixSeconds: this.#currentUnixTimeSeconds(),
@@ -1297,7 +1264,7 @@ export class PrivateMessagingService {
     if (this.#privateConversations.getReplyInterfaceMessageId(conversation) === message.id) {
       this.#privateConversations.setReplyInterfaceMessageId(conversation, undefined);
     }
-    this.#messages.deletePrivateMessage(message.id);
+    this.#messages.deleteMessage(message.id);
   }
 
   /**
@@ -1334,7 +1301,7 @@ export class PrivateMessagingService {
    * for both participants.
    */
   recordServiceMessage(
-    { conversation, authorRole, content, isSilent }: RecordPrivateServiceMessageInput,
+    { conversation, sender, content, isSilent }: RecordPrivateServiceMessageInput,
   ): PrivateMessage {
     const account = this.#accounts.getById(conversation.accountId);
     const bot = this.#bots.getById(conversation.botId);
@@ -1343,7 +1310,7 @@ export class PrivateMessagingService {
         `Participants of conversation ${JSON.stringify(conversation)} do not exist`,
       );
     }
-    return this.#storePrivateMessage({ account, bot, authorRole, content, isSilent });
+    return this.#storePrivateMessage({ account, bot, sender, content, isSilent });
   }
 
   /**
@@ -1358,17 +1325,9 @@ export class PrivateMessagingService {
       conversation.botId,
       botMessageId,
     );
-    const message = canonicalMessageId === undefined
+    return canonicalMessageId === undefined
       ? undefined
-      : this.#messages.getPrivateMessage(canonicalMessageId);
-    if (
-      message === undefined ||
-      message.conversation.accountId !== conversation.accountId ||
-      message.conversation.botId !== conversation.botId
-    ) {
-      return undefined;
-    }
-    return message;
+      : this.#messages.findChatMessage({ type: 'private', conversation }, canonicalMessageId);
   }
 
   /**
@@ -1549,7 +1508,7 @@ export class PrivateMessagingService {
       message: this.#storePrivateMessage({
         account,
         bot,
-        authorRole: 'account',
+        sender: 'account',
         content: resolution.content,
       }),
     };
@@ -1600,7 +1559,10 @@ export class PrivateMessagingService {
       return { found: false, reason: 'bot_not_found' };
     }
 
-    return { found: true, messages: this.#messages.getPrivateConversationMessages(input) };
+    return {
+      found: true,
+      messages: this.#messages.getChatMessages({ type: 'private', conversation: input }),
+    };
   }
 
   /**
@@ -1701,7 +1663,7 @@ export class PrivateMessagingService {
     if (messageId === undefined) {
       return undefined;
     }
-    const message = this.#messages.getPrivateMessage(messageId);
+    const message = this.#messages.findChatMessage({ type: 'private', conversation }, messageId);
     const replyInterface = message?.replyInterfaceMarkup;
     if (
       message === undefined || replyInterface === undefined ||
@@ -1810,7 +1772,7 @@ export class PrivateMessagingService {
       return { edited: false, reason: editFailure };
     }
 
-    const editedMessage = this.#messages.editPrivateMessage(message.id, {
+    const editedMessage = this.#messages.editMessage(message.chat, message.id, {
       ...edit,
       content: storeOutgoingContent(content, this.#files, this.#polls),
     });
@@ -1867,7 +1829,7 @@ export class PrivateMessagingService {
         content: storeOutgoingContent(content, this.#files, this.#polls),
         account,
         bot,
-        authorRole: 'account',
+        sender: 'account',
       }),
     };
   }
@@ -1880,7 +1842,7 @@ export class PrivateMessagingService {
    */
   #storePrivateAlbum(
     contents: readonly NormalizedOutgoingContent[],
-    message: Omit<NewPrivateMessage, 'content' | 'mediaGroupId'>,
+    message: Omit<ParticipantMessage, 'content' | 'mediaGroupId'>,
   ): readonly PrivateMessage[] {
     const mediaGroupId = formsAlbum(contents.length)
       ? this.#messages.createMediaGroupId()
@@ -1898,54 +1860,21 @@ export class PrivateMessagingService {
    * Stores a message of an existing private conversation, numbers it in both participants' message
    * boxes, applies its change of the account's reply interface, and publishes its creation.
    */
-  #storePrivateMessage(
-    {
-      account,
-      bot,
-      authorRole,
-      content,
-      replyToMessageId,
-      externalReply,
-      quote,
-      mediaGroupId,
-      inlineKeyboard,
-      replyInterfaceMarkup,
-      viaBotId,
-      forwardInfo,
-      isContentProtected,
-      isSilent,
-      messageEffectId,
-    }: NewPrivateMessage,
-  ): PrivateMessage {
+  #storePrivateMessage({ account, bot, ...message }: ParticipantMessage): PrivateMessage {
     const conversation: PrivateConversationKey = {
       accountId: account.profile.id,
       botId: bot.profile.id,
     };
-    const storedMessage = this.#messages.addPrivateMessage({
-      conversation,
-      authorRole,
+    const chat: PrivateChatKey = { type: 'private', conversation };
+    const storedMessage = this.#messages.addMessage({
+      ...message,
+      chat,
       sentAtUnixSeconds: this.#currentUnixTimeSeconds(),
-      content,
-      replyToMessageId,
-      externalReply,
-      quote,
-      mediaGroupId,
-      inlineKeyboard,
-      replyInterfaceMarkup,
-      viaBotId,
-      forwardInfo,
-      isContentProtected,
-      isSilent,
-      messageEffectId,
     });
+    const { replyInterfaceMarkup } = storedMessage;
     // Only the bot's numbering is projected today; the account's keeps the stored model faithful
     // to Telegram.
-    for (
-      const boxOwnerId of privateChatMessagePolicy.getNumberingBoxOwnerIds({
-        type: 'private',
-        conversation,
-      })
-    ) {
+    for (const boxOwnerId of privateChatMessagePolicy.getNumberingBoxOwnerIds(chat)) {
       this.#messageBoxes.assignMessageId(boxOwnerId, storedMessage.id);
     }
     // As TDLib does for a private chat: a keyboard or forced reply replaces what the client shows,
@@ -1958,7 +1887,7 @@ export class PrivateMessagingService {
     }
     // As TDLib's `updatePendingMessage` tells clients, any incoming message removes the bot's
     // draft: a sent, forwarded or copied message, an album's, or a service message of its pin.
-    if (authorRole === 'bot') {
+    if (storedMessage.sender === 'bot') {
       this.#messageDrafts.clearBotDraft(conversation);
     }
     this.#events.publish({ type: 'message_created', message: storedMessage });

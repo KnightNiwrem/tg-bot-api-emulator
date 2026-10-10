@@ -251,8 +251,8 @@ function privateMessage(
   return {
     kind: 'private_message',
     id: crypto.randomUUID(),
-    conversation: { accountId: 10, botId: 20 },
-    authorRole: 'account',
+    chat: { type: 'private', conversation: { accountId: 10, botId: 20 } },
+    sender: 'account',
     sentAtUnixSeconds: 1_700_000_000,
     content,
     ...(mediaGroupId === undefined ? {} : { mediaGroupId }),

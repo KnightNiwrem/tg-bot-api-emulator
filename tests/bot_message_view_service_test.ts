@@ -13,9 +13,12 @@ Deno.test('BotMessageViewService shows an account message in its bot private cha
   const { virtualUsers, messages, messageBoxes, botMessageViews } = createViewFixture();
   const account = createAccount(virtualUsers);
   const bot = createBot(virtualUsers);
-  const message = messages.addPrivateMessage({
-    conversation: { accountId: account.profile.id, botId: bot.profile.id },
-    authorRole: 'account',
+  const message = messages.addMessage({
+    chat: {
+      type: 'private',
+      conversation: { accountId: account.profile.id, botId: bot.profile.id },
+    },
+    sender: 'account',
     sentAtUnixSeconds: 1_700_000_000,
     content: {
       kind: 'text',
@@ -46,9 +49,12 @@ Deno.test('BotMessageViewService shows a bot message, then its edit date and key
   const { virtualUsers, messages, messageBoxes, botMessageViews } = createViewFixture();
   const account = createAccount(virtualUsers);
   const bot = createBot(virtualUsers);
-  const sentMessage = messages.addPrivateMessage({
-    conversation: { accountId: account.profile.id, botId: bot.profile.id },
-    authorRole: 'bot',
+  const sentMessage = messages.addMessage({
+    chat: {
+      type: 'private',
+      conversation: { accountId: account.profile.id, botId: bot.profile.id },
+    },
+    sender: 'bot',
     sentAtUnixSeconds: 1_700_000_000,
     content: { kind: 'text', text: 'Continue?', entities: [] },
   });
@@ -74,7 +80,7 @@ Deno.test('BotMessageViewService shows a bot message, then its edit date and key
     );
   }
 
-  const message = messages.editPrivateMessage(sentMessage.id, {
+  const message = messages.editMessage(sentMessage.chat, sentMessage.id, {
     inlineKeyboard: [[
       { kind: 'callback', text: 'Yes', callbackData: 'yes' },
       { kind: 'url', text: 'Docs', url: 'https://grammy.dev' },
@@ -116,31 +122,31 @@ Deno.test('BotMessageViewService shows the current replied message until it is d
   const account = createAccount(virtualUsers);
   const bot = createBot(virtualUsers);
   const conversation = { accountId: account.profile.id, botId: bot.profile.id };
-  const question = messages.addPrivateMessage({
-    conversation,
-    authorRole: 'bot',
+  const question = messages.addMessage({
+    chat: { type: 'private', conversation },
+    sender: 'bot',
     sentAtUnixSeconds: 1_700_000_000,
     content: { kind: 'text', text: 'Your name?', entities: [] },
   });
   messageBoxes.assignMessageId(bot.profile.id, question.id);
-  const answer = messages.addPrivateMessage({
-    conversation,
-    authorRole: 'account',
+  const answer = messages.addMessage({
+    chat: { type: 'private', conversation },
+    sender: 'account',
     sentAtUnixSeconds: 1_700_000_001,
     replyToMessageId: question.id,
     content: { kind: 'text', text: 'Ada', entities: [] },
   });
   messageBoxes.assignMessageId(bot.profile.id, answer.id);
-  const confirmation = messages.addPrivateMessage({
-    conversation,
-    authorRole: 'bot',
+  const confirmation = messages.addMessage({
+    chat: { type: 'private', conversation },
+    sender: 'bot',
     sentAtUnixSeconds: 1_700_000_002,
     replyToMessageId: answer.id,
     isContentProtected: true,
     content: { kind: 'text', text: 'Saved', entities: [] },
   });
   messageBoxes.assignMessageId(bot.profile.id, confirmation.id);
-  messages.editPrivateMessage(question.id, {
+  messages.editMessage(question.chat, question.id, {
     inlineKeyboard: undefined,
     contentEditedAtUnixSeconds: 1_700_000_003,
     content: { kind: 'text', text: 'Your first name?', entities: [] },
@@ -199,7 +205,7 @@ Deno.test('BotMessageViewService shows the current replied message until it is d
     );
   }
 
-  messages.deletePrivateMessage(question.id);
+  messages.deleteMessage(question.id);
   const answerViewAfterDeletion = botMessageViews.viewPrivateMessageForBot(answer);
   if ('reply_to_message' in answerViewAfterDeletion) {
     throw new Error('Expected a reply to a deleted message to omit reply_to_message');
@@ -210,9 +216,12 @@ Deno.test('BotMessageViewService shows a callback query with its message as the 
   const { virtualUsers, messages, messageBoxes, botMessageViews } = createViewFixture();
   const account = createAccount(virtualUsers);
   const bot = createBot(virtualUsers);
-  const message = messages.addPrivateMessage({
-    conversation: { accountId: account.profile.id, botId: bot.profile.id },
-    authorRole: 'bot',
+  const message = messages.addMessage({
+    chat: {
+      type: 'private',
+      conversation: { accountId: account.profile.id, botId: bot.profile.id },
+    },
+    sender: 'bot',
     sentAtUnixSeconds: 1_700_000_000,
     inlineKeyboard: [[{ kind: 'callback', text: 'Yes', callbackData: 'yes' }]],
     content: { kind: 'text', text: 'Continue?', entities: [] },
@@ -221,7 +230,7 @@ Deno.test('BotMessageViewService shows a callback query with its message as the 
 
   const view = botMessageViews.viewCallbackQueryForBot({
     id: '7',
-    ...message.conversation,
+    ...message.chat.conversation,
     messageId: message.id,
     chatInstance: '-42',
     callbackData: 'yes',
@@ -259,15 +268,21 @@ Deno.test('BotMessageViewService shows photos and documents in Telegram order wi
     width: 640,
     height: 480,
   });
-  const documentMessage = messages.addPrivateMessage({
-    conversation: { accountId: account.profile.id, botId: bot.profile.id },
-    authorRole: 'account',
+  const documentMessage = messages.addMessage({
+    chat: {
+      type: 'private',
+      conversation: { accountId: account.profile.id, botId: bot.profile.id },
+    },
+    sender: 'account',
     sentAtUnixSeconds: 1_700_000_000,
     content: { kind: 'document', fileId: document.id, caption: { text: '', entities: [] } },
   });
-  const photoMessage = messages.addPrivateMessage({
-    conversation: { accountId: account.profile.id, botId: bot.profile.id },
-    authorRole: 'bot',
+  const photoMessage = messages.addMessage({
+    chat: {
+      type: 'private',
+      conversation: { accountId: account.profile.id, botId: bot.profile.id },
+    },
+    sender: 'bot',
     sentAtUnixSeconds: 1_700_000_001,
     content: {
       kind: 'photo',
@@ -330,9 +345,12 @@ Deno.test('BotMessageViewService rejects a message missing from the bot message 
   const { virtualUsers, messages, messageBoxes, botMessageViews } = createViewFixture();
   const account = createAccount(virtualUsers);
   const bot = createBot(virtualUsers);
-  const message = messages.addPrivateMessage({
-    conversation: { accountId: account.profile.id, botId: bot.profile.id },
-    authorRole: 'account',
+  const message = messages.addMessage({
+    chat: {
+      type: 'private',
+      conversation: { accountId: account.profile.id, botId: bot.profile.id },
+    },
+    sender: 'account',
     sentAtUnixSeconds: 1_700_000_000,
     content: { kind: 'text', text: 'Hello', entities: [] },
   });

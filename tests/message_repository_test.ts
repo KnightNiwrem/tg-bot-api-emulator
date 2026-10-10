@@ -1,25 +1,27 @@
 import { MessageRepository } from '../src/repositories/message.ts';
+import type { ChatKey, PrivateChatKey, SupergroupChatKey } from '../src/types/virtual_chat.ts';
+import { type ChatMessage, getContentText } from '../src/types/virtual_message.ts';
 
 Deno.test('MessageRepository stores ordered private conversation history', () => {
   const messages = new MessageRepository();
   const firstConversation = { accountId: 1, botId: 2 };
   const secondConversation = { accountId: 1, botId: 3 };
 
-  const firstMessage = messages.addPrivateMessage({
-    conversation: firstConversation,
-    authorRole: 'account',
+  const firstMessage = messages.addMessage({
+    chat: { type: 'private', conversation: firstConversation },
+    sender: 'account',
     sentAtUnixSeconds: 1_700_000_000,
     content: { kind: 'text', text: 'first', entities: [] },
   });
-  const unrelatedMessage = messages.addPrivateMessage({
-    conversation: secondConversation,
-    authorRole: 'account',
+  const unrelatedMessage = messages.addMessage({
+    chat: { type: 'private', conversation: secondConversation },
+    sender: 'account',
     sentAtUnixSeconds: 1_700_000_001,
     content: { kind: 'text', text: 'unrelated', entities: [] },
   });
-  const secondMessage = messages.addPrivateMessage({
-    conversation: firstConversation,
-    authorRole: 'account',
+  const secondMessage = messages.addMessage({
+    chat: { type: 'private', conversation: firstConversation },
+    sender: 'account',
     sentAtUnixSeconds: 1_700_000_002,
     content: { kind: 'text', text: 'second', entities: [] },
   });
@@ -29,12 +31,15 @@ Deno.test('MessageRepository stores ordered private conversation history', () =>
   ) {
     throw new Error('Expected each canonical message to have a distinct identity');
   }
-  const history = messages.getPrivateConversationMessages(firstConversation);
+  const history = messages.getChatMessages({ type: 'private', conversation: firstConversation });
   if (history.length !== 2 || history[0] !== firstMessage || history[1] !== secondMessage) {
     throw new Error('Expected history to contain only the conversation messages in order');
   }
 
-  const repeatedHistoryLookup = messages.getPrivateConversationMessages(firstConversation);
+  const repeatedHistoryLookup = messages.getChatMessages({
+    type: 'private',
+    conversation: firstConversation,
+  });
   if (history === repeatedHistoryLookup) {
     throw new Error('Expected each history lookup to return a separate array');
   }
@@ -44,16 +49,16 @@ Deno.test('MessageRepository edits a message in place without changing its ident
   const messages = new MessageRepository();
   const conversation = { accountId: 1, botId: 2 };
   const inlineKeyboard = [[{ kind: 'callback' as const, text: 'Yes', callbackData: 'yes' }]];
-  const firstMessage = messages.addPrivateMessage({
-    conversation,
-    authorRole: 'bot',
+  const firstMessage = messages.addMessage({
+    chat: { type: 'private', conversation },
+    sender: 'bot',
     sentAtUnixSeconds: 1_700_000_000,
     inlineKeyboard,
     content: { kind: 'text', text: 'Continue?', entities: [] },
   });
-  const secondMessage = messages.addPrivateMessage({
-    conversation,
-    authorRole: 'account',
+  const secondMessage = messages.addMessage({
+    chat: { type: 'private', conversation },
+    sender: 'account',
     sentAtUnixSeconds: 1_700_000_001,
     content: { kind: 'text', text: 'Later', entities: [] },
   });
@@ -65,7 +70,7 @@ Deno.test('MessageRepository edits a message in place without changing its ident
     throw new Error('Expected a stored copy of the inline keyboard only where one was attached');
   }
 
-  const editedMessage = messages.editPrivateMessage(firstMessage.id, {
+  const editedMessage = messages.editMessage(firstMessage.chat, firstMessage.id, {
     inlineKeyboard: undefined,
     contentEditedAtUnixSeconds: 1_700_000_005,
     content: {
@@ -77,7 +82,7 @@ Deno.test('MessageRepository edits a message in place without changing its ident
   if (
     editedMessage.id !== firstMessage.id ||
     editedMessage.sentAtUnixSeconds !== 1_700_000_000 ||
-    editedMessage.authorRole !== 'bot' ||
+    editedMessage.sender !== 'bot' ||
     editedMessage.content.kind !== 'text' ||
     editedMessage.content.text !== 'Continued /start' ||
     editedMessage.content.entities.length !== 1 ||
@@ -86,14 +91,14 @@ Deno.test('MessageRepository edits a message in place without changing its ident
   ) {
     throw new Error('Expected the edit to replace only the editable content');
   }
-  if (messages.getPrivateMessage(firstMessage.id) !== editedMessage) {
+  if (messages.findChatMessage(firstMessage.chat, firstMessage.id) !== editedMessage) {
     throw new Error('Expected lookups to return the edited message');
   }
-  const history = messages.getPrivateConversationMessages(conversation);
+  const history = messages.getChatMessages({ type: 'private', conversation });
   if (history[0] !== editedMessage || history[1] !== secondMessage) {
     throw new Error('Expected history to keep the edited message in its original position');
   }
-  if (messages.getPrivateMessage('unknown') !== undefined) {
+  if (messages.findChatMessage({ type: 'private', conversation }, 'unknown') !== undefined) {
     throw new Error('Expected an unknown canonical message ID to find nothing');
   }
 });
@@ -101,9 +106,9 @@ Deno.test('MessageRepository edits a message in place without changing its ident
 Deno.test('MessageRepository keeps what an edit cannot change', () => {
   const messages = new MessageRepository();
   const conversation = { accountId: 1, botId: 2 };
-  const question = messages.addPrivateMessage({
-    conversation,
-    authorRole: 'account',
+  const question = messages.addMessage({
+    chat: { type: 'private', conversation },
+    sender: 'account',
     sentAtUnixSeconds: 1_700_000_000,
     content: { kind: 'text', text: 'Colors?', entities: [] },
   });
@@ -115,9 +120,9 @@ Deno.test('MessageRepository keeps what an edit cannot change', () => {
     isOneTime: false,
     isSelective: false,
   };
-  const answer = messages.addPrivateMessage({
-    conversation,
-    authorRole: 'bot',
+  const answer = messages.addMessage({
+    chat: { type: 'private', conversation },
+    sender: 'bot',
     sentAtUnixSeconds: 1_700_000_001,
     replyToMessageId: question.id,
     replyInterfaceMarkup,
@@ -133,7 +138,7 @@ Deno.test('MessageRepository keeps what an edit cannot change', () => {
     throw new Error('Expected a stored copy of the reply interface markup only where one was sent');
   }
 
-  const editedAnswer = messages.editPrivateMessage(answer.id, {
+  const editedAnswer = messages.editMessage(answer.chat, answer.id, {
     inlineKeyboard: undefined,
     contentEditedAtUnixSeconds: 1_700_000_005,
     content: { kind: 'text', text: 'Pick a color', entities: [] },
@@ -153,18 +158,18 @@ Deno.test('MessageRepository keeps fields that only some messages carry through 
     originalSender: { kind: 'hidden_user' as const, name: 'Ann' },
     originalSentAtUnixSeconds: 1_600_000_000,
   };
-  const privateMessage = messages.addPrivateMessage({
-    conversation: { accountId: 1, botId: 2 },
-    authorRole: 'account',
+  const privateMessage = messages.addMessage({
+    chat: { type: 'private', conversation: { accountId: 1, botId: 2 } },
+    sender: 'account',
     sentAtUnixSeconds: 1_700_000_000,
     content: { kind: 'text', text: 'Forwarded', entities: [] },
     forwardInfo,
     isSilent: true,
     messageEffectId: '5104841245755180586',
   });
-  const supergroupMessage = messages.addSupergroupMessage({
-    chatId: -1_000_000_000_001,
-    author: { kind: 'account', accountId: 1 },
+  const supergroupMessage = messages.addMessage({
+    chat: { type: 'supergroup', chatId: -1_000_000_000_001 },
+    sender: { kind: 'account', accountId: 1 },
     sentAtUnixSeconds: 1_700_000_000,
     content: { kind: 'text', text: 'Quoted', entities: [] },
     externalReply: { origin: forwardInfo },
@@ -177,8 +182,12 @@ Deno.test('MessageRepository keeps fields that only some messages carry through 
     contentEditedAtUnixSeconds: 1_700_000_005,
   };
 
-  const editedPrivateMessage = messages.editPrivateMessage(privateMessage.id, edit);
-  const editedSupergroupMessage = messages.editSupergroupMessage(supergroupMessage.id, edit);
+  const editedPrivateMessage = messages.editMessage(privateMessage.chat, privateMessage.id, edit);
+  const editedSupergroupMessage = messages.editMessage(
+    supergroupMessage.chat,
+    supergroupMessage.id,
+    edit,
+  );
   const isSameValue = (left: unknown, right: unknown) =>
     left !== undefined && JSON.stringify(left) === JSON.stringify(right);
   if (
@@ -196,14 +205,14 @@ Deno.test('MessageRepository keeps fields that only some messages carry through 
 Deno.test('MessageRepository drops the inline keyboard and edit time that an edit omits', () => {
   const messages = new MessageRepository();
   const inlineKeyboard = [[{ kind: 'callback' as const, text: 'Yes', callbackData: 'yes' }]];
-  const message = messages.addSupergroupMessage({
-    chatId: -1_000_000_000_001,
-    author: { kind: 'bot', botId: 2 },
+  const message = messages.addMessage({
+    chat: { type: 'supergroup', chatId: -1_000_000_000_001 },
+    sender: { kind: 'bot', botId: 2 },
     sentAtUnixSeconds: 1_700_000_000,
     content: { kind: 'text', text: 'Continue?', entities: [] },
     inlineKeyboard,
   });
-  const editedMessage = messages.editSupergroupMessage(message.id, {
+  const editedMessage = messages.editMessage(message.chat, message.id, {
     content: { kind: 'text', text: 'Continue now?', entities: [] },
     inlineKeyboard,
     contentEditedAtUnixSeconds: 1_700_000_005,
@@ -215,7 +224,7 @@ Deno.test('MessageRepository drops the inline keyboard and edit time that an edi
     throw new Error('Expected the edit to write the inline keyboard and edit time it carries');
   }
 
-  const reeditedMessage = messages.editSupergroupMessage(message.id, {
+  const reeditedMessage = messages.editMessage(message.chat, message.id, {
     content: { kind: 'text', text: 'Done', entities: [] },
     inlineKeyboard: undefined,
     contentEditedAtUnixSeconds: undefined,
@@ -239,16 +248,16 @@ Deno.test('MessageRepository issues distinct album identifiers that messages kee
 
   const [mediaGroupId] = mediaGroupIds;
   const photo = { kind: 'photo' as const, fileId: 'file', hasSpoiler: false };
-  const privateMember = messages.addPrivateMessage({
-    conversation: { accountId: 1, botId: 2 },
-    authorRole: 'bot',
+  const privateMember = messages.addMessage({
+    chat: { type: 'private', conversation: { accountId: 1, botId: 2 } },
+    sender: 'bot',
     sentAtUnixSeconds: 1_700_000_000,
     mediaGroupId,
     content: { ...photo, caption: { text: '', entities: [] }, showsCaptionAboveMedia: false },
   });
-  const supergroupMember = messages.addSupergroupMessage({
-    chatId: -1_000_000_000_001,
-    author: { kind: 'bot', botId: 2 },
+  const supergroupMember = messages.addMessage({
+    chat: { type: 'supergroup', chatId: -1_000_000_000_001 },
+    sender: { kind: 'bot', botId: 2 },
     sentAtUnixSeconds: 1_700_000_000,
     mediaGroupId,
     content: { ...photo, caption: { text: '', entities: [] }, showsCaptionAboveMedia: false },
@@ -263,8 +272,8 @@ Deno.test('MessageRepository issues distinct album identifiers that messages kee
     },
   };
   const editedMembers = [
-    messages.editPrivateMessage(privateMember.id, edit),
-    messages.editSupergroupMessage(supergroupMember.id, edit),
+    messages.editMessage(privateMember.chat, privateMember.id, edit),
+    messages.editMessage(supergroupMember.chat, supergroupMember.id, edit),
   ];
   if (
     privateMember.mediaGroupId !== mediaGroupId ||
@@ -279,9 +288,9 @@ Deno.test('MessageRepository deletes a message from the store and its conversati
   const messages = new MessageRepository();
   const conversation = { accountId: 1, botId: 2 };
   const addMessage = (text: string) =>
-    messages.addPrivateMessage({
-      conversation,
-      authorRole: 'account',
+    messages.addMessage({
+      chat: { type: 'private', conversation },
+      sender: 'account',
       sentAtUnixSeconds: 1_700_000_000,
       content: { kind: 'text', text, entities: [] },
     });
@@ -289,18 +298,18 @@ Deno.test('MessageRepository deletes a message from the store and its conversati
   const deletedMessage = addMessage('deleted');
   const lastMessage = addMessage('last');
 
-  messages.deletePrivateMessage(deletedMessage.id);
-  if (messages.getPrivateMessage(deletedMessage.id) !== undefined) {
+  messages.deleteMessage(deletedMessage.id);
+  if (messages.findChatMessage(deletedMessage.chat, deletedMessage.id) !== undefined) {
     throw new Error('Expected the deleted message not to be retrievable');
   }
-  const history = messages.getPrivateConversationMessages(conversation);
+  const history = messages.getChatMessages({ type: 'private', conversation });
   if (history.length !== 2 || history[0] !== firstMessage || history[1] !== lastMessage) {
     throw new Error('Expected history to keep the other messages in order');
   }
 
   let secondDeletionError: unknown;
   try {
-    messages.deletePrivateMessage(deletedMessage.id);
+    messages.deleteMessage(deletedMessage.id);
   } catch (error) {
     secondDeletionError = error;
   }
@@ -312,9 +321,9 @@ Deno.test('MessageRepository deletes a message from the store and its conversati
 Deno.test('MessageRepository stores, edits, and deletes supergroup messages by chat', () => {
   const messages = new MessageRepository();
   const add = (chatId: number, text: string) =>
-    messages.addSupergroupMessage({
-      chatId,
-      author: { kind: 'account', accountId: 1 },
+    messages.addMessage({
+      chat: { type: 'supergroup', chatId },
+      sender: { kind: 'account', accountId: 1 },
       sentAtUnixSeconds: 1_700_000_000,
       content: { kind: 'text', text, entities: [] },
     });
@@ -322,19 +331,25 @@ Deno.test('MessageRepository stores, edits, and deletes supergroup messages by c
   add(-1_000_000_000_002, 'unrelated');
   const second = add(-1_000_000_000_001, 'second');
 
-  const edited = messages.editSupergroupMessage(first.id, {
+  const edited = messages.editMessage(first.chat, first.id, {
     inlineKeyboard: undefined,
     contentEditedAtUnixSeconds: 1_700_000_001,
     content: { kind: 'text', text: 'edited', entities: [] },
   });
-  messages.deleteSupergroupMessage(second.id);
+  messages.deleteMessage(second.id);
 
-  const history = messages.getSupergroupMessages(-1_000_000_000_001);
+  const history = messages.getChatMessages({ type: 'supergroup', chatId: -1_000_000_000_001 });
   if (
     history.length !== 1 || history[0] !== edited || edited.id !== first.id ||
-    edited.contentEditedAtUnixSeconds !== 1_700_000_001 || !first.author ||
-    messages.getSupergroupMessage(second.id) !== undefined ||
-    messages.getPrivateMessage(first.id) !== undefined
+    edited.contentEditedAtUnixSeconds !== 1_700_000_001 || !first.sender ||
+    messages.findChatMessage(second.chat, second.id) !== undefined ||
+    messages.findChatMessage({ type: 'supergroup', chatId: -1_000_000_000_002 }, first.id) !==
+      undefined ||
+    messages.findChatMessage(
+        { type: 'private', conversation: { accountId: 1, botId: 2 } },
+        first.id,
+      ) !==
+      undefined
   ) {
     throw new Error('Expected the supergroup history to hold only its edited remaining message');
   }
@@ -342,23 +357,23 @@ Deno.test('MessageRepository stores, edits, and deletes supergroup messages by c
 
 Deno.test('MessageRepository finds messages sent through inline bots until they are deleted', () => {
   const messages = new MessageRepository();
-  const privateMessage = messages.addPrivateMessage({
-    conversation: { accountId: 1, botId: 2 },
-    authorRole: 'account',
+  const privateMessage = messages.addMessage({
+    chat: { type: 'private', conversation: { accountId: 1, botId: 2 } },
+    sender: 'account',
     sentAtUnixSeconds: 1_700_000_000,
     content: { kind: 'text', text: 'Cats', entities: [] },
     viaBotId: 3,
   });
-  const supergroupMessage = messages.addSupergroupMessage({
-    chatId: -1_000_000_000_001,
-    author: { kind: 'account', accountId: 1 },
+  const supergroupMessage = messages.addMessage({
+    chat: { type: 'supergroup', chatId: -1_000_000_000_001 },
+    sender: { kind: 'account', accountId: 1 },
     sentAtUnixSeconds: 1_700_000_000,
     content: { kind: 'text', text: 'Dogs', entities: [] },
     viaBotId: 3,
   });
-  const ownMessage = messages.addPrivateMessage({
-    conversation: { accountId: 1, botId: 2 },
-    authorRole: 'account',
+  const ownMessage = messages.addMessage({
+    chat: { type: 'private', conversation: { accountId: 1, botId: 2 } },
+    sender: 'account',
     sentAtUnixSeconds: 1_700_000_000,
     content: { kind: 'text', text: 'Hello', entities: [] },
   });
@@ -373,7 +388,7 @@ Deno.test('MessageRepository finds messages sent through inline bots until they 
     throw new Error('Expected distinct inline message identifiers only for messages through a bot');
   }
 
-  const editedMessage = messages.editPrivateMessage(privateMessage.id, {
+  const editedMessage = messages.editMessage(privateMessage.chat, privateMessage.id, {
     content: { kind: 'text', text: 'More cats', entities: [] },
     inlineKeyboard: undefined,
     contentEditedAtUnixSeconds: 1_700_000_001,
@@ -386,12 +401,221 @@ Deno.test('MessageRepository finds messages sent through inline bots until they 
     throw new Error('Expected edits to keep the inline message identifier');
   }
 
-  messages.deletePrivateMessage(privateMessage.id);
-  messages.deleteSupergroupMessage(supergroupMessage.id);
+  messages.deleteMessage(privateMessage.id);
+  messages.deleteMessage(supergroupMessage.id);
   if (
     messages.getMessageByInlineMessageId(privateViaBot.inlineMessageId) !== undefined ||
     messages.getMessageByInlineMessageId(supergroupViaBot.inlineMessageId) !== undefined
   ) {
     throw new Error('Expected deleted messages to be found by no inline message identifier');
   }
+});
+
+const FIRST_PRIVATE_CHAT: PrivateChatKey = {
+  type: 'private',
+  conversation: { accountId: 1, botId: 2 },
+};
+/** Another private chat of the account of `FIRST_PRIVATE_CHAT`. */
+const SECOND_PRIVATE_CHAT: PrivateChatKey = {
+  type: 'private',
+  conversation: { accountId: 1, botId: 3 },
+};
+/** Another private chat of the bot of `FIRST_PRIVATE_CHAT`. */
+const OTHER_ACCOUNT_PRIVATE_CHAT: PrivateChatKey = {
+  type: 'private',
+  conversation: { accountId: 4, botId: 2 },
+};
+const FIRST_SUPERGROUP: SupergroupChatKey = { type: 'supergroup', chatId: -1_000_000_000_001 };
+const SECOND_SUPERGROUP: SupergroupChatKey = { type: 'supergroup', chatId: -1_000_000_000_002 };
+const CHATS: readonly ChatKey[] = [
+  FIRST_PRIVATE_CHAT,
+  SECOND_PRIVATE_CHAT,
+  OTHER_ACCOUNT_PRIVATE_CHAT,
+  FIRST_SUPERGROUP,
+  SECOND_SUPERGROUP,
+];
+
+/** Stores a text message of the account in a private chat, or of account 1 in a supergroup. */
+function addText(messages: MessageRepository, chat: ChatKey, text: string): ChatMessage {
+  const content = { kind: 'text', text, entities: [] } as const;
+  return chat.type === 'private'
+    ? messages.addMessage({ chat, sender: 'account', sentAtUnixSeconds: 1_700_000_000, content })
+    : messages.addMessage({
+      chat,
+      sender: { kind: 'account', accountId: 1 },
+      sentAtUnixSeconds: 1_700_000_000,
+      content,
+    });
+}
+
+function getTexts(messages: readonly ChatMessage[]): readonly string[] {
+  return messages.map((message) => getContentText(message.content).text);
+}
+
+function assertEquals(actual: unknown, expected: unknown): void {
+  if (JSON.stringify(actual) !== JSON.stringify(expected)) {
+    throw new Error(`Expected ${JSON.stringify(expected)}, received ${JSON.stringify(actual)}`);
+  }
+}
+
+Deno.test('MessageRepository keeps one log per chat, whatever the chat type', () => {
+  const messages = new MessageRepository();
+  const stored = [
+    addText(messages, FIRST_PRIVATE_CHAT, 'private 1a'),
+    addText(messages, FIRST_SUPERGROUP, 'supergroup 1a'),
+    addText(messages, SECOND_PRIVATE_CHAT, 'private 2a'),
+    addText(messages, FIRST_PRIVATE_CHAT, 'private 1b'),
+    addText(messages, OTHER_ACCOUNT_PRIVATE_CHAT, 'other account a'),
+    addText(messages, SECOND_SUPERGROUP, 'supergroup 2a'),
+    addText(messages, FIRST_SUPERGROUP, 'supergroup 1b'),
+  ];
+
+  assertEquals(CHATS.map((chat) => getTexts(messages.getChatMessages(chat))), [
+    ['private 1a', 'private 1b'],
+    ['private 2a'],
+    ['other account a'],
+    ['supergroup 1a', 'supergroup 1b'],
+    ['supergroup 2a'],
+  ]);
+  assertEquals(
+    stored.map((message) => [message.kind, message.chat.type]),
+    [
+      ['private_message', 'private'],
+      ['supergroup_message', 'supergroup'],
+      ['private_message', 'private'],
+      ['private_message', 'private'],
+      ['private_message', 'private'],
+      ['supergroup_message', 'supergroup'],
+      ['supergroup_message', 'supergroup'],
+    ],
+  );
+  // Each message is found through its own chat's key only: not through another chat of either
+  // participant, nor through a chat of the other type.
+  assertEquals(
+    stored.map((message) =>
+      CHATS.map((chat) => messages.findChatMessage(chat, message.id) === message)
+    ),
+    [
+      [true, false, false, false, false],
+      [false, false, false, true, false],
+      [false, true, false, false, false],
+      [true, false, false, false, false],
+      [false, false, true, false, false],
+      [false, false, false, false, true],
+      [false, false, false, true, false],
+    ],
+  );
+});
+
+Deno.test("MessageRepository deletes and edits a message only through its own chat's log", () => {
+  const messages = new MessageRepository();
+  const [privateMessage, supergroupMessage] = [FIRST_PRIVATE_CHAT, FIRST_SUPERGROUP].map(
+    (chat) => {
+      const deleted = addText(messages, chat, 'deleted');
+      addText(messages, chat, 'kept');
+      return deleted;
+    },
+  );
+  const otherChatMessages = [SECOND_PRIVATE_CHAT, SECOND_SUPERGROUP].map((chat) =>
+    addText(messages, chat, 'other chat')
+  );
+  const edit = {
+    content: { kind: 'text', text: 'edited', entities: [] },
+    inlineKeyboard: undefined,
+    contentEditedAtUnixSeconds: 1_700_000_005,
+  } as const;
+  const refusals = [
+    () => messages.editMessage(SECOND_PRIVATE_CHAT, privateMessage.id, edit),
+    () => messages.editMessage(SECOND_SUPERGROUP, supergroupMessage.id, edit),
+    () => messages.editMessage(FIRST_SUPERGROUP, privateMessage.id, edit),
+    () => messages.setMessageReactions(SECOND_SUPERGROUP, supergroupMessage.id, []),
+  ].map((change) => {
+    try {
+      change();
+      return 'changed';
+    } catch (error) {
+      return error instanceof Error ? 'refused' : error;
+    }
+  });
+  assertEquals(refusals, ['refused', 'refused', 'refused', 'refused']);
+  assertEquals(
+    [privateMessage, supergroupMessage].map((message) =>
+      messages.findChatMessage(message.chat, message.id) === message
+    ),
+    [true, true],
+  );
+
+  messages.deleteMessage(privateMessage.id);
+  messages.deleteMessage(supergroupMessage.id);
+  assertEquals(CHATS.map((chat) => getTexts(messages.getChatMessages(chat))), [
+    ['kept'],
+    ['other chat'],
+    [],
+    ['kept'],
+    ['other chat'],
+  ]);
+  assertEquals(
+    [privateMessage, supergroupMessage, ...otherChatMessages].map((message) =>
+      messages.findChatMessage(message.chat, message.id) !== undefined
+    ),
+    [false, false, true, true],
+  );
+});
+
+Deno.test('MessageRepository keeps the fields only some chat types carry through other changes', () => {
+  const messages = new MessageRepository();
+  const content = { kind: 'text', text: 'Hello', entities: [] } as const;
+  const privateMessage = messages.addMessage({
+    chat: FIRST_PRIVATE_CHAT,
+    sender: 'bot',
+    sentAtUnixSeconds: 1_700_000_000,
+    content,
+    messageEffectId: '5104841245755180586',
+  });
+  const supergroupMessage = messages.addMessage({
+    chat: FIRST_SUPERGROUP,
+    sender: { kind: 'bot', botId: 2 },
+    sentAtUnixSeconds: 1_700_000_000,
+    content,
+  });
+  const reactions = [{ userId: 1, emojis: ['👍' as const] }];
+  const reactedMessage = messages.setMessageReactions(
+    FIRST_SUPERGROUP,
+    supergroupMessage.id,
+    reactions,
+  );
+  const edit = { content, inlineKeyboard: undefined, contentEditedAtUnixSeconds: 1_700_000_005 };
+  const editedPrivateMessage = messages.editMessage(FIRST_PRIVATE_CHAT, privateMessage.id, edit);
+  const editedSupergroupMessage = messages.editMessage(
+    FIRST_SUPERGROUP,
+    supergroupMessage.id,
+    edit,
+  );
+  const pinnedPrivateMessage = messages.setMessagePinned(privateMessage.id, true);
+  const pinnedSupergroupMessage = messages.setMessagePinned(supergroupMessage.id, true);
+  const unreactedMessage = messages.setMessageReactions(
+    FIRST_SUPERGROUP,
+    supergroupMessage.id,
+    [],
+  );
+
+  assertEquals(
+    [
+      reactedMessage.reactions,
+      editedSupergroupMessage.reactions,
+      pinnedSupergroupMessage.kind === 'supergroup_message' && pinnedSupergroupMessage.reactions,
+      'reactions' in unreactedMessage,
+      unreactedMessage.isPinned,
+      reactedMessage.reactions === reactions,
+    ],
+    [reactions, reactions, reactions, false, true, false],
+  );
+  assertEquals(
+    [
+      editedPrivateMessage.messageEffectId,
+      pinnedPrivateMessage.kind === 'private_message' && pinnedPrivateMessage.messageEffectId,
+      'messageEffectId' in supergroupMessage,
+    ],
+    ['5104841245755180586', '5104841245755180586', false],
+  );
 });

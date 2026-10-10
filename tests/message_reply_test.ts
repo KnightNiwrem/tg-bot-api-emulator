@@ -16,8 +16,8 @@ Deno.test('createExternalReply shows a supergroup message by its hidden origin a
   const message: SupergroupContentMessage = {
     kind: 'supergroup_message',
     id: 'message',
-    chatId: SUPERGROUP_ID,
-    author: { kind: 'account', accountId: ACCOUNT_ID },
+    chat: { type: 'supergroup', chatId: SUPERGROUP_ID },
+    sender: { kind: 'account', accountId: ACCOUNT_ID },
     sentAtUnixSeconds: 1_700_000_000,
     content: { kind: 'text', text: 'Ship it', entities: [] },
     isContentProtected: false,
@@ -50,8 +50,8 @@ Deno.test('createExternalReply keeps private media without its caption', () => {
   const message: PrivateContentMessage = {
     kind: 'private_message',
     id: 'message',
-    conversation: { accountId: ACCOUNT_ID, botId: BOT_ID },
-    authorRole: 'bot',
+    chat: { type: 'private', conversation: { accountId: ACCOUNT_ID, botId: BOT_ID } },
+    sender: 'bot',
     sentAtUnixSeconds: 1_700_000_000,
     content: {
       kind: 'photo',

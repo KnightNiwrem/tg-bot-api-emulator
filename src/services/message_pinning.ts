@@ -9,8 +9,11 @@ import {
 import type { VirtualAccount } from '../types/virtual_account.ts';
 import type { VirtualBot } from '../types/virtual_bot.ts';
 import type {
+  ChatActor,
   ChatAddress,
   ChatKey,
+  ChatKeyOfType,
+  ChatType,
   PrivateChatKey,
   PrivateConversationKey,
   PrivateConversationRole,
@@ -20,20 +23,16 @@ import type {
 import {
   type CanonicalMessageId,
   type ChatMessage,
+  type ChatMessageOfType,
   isContentMessage,
   type MessagePinnedContent,
   type PrivateMessage,
   type SupergroupMessage,
-  type SupergroupMessageAuthor,
+  type SupergroupMessageSender,
 } from '../types/virtual_message.ts';
 
-/** The account or bot that pins or unpins a message of a chat it takes part in. */
-export type MessagePinner =
-  | { readonly kind: 'account'; readonly accountId: number }
-  | { readonly kind: 'bot'; readonly botId: number };
-
 export interface PinMessageInput {
-  readonly pinner: MessagePinner;
+  readonly pinner: ChatActor;
   /** The chat as the pinner addresses it. */
   readonly chat: ChatAddress;
   /**
@@ -49,7 +48,7 @@ export interface PinMessageInput {
 }
 
 export interface UnpinMessageInput {
-  readonly pinner: MessagePinner;
+  readonly pinner: ChatActor;
   readonly chat: ChatAddress;
   /**
    * The message's ID, as `PinMessageInput` describes it; omitted to unpin the newest pinned
@@ -59,7 +58,7 @@ export interface UnpinMessageInput {
 }
 
 export interface UnpinAllMessagesInput {
-  readonly pinner: MessagePinner;
+  readonly pinner: ChatActor;
   readonly chat: ChatAddress;
 }
 
@@ -155,7 +154,7 @@ interface PrivateChatMessages {
   ): PrivateMessage | undefined;
   recordServiceMessage(input: {
     readonly conversation: PrivateConversationKey;
-    readonly authorRole: PrivateConversationRole;
+    readonly sender: PrivateConversationRole;
     readonly content: MessagePinnedContent;
     readonly isSilent: boolean;
   }): PrivateMessage;
@@ -165,7 +164,7 @@ interface SupergroupChatMessages {
   getMessageByChatMessageId(chatId: number, messageId: number): SupergroupMessage | undefined;
   recordServiceMessage(input: {
     readonly chatId: number;
-    readonly author: SupergroupMessageAuthor;
+    readonly sender: SupergroupMessageSender;
     readonly content: MessagePinnedContent;
     readonly changedAtUnixSeconds: number;
     readonly isSilent: boolean;
@@ -173,8 +172,9 @@ interface SupergroupChatMessages {
 }
 
 interface PinnedMessageStore {
-  getPrivateConversationMessages(conversation: PrivateConversationKey): readonly PrivateMessage[];
-  getSupergroupMessages(chatId: number): readonly SupergroupMessage[];
+  getChatMessages<Type extends ChatType>(
+    chat: ChatKeyOfType<Type>,
+  ): readonly ChatMessageOfType<Type>[];
   setMessagePinned(messageId: CanonicalMessageId, isPinned: boolean): ChatMessage;
 }
 
@@ -359,7 +359,7 @@ export class MessagePinningService {
    * chat with the bot, and an account as a participant of the chat.
    */
   #reachChat(
-    pinner: MessagePinner,
+    pinner: ChatActor,
     chat: ChatAddress,
   ):
     | { readonly reached: true; readonly chat: ReachedPinningChat }
@@ -379,7 +379,7 @@ export class MessagePinningService {
     }
   }
 
-  #pinnerExists(pinner: MessagePinner): boolean {
+  #pinnerExists(pinner: ChatActor): boolean {
     return pinner.kind === 'account'
       ? this.#accounts.getById(pinner.accountId) !== undefined
       : this.#bots.getById(pinner.botId) !== undefined;
@@ -391,7 +391,7 @@ export class MessagePinningService {
    * participant may then write there.
    */
   #reachChatToWrite(
-    pinner: MessagePinner,
+    pinner: ChatActor,
     chat: ChatAddress,
   ):
     | { readonly reached: true; readonly chat: ReachedPinningChat }
@@ -411,7 +411,7 @@ export class MessagePinningService {
    * that started it.
    */
   #reachPrivateChat(
-    pinner: MessagePinner,
+    pinner: ChatActor,
     peerId: number,
   ):
     | { readonly reached: true; readonly chat: ReachedPinningChat }
@@ -432,7 +432,7 @@ export class MessagePinningService {
   }
 
   #reachSupergroup(
-    pinner: MessagePinner,
+    pinner: ChatActor,
     chatId: number,
   ):
     | { readonly reached: true; readonly chat: ReachedPinningChat }
@@ -455,7 +455,7 @@ export class MessagePinningService {
   }
 
   #resolveSupergroupMembership(
-    pinner: MessagePinner,
+    pinner: ChatActor,
     chatId: number,
   ):
     | {
@@ -482,7 +482,7 @@ export class MessagePinningService {
 
   /** Records a pin as the pinner's service message of the chat. */
   #recordPin(
-    pinner: MessagePinner,
+    pinner: ChatActor,
     chat: ReachedPinningChat,
     pinnedMessageId: CanonicalMessageId,
     isSilent: boolean,
@@ -491,7 +491,7 @@ export class MessagePinningService {
     if (chat.type === 'private') {
       this.#privateMessages.recordServiceMessage({
         conversation: chat.conversation,
-        authorRole: pinner.kind,
+        sender: pinner.kind,
         content,
         isSilent: true,
       });
@@ -499,7 +499,7 @@ export class MessagePinningService {
     }
     this.#supergroupMessages.recordServiceMessage({
       chatId: chat.chatId,
-      author: pinner,
+      sender: pinner,
       content,
       changedAtUnixSeconds: this.#currentUnixTimeSeconds(),
       isSilent,
@@ -514,10 +514,7 @@ export class MessagePinningService {
 
   /** A chat's pinned messages, newest first: its history lists messages oldest first. */
   #listPinnedMessages(chat: ChatKey): readonly ChatMessage[] {
-    const history: readonly ChatMessage[] = chat.type === 'private'
-      ? this.#messages.getPrivateConversationMessages(chat.conversation)
-      : this.#messages.getSupergroupMessages(chat.chatId);
-    return history.filter((message) => message.isPinned).reverse();
+    return this.#messages.getChatMessages(chat).filter((message) => message.isPinned).reverse();
   }
 }
 
@@ -530,7 +527,7 @@ export class MessagePinningService {
 function canPinSupergroupMessages(
   supergroup: Supergroup,
   membership: ChatMembership,
-  pinner: MessagePinner,
+  pinner: ChatActor,
 ): boolean {
   if (supergroup.username !== undefined) {
     return holdsSupergroupAdministratorRight(membership, 'can_pin_messages');

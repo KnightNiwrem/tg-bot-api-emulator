@@ -24,7 +24,7 @@ import {
 } from '../src/types/chat_membership.ts';
 import { ALL_CHAT_PERMISSIONS, type ChatPermissions } from '../src/types/chat_permissions.ts';
 import type { BasicGroup, Channel, Supergroup } from '../src/types/virtual_chat.ts';
-import type { SupergroupMessageAuthor } from '../src/types/virtual_message.ts';
+import type { ChatActor } from '../src/types/virtual_chat.ts';
 
 Deno.test('SharedChatAdministrationService creates a basic group with its initial participants', () => {
   const { virtualUsers, identities, sharedChats, sharedChatAdministration } =
@@ -235,7 +235,7 @@ Deno.test('SharedChatAdministrationService adds permitted members to shared chat
   }
   const expectedMembershipChanges = [{
     chatId: supergroup.id,
-    author: { kind: 'account', accountId: owner.profile.id },
+    sender: { kind: 'account', accountId: owner.profile.id },
     content: { kind: 'members_joined', memberIds: [bot.profile.id] },
     changedAtUnixSeconds: 1_700_000_000,
   }];
@@ -520,9 +520,9 @@ Deno.test('SharedChatAdministrationService ends memberships as members leave or 
   const expectedChanges = [
     [{ kind: 'account', accountId: member.profile.id }, member.profile.id],
     [{ kind: 'account', accountId: owner.profile.id }, bot.profile.id],
-  ].map(([author, memberId]) => ({
+  ].map(([sender, memberId]) => ({
     chatId: supergroup.id,
-    author,
+    sender,
     content: { kind: 'member_left', memberId },
     changedAtUnixSeconds: 1_700_000_000,
   }));
@@ -1106,7 +1106,7 @@ Deno.test('SharedChatAdministrationService lets bots ban and unban users in TDLi
   ];
   const removalRecord = {
     chatId: supergroup.id,
-    author: { kind: 'bot', botId },
+    sender: { kind: 'bot', botId },
     content: { kind: 'member_left', memberId: member.profile.id },
     changedAtUnixSeconds: now,
   };
@@ -1467,7 +1467,7 @@ Deno.test('SharedChatAdministrationService lets bots restrict users in TDLib ord
 Deno.test('SharedChatAdministrationService lets members change information as permissions allow', () => {
   const { owner, member, moderatorBot, supergroup, sharedChats, sharedChatAdministration } =
     createModerationFixture();
-  const changeTitle = (actor: SupergroupMessageAuthor, title: string) => {
+  const changeTitle = (actor: ChatActor, title: string) => {
     const result = sharedChatAdministration.changeSupergroupTitle({
       actor,
       chatId: supergroup.id,
@@ -1475,8 +1475,8 @@ Deno.test('SharedChatAdministrationService lets members change information as pe
     });
     return result.changed ? 'changed' : result.reason;
   };
-  const memberAccount: SupergroupMessageAuthor = { kind: 'account', accountId: member.profile.id };
-  const bot: SupergroupMessageAuthor = { kind: 'bot', botId: moderatorBot.profile.id };
+  const memberAccount: ChatActor = { kind: 'account', accountId: member.profile.id };
+  const bot: ChatActor = { kind: 'bot', botId: moderatorBot.profile.id };
 
   // By default every account member may change information, but a bot needs the right.
   const byDefault = [changeTitle(memberAccount, 'Members'), changeTitle(bot, 'Bots')];

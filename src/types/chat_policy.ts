@@ -212,9 +212,9 @@ export const privateChatMessagePolicy:
     getObserverBoxOwnerId: ({ conversation }, observerRole) =>
       observerRole === 'account' ? conversation.accountId : conversation.botId,
     selectMessageRecipientBotIds: (message) =>
-      message.authorRole === 'bot' && isPrivateContentMessage(message)
+      message.sender === 'bot' && isPrivateContentMessage(message)
         ? []
-        : [message.conversation.botId],
+        : [message.chat.conversation.botId],
   };
 
 /**

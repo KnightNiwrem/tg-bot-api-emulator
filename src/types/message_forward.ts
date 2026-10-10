@@ -7,7 +7,7 @@ import { type MessageRepetition, repeatRichMessage } from './rich_message.ts';
 import {
   type ChatMessage,
   type ContentMessage,
-  getMessageAuthorId,
+  getMessageSenderId,
   hasProtectedContent,
   isContentMessage,
   type MessageContent,
@@ -163,7 +163,7 @@ export function getMessageOrigin(
   getPrivateForwardName: PrivateForwardNameLookup,
 ): MessageForwardInfo {
   const origin: MessageForwardInfo = message.forwardInfo ?? {
-    originalSender: { kind: 'user', userId: getMessageAuthorId(message) },
+    originalSender: { kind: 'user', userId: getMessageSenderId(message) },
     originalSentAtUnixSeconds: message.sentAtUnixSeconds,
     ...(message.viaBot === undefined ? {} : { viaBotId: message.viaBot.botId }),
   };

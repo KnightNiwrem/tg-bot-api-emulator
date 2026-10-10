@@ -6,7 +6,13 @@ import type { PollId } from './poll.ts';
 import type { ReplyInterfaceMarkup } from './reply_interface.ts';
 import { type RichMessage, richMessageMentionsUser } from './rich_message.ts';
 import type { StoredFileId } from './stored_file.ts';
-import type { PrivateConversationKey, PrivateConversationRole } from './virtual_chat.ts';
+import type {
+  ChatKey,
+  ChatType,
+  PrivateChatKey,
+  PrivateConversationRole,
+  SupergroupChatKey,
+} from './virtual_chat.ts';
 
 /** The most characters of message text that Telegram accepts, as `countTextCharacters` counts them. */
 export const MAX_TEXT_MESSAGE_LENGTH = 4_096;
@@ -324,7 +330,7 @@ export type SupergroupServiceContent =
   | TitleChangedMessageContent
   | MessagePinnedContent;
 
-/** What a supergroup message shows: content its author wrote, or a change of the supergroup. */
+/** What a supergroup message shows: content its sender wrote, or a change of the supergroup. */
 export type SupergroupMessageContent = MessageContent | SupergroupServiceContent;
 
 /**
@@ -389,15 +395,15 @@ export type PrivateServiceContent =
   | ChatSharedMessageContent
   | WebAppDataMessageContent;
 
-/** What a private message shows: content its author wrote, or a service message's record. */
+/** What a private message shows: content its sender wrote, or a service message's record. */
 export type PrivateMessageContent = MessageContent | PrivateServiceContent;
 
-/** What a message of any chat shows: content its author wrote, or a service message's record. */
+/** What a message of any chat shows: content its sender wrote, or a service message's record. */
 export type ChatMessageContent = SupergroupMessageContent | PrivateMessageContent;
 
 /**
  * Whether a message's content records a change of its chat, or what an account shared, as a
- * service message, rather than content its author wrote.
+ * service message, rather than content its sender wrote.
  */
 function isServiceContent(
   content: ChatMessageContent,
@@ -574,17 +580,21 @@ export type ExternalReplyMedia =
   | LocationMessageContent;
 
 /**
- * A canonical message of a private conversation: one either participant wrote, or a service
- * message recording a pin that either participant made, or the users or chat the account shared.
+ * What a message's sender chose to send, which a message to store and the stored message share,
+ * whatever their chat type.
  */
-export interface PrivateMessage {
-  readonly kind: 'private_message';
-  readonly id: CanonicalMessageId;
-  readonly conversation: PrivateConversationKey;
-  readonly authorRole: PrivateConversationRole;
+interface SentMessageFields<Chat extends ChatKey, Sender, Content extends ChatMessageContent> {
+  /** The chat whose message log holds the message. */
+  readonly chat: Chat;
+  /**
+   * Who the message shows as its sender, or as the maker of the change a service message records.
+   * It is attribution, not authorization: which actor was allowed to send the message is decided
+   * before it is stored, and an inline bot or a forward's origin is attributed separately.
+   */
+  readonly sender: Sender;
   readonly sentAtUnixSeconds: number;
-  readonly content: PrivateMessageContent;
-  /** The message of the same conversation this one replies to; omitted when it is no reply. */
+  readonly content: Content;
+  /** The message of the same chat this one replies to; omitted when it is no reply. */
   readonly replyToMessageId?: CanonicalMessageId;
   /** The message of another chat this one replies to; omitted when it replies to none. */
   readonly externalReply?: ExternalReply;
@@ -597,76 +607,27 @@ export interface PrivateMessage {
    * and inline bots to messages sent through them.
    */
   readonly inlineKeyboard?: InlineKeyboard;
-  /** Omitted for a message not sent through a bot's inline mode. Only accounts send them. */
-  readonly viaBot?: ViaBot;
   /** Omitted for a message that is no forward. */
   readonly forwardInfo?: MessageForwardInfo;
   /**
-   * The change of the account client's reply interface the message carries: a reply keyboard or
-   * forced reply to show, or the removal of a reply keyboard; omitted for none. Only bots send
-   * one, and never with an inline keyboard. It stays with the message after the client stops
+   * The change of the reply interface of the clients of the chat's accounts that the message
+   * carries: a reply keyboard or forced reply to show, or the removal of a reply keyboard; omitted
+   * for none. Only bots send one, and never with an inline keyboard; in a supergroup, its
+   * selectivity chooses the members it applies to. It stays with the message after clients stop
    * showing the interface, since, as in TDLib, it makes the message impossible to edit.
    */
   readonly replyInterfaceMarkup?: ReplyInterfaceMarkup;
-  /**
-   * When the text or caption was last edited; omitted for a message whose content was never
-   * edited.
-   */
-  readonly contentEditedAtUnixSeconds?: number;
-  /** Whether the sender protected the message from forwarding and saving. Only bots protect. */
-  readonly isContentProtected: boolean;
-  /** As `SupergroupMessage` describes it. */
-  readonly isSilent: boolean;
-  /** As `SupergroupMessage` describes it. */
-  readonly isPinned: boolean;
-  /**
-   * The decimal text of the 64-bit identifier of the message effect clients play with the
-   * message; omitted for none. Only bots add effects, which Telegram allows only in private chats.
-   */
-  readonly messageEffectId?: string;
 }
 
 /**
- * The member of a supergroup who wrote a message there, or made the change a service message
- * records: an account or a bot.
+ * The shared core of a canonical message of any chat: one that its sender wrote, or a service
+ * message recording a change that its sender made.
  */
-export type SupergroupMessageAuthor =
-  | { readonly kind: 'account'; readonly accountId: number }
-  | { readonly kind: 'bot'; readonly botId: number };
-
-/**
- * A canonical message of a supergroup: one that a member wrote, or a service message recording a
- * change of the supergroup or a pin, which its author made.
- */
-export interface SupergroupMessage {
-  readonly kind: 'supergroup_message';
+interface MessageCore<Chat extends ChatKey, Sender, Content extends ChatMessageContent>
+  extends SentMessageFields<Chat, Sender, Content> {
   readonly id: CanonicalMessageId;
-  readonly chatId: number;
-  readonly author: SupergroupMessageAuthor;
-  readonly sentAtUnixSeconds: number;
-  readonly content: SupergroupMessageContent;
-  /** The message of the same supergroup this one replies to; omitted when it is no reply. */
-  readonly replyToMessageId?: CanonicalMessageId;
-  /** The message of another chat this one replies to; omitted when it replies to none. */
-  readonly externalReply?: ExternalReply;
-  /** The quoted part of the replied message; omitted for a reply without one, or no reply. */
-  readonly quote?: TextQuote;
-  /** The album the message belongs to; omitted for a message outside albums. */
-  readonly mediaGroupId?: MediaGroupId;
-  /**
-   * Omitted when the message has no inline keyboard. Bots attach inline keyboards to their messages,
-   * and inline bots to messages sent through them.
-   */
-  readonly inlineKeyboard?: InlineKeyboard;
   /** Omitted for a message not sent through a bot's inline mode. Only accounts send them. */
   readonly viaBot?: ViaBot;
-  /** Omitted for a message that is no forward. */
-  readonly forwardInfo?: MessageForwardInfo;
-  /**
-   * The change of the reply interface of the members' clients that the message carries, as
-   * `PrivateMessage` describes it; its selectivity chooses the members it applies to.
-   */
-  readonly replyInterfaceMarkup?: ReplyInterfaceMarkup;
   /**
    * When the text or caption was last edited; omitted for a message whose content was never
    * edited.
@@ -685,6 +646,63 @@ export interface SupergroupMessage {
    * message shows it. A chat pins any number of messages; deleting a message unpins it.
    */
   readonly isPinned: boolean;
+}
+
+/**
+ * A message to store in its chat's log, which the message repository gives its identity, and the
+ * inline message identifier of a message sent through an inline bot.
+ */
+export interface NewMessageCore<Chat extends ChatKey, Sender, Content extends ChatMessageContent>
+  extends SentMessageFields<Chat, Sender, Content> {
+  /**
+   * The bot through whose inline mode the account sent the message, which gives the message an
+   * inline message identifier; omitted for other messages.
+   */
+  readonly viaBotId?: number;
+  /** Omitted for a message its sender did not protect. */
+  readonly isContentProtected?: boolean;
+  /** Omitted for a message its sender did not send silently. */
+  readonly isSilent?: boolean;
+}
+
+/**
+ * A canonical message of a private conversation: one either participant wrote, or a service
+ * message recording a pin that either participant made, or the users or chat the account shared.
+ * Its sender is named by its role in the conversation.
+ */
+export interface PrivateMessage<Content extends PrivateMessageContent = PrivateMessageContent>
+  extends MessageCore<PrivateChatKey, PrivateConversationRole, Content> {
+  readonly kind: 'private_message';
+  /**
+   * The decimal text of the 64-bit identifier of the message effect clients play with the
+   * message; omitted for none. Only bots add effects, which Telegram allows only in private chats.
+   */
+  readonly messageEffectId?: string;
+}
+
+/** A private message to store, as `PrivateMessage` describes its fields. */
+export interface NewPrivateMessage
+  extends NewMessageCore<PrivateChatKey, PrivateConversationRole, PrivateMessageContent> {
+  /** Omitted for a message without a message effect. */
+  readonly messageEffectId?: string;
+}
+
+/**
+ * The member of a supergroup that a message shows as its sender, or as the maker of the change a
+ * service message records: an account or a bot.
+ */
+export type SupergroupMessageSender =
+  | { readonly kind: 'account'; readonly accountId: number }
+  | { readonly kind: 'bot'; readonly botId: number };
+
+/**
+ * A canonical message of a supergroup: one that a member wrote, or a service message recording a
+ * change of the supergroup or a pin, which its sender made.
+ */
+export interface SupergroupMessage<
+  Content extends SupergroupMessageContent = SupergroupMessageContent,
+> extends MessageCore<SupergroupChatKey, SupergroupMessageSender, Content> {
+  readonly kind: 'supergroup_message';
   /**
    * The members' reactions to the message, one entry per reacting user, in the order the users
    * last changed them; omitted while nobody reacts. Edits keep them, and deleting the message
@@ -693,8 +711,48 @@ export interface SupergroupMessage {
   readonly reactions?: readonly UserReaction[];
 }
 
+/** A supergroup message to store, as `SupergroupMessage` describes its fields. */
+export type NewSupergroupMessage = NewMessageCore<
+  SupergroupChatKey,
+  SupergroupMessageSender,
+  SupergroupMessageContent
+>;
+
+/** Each chat type's messages, by the type of their chat. */
+interface ChatMessageByChatType {
+  readonly private: PrivateMessage;
+  readonly supergroup: SupergroupMessage;
+}
+
+/** Each chat type's messages to store, by the type of their chat. */
+interface NewChatMessageByChatType {
+  readonly private: NewPrivateMessage;
+  readonly supergroup: NewSupergroupMessage;
+}
+
+/** A canonical message of a chat of the given type. */
+export type ChatMessageOfType<Type extends ChatType> = ChatMessageByChatType[Type];
+
+/** A message to store in a chat of the given type. */
+export type NewChatMessageOfType<Type extends ChatType> = NewChatMessageByChatType[Type];
+
 /** A canonical message of any chat the emulator supports. */
-export type ChatMessage = PrivateMessage | SupergroupMessage;
+export type ChatMessage = ChatMessageOfType<ChatType>;
+
+/** Whether a message belongs to a chat of the given type, which its chat key states. */
+export function isMessageOfChatType<Type extends ChatType>(
+  message: ChatMessage,
+  chatType: Type,
+): message is ChatMessageOfType<Type> {
+  return message.chat.type === chatType;
+}
+
+/** The editable parts of a content message, which an edit replaces as a whole. */
+export interface MessageEdit {
+  readonly content: MessageContent;
+  readonly inlineKeyboard: InlineKeyboard | undefined;
+  readonly contentEditedAtUnixSeconds: number | undefined;
+}
 
 /**
  * The bot whose buttons a message carries, which receives the callback queries of their presses:
@@ -707,9 +765,9 @@ export function getInlineKeyboardOwnerId(message: ChatMessage): number | undefin
   }
   switch (message.kind) {
     case 'private_message':
-      return message.authorRole === 'bot' ? message.conversation.botId : undefined;
+      return message.sender === 'bot' ? message.chat.conversation.botId : undefined;
     case 'supergroup_message':
-      return message.author.kind === 'bot' ? message.author.botId : undefined;
+      return message.sender.kind === 'bot' ? message.sender.botId : undefined;
     default: {
       const unhandledMessage: never = message;
       throw new Error(`Unhandled message: ${JSON.stringify(unhandledMessage)}`);
@@ -733,9 +791,9 @@ export function canBotEditMessage(message: ChatMessage, botId: number): boolean 
   }
   switch (message.kind) {
     case 'private_message':
-      return message.authorRole === 'bot' && message.conversation.botId === botId;
+      return message.sender === 'bot' && message.chat.conversation.botId === botId;
     case 'supergroup_message':
-      return message.author.kind === 'bot' && message.author.botId === botId;
+      return message.sender.kind === 'bot' && message.sender.botId === botId;
     default: {
       const unhandledMessage: never = message;
       throw new Error(`Unhandled message: ${JSON.stringify(unhandledMessage)}`);
@@ -757,9 +815,9 @@ export function canAccountEditMessage(message: ChatMessage, accountId: number): 
   }
   switch (message.kind) {
     case 'private_message':
-      return message.authorRole === 'account' && message.conversation.accountId === accountId;
+      return message.sender === 'account' && message.chat.conversation.accountId === accountId;
     case 'supergroup_message':
-      return message.author.kind === 'account' && message.author.accountId === accountId;
+      return message.sender.kind === 'account' && message.sender.accountId === accountId;
     default: {
       const unhandledMessage: never = message;
       throw new Error(`Unhandled message: ${JSON.stringify(unhandledMessage)}`);
@@ -767,15 +825,15 @@ export function canAccountEditMessage(message: ChatMessage, accountId: number): 
   }
 }
 
-/** The account or bot that wrote a message, or made the change a service message records. */
-export function getMessageAuthorId(message: ChatMessage): number {
+/** The account or bot that a message shows as its sender. */
+export function getMessageSenderId(message: ChatMessage): number {
   switch (message.kind) {
     case 'private_message':
-      return message.authorRole === 'account'
-        ? message.conversation.accountId
-        : message.conversation.botId;
+      return message.sender === 'account'
+        ? message.chat.conversation.accountId
+        : message.chat.conversation.botId;
     case 'supergroup_message':
-      return message.author.kind === 'account' ? message.author.accountId : message.author.botId;
+      return message.sender.kind === 'account' ? message.sender.accountId : message.sender.botId;
     default: {
       const unhandledMessage: never = message;
       throw new Error(`Unhandled message: ${JSON.stringify(unhandledMessage)}`);
@@ -799,33 +857,33 @@ export function getMessageNotification(
   message: ChatMessage,
   accountId: number,
 ): MessageNotification | undefined {
-  return getMessageAuthorId(message) === accountId ? undefined : { isSilent: message.isSilent };
+  return getMessageSenderId(message) === accountId ? undefined : { isSilent: message.isSilent };
 }
 
-/** A supergroup message that shows content its author wrote, rather than a service message. */
-export type SupergroupContentMessage = SupergroupMessage & { readonly content: MessageContent };
+/** A supergroup message that shows content its sender wrote, rather than a service message. */
+export type SupergroupContentMessage = SupergroupMessage<MessageContent>;
 
-/** Whether a supergroup message shows content its author wrote, which only such a message has. */
+/** Whether a supergroup message shows content its sender wrote, which only such a message has. */
 export function isSupergroupContentMessage(
   message: SupergroupMessage,
 ): message is SupergroupContentMessage {
   return !isServiceContent(message.content);
 }
 
-/** A private message that shows content its author wrote, rather than a service message. */
-export type PrivateContentMessage = PrivateMessage & { readonly content: MessageContent };
+/** A private message that shows content its sender wrote, rather than a service message. */
+export type PrivateContentMessage = PrivateMessage<MessageContent>;
 
-/** Whether a private message shows content its author wrote, which only such a message has. */
+/** Whether a private message shows content its sender wrote, which only such a message has. */
 export function isPrivateContentMessage(
   message: PrivateMessage,
 ): message is PrivateContentMessage {
   return !isServiceContent(message.content);
 }
 
-/** A message of any chat that shows content its author wrote, rather than a service message. */
+/** A message of any chat that shows content its sender wrote, rather than a service message. */
 export type ContentMessage = PrivateContentMessage | SupergroupContentMessage;
 
-/** Whether a message of any chat shows content its author wrote. */
+/** Whether a message of any chat shows content its sender wrote. */
 export function isContentMessage(message: ChatMessage): message is ContentMessage {
   return message.kind === 'private_message'
     ? isPrivateContentMessage(message)

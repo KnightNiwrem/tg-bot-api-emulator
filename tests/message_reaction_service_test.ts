@@ -166,9 +166,9 @@ Deno.test('MessageReactionService refuses reactions to service messages and with
     sendText,
   } = createReactionFixture();
   const message = sendText(ada.profile.id, 'Quiet please');
-  const joined = messages.getSupergroupMessages(supergroup.id).find((candidate) =>
-    candidate.content.kind === 'members_joined'
-  );
+  const joined = messages.getChatMessages({ type: 'supergroup', chatId: supergroup.id }).find((
+    candidate,
+  ) => candidate.content.kind === 'members_joined');
   const joinedMessageId = joined === undefined
     ? undefined
     : messageBoxes.getMessageId(supergroup.id, joined.id);

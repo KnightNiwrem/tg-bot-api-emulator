@@ -124,9 +124,12 @@ Deno.test('PrivateMessagingService sends, stores, and publishes private account 
   ) {
     throw new Error('Expected the first message to activate the private conversation');
   }
-  const storedMessages = messages.getPrivateConversationMessages({
-    accountId: account.profile.id,
-    botId: bot.profile.id,
+  const storedMessages = messages.getChatMessages({
+    type: 'private',
+    conversation: {
+      accountId: account.profile.id,
+      botId: bot.profile.id,
+    },
   });
   if (
     storedMessages.length !== 2 ||
@@ -137,10 +140,10 @@ Deno.test('PrivateMessagingService sends, stores, and publishes private account 
   }
   if (
     getContentText(firstResult.message.content).text !== 'Hello' ||
-    firstResult.message.authorRole !== 'account' ||
+    firstResult.message.sender !== 'account' ||
     firstResult.message.sentAtUnixSeconds !== 1_700_000_000 ||
-    firstResult.message.conversation.accountId !== account.profile.id ||
-    firstResult.message.conversation.botId !== bot.profile.id
+    firstResult.message.chat.conversation.accountId !== account.profile.id ||
+    firstResult.message.chat.conversation.botId !== bot.profile.id
   ) {
     throw new Error('Expected the result to carry the canonical account message');
   }
@@ -254,9 +257,12 @@ Deno.test('PrivateMessagingService validates private messages before changing st
         botId: bot.profile.id,
       }) !==
       undefined ||
-    messages.getPrivateConversationMessages({
-        accountId: account.profile.id,
-        botId: bot.profile.id,
+    messages.getChatMessages({
+        type: 'private',
+        conversation: {
+          accountId: account.profile.id,
+          botId: bot.profile.id,
+        },
       }).length !== 0 ||
     botUpdates.confirmAndReadPendingUpdates(bot.profile.id, { limit: 100 }).length !== 0
   ) {
@@ -288,9 +294,9 @@ Deno.test('PrivateMessagingService stores a bot reply in the private conversatio
 
   const reply = replyResult.message;
   if (
-    reply.authorRole !== 'bot' ||
-    reply.conversation.accountId !== account.profile.id ||
-    reply.conversation.botId !== bot.profile.id ||
+    reply.sender !== 'bot' ||
+    reply.chat.conversation.accountId !== account.profile.id ||
+    reply.chat.conversation.botId !== bot.profile.id ||
     reply.sentAtUnixSeconds !== 1_700_000_000 ||
     JSON.stringify(getContentText(reply.content).entities) !==
       JSON.stringify([{ type: 'bot_command', offset: 4, length: 5 }])
@@ -303,9 +309,12 @@ Deno.test('PrivateMessagingService stores a bot reply in the private conversatio
   ) {
     throw new Error("Expected the reply to be numbered in both participants' message boxes");
   }
-  const storedMessages = messages.getPrivateConversationMessages({
-    accountId: account.profile.id,
-    botId: bot.profile.id,
+  const storedMessages = messages.getChatMessages({
+    type: 'private',
+    conversation: {
+      accountId: account.profile.id,
+      botId: bot.profile.id,
+    },
   });
   const history = privateMessaging.getPrivateMessageHistory({
     accountId: account.profile.id,
@@ -466,7 +475,7 @@ Deno.test('PrivateMessagingService stores replies only to messages of the same c
       'Expected allowSendingWithoutReply to send a reply to a deleted message as none',
     );
   }
-  if (messages.getPrivateMessage(otherChatMessage.id) !== otherChatMessage) {
+  if (messages.findChatMessage(otherChatMessage.chat, otherChatMessage.id) !== otherChatMessage) {
     throw new Error("Expected the other chat's message to be unaffected");
   }
 });
@@ -514,7 +523,7 @@ Deno.test('PrivateMessagingService shows the reply interface the latest bot mess
   const press = pressButton('Red');
   const pressOfMissingButton = pressButton('Blue');
   if (
-    !press.sent || press.message.authorRole !== 'account' ||
+    !press.sent || press.message.sender !== 'account' ||
     getContentText(press.message.content).text !== 'Red' ||
     pressOfMissingButton.sent || pressOfMissingButton.reason !== 'reply_keyboard_button_not_found'
   ) {
@@ -590,7 +599,7 @@ Deno.test('PrivateMessagingService stores an inline keyboard whose callback data
   }
   if (
     JSON.stringify(result.message.inlineKeyboard) !== JSON.stringify(inlineKeyboard) ||
-    messages.getPrivateMessage(result.message.id) !== result.message
+    messages.findChatMessage(result.message.chat, result.message.id) !== result.message
   ) {
     throw new Error('Expected the stored bot message to carry its inline keyboard');
   }
@@ -797,7 +806,7 @@ Deno.test('PrivateMessagingService validates bot message edits in Telegram order
   if (keyboardEdit.edited || keyboardEdit.reason !== 'message_not_modified') {
     throw new Error('Expected an identical keyboard edit to be rejected as not modified');
   }
-  if (messages.getPrivateMessage(botMessage.id) !== botMessage) {
+  if (messages.findChatMessage(botMessage.chat, botMessage.id) !== botMessage) {
     throw new Error('Expected rejected edits to leave the message unchanged');
   }
 });
@@ -866,7 +875,7 @@ Deno.test('PrivateMessagingService refuses edits of messages with reply markup o
       const edits = editEveryWay(expectBotMessageId(messageBoxes, bot, sent.message.id));
       if (
         edits.some((edit) => edit.edited || edit.reason !== 'message_not_editable') ||
-        messages.getPrivateMessage(sent.message.id) !== sent.message ||
+        messages.findChatMessage(sent.message.chat, sent.message.id) !== sent.message ||
         publishedEvents.length !== eventCountBeforeEdits
       ) {
         throw new Error(
@@ -938,14 +947,17 @@ Deno.test('PrivateMessagingService lets a bot delete messages of its private cha
       "Expected both participants' messages to be deleted once and other IDs to be skipped",
     );
   }
-  const history = messages.getPrivateConversationMessages({
-    accountId: account.profile.id,
-    botId: bot.profile.id,
+  const history = messages.getChatMessages({
+    type: 'private',
+    conversation: {
+      accountId: account.profile.id,
+      botId: bot.profile.id,
+    },
   });
   if (history.length !== 1 || history[0] !== keptMessage) {
     throw new Error('Expected only the undeleted message to remain in the history');
   }
-  if (messages.getPrivateMessage(otherChatMessage.id) !== otherChatMessage) {
+  if (messages.findChatMessage(otherChatMessage.chat, otherChatMessage.id) !== otherChatMessage) {
     throw new Error("Expected a message of the bot's other chat to be kept");
   }
   if (publishedEvents.length !== publishedEventCount) {
@@ -1010,7 +1022,7 @@ Deno.test('PrivateMessagingService validates message deletions before changing s
       throw new Error(`Expected the deletion to fail with ${expectedReason}`);
     }
   }
-  if (messages.getPrivateMessage(message.id) !== message) {
+  if (messages.findChatMessage(message.chat, message.id) !== message) {
     throw new Error('Expected rejected deletions to keep the message');
   }
 });
@@ -1496,9 +1508,12 @@ Deno.test('PrivateMessagingService sends albums as ordered messages that share a
   }
   if (
     JSON.stringify(
-      messages.getPrivateConversationMessages({
-        accountId: account.profile.id,
-        botId: bot.profile.id,
+      messages.getChatMessages({
+        type: 'private',
+        conversation: {
+          accountId: account.profile.id,
+          botId: bot.profile.id,
+        },
       }).map((message) => message.id),
     ) !==
       JSON.stringify([...accountAlbum.messages, ...botAlbum.messages, ...singleAlbum.messages]
@@ -1541,9 +1556,12 @@ Deno.test('PrivateMessagingService checks every message of an album before stori
   const storedState = () => ({
     uploads: storedUploads.length,
     events: publishedEvents.length,
-    history: messages.getPrivateConversationMessages({
-      accountId: account.profile.id,
-      botId: bot.profile.id,
+    history: messages.getChatMessages({
+      type: 'private',
+      conversation: {
+        accountId: account.profile.id,
+        botId: bot.profile.id,
+      },
     }).length,
   });
   const stateBefore = storedState();
@@ -1875,7 +1893,7 @@ Deno.test('PrivateMessagingService validates account message edits before changi
     }
   }
   if (
-    messages.getPrivateMessage(accountMessage.id) !== accountMessage ||
+    messages.findChatMessage(accountMessage.chat, accountMessage.id) !== accountMessage ||
     publishedEvents.length !== publishedEventCount
   ) {
     throw new Error('Expected rejected edits to leave the message unchanged and unpublished');
@@ -2061,7 +2079,7 @@ Deno.test('PrivateMessagingService lets a join request contact grant send messag
       album.sent ? album.messages.length : album.reason,
       joinRequesterGrants.claims,
       publishedEvents.length - eventCountBeforeGrantedSends,
-      messages.getPrivateConversationMessages(conversation).length,
+      messages.getChatMessages({ type: 'private', conversation }).length,
       privateConversations.getPrivateConversation(conversation) !== undefined,
       privateMessaging.isPrivateConversationStarted(conversation),
     ],
@@ -2224,7 +2242,7 @@ Deno.test('PrivateMessagingService shares chosen users as a service message of t
     users: [{ userId: grace.profile.id, firstName: 'Grace' }],
   };
   if (
-    shared.message.authorRole !== 'account' ||
+    shared.message.sender !== 'account' ||
     JSON.stringify(shared.message.content) !== JSON.stringify(expectedContent) ||
     shared.message.replyToMessageId !== undefined
   ) {
@@ -2320,7 +2338,7 @@ Deno.test('PrivateMessagingService sends Web App data as a service message of th
     data: '{"nights":3}',
   };
   if (
-    sent.message.authorRole !== 'account' ||
+    sent.message.sender !== 'account' ||
     JSON.stringify(sent.message.content) !== JSON.stringify(expectedContent) ||
     sent.message.replyToMessageId !== undefined
   ) {

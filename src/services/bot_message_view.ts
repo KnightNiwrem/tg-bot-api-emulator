@@ -95,10 +95,18 @@ import {
 import { isUserId } from '../types/telegram_identity.ts';
 import type { VirtualAccount } from '../types/virtual_account.ts';
 import type { VirtualBot } from '../types/virtual_bot.ts';
-import type { PrivateConversationKey, SharedChat, Supergroup } from '../types/virtual_chat.ts';
+import type {
+  ChatKeyOfType,
+  ChatType,
+  PrivateChatKey,
+  SharedChat,
+  Supergroup,
+  SupergroupChatKey,
+} from '../types/virtual_chat.ts';
 import {
   type CanonicalMessageId,
   type ChatMessage,
+  type ChatMessageOfType,
   type ExternalReply,
   type FormattedText,
   getContentText,
@@ -109,7 +117,7 @@ import {
   type MessagePinnedContent,
   type PrivateMessage,
   type SupergroupMessage,
-  type SupergroupMessageAuthor,
+  type SupergroupMessageSender,
 } from '../types/virtual_message.ts';
 
 interface AccountLookup {
@@ -125,8 +133,10 @@ interface MessageIdLookup {
 }
 
 interface MessageLookup {
-  getPrivateMessage(messageId: CanonicalMessageId): PrivateMessage | undefined;
-  getSupergroupMessage(messageId: CanonicalMessageId): SupergroupMessage | undefined;
+  findChatMessage<Type extends ChatType>(
+    chat: ChatKeyOfType<Type>,
+    messageId: CanonicalMessageId,
+  ): ChatMessageOfType<Type> | undefined;
 }
 
 interface SharedChatLookup {
@@ -221,7 +231,7 @@ export class BotMessageViewService {
   viewPrivateMessageForBot(message: PrivateMessage): BotApiPrivateMessage {
     const repliedMessage = message.replyToMessageId === undefined
       ? undefined
-      : this.#messages.getPrivateMessage(message.replyToMessageId);
+      : this.#messages.findChatMessage(message.chat, message.replyToMessageId);
     const observed = this.#observePrivateMessage(message);
     return projectPrivateMessageForBot({
       ...observed,
@@ -230,9 +240,9 @@ export class BotMessageViewService {
         : { repliedMessage: this.#viewRepliedPrivateMessage(repliedMessage) }),
       ...(message.content.kind === 'message_pinned'
         ? {
-          pinnedMessage: this.#findPinnedPrivateMessage(message.content) ?? {
+          pinnedMessage: this.#findPinnedPrivateMessage(message.chat, message.content) ?? {
             message_id: this.#requirePrivateBotMessageId(
-              message.conversation,
+              message.chat,
               message.content.pinnedMessageId,
             ),
             chat: projectPrivateChat(observed.account),
@@ -246,13 +256,13 @@ export class BotMessageViewService {
   /**
    * Returns a supergroup message as a member, bot or account, sees it, with the current state of
    * the message it replies to unless that message was deleted. Members see the same message, apart
-   * from the `file_id` of its file. The message must be committed: its supergroup and author exist
+   * from the `file_id` of its file. The message must be committed: its supergroup and sender exist
    * and it is numbered in the supergroup's box.
    */
   viewSupergroupMessage(message: SupergroupMessage, observerId: number): BotApiSupergroupMessage {
     const repliedMessage = message.replyToMessageId === undefined
       ? undefined
-      : this.#messages.getSupergroupMessage(message.replyToMessageId);
+      : this.#messages.findChatMessage(message.chat, message.replyToMessageId);
     const observed = this.#observeSupergroupMessage(message, observerId);
     return projectSupergroupMessage({
       ...observed,
@@ -261,14 +271,15 @@ export class BotMessageViewService {
         : { repliedMessage: this.#viewRepliedSupergroupMessage(repliedMessage, observerId) }),
       ...(message.content.kind === 'message_pinned'
         ? {
-          pinnedMessage: this.#findPinnedSupergroupMessage(message.content, observerId) ?? {
-            message_id: this.#requireSupergroupMessageId(
-              message.chatId,
-              message.content.pinnedMessageId,
-            ),
-            chat: projectSupergroupChat(observed.supergroup),
-            date: 0,
-          },
+          pinnedMessage:
+            this.#findPinnedSupergroupMessage(message.chat, message.content, observerId) ?? {
+              message_id: this.#requireSupergroupMessageId(
+                message.chat,
+                message.content.pinnedMessageId,
+              ),
+              chat: projectSupergroupChat(observed.supergroup),
+              date: 0,
+            },
         }
         : {}),
     });
@@ -457,15 +468,15 @@ export class BotMessageViewService {
     event: MessageReactionChangedEvent,
   ): BotApiMessageReactionUpdated {
     const { message } = event;
-    const supergroup = this.#sharedChats.getSharedChat(message.chatId);
+    const supergroup = this.#sharedChats.getSharedChat(message.chat.chatId);
     if (supergroup?.kind !== 'supergroup') {
-      throw new Error(`Supergroup ${message.chatId} of a reaction change does not exist`);
+      throw new Error(`Supergroup ${message.chat.chatId} of a reaction change does not exist`);
     }
     return projectMessageReactionChange({
       event,
       supergroup,
       reactor: this.#findAccountProfile(event.accountId, 'a reaction change'),
-      messageId: this.#requireSupergroupMessageId(message.chatId, message.id),
+      messageId: this.#requireSupergroupMessageId(message.chat, message.id),
     });
   }
 
@@ -570,7 +581,7 @@ export class BotMessageViewService {
     observerId: number,
   ): BotApiRepliedSupergroupMessage {
     const pinnedMessage = message.content.kind === 'message_pinned'
-      ? this.#findPinnedSupergroupMessage(message.content, observerId)
+      ? this.#findPinnedSupergroupMessage(message.chat, message.content, observerId)
       : undefined;
     return projectRepliedSupergroupMessage({
       ...this.#observeSupergroupMessage(message, observerId),
@@ -583,10 +594,11 @@ export class BotMessageViewService {
    * was deleted.
    */
   #findPinnedSupergroupMessage(
+    chat: SupergroupChatKey,
     { pinnedMessageId }: MessagePinnedContent,
     observerId: number,
   ): BotApiPinnedSupergroupMessage | undefined {
-    const pinnedMessage = this.#messages.getSupergroupMessage(pinnedMessageId);
+    const pinnedMessage = this.#messages.findChatMessage(chat, pinnedMessageId);
     return pinnedMessage === undefined
       ? undefined
       : this.#viewPinnedSupergroupMessage(pinnedMessage, observerId);
@@ -611,15 +623,15 @@ export class BotMessageViewService {
     message: Message,
     observerId: number,
   ): ObservedSupergroupMessage<Message> {
-    const supergroup = this.#sharedChats.getSharedChat(message.chatId);
+    const supergroup = this.#sharedChats.getSharedChat(message.chat.chatId);
     if (supergroup?.kind !== 'supergroup') {
-      throw new Error(`Supergroup ${message.chatId} of message ${message.id} does not exist`);
+      throw new Error(`Supergroup ${message.chat.chatId} of message ${message.id} does not exist`);
     }
     return {
       message,
       supergroup,
-      author: this.#findSupergroupMessageAuthor(message.author, message.id),
-      messageId: this.#requireSupergroupMessageId(message.chatId, message.id),
+      sender: this.#findSupergroupMessageSender(message.sender, message.id),
+      messageId: this.#requireSupergroupMessageId(message.chat, message.id),
       context: this.#resolveProjectionContext(message, observerId),
     };
   }
@@ -637,31 +649,28 @@ export class BotMessageViewService {
   }
 
   /** The ID by which the bot of a private conversation sees one of the conversation's messages. */
-  #requirePrivateBotMessageId(
-    conversation: PrivateConversationKey,
-    messageId: CanonicalMessageId,
-  ): number {
+  #requirePrivateBotMessageId(chat: PrivateChatKey, messageId: CanonicalMessageId): number {
     return this.#requireMessageId(
-      privateChatMessagePolicy.getObserverBoxOwnerId({ type: 'private', conversation }, 'bot'),
+      privateChatMessagePolicy.getObserverBoxOwnerId(chat, 'bot'),
       messageId,
     );
   }
 
   /** The ID by which every member of a supergroup sees one of its messages. */
-  #requireSupergroupMessageId(chatId: number, messageId: CanonicalMessageId): number {
+  #requireSupergroupMessageId(chat: SupergroupChatKey, messageId: CanonicalMessageId): number {
     return this.#requireMessageId(
-      supergroupMessagePolicy.getObserverBoxOwnerId({ type: 'supergroup', chatId }, 'member'),
+      supergroupMessagePolicy.getObserverBoxOwnerId(chat, 'member'),
       messageId,
     );
   }
 
-  #findSupergroupMessageAuthor(
-    author: SupergroupMessageAuthor,
+  #findSupergroupMessageSender(
+    sender: SupergroupMessageSender,
     messageId: CanonicalMessageId,
   ): BotApiUser {
-    const user = this.#findUser(author.kind === 'account' ? author.accountId : author.botId);
+    const user = this.#findUser(sender.kind === 'account' ? sender.accountId : sender.botId);
     if (user === undefined) {
-      throw new Error(`Author of message ${messageId} does not exist`);
+      throw new Error(`Sender of message ${messageId} does not exist`);
     }
     return user;
   }
@@ -691,7 +700,7 @@ export class BotMessageViewService {
    */
   #viewRepliedPrivateMessage(message: PrivateMessage): BotApiRepliedPrivateMessage {
     const pinnedMessage = message.content.kind === 'message_pinned'
-      ? this.#findPinnedPrivateMessage(message.content)
+      ? this.#findPinnedPrivateMessage(message.chat, message.content)
       : undefined;
     return projectRepliedPrivateMessageForBot({
       ...this.#observePrivateMessage(message),
@@ -704,9 +713,10 @@ export class BotMessageViewService {
    * was deleted.
    */
   #findPinnedPrivateMessage(
+    chat: PrivateChatKey,
     { pinnedMessageId }: MessagePinnedContent,
   ): BotApiPinnedPrivateMessage | undefined {
-    const pinnedMessage = this.#messages.getPrivateMessage(pinnedMessageId);
+    const pinnedMessage = this.#messages.findChatMessage(chat, pinnedMessageId);
     return pinnedMessage === undefined ? undefined : this.#viewPinnedPrivateMessage(pinnedMessage);
   }
 
@@ -728,7 +738,7 @@ export class BotMessageViewService {
   #observePrivateMessage<Message extends PrivateMessage>(
     message: Message,
   ): ObservedPrivateMessage<Message> {
-    const { accountId, botId: observingBotId } = message.conversation;
+    const { accountId, botId: observingBotId } = message.chat.conversation;
     const account = this.#accounts.getById(accountId);
     if (account === undefined) {
       throw new Error(`Account ${accountId} of message ${message.id} does not exist`);
@@ -741,7 +751,7 @@ export class BotMessageViewService {
       message,
       account: account.profile,
       bot: bot.profile,
-      observerMessageId: this.#requirePrivateBotMessageId(message.conversation, message.id),
+      observerMessageId: this.#requirePrivateBotMessageId(message.chat, message.id),
       context: this.#resolveProjectionContext(message, observingBotId),
     };
   }
