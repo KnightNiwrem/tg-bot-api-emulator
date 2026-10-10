@@ -1,21 +1,48 @@
 /**
- * Keeps the checked dependency graph reproducible. Source, test and client code reach external
- * packages only through the import map in `deno.json`, which names exact versions. Documentation
- * examples are meant to be copied, so they name the import map's registry packages in full, from
- * the same registry and at the same versions, and `deno.lock` records what each one resolved to.
- * grammY and auto-retry, which the import map takes from their Deno source, are named by their npm
- * packages instead; see {@link ALIASES_BY_GUIDE_DISTRIBUTION}.
+ * Keeps the checked dependency graph reproducible. Every module in the repository outside `docs/`
+ * reaches external packages only through the import map in `deno.json`, which names exact
+ * versions, and tasks and CI steps fetch nothing by themselves. Documentation examples are meant
+ * to be copied, so they name the import map's registry packages in full, from the same registry
+ * and at the same versions, and `deno.lock` records what each one resolved to. grammY and
+ * auto-retry, which the import map takes from their Deno source, are named by their npm packages
+ * instead; see {@link ALIASES_BY_GUIDE_DISTRIBUTION}.
+ *
+ * Out of scope: the versions of GitHub Actions in CI, which `uses:` pins by major tag, and the
+ * availability of the locked remote modules.
  */
-import { parseModule } from '@deno/graph';
+import { parse as parseYaml } from '@std/yaml';
+
+import {
+  classifyFileName,
+  type CodeExample,
+  extractCodeExamples,
+  MODULE_EXTENSIONS,
+  type ModuleImports,
+  readModuleImports,
+  readRepositoryInventory,
+  type RepositoryInventory,
+} from './support/repository_modules.ts';
 
 const REPOSITORY_ROOT = new URL('../', import.meta.url);
-/** Directories whose TypeScript modules import external packages through the import map. */
-const CODE_DIRECTORIES = ['src/', 'tests/', 'clients/'];
-/** Documentation whose TypeScript files and ```ts blocks are copyable examples. */
-const DOCUMENTATION_PATHS = ['README.md', 'docs/'];
+/** The directory whose modules are copyable examples rather than code that imports aliases. */
+const DOCUMENTATION_DIRECTORY = 'docs/';
+const CI_WORKFLOW_DIRECTORY = '.github/workflows/';
 
 /** An exact semantic version, without ranges, tags or build metadata. */
 const EXACT_VERSION = /^\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?$/;
+/** `deno.json` fields that would resolve imports other than through its own `imports`. */
+const RESOLUTION_OVERRIDE_FIELDS = ['importMap', 'scopes', 'workspace', 'links', 'patch'];
+/**
+ * A command that fetches a package or module by itself, so that neither the import map nor
+ * `deno.lock` governs it: a registry or URL specifier, a package runner, or a download.
+ */
+const SELF_FETCHING_COMMAND = new RegExp(
+  [
+    String.raw`(?:^|[\s'"=(])(?:npm:|jsr:|https?://)`,
+    String.raw`(?:^|[\s;&|(])(?:npx|bunx|pnpx|curl|wget)(?:\s|$)`,
+    String.raw`(?:^|[\s;&|(])(?:npm|pnpm|yarn|bun)\s+(?:exec|dlx|x|install|i|ci|add)(?:\s|$)`,
+  ].join('|'),
+);
 
 /** A specifier for a package in the npm or JSR registry, such as `npm:grammy@1.46.0/types`. */
 interface RegistrySpecifier {
@@ -35,27 +62,20 @@ interface PinnedTarget {
 /** The exact versions the import map pins, by registry-qualified package such as `npm:zod`. */
 type PinnedVersions = ReadonlyMap<string, ReadonlySet<string>>;
 
-/** The imports of one module, as {@link readModuleImports} finds them. */
-interface ModuleImports {
-  /** Every specifier the module imports, without the local files it resolves to. */
-  readonly specifiers: readonly string[];
-  /** The 1-based lines of dynamic imports whose specifier is computed at run time. */
-  readonly computedImportLines: readonly number[];
-}
-
-/** A TypeScript example from the documentation, under the module URL it is parsed as. */
-interface TypeScriptExample {
-  /** Where problems are reported, such as `docs/clients/typescript/polls.md, example 2`. */
-  readonly label: string;
-  readonly moduleUrl: URL;
-  readonly source: string;
+/** The parts of `deno.json` that decide how dependencies resolve and what tasks run. */
+interface DenoConfiguration {
+  readonly imports: Readonly<Record<string, string>>;
+  readonly taskCommands: Readonly<Record<string, string>>;
+  readonly resolutionOverrides: readonly string[];
 }
 
 Deno.test('the import map pins every target to one exact version per package', async () => {
-  const imports = await readImportMap();
-  const problems: string[] = [];
+  const configuration = await readDenoConfiguration();
+  const problems = configuration.resolutionOverrides.map((field) =>
+    `deno.json: ${field} would resolve imports outside the import map`
+  );
   const versionsBySource = new Map<string, Set<string>>();
-  for (const [alias, target] of Object.entries(imports)) {
+  for (const [alias, target] of Object.entries(configuration.imports)) {
     const pinning = readPinnedTarget(target);
     if (typeof pinning === 'string') {
       problems.push(`${alias}: ${pinning}`);
@@ -73,15 +93,28 @@ Deno.test('the import map pins every target to one exact version per package', a
   }
 });
 
+Deno.test('every file is one the dependency checks can classify', async () => {
+  const inventory = await readRepositoryInventory(REPOSITORY_ROOT);
+  if (inventory.problems.length > 0) {
+    throw new Error(`Files outside the dependency checks:\n${inventory.problems.join('\n')}`);
+  }
+  if (!inventory.modulePaths.includes('tests/dependency_specifiers_test.ts')) {
+    throw new Error('Expected the inventory to include this test module');
+  }
+});
+
 Deno.test('code imports external packages only through the import map', async () => {
-  const imports = await readImportMap();
+  const { imports } = await readDenoConfiguration();
+  const inventory = await readRepositoryInventory(REPOSITORY_ROOT);
   const problems: string[] = [];
-  for (const path of await listFiles(CODE_DIRECTORIES, '.ts')) {
+  for (const path of inventory.modulePaths) {
+    if (path.startsWith(DOCUMENTATION_DIRECTORY)) continue;
     const moduleImports = await readModuleImports(
+      REPOSITORY_ROOT,
       new URL(path, REPOSITORY_ROOT),
       await readRepositoryText(path),
     );
-    problems.push(...computedImportProblems(path, moduleImports));
+    problems.push(...moduleScopeProblems(path, moduleImports, inventory));
     for (const specifier of moduleImports.specifiers) {
       if (!isRelative(specifier) && !isNodeBuiltIn(specifier) && !isMapped(specifier, imports)) {
         problems.push(`${path}: ${specifier}`);
@@ -94,25 +127,46 @@ Deno.test('code imports external packages only through the import map', async ()
 });
 
 Deno.test('documentation examples name registry packages at import map versions', async () => {
-  const pinnedVersions = pinnedVersionsByPackage(await readImportMap());
+  const pinnedVersions = pinnedVersionsByPackage((await readDenoConfiguration()).imports);
+  const inventory = await readRepositoryInventory(REPOSITORY_ROOT);
+  const examples: CodeExample[] = [];
+  for (const path of inventory.documentationPaths) {
+    examples.push(...extractCodeExamples(REPOSITORY_ROOT, path, await readRepositoryText(path)));
+  }
+  for (const path of inventory.modulePaths) {
+    if (!path.startsWith(DOCUMENTATION_DIRECTORY)) continue;
+    const moduleUrl = new URL(path, REPOSITORY_ROOT);
+    examples.push({ label: path, moduleUrl, source: await readRepositoryText(path) });
+  }
   const problems: string[] = [];
-  for (const path of await listFiles(DOCUMENTATION_PATHS, '.md', '.ts')) {
-    const text = await readRepositoryText(path);
-    const examples = path.endsWith('.md')
-      ? extractTypeScriptExamples(path, text)
-      : [{ label: path, moduleUrl: new URL(path, REPOSITORY_ROOT), source: text }];
-    for (const { label, moduleUrl, source } of examples) {
-      const moduleImports = await readModuleImports(moduleUrl, source);
-      problems.push(...computedImportProblems(label, moduleImports));
-      for (const specifier of moduleImports.specifiers) {
-        if (isRelative(specifier)) continue;
-        const problem = documentationSpecifierProblem(specifier, pinnedVersions);
-        if (problem !== undefined) problems.push(`${label}: ${specifier} ${problem}`);
-      }
+  for (const { label, moduleUrl, source } of examples) {
+    const moduleImports = await readModuleImports(REPOSITORY_ROOT, moduleUrl, source);
+    problems.push(...moduleScopeProblems(label, moduleImports, inventory));
+    for (const specifier of moduleImports.specifiers) {
+      if (isRelative(specifier)) continue;
+      const problem = documentationSpecifierProblem(specifier, pinnedVersions);
+      if (problem !== undefined) problems.push(`${label}: ${specifier} ${problem}`);
     }
   }
   if (problems.length > 0) {
     throw new Error(`Documentation imports out of step with deno.json:\n${problems.join('\n')}`);
+  }
+});
+
+Deno.test('tasks and CI steps fetch packages only through the import map', async () => {
+  const commands = Object.entries((await readDenoConfiguration()).taskCommands).map((
+    [name, command],
+  ) => ({ label: `deno.json task ${name}`, command }));
+  for await (const entry of Deno.readDir(new URL(CI_WORKFLOW_DIRECTORY, REPOSITORY_ROOT))) {
+    const path = `${CI_WORKFLOW_DIRECTORY}${entry.name}`;
+    const workflow: unknown = parseYaml(await readRepositoryText(path));
+    for (const command of collectRunCommands(workflow)) commands.push({ label: path, command });
+  }
+  const problems = commands.filter(({ command }) => SELF_FETCHING_COMMAND.test(command)).map((
+    { label, command },
+  ) => `${label}: ${command}`);
+  if (problems.length > 0) {
+    throw new Error(`Commands that fetch outside the import map:\n${problems.join('\n')}`);
   }
 });
 
@@ -136,10 +190,11 @@ Deno.test('import discovery finds every written import form and flags computed o
     'await import(name);',
   ].join('\n');
   const moduleImports = await readModuleImports(
+    REPOSITORY_ROOT,
     new URL('tests/import_forms.ts', REPOSITORY_ROOT),
     source,
   );
-  const expectedSpecifiers = [
+  assertSameItems(moduleImports.specifiers, [
     'npm:reference-types@latest',
     'npm:static@latest',
     'npm:type-only@latest',
@@ -151,15 +206,79 @@ Deno.test('import discovery finds every written import form and flags computed o
     'npm:commented@latest',
     'npm:attributes@latest',
     './local.ts',
+  ], 'specifiers');
+  assertSameItems(moduleImports.localPaths, ['tests/local.ts'], 'local files');
+  assertSameItems(moduleImports.computedImportLines, [15, 16], 'computed import lines');
+
+  const jsxModule = await readModuleImports(
+    REPOSITORY_ROOT,
+    new URL('clients/view.tsx', REPOSITORY_ROOT),
+    "import { h } from 'npm:preact@latest';\nexport const view = <div>{h}</div>;\n",
+  );
+  assertSameItems(jsxModule.specifiers, ['npm:preact@latest'], 'JSX module specifiers');
+});
+
+Deno.test('the inventory classifies every Deno module extension and refuses unknown ones', () => {
+  const cases: Array<[name: string, classification: ReturnType<typeof classifyFileName>]> = [
+    ...MODULE_EXTENSIONS.map((extension): [string, 'module'] => [`view${extension}`, 'module']),
+    ['view_test.tsx', 'module'],
+    ['types.d.ts', 'module'],
+    ['README.md', 'documentation'],
+    ['openapi.yaml', 'data'],
+    ['.fallowrc.json', 'data'],
+    ['deno.lock', 'data'],
+    ['deno.json', 'configuration'],
+    ['package.json', 'configuration'],
+    ['import_map.json', 'configuration'],
+    ['LICENSE', 'extensionless'],
+    ['.gitignore', 'extensionless'],
+    ['module.wasm', 'unrecognised'],
+    ['component.vue', 'unrecognised'],
+    ['script.coffee', 'unrecognised'],
   ];
-  const found = JSON.stringify([...moduleImports.specifiers].sort());
-  if (found !== JSON.stringify([...expectedSpecifiers].sort())) {
-    throw new Error(`Expected the specifiers ${expectedSpecifiers.join(', ')}, found ${found}`);
+  for (const [name, expected] of cases) {
+    const classification = classifyFileName(name);
+    if (classification !== expected) {
+      throw new Error(`Expected ${name} to classify as ${expected}, not ${classification}`);
+    }
   }
-  if (JSON.stringify(moduleImports.computedImportLines) !== JSON.stringify([15, 16])) {
-    throw new Error(
-      `Expected computed imports on lines 15 and 16, found ${moduleImports.computedImportLines}`,
-    );
+  const markdown = [
+    '```tsx',
+    "import { h } from 'npm:preact@latest';",
+    '```',
+    '```sh',
+    'deno task start',
+    '```',
+    '```javascript',
+    "import 'npm:left-pad@latest';",
+    '```',
+  ].join('\n');
+  const examples = extractCodeExamples(REPOSITORY_ROOT, 'docs/page.md', markdown);
+  assertSameItems(
+    examples.map(({ moduleUrl }) => moduleUrl.pathname.slice(REPOSITORY_ROOT.pathname.length)),
+    ['docs/page.md$1.tsx', 'docs/page.md$2.js'],
+    'example modules',
+  );
+});
+
+Deno.test('the command check rejects package runners, registry specifiers and downloads', () => {
+  const cases: Array<[command: string, fetchesBySelf: boolean]> = [
+    ['deno run -A fallow dead-code --boundary-violations', false],
+    ['deno run --allow-read --allow-env @redocly/cli lint openapi/openapi.yaml', false],
+    ['deno test --allow-net=127.0.0.1 --allow-import=cdn.jsdelivr.net,jsr.io', false],
+    ['git diff --exit-code -- deno.lock', false],
+    ['deno task ${{ matrix.task }}', false],
+    ['npx --yes @redocly/cli@2.54.2 lint openapi/openapi.yaml', true],
+    ['deno run -A npm:@redocly/cli@2.54.2 lint', true],
+    ['deno run jsr:@std/http@1.0.0/file-server', true],
+    ['deno run https://example.com/script.ts', true],
+    ['deno test && npm exec redocly', true],
+    ['curl -fsSL https://example.com/install.sh | sh', true],
+  ];
+  for (const [command, fetchesBySelf] of cases) {
+    if (SELF_FETCHING_COMMAND.test(command) !== fetchesBySelf) {
+      throw new Error(`Expected ${command} to be ${fetchesBySelf ? 'rejected' : 'accepted'}`);
+    }
   }
 });
 
@@ -204,6 +323,7 @@ Deno.test('the specifier checks reject remote URLs, ranges and unpinned packages
     ['https://cdn.jsdelivr.net/gh/grammyjs/grammY@^1.46.0/src/mod.ts', false],
     ['https://lib.deno.dev/x/grammy@v1/mod.ts', false],
     ['http://cdn.jsdelivr.net/gh/grammyjs/grammY@v1.46.0/src/mod.ts', false],
+    ['./vendor/grammy/mod.ts', false],
   ];
   for (const [target, accepted] of targetCases) {
     if ((typeof readPinnedTarget(target) !== 'string') !== accepted) {
@@ -348,109 +468,76 @@ function isNodeBuiltIn(specifier: string): boolean {
 }
 
 /**
- * What a module imports. Deno's own module analysis, deno_graph, finds every specifier Deno would
- * load or type-check: imports, re-exports, dynamic imports with string or plain template
- * arguments, `import()` types, `import x = require()`, triple-slash references and
- * `@ts-types`/`@deno-types` directives. Specifiers are as written, except that a directive's types
- * specifier is reported resolved; a resolved local file is left out.
- *
- * A dynamic import whose argument is computed has no specifier until it runs, so no static check
- * and no `deno.lock` entry can cover it; Deno's parser finds those through a lint rule.
+ * Problems that no allowed specifier can excuse: dynamic imports whose specifier is computed, and
+ * local imports of files the inventory does not cover, such as a module in an ignored directory.
+ * A local data or text file, such as an OpenAPI schema a test reads, imports nothing.
  */
-async function readModuleImports(moduleUrl: URL, source: string): Promise<ModuleImports> {
-  const module = await parseModule(moduleUrl.href, new TextEncoder().encode(source));
-  const specifiers = new Set<string>();
-  const addResolved = (resolved: string | undefined) => {
-    if (resolved !== undefined && !resolved.startsWith('file:')) specifiers.add(resolved);
-  };
-  for (const dependency of module.dependencies ?? []) {
-    specifiers.add(dependency.specifier);
-    addResolved(dependency.code?.specifier);
-    addResolved(dependency.type?.specifier);
+function moduleScopeProblems(
+  label: string,
+  moduleImports: ModuleImports,
+  inventory: RepositoryInventory,
+): string[] {
+  const problems = moduleImports.computedImportLines.map((line) =>
+    `${label}:${line}: computes its import specifier, which neither this check nor deno.lock covers`
+  );
+  for (const path of moduleImports.localPaths) {
+    if (!inventory.kindsByPath.has(path)) {
+      problems.push(`${label}: imports ${path}, which the dependency checks do not cover`);
+    }
   }
-  if (module.typesDependency !== undefined) {
-    specifiers.add(module.typesDependency.specifier);
-    addResolved(module.typesDependency.dependency.specifier);
-  }
-  const computedImports = Deno.lint.runPlugin(COMPUTED_IMPORT_PLUGIN, moduleUrl.pathname, source);
-  return {
-    specifiers: [...specifiers],
-    computedImportLines: computedImports.map(({ range: [start] }) =>
-      source.slice(0, start).split('\n').length
-    ),
-  };
+  return problems;
 }
 
-/** Reports each dynamic `import()` whose argument is not a string without substitutions. */
-const COMPUTED_IMPORT_PLUGIN: Deno.lint.Plugin = {
-  name: 'dependency-specifiers',
-  rules: {
-    'computed-import': {
-      create(context) {
-        return {
-          ImportExpression(node) {
-            const { source } = node;
-            const isWrittenOut = source.type === 'Literal' ||
-              (source.type === 'TemplateLiteral' && source.expressions.length === 0);
-            if (!isWrittenOut) context.report({ node, message: 'computed import specifier' });
-          },
-        };
-      },
-    },
-  },
-};
-
-/** One problem per computed dynamic import, which no specifier rule can check. */
-function computedImportProblems(label: string, imports: ModuleImports): string[] {
-  return imports.computedImportLines.map((line) =>
-    `${label}:${line}: computes its import specifier, which neither this check nor deno.lock covers`
+/** Every `run` command in a parsed CI workflow, wherever its steps are. */
+function collectRunCommands(value: unknown): string[] {
+  if (Array.isArray(value)) return value.flatMap(collectRunCommands);
+  if (typeof value !== 'object' || value === null) return [];
+  return Object.entries(value).flatMap(([key, child]) =>
+    key === 'run' && typeof child === 'string' ? [child] : collectRunCommands(child)
   );
 }
 
-/** The TypeScript examples of a Markdown page, each with a module URL Deno can parse it under. */
-function extractTypeScriptExamples(path: string, markdown: string): TypeScriptExample[] {
-  return [...markdown.matchAll(/^```ts\n([\s\S]*?)^```$/gm)].map(([, source], index) => ({
-    label: `${path}, example ${index + 1}`,
-    moduleUrl: new URL(`${path}$${index + 1}.ts`, REPOSITORY_ROOT),
-    source,
-  }));
+function assertSameItems<T>(actual: readonly T[], expected: readonly T[], what: string): void {
+  const sortedActual = JSON.stringify([...actual].sort());
+  const sortedExpected = JSON.stringify([...expected].sort());
+  if (sortedActual !== sortedExpected) {
+    throw new Error(`Expected the ${what} ${sortedExpected}, found ${sortedActual}`);
+  }
 }
 
-async function readImportMap(): Promise<Record<string, string>> {
+async function readDenoConfiguration(): Promise<DenoConfiguration> {
   const configuration: unknown = JSON.parse(await readRepositoryText('deno.json'));
   if (typeof configuration !== 'object' || configuration === null) {
     throw new Error('Expected deno.json to hold an object');
   }
-  const imports: unknown = Reflect.get(configuration, 'imports');
-  if (typeof imports !== 'object' || imports === null) {
-    throw new Error('Expected deno.json to hold an import map');
-  }
-  const entries = Object.entries(imports);
-  const targets: Record<string, string> = {};
-  for (const [alias, target] of entries) {
-    if (typeof target !== 'string') throw new Error(`Expected ${alias} to map to a specifier`);
-    targets[alias] = target;
-  }
-  return targets;
+  return {
+    imports: readStringRecord(Reflect.get(configuration, 'imports'), 'imports', (target) => target),
+    taskCommands: readStringRecord(Reflect.get(configuration, 'tasks'), 'tasks', (task) => {
+      const command: unknown = typeof task === 'object' && task !== null
+        ? Reflect.get(task, 'command')
+        : task;
+      return command;
+    }),
+    resolutionOverrides: RESOLUTION_OVERRIDE_FIELDS.filter((field) => field in configuration),
+  };
 }
 
-/** Repository-relative paths of the files with one of `extensions` at or below `roots`. */
-async function listFiles(roots: readonly string[], ...extensions: string[]): Promise<string[]> {
-  const paths: string[] = [];
-  const pending = [...roots];
-  for (let path = pending.pop(); path !== undefined; path = pending.pop()) {
-    if (!path.endsWith('/')) {
-      paths.push(path);
-      continue;
-    }
-    for await (const entry of Deno.readDir(new URL(path, REPOSITORY_ROOT))) {
-      if (entry.isDirectory) pending.push(`${path}${entry.name}/`);
-      else if (extensions.some((extension) => entry.name.endsWith(extension))) {
-        paths.push(`${path}${entry.name}`);
-      }
-    }
+/** Reads a `deno.json` object whose entries `read` turns into strings, rejecting other shapes. */
+function readStringRecord(
+  value: unknown,
+  field: string,
+  read: (entry: unknown) => unknown,
+): Record<string, string> {
+  if (typeof value !== 'object' || value === null) {
+    throw new Error(`Expected deno.json to hold ${field}`);
   }
-  return paths.sort();
+  const record: Record<string, string> = {};
+  for (const [name, entry] of Object.entries(value)) {
+    const text = read(entry);
+    if (typeof text !== 'string') throw new Error(`Expected deno.json ${field}.${name} as text`);
+    record[name] = text;
+  }
+  return record;
 }
 
 async function readRepositoryText(path: string): Promise<string> {
