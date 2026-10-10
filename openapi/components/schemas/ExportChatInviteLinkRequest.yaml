@@ -1,0 +1,9 @@
+type: object
+additionalProperties: false
+required:
+  - chat_id
+properties:
+  chat_id:
+    $ref: ./ChatIdentifier.yaml
+    description: >-
+      Identifier of the supergroup: its negative chat ID, or `@username` for a public one.

@@ -629,3 +629,84 @@ Deno.test('the bot switches its link to approval, then revokes it', async () => 
   });
 });
 ```
+
+## Primary links
+
+A bot that publishes the supergroup's main link uses its primary link instead of creating additional
+ones. `exportChatInviteLink` answers a new primary link as a string and revokes the bot's previous
+one, whose members stay. `getChat` shows the bot its current primary link as `invite_link`, and
+revoking that link gives the bot a replacement, which `getChat` then shows. Reading the chat never
+creates a primary link: before the bot's first export, `getChat` shows none. Each administrator bot
+has its own primary link, and the owner's `getChatInviteLinks` lists every one, replaced ones too,
+with `is_primary` set. [Primary links](../../features/invite-links.md#primary-links) describes the
+rules and errors.
+
+In this example, the owner asks the bot for the link, then has it replace the link:
+
+```ts
+import { assertEquals, assertNotEquals, assertRejects } from 'jsr:@std/assert@^1';
+import { EmulationClientError } from '../../../clients/typescript/mod.ts';
+import { withBotFixture } from './bot_fixture.ts';
+
+Deno.test('the bot publishes its primary link, then replaces it', async () => {
+  await withBotFixture({
+    handlers: (bot) => {
+      bot.command('link', async (ctx) => {
+        await ctx.reply(await ctx.exportChatInviteLink());
+      });
+      bot.command('newlink', async (ctx) => {
+        const { invite_link: currentLink } = await ctx.getChat();
+        if (currentLink !== undefined) {
+          await ctx.revokeChatInviteLink(currentLink);
+        }
+        await ctx.reply((await ctx.getChat()).invite_link ?? 'No link yet');
+      });
+    },
+  }, async ({ session, botProfile, account, activity }) => {
+    const supergroup = await account.createSupergroup({ title: 'Book club' });
+    const groupChat = { type: 'supergroup', chatId: supergroup.id } as const;
+    await account.addChatMember({ chat: groupChat, userId: botProfile.id });
+    await account.promoteChatMember({
+      chat: groupChat,
+      userId: botProfile.id,
+      rights: { can_invite_users: true },
+    });
+    // Sends the bot a command and returns the text of its reply.
+    const askBot = async (command: string) => {
+      const beforeAsking = await activity.position();
+      await account.sendMessage({ to: groupChat, text: `/${command}@test_bot` });
+      const reply = await activity.waitFor(
+        { method: 'sendMessage', chat_id: supergroup.id, ok: true },
+        { after: beforeAsking },
+      );
+      return reply.parameters.text;
+    };
+
+    const firstLink = await askBot('link');
+    const { account: grace } = await session.createAccount({ first_name: 'Grace' });
+    await grace.joinChatByInviteLink({ inviteLink: firstLink });
+
+    const secondLink = await askBot('newlink');
+    assertNotEquals(secondLink, firstLink);
+    const { account: heidi } = await session.createAccount({ first_name: 'Heidi' });
+    const refusal = await assertRejects(
+      () => heidi.joinChatByInviteLink({ inviteLink: firstLink }),
+      EmulationClientError,
+    );
+    assertEquals(refusal.status, 410);
+    assertEquals((await heidi.joinChatByInviteLink({ inviteLink: secondLink })).outcome, 'joined');
+
+    // Grace stays a member of the replaced link, which the owner sees revoked.
+    const ownerView = await account.getChatInviteLinks({ chat: groupChat });
+    assertEquals(
+      ownerView.map(({ invite_link, is_primary, is_revoked, member_count }) => [
+        invite_link,
+        is_primary,
+        is_revoked,
+        member_count,
+      ]),
+      [[firstLink, true, true, 1], [secondLink, true, false, 1]],
+    );
+  });
+});
+```

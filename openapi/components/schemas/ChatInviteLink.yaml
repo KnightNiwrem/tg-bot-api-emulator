@@ -1,8 +1,8 @@
 type: object
 additionalProperties: false
 description: >-
-  An additional invite link of a supergroup, in the field order of the official Bot API server.
-  Primary and subscription links are not supported.
+  An invite link of a supergroup, in the field order of the official Bot API server: an
+  administrator's primary link or an additional link. Subscription links are not supported.
 required:
   - invite_link
   - creator
@@ -42,10 +42,13 @@ properties:
     description: Whether users who use the link send a join request instead of joining.
   is_primary:
     type: boolean
-    const: false
+    description: >-
+      Whether the link is its creator's primary link, from `exportChatInviteLink` or the
+      replacement that revoking the previous one created, which has no name, expiry date or
+      member limit and never creates join requests.
   is_revoked:
     type: boolean
     description: >-
-      Whether the bot that created the link revoked it with `revokeChatInviteLink`, after which
-      it admits nobody. A `chat_member` update for an approved join request shows the link as it
+      Whether the bot that created the link revoked it with `revokeChatInviteLink`, or replaced
+      it as its primary link with `exportChatInviteLink`, after which it admits nobody. A `chat_member` update for an approved join request shows the link as it
       is when the request is approved.

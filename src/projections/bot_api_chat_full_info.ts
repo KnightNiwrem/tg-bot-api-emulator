@@ -60,11 +60,14 @@ export function projectPrivateChatFullInfo(
  *   non-members write, and the emulator has none.
  * - Gifts cannot be sent to it, so it accepts none, as `JsonChat` derives from `can_send_gift`.
  *
- * As for a private chat, `JsonChat` shows the newest pinned message without its reply.
+ * As for a private chat, `JsonChat` shows the newest pinned message without its reply. It shows
+ * the observing administrator's own primary invite link, whole, which `primaryInviteLinkUrl`
+ * omits when the observer has none to show.
  */
 export function projectSupergroupChatFullInfo(
   { id, title, username, description, hasProtectedContent, defaultPermissions }: Supergroup,
   pinnedMessage: BotApiPinnedSupergroupMessage | undefined,
+  primaryInviteLinkUrl: string | undefined,
 ): BotApiSupergroupChatFullInfo {
   const channelId = -id - SUPERGROUP_CHAT_ID_OFFSET;
   return {
@@ -74,6 +77,7 @@ export function projectSupergroupChatFullInfo(
     type: 'supergroup',
     ...(username === undefined ? {} : { active_usernames: [username] }),
     ...(description === undefined || description.length === 0 ? {} : { description }),
+    ...(primaryInviteLinkUrl === undefined ? {} : { invite_link: primaryInviteLinkUrl }),
     has_visible_history: true,
     permissions: projectChatPermissions(defaultPermissions),
     join_to_send_messages: true,

@@ -110,6 +110,10 @@ import type {
   EditInviteLinkAsBotFailureReason,
   EditInviteLinkAsBotInput,
   EditInviteLinkAsBotResult,
+  ExportPrimaryInviteLinkAsBotFailureReason,
+  ExportPrimaryInviteLinkAsBotInput,
+  ExportPrimaryInviteLinkAsBotResult,
+  FindPrimaryInviteLinkOfBotInput,
   RevokeInviteLinkAsBotFailureReason,
   RevokeInviteLinkAsBotInput,
   RevokeInviteLinkAsBotResult,
@@ -1398,6 +1402,24 @@ export type BotApiUnbanChatMemberResult =
     readonly reason: ChatMemberModerationFailureReason | 'method_unavailable_in_private_chats';
   };
 
+export interface ExportChatInviteLinkRequest {
+  /** The Bot API `chat_id`, as `SendRequestOptions` describes it. */
+  readonly chatId: number;
+}
+
+export type BotApiExportChatInviteLinkResult =
+  | {
+    readonly exported: true;
+    /** The bot's new primary link, whole, as the official server answers it: a bare string. */
+    readonly inviteLink: string;
+  }
+  | {
+    readonly exported: false;
+    readonly reason:
+      | Exclude<ExportPrimaryInviteLinkAsBotFailureReason, 'bot_not_found'>
+      | 'private_chat_has_no_invite_links';
+  };
+
 export interface CreateChatInviteLinkRequest {
   /** The Bot API `chat_id`, as `SendRequestOptions` describes it. */
   readonly chatId: number;
@@ -1997,11 +2019,16 @@ interface BotMessageViews {
     readonly chatId: number;
     readonly observerBotId: number;
     readonly pinnedMessage: ChatMessage | undefined;
+    readonly primaryInviteLink: ChatInviteLink | undefined;
   }): BotApiChatFullInfo | undefined;
   viewChatInviteLink(link: ChatInviteLink, observerId: number): BotApiChatInviteLink;
 }
 
 interface ChatAdmission {
+  exportPrimaryInviteLinkAsBot(
+    input: ExportPrimaryInviteLinkAsBotInput,
+  ): ExportPrimaryInviteLinkAsBotResult;
+  findPrimaryInviteLinkOfBot(input: FindPrimaryInviteLinkOfBotInput): ChatInviteLink | undefined;
   createInviteLinkAsBot(input: CreateInviteLinkAsBotInput): CreateInviteLinkAsBotResult;
   editInviteLinkAsBot(input: EditInviteLinkAsBotInput): EditInviteLinkAsBotResult;
   revokeInviteLinkAsBot(input: RevokeInviteLinkAsBotInput): RevokeInviteLinkAsBotResult;
@@ -2047,8 +2074,8 @@ interface BotApiServiceDependencies {
   readonly messageRepeater: BotMessageRepetition;
   readonly chatMemberships: ChatMemberships;
   /**
-   * Creates, edits and revokes the invite links that let accounts join supergroups, and decides
-   * join requests.
+   * Creates, edits and revokes the invite links that let accounts join supergroups, exports the
+   * bot's primary links, and decides join requests.
    */
   readonly chatAdmission: ChatAdmission;
   readonly botMessageViews: BotMessageViews;
@@ -3173,10 +3200,12 @@ export class BotApiService {
    * Returns everything a bot may learn about a chat: the private chat with an account that started
    * it, or a supergroup the bot may read, which a public one is to bots that are not members. It
    * shows the chat's newest pinned message, as the official Bot API server's `getChat` asks
-   * TDLib's `getChatPinnedMessage` for it.
+   * TDLib's `getChatPinnedMessage` for it, and a supergroup shows the bot's own primary invite
+   * link, as `ChatAdmissionService.findPrimaryInviteLinkOfBot` finds it.
    */
   getChat(authenticatedBot: VirtualBotProfile, { chatId }: GetChatRequest): BotApiGetChatResult {
     let pinnedMessagesChat: PinnedMessagesChat;
+    let primaryInviteLink: ChatInviteLink | undefined;
     if (isUserId(chatId)) {
       if (!this.#isPrivateChatKnown(authenticatedBot, chatId)) {
         return { found: false, reason: 'chat_not_found' };
@@ -3194,11 +3223,16 @@ export class BotApiService {
         return { found: false, reason: excludeMissingBotFailure(authenticatedBot, result.reason) };
       }
       pinnedMessagesChat = { type: 'supergroup', chatId };
+      primaryInviteLink = this.#chatAdmission.findPrimaryInviteLinkOfBot({
+        botId: authenticatedBot.id,
+        chatId,
+      });
     }
     const chat = this.#botMessageViews.viewChatFullInfo({
       chatId,
       observerBotId: authenticatedBot.id,
       pinnedMessage: this.#messagePinning.findNewestPinnedMessage(pinnedMessagesChat),
+      primaryInviteLink,
     });
     if (chat === undefined) {
       throw new Error(`Chat ${chatId} was found but cannot be shown`);
@@ -3342,6 +3376,30 @@ export class BotApiService {
   }
 
   /**
+   * Replaces the bot's primary invite link of a supergroup, as
+   * `ChatAdmissionService.exportPrimaryInviteLinkAsBot` does, and returns the new link, whole. As
+   * TDLib's `can_manage_dialog_invite_links` refuses, a private chat has no invite links.
+   */
+  exportChatInviteLink(
+    authenticatedBot: VirtualBotProfile,
+    { chatId }: ExportChatInviteLinkRequest,
+  ): BotApiExportChatInviteLinkResult {
+    if (isUserId(chatId)) {
+      return {
+        exported: false,
+        reason: this.#describePrivateChatInviteLinkFailure(authenticatedBot, chatId),
+      };
+    }
+    const result = this.#chatAdmission.exportPrimaryInviteLinkAsBot({
+      exporterBotId: authenticatedBot.id,
+      chatId,
+    });
+    return result.exported
+      ? { exported: true, inviteLink: result.link.url }
+      : { exported: false, reason: excludeMissingBotFailure(authenticatedBot, result.reason) };
+  }
+
+  /**
    * Creates an additional invite link of a supergroup, as
    * `ChatAdmissionService.createInviteLinkAsBot` does, and returns it as its creator sees it. As
    * TDLib's `can_manage_dialog_invite_links` refuses, a private chat has no invite links.
@@ -3409,7 +3467,8 @@ export class BotApiService {
 
   /**
    * Revokes an invite link the bot created, as `ChatAdmissionService.revokeInviteLinkAsBot` does,
-   * and returns the revoked link as its creator sees it; a private chat has no invite links.
+   * and returns the revoked link as its creator sees it, even when revoking the bot's primary link
+   * gave it a new one; a private chat has no invite links.
    */
   revokeChatInviteLink(
     authenticatedBot: VirtualBotProfile,

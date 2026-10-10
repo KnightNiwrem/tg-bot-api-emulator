@@ -256,8 +256,9 @@ demotions, bans and unbans.
 the fields and field order of the official server's full [`JsonChat`][json-chat]. As its
 [`check_chat_access`][chat-read-access] requires for reading, a bot that is not a member may read a
 public supergroup, but not one it was removed from. It shows the newest
-[pinned message](pinned-messages.md#pinned-message-in-getchat). Fields for data the emulator does
-not model, such as photos, bios and invite links, are omitted. The remaining fields show what a chat
+[pinned message](pinned-messages.md#pinned-message-in-getchat), and a supergroup shows the bot its
+own [primary invite link](invite-links.md#primary-links) as `invite_link`. Fields for data the
+emulator does not model, such as photos and bios, are omitted. The remaining fields show what a chat
 nobody configured further shows:
 
 - `accent_color_id` is TDLib's default [`AccentColorId`][accent-color] of the user or channel ID,
@@ -490,8 +491,6 @@ production read permissions.
   need their behavioral effects as the associated features are supported.
 
 - **Anonymous administrators.** Anonymous administration and its message attribution are absent.
-- **Primary invite links.** Supergroups have no primary [invite link](invite-links.md#real-gaps), so
-  it cannot be exported or replaced.
 - **Additional service messages.** Only membership, title and [pin](pinned-messages.md) service
   messages are produced. Other service events, such as photo changes, need corresponding messages as
   their features are supported.

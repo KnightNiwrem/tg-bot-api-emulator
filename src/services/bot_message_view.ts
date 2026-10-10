@@ -508,11 +508,13 @@ export class BotMessageViewService {
    * pinned message, if given, is shown as a replied message is, without its own `reply_to_message`.
    */
   viewChatFullInfo(
-    { chatId, observerBotId, pinnedMessage }: {
+    { chatId, observerBotId, pinnedMessage, primaryInviteLink }: {
       readonly chatId: number;
       readonly observerBotId: number;
       /** The chat's newest pinned message; omitted when it pins none. */
       readonly pinnedMessage: ChatMessage | undefined;
+      /** The observer's own primary link of a supergroup to show; omitted for none. */
+      readonly primaryInviteLink: ChatInviteLink | undefined;
     },
   ): BotApiChatFullInfo | undefined {
     if (isUserId(chatId)) {
@@ -535,8 +537,21 @@ export class BotMessageViewService {
         pinnedMessage === undefined
           ? undefined
           : this.#viewPinnedSupergroupMessage(pinnedMessage, observerBotId),
+        primaryInviteLink === undefined
+          ? undefined
+          : this.#viewOwnPrimaryInviteLinkUrl(primaryInviteLink, chatId, observerBotId),
       )
       : undefined;
+  }
+
+  /** Returns the whole URL of a primary link of the chat that the observer created. */
+  #viewOwnPrimaryInviteLinkUrl(link: ChatInviteLink, chatId: number, observerId: number): string {
+    if (!link.isPrimary || link.chatId !== chatId || link.creatorId !== observerId) {
+      throw new Error(
+        `Invite link ${link.url} is not a primary link of ${observerId} in ${chatId}`,
+      );
+    }
+    return link.url;
   }
 
   /**

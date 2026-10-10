@@ -1,9 +1,11 @@
 description: >-
-  Telegram Bot API method for revoking an additional invite link that the bot created in a
-  supergroup. The bot needs the `can_invite_users` administrator right. A revoked link admits
-  nobody from then on and can be neither edited nor revoked again; members that joined through
-  it stay, and pending join requests sent through it stay pending with their requester contact,
-  for an administrator bot to decide. No bot receives an update for it.
+  Telegram Bot API method for revoking an invite link that the bot created in a supergroup. The
+  bot needs the `can_invite_users` administrator right. A revoked link admits nobody from then
+  on and can be neither edited nor revoked again; members that joined through it stay, and
+  pending join requests sent through it stay pending with their requester contact, for an
+  administrator bot to decide. Revoking the bot's primary link gives the bot a new primary link,
+  which `getChat` shows; the answer is still the revoked link. No bot receives an update for
+  it.
 parameters:
   - $ref: ../components/parameters/SessionId.yaml
   - $ref: ../components/parameters/BotToken.yaml
@@ -24,7 +26,9 @@ post:
           $ref: ../components/schemas/RevokeChatInviteLinkRequest.yaml
   responses:
     '200':
-      description: The revoked link, as its creator sees it, with `is_revoked` true.
+      description: >-
+        The revoked link, as its creator sees it, with `is_revoked` true, and not the
+        replacement of a revoked primary link.
       content:
         application/json:
           schema:

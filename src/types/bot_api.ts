@@ -94,6 +94,11 @@ export interface BotApiSupergroupChatFullInfo extends BotApiSupergroupChat, BotA
   readonly active_usernames?: readonly string[];
   /** Omitted when empty. */
   readonly description?: string;
+  /**
+   * The observing bot's own primary invite link, whole; omitted when it has none that is not
+   * revoked, or lacks the `can_invite_users` administrator right.
+   */
+  readonly invite_link?: string;
   /** Present only when true. */
   readonly has_visible_history?: true;
   readonly permissions: BotApiChatPermissions;
@@ -823,7 +828,7 @@ export type BotApiGroupChatBotMember = Exclude<
 
 /**
  * An invite link of a chat, in the field order of the official Bot API server's
- * `JsonChatInviteLink`. Primary and subscription links are not supported.
+ * `JsonChatInviteLink`. Subscription links are not supported.
  */
 export interface BotApiChatInviteLink {
   /**
@@ -841,7 +846,8 @@ export interface BotApiChatInviteLink {
   /** How many pending join requests were sent through the link; omitted for none. */
   readonly pending_join_request_count?: number;
   readonly creates_join_request: boolean;
-  readonly is_primary: false;
+  /** Whether the link is its creator's primary link rather than an additional one. */
+  readonly is_primary: boolean;
   readonly is_revoked: boolean;
 }
 

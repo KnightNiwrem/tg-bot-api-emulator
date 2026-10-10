@@ -9,6 +9,7 @@ required:
   - member_count
   - pending_join_request_count
   - creates_join_request
+  - is_primary
   - is_expired
   - is_revoked
 properties:
@@ -44,6 +45,11 @@ properties:
   creates_join_request:
     type: boolean
     description: Whether users who use the link send a join request instead of joining.
+  is_primary:
+    type: boolean
+    description: >-
+      Whether the link is its creator's primary link rather than an additional link. Each
+      administrator bot has at most one primary link that is not revoked.
   is_expired:
     type: boolean
     description: >-
@@ -52,5 +58,5 @@ properties:
   is_revoked:
     type: boolean
     description: >-
-      Whether the bot that created the link revoked it, which ended its use for good. Its
-      members and pending join requests stay.
+      Whether the bot that created the link revoked it, or replaced it as its primary link,
+      which ended its use for good. Its members and pending join requests stay.

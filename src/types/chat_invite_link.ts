@@ -41,10 +41,13 @@ export interface ChatInviteLinkSettings {
 }
 
 /**
- * An additional invite link of a supergroup, which an administrator created besides the chat's
- * primary link. Its creator stays its owner, and only it edits or revokes the link. A link stays
- * usable until its expiry date arrives, which happens only when a test makes it arrive, or until
- * it is revoked. Primary links and subscription links are not supported.
+ * An invite link of a supergroup. Its creator stays its owner, and only it edits or revokes the
+ * link. A link stays usable until its expiry date arrives, which happens only when a test makes it
+ * arrive, or until it is revoked. Subscription links are not supported.
+ *
+ * Each administrator has at most one primary link of a chat that is not revoked: replacing it
+ * revokes the previous one. A primary link has no name, expiry date or member limit, never
+ * creates join requests, and cannot be edited. Every other link is an additional link.
  */
 export interface ChatInviteLink extends ChatInviteLinkSettings {
   /** The link as Telegram shows it to its creator: `INVITE_LINK_PREFIX` and the link's hash. */
@@ -53,6 +56,8 @@ export interface ChatInviteLink extends ChatInviteLinkSettings {
   /** The administrator that created the link, who alone sees the whole link in updates. */
   readonly creatorId: number;
   readonly createdAtUnixSeconds: number;
+  /** Whether the link is its creator's primary link of the chat rather than an additional one. */
+  readonly isPrimary: boolean;
   /**
    * Whether a test made the link's current expiry date arrive, which ends its use until an edit
    * gives the link another expiry date or none.

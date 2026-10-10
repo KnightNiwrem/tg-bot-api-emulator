@@ -1,0 +1,69 @@
+description: >-
+  Telegram Bot API method for replacing the bot's primary invite link of a supergroup. The bot
+  needs the `can_invite_users` administrator right, which default permissions never grant a bot.
+  Each administrator bot has its own primary link: an export revokes the bot's previous primary
+  link, if any, whose members stay, and leaves other administrators' primary links and every
+  additional link as they are. `getChat` shows the bot its current primary link as
+  `invite_link`. A primary link has no name, expiry date or member limit, never creates join
+  requests, and cannot be edited; revoking it with `revokeChatInviteLink` gives the bot a new
+  one. No bot receives an update for it.
+parameters:
+  - $ref: ../components/parameters/SessionId.yaml
+  - $ref: ../components/parameters/BotToken.yaml
+post:
+  operationId: exportChatInviteLink
+  summary: Replace the primary invite link of a supergroup as the authenticated virtual bot
+  requestBody:
+    required: true
+    content:
+      application/json:
+        schema:
+          $ref: ../components/schemas/ExportChatInviteLinkRequest.yaml
+      application/x-www-form-urlencoded:
+        schema:
+          $ref: ../components/schemas/ExportChatInviteLinkRequest.yaml
+      multipart/form-data:
+        schema:
+          $ref: ../components/schemas/ExportChatInviteLinkRequest.yaml
+  responses:
+    '200':
+      description: The bot's new primary link, as a bare string, as the official server answers it.
+      content:
+        application/json:
+          schema:
+            $ref: ../components/schemas/InviteLinkUrlResultResponse.yaml
+    '400':
+      description: >-
+        The request cannot be decoded or has unsupported parameters (`Bad Request: invalid
+        exportChatInviteLink parameters`), or Telegram would reject it, in this order: `chat_id`
+        is missing (`Bad Request: chat_id is empty`); the chat is neither a private chat with an
+        account that has written to the bot nor a supergroup the bot is or was a member of
+        (`Bad Request: chat not found`); the chat is a private chat (`Bad Request: can't invite
+        members to a private chat`); or the bot lacks `can_invite_users` (`Bad Request: not
+        enough rights to manage chat invite link`). A refused request changes nothing.
+      content:
+        application/json:
+          schema:
+            $ref: ../components/schemas/BotApiErrorResponse.yaml
+    '401':
+      description: The token does not belong to a virtual bot in the addressed session.
+      content:
+        application/json:
+          schema:
+            $ref: ../components/schemas/BotApiErrorResponse.yaml
+    '403':
+      description: >-
+        The bot left the supergroup (`Forbidden: bot is not a member of the supergroup chat`) or
+        was removed from it (`Forbidden: bot was kicked from the supergroup chat`).
+      content:
+        application/json:
+          schema:
+            $ref: ../components/schemas/BotApiErrorResponse.yaml
+    '404':
+      description: No active test session has the supplied identifier.
+    '429':
+      $ref: ../components/responses/BotApiRateLimited.yaml
+    '500':
+      $ref: ../components/responses/BotApiServerError.yaml
+    '503':
+      $ref: ../components/responses/BotApiServerError.yaml

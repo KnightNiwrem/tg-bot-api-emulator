@@ -279,6 +279,8 @@ paths:
     $ref: paths/sessions_{sessionId}_bot-api_bot{token}_banChatMember.yaml
   /sessions/{sessionId}/bot-api/bot{token}/promoteChatMember:
     $ref: paths/sessions_{sessionId}_bot-api_bot{token}_promoteChatMember.yaml
+  /sessions/{sessionId}/bot-api/bot{token}/exportChatInviteLink:
+    $ref: paths/sessions_{sessionId}_bot-api_bot{token}_exportChatInviteLink.yaml
   /sessions/{sessionId}/bot-api/bot{token}/createChatInviteLink:
     $ref: paths/sessions_{sessionId}_bot-api_bot{token}_createChatInviteLink.yaml
   /sessions/{sessionId}/bot-api/bot{token}/editChatInviteLink:

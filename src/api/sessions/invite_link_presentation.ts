@@ -15,7 +15,8 @@ type ChatJoinRequest = Extract<
 /**
  * Shows an invite link as the supergroup's owner inspects it, with the whole link, the Bot API's
  * field names, how many members joined through it and still are, how many pending join requests
- * were sent through it, whether a test made its expiry date arrive, and whether it was revoked.
+ * were sent through it, whether it is its creator's primary link, whether a test made its expiry
+ * date arrive, and whether it was revoked.
  */
 export function presentChatInviteLinkUsage(
   { link, memberCount, pendingJoinRequestCount }: ChatInviteLinkUsage,
@@ -29,6 +30,7 @@ export function presentChatInviteLinkUsage(
     member_count: memberCount,
     pending_join_request_count: pendingJoinRequestCount,
     creates_join_request: link.createsJoinRequest,
+    is_primary: link.isPrimary,
     is_expired: link.hasExpired,
     is_revoked: link.isRevoked,
   };
