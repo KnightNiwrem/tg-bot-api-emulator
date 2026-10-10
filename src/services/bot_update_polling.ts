@@ -164,11 +164,13 @@ export class BotUpdatePollingService {
       }
     }
 
-    if (heldLongPoll.terminationReason !== undefined) {
-      return { retrieved: false, reason: heldLongPoll.terminationReason };
-    }
+    // A poll that a conflict terminated but that is answered only after the session ended is
+    // answered as any other poll the end finds unanswered.
     if (!this.#sessionLifetime.admitsCommits) {
       return { retrieved: false, reason: 'session_ended' };
+    }
+    if (heldLongPoll.terminationReason !== undefined) {
+      return { retrieved: false, reason: heldLongPoll.terminationReason };
     }
     return this.#deliverUpdates(
       botId,

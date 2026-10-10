@@ -207,6 +207,36 @@ Deno.test('BotUpdatePollingService ends held long polls and changes nothing once
   );
 });
 
+Deno.test('BotUpdatePollingService answers a terminated long poll the session end finds unanswered as ended', async () => {
+  const { botUpdatePolling, endSession } = createPollingFixture();
+  const pollTerminatedByWebhook = botUpdatePolling.getUpdates(BOT_ID, {
+    limit: 100,
+    timeoutSeconds: 50,
+  });
+  const pollTerminatedByOtherPoll = botUpdatePolling.getUpdates(OTHER_BOT_ID, {
+    limit: 100,
+    timeoutSeconds: 50,
+  });
+
+  // Both polls are terminated, and the session ends before either is answered.
+  botUpdatePolling.terminateLongPollForWebhook(BOT_ID);
+  const terminatingPoll = botUpdatePolling.getUpdates(OTHER_BOT_ID, {
+    limit: 100,
+    timeoutSeconds: 50,
+  });
+  endSession();
+
+  assertJsonEqual(
+    await Promise.all([pollTerminatedByWebhook, pollTerminatedByOtherPoll, terminatingPoll]),
+    [
+      { retrieved: false, reason: 'session_ended' },
+      { retrieved: false, reason: 'session_ended' },
+      { retrieved: false, reason: 'session_ended' },
+    ],
+    'Expected every poll still unanswered at the end to be answered as ended, not as a conflict',
+  );
+});
+
 Deno.test('BotUpdatePollingService records the updates each answer confirms and delivers', async () => {
   const { botUpdates, botActivity, botUpdatePolling } = createPollingFixture();
   botUpdates.enqueueMessageUpdate(BOT_ID, createPrivateMessage(1));
