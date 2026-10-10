@@ -1,4 +1,5 @@
 import type { ChatDomainEvent } from '../types/chat_domain_event.ts';
+import { privateChatMessagePolicy } from '../types/chat_policy.ts';
 import type { InlineKeyboard } from '../types/inline_keyboard.ts';
 import type { Poll, PollId } from '../types/poll.ts';
 import { type AlbumCompositionFailureReason, formsAlbum } from '../types/media_album.ts';
@@ -16,6 +17,7 @@ import {
 import type { VirtualAccount } from '../types/virtual_account.ts';
 import type { VirtualBot } from '../types/virtual_bot.ts';
 import type {
+  AccountPrivateChatAddress,
   PrivateConversation,
   PrivateConversationKey,
   PrivateConversationRole,
@@ -101,10 +103,7 @@ export type PrivateConversationActivationResult =
 
 export interface SendAccountMessageInput {
   readonly fromAccountId: number;
-  readonly to: {
-    readonly type: 'private';
-    readonly botId: number;
-  };
+  readonly to: AccountPrivateChatAddress;
   readonly content: AccountMessageContent;
   /** The ID, in the bot's message box, of the chat's message to reply to; omitted for no reply. */
   readonly replyToBotMessageId?: number;
@@ -134,10 +133,7 @@ export type SendAccountMessageResult =
 /** An album an account sends to its private chat with a bot. */
 export interface SendAccountAlbumInput {
   readonly fromAccountId: number;
-  readonly to: {
-    readonly type: 'private';
-    readonly botId: number;
-  };
+  readonly to: AccountPrivateChatAddress;
   /** The album's media in the order the chat shows them, each with its caption. */
   readonly contents: readonly AccountAlbumMediaContent[];
   /** As `SendAccountMessageInput` describes it; every message of the album replies to it. */
@@ -167,10 +163,7 @@ export type SendAccountAlbumResult =
  */
 export interface SendAccountInlineResultInput {
   readonly fromAccountId: number;
-  readonly to: {
-    readonly type: 'private';
-    readonly botId: number;
-  };
+  readonly to: AccountPrivateChatAddress;
   readonly viaBotId: number;
   /**
    * What the result sends, which Telegram checked when the bot answered: content the answer holds,
@@ -191,10 +184,7 @@ export type SendAccountInlineResultResult =
 /** A forward that an account sends to its private chat with a bot. */
 export interface SendAccountForwardInput {
   readonly fromAccountId: number;
-  readonly to: {
-    readonly type: 'private';
-    readonly botId: number;
-  };
+  readonly to: AccountPrivateChatAddress;
   readonly forward: MessageForward;
 }
 
@@ -426,10 +416,7 @@ export type EditBotMessageMediaResult =
 
 export interface EditAccountMessageInput {
   readonly fromAccountId: number;
-  readonly chat: {
-    readonly type: 'private';
-    readonly botId: number;
-  };
+  readonly chat: AccountPrivateChatAddress;
   /** The message's ID in the bot's message box. */
   readonly botMessageId: number;
   readonly edit: AccountMessageEdit;
@@ -520,10 +507,7 @@ export type GetPrivateChatReplyInterfaceResult =
 
 export interface PressReplyKeyboardButtonInput {
   readonly fromAccountId: number;
-  readonly chat: {
-    readonly type: 'private';
-    readonly botId: number;
-  };
+  readonly chat: AccountPrivateChatAddress;
   /**
    * The text of the button to press. Buttons may share it, so the answer's kind also selects the
    * button, as `selectReplyKeyboardButton` describes.
@@ -1954,10 +1938,16 @@ export class PrivateMessagingService {
       isSilent,
       messageEffectId,
     });
-    // Telegram numbers a private message in each participant's message box. Only the bot's
-    // numbering is projected today; the account's keeps the stored model faithful to Telegram.
-    this.#messageBoxes.assignMessageId(account.profile.id, storedMessage.id);
-    this.#messageBoxes.assignMessageId(bot.profile.id, storedMessage.id);
+    // Only the bot's numbering is projected today; the account's keeps the stored model faithful
+    // to Telegram.
+    for (
+      const boxOwnerId of privateChatMessagePolicy.getNumberingBoxOwnerIds({
+        type: 'private',
+        conversation,
+      })
+    ) {
+      this.#messageBoxes.assignMessageId(boxOwnerId, storedMessage.id);
+    }
     // As TDLib does for a private chat: a keyboard or forced reply replaces what the client shows,
     // and a removal clears it.
     if (replyInterfaceMarkup !== undefined) {

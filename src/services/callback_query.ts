@@ -7,6 +7,7 @@ import type {
 } from '../types/callback_query.ts';
 import type { ChatDomainEvent } from '../types/chat_domain_event.ts';
 import type { VirtualBot } from '../types/virtual_bot.ts';
+import type { AccountChatAddress } from '../types/virtual_chat.ts';
 import { listRichMessageButtons, type RichMessageButtonAction } from '../types/rich_message.ts';
 import {
   type CanonicalMessageId,
@@ -17,15 +18,12 @@ import {
 import type {
   AccountChatMessageLookupFailureReason,
   AccountChatMessageReader,
-  AccountMessageChat,
 } from './account_chat_message.ts';
-
-/** The chat of the message carrying a pressed button, as the pressing account addresses it. */
-export type CallbackButtonChat = AccountMessageChat;
 
 export interface PressCallbackButtonInput {
   readonly fromAccountId: number;
-  readonly chat: CallbackButtonChat;
+  /** The chat of the message carrying the button, as the pressing account addresses it. */
+  readonly chat: AccountChatAddress;
   /** The ID of the message carrying the button, as the chat numbers it for its bots. */
   readonly messageId: number;
   readonly callbackData: string;

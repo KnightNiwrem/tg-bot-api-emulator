@@ -1,26 +1,28 @@
-import type { ChatMembership } from '../types/chat_membership.ts';
-import type { VirtualAccount } from '../types/virtual_account.ts';
-import type { VirtualBot } from '../types/virtual_bot.ts';
 import type {
+  ChatMessageLookup,
+  PrivateChatAccessPredicates,
+  PrivateChatIdentityPolicy,
+  SupergroupAccessPredicates,
+  SupergroupIdentityPolicy,
+} from '../types/chat_policy.ts';
+import type { VirtualAccount } from '../types/virtual_account.ts';
+import type {
+  AccountChatAddress,
+  PrivateChatKey,
   PrivateConversation,
-  PrivateConversationKey,
-  SharedChat,
   Supergroup,
+  SupergroupChatKey,
 } from '../types/virtual_chat.ts';
 import type { ChatMessage, PrivateMessage, SupergroupMessage } from '../types/virtual_message.ts';
-
-/**
- * A chat as an account addresses one of its messages: its private chat with a bot, where the bot's
- * message box numbers messages, or a supergroup, which numbers its own messages.
- */
-export type AccountMessageChat =
-  | { readonly type: 'private'; readonly botId: number }
-  | { readonly type: 'supergroup'; readonly chatId: number };
 
 /** A message as an account addresses it. */
 export interface AccountChatMessageKey {
   readonly accountId: number;
-  readonly chat: AccountMessageChat;
+  /**
+   * The account's private chat with a bot, where the bot's message box numbers messages, or a
+   * supergroup, which numbers its own messages.
+   */
+  readonly chat: AccountChatAddress;
   /** The ID of the message, as the chat numbers it for its bots. */
   readonly messageId: number;
 }
@@ -59,38 +61,21 @@ interface AccountLookup {
   getById(accountId: number): VirtualAccount | undefined;
 }
 
-interface BotLookup {
-  getById(botId: number): VirtualBot | undefined;
-}
+type PrivateChatReading =
+  & Pick<PrivateChatIdentityPolicy, 'identifyChatForAccount'>
+  & Pick<PrivateChatAccessPredicates, 'findConversation'>
+  & ChatMessageLookup<PrivateChatKey, PrivateMessage>;
 
-interface PrivateConversationLookup {
-  getPrivateConversation(key: PrivateConversationKey): PrivateConversation | undefined;
-}
+type SupergroupReading =
+  & Pick<SupergroupIdentityPolicy, 'identifyChatForAccount'>
+  & Pick<SupergroupAccessPredicates, 'resolveAccountMembership'>
+  & ChatMessageLookup<SupergroupChatKey, SupergroupMessage>;
 
-interface PrivateMessageLookup {
-  getPrivateMessageByBotMessageId(
-    conversation: PrivateConversationKey,
-    botMessageId: number,
-  ): PrivateMessage | undefined;
-}
-
-interface SupergroupLookup {
-  getSharedChat(chatId: number): SharedChat | undefined;
-  getChatMembership(chatId: number, identityId: number): ChatMembership | undefined;
-}
-
-interface SupergroupMessageLookup {
-  getMessageByChatMessageId(chatId: number, messageId: number): SupergroupMessage | undefined;
-}
-
-/** The stores in which an account's message lookup finds accounts, chats and messages. */
-export interface AccountChatMessageStores {
+/** What an account's message lookup asks: whether the account exists, and each chat type. */
+export interface AccountChatMessageReaderDependencies {
   readonly accounts: AccountLookup;
-  readonly bots: BotLookup;
-  readonly privateConversations: PrivateConversationLookup;
-  readonly privateMessages: PrivateMessageLookup;
-  readonly sharedChats: SupergroupLookup;
-  readonly supergroupMessages: SupergroupMessageLookup;
+  readonly privateChats: PrivateChatReading;
+  readonly supergroups: SupergroupReading;
 }
 
 /**
@@ -101,32 +86,37 @@ export interface AccountChatMessageStores {
  * member.
  */
 export function createAccountChatMessageReader(
-  stores: AccountChatMessageStores,
+  dependencies: AccountChatMessageReaderDependencies,
 ): AccountChatMessageReader {
   return {
     findMessage: ({ accountId, chat, messageId }) => {
-      if (stores.accounts.getById(accountId) === undefined) {
+      if (dependencies.accounts.getById(accountId) === undefined) {
         return { found: false, reason: 'account_not_found' };
       }
       return chat.type === 'private'
-        ? findPrivateChatMessage(stores, { accountId, botId: chat.botId }, messageId)
-        : findSupergroupMessage(stores, accountId, chat.chatId, messageId);
+        ? findPrivateChatMessage(dependencies.privateChats, accountId, chat.botId, messageId)
+        : findSupergroupMessage(dependencies.supergroups, accountId, chat.chatId, messageId);
     },
   };
 }
 
 function findPrivateChatMessage(
-  { bots, privateConversations, privateMessages }: AccountChatMessageStores,
-  conversationKey: PrivateConversationKey,
+  privateChats: PrivateChatReading,
+  accountId: number,
+  botId: number,
   botMessageId: number,
 ): AccountChatMessageLookupResult {
-  if (bots.getById(conversationKey.botId) === undefined) {
-    return { found: false, reason: 'bot_not_found' };
+  const identification = privateChats.identifyChatForAccount(accountId, {
+    type: 'private',
+    peerId: botId,
+  });
+  if (!identification.identified) {
+    return { found: false, reason: identification.reason };
   }
-  const conversation = privateConversations.getPrivateConversation(conversationKey);
+  const conversation = privateChats.findConversation(identification.key);
   const message = conversation === undefined
     ? undefined
-    : privateMessages.getPrivateMessageByBotMessageId(conversationKey, botMessageId);
+    : privateChats.findMessageByChatMessageId(identification.key, botMessageId);
   if (conversation === undefined || message === undefined) {
     return { found: false, reason: 'message_not_found' };
   }
@@ -134,21 +124,25 @@ function findPrivateChatMessage(
 }
 
 function findSupergroupMessage(
-  { sharedChats, supergroupMessages }: AccountChatMessageStores,
+  supergroups: SupergroupReading,
   accountId: number,
   chatId: number,
   messageId: number,
 ): AccountChatMessageLookupResult {
-  const supergroup = sharedChats.getSharedChat(chatId);
-  if (supergroup?.kind !== 'supergroup') {
-    return { found: false, reason: 'chat_not_found' };
+  const identification = supergroups.identifyChatForAccount(accountId, {
+    type: 'supergroup',
+    chatId,
+  });
+  if (!identification.identified) {
+    return { found: false, reason: identification.reason };
   }
-  if (sharedChats.getChatMembership(chatId, accountId) === undefined) {
-    return { found: false, reason: 'not_a_member' };
+  const membership = supergroups.resolveAccountMembership(accountId, identification.supergroup);
+  if (!membership.member) {
+    return { found: false, reason: membership.reason };
   }
-  const message = supergroupMessages.getMessageByChatMessageId(chatId, messageId);
+  const message = supergroups.findMessageByChatMessageId(identification.key, messageId);
   if (message === undefined) {
     return { found: false, reason: 'message_not_found' };
   }
-  return { found: true, message, chat: supergroup };
+  return { found: true, message, chat: identification.supergroup };
 }

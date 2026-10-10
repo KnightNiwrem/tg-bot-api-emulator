@@ -10,14 +10,14 @@ import {
 } from '../src/services/chat_action.ts';
 import { VirtualUserService } from '../src/services/virtual_user.ts';
 import { ALL_CHAT_PERMISSIONS } from '../src/types/chat_permissions.ts';
-import type { ChatActionChat } from '../src/types/virtual_chat.ts';
+import type { ChatKey } from '../src/types/virtual_chat.ts';
 
 const SUPERGROUP_ID = -1_000_000_000_001;
 
 Deno.test('ChatActionService shows a private chat action until it is canceled or expired', () => {
   const { chatActions, account, bot } = createChatActionFixture();
   const key = { accountId: account.profile.id, botId: bot.id };
-  const chat: ChatActionChat = { type: 'private', ...key };
+  const chat: ChatKey = { type: 'private', conversation: key };
   const seen = () => actionsOf(chatActions.getPrivateChatActions(key));
   const expire = () => expiryOf(chatActions.expirePrivateChatAction(key));
 
@@ -77,7 +77,7 @@ Deno.test('ChatActionService shows members each bot latest action until its mess
     },
     account.profile.id,
   );
-  const chat: ChatActionChat = { type: 'supergroup', chatId: SUPERGROUP_ID };
+  const chat: ChatKey = { type: 'supergroup', chatId: SUPERGROUP_ID };
   const seenBy = (accountId: number) =>
     actionsOf(chatActions.getSupergroupChatActions({ accountId, chatId: SUPERGROUP_ID }));
 

@@ -1,6 +1,7 @@
 import type { GeoLocation } from './geo_location.ts';
 import type { InlineKeyboard } from './inline_keyboard.ts';
 import type { AudioAttributes, StoredFileId, VideoAttributes } from './stored_file.ts';
+import type { AccountChatAddress } from './virtual_chat.ts';
 import type { FormattedText, MessageContent } from './virtual_message.ts';
 
 /** Telegram's decimal text form of a 64-bit inline query identifier. */
@@ -18,14 +19,6 @@ export const MAX_INLINE_QUERY_NEXT_OFFSET_BYTES = 64;
 
 /** The most characters of a `start_parameter` that TDLib accepts. */
 export const MAX_START_PARAMETER_LENGTH = 64;
-
-/**
- * The chat where an account typed an inline query, which is where the result it chooses is sent:
- * its private chat with a bot, the inline bot or another, or a supergroup it is a member of.
- */
-export type InlineQueryChat =
-  | { readonly type: 'private'; readonly botId: number }
-  | { readonly type: 'supergroup'; readonly chatId: number };
 
 /**
  * Media of a result that the bot names by URL, with the caption it is sent with. Telegram
@@ -237,7 +230,11 @@ export interface InlineQuery {
   readonly accountId: number;
   /** The inline bot, which receives and answers the query. */
   readonly botId: number;
-  readonly chat: InlineQueryChat;
+  /**
+   * The chat where the account typed the query, which is where the result it chooses is sent:
+   * its private chat with a bot, the inline bot or another, or a supergroup it is a member of.
+   */
+  readonly chat: AccountChatAddress;
   /** Up to 256 characters; empty when the account typed only the bot's username. */
   readonly query: string;
   /** The `next_offset` of an earlier answer, requesting more results; empty for the first. */

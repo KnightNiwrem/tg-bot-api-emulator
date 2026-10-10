@@ -7,6 +7,7 @@ import {
   type SupergroupBotAccessFailureReason,
   type SupergroupMembershipLookup,
 } from '../types/chat_membership.ts';
+import { supergroupMessagePolicy } from '../types/chat_policy.ts';
 import {
   type ChatPermissions,
   getContentSendPermissions,
@@ -1700,7 +1701,14 @@ export class SupergroupMessagingService {
     repliedMessage?: SupergroupMessage,
   ): SupergroupMessage {
     const storedMessage = this.#messages.addSupergroupMessage(message);
-    this.#messageBoxes.assignMessageId(message.chatId, storedMessage.id);
+    for (
+      const boxOwnerId of supergroupMessagePolicy.getNumberingBoxOwnerIds({
+        type: 'supergroup',
+        chatId: message.chatId,
+      })
+    ) {
+      this.#messageBoxes.assignMessageId(boxOwnerId, storedMessage.id);
+    }
     this.#events.publish({ type: 'message_created', message: storedMessage });
     this.#updateMemberReplyInterfaces(storedMessage, repliedMessage);
     return storedMessage;

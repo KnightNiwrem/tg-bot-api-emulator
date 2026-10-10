@@ -14,7 +14,9 @@ import {
   CallbackQueryService,
   type PressCallbackButtonFailureReason,
 } from '../src/services/callback_query.ts';
+import { PrivateChatPolicy } from '../src/services/private_chat_policy.ts';
 import { PrivateMessagingService } from '../src/services/private_messaging.ts';
+import { SupergroupChatPolicy } from '../src/services/supergroup_chat_policy.ts';
 import { SupergroupMessagingService } from '../src/services/supergroup_messaging.ts';
 import { VirtualUserService } from '../src/services/virtual_user.ts';
 import type { ChatDomainEvent } from '../src/types/chat_domain_event.ts';
@@ -438,6 +440,13 @@ function createCallbackQueryFixture() {
   const polls = new PollRepository();
   const messageBoxes = new MessageBoxRepository();
   const sharedChats = new SharedChatRepository();
+  const blockedUsers = new BlockedUserRepository();
+  const joinRequesterContacts = {
+    mayContactJoinRequester: () => false,
+    claimJoinRequesterContact: () => {
+      throw new Error('Unexpected join requester contact');
+    },
+  };
   const publishedEvents: ChatDomainEvent[] = [];
   const events = { publish: (event: ChatDomainEvent) => publishedEvents.push(event) };
   const privateMessaging = new PrivateMessagingService({
@@ -449,13 +458,8 @@ function createCallbackQueryFixture() {
     files,
     polls,
     messageBoxes,
-    blockedUsers: new BlockedUserRepository(),
-    joinRequesterContacts: {
-      mayContactJoinRequester: () => false,
-      claimJoinRequesterContact: () => {
-        throw new Error('Unexpected join requester contact');
-      },
-    },
+    blockedUsers,
+    joinRequesterContacts,
     events,
     // No draft is shown in these chats; a bot's message has none to remove.
     messageDrafts: { clearBotDraft: () => {} },
@@ -475,11 +479,18 @@ function createCallbackQueryFixture() {
   const callbackQueries = new CallbackQueryService({
     accountChatMessages: createAccountChatMessageReader({
       accounts,
-      bots,
-      privateConversations,
-      privateMessages: privateMessaging,
-      sharedChats,
-      supergroupMessages: supergroupMessaging,
+      privateChats: new PrivateChatPolicy({
+        accounts,
+        bots,
+        privateConversations,
+        blockedUsers,
+        joinRequesterContacts,
+        privateMessages: privateMessaging,
+      }),
+      supergroups: new SupergroupChatPolicy({
+        sharedChats,
+        supergroupMessages: supergroupMessaging,
+      }),
     }),
     bots,
     callbackQueries: new CallbackQueryRepository(),
