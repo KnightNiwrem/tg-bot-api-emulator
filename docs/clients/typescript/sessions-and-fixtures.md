@@ -34,8 +34,8 @@ A session holds as many bots and accounts as a scenario needs. Each account has 
 with a bot, and `getMessages` returns only the chats the account takes part in:
 
 ```ts
-import { Bot } from 'npm:grammy@^1.46.0';
-import { assertEquals } from 'jsr:@std/assert@^1';
+import { Bot } from 'npm:grammy@1.46.0';
+import { assertEquals } from 'jsr:@std/assert@1.0.19';
 import { TelegramEmulationClient } from '../../../clients/typescript/mod.ts';
 
 Deno.test('each account sees only its own conversation with the bot', async () => {
@@ -104,7 +104,7 @@ this page.
  * session with one grammY bot and one account, and the fixture stops the bot and ends the session
  * however the test finishes.
  */
-import { Bot, type PollingOptions } from 'npm:grammy@^1.46.0';
+import { Bot, type PollingOptions } from 'npm:grammy@1.46.0';
 import {
   type BotActivityLog,
   type CreateVirtualAccountInput,
@@ -205,7 +205,7 @@ registration, or choose the update types the bot polls for, and further accounts
 `session.createAccount`:
 
 ```ts
-import { assertEquals } from 'jsr:@std/assert@^1';
+import { assertEquals } from 'jsr:@std/assert@1.0.19';
 import { withBotFixture } from './bot_fixture.ts';
 
 Deno.test('the bot answers in the language of each account', () =>

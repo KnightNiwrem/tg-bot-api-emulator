@@ -1,6 +1,5 @@
-import { Bot } from 'https://cdn.jsdelivr.net/gh/grammyjs/grammY@^1.46.0/src/bot.ts';
-import { GrammyError } from 'https://cdn.jsdelivr.net/gh/grammyjs/grammY@^1.46.0/src/core/error.ts';
-import { autoRetry } from '@grammyjs/auto-retry/mod.ts';
+import { Bot, GrammyError } from 'grammy';
+import { autoRetry } from '@grammyjs/auto-retry';
 
 import { createTestApi } from '../../tests/support/emulation_api.ts';
 import { EmulationClientError, TelegramEmulationClient } from './mod.ts';

@@ -34,7 +34,15 @@ jobs:
       - name: Setup Deno
         uses: denoland/setup-deno@v2
         with:
-          deno-version: v2.x
+          deno-version-file: .dvmrc
+          cache: true
+          # The matrix jobs share one job ID, so the task name keeps each job's cache its own.
+          cache-hash: ${{ matrix.task }}-${{ hashFiles('deno.lock', '.dvmrc') }}
 
       - name: ${{ matrix.task_name }}
         run: deno task ${{ matrix.task }}
+
+      # The frozen lock rejects new or changed dependencies. Deno still restores entries it can
+      # derive, such as a missing specifier for a locked package, so any lock change fails the job.
+      - name: Lockfile unchanged
+        run: git diff --exit-code -- deno.lock
