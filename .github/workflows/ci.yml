@@ -34,7 +34,10 @@ jobs:
       - name: Setup Deno
         uses: denoland/setup-deno@v2
         with:
-          deno-version: v2.x
+          deno-version-file: .dvmrc
+          cache: true
+          # The matrix jobs share one job ID, so the task name keeps each job's cache its own.
+          cache-hash: ${{ matrix.task }}-${{ hashFiles('deno.lock', '.dvmrc') }}
 
       - name: ${{ matrix.task_name }}
         run: deno task ${{ matrix.task }}
