@@ -23,8 +23,8 @@ in privacy mode. [Membership and messages](../../features/supergroups.md#members
 describes both.
 
 ```ts
-import { assertEquals, assertExists } from 'jsr:@std/assert@^1';
-import type { ChatMemberUpdated } from 'npm:grammy@^1.46.0/types';
+import { assertEquals, assertExists } from 'jsr:@std/assert@1.0.19';
+import type { ChatMemberUpdated } from 'npm:grammy@1.46.0/types';
 import { withBotFixture } from './bot_fixture.ts';
 
 Deno.test('the bot greets the supergroup that adds it', () =>
@@ -90,7 +90,7 @@ reply fences the chatter's delivery.
 explains fences.
 
 ```ts
-import { assertEquals } from 'jsr:@std/assert@^1';
+import { assertEquals } from 'jsr:@std/assert@1.0.19';
 import { withBotFixture } from './bot_fixture.ts';
 
 Deno.test('a bot in privacy mode receives commands but not chatter', () =>
@@ -143,7 +143,7 @@ The fixture's `bot` option registers a bot with privacy mode turned off, which r
 account message:
 
 ```ts
-import { assertEquals } from 'jsr:@std/assert@^1';
+import { assertEquals } from 'jsr:@std/assert@1.0.19';
 import { withBotFixture } from './bot_fixture.ts';
 
 Deno.test('a bot without privacy mode receives every message', () =>
@@ -189,8 +189,8 @@ A second bot in the session plays the helper the bot under test talks to. It run
 handlers with its own token:
 
 ```ts
-import { assertEquals } from 'jsr:@std/assert@^1';
-import { Bot } from 'npm:grammy@^1.46.0';
+import { assertEquals } from 'jsr:@std/assert@1.0.19';
+import { Bot } from 'npm:grammy@1.46.0';
 import { withBotFixture } from './bot_fixture.ts';
 
 Deno.test('the bot asks the translator bot and posts its answer', () =>
@@ -252,7 +252,7 @@ Each join or departure is recorded as a service message with `new_chat_members` 
 `left_chat_member`, which the supergroup's bots receive.
 
 ```ts
-import { assertEquals, assertExists, assertRejects } from 'jsr:@std/assert@^1';
+import { assertEquals, assertExists, assertRejects } from 'jsr:@std/assert@1.0.19';
 import { EmulationClientError } from '../../../clients/typescript/mod.ts';
 import { withBotFixture } from './bot_fixture.ts';
 
@@ -334,9 +334,9 @@ error there. The bot below posts announcements to the supergroup that added it, 
 account in their private chat when posting fails.
 
 ```ts
-import { assertEquals, assertExists } from 'jsr:@std/assert@^1';
-import { GrammyError } from 'npm:grammy@^1.46.0';
-import type { ChatMemberUpdated } from 'npm:grammy@^1.46.0/types';
+import { assertEquals, assertExists } from 'jsr:@std/assert@1.0.19';
+import { GrammyError } from 'npm:grammy@1.46.0';
+import type { ChatMemberUpdated } from 'npm:grammy@1.46.0/types';
 import { withBotFixture } from './bot_fixture.ts';
 
 Deno.test('a removed bot is kicked and can no longer post to the supergroup', () => {
@@ -412,7 +412,7 @@ No service message records a description; bots read it with `getChat`.
 cleans both.
 
 ```ts
-import { assertEquals, assertExists } from 'jsr:@std/assert@^1';
+import { assertEquals, assertExists } from 'jsr:@std/assert@1.0.19';
 import { withBotFixture } from './bot_fixture.ts';
 
 Deno.test('the bot sees the title and description members set', () =>
@@ -476,7 +476,7 @@ change. [Bot promotion](../../features/supergroups.md#bot-promotion) describes t
 with the other owner operations.
 
 ```ts
-import { assertEquals, assertRejects } from 'jsr:@std/assert@^1';
+import { assertEquals, assertRejects } from 'jsr:@std/assert@1.0.19';
 import { EmulationClientError } from '../../../clients/typescript/mod.ts';
 import { withBotFixture } from './bot_fixture.ts';
 

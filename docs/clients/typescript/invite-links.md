@@ -24,8 +24,8 @@ account, and [joining through a link](../../features/invite-links.md#joining-thr
 the refusals and the `chat_member` updates administrator bots receive.
 
 ```ts
-import { assert, assertEquals, assertExists } from 'jsr:@std/assert@^1';
-import type { ChatInviteLink } from 'npm:grammy@^1.46.0/types';
+import { assert, assertEquals, assertExists } from 'jsr:@std/assert@1.0.19';
+import type { ChatInviteLink } from 'npm:grammy@1.46.0/types';
 import { withBotFixture } from './bot_fixture.ts';
 
 Deno.test('the bot creates an invite link that another account joins through', async () => {
@@ -98,8 +98,8 @@ uses it stays outside with a pending request, and `joinChatByInviteLink` answers
 `account.getChatJoinRequests`. A bot that does not handle the update leaves the request pending:
 
 ```ts
-import { assert, assertEquals } from 'jsr:@std/assert@^1';
-import type { ChatInviteLink, ChatJoinRequest } from 'npm:grammy@^1.46.0/types';
+import { assert, assertEquals } from 'jsr:@std/assert@1.0.19';
+import type { ChatInviteLink, ChatJoinRequest } from 'npm:grammy@1.46.0/types';
 import { withBotFixture } from './bot_fixture.ts';
 
 Deno.test('an account that uses a request link waits outside the supergroup', async () => {
@@ -159,8 +159,8 @@ declining leaves it outside without an update.
 lists the errors a decision can fail with.
 
 ```ts
-import { assert, assertEquals } from 'jsr:@std/assert@^1';
-import type { ChatInviteLink } from 'npm:grammy@^1.46.0/types';
+import { assert, assertEquals } from 'jsr:@std/assert@1.0.19';
+import type { ChatInviteLink } from 'npm:grammy@1.46.0/types';
 import { withBotFixture } from './bot_fixture.ts';
 
 Deno.test('the bot approves requesters with a username and declines the others', async () => {
@@ -244,8 +244,8 @@ bot may keep writing after the decision; the prompt alone gives the bot no lasti
 covers. The owner sees each request's `requester_contact` with `getChatJoinRequests`.
 
 ```ts
-import { assert, assertEquals } from 'jsr:@std/assert@^1';
-import type { ChatInviteLink } from 'npm:grammy@^1.46.0/types';
+import { assert, assertEquals } from 'jsr:@std/assert@1.0.19';
+import type { ChatInviteLink } from 'npm:grammy@1.46.0/types';
 import { withBotFixture } from './bot_fixture.ts';
 
 Deno.test('the bot asks a requester to prove it is human before approving it', async () => {
@@ -335,8 +335,8 @@ decision the account may not make, or one made already, rejects with an `Emulati
 [Decisions by accounts](../../features/invite-links.md#decisions-by-accounts) lists them.
 
 ```ts
-import { assert, assertEquals } from 'jsr:@std/assert@^1';
-import type { ChatInviteLink } from 'npm:grammy@^1.46.0/types';
+import { assert, assertEquals } from 'jsr:@std/assert@1.0.19';
+import type { ChatInviteLink } from 'npm:grammy@1.46.0/types';
 import { withBotFixture } from './bot_fixture.ts';
 
 Deno.test('the owner approves a requester before the bot does', async () => {
@@ -420,8 +420,8 @@ whose `status` is `410`; a member that leaves frees its place.
 [Member limits](../../features/invite-links.md#member-limits) explains what counts.
 
 ```ts
-import { assert, assertEquals, assertRejects } from 'jsr:@std/assert@^1';
-import type { ChatInviteLink } from 'npm:grammy@^1.46.0/types';
+import { assert, assertEquals, assertRejects } from 'jsr:@std/assert@1.0.19';
+import type { ChatInviteLink } from 'npm:grammy@1.46.0/types';
 import { EmulationClientError } from '../../../clients/typescript/mod.ts';
 import { withBotFixture } from './bot_fixture.ts';
 
@@ -480,8 +480,8 @@ members who joined through it stay, and no bot receives an update. [Test control
 lists the other moments a test controls this way.
 
 ```ts
-import { assert, assertEquals, assertRejects } from 'jsr:@std/assert@^1';
-import type { ChatInviteLink } from 'npm:grammy@^1.46.0/types';
+import { assert, assertEquals, assertRejects } from 'jsr:@std/assert@1.0.19';
+import type { ChatInviteLink } from 'npm:grammy@1.46.0/types';
 import { EmulationClientError } from '../../../clients/typescript/mod.ts';
 import { withBotFixture } from './bot_fixture.ts';
 
@@ -545,8 +545,8 @@ In this example, the owner switches the bot's open link to approval and later cl
 commands in the supergroup:
 
 ```ts
-import { assert, assertEquals, assertRejects } from 'jsr:@std/assert@^1';
-import type { ChatInviteLink } from 'npm:grammy@^1.46.0/types';
+import { assert, assertEquals, assertRejects } from 'jsr:@std/assert@1.0.19';
+import type { ChatInviteLink } from 'npm:grammy@1.46.0/types';
 import { EmulationClientError } from '../../../clients/typescript/mod.ts';
 import { withBotFixture } from './bot_fixture.ts';
 
@@ -644,7 +644,7 @@ rules and errors.
 In this example, the owner asks the bot for the link, then has it replace the link:
 
 ```ts
-import { assertEquals, assertNotEquals, assertRejects } from 'jsr:@std/assert@^1';
+import { assertEquals, assertNotEquals, assertRejects } from 'jsr:@std/assert@1.0.19';
 import { EmulationClientError } from '../../../clients/typescript/mod.ts';
 import { withBotFixture } from './bot_fixture.ts';
 

@@ -1,4 +1,4 @@
-import { Bot } from 'https://cdn.jsdelivr.net/gh/grammyjs/grammY@^1.46.0/src/bot.ts';
+import { Bot } from 'grammy';
 
 import { EmulationClientError, TelegramEmulationClient } from '../clients/typescript/mod.ts';
 import { createTestApi } from './support/emulation_api.ts';

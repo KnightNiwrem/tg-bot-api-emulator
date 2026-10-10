@@ -21,7 +21,7 @@ bot's included, in the order they last changed them.
 
 ```ts
 import { withBotFixture } from './bot_fixture.ts';
-import { assertEquals } from 'jsr:@std/assert@^1';
+import { assertEquals } from 'jsr:@std/assert@1.0.19';
 
 Deno.test('the bot acknowledges a thumbs-up with an OK hand', () =>
   withBotFixture({
@@ -75,8 +75,8 @@ log as `update_delivered` entries of the supergroup.
 
 ```ts
 import { withBotFixture } from './bot_fixture.ts';
-import { assertEquals } from 'jsr:@std/assert@^1';
-import type { MessageReactionUpdated, ReactionType } from 'npm:grammy@^1.46.0/types';
+import { assertEquals } from 'jsr:@std/assert@1.0.19';
+import type { MessageReactionUpdated, ReactionType } from 'npm:grammy@1.46.0/types';
 
 Deno.test('the bot observes a reaction being changed and removed', () =>
   withBotFixture({

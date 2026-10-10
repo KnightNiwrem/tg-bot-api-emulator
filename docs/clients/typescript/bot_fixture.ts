@@ -4,7 +4,7 @@
  * session with one grammY bot and one account, and the fixture stops the bot and ends the session
  * however the test finishes.
  */
-import { Bot, type PollingOptions } from 'npm:grammy@^1.46.0';
+import { Bot, type PollingOptions } from 'npm:grammy@1.46.0';
 import {
   type BotActivityLog,
   type CreateVirtualAccountInput,

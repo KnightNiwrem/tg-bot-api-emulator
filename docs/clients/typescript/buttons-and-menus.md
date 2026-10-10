@@ -23,7 +23,7 @@ whose text mentions the given text or pattern. The emulator's
 what a press sends and what an answer may hold.
 
 ```ts
-import { assertEquals, assertExists } from 'jsr:@std/assert@^1';
+import { assertEquals, assertExists } from 'jsr:@std/assert@1.0.19';
 import { withBotFixture } from './bot_fixture.ts';
 
 Deno.test('an account presses a Details button by its label and reads the answer', async () => {
@@ -106,7 +106,7 @@ throws the same error before the bot receives anything, and also when the one ma
 a callback button.
 
 ```ts
-import { assertEquals, assertExists, assertRejects, assertThrows } from 'jsr:@std/assert@^1';
+import { assertEquals, assertExists, assertRejects, assertThrows } from 'jsr:@std/assert@1.0.19';
 import { ButtonSelectionError, findButton, listButtons } from '../../../clients/typescript/mod.ts';
 import { withBotFixture } from './bot_fixture.ts';
 
@@ -194,7 +194,7 @@ press by editing the message. The test below waits for the edit, correlated by t
 then for the answer, and reads the edited message from history by its ID.
 
 ```ts
-import { assertEquals, assertExists } from 'jsr:@std/assert@^1';
+import { assertEquals, assertExists } from 'jsr:@std/assert@1.0.19';
 import { withBotFixture } from './bot_fixture.ts';
 
 Deno.test('the bot edits its message when an account presses a button', async () => {
@@ -275,7 +275,7 @@ feature page describes how
 including [in supergroups](../../features/keyboards-and-callbacks.md#in-supergroups).
 
 ```ts
-import { assert, assertEquals, assertExists } from 'jsr:@std/assert@^1';
+import { assert, assertEquals, assertExists } from 'jsr:@std/assert@1.0.19';
 import { withBotFixture } from './bot_fixture.ts';
 
 Deno.test('an account answers a reply keyboard by pressing one of its buttons', async () => {
@@ -346,7 +346,7 @@ emulator does not reproduce the client's own
 [dismissal](../../features/keyboards-and-callbacks.md#intentional-deviations).
 
 ```ts
-import { assert, assertEquals, assertExists } from 'jsr:@std/assert@^1';
+import { assert, assertEquals, assertExists } from 'jsr:@std/assert@1.0.19';
 import { withBotFixture } from './bot_fixture.ts';
 
 Deno.test('an account answers a forced reply', async () => {
@@ -428,7 +428,7 @@ feature page lists the
 [criteria and their limits](../../features/keyboards-and-callbacks.md#sharing-users-and-chats).
 
 ```ts
-import { assertEquals } from 'jsr:@std/assert@^1';
+import { assertEquals } from 'jsr:@std/assert@1.0.19';
 import { withBotFixture } from './bot_fixture.ts';
 
 Deno.test('an account shares a teammate with the bot that asked for one', async () => {
@@ -488,8 +488,8 @@ describes
 [what the emulator models](../../features/keyboards-and-callbacks.md#sending-web-app-data).
 
 ```ts
-import { assertEquals } from 'jsr:@std/assert@^1';
-import { Keyboard } from 'npm:grammy@^1.46.0';
+import { assertEquals } from 'jsr:@std/assert@1.0.19';
+import { Keyboard } from 'npm:grammy@1.46.0';
 import { withBotFixture } from './bot_fixture.ts';
 
 Deno.test('an account books the dates its Web App chose', async () => {
@@ -545,7 +545,7 @@ none. Both read what the bot has stored, so the test waits for the bot's `setMyC
 [menu button fallback](../../features/command-menus.md#menu-buttons).
 
 ```ts
-import { assertEquals } from 'jsr:@std/assert@^1';
+import { assertEquals } from 'jsr:@std/assert@1.0.19';
 import { withBotFixture } from './bot_fixture.ts';
 
 Deno.test('an account sees the command menu and menu button the bot sets', async () => {
@@ -592,7 +592,7 @@ commands for the account, with the bot's `bot_id`. The bot below sets commands f
 it is added to it; [Supergroups](supergroups.md) covers creating supergroups and adding bots.
 
 ```ts
-import { assertEquals } from 'jsr:@std/assert@^1';
+import { assertEquals } from 'jsr:@std/assert@1.0.19';
 import { withBotFixture } from './bot_fixture.ts';
 
 Deno.test('a supergroup member sees the commands a bot sets for the supergroup', async () => {

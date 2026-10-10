@@ -1,5 +1,5 @@
-import { Bot } from 'https://cdn.jsdelivr.net/gh/grammyjs/grammY@^1.46.0/src/bot.ts';
-import { run } from '@grammyjs/runner/runner.ts';
+import { Bot } from 'grammy';
+import { run } from '@grammyjs/runner';
 
 import {
   type AccountPollInput,

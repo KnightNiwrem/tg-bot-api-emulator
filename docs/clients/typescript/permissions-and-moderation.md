@@ -24,7 +24,7 @@ the bot left the earlier, harmless message alone, and checks the result in the o
 spam is gone, and the bot's service message records the sender's removal.
 
 ```ts
-import { assert, assertEquals, assertExists, assertRejects } from 'jsr:@std/assert@^1';
+import { assert, assertEquals, assertExists, assertRejects } from 'jsr:@std/assert@1.0.19';
 import { EmulationClientError } from '../../../clients/typescript/mod.ts';
 import { withBotFixture } from './bot_fixture.ts';
 
@@ -104,8 +104,8 @@ without it. [Administrator delegation](../../features/supergroups.md#administrat
 describes `promoted_by_user_id` and `can_be_edited`.
 
 ```ts
-import { assert, assertEquals } from 'jsr:@std/assert@^1';
-import type { ChatMemberUpdated } from 'npm:grammy@^1.46.0/types';
+import { assert, assertEquals } from 'jsr:@std/assert@1.0.19';
+import type { ChatMemberUpdated } from 'npm:grammy@1.46.0/types';
 import { withBotFixture } from './bot_fixture.ts';
 
 Deno.test('the owner promotes, titles and demotes the bot', () =>
@@ -167,7 +167,7 @@ status 403 or 409 and changes nothing.
 [Account administrators](../../features/supergroups.md#account-administrators) lists the rules.
 
 ```ts
-import { assert, assertEquals, assertRejects } from 'jsr:@std/assert@^1';
+import { assert, assertEquals, assertRejects } from 'jsr:@std/assert@1.0.19';
 import { EmulationClientError } from '../../../clients/typescript/mod.ts';
 import { withBotFixture } from './bot_fixture.ts';
 
@@ -244,8 +244,8 @@ The refused `sendPhoto` call is in the activity log with `ok: false` and Telegra
 test asserts before ending the restriction and asking again.
 
 ```ts
-import { assertEquals, assertExists } from 'jsr:@std/assert@^1';
-import { GrammyError, InputFile } from 'npm:grammy@^1.46.0';
+import { assertEquals, assertExists } from 'jsr:@std/assert@1.0.19';
+import { GrammyError, InputFile } from 'npm:grammy@1.46.0';
 import { withBotFixture } from './bot_fixture.ts';
 
 // A 2×1 GIF image, which the emulator accepts as a photo.
@@ -326,7 +326,7 @@ A restriction without `untilDate` lasts until the owner or an administrator acco
 with status 403, so the supergroup's bots never receive it.
 
 ```ts
-import { assertEquals, assertRejects } from 'jsr:@std/assert@^1';
+import { assertEquals, assertRejects } from 'jsr:@std/assert@1.0.19';
 import { EmulationClientError } from '../../../clients/typescript/mod.ts';
 import { withBotFixture } from './bot_fixture.ts';
 
@@ -376,7 +376,7 @@ the defaults as `permissions` in `getChat`.
 `setChatPermissions` as well.
 
 ```ts
-import { assertEquals, assertRejects } from 'jsr:@std/assert@^1';
+import { assertEquals, assertRejects } from 'jsr:@std/assert@1.0.19';
 import { EmulationClientError } from '../../../clients/typescript/mod.ts';
 import { withBotFixture } from './bot_fixture.ts';
 

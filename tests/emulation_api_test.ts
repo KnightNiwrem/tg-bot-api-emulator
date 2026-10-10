@@ -1,11 +1,4 @@
-import { Bot } from 'https://cdn.jsdelivr.net/gh/grammyjs/grammY@^1.46.0/src/bot.ts';
-import {
-  InlineKeyboard,
-  Keyboard,
-} from 'https://cdn.jsdelivr.net/gh/grammyjs/grammY@^1.46.0/src/convenience/keyboard.ts';
-import { InputFile } from 'https://cdn.jsdelivr.net/gh/grammyjs/grammY@^1.46.0/src/types.ts';
-import { GrammyError } from 'https://cdn.jsdelivr.net/gh/grammyjs/grammY@^1.46.0/src/core/error.ts';
-import { webhookCallback } from 'https://cdn.jsdelivr.net/gh/grammyjs/grammY@^1.46.0/src/convenience/webhook.ts';
+import { Bot, GrammyError, InlineKeyboard, InputFile, Keyboard, webhookCallback } from 'grammy';
 
 import { MAX_TELEGRAM_USER_ID } from '../src/types/telegram_identity.ts';
 import {

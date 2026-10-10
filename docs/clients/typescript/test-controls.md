@@ -25,8 +25,8 @@ the `GrammyError` itself and retries once after `retry_after`. The emulator does
 that come early, so the bot's wait is its own behavior under test, not the test's synchronization.
 
 ```ts
-import { assert, assertEquals } from 'jsr:@std/assert@^1';
-import { GrammyError } from 'npm:grammy@^1.46.0';
+import { assert, assertEquals } from 'jsr:@std/assert@1.0.19';
+import { GrammyError } from 'npm:grammy@1.46.0';
 import { withBotFixture } from './bot_fixture.ts';
 
 Deno.test('the bot retries a reply that Telegram rate-limited', async () => {
@@ -97,8 +97,8 @@ The bot below retries failed calls with grammY's auto-retry plugin, which waits 
 retries a server error, so the test waits longer than the default 5 seconds for the retried reply:
 
 ```ts
-import { assertEquals } from 'jsr:@std/assert@^1';
-import { autoRetry } from 'npm:@grammyjs/auto-retry@^2.0.2';
+import { assertEquals } from 'jsr:@std/assert@1.0.19';
+import { autoRetry } from 'npm:@grammyjs/auto-retry@2.0.2';
 import { withBotFixture } from './bot_fixture.ts';
 
 Deno.test('the bot retries a reply that failed with a server error', async () => {
@@ -160,8 +160,8 @@ webhook answers `500`. The test releases the retry at once instead of relying on
 Telegram's retries:
 
 ```ts
-import { assertEquals } from 'jsr:@std/assert@^1';
-import { Bot, webhookCallback } from 'npm:grammy@^1.46.0';
+import { assertEquals } from 'jsr:@std/assert@1.0.19';
+import { Bot, webhookCallback } from 'npm:grammy@1.46.0';
 import { TelegramEmulationClient } from '../../../clients/typescript/mod.ts';
 import { EMULATOR_URL } from './bot_fixture.ts';
 
@@ -272,7 +272,7 @@ message shows it and `session.downloadFile` returns the registered bytes.
 method accepts and the errors of failed downloads.
 
 ```ts
-import { assertEquals, assertExists } from 'jsr:@std/assert@^1';
+import { assertEquals, assertExists } from 'jsr:@std/assert@1.0.19';
 import { withBotFixture } from './bot_fixture.ts';
 
 const LOGO_URL = 'https://example.com/logo.gif';
@@ -324,8 +324,8 @@ Without a registered resource, the bot's call fails with
 `Bad Request: failed to get HTTP URL content`, which a test uses to check the bot's fallback:
 
 ```ts
-import { assert, assertEquals } from 'jsr:@std/assert@^1';
-import { GrammyError } from 'npm:grammy@^1.46.0';
+import { assert, assertEquals } from 'jsr:@std/assert@1.0.19';
+import { GrammyError } from 'npm:grammy@1.46.0';
 import { withBotFixture } from './bot_fixture.ts';
 
 Deno.test('a URL without a registered resource is unreachable', async () => {
@@ -390,8 +390,8 @@ The bot below uploads a document one byte larger than the cloud's 50 MiB limit, 
 session accepts:
 
 ```ts
-import { assertEquals, assertExists } from 'jsr:@std/assert@^1';
-import { Bot, InputFile } from 'npm:grammy@^1.46.0';
+import { assertEquals, assertExists } from 'jsr:@std/assert@1.0.19';
+import { Bot, InputFile } from 'npm:grammy@1.46.0';
 import { TelegramEmulationClient } from '../../../clients/typescript/mod.ts';
 import { EMULATOR_URL } from './bot_fixture.ts';
 

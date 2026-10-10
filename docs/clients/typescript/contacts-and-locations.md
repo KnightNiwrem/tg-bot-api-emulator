@@ -15,7 +15,7 @@ names no Telegram user, even when the number belongs to an account;
 [whose contact it is](../../features/contacts-and-locations.md#whose-contact-it-is) explains why.
 
 ```ts
-import { assertEquals } from 'jsr:@std/assert@^1';
+import { assertEquals } from 'jsr:@std/assert@1.0.19';
 import { withBotFixture } from './bot_fixture.ts';
 
 Deno.test('a written contact names no user', async () => {
@@ -63,7 +63,7 @@ own number by comparing `contact.user_id` with `from.id`. For an account created
 number, `shareOwnContact` fails and sends nothing.
 
 ```ts
-import { assertEquals } from 'jsr:@std/assert@^1';
+import { assertEquals } from 'jsr:@std/assert@1.0.19';
 import { withBotFixture } from './bot_fixture.ts';
 
 Deno.test('the bot verifies an account that shares its own contact', async () => {
@@ -109,7 +109,7 @@ horizontal accuracy in meters, which Telegram keeps in whole meters, rounded up.
 ranges.
 
 ```ts
-import { assertEquals } from 'jsr:@std/assert@^1';
+import { assertEquals } from 'jsr:@std/assert@1.0.19';
 import { withBotFixture } from './bot_fixture.ts';
 
 Deno.test('the bot receives a static location', async () => {
@@ -166,8 +166,8 @@ and
 for the details, and [Buttons and menus](buttons-and-menus.md) for reply keyboards in general.
 
 ```ts
-import { assertEquals, assertExists } from 'jsr:@std/assert@^1';
-import { Keyboard } from 'npm:grammy@^1.46.0';
+import { assertEquals, assertExists } from 'jsr:@std/assert@1.0.19';
+import { Keyboard } from 'npm:grammy@1.46.0';
 import { withBotFixture } from './bot_fixture.ts';
 
 Deno.test('request buttons share the contact and location the bot asks for', async () => {

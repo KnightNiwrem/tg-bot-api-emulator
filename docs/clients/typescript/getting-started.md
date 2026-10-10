@@ -24,8 +24,8 @@ import is relative to that directory; from anywhere else, point it at the reposi
 `clients/typescript/mod.ts`.
 
 ```ts
-import { Bot } from 'npm:grammy@^1.46.0';
-import { assertEquals } from 'jsr:@std/assert@^1';
+import { Bot } from 'npm:grammy@1.46.0';
+import { assertEquals } from 'jsr:@std/assert@1.0.19';
 import { TelegramEmulationClient } from '../../../clients/typescript/mod.ts';
 
 Deno.test('the bot greets an account that sends /start', async () => {

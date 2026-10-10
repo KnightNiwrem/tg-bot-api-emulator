@@ -22,7 +22,7 @@ reaches the bot again.
 
 ```ts
 import { withBotFixture } from './bot_fixture.ts';
-import { assertEquals } from 'jsr:@std/assert@^1';
+import { assertEquals } from 'jsr:@std/assert@1.0.19';
 
 Deno.test('the bot answers an inline query typed in its private chat', () =>
   withBotFixture({
@@ -66,7 +66,7 @@ sends a result of the answer to the chat where the query was typed, as the accou
 
 ```ts
 import { withBotFixture } from './bot_fixture.ts';
-import { assertEquals, assertExists } from 'jsr:@std/assert@^1';
+import { assertEquals, assertExists } from 'jsr:@std/assert@1.0.19';
 
 Deno.test('the account sends an inline result to a supergroup', () =>
   withBotFixture({
@@ -132,7 +132,7 @@ an inline message and how.
 
 ```ts
 import { withBotFixture } from './bot_fixture.ts';
-import { assert, assertEquals, assertObjectMatch } from 'jsr:@std/assert@^1';
+import { assert, assertEquals, assertObjectMatch } from 'jsr:@std/assert@1.0.19';
 
 Deno.test('the inline bot edits the message its result sent when a button is pressed', () =>
   withBotFixture({
@@ -221,7 +221,7 @@ bot that does not request one is refused with status 409.
 
 ```ts
 import { withBotFixture } from './bot_fixture.ts';
-import { assertEquals } from 'jsr:@std/assert@^1';
+import { assertEquals } from 'jsr:@std/assert@1.0.19';
 
 Deno.test('the bot answers with the location the account shares', () =>
   withBotFixture({
@@ -275,7 +275,7 @@ request.
 
 ```ts
 import { withBotFixture } from './bot_fixture.ts';
-import { assertEquals } from 'jsr:@std/assert@^1';
+import { assertEquals } from 'jsr:@std/assert@1.0.19';
 
 Deno.test('the bot answers again once its cached answer expires', () => {
   let cakesInStock = 3;

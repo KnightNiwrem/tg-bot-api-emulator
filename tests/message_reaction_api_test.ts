@@ -1,5 +1,5 @@
-import { Bot } from 'https://cdn.jsdelivr.net/gh/grammyjs/grammY@^1.46.0/src/bot.ts';
-import { run } from '@grammyjs/runner/runner.ts';
+import { Bot } from 'grammy';
+import { run } from '@grammyjs/runner';
 import { parse as parseYaml } from '@std/yaml';
 import { z } from 'zod';
 import reactionTypeEmojiYaml from '../openapi/components/schemas/ReactionTypeEmoji.yaml' with {

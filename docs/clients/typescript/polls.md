@@ -24,7 +24,7 @@ describes the checks a vote passes.
 
 ```ts
 import { withBotFixture } from './bot_fixture.ts';
-import { assertEquals, assertExists } from 'jsr:@std/assert@^1';
+import { assertEquals, assertExists } from 'jsr:@std/assert@1.0.19';
 
 Deno.test('the account votes in the poll the bot sends and retracts its vote', () =>
   withBotFixture({
@@ -88,7 +88,7 @@ the voter in their private chat, which the test waits for by its exact text.
 
 ```ts
 import { withBotFixture } from './bot_fixture.ts';
-import { assertExists, assertObjectMatch } from 'jsr:@std/assert@^1';
+import { assertExists, assertObjectMatch } from 'jsr:@std/assert@1.0.19';
 
 Deno.test('the bot receives the vote and the poll counts', () =>
   withBotFixture({
@@ -170,7 +170,7 @@ happens to the message's keyboard.
 ```ts
 import { withBotFixture } from './bot_fixture.ts';
 import { EmulationClientError } from '../../../clients/typescript/mod.ts';
-import { assertEquals, assertExists, assertRejects } from 'jsr:@std/assert@^1';
+import { assertEquals, assertExists, assertRejects } from 'jsr:@std/assert@1.0.19';
 
 Deno.test('the bot stops its poll, which then refuses votes', () =>
   withBotFixture({
@@ -257,7 +257,7 @@ semantics.
 
 ```ts
 import { withBotFixture } from './bot_fixture.ts';
-import { assertEquals, assertExists, assertObjectMatch } from 'jsr:@std/assert@^1';
+import { assertEquals, assertExists, assertObjectMatch } from 'jsr:@std/assert@1.0.19';
 
 Deno.test('the poll closes when the test makes its closing time arrive', () =>
   withBotFixture({
@@ -318,7 +318,7 @@ forward. [Accounts' polls](../../features/polls.md#accounts-polls) describes the
 
 ```ts
 import { withBotFixture } from './bot_fixture.ts';
-import { assertEquals } from 'jsr:@std/assert@^1';
+import { assertEquals } from 'jsr:@std/assert@1.0.19';
 
 Deno.test('the bot reads the quiz an account sends, and the account stops it', () =>
   withBotFixture({
@@ -369,7 +369,7 @@ describes the press.
 ```ts
 import { withBotFixture } from './bot_fixture.ts';
 import { EmulationClientError } from '../../../clients/typescript/mod.ts';
-import { assertEquals, assertRejects } from 'jsr:@std/assert@^1';
+import { assertEquals, assertRejects } from 'jsr:@std/assert@1.0.19';
 
 Deno.test('the account answers a quiz request with a quiz', () =>
   withBotFixture({
