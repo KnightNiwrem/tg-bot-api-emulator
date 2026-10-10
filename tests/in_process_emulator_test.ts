@@ -197,6 +197,28 @@ Deno.test('An in-process request aborts with a signal that only resembles an Abo
   }
 });
 
+Deno.test('In-process requests let go of a reused polyfilled signal once they settle', async () => {
+  await using emulator = createInProcessEmulator();
+  const session = await emulator.client.createSession();
+  const { token } = await session.createBot({ first_name: 'Shop', username: 'shop_bot' });
+  const reusedSignal = new ListenerTrackingSignal();
+
+  const responses = await Promise.all(
+    Array.from({ length: 20 }, () =>
+      emulator.fetch(`${session.botApiRoot}/bot${token}/getMe`, {
+        signal: reusedSignal as unknown as AbortSignal,
+      })),
+  );
+
+  assertEqual(
+    responses.every(({ status }) => status === 200),
+    true,
+    'Expected every request to be answered',
+  );
+  await Promise.all(responses.map((response) => response.body?.cancel()));
+  assertEqual(reusedSignal.abortListenerCount, 0, 'Expected no abort listener to be left behind');
+});
+
 Deno.test('An in-process emulator names its public origin in the URLs it returns', async () => {
   await using defaultEmulator = createInProcessEmulator();
   await using namedEmulator = createInProcessEmulator({ publicOrigin: 'https://bots.example/' });
@@ -229,6 +251,34 @@ Deno.test('An in-process emulator refuses a public origin that is not an origin'
     throw new Error(`Expected ${publicOrigin} to be refused`);
   }
 });
+
+/** A signal like an `AbortController` polyfill's, which counts the abort listeners it holds. */
+class ListenerTrackingSignal extends EventTarget {
+  readonly aborted = false;
+  readonly #abortListeners = new Set<EventListenerOrEventListenerObject>();
+
+  get abortListenerCount(): number {
+    return this.#abortListeners.size;
+  }
+
+  override addEventListener(
+    type: string,
+    listener: EventListenerOrEventListenerObject | null,
+    options?: AddEventListenerOptions | boolean,
+  ): void {
+    if (type === 'abort' && listener !== null) this.#abortListeners.add(listener);
+    super.addEventListener(type, listener, options);
+  }
+
+  override removeEventListener(
+    type: string,
+    listener: EventListenerOrEventListenerObject | null,
+    options?: EventListenerOptions | boolean,
+  ): void {
+    if (type === 'abort' && listener !== null) this.#abortListeners.delete(listener);
+    super.removeEventListener(type, listener, options);
+  }
+}
 
 /**
  * Serves the emulation API on a loopback port, as the standalone server does, for a client and a

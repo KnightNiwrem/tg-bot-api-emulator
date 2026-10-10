@@ -77,22 +77,28 @@ export function createInProcessEmulatorWithHandler(
     if (disposal !== undefined) {
       return Promise.reject(new TypeError('The in-process emulator has been disposed of'));
     }
+    const bridgedSignal = bridgeAbortSignal(init);
     let request: Request;
     try {
-      request = new Request(input, withPlatformAbortSignal(init));
+      request = new Request(input, bridgedSignal.init);
     } catch (error) {
+      bridgedSignal.detach();
       return Promise.reject(error);
     }
     const { signal } = request;
     if (signal.aborted) {
+      bridgedSignal.detach();
       return Promise.reject(signal.reason);
     }
 
     // The handler starts at once, so requests sent one after another reach it in that order.
     const answering = (async () => await handleRequest(request))();
     requestsBeingAnswered.add(answering);
-    const forget = () => requestsBeingAnswered.delete(answering);
-    answering.then(forget, forget);
+    const settle = () => {
+      requestsBeingAnswered.delete(answering);
+      bridgedSignal.detach();
+    };
+    answering.then(settle, settle);
     return answerUnlessAborted(answering, signal);
   };
 
@@ -149,17 +155,26 @@ interface AbortSignalLike {
   readonly aborted: boolean;
   readonly reason?: unknown;
   addEventListener(type: 'abort', listener: () => void, options?: { once?: boolean }): void;
+  removeEventListener(type: 'abort', listener: () => void): void;
+}
+
+/** A request's options with a signal `Request` accepts, and how to let go of the given signal. */
+interface BridgedAbortSignal {
+  readonly init: RequestInit | undefined;
+  /** Stops following the given signal, once the request no longer needs to; idempotent. */
+  readonly detach: () => void;
 }
 
 /**
  * `init` with its signal as a platform `AbortSignal` that aborts when the given signal does, so
  * that a polyfilled signal still cancels the request. Any other signal is left for `Request` to
- * accept or refuse.
+ * accept or refuse. A caller may reuse one signal for many requests, so each request detaches from
+ * it once it settles.
  */
-function withPlatformAbortSignal(init: RequestInit | undefined): RequestInit | undefined {
+function bridgeAbortSignal(init: RequestInit | undefined): BridgedAbortSignal {
   const signal: unknown = init?.signal;
   if (signal instanceof AbortSignal || !isAbortSignalLike(signal)) {
-    return init;
+    return { init, detach: () => {} };
   }
   const abortController = new AbortController();
   const abort = () =>
@@ -168,16 +183,20 @@ function withPlatformAbortSignal(init: RequestInit | undefined): RequestInit | u
     );
   if (signal.aborted) {
     abort();
-  } else {
-    signal.addEventListener('abort', abort, { once: true });
+    return { init: { ...init, signal: abortController.signal }, detach: () => {} };
   }
-  return { ...init, signal: abortController.signal };
+  signal.addEventListener('abort', abort, { once: true });
+  return {
+    init: { ...init, signal: abortController.signal },
+    detach: () => signal.removeEventListener('abort', abort),
+  };
 }
 
 function isAbortSignalLike(value: unknown): value is AbortSignalLike {
   return typeof value === 'object' && value !== null && 'aborted' in value &&
     typeof value.aborted === 'boolean' && 'addEventListener' in value &&
-    typeof value.addEventListener === 'function';
+    typeof value.addEventListener === 'function' && 'removeEventListener' in value &&
+    typeof value.removeEventListener === 'function';
 }
 
 function parsePublicOrigin(publicOrigin: string): string {
