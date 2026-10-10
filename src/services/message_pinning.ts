@@ -9,9 +9,13 @@ import {
 import type { VirtualAccount } from '../types/virtual_account.ts';
 import type { VirtualBot } from '../types/virtual_bot.ts';
 import type {
+  ChatAddress,
+  ChatKey,
+  PrivateChatKey,
   PrivateConversationKey,
   PrivateConversationRole,
   Supergroup,
+  SupergroupChatKey,
 } from '../types/virtual_chat.ts';
 import {
   type CanonicalMessageId,
@@ -28,25 +32,10 @@ export type MessagePinner =
   | { readonly kind: 'account'; readonly accountId: number }
   | { readonly kind: 'bot'; readonly botId: number };
 
-/**
- * A chat as the account or bot that pins its messages addresses it: its private chat with the
- * other participant, a bot for an account and an account for a bot, or a supergroup.
- */
-export type PinningChat =
-  | { readonly type: 'private'; readonly peerId: number }
-  | { readonly type: 'supergroup'; readonly chatId: number };
-
-/**
- * A chat whose pinned messages the caller reads after checking the reader's access: a private
- * conversation, or a supergroup.
- */
-export type PinnedMessagesChat =
-  | { readonly type: 'private'; readonly conversation: PrivateConversationKey }
-  | { readonly type: 'supergroup'; readonly chatId: number };
-
 export interface PinMessageInput {
   readonly pinner: MessagePinner;
-  readonly chat: PinningChat;
+  /** The chat as the pinner addresses it. */
+  readonly chat: ChatAddress;
   /**
    * The message's ID as the chat's bots see it: in a private chat, its ID in the bot's message
    * box, by which accounts address private messages too; in a supergroup, the supergroup's ID.
@@ -61,7 +50,7 @@ export interface PinMessageInput {
 
 export interface UnpinMessageInput {
   readonly pinner: MessagePinner;
-  readonly chat: PinningChat;
+  readonly chat: ChatAddress;
   /**
    * The message's ID, as `PinMessageInput` describes it; omitted to unpin the newest pinned
    * message, as the Bot API's `unpinChatMessage` does without a `message_id`.
@@ -71,7 +60,7 @@ export interface UnpinMessageInput {
 
 export interface UnpinAllMessagesInput {
   readonly pinner: MessagePinner;
-  readonly chat: PinningChat;
+  readonly chat: ChatAddress;
 }
 
 /** Why an account or a bot cannot reach a chat to manage its pinned messages. */
@@ -126,7 +115,7 @@ export type UnpinAllMessagesResult =
 
 export interface GetPinnedMessagesInput {
   readonly accountId: number;
-  readonly chat: PinningChat;
+  readonly chat: ChatAddress;
 }
 
 export type GetPinnedMessagesResult =
@@ -206,10 +195,8 @@ interface MessagePinningServiceDependencies {
 
 /** A chat a pinner reached, with what it may do there. */
 type ReachedPinningChat =
-  | { readonly type: 'private'; readonly conversation: PrivateConversationKey }
-  | {
-    readonly type: 'supergroup';
-    readonly chatId: number;
+  | PrivateChatKey
+  | SupergroupChatKey & {
     /** Whether the pinner holds the `can_pin_messages` permission there. */
     readonly canPinMessages: boolean;
   };
@@ -362,7 +349,7 @@ export class MessagePinningService {
    * pinned message by sending date, as TDLib's `last_pinned_message_id` is the greatest pinned
    * message ID; `undefined` when the chat pins none. The caller checks the reader's access.
    */
-  findNewestPinnedMessage(chat: PinnedMessagesChat): ChatMessage | undefined {
+  findNewestPinnedMessage(chat: ChatKey): ChatMessage | undefined {
     return this.#listPinnedMessages(chat)[0];
   }
 
@@ -373,7 +360,7 @@ export class MessagePinningService {
    */
   #reachChat(
     pinner: MessagePinner,
-    chat: PinningChat,
+    chat: ChatAddress,
   ):
     | { readonly reached: true; readonly chat: ReachedPinningChat }
     | { readonly reached: false; readonly reason: PinningChatAccessFailureReason } {
@@ -405,7 +392,7 @@ export class MessagePinningService {
    */
   #reachChatToWrite(
     pinner: MessagePinner,
-    chat: PinningChat,
+    chat: ChatAddress,
   ):
     | { readonly reached: true; readonly chat: ReachedPinningChat }
     | { readonly reached: false; readonly reason: PinningChatAccessFailureReason } {
@@ -526,7 +513,7 @@ export class MessagePinningService {
   }
 
   /** A chat's pinned messages, newest first: its history lists messages oldest first. */
-  #listPinnedMessages(chat: PinnedMessagesChat): readonly ChatMessage[] {
+  #listPinnedMessages(chat: ChatKey): readonly ChatMessage[] {
     const history: readonly ChatMessage[] = chat.type === 'private'
       ? this.#messages.getPrivateConversationMessages(chat.conversation)
       : this.#messages.getSupergroupMessages(chat.chatId);

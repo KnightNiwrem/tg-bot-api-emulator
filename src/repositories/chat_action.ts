@@ -1,11 +1,11 @@
-import type { ChatActionChat, VisibleChatAction } from '../types/virtual_chat.ts';
+import type { ChatKey, VisibleChatAction } from '../types/virtual_chat.ts';
 
 /** Stores the chat actions bots show in each chat, one per bot, in the order the bots sent them. */
 export class ChatActionRepository {
   readonly #actionsByChatKey = new Map<string, readonly VisibleChatAction[]>();
 
   /** Replaces the bot's action in the chat with a newly sent one, which becomes the latest. */
-  showAction(chat: ChatActionChat, shownAction: VisibleChatAction): void {
+  showAction(chat: ChatKey, shownAction: VisibleChatAction): void {
     const chatKey = serializeChatKey(chat);
     this.#actionsByChatKey.set(chatKey, [
       ...this.#withoutBotAction(chatKey, shownAction.botId),
@@ -14,7 +14,7 @@ export class ChatActionRepository {
   }
 
   /** Removes the bot's action from the chat. Returns whether the chat showed one. */
-  removeAction(chat: ChatActionChat, botId: number): boolean {
+  removeAction(chat: ChatKey, botId: number): boolean {
     const chatKey = serializeChatKey(chat);
     const actions = this.#actionsByChatKey.get(chatKey) ?? [];
     const remainingActions = this.#withoutBotAction(chatKey, botId);
@@ -27,7 +27,7 @@ export class ChatActionRepository {
   }
 
   /** Returns the chat's actions, oldest first. */
-  getActions(chat: ChatActionChat): readonly VisibleChatAction[] {
+  getActions(chat: ChatKey): readonly VisibleChatAction[] {
     return this.#actionsByChatKey.get(serializeChatKey(chat)) ?? [];
   }
 
@@ -36,10 +36,10 @@ export class ChatActionRepository {
   }
 }
 
-function serializeChatKey(chat: ChatActionChat): string {
+function serializeChatKey(chat: ChatKey): string {
   switch (chat.type) {
     case 'private':
-      return `private:${chat.accountId}:${chat.botId}`;
+      return `private:${chat.conversation.accountId}:${chat.conversation.botId}`;
     case 'supergroup':
       return `supergroup:${chat.chatId}`;
     default: {

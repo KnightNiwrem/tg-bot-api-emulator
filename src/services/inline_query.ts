@@ -6,7 +6,6 @@ import {
   findInlineQueryResult,
   type InlineQuery,
   type InlineQueryAnswer,
-  type InlineQueryChat,
   type InlineQueryId,
   type InlineQueryResult,
   type InlineQueryResultsButton,
@@ -35,7 +34,11 @@ import type {
 } from '../types/stored_file.ts';
 import type { VirtualAccount } from '../types/virtual_account.ts';
 import type { VirtualBot } from '../types/virtual_bot.ts';
-import type { SharedChat } from '../types/virtual_chat.ts';
+import type {
+  AccountChatAddress,
+  AccountPrivateChatAddress,
+  SharedChat,
+} from '../types/virtual_chat.ts';
 import type {
   ChatMessage,
   FormattedText,
@@ -69,7 +72,7 @@ export interface SendInlineQueryInput {
   readonly fromAccountId: number;
   /** The inline bot, whose username the account typed. */
   readonly botId: number;
-  readonly chat: InlineQueryChat;
+  readonly chat: AccountChatAddress;
   readonly query: string;
   /** The `next_offset` of an earlier answer, or empty for the first results. */
   readonly offset: string;
@@ -327,7 +330,7 @@ interface InlineResultSending {
 interface PrivateInlineResultMessaging {
   sendAccountInlineResult(
     input: InlineResultSending & {
-      readonly to: { readonly type: 'private'; readonly botId: number };
+      readonly to: AccountPrivateChatAddress;
     },
   ):
     | { readonly sent: true; readonly message: PrivateMessage }
@@ -354,7 +357,7 @@ interface InlineQueryStore {
   addInlineQuery(input: {
     readonly accountId: number;
     readonly botId: number;
-    readonly chat: InlineQueryChat;
+    readonly chat: AccountChatAddress;
     readonly query: string;
     readonly offset: string;
   }): InlineQuery;
@@ -643,7 +646,7 @@ export class InlineQueryService {
   /** Checks that the account can type in the query's chat, as it can write there. */
   #checkChatAccess(
     accountId: number,
-    chat: InlineQueryChat,
+    chat: AccountChatAddress,
   ): 'chat_not_found' | 'not_a_member' | undefined {
     if (chat.type === 'private') {
       return this.#bots.getById(chat.botId) === undefined ? 'chat_not_found' : undefined;

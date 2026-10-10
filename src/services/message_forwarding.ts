@@ -4,23 +4,23 @@ import {
   type MessageForward,
   type PrivateForwardNameLookup,
 } from '../types/message_forward.ts';
+import type { AccountChatAddress, AccountPrivateChatAddress } from '../types/virtual_chat.ts';
 import type { ChatMessage, PrivateMessage, SupergroupMessage } from '../types/virtual_message.ts';
 import type {
   AccountChatMessageLookupFailureReason,
   AccountChatMessageReader,
-  AccountMessageChat,
 } from './account_chat_message.ts';
-
-/** A chat of an account: its private chat with a bot, or a supergroup it is a member of. */
-export type AccountChat = AccountMessageChat;
 
 export interface ForwardAccountMessageInput {
   readonly fromAccountId: number;
-  /** The chat of the forwarded message. */
-  readonly fromChat: AccountChat;
+  /**
+   * The chat of the forwarded message: the account's private chat with a bot, or a supergroup it
+   * is a member of.
+   */
+  readonly fromChat: AccountChatAddress;
   /** The forwarded message's ID as the bots of its chat see it. */
   readonly messageId: number;
-  readonly toChat: AccountChat;
+  readonly toChat: AccountChatAddress;
 }
 
 export type ForwardAccountMessageFailureReason =
@@ -41,7 +41,7 @@ type AccountForwardSendingResult<Message extends ChatMessage, FailureReason exte
 interface PrivateForwardMessaging {
   sendAccountForward(input: {
     readonly fromAccountId: number;
-    readonly to: { readonly type: 'private'; readonly botId: number };
+    readonly to: AccountPrivateChatAddress;
     readonly forward: MessageForward;
   }): AccountForwardSendingResult<
     PrivateMessage,

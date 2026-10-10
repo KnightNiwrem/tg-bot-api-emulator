@@ -85,8 +85,9 @@ import type { VirtualBot, VirtualBotProfile } from '../types/virtual_bot.ts';
 import type { WrittenMessageDraft } from '../types/message_draft.ts';
 import {
   type ChatAction,
-  type ChatActionChat,
-  getBotChatActionChat,
+  type ChatKey,
+  getBotApiChatAddress,
+  getBotApiChatKey,
   type PrivateConversationKey,
 } from '../types/virtual_chat.ts';
 import {
@@ -167,8 +168,6 @@ import type {
 import type {
   PinMessageInput,
   PinMessageResult,
-  PinnedMessagesChat,
-  PinningChat,
   UnpinAllMessagesInput,
   UnpinAllMessagesResult,
   UnpinMessageInput,
@@ -2040,7 +2039,7 @@ interface MessagePinning {
   pinMessage(input: PinMessageInput): PinMessageResult;
   unpinMessage(input: UnpinMessageInput): UnpinMessageResult;
   unpinAllMessages(input: UnpinAllMessagesInput): UnpinAllMessagesResult;
-  findNewestPinnedMessage(chat: PinnedMessagesChat): ChatMessage | undefined;
+  findNewestPinnedMessage(chat: ChatKey): ChatMessage | undefined;
 }
 
 interface MessageReactions {
@@ -2050,7 +2049,7 @@ interface MessageReactions {
 interface ChatActions {
   recordBotChatAction(input: {
     readonly botId: number;
-    readonly chat: ChatActionChat;
+    readonly chat: ChatKey;
     readonly action: ChatAction;
   }): void;
 }
@@ -2873,7 +2872,7 @@ export class BotApiService {
     }
     this.#chatActions.recordBotChatAction({
       botId: authenticatedBot.id,
-      chat: getBotChatActionChat(authenticatedBot.id, chatId),
+      chat: getBotApiChatKey(authenticatedBot.id, chatId),
       action,
     });
     return { sent: true };
@@ -3204,7 +3203,7 @@ export class BotApiService {
    * link, as `ChatAdmissionService.findPrimaryInviteLinkOfBot` finds it.
    */
   getChat(authenticatedBot: VirtualBotProfile, { chatId }: GetChatRequest): BotApiGetChatResult {
-    let pinnedMessagesChat: PinnedMessagesChat;
+    let pinnedMessagesChat: ChatKey;
     let primaryInviteLink: ChatInviteLink | undefined;
     if (isUserId(chatId)) {
       if (!this.#isPrivateChatKnown(authenticatedBot, chatId)) {
@@ -3797,7 +3796,7 @@ export class BotApiService {
   ): BotApiPinChatMessageResult {
     const result = this.#messagePinning.pinMessage({
       pinner: { kind: 'bot', botId: authenticatedBot.id },
-      chat: toPinningChat(chatId),
+      chat: getBotApiChatAddress(chatId),
       messageId,
       isSilent,
     });
@@ -3816,7 +3815,7 @@ export class BotApiService {
   ): BotApiUnpinChatMessageResult {
     const result = this.#messagePinning.unpinMessage({
       pinner: { kind: 'bot', botId: authenticatedBot.id },
-      chat: toPinningChat(chatId),
+      chat: getBotApiChatAddress(chatId),
       messageId,
     });
     return result.unpinned ? { unpinned: true } : {
@@ -3835,7 +3834,7 @@ export class BotApiService {
   ): BotApiUnpinAllChatMessagesResult {
     const result = this.#messagePinning.unpinAllMessages({
       pinner: { kind: 'bot', botId: authenticatedBot.id },
-      chat: toPinningChat(chatId),
+      chat: getBotApiChatAddress(chatId),
     });
     return result.unpinned ? { unpinned: true } : {
       unpinned: false,
@@ -5041,14 +5040,6 @@ function excludeMissingBotFailure<Reason extends string>(
     throw new Error(`Authenticated bot ${authenticatedBot.id} does not exist`);
   }
   return reason;
-}
-
-/**
- * The chat a bot pins in, by the Bot API `chat_id`: a user's ID names the bot's private chat with
- * that user, and any other ID a supergroup.
- */
-function toPinningChat(chatId: number): PinningChat {
-  return isUserId(chatId) ? { type: 'private', peerId: chatId } : { type: 'supergroup', chatId };
 }
 
 /**

@@ -22,8 +22,8 @@ import { VirtualUserService } from '../src/services/virtual_user.ts';
 import type { WebFileDownload } from '../src/services/web_file_download.ts';
 import type { ChatDomainEvent } from '../src/types/chat_domain_event.ts';
 import { ALL_CHAT_PERMISSIONS } from '../src/types/chat_permissions.ts';
-import type { InlineQueryChat } from '../src/types/inline_query.ts';
 import type { FileUpload } from '../src/types/stored_file.ts';
+import type { AccountChatAddress } from '../src/types/virtual_chat.ts';
 
 const SUPERGROUP = {
   kind: 'supergroup',
@@ -40,7 +40,7 @@ Deno.test('InlineQueryService sends queries only to inline bots in chats the acc
   const plainBot = createBot(virtualUsers, 'plain_bot', { supports_inline_queries: false });
   const stranger = createAccount(virtualUsers, 'Grace');
   sharedChats.registerSupergroup(SUPERGROUP, account.profile.id);
-  const send = (fromAccountId: number, botId: number, chat: InlineQueryChat) =>
+  const send = (fromAccountId: number, botId: number, chat: AccountChatAddress) =>
     inlineQueries.sendInlineQuery({ fromAccountId, botId, chat, query: 'cats', offset: '' });
 
   const failures = [
@@ -867,7 +867,7 @@ function createInlineQueryFixture() {
   const inlineBot = createBot(virtualUsers, 'inline_bot', { supports_inline_queries: true });
 
   const sendQuery = (
-    chat: InlineQueryChat = { type: 'private', botId: inlineBot.profile.id },
+    chat: AccountChatAddress = { type: 'private', botId: inlineBot.profile.id },
   ) => {
     const result = inlineQueries.sendInlineQuery({
       fromAccountId: account.profile.id,

@@ -10,19 +10,21 @@ import { SharedChatRepository } from '../src/repositories/shared_chat.ts';
 import { TelegramIdentityRepository } from '../src/repositories/telegram_identity.ts';
 import {
   type AccountChatMessageLookupResult,
-  type AccountMessageChat,
   createAccountChatMessageReader,
 } from '../src/services/account_chat_message.ts';
+import { PrivateChatPolicy } from '../src/services/private_chat_policy.ts';
 import { PrivateMessagingService } from '../src/services/private_messaging.ts';
+import { SupergroupChatPolicy } from '../src/services/supergroup_chat_policy.ts';
 import { SupergroupMessagingService } from '../src/services/supergroup_messaging.ts';
 import { VirtualUserService } from '../src/services/virtual_user.ts';
 import { ALL_CHAT_PERMISSIONS } from '../src/types/chat_permissions.ts';
+import type { AccountChatAddress } from '../src/types/virtual_chat.ts';
 import type { ChatMessage } from '../src/types/virtual_message.ts';
 
 Deno.test('the account chat-message reader finds private chat messages by their ID in the bot message box', () => {
   const { reader, ada, stranger, bot, adaConversation, adaMessages } = createReaderFixture();
-  const privateChat: AccountMessageChat = { type: 'private', botId: bot.profile.id };
-  const find = (accountId: number, chat: AccountMessageChat, messageId: number) =>
+  const privateChat: AccountChatAddress = { type: 'private', botId: bot.profile.id };
+  const find = (accountId: number, chat: AccountChatAddress, messageId: number) =>
     reader.findMessage({ accountId, chat, messageId });
 
   assertSameReasons(
@@ -47,7 +49,7 @@ Deno.test('the account chat-message reader finds private chat messages by their 
 Deno.test('the account chat-message reader finds messages in a conversation a join request opened', () => {
   const { reader, privateConversations, grace, bot, adaMessages, gracePrompt } =
     createReaderFixture();
-  const privateChat: AccountMessageChat = { type: 'private', botId: bot.profile.id };
+  const privateChat: AccountChatAddress = { type: 'private', botId: bot.profile.id };
   const graceConversation = { accountId: grace.profile.id, botId: bot.profile.id };
 
   const result = reader.findMessage({
@@ -77,8 +79,8 @@ Deno.test('the account chat-message reader finds messages in a conversation a jo
 Deno.test('the account chat-message reader finds supergroup messages only for current members', () => {
   const { reader, ada, stranger, bot, basicGroupId, supergroup, adaMessages, supergroupMessage } =
     createReaderFixture();
-  const supergroupChat: AccountMessageChat = { type: 'supergroup', chatId: supergroup.id };
-  const find = (accountId: number, chat: AccountMessageChat, messageId: number) =>
+  const supergroupChat: AccountChatAddress = { type: 'supergroup', chatId: supergroup.id };
+  const find = (accountId: number, chat: AccountChatAddress, messageId: number) =>
     reader.findMessage({ accountId, chat, messageId });
 
   assertSameReasons(
@@ -128,6 +130,11 @@ function createReaderFixture() {
   const { bot } = botCreation;
 
   const privateConversations = new PrivateConversationRepository();
+  const blockedUsers = new BlockedUserRepository();
+  const joinRequesterContacts = {
+    mayContactJoinRequester: (_botId: number, accountId: number) => accountId === grace.profile.id,
+    claimJoinRequesterContact: () => {},
+  };
   const sharedChats = new SharedChatRepository();
   const messages = new MessageRepository();
   const files = new FileRepository();
@@ -144,11 +151,8 @@ function createReaderFixture() {
     files,
     polls,
     messageBoxes,
-    blockedUsers: new BlockedUserRepository(),
-    joinRequesterContacts: {
-      mayContactJoinRequester: (_botId, accountId) => accountId === grace.profile.id,
-      claimJoinRequesterContact: () => {},
-    },
+    blockedUsers,
+    joinRequesterContacts,
     events,
     // No draft is shown in these chats; a bot's message has none to remove.
     messageDrafts: { clearBotDraft: () => {} },
@@ -228,11 +232,18 @@ function createReaderFixture() {
   return {
     reader: createAccountChatMessageReader({
       accounts,
-      bots,
-      privateConversations,
-      privateMessages: privateMessaging,
-      sharedChats,
-      supergroupMessages: supergroupMessaging,
+      privateChats: new PrivateChatPolicy({
+        accounts,
+        bots,
+        privateConversations,
+        blockedUsers,
+        joinRequesterContacts,
+        privateMessages: privateMessaging,
+      }),
+      supergroups: new SupergroupChatPolicy({
+        sharedChats,
+        supergroupMessages: supergroupMessaging,
+      }),
     }),
     privateConversations,
     ada,

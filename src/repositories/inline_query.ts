@@ -1,15 +1,11 @@
 import type { GeoLocation } from '../types/geo_location.ts';
-import type {
-  InlineQuery,
-  InlineQueryAnswer,
-  InlineQueryChat,
-  InlineQueryId,
-} from '../types/inline_query.ts';
+import type { InlineQuery, InlineQueryAnswer, InlineQueryId } from '../types/inline_query.ts';
+import type { AccountChatAddress } from '../types/virtual_chat.ts';
 
 export interface AddInlineQueryInput {
   readonly accountId: number;
   readonly botId: number;
-  readonly chat: InlineQueryChat;
+  readonly chat: AccountChatAddress;
   readonly query: string;
   readonly offset: string;
   readonly userLocation?: GeoLocation;

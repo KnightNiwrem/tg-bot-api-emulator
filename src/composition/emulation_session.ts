@@ -54,9 +54,11 @@ import { MessageForwardingService } from '../services/message_forwarding.ts';
 import { MessagePinningService } from '../services/message_pinning.ts';
 import { MessageReactionService } from '../services/message_reaction.ts';
 import { PollService } from '../services/poll.ts';
+import { PrivateChatPolicy } from '../services/private_chat_policy.ts';
 import { PrivateMessagingService } from '../services/private_messaging.ts';
 import { createSessionUserMentionContext } from '../services/session_user_mention.ts';
 import { SharedChatAdministrationService } from '../services/shared_chat_administration.ts';
+import { SupergroupChatPolicy } from '../services/supergroup_chat_policy.ts';
 import { SupergroupMessagingService } from '../services/supergroup_messaging.ts';
 import { VirtualUserService } from '../services/virtual_user.ts';
 import {
@@ -182,11 +184,15 @@ export function createEmulationSession(
   });
   const accountChatMessages = createAccountChatMessageReader({
     accounts,
-    bots,
-    privateConversations,
-    privateMessages: privateMessaging,
-    sharedChats,
-    supergroupMessages: supergroupMessaging,
+    privateChats: new PrivateChatPolicy({
+      accounts,
+      bots,
+      privateConversations,
+      blockedUsers,
+      joinRequesterContacts: chatAdmission,
+      privateMessages: privateMessaging,
+    }),
+    supergroups: new SupergroupChatPolicy({ sharedChats, supergroupMessages: supergroupMessaging }),
   });
   const messageForwarding = new MessageForwardingService({
     accountChatMessages,

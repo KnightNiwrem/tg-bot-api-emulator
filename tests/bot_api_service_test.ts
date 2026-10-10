@@ -50,7 +50,9 @@ import { CallbackQueryService } from '../src/services/callback_query.ts';
 import { ChatActionService } from '../src/services/chat_action.ts';
 import { ChatAdmissionService } from '../src/services/chat_admission.ts';
 import { InlineQueryService } from '../src/services/inline_query.ts';
+import { PrivateChatPolicy } from '../src/services/private_chat_policy.ts';
 import { PrivateMessagingService } from '../src/services/private_messaging.ts';
+import { SupergroupChatPolicy } from '../src/services/supergroup_chat_policy.ts';
 import { SupergroupMessagingService } from '../src/services/supergroup_messaging.ts';
 import { VirtualUserService } from '../src/services/virtual_user.ts';
 import type { PhotoUpload } from '../src/types/stored_file.ts';
@@ -463,6 +465,12 @@ function createBotApiFixture() {
   });
   const privateConversations = new PrivateConversationRepository();
   const blockedUsers = new BlockedUserRepository();
+  const joinRequesterContacts = {
+    mayContactJoinRequester: () => false,
+    claimJoinRequesterContact: () => {
+      throw new Error('Unexpected join requester contact');
+    },
+  };
   const messageDrafts = new MessageDraftService({
     accounts,
     bots,
@@ -479,12 +487,7 @@ function createBotApiFixture() {
     polls,
     messageBoxes,
     blockedUsers,
-    joinRequesterContacts: {
-      mayContactJoinRequester: () => false,
-      claimJoinRequesterContact: () => {
-        throw new Error('Unexpected join requester contact');
-      },
-    },
+    joinRequesterContacts,
     events,
     messageDrafts,
     currentUnixTimeSeconds: () => 1_700_000_000,
@@ -503,11 +506,18 @@ function createBotApiFixture() {
   const callbackQueries = new CallbackQueryService({
     accountChatMessages: createAccountChatMessageReader({
       accounts,
-      bots,
-      privateConversations,
-      privateMessages: privateMessaging,
-      sharedChats,
-      supergroupMessages: supergroupMessaging,
+      privateChats: new PrivateChatPolicy({
+        accounts,
+        bots,
+        privateConversations,
+        blockedUsers,
+        joinRequesterContacts,
+        privateMessages: privateMessaging,
+      }),
+      supergroups: new SupergroupChatPolicy({
+        sharedChats,
+        supergroupMessages: supergroupMessaging,
+      }),
     }),
     bots,
     callbackQueries: new CallbackQueryRepository(),

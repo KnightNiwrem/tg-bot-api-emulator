@@ -78,6 +78,7 @@ import {
   type ChatMembership,
   type ChatMemberStatus,
 } from '../types/chat_membership.ts';
+import { privateChatMessagePolicy, supergroupMessagePolicy } from '../types/chat_policy.ts';
 import type { InlineQuery } from '../types/inline_query.ts';
 import {
   getPollCreatorId,
@@ -94,7 +95,7 @@ import {
 import { isUserId } from '../types/telegram_identity.ts';
 import type { VirtualAccount } from '../types/virtual_account.ts';
 import type { VirtualBot } from '../types/virtual_bot.ts';
-import type { SharedChat, Supergroup } from '../types/virtual_chat.ts';
+import type { PrivateConversationKey, SharedChat, Supergroup } from '../types/virtual_chat.ts';
 import {
   type CanonicalMessageId,
   type ChatMessage,
@@ -230,7 +231,10 @@ export class BotMessageViewService {
       ...(message.content.kind === 'message_pinned'
         ? {
           pinnedMessage: this.#findPinnedPrivateMessage(message.content) ?? {
-            message_id: this.#requireMessageId(observed.bot.id, message.content.pinnedMessageId),
+            message_id: this.#requirePrivateBotMessageId(
+              message.conversation,
+              message.content.pinnedMessageId,
+            ),
             chat: projectPrivateChat(observed.account),
             date: 0,
           },
@@ -258,7 +262,10 @@ export class BotMessageViewService {
       ...(message.content.kind === 'message_pinned'
         ? {
           pinnedMessage: this.#findPinnedSupergroupMessage(message.content, observerId) ?? {
-            message_id: this.#requireMessageId(message.chatId, message.content.pinnedMessageId),
+            message_id: this.#requireSupergroupMessageId(
+              message.chatId,
+              message.content.pinnedMessageId,
+            ),
             chat: projectSupergroupChat(observed.supergroup),
             date: 0,
           },
@@ -458,7 +465,7 @@ export class BotMessageViewService {
       event,
       supergroup,
       reactor: this.#findAccountProfile(event.accountId, 'a reaction change'),
-      messageId: this.#requireMessageId(message.chatId, message.id),
+      messageId: this.#requireSupergroupMessageId(message.chatId, message.id),
     });
   }
 
@@ -612,7 +619,7 @@ export class BotMessageViewService {
       message,
       supergroup,
       author: this.#findSupergroupMessageAuthor(message.author, message.id),
-      messageId: this.#requireMessageId(message.chatId, message.id),
+      messageId: this.#requireSupergroupMessageId(message.chatId, message.id),
       context: this.#resolveProjectionContext(message, observerId),
     };
   }
@@ -627,6 +634,25 @@ export class BotMessageViewService {
       throw new Error(`Message ${messageId} is not numbered in the message box of ${boxOwnerId}`);
     }
     return observerMessageId;
+  }
+
+  /** The ID by which the bot of a private conversation sees one of the conversation's messages. */
+  #requirePrivateBotMessageId(
+    conversation: PrivateConversationKey,
+    messageId: CanonicalMessageId,
+  ): number {
+    return this.#requireMessageId(
+      privateChatMessagePolicy.getObserverBoxOwnerId({ type: 'private', conversation }, 'bot'),
+      messageId,
+    );
+  }
+
+  /** The ID by which every member of a supergroup sees one of its messages. */
+  #requireSupergroupMessageId(chatId: number, messageId: CanonicalMessageId): number {
+    return this.#requireMessageId(
+      supergroupMessagePolicy.getObserverBoxOwnerId({ type: 'supergroup', chatId }, 'member'),
+      messageId,
+    );
   }
 
   #findSupergroupMessageAuthor(
@@ -715,7 +741,7 @@ export class BotMessageViewService {
       message,
       account: account.profile,
       bot: bot.profile,
-      observerMessageId: this.#requireMessageId(observingBotId, message.id),
+      observerMessageId: this.#requirePrivateBotMessageId(message.conversation, message.id),
       context: this.#resolveProjectionContext(message, observingBotId),
     };
   }

@@ -3,7 +3,7 @@ import type { FormerSupergroupMemberFailureReason } from '../types/chat_membersh
 import { isForwardable, type PrivateForwardNameLookup } from '../types/message_forward.ts';
 import { createExternalReply, type ExternalReplyTarget } from '../types/message_reply.ts';
 import { isUserId } from '../types/telegram_identity.ts';
-import { type ChatActionChat, getBotChatActionChat } from '../types/virtual_chat.ts';
+import { type ChatKey, getBotApiChatKey } from '../types/virtual_chat.ts';
 import type {
   ChatMessage,
   MediaGroupId,
@@ -62,7 +62,7 @@ interface BotMessageViews {
 }
 
 interface ChatActionEnding {
-  endBotChatAction(input: { readonly botId: number; readonly chat: ChatActionChat }): void;
+  endBotChatAction(input: { readonly botId: number; readonly chat: ChatKey }): void;
 }
 
 interface BotMessageSenderDependencies {
@@ -178,7 +178,7 @@ export class BotMessageSender {
       // As TDLib's `DialogActionManager` does, a bot's message ends its chat action.
       this.#chatActions.endBotChatAction({
         botId,
-        chat: getBotChatActionChat(botId, options.chatId),
+        chat: getBotApiChatKey(botId, options.chatId),
       });
     }
     return result;
@@ -205,7 +205,7 @@ export class BotMessageSender {
       // As for a single message, the album ends the bot's chat action.
       this.#chatActions.endBotChatAction({
         botId,
-        chat: getBotChatActionChat(botId, options.chatId),
+        chat: getBotApiChatKey(botId, options.chatId),
       });
     }
     return result;

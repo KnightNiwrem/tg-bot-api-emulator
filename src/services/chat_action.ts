@@ -3,7 +3,7 @@ import type { VirtualAccount } from '../types/virtual_account.ts';
 import type { VirtualBot } from '../types/virtual_bot.ts';
 import type {
   ChatAction,
-  ChatActionChat,
+  ChatKey,
   PrivateConversationKey,
   SharedChat,
   VisibleChatAction,
@@ -52,9 +52,9 @@ interface SupergroupMembershipLookup {
 }
 
 interface ChatActionStore {
-  showAction(chat: ChatActionChat, shownAction: VisibleChatAction): void;
-  removeAction(chat: ChatActionChat, botId: number): boolean;
-  getActions(chat: ChatActionChat): readonly VisibleChatAction[];
+  showAction(chat: ChatKey, shownAction: VisibleChatAction): void;
+  removeAction(chat: ChatKey, botId: number): boolean;
+  getActions(chat: ChatKey): readonly VisibleChatAction[];
 }
 
 interface ChatActionServiceDependencies {
@@ -65,7 +65,7 @@ interface ChatActionServiceDependencies {
 }
 
 type ChatActionChatLookup =
-  | { readonly found: true; readonly chat: ChatActionChat }
+  | { readonly found: true; readonly chat: ChatKey }
   | { readonly found: false; readonly reason: ChatActionsLookupFailureReason };
 
 /**
@@ -96,7 +96,7 @@ export class ChatActionService {
   recordBotChatAction(
     { botId, chat, action }: {
       readonly botId: number;
-      readonly chat: ChatActionChat;
+      readonly chat: ChatKey;
       readonly action: ChatAction;
     },
   ): void {
@@ -108,7 +108,7 @@ export class ChatActionService {
   }
 
   /** Ends the chat action of a bot that sent a message to the chat. */
-  endBotChatAction({ botId, chat }: { readonly botId: number; readonly chat: ChatActionChat }) {
+  endBotChatAction({ botId, chat }: { readonly botId: number; readonly chat: ChatKey }) {
     this.#chatActions.removeAction(chat, botId);
   }
 
@@ -164,14 +164,14 @@ export class ChatActionService {
       : { expired: false, reason: 'chat_action_not_found' };
   }
 
-  #findPrivateChat({ accountId, botId }: PrivateConversationKey): ChatActionChatLookup {
-    if (this.#accounts.getById(accountId) === undefined) {
+  #findPrivateChat(conversation: PrivateConversationKey): ChatActionChatLookup {
+    if (this.#accounts.getById(conversation.accountId) === undefined) {
       return { found: false, reason: 'account_not_found' };
     }
-    if (this.#bots.getById(botId) === undefined) {
+    if (this.#bots.getById(conversation.botId) === undefined) {
       return { found: false, reason: 'bot_not_found' };
     }
-    return { found: true, chat: { type: 'private', accountId, botId } };
+    return { found: true, chat: { type: 'private', conversation } };
   }
 
   #findSupergroupChat({ accountId, chatId }: SupergroupChatActionsKey): ChatActionChatLookup {

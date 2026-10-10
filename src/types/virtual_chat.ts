@@ -1,9 +1,67 @@
 import type { ChatPermissions } from './chat_permissions.ts';
 import { isUserId } from './telegram_identity.ts';
 
+/**
+ * Identifies a private conversation by its participants, each named by its role, the account and
+ * the bot, so the key is the same whichever participant addresses the conversation.
+ */
 export interface PrivateConversationKey {
   readonly accountId: number;
   readonly botId: number;
+}
+
+/**
+ * A chat as an actor addresses it, relative to that actor: its private chat with a peer, a bot for
+ * an account and an account for a bot, or a supergroup. The chat type's identity policy resolves
+ * it to the `ChatKey` of the chat it names, without deciding what the actor may do there.
+ */
+export type ChatAddress =
+  | { readonly type: 'private'; readonly peerId: number }
+  | { readonly type: 'supergroup'; readonly chatId: number };
+
+export type PrivateChatAddress = Extract<ChatAddress, { readonly type: 'private' }>;
+export type SupergroupChatAddress = Extract<ChatAddress, { readonly type: 'supergroup' }>;
+
+/**
+ * A chat as an account addresses it through the control API: its private chat with a bot, by the
+ * bot's ID, or a supergroup. It names the same chat as the account's `ChatAddress`, whose private
+ * peer is always a bot.
+ */
+export type AccountChatAddress = AccountPrivateChatAddress | SupergroupChatAddress;
+
+/** An account's private chat with a bot, as the account addresses it, by the bot's ID. */
+export interface AccountPrivateChatAddress {
+  readonly type: 'private';
+  readonly botId: number;
+}
+
+/**
+ * The chat a bot addresses by a Bot API `chat_id`: a user's ID names the bot's private chat with
+ * that user, and any other ID a supergroup.
+ */
+export function getBotApiChatAddress(chatId: number): ChatAddress {
+  return isUserId(chatId) ? { type: 'private', peerId: chatId } : { type: 'supergroup', chatId };
+}
+
+/**
+ * A chat as the emulator identifies it, the same for every participant: a private conversation by
+ * its participants' roles, or a supergroup by its ID.
+ */
+export type ChatKey =
+  | { readonly type: 'private'; readonly conversation: PrivateConversationKey }
+  | { readonly type: 'supergroup'; readonly chatId: number };
+
+export type PrivateChatKey = Extract<ChatKey, { readonly type: 'private' }>;
+export type SupergroupChatKey = Extract<ChatKey, { readonly type: 'supergroup' }>;
+
+/**
+ * The chat a bot addresses by a Bot API `chat_id`, as `getBotApiChatAddress` finds it, identified
+ * without checking that it exists: its private conversation with the user, or the supergroup.
+ */
+export function getBotApiChatKey(botId: number, chatId: number): ChatKey {
+  return isUserId(chatId)
+    ? { type: 'private', conversation: { accountId: chatId, botId } }
+    : { type: 'supergroup', chatId };
 }
 
 /**
@@ -31,21 +89,6 @@ export type ShownChatActionType = Exclude<ChatAction, 'cancel'>;
 export interface VisibleChatAction {
   readonly botId: number;
   readonly action: ShownChatActionType;
-}
-
-/** A chat a bot shows chat actions in: a private conversation, or a supergroup. */
-export type ChatActionChat =
-  | { readonly type: 'private'; readonly accountId: number; readonly botId: number }
-  | { readonly type: 'supergroup'; readonly chatId: number };
-
-/**
- * The chat a bot shows its chat actions in when it addresses a chat by a Bot API `chat_id`: its
- * private conversation with the user, or the supergroup.
- */
-export function getBotChatActionChat(botId: number, chatId: number): ChatActionChat {
-  return isUserId(chatId)
-    ? { type: 'private', accountId: chatId, botId }
-    : { type: 'supergroup', chatId };
 }
 
 /** Which participant of a private conversation, identified relative to its key. */

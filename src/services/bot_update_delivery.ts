@@ -27,6 +27,7 @@ import type {
   PollAnswerChangedEvent,
 } from '../types/chat_domain_event.ts';
 import type { ChatMembership } from '../types/chat_membership.ts';
+import { privateChatMessagePolicy, supergroupMessagePolicy } from '../types/chat_policy.ts';
 import type { InlineQuery } from '../types/inline_query.ts';
 import type { Poll } from '../types/poll.ts';
 import type { VirtualBot, VirtualBotProfile } from '../types/virtual_bot.ts';
@@ -34,7 +35,6 @@ import {
   type CanonicalMessageId,
   type ChatMessage,
   getContentText,
-  isPrivateContentMessage,
   isSupergroupContentMessage,
   mentionsUser,
   type PrivateMessage,
@@ -225,23 +225,21 @@ export class BotUpdateDeliveryService {
   }
 
   /**
-   * A private message, and each edit of it, is observed only by the bot of its conversation,
-   * which, as on Telegram, receives no update for its own message or edit. A service message
-   * recording the bot's own pin is the exception, which the Bot API server's
-   * `need_skip_update_message` keeps among a bot's outgoing messages.
+   * A private message, and each edit of it, is observed by the recipients that
+   * `privateChatMessagePolicy` selects: the bot of its conversation, unless the message is the
+   * bot's own content.
    */
   #deliverPrivateMessage(message: PrivateMessage, updateType: MessageUpdateType): void {
-    const observingBotId = message.conversation.botId;
-    const isOwnContentMessage = message.authorRole === 'bot' && isPrivateContentMessage(message);
-    if (isOwnContentMessage || !this.#isSubscribed(observingBotId, updateType)) {
-      return;
+    for (const observingBotId of privateChatMessagePolicy.selectMessageRecipientBotIds(message)) {
+      if (!this.#isSubscribed(observingBotId, updateType)) {
+        continue;
+      }
+      this.#enqueueMessage(
+        observingBotId,
+        updateType,
+        this.#botMessageViews.viewPrivateMessageForBot(message),
+      );
     }
-
-    this.#enqueueMessage(
-      observingBotId,
-      updateType,
-      this.#botMessageViews.viewPrivateMessageForBot(message),
-    );
   }
 
   /**
@@ -326,22 +324,18 @@ export class BotUpdateDeliveryService {
   }
 
   /**
-   * A service message about a change of the supergroup's members or title is observed by every
-   * bot of the supergroup, privacy mode notwithstanding, and by a bot that left or was removed,
-   * which, as on Telegram, still learns of its own departure. Telegram delivers service messages
-   * to every bot, so, unlike other messages, a bot's service message, about its leaving, its
-   * removal of a member, or its change of the title, reaches the other bots too, and, as the Bot
-   * API server's `need_skip_update_message` does for removals and title changes, the bot that
-   * made it.
+   * A service message about a change of the supergroup's members or title is observed by the bots
+   * among the recipients that `supergroupMessagePolicy` selects, privacy mode notwithstanding: the
+   * supergroup's bots, and a bot that left or was removed. Telegram delivers service messages to
+   * every bot, so, unlike other messages, a bot's service message, about its leaving, its removal
+   * of a member, or its change of the title, reaches the other bots too, and, as the Bot API
+   * server's `need_skip_update_message` does for removals and title changes, the bot that made it.
    */
   #deliverServiceMessage(message: SupergroupMessage): void {
-    const departedMemberIds = message.content.kind === 'member_left'
-      ? [message.content.memberId]
-      : [];
-    const observerIds = new Set([
-      ...this.#sharedChats.getChatMemberIds(message.chatId),
-      ...departedMemberIds,
-    ]);
+    const observerIds = supergroupMessagePolicy.selectServiceMessageRecipientIds(
+      message,
+      this.#sharedChats.getChatMemberIds(message.chatId),
+    );
     for (const observerId of observerIds) {
       if (
         this.#bots.getById(observerId) === undefined || !this.#isSubscribed(observerId, 'message')
