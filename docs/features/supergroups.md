@@ -550,6 +550,7 @@ not show. The emulator chooses where they are not visible:
 [default permission tests](../../tests/chat_default_permissions_api_test.ts),
 [permission tests](../../tests/chat_permissions_test.ts),
 [privacy filtering](../../src/services/bot_update_delivery.ts),
+[last message-sending bot](../../src/repositories/last_message_sending_bot.ts),
 [administration tests](../../tests/shared_chat_administration_service_test.ts),
 [delivery tests](../../tests/bot_update_delivery_service_test.ts),
 [bot-to-bot tests](../../tests/bot_to_bot_communication_api_test.ts),

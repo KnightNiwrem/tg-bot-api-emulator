@@ -4,6 +4,7 @@ import { BotRepository } from '../src/repositories/bot.ts';
 import { BotUpdateRepository } from '../src/repositories/bot_update.ts';
 import { BotUpdateSubscriptionRepository } from '../src/repositories/bot_update_subscription.ts';
 import { FileRepository } from '../src/repositories/file.ts';
+import { LastMessageSendingBotRepository } from '../src/repositories/last_message_sending_bot.ts';
 import { PollRepository } from '../src/repositories/poll.ts';
 import { MessageRepository } from '../src/repositories/message.ts';
 import { PrivateConversationRepository } from '../src/repositories/private_conversation.ts';
@@ -2705,6 +2706,7 @@ function createPrivateMessagingFixture() {
     bots,
     sharedChats,
     messages,
+    lastMessageSendingBots: new LastMessageSendingBotRepository(),
   });
   const publishedEvents: ChatDomainEvent[] = [];
   let currentUnixTimeSeconds = 1_700_000_000;

@@ -110,6 +110,11 @@ interface SupergroupMessageLookup {
   getSupergroupMessage(messageId: CanonicalMessageId): SupergroupMessage | undefined;
 }
 
+interface LastMessageSendingBotRecords {
+  recordMessageSendingBot(supergroupId: number, botId: number): void;
+  getLastMessageSendingBotId(supergroupId: number): number | undefined;
+}
+
 interface BotUpdateDeliveryServiceDependencies {
   readonly botMessageViews: BotMessageViews;
   readonly botUpdates: BotUpdateMailboxes;
@@ -117,6 +122,7 @@ interface BotUpdateDeliveryServiceDependencies {
   readonly bots: BotLookup;
   readonly sharedChats: ChatMemberLookup;
   readonly messages: SupergroupMessageLookup;
+  readonly lastMessageSendingBots: LastMessageSendingBotRecords;
 }
 
 /** What a bot receives of a message: a new message, or an edit of one. */
@@ -137,7 +143,8 @@ type PrivacyModeAddressee =
  * It selects the bots that observe each event, projects the event for each of them, and appends
  * the resulting update to that bot's mailbox. A bot that has not subscribed to the update's type
  * never receives it, as Telegram drops such updates when they are created; the underlying chat
- * state is unaffected.
+ * state is unaffected. Delivering a bot's new supergroup content message also records that bot as
+ * the supergroup's last message-sending bot, which routes later commands without a username.
  */
 export class BotUpdateDeliveryService {
   readonly #botMessageViews: BotMessageViews;
@@ -146,15 +153,18 @@ export class BotUpdateDeliveryService {
   readonly #bots: BotLookup;
   readonly #sharedChats: ChatMemberLookup;
   readonly #messages: SupergroupMessageLookup;
-  /**
-   * The bot that last sent a content message to each supergroup, which alone of the bots in
-   * privacy mode receives commands without a username there.
-   */
-  readonly #lastMessageSendingBotIds = new Map<number, number>();
+  readonly #lastMessageSendingBots: LastMessageSendingBotRecords;
 
   constructor(
-    { botMessageViews, botUpdates, updateSubscriptions, bots, sharedChats, messages }:
-      BotUpdateDeliveryServiceDependencies,
+    {
+      botMessageViews,
+      botUpdates,
+      updateSubscriptions,
+      bots,
+      sharedChats,
+      messages,
+      lastMessageSendingBots,
+    }: BotUpdateDeliveryServiceDependencies,
   ) {
     this.#botMessageViews = botMessageViews;
     this.#botUpdates = botUpdates;
@@ -162,6 +172,7 @@ export class BotUpdateDeliveryService {
     this.#bots = bots;
     this.#sharedChats = sharedChats;
     this.#messages = messages;
+    this.#lastMessageSendingBots = lastMessageSendingBots;
   }
 
   publish(event: ChatDomainEvent): void {
@@ -267,7 +278,7 @@ export class BotUpdateDeliveryService {
     }
     if (message.author.kind === 'bot') {
       if (updateType === 'message') {
-        this.#lastMessageSendingBotIds.set(message.chatId, message.author.botId);
+        this.#lastMessageSendingBots.recordMessageSendingBot(message.chatId, message.author.botId);
         this.#deliverBotToBotMessage(message, message.author.botId);
       }
       return;
@@ -629,7 +640,9 @@ export class BotUpdateDeliveryService {
     if (!startsWithCommandWithoutUsername(message)) {
       return false;
     }
-    const lastMessageSendingBotId = this.#lastMessageSendingBotIds.get(message.chatId);
+    const lastMessageSendingBotId = this.#lastMessageSendingBots.getLastMessageSendingBotId(
+      message.chatId,
+    );
     return lastMessageSendingBotId === undefined || lastMessageSendingBotId === bot.id;
   }
 

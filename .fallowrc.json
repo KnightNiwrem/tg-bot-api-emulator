@@ -135,6 +135,12 @@
         ]
       },
       {
+        "name": "last-message-sending-bot-repository",
+        "patterns": [
+          "src/repositories/last_message_sending_bot.ts"
+        ]
+      },
+      {
         "name": "bot-command-repository",
         "patterns": [
           "src/repositories/bot_command.ts"
@@ -431,6 +437,12 @@
         ]
       },
       {
+        "from": "last-message-sending-bot-repository",
+        "allow": [
+          "domain"
+        ]
+      },
+      {
         "from": "bot-command-repository",
         "allow": [
           "domain"
@@ -654,6 +666,7 @@
           "bot-webhook-repository",
           "callback-query-repository",
           "inline-query-repository",
+          "last-message-sending-bot-repository",
           "bot-command-repository",
           "bot-description-repository",
           "bot-default-administrator-rights-repository",

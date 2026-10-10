@@ -17,6 +17,7 @@ import { ChatActionRepository } from '../repositories/chat_action.ts';
 import { ChatInviteLinkRepository } from '../repositories/chat_invite_link.ts';
 import { FileRepository } from '../repositories/file.ts';
 import { InlineQueryRepository } from '../repositories/inline_query.ts';
+import { LastMessageSendingBotRepository } from '../repositories/last_message_sending_bot.ts';
 import { MessageRepository } from '../repositories/message.ts';
 import { MessageDraftRepository } from '../repositories/message_draft.ts';
 import { PollRepository } from '../repositories/poll.ts';
@@ -106,6 +107,7 @@ export function createEmulationSession(
     bots,
     sharedChats,
     messages,
+    lastMessageSendingBots: new LastMessageSendingBotRepository(),
   });
   const currentUnixTimeSeconds = () => Math.floor(Date.now() / 1_000);
   const supergroupMessaging = new SupergroupMessagingService({
