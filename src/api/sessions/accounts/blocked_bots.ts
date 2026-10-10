@@ -1,5 +1,10 @@
 import { Hono } from 'hono';
 
+import {
+  controlErrorResponse,
+  invalidControlRequestResponse,
+} from '../../control_error_response.ts';
+import { readPathParameters } from '../control_request_input.ts';
 import type { SessionRouteContextTypes } from '../session_route_context_types.ts';
 import {
   ACCOUNT_ID_PARAMETER,
@@ -14,31 +19,35 @@ export function createBlockedBotRoutes(): Hono<SessionRouteContextTypes> {
   const accountRoutes = new Hono<SessionRouteContextTypes>();
 
   accountRoutes.put(BLOCKED_BOT_PATH, (context) => {
-    const conversationPath = privateConversationPathSchema.safeParse(context.req.param());
-    if (!conversationPath.success) {
-      return context.body(null, 400);
+    const conversationPath = readPathParameters(privateConversationPathSchema, context.req.param());
+    if (!conversationPath.valid) {
+      return invalidControlRequestResponse(context, conversationPath.issues);
     }
-    const { accountId, botId } = conversationPath.data;
+    const { accountId, botId } = conversationPath.value;
 
     const result = context.get('emulationSession').botBlocking.blockBot({
       accountId,
       botId,
     });
-    return context.body(null, result.applied ? 204 : 404);
+    return result.applied
+      ? context.body(null, 204)
+      : controlErrorResponse(context, 404, result.reason);
   });
 
   accountRoutes.delete(BLOCKED_BOT_PATH, (context) => {
-    const conversationPath = privateConversationPathSchema.safeParse(context.req.param());
-    if (!conversationPath.success) {
-      return context.body(null, 400);
+    const conversationPath = readPathParameters(privateConversationPathSchema, context.req.param());
+    if (!conversationPath.valid) {
+      return invalidControlRequestResponse(context, conversationPath.issues);
     }
-    const { accountId, botId } = conversationPath.data;
+    const { accountId, botId } = conversationPath.value;
 
     const result = context.get('emulationSession').botBlocking.unblockBot({
       accountId,
       botId,
     });
-    return context.body(null, result.applied ? 204 : 404);
+    return result.applied
+      ? context.body(null, 204)
+      : controlErrorResponse(context, 404, result.reason);
   });
 
   return accountRoutes;

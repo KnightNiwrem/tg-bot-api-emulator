@@ -1,5 +1,6 @@
 import { Hono } from 'hono';
 
+import { controlErrorResponse } from './control_error_response.ts';
 import { createSessionRoutes, type SessionLifecycle } from './sessions/mod.ts';
 
 export interface EmulationApiDependencies {
@@ -14,7 +15,9 @@ export function createEmulationApi(
   const api = new Hono();
 
   api.route('/sessions', createSessionRoutes({ sessionLifecycle, publicOrigin }));
-  api.notFound((context) => context.body(null, 404));
+  // Every Bot API path under a session's root has a route of its own, so only control requests
+  // reach this answer.
+  api.notFound((context) => controlErrorResponse(context, 404, 'route_not_found'));
 
   return api;
 }

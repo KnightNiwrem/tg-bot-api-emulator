@@ -12,3 +12,12 @@ delete:
       description: The test session and all of its state were discarded.
     '404':
       description: No active test session has the supplied identifier.
+      content:
+        application/json:
+          schema:
+            allOf:
+              - $ref: ../components/schemas/ControlError.yaml
+              - properties:
+                  reason:
+                    enum:
+                      - session_not_found

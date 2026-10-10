@@ -65,16 +65,90 @@ post:
         longer than 4096 bytes in UTF-8. A request that requires Premium users, a channel, a
         forum, or an anonymous administrator cannot be answered, as the emulator models none of
         them.
+      content:
+        application/json:
+          schema:
+            oneOf:
+              - $ref: ../components/schemas/ControlValidationError.yaml
+              - allOf:
+                  - $ref: ../components/schemas/ControlError.yaml
+                  - properties:
+                      reason:
+                        enum:
+                          - bot_administrator_rights_missing
+                          - bot_not_member
+                          - caption_too_long
+                          - message_text_empty
+                          - message_text_too_long
+                          - poll_has_too_many_options
+                          - poll_option_too_long
+                          - poll_options_missing
+                          - poll_question_too_long
+                          - quiz_correct_option_not_found
+                          - quiz_correct_options_missing
+                          - quiz_correct_options_not_increasing
+                          - quiz_explanation_has_too_many_line_feeds
+                          - quiz_explanation_too_long
+                          - reply_keyboard_button_ambiguous
+                          - reply_keyboard_button_answer_missing
+                          - reply_keyboard_button_answer_not_requested
+                          - reply_keyboard_button_not_found
+                          - reply_keyboard_button_request_unsupported
+                          - reply_message_not_found
+                          - requested_poll_type_mismatch
+                          - shared_chat_not_created
+                          - shared_chat_username_mismatch
+                          - shared_user_kind_mismatch
+                          - shared_users_duplicated
+                          - shared_users_too_few
+                          - shared_users_too_many
+                          - text_invalid
+                          - user_administrator_rights_missing
     '403':
       description: >-
         The account is not a member of the supergroup it presses a button in, or may not send
         text there, as its restriction or the supergroup's default permissions decide, or is not
         a member of the supergroup it chooses to share.
+      content:
+        application/json:
+          schema:
+            allOf:
+              - $ref: ../components/schemas/ControlError.yaml
+              - properties:
+                  reason:
+                    enum:
+                      - not_a_member
+                      - send_permission_missing
+                      - shared_chat_not_joined
     '404':
       description: >-
         The session, account, bot, or supergroup does not exist, or no account or bot of the
         session has a chosen user ID, or no supergroup of the session the chosen chat ID.
+      content:
+        application/json:
+          schema:
+            allOf:
+              - $ref: ../components/schemas/ControlError.yaml
+              - properties:
+                  reason:
+                    enum:
+                      - account_not_found
+                      - bot_not_found
+                      - chat_not_found
+                      - session_not_found
+                      - shared_chat_not_found
+                      - shared_user_not_found
     '409':
       description: >-
         The account blocks the bot and must unblock it before writing to it, or presses a
         `request_contact` button without having a phone number.
+      content:
+        application/json:
+          schema:
+            allOf:
+              - $ref: ../components/schemas/ControlError.yaml
+              - properties:
+                  reason:
+                    enum:
+                      - account_phone_number_missing
+                      - bot_blocked

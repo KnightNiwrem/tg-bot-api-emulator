@@ -22,13 +22,50 @@ post:
             $ref: ../components/schemas/SentSupergroupMessage.yaml
     '400':
       description: A path identifier is invalid.
+      content:
+        application/json:
+          schema:
+            $ref: ../components/schemas/ControlValidationError.yaml
     '403':
       description: >-
         The account is not a member of the supergroup, or did not send the message: another
         member sent it, or it is a forward.
+      content:
+        application/json:
+          schema:
+            allOf:
+              - $ref: ../components/schemas/ControlError.yaml
+              - properties:
+                  reason:
+                    enum:
+                      - not_a_member
+                      - poll_not_stoppable
     '404':
       description: >-
         The session, account, supergroup, or message of the supergroup does not exist, or the
         message shows no poll.
+      content:
+        application/json:
+          schema:
+            allOf:
+              - $ref: ../components/schemas/ControlError.yaml
+              - properties:
+                  reason:
+                    enum:
+                      - account_not_found
+                      - bot_not_found
+                      - chat_not_found
+                      - message_has_no_poll
+                      - message_not_found
+                      - session_not_found
     '409':
       description: The poll is already closed.
+      content:
+        application/json:
+          schema:
+            allOf:
+              - $ref: ../components/schemas/ControlError.yaml
+              - properties:
+                  reason:
+                    enum:
+                      - poll_already_closed

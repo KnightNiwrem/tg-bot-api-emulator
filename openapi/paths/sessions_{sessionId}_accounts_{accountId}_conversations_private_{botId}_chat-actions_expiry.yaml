@@ -17,5 +17,22 @@ post:
       description: The action expired.
     '400':
       description: A path identifier is invalid.
+      content:
+        application/json:
+          schema:
+            $ref: ../components/schemas/ControlValidationError.yaml
     '404':
       description: The session, account, or bot does not exist, or the bot shows no action.
+      content:
+        application/json:
+          schema:
+            allOf:
+              - $ref: ../components/schemas/ControlError.yaml
+              - properties:
+                  reason:
+                    enum:
+                      - account_not_found
+                      - bot_not_found
+                      - chat_action_not_found
+                      - chat_not_found
+                      - session_not_found

@@ -22,9 +22,33 @@ post:
             $ref: ../components/schemas/ExpiredRequesterContactResponse.yaml
     '400':
       description: A path identifier is invalid.
+      content:
+        application/json:
+          schema:
+            $ref: ../components/schemas/ControlValidationError.yaml
     '404':
       description: >-
         No active test session or supergroup has the supplied identifier, or the user has no
         pending request to join the supergroup.
+      content:
+        application/json:
+          schema:
+            allOf:
+              - $ref: ../components/schemas/ControlError.yaml
+              - properties:
+                  reason:
+                    enum:
+                      - chat_not_found
+                      - join_request_not_found
+                      - session_not_found
     '409':
       description: The request's contact window ended before.
+      content:
+        application/json:
+          schema:
+            allOf:
+              - $ref: ../components/schemas/ControlError.yaml
+              - properties:
+                  reason:
+                    enum:
+                      - requester_contact_already_expired

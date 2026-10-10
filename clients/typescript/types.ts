@@ -1,3 +1,5 @@
+import type { ControlRefusalReason } from './control_refusal_reasons.ts';
+
 /**
  * The deployment of the official Bot API server whose upload limits a session's bots meet:
  * `cloud` for the server Telegram hosts at `api.telegram.org`, `local` for a self-hosted server
@@ -3029,6 +3031,61 @@ export interface BotActivityCursor {
 }
 
 export type HttpMethod = 'DELETE' | 'GET' | 'PATCH' | 'POST' | 'PUT';
+
+/** The part of a control request an input issue is in. */
+export type ControlRequestIssueSource = 'body' | 'path' | 'query';
+
+/**
+ * What is wrong with one input value of a control request: a body that is not JSON
+ * (`invalid_json`), a value that is missing or of the wrong type (`invalid_type`), outside its
+ * bounds (`too_small`, `too_big`), not of the required form (`invalid_format`), or not allowed
+ * (`invalid_value`), a field or query parameter the operation does not take (`unknown_field`), a
+ * repeated query parameter (`duplicate_field`), or a value that matches none of the forms it may
+ * take (`no_matching_variant`).
+ */
+export type ControlRequestIssueCode =
+  | 'invalid_json'
+  | 'invalid_type'
+  | 'too_small'
+  | 'too_big'
+  | 'invalid_format'
+  | 'invalid_value'
+  | 'unknown_field'
+  | 'duplicate_field'
+  | 'no_matching_variant';
+
+/**
+ * One problem with a control request's input: the part of the request it is in, the field names
+ * and list indexes that lead to it from that part's root (a path or query parameter's name), its
+ * stable code, and an explanation for a person, which never repeats an input value.
+ */
+export interface ControlRequestIssue {
+  readonly source: ControlRequestIssueSource;
+  readonly path: readonly (string | number)[];
+  readonly code: ControlRequestIssueCode;
+  readonly message: string;
+}
+
+/** The body of a control request whose input breaks the operation's contract: its issues. */
+export interface ControlValidationErrorBody {
+  readonly reason: 'invalid_request';
+  readonly issues: readonly [ControlRequestIssue, ...ControlRequestIssue[]];
+}
+
+/**
+ * The body of any other refusal of a control request: only its stable `reason`, such as
+ * `bot_blocked` or `session_not_found`.
+ */
+export interface ControlRefusalBody {
+  readonly reason: ControlRefusalReason;
+  readonly issues?: never;
+}
+
+/**
+ * The JSON body with which the emulator refuses a control request, told apart by its `reason`:
+ * only an `invalid_request` body has `issues`.
+ */
+export type ControlErrorBody = ControlValidationErrorBody | ControlRefusalBody;
 
 export interface RequestDetails {
   readonly method: HttpMethod;

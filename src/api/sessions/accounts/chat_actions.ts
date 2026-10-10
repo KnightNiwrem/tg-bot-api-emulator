@@ -2,6 +2,11 @@ import { Hono } from 'hono';
 
 import type { EmulationSession } from '../../../types/emulation_session.ts';
 import type { VisibleChatAction } from '../../../types/virtual_chat.ts';
+import {
+  controlErrorResponse,
+  invalidControlRequestResponse,
+} from '../../control_error_response.ts';
+import { readPathParameters } from '../control_request_input.ts';
 import type { SessionRouteContextTypes } from '../session_route_context_types.ts';
 import {
   BOT_ID_PARAMETER,
@@ -29,51 +34,58 @@ export function createChatActionRoutes(): Hono<SessionRouteContextTypes> {
   const accountRoutes = new Hono<SessionRouteContextTypes>();
 
   accountRoutes.get(PRIVATE_CHAT_ACTIONS_PATH, (context) => {
-    const conversationPath = privateConversationPathSchema.safeParse(context.req.param());
-    if (!conversationPath.success) {
-      return context.body(null, 400);
+    const conversationPath = readPathParameters(privateConversationPathSchema, context.req.param());
+    if (!conversationPath.valid) {
+      return invalidControlRequestResponse(context, conversationPath.issues);
     }
     const result = context.get('emulationSession').chatActions.getPrivateChatActions(
-      conversationPath.data,
+      conversationPath.value,
     );
     return result.found
       ? context.json({ chat_actions: result.chatActions.map(presentChatActionForAccount) })
-      : context.body(null, chatActionFailureStatus(result.reason));
+      : controlErrorResponse(context, chatActionFailureStatus(result.reason), result.reason);
   });
 
   accountRoutes.post(PRIVATE_CHAT_ACTION_EXPIRY_PATH, (context) => {
-    const conversationPath = privateConversationPathSchema.safeParse(context.req.param());
-    if (!conversationPath.success) {
-      return context.body(null, 400);
+    const conversationPath = readPathParameters(privateConversationPathSchema, context.req.param());
+    if (!conversationPath.valid) {
+      return invalidControlRequestResponse(context, conversationPath.issues);
     }
     const result = context.get('emulationSession').chatActions.expirePrivateChatAction(
-      conversationPath.data,
+      conversationPath.value,
     );
-    return context.body(null, result.expired ? 204 : chatActionFailureStatus(result.reason));
+    return result.expired
+      ? context.body(null, 204)
+      : controlErrorResponse(context, chatActionFailureStatus(result.reason), result.reason);
   });
 
   accountRoutes.get(SUPERGROUP_CHAT_ACTIONS_PATH, (context) => {
-    const conversationPath = supergroupConversationPathSchema.safeParse(context.req.param());
-    if (!conversationPath.success) {
-      return context.body(null, 400);
+    const conversationPath = readPathParameters(
+      supergroupConversationPathSchema,
+      context.req.param(),
+    );
+    if (!conversationPath.valid) {
+      return invalidControlRequestResponse(context, conversationPath.issues);
     }
     const result = context.get('emulationSession').chatActions.getSupergroupChatActions(
-      conversationPath.data,
+      conversationPath.value,
     );
     return result.found
       ? context.json({ chat_actions: result.chatActions.map(presentChatActionForAccount) })
-      : context.body(null, chatActionFailureStatus(result.reason));
+      : controlErrorResponse(context, chatActionFailureStatus(result.reason), result.reason);
   });
 
   accountRoutes.post(SUPERGROUP_CHAT_ACTION_EXPIRY_PATH, (context) => {
-    const botPath = supergroupBotPathSchema.safeParse(context.req.param());
-    if (!botPath.success) {
-      return context.body(null, 400);
+    const botPath = readPathParameters(supergroupBotPathSchema, context.req.param());
+    if (!botPath.valid) {
+      return invalidControlRequestResponse(context, botPath.issues);
     }
     const result = context.get('emulationSession').chatActions.expireSupergroupChatAction(
-      botPath.data,
+      botPath.value,
     );
-    return context.body(null, result.expired ? 204 : chatActionFailureStatus(result.reason));
+    return result.expired
+      ? context.body(null, 204)
+      : controlErrorResponse(context, chatActionFailureStatus(result.reason), result.reason);
   });
 
   return accountRoutes;

@@ -129,5 +129,26 @@ get:
       description: >-
         The query has an unknown, repeated, or malformed parameter, `before` is not greater than
         `after`, `wait_ms` is given with `before`, or a position is beyond the head of the log.
+      content:
+        application/json:
+          schema:
+            oneOf:
+              - $ref: ../components/schemas/ControlValidationError.yaml
+              - allOf:
+                  - $ref: ../components/schemas/ControlError.yaml
+                  - properties:
+                      reason:
+                        enum:
+                          - after_beyond_head
+                          - before_beyond_head
     '404':
       description: No active test session has the supplied identifier.
+      content:
+        application/json:
+          schema:
+            allOf:
+              - $ref: ../components/schemas/ControlError.yaml
+              - properties:
+                  reason:
+                    enum:
+                      - session_not_found

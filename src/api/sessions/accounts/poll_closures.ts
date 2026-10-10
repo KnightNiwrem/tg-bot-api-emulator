@@ -1,6 +1,10 @@
 import { Hono } from 'hono';
 
 import type { EmulationSession } from '../../../types/emulation_session.ts';
+import {
+  controlErrorResponse,
+  invalidControlRequestResponse,
+} from '../../control_error_response.ts';
 import type { SessionRouteContextTypes } from '../session_route_context_types.ts';
 import { PRIVATE_MESSAGE_PATH, SUPERGROUP_MESSAGE_PATH } from './account_paths.ts';
 import { viewChatMessageForAccount } from './chat_message_view.ts';
@@ -24,14 +28,19 @@ export function createPollClosureRoutes(): Hono<SessionRouteContextTypes> {
     ] as const
   ) {
     accountRoutes.post(pollClosurePath, (context) => {
-      const pollMessage = readPollMessageKey(context.req.param(), chatType);
-      if (pollMessage === undefined) {
-        return context.body(null, 400);
+      const pollMessageReading = readPollMessageKey(context.req.param(), chatType);
+      if (!pollMessageReading.valid) {
+        return invalidControlRequestResponse(context, pollMessageReading.issues);
       }
+      const pollMessage = pollMessageReading.value;
       const { polls, botMessageViews } = context.get('emulationSession');
       const result = polls.stopAccountPoll(pollMessage);
       if (!result.stopped) {
-        return context.body(null, pollClosureFailureStatus(result.reason));
+        return controlErrorResponse(
+          context,
+          pollClosureFailureStatus(result.reason),
+          result.reason,
+        );
       }
       return context.json({
         message: viewChatMessageForAccount(botMessageViews, result.message, pollMessage.accountId),

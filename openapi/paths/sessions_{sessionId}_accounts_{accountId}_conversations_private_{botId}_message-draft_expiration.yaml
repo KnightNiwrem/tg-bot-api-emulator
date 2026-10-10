@@ -23,7 +23,32 @@ post:
       description: The draft expired.
     '400':
       description: A path identifier or the body is invalid.
+      content:
+        application/json:
+          schema:
+            $ref: ../components/schemas/ControlValidationError.yaml
     '404':
       description: The session, account, or bot does not exist, or the chat shows no draft.
+      content:
+        application/json:
+          schema:
+            allOf:
+              - $ref: ../components/schemas/ControlError.yaml
+              - properties:
+                  reason:
+                    enum:
+                      - account_not_found
+                      - bot_not_found
+                      - draft_not_found
+                      - session_not_found
     '409':
       description: The chat shows a draft other than the one `draft_id` names, which stays shown.
+      content:
+        application/json:
+          schema:
+            allOf:
+              - $ref: ../components/schemas/ControlError.yaml
+              - properties:
+                  reason:
+                    enum:
+                      - draft_id_mismatch

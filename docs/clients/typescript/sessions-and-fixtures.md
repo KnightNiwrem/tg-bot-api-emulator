@@ -261,9 +261,13 @@ The fixture is a starting point, not part of the client. Change it to fit your b
 
 ## When a client call fails
 
-Client operations reject with an `EmulationClientError` when the emulator refuses a request, as it
+Client operations reject with an `EmulationControlError` when the emulator refuses a request, as it
 does when an account does something Telegram would not let it do, such as writing to a bot it has
-blocked. The error carries the request's `method` and `url`, and the response's `status`, which says
-why: `404` for something that does not exist, such as an ended session, and `409` for an action the
-current state does not allow. The [OpenAPI description](../../../openapi/openapi.yaml) lists each
-operation's statuses, and [Troubleshooting](troubleshooting.md) lists common causes.
+blocked. The error carries the request's `method` and `url`, the response's `status`, and the
+`reason` the emulator gives, a stable code such as `session_not_found` for an ended session or
+`bot_blocked` for the blocked bot, with the parsed response `body`. Malformed input is refused with
+the reason `invalid_request`, whose body's `issues` say what is wrong and where. Other failures,
+such as a network error or a response the client cannot read, reject with an `EmulationClientError`,
+of which `EmulationControlError` is a kind. The [OpenAPI description](../../../openapi/openapi.yaml)
+lists each operation's statuses and reasons, and [Troubleshooting](troubleshooting.md) lists common
+causes.

@@ -2,7 +2,10 @@ export { BotActivityTimeoutError, latest, UnexpectedBotActivityError } from './b
 export {
   EmulationClientError,
   type EmulationClientErrorDetails,
+  EmulationControlError,
+  type EmulationControlErrorDetails,
 } from './emulation_client_error.ts';
+export { CONTROL_REFUSAL_REASONS, type ControlRefusalReason } from './control_refusal_reasons.ts';
 export { ButtonSelectionError, findButton, listButtons } from './message_buttons.ts';
 export { richMessageToPlainText, richTextToPlainText } from './rich_message_text.ts';
 export type { EmulationSessionClient } from './emulation_session_client.ts';
@@ -82,6 +85,12 @@ export type {
   ChatSharedContent,
   ChooseInlineQueryResultInput,
   Contact,
+  ControlErrorBody,
+  ControlRefusalBody,
+  ControlRequestIssue,
+  ControlRequestIssueCode,
+  ControlRequestIssueSource,
+  ControlValidationErrorBody,
   CopyTextInlineKeyboardButton,
   CreatedVirtualAccount,
   CreatedVirtualBot,

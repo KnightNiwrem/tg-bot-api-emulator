@@ -22,7 +22,31 @@ post:
             $ref: ../components/schemas/ExpiredRestrictionResponse.yaml
     '400':
       description: A path identifier is invalid.
+      content:
+        application/json:
+          schema:
+            $ref: ../components/schemas/ControlValidationError.yaml
     '404':
       description: No active test session, supergroup, or user has the supplied identifier.
+      content:
+        application/json:
+          schema:
+            allOf:
+              - $ref: ../components/schemas/ControlError.yaml
+              - properties:
+                  reason:
+                    enum:
+                      - chat_not_found
+                      - member_not_found
+                      - session_not_found
     '409':
       description: The user is not restricted, or its restriction lasts until it is lifted.
+      content:
+        application/json:
+          schema:
+            allOf:
+              - $ref: ../components/schemas/ControlError.yaml
+              - properties:
+                  reason:
+                    enum:
+                      - restriction_not_temporary

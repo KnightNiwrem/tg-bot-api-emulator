@@ -27,3 +27,7 @@ post:
             $ref: ../components/schemas/Session.yaml
     '400':
       description: The request body is malformed or does not match the session creation schema.
+      content:
+        application/json:
+          schema:
+            $ref: ../components/schemas/ControlValidationError.yaml
