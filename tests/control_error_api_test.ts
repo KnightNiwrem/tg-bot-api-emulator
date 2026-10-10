@@ -10,6 +10,7 @@ import { BotRepository } from '../src/repositories/bot.ts';
 import { SessionRepository } from '../src/repositories/session.ts';
 import { SessionLifecycleService } from '../src/services/session_lifecycle.ts';
 import { VirtualUserService } from '../src/services/virtual_user.ts';
+import { createSystemSessionTiming } from '../src/timing/system_timing.ts';
 import {
   createSession,
   createTestSession,
@@ -408,7 +409,7 @@ function createExhaustedIdentityLifecycle(): SessionLifecycleService {
   return new SessionLifecycleService({
     sessionRepository: new SessionRepository(),
     createEmulationSession: (id, options) => ({
-      ...createEmulationSession(id, options),
+      ...createEmulationSession(id, options, createSystemSessionTiming()),
       virtualUsers: new VirtualUserService({
         identities: {
           reserveIdentity: () => ({ reserved: false, reason: 'identity_limit_reached' }),
