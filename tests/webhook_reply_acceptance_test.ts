@@ -247,6 +247,53 @@ Deno.test('a replacement right after the complete response arrives does not send
   }
 });
 
+Deno.test("a failure decided just before a replacement is not the replacement webhook's error", async () => {
+  const completeBody = Promise.withResolvers<ArrayBuffer>();
+  /** A failed response whose body the test completes. */
+  class ControlledBodyResponse extends Response {
+    override arrayBuffer(): Promise<ArrayBuffer> {
+      return completeBody.promise;
+    }
+  }
+  const fixture = createAcceptanceFixture((request) =>
+    request.url === REPLACEMENT_WEBHOOK_URL
+      ? new Response(null)
+      : new ControlledBodyResponse(null, { status: 500, statusText: 'Internal Server Error' })
+  );
+  const { botId, botUpdates, botWebhooks, webhookAttempts } = fixture;
+
+  try {
+    webhookAttempts.setScheduling(botId, 'manual');
+    botUpdates.enqueueMessageUpdate(botId, createPrivateMessage(1));
+    botWebhooks.setWebhook(botId, webhookRequest());
+    await fixture.waitForRequestCount(1);
+    await new Promise((resolve) => setTimeout(resolve, 0));
+
+    completeBody.resolve(new ArrayBuffer(0));
+    // The failed response wins the attempt in the first microtask; the replacement comes next,
+    // before the old delivery has handled the failure.
+    await Promise.resolve();
+    botWebhooks.setWebhook(botId, { ...webhookRequest(), url: REPLACEMENT_WEBHOOK_URL });
+    await fixture.waitForEntry({ kind: 'update_confirmed' });
+    await waitUntil(() => listAttempts(webhookAttempts, botId)[0].status !== 'in_flight');
+    await new Promise((resolve) => setTimeout(resolve, 0));
+
+    const webhookInfo = botWebhooks.getWebhookInfo(botId);
+    assertJson(
+      [
+        listAttempts(webhookAttempts, botId).map(describeAttemptState),
+        webhookInfo.url,
+        webhookInfo.last_error_message,
+        webhookInfo.pending_update_count,
+      ],
+      [['failed: cancelled', 'accepted'], REPLACEMENT_WEBHOOK_URL, undefined, 0],
+      "Expected the old webhook's failure to leave the replacement without a delivery error",
+    );
+  } finally {
+    botWebhooks.endDelivery();
+  }
+});
+
 Deno.test('a response that arrives after its attempt was cancelled is disposed of', async () => {
   const lateResponse = Promise.withResolvers<Response>();
   const bodyCancellation = Promise.withResolvers<void>();

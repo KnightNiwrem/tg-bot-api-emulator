@@ -458,7 +458,9 @@ export class BotWebhookService {
       }
 
       const { failure } = outcome;
-      if ('errorMessage' in failure) {
+      // A failure decided just before the webhook was replaced or deleted belongs to a webhook that
+      // is no longer the bot's, so it must not become the current webhook's delivery error.
+      if ('errorMessage' in failure && !signal.aborted) {
         this.#webhooks.recordDeliveryError(botId, {
           dateUnixSeconds: this.#currentUnixTimeSeconds(),
           message: failure.errorMessage,
