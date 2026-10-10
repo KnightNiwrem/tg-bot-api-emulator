@@ -61,6 +61,7 @@ export function callBytesOperation<Contract extends BytesSuccessContract>(
     method: contract.method,
     url: buildOperationUrl(transport.serverRoot, contract, request),
     expectedStatus: contract.success.status,
+    body: request.body,
   });
 }
 

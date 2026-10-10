@@ -19,8 +19,8 @@ interface JsonRequest<Schema extends z.ZodType> extends SerializableRequest, Abo
   readonly responseSchema: Schema;
 }
 
-/** A request whose response is read as it is, rather than as JSON. */
-interface RawResponseRequest extends RequestDetails {
+/** A request, optionally with a JSON body, whose response is read as it is, rather than as JSON. */
+interface RawResponseRequest extends SerializableRequest {
   readonly expectedStatus: number;
 }
 

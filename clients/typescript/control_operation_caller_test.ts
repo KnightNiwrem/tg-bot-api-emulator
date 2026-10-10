@@ -174,6 +174,81 @@ Deno.test('An optional body may be left out, and its defaults still apply', asyn
   );
 });
 
+/** The parts of a request every kind of call sends: a path parameter, a query and a body. */
+const echoRequestParts = {
+  params: z.strictObject({ echoId: z.string() }),
+  query: z.strictObject({ tag: z.string() }),
+  body: { required: true, schema: z.strictObject({ text: z.string() }) },
+} as const;
+
+const echoJsonContract = defineControlOperation({
+  operationId: 'echoJson',
+  method: 'POST',
+  path: '/echoes/{echoId}/json',
+  ...echoRequestParts,
+  success: { status: 200, body: { kind: 'json', schema: z.strictObject({ echo: z.string() }) } },
+  refusals: {},
+});
+
+const echoEmptyContract = defineControlOperation({
+  operationId: 'echoEmpty',
+  method: 'POST',
+  path: '/echoes/{echoId}/empty',
+  ...echoRequestParts,
+  success: { status: 204, body: { kind: 'empty' } },
+  refusals: {},
+});
+
+const echoBytesContract = defineControlOperation({
+  operationId: 'echoBytes',
+  method: 'POST',
+  path: '/echoes/{echoId}/bytes',
+  ...echoRequestParts,
+  success: { status: 200, body: { kind: 'bytes' } },
+  refusals: {},
+});
+
+Deno.test('Every kind of call sends its path parameters, query and body', async () => {
+  const routes = new Hono();
+  const describeRequest = (
+    { params, query, body }: {
+      params: { echoId: string };
+      query: { tag: string };
+      body: { text: string };
+    },
+  ) => `${params.echoId} ${query.tag} ${body.text}`;
+  const emptyEchoes: string[] = [];
+  registerControlOperation(routes, '', echoJsonContract, (request) => ({
+    status: 200,
+    body: { echo: describeRequest(request) },
+  }));
+  registerControlOperation(routes, '', echoEmptyContract, (request) => {
+    emptyEchoes.push(describeRequest(request));
+    return { status: 204 };
+  });
+  registerControlOperation(routes, '', echoBytesContract, (request) => ({
+    status: 200,
+    body: new TextEncoder().encode(describeRequest(request)),
+    mediaType: 'text/plain',
+  }));
+  const app = new Hono().route('/', routes);
+  const transport: ControlOperationTransport = {
+    serverRoot: new URL('http://echoes.example/'),
+    fetch: (input, init) => Promise.resolve(app.request(input, init)),
+  };
+  const request = { params: { echoId: 'e/1' }, query: { tag: 'a&b' }, body: { text: 'Hi' } };
+
+  const json = await callJsonOperation(transport, echoJsonContract, request);
+  await callEmptyOperation(transport, echoEmptyContract, request);
+  const bytes = await callBytesOperation(transport, echoBytesContract, request);
+
+  assertEqual(
+    [json.echo, emptyEchoes[0], new TextDecoder().decode(bytes)],
+    ['e/1 a&b Hi', 'e/1 a&b Hi', 'e/1 a&b Hi'],
+    'Expected each kind of call to send every part of its request',
+  );
+});
+
 function assertEqual(actual: unknown, expected: unknown, message: string): void {
   if (JSON.stringify(actual) !== JSON.stringify(expected)) {
     throw new Error(
