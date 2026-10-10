@@ -1,6 +1,12 @@
 import { createEmulationApi } from '../../src/api/mod.ts';
 import { createSessionLifecycleService } from '../../src/composition/session_lifecycle.ts';
-import { EmulationClientError, EmulationControlError, TelegramEmulationClient } from './mod.ts';
+import {
+  type ControlErrorBody,
+  type ControlValidationErrorBody,
+  EmulationClientError,
+  EmulationControlError,
+  TelegramEmulationClient,
+} from './mod.ts';
 
 const PUBLIC_ORIGIN = 'http://emulator.example:9000';
 
@@ -22,7 +28,7 @@ Deno.test('A refusal rejects with an EmulationControlError naming its reason', a
       method: refusal.method,
       status: refusal.status,
       reason: refusal.reason,
-      issues: refusal.issues,
+      body: refusal.body,
       responseBody: refusal.responseBody,
     },
     {
@@ -30,7 +36,7 @@ Deno.test('A refusal rejects with an EmulationControlError naming its reason', a
       method: 'POST',
       status: 409,
       reason: 'username_taken',
-      issues: [],
+      body: { reason: 'username_taken' },
       responseBody: '{"reason":"username_taken"}',
     },
     'Expected the refusal with its status, reason, and raw body',
@@ -49,14 +55,16 @@ Deno.test('Input the emulator rejects lists each issue on the control error', as
     session.queueServerErrorResponses({ bot_id: bot.id, method: 'sendTelepathy', error_code: 500 }),
   );
 
-  if (!(refusal instanceof EmulationControlError)) {
-    throw new Error(`Expected a control error, received ${refusal}`);
+  if (!(refusal instanceof EmulationControlError) || refusal.body.issues === undefined) {
+    throw new Error(`Expected a control error with issues, received ${refusal}`);
   }
+  // Checking for issues narrows the body to a validation failure, whose reason is fixed.
+  const validationFailure: ControlValidationErrorBody = refusal.body;
   assertJson(
     {
       status: refusal.status,
-      reason: refusal.reason,
-      issues: refusal.issues.map(({ source, path, code }) => ({ source, path, code })),
+      reason: validationFailure.reason,
+      issues: validationFailure.issues.map(({ source, path, code }) => ({ source, path, code })),
     },
     {
       status: 400,
@@ -107,6 +115,25 @@ Deno.test('A refusal whose body is not a control error keeps its status and raw 
       { status: answer.status, responseBody: expectedBody },
       'Expected the status and the raw body',
     );
+  }
+});
+
+Deno.test('A control error refuses a body its contract does not allow', () => {
+  const request = { method: 'POST', url: `${PUBLIC_ORIGIN}/sessions`, status: 400 } as const;
+  const malformedBodies: readonly ControlErrorBody[] = [
+    { reason: 'invalid_request' },
+    { reason: 'Bot Blocked' },
+  ];
+  for (const body of malformedBodies) {
+    let constructionError: unknown;
+    try {
+      new EmulationControlError('refused', { ...request, responseBody: '', body });
+    } catch (error) {
+      constructionError = error;
+    }
+    if (!(constructionError instanceof TypeError)) {
+      throw new Error(`Expected ${JSON.stringify(body)} to be refused as a control error body`);
+    }
   }
 });
 

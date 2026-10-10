@@ -289,10 +289,10 @@ function readControlErrorBody(responseBody: string): ControlErrorBody | undefine
 }
 
 /** Describes a refusal by its reason and each issue, as `body.text: invalid_type (…)`. */
-function formatControlErrorBody({ reason, issues = [] }: ControlErrorBody): string {
-  return issues.length === 0
-    ? reason
-    : `${reason}; ${issues.map(formatControlRequestIssue).join('; ')}`;
+function formatControlErrorBody(body: ControlErrorBody): string {
+  return body.issues === undefined
+    ? body.reason
+    : `${body.reason}; ${body.issues.map(formatControlRequestIssue).join('; ')}`;
 }
 
 function formatControlRequestIssue({ source, path, code, message }: ControlRequestIssue): string {

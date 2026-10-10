@@ -88,8 +88,10 @@ why, which its message also names:
 - `400`: the request is not one Telegram would accept, such as `message_text_too_long`, or its input
   is malformed, which is `invalid_request`.
 
-For `invalid_request`, `issues` lists each problem: where it is (`source` and `path`), its `code`,
-and a `message`. The error's message lists them too, as in
+The error's `body` is the response's parsed body. Only an `invalid_request` body has `issues`, which
+list each problem: where it is (`source` and `path`), its `code`, and a `message`. Checking
+`error.body.issues !== undefined` narrows `body` to a `ControlValidationErrorBody`. The error's
+message lists the issues too, as in
 `POST …/accounts/1/messages returned HTTP 400; expected 201: invalid_request; body.text: invalid_type (Invalid input: expected string, received number)`.
 Input the client's types allow can still be refused here, such as a username Telegram's syntax does
 not allow or text longer than Telegram's limit. A test that expects a refusal can assert on the

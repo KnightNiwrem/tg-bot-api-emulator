@@ -3064,15 +3064,26 @@ export interface ControlRequestIssue {
   readonly message: string;
 }
 
-/**
- * The JSON body with which the emulator refuses a control request: a stable `reason` code, such
- * as `bot_blocked` or `session_not_found`, and, for input that breaks the operation's contract,
- * whose reason is `invalid_request`, the issues it has.
- */
-export interface ControlErrorBody {
-  readonly reason: string;
-  readonly issues?: readonly ControlRequestIssue[];
+/** The body of a control request whose input breaks the operation's contract: its issues. */
+export interface ControlValidationErrorBody {
+  readonly reason: 'invalid_request';
+  readonly issues: readonly [ControlRequestIssue, ...ControlRequestIssue[]];
 }
+
+/**
+ * The body of any other refusal of a control request: only its stable `reason`, such as
+ * `bot_blocked` or `session_not_found`, which is never `invalid_request`.
+ */
+export interface ControlRefusalBody {
+  readonly reason: string;
+  readonly issues?: never;
+}
+
+/**
+ * The JSON body with which the emulator refuses a control request. Only a body whose reason is
+ * `invalid_request` has `issues`, so checking for them tells the two apart.
+ */
+export type ControlErrorBody = ControlValidationErrorBody | ControlRefusalBody;
 
 export interface RequestDetails {
   readonly method: HttpMethod;

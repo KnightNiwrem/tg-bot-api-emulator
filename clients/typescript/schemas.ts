@@ -1342,7 +1342,7 @@ const controlRequestIssueSchema: z.ZodType<ControlRequestIssue> = z.strictObject
 export const controlErrorBodySchema: z.ZodType<ControlErrorBody> = z.union([
   z.strictObject({
     reason: z.literal('invalid_request'),
-    issues: z.array(controlRequestIssueSchema).min(1),
+    issues: z.tuple([controlRequestIssueSchema], controlRequestIssueSchema),
   }),
   z.strictObject({
     reason: z.string().regex(/^[a-z][a-z0-9_]*$/).refine((reason) => reason !== 'invalid_request'),

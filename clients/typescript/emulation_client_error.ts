@@ -1,4 +1,7 @@
-import type { ControlErrorBody, ControlRequestIssue, HttpMethod, RequestDetails } from './types.ts';
+import { z } from 'zod';
+
+import { controlErrorBodySchema } from './schemas.ts';
+import type { ControlErrorBody, HttpMethod, RequestDetails } from './types.ts';
 
 export interface EmulationClientErrorDetails extends RequestDetails {
   readonly status?: number;
@@ -32,7 +35,7 @@ export class EmulationClientError extends Error {
   }
 }
 
-/** A refusal from the emulator's control API, with the reason and issues its JSON body gives. */
+/** A refusal from the emulator's control API: the request, the response, and its parsed body. */
 export interface EmulationControlErrorDetails extends RequestDetails {
   readonly status: number;
   readonly responseBody: string;
@@ -42,21 +45,32 @@ export interface EmulationControlErrorDetails extends RequestDetails {
 /**
  * The emulator refused a control request, answering with its JSON error body. `reason` is the
  * refusal's stable code, such as `bot_blocked`, `session_not_found`, or, for input that breaks the
- * operation's contract, `invalid_request`, whose `issues` say what is wrong and where.
+ * operation's contract, `invalid_request`. Only that body has `issues`, which say what is wrong and
+ * where, so `error.body.issues !== undefined` narrows `body` to a `ControlValidationErrorBody`.
  */
 export class EmulationControlError extends EmulationClientError {
   override readonly name: string = 'EmulationControlError';
   override readonly status: number;
   override readonly responseBody: string;
-  readonly reason: string;
-  /** What is wrong with the request's input; empty unless `reason` is `invalid_request`. */
-  readonly issues: readonly ControlRequestIssue[];
+  readonly body: ControlErrorBody;
 
+  /**
+   * @throws {TypeError} when `body` is not a control error body: a validation failure without
+   * issues, or a reason that is `invalid_request` or not a snake_case code.
+   */
   constructor(message: string, details: EmulationControlErrorDetails) {
+    const body = controlErrorBodySchema.safeParse(details.body);
+    if (!body.success) {
+      throw new TypeError(`Not a control error body: ${z.prettifyError(body.error)}`);
+    }
     super(message, details);
     this.status = details.status;
     this.responseBody = details.responseBody;
-    this.reason = details.body.reason;
-    this.issues = details.body.issues ?? [];
+    this.body = body.data;
+  }
+
+  /** The refusal's stable code. */
+  get reason(): string {
+    return this.body.reason;
   }
 }

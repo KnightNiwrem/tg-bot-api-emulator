@@ -252,16 +252,53 @@ Deno.test('Missing resources are refused with the reason that names them', async
   }
 });
 
-Deno.test('A path no route serves is refused as route_not_found', async () => {
+Deno.test('A path or method no route serves is refused as route_not_found', async () => {
   // The OpenAPI document cannot describe a route it does not list, so the API is not checked
   // against it here.
   const api = createUncheckedTestApi();
-  const sessionPath = await createSession(api);
+  const liveSessionPath = await createSession(api);
+  const endedSessionPath = await createSession(api);
+  await api.request(endedSessionPath, { method: 'DELETE' });
 
-  for (const path of ['/unknown', `${sessionPath}/unknown`, `${sessionPath}/accounts/1/unknown`]) {
-    const { status, body } = await requestJson<ControlErrorBody>(api, 'GET', path);
-    assertStatus(status, 404, path);
-    assertJson(body, { reason: 'route_not_found' }, `Expected ${path} to name no route`);
+  const cases: readonly (readonly [method: 'GET' | 'PATCH', path: string])[] = [
+    ['GET', '/unknown'],
+    ['GET', '/sessions/no-such-session/unknown'],
+    ...[liveSessionPath, endedSessionPath, '/sessions/no-such-session'].flatMap((sessionPath) =>
+      [
+        ['GET', `${sessionPath}/unknown`],
+        ['GET', `${sessionPath}/accounts/1/unknown`],
+        ['PATCH', `${sessionPath}/accounts/1`],
+        ['PATCH', `${sessionPath}/bot-activity`],
+      ] as const
+    ),
+  ];
+  for (const [method, path] of cases) {
+    const { status, body } = await requestJson<ControlErrorBody>(api, method, path);
+    assertStatus(status, 404, `${method} ${path}`);
+    assertJson(body, { reason: 'route_not_found' }, `Expected ${method} ${path} to name no route`);
+  }
+});
+
+Deno.test('A route that serves a request of an ended session refuses it as session_not_found', async () => {
+  const api = createUncheckedTestApi();
+  const sessionPath = await createSession(api);
+  await api.request(sessionPath, { method: 'DELETE' });
+
+  for (
+    const [method, path] of [
+      ['GET', `${sessionPath}/bot-activity`],
+      ['POST', `${sessionPath}/accounts`],
+      ['GET', `${sessionPath}/accounts/1/conversations/private/2/messages`],
+    ] as const
+  ) {
+    const requestBody = method === 'POST' ? { first_name: 'Ada' } : undefined;
+    const { status, body } = await requestJson<ControlErrorBody>(api, method, path, requestBody);
+    assertStatus(status, 404, `${method} ${path}`);
+    assertJson(
+      body,
+      { reason: 'session_not_found' },
+      `Expected ${method} ${path} to name the session`,
+    );
   }
 });
 

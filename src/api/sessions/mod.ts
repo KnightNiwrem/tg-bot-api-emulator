@@ -1,5 +1,5 @@
 import { type Context, Hono, type MiddlewareHandler } from 'hono';
-import { basePath } from 'hono/route';
+import { basePath, matchedRoutes } from 'hono/route';
 import { z } from 'zod';
 
 import type { EmulationSession, EmulationSessionOptions } from '../../types/emulation_session.ts';
@@ -28,6 +28,9 @@ const WEB_RESOURCE_COLLECTION_PATH = `${SESSION_PATH}/web-resources` as const;
 const POLL_COLLECTION_PATH = `${SESSION_PATH}/polls` as const;
 const INLINE_QUERY_COLLECTION_PATH = `${SESSION_PATH}/inline-queries` as const;
 const SUPERGROUP_COLLECTION_PATH = `${SESSION_PATH}/supergroups` as const;
+
+/** The method Hono records for middleware, which `use` registers for every method. */
+const MIDDLEWARE_METHOD = 'ALL';
 
 /** The reason a control route gives for a session that does not exist or has ended. */
 const SESSION_NOT_FOUND_REASON = 'session_not_found';
@@ -112,11 +115,24 @@ export function createSessionRoutes(
     [SUPERGROUP_COLLECTION_PATH, createSupergroupRoutes()],
   ];
   for (const [path, routes] of controlSubresourceRoutes) {
-    sessionRoutes.use(`${path}/*`, requireControlSession);
+    // A method or path that no control route serves reaches `route_not_found` whether or not its
+    // session exists; only a request a route serves needs the session.
+    sessionRoutes.use(
+      `${path}/*`,
+      (context, next) => isServedByRoute(context) ? requireControlSession(context, next) : next(),
+    );
     sessionRoutes.route(path, routes);
   }
 
   return sessionRoutes;
+}
+
+/**
+ * Whether a route registered for the request's method and path serves it, rather than only
+ * middleware such as this module's, which Hono registers for every method as `ALL`.
+ */
+function isServedByRoute(context: Context): boolean {
+  return matchedRoutes(context).some(({ method }) => method !== MIDDLEWARE_METHOD);
 }
 
 /**
