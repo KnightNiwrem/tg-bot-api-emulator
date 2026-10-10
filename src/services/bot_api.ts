@@ -2270,8 +2270,6 @@ export class BotApiService {
    * `Client::get_formatted_text` does before it looks at the chat: a parse mode other than `none`
    * turns markup into entities and overrides `entities`. The result still has to pass the checks
    * that sending or editing applies.
-   *
-   * Date and time entities, which Telegram's markup can produce, are not supported.
    */
   readFormattedText(
     { text, parseMode, entities }: ReadFormattedTextRequest,
