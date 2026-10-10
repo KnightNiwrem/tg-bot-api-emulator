@@ -85,6 +85,7 @@ import type { VirtualBot, VirtualBotProfile } from '../types/virtual_bot.ts';
 import type { WrittenMessageDraft } from '../types/message_draft.ts';
 import {
   type ChatAction,
+  type ChatActor,
   type ChatKey,
   getBotApiChatAddress,
   getBotApiChatKey,
@@ -97,7 +98,6 @@ import {
   type LocationMessageContent,
   type PrivateMessage,
   type SupergroupMessage,
-  type SupergroupMessageAuthor,
   type TextEntity,
 } from '../types/virtual_message.ts';
 import type { GetUpdatesRequest, GetUpdatesResult } from './bot_update_polling.ts';
@@ -1769,17 +1769,17 @@ interface ChatMemberships {
     readonly customTitle: string;
   }): SetCustomTitleAsBotResult;
   changeSupergroupTitle(input: {
-    readonly actor: SupergroupMessageAuthor;
+    readonly actor: ChatActor;
     readonly chatId: number;
     readonly title: string;
   }): ChangeSupergroupTitleResult;
   changeSupergroupDescription(input: {
-    readonly actor: SupergroupMessageAuthor;
+    readonly actor: ChatActor;
     readonly chatId: number;
     readonly description: string;
   }): ChangeSupergroupDescriptionResult;
   changeDefaultPermissions(input: {
-    readonly actor: SupergroupMessageAuthor;
+    readonly actor: ChatActor;
     readonly chatId: number;
     readonly permissions: ChatPermissions;
   }): ChangeDefaultPermissionsResult;

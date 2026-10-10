@@ -311,8 +311,8 @@ Deno.test('showsQuizSolution shows an account quiz to the bot of the private cha
   const privateMessage: PrivateMessage = {
     kind: 'private_message',
     id: 'message-1',
-    conversation: { accountId: 7, botId: 1 },
-    authorRole: 'account',
+    chat: { type: 'private', conversation: { accountId: 7, botId: 1 } },
+    sender: 'account',
     sentAtUnixSeconds: 0,
     content: { kind: 'poll', pollId: quiz.id },
     isContentProtected: false,
@@ -322,7 +322,7 @@ Deno.test('showsQuizSolution shows an account quiz to the bot of the private cha
   const forward: PrivateMessage = {
     ...privateMessage,
     id: 'message-2',
-    conversation: { accountId: 8, botId: 2 },
+    chat: { type: 'private', conversation: { accountId: 8, botId: 2 } },
     forwardInfo: {
       originalSender: { kind: 'user', userId: 7 },
       originalSentAtUnixSeconds: 0,
@@ -331,8 +331,8 @@ Deno.test('showsQuizSolution shows an account quiz to the bot of the private cha
   const supergroupMessage: SupergroupMessage = {
     kind: 'supergroup_message',
     id: 'message-3',
-    chatId: -1_000_000_000_001,
-    author: { kind: 'account', accountId: 7 },
+    chat: { type: 'supergroup', chatId: -1_000_000_000_001 },
+    sender: { kind: 'account', accountId: 7 },
     sentAtUnixSeconds: 0,
     content: { kind: 'poll', pollId: quiz.id },
     isContentProtected: false,

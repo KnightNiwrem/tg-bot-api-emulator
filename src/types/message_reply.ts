@@ -57,7 +57,7 @@ export function createExternalReply(
     externalReply: {
       origin: getMessageOrigin(repliedMessage, getPrivateForwardName),
       ...(repliedMessage.kind === 'supergroup_message'
-        ? { supergroupMessage: { chatId: repliedMessage.chatId, messageId: messageIdInChat } }
+        ? { supergroupMessage: { chatId: repliedMessage.chat.chatId, messageId: messageIdInChat } }
         : {}),
       ...getExternalReplyMedia(content),
     },

@@ -31,6 +31,7 @@ import { privateChatMessagePolicy, supergroupMessagePolicy } from '../types/chat
 import type { InlineQuery } from '../types/inline_query.ts';
 import type { Poll } from '../types/poll.ts';
 import type { VirtualBot, VirtualBotProfile } from '../types/virtual_bot.ts';
+import type { SupergroupChatKey } from '../types/virtual_chat.ts';
 import {
   type CanonicalMessageId,
   type ChatMessage,
@@ -107,7 +108,10 @@ interface ChatMemberLookup {
 }
 
 interface SupergroupMessageLookup {
-  getSupergroupMessage(messageId: CanonicalMessageId): SupergroupMessage | undefined;
+  findChatMessage(
+    chat: SupergroupChatKey,
+    messageId: CanonicalMessageId,
+  ): SupergroupMessage | undefined;
 }
 
 interface LastMessageSendingBotRecords {
@@ -274,20 +278,23 @@ export class BotUpdateDeliveryService {
       this.#deliverServiceMessage(message);
       return;
     }
-    if (message.author.kind === 'bot') {
+    if (message.sender.kind === 'bot') {
       if (updateType === 'message') {
-        this.#lastMessageSendingBots.recordMessageSendingBot(message.chatId, message.author.botId);
-        this.#deliverBotToBotMessage(message, message.author.botId);
+        this.#lastMessageSendingBots.recordMessageSendingBot(
+          message.chat.chatId,
+          message.sender.botId,
+        );
+        this.#deliverBotToBotMessage(message, message.sender.botId);
       }
       return;
     }
     const addressee = this.#findPrivacyModeAddressee(message);
-    for (const memberId of this.#sharedChats.getChatMemberIds(message.chatId)) {
+    for (const memberId of this.#sharedChats.getChatMemberIds(message.chat.chatId)) {
       const bot = this.#bots.getById(memberId)?.profile;
       if (bot === undefined) {
         continue;
       }
-      const readsMessage = this.#readsAllGroupMessages(bot, message.chatId) ||
+      const readsMessage = this.#readsAllGroupMessages(bot, message.chat.chatId) ||
         (addressee === undefined
           ? this.#isImplicitlyAddressedToBot(message, bot)
           : isPrivacyModeAddressee(addressee, bot));
@@ -315,7 +322,7 @@ export class BotUpdateDeliveryService {
     const recipientId = this.#findBotToBotAddresseeId(message);
     if (
       recipientId === undefined || recipientId === senderBotId ||
-      this.#sharedChats.getChatMembership(message.chatId, recipientId) === undefined
+      this.#sharedChats.getChatMembership(message.chat.chatId, recipientId) === undefined
     ) {
       return;
     }
@@ -345,7 +352,7 @@ export class BotUpdateDeliveryService {
   #deliverServiceMessage(message: SupergroupMessage): void {
     const observerIds = supergroupMessagePolicy.selectServiceMessageRecipientIds(
       message,
-      this.#sharedChats.getChatMemberIds(message.chatId),
+      this.#sharedChats.getChatMemberIds(message.chat.chatId),
     );
     for (const observerId of observerIds) {
       if (
@@ -522,7 +529,7 @@ export class BotUpdateDeliveryService {
    * them; privacy mode does not matter. Bots never change reactions that bots observe.
    */
   #deliverMessageReactionChange(event: MessageReactionChangedEvent): void {
-    const { chatId } = event.message;
+    const { chatId } = event.message.chat;
     const observerIds = this.#sharedChats.getChatMemberIds(chatId).filter((memberId) =>
       this.#bots.getById(memberId) !== undefined && this.#isAdministrator(memberId, chatId) &&
       this.#isSubscribed(memberId, 'message_reaction')
@@ -548,7 +555,7 @@ export class BotUpdateDeliveryService {
   #findPrivacyModeAddressee(message: SupergroupContentMessage): PrivacyModeAddressee | undefined {
     const repliedMessage = message.replyToMessageId === undefined
       ? undefined
-      : this.#messages.getSupergroupMessage(message.replyToMessageId);
+      : this.#messages.findChatMessage(message.chat, message.replyToMessageId);
     const repliedMessageAddressee = repliedMessage === undefined
       ? undefined
       : this.#findRepliedMessageAddressee(repliedMessage);
@@ -571,8 +578,8 @@ export class BotUpdateDeliveryService {
   #findRepliedMessageAddressee(
     repliedMessage: SupergroupMessage,
   ): PrivacyModeAddressee | undefined {
-    if (repliedMessage.author.kind === 'bot') {
-      return { kind: 'bot', botId: repliedMessage.author.botId };
+    if (repliedMessage.sender.kind === 'bot') {
+      return { kind: 'bot', botId: repliedMessage.sender.botId };
     }
     return isSupergroupContentMessage(repliedMessage)
       ? this.#findPrivacyModeAddressee(repliedMessage)
@@ -593,16 +600,15 @@ export class BotUpdateDeliveryService {
   #findBotToBotAddresseeId(message: SupergroupContentMessage): number | undefined {
     const repliedMessage = message.replyToMessageId === undefined
       ? undefined
-      : this.#messages.getSupergroupMessage(message.replyToMessageId);
-    const repliedBotId = repliedMessage?.chatId === message.chatId &&
-        repliedMessage.author.kind === 'bot'
-      ? repliedMessage.author.botId
+      : this.#messages.findChatMessage(message.chat, message.replyToMessageId);
+    const repliedBotId = repliedMessage?.sender.kind === 'bot'
+      ? repliedMessage.sender.botId
       : undefined;
     const commandUsername = findLeadingCommandUsername(message);
     if (repliedBotId === undefined) {
       return commandUsername === undefined
         ? undefined
-        : this.#findMemberBotIdByUsername(message.chatId, commandUsername);
+        : this.#findMemberBotIdByUsername(message.chat.chatId, commandUsername);
     }
     const repliedBot = this.#bots.getById(repliedBotId)?.profile;
     const commandsAnotherBot = commandUsername !== undefined &&
@@ -635,7 +641,7 @@ export class BotUpdateDeliveryService {
       return false;
     }
     const lastMessageSendingBotId = this.#lastMessageSendingBots.getLastMessageSendingBotId(
-      message.chatId,
+      message.chat.chatId,
     );
     return lastMessageSendingBotId === undefined || lastMessageSendingBotId === bot.id;
   }

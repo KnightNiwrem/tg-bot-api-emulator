@@ -55,12 +55,13 @@ import type { VirtualBot } from '../types/virtual_bot.ts';
 import {
   type BasicGroup,
   type Channel,
+  type ChatActor,
   createChatInstance,
   type SharedChat,
   type Supergroup,
 } from '../types/virtual_chat.ts';
 import type {
-  SupergroupMessageAuthor,
+  SupergroupMessageSender,
   SupergroupServiceContent,
 } from '../types/virtual_message.ts';
 
@@ -350,7 +351,7 @@ const MAX_CHAT_DESCRIPTION_LENGTH = 255;
 
 export interface ChangeSupergroupTitleInput {
   /** The account or bot that changes the title, which the service message names. */
-  readonly actor: SupergroupMessageAuthor;
+  readonly actor: ChatActor;
   readonly chatId: number;
   /** The title as the actor specified it, before Telegram cleans it. */
   readonly title: string;
@@ -358,7 +359,7 @@ export interface ChangeSupergroupTitleInput {
 
 export interface ChangeSupergroupDescriptionInput {
   /** The account or bot that changes the description. */
-  readonly actor: SupergroupMessageAuthor;
+  readonly actor: ChatActor;
   readonly chatId: number;
   /** The description as the actor specified it, before Telegram cleans it; empty removes it. */
   readonly description: string;
@@ -391,7 +392,7 @@ export type ChangeSupergroupDescriptionResult =
 
 export interface ChangeDefaultPermissionsInput {
   /** The account or bot that changes what members may do by default. */
-  readonly actor: SupergroupMessageAuthor;
+  readonly actor: ChatActor;
   readonly chatId: number;
   /** What members may do from now on, unless a restriction of their own withholds more. */
   readonly permissions: ChatPermissions;
@@ -782,7 +783,7 @@ interface ChatDomainEventSink {
 interface SupergroupServiceMessageRecorder {
   recordServiceMessage(input: {
     readonly chatId: number;
-    readonly author: SupergroupMessageAuthor;
+    readonly sender: SupergroupMessageSender;
     readonly content: SupergroupServiceContent;
     readonly changedAtUnixSeconds: number;
   }): void;
@@ -838,7 +839,7 @@ function createDelegationLink(
  */
 function canChangeSupergroupInfo(
   supergroup: Supergroup,
-  actor: SupergroupMessageAuthor,
+  actor: ChatActor,
   membership: ChatMembership,
 ): boolean {
   return getEffectiveChatPermissions(membership, {
@@ -1012,7 +1013,7 @@ export class SharedChatAdministrationService {
     }
     this.#publishJoin(chat, {
       actorId: input.actorAccountId,
-      author: { kind: 'account', accountId: input.actorAccountId },
+      sender: { kind: 'account', accountId: input.actorAccountId },
       memberId: input.memberId,
       oldStatus: statusBeforeJoining,
       newStatus: statusAfterJoining,
@@ -1052,7 +1053,7 @@ export class SharedChatAdministrationService {
     }
     this.#publishJoin(chat, {
       actorId: approverId ?? accountId,
-      author: { kind: 'account', accountId },
+      sender: { kind: 'account', accountId },
       memberId: accountId,
       oldStatus: statusBeforeJoining,
       newStatus: statusAfterJoining,
@@ -1633,7 +1634,7 @@ export class SharedChatAdministrationService {
       throw new Error(`Supergroup ${input.chatId} could not be updated`);
     }
     this.#recordSupergroupServiceMessage(access.supergroup, {
-      author: input.actor,
+      sender: input.actor,
       content: { kind: 'title_changed', title },
       changedAtUnixSeconds: this.#currentUnixTimeSeconds(),
     });
@@ -1718,7 +1719,7 @@ export class SharedChatAdministrationService {
    * account as a member of the supergroup.
    */
   #resolveSupergroupActor(
-    { actor, chatId }: { readonly actor: SupergroupMessageAuthor; readonly chatId: number },
+    { actor, chatId }: { readonly actor: ChatActor; readonly chatId: number },
   ):
     | {
       readonly resolved: true;
@@ -2245,7 +2246,7 @@ export class SharedChatAdministrationService {
       return { restricted: false, reason: 'member_is_administrator' };
     }
 
-    const actor: SupergroupMessageAuthor = { kind: 'bot', botId };
+    const actor: ChatActor = { kind: 'bot', botId };
     if (isChatMember(memberStatus)) {
       this.#endMembership(chat, {
         actor,
@@ -2353,7 +2354,7 @@ export class SharedChatAdministrationService {
     chat: SharedChat,
     { actor, memberId, membership, statusAfterLeaving }: {
       /** The member itself when it leaves, or the account or bot that removes it. */
-      readonly actor: SupergroupMessageAuthor;
+      readonly actor: ChatActor;
       readonly memberId: number;
       /** The membership that ends. */
       readonly membership: ChatMembership;
@@ -2377,7 +2378,7 @@ export class SharedChatAdministrationService {
       changedAtUnixSeconds: leftAtUnixSeconds,
     });
     this.#recordSupergroupServiceMessage(chat, {
-      author: actor,
+      sender: actor,
       content: { kind: 'member_left', memberId },
       changedAtUnixSeconds: leftAtUnixSeconds,
     });
@@ -2386,14 +2387,14 @@ export class SharedChatAdministrationService {
   /** Publishes a user's joining a chat, then records it as a service message. */
   #publishJoin(
     chat: SharedChat,
-    { actorId, author, memberId, oldStatus, newStatus, inviteLink }: {
+    { actorId, sender, memberId, oldStatus, newStatus, inviteLink }: {
       /**
        * The user that made the change: the account that added the member, the administrator that
        * approved its request, or the member itself when it joined by itself.
        */
       readonly actorId: number;
       /** The account that added the member, or the member itself when it joined otherwise. */
-      readonly author: SupergroupMessageAuthor;
+      readonly sender: SupergroupMessageSender;
       readonly memberId: number;
       readonly oldStatus: FormerChatMemberStatus;
       readonly newStatus: JoiningMemberStatus;
@@ -2412,7 +2413,7 @@ export class SharedChatAdministrationService {
       ...(inviteLink === undefined ? {} : { inviteLink }),
     });
     this.#recordSupergroupServiceMessage(chat, {
-      author,
+      sender,
       content: { kind: 'members_joined', memberIds: [memberId] },
       changedAtUnixSeconds: joinedAtUnixSeconds,
     });
@@ -2421,7 +2422,7 @@ export class SharedChatAdministrationService {
   #recordSupergroupServiceMessage(
     chat: SharedChat,
     change: {
-      readonly author: SupergroupMessageAuthor;
+      readonly sender: SupergroupMessageSender;
       readonly content: SupergroupServiceContent;
       readonly changedAtUnixSeconds: number;
     },
@@ -2431,8 +2432,8 @@ export class SharedChatAdministrationService {
     }
   }
 
-  /** Identifies a user as an account or a bot, as service messages name their authors. */
-  #identifyUser(userId: number): SupergroupMessageAuthor | undefined {
+  /** Identifies a user as an account or a bot, as changes name their actors and members. */
+  #identifyUser(userId: number): ChatActor | undefined {
     if (this.#accounts.getById(userId) !== undefined) {
       return { kind: 'account', accountId: userId };
     }

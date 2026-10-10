@@ -481,7 +481,7 @@ Deno.test('SupergroupMessagingService lets the inline bot edit a message sent th
   });
   if (
     !textEdit.edited || getContentText(textEdit.message.content).text !== 'Dogs' ||
-    textEdit.message.author.kind !== 'account' || !keyboardEdit.edited
+    textEdit.message.sender.kind !== 'account' || !keyboardEdit.edited
   ) {
     throw new Error(
       `Expected the inline bot to edit the message by its chat, received ${
@@ -612,16 +612,16 @@ Deno.test('SupergroupMessagingService turns away bots that left or were removed'
     chatId: supergroup.id,
   });
   const expectedHistory = [
-    { author: { kind: 'account', accountId: owner.profile.id }, kind: 'members_joined' },
-    { author: { kind: 'account', accountId: owner.profile.id }, kind: 'members_joined' },
-    { author: { kind: 'bot', botId: bot.profile.id }, kind: 'text' },
-    { author: { kind: 'bot', botId: bot.profile.id }, kind: 'member_left' },
-    { author: { kind: 'account', accountId: owner.profile.id }, kind: 'member_left' },
+    { sender: { kind: 'account', accountId: owner.profile.id }, kind: 'members_joined' },
+    { sender: { kind: 'account', accountId: owner.profile.id }, kind: 'members_joined' },
+    { sender: { kind: 'bot', botId: bot.profile.id }, kind: 'text' },
+    { sender: { kind: 'bot', botId: bot.profile.id }, kind: 'member_left' },
+    { sender: { kind: 'account', accountId: owner.profile.id }, kind: 'member_left' },
   ];
   if (
     !history.found ||
     JSON.stringify(
-        history.messages.map(({ author, content }) => ({ author, kind: content.kind })),
+        history.messages.map(({ sender, content }) => ({ sender, kind: content.kind })),
       ) !==
       JSON.stringify(expectedHistory) ||
     history.messages[2].id !== botMessage.id

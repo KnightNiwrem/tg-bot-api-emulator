@@ -1,4 +1,4 @@
-import { type ChatMessage, getMessageAuthorId, type MediaGroupId } from './virtual_message.ts';
+import { type ChatMessage, getMessageSenderId, type MediaGroupId } from './virtual_message.ts';
 
 /** The most messages an album holds, as Telegram's servers limit it. */
 export const MAX_ALBUM_MESSAGE_COUNT = 10;
@@ -179,12 +179,12 @@ function formsHomogeneousAlbum(messages: readonly ChatMessage[]): boolean {
 
 /**
  * The user who first sent a message, as TDLib's `get_message_original_sender` finds them: the
- * author of a message, or the sender a forward shows; `undefined` for a forward that hides its
+ * sender of a message, or the sender a forward shows; `undefined` for a forward that hides its
  * sender.
  */
 function getOriginalSenderId(message: ChatMessage): number | undefined {
   if (message.forwardInfo === undefined) {
-    return getMessageAuthorId(message);
+    return getMessageSenderId(message);
   }
   const { originalSender } = message.forwardInfo;
   return originalSender.kind === 'user' ? originalSender.userId : undefined;

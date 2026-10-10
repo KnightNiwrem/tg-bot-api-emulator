@@ -25,8 +25,8 @@ const conversation: PrivateConversation = {
 const privateMessage: PrivateContentMessage = {
   kind: 'private_message',
   id: 'private',
-  conversation,
-  authorRole: 'bot',
+  chat: { type: 'private', conversation },
+  sender: 'bot',
   sentAtUnixSeconds: 1_700_000_000,
   content: { kind: 'text', text: 'Hello', entities: [] },
   isContentProtected: false,
@@ -36,8 +36,8 @@ const privateMessage: PrivateContentMessage = {
 const supergroupMessage: SupergroupMessage = {
   kind: 'supergroup_message',
   id: 'supergroup',
-  chatId: SUPERGROUP_ID,
-  author: { kind: 'account', accountId: ACCOUNT_ID },
+  chat: { type: 'supergroup', chatId: SUPERGROUP_ID },
+  sender: { kind: 'account', accountId: ACCOUNT_ID },
   sentAtUnixSeconds: 1_700_000_000,
   content: { kind: 'text', text: 'Welcome', entities: [] },
   isContentProtected: false,

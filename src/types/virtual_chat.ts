@@ -54,6 +54,23 @@ export type ChatKey =
 export type PrivateChatKey = Extract<ChatKey, { readonly type: 'private' }>;
 export type SupergroupChatKey = Extract<ChatKey, { readonly type: 'supergroup' }>;
 
+/** The type of a chat as the emulator keys it, which selects the chat type's rules and messages. */
+export type ChatType = ChatKey['type'];
+
+/**
+ * The key of a chat of the given type. Code generic over chat types takes a chat by this type, so
+ * the type of the chat it is given selects the type of what it returns.
+ */
+export type ChatKeyOfType<Type extends ChatType> = ChatKey & { readonly type: Type };
+
+/**
+ * An authenticated account or bot that acts in a chat: the principal whose access an operation
+ * checks. It is not the sender a message shows, which the message's own attribution records.
+ */
+export type ChatActor =
+  | { readonly kind: 'account'; readonly accountId: number }
+  | { readonly kind: 'bot'; readonly botId: number };
+
 /**
  * The chat a bot addresses by a Bot API `chat_id`, as `getBotApiChatAddress` finds it, identified
  * without checking that it exists: its private conversation with the user, or the supergroup.

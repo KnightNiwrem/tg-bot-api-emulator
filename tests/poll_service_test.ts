@@ -18,8 +18,8 @@ const conversation: PrivateConversation = {
 const textMessage: PrivateContentMessage = {
   kind: 'private_message',
   id: 'text',
-  conversation,
-  authorRole: 'bot',
+  chat: { type: 'private', conversation },
+  sender: 'bot',
   sentAtUnixSeconds: 1_700_000_000,
   content: { kind: 'text', text: 'Hello', entities: [] },
   isContentProtected: false,

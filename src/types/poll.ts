@@ -223,7 +223,7 @@ export function showsQuizSolution(
 
 /** Whether a message was sent, not forwarded, to the private chat of the given bot. */
 function isSentToBotPrivateChat(message: ChatMessage, botId: number): boolean {
-  return message.kind === 'private_message' && message.conversation.botId === botId &&
+  return message.kind === 'private_message' && message.chat.conversation.botId === botId &&
     message.forwardInfo === undefined;
 }
 

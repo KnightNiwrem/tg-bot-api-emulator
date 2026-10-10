@@ -325,8 +325,8 @@ function privateMessage(content: MessageContent): PrivateMessage {
   return {
     kind: 'private_message',
     id: crypto.randomUUID(),
-    conversation: { accountId: ACCOUNT_ID, botId: BOT_ID },
-    authorRole: 'account',
+    chat: { type: 'private', conversation: { accountId: ACCOUNT_ID, botId: BOT_ID } },
+    sender: 'account',
     sentAtUnixSeconds: NOW_UNIX_SECONDS - 60,
     content,
     isContentProtected: false,

@@ -166,10 +166,10 @@ Deno.test('private chat updates reach the bot except for its own content message
   const { privateMessaging, ada, bot } = createChatPolicyFixture();
   const accountMessage = sendAccountText(privateMessaging, ada, bot, 'Hello');
   const botMessage = sendBotText(privateMessaging, bot, ada, 'Hi');
-  const recordPin = (authorRole: PrivateConversationRole) =>
+  const recordPin = (sender: PrivateConversationRole) =>
     privateMessaging.recordServiceMessage({
       conversation: { accountId: ada, botId: bot },
-      authorRole,
+      sender,
       content: { kind: 'message_pinned', pinnedMessageId: botMessage.id },
       isSilent: true,
     });
@@ -299,7 +299,7 @@ Deno.test('supergroup service messages reach every member, their author and a de
 
   const titleChange = supergroupMessaging.recordServiceMessage({
     chatId: TEAM.id,
-    author: { kind: 'bot', botId: bot },
+    sender: { kind: 'bot', botId: bot },
     content: { kind: 'title_changed', title: 'Renamed' },
     changedAtUnixSeconds: NOW,
     isSilent: false,
@@ -308,7 +308,7 @@ Deno.test('supergroup service messages reach every member, their author and a de
   sharedChats.removeChatMember(TEAM.id, otherBot, { status: 'kicked' });
   const removal = supergroupMessaging.recordServiceMessage({
     chatId: TEAM.id,
-    author: { kind: 'bot', botId: bot },
+    sender: { kind: 'bot', botId: bot },
     content: { kind: 'member_left', memberId: otherBot },
     changedAtUnixSeconds: NOW,
     isSilent: false,

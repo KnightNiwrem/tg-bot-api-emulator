@@ -14,7 +14,7 @@ import {
 } from '../types/message_reaction.ts';
 import type { VirtualAccount } from '../types/virtual_account.ts';
 import type { VirtualBot } from '../types/virtual_bot.ts';
-import type { Supergroup } from '../types/virtual_chat.ts';
+import type { Supergroup, SupergroupChatKey } from '../types/virtual_chat.ts';
 import {
   type CanonicalMessageId,
   isSupergroupContentMessage,
@@ -126,8 +126,9 @@ interface SupergroupMessageLookup {
 }
 
 interface SupergroupMessageReactionStore {
-  getSupergroupMessages(chatId: number): readonly SupergroupMessage[];
-  setSupergroupMessageReactions(
+  getChatMessages(chat: SupergroupChatKey): readonly SupergroupMessage[];
+  setMessageReactions(
+    chat: SupergroupChatKey,
     messageId: CanonicalMessageId,
     reactions: readonly UserReaction[],
   ): SupergroupMessage;
@@ -338,7 +339,8 @@ export class MessageReactionService {
       return { chosen: true, message, oldEmojis, newEmojis };
     }
     const otherReactions = reactions.filter((reaction) => reaction.userId !== reactorId);
-    const changedMessage = this.#messages.setSupergroupMessageReactions(
+    const changedMessage = this.#messages.setMessageReactions(
+      message.chat,
       message.id,
       newEmojis.length === 0
         ? otherReactions
@@ -357,7 +359,7 @@ export class MessageReactionService {
     if (message.mediaGroupId === undefined) {
       return message;
     }
-    return this.#messages.getSupergroupMessages(message.chatId).find((chatMessage) =>
+    return this.#messages.getChatMessages(message.chat).find((chatMessage) =>
       chatMessage.mediaGroupId === message.mediaGroupId
     ) ?? message;
   }

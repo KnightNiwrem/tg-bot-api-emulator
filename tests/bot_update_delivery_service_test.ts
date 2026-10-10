@@ -23,9 +23,12 @@ Deno.test('BotUpdateDeliveryService delivers a private message to its conversati
   const account = createAccount(virtualUsers);
   const targetBot = createBot(virtualUsers, 'target_bot');
   const otherBot = createBot(virtualUsers, 'other_bot');
-  const message = messages.addPrivateMessage({
-    conversation: { accountId: account.profile.id, botId: targetBot.profile.id },
-    authorRole: 'account',
+  const message = messages.addMessage({
+    chat: {
+      type: 'private',
+      conversation: { accountId: account.profile.id, botId: targetBot.profile.id },
+    },
+    sender: 'account',
     sentAtUnixSeconds: 1_700_000_000,
     content: {
       kind: 'text',
@@ -66,9 +69,12 @@ Deno.test('BotUpdateDeliveryService does not deliver a bot its own message', () 
     createDeliveryFixture();
   const account = createAccount(virtualUsers);
   const bot = createBot(virtualUsers, 'test_bot');
-  const message = messages.addPrivateMessage({
-    conversation: { accountId: account.profile.id, botId: bot.profile.id },
-    authorRole: 'bot',
+  const message = messages.addMessage({
+    chat: {
+      type: 'private',
+      conversation: { accountId: account.profile.id, botId: bot.profile.id },
+    },
+    sender: 'bot',
     sentAtUnixSeconds: 1_700_000_000,
     content: { kind: 'text', text: 'Welcome!', entities: [] },
   });
@@ -86,9 +92,12 @@ Deno.test('BotUpdateDeliveryService delivers a callback query to the bot whose b
     createDeliveryFixture();
   const account = createAccount(virtualUsers);
   const bot = createBot(virtualUsers, 'test_bot');
-  const message = messages.addPrivateMessage({
-    conversation: { accountId: account.profile.id, botId: bot.profile.id },
-    authorRole: 'bot',
+  const message = messages.addMessage({
+    chat: {
+      type: 'private',
+      conversation: { accountId: account.profile.id, botId: bot.profile.id },
+    },
+    sender: 'bot',
     sentAtUnixSeconds: 1_700_000_000,
     inlineKeyboard: [[{ kind: 'callback', text: 'Yes', callbackData: 'yes' }]],
     content: { kind: 'text', text: 'Continue?', entities: [] },
@@ -99,7 +108,7 @@ Deno.test('BotUpdateDeliveryService delivers a callback query to the bot whose b
     type: 'callback_query_created',
     callbackQuery: {
       id: '7',
-      ...message.conversation,
+      ...message.chat.conversation,
       messageId: message.id,
       chatInstance: '-42',
       callbackData: 'yes',
@@ -140,16 +149,19 @@ Deno.test('BotUpdateDeliveryService skips update types excluded by the bot subsc
   } = createDeliveryFixture();
   const account = createAccount(virtualUsers);
   const bot = createBot(virtualUsers, 'test_bot');
-  const botMessage = messages.addPrivateMessage({
-    conversation: { accountId: account.profile.id, botId: bot.profile.id },
-    authorRole: 'bot',
+  const botMessage = messages.addMessage({
+    chat: {
+      type: 'private',
+      conversation: { accountId: account.profile.id, botId: bot.profile.id },
+    },
+    sender: 'bot',
     sentAtUnixSeconds: 1_700_000_000,
     inlineKeyboard: [[{ kind: 'callback', text: 'Yes', callbackData: 'yes' }]],
     content: { kind: 'text', text: 'Continue?', entities: [] },
   });
-  const accountMessage = messages.addPrivateMessage({
-    conversation: botMessage.conversation,
-    authorRole: 'account',
+  const accountMessage = messages.addMessage({
+    chat: { type: 'private', conversation: botMessage.chat.conversation },
+    sender: 'account',
     sentAtUnixSeconds: 1_700_000_001,
     content: { kind: 'text', text: 'Hello', entities: [] },
   });
@@ -171,7 +183,7 @@ Deno.test('BotUpdateDeliveryService skips update types excluded by the bot subsc
     type: 'callback_query_created',
     callbackQuery: {
       id: '7',
-      ...botMessage.conversation,
+      ...botMessage.chat.conversation,
       messageId: botMessage.id,
       chatInstance: '-42',
       callbackData: 'yes',
@@ -191,15 +203,15 @@ Deno.test('BotUpdateDeliveryService delivers an account edit, but not its own, t
   const account = createAccount(virtualUsers);
   const bot = createBot(virtualUsers, 'test_bot');
   const conversation = { accountId: account.profile.id, botId: bot.profile.id };
-  const accountMessage = messages.addPrivateMessage({
-    conversation,
-    authorRole: 'account',
+  const accountMessage = messages.addMessage({
+    chat: { type: 'private', conversation },
+    sender: 'account',
     sentAtUnixSeconds: 1_700_000_000,
     content: { kind: 'text', text: 'Hello', entities: [] },
   });
-  const botMessage = messages.addPrivateMessage({
-    conversation,
-    authorRole: 'bot',
+  const botMessage = messages.addMessage({
+    chat: { type: 'private', conversation },
+    sender: 'bot',
     sentAtUnixSeconds: 1_700_000_001,
     content: { kind: 'text', text: 'Hi', entities: [] },
   });
@@ -213,14 +225,14 @@ Deno.test('BotUpdateDeliveryService delivers an account edit, but not its own, t
 
   botUpdateDelivery.publish({
     type: 'message_edited',
-    message: messages.editPrivateMessage(botMessage.id, {
+    message: messages.editMessage(botMessage.chat, botMessage.id, {
       ...edit,
       content: { kind: 'text', text: 'Hi there', entities: [] },
     }),
   });
   botUpdateDelivery.publish({
     type: 'message_edited',
-    message: messages.editPrivateMessage(accountMessage.id, {
+    message: messages.editMessage(accountMessage.chat, accountMessage.id, {
       ...edit,
       content: { kind: 'text', text: 'Hello!', entities: [] },
     }),
@@ -352,14 +364,14 @@ Deno.test('BotUpdateDeliveryService delivers supergroup additions and edits to t
       changedAtUnixSeconds: 1_700_000_000,
     });
   }
-  const message = messages.addSupergroupMessage({
-    chatId: supergroup.id,
-    author: { kind: 'account', accountId: owner.profile.id },
+  const message = messages.addMessage({
+    chat: { type: 'supergroup', chatId: supergroup.id },
+    sender: { kind: 'account', accountId: owner.profile.id },
     sentAtUnixSeconds: 1_700_000_001,
     content: { kind: 'text', text: 'Hello', entities: [] },
   });
   messageBoxes.assignMessageId(supergroup.id, message.id);
-  const editedMessage = messages.editSupergroupMessage(message.id, {
+  const editedMessage = messages.editMessage(message.chat, message.id, {
     inlineKeyboard: undefined,
     contentEditedAtUnixSeconds: 1_700_000_002,
     content: { kind: 'text', text: 'Hello again', entities: [] },
@@ -425,9 +437,9 @@ Deno.test('BotUpdateDeliveryService delivers a promotion and every message to an
     newStatus: administratorStatus,
     changedAtUnixSeconds: 1_700_000_000,
   });
-  const message = messages.addSupergroupMessage({
-    chatId: supergroup.id,
-    author: { kind: 'account', accountId: owner.profile.id },
+  const message = messages.addMessage({
+    chat: { type: 'supergroup', chatId: supergroup.id },
+    sender: { kind: 'account', accountId: owner.profile.id },
     sentAtUnixSeconds: 1_700_000_001,
     content: { kind: 'text', text: 'Not addressed to any bot', entities: [] },
   });
@@ -522,9 +534,9 @@ Deno.test("BotUpdateDeliveryService delivers bots' membership service messages t
   // As the administration service does, a member leaves the chat before its departure is recorded.
   const recordDeparture = (authorBotId: number, memberId: number) => {
     sharedChats.removeChatMember(supergroup.id, memberId, { status: 'left' });
-    const message = messages.addSupergroupMessage({
-      chatId: supergroup.id,
-      author: { kind: 'bot', botId: authorBotId },
+    const message = messages.addMessage({
+      chat: { type: 'supergroup', chatId: supergroup.id },
+      sender: { kind: 'bot', botId: authorBotId },
       sentAtUnixSeconds: 1_700_000_000,
       content: { kind: 'member_left', memberId },
     });
@@ -604,9 +616,9 @@ Deno.test('BotUpdateDeliveryService addresses supergroup media by caption and pe
     mimeType: 'text/plain',
   });
   const publishDocument = (caption: string) => {
-    const message = messages.addSupergroupMessage({
-      chatId: supergroup.id,
-      author: { kind: 'account', accountId: owner.profile.id },
+    const message = messages.addMessage({
+      chat: { type: 'supergroup', chatId: supergroup.id },
+      sender: { kind: 'account', accountId: owner.profile.id },
       sentAtUnixSeconds: 1_700_000_001,
       content: {
         kind: 'document',
@@ -666,9 +678,12 @@ Deno.test('BotUpdateDeliveryService delivers inline queries, and chosen results 
     state: { status: 'awaiting_answer' },
   } as const;
   botUpdateDelivery.publish({ type: 'inline_query_created', inlineQuery });
-  const message = messages.addPrivateMessage({
-    conversation: { accountId: account.profile.id, botId: feedbackBot.profile.id },
-    authorRole: 'account',
+  const message = messages.addMessage({
+    chat: {
+      type: 'private',
+      conversation: { accountId: account.profile.id, botId: feedbackBot.profile.id },
+    },
+    sender: 'account',
     sentAtUnixSeconds: 1_700_000_000,
     content: { kind: 'text', text: 'Cats', entities: [] },
     inlineKeyboard: [[{ kind: 'callback', text: 'Like', callbackData: 'like' }]],
@@ -746,9 +761,9 @@ Deno.test('BotUpdateDeliveryService delivers supergroup messages sent through a 
   sharedChats.registerSupergroup(supergroup, owner.profile.id);
   sharedChats.addChatMember(supergroup.id, inlineBot.profile.id);
   for (const viaBotId of [otherBot.profile.id, inlineBot.profile.id]) {
-    const message = messages.addSupergroupMessage({
-      chatId: supergroup.id,
-      author: { kind: 'account', accountId: owner.profile.id },
+    const message = messages.addMessage({
+      chat: { type: 'supergroup', chatId: supergroup.id },
+      sender: { kind: 'account', accountId: owner.profile.id },
       sentAtUnixSeconds: 1_700_000_000,
       content: { kind: 'text', text: 'Cats', entities: [] },
       viaBotId,
@@ -798,16 +813,16 @@ Deno.test('BotUpdateDeliveryService lets a message reach only the privacy-mode b
   });
   const bots = { a: botA, b: botB, c: botC, admin: administratorBot };
   const send = (
-    author: { readonly kind: 'account'; readonly accountId: number } | {
+    sender: { readonly kind: 'account'; readonly accountId: number } | {
       readonly kind: 'bot';
       readonly botId: number;
     },
     text: string,
     options: { readonly replyToMessageId?: string; readonly viaBotId?: number } = {},
   ) => {
-    const message = messages.addSupergroupMessage({
-      chatId: supergroup.id,
-      author,
+    const message = messages.addMessage({
+      chat: { type: 'supergroup', chatId: supergroup.id },
+      sender,
       sentAtUnixSeconds: 1_700_000_000,
       content: {
         kind: 'text',
@@ -924,16 +939,16 @@ Deno.test('BotUpdateDeliveryService sends general commands to the bot that last 
   });
   const bots = { a: botA, b: botB, inline: inlineBot, admin: administratorBot };
   const send = (
-    author: { readonly kind: 'account'; readonly accountId: number } | {
+    sender: { readonly kind: 'account'; readonly accountId: number } | {
       readonly kind: 'bot';
       readonly botId: number;
     },
     text: string,
     viaBotId?: number,
   ) => {
-    const message = messages.addSupergroupMessage({
-      chatId: supergroup.id,
-      author,
+    const message = messages.addMessage({
+      chat: { type: 'supergroup', chatId: supergroup.id },
+      sender,
       sentAtUnixSeconds: 1_700_000_000,
       content: {
         kind: 'text',
@@ -1165,9 +1180,9 @@ Deno.test('BotUpdateDeliveryService addresses a bot message only by its own repl
     text: string,
     options: { readonly replyToMessageId?: string; readonly viaBotId?: number } = {},
   ) => {
-    const message = messages.addSupergroupMessage({
-      chatId,
-      author: authorBotId === undefined
+    const message = messages.addMessage({
+      chat: { type: 'supergroup', chatId },
+      sender: authorBotId === undefined
         ? { kind: 'account', accountId: owner.profile.id }
         : { kind: 'bot', botId: authorBotId },
       sentAtUnixSeconds: 1_700_000_000,
