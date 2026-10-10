@@ -1,5 +1,4 @@
-import { createEmulationApi } from '../../src/api/mod.ts';
-import { createSessionLifecycleService } from '../../src/composition/session_lifecycle.ts';
+import { createTestApi } from '../../tests/support/emulation_api.ts';
 import {
   BotActivityTimeoutError,
   EmulationClientError,
@@ -364,10 +363,7 @@ async function assertRejects(
 
 async function createFixture() {
   const publicOrigin = 'http://emulator.example:9000';
-  const api = createEmulationApi({
-    sessionLifecycle: createSessionLifecycleService(),
-    publicOrigin,
-  });
+  const api = createTestApi(publicOrigin);
   const fetch = createInProcessFetch(api.fetch);
   const client = new TelegramEmulationClient(publicOrigin, { fetch });
   const session = await client.createSession();

@@ -1,8 +1,6 @@
 import { Bot } from 'https://cdn.jsdelivr.net/gh/grammyjs/grammY@^1.46.0/src/bot.ts';
 import { run } from '@grammyjs/runner/runner.ts';
 
-import { createEmulationApi } from '../src/api/mod.ts';
-import { createSessionLifecycleService } from '../src/composition/session_lifecycle.ts';
 import {
   type AccountPollInput,
   EmulationClientError,
@@ -11,6 +9,7 @@ import {
   type SupergroupMessageTarget,
   TelegramEmulationClient,
 } from '../clients/typescript/mod.ts';
+import { createTestApi } from './support/emulation_api.ts';
 
 const PUBLIC_ORIGIN = 'http://emulator.example:9000';
 
@@ -519,10 +518,7 @@ Deno.test('a bot copies an account quiz only where it sees its solution', async 
 });
 
 Deno.test('account polls stay within their session', async () => {
-  const api = createEmulationApi({
-    sessionLifecycle: createSessionLifecycleService(),
-    publicOrigin: PUBLIC_ORIGIN,
-  });
+  const api = createTestApi(PUBLIC_ORIGIN);
   const first = await createAccountPollFixture(api);
   const second = await createAccountPollFixture(api);
   const pollMessage = await first.ada.sendPoll({ to: first.privateChat, poll: LUNCH_POLL });
@@ -563,10 +559,7 @@ Deno.test('account polls stay within their session', async () => {
  * with; Ada owns a supergroup with Grace and the bot; Linus is an account outside it.
  */
 async function createAccountPollFixture(
-  api = createEmulationApi({
-    sessionLifecycle: createSessionLifecycleService(),
-    publicOrigin: PUBLIC_ORIGIN,
-  }),
+  api = createTestApi(PUBLIC_ORIGIN),
 ) {
   const fetch: typeof globalThis.fetch = async (input, init) =>
     await api.fetch(new Request(input, init));

@@ -1,5 +1,4 @@
-import { createEmulationApi } from '../../src/api/mod.ts';
-import { createSessionLifecycleService } from '../../src/composition/session_lifecycle.ts';
+import { createTestApi } from '../../tests/support/emulation_api.ts';
 import { EmulationClientError, TelegramEmulationClient } from './mod.ts';
 
 const PUBLIC_ORIGIN = 'http://emulator.example:9000';
@@ -223,10 +222,7 @@ Deno.test('Ending a session cancels its manual webhook attempts and retries', as
 });
 
 function createInProcessClient() {
-  const api = createEmulationApi({
-    sessionLifecycle: createSessionLifecycleService(),
-    publicOrigin: PUBLIC_ORIGIN,
-  });
+  const api = createTestApi(PUBLIC_ORIGIN);
   const client = new TelegramEmulationClient(PUBLIC_ORIGIN, {
     fetch: async (input, init) => await api.fetch(new Request(input, init)),
   });

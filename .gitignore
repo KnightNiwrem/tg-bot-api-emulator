@@ -3,3 +3,4 @@
 node_modules/
 npm/
 dist/
+.openapi-conformance-records.jsonl

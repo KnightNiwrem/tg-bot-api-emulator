@@ -1,8 +1,6 @@
 import { Bot } from 'https://cdn.jsdelivr.net/gh/grammyjs/grammY@^1.46.0/src/bot.ts';
 import { run } from '@grammyjs/runner/runner.ts';
 
-import { createEmulationApi } from '../src/api/mod.ts';
-import { createSessionLifecycleService } from '../src/composition/session_lifecycle.ts';
 import {
   EmulationClientError,
   type EmulationSessionClient,
@@ -10,6 +8,7 @@ import {
   type PrivateMessageTarget,
   TelegramEmulationClient,
 } from '../clients/typescript/mod.ts';
+import { createTestApi } from './support/emulation_api.ts';
 
 const PUBLIC_ORIGIN = 'http://emulator.example:9000';
 
@@ -477,10 +476,7 @@ Deno.test('sharing users or a chat grants the bot no access, membership, or righ
 });
 
 Deno.test('selections stay within their session', async () => {
-  const api = createEmulationApi({
-    sessionLifecycle: createSessionLifecycleService(),
-    publicOrigin: PUBLIC_ORIGIN,
-  });
+  const api = createTestApi(PUBLIC_ORIGIN);
   const first = await createSharingFixture(api);
   const second = await createSharingFixture(api);
   // Only the second session has a fourth account and a supergroup with this ID.
@@ -546,10 +542,7 @@ Deno.test('selections stay within their session', async () => {
  * that she can share.
  */
 async function createSharingFixture(
-  api = createEmulationApi({
-    sessionLifecycle: createSessionLifecycleService(),
-    publicOrigin: PUBLIC_ORIGIN,
-  }),
+  api = createTestApi(PUBLIC_ORIGIN),
 ) {
   const fetch: typeof globalThis.fetch = async (input, init) =>
     await api.fetch(new Request(input, init));

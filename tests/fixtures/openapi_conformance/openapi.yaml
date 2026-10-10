@@ -1,0 +1,145 @@
+openapi: 3.1.1
+info:
+  title: OpenAPI conformance check fixture
+  version: 0.0.0
+  description: >-
+    A small document with the kinds of operations the conformance check distinguishes: JSON bodies
+    with a required header, empty bodies, binary bodies of any media type, form and deepObject
+    query parameters, and Bot API method paths.
+paths:
+  /sessions/{sessionId}/widgets:
+    parameters:
+      - $ref: ./components/SessionId.yaml
+    get:
+      operationId: listWidgets
+      parameters:
+        - name: limit
+          in: query
+          schema:
+            type: integer
+            minimum: 0
+        - name: labels
+          in: query
+          style: deepObject
+          explode: true
+          schema:
+            type: object
+            additionalProperties:
+              type: string
+      responses:
+        '200':
+          description: The widgets.
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: ./components/Widget.yaml
+        '400':
+          description: The query is malformed.
+    post:
+      operationId: createWidget
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: ./components/Widget.yaml
+      responses:
+        '201':
+          description: The widget was created.
+          headers:
+            Location:
+              required: true
+              schema:
+                type: string
+                format: uri-reference
+          content:
+            application/json:
+              schema:
+                $ref: ./components/Widget.yaml
+        '400':
+          description: The body is malformed.
+  /sessions/{sessionId}/widgets/{widgetId}:
+    parameters:
+      - $ref: ./components/SessionId.yaml
+      - name: widgetId
+        in: path
+        required: true
+        schema:
+          type: integer
+          minimum: 1
+    delete:
+      operationId: deleteWidget
+      responses:
+        '204':
+          description: The widget was deleted.
+        '404':
+          description: No widget has the identifier.
+  /sessions/{sessionId}/files/{fileId}:
+    parameters:
+      - $ref: ./components/SessionId.yaml
+      - name: fileId
+        in: path
+        required: true
+        schema:
+          type: string
+    get:
+      operationId: downloadFile
+      responses:
+        '200':
+          description: The file's bytes, in the media type it was stored with.
+          content:
+            '*/*': {}
+  /sessions/{sessionId}/bot-api/bot{token}/getMe:
+    parameters:
+      - $ref: ./components/SessionId.yaml
+      - $ref: ./components/BotToken.yaml
+    post:
+      operationId: getMe
+      responses:
+        '200':
+          description: The bot.
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                  - ok
+                properties:
+                  ok:
+                    const: true
+        '429':
+          description: The call was rate limited.
+          headers:
+            Retry-After:
+              required: true
+              schema:
+                type: integer
+                minimum: 1
+          content:
+            application/json:
+              schema:
+                type: object
+  /sessions/{sessionId}/bot-api/bot{token}/banChatMember:
+    parameters:
+      - $ref: ./components/SessionId.yaml
+      - $ref: ./components/BotToken.yaml
+    post:
+      operationId: banChatMember
+      responses:
+        '200':
+          description: The member was banned.
+          content:
+            application/json:
+              schema:
+                type: object
+  /sessions/{sessionId}/bot-api/bot{token}/{method}:
+    parameters:
+      - $ref: ./components/SessionId.yaml
+      - $ref: ./components/BotToken.yaml
+      - name: method
+        in: path
+        required: true
+        schema:
+          type: string

@@ -3,9 +3,8 @@ import { GrammyError } from 'https://cdn.jsdelivr.net/gh/grammyjs/grammY@^1.46.0
 import { InputFile } from 'https://cdn.jsdelivr.net/gh/grammyjs/grammY@^1.46.0/src/types.ts';
 import { run } from '@grammyjs/runner/runner.ts';
 
-import { createEmulationApi } from '../src/api/mod.ts';
-import { createSessionLifecycleService } from '../src/composition/session_lifecycle.ts';
 import { TelegramEmulationClient } from '../clients/typescript/mod.ts';
+import { createTestApi } from './support/emulation_api.ts';
 
 /** A 2×1 GIF, small enough to spell out and an image the emulator reads dimensions from. */
 const RECEIPT_IMAGE = new Uint8Array([0x47, 0x49, 0x46, 0x38, 0x39, 0x61, 2, 0, 1, 0, 0, 0, 0]);
@@ -108,10 +107,7 @@ Deno.test('the walkthrough photo step reads the delayed bot reply, not the uploa
 
 async function createFixture() {
   const publicOrigin = 'http://emulator.example:9000';
-  const api = createEmulationApi({
-    sessionLifecycle: createSessionLifecycleService(),
-    publicOrigin,
-  });
+  const api = createTestApi(publicOrigin);
   const fetch = createInProcessFetch(api.fetch);
   const session = await new TelegramEmulationClient(publicOrigin, { fetch }).createSession();
   const createdBot = await session.createBot({

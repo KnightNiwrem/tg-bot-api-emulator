@@ -5,6 +5,7 @@
 import { createEmulationApi } from '../../src/api/mod.ts';
 import { createSessionLifecycleService } from '../../src/composition/session_lifecycle.ts';
 import type { UploadProfile } from '../../src/types/upload_profile.ts';
+import { withOpenApiConformanceCheck } from './openapi_conformance/conformance_middleware.ts';
 
 /** An in-process emulation API that tests send requests to without a network. */
 export type EmulationApi = ReturnType<typeof createEmulationApi>;
@@ -17,12 +18,17 @@ export interface SessionSettings {
   readonly upload_profile?: UploadProfile;
 }
 
-/** Creates an in-process emulation API with its own, empty set of sessions. */
-export function createTestApi(): EmulationApi {
-  return createEmulationApi({
-    sessionLifecycle: createSessionLifecycleService(),
-    publicOrigin: TEST_PUBLIC_ORIGIN,
-  });
+/**
+ * Creates an in-process emulation API with its own, empty set of sessions, naming `publicOrigin`
+ * in the absolute URLs it returns.
+ *
+ * Every response it gives is checked against `openapi/openapi.yaml`: one that departs from it
+ * rejects the request with an `OpenApiConformanceError` instead of reaching the test.
+ */
+export function createTestApi(publicOrigin: string = TEST_PUBLIC_ORIGIN): EmulationApi {
+  return withOpenApiConformanceCheck(
+    createEmulationApi({ sessionLifecycle: createSessionLifecycleService(), publicOrigin }),
+  );
 }
 
 /**
