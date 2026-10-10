@@ -150,11 +150,7 @@ interface BotWebhookServiceDependencies {
 
 /** How an attempt to deliver an update to a webhook ended. */
 type UpdateDeliveryOutcome =
-  | {
-    readonly outcome: 'accepted';
-    /** The webhook's complete response, which may name a Bot API method to run. */
-    readonly reply: Response;
-  }
+  | { readonly outcome: 'accepted' }
   | {
     readonly outcome: 'failed';
     readonly failure: WebhookAttemptFailure;
@@ -441,6 +437,14 @@ export class BotWebhookService {
         outcome = await this.#sendUpdate(botId, webhook, update, {
           attempt,
           deliverySignal: signal,
+          acceptUpdate: (reply) => {
+            // The reply's work is under way before the confirmation is published, so no reader
+            // sees the update confirmed while the method its webhook named has not started.
+            this.#startWebhookReply(botId, reply);
+            this.#pendingUpdates.confirmPendingUpdate(botId, update.update_id);
+            attempt.accept();
+            this.#updateActivity.recordWebhookUpdateConfirmation(botId, update, attempt.id);
+          },
         });
       } finally {
         releaseConnection();
@@ -450,12 +454,6 @@ export class BotWebhookService {
         return;
       }
       if (outcome.outcome === 'accepted') {
-        // The reply's work is under way before the confirmation is published, so no reader sees
-        // the update confirmed while the method its webhook named has not started.
-        this.#startWebhookReply(botId, outcome.reply);
-        this.#pendingUpdates.confirmPendingUpdate(botId, update.update_id);
-        attempt.accept();
-        this.#updateActivity.recordWebhookUpdateConfirmation(botId, update, attempt.id);
         continue;
       }
 
@@ -493,7 +491,9 @@ export class BotWebhookService {
    *
    * As on Telegram, the webhook answers only once its whole response has arrived, so a response
    * whose body fails or does not arrive in time fails the attempt, whatever its status. A complete
-   * successful response accepts the update; the method it may name runs apart from the delivery.
+   * successful response accepts the update through `acceptUpdate`, called with the response in the
+   * same step as its body arrives, so that nothing done to the webhook meanwhile can overturn the
+   * acceptance or have another delivery send the update again.
    *
    * A sender that ignores the attempt's signal cannot hold the attempt: its late response is
    * disposed of, and its late failure observed and ignored.
@@ -504,9 +504,10 @@ export class BotWebhookService {
     botId: number,
     webhook: BotWebhook,
     update: BotApiUpdate,
-    { attempt, deliverySignal }: {
+    { attempt, deliverySignal, acceptUpdate }: {
       readonly attempt: WebhookAttemptHandle;
       readonly deliverySignal: AbortSignal;
+      readonly acceptUpdate: (reply: Response) => void;
     },
   ): Promise<UpdateDeliveryOutcome> {
     const attemptSignal = AbortSignal.any([deliverySignal, attempt.deadlineSignal]);
@@ -515,7 +516,7 @@ export class BotWebhookService {
     const responseArrival = await settleUnlessAborted(
       this.#sendWebhookRequest(request),
       attemptSignal,
-      disposeResponse,
+      { disposeLateValue: disposeResponse },
     );
     if (responseArrival.settlement !== 'fulfilled') {
       // Telegram reports other failures to connect without their cause.
@@ -525,15 +526,24 @@ export class BotWebhookService {
       });
     }
     const response = responseArrival.value;
-    const bodyArrival = await settleUnlessAborted(response.arrayBuffer(), attemptSignal);
+    const { status, statusText, headers } = response;
+    const isSuccessful = status >= 200 && status <= 299;
+    const bodyArrival = await settleUnlessAborted(response.arrayBuffer(), attemptSignal, {
+      onFulfilledFirst: (body) => {
+        if (isSuccessful) {
+          acceptUpdate(
+            new Response(body.byteLength === 0 ? null : body, { status, statusText, headers }),
+          );
+        }
+      },
+    });
     if (bodyArrival.settlement !== 'fulfilled') {
       // Telegram reports a response cut short by its connection closing without a description.
       return describeUnfinishedAttempt(bodyArrival, deliverySignal, {
         reason: 'response_interrupted',
       });
     }
-    const body = bodyArrival.value;
-    if (response.status < 200 || response.status > 299) {
+    if (!isSuccessful) {
       return {
         outcome: 'failed',
         failure: {
@@ -545,12 +555,7 @@ export class BotWebhookService {
         retryAfterSeconds: readRetryAfterSeconds(response),
       };
     }
-
-    const { status, statusText, headers } = response;
-    return {
-      outcome: 'accepted',
-      reply: new Response(body.byteLength === 0 ? null : body, { status, statusText, headers }),
-    };
+    return { outcome: 'accepted' };
   }
 }
 
@@ -714,14 +719,18 @@ type AttemptStepSettlement<T> =
 
 /**
  * Settles as `promise` does, unless `signal` aborts first. Whichever happens first decides the
- * settlement, at that moment, so a later abort cannot overturn a value that already arrived. The
- * promise may keep running: a value it yields after the abort is passed to `disposeLateValue`, and a
- * later failure is observed and ignored.
+ * settlement, at that moment: a value that arrives first is passed to `onFulfilledFirst` in the
+ * same step, before anything else can run, so a later abort cannot overturn what the caller did
+ * with it. The promise may keep running: a value it yields after the abort is passed to
+ * `disposeLateValue`, and a later failure is observed and ignored.
  */
 function settleUnlessAborted<T>(
   promise: Promise<T>,
   signal: AbortSignal,
-  disposeLateValue: (value: T) => void = () => {},
+  { onFulfilledFirst = () => {}, disposeLateValue = () => {} }: {
+    readonly onFulfilledFirst?: (value: T) => void;
+    readonly disposeLateValue?: (value: T) => void;
+  } = {},
 ): Promise<AttemptStepSettlement<T>> {
   return new Promise((resolve) => {
     let isSettled = false;
@@ -737,6 +746,7 @@ function settleUnlessAborted<T>(
           disposeLateValue(value);
         } else {
           settle({ settlement: 'fulfilled', value });
+          onFulfilledFirst(value);
         }
       },
       () => {

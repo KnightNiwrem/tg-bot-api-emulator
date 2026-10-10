@@ -206,6 +206,47 @@ for (const stage of Object.keys(EXPECTED_OUTCOMES) as AnswerStage[]) {
   }
 }
 
+Deno.test('a replacement right after the complete response arrives does not send the update again', async () => {
+  const completeBody = Promise.withResolvers<ArrayBuffer>();
+  /** A response whose body the test completes. */
+  class ControlledBodyResponse extends Response {
+    override arrayBuffer(): Promise<ArrayBuffer> {
+      return completeBody.promise;
+    }
+  }
+  const fixture = createAcceptanceFixture((request) =>
+    request.url === REPLACEMENT_WEBHOOK_URL ? new Response(null) : new ControlledBodyResponse(null)
+  );
+  const { botId, botUpdates, botWebhooks, webhookAttempts } = fixture;
+
+  try {
+    botUpdates.enqueueMessageUpdate(botId, createPrivateMessage(1));
+    botWebhooks.setWebhook(botId, webhookRequest());
+    await fixture.waitForRequestCount(1);
+    await new Promise((resolve) => setTimeout(resolve, 0));
+
+    completeBody.resolve(new ArrayBuffer(0));
+    // The emulator sees the complete body in the first microtask; the replacement comes next,
+    // before the delivery has done anything else.
+    await Promise.resolve();
+    botWebhooks.setWebhook(botId, { ...webhookRequest(), url: REPLACEMENT_WEBHOOK_URL });
+    await waitUntil(() => listAttempts(webhookAttempts, botId)[0].status !== 'in_flight');
+    await new Promise((resolve) => setTimeout(resolve, 0));
+
+    assertJson(
+      [
+        listAttempts(webhookAttempts, botId).map(describeAttemptState),
+        fixture.receivedRequests.map(({ url }) => url === REPLACEMENT_WEBHOOK_URL),
+        botWebhooks.getWebhookInfo(botId).pending_update_count,
+      ],
+      [['accepted'], [false], 0],
+      'Expected the complete response to accept the update before the replacement could cancel it',
+    );
+  } finally {
+    botWebhooks.endDelivery();
+  }
+});
+
 Deno.test('a response that arrives after its attempt was cancelled is disposed of', async () => {
   const lateResponse = Promise.withResolvers<Response>();
   const bodyCancellation = Promise.withResolvers<void>();
