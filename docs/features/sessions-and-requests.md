@@ -82,8 +82,9 @@ with `404` and `route_not_found`.
 
 Input that breaks an operation's contract is answered with `400`, the reason `invalid_request`, and
 an `issues` list. Each issue names the part of the request it is in (`body`, `path` or `query`),
-where it is, as field names and list indexes from that part's root or the parameter's name, a stable
-`code`, and a `message` for a person:
+where it is, as field names and list indexes from that part's root or the parameter's name, followed
+by the member names and list indexes within a query parameter whose value is JSON, such as
+`parameters_json`, a stable `code`, and a `message` for a person:
 
 ```json
 {
@@ -99,13 +100,14 @@ where it is, as field names and list indexes from that part's root or the parame
 }
 ```
 
-The codes are `invalid_json` for a body that is not JSON, `invalid_type`, `too_small`, `too_big`,
-`invalid_format` and `invalid_value` for a value that is missing or not as the operation describes
-it, `unknown_field` for a field or query parameter it does not take, `duplicate_field` for a
-repeated query parameter, and `no_matching_variant` for a value that matches none of the forms it
-may take. When exactly one form accepts a value's type and every field it has, that form's issues
-are listed instead, so that a text message with a number as its `text` reports its `text`. A message
-never repeats an input value, and its wording is not part of the contract.
+The codes are `invalid_json` for a body or JSON query parameter that is not JSON, `invalid_type`,
+`too_small`, `too_big`, `invalid_format` and `invalid_value` for a value that is missing or not as
+the operation describes it, `unknown_field` for a field or query parameter it does not take,
+`duplicate_field` for a repeated query parameter or a member a JSON query parameter's object names
+twice, and `no_matching_variant` for a value that matches none of the forms it may take. When
+exactly one form accepts a value's type and every field it has, that form's issues are listed
+instead, so that a text message with a number as its `text` reports its `text`. A message never
+repeats an input value, and its wording is not part of the contract.
 
 The emulator keeps rejecting what is malformed; the error bodies explain a rejection without
 relaxing it. The [OpenAPI description](../../openapi/openapi.yaml) lists the reasons each status of

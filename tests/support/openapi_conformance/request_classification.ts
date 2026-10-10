@@ -100,6 +100,8 @@ function findQueryViolations(
       }
     } else if (value.kind === 'repeated') {
       violations.push(`the query parameter ${parameter.name} is repeated`);
+    } else if (value.kind === 'undecodable') {
+      violations.push(`the query parameter ${parameter.name} ${value.reason}`);
     } else {
       violations.push(...findParameterValueViolations(parameter, value.value, schemas));
     }
@@ -110,6 +112,8 @@ function findQueryViolations(
 type QueryParameterValue =
   | { readonly kind: 'absent' }
   | { readonly kind: 'repeated' }
+  /** A value that is not text of the media type the document describes it by. */
+  | { readonly kind: 'undecodable'; readonly reason: string }
   | { readonly kind: 'present'; readonly value: unknown };
 
 function queryParameterValue(
@@ -128,7 +132,19 @@ function queryParameterValue(
   if (values === undefined) return { kind: 'absent' };
   // The document has no array-valued query parameter, so a repeated one is always a mistake.
   if (values.length > 1) return { kind: 'repeated' };
+  if (parameter.contentMediaType !== undefined) {
+    return decodeContentParameterValue(values[0], parameter.contentMediaType);
+  }
   return { kind: 'present', value: coerceTextValue(values[0], parameter.schema, schemaFiles) };
+}
+
+/** Reads a parameter's text as the media type the document describes the parameter by. */
+function decodeContentParameterValue(text: string, mediaType: string): QueryParameterValue {
+  if (!isJsonMediaType(mediaType)) return { kind: 'present', value: text };
+  const parsedText = parseJsonBody(new TextEncoder().encode(text));
+  return parsedText.parsed
+    ? { kind: 'present', value: parsedText.value }
+    : { kind: 'undecodable', reason: `is not JSON: ${parsedText.reason}` };
 }
 
 function findParameterValueViolations(

@@ -63,12 +63,55 @@ Entries are kept until the session ends.
 
 `GET /sessions/{sessionId}/bot-activity` answers with the earliest entries after `after`, and before
 `before` if given, that match every filter given, with `head_position`, the latest position. The
-filters are `bot_id`, `kind`, `method`, `chat_id`, `user_id`, `update_id`, `ok` and `parameters`,
-which matches parameter text exactly, as in `parameters[callback_query_id]=123`. A method matches
-without regard to case, and an older name finds its calls too. Filters that only calls have,
-`method`, `ok` and `parameters`, match no update entry, and filters that only updates have,
-`user_id` and `update_id`, match no call. Each bot numbers its updates independently, so an
-`update_id` names one update only together with `bot_id`.
+filters are `bot_id`, `kind`, `method`, `chat_id`, `user_id`, `update_id`, `ok`, `parameters` and
+`parameters_json`. A method matches without regard to case, and an older name finds its calls too.
+Filters that only calls have, `method`, `ok`, `parameters` and `parameters_json`, match no update
+entry, and filters that only updates have, `user_id` and `update_id`, match no call. Each bot
+numbers its updates independently, so an `update_id` names one update only together with `bot_id`.
+
+### Matching parameters
+
+A call's parameters are recorded as the text the bot sent, as Telegram reads every parameter as
+text. A JSON body's string is recorded as it is, and any other JSON value as its JSON text.
+
+`parameters[name]=text` compares that text exactly, as in `parameters[callback_query_id]=123`. Text
+that happens to be JSON is still compared as text, so
+`parameters[reply_parameters]={"message_id":5}` finds only calls that sent exactly those characters,
+not those that ordered the members differently, spaced them, or sent another member as well.
+
+`parameters_json` compares JSON by its structure. Its value is one URL-encoded JSON object holding a
+pattern for each parameter it names, such as
+`parameters_json={"reply_parameters":{"message_id":5}}`. Each pattern must be a JSON object or
+array, the shapes of the parameters Telegram reads as JSON, such as `reply_parameters`,
+`reply_markup` or `entities`. A call matches when it sent every named parameter, the parameter's
+text is JSON nested at most 100 levels, and that JSON matches the pattern:
+
+- a string, number or boolean matches the same value of the same type, so `5` matches neither `"5"`
+  nor `true`
+- numbers compare by the exact decimal value their text spells, not as the nearest floating-point
+  number: `1` matches `1.0` and `1e0`, and `-0` matches `0`, but `9007199254740993` does not match
+  `9007199254740992`, `0.30000000000000001` does not match `0.3`, and `1e400` does not match
+  `1e500`, though JavaScript reads each of those pairs as one number
+- `null` matches only `null`, not a missing member
+- an object matches an object that has every member the pattern names, each with a matching value;
+  other members and member order do not matter, so no pattern can require a member to be missing
+- an array matches an array of the same length whose elements match the pattern's elements in order;
+  the objects in it may have members the pattern does not name
+
+So `{"reply_markup":{"inline_keyboard":[[{"text":"Yes"},{"text":"No"}]]}}` finds a keyboard of one
+row with those two buttons, whatever their callback data. A parameter sent as a JSON body's object
+matches just as one sent as form text holding the same JSON. The emulator records such an object as
+it writes it again after reading it, so a number in it that JavaScript cannot hold exactly is
+recorded as JavaScript holds it: `9007199254740993` as `9007199254740992`, and `1e500` as `null`.
+Form text, and a JSON body's string, are recorded exactly. Only the parameters `parameters_json`
+names are read as JSON, and both filters can be given together.
+
+A `parameters_json` value that is not JSON is an `invalid_json` issue, one that nests objects and
+arrays more than 100 levels deep, its own object included, is a `too_big` issue, one that is not an
+object, or has a pattern that is not an object or array, is an `invalid_type` issue, and a member
+that an object in it names twice is a `duplicate_field` issue. No Bot API parameter's JSON nests
+nearly as deep as the limit allows. Each issue's path continues into the JSON, as in
+`["parameters_json", "reply_markup", "inline_keyboard"]`.
 
 A read without `before` that finds nothing is held for up to `wait_ms` milliseconds, at most 10
 minutes, until a matching entry is recorded or the session ends. A read with `before` covers a range
@@ -81,16 +124,24 @@ parameter.
 
 `session.botActivity(filter?, options?)` returns a view of the log. The view's filter applies to
 every read in addition to the read's own filter. Filters use the entries' field names, such as
-`bot_id` and `chat_id`. An empty `parameters` map matches only calls, like any criteria only calls
-have; as it puts nothing in the query, the client sends `kind=bot_api_call` for it. A view and a
-read whose criteria together can match no entry are rejected with a `TypeError`: different values
-for one criterion, or a call's criteria or `kind` together with an update's. Methods differ only
-when the server would read them differently, ignoring case and resolving older names, so a view of
-`kickChatMember` accepts a read of `banChatMember` and finds its calls. A `where` predicate checks
-the entries that match the other criteria, on the client, and receives only the kinds of entry those
-criteria can match: a `BotApiCallEntry` when they name a `method`, an `UpdateDeliveredEntry` when
-they name that `kind`. A list of different filters needs a declared type, such as
-`BotActivityCriteria[]`, as TypeScript infers the narrowed type from a single filter only.
+`bot_id` and `chat_id`. `parameters` takes the exact text of each parameter, and `parameters_json`
+the patterns for parameters that hold JSON, as plain values, such as
+`{ parameters_json: { reply_parameters: { message_id: command.message_id } } }`; the client sends
+them as one JSON query parameter. It writes that JSON itself from the values it checks, reading each
+once, and refuses with a `TypeError` a pattern that JSON cannot carry unchanged: one holding
+`undefined`, `NaN`, a `Date` or another class's object, or an object or array with a `toJSON`
+property or a getter, whose code would decide what `JSON.stringify` sends. An empty `parameters` or
+`parameters_json` map matches only calls, like any criteria only calls have; as an empty
+`parameters` map puts nothing in the query, the client sends `kind=bot_api_call` for it. A view and
+a read whose criteria together can match no entry are rejected with a `TypeError`: different values
+for one criterion, or a call's criteria or `kind` together with an update's. Patterns for one
+parameter differ when they differ other than in member order. Methods differ only when the server
+would read them differently, ignoring case and resolving older names, so a view of `kickChatMember`
+accepts a read of `banChatMember` and finds its calls. A `where` predicate checks the entries that
+match the other criteria, on the client, and receives only the kinds of entry those criteria can
+match: a `BotApiCallEntry` when they name a `method`, an `UpdateDeliveredEntry` when they name that
+`kind`. A list of different filters needs a declared type, such as `BotActivityCriteria[]`, as
+TypeScript infers the narrowed type from a single filter only.
 
 - `position()` returns the head position.
 - `waitFor(filter, { after })` returns the first matching entry after a position. It holds one

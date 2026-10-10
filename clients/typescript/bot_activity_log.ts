@@ -1,6 +1,7 @@
 import { toCurrentBotApiMethodName } from './bot_api_method_name.ts';
 import { BOT_ACTIVITY_KINDS } from './constants.ts';
 import { EmulationClientError } from './emulation_client_error.ts';
+import { type CheckedJsonPattern, checkJsonPattern } from './json_pattern.ts';
 import type {
   BotActivityCriteria,
   BotActivityCursor,
@@ -13,6 +14,7 @@ import type {
   BotActivityLogOptions,
   BotActivityPosition,
   BotActivityRange,
+  JsonStructure,
   WaitForBotActivityOptions,
 } from './types.ts';
 
@@ -563,6 +565,10 @@ function combineFilters(
   readFilter: BotActivityFilter,
 ): BotActivityFilter {
   const parameters = combineParameters(logFilter.parameters, readFilter.parameters);
+  const parameterPatterns = combineParameterPatterns(
+    logFilter.parameters_json,
+    readFilter.parameters_json,
+  );
   const predicates = wherePredicates(logFilter, readFilter);
   const combinedFilter: BotActivityFilter = {
     bot_id: combineCriterion('bot_id', logFilter.bot_id, readFilter.bot_id),
@@ -579,6 +585,7 @@ function combineFilters(
     update_id: combineCriterion('update_id', logFilter.update_id, readFilter.update_id),
     ok: combineCriterion('ok', logFilter.ok, readFilter.ok),
     ...(parameters === undefined ? {} : { parameters }),
+    ...(parameterPatterns === undefined ? {} : { parameters_json: parameterPatterns }),
     ...(predicates.length === 0
       ? {}
       : { where: (entry: BotActivityEntry) => predicates.every((where) => where(entry)) }),
@@ -619,6 +626,56 @@ function combineParameters(
     parameters.set(name, text);
   }
   return Object.fromEntries(parameters);
+}
+
+/**
+ * Combines parameter patterns into copies of the values checked, which `checkJsonPattern`
+ * describes, so that later reads, and the text a read sends, see only what was checked. Patterns
+ * for one parameter differ only when they differ other than in member order. An empty map is
+ * kept, as it is for `combineParameters`.
+ */
+function combineParameterPatterns(
+  logPatterns: Readonly<Record<string, JsonStructure>> | undefined,
+  readPatterns: Readonly<Record<string, JsonStructure>> | undefined,
+): Readonly<Record<string, JsonStructure>> | undefined {
+  if (logPatterns === undefined && readPatterns === undefined) {
+    return undefined;
+  }
+  const patterns = checkParameterPatterns(logPatterns, 'log');
+  for (const [name, readPattern] of checkParameterPatterns(readPatterns, 'read')) {
+    const logPattern = patterns.get(name);
+    if (logPattern !== undefined && logPattern.text !== readPattern.text) {
+      throw new TypeError(
+        `The read's pattern for parameter ${name} ${readPattern.text} conflicts with the log's ` +
+          logPattern.text,
+      );
+    }
+    patterns.set(name, readPattern);
+  }
+  return Object.fromEntries([...patterns].map(([name, { value }]) => [name, value]));
+}
+
+/** Checks the patterns of the log's filter or a read's, by parameter name. */
+function checkParameterPatterns(
+  patterns: Readonly<Record<string, JsonStructure>> | undefined,
+  filterName: 'log' | 'read',
+): Map<string, CheckedJsonPattern> {
+  if (patterns === undefined) {
+    return new Map();
+  }
+  const { value: checkedPatterns } = checkJsonPattern(
+    patterns,
+    `The ${filterName}'s parameters_json`,
+  );
+  if (Array.isArray(checkedPatterns)) {
+    throw new TypeError(`The ${filterName}'s parameters_json must be an object, not an array`);
+  }
+  return new Map(
+    Object.entries(checkedPatterns).map(([name, pattern]) => [
+      name,
+      checkJsonPattern(pattern, `The ${filterName}'s pattern for parameter ${name}`),
+    ]),
+  );
 }
 
 function combineCriterion<Value>(
@@ -686,12 +743,12 @@ function isEntryMatching(entry: BotActivityEntry, criteria: BotActivityCriteria)
 
 /**
  * The kinds of entry criteria can match: the kind they name, if any, narrowed by the criteria
- * that only calls have, `method`, `ok` and `parameters`, even an empty map, and those that only
- * updates have, `user_id` and `update_id`.
+ * that only calls have, `method`, `ok`, `parameters` and `parameters_json`, even an empty map, and
+ * those that only updates have, `user_id` and `update_id`.
  */
 export function kindsMatchableBy(criteria: BotActivityCriteria): readonly BotActivityKind[] {
   const hasCallCriteria = criteria.method !== undefined || criteria.ok !== undefined ||
-    criteria.parameters !== undefined;
+    criteria.parameters !== undefined || criteria.parameters_json !== undefined;
   const hasUpdateCriteria = criteria.user_id !== undefined || criteria.update_id !== undefined;
   return BOT_ACTIVITY_KINDS.filter((kind) =>
     (criteria.kind === undefined || kind === criteria.kind) &&

@@ -26,6 +26,17 @@ paths:
             type: object
             additionalProperties:
               type: string
+        - name: shape
+          in: query
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                  - sides
+                properties:
+                  sides:
+                    type: integer
       responses:
         '200':
           description: The widgets.

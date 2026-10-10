@@ -61,7 +61,7 @@ Deno.test('the bot greets an account that sends /start', async () => {
           method: 'sendMessage',
           chat_id: account.id,
           ok: true,
-          parameters: { reply_parameters: JSON.stringify({ message_id: command.message_id }) },
+          parameters_json: { reply_parameters: { message_id: command.message_id } },
         },
         { after: beforeStart },
       );

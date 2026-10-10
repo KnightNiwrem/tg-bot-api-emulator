@@ -24,6 +24,11 @@ export interface DocumentedParameter {
   readonly required: boolean;
   /** The serialization style, defaulted as OpenAPI defaults it for the parameter's location. */
   readonly style: string;
+  /**
+   * The media type the value is text of, such as `application/json`, when the document describes
+   * the parameter by `content` rather than by a schema; `schema` is then that media type's.
+   */
+  readonly contentMediaType: string | undefined;
   readonly schema: JsonSchema | undefined;
 }
 
@@ -87,6 +92,7 @@ const parameterSchema = z.looseObject({
   required: z.boolean().optional(),
   style: z.string().optional(),
   schema: z.unknown().optional(),
+  content: z.record(z.string(), z.looseObject({ schema: z.unknown().optional() })).optional(),
 });
 
 const mediaTypesSchema = z.record(z.string(), z.looseObject({ schema: z.unknown().optional() }));
@@ -218,12 +224,25 @@ function readParameters(
   return (parameterNodes ?? []).map((parameterNode) => {
     const located = reader.dereference({ value: parameterNode, fileUrl });
     const parameter = parseAt(parameterSchema, located.value, `${location} parameter`);
+    const parameterLocation = `${location} ${parameter.name}`;
+    const content = Object.entries(parameter.content ?? {});
+    if (content.length > 1 || (content.length === 1 && parameter.schema !== undefined)) {
+      throw new Error(
+        `${parameterLocation}: a parameter is described by a schema or one media type, not both`,
+      );
+    }
+    const [contentMediaType, contentMediaTypeObject] = content[0] ?? [];
     return {
       name: parameter.name,
       location: parameter.in,
       required: parameter.required ?? false,
       style: parameter.style ?? DEFAULT_PARAMETER_STYLES[parameter.in],
-      schema: reader.readSchema(parameter.schema, located.fileUrl, `${location} ${parameter.name}`),
+      contentMediaType: contentMediaType?.toLowerCase(),
+      schema: reader.readSchema(
+        contentMediaTypeObject?.schema ?? parameter.schema,
+        located.fileUrl,
+        parameterLocation,
+      ),
     };
   });
 }

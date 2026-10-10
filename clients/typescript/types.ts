@@ -2859,10 +2859,45 @@ export interface BotActivityCriteria {
   readonly ok?: boolean;
   /**
    * Parameter text the call must have sent, by parameter name, compared exactly. An empty map
-   * still matches only calls.
+   * still matches only calls. Text that happens to be JSON is compared as text; use
+   * `parameters_json` to compare JSON by its structure.
    */
   readonly parameters?: Readonly<Record<string, string>>;
+  /**
+   * Patterns, by parameter name, that the JSON the call sent in each parameter must match, such
+   * as `{ reply_parameters: { message_id } }`. A parameter whose text is not JSON matches no
+   * pattern. Within a pattern:
+   *
+   * - a string, number or boolean matches the same value of the same type, so `5` matches neither
+   *   `'5'` nor `true`. The emulator compares numbers by the exact decimal value their JSON text
+   *   spells, and the client writes a number as `JSON.stringify` does, the shortest spelling that
+   *   reads back as the same JavaScript number, so `0.1` is sent as `0.1` and matches `0.10`. An
+   *   integer beyond `Number.MAX_SAFE_INTEGER` cannot be written exactly from JavaScript, so match
+   *   such a parameter by its text in `parameters`;
+   * - `null` matches only `null`, not a missing member;
+   * - an object matches an object that has every member the pattern names, with a matching value,
+   *   whatever other members it has and in whatever order, so no pattern requires a member to be
+   *   missing;
+   * - an array matches an array of the same length whose elements match the pattern's, in order.
+   *
+   * An empty map still matches only calls. A read refuses with a `TypeError` patterns that JSON
+   * cannot carry unchanged, such as a `Date`, `NaN`, or an object with a `toJSON` method or a
+   * getter.
+   */
+  readonly parameters_json?: Readonly<Record<string, JsonStructure>>;
 }
+
+/** A value JSON text can hold. */
+export type JsonValue =
+  | null
+  | boolean
+  | number
+  | string
+  | readonly JsonValue[]
+  | { readonly [member: string]: JsonValue };
+
+/** A JSON object or array: the values a Bot API parameter holds as JSON text. */
+export type JsonStructure = readonly JsonValue[] | { readonly [member: string]: JsonValue };
 
 /** Criteria, and a predicate the client checks on the entries that satisfy them. */
 export interface BotActivityFilter<Entry extends BotActivityEntry = BotActivityEntry>
@@ -2889,7 +2924,8 @@ export type BotActivityEntryMatching<Criteria extends BotActivityCriteria> = Cri
   : Criteria extends
     | { readonly method: string }
     | { readonly ok: boolean }
-    | { readonly parameters: Readonly<Record<string, string>> } ? BotApiCallEntry
+    | { readonly parameters: Readonly<Record<string, string>> }
+    | { readonly parameters_json: Readonly<Record<string, JsonStructure>> } ? BotApiCallEntry
   : Criteria extends { readonly user_id: number } | { readonly update_id: number }
     ? UpdateDeliveredEntry | UpdateConfirmedEntry | WebhookAttemptFailedEntry
   : BotActivityEntry;
@@ -2977,19 +3013,21 @@ export type HttpMethod = 'DELETE' | 'GET' | 'PATCH' | 'POST' | 'PUT';
 export type ControlRequestIssueSource = typeof CONTROL_REQUEST_ISSUE_SOURCES[number];
 
 /**
- * What is wrong with one input value of a control request: a body that is not JSON
- * (`invalid_json`), a value that is missing or of the wrong type (`invalid_type`), outside its
- * bounds (`too_small`, `too_big`), not of the required form (`invalid_format`), or not allowed
+ * What is wrong with one input value of a control request: a body or JSON query parameter that is
+ * not JSON (`invalid_json`), a value that is missing or of the wrong type (`invalid_type`), outside
+ * its bounds (`too_small`, `too_big`), not of the required form (`invalid_format`), or not allowed
  * (`invalid_value`), a field or query parameter the operation does not take (`unknown_field`), a
- * repeated query parameter (`duplicate_field`), or a value that matches none of the forms it may
- * take (`no_matching_variant`).
+ * repeated query parameter or a member a JSON query parameter's object names twice
+ * (`duplicate_field`), or a value that matches none of the forms it may take
+ * (`no_matching_variant`).
  */
 export type ControlRequestIssueCode = typeof CONTROL_REQUEST_ISSUE_CODES[number];
 
 /**
  * One problem with a control request's input: the part of the request it is in, the field names
- * and list indexes that lead to it from that part's root (a path or query parameter's name), its
- * stable code, and an explanation for a person, which never repeats an input value.
+ * and list indexes that lead to it from that part's root (a path or query parameter's name,
+ * followed by the members and indexes within a query parameter that holds JSON), its stable code,
+ * and an explanation for a person, which never repeats an input value.
  */
 export interface ControlRequestIssue {
   readonly source: ControlRequestIssueSource;

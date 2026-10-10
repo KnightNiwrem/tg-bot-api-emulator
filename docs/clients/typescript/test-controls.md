@@ -60,10 +60,8 @@ Deno.test('the bot retries a reply that Telegram rate-limited', async () => {
     const reply = {
       method: 'sendMessage',
       chat_id: account.id,
-      parameters: {
-        text: 'Hello!',
-        reply_parameters: JSON.stringify({ message_id: trigger.message_id }),
-      },
+      parameters: { text: 'Hello!' },
+      parameters_json: { reply_parameters: { message_id: trigger.message_id } },
     } as const;
     const limited = await activity.waitFor({ ...reply, ok: false }, { after: beforeStart });
     assert(!limited.answer.ok);
@@ -301,10 +299,8 @@ Deno.test('the bot sends a photo by URL from the emulated web', async () => {
         method: 'sendPhoto',
         chat_id: account.id,
         ok: true,
-        parameters: {
-          photo: LOGO_URL,
-          reply_parameters: JSON.stringify({ message_id: trigger.message_id }),
-        },
+        parameters: { photo: LOGO_URL },
+        parameters_json: { reply_parameters: { message_id: trigger.message_id } },
       },
       { after: beforeCommand },
     );
@@ -346,14 +342,14 @@ Deno.test('a URL without a registered resource is unreachable', async () => {
   }, async ({ account, privateChat, activity }) => {
     const beforeCommand = await activity.position();
     const trigger = await account.sendMessage({ to: privateChat, text: '/logo' });
-    const replyParameters = JSON.stringify({ message_id: trigger.message_id });
+    const repliesToTrigger = { reply_parameters: { message_id: trigger.message_id } };
 
     const failed = await activity.waitFor(
       {
         method: 'sendPhoto',
         chat_id: account.id,
         ok: false,
-        parameters: { reply_parameters: replyParameters },
+        parameters_json: repliesToTrigger,
       },
       { after: beforeCommand },
     );
@@ -364,7 +360,8 @@ Deno.test('a URL without a registered resource is unreachable', async () => {
         method: 'sendMessage',
         chat_id: account.id,
         ok: true,
-        parameters: { text: 'The logo is unavailable.', reply_parameters: replyParameters },
+        parameters: { text: 'The logo is unavailable.' },
+        parameters_json: repliesToTrigger,
       },
       { after: failed },
     );
@@ -432,7 +429,7 @@ Deno.test('a bot of a local session uploads a file larger than the cloud allows'
           method: 'sendDocument',
           chat_id: account.id,
           ok: true,
-          parameters: { reply_parameters: JSON.stringify({ message_id: trigger.message_id }) },
+          parameters_json: { reply_parameters: { message_id: trigger.message_id } },
         },
         { after: beforeCommand },
       );

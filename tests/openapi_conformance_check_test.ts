@@ -221,6 +221,12 @@ Deno.test('the conformance check records invalid requests without failing them',
       undefined,
       'the query parameter labels[size] is repeated',
     ],
+    [`${WIDGETS_PATH}?shape={`, undefined, 'the query parameter shape is not JSON'],
+    [
+      `${WIDGETS_PATH}?shape=${encodeURIComponent('{"sides":"3"}')}`,
+      undefined,
+      'the query parameter shape: /sides must be integer',
+    ],
     [WIDGETS_PATH, { method: 'POST' }, 'the required request body is missing'],
     [WIDGETS_PATH, postJson({ name: '' }), 'the request body: /name must NOT have fewer than 1'],
     [
@@ -243,12 +249,16 @@ Deno.test('the conformance check records invalid requests without failing them',
   }
 });
 
-Deno.test('the conformance check reads form and deepObject query parameters by their schemas', async () => {
+Deno.test('the conformance check reads form, deepObject and JSON query parameters by their schemas', async () => {
   const { checkedApi, records } = createCheckedFixtureApi((api) => {
     api.get(WIDGETS_PATH, (context) => context.json([{ name: 'cog' }]));
   });
 
-  await checkedApi.request(`${WIDGETS_PATH}?limit=10&labels[size]=s&labels[colour]=red`);
+  await checkedApi.request(
+    `${WIDGETS_PATH}?limit=10&labels[size]=s&labels[colour]=red&shape=${
+      encodeURIComponent('{"sides":3}')
+    }`,
+  );
 
   const { route } = expectSingleRecord(records);
   if (route.kind !== 'documented' || route.requestClassification.validity !== 'valid') {

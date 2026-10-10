@@ -46,7 +46,7 @@ Deno.test('the bot greets the name the account gives in reply to its question', 
       method: 'sendMessage',
       chat_id: account.id,
       ok: true,
-      parameters: { reply_parameters: JSON.stringify({ message_id: start.message_id }) },
+      parameters_json: { reply_parameters: { message_id: start.message_id } },
     }, { after: beforeStart });
     const question = (await account.getMessages({ chat: privateChat })).find((message) =>
       message.from.id === botProfile.id && message.reply_to_message?.message_id === start.message_id
@@ -65,7 +65,7 @@ Deno.test('the bot greets the name the account gives in reply to its question', 
       method: 'sendMessage',
       chat_id: account.id,
       ok: true,
-      parameters: { reply_parameters: JSON.stringify({ message_id: answer.message_id }) },
+      parameters_json: { reply_parameters: { message_id: answer.message_id } },
     }, { after: beforeAnswer });
     const greeting = (await account.getMessages({ chat: privateChat })).find((message) =>
       message.from.id === botProfile.id &&
@@ -111,7 +111,7 @@ Deno.test('the bot repeats the bold part of a message in bold', () =>
       method: 'sendMessage',
       chat_id: account.id,
       ok: true,
-      parameters: { reply_parameters: JSON.stringify({ message_id: request.message_id }) },
+      parameters_json: { reply_parameters: { message_id: request.message_id } },
     }, { after: beforeSend });
 
     const confirmation = (await account.getMessages({ chat: privateChat })).find((message) =>
@@ -160,10 +160,8 @@ Deno.test('the bot notices when the account edits its message', () =>
       method: 'sendMessage',
       chat_id: account.id,
       ok: true,
-      parameters: {
-        reply_parameters: JSON.stringify({ message_id: original.message_id }),
-        text: 'You changed it to: Hello again! (bold: Hello)',
-      },
+      parameters: { text: 'You changed it to: Hello again! (bold: Hello)' },
+      parameters_json: { reply_parameters: { message_id: original.message_id } },
     }, { after: beforeEdit });
 
     const history = await account.getMessages({ chat: privateChat });
@@ -209,10 +207,8 @@ Deno.test('the bot notices when the account edits a caption', () =>
       method: 'sendMessage',
       chat_id: account.id,
       ok: true,
-      parameters: {
-        reply_parameters: JSON.stringify({ message_id: photo.message_id }),
-        text: 'New caption: Final',
-      },
+      parameters: { text: 'New caption: Final' },
+      parameters_json: { reply_parameters: { message_id: photo.message_id } },
     }, { after: beforeEdit });
   }));
 ```
@@ -246,7 +242,7 @@ Deno.test('deleting a message sends the bot no update', () =>
       method: 'sendMessage',
       chat_id: account.id,
       ok: true,
-      parameters: { reply_parameters: JSON.stringify({ message_id: typo.message_id }) },
+      parameters_json: { reply_parameters: { message_id: typo.message_id } },
     }, { after: beforeTypo });
 
     await account.deleteMessage({ chat: privateChat, message_id: typo.message_id });
@@ -297,7 +293,7 @@ Deno.test('the bot reports progress by editing its status message', () =>
       method: 'sendMessage',
       chat_id: account.id,
       ok: true,
-      parameters: { reply_parameters: JSON.stringify({ message_id: command.message_id }) },
+      parameters_json: { reply_parameters: { message_id: command.message_id } },
     }, { after: beforeCommand });
     assert(statusCall.answer.ok);
     const statusId = (statusCall.answer.result as { message_id: number }).message_id;
@@ -361,7 +357,7 @@ Deno.test('the bot names the origin of forwarded messages', () =>
       method: 'sendMessage',
       chat_id: account.id,
       ok: true,
-      parameters: { reply_parameters: JSON.stringify({ message_id: command.message_id }) },
+      parameters_json: { reply_parameters: { message_id: command.message_id } },
     }, { after: beforeTip });
     const tip = (await account.getMessages({ chat: privateChat })).find((message) =>
       message.from.id === botProfile.id &&
@@ -393,19 +389,15 @@ Deno.test('the bot names the origin of forwarded messages', () =>
       method: 'sendMessage',
       chat_id: account.id,
       ok: true,
-      parameters: {
-        reply_parameters: JSON.stringify({ message_id: forwardedTip.message_id }),
-        text: 'Forwarded from Test Bot',
-      },
+      parameters: { text: 'Forwarded from Test Bot' },
+      parameters_json: { reply_parameters: { message_id: forwardedTip.message_id } },
     }, { after: beforeForwards });
     await activity.waitFor({
       method: 'sendMessage',
       chat_id: account.id,
       ok: true,
-      parameters: {
-        reply_parameters: JSON.stringify({ message_id: forwardedNote.message_id }),
-        text: 'Forwarded from Ada (hidden)',
-      },
+      parameters: { text: 'Forwarded from Ada (hidden)' },
+      parameters_json: { reply_parameters: { message_id: forwardedNote.message_id } },
     }, { after: beforeForwards });
   }));
 ```
@@ -450,10 +442,8 @@ Deno.test('the bot acknowledges a pinned message', () =>
       method: 'sendMessage',
       chat_id: account.id,
       ok: true,
-      parameters: {
-        reply_parameters: JSON.stringify({ message_id: pinService.message_id }),
-        text: 'Pinned: Buy milk',
-      },
+      parameters: { text: 'Pinned: Buy milk' },
+      parameters_json: { reply_parameters: { message_id: pinService.message_id } },
     }, { after: beforePin });
 
     await account.unpinMessage({ chat: privateChat, message_id: reminder.message_id });
@@ -532,7 +522,7 @@ Deno.test('a blocked bot cannot message the account until it is unblocked', () =
       method: 'sendMessage',
       chat_id: account.id,
       ok: true,
-      parameters: { reply_parameters: JSON.stringify({ message_id: start.message_id }) },
+      parameters_json: { reply_parameters: { message_id: start.message_id } },
     }, { after: beforeStart });
 
     const beforeBlock = await activity.position();
@@ -659,7 +649,7 @@ Deno.test('the account sees the bot typing until the action expires', async () =
         method: 'sendMessage',
         chat_id: account.id,
         ok: true,
-        parameters: { reply_parameters: JSON.stringify({ message_id: command.message_id }) },
+        parameters_json: { reply_parameters: { message_id: command.message_id } },
       }, { after: typing });
       assertEquals(await account.getChatActions({ chat: privateChat }), []);
     } finally {

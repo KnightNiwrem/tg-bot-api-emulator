@@ -230,7 +230,7 @@ Deno.test('the bot answers in the language of each account', () =>
           method: 'sendMessage',
           chat_id: speaker.id,
           ok: true,
-          parameters: { reply_parameters: JSON.stringify({ message_id: command.message_id }) },
+          parameters_json: { reply_parameters: { message_id: command.message_id } },
         },
         { after: beforeCommand },
       );

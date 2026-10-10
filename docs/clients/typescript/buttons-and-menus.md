@@ -57,7 +57,7 @@ Deno.test('an account presses a Details button by its label and reads the answer
       method: 'sendMessage',
       chat_id: account.id,
       ok: true,
-      parameters: { reply_parameters: JSON.stringify({ message_id: command.message_id }) },
+      parameters_json: { reply_parameters: { message_id: command.message_id } },
     }, { after: beforeCommand });
     const shop = (await account.getMessages({ chat: privateChat })).find((message) =>
       message.from.id === botProfile.id &&
@@ -138,7 +138,7 @@ Deno.test('selectors pick exactly one button or list the candidates', async () =
       method: 'sendMessage',
       chat_id: account.id,
       ok: true,
-      parameters: { reply_parameters: JSON.stringify({ message_id: command.message_id }) },
+      parameters_json: { reply_parameters: { message_id: command.message_id } },
     }, { after: beforeCommand });
     const shop = (await account.getMessages({ chat: privateChat })).find((message) =>
       message.from.id === botProfile.id &&
@@ -225,7 +225,7 @@ Deno.test('the bot edits its message when an account presses a button', async ()
       method: 'sendMessage',
       chat_id: account.id,
       ok: true,
-      parameters: { reply_parameters: JSON.stringify({ message_id: command.message_id }) },
+      parameters_json: { reply_parameters: { message_id: command.message_id } },
     }, { after: beforeCommand });
     const shop = (await account.getMessages({ chat: privateChat })).find((message) =>
       message.from.id === botProfile.id &&
@@ -305,7 +305,7 @@ Deno.test('an account answers a reply keyboard by pressing one of its buttons', 
       method: 'sendMessage',
       chat_id: account.id,
       ok: true,
-      parameters: { reply_parameters: JSON.stringify({ message_id: command.message_id }) },
+      parameters_json: { reply_parameters: { message_id: command.message_id } },
     }, { after: beforeCommand });
 
     const shown = await account.getReplyInterface({ chat: privateChat });
@@ -325,7 +325,7 @@ Deno.test('an account answers a reply keyboard by pressing one of its buttons', 
       method: 'sendMessage',
       chat_id: account.id,
       ok: true,
-      parameters: { reply_parameters: JSON.stringify({ message_id: press.message_id }) },
+      parameters_json: { reply_parameters: { message_id: press.message_id } },
     }, { after: beforePress });
 
     const confirmation = (await account.getMessages({ chat: privateChat })).find((message) =>
@@ -371,7 +371,7 @@ Deno.test('an account answers a forced reply', async () => {
       method: 'sendMessage',
       chat_id: account.id,
       ok: true,
-      parameters: { reply_parameters: JSON.stringify({ message_id: command.message_id }) },
+      parameters_json: { reply_parameters: { message_id: command.message_id } },
     }, { after: beforeCommand });
 
     const shown = await account.getReplyInterface({ chat: privateChat });
@@ -388,7 +388,7 @@ Deno.test('an account answers a forced reply', async () => {
       method: 'sendMessage',
       chat_id: account.id,
       ok: true,
-      parameters: { reply_parameters: JSON.stringify({ message_id: answer.message_id }) },
+      parameters_json: { reply_parameters: { message_id: answer.message_id } },
     }, { after: beforeAnswer });
     const greeting = (await account.getMessages({ chat: privateChat })).find((message) =>
       message.from.id === botProfile.id &&
@@ -571,7 +571,7 @@ Deno.test('an account sees the command menu and menu button the bot sets', async
     const commandsSet = await activity.waitFor({
       method: 'setMyCommands',
       ok: true,
-      parameters: { scope: JSON.stringify({ type: 'all_private_chats' }) },
+      parameters_json: { scope: { type: 'all_private_chats' } },
     }, { after: beforeStart });
     await activity.waitFor(
       { method: 'setChatMenuButton', chat_id: account.id, ok: true },
@@ -614,7 +614,7 @@ Deno.test('a supergroup member sees the commands a bot sets for the supergroup',
     await activity.waitFor({
       method: 'setMyCommands',
       ok: true,
-      parameters: { scope: JSON.stringify({ type: 'chat', chat_id: supergroup.id }) },
+      parameters_json: { scope: { type: 'chat', chat_id: supergroup.id } },
     }, { after: beforeAdding });
 
     assertEquals(await account.getSupergroupBotCommands({ chat: teamChat }), [{

@@ -58,7 +58,7 @@ Deno.test('an account reads the rich message a bot sends', async () => {
       method: 'sendRichMessage',
       chat_id: account.id,
       ok: true,
-      parameters: { reply_parameters: JSON.stringify({ message_id: command.message_id }) },
+      parameters_json: { reply_parameters: { message_id: command.message_id } },
     }, { after: beforeCommand });
 
     const recipe = (await account.getMessages({ chat: privateChat })).find((message) =>
@@ -146,7 +146,7 @@ Deno.test('an account presses a button in a table row of a rich message', async 
       method: 'sendRichMessage',
       chat_id: account.id,
       ok: true,
-      parameters: { reply_parameters: JSON.stringify({ message_id: command.message_id }) },
+      parameters_json: { reply_parameters: { message_id: command.message_id } },
     }, { after: beforeCommand });
     const prices = (await account.getMessages({ chat: privateChat })).find((message) =>
       message.from.id === botProfile.id &&

@@ -42,7 +42,7 @@ Deno.test('the account votes in the poll the bot sends and retracts its vote', (
         method: 'sendPoll',
         chat_id: account.id,
         ok: true,
-        parameters: { reply_parameters: JSON.stringify({ message_id: command.message_id }) },
+        parameters_json: { reply_parameters: { message_id: command.message_id } },
       },
       { after: beforeCommand },
     );
@@ -113,7 +113,7 @@ Deno.test('the bot receives the vote and the poll counts', () =>
         method: 'sendPoll',
         chat_id: account.id,
         ok: true,
-        parameters: { reply_parameters: JSON.stringify({ message_id: command.message_id }) },
+        parameters_json: { reply_parameters: { message_id: command.message_id } },
       },
       { after: beforeCommand },
     );
@@ -194,7 +194,7 @@ Deno.test('the bot stops its poll, which then refuses votes', () =>
         method: 'sendPoll',
         chat_id: account.id,
         ok: true,
-        parameters: { reply_parameters: JSON.stringify({ message_id: command.message_id }) },
+        parameters_json: { reply_parameters: { message_id: command.message_id } },
       },
       { after: beforeCommand },
     );
@@ -276,7 +276,7 @@ Deno.test('the poll closes when the test makes its closing time arrive', () =>
         method: 'sendPoll',
         chat_id: account.id,
         ok: true,
-        parameters: { reply_parameters: JSON.stringify({ message_id: command.message_id }) },
+        parameters_json: { reply_parameters: { message_id: command.message_id } },
       },
       { after: beforeCommand },
     );
