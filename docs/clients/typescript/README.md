@@ -53,3 +53,6 @@ Every example is a complete Deno test whose imports are relative to this directo
 fixture, [`bot_fixture.ts`](bot_fixture.ts), already is. Start the emulator with `deno task start`
 from the repository root, save an example here, and run it with
 `deno test --allow-net --allow-env <file>`.
+
+The examples name the package versions the repository checks them with, which its `deno.lock`
+records. Deno uses that lockfile here and rejects other versions; add `--no-lock` to try them.

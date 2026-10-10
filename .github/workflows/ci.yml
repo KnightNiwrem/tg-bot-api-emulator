@@ -41,3 +41,8 @@ jobs:
 
       - name: ${{ matrix.task_name }}
         run: deno task ${{ matrix.task }}
+
+      # The frozen lock rejects new or changed dependencies. Deno still restores entries it can
+      # derive, such as a missing specifier for a locked package, so any lock change fails the job.
+      - name: Lockfile unchanged
+        run: git diff --exit-code -- deno.lock

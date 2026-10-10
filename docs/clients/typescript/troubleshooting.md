@@ -19,6 +19,12 @@ started with.
 - `Requires env access`: grammY's npm package reads environment variables when it loads; add
   `--allow-env`.
 
+## Deno reports that the lockfile is out of date
+
+Inside the repository, Deno uses its frozen `deno.lock`, which records the package versions the
+examples name. A test that imports another version, or another package, fails with
+`The lockfile is out of date`. Run it with `--no-lock`, or keep the versions the examples use.
+
 ## A wait times out
 
 `waitFor` rejects with a `BotActivityTimeoutError` when no entry matches before its timeout. The
