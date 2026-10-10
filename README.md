@@ -98,8 +98,9 @@ Source, test and client code import external packages only through import map al
 `grammy`. grammY and its runner and auto-retry plugins map to grammY's Deno source modules at exact
 release tags: the npm build passes Node-specific request options, such as `abort-controller`
 signals, to a custom `fetch`, which the tests' in-process `fetch` cannot accept. The guide's
-examples are meant to be copied, so they name registry packages in full, such as
-`npm:grammy@1.46.0`, at the versions the import map pins.
+examples are meant to be copied, so they name the import map's registry packages in full, from the
+same registry and at the same version, such as `jsr:@std/assert@1.0.19`; for grammY and its plugins
+they use the npm packages of the pinned releases, such as `npm:grammy@1.46.0`.
 [`tests/dependency_specifiers_test.ts`](tests/dependency_specifiers_test.ts) checks these rules.
 
 To add or bump a dependency, set its exact version in `deno.json` and in any guide examples that
