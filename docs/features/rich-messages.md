@@ -173,7 +173,8 @@ dimensions it fills in, which the emulator does not.
 [normalization](../../src/services/rich_message_normalization.ts),
 [projection](../../src/projections/bot_api_rich_message.ts),
 [URL downloads](../../src/api/sessions/bot_api/web_file_parameter.ts),
-[unit tests](../../tests/rich_message_test.ts), [HTTP tests](../../tests/emulation_api_test.ts),
+[unit tests](../../tests/rich_message_test.ts),
+[HTTP tests](../../tests/http/rich_messages_test.ts),
 [video and voice note block tests](../../tests/rich_video_voice_blocks_api_test.ts) and
 [inline URL media tests](../../tests/inline_result_media_api_test.ts).
 

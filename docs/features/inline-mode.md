@@ -237,7 +237,7 @@ public.
 [result parsing](../../src/api/sessions/bot_api/inline_query_answer_parameters.ts),
 [message edit permissions](../../src/types/virtual_message.ts),
 [inline tests](../../tests/inline_query_service_test.ts),
-[HTTP tests](../../tests/emulation_api_test.ts),
+[HTTP tests](../../tests/http/inline_mode_test.ts),
 [answer cache API tests](../../tests/inline_answer_cache_api_test.ts),
 [URL media tests](../../tests/inline_result_media_api_test.ts) and
 [contact and location result tests](../../tests/inline_result_contact_location_api_test.ts).

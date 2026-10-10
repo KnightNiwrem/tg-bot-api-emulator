@@ -95,3 +95,8 @@ export async function requestJson<Body>(
     },
   };
 }
+
+/** The `RequestInit` of a `method` request carrying `body` as its JSON body. */
+export function jsonRequest(method: 'PATCH' | 'POST' | 'PUT', body: unknown): RequestInit {
+  return { method, headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) };
+}

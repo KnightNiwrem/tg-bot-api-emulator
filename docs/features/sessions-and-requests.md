@@ -255,7 +255,7 @@ managing individual profiles is missing.
 [their dispatch](../../src/api/sessions/bot_api/queued_answer.ts),
 [session timing tests](../../tests/session_timing_test.ts),
 [request decoding tests](../../tests/bot_api_request_parameters_test.ts) and
-[HTTP tests](../../tests/emulation_api_test.ts), including
+[HTTP tests](../../tests/http/sessions_and_requests_test.ts), including
 [server error answer tests](../../tests/bot_server_error_api_test.ts),
 [control API errors](../../src/api/control_error_response.ts) with
 [their input issues](../../src/api/sessions/control_request_input.ts) and
