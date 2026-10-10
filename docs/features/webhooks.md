@@ -143,7 +143,7 @@ There is no Telegram synchronization error state because sessions have no Telegr
 [webhook tests](../../tests/bot_webhook_service_test.ts),
 [response method eligibility tests](../../tests/webhook_reply_eligibility_test.ts),
 [delivery control tests](../../tests/webhook_attempt_scheduler_test.ts),
-[HTTP tests](../../tests/emulation_api_test.ts) and
+[HTTP tests](../../tests/http/webhooks_test.ts) and
 [local webhook control tests](../../clients/typescript/webhook_delivery_client_test.ts).
 
 [webhook-response]: https://github.com/tdlib/telegram-bot-api/blob/e3e9dd8e5b3d7ab8537cd5a10dc31d5ffa8f82d1/telegram-bot-api/WebhookActor.cpp#L608-L680
