@@ -1,5 +1,8 @@
 import { z } from 'zod';
 
+import { accountProfileSchema } from '../../src/control_contracts/accounts.ts';
+import { botProfileSchema } from '../../src/control_contracts/bots.ts';
+import { controlValidationErrorSchema } from '../../src/control_contracts/control_errors.ts';
 import {
   MAX_CUSTOM_TITLE_LENGTH,
   MAX_SUPERGROUP_OR_CHANNEL_ID,
@@ -12,9 +15,6 @@ import type {
   BotActivityEntry,
   CallbackQuery,
   ControlErrorBody,
-  ControlRequestIssue,
-  CreatedVirtualBot,
-  EmulationSession,
   InlineKeyboardMarkup,
   InlineQuery,
   MessageEntity,
@@ -37,17 +37,11 @@ import type {
   Supergroup,
   SupergroupMessage,
   UserReaction,
-  VirtualAccountProfile,
-  VirtualBotProfile,
   WebhookAttempt,
   WebhookAttemptFailure,
   WebhookDelivery,
   WebResource,
 } from './types.ts';
-
-interface CreatedVirtualAccountResponse {
-  readonly account: VirtualAccountProfile;
-}
 
 const telegramUserIdSchema = z.number().int()
   .min(MIN_TELEGRAM_USER_ID)
@@ -56,43 +50,6 @@ const telegramUserIdSchema = z.number().int()
 const supergroupIdSchema = z.number().int()
   .min(MIN_SUPERGROUP_OR_CHANNEL_ID)
   .max(MAX_SUPERGROUP_OR_CHANNEL_ID);
-
-const virtualBotProfileSchema: z.ZodType<VirtualBotProfile> = z.strictObject({
-  id: telegramUserIdSchema,
-  is_bot: z.literal(true),
-  first_name: z.string(),
-  username: z.string(),
-  can_join_groups: z.boolean(),
-  can_read_all_group_messages: z.boolean(),
-  supports_guest_queries: z.boolean().optional(),
-  supports_inline_queries: z.boolean(),
-  can_connect_to_business: z.boolean(),
-  has_main_web_app: z.boolean(),
-  has_topics_enabled: z.boolean(),
-  allows_users_to_create_topics: z.boolean(),
-  can_manage_bots: z.boolean(),
-  supports_join_request_queries: z.boolean(),
-});
-
-export const virtualAccountProfileSchema: z.ZodType<VirtualAccountProfile> = z.strictObject({
-  id: telegramUserIdSchema,
-  is_bot: z.literal(false),
-  first_name: z.string(),
-  last_name: z.string().optional(),
-  username: z.string().optional(),
-  language_code: z.string().optional(),
-});
-
-export const emulationSessionSchema: z.ZodType<EmulationSession> = z.strictObject({
-  id: z.uuid(),
-  botApiRoot: z.url(),
-  uploadProfile: z.enum(['cloud', 'local']),
-});
-
-export const createdVirtualBotSchema: z.ZodType<CreatedVirtualBot> = z.strictObject({
-  token: z.string().min(1),
-  bot: virtualBotProfileSchema,
-});
 
 export const webResourceSchema: z.ZodType<WebResource> = z.strictObject({
   url: z.url({ protocol: /^https?$/ }),
@@ -172,15 +129,9 @@ export const webhookAttemptListSchema = z.strictObject({
   webhook_attempts: z.array(webhookAttemptSchema),
 });
 
-export const createdVirtualAccountSchema: z.ZodType<CreatedVirtualAccountResponse> = z.strictObject(
-  {
-    account: virtualAccountProfileSchema,
-  },
-);
-
 export const getMeResponseSchema = z.strictObject({
   ok: z.literal(true),
-  result: virtualBotProfileSchema,
+  result: botProfileSchema,
 });
 
 const messageSenderBotSchema: z.ZodType<MessageSenderBot> = z.strictObject({
@@ -243,7 +194,7 @@ const messageEntitySchema: z.ZodType<MessageEntity> = z.union([
   z.strictObject({
     type: z.literal('text_mention'),
     ...messageEntitySpanShape,
-    user: z.union([virtualAccountProfileSchema, messageSenderBotSchema]),
+    user: z.union([accountProfileSchema, messageSenderBotSchema]),
   }),
   z.strictObject({
     type: z.literal('custom_emoji'),
@@ -342,7 +293,7 @@ const richTextObjectSchema: z.ZodType<RichTextObject> = z.lazy(() =>
     z.strictObject({
       type: z.literal('text_mention'),
       text: richTextSchema,
-      user: z.union([virtualAccountProfileSchema, messageSenderBotSchema]),
+      user: z.union([accountProfileSchema, messageSenderBotSchema]),
     }),
     z.strictObject({ type: z.literal('url'), text: richTextSchema, url: z.string() }),
     z.strictObject({
@@ -498,7 +449,7 @@ const richMessageSchema: z.ZodType<RichMessage> = z.strictObject({
 const messageOriginSchema = z.discriminatedUnion('type', [
   z.strictObject({
     type: z.literal('user'),
-    sender_user: z.union([virtualAccountProfileSchema, messageSenderBotSchema]),
+    sender_user: z.union([accountProfileSchema, messageSenderBotSchema]),
     date: z.number().int().nonnegative(),
   }),
   z.strictObject({
@@ -512,12 +463,12 @@ const messageOriginSchema = z.discriminatedUnion('type', [
 function messageHeaderShape<Chat extends z.ZodType>(chat: Chat) {
   return {
     message_id: z.number().int().positive(),
-    from: z.union([virtualAccountProfileSchema, messageSenderBotSchema]),
+    from: z.union([accountProfileSchema, messageSenderBotSchema]),
     chat,
     date: z.number().int().nonnegative(),
     edit_date: z.number().int().nonnegative().optional(),
     forward_origin: messageOriginSchema.optional(),
-    forward_from: z.union([virtualAccountProfileSchema, messageSenderBotSchema]).optional(),
+    forward_from: z.union([accountProfileSchema, messageSenderBotSchema]).optional(),
     forward_sender_name: z.string().min(1).optional(),
     forward_date: z.number().int().nonnegative().optional(),
   };
@@ -692,7 +643,7 @@ const messageTrailerShape = {
   effect_id: z.string().regex(/^-?\d+$/).optional(),
 };
 
-const messageUserSchema = z.union([virtualAccountProfileSchema, messageSenderBotSchema]);
+const messageUserSchema = z.union([accountProfileSchema, messageSenderBotSchema]);
 
 /** A user's standing once its temporary restriction ends, as bots see it. */
 export const expiredRestrictionResponseSchema = z.strictObject({
@@ -1319,32 +1270,12 @@ export const botActivityReadResponseSchema = z.strictObject({
   head_position: z.int().nonnegative(),
 });
 
-const controlRequestIssueSchema: z.ZodType<ControlRequestIssue> = z.strictObject({
-  source: z.enum(['body', 'path', 'query']),
-  path: z.array(z.union([z.string(), z.int().nonnegative()])),
-  code: z.enum([
-    'invalid_json',
-    'invalid_type',
-    'too_small',
-    'too_big',
-    'invalid_format',
-    'invalid_value',
-    'unknown_field',
-    'duplicate_field',
-    'no_matching_variant',
-  ]),
-  message: z.string(),
-});
-
 /**
  * A control error body: input that breaks an operation's contract, with at least one issue, or
  * another refusal, which names only its reason.
  */
 export const controlErrorBodySchema: z.ZodType<ControlErrorBody> = z.union([
-  z.strictObject({
-    reason: z.literal('invalid_request'),
-    issues: z.tuple([controlRequestIssueSchema], controlRequestIssueSchema),
-  }),
+  controlValidationErrorSchema,
   z.strictObject({
     reason: z.enum(CONTROL_REFUSAL_REASONS),
   }),

@@ -1,8 +1,16 @@
 import type { z } from 'zod';
 
+import { createAccountContract } from '../../src/control_contracts/accounts.ts';
+import { createBotContract } from '../../src/control_contracts/bots.ts';
+import { deleteSessionContract } from '../../src/control_contracts/sessions.ts';
 import { createHttpBotActivityPageReader } from './bot_activity_http_page_reader.ts';
 import { createBotActivityLog } from './bot_activity_log.ts';
 import { HTTP_STATUS_CREATED, HTTP_STATUS_NO_CONTENT, HTTP_STATUS_OK } from './constants.ts';
+import {
+  callEmptyOperation,
+  callJsonOperation,
+  type ControlOperationTransport,
+} from './control_operation_caller.ts';
 import { ButtonSelectionError, findButton } from './message_buttons.ts';
 import {
   botCommandsResponseSchema,
@@ -13,8 +21,6 @@ import {
   chatJoinResponseSchema,
   chosenInlineResultResponseSchema,
   createdSupergroupResponseSchema,
-  createdVirtualAccountSchema,
-  createdVirtualBotSchema,
   expiredInviteLinkResponseSchema,
   expiredPollResponseSchema,
   expiredRequesterContactResponseSchema,
@@ -267,6 +273,7 @@ class HttpEmulationSessionClient implements EmulationSessionClient {
   readonly #sessionUrl: string;
   readonly #botApiRoot: URL;
   readonly #fetch: typeof globalThis.fetch;
+  readonly #transport: ControlOperationTransport;
 
   constructor(
     serverRoot: URL,
@@ -279,32 +286,25 @@ class HttpEmulationSessionClient implements EmulationSessionClient {
     this.#sessionUrl = new URL(`sessions/${encodeURIComponent(session.id)}`, serverRoot).href;
     this.#botApiRoot = normalizeUrlRoot(session.botApiRoot, 'botApiRoot');
     this.#fetch = fetchImplementation;
+    this.#transport = { serverRoot, fetch: fetchImplementation };
   }
 
-  async end(): Promise<void> {
-    await requestEmptyResponse(this.#fetch, {
-      method: 'DELETE',
-      url: this.#sessionUrl,
-      expectedStatus: HTTP_STATUS_NO_CONTENT,
+  end(): Promise<void> {
+    return callEmptyOperation(this.#transport, deleteSessionContract, {
+      params: { sessionId: this.id },
     });
   }
 
   createBot(input: CreateVirtualBotInput): Promise<CreatedVirtualBot> {
-    return requestJson(this.#fetch, {
-      method: 'POST',
-      url: `${this.#sessionUrl}/bots`,
-      expectedStatus: HTTP_STATUS_CREATED,
-      responseSchema: createdVirtualBotSchema,
+    return callJsonOperation(this.#transport, createBotContract, {
+      params: { sessionId: this.id },
       body: input,
     });
   }
 
   async createAccount(input: CreateVirtualAccountInput): Promise<CreatedVirtualAccount> {
-    const response = await requestJson(this.#fetch, {
-      method: 'POST',
-      url: `${this.#sessionUrl}/accounts`,
-      expectedStatus: HTTP_STATUS_CREATED,
-      responseSchema: createdVirtualAccountSchema,
+    const response = await callJsonOperation(this.#transport, createAccountContract, {
+      params: { sessionId: this.id },
       body: input,
     });
     return {

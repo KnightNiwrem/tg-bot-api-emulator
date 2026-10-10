@@ -6,7 +6,9 @@ Every operation of the TypeScript client, grouped by what it is for, with the gu
 it in use. Each operation's documentation comment in
 [`clients/typescript/types.ts`](../../../clients/typescript/types.ts) and
 [`emulation_session_client.ts`](../../../clients/typescript/emulation_session_client.ts) states its
-exact contract.
+exact contract. The inputs and results of creating and ending sessions and creating bots and
+accounts are inferred from their operations' contracts in
+[`src/control_contracts/`](../../../src/control_contracts/), whose field comments document them.
 
 ## Client and session
 

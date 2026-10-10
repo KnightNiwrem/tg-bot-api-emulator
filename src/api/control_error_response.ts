@@ -1,38 +1,20 @@
 import type { Context } from 'hono';
 import type { ClientErrorStatusCode, ServerErrorStatusCode } from 'hono/utils/http-status';
 
+import {
+  type CONTROL_REQUEST_ISSUE_CODES,
+  type CONTROL_REQUEST_ISSUE_SOURCES,
+  INVALID_REQUEST_REASON,
+} from '../control_contracts/control_errors.ts';
+
 /** The status of a control route's refusal: the request's fault, or the session's state. */
 type ControlErrorStatus = ClientErrorStatusCode | ServerErrorStatusCode;
 
-/** The reason a control route gives when its request breaks the operation's input contract. */
-const INVALID_REQUEST_REASON = 'invalid_request';
-
 /** The part of a control request an input issue is in. */
-export type ControlRequestIssueSource = 'body' | 'path' | 'query';
+export type ControlRequestIssueSource = typeof CONTROL_REQUEST_ISSUE_SOURCES[number];
 
-/**
- * What is wrong with one input value. The codes are the emulator's own, so that they stay stable
- * across validation libraries:
- *
- * - `invalid_json`: the body is not JSON;
- * - `invalid_type`: a value is missing or of the wrong type;
- * - `too_small` / `too_big`: a number, text, or list is outside its bounds;
- * - `invalid_format`: text does not have the required form;
- * - `invalid_value`: a value is not one of those allowed, or breaks a rule its field states;
- * - `unknown_field`: the operation takes no field or query parameter of that name;
- * - `duplicate_field`: a query parameter is repeated;
- * - `no_matching_variant`: a value that takes one of several forms matches none of them.
- */
-export type ControlRequestIssueCode =
-  | 'invalid_json'
-  | 'invalid_type'
-  | 'too_small'
-  | 'too_big'
-  | 'invalid_format'
-  | 'invalid_value'
-  | 'unknown_field'
-  | 'duplicate_field'
-  | 'no_matching_variant';
+/** What is wrong with one input value, as `CONTROL_REQUEST_ISSUE_CODES` describes each code. */
+export type ControlRequestIssueCode = typeof CONTROL_REQUEST_ISSUE_CODES[number];
 
 /**
  * One problem with a control request's input: where it is, as the field names and list indexes

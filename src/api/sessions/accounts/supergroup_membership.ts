@@ -1,6 +1,7 @@
 import { Hono } from 'hono';
 import { z } from 'zod';
 
+import { telegramUsernameSchema } from '../../../control_contracts/wire_fields.ts';
 import type { EmulationSession } from '../../../types/emulation_session.ts';
 import type { Supergroup } from '../../../types/virtual_chat.ts';
 import {
@@ -19,7 +20,6 @@ import {
   supergroupMemberPathSchema,
   USER_ID_PARAMETER,
 } from './account_paths.ts';
-import { telegramUsernameSchema } from './request_fields.ts';
 
 const SUPERGROUP_COLLECTION_PATH = `/:${ACCOUNT_ID_PARAMETER}/supergroups` as const;
 const SUPERGROUP_MEMBER_PATH =

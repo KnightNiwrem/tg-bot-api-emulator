@@ -363,6 +363,12 @@
         ]
       },
       {
+        "name": "control-contracts",
+        "patterns": [
+          "src/control_contracts/**/*.ts"
+        ]
+      },
+      {
         "name": "transport",
         "patterns": [
           "src/api/**/*.ts",
@@ -759,9 +765,16 @@
         ]
       },
       {
+        "from": "control-contracts",
+        "allow": [
+          "domain"
+        ]
+      },
+      {
         "from": "transport",
         "allow": [
           "domain",
+          "control-contracts",
           "transport"
         ],
         "allowTypeOnly": [
