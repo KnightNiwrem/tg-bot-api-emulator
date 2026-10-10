@@ -58,9 +58,10 @@ A failed call is recorded with its answer, as Telegram would send it:
   [feature reference](../../features/README.md#implemented-bot-api-methods) lists the methods it
   implements.
 - `400 Bad Request: invalid <method> parameters`: the call sent a parameter the emulator does not
-  support, or a value it does not accept. The emulator validates strictly, as the
-  [sessions reference](../../features/sessions-and-requests.md#strict-request-validation) describes,
-  and each feature page lists the parameters its methods take.
+  support, or a value it does not accept. The message editing methods add the path of the first such
+  parameter, as in `invalid stopPoll parameters: open_period`. The emulator validates strictly, as
+  the [sessions reference](../../features/sessions-and-requests.md#strict-request-validation)
+  describes, and each feature page lists the parameters its methods take.
 - `400 Bad Request: chat not found`: the bot wrote to an account that has never written to it.
   Telegram lets a bot write to a user only after the user has started a chat with it, so the account
   sends the bot a message first. A bot that received the account's pending join request may also

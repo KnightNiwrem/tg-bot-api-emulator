@@ -20,6 +20,7 @@ import {
   type MessageForwardInfo,
 } from '../types/virtual_message.ts';
 import type {
+  BotPrivateChatAccessFailureReason,
   CopyMessageRequest,
   CopyMessageSendResult,
   CopyMessagesRequest,
@@ -71,10 +72,11 @@ interface BotMessageRepeaterDependencies {
 
 /**
  * Why the message that a forward or copy repeats cannot be read: its chat is unknown to the bot,
- * or the bot is no member of it, or the chat has no such message.
+ * or the bot cannot address it, or the chat has no such message.
  */
 type RepeatedMessageFailureReason =
   | 'chat_not_found'
+  | BotPrivateChatAccessFailureReason
   | FormerSupergroupMemberFailureReason
   | 'repeated_message_not_found';
 

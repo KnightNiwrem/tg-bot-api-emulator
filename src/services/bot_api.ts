@@ -487,9 +487,16 @@ export type SendContactRequest = SendRequestOptions & {
  */
 export type SendLocationRequest = SendRequestOptions & { readonly location: GeoLocation };
 
+/**
+ * Why a bot cannot address a private chat: the account does not exist, or it never started the
+ * bot. Telegram reports both as an unknown chat; the domain keeps them apart.
+ */
+export type BotPrivateChatAccessFailureReason = 'account_not_found' | 'conversation_not_started';
+
 export type SendFailureReason =
   | 'message_text_empty'
   | 'chat_not_found'
+  | BotPrivateChatAccessFailureReason
   | FormerSupergroupMemberFailureReason
   | 'reply_message_not_found'
   | 'message_effect_not_allowed_in_chat'
@@ -723,6 +730,7 @@ export interface StopPollRequest extends MessageTarget {
 
 export type StopPollFailureReason =
   | 'chat_not_found'
+  | BotPrivateChatAccessFailureReason
   | FormerSupergroupMemberFailureReason
   | 'message_not_found'
   | PollStopFailureReason
@@ -736,6 +744,7 @@ export type StopPollResult =
 
 export type EditMessageReplyMarkupFailureReason =
   | 'chat_not_found'
+  | BotPrivateChatAccessFailureReason
   | FormerSupergroupMemberFailureReason
   | 'message_not_found'
   | 'message_not_editable'
@@ -827,7 +836,7 @@ export interface EditInlineMessageReplyMarkupRequest extends InlineMessageTarget
  * identifier of no message, of a deleted one, or of another bot's inline message finds none.
  */
 export type EditInlineMessageReplyMarkupFailureReason =
-  | 'inline_message_not_found'
+  | 'message_not_found'
   | 'callback_data_invalid'
   | 'button_type_invalid'
   | 'message_not_modified';
@@ -1045,6 +1054,7 @@ export type SendChatActionResult =
 /** Why a bot cannot show a chat action or a message draft in a chat. */
 type BotChatActionAccessFailureReason =
   | 'chat_not_found'
+  | BotPrivateChatAccessFailureReason
   | FormerSupergroupMemberFailureReason
   | 'bot_blocked';
 
@@ -2924,8 +2934,7 @@ export class BotApiService {
 
   /**
    * Checks that the bot may show a chat action, or a message draft, which TDLib sends as one, in a
-   * private chat or a supergroup. As for sending, a private chat the bot cannot address is not
-   * found.
+   * private chat or a supergroup.
    */
   #checkBotChatActionAccess(
     botId: number,
@@ -2953,19 +2962,10 @@ export class BotApiService {
     if (privateAccess.allowed) {
       return privateAccess;
     }
-    switch (privateAccess.reason) {
-      case 'bot_blocked':
-        return { allowed: false, reason: privateAccess.reason };
-      case 'account_not_found':
-      case 'conversation_not_started':
-        return { allowed: false, reason: 'chat_not_found' };
-      case 'bot_not_found':
-        throw new Error(`Authenticated bot ${botId} does not exist`);
-      default: {
-        const unhandledReason: never = privateAccess.reason;
-        throw new Error(`Unhandled chat action access failure: ${unhandledReason}`);
-      }
+    if (privateAccess.reason === 'bot_not_found') {
+      throw new Error(`Authenticated bot ${botId} does not exist`);
     }
+    return { allowed: false, reason: privateAccess.reason };
   }
 
   /**
@@ -3595,15 +3595,8 @@ export class BotApiService {
       case 'text_invalid':
       case 'send_permission_missing':
         return result;
-      case 'message_text_empty':
-      case 'message_has_no_text':
-      case 'message_text_too_long':
-        return { edited: false, reason: result.reason };
       default:
-        return {
-          edited: false,
-          reason: toEditMessageFailureReason(authenticatedBot, result.reason),
-        };
+        return { edited: false, reason: excludeMissingBotFailure(authenticatedBot, result.reason) };
     }
   }
 
@@ -3645,14 +3638,8 @@ export class BotApiService {
     switch (result.reason) {
       case 'text_invalid':
         return result;
-      case 'message_has_no_caption':
-      case 'caption_too_long':
-        return { edited: false, reason: result.reason };
       default:
-        return {
-          edited: false,
-          reason: toEditMessageFailureReason(authenticatedBot, result.reason),
-        };
+        return { edited: false, reason: excludeMissingBotFailure(authenticatedBot, result.reason) };
     }
   }
 
@@ -3696,15 +3683,8 @@ export class BotApiService {
       case 'text_invalid':
       case 'send_permission_missing':
         return result;
-      case 'message_media_not_editable':
-      case 'caption_too_long':
-      case 'album_media_kind_changed':
-        return { edited: false, reason: result.reason };
       default:
-        return {
-          edited: false,
-          reason: toEditMessageFailureReason(authenticatedBot, result.reason),
-        };
+        return { edited: false, reason: excludeMissingBotFailure(authenticatedBot, result.reason) };
     }
   }
 
@@ -3732,7 +3712,7 @@ export class BotApiService {
     if (result.edited) {
       return result;
     }
-    return { edited: false, reason: toEditMessageFailureReason(authenticatedBot, result.reason) };
+    return { edited: false, reason: excludeMissingBotFailure(authenticatedBot, result.reason) };
   }
 
   /**
@@ -3761,28 +3741,7 @@ export class BotApiService {
     if (result.stopped) {
       return { stopped: true, poll: this.#botMessageViews.viewPollForCreator(result.poll) };
     }
-    switch (result.reason) {
-      case 'chat_not_found':
-      case 'bot_not_a_member':
-      case 'bot_kicked':
-      case 'message_not_found':
-      case 'message_has_no_poll':
-      case 'poll_not_stoppable':
-      case 'poll_already_closed':
-      case 'callback_data_invalid':
-      case 'button_type_invalid':
-        return { stopped: false, reason: result.reason };
-      // As for sending, a chat the bot cannot address is not found.
-      case 'account_not_found':
-      case 'conversation_not_started':
-        return { stopped: false, reason: 'chat_not_found' };
-      case 'bot_not_found':
-        throw new Error(`Authenticated bot ${authenticatedBot.id} does not exist`);
-      default: {
-        const unhandledReason: never = result;
-        throw new Error(`Unhandled poll stop failure: ${JSON.stringify(unhandledReason)}`);
-      }
-    }
+    return { stopped: false, reason: excludeMissingBotFailure(authenticatedBot, result.reason) };
   }
 
   /**
@@ -3973,7 +3932,7 @@ export class BotApiService {
   ): EditInlineMessageTextResult {
     const message = this.#findOwnInlineMessage(authenticatedBot, inlineMessageId);
     if (message === undefined) {
-      return { edited: false, reason: 'inline_message_not_found' };
+      return { edited: false, reason: 'message_not_found' };
     }
     if (
       content.kind === 'rich_message' &&
@@ -4003,14 +3962,10 @@ export class BotApiService {
       // TDLib checks no permission for a message addressed by its inline message identifier.
       case 'send_permission_missing':
         throw new Error(`Inline message ${inlineMessageId} was refused for a permission`);
-      case 'message_text_empty':
-      case 'message_has_no_text':
-      case 'message_text_too_long':
-        return { edited: false, reason: result.reason };
       default:
         return {
           edited: false,
-          reason: toEditInlineMessageFailureReason(authenticatedBot, result.reason),
+          reason: excludeInlineMessageChatFailure(authenticatedBot, result.reason),
         };
     }
   }
@@ -4026,7 +3981,7 @@ export class BotApiService {
   ): EditInlineMessageResult<EditInlineMessageCaptionFailureReason> {
     const message = this.#findOwnInlineMessage(authenticatedBot, inlineMessageId);
     if (message === undefined) {
-      return { edited: false, reason: 'inline_message_not_found' };
+      return { edited: false, reason: 'message_not_found' };
     }
     const edit = {
       fromBotId: authenticatedBot.id,
@@ -4045,13 +4000,10 @@ export class BotApiService {
     switch (result.reason) {
       case 'text_invalid':
         return result;
-      case 'message_has_no_caption':
-      case 'caption_too_long':
-        return { edited: false, reason: result.reason };
       default:
         return {
           edited: false,
-          reason: toEditInlineMessageFailureReason(authenticatedBot, result.reason),
+          reason: excludeInlineMessageChatFailure(authenticatedBot, result.reason),
         };
     }
   }
@@ -4069,7 +4021,7 @@ export class BotApiService {
   ): EditInlineMessageMediaResult {
     const message = this.#findOwnInlineMessage(authenticatedBot, inlineMessageId);
     if (message === undefined) {
-      return { edited: false, reason: 'inline_message_not_found' };
+      return { edited: false, reason: 'message_not_found' };
     }
     if (getMediaReplacementFile(media).kind === 'upload') {
       return { edited: false, reason: 'inline_message_upload_unsupported' };
@@ -4096,15 +4048,12 @@ export class BotApiService {
       // TDLib checks no permission for a message addressed by its inline message identifier.
       case 'send_permission_missing':
         throw new Error(`Inline message ${inlineMessageId} was refused for a permission`);
-      case 'caption_too_long':
-      case 'message_media_not_editable':
-        return { edited: false, reason: result.reason };
       case 'album_media_kind_changed':
         throw new Error(`Inline message ${inlineMessageId} belongs to an album`);
       default:
         return {
           edited: false,
-          reason: toEditInlineMessageFailureReason(authenticatedBot, result.reason),
+          reason: excludeInlineMessageChatFailure(authenticatedBot, result.reason),
         };
     }
   }
@@ -4116,7 +4065,7 @@ export class BotApiService {
   ): EditInlineMessageResult<EditInlineMessageReplyMarkupFailureReason> {
     const message = this.#findOwnInlineMessage(authenticatedBot, inlineMessageId);
     if (message === undefined) {
-      return { edited: false, reason: 'inline_message_not_found' };
+      return { edited: false, reason: 'message_not_found' };
     }
     const edit = { fromBotId: authenticatedBot.id, inlineMessageId, inlineKeyboard };
     const result = message.kind === 'private_message'
@@ -4124,7 +4073,7 @@ export class BotApiService {
       : this.#supergroupBotMessages.editBotMessageInlineKeyboard(edit);
     return result.edited ? { edited: true } : {
       edited: false,
-      reason: toEditInlineMessageFailureReason(authenticatedBot, result.reason),
+      reason: excludeInlineMessageChatFailure(authenticatedBot, result.reason),
     };
   }
 
@@ -5029,8 +4978,9 @@ function projectBotCommand({ command, description, isEphemeral }: BotCommand): B
 }
 
 /**
- * Narrows why a member query or moderation of the authenticated bot failed to the reasons it can
- * meet: the authenticated bot itself always exists.
+ * Narrows why an operation of the authenticated bot failed to the reasons it can meet: the
+ * authenticated bot itself always exists. The other reasons stay as precise as the domain reports
+ * them, for the Bot API's presenters to word.
  */
 function excludeMissingBotFailure<Reason extends string>(
   authenticatedBot: VirtualBotProfile,
@@ -5072,50 +5022,21 @@ function excludeAccountPinChangeFailure<Reason extends string>(
   return reason;
 }
 
-/** Translates the edit failures shared by both edit methods into Bot API failures. */
-function toEditMessageFailureReason(
-  authenticatedBot: VirtualBotProfile,
-  reason: BotMessageEditFailureReason | SupergroupBotMessageEditFailureReason,
-): EditMessageReplyMarkupFailureReason {
-  switch (reason) {
-    case 'chat_not_found':
-    case 'bot_not_a_member':
-    case 'bot_kicked':
-    case 'message_not_found':
-    case 'message_not_editable':
-    case 'callback_data_invalid':
-    case 'button_type_invalid':
-    case 'message_not_modified':
-      return reason;
-    // As for sending, a chat the bot cannot address is not found.
-    case 'account_not_found':
-    case 'conversation_not_started':
-      return 'chat_not_found';
-    case 'bot_not_found':
-      throw new Error(`Authenticated bot ${authenticatedBot.id} does not exist`);
-    default: {
-      const unhandledReason: never = reason;
-      throw new Error(`Unhandled bot message edit failure: ${unhandledReason}`);
-    }
-  }
-}
-
 /**
- * Translates the failures shared by the edit methods for an inline message into Bot API failures.
- * The messaging services check an inline message only by its identifier, so failures about its
- * chat cannot occur.
+ * Leaves out the failures of an edit of an inline message that cannot occur: the authenticated bot
+ * exists, and the messaging services check an inline message only by its identifier, so failures
+ * about its chat cannot occur.
  */
-function toEditInlineMessageFailureReason(
+function excludeInlineMessageChatFailure<Reason extends string>(
   authenticatedBot: VirtualBotProfile,
-  reason: BotMessageEditFailureReason | SupergroupBotMessageEditFailureReason,
-): EditInlineMessageReplyMarkupFailureReason {
+  reason:
+    | Reason
+    | 'bot_not_found'
+    | BotPrivateChatAccessFailureReason
+    | SupergroupBotAccessFailureReason
+    | 'message_not_editable',
+): Reason {
   switch (reason) {
-    case 'callback_data_invalid':
-    case 'button_type_invalid':
-    case 'message_not_modified':
-      return reason;
-    case 'message_not_found':
-      return 'inline_message_not_found';
     case 'bot_not_found':
       throw new Error(`Authenticated bot ${authenticatedBot.id} does not exist`);
     case 'account_not_found':
@@ -5125,9 +5046,7 @@ function toEditInlineMessageFailureReason(
     case 'bot_kicked':
     case 'message_not_editable':
       throw new Error(`Inline message edit failed for its chat: ${reason}`);
-    default: {
-      const unhandledReason: never = reason;
-      throw new Error(`Unhandled inline message edit failure: ${unhandledReason}`);
-    }
+    default:
+      return reason;
   }
 }

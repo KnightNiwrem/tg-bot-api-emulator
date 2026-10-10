@@ -11,10 +11,8 @@ import {
   type UnreadFormattedText,
   type UnreadInputMessageContent,
 } from '../inline_query_answer_parameters.ts';
-import {
-  BUTTON_DATA_INVALID_DESCRIPTION,
-  TDLIB_FILE_TYPE_NAMES,
-} from '../message_content_answers.ts';
+import { BOT_API_ERRORS } from '../errors/error_catalogue.ts';
+import { presentBotApiError } from '../errors/error_template.ts';
 import {
   badRequestDescription,
   botApiError,
@@ -66,7 +64,7 @@ const ANSWER_INLINE_QUERY_FAILURE_DESCRIPTIONS = {
   video_title_empty: 'Bad Request: VIDEO_TITLE_EMPTY',
   web_document_url_invalid: 'Bad Request: WEBDOCUMENT_URL_INVALID',
   photo_thumbnail_url_empty: 'Bad Request: PHOTO_THUMB_URL_EMPTY',
-  callback_data_invalid: BUTTON_DATA_INVALID_DESCRIPTION,
+  callback_data_invalid: BOT_API_ERRORS.buttonDataInvalid.description(),
   message_text_too_long: 'Bad Request: MESSAGE_TOO_LONG',
   caption_too_long: 'Bad Request: MEDIA_CAPTION_TOO_LONG',
   file_id_invalid: "Bad Request: wrong remote file identifier specified: can't unserialize it",
@@ -213,12 +211,7 @@ function handleAnswerInlineQuery(
     case 'text_invalid':
       return botApiError(400, badRequestDescription(result.textError));
     case 'file_type_mismatch':
-      return botApiError(
-        400,
-        `Bad Request: can't use file of type ${TDLIB_FILE_TYPE_NAMES[result.actualFileType]} as ${
-          TDLIB_FILE_TYPE_NAMES[result.expectedFileType]
-        }`,
-      );
+      return presentBotApiError(BOT_API_ERRORS.fileTypeMismatch, result);
     default:
       return botApiError(400, ANSWER_INLINE_QUERY_FAILURE_DESCRIPTIONS[result.reason]);
   }

@@ -1,6 +1,6 @@
 import { z } from 'zod';
 
-import { CHAT_ID_EMPTY_DESCRIPTION, supergroupBotAccessFailureAnswer } from '../chat_access.ts';
+import { botChatAccessFailureAnswer, CHAT_ID_EMPTY_DESCRIPTION } from '../chat_access.ts';
 import {
   INVALID_MESSAGE_IDENTIFIER_DESCRIPTION,
   MESSAGE_IDENTIFIERS_NOT_SPECIFIED_DESCRIPTION,
@@ -70,7 +70,7 @@ function handleDeleteMessage(
     case 'chat_not_found':
     case 'bot_not_a_member':
     case 'bot_kicked':
-      return supergroupBotAccessFailureAnswer(result.reason);
+      return botChatAccessFailureAnswer(result.reason);
     case 'message_not_found':
       return botApiError(400, MESSAGE_TO_DELETE_NOT_FOUND_DESCRIPTION);
     case 'message_not_deletable':
@@ -116,7 +116,7 @@ function handleDeleteMessages(
     case 'chat_not_found':
     case 'bot_not_a_member':
     case 'bot_kicked':
-      return supergroupBotAccessFailureAnswer(result.reason);
+      return botChatAccessFailureAnswer(result.reason);
     case 'message_not_deletable':
       return botApiError(400, MESSAGE_NOT_DELETABLE_DESCRIPTION);
     default: {

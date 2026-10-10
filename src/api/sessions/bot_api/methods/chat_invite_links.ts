@@ -1,7 +1,7 @@
 import { z } from 'zod';
 
 import type { EmulationSession } from '../../../../types/emulation_session.ts';
-import { CHAT_ID_EMPTY_DESCRIPTION, supergroupBotAccessFailureAnswer } from '../chat_access.ts';
+import { botChatAccessFailureAnswer, CHAT_ID_EMPTY_DESCRIPTION } from '../chat_access.ts';
 import {
   botApiError,
   type BotApiMethod,
@@ -233,7 +233,7 @@ function inviteLinkMethodFailureAnswer(
     case 'chat_not_found':
     case 'bot_not_a_member':
     case 'bot_kicked':
-      return supergroupBotAccessFailureAnswer(reason);
+      return botChatAccessFailureAnswer(reason);
     case 'private_chat_has_no_invite_links':
       return botApiError(400, PRIVATE_CHAT_HAS_NO_INVITE_LINKS_DESCRIPTION);
     case 'text_encoding_invalid':

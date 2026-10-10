@@ -59,7 +59,7 @@ import { VirtualUserService } from '../src/services/virtual_user.ts';
 import type { PhotoUpload } from '../src/types/stored_file.ts';
 import { createRealTimeScheduler, createRetryScheduler } from './support/scheduler.ts';
 
-Deno.test('BotApiService translates private messaging failures into Bot API reasons', () => {
+Deno.test('BotApiService reports why a bot cannot address a private chat, for the Bot API to present', () => {
   const { virtualUsers, privateMessaging, botApi } = createBotApiFixture();
   const bot = createBot(virtualUsers, 'test_bot');
   const account = createAccount(virtualUsers);
@@ -69,11 +69,22 @@ Deno.test('BotApiService translates private messaging failures into Bot API reas
     to: { type: 'private', botId: bot.profile.id },
     content: { kind: 'text', text: '/start' },
   });
-  // Any user who has not written to the bot is, like an unknown chat, not found.
+  // Telegram reports both as an unknown chat; the service keeps them apart for the presenters of
+  // the families that present them, while the others still report an unknown chat.
   const chatId = strangerAccount.profile.id;
+  const unknownAccountId = strangerAccount.profile.id + 1000;
 
   const cases = [
-    ['sendMessage', botApi.sendMessage(bot.profile, { chatId, text: 'Hello' }), 'chat_not_found'],
+    [
+      'sendMessage',
+      botApi.sendMessage(bot.profile, { chatId, text: 'Hello' }),
+      'conversation_not_started',
+    ],
+    [
+      'sendMessage',
+      botApi.sendMessage(bot.profile, { chatId: unknownAccountId, text: 'Hello' }),
+      'account_not_found',
+    ],
     [
       'editMessageText',
       botApi.editMessageText(bot.profile, {
@@ -81,12 +92,17 @@ Deno.test('BotApiService translates private messaging failures into Bot API reas
         messageId: 1,
         content: { kind: 'text', text: 'Done' },
       }),
-      'chat_not_found',
+      'conversation_not_started',
     ],
     [
       'editMessageReplyMarkup',
       botApi.editMessageReplyMarkup(bot.profile, { chatId, messageId: 1 }),
-      'chat_not_found',
+      'conversation_not_started',
+    ],
+    [
+      'stopPoll',
+      botApi.stopPoll(bot.profile, { chatId, messageId: 1 }),
+      'conversation_not_started',
     ],
     [
       'deleteMessage',
@@ -101,7 +117,7 @@ Deno.test('BotApiService translates private messaging failures into Bot API reas
     [
       'sendChatAction',
       botApi.sendChatAction(bot.profile, { chatId, action: 'typing' }),
-      'chat_not_found',
+      'conversation_not_started',
     ],
     // The text is checked before the chat.
     ['sendMessage', botApi.sendMessage(bot.profile, { chatId, text: '' }), 'message_text_empty'],

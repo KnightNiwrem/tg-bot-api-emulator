@@ -11,11 +11,10 @@ import {
   MAX_VIDEO_SIDE_LENGTH,
 } from '../../../../types/stored_file.ts';
 import type { ChatAction } from '../../../../types/virtual_chat.ts';
-import {
-  BOT_BLOCKED_DESCRIPTION,
-  CHAT_ID_EMPTY_DESCRIPTION,
-  supergroupBotAccessFailureAnswer,
-} from '../chat_access.ts';
+import { CHAT_ID_EMPTY_DESCRIPTION } from '../chat_access.ts';
+import { BOT_API_ERRORS } from '../errors/error_catalogue.ts';
+import { presentFixedBotApiError } from '../errors/error_template.ts';
+import { presentMessageSendingFailure } from '../errors/message_sending_failure_presenter.ts';
 import { contactNameSchema, contactVcardSchema } from '../contact_parameter.ts';
 import {
   captionParametersShape,
@@ -37,11 +36,8 @@ import {
   describeInputPollOptionTextError,
   readInputPollOptionsParameter,
 } from '../input_poll_option_parameter.ts';
-import { MESSAGE_TEXT_TOO_LONG_DESCRIPTION } from '../message_content_answers.ts';
 import { messageEntitiesParameter } from '../message_entities_parameter.ts';
 import {
-  albumMessageNotSentError,
-  badRequestDescription,
   botApiError,
   type BotApiMethod,
   type BotApiMethodAnswer,
@@ -87,13 +83,6 @@ export const MESSAGE_SENDING_METHODS: readonly BotApiMethod[] = [
   { name: 'sendVideo', recordsActivity: true, handler: handleSendVideo },
   { name: 'sendVoice', recordsActivity: true, handler: handleSendVoice },
 ];
-
-/** Telegram's descriptions for a message draft its servers refuse. */
-const DRAFT_ID_INVALID_DESCRIPTION = 'Bad Request: RANDOM_ID_INVALID';
-const DRAFT_CHAT_NOT_PRIVATE_DESCRIPTION = 'Bad Request: TEXTDRAFT_PEER_INVALID';
-
-/** Telegram's description for a missing or unknown chat action. */
-const CHAT_ACTION_INVALID_DESCRIPTION = 'Bad Request: wrong parameter action in request';
 
 /** Chat actions by the lowercase names Telegram reads, including its older aliases. */
 const CHAT_ACTIONS_BY_NAME: ReadonlyMap<string, ChatAction> = new Map([
@@ -288,12 +277,6 @@ type SendMediaGroupResult = ReturnType<EmulationSession['botApi']['sendMediaGrou
 type MediaReplacementRequest = Parameters<
   EmulationSession['botApi']['sendMediaGroup']
 >[1]['media'][number];
-
-/** An upload of an album's message that Telegram's servers refused once the album was sent. */
-type ServerRefusedUploadFailure = Extract<
-  SendMediaGroupResult,
-  { readonly reason: 'media_group_member_not_sent' }
->['failure'];
 
 /** A poll's type as `sendPoll` takes it. */
 type PollTypeRequest = Parameters<EmulationSession['botApi']['sendPoll']>[1]['type'];
@@ -875,57 +858,11 @@ async function handleSendMediaGroup(
   }));
 }
 
-/**
- * Telegram's answer to `sendMediaGroup`: the album's messages, or, for an album TDLib refuses, the
- * description `fail_query_with_error` gives TDLib's error.
- */
+/** Telegram's answer to `sendMediaGroup`: the album's messages, or its error for why none was sent. */
 function sendMediaGroupAnswer(result: SendMediaGroupResult): BotApiMethodAnswer {
-  if (result.sent) {
-    return botApiResult(result.messages);
-  }
-  switch (result.reason) {
-    case 'album_empty':
-      return botApiError(400, 'Bad Request: there are no messages to send');
-    case 'album_too_large':
-      return botApiError(400, 'Bad Request: too many messages to send as an album');
-    case 'album_caption_placement_mixed':
-      return botApiError(
-        400,
-        'Bad Request: parameter show_caption_above_media must be the same for all messages',
-      );
-    case 'album_documents_mixed':
-      return botApiError(400, "Bad Request: document can't be mixed with other media types");
-    case 'album_audio_mixed':
-      return botApiError(400, "Bad Request: audio can't be mixed with other media types");
-    case 'media_group_member_not_sent':
-      return albumMessageNotSentError(
-        result.memberPosition,
-        serverRefusedUploadError(result.failure),
-      );
-    default:
-      return sendMethodAnswer(result);
-  }
-}
-
-/**
- * The error Telegram's servers give for an upload they refuse, as `albumMessageNotSentError`
- * reports it. A local server's upload limit is enforced with an error that is not in the source;
- * the emulator words it as TDLib's `check_full_local_location` words its own size checks.
- */
-function serverRefusedUploadError(failure: ServerRefusedUploadFailure): string {
-  switch (failure.reason) {
-    case 'image_invalid':
-      return 'IMAGE_PROCESS_FAILED';
-    case 'photo_dimensions_invalid':
-      return 'PHOTO_INVALID_DIMENSIONS';
-    case 'bot_upload_too_big':
-      return `File of size ${failure.fileSizeBytes} bytes is too big; ` +
-        `the maximum size is ${failure.maxFileSizeBytes} bytes`;
-    default: {
-      const unhandledFailure: never = failure;
-      throw new Error(`Unhandled refused upload: ${JSON.stringify(unhandledFailure)}`);
-    }
-  }
+  return result.sent
+    ? botApiResult(result.messages)
+    : presentMessageSendingFailure('message_send', result);
 }
 
 /** The error for a file parameter that names no uploaded file. */
@@ -969,29 +906,7 @@ function handleSendMessageDraft(
     canStop: data.can_stop,
     keepOnStop: data.keep_on_stop,
   });
-  if (result.sent) {
-    return botApiResult(true);
-  }
-  switch (result.reason) {
-    case 'chat_not_found':
-    case 'bot_not_a_member':
-    case 'bot_kicked':
-      return supergroupBotAccessFailureAnswer(result.reason);
-    case 'text_invalid':
-      return botApiError(400, badRequestDescription(result.textError));
-    case 'draft_chat_not_private':
-      return botApiError(400, DRAFT_CHAT_NOT_PRIVATE_DESCRIPTION);
-    case 'bot_blocked':
-      return botApiError(403, BOT_BLOCKED_DESCRIPTION);
-    case 'draft_id_missing':
-      return botApiError(400, DRAFT_ID_INVALID_DESCRIPTION);
-    case 'message_text_too_long':
-      return botApiError(400, MESSAGE_TEXT_TOO_LONG_DESCRIPTION);
-    default: {
-      const unhandledReason: never = result;
-      throw new Error(`Unhandled sendMessageDraft failure: ${JSON.stringify(unhandledReason)}`);
-    }
-  }
+  return result.sent ? botApiResult(true) : presentMessageSendingFailure('message_draft', result);
 }
 
 function handleSendChatAction(
@@ -1006,7 +921,7 @@ function handleSendChatAction(
   // Telegram reads the action before it looks at the chat.
   const action = CHAT_ACTIONS_BY_NAME.get(actionName.toLowerCase());
   if (action === undefined) {
-    return botApiError(400, CHAT_ACTION_INVALID_DESCRIPTION);
+    return presentFixedBotApiError(BOT_API_ERRORS.chatActionInvalid);
   }
   if (chatId === undefined) {
     return botApiError(400, CHAT_ID_EMPTY_DESCRIPTION);
@@ -1016,19 +931,5 @@ function handleSendChatAction(
     context.bot,
     { chatId, action },
   );
-  if (result.sent) {
-    return botApiResult(true);
-  }
-  switch (result.reason) {
-    case 'chat_not_found':
-    case 'bot_not_a_member':
-    case 'bot_kicked':
-      return supergroupBotAccessFailureAnswer(result.reason);
-    case 'bot_blocked':
-      return botApiError(403, BOT_BLOCKED_DESCRIPTION);
-    default: {
-      const unhandledReason: never = result.reason;
-      throw new Error(`Unhandled sendChatAction failure: ${unhandledReason}`);
-    }
-  }
+  return result.sent ? botApiResult(true) : presentMessageSendingFailure('chat_action', result);
 }

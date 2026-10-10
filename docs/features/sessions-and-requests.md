@@ -216,6 +216,16 @@ The corresponding upstream paths are [`HttpReader::read_next`][http-reader],
 [`Client::process_get_updates_query`][polling]. This does not imply that all malformed requests are
 accepted upstream; low-level HTTP errors and size limits can still fail there.
 
+`editMessageText`, `editMessageCaption`, `editMessageMedia`, `editMessageReplyMarkup` and `stopPoll`
+name the first parameter their schema refuses after the description, as a path into the call's
+parameters:
+`Bad Request: invalid editMessageReplyMarkup parameters: reply_markup.inline_keyboard[0][1]` for a
+button with no action, or `Bad Request: invalid stopPoll parameters: open_period` for a parameter
+the method does not take. A key that is not a plain name is written as a JSON string in brackets,
+such as `["odd key"]`; the path never includes a parameter's value. A parameter that the schema
+reads as text and a later reader refuses, such as `editMessageMedia`'s `media`, keeps the
+description without a path, as do the other methods.
+
 ## Accepted options without their Telegram effects
 
 | Option or method                                   | Emulator behavior                            | Classification and details                                         |
@@ -250,6 +260,10 @@ managing individual profiles is missing.
 [request decoding](../../src/api/sessions/bot_api/request_parameters.ts),
 [method invocation](../../src/api/sessions/bot_api/method_invocation.ts),
 [method schemas](../../src/api/sessions/bot_api/methods/),
+[Bot API error catalogue](../../src/api/sessions/bot_api/errors/error_catalogue.ts), which records
+where each description comes from, and its
+[presentation tests](../../tests/bot_api_error_presentation_test.ts) and
+[parameter path tests](../../tests/bot_api_invalid_parameters_test.ts),
 [rate limit answers](../../src/services/bot_rate_limit.ts),
 [server error answers](../../src/services/bot_server_error.ts) and
 [their dispatch](../../src/api/sessions/bot_api/queued_answer.ts),

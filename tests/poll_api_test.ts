@@ -783,7 +783,7 @@ Deno.test('stopPoll closes a poll, keeps its votes and refuses later answers', a
       'Bad Request: chat not found',
       'Bad Request: chat_id is empty',
       'Bad Request: BUTTON_DATA_INVALID',
-      'Bad Request: invalid stopPoll parameters',
+      'Bad Request: invalid stopPoll parameters: open_period',
     ],
     'Expected stopPoll to refuse what Telegram refuses',
   );

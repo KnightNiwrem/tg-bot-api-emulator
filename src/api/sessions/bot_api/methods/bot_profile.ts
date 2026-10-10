@@ -10,7 +10,7 @@ import {
   botCommandsParameter,
   readBotCommandScopeParameter,
 } from '../bot_command_parameters.ts';
-import { resolveChatIdentifier, supergroupBotAccessFailureAnswer } from '../chat_access.ts';
+import { botChatAccessFailureAnswer, resolveChatIdentifier } from '../chat_access.ts';
 import { readChatAdministratorRightsParameter } from '../chat_administrator_rights_parameter.ts';
 import { readMenuButtonParameter } from '../menu_button_parameter.ts';
 import {
@@ -256,7 +256,7 @@ function myCommandsTargetError(reason: MyCommandsTargetFailureReason): BotApiMet
     case 'chat_not_found':
     case 'bot_not_a_member':
     case 'bot_kicked':
-      return supergroupBotAccessFailureAnswer(reason);
+      return botChatAccessFailureAnswer(reason);
     case 'scope_not_allowed_in_private_chats':
       return botApiError(400, SCOPE_NOT_ALLOWED_IN_PRIVATE_CHATS_DESCRIPTION);
     case 'language_code_invalid':

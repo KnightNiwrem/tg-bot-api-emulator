@@ -1,6 +1,6 @@
 import { z } from 'zod';
 
-import { CHAT_ID_EMPTY_DESCRIPTION, supergroupBotAccessFailureAnswer } from '../chat_access.ts';
+import { botChatAccessFailureAnswer, CHAT_ID_EMPTY_DESCRIPTION } from '../chat_access.ts';
 import { messageIdOrNone } from '../message_identifiers.ts';
 import {
   botApiError,
@@ -85,7 +85,7 @@ function handleSetMessageReaction(
     case 'chat_not_found':
     case 'bot_not_a_member':
     case 'bot_kicked':
-      return supergroupBotAccessFailureAnswer(result.reason);
+      return botChatAccessFailureAnswer(result.reason);
     case 'private_chat_reactions_unsupported':
       return botApiError(400, PRIVATE_CHAT_REACTIONS_UNSUPPORTED_DESCRIPTION);
     case 'message_not_found':

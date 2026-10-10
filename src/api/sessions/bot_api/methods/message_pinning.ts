@@ -1,11 +1,9 @@
 import { z } from 'zod';
 
 import type { SupergroupBotAccessFailureReason } from '../../../../types/chat_membership.ts';
-import {
-  BOT_BLOCKED_DESCRIPTION,
-  CHAT_ID_EMPTY_DESCRIPTION,
-  supergroupBotAccessFailureAnswer,
-} from '../chat_access.ts';
+import { botChatAccessFailureAnswer, CHAT_ID_EMPTY_DESCRIPTION } from '../chat_access.ts';
+import { BOT_API_ERRORS } from '../errors/error_catalogue.ts';
+import { presentFixedBotApiError } from '../errors/error_template.ts';
 import { messageIdOrNone, NO_MESSAGE_ID } from '../message_identifiers.ts';
 import {
   botApiError,
@@ -149,9 +147,9 @@ function pinChangeFailureAnswer(
     case 'chat_not_found':
     case 'bot_not_a_member':
     case 'bot_kicked':
-      return supergroupBotAccessFailureAnswer(reason);
+      return botChatAccessFailureAnswer(reason);
     case 'bot_blocked':
-      return botApiError(403, BOT_BLOCKED_DESCRIPTION);
+      return presentFixedBotApiError(BOT_API_ERRORS.botBlocked);
     case 'not_enough_rights':
       return botApiError(400, NOT_ENOUGH_RIGHTS_TO_PIN_DESCRIPTION);
     case 'service_message_not_pinnable':
