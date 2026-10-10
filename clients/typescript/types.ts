@@ -2876,7 +2876,9 @@ export interface BotActivityCriteria {
    *   missing;
    * - an array matches an array of the same length whose elements match the pattern's, in order.
    *
-   * An empty map still matches only calls.
+   * An empty map still matches only calls. A read refuses with a `TypeError` patterns that JSON
+   * cannot carry unchanged, such as a `Date`, `NaN`, or an object with a `toJSON` method or a
+   * getter.
    */
   readonly parameters_json?: Readonly<Record<string, JsonStructure>>;
 }

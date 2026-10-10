@@ -1,7 +1,7 @@
 import { toCurrentBotApiMethodName } from './bot_api_method_name.ts';
 import { BOT_ACTIVITY_KINDS } from './constants.ts';
 import { EmulationClientError } from './emulation_client_error.ts';
-import { assertJsonStructure, canonicalJsonText } from './json_pattern.ts';
+import { type CheckedJsonPattern, checkJsonPattern } from './json_pattern.ts';
 import type {
   BotActivityCriteria,
   BotActivityCursor,
@@ -629,9 +629,10 @@ function combineParameters(
 }
 
 /**
- * Combines parameter patterns, after checking that each is JSON. Patterns for one parameter differ
- * only when they differ other than in member order. An empty map is kept, as it is for
- * `combineParameters`.
+ * Combines parameter patterns into copies of the values checked, which `checkJsonPattern`
+ * describes, so that later reads, and the text a read sends, see only what was checked. Patterns
+ * for one parameter differ only when they differ other than in member order. An empty map is
+ * kept, as it is for `combineParameters`.
  */
 function combineParameterPatterns(
   logPatterns: Readonly<Record<string, JsonStructure>> | undefined,
@@ -640,22 +641,41 @@ function combineParameterPatterns(
   if (logPatterns === undefined && readPatterns === undefined) {
     return undefined;
   }
-  for (const [filterName, patterns] of [['log', logPatterns], ['read', readPatterns]] as const) {
-    for (const [name, pattern] of Object.entries(patterns ?? {})) {
-      assertJsonStructure(pattern, `The ${filterName}'s pattern for parameter ${name}`);
+  const patterns = checkParameterPatterns(logPatterns, 'log');
+  for (const [name, readPattern] of checkParameterPatterns(readPatterns, 'read')) {
+    const logPattern = patterns.get(name);
+    if (logPattern !== undefined && logPattern.text !== readPattern.text) {
+      throw new TypeError(
+        `The read's pattern for parameter ${name} ${readPattern.text} conflicts with the log's ` +
+          logPattern.text,
+      );
     }
+    patterns.set(name, readPattern);
   }
-  const patterns = new Map(Object.entries(logPatterns ?? {}));
-  for (const [name, pattern] of Object.entries(readPatterns ?? {})) {
-    assertCompatibleCriteria(
-      `pattern for parameter ${name}`,
-      patterns.get(name),
-      pattern,
-      canonicalJsonText,
-    );
-    patterns.set(name, pattern);
+  return Object.fromEntries([...patterns].map(([name, { value }]) => [name, value]));
+}
+
+/** Checks the patterns of the log's filter or a read's, by parameter name. */
+function checkParameterPatterns(
+  patterns: Readonly<Record<string, JsonStructure>> | undefined,
+  filterName: 'log' | 'read',
+): Map<string, CheckedJsonPattern> {
+  if (patterns === undefined) {
+    return new Map();
   }
-  return Object.fromEntries(patterns);
+  const { value: checkedPatterns } = checkJsonPattern(
+    patterns,
+    `The ${filterName}'s parameters_json`,
+  );
+  if (Array.isArray(checkedPatterns)) {
+    throw new TypeError(`The ${filterName}'s parameters_json must be an object, not an array`);
+  }
+  return new Map(
+    Object.entries(checkedPatterns).map(([name, pattern]) => [
+      name,
+      checkJsonPattern(pattern, `The ${filterName}'s pattern for parameter ${name}`),
+    ]),
+  );
 }
 
 function combineCriterion<Value>(

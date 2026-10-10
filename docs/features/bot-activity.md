@@ -120,8 +120,10 @@ every read in addition to the read's own filter. Filters use the entries' field 
 `bot_id` and `chat_id`. `parameters` takes the exact text of each parameter, and `parameters_json`
 the patterns for parameters that hold JSON, as plain values, such as
 `{ parameters_json: { reply_parameters: { message_id: command.message_id } } }`; the client sends
-them as one JSON query parameter. It refuses with a `TypeError` a pattern that JSON cannot carry
-unchanged, such as one holding `undefined`, `NaN` or a `Date`. An empty `parameters` or
+them as one JSON query parameter. It writes that JSON itself from the values it checks, reading each
+once, and refuses with a `TypeError` a pattern that JSON cannot carry unchanged: one holding
+`undefined`, `NaN`, a `Date` or another class's object, or an object or array with a `toJSON`
+property or a getter, whose code would decide what `JSON.stringify` sends. An empty `parameters` or
 `parameters_json` map matches only calls, like any criteria only calls have; as an empty
 `parameters` map puts nothing in the query, the client sends `kind=bot_api_call` for it. A view and
 a read whose criteria together can match no entry are rejected with a `TypeError`: different values

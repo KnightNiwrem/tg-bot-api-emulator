@@ -5,6 +5,7 @@ import {
   kindsMatchableBy,
 } from './bot_activity_log.ts';
 import { HTTP_STATUS_OK } from './constants.ts';
+import { checkJsonPattern } from './json_pattern.ts';
 import { botActivityReadResponseSchema } from './schemas.ts';
 import type { BotActivityCriteria, BotActivityKind } from './types.ts';
 import { requestJson } from './utils.ts';
@@ -60,7 +61,9 @@ function toReadQuery(
     query.set(`parameters[${name}]`, text);
   }
   if (parameters_json !== undefined) {
-    query.set('parameters_json', JSON.stringify(parameters_json));
+    // The text the check writes from the values it read, rather than `JSON.stringify`, which
+    // would run any hook the patterns carry.
+    query.set('parameters_json', checkJsonPattern(parameters_json, 'parameters_json').text);
   }
   return query;
 }

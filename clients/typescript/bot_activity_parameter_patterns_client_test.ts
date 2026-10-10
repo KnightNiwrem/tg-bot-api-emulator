@@ -5,6 +5,7 @@
  */
 import { createTestApi } from '../../tests/support/emulation_api.ts';
 import { createHttpBotActivityPageReader } from './bot_activity_http_page_reader.ts';
+import { createBotActivityLog } from './bot_activity_log.ts';
 import { TelegramEmulationClient, UnexpectedBotActivityError } from './mod.ts';
 import type { BotActivityCriteria, JsonStructure } from './mod.ts';
 
@@ -109,6 +110,9 @@ Deno.test('The client refuses patterns that sending as JSON would change', async
     ['a function', { toJSON: () => ({}) }],
     ['a bigint', { id: 1n }],
     ['a cycle', cyclic],
+    ['a hidden toJSON', withHiddenToJson({ message_id: 1 })],
+    ['a hidden toJSON on a nested object', { quote: withHiddenToJson({ text: 'x' }) }],
+    ['a getter', Object.defineProperty({}, 'message_id', { get: () => 1, enumerable: true })],
   ];
   for (const [description, pattern] of patterns) {
     await assertTypeError(
@@ -120,8 +124,45 @@ Deno.test('The client refuses patterns that sending as JSON would change', async
       `Expected a pattern holding ${description} to be refused`,
     );
   }
+  const viewWithHook = session.botActivity({
+    parameters_json: withHiddenToJson({ reply_parameters: { message_id: 1 } }),
+  });
+  await assertTypeError(
+    () => viewWithHook.assertNone({}, { after: 0, before: 1 }),
+    "Expected a toJSON hook on a view's patterns to be refused",
+  );
   await session.end();
 });
+
+Deno.test('Each read sends the text of the patterns as it checked them for that read', async () => {
+  const requestedUrls: URL[] = [];
+  const fetch: typeof globalThis.fetch = (input) => {
+    requestedUrls.push(new URL(input instanceof Request ? input.url : input));
+    return Promise.resolve(Response.json({ entries: [], head_position: 0 }));
+  };
+  const replyParameters: { message_id: number } = { message_id: 5 };
+  const activity = createBotActivityLog(
+    createHttpBotActivityPageReader('http://emulator.example/bot-activity', fetch),
+    { parameters_json: { reply_parameters: replyParameters } },
+    {},
+  );
+
+  // The view's patterns are checked anew for each read, so a change before a read is what it sends.
+  replyParameters.message_id = 6;
+  await activity.assertNone({ method: 'sendMessage' }, { after: 0, before: 1 });
+
+  const sentPatterns = requestedUrls.map((url) => url.searchParams.get('parameters_json'));
+  if (JSON.stringify(sentPatterns) !== JSON.stringify(['{"reply_parameters":{"message_id":6}}'])) {
+    throw new Error(`Expected the checked patterns to be sent: ${JSON.stringify(sentPatterns)}`);
+  }
+});
+
+function withHiddenToJson<Value extends object>(value: Value): Value {
+  return Object.defineProperty(value, 'toJSON', {
+    value: () => ({ message_id: 999 }),
+    enumerable: false,
+  });
+}
 
 Deno.test('The HTTP page reader sends parameter patterns as one JSON query parameter', async () => {
   const requestedUrls: URL[] = [];
