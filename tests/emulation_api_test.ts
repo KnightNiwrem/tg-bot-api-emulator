@@ -5,16 +5,46 @@ import {
 } from 'https://cdn.jsdelivr.net/gh/grammyjs/grammY@^1.46.0/src/convenience/keyboard.ts';
 import { InputFile } from 'https://cdn.jsdelivr.net/gh/grammyjs/grammY@^1.46.0/src/types.ts';
 import { GrammyError } from 'https://cdn.jsdelivr.net/gh/grammyjs/grammY@^1.46.0/src/core/error.ts';
-import { webhookCallback } from 'https://cdn.jsdelivr.net/gh/grammyjs/grammY@^1.46.0/src/convenience/webhook.ts';
+import {
+  webhookCallback,
+} from 'https://cdn.jsdelivr.net/gh/grammyjs/grammY@^1.46.0/src/convenience/webhook.ts';
 
 import { MAX_TELEGRAM_USER_ID } from '../src/types/telegram_identity.ts';
 import {
   createTestApi,
   createTestSession,
-  type EmulationApi,
-  type SessionSettings,
+  jsonRequest,
   TEST_PUBLIC_ORIGIN,
 } from './support/emulation_api.ts';
+import { expectSettlementWithin } from './support/settlement.ts';
+import { createInProcessFetch } from './support/in_process_fetch.ts';
+import {
+  isBadRequestResponse,
+  isCreatedAccountResponse,
+  isCreatedBotResponse,
+  isGetUpdatesResponse,
+  isMessageHistoryResponse,
+  isNotFoundResponse,
+  isPrivateMessage,
+  isSentMessageResponse,
+  isUserProfile,
+  type TestPrivateMessage,
+} from './support/http_response_guards.ts';
+import {
+  botApiResult,
+  callBotApi,
+  callBotApiWithFiles,
+  createUpdateReader,
+  photoSizeOf,
+  updateMessages,
+} from './support/bot_api_requests.ts';
+import {
+  createAccount,
+  createBot,
+  createPrivateConversationFixture,
+  createSupergroupFixture,
+} from './support/http_fixtures.ts';
+import { gifImage } from './support/media_samples.ts';
 
 Deno.test('POST /sessions creates a session and returns its API locations', async () => {
   const api = createTestApi();
@@ -4098,7 +4128,6 @@ Deno.test('sendChatAction accepts Telegram actions in started private chats', as
   );
 });
 
-/** Returns what `pending` settles to, failing if it is still pending after `milliseconds`. */
 Deno.test('sendMessage replies to messages of the chat and accepts Telegram message options', async () => {
   const { api, sessionPath, botApiPath, createdBot, createdAccount, sendText } =
     await createPrivateConversationFixture();
@@ -12454,169 +12483,6 @@ Deno.test('tests queue rate limit answers for the next Bot API calls of a bot', 
   }
 });
 
-async function expectSettlementWithin<T>(
-  pending: Promise<T>,
-  milliseconds: number,
-  failureMessage: string,
-): Promise<T> {
-  let timeoutId: ReturnType<typeof setTimeout> | undefined;
-  const timeout = new Promise<never>((_resolve, reject) => {
-    timeoutId = setTimeout(() => reject(new Error(failureMessage)), milliseconds);
-  });
-  try {
-    return await Promise.race([pending, timeout]);
-  } finally {
-    clearTimeout(timeoutId);
-  }
-}
-
-/** Creates a session holding a bot and an account that can message it. */
-async function createPrivateConversationFixture(sessionSettings?: SessionSettings) {
-  const { api, sessionPath } = await createTestSession(sessionSettings);
-  const createBotResponse = await api.request(`${sessionPath}/bots`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ first_name: 'Test Bot', username: 'test_bot' }),
-  });
-  const createdBot: unknown = await createBotResponse.json();
-  if (!isCreatedBotResponse(createdBot)) {
-    throw new Error('Expected a created bot response');
-  }
-  const createAccountResponse = await api.request(`${sessionPath}/accounts`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ first_name: 'Ada' }),
-  });
-  const createdAccount: unknown = await createAccountResponse.json();
-  if (!isCreatedAccountResponse(createdAccount)) {
-    throw new Error('Expected a created account response');
-  }
-
-  const sendText = async (text: string) => {
-    const response = await api.request(
-      `${sessionPath}/accounts/${createdAccount.account.id}/messages`,
-      {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ to: { type: 'private', botId: createdBot.bot.id }, text }),
-      },
-    );
-    if (response.status !== 201) {
-      throw new Error(`Expected "${text}" to be accepted, received ${response.status}`);
-    }
-  };
-
-  return {
-    api,
-    sessionPath,
-    botApiPath: `${sessionPath}/bot-api/bot${createdBot.token}`,
-    createdBot,
-    createdAccount,
-    sendText,
-  };
-}
-
-/**
- * Creates a session with a supergroup that its owner, Ada, created, and to which Ada added Grace,
- * a bot in privacy mode, and a bot that reads all group messages.
- */
-async function createSupergroupFixture() {
-  const { api, sessionPath } = await createTestSession();
-  const owner = await createAccount(api, sessionPath, 'Ada');
-  const member = await createAccount(api, sessionPath, 'Grace');
-  const bot = await createBot(api, sessionPath, 'test_bot');
-  const readerBot = await createBot(api, sessionPath, 'reader_bot', {
-    can_read_all_group_messages: true,
-  });
-
-  const createResponse = await api.request(
-    `${sessionPath}/accounts/${owner.id}/supergroups`,
-    jsonRequest('POST', { title: 'Team' }),
-  );
-  if (createResponse.status !== 201) {
-    throw new Error(`Expected the supergroup to be created, received ${createResponse.status}`);
-  }
-  const { supergroup } = await createResponse.json() as {
-    supergroup: { id: number; type: string; title: string };
-  };
-  const supergroupPath = (accountId: number) =>
-    `${sessionPath}/accounts/${accountId}/conversations/supergroup/${supergroup.id}`;
-  for (const userId of [member.id, bot.bot.id, readerBot.bot.id]) {
-    const response = await api.request(`${supergroupPath(owner.id)}/members/${userId}`, {
-      method: 'PUT',
-    });
-    if (response.status !== 204) {
-      throw new Error(`Expected member ${userId} to be added, received ${response.status}`);
-    }
-  }
-
-  const sendSupergroupText = async (accountId: number, text: string, replyToMessageId?: number) => {
-    const response = await api.request(
-      `${sessionPath}/accounts/${accountId}/messages`,
-      jsonRequest('POST', {
-        to: { type: 'supergroup', chatId: supergroup.id },
-        text,
-        ...(replyToMessageId === undefined ? {} : { reply_to_message_id: replyToMessageId }),
-      }),
-    );
-    const body: unknown = await response.json();
-    if (response.status !== 201 || !isSentMessageResponse(body)) {
-      throw new Error(`Expected "${text}" to be accepted, received ${response.status}`);
-    }
-    return body.message;
-  };
-
-  return {
-    api,
-    sessionPath,
-    owner,
-    member,
-    bot,
-    readerBot,
-    supergroup,
-    supergroupPath,
-    sendSupergroupText,
-  };
-}
-
-async function createAccount(
-  api: EmulationApi,
-  sessionPath: string,
-  firstName: string,
-) {
-  const response = await api.request(
-    `${sessionPath}/accounts`,
-    jsonRequest('POST', { first_name: firstName }),
-  );
-  const body: unknown = await response.json();
-  if (!isCreatedAccountResponse(body)) {
-    throw new Error(`Expected account ${firstName} to be created, received ${response.status}`);
-  }
-  return body.account;
-}
-
-async function createBot(
-  api: EmulationApi,
-  sessionPath: string,
-  username: string,
-  options: {
-    can_read_all_group_messages?: boolean;
-    supports_inline_queries?: boolean;
-    receives_chosen_inline_results?: boolean;
-    requests_inline_location?: boolean;
-  } = {},
-) {
-  const response = await api.request(
-    `${sessionPath}/bots`,
-    jsonRequest('POST', { first_name: 'Test Bot', username, ...options }),
-  );
-  const body: unknown = await response.json();
-  if (!isCreatedBotResponse(body)) {
-    throw new Error(`Expected bot ${username} to be created, received ${response.status}`);
-  }
-  return { ...body, botApiPath: `${sessionPath}/bot-api/bot${body.token}` };
-}
-
 /**
  * A supergroup administrator as the Bot API shows it, holding the given rights; the list includes
  * `can_manage_chat`, which any right includes.
@@ -12650,10 +12516,6 @@ function administratorMember(user: unknown, heldRights: readonly string[]) {
   };
 }
 
-function jsonRequest(method: 'PATCH' | 'POST' | 'PUT', body: unknown): RequestInit {
-  return { method, headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) };
-}
-
 function isSessionResponse(
   value: unknown,
 ): value is { id: string; botApiRoot: string; uploadProfile: string } {
@@ -12664,22 +12526,6 @@ function isSessionResponse(
   const { id, botApiRoot, uploadProfile } = value as Record<string, unknown>;
   return typeof id === 'string' && id.length > 0 && typeof botApiRoot === 'string' &&
     typeof uploadProfile === 'string';
-}
-
-function isCreatedBotResponse(value: unknown): value is {
-  token: string;
-  bot: { id: number; is_bot: boolean; first_name: string; username: string };
-} {
-  if (typeof value !== 'object' || value === null) {
-    return false;
-  }
-
-  const { token, bot } = value as Record<string, unknown>;
-  return (
-    typeof token === 'string' &&
-    isUserProfile(bot) &&
-    typeof bot.username === 'string'
-  );
 }
 
 function isGetMeResponse(value: unknown): value is {
@@ -12694,20 +12540,6 @@ function isGetMeResponse(value: unknown): value is {
   return ok === true && isUserProfile(result) && typeof result.username === 'string';
 }
 
-function isBadRequestResponse(value: unknown): value is {
-  ok: false;
-  error_code: 400;
-  description: string;
-} {
-  if (typeof value !== 'object' || value === null) {
-    return false;
-  }
-
-  const { ok, error_code, description } = value as Record<string, unknown>;
-  return ok === false && error_code === 400 && typeof description === 'string' &&
-    description.startsWith('Bad Request: ');
-}
-
 function isUnauthorizedResponse(value: unknown): value is {
   ok: false;
   error_code: 401;
@@ -12719,87 +12551,6 @@ function isUnauthorizedResponse(value: unknown): value is {
 
   const { ok, error_code, description } = value as Record<string, unknown>;
   return ok === false && error_code === 401 && description === 'Unauthorized';
-}
-
-/** Calls a Bot API method with JSON parameters and returns the status and decoded body. */
-async function callBotApi(
-  api: EmulationApi,
-  methodPath: string,
-  parameters: Record<string, unknown>,
-): Promise<{ status: number; body: unknown }> {
-  const response = await api.request(methodPath, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(parameters),
-  });
-  return { status: response.status, body: await response.json() };
-}
-
-/**
- * Calls a Bot API method with a multipart body of text parameters and uploaded files, as bots send
- * files, and returns the status and decoded body.
- */
-async function callBotApiWithFiles(
-  api: EmulationApi,
-  methodPath: string,
-  parameters: Record<string, string>,
-  files: Record<string, File>,
-): Promise<{ status: number; body: unknown }> {
-  const body = new FormData();
-  for (const [name, value] of Object.entries(parameters)) {
-    body.append(name, value);
-  }
-  for (const [name, file] of Object.entries(files)) {
-    body.append(name, file);
-  }
-  const response = await api.request(methodPath, { method: 'POST', body });
-  return { status: response.status, body: await response.json() };
-}
-
-/** Returns the messages and edited messages of a successful getUpdates response. */
-function updateMessages(body: unknown): Record<string, unknown>[] {
-  if (typeof body !== 'object' || body === null) {
-    return [];
-  }
-  const { ok, result } = body as Record<string, unknown>;
-  if (ok !== true || !Array.isArray(result)) {
-    return [];
-  }
-  return result.flatMap((update: Record<string, unknown>) => {
-    const message = update.message ?? update.edited_message;
-    return typeof message === 'object' && message !== null
-      ? [message as Record<string, unknown>]
-      : [];
-  });
-}
-
-/** Returns the one size of a message's photo. */
-function photoSizeOf(
-  message: Record<string, unknown> | undefined,
-): { file_id: string; file_unique_id: string } | undefined {
-  const photo = message?.photo;
-  return Array.isArray(photo) ? photo[0] : undefined;
-}
-
-/** The header of a GIF image, which is all the emulator reads of a photo. */
-function gifImage(width: number, height: number): Uint8Array<ArrayBuffer> {
-  const image = new Uint8Array(13);
-  image.set(new TextEncoder().encode('GIF89a'));
-  const view = new DataView(image.buffer);
-  view.setUint16(6, width, true);
-  view.setUint16(8, height, true);
-  return image;
-}
-
-/** Returns the message a successful Bot API message method returned, if it did. */
-function botApiResult(body: unknown): Record<string, unknown> | undefined {
-  if (typeof body !== 'object' || body === null) {
-    return undefined;
-  }
-  const { ok, result } = body as Record<string, unknown>;
-  return ok === true && typeof result === 'object' && result !== null
-    ? result as Record<string, unknown>
-    : undefined;
 }
 
 function isCallbackQueryResponse(value: unknown): value is {
@@ -12823,18 +12574,6 @@ function isCallbackQueryResponse(value: unknown): value is {
     (answer === null || typeof answer === 'object');
 }
 
-function isNotFoundResponse<Description extends string>(
-  value: unknown,
-  expectedDescription: Description,
-): value is { ok: false; error_code: 404; description: Description } {
-  if (typeof value !== 'object' || value === null) {
-    return false;
-  }
-
-  const { ok, error_code, description } = value as Record<string, unknown>;
-  return ok === false && error_code === 404 && description === expectedDescription;
-}
-
 const TERMINATED_BY_OTHER_LONG_POLL_DESCRIPTION =
   'Conflict: terminated by other getUpdates request; make sure that only one bot instance is running';
 
@@ -12850,139 +12589,4 @@ function isTerminatedByOtherLongPollResponse(value: unknown): value is {
   const { ok, error_code, description } = value as Record<string, unknown>;
   return ok === false && error_code === 409 &&
     description === TERMINATED_BY_OTHER_LONG_POLL_DESCRIPTION;
-}
-
-function isSentMessageResponse(value: unknown): value is {
-  message: TestPrivateMessage;
-} {
-  if (typeof value !== 'object' || value === null) {
-    return false;
-  }
-  const { message } = value as Record<string, unknown>;
-  return isPrivateMessage(message);
-}
-
-function isMessageHistoryResponse(value: unknown): value is {
-  messages: Array<TestPrivateMessage>;
-} {
-  if (typeof value !== 'object' || value === null) {
-    return false;
-  }
-  const { messages } = value as Record<string, unknown>;
-  return Array.isArray(messages) && messages.every(isPrivateMessage);
-}
-
-function isGetUpdatesResponse(value: unknown): value is {
-  ok: true;
-  result: Array<{
-    update_id: number;
-    message: TestPrivateMessage;
-  }>;
-} {
-  if (typeof value !== 'object' || value === null) {
-    return false;
-  }
-  const { ok, result } = value as Record<string, unknown>;
-  return ok === true && Array.isArray(result) && result.every((update) => {
-    if (typeof update !== 'object' || update === null) {
-      return false;
-    }
-    const candidate = update as Record<string, unknown>;
-    return typeof candidate.update_id === 'number' && isPrivateMessage(candidate.message);
-  });
-}
-
-/** The parts of a Bot API message these tests check. */
-interface TestPrivateMessage {
-  message_id: number;
-  from: { id: number };
-  chat: { id: number; type: string };
-  date: number;
-  text: string;
-  /** Left unchecked; tests compare it as a whole. */
-  entities?: unknown;
-  /** Left unchecked; tests compare it as a whole. */
-  reply_markup?: unknown;
-}
-
-function isPrivateMessage(value: unknown): value is TestPrivateMessage {
-  if (typeof value !== 'object' || value === null) {
-    return false;
-  }
-  const message = value as Record<string, unknown>;
-  return (
-    typeof message.message_id === 'number' &&
-    typeof message.date === 'number' &&
-    typeof message.text === 'string' &&
-    typeof message.from === 'object' &&
-    message.from !== null &&
-    typeof (message.from as Record<string, unknown>).id === 'number' &&
-    typeof message.chat === 'object' &&
-    message.chat !== null &&
-    typeof (message.chat as Record<string, unknown>).id === 'number' &&
-    typeof (message.chat as Record<string, unknown>).type === 'string'
-  );
-}
-
-function isCreatedAccountResponse(value: unknown): value is {
-  account: {
-    id: number;
-    is_bot: boolean;
-    first_name: string;
-    last_name?: string;
-    username?: string;
-    language_code?: string;
-  };
-} {
-  if (typeof value !== 'object' || value === null) {
-    return false;
-  }
-
-  const { account } = value as Record<string, unknown>;
-  return isUserProfile(account);
-}
-
-function isUserProfile(value: unknown): value is {
-  id: number;
-  is_bot: boolean;
-  first_name: string;
-  last_name?: string;
-  username?: string;
-  language_code?: string;
-} {
-  if (typeof value !== 'object' || value === null) {
-    return false;
-  }
-
-  const profile = value as Record<string, unknown>;
-  return (
-    typeof profile.id === 'number' &&
-    typeof profile.is_bot === 'boolean' &&
-    typeof profile.first_name === 'string' &&
-    (profile.last_name === undefined || typeof profile.last_name === 'string') &&
-    (profile.username === undefined || typeof profile.username === 'string') &&
-    (profile.language_code === undefined || typeof profile.language_code === 'string')
-  );
-}
-
-/** Returns a reader of each bot's updates since the reader last read that bot's updates. */
-function createUpdateReader(api: EmulationApi) {
-  const nextOffsetsByBotApiPath = new Map<string, number>();
-  return async (botApiPath: string): Promise<Array<Record<string, unknown>>> => {
-    const { body } = await callBotApi(api, `${botApiPath}/getUpdates`, {
-      offset: nextOffsetsByBotApiPath.get(botApiPath) ?? 0,
-    });
-    const updates = (body as { result: Array<Record<string, unknown>> }).result;
-    const lastUpdateId = updates.at(-1)?.update_id;
-    if (typeof lastUpdateId === 'number') {
-      nextOffsetsByBotApiPath.set(botApiPath, lastUpdateId + 1);
-    }
-    return updates;
-  };
-}
-
-function createInProcessFetch(
-  handler: (request: Request) => Response | Promise<Response>,
-): typeof globalThis.fetch {
-  return async (input, init) => await handler(new Request(input, init));
 }
