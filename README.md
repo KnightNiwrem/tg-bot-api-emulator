@@ -84,6 +84,26 @@ purpose.
   they exercised
 - `deno task architecture:check` — check that imports respect the layer boundaries set in
   `.fallowrc.json`
+- `deno task lock:update` — resolve `deno.lock` again after a dependency changes in `deno.json`
+
+## Dependencies
+
+CI runs the Deno version in `.dvmrc`. The import map in `deno.json` pins every external dependency,
+including the Redocly and fallow tools, at an exact version, and `deno.lock` records what each one
+resolved to, with integrity hashes. Every task uses the lockfile frozen, so a dependency that is
+missing from it or whose content changed fails the task instead of resolving anew.
+
+Source, test and client code import external packages only through import map aliases such as
+`grammy`. grammY and its runner and auto-retry plugins map to grammY's Deno source modules at exact
+release tags: the npm build passes Node-specific request options, such as `abort-controller`
+signals, to a custom `fetch`, which the tests' in-process `fetch` cannot accept. The guide's
+examples are meant to be copied, so they name registry packages in full, such as
+`npm:grammy@1.46.0`, at the versions the import map pins.
+[`tests/dependency_specifiers_test.ts`](tests/dependency_specifiers_test.ts) checks these rules.
+
+To add or bump a dependency, set its exact version in `deno.json` and in any guide examples that
+name it, run `deno task lock:update`, and commit the `deno.lock` diff with the change. The task
+resolves the whole graph again, so review the diff for transitive changes too.
 
 ## Environment
 
