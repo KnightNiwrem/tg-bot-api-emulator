@@ -38,6 +38,11 @@ const BOT_API_METHODS_BY_LOWERCASE_NAME: ReadonlyMap<string, BotApiMethod> = new
   BOT_API_METHODS.map((method) => [method.name.toLowerCase(), method] as const),
 );
 
+/** The current names of the Bot API methods the emulator implements, in catalogue order. */
+export function listBotApiMethodNames(): readonly string[] {
+  return BOT_API_METHODS.map((method) => method.name);
+}
+
 /**
  * Finds a Bot API method by its current or older name, which Telegram matches
  * case-insensitively.

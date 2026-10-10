@@ -45,7 +45,7 @@ thresholds, which tests replace with
 
 This is the complete inventory from the
 [method catalogue](../../src/api/sessions/bot_api/method_catalogue.ts). Method names are
-case-insensitive. The two legacy aliases below are also accepted.
+case-insensitive. The legacy aliases below are also accepted.
 
 | Area             | Methods                                                                                                                                                                                     |
 | ---------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
