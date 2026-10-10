@@ -51,7 +51,8 @@ entities that overlap supplied ones, or each other, are dropped, and none are de
 in TDLib's [`merge_new_entities`][entity-merging], formatting splits around them.
 
 Telegram's servers detect these entities in the messages they receive; TDLib reproduces their rules
-for displaying messages. Phone numbers are a [real gap](#real-gaps).
+for displaying messages. Phone numbers are not detected, as an
+[intentional deviation](#intentional-deviations).
 
 ## Intentional deviations
 
