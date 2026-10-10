@@ -3,17 +3,17 @@ import type { z } from 'zod';
 import type {
   accountProfileSchema,
   createAccountContract,
-} from '../../src/control_contracts/accounts.ts';
-import type { botProfileSchema, createBotContract } from '../../src/control_contracts/bots.ts';
+} from '../../control_contracts/accounts.ts';
+import type { botProfileSchema, createBotContract } from '../../control_contracts/bots.ts';
 import type {
   CONTROL_REQUEST_ISSUE_CODES,
   CONTROL_REQUEST_ISSUE_SOURCES,
-} from '../../src/control_contracts/control_errors.ts';
+} from '../../control_contracts/control_errors.ts';
 import type {
   ControlOperationRequest,
   ControlOperationResult,
-} from '../../src/control_contracts/operation_contract.ts';
-import type { createSessionContract } from '../../src/control_contracts/sessions.ts';
+} from '../../control_contracts/operation_contract.ts';
+import type { createSessionContract } from '../../control_contracts/sessions.ts';
 import type { ControlRefusalReason } from './control_refusal_reasons.ts';
 
 /** The server-assigned identity, Bot API location, and settings of an emulation session. */

@@ -10,7 +10,7 @@ import {
   type ControlOperationResponse,
   type DecodedControlRequest,
   readPathPlaceholders,
-} from '../control_contracts/operation_contract.ts';
+} from '../../control_contracts/operation_contract.ts';
 import {
   type ControlRequestIssue,
   invalidControlRequestResponse,

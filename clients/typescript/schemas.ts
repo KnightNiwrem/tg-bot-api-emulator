@@ -1,8 +1,8 @@
 import { z } from 'zod';
 
-import { accountProfileSchema } from '../../src/control_contracts/accounts.ts';
-import { botProfileSchema } from '../../src/control_contracts/bots.ts';
-import { controlValidationErrorSchema } from '../../src/control_contracts/control_errors.ts';
+import { accountProfileSchema } from '../../control_contracts/accounts.ts';
+import { botProfileSchema } from '../../control_contracts/bots.ts';
+import { controlValidationErrorSchema } from '../../control_contracts/control_errors.ts';
 import {
   MAX_CUSTOM_TITLE_LENGTH,
   MAX_SUPERGROUP_OR_CHANNEL_ID,

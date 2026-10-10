@@ -365,7 +365,7 @@
       {
         "name": "control-contracts",
         "patterns": [
-          "src/control_contracts/**/*.ts"
+          "control_contracts/**/*.ts"
         ]
       },
       {
@@ -766,9 +766,7 @@
       },
       {
         "from": "control-contracts",
-        "allow": [
-          "domain"
-        ]
+        "allow": []
       },
       {
         "from": "transport",
@@ -783,7 +781,9 @@
       },
       {
         "from": "typescript-client",
-        "allow": []
+        "allow": [
+          "control-contracts"
+        ]
       },
       {
         "from": "in-process-emulator",

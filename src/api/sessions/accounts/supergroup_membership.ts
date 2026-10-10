@@ -1,7 +1,7 @@
 import { Hono } from 'hono';
 import { z } from 'zod';
 
-import { telegramUsernameSchema } from '../../../control_contracts/wire_fields.ts';
+import { telegramUsernameSchema } from '../../../../control_contracts/wire_fields.ts';
 import type { EmulationSession } from '../../../types/emulation_session.ts';
 import type { Supergroup } from '../../../types/virtual_chat.ts';
 import {

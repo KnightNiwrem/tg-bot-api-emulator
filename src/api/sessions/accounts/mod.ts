@@ -1,8 +1,8 @@
 import { Hono } from 'hono';
 import { basePath } from 'hono/route';
 
-import { createAccountContract } from '../../../control_contracts/accounts.ts';
-import type { ControlOperationResponse } from '../../../control_contracts/operation_contract.ts';
+import { createAccountContract } from '../../../../control_contracts/accounts.ts';
+import type { ControlOperationResponse } from '../../../../control_contracts/operation_contract.ts';
 import type { EmulationSession } from '../../../types/emulation_session.ts';
 import type { VirtualAccountProfile } from '../../../types/virtual_account.ts';
 import { registerControlOperation } from '../../control_operation_route.ts';

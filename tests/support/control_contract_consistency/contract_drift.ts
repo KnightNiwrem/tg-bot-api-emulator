@@ -5,7 +5,7 @@
  */
 import type { z } from 'zod';
 
-import type { ControlOperationContract } from '../../../src/control_contracts/operation_contract.ts';
+import type { ControlOperationContract } from '../../../control_contracts/operation_contract.ts';
 import type {
   DocumentedHeader,
   DocumentedMediaType,

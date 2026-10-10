@@ -6,8 +6,8 @@ import { Hono } from 'hono';
 import { z } from 'zod';
 
 import { registerControlOperation } from '../../src/api/control_operation_route.ts';
-import { controlRefusalSchema } from '../../src/control_contracts/control_errors.ts';
-import { defineControlOperation } from '../../src/control_contracts/operation_contract.ts';
+import { controlRefusalSchema } from '../../control_contracts/control_errors.ts';
+import { defineControlOperation } from '../../control_contracts/operation_contract.ts';
 import {
   callBytesOperation,
   callEmptyOperation,

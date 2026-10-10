@@ -8,7 +8,7 @@ it in use. Each operation's documentation comment in
 [`emulation_session_client.ts`](../../../clients/typescript/emulation_session_client.ts) states its
 exact contract. The inputs and results of creating and ending sessions and creating bots and
 accounts are inferred from their operations' contracts in
-[`src/control_contracts/`](../../../src/control_contracts/), whose field comments document them.
+[`control_contracts/`](../../../control_contracts/), whose field comments document them.
 
 ## Client and session
 

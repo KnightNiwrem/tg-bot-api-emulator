@@ -1,12 +1,18 @@
 /** Wire fields that several control resources share. */
 import { z } from 'zod';
 
-import {
-  MAX_TELEGRAM_USER_ID,
-  MAX_TELEGRAM_USERNAME_LENGTH,
-  MIN_TELEGRAM_USER_ID,
-  TELEGRAM_USERNAME_PATTERN,
-} from '../types/telegram_identity.ts';
+/** Telegram's user IDs, which accounts and bots share: from 1 to 2^40 - 1. */
+const MIN_TELEGRAM_USER_ID = 1;
+const MAX_TELEGRAM_USER_ID = 0xff_ffff_ffff;
+
+/** The most characters of a username. */
+const MAX_TELEGRAM_USERNAME_LENGTH = 32;
+
+/**
+ * An ASCII letter, then ASCII letters and digits, each of which may follow a single underscore, so
+ * that an underscore is never last nor doubled.
+ */
+const TELEGRAM_USERNAME_PATTERN = /^[A-Za-z](?:_?[A-Za-z0-9])*$/;
 
 /**
  * A URI reference, such as the path `/sessions/1`: text that resolves against a base URL, as WHATWG
@@ -29,6 +35,10 @@ export const telegramUserIdSchema = z.int().min(MIN_TELEGRAM_USER_ID).max(MAX_TE
  * A Telegram username, without `@`, of the syntax TDLib's `is_valid_username` admits: from 1 to 32
  * ASCII letters, digits, and underscores, beginning with a letter, without a trailing or doubled
  * underscore.
+ *
+ * Telegram's further rules for choosing a new username, such as its minimum of 5 characters, the
+ * `bot` ending of a bot's username, and reserved prefixes, are not checked: older usernames, such
+ * as `@gif`'s, break them and still name real chats.
  */
 export const telegramUsernameSchema = z.string()
   .min(1)

@@ -10,9 +10,6 @@ export type UploadProfile = typeof UPLOAD_PROFILES[number];
 
 export const UPLOAD_PROFILES = ['cloud', 'local'] as const;
 
-/** The profile of a session created without one. */
-export const DEFAULT_UPLOAD_PROFILE: UploadProfile = 'cloud';
-
 /**
  * The largest file, in bytes, that a bot may upload with `multipart/form-data` under each profile,
  * whatever its kind; a photo must also meet TDLib's smaller photo limit. Telegram documents 50 MB

@@ -1,8 +1,8 @@
 import type { z } from 'zod';
 
-import { createAccountContract } from '../../src/control_contracts/accounts.ts';
-import { createBotContract } from '../../src/control_contracts/bots.ts';
-import { deleteSessionContract } from '../../src/control_contracts/sessions.ts';
+import { createAccountContract } from '../../control_contracts/accounts.ts';
+import { createBotContract } from '../../control_contracts/bots.ts';
+import { deleteSessionContract } from '../../control_contracts/sessions.ts';
 import { createHttpBotActivityPageReader } from './bot_activity_http_page_reader.ts';
 import { createBotActivityLog } from './bot_activity_log.ts';
 import { HTTP_STATUS_CREATED, HTTP_STATUS_NO_CONTENT, HTTP_STATUS_OK } from './constants.ts';

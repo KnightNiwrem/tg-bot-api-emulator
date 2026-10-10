@@ -1,7 +1,6 @@
 /** The contracts of a session's virtual accounts, and the profile they show. */
 import { z } from 'zod';
 
-import { MAX_ACCOUNT_NAME_LENGTH } from '../types/virtual_account.ts';
 import { controlRefusalSchema, controlValidationErrorSchema } from './control_errors.ts';
 import { defineControlOperation } from './operation_contract.ts';
 import { sessionNotFoundSchema } from './sessions.ts';
@@ -11,6 +10,12 @@ import {
   telegramUserIdSchema,
   telegramUsernameSchema,
 } from './wire_fields.ts';
+
+/**
+ * The most characters of an account's first or last name, the server-side limit of TDLib's
+ * `UserManager::MAX_NAME_LENGTH`. It keeps an account's own contact within the contact name limit.
+ */
+const MAX_ACCOUNT_NAME_LENGTH = 64;
 
 /** An E.164 phone number's digits: a country code that never starts with 0, and at most 15 digits. */
 const ACCOUNT_PHONE_NUMBER_PATTERN = /^[1-9][0-9]{0,14}$/;

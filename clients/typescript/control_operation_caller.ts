@@ -12,7 +12,7 @@ import {
   type EmptySuccessContract,
   type JsonSuccessContract,
   readPathPlaceholders,
-} from '../../src/control_contracts/operation_contract.ts';
+} from '../../control_contracts/operation_contract.ts';
 import { requestBytes, requestEmptyResponse, requestJson } from './utils.ts';
 
 /** Where and how a client sends control requests. */

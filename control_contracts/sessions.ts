@@ -1,7 +1,6 @@
 /** The contracts of the session resource: creating and ending isolated test sessions. */
 import { z } from 'zod';
 
-import { DEFAULT_UPLOAD_PROFILE, UPLOAD_PROFILES } from '../types/upload_profile.ts';
 import { controlRefusalSchema, controlValidationErrorSchema } from './control_errors.ts';
 import { defineControlOperation } from './operation_contract.ts';
 import { createdResourceHeadersSchema, sessionIdParameterSchema } from './wire_fields.ts';
@@ -12,12 +11,12 @@ import { createdResourceHeadersSchema, sessionIdParameterSchema } from './wire_f
  * started with `--local`. The profile changes only upload limits; every other behavior stays that
  * of the cloud server.
  */
-const uploadProfileSchema = z.enum(UPLOAD_PROFILES);
+export const uploadProfileSchema = z.enum(['cloud', 'local']);
 
 /** Settings of a new session, which stay fixed for its lifetime. */
 const createSessionRequestSchema = z.strictObject({
   /** Defaults to `cloud`. */
-  upload_profile: uploadProfileSchema.default(DEFAULT_UPLOAD_PROFILE),
+  upload_profile: uploadProfileSchema.default('cloud'),
 });
 
 /** The server-assigned identity, Bot API location, and settings of an emulation session. */

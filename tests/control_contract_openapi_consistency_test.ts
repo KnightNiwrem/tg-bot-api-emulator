@@ -5,14 +5,14 @@
  */
 import { z } from 'zod';
 
-import { createAccountContract } from '../src/control_contracts/accounts.ts';
-import { createBotContract } from '../src/control_contracts/bots.ts';
-import { controlRefusalSchema } from '../src/control_contracts/control_errors.ts';
+import { createAccountContract } from '../control_contracts/accounts.ts';
+import { createBotContract } from '../control_contracts/bots.ts';
+import { controlRefusalSchema } from '../control_contracts/control_errors.ts';
 import {
   type ControlOperationContract,
   defineControlOperation,
-} from '../src/control_contracts/operation_contract.ts';
-import { createSessionContract, deleteSessionContract } from '../src/control_contracts/sessions.ts';
+} from '../control_contracts/operation_contract.ts';
+import { createSessionContract, deleteSessionContract } from '../control_contracts/sessions.ts';
 import { findContractDrift } from './support/control_contract_consistency/contract_drift.ts';
 import { JsonSchemaCanonicalizer } from './support/control_contract_consistency/json_schema_canonical_form.ts';
 import { readWireJsonSchema } from './support/control_contract_consistency/wire_json_schema.ts';

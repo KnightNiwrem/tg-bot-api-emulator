@@ -5,7 +5,7 @@ import {
   type CONTROL_REQUEST_ISSUE_CODES,
   type CONTROL_REQUEST_ISSUE_SOURCES,
   INVALID_REQUEST_REASON,
-} from '../control_contracts/control_errors.ts';
+} from '../../control_contracts/control_errors.ts';
 
 /** The status of a control route's refusal: the request's fault, or the session's state. */
 type ControlErrorStatus = ClientErrorStatusCode | ServerErrorStatusCode;

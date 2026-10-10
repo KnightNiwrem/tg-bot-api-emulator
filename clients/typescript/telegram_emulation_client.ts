@@ -1,4 +1,4 @@
-import { createSessionContract } from '../../src/control_contracts/sessions.ts';
+import { createSessionContract } from '../../control_contracts/sessions.ts';
 import { callJsonOperation } from './control_operation_caller.ts';
 import {
   createEmulationSessionClient,

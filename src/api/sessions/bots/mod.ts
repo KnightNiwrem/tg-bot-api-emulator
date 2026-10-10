@@ -2,7 +2,7 @@ import { Hono } from 'hono';
 import { basePath } from 'hono/route';
 import { z } from 'zod';
 
-import { createBotContract } from '../../../control_contracts/bots.ts';
+import { createBotContract } from '../../../../control_contracts/bots.ts';
 import type { QueuedRateLimitResponses } from '../../../types/bot_rate_limit.ts';
 import type { VirtualBotProfile } from '../../../types/virtual_bot.ts';
 import {
