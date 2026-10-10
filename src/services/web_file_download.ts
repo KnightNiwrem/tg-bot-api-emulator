@@ -1,3 +1,5 @@
+import type { Scheduler } from '../timing/session_timing.ts';
+
 /**
  * Answers a request for a web resource, as `fetch` does. The emulator answers from the resources a
  * test registered in its session rather than from the network.
@@ -19,6 +21,8 @@ interface WebFileDownloaderDependencies {
   readonly timeoutMilliseconds: number;
   /** How many redirects a download follows before it fails. */
   readonly maxRedirects: number;
+  /** Measures each download's time budget. */
+  readonly scheduler: Pick<Scheduler, 'deadline'>;
 }
 
 /** The emulator's budgets for downloads; Telegram's own are not public. */
@@ -44,13 +48,16 @@ export class WebFileDownloader {
   readonly #fetchWebResource: WebResourceFetcher;
   readonly #timeoutMilliseconds: number;
   readonly #maxRedirects: number;
+  readonly #scheduler: Pick<Scheduler, 'deadline'>;
 
   constructor(
-    { fetchWebResource, timeoutMilliseconds, maxRedirects }: WebFileDownloaderDependencies,
+    { fetchWebResource, timeoutMilliseconds, maxRedirects, scheduler }:
+      WebFileDownloaderDependencies,
   ) {
     this.#fetchWebResource = fetchWebResource;
     this.#timeoutMilliseconds = timeoutMilliseconds;
     this.#maxRedirects = maxRedirects;
+    this.#scheduler = scheduler;
   }
 
   async download(
@@ -59,10 +66,18 @@ export class WebFileDownloader {
     signal?: AbortSignal,
   ): Promise<WebFileDownload> {
     const controller = new AbortController();
-    const timeout = setTimeout(
-      () => controller.abort(new DOMException('Download timed out', 'TimeoutError')),
+    const downloadEnd = new AbortController();
+    const { signal: deadlineSignal } = this.#scheduler.deadline(
       this.#timeoutMilliseconds,
+      downloadEnd.signal,
     );
+    const abortForDeadline = () =>
+      controller.abort(new DOMException('Download timed out', 'TimeoutError'));
+    if (deadlineSignal.aborted) {
+      abortForDeadline();
+    } else {
+      deadlineSignal.addEventListener('abort', abortForDeadline, { once: true });
+    }
     const abortForCaller = () => controller.abort(signal?.reason);
     if (signal?.aborted) {
       abortForCaller();
@@ -75,7 +90,8 @@ export class WebFileDownloader {
       // The resource failed to answer, its content failed to arrive, or a budget ran out.
       return CONTENT_UNAVAILABLE;
     } finally {
-      clearTimeout(timeout);
+      downloadEnd.abort();
+      deadlineSignal.removeEventListener('abort', abortForDeadline);
       signal?.removeEventListener('abort', abortForCaller);
     }
   }

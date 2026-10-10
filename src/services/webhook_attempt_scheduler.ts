@@ -6,6 +6,7 @@ import type {
   WebhookScheduling,
 } from '../types/bot_webhook.ts';
 import type { VirtualBot } from '../types/virtual_bot.ts';
+import type { Scheduler } from '../timing/session_timing.ts';
 
 /**
  * How long a webhook may take to answer an update under automatic scheduling. Telegram's webhook
@@ -28,10 +29,10 @@ interface WebhookAttemptSchedulerDependencies {
    */
   readonly attemptTimeoutMilliseconds: number;
   /**
-   * Waits `delaySeconds` before an automatically scheduled retry, and resolves early once `signal`
-   * aborts, as `waitForRetryDelay` does outside tests.
+   * Times automatically scheduled attempts: each attempt's deadline, and the delay before each
+   * failed attempt's retry.
    */
-  readonly waitBeforeRetry: (delaySeconds: number, signal: AbortSignal) => Promise<void>;
+  readonly scheduler: Scheduler;
 }
 
 export interface BeginWebhookAttemptInput {
@@ -100,7 +101,7 @@ interface OpenWebhookAttempt {
  *
  * Under a bot's `automatic` scheduling, the default, the emulator decides by its own timing, as
  * Telegram does: an attempt's deadline arrives once its timeout passes, and a retry is released
- * once its delay passes. Under `manual` scheduling, nothing ends by itself: a test expires attempts
+ * once its delay passes, as the session's scheduler measures them. Under `manual` scheduling, nothing ends by itself: a test expires attempts
  * and releases retries, so that it reaches each delivery state without waiting. These are emulator
  * controls; they do not reproduce Telegram's timing. Either way, a test may expire an attempt in
  * flight or release a waiting retry early. An attempt and its retry follow the scheduling of their
@@ -114,7 +115,7 @@ interface OpenWebhookAttempt {
 export class WebhookAttemptScheduler {
   readonly #bots: BotLookup;
   readonly #attemptTimeoutMilliseconds: number;
-  readonly #waitBeforeRetry: (delaySeconds: number, signal: AbortSignal) => Promise<void>;
+  readonly #scheduler: Scheduler;
   readonly #schedulingByBotId = new Map<number, WebhookScheduling>();
   /** Every attempt of the session, in the order they began, which is also the order of their IDs. */
   readonly #attemptsById = new Map<number, WebhookAttempt>();
@@ -122,11 +123,11 @@ export class WebhookAttemptScheduler {
   #lastAttemptId = 0;
 
   constructor(
-    { bots, attemptTimeoutMilliseconds, waitBeforeRetry }: WebhookAttemptSchedulerDependencies,
+    { bots, attemptTimeoutMilliseconds, scheduler }: WebhookAttemptSchedulerDependencies,
   ) {
     this.#bots = bots;
     this.#attemptTimeoutMilliseconds = attemptTimeoutMilliseconds;
-    this.#waitBeforeRetry = waitBeforeRetry;
+    this.#scheduler = scheduler;
   }
 
   getScheduling(botId: number): WebhookSchedulingResult {
@@ -221,13 +222,19 @@ export class WebhookAttemptScheduler {
     };
     this.#attemptsById.set(identity.id, { ...identity, status: 'in_flight' });
     this.#openAttemptsById.set(identity.id, openAttempt);
-    const deadlineTimerId = identity.scheduling === 'automatic'
-      ? setTimeout(() => openAttempt.deadline.abort(), this.#attemptTimeoutMilliseconds)
-      : undefined;
+    // An automatic attempt's timeout lasts until the attempt settles.
+    const attemptSettlement = new AbortController();
+    if (identity.scheduling === 'automatic') {
+      const timeout = this.#scheduler.deadline(
+        this.#attemptTimeoutMilliseconds,
+        attemptSettlement.signal,
+      );
+      timeout.signal.addEventListener('abort', () => openAttempt.deadline.abort(), { once: true });
+    }
 
     const isInFlight = () => this.#getAttempt(identity.id).status === 'in_flight';
     const settle = (attempt: WebhookAttempt) => {
-      clearTimeout(deadlineTimerId);
+      attemptSettlement.abort();
       this.#attemptsById.set(identity.id, attempt);
       openAttempt.settled.resolve();
     };
@@ -273,7 +280,7 @@ export class WebhookAttemptScheduler {
         const retryEnd = AbortSignal.any([deliverySignal, openAttempt.retryRelease.signal]);
         try {
           await (identity.scheduling === 'automatic'
-            ? this.#waitBeforeRetry(retryDelaySeconds, retryEnd)
+            ? this.#scheduler.sleep(retryDelaySeconds * 1_000, retryEnd)
             : waitForAbort(retryEnd));
         } finally {
           const attempt = this.#getAttempt(identity.id);
@@ -311,23 +318,6 @@ export class WebhookAttemptScheduler {
     }
     this.#attemptsById.set(attemptId, { ...attempt, retry: { ...attempt.retry, status } });
   }
-}
-
-/** Resolves after the delay, or at once when `signal` aborts. */
-export function waitForRetryDelay(delaySeconds: number, signal: AbortSignal): Promise<void> {
-  return new Promise((resolve) => {
-    if (signal.aborted) {
-      resolve();
-      return;
-    }
-    const finish = () => {
-      clearTimeout(timeoutId);
-      signal.removeEventListener('abort', finish);
-      resolve();
-    };
-    const timeoutId = setTimeout(finish, delaySeconds * 1_000);
-    signal.addEventListener('abort', finish, { once: true });
-  });
 }
 
 /** Resolves once `signal` aborts. */

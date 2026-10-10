@@ -61,7 +61,6 @@ import { SharedChatAdministrationService } from '../services/shared_chat_adminis
 import { SupergroupMessagingService } from '../services/supergroup_messaging.ts';
 import { VirtualUserService } from '../services/virtual_user.ts';
 import {
-  waitForRetryDelay,
   WEBHOOK_ATTEMPT_TIMEOUT_MILLISECONDS,
   WebhookAttemptScheduler,
 } from '../services/webhook_attempt_scheduler.ts';
@@ -71,10 +70,16 @@ import {
   WebFileDownloader,
 } from '../services/web_file_download.ts';
 import { WebResourceService } from '../services/web_resource.ts';
+import type { SessionTiming } from '../timing/session_timing.ts';
 
+/**
+ * Composes one isolated session. Its services read calendar time and measure deadlines only
+ * through the session's own `timing`.
+ */
 export function createEmulationSession(
   id: string,
   { uploadProfile }: EmulationSessionOptions,
+  { wallClock, scheduler }: SessionTiming,
 ): EmulationSession {
   const identities = new TelegramIdentityRepository();
   const accounts = new AccountRepository();
@@ -109,7 +114,7 @@ export function createEmulationSession(
     messages,
     lastMessageSendingBots: new LastMessageSendingBotRepository(),
   });
-  const currentUnixTimeSeconds = () => Math.floor(Date.now() / 1_000);
+  const currentUnixTimeSeconds = () => wallClock.currentUnixTimeSeconds();
   const supergroupMessaging = new SupergroupMessagingService({
     accounts,
     bots,
@@ -204,6 +209,7 @@ export function createEmulationSession(
       fetchWebResource: (request) => webResources.fetchWebResource(request),
       timeoutMilliseconds: WEB_FILE_DOWNLOAD_TIMEOUT_MILLISECONDS,
       maxRedirects: MAX_WEB_FILE_REDIRECTS,
+      scheduler,
     }),
   });
   const botBlocking = new BotBlockingService({
@@ -276,16 +282,17 @@ export function createEmulationSession(
     serverErrorResponses: new QueuedBotApiAnswerRepository(),
   });
 
-  const botActivity = new BotActivityService({ log: new BotActivityLogRepository() });
+  const botActivity = new BotActivityService({ log: new BotActivityLogRepository(), scheduler });
   const botUpdatePolling = new BotUpdatePollingService({
     botUpdates,
     updateSubscriptions,
     updateActivity: botActivity,
+    scheduler,
   });
   const webhookAttempts = new WebhookAttemptScheduler({
     bots,
     attemptTimeoutMilliseconds: WEBHOOK_ATTEMPT_TIMEOUT_MILLISECONDS,
-    waitBeforeRetry: waitForRetryDelay,
+    scheduler,
   });
   const botWebhooks = new BotWebhookService({
     webhooks: new BotWebhookRepository(),

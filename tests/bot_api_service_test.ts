@@ -55,6 +55,7 @@ import { PrivateMessagingService } from '../src/services/private_messaging.ts';
 import { SupergroupMessagingService } from '../src/services/supergroup_messaging.ts';
 import { VirtualUserService } from '../src/services/virtual_user.ts';
 import type { PhotoUpload } from '../src/types/stored_file.ts';
+import { createRealTimeScheduler, createRetryScheduler } from './support/scheduler.ts';
 
 Deno.test('BotApiService translates private messaging failures into Bot API reasons', () => {
   const { virtualUsers, privateMessaging, botApi } = createBotApiFixture();
@@ -442,7 +443,10 @@ function createBotApiFixture() {
   const files = new FileRepository();
   const polls = new PollRepository();
   const botUpdates = new BotUpdateRepository();
-  const botActivity = new BotActivityService({ log: new BotActivityLogRepository() });
+  const botActivity = new BotActivityService({
+    log: new BotActivityLogRepository(),
+    scheduler: createRealTimeScheduler(),
+  });
   const updateSubscriptions = new BotUpdateSubscriptionRepository();
   const sharedChats = new SharedChatRepository();
   const botMessageViews = new BotMessageViewService({
@@ -551,6 +555,7 @@ function createBotApiFixture() {
       botUpdates,
       updateSubscriptions,
       updateActivity: botActivity,
+      scheduler: createRealTimeScheduler(),
     }),
     webhooks: new BotWebhookService({
       webhooks: new BotWebhookRepository(),
@@ -562,7 +567,9 @@ function createBotApiFixture() {
       attempts: new WebhookAttemptScheduler({
         bots,
         attemptTimeoutMilliseconds: WEBHOOK_ATTEMPT_TIMEOUT_MILLISECONDS,
-        waitBeforeRetry: () => Promise.reject(new Error('Unexpected webhook retry')),
+        scheduler: createRetryScheduler(() =>
+          Promise.reject(new Error('Unexpected webhook retry'))
+        ),
       }),
       currentUnixTimeSeconds: () => 1_700_000_000,
     }),

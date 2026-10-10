@@ -95,7 +95,11 @@ interface BotWebhookStore {
 interface PendingUpdateQueue {
   readPendingUpdates(botId: number): readonly BotApiUpdate[];
   confirmPendingUpdate(botId: number, updateId: number): void;
-  waitForUpdate(botId: number, input: { readonly signal: AbortSignal }): Promise<void>;
+  getNextUpdateId(botId: number): number;
+  waitForUpdate(
+    botId: number,
+    input: { readonly awaitedUpdateId: number; readonly signal: AbortSignal },
+  ): Promise<unknown>;
   countPendingUpdates(botId: number): number;
   discardPendingUpdates(botId: number): void;
 }
@@ -360,6 +364,7 @@ export class BotWebhookService {
       const queueEnded = new Promise<void>((resolve) => {
         wakeUp = resolve;
       });
+      const nextUpdateId = this.#pendingUpdates.getNextUpdateId(botId);
       for (const update of this.#pendingUpdates.readPendingUpdates(botId)) {
         const queueKey = getWebhookUpdateQueueKey(update);
         if (deliveringQueueKeys.has(queueKey)) {
@@ -375,6 +380,7 @@ export class BotWebhookService {
       const updateWait = new AbortController();
       await Promise.race([
         this.#pendingUpdates.waitForUpdate(botId, {
+          awaitedUpdateId: nextUpdateId,
           signal: AbortSignal.any([signal, updateWait.signal]),
         }),
         queueEnded,

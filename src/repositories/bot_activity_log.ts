@@ -1,3 +1,5 @@
+import { type NotificationWaitEnd, waitForNotification } from '../timing/notification_wait.ts';
+import type { Deadline } from '../timing/session_timing.ts';
 import type { BotActivityEntry, UnpositionedBotActivityEntry } from '../types/bot_activity.ts';
 
 interface FindEntriesInput {
@@ -10,7 +12,9 @@ interface FindEntriesInput {
 }
 
 interface WaitForAppendInput {
-  readonly timeoutMilliseconds: number;
+  /** The head position the caller last read; an entry after it ends the wait at once. */
+  readonly afterPosition: number;
+  readonly deadline: Deadline;
   readonly signal: AbortSignal;
 }
 
@@ -28,8 +32,8 @@ export class BotActivityLogRepository {
       ...unpositionedEntry,
     };
     this.#entries.push(entry);
-    for (const finish of [...this.#appendWaiters]) {
-      finish();
+    for (const notify of [...this.#appendWaiters]) {
+      notify();
     }
     return entry;
   }
@@ -52,29 +56,23 @@ export class BotActivityLogRepository {
     return foundEntries;
   }
 
-  /** Resolves when an entry is appended, the timeout elapses, or `signal` aborts. */
-  waitForAppend({ timeoutMilliseconds, signal }: WaitForAppendInput): Promise<void> {
-    return new Promise((resolve) => {
-      if (signal.aborted) {
-        resolve();
-        return;
-      }
-      const finish = () => {
-        clearTimeout(timeoutId);
-        signal.removeEventListener('abort', finish);
-        this.#appendWaiters.delete(finish);
-        resolve();
-      };
-      // Deno loads `setTimeout` on its first use, which may run other code that appends an entry
-      // or aborts `signal`, so the waiter is registered only after the timer has started.
-      const headPositionBeforeTimer = this.#entries.length;
-      const timeoutId = setTimeout(finish, timeoutMilliseconds);
-      if (signal.aborted || this.#entries.length !== headPositionBeforeTimer) {
-        finish();
-        return;
-      }
-      this.#appendWaiters.add(finish);
-      signal.addEventListener('abort', finish, { once: true });
+  /**
+   * Resolves once the log holds an entry after `afterPosition`, at once if it already does, or
+   * when the deadline arrives or `signal` aborts.
+   */
+  waitForAppend(
+    { afterPosition, deadline, signal }: WaitForAppendInput,
+  ): Promise<NotificationWaitEnd> {
+    return waitForNotification({
+      subscribe: (notify) => {
+        this.#appendWaiters.add(notify);
+        return () => {
+          this.#appendWaiters.delete(notify);
+        };
+      },
+      hasChanged: () => this.#entries.length > afterPosition,
+      deadline,
+      signal,
     });
   }
 }

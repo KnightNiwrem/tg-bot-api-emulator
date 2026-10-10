@@ -1,4 +1,5 @@
 import { createEmulationSession } from '../src/composition/emulation_session.ts';
+import { createSystemSessionTiming } from '../src/timing/system_timing.ts';
 import { SessionRepository } from '../src/repositories/session.ts';
 import { SessionLifecycleService } from '../src/services/session_lifecycle.ts';
 import type { EmulationSessionOptions } from '../src/types/emulation_session.ts';
@@ -7,14 +8,16 @@ const CLOUD_SESSION_OPTIONS: EmulationSessionOptions = { uploadProfile: 'cloud' 
 
 Deno.test('SessionLifecycleService creates, retrieves, and ends an active session', () => {
   const sessionRepository = new SessionRepository();
-  sessionRepository.add(createEmulationSession('existing-session', CLOUD_SESSION_OPTIONS));
+  sessionRepository.add(
+    createEmulationSession('existing-session', CLOUD_SESSION_OPTIONS, createSystemSessionTiming()),
+  );
   const generatedSessionIds = ['existing-session', 'new-session'];
   const createdSessionIds: string[] = [];
   const sessionLifecycle = new SessionLifecycleService({
     sessionRepository,
     createEmulationSession: (sessionId, options) => {
       createdSessionIds.push(sessionId);
-      return createEmulationSession(sessionId, options);
+      return createEmulationSession(sessionId, options, createSystemSessionTiming());
     },
     generateSessionId: () => {
       const sessionId = generatedSessionIds.shift();
@@ -51,7 +54,7 @@ Deno.test('SessionLifecycleService ends a session once, after it can no longer b
   const sessionLifecycle: SessionLifecycleService = new SessionLifecycleService({
     sessionRepository: new SessionRepository(),
     createEmulationSession: (sessionId) => ({
-      ...createEmulationSession(sessionId, CLOUD_SESSION_OPTIONS),
+      ...createEmulationSession(sessionId, CLOUD_SESSION_OPTIONS, createSystemSessionTiming()),
       end: () => {
         sessionIdsFoundWhileEnding.push(sessionLifecycle.getSessionById(sessionId)?.id);
       },
@@ -75,7 +78,11 @@ Deno.test('SessionLifecycleService rejects a factory result with the wrong ID', 
   const sessionLifecycle = new SessionLifecycleService({
     sessionRepository: new SessionRepository(),
     createEmulationSession: () =>
-      createEmulationSession('unexpected-session', CLOUD_SESSION_OPTIONS),
+      createEmulationSession(
+        'unexpected-session',
+        CLOUD_SESSION_OPTIONS,
+        createSystemSessionTiming(),
+      ),
     generateSessionId: () => 'requested-session',
   });
 
@@ -97,7 +104,9 @@ Deno.test('SessionLifecycleService rejects a factory result with the wrong ID', 
 
 Deno.test('SessionLifecycleService limits retries for duplicate generated IDs', () => {
   const sessionRepository = new SessionRepository();
-  sessionRepository.add(createEmulationSession('existing-session', CLOUD_SESSION_OPTIONS));
+  sessionRepository.add(
+    createEmulationSession('existing-session', CLOUD_SESSION_OPTIONS, createSystemSessionTiming()),
+  );
   let generationAttempts = 0;
   const sessionLifecycle = new SessionLifecycleService({
     sessionRepository,

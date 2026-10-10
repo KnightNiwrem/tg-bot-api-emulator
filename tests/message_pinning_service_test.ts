@@ -1,4 +1,5 @@
 import { createEmulationSession } from '../src/composition/emulation_session.ts';
+import { createSystemSessionTiming } from '../src/timing/system_timing.ts';
 import type { SupergroupAdministratorRight } from '../src/types/chat_membership.ts';
 import { ALL_CHAT_PERMISSIONS, type ChatPermission } from '../src/types/chat_permissions.ts';
 import type { EmulationSession } from '../src/types/emulation_session.ts';
@@ -10,7 +11,11 @@ import type { ChatMessage } from '../src/types/virtual_message.ts';
  * private chat with the pinning bot.
  */
 function createPinningFixture() {
-  const session = createEmulationSession('pinning', { uploadProfile: 'cloud' });
+  const session = createEmulationSession(
+    'pinning',
+    { uploadProfile: 'cloud' },
+    createSystemSessionTiming(),
+  );
   const createAccount = (firstName: string) => {
     const result = session.virtualUsers.createAccount({ first_name: firstName });
     if (!result.created) {

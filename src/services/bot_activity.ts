@@ -11,6 +11,7 @@ import {
   getBotApiUpdateUserId,
 } from '../types/bot_api.ts';
 import type { WebhookAttemptFailure } from '../types/bot_webhook.ts';
+import type { Deadline, Scheduler } from '../timing/session_timing.ts';
 
 interface BotActivityLog {
   append(entry: UnpositionedBotActivityEntry): BotActivityEntry;
@@ -22,13 +23,16 @@ interface BotActivityLog {
     readonly matches: (entry: BotActivityEntry) => boolean;
   }): readonly BotActivityEntry[];
   waitForAppend(input: {
-    readonly timeoutMilliseconds: number;
+    readonly afterPosition: number;
+    readonly deadline: Deadline;
     readonly signal: AbortSignal;
-  }): Promise<void>;
+  }): Promise<unknown>;
 }
 
 interface BotActivityServiceDependencies {
   readonly log: BotActivityLog;
+  /** Measures how long a read waits. */
+  readonly scheduler: Pick<Scheduler, 'deadline'>;
 }
 
 /** A call as it is recorded, before the log assigns its position. */
@@ -68,17 +72,21 @@ export type ReadBotActivityResult =
     readonly reason: 'after_beyond_head' | 'before_beyond_head';
   };
 
+type CompletedBotActivityRead = Extract<ReadBotActivityResult, { readonly read: true }>;
+
 /**
  * Records what passes between the emulator and a session's bots, and lets tests read the record,
  * waiting for entries that have not been recorded yet.
  */
 export class BotActivityService {
   readonly #log: BotActivityLog;
+  readonly #scheduler: Pick<Scheduler, 'deadline'>;
   /** Aborted when the session ends, which answers waiting reads and stops later ones waiting. */
   readonly #readingEnd = new AbortController();
 
-  constructor({ log }: BotActivityServiceDependencies) {
+  constructor({ log, scheduler }: BotActivityServiceDependencies) {
     this.#log = log;
+    this.#scheduler = scheduler;
   }
 
   recordBotApiCall(call: RecordedBotApiCall): void {
@@ -184,29 +192,41 @@ export class BotActivityService {
     }
 
     const matches = (entry: BotActivityEntry) => matchesBotActivityFilter(entry, filter);
+    const readAfter = (position: number): CompletedBotActivityRead => {
+      const headPosition = this.#log.getHeadPosition();
+      const entries = this.#log.findEntries({ after: position, before, limit, matches });
+      return { read: true, entries, headPosition };
+    };
     // A range that ends before a position is already complete, and a read of no entries has
     // nothing to wait for.
-    const mayWait = before === undefined && limit > 0;
+    if (before !== undefined || limit === 0) {
+      return readAfter(after);
+    }
+
     const waitEndingSignal = signal === undefined
       ? this.#readingEnd.signal
       : AbortSignal.any([signal, this.#readingEnd.signal]);
-    const waitDeadline = performance.now() + waitMilliseconds;
-    let unreadAfter = after;
-    while (true) {
-      const headPosition = this.#log.getHeadPosition();
-      const entries = this.#log.findEntries({ after: unreadAfter, before, limit, matches });
-      const remainingWaitMilliseconds = waitDeadline - performance.now();
-      if (
-        entries.length > 0 || !mayWait || remainingWaitMilliseconds <= 0 ||
-        waitEndingSignal.aborted
-      ) {
-        return { read: true, entries, headPosition };
+    const readEnd = new AbortController();
+    const waitDeadline = this.#scheduler.deadline(waitMilliseconds, readEnd.signal);
+    try {
+      let unreadAfter = after;
+      while (true) {
+        const result = readAfter(unreadAfter);
+        if (
+          result.entries.length > 0 || waitDeadline.remainingMilliseconds() <= 0 ||
+          waitEndingSignal.aborted
+        ) {
+          return result;
+        }
+        unreadAfter = result.headPosition;
+        await this.#log.waitForAppend({
+          afterPosition: unreadAfter,
+          deadline: waitDeadline,
+          signal: waitEndingSignal,
+        });
       }
-      unreadAfter = headPosition;
-      await this.#log.waitForAppend({
-        timeoutMilliseconds: remainingWaitMilliseconds,
-        signal: waitEndingSignal,
-      });
+    } finally {
+      readEnd.abort();
     }
   }
 

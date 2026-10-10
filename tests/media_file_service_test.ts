@@ -11,6 +11,7 @@ import {
   MAX_WEB_FILE_BYTES,
 } from '../src/types/stored_file.ts';
 import { MAX_BOT_UPLOAD_BYTES, type UploadProfile } from '../src/types/upload_profile.ts';
+import { createRealTimeScheduler } from './support/scheduler.ts';
 
 const FIRST_BOT_ID = 1;
 const SECOND_BOT_ID = 2;
@@ -871,7 +872,12 @@ function createMediaFileFixture(
 }
 
 function createWebFileDownloader(fetchWebResource: WebResourceFetcher): WebFileDownloader {
-  return new WebFileDownloader({ fetchWebResource, timeoutMilliseconds: 1_000, maxRedirects: 5 });
+  return new WebFileDownloader({
+    fetchWebResource,
+    timeoutMilliseconds: 1_000,
+    maxRedirects: 5,
+    scheduler: createRealTimeScheduler(),
+  });
 }
 
 /** The header of a GIF image, which is all the emulator reads of a photo. */

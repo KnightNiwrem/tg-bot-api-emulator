@@ -3,6 +3,7 @@ import {
   type BotApiUpdateType,
   resolveAllowedUpdateTypes,
 } from '../types/bot_api.ts';
+import type { Deadline, Scheduler } from '../timing/session_timing.ts';
 
 export interface GetUpdatesRequest {
   readonly offset?: number;
@@ -27,10 +28,15 @@ interface PendingUpdateQueue {
     firstUnconfirmedUpdateId: number | undefined,
   ): readonly BotApiUpdate[];
   readPendingUpdates(botId: number): readonly BotApiUpdate[];
+  getNextUpdateId(botId: number): number;
   waitForUpdate(
     botId: number,
-    input: { readonly timeoutSeconds: number; readonly signal?: AbortSignal },
-  ): Promise<void>;
+    input: {
+      readonly awaitedUpdateId: number;
+      readonly deadline: Deadline;
+      readonly signal: AbortSignal;
+    },
+  ): Promise<unknown>;
 }
 
 interface BotUpdateSubscriptionStore {
@@ -53,6 +59,8 @@ interface BotUpdatePollingServiceDependencies {
   readonly botUpdates: PendingUpdateQueue;
   readonly updateSubscriptions: BotUpdateSubscriptionStore;
   readonly updateActivity: UpdateActivityRecorder;
+  /** Measures how long a long poll is held. */
+  readonly scheduler: Pick<Scheduler, 'deadline'>;
 }
 
 /**
@@ -63,6 +71,7 @@ export class BotUpdatePollingService {
   readonly #botUpdates: PendingUpdateQueue;
   readonly #updateSubscriptions: BotUpdateSubscriptionStore;
   readonly #updateActivity: UpdateActivityRecorder;
+  readonly #scheduler: Pick<Scheduler, 'deadline'>;
   readonly #heldLongPollsByBotId = new Map<number, HeldLongPoll>();
   /**
    * Aborted when long polling ends. Kept apart from the held long poll controllers so that the end
@@ -71,11 +80,13 @@ export class BotUpdatePollingService {
   readonly #longPollingEnd = new AbortController();
 
   constructor(
-    { botUpdates, updateSubscriptions, updateActivity }: BotUpdatePollingServiceDependencies,
+    { botUpdates, updateSubscriptions, updateActivity, scheduler }:
+      BotUpdatePollingServiceDependencies,
   ) {
     this.#botUpdates = botUpdates;
     this.#updateSubscriptions = updateSubscriptions;
     this.#updateActivity = updateActivity;
+    this.#scheduler = scheduler;
   }
 
   /**
@@ -107,6 +118,7 @@ export class BotUpdatePollingService {
       botId,
       offset,
     );
+    const nextUpdateId = this.#botUpdates.getNextUpdateId(botId);
     const updates = this.#confirmAndReadPendingUpdates(botId, firstUnconfirmedUpdateId, limit);
     if (
       updates.length > 0 || timeoutSeconds === 0 || signal?.aborted === true ||
@@ -120,12 +132,15 @@ export class BotUpdatePollingService {
     if (signal !== undefined) {
       waitEndingSignals.push(signal);
     }
+    const longPollEnd = new AbortController();
     try {
       await this.#botUpdates.waitForUpdate(botId, {
-        timeoutSeconds,
+        awaitedUpdateId: nextUpdateId,
+        deadline: this.#scheduler.deadline(timeoutSeconds * 1_000, longPollEnd.signal),
         signal: AbortSignal.any(waitEndingSignals),
       });
     } finally {
+      longPollEnd.abort();
       if (this.#heldLongPollsByBotId.get(botId) === heldLongPoll) {
         this.#heldLongPollsByBotId.delete(botId);
       }

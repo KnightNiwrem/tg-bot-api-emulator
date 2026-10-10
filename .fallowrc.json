@@ -57,6 +57,19 @@
         ]
       },
       {
+        "name": "session-timing",
+        "patterns": [
+          "src/timing/session_timing.ts",
+          "src/timing/notification_wait.ts"
+        ]
+      },
+      {
+        "name": "system-timing",
+        "patterns": [
+          "src/timing/system_timing.ts"
+        ]
+      },
+      {
         "name": "account-repository",
         "patterns": [
           "src/repositories/account.ts"
@@ -359,6 +372,17 @@
         "allow": []
       },
       {
+        "from": "session-timing",
+        "allow": []
+      },
+      {
+        "from": "system-timing",
+        "allow": [],
+        "allowTypeOnly": [
+          "session-timing"
+        ]
+      },
+      {
         "from": "account-repository",
         "allow": [
           "domain"
@@ -409,7 +433,8 @@
       {
         "from": "bot-update-repository",
         "allow": [
-          "domain"
+          "domain",
+          "session-timing"
         ]
       },
       {
@@ -475,7 +500,8 @@
       {
         "from": "bot-activity-log-repository",
         "allow": [
-          "domain"
+          "domain",
+          "session-timing"
         ]
       },
       {
@@ -563,7 +589,8 @@
           "bot-repository",
           "shared-chat-repository",
           "chat-invite-link-repository",
-          "identity-repository"
+          "identity-repository",
+          "session-timing"
         ]
       },
       {
@@ -583,12 +610,18 @@
         "from": "update-polling",
         "allow": [
           "domain"
+        ],
+        "allowTypeOnly": [
+          "session-timing"
         ]
       },
       {
         "from": "webhook-delivery",
         "allow": [
           "domain"
+        ],
+        "allowTypeOnly": [
+          "session-timing"
         ]
       },
       {
@@ -640,6 +673,9 @@
         "from": "bot-activity",
         "allow": [
           "domain"
+        ],
+        "allowTypeOnly": [
+          "session-timing"
         ]
       },
       {
@@ -653,6 +689,8 @@
         "from": "composition",
         "allow": [
           "domain",
+          "session-timing",
+          "system-timing",
           "account-repository",
           "bot-repository",
           "private-conversation-repository",
