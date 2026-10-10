@@ -408,11 +408,14 @@ in part:
   expiration date on permanent invite links" in the error list of
   [`messages.editExportedChatInvite`][edit-exported-chat-invite]; whether they also refuse an edit
   of its name, and in which order they check the settings, is not public. The emulator refuses every
-  edit of a primary link with it, before checking the settings. The Bot API says a bot generates its
-  link "using exportChatInviteLink or by calling the getChat method", but not when reading the chat
-  creates one; the emulator creates a primary link only when the bot exports or revokes one. When
-  Telegram's servers stop showing an administrator its primary link is not public either; the
-  emulator shows it while the bot holds `can_invite_users`.
+  edit of a primary link with it, before the servers' `EXPIRE_DATE_INVALID` and
+  `USAGE_LIMIT_INVALID` checks. TDLib's own checks still come first, as for any link: a primary link
+  edited to create join requests with a member limit is refused as such, before Telegram's servers
+  see the edit. The Bot API says a bot generates its link "using exportChatInviteLink or by calling
+  the getChat method", but not when reading the chat creates one; the emulator creates a primary
+  link only when the bot exports or revokes one. When Telegram's servers stop showing an
+  administrator its primary link is not public either; the emulator shows it while the bot holds
+  `can_invite_users`.
 - **Requests through changed links.** Neither the Bot API nor TDLib documents an effect of editing,
   revoking or the expiry of a link on the pending join requests sent through it: the Bot API's
   `editChatInviteLink` and `revokeChatInviteLink`, and TDLib's methods of the same names, describe

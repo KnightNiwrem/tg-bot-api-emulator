@@ -1619,6 +1619,8 @@ Deno.test('exportChatInviteLink and primary link edits refuse invalid calls with
       await editPrimary({ name: 'Main' }),
       await editPrimary({}),
       await editPrimary({ expire_date: nowUnixSeconds() - 10 }),
+      // TDLib refuses this combination before Telegram's servers see the edit or the link.
+      await editPrimary({ creates_join_request: true, member_limit: 1 }),
       expiryStatus,
     ],
     [
@@ -1631,6 +1633,10 @@ Deno.test('exportChatInviteLink and primary link edits refuse invalid calls with
       permanent,
       permanent,
       permanent,
+      [
+        400,
+        "Bad Request: member limit can't be specified for links requiring administrator approval",
+      ],
       409,
     ],
     'Expected each refused export and primary link edit, and a primary link to have no expiry',
