@@ -9,6 +9,11 @@ import type {
   ReplyKeyboardButtonRequest,
 } from '../../../types/reply_interface.ts';
 import { type ChatMessage, getMessageNotification } from '../../../types/virtual_message.ts';
+import {
+  controlErrorResponse,
+  invalidControlRequestResponse,
+} from '../../control_error_response.ts';
+import { readPathParameters } from '../control_request_input.ts';
 import type { SessionRouteContextTypes } from '../session_route_context_types.ts';
 import {
   PRIVATE_CONVERSATION_PATH,
@@ -37,11 +42,14 @@ export function createConversationReadRoutes(): Hono<SessionRouteContextTypes> {
   const accountRoutes = new Hono<SessionRouteContextTypes>();
 
   accountRoutes.get(SUPERGROUP_MESSAGE_HISTORY_PATH, (context) => {
-    const conversationPath = supergroupConversationPathSchema.safeParse(context.req.param());
-    if (!conversationPath.success) {
-      return context.body(null, 400);
+    const conversationPath = readPathParameters(
+      supergroupConversationPathSchema,
+      context.req.param(),
+    );
+    if (!conversationPath.valid) {
+      return invalidControlRequestResponse(context, conversationPath.issues);
     }
-    const { accountId, chatId } = conversationPath.data;
+    const { accountId, chatId } = conversationPath.value;
 
     const { supergroupMessaging, botMessageViews } = context.get('emulationSession');
     const result = supergroupMessaging.getMessageHistory({
@@ -49,7 +57,11 @@ export function createConversationReadRoutes(): Hono<SessionRouteContextTypes> {
       chatId,
     });
     if (!result.found) {
-      return context.body(null, supergroupMemberFailureStatus(result.reason));
+      return controlErrorResponse(
+        context,
+        supergroupMemberFailureStatus(result.reason),
+        result.reason,
+      );
     }
     return context.json({
       messages: result.messages.map((message) =>
@@ -59,18 +71,25 @@ export function createConversationReadRoutes(): Hono<SessionRouteContextTypes> {
   });
 
   accountRoutes.get(SUPERGROUP_COMMANDS_PATH, (context) => {
-    const conversationPath = supergroupConversationPathSchema.safeParse(context.req.param());
-    if (!conversationPath.success) {
-      return context.body(null, 400);
+    const conversationPath = readPathParameters(
+      supergroupConversationPathSchema,
+      context.req.param(),
+    );
+    if (!conversationPath.valid) {
+      return invalidControlRequestResponse(context, conversationPath.issues);
     }
-    const { accountId, chatId } = conversationPath.data;
+    const { accountId, chatId } = conversationPath.value;
 
     const result = context.get('emulationSession').botCommands.getSupergroupCommands({
       accountId,
       chatId,
     });
     if (!result.found) {
-      return context.body(null, supergroupMemberFailureStatus(result.reason));
+      return controlErrorResponse(
+        context,
+        supergroupMemberFailureStatus(result.reason),
+        result.reason,
+      );
     }
     return context.json({
       bot_commands: result.botCommands.map(({ botId, commands }) => ({
@@ -81,11 +100,14 @@ export function createConversationReadRoutes(): Hono<SessionRouteContextTypes> {
   });
 
   accountRoutes.get(SUPERGROUP_NOTIFICATIONS_PATH, (context) => {
-    const conversationPath = supergroupConversationPathSchema.safeParse(context.req.param());
-    if (!conversationPath.success) {
-      return context.body(null, 400);
+    const conversationPath = readPathParameters(
+      supergroupConversationPathSchema,
+      context.req.param(),
+    );
+    if (!conversationPath.valid) {
+      return invalidControlRequestResponse(context, conversationPath.issues);
     }
-    const { accountId, chatId } = conversationPath.data;
+    const { accountId, chatId } = conversationPath.value;
 
     const { supergroupMessaging, botMessageViews } = context.get('emulationSession');
     const result = supergroupMessaging.getMessageHistory({
@@ -93,7 +115,11 @@ export function createConversationReadRoutes(): Hono<SessionRouteContextTypes> {
       chatId,
     });
     if (!result.found) {
-      return context.body(null, supergroupMemberFailureStatus(result.reason));
+      return controlErrorResponse(
+        context,
+        supergroupMemberFailureStatus(result.reason),
+        result.reason,
+      );
     }
     return context.json({
       notifications: presentNotificationsForAccount(
@@ -105,11 +131,14 @@ export function createConversationReadRoutes(): Hono<SessionRouteContextTypes> {
   });
 
   accountRoutes.get(SUPERGROUP_REPLY_INTERFACE_PATH, (context) => {
-    const conversationPath = supergroupConversationPathSchema.safeParse(context.req.param());
-    if (!conversationPath.success) {
-      return context.body(null, 400);
+    const conversationPath = readPathParameters(
+      supergroupConversationPathSchema,
+      context.req.param(),
+    );
+    if (!conversationPath.valid) {
+      return invalidControlRequestResponse(context, conversationPath.issues);
     }
-    const { accountId, chatId } = conversationPath.data;
+    const { accountId, chatId } = conversationPath.value;
 
     const { supergroupMessaging, botMessageViews } = context.get('emulationSession');
     const result = supergroupMessaging.getReplyInterface({
@@ -117,7 +146,11 @@ export function createConversationReadRoutes(): Hono<SessionRouteContextTypes> {
       chatId,
     });
     if (!result.found) {
-      return context.body(null, supergroupMemberFailureStatus(result.reason));
+      return controlErrorResponse(
+        context,
+        supergroupMemberFailureStatus(result.reason),
+        result.reason,
+      );
     }
     const { shownReplyInterface } = result;
     return context.json({
@@ -130,11 +163,11 @@ export function createConversationReadRoutes(): Hono<SessionRouteContextTypes> {
   });
 
   accountRoutes.get(PRIVATE_MESSAGE_HISTORY_PATH, (context) => {
-    const conversationPath = privateConversationPathSchema.safeParse(context.req.param());
-    if (!conversationPath.success) {
-      return context.body(null, 400);
+    const conversationPath = readPathParameters(privateConversationPathSchema, context.req.param());
+    if (!conversationPath.valid) {
+      return invalidControlRequestResponse(context, conversationPath.issues);
     }
-    const { accountId, botId } = conversationPath.data;
+    const { accountId, botId } = conversationPath.value;
 
     const { privateMessaging, botMessageViews } = context.get('emulationSession');
     const result = privateMessaging.getPrivateMessageHistory({
@@ -142,7 +175,7 @@ export function createConversationReadRoutes(): Hono<SessionRouteContextTypes> {
       botId,
     });
     if (!result.found) {
-      return context.body(null, 404);
+      return controlErrorResponse(context, 404, result.reason);
     }
 
     return context.json({
@@ -151,45 +184,45 @@ export function createConversationReadRoutes(): Hono<SessionRouteContextTypes> {
   });
 
   accountRoutes.get(PRIVATE_CHAT_COMMANDS_PATH, (context) => {
-    const conversationPath = privateConversationPathSchema.safeParse(context.req.param());
-    if (!conversationPath.success) {
-      return context.body(null, 400);
+    const conversationPath = readPathParameters(privateConversationPathSchema, context.req.param());
+    if (!conversationPath.valid) {
+      return invalidControlRequestResponse(context, conversationPath.issues);
     }
-    const { accountId, botId } = conversationPath.data;
+    const { accountId, botId } = conversationPath.value;
 
     const result = context.get('emulationSession').botCommands.getPrivateChatCommands({
       accountId,
       botId,
     });
     if (!result.found) {
-      return context.body(null, 404);
+      return controlErrorResponse(context, 404, result.reason);
     }
     return context.json({ commands: result.commands.map(presentBotCommandForAccount) });
   });
 
   accountRoutes.get(PRIVATE_CHAT_MENU_BUTTON_PATH, (context) => {
-    const conversationPath = privateConversationPathSchema.safeParse(context.req.param());
-    if (!conversationPath.success) {
-      return context.body(null, 400);
+    const conversationPath = readPathParameters(privateConversationPathSchema, context.req.param());
+    if (!conversationPath.valid) {
+      return invalidControlRequestResponse(context, conversationPath.issues);
     }
-    const { accountId, botId } = conversationPath.data;
+    const { accountId, botId } = conversationPath.value;
 
     const result = context.get('emulationSession').botMenuButtons.getPrivateChatMenuButton({
       accountId,
       botId,
     });
     if (!result.found) {
-      return context.body(null, 404);
+      return controlErrorResponse(context, 404, result.reason);
     }
     return context.json({ menu_button: toBotApiMenuButton(result.menuButton) });
   });
 
   accountRoutes.get(PRIVATE_CHAT_NOTIFICATIONS_PATH, (context) => {
-    const conversationPath = privateConversationPathSchema.safeParse(context.req.param());
-    if (!conversationPath.success) {
-      return context.body(null, 400);
+    const conversationPath = readPathParameters(privateConversationPathSchema, context.req.param());
+    if (!conversationPath.valid) {
+      return invalidControlRequestResponse(context, conversationPath.issues);
     }
-    const { accountId, botId } = conversationPath.data;
+    const { accountId, botId } = conversationPath.value;
 
     const { privateMessaging, botMessageViews } = context.get('emulationSession');
     const result = privateMessaging.getPrivateMessageHistory({
@@ -197,7 +230,7 @@ export function createConversationReadRoutes(): Hono<SessionRouteContextTypes> {
       botId,
     });
     if (!result.found) {
-      return context.body(null, 404);
+      return controlErrorResponse(context, 404, result.reason);
     }
     return context.json({
       notifications: presentNotificationsForAccount(
@@ -209,11 +242,11 @@ export function createConversationReadRoutes(): Hono<SessionRouteContextTypes> {
   });
 
   accountRoutes.get(PRIVATE_CHAT_REPLY_INTERFACE_PATH, (context) => {
-    const conversationPath = privateConversationPathSchema.safeParse(context.req.param());
-    if (!conversationPath.success) {
-      return context.body(null, 400);
+    const conversationPath = readPathParameters(privateConversationPathSchema, context.req.param());
+    if (!conversationPath.valid) {
+      return invalidControlRequestResponse(context, conversationPath.issues);
     }
-    const { accountId, botId } = conversationPath.data;
+    const { accountId, botId } = conversationPath.value;
 
     const { privateMessaging, botMessageViews } = context.get('emulationSession');
     const result = privateMessaging.getPrivateChatReplyInterface({
@@ -221,7 +254,7 @@ export function createConversationReadRoutes(): Hono<SessionRouteContextTypes> {
       botId,
     });
     if (!result.found) {
-      return context.body(null, 404);
+      return controlErrorResponse(context, 404, result.reason);
     }
     const { shownReplyInterface } = result;
     return context.json({

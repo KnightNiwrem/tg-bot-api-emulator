@@ -5,6 +5,11 @@ import {
   isSendableWebAppData,
   type ReplyKeyboardRequestAnswer,
 } from '../../../types/reply_interface.ts';
+import {
+  controlErrorResponse,
+  invalidControlRequestResponse,
+} from '../../control_error_response.ts';
+import { readPathParameters } from '../control_request_input.ts';
 import { readJsonRequestBody } from '../json_request_body.ts';
 import type { SessionRouteContextTypes } from '../session_route_context_types.ts';
 import { ACCOUNT_ID_PARAMETER, accountPathSchema } from './account_paths.ts';
@@ -37,7 +42,9 @@ const pressReplyKeyboardButtonRequestSchema = z.strictObject({
   shared_user_ids: z.array(telegramUserIdSchema).min(1).optional(),
   shared_chat_id: supergroupChatIdSchema.optional(),
   poll: accountPollSchema.optional(),
-  web_app_data: z.string().refine(isSendableWebAppData).optional(),
+  web_app_data: z.string().refine(isSendableWebAppData, {
+    message: 'Web App data must be nonempty and fit in the bytes Telegram allows',
+  }).optional(),
 }).transform((
   { chat, text, location, shared_user_ids, shared_chat_id, poll, web_app_data },
   context,
@@ -64,19 +71,20 @@ export function createReplyKeyboardPressRoutes(): Hono<SessionRouteContextTypes>
   const accountRoutes = new Hono<SessionRouteContextTypes>();
 
   accountRoutes.post(REPLY_KEYBOARD_PRESS_COLLECTION_PATH, async (context) => {
-    const accountPath = accountPathSchema.safeParse(context.req.param());
-    if (!accountPath.success) {
-      return context.body(null, 400);
+    const accountPath = readPathParameters(accountPathSchema, context.req.param());
+    if (!accountPath.valid) {
+      return invalidControlRequestResponse(context, accountPath.issues);
     }
-    const { accountId } = accountPath.data;
+    const { accountId } = accountPath.value;
 
-    const requestBody = await readJsonRequestBody(
+    const requestBodyReading = await readJsonRequestBody(
       context.req,
       pressReplyKeyboardButtonRequestSchema,
     );
-    if (requestBody === undefined) {
-      return context.body(null, 400);
+    if (!requestBodyReading.valid) {
+      return invalidControlRequestResponse(context, requestBodyReading.issues);
     }
+    const requestBody = requestBodyReading.value;
 
     const { privateMessaging, supergroupMessaging, botMessageViews } = context.get(
       'emulationSession',
@@ -85,7 +93,7 @@ export function createReplyKeyboardPressRoutes(): Hono<SessionRouteContextTypes>
     if (chat.type === 'supergroup') {
       // Only private chats show buttons with a request, so no supergroup button takes an answer.
       if (answer !== undefined) {
-        return context.body(null, 400);
+        return controlErrorResponse(context, 400, 'reply_keyboard_button_answer_not_requested');
       }
       const result = supergroupMessaging.pressReplyKeyboardButton({
         fromAccountId: accountId,
@@ -93,7 +101,11 @@ export function createReplyKeyboardPressRoutes(): Hono<SessionRouteContextTypes>
         text,
       });
       if (!result.sent) {
-        return context.body(null, supergroupMemberFailureStatus(result.reason));
+        return controlErrorResponse(
+          context,
+          supergroupMemberFailureStatus(result.reason),
+          result.reason,
+        );
       }
       return context.json(
         { message: botMessageViews.viewSupergroupMessage(result.message, accountId) },
@@ -107,7 +119,11 @@ export function createReplyKeyboardPressRoutes(): Hono<SessionRouteContextTypes>
       ...(answer === undefined ? {} : { answer }),
     });
     if (!result.sent) {
-      return context.body(null, accountMessageFailureStatus(result.reason));
+      return controlErrorResponse(
+        context,
+        accountMessageFailureStatus(result.reason),
+        result.reason,
+      );
     }
     return context.json(
       { message: botMessageViews.viewPrivateMessageForBot(result.message) },

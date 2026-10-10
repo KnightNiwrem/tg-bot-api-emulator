@@ -24,9 +24,34 @@ put:
       description: The supergroup's members may do what the permissions grant.
     '400':
       description: A path identifier or the body is invalid.
+      content:
+        application/json:
+          schema:
+            $ref: ../components/schemas/ControlValidationError.yaml
     '403':
       description: >-
         The account is not a member of the supergroup, or lacks the `can_restrict_members`
         right.
+      content:
+        application/json:
+          schema:
+            allOf:
+              - $ref: ../components/schemas/ControlError.yaml
+              - properties:
+                  reason:
+                    enum:
+                      - not_a_member
+                      - not_enough_rights
     '404':
       description: The session, account, or supergroup does not exist.
+      content:
+        application/json:
+          schema:
+            allOf:
+              - $ref: ../components/schemas/ControlError.yaml
+              - properties:
+                  reason:
+                    enum:
+                      - actor_not_found
+                      - chat_not_found
+                      - session_not_found

@@ -26,9 +26,40 @@ post:
             $ref: ../components/schemas/CreatedBot.yaml
     '400':
       description: The request body is malformed or does not match the bot creation schema.
+      content:
+        application/json:
+          schema:
+            $ref: ../components/schemas/ControlValidationError.yaml
     '404':
       description: No active test session has the supplied identifier.
+      content:
+        application/json:
+          schema:
+            allOf:
+              - $ref: ../components/schemas/ControlError.yaml
+              - properties:
+                  reason:
+                    enum:
+                      - session_not_found
     '409':
       description: The username is already assigned within the test session.
+      content:
+        application/json:
+          schema:
+            allOf:
+              - $ref: ../components/schemas/ControlError.yaml
+              - properties:
+                  reason:
+                    enum:
+                      - username_taken
     '507':
       description: The test session cannot allocate another Telegram user identifier.
+      content:
+        application/json:
+          schema:
+            allOf:
+              - $ref: ../components/schemas/ControlError.yaml
+              - properties:
+                  reason:
+                    enum:
+                      - identity_limit_reached

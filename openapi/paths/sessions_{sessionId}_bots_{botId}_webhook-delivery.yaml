@@ -18,6 +18,16 @@ get:
             $ref: ../components/schemas/WebhookDelivery.yaml
     '404':
       description: No active test session or virtual bot has the supplied identifier.
+      content:
+        application/json:
+          schema:
+            allOf:
+              - $ref: ../components/schemas/ControlError.yaml
+              - properties:
+                  reason:
+                    enum:
+                      - bot_not_found
+                      - session_not_found
 put:
   operationId: setWebhookDelivery
   summary: Choose who ends a bot's webhook delivery attempts and retry waits
@@ -36,5 +46,19 @@ put:
             $ref: ../components/schemas/WebhookDelivery.yaml
     '400':
       description: The request body is malformed.
+      content:
+        application/json:
+          schema:
+            $ref: ../components/schemas/ControlValidationError.yaml
     '404':
       description: No active test session or virtual bot has the supplied identifier.
+      content:
+        application/json:
+          schema:
+            allOf:
+              - $ref: ../components/schemas/ControlError.yaml
+              - properties:
+                  reason:
+                    enum:
+                      - bot_not_found
+                      - session_not_found

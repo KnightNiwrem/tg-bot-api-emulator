@@ -2,6 +2,10 @@ import { Hono } from 'hono';
 import { z } from 'zod';
 
 import type { WebResource } from '../../../types/web_resource.ts';
+import {
+  controlErrorResponse,
+  invalidControlRequestResponse,
+} from '../../control_error_response.ts';
 import { base64ContentSchema } from '../base64_content.ts';
 import { readJsonRequestBody } from '../json_request_body.ts';
 import type { SessionRouteContextTypes } from '../session_route_context_types.ts';
@@ -23,10 +27,14 @@ export function createWebResourceRoutes(): Hono<SessionRouteContextTypes> {
   const webResourceRoutes = new Hono<SessionRouteContextTypes>();
 
   webResourceRoutes.post('/', async (context) => {
-    const requestBody = await readJsonRequestBody(context.req, registerWebResourceRequestSchema);
-    if (requestBody === undefined) {
-      return context.body(null, 400);
+    const requestBodyReading = await readJsonRequestBody(
+      context.req,
+      registerWebResourceRequestSchema,
+    );
+    if (!requestBodyReading.valid) {
+      return invalidControlRequestResponse(context, requestBodyReading.issues);
     }
+    const requestBody = requestBodyReading.value;
     const { url, status, content_type: contentType, location, content_base64: content } =
       requestBody;
     const result = context.get('emulationSession').webResources.registerWebResource({
@@ -38,7 +46,7 @@ export function createWebResourceRoutes(): Hono<SessionRouteContextTypes> {
     });
     return result.registered
       ? context.json(viewWebResource(result.resource), 201)
-      : context.body(null, 400);
+      : controlErrorResponse(context, 400, result.reason);
   });
 
   return webResourceRoutes;

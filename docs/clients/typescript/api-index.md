@@ -143,9 +143,14 @@ exact contract.
 
 ## Errors
 
-| Error                        | Raised when                                                               | Guide                                 |
-| ---------------------------- | ------------------------------------------------------------------------- | ------------------------------------- |
-| `EmulationClientError`       | The emulator refuses a request, or a request fails or breaks its contract | [Troubleshooting](troubleshooting.md) |
-| `BotActivityTimeoutError`    | A wait finds no matching entry in time                                    | [Troubleshooting](troubleshooting.md) |
-| `UnexpectedBotActivityError` | `assertNone` finds matching entries                                       | [Troubleshooting](troubleshooting.md) |
-| `ButtonSelectionError`       | A button selector matches no button, or several                           | [Troubleshooting](troubleshooting.md) |
+| Error                        | Raised when                                                                | Guide                                 |
+| ---------------------------- | -------------------------------------------------------------------------- | ------------------------------------- |
+| `EmulationControlError`      | The emulator refuses a request, naming its `reason`                        | [Troubleshooting](troubleshooting.md) |
+| `EmulationClientError`       | A request fails or breaks its contract; also every `EmulationControlError` | [Troubleshooting](troubleshooting.md) |
+| `BotActivityTimeoutError`    | A wait finds no matching entry in time                                     | [Troubleshooting](troubleshooting.md) |
+| `UnexpectedBotActivityError` | `assertNone` finds matching entries                                        | [Troubleshooting](troubleshooting.md) |
+| `ButtonSelectionError`       | A button selector matches no button, or several                            | [Troubleshooting](troubleshooting.md) |
+
+`CONTROL_REFUSAL_REASONS` lists every `reason` an `EmulationControlError` can carry besides
+`invalid_request`; [Troubleshooting](troubleshooting.md#the-emulator-refuses-a-request) explains
+them.

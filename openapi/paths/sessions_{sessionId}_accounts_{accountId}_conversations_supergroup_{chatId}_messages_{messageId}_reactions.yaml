@@ -21,10 +21,35 @@ get:
             $ref: ../components/schemas/SupergroupMessageReactions.yaml
     '400':
       description: A path identifier is invalid.
+      content:
+        application/json:
+          schema:
+            $ref: ../components/schemas/ControlValidationError.yaml
     '403':
       description: The account is not a member of the supergroup.
+      content:
+        application/json:
+          schema:
+            allOf:
+              - $ref: ../components/schemas/ControlError.yaml
+              - properties:
+                  reason:
+                    enum:
+                      - not_a_member
     '404':
       description: The session, account, supergroup, or message of the supergroup does not exist.
+      content:
+        application/json:
+          schema:
+            allOf:
+              - $ref: ../components/schemas/ControlError.yaml
+              - properties:
+                  reason:
+                    enum:
+                      - account_not_found
+                      - chat_not_found
+                      - message_not_found
+                      - session_not_found
 put:
   operationId: setSupergroupAccountMessageReaction
   summary: React to a message of a supergroup, or change the reaction
@@ -50,16 +75,60 @@ put:
       description: >-
         The request is invalid, names an emoji the Bot API does not list for
         `ReactionTypeEmoji`, chooses more than one reaction, or the message is a service message.
+      content:
+        application/json:
+          schema:
+            oneOf:
+              - $ref: ../components/schemas/ControlValidationError.yaml
+              - allOf:
+                  - $ref: ../components/schemas/ControlError.yaml
+                  - properties:
+                      reason:
+                        enum:
+                          - message_not_reactable
+                          - reaction_emoji_unsupported
+                          - too_many_reactions
     '403':
       description: >-
         The account is not a member of the supergroup, or lacks the `can_react_to_messages`
         permission.
+      content:
+        application/json:
+          schema:
+            allOf:
+              - $ref: ../components/schemas/ControlError.yaml
+              - properties:
+                  reason:
+                    enum:
+                      - not_a_member
+                      - reaction_not_permitted
     '404':
       description: The session, account, supergroup, or message of the supergroup does not exist.
+      content:
+        application/json:
+          schema:
+            allOf:
+              - $ref: ../components/schemas/ControlError.yaml
+              - properties:
+                  reason:
+                    enum:
+                      - account_not_found
+                      - chat_not_found
+                      - message_not_found
+                      - session_not_found
     '409':
       description: >-
         The message already shows eleven distinct reactions, Telegram's `reactions_uniq_max`, and
         the chosen one is not among them.
+      content:
+        application/json:
+          schema:
+            allOf:
+              - $ref: ../components/schemas/ControlError.yaml
+              - properties:
+                  reason:
+                    enum:
+                      - too_many_distinct_reactions
 delete:
   operationId: removeSupergroupAccountMessageReaction
   summary: Remove the account's reaction to a message of a supergroup
@@ -71,7 +140,42 @@ delete:
       description: The account has no reaction to the message.
     '400':
       description: A path identifier is invalid.
+      content:
+        application/json:
+          schema:
+            oneOf:
+              - $ref: ../components/schemas/ControlValidationError.yaml
+              - allOf:
+                  - $ref: ../components/schemas/ControlError.yaml
+                  - properties:
+                      reason:
+                        enum:
+                          - message_not_reactable
+                          - reaction_emoji_unsupported
+                          - too_many_reactions
     '403':
       description: The account is not a member of the supergroup.
+      content:
+        application/json:
+          schema:
+            allOf:
+              - $ref: ../components/schemas/ControlError.yaml
+              - properties:
+                  reason:
+                    enum:
+                      - not_a_member
+                      - reaction_not_permitted
     '404':
       description: The session, account, supergroup, or message of the supergroup does not exist.
+      content:
+        application/json:
+          schema:
+            allOf:
+              - $ref: ../components/schemas/ControlError.yaml
+              - properties:
+                  reason:
+                    enum:
+                      - account_not_found
+                      - chat_not_found
+                      - message_not_found
+                      - session_not_found

@@ -499,7 +499,7 @@ Deno.test('the bot acknowledges a pin in a supergroup', () =>
 the block. Each change sends the bot a `my_chat_member` update: `kicked` when blocked, `member`
 again when unblocked. While blocked, the bot's sends to the account fail with
 `403 Forbidden: bot was blocked by the user`, and the account's own sends to the bot are refused
-with an `EmulationClientError` of status 409. The
+with an `EmulationControlError` of status 409 and reason `bot_blocked`. The
 [blocking reference](../../features/messages.md#blocking) describes the rest. The test below sends
 as the bot directly through the fixture's `bot.api`.
 
@@ -507,7 +507,7 @@ as the bot directly through the fixture's `bot.api`.
 import { assertEquals, assertRejects } from 'jsr:@std/assert@^1';
 import { GrammyError } from 'npm:grammy@^1.46.0';
 import type { ChatMemberUpdated } from 'npm:grammy@^1.46.0/types';
-import { EmulationClientError } from '../../../clients/typescript/mod.ts';
+import { EmulationControlError } from '../../../clients/typescript/mod.ts';
 import { withBotFixture } from './bot_fixture.ts';
 
 Deno.test('a blocked bot cannot message the account until it is unblocked', () =>
@@ -547,9 +547,9 @@ Deno.test('a blocked bot cannot message the account until it is unblocked', () =
     );
     const refusal = await assertRejects(
       () => account.sendMessage({ to: privateChat, text: 'Hello?' }),
-      EmulationClientError,
+      EmulationControlError,
     );
-    assertEquals(refusal.status, 409);
+    assertEquals([refusal.status, refusal.reason], [409, 'bot_blocked']);
 
     const beforeUnblock = await activity.position();
     await account.unblockBot({ botId: botProfile.id });

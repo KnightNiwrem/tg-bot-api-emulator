@@ -25,11 +25,46 @@ post:
       description: The draft stopped.
     '400':
       description: A path identifier or the body is invalid.
+      content:
+        application/json:
+          schema:
+            $ref: ../components/schemas/ControlValidationError.yaml
     '403':
       description: The draft has no Stop button; it stays shown.
+      content:
+        application/json:
+          schema:
+            allOf:
+              - $ref: ../components/schemas/ControlError.yaml
+              - properties:
+                  reason:
+                    enum:
+                      - draft_not_stoppable
     '404':
       description: The session, account, or bot does not exist, or the chat shows no draft.
+      content:
+        application/json:
+          schema:
+            allOf:
+              - $ref: ../components/schemas/ControlError.yaml
+              - properties:
+                  reason:
+                    enum:
+                      - account_not_found
+                      - bot_not_found
+                      - draft_not_found
+                      - session_not_found
     '409':
       description: >-
         The chat shows a draft other than the one `draft_id` names, or a kept draft that was
         already stopped; it stays shown.
+      content:
+        application/json:
+          schema:
+            allOf:
+              - $ref: ../components/schemas/ControlError.yaml
+              - properties:
+                  reason:
+                    enum:
+                      - draft_already_stopped
+                      - draft_id_mismatch

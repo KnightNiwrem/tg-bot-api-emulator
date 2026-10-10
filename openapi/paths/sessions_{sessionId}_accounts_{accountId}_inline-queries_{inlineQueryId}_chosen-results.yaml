@@ -42,23 +42,83 @@ post:
               - $ref: ../components/schemas/SentSupergroupMessage.yaml
     '400':
       description: The request is invalid, or the answer has no result with the given ID.
+      content:
+        application/json:
+          schema:
+            oneOf:
+              - $ref: ../components/schemas/ControlValidationError.yaml
+              - allOf:
+                  - $ref: ../components/schemas/ControlError.yaml
+                  - properties:
+                      reason:
+                        enum:
+                          - result_not_found
     '403':
       description: >-
         The account is no longer a member of the supergroup, or may not send the result there:
         as TDLib's `send_inline_query_result_message` requires, it needs `can_send_other_messages`
         to use inline bots, and then the permission for the result's content.
+      content:
+        application/json:
+          schema:
+            allOf:
+              - $ref: ../components/schemas/ControlError.yaml
+              - properties:
+                  reason:
+                    enum:
+                      - inline_bots_not_permitted
+                      - not_a_member
+                      - send_permission_missing
     '404':
       description: The session does not exist, or the account sent no such inline query.
+      content:
+        application/json:
+          schema:
+            allOf:
+              - $ref: ../components/schemas/ControlError.yaml
+              - properties:
+                  reason:
+                    enum:
+                      - inline_query_not_found
+                      - session_not_found
     '409':
       description: >-
         The bot has not answered the query yet, or the account blocks the bot of the private
         chat and must unblock it before writing to it.
+      content:
+        application/json:
+          schema:
+            allOf:
+              - $ref: ../components/schemas/ControlError.yaml
+              - properties:
+                  reason:
+                    enum:
+                      - bot_blocked
+                      - inline_query_not_answered
     '422':
       description: >-
         The media the result names by URL was downloaded but is not of the result's kind: it is
         empty, served as another type, or, for a photo, not an image Telegram can process. The
         account's client receives Telegram's `WEBPAGE_MEDIA_EMPTY` or image error.
+      content:
+        application/json:
+          schema:
+            allOf:
+              - $ref: ../components/schemas/ControlError.yaml
+              - properties:
+                  reason:
+                    enum:
+                      - web_media_invalid
     '502':
       description: >-
         The media the result names by URL cannot be downloaded from the session's emulated web,
         as Telegram's `WEBPAGE_CURL_FAILED`.
+      content:
+        application/json:
+          schema:
+            allOf:
+              - $ref: ../components/schemas/ControlError.yaml
+              - properties:
+                  reason:
+                    enum:
+                      - web_media_unavailable

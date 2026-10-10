@@ -3,6 +3,12 @@ import { basePath } from 'hono/route';
 import { z } from 'zod';
 
 import type { CallbackQuery } from '../../../types/callback_query.ts';
+import type { EmulationSession } from '../../../types/emulation_session.ts';
+import {
+  controlErrorResponse,
+  invalidControlRequestResponse,
+} from '../../control_error_response.ts';
+import { readPathParameters } from '../control_request_input.ts';
 import { readJsonRequestBody } from '../json_request_body.ts';
 import type { SessionRouteContextTypes } from '../session_route_context_types.ts';
 import { ACCOUNT_ID_PARAMETER, accountPathSchema } from './account_paths.ts';
@@ -29,16 +35,20 @@ export function createCallbackQueryRoutes(): Hono<SessionRouteContextTypes> {
   const accountRoutes = new Hono<SessionRouteContextTypes>();
 
   accountRoutes.post(CALLBACK_QUERY_COLLECTION_PATH, async (context) => {
-    const accountPath = accountPathSchema.safeParse(context.req.param());
-    if (!accountPath.success) {
-      return context.body(null, 400);
+    const accountPath = readPathParameters(accountPathSchema, context.req.param());
+    if (!accountPath.valid) {
+      return invalidControlRequestResponse(context, accountPath.issues);
     }
-    const { accountId } = accountPath.data;
+    const { accountId } = accountPath.value;
 
-    const requestBody = await readJsonRequestBody(context.req, pressCallbackButtonRequestSchema);
-    if (requestBody === undefined) {
-      return context.body(null, 400);
+    const requestBodyReading = await readJsonRequestBody(
+      context.req,
+      pressCallbackButtonRequestSchema,
+    );
+    if (!requestBodyReading.valid) {
+      return invalidControlRequestResponse(context, requestBodyReading.issues);
     }
+    const requestBody = requestBodyReading.value;
 
     const result = context.get('emulationSession').callbackQueries.pressCallbackButton({
       fromAccountId: accountId,
@@ -48,21 +58,11 @@ export function createCallbackQueryRoutes(): Hono<SessionRouteContextTypes> {
       expired: requestBody.expired,
     });
     if (!result.pressed) {
-      switch (result.reason) {
-        case 'callback_button_not_found':
-          return context.body(null, 400);
-        case 'not_a_member':
-          return context.body(null, 403);
-        case 'account_not_found':
-        case 'bot_not_found':
-        case 'chat_not_found':
-        case 'message_not_found':
-          return context.body(null, 404);
-        default: {
-          const unhandledReason: never = result.reason;
-          throw new Error(`Unhandled callback button press failure: ${unhandledReason}`);
-        }
-      }
+      return controlErrorResponse(
+        context,
+        callbackButtonPressFailureStatus(result.reason),
+        result.reason,
+      );
     }
 
     const callbackQueryPath = `${
@@ -76,23 +76,50 @@ export function createCallbackQueryRoutes(): Hono<SessionRouteContextTypes> {
   });
 
   accountRoutes.get(CALLBACK_QUERY_PATH, (context) => {
-    const accountPath = accountPathSchema.safeParse(context.req.param());
-    if (!accountPath.success) {
-      return context.body(null, 400);
+    const accountPath = readPathParameters(accountPathSchema, context.req.param());
+    if (!accountPath.valid) {
+      return invalidControlRequestResponse(context, accountPath.issues);
     }
-    const { accountId } = accountPath.data;
+    const { accountId } = accountPath.value;
 
     const callbackQuery = context.get('emulationSession').callbackQueries.getAccountCallbackQuery({
       accountId,
       callbackQueryId: context.req.param(CALLBACK_QUERY_ID_PARAMETER),
     });
     if (callbackQuery === undefined) {
-      return context.body(null, 404);
+      return controlErrorResponse(context, 404, 'callback_query_not_found');
     }
     return context.json({ callback_query: presentCallbackQueryForAccount(callbackQuery) });
   });
 
   return accountRoutes;
+}
+
+/**
+ * A message without the pressed button rejects the request; a supergroup the account is not a
+ * member of is forbidden; a missing account, bot, chat, or message is not found.
+ */
+function callbackButtonPressFailureStatus(
+  reason: Extract<
+    ReturnType<EmulationSession['callbackQueries']['pressCallbackButton']>,
+    { readonly pressed: false }
+  >['reason'],
+): 400 | 403 | 404 {
+  switch (reason) {
+    case 'callback_button_not_found':
+      return 400;
+    case 'not_a_member':
+      return 403;
+    case 'account_not_found':
+    case 'bot_not_found':
+    case 'chat_not_found':
+    case 'message_not_found':
+      return 404;
+    default: {
+      const unhandledReason: never = reason;
+      throw new Error(`Unhandled callback button press failure: ${unhandledReason}`);
+    }
+  }
 }
 
 /** Shows a callback query to the account that created it, with the bot's answer once given. */

@@ -26,6 +26,18 @@ info:
     with a `404` Bot API error described as `Not Found`, before any token is checked.
 
 
+    Control routes, every route outside a session's Bot API root, answer each failure they expect
+    with a JSON body naming a stable `reason` code, whatever its status. Input that breaks an
+    operation's contract is answered with `400` and `reason` `invalid_request`, listing each
+    problem with the part of the request it is in, where, and a stable code
+    (`ControlValidationError`). Any other refusal, such as a missing resource or a state that does
+    not allow the operation, carries only its `reason` (`ControlError`); each operation lists the
+    reasons each of its error statuses can carry. A path or method that no route serves is
+    answered with `404` and `reason` `route_not_found`. Bot API responses are Telegram's: a
+    request under the Bot API root of a session that does not exist is answered with a `404`
+    without a body.
+
+
     The server is meant to run inside a test environment, such as CI, rather than as a public
     service, so admin routes require no credentials; each test session isolates its own state. Bot
     API routes authenticate the bot token in their path, as Telegram does, and answer a token that

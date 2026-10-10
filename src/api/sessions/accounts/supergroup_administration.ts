@@ -7,6 +7,11 @@ import {
 } from '../../../types/chat_membership.ts';
 import { CHAT_PERMISSIONS } from '../../../types/chat_permissions.ts';
 import type { EmulationSession } from '../../../types/emulation_session.ts';
+import {
+  controlErrorResponse,
+  invalidControlRequestResponse,
+} from '../../control_error_response.ts';
+import { readPathParameters } from '../control_request_input.ts';
 import { readJsonRequestBody } from '../json_request_body.ts';
 import type { SessionRouteContextTypes } from '../session_route_context_types.ts';
 import {
@@ -81,16 +86,23 @@ export function createSupergroupAdministrationRoutes(): Hono<SessionRouteContext
 
   // A member inspects the owner and administrators, who promoted each, and whom it may edit.
   accountRoutes.get(SUPERGROUP_ADMINISTRATOR_COLLECTION_PATH, (context) => {
-    const conversationPath = supergroupConversationPathSchema.safeParse(context.req.param());
-    if (!conversationPath.success) {
-      return context.body(null, 400);
+    const conversationPath = readPathParameters(
+      supergroupConversationPathSchema,
+      context.req.param(),
+    );
+    if (!conversationPath.valid) {
+      return invalidControlRequestResponse(context, conversationPath.issues);
     }
-    const { accountId, chatId } = conversationPath.data;
+    const { accountId, chatId } = conversationPath.value;
 
     const result = context.get('emulationSession').sharedChatAdministration
       .getAdministratorsForAccount({ observerAccountId: accountId, chatId });
     if (!result.found) {
-      return context.body(null, supergroupMemberFailureStatus(result.reason));
+      return controlErrorResponse(
+        context,
+        supergroupMemberFailureStatus(result.reason),
+        result.reason,
+      );
     }
     return context.json({
       administrators: result.administrators.map(presentAdministratorForAccount),
@@ -100,15 +112,19 @@ export function createSupergroupAdministrationRoutes(): Hono<SessionRouteContext
   // The owner or an administrator that may promote makes a member an administrator, or changes
   // the rights of an administrator it may edit.
   accountRoutes.put(SUPERGROUP_ADMINISTRATOR_PATH, async (context) => {
-    const memberPath = supergroupMemberPathSchema.safeParse(context.req.param());
-    if (!memberPath.success) {
-      return context.body(null, 400);
+    const memberPath = readPathParameters(supergroupMemberPathSchema, context.req.param());
+    if (!memberPath.valid) {
+      return invalidControlRequestResponse(context, memberPath.issues);
     }
-    const requestBody = await readJsonRequestBody(context.req, promoteChatMemberRequestSchema);
-    if (requestBody === undefined) {
-      return context.body(null, 400);
+    const requestBodyReading = await readJsonRequestBody(
+      context.req,
+      promoteChatMemberRequestSchema,
+    );
+    if (!requestBodyReading.valid) {
+      return invalidControlRequestResponse(context, requestBodyReading.issues);
     }
-    const { accountId, chatId, userId } = memberPath.data;
+    const requestBody = requestBodyReading.value;
+    const { accountId, chatId, userId } = memberPath.value;
 
     const result = context.get('emulationSession').sharedChatAdministration.promoteChatMember({
       actorAccountId: accountId,
@@ -122,23 +138,31 @@ export function createSupergroupAdministrationRoutes(): Hono<SessionRouteContext
       return context.body(null, 204);
     }
     // An administrator without rights would be a member; DELETE demotes one instead.
-    return result.reason === 'no_rights_granted'
-      ? context.body(null, 400)
-      : context.body(null, accountAdministrationFailureStatus(result.reason));
+    return controlErrorResponse(
+      context,
+      result.reason === 'no_rights_granted'
+        ? 400
+        : accountAdministrationFailureStatus(result.reason),
+      result.reason,
+    );
   });
 
   // The owner or an administrator that may restrict members restricts a user, member or not, or
   // changes its restriction.
   accountRoutes.put(SUPERGROUP_RESTRICTION_PATH, async (context) => {
-    const memberPath = supergroupMemberPathSchema.safeParse(context.req.param());
-    if (!memberPath.success) {
-      return context.body(null, 400);
+    const memberPath = readPathParameters(supergroupMemberPathSchema, context.req.param());
+    if (!memberPath.valid) {
+      return invalidControlRequestResponse(context, memberPath.issues);
     }
-    const requestBody = await readJsonRequestBody(context.req, restrictChatMemberRequestSchema);
-    if (requestBody === undefined) {
-      return context.body(null, 400);
+    const requestBodyReading = await readJsonRequestBody(
+      context.req,
+      restrictChatMemberRequestSchema,
+    );
+    if (!requestBodyReading.valid) {
+      return invalidControlRequestResponse(context, requestBodyReading.issues);
     }
-    const { accountId, chatId, userId } = memberPath.data;
+    const requestBody = requestBodyReading.value;
+    const { accountId, chatId, userId } = memberPath.value;
 
     const result = context.get('emulationSession').sharedChatAdministration
       .restrictChatMemberAsAccount({
@@ -148,38 +172,43 @@ export function createSupergroupAdministrationRoutes(): Hono<SessionRouteContext
         permissions: requestBody.permissions,
         requestedRestrictionEndUnixSeconds: requestBody.until_date,
       });
-    return result.changed
-      ? context.body(null, 204)
-      : context.body(null, accountAdministrationFailureStatus(result.reason));
+    return result.changed ? context.body(null, 204) : controlErrorResponse(
+      context,
+      accountAdministrationFailureStatus(result.reason),
+      result.reason,
+    );
   });
 
   // The owner or an administrator that may restrict members lifts a user's restriction; lifting
   // none changes nothing.
   accountRoutes.delete(SUPERGROUP_RESTRICTION_PATH, (context) => {
-    const memberPath = supergroupMemberPathSchema.safeParse(context.req.param());
-    if (!memberPath.success) {
-      return context.body(null, 400);
+    const memberPath = readPathParameters(supergroupMemberPathSchema, context.req.param());
+    if (!memberPath.valid) {
+      return invalidControlRequestResponse(context, memberPath.issues);
     }
-    const { accountId, chatId, userId } = memberPath.data;
+    const { accountId, chatId, userId } = memberPath.value;
 
     const result = context.get('emulationSession').sharedChatAdministration
       .liftRestrictionAsAccount({ actorAccountId: accountId, chatId, memberId: userId });
-    return result.changed
-      ? context.body(null, 204)
-      : context.body(null, accountAdministrationFailureStatus(result.reason));
+    return result.changed ? context.body(null, 204) : controlErrorResponse(
+      context,
+      accountAdministrationFailureStatus(result.reason),
+      result.reason,
+    );
   });
 
   // The owner sets its own custom title or an administrator's; an empty title removes it.
   accountRoutes.put(SUPERGROUP_CUSTOM_TITLE_PATH, async (context) => {
-    const memberPath = supergroupMemberPathSchema.safeParse(context.req.param());
-    if (!memberPath.success) {
-      return context.body(null, 400);
+    const memberPath = readPathParameters(supergroupMemberPathSchema, context.req.param());
+    if (!memberPath.valid) {
+      return invalidControlRequestResponse(context, memberPath.issues);
     }
-    const requestBody = await readJsonRequestBody(context.req, setCustomTitleRequestSchema);
-    if (requestBody === undefined) {
-      return context.body(null, 400);
+    const requestBodyReading = await readJsonRequestBody(context.req, setCustomTitleRequestSchema);
+    if (!requestBodyReading.valid) {
+      return invalidControlRequestResponse(context, requestBodyReading.issues);
     }
-    const { accountId, chatId, userId } = memberPath.data;
+    const requestBody = requestBodyReading.value;
+    const { accountId, chatId, userId } = memberPath.value;
 
     const result = context.get('emulationSession').sharedChatAdministration.setCustomTitle({
       actorAccountId: accountId,
@@ -194,16 +223,16 @@ export function createSupergroupAdministrationRoutes(): Hono<SessionRouteContext
       case 'actor_account_not_found':
       case 'chat_not_found':
       case 'member_not_found':
-        return context.body(null, 404);
+        return controlErrorResponse(context, 404, result.reason);
       case 'actor_not_authorized':
-        return context.body(null, 403);
+        return controlErrorResponse(context, 403, result.reason);
       case 'not_a_member':
       case 'not_an_administrator':
-        return context.body(null, 409);
+        return controlErrorResponse(context, 409, result.reason);
       case 'text_encoding_invalid':
       case 'custom_title_too_long':
       case 'custom_title_contains_emoji':
-        return context.body(null, 400);
+        return controlErrorResponse(context, 400, result.reason);
       default: {
         const unhandledReason: never = result.reason;
         throw new Error(`Unhandled custom title failure: ${unhandledReason}`);
@@ -213,18 +242,22 @@ export function createSupergroupAdministrationRoutes(): Hono<SessionRouteContext
 
   // A member changes the supergroup's title, which a service message records.
   accountRoutes.put(SUPERGROUP_TITLE_PATH, async (context) => {
-    const conversationPath = supergroupConversationPathSchema.safeParse(context.req.param());
-    if (!conversationPath.success) {
-      return context.body(null, 400);
+    const conversationPath = readPathParameters(
+      supergroupConversationPathSchema,
+      context.req.param(),
+    );
+    if (!conversationPath.valid) {
+      return invalidControlRequestResponse(context, conversationPath.issues);
     }
-    const requestBody = await readJsonRequestBody(
+    const requestBodyReading = await readJsonRequestBody(
       context.req,
       changeSupergroupTitleRequestSchema,
     );
-    if (requestBody === undefined) {
-      return context.body(null, 400);
+    if (!requestBodyReading.valid) {
+      return invalidControlRequestResponse(context, requestBodyReading.issues);
     }
-    const { accountId, chatId } = conversationPath.data;
+    const requestBody = requestBodyReading.value;
+    const { accountId, chatId } = conversationPath.value;
 
     const result = context.get('emulationSession').sharedChatAdministration
       .changeSupergroupTitle({
@@ -232,25 +265,31 @@ export function createSupergroupAdministrationRoutes(): Hono<SessionRouteContext
         chatId,
         title: requestBody.title,
       });
-    return result.changed
-      ? context.body(null, 204)
-      : context.body(null, supergroupInfoChangeFailureStatus(result.reason));
+    return result.changed ? context.body(null, 204) : controlErrorResponse(
+      context,
+      supergroupInfoChangeFailureStatus(result.reason),
+      result.reason,
+    );
   });
 
   // A member changes the supergroup's description, which no service message records.
   accountRoutes.put(SUPERGROUP_DESCRIPTION_PATH, async (context) => {
-    const conversationPath = supergroupConversationPathSchema.safeParse(context.req.param());
-    if (!conversationPath.success) {
-      return context.body(null, 400);
+    const conversationPath = readPathParameters(
+      supergroupConversationPathSchema,
+      context.req.param(),
+    );
+    if (!conversationPath.valid) {
+      return invalidControlRequestResponse(context, conversationPath.issues);
     }
-    const requestBody = await readJsonRequestBody(
+    const requestBodyReading = await readJsonRequestBody(
       context.req,
       changeSupergroupDescriptionRequestSchema,
     );
-    if (requestBody === undefined) {
-      return context.body(null, 400);
+    if (!requestBodyReading.valid) {
+      return invalidControlRequestResponse(context, requestBodyReading.issues);
     }
-    const { accountId, chatId } = conversationPath.data;
+    const requestBody = requestBodyReading.value;
+    const { accountId, chatId } = conversationPath.value;
 
     const result = context.get('emulationSession').sharedChatAdministration
       .changeSupergroupDescription({
@@ -258,25 +297,31 @@ export function createSupergroupAdministrationRoutes(): Hono<SessionRouteContext
         chatId,
         description: requestBody.description,
       });
-    return result.changed
-      ? context.body(null, 204)
-      : context.body(null, supergroupInfoChangeFailureStatus(result.reason));
+    return result.changed ? context.body(null, 204) : controlErrorResponse(
+      context,
+      supergroupInfoChangeFailureStatus(result.reason),
+      result.reason,
+    );
   });
 
   // A member with the right to restrict members changes what members may do by default.
   accountRoutes.put(SUPERGROUP_DEFAULT_PERMISSIONS_PATH, async (context) => {
-    const conversationPath = supergroupConversationPathSchema.safeParse(context.req.param());
-    if (!conversationPath.success) {
-      return context.body(null, 400);
+    const conversationPath = readPathParameters(
+      supergroupConversationPathSchema,
+      context.req.param(),
+    );
+    if (!conversationPath.valid) {
+      return invalidControlRequestResponse(context, conversationPath.issues);
     }
-    const requestBody = await readJsonRequestBody(
+    const requestBodyReading = await readJsonRequestBody(
       context.req,
       changeDefaultPermissionsRequestSchema,
     );
-    if (requestBody === undefined) {
-      return context.body(null, 400);
+    if (!requestBodyReading.valid) {
+      return invalidControlRequestResponse(context, requestBodyReading.issues);
     }
-    const { accountId, chatId } = conversationPath.data;
+    const requestBody = requestBodyReading.value;
+    const { accountId, chatId } = conversationPath.value;
 
     const result = context.get('emulationSession').sharedChatAdministration
       .changeDefaultPermissions({
@@ -290,10 +335,10 @@ export function createSupergroupAdministrationRoutes(): Hono<SessionRouteContext
     switch (result.reason) {
       case 'actor_not_found':
       case 'chat_not_found':
-        return context.body(null, 404);
+        return controlErrorResponse(context, 404, result.reason);
       case 'not_a_member':
       case 'not_enough_rights':
-        return context.body(null, 403);
+        return controlErrorResponse(context, 403, result.reason);
       // Only bots are refused for their former membership.
       case 'bot_not_a_member':
       case 'bot_kicked':
@@ -318,20 +363,22 @@ export function createSupergroupAdministrationRoutes(): Hono<SessionRouteContext
   // The owner or an administrator that may edit an administrator demotes it to a member;
   // demoting a member changes nothing.
   accountRoutes.delete(SUPERGROUP_ADMINISTRATOR_PATH, (context) => {
-    const memberPath = supergroupMemberPathSchema.safeParse(context.req.param());
-    if (!memberPath.success) {
-      return context.body(null, 400);
+    const memberPath = readPathParameters(supergroupMemberPathSchema, context.req.param());
+    if (!memberPath.valid) {
+      return invalidControlRequestResponse(context, memberPath.issues);
     }
-    const { accountId, chatId, userId } = memberPath.data;
+    const { accountId, chatId, userId } = memberPath.value;
 
     const result = context.get('emulationSession').sharedChatAdministration.demoteChatMember({
       actorAccountId: accountId,
       chatId,
       memberId: userId,
     });
-    return result.demoted
-      ? context.body(null, 204)
-      : context.body(null, accountAdministrationFailureStatus(result.reason));
+    return result.demoted ? context.body(null, 204) : controlErrorResponse(
+      context,
+      accountAdministrationFailureStatus(result.reason),
+      result.reason,
+    );
   });
 
   return accountRoutes;
@@ -392,11 +439,14 @@ function setSupergroupContentProtection(
   context: Context<SessionRouteContextTypes>,
   hasProtectedContent: boolean,
 ): Response {
-  const conversationPath = supergroupConversationPathSchema.safeParse(context.req.param());
-  if (!conversationPath.success) {
-    return context.body(null, 400);
+  const conversationPath = readPathParameters(
+    supergroupConversationPathSchema,
+    context.req.param(),
+  );
+  if (!conversationPath.valid) {
+    return invalidControlRequestResponse(context, conversationPath.issues);
   }
-  const { accountId, chatId } = conversationPath.data;
+  const { accountId, chatId } = conversationPath.value;
 
   const result = context.get('emulationSession').sharedChatAdministration.setContentProtection({
     actorAccountId: accountId,
@@ -406,7 +456,11 @@ function setSupergroupContentProtection(
   if (result.set) {
     return context.body(null, 204);
   }
-  return context.body(null, result.reason === 'actor_not_authorized' ? 403 : 404);
+  return controlErrorResponse(
+    context,
+    result.reason === 'actor_not_authorized' ? 403 : 404,
+    result.reason,
+  );
 }
 
 /**

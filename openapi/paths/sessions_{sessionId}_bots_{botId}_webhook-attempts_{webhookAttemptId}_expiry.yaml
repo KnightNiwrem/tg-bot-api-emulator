@@ -24,6 +24,26 @@ post:
       description: >-
         No active test session or virtual bot has the supplied identifier, or the bot has no such
         attempt.
+      content:
+        application/json:
+          schema:
+            allOf:
+              - $ref: ../components/schemas/ControlError.yaml
+              - properties:
+                  reason:
+                    enum:
+                      - attempt_not_found
+                      - bot_not_found
+                      - session_not_found
     '409':
       description: >-
         The attempt is no longer in flight, or its deadline has already arrived.
+      content:
+        application/json:
+          schema:
+            allOf:
+              - $ref: ../components/schemas/ControlError.yaml
+              - properties:
+                  reason:
+                    enum:
+                      - attempt_not_in_flight

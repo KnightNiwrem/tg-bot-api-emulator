@@ -38,12 +38,67 @@ post:
         empty, the album holds no item or more than 10, mixes documents or audio files with other
         media, or the
         replied message is not a message of the chat.
+      content:
+        application/json:
+          schema:
+            oneOf:
+              - $ref: ../components/schemas/ControlValidationError.yaml
+              - allOf:
+                  - $ref: ../components/schemas/ControlError.yaml
+                  - properties:
+                      reason:
+                        enum:
+                          - album_audio_mixed
+                          - album_caption_placement_mixed
+                          - album_documents_mixed
+                          - album_empty
+                          - album_too_large
+                          - bot_upload_too_big
+                          - caption_too_long
+                          - file_empty
+                          - image_invalid
+                          - message_text_too_long
+                          - photo_dimensions_invalid
+                          - photo_too_big
+                          - reply_message_not_found
+                          - text_invalid
     '403':
       description: >-
         The account is not a member of the supergroup, or may not send an item's kind of media
         there, as its restriction or the supergroup's default permissions decide.
+      content:
+        application/json:
+          schema:
+            allOf:
+              - $ref: ../components/schemas/ControlError.yaml
+              - properties:
+                  reason:
+                    enum:
+                      - not_a_member
+                      - send_permission_missing
     '404':
       description: >-
         The session, sending account, or the bot or supergroup of the request does not exist.
+      content:
+        application/json:
+          schema:
+            allOf:
+              - $ref: ../components/schemas/ControlError.yaml
+              - properties:
+                  reason:
+                    enum:
+                      - account_not_found
+                      - bot_not_found
+                      - chat_not_found
+                      - session_not_found
     '409':
       description: The account blocks the target bot and must unblock it before writing to it.
+      content:
+        application/json:
+          schema:
+            allOf:
+              - $ref: ../components/schemas/ControlError.yaml
+              - properties:
+                  reason:
+                    enum:
+                      - bot_blocked

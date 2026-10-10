@@ -1,5 +1,6 @@
 import { Hono } from 'hono';
 
+import { controlErrorResponse } from '../../control_error_response.ts';
 import type { SessionRouteContextTypes } from '../session_route_context_types.ts';
 
 const INLINE_QUERY_ID_PARAMETER = 'inlineQueryId';
@@ -18,7 +19,11 @@ export function createInlineQueryCacheRoutes(): Hono<SessionRouteContextTypes> {
       context.req.param(INLINE_QUERY_ID_PARAMETER),
     );
     if (!result.expired) {
-      return context.body(null, result.reason === 'inline_query_not_found' ? 404 : 409);
+      return controlErrorResponse(
+        context,
+        result.reason === 'inline_query_not_found' ? 404 : 409,
+        result.reason,
+      );
     }
     return context.body(null, 204);
   });

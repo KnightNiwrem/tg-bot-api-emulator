@@ -10,6 +10,11 @@ import {
   type InlineQueryResultsButton,
   MAX_INLINE_QUERY_LENGTH,
 } from '../../../types/inline_query.ts';
+import {
+  controlErrorResponse,
+  invalidControlRequestResponse,
+} from '../../control_error_response.ts';
+import { readPathParameters } from '../control_request_input.ts';
 import { readJsonRequestBody } from '../json_request_body.ts';
 import type { SessionRouteContextTypes } from '../session_route_context_types.ts';
 import { ACCOUNT_ID_PARAMETER, accountPathSchema } from './account_paths.ts';
@@ -28,7 +33,9 @@ const CHOSEN_INLINE_RESULT_COLLECTION_PATH = `${INLINE_QUERY_PATH}/chosen-result
 const sendInlineQueryRequestSchema = z.strictObject({
   bot_id: telegramUserIdSchema,
   chat: chatSchema,
-  query: z.string().default('').refine((query) => [...query].length <= MAX_INLINE_QUERY_LENGTH),
+  query: z.string().default('').refine((query) => [...query].length <= MAX_INLINE_QUERY_LENGTH, {
+    message: `A query must have at most ${MAX_INLINE_QUERY_LENGTH} characters`,
+  }),
   /** The `next_offset` of an earlier answer, requesting more results; empty for the first. */
   offset: z.string().default(''),
   /** Where the account is, shared with a bot that requests it. */
@@ -47,16 +54,17 @@ export function createInlineQueryRoutes(): Hono<SessionRouteContextTypes> {
   const accountRoutes = new Hono<SessionRouteContextTypes>();
 
   accountRoutes.post(INLINE_QUERY_COLLECTION_PATH, async (context) => {
-    const accountPath = accountPathSchema.safeParse(context.req.param());
-    if (!accountPath.success) {
-      return context.body(null, 400);
+    const accountPath = readPathParameters(accountPathSchema, context.req.param());
+    if (!accountPath.valid) {
+      return invalidControlRequestResponse(context, accountPath.issues);
     }
-    const { accountId } = accountPath.data;
+    const { accountId } = accountPath.value;
 
-    const requestBody = await readJsonRequestBody(context.req, sendInlineQueryRequestSchema);
-    if (requestBody === undefined) {
-      return context.body(null, 400);
+    const requestBodyReading = await readJsonRequestBody(context.req, sendInlineQueryRequestSchema);
+    if (!requestBodyReading.valid) {
+      return invalidControlRequestResponse(context, requestBodyReading.issues);
     }
+    const requestBody = requestBodyReading.value;
 
     const result = context.get('emulationSession').inlineQueries.sendInlineQuery({
       fromAccountId: accountId,
@@ -67,21 +75,11 @@ export function createInlineQueryRoutes(): Hono<SessionRouteContextTypes> {
       ...(requestBody.location === undefined ? {} : { userLocation: requestBody.location }),
     });
     if (!result.sent) {
-      switch (result.reason) {
-        case 'not_a_member':
-          return context.body(null, 403);
-        case 'inline_mode_disabled':
-        case 'inline_location_not_requested':
-          return context.body(null, 409);
-        case 'account_not_found':
-        case 'bot_not_found':
-        case 'chat_not_found':
-          return context.body(null, 404);
-        default: {
-          const unhandledReason: never = result.reason;
-          throw new Error(`Unhandled inline query send failure: ${unhandledReason}`);
-        }
-      }
+      return controlErrorResponse(
+        context,
+        inlineQuerySendFailureStatus(result.reason),
+        result.reason,
+      );
     }
 
     const inlineQueryPath = `${
@@ -95,36 +93,37 @@ export function createInlineQueryRoutes(): Hono<SessionRouteContextTypes> {
   });
 
   accountRoutes.get(INLINE_QUERY_PATH, (context) => {
-    const accountPath = accountPathSchema.safeParse(context.req.param());
-    if (!accountPath.success) {
-      return context.body(null, 400);
+    const accountPath = readPathParameters(accountPathSchema, context.req.param());
+    if (!accountPath.valid) {
+      return invalidControlRequestResponse(context, accountPath.issues);
     }
-    const { accountId } = accountPath.data;
+    const { accountId } = accountPath.value;
 
     const inlineQuery = context.get('emulationSession').inlineQueries.getAccountInlineQuery({
       accountId,
       inlineQueryId: context.req.param(INLINE_QUERY_ID_PARAMETER),
     });
     if (inlineQuery === undefined) {
-      return context.body(null, 404);
+      return controlErrorResponse(context, 404, 'inline_query_not_found');
     }
     return context.json({ inline_query: presentInlineQueryForAccount(inlineQuery) });
   });
 
   accountRoutes.post(CHOSEN_INLINE_RESULT_COLLECTION_PATH, async (context) => {
-    const accountPath = accountPathSchema.safeParse(context.req.param());
-    if (!accountPath.success) {
-      return context.body(null, 400);
+    const accountPath = readPathParameters(accountPathSchema, context.req.param());
+    if (!accountPath.valid) {
+      return invalidControlRequestResponse(context, accountPath.issues);
     }
-    const { accountId } = accountPath.data;
+    const { accountId } = accountPath.value;
 
-    const requestBody = await readJsonRequestBody(
+    const requestBodyReading = await readJsonRequestBody(
       context.req,
       chooseInlineQueryResultRequestSchema,
     );
-    if (requestBody === undefined) {
-      return context.body(null, 400);
+    if (!requestBodyReading.valid) {
+      return invalidControlRequestResponse(context, requestBodyReading.issues);
     }
+    const requestBody = requestBodyReading.value;
 
     const { inlineQueries, botMessageViews } = context.get('emulationSession');
     const result = await inlineQueries.chooseInlineQueryResult({
@@ -134,7 +133,11 @@ export function createInlineQueryRoutes(): Hono<SessionRouteContextTypes> {
       signal: context.req.raw.signal,
     });
     if (!result.chosen) {
-      return context.body(null, chosenInlineResultFailureStatus(result.reason));
+      return controlErrorResponse(
+        context,
+        chosenInlineResultFailureStatus(result.reason),
+        result.reason,
+      );
     }
     return context.json(
       { message: viewChatMessageForAccount(botMessageViews, result.message, accountId) },
@@ -143,6 +146,34 @@ export function createInlineQueryRoutes(): Hono<SessionRouteContextTypes> {
   });
 
   return accountRoutes;
+}
+
+/**
+ * A supergroup the account is not a member of is forbidden; a bot without inline mode, or one
+ * that does not ask for the account's location while the request shares it, conflicts with the
+ * query; a missing account, bot, or chat is not found.
+ */
+function inlineQuerySendFailureStatus(
+  reason: Extract<
+    ReturnType<EmulationSession['inlineQueries']['sendInlineQuery']>,
+    { readonly sent: false }
+  >['reason'],
+): 403 | 404 | 409 {
+  switch (reason) {
+    case 'not_a_member':
+      return 403;
+    case 'inline_mode_disabled':
+    case 'inline_location_not_requested':
+      return 409;
+    case 'account_not_found':
+    case 'bot_not_found':
+    case 'chat_not_found':
+      return 404;
+    default: {
+      const unhandledReason: never = reason;
+      throw new Error(`Unhandled inline query send failure: ${unhandledReason}`);
+    }
+  }
 }
 
 /**

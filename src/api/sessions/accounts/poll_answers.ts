@@ -2,6 +2,10 @@ import { Hono } from 'hono';
 import { z } from 'zod';
 
 import type { EmulationSession } from '../../../types/emulation_session.ts';
+import {
+  controlErrorResponse,
+  invalidControlRequestResponse,
+} from '../../control_error_response.ts';
 import { readJsonRequestBody } from '../json_request_body.ts';
 import type { SessionRouteContextTypes } from '../session_route_context_types.ts';
 import { PRIVATE_MESSAGE_PATH, SUPERGROUP_MESSAGE_PATH } from './account_paths.ts';
@@ -33,51 +37,55 @@ export function createPollAnswerRoutes(): Hono<SessionRouteContextTypes> {
     ] as const
   ) {
     accountRoutes.get(pollAnswerPath, (context) => {
-      const pollMessage = readPollMessageKey(context.req.param(), chatType);
-      if (pollMessage === undefined) {
-        return context.body(null, 400);
+      const pollMessageReading = readPollMessageKey(context.req.param(), chatType);
+      if (!pollMessageReading.valid) {
+        return invalidControlRequestResponse(context, pollMessageReading.issues);
       }
+      const pollMessage = pollMessageReading.value;
       const { polls, botMessageViews } = context.get('emulationSession');
       const result = polls.getAccountPollAnswer(pollMessage);
       if (!result.found) {
-        return context.body(null, pollAnswerFailureStatus(result.reason));
+        return controlErrorResponse(context, pollAnswerFailureStatus(result.reason), result.reason);
       }
       return context.json(presentPollAnswerForAccount(botMessageViews, result, pollMessage));
     });
 
     accountRoutes.put(pollAnswerPath, async (context) => {
-      const pollMessage = readPollMessageKey(context.req.param(), chatType);
-      if (pollMessage === undefined) {
-        return context.body(null, 400);
+      const pollMessageReading = readPollMessageKey(context.req.param(), chatType);
+      if (!pollMessageReading.valid) {
+        return invalidControlRequestResponse(context, pollMessageReading.issues);
       }
-      const requestBody = await readJsonRequestBody(context.req, setPollAnswerRequestSchema);
-      if (requestBody === undefined) {
-        return context.body(null, 400);
+      const pollMessage = pollMessageReading.value;
+      const requestBodyReading = await readJsonRequestBody(context.req, setPollAnswerRequestSchema);
+      if (!requestBodyReading.valid) {
+        return invalidControlRequestResponse(context, requestBodyReading.issues);
       }
+      const requestBody = requestBodyReading.value;
       const { polls, botMessageViews } = context.get('emulationSession');
       const result = polls.setAccountPollAnswer({
         ...pollMessage,
         optionPositions: requestBody.option_ids,
       });
       if (!result.answered) {
-        return context.body(null, pollAnswerFailureStatus(result.reason));
+        return controlErrorResponse(context, pollAnswerFailureStatus(result.reason), result.reason);
       }
       return context.json(presentPollAnswerForAccount(botMessageViews, result, pollMessage));
     });
 
     // Retracting chooses no options, as TDLib's `setPollAnswer` does with none.
     accountRoutes.delete(pollAnswerPath, (context) => {
-      const pollMessage = readPollMessageKey(context.req.param(), chatType);
-      if (pollMessage === undefined) {
-        return context.body(null, 400);
+      const pollMessageReading = readPollMessageKey(context.req.param(), chatType);
+      if (!pollMessageReading.valid) {
+        return invalidControlRequestResponse(context, pollMessageReading.issues);
       }
+      const pollMessage = pollMessageReading.value;
       const result = context.get('emulationSession').polls.setAccountPollAnswer({
         ...pollMessage,
         optionPositions: [],
       });
       return result.answered
         ? context.body(null, 204)
-        : context.body(null, pollAnswerFailureStatus(result.reason));
+        : controlErrorResponse(context, pollAnswerFailureStatus(result.reason), result.reason);
     });
   }
 

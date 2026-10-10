@@ -2,8 +2,12 @@ import { Hono } from 'hono';
 import { z } from 'zod';
 
 import type { EmulationSession } from '../../../types/emulation_session.ts';
-import { isTelegramUsername } from '../../../types/telegram_identity.ts';
 import type { Supergroup } from '../../../types/virtual_chat.ts';
+import {
+  controlErrorResponse,
+  invalidControlRequestResponse,
+} from '../../control_error_response.ts';
+import { readPathParameters } from '../control_request_input.ts';
 import { presentChatInviteLinkUsage, presentChatJoinRequest } from '../invite_link_presentation.ts';
 import { readJsonRequestBody } from '../json_request_body.ts';
 import type { SessionRouteContextTypes } from '../session_route_context_types.ts';
@@ -15,6 +19,7 @@ import {
   supergroupMemberPathSchema,
   USER_ID_PARAMETER,
 } from './account_paths.ts';
+import { telegramUsernameSchema } from './request_fields.ts';
 
 const SUPERGROUP_COLLECTION_PATH = `/:${ACCOUNT_ID_PARAMETER}/supergroups` as const;
 const SUPERGROUP_MEMBER_PATH =
@@ -40,7 +45,7 @@ const decideJoinRequestRequestSchema = z.strictObject({
 const createSupergroupRequestSchema = z.strictObject({
   title: z.string().min(1),
   /** Makes the supergroup public under this username, unique among the session's usernames. */
-  username: z.string().refine(isTelegramUsername).optional(),
+  username: telegramUsernameSchema.optional(),
   description: z.string().min(1).optional(),
 });
 
@@ -53,16 +58,20 @@ export function createSupergroupMembershipRoutes(): Hono<SessionRouteContextType
   const accountRoutes = new Hono<SessionRouteContextTypes>();
 
   accountRoutes.post(SUPERGROUP_COLLECTION_PATH, async (context) => {
-    const accountPath = accountPathSchema.safeParse(context.req.param());
-    if (!accountPath.success) {
-      return context.body(null, 400);
+    const accountPath = readPathParameters(accountPathSchema, context.req.param());
+    if (!accountPath.valid) {
+      return invalidControlRequestResponse(context, accountPath.issues);
     }
-    const { accountId } = accountPath.data;
+    const { accountId } = accountPath.value;
 
-    const requestBody = await readJsonRequestBody(context.req, createSupergroupRequestSchema);
-    if (requestBody === undefined) {
-      return context.body(null, 400);
+    const requestBodyReading = await readJsonRequestBody(
+      context.req,
+      createSupergroupRequestSchema,
+    );
+    if (!requestBodyReading.valid) {
+      return invalidControlRequestResponse(context, requestBodyReading.issues);
     }
+    const requestBody = requestBodyReading.value;
 
     const { title, username, description } = requestBody;
     const result = context.get('emulationSession').sharedChatAdministration.createSupergroup({
@@ -74,11 +83,11 @@ export function createSupergroupMembershipRoutes(): Hono<SessionRouteContextType
     if (!result.created) {
       switch (result.reason) {
         case 'creator_account_not_found':
-          return context.body(null, 404);
+          return controlErrorResponse(context, 404, result.reason);
         case 'username_taken':
-          return context.body(null, 409);
+          return controlErrorResponse(context, 409, result.reason);
         case 'identity_limit_reached':
-          return context.body(null, 507);
+          return controlErrorResponse(context, 507, result.reason);
         default: {
           const unhandledReason: never = result.reason;
           throw new Error(`Unhandled supergroup creation failure: ${unhandledReason}`);
@@ -91,11 +100,11 @@ export function createSupergroupMembershipRoutes(): Hono<SessionRouteContextType
   // The account joins a public supergroup by itself when it names itself, and otherwise adds the
   // member as the owner.
   accountRoutes.put(SUPERGROUP_MEMBER_PATH, (context) => {
-    const memberPath = supergroupMemberPathSchema.safeParse(context.req.param());
-    if (!memberPath.success) {
-      return context.body(null, 400);
+    const memberPath = readPathParameters(supergroupMemberPathSchema, context.req.param());
+    if (!memberPath.valid) {
+      return invalidControlRequestResponse(context, memberPath.issues);
     }
-    const { accountId, chatId, userId } = memberPath.data;
+    const { accountId, chatId, userId } = memberPath.value;
 
     if (userId === accountId) {
       const result = context.get('emulationSession').chatAdmission.joinPublicSupergroup({
@@ -111,10 +120,10 @@ export function createSupergroupMembershipRoutes(): Hono<SessionRouteContextType
           return context.body(null, 204);
         case 'chat_not_public':
         case 'banned':
-          return context.body(null, 403);
+          return controlErrorResponse(context, 403, result.reason);
         case 'account_not_found':
         case 'chat_not_found':
-          return context.body(null, 404);
+          return controlErrorResponse(context, 404, result.reason);
         default: {
           const unhandledReason: never = result.reason;
           throw new Error(`Unhandled public supergroup joining failure: ${unhandledReason}`);
@@ -135,11 +144,11 @@ export function createSupergroupMembershipRoutes(): Hono<SessionRouteContextType
       case 'member_already_present':
         return context.body(null, 204);
       case 'actor_not_authorized':
-        return context.body(null, 403);
+        return controlErrorResponse(context, 403, result.reason);
       case 'actor_account_not_found':
       case 'chat_not_found':
       case 'member_not_found':
-        return context.body(null, 404);
+        return controlErrorResponse(context, 404, result.reason);
       // Only supergroups are addressed here, and they accept bots.
       case 'bot_not_permitted_in_channel':
         throw new Error(`Supergroup ${chatId} refused bot ${userId} as a channel`);
@@ -152,11 +161,11 @@ export function createSupergroupMembershipRoutes(): Hono<SessionRouteContextType
 
   // The account leaves when it names itself, and otherwise removes the member as the owner.
   accountRoutes.delete(SUPERGROUP_MEMBER_PATH, (context) => {
-    const memberPath = supergroupMemberPathSchema.safeParse(context.req.param());
-    if (!memberPath.success) {
-      return context.body(null, 400);
+    const memberPath = readPathParameters(supergroupMemberPathSchema, context.req.param());
+    if (!memberPath.valid) {
+      return invalidControlRequestResponse(context, memberPath.issues);
     }
-    const { accountId, chatId, userId } = memberPath.data;
+    const { accountId, chatId, userId } = memberPath.value;
 
     const { sharedChatAdministration } = context.get('emulationSession');
     if (userId === accountId) {
@@ -173,9 +182,9 @@ export function createSupergroupMembershipRoutes(): Hono<SessionRouteContextType
           return context.body(null, 204);
         case 'member_not_found':
         case 'chat_not_found':
-          return context.body(null, 404);
+          return controlErrorResponse(context, 404, result.reason);
         case 'owner_cannot_leave':
-          return context.body(null, 409);
+          return controlErrorResponse(context, 409, result.reason);
         default: {
           const unhandledReason: never = result.reason;
           throw new Error(`Unhandled chat leaving failure: ${unhandledReason}`);
@@ -196,11 +205,11 @@ export function createSupergroupMembershipRoutes(): Hono<SessionRouteContextType
       case 'not_a_member':
         return context.body(null, 204);
       case 'actor_not_authorized':
-        return context.body(null, 403);
+        return controlErrorResponse(context, 403, result.reason);
       case 'actor_account_not_found':
       case 'chat_not_found':
       case 'member_not_found':
-        return context.body(null, 404);
+        return controlErrorResponse(context, 404, result.reason);
       // A chat has one owner, and an owner naming itself leaves instead.
       case 'member_is_owner':
         throw new Error(`Supergroup ${chatId} has an owner besides ${accountId}`);
@@ -213,17 +222,21 @@ export function createSupergroupMembershipRoutes(): Hono<SessionRouteContextType
 
   // The account joins the chat an invite link leads to, or requests to join it.
   accountRoutes.post(CHAT_JOIN_COLLECTION_PATH, async (context) => {
-    const accountPath = accountPathSchema.safeParse(context.req.param());
-    if (!accountPath.success) {
-      return context.body(null, 400);
+    const accountPath = readPathParameters(accountPathSchema, context.req.param());
+    if (!accountPath.valid) {
+      return invalidControlRequestResponse(context, accountPath.issues);
     }
-    const requestBody = await readJsonRequestBody(context.req, joinChatByInviteLinkRequestSchema);
-    if (requestBody === undefined) {
-      return context.body(null, 400);
+    const requestBodyReading = await readJsonRequestBody(
+      context.req,
+      joinChatByInviteLinkRequestSchema,
+    );
+    if (!requestBodyReading.valid) {
+      return invalidControlRequestResponse(context, requestBodyReading.issues);
     }
+    const requestBody = requestBodyReading.value;
 
     const result = context.get('emulationSession').chatAdmission.joinChatByInviteLink({
-      accountId: accountPath.data.accountId,
+      accountId: accountPath.value.accountId,
       inviteLinkUrl: requestBody.invite_link,
     });
     if (result.used) {
@@ -232,19 +245,19 @@ export function createSupergroupMembershipRoutes(): Hono<SessionRouteContextType
     switch (result.reason) {
       case 'account_not_found':
       case 'invite_link_not_found':
-        return context.body(null, 404);
+        return controlErrorResponse(context, 404, result.reason);
       case 'banned':
-        return context.body(null, 403);
+        return controlErrorResponse(context, 403, result.reason);
       case 'already_a_member':
       case 'join_request_pending':
-        return context.body(null, 409);
+        return controlErrorResponse(context, 409, result.reason);
       // `messages.importChatInvite` documents `INVITE_HASH_EXPIRED` for a link that no longer
       // works, which a revoked link is too, and Telegram's clients show a link whose member limit
       // is reached as expired.
       case 'invite_link_revoked':
       case 'invite_link_expired':
       case 'invite_link_member_limit_reached':
-        return context.body(null, 410);
+        return controlErrorResponse(context, 410, result.reason);
       default: {
         const unhandledReason: never = result.reason;
         throw new Error(`Unhandled invite link joining failure: ${unhandledReason}`);
@@ -254,11 +267,14 @@ export function createSupergroupMembershipRoutes(): Hono<SessionRouteContextType
 
   // The owner inspects the supergroup's invite links and how many members joined through each.
   accountRoutes.get(SUPERGROUP_INVITE_LINK_COLLECTION_PATH, (context) => {
-    const conversationPath = supergroupConversationPathSchema.safeParse(context.req.param());
-    if (!conversationPath.success) {
-      return context.body(null, 400);
+    const conversationPath = readPathParameters(
+      supergroupConversationPathSchema,
+      context.req.param(),
+    );
+    if (!conversationPath.valid) {
+      return invalidControlRequestResponse(context, conversationPath.issues);
     }
-    const { accountId, chatId } = conversationPath.data;
+    const { accountId, chatId } = conversationPath.value;
 
     const result = context.get('emulationSession').chatAdmission.getInviteLinksForAccount({
       accountId,
@@ -267,16 +283,23 @@ export function createSupergroupMembershipRoutes(): Hono<SessionRouteContextType
     if (result.found) {
       return context.json({ invite_links: result.links.map(presentChatInviteLinkUsage) });
     }
-    return context.body(null, ownerInspectionFailureStatus(result.reason));
+    return controlErrorResponse(
+      context,
+      ownerInspectionFailureStatus(result.reason),
+      result.reason,
+    );
   });
 
   // The owner inspects the pending requests to join the supergroup.
   accountRoutes.get(SUPERGROUP_JOIN_REQUEST_COLLECTION_PATH, (context) => {
-    const conversationPath = supergroupConversationPathSchema.safeParse(context.req.param());
-    if (!conversationPath.success) {
-      return context.body(null, 400);
+    const conversationPath = readPathParameters(
+      supergroupConversationPathSchema,
+      context.req.param(),
+    );
+    if (!conversationPath.valid) {
+      return invalidControlRequestResponse(context, conversationPath.issues);
     }
-    const { accountId, chatId } = conversationPath.data;
+    const { accountId, chatId } = conversationPath.value;
 
     const result = context.get('emulationSession').chatAdmission.getJoinRequestsForAccount({
       accountId,
@@ -285,20 +308,28 @@ export function createSupergroupMembershipRoutes(): Hono<SessionRouteContextType
     if (result.found) {
       return context.json({ join_requests: result.requests.map(presentChatJoinRequest) });
     }
-    return context.body(null, ownerInspectionFailureStatus(result.reason));
+    return controlErrorResponse(
+      context,
+      ownerInspectionFailureStatus(result.reason),
+      result.reason,
+    );
   });
 
   // The owner or an administrator with `can_invite_users` approves or declines a pending request.
   accountRoutes.post(SUPERGROUP_JOIN_REQUEST_DECISION_PATH, async (context) => {
-    const requestPath = supergroupMemberPathSchema.safeParse(context.req.param());
-    if (!requestPath.success) {
-      return context.body(null, 400);
+    const requestPath = readPathParameters(supergroupMemberPathSchema, context.req.param());
+    if (!requestPath.valid) {
+      return invalidControlRequestResponse(context, requestPath.issues);
     }
-    const requestBody = await readJsonRequestBody(context.req, decideJoinRequestRequestSchema);
-    if (requestBody === undefined) {
-      return context.body(null, 400);
+    const requestBodyReading = await readJsonRequestBody(
+      context.req,
+      decideJoinRequestRequestSchema,
+    );
+    if (!requestBodyReading.valid) {
+      return invalidControlRequestResponse(context, requestBodyReading.issues);
     }
-    const { accountId, chatId, userId } = requestPath.data;
+    const requestBody = requestBodyReading.value;
+    const { accountId, chatId, userId } = requestPath.value;
 
     const result = context.get('emulationSession').chatAdmission.decideJoinRequestAsAccount({
       deciderAccountId: accountId,
@@ -314,12 +345,12 @@ export function createSupergroupMembershipRoutes(): Hono<SessionRouteContextType
       case 'account_not_found':
       case 'chat_not_found':
       case 'join_request_missing':
-        return context.body(null, 404);
+        return controlErrorResponse(context, 404, result.reason);
       case 'not_enough_rights':
-        return context.body(null, 403);
+        return controlErrorResponse(context, 403, result.reason);
       // An approved request made its user a member, which no decision changes.
       case 'already_a_member':
-        return context.body(null, 409);
+        return controlErrorResponse(context, 409, result.reason);
       default: {
         const unhandledReason: never = result.reason;
         throw new Error(`Unhandled join request decision failure: ${unhandledReason}`);

@@ -19,5 +19,20 @@ get:
             $ref: ../components/schemas/MessageHistory.yaml
     '400':
       description: An account or bot path identifier is invalid.
+      content:
+        application/json:
+          schema:
+            $ref: ../components/schemas/ControlValidationError.yaml
     '404':
       description: The session, account, or bot does not exist.
+      content:
+        application/json:
+          schema:
+            allOf:
+              - $ref: ../components/schemas/ControlError.yaml
+              - properties:
+                  reason:
+                    enum:
+                      - account_not_found
+                      - bot_not_found
+                      - session_not_found

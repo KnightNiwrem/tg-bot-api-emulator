@@ -1,6 +1,11 @@
 import { type Context, Hono } from 'hono';
 
 import type { EmulationSession } from '../../../types/emulation_session.ts';
+import {
+  controlErrorResponse,
+  invalidControlRequestResponse,
+} from '../../control_error_response.ts';
+import { readPathParameters } from '../control_request_input.ts';
 import type { SessionRouteContextTypes } from '../session_route_context_types.ts';
 import {
   MESSAGE_ID_PARAMETER,
@@ -31,21 +36,21 @@ export function createPinnedMessageRoutes(): Hono<SessionRouteContextTypes> {
 
   // The account reads the messages its private chat with the bot pins, newest first.
   accountRoutes.get(PRIVATE_PINNED_MESSAGE_COLLECTION_PATH, (context) => {
-    const conversationPath = privateConversationPathSchema.safeParse(context.req.param());
-    if (!conversationPath.success) {
-      return context.body(null, 400);
+    const conversationPath = readPathParameters(privateConversationPathSchema, context.req.param());
+    if (!conversationPath.valid) {
+      return invalidControlRequestResponse(context, conversationPath.issues);
     }
-    const { accountId, botId } = conversationPath.data;
+    const { accountId, botId } = conversationPath.value;
     return answerPinnedMessages(context, accountId, { type: 'private', peerId: botId });
   });
 
   // Either participant of a private chat pins and unpins any of its messages.
   accountRoutes.put(PRIVATE_PINNED_MESSAGE_PATH, (context) => {
-    const messagePath = privateMessagePathSchema.safeParse(context.req.param());
-    if (!messagePath.success) {
-      return context.body(null, 400);
+    const messagePath = readPathParameters(privateMessagePathSchema, context.req.param());
+    if (!messagePath.valid) {
+      return invalidControlRequestResponse(context, messagePath.issues);
     }
-    const { accountId, botId, messageId } = messagePath.data;
+    const { accountId, botId, messageId } = messagePath.value;
     return answerPinChange(context, 'pin', {
       accountId,
       chat: { type: 'private', peerId: botId },
@@ -53,11 +58,11 @@ export function createPinnedMessageRoutes(): Hono<SessionRouteContextTypes> {
     });
   });
   accountRoutes.delete(PRIVATE_PINNED_MESSAGE_PATH, (context) => {
-    const messagePath = privateMessagePathSchema.safeParse(context.req.param());
-    if (!messagePath.success) {
-      return context.body(null, 400);
+    const messagePath = readPathParameters(privateMessagePathSchema, context.req.param());
+    if (!messagePath.valid) {
+      return invalidControlRequestResponse(context, messagePath.issues);
     }
-    const { accountId, botId, messageId } = messagePath.data;
+    const { accountId, botId, messageId } = messagePath.value;
     return answerPinChange(context, 'unpin', {
       accountId,
       chat: { type: 'private', peerId: botId },
@@ -67,21 +72,24 @@ export function createPinnedMessageRoutes(): Hono<SessionRouteContextTypes> {
 
   // A member reads the messages the supergroup pins, newest first.
   accountRoutes.get(SUPERGROUP_PINNED_MESSAGE_COLLECTION_PATH, (context) => {
-    const conversationPath = supergroupConversationPathSchema.safeParse(context.req.param());
-    if (!conversationPath.success) {
-      return context.body(null, 400);
+    const conversationPath = readPathParameters(
+      supergroupConversationPathSchema,
+      context.req.param(),
+    );
+    if (!conversationPath.valid) {
+      return invalidControlRequestResponse(context, conversationPath.issues);
     }
-    const { accountId, chatId } = conversationPath.data;
+    const { accountId, chatId } = conversationPath.value;
     return answerPinnedMessages(context, accountId, { type: 'supergroup', chatId });
   });
 
   // A member with the `can_pin_messages` permission pins and unpins the supergroup's messages.
   accountRoutes.put(SUPERGROUP_PINNED_MESSAGE_PATH, (context) => {
-    const messagePath = supergroupMessagePathSchema.safeParse(context.req.param());
-    if (!messagePath.success) {
-      return context.body(null, 400);
+    const messagePath = readPathParameters(supergroupMessagePathSchema, context.req.param());
+    if (!messagePath.valid) {
+      return invalidControlRequestResponse(context, messagePath.issues);
     }
-    const { accountId, chatId, messageId } = messagePath.data;
+    const { accountId, chatId, messageId } = messagePath.value;
     return answerPinChange(context, 'pin', {
       accountId,
       chat: { type: 'supergroup', chatId },
@@ -89,11 +97,11 @@ export function createPinnedMessageRoutes(): Hono<SessionRouteContextTypes> {
     });
   });
   accountRoutes.delete(SUPERGROUP_PINNED_MESSAGE_PATH, (context) => {
-    const messagePath = supergroupMessagePathSchema.safeParse(context.req.param());
-    if (!messagePath.success) {
-      return context.body(null, 400);
+    const messagePath = readPathParameters(supergroupMessagePathSchema, context.req.param());
+    if (!messagePath.valid) {
+      return invalidControlRequestResponse(context, messagePath.issues);
     }
-    const { accountId, chatId, messageId } = messagePath.data;
+    const { accountId, chatId, messageId } = messagePath.value;
     return answerPinChange(context, 'unpin', {
       accountId,
       chat: { type: 'supergroup', chatId },
@@ -115,7 +123,11 @@ function answerPinnedMessages(
   const { messagePinning, botMessageViews } = context.get('emulationSession');
   const result = messagePinning.getPinnedMessages({ accountId, chat });
   if (!result.found) {
-    return context.body(null, result.reason === 'not_a_member' ? 403 : 404);
+    return controlErrorResponse(
+      context,
+      result.reason === 'not_a_member' ? 403 : 404,
+      result.reason,
+    );
   }
   return context.json({
     messages: result.messages.map((message) =>
@@ -139,10 +151,14 @@ function answerPinChange(
   if (change === 'pin') {
     // Accounts pin as Telegram's clients do by default, notifying the members of a supergroup.
     const result = messagePinning.pinMessage({ ...input, isSilent: false });
-    return context.body(null, result.pinned ? 204 : pinChangeFailureStatus(result.reason));
+    return result.pinned
+      ? context.body(null, 204)
+      : controlErrorResponse(context, pinChangeFailureStatus(result.reason), result.reason);
   }
   const result = messagePinning.unpinMessage(input);
-  return context.body(null, result.unpinned ? 204 : pinChangeFailureStatus(result.reason));
+  return result.unpinned
+    ? context.body(null, 204)
+    : controlErrorResponse(context, pinChangeFailureStatus(result.reason), result.reason);
 }
 
 /**

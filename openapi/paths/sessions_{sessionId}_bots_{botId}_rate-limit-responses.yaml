@@ -27,8 +27,22 @@ post:
       description: >-
         The request body is malformed, or `method` names no Bot API method the emulator
         implements.
+      content:
+        application/json:
+          schema:
+            $ref: ../components/schemas/ControlValidationError.yaml
     '404':
       description: No active test session or virtual bot has the supplied identifier.
+      content:
+        application/json:
+          schema:
+            allOf:
+              - $ref: ../components/schemas/ControlError.yaml
+              - properties:
+                  reason:
+                    enum:
+                      - bot_not_found
+                      - session_not_found
 get:
   operationId: listRateLimitResponses
   summary: List the rate limit answers still queued for a bot
@@ -49,3 +63,13 @@ get:
                   $ref: ../components/schemas/RateLimitResponses.yaml
     '404':
       description: No active test session or virtual bot has the supplied identifier.
+      content:
+        application/json:
+          schema:
+            allOf:
+              - $ref: ../components/schemas/ControlError.yaml
+              - properties:
+                  reason:
+                    enum:
+                      - bot_not_found
+                      - session_not_found

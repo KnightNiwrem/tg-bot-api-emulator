@@ -21,12 +21,55 @@ put:
       description: The message was pinned.
     '400':
       description: A path identifier is invalid, or the message is a service message.
+      content:
+        application/json:
+          schema:
+            oneOf:
+              - $ref: ../components/schemas/ControlValidationError.yaml
+              - allOf:
+                  - $ref: ../components/schemas/ControlError.yaml
+                  - properties:
+                      reason:
+                        enum:
+                          - service_message_not_pinnable
     '403':
       description: The account is not a member, or lacks the `can_pin_messages` permission.
+      content:
+        application/json:
+          schema:
+            allOf:
+              - $ref: ../components/schemas/ControlError.yaml
+              - properties:
+                  reason:
+                    enum:
+                      - not_a_member
+                      - not_enough_rights
     '404':
       description: The session, account, supergroup, or message does not exist.
+      content:
+        application/json:
+          schema:
+            allOf:
+              - $ref: ../components/schemas/ControlError.yaml
+              - properties:
+                  reason:
+                    enum:
+                      - chat_not_found
+                      - message_not_found
+                      - pinner_not_found
+                      - session_not_found
     '409':
       description: The message is already pinned, which Telegram refuses as not modified.
+      content:
+        application/json:
+          schema:
+            allOf:
+              - $ref: ../components/schemas/ControlError.yaml
+              - properties:
+                  reason:
+                    enum:
+                      - bot_blocked
+                      - message_already_pinned
 delete:
   operationId: unpinSupergroupMessage
   summary: Unpin a message of the supergroup
@@ -36,9 +79,52 @@ delete:
       description: The message was unpinned.
     '400':
       description: A path identifier is invalid, or the message is a service message.
+      content:
+        application/json:
+          schema:
+            oneOf:
+              - $ref: ../components/schemas/ControlValidationError.yaml
+              - allOf:
+                  - $ref: ../components/schemas/ControlError.yaml
+                  - properties:
+                      reason:
+                        enum:
+                          - service_message_not_pinnable
     '403':
       description: The account is not a member, or lacks the `can_pin_messages` permission.
+      content:
+        application/json:
+          schema:
+            allOf:
+              - $ref: ../components/schemas/ControlError.yaml
+              - properties:
+                  reason:
+                    enum:
+                      - not_a_member
+                      - not_enough_rights
     '404':
       description: The session, account, supergroup, or message does not exist.
+      content:
+        application/json:
+          schema:
+            allOf:
+              - $ref: ../components/schemas/ControlError.yaml
+              - properties:
+                  reason:
+                    enum:
+                      - chat_not_found
+                      - message_not_found
+                      - pinner_not_found
+                      - session_not_found
     '409':
       description: The message is not pinned, which Telegram refuses as not modified.
+      content:
+        application/json:
+          schema:
+            allOf:
+              - $ref: ../components/schemas/ControlError.yaml
+              - properties:
+                  reason:
+                    enum:
+                      - bot_blocked
+                      - message_not_pinned

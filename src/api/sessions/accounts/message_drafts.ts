@@ -2,6 +2,11 @@ import { type Context, Hono } from 'hono';
 import { z } from 'zod';
 
 import type { EmulationSession } from '../../../types/emulation_session.ts';
+import {
+  controlErrorResponse,
+  invalidControlRequestResponse,
+} from '../../control_error_response.ts';
+import { type ControlRequestInputReading, readPathParameters } from '../control_request_input.ts';
 import { readJsonRequestBody } from '../json_request_body.ts';
 import type { SessionRouteContextTypes } from '../session_route_context_types.ts';
 import { PRIVATE_CONVERSATION_PATH, privateConversationPathSchema } from './account_paths.ts';
@@ -18,7 +23,9 @@ const MIN_INT64 = -(2n ** 63n);
 const MAX_INT64 = 2n ** 63n - 1n;
 
 /** A draft ID in Telegram's decimal text form, which a draft action compares as written. */
-const draftIdSchema = z.string().refine(isDraftIdText);
+const draftIdSchema = z.string().refine(isDraftIdText, {
+  message: 'Expected a nonzero 64-bit integer in decimal text',
+});
 
 const shownDraftActionRequestSchema = z.strictObject({
   /** The draft the test expects the chat to show; omitted to act on whichever draft it shows. */
@@ -39,14 +46,14 @@ export function createMessageDraftRoutes(): Hono<SessionRouteContextTypes> {
   const accountRoutes = new Hono<SessionRouteContextTypes>();
 
   accountRoutes.get(PRIVATE_MESSAGE_DRAFT_PATH, (context) => {
-    const conversationPath = privateConversationPathSchema.safeParse(context.req.param());
-    if (!conversationPath.success) {
-      return context.body(null, 400);
+    const conversationPath = readPathParameters(privateConversationPathSchema, context.req.param());
+    if (!conversationPath.valid) {
+      return invalidControlRequestResponse(context, conversationPath.issues);
     }
     const { messageDrafts, botMessageViews } = context.get('emulationSession');
-    const result = messageDrafts.getPrivateMessageDraft(conversationPath.data);
+    const result = messageDrafts.getPrivateMessageDraft(conversationPath.value);
     if (!result.found) {
-      return context.body(null, 404);
+      return controlErrorResponse(context, 404, result.reason);
     }
     const { draft } = result;
     return context.json({
@@ -62,20 +69,28 @@ export function createMessageDraftRoutes(): Hono<SessionRouteContextTypes> {
 
   accountRoutes.post(PRIVATE_MESSAGE_DRAFT_EXPIRATION_PATH, async (context) => {
     const target = await readShownDraftTarget(context);
-    if (target === undefined) {
-      return context.body(null, 400);
+    if (!target.valid) {
+      return invalidControlRequestResponse(context, target.issues);
     }
-    const result = context.get('emulationSession').messageDrafts.expirePrivateMessageDraft(target);
-    return context.body(null, result.expired ? 204 : draftActionFailureStatus(result.reason));
+    const result = context.get('emulationSession').messageDrafts.expirePrivateMessageDraft(
+      target.value,
+    );
+    return result.expired
+      ? context.body(null, 204)
+      : controlErrorResponse(context, draftActionFailureStatus(result.reason), result.reason);
   });
 
   accountRoutes.post(PRIVATE_MESSAGE_DRAFT_STOP_PATH, async (context) => {
     const target = await readShownDraftTarget(context);
-    if (target === undefined) {
-      return context.body(null, 400);
+    if (!target.valid) {
+      return invalidControlRequestResponse(context, target.issues);
     }
-    const result = context.get('emulationSession').messageDrafts.stopPrivateMessageDraft(target);
-    return context.body(null, result.stopped ? 204 : draftActionFailureStatus(result.reason));
+    const result = context.get('emulationSession').messageDrafts.stopPrivateMessageDraft(
+      target.value,
+    );
+    return result.stopped
+      ? context.body(null, 204)
+      : controlErrorResponse(context, draftActionFailureStatus(result.reason), result.reason);
   });
 
   return accountRoutes;
@@ -83,21 +98,24 @@ export function createMessageDraftRoutes(): Hono<SessionRouteContextTypes> {
 
 /**
  * Reads the draft an action applies to: the private chat's from the path, guarded by the
- * `draft_id` of a body, which may be empty. Returns `undefined` for an invalid path or body.
+ * `draft_id` of a body, which may be empty.
  */
 async function readShownDraftTarget(
   context: Context<SessionRouteContextTypes>,
-): Promise<ShownMessageDraftTarget | undefined> {
-  const conversationPath = privateConversationPathSchema.safeParse(context.req.param());
-  if (!conversationPath.success) {
-    return undefined;
+): Promise<ControlRequestInputReading<ShownMessageDraftTarget>> {
+  const conversationPath = readPathParameters(privateConversationPathSchema, context.req.param());
+  if (!conversationPath.valid) {
+    return conversationPath;
   }
   const requestBody = await readJsonRequestBody(context.req, shownDraftActionRequestSchema, {
     allowsEmptyBody: true,
   });
-  return requestBody === undefined
-    ? undefined
-    : { ...conversationPath.data, expectedDraftId: requestBody.draft_id };
+  return requestBody.valid
+    ? {
+      valid: true,
+      value: { ...conversationPath.value, expectedDraftId: requestBody.value.draft_id },
+    }
+    : requestBody;
 }
 
 /**

@@ -30,8 +30,38 @@ patch:
         The request, text, or caption is invalid, the bot wrote the message, the request gives
         text for captioned media or a caption for a text message, or the normalized text or
         caption is the message's current one.
+      content:
+        application/json:
+          schema:
+            oneOf:
+              - $ref: ../components/schemas/ControlValidationError.yaml
+              - allOf:
+                  - $ref: ../components/schemas/ControlError.yaml
+                  - properties:
+                      reason:
+                        enum:
+                          - caption_too_long
+                          - message_has_no_caption
+                          - message_has_no_text
+                          - message_not_editable
+                          - message_not_modified
+                          - message_text_empty
+                          - message_text_too_long
+                          - text_invalid
     '404':
       description: The session, account, bot, or message of their private chat does not exist.
+      content:
+        application/json:
+          schema:
+            allOf:
+              - $ref: ../components/schemas/ControlError.yaml
+              - properties:
+                  reason:
+                    enum:
+                      - account_not_found
+                      - bot_not_found
+                      - message_not_found
+                      - session_not_found
 delete:
   operationId: deleteAccountMessage
   summary: Delete a message of the private chat for both participants
@@ -47,7 +77,23 @@ delete:
       description: The message was deleted.
     '400':
       description: A path identifier is invalid.
+      content:
+        application/json:
+          schema:
+            $ref: ../components/schemas/ControlValidationError.yaml
     '404':
       description: >-
         The session, account, bot, or message of their private chat does not exist, including
         a deleted message.
+      content:
+        application/json:
+          schema:
+            allOf:
+              - $ref: ../components/schemas/ControlError.yaml
+              - properties:
+                  reason:
+                    enum:
+                      - account_not_found
+                      - bot_not_found
+                      - message_not_found
+                      - session_not_found

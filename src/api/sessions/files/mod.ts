@@ -1,5 +1,6 @@
 import { Hono } from 'hono';
 
+import { controlErrorResponse } from '../../control_error_response.ts';
 import { fileDownloadResponse } from '../file_download.ts';
 import type { SessionRouteContextTypes } from '../session_route_context_types.ts';
 
@@ -16,7 +17,9 @@ export function createFileRoutes(): Hono<SessionRouteContextTypes> {
     const file = context.get('emulationSession').mediaFiles.findFileByUniqueId(
       context.req.param(FILE_UNIQUE_ID_PARAMETER),
     );
-    return file === undefined ? context.body(null, 404) : fileDownloadResponse(context, file);
+    return file === undefined
+      ? controlErrorResponse(context, 404, 'file_not_found')
+      : fileDownloadResponse(context, file);
   });
 
   return fileRoutes;

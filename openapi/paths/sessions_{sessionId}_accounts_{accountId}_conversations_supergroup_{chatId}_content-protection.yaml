@@ -21,10 +21,34 @@ put:
       description: The supergroup protects all its content.
     '400':
       description: A path identifier is invalid.
+      content:
+        application/json:
+          schema:
+            $ref: ../components/schemas/ControlValidationError.yaml
     '403':
       description: The account does not own the supergroup.
+      content:
+        application/json:
+          schema:
+            allOf:
+              - $ref: ../components/schemas/ControlError.yaml
+              - properties:
+                  reason:
+                    enum:
+                      - actor_not_authorized
     '404':
       description: The session, account, or supergroup does not exist.
+      content:
+        application/json:
+          schema:
+            allOf:
+              - $ref: ../components/schemas/ControlError.yaml
+              - properties:
+                  reason:
+                    enum:
+                      - actor_account_not_found
+                      - chat_not_found
+                      - session_not_found
 delete:
   operationId: unprotectSupergroupContent
   summary: Lift the content protection of a supergroup the account owns
@@ -36,7 +60,31 @@ delete:
       description: The supergroup no longer protects all its content.
     '400':
       description: A path identifier is invalid.
+      content:
+        application/json:
+          schema:
+            $ref: ../components/schemas/ControlValidationError.yaml
     '403':
       description: The account does not own the supergroup.
+      content:
+        application/json:
+          schema:
+            allOf:
+              - $ref: ../components/schemas/ControlError.yaml
+              - properties:
+                  reason:
+                    enum:
+                      - actor_not_authorized
     '404':
       description: The session, account, or supergroup does not exist.
+      content:
+        application/json:
+          schema:
+            allOf:
+              - $ref: ../components/schemas/ControlError.yaml
+              - properties:
+                  reason:
+                    enum:
+                      - actor_account_not_found
+                      - chat_not_found
+                      - session_not_found

@@ -7,9 +7,12 @@ import {
   MIN_SUPERGROUP_OR_CHANNEL_ID,
   MIN_TELEGRAM_USER_ID,
 } from './constants.ts';
+import { CONTROL_REFUSAL_REASONS } from './control_refusal_reasons.ts';
 import type {
   BotActivityEntry,
   CallbackQuery,
+  ControlErrorBody,
+  ControlRequestIssue,
   CreatedVirtualBot,
   EmulationSession,
   InlineKeyboardMarkup,
@@ -1315,3 +1318,34 @@ export const botActivityReadResponseSchema = z.strictObject({
   entries: z.array(botActivityEntrySchema),
   head_position: z.int().nonnegative(),
 });
+
+const controlRequestIssueSchema: z.ZodType<ControlRequestIssue> = z.strictObject({
+  source: z.enum(['body', 'path', 'query']),
+  path: z.array(z.union([z.string(), z.int().nonnegative()])),
+  code: z.enum([
+    'invalid_json',
+    'invalid_type',
+    'too_small',
+    'too_big',
+    'invalid_format',
+    'invalid_value',
+    'unknown_field',
+    'duplicate_field',
+    'no_matching_variant',
+  ]),
+  message: z.string(),
+});
+
+/**
+ * A control error body: input that breaks an operation's contract, with at least one issue, or
+ * another refusal, which names only its reason.
+ */
+export const controlErrorBodySchema: z.ZodType<ControlErrorBody> = z.union([
+  z.strictObject({
+    reason: z.literal('invalid_request'),
+    issues: z.tuple([controlRequestIssueSchema], controlRequestIssueSchema),
+  }),
+  z.strictObject({
+    reason: z.enum(CONTROL_REFUSAL_REASONS),
+  }),
+]);

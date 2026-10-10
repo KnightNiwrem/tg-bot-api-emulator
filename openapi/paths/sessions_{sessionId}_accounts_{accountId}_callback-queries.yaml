@@ -40,9 +40,42 @@ post:
     '400':
       description: >-
         The request is invalid, or the message has no callback button with the given data.
+      content:
+        application/json:
+          schema:
+            oneOf:
+              - $ref: ../components/schemas/ControlValidationError.yaml
+              - allOf:
+                  - $ref: ../components/schemas/ControlError.yaml
+                  - properties:
+                      reason:
+                        enum:
+                          - callback_button_not_found
     '403':
       description: The account is not a member of the supergroup.
+      content:
+        application/json:
+          schema:
+            allOf:
+              - $ref: ../components/schemas/ControlError.yaml
+              - properties:
+                  reason:
+                    enum:
+                      - not_a_member
     '404':
       description: >-
         The session, account, bot, or supergroup does not exist, or the chat has no message
         with the given ID.
+      content:
+        application/json:
+          schema:
+            allOf:
+              - $ref: ../components/schemas/ControlError.yaml
+              - properties:
+                  reason:
+                    enum:
+                      - account_not_found
+                      - bot_not_found
+                      - chat_not_found
+                      - message_not_found
+                      - session_not_found

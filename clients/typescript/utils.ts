@@ -1,7 +1,8 @@
 import { z } from 'zod';
 
-import { EmulationClientError } from './emulation_client_error.ts';
-import type { RequestDetails } from './types.ts';
+import { EmulationClientError, EmulationControlError } from './emulation_client_error.ts';
+import { controlErrorBodySchema } from './schemas.ts';
+import type { ControlErrorBody, ControlRequestIssue, RequestDetails } from './types.ts';
 
 /**
  * A request that is abandoned once its signal aborts: unsent if it has already aborted, and
@@ -242,19 +243,65 @@ function createAbandonedRequestError(
   );
 }
 
+/**
+ * Throws for a response of another status than the request expects: an `EmulationControlError` for
+ * a refusal whose body is the emulator's JSON error body, and otherwise an `EmulationClientError`
+ * with the status and the raw body.
+ */
 function assertResponseStatus(
   response: Response,
   responseBody: string,
   request: JsonRequest<unknown> | RawResponseRequest,
 ): void {
-  if (response.status !== request.expectedStatus) {
-    throw new EmulationClientError(
-      `${
-        formatRequest(request)
-      } returned HTTP ${response.status}; expected ${request.expectedStatus}`,
-      { ...request, status: response.status, responseBody },
-    );
+  if (response.status === request.expectedStatus) {
+    return;
   }
+  const unexpectedStatus = `${
+    formatRequest(request)
+  } returned HTTP ${response.status}; expected ${request.expectedStatus}`;
+  const errorBody = response.status >= 400 ? readControlErrorBody(responseBody) : undefined;
+  if (errorBody === undefined) {
+    throw new EmulationClientError(unexpectedStatus, {
+      ...request,
+      status: response.status,
+      responseBody,
+    });
+  }
+  throw new EmulationControlError(`${unexpectedStatus}: ${formatControlErrorBody(errorBody)}`, {
+    method: request.method,
+    url: request.url,
+    status: response.status,
+    responseBody,
+    body: errorBody,
+  });
+}
+
+/** Reads a refusal's body as the emulator's JSON error body; `undefined` for any other body. */
+function readControlErrorBody(responseBody: string): ControlErrorBody | undefined {
+  let value: unknown;
+  try {
+    value = JSON.parse(responseBody);
+  } catch {
+    return undefined;
+  }
+  const errorBody = controlErrorBodySchema.safeParse(value);
+  return errorBody.success ? errorBody.data : undefined;
+}
+
+/** Describes a refusal by its reason and each issue, as `body.text: invalid_type (…)`. */
+function formatControlErrorBody(body: ControlErrorBody): string {
+  return body.issues === undefined
+    ? body.reason
+    : `${body.reason}; ${body.issues.map(formatControlRequestIssue).join('; ')}`;
+}
+
+function formatControlRequestIssue({ source, path, code, message }: ControlRequestIssue): string {
+  const location = path.reduce<string>(
+    (prefix, segment) =>
+      typeof segment === 'number' ? `${prefix}[${segment}]` : `${prefix}.${segment}`,
+    source,
+  );
+  return `${location}: ${code} (${message})`;
 }
 
 function formatRequest(request: RequestDetails): string {

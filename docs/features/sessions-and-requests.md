@@ -69,8 +69,48 @@ with another fault may fail for the username instead.
 
 Responses use Telegram's `ok`/`result` or `ok`/`error_code`/`description` envelope. An unknown
 virtual token gives `401 Unauthorized`; an unimplemented method gives
-`404 Not Found: method not found`. Requests under an absent session use the emulation API's plain
-`404`, not a Bot API envelope.
+`404 Not Found: method not found`. A Bot API request under an absent session is answered with a
+`404` without a body, not a Bot API envelope.
+
+### Control API errors
+
+Every other route, from `POST /sessions` to the test controls, answers each failure it expects with
+a JSON body that names a stable `reason`, whatever the status: `404` with `session_not_found` for an
+ended session, `409` with `bot_blocked` for a message to a bot the account blocked, or `507` with
+`identity_limit_reached` for a session out of user IDs. A path or method no route serves is answered
+with `404` and `route_not_found`.
+
+Input that breaks an operation's contract is answered with `400`, the reason `invalid_request`, and
+an `issues` list. Each issue names the part of the request it is in (`body`, `path` or `query`),
+where it is, as field names and list indexes from that part's root or the parameter's name, a stable
+`code`, and a `message` for a person:
+
+```json
+{
+  "reason": "invalid_request",
+  "issues": [
+    {
+      "source": "body",
+      "path": ["media", 1, "photo", "content_base64"],
+      "code": "invalid_type",
+      "message": "Invalid input: expected string, received number"
+    }
+  ]
+}
+```
+
+The codes are `invalid_json` for a body that is not JSON, `invalid_type`, `too_small`, `too_big`,
+`invalid_format` and `invalid_value` for a value that is missing or not as the operation describes
+it, `unknown_field` for a field or query parameter it does not take, `duplicate_field` for a
+repeated query parameter, and `no_matching_variant` for a value that matches none of the forms it
+may take. When exactly one form accepts a value's type and every field it has, that form's issues
+are listed instead, so that a text message with a number as its `text` reports its `text`. A message
+never repeats an input value, and its wording is not part of the contract.
+
+The emulator keeps rejecting what is malformed; the error bodies explain a rejection without
+relaxing it. The [OpenAPI description](../../openapi/openapi.yaml) lists the reasons each status of
+each operation can carry, and the TypeScript client throws them as an `EmulationControlError`; see
+[Troubleshooting](../clients/typescript/troubleshooting.md#the-emulator-refuses-a-request).
 
 ### Rate limit answers
 
@@ -216,7 +256,10 @@ managing individual profiles is missing.
 [session timing tests](../../tests/session_timing_test.ts),
 [request decoding tests](../../tests/bot_api_request_parameters_test.ts) and
 [HTTP tests](../../tests/emulation_api_test.ts), including
-[server error answer tests](../../tests/bot_server_error_api_test.ts).
+[server error answer tests](../../tests/bot_server_error_api_test.ts),
+[control API errors](../../src/api/control_error_response.ts) with
+[their input issues](../../src/api/sessions/control_request_input.ts) and
+[tests](../../tests/control_error_api_test.ts).
 
 [http-reader]: https://github.com/tdlib/td/blob/bc9c263e2bfee06aaab41e82db51a103376030bc/tdnet/td/net/HttpReader.cpp#L110-L233
 [query-source]: https://github.com/tdlib/telegram-bot-api/blob/e3e9dd8e5b3d7ab8537cd5a10dc31d5ffa8f82d1/telegram-bot-api/Query.cpp

@@ -21,10 +21,28 @@ get:
             $ref: ../components/schemas/PollAnswerResponse.yaml
     '400':
       description: A path identifier is invalid.
+      content:
+        application/json:
+          schema:
+            $ref: ../components/schemas/ControlValidationError.yaml
     '404':
       description: >-
         The session, account, bot, or message of their private chat does not exist, or the
         message shows no poll.
+      content:
+        application/json:
+          schema:
+            allOf:
+              - $ref: ../components/schemas/ControlError.yaml
+              - properties:
+                  reason:
+                    enum:
+                      - account_not_found
+                      - bot_not_found
+                      - chat_not_found
+                      - message_has_no_poll
+                      - message_not_found
+                      - session_not_found
 put:
   operationId: answerAccountPoll
   summary: Vote in a poll of the account's private chat with a bot, or change the vote
@@ -50,13 +68,50 @@ put:
       description: >-
         The request is invalid, chooses several options of a poll that allows one, or names an
         option the poll lacks.
+      content:
+        application/json:
+          schema:
+            oneOf:
+              - $ref: ../components/schemas/ControlValidationError.yaml
+              - allOf:
+                  - $ref: ../components/schemas/ControlError.yaml
+                  - properties:
+                      reason:
+                        enum:
+                          - multiple_answers_not_allowed
+                          - poll_option_not_found
     '404':
       description: >-
         The session, account, bot, or message of their private chat does not exist, or the
         message shows no poll.
+      content:
+        application/json:
+          schema:
+            allOf:
+              - $ref: ../components/schemas/ControlError.yaml
+              - properties:
+                  reason:
+                    enum:
+                      - account_not_found
+                      - bot_not_found
+                      - chat_not_found
+                      - message_has_no_poll
+                      - message_not_found
+                      - session_not_found
     '409':
       description: >-
         The poll is closed, or disallows revoting and the account has answered.
+      content:
+        application/json:
+          schema:
+            allOf:
+              - $ref: ../components/schemas/ControlError.yaml
+              - properties:
+                  reason:
+                    enum:
+                      - answer_change_not_allowed
+                      - answer_retraction_not_allowed
+                      - poll_closed
 delete:
   operationId: retractAccountPollAnswer
   summary: Retract the account's answer to a poll of its private chat with a bot
@@ -69,9 +124,46 @@ delete:
       description: The account has no answer to the poll.
     '400':
       description: A path identifier is invalid.
+      content:
+        application/json:
+          schema:
+            oneOf:
+              - $ref: ../components/schemas/ControlValidationError.yaml
+              - allOf:
+                  - $ref: ../components/schemas/ControlError.yaml
+                  - properties:
+                      reason:
+                        enum:
+                          - multiple_answers_not_allowed
+                          - poll_option_not_found
     '404':
       description: >-
         The session, account, bot, or message of their private chat does not exist, or the
         message shows no poll.
+      content:
+        application/json:
+          schema:
+            allOf:
+              - $ref: ../components/schemas/ControlError.yaml
+              - properties:
+                  reason:
+                    enum:
+                      - account_not_found
+                      - bot_not_found
+                      - chat_not_found
+                      - message_has_no_poll
+                      - message_not_found
+                      - session_not_found
     '409':
       description: The poll is closed, or disallows revoting.
+      content:
+        application/json:
+          schema:
+            allOf:
+              - $ref: ../components/schemas/ControlError.yaml
+              - properties:
+                  reason:
+                    enum:
+                      - answer_change_not_allowed
+                      - answer_retraction_not_allowed
+                      - poll_closed

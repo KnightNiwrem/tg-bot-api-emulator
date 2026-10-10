@@ -2,6 +2,11 @@ import { Hono } from 'hono';
 import { z } from 'zod';
 
 import type { EmulationSession } from '../../../types/emulation_session.ts';
+import {
+  controlErrorResponse,
+  invalidControlRequestResponse,
+} from '../../control_error_response.ts';
+import { type ControlRequestInputReading, readPathParameters } from '../control_request_input.ts';
 import { readJsonRequestBody } from '../json_request_body.ts';
 import type { SessionRouteContextTypes } from '../session_route_context_types.ts';
 import { SUPERGROUP_MESSAGE_PATH, supergroupMessagePathSchema } from './account_paths.ts';
@@ -31,50 +36,65 @@ export function createMessageReactionRoutes(): Hono<SessionRouteContextTypes> {
   const accountRoutes = new Hono<SessionRouteContextTypes>();
 
   accountRoutes.get(SUPERGROUP_MESSAGE_REACTIONS_PATH, (context) => {
-    const messageKey = readReactionMessageKey(context.req.param());
-    if (messageKey === undefined) {
-      return context.body(null, 400);
+    const messageKeyReading = readReactionMessageKey(context.req.param());
+    if (!messageKeyReading.valid) {
+      return invalidControlRequestResponse(context, messageKeyReading.issues);
     }
+    const messageKey = messageKeyReading.value;
     const { messageReactions, botMessageViews } = context.get('emulationSession');
     const result = messageReactions.getAccountMessageReactions(messageKey);
     if (!result.found) {
-      return context.body(null, messageReactionFailureStatus(result.reason));
+      return controlErrorResponse(
+        context,
+        messageReactionFailureStatus(result.reason),
+        result.reason,
+      );
     }
     return context.json(presentMessageReactions(botMessageViews, result, messageKey));
   });
 
   accountRoutes.put(SUPERGROUP_MESSAGE_REACTIONS_PATH, async (context) => {
-    const messageKey = readReactionMessageKey(context.req.param());
-    if (messageKey === undefined) {
-      return context.body(null, 400);
+    const messageKeyReading = readReactionMessageKey(context.req.param());
+    if (!messageKeyReading.valid) {
+      return invalidControlRequestResponse(context, messageKeyReading.issues);
     }
-    const requestBody = await readJsonRequestBody(context.req, setMessageReactionRequestSchema);
-    if (requestBody === undefined) {
-      return context.body(null, 400);
+    const messageKey = messageKeyReading.value;
+    const requestBodyReading = await readJsonRequestBody(
+      context.req,
+      setMessageReactionRequestSchema,
+    );
+    if (!requestBodyReading.valid) {
+      return invalidControlRequestResponse(context, requestBodyReading.issues);
     }
+    const requestBody = requestBodyReading.value;
     const { messageReactions, botMessageViews } = context.get('emulationSession');
     const result = messageReactions.setAccountMessageReaction({
       ...messageKey,
       emojis: requestBody.reaction.map(({ emoji }) => emoji),
     });
     if (!result.set) {
-      return context.body(null, messageReactionFailureStatus(result.reason));
+      return controlErrorResponse(
+        context,
+        messageReactionFailureStatus(result.reason),
+        result.reason,
+      );
     }
     return context.json(presentMessageReactions(botMessageViews, result, messageKey));
   });
 
   accountRoutes.delete(SUPERGROUP_MESSAGE_REACTIONS_PATH, (context) => {
-    const messageKey = readReactionMessageKey(context.req.param());
-    if (messageKey === undefined) {
-      return context.body(null, 400);
+    const messageKeyReading = readReactionMessageKey(context.req.param());
+    if (!messageKeyReading.valid) {
+      return invalidControlRequestResponse(context, messageKeyReading.issues);
     }
+    const messageKey = messageKeyReading.value;
     const result = context.get('emulationSession').messageReactions.setAccountMessageReaction({
       ...messageKey,
       emojis: [],
     });
     return result.set
       ? context.body(null, 204)
-      : context.body(null, messageReactionFailureStatus(result.reason));
+      : controlErrorResponse(context, messageReactionFailureStatus(result.reason), result.reason);
   });
 
   return accountRoutes;
@@ -94,18 +114,16 @@ type MessageReactions = Omit<
   'found'
 >;
 
-/** Reads the message of a reaction route; `undefined` for path parameters that identify none. */
+/** Reads the message of a reaction route from its path parameters. */
 function readReactionMessageKey(
   pathParameters: Record<string, string>,
-): AccountReactionMessageKey | undefined {
-  const messagePath = supergroupMessagePathSchema.safeParse(pathParameters);
-  return messagePath.success
-    ? {
-      accountId: messagePath.data.accountId,
-      chatId: messagePath.data.chatId,
-      messageId: messagePath.data.messageId,
-    }
-    : undefined;
+): ControlRequestInputReading<AccountReactionMessageKey> {
+  const messagePath = readPathParameters(supergroupMessagePathSchema, pathParameters);
+  if (!messagePath.valid) {
+    return messagePath;
+  }
+  const { accountId, chatId, messageId } = messagePath.value;
+  return { valid: true, value: { accountId, chatId, messageId } };
 }
 
 /**

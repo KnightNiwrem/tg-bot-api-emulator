@@ -31,8 +31,22 @@ post:
       description: >-
         The request body is malformed, `error_code` is neither `500` nor `503`, or `method`
         names no Bot API method the emulator implements. Answers already queued are kept.
+      content:
+        application/json:
+          schema:
+            $ref: ../components/schemas/ControlValidationError.yaml
     '404':
       description: No active test session or virtual bot has the supplied identifier.
+      content:
+        application/json:
+          schema:
+            allOf:
+              - $ref: ../components/schemas/ControlError.yaml
+              - properties:
+                  reason:
+                    enum:
+                      - bot_not_found
+                      - session_not_found
 get:
   operationId: listServerErrorResponses
   summary: List the server error answers still queued for a bot
@@ -53,3 +67,13 @@ get:
                   $ref: ../components/schemas/ServerErrorResponses.yaml
     '404':
       description: No active test session or virtual bot has the supplied identifier.
+      content:
+        application/json:
+          schema:
+            allOf:
+              - $ref: ../components/schemas/ControlError.yaml
+              - properties:
+                  reason:
+                    enum:
+                      - bot_not_found
+                      - session_not_found

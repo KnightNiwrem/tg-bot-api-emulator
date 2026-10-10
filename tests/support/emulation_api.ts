@@ -67,8 +67,8 @@ export async function createTestSession(
  * response status with the parsed JSON body. `Body` is the caller's expectation of the body's shape
  * and is not checked.
  *
- * A response without a body, such as a refusal or a `204`, still yields its status, but reading its
- * `body` throws, naming the request, rather than yielding a value its type does not allow.
+ * A response without a body, such as a `204`, still yields its status, but reading its `body`
+ * throws, naming the request, rather than yielding a value its type does not allow.
  */
 export async function requestJson<Body>(
   api: EmulationApi,

@@ -8,6 +8,11 @@ import {
   MIN_SUPERGROUP_OR_CHANNEL_ID,
   MIN_TELEGRAM_USER_ID,
 } from '../../../types/telegram_identity.ts';
+import {
+  controlErrorResponse,
+  invalidControlRequestResponse,
+} from '../../control_error_response.ts';
+import { readPathParameters } from '../control_request_input.ts';
 import { presentChatInviteLinkUsage, presentChatJoinRequest } from '../invite_link_presentation.ts';
 import type { SessionRouteContextTypes } from '../session_route_context_types.ts';
 
@@ -36,7 +41,9 @@ const supergroupUserPathSchema = z.object({
 /** The path parameters of a supergroup's invite link, named by its hash. */
 const inviteLinkPathSchema = z.object({
   [CHAT_ID_PARAMETER]: supergroupChatIdPathParameterSchema,
-  [INVITE_LINK_HASH_PARAMETER]: z.string().refine(isInviteLinkHash),
+  [INVITE_LINK_HASH_PARAMETER]: z.string().refine(isInviteLinkHash, {
+    message: 'Expected the hash of an invite link',
+  }),
 });
 
 /**
@@ -48,16 +55,20 @@ export function createSupergroupRoutes(): Hono<SessionRouteContextTypes> {
   const supergroupRoutes = new Hono<SessionRouteContextTypes>();
 
   supergroupRoutes.post(RESTRICTION_EXPIRY_PATH, (context) => {
-    const restrictionPath = supergroupUserPathSchema.safeParse(context.req.param());
-    if (!restrictionPath.success) {
-      return context.body(null, 400);
+    const restrictionPath = readPathParameters(supergroupUserPathSchema, context.req.param());
+    if (!restrictionPath.valid) {
+      return invalidControlRequestResponse(context, restrictionPath.issues);
     }
-    const { chatId, userId } = restrictionPath.data;
+    const { chatId, userId } = restrictionPath.value;
 
     const { sharedChatAdministration, botMessageViews } = context.get('emulationSession');
     const result = sharedChatAdministration.expireRestriction({ chatId, memberId: userId });
     if (!result.expired) {
-      return context.body(null, result.reason === 'restriction_not_temporary' ? 409 : 404);
+      return controlErrorResponse(
+        context,
+        result.reason === 'restriction_not_temporary' ? 409 : 404,
+        result.reason,
+      );
     }
     const chatMember = botMessageViews.viewChatMember({ chatId, userId, status: result.status });
     if (chatMember === undefined) {
@@ -67,35 +78,40 @@ export function createSupergroupRoutes(): Hono<SessionRouteContextTypes> {
   });
 
   supergroupRoutes.post(INVITE_LINK_EXPIRY_PATH, (context) => {
-    const inviteLinkPath = inviteLinkPathSchema.safeParse(context.req.param());
-    if (!inviteLinkPath.success) {
-      return context.body(null, 400);
+    const inviteLinkPath = readPathParameters(inviteLinkPathSchema, context.req.param());
+    if (!inviteLinkPath.valid) {
+      return invalidControlRequestResponse(context, inviteLinkPath.issues);
     }
-    const { chatId, inviteLinkHash } = inviteLinkPath.data;
+    const { chatId, inviteLinkHash } = inviteLinkPath.value;
 
     const result = context.get('emulationSession').chatAdmission.expireInviteLink({
       chatId,
       inviteLinkUrl: `${INVITE_LINK_PREFIX}${inviteLinkHash}`,
     });
     if (!result.expired) {
-      return context.body(null, result.reason === 'invite_link_not_expirable' ? 409 : 404);
+      return controlErrorResponse(
+        context,
+        result.reason === 'invite_link_not_expirable' ? 409 : 404,
+        result.reason,
+      );
     }
     return context.json({ invite_link: presentChatInviteLinkUsage(result.link) });
   });
 
   supergroupRoutes.post(REQUESTER_CONTACT_EXPIRY_PATH, (context) => {
-    const joinRequestPath = supergroupUserPathSchema.safeParse(context.req.param());
-    if (!joinRequestPath.success) {
-      return context.body(null, 400);
+    const joinRequestPath = readPathParameters(supergroupUserPathSchema, context.req.param());
+    if (!joinRequestPath.valid) {
+      return invalidControlRequestResponse(context, joinRequestPath.issues);
     }
 
     const result = context.get('emulationSession').chatAdmission.expireJoinRequesterContact(
-      joinRequestPath.data,
+      joinRequestPath.value,
     );
     if (!result.expired) {
-      return context.body(
-        null,
+      return controlErrorResponse(
+        context,
         result.reason === 'requester_contact_already_expired' ? 409 : 404,
+        result.reason,
       );
     }
     return context.json({ join_request: presentChatJoinRequest(result.request) });

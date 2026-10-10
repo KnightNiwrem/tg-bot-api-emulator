@@ -32,13 +32,47 @@ post:
       description: The request ended with the decision.
     '400':
       description: A path identifier or the body is invalid.
+      content:
+        application/json:
+          schema:
+            $ref: ../components/schemas/ControlValidationError.yaml
     '403':
       description: >-
         The account is neither the supergroup's owner nor an administrator holding
         `can_invite_users`, including when it is not a member.
+      content:
+        application/json:
+          schema:
+            allOf:
+              - $ref: ../components/schemas/ControlError.yaml
+              - properties:
+                  reason:
+                    enum:
+                      - not_enough_rights
     '404':
       description: >-
         The session, account, or supergroup does not exist, or the user has no pending request to
         join it, including once its request was declined.
+      content:
+        application/json:
+          schema:
+            allOf:
+              - $ref: ../components/schemas/ControlError.yaml
+              - properties:
+                  reason:
+                    enum:
+                      - account_not_found
+                      - chat_not_found
+                      - join_request_missing
+                      - session_not_found
     '409':
       description: The user is a member of the supergroup, including once its request was approved.
+      content:
+        application/json:
+          schema:
+            allOf:
+              - $ref: ../components/schemas/ControlError.yaml
+              - properties:
+                  reason:
+                    enum:
+                      - already_a_member

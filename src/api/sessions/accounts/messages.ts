@@ -5,7 +5,12 @@ import { isContactVcardWithinLimit, MAX_CONTACT_NAME_LENGTH } from '../../../typ
 import type { EmulationSession } from '../../../types/emulation_session.ts';
 import { MAX_MEDIA_DURATION_SECONDS, MAX_VIDEO_SIDE_LENGTH } from '../../../types/stored_file.ts';
 import { countTextCharacters, MAX_TEXT_MESSAGE_LENGTH } from '../../../types/virtual_message.ts';
+import {
+  controlErrorResponse,
+  invalidControlRequestResponse,
+} from '../../control_error_response.ts';
 import { base64ContentSchema } from '../base64_content.ts';
+import { readPathParameters } from '../control_request_input.ts';
 import { readJsonRequestBody } from '../json_request_body.ts';
 import type { SessionRouteContextTypes } from '../session_route_context_types.ts';
 import {
@@ -128,7 +133,9 @@ const accountContactShape = {
     phone_number: z.string().min(1),
     first_name: contactNameSchema.pipe(z.string().min(1)),
     last_name: contactNameSchema.default(''),
-    vcard: z.string().refine(isContactVcardWithinLimit).default(''),
+    vcard: z.string().refine(isContactVcardWithinLimit, {
+      message: 'A vCard must fit in the bytes the Bot API allows',
+    }).default(''),
   }),
 };
 
@@ -192,16 +199,17 @@ export function createMessageRoutes(): Hono<SessionRouteContextTypes> {
   const accountRoutes = new Hono<SessionRouteContextTypes>();
 
   accountRoutes.post(ACCOUNT_MESSAGE_COLLECTION_PATH, async (context) => {
-    const accountPath = accountPathSchema.safeParse(context.req.param());
-    if (!accountPath.success) {
-      return context.body(null, 400);
+    const accountPath = readPathParameters(accountPathSchema, context.req.param());
+    if (!accountPath.valid) {
+      return invalidControlRequestResponse(context, accountPath.issues);
     }
-    const { accountId } = accountPath.data;
+    const { accountId } = accountPath.value;
 
-    const requestBody = await readJsonRequestBody(context.req, sendMessageRequestSchema);
-    if (requestBody === undefined) {
-      return context.body(null, 400);
+    const requestBodyReading = await readJsonRequestBody(context.req, sendMessageRequestSchema);
+    if (!requestBodyReading.valid) {
+      return invalidControlRequestResponse(context, requestBodyReading.issues);
     }
+    const requestBody = requestBodyReading.value;
 
     const {
       privateMessaging,
@@ -219,17 +227,18 @@ export function createMessageRoutes(): Hono<SessionRouteContextTypes> {
         toChat: to,
       });
       if (!result.forwarded) {
-        return context.body(null, forwardFailureStatus(result.reason));
+        return controlErrorResponse(context, forwardFailureStatus(result.reason), result.reason);
       }
       return context.json(
         { message: viewChatMessageForAccount(botMessageViews, result.message, accountId) },
         201,
       );
     }
-    const content = readAccountMessageContent(requestBody, mediaFiles);
-    if (content === undefined) {
-      return context.body(null, 400);
+    const contentReading = readAccountMessageContent(requestBody, mediaFiles);
+    if (!contentReading.read) {
+      return controlErrorResponse(context, 400, contentReading.reason);
     }
+    const { content } = contentReading;
     const { to, reply_to_message_id: replyToMessageId } = requestBody;
     if (to.type === 'supergroup') {
       const result = supergroupMessaging.sendAccountMessage({
@@ -239,7 +248,11 @@ export function createMessageRoutes(): Hono<SessionRouteContextTypes> {
         replyToMessageId,
       });
       if (!result.sent) {
-        return context.body(null, supergroupMemberFailureStatus(result.reason));
+        return controlErrorResponse(
+          context,
+          supergroupMemberFailureStatus(result.reason),
+          result.reason,
+        );
       }
       return context.json(
         { message: botMessageViews.viewSupergroupMessage(result.message, accountId) },
@@ -254,7 +267,11 @@ export function createMessageRoutes(): Hono<SessionRouteContextTypes> {
       replyToBotMessageId: replyToMessageId,
     });
     if (!result.sent) {
-      return context.body(null, accountMessageFailureStatus(result.reason));
+      return controlErrorResponse(
+        context,
+        accountMessageFailureStatus(result.reason),
+        result.reason,
+      );
     }
 
     return context.json(
@@ -264,27 +281,28 @@ export function createMessageRoutes(): Hono<SessionRouteContextTypes> {
   });
 
   accountRoutes.post(ACCOUNT_MEDIA_GROUP_COLLECTION_PATH, async (context) => {
-    const accountPath = accountPathSchema.safeParse(context.req.param());
-    if (!accountPath.success) {
-      return context.body(null, 400);
+    const accountPath = readPathParameters(accountPathSchema, context.req.param());
+    if (!accountPath.valid) {
+      return invalidControlRequestResponse(context, accountPath.issues);
     }
-    const { accountId } = accountPath.data;
+    const { accountId } = accountPath.value;
 
-    const requestBody = await readJsonRequestBody(context.req, sendMediaGroupRequestSchema);
-    if (requestBody === undefined) {
-      return context.body(null, 400);
+    const requestBodyReading = await readJsonRequestBody(context.req, sendMediaGroupRequestSchema);
+    if (!requestBodyReading.valid) {
+      return invalidControlRequestResponse(context, requestBodyReading.issues);
     }
+    const requestBody = requestBodyReading.value;
 
     const { privateMessaging, supergroupMessaging, botMessageViews, mediaFiles } = context.get(
       'emulationSession',
     );
     const contents: AccountAlbumMediaContent[] = [];
     for (const media of requestBody.media) {
-      const content = readAccountMediaContent(media, mediaFiles);
-      if (content === undefined) {
-        return context.body(null, 400);
+      const contentReading = readAccountMediaContent(media, mediaFiles);
+      if (!contentReading.read) {
+        return controlErrorResponse(context, 400, contentReading.reason);
       }
-      contents.push(content);
+      contents.push(contentReading.content);
     }
     const { to, reply_to_message_id: replyToMessageId } = requestBody;
     if (to.type === 'supergroup') {
@@ -295,7 +313,11 @@ export function createMessageRoutes(): Hono<SessionRouteContextTypes> {
         replyToMessageId,
       });
       if (!result.sent) {
-        return context.body(null, supergroupMemberFailureStatus(result.reason));
+        return controlErrorResponse(
+          context,
+          supergroupMemberFailureStatus(result.reason),
+          result.reason,
+        );
       }
       return context.json(
         {
@@ -314,7 +336,11 @@ export function createMessageRoutes(): Hono<SessionRouteContextTypes> {
       replyToBotMessageId: replyToMessageId,
     });
     if (!result.sent) {
-      return context.body(null, accountMessageFailureStatus(result.reason));
+      return controlErrorResponse(
+        context,
+        accountMessageFailureStatus(result.reason),
+        result.reason,
+      );
     }
     return context.json(
       {
@@ -327,16 +353,17 @@ export function createMessageRoutes(): Hono<SessionRouteContextTypes> {
   });
 
   accountRoutes.patch(SUPERGROUP_MESSAGE_PATH, async (context) => {
-    const messagePath = supergroupMessagePathSchema.safeParse(context.req.param());
-    if (!messagePath.success) {
-      return context.body(null, 400);
+    const messagePath = readPathParameters(supergroupMessagePathSchema, context.req.param());
+    if (!messagePath.valid) {
+      return invalidControlRequestResponse(context, messagePath.issues);
     }
-    const { accountId, chatId, messageId } = messagePath.data;
+    const { accountId, chatId, messageId } = messagePath.value;
 
-    const requestBody = await readJsonRequestBody(context.req, editMessageRequestSchema);
-    if (requestBody === undefined) {
-      return context.body(null, 400);
+    const requestBodyReading = await readJsonRequestBody(context.req, editMessageRequestSchema);
+    if (!requestBodyReading.valid) {
+      return invalidControlRequestResponse(context, requestBodyReading.issues);
     }
+    const requestBody = requestBodyReading.value;
 
     const { supergroupMessaging, botMessageViews } = context.get('emulationSession');
     const result = supergroupMessaging.editAccountMessage({
@@ -346,7 +373,11 @@ export function createMessageRoutes(): Hono<SessionRouteContextTypes> {
       edit: readAccountMessageEdit(requestBody),
     });
     if (!result.edited) {
-      return context.body(null, supergroupMemberFailureStatus(result.reason));
+      return controlErrorResponse(
+        context,
+        supergroupMemberFailureStatus(result.reason),
+        result.reason,
+      );
     }
     return context.json({
       message: botMessageViews.viewSupergroupMessage(result.message, accountId),
@@ -355,11 +386,11 @@ export function createMessageRoutes(): Hono<SessionRouteContextTypes> {
 
   // The account deletes the message for every member, as Telegram's clients do.
   accountRoutes.delete(SUPERGROUP_MESSAGE_PATH, (context) => {
-    const messagePath = supergroupMessagePathSchema.safeParse(context.req.param());
-    if (!messagePath.success) {
-      return context.body(null, 400);
+    const messagePath = readPathParameters(supergroupMessagePathSchema, context.req.param());
+    if (!messagePath.valid) {
+      return invalidControlRequestResponse(context, messagePath.issues);
     }
-    const { accountId, chatId, messageId } = messagePath.data;
+    const { accountId, chatId, messageId } = messagePath.value;
 
     const result = context.get('emulationSession').supergroupMessaging.deleteAccountMessage({
       fromAccountId: accountId,
@@ -369,25 +400,27 @@ export function createMessageRoutes(): Hono<SessionRouteContextTypes> {
     if (result.deleted) {
       return context.body(null, 204);
     }
-    return context.body(
-      null,
+    return controlErrorResponse(
+      context,
       result.reason === 'message_not_deletable'
         ? 403
         : supergroupMemberFailureStatus(result.reason),
+      result.reason,
     );
   });
 
   accountRoutes.patch(PRIVATE_MESSAGE_PATH, async (context) => {
-    const messagePath = privateMessagePathSchema.safeParse(context.req.param());
-    if (!messagePath.success) {
-      return context.body(null, 400);
+    const messagePath = readPathParameters(privateMessagePathSchema, context.req.param());
+    if (!messagePath.valid) {
+      return invalidControlRequestResponse(context, messagePath.issues);
     }
-    const { accountId, botId, messageId } = messagePath.data;
+    const { accountId, botId, messageId } = messagePath.value;
 
-    const requestBody = await readJsonRequestBody(context.req, editMessageRequestSchema);
-    if (requestBody === undefined) {
-      return context.body(null, 400);
+    const requestBodyReading = await readJsonRequestBody(context.req, editMessageRequestSchema);
+    if (!requestBodyReading.valid) {
+      return invalidControlRequestResponse(context, requestBodyReading.issues);
     }
+    const requestBody = requestBodyReading.value;
 
     const { privateMessaging, botMessageViews } = context.get('emulationSession');
     const result = privateMessaging.editAccountMessage({
@@ -397,27 +430,31 @@ export function createMessageRoutes(): Hono<SessionRouteContextTypes> {
       edit: readAccountMessageEdit(requestBody),
     });
     if (!result.edited) {
-      const isNotFound = result.reason === 'account_not_found' ||
-        result.reason === 'bot_not_found' || result.reason === 'message_not_found';
-      return context.body(null, isNotFound ? 404 : 400);
+      return controlErrorResponse(
+        context,
+        privateMessageEditFailureStatus(result.reason),
+        result.reason,
+      );
     }
     return context.json({ message: botMessageViews.viewPrivateMessageForBot(result.message) });
   });
 
   // The account deletes the message for both participants, as Telegram's clients can.
   accountRoutes.delete(PRIVATE_MESSAGE_PATH, (context) => {
-    const messagePath = privateMessagePathSchema.safeParse(context.req.param());
-    if (!messagePath.success) {
-      return context.body(null, 400);
+    const messagePath = readPathParameters(privateMessagePathSchema, context.req.param());
+    if (!messagePath.valid) {
+      return invalidControlRequestResponse(context, messagePath.issues);
     }
-    const { accountId, botId, messageId } = messagePath.data;
+    const { accountId, botId, messageId } = messagePath.value;
 
     const result = context.get('emulationSession').privateMessaging.deleteAccountMessage({
       fromAccountId: accountId,
       botId,
       botMessageId: messageId,
     });
-    return context.body(null, result.deleted ? 204 : 404);
+    return result.deleted
+      ? context.body(null, 204)
+      : controlErrorResponse(context, 404, result.reason);
   });
 
   return accountRoutes;
@@ -431,31 +468,45 @@ type AccountAlbumMediaContent = Parameters<
   EmulationSession['privateMessaging']['sendAccountAlbum']
 >[0]['contents'][number];
 
-/**
- * Reads the content of an account's message, checking an uploaded photo as Telegram does; returns
- * `undefined` for a file Telegram would not send.
- */
+/** Why Telegram refuses a file an account uploads. */
+type AccountUploadFailureReason = Extract<
+  AccountUploadPreparation | ReturnType<EmulationSession['mediaFiles']['prepareVoiceUpload']>,
+  { readonly prepared: false }
+>['reason'];
+
+/** The content of an account's message as its client prepares it, or why Telegram refuses it. */
+type AccountContentReading<Content> =
+  | { readonly read: true; readonly content: Content }
+  | { readonly read: false; readonly reason: AccountUploadFailureReason };
+
+/** Reads the content of an account's message, checking an uploaded file as Telegram does. */
 function readAccountMessageContent(
   request: Exclude<z.infer<typeof sendMessageRequestSchema>, { readonly forward: unknown }>,
   mediaFiles: EmulationSession['mediaFiles'],
-): AccountMessageContent | undefined {
+): AccountContentReading<AccountMessageContent> {
   if ('text' in request) {
-    return { kind: 'text', text: request.text, entities: request.entities };
+    return {
+      read: true,
+      content: { kind: 'text', text: request.text, entities: request.entities },
+    };
   }
   if ('own_contact' in request) {
-    return { kind: 'own_contact' };
+    return { read: true, content: { kind: 'own_contact' } };
   }
   if ('location' in request) {
-    return { kind: 'location', location: request.location };
+    return { read: true, content: { kind: 'location', location: request.location } };
   }
   if ('poll' in request) {
-    return { kind: 'poll', poll: request.poll };
+    return { read: true, content: { kind: 'poll', poll: request.poll } };
   }
   if ('contact' in request) {
     const { phone_number, first_name, last_name, vcard } = request.contact;
     return {
-      kind: 'contact',
-      contact: { phoneNumber: phone_number, firstName: first_name, lastName: last_name, vcard },
+      read: true,
+      content: {
+        kind: 'contact',
+        contact: { phoneNumber: phone_number, firstName: first_name, lastName: last_name, vcard },
+      },
     };
   }
   return 'voice' in request
@@ -464,13 +515,13 @@ function readAccountMessageContent(
 }
 
 /**
- * Reads a voice note an account records, as its client prepares it; returns `undefined` for an
- * upload Telegram refuses. Unlike other media, a voice note never joins an album.
+ * Reads a voice note an account records, as its client prepares it. Unlike other media, a voice
+ * note never joins an album.
  */
 function readAccountVoiceContent(
   request: z.infer<z.ZodObject<typeof accountVoiceShape>>,
   mediaFiles: EmulationSession['mediaFiles'],
-): AccountMessageContent | undefined {
+): AccountContentReading<AccountMessageContent> {
   const preparation = mediaFiles.prepareVoiceUpload({
     content: request.voice.content_base64,
     durationSeconds: request.voice.duration,
@@ -478,18 +529,18 @@ function readAccountVoiceContent(
   });
   return preparation.prepared
     ? {
-      kind: 'media',
-      upload: preparation.upload,
-      caption: request.caption,
-      captionEntities: request.caption_entities,
+      read: true,
+      content: {
+        kind: 'media',
+        upload: preparation.upload,
+        caption: request.caption,
+        captionEntities: request.caption_entities,
+      },
     }
-    : undefined;
+    : { read: false, reason: preparation.reason };
 }
 
-/**
- * Reads a photo, document, video, or audio file an account uploads, as its client prepares it;
- * returns `undefined` for an upload Telegram refuses.
- */
+/** Reads a photo, document, video, or audio file an account uploads, as its client prepares it. */
 function readAccountMediaContent(
   request:
     | z.infer<z.ZodObject<typeof accountPhotoShape>>
@@ -497,16 +548,19 @@ function readAccountMediaContent(
     | z.infer<z.ZodObject<typeof accountVideoShape>>
     | z.infer<z.ZodObject<typeof accountAudioShape>>,
   mediaFiles: EmulationSession['mediaFiles'],
-): AccountAlbumMediaContent | undefined {
+): AccountContentReading<AccountAlbumMediaContent> {
   const preparation = prepareAccountUpload(request, mediaFiles);
   return preparation.prepared
     ? {
-      kind: 'media',
-      upload: preparation.upload,
-      caption: request.caption,
-      captionEntities: request.caption_entities,
+      read: true,
+      content: {
+        kind: 'media',
+        upload: preparation.upload,
+        caption: request.caption,
+        captionEntities: request.caption_entities,
+      },
     }
-    : undefined;
+    : { read: false, reason: preparation.reason };
 }
 
 /** How a file an account uploads was prepared, or why Telegram refuses it. */
@@ -566,6 +620,23 @@ function readAccountMessageEdit(
   return 'text' in request
     ? { kind: 'text', text: request.text, entities: request.entities }
     : { kind: 'caption', caption: request.caption, captionEntities: request.caption_entities };
+}
+
+/** A missing account, bot, or message is not found; any other failure rejects the edit. */
+function privateMessageEditFailureStatus(
+  reason: Extract<
+    ReturnType<EmulationSession['privateMessaging']['editAccountMessage']>,
+    { readonly edited: false }
+  >['reason'],
+): 400 | 404 {
+  switch (reason) {
+    case 'account_not_found':
+    case 'bot_not_found':
+    case 'message_not_found':
+      return 404;
+    default:
+      return 400;
+  }
 }
 
 /**

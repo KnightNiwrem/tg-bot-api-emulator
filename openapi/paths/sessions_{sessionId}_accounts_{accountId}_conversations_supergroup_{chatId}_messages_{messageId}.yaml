@@ -29,10 +29,49 @@ patch:
         The request, text, or caption is invalid, another member wrote the message, the request
         gives text for captioned media or a caption for a text message, or the normalized
         text or caption is the message's current one.
+      content:
+        application/json:
+          schema:
+            oneOf:
+              - $ref: ../components/schemas/ControlValidationError.yaml
+              - allOf:
+                  - $ref: ../components/schemas/ControlError.yaml
+                  - properties:
+                      reason:
+                        enum:
+                          - caption_too_long
+                          - message_has_no_caption
+                          - message_has_no_text
+                          - message_not_editable
+                          - message_not_modified
+                          - message_text_empty
+                          - message_text_too_long
+                          - text_invalid
     '403':
       description: The account is not a member of the supergroup.
+      content:
+        application/json:
+          schema:
+            allOf:
+              - $ref: ../components/schemas/ControlError.yaml
+              - properties:
+                  reason:
+                    enum:
+                      - not_a_member
     '404':
       description: The session, account, supergroup, or message of the supergroup does not exist.
+      content:
+        application/json:
+          schema:
+            allOf:
+              - $ref: ../components/schemas/ControlError.yaml
+              - properties:
+                  reason:
+                    enum:
+                      - account_not_found
+                      - chat_not_found
+                      - message_not_found
+                      - session_not_found
 delete:
   operationId: deleteSupergroupAccountMessage
   summary: Delete a message of a supergroup for every member
@@ -46,10 +85,36 @@ delete:
       description: The message was deleted.
     '400':
       description: A path identifier is invalid.
+      content:
+        application/json:
+          schema:
+            $ref: ../components/schemas/ControlValidationError.yaml
     '403':
       description: >-
         The account is not a member of the supergroup, or may not delete the message.
+      content:
+        application/json:
+          schema:
+            allOf:
+              - $ref: ../components/schemas/ControlError.yaml
+              - properties:
+                  reason:
+                    enum:
+                      - message_not_deletable
+                      - not_a_member
     '404':
       description: >-
         The session, account, supergroup, or message of the supergroup does not exist,
         including a deleted message.
+      content:
+        application/json:
+          schema:
+            allOf:
+              - $ref: ../components/schemas/ControlError.yaml
+              - properties:
+                  reason:
+                    enum:
+                      - account_not_found
+                      - chat_not_found
+                      - message_not_found
+                      - session_not_found
