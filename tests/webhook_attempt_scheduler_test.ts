@@ -9,12 +9,12 @@ import { BotActivityService } from '../src/services/bot_activity.ts';
 import { BotWebhookService } from '../src/services/bot_webhook.ts';
 import { VirtualUserService } from '../src/services/virtual_user.ts';
 import {
-  waitForRetryDelay,
   WEBHOOK_ATTEMPT_TIMEOUT_MILLISECONDS,
   WebhookAttemptScheduler,
 } from '../src/services/webhook_attempt_scheduler.ts';
 import type { BotActivityEntry, BotActivityFilter } from '../src/types/bot_activity.ts';
 import type { WebhookAttempt } from '../src/types/bot_webhook.ts';
+import { createRealTimeScheduler, createRetryScheduler } from './support/scheduler.ts';
 import {
   ADA_ID,
   createPrivateMessage,
@@ -456,11 +456,14 @@ function createSchedulerFixture(
   const botId = createBot(virtualUsers, 'webhook_bot');
   const otherBotId = createBot(virtualUsers, 'other_bot');
   const botUpdates = new BotUpdateRepository();
-  const botActivity = new BotActivityService({ log: new BotActivityLogRepository() });
+  const botActivity = new BotActivityService({
+    log: new BotActivityLogRepository(),
+    scheduler: createRealTimeScheduler(),
+  });
   const webhookAttempts = new WebhookAttemptScheduler({
     bots,
     attemptTimeoutMilliseconds: WEBHOOK_ATTEMPT_TIMEOUT_MILLISECONDS,
-    waitBeforeRetry: options.waitBeforeRetry ?? waitForRetryDelay,
+    scheduler: createRetryScheduler(options.waitBeforeRetry),
   });
   const receivedRequests: ReceivedWebhookRequest[] = [];
   const requestCounter = new ReceivedRequestCounter();

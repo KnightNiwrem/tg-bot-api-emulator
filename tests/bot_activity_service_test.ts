@@ -6,6 +6,7 @@ import {
 } from '../src/services/bot_activity.ts';
 import type { BotActivityEntry, BotActivityFilter } from '../src/types/bot_activity.ts';
 import type { BotApiUpdate } from '../src/types/bot_api.ts';
+import { createRealTimeScheduler } from './support/scheduler.ts';
 
 const BOT_ID = 10;
 const OTHER_BOT_ID = 20;
@@ -255,7 +256,10 @@ Deno.test('BotActivityService stops holding a read whose reader stops waiting', 
 });
 
 function createBotActivity(): BotActivityService {
-  return new BotActivityService({ log: new BotActivityLogRepository() });
+  return new BotActivityService({
+    log: new BotActivityLogRepository(),
+    scheduler: createRealTimeScheduler(),
+  });
 }
 
 async function readAll(

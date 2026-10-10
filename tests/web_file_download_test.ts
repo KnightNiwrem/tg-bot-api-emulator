@@ -3,6 +3,7 @@ import {
   WebFileDownloader,
   type WebResourceFetcher,
 } from '../src/services/web_file_download.ts';
+import { createRealTimeScheduler } from './support/scheduler.ts';
 
 const PDF_CONTENT = new TextEncoder().encode('%PDF-1.7 report');
 
@@ -259,7 +260,12 @@ function createDownloader(
   fetchWebResource: WebResourceFetcher,
   { timeoutMilliseconds = 1_000, maxRedirects = 5 } = {},
 ): WebFileDownloader {
-  return new WebFileDownloader({ fetchWebResource, timeoutMilliseconds, maxRedirects });
+  return new WebFileDownloader({
+    fetchWebResource,
+    timeoutMilliseconds,
+    maxRedirects,
+    scheduler: createRealTimeScheduler(),
+  });
 }
 
 function assertDownloaded(

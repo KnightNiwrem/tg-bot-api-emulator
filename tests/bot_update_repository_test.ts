@@ -68,14 +68,15 @@ Deno.test('BotUpdateRepository sequences and confirms each bot mailbox independe
 Deno.test('BotUpdateRepository ends a wait when its signal aborts', async () => {
   const botUpdates = new BotUpdateRepository();
   const abortController = new AbortController();
+  const awaitedUpdateId = botUpdates.getNextUpdateId(10);
   const pendingWait = botUpdates.waitForUpdate(10, {
-    timeoutSeconds: 50,
+    awaitedUpdateId,
     signal: abortController.signal,
   });
 
   abortController.abort();
   await pendingWait;
-  await botUpdates.waitForUpdate(10, { timeoutSeconds: 50, signal: abortController.signal });
+  await botUpdates.waitForUpdate(10, { awaitedUpdateId, signal: abortController.signal });
 });
 
 Deno.test('BotUpdateRepository resolves a negative offset against the queue tail', () => {

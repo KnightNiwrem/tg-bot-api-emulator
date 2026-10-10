@@ -11,6 +11,12 @@ import type {
   BotApiUpdate,
 } from '../types/bot_api.ts';
 import type { BotApiPoll, BotApiPollAnswer } from '../types/bot_api_poll.ts';
+import {
+  type NotificationWaitEnd,
+  type Unsubscribe,
+  waitForNotification,
+} from '../timing/notification_wait.ts';
+import type { Deadline } from '../timing/session_timing.ts';
 
 /**
  * How far beyond the ID of the next update an offset can be before Telegram ignores it. From the
@@ -29,8 +35,13 @@ interface ConfirmAndReadPendingUpdatesInput {
 }
 
 interface WaitForUpdateInput {
+  /**
+   * The ID of the update to wait for: the bot's next update ID, as `getNextUpdateId` read it when
+   * the caller last looked at the bot's queue.
+   */
+  readonly awaitedUpdateId: number;
   /** Omitted to wait without a time limit. */
-  readonly timeoutSeconds?: number;
+  readonly deadline?: Deadline;
   readonly signal?: AbortSignal;
 }
 
@@ -200,32 +211,24 @@ export class BotUpdateRepository {
     this.#getOrCreateMailbox(botId).updates.splice(0);
   }
 
-  /** Resolves when an update is enqueued for the bot, the timeout elapses, or `signal` aborts. */
-  waitForUpdate(botId: number, { timeoutSeconds, signal }: WaitForUpdateInput): Promise<void> {
-    return new Promise((resolve) => {
-      if (signal?.aborted === true) {
-        resolve();
-        return;
-      }
+  /** The ID the bot's next update will receive, which grows with each update enqueued for it. */
+  getNextUpdateId(botId: number): number {
+    return this.#getOrCreateMailbox(botId).nextUpdateId;
+  }
 
-      const waiters = this.#waitersByBotId.get(botId) ?? new Set<() => void>();
-
-      const finish = () => {
-        clearTimeout(timeoutId);
-        signal?.removeEventListener('abort', finish);
-        waiters.delete(finish);
-        if (waiters.size === 0) {
-          this.#waitersByBotId.delete(botId);
-        }
-        resolve();
-      };
-
-      waiters.add(finish);
-      this.#waitersByBotId.set(botId, waiters);
-      const timeoutId = timeoutSeconds === undefined
-        ? undefined
-        : setTimeout(finish, timeoutSeconds * 1_000);
-      signal?.addEventListener('abort', finish, { once: true });
+  /**
+   * Resolves once the bot's update with ID `awaitedUpdateId`, or a later one, has been enqueued, at
+   * once if it already has, or when the deadline arrives or `signal` aborts.
+   */
+  waitForUpdate(
+    botId: number,
+    { awaitedUpdateId, deadline, signal }: WaitForUpdateInput,
+  ): Promise<NotificationWaitEnd> {
+    return waitForNotification({
+      subscribe: (notify) => this.#subscribeToEnqueues(botId, notify),
+      hasChanged: () => this.getNextUpdateId(botId) > awaitedUpdateId,
+      deadline,
+      signal,
     });
   }
 
@@ -248,9 +251,22 @@ export class BotUpdateRepository {
     return mailbox;
   }
 
+  /** Calls `notify` each time an update is enqueued for the bot, until unsubscribed. */
+  #subscribeToEnqueues(botId: number, notify: () => void): Unsubscribe {
+    const waiters = this.#waitersByBotId.get(botId) ?? new Set<() => void>();
+    waiters.add(notify);
+    this.#waitersByBotId.set(botId, waiters);
+    return () => {
+      waiters.delete(notify);
+      if (waiters.size === 0 && this.#waitersByBotId.get(botId) === waiters) {
+        this.#waitersByBotId.delete(botId);
+      }
+    };
+  }
+
   #notifyWaiters(botId: number): void {
-    for (const finish of [...(this.#waitersByBotId.get(botId) ?? [])]) {
-      finish();
+    for (const notify of [...(this.#waitersByBotId.get(botId) ?? [])]) {
+      notify();
     }
   }
 }

@@ -1,6 +1,7 @@
 import { WebResourceRepository } from '../src/repositories/web_resource.ts';
 import { WebFileDownloader } from '../src/services/web_file_download.ts';
 import { WebResourceService } from '../src/services/web_resource.ts';
+import { createRealTimeScheduler } from './support/scheduler.ts';
 
 Deno.test('WebResourceService serves what a test registered for each spelling of a URL', async () => {
   const webResources = new WebResourceService({ webResources: new WebResourceRepository() });
@@ -81,6 +82,7 @@ Deno.test('WebResourceService serves URLs with userinfo, which TDLib reads', asy
     fetchWebResource: (request) => webResources.fetchWebResource(request),
     timeoutMilliseconds: 1_000,
     maxRedirects: 5,
+    scheduler: createRealTimeScheduler(),
   });
   const download = await downloader.download('https://user:secret@example.com/private.pdf', 100);
   if (

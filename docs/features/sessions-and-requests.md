@@ -133,6 +133,9 @@ Telegram's JSON errors handle it as a Bot API error.
   sessions keep tests isolated and prevent state from leaking between runs.
 - **Ordinary time and fresh fixtures.** The emulation API intentionally has no clock-advance or
   snapshot/restore facility. Ordinary time and fresh fixtures are sufficient for the intended tests.
+  Each session has two clocks: calendar time for Telegram's dates, and a monotonic clock for
+  protocol timeouts and delays, such as long polls, activity reads, webhook attempts and retries,
+  and file downloads. Both follow real time, and a change of calendar time moves no deadline.
 - **Session lifecycle control.** `close` and `logOut` are intentionally unsupported. Session
   teardown is sufficient for emulator lifecycle control.
 - **Strict request fields and types.** Unknown parameters and nested fields, integer parameters with
@@ -203,12 +206,14 @@ managing individual profiles is missing.
 ## Local evidence
 
 [Session lifecycle](../../src/services/session_lifecycle.ts),
+[session clocks and scheduler](../../src/timing/session_timing.ts),
 [request decoding](../../src/api/sessions/bot_api/request_parameters.ts),
 [method invocation](../../src/api/sessions/bot_api/method_invocation.ts),
 [method schemas](../../src/api/sessions/bot_api/methods/),
 [rate limit answers](../../src/services/bot_rate_limit.ts),
 [server error answers](../../src/services/bot_server_error.ts) and
 [their dispatch](../../src/api/sessions/bot_api/queued_answer.ts),
+[session timing tests](../../tests/session_timing_test.ts),
 [request decoding tests](../../tests/bot_api_request_parameters_test.ts) and
 [HTTP tests](../../tests/emulation_api_test.ts), including
 [server error answer tests](../../tests/bot_server_error_api_test.ts).

@@ -13,6 +13,7 @@ import {
   type BotApiUpdateType,
   DEFAULT_ALLOWED_UPDATE_TYPES,
 } from '../src/types/bot_api.ts';
+import { createRealTimeScheduler } from './support/scheduler.ts';
 
 const BOT_ID = 10;
 const OTHER_BOT_ID = 20;
@@ -245,11 +246,15 @@ Deno.test('BotUpdatePollingService records the updates each answer confirms and 
 function createPollingFixture() {
   const botUpdates = new BotUpdateRepository();
   const updateSubscriptions = new BotUpdateSubscriptionRepository();
-  const botActivity = new BotActivityService({ log: new BotActivityLogRepository() });
+  const botActivity = new BotActivityService({
+    log: new BotActivityLogRepository(),
+    scheduler: createRealTimeScheduler(),
+  });
   const botUpdatePolling = new BotUpdatePollingService({
     botUpdates,
     updateSubscriptions,
     updateActivity: botActivity,
+    scheduler: createRealTimeScheduler(),
   });
   return { botUpdates, updateSubscriptions, botActivity, botUpdatePolling };
 }

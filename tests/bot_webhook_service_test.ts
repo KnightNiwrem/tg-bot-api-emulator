@@ -5,10 +5,10 @@ import { BotWebhookRepository } from '../src/repositories/bot_webhook.ts';
 import { BotActivityService } from '../src/services/bot_activity.ts';
 import { BotWebhookService, type SetWebhookRequest } from '../src/services/bot_webhook.ts';
 import {
-  waitForRetryDelay,
   WEBHOOK_ATTEMPT_TIMEOUT_MILLISECONDS,
   WebhookAttemptScheduler,
 } from '../src/services/webhook_attempt_scheduler.ts';
+import { createRealTimeScheduler, createRetryScheduler } from './support/scheduler.ts';
 import {
   ADA_ID,
   createPrivateMessage,
@@ -678,7 +678,10 @@ function createWebhookFixture(
   const receivedRequests: ReceivedWebhookRequest[] = [];
   const receivedSignals: AbortSignal[] = [];
   const requestCounter = new ReceivedRequestCounter();
-  const botActivity = new BotActivityService({ log: new BotActivityLogRepository() });
+  const botActivity = new BotActivityService({
+    log: new BotActivityLogRepository(),
+    scheduler: createRealTimeScheduler(),
+  });
   const botWebhooks = new BotWebhookService({
     webhooks: new BotWebhookRepository(),
     pendingUpdates: botUpdates,
@@ -697,7 +700,7 @@ function createWebhookFixture(
       bots: { getById: () => undefined },
       attemptTimeoutMilliseconds: options.attemptTimeoutMilliseconds ??
         WEBHOOK_ATTEMPT_TIMEOUT_MILLISECONDS,
-      waitBeforeRetry: options.waitBeforeRetry ?? waitForRetryDelay,
+      scheduler: createRetryScheduler(options.waitBeforeRetry),
     }),
     currentUnixTimeSeconds: () => NOW_UNIX_SECONDS,
   });
