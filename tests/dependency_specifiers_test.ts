@@ -1,8 +1,10 @@
 /**
  * Keeps the checked dependency graph reproducible. Source, test and client code reach external
  * packages only through the import map in `deno.json`, which names exact versions. Documentation
- * examples are meant to be copied, so they name registry packages in full, at the import map's
- * versions, and `deno.lock` records what each of those specifiers resolved to.
+ * examples are meant to be copied, so they name the import map's registry packages in full, from
+ * the same registry and at the same versions, and `deno.lock` records what each one resolved to.
+ * grammY and auto-retry, which the import map takes from their Deno source, are named by their npm
+ * packages instead; see {@link ALIASES_BY_GUIDE_DISTRIBUTION}.
  */
 import { parseModule } from '@deno/graph';
 
@@ -30,7 +32,7 @@ interface PinnedTarget {
   readonly version: string;
 }
 
-/** The exact versions the import map pins, by each package name an example may import. */
+/** The exact versions the import map pins, by registry-qualified package such as `npm:zod`. */
 type PinnedVersions = ReadonlyMap<string, ReadonlySet<string>>;
 
 /** The imports of one module, as {@link readModuleImports} finds them. */
@@ -162,14 +164,27 @@ Deno.test('import discovery finds every written import form and flags computed o
 });
 
 Deno.test('the specifier checks reject remote URLs, ranges and unpinned packages', () => {
-  const pinnedVersions: PinnedVersions = new Map([['grammy', new Set(['1.46.0'])]]);
+  const pinnedVersions = pinnedVersionsByPackage({
+    'grammy': 'https://cdn.jsdelivr.net/gh/grammyjs/grammY@v1.46.0/src/mod.ts',
+    '@grammyjs/auto-retry': 'https://cdn.jsdelivr.net/gh/grammyjs/auto-retry@v2.0.2/src/mod.ts',
+    'hono': 'jsr:@hono/hono@4.13.13',
+    'zod': 'npm:zod@4.6.5',
+  });
   const documentationCases: Array<[specifier: string, accepted: boolean]> = [
     ['npm:grammy@1.46.0', true],
     ['npm:grammy@1.46.0/types', true],
+    ['npm:@grammyjs/auto-retry@2.0.2', true],
+    ['jsr:@hono/hono@4.13.13', true],
+    ['npm:zod@4.6.5', true],
     ['npm:grammy@^1.46.0', false],
     ['npm:grammy@1', false],
     ['npm:grammy', false],
     ['npm:grammy@1.45.1', false],
+    // The pinned version, but from another registry or under the alias's name.
+    ['jsr:@grammyjs/grammy@1.46.0', false],
+    ['npm:hono@4.13.13', false],
+    ['npm:@hono/hono@4.13.13', false],
+    ['jsr:zod@4.6.5', false],
     ['jsr:@std/assert@1.0.19', false],
     ['https://cdn.jsdelivr.net/gh/grammyjs/grammY@v1.46.0/src/mod.ts', false],
     ['grammy', false],
@@ -229,10 +244,13 @@ function documentationSpecifierProblem(
   if (registrySpecifier === undefined) {
     return 'is not a fully qualified npm: or jsr: specifier';
   }
-  const { packageName, version } = registrySpecifier;
+  const { registry, packageName, version } = registrySpecifier;
   if (version === undefined || !EXACT_VERSION.test(version)) return 'names no exact version';
-  const expectedVersions = pinnedVersions.get(packageName);
-  if (expectedVersions === undefined) return `names ${packageName}, which deno.json does not pin`;
+  const registryPackage = `${registry}:${packageName}`;
+  const expectedVersions = pinnedVersions.get(registryPackage);
+  if (expectedVersions === undefined) {
+    return `names ${registryPackage}, which deno.json does not pin from that registry`;
+  }
   if (!expectedVersions.has(version)) {
     return `differs from the version deno.json pins, ${[...expectedVersions].join(' or ')}`;
   }
@@ -261,22 +279,43 @@ function readPinnedTarget(target: string): PinnedTarget | string {
 }
 
 /**
- * The versions the import map pins, by every package name an example may use for them: the name
- * of an aliased registry package and the package name of the alias itself, so that `npm:grammy`
- * finds the version of the `grammy` alias whichever distribution it maps to.
+ * The registry packages the guide imports for import map aliases that map to another distribution
+ * of the same release, each with the alias whose version it must match. The guide's readers run
+ * grammY from npm, as grammY documents for Deno. The repository's own tests import grammY and its
+ * plugins as Deno source modules, because the npm build passes Node-specific request options to a
+ * custom `fetch`, which the tests' in-process `fetch` cannot accept.
+ */
+const ALIASES_BY_GUIDE_DISTRIBUTION: ReadonlyMap<string, string> = new Map([
+  ['npm:grammy', 'grammy'],
+  ['npm:@grammyjs/auto-retry', '@grammyjs/auto-retry'],
+]);
+
+/**
+ * The versions the import map pins, by registry-qualified package such as `jsr:@hono/hono`: the
+ * registry targets themselves, and each guide distribution of an alias that maps elsewhere.
  */
 function pinnedVersionsByPackage(imports: Readonly<Record<string, string>>): PinnedVersions {
   const versionsByPackage = new Map<string, Set<string>>();
-  for (const [alias, target] of Object.entries(imports)) {
+  const addVersion = (registryPackage: string, version: string) => {
+    const versions = versionsByPackage.get(registryPackage) ?? new Set();
+    versions.add(version);
+    versionsByPackage.set(registryPackage, versions);
+  };
+  for (const target of Object.values(imports)) {
     const pinning = readPinnedTarget(target);
-    if (typeof pinning === 'string' || /^[a-z][a-z0-9+.-]*:/i.test(alias)) continue;
-    const names = [packageNameOf(alias), parseRegistrySpecifier(target)?.packageName];
-    for (const name of names) {
-      if (name === undefined) continue;
-      const versions = versionsByPackage.get(name) ?? new Set();
-      versions.add(pinning.version);
-      versionsByPackage.set(name, versions);
+    if (typeof pinning !== 'string' && parseRegistrySpecifier(target) !== undefined) {
+      addVersion(pinning.source, pinning.version);
     }
+  }
+  for (const [registryPackage, alias] of ALIASES_BY_GUIDE_DISTRIBUTION) {
+    const target = imports[alias];
+    const pinning = target === undefined ? undefined : readPinnedTarget(target);
+    if (pinning === undefined || typeof pinning === 'string') {
+      throw new Error(
+        `Expected deno.json to pin the ${alias} alias that ${registryPackage} follows`,
+      );
+    }
+    addVersion(registryPackage, pinning.version);
   }
   return versionsByPackage;
 }
@@ -286,12 +325,6 @@ function parseRegistrySpecifier(specifier: string): RegistrySpecifier | undefine
   if (match === null) return undefined;
   const [, registry, packageName, version] = match;
   return { registry: registry === 'npm' ? 'npm' : 'jsr', packageName, version };
-}
-
-/** The package an import map alias such as `hono/route` or `@std/yaml` belongs to. */
-function packageNameOf(alias: string): string {
-  const segments = alias.split('/');
-  return alias.startsWith('@') ? segments.slice(0, 2).join('/') : segments[0];
 }
 
 /**
