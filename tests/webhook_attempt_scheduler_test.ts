@@ -21,8 +21,6 @@ import {
   NOW_UNIX_SECONDS,
   ReceivedRequestCounter,
   respondOnlyByAborting,
-  waitForAbort,
-  waitUntil,
   WEBHOOK_URL,
   webhookRequest,
 } from './support/webhook_delivery.ts';
@@ -390,13 +388,12 @@ Deno.test('Automatic scheduling lets a test expire an attempt and release a retr
   }
 });
 
-Deno.test('Expiring an attempt whose webhook answered completely leaves it accepted', async () => {
-  // The webhook accepts the update, and the method its answer names runs until it is aborted.
-  const replySignals: AbortSignal[] = [];
-  const fixture = createSchedulerFixture(() => new Response(null), {
-    runWebhookReply: (_botId, _reply, signal) => {
-      replySignals.push(signal);
-      return waitForAbort(signal);
+Deno.test('An attempt whose webhook answered completely is accepted before its reply runs', async () => {
+  // The webhook accepts the update; the method its answer names is started and never finishes.
+  const startedReplies: Response[] = [];
+  const fixture = createSchedulerFixture(() => Response.json({ method: 'sendMessage' }), {
+    startWebhookReply: (_botId, reply) => {
+      startedReplies.push(reply);
     },
   });
   const { botId, botUpdates, botWebhooks, webhookAttempts } = fixture;
@@ -405,19 +402,17 @@ Deno.test('Expiring an attempt whose webhook answered completely leaves it accep
     webhookAttempts.setScheduling(botId, 'manual');
     botUpdates.enqueueMessageUpdate(botId, createPrivateMessage(1));
     botWebhooks.setWebhook(botId, webhookRequest());
-    await waitUntil(() => replySignals.length === 1);
+    await fixture.waitForEntry({ kind: 'update_confirmed' });
 
-    const expiry = await webhookAttempts.expireAttempt(botId, 1);
-    const confirmations = await fixture.readEntries({ kind: 'update_confirmed' });
     assertJson(
       [
-        expiry.expired && expiry.attempt.status,
-        replySignals[0].aborted,
-        confirmations.length,
+        startedReplies.length,
+        await webhookAttempts.expireAttempt(botId, 1),
+        listAttempts(webhookAttempts, botId).map(describeAttemptState),
         botWebhooks.getWebhookInfo(botId).pending_update_count,
       ],
-      ['accepted', true, 1, 0],
-      "Expected the complete answer to decide the outcome, and the reply's method to stop",
+      [1, { expired: false, reason: 'attempt_not_in_flight' }, ['accepted'], 0],
+      "Expected the complete answer to accept the update without waiting for the reply's method",
     );
   } finally {
     botWebhooks.endDelivery();
@@ -440,11 +435,7 @@ function createSchedulerFixture(
     /** Waits for real when omitted. */
     readonly waitBeforeRetry?: (delaySeconds: number, signal: AbortSignal) => Promise<void>;
     /** Reads and ignores each reply when omitted. */
-    readonly runWebhookReply?: (
-      botId: number,
-      reply: Response,
-      signal: AbortSignal,
-    ) => Promise<void>;
+    readonly startWebhookReply?: (botId: number, reply: Response) => void;
   } = {},
 ) {
   const bots = new BotRepository();
@@ -478,8 +469,8 @@ function createSchedulerFixture(
       requestCounter.countRequest();
       return await respond(request, receivedRequests.length - 1);
     },
-    runWebhookReply: options.runWebhookReply ?? (async (_botId, reply) => {
-      await reply.arrayBuffer();
+    startWebhookReply: options.startWebhookReply ?? ((_botId, reply) => {
+      void reply.arrayBuffer();
     }),
     attempts: webhookAttempts,
     currentUnixTimeSeconds: () => NOW_UNIX_SECONDS,

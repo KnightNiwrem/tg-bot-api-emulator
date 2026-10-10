@@ -310,16 +310,20 @@ export function createEmulationSession(
     updateSubscriptions,
     updateActivity: botActivity,
     sendWebhookRequest: (request) => fetch(request),
-    runWebhookReply: async (botId, reply, signal) => {
+    startWebhookReply: (botId, reply) => {
       const bot = bots.getById(botId);
-      if (bot !== undefined) {
-        await runWebhookReply({
-          session,
-          bot: bot.profile,
-          signal: lifetime.bind(signal),
-          via: 'webhook_reply',
-        }, reply);
+      if (bot === undefined) {
+        return;
       }
+      // Nobody receives the reply method's answer, so nothing awaits it; only the session's end
+      // bounds it. A method that fails by throwing has no caller to report to either, so its
+      // failure is observed and dropped, as a failing answer is.
+      runWebhookReply({
+        session,
+        bot: bot.profile,
+        signal: lifetime.endSignal,
+        via: 'webhook_reply',
+      }, reply).catch(() => {});
     },
     attempts: webhookAttempts,
     currentUnixTimeSeconds,

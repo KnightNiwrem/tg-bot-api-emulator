@@ -38,7 +38,10 @@ interface WebhookAttemptSchedulerDependencies {
 export interface BeginWebhookAttemptInput {
   readonly botId: number;
   readonly update: BotApiUpdate;
-  /** Aborts when delivery to the webhook stops, which cancels the attempt or its retry wait. */
+  /**
+   * Aborts when delivery to the webhook stops. The delivery then cancels an attempt still waiting
+   * for its complete response, and a waiting retry is cancelled with it.
+   */
   readonly deliverySignal: AbortSignal;
 }
 
@@ -52,6 +55,11 @@ export interface WebhookAttemptHandle {
   readonly deadlineSignal: AbortSignal;
   /** Records that the webhook accepted the update; ignored once the attempt is no longer in flight. */
   accept(): void;
+  /**
+   * Records that delivery stopped before the webhook's complete response arrived; ignored once the
+   * attempt is no longer in flight.
+   */
+  cancel(): void;
   /**
    * Records the failure and schedules the retry, then resolves once the retry is released, or once
    * delivery stops, which cancels it. Resolves at once when the attempt is no longer in flight.
@@ -93,6 +101,8 @@ interface OpenWebhookAttempt {
   readonly retryRelease: AbortController;
   /** Resolves once the attempt is no longer in flight. */
   readonly settled: PromiseWithResolvers<void>;
+  /** Aborts when delivery to the attempt's webhook stops. */
+  readonly deliverySignal: AbortSignal;
 }
 
 /**
@@ -109,8 +119,9 @@ interface OpenWebhookAttempt {
  *
  * Each control applies to one attempt of one bot, once: an attempt that is no longer in flight
  * cannot be expired, and a retry that is no longer waiting cannot be released. When delivery stops,
- * because the webhook is replaced or deleted or the session ends, the attempt in flight is
- * cancelled, and so is a waiting retry, along with their timers.
+ * because the webhook is replaced or deleted or the session ends, an attempt still waiting for its
+ * complete response is cancelled, and so is a waiting retry, along with their timers. An attempt
+ * whose complete response arrived is accepted, whatever happens to its webhook afterward.
  */
 export class WebhookAttemptScheduler {
   readonly #bots: BotLookup;
@@ -180,8 +191,9 @@ export class WebhookAttemptScheduler {
 
   /**
    * Makes the deadline of the bot's attempt in flight arrive, as its timeout passing does, and
-   * resolves with the attempt once its outcome is decided. An attempt whose webhook has already
-   * answered completely is still accepted.
+   * resolves with the attempt once its outcome is decided. An attempt whose webhook answered
+   * completely is accepted at once, so it is no longer in flight, and neither is one whose delivery
+   * stopped, which is being cancelled.
    */
   async expireAttempt(botId: number, attemptId: number): Promise<ExpireWebhookAttemptResult> {
     if (this.#bots.getById(botId) === undefined) {
@@ -192,10 +204,11 @@ export class WebhookAttemptScheduler {
       return { expired: false, reason: 'attempt_not_found' };
     }
     const openAttempt = this.#openAttemptsById.get(attemptId);
-    // An attempt whose deadline has already arrived is about to fail, so it is no longer expired.
+    // An attempt whose deadline has already arrived is about to fail, and one whose delivery
+    // stopped is about to be cancelled, so neither is expired.
     if (
       attempt.status !== 'in_flight' || openAttempt === undefined ||
-      openAttempt.deadline.signal.aborted
+      openAttempt.deadline.signal.aborted || openAttempt.deliverySignal.aborted
     ) {
       return { expired: false, reason: 'attempt_not_in_flight' };
     }
@@ -219,6 +232,7 @@ export class WebhookAttemptScheduler {
       deadline: new AbortController(),
       retryRelease: new AbortController(),
       settled: Promise.withResolvers(),
+      deliverySignal,
     };
     this.#attemptsById.set(identity.id, { ...identity, status: 'in_flight' });
     this.#openAttemptsById.set(identity.id, openAttempt);
@@ -239,24 +253,19 @@ export class WebhookAttemptScheduler {
       openAttempt.settled.resolve();
     };
     const close = () => {
-      deliverySignal.removeEventListener('abort', cancel);
+      deliverySignal.removeEventListener('abort', cancelWaitingRetry);
       this.#openAttemptsById.delete(identity.id);
     };
-    const cancel = () => {
+    // A waiting retry is cancelled as soon as delivery stops, so that no test can release it; the
+    // retry wait then ends, and closes the attempt. An attempt in flight is cancelled by its
+    // delivery, which alone knows whether the webhook's complete response arrived first.
+    const cancelWaitingRetry = () => {
       const attempt = this.#getAttempt(identity.id);
-      if (attempt.status === 'in_flight') {
-        settle({ ...identity, status: 'cancelled' });
-        close();
-      } else if (attempt.status === 'failed' && attempt.retry.status === 'waiting') {
-        // The retry wait also ends with delivery, and closes the attempt once it has.
+      if (attempt.status === 'failed' && attempt.retry.status === 'waiting') {
         this.#setRetryStatus(identity.id, 'cancelled');
       }
     };
-    if (deliverySignal.aborted) {
-      cancel();
-    } else {
-      deliverySignal.addEventListener('abort', cancel, { once: true });
-    }
+    deliverySignal.addEventListener('abort', cancelWaitingRetry, { once: true });
 
     return {
       id: identity.id,
@@ -264,6 +273,12 @@ export class WebhookAttemptScheduler {
       accept: () => {
         if (isInFlight()) {
           settle({ ...identity, status: 'accepted' });
+          close();
+        }
+      },
+      cancel: () => {
+        if (isInFlight()) {
+          settle({ ...identity, status: 'cancelled' });
           close();
         }
       },
