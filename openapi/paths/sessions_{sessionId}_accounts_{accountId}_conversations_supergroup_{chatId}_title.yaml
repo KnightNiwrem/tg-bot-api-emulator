@@ -29,6 +29,11 @@ put:
   responses:
     '204':
       description: The supergroup has the title.
+      headers:
+        Action-Receipt-Session-Id:
+          $ref: ../components/headers/ActionReceiptSessionId.yaml
+        Action-Receipt-Activity-Position:
+          $ref: ../components/headers/ActionReceiptActivityPosition.yaml
     '400':
       description: >-
         A path identifier or the body is invalid, or the title is empty once cleaned or not

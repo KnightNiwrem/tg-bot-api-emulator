@@ -70,6 +70,7 @@ export const createSupergroupContract = defineControlOperation({
   success: {
     status: 201,
     body: { kind: 'json', schema: z.strictObject({ supergroup: supergroupSchema }) },
+    actionReceipt: 'before_action',
   },
   refusals: {
     400: controlValidationErrorSchema,
@@ -89,7 +90,7 @@ export const addSupergroupMemberContract = defineControlOperation({
   path:
     '/sessions/{sessionId}/accounts/{accountId}/conversations/supergroup/{chatId}/members/{userId}',
   params: accountSupergroupUserPathSchema,
-  success: { status: 204, body: { kind: 'empty' } },
+  success: { status: 204, body: { kind: 'empty' }, actionReceipt: 'before_action' },
   refusals: {
     400: controlValidationErrorSchema,
     403: controlRefusalSchema(['actor_not_authorized', 'banned', 'chat_not_public']),
@@ -113,7 +114,7 @@ export const removeSupergroupMemberContract = defineControlOperation({
   path:
     '/sessions/{sessionId}/accounts/{accountId}/conversations/supergroup/{chatId}/members/{userId}',
   params: accountSupergroupUserPathSchema,
-  success: { status: 204, body: { kind: 'empty' } },
+  success: { status: 204, body: { kind: 'empty' }, actionReceipt: 'before_action' },
   refusals: {
     400: controlValidationErrorSchema,
     403: controlRefusalSchema(['actor_not_authorized']),
@@ -148,7 +149,11 @@ export const joinChatByInviteLinkContract = defineControlOperation({
   path: '/sessions/{sessionId}/accounts/{accountId}/chat-joins',
   params: accountPathSchema,
   body: { required: true, schema: joinChatByInviteLinkRequestSchema },
-  success: { status: 200, body: { kind: 'json', schema: chatJoinSchema } },
+  success: {
+    status: 200,
+    body: { kind: 'json', schema: chatJoinSchema },
+    actionReceipt: 'before_action',
+  },
   refusals: {
     400: controlValidationErrorSchema,
     403: controlRefusalSchema(['banned']),
@@ -295,7 +300,7 @@ export const decideSupergroupJoinRequestContract = defineControlOperation({
     '/sessions/{sessionId}/accounts/{accountId}/conversations/supergroup/{chatId}/join-requests/{userId}/decision',
   params: accountSupergroupUserPathSchema,
   body: { required: true, schema: decideJoinRequestRequestSchema },
-  success: { status: 204, body: { kind: 'empty' } },
+  success: { status: 204, body: { kind: 'empty' }, actionReceipt: 'before_action' },
   refusals: {
     400: controlValidationErrorSchema,
     403: controlRefusalSchema(['not_enough_rights']),
@@ -322,6 +327,7 @@ export const expireChatInviteLinkContract = defineControlOperation({
   success: {
     status: 200,
     body: { kind: 'json', schema: z.strictObject({ invite_link: supergroupInviteLinkSchema }) },
+    actionReceipt: 'before_action',
   },
   refusals: {
     400: controlValidationErrorSchema,
@@ -343,6 +349,7 @@ export const expireJoinRequesterContactContract = defineControlOperation({
   success: {
     status: 200,
     body: { kind: 'json', schema: z.strictObject({ join_request: supergroupJoinRequestSchema }) },
+    actionReceipt: 'before_action',
   },
   refusals: {
     400: controlValidationErrorSchema,

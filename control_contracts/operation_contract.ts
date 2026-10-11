@@ -10,6 +10,7 @@
 import type { z } from 'zod';
 
 import { isMediaRange } from '../http_grammar/media_type.ts';
+import { actionReceiptHeadersSchema, type ActionReceiptSource } from './action_receipts.ts';
 
 export type ControlHttpMethod = 'DELETE' | 'GET' | 'PATCH' | 'POST' | 'PUT';
 
@@ -60,9 +61,18 @@ export type QueryParameterSerialization = 'deepObject' | 'json';
 /** The response of an operation that succeeds. */
 export interface SuccessResponseContract {
   readonly status: number;
-  /** The headers the response carries, by name; an optional field is a header it may leave out. */
+  /**
+   * The headers the response carries, by name, other than its action receipt's; an optional field
+   * is a header it may leave out.
+   */
   readonly headers?: z.ZodObject;
   readonly body: ResponseBodyContract;
+  /**
+   * Where the action receipt comes from that the response carries, in the headers
+   * `actionReceiptHeadersSchema` describes; omitted for an operation that answers with none, such
+   * as a read.
+   */
+  readonly actionReceipt?: ActionReceiptSource;
 }
 
 /**
@@ -99,7 +109,8 @@ const PATH_PLACEHOLDER_PATTERN = /\{([^{}]+)\}/g;
  *
  * @throws {Error} when `params` does not name exactly the placeholders of `path`,
  * `querySerialization` names a parameter that `query` does not, a bytes success declares text that
- * is no media range, or a refusal status is not an error status.
+ * is no media range, a `GET` declares an action receipt, the success headers name a receipt
+ * header themselves, or a refusal status is not an error status.
  */
 export function defineControlOperation<const Contract extends ControlOperationContract>(
   contract: Contract,
@@ -125,6 +136,14 @@ export function defineControlOperation<const Contract extends ControlOperationCo
     throw new Error(
       `${contract.operationId} declares ${successBody.mediaTypeRange}, which is no media range`,
     );
+  }
+  if (contract.method === 'GET' && contract.success.actionReceipt !== undefined) {
+    throw new Error(`${contract.operationId} reads, so it answers with no action receipt`);
+  }
+  for (const name of Object.keys(contract.success.headers?.shape ?? {})) {
+    if (Object.hasOwn(actionReceiptHeadersSchema.shape, name)) {
+      throw new Error(`${contract.operationId} declares the receipt header ${name} as its own`);
+    }
   }
   for (const status of Object.keys(contract.refusals).map(Number)) {
     if (!Number.isInteger(status) || status < 400 || status > 599) {
@@ -178,11 +197,21 @@ type SuccessHeaderFields<Success extends SuccessResponseContract> = Success['hea
   z.ZodObject ? { readonly headers: z.output<Success['headers']> }
   : { readonly headers?: never };
 
+/**
+ * What a route gives for its success's action receipt: the ID of the session it created, for a
+ * receipt from the session's creation; nothing for one captured before the action, which the
+ * route's registration captures.
+ */
+type SuccessReceiptFields<Success extends SuccessResponseContract> =
+  Success['actionReceipt'] extends 'session_creation' ? { readonly createdSessionId: string }
+    : { readonly createdSessionId?: never };
+
 /** A success response as a route gives it, in output semantics. */
 export type ControlOperationSuccess<Contract extends ControlOperationContract> =
   & { readonly status: Contract['success']['status'] }
   & SuccessHeaderFields<Contract['success']>
-  & SuccessBodyFields<Contract['success']['body']>;
+  & SuccessBodyFields<Contract['success']['body']>
+  & SuccessReceiptFields<Contract['success']>;
 
 /** A refusal as a route gives it: one of the operation's refusal statuses with its JSON body. */
 export type ControlOperationRefusal<Contract extends ControlOperationContract> = {
@@ -211,6 +240,21 @@ export type EmptySuccessContract = ControlOperationContract & {
 export type BytesSuccessContract = ControlOperationContract & {
   readonly success: { readonly body: BytesResponseBodyContract };
 };
+
+/**
+ * Every header a success response carries: its own, and its action receipt's when it answers with
+ * one; `undefined` when it carries none.
+ */
+export function readSuccessHeadersSchema(
+  success: SuccessResponseContract,
+): z.ZodObject | undefined {
+  if (success.actionReceipt === undefined) {
+    return success.headers;
+  }
+  return success.headers === undefined
+    ? actionReceiptHeadersSchema
+    : success.headers.extend(actionReceiptHeadersSchema.shape);
+}
 
 /** The JSON value of a success response, as a client reads it, in output semantics. */
 export type ControlOperationResult<Contract extends JsonSuccessContract> = z.output<

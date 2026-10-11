@@ -16,6 +16,11 @@ post:
   responses:
     '200':
       description: The restriction ended; the user's standing is shown as bots see it.
+      headers:
+        Action-Receipt-Session-Id:
+          $ref: ../components/headers/ActionReceiptSessionId.yaml
+        Action-Receipt-Activity-Position:
+          $ref: ../components/headers/ActionReceiptActivityPosition.yaml
       content:
         application/json:
           schema:

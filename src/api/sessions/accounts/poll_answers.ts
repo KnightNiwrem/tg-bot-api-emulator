@@ -6,6 +6,7 @@ import {
   controlErrorResponse,
   invalidControlRequestResponse,
 } from '../../control_error_response.ts';
+import { answerWithActionReceipt } from '../action_receipt.ts';
 import { readJsonRequestBody } from '../json_request_body.ts';
 import type { SessionRouteContextTypes } from '../session_route_context_types.ts';
 import { PRIVATE_MESSAGE_PATH, SUPERGROUP_MESSAGE_PATH } from './account_paths.ts';
@@ -61,15 +62,20 @@ export function createPollAnswerRoutes(): Hono<SessionRouteContextTypes> {
         return invalidControlRequestResponse(context, requestBodyReading.issues);
       }
       const requestBody = requestBodyReading.value;
-      const { polls, botMessageViews } = context.get('emulationSession');
-      const result = polls.setAccountPollAnswer({
-        ...pollMessage,
-        optionPositions: requestBody.option_ids,
+      return answerWithActionReceipt(context, ({ polls, botMessageViews }) => {
+        const result = polls.setAccountPollAnswer({
+          ...pollMessage,
+          optionPositions: requestBody.option_ids,
+        });
+        if (!result.answered) {
+          return controlErrorResponse(
+            context,
+            pollAnswerFailureStatus(result.reason),
+            result.reason,
+          );
+        }
+        return context.json(presentPollAnswerForAccount(botMessageViews, result, pollMessage));
       });
-      if (!result.answered) {
-        return controlErrorResponse(context, pollAnswerFailureStatus(result.reason), result.reason);
-      }
-      return context.json(presentPollAnswerForAccount(botMessageViews, result, pollMessage));
     });
 
     // Retracting chooses no options, as TDLib's `setPollAnswer` does with none.
@@ -79,13 +85,15 @@ export function createPollAnswerRoutes(): Hono<SessionRouteContextTypes> {
         return invalidControlRequestResponse(context, pollMessageReading.issues);
       }
       const pollMessage = pollMessageReading.value;
-      const result = context.get('emulationSession').polls.setAccountPollAnswer({
-        ...pollMessage,
-        optionPositions: [],
+      return answerWithActionReceipt(context, ({ polls }) => {
+        const result = polls.setAccountPollAnswer({
+          ...pollMessage,
+          optionPositions: [],
+        });
+        return result.answered
+          ? context.body(null, 204)
+          : controlErrorResponse(context, pollAnswerFailureStatus(result.reason), result.reason);
       });
-      return result.answered
-        ? context.body(null, 204)
-        : controlErrorResponse(context, pollAnswerFailureStatus(result.reason), result.reason);
     });
   }
 

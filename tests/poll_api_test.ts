@@ -349,6 +349,32 @@ Deno.test('supergroup members vote in a poll whose answers cannot change', async
   assertEquals(voterCounts(adaView?.poll), '[[1,0,2],2]', 'Expected refusals to change nothing');
 });
 
+Deno.test('a supergroup member retracts its answer to a poll that allows revoting', async () => {
+  const { api, ada, supergroupChat, sendPoll, pollAnswerPath, answerPoll } =
+    await createPollFixture();
+  const sent = await sendPoll({
+    chat_id: supergroupChat.chatId,
+    question: 'Lunch?',
+    options: ['Pizza', 'Pasta'],
+  });
+  await answerPoll(ada.id, supergroupChat, sent.message_id, [1]);
+
+  const retraction = await api.request(pollAnswerPath(ada.id, supergroupChat, sent.message_id), {
+    method: 'DELETE',
+  });
+  const answer = await requestJson<PollAnswerResponse>(
+    api,
+    'GET',
+    pollAnswerPath(ada.id, supergroupChat, sent.message_id),
+  );
+
+  assertEquals(
+    [retraction.status, answer.body.poll_answer.option_ids],
+    [204, []],
+    'Expected the member to have chosen no option once it retracted',
+  );
+});
+
 Deno.test('sendPoll refuses polls as Telegram does and stores none of them', async () => {
   const { ada, bot, privateChat, callBot, getHistory } = await createPollFixture();
   const historyBefore = await getHistory(ada.id, privateChat);

@@ -21,6 +21,11 @@ patch:
   responses:
     '200':
       description: The message was edited.
+      headers:
+        Action-Receipt-Session-Id:
+          $ref: ../components/headers/ActionReceiptSessionId.yaml
+        Action-Receipt-Activity-Position:
+          $ref: ../components/headers/ActionReceiptActivityPosition.yaml
       content:
         application/json:
           schema:
@@ -75,6 +80,11 @@ delete:
   responses:
     '204':
       description: The message was deleted.
+      headers:
+        Action-Receipt-Session-Id:
+          $ref: ../components/headers/ActionReceiptSessionId.yaml
+        Action-Receipt-Activity-Position:
+          $ref: ../components/headers/ActionReceiptActivityPosition.yaml
     '400':
       description: A path identifier is invalid.
       content:

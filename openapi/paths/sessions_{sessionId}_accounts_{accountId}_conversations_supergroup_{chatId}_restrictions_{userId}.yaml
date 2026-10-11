@@ -31,6 +31,11 @@ put:
       description: >-
         The user keeps the listed permissions: restricted, or, with every permission, a plain
         member or a user that left.
+      headers:
+        Action-Receipt-Session-Id:
+          $ref: ../components/headers/ActionReceiptSessionId.yaml
+        Action-Receipt-Activity-Position:
+          $ref: ../components/headers/ActionReceiptActivityPosition.yaml
     '400':
       description: A path identifier or the body is invalid.
       content:
@@ -90,6 +95,11 @@ delete:
   responses:
     '204':
       description: The user is not restricted.
+      headers:
+        Action-Receipt-Session-Id:
+          $ref: ../components/headers/ActionReceiptSessionId.yaml
+        Action-Receipt-Activity-Position:
+          $ref: ../components/headers/ActionReceiptActivityPosition.yaml
     '400':
       description: A path identifier is invalid.
       content:

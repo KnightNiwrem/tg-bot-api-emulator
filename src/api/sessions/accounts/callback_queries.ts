@@ -8,6 +8,7 @@ import {
   controlErrorResponse,
   invalidControlRequestResponse,
 } from '../../control_error_response.ts';
+import { answerWithActionReceipt } from '../action_receipt.ts';
 import { readPathParameters } from '../control_request_input.ts';
 import { readJsonRequestBody } from '../json_request_body.ts';
 import type { SessionRouteContextTypes } from '../session_route_context_types.ts';
@@ -50,29 +51,31 @@ export function createCallbackQueryRoutes(): Hono<SessionRouteContextTypes> {
     }
     const requestBody = requestBodyReading.value;
 
-    const result = context.get('emulationSession').callbackQueries.pressCallbackButton({
-      fromAccountId: accountId,
-      chat: requestBody.chat,
-      messageId: requestBody.message_id,
-      callbackData: requestBody.callback_data,
-      expired: requestBody.expired,
-    });
-    if (!result.pressed) {
-      return controlErrorResponse(
-        context,
-        callbackButtonPressFailureStatus(result.reason),
-        result.reason,
-      );
-    }
+    return answerWithActionReceipt(context, ({ callbackQueries }) => {
+      const result = callbackQueries.pressCallbackButton({
+        fromAccountId: accountId,
+        chat: requestBody.chat,
+        messageId: requestBody.message_id,
+        callbackData: requestBody.callback_data,
+        expired: requestBody.expired,
+      });
+      if (!result.pressed) {
+        return controlErrorResponse(
+          context,
+          callbackButtonPressFailureStatus(result.reason),
+          result.reason,
+        );
+      }
 
-    const callbackQueryPath = `${
-      basePath(context)
-    }/${accountId}/callback-queries/${result.callbackQuery.id}`;
-    return context.json(
-      { callback_query: presentCallbackQueryForAccount(result.callbackQuery) },
-      201,
-      { Location: callbackQueryPath },
-    );
+      const callbackQueryPath = `${
+        basePath(context)
+      }/${accountId}/callback-queries/${result.callbackQuery.id}`;
+      return context.json(
+        { callback_query: presentCallbackQueryForAccount(result.callbackQuery) },
+        201,
+        { Location: callbackQueryPath },
+      );
+    });
   });
 
   accountRoutes.get(CALLBACK_QUERY_PATH, (context) => {

@@ -49,6 +49,11 @@ post:
         supergroup, the created poll, or the Web App's data were sent as the account's message,
         and, unless the bot's allowed_updates subscription excludes message updates, an update was
         enqueued for the bot.
+      headers:
+        Action-Receipt-Session-Id:
+          $ref: ../components/headers/ActionReceiptSessionId.yaml
+        Action-Receipt-Activity-Position:
+          $ref: ../components/headers/ActionReceiptActivityPosition.yaml
       content:
         application/json:
           schema:

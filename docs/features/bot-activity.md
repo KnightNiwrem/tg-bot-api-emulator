@@ -130,6 +130,42 @@ parameters, and `wait_ms` together with `before` are rejected with `400`.
 [The OpenAPI description](../../openapi/paths/sessions_{sessionId}_bot-activity.yaml) lists every
 parameter.
 
+## Action receipts
+
+A test usually acts, then waits for what its bot does in response. The position to wait after must
+come before anything the action causes: a bot that holds a long poll gets an account's message the
+moment the emulator stores it, and can reply before the action's response even reaches the test.
+
+So every successful control action answers with an action receipt, in two headers, whatever its
+body:
+
+- `Action-Receipt-Session-Id`: the session the action changed
+- `Action-Receipt-Activity-Position`: the head of that session's log where the action executed,
+  before it changed anything
+
+```http
+HTTP/1.1 201 Created
+Content-Type: application/json
+Action-Receipt-Session-Id: 0b9e6c1a-4a8f-4e2b-9d43-7c1f0a6b2e15
+Action-Receipt-Activity-Position: 42
+```
+
+Reading the log with `after=42` finds every entry the action caused, even one recorded before the
+response was sent, such as a webhook failure that expiring its attempt records. The position is a
+lower bound, not a causal link: activity the action did not cause, such as another bot's calls or
+the replies to an earlier action, may come after it too. A test still identifies the entry it waits
+for, as [the TypeScript client section](#typescript-client) shows.
+
+Every operation that acts carries a receipt, whether it answers with JSON or with `204 No Content`:
+
+- An action that changes nothing, such as blocking a blocked bot, answers with the head as it is.
+- Creating a session answers with the new session and position 0, which comes before every entry of
+  its log. Creating anything else, such as a bot or a supergroup, is an action like any other.
+- A refusal changes nothing and carries no receipt.
+- Ending a session carries none, as its log ends with it.
+
+Reads, such as reading the log itself or a chat's history, carry no receipt.
+
 ## TypeScript client
 
 `session.botActivity(filter?, options?)` returns a view of the log. The view's filter applies to
@@ -264,6 +300,8 @@ does a method a webhook's answer names, which runs after the confirmation.
 [recording and reading](../../src/services/bot_activity.ts),
 [call recording](../../src/api/sessions/bot_api/call_recording.ts),
 [HTTP reads](../../src/api/sessions/bot_activity/mod.ts),
+[action receipts](../../src/api/sessions/action_receipt.ts),
+[action receipt tests](../../tests/http/action_receipts_test.ts),
 [client waits](../../clients/typescript/bot_activity_log.ts),
 [client HTTP reads](../../clients/typescript/bot_activity_http_page_reader.ts),
 [service tests](../../tests/bot_activity_service_test.ts),

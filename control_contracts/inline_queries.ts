@@ -141,6 +141,7 @@ export const sendInlineQueryContract = defineControlOperation({
     status: 201,
     headers: createdResourceHeadersSchema,
     body: { kind: 'json', schema: inlineQueryResponseSchema },
+    actionReceipt: 'before_action',
   },
   refusals: {
     400: controlValidationErrorSchema,
@@ -177,7 +178,7 @@ export const expireInlineAnswerCacheContract = defineControlOperation({
   method: 'POST',
   path: '/sessions/{sessionId}/inline-queries/{inlineQueryId}/answer-cache/expiry',
   params: z.strictObject({ sessionId: sessionIdParameterSchema, inlineQueryId: z.string() }),
-  success: { status: 204, body: { kind: 'empty' } },
+  success: { status: 204, body: { kind: 'empty' }, actionReceipt: 'before_action' },
   refusals: {
     404: controlRefusalSchema(['inline_query_not_found', 'session_not_found']),
     409: controlRefusalSchema(['answer_not_cached']),

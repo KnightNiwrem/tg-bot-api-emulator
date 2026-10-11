@@ -84,6 +84,7 @@ export const createAccountContract = defineControlOperation({
     status: 201,
     headers: createdResourceHeadersSchema,
     body: { kind: 'json', schema: createdAccountSchema },
+    actionReceipt: 'before_action',
   },
   refusals: {
     // A name Telegram's cleanup would change is input the schema accepts but the server refuses.

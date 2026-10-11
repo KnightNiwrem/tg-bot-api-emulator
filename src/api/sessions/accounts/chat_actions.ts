@@ -6,6 +6,7 @@ import {
   controlErrorResponse,
   invalidControlRequestResponse,
 } from '../../control_error_response.ts';
+import { answerWithActionReceipt } from '../action_receipt.ts';
 import { readPathParameters } from '../control_request_input.ts';
 import type { SessionRouteContextTypes } from '../session_route_context_types.ts';
 import {
@@ -51,12 +52,14 @@ export function createChatActionRoutes(): Hono<SessionRouteContextTypes> {
     if (!conversationPath.valid) {
       return invalidControlRequestResponse(context, conversationPath.issues);
     }
-    const result = context.get('emulationSession').chatActions.expirePrivateChatAction(
-      conversationPath.value,
-    );
-    return result.expired
-      ? context.body(null, 204)
-      : controlErrorResponse(context, chatActionFailureStatus(result.reason), result.reason);
+    return answerWithActionReceipt(context, ({ chatActions }) => {
+      const result = chatActions.expirePrivateChatAction(
+        conversationPath.value,
+      );
+      return result.expired
+        ? context.body(null, 204)
+        : controlErrorResponse(context, chatActionFailureStatus(result.reason), result.reason);
+    });
   });
 
   accountRoutes.get(SUPERGROUP_CHAT_ACTIONS_PATH, (context) => {
@@ -80,12 +83,14 @@ export function createChatActionRoutes(): Hono<SessionRouteContextTypes> {
     if (!botPath.valid) {
       return invalidControlRequestResponse(context, botPath.issues);
     }
-    const result = context.get('emulationSession').chatActions.expireSupergroupChatAction(
-      botPath.value,
-    );
-    return result.expired
-      ? context.body(null, 204)
-      : controlErrorResponse(context, chatActionFailureStatus(result.reason), result.reason);
+    return answerWithActionReceipt(context, ({ chatActions }) => {
+      const result = chatActions.expireSupergroupChatAction(
+        botPath.value,
+      );
+      return result.expired
+        ? context.body(null, 204)
+        : controlErrorResponse(context, chatActionFailureStatus(result.reason), result.reason);
+    });
   });
 
   return accountRoutes;

@@ -22,6 +22,11 @@ put:
   responses:
     '204':
       description: The supergroup's members may do what the permissions grant.
+      headers:
+        Action-Receipt-Session-Id:
+          $ref: ../components/headers/ActionReceiptSessionId.yaml
+        Action-Receipt-Activity-Position:
+          $ref: ../components/headers/ActionReceiptActivityPosition.yaml
     '400':
       description: A path identifier or the body is invalid.
       content:

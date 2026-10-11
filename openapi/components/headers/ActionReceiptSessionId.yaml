@@ -1,0 +1,7 @@
+description: >-
+  The ID of the session whose bot activity log the action receipt's position is in: the session the
+  action changed, or the session it created.
+required: true
+schema:
+  type: string
+  format: uuid

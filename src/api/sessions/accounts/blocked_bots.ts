@@ -4,6 +4,7 @@ import {
   controlErrorResponse,
   invalidControlRequestResponse,
 } from '../../control_error_response.ts';
+import { answerWithActionReceipt } from '../action_receipt.ts';
 import { readPathParameters } from '../control_request_input.ts';
 import type { SessionRouteContextTypes } from '../session_route_context_types.ts';
 import {
@@ -25,13 +26,15 @@ export function createBlockedBotRoutes(): Hono<SessionRouteContextTypes> {
     }
     const { accountId, botId } = conversationPath.value;
 
-    const result = context.get('emulationSession').botBlocking.blockBot({
-      accountId,
-      botId,
+    return answerWithActionReceipt(context, ({ botBlocking }) => {
+      const result = botBlocking.blockBot({
+        accountId,
+        botId,
+      });
+      return result.applied
+        ? context.body(null, 204)
+        : controlErrorResponse(context, 404, result.reason);
     });
-    return result.applied
-      ? context.body(null, 204)
-      : controlErrorResponse(context, 404, result.reason);
   });
 
   accountRoutes.delete(BLOCKED_BOT_PATH, (context) => {
@@ -41,13 +44,15 @@ export function createBlockedBotRoutes(): Hono<SessionRouteContextTypes> {
     }
     const { accountId, botId } = conversationPath.value;
 
-    const result = context.get('emulationSession').botBlocking.unblockBot({
-      accountId,
-      botId,
+    return answerWithActionReceipt(context, ({ botBlocking }) => {
+      const result = botBlocking.unblockBot({
+        accountId,
+        botId,
+      });
+      return result.applied
+        ? context.body(null, 204)
+        : controlErrorResponse(context, 404, result.reason);
     });
-    return result.applied
-      ? context.body(null, 204)
-      : controlErrorResponse(context, 404, result.reason);
   });
 
   return accountRoutes;

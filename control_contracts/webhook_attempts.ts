@@ -118,7 +118,11 @@ export const setWebhookDeliveryContract = defineControlOperation({
   path: '/sessions/{sessionId}/bots/{botId}/webhook-delivery',
   params: botPathSchema,
   body: { required: true, schema: webhookDeliverySchema },
-  success: { status: 200, body: { kind: 'json', schema: webhookDeliverySchema } },
+  success: {
+    status: 200,
+    body: { kind: 'json', schema: webhookDeliverySchema },
+    actionReceipt: 'before_action',
+  },
   refusals: { 400: controlValidationErrorSchema, 404: botNotFoundSchema },
 });
 
@@ -147,7 +151,11 @@ export const releaseWebhookRetryContract = defineControlOperation({
   method: 'POST',
   path: '/sessions/{sessionId}/bots/{botId}/webhook-attempts/{webhookAttemptId}/retry-release',
   params: webhookAttemptPathSchema,
-  success: { status: 200, body: { kind: 'json', schema: webhookAttemptSchema } },
+  success: {
+    status: 200,
+    body: { kind: 'json', schema: webhookAttemptSchema },
+    actionReceipt: 'before_action',
+  },
   refusals: {
     400: controlValidationErrorSchema,
     404: webhookAttemptNotFoundSchema,
@@ -164,7 +172,11 @@ export const expireWebhookAttemptContract = defineControlOperation({
   method: 'POST',
   path: '/sessions/{sessionId}/bots/{botId}/webhook-attempts/{webhookAttemptId}/expiry',
   params: webhookAttemptPathSchema,
-  success: { status: 200, body: { kind: 'json', schema: webhookAttemptSchema } },
+  success: {
+    status: 200,
+    body: { kind: 'json', schema: webhookAttemptSchema },
+    actionReceipt: 'before_action',
+  },
   refusals: {
     400: controlValidationErrorSchema,
     404: webhookAttemptNotFoundSchema,

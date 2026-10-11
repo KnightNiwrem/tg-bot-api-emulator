@@ -6,6 +6,7 @@ import {
   controlErrorResponse,
   invalidControlRequestResponse,
 } from '../../control_error_response.ts';
+import { answerWithActionReceipt } from '../action_receipt.ts';
 import { type ControlRequestInputReading, readPathParameters } from '../control_request_input.ts';
 import { readJsonRequestBody } from '../json_request_body.ts';
 import type { SessionRouteContextTypes } from '../session_route_context_types.ts';
@@ -72,12 +73,14 @@ export function createMessageDraftRoutes(): Hono<SessionRouteContextTypes> {
     if (!target.valid) {
       return invalidControlRequestResponse(context, target.issues);
     }
-    const result = context.get('emulationSession').messageDrafts.expirePrivateMessageDraft(
-      target.value,
-    );
-    return result.expired
-      ? context.body(null, 204)
-      : controlErrorResponse(context, draftActionFailureStatus(result.reason), result.reason);
+    return answerWithActionReceipt(context, ({ messageDrafts }) => {
+      const result = messageDrafts.expirePrivateMessageDraft(
+        target.value,
+      );
+      return result.expired
+        ? context.body(null, 204)
+        : controlErrorResponse(context, draftActionFailureStatus(result.reason), result.reason);
+    });
   });
 
   accountRoutes.post(PRIVATE_MESSAGE_DRAFT_STOP_PATH, async (context) => {
@@ -85,12 +88,14 @@ export function createMessageDraftRoutes(): Hono<SessionRouteContextTypes> {
     if (!target.valid) {
       return invalidControlRequestResponse(context, target.issues);
     }
-    const result = context.get('emulationSession').messageDrafts.stopPrivateMessageDraft(
-      target.value,
-    );
-    return result.stopped
-      ? context.body(null, 204)
-      : controlErrorResponse(context, draftActionFailureStatus(result.reason), result.reason);
+    return answerWithActionReceipt(context, ({ messageDrafts }) => {
+      const result = messageDrafts.stopPrivateMessageDraft(
+        target.value,
+      );
+      return result.stopped
+        ? context.body(null, 204)
+        : controlErrorResponse(context, draftActionFailureStatus(result.reason), result.reason);
+    });
   });
 
   return accountRoutes;

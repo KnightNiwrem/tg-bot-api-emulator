@@ -63,6 +63,11 @@ files it uploaded and the `answer` it received; an update's entry holds the upda
 awaited its first reply before sending the second, the entry for the second shows that both are in
 the chat by the time the test reads it.
 
+Over HTTP, the emulator also answers every control action with an
+[action receipt](../../features/bot-activity.md#action-receipts): the log's position before the
+action, in the response's headers. This client does not read receipts, so a test takes the position
+itself before it acts, as above.
+
 The `activity` view of the fixture is already filtered to the fixture's bot; `session.botActivity()`
 without a filter sees every bot of the session.
 

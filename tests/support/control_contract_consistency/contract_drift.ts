@@ -5,9 +5,10 @@
  */
 import type { z } from 'zod';
 
-import type {
-  ControlOperationContract,
-  QueryParameterSerialization,
+import {
+  type ControlOperationContract,
+  type QueryParameterSerialization,
+  readSuccessHeadersSchema,
 } from '../../../control_contracts/operation_contract.ts';
 import type {
   DocumentedHeader,
@@ -191,7 +192,14 @@ function findResponseDrift(
   const success = operation.responses.get(String(contract.success.status));
   if (success !== undefined) {
     const label = `response ${contract.success.status}`;
-    drift.push(...findHeaderDrift(label, contract.success.headers, success.headers, compare));
+    drift.push(
+      ...findHeaderDrift(
+        label,
+        readSuccessHeadersSchema(contract.success),
+        success.headers,
+        compare,
+      ),
+    );
     const body = contract.success.body;
     switch (body.kind) {
       case 'json':

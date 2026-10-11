@@ -46,6 +46,11 @@ put:
   responses:
     '200':
       description: The bot's webhook delivery settings, as set.
+      headers:
+        Action-Receipt-Session-Id:
+          $ref: ../components/headers/ActionReceiptSessionId.yaml
+        Action-Receipt-Activity-Position:
+          $ref: ../components/headers/ActionReceiptActivityPosition.yaml
       content:
         application/json:
           schema:

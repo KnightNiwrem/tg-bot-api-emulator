@@ -1,0 +1,11 @@
+description: >-
+  The action receipt's position in the session's bot activity log, written in decimal digits: the
+  log's head where the action executed, before it changed anything, or 0 for a session the action
+  created. Every entry the action causes comes after this position, so a read `after` it misses
+  none of them, even one recorded before this response was sent. Entries the action did not cause,
+  such as another bot's calls, may follow it too. An action that changes nothing answers with the
+  head as it is.
+required: true
+schema:
+  type: integer
+  minimum: 0

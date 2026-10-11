@@ -9,6 +9,7 @@ import {
   controlErrorResponse,
   invalidControlRequestResponse,
 } from '../../control_error_response.ts';
+import { answerWithActionReceipt } from '../action_receipt.ts';
 import { readPathParameters } from '../control_request_input.ts';
 import { readJsonRequestBody } from '../json_request_body.ts';
 import type { SessionRouteContextTypes } from '../session_route_context_types.ts';
@@ -86,47 +87,48 @@ export function createReplyKeyboardPressRoutes(): Hono<SessionRouteContextTypes>
     }
     const requestBody = requestBodyReading.value;
 
-    const { replyInterfaces, botMessageViews } = context.get('emulationSession');
-    const { chat, text, answer } = requestBody;
-    if (chat.type === 'supergroup') {
-      // Only private chats show buttons with a request, so no supergroup button takes an answer.
-      if (answer !== undefined) {
-        return controlErrorResponse(context, 400, 'reply_keyboard_button_answer_not_requested');
+    return answerWithActionReceipt(context, ({ replyInterfaces, botMessageViews }) => {
+      const { chat, text, answer } = requestBody;
+      if (chat.type === 'supergroup') {
+        // Only private chats show buttons with a request, so no supergroup button takes an answer.
+        if (answer !== undefined) {
+          return controlErrorResponse(context, 400, 'reply_keyboard_button_answer_not_requested');
+        }
+        const result = replyInterfaces.pressSupergroupReplyKeyboardButton({
+          fromAccountId: accountId,
+          chat,
+          text,
+        });
+        if (!result.sent) {
+          return controlErrorResponse(
+            context,
+            supergroupMemberFailureStatus(result.reason),
+            result.reason,
+          );
+        }
+        return context.json(
+          { message: botMessageViews.viewSupergroupMessage(result.message, accountId) },
+          201,
+        );
       }
-      const result = replyInterfaces.pressSupergroupReplyKeyboardButton({
+      const result = replyInterfaces.pressPrivateChatReplyKeyboardButton({
         fromAccountId: accountId,
-        chat,
+        chat: { type: 'private', peerId: chat.botId },
         text,
+        ...(answer === undefined ? {} : { answer }),
       });
       if (!result.sent) {
         return controlErrorResponse(
           context,
-          supergroupMemberFailureStatus(result.reason),
+          accountMessageFailureStatus(result.reason),
           result.reason,
         );
       }
       return context.json(
-        { message: botMessageViews.viewSupergroupMessage(result.message, accountId) },
+        { message: botMessageViews.viewPrivateMessageForBot(result.message) },
         201,
       );
-    }
-    const result = replyInterfaces.pressPrivateChatReplyKeyboardButton({
-      fromAccountId: accountId,
-      chat: { type: 'private', peerId: chat.botId },
-      text,
-      ...(answer === undefined ? {} : { answer }),
     });
-    if (!result.sent) {
-      return controlErrorResponse(
-        context,
-        accountMessageFailureStatus(result.reason),
-        result.reason,
-      );
-    }
-    return context.json(
-      { message: botMessageViews.viewPrivateMessageForBot(result.message) },
-      201,
-    );
   });
 
   return accountRoutes;

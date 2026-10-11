@@ -66,6 +66,7 @@ export function createSessionRoutes(
       return {
         status: 201,
         headers: { Location: sessionPath },
+        createdSessionId: session.id,
         body: {
           id: session.id,
           botApiRoot: new URL(`${sessionPath}/bot-api`, publicOrigin).href,

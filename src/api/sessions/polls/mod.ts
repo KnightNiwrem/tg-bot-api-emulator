@@ -1,6 +1,7 @@
 import { Hono } from 'hono';
 
 import { controlErrorResponse } from '../../control_error_response.ts';
+import { answerWithActionReceipt } from '../action_receipt.ts';
 import type { SessionRouteContextTypes } from '../session_route_context_types.ts';
 
 const POLL_ID_PARAMETER = 'pollId';
@@ -14,16 +15,17 @@ export function createPollRoutes(): Hono<SessionRouteContextTypes> {
   const pollRoutes = new Hono<SessionRouteContextTypes>();
 
   pollRoutes.post(POLL_EXPIRY_PATH, (context) => {
-    const { polls, botMessageViews } = context.get('emulationSession');
-    const result = polls.expirePoll(context.req.param(POLL_ID_PARAMETER));
-    if (!result.expired) {
-      return controlErrorResponse(
-        context,
-        result.reason === 'poll_not_found' ? 404 : 409,
-        result.reason,
-      );
-    }
-    return context.json({ poll: botMessageViews.viewPollForCreator(result.poll) });
+    return answerWithActionReceipt(context, ({ polls, botMessageViews }) => {
+      const result = polls.expirePoll(context.req.param(POLL_ID_PARAMETER));
+      if (!result.expired) {
+        return controlErrorResponse(
+          context,
+          result.reason === 'poll_not_found' ? 404 : 409,
+          result.reason,
+        );
+      }
+      return context.json({ poll: botMessageViews.viewPollForCreator(result.poll) });
+    });
   });
 
   return pollRoutes;

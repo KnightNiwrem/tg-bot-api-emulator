@@ -39,6 +39,7 @@ export const createSessionContract = defineControlOperation({
     status: 201,
     headers: createdResourceHeadersSchema,
     body: { kind: 'json', schema: sessionSchema },
+    actionReceipt: 'session_creation',
   },
   refusals: { 400: controlValidationErrorSchema },
 });

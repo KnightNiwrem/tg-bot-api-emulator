@@ -155,7 +155,7 @@ export const promoteSupergroupMemberContract = defineControlOperation({
     '/sessions/{sessionId}/accounts/{accountId}/conversations/supergroup/{chatId}/administrators/{userId}',
   params: accountSupergroupUserPathSchema,
   body: { required: true, schema: promoteSupergroupMemberRequestSchema },
-  success: { status: 204, body: { kind: 'empty' } },
+  success: { status: 204, body: { kind: 'empty' }, actionReceipt: 'before_action' },
   refusals: {
     400: z.union([controlValidationErrorSchema, controlRefusalSchema(['no_rights_granted'])]),
     403: controlRefusalSchema([
@@ -176,7 +176,7 @@ export const demoteSupergroupMemberContract = defineControlOperation({
   path:
     '/sessions/{sessionId}/accounts/{accountId}/conversations/supergroup/{chatId}/administrators/{userId}',
   params: accountSupergroupUserPathSchema,
-  success: { status: 204, body: { kind: 'empty' } },
+  success: { status: 204, body: { kind: 'empty' }, actionReceipt: 'before_action' },
   refusals: {
     400: controlValidationErrorSchema,
     403: controlRefusalSchema([
@@ -206,7 +206,7 @@ export const setSupergroupCustomTitleContract = defineControlOperation({
     '/sessions/{sessionId}/accounts/{accountId}/conversations/supergroup/{chatId}/administrators/{userId}/custom-title',
   params: accountSupergroupUserPathSchema,
   body: { required: true, schema: setCustomTitleRequestSchema },
-  success: { status: 204, body: { kind: 'empty' } },
+  success: { status: 204, body: { kind: 'empty' }, actionReceipt: 'before_action' },
   refusals: {
     400: z.union([
       controlValidationErrorSchema,
@@ -257,7 +257,7 @@ export const restrictSupergroupMemberContract = defineControlOperation({
     '/sessions/{sessionId}/accounts/{accountId}/conversations/supergroup/{chatId}/restrictions/{userId}',
   params: accountSupergroupUserPathSchema,
   body: { required: true, schema: restrictSupergroupMemberRequestSchema },
-  success: { status: 204, body: { kind: 'empty' } },
+  success: { status: 204, body: { kind: 'empty' }, actionReceipt: 'before_action' },
   refusals: restrictionRefusals,
 });
 
@@ -267,7 +267,7 @@ export const liftSupergroupMemberRestrictionContract = defineControlOperation({
   path:
     '/sessions/{sessionId}/accounts/{accountId}/conversations/supergroup/{chatId}/restrictions/{userId}',
   params: accountSupergroupUserPathSchema,
-  success: { status: 204, body: { kind: 'empty' } },
+  success: { status: 204, body: { kind: 'empty' }, actionReceipt: 'before_action' },
   refusals: restrictionRefusals,
 });
 
@@ -292,7 +292,7 @@ export const setSupergroupDefaultPermissionsContract = defineControlOperation({
       permissions: chatPermissionsSchema,
     }),
   },
-  success: { status: 204, body: { kind: 'empty' } },
+  success: { status: 204, body: { kind: 'empty' }, actionReceipt: 'before_action' },
   refusals: { 400: controlValidationErrorSchema, ...supergroupChangeRefusals },
 });
 
@@ -309,7 +309,7 @@ export const protectSupergroupContentContract = defineControlOperation({
   path:
     '/sessions/{sessionId}/accounts/{accountId}/conversations/supergroup/{chatId}/content-protection',
   params: accountSupergroupPathSchema,
-  success: { status: 204, body: { kind: 'empty' } },
+  success: { status: 204, body: { kind: 'empty' }, actionReceipt: 'before_action' },
   refusals: contentProtectionRefusals,
 });
 
@@ -319,7 +319,7 @@ export const unprotectSupergroupContentContract = defineControlOperation({
   path:
     '/sessions/{sessionId}/accounts/{accountId}/conversations/supergroup/{chatId}/content-protection',
   params: accountSupergroupPathSchema,
-  success: { status: 204, body: { kind: 'empty' } },
+  success: { status: 204, body: { kind: 'empty' }, actionReceipt: 'before_action' },
   refusals: contentProtectionRefusals,
 });
 
@@ -335,7 +335,7 @@ export const changeSupergroupTitleContract = defineControlOperation({
       title: z.string(),
     }),
   },
-  success: { status: 204, body: { kind: 'empty' } },
+  success: { status: 204, body: { kind: 'empty' }, actionReceipt: 'before_action' },
   refusals: {
     400: z.union([
       controlValidationErrorSchema,
@@ -357,7 +357,7 @@ export const changeSupergroupDescriptionContract = defineControlOperation({
       description: z.string(),
     }),
   },
-  success: { status: 204, body: { kind: 'empty' } },
+  success: { status: 204, body: { kind: 'empty' }, actionReceipt: 'before_action' },
   refusals: {
     400: z.union([controlValidationErrorSchema, controlRefusalSchema(['text_encoding_invalid'])]),
     ...supergroupChangeRefusals,
@@ -387,6 +387,7 @@ export const expireSupergroupMemberRestrictionContract = defineControlOperation(
         }),
       }),
     },
+    actionReceipt: 'before_action',
   },
   refusals: {
     400: controlValidationErrorSchema,

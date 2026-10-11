@@ -35,6 +35,11 @@ post:
       description: >-
         The message was stored and, unless a receiving bot's allowed_updates subscription
         excludes message updates, an update was enqueued for each bot that receives it.
+      headers:
+        Action-Receipt-Session-Id:
+          $ref: ../components/headers/ActionReceiptSessionId.yaml
+        Action-Receipt-Activity-Position:
+          $ref: ../components/headers/ActionReceiptActivityPosition.yaml
       content:
         application/json:
           schema:

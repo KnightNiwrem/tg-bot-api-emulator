@@ -75,7 +75,11 @@ export const queueRateLimitResponsesContract = defineControlOperation({
       count: requestedCountSchema.default(1),
     }),
   },
-  success: { status: 201, body: { kind: 'json', schema: rateLimitResponsesSchema } },
+  success: {
+    status: 201,
+    body: { kind: 'json', schema: rateLimitResponsesSchema },
+    actionReceipt: 'before_action',
+  },
   refusals: queuedAnswerRefusals,
 });
 
@@ -111,7 +115,11 @@ export const queueServerErrorResponsesContract = defineControlOperation({
       count: requestedCountSchema.default(1),
     }),
   },
-  success: { status: 201, body: { kind: 'json', schema: serverErrorResponsesSchema } },
+  success: {
+    status: 201,
+    body: { kind: 'json', schema: serverErrorResponsesSchema },
+    actionReceipt: 'before_action',
+  },
   refusals: queuedAnswerRefusals,
 });
 
