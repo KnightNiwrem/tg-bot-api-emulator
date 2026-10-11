@@ -248,6 +248,11 @@ export const BOT_API_ERRORS = {
         )
         : emulatorInference(UPLOAD_LIMIT_INFERENCE),
   },
+  fileIdNotSpecified: fixedBotApiError(
+    400,
+    'Bad Request: file_id not specified',
+    botApiServerSource('telegram-bot-api/Client.cpp#L9034-L9038'),
+  ),
   fileIdInvalid: fixedBotApiError(
     400,
     'Bad Request: wrong file identifier/HTTP URL specified',
