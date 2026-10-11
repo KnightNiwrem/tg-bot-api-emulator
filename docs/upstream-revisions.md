@@ -1,10 +1,12 @@
 # Upstream revisions
 
-The emulator follows Telegram's open-source software as it was at fixed commits. This page lists
-every upstream commit the repository cites and the areas of the emulator that depend on it. When
-upstream moves on, a re-review starts here: compare the cited files between the listed commit and
-the new one, re-check the listed areas, and update the links that cite the commit. A change that
-cites another upstream commit adds it here.
+The emulator follows Telegram's open-source software as it was at fixed commits. This page lists the
+upstream commits the repository cites and the areas of the emulator that depend on each. It is
+maintained by hand, and nothing checks it against the citations, so treat it as the starting point
+for a re-review after an upstream release, not as a guarantee: compare the cited files between the
+listed commit and the new one, re-check the listed areas, update the links that cite the commit, and
+search the repository for citations this page misses. A change that cites another upstream commit
+adds it here.
 
 ## Official Bot API server
 
