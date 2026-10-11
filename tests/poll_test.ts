@@ -1,3 +1,4 @@
+import { assertEquals } from '@std/assert';
 import { PollRepository } from '../src/repositories/poll.ts';
 import { normalizeNewPoll } from '../src/services/poll_normalization.ts';
 import {
@@ -53,9 +54,11 @@ function createPoll(
 }
 
 Deno.test('toChosenOptionPositions orders options and counts each once, as TDLib does', () => {
-  if (JSON.stringify(toChosenOptionPositions([2, 0, 2, 1, 0])) !== JSON.stringify([0, 1, 2])) {
-    throw new Error('Expected repeated positions to count once, in increasing order');
-  }
+  assertEquals(
+    toChosenOptionPositions([2, 0, 2, 1, 0]),
+    [0, 1, 2],
+    'Expected repeated positions to count once, in increasing order',
+  );
 });
 
 Deno.test('checkPollAnswer applies the checks of TDLib set_poll_answer in its order', () => {
@@ -104,12 +107,14 @@ Deno.test('PollRepository keeps each voter answer, from which the counts follow'
   if (poll.id === otherPoll.id || !/^[1-9]\d*$/.test(poll.id)) {
     throw new Error('Expected distinct positive decimal poll identifiers');
   }
-  if (
-    JSON.stringify(poll.options.map(({ persistentId }) => persistentId)) !==
-      JSON.stringify(['0', '1', '2']) || poll.isClosed
-  ) {
+  if (poll.isClosed) {
     throw new Error('Expected an open poll whose options are identified by position');
   }
+  assertEquals(
+    poll.options.map(({ persistentId }) => persistentId),
+    ['0', '1', '2'],
+    'Expected an open poll whose options are identified by position',
+  );
 
   polls.setVoterAnswer(poll.id, 7, [0, 2]);
   polls.setVoterAnswer(poll.id, 8, [2]);
@@ -117,21 +122,28 @@ Deno.test('PollRepository keeps each voter answer, from which the counts follow'
   const retracted = polls.setVoterAnswer(poll.id, 9, []);
   const counts = countPollVoters(answered);
   const countsAfterRetraction = countPollVoters(retracted);
-  if (
-    JSON.stringify(counts) !==
-      JSON.stringify({ optionVoterCounts: [1, 1, 2], totalVoterCount: 3 }) ||
-    JSON.stringify(countsAfterRetraction) !==
-      JSON.stringify({ optionVoterCounts: [1, 0, 2], totalVoterCount: 2 })
-  ) {
-    throw new Error(`Expected counts from the answers, got ${JSON.stringify(counts)}`);
-  }
+  assertEquals(
+    counts,
+    { optionVoterCounts: [1, 1, 2], totalVoterCount: 3 },
+    'Expected counts from the answers',
+  );
+  assertEquals(
+    countsAfterRetraction,
+    { optionVoterCounts: [1, 0, 2], totalVoterCount: 2 },
+    'Expected counts from the answers',
+  );
   if (
     getVoterAnswer(retracted, 9).length !== 0 ||
-    JSON.stringify(getVoterAnswer(retracted, 7)) !== JSON.stringify([0, 2]) ||
-    polls.getPoll(poll.id) !== retracted || countPollVoters(otherPoll).totalVoterCount !== 0
+    polls.getPoll(poll.id) !== retracted ||
+    countPollVoters(otherPoll).totalVoterCount !== 0
   ) {
     throw new Error('Expected the retraction to remove only the voter answer');
   }
+  assertEquals(
+    getVoterAnswer(retracted, 7),
+    [0, 2],
+    'Expected the retraction to remove only the voter answer',
+  );
 });
 
 Deno.test('normalizeNewPoll checks a poll as TDLib does and keeps only custom emoji', () => {
@@ -154,18 +166,22 @@ Deno.test('normalizeNewPoll checks a poll as TDLib does and keeps only custom em
     throw new Error(`Expected the poll to be accepted, got ${JSON.stringify(normalization)}`);
   }
   const { poll } = normalization;
-  if (
-    JSON.stringify(poll.question) !==
-      JSON.stringify({ text: '🍕 Lunch?', entities: [{ ...customEmoji, offset: 0, length: 2 }] }) ||
-    JSON.stringify(poll.optionTexts) !== JSON.stringify([
-        { text: '/pizza 🍕', entities: [{ ...customEmoji, offset: 7, length: 2 }] },
-        { text: 'Pasta', entities: [] },
-      ]) ||
-    JSON.stringify(poll.creator) !== JSON.stringify({ kind: 'bot', botId: 1 }) ||
-    !poll.isAnonymous
-  ) {
-    throw new Error(`Expected trimmed text with only custom emoji, got ${JSON.stringify(poll)}`);
+  if (!poll.isAnonymous) {
+    throw new Error('Expected trimmed text with only custom emoji');
   }
+  assertEquals(poll.question, {
+    text: '🍕 Lunch?',
+    entities: [{ ...customEmoji, offset: 0, length: 2 }],
+  }, 'Expected trimmed text with only custom emoji');
+  assertEquals(poll.optionTexts, [
+    { text: '/pizza 🍕', entities: [{ ...customEmoji, offset: 7, length: 2 }] },
+    { text: 'Pasta', entities: [] },
+  ], 'Expected trimmed text with only custom emoji');
+  assertEquals(
+    poll.creator,
+    { kind: 'bot', botId: 1 },
+    'Expected trimmed text with only custom emoji',
+  );
 });
 
 Deno.test('normalizeNewPoll refuses polls in the order TDLib checks them', () => {
@@ -215,11 +231,16 @@ Deno.test('normalizeNewPoll limits an account question to 255 characters, as TDL
   const overLimit = accountPoll(256);
   if (
     !atLimit.normalized ||
-    JSON.stringify(atLimit.poll.creator) !== JSON.stringify({ kind: 'account', accountId: 7 }) ||
-    overLimit.normalized || overLimit.failure.reason !== 'poll_question_too_long'
+    overLimit.normalized ||
+    overLimit.failure.reason !== 'poll_question_too_long'
   ) {
     throw new Error(`Unexpected account question limit: ${JSON.stringify([atLimit, overLimit])}`);
   }
+  assertEquals(
+    atLimit.poll.creator,
+    { kind: 'account', accountId: 7 },
+    'Unexpected account question limit',
+  );
 });
 
 Deno.test('normalizeNewPoll checks quizzes as TDLib checks them, then the documented limits', () => {
@@ -284,17 +305,13 @@ Deno.test('showsQuizSolution shows a quiz solution to its bot, its voters, and o
   const visibility = [quiz, answered, retracted, closed, regular].map((poll) =>
     observers.map((observerId) => showsQuizSolution(poll, { observerId }))
   );
-  if (
-    JSON.stringify(visibility) !== JSON.stringify([
-      [true, false, false],
-      [true, true, false],
-      [true, true, false],
-      [true, true, true],
-      [false, false, false],
-    ])
-  ) {
-    throw new Error(`Unexpected quiz solution visibility: ${JSON.stringify(visibility)}`);
-  }
+  assertEquals(visibility, [
+    [true, false, false],
+    [true, true, false],
+    [true, true, false],
+    [true, true, true],
+    [false, false, false],
+  ], 'Unexpected quiz solution visibility');
 });
 
 Deno.test('showsQuizSolution shows an account quiz to the bot of the private chat it was sent to', () => {
@@ -347,13 +364,17 @@ Deno.test('showsQuizSolution shows an account quiz to the bot of the private cha
     showsQuizSolution(quiz, { observerId: 1, pollMessage: supergroupMessage }),
     showsQuizSolution(quiz, { observerId: 8, pollMessage: privateMessage }),
   ];
-  if (JSON.stringify(visibility) !== JSON.stringify([true, true, false, false, false, false])) {
-    throw new Error(`Unexpected account quiz solution visibility: ${JSON.stringify(visibility)}`);
-  }
+  assertEquals(
+    visibility,
+    [true, true, false, false, false, false],
+    'Unexpected account quiz solution visibility',
+  );
 });
 
 function expectQuizType(poll: NewPoll, expected: NewPoll['type']): void {
-  if (JSON.stringify(poll.type) !== JSON.stringify(expected)) {
-    throw new Error(`Expected ${JSON.stringify(expected)}, got ${JSON.stringify(poll.type)}`);
-  }
+  assertEquals(
+    poll.type,
+    expected,
+    'Expected the quiz to keep its type',
+  );
 }

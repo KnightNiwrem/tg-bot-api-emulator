@@ -1,3 +1,4 @@
+import { assertEquals } from '@std/assert';
 import type { MediaContent } from '../src/services/message_content.ts';
 import { grantSupergroupAdministratorRights } from '../src/types/chat_membership.ts';
 import { createMessageForward } from '../src/types/message_forward.ts';
@@ -37,29 +38,32 @@ Deno.test('SupergroupMessagingService numbers messages once for the supergroup a
 
   if (
     getContentText(accountMessage.content).text !== '/start' ||
-    JSON.stringify(getContentText(accountMessage.content).entities) !==
-      JSON.stringify([{ type: 'bot_command', offset: 0, length: 6 }]) ||
-    botMessage.replyToMessageId !== accountMessage.id || !botMessage.isContentProtected ||
+    botMessage.replyToMessageId !== accountMessage.id ||
+    !botMessage.isContentProtected ||
     replyToMissing.replyToMessageId !== undefined
   ) {
     throw new Error('Expected normalized text, a resolved reply, and a reply sent without target');
   }
+  assertEquals(getContentText(accountMessage.content).entities, [{
+    type: 'bot_command',
+    offset: 0,
+    length: 6,
+  }], 'Expected normalized text, a resolved reply, and a reply sent without target');
   const messageIds = [accountMessage, botMessage, replyToMissing].map((message) =>
     messageBoxes.getMessageId(supergroup.id, message.id)
   );
   if (
-    JSON.stringify(messageIds) !== JSON.stringify([2, 3, 4]) ||
     messageBoxes.getMessageId(owner.profile.id, accountMessage.id) !== undefined ||
     messageBoxes.getMessageId(bot.profile.id, botMessage.id) !== undefined
   ) {
     throw new Error("Expected the supergroup's own box to number its messages");
   }
-  if (
-    JSON.stringify(publishedEvents.map((event) => event.type)) !==
-      JSON.stringify(['message_created', 'message_created', 'message_created'])
-  ) {
-    throw new Error('Expected each committed message to be published');
-  }
+  assertEquals(messageIds, [2, 3, 4], "Expected the supergroup's own box to number its messages");
+  assertEquals(publishedEvents.map((event) => event.type), [
+    'message_created',
+    'message_created',
+    'message_created',
+  ], 'Expected each committed message to be published');
 });
 
 Deno.test('SupergroupMessagingService sends albums whole, numbered in order for the supergroup', () => {
@@ -100,9 +104,10 @@ Deno.test('SupergroupMessagingService sends albums whole, numbered in order for 
     messageBoxes.getMessageId(supergroup.id, message.id)
   );
   if (
-    JSON.stringify(messageIds) !== JSON.stringify([2, 3, 4, 5]) ||
-    firstPhoto.mediaGroupId === undefined || secondPhoto.mediaGroupId !== firstPhoto.mediaGroupId ||
-    firstReply.mediaGroupId === undefined || firstReply.mediaGroupId === firstPhoto.mediaGroupId ||
+    firstPhoto.mediaGroupId === undefined ||
+    secondPhoto.mediaGroupId !== firstPhoto.mediaGroupId ||
+    firstReply.mediaGroupId === undefined ||
+    firstReply.mediaGroupId === firstPhoto.mediaGroupId ||
     secondReply.mediaGroupId !== firstReply.mediaGroupId ||
     botAlbum.messages.some((message) =>
       message.replyToMessageId !== secondPhoto.id || !message.isContentProtected
@@ -111,6 +116,11 @@ Deno.test('SupergroupMessagingService sends albums whole, numbered in order for 
   ) {
     throw new Error('Expected two albums numbered in order, the second replying alike');
   }
+  assertEquals(
+    messageIds,
+    [2, 3, 4, 5],
+    'Expected two albums numbered in order, the second replying alike',
+  );
 
   const stranger = createVirtualAccount(virtualUsers, { first_name: 'Grace' });
   const failures = [
@@ -142,20 +152,18 @@ Deno.test('SupergroupMessagingService sends albums whole, numbered in order for 
       contents: Array.from({ length: 11 }, () => photo('')),
     }),
   ].map((result) => result.sent ? 'sent' : result.reason);
-  if (
-    JSON.stringify(failures) !==
-      JSON.stringify([
-        'not_a_member',
-        'reply_message_not_found',
-        'message_effect_not_allowed_in_chat',
-        'caption_too_long',
-        'album_too_large',
-      ]) || publishedEvents.length !== 4
-  ) {
+  if (publishedEvents.length !== 4) {
     throw new Error(
       `Expected refused albums to send nothing, received ${JSON.stringify(failures)}`,
     );
   }
+  assertEquals(failures, [
+    'not_a_member',
+    'reply_message_not_found',
+    'message_effect_not_allowed_in_chat',
+    'caption_too_long',
+    'album_too_large',
+  ], 'Expected refused albums to send nothing');
 
   const albumWithoutReply = messageSending.sendSupergroupAlbum({
     fromBotId: bot.profile.id,
@@ -286,9 +294,7 @@ Deno.test('SupergroupMessagingService lets only members write and read', () => {
     otherFailures: ['chat_not_found', 'not_a_member'],
   };
   const received = { accountFailures, botFailures, otherFailures };
-  if (JSON.stringify(received) !== JSON.stringify(expected)) {
-    throw new Error(`Expected member checks, received ${JSON.stringify(received)}`);
-  }
+  assertEquals(received, expected, 'Expected member checks');
   if (publishedEvents.length !== publishedEventCount) {
     throw new Error('Expected rejected messages not to be published');
   }
@@ -394,11 +400,7 @@ Deno.test("SupergroupMessagingService edits and deletes only the author's own me
     ],
     deletionFailures: ['message_not_deletable', 'message_not_deletable'],
   };
-  if (JSON.stringify({ editFailures, deletionFailures }) !== JSON.stringify(expectedFailures)) {
-    throw new Error(
-      `Expected authorship checks, received ${JSON.stringify({ editFailures, deletionFailures })}`,
-    );
-  }
+  assertEquals({ editFailures, deletionFailures }, expectedFailures, 'Expected authorship checks');
 
   const publishedEventCount = publishedEvents.length;
   const accountEdit = messageEditing.editAccountSupergroupMessage({
@@ -417,19 +419,21 @@ Deno.test("SupergroupMessagingService edits and deletes only the author's own me
     chatId: supergroup.id,
   });
   if (
-    !accountEdit.edited || accountEdit.message.contentEditedAtUnixSeconds !== 1_700_000_000 ||
+    !accountEdit.edited ||
+    accountEdit.message.contentEditedAtUnixSeconds !== 1_700_000_000 ||
     publishedEvents.at(-1)?.type !== 'message_edited' ||
     publishedEvents.length !== publishedEventCount + 1 ||
-    !deletion.deleted || deletion.deletedMessageCount !== 1 ||
-    !history.found ||
-    JSON.stringify(
-        history.messages.map(({ content }) =>
-          content.kind === 'text' ? content.text : content.kind
-        ),
-      ) !== JSON.stringify(['members_joined', 'members_joined', 'Hello /help'])
+    !deletion.deleted ||
+    deletion.deletedMessageCount !== 1 ||
+    !history.found
   ) {
     throw new Error('Expected the account edit to be published and the bot message deleted');
   }
+  assertEquals(
+    history.messages.map(({ content }) => content.kind === 'text' ? content.text : content.kind),
+    ['members_joined', 'members_joined', 'Hello /help'],
+    'Expected the account edit to be published and the bot message deleted',
+  );
 });
 
 Deno.test('SupergroupMessagingService lets the inline bot edit a message sent through it by its chat', () => {
@@ -629,30 +633,28 @@ Deno.test('SupergroupMessagingService turns away bots that left or were removed'
     ...Array(4).fill('bot_not_a_member'),
     ...Array(4).fill('bot_kicked'),
   ];
-  if (JSON.stringify(failures) !== JSON.stringify(expectedFailures)) {
-    throw new Error(`Expected former members to be turned away, received ${failures.join()}`);
-  }
+  assertEquals(failures, expectedFailures, 'Expected former members to be turned away');
   const history = supergroupMessaging.getMessageHistory({
     accountId: owner.profile.id,
     chatId: supergroup.id,
   });
-  const expectedHistory = [
-    { sender: { kind: 'account', accountId: owner.profile.id }, kind: 'members_joined' },
-    { sender: { kind: 'account', accountId: owner.profile.id }, kind: 'members_joined' },
-    { sender: { kind: 'bot', botId: bot.profile.id }, kind: 'text' },
-    { sender: { kind: 'bot', botId: bot.profile.id }, kind: 'member_left' },
-    { sender: { kind: 'account', accountId: owner.profile.id }, kind: 'member_left' },
-  ];
   if (
     !history.found ||
-    JSON.stringify(
-        history.messages.map(({ sender, content }) => ({ sender, kind: content.kind })),
-      ) !==
-      JSON.stringify(expectedHistory) ||
     history.messages[2].id !== botMessage.id
   ) {
     throw new Error(`Expected the departures in the history, received ${JSON.stringify(history)}`);
   }
+  assertEquals(
+    history.messages.map(({ sender, content }) => ({ sender, kind: content.kind })),
+    [
+      { sender: { kind: 'account', accountId: owner.profile.id }, kind: 'members_joined' },
+      { sender: { kind: 'account', accountId: owner.profile.id }, kind: 'members_joined' },
+      { sender: { kind: 'bot', botId: bot.profile.id }, kind: 'text' },
+      { sender: { kind: 'bot', botId: bot.profile.id }, kind: 'member_left' },
+      { sender: { kind: 'account', accountId: owner.profile.id }, kind: 'member_left' },
+    ],
+    'Expected the departures in the history',
+  );
 });
 
 Deno.test('SupergroupMessagingService sends only what a member may send', () => {
@@ -721,21 +723,20 @@ Deno.test('SupergroupMessagingService sends only what a member may send', () => 
       content: { kind: 'text', text: 'Result', entities: [] },
     }),
   ].map(describe);
-  if (
-    JSON.stringify(restrictedSends) !== JSON.stringify([
-        'sent',
-        'send_permission_missing photo',
-        'send_permission_missing photo',
-        'send_permission_missing photo',
-        'inline_bots_not_permitted',
-      ]) || publishedEvents.length !== 1
-  ) {
+  if (publishedEvents.length !== 1) {
     throw new Error(
       `Expected only the restricted member's text to be sent, received ${
         JSON.stringify(restrictedSends)
       }`,
     );
   }
+  assertEquals(restrictedSends, [
+    'sent',
+    'send_permission_missing photo',
+    'send_permission_missing photo',
+    'send_permission_missing photo',
+    'inline_bots_not_permitted',
+  ], "Expected only the restricted member's text to be sent");
 
   // Default permissions bind every member, bots too, but not the owner or administrators.
   sharedChats.updateSupergroupDefaultPermissions(supergroup.id, new Set(['can_send_photos']));
@@ -776,22 +777,17 @@ Deno.test('SupergroupMessagingService sends only what a member may send', () => 
     rights: grantSupergroupAdministratorRights(['can_pin_messages']),
   });
   const sendsAsAdministrator = defaultSends();
-  if (
-    JSON.stringify(sendsUnderDefaults) !== JSON.stringify([
-        'send_permission_missing text',
-        'sent',
-        'send_permission_missing text',
-        'sent',
-      ]) ||
-    JSON.stringify(sendsAsAdministrator) !==
-      JSON.stringify(['send_permission_missing text', 'sent', 'sent', 'sent'])
-  ) {
-    throw new Error(
-      `Expected default permissions to bind members only, received ${
-        JSON.stringify([sendsUnderDefaults, sendsAsAdministrator])
-      }`,
-    );
-  }
+  assertEquals(sendsUnderDefaults, [
+    'send_permission_missing text',
+    'sent',
+    'send_permission_missing text',
+    'sent',
+  ], 'Expected default permissions to bind members only');
+  assertEquals(
+    sendsAsAdministrator,
+    ['send_permission_missing text', 'sent', 'sent', 'sent'],
+    'Expected default permissions to bind members only',
+  );
 });
 
 Deno.test('SupergroupMessagingService lets a text mention name any user of the session', () => {
@@ -817,12 +813,11 @@ Deno.test('SupergroupMessagingService lets a text mention name any user of the s
   for (const userId of [owner.profile.id, outsideAccount.profile.id, outsideBot.profile.id]) {
     const message = expectContentMessage(expectSent(sendMention(userId)));
     const entities = getContentText(message.content).entities;
-    const expectedEntities = [{ type: 'text_mention', offset: 0, length: 2, userId }];
-    if (JSON.stringify(entities) !== JSON.stringify(expectedEntities)) {
-      throw new Error(
-        `Expected the mention of ${userId} to be kept, received ${JSON.stringify(entities)}`,
-      );
-    }
+    assertEquals(
+      entities,
+      [{ type: 'text_mention', offset: 0, length: 2, userId }],
+      `Expected the mention of ${userId} to be kept`,
+    );
   }
   const unknownUserResult = sendMention(999);
   if (

@@ -1,3 +1,4 @@
+import { assertEquals } from '@std/assert';
 import { resolveReplyQuote, type SpecifiedQuote } from '../src/services/message_content.ts';
 import { createAutomaticQuote, createExternalReply } from '../src/types/message_reply.ts';
 import type {
@@ -30,7 +31,7 @@ Deno.test('createExternalReply shows a supergroup message by its hidden origin a
     42,
     (userId) => userId === ACCOUNT_ID ? 'Ada' : undefined,
   );
-  const expected = {
+  assertEquals(target, {
     externalReply: {
       origin: {
         originalSender: { kind: 'hidden_user', name: 'Ada' },
@@ -39,10 +40,7 @@ Deno.test('createExternalReply shows a supergroup message by its hidden origin a
       supergroupMessage: { chatId: SUPERGROUP_ID, messageId: 42 },
     },
     repliedText: { text: 'Ship it', entities: [] },
-  };
-  if (JSON.stringify(target) !== JSON.stringify(expected)) {
-    throw new Error(`Expected the supergroup message, received ${JSON.stringify(target)}`);
-  }
+  }, 'Expected the supergroup message');
 });
 
 Deno.test('createExternalReply keeps private media without its caption', () => {
@@ -66,24 +64,24 @@ Deno.test('createExternalReply keeps private media without its caption', () => {
   };
 
   const { externalReply, repliedText } = createExternalReply(message, 7, () => undefined);
-  const expectedMedia = {
+  if (externalReply.supergroupMessage !== undefined) {
+    throw new Error(
+      `Expected the photo without its caption, received ${JSON.stringify(externalReply)}`,
+    );
+  }
+  assertEquals(
+    externalReply.origin.originalSender,
+    { kind: 'user', userId: BOT_ID },
+    'Expected the photo without its caption',
+  );
+  assertEquals(externalReply.media, {
     kind: 'photo',
     fileId: 'photo',
     caption: { text: '', entities: [] },
     hasSpoiler: true,
     showsCaptionAboveMedia: true,
-  };
-  if (
-    externalReply.supergroupMessage !== undefined ||
-    JSON.stringify(externalReply.origin.originalSender) !==
-      JSON.stringify({ kind: 'user', userId: BOT_ID }) ||
-    JSON.stringify(externalReply.media) !== JSON.stringify(expectedMedia) ||
-    JSON.stringify(repliedText) !== JSON.stringify(caption)
-  ) {
-    throw new Error(
-      `Expected the photo without its caption, received ${JSON.stringify(externalReply)}`,
-    );
-  }
+  }, 'Expected the photo without its caption');
+  assertEquals(repliedText, caption, 'Expected the photo without its caption');
 });
 
 Deno.test('createAutomaticQuote truncates to 1,024 characters and keeps quote entities', () => {
@@ -101,17 +99,18 @@ Deno.test('createAutomaticQuote truncates to 1,024 characters and keeps quote en
   };
 
   const quote = createAutomaticQuote(text);
-  const expectedEntities = [
-    { type: 'italic', offset: 1_021, length: 4 },
-    { type: 'custom_emoji', offset: 1_023, length: 2, customEmojiId: '1' },
-    { type: 'bold', offset: 1_021, length: 4 },
-  ];
   if (
-    quote?.text.text !== `${'a'.repeat(1_023)}😀` || quote.position !== 0 || quote.isManual ||
-    JSON.stringify(quote.text.entities) !== JSON.stringify(expectedEntities)
+    quote?.text.text !== `${'a'.repeat(1_023)}😀` ||
+    quote.position !== 0 ||
+    quote.isManual
   ) {
     throw new Error(`Expected a truncated automatic quote, received ${JSON.stringify(quote)}`);
   }
+  assertEquals(quote.text.entities, [
+    { type: 'italic', offset: 1_021, length: 4 },
+    { type: 'custom_emoji', offset: 1_023, length: 2, customEmojiId: '1' },
+    { type: 'bold', offset: 1_021, length: 4 },
+  ], 'Expected a truncated automatic quote');
   if (createAutomaticQuote({ text: '', entities: [] }) !== undefined) {
     throw new Error('Expected empty text to have no quote');
   }
@@ -133,7 +132,10 @@ Deno.test('resolveReplyQuote finds a chosen quote nearest to its position', () =
   });
   // The code entity is not kept in quotes, so it need not be quoted.
   const first = resolve({ text: 'go,', position: 1_000_001 });
-  const expected = [
+  const received = [nearest, withFormatting, first].map((resolution) =>
+    resolution.resolved ? resolution.quote : resolution.reason
+  );
+  assertEquals(received, [
     { text: { text: 'go', entities: [] }, position: 4, isManual: true },
     {
       text: { text: 'go now', entities: [{ type: 'bold', offset: 0, length: 6 }] },
@@ -141,13 +143,7 @@ Deno.test('resolveReplyQuote finds a chosen quote nearest to its position', () =
       isManual: true,
     },
     { text: { text: 'go,', entities: [] }, position: 0, isManual: true },
-  ];
-  const received = [nearest, withFormatting, first].map((resolution) =>
-    resolution.resolved ? resolution.quote : resolution.reason
-  );
-  if (JSON.stringify(received) !== JSON.stringify(expected)) {
-    throw new Error(`Expected the quotes to be found, received ${JSON.stringify(received)}`);
-  }
+  ], 'Expected the quotes to be found');
 });
 
 Deno.test('resolveReplyQuote rejects a quote that is not an exact part of the replied text', () => {

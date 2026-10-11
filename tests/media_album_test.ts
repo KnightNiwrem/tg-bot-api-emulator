@@ -1,3 +1,4 @@
+import { assertEquals } from '@std/assert';
 import {
   type AlbumMember,
   canChangeAlbumMediaKind,
@@ -49,7 +50,7 @@ Deno.test('checkAlbumComposition refuses albums in the order TDLib checks them',
     [video, abovePhoto],
     [document, video],
   ].map(checkAlbumComposition);
-  const expectedFailures = [
+  assertEquals(failures, [
     'album_empty',
     'album_too_large',
     'album_too_large',
@@ -59,10 +60,7 @@ Deno.test('checkAlbumComposition refuses albums in the order TDLib checks them',
     'album_documents_mixed',
     'album_caption_placement_mixed',
     'album_documents_mixed',
-  ];
-  if (JSON.stringify(failures) !== JSON.stringify(expectedFailures)) {
-    throw new Error(`Expected TDLib's failures, received ${JSON.stringify(failures)}`);
-  }
+  ], "Expected TDLib's failures");
 });
 
 Deno.test('checkAlbumComposition keeps audio files among audio files only', () => {
@@ -86,9 +84,7 @@ Deno.test('checkAlbumComposition keeps audio files among audio files only', () =
     'album_documents_mixed',
     'album_caption_placement_mixed',
   ];
-  if (JSON.stringify(outcomes) !== JSON.stringify(expectedOutcomes)) {
-    throw new Error(`Expected TDLib's audio albums, received ${JSON.stringify(outcomes)}`);
-  }
+  assertEquals(outcomes, expectedOutcomes, "Expected TDLib's audio albums");
 });
 
 Deno.test('toAlbumMember places only a photo or video caption above its media', () => {
@@ -99,20 +95,13 @@ Deno.test('toAlbumMember places only a photo or video caption above its media', 
     toAlbumMember({ kind: 'document' }),
     toAlbumMember({ kind: 'audio' }),
   ];
-  if (
-    JSON.stringify(members) !==
-      JSON.stringify([
-        { kind: 'photo', showsCaptionAboveMedia: true },
-        { kind: 'photo', showsCaptionAboveMedia: false },
-        { kind: 'video', showsCaptionAboveMedia: true },
-        { kind: 'document', showsCaptionAboveMedia: false },
-        { kind: 'audio', showsCaptionAboveMedia: false },
-      ])
-  ) {
-    throw new Error(
-      `Expected album members as TDLib reads them, received ${JSON.stringify(members)}`,
-    );
-  }
+  assertEquals(members, [
+    { kind: 'photo', showsCaptionAboveMedia: true },
+    { kind: 'photo', showsCaptionAboveMedia: false },
+    { kind: 'video', showsCaptionAboveMedia: true },
+    { kind: 'document', showsCaptionAboveMedia: false },
+    { kind: 'audio', showsCaptionAboveMedia: false },
+  ], 'Expected album members as TDLib reads them');
 });
 
 Deno.test('canChangeAlbumMediaKind lets photos and videos replace each other only', () => {
@@ -130,9 +119,7 @@ Deno.test('canChangeAlbumMediaKind lets photos and videos replace each other onl
     'document->document',
     'audio->audio',
   ];
-  if (JSON.stringify(allowedChanges) !== JSON.stringify(expectedChanges)) {
-    throw new Error(`Expected TDLib's album media changes, received ${allowedChanges}`);
-  }
+  assertEquals(allowedChanges, expectedChanges, "Expected TDLib's album media changes");
 });
 
 Deno.test('formsAlbum groups two or more messages', () => {
@@ -153,14 +140,18 @@ Deno.test('groupRepeatedAlbums gives each album repeated twice or more a new alb
     albumPhoto('2'),
   ]);
   if (
-    albumCount !== 2 || albumIndexes.length !== 7 ||
-    JSON.stringify(albumIndexes) !==
-      JSON.stringify([0, undefined, 1, 0, undefined, 1, 1])
+    albumCount !== 2 ||
+    albumIndexes.length !== 7
   ) {
     throw new Error(
       `Expected albums 1 and 2 to be regrouped, received ${JSON.stringify(albumIndexes)}`,
     );
   }
+  assertEquals(
+    albumIndexes,
+    [0, undefined, 1, 0, undefined, 1, 1],
+    'Expected albums 1 and 2 to be regrouped',
+  );
 });
 
 Deno.test('groupRepeatedAlbums groups documents that one visible user first sent', () => {
@@ -200,9 +191,7 @@ Deno.test('groupRepeatedAlbums groups documents that one visible user first sent
     ungrouped(MAX_ALBUM_MESSAGE_COUNT + 1),
     ungrouped(1),
   ];
-  if (JSON.stringify(groupings) !== JSON.stringify(expectedGroupings)) {
-    throw new Error(`Expected TDLib's document albums, received ${JSON.stringify(groupings)}`);
-  }
+  assertEquals(groupings, expectedGroupings, "Expected TDLib's document albums");
 });
 
 Deno.test('groupRepeatedAlbums groups audio files that one visible user first sent', () => {
@@ -220,9 +209,7 @@ Deno.test('groupRepeatedAlbums groups audio files that one visible user first se
     { albumCount: 0, albumIndexes: [undefined, undefined] },
     { albumCount: 0, albumIndexes: [undefined, undefined] },
   ];
-  if (JSON.stringify(groupings) !== JSON.stringify(expectedGroupings)) {
-    throw new Error(`Expected TDLib's audio albums, received ${JSON.stringify(groupings)}`);
-  }
+  assertEquals(groupings, expectedGroupings, "Expected TDLib's audio albums");
 });
 
 /**

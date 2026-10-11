@@ -1,3 +1,4 @@
+import { assertEquals } from '@std/assert';
 import type {
   AccountChatMessageLookupFailureReason,
   AccountChatMessageLookupResult,
@@ -95,7 +96,5 @@ Deno.test('PollService reports why the account cannot read a poll message, befor
     ].map((reason) => [reason, reason, reason, 3]),
     ['message_has_no_poll', 'message_has_no_poll', 'message_has_no_poll', 3],
   ];
-  if (JSON.stringify(outcomes) !== JSON.stringify(expected)) {
-    throw new Error(`Expected each lookup failure unchanged, received ${JSON.stringify(outcomes)}`);
-  }
+  assertEquals(outcomes, expected, 'Expected each lookup failure unchanged');
 });

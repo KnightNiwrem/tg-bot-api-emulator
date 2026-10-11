@@ -26,10 +26,12 @@ import {
   MAX_CAPTION_LENGTH,
   MAX_TEXT_MESSAGE_LENGTH,
   type PrivateMessage,
+  type PrivateMessageContent,
   type TextEntity,
 } from '../src/types/virtual_message.ts';
 import type { VirtualBot } from '../src/types/virtual_bot.ts';
 import { createChatMessagingServices } from './support/chat_messaging_services.ts';
+import { assertEqualsInFieldOrder } from './support/field_order_assertion.ts';
 import { TEST_UNIX_TIME_SECONDS } from './support/fixed_wall_clock.ts';
 import { createVirtualAccount, createVirtualBot } from './support/virtual_users.ts';
 
@@ -297,12 +299,15 @@ Deno.test('PrivateMessagingService stores a bot reply in the private conversatio
     reply.sender !== 'bot' ||
     reply.chat.conversation.accountId !== account.profile.id ||
     reply.chat.conversation.botId !== bot.profile.id ||
-    reply.sentAtUnixSeconds !== 1_700_000_000 ||
-    JSON.stringify(getContentText(reply.content).entities) !==
-      JSON.stringify([{ type: 'bot_command', offset: 4, length: 5 }])
+    reply.sentAtUnixSeconds !== 1_700_000_000
   ) {
     throw new Error("Expected the result to carry the bot's canonical reply with its entities");
   }
+  assertEquals(getContentText(reply.content).entities, [{
+    type: 'bot_command',
+    offset: 4,
+    length: 5,
+  }], "Expected the result to carry the bot's canonical reply with its entities");
   if (
     messageBoxes.getMessageId(account.profile.id, reply.id) !== 2 ||
     messageBoxes.getMessageId(bot.profile.id, reply.id) !== 2
@@ -332,12 +337,15 @@ Deno.test('PrivateMessagingService stores a bot reply in the private conversatio
   }
   if (
     publishedEvents.length !== 2 ||
-    JSON.stringify(publishedEvents[1]) !==
-      JSON.stringify({ type: 'message_created', message: reply }) ||
     botUpdates.confirmAndReadPendingUpdates(bot.profile.id, { limit: 100 }).length !== 1
   ) {
     throw new Error('Expected the reply to be published without becoming an update for its bot');
   }
+  assertEquals(
+    publishedEvents[1],
+    { type: 'message_created', message: reply },
+    'Expected the reply to be published without becoming an update for its bot',
+  );
 });
 
 Deno.test('PrivateMessagingService validates bot messages in Telegram order before changing state', () => {
@@ -522,12 +530,14 @@ Deno.test('PrivateMessagingService shows the reply interface the latest bot mess
 
   const keyboardMessage = sendWithReplyInterfaceMarkup(COLOR_KEYBOARD);
   sendBotMessage(messageSending, account.profile.id, bot, YES_NO_KEYBOARD);
-  if (
-    shownReplyInterface()?.message.id !== keyboardMessage.id ||
-    JSON.stringify(shownReplyInterface()?.replyInterface) !== JSON.stringify(COLOR_KEYBOARD)
-  ) {
+  if (shownReplyInterface()?.message.id !== keyboardMessage.id) {
     throw new Error('Expected the keyboard to stay shown after a message with an inline keyboard');
   }
+  assertEquals(
+    shownReplyInterface()?.replyInterface,
+    COLOR_KEYBOARD,
+    'Expected the keyboard to stay shown after a message with an inline keyboard',
+  );
   const press = pressButton('Red');
   const pressOfMissingButton = pressButton('Blue');
   if (
@@ -605,12 +615,14 @@ Deno.test('PrivateMessagingService stores an inline keyboard whose callback data
   if (!result.sent) {
     throw new Error(`Expected the bot message to be sent, received ${result.reason}`);
   }
-  if (
-    JSON.stringify(result.message.inlineKeyboard) !== JSON.stringify(inlineKeyboard) ||
-    messages.findChatMessage(result.message.chat, result.message.id) !== result.message
-  ) {
+  if (messages.findChatMessage(result.message.chat, result.message.id) !== result.message) {
     throw new Error('Expected the stored bot message to carry its inline keyboard');
   }
+  assertEquals(
+    result.message.inlineKeyboard,
+    inlineKeyboard,
+    'Expected the stored bot message to carry its inline keyboard',
+  );
   const oversized = send([[{ kind: 'callback', text: 'Too long', callbackData: 'é'.repeat(33) }]]);
   if (oversized.sent || oversized.reason !== 'callback_data_invalid') {
     throw new Error('Expected 66 bytes of callback data to be rejected');
@@ -650,12 +662,15 @@ Deno.test('PrivateMessagingService edits the text and keyboard of a bot message'
     textEdit.message.sentAtUnixSeconds !== 1_700_000_000 ||
     textEdit.message.contentEditedAtUnixSeconds !== 1_700_000_005 ||
     getContentText(textEdit.message.content).text !== 'Chosen: /yes' ||
-    JSON.stringify(getContentText(textEdit.message.content).entities) !==
-      JSON.stringify([{ type: 'bot_command', offset: 8, length: 4 }]) ||
     textEdit.message.inlineKeyboard !== undefined
   ) {
     throw new Error('Expected a dated text edit that recomputes entities and drops the keyboard');
   }
+  assertEquals(getContentText(textEdit.message.content).entities, [{
+    type: 'bot_command',
+    offset: 8,
+    length: 4,
+  }], 'Expected a dated text edit that recomputes entities and drops the keyboard');
   advanceClockSeconds(5);
 
   const keyboardEdit = messageEditing.editPrivateChatMessageKeyboard({
@@ -669,11 +684,15 @@ Deno.test('PrivateMessagingService edits the text and keyboard of a bot message'
   }
   if (
     getContentText(keyboardEdit.message.content).text !== 'Chosen: /yes' ||
-    keyboardEdit.message.contentEditedAtUnixSeconds !== 1_700_000_005 ||
-    JSON.stringify(keyboardEdit.message.inlineKeyboard) !== JSON.stringify(YES_NO_KEYBOARD)
+    keyboardEdit.message.contentEditedAtUnixSeconds !== 1_700_000_005
   ) {
     throw new Error('Expected a keyboard edit to keep the text and its edit date');
   }
+  assertEquals(
+    keyboardEdit.message.inlineKeyboard,
+    YES_NO_KEYBOARD,
+    'Expected a keyboard edit to keep the text and its edit date',
+  );
 
   const sameTextEdit = messageEditing.editPrivateChatMessageText({
     fromBotId: bot.profile.id,
@@ -688,12 +707,11 @@ Deno.test('PrivateMessagingService edits the text and keyboard of a bot message'
   ) {
     throw new Error('Expected an unchanged text to keep its edit date while the keyboard goes');
   }
-  if (
-    JSON.stringify(publishedEvents.slice(2).map(({ type }) => type)) !==
-      JSON.stringify(['message_edited', 'message_edited', 'message_edited'])
-  ) {
-    throw new Error('Expected each edit to publish the edited message');
-  }
+  assertEquals(publishedEvents.slice(2).map(({ type }) => type), [
+    'message_edited',
+    'message_edited',
+    'message_edited',
+  ], 'Expected each edit to publish the edited message');
 });
 
 Deno.test('PrivateMessagingService validates bot message edits in Telegram order', () => {
@@ -1087,7 +1105,7 @@ Deno.test('PrivateMessagingService normalizes bot text and entities as Telegram 
   }
   // Whitespace is trimmed from both ends, the tab becomes a space, and formatting splits around the
   // mention, the link, and the detected command.
-  const expectedEntities = [
+  const expectedEntities: readonly TextEntity[] = [
     { type: 'bold', offset: 0, length: 3 },
     { type: 'text_mention', offset: 3, length: 3, userId: account.profile.id },
     { type: 'bold', offset: 3, length: 3 },
@@ -1098,15 +1116,16 @@ Deno.test('PrivateMessagingService normalizes bot text and entities as Telegram 
     { type: 'bot_command', offset: 17, length: 5 },
     { type: 'bold', offset: 17, length: 3 },
   ];
-  if (
-    getContentText(result.message.content).text !== 'Hi Ada, see site /help' ||
-    JSON.stringify(getContentText(result.message.content).entities) !==
-      JSON.stringify(expectedEntities)
-  ) {
+  if (getContentText(result.message.content).text !== 'Hi Ada, see site /help') {
     throw new Error(
       `Expected normalized text and entities, received ${JSON.stringify(result.message)}`,
     );
   }
+  assertEquals(
+    getContentText(result.message.content).entities,
+    expectedEntities,
+    'Expected normalized text and entities',
+  );
 });
 
 Deno.test('PrivateMessagingService rejects bot text Telegram cannot normalize after the chat check', () => {
@@ -1214,13 +1233,17 @@ Deno.test('PrivateMessagingService limits text by its characters, not its UTF-16
     { type: 'bold', offset: 2, length: emojiText.length },
   ]);
   if (
-    !formatted.sent || formatted.message.content.kind !== 'text' ||
-    formatted.message.content.text !== emojiText ||
-    JSON.stringify(formatted.message.content.entities) !==
-      JSON.stringify([{ type: 'bold', offset: 0, length: emojiText.length }])
+    !formatted.sent ||
+    formatted.message.content.kind !== 'text' ||
+    formatted.message.content.text !== emojiText
   ) {
     throw new Error('Expected formatted text to be limited after it is trimmed');
   }
+  assertEquals(formatted.message.content.entities, [{
+    type: 'bold',
+    offset: 0,
+    length: emojiText.length,
+  }], 'Expected formatted text to be limited after it is trimmed');
 
   const edited = messageEditing.editPrivateChatMessageText({
     fromBotId: bot.profile.id,
@@ -1248,12 +1271,16 @@ Deno.test('PrivateMessagingService normalizes account text as a Telegram client 
 
   const result = send('  /start\r\n');
   if (
-    !result.sent || getContentText(result.message.content).text !== '/start' ||
-    JSON.stringify(getContentText(result.message.content).entities) !==
-      JSON.stringify([{ type: 'bot_command', offset: 0, length: 6 }])
+    !result.sent ||
+    getContentText(result.message.content).text !== '/start'
   ) {
     throw new Error(`Expected trimmed text with its command, received ${JSON.stringify(result)}`);
   }
+  assertEquals(getContentText(result.message.content).entities, [{
+    type: 'bot_command',
+    offset: 0,
+    length: 6,
+  }], 'Expected trimmed text with its command');
   const blankResult = send(' \n ');
   if (
     blankResult.sent || blankResult.reason !== 'text_invalid' ||
@@ -1282,14 +1309,18 @@ Deno.test('PrivateMessagingService treats changed entities as an edit of the tex
 
   const boldEdit = editText([{ type: 'bold', offset: 0, length: 8 }]);
   if (
-    !boldEdit.edited || boldEdit.message.contentEditedAtUnixSeconds !== 1_700_000_005 ||
-    JSON.stringify(getContentText(boldEdit.message.content).entities) !==
-      JSON.stringify([{ type: 'bold', offset: 0, length: 8 }])
+    !boldEdit.edited ||
+    boldEdit.message.contentEditedAtUnixSeconds !== 1_700_000_005
   ) {
     throw new Error(
       `Expected formatting alone to be a dated edit, received ${JSON.stringify(boldEdit)}`,
     );
   }
+  assertEquals(getContentText(boldEdit.message.content).entities, [{
+    type: 'bold',
+    offset: 0,
+    length: 8,
+  }], 'Expected formatting alone to be a dated edit');
   const repeatedEdit = editText([{ type: 'bold', offset: 0, length: 4 }, {
     type: 'bold',
     offset: 4,
@@ -1357,19 +1388,20 @@ Deno.test('PrivateMessagingService sends photos and documents with normalized ca
   );
   if (
     storedPhoto?.type !== 'photo' ||
-    JSON.stringify(accountPhoto.message.content.caption) !==
-      JSON.stringify({
-        text: '/start now',
-        entities: [{ type: 'bot_command', offset: 0, length: 6 }],
-      }) ||
-    photoUpdate === undefined || !('photo' in photoUpdate) ||
+    photoUpdate === undefined ||
+    !('photo' in photoUpdate) ||
     photoUpdate.photo[0].file_unique_id !== storedPhoto.uniqueId ||
-    photoUpdate.photo[0].width !== 4 || photoUpdate.caption !== '/start now'
+    photoUpdate.photo[0].width !== 4 ||
+    photoUpdate.caption !== '/start now'
   ) {
     throw new Error(
       `Expected the bot to receive the captioned photo, received ${JSON.stringify(photoUpdate)}`,
     );
   }
+  assertEquals(accountPhoto.message.content.caption, {
+    text: '/start now',
+    entities: [{ type: 'bot_command', offset: 0, length: 6 }],
+  }, 'Expected the bot to receive the captioned photo');
 
   const botDocument = messageSending.sendPrivateChatMessage({
     fromBotId: bot.profile.id,
@@ -1401,22 +1433,25 @@ Deno.test('PrivateMessagingService sends photos and documents with normalized ca
     },
   });
   if (
-    !botDocument.sent || botDocument.message.content.kind !== 'document' ||
+    !botDocument.sent ||
+    botDocument.message.content.kind !== 'document' ||
     files.getFile(botDocument.message.content.fileId)?.type !== 'document' ||
-    JSON.stringify(botDocument.message.content.caption.entities) !==
-      JSON.stringify([{ type: 'bold', offset: 0, length: 6 }]) ||
-    !reusedPhoto.sent ||
-    JSON.stringify(reusedPhoto.message.content) !==
-      JSON.stringify({
-        kind: 'photo',
-        fileId: storedPhoto.id,
-        caption: { text: '', entities: [] },
-        hasSpoiler: true,
-        showsCaptionAboveMedia: true,
-      })
+    !reusedPhoto.sent
   ) {
     throw new Error('Expected the bot to send an uploaded document and a stored photo');
   }
+  assertEquals(botDocument.message.content.caption.entities, [{
+    type: 'bold',
+    offset: 0,
+    length: 6,
+  }], 'Expected the bot to send an uploaded document and a stored photo');
+  assertEquals(reusedPhoto.message.content, {
+    kind: 'photo',
+    fileId: storedPhoto.id,
+    caption: { text: '', entities: [] },
+    hasSpoiler: true,
+    showsCaptionAboveMedia: true,
+  }, 'Expected the bot to send an uploaded document and a stored photo');
 });
 
 Deno.test('PrivateMessagingService limits captions and stores no upload of a refused message', () => {
@@ -1484,17 +1519,21 @@ Deno.test('PrivateMessagingService sends albums as ordered messages that share a
   const updates = botUpdates.confirmAndReadPendingUpdates(bot.profile.id, { limit: 100 })
     .map(messageFromUpdate);
   if (
-    accountAlbum.messages.length !== 2 || firstPhoto.mediaGroupId === undefined ||
+    accountAlbum.messages.length !== 2 ||
+    firstPhoto.mediaGroupId === undefined ||
     secondPhoto.mediaGroupId !== firstPhoto.mediaGroupId ||
     getContentText(secondPhoto.content).text !== '/second' ||
-    JSON.stringify(updates.map((update) => update?.message_id)) !==
-      JSON.stringify([1, 2]) ||
     updates.some((update) => update?.media_group_id !== firstPhoto.mediaGroupId)
   ) {
     throw new Error(
       `Expected the bot to receive the album in order, received ${JSON.stringify(updates)}`,
     );
   }
+  assertEquals(
+    updates.map((update) => update?.message_id),
+    [1, 2],
+    'Expected the bot to receive the album in order',
+  );
 
   const document = (fileName: string): MediaContent => ({
     kind: 'document',
@@ -1541,21 +1580,18 @@ Deno.test('PrivateMessagingService sends albums as ordered messages that share a
   ) {
     throw new Error('Expected a new album replying alike, and a single message outside albums');
   }
-  if (
-    JSON.stringify(
-      messages.getChatMessages({
-        type: 'private',
-        conversation: {
-          accountId: account.profile.id,
-          botId: bot.profile.id,
-        },
-      }).map((message) => message.id),
-    ) !==
-      JSON.stringify([...accountAlbum.messages, ...botAlbum.messages, ...singleAlbum.messages]
-        .map((message) => message.id))
-  ) {
-    throw new Error('Expected the history to hold the albums in order');
-  }
+  assertEquals(
+    messages.getChatMessages({
+      type: 'private',
+      conversation: {
+        accountId: account.profile.id,
+        botId: bot.profile.id,
+      },
+    }).map((message) => message.id),
+    [...accountAlbum.messages, ...botAlbum.messages, ...singleAlbum.messages]
+      .map((message) => message.id),
+    'Expected the history to hold the albums in order',
+  );
 });
 
 Deno.test('PrivateMessagingService checks every message of an album before storing any', () => {
@@ -1620,23 +1656,20 @@ Deno.test('PrivateMessagingService checks every message of an album before stori
   failures.push(
     ...[sendBotAlbum([photo(''), photo('')])].map((result) => result.sent ? 'sent' : result.reason),
   );
-  if (
-    JSON.stringify(failures) !==
-      JSON.stringify([
-        'caption_too_long',
-        'album_empty',
-        'album_too_large',
-        'album_caption_placement_mixed',
-        'album_documents_mixed',
-        'album_documents_mixed',
-        'bot_blocked',
-      ])
-  ) {
-    throw new Error(`Expected each album to be refused, received ${JSON.stringify(failures)}`);
-  }
-  if (JSON.stringify(storedState()) !== JSON.stringify(stateBefore)) {
-    throw new Error('Expected refused albums to store no message, upload, or event');
-  }
+  assertEquals(failures, [
+    'caption_too_long',
+    'album_empty',
+    'album_too_large',
+    'album_caption_placement_mixed',
+    'album_documents_mixed',
+    'album_documents_mixed',
+    'bot_blocked',
+  ], 'Expected each album to be refused');
+  assertEquals(
+    storedState(),
+    stateBefore,
+    'Expected refused albums to store no message, upload, or event',
+  );
 });
 
 Deno.test('PrivateMessagingService stores the uploads of rich messages only once they are sent or edited', () => {
@@ -1802,18 +1835,25 @@ Deno.test('PrivateMessagingService edits captions and refuses edits of the other
   const updates = botUpdates.confirmAndReadPendingUpdates(bot.profile.id, { limit: 100 });
   const editUpdate = updates.at(-1);
   if (
-    accountTextEdit.edited || accountTextEdit.reason !== 'message_has_no_text' ||
-    unchangedCaption.edited || unchangedCaption.reason !== 'message_not_modified' ||
-    !accountCaptionEdit.edited || editUpdate === undefined || !('edited_message' in editUpdate) ||
+    accountTextEdit.edited ||
+    accountTextEdit.reason !== 'message_has_no_text' ||
+    unchangedCaption.edited ||
+    unchangedCaption.reason !== 'message_not_modified' ||
+    !accountCaptionEdit.edited ||
+    editUpdate === undefined ||
+    !('edited_message' in editUpdate) ||
     !('document' in editUpdate.edited_message) ||
-    editUpdate.edited_message.caption !== '/help notes' ||
-    JSON.stringify(editUpdate.edited_message.caption_entities) !==
-      JSON.stringify([{ type: 'bot_command', offset: 0, length: 5 }])
+    editUpdate.edited_message.caption !== '/help notes'
   ) {
     throw new Error(
       `Expected the account caption edit to reach the bot, received ${JSON.stringify(updates)}`,
     );
   }
+  assertEqualsInFieldOrder(editUpdate.edited_message.caption_entities, [{
+    type: 'bot_command',
+    offset: 0,
+    length: 5,
+  }], 'Expected the account caption edit to reach the bot');
 });
 
 Deno.test('PrivateMessagingService edits the text of an account message and publishes the edit', () => {
@@ -1845,18 +1885,20 @@ Deno.test('PrivateMessagingService edits the text of an account message and publ
     result.message.id !== accountMessage.id ||
     result.message.sentAtUnixSeconds !== 1_700_000_000 ||
     result.message.contentEditedAtUnixSeconds !== 1_700_000_005 ||
-    getContentText(result.message.content).text !== 'Hello /help' ||
-    JSON.stringify(getContentText(result.message.content).entities) !==
-      JSON.stringify([{ type: 'bot_command', offset: 6, length: 5 }])
+    getContentText(result.message.content).text !== 'Hello /help'
   ) {
     throw new Error('Expected a dated edit whose text is normalized as when sending');
   }
-  if (
-    JSON.stringify(publishedEvents.at(-1)) !==
-      JSON.stringify({ type: 'message_edited', message: result.message })
-  ) {
-    throw new Error('Expected the edit to be published');
-  }
+  assertEquals(getContentText(result.message.content).entities, [{
+    type: 'bot_command',
+    offset: 6,
+    length: 5,
+  }], 'Expected a dated edit whose text is normalized as when sending');
+  assertEquals(
+    publishedEvents.at(-1),
+    { type: 'message_edited', message: result.message },
+    'Expected the edit to be published',
+  );
   const updates = botUpdates.confirmAndReadPendingUpdates(bot.profile.id, { limit: 100 });
   const lastUpdate = updates.at(-1);
   if (
@@ -2068,9 +2110,7 @@ Deno.test('PrivateMessagingService checks the account, bot, and block alike on e
     Array(4).fill('bot_not_found'),
     Array(4).fill('bot_blocked'),
   ];
-  if (JSON.stringify(received) !== JSON.stringify(expected)) {
-    throw new Error(`Expected sender checks in order, received ${JSON.stringify(received)}`);
-  }
+  assertEquals(received, expected, 'Expected sender checks in order');
   if (
     privateConversations.getPrivateConversation({
         accountId: blockingAccount.profile.id,
@@ -2294,38 +2334,45 @@ Deno.test('PrivateMessagingService shares chosen users as a service message of t
   if (!shared.sent) {
     throw new Error(`Expected the users to be shared, received ${shared.reason}`);
   }
-  const expectedContent = {
+  const expectedContent: PrivateMessageContent = {
     kind: 'users_shared',
     requestId: 3,
     users: [{ userId: grace.profile.id, firstName: 'Grace' }],
   };
   if (
     shared.message.sender !== 'account' ||
-    JSON.stringify(shared.message.content) !== JSON.stringify(expectedContent) ||
     shared.message.replyToMessageId !== undefined
   ) {
     throw new Error(
       `Expected a service message of the account, received ${JSON.stringify(shared)}`,
     );
   }
+  assertEquals(
+    shared.message.content,
+    expectedContent,
+    'Expected a service message of the account',
+  );
   const sharedMessage = messageFromUpdate(
     botUpdates.confirmAndReadPendingUpdates(bot.profile.id, { limit: 100 }).at(-1),
   );
   if (
-    sharedMessage === undefined || !('users_shared' in sharedMessage) ||
-    JSON.stringify(sharedMessage.users_shared) !==
-      JSON.stringify({
-        user_ids: [grace.profile.id],
-        users: [{ user_id: grace.profile.id, first_name: 'Grace' }],
-        request_id: 3,
-      }) ||
-    JSON.stringify(sharedMessage.user_shared) !==
-      JSON.stringify({ user_id: grace.profile.id, request_id: 3 })
+    sharedMessage === undefined ||
+    !('users_shared' in sharedMessage)
   ) {
     throw new Error(
       `Expected the bot to receive the shared user: ${JSON.stringify(sharedMessage)}`,
     );
   }
+  assertEqualsInFieldOrder(sharedMessage.users_shared, {
+    user_ids: [grace.profile.id],
+    users: [{ user_id: grace.profile.id, first_name: 'Grace' }],
+    request_id: 3,
+  }, 'Expected the bot to receive the shared user');
+  assertEqualsInFieldOrder(
+    sharedMessage.user_shared,
+    { user_id: grace.profile.id, request_id: 3 },
+    'Expected the bot to receive the shared user',
+  );
 });
 
 Deno.test('PrivateMessagingService sends Web App data as a service message of the account', () => {
@@ -2392,29 +2439,32 @@ Deno.test('PrivateMessagingService sends Web App data as a service message of th
   if (!sent.sent) {
     throw new Error(`Expected the Web App data to be sent, received ${sent.reason}`);
   }
-  const expectedContent = {
+  const expectedContent: PrivateMessageContent = {
     kind: 'web_app_data',
     buttonText: 'Choose dates',
     data: '{"nights":3}',
   };
   if (
     sent.message.sender !== 'account' ||
-    JSON.stringify(sent.message.content) !== JSON.stringify(expectedContent) ||
     sent.message.replyToMessageId !== undefined
   ) {
     throw new Error(`Expected a service message of the account, received ${JSON.stringify(sent)}`);
   }
+  assertEquals(sent.message.content, expectedContent, 'Expected a service message of the account');
   const updates = pendingUpdates();
   const sentMessage = messageFromUpdate(updates.at(-1));
   if (
-    updates.length !== updateCountBeforePresses + 1 || sentMessage === undefined ||
+    updates.length !== updateCountBeforePresses + 1 ||
+    sentMessage === undefined ||
     'text' in sentMessage ||
-    !('web_app_data' in sentMessage) ||
-    JSON.stringify(sentMessage.web_app_data) !==
-      JSON.stringify({ button_text: 'Choose dates', data: '{"nights":3}' })
+    !('web_app_data' in sentMessage)
   ) {
     throw new Error(`Expected the bot to receive the Web App data: ${JSON.stringify(updates)}`);
   }
+  assertEqualsInFieldOrder(sentMessage.web_app_data, {
+    button_text: 'Choose dates',
+    data: '{"nights":3}',
+  }, 'Expected the bot to receive the Web App data');
 });
 
 Deno.test('PrivateMessagingService answers the button that takes the answer among buttons that share a label', () => {

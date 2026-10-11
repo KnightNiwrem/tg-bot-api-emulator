@@ -64,12 +64,16 @@ Deno.test('MessageRepository edits a message in place without changing its ident
     content: { kind: 'text', text: 'Later', entities: [] },
   });
   if (
-    JSON.stringify(firstMessage.inlineKeyboard) !== JSON.stringify(inlineKeyboard) ||
     firstMessage.inlineKeyboard === inlineKeyboard ||
     secondMessage.inlineKeyboard !== undefined
   ) {
     throw new Error('Expected a stored copy of the inline keyboard only where one was attached');
   }
+  assertEquals(
+    firstMessage.inlineKeyboard,
+    inlineKeyboard,
+    'Expected a stored copy of the inline keyboard only where one was attached',
+  );
 
   const editedMessage = messages.editMessage(firstMessage.chat, firstMessage.id, {
     inlineKeyboard: undefined,
@@ -132,12 +136,17 @@ Deno.test('MessageRepository keeps what an edit cannot change', () => {
   });
   if (
     answer.replyInterfaceMarkup === replyInterfaceMarkup ||
-    JSON.stringify(answer.replyInterfaceMarkup) !== JSON.stringify(replyInterfaceMarkup) ||
-    question.isContentProtected || 'replyToMessageId' in question ||
+    question.isContentProtected ||
+    'replyToMessageId' in question ||
     'replyInterfaceMarkup' in question
   ) {
     throw new Error('Expected a stored copy of the reply interface markup only where one was sent');
   }
+  assertEquals(
+    answer.replyInterfaceMarkup,
+    replyInterfaceMarkup,
+    'Expected a stored copy of the reply interface markup only where one was sent',
+  );
 
   const editedAnswer = messages.editMessage(answer.chat, answer.id, {
     inlineKeyboard: undefined,
@@ -189,17 +198,35 @@ Deno.test('MessageRepository keeps fields that only some messages carry through 
     supergroupMessage.id,
     edit,
   );
-  const isSameValue = (left: unknown, right: unknown) =>
-    left !== undefined && JSON.stringify(left) === JSON.stringify(right);
+  assertEquals(
+    [
+      editedPrivateMessage.messageEffectId,
+      editedPrivateMessage.forwardInfo,
+      editedPrivateMessage.isSilent,
+      editedSupergroupMessage.externalReply,
+      editedSupergroupMessage.quote,
+      editedSupergroupMessage.viaBot,
+    ],
+    [
+      '5104841245755180586',
+      forwardInfo,
+      true,
+      supergroupMessage.externalReply,
+      supergroupMessage.quote,
+      supergroupMessage.viaBot,
+    ],
+    'Expected the edits to keep every field they do not replace',
+  );
   if (
-    editedPrivateMessage.messageEffectId !== '5104841245755180586' ||
-    !isSameValue(editedPrivateMessage.forwardInfo, forwardInfo) ||
-    !editedPrivateMessage.isSilent ||
-    !isSameValue(editedSupergroupMessage.externalReply, supergroupMessage.externalReply) ||
-    !isSameValue(editedSupergroupMessage.quote, supergroupMessage.quote) ||
-    !isSameValue(editedSupergroupMessage.viaBot, supergroupMessage.viaBot)
+    [
+      forwardInfo,
+      supergroupMessage.externalReply,
+      supergroupMessage.quote,
+      supergroupMessage.viaBot,
+    ]
+      .includes(undefined)
   ) {
-    throw new Error('Expected the edits to keep every field they do not replace');
+    throw new Error('Expected the fixture to set every field the edits keep');
   }
 });
 
@@ -218,12 +245,14 @@ Deno.test('MessageRepository drops the inline keyboard and edit time that an edi
     inlineKeyboard,
     contentEditedAtUnixSeconds: 1_700_000_005,
   });
-  if (
-    JSON.stringify(editedMessage.inlineKeyboard) !== JSON.stringify(inlineKeyboard) ||
-    editedMessage.contentEditedAtUnixSeconds !== 1_700_000_005
-  ) {
+  if (editedMessage.contentEditedAtUnixSeconds !== 1_700_000_005) {
     throw new Error('Expected the edit to write the inline keyboard and edit time it carries');
   }
+  assertEquals(
+    editedMessage.inlineKeyboard,
+    inlineKeyboard,
+    'Expected the edit to write the inline keyboard and edit time it carries',
+  );
 
   const reeditedMessage = messages.editMessage(message.chat, message.id, {
     content: { kind: 'text', text: 'Done', entities: [] },

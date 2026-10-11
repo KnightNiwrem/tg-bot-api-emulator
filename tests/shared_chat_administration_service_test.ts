@@ -221,7 +221,7 @@ Deno.test('SharedChatAdministrationService adds permitted members to shared chat
     { chat: supergroup, memberId: bot.profile.id },
     { chat: channel, memberId: account.profile.id },
   ];
-  const expectedEvents = additions.map(({ chat, memberId }) => ({
+  const expectedEvents = additions.map(({ chat, memberId }): ChatDomainEvent => ({
     type: 'chat_member_status_changed',
     chat,
     actorId: owner.profile.id,
@@ -230,24 +230,18 @@ Deno.test('SharedChatAdministrationService adds permitted members to shared chat
     newStatus: { status: 'member' },
     changedAtUnixSeconds: 1_700_000_000,
   }));
-  if (JSON.stringify(publishedEvents) !== JSON.stringify(expectedEvents)) {
-    throw new Error(
-      `Expected each addition to be published, received ${JSON.stringify(publishedEvents)}`,
-    );
-  }
-  const expectedMembershipChanges = [{
+  assertEquals(publishedEvents, expectedEvents, 'Expected each addition to be published');
+  const expectedMembershipChanges: SupergroupServiceMessageRecord[] = [{
     chatId: supergroup.id,
     sender: { kind: 'account', accountId: owner.profile.id },
     content: { kind: 'members_joined', memberIds: [bot.profile.id] },
     changedAtUnixSeconds: 1_700_000_000,
   }];
-  if (JSON.stringify(recordedServiceMessages) !== JSON.stringify(expectedMembershipChanges)) {
-    throw new Error(
-      `Expected only the supergroup to record the addition, received ${
-        JSON.stringify(recordedServiceMessages)
-      }`,
-    );
-  }
+  assertEquals(
+    recordedServiceMessages,
+    expectedMembershipChanges,
+    'Expected only the supergroup to record the addition',
+  );
   if (!/^-?\d+$/.test(supergroup.chatInstance)) {
     throw new Error('Expected the supergroup to have a chat instance');
   }
@@ -482,11 +476,16 @@ Deno.test('SharedChatAdministrationService ends memberships as members leave or 
     'chat_not_found',
   ];
   if (
-    JSON.stringify(refusals.map(failureReason)) !== JSON.stringify(expectedRefusals) ||
-    publishedEvents.length !== 0 || recordedServiceMessages.length !== 0
+    publishedEvents.length !== 0 ||
+    recordedServiceMessages.length !== 0
   ) {
     throw new Error(`Expected refusals to change nothing, received ${JSON.stringify(refusals)}`);
   }
+  assertEquals(
+    refusals.map(failureReason),
+    expectedRefusals,
+    'Expected refusals to change nothing',
+  );
 
   const leaving = sharedChatAdministration.leaveChat({
     memberId: member.profile.id,
@@ -507,10 +506,10 @@ Deno.test('SharedChatAdministrationService ends memberships as members leave or 
   ) {
     throw new Error('Expected the member to have left and the bot to be banned');
   }
-  const expectedEvents = [
+  const expectedEvents = ([
     [member.profile.id, member.profile.id, 'left'],
     [owner.profile.id, bot.profile.id, 'kicked'],
-  ].map(([actorId, memberId, statusAfterLeaving]) => ({
+  ] as const).map(([actorId, memberId, statusAfterLeaving]): ChatDomainEvent => ({
     type: 'chat_member_status_changed',
     chat: supergroup,
     actorId,
@@ -519,38 +518,35 @@ Deno.test('SharedChatAdministrationService ends memberships as members leave or 
     newStatus: { status: statusAfterLeaving },
     changedAtUnixSeconds: 1_700_000_000,
   }));
-  const expectedChanges = [
+  const expectedChanges = ([
     [{ kind: 'account', accountId: member.profile.id }, member.profile.id],
     [{ kind: 'account', accountId: owner.profile.id }, bot.profile.id],
-  ].map(([sender, memberId]) => ({
+  ] as const).map(([sender, memberId]): SupergroupServiceMessageRecord => ({
     chatId: supergroup.id,
     sender,
     content: { kind: 'member_left', memberId },
     changedAtUnixSeconds: 1_700_000_000,
   }));
-  if (
-    JSON.stringify(publishedEvents) !== JSON.stringify(expectedEvents) ||
-    JSON.stringify(recordedServiceMessages) !== JSON.stringify(expectedChanges)
-  ) {
-    throw new Error(
-      `Expected each departure to be published and recorded, received ${
-        JSON.stringify([publishedEvents, recordedServiceMessages])
-      }`,
-    );
-  }
+  assertEquals(
+    publishedEvents,
+    expectedEvents,
+    'Expected each departure to be published and recorded',
+  );
+  assertEquals(
+    recordedServiceMessages,
+    expectedChanges,
+    'Expected each departure to be published and recorded',
+  );
 
   const repeatedLeaving = sharedChatAdministration.leaveChat({
     memberId: bot.profile.id,
     chatId: supergroup.id,
   });
-  if (
-    JSON.stringify(repeatedLeaving) !==
-      '{"left":false,"reason":"not_a_member","formerStatus":{"status":"kicked"}}'
-  ) {
-    throw new Error(
-      `Expected a removed bot to be told how it left, received ${JSON.stringify(repeatedLeaving)}`,
-    );
-  }
+  assertEquals(
+    repeatedLeaving,
+    { left: false, reason: 'not_a_member', formerStatus: { status: 'kicked' } },
+    'Expected a removed bot to be told how it left',
+  );
   assertMemberAdded(sharedChatAdministration.addChatMember({
     actorAccountId: owner.profile.id,
     chatId: supergroup.id,
@@ -599,21 +595,17 @@ Deno.test('SharedChatAdministrationService lets the owner promote and demote mem
     changeRole(999, ['can_delete_messages']),
     changeRole(member.profile.id, []),
   ];
-  if (
-    JSON.stringify(outcomes) !== JSON.stringify([
-      'changed',
-      'changed',
-      'changed',
-      'changed',
-      'changed',
-      'not_enough_rights',
-      'member_is_owner',
-      'member_not_found',
-      'no_rights_granted',
-    ])
-  ) {
-    throw new Error(`Expected the owner to change roles, received ${outcomes.join()}`);
-  }
+  assertEquals(outcomes, [
+    'changed',
+    'changed',
+    'changed',
+    'changed',
+    'changed',
+    'not_enough_rights',
+    'member_is_owner',
+    'member_not_found',
+    'no_rights_granted',
+  ], 'Expected the owner to change roles');
 
   // Repeating a promotion or a demotion publishes nothing; any right includes can_manage_chat.
   const statusChanges = publishedEvents.map((event) =>
@@ -631,9 +623,7 @@ Deno.test('SharedChatAdministrationService lets the owner promote and demote mem
     ],
     [owner.profile.id, promotedTo('can_manage_chat,can_restrict_members'), 'member'],
   ];
-  if (JSON.stringify(statusChanges) !== JSON.stringify(expectedStatusChanges)) {
-    throw new Error(`Expected each role change once, received ${JSON.stringify(statusChanges)}`);
-  }
+  assertEquals(statusChanges, expectedStatusChanges, 'Expected each role change once');
 
   // An administrator that leaves is no member any more, and a non-member has no role to change.
   changeRole(member.profile.id, ['can_pin_messages']);
@@ -1043,17 +1033,16 @@ Deno.test('SharedChatAdministrationService lets bots ban and unban users in TDLi
     ban(member.profile.id),
     unban(member.profile.id),
   ];
-  if (
-    JSON.stringify(refusalsWithoutRights) !== JSON.stringify([
-        'member_is_owner',
-        'cannot_restrict_self',
-        'member_not_found',
-        'not_enough_rights',
-        'not_enough_rights',
-      ]) || publishedEvents.length !== 0
-  ) {
+  if (publishedEvents.length !== 0) {
     throw new Error(`Expected refusals without rights, received ${refusalsWithoutRights.join()}`);
   }
+  assertEquals(refusalsWithoutRights, [
+    'member_is_owner',
+    'cannot_restrict_self',
+    'member_not_found',
+    'not_enough_rights',
+    'not_enough_rights',
+  ], 'Expected refusals without rights');
 
   for (
     const [memberId, rights] of [
@@ -1080,12 +1069,16 @@ Deno.test('SharedChatAdministrationService lets bots ban and unban users in TDLi
     ban(stranger.profile.id),
   ];
   if (
-    JSON.stringify(outcomes) !==
-      JSON.stringify(['member_is_administrator', 'banned', 'banned', 'banned', 'banned']) ||
-    statusOf(member.profile.id) !== 'kicked' || statusOf(stranger.profile.id) !== 'kicked'
+    statusOf(member.profile.id) !== 'kicked' ||
+    statusOf(stranger.profile.id) !== 'kicked'
   ) {
     throw new Error(`Expected bans of non-administrators, received ${outcomes.join()}`);
   }
+  assertEquals(
+    outcomes,
+    ['member_is_administrator', 'banned', 'banned', 'banned', 'banned'],
+    'Expected bans of non-administrators',
+  );
   // A ban that changes nothing publishes nothing, and one shorter than 30 seconds is forever.
   // Only the removal of a member is recorded as a service message, which the bot wrote.
   const botId = moderatorBot.profile.id;
@@ -1106,18 +1099,14 @@ Deno.test('SharedChatAdministrationService lets bots ban and unban users in TDLi
     [botId, member.profile.id, `kicked(${now + 3_600})`, 'kicked'],
     [botId, stranger.profile.id, 'left', 'kicked'],
   ];
-  const removalRecord = {
+  const removalRecord: SupergroupServiceMessageRecord = {
     chatId: supergroup.id,
     sender: { kind: 'bot', botId },
     content: { kind: 'member_left', memberId: member.profile.id },
     changedAtUnixSeconds: now,
   };
-  if (
-    JSON.stringify(banChanges) !== JSON.stringify(expectedBanChanges) ||
-    JSON.stringify(recordedServiceMessages.splice(0)) !== JSON.stringify([removalRecord])
-  ) {
-    throw new Error(`Expected each ban once, received ${JSON.stringify(banChanges)}`);
-  }
+  assertEquals(banChanges, expectedBanChanges, 'Expected each ban once');
+  assertEquals(recordedServiceMessages.splice(0), [removalRecord], 'Expected each ban once');
 
   // Unbanning lifts a ban, and, unless only a ban is to be lifted, removes a member by banning it
   // for a minute first, as Telegram does. A bot that unbans itself leaves.
@@ -1138,20 +1127,16 @@ Deno.test('SharedChatAdministrationService lets bots ban and unban users in TDLi
     unban(999, true),
     unban(moderatorBot.profile.id),
   ];
-  if (
-    JSON.stringify(unbanOutcomes) !== JSON.stringify([
-      'unbanned',
-      'unbanned',
-      'unbanned',
-      'unbanned',
-      'member_is_owner',
-      'member_is_administrator',
-      'member_not_found',
-      'unbanned',
-    ])
-  ) {
-    throw new Error(`Expected unbans in TDLib order, received ${unbanOutcomes.join()}`);
-  }
+  assertEquals(unbanOutcomes, [
+    'unbanned',
+    'unbanned',
+    'unbanned',
+    'unbanned',
+    'member_is_owner',
+    'member_is_administrator',
+    'member_not_found',
+    'unbanned',
+  ], 'Expected unbans in TDLib order');
   const unbanChanges = describeChanges();
   const expectedUnbanChanges = [
     [botId, stranger.profile.id, 'kicked', 'left'],
@@ -1159,14 +1144,12 @@ Deno.test('SharedChatAdministrationService lets bots ban and unban users in TDLi
     [botId, member.profile.id, `kicked(${now + 60})`, 'left'],
     [botId, botId, 'administrator(can_manage_chat,can_restrict_members)', 'left'],
   ];
-  if (
-    JSON.stringify(unbanChanges) !== JSON.stringify(expectedUnbanChanges) ||
-    recordedServiceMessages.length !== 2
-  ) {
+  if (recordedServiceMessages.length !== 2) {
     throw new Error(
       `Expected unbans to change standings, received ${JSON.stringify(unbanChanges)}`,
     );
   }
+  assertEquals(unbanChanges, expectedUnbanChanges, 'Expected unbans to change standings');
   if (ban(member.profile.id) !== 'bot_not_a_member') {
     throw new Error('Expected a bot that left to be turned away');
   }
@@ -1202,17 +1185,9 @@ Deno.test('SharedChatAdministrationService tells member bots the standing of sup
   const administrators = sharedChatAdministration.getChatAdministrators(query);
   const memberCount = sharedChatAdministration.getChatMemberCount(query);
   if (
-    JSON.stringify(standings) !== JSON.stringify([
-        'owner',
-        'kicked',
-        'left',
-        'administrator(can_manage_chat,can_restrict_members)',
-        'member',
-      ]) ||
     !administrators.found ||
-    JSON.stringify(administrators.administrators.map(({ userId }) => userId)) !==
-      JSON.stringify([owner.profile.id, otherBot.profile.id]) ||
-    !memberCount.found || memberCount.memberCount !== 3
+    !memberCount.found ||
+    memberCount.memberCount !== 3
   ) {
     throw new Error(
       `Expected the standings of the supergroup's users, received ${
@@ -1220,6 +1195,17 @@ Deno.test('SharedChatAdministrationService tells member bots the standing of sup
       }`,
     );
   }
+  assertEquals(standings, [
+    'owner',
+    'kicked',
+    'left',
+    'administrator(can_manage_chat,can_restrict_members)',
+    'member',
+  ], "Expected the standings of the supergroup's users");
+  assertEquals(administrators.administrators.map(({ userId }) => userId), [
+    owner.profile.id,
+    otherBot.profile.id,
+  ], "Expected the standings of the supergroup's users");
 
   const unknownUser = sharedChatAdministration.getChatMemberStatus({ ...query, userId: 999 });
   const bannedBotQuery = { observerBotId: otherBot.profile.id, chatId: supergroup.id };
@@ -1233,12 +1219,11 @@ Deno.test('SharedChatAdministrationService tells member bots the standing of sup
     sharedChatAdministration.getChatAdministrators(bannedBotQuery),
     sharedChatAdministration.getChatMemberCount({ ...query, chatId: -1_000_000_009_999 }),
   ].map((result) => result.found ? 'found' : result.reason);
-  if (
-    JSON.stringify(refusals) !==
-      JSON.stringify(['member_not_found', 'bot_kicked', 'chat_not_found'])
-  ) {
-    throw new Error(`Expected member queries to be refused, received ${refusals.join()}`);
-  }
+  assertEquals(
+    refusals,
+    ['member_not_found', 'bot_kicked', 'chat_not_found'],
+    'Expected member queries to be refused',
+  );
 });
 
 /** Describes a standing compactly: rights sorted, and a ban's end when it has one. */
@@ -1289,31 +1274,31 @@ Deno.test('SharedChatAdministrationService keeps a restriction while the user le
   });
   const restrictedMember = 'restricted member(can_send_messages)';
   if (
-    JSON.stringify(statuses) !== JSON.stringify([
-        restrictedMember,
-        'restricted non-member(can_send_messages)',
-        restrictedMember,
-        restrictedMember,
-      ]) ||
-    !demotion.demoted || !administrators.found ||
-    JSON.stringify(administrators.administrators.map(({ userId }) => userId)) !==
-      JSON.stringify([owner.profile.id])
+    !demotion.demoted ||
+    !administrators.found
   ) {
     throw new Error(`Expected the restriction to last, received ${JSON.stringify(statuses)}`);
   }
+  assertEquals(statuses, [
+    restrictedMember,
+    'restricted non-member(can_send_messages)',
+    restrictedMember,
+    restrictedMember,
+  ], 'Expected the restriction to last');
+  assertEquals(
+    administrators.administrators.map(({ userId }) => userId),
+    [owner.profile.id],
+    'Expected the restriction to last',
+  );
   const changes = publishedEvents.map((event) =>
     event.type === 'chat_member_status_changed'
       ? `${describeStatus(event.oldStatus)} -> ${describeStatus(event.newStatus)}`
       : event.type
   );
-  if (
-    JSON.stringify(changes) !== JSON.stringify([
-      `${restrictedMember} -> restricted non-member(can_send_messages)`,
-      `restricted non-member(can_send_messages) -> ${restrictedMember}`,
-    ])
-  ) {
-    throw new Error(`Expected the restriction in each change, received ${JSON.stringify(changes)}`);
-  }
+  assertEquals(changes, [
+    `${restrictedMember} -> restricted non-member(can_send_messages)`,
+    `restricted non-member(can_send_messages) -> ${restrictedMember}`,
+  ], 'Expected the restriction in each change');
 
   // A ban or a removal ends a restricted member's membership as it ends any other's.
   sharedChatAdministration.promoteChatMember({
@@ -1501,18 +1486,14 @@ Deno.test('SharedChatAdministrationService lets members change information as pe
   });
   const withRestriction = [changeTitle(memberAccount, 'Restricted'), changeTitle(bot, 'Bots')];
   const received = [...byDefault, ...withoutDefault, ...withRestriction];
-  if (
-    JSON.stringify(received) !== JSON.stringify([
-      'changed',
-      'not_enough_rights',
-      'not_enough_rights',
-      'changed',
-      'not_enough_rights',
-      'changed',
-    ])
-  ) {
-    throw new Error(`Expected permissions to decide title changes, received ${received}`);
-  }
+  assertEquals(received, [
+    'changed',
+    'not_enough_rights',
+    'not_enough_rights',
+    'changed',
+    'not_enough_rights',
+    'changed',
+  ], 'Expected permissions to decide title changes');
 });
 
 function describeStatus(status: ChatMemberStatus): string {

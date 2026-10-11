@@ -1,3 +1,4 @@
+import { assertEquals } from '@std/assert';
 import type {
   AccountChatMessageKey,
   AccountChatMessageLookupFailureReason,
@@ -85,19 +86,20 @@ Deno.test('MessageForwardingService reports why the account cannot read the mess
     };
   });
 
-  const expectedReadKey = {
+  const expectedReadKey: AccountChatMessageKey = {
     accountId: ACCOUNT_ID,
     chat: { type: 'supergroup', chatId: SUPERGROUP_ID },
     messageId: 5,
   };
-  const expected = reasons.map((reason) => ({
-    reason,
-    readKeys: [expectedReadKey],
-    sentForwardCount: 0,
-  }));
-  if (JSON.stringify(results) !== JSON.stringify(expected)) {
-    throw new Error(`Expected each lookup failure unchanged, received ${JSON.stringify(results)}`);
-  }
+  assertEquals(
+    results,
+    reasons.map((reason) => ({
+      reason,
+      readKeys: [expectedReadKey],
+      sentForwardCount: 0,
+    })),
+    'Expected each lookup failure unchanged',
+  );
 });
 
 Deno.test('MessageForwardingService refuses messages of a supergroup that protects its content', () => {
@@ -126,16 +128,11 @@ Deno.test('MessageForwardingService refuses messages of a supergroup that protec
       ];
     },
   );
-  const expected = [
+  assertEquals(outcomes, [
     ['message_not_forwardable', []],
     ['forwarded', [['private', 'text']]],
     ['forwarded', [['private', 'text']]],
-  ];
-  if (JSON.stringify(outcomes) !== JSON.stringify(expected)) {
-    throw new Error(
-      `Expected only the protected supergroup to refuse, received ${JSON.stringify(outcomes)}`,
-    );
-  }
+  ], 'Expected only the protected supergroup to refuse');
 });
 
 /** A forwarding service whose reader finds the given result, and which records what it sends. */
