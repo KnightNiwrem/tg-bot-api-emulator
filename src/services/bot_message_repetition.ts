@@ -1,4 +1,3 @@
-import type { FormerSupergroupMemberFailureReason } from '../types/chat_membership.ts';
 import type { InlineKeyboard } from '../types/inline_keyboard.ts';
 import { groupRepeatedAlbums } from '../types/media_album.ts';
 import {
@@ -20,7 +19,6 @@ import {
   type MessageForwardInfo,
 } from '../types/virtual_message.ts';
 import type {
-  BotPrivateChatAccessFailureReason,
   CopyMessageRequest,
   CopyMessageSendResult,
   CopyMessagesRequest,
@@ -69,21 +67,6 @@ interface BotMessageRepeaterDependencies {
   /** The time that the open periods of copied polls count from. */
   readonly currentUnixTimeSeconds: () => number;
 }
-
-/**
- * Why the message that a forward or copy repeats cannot be read: its chat is unknown to the bot,
- * or the bot cannot address it, or the chat has no such message.
- */
-type RepeatedMessageFailureReason =
-  | 'chat_not_found'
-  | BotPrivateChatAccessFailureReason
-  | FormerSupergroupMemberFailureReason
-  | 'repeated_message_not_found';
-
-/** A message that a forward or copy repeats, with whether its chat protects all content. */
-type RepeatedMessageLookup =
-  | Extract<BotChatMessageLookup, { readonly found: true }>
-  | { readonly found: false; readonly reason: RepeatedMessageFailureReason };
 
 /** What a forward or copy repeats of the original. */
 interface MessageRepetition {
@@ -154,7 +137,7 @@ export class BotMessageRepeater {
       messageEffectId,
     }: ForwardMessageRequest,
   ): ForwardMessageResult {
-    const lookup = this.#findRepeatedMessage(botId, forwardedMessage);
+    const lookup = this.#messageSender.findBotChatMessage(botId, forwardedMessage);
     if (!lookup.found) {
       return { sent: false, reason: lookup.reason };
     }
@@ -205,7 +188,7 @@ export class BotMessageRepeater {
       ...options
     }: CopyMessageRequest,
   ): CopyMessageSendResult {
-    const lookup = this.#findRepeatedMessage(botId, copiedMessage);
+    const lookup = this.#messageSender.findBotChatMessage(botId, copiedMessage);
     if (!lookup.found) {
       return { sent: false, reason: lookup.reason };
     }
@@ -282,11 +265,14 @@ export class BotMessageRepeater {
       readonly chatProtectsContent: boolean;
     }> = [];
     for (const messageId of messageIds) {
-      const lookup = this.#findRepeatedMessage(botId, { chatId: fromChatId, messageId });
+      const lookup = this.#messageSender.findBotChatMessage(botId, {
+        chatId: fromChatId,
+        messageId,
+      });
       if (lookup.found) {
         const { message, chatProtectsContent } = lookup;
         repeatedMessages.push({ messageId, message, chatProtectsContent });
-      } else if (lookup.reason !== 'repeated_message_not_found') {
+      } else if (lookup.reason !== 'message_not_found') {
         return { sent: false, reason: lookup.reason };
       }
     }
@@ -469,22 +455,6 @@ export class BotMessageRepeater {
           },
         }),
       },
-    };
-  }
-
-  /**
-   * Finds the message of one of the bot's chats that a forward or copy repeats, as the message
-   * sender's `findBotChatMessage` finds it; a missing message is reported as a repeated message
-   * that is not found.
-   */
-  #findRepeatedMessage(botId: number, target: MessageTarget): RepeatedMessageLookup {
-    const lookup = this.#messageSender.findBotChatMessage(botId, target);
-    if (lookup.found) {
-      return lookup;
-    }
-    return {
-      found: false,
-      reason: lookup.reason === 'message_not_found' ? 'repeated_message_not_found' : lookup.reason,
     };
   }
 }

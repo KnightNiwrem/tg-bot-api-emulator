@@ -2,6 +2,11 @@ import { z } from 'zod';
 
 import type { EmulationSession } from '../../../../types/emulation_session.ts';
 import { CHAT_ID_EMPTY_DESCRIPTION } from '../chat_access.ts';
+import {
+  describeInvalidMethodParameters,
+  invalidMethodParametersAnswer,
+} from '../errors/invalid_parameters.ts';
+import { presentMessageRepetitionFailure } from '../errors/message_repetition_failure_presenter.ts';
 import { readSpecifiedCaption } from '../formatted_text_reading.ts';
 import { messageEntitiesParameter } from '../message_entities_parameter.ts';
 import {
@@ -24,7 +29,6 @@ import {
   jsonParameter,
   optionalInt64Identifier,
 } from '../request_parameters.ts';
-import { sendMethodAnswer } from '../send_answer.ts';
 import {
   readSendOptions,
   replyMarkupParametersShape,
@@ -39,21 +43,8 @@ export const MESSAGE_REPETITION_METHODS: readonly BotApiMethod[] = [
   { name: 'forwardMessages', recordsActivity: true, handler: handleForwardMessages },
 ];
 
-/** TDLib's description for a message effect in a request that cannot use one. */
-const MESSAGE_EFFECT_NOT_ALLOWED_IN_METHOD_DESCRIPTION =
-  "Bad Request: can't use message effects in the method";
-
-/** Telegram's descriptions for rejected forwards and copies of messages. */
+/** Telegram's description for a forward or copy that names no chat to repeat from. */
 const FROM_CHAT_ID_REQUIRED_DESCRIPTION = 'Bad Request: parameter "from_chat_id" is required';
-const MESSAGE_TO_FORWARD_NOT_FOUND_DESCRIPTION = 'Bad Request: message to forward not found';
-const MESSAGE_TO_COPY_NOT_FOUND_DESCRIPTION = 'Bad Request: message to copy not found';
-const MESSAGE_NOT_FORWARDABLE_DESCRIPTION = "Bad Request: the message can't be forwarded";
-const MESSAGE_NOT_COPYABLE_DESCRIPTION = "Bad Request: the message can't be copied";
-/** TDLib words these alike for forwardMessages and copyMessages, which both forward in TDLib. */
-const NO_MESSAGES_TO_FORWARD_DESCRIPTION = 'Bad Request: there are no messages to forward';
-const MESSAGE_IDS_NOT_INCREASING_DESCRIPTION =
-  'Bad Request: message identifiers must be in a strictly increasing order';
-const MESSAGES_NOT_FORWARDABLE_DESCRIPTION = "Bad Request: messages can't be forwarded";
 
 /** Telegram forwards or copies at most 100 messages in one request. */
 const MAX_REPEATED_MESSAGES_COUNT = 100;
@@ -114,17 +105,13 @@ const copyMessagesParametersSchema = z.strictObject({
 /** The messages that `forwardMessages` or `copyMessages` repeats, and the chat they go to. */
 type RepeatMessagesRequest = Parameters<EmulationSession['botApi']['forwardMessages']>[1];
 
-type RepeatMessagesResult =
-  | ReturnType<EmulationSession['botApi']['forwardMessages']>
-  | ReturnType<EmulationSession['botApi']['copyMessages']>;
-
 function handleForwardMessage(
   context: BotApiMethodContext,
   parameters: BotApiRequestParameters,
 ): BotApiMethodAnswer {
   const parsedParameters = forwardMessageParametersSchema.safeParse(parameters);
   if (!parsedParameters.success) {
-    return botApiError(400, 'Bad Request: invalid forwardMessage parameters');
+    return invalidMethodParametersAnswer('forwardMessage', parsedParameters.error);
   }
   const {
     chat_id: chatId,
@@ -155,27 +142,19 @@ function handleForwardMessage(
       messageEffectId,
     },
   );
-  if (result.sent) {
-    return sendMethodAnswer(result);
-  }
-  switch (result.reason) {
-    case 'repeated_message_not_found':
-      return botApiError(400, MESSAGE_TO_FORWARD_NOT_FOUND_DESCRIPTION);
-    case 'message_not_forwardable':
-      return botApiError(400, MESSAGE_NOT_FORWARDABLE_DESCRIPTION);
-    default:
-      return sendMethodAnswer(result);
-  }
+  return result.sent
+    ? botApiResult(result.message)
+    : presentMessageRepetitionFailure('message_forward', result);
 }
 
 function handleCopyMessage(
   context: BotApiMethodContext,
   parameters: BotApiRequestParameters,
 ): BotApiMethodAnswer {
-  const invalidParametersDescription = 'Bad Request: invalid copyMessage parameters';
+  const invalidParametersDescription = describeInvalidMethodParameters('copyMessage');
   const parsedParameters = copyMessageParametersSchema.safeParse(parameters);
   if (!parsedParameters.success) {
-    return botApiError(400, invalidParametersDescription);
+    return invalidMethodParametersAnswer('copyMessage', parsedParameters.error);
   }
   const { data } = parsedParameters;
   if (data.from_chat_id === undefined) {
@@ -207,17 +186,9 @@ function handleCopyMessage(
       showsCaptionAboveMedia: data.show_caption_above_media,
     },
   );
-  if (result.sent) {
-    return botApiResult({ message_id: result.messageId });
-  }
-  switch (result.reason) {
-    case 'repeated_message_not_found':
-      return botApiError(400, MESSAGE_TO_COPY_NOT_FOUND_DESCRIPTION);
-    case 'message_not_copyable':
-      return botApiError(400, MESSAGE_NOT_COPYABLE_DESCRIPTION);
-    default:
-      return sendMethodAnswer(result);
-  }
+  return result.sent
+    ? botApiResult({ message_id: result.messageId })
+    : presentMessageRepetitionFailure('message_copy', result);
 }
 
 function handleForwardMessages(
@@ -226,13 +197,16 @@ function handleForwardMessages(
 ): BotApiMethodAnswer {
   const parsedParameters = forwardMessagesParametersSchema.safeParse(parameters);
   if (!parsedParameters.success) {
-    return botApiError(400, 'Bad Request: invalid forwardMessages parameters');
+    return invalidMethodParametersAnswer('forwardMessages', parsedParameters.error);
   }
   const reading = readRepeatMessagesRequest(parsedParameters.data);
   if (!reading.read) {
     return reading.errorAnswer;
   }
-  return repeatMessagesAnswer(context.session.botApi.forwardMessages(context.bot, reading.request));
+  return repeatMessagesAnswer(
+    'message_forward',
+    context.session.botApi.forwardMessages(context.bot, reading.request),
+  );
 }
 
 function handleCopyMessages(
@@ -241,13 +215,14 @@ function handleCopyMessages(
 ): BotApiMethodAnswer {
   const parsedParameters = copyMessagesParametersSchema.safeParse(parameters);
   if (!parsedParameters.success) {
-    return botApiError(400, 'Bad Request: invalid copyMessages parameters');
+    return invalidMethodParametersAnswer('copyMessages', parsedParameters.error);
   }
   const reading = readRepeatMessagesRequest(parsedParameters.data);
   if (!reading.read) {
     return reading.errorAnswer;
   }
   return repeatMessagesAnswer(
+    'message_copy',
     context.session.botApi.copyMessages(context.bot, {
       ...reading.request,
       removesCaptions: parsedParameters.data.remove_caption,
@@ -296,20 +271,12 @@ function readRepeatMessagesRequest(
   };
 }
 
-function repeatMessagesAnswer(result: RepeatMessagesResult): BotApiMethodAnswer {
-  if (result.sent) {
-    return botApiResult(result.messageIds.map((messageId) => ({ message_id: messageId })));
-  }
-  switch (result.reason) {
-    case 'repeated_messages_not_found':
-      return botApiError(400, NO_MESSAGES_TO_FORWARD_DESCRIPTION);
-    case 'message_effect_not_allowed_for_several_messages':
-      return botApiError(400, MESSAGE_EFFECT_NOT_ALLOWED_IN_METHOD_DESCRIPTION);
-    case 'repeated_message_ids_not_increasing':
-      return botApiError(400, MESSAGE_IDS_NOT_INCREASING_DESCRIPTION);
-    case 'messages_not_repeatable':
-      return botApiError(400, MESSAGES_NOT_FORWARDABLE_DESCRIPTION);
-    default:
-      return sendMethodAnswer(result);
-  }
+/** Telegram's answer to `forwardMessages` or `copyMessages`: the new messages' IDs, or its error. */
+function repeatMessagesAnswer(
+  operation: 'message_forward' | 'message_copy',
+  result: ReturnType<EmulationSession['botApi']['forwardMessages']>,
+): BotApiMethodAnswer {
+  return result.sent
+    ? botApiResult(result.messageIds.map((messageId) => ({ message_id: messageId })))
+    : presentMessageRepetitionFailure(operation, result);
 }

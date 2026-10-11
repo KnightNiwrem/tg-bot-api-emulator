@@ -1,9 +1,7 @@
 import { z } from 'zod';
 
-import type { SupergroupBotAccessFailureReason } from '../../../../types/chat_membership.ts';
-import { botChatAccessFailureAnswer, CHAT_ID_EMPTY_DESCRIPTION } from '../chat_access.ts';
-import { BOT_API_ERRORS } from '../errors/error_catalogue.ts';
-import { presentFixedBotApiError } from '../errors/error_template.ts';
+import { CHAT_ID_EMPTY_DESCRIPTION } from '../chat_access.ts';
+import { presentMessagePinningFailure } from '../errors/message_pinning_failure_presenter.ts';
 import { messageIdOrNone, NO_MESSAGE_ID } from '../message_identifiers.ts';
 import {
   botApiError,
@@ -24,18 +22,6 @@ export const MESSAGE_PINNING_METHODS: readonly BotApiMethod[] = [
   { name: 'unpinChatMessage', recordsActivity: true, handler: handleUnpinChatMessage },
   { name: 'unpinAllChatMessages', recordsActivity: true, handler: handleUnpinAllChatMessages },
 ];
-
-/**
- * Telegram's descriptions for rejected pins: the official server's `check_message` and
- * `getChatPinnedMessage` failure, TDLib's `can_pin_message` errors, and Telegram's refusal of a pin
- * that changes nothing, which the server passes on.
- */
-const MESSAGE_TO_PIN_NOT_FOUND_DESCRIPTION = 'Bad Request: message to pin not found';
-const MESSAGE_TO_UNPIN_NOT_FOUND_DESCRIPTION = 'Bad Request: message to unpin not found';
-const NOT_ENOUGH_RIGHTS_TO_PIN_DESCRIPTION =
-  'Bad Request: not enough rights to manage pinned messages in the chat';
-const SERVICE_MESSAGE_NOT_PINNABLE_DESCRIPTION = "Bad Request: service messages can't be pinned";
-const PINNED_MESSAGE_NOT_MODIFIED_DESCRIPTION = 'Bad Request: CHAT_NOT_MODIFIED';
 
 // Business connections are not supported.
 const pinChatMessageParametersSchema = z.strictObject({
@@ -75,17 +61,7 @@ function handlePinChatMessage(
     messageId: messageIdOrNone(messageId),
     isSilent,
   });
-  if (result.pinned) {
-    return botApiResult(true);
-  }
-  switch (result.reason) {
-    case 'message_not_found':
-      return botApiError(400, MESSAGE_TO_PIN_NOT_FOUND_DESCRIPTION);
-    case 'message_already_pinned':
-      return botApiError(400, PINNED_MESSAGE_NOT_MODIFIED_DESCRIPTION);
-    default:
-      return pinChangeFailureAnswer(result.reason);
-  }
+  return result.pinned ? botApiResult(true) : presentMessagePinningFailure('message_pin', result);
 }
 
 function handleUnpinChatMessage(
@@ -105,17 +81,9 @@ function handleUnpinChatMessage(
     chatId,
     ...(messageId === undefined || messageId === NO_MESSAGE_ID ? {} : { messageId }),
   });
-  if (result.unpinned) {
-    return botApiResult(true);
-  }
-  switch (result.reason) {
-    case 'message_not_found':
-      return botApiError(400, MESSAGE_TO_UNPIN_NOT_FOUND_DESCRIPTION);
-    case 'message_not_pinned':
-      return botApiError(400, PINNED_MESSAGE_NOT_MODIFIED_DESCRIPTION);
-    default:
-      return pinChangeFailureAnswer(result.reason);
-  }
+  return result.unpinned
+    ? botApiResult(true)
+    : presentMessagePinningFailure('message_unpin', result);
 }
 
 function handleUnpinAllChatMessages(
@@ -132,31 +100,7 @@ function handleUnpinAllChatMessages(
   }
 
   const result = context.session.botApi.unpinAllChatMessages(context.bot, { chatId });
-  return result.unpinned ? botApiResult(true) : pinChangeFailureAnswer(result.reason);
-}
-
-/** Telegram's error for a pin or unpin refused for the chat, the bot's rights, or the message. */
-function pinChangeFailureAnswer(
-  reason:
-    | SupergroupBotAccessFailureReason
-    | 'bot_blocked'
-    | 'not_enough_rights'
-    | 'service_message_not_pinnable',
-): BotApiMethodAnswer {
-  switch (reason) {
-    case 'chat_not_found':
-    case 'bot_not_a_member':
-    case 'bot_kicked':
-      return botChatAccessFailureAnswer(reason);
-    case 'bot_blocked':
-      return presentFixedBotApiError(BOT_API_ERRORS.botBlocked);
-    case 'not_enough_rights':
-      return botApiError(400, NOT_ENOUGH_RIGHTS_TO_PIN_DESCRIPTION);
-    case 'service_message_not_pinnable':
-      return botApiError(400, SERVICE_MESSAGE_NOT_PINNABLE_DESCRIPTION);
-    default: {
-      const unhandledReason: never = reason;
-      throw new Error(`Unhandled pin failure: ${unhandledReason}`);
-    }
-  }
+  return result.unpinned
+    ? botApiResult(true)
+    : presentMessagePinningFailure('message_unpin', result);
 }

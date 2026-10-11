@@ -1,6 +1,7 @@
 import { z } from 'zod';
 
-import { botChatAccessFailureAnswer, CHAT_ID_EMPTY_DESCRIPTION } from '../chat_access.ts';
+import { CHAT_ID_EMPTY_DESCRIPTION } from '../chat_access.ts';
+import { presentMessageDeletionFailure } from '../errors/message_deletion_failure_presenter.ts';
 import {
   INVALID_MESSAGE_IDENTIFIER_DESCRIPTION,
   MESSAGE_IDENTIFIERS_NOT_SPECIFIED_DESCRIPTION,
@@ -25,10 +26,6 @@ export const MESSAGE_DELETION_METHODS: readonly BotApiMethod[] = [
   { name: 'deleteMessage', recordsActivity: true, handler: handleDeleteMessage },
   { name: 'deleteMessages', recordsActivity: true, handler: handleDeleteMessages },
 ];
-
-/** Telegram's descriptions for rejected message deletions. */
-const MESSAGE_TO_DELETE_NOT_FOUND_DESCRIPTION = 'Bad Request: message to delete not found';
-const MESSAGE_NOT_DELETABLE_DESCRIPTION = "Bad Request: message can't be deleted";
 
 /** Telegram deletes at most 100 messages in one deleteMessages request. */
 const MAX_DELETE_MESSAGES_COUNT = 100;
@@ -63,23 +60,7 @@ function handleDeleteMessage(
     context.bot,
     { chatId, messageId: messageIdOrNone(messageId) },
   );
-  if (result.deleted) {
-    return botApiResult(true);
-  }
-  switch (result.reason) {
-    case 'chat_not_found':
-    case 'bot_not_a_member':
-    case 'bot_kicked':
-      return botChatAccessFailureAnswer(result.reason);
-    case 'message_not_found':
-      return botApiError(400, MESSAGE_TO_DELETE_NOT_FOUND_DESCRIPTION);
-    case 'message_not_deletable':
-      return botApiError(400, MESSAGE_NOT_DELETABLE_DESCRIPTION);
-    default: {
-      const unhandledReason: never = result.reason;
-      throw new Error(`Unhandled deleteMessage failure: ${unhandledReason}`);
-    }
-  }
+  return result.deleted ? botApiResult(true) : presentMessageDeletionFailure(result);
 }
 
 function handleDeleteMessages(
@@ -109,19 +90,5 @@ function handleDeleteMessages(
     context.bot,
     { chatId, messageIds },
   );
-  if (result.deleted) {
-    return botApiResult(true);
-  }
-  switch (result.reason) {
-    case 'chat_not_found':
-    case 'bot_not_a_member':
-    case 'bot_kicked':
-      return botChatAccessFailureAnswer(result.reason);
-    case 'message_not_deletable':
-      return botApiError(400, MESSAGE_NOT_DELETABLE_DESCRIPTION);
-    default: {
-      const unhandledReason: never = result.reason;
-      throw new Error(`Unhandled deleteMessages failure: ${unhandledReason}`);
-    }
-  }
+  return result.deleted ? botApiResult(true) : presentMessageDeletionFailure(result);
 }

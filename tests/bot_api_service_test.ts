@@ -67,8 +67,8 @@ Deno.test('BotApiService reports why a bot cannot address a private chat, for th
     to: { type: 'private', botId: bot.profile.id },
     content: { kind: 'text', text: '/start' },
   });
-  // Telegram reports both as an unknown chat; the service keeps them apart for the presenters of
-  // the families that present them, while the others still report an unknown chat.
+  // Telegram reports both as an unknown chat; where the messaging services tell them apart, the
+  // service passes both on for the presenters to word.
   const chatId = strangerAccount.profile.id;
   const unknownAccountId = strangerAccount.profile.id + 1000;
 
@@ -105,12 +105,12 @@ Deno.test('BotApiService reports why a bot cannot address a private chat, for th
     [
       'deleteMessage',
       botApi.deleteMessage(bot.profile, { chatId, messageId: 1 }),
-      'chat_not_found',
+      'conversation_not_started',
     ],
     [
       'deleteMessages',
-      botApi.deleteMessages(bot.profile, { chatId, messageIds: [1] }),
-      'chat_not_found',
+      botApi.deleteMessages(bot.profile, { chatId: unknownAccountId, messageIds: [1] }),
+      'account_not_found',
     ],
     [
       'sendChatAction',
