@@ -166,6 +166,13 @@ import type {
   TextInvalidFailure,
   TextMessageReplacement,
 } from './message_content.ts';
+import type { MessageDeletionService } from './message_deletion.ts';
+import type {
+  BotCaptionEdit,
+  BotPrivateChatMessageTarget,
+  BotSupergroupMessageTarget,
+  MessageEditingService,
+} from './message_editing.ts';
 import type {
   PinMessageInput,
   PinMessageResult,
@@ -181,12 +188,6 @@ import type {
 } from './message_reaction.ts';
 import type { PollStopFailureReason } from './poll.ts';
 import type { PollLimitFailure } from './poll_normalization.ts';
-import type {
-  BotCaptionEdit,
-  BotPrivateChatMessageTarget,
-  BotSupergroupMessageTarget,
-  MessageEditingService,
-} from './message_editing.ts';
 import type { SendPermissionMissingFailure } from './supergroup_messaging.ts';
 
 /** The most UTF-8 bytes of text the Bot API reads before applying its formatting. */
@@ -1559,16 +1560,6 @@ interface BotMessaging {
         | 'conversation_not_started'
         | 'bot_blocked';
     };
-  deleteMessagesByBot(input: {
-    readonly fromBotId: number;
-    readonly chat: BotPrivateChat;
-    readonly botMessageIds: readonly number[];
-  }):
-    | { readonly deleted: true; readonly deletedMessageCount: number }
-    | {
-      readonly deleted: false;
-      readonly reason: 'bot_not_found' | 'account_not_found' | 'conversation_not_started';
-    };
 }
 
 interface SupergroupBotMessaging {
@@ -1581,21 +1572,13 @@ interface SupergroupBotMessaging {
       readonly allowed: false;
       readonly reason: 'bot_not_found' | 'chat_not_found' | FormerSupergroupMemberFailureReason;
     };
-  deleteMessagesByBot(input: {
-    readonly fromBotId: number;
-    readonly chatId: number;
-    readonly messageIds: readonly number[];
-  }):
-    | { readonly deleted: true; readonly deletedMessageCount: number }
-    | {
-      readonly deleted: false;
-      readonly reason:
-        | 'bot_not_found'
-        | 'chat_not_found'
-        | FormerSupergroupMemberFailureReason
-        | 'message_not_deletable';
-    };
 }
+
+/** The message deletion that `deleteMessage` and `deleteMessages` carry out, by chat type. */
+type BotMessageDeletion = Pick<
+  MessageDeletionService,
+  'deletePrivateChatMessages' | 'deleteSupergroupMessages'
+>;
 
 /**
  * The message editing that the edit methods and `stopPoll` carry out, by the target each addresses:
@@ -1970,6 +1953,8 @@ interface BotApiServiceDependencies {
    * Edits the bot's messages and the messages sent through its inline mode, and stops its polls.
    */
   readonly messageEditing: BotMessageEditing;
+  /** Deletes messages of the bot's chats. */
+  readonly messageDeletion: BotMessageDeletion;
   /**
    * Sends the bot's messages and albums to its chats, as every send method sends them, resolving
    * what they reply to in other chats.
@@ -2034,6 +2019,7 @@ export class BotApiService {
   readonly #botMessages: BotMessaging;
   readonly #supergroupBotMessages: SupergroupBotMessaging;
   readonly #messageEditing: BotMessageEditing;
+  readonly #messageDeletion: BotMessageDeletion;
   readonly #messageSender: BotMessageSending;
   readonly #messageRepeater: BotMessageRepetition;
   readonly #chatMemberships: ChatMemberships;
@@ -2063,6 +2049,7 @@ export class BotApiService {
       botMessages,
       supergroupBotMessages,
       messageEditing,
+      messageDeletion,
       messageSender,
       messageRepeater,
       chatMemberships,
@@ -2091,6 +2078,7 @@ export class BotApiService {
     this.#botMessages = botMessages;
     this.#supergroupBotMessages = supergroupBotMessages;
     this.#messageEditing = messageEditing;
+    this.#messageDeletion = messageDeletion;
     this.#messageSender = messageSender;
     this.#messageRepeater = messageRepeater;
     this.#chatMemberships = chatMemberships;
@@ -4352,14 +4340,14 @@ export class BotApiService {
     | { readonly deleted: true; readonly deletedMessageCount: number }
     | { readonly deleted: false; readonly reason: MessageDeletionFailureReason } {
     const result = isUserId(chatId)
-      ? this.#botMessages.deleteMessagesByBot({
+      ? this.#messageDeletion.deletePrivateChatMessages({
         fromBotId: authenticatedBot.id,
-        chat: { type: 'private', accountId: chatId },
-        botMessageIds: messageIds,
+        chat: { type: 'private', peerId: chatId },
+        messageIds,
       })
-      : this.#supergroupBotMessages.deleteMessagesByBot({
+      : this.#messageDeletion.deleteSupergroupMessages({
         fromBotId: authenticatedBot.id,
-        chatId,
+        chat: { type: 'supergroup', chatId },
         messageIds,
       });
     if (result.deleted) {

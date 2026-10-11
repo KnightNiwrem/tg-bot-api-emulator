@@ -289,6 +289,7 @@
           "src/services/supergroup_chat_policy.ts",
           "src/services/supergroup_messaging.ts",
           "src/services/message_content.ts",
+          "src/services/message_deletion.ts",
           "src/services/message_editing.ts",
           "src/services/poll.ts",
           "src/services/poll_normalization.ts",

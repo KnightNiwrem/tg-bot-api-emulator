@@ -2,7 +2,6 @@ import type { ChatDomainEvent } from '../types/chat_domain_event.ts';
 import {
   type ChatMembership,
   getEffectiveChatPermissions,
-  holdsSupergroupAdministratorRight,
   resolveSupergroupBotMembership,
   type SupergroupBotAccessFailureReason,
   type SupergroupMembershipLookup,
@@ -30,7 +29,6 @@ import type { ChatActor, Supergroup, SupergroupChatKey } from '../types/virtual_
 import {
   type CanonicalMessageId,
   getMessageSenderId,
-  isSupergroupContentMessage,
   type MediaGroupId,
   mentionsUser,
   type MessageContent,
@@ -314,43 +312,6 @@ export type PressSupergroupReplyKeyboardButtonResult =
   | SendSupergroupAccountMessageResult
   | { readonly sent: false; readonly reason: ReplyKeyboardButtonSelectionFailureReason };
 
-export interface DeleteSupergroupMessagesByBotInput {
-  readonly fromBotId: number;
-  readonly chatId: number;
-  /** The supergroup's IDs of the messages. */
-  readonly messageIds: readonly number[];
-}
-
-export type DeleteSupergroupMessagesByBotResult =
-  | {
-    readonly deleted: true;
-    /** How many of the IDs identified a message of the supergroup, each deleted once. */
-    readonly deletedMessageCount: number;
-  }
-  | {
-    readonly deleted: false;
-    readonly reason: 'bot_not_found' | SupergroupBotAccessFailureReason | 'message_not_deletable';
-  };
-
-export interface DeleteSupergroupAccountMessageInput {
-  readonly fromAccountId: number;
-  readonly chatId: number;
-  /** The supergroup's ID of the message. */
-  readonly messageId: number;
-}
-
-export type DeleteSupergroupAccountMessageResult =
-  | { readonly deleted: true }
-  | {
-    readonly deleted: false;
-    readonly reason:
-      | 'account_not_found'
-      | 'chat_not_found'
-      | 'not_a_member'
-      | 'message_not_found'
-      | 'message_not_deletable';
-  };
-
 export interface CheckSupergroupBotChatActionAccessInput {
   readonly fromBotId: number;
   readonly chatId: number;
@@ -431,7 +392,6 @@ interface SupergroupMessageStore {
     chat: SupergroupChatKey,
     messageId: CanonicalMessageId,
   ): SupergroupMessage | undefined;
-  deleteMessage(messageId: CanonicalMessageId): void;
   getChatMessages(chat: SupergroupChatKey): readonly SupergroupMessage[];
 }
 
@@ -465,11 +425,10 @@ interface SupergroupMessagingServiceDependencies {
  * the supergroup's own message box, then published. Only members write to a supergroup or read its
  * messages.
  *
- * Bots attach inline keyboards to their messages, and delete them; as on Telegram, only an
- * administrator bot with the right to delete messages deletes other members'. Bots also show reply
- * keyboards and forced replies to all members or to chosen ones, which account members press or
- * answer. Accounts send inline query results through inline bots. `MessageEditingService` edits
- * the messages of supergroups, as it edits those of every chat type.
+ * Bots attach inline keyboards to their messages, and show reply keyboards and forced replies to
+ * all members or to chosen ones, which account members press or answer. Accounts send inline query
+ * results through inline bots. `MessageEditingService` edits, and `MessageDeletionService`
+ * deletes, the messages of supergroups, as they do those of every chat type.
  *
  * Results carry canonical messages; presenting them to an observer is left to the caller.
  */
@@ -832,82 +791,6 @@ export class SupergroupMessagingService {
         isSilent: input.isSilent,
       }, repliedMessage),
     };
-  }
-
-  /**
-   * Deletes messages of a supergroup for every member. IDs that identify no message of the
-   * supergroup, including messages already deleted, are skipped. As on Telegram, a bot deletes its
-   * own messages, and any message, service messages included, as an administrator with the
-   * `can_delete_messages` right; otherwise a message of another member cannot be deleted, and then
-   * none is.
-   */
-  deleteMessagesByBot(
-    input: DeleteSupergroupMessagesByBotInput,
-  ): DeleteSupergroupMessagesByBotResult {
-    if (this.#bots.getById(input.fromBotId) === undefined) {
-      return { deleted: false, reason: 'bot_not_found' };
-    }
-    const botMembership = resolveSupergroupBotMembership(
-      this.#sharedChats,
-      input.fromBotId,
-      input.chatId,
-    );
-    if (!botMembership.resolved) {
-      return { deleted: false, reason: botMembership.reason };
-    }
-    const deletesAnyMessage = holdsSupergroupAdministratorRight(
-      botMembership.membership,
-      'can_delete_messages',
-    );
-
-    const messages = new Map<CanonicalMessageId, SupergroupMessage>();
-    for (const messageId of input.messageIds) {
-      const message = this.getMessageByChatMessageId(input.chatId, messageId);
-      if (message === undefined) {
-        continue;
-      }
-      const isOwnMessage = message.sender.kind === 'bot' &&
-        message.sender.botId === input.fromBotId;
-      if (!isOwnMessage && !deletesAnyMessage) {
-        return { deleted: false, reason: 'message_not_deletable' };
-      }
-      messages.set(message.id, message);
-    }
-    for (const messageId of messages.keys()) {
-      this.#messages.deleteMessage(messageId);
-    }
-    return { deleted: true, deletedMessageCount: messages.size };
-  }
-
-  /**
-   * Deletes a message of a supergroup for every member, as an account does from its client. As
-   * TDLib's `can_delete_channel_message` allows, an account deletes the messages it wrote, and the
-   * owner or an administrator with the `can_delete_messages` right deletes any message; a member
-   * cannot delete a service message recording its own change. As for a bot's deletion, no bot
-   * receives an update for it.
-   */
-  deleteAccountMessage(
-    { fromAccountId, chatId, messageId }: DeleteSupergroupAccountMessageInput,
-  ): DeleteSupergroupAccountMessageResult {
-    const memberResolution = this.#resolveAccountMember(fromAccountId, chatId);
-    if (!memberResolution.resolved) {
-      return { deleted: false, reason: memberResolution.reason };
-    }
-    const message = this.getMessageByChatMessageId(chatId, messageId);
-    if (message === undefined) {
-      return { deleted: false, reason: 'message_not_found' };
-    }
-    const deletesAnyMessage = holdsSupergroupAdministratorRight(
-      this.#sharedChats.getChatMembership(chatId, fromAccountId),
-      'can_delete_messages',
-    );
-    const isOwnContentMessage = isSupergroupContentMessage(message) &&
-      message.sender.kind === 'account' && message.sender.accountId === fromAccountId;
-    if (!isOwnContentMessage && !deletesAnyMessage) {
-      return { deleted: false, reason: 'message_not_deletable' };
-    }
-    this.#messages.deleteMessage(message.id);
-    return { deleted: true };
   }
 
   /**

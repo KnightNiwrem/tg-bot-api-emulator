@@ -11,7 +11,12 @@ import {
   MAX_DISTINCT_REACTIONS_PER_MESSAGE,
   MessageReactionService,
 } from '../src/services/message_reaction.ts';
+import { BlockedUserRepository } from '../src/repositories/blocked_user.ts';
+import { PrivateConversationRepository } from '../src/repositories/private_conversation.ts';
+import { MessageDeletionService } from '../src/services/message_deletion.ts';
+import { PrivateChatPolicy } from '../src/services/private_chat_policy.ts';
 import { SharedChatAdministrationService } from '../src/services/shared_chat_administration.ts';
+import { SupergroupChatPolicy } from '../src/services/supergroup_chat_policy.ts';
 import { SupergroupMessagingService } from '../src/services/supergroup_messaging.ts';
 import { VirtualUserService } from '../src/services/virtual_user.ts';
 import type { ChatDomainEvent } from '../src/types/chat_domain_event.ts';
@@ -318,15 +323,14 @@ Deno.test('MessageReactionService finds messages only for members and bots of th
 });
 
 Deno.test('MessageReactionService loses the reactions of a deleted message', () => {
-  const { messageReactions, supergroupMessaging, ada, supergroup, sendText } =
-    createReactionFixture();
+  const { messageReactions, messageDeletion, ada, supergroup, sendText } = createReactionFixture();
   const message = sendText(ada.profile.id, 'Typo');
   const key = { accountId: ada.profile.id, chatId: supergroup.id, messageId: message.messageId };
   messageReactions.setAccountMessageReaction({ ...key, emojis: ['😁'] });
 
-  supergroupMessaging.deleteAccountMessage({
+  messageDeletion.deleteAccountSupergroupMessage({
     fromAccountId: ada.profile.id,
-    chatId: supergroup.id,
+    chat: { type: 'supergroup', chatId: supergroup.id },
     messageId: message.messageId,
   });
 
@@ -369,6 +373,23 @@ function createReactionFixture() {
     supergroupMessages: supergroupMessaging,
     events,
     currentUnixTimeSeconds,
+  });
+  const privateConversations = new PrivateConversationRepository();
+  const messageDeletion = new MessageDeletionService({
+    accounts,
+    bots,
+    // These tests send no private messages, so none is found.
+    privateChats: new PrivateChatPolicy({
+      accounts,
+      bots,
+      privateConversations,
+      blockedUsers: new BlockedUserRepository(),
+      joinRequesterContacts: { mayContactJoinRequester: () => false },
+      privateMessages: { getPrivateMessageByBotMessageId: () => undefined },
+    }),
+    supergroups: new SupergroupChatPolicy({ sharedChats, supergroupMessages: supergroupMessaging }),
+    messages,
+    privateReplyInterfaces: privateConversations,
   });
   const messageReactions = new MessageReactionService({
     accounts,
@@ -435,6 +456,7 @@ function createReactionFixture() {
     virtualUsers,
     sharedChatAdministration,
     supergroupMessaging,
+    messageDeletion,
     messages,
     messageBoxes,
     messageReactions,
