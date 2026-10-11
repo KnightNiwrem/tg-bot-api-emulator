@@ -8,7 +8,6 @@ required:
 properties:
   content_base64:
     type: string
-    minLength: 1
     contentEncoding: base64
     description: >-
       The video's content, which must not be empty. An account uploads through its own
