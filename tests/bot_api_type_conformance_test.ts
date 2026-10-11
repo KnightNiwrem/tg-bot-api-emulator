@@ -13,6 +13,8 @@
 import type {
   Audio,
   BotCommand,
+  BotDescription,
+  BotShortDescription,
   CallbackQuery,
   Chat,
   ChatAdministratorRights,
@@ -31,11 +33,13 @@ import type {
   ChosenInlineResult,
   Document,
   File,
+  InaccessibleMessage,
   InlineQuery,
   MenuButton,
   Message,
   MessageEntity,
   MessageGenerationStopped,
+  MessageId,
   MessageReactionUpdated,
   PhotoSize,
   Poll,
@@ -52,6 +56,8 @@ import type {
 import type {
   BotApiAudio,
   BotApiBotCommand,
+  BotApiBotDescription,
+  BotApiBotShortDescription,
   BotApiCallbackQueryUpdate,
   BotApiChatInviteLink,
   BotApiChatJoinRequestUpdate,
@@ -62,21 +68,26 @@ import type {
   BotApiDocument,
   BotApiDownloadableFile,
   BotApiEditedMessageUpdate,
+  BotApiInaccessibleMessage,
   BotApiInlineQueryUpdate,
   BotApiMenuButton,
   BotApiMessage,
   BotApiMessageEntity,
   BotApiMessageGenerationStopped,
+  BotApiMessageId,
   BotApiMessageReactionUpdate,
   BotApiMessageReactionUpdated,
   BotApiMessageUpdate,
   BotApiMyChatMemberUpdate,
   BotApiPinnedPrivateMessage,
+  BotApiPinnedSupergroupMessage,
   BotApiPollAnswerUpdate,
   BotApiPollUpdate,
   BotApiPrivateChat,
   BotApiPrivateChatFullInfo,
   BotApiPrivateMessage,
+  BotApiRepliedPrivateMessage,
+  BotApiRepliedSupergroupMessage,
   BotApiStoppedMessageGenerationUpdate,
   BotApiSupergroupChat,
   BotApiSupergroupChatFullInfo,
@@ -338,6 +349,18 @@ type GrammySupergroupMessage =
     | Message.PinnedMessageMessage
   );
 
+/**
+ * grammY's message of any kind in a private chat. A replied or pinned message is checked against
+ * it because grammY's `Message`, where such a message is nested, allows it any chat.
+ */
+type GrammyMessageInPrivateChat = Message & Update.NonChannel & Update.Private;
+
+/** grammY's message of any kind in a supergroup, as `GrammyMessageInPrivateChat` describes. */
+type GrammyMessageInSupergroup = Message & Update.NonChannel & { chat: Chat.SupergroupChat };
+
+/** grammY's replied message, which never shows its own reply. */
+type GrammyRepliedMessage = NonNullable<Message['reply_to_message']>;
+
 type GrammyEditedPrivateMessage = Update.Edited & GrammyPrivateMessage;
 
 type GrammyEditedSupergroupMessage = Update.Edited & GrammySupergroupMessage;
@@ -366,6 +389,33 @@ interface BotApiWireTypeConformance {
   getMeUser: ExpectTrue<ConformsToGrammy<VirtualBotProfile, UserFromGetMe>>;
   privateMessage: ExpectTrue<ConformsToGrammy<BotApiPrivateMessage, GrammyPrivateMessage>>;
   supergroupMessage: ExpectTrue<ConformsToGrammy<BotApiSupergroupMessage, GrammySupergroupMessage>>;
+  repliedPrivateMessage: ExpectTrue<
+    ConformsToGrammy<BotApiRepliedPrivateMessage, GrammyRepliedMessage & GrammyMessageInPrivateChat>
+  >;
+  repliedSupergroupMessage: ExpectTrue<
+    ConformsToGrammy<
+      BotApiRepliedSupergroupMessage,
+      GrammyRepliedMessage & GrammyMessageInSupergroup
+    >
+  >;
+  pinnedPrivateMessage: ExpectTrue<
+    ConformsToGrammy<BotApiPinnedPrivateMessage, GrammyMessageInPrivateChat>
+  >;
+  pinnedSupergroupMessage: ExpectTrue<
+    ConformsToGrammy<BotApiPinnedSupergroupMessage, GrammyMessageInSupergroup>
+  >;
+  inaccessiblePrivateMessage: ExpectTrue<
+    ConformsToGrammy<
+      BotApiInaccessibleMessage<BotApiPrivateChat>,
+      InaccessibleMessage & Update.Private
+    >
+  >;
+  inaccessibleSupergroupMessage: ExpectTrue<
+    ConformsToGrammy<
+      BotApiInaccessibleMessage<BotApiSupergroupChat>,
+      InaccessibleMessage & { chat: Chat.SupergroupChat }
+    >
+  >;
   richMessage: ExpectTrue<
     ConformsToGrammy<BotApiRichMessage, NonNullable<Message['rich_message']>>
   >;
@@ -476,6 +526,9 @@ interface BotApiWireTypeConformance {
   chatInviteLink: ExpectTrue<ConformsToGrammy<BotApiChatInviteLink, ChatInviteLink>>;
   downloadableFile: ExpectTrue<ConformsToGrammy<BotApiDownloadableFile, File>>;
   botCommand: ExpectTrue<ConformsToGrammy<BotApiBotCommand, BotCommand>>;
+  botDescription: ExpectTrue<ConformsToGrammy<BotApiBotDescription, BotDescription>>;
+  botShortDescription: ExpectTrue<ConformsToGrammy<BotApiBotShortDescription, BotShortDescription>>;
+  messageId: ExpectTrue<ConformsToGrammy<BotApiMessageId, MessageId>>;
   menuButton: ExpectTrue<ConformsToGrammy<BotApiMenuButton, MenuButton>>;
   defaultAdministratorRights: ExpectTrue<
     ConformsToGrammy<BotApiDefaultAdministratorRights, ChatAdministratorRights>
@@ -654,6 +707,20 @@ type FileWithIncompatibleValue =
 /** An invite link without whether it is revoked, which grammY requires. */
 type InviteLinkWithoutRequiredField = Omit<BotApiChatInviteLink, 'is_revoked'>;
 
+/**
+ * grammY's `Message` and `InaccessibleMessage` admit a message of any chat, so a replied, pinned or
+ * deleted message is checked against grammY's message in its own kind of chat.
+ */
+type DeletedMessageAdmitsAnyChat = ExpectTrue<
+  ConformsToGrammy<BotApiInaccessibleMessage<BotApiSupergroupChat>, InaccessibleMessage>
+>;
+
+/** A deleted message of a supergroup, checked as one of a private chat. */
+type DeletedMessageOfAnotherChat = ConformsToGrammy<
+  BotApiInaccessibleMessage<BotApiSupergroupChat>,
+  InaccessibleMessage & Update.Private
+>;
+
 /** A recursive local type that allows `rootOnly` at every depth. */
 interface RecursiveLocalNode {
   readonly rootOnly?: string;
@@ -689,6 +756,9 @@ interface NegativeCaseFailures {
   incompatibleValueIsNotAssignable: ExpectTrue<
     IsExactly<FailingPaths<ConformsToGrammy<FileWithIncompatibleValue, File>>, 'file_size'>
   >;
+  messageOfAnotherChatIsNotAssignable: ExpectTrue<
+    IsExactly<FailingPaths<DeletedMessageOfAnotherChat>, 'chat'>
+  >;
   missingRequiredFieldIsNotAssignable: ExpectTrue<
     IsExactly<
       FailingPaths<ConformsToGrammy<InviteLinkWithoutRequiredField, ChatInviteLink>>,
@@ -713,6 +783,10 @@ interface NegativeCasesFail {
   incompatibleValue: ExpectTrue<
     // @ts-expect-error A value of another type is not assignable to grammY's.
     ConformsToGrammy<FileWithIncompatibleValue, File>
+  >;
+  messageOfAnotherChat: ExpectTrue<
+    // @ts-expect-error A message of a supergroup is not one of a private chat.
+    DeletedMessageOfAnotherChat
   >;
   missingRequiredField: ExpectTrue<
     // @ts-expect-error A field grammY requires cannot be missing.

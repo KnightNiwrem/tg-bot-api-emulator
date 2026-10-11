@@ -655,7 +655,6 @@ export type BotApiPinnedSupergroupMessage = BotApiRepliedMessageInChat<
   BotApiMessageContent
 >;
 
-/** A bot command as the Bot API shows it. */
 /**
  * The rights a bot asks for by default as an administrator of a kind of chat: every right that
  * applies to the kind, held or not, in the order the Bot API shows them.
@@ -670,11 +669,30 @@ export type BotApiMenuButton =
   | { readonly type: 'web_app'; readonly text: string; readonly web_app: { readonly url: string } }
   | { readonly type: 'default' };
 
+/** A bot command as the Bot API shows it. */
 export interface BotApiBotCommand {
   readonly command: string;
   readonly description: string;
   /** Present only when set. */
   readonly is_ephemeral?: true;
+}
+
+/** The bot's description in one language, as `getMyDescription` returns it; empty for none. */
+export interface BotApiBotDescription {
+  readonly description: string;
+}
+
+/**
+ * The bot's short description in one language, as `getMyShortDescription` returns it; empty for
+ * none.
+ */
+export interface BotApiBotShortDescription {
+  readonly short_description: string;
+}
+
+/** The ID of a message a bot sent, as `copyMessage`, `copyMessages` and `forwardMessages` return it. */
+export interface BotApiMessageId {
+  readonly message_id: number;
 }
 
 /**

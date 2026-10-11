@@ -1,5 +1,6 @@
 import { z } from 'zod';
 
+import type { BotApiBotDescription, BotApiBotShortDescription } from '../../../../types/bot_api.ts';
 import type { EmulationSession } from '../../../../types/emulation_session.ts';
 import {
   botCommandScopeParameter,
@@ -346,7 +347,7 @@ function handleGetMyDescription(
     languageCode: parsedParameters.data.language_code,
   });
   return result.found
-    ? botApiResult({ description: result.text })
+    ? botApiResult({ description: result.text } satisfies BotApiBotDescription)
     : presentBotProfileFailure(result);
 }
 
@@ -363,6 +364,6 @@ function handleGetMyShortDescription(
     languageCode: parsedParameters.data.language_code,
   });
   return result.found
-    ? botApiResult({ short_description: result.text })
+    ? botApiResult({ short_description: result.text } satisfies BotApiBotShortDescription)
     : presentBotProfileFailure(result);
 }
