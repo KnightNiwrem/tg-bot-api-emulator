@@ -386,7 +386,7 @@ Deno.test('a grammY bot asks for a contact and a location through its webhook an
   const grammyBot = new Bot(botToken, {
     client: {
       apiRoot: `${TEST_PUBLIC_ORIGIN}${sessionPath}/bot-api`,
-      fetch: async (input, init) => await api.fetch(new Request(input, init)),
+      fetch: api.fetch,
     },
   });
   const answered = Promise.withResolvers<void>();

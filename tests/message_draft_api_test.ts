@@ -7,11 +7,14 @@ import {
   type EmulationSessionClient,
   type MessageDraft,
   type PrivateMessageTarget,
-  TelegramEmulationClient,
   type VirtualAccountClient,
 } from '../clients/typescript/mod.ts';
 import { messageDraftResponseSchema } from '../clients/typescript/schemas.ts';
-import { createTestApi, type EmulationApi, TEST_PUBLIC_ORIGIN } from './support/emulation_api.ts';
+import {
+  createTestInProcessEmulator,
+  type EmulationApi,
+  type TestInProcessEmulator,
+} from './support/emulation_api.ts';
 
 /** The most characters of message text Telegram accepts. */
 const MAX_TEXT_LENGTH = 4_096;
@@ -333,7 +336,7 @@ Deno.test('a test expires the draft an account sees, which the bot can show agai
 });
 
 Deno.test('drafts stay within their own chat, bot and session', async () => {
-  const api = createTestApi();
+  await using api = createTestInProcessEmulator();
   const { session, bot, ada, privateChat, callBot } = await createDraftFixture(api);
   const other = await createDraftFixture(api);
   try {
@@ -667,7 +670,7 @@ Deno.test('a kept draft stays stopped until it expires or the bot sends the part
 });
 
 Deno.test('refused stops leave the draft shown and tell the bot nothing', async () => {
-  const api = createTestApi();
+  await using api = createTestInProcessEmulator();
   const { session, bot, ada, privateChat, callBot } = await createDraftFixture(api);
   const other = await createDraftFixture(api);
   try {
@@ -941,10 +944,11 @@ interface DraftFixture {
 }
 
 /** A session in which Ada started a chat with the bot, which answers Bot API calls. */
-async function createDraftFixture(api = createTestApi()): Promise<DraftFixture> {
-  const fetch: typeof globalThis.fetch = async (input, init) =>
-    await api.fetch(new Request(input, init));
-  const session = await new TelegramEmulationClient(TEST_PUBLIC_ORIGIN, { fetch }).createSession();
+async function createDraftFixture(
+  api: TestInProcessEmulator = createTestInProcessEmulator(),
+): Promise<DraftFixture> {
+  const { fetch } = api;
+  const session = await api.client.createSession();
   const createdBot = await session.createBot({ first_name: 'Answer Bot', username: 'answer_bot' });
   const { account: ada } = await session.createAccount({ first_name: 'Ada' });
   const privateChat: PrivateMessageTarget = { type: 'private', botId: createdBot.bot.id };

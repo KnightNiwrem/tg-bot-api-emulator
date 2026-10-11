@@ -8,14 +8,13 @@ import {
   type EmulationSessionClient,
   type PrivateMessage,
   type PrivateMessageTarget,
-  TelegramEmulationClient,
   type VirtualAccountClient,
 } from '../clients/typescript/mod.ts';
 import {
-  createTestApi,
+  createTestInProcessEmulator,
   type EmulationApi,
   requestJson,
-  TEST_PUBLIC_ORIGIN,
+  type TestInProcessEmulator,
 } from './support/emulation_api.ts';
 
 const DATES_APP_URL = 'https://hotel.example/dates';
@@ -480,7 +479,7 @@ Deno.test('a submission is stored but not delivered when the bot excludes messag
 });
 
 Deno.test('Web App submissions stay within their session', async () => {
-  const api = createTestApi();
+  await using api = createTestInProcessEmulator();
   const first = await createWebAppFixture(api);
   const second = await createWebAppFixture(api);
   await showDatesKeyboard(first.callBot, first.ada.id);
@@ -526,10 +525,11 @@ type BotApiCaller = (
 ) => Promise<{ ok: boolean; result?: unknown; description?: string }>;
 
 /** Creates a session whose bot Ada has started a private chat with. */
-async function createWebAppFixture(api = createTestApi()): Promise<WebAppFixture> {
-  const fetch: typeof globalThis.fetch = async (input, init) =>
-    await api.fetch(new Request(input, init));
-  const session = await new TelegramEmulationClient(TEST_PUBLIC_ORIGIN, { fetch }).createSession();
+async function createWebAppFixture(
+  api: TestInProcessEmulator = createTestInProcessEmulator(),
+): Promise<WebAppFixture> {
+  const { fetch } = api;
+  const session = await api.client.createSession();
   const createdBot = await session.createBot({ first_name: 'Hotel Bot', username: 'hotel_bot' });
   const { account: ada } = await session.createAccount({ first_name: 'Ada' });
   const privateChat: PrivateMessageTarget = { type: 'private', botId: createdBot.bot.id };

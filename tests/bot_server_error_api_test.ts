@@ -8,6 +8,7 @@ import {
   type EmulationApi,
   requestJson,
   TEST_PUBLIC_ORIGIN,
+  type TestInProcessEmulator,
 } from './support/emulation_api.ts';
 
 interface BotApiBody {
@@ -431,7 +432,7 @@ async function createBot(
 }
 
 function createGrammyBot(
-  api: EmulationApi,
+  api: TestInProcessEmulator,
   sessionPath: string,
   token: string,
   clientOptions: { canUseWebhookReply?: (method: string) => boolean } = {},
@@ -439,7 +440,7 @@ function createGrammyBot(
   return new Bot(token, {
     client: {
       apiRoot: `${TEST_PUBLIC_ORIGIN}${sessionPath}/bot-api`,
-      fetch: async (input, init) => await api.fetch(new Request(input, init)),
+      fetch: api.fetch,
       ...clientOptions,
     },
   });

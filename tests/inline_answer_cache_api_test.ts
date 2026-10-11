@@ -8,10 +8,12 @@ import {
   type LocationInput,
   type PrivateMessageTarget,
   type SendInlineQueryInput,
-  TelegramEmulationClient,
   type VirtualAccountClient,
 } from '../clients/typescript/mod.ts';
-import { createTestApi, TEST_PUBLIC_ORIGIN } from './support/emulation_api.ts';
+import {
+  createTestInProcessEmulator,
+  type TestInProcessEmulator,
+} from './support/emulation_api.ts';
 
 Deno.test('a test expires a cached inline answer, and the next query reaches the bot', async () => {
   const { session, ada, grace, bot, privateChat, callBot, takeInlineQueryUpdates } =
@@ -90,7 +92,7 @@ Deno.test('a test expires a cached inline answer, and the next query reaches the
 });
 
 Deno.test('answer cache expiry follows the request, not the chat, and stays in its session', async () => {
-  const api = createTestApi();
+  await using api = createTestInProcessEmulator();
   const first = await createInlineCacheFixture(api);
   const second = await createInlineCacheFixture(api);
   try {
@@ -158,7 +160,7 @@ Deno.test('answer cache expiry follows the request, not the chat, and stays in i
 });
 
 Deno.test('answer cache expiry is refused, changing nothing, when there is no answer to expire', async () => {
-  const api = createTestApi();
+  await using api = createTestInProcessEmulator();
   const { session, ada, bot, privateChat, callBot, takeInlineQueryUpdates } =
     await createInlineCacheFixture(api);
   try {
@@ -287,10 +289,11 @@ interface InlineCacheFixture {
  * Creates a session where Ada and Grace can type inline queries for an inline bot that requests
  * their location, which the test drives through its Bot API unless it starts a grammY bot.
  */
-async function createInlineCacheFixture(api = createTestApi()): Promise<InlineCacheFixture> {
-  const fetch: typeof globalThis.fetch = async (input, init) =>
-    await api.fetch(new Request(input, init));
-  const session = await new TelegramEmulationClient(TEST_PUBLIC_ORIGIN, { fetch }).createSession();
+async function createInlineCacheFixture(
+  api: TestInProcessEmulator = createTestInProcessEmulator(),
+): Promise<InlineCacheFixture> {
+  const { fetch } = api;
+  const session = await api.client.createSession();
   const createdBot = await session.createBot({
     first_name: 'Inline Bot',
     username: 'inline_bot',

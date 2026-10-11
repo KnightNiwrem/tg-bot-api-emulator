@@ -889,7 +889,7 @@ Deno.test('a grammY bot mutes a member through its webhook and observes the chan
   const grammyBot = new Bot(moderatorBot.token, {
     client: {
       apiRoot: `${TEST_PUBLIC_ORIGIN}${sessionPath}/bot-api`,
-      fetch: async (input, init) => await api.fetch(new Request(input, init)),
+      fetch: api.fetch,
     },
   });
   const restrictionObserved = Promise.withResolvers<string>();

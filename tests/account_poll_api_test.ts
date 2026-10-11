@@ -7,11 +7,11 @@ import {
   type EmulationSessionClient,
   type PrivateMessageTarget,
   type SupergroupMessageTarget,
-  TelegramEmulationClient,
 } from '../clients/typescript/mod.ts';
-import { createTestApi } from './support/emulation_api.ts';
-
-const PUBLIC_ORIGIN = 'http://emulator.example:9000';
+import {
+  createTestInProcessEmulator,
+  type TestInProcessEmulator,
+} from './support/emulation_api.ts';
 
 const LUNCH_POLL: AccountPollInput = {
   question: 'Lunch?',
@@ -518,7 +518,7 @@ Deno.test('a bot copies an account quiz only where it sees its solution', async 
 });
 
 Deno.test('account polls stay within their session', async () => {
-  const api = createTestApi(PUBLIC_ORIGIN);
+  await using api = createTestInProcessEmulator();
   const first = await createAccountPollFixture(api);
   const second = await createAccountPollFixture(api);
   const pollMessage = await first.ada.sendPoll({ to: first.privateChat, poll: LUNCH_POLL });
@@ -559,11 +559,10 @@ Deno.test('account polls stay within their session', async () => {
  * with; Ada owns a supergroup with Grace and the bot; Linus is an account outside it.
  */
 async function createAccountPollFixture(
-  api = createTestApi(PUBLIC_ORIGIN),
+  api: TestInProcessEmulator = createTestInProcessEmulator(),
 ) {
-  const fetch: typeof globalThis.fetch = async (input, init) =>
-    await api.fetch(new Request(input, init));
-  const session = await new TelegramEmulationClient(PUBLIC_ORIGIN, { fetch }).createSession();
+  const { fetch } = api;
+  const session = await api.client.createSession();
   const createdBot = await session.createBot({
     first_name: 'Survey Bot',
     username: 'survey_bot',

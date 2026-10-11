@@ -7,7 +7,6 @@ import { GrammyError } from 'https://cdn.jsdelivr.net/gh/grammyjs/grammY@^1.46.0
 import { MAX_TELEGRAM_USER_ID } from '../../src/types/telegram_identity.ts';
 import { createTestSession, jsonRequest, TEST_PUBLIC_ORIGIN } from '../support/emulation_api.ts';
 import { expectSettlementWithin } from '../support/settlement.ts';
-import { createInProcessFetch } from '../support/in_process_fetch.ts';
 import {
   isBadRequestResponse,
   isGetUpdatesResponse,
@@ -260,7 +259,7 @@ Deno.test('a grammY bot deletes an incoming secret and its menu after a button p
   const grammyBot = new Bot(createdBot.token, {
     client: {
       apiRoot: `${TEST_PUBLIC_ORIGIN}${sessionPath}/bot-api`,
-      fetch: createInProcessFetch(api.fetch),
+      fetch: api.fetch,
     },
   });
   const menuSent = Promise.withResolvers<number>();
@@ -711,7 +710,7 @@ Deno.test('a grammY bot asks a question in a reply and reads the account reply t
   const grammyBot = new Bot(createdBot.token, {
     client: {
       apiRoot: `${TEST_PUBLIC_ORIGIN}${sessionPath}/bot-api`,
-      fetch: createInProcessFetch(api.fetch),
+      fetch: api.fetch,
     },
   });
   const questionAsked = Promise.withResolvers<number>();
@@ -1083,7 +1082,7 @@ Deno.test('a grammY bot answers an edited message and forgets a user who blocks 
   const grammyBot = new Bot(createdBot.token, {
     client: {
       apiRoot: `${TEST_PUBLIC_ORIGIN}${sessionPath}/bot-api`,
-      fetch: createInProcessFetch(api.fetch),
+      fetch: api.fetch,
     },
   });
   const subscribers = new Set<number>();
@@ -2129,7 +2128,7 @@ Deno.test('a grammY support bot forwards questions to its team and copies answer
   const grammyBot = new Bot(bot.token, {
     client: {
       apiRoot: `${TEST_PUBLIC_ORIGIN}${sessionPath}/bot-api`,
-      fetch: createInProcessFetch(api.fetch),
+      fetch: api.fetch,
     },
   });
   const answerCopied = Promise.withResolvers<void>();

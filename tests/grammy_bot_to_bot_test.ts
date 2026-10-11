@@ -1,6 +1,6 @@
 import { Bot } from 'https://cdn.jsdelivr.net/gh/grammyjs/grammY@^1.46.0/src/bot.ts';
 
-import { createTestInProcessEmulator } from './support/in_process_emulator.ts';
+import { createTestInProcessEmulator } from './support/emulation_api.ts';
 
 for (
   const { optedIn, coordinatorEnables, translatorEnables } of [

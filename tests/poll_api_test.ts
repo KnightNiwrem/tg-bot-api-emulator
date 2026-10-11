@@ -704,7 +704,7 @@ Deno.test('a grammY bot sends a poll in reply to a command, and accounts vote in
   const grammyBot = new Bot(botToken, {
     client: {
       apiRoot: `${TEST_PUBLIC_ORIGIN}${sessionPath}/bot-api`,
-      fetch: async (input, init) => await api.fetch(new Request(input, init)),
+      fetch: api.fetch,
     },
   });
   const pollSent = Promise.withResolvers<{ message_id: number; poll: TestPoll }>();
@@ -1048,7 +1048,7 @@ Deno.test('a grammY bot thanks voters through its webhook, as the activity log s
   const grammyBot = new Bot(botToken, {
     client: {
       apiRoot: `${TEST_PUBLIC_ORIGIN}${sessionPath}/bot-api`,
-      fetch: async (input, init) => await api.fetch(new Request(input, init)),
+      fetch: api.fetch,
     },
   });
   const thanked = Promise.withResolvers<void>();

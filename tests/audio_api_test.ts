@@ -940,7 +940,7 @@ Deno.test('a grammY bot receives a track and replies with its own track and a co
   const grammyBot = new Bot(bot.token, {
     client: {
       apiRoot: `${TEST_PUBLIC_ORIGIN}${sessionPath}/bot-api`,
-      fetch: async (input, init) => await api.fetch(new Request(input, init)),
+      fetch: api.fetch,
     },
   });
   await grammyBot.init();

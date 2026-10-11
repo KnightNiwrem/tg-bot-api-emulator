@@ -5,10 +5,9 @@ import {
   type MessageTarget,
   type PrivateMessageTarget,
   type SupergroupMessageTarget,
-  TelegramEmulationClient,
   type VirtualAccountClient,
 } from '../clients/typescript/mod.ts';
-import { createTestApi, TEST_PUBLIC_ORIGIN } from './support/emulation_api.ts';
+import { createTestInProcessEmulator } from './support/emulation_api.ts';
 
 interface FixtureBot {
   readonly id: number;
@@ -38,10 +37,9 @@ interface ShownChat {
  * bots. Grace may pin by the supergroup's default permissions.
  */
 async function createUnpinAllFixture() {
-  const api = createTestApi();
-  const fetch: typeof globalThis.fetch = async (input, init) =>
-    await api.fetch(new Request(input, init));
-  const session = await new TelegramEmulationClient(TEST_PUBLIC_ORIGIN, { fetch }).createSession();
+  const api = createTestInProcessEmulator();
+  const { fetch } = api;
+  const session = await api.client.createSession();
   const { account: ada } = await session.createAccount({ first_name: 'Ada' });
   const { account: grace } = await session.createAccount({ first_name: 'Grace' });
   const createBot = async (username: string): Promise<FixtureBot> => {

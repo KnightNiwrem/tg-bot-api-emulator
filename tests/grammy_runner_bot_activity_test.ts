@@ -6,7 +6,7 @@ import { latest } from '../clients/typescript/mod.ts';
 import {
   createTestInProcessEmulator,
   type TestInProcessEmulator,
-} from './support/in_process_emulator.ts';
+} from './support/emulation_api.ts';
 
 Deno.test('a sequentialized grammY runner keeps each chat in order while chats interleave', async () => {
   await using emulator = createTestInProcessEmulator();

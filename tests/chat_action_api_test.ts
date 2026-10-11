@@ -8,10 +8,12 @@ import {
   type ExpireChatActionInput,
   type PrivateMessageTarget,
   type SupergroupMessageTarget,
-  TelegramEmulationClient,
   type VirtualAccountClient,
 } from '../clients/typescript/mod.ts';
-import { createTestApi, TEST_PUBLIC_ORIGIN } from './support/emulation_api.ts';
+import {
+  createTestInProcessEmulator,
+  type TestInProcessEmulator,
+} from './support/emulation_api.ts';
 
 Deno.test('a test expires the chat action an account sees, which the bot can show again', async () => {
   const { session, bot, ada, privateChat, callBot } = await createChatActionFixture();
@@ -176,7 +178,7 @@ Deno.test("a test expires one bot's chat action in a supergroup and leaves the o
 });
 
 Deno.test('chat action expiry stays within its own chat, account and session', async () => {
-  const api = createTestApi();
+  await using api = createTestInProcessEmulator();
   const { session, bot, ada, privateChat, callBot } = await createChatActionFixture(api);
   const other = await createChatActionFixture(api);
   try {
@@ -329,10 +331,11 @@ interface ChatActionFixture {
 }
 
 /** A session in which Ada started a chat with the bot, which answers Bot API calls. */
-async function createChatActionFixture(api = createTestApi()): Promise<ChatActionFixture> {
-  const fetch: typeof globalThis.fetch = async (input, init) =>
-    await api.fetch(new Request(input, init));
-  const session = await new TelegramEmulationClient(TEST_PUBLIC_ORIGIN, { fetch }).createSession();
+async function createChatActionFixture(
+  api: TestInProcessEmulator = createTestInProcessEmulator(),
+): Promise<ChatActionFixture> {
+  const { fetch } = api;
+  const session = await api.client.createSession();
   const createdBot = await session.createBot({ first_name: 'Answer Bot', username: 'answer_bot' });
   const { account: ada } = await session.createAccount({ first_name: 'Ada' });
   const privateChat: PrivateMessageTarget = { type: 'private', botId: createdBot.bot.id };

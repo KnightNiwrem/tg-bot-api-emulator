@@ -6,6 +6,7 @@ import {
   type EmulationApi,
   requestJson,
   TEST_PUBLIC_ORIGIN,
+  type TestInProcessEmulator,
 } from './support/emulation_api.ts';
 
 interface BotApiResponse {
@@ -44,7 +45,7 @@ const SUPERGROUP_ADMINISTRATOR_RIGHTS = [
  * `can_promote_members`; Linus is an account outside the supergroup. The session is created on
  * `existingApi` when given, or on an API of its own.
  */
-async function createPromotionFixture(existingApi?: EmulationApi) {
+async function createPromotionFixture(existingApi?: TestInProcessEmulator) {
   const { api, sessionPath } = existingApi === undefined
     ? await createTestSession()
     : { api: existingApi, sessionPath: await createSession(existingApi) };
@@ -956,7 +957,7 @@ Deno.test('a grammY bot promotes a member through its webhook, as the activity l
   const grammyBot = new Bot(delegatingBot.token, {
     client: {
       apiRoot: `${TEST_PUBLIC_ORIGIN}${sessionPath}/bot-api`,
-      fetch: async (input, init) => await api.fetch(new Request(input, init)),
+      fetch: api.fetch,
     },
   });
   const promotionObserved = Promise.withResolvers<{ status: string; can_be_edited?: boolean }>();

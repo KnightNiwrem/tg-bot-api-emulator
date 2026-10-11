@@ -7,6 +7,7 @@ import {
   type EmulationApi,
   requestJson,
   TEST_PUBLIC_ORIGIN,
+  type TestInProcessEmulator,
 } from './support/emulation_api.ts';
 
 interface BotApiResponse {
@@ -878,7 +879,7 @@ Deno.test('a grammY bot receives a join request through its webhook, as the log 
   const grammyBot = new Bot(inviterBot.token, {
     client: {
       apiRoot: `${TEST_PUBLIC_ORIGIN}${sessionPath}/bot-api`,
-      fetch: async (input, init) => await api.fetch(new Request(input, init)),
+      fetch: api.fetch,
     },
   });
   const requestObserved = Promise.withResolvers<Record<string, unknown>>();
@@ -1311,7 +1312,7 @@ Deno.test('a grammY bot approves join requests through its webhook', async () =>
   const grammyBot = new Bot(inviterBot.token, {
     client: {
       apiRoot: `${TEST_PUBLIC_ORIGIN}${sessionPath}/bot-api`,
-      fetch: async (input, init) => await api.fetch(new Request(input, init)),
+      fetch: api.fetch,
     },
   });
   const memberObserved = Promise.withResolvers<Record<string, unknown>>();
@@ -1952,7 +1953,7 @@ interface GatekeeperApprovalOutcome {
  */
 async function serveGatekeeperBot(
   { api, sessionPath, inviterBot }: {
-    readonly api: EmulationApi;
+    readonly api: TestInProcessEmulator;
     readonly sessionPath: string;
     readonly inviterBot: FixtureBot;
   },
@@ -1960,7 +1961,7 @@ async function serveGatekeeperBot(
   const grammyBot = new Bot(inviterBot.token, {
     client: {
       apiRoot: `${TEST_PUBLIC_ORIGIN}${sessionPath}/bot-api`,
-      fetch: async (input, init) => await api.fetch(new Request(input, init)),
+      fetch: api.fetch,
     },
   });
   const requestChatIds = new Map<number, number>();

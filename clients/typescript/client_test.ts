@@ -1,6 +1,6 @@
 import { accountProfileSchema } from '../../control_contracts/accounts.ts';
 import { TEST_PUBLIC_ORIGIN } from '../../tests/support/emulation_api.ts';
-import { createTestInProcessEmulator } from '../../tests/support/in_process_emulator.ts';
+import { createTestInProcessEmulator } from '../../tests/support/emulation_api.ts';
 import { MAX_TELEGRAM_USER_ID } from './constants.ts';
 import {
   type Audio,

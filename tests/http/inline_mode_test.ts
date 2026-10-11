@@ -6,7 +6,6 @@ import { InputFile } from 'https://cdn.jsdelivr.net/gh/grammyjs/grammY@^1.46.0/s
 
 import { createTestSession, jsonRequest, TEST_PUBLIC_ORIGIN } from '../support/emulation_api.ts';
 import { expectSettlementWithin } from '../support/settlement.ts';
-import { createInProcessFetch } from '../support/in_process_fetch.ts';
 import { isBadRequestResponse } from '../support/http_response_guards.ts';
 import {
   botApiResult,
@@ -730,7 +729,7 @@ Deno.test('a grammY bot answers inline queries and edits the message it sent to 
   const grammyBot = new Bot(inlineBot.token, {
     client: {
       apiRoot: `${TEST_PUBLIC_ORIGIN}${sessionPath}/bot-api`,
-      fetch: createInProcessFetch(api.fetch),
+      fetch: api.fetch,
     },
   });
   let catPhotoFileId: string | undefined;

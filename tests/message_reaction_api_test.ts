@@ -11,12 +11,14 @@ import {
   EmulationClientError,
   type EmulationSessionClient,
   type SupergroupMessageTarget,
-  TelegramEmulationClient,
   type VirtualAccountClient,
 } from '../clients/typescript/mod.ts';
-import { createTestApi } from './support/emulation_api.ts';
+import {
+  createTestInProcessEmulator,
+  TEST_PUBLIC_ORIGIN,
+  type TestInProcessEmulator,
+} from './support/emulation_api.ts';
 
-const PUBLIC_ORIGIN = 'http://emulator.example:9000';
 /** A 2 by 1 GIF image, whose header is all the emulator reads. */
 const IMAGE = new Uint8Array([0x47, 0x49, 0x46, 0x38, 0x39, 0x61, 2, 0, 1, 0, 0, 0, 0]);
 
@@ -213,7 +215,7 @@ Deno.test('rejected reactions leave reactions and updates unchanged', async () =
       await expectRefused(request(), status, description);
     }
     const invalidBody = await fixture.fetch(
-      `${PUBLIC_ORIGIN}/sessions/${session.id}/accounts/${ada.id}/conversations/supergroup/${team.chatId}/messages/${message.message_id}/reactions`,
+      `${TEST_PUBLIC_ORIGIN}/sessions/${session.id}/accounts/${ada.id}/conversations/supergroup/${team.chatId}/messages/${message.message_id}/reactions`,
       {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
@@ -457,7 +459,7 @@ Deno.test("an account's poll takes reactions, which stopping the poll keeps", as
 });
 
 Deno.test('reactions stay inside their session', async () => {
-  const api = createTestApi(PUBLIC_ORIGIN);
+  await using api = createTestInProcessEmulator();
   const first = await createReactionFixture(api);
   const second = await createReactionFixture(api);
   try {
@@ -555,11 +557,10 @@ interface ReactionFixture {
 
 /** A supergroup owned by an account, with a second account and an administrator bot. */
 async function createReactionFixture(
-  api = createTestApi(PUBLIC_ORIGIN),
+  api: TestInProcessEmulator = createTestInProcessEmulator(),
 ): Promise<ReactionFixture> {
-  const fetch: typeof globalThis.fetch = async (input, init) =>
-    await api.fetch(new Request(input, init));
-  const session = await new TelegramEmulationClient(PUBLIC_ORIGIN, { fetch }).createSession();
+  const { fetch } = api;
+  const session = await api.client.createSession();
   const { account: owner } = await session.createAccount({ first_name: 'Owner' });
   const { account: ada } = await session.createAccount({ first_name: 'Ada' });
   const supergroup = await owner.createSupergroup({ title: 'Team' });

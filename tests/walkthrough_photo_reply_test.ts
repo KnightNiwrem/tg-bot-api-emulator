@@ -6,7 +6,7 @@ import { run } from '@grammyjs/runner/runner.ts';
 import {
   createTestInProcessEmulator,
   type TestInProcessEmulator,
-} from './support/in_process_emulator.ts';
+} from './support/emulation_api.ts';
 
 /** A 2×1 GIF, small enough to spell out and an image the emulator reads dimensions from. */
 const RECEIPT_IMAGE = new Uint8Array([0x47, 0x49, 0x46, 0x38, 0x39, 0x61, 2, 0, 1, 0, 0, 0, 0]);

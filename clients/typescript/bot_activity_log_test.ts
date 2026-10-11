@@ -1,7 +1,7 @@
 import {
   createTestInProcessEmulator,
   type TestInProcessEmulator,
-} from '../../tests/support/in_process_emulator.ts';
+} from '../../tests/support/emulation_api.ts';
 import {
   BotActivityTimeoutError,
   EmulationClientError,

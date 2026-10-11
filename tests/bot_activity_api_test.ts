@@ -1,12 +1,10 @@
 import { Bot } from 'https://cdn.jsdelivr.net/gh/grammyjs/grammY@^1.46.0/src/bot.ts';
 import { webhookCallback } from 'https://cdn.jsdelivr.net/gh/grammyjs/grammY@^1.46.0/src/convenience/webhook.ts';
-import { createTestApi, TEST_PUBLIC_ORIGIN } from './support/emulation_api.ts';
-import { createTestInProcessEmulator } from './support/in_process_emulator.ts';
-
-/** What the tests send requests to by path: the emulation API, or an in-process emulator. */
-interface RequestRecipient {
-  request(path: string, init?: RequestInit): Response | Promise<Response>;
-}
+import {
+  createTestInProcessEmulator,
+  type EmulationApi,
+  TEST_PUBLIC_ORIGIN,
+} from './support/emulation_api.ts';
 
 interface BotActivityReadBody {
   readonly entries: ReadonlyArray<Record<string, unknown>>;
@@ -321,7 +319,7 @@ Deno.test('GET bot-activity records a webhook reply after the confirmation of it
 });
 
 /** Creates a session on `api` holding a bot and an account that can message it. */
-async function createFixture(api: RequestRecipient = createTestApi()) {
+async function createFixture(api: EmulationApi = createTestInProcessEmulator()) {
   const sessionPath = await createSession(api);
   const createdBot = await postJson(api, `${sessionPath}/bots`, {
     first_name: 'Test Bot',
@@ -350,7 +348,7 @@ async function createFixture(api: RequestRecipient = createTestApi()) {
   };
 }
 
-async function createSession(api: RequestRecipient): Promise<string> {
+async function createSession(api: EmulationApi): Promise<string> {
   const response = await api.request('/sessions', { method: 'POST' });
   const sessionPath = response.headers.get('Location');
   if (response.status !== 201 || sessionPath === null) {
@@ -359,7 +357,7 @@ async function createSession(api: RequestRecipient): Promise<string> {
   return sessionPath;
 }
 
-async function postJson(api: RequestRecipient, path: string, body: unknown): Promise<unknown> {
+async function postJson(api: EmulationApi, path: string, body: unknown): Promise<unknown> {
   const response = await api.request(path, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
@@ -372,7 +370,7 @@ async function postJson(api: RequestRecipient, path: string, body: unknown): Pro
 }
 
 async function callBotApi(
-  api: RequestRecipient,
+  api: EmulationApi,
   methodPath: string,
   parameters: Record<string, unknown>,
 ): Promise<{ status: number; body: unknown }> {
@@ -384,7 +382,7 @@ async function callBotApi(
   return { status: response.status, body: await response.json() };
 }
 
-async function readActivity(api: RequestRecipient, path: string): Promise<BotActivityReadBody> {
+async function readActivity(api: EmulationApi, path: string): Promise<BotActivityReadBody> {
   const response = await api.request(path);
   if (response.status !== 200) {
     throw new Error(`Expected GET ${path} to succeed, received ${response.status}`);

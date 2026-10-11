@@ -2,7 +2,6 @@ import { Bot } from 'https://cdn.jsdelivr.net/gh/grammyjs/grammY@^1.46.0/src/bot
 import { InputFile } from 'https://cdn.jsdelivr.net/gh/grammyjs/grammY@^1.46.0/src/types.ts';
 
 import { jsonRequest, TEST_PUBLIC_ORIGIN } from '../support/emulation_api.ts';
-import { createInProcessFetch } from '../support/in_process_fetch.ts';
 import { isBadRequestResponse } from '../support/http_response_guards.ts';
 import {
   botApiResult,
@@ -617,7 +616,7 @@ Deno.test('a grammY bot sends a rich message with an uploaded photo', async () =
   const grammyBot = new Bot(createdBot.token, {
     client: {
       apiRoot: `${TEST_PUBLIC_ORIGIN}${sessionPath}/bot-api`,
-      fetch: createInProcessFetch(api.fetch),
+      fetch: api.fetch,
     },
   });
 

@@ -1,6 +1,6 @@
 import { Bot } from 'https://cdn.jsdelivr.net/gh/grammyjs/grammY@^1.46.0/src/bot.ts';
 
-import { createTestInProcessEmulator } from './support/in_process_emulator.ts';
+import { createTestInProcessEmulator } from './support/emulation_api.ts';
 
 // Follows docs/clients/typescript/getting-started.md, whose snippet `deno task check` type-checks,
 // with an in-process emulator in place of the one `deno task start` serves.

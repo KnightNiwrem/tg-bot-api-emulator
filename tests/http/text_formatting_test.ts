@@ -2,7 +2,6 @@ import { Bot } from 'https://cdn.jsdelivr.net/gh/grammyjs/grammY@^1.46.0/src/bot
 import { GrammyError } from 'https://cdn.jsdelivr.net/gh/grammyjs/grammY@^1.46.0/src/core/error.ts';
 
 import { jsonRequest, TEST_PUBLIC_ORIGIN } from '../support/emulation_api.ts';
-import { createInProcessFetch } from '../support/in_process_fetch.ts';
 import { isBadRequestResponse, isMessageHistoryResponse } from '../support/http_response_guards.ts';
 import { botApiResult, callBotApi, updateMessages } from '../support/bot_api_requests.ts';
 import { createAccount, createPrivateConversationFixture } from '../support/http_fixtures.ts';
@@ -18,7 +17,7 @@ Deno.test('grammY command handlers match account-sent bot commands', async () =>
   const grammyBot = new Bot(createdBot.token, {
     client: {
       apiRoot: `${TEST_PUBLIC_ORIGIN}${sessionPath}/bot-api`,
-      fetch: createInProcessFetch(api.fetch),
+      fetch: api.fetch,
     },
   });
   const startCommandPayloads: string[] = [];
@@ -47,7 +46,7 @@ Deno.test('messages carry the entities Telegram detects in their text', async ()
   const grammyBot = new Bot(createdBot.token, {
     client: {
       apiRoot: `${TEST_PUBLIC_ORIGIN}${sessionPath}/bot-api`,
-      fetch: createInProcessFetch(api.fetch),
+      fetch: api.fetch,
     },
   });
   const linkReceived = Promise.withResolvers<readonly string[]>();
@@ -466,7 +465,7 @@ Deno.test('a grammY bot replies with HTML and receives Telegram errors for bad M
   const grammyBot = new Bot(createdBot.token, {
     client: {
       apiRoot: `${TEST_PUBLIC_ORIGIN}${sessionPath}/bot-api`,
-      fetch: createInProcessFetch(api.fetch),
+      fetch: api.fetch,
     },
   });
   const markdownV2Failure = Promise.withResolvers<unknown>();

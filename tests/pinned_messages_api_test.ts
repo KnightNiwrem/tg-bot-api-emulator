@@ -1,6 +1,6 @@
 import {
   createSession,
-  createTestApi,
+  createTestInProcessEmulator,
   type EmulationApi,
   requestJson,
 } from './support/emulation_api.ts';
@@ -18,7 +18,7 @@ interface ShownMessage {
  * Creates a session where Ada has written to a bot and owns a supergroup with Grace, the bot, and
  * Linus, an administrator account without the right to pin.
  */
-async function createPinnedMessagesFixture(api: EmulationApi = createTestApi()) {
+async function createPinnedMessagesFixture(api: EmulationApi = createTestInProcessEmulator()) {
   const sessionPath = await createSession(api);
   const createAccount = async (firstName: string) =>
     (await requestJson<{ account: { id: number } }>(
@@ -255,7 +255,7 @@ Deno.test('an account that blocks the bot cannot pin in their private chat, but 
 });
 
 Deno.test('pinned messages of one session stay out of another', async () => {
-  const api = createTestApi();
+  await using api = createTestInProcessEmulator();
   const first = await createPinnedMessagesFixture(api);
   const second = await createPinnedMessagesFixture(api);
   const messageId = await first.sendToBot('first session');

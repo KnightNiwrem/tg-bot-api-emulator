@@ -1,5 +1,4 @@
-import { createEmulationApi } from '../../src/api/mod.ts';
-import { createSessionLifecycleService } from '../../src/composition/session_lifecycle.ts';
+import { createTestInProcessEmulator } from '../../tests/support/emulation_api.ts';
 import {
   type ControlErrorBody,
   type ControlRefusalReason,
@@ -13,7 +12,8 @@ import {
 const PUBLIC_ORIGIN = 'http://emulator.example:9000';
 
 Deno.test('A refusal rejects with an EmulationControlError naming its reason', async () => {
-  const { client } = createInProcessClient();
+  await using emulator = createTestInProcessEmulator();
+  const { client } = emulator;
   const session = await client.createSession();
   await session.createBot({ first_name: 'Shop', username: 'shop_bot' });
 
@@ -49,7 +49,8 @@ Deno.test('A refusal rejects with an EmulationControlError naming its reason', a
 });
 
 Deno.test('Input the emulator rejects lists each issue on the control error', async () => {
-  const { client } = createInProcessClient();
+  await using emulator = createTestInProcessEmulator();
+  const { client } = emulator;
   const session = await client.createSession();
   const { bot } = await session.createBot({ first_name: 'Shop', username: 'shop_bot' });
 
@@ -81,7 +82,8 @@ Deno.test('Input the emulator rejects lists each issue on the control error', as
 });
 
 Deno.test('An ended session refuses its operations as session_not_found', async () => {
-  const { client } = createInProcessClient();
+  await using emulator = createTestInProcessEmulator();
+  const { client } = emulator;
   const session = await client.createSession();
   await session.end();
 
@@ -161,17 +163,6 @@ Deno.test('A control error refuses a body its contract does not allow', () => {
 
 /** `true` when no value of `Value` is a `ControlErrorBody`. */
 type IsNotControlErrorBody<Value> = Value extends ControlErrorBody ? false : true;
-
-function createInProcessClient() {
-  const api = createEmulationApi({
-    sessionLifecycle: createSessionLifecycleService(),
-    publicOrigin: PUBLIC_ORIGIN,
-  });
-  const client = new TelegramEmulationClient(PUBLIC_ORIGIN, {
-    fetch: async (input, init) => await api.fetch(new Request(input, init)),
-  });
-  return { client };
-}
 
 async function rejectionOf(pending: Promise<unknown>): Promise<unknown> {
   try {

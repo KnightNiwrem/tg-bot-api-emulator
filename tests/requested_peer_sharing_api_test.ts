@@ -6,11 +6,11 @@ import {
   type EmulationSessionClient,
   type PressReplyKeyboardButtonInput,
   type PrivateMessageTarget,
-  TelegramEmulationClient,
 } from '../clients/typescript/mod.ts';
-import { createTestApi } from './support/emulation_api.ts';
-
-const PUBLIC_ORIGIN = 'http://emulator.example:9000';
+import {
+  createTestInProcessEmulator,
+  type TestInProcessEmulator,
+} from './support/emulation_api.ts';
 
 /** Every administrator right that grammY's `ChatAdministratorRights` requires, none held. */
 const NO_ADMINISTRATOR_RIGHTS = {
@@ -476,7 +476,7 @@ Deno.test('sharing users or a chat grants the bot no access, membership, or righ
 });
 
 Deno.test('selections stay within their session', async () => {
-  const api = createTestApi(PUBLIC_ORIGIN);
+  await using api = createTestInProcessEmulator();
   const first = await createSharingFixture(api);
   const second = await createSharingFixture(api);
   // Only the second session has a fourth account and a supergroup with this ID.
@@ -542,11 +542,10 @@ Deno.test('selections stay within their session', async () => {
  * that she can share.
  */
 async function createSharingFixture(
-  api = createTestApi(PUBLIC_ORIGIN),
+  api: TestInProcessEmulator = createTestInProcessEmulator(),
 ) {
-  const fetch: typeof globalThis.fetch = async (input, init) =>
-    await api.fetch(new Request(input, init));
-  const session = await new TelegramEmulationClient(PUBLIC_ORIGIN, { fetch }).createSession();
+  const { fetch } = api;
+  const session = await api.client.createSession();
   const createdBot = await session.createBot({ first_name: 'Team Bot', username: 'team_bot' });
   const { account: ada } = await session.createAccount({ first_name: 'Ada' });
   const { account: grace } = await session.createAccount({ first_name: 'Grace' });

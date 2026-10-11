@@ -6,7 +6,6 @@ import {
 
 import { createTestSession, jsonRequest, TEST_PUBLIC_ORIGIN } from '../support/emulation_api.ts';
 import { expectSettlementWithin } from '../support/settlement.ts';
-import { createInProcessFetch } from '../support/in_process_fetch.ts';
 import {
   isBadRequestResponse,
   isGetUpdatesResponse,
@@ -965,7 +964,7 @@ Deno.test('a grammY bot answers an inline keyboard press and edits its message',
   const grammyBot = new Bot(createdBot.token, {
     client: {
       apiRoot: `${TEST_PUBLIC_ORIGIN}${sessionPath}/bot-api`,
-      fetch: createInProcessFetch(api.fetch),
+      fetch: api.fetch,
     },
   });
   const menuSent = Promise.withResolvers<number>();
@@ -1332,7 +1331,7 @@ Deno.test('a grammY bot runs a menu on a reply keyboard and asks with a forced r
   const grammyBot = new Bot(createdBot.token, {
     client: {
       apiRoot: `${TEST_PUBLIC_ORIGIN}${sessionPath}/bot-api`,
-      fetch: createInProcessFetch(api.fetch),
+      fetch: api.fetch,
     },
   });
   const handled = { menu: Promise.withResolvers<void>(), question: Promise.withResolvers<void>() };

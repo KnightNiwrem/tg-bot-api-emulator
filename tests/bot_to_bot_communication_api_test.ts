@@ -1,9 +1,12 @@
 import {
   type EmulationSessionClient,
-  TelegramEmulationClient,
   type VirtualAccountClient,
 } from '../clients/typescript/mod.ts';
-import { createTestApi, createTestSession, requestJson } from './support/emulation_api.ts';
+import {
+  createTestInProcessEmulator,
+  createTestSession,
+  requestJson,
+} from './support/emulation_api.ts';
 
 interface SentBotMessage {
   readonly message_id: number;
@@ -295,13 +298,9 @@ interface CreatedTestBot {
 }
 
 async function createFixture() {
-  const publicOrigin = 'http://emulator.example:9000';
-  const api = createTestApi(publicOrigin);
-  const fetch: typeof globalThis.fetch = async (input, init) =>
-    await api.fetch(new Request(input, init));
-  const session: EmulationSessionClient = await new TelegramEmulationClient(publicOrigin, {
-    fetch,
-  }).createSession();
+  const api = createTestInProcessEmulator();
+  const { fetch } = api;
+  const session: EmulationSessionClient = await api.client.createSession();
   const { account: owner }: { account: VirtualAccountClient } = await session.createAccount({
     first_name: 'Ada',
   });
