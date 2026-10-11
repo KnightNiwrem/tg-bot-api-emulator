@@ -332,6 +332,12 @@ type SupergroupPinningPolicy =
   & SupergroupAccessPredicates
   & ChatMessageLookup<SupergroupChatKey, SupergroupMessage>;
 
+/** The session's transactions, in which each change of a chat's pins runs. */
+interface MessagePinningTransactions {
+  /** Runs a command in the transaction of the command executing, or in one of its own. */
+  withinTransaction<Result>(command: () => Result): Result;
+}
+
 interface MessagePinningServiceDependencies {
   readonly accounts: AccountLookup;
   readonly bots: BotLookup;
@@ -339,6 +345,8 @@ interface MessagePinningServiceDependencies {
   readonly supergroups: SupergroupPinningPolicy;
   readonly serviceMessages: PinServiceMessageRecording;
   readonly messages: PinnedMessageStore;
+  /** Runs each pin, unpin and unpin of all as one transaction. */
+  readonly transactions: MessagePinningTransactions;
   readonly currentUnixTimeSeconds: () => number;
 }
 
@@ -356,11 +364,16 @@ interface MessagePinningServiceDependencies {
  *
  * Each pinner has its own entry points, which select the chat type's targeting by the address and
  * report exactly the failures that pinner can meet, in Telegram's order.
+ *
+ * Each change of a chat's pins runs as one transaction, checks included: a pin and its service
+ * message, with the updates it becomes, are published together, or not at all, and an unpin of
+ * every message unpins all of them or none.
  */
 export class MessagePinningService {
   readonly #accounts: AccountLookup;
   readonly #bots: BotLookup;
   readonly #messages: PinnedMessageStore;
+  readonly #transactions: MessagePinningTransactions;
   readonly #botPrivateChatTargeting: PinningTargeting<BotPrivateChatPinningTypes>;
   readonly #botSupergroupTargeting: PinningTargeting<BotSupergroupPinningTypes>;
   readonly #accountPrivateChatTargeting: PinningTargeting<AccountPrivateChatPinningTypes>;
@@ -376,12 +389,14 @@ export class MessagePinningService {
       supergroups,
       serviceMessages,
       messages,
+      transactions,
       currentUnixTimeSeconds,
     }: MessagePinningServiceDependencies,
   ) {
     this.#accounts = accounts;
     this.#bots = bots;
     this.#messages = messages;
+    this.#transactions = transactions;
     this.#privateChats = privateChats;
     this.#supergroups = supergroups;
     this.#botPrivateChatTargeting = {
@@ -601,24 +616,26 @@ export class MessagePinningService {
       readonly isSilent: boolean;
     },
   ): MessagePinResult<Types, never> {
-    const reach = targeting.reachChatToChangePins(pinnerId, chat);
-    if (!reach.reached) {
-      return { pinned: false, reason: reach.reason };
-    }
-    const message = targeting.findMessage(reach, messageId);
-    if (message === undefined) {
-      return { pinned: false, reason: 'message_not_found' };
-    }
-    const refusal = findPinChangeRefusal(targeting, reach, message);
-    if (refusal !== undefined) {
-      return { pinned: false, reason: refusal };
-    }
-    if (message.isPinned) {
-      return { pinned: false, reason: 'message_already_pinned' };
-    }
-    const pinnedMessage = this.#messages.setMessagePinned(message.id, true);
-    targeting.recordPin(reach, pinnerId, pinnedMessage.id, isSilent);
-    return { pinned: true };
+    return this.#transactions.withinTransaction(() => {
+      const reach = targeting.reachChatToChangePins(pinnerId, chat);
+      if (!reach.reached) {
+        return { pinned: false, reason: reach.reason };
+      }
+      const message = targeting.findMessage(reach, messageId);
+      if (message === undefined) {
+        return { pinned: false, reason: 'message_not_found' };
+      }
+      const refusal = findPinChangeRefusal(targeting, reach, message);
+      if (refusal !== undefined) {
+        return { pinned: false, reason: refusal };
+      }
+      if (message.isPinned) {
+        return { pinned: false, reason: 'message_already_pinned' };
+      }
+      const pinnedMessage = this.#messages.setMessagePinned(message.id, true);
+      targeting.recordPin(reach, pinnerId, pinnedMessage.id, isSilent);
+      return { pinned: true };
+    });
   }
 
   /**
@@ -633,25 +650,27 @@ export class MessagePinningService {
     chat: Types['address'],
     messageId: number | undefined,
   ): MessageUnpinResult<Types, never> {
-    const reach = targeting.reachChatToChangePins(pinnerId, chat);
-    if (!reach.reached) {
-      return { unpinned: false, reason: reach.reason };
-    }
-    const message = messageId === undefined
-      ? this.#listPinnedMessages(reach.key)[0]
-      : targeting.findMessage(reach, messageId);
-    if (message === undefined) {
-      return { unpinned: false, reason: 'message_not_found' };
-    }
-    const refusal = findPinChangeRefusal(targeting, reach, message);
-    if (refusal !== undefined) {
-      return { unpinned: false, reason: refusal };
-    }
-    if (!message.isPinned) {
-      return { unpinned: false, reason: 'message_not_pinned' };
-    }
-    this.#messages.setMessagePinned(message.id, false);
-    return { unpinned: true };
+    return this.#transactions.withinTransaction(() => {
+      const reach = targeting.reachChatToChangePins(pinnerId, chat);
+      if (!reach.reached) {
+        return { unpinned: false, reason: reach.reason };
+      }
+      const message = messageId === undefined
+        ? this.#listPinnedMessages(reach.key)[0]
+        : targeting.findMessage(reach, messageId);
+      if (message === undefined) {
+        return { unpinned: false, reason: 'message_not_found' };
+      }
+      const refusal = findPinChangeRefusal(targeting, reach, message);
+      if (refusal !== undefined) {
+        return { unpinned: false, reason: refusal };
+      }
+      if (!message.isPinned) {
+        return { unpinned: false, reason: 'message_not_pinned' };
+      }
+      this.#messages.setMessagePinned(message.id, false);
+      return { unpinned: true };
+    });
   }
 
   /**
@@ -667,18 +686,20 @@ export class MessagePinningService {
     pinnerId: number,
     chat: Types['address'],
   ): ChatMessagesUnpinResult<Types, never> {
-    const reach = targeting.reachChatToChangePins(pinnerId, chat);
-    if (!reach.reached) {
-      return { unpinned: false, reason: reach.reason };
-    }
-    const refusal = targeting.findRightRefusal(reach);
-    if (refusal !== undefined) {
-      return { unpinned: false, reason: refusal };
-    }
-    for (const message of this.#listPinnedMessages(reach.key)) {
-      this.#messages.setMessagePinned(message.id, false);
-    }
-    return { unpinned: true };
+    return this.#transactions.withinTransaction(() => {
+      const reach = targeting.reachChatToChangePins(pinnerId, chat);
+      if (!reach.reached) {
+        return { unpinned: false, reason: reach.reason };
+      }
+      const refusal = targeting.findRightRefusal(reach);
+      if (refusal !== undefined) {
+        return { unpinned: false, reason: refusal };
+      }
+      for (const message of this.#listPinnedMessages(reach.key)) {
+        this.#messages.setMessagePinned(message.id, false);
+      }
+      return { unpinned: true };
+    });
   }
 
   /** A chat's pinned messages, newest first: its history lists messages oldest first. */

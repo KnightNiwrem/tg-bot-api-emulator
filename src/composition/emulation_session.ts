@@ -235,6 +235,7 @@ export function createEmulationSession(
     supergroups,
     serviceMessages: messageCommitter,
     messages,
+    transactions,
     currentUnixTimeSeconds,
   });
   const messageEditing = new MessageEditingService({
