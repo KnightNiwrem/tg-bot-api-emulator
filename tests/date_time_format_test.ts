@@ -1,3 +1,4 @@
+import { assertEquals } from '@std/assert';
 import {
   type MarkupDateTimeFormatReading,
   readMarkupDateTimeFormat,
@@ -60,11 +61,9 @@ Deno.test('readMarkupDateTimeFormat rejects letters outside the format alphabet'
 
 function assertFormatReading(format: string, expected: MarkupDateTimeFormatReading): void {
   const reading = readMarkupDateTimeFormat(format);
-  if (JSON.stringify(reading) !== JSON.stringify(expected)) {
-    throw new Error(
-      `Expected ${JSON.stringify(format)} to read as ${JSON.stringify(expected)}, received ${
-        JSON.stringify(reading)
-      }`,
-    );
-  }
+  assertEquals(
+    reading,
+    expected,
+    `Expected ${JSON.stringify(format)} to read as ${JSON.stringify(expected)}`,
+  );
 }

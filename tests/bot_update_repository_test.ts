@@ -1,3 +1,4 @@
+import { assertEquals } from '@std/assert';
 import { BotUpdateRepository } from '../src/repositories/bot_update.ts';
 import type { BotApiPrivateMessage } from '../src/types/bot_api.ts';
 
@@ -10,12 +11,10 @@ Deno.test('BotUpdateRepository confirms one update a webhook accepted, out of or
   botUpdates.confirmPendingUpdate(10, 2);
   botUpdates.confirmPendingUpdate(10, 2);
   const pendingUpdateIds = botUpdates.readPendingUpdates(10).map(({ update_id }) => update_id);
-  if (
-    JSON.stringify(pendingUpdateIds) !== JSON.stringify([1, 3]) ||
-    botUpdates.countPendingUpdates(10) !== 2
-  ) {
+  if (botUpdates.countPendingUpdates(10) !== 2) {
     throw new Error(`Expected only update 2 to be confirmed, received ${pendingUpdateIds}`);
   }
+  assertEquals(pendingUpdateIds, [1, 3], 'Expected only update 2 to be confirmed');
 });
 
 Deno.test('BotUpdateRepository sequences and confirms each bot mailbox independently', () => {

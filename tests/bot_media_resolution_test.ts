@@ -1,3 +1,4 @@
+import { assertEquals } from '@std/assert';
 import { FileRepository } from '../src/repositories/file.ts';
 import type { BotApiInputFile, BotApiRichMessageFileTypes } from '../src/services/bot_api.ts';
 import { BotMediaResolver } from '../src/services/bot_media_resolution.ts';
@@ -32,14 +33,11 @@ Deno.test('BotMediaResolver refuses a file_id of another type or one the bot doe
     // As on Telegram, a `file_id` belongs to the bot that knows the file by it.
     botMedia.resolveVoiceMedia(OTHER_BOT_ID, { voice, durationSeconds: 0, caption: NO_CAPTION }),
   ].map((resolution) => resolution.resolved ? resolution : resolution.failure);
-  const expectedFailures = [
+  assertEquals(failures, [
     { reason: 'file_type_mismatch', expectedFileType: 'document', actualFileType: 'voice' },
     { reason: 'file_type_mismatch', expectedFileType: 'audio', actualFileType: 'voice' },
     { reason: 'file_id_invalid' },
-  ];
-  if (JSON.stringify(failures) !== JSON.stringify(expectedFailures)) {
-    throw new Error(`Expected file_id failures, received ${JSON.stringify(failures)}`);
-  }
+  ], 'Expected file_id failures');
 
   const reused = botMedia.resolveVoiceMedia(BOT_ID, {
     voice,

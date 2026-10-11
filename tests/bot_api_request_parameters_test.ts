@@ -1,3 +1,4 @@
+import { assertEquals } from '@std/assert';
 import {
   booleanParameter,
   type BotApiRequestParametersDecoding,
@@ -158,11 +159,9 @@ function assertDecodedParameters(
   if (!decoding.decoded) {
     throw new Error(`Expected parameters to decode, received "${decoding.description}"`);
   }
-  if (JSON.stringify(decoding.parameters) !== JSON.stringify(expectedParameters)) {
-    throw new Error(
-      `Expected ${JSON.stringify(expectedParameters)}, received ${
-        JSON.stringify(decoding.parameters)
-      }`,
-    );
-  }
+  assertEquals(
+    decoding.parameters,
+    expectedParameters,
+    `Expected ${JSON.stringify(expectedParameters)}`,
+  );
 }

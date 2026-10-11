@@ -3,6 +3,7 @@
  * call sent by its structure, how a view's patterns combine with a read's, and the patterns the
  * client refuses before it reads anything.
  */
+import { assertEquals } from '@std/assert';
 import { createTestInProcessEmulator } from '../../tests/support/emulation_api.ts';
 import { createHttpBotActivityPageReader } from './bot_activity_http_page_reader.ts';
 import { createBotActivityLog } from './bot_activity_log.ts';
@@ -155,9 +156,11 @@ Deno.test('Each read sends the text of the patterns as it checked them for that 
   await activity.assertNone({ method: 'sendMessage' }, { after: 0, before: 1 });
 
   const sentPatterns = requestedUrls.map((url) => url.searchParams.get('parameters_json'));
-  if (JSON.stringify(sentPatterns) !== JSON.stringify(['{"reply_parameters":{"message_id":6}}'])) {
-    throw new Error(`Expected the checked patterns to be sent: ${JSON.stringify(sentPatterns)}`);
-  }
+  assertEquals(
+    sentPatterns,
+    ['{"reply_parameters":{"message_id":6}}'],
+    'Expected the checked patterns to be sent',
+  );
 });
 
 function withHiddenToJson<Value extends object>(value: Value): Value {

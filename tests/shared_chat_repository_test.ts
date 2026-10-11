@@ -1,3 +1,4 @@
+import { assertEquals } from '@std/assert';
 import {
   type BasicGroupRegistrationFailureReason,
   type BasicGroupRegistrationResult,
@@ -231,18 +232,13 @@ Deno.test('SharedChatRepository keeps pending join requests only for users that 
   });
 
   const remaining = sharedChats.listJoinRequests(chatId).map(({ userId }) => userId);
-  if (
-    JSON.stringify([
+  assertEquals(
+    [
       refusals,
       remaining,
       sharedChats.countJoinRequestsByInviteLink(chatId, inviteLinkUrl),
-    ]) !==
-      JSON.stringify([['refused', 'refused'], [4], 1])
-  ) {
-    throw new Error(
-      `Expected a member and a duplicate refused, and only the restricted user's request kept, received ${
-        JSON.stringify([refusals, remaining])
-      }`,
-    );
-  }
+    ],
+    [['refused', 'refused'], [4], 1],
+    "Expected a member and a duplicate refused, and only the restricted user's request kept",
+  );
 });

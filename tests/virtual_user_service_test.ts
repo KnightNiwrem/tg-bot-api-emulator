@@ -1,3 +1,4 @@
+import { assertEquals } from '@std/assert';
 import { AccountRepository } from '../src/repositories/account.ts';
 import { BotRepository } from '../src/repositories/bot.ts';
 import { TelegramIdentityRepository } from '../src/repositories/telegram_identity.ts';
@@ -36,12 +37,14 @@ Deno.test('VirtualUserService creates accounts and complete bots in one user ID 
     can_manage_bots: false,
     supports_join_request_queries: false,
   };
-  if (
-    accountResult.account.profile.id !== 1 ||
-    JSON.stringify(botResult.bot.profile) !== JSON.stringify(expectedBotProfile)
-  ) {
+  if (accountResult.account.profile.id !== 1) {
     throw new Error('Expected the next user ID and capability defaults in the bot profile');
   }
+  assertEquals(
+    botResult.bot.profile,
+    expectedBotProfile,
+    'Expected the next user ID and capability defaults in the bot profile',
+  );
   if (!botResult.bot.token.startsWith(`${botResult.bot.profile.id}:`)) {
     throw new Error('Expected the bot token to be prefixed with its user ID');
   }

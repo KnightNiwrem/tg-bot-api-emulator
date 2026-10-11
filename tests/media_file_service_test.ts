@@ -1,3 +1,4 @@
+import { assertEquals } from '@std/assert';
 import { FileRepository } from '../src/repositories/file.ts';
 import { MediaFileService, type UploadSource } from '../src/services/media_file.ts';
 import { WebFileDownloader, type WebResourceFetcher } from '../src/services/web_file_download.ts';
@@ -90,22 +91,19 @@ Deno.test('MediaFileService refuses bot uploads larger than the cloud profile al
   if (!prepareDocument(atLimit, 'bot_upload').prepared) {
     throw new Error('Expected a bot document of exactly 50 MB to be accepted');
   }
-  const expectedFailure = {
-    prepared: false,
-    reason: 'bot_upload_too_big',
-    uploadProfile: 'cloud',
-    fileSizeBytes: MAX_BOT_UPLOAD_BYTES.cloud + 1,
-    maxFileSizeBytes: MAX_BOT_UPLOAD_BYTES.cloud,
-  };
   // A photo over the server's limit fails for it before TDLib checks the photo limit.
   const failures = [
     prepareDocument(overLimit, 'bot_upload'),
     mediaFiles.preparePhotoUpload({ content: overLimit, source: 'bot_upload' }),
   ];
   for (const failure of failures) {
-    if (JSON.stringify(failure) !== JSON.stringify(expectedFailure)) {
-      throw new Error(`Expected bot_upload_too_big, received ${JSON.stringify(failure)}`);
-    }
+    assertEquals(failure, {
+      prepared: false,
+      reason: 'bot_upload_too_big',
+      uploadProfile: 'cloud',
+      fileSizeBytes: MAX_BOT_UPLOAD_BYTES.cloud + 1,
+      maxFileSizeBytes: MAX_BOT_UPLOAD_BYTES.cloud,
+    }, 'Expected bot_upload_too_big');
   }
 
   // An account uploads through its own client, which the Bot API server's limit does not bind.
@@ -173,18 +171,16 @@ Deno.test('MediaFileService keeps a usable thumbnail and leaves out others, as T
     });
 
   const document = withThumbnail(gifImage(320, 240));
-  if (
-    !document.prepared ||
-    JSON.stringify(document.upload.thumbnail) !== JSON.stringify({
-        type: 'thumbnail',
-        content: gifImage(320, 240),
-        imageFormat: 'gif',
-        width: 320,
-        height: 240,
-      })
-  ) {
+  if (!document.prepared) {
     throw new Error(`Expected a document with its thumbnail, received ${JSON.stringify(document)}`);
   }
+  assertEquals(document.upload.thumbnail, {
+    type: 'thumbnail',
+    content: gifImage(320, 240),
+    imageFormat: 'gif',
+    width: 320,
+    height: 240,
+  }, 'Expected a document with its thumbnail');
 
   const largestThumbnail = new Uint8Array(MAX_THUMBNAIL_UPLOAD_BYTES);
   largestThumbnail.set(gifImage(90, 90));
@@ -274,9 +270,7 @@ Deno.test('MediaFileService downloads files sent by URL as Telegram accepts them
     { downloaded: false, reason: 'web_content_unavailable' },
     { downloaded: false, reason: 'file_url_invalid', urlError: 'Unsupported URL protocol' },
   ].map((failure) => JSON.stringify(failure));
-  if (JSON.stringify(failures) !== JSON.stringify(expectedFailures)) {
-    throw new Error(`Expected Telegram's refusals, received ${JSON.stringify(failures, null, 2)}`);
-  }
+  assertEquals(failures, expectedFailures, "Expected Telegram's refusals");
 });
 
 Deno.test('MediaFileService prepares a downloaded document with the type it was served as', () => {
@@ -357,17 +351,12 @@ Deno.test('MediaFileService gives each bot its own file IDs and download paths',
   const paths = [photoFile, documentFile, photoFileAgain, secondBotPhotoFile].map((result) =>
     result.found ? result.downloadableFile.filePath : result.reason
   );
-  if (
-    JSON.stringify(paths) !==
-      JSON.stringify([
-        'photos/file_0.gif',
-        'documents/file_1',
-        'photos/file_0.gif',
-        'photos/file_0.gif',
-      ])
-  ) {
-    throw new Error(`Expected numbered paths per bot, received ${JSON.stringify(paths)}`);
-  }
+  assertEquals(paths, [
+    'photos/file_0.gif',
+    'documents/file_1',
+    'photos/file_0.gif',
+    'photos/file_0.gif',
+  ], 'Expected numbered paths per bot');
   if (
     mediaFiles.findBotFileByPath(FIRST_BOT_ID, 'documents/file_1') !== document ||
     mediaFiles.findBotFileByPath(SECOND_BOT_ID, 'documents/file_1') !== undefined ||
@@ -411,13 +400,6 @@ Deno.test('MediaFileService keeps the attributes a sender defines for a video', 
   // As TDLib uploads it, a video whose name names no video type is sent as `video/mp4`.
   const summaries = uploads.map(({ fileName, mimeType }) => [fileName ?? null, mimeType]);
   if (
-    JSON.stringify(summaries) !== JSON.stringify([
-        ['clip.mp4', 'video/mp4'],
-        ['clip.MOV', 'video/quicktime'],
-        ['notes.txt', 'video/mp4'],
-        [null, 'video/mp4'],
-        ['download', 'video/mp4'],
-      ]) ||
     uploads.some(({ durationSeconds, width, height, thumbnail }) =>
       durationSeconds !== 12 || width !== 1920 || height !== 1080 || thumbnail?.width !== 320 ||
       thumbnail.height !== 180
@@ -425,6 +407,13 @@ Deno.test('MediaFileService keeps the attributes a sender defines for a video', 
   ) {
     throw new Error(`Expected the sender's attributes, received ${JSON.stringify(summaries)}`);
   }
+  assertEquals(summaries, [
+    ['clip.mp4', 'video/mp4'],
+    ['clip.MOV', 'video/quicktime'],
+    ['notes.txt', 'video/mp4'],
+    [null, 'video/mp4'],
+    ['download', 'video/mp4'],
+  ], "Expected the sender's attributes");
 
   const empty = mediaFiles.prepareVideoUpload({
     content: new Uint8Array(),
@@ -455,18 +444,18 @@ Deno.test('MediaFileService limits bot videos by the upload profile only', () =>
   const cloudFailure = prepareVideo('cloud', overCloudLimit, 'bot_upload');
   if (
     !prepareVideo('cloud', new Uint8Array(MAX_BOT_UPLOAD_BYTES.cloud), 'bot_upload').prepared ||
-    JSON.stringify(cloudFailure) !== JSON.stringify({
-        prepared: false,
-        reason: 'bot_upload_too_big',
-        uploadProfile: 'cloud',
-        fileSizeBytes: MAX_BOT_UPLOAD_BYTES.cloud + 1,
-        maxFileSizeBytes: MAX_BOT_UPLOAD_BYTES.cloud,
-      }) ||
     !prepareVideo('local', overCloudLimit, 'bot_upload').prepared ||
     !prepareVideo('cloud', overCloudLimit, 'account_upload').prepared
   ) {
     throw new Error(`Expected only the cloud bot upload to fail, received ${cloudFailure}`);
   }
+  assertEquals(cloudFailure, {
+    prepared: false,
+    reason: 'bot_upload_too_big',
+    uploadProfile: 'cloud',
+    fileSizeBytes: MAX_BOT_UPLOAD_BYTES.cloud + 1,
+    maxFileSizeBytes: MAX_BOT_UPLOAD_BYTES.cloud,
+  }, 'Expected only the cloud bot upload to fail');
 });
 
 Deno.test('MediaFileService downloads a video sent by URL only when served as MPEG-4', async () => {
@@ -498,13 +487,18 @@ Deno.test('MediaFileService downloads a video sent by URL only when served as MP
     await download('https://example.com/large.mp4'),
   ].map((result) => result.downloaded ? 'downloaded' : result.reason);
   if (
-    !video.downloaded || video.webFile.fileName !== 'clip.mp4' ||
-    video.webFile.mediaType !== 'video/mp4' || !largest.downloaded ||
-    JSON.stringify(failures) !==
-      JSON.stringify(['web_content_type_invalid', 'web_content_unavailable'])
+    !video.downloaded ||
+    video.webFile.fileName !== 'clip.mp4' ||
+    video.webFile.mediaType !== 'video/mp4' ||
+    !largest.downloaded
   ) {
     throw new Error(`Expected only MPEG-4 videos of up to 20 MB, received ${failures}`);
   }
+  assertEquals(
+    failures,
+    ['web_content_type_invalid', 'web_content_unavailable'],
+    'Expected only MPEG-4 videos of up to 20 MB',
+  );
 });
 
 Deno.test('MediaFileService types voice notes as TDLib uploads them and keeps their duration', () => {
@@ -533,17 +527,19 @@ Deno.test('MediaFileService types voice notes as TDLib uploads them and keeps th
     source: 'account_upload',
   });
   if (
-    JSON.stringify(mimeTypes) !== JSON.stringify([
-        'audio/ogg',
-        'audio/ogg',
-        'audio/mpeg',
-        'audio/mp4',
-        'audio/ogg',
-        'audio/ogg',
-      ]) || empty.prepared || empty.reason !== 'file_empty'
+    empty.prepared ||
+    empty.reason !== 'file_empty'
   ) {
     throw new Error(`Expected TDLib's voice note types, received ${JSON.stringify(mimeTypes)}`);
   }
+  assertEquals(mimeTypes, [
+    'audio/ogg',
+    'audio/ogg',
+    'audio/mpeg',
+    'audio/mp4',
+    'audio/ogg',
+    'audio/ogg',
+  ], "Expected TDLib's voice note types");
 });
 
 Deno.test('MediaFileService limits bot voice notes by the upload profile only', () => {
@@ -600,16 +596,12 @@ Deno.test('MediaFileService downloads a voice note sent by URL only when served 
     const result = await download(url);
     return result.downloaded ? result.webFile.mediaType : result.reason;
   }));
-  if (
-    JSON.stringify(outcomes) !== JSON.stringify([
-      'audio/ogg',
-      'audio/ogg',
-      'web_content_type_invalid',
-      'web_content_unavailable',
-    ])
-  ) {
-    throw new Error(`Expected only OGG voice notes of up to 20 MB, received ${outcomes}`);
-  }
+  assertEquals(outcomes, [
+    'audio/ogg',
+    'audio/ogg',
+    'web_content_type_invalid',
+    'web_content_unavailable',
+  ], 'Expected only OGG voice notes of up to 20 MB');
 });
 
 Deno.test('isWebVoiceNoteSentAsVoiceNote sends voice notes by URL as such up to 1 MB', () => {
@@ -631,12 +623,11 @@ Deno.test('MediaFileService lets bots download voice notes under their type exte
     );
     return result.found ? result.downloadableFile.filePath : result.reason;
   });
-  if (
-    JSON.stringify(paths) !==
-      JSON.stringify(['voice/file_0.oga', 'voice/file_1.mp3', 'voice/file_2.m4a'])
-  ) {
-    throw new Error(`Expected voice note paths, received ${JSON.stringify(paths)}`);
-  }
+  assertEquals(
+    paths,
+    ['voice/file_0.oga', 'voice/file_1.mp3', 'voice/file_2.m4a'],
+    'Expected voice note paths',
+  );
 });
 
 Deno.test('MediaFileService lets bots download a video and its thumbnail as files', () => {
@@ -674,12 +665,11 @@ Deno.test('MediaFileService lets bots download a video and its thumbnail as file
   };
 
   const paths = [video.id, video.thumbnail?.id ?? '', unnamedVideo.id].map(getPath);
-  if (
-    JSON.stringify(paths) !==
-      JSON.stringify(['videos/file_0.mov', 'thumbnails/file_1.gif', 'videos/file_2'])
-  ) {
-    throw new Error(`Expected video and thumbnail paths, received ${JSON.stringify(paths)}`);
-  }
+  assertEquals(
+    paths,
+    ['videos/file_0.mov', 'thumbnails/file_1.gif', 'videos/file_2'],
+    'Expected video and thumbnail paths',
+  );
 });
 
 Deno.test('MediaFileService keeps the metadata a sender defines for an audio file', () => {
@@ -709,7 +699,7 @@ Deno.test('MediaFileService keeps the metadata a sender defines for an audio fil
     return { ...upload, thumbnail: thumbnail === undefined ? null : thumbnail.width };
   });
   // An empty performer or title is none, and a name that names no audio type is `audio/mpeg`.
-  const expectedUploads = [
+  assertEquals(uploads, [
     {
       type: 'audio',
       fileName: 'track.mp3',
@@ -727,10 +717,7 @@ Deno.test('MediaFileService keeps the metadata a sender defines for an audio fil
       thumbnail: 300,
     },
     { type: 'audio', mimeType: 'audio/mpeg', durationSeconds: 3, thumbnail: 300 },
-  ];
-  if (JSON.stringify(uploads) !== JSON.stringify(expectedUploads)) {
-    throw new Error(`Expected the sender's metadata, received ${JSON.stringify(uploads)}`);
-  }
+  ], "Expected the sender's metadata");
 
   const empty = mediaFiles.prepareAudioUpload({
     content: new Uint8Array(),
@@ -789,15 +776,11 @@ Deno.test('MediaFileService downloads an audio file sent by URL only when served
       ? [preparation.upload.fileName, preparation.upload.mimeType, preparation.upload.title]
       : preparation.reason;
   }));
-  if (
-    JSON.stringify(outcomes) !== JSON.stringify([
-      ['track.mp3', 'audio/mpeg', 'Engines'],
-      'web_content_type_invalid',
-      'web_content_unavailable',
-    ])
-  ) {
-    throw new Error(`Expected only MP3 audio files of up to 20 MB, received ${outcomes}`);
-  }
+  assertEquals(outcomes, [
+    ['track.mp3', 'audio/mpeg', 'Engines'],
+    'web_content_type_invalid',
+    'web_content_unavailable',
+  ], 'Expected only MP3 audio files of up to 20 MB');
 });
 
 Deno.test('MediaFileService lets bots download audio files under music/ as TDLib names them', () => {
@@ -830,17 +813,13 @@ Deno.test('MediaFileService lets bots download audio files under music/ as TDLib
     );
     return result.found ? result.downloadableFile.filePath : result.reason;
   });
-  if (
-    JSON.stringify(paths) !== JSON.stringify([
-      'music/file_0.m4a',
-      'music/file_1.mp3',
-      'music/file_2.mp3',
-      'music/file_3.m4a',
-      'thumbnails/file_4.gif',
-    ])
-  ) {
-    throw new Error(`Expected audio paths, received ${JSON.stringify(paths)}`);
-  }
+  assertEquals(paths, [
+    'music/file_0.m4a',
+    'music/file_1.mp3',
+    'music/file_2.mp3',
+    'music/file_3.m4a',
+    'thumbnails/file_4.gif',
+  ], 'Expected audio paths');
 });
 
 Deno.test('MediaFileService refuses downloads of files larger than 20 MB', () => {

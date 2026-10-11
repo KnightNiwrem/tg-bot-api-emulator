@@ -1,3 +1,4 @@
+import { assertEquals } from '@std/assert';
 import {
   findBankCardNumberEntities,
   findCashtagEntities,
@@ -36,13 +37,11 @@ Deno.test('entity finders match the cases of TDLib', () => {
   for (const [name, find, cases] of finders) {
     for (const [text, expected] of cases) {
       const found = spanTexts(text, find(text));
-      if (JSON.stringify(found) !== JSON.stringify(expected)) {
-        throw new Error(
-          `Expected ${name} ${JSON.stringify(expected)} in ${JSON.stringify(text)}, found ${
-            JSON.stringify(found)
-          }`,
-        );
-      }
+      assertEquals(
+        found,
+        expected,
+        `Expected ${name} ${JSON.stringify(expected)} in ${JSON.stringify(text)}`,
+      );
     }
   }
 });
@@ -54,13 +53,13 @@ Deno.test('URL and email address finding matches the cases of TDLib', () => {
       spanTexts(text, entities.filter((entity) => entity.type === 'url')),
       spanTexts(text, entities.filter((entity) => entity.type === 'email')),
     ];
-    if (JSON.stringify(found) !== JSON.stringify([expectedUrls, expectedEmailAddresses])) {
-      throw new Error(
-        `Expected URLs and email addresses ${
-          JSON.stringify([expectedUrls, expectedEmailAddresses])
-        } in ${JSON.stringify(text)}, found ${JSON.stringify(found)}`,
-      );
-    }
+    assertEquals(
+      found,
+      [expectedUrls, expectedEmailAddresses],
+      `Expected URLs and email addresses ${
+        JSON.stringify([expectedUrls, expectedEmailAddresses])
+      } in ${JSON.stringify(text)}`,
+    );
   }
 
   const { badUserParts, goodUserParts, badDomains, goodDomains } = TDLIB_EMAIL_ADDRESS_PARTS;
@@ -97,9 +96,11 @@ Deno.test('detected entities are sorted, and only the first of overlapping entit
     ['email', 'ada@example.com'],
     ['bank_card_number', '4242 4242 4242 4242'],
   ];
-  if (JSON.stringify(found) !== JSON.stringify(expected)) {
-    throw new Error(`Expected ${JSON.stringify(expected)}, found ${JSON.stringify(found)}`);
-  }
+  assertEquals(
+    found,
+    expected,
+    `Expected ${JSON.stringify(expected)}`,
+  );
 });
 
 function spanTexts(text: string, entities: readonly TextEntity[]): string[] {
