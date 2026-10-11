@@ -1,8 +1,8 @@
 {
   "$schema": "https://raw.githubusercontent.com/fallow-rs/fallow/main/schema.json",
   "entry": [
+    "clients/typescript/in_process/mod.ts",
     "clients/typescript/mod.ts",
-    "in_process/mod.ts",
     "src/main.ts",
     "tests/support/openapi_conformance/coverage_report.ts"
   ],
@@ -397,13 +397,13 @@
       {
         "name": "http-grammar",
         "patterns": [
-          "http_grammar/**/*.ts"
+          "src/api/http_grammar/**/*.ts"
         ]
       },
       {
         "name": "control-contracts",
         "patterns": [
-          "control_contracts/**/*.ts"
+          "src/api/contracts/**/*.ts"
         ]
       },
       {
@@ -422,15 +422,15 @@
         ]
       },
       {
-        "name": "typescript-client",
+        "name": "in-process-emulator",
         "patterns": [
-          "clients/typescript/**/*.ts"
+          "clients/typescript/in_process/**/*.ts"
         ]
       },
       {
-        "name": "in-process-emulator",
+        "name": "typescript-client",
         "patterns": [
-          "in_process/**/*.ts"
+          "clients/typescript/**/*.ts"
         ]
       }
     ],
