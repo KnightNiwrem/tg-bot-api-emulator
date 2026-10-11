@@ -162,6 +162,28 @@ Deno.test('the chat information methods name the parameter that does not fit the
   );
 });
 
+Deno.test('getFile names the parameter that does not fit its schema, then requires a file', async () => {
+  const { api, botApiPath } = await createFixture();
+  const cases: readonly [parameters: object, description: string][] = [
+    [
+      { file_id: 'secret', file_path: 'secret' },
+      'Bad Request: invalid getFile parameters: file_path',
+    ],
+    [{}, 'Bad Request: file_id not specified'],
+    [{ file_id: '' }, 'Bad Request: file_id not specified'],
+  ];
+
+  const answers = [];
+  for (const [parameters] of cases) {
+    answers.push(await callBotApi(api, `${botApiPath}/getFile`, parameters));
+  }
+  assertEquals(
+    answers,
+    cases.map(([, description]) => [400, description]),
+    'Expected the schema to be read before the file is required',
+  );
+});
+
 /** Creates a session holding a bot. */
 async function createFixture() {
   const { api, sessionPath } = await createTestSession();
