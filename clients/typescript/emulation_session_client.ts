@@ -602,10 +602,10 @@ function createVirtualAccountClient(
           params: { ...params, messageId },
         });
       },
-      answerPoll(messageId, optionIds) {
+      answerPoll(messageId, body) {
         return callJsonAction(transport, answerAccountPollContract, {
           params: { ...params, messageId },
-          body: { option_ids: [...optionIds] },
+          body,
         });
       },
       async stopPoll(messageId) {
@@ -646,10 +646,10 @@ function createVirtualAccountClient(
           params: { ...params, messageId },
         });
       },
-      answerPoll(messageId, optionIds) {
+      answerPoll(messageId, body) {
         return callJsonAction(transport, answerSupergroupAccountPollContract, {
           params: { ...params, messageId },
-          body: { option_ids: [...optionIds] },
+          body,
         });
       },
       async stopPoll(messageId) {
@@ -710,88 +710,50 @@ function createVirtualAccountClient(
       return sendMessageTo(input.to, { ...input, entities: copyEntities(input.entities) });
     },
     sendPhoto<Target extends MessageTarget>(
-      { to, photo, caption, caption_entities, reply_to_message_id }: AccountSendPhotoInput<Target>,
+      { photo, caption_entities, ...message }: AccountSendPhotoInput<Target>,
     ): Promise<ActionOutcome<MessageIn<Target>>> {
-      return sendMessageTo(to, {
-        to,
+      return sendMessageTo(message.to, {
+        ...message,
         photo: { content_base64: photo.toBase64() },
-        caption,
         caption_entities: copyEntities(caption_entities),
-        reply_to_message_id,
       });
     },
     sendDocument<Target extends MessageTarget>(
-      {
-        to,
-        document,
-        file_name,
-        caption,
-        caption_entities,
-        reply_to_message_id,
-      }: AccountSendDocumentInput<Target>,
+      { document, file_name, caption_entities, ...message }: AccountSendDocumentInput<Target>,
     ): Promise<ActionOutcome<MessageIn<Target>>> {
-      return sendMessageTo(to, {
-        to,
+      return sendMessageTo(message.to, {
+        ...message,
         document: { content_base64: document.toBase64(), file_name },
-        caption,
         caption_entities: copyEntities(caption_entities),
-        reply_to_message_id,
       });
     },
     sendVideo<Target extends MessageTarget>(
-      {
-        to,
-        video,
-        file_name,
-        duration,
-        width,
-        height,
-        caption,
-        caption_entities,
-        reply_to_message_id,
-      }: AccountSendVideoInput<Target>,
+      { video, file_name, duration, width, height, caption_entities, ...message }:
+        AccountSendVideoInput<Target>,
     ): Promise<ActionOutcome<MessageIn<Target>>> {
-      return sendMessageTo(to, {
-        to,
+      return sendMessageTo(message.to, {
+        ...message,
         video: toAccountVideoUpload({ video, file_name, duration, width, height }),
-        caption,
         caption_entities: copyEntities(caption_entities),
-        reply_to_message_id,
       });
     },
     sendVoice<Target extends MessageTarget>(
-      { to, voice, duration, caption, caption_entities, reply_to_message_id }:
-        AccountSendVoiceInput<
-          Target
-        >,
+      { voice, duration, caption_entities, ...message }: AccountSendVoiceInput<Target>,
     ): Promise<ActionOutcome<MessageIn<Target>>> {
-      return sendMessageTo(to, {
-        to,
+      return sendMessageTo(message.to, {
+        ...message,
         voice: { content_base64: voice.toBase64(), duration },
-        caption,
         caption_entities: copyEntities(caption_entities),
-        reply_to_message_id,
       });
     },
     sendAudio<Target extends MessageTarget>(
-      {
-        to,
-        audio,
-        file_name,
-        duration,
-        performer,
-        title,
-        caption,
-        caption_entities,
-        reply_to_message_id,
-      }: AccountSendAudioInput<Target>,
+      { audio, file_name, duration, performer, title, caption_entities, ...message }:
+        AccountSendAudioInput<Target>,
     ): Promise<ActionOutcome<MessageIn<Target>>> {
-      return sendMessageTo(to, {
-        to,
+      return sendMessageTo(message.to, {
+        ...message,
         audio: toAccountAudioUpload({ audio, file_name, duration, performer, title }),
-        caption,
         caption_entities: copyEntities(caption_entities),
-        reply_to_message_id,
       });
     },
     sendContact<Target extends MessageTarget>(
@@ -800,9 +762,9 @@ function createVirtualAccountClient(
       return sendMessageTo(input.to, input);
     },
     shareOwnContact<Target extends MessageTarget>(
-      { to, reply_to_message_id }: AccountShareOwnContactInput<Target>,
+      input: AccountShareOwnContactInput<Target>,
     ): Promise<ActionOutcome<MessageIn<Target>>> {
-      return sendMessageTo(to, { to, own_contact: true, reply_to_message_id });
+      return sendMessageTo(input.to, { ...input, own_contact: true });
     },
     sendLocation<Target extends MessageTarget>(
       input: AccountSendLocationInput<Target>,
@@ -810,23 +772,23 @@ function createVirtualAccountClient(
       return sendMessageTo(input.to, input);
     },
     sendPoll<Target extends MessageTarget>(
-      { to, poll, reply_to_message_id }: AccountSendPollInput<Target>,
+      input: AccountSendPollInput<Target>,
     ): Promise<ActionOutcome<MessageIn<Target>>> {
-      return sendMessageTo(to, { to, poll: toAccountPollBody(poll), reply_to_message_id });
+      return sendMessageTo(input.to, { ...input, poll: toAccountPollBody(input.poll) });
     },
     async sendMediaGroup<Target extends MessageTarget>(
-      { to, media, reply_to_message_id }: AccountSendMediaGroupInput<Target>,
+      { media, ...album }: AccountSendMediaGroupInput<Target>,
     ): Promise<ActionOutcome<readonly MessageIn<Target>[]>> {
+      const { to } = album;
       const request = {
         params: accountParams,
         body: {
-          to,
+          ...album,
           media: media.map((item) => ({
             ...toAccountMediaGroupFile(item),
             caption: item.caption,
             caption_entities: copyEntities(item.caption_entities),
           })),
-          reply_to_message_id,
         },
       };
       const sending = await callJsonAction(transport, sendAccountMediaGroupContract, request);
@@ -837,24 +799,24 @@ function createVirtualAccountClient(
       );
     },
     forwardMessage<Target extends MessageTarget>(
-      { from, message_id, to }: AccountForwardMessageInput<Target>,
+      { from, message_id, ...message }: AccountForwardMessageInput<Target>,
     ): Promise<ActionOutcome<MessageIn<Target>>> {
-      return sendMessageTo(to, { to, forward: { chat: from, message_id } });
+      return sendMessageTo(message.to, { ...message, forward: { chat: from, message_id } });
     },
     editMessage<Target extends MessageTarget>(
-      input: AccountEditMessageInput<Target>,
+      { chat, message_id, entities, ...edit }: AccountEditMessageInput<Target>,
     ): Promise<ActionOutcome<MessageIn<Target>>> {
-      return chatMessageOperationsFor(input.chat).editMessage(input.message_id, {
-        text: input.text,
-        entities: copyEntities(input.entities),
+      return chatMessageOperationsFor(chat).editMessage(message_id, {
+        ...edit,
+        entities: copyEntities(entities),
       });
     },
     editMessageCaption<Target extends MessageTarget>(
-      input: AccountEditMessageCaptionInput<Target>,
+      { chat, message_id, caption_entities, ...edit }: AccountEditMessageCaptionInput<Target>,
     ): Promise<ActionOutcome<MessageIn<Target>>> {
-      return chatMessageOperationsFor(input.chat).editMessage(input.message_id, {
-        caption: input.caption,
-        caption_entities: copyEntities(input.caption_entities),
+      return chatMessageOperationsFor(chat).editMessage(message_id, {
+        ...edit,
+        caption_entities: copyEntities(caption_entities),
       });
     },
     deleteMessage(
@@ -1126,9 +1088,12 @@ function createVirtualAccountClient(
       return response.callback_query;
     },
     answerPoll<Target extends MessageTarget>(
-      { chat, message_id, option_ids }: AnswerPollInput<Target>,
+      { chat, message_id, option_ids, ...answer }: AnswerPollInput<Target>,
     ): Promise<ActionOutcome<AccountPollAnswer<Target>>> {
-      return chatMessageOperationsFor(chat).answerPoll(message_id, option_ids);
+      return chatMessageOperationsFor(chat).answerPoll(message_id, {
+        ...answer,
+        option_ids: [...option_ids],
+      });
     },
     getPollAnswer<Target extends MessageTarget>(
       input: AccountPollMessageInput<Target>,
@@ -1152,11 +1117,11 @@ function createVirtualAccountClient(
       return chatMessageOperationsFor(input.chat).stopPoll(input.message_id);
     },
     setMessageReaction(
-      { chat, message_id: messageId, reaction }: SetMessageReactionInput,
+      { chat, message_id: messageId, reaction, ...choice }: SetMessageReactionInput,
     ): Promise<ActionOutcome<MessageReactions>> {
       return callJsonAction(transport, setSupergroupAccountMessageReactionContract, {
         params: { ...supergroupParams(chat), messageId },
-        body: { reaction: [...reaction] },
+        body: { ...choice, reaction: [...reaction] },
       });
     },
     getMessageReactions(
@@ -1187,13 +1152,13 @@ function createVirtualAccountClient(
       return response.inline_query;
     },
     async chooseInlineQueryResult(
-      input: ChooseInlineQueryResultInput,
+      { inline_query_id: inlineQueryId, ...choice }: ChooseInlineQueryResultInput,
     ): Promise<ActionOutcome<PrivateMessage | SupergroupMessage>> {
-      const choice = await callJsonAction(transport, chooseInlineQueryResultContract, {
-        params: { ...accountParams, inlineQueryId: input.inline_query_id },
-        body: { result_id: input.result_id },
+      const sending = await callJsonAction(transport, chooseInlineQueryResultContract, {
+        params: { ...accountParams, inlineQueryId },
+        body: choice,
       });
-      return selectResult(choice, ({ message }) => message);
+      return selectResult(sending, ({ message }) => message);
     },
     async getBotCommands({ chat }: AccountBotCommandsInput): Promise<readonly BotCommand[]> {
       const response = await callJsonOperation(transport, getPrivateChatBotCommandsContract, {
@@ -1269,6 +1234,9 @@ function toAccountPollBody(poll: AccountPollInput) {
     : { ...poll, ...lists };
 }
 
+/** The body of an account's answer to a poll: the options it chooses. */
+type AnswerPollBody = ControlOperationRequest<typeof answerAccountPollContract>['body'];
+
 /** The body of an edit of an account's message: new text, or a new caption. */
 type AccountMessageEditBody = ControlOperationRequest<typeof editAccountMessageContract>['body'];
 
@@ -1286,7 +1254,7 @@ interface ChatMessageOperations<Target extends MessageTarget> {
   readPollAnswer(messageId: number): Promise<AccountPollAnswer<Target>>;
   answerPoll(
     messageId: number,
-    optionIds: readonly number[],
+    body: AnswerPollBody,
   ): Promise<ActionOutcome<AccountPollAnswer<Target>>>;
   stopPoll(messageId: number): Promise<ActionOutcome<MessageIn<Target>>>;
 }
