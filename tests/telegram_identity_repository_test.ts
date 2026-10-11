@@ -1,8 +1,11 @@
+import { assertEquals } from '@std/assert';
+
 import {
   type IdentityReservationInput,
   type TelegramIdentity,
   TelegramIdentityRepository,
 } from '../src/repositories/telegram_identity.ts';
+import { SessionChangeJournal } from '../src/transactions/change_staging.ts';
 import { MAX_TELEGRAM_USER_ID, MIN_TELEGRAM_USER_ID } from '../src/types/telegram_identity.ts';
 
 Deno.test('Telegram user IDs use the official MTProto user range', () => {
@@ -76,3 +79,27 @@ function reserveIdentity(
   }
   return result.identity;
 }
+
+Deno.test('a reservation that its transaction aborts frees its ID and its username', () => {
+  const journal = new SessionChangeJournal({
+    reportNotificationFailure: (error) => {
+      throw error;
+    },
+  });
+  const identities = new TelegramIdentityRepository(journal);
+  const reserveAll = () =>
+    (['account', 'basic_group', 'supergroup'] as const).map((kind) =>
+      identities.reserveIdentity(
+        kind === 'basic_group' ? { kind } : { kind, username: `${kind}_name` },
+      )
+    );
+
+  journal.begin();
+  const abortedReservations = reserveAll();
+  journal.abort();
+  const reservations = reserveAll();
+
+  assertEquals(reservations, abortedReservations);
+  assertEquals(reservations.every((reservation) => reservation.reserved), true);
+  assertEquals(identities.getByUsername('ACCOUNT_NAME'), identities.getById(MIN_TELEGRAM_USER_ID));
+});

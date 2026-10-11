@@ -1,3 +1,5 @@
+import { type ChangeStaging, UNSTAGED_CHANGES } from '../transactions/change_staging.ts';
+import { TransactionalMap } from '../transactions/transactional_collections.ts';
 import {
   MAX_SUPERGROUP_OR_CHANNEL_ID,
   MAX_TELEGRAM_USER_ID,
@@ -69,12 +71,24 @@ export type IdentityReservationResult =
     readonly reason: IdentityReservationFailureReason;
   };
 
+/**
+ * Reserves the IDs and usernames of a session's users and chats. A reservation that a transaction
+ * aborts frees its username and its ID, which the next reservation of its kind takes.
+ */
 export class TelegramIdentityRepository {
-  readonly #identitiesById = new Map<number, TelegramIdentity>();
-  readonly #identitiesByNormalizedUsername = new Map<string, TelegramIdentity>();
+  readonly #staging: ChangeStaging;
+  readonly #identitiesById: TransactionalMap<number, TelegramIdentity>;
+  readonly #identitiesByNormalizedUsername: TransactionalMap<string, TelegramIdentity>;
   #nextUserId = MIN_TELEGRAM_USER_ID;
   #nextBasicGroupId = HIGHEST_BASIC_GROUP_ID;
   #nextSupergroupOrChannelId = MAX_SUPERGROUP_OR_CHANNEL_ID;
+
+  /** `staging` decides how the repository's writes take part in its session's transactions. */
+  constructor(staging: ChangeStaging = UNSTAGED_CHANGES) {
+    this.#staging = staging;
+    this.#identitiesById = new TransactionalMap(staging);
+    this.#identitiesByNormalizedUsername = new TransactionalMap(staging);
+  }
 
   reserveIdentity(input: IdentityReservationInput): IdentityReservationResult {
     const username = 'username' in input ? input.username : undefined;
@@ -110,22 +124,37 @@ export class TelegramIdentityRepository {
   #allocateId(kind: TelegramIdentity['kind']): number | undefined {
     switch (kind) {
       case 'account':
-      case 'bot':
+      case 'bot': {
         if (this.#nextUserId > MAX_TELEGRAM_USER_ID) {
           return undefined;
         }
-        return this.#nextUserId++;
-      case 'basic_group':
+        const id = this.#nextUserId++;
+        this.#staging.recordRevert(() => {
+          this.#nextUserId = id;
+        });
+        return id;
+      }
+      case 'basic_group': {
         if (this.#nextBasicGroupId < LOWEST_BASIC_GROUP_ID) {
           return undefined;
         }
-        return this.#nextBasicGroupId--;
+        const id = this.#nextBasicGroupId--;
+        this.#staging.recordRevert(() => {
+          this.#nextBasicGroupId = id;
+        });
+        return id;
+      }
       case 'supergroup':
-      case 'channel':
+      case 'channel': {
         if (this.#nextSupergroupOrChannelId < MIN_SUPERGROUP_OR_CHANNEL_ID) {
           return undefined;
         }
-        return this.#nextSupergroupOrChannelId--;
+        const id = this.#nextSupergroupOrChannelId--;
+        this.#staging.recordRevert(() => {
+          this.#nextSupergroupOrChannelId = id;
+        });
+        return id;
+      }
     }
   }
 }

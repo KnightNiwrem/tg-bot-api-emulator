@@ -551,7 +551,7 @@ function createBotApiFixture() {
     bots,
     sharedChats,
     supergroupMessages: supergroupMessaging,
-    events,
+    transactions: { ...events, withinTransaction: (command) => command() },
     currentUnixTimeSeconds: () => 1_700_000_000,
   });
   const mediaFiles = new MediaFileService({

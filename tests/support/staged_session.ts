@@ -83,7 +83,7 @@ export function createStagedSessionFixture({ privacyMode }: { readonly privacyMo
       notificationFailures.push(error instanceof Error ? error.message : error),
   });
   const sessionEnd = new AbortController();
-  const identities = new TelegramIdentityRepository();
+  const identities = new TelegramIdentityRepository(journal);
   const accounts = new AccountRepository();
   const bots = new BotRepository();
   const virtualUsers = new VirtualUserService({ identities, accounts, bots });
@@ -136,7 +136,7 @@ export function createStagedSessionFixture({ privacyMode }: { readonly privacyMo
     bots,
     sharedChats,
     supergroupMessages: supergroupMessaging,
-    events: transactions,
+    transactions,
     currentUnixTimeSeconds,
   });
   const chatAdmission = new ChatAdmissionService({

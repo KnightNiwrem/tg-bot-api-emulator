@@ -371,7 +371,7 @@ function createReactionFixture() {
     bots,
     sharedChats,
     supergroupMessages: supergroupMessaging,
-    events,
+    transactions: { ...events, withinTransaction: (command) => command() },
     currentUnixTimeSeconds,
   });
   const privateConversations = new PrivateConversationRepository();

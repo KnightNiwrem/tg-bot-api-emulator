@@ -10,6 +10,8 @@ import { readChatMemberTarget, USER_ID_INVALID_DESCRIPTION } from '../chat_membe
 import { readChatPermissionsParameter } from '../chat_permissions_parameter.ts';
 import { presentChatMemberFailure } from '../errors/chat_member_failure_presenter.ts';
 import {
+  answeredPreparation,
+  type BotApiCallPreparation,
   botApiError,
   type BotApiMethod,
   type BotApiMethodAnswer,
@@ -22,21 +24,25 @@ import {
   integerParameter,
 } from '../request_parameters.ts';
 
-/** The methods that read a chat's members, moderate or promote them, or make the bot leave. */
+/**
+ * The methods that read a chat's members, moderate or promote them, or make the bot leave. Each
+ * method that changes the chat is executed as a command in its call's transaction; the reads
+ * change nothing, and answer from their handlers.
+ */
 export const CHAT_MEMBER_METHODS: readonly BotApiMethod[] = [
-  { name: 'banChatMember', recordsActivity: true, handler: handleBanChatMember },
+  { name: 'banChatMember', recordsActivity: true, prepare: prepareBanChatMember },
   { name: 'getChatAdministrators', recordsActivity: true, handler: handleGetChatAdministrators },
   { name: 'getChatMember', recordsActivity: true, handler: handleGetChatMember },
   { name: 'getChatMemberCount', recordsActivity: true, handler: handleGetChatMemberCount },
-  { name: 'leaveChat', recordsActivity: true, handler: handleLeaveChat },
-  { name: 'promoteChatMember', recordsActivity: true, handler: handlePromoteChatMember },
-  { name: 'restrictChatMember', recordsActivity: true, handler: handleRestrictChatMember },
+  { name: 'leaveChat', recordsActivity: true, prepare: prepareLeaveChat },
+  { name: 'promoteChatMember', recordsActivity: true, prepare: preparePromoteChatMember },
+  { name: 'restrictChatMember', recordsActivity: true, prepare: prepareRestrictChatMember },
   {
     name: 'setChatAdministratorCustomTitle',
     recordsActivity: true,
-    handler: handleSetChatAdministratorCustomTitle,
+    prepare: prepareSetChatAdministratorCustomTitle,
   },
-  { name: 'unbanChatMember', recordsActivity: true, handler: handleUnbanChatMember },
+  { name: 'unbanChatMember', recordsActivity: true, prepare: prepareUnbanChatMember },
 ];
 
 /** The emulator's description for a promotion to an anonymous administrator, which it lacks. */
@@ -120,24 +126,29 @@ const unbanChatMemberParametersSchema = z.strictObject({
   only_if_banned: booleanParameter().default(false),
 });
 
-function handleLeaveChat(
+function prepareLeaveChat(
   context: BotApiMethodContext,
   parameters: BotApiRequestParameters,
-): BotApiMethodAnswer {
+): BotApiCallPreparation {
   const parsedParameters = leaveChatParametersSchema.safeParse(parameters);
   if (!parsedParameters.success) {
-    return botApiError(400, 'Bad Request: invalid leaveChat parameters');
+    return answeredPreparation(botApiError(400, 'Bad Request: invalid leaveChat parameters'));
   }
   const { chat_id: chatId } = parsedParameters.data;
   if (chatId === undefined) {
-    return botApiError(400, CHAT_ID_EMPTY_DESCRIPTION);
+    return answeredPreparation(botApiError(400, CHAT_ID_EMPTY_DESCRIPTION));
   }
 
-  const result = context.session.botApi.leaveChat(
-    context.bot,
-    { chatId },
-  );
-  return result.left ? botApiResult(true) : presentChatMemberFailure('chat_leave', result);
+  return {
+    kind: 'command',
+    execute: () => {
+      const result = context.session.botApi.leaveChat(
+        context.bot,
+        { chatId },
+      );
+      return result.left ? botApiResult(true) : presentChatMemberFailure('chat_leave', result);
+    },
+  };
 }
 
 function handleGetChatMember(
@@ -206,92 +217,111 @@ function handleGetChatMemberCount(
     : presentChatMemberFailure('member_lookup', result);
 }
 
-function handleBanChatMember(
+function prepareBanChatMember(
   context: BotApiMethodContext,
   parameters: BotApiRequestParameters,
-): BotApiMethodAnswer {
+): BotApiCallPreparation {
   const parsedParameters = banChatMemberParametersSchema.safeParse(parameters);
   if (!parsedParameters.success) {
-    return botApiError(400, 'Bad Request: invalid banChatMember parameters');
+    return answeredPreparation(botApiError(400, 'Bad Request: invalid banChatMember parameters'));
   }
   const targetReading = readChatMemberTarget(parsedParameters.data);
   if (!targetReading.read) {
-    return targetReading.errorAnswer;
+    return answeredPreparation(targetReading.errorAnswer);
   }
 
-  const result = context.session.botApi.banChatMember(
-    context.bot,
-    { ...targetReading.target, untilUnixSeconds: parsedParameters.data.until_date },
-  );
-  return result.banned ? botApiResult(true) : presentChatMemberFailure('member_moderation', result);
+  return {
+    kind: 'command',
+    execute: () => {
+      const result = context.session.botApi.banChatMember(
+        context.bot,
+        { ...targetReading.target, untilUnixSeconds: parsedParameters.data.until_date },
+      );
+      return result.banned
+        ? botApiResult(true)
+        : presentChatMemberFailure('member_moderation', result);
+    },
+  };
 }
 
-function handleRestrictChatMember(
+function prepareRestrictChatMember(
   context: BotApiMethodContext,
   parameters: BotApiRequestParameters,
-): BotApiMethodAnswer {
+): BotApiCallPreparation {
   const invalidParametersDescription = 'Bad Request: invalid restrictChatMember parameters';
   const parsedParameters = restrictChatMemberParametersSchema.safeParse(parameters);
   if (!parsedParameters.success) {
-    return botApiError(400, invalidParametersDescription);
+    return answeredPreparation(botApiError(400, invalidParametersDescription));
   }
   const { data } = parsedParameters;
   // Telegram reads the user, then the permissions, before it looks at the chat.
   if (data.user_id === undefined || data.user_id <= 0) {
-    return botApiError(400, USER_ID_INVALID_DESCRIPTION);
+    return answeredPreparation(botApiError(400, USER_ID_INVALID_DESCRIPTION));
   }
   const permissionsReading = readChatPermissionsParameter(data.permissions, {
     usesIndependentChatPermissions: data.use_independent_chat_permissions,
     invalidParametersDescription,
   });
   if (!permissionsReading.read) {
-    return botApiError(400, permissionsReading.description);
+    return answeredPreparation(botApiError(400, permissionsReading.description));
   }
   const targetReading = readChatMemberTarget(data);
   if (!targetReading.read) {
-    return targetReading.errorAnswer;
+    return answeredPreparation(targetReading.errorAnswer);
   }
 
-  const result = context.session.botApi.restrictChatMember(context.bot, {
-    ...targetReading.target,
-    permissions: permissionsReading.permissions,
-    untilUnixSeconds: data.until_date,
-  });
-  return result.restricted
-    ? botApiResult(true)
-    : presentChatMemberFailure('member_moderation', result);
+  return {
+    kind: 'command',
+    execute: () => {
+      const result = context.session.botApi.restrictChatMember(context.bot, {
+        ...targetReading.target,
+        permissions: permissionsReading.permissions,
+        untilUnixSeconds: data.until_date,
+      });
+      return result.restricted
+        ? botApiResult(true)
+        : presentChatMemberFailure('member_moderation', result);
+    },
+  };
 }
 
 /**
- * Answers `promoteChatMember`. As the official server's `process_promote_chat_member_query` reads
+ * Prepares `promoteChatMember`. As the official server's `process_promote_chat_member_query` reads
  * them, each right is a separate parameter, a missing one is false, and passing none demotes an
  * administrator.
  */
-function handlePromoteChatMember(
+function preparePromoteChatMember(
   context: BotApiMethodContext,
   parameters: BotApiRequestParameters,
-): BotApiMethodAnswer {
+): BotApiCallPreparation {
   const parsedParameters = promoteChatMemberParametersSchema.safeParse(parameters);
   if (!parsedParameters.success) {
-    return botApiError(400, 'Bad Request: invalid promoteChatMember parameters');
+    return answeredPreparation(
+      botApiError(400, 'Bad Request: invalid promoteChatMember parameters'),
+    );
   }
   const { data } = parsedParameters;
   const targetReading = readChatMemberTarget(data);
   if (!targetReading.read) {
-    return targetReading.errorAnswer;
+    return answeredPreparation(targetReading.errorAnswer);
   }
   // Anonymous administrators are not supported; granting the right alone would misrepresent them.
   if (data.is_anonymous === true) {
-    return botApiError(400, ANONYMOUS_ADMINISTRATORS_UNSUPPORTED_DESCRIPTION);
+    return answeredPreparation(botApiError(400, ANONYMOUS_ADMINISTRATORS_UNSUPPORTED_DESCRIPTION));
   }
 
-  const result = context.session.botApi.promoteChatMember(context.bot, {
-    ...targetReading.target,
-    rights: readPromotedSupergroupRights(data),
-  });
-  return result.promoted
-    ? botApiResult(true)
-    : presentChatMemberFailure('member_promotion', result);
+  return {
+    kind: 'command',
+    execute: () => {
+      const result = context.session.botApi.promoteChatMember(context.bot, {
+        ...targetReading.target,
+        rights: readPromotedSupergroupRights(data),
+      });
+      return result.promoted
+        ? botApiResult(true)
+        : presentChatMemberFailure('member_promotion', result);
+    },
+  };
 }
 
 /**
@@ -310,48 +340,62 @@ function readPromotedSupergroupRights(
   );
 }
 
-function handleUnbanChatMember(
+function prepareUnbanChatMember(
   context: BotApiMethodContext,
   parameters: BotApiRequestParameters,
-): BotApiMethodAnswer {
+): BotApiCallPreparation {
   const parsedParameters = unbanChatMemberParametersSchema.safeParse(parameters);
   if (!parsedParameters.success) {
-    return botApiError(400, 'Bad Request: invalid unbanChatMember parameters');
+    return answeredPreparation(botApiError(400, 'Bad Request: invalid unbanChatMember parameters'));
   }
   const targetReading = readChatMemberTarget(parsedParameters.data);
   if (!targetReading.read) {
-    return targetReading.errorAnswer;
+    return answeredPreparation(targetReading.errorAnswer);
   }
 
-  const result = context.session.botApi.unbanChatMember(
-    context.bot,
-    { ...targetReading.target, onlyIfBanned: parsedParameters.data.only_if_banned },
-  );
-  return result.unbanned
-    ? botApiResult(true)
-    : presentChatMemberFailure('member_moderation', result);
+  return {
+    kind: 'command',
+    execute: () => {
+      const result = context.session.botApi.unbanChatMember(
+        context.bot,
+        { ...targetReading.target, onlyIfBanned: parsedParameters.data.only_if_banned },
+      );
+      return result.unbanned
+        ? botApiResult(true)
+        : presentChatMemberFailure('member_moderation', result);
+    },
+  };
 }
 
 /**
- * Answers `setChatAdministratorCustomTitle`. As the official server reads it, a missing
+ * Prepares `setChatAdministratorCustomTitle`. As the official server reads it, a missing
  * `custom_title` is empty, which removes the title.
  */
-function handleSetChatAdministratorCustomTitle(
+function prepareSetChatAdministratorCustomTitle(
   context: BotApiMethodContext,
   parameters: BotApiRequestParameters,
-): BotApiMethodAnswer {
+): BotApiCallPreparation {
   const parsedParameters = setChatAdministratorCustomTitleParametersSchema.safeParse(parameters);
   if (!parsedParameters.success) {
-    return botApiError(400, 'Bad Request: invalid setChatAdministratorCustomTitle parameters');
+    return answeredPreparation(
+      botApiError(400, 'Bad Request: invalid setChatAdministratorCustomTitle parameters'),
+    );
   }
   const targetReading = readChatMemberTarget(parsedParameters.data);
   if (!targetReading.read) {
-    return targetReading.errorAnswer;
+    return answeredPreparation(targetReading.errorAnswer);
   }
 
-  const result = context.session.botApi.setChatAdministratorCustomTitle(context.bot, {
-    ...targetReading.target,
-    customTitle: parsedParameters.data.custom_title ?? '',
-  });
-  return result.set ? botApiResult(true) : presentChatMemberFailure('custom_title_change', result);
+  return {
+    kind: 'command',
+    execute: () => {
+      const result = context.session.botApi.setChatAdministratorCustomTitle(context.bot, {
+        ...targetReading.target,
+        customTitle: parsedParameters.data.custom_title ?? '',
+      });
+      return result.set
+        ? botApiResult(true)
+        : presentChatMemberFailure('custom_title_change', result);
+    },
+  };
 }

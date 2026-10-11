@@ -776,8 +776,13 @@ type SharedChatStore =
   & OwnerOnlySharedChatStore
   & ChatMembershipStore;
 
-/** Takes each event into the transaction of the command that caused it. */
-interface ChatDomainEventSink {
+/**
+ * The session's transactions: each command of chat administration runs in one, and emits its
+ * events into it.
+ */
+interface SharedChatAdministrationTransactions {
+  /** Runs a command in the transaction of the command executing, or in one of its own. */
+  withinTransaction<Result>(command: () => Result): Result;
   emit(event: ChatDomainEvent): void;
 }
 
@@ -796,7 +801,11 @@ interface SharedChatAdministrationServiceDependencies {
   readonly bots: BotLookup;
   readonly sharedChats: SharedChatStore;
   readonly supergroupMessages: SupergroupServiceMessageRecorder;
-  readonly events: ChatDomainEventSink;
+  /**
+   * Runs each command that changes the session as one transaction, which receives each change of
+   * a standing.
+   */
+  readonly transactions: SharedChatAdministrationTransactions;
   readonly currentUnixTimeSeconds: () => number;
 }
 
@@ -860,6 +869,12 @@ function canChangeSupergroupInfo(
  * Members and bots also change a supergroup's title and description here, and a new title is
  * recorded as a service message too. Bots also read the standing of a supergroup's users here, as
  * a member of the supergroup.
+ *
+ * Each command that changes the session runs as one transaction: the chat it creates with its
+ * identity, the standings it changes, the service messages recording them, and the updates their
+ * events become are published together, or, should any step fail, not at all. Every condition a
+ * command depends on is checked in that transaction, so a command prepared earlier is never
+ * committed against changed state.
  */
 export class SharedChatAdministrationService {
   readonly #identities: SharedChatIdentityReservationStore;
@@ -867,7 +882,7 @@ export class SharedChatAdministrationService {
   readonly #bots: BotLookup;
   readonly #sharedChats: SharedChatStore;
   readonly #supergroupMessages: SupergroupServiceMessageRecorder;
-  readonly #events: ChatDomainEventSink;
+  readonly #transactions: SharedChatAdministrationTransactions;
   readonly #currentUnixTimeSeconds: () => number;
 
   constructor(
@@ -877,7 +892,7 @@ export class SharedChatAdministrationService {
       bots,
       sharedChats,
       supergroupMessages,
-      events,
+      transactions,
       currentUnixTimeSeconds,
     }: SharedChatAdministrationServiceDependencies,
   ) {
@@ -886,140 +901,148 @@ export class SharedChatAdministrationService {
     this.#bots = bots;
     this.#sharedChats = sharedChats;
     this.#supergroupMessages = supergroupMessages;
-    this.#events = events;
+    this.#transactions = transactions;
     this.#currentUnixTimeSeconds = currentUnixTimeSeconds;
   }
 
   createBasicGroup(input: CreateBasicGroupInput): BasicGroupCreationResult {
-    const participantValidationFailure = this.#validateBasicGroupParticipants(input);
-    if (participantValidationFailure !== undefined) {
-      return { created: false, reason: participantValidationFailure };
-    }
+    return this.#transactions.withinTransaction(() => {
+      const participantValidationFailure = this.#validateBasicGroupParticipants(input);
+      if (participantValidationFailure !== undefined) {
+        return { created: false, reason: participantValidationFailure };
+      }
 
-    const groupId = this.#reserveSharedChatId('basic_group');
-    if (groupId === undefined) {
-      return { created: false, reason: 'identity_limit_reached' };
-    }
-    const group: BasicGroup = {
-      kind: 'basic_group',
-      id: groupId,
-      title: input.title,
-    };
-    const registration = this.#sharedChats.registerBasicGroup(
-      group,
-      input.creatorAccountId,
-      input.initialMemberIds,
-    );
-    if (!registration.registered) {
-      throw new Error(`Reserved basic group could not be registered: ${registration.reason}`);
-    }
+      const groupId = this.#reserveSharedChatId('basic_group');
+      if (groupId === undefined) {
+        return { created: false, reason: 'identity_limit_reached' };
+      }
+      const group: BasicGroup = {
+        kind: 'basic_group',
+        id: groupId,
+        title: input.title,
+      };
+      const registration = this.#sharedChats.registerBasicGroup(
+        group,
+        input.creatorAccountId,
+        input.initialMemberIds,
+      );
+      if (!registration.registered) {
+        throw new Error(`Reserved basic group could not be registered: ${registration.reason}`);
+      }
 
-    return { created: true, group };
+      return { created: true, group };
+    });
   }
 
   createSupergroup(input: CreateSupergroupInput): SupergroupCreationResult {
-    if (this.#accounts.getById(input.creatorAccountId) === undefined) {
-      return { created: false, reason: 'creator_account_not_found' };
-    }
+    return this.#transactions.withinTransaction(() => {
+      if (this.#accounts.getById(input.creatorAccountId) === undefined) {
+        return { created: false, reason: 'creator_account_not_found' };
+      }
 
-    const identityReservation = this.#identities.reserveIdentity({
-      kind: 'supergroup',
-      ...(input.username === undefined ? {} : { username: input.username }),
+      const identityReservation = this.#identities.reserveIdentity({
+        kind: 'supergroup',
+        ...(input.username === undefined ? {} : { username: input.username }),
+      });
+      if (!identityReservation.reserved) {
+        return { created: false, reason: identityReservation.reason };
+      }
+      if (identityReservation.identity.kind !== 'supergroup') {
+        throw new Error('Supergroup identity reservation returned a different identity kind');
+      }
+      const supergroup: Supergroup = {
+        kind: 'supergroup',
+        id: identityReservation.identity.id,
+        title: input.title,
+        ...(input.username === undefined ? {} : { username: input.username }),
+        description: input.description,
+        chatInstance: createChatInstance(),
+        hasProtectedContent: false,
+        defaultPermissions: ALL_CHAT_PERMISSIONS,
+      };
+      const registration = this.#sharedChats.registerSupergroup(supergroup, input.creatorAccountId);
+      if (!registration.registered) {
+        throw new Error(`Reserved supergroup could not be registered: ${registration.reason}`);
+      }
+
+      return { created: true, supergroup };
     });
-    if (!identityReservation.reserved) {
-      return { created: false, reason: identityReservation.reason };
-    }
-    if (identityReservation.identity.kind !== 'supergroup') {
-      throw new Error('Supergroup identity reservation returned a different identity kind');
-    }
-    const supergroup: Supergroup = {
-      kind: 'supergroup',
-      id: identityReservation.identity.id,
-      title: input.title,
-      ...(input.username === undefined ? {} : { username: input.username }),
-      description: input.description,
-      chatInstance: createChatInstance(),
-      hasProtectedContent: false,
-      defaultPermissions: ALL_CHAT_PERMISSIONS,
-    };
-    const registration = this.#sharedChats.registerSupergroup(supergroup, input.creatorAccountId);
-    if (!registration.registered) {
-      throw new Error(`Reserved supergroup could not be registered: ${registration.reason}`);
-    }
-
-    return { created: true, supergroup };
   }
 
   createChannel(input: CreateChannelInput): ChannelCreationResult {
-    if (this.#accounts.getById(input.creatorAccountId) === undefined) {
-      return { created: false, reason: 'creator_account_not_found' };
-    }
+    return this.#transactions.withinTransaction(() => {
+      if (this.#accounts.getById(input.creatorAccountId) === undefined) {
+        return { created: false, reason: 'creator_account_not_found' };
+      }
 
-    const channelId = this.#reserveSharedChatId('channel');
-    if (channelId === undefined) {
-      return { created: false, reason: 'identity_limit_reached' };
-    }
-    const channel: Channel = {
-      kind: 'channel',
-      id: channelId,
-      title: input.title,
-      description: input.description,
-    };
-    const registration = this.#sharedChats.registerChannel(channel, input.creatorAccountId);
-    if (!registration.registered) {
-      throw new Error(`Reserved channel could not be registered: ${registration.reason}`);
-    }
+      const channelId = this.#reserveSharedChatId('channel');
+      if (channelId === undefined) {
+        return { created: false, reason: 'identity_limit_reached' };
+      }
+      const channel: Channel = {
+        kind: 'channel',
+        id: channelId,
+        title: input.title,
+        description: input.description,
+      };
+      const registration = this.#sharedChats.registerChannel(channel, input.creatorAccountId);
+      if (!registration.registered) {
+        throw new Error(`Reserved channel could not be registered: ${registration.reason}`);
+      }
 
-    return { created: true, channel };
+      return { created: true, channel };
+    });
   }
 
   addChatMember(input: AddChatMemberInput): AddChatMemberResult {
-    if (this.#accounts.getById(input.actorAccountId) === undefined) {
-      return { added: false, reason: 'actor_account_not_found' };
-    }
+    return this.#transactions.withinTransaction(() => {
+      if (this.#accounts.getById(input.actorAccountId) === undefined) {
+        return { added: false, reason: 'actor_account_not_found' };
+      }
 
-    const chat = this.#sharedChats.getSharedChat(input.chatId);
-    if (chat === undefined) {
-      return { added: false, reason: 'chat_not_found' };
-    }
-    const actorMembership = this.#sharedChats.getChatMembership(
-      input.chatId,
-      input.actorAccountId,
-    );
-    if (actorMembership?.status !== 'owner') {
-      return { added: false, reason: 'actor_not_authorized' };
-    }
+      const chat = this.#sharedChats.getSharedChat(input.chatId);
+      if (chat === undefined) {
+        return { added: false, reason: 'chat_not_found' };
+      }
+      const actorMembership = this.#sharedChats.getChatMembership(
+        input.chatId,
+        input.actorAccountId,
+      );
+      if (actorMembership?.status !== 'owner') {
+        return { added: false, reason: 'actor_not_authorized' };
+      }
 
-    const member = this.#identifyUser(input.memberId);
-    if (member === undefined) {
-      return { added: false, reason: 'member_not_found' };
-    }
-    if (chat.kind === 'channel' && member.kind === 'bot') {
-      return { added: false, reason: 'bot_not_permitted_in_channel' };
-    }
+      const member = this.#identifyUser(input.memberId);
+      if (member === undefined) {
+        return { added: false, reason: 'member_not_found' };
+      }
+      if (chat.kind === 'channel' && member.kind === 'bot') {
+        return { added: false, reason: 'bot_not_permitted_in_channel' };
+      }
 
-    // As an owner does in Telegram's apps, adding a banned user lifts its ban.
-    const statusBeforeJoining = this.#sharedChats.getFormerMemberStatus(
-      input.chatId,
-      input.memberId,
-    ) ?? LEFT_CHAT_MEMBER_STATUS;
-    const statusAfterJoining = getJoiningMemberStatus(statusBeforeJoining);
-    const addition = this.#sharedChats.addChatMember(
-      input.chatId,
-      input.memberId,
-      statusAfterJoining,
-    );
-    if (!addition.added) {
+      // As an owner does in Telegram's apps, adding a banned user lifts its ban.
+      const statusBeforeJoining = this.#sharedChats.getFormerMemberStatus(
+        input.chatId,
+        input.memberId,
+      ) ?? LEFT_CHAT_MEMBER_STATUS;
+      const statusAfterJoining = getJoiningMemberStatus(statusBeforeJoining);
+      const addition = this.#sharedChats.addChatMember(
+        input.chatId,
+        input.memberId,
+        statusAfterJoining,
+      );
+      if (!addition.added) {
+        return addition;
+      }
+      this.#publishJoin(chat, {
+        actorId: input.actorAccountId,
+        sender: { kind: 'account', accountId: input.actorAccountId },
+        memberId: input.memberId,
+        oldStatus: statusBeforeJoining,
+        newStatus: statusAfterJoining,
+      });
       return addition;
-    }
-    this.#publishJoin(chat, {
-      actorId: input.actorAccountId,
-      sender: { kind: 'account', accountId: input.actorAccountId },
-      memberId: input.memberId,
-      oldStatus: statusBeforeJoining,
-      newStatus: statusAfterJoining,
     });
-    return addition;
   }
 
   /**
@@ -1032,33 +1055,35 @@ export class SharedChatAdministrationService {
    * invite link, which the membership remembers while it lasts.
    */
   admitAccount({ accountId, chatId, inviteLink, approverId }: AdmitAccountInput): void {
-    const chat = this.#sharedChats.getSharedChat(chatId);
-    if (chat?.kind !== 'supergroup') {
-      throw new Error(`Account ${accountId} cannot join chat ${chatId}, which is no supergroup`);
-    }
-    const statusBeforeJoining = this.#lookUpChatMemberStatus(chatId, accountId);
-    if (isChatMember(statusBeforeJoining) || statusBeforeJoining.status === 'kicked') {
-      throw new Error(
-        `Account ${accountId} cannot join supergroup ${chatId} as ${statusBeforeJoining.status}`,
+    return this.#transactions.withinTransaction(() => {
+      const chat = this.#sharedChats.getSharedChat(chatId);
+      if (chat?.kind !== 'supergroup') {
+        throw new Error(`Account ${accountId} cannot join chat ${chatId}, which is no supergroup`);
+      }
+      const statusBeforeJoining = this.#lookUpChatMemberStatus(chatId, accountId);
+      if (isChatMember(statusBeforeJoining) || statusBeforeJoining.status === 'kicked') {
+        throw new Error(
+          `Account ${accountId} cannot join supergroup ${chatId} as ${statusBeforeJoining.status}`,
+        );
+      }
+      const statusAfterJoining = getJoiningMemberStatus(statusBeforeJoining);
+      const addition = this.#sharedChats.addChatMember(
+        chatId,
+        accountId,
+        statusAfterJoining,
+        inviteLink?.url,
       );
-    }
-    const statusAfterJoining = getJoiningMemberStatus(statusBeforeJoining);
-    const addition = this.#sharedChats.addChatMember(
-      chatId,
-      accountId,
-      statusAfterJoining,
-      inviteLink?.url,
-    );
-    if (!addition.added) {
-      throw new Error(`Account ${accountId} could not join chat ${chatId}: ${addition.reason}`);
-    }
-    this.#publishJoin(chat, {
-      actorId: approverId ?? accountId,
-      sender: { kind: 'account', accountId },
-      memberId: accountId,
-      oldStatus: statusBeforeJoining,
-      newStatus: statusAfterJoining,
-      ...(inviteLink === undefined ? {} : { inviteLink }),
+      if (!addition.added) {
+        throw new Error(`Account ${accountId} could not join chat ${chatId}: ${addition.reason}`);
+      }
+      this.#publishJoin(chat, {
+        actorId: approverId ?? accountId,
+        sender: { kind: 'account', accountId },
+        memberId: accountId,
+        oldStatus: statusBeforeJoining,
+        newStatus: statusAfterJoining,
+        ...(inviteLink === undefined ? {} : { inviteLink }),
+      });
     });
   }
 
@@ -1067,37 +1092,39 @@ export class SharedChatAdministrationService {
    * keeps a creator who left as the chat's owner, which the emulator does not support.
    */
   leaveChat({ memberId, chatId }: LeaveChatInput): LeaveChatResult {
-    const member = this.#identifyUser(memberId);
-    if (member === undefined) {
-      return { left: false, reason: 'member_not_found' };
-    }
-    const chat = this.#sharedChats.getSharedChat(chatId);
-    if (chat === undefined) {
-      return { left: false, reason: 'chat_not_found' };
-    }
-    const membership = this.#sharedChats.getChatMembership(chatId, memberId);
-    if (membership === undefined) {
-      const formerStatus = this.#sharedChats.getFormerMemberStatus(chatId, memberId);
-      return {
-        left: false,
-        reason: 'not_a_member',
-        ...(formerStatus === undefined ? {} : { formerStatus }),
-      };
-    }
-    if (membership.status === 'owner') {
-      return { left: false, reason: 'owner_cannot_leave' };
-    }
+    return this.#transactions.withinTransaction(() => {
+      const member = this.#identifyUser(memberId);
+      if (member === undefined) {
+        return { left: false, reason: 'member_not_found' };
+      }
+      const chat = this.#sharedChats.getSharedChat(chatId);
+      if (chat === undefined) {
+        return { left: false, reason: 'chat_not_found' };
+      }
+      const membership = this.#sharedChats.getChatMembership(chatId, memberId);
+      if (membership === undefined) {
+        const formerStatus = this.#sharedChats.getFormerMemberStatus(chatId, memberId);
+        return {
+          left: false,
+          reason: 'not_a_member',
+          ...(formerStatus === undefined ? {} : { formerStatus }),
+        };
+      }
+      if (membership.status === 'owner') {
+        return { left: false, reason: 'owner_cannot_leave' };
+      }
 
-    this.#endMembership(chat, {
-      actor: member,
-      memberId,
-      membership,
-      // As TDLib's `leave_dialog` asks, a restricted member stays restricted once it leaves.
-      statusAfterLeaving: membership.status === 'restricted'
-        ? { ...membership, isMember: false }
-        : LEFT_CHAT_MEMBER_STATUS,
+      this.#endMembership(chat, {
+        actor: member,
+        memberId,
+        membership,
+        // As TDLib's `leave_dialog` asks, a restricted member stays restricted once it leaves.
+        statusAfterLeaving: membership.status === 'restricted'
+          ? { ...membership, isMember: false }
+          : LEFT_CHAT_MEMBER_STATUS,
+      });
+      return { left: true };
     });
-    return { left: true };
   }
 
   /**
@@ -1105,40 +1132,42 @@ export class SharedChatAdministrationService {
    * channel bans the member until it is added again, whereas a basic group just loses the member.
    */
   removeChatMember(input: RemoveChatMemberInput): RemoveChatMemberResult {
-    if (this.#accounts.getById(input.actorAccountId) === undefined) {
-      return { removed: false, reason: 'actor_account_not_found' };
-    }
-    const chat = this.#sharedChats.getSharedChat(input.chatId);
-    if (chat === undefined) {
-      return { removed: false, reason: 'chat_not_found' };
-    }
-    const actorMembership = this.#sharedChats.getChatMembership(
-      input.chatId,
-      input.actorAccountId,
-    );
-    if (actorMembership?.status !== 'owner') {
-      return { removed: false, reason: 'actor_not_authorized' };
-    }
-    if (this.#identifyUser(input.memberId) === undefined) {
-      return { removed: false, reason: 'member_not_found' };
-    }
-    const membership = this.#sharedChats.getChatMembership(input.chatId, input.memberId);
-    if (membership === undefined) {
-      return { removed: false, reason: 'not_a_member' };
-    }
-    if (membership.status === 'owner') {
-      return { removed: false, reason: 'member_is_owner' };
-    }
+    return this.#transactions.withinTransaction(() => {
+      if (this.#accounts.getById(input.actorAccountId) === undefined) {
+        return { removed: false, reason: 'actor_account_not_found' };
+      }
+      const chat = this.#sharedChats.getSharedChat(input.chatId);
+      if (chat === undefined) {
+        return { removed: false, reason: 'chat_not_found' };
+      }
+      const actorMembership = this.#sharedChats.getChatMembership(
+        input.chatId,
+        input.actorAccountId,
+      );
+      if (actorMembership?.status !== 'owner') {
+        return { removed: false, reason: 'actor_not_authorized' };
+      }
+      if (this.#identifyUser(input.memberId) === undefined) {
+        return { removed: false, reason: 'member_not_found' };
+      }
+      const membership = this.#sharedChats.getChatMembership(input.chatId, input.memberId);
+      if (membership === undefined) {
+        return { removed: false, reason: 'not_a_member' };
+      }
+      if (membership.status === 'owner') {
+        return { removed: false, reason: 'member_is_owner' };
+      }
 
-    this.#endMembership(chat, {
-      actor: { kind: 'account', accountId: input.actorAccountId },
-      memberId: input.memberId,
-      membership,
-      statusAfterLeaving: chat.kind === 'basic_group'
-        ? LEFT_CHAT_MEMBER_STATUS
-        : { status: 'kicked' },
+      this.#endMembership(chat, {
+        actor: { kind: 'account', accountId: input.actorAccountId },
+        memberId: input.memberId,
+        membership,
+        statusAfterLeaving: chat.kind === 'basic_group'
+          ? LEFT_CHAT_MEMBER_STATUS
+          : { status: 'kicked' },
+      });
+      return { removed: true };
     });
-    return { removed: true };
   }
 
   /**
@@ -1149,11 +1178,13 @@ export class SharedChatAdministrationService {
    * promoter.
    */
   promoteChatMember(input: PromoteChatMemberInput): PromoteChatMemberResult {
-    if (input.rights.size === 0) {
-      return { promoted: false, reason: 'no_rights_granted' };
-    }
-    const change = this.#setAdministratorRightsAsAccount(input, input.rights);
-    return change.changed ? { promoted: true } : { promoted: false, reason: change.reason };
+    return this.#transactions.withinTransaction(() => {
+      if (input.rights.size === 0) {
+        return { promoted: false, reason: 'no_rights_granted' };
+      }
+      const change = this.#setAdministratorRightsAsAccount(input, input.rights);
+      return change.changed ? { promoted: true } : { promoted: false, reason: change.reason };
+    });
   }
 
   /**
@@ -1162,14 +1193,16 @@ export class SharedChatAdministrationService {
    * administrator succeeds without effect, and a restricted member stays restricted.
    */
   demoteChatMember(input: DemoteChatMemberInput): DemoteChatMemberResult {
-    const change = this.#setAdministratorRightsAsAccount(input, new Set());
-    if (change.changed) {
-      return { demoted: true };
-    }
-    if (change.reason === 'rights_not_held') {
-      throw new Error(`Demoting member ${input.memberId} of chat ${input.chatId} granted rights`);
-    }
-    return { demoted: false, reason: change.reason };
+    return this.#transactions.withinTransaction(() => {
+      const change = this.#setAdministratorRightsAsAccount(input, new Set());
+      if (change.changed) {
+        return { demoted: true };
+      }
+      if (change.reason === 'rights_not_held') {
+        throw new Error(`Demoting member ${input.memberId} of chat ${input.chatId} granted rights`);
+      }
+      return { demoted: false, reason: change.reason };
+    });
   }
 
   /**
@@ -1179,37 +1212,39 @@ export class SharedChatAdministrationService {
    * `#normalizeCustomTitle` reads it. Setting the title it has succeeds without effect.
    */
   setCustomTitle(input: SetCustomTitleInput): SetCustomTitleResult {
-    const target = this.#resolveMemberAsOwner(input);
-    if (!target.resolved) {
-      return { set: false, reason: target.reason };
-    }
-    const { chat, membership } = target;
-    if (membership.status !== 'owner' && membership.status !== 'administrator') {
-      return { set: false, reason: 'not_an_administrator' };
-    }
-    const title = this.#normalizeCustomTitle(input.customTitle);
-    if (!title.read) {
-      return { set: false, reason: title.reason };
-    }
-    if (membership.customTitle === title.customTitle) {
-      return { set: true };
-    }
-    const { customTitle: _, ...untitledMembership } = membership;
-    const newStatus: ChatMembership = title.customTitle === undefined
-      ? untitledMembership
-      : { ...untitledMembership, customTitle: title.customTitle };
+    return this.#transactions.withinTransaction(() => {
+      const target = this.#resolveMemberAsOwner(input);
+      if (!target.resolved) {
+        return { set: false, reason: target.reason };
+      }
+      const { chat, membership } = target;
+      if (membership.status !== 'owner' && membership.status !== 'administrator') {
+        return { set: false, reason: 'not_an_administrator' };
+      }
+      const title = this.#normalizeCustomTitle(input.customTitle);
+      if (!title.read) {
+        return { set: false, reason: title.reason };
+      }
+      if (membership.customTitle === title.customTitle) {
+        return { set: true };
+      }
+      const { customTitle: _, ...untitledMembership } = membership;
+      const newStatus: ChatMembership = title.customTitle === undefined
+        ? untitledMembership
+        : { ...untitledMembership, customTitle: title.customTitle };
 
-    this.#storeCustomTitle(chat.id, input.memberId, title.customTitle);
-    this.#events.emit({
-      type: 'chat_member_status_changed',
-      chat,
-      actorId: input.actorAccountId,
-      memberId: input.memberId,
-      oldStatus: membership,
-      newStatus,
-      changedAtUnixSeconds: this.#currentUnixTimeSeconds(),
+      this.#storeCustomTitle(chat.id, input.memberId, title.customTitle);
+      this.#transactions.emit({
+        type: 'chat_member_status_changed',
+        chat,
+        actorId: input.actorAccountId,
+        memberId: input.memberId,
+        oldStatus: membership,
+        newStatus,
+        changedAtUnixSeconds: this.#currentUnixTimeSeconds(),
+      });
+      return { set: true };
     });
-    return { set: true };
   }
 
   /**
@@ -1222,33 +1257,35 @@ export class SharedChatAdministrationService {
    * update reports the change. Setting the title the administrator has succeeds without effect.
    */
   setCustomTitleAsBot(input: SetCustomTitleAsBotInput): SetCustomTitleAsBotResult {
-    const target = this.#resolveModerationTarget(input);
-    if (!target.resolved) {
-      return { set: false, reason: target.reason };
-    }
-    const { memberStatus } = target;
-    if (memberStatus.status === 'owner') {
-      return { set: false, reason: 'member_is_owner' };
-    }
-    if (memberStatus.status !== 'administrator') {
-      return { set: false, reason: 'member_is_not_administrator' };
-    }
-    if (
-      !canEditSupergroupAdministrator(this.#readMembership(input.chatId), input.actorBotId, {
-        userId: input.memberId,
-        membership: memberStatus,
-      })
-    ) {
-      return { set: false, reason: 'custom_title_not_editable' };
-    }
-    const title = this.#normalizeCustomTitle(input.customTitle);
-    if (!title.read) {
-      return { set: false, reason: title.reason };
-    }
-    if (memberStatus.customTitle !== title.customTitle) {
-      this.#storeCustomTitle(input.chatId, input.memberId, title.customTitle);
-    }
-    return { set: true };
+    return this.#transactions.withinTransaction(() => {
+      const target = this.#resolveModerationTarget(input);
+      if (!target.resolved) {
+        return { set: false, reason: target.reason };
+      }
+      const { memberStatus } = target;
+      if (memberStatus.status === 'owner') {
+        return { set: false, reason: 'member_is_owner' };
+      }
+      if (memberStatus.status !== 'administrator') {
+        return { set: false, reason: 'member_is_not_administrator' };
+      }
+      if (
+        !canEditSupergroupAdministrator(this.#readMembership(input.chatId), input.actorBotId, {
+          userId: input.memberId,
+          membership: memberStatus,
+        })
+      ) {
+        return { set: false, reason: 'custom_title_not_editable' };
+      }
+      const title = this.#normalizeCustomTitle(input.customTitle);
+      if (!title.read) {
+        return { set: false, reason: title.reason };
+      }
+      if (memberStatus.customTitle !== title.customTitle) {
+        this.#storeCustomTitle(input.chatId, input.memberId, title.customTitle);
+      }
+      return { set: true };
+    });
   }
 
   /**
@@ -1262,20 +1299,22 @@ export class SharedChatAdministrationService {
    * decides.
    */
   banChatMember(input: BanChatMemberInput): BanChatMemberResult {
-    const target = this.#resolveModerationTarget(input);
-    if (!target.resolved) {
-      return { banned: false, reason: target.reason };
-    }
-    if (input.memberId === input.actorBotId) {
-      return { banned: false, reason: 'cannot_restrict_self' };
-    }
-    const restriction = this.#restrictAsBot(target, {
-      status: 'kicked',
-      ...this.#normalizeBanEnd(input.requestedBanEndUnixSeconds),
+    return this.#transactions.withinTransaction(() => {
+      const target = this.#resolveModerationTarget(input);
+      if (!target.resolved) {
+        return { banned: false, reason: target.reason };
+      }
+      if (input.memberId === input.actorBotId) {
+        return { banned: false, reason: 'cannot_restrict_self' };
+      }
+      const restriction = this.#restrictAsBot(target, {
+        status: 'kicked',
+        ...this.#normalizeBanEnd(input.requestedBanEndUnixSeconds),
+      });
+      return restriction.restricted
+        ? { banned: true }
+        : { banned: false, reason: restriction.reason };
     });
-    return restriction.restricted
-      ? { banned: true }
-      : { banned: false, reason: restriction.reason };
   }
 
   /**
@@ -1284,39 +1323,41 @@ export class SharedChatAdministrationService {
    * records, and a bot that names itself leaves.
    */
   unbanChatMember(input: UnbanChatMemberInput): UnbanChatMemberResult {
-    const target = this.#resolveModerationTarget(input);
-    if (!target.resolved) {
-      return { unbanned: false, reason: target.reason };
-    }
-    if (input.onlyIfBanned && target.memberStatus.status !== 'kicked') {
-      return { unbanned: true };
-    }
-    if (input.memberId === input.actorBotId) {
-      const leaving = this.leaveChat({ memberId: input.actorBotId, chatId: input.chatId });
-      if (!leaving.left) {
-        throw new Error(`Bot ${input.actorBotId} could not leave chat ${input.chatId}`);
+    return this.#transactions.withinTransaction(() => {
+      const target = this.#resolveModerationTarget(input);
+      if (!target.resolved) {
+        return { unbanned: false, reason: target.reason };
       }
-      return { unbanned: true };
-    }
+      if (input.onlyIfBanned && target.memberStatus.status !== 'kicked') {
+        return { unbanned: true };
+      }
+      if (input.memberId === input.actorBotId) {
+        const leaving = this.leaveChat({ memberId: input.actorBotId, chatId: input.chatId });
+        if (!leaving.left) {
+          throw new Error(`Bot ${input.actorBotId} could not leave chat ${input.chatId}`);
+        }
+        return { unbanned: true };
+      }
 
-    let bannedTarget: ModerationTarget = target;
-    if (isChatMember(target.memberStatus)) {
-      // Telegram removes a member by banning it briefly, then lifting the ban.
-      const removalBan: FormerChatMemberStatus = {
-        status: 'kicked',
-        bannedUntilUnixSeconds: this.#currentUnixTimeSeconds() +
-          MEMBER_REMOVAL_BAN_DURATION_SECONDS,
-      };
-      const removal = this.#restrictAsBot(target, removalBan);
-      if (!removal.restricted) {
-        return { unbanned: false, reason: removal.reason };
+      let bannedTarget: ModerationTarget = target;
+      if (isChatMember(target.memberStatus)) {
+        // Telegram removes a member by banning it briefly, then lifting the ban.
+        const removalBan: FormerChatMemberStatus = {
+          status: 'kicked',
+          bannedUntilUnixSeconds: this.#currentUnixTimeSeconds() +
+            MEMBER_REMOVAL_BAN_DURATION_SECONDS,
+        };
+        const removal = this.#restrictAsBot(target, removalBan);
+        if (!removal.restricted) {
+          return { unbanned: false, reason: removal.reason };
+        }
+        bannedTarget = { ...target, memberStatus: removalBan };
       }
-      bannedTarget = { ...target, memberStatus: removalBan };
-    }
-    const liftedBan = this.#restrictAsBot(bannedTarget, LEFT_CHAT_MEMBER_STATUS);
-    return liftedBan.restricted
-      ? { unbanned: true }
-      : { unbanned: false, reason: liftedBan.reason };
+      const liftedBan = this.#restrictAsBot(bannedTarget, LEFT_CHAT_MEMBER_STATUS);
+      return liftedBan.restricted
+        ? { unbanned: true }
+        : { unbanned: false, reason: liftedBan.reason };
+    });
   }
 
   /**
@@ -1333,59 +1374,61 @@ export class SharedChatAdministrationService {
    * days lasts until it is lifted.
    */
   restrictChatMember(input: RestrictChatMemberInput): RestrictChatMemberResult {
-    const target = this.#resolveModerationTarget(input);
-    if (!target.resolved) {
-      return { restricted: false, reason: target.reason };
-    }
-    const { botMembership, memberStatus } = target;
-    const newStatus = createRestrictedStatus(isChatMember(memberStatus), {
-      permissions: input.permissions,
-      ...this.#normalizeRestrictionEnd(input.requestedRestrictionEndUnixSeconds),
-    });
-    if (isSameChatMemberStatus(memberStatus, newStatus)) {
-      return { restricted: true };
-    }
-    if (memberStatus.status === 'owner') {
-      return { restricted: false, reason: 'member_is_owner' };
-    }
-    if (input.memberId === input.actorBotId) {
-      return this.#restrictSelf(target, newStatus);
-    }
-    if (memberStatus.status === 'administrator' && newStatus.status === 'member') {
-      const demotion = this.#promoteAsBot(target, new Set());
-      if (demotion.promoted) {
+    return this.#transactions.withinTransaction(() => {
+      const target = this.#resolveModerationTarget(input);
+      if (!target.resolved) {
+        return { restricted: false, reason: target.reason };
+      }
+      const { botMembership, memberStatus } = target;
+      const newStatus = createRestrictedStatus(isChatMember(memberStatus), {
+        permissions: input.permissions,
+        ...this.#normalizeRestrictionEnd(input.requestedRestrictionEndUnixSeconds),
+      });
+      if (isSameChatMemberStatus(memberStatus, newStatus)) {
         return { restricted: true };
       }
-      switch (demotion.reason) {
-        case 'not_enough_rights_to_promote':
-        case 'member_is_administrator':
-          return { restricted: false, reason: demotion.reason };
-        default:
-          throw new Error(
-            `Administrator ${input.memberId} of chat ${input.chatId} could not be demoted: ${demotion.reason}`,
-          );
+      if (memberStatus.status === 'owner') {
+        return { restricted: false, reason: 'member_is_owner' };
       }
-    }
-    if (!holdsSupergroupAdministratorRight(botMembership, 'can_restrict_members')) {
-      return { restricted: false, reason: 'not_enough_rights' };
-    }
-    if (
-      memberStatus.status === 'administrator' &&
-      !isAdministratorPromotedBy(this.#readMembership(input.chatId), input.actorBotId, {
-        userId: input.memberId,
-        membership: memberStatus,
-      })
-    ) {
-      return { restricted: false, reason: 'member_is_administrator' };
-    }
+      if (input.memberId === input.actorBotId) {
+        return this.#restrictSelf(target, newStatus);
+      }
+      if (memberStatus.status === 'administrator' && newStatus.status === 'member') {
+        const demotion = this.#promoteAsBot(target, new Set());
+        if (demotion.promoted) {
+          return { restricted: true };
+        }
+        switch (demotion.reason) {
+          case 'not_enough_rights_to_promote':
+          case 'member_is_administrator':
+            return { restricted: false, reason: demotion.reason };
+          default:
+            throw new Error(
+              `Administrator ${input.memberId} of chat ${input.chatId} could not be demoted: ${demotion.reason}`,
+            );
+        }
+      }
+      if (!holdsSupergroupAdministratorRight(botMembership, 'can_restrict_members')) {
+        return { restricted: false, reason: 'not_enough_rights' };
+      }
+      if (
+        memberStatus.status === 'administrator' &&
+        !isAdministratorPromotedBy(this.#readMembership(input.chatId), input.actorBotId, {
+          userId: input.memberId,
+          membership: memberStatus,
+        })
+      ) {
+        return { restricted: false, reason: 'member_is_administrator' };
+      }
 
-    this.#changeStatusOfUser(target.chat, {
-      actorId: input.actorBotId,
-      memberId: input.memberId,
-      oldStatus: memberStatus,
-      newStatus,
+      this.#changeStatusOfUser(target.chat, {
+        actorId: input.actorBotId,
+        memberId: input.memberId,
+        oldStatus: memberStatus,
+        newStatus,
+      });
+      return { restricted: true };
     });
-    return { restricted: true };
   }
 
   /**
@@ -1403,38 +1446,40 @@ export class SharedChatAdministrationService {
    * failure changes nothing.
    */
   promoteChatMemberAsBot(input: PromoteChatMemberAsBotInput): PromoteChatMemberAsBotResult {
-    const target = this.#resolveModerationTarget(input);
-    if (!target.resolved) {
-      return { promoted: false, reason: target.reason };
-    }
-    const { botMembership, memberStatus } = target;
-    if (memberStatus.status === 'owner') {
-      return { promoted: false, reason: 'member_is_owner' };
-    }
-    const isUnchanged = input.rights.size === 0
-      ? memberStatus.status === 'member'
-      : memberStatus.status === 'administrator' &&
-        isSameSupergroupAdministratorRights(memberStatus.rights, input.rights) &&
-        canEditSupergroupAdministrator(this.#readMembership(input.chatId), input.actorBotId, {
-          userId: input.memberId,
-          membership: memberStatus,
-        });
-    if (isUnchanged) {
-      return { promoted: true };
-    }
-    if (input.rights.size > 0 || memberStatus.status === 'administrator') {
-      return this.#promoteAsBot(target, input.rights);
-    }
-    if (isChatMember(memberStatus)) {
-      return this.#liftRestrictionByDemotion(input);
-    }
-    if (
-      memberStatus.status !== 'left' &&
-      !holdsSupergroupAdministratorRight(botMembership, 'can_restrict_members')
-    ) {
-      return { promoted: false, reason: 'not_enough_rights' };
-    }
-    return { promoted: false, reason: 'bots_cannot_add_members' };
+    return this.#transactions.withinTransaction(() => {
+      const target = this.#resolveModerationTarget(input);
+      if (!target.resolved) {
+        return { promoted: false, reason: target.reason };
+      }
+      const { botMembership, memberStatus } = target;
+      if (memberStatus.status === 'owner') {
+        return { promoted: false, reason: 'member_is_owner' };
+      }
+      const isUnchanged = input.rights.size === 0
+        ? memberStatus.status === 'member'
+        : memberStatus.status === 'administrator' &&
+          isSameSupergroupAdministratorRights(memberStatus.rights, input.rights) &&
+          canEditSupergroupAdministrator(this.#readMembership(input.chatId), input.actorBotId, {
+            userId: input.memberId,
+            membership: memberStatus,
+          });
+      if (isUnchanged) {
+        return { promoted: true };
+      }
+      if (input.rights.size > 0 || memberStatus.status === 'administrator') {
+        return this.#promoteAsBot(target, input.rights);
+      }
+      if (isChatMember(memberStatus)) {
+        return this.#liftRestrictionByDemotion(input);
+      }
+      if (
+        memberStatus.status !== 'left' &&
+        !holdsSupergroupAdministratorRight(botMembership, 'can_restrict_members')
+      ) {
+        return { promoted: false, reason: 'not_enough_rights' };
+      }
+      return { promoted: false, reason: 'bots_cannot_add_members' };
+    });
   }
 
   /**
@@ -1443,14 +1488,16 @@ export class SharedChatAdministrationService {
    * restricted administrator loses its rights and custom title.
    */
   restrictChatMemberAsAccount(input: RestrictChatMemberAsAccountInput): AccountRestrictionResult {
-    return this.#changeRestrictionAsAccount(
-      input,
-      (status) =>
-        createRestrictedStatus(isChatMember(status), {
-          permissions: input.permissions,
-          ...this.#normalizeRestrictionEnd(input.requestedRestrictionEndUnixSeconds),
-        }),
-    );
+    return this.#transactions.withinTransaction(() => {
+      return this.#changeRestrictionAsAccount(
+        input,
+        (status) =>
+          createRestrictedStatus(isChatMember(status), {
+            permissions: input.permissions,
+            ...this.#normalizeRestrictionEnd(input.requestedRestrictionEndUnixSeconds),
+          }),
+      );
+    });
   }
 
   /**
@@ -1459,13 +1506,15 @@ export class SharedChatAdministrationService {
    * not restricted stays as it is.
    */
   liftRestrictionAsAccount(input: LiftRestrictionAsAccountInput): AccountRestrictionResult {
-    return this.#changeRestrictionAsAccount(
-      input,
-      (status) =>
-        status.status === 'restricted'
-          ? createRestrictedStatus(status.isMember, { permissions: ALL_CHAT_PERMISSIONS })
-          : status,
-    );
+    return this.#transactions.withinTransaction(() => {
+      return this.#changeRestrictionAsAccount(
+        input,
+        (status) =>
+          status.status === 'restricted'
+            ? createRestrictedStatus(status.isMember, { permissions: ALL_CHAT_PERMISSIONS })
+            : status,
+      );
+    });
   }
 
   /**
@@ -1475,21 +1524,23 @@ export class SharedChatAdministrationService {
    * and the public source shows no update Telegram's servers send for it, so no event is published.
    */
   expireRestriction({ chatId, memberId }: ExpireRestrictionInput): ExpireRestrictionResult {
-    if (this.#sharedChats.getSharedChat(chatId)?.kind !== 'supergroup') {
-      return { expired: false, reason: 'chat_not_found' };
-    }
-    if (this.#identifyUser(memberId) === undefined) {
-      return { expired: false, reason: 'member_not_found' };
-    }
-    const status = this.#lookUpChatMemberStatus(chatId, memberId);
-    if (status.status !== 'restricted' || status.restrictedUntilUnixSeconds === undefined) {
-      return { expired: false, reason: 'restriction_not_temporary' };
-    }
-    const statusAfterExpiry = createRestrictedStatus(status.isMember, {
-      permissions: ALL_CHAT_PERMISSIONS,
+    return this.#transactions.withinTransaction(() => {
+      if (this.#sharedChats.getSharedChat(chatId)?.kind !== 'supergroup') {
+        return { expired: false, reason: 'chat_not_found' };
+      }
+      if (this.#identifyUser(memberId) === undefined) {
+        return { expired: false, reason: 'member_not_found' };
+      }
+      const status = this.#lookUpChatMemberStatus(chatId, memberId);
+      if (status.status !== 'restricted' || status.restrictedUntilUnixSeconds === undefined) {
+        return { expired: false, reason: 'restriction_not_temporary' };
+      }
+      const statusAfterExpiry = createRestrictedStatus(status.isMember, {
+        permissions: ALL_CHAT_PERMISSIONS,
+      });
+      this.#storeStatusOfUser(chatId, memberId, statusAfterExpiry);
+      return { expired: true, status: statusAfterExpiry };
     });
-    this.#storeStatusOfUser(chatId, memberId, statusAfterExpiry);
-    return { expired: true, status: statusAfterExpiry };
   }
 
   /**
@@ -1586,23 +1637,28 @@ export class SharedChatAdministrationService {
    * to every message, including earlier ones, as long as it lasts.
    */
   setContentProtection(input: SetContentProtectionInput): SetContentProtectionResult {
-    if (this.#accounts.getById(input.actorAccountId) === undefined) {
-      return { set: false, reason: 'actor_account_not_found' };
-    }
-    if (this.#sharedChats.getSharedChat(input.chatId)?.kind !== 'supergroup') {
-      return { set: false, reason: 'chat_not_found' };
-    }
-    if (
-      this.#sharedChats.getChatMembership(input.chatId, input.actorAccountId)?.status !== 'owner'
-    ) {
-      return { set: false, reason: 'actor_not_authorized' };
-    }
-    if (
-      !this.#sharedChats.updateSupergroupContentProtection(input.chatId, input.hasProtectedContent)
-    ) {
-      throw new Error(`Supergroup ${input.chatId} could not be updated`);
-    }
-    return { set: true };
+    return this.#transactions.withinTransaction(() => {
+      if (this.#accounts.getById(input.actorAccountId) === undefined) {
+        return { set: false, reason: 'actor_account_not_found' };
+      }
+      if (this.#sharedChats.getSharedChat(input.chatId)?.kind !== 'supergroup') {
+        return { set: false, reason: 'chat_not_found' };
+      }
+      if (
+        this.#sharedChats.getChatMembership(input.chatId, input.actorAccountId)?.status !== 'owner'
+      ) {
+        return { set: false, reason: 'actor_not_authorized' };
+      }
+      if (
+        !this.#sharedChats.updateSupergroupContentProtection(
+          input.chatId,
+          input.hasProtectedContent,
+        )
+      ) {
+        throw new Error(`Supergroup ${input.chatId} could not be updated`);
+      }
+      return { set: true };
+    });
   }
 
   /**
@@ -1612,34 +1668,36 @@ export class SharedChatAdministrationService {
    * supergroup has succeeds without effect; a new one is recorded as the actor's service message.
    */
   changeSupergroupTitle(input: ChangeSupergroupTitleInput): ChangeSupergroupTitleResult {
-    const access = this.#resolveSupergroupActor(input);
-    if (!access.resolved) {
-      return { changed: false, reason: access.reason };
-    }
-    const cleanedTitle = cleanInputString(input.title);
-    if (cleanedTitle === undefined) {
-      return { changed: false, reason: 'text_encoding_invalid' };
-    }
-    const title = cleanName(cleanedTitle, MAX_CHAT_TITLE_LENGTH);
-    if (title.length === 0) {
-      return { changed: false, reason: 'title_empty' };
-    }
-    if (!canChangeSupergroupInfo(access.supergroup, input.actor, access.membership)) {
-      return { changed: false, reason: 'not_enough_rights' };
-    }
-    if (access.supergroup.title === title) {
-      return { changed: true };
-    }
+    return this.#transactions.withinTransaction(() => {
+      const access = this.#resolveSupergroupActor(input);
+      if (!access.resolved) {
+        return { changed: false, reason: access.reason };
+      }
+      const cleanedTitle = cleanInputString(input.title);
+      if (cleanedTitle === undefined) {
+        return { changed: false, reason: 'text_encoding_invalid' };
+      }
+      const title = cleanName(cleanedTitle, MAX_CHAT_TITLE_LENGTH);
+      if (title.length === 0) {
+        return { changed: false, reason: 'title_empty' };
+      }
+      if (!canChangeSupergroupInfo(access.supergroup, input.actor, access.membership)) {
+        return { changed: false, reason: 'not_enough_rights' };
+      }
+      if (access.supergroup.title === title) {
+        return { changed: true };
+      }
 
-    if (!this.#sharedChats.updateSupergroupInfo(input.chatId, { title })) {
-      throw new Error(`Supergroup ${input.chatId} could not be updated`);
-    }
-    this.#recordSupergroupServiceMessage(access.supergroup, {
-      sender: input.actor,
-      content: { kind: 'title_changed', title },
-      changedAtUnixSeconds: this.#currentUnixTimeSeconds(),
+      if (!this.#sharedChats.updateSupergroupInfo(input.chatId, { title })) {
+        throw new Error(`Supergroup ${input.chatId} could not be updated`);
+      }
+      this.#recordSupergroupServiceMessage(access.supergroup, {
+        sender: input.actor,
+        content: { kind: 'title_changed', title },
+        changedAtUnixSeconds: this.#currentUnixTimeSeconds(),
+      });
+      return { changed: true };
     });
-    return { changed: true };
   }
 
   /**
@@ -1652,26 +1710,28 @@ export class SharedChatAdministrationService {
   changeSupergroupDescription(
     input: ChangeSupergroupDescriptionInput,
   ): ChangeSupergroupDescriptionResult {
-    const access = this.#resolveSupergroupActor(input);
-    if (!access.resolved) {
-      return { changed: false, reason: access.reason };
-    }
-    const cleanedDescription = cleanInputString(input.description);
-    if (cleanedDescription === undefined) {
-      return { changed: false, reason: 'text_encoding_invalid' };
-    }
-    const description = stripEmptyCharacters(cleanedDescription, MAX_CHAT_DESCRIPTION_LENGTH);
-    if (!canChangeSupergroupInfo(access.supergroup, input.actor, access.membership)) {
-      return { changed: false, reason: 'not_enough_rights' };
-    }
-    if ((access.supergroup.description ?? '') === description) {
-      return { changed: false, reason: 'description_not_modified' };
-    }
+    return this.#transactions.withinTransaction(() => {
+      const access = this.#resolveSupergroupActor(input);
+      if (!access.resolved) {
+        return { changed: false, reason: access.reason };
+      }
+      const cleanedDescription = cleanInputString(input.description);
+      if (cleanedDescription === undefined) {
+        return { changed: false, reason: 'text_encoding_invalid' };
+      }
+      const description = stripEmptyCharacters(cleanedDescription, MAX_CHAT_DESCRIPTION_LENGTH);
+      if (!canChangeSupergroupInfo(access.supergroup, input.actor, access.membership)) {
+        return { changed: false, reason: 'not_enough_rights' };
+      }
+      if ((access.supergroup.description ?? '') === description) {
+        return { changed: false, reason: 'description_not_modified' };
+      }
 
-    if (!this.#sharedChats.updateSupergroupInfo(input.chatId, { description })) {
-      throw new Error(`Supergroup ${input.chatId} could not be updated`);
-    }
-    return { changed: true };
+      if (!this.#sharedChats.updateSupergroupInfo(input.chatId, { description })) {
+        throw new Error(`Supergroup ${input.chatId} could not be updated`);
+      }
+      return { changed: true };
+    });
   }
 
   /**
@@ -1682,20 +1742,22 @@ export class SharedChatAdministrationService {
    * the change, and no bot receives an update for it.
    */
   changeDefaultPermissions(input: ChangeDefaultPermissionsInput): ChangeDefaultPermissionsResult {
-    const access = this.#resolveSupergroupActor(input);
-    if (!access.resolved) {
-      return { changed: false, reason: access.reason };
-    }
-    if (!holdsSupergroupAdministratorRight(access.membership, 'can_restrict_members')) {
-      return { changed: false, reason: 'not_enough_rights' };
-    }
-    if (isSameChatPermissions(access.supergroup.defaultPermissions, input.permissions)) {
+    return this.#transactions.withinTransaction(() => {
+      const access = this.#resolveSupergroupActor(input);
+      if (!access.resolved) {
+        return { changed: false, reason: access.reason };
+      }
+      if (!holdsSupergroupAdministratorRight(access.membership, 'can_restrict_members')) {
+        return { changed: false, reason: 'not_enough_rights' };
+      }
+      if (isSameChatPermissions(access.supergroup.defaultPermissions, input.permissions)) {
+        return { changed: true };
+      }
+      if (!this.#sharedChats.updateSupergroupDefaultPermissions(input.chatId, input.permissions)) {
+        throw new Error(`Supergroup ${input.chatId} could not be updated`);
+      }
       return { changed: true };
-    }
-    if (!this.#sharedChats.updateSupergroupDefaultPermissions(input.chatId, input.permissions)) {
-      throw new Error(`Supergroup ${input.chatId} could not be updated`);
-    }
-    return { changed: true };
+    });
   }
 
   /**
@@ -2151,7 +2213,7 @@ export class SharedChatAdministrationService {
       );
     }
     this.#storeStatusOfUser(chat.id, memberId, newStatus);
-    this.#events.emit({
+    this.#transactions.emit({
       type: 'chat_member_status_changed',
       chat,
       actorId,
@@ -2261,7 +2323,7 @@ export class SharedChatAdministrationService {
     if (!update.updated) {
       throw new Error(`Non-member ${memberId} of chat ${chat.id} could not be updated`);
     }
-    this.#events.emit({
+    this.#transactions.emit({
       type: 'chat_member_status_changed',
       chat,
       actorId: botId,
@@ -2369,7 +2431,7 @@ export class SharedChatAdministrationService {
       );
     }
     const leftAtUnixSeconds = this.#currentUnixTimeSeconds();
-    this.#events.emit({
+    this.#transactions.emit({
       type: 'chat_member_status_changed',
       chat,
       actorId: actor.kind === 'account' ? actor.accountId : actor.botId,
@@ -2403,7 +2465,7 @@ export class SharedChatAdministrationService {
     },
   ): void {
     const joinedAtUnixSeconds = this.#currentUnixTimeSeconds();
-    this.#events.emit({
+    this.#transactions.emit({
       type: 'chat_member_status_changed',
       chat,
       actorId,

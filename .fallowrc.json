@@ -605,7 +605,8 @@
       {
         "from": "identity-repository",
         "allow": [
-          "domain"
+          "domain",
+          "change-staging"
         ]
       },
       {
