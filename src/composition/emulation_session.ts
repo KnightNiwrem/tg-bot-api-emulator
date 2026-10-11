@@ -171,8 +171,8 @@ export function createEmulationSession(
   const messageDrafts = new MessageDraftService({
     accounts,
     bots,
-    drafts: new MessageDraftRepository(),
-    events: transactions,
+    drafts: new MessageDraftRepository(journal),
+    transactions,
   });
   const privateMessaging = new PrivateMessagingService({
     accounts,
@@ -306,7 +306,7 @@ export function createEmulationSession(
     accounts,
     bots,
     sharedChats,
-    chatActions: new ChatActionRepository(),
+    chatActions: new ChatActionRepository(journal),
   });
 
   const botCommands = new BotCommandService({

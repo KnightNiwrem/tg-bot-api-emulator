@@ -500,7 +500,7 @@ function createBotApiFixture() {
     accounts,
     bots,
     drafts: new MessageDraftRepository(),
-    events: events,
+    transactions: { ...events, withinTransaction: (command) => command() },
   });
   const privateMessaging = new PrivateMessagingService({
     accounts,
