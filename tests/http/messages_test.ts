@@ -31,8 +31,8 @@ import { FIXED_WALL_CLOCK } from '../support/fixed_wall_clock.ts';
 import { gifImage } from '../support/media_samples.ts';
 
 Deno.test('sendMessage replies only in private chats the account has started', async () => {
-  const { api, botApiPath, createdBot, createdAccount, sendText } =
-    await createPrivateConversationFixture();
+  await using fixture = await createPrivateConversationFixture();
+  const { api, botApiPath, createdBot, createdAccount, sendText } = fixture;
   const sendMessage = async (parameters: Record<string, unknown>) => {
     const response = await api.request(`${botApiPath}/sendMessage`, {
       method: 'POST',
@@ -115,8 +115,8 @@ Deno.test('sendMessage replies only in private chats the account has started', a
 });
 
 Deno.test('deleteMessage and deleteMessages follow Telegram checks', async () => {
-  const { api, sessionPath, botApiPath, createdBot, createdAccount, sendText } =
-    await createPrivateConversationFixture();
+  await using fixture = await createPrivateConversationFixture();
+  const { api, sessionPath, botApiPath, createdBot, createdAccount, sendText } = fixture;
   await sendText('/start');
   const accountId = createdAccount.account.id;
   const sendReply = async (text: string) => {
@@ -252,8 +252,8 @@ Deno.test('deleteMessage and deleteMessages follow Telegram checks', async () =>
 });
 
 Deno.test('a grammY bot deletes an incoming secret and its menu after a button press', async () => {
-  const { api, sessionPath, createdBot, createdAccount, sendText } =
-    await createPrivateConversationFixture();
+  await using fixture = await createPrivateConversationFixture();
+  const { api, sessionPath, createdBot, createdAccount, sendText } = fixture;
   const accountId = createdAccount.account.id;
   const historyPath =
     `${sessionPath}/accounts/${accountId}/conversations/private/${createdBot.bot.id}/messages`;
@@ -326,7 +326,8 @@ Deno.test('a grammY bot deletes an incoming secret and its menu after a button p
 });
 
 Deno.test('private message routes validate participants and request bodies', async () => {
-  const { api, sessionPath } = await createTestSession();
+  await using testSession = await createTestSession();
+  const { api, sessionPath } = testSession;
   const account = await createAccount(api, sessionPath, 'Ada');
 
   const missingBotResponse = await api.request(
@@ -399,8 +400,8 @@ Deno.test('private message routes validate participants and request bodies', asy
 });
 
 Deno.test('accounts see the chat action a bot shows until its next message', async () => {
-  const { api, sessionPath, botApiPath, createdBot, createdAccount, sendText } =
-    await createPrivateConversationFixture();
+  await using fixture = await createPrivateConversationFixture();
+  const { api, sessionPath, botApiPath, createdBot, createdAccount, sendText } = fixture;
   const accountId = createdAccount.account.id;
   const chatActionsPath =
     `${sessionPath}/accounts/${accountId}/conversations/private/${createdBot.bot.id}/chat-actions`;
@@ -433,8 +434,9 @@ Deno.test('accounts see the chat action a bot shows until its next message', asy
 });
 
 Deno.test('accounts see which bot messages notify them silently', async () => {
+  await using fixture = await createSupergroupFixture();
   const { api, sessionPath, owner, member, bot, supergroup, supergroupPath, sendSupergroupText } =
-    await createSupergroupFixture();
+    fixture;
   await api.request(
     `${sessionPath}/accounts/${owner.id}/messages`,
     jsonRequest('POST', { to: { type: 'private', botId: bot.bot.id }, text: '/start' }),
@@ -510,7 +512,8 @@ Deno.test('accounts see which bot messages notify them silently', async () => {
 });
 
 Deno.test('sendChatAction accepts Telegram actions in started private chats', async () => {
-  const { api, botApiPath, createdAccount, sendText } = await createPrivateConversationFixture();
+  await using fixture = await createPrivateConversationFixture();
+  const { api, botApiPath, createdAccount, sendText } = fixture;
   const accountId = createdAccount.account.id;
   const sendChatAction = (parameters: Record<string, unknown>) =>
     callBotApi(api, `${botApiPath}/sendChatAction`, parameters);
@@ -546,8 +549,8 @@ Deno.test('sendChatAction accepts Telegram actions in started private chats', as
 });
 
 Deno.test('sendMessage replies to messages of the chat and accepts Telegram message options', async () => {
-  const { api, sessionPath, botApiPath, createdBot, createdAccount, sendText } =
-    await createPrivateConversationFixture();
+  await using fixture = await createPrivateConversationFixture();
+  const { api, sessionPath, botApiPath, createdBot, createdAccount, sendText } = fixture;
   const accountId = createdAccount.account.id;
   await sendText('Question?');
   const sendMessage = (parameters: Record<string, unknown>) =>
@@ -706,8 +709,8 @@ Deno.test('sendMessage replies to messages of the chat and accepts Telegram mess
 });
 
 Deno.test('a grammY bot asks a question in a reply and reads the account reply to it', async () => {
-  const { api, sessionPath, createdBot, createdAccount, sendText } =
-    await createPrivateConversationFixture();
+  await using fixture = await createPrivateConversationFixture();
+  const { api, sessionPath, createdBot, createdAccount, sendText } = fixture;
   const grammyBot = new Bot(createdBot.token, {
     client: {
       apiRoot: `${TEST_PUBLIC_ORIGIN}${sessionPath}/bot-api`,
@@ -787,8 +790,8 @@ Deno.test('a grammY bot asks a question in a reply and reads the account reply t
 });
 
 Deno.test('an account blocks a bot, which receives my_chat_member updates and Telegram 403s', async () => {
-  const { api, sessionPath, botApiPath, createdBot, createdAccount, sendText } =
-    await createPrivateConversationFixture();
+  await using fixture = await createPrivateConversationFixture();
+  const { api, sessionPath, botApiPath, createdBot, createdAccount, sendText } = fixture;
   const accountId = createdAccount.account.id;
   const accountPath = `${sessionPath}/accounts/${accountId}`;
   const blockedBotPath = `${accountPath}/blocked-bots/${createdBot.bot.id}`;
@@ -906,8 +909,9 @@ Deno.test('an account blocks a bot, which receives my_chat_member updates and Te
 });
 
 Deno.test('accounts delete messages, which bots then no longer find', async () => {
+  await using fixture = await createSupergroupFixture();
   const { api, sessionPath, owner, member, bot, supergroup, supergroupPath, sendSupergroupText } =
-    await createSupergroupFixture();
+    fixture;
   const readUpdates = createUpdateReader(api);
   const privatePath = `${sessionPath}/accounts/${owner.id}/conversations/private/${bot.bot.id}`;
   const sent = await api.request(
@@ -1011,8 +1015,8 @@ Deno.test('accounts delete messages, which bots then no longer find', async () =
 });
 
 Deno.test('PATCH on an account message edits it and sends the bot an edited_message update', async () => {
-  const { api, sessionPath, botApiPath, createdBot, createdAccount, sendText } =
-    await createPrivateConversationFixture();
+  await using fixture = await createPrivateConversationFixture();
+  const { api, sessionPath, botApiPath, createdBot, createdAccount, sendText } = fixture;
   const historyPath =
     `${sessionPath}/accounts/${createdAccount.account.id}/conversations/private/${createdBot.bot.id}/messages`;
   const editMessage = (messageId: number | string, body: unknown) =>
@@ -1077,8 +1081,8 @@ Deno.test('PATCH on an account message edits it and sends the bot an edited_mess
 });
 
 Deno.test('a grammY bot answers an edited message and forgets a user who blocks it', async () => {
-  const { api, sessionPath, createdBot, createdAccount, sendText } =
-    await createPrivateConversationFixture();
+  await using fixture = await createPrivateConversationFixture();
+  const { api, sessionPath, createdBot, createdAccount, sendText } = fixture;
   const accountPath = `${sessionPath}/accounts/${createdAccount.account.id}`;
   const grammyBot = new Bot(createdBot.token, {
     client: {
@@ -1171,7 +1175,8 @@ Deno.test('a grammY bot answers an edited message and forgets a user who blocks 
 });
 
 Deno.test('bots reply to messages of their other chats with an external reply', async () => {
-  const { api, sessionPath, member, bot, supergroup } = await createSupergroupFixture();
+  await using fixture = await createSupergroupFixture();
+  const { api, sessionPath, member, bot, supergroup } = fixture;
   const sendMessage = async (parameters: Record<string, unknown>) => {
     const { status, body } = await callBotApi(api, `${bot.botApiPath}/sendMessage`, parameters);
     return { status, body, message: botApiResult(body) };
@@ -1313,8 +1318,8 @@ Deno.test('bots reply to messages of their other chats with an external reply', 
 });
 
 Deno.test('forwardMessage forwards messages with their origin and follows Telegram checks', async () => {
-  const { api, sessionPath, owner, bot, supergroup, supergroupPath } =
-    await createSupergroupFixture();
+  await using fixture = await createSupergroupFixture();
+  const { api, sessionPath, owner, bot, supergroup, supergroupPath } = fixture;
   const privateChat = { type: 'private', botId: bot.bot.id };
   const accountMessageResponse = await api.request(
     `${sessionPath}/accounts/${owner.id}/messages`,
@@ -1495,8 +1500,8 @@ Deno.test('forwardMessage forwards messages with their origin and follows Telegr
 Deno.test('forwardMessages and copyMessages repeat messages that can be repeated, in order', async () => {
   // The calendar time stands still, since the forwards' origin dates of messages sent by separate
   // requests are compared.
-  const { api, sessionPath, owner, bot, supergroup, supergroupPath } =
-    await createSupergroupFixture({ wallClock: FIXED_WALL_CLOCK });
+  await using fixture = await createSupergroupFixture({ wallClock: FIXED_WALL_CLOCK });
+  const { api, sessionPath, owner, bot, supergroup, supergroupPath } = fixture;
   const sendAccountMessage = async (message: Record<string, unknown>) => {
     const response = await api.request(
       `${sessionPath}/accounts/${owner.id}/messages`,
@@ -1657,7 +1662,8 @@ Deno.test('forwardMessages and copyMessages repeat messages that can be repeated
 });
 
 Deno.test('bots add message effects to private messages only, as TDLib allows', async () => {
-  const { api, sessionPath, owner, bot, supergroup } = await createSupergroupFixture();
+  await using fixture = await createSupergroupFixture();
+  const { api, sessionPath, owner, bot, supergroup } = fixture;
   const effectId = '5104841245755180586';
   const questionResponse = await api.request(
     `${sessionPath}/accounts/${owner.id}/messages`,
@@ -1792,8 +1798,8 @@ Deno.test('bots add message effects to private messages only, as TDLib allows', 
 });
 
 Deno.test('copyMessage copies messages without their origin and follows Telegram checks', async () => {
-  const { api, sessionPath, owner, bot, supergroup, supergroupPath } =
-    await createSupergroupFixture();
+  await using fixture = await createSupergroupFixture();
+  const { api, sessionPath, owner, bot, supergroup, supergroupPath } = fixture;
   const photoResponse = await api.request(
     `${sessionPath}/accounts/${owner.id}/messages`,
     jsonRequest('POST', {
@@ -1962,8 +1968,9 @@ Deno.test('copyMessage copies messages without their origin and follows Telegram
 });
 
 Deno.test('an account forwards messages to bots, which receive their origin', async () => {
+  await using fixture = await createSupergroupFixture();
   const { api, sessionPath, owner, member, bot, supergroup, supergroupPath, sendSupergroupText } =
-    await createSupergroupFixture();
+    fixture;
   const readUpdates = createUpdateReader(api);
   const supergroupChat = { type: 'supergroup', chatId: supergroup.id };
   const privateChat = { type: 'private', botId: bot.bot.id };
@@ -2042,8 +2049,8 @@ Deno.test('an account forwards messages to bots, which receive their origin', as
 });
 
 Deno.test('forwards and external replies show only the name of an account with private forwards', async () => {
-  const { api, sessionPath, owner, bot, supergroup, supergroupPath, sendSupergroupText } =
-    await createSupergroupFixture();
+  await using fixture = await createSupergroupFixture();
+  const { api, sessionPath, owner, bot, supergroup, supergroupPath, sendSupergroupText } = fixture;
   const readUpdates = createUpdateReader(api);
   const accountResponse = await api.request(
     `${sessionPath}/accounts`,
@@ -2125,8 +2132,8 @@ Deno.test('forwards and external replies show only the name of an account with p
 });
 
 Deno.test('a grammY support bot forwards questions to its team and copies answers back', async () => {
-  const { api, sessionPath, member, bot, supergroup, supergroupPath } =
-    await createSupergroupFixture();
+  await using fixture = await createSupergroupFixture();
+  const { api, sessionPath, member, bot, supergroup, supergroupPath } = fixture;
   const customer = await createAccount(api, sessionPath, 'Linus');
   const grammyBot = new Bot(bot.token, {
     client: {

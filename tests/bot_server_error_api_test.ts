@@ -30,8 +30,8 @@ interface ActivityEntry {
 }
 
 Deno.test('queued server errors answer the next matching calls before they run', async () => {
-  const { api, sessionPath, botApiPath, bot, account, sendText, readMessageTexts } =
-    await createFixture();
+  await using fixture = await createFixture();
+  const { api, sessionPath, botApiPath, bot, account, sendText, readMessageTexts } = fixture;
   await sendText('/start');
   const serverErrorsPath = `${sessionPath}/bots/${bot.id}/server-error-responses`;
 
@@ -124,7 +124,8 @@ Deno.test('queued server errors answer the next matching calls before they run',
 });
 
 Deno.test('rejected server error queue requests leave the queued answers intact', async () => {
-  const { api, sessionPath, bot, account } = await createFixture();
+  await using fixture = await createFixture();
+  const { api, sessionPath, bot, account } = fixture;
   const serverErrorsPath = `${sessionPath}/bots/${bot.id}/server-error-responses`;
   const queued = await requestJson(api, 'POST', serverErrorsPath, {
     method: 'getMe',
@@ -176,8 +177,8 @@ Deno.test('rejected server error queue requests leave the queued answers intact'
 });
 
 Deno.test('concurrent calls take each queued server error exactly once', async () => {
-  const { api, sessionPath, botApiPath, bot, account, sendText, readMessageTexts } =
-    await createFixture();
+  await using fixture = await createFixture();
+  const { api, sessionPath, botApiPath, bot, account, sendText, readMessageTexts } = fixture;
   await sendText('/start');
   const serverErrorsPath = `${sessionPath}/bots/${bot.id}/server-error-responses`;
   await requestJson(api, 'POST', serverErrorsPath, {
@@ -215,7 +216,8 @@ Deno.test('concurrent calls take each queued server error exactly once', async (
 });
 
 Deno.test('queued rate limit answers apply before queued server errors', async () => {
-  const { api, sessionPath, botApiPath, bot } = await createFixture();
+  await using fixture = await createFixture();
+  const { api, sessionPath, botApiPath, bot } = fixture;
   const botPath = `${sessionPath}/bots/${bot.id}`;
   // Queued first, the server error still waits for the rate limit answer.
   await requestJson(api, 'POST', `${botPath}/server-error-responses`, { error_code: 500 });
@@ -242,7 +244,8 @@ Deno.test('queued rate limit answers apply before queued server errors', async (
 });
 
 Deno.test('calls that never reach a method leave queued server errors for later calls', async () => {
-  const { api, sessionPath, botApiPath, bot } = await createFixture();
+  await using fixture = await createFixture();
+  const { api, sessionPath, botApiPath, bot } = fixture;
   const serverErrorsPath = `${sessionPath}/bots/${bot.id}/server-error-responses`;
   await requestJson(api, 'POST', serverErrorsPath, { error_code: 500 });
 
@@ -280,7 +283,8 @@ Deno.test('calls that never reach a method leave queued server errors for later 
 });
 
 Deno.test('a polling bot keeps its updates through a queued getUpdates failure', async () => {
-  const { api, sessionPath, botApiPath, bot, sendText } = await createFixture();
+  await using fixture = await createFixture();
+  const { api, sessionPath, botApiPath, bot, sendText } = fixture;
   await requestJson(api, 'POST', `${sessionPath}/bots/${bot.id}/server-error-responses`, {
     method: 'getUpdates',
     error_code: 503,
@@ -300,7 +304,8 @@ Deno.test('a polling bot keeps its updates through a queued getUpdates failure',
 });
 
 Deno.test('a webhook reply takes the queued server error and changes nothing', async () => {
-  const { api, sessionPath, bot, sendText, readMessageTexts } = await createFixture();
+  await using fixture = await createFixture();
+  const { api, sessionPath, bot, sendText, readMessageTexts } = fixture;
   const grammyBot = createGrammyBot(api, sessionPath, bot.token, {
     canUseWebhookReply: (method) => method === 'sendMessage',
   });
@@ -347,7 +352,8 @@ Deno.test('a webhook reply takes the queued server error and changes nothing', a
 });
 
 Deno.test('queued server errors stay within their session and end with it', async () => {
-  const { api, sessionPath, botApiPath, bot } = await createFixture();
+  await using fixture = await createFixture();
+  const { api, sessionPath, botApiPath, bot } = fixture;
   const otherSessionPath = await createSession(api);
   const otherBot = await createBot(api, otherSessionPath);
   await requestJson(api, 'POST', `${sessionPath}/bots/${bot.id}/server-error-responses`, {
@@ -378,12 +384,14 @@ Deno.test('queued server errors stay within their session and end with it', asyn
 
 /** Creates a session holding a bot and an account that can message it. */
 async function createFixture() {
-  const { api, sessionPath } = await createTestSession();
+  await using disposalOnFailure = new AsyncDisposableStack();
+  const { api, sessionPath } = disposalOnFailure.use(await createTestSession());
   const bot = await createBot(api, sessionPath);
   const account = await createAccount(api, sessionPath, 'Ada');
   const conversationPath =
     `${sessionPath}/accounts/${account.id}/conversations/private/${bot.id}/messages`;
 
+  const emulatorDisposal = disposalOnFailure.move();
   return {
     api,
     sessionPath,
@@ -412,6 +420,7 @@ async function createFixture() {
       );
       return history.body.messages.map(({ text }) => text);
     },
+    [Symbol.asyncDispose]: () => emulatorDisposal.disposeAsync(),
   };
 }
 

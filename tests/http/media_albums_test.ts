@@ -23,8 +23,8 @@ import {
 import { gifImage } from '../support/media_samples.ts';
 
 Deno.test('an account and a bot exchange albums whose messages arrive in order', async () => {
-  const { api, sessionPath, botApiPath, createdBot, createdAccount } =
-    await createPrivateConversationFixture();
+  await using fixture = await createPrivateConversationFixture();
+  const { api, sessionPath, botApiPath, createdBot, createdAccount } = fixture;
   const chat = { type: 'private', botId: createdBot.bot.id };
   const accountPath = `${sessionPath}/accounts/${createdAccount.account.id}`;
 
@@ -128,8 +128,8 @@ Deno.test('an account and a bot exchange albums whose messages arrive in order',
 });
 
 Deno.test('sendMediaGroup follows Telegram checks and sends nothing it refuses', async () => {
-  const { api, sessionPath, botApiPath, createdBot, createdAccount, sendText } =
-    await createPrivateConversationFixture();
+  await using fixture = await createPrivateConversationFixture();
+  const { api, sessionPath, botApiPath, createdBot, createdAccount, sendText } = fixture;
   await sendText('/start');
   const chatId = String(createdAccount.account.id);
   const uploadedPhoto = await callBotApiWithFiles(api, `${botApiPath}/sendPhoto`, {
@@ -301,8 +301,8 @@ Deno.test('sendMediaGroup follows Telegram checks and sends nothing it refuses',
 });
 
 Deno.test('sendMediaGroup checks each caption with its file, as TDLib reads them', async () => {
-  const { api, sessionPath, botApiPath, createdBot, createdAccount, sendText } =
-    await createPrivateConversationFixture();
+  await using fixture = await createPrivateConversationFixture();
+  const { api, sessionPath, botApiPath, createdBot, createdAccount, sendText } = fixture;
   await sendText('/start');
   const chatId = String(createdAccount.account.id);
   const uploadedPhoto = await callBotApiWithFiles(api, `${botApiPath}/sendPhoto`, {
@@ -371,8 +371,8 @@ Deno.test('sendMediaGroup checks each caption with its file, as TDLib reads them
 });
 
 Deno.test('albums reach supergroup bots as their messages would alone', async () => {
-  const { api, sessionPath, owner, bot, readerBot, supergroup, supergroupPath } =
-    await createSupergroupFixture();
+  await using fixture = await createSupergroupFixture();
+  const { api, sessionPath, owner, bot, readerBot, supergroup, supergroupPath } = fixture;
   const readUpdates = createUpdateReader(api);
   const botApiPath = `${sessionPath}/bot-api/bot${bot.token}`;
   const readerBotApiPath = `${sessionPath}/bot-api/bot${readerBot.token}`;
@@ -437,8 +437,8 @@ Deno.test('albums reach supergroup bots as their messages would alone', async ()
 });
 
 Deno.test('forwards and copies of albums form new albums as TDLib groups them', async () => {
-  const { api, sessionPath, botApiPath, createdBot, createdAccount } =
-    await createPrivateConversationFixture();
+  await using fixture = await createPrivateConversationFixture();
+  const { api, sessionPath, botApiPath, createdBot, createdAccount } = fixture;
   const chatId = createdAccount.account.id;
   const accountPath = `${sessionPath}/accounts/${chatId}`;
   const historyPath = `${accountPath}/conversations/private/${createdBot.bot.id}/messages`;
@@ -520,8 +520,8 @@ Deno.test('forwards and copies of albums form new albums as TDLib groups them', 
 });
 
 Deno.test('a message of an album keeps its kind of media, and its album outlives a deletion', async () => {
-  const { api, sessionPath, botApiPath, createdBot, createdAccount, sendText } =
-    await createPrivateConversationFixture();
+  await using fixture = await createPrivateConversationFixture();
+  const { api, sessionPath, botApiPath, createdBot, createdAccount, sendText } = fixture;
   await sendText('/start');
   const chatId = String(createdAccount.account.id);
   const album = await callBotApiWithFiles(api, `${botApiPath}/sendMediaGroup`, {
@@ -584,7 +584,8 @@ Deno.test('a message of an album keeps its kind of media, and its album outlives
 });
 
 Deno.test('a grammY bot receives an album through its webhook and answers with one', async () => {
-  const { api, sessionPath, createdBot, createdAccount } = await createPrivateConversationFixture();
+  await using fixture = await createPrivateConversationFixture();
+  const { api, sessionPath, createdBot, createdAccount } = fixture;
   const grammyBot = new Bot(createdBot.token, {
     client: {
       apiRoot: `${TEST_PUBLIC_ORIGIN}${sessionPath}/bot-api`,
@@ -697,9 +698,9 @@ Deno.test('a grammY bot receives an album through its webhook and answers with o
 });
 
 Deno.test("sendMediaGroup reuses files only by the bot's own file_id or a URL", async () => {
-  const { api, sessionPath, botApiPath, createdBot, createdAccount, sendText } =
-    await createPrivateConversationFixture();
-  const otherSession = await createPrivateConversationFixture();
+  await using fixture = await createPrivateConversationFixture();
+  const { api, sessionPath, botApiPath, createdBot, createdAccount, sendText } = fixture;
+  await using otherSession = await createPrivateConversationFixture();
   await otherSession.sendText('/start');
   await sendText('/start');
   const chatId = String(createdAccount.account.id);
@@ -782,7 +783,8 @@ Deno.test("sendMediaGroup reuses files only by the bot's own file_id or a URL", 
 });
 
 Deno.test('sendMediaGroup sends photos, videos, documents and audio and names each kind it refuses', async () => {
-  const { api, botApiPath, createdAccount, sendText } = await createPrivateConversationFixture();
+  await using fixture = await createPrivateConversationFixture();
+  const { api, botApiPath, createdAccount, sendText } = fixture;
   await sendText('/start');
   const chatId = String(createdAccount.account.id);
   const files = {
@@ -843,8 +845,8 @@ Deno.test('sendMediaGroup sends photos, videos, documents and audio and names ea
 });
 
 Deno.test('albums hold photos with videos, and documents only among documents', async () => {
-  const { api, sessionPath, botApiPath, createdBot, createdAccount, sendText } =
-    await createPrivateConversationFixture();
+  await using fixture = await createPrivateConversationFixture();
+  const { api, sessionPath, botApiPath, createdBot, createdAccount, sendText } = fixture;
   await sendText('/start');
   const chatId = String(createdAccount.account.id);
   const accountPath = `${sessionPath}/accounts/${chatId}`;

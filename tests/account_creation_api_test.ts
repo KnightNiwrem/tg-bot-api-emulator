@@ -15,7 +15,8 @@ interface CreationResponseBody {
 const ASTRAL_CHARACTER = '😀';
 
 Deno.test('An account name has at most 64 code points, however many UTF-16 units they take', async () => {
-  const { api, sessionPath } = await createTestSession();
+  await using testSession = await createTestSession();
+  const { api, sessionPath } = testSession;
   const longestName = ASTRAL_CHARACTER.repeat(64);
 
   const created = await requestJson<CreationResponseBody>(api, 'POST', `${sessionPath}/accounts`, {
@@ -42,7 +43,8 @@ Deno.test('An account name has at most 64 code points, however many UTF-16 units
 });
 
 Deno.test('A name within the limit that is not well-formed Unicode is invalid', async () => {
-  const { api, sessionPath } = await createTestSession();
+  await using testSession = await createTestSession();
+  const { api, sessionPath } = testSession;
 
   const response = await requestJson<CreationResponseBody>(api, 'POST', `${sessionPath}/accounts`, {
     first_name: `${'a'.repeat(63)}\uD83D`,
@@ -53,7 +55,8 @@ Deno.test('A name within the limit that is not well-formed Unicode is invalid', 
 });
 
 Deno.test('A username has at most 32 characters of Telegram’s syntax', async () => {
-  const { api, sessionPath } = await createTestSession();
+  await using testSession = await createTestSession();
+  const { api, sessionPath } = testSession;
   const bots = `${sessionPath}/bots`;
 
   const longest = await requestJson<CreationResponseBody>(api, 'POST', bots, {

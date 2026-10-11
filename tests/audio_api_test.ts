@@ -70,7 +70,8 @@ const OGG_URL = 'https://cdn.example.com/songs/drive.ogg';
  * with Grace and the bot, and the emulated web serves an MP3 file and an OGG file.
  */
 async function createAudioFixture() {
-  const { api, sessionPath } = await createTestSession();
+  await using disposalOnFailure = new AsyncDisposableStack();
+  const { api, sessionPath } = disposalOnFailure.use(await createTestSession());
   const createAccount = (firstName: string) => createSessionAccount(api, sessionPath, firstName);
   const ada = await createAccount('Ada');
   const grace = await createAccount('Grace');
@@ -141,6 +142,7 @@ async function createAudioFixture() {
   const readUpdates = async () => withoutUpdateIds(await readBotUpdates(bot.botApiPath));
   await readUpdates();
 
+  const emulatorDisposal = disposalOnFailure.move();
   return {
     api,
     sessionPath,
@@ -157,6 +159,7 @@ async function createAudioFixture() {
     callBot,
     getHistory,
     readUpdates,
+    [Symbol.asyncDispose]: () => emulatorDisposal.disposeAsync(),
   };
 }
 
@@ -197,6 +200,7 @@ function audioOf(message: TestMessage | undefined): TestAudio {
 }
 
 Deno.test('an account uploads a track that the bot inspects, downloads, and sends back by file_id', async () => {
+  await using fixture = await createAudioFixture();
   const {
     api,
     sessionPath,
@@ -207,7 +211,7 @@ Deno.test('an account uploads a track that the bot inspects, downloads, and send
     callBot,
     getHistory,
     readUpdates,
-  } = await createAudioFixture();
+  } = fixture;
   const sent = await sendAccountMessage(ada.id, {
     to: privateChat,
     audio: {
@@ -331,7 +335,8 @@ Deno.test('an account uploads a track that the bot inspects, downloads, and send
 });
 
 Deno.test('a bot uploads a track with a cover and sends one by URL with the metadata it states', async () => {
-  const { api, sessionPath, ada, bot, callBot } = await createAudioFixture();
+  await using fixture = await createAudioFixture();
+  const { api, sessionPath, ada, bot, callBot } = fixture;
   const uploaded = await callBotWithFiles<TestMessage>(api, `${bot.botApiPath}/sendAudio`, {
     chat_id: String(ada.id),
     audio: 'attach://track',
@@ -432,8 +437,9 @@ Deno.test('a bot uploads a track with a cover and sends one by URL with the meta
 });
 
 Deno.test('audio file IDs send only audio files, and only for the user that knows them', async () => {
+  await using fixture = await createAudioFixture();
   const { ada, bot, otherBot, privateChat, sendAccountMessage, callBot, getHistory, readUpdates } =
-    await createAudioFixture();
+    fixture;
   await sendAccountMessage(ada.id, {
     to: privateChat,
     audio: { content_base64: TRACK_BYTES.toBase64() },
@@ -448,7 +454,7 @@ Deno.test('audio file IDs send only audio files, and only for the user that know
   const historyBefore = await getHistory(ada.id, privateChat);
 
   // A second session knows nothing of the first one's files.
-  const second = await createAudioFixture();
+  await using second = await createAudioFixture();
   const refusals = await Promise.all([
     callBot(bot.botApiPath, 'sendAudio', { chat_id: ada.id, audio: documentFileId }),
     callBot(bot.botApiPath, 'sendVoice', { chat_id: ada.id, voice: audioFileId }),
@@ -481,6 +487,7 @@ Deno.test('audio file IDs send only audio files, and only for the user that know
 });
 
 Deno.test('can_send_audios governs the audio files accounts and bots send to a supergroup', async () => {
+  await using fixture = await createAudioFixture();
   const {
     api,
     ada,
@@ -493,7 +500,7 @@ Deno.test('can_send_audios governs the audio files accounts and bots send to a s
     callBot,
     getHistory,
     readUpdates,
-  } = await createAudioFixture();
+  } = fixture;
   const sentToBot = await sendAccountMessage(ada.id, {
     to: privateChat,
     audio: { content_base64: TRACK_BYTES.toBase64() },
@@ -558,6 +565,7 @@ Deno.test('can_send_audios governs the audio files accounts and bots send to a s
 });
 
 Deno.test('audio albums hold only audio files, and their messages stay audio files', async () => {
+  await using fixture = await createAudioFixture();
   const {
     api,
     ada,
@@ -568,7 +576,7 @@ Deno.test('audio albums hold only audio files, and their messages stay audio fil
     callBot,
     getHistory,
     readUpdates,
-  } = await createAudioFixture();
+  } = fixture;
   await sendAccountMessage(ada.id, {
     to: privateChat,
     audio: { content_base64: TRACK_BYTES.toBase64(), title: 'Engines' },
@@ -701,6 +709,7 @@ Deno.test('audio albums hold only audio files, and their messages stay audio fil
 });
 
 Deno.test('forwarded and copied audio files of one sender form new albums, and replies show them', async () => {
+  await using fixture = await createAudioFixture();
   const {
     ada,
     grace,
@@ -710,7 +719,7 @@ Deno.test('forwarded and copied audio files of one sender form new albums, and r
     sendAccountMessage,
     callBot,
     getHistory,
-  } = await createAudioFixture();
+  } = fixture;
   const sendTrack = async (title: string) =>
     (await sendAccountMessage(ada.id, {
       to: privateChat,
@@ -765,6 +774,7 @@ Deno.test('forwarded and copied audio files of one sender form new albums, and r
 });
 
 Deno.test('inline audio results send cached tracks and tracks downloaded from their URL', async () => {
+  await using fixture = await createAudioFixture();
   const {
     api,
     ada,
@@ -778,7 +788,7 @@ Deno.test('inline audio results send cached tracks and tracks downloaded from th
     callBot,
     getHistory,
     readUpdates,
-  } = await createAudioFixture();
+  } = fixture;
   await sendAccountMessage(ada.id, {
     to: privateChat,
     audio: { content_base64: TRACK_BYTES.toBase64(), title: 'Engines', performer: 'Ada' },
@@ -904,8 +914,8 @@ Deno.test('inline audio results send cached tracks and tracks downloaded from th
 });
 
 Deno.test('a grammY bot receives a track and replies with its own track and a cover', async () => {
-  const { api, sessionPath, ada, bot, privateChat, sendAccountMessage, getHistory } =
-    await createAudioFixture();
+  await using fixture = await createAudioFixture();
+  const { api, sessionPath, ada, bot, privateChat, sendAccountMessage, getHistory } = fixture;
   const grammyBot = new Bot(bot.token, {
     client: {
       apiRoot: `${TEST_PUBLIC_ORIGIN}${sessionPath}/bot-api`,

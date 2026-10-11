@@ -9,7 +9,8 @@ import { requestJson } from '../support/emulation_api.ts';
 import { createSupergroupFixture } from '../support/http_fixtures.ts';
 
 Deno.test('Supergroup paths take IDs written only in decimal digits', async () => {
-  const { api, sessionPath, owner, member, supergroup } = await createSupergroupFixture();
+  await using fixture = await createSupergroupFixture();
+  const { api, sessionPath, owner, member, supergroup } = fixture;
   const membersPath = `${sessionPath}/accounts/${owner.id}/conversations/supergroup`;
 
   const accepted = await api.request(`${membersPath}/${supergroup.id}/members/${member.id}`, {
@@ -41,7 +42,8 @@ Deno.test('Supergroup paths take IDs written only in decimal digits', async () =
 });
 
 Deno.test('An invite link expiry names the link by a hash of its form', async () => {
-  const { api, sessionPath, supergroup } = await createSupergroupFixture();
+  await using fixture = await createSupergroupFixture();
+  const { api, sessionPath, supergroup } = fixture;
   const inviteLinksPath = `${sessionPath}/supergroups/${supergroup.id}/invite-links`;
 
   const unknown = await requestJson<ControlErrorBody>(

@@ -24,7 +24,8 @@ interface BotApiTestUpdate {
 }
 
 Deno.test('bot creation accepts a boolean enables_bot_to_bot_communication that getMe omits', async () => {
-  const { api, sessionPath } = await createTestSession();
+  await using testSession = await createTestSession();
+  const { api, sessionPath } = testSession;
   for (const value of ['true', 1, null, {}]) {
     const refused = await requestJson(api, 'POST', `${sessionPath}/bots`, {
       first_name: 'Relay',
@@ -68,7 +69,7 @@ Deno.test('an addressed command and a direct reply reach the other bot when eith
     { name: 'omitted', a: undefined, b: undefined, delivered: false },
   ] as const;
   for (const { name, a, b, delivered } of settings) {
-    const fixture = await createFixture();
+    await using fixture = await createFixture();
     try {
       const botA = await fixture.addBot('a_bot', a);
       const botB = await fixture.addBot('b_bot', b);
@@ -103,8 +104,8 @@ Deno.test('an addressed command and a direct reply reach the other bot when eith
 });
 
 Deno.test('a bot message reaches only the one member bot it addresses', async () => {
-  const fixture = await createFixture();
-  const otherFixture = await createFixture();
+  await using fixture = await createFixture();
+  await using otherFixture = await createFixture();
   try {
     const botA = await fixture.addBot('a_bot', true);
     const botB = await fixture.addBot('b_bot', false);
@@ -213,7 +214,7 @@ Deno.test('a bot message reaches only the one member bot it addresses', async ()
 });
 
 Deno.test('bot-to-bot messages keep account privacy routing and service messages', async () => {
-  const fixture = await createFixture();
+  await using fixture = await createFixture();
   try {
     const botA = await fixture.addBot('a_bot', true);
     const botB = await fixture.addBot('b_bot', false);
@@ -243,7 +244,7 @@ Deno.test('bot-to-bot messages keep account privacy routing and service messages
 });
 
 Deno.test('a recipient that excludes message updates never receives a bot-to-bot message', async () => {
-  const fixture = await createFixture();
+  await using fixture = await createFixture();
   const webhookRequests: BotApiTestUpdate[] = [];
   const webhookServer = Deno.serve({
     hostname: '127.0.0.1',
@@ -299,8 +300,13 @@ interface CreatedTestBot {
   readonly token: string;
 }
 
+/**
+ * Creates a supergroup of Ada's on an emulator of its own, which disposing of the fixture disposes
+ * of.
+ */
 async function createFixture() {
-  const api = createTestInProcessEmulator();
+  await using disposalOnFailure = new AsyncDisposableStack();
+  const api = disposalOnFailure.use(createTestInProcessEmulator());
   const { fetch } = api;
   const session: EmulationSessionClient = await api.client.createSession();
   const { account: owner }: { account: VirtualAccountClient } = await session.createAccount({
@@ -357,6 +363,7 @@ async function createFixture() {
     return updates;
   };
 
+  const emulatorDisposal = disposalOnFailure.move();
   return {
     session,
     owner,
@@ -389,5 +396,6 @@ async function createFixture() {
         while ((await readUpdates(bot)).length > 0);
       }
     },
+    [Symbol.asyncDispose]: () => emulatorDisposal.disposeAsync(),
   };
 }

@@ -9,8 +9,8 @@ import { requestJson } from '../support/emulation_api.ts';
 import { createSupergroupFixture } from '../support/http_fixtures.ts';
 
 Deno.test('Administration paths take IDs written only in decimal digits', async () => {
-  const { api, sessionPath, owner, member, supergroup, supergroupPath } =
-    await createSupergroupFixture();
+  await using fixture = await createSupergroupFixture();
+  const { api, sessionPath, owner, member, supergroup, supergroupPath } = fixture;
 
   const refusals = await Promise.all([
     requestJson<ControlErrorBody>(
@@ -40,7 +40,8 @@ Deno.test('Administration paths take IDs written only in decimal digits', async 
 });
 
 Deno.test('A right or permission the Bot API does not name is an unknown field', async () => {
-  const { api, owner, member, supergroupPath } = await createSupergroupFixture();
+  await using fixture = await createSupergroupFixture();
+  const { api, owner, member, supergroupPath } = fixture;
 
   const promotion = await requestJson<ControlErrorBody>(
     api,

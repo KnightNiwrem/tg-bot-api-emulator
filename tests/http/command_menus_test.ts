@@ -9,8 +9,8 @@ import {
 } from '../support/http_fixtures.ts';
 
 Deno.test('setMyCommands, getMyCommands, and deleteMyCommands follow Telegram checks', async () => {
-  const { api, sessionPath, botApiPath, createdBot, createdAccount, sendText } =
-    await createPrivateConversationFixture();
+  await using fixture = await createPrivateConversationFixture();
+  const { api, sessionPath, botApiPath, createdBot, createdAccount, sendText } = fixture;
   const accountId = createdAccount.account.id;
   const expectBadRequest = async (
     methodName: string,
@@ -167,7 +167,8 @@ Deno.test('setMyCommands, getMyCommands, and deleteMyCommands follow Telegram ch
 });
 
 Deno.test('bots set and read their descriptions and short descriptions by language', async () => {
-  const { api, botApiPath } = await createPrivateConversationFixture();
+  await using fixture = await createPrivateConversationFixture();
+  const { api, botApiPath } = fixture;
   const callBot = async (methodName: string, parameters: Record<string, unknown>) =>
     await callBotApi(api, `${botApiPath}/${methodName}`, parameters);
   const expectResult = async (
@@ -240,7 +241,8 @@ Deno.test('bots set and read their descriptions and short descriptions by langua
 });
 
 Deno.test('bots set and read the administrator rights they ask for by default', async () => {
-  const { api, botApiPath } = await createPrivateConversationFixture();
+  await using fixture = await createPrivateConversationFixture();
+  const { api, botApiPath } = fixture;
   const callBot = async (methodName: string, parameters: Record<string, unknown>) =>
     await callBotApi(api, `${botApiPath}/${methodName}`, parameters);
   const noGroupRights = {
@@ -352,8 +354,8 @@ Deno.test('bots set and read the administrator rights they ask for by default', 
 });
 
 Deno.test('bots choose the menu button accounts see in their private chats', async () => {
-  const { api, sessionPath, botApiPath, createdBot, createdAccount } =
-    await createPrivateConversationFixture();
+  await using fixture = await createPrivateConversationFixture();
+  const { api, sessionPath, botApiPath, createdBot, createdAccount } = fixture;
   const accountId = createdAccount.account.id;
   const callBot = async (methodName: string, parameters: Record<string, unknown>) =>
     await callBotApi(api, `${botApiPath}/${methodName}`, parameters);
@@ -473,8 +475,8 @@ Deno.test('bots choose the menu button accounts see in their private chats', asy
 });
 
 Deno.test('bots set supergroup command scopes that members see in their menus', async () => {
-  const { api, sessionPath, owner, member, bot, readerBot, supergroup, supergroupPath } =
-    await createSupergroupFixture();
+  await using fixture = await createSupergroupFixture();
+  const { api, sessionPath, owner, member, bot, readerBot, supergroup, supergroupPath } = fixture;
   const setCommands = (botApiPath: string, command: string, scope: Record<string, unknown>) =>
     callBotApi(api, `${botApiPath}/setMyCommands`, {
       commands: [{ command, description: command }],
@@ -546,7 +548,8 @@ Deno.test('bots set supergroup command scopes that members see in their menus', 
 });
 
 Deno.test('empty commands and scope are read as no commands and the default scope', async () => {
-  const { api, botApiPath } = await createPrivateConversationFixture();
+  await using fixture = await createPrivateConversationFixture();
+  const { api, botApiPath } = fixture;
   const call = async (methodName: string, parameters: Record<string, string>) => {
     const { status, body } = await callBotApi(api, `${botApiPath}/${methodName}`, parameters);
     return [status, body];

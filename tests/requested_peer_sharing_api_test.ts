@@ -31,7 +31,8 @@ const NO_ADMINISTRATOR_RIGHTS = {
 };
 
 Deno.test('a grammY bot receives the users an account shares through a request_users button', async () => {
-  const { session, fetch, bot, ada, grace, linus, privateChat } = await createSharingFixture();
+  await using fixture = await createSharingFixture();
+  const { session, fetch, bot, ada, grace, linus, privateChat } = fixture;
   const grammyBot = new Bot(bot.token, { client: { apiRoot: session.botApiRoot, fetch } });
   grammyBot.command('team', (context) =>
     context.reply('Who joins the team?', {
@@ -131,7 +132,8 @@ Deno.test('a grammY bot receives the users an account shares through a request_u
 });
 
 Deno.test('a grammY bot receives a supergroup that meets its request_chat criteria', async () => {
-  const { session, fetch, bot, ada, privateChat } = await createSharingFixture();
+  await using fixture = await createSharingFixture();
+  const { session, fetch, bot, ada, privateChat } = fixture;
   const team = await ada.createSupergroup({ title: 'Team', username: 'team_chat' });
   const teamChat = { type: 'supergroup', chatId: team.id } as const;
   await ada.addChatMember({ chat: teamChat, userId: bot.id });
@@ -199,7 +201,7 @@ Deno.test('a grammY bot receives a supergroup that meets its request_chat criter
 });
 
 Deno.test('shared users and chats answer their own buttons among buttons that share a label', async () => {
-  const fixture = await createSharingFixture();
+  await using fixture = await createSharingFixture();
   const { session, bot, ada, grace, privateChat } = fixture;
   const callBot = createBotApiCaller(fixture);
   const team = await ada.createSupergroup({ title: 'Team' });
@@ -260,7 +262,7 @@ Deno.test('shared users and chats answer their own buttons among buttons that sh
 });
 
 Deno.test('refused selections create no message or update and leave the request in place', async () => {
-  const fixture = await createSharingFixture();
+  await using fixture = await createSharingFixture();
   const { session, bot, ada, grace, privateChat } = fixture;
   const callBot = createBotApiCaller(fixture);
   const team = await ada.createSupergroup({ title: 'Team' });
@@ -436,7 +438,7 @@ Deno.test('refused selections create no message or update and leave the request 
 });
 
 Deno.test('sharing users or a chat grants the bot no access, membership, or rights', async () => {
-  const fixture = await createSharingFixture();
+  await using fixture = await createSharingFixture();
   const { session, bot, ada, grace, privateChat } = fixture;
   const callBot = createBotApiCaller(fixture);
   const team = await ada.createSupergroup({ title: 'Team' });
@@ -479,8 +481,8 @@ Deno.test('sharing users or a chat grants the bot no access, membership, or righ
 
 Deno.test('selections stay within their session', async () => {
   await using api = createTestInProcessEmulator();
-  const first = await createSharingFixture(api);
-  const second = await createSharingFixture(api);
+  await using first = await createSharingFixture(api);
+  await using second = await createSharingFixture(api);
   // Only the second session has a fourth account and a supergroup with this ID.
   const { account: extra } = await second.session.createAccount({ first_name: 'Extra' });
   await second.ada.createSupergroup({ title: 'Elsewhere' });
@@ -541,11 +543,12 @@ Deno.test('selections stay within their session', async () => {
 
 /**
  * Creates a session whose bot Ada has started a private chat with, and accounts Grace and Linus
- * that she can share.
+ * that she can share, on `sharedApi` or else on an emulator of its own, which disposing of the
+ * fixture disposes of.
  */
-async function createSharingFixture(
-  api: TestInProcessEmulator = createTestInProcessEmulator(),
-) {
+async function createSharingFixture(sharedApi?: TestInProcessEmulator) {
+  await using disposalOnFailure = new AsyncDisposableStack();
+  const api = sharedApi ?? disposalOnFailure.use(createTestInProcessEmulator());
   const { fetch } = api;
   const session = await api.client.createSession();
   const createdBot = await session.createBot({ first_name: 'Team Bot', username: 'team_bot' });
@@ -558,6 +561,7 @@ async function createSharingFixture(
   });
   const privateChat: PrivateMessageTarget = { type: 'private', botId: createdBot.bot.id };
   await ada.sendMessage({ to: privateChat, text: '/start' });
+  const emulatorDisposal = disposalOnFailure.move();
   return {
     session,
     fetch,
@@ -566,6 +570,7 @@ async function createSharingFixture(
     grace,
     linus,
     privateChat,
+    [Symbol.asyncDispose]: () => emulatorDisposal.disposeAsync(),
   };
 }
 

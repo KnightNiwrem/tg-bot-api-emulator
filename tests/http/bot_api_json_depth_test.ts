@@ -36,7 +36,8 @@ interface RecordedCall {
 }
 
 Deno.test('a JSON body member nested beyond 100 levels is refused, at the exact boundary', async () => {
-  const { api, botApiPath, createdAccount, sendText } = await createPrivateConversationFixture();
+  await using fixture = await createPrivateConversationFixture();
+  const { api, botApiPath, createdAccount, sendText } = fixture;
   await sendText('/start');
   const chatId = createdAccount.account.id;
   // `text` is plain text to `sendMessage`, which sends a member's source text as it is.
@@ -74,7 +75,8 @@ Deno.test('a JSON body member nested beyond 100 levels is refused, at the exact 
 });
 
 Deno.test('a JSON body string member is not limited by the depth of the JSON it holds', async () => {
-  const { api, botApiPath, createdAccount, sendText } = await createPrivateConversationFixture();
+  await using fixture = await createPrivateConversationFixture();
+  const { api, botApiPath, createdAccount, sendText } = fixture;
   await sendText('/start');
   const text = nestedArrays(101);
   const answer = await postJsonBody(api, `${botApiPath}/sendMessage`, {
@@ -85,8 +87,8 @@ Deno.test('a JSON body string member is not limited by the depth of the JSON it 
 });
 
 Deno.test('a JSON body refused for its depth is recorded without parameters', async () => {
-  const { api, sessionPath, botApiPath, createdAccount, sendText } =
-    await createPrivateConversationFixture();
+  await using fixture = await createPrivateConversationFixture();
+  const { api, sessionPath, botApiPath, createdAccount, sendText } = fixture;
   await sendText('/start');
   const answer = await postJsonBody(api, `${botApiPath}/sendMessage`, {
     chat_id: String(createdAccount.account.id),
@@ -104,7 +106,8 @@ Deno.test('a JSON body refused for its depth is recorded without parameters', as
 });
 
 Deno.test('reply_markup nested beyond 100 levels is refused in every encoding', async () => {
-  const { api, botApiPath, createdAccount, sendText } = await createPrivateConversationFixture();
+  await using fixture = await createPrivateConversationFixture();
+  const { api, botApiPath, createdAccount, sendText } = fixture;
   await sendText('/start');
   const chatId = String(createdAccount.account.id);
   const methodPath = `${botApiPath}/sendMessage`;
@@ -161,7 +164,8 @@ Deno.test('reply_markup nested beyond 100 levels is refused in every encoding', 
 });
 
 Deno.test("reply_markup of an edit nested beyond 100 levels gets Telegram's description", async () => {
-  const { api, botApiPath, createdAccount, sendText } = await createPrivateConversationFixture();
+  await using fixture = await createPrivateConversationFixture();
+  const { api, botApiPath, createdAccount, sendText } = fixture;
   await sendText('/start');
   const parameters = { chat_id: String(createdAccount.account.id), message_id: '1' };
   const methodPath = `${botApiPath}/editMessageReplyMarkup`;
@@ -183,7 +187,8 @@ Deno.test("reply_markup of an edit nested beyond 100 levels gets Telegram's desc
 });
 
 Deno.test('each JSON-typed parameter reader refuses JSON nested beyond 100 levels', async () => {
-  const { api, botApiPath, createdAccount, sendText } = await createPrivateConversationFixture();
+  await using fixture = await createPrivateConversationFixture();
+  const { api, botApiPath, createdAccount, sendText } = fixture;
   await sendText('/start');
   const chatId = String(createdAccount.account.id);
   const tooDeep = nestedArrays(101);

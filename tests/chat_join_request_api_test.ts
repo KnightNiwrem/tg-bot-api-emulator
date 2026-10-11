@@ -47,7 +47,8 @@ const READ_UPDATE_TYPES = ['message', 'chat_member', 'chat_join_request'];
  * link that creates join requests.
  */
 async function createJoinRequestFixture() {
-  const { api, sessionPath } = await createTestSession();
+  await using disposalOnFailure = new AsyncDisposableStack();
+  const { api, sessionPath } = disposalOnFailure.use(await createTestSession());
   const ada = await createAccount(api, sessionPath, 'Ada');
   const grace = await createAccount(api, sessionPath, 'Grace');
   const hopper = await createAccount(api, sessionPath, 'Hopper');
@@ -137,6 +138,7 @@ async function createJoinRequestFixture() {
     ((await callBot(inviterBot, 'getChatMember', { chat_id: supergroup.id, user_id: userId }))
       .body.result as { status: string }).status;
 
+  const emulatorDisposal = disposalOnFailure.move();
   return {
     api,
     sessionPath,
@@ -160,6 +162,7 @@ async function createJoinRequestFixture() {
     getPendingCounts,
     getRequesterContacts,
     getMemberStatus,
+    [Symbol.asyncDispose]: () => emulatorDisposal.disposeAsync(),
   };
 }
 
@@ -197,6 +200,7 @@ async function expectStatus(
 /** Compares JSON values by content: object keys in any order, array items in order. */
 
 Deno.test('a request link leaves the account outside and sends its request to eligible bots', async () => {
+  await using fixture = await createJoinRequestFixture();
   const {
     api,
     ada,
@@ -215,7 +219,7 @@ Deno.test('a request link leaves the account outside and sends its request to el
     getJoinRequests,
     getPendingCounts,
     getMemberStatus,
-  } = await createJoinRequestFixture();
+  } = fixture;
   // The co-inviter's subscription leaves join requests out.
   await readUpdates(coInviterBot, ['message']);
   const memberCount = async () =>
@@ -290,8 +294,8 @@ Deno.test('a request link leaves the account outside and sends its request to el
 });
 
 Deno.test('another administrator with the right receives requests with the link hidden', async () => {
-  const { grace, coInviterBot, readUpdates, requestLink, useLink } =
-    await createJoinRequestFixture();
+  await using fixture = await createJoinRequestFixture();
+  const { grace, coInviterBot, readUpdates, requestLink, useLink } = fixture;
 
   await useLink(grace, requestLink.invite_link);
 
@@ -303,6 +307,7 @@ Deno.test('another administrator with the right receives requests with the link 
 });
 
 Deno.test('a request link has an explicit outcome for each standing and repeated use', async () => {
+  await using fixture = await createJoinRequestFixture();
   const {
     api,
     sessionPath,
@@ -317,7 +322,7 @@ Deno.test('a request link has an explicit outcome for each standing and repeated
     requestLink,
     useLink,
     getJoinRequests,
-  } = await createJoinRequestFixture();
+  } = fixture;
   const otherRequestLink = await createLink({
     creates_join_request: true,
     expire_date: 2 ** 31 - 1,
@@ -365,6 +370,7 @@ Deno.test('a request link has an explicit outcome for each standing and repeated
 });
 
 Deno.test('a pending request ends when its account joins another way or is banned', async () => {
+  await using fixture = await createJoinRequestFixture();
   const {
     grace,
     hopper,
@@ -378,7 +384,7 @@ Deno.test('a pending request ends when its account joins another way or is banne
     useLink,
     getJoinRequests,
     getPendingCounts,
-  } = await createJoinRequestFixture();
+  } = fixture;
   for (const account of [grace, hopper, linus]) {
     await useLink(account, requestLink.invite_link);
   }
@@ -405,6 +411,7 @@ Deno.test('a pending request ends when its account joins another way or is banne
 });
 
 Deno.test('a bot that received a request prompts its requester, who answers before the decision', async () => {
+  await using fixture = await createJoinRequestFixture();
   const {
     api,
     sessionPath,
@@ -416,7 +423,7 @@ Deno.test('a bot that received a request prompts its requester, who answers befo
     requestLink,
     useLink,
     getRequesterContacts,
-  } = await createJoinRequestFixture();
+  } = fixture;
   await useLink(grace, requestLink.invite_link);
   const [update] = await readUpdates(inviterBot, [...READ_UPDATE_TYPES, 'callback_query']);
   await readUpdates(coInviterBot);
@@ -512,6 +519,7 @@ Deno.test('a bot that received a request prompts its requester, who answers befo
 });
 
 Deno.test('the prompt alone gives no lasting access, which a decision or an expiry ends', async () => {
+  await using fixture = await createJoinRequestFixture();
   const {
     api,
     sessionPath,
@@ -527,7 +535,7 @@ Deno.test('the prompt alone gives no lasting access, which a decision or an expi
     useLink,
     getRequesterContacts,
     getJoinRequests,
-  } = await createJoinRequestFixture();
+  } = fixture;
   for (const account of [grace, hopper, linus]) {
     await useLink(account, requestLink.invite_link);
   }
@@ -614,6 +622,7 @@ Deno.test('the prompt alone gives no lasting access, which a decision or an expi
 });
 
 Deno.test('a requester contact excludes unrelated bots, blocked bots and other sessions', async () => {
+  await using fixture = await createJoinRequestFixture();
   const {
     api,
     sessionPath,
@@ -628,7 +637,7 @@ Deno.test('a requester contact excludes unrelated bots, blocked bots and other s
     requestLink,
     useLink,
     getRequesterContacts,
-  } = await createJoinRequestFixture();
+  } = fixture;
   await useLink(grace, requestLink.invite_link);
   // The member bot gains the right only after the request, which it never received.
   await asOwner(
@@ -640,7 +649,7 @@ Deno.test('a requester contact excludes unrelated bots, blocked bots and other s
     'PUT',
     `${sessionPath}/accounts/${grace.id}/blocked-bots/${coInviterBot.bot.id}`,
   );
-  const otherSession = await createJoinRequestFixture();
+  await using otherSession = await createJoinRequestFixture();
   await readUpdates(inviterBot);
   const describeSend = async (bot: FixtureBot, chatId: number, call = callBot) => {
     const { status, body } = await call(bot, 'sendMessage', { chat_id: chatId, text: 'Hello' });
@@ -675,6 +684,7 @@ Deno.test('a requester contact excludes unrelated bots, blocked bots and other s
 });
 
 Deno.test('competing and repeated contacts keep each grant to its bot and request', async () => {
+  await using fixture = await createJoinRequestFixture();
   const {
     api,
     sessionPath,
@@ -687,7 +697,7 @@ Deno.test('competing and repeated contacts keep each grant to its bot and reques
     requestLink,
     useLink,
     getRequesterContacts,
-  } = await createJoinRequestFixture();
+  } = fixture;
   // Grace started the co-inviter before requesting, so it writes to her as before.
   await requestJson(api, 'POST', `${sessionPath}/accounts/${grace.id}/messages`, {
     to: { type: 'private', botId: coInviterBot.bot.id },
@@ -739,6 +749,7 @@ Deno.test('competing and repeated contacts keep each grant to its bot and reques
 });
 
 Deno.test('simultaneous prompts of two bots let exactly one claim the contact', async () => {
+  await using fixture = await createJoinRequestFixture();
   const {
     api,
     sessionPath,
@@ -749,7 +760,7 @@ Deno.test('simultaneous prompts of two bots let exactly one claim the contact', 
     requestLink,
     useLink,
     getRequesterContacts,
-  } = await createJoinRequestFixture();
+  } = fixture;
   await useLink(hopper, requestLink.invite_link);
 
   const prompts = await Promise.all(
@@ -781,6 +792,7 @@ Deno.test('simultaneous prompts of two bots let exactly one claim the contact', 
 });
 
 Deno.test("a link's expiry leaves its pending requests and their contacts in place", async () => {
+  await using fixture = await createJoinRequestFixture();
   const {
     api,
     sessionPath,
@@ -792,7 +804,7 @@ Deno.test("a link's expiry leaves its pending requests and their contacts in pla
     createLink,
     useLink,
     getRequesterContacts,
-  } = await createJoinRequestFixture();
+  } = fixture;
   const expiringLink = await createLink({
     creates_join_request: true,
     expire_date: Math.floor(Date.now() / 1_000) + 3_600,
@@ -820,8 +832,8 @@ Deno.test("a link's expiry leaves its pending requests and their contacts in pla
 });
 
 Deno.test('a grammY bot receives a join request through its webhook, as the log shows', async () => {
-  const { api, sessionPath, grace, inviterBot, supergroup, requestLink, useLink } =
-    await createJoinRequestFixture();
+  await using fixture = await createJoinRequestFixture();
+  const { api, sessionPath, grace, inviterBot, supergroup, requestLink, useLink } = fixture;
   const grammyBot = new Bot(inviterBot.token, {
     client: {
       apiRoot: `${TEST_PUBLIC_ORIGIN}${sessionPath}/bot-api`,
@@ -908,6 +920,7 @@ function describeMembershipUpdates(updates: ReadonlyArray<Record<string, unknown
 }
 
 Deno.test('a bot approves a request, which lets the account in through the link', async () => {
+  await using fixture = await createJoinRequestFixture();
   const {
     api,
     grace,
@@ -925,7 +938,7 @@ Deno.test('a bot approves a request, which lets the account in through the link'
     getJoinRequests,
     getPendingCounts,
     getMemberStatus,
-  } = await createJoinRequestFixture();
+  } = fixture;
   await useLink(grace, requestLink.invite_link);
   await useLink(hopper, requestLink.invite_link);
   for (const bot of [inviterBot, coInviterBot, observerBot, memberBot]) {
@@ -997,6 +1010,7 @@ Deno.test('a bot approves a request, which lets the account in through the link'
 });
 
 Deno.test('a bot declines a request, which leaves the account outside without an update', async () => {
+  await using fixture = await createJoinRequestFixture();
   const {
     api,
     grace,
@@ -1012,7 +1026,7 @@ Deno.test('a bot declines a request, which leaves the account outside without an
     getJoinRequests,
     getPendingCounts,
     getMemberStatus,
-  } = await createJoinRequestFixture();
+  } = fixture;
   await useLink(grace, requestLink.invite_link);
   for (const bot of [inviterBot, observerBot, memberBot]) {
     await readUpdates(bot);
@@ -1048,6 +1062,7 @@ Deno.test('a bot declines a request, which leaves the account outside without an
 });
 
 Deno.test('deciding a request has an explicit outcome for each standing, right and chat', async () => {
+  await using fixture = await createJoinRequestFixture();
   const {
     api,
     sessionPath,
@@ -1064,7 +1079,7 @@ Deno.test('deciding a request has an explicit outcome for each standing, right a
     requestLink,
     useLink,
     getJoinRequests,
-  } = await createJoinRequestFixture();
+  } = fixture;
   await useLink(grace, requestLink.invite_link);
   await useLink(hopper, requestLink.invite_link);
   // Linus starts a private chat with the inviter, which has no join requests.
@@ -1158,6 +1173,7 @@ Deno.test('deciding a request has an explicit outcome for each standing, right a
 });
 
 Deno.test('simultaneous approvals add the member once, as the activity log shows', async () => {
+  await using fixture = await createJoinRequestFixture();
   const {
     api,
     sessionPath,
@@ -1170,7 +1186,7 @@ Deno.test('simultaneous approvals add the member once, as the activity log shows
     callBot,
     requestLink,
     useLink,
-  } = await createJoinRequestFixture();
+  } = fixture;
   await useLink(grace, requestLink.invite_link);
   await readUpdates(observerBot);
   const memberCount = async () =>
@@ -1206,6 +1222,7 @@ Deno.test('simultaneous approvals add the member once, as the activity log shows
 });
 
 Deno.test('an approved account joins with its restriction, and counts for its link while it stays', async () => {
+  await using fixture = await createJoinRequestFixture();
   const {
     api,
     ada,
@@ -1217,7 +1234,7 @@ Deno.test('an approved account joins with its restriction, and counts for its li
     callBot,
     requestLink,
     useLink,
-  } = await createJoinRequestFixture();
+  } = fixture;
   await useLink(grace, requestLink.invite_link);
   await asOwner(
     `restrictions/${grace.id}`,
@@ -1253,8 +1270,9 @@ Deno.test('an approved account joins with its restriction, and counts for its li
 });
 
 Deno.test('a grammY bot approves join requests through its webhook', async () => {
+  await using fixture = await createJoinRequestFixture();
   const { api, sessionPath, grace, inviterBot, supergroup, requestLink, useLink, getMemberStatus } =
-    await createJoinRequestFixture();
+    fixture;
   const grammyBot = new Bot(inviterBot.token, {
     client: {
       apiRoot: `${TEST_PUBLIC_ORIGIN}${sessionPath}/bot-api`,
@@ -1312,7 +1330,8 @@ Deno.test('a grammY bot approves join requests through its webhook', async () =>
  * Grace and Hopper have pending requests, and every bot read its updates.
  */
 async function createAccountDecisionFixture() {
-  const fixture = await createJoinRequestFixture();
+  await using disposalOnFailure = new AsyncDisposableStack();
+  const fixture = disposalOnFailure.use(await createJoinRequestFixture());
   const {
     api,
     sessionPath,
@@ -1361,7 +1380,16 @@ async function createAccountDecisionFixture() {
       jsonRequest('POST', { decision }),
     )).status;
 
-  return { ...fixture, kay, ned, pat, decisionPath, decideAsAccount };
+  const emulatorDisposal = disposalOnFailure.move();
+  return {
+    ...fixture,
+    kay,
+    ned,
+    pat,
+    decisionPath,
+    decideAsAccount,
+    [Symbol.asyncDispose]: () => emulatorDisposal.disposeAsync(),
+  };
 }
 
 /** Describes a Bot API call's outcome as its result, or as its status and error. */
@@ -1373,6 +1401,7 @@ async function describeBotCall(
 }
 
 Deno.test('an administrator account approves a request, which bots receive from the account', async () => {
+  await using fixture = await createAccountDecisionFixture();
   const {
     api,
     ada,
@@ -1392,7 +1421,7 @@ Deno.test('an administrator account approves a request, which bots receive from 
     getRequesterContacts,
     getMemberStatus,
     decideAsAccount,
-  } = await createAccountDecisionFixture();
+  } = fixture;
   // The inviter prompts Grace, claiming her contact before Kay decides.
   const prompt = await callBot(inviterBot, 'sendMessage', { chat_id: grace.id, text: 'Hi?' });
   const memberCount = async () =>
@@ -1499,6 +1528,7 @@ Deno.test('an administrator account approves a request, which bots receive from 
 });
 
 Deno.test('the owner declines a request, which leaves the account outside without an update', async () => {
+  await using fixture = await createAccountDecisionFixture();
   const {
     ada,
     kay,
@@ -1517,7 +1547,7 @@ Deno.test('the owner declines a request, which leaves the account outside withou
     getRequesterContacts,
     getMemberStatus,
     decideAsAccount,
-  } = await createAccountDecisionFixture();
+  } = fixture;
   await callBot(inviterBot, 'sendMessage', { chat_id: hopper.id, text: 'Hi?' });
 
   const decline = await decideAsAccount(ada, hopper.id, 'decline');
@@ -1573,6 +1603,7 @@ Deno.test('the owner declines a request, which leaves the account outside withou
 });
 
 Deno.test('deciding as an account has an explicit status for each actor, right, target and chat', async () => {
+  await using fixture = await createAccountDecisionFixture();
   const {
     api,
     sessionPath,
@@ -1591,7 +1622,7 @@ Deno.test('deciding as an account has an explicit status for each actor, right, 
     getRequesterContacts,
     decisionPath,
     decideAsAccount,
-  } = await createAccountDecisionFixture();
+  } = fixture;
   const { body: { supergroup: otherSupergroup } } = await requestJson<
     { supergroup: { id: number } }
   >(api, 'POST', `${sessionPath}/accounts/${ada.id}/supergroups`, { title: 'Other team' });
@@ -1676,6 +1707,7 @@ Deno.test('deciding as an account has an explicit status for each actor, right, 
 });
 
 Deno.test('competing account and bot decisions let one win, admitting the requester once', async () => {
+  await using fixture = await createAccountDecisionFixture();
   const {
     api,
     sessionPath,
@@ -1692,7 +1724,7 @@ Deno.test('competing account and bot decisions let one win, admitting the reques
     getJoinRequests,
     getMemberStatus,
     decideAsAccount,
-  } = await createAccountDecisionFixture();
+  } = fixture;
   const memberCount = async () =>
     (await callBot(inviterBot, 'getChatMemberCount', { chat_id: supergroup.id })).body.result;
   const memberCountBefore = await memberCount() as number;
@@ -1767,6 +1799,7 @@ Deno.test('competing account and bot decisions let one win, admitting the reques
 });
 
 Deno.test("an account's approval keeps the requester's restriction and the revoked link", async () => {
+  await using fixture = await createAccountDecisionFixture();
   const {
     api,
     ada,
@@ -1780,7 +1813,7 @@ Deno.test("an account's approval keeps the requester's restriction and the revok
     callBot,
     requestLink,
     decideAsAccount,
-  } = await createAccountDecisionFixture();
+  } = fixture;
   await asOwner(
     `restrictions/${grace.id}`,
     jsonRequest('PUT', { permissions: { can_send_messages: true } }),
@@ -1816,6 +1849,7 @@ Deno.test("an account's approval keeps the requester's restriction and the revok
 });
 
 Deno.test('a requester that started a chat with a bot keeps it after an account decides', async () => {
+  await using fixture = await createAccountDecisionFixture();
   const {
     api,
     sessionPath,
@@ -1830,7 +1864,7 @@ Deno.test('a requester that started a chat with a bot keeps it after an account 
     requestLink,
     useLink,
     decideAsAccount,
-  } = await createAccountDecisionFixture();
+  } = fixture;
   // Linus starts a chat with the inviter, then requests to join.
   await expectStatus(
     api.request(
@@ -1965,7 +1999,7 @@ async function serveGatekeeperBot(
 }
 
 Deno.test('a grammY bot finds its approval stale once an administrator account decided', async () => {
-  const fixture = await createAccountDecisionFixture();
+  await using fixture = await createAccountDecisionFixture();
   const {
     kay,
     grace,
@@ -2023,7 +2057,7 @@ Deno.test('a grammY bot finds its approval stale once an administrator account d
 });
 
 Deno.test('a grammY bot keeps the chat a requester started after the owner declines', async () => {
-  const fixture = await createAccountDecisionFixture();
+  await using fixture = await createAccountDecisionFixture();
   const {
     api,
     sessionPath,

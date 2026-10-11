@@ -17,8 +17,8 @@ import {
 import { gifImage } from '../support/media_samples.ts';
 
 Deno.test('sendRichMessage sends blocks that accounts see and press as the bot sent them', async () => {
-  const { api, sessionPath, botApiPath, createdBot, createdAccount, sendText } =
-    await createPrivateConversationFixture();
+  await using fixture = await createPrivateConversationFixture();
+  const { api, sessionPath, botApiPath, createdBot, createdAccount, sendText } = fixture;
   await sendText('/start');
   const accountId = createdAccount.account.id;
   const richMessage = {
@@ -276,7 +276,8 @@ Deno.test('sendRichMessage sends blocks that accounts see and press as the bot s
 });
 
 Deno.test('editMessageText turns text into a rich message and back', async () => {
-  const { api, botApiPath, createdAccount, sendText } = await createPrivateConversationFixture();
+  await using fixture = await createPrivateConversationFixture();
+  const { api, botApiPath, createdAccount, sendText } = fixture;
   await sendText('/start');
   const chatId = createdAccount.account.id;
   const sent = await callBotApi(api, `${botApiPath}/sendMessage`, {
@@ -366,7 +367,8 @@ Deno.test('editMessageText turns text into a rich message and back', async () =>
 });
 
 Deno.test('sendRichMessage refuses rich messages as Telegram does', async () => {
-  const { api, botApiPath, createdAccount, sendText } = await createPrivateConversationFixture();
+  await using fixture = await createPrivateConversationFixture();
+  const { api, botApiPath, createdAccount, sendText } = fixture;
   const chatId = createdAccount.account.id;
   const paragraph = (text: unknown) => ({ blocks: [{ type: 'paragraph', text }] });
   const buttonRow = (buttons: unknown[]) => ({ blocks: [{ type: 'buttons', buttons }] });
@@ -520,8 +522,8 @@ Deno.test('sendRichMessage refuses rich messages as Telegram does', async () => 
 });
 
 Deno.test('bots send and edit rich messages in supergroups and inline messages', async () => {
-  const { api, sessionPath, owner, bot, supergroup, supergroupPath } =
-    await createSupergroupFixture();
+  await using fixture = await createSupergroupFixture();
+  const { api, sessionPath, owner, bot, supergroup, supergroupPath } = fixture;
   const sent = await callBotApi(api, `${bot.botApiPath}/sendRichMessage`, {
     chat_id: supergroup.id,
     rich_message: { blocks: [{ type: 'paragraph', text: 'Hi @ada_writer' }] },
@@ -610,8 +612,8 @@ Deno.test('bots send and edit rich messages in supergroups and inline messages',
 });
 
 Deno.test('a grammY bot sends a rich message with an uploaded photo', async () => {
-  const { api, sessionPath, createdBot, createdAccount, sendText } =
-    await createPrivateConversationFixture();
+  await using fixture = await createPrivateConversationFixture();
+  const { api, sessionPath, createdBot, createdAccount, sendText } = fixture;
   await sendText('/start');
   const grammyBot = new Bot(createdBot.token, {
     client: {

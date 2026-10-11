@@ -18,7 +18,8 @@ interface BotActivityReadBody {
 }
 
 Deno.test('GET bot-activity records calls with their answers, apart from getUpdates', async () => {
-  const { api, activityPath, botApiPath, bot, account, sendText } = await createFixture();
+  await using fixture = await createFixture();
+  const { api, activityPath, botApiPath, bot, account, sendText } = fixture;
   await sendText('/start');
   await callBotApi(api, `${botApiPath}/getUpdates`, {});
   await callBotApi(api, `${botApiPath}/SENDMESSAGE`, { chat_id: account.id, text: 'Hello' });
@@ -108,7 +109,8 @@ Deno.test('GET bot-activity records calls with their answers, apart from getUpda
 });
 
 Deno.test('GET bot-activity records deliveries and confirmations of polled updates', async () => {
-  const { api, activityPath, botApiPath, bot, account, sendText } = await createFixture();
+  await using fixture = await createFixture();
+  const { api, activityPath, botApiPath, bot, account, sendText } = fixture;
   await sendText('/start');
   const { body } = await callBotApi(api, `${botApiPath}/getUpdates`, {});
   const updateId = (body as { result: Array<{ update_id: number }> }).result[0].update_id;
@@ -140,7 +142,8 @@ Deno.test('GET bot-activity records deliveries and confirmations of polled updat
 });
 
 Deno.test('GET bot-activity filters entries by query parameters', async () => {
-  const { api, activityPath, botApiPath, account, sendText } = await createFixture();
+  await using fixture = await createFixture();
+  const { api, activityPath, botApiPath, account, sendText } = fixture;
   await sendText('/start');
   await callBotApi(api, `${botApiPath}/getUpdates`, {});
   await callBotApi(api, `${botApiPath}/sendMessage`, { chat_id: account.id, text: 'One' });
@@ -174,7 +177,8 @@ Deno.test('GET bot-activity filters entries by query parameters', async () => {
 });
 
 Deno.test('GET bot-activity filters by a parameter whose name has a line break', async () => {
-  const { api, activityPath, botApiPath, account } = await createFixture();
+  await using fixture = await createFixture();
+  const { api, activityPath, botApiPath, account } = fixture;
   await callBotApi(api, `${botApiPath}/sendMessage`, {
     chat_id: account.id,
     text: 'One',
@@ -195,7 +199,8 @@ Deno.test('GET bot-activity filters by a parameter whose name has a line break',
 });
 
 Deno.test('GET bot-activity finds calls of a method by an older name of it', async () => {
-  const { api, activityPath, botApiPath } = await createFixture();
+  await using fixture = await createFixture();
+  const { api, activityPath, botApiPath } = fixture;
   await callBotApi(api, `${botApiPath}/getChatMembersCount`, { chat_id: 1 });
 
   const { entries } = await readActivity(api, `${activityPath}?method=getChatMemberCount`);
@@ -210,7 +215,8 @@ Deno.test('GET bot-activity finds calls of a method by an older name of it', asy
 });
 
 Deno.test('GET bot-activity rejects malformed queries and positions beyond the head', async () => {
-  const { api, activityPath } = await createFixture();
+  await using fixture = await createFixture();
+  const { api, activityPath } = fixture;
   const cases = [
     'unknown=1',
     'after=0&after=1',
@@ -246,7 +252,8 @@ Deno.test('GET bot-activity rejects malformed queries and positions beyond the h
 });
 
 Deno.test('GET bot-activity holds a read until a matching entry is recorded', async () => {
-  const { api, activityPath, botApiPath, account, sendText } = await createFixture();
+  await using fixture = await createFixture();
+  const { api, activityPath, botApiPath, account, sendText } = fixture;
   const heldRead = readActivity(api, `${activityPath}?method=sendMessage&wait_ms=10000`);
 
   await sendText('/start');
@@ -263,7 +270,8 @@ Deno.test('GET bot-activity holds a read until a matching entry is recorded', as
 });
 
 Deno.test('DELETE /sessions/:sessionId answers held bot activity reads', async () => {
-  const { api, sessionPath, activityPath } = await createFixture();
+  await using fixture = await createFixture();
+  const { api, sessionPath, activityPath } = fixture;
   const heldRead = readActivity(api, `${activityPath}?wait_ms=600000`);
 
   await api.request(sessionPath, { method: 'DELETE' });
@@ -279,9 +287,10 @@ Deno.test('DELETE /sessions/:sessionId answers held bot activity reads', async (
 
 Deno.test('GET bot-activity records a webhook reply after the confirmation of its update', async () => {
   await using emulator = createTestInProcessEmulator();
-  const { api, sessionPath, activityPath, createdBot, account, sendText } = await createFixture(
+  await using fixture = await createFixture(
     emulator,
   );
+  const { api, sessionPath, activityPath, createdBot, account, sendText } = fixture;
   const grammyBot = new Bot(createdBot.token, {
     client: {
       apiRoot: `${TEST_PUBLIC_ORIGIN}${sessionPath}/bot-api`,
@@ -324,8 +333,13 @@ Deno.test('GET bot-activity records a webhook reply after the confirmation of it
   }
 });
 
-/** Creates a session on `api` holding a bot and an account that can message it. */
-async function createFixture(api: EmulationApi = createTestInProcessEmulator()) {
+/**
+ * Creates a session holding a bot and an account that can message it, on `sharedApi` or else on an
+ * emulator of its own, which disposing of the fixture disposes of.
+ */
+async function createFixture(sharedApi?: EmulationApi) {
+  await using disposalOnFailure = new AsyncDisposableStack();
+  const api = sharedApi ?? disposalOnFailure.use(createTestInProcessEmulator());
   const sessionPath = await createSession(api);
   const { botApiPath, ...createdBot } = await createBot(api, sessionPath, 'test_bot');
   const account = await createAccount(api, sessionPath, 'Ada');
@@ -345,6 +359,7 @@ async function createFixture(api: EmulationApi = createTestInProcessEmulator()) 
     }
   };
 
+  const emulatorDisposal = disposalOnFailure.move();
   return {
     api,
     sessionPath,
@@ -354,6 +369,7 @@ async function createFixture(api: EmulationApi = createTestInProcessEmulator()) 
     bot: createdBot.bot,
     account,
     sendText,
+    [Symbol.asyncDispose]: () => emulatorDisposal.disposeAsync(),
   };
 }
 

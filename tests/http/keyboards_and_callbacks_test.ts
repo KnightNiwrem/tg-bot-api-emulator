@@ -21,8 +21,8 @@ import {
 } from '../support/http_fixtures.ts';
 
 Deno.test('sendMessage attaches an inline keyboard from every request encoding', async () => {
-  const { api, sessionPath, botApiPath, createdBot, createdAccount, sendText } =
-    await createPrivateConversationFixture();
+  await using fixture = await createPrivateConversationFixture();
+  const { api, sessionPath, botApiPath, createdBot, createdAccount, sendText } = fixture;
   await sendText('/start');
   const accountId = createdAccount.account.id;
   const inlineKeyboard = [
@@ -117,7 +117,8 @@ Deno.test('sendMessage attaches an inline keyboard from every request encoding',
 });
 
 Deno.test('URL buttons follow Telegram link rules', async () => {
-  const { api, botApiPath, createdAccount, sendText } = await createPrivateConversationFixture();
+  await using fixture = await createPrivateConversationFixture();
+  const { api, botApiPath, createdAccount, sendText } = fixture;
   await sendText('/start');
   const accountId = createdAccount.account.id;
   const sendUrlButtons = (urls: readonly string[]) =>
@@ -181,8 +182,8 @@ Deno.test('URL buttons follow Telegram link rules', async () => {
 });
 
 Deno.test('copy-text, switch-inline and disabled buttons follow Telegram rules', async () => {
-  const { api, sessionPath, botApiPath, createdBot, createdAccount, sendText } =
-    await createPrivateConversationFixture();
+  await using fixture = await createPrivateConversationFixture();
+  const { api, sessionPath, botApiPath, createdBot, createdAccount, sendText } = fixture;
   await sendText('/start');
   const accountId = createdAccount.account.id;
   const sendButtons = (buttons: readonly unknown[]) =>
@@ -299,7 +300,8 @@ Deno.test('copy-text, switch-inline and disabled buttons follow Telegram rules',
 });
 
 Deno.test('login and Web App buttons follow Telegram rules', async () => {
-  const { api, botApiPath, createdAccount, sendText } = await createPrivateConversationFixture();
+  await using fixture = await createPrivateConversationFixture();
+  const { api, botApiPath, createdAccount, sendText } = fixture;
   await sendText('/start');
   const accountId = createdAccount.account.id;
   const sendButtons = (buttons: readonly unknown[]) =>
@@ -455,7 +457,8 @@ Deno.test('login and Web App buttons follow Telegram rules', async () => {
 });
 
 Deno.test('Web App buttons work only in private chats', async () => {
-  const { api, owner, bot, supergroup, supergroupPath } = await createSupergroupFixture();
+  await using fixture = await createSupergroupFixture();
+  const { api, owner, bot, supergroup, supergroupPath } = fixture;
   const webAppKeyboard = {
     inline_keyboard: [[{ text: 'Open', web_app: { url: 'https://a.io' } }]],
   };
@@ -514,7 +517,8 @@ Deno.test('Web App buttons work only in private chats', async () => {
 });
 
 Deno.test('forwards keep switch-inline buttons only of messages sent through an inline bot', async () => {
-  const { api, sessionPath } = await createTestSession();
+  await using testSession = await createTestSession();
+  const { api, sessionPath } = testSession;
   const account = await createAccount(api, sessionPath, 'Ada');
   const inlineBot = await createBot(api, sessionPath, 'cats_bot', {
     supports_inline_queries: true,
@@ -590,8 +594,8 @@ Deno.test('forwards keep switch-inline buttons only of messages sent through an 
 });
 
 Deno.test('keyboard buttons keep their style and custom emoji icon', async () => {
-  const { api, sessionPath, botApiPath, createdBot, createdAccount, sendText } =
-    await createPrivateConversationFixture();
+  await using fixture = await createPrivateConversationFixture();
+  const { api, sessionPath, botApiPath, createdBot, createdAccount, sendText } = fixture;
   await sendText('/start');
   const accountId = createdAccount.account.id;
   const iconId = '5368324170671202286';
@@ -685,8 +689,8 @@ Deno.test('keyboard buttons keep their style and custom emoji icon', async () =>
 });
 
 Deno.test('an account presses a callback button and reads the bot answer', async () => {
-  const { api, sessionPath, botApiPath, createdBot, createdAccount, sendText } =
-    await createPrivateConversationFixture();
+  await using fixture = await createPrivateConversationFixture();
+  const { api, sessionPath, botApiPath, createdBot, createdAccount, sendText } = fixture;
   await sendText('/start');
   const accountId = createdAccount.account.id;
   const reply = await callBotApi(api, `${botApiPath}/sendMessage`, {
@@ -808,8 +812,8 @@ Deno.test('an account presses a callback button and reads the bot answer', async
 });
 
 Deno.test('a callback query created expired reaches the bot but refuses its answer', async () => {
-  const { api, sessionPath, botApiPath, createdBot, createdAccount, sendText } =
-    await createPrivateConversationFixture();
+  await using fixture = await createPrivateConversationFixture();
+  const { api, sessionPath, botApiPath, createdBot, createdAccount, sendText } = fixture;
   await sendText('/start');
   const accountId = createdAccount.account.id;
   const reply = await callBotApi(api, `${botApiPath}/sendMessage`, {
@@ -869,7 +873,8 @@ Deno.test('a callback query created expired reaches the bot but refuses its answ
 });
 
 Deno.test('editMessageText and editMessageReplyMarkup follow Telegram checks', async () => {
-  const { api, botApiPath, createdAccount, sendText } = await createPrivateConversationFixture();
+  await using fixture = await createPrivateConversationFixture();
+  const { api, botApiPath, createdAccount, sendText } = fixture;
   await sendText('/start');
   const accountId = createdAccount.account.id;
   const keyboard = { inline_keyboard: [[{ text: 'Yes', callback_data: 'yes' }]] };
@@ -969,8 +974,8 @@ Deno.test('editMessageText and editMessageReplyMarkup follow Telegram checks', a
 });
 
 Deno.test('a grammY bot answers an inline keyboard press and edits its message', async () => {
-  const { api, sessionPath, createdBot, createdAccount, sendText } =
-    await createPrivateConversationFixture();
+  await using fixture = await createPrivateConversationFixture();
+  const { api, sessionPath, createdBot, createdAccount, sendText } = fixture;
   const accountId = createdAccount.account.id;
   const grammyBot = new Bot(createdBot.token, {
     client: {
@@ -1047,8 +1052,8 @@ Deno.test('a grammY bot answers an inline keyboard press and edits its message',
 });
 
 Deno.test("sendMessage changes the reply interface the account's client shows", async () => {
-  const { api, sessionPath, botApiPath, createdBot, createdAccount, sendText } =
-    await createPrivateConversationFixture();
+  await using fixture = await createPrivateConversationFixture();
+  const { api, sessionPath, botApiPath, createdBot, createdAccount, sendText } = fixture;
   const accountId = createdAccount.account.id;
   const accountPath = `${sessionPath}/accounts/${accountId}`;
   const replyInterfacePath =
@@ -1190,8 +1195,8 @@ Deno.test("sendMessage changes the reply interface the account's client shows", 
 });
 
 Deno.test('reply keyboard buttons request data only in private chats', async () => {
-  const { api, sessionPath, botApiPath, createdBot, createdAccount, sendText } =
-    await createPrivateConversationFixture();
+  await using fixture = await createPrivateConversationFixture();
+  const { api, sessionPath, botApiPath, createdBot, createdAccount, sendText } = fixture;
   await sendText('/start');
   const accountId = createdAccount.account.id;
   const accountPath = `${sessionPath}/accounts/${accountId}`;
@@ -1304,7 +1309,7 @@ Deno.test('reply keyboard buttons request data only in private chats', async () 
     }
   }
 
-  const group = await createSupergroupFixture();
+  await using group = await createSupergroupFixture();
   const groupRequests: Array<[unknown, string]> = [
     [{ request_contact: true }, 'phone number can be requested in private chats only'],
     [{ request_location: true }, 'location can be requested in private chats only'],
@@ -1336,8 +1341,8 @@ Deno.test('reply keyboard buttons request data only in private chats', async () 
 });
 
 Deno.test('a grammY bot runs a menu on a reply keyboard and asks with a forced reply', async () => {
-  const { api, sessionPath, createdBot, createdAccount, sendText } =
-    await createPrivateConversationFixture();
+  await using fixture = await createPrivateConversationFixture();
+  const { api, sessionPath, createdBot, createdAccount, sendText } = fixture;
   const accountPath = `${sessionPath}/accounts/${createdAccount.account.id}`;
   const grammyBot = new Bot(createdBot.token, {
     client: {
@@ -1418,8 +1423,8 @@ Deno.test('a grammY bot runs a menu on a reply keyboard and asks with a forced r
 });
 
 Deno.test('bots show reply keyboards and forced replies to all or chosen supergroup members', async () => {
-  const { api, sessionPath, owner, member, bot, readerBot, supergroup, supergroupPath } =
-    await createSupergroupFixture();
+  await using fixture = await createSupergroupFixture();
+  const { api, sessionPath, owner, member, bot, readerBot, supergroup, supergroupPath } = fixture;
   const readUpdates = createUpdateReader(api);
   const send = async (botApiPath: string, parameters: Record<string, unknown>) =>
     botApiResult(

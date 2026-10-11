@@ -10,7 +10,8 @@ import { requestJson } from '../support/emulation_api.ts';
 import { createPrivateConversationFixture } from '../support/http_fixtures.ts';
 
 Deno.test('A web resource is refused unless its content type is a well-formed Content-Type', async () => {
-  const { api, sessionPath } = await createPrivateConversationFixture();
+  await using fixture = await createPrivateConversationFixture();
+  const { api, sessionPath } = fixture;
   const register = (contentType: string) =>
     requestJson<{ reason?: string }>(api, 'POST', `${sessionPath}/web-resources`, {
       url: 'https://files.example/report.pdf',
@@ -32,8 +33,8 @@ Deno.test('A web resource is refused unless its content type is a well-formed Co
 });
 
 Deno.test('A bot upload is typed by its file name, whatever its part says', async () => {
-  const { api, sessionPath, botApiPath, createdAccount, sendText } =
-    await createPrivateConversationFixture();
+  await using fixture = await createPrivateConversationFixture();
+  const { api, sessionPath, botApiPath, createdAccount, sendText } = fixture;
   await sendText('/start');
   const body = new FormData();
   body.append('chat_id', String(createdAccount.account.id));

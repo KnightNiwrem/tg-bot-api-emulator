@@ -31,8 +31,8 @@ interface BotApiCallEntryBody {
 }
 
 Deno.test('sendMessage reads reply_parameters and reply_markup alike in every encoding', async () => {
-  const { api, sessionPath, botApiPath, createdAccount, sendText } =
-    await createPrivateConversationFixture();
+  await using fixture = await createPrivateConversationFixture();
+  const { api, sessionPath, botApiPath, createdAccount, sendText } = fixture;
   await sendText('/start');
   const chatId = json(String(createdAccount.account.id));
   const question = await callInEncoding(api, `${botApiPath}/sendMessage`, 'JSON body members', {
@@ -89,8 +89,8 @@ Deno.test('sendMessage reads reply_parameters and reply_markup alike in every en
 });
 
 Deno.test('A nested number too large to be finite fails alike in every encoding', async () => {
-  const { api, sessionPath, botApiPath, createdAccount, sendText } =
-    await createPrivateConversationFixture();
+  await using fixture = await createPrivateConversationFixture();
+  const { api, sessionPath, botApiPath, createdAccount, sendText } = fixture;
   await sendText('/start');
   const replyParameters = '{"message_id": 1e500}';
 
@@ -122,7 +122,8 @@ Deno.test('A nested number too large to be finite fails alike in every encoding'
 });
 
 Deno.test('Bot activity finds nested numbers a JSON body sent by their exact value', async () => {
-  const { api, sessionPath, botApiPath } = await createPrivateConversationFixture();
+  await using fixture = await createPrivateConversationFixture();
+  const { api, sessionPath, botApiPath } = fixture;
   const exactPoint = '{"x": 1.0, "big": 1e500, "id": 9007199254740993}';
   await callInEncoding(api, `${botApiPath}/recordParameters`, 'JSON body members', {
     point: json(exactPoint),

@@ -10,7 +10,8 @@ import {
 import { gifImage } from '../support/media_samples.ts';
 
 Deno.test('a grammY bot answers an account voice note with one it downloads and sends back', async () => {
-  const { api, sessionPath, createdBot, createdAccount } = await createPrivateConversationFixture();
+  await using fixture = await createPrivateConversationFixture();
+  const { api, sessionPath, createdBot, createdAccount } = fixture;
   const accountPath = `${sessionPath}/accounts/${createdAccount.account.id}`;
   const historyPath = `${accountPath}/conversations/private/${createdBot.bot.id}/messages`;
   const recording = new TextEncoder().encode('opus bytes the emulator never decodes');
@@ -82,8 +83,8 @@ Deno.test('a grammY bot answers an account voice note with one it downloads and 
 });
 
 Deno.test('sendVoice follows Telegram checks and sends long voice notes by URL as files', async () => {
-  const { api, sessionPath, botApiPath, createdBot, createdAccount, sendText } =
-    await createPrivateConversationFixture();
+  await using fixture = await createPrivateConversationFixture();
+  const { api, sessionPath, botApiPath, createdBot, createdAccount, sendText } = fixture;
   await sendText('/start');
   const chatId = String(createdAccount.account.id);
   const sendVoice = async (parameters: Record<string, string>, files: Record<string, File>) => {
@@ -207,8 +208,8 @@ Deno.test('sendVoice follows Telegram checks and sends long voice notes by URL a
 });
 
 Deno.test('voice notes stay out of albums and media replacement', async () => {
-  const { api, sessionPath, botApiPath, createdBot, createdAccount, sendText } =
-    await createPrivateConversationFixture();
+  await using fixture = await createPrivateConversationFixture();
+  const { api, sessionPath, botApiPath, createdBot, createdAccount, sendText } = fixture;
   await sendText('/start');
   const chatId = String(createdAccount.account.id);
   const voiceMessage = botApiResult(
@@ -287,8 +288,8 @@ Deno.test('voice notes stay out of albums and media replacement', async () => {
 });
 
 Deno.test('supergroup bots receive voice notes as other messages, and bots repeat them', async () => {
-  const { api, sessionPath, owner, member, bot, readerBot, supergroup } =
-    await createSupergroupFixture();
+  await using fixture = await createSupergroupFixture();
+  const { api, sessionPath, owner, member, bot, readerBot, supergroup } = fixture;
   const lastUpdateId = async (botApiPath: string) => {
     const { body } = await callBotApi(api, `${botApiPath}/getUpdates`, {});
     return (body as { result: Array<{ update_id: number }> }).result.at(-1)?.update_id ?? 0;
