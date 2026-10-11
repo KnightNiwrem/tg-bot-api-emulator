@@ -79,7 +79,7 @@ Deno.test('decodeBotApiRequestParameters keeps the text of JSON numbers beyond s
     draft_id: '9007199254740993',
     message_effect_id: '-9223372036854775808',
     latitude: '51.50',
-    reply_markup: '{"inline_keyboard":[]}',
+    reply_markup: '{"inline_keyboard": []}',
   });
 });
 

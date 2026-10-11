@@ -38,8 +38,12 @@ const FALSE_BOOLEAN_TEXTS = ['false', 'no', '0'] as const;
  * `HttpReader` does. A query-string parameter takes precedence over a body parameter of the same
  * name, because Telegram reads the query string first and uses the first occurrence.
  *
- * A JSON string value is used as-is; any other JSON value is kept as its JSON text, so `2` and
- * `"2"` are equivalent, as are `["message"]` and `"[\"message\"]"`.
+ * A JSON body's string member is used as its content, and any other member as its source text,
+ * exactly as the bot wrote it, so `2` and `"2"` are equivalent, as are `["message"]` and
+ * `"[\"message\"]"`. Every encoding thus yields the same text for a parameter whose value the bot
+ * spelled the same way: JSON text in a form field, in the query string, or as a JSON body's member
+ * is read character for character, whitespace and member order included, and only the encoding's
+ * own escaping is undone.
  *
  * A multipart body can also upload files, which methods that send files read by part name; as on
  * Telegram, the first file of a name counts, and other methods ignore files.
@@ -151,41 +155,131 @@ async function decodeBodyParameterEntries(
 }
 
 /**
- * Reads a JSON object's members as parameters: strings as they are, numbers as their source text,
- * as Telegram reads a number it receives, and other values as JSON text. Keeping a number's text
- * keeps 64-bit identifiers, such as `draft_id`, exact beyond the integers a JavaScript number holds.
+ * Reads a JSON object's members as parameters, as the official Bot API server's `HttpReader` does:
+ * a string as its content, and any other value as its source text, exactly as the bot wrote it.
+ * So every number keeps its spelling, whether it is a member or nested in one: 64-bit identifiers
+ * such as `draft_id` stay exact beyond the integers a JavaScript number holds, and `1e500` and
+ * `1.0` stay as they are. Every member counts, in source order, so the first of a repeated name
+ * wins, as among form fields.
  */
 function decodeJsonObjectParameterEntries(body: string): BodyParameterEntriesDecoding {
-  // The source text of each number, by the object or array that holds it and its key there.
-  const numberSourcesByHolder = new WeakMap<object, Map<string, string>>();
   let parsedBody: unknown;
   try {
-    parsedBody = JSON.parse(
-      body,
-      function (this: object, key: string, value: unknown, context?: { source?: string }) {
-        if (typeof value === 'number' && context?.source !== undefined) {
-          const numberSources = numberSourcesByHolder.get(this) ?? new Map<string, string>();
-          numberSources.set(key, context.source);
-          numberSourcesByHolder.set(this, numberSources);
-        }
-        return value;
-      },
-    );
+    parsedBody = JSON.parse(body);
   } catch {
     return { decoded: false, description: 'Bad Request: invalid JSON body' };
   }
   if (typeof parsedBody !== 'object' || parsedBody === null || Array.isArray(parsedBody)) {
     return { decoded: false, description: 'Bad Request: JSON object expected' };
   }
-  const numberSources = numberSourcesByHolder.get(parsedBody);
   return {
     decoded: true,
-    parameterEntries: Object.entries(parsedBody).map(([name, value]) => [
-      name,
-      typeof value === 'string' ? value : numberSources?.get(name) ?? JSON.stringify(value),
-    ]),
+    parameterEntries: readJsonObjectMemberTexts(body),
     uploadedFiles: NO_UPLOADED_FILES,
   };
+}
+
+/**
+ * Each member of a JSON object's text, in source order, as its name and the text of its value: a
+ * string's content, or the source text of any other value, without the whitespace around it.
+ * `objectText` must be a JSON object, as `JSON.parse` has checked, so that the scan needs no checks
+ * of its own. The scan keeps no stack, so no nesting depth can overflow the call stack.
+ */
+function readJsonObjectMemberTexts(objectText: string): Array<readonly [string, string]> {
+  const memberTexts: Array<readonly [string, string]> = [];
+  // Past the object's opening brace.
+  let position = skipJsonWhitespace(objectText, skipJsonWhitespace(objectText, 0) + 1);
+  while (objectText[position] !== '}') {
+    const nameEnd = jsonStringEnd(objectText, position);
+    const name = decodeJsonString(objectText.slice(position, nameEnd));
+    // Past the colon after the name.
+    const valueStart = skipJsonWhitespace(objectText, skipJsonWhitespace(objectText, nameEnd) + 1);
+    const valueEnd = jsonValueEnd(objectText, valueStart);
+    const valueSource = objectText.slice(valueStart, valueEnd);
+    memberTexts.push([
+      name,
+      objectText[valueStart] === '"' ? decodeJsonString(valueSource) : valueSource,
+    ]);
+    position = skipJsonWhitespace(objectText, valueEnd);
+    if (objectText[position] === ',') {
+      position = skipJsonWhitespace(objectText, position + 1);
+    }
+  }
+  return memberTexts;
+}
+
+/** The characters JSON allows between its tokens. */
+const JSON_WHITESPACE_CHARACTERS: ReadonlySet<string> = new Set([' ', '\t', '\n', '\r']);
+/** The characters that can end a JSON number, `true`, `false` or `null` within an object or array. */
+const JSON_SCALAR_TERMINATORS: ReadonlySet<string> = new Set([
+  ...JSON_WHITESPACE_CHARACTERS,
+  ',',
+  '}',
+  ']',
+]);
+
+/** The position of the first character at or after `position` that is not JSON whitespace. */
+function skipJsonWhitespace(jsonText: string, position: number): number {
+  let end = position;
+  while (JSON_WHITESPACE_CHARACTERS.has(jsonText[end])) {
+    end++;
+  }
+  return end;
+}
+
+/** The position just after the JSON value that starts at `start`. */
+function jsonValueEnd(jsonText: string, start: number): number {
+  const firstCharacter = jsonText[start];
+  if (firstCharacter === '"') {
+    return jsonStringEnd(jsonText, start);
+  }
+  if (firstCharacter === '{' || firstCharacter === '[') {
+    return jsonContainerEnd(jsonText, start);
+  }
+  let end = start;
+  while (end < jsonText.length && !JSON_SCALAR_TERMINATORS.has(jsonText[end])) {
+    end++;
+  }
+  return end;
+}
+
+/** The position just after the JSON string whose opening quote is at `start`. */
+function jsonStringEnd(jsonText: string, start: number): number {
+  let position = start + 1;
+  while (jsonText[position] !== '"') {
+    // An escape is a backslash and at least one more character, none of which closes the string.
+    position += jsonText[position] === '\\' ? 2 : 1;
+  }
+  return position + 1;
+}
+
+/** The position just after the JSON object or array that opens at `start`. */
+function jsonContainerEnd(jsonText: string, start: number): number {
+  let depth = 0;
+  let position = start;
+  do {
+    const character = jsonText[position];
+    if (character === '"') {
+      position = jsonStringEnd(jsonText, position);
+      continue;
+    }
+    if (character === '{' || character === '[') {
+      depth++;
+    } else if (character === '}' || character === ']') {
+      depth--;
+    }
+    position++;
+  } while (depth > 0);
+  return position;
+}
+
+/** The content of a JSON string's source text, quotes included. */
+function decodeJsonString(stringSource: string): string {
+  const content: unknown = JSON.parse(stringSource);
+  if (typeof content !== 'string') {
+    throw new TypeError(`Expected the source text of a JSON string: ${stringSource}`);
+  }
+  return content;
 }
 
 /**
