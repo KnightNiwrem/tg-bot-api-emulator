@@ -1,225 +1,226 @@
 import { assertEquals } from '@std/assert';
-import { AccountRepository } from '../src/repositories/account.ts';
-import { BotRepository } from '../src/repositories/bot.ts';
-import { BotActivityLogRepository } from '../src/repositories/bot_activity_log.ts';
-import { BotUpdateRepository } from '../src/repositories/bot_update.ts';
-import { TelegramIdentityRepository } from '../src/repositories/telegram_identity.ts';
-import { BotActivityService } from '../src/services/bot_activity.ts';
-import { VirtualUserService } from '../src/services/virtual_user.ts';
-import {
-  WEBHOOK_ATTEMPT_TIMEOUT_MILLISECONDS,
-  WebhookAttemptScheduler,
-} from '../src/services/webhook_attempt_scheduler.ts';
+import type { WebhookAttemptScheduler } from '../src/services/webhook_attempt_scheduler.ts';
 import type { BotActivityEntry, BotActivityFilter } from '../src/types/bot_activity.ts';
 import type { WebhookAttempt } from '../src/types/bot_webhook.ts';
-import { createRealTimeScheduler, createRetryScheduler } from './support/scheduler.ts';
+import { createRetryScheduler } from './support/scheduler.ts';
 import { createVirtualBot } from './support/virtual_users.ts';
 import {
-  ADA_ID,
-  createPrivateMessage,
-  createUpdateConsumers,
-  ReceivedRequestCounter,
+  createWebhookSession,
   respondOnlyByAborting,
   WEBHOOK_URL,
-  webhookRequest,
+  type WebhookResponder,
 } from './support/webhook_delivery.ts';
 
-const GRACE_ID = 2;
 const READ_TIMEOUT = 'Read timeout expired';
 
 Deno.test('Manual scheduling waits for a test to release each retry and expire each attempt', async () => {
   // The webhook fails the first attempt, never answers the second, and accepts the third.
-  const fixture = createSchedulerFixture((request, requestIndex) => {
+  using fixture = createSchedulerFixture((request, requestIndex) => {
     if (requestIndex === 0) {
       return new Response(null, { status: 500, statusText: 'Internal Server Error' });
     }
     return requestIndex === 1 ? respondOnlyByAborting(request) : new Response(null);
   });
-  const { botId, botUpdates, updateConsumers, webhookAttempts, receivedRequests, endSession } =
-    fixture;
+  const {
+    botId,
+    webhookAttempts,
+    receivedRequests,
+    adaId,
+    sendAccountMessage,
+    setWebhook,
+    getWebhookInfo,
+  } = fixture;
 
-  try {
-    webhookAttempts.setScheduling(botId, 'manual');
-    botUpdates.enqueueMessageUpdate(botId, createPrivateMessage(1));
-    updateConsumers.setWebhook(botId, webhookRequest());
+  webhookAttempts.setScheduling(botId, 'manual');
+  sendAccountMessage(adaId);
+  setWebhook();
 
-    const firstFailure = await fixture.waitForEntry({ kind: 'webhook_attempt_failed' });
-    // Telegram would send the update again at once; manual scheduling waits for the test.
-    await new Promise((resolve) => setTimeout(resolve, 20));
-    assertEquals(
-      [receivedRequests.length, listAttempts(webhookAttempts, botId)],
-      [1, [{
-        id: 1,
-        botId,
-        updateId: 1,
-        scheduling: 'manual',
-        status: 'failed',
-        failure: {
-          reason: 'http_error',
-          statusCode: 500,
-          errorMessage: 'Wrong response from the webhook: 500 Internal Server Error',
+  const firstFailure = await fixture.waitForEntry({ kind: 'webhook_attempt_failed' });
+  // Telegram would send the update again at once; manual scheduling waits for the test.
+  await new Promise((resolve) => setTimeout(resolve, 20));
+  assertEquals(
+    [receivedRequests.length, listAttempts(webhookAttempts, botId)],
+    [1, [{
+      id: 1,
+      botId,
+      updateId: 1,
+      scheduling: 'manual',
+      status: 'failed',
+      failure: {
+        reason: 'http_error',
+        statusCode: 500,
+        errorMessage: 'Wrong response from the webhook: 500 Internal Server Error',
+      },
+      retry: { delaySeconds: 0, status: 'waiting' },
+    }]],
+    'Expected the failed attempt to wait for its retry to be released',
+  );
+  assertEquals(
+    firstFailure.kind === 'webhook_attempt_failed' &&
+      [firstFailure.webhookAttemptId, firstFailure.retryDelaySeconds],
+    [1, 0],
+    'Expected the failure entry to name the attempt and its retry delay',
+  );
+
+  const release = webhookAttempts.releaseRetry(botId, 1);
+  const repeatedRelease = webhookAttempts.releaseRetry(botId, 1);
+  assertEquals(
+    [
+      release.released && release.attempt.status === 'failed' && release.attempt.retry,
+      repeatedRelease,
+    ],
+    [
+      { delaySeconds: 0, status: 'released' },
+      { released: false, reason: 'retry_not_waiting' },
+    ],
+    'Expected a retry to be released once',
+  );
+
+  await fixture.waitForRequestCount(2);
+  // The webhook's 60-second timeout would end the attempt; manual scheduling waits for the test.
+  const [expiry, concurrentExpiry] = await Promise.all([
+    webhookAttempts.expireAttempt(botId, 2),
+    webhookAttempts.expireAttempt(botId, 2),
+  ]);
+  assertEquals(
+    [expiry, concurrentExpiry, await webhookAttempts.expireAttempt(botId, 1)],
+    [
+      {
+        expired: true,
+        attempt: {
+          id: 2,
+          botId,
+          updateId: 1,
+          scheduling: 'manual',
+          status: 'failed',
+          failure: { reason: 'timed_out', errorMessage: READ_TIMEOUT },
+          retry: { delaySeconds: 2, status: 'waiting' },
         },
-        retry: { delaySeconds: 0, status: 'waiting' },
-      }]],
-      'Expected the failed attempt to wait for its retry to be released',
-    );
-    assertEquals(
-      firstFailure.kind === 'webhook_attempt_failed' &&
-        [firstFailure.webhookAttemptId, firstFailure.retryDelaySeconds],
-      [1, 0],
-      'Expected the failure entry to name the attempt and its retry delay',
-    );
+      },
+      { expired: false, reason: 'attempt_not_in_flight' },
+      { expired: false, reason: 'attempt_not_in_flight' },
+    ],
+    'Expected the attempt in flight to time out once, and to back off as Telegram does',
+  );
+  assertEquals(
+    [
+      receivedRequests[1].signal.aborted,
+      getWebhookInfo().last_error_message,
+      getWebhookInfo().pending_update_count,
+    ],
+    [true, READ_TIMEOUT, 1],
+    'Expected the expired request to be aborted and the update to stay pending',
+  );
 
-    const release = webhookAttempts.releaseRetry(botId, 1);
-    const repeatedRelease = webhookAttempts.releaseRetry(botId, 1);
-    assertEquals(
+  webhookAttempts.releaseRetry(botId, 2);
+  await fixture.waitForEntry({ kind: 'update_confirmed' });
+  assertEquals(
+    [
+      listAttempts(webhookAttempts, botId).map(({ status }) => status),
+      getWebhookInfo().pending_update_count,
+      webhookAttempts.releaseRetry(botId, 3),
+      await webhookAttempts.expireAttempt(botId, 3),
+      (await fixture.readEntries({})).map((entry) =>
+        entry.kind === 'bot_api_call' ? entry.kind : [entry.kind, entry.webhookAttemptId]
+      ),
+    ],
+    [
+      ['failed', 'failed', 'accepted'],
+      0,
+      { released: false, reason: 'retry_not_waiting' },
+      { expired: false, reason: 'attempt_not_in_flight' },
       [
-        release.released && release.attempt.status === 'failed' && release.attempt.retry,
-        repeatedRelease,
+        ['update_delivered', 1],
+        ['webhook_attempt_failed', 1],
+        ['update_delivered', 2],
+        ['webhook_attempt_failed', 2],
+        ['update_delivered', 3],
+        ['update_confirmed', 3],
       ],
-      [
-        { delaySeconds: 0, status: 'released' },
-        { released: false, reason: 'retry_not_waiting' },
-      ],
-      'Expected a retry to be released once',
-    );
-
-    await fixture.waitForRequestCount(2);
-    // The webhook's 60-second timeout would end the attempt; manual scheduling waits for the test.
-    const [expiry, concurrentExpiry] = await Promise.all([
-      webhookAttempts.expireAttempt(botId, 2),
-      webhookAttempts.expireAttempt(botId, 2),
-    ]);
-    assertEquals(
-      [expiry, concurrentExpiry, await webhookAttempts.expireAttempt(botId, 1)],
-      [
-        {
-          expired: true,
-          attempt: {
-            id: 2,
-            botId,
-            updateId: 1,
-            scheduling: 'manual',
-            status: 'failed',
-            failure: { reason: 'timed_out', errorMessage: READ_TIMEOUT },
-            retry: { delaySeconds: 2, status: 'waiting' },
-          },
-        },
-        { expired: false, reason: 'attempt_not_in_flight' },
-        { expired: false, reason: 'attempt_not_in_flight' },
-      ],
-      'Expected the attempt in flight to time out once, and to back off as Telegram does',
-    );
-    assertEquals(
-      [
-        receivedRequests[1].signal.aborted,
-        updateConsumers.getWebhookInfo(botId).last_error_message,
-        updateConsumers.getWebhookInfo(botId).pending_update_count,
-      ],
-      [true, READ_TIMEOUT, 1],
-      'Expected the expired request to be aborted and the update to stay pending',
-    );
-
-    webhookAttempts.releaseRetry(botId, 2);
-    await fixture.waitForEntry({ kind: 'update_confirmed' });
-    assertEquals(
-      [
-        listAttempts(webhookAttempts, botId).map(({ status }) => status),
-        updateConsumers.getWebhookInfo(botId).pending_update_count,
-        webhookAttempts.releaseRetry(botId, 3),
-        await webhookAttempts.expireAttempt(botId, 3),
-        (await fixture.readEntries({})).map((entry) =>
-          entry.kind === 'bot_api_call' ? entry.kind : [entry.kind, entry.webhookAttemptId]
-        ),
-      ],
-      [
-        ['failed', 'failed', 'accepted'],
-        0,
-        { released: false, reason: 'retry_not_waiting' },
-        { expired: false, reason: 'attempt_not_in_flight' },
-        [
-          ['update_delivered', 1],
-          ['webhook_attempt_failed', 1],
-          ['update_delivered', 2],
-          ['webhook_attempt_failed', 2],
-          ['update_delivered', 3],
-          ['update_confirmed', 3],
-        ],
-      ],
-      'Expected the recovered update to be confirmed once, and its attempts to need no control',
-    );
-  } finally {
-    endSession();
-  }
+    ],
+    'Expected the recovered update to be confirmed once, and its attempts to need no control',
+  );
 });
 
 Deno.test('Webhook attempt controls apply only to the attempts of the bot they name', async () => {
-  const fixture = createSchedulerFixture(
+  using fixture = createSchedulerFixture(
     () => new Response(null, { status: 502, statusText: 'Bad Gateway' }),
   );
-  const { botId, otherBotId, botUpdates, updateConsumers, webhookAttempts, endSession } = fixture;
+  const {
+    botId,
+    otherBotId,
+    webhookAttempts,
+    adaId,
+    sendAccountMessage,
+    setWebhook,
+  } = fixture;
   const unknownBotId = Math.max(botId, otherBotId) + 1;
 
-  try {
-    webhookAttempts.setScheduling(botId, 'manual');
-    botUpdates.enqueueMessageUpdate(botId, createPrivateMessage(1));
-    updateConsumers.setWebhook(botId, webhookRequest());
-    await fixture.waitForEntry({ kind: 'webhook_attempt_failed' });
+  webhookAttempts.setScheduling(botId, 'manual');
+  sendAccountMessage(adaId);
+  setWebhook();
+  await fixture.waitForEntry({ kind: 'webhook_attempt_failed' });
 
-    assertEquals(
-      [
-        webhookAttempts.getScheduling(otherBotId),
-        webhookAttempts.releaseRetry(otherBotId, 1),
-        await webhookAttempts.expireAttempt(otherBotId, 1),
-        webhookAttempts.listAttempts(otherBotId),
-        webhookAttempts.releaseRetry(botId, 2),
-        webhookAttempts.getScheduling(unknownBotId),
-        webhookAttempts.setScheduling(unknownBotId, 'manual'),
-        webhookAttempts.listAttempts(unknownBotId),
-        webhookAttempts.releaseRetry(unknownBotId, 1),
-        await webhookAttempts.expireAttempt(unknownBotId, 1),
-      ],
-      [
-        { found: true, scheduling: 'automatic' },
-        { released: false, reason: 'attempt_not_found' },
-        { expired: false, reason: 'attempt_not_found' },
-        { found: true, attempts: [] },
-        { released: false, reason: 'attempt_not_found' },
-        { found: false, reason: 'bot_not_found' },
-        { found: false, reason: 'bot_not_found' },
-        { found: false, reason: 'bot_not_found' },
-        { released: false, reason: 'bot_not_found' },
-        { expired: false, reason: 'bot_not_found' },
-      ],
-      "Expected another bot's controls to find none of the bot's attempts",
-    );
-    const [attempt] = listAttempts(webhookAttempts, botId);
-    assertEquals(
-      attempt.status === 'failed' && attempt.retry.status,
-      'waiting',
-      "Expected the bot's retry to keep waiting",
-    );
-  } finally {
-    endSession();
-  }
+  assertEquals(
+    [
+      webhookAttempts.getScheduling(otherBotId),
+      webhookAttempts.releaseRetry(otherBotId, 1),
+      await webhookAttempts.expireAttempt(otherBotId, 1),
+      webhookAttempts.listAttempts(otherBotId),
+      webhookAttempts.releaseRetry(botId, 2),
+      webhookAttempts.getScheduling(unknownBotId),
+      webhookAttempts.setScheduling(unknownBotId, 'manual'),
+      webhookAttempts.listAttempts(unknownBotId),
+      webhookAttempts.releaseRetry(unknownBotId, 1),
+      await webhookAttempts.expireAttempt(unknownBotId, 1),
+    ],
+    [
+      { found: true, scheduling: 'automatic' },
+      { released: false, reason: 'attempt_not_found' },
+      { expired: false, reason: 'attempt_not_found' },
+      { found: true, attempts: [] },
+      { released: false, reason: 'attempt_not_found' },
+      { found: false, reason: 'bot_not_found' },
+      { found: false, reason: 'bot_not_found' },
+      { found: false, reason: 'bot_not_found' },
+      { released: false, reason: 'bot_not_found' },
+      { expired: false, reason: 'bot_not_found' },
+    ],
+    "Expected another bot's controls to find none of the bot's attempts",
+  );
+  const [attempt] = listAttempts(webhookAttempts, botId);
+  assertEquals(
+    attempt.status === 'failed' && attempt.retry.status,
+    'waiting',
+    "Expected the bot's retry to keep waiting",
+  );
 });
 
 Deno.test('Replacing or deleting a webhook and ending delivery cancel its attempts and retries', async () => {
   // The first webhook never answers; the second fails every update; the third never answers.
-  const fixture = createSchedulerFixture((request) =>
+  using fixture = createSchedulerFixture((request) =>
     request.url.endsWith('/second')
       ? new Response(null, { status: 500, statusText: 'Internal Server Error' })
       : respondOnlyByAborting(request)
   );
-  const { botId, botUpdates, updateConsumers, webhookAttempts, receivedRequests, endSession } =
-    fixture;
+  const {
+    botId,
+    webhookAttempts,
+    receivedRequests,
+    session,
+    bot,
+    adaId,
+    sendAccountMessage,
+    setWebhook,
+    getWebhookInfo,
+  } = fixture;
 
-  botUpdates.enqueueMessageUpdate(botId, createPrivateMessage(1));
+  sendAccountMessage(adaId);
   webhookAttempts.setScheduling(botId, 'manual');
-  updateConsumers.setWebhook(botId, webhookRequest());
+  setWebhook();
   await fixture.waitForRequestCount(1);
 
-  updateConsumers.setWebhook(botId, { ...webhookRequest(), url: `${WEBHOOK_URL}/second` });
+  setWebhook({ url: `${WEBHOOK_URL}/second` });
   await fixture.waitForEntry({ kind: 'webhook_attempt_failed' });
   assertEquals(
     [
@@ -235,12 +236,12 @@ Deno.test('Replacing or deleting a webhook and ending delivery cancel its attemp
     "Expected the replaced webhook's attempt to be cancelled and unable to time out",
   );
 
-  updateConsumers.deleteWebhook(botId, { dropPendingUpdates: false });
+  session.botApi.deleteWebhook(bot, { dropPendingUpdates: false });
   assertEquals(
     [
       webhookAttempts.releaseRetry(botId, 2),
       listAttempts(webhookAttempts, botId).map(describeAttemptState),
-      updateConsumers.getWebhookInfo(botId).pending_update_count,
+      getWebhookInfo().pending_update_count,
     ],
     [
       { released: false, reason: 'retry_not_waiting' },
@@ -250,9 +251,9 @@ Deno.test('Replacing or deleting a webhook and ending delivery cancel its attemp
     "Expected the deleted webhook's retry to be cancelled, leaving the update pending",
   );
 
-  updateConsumers.setWebhook(botId, { ...webhookRequest(), url: `${WEBHOOK_URL}/third` });
+  setWebhook({ url: `${WEBHOOK_URL}/third` });
   await fixture.waitForRequestCount(3);
-  endSession();
+  fixture.session.end();
   await new Promise((resolve) => setTimeout(resolve, 10));
   assertEquals(
     [
@@ -273,42 +274,45 @@ Deno.test('Replacing or deleting a webhook and ending delivery cancel its attemp
 
 Deno.test('Manual scheduling holds back only the queue of the failing update', async () => {
   // Every first attempt of an update to Ada fails; Grace's updates are accepted.
-  const fixture = createSchedulerFixture((_request, requestIndex) =>
+  using fixture = createSchedulerFixture((_request, requestIndex) =>
     requestIndex === 0
       ? new Response(null, { status: 500, statusText: 'Internal Server Error' })
       : new Response(null)
   );
-  const { botId, botUpdates, updateConsumers, webhookAttempts, receivedRequests, endSession } =
-    fixture;
+  const {
+    botId,
+    webhookAttempts,
+    receivedRequests,
+    adaId,
+    graceId,
+    sendAccountMessage,
+    setWebhook,
+  } = fixture;
 
-  try {
-    webhookAttempts.setScheduling(botId, 'manual');
-    botUpdates.enqueueMessageUpdate(botId, createPrivateMessage(1, ADA_ID));
-    botUpdates.enqueueMessageUpdate(botId, createPrivateMessage(2, ADA_ID));
-    botUpdates.enqueueMessageUpdate(botId, createPrivateMessage(3, GRACE_ID));
-    updateConsumers.setWebhook(botId, webhookRequest());
-    await fixture.waitForEntry({ kind: 'update_confirmed', updateId: 3 });
-    await fixture.waitForEntry({ kind: 'webhook_attempt_failed', updateId: 1 });
-    const sentBeforeRelease = receivedRequests.map(({ updateId }) => updateId).toSorted();
+  webhookAttempts.setScheduling(botId, 'manual');
+  sendAccountMessage(adaId);
+  sendAccountMessage(adaId);
+  sendAccountMessage(graceId);
+  setWebhook();
+  await fixture.waitForEntry({ kind: 'update_confirmed', updateId: 3 });
+  await fixture.waitForEntry({ kind: 'webhook_attempt_failed', updateId: 1 });
+  const sentBeforeRelease = receivedRequests.map(({ updateId }) => updateId).toSorted();
 
-    const failedAttempt = listAttempts(webhookAttempts, botId).find(({ status }) =>
-      status === 'failed'
-    );
-    webhookAttempts.releaseRetry(botId, failedAttempt?.id ?? 0);
-    await fixture.waitForEntry({ kind: 'update_confirmed', updateId: 2 });
-    assertEquals(
-      [sentBeforeRelease, receivedRequests.slice(2).map(({ updateId }) => updateId)],
-      [[1, 3], [1, 2]],
-      "Expected Ada's later update to wait for her failing one, while Grace's was delivered",
-    );
-  } finally {
-    endSession();
-  }
+  const failedAttempt = listAttempts(webhookAttempts, botId).find(({ status }) =>
+    status === 'failed'
+  );
+  webhookAttempts.releaseRetry(botId, failedAttempt?.id ?? 0);
+  await fixture.waitForEntry({ kind: 'update_confirmed', updateId: 2 });
+  assertEquals(
+    [sentBeforeRelease, receivedRequests.slice(2).map(({ updateId }) => updateId)],
+    [[1, 3], [1, 2]],
+    "Expected Ada's later update to wait for her failing one, while Grace's was delivered",
+  );
 });
 
 Deno.test('An attempt and its retry follow the scheduling of their bot when the attempt began', async () => {
   const retryDelaysSeconds: number[] = [];
-  const fixture = createSchedulerFixture(
+  using fixture = createSchedulerFixture(
     (_request, requestIndex) =>
       requestIndex < 2
         ? new Response(null, { status: 500, statusText: 'Internal Server Error' })
@@ -320,39 +324,41 @@ Deno.test('An attempt and its retry follow the scheduling of their bot when the 
       },
     },
   );
-  const { botId, botUpdates, updateConsumers, webhookAttempts, receivedRequests, endSession } =
-    fixture;
+  const {
+    botId,
+    webhookAttempts,
+    receivedRequests,
+    adaId,
+    sendAccountMessage,
+    setWebhook,
+  } = fixture;
 
-  try {
-    webhookAttempts.setScheduling(botId, 'manual');
-    botUpdates.enqueueMessageUpdate(botId, createPrivateMessage(1));
-    updateConsumers.setWebhook(botId, webhookRequest());
-    await fixture.waitForEntry({ kind: 'webhook_attempt_failed' });
+  webhookAttempts.setScheduling(botId, 'manual');
+  sendAccountMessage(adaId);
+  setWebhook();
+  await fixture.waitForEntry({ kind: 'webhook_attempt_failed' });
 
-    // The manual attempt's retry still waits for the test after scheduling turns automatic.
-    webhookAttempts.setScheduling(botId, 'automatic');
-    await new Promise((resolve) => setTimeout(resolve, 20));
-    const sentBeforeRelease = receivedRequests.length;
-    webhookAttempts.releaseRetry(botId, 1);
-    await fixture.waitForEntry({ kind: 'update_confirmed' });
+  // The manual attempt's retry still waits for the test after scheduling turns automatic.
+  webhookAttempts.setScheduling(botId, 'automatic');
+  await new Promise((resolve) => setTimeout(resolve, 20));
+  const sentBeforeRelease = receivedRequests.length;
+  webhookAttempts.releaseRetry(botId, 1);
+  await fixture.waitForEntry({ kind: 'update_confirmed' });
 
-    assertEquals(
-      [
-        sentBeforeRelease,
-        listAttempts(webhookAttempts, botId).map(({ scheduling }) => scheduling),
-        retryDelaysSeconds,
-      ],
-      [1, ['manual', 'automatic', 'automatic'], [2]],
-      'Expected only attempts that began under automatic scheduling to retry by themselves',
-    );
-  } finally {
-    endSession();
-  }
+  assertEquals(
+    [
+      sentBeforeRelease,
+      listAttempts(webhookAttempts, botId).map(({ scheduling }) => scheduling),
+      retryDelaysSeconds,
+    ],
+    [1, ['manual', 'automatic', 'automatic'], [2]],
+    'Expected only attempts that began under automatic scheduling to retry by themselves',
+  );
 });
 
 Deno.test('Automatic scheduling lets a test expire an attempt and release a retry early', async () => {
   // The webhook never answers the first attempt, fails the second, and accepts the third.
-  const fixture = createSchedulerFixture((request, requestIndex) => {
+  using fixture = createSchedulerFixture((request, requestIndex) => {
     if (requestIndex === 0) {
       return respondOnlyByAborting(request);
     }
@@ -360,124 +366,61 @@ Deno.test('Automatic scheduling lets a test expire an attempt and release a retr
       ? new Response(null, { status: 503, statusText: 'Service Unavailable' })
       : new Response(null);
   });
-  const { botId, botUpdates, updateConsumers, webhookAttempts, endSession } = fixture;
+  const {
+    botId,
+    webhookAttempts,
+    adaId,
+    sendAccountMessage,
+    setWebhook,
+  } = fixture;
 
-  try {
-    botUpdates.enqueueMessageUpdate(botId, createPrivateMessage(1));
-    updateConsumers.setWebhook(botId, webhookRequest());
-    await fixture.waitForRequestCount(1);
-    const expiry = await webhookAttempts.expireAttempt(botId, 1);
+  sendAccountMessage(adaId);
+  setWebhook();
+  await fixture.waitForRequestCount(1);
+  const expiry = await webhookAttempts.expireAttempt(botId, 1);
 
-    // The timeout is retried at once; the 503 waits 2 seconds unless the test releases it.
-    await fixture.waitForEntry({ kind: 'webhook_attempt_failed', webhookAttemptId: 2 });
-    const release = webhookAttempts.releaseRetry(botId, 2);
-    await fixture.waitForEntry({ kind: 'update_confirmed' });
-    assertEquals(
-      [
-        expiry.expired && describeAttemptState(expiry.attempt),
-        release.released && describeAttemptState(release.attempt),
-        listAttempts(webhookAttempts, botId).map(describeAttemptState),
-      ],
-      // The expired attempt's immediate retry was still waiting when its outcome was decided.
-      ['failed: waiting', 'failed: released', [
-        'failed: released',
-        'failed: released',
-        'accepted',
-      ]],
-      'Expected the controls to end the timeout and the backoff without waiting for them',
-    );
-  } finally {
-    endSession();
-  }
+  // The timeout is retried at once; the 503 waits 2 seconds unless the test releases it.
+  await fixture.waitForEntry({ kind: 'webhook_attempt_failed', webhookAttemptId: 2 });
+  const release = webhookAttempts.releaseRetry(botId, 2);
+  await fixture.waitForEntry({ kind: 'update_confirmed' });
+  assertEquals(
+    [
+      expiry.expired && describeAttemptState(expiry.attempt),
+      release.released && describeAttemptState(release.attempt),
+      listAttempts(webhookAttempts, botId).map(describeAttemptState),
+    ],
+    // The expired attempt's immediate retry was still waiting when its outcome was decided.
+    ['failed: waiting', 'failed: released', [
+      'failed: released',
+      'failed: released',
+      'accepted',
+    ]],
+    'Expected the controls to end the timeout and the backoff without waiting for them',
+  );
 });
-
-Deno.test('An attempt whose webhook answered completely is accepted before its reply runs', async () => {
-  // The webhook accepts the update; the method its answer names is started and never finishes.
-  const startedReplies: Response[] = [];
-  const fixture = createSchedulerFixture(() => Response.json({ method: 'sendMessage' }), {
-    startWebhookReply: (_botId, reply) => {
-      startedReplies.push(reply);
-    },
-  });
-  const { botId, botUpdates, updateConsumers, webhookAttempts, endSession } = fixture;
-
-  try {
-    webhookAttempts.setScheduling(botId, 'manual');
-    botUpdates.enqueueMessageUpdate(botId, createPrivateMessage(1));
-    updateConsumers.setWebhook(botId, webhookRequest());
-    await fixture.waitForEntry({ kind: 'update_confirmed' });
-
-    assertEquals(
-      [
-        startedReplies.length,
-        await webhookAttempts.expireAttempt(botId, 1),
-        listAttempts(webhookAttempts, botId).map(describeAttemptState),
-        updateConsumers.getWebhookInfo(botId).pending_update_count,
-      ],
-      [1, { expired: false, reason: 'attempt_not_in_flight' }, ['accepted'], 0],
-      "Expected the complete answer to accept the update without waiting for the reply's method",
-    );
-  } finally {
-    endSession();
-  }
-});
-
-interface ReceivedWebhookRequest {
-  readonly url: string;
-  readonly signal: AbortSignal;
-  readonly updateId: number;
-}
 
 /**
- * Creates a webhook service with its attempt scheduler for one of two bots, whose webhook requests
- * `respond` answers in place of the network.
+ * Creates a root-backed session with two bots, whose webhook requests `respond` answers in place of
+ * the network, for the attempts of the first bot.
  */
 function createSchedulerFixture(
-  respond: (request: Request, requestIndex: number) => Response | Promise<Response>,
+  respond: WebhookResponder,
   options: {
     /** Waits for real when omitted. */
     readonly waitBeforeRetry?: (delaySeconds: number, signal: AbortSignal) => Promise<void>;
-    /** Reads and ignores each reply when omitted. */
-    readonly startWebhookReply?: (botId: number, reply: Response) => void;
   } = {},
 ) {
-  const bots = new BotRepository();
-  const virtualUsers = new VirtualUserService({
-    identities: new TelegramIdentityRepository(),
-    accounts: new AccountRepository(),
-    bots,
-  });
-  const botId = createBot(virtualUsers, 'webhook_bot');
-  const otherBotId = createBot(virtualUsers, 'other_bot');
-  const botUpdates = new BotUpdateRepository();
-  const botActivity = new BotActivityService({
-    log: new BotActivityLogRepository(),
-    scheduler: createRealTimeScheduler(),
-  });
-  const webhookAttempts = new WebhookAttemptScheduler({
-    bots,
-    attemptTimeoutMilliseconds: WEBHOOK_ATTEMPT_TIMEOUT_MILLISECONDS,
+  const webhookSession = createWebhookSession(respond, {
+    id: 'webhook-attempt-scheduler',
     scheduler: createRetryScheduler(options.waitBeforeRetry),
   });
-  const receivedRequests: ReceivedWebhookRequest[] = [];
-  const requestCounter = new ReceivedRequestCounter();
-  const { updateConsumers, endSession } = createUpdateConsumers({
-    botUpdates,
-    updateActivity: botActivity,
-    sendWebhookRequest: async (request) => {
-      const { update_id: updateId } = await request.json();
-      receivedRequests.push({ url: request.url, signal: request.signal, updateId });
-      requestCounter.countRequest();
-      return await respond(request, receivedRequests.length - 1);
-    },
-    startWebhookReply: options.startWebhookReply ?? ((_botId, reply) => {
-      void reply.arrayBuffer();
-    }),
-    attempts: webhookAttempts,
-  });
+  const { session, bot } = webhookSession;
+  const otherBotId =
+    createVirtualBot(session.virtualUsers, { first_name: 'Webhook Bot', username: 'other_bot' })
+      .profile.id;
 
   const readEntries = async (filter: BotActivityFilter) => {
-    const result = await botActivity.readEntries({
+    const result = await session.botActivity.readEntries({
       after: 0,
       filter,
       limit: 100,
@@ -493,9 +436,9 @@ function createSchedulerFixture(
     const { webhookAttemptId, ...criteria } = filter;
     const deadline = Date.now() + 1_000;
     for (let after = 0;;) {
-      const result = await botActivity.readEntries({
+      const result = await session.botActivity.readEntries({
         after,
-        filter: { ...criteria, botId },
+        filter: { ...criteria, botId: bot.id },
         limit: 100,
         waitMilliseconds: Math.max(deadline - Date.now(), 0),
       });
@@ -517,22 +460,13 @@ function createSchedulerFixture(
   };
 
   return {
-    botId,
+    ...webhookSession,
+    botId: bot.id,
     otherBotId,
-    botUpdates,
-    updateConsumers,
-    endSession,
-    webhookAttempts,
-    receivedRequests,
+    webhookAttempts: session.webhookAttempts,
     readEntries,
     waitForEntry,
-    /** Resolves once the webhook has received `count` requests, failing after a second. */
-    waitForRequestCount: (count: number) => requestCounter.waitForCount(count),
   };
-}
-
-function createBot(virtualUsers: VirtualUserService, username: string): number {
-  return createVirtualBot(virtualUsers, { first_name: 'Webhook Bot', username }).profile.id;
 }
 
 function listAttempts(

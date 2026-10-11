@@ -9,13 +9,19 @@ import { AccountRepository } from '../src/repositories/account.ts';
 import { BotRepository } from '../src/repositories/bot.ts';
 import { BotActivityLogRepository } from '../src/repositories/bot_activity_log.ts';
 import { BotUpdateRepository } from '../src/repositories/bot_update.ts';
+import { BotUpdateSubscriptionRepository } from '../src/repositories/bot_update_subscription.ts';
+import { BotWebhookRepository } from '../src/repositories/bot_webhook.ts';
 import { TelegramIdentityRepository } from '../src/repositories/telegram_identity.ts';
 import { BotActivityService } from '../src/services/bot_activity.ts';
+import { BotUpdateConsumerService } from '../src/services/bot_update_consumer.ts';
+import { BotUpdatePollingService } from '../src/services/bot_update_polling.ts';
+import { SessionLifetime } from '../src/services/session_lifetime.ts';
 import { VirtualUserService } from '../src/services/virtual_user.ts';
 import {
   WEBHOOK_ATTEMPT_TIMEOUT_MILLISECONDS,
   WebhookAttemptScheduler,
 } from '../src/services/webhook_attempt_scheduler.ts';
+import { WebhookDeliveryService } from '../src/services/webhook_delivery.ts';
 import type { BotApiUpdate } from '../src/types/bot_api.ts';
 import type { BotActivityEntry, BotActivityFilter } from '../src/types/bot_activity.ts';
 import type { WebhookAttempt } from '../src/types/bot_webhook.ts';
@@ -23,7 +29,7 @@ import { createRealTimeScheduler } from './support/scheduler.ts';
 import { createVirtualBot } from './support/virtual_users.ts';
 import {
   createPrivateMessage,
-  createUpdateConsumers,
+  NOW_UNIX_SECONDS,
   ReceivedRequestCounter,
   respondOnlyByAborting,
   waitUntil,
@@ -91,6 +97,59 @@ Deno.test("an accepted update's reply is started before its confirmation is reco
       publications,
       ['reply_started', 'update_confirmed'],
       'Expected the reply to be under way before anyone could read the confirmation',
+    );
+  } finally {
+    endSession();
+  }
+});
+
+Deno.test('An attempt whose webhook answered completely is accepted before its reply runs', async () => {
+  // The webhook accepts the update; the method its answer names is held and never finishes.
+  const fixture = createAcceptanceFixture(() => Response.json({ method: 'sendMessage' }));
+  const { botId, botUpdates, updateConsumers, webhookAttempts, heldReplies, endSession } = fixture;
+
+  try {
+    webhookAttempts.setScheduling(botId, 'manual');
+    botUpdates.enqueueMessageUpdate(botId, createPrivateMessage(1));
+    updateConsumers.setWebhook(botId, webhookRequest());
+    await fixture.waitForEntry({ kind: 'update_confirmed' });
+
+    assertEquals(
+      [
+        heldReplies.startedCount,
+        await webhookAttempts.expireAttempt(botId, 1),
+        listAttempts(webhookAttempts, botId).map(describeAttemptState),
+        updateConsumers.getWebhookInfo(botId).pending_update_count,
+      ],
+      [1, { expired: false, reason: 'attempt_not_in_flight' }, ['accepted'], 0],
+      "Expected the complete answer to accept the update without waiting for the reply's method",
+    );
+  } finally {
+    endSession();
+  }
+});
+
+Deno.test('Webhook delivery confirms an accepted update whose reply never finishes', async () => {
+  // Each reply's method is started and held; nothing waits for it.
+  const fixture = createAcceptanceFixture(() =>
+    new Response('{"method":"sendMessage"}', { headers: { 'Content-Type': 'application/json' } })
+  );
+  const { botId, botUpdates, updateConsumers, endSession } = fixture;
+
+  try {
+    botUpdates.enqueueMessageUpdate(botId, createPrivateMessage(1));
+    botUpdates.enqueueMessageUpdate(botId, createPrivateMessage(2));
+    updateConsumers.setWebhook(botId, webhookRequest());
+    await fixture.waitForRequestCount(2);
+    await waitUntil(() => updateConsumers.getWebhookInfo(botId).pending_update_count === 0);
+
+    assertEquals(
+      [
+        fixture.receivedRequests.map(({ updateId }) => updateId),
+        'last_error_message' in updateConsumers.getWebhookInfo(botId),
+      ],
+      [[1, 2], false],
+      'Expected a running reply to leave its update delivered without an error',
     );
   } finally {
     endSession();
@@ -404,6 +463,11 @@ class HeldReplies {
   readonly #release = Promise.withResolvers<void>();
   readonly #countChanges = new Set<() => void>();
 
+  /** How many replies have been started. */
+  get startedCount(): number {
+    return this.#startedCount;
+  }
+
   start(reply: Response): void {
     this.#startedCount++;
     this.#notify();
@@ -559,4 +623,56 @@ function listAttempts(
 /** The attempt's status, followed by its retry's for a failed attempt. */
 function describeAttemptState(attempt: WebhookAttempt): string {
   return attempt.status === 'failed' ? `failed: ${attempt.retry.status}` : attempt.status;
+}
+
+/** What a test supplies to deliver a session's updates to webhooks in place of the network. */
+interface UpdateConsumersOptions {
+  readonly botUpdates: BotUpdateRepository;
+  /** Records what polling and webhook delivery observe, as the session's bot activity does. */
+  readonly updateActivity:
+    & ConstructorParameters<typeof BotUpdatePollingService>[0]['updateActivity']
+    & ConstructorParameters<typeof WebhookDeliveryService>[0]['updateActivity'];
+  readonly attempts: WebhookAttemptScheduler;
+  readonly sendWebhookRequest: (request: Request) => Promise<Response>;
+  readonly startWebhookReply: (botId: number, reply: Response) => void;
+}
+
+/**
+ * Creates the delivery owner of a session's bots, with polling and webhook delivery, and the end
+ * of its session, which stops every webhook generation as `session.end()` does.
+ */
+function createUpdateConsumers(
+  {
+    botUpdates,
+    updateActivity,
+    attempts,
+    sendWebhookRequest,
+    startWebhookReply,
+  }: UpdateConsumersOptions,
+): { readonly updateConsumers: BotUpdateConsumerService; readonly endSession: () => void } {
+  const sessionEnd = new AbortController();
+  const sessionLifetime = new SessionLifetime(sessionEnd.signal);
+  const webhooks = new BotWebhookRepository();
+  const updateConsumers = new BotUpdateConsumerService({
+    webhooks,
+    pendingUpdates: botUpdates,
+    updateSubscriptions: new BotUpdateSubscriptionRepository(),
+    polling: new BotUpdatePollingService({
+      botUpdates,
+      updateActivity,
+      scheduler: createRealTimeScheduler(),
+      sessionLifetime,
+    }),
+    webhookDelivery: new WebhookDeliveryService({
+      pendingUpdates: botUpdates,
+      deliveryErrors: webhooks,
+      updateActivity,
+      sendWebhookRequest,
+      startWebhookReply,
+      attempts,
+      currentUnixTimeSeconds: () => NOW_UNIX_SECONDS,
+    }),
+    sessionLifetime,
+  });
+  return { updateConsumers, endSession: () => sessionEnd.abort() };
 }
