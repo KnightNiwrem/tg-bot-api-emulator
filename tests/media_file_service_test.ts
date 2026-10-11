@@ -1,8 +1,11 @@
 import { assertEquals } from '@std/assert';
 import { FileRepository } from '../src/repositories/file.ts';
-import { MediaFileService, type UploadSource } from '../src/services/media_file.ts';
-import { WebFileDownloader, type WebResourceFetcher } from '../src/services/web_file_download.ts';
-import { WebResourceService } from '../src/services/web_resource.ts';
+import { MediaFileService, type UploadSource } from '../src/services/domain/media_file.ts';
+import {
+  WebFileDownloader,
+  type WebResourceFetcher,
+} from '../src/services/domain/web_file_download.ts';
+import { WebResourceService } from '../src/services/domain/web_resource.ts';
 import { WebResourceRepository } from '../src/repositories/web_resource.ts';
 import {
   isWebVoiceNoteSentAsVoiceNote,

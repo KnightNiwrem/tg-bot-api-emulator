@@ -4,7 +4,7 @@ import {
   BotActivityService,
   type ReadBotActivityResult,
   type RecordedBotApiCall,
-} from '../src/services/bot_activity.ts';
+} from '../src/services/bot_activity/bot_activity.ts';
 import type { BotActivityEntry, BotActivityFilter } from '../src/types/bot_activity.ts';
 import type { BotApiUpdate } from '../src/types/bot_api.ts';
 import { createRealTimeScheduler } from './support/scheduler.ts';

@@ -156,10 +156,10 @@ Bot API documentation and the `messages.sendReaction` error list, not verified a
 ## Local evidence
 
 [Domain model](../../src/types/message_reaction.ts),
-[reaction service](../../src/services/message_reaction.ts),
+[reaction service](../../src/services/domain/message_reaction.ts),
 [parameter reading](../../src/api/sessions/bot_api/reaction_type_parameter.ts),
 [account routes](../../src/api/sessions/accounts/message_reactions.ts),
-[update delivery](../../src/services/bot_update_delivery.ts),
+[update delivery](../../src/services/update_delivery/bot_update_delivery.ts),
 [projection](../../src/projections/bot_api_message_reaction.ts),
 [unit tests](../../tests/message_reaction_service_test.ts) and
 [HTTP tests](../../tests/message_reaction_api_test.ts).

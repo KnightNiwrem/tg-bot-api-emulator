@@ -291,11 +291,12 @@ does neither, as for a bot's stop.
 
 [Parameter reading](../../src/api/sessions/bot_api/input_poll_option_parameter.ts) and
 [quiz parameters](../../src/api/sessions/bot_api/quiz_parameters.ts),
-[domain model](../../src/types/poll.ts), [normalization](../../src/services/poll_normalization.ts),
-[voting and stopping](../../src/services/poll.ts), [storage](../../src/repositories/poll.ts),
+[domain model](../../src/types/poll.ts),
+[normalization](../../src/services/domain/poll_normalization.ts),
+[voting and stopping](../../src/services/domain/poll.ts), [storage](../../src/repositories/poll.ts),
 [account poll requests](../../src/api/sessions/accounts/request_fields.ts) and
 [closure routes](../../src/api/sessions/accounts/poll_closures.ts),
-[update delivery](../../src/services/bot_update_delivery.ts),
+[update delivery](../../src/services/update_delivery/bot_update_delivery.ts),
 [projection](../../src/projections/bot_api_message.ts), [unit tests](../../tests/poll_test.ts),
 [HTTP tests](../../tests/poll_api_test.ts) and
 [account poll tests](../../tests/account_poll_api_test.ts).

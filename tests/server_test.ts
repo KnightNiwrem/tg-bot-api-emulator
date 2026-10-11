@@ -1,4 +1,4 @@
-import { TelegramEmulationServer } from '../src/server.ts';
+import { TelegramEmulationServer } from '../src/api/server.ts';
 
 Deno.test('TelegramEmulationServer listens for HTTP requests', async () => {
   const server = new TelegramEmulationServer({ hostname: '127.0.0.1', port: 0 }).start(

@@ -159,7 +159,7 @@ checked.
 ## Local evidence
 
 [Contact type](../../src/types/contact.ts), [location type](../../src/types/geo_location.ts),
-[content normalization](../../src/services/message_content.ts),
+[content normalization](../../src/services/domain/message_content.ts),
 [Bot API handlers](../../src/api/sessions/bot_api/methods/message_sending.ts),
 [account routes](../../src/api/sessions/accounts/mod.ts) and
 [contact tests](../../tests/contact_api_test.ts),

@@ -2,8 +2,8 @@ import { assertEquals } from '@std/assert';
 import type {
   RestrictChatMemberAsAccountInput,
   SharedChatAdministrationService,
-} from '../src/services/shared_chat_administration.ts';
-import type { VirtualUserService } from '../src/services/virtual_user.ts';
+} from '../src/services/domain/shared_chat_administration.ts';
+import type { VirtualUserService } from '../src/services/domain/virtual_user.ts';
 import type { PhotoUpload } from '../src/types/stored_file.ts';
 import { assertEqualsInFieldOrder } from './support/field_order_assertion.ts';
 import { buildSessionServices } from './support/session_services.ts';

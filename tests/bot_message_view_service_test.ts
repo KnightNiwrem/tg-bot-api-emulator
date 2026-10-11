@@ -6,8 +6,8 @@ import { MessageRepository } from '../src/repositories/message.ts';
 import { SharedChatRepository } from '../src/repositories/shared_chat.ts';
 import { TelegramIdentityRepository } from '../src/repositories/telegram_identity.ts';
 import { MessageBoxRepository } from '../src/repositories/message_box.ts';
-import { BotMessageViewService } from '../src/services/bot_message_view.ts';
-import { VirtualUserService } from '../src/services/virtual_user.ts';
+import { BotMessageViewService } from '../src/services/bot_message_view/bot_message_view.ts';
+import { VirtualUserService } from '../src/services/domain/virtual_user.ts';
 import { assertEqualsInFieldOrder } from './support/field_order_assertion.ts';
 import { createVirtualAccount, createVirtualBot } from './support/virtual_users.ts';
 

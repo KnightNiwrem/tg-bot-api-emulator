@@ -63,7 +63,7 @@ functions it follows.
 - `td/telegram/UpdatesManager.cpp` and `tddb/td/db/TQueue.cpp`: the update queue and which updates
   bots receive.
 - `tdnet/td/net/HttpReader.cpp`, `HttpConnectionBase.cpp`, `tdutils/td/utils/HttpUrl.cpp` and
-  `JsonBuilder.cpp`: how requests are read, in `src/api/`.
+  `JsonBuilder.cpp`: how requests are read, in `src/http_grammar/` and `src/api/`.
 - `td/generate/scheme/td_api.tl`: the TDLib API's own descriptions of fields and limits.
 - Feature pages: every page in [`docs/features/`](features/README.md), the index included, except
   `bot-activity.md`.

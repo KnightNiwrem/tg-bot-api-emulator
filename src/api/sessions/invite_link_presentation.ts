@@ -1,4 +1,4 @@
-import type { EmulationSession } from '../../types/emulation_session.ts';
+import type { EmulationSession } from '../../session/emulation_session.ts';
 
 /** An invite link with how many current members joined through it, as the emulation API shows it. */
 type ChatInviteLinkUsage = Extract<

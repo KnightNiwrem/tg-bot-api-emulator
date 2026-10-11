@@ -14,64 +14,19 @@
       {
         "name": "domain",
         "patterns": [
-          "src/types/virtual_account.ts",
-          "src/types/virtual_bot.ts",
-          "src/types/virtual_chat.ts",
-          "src/types/chat_policy.ts",
-          "src/types/chat_membership.ts",
-          "src/types/chat_permissions.ts",
-          "src/types/chat_invite_link.ts",
-          "src/types/chat_join_request.ts",
-          "src/types/virtual_message.ts",
-          "src/types/rich_message.ts",
-          "src/types/message_forward.ts",
-          "src/types/message_reply.ts",
-          "src/types/media_album.ts",
-          "src/types/message_reaction.ts",
-          "src/types/message_draft.ts",
-          "src/types/stored_file.ts",
-          "src/types/upload_profile.ts",
-          "src/types/http_url.ts",
-          "src/types/web_resource.ts",
-          "src/types/chat_domain_event.ts",
-          "src/types/callback_query.ts",
-          "src/types/inline_query.ts",
-          "src/types/geo_location.ts",
-          "src/types/contact.ts",
-          "src/types/button_appearance.ts",
-          "src/types/inline_keyboard.ts",
-          "src/types/reply_interface.ts",
-          "src/types/bot_api.ts",
-          "src/types/bot_api_method_name.ts",
-          "src/types/bot_api_rich_message.ts",
-          "src/types/poll.ts",
-          "src/types/bot_api_poll.ts",
-          "src/types/telegram_identity.ts",
-          "src/types/telegram_int64.ts",
-          "src/types/bot_command.ts",
-          "src/types/bot_language_code.ts",
-          "src/types/bot_description.ts",
-          "src/types/bot_default_administrator_rights.ts",
-          "src/types/bot_menu_button.ts",
-          "src/types/bot_webhook.ts",
-          "src/types/bot_rate_limit.ts",
-          "src/types/bot_server_error.ts",
-          "src/types/bot_activity.ts",
-          "src/types/bot_activity_kind.ts",
-          "src/types/json_pattern.ts"
+          "src/types/**/*.ts"
         ]
       },
       {
         "name": "session-timing",
         "patterns": [
-          "src/timing/session_timing.ts",
-          "src/timing/notification_wait.ts"
+          "src/timing/session/**/*.ts"
         ]
       },
       {
         "name": "system-timing",
         "patterns": [
-          "src/timing/system_timing.ts"
+          "src/timing/system/**/*.ts"
         ]
       },
       {
@@ -233,26 +188,25 @@
       {
         "name": "change-staging",
         "patterns": [
-          "src/transactions/change_staging.ts",
-          "src/transactions/transactional_collections.ts"
+          "src/transactions/staging/**/*.ts"
         ]
       },
       {
         "name": "session-transactions",
         "patterns": [
-          "src/transactions/session_transactions.ts"
+          "src/transactions/session/**/*.ts"
         ]
       },
       {
         "name": "session-lifetime",
         "patterns": [
-          "src/services/session_lifetime.ts"
+          "src/services/session_lifetime/**/*.ts"
         ]
       },
       {
         "name": "session",
         "patterns": [
-          "src/types/emulation_session.ts"
+          "src/session/**/*.ts"
         ]
       },
       {
@@ -282,109 +236,73 @@
       {
         "name": "domain-services",
         "patterns": [
-          "src/services/account_chat_message.ts",
-          "src/services/callback_query.ts",
-          "src/services/inline_query.ts",
-          "src/services/private_chat_policy.ts",
-          "src/services/private_messaging.ts",
-          "src/services/supergroup_chat_policy.ts",
-          "src/services/supergroup_messaging.ts",
-          "src/services/message_content.ts",
-          "src/services/message_deletion.ts",
-          "src/services/message_editing.ts",
-          "src/services/message_commit.ts",
-          "src/services/message_sending.ts",
-          "src/services/poll.ts",
-          "src/services/poll_normalization.ts",
-          "src/services/rich_message_normalization.ts",
-          "src/services/session_user_mention.ts",
-          "src/services/message_forwarding.ts",
-          "src/services/message_pinning.ts",
-          "src/services/message_reaction.ts",
-          "src/services/reply_interface.ts",
-          "src/services/media_file.ts",
-          "src/services/shared_chat_administration.ts",
-          "src/services/chat_admission.ts",
-          "src/services/virtual_user.ts",
-          "src/services/bot_command.ts",
-          "src/services/bot_description.ts",
-          "src/services/bot_default_administrator_rights.ts",
-          "src/services/bot_menu_button.ts",
-          "src/services/bot_blocking.ts",
-          "src/services/chat_action.ts",
-          "src/services/message_draft.ts",
-          "src/services/bot_rate_limit.ts",
-          "src/services/bot_server_error.ts",
-          "src/services/web_resource.ts",
-          "src/services/web_file_download.ts",
-          "src/services/requested_peer_sharing.ts"
+          "src/services/domain/**/*.ts"
         ]
       },
       {
         "name": "bot-message-view",
         "patterns": [
-          "src/services/bot_message_view.ts"
+          "src/services/bot_message_view/**/*.ts"
         ]
       },
       {
         "name": "update-delivery",
         "patterns": [
-          "src/services/bot_update_delivery.ts"
+          "src/services/update_delivery/**/*.ts"
         ]
       },
       {
         "name": "update-polling",
         "patterns": [
-          "src/services/bot_update_polling.ts"
+          "src/services/update_polling/**/*.ts"
         ]
       },
       {
         "name": "webhook-delivery",
         "patterns": [
-          "src/services/webhook_delivery.ts",
-          "src/services/webhook_attempt_scheduler.ts"
+          "src/services/webhook_delivery/**/*.ts"
         ]
       },
       {
         "name": "update-consumers",
         "patterns": [
-          "src/services/bot_update_consumer.ts"
+          "src/services/update_consumers/**/*.ts"
         ]
       },
       {
         "name": "bot-api-service",
         "patterns": [
-          "src/services/bot_api.ts"
+          "src/services/bot_api/**/*.ts"
         ]
       },
       {
         "name": "bot-media-resolution",
         "patterns": [
-          "src/services/bot_media_resolution.ts"
+          "src/services/bot_media_resolution/**/*.ts"
         ]
       },
       {
         "name": "bot-message-sending",
         "patterns": [
-          "src/services/bot_message_sending.ts"
+          "src/services/bot_message_sending/**/*.ts"
         ]
       },
       {
         "name": "bot-message-repetition",
         "patterns": [
-          "src/services/bot_message_repetition.ts"
+          "src/services/bot_message_repetition/**/*.ts"
         ]
       },
       {
         "name": "bot-activity",
         "patterns": [
-          "src/services/bot_activity.ts"
+          "src/services/bot_activity/**/*.ts"
         ]
       },
       {
         "name": "application-services",
         "patterns": [
-          "src/services/session_lifecycle.ts"
+          "src/services/application/**/*.ts"
         ]
       },
       {
@@ -397,7 +315,7 @@
       {
         "name": "http-grammar",
         "patterns": [
-          "src/api/http_grammar/**/*.ts"
+          "src/http_grammar/**/*.ts"
         ]
       },
       {
@@ -409,9 +327,7 @@
       {
         "name": "transport",
         "patterns": [
-          "src/api/**/*.ts",
-          "src/config.ts",
-          "src/server.ts"
+          "src/api/**/*.ts"
         ]
       },
       {

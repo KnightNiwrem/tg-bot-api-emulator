@@ -14,7 +14,7 @@ import type {
   MessagePinningService,
   MessagePinResult,
   MessageUnpinResult,
-} from '../src/services/message_pinning.ts';
+} from '../src/services/domain/message_pinning.ts';
 import type { ExpectTrue, IsExactly } from './support/type_conformance.ts';
 
 type FailureReason<Result> = Result extends { readonly reason: infer Reason } ? Reason : never;

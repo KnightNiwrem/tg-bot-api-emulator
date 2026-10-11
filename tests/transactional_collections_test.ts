@@ -1,9 +1,9 @@
 import { assertEquals } from '@std/assert';
-import { SessionChangeJournal } from '../src/transactions/change_staging.ts';
+import { SessionChangeJournal } from '../src/transactions/staging/change_staging.ts';
 import {
   TransactionalMap,
   TransactionalSet,
-} from '../src/transactions/transactional_collections.ts';
+} from '../src/transactions/staging/transactional_collections.ts';
 
 Deno.test('an aborted transaction restores a map, the order of its entries included', () => {
   const journal = createJournal();

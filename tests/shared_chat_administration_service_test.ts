@@ -13,9 +13,9 @@ import {
   type RemoveChatMemberResult,
   SharedChatAdministrationService,
   type SupergroupCreationResult,
-} from '../src/services/shared_chat_administration.ts';
-import type { SupergroupServiceMessageRecord } from '../src/services/message_commit.ts';
-import { VirtualUserService } from '../src/services/virtual_user.ts';
+} from '../src/services/domain/shared_chat_administration.ts';
+import type { SupergroupServiceMessageRecord } from '../src/services/domain/message_commit.ts';
+import { VirtualUserService } from '../src/services/domain/virtual_user.ts';
 import type { ChatDomainEvent } from '../src/types/chat_domain_event.ts';
 import {
   type ChatMembership,

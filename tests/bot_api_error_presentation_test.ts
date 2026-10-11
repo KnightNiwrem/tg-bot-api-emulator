@@ -4,7 +4,7 @@ import type { BotApiErrorProvenance } from '../src/api/sessions/bot_api/errors/e
 import { presentMessageEditingFailure } from '../src/api/sessions/bot_api/errors/message_editing_failure_presenter.ts';
 import { presentMessageSendingFailure } from '../src/api/sessions/bot_api/errors/message_sending_failure_presenter.ts';
 import type { BotApiMethodAnswer } from '../src/api/sessions/bot_api/method_call.ts';
-import type { EmulationSession } from '../src/types/emulation_session.ts';
+import type { EmulationSession } from '../src/session/emulation_session.ts';
 
 // The expected answers are Telegram's literal statuses and descriptions, written out rather than
 // read from the catalogue, so that an edit of a catalogue entry fails these tests.

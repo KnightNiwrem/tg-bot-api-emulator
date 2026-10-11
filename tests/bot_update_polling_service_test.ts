@@ -2,14 +2,14 @@ import { assertEquals } from '@std/assert';
 import { BotActivityLogRepository } from '../src/repositories/bot_activity_log.ts';
 import { BotUpdateRepository } from '../src/repositories/bot_update.ts';
 import { BotUpdateSubscriptionRepository } from '../src/repositories/bot_update_subscription.ts';
-import { BotActivityService } from '../src/services/bot_activity.ts';
+import { BotActivityService } from '../src/services/bot_activity/bot_activity.ts';
 import {
   BotUpdatePollingService,
   type GetUpdatesResult,
-} from '../src/services/bot_update_polling.ts';
-import { BotUpdateConsumerService } from '../src/services/bot_update_consumer.ts';
+} from '../src/services/update_polling/bot_update_polling.ts';
+import { BotUpdateConsumerService } from '../src/services/update_consumers/bot_update_consumer.ts';
 import { BotWebhookRepository } from '../src/repositories/bot_webhook.ts';
-import { SessionLifetime } from '../src/services/session_lifetime.ts';
+import { SessionLifetime } from '../src/services/session_lifetime/session_lifetime.ts';
 import {
   type BotApiMessage,
   type BotApiPrivateMessage,

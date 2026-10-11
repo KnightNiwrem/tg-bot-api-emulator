@@ -4,7 +4,7 @@
  * message, none about a chat. The expected sets are written out here, independently of the
  * service's types.
  */
-import type { MessageEditingService } from '../src/services/message_editing.ts';
+import type { MessageEditingService } from '../src/services/domain/message_editing.ts';
 import type { PrivateMessage, SupergroupMessage } from '../src/types/virtual_message.ts';
 import type { ExpectTrue, IsExactly } from './support/type_conformance.ts';
 

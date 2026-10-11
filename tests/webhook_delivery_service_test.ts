@@ -1,6 +1,6 @@
 import { assertEquals } from '@std/assert';
-import { WEBHOOK_ATTEMPT_TIMEOUT_MILLISECONDS } from '../src/services/webhook_attempt_scheduler.ts';
-import type { Scheduler } from '../src/timing/session_timing.ts';
+import { WEBHOOK_ATTEMPT_TIMEOUT_MILLISECONDS } from '../src/services/webhook_delivery/webhook_attempt_scheduler.ts';
+import type { Scheduler } from '../src/timing/session/session_timing.ts';
 import type { BotActivityEntry, BotActivityFilter } from '../src/types/bot_activity.ts';
 import { assertEqualsInFieldOrder } from './support/field_order_assertion.ts';
 import { TEST_UNIX_TIME_SECONDS } from './support/fixed_wall_clock.ts';

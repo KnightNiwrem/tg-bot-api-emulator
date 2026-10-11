@@ -6,7 +6,7 @@ import type {
   CreateVirtualAccountInput,
   CreateVirtualBotInput,
   VirtualUserService,
-} from '../../src/services/virtual_user.ts';
+} from '../../src/services/domain/virtual_user.ts';
 import type { VirtualAccount } from '../../src/types/virtual_account.ts';
 import type { VirtualBot } from '../../src/types/virtual_bot.ts';
 

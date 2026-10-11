@@ -1,7 +1,7 @@
 import { assertEquals } from '@std/assert';
 import type { SupergroupAdministratorRight } from '../src/types/chat_membership.ts';
 import { ALL_CHAT_PERMISSIONS, type ChatPermission } from '../src/types/chat_permissions.ts';
-import type { EmulationSession } from '../src/types/emulation_session.ts';
+import type { EmulationSession } from '../src/session/emulation_session.ts';
 import type { ChatActor, ChatAddress } from '../src/types/virtual_chat.ts';
 import type { ChatMessage } from '../src/types/virtual_message.ts';
 import { buildSessionServices } from './support/session_services.ts';

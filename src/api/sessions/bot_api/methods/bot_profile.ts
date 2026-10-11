@@ -1,7 +1,7 @@
 import { z } from 'zod';
 
 import type { BotApiBotDescription, BotApiBotShortDescription } from '../../../../types/bot_api.ts';
-import type { EmulationSession } from '../../../../types/emulation_session.ts';
+import type { EmulationSession } from '../../../../session/emulation_session.ts';
 import {
   botCommandScopeParameter,
   botCommandsParameter,

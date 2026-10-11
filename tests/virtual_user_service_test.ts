@@ -2,7 +2,7 @@ import { assertEquals } from '@std/assert';
 import { AccountRepository } from '../src/repositories/account.ts';
 import { BotRepository } from '../src/repositories/bot.ts';
 import { TelegramIdentityRepository } from '../src/repositories/telegram_identity.ts';
-import { VirtualUserService } from '../src/services/virtual_user.ts';
+import { VirtualUserService } from '../src/services/domain/virtual_user.ts';
 
 Deno.test('VirtualUserService creates accounts and complete bots in one user ID sequence', () => {
   const { accounts, bots, virtualUsers } = createVirtualUserState();

@@ -10,7 +10,7 @@ import {
   createSessionLifecycleService,
   type SessionTimingSource,
 } from '../../../src/composition/session_lifecycle.ts';
-import type { HttpRequestHandler } from '../../../src/server.ts';
+import type { HttpRequestHandler } from '../../../src/api/server.ts';
 import { TelegramEmulationClient } from '../mod.ts';
 
 /** The origin an in-process emulator names in the URLs it returns, unless told otherwise. */

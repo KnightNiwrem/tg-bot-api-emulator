@@ -3,9 +3,9 @@
  * whether through a root-backed session whose webhook transport the test supplies, or through a
  * delivery a component test composes around its own fakes.
  */
-import type { SetWebhookRequest } from '../../src/services/bot_update_consumer.ts';
-import type { WebhookTransport } from '../../src/services/webhook_delivery.ts';
-import type { Scheduler } from '../../src/timing/session_timing.ts';
+import type { SetWebhookRequest } from '../../src/services/update_consumers/bot_update_consumer.ts';
+import type { WebhookTransport } from '../../src/services/webhook_delivery/webhook_delivery.ts';
+import type { Scheduler } from '../../src/timing/session/session_timing.ts';
 import type { BotApiPrivateMessage } from '../../src/types/bot_api.ts';
 import type { VirtualBotProfile } from '../../src/types/virtual_bot.ts';
 import { buildSessionServices, type SessionServices } from './session_services.ts';

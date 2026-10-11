@@ -5,7 +5,7 @@ import {
   type TelegramIdentity,
   TelegramIdentityRepository,
 } from '../src/repositories/telegram_identity.ts';
-import { SessionChangeJournal } from '../src/transactions/change_staging.ts';
+import { SessionChangeJournal } from '../src/transactions/staging/change_staging.ts';
 import { MAX_TELEGRAM_USER_ID, MIN_TELEGRAM_USER_ID } from '../src/types/telegram_identity.ts';
 
 Deno.test('Telegram user IDs use the official MTProto user range', () => {

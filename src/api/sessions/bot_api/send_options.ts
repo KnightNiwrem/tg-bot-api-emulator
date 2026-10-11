@@ -1,6 +1,6 @@
 import { z } from 'zod';
 
-import type { EmulationSession } from '../../../types/emulation_session.ts';
+import type { EmulationSession } from '../../../session/emulation_session.ts';
 import { resolveChatIdentifier } from './chat_access.ts';
 import { BOT_API_ERRORS } from './errors/error_catalogue.ts';
 import { presentFixedBotApiError } from './errors/error_template.ts';

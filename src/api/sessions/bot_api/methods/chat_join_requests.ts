@@ -1,6 +1,6 @@
 import { z } from 'zod';
 
-import type { EmulationSession } from '../../../../types/emulation_session.ts';
+import type { EmulationSession } from '../../../../session/emulation_session.ts';
 import { readChatMemberTargetStep } from '../chat_member_requests.ts';
 import { presentChatJoinRequestFailure } from '../errors/chat_join_request_failure_presenter.ts';
 import { type BotApiMethod, type BotApiMethodContext, botApiResult } from '../method_call.ts';

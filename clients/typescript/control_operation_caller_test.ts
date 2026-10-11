@@ -9,7 +9,7 @@ import { z } from 'zod';
 import { registerControlOperation } from '../../src/api/control_operation_route.ts';
 import type { SessionRouteContextTypes } from '../../src/api/sessions/session_route_context_types.ts';
 import { controlRefusalSchema } from '../../src/api/contracts/control_errors.ts';
-import { isContentTypeInRange } from '../../src/api/http_grammar/media_type.ts';
+import { isContentTypeInRange } from '../../src/http_grammar/media_type.ts';
 import { defineControlOperation } from '../../src/api/contracts/operation_contract.ts';
 import {
   callBytesOperation,

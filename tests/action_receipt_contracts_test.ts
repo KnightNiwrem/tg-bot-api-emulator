@@ -14,7 +14,7 @@ import { defineControlOperation } from '../src/api/contracts/operation_contract.
 import { registerControlOperation } from '../src/api/control_operation_route.ts';
 import { answerWithActionReceipt } from '../src/api/sessions/action_receipt.ts';
 import type { SessionRouteContextTypes } from '../src/api/sessions/session_route_context_types.ts';
-import type { EmulationSession } from '../src/types/emulation_session.ts';
+import type { EmulationSession } from '../src/session/emulation_session.ts';
 import { readOpenApiDocument } from './support/openapi_conformance/openapi_document.ts';
 import { buildSessionServices } from './support/session_services.ts';
 

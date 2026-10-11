@@ -1,5 +1,5 @@
-import type { Deadline, Scheduler } from '../../src/timing/session_timing.ts';
-import { SYSTEM_MONOTONIC_CLOCK, TimerScheduler } from '../../src/timing/system_timing.ts';
+import type { Deadline, Scheduler } from '../../src/timing/session/session_timing.ts';
+import { SYSTEM_MONOTONIC_CLOCK, TimerScheduler } from '../../src/timing/system/system_timing.ts';
 
 /** Schedules in real time, as every session does by default. */
 export function createRealTimeScheduler(): Scheduler {

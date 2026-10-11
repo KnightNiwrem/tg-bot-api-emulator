@@ -3,16 +3,16 @@ import { BotUpdateRepository } from '../src/repositories/bot_update.ts';
 import { BotUpdateSubscriptionRepository } from '../src/repositories/bot_update_subscription.ts';
 import { LastMessageSendingBotRepository } from '../src/repositories/last_message_sending_bot.ts';
 import type { MessageBoxRepository } from '../src/repositories/message_box.ts';
-import { BotMessageViewService } from '../src/services/bot_message_view.ts';
-import { BotUpdateDeliveryService } from '../src/services/bot_update_delivery.ts';
+import { BotMessageViewService } from '../src/services/bot_message_view/bot_message_view.ts';
+import { BotUpdateDeliveryService } from '../src/services/update_delivery/bot_update_delivery.ts';
 import type {
   BotMessageReplyTarget,
   MessageSendingService,
-} from '../src/services/message_sending.ts';
-import type { MediaContent } from '../src/services/message_content.ts';
-import type { MessageDeletionService } from '../src/services/message_deletion.ts';
-import type { MessageEditingService } from '../src/services/message_editing.ts';
-import type { ReplyInterfaceService } from '../src/services/reply_interface.ts';
+} from '../src/services/domain/message_sending.ts';
+import type { MediaContent } from '../src/services/domain/message_content.ts';
+import type { MessageDeletionService } from '../src/services/domain/message_deletion.ts';
+import type { MessageEditingService } from '../src/services/domain/message_editing.ts';
+import type { ReplyInterfaceService } from '../src/services/domain/reply_interface.ts';
 import type { BotApiMessage, BotApiUpdate } from '../src/types/bot_api.ts';
 import type { InlineKeyboard } from '../src/types/inline_keyboard.ts';
 import type {

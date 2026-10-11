@@ -1,8 +1,8 @@
 import { SessionRepository } from '../repositories/session.ts';
-import { SessionLifecycleService } from '../services/session_lifecycle.ts';
-import type { WebhookTransport } from '../services/webhook_delivery.ts';
-import type { SessionTiming } from '../timing/session_timing.ts';
-import { createSystemSessionTiming } from '../timing/system_timing.ts';
+import { SessionLifecycleService } from '../services/application/session_lifecycle.ts';
+import type { WebhookTransport } from '../services/webhook_delivery/webhook_delivery.ts';
+import type { SessionTiming } from '../timing/session/session_timing.ts';
+import { createSystemSessionTiming } from '../timing/system/system_timing.ts';
 import { createEmulationSession } from './emulation_session.ts';
 
 /** Sends every session's webhook requests over the network. */

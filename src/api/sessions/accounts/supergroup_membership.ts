@@ -13,7 +13,7 @@ import {
   joinChatByInviteLinkContract,
   removeSupergroupMemberContract,
 } from '../../contracts/supergroups.ts';
-import type { EmulationSession } from '../../../types/emulation_session.ts';
+import type { EmulationSession } from '../../../session/emulation_session.ts';
 import type { Supergroup } from '../../../types/virtual_chat.ts';
 import { registerControlOperation } from '../../control_operation_route.ts';
 import { presentChatInviteLinkUsage, presentChatJoinRequest } from '../invite_link_presentation.ts';

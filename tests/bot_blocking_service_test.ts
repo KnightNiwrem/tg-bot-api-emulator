@@ -3,8 +3,8 @@ import { AccountRepository } from '../src/repositories/account.ts';
 import { BlockedUserRepository } from '../src/repositories/blocked_user.ts';
 import { BotRepository } from '../src/repositories/bot.ts';
 import { TelegramIdentityRepository } from '../src/repositories/telegram_identity.ts';
-import { BotBlockingService } from '../src/services/bot_blocking.ts';
-import { VirtualUserService } from '../src/services/virtual_user.ts';
+import { BotBlockingService } from '../src/services/domain/bot_blocking.ts';
+import { VirtualUserService } from '../src/services/domain/virtual_user.ts';
 import type { ChatDomainEvent } from '../src/types/chat_domain_event.ts';
 import { createVirtualAccount, createVirtualBot } from './support/virtual_users.ts';
 

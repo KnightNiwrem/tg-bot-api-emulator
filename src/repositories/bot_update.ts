@@ -15,10 +15,10 @@ import {
   type NotificationWaitEnd,
   type Unsubscribe,
   waitForNotification,
-} from '../timing/notification_wait.ts';
-import type { Deadline } from '../timing/session_timing.ts';
-import { type ChangeStaging, UNSTAGED_CHANGES } from '../transactions/change_staging.ts';
-import { TransactionalMap } from '../transactions/transactional_collections.ts';
+} from '../timing/session/notification_wait.ts';
+import type { Deadline } from '../timing/session/session_timing.ts';
+import { type ChangeStaging, UNSTAGED_CHANGES } from '../transactions/staging/change_staging.ts';
+import { TransactionalMap } from '../transactions/staging/transactional_collections.ts';
 
 /**
  * How far beyond the ID of the next update an offset can be before Telegram ignores it. From the

@@ -6,8 +6,8 @@ import { TelegramIdentityRepository } from '../src/repositories/telegram_identit
 import {
   BotDefaultAdministratorRightsService,
   type GetBotDefaultAdministratorRightsResult,
-} from '../src/services/bot_default_administrator_rights.ts';
-import { VirtualUserService } from '../src/services/virtual_user.ts';
+} from '../src/services/domain/bot_default_administrator_rights.ts';
+import { VirtualUserService } from '../src/services/domain/virtual_user.ts';
 import { createVirtualBot } from './support/virtual_users.ts';
 
 Deno.test('BotDefaultAdministratorRightsService keeps group and channel rights apart', () => {

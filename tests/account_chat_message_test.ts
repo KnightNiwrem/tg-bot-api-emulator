@@ -2,7 +2,7 @@ import { assertEquals } from '@std/assert';
 import {
   type AccountChatMessageLookupResult,
   createAccountChatMessageReader,
-} from '../src/services/account_chat_message.ts';
+} from '../src/services/domain/account_chat_message.ts';
 import { ALL_CHAT_PERMISSIONS } from '../src/types/chat_permissions.ts';
 import type { AccountChatAddress } from '../src/types/virtual_chat.ts';
 import type { ChatMessage } from '../src/types/virtual_message.ts';

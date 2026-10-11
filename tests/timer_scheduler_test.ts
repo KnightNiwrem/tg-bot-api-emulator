@@ -1,5 +1,5 @@
-import type { MonotonicClock } from '../src/timing/session_timing.ts';
-import { SYSTEM_MONOTONIC_CLOCK, TimerScheduler } from '../src/timing/system_timing.ts';
+import type { MonotonicClock } from '../src/timing/session/session_timing.ts';
+import { SYSTEM_MONOTONIC_CLOCK, TimerScheduler } from '../src/timing/system/system_timing.ts';
 import { waitForAbort } from './support/webhook_delivery.ts';
 
 Deno.test('TimerScheduler measures what remains of a deadline on its monotonic clock', () => {

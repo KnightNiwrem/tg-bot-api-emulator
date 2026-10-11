@@ -3,11 +3,11 @@ import type {
   AccountChatMessageKey,
   AccountChatMessageLookupFailureReason,
   AccountChatMessageLookupResult,
-} from '../src/services/account_chat_message.ts';
+} from '../src/services/domain/account_chat_message.ts';
 import {
   type ForwardAccountMessageInput,
   MessageForwardingService,
-} from '../src/services/message_forwarding.ts';
+} from '../src/services/domain/message_forwarding.ts';
 import { ALL_CHAT_PERMISSIONS } from '../src/types/chat_permissions.ts';
 import type { MessageForward } from '../src/types/message_forward.ts';
 import type { PrivateConversation, Supergroup } from '../src/types/virtual_chat.ts';

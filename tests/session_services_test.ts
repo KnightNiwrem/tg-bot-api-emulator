@@ -1,6 +1,6 @@
 import { assertEquals, assertRejects } from '@std/assert';
 import type { BotApiWebhookInfo } from '../src/types/bot_api.ts';
-import type { EmulationSession } from '../src/types/emulation_session.ts';
+import type { EmulationSession } from '../src/session/emulation_session.ts';
 import { createTestSession } from './support/emulation_api.ts';
 import {
   createPrivateConversationFixture,

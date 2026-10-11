@@ -9,7 +9,7 @@
  */
 import type { z } from 'zod';
 
-import { isMediaRange } from '../http_grammar/media_type.ts';
+import { isMediaRange } from '../../http_grammar/media_type.ts';
 import { actionReceiptHeadersSchema, type ActionReceiptSource } from './action_receipts.ts';
 
 export type ControlHttpMethod = 'DELETE' | 'GET' | 'PATCH' | 'POST' | 'PUT';

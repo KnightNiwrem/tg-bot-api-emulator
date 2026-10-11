@@ -3,7 +3,7 @@
  * building the emulator, creating sessions on it, and exchanging JSON with its routes.
  */
 import { createEmulationApi } from '../../src/api/mod.ts';
-import type { WallClock } from '../../src/timing/session_timing.ts';
+import type { WallClock } from '../../src/timing/session/session_timing.ts';
 import type { UploadProfile } from '../../src/types/upload_profile.ts';
 import {
   createInProcessEmulatorWithHandler,

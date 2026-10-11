@@ -1,5 +1,8 @@
-import { type ChangeStaging, UNSTAGED_CHANGES } from '../transactions/change_staging.ts';
-import { TransactionalMap, TransactionalSet } from '../transactions/transactional_collections.ts';
+import { type ChangeStaging, UNSTAGED_CHANGES } from '../transactions/staging/change_staging.ts';
+import {
+  TransactionalMap,
+  TransactionalSet,
+} from '../transactions/staging/transactional_collections.ts';
 import type { InlineKeyboard } from '../types/inline_keyboard.ts';
 import type { UserReaction } from '../types/message_reaction.ts';
 import type { ReplyInterfaceMarkup } from '../types/reply_interface.ts';

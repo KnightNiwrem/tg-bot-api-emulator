@@ -8,7 +8,7 @@ import type {
   DecodedControlRequest,
 } from '../../contracts/operation_contract.ts';
 import { toBotApiLocation } from '../../../types/bot_api.ts';
-import type { EmulationSession } from '../../../types/emulation_session.ts';
+import type { EmulationSession } from '../../../session/emulation_session.ts';
 import { createGeoLocation, type GeoLocation } from '../../../types/geo_location.ts';
 import type {
   InlineQuery,

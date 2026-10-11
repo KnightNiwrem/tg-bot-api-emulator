@@ -3,8 +3,8 @@ import { CallbackQueryRepository } from '../src/repositories/callback_query.ts';
 import {
   CallbackQueryService,
   type PressCallbackButtonFailureReason,
-} from '../src/services/callback_query.ts';
-import { VirtualUserService } from '../src/services/virtual_user.ts';
+} from '../src/services/domain/callback_query.ts';
+import { VirtualUserService } from '../src/services/domain/virtual_user.ts';
 import { createChatMessagingServices } from './support/chat_messaging_services.ts';
 import { ALL_CHAT_PERMISSIONS } from '../src/types/chat_permissions.ts';
 import { createVirtualAccount, createVirtualBot } from './support/virtual_users.ts';

@@ -1,6 +1,6 @@
 import { assertEquals } from '@std/assert';
 import { PollRepository } from '../src/repositories/poll.ts';
-import { normalizeNewPoll } from '../src/services/poll_normalization.ts';
+import { normalizeNewPoll } from '../src/services/domain/poll_normalization.ts';
 import {
   checkPollAnswer,
   countPollVoters,

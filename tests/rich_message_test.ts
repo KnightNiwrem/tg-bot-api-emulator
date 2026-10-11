@@ -1,7 +1,7 @@
 import { assertEquals } from '@std/assert';
 import { assertEqualsInFieldOrder } from './support/field_order_assertion.ts';
 import { projectRichMessage } from '../src/projections/bot_api_rich_message.ts';
-import { normalizeRichMessage } from '../src/services/rich_message_normalization.ts';
+import { normalizeRichMessage } from '../src/services/domain/rich_message_normalization.ts';
 import type { BotApiRichMessage } from '../src/types/bot_api_rich_message.ts';
 import {
   EMPTY_RICH_TEXT,

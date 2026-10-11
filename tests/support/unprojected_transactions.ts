@@ -3,8 +3,8 @@
  * execute commands under the given lifetime's commit gate, and run effects after publication, as a
  * session's transactions do.
  */
-import { SessionChangeJournal } from '../../src/transactions/change_staging.ts';
-import { SessionTransactions } from '../../src/transactions/session_transactions.ts';
+import { SessionChangeJournal } from '../../src/transactions/staging/change_staging.ts';
+import { SessionTransactions } from '../../src/transactions/session/session_transactions.ts';
 
 /**
  * Creates the transactions, over a journal of their own, under which the test's unstaged

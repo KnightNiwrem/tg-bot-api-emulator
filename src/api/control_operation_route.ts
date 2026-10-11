@@ -11,8 +11,8 @@ import {
   type DecodedControlRequest,
   readPathPlaceholders,
 } from './contracts/operation_contract.ts';
-import { isContentTypeInRange } from './http_grammar/media_type.ts';
-import type { EmulationSession } from '../types/emulation_session.ts';
+import { isContentTypeInRange } from '../http_grammar/media_type.ts';
+import type { EmulationSession } from '../session/emulation_session.ts';
 import {
   invalidControlRequestResponse,
   sessionNotFoundResponse,

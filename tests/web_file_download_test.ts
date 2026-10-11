@@ -3,7 +3,7 @@ import {
   type WebFileDownload,
   WebFileDownloader,
   type WebResourceFetcher,
-} from '../src/services/web_file_download.ts';
+} from '../src/services/domain/web_file_download.ts';
 import { createRealTimeScheduler } from './support/scheduler.ts';
 
 const PDF_CONTENT = new TextEncoder().encode('%PDF-1.7 report');

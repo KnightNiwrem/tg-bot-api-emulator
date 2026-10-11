@@ -3,7 +3,7 @@ import { presentChatInfoChangeFailure } from '../src/api/sessions/bot_api/errors
 import { presentChatInviteLinkFailure } from '../src/api/sessions/bot_api/errors/chat_invite_link_failure_presenter.ts';
 import { presentChatJoinRequestFailure } from '../src/api/sessions/bot_api/errors/chat_join_request_failure_presenter.ts';
 import { presentChatMemberFailure } from '../src/api/sessions/bot_api/errors/chat_member_failure_presenter.ts';
-import type { EmulationSession } from '../src/types/emulation_session.ts';
+import type { EmulationSession } from '../src/session/emulation_session.ts';
 import {
   type CasesByReason,
   expectPresentations,
