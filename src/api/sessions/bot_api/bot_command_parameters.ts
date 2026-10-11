@@ -15,16 +15,28 @@ const botCommandParameterSchema = z.strictObject({
 }));
 
 /**
- * A `commands` parameter: a JSON array of Bot API `BotCommand` objects. Telegram also reads a
- * number where text is expected; rejecting it instead surfaces the bot's mistake in tests.
+ * A `commands` parameter: a JSON array of Bot API `BotCommand` objects, read as the official Bot
+ * API server's `get_bot_commands` reads it: empty text is no commands, and text it cannot read as
+ * JSON is refused with its description. Telegram also reads a number where text is expected;
+ * rejecting it instead surfaces the bot's mistake in tests.
  */
 export function botCommandsParameter() {
-  return jsonParameter(z.array(botCommandParameterSchema));
+  return jsonParameter(z.array(botCommandParameterSchema), {
+    unparsableJsonDescription: "Bad Request: can't parse commands JSON object",
+    emptyText: { readAs: [] },
+  });
 }
 
-/** A `scope` parameter: a JSON value that `readBotCommandScopeParameter` reads. */
+/**
+ * A `scope` parameter: a JSON value that `readBotCommandScopeParameter` reads, read as the official
+ * Bot API server's `get_bot_command_scope` reads it: empty text is the default scope, and text it
+ * cannot read as JSON is refused with its description.
+ */
 export function botCommandScopeParameter() {
-  return jsonParameter(z.unknown());
+  return jsonParameter(z.unknown(), {
+    unparsableJsonDescription: "Bad Request: can't parse BotCommandScope JSON object",
+    emptyText: { readAs: undefined },
+  });
 }
 
 export type BotCommandScopeParameterReading =
