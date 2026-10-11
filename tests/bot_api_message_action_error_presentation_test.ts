@@ -112,7 +112,7 @@ const PINS_NOT_MODIFIED = [400, 'Bad Request: CHAT_NOT_MODIFIED'] as const;
 
 /** The failures of pins and unpins alike. */
 const PIN_CHANGE_CASES = {
-  ...SUPERGROUP_ACCESS_CASES,
+  ...CHAT_ACCESS_CASES,
   bot_blocked: [[{ reason: 'bot_blocked' }, ...BOT_BLOCKED]],
   not_enough_rights: [[{ reason: 'not_enough_rights' }, ...NOT_ENOUGH_RIGHTS_TO_PIN]],
   service_message_not_pinnable: [

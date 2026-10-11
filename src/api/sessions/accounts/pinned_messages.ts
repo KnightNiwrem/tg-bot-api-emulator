@@ -112,7 +112,7 @@ export function createPinnedMessageRoutes(): Hono<SessionRouteContextTypes> {
   return accountRoutes;
 }
 
-type PinningChat = Parameters<EmulationSession['messagePinning']['pinMessage']>[0]['chat'];
+type PinningChat = Parameters<MessagePinning['pinMessageByAccount']>[0]['chat'];
 
 /** Answers an account's request for the pinned messages of its chat, shown as its history shows. */
 function answerPinnedMessages(
@@ -147,15 +147,15 @@ function answerPinChange(
   },
 ): Response {
   const { messagePinning } = context.get('emulationSession');
-  const input = { pinner: { kind: 'account', accountId } as const, chat, messageId };
+  const input = { fromAccountId: accountId, chat, messageId };
   if (change === 'pin') {
     // Accounts pin as Telegram's clients do by default, notifying the members of a supergroup.
-    const result = messagePinning.pinMessage({ ...input, isSilent: false });
+    const result = messagePinning.pinMessageByAccount({ ...input, isSilent: false });
     return result.pinned
       ? context.body(null, 204)
       : controlErrorResponse(context, pinChangeFailureStatus(result.reason), result.reason);
   }
-  const result = messagePinning.unpinMessage(input);
+  const result = messagePinning.unpinMessageByAccount(input);
   return result.unpinned
     ? context.body(null, 204)
     : controlErrorResponse(context, pinChangeFailureStatus(result.reason), result.reason);
@@ -169,8 +169,14 @@ function answerPinChange(
  */
 function pinChangeFailureStatus(
   reason:
-    | Extract<ReturnType<MessagePinning['pinMessage']>, { readonly pinned: false }>['reason']
-    | Extract<ReturnType<MessagePinning['unpinMessage']>, { readonly unpinned: false }>['reason'],
+    | Extract<
+      ReturnType<MessagePinning['pinMessageByAccount']>,
+      { readonly pinned: false }
+    >['reason']
+    | Extract<
+      ReturnType<MessagePinning['unpinMessageByAccount']>,
+      { readonly unpinned: false }
+    >['reason'],
 ): 400 | 403 | 404 | 409 {
   switch (reason) {
     case 'pinner_not_found':
@@ -188,10 +194,6 @@ function pinChangeFailureStatus(
     // As for an account's messages, a block conflicts with writing to the bot.
     case 'bot_blocked':
       return 409;
-    // Only bots are refused for their former membership.
-    case 'bot_not_a_member':
-    case 'bot_kicked':
-      throw new Error(`Account refused as a bot: ${reason}`);
     default: {
       const unhandledReason: never = reason;
       throw new Error(`Unhandled pin change failure: ${unhandledReason}`);
