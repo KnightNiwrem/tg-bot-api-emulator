@@ -88,15 +88,18 @@ interface PollStore {
   closePoll(pollId: PollId): Poll;
 }
 
-/** Takes each event into the transaction of the command that caused it. */
-interface ChatDomainEventSink {
+/** The session's transactions: each command runs in one, and emits its event into it. */
+interface PollTransactions {
+  /** Runs a command in the transaction of the command executing, or in one of its own. */
+  withinTransaction<Result>(command: () => Result): Result;
   emit(event: ChatDomainEvent): void;
 }
 
 interface PollServiceDependencies {
   readonly accountChatMessages: AccountChatMessageReader;
   readonly polls: PollStore;
-  readonly events: ChatDomainEventSink;
+  /** Runs each vote, stop and expiry as one transaction, which receives its event. */
+  readonly transactions: PollTransactions;
 }
 
 type PollMessageResolution =
@@ -110,16 +113,19 @@ type PollMessageResolution =
  * poll as the message it repeats, so a vote through either counts once in that poll. Each changed
  * answer is published, for a bot that sent the poll to observe. An account also stops the polls it
  * sent, as TDLib's `stopPoll` does for a user.
+ *
+ * Each change runs as one transaction, checks included: the poll's new answers or closure and the
+ * updates its event becomes are published together, or not at all.
  */
 export class PollService {
   readonly #accountChatMessages: AccountChatMessageReader;
   readonly #polls: PollStore;
-  readonly #events: ChatDomainEventSink;
+  readonly #transactions: PollTransactions;
 
-  constructor({ accountChatMessages, polls, events }: PollServiceDependencies) {
+  constructor({ accountChatMessages, polls, transactions }: PollServiceDependencies) {
     this.#accountChatMessages = accountChatMessages;
     this.#polls = polls;
-    this.#events = events;
+    this.#transactions = transactions;
   }
 
   /** Returns the poll a message shows to an account that can read it, with the account's answer. */
@@ -145,33 +151,35 @@ export class PollService {
    * revoting refuses any answer from an account that has answered.
    */
   setAccountPollAnswer(input: SetAccountPollAnswerInput): SetAccountPollAnswerResult {
-    const resolution = this.#resolvePollMessage(input);
-    if (!resolution.resolved) {
-      return { answered: false, reason: resolution.reason };
-    }
-    const { message, poll } = resolution;
-    const chosenOptionPositions = toChosenOptionPositions(input.optionPositions);
-    const answerFailure = checkPollAnswer(poll, input.accountId, chosenOptionPositions);
-    if (answerFailure !== undefined) {
-      return { answered: false, reason: answerFailure };
-    }
-    const previousOptionPositions = getVoterAnswer(poll, input.accountId);
-    if (areSameOptionPositions(previousOptionPositions, chosenOptionPositions)) {
-      return { answered: true, poll, message, chosenOptionPositions };
-    }
+    return this.#transactions.withinTransaction(() => {
+      const resolution = this.#resolvePollMessage(input);
+      if (!resolution.resolved) {
+        return { answered: false, reason: resolution.reason };
+      }
+      const { message, poll } = resolution;
+      const chosenOptionPositions = toChosenOptionPositions(input.optionPositions);
+      const answerFailure = checkPollAnswer(poll, input.accountId, chosenOptionPositions);
+      if (answerFailure !== undefined) {
+        return { answered: false, reason: answerFailure };
+      }
+      const previousOptionPositions = getVoterAnswer(poll, input.accountId);
+      if (areSameOptionPositions(previousOptionPositions, chosenOptionPositions)) {
+        return { answered: true, poll, message, chosenOptionPositions };
+      }
 
-    const answeredPoll = this.#polls.setVoterAnswer(
-      poll.id,
-      input.accountId,
-      chosenOptionPositions,
-    );
-    this.#events.emit({
-      type: 'poll_answer_changed',
-      poll: answeredPoll,
-      voterId: input.accountId,
-      chosenOptionPositions,
+      const answeredPoll = this.#polls.setVoterAnswer(
+        poll.id,
+        input.accountId,
+        chosenOptionPositions,
+      );
+      this.#transactions.emit({
+        type: 'poll_answer_changed',
+        poll: answeredPoll,
+        voterId: input.accountId,
+        chosenOptionPositions,
+      });
+      return { answered: true, poll: answeredPoll, message, chosenOptionPositions };
     });
-    return { answered: true, poll: answeredPoll, message, chosenOptionPositions };
   }
 
   /**
@@ -182,20 +190,22 @@ export class PollService {
    * edit date. The closure is published as a bot's stop is; no bot observes an account's poll.
    */
   stopAccountPoll(key: AccountPollMessageKey): StopAccountPollResult {
-    const resolution = this.#resolvePollMessage(key);
-    if (!resolution.resolved) {
-      return { stopped: false, reason: resolution.reason };
-    }
-    const { message, poll } = resolution;
-    if (!canAccountEditMessage(message, key.accountId)) {
-      return { stopped: false, reason: 'poll_not_stoppable' };
-    }
-    if (poll.isClosed) {
-      return { stopped: false, reason: 'poll_already_closed' };
-    }
-    const closedPoll = this.#polls.closePoll(poll.id);
-    this.#events.emit({ type: 'poll_closed', poll: closedPoll });
-    return { stopped: true, poll: closedPoll, message };
+    return this.#transactions.withinTransaction(() => {
+      const resolution = this.#resolvePollMessage(key);
+      if (!resolution.resolved) {
+        return { stopped: false, reason: resolution.reason };
+      }
+      const { message, poll } = resolution;
+      if (!canAccountEditMessage(message, key.accountId)) {
+        return { stopped: false, reason: 'poll_not_stoppable' };
+      }
+      if (poll.isClosed) {
+        return { stopped: false, reason: 'poll_already_closed' };
+      }
+      const closedPoll = this.#polls.closePoll(poll.id);
+      this.#transactions.emit({ type: 'poll_closed', poll: closedPoll });
+      return { stopped: true, poll: closedPoll, message };
+    });
   }
 
   /**
@@ -204,19 +214,21 @@ export class PollService {
    * observes its closure, as Telegram's servers report a poll that closed by itself.
    */
   expirePoll(pollId: PollId): ExpirePollResult {
-    const poll = this.#polls.getPoll(pollId);
-    if (poll === undefined) {
-      return { expired: false, reason: 'poll_not_found' };
-    }
-    if (poll.isClosed) {
-      return { expired: false, reason: 'poll_already_closed' };
-    }
-    if (poll.closingTime === undefined) {
-      return { expired: false, reason: 'poll_without_closing_time' };
-    }
-    const closedPoll = this.#polls.closePoll(pollId);
-    this.#events.emit({ type: 'poll_closed', poll: closedPoll });
-    return { expired: true, poll: closedPoll };
+    return this.#transactions.withinTransaction(() => {
+      const poll = this.#polls.getPoll(pollId);
+      if (poll === undefined) {
+        return { expired: false, reason: 'poll_not_found' };
+      }
+      if (poll.isClosed) {
+        return { expired: false, reason: 'poll_already_closed' };
+      }
+      if (poll.closingTime === undefined) {
+        return { expired: false, reason: 'poll_without_closing_time' };
+      }
+      const closedPoll = this.#polls.closePoll(pollId);
+      this.#transactions.emit({ type: 'poll_closed', poll: closedPoll });
+      return { expired: true, poll: closedPoll };
+    });
   }
 
   /**

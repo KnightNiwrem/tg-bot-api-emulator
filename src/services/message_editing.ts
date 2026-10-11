@@ -449,9 +449,8 @@ interface MessageEditingDependencies {
  * Each edit runs as one transaction: the files its new content uploads, the edited message and the
  * updates its event becomes are published together, or, should any step fail, not at all. Every
  * condition an edit depends on is checked in that transaction, so an edit prepared earlier is
- * never committed against changed state. Stopping a poll does not run in a transaction of its own
- * yet: it joins the transaction of a command executing it, and its event is otherwise projected
- * in a transaction of its own.
+ * never committed against changed state. Stopping a poll is one transaction too: the closed poll,
+ * the message's new keyboard and the closure's updates.
  */
 export class MessageEditingService {
   readonly #accounts: AccountLookup;
@@ -757,42 +756,44 @@ export class MessageEditingService {
     targeting: BotEditTargeting<Types>,
     input: Types['target'] & BotPollStop,
   ): BotPollStopResult<Types> {
-    if (this.#bots.getById(input.fromBotId) === undefined) {
-      return { stopped: false, reason: 'bot_not_found' };
-    }
-    const target = targeting.reachMessage(input);
-    if (!target.reached) {
-      return { stopped: false, reason: target.reason };
-    }
-    const { message } = target;
-    // A service message shows no poll.
-    if (!isContentMessage(message)) {
-      return { stopped: false, reason: 'message_has_no_poll' };
-    }
-    const pollLookup = findStoppablePoll(message, input.fromBotId, this.#polls);
-    if (!pollLookup.found) {
-      return { stopped: false, reason: pollLookup.reason };
-    }
-    const { inlineKeyboard } = input;
-    const buttonFailure = targeting.findButtonFailure(message, inlineKeyboard, {
-      kind: 'existing',
-      content: message.content,
-    });
-    if (buttonFailure !== undefined) {
-      return { stopped: false, reason: buttonFailure };
-    }
-    if (inlineKeyboard !== undefined && !hasOnlyValidCallbackData(inlineKeyboard)) {
-      return { stopped: false, reason: 'callback_data_invalid' };
-    }
+    return this.#transactions.withinTransaction(() => {
+      if (this.#bots.getById(input.fromBotId) === undefined) {
+        return { stopped: false, reason: 'bot_not_found' };
+      }
+      const target = targeting.reachMessage(input);
+      if (!target.reached) {
+        return { stopped: false, reason: target.reason };
+      }
+      const { message } = target;
+      // A service message shows no poll.
+      if (!isContentMessage(message)) {
+        return { stopped: false, reason: 'message_has_no_poll' };
+      }
+      const pollLookup = findStoppablePoll(message, input.fromBotId, this.#polls);
+      if (!pollLookup.found) {
+        return { stopped: false, reason: pollLookup.reason };
+      }
+      const { inlineKeyboard } = input;
+      const buttonFailure = targeting.findButtonFailure(message, inlineKeyboard, {
+        kind: 'existing',
+        content: message.content,
+      });
+      if (buttonFailure !== undefined) {
+        return { stopped: false, reason: buttonFailure };
+      }
+      if (inlineKeyboard !== undefined && !hasOnlyValidCallbackData(inlineKeyboard)) {
+        return { stopped: false, reason: 'callback_data_invalid' };
+      }
 
-    const stoppedPoll = this.#polls.closePoll(pollLookup.poll.id);
-    const stoppedMessage = targeting.storeEdit(message, {
-      content: message.content,
-      inlineKeyboard,
-      contentEditedAtUnixSeconds: message.contentEditedAtUnixSeconds,
+      const stoppedPoll = this.#polls.closePoll(pollLookup.poll.id);
+      const stoppedMessage = targeting.storeEdit(message, {
+        content: message.content,
+        inlineKeyboard,
+        contentEditedAtUnixSeconds: message.contentEditedAtUnixSeconds,
+      });
+      this.#transactions.emit({ type: 'poll_closed', poll: stoppedPoll });
+      return { stopped: true, message: stoppedMessage, poll: stoppedPoll };
     });
-    this.#transactions.emit({ type: 'poll_closed', poll: stoppedPoll });
-    return { stopped: true, message: stoppedMessage, poll: stoppedPoll };
   }
 
   #editAccountMessage<Types extends AccountEditTargetingTypes>(
