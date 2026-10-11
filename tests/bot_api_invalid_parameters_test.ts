@@ -316,6 +316,70 @@ Deno.test('the query answer methods name the parameter that does not fit their s
   );
 });
 
+Deno.test('the member administration methods name the parameter that does not fit their schema', async () => {
+  const { api, botApiPath } = await createFixture();
+  const cases: readonly [method: string, parameters: object, description: string][] = [
+    [
+      'banChatMember',
+      { chat_id: 1, user_id: 2, until_date: 'tomorrow' },
+      'Bad Request: invalid banChatMember parameters: until_date',
+    ],
+    [
+      'unbanChatMember',
+      { chat_id: 1, user_id: 2, only_if_banned: 'secret' },
+      'Bad Request: invalid unbanChatMember parameters: only_if_banned',
+    ],
+    ['leaveChat', { chat_id: 'secret' }, 'Bad Request: invalid leaveChat parameters: chat_id'],
+    ['leaveChat', {}, 'Bad Request: chat_id is empty'],
+    [
+      'getChatMember',
+      { chat_id: 1, user_id: 'secret' },
+      'Bad Request: invalid getChatMember parameters: user_id',
+    ],
+    ['getChatMember', { chat_id: 1 }, 'Bad Request: invalid user_id specified'],
+    ['getChatAdministrators', {}, 'Bad Request: chat_id is empty'],
+    [
+      'getChatMemberCount',
+      { secret: 1 },
+      'Bad Request: invalid getChatMemberCount parameters: secret',
+    ],
+    [
+      'setChatAdministratorCustomTitle',
+      { user_id: 2, custom_title: 'Lead' },
+      'Bad Request: chat_id is empty',
+    ],
+    // The user is read before the anonymity the emulator refuses.
+    [
+      'promoteChatMember',
+      { chat_id: 1, is_anonymous: true },
+      'Bad Request: invalid user_id specified',
+    ],
+    [
+      'promoteChatMember',
+      { chat_id: 1, user_id: 2, is_anonymous: true },
+      'Bad Request: anonymous administrators are not supported',
+    ],
+    // The user is read first, then the permissions, then the chat.
+    ['restrictChatMember', { permissions: 'not JSON' }, 'Bad Request: invalid user_id specified'],
+    [
+      'restrictChatMember',
+      { user_id: 2, permissions: 'not JSON' },
+      "Bad Request: can't parse permissions JSON object",
+    ],
+    ['restrictChatMember', { user_id: 2, permissions: {} }, 'Bad Request: chat_id is empty'],
+  ];
+
+  const answers = [];
+  for (const [method, parameters] of cases) {
+    answers.push(await callBotApi(api, `${botApiPath}/${method}`, parameters));
+  }
+  assertEquals(
+    answers,
+    cases.map(([, , description]) => [400, description]),
+    'Expected each refusal from the first step that refuses, naming a schema path without its value',
+  );
+});
+
 /** Creates a session holding a bot. */
 async function createFixture() {
   const { api, sessionPath } = await createTestSession();
