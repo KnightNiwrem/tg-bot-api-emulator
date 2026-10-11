@@ -184,6 +184,50 @@ Deno.test('getFile names the parameter that does not fit its schema, then requir
   );
 });
 
+Deno.test('the update delivery methods name the parameter that does not fit their schema', async () => {
+  const { api, botApiPath } = await createFixture();
+  const cases: readonly [method: string, parameters: object, description: string][] = [
+    ['getUpdates', { limit: 101 }, 'Bad Request: invalid getUpdates parameters: limit'],
+    [
+      'getUpdates',
+      { allowed_updates: ['message', 1] },
+      'Bad Request: invalid getUpdates parameters: allowed_updates[1]',
+    ],
+    ['getWebhookInfo', { url: 'secret' }, 'Bad Request: invalid getWebhookInfo parameters: url'],
+    [
+      'deleteWebhook',
+      { drop_pending_updates: 'secret' },
+      'Bad Request: invalid deleteWebhook parameters: drop_pending_updates',
+    ],
+    [
+      'setWebhook',
+      { url: 'https://bot.example/webhook', allowed_updates: 'secret' },
+      'Bad Request: invalid setWebhook parameters: allowed_updates',
+    ],
+    // An IP address is refused before a certificate, and both before the webhook's URL is read.
+    [
+      'setWebhook',
+      { url: 'ftp://bot.example', ip_address: '203.0.113.1', certificate: 'attach://file' },
+      'Bad Request: webhook IP addresses are not supported',
+    ],
+    [
+      'setWebhook',
+      { url: 'ftp://bot.example', certificate: 'attach://file' },
+      'Bad Request: custom webhook certificates are not supported',
+    ],
+  ];
+
+  const answers = [];
+  for (const [method, parameters] of cases) {
+    answers.push(await callBotApi(api, `${botApiPath}/${method}`, parameters));
+  }
+  assertEquals(
+    answers,
+    cases.map(([, , description]) => [400, description]),
+    'Expected each refusal from the first step that refuses, naming a schema path without its value',
+  );
+});
+
 /** Creates a session holding a bot. */
 async function createFixture() {
   const { api, sessionPath } = await createTestSession();

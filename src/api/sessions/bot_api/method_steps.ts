@@ -11,6 +11,7 @@ import {
   type BotApiMethod,
   type BotApiMethodAnswer,
   type BotApiMethodContext,
+  type BotApiMethodOutcome,
 } from './method_call.ts';
 import type { BotApiRequestParameters, BotApiUploadedFiles } from './request_parameters.ts';
 
@@ -121,21 +122,28 @@ export function commandMethodOfSteps<Schema extends z.ZodType, Prepared>(
 
 /**
  * A method whose handler runs its steps, then `execute`, which answers the call and commits its
- * own changes, as a `BotApiMethodHandler` does.
+ * own changes, as a `BotApiMethodHandler` does; one that waits, as a long poll does, checks its
+ * session as such a handler does.
  */
 export interface BotApiHandledMethodOfSteps<Schema extends z.ZodType, Prepared>
   extends BotApiMethodOfSteps<Schema, Prepared> {
-  readonly execute: (context: BotApiMethodContext, prepared: Prepared) => BotApiMethodAnswer;
+  readonly execute: (
+    context: BotApiMethodContext,
+    prepared: Prepared,
+  ) => BotApiMethodOutcome | Promise<BotApiMethodOutcome>;
+  /** The answer a call receives once its session has ended, as a method record declares it. */
+  readonly answerOnceSessionEnded?: BotApiMethodAnswer;
 }
 
 /** The method record of a method that `BotApiHandledMethodOfSteps` defines. */
 export function handledMethodOfSteps<Schema extends z.ZodType, Prepared>(
-  { execute, ...method }: BotApiHandledMethodOfSteps<Schema, Prepared>,
+  { execute, answerOnceSessionEnded, ...method }: BotApiHandledMethodOfSteps<Schema, Prepared>,
 ): BotApiMethod {
   return {
     name: method.name,
     recordsActivity: method.recordsActivity,
-    handler: (context, parameters, uploadedFiles): BotApiMethodAnswer => {
+    ...(answerOnceSessionEnded === undefined ? {} : { answerOnceSessionEnded }),
+    handler: (context, parameters, uploadedFiles) => {
       const result = runSteps(method, context, parameters, uploadedFiles);
       return result.proceeds ? execute(context, result.value) : result.answer;
     },

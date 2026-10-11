@@ -11,7 +11,9 @@ import {
   botApiError,
   type BotApiMethodAnswer,
   type BotApiMethodContext,
+  type BotApiMethodOutcome,
   botApiResult,
+  SESSION_ENDED,
 } from '../src/api/sessions/bot_api/method_call.ts';
 import {
   answerWith,
@@ -159,6 +161,33 @@ Deno.test('a handled method of steps executes once its steps proceed, with its o
     ],
     ['Hi'],
   ]);
+});
+
+Deno.test('a handled method of steps may wait, and keeps its answer once its session ends', async () => {
+  const endedSessionAnswer = botApiResult([]);
+  const method = handledMethodOfSteps({
+    name: 'waitForThings',
+    recordsActivity: false,
+    parameters: z.strictObject({}),
+    steps: ({ parameters }) => startSteps(parameters),
+    execute: async (): Promise<BotApiMethodOutcome> => {
+      await Promise.resolve();
+      return SESSION_ENDED;
+    },
+    answerOnceSessionEnded: endedSessionAnswer,
+  });
+  if (!('handler' in method)) {
+    throw new Error('Expected a handled method of steps to have a handler');
+  }
+
+  assertEquals(
+    [
+      await method.handler(createMethodContext(), {}, new Map()),
+      method.answerOnceSessionEnded,
+      method.recordsActivity,
+    ],
+    [SESSION_ENDED, endedSessionAnswer, false],
+  );
 });
 
 /** The context of a call by a bot of a new session. */

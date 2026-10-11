@@ -141,7 +141,10 @@ Deno.test('setWebhook, getWebhookInfo, and deleteWebhook follow Telegram checks'
         { url: webhookUrl, ip_address: '203.0.113.1' },
         'Bad Request: webhook IP addresses are not supported',
       ],
-      [{ url: webhookUrl, max_connections: 'many' }, 'Bad Request: invalid setWebhook parameters'],
+      [
+        { url: webhookUrl, max_connections: 'many' },
+        'Bad Request: invalid setWebhook parameters: max_connections',
+      ],
     ];
     for (const [parameters, description] of rejections) {
       expectAnswer(

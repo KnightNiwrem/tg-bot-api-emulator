@@ -1,38 +1,21 @@
 import { z } from 'zod';
 
 import { presentUpdateDeliveryFailure } from '../errors/update_delivery_failure_presenter.ts';
+import { type BotApiMethod, botApiResult, SESSION_ENDED } from '../method_call.ts';
 import {
-  botApiError,
-  type BotApiMethod,
-  type BotApiMethodAnswer,
-  type BotApiMethodContext,
-  type BotApiMethodOutcome,
-  botApiResult,
-  SESSION_ENDED,
-} from '../method_call.ts';
+  answerWithBadRequest,
+  type BotApiStepResult,
+  handledMethodOfSteps,
+  proceedWith,
+  startSteps,
+} from '../method_steps.ts';
 import {
   booleanParameter,
-  type BotApiRequestParameters,
   type BotApiUploadedFiles,
   clampedIntegerParameter,
   integerParameter,
   jsonParameter,
 } from '../request_parameters.ts';
-
-/** The methods by which a bot receives updates: polling with `getUpdates`, or a webhook. */
-export const UPDATE_DELIVERY_METHODS: readonly BotApiMethod[] = [
-  { name: 'deleteWebhook', recordsActivity: true, handler: handleDeleteWebhook },
-  {
-    name: 'getUpdates',
-    recordsActivity: false,
-    handler: handleGetUpdates,
-    // A long poll held or still arriving when its session ends finds nothing, as one whose timeout
-    // passes does; it confirms nothing.
-    answerOnceSessionEnded: botApiResult([]),
-  },
-  { name: 'getWebhookInfo', recordsActivity: true, handler: handleGetWebhookInfo },
-  { name: 'setWebhook', recordsActivity: true, handler: handleSetWebhook },
-];
 
 /** Telegram's answers to setWebhook and deleteWebhook, by what the request did. */
 const SET_WEBHOOK_OUTCOME_DESCRIPTIONS = {
@@ -85,93 +68,97 @@ const getUpdatesParametersSchema = z.strictObject({
   allowed_updates: jsonParameter(z.array(z.string())).optional(),
 });
 
-async function handleGetUpdates(
-  context: BotApiMethodContext,
-  parameters: BotApiRequestParameters,
-): Promise<BotApiMethodOutcome> {
-  const parsedParameters = getUpdatesParametersSchema.safeParse(parameters);
-  if (!parsedParameters.success) {
-    return botApiError(400, 'Bad Request: invalid getUpdates parameters');
-  }
+type SetWebhookParameters = z.output<typeof setWebhookParametersSchema>;
 
-  const result = await context.session.botApi.getUpdates(
-    context.bot,
-    {
-      offset: parsedParameters.data.offset,
-      limit: parsedParameters.data.limit,
-      timeoutSeconds: parsedParameters.data.timeout,
-      allowedUpdates: parsedParameters.data.allowed_updates,
-      signal: context.signal,
+/** The methods by which a bot receives updates: polling with `getUpdates`, or a webhook. */
+export const UPDATE_DELIVERY_METHODS: readonly BotApiMethod[] = [
+  handledMethodOfSteps({
+    name: 'deleteWebhook',
+    recordsActivity: true,
+    parameters: deleteWebhookParametersSchema,
+    steps: ({ parameters }) => startSteps(parameters),
+    execute: (context, { drop_pending_updates: dropPendingUpdates }) => {
+      const outcome = context.session.botApi.deleteWebhook(context.bot, { dropPendingUpdates });
+      return botApiResult(true, SET_WEBHOOK_OUTCOME_DESCRIPTIONS[outcome]);
     },
-  );
-  if (result.retrieved) {
-    return botApiResult(result.updates);
-  }
-  // A poll whose session ended is refused without an answer.
-  const { reason } = result;
-  return reason === 'session_ended'
-    ? SESSION_ENDED
-    : presentUpdateDeliveryFailure({ retrieved: false, reason });
+  }),
+  handledMethodOfSteps({
+    name: 'getUpdates',
+    recordsActivity: false,
+    parameters: getUpdatesParametersSchema,
+    steps: ({ parameters }) => startSteps(parameters),
+    execute: async (context, { offset, limit, timeout, allowed_updates: allowedUpdates }) => {
+      const result = await context.session.botApi.getUpdates(context.bot, {
+        offset,
+        limit,
+        timeoutSeconds: timeout,
+        allowedUpdates,
+        signal: context.signal,
+      });
+      if (result.retrieved) {
+        return botApiResult(result.updates);
+      }
+      // A poll whose session ended is refused without an answer.
+      const { reason } = result;
+      return reason === 'session_ended'
+        ? SESSION_ENDED
+        : presentUpdateDeliveryFailure({ retrieved: false, reason });
+    },
+    // A long poll held or still arriving when its session ends finds nothing, as one whose timeout
+    // passes does; it confirms nothing.
+    answerOnceSessionEnded: botApiResult([]),
+  }),
+  handledMethodOfSteps({
+    name: 'getWebhookInfo',
+    recordsActivity: true,
+    parameters: getWebhookInfoParametersSchema,
+    steps: ({ parameters }) => startSteps(parameters),
+    execute: (context) => botApiResult(context.session.botApi.getWebhookInfo(context.bot)),
+  }),
+  handledMethodOfSteps({
+    name: 'setWebhook',
+    recordsActivity: true,
+    parameters: setWebhookParametersSchema,
+    steps: ({ parameters, uploadedFiles }) =>
+      startSteps(parameters)
+        .andThen(refuseWebhookIpAddress)
+        .andThen((webhookParameters) => refuseWebhookCertificate(webhookParameters, uploadedFiles)),
+    execute: (context, parameters) => {
+      const result = context.session.botApi.setWebhook(context.bot, {
+        url: parameters.url,
+        secretToken: parameters.secret_token,
+        maxConnections: parameters.max_connections,
+        allowedUpdates: parameters.allowed_updates,
+        dropPendingUpdates: parameters.drop_pending_updates,
+      });
+      return result.accepted
+        ? botApiResult(true, SET_WEBHOOK_OUTCOME_DESCRIPTIONS[result.outcome])
+        : presentUpdateDeliveryFailure(result);
+    },
+  }),
+];
+
+/** The step that refuses a webhook at a given IP address, which the emulator does not support. */
+function refuseWebhookIpAddress(
+  parameters: SetWebhookParameters,
+): BotApiStepResult<SetWebhookParameters> {
+  return parameters.ip_address.length > 0
+    ? answerWithBadRequest(WEBHOOK_IP_ADDRESS_UNSUPPORTED_DESCRIPTION)
+    : proceedWith(parameters);
 }
 
-function handleSetWebhook(
-  context: BotApiMethodContext,
-  parameters: BotApiRequestParameters,
+/**
+ * The step that refuses a webhook's self-signed certificate, which the emulator does not support.
+ * Telegram reads the certificate from a part of that name or through `attach://`.
+ */
+function refuseWebhookCertificate(
+  parameters: SetWebhookParameters,
   uploadedFiles: BotApiUploadedFiles,
-): BotApiMethodAnswer {
-  const parsedParameters = setWebhookParametersSchema.safeParse(parameters);
-  if (!parsedParameters.success) {
-    return botApiError(400, 'Bad Request: invalid setWebhook parameters');
-  }
-  const { data } = parsedParameters;
-  if (data.ip_address.length > 0) {
-    return botApiError(400, WEBHOOK_IP_ADDRESS_UNSUPPORTED_DESCRIPTION);
-  }
-  // Telegram reads the certificate from a part of that name or through `attach://`.
-  const specifiesCertificate = (data.certificate !== undefined && data.certificate.length > 0) ||
+): BotApiStepResult<SetWebhookParameters> {
+  const specifiesCertificate =
+    (parameters.certificate !== undefined && parameters.certificate.length > 0) ||
     uploadedFiles.has('certificate');
-  if (specifiesCertificate) {
-    return botApiError(400, WEBHOOK_CERTIFICATE_UNSUPPORTED_DESCRIPTION);
-  }
-
-  const result = context.session.botApi.setWebhook(
-    context.bot,
-    {
-      url: data.url,
-      secretToken: data.secret_token,
-      maxConnections: data.max_connections,
-      allowedUpdates: data.allowed_updates,
-      dropPendingUpdates: data.drop_pending_updates,
-    },
-  );
-  if (!result.accepted) {
-    return presentUpdateDeliveryFailure(result);
-  }
-  return botApiResult(true, SET_WEBHOOK_OUTCOME_DESCRIPTIONS[result.outcome]);
-}
-
-function handleGetWebhookInfo(
-  context: BotApiMethodContext,
-  parameters: BotApiRequestParameters,
-): BotApiMethodAnswer {
-  if (!getWebhookInfoParametersSchema.safeParse(parameters).success) {
-    return botApiError(400, 'Bad Request: invalid getWebhookInfo parameters');
-  }
-  return botApiResult(context.session.botApi.getWebhookInfo(context.bot));
-}
-
-function handleDeleteWebhook(
-  context: BotApiMethodContext,
-  parameters: BotApiRequestParameters,
-): BotApiMethodAnswer {
-  const parsedParameters = deleteWebhookParametersSchema.safeParse(parameters);
-  if (!parsedParameters.success) {
-    return botApiError(400, 'Bad Request: invalid deleteWebhook parameters');
-  }
-
-  const outcome = context.session.botApi.deleteWebhook(
-    context.bot,
-    { dropPendingUpdates: parsedParameters.data.drop_pending_updates },
-  );
-  return botApiResult(true, SET_WEBHOOK_OUTCOME_DESCRIPTIONS[outcome]);
+  return specifiesCertificate
+    ? answerWithBadRequest(WEBHOOK_CERTIFICATE_UNSUPPORTED_DESCRIPTION)
+    : proceedWith(parameters);
 }
