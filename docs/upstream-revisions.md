@@ -27,6 +27,9 @@ committed 2026-08-25, Bot API 10.3. It is the server the
 - `telegram-bot-api/Query.cpp` and `Query.h`: how answers and errors, with `retry_after`, are
   written.
 - Feature pages: every page in [`docs/features/`](features/README.md) cites it.
+- Code and tests citing it: `src/api/sessions/bot_api/errors/error_template.ts`, the root of the
+  error catalogue's links; `src/types/bot_api.ts`; `tests/bot_api_error_presentation_test.ts`, which
+  checks that the catalogue's links use this revision; and `tests/bot_api_type_conformance_test.ts`.
 
 ## TDLib
 
@@ -62,8 +65,12 @@ functions it follows.
 - `tdnet/td/net/HttpReader.cpp`, `HttpConnectionBase.cpp`, `tdutils/td/utils/HttpUrl.cpp` and
   `JsonBuilder.cpp`: how requests are read, in `http_grammar/` and `src/api/`.
 - `td/generate/scheme/td_api.tl`: the TDLib API's own descriptions of fields and limits.
-- Feature pages: every page in [`docs/features/`](features/README.md) except the index and
+- Feature pages: every page in [`docs/features/`](features/README.md), the index included, except
   `bot-activity.md`.
+- Code and tests citing it: `src/api/sessions/bot_api/errors/error_template.ts`, the root of the
+  error catalogue's links; `tests/bot_api_error_presentation_test.ts`, which checks that the
+  catalogue's links use this revision; `tests/bot_api_type_conformance_test.ts`; and the fixtures
+  `tests/fixtures/tdlib_detected_entity_cases.ts` and `tests/fixtures/tdlib_markup_cases.ts`.
 
 **[`tdlib/td` at `ea97bcdd3a15523c58ddfe772b4547187cf5bbeb`](https://github.com/tdlib/td/commit/ea97bcdd3a15523c58ddfe772b4547187cf5bbeb)**,
 committed 2026-09-21: the tests that the text-handling fixtures were ported from.
