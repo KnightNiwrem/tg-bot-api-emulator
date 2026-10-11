@@ -1,3 +1,4 @@
+import { assertEquals } from '@std/assert';
 import { ButtonSelectionError, findButton, listButtons } from './mod.ts';
 import type { ButtonSelector, MessageWithButtons, RichBlockTableCell, RichText } from './mod.ts';
 
@@ -55,23 +56,16 @@ Deno.test('listButtons lists rich message buttons, then the inline keyboard, wit
     'Equipment reply_markup.inline_keyboard[0][1]',
     'Guide reply_markup.inline_keyboard[0][2]',
   ];
-  if (JSON.stringify(buttons) !== JSON.stringify(expected)) {
-    throw new Error(`Unexpected buttons: ${JSON.stringify(buttons)}`);
-  }
+  assertEquals(buttons, expected, 'Unexpected buttons');
 
   const [potionDetails] = listButtons(shop);
   const containers = potionDetails?.containers.map((container) =>
     `${container.kind} ${container.text}`
   );
-  if (
-    JSON.stringify(containers) !==
-      JSON.stringify([
-        'block Potion | 10g | Details\nEther | 20g | Details',
-        'table_row Potion | 10g | Details',
-      ])
-  ) {
-    throw new Error(`Unexpected containers: ${JSON.stringify(containers)}`);
-  }
+  assertEquals(containers, [
+    'block Potion | 10g | Details\nEther | 20g | Details',
+    'table_row Potion | 10g | Details',
+  ], 'Unexpected containers');
 });
 
 Deno.test('findButton matches the whole label, or a pattern', () => {
@@ -201,9 +195,7 @@ Deno.test('listButtons finds buttons in quotes, credits, and captions', () => {
     'caption credit rich_message.blocks[2].caption.credit.button',
     'table caption rich_message.blocks[3].caption.button',
   ];
-  if (JSON.stringify(buttons) !== JSON.stringify(expected)) {
-    throw new Error(`Unexpected buttons: ${JSON.stringify(buttons)}`);
-  }
+  assertEquals(buttons, expected, 'Unexpected buttons');
 });
 
 Deno.test('listButtons keeps disabled buttons, which tests can tell apart', () => {
@@ -219,7 +211,5 @@ Deno.test('listButtons keeps disabled buttons, which tests can tell apart', () =
     },
   });
   const disabled = buttons.filter(({ button }) => 'disabled' in button).map(({ label }) => label);
-  if (JSON.stringify(disabled) !== JSON.stringify(['Sold out'])) {
-    throw new Error(`Expected the disabled button to be listed, got ${JSON.stringify(disabled)}`);
-  }
+  assertEquals(disabled, ['Sold out'], 'Expected the disabled button to be listed');
 });

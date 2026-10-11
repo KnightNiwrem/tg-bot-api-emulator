@@ -1,3 +1,4 @@
+import { assertEquals } from '@std/assert';
 import {
   type WebFileDownload,
   WebFileDownloader,
@@ -18,9 +19,7 @@ Deno.test('WebFileDownloader downloads content with its media type', async () =>
 
   const download = await downloader.download('https://example.com/report.pdf', 1_000);
   assertDownloaded(download, PDF_CONTENT, 'application/pdf');
-  if (JSON.stringify(requestedUrls) !== JSON.stringify(['https://example.com/report.pdf'])) {
-    throw new Error(`Expected one request, received ${JSON.stringify(requestedUrls)}`);
-  }
+  assertEquals(requestedUrls, ['https://example.com/report.pdf'], 'Expected one request');
 });
 
 Deno.test('WebFileDownloader follows a bounded number of HTTP redirects', async () => {

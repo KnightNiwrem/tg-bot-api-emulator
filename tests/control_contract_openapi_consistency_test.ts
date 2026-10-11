@@ -3,6 +3,7 @@
  * alike: its route, parameters, request body, statuses, headers and bodies. Neither is generated
  * from the other, so this check is what keeps them in step.
  */
+import { assertEquals } from '@std/assert';
 import { z } from 'zod';
 
 import { createAccountContract } from '../control_contracts/accounts.ts';
@@ -296,11 +297,9 @@ function findOperation(operationId: string): DocumentedOperation {
 function assertDrift(drift: readonly string[], expected: readonly string[]): void {
   const sortedDrift = [...drift].sort();
   const sortedExpected = [...expected].sort();
-  if (JSON.stringify(sortedDrift) !== JSON.stringify(sortedExpected)) {
-    throw new Error(
-      `Expected exactly this drift:\n${sortedExpected.join('\n')}\nfound:\n${
-        sortedDrift.join('\n')
-      }`,
-    );
-  }
+  assertEquals(
+    sortedDrift,
+    sortedExpected,
+    `Expected exactly this drift:\n${sortedExpected.join('\n')}\nfound:\n${sortedDrift.join('\n')}`,
+  );
 }

@@ -2,7 +2,9 @@
  * Reading bot activity by `parameters_json`: structural patterns for the JSON a call sent in its
  * parameters, beside exact `parameters[name]` text, and the issues a malformed pattern reports.
  */
+import { assertEquals } from '@std/assert';
 import { createTestSession, type EmulationApi, requestJson } from './support/emulation_api.ts';
+import { assertEqualsInFieldOrder } from './support/field_order_assertion.ts';
 import { createAccount, createBot } from './support/http_fixtures.ts';
 
 interface BotActivityReadBody {
@@ -375,9 +377,7 @@ async function assertPositions(
 ): Promise<void> {
   const { status, body } = await requestJson<BotActivityReadBody>(api, 'GET', path);
   const positions = status === 200 ? body.entries.map(({ position }) => position) : status;
-  if (JSON.stringify(positions) !== JSON.stringify(expected)) {
-    throw new Error(`${message}: GET ${path} found ${JSON.stringify(positions)}`);
-  }
+  assertEquals(positions, [...expected], `${message}: GET ${path}`);
 }
 
 /** Checks that a read is refused with exactly these issues of the query, or succeeds for none. */
@@ -397,11 +397,9 @@ async function assertIssues(
     ? body.issues.map(({ source, path, code }) => [source, path, code])
     : status;
   const expectedIssues = expected.map(([issuePath, code]) => ['query', issuePath, code]);
-  if (JSON.stringify(issues) !== JSON.stringify(expectedIssues)) {
-    throw new Error(
-      `Expected GET ${path} to report ${JSON.stringify(expectedIssues)}, received ${
-        JSON.stringify(issues)
-      }`,
-    );
-  }
+  assertEqualsInFieldOrder(
+    issues,
+    expectedIssues,
+    `Expected GET ${path} to report ${JSON.stringify(expectedIssues)}`,
+  );
 }

@@ -1,3 +1,4 @@
+import { assertEquals } from '@std/assert';
 import {
   type FormattedText,
   getContentText,
@@ -90,11 +91,10 @@ Deno.test('getContentText reads text and captions, and no text of other content'
   for (const { content, contentText } of CONTENT_CASES) {
     const { text, entities } = getContentText(content);
     const actualText = { text, entities };
-    if (JSON.stringify(actualText) !== JSON.stringify(contentText)) {
-      throw new Error(
-        `Expected ${content.kind} to carry ${JSON.stringify(contentText)}, ` +
-          `received ${JSON.stringify(actualText)}`,
-      );
-    }
+    assertEquals(
+      actualText,
+      contentText,
+      `Expected ${content.kind} to carry ${JSON.stringify(contentText)}`,
+    );
   }
 });

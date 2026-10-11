@@ -282,22 +282,14 @@ Deno.test('BotUpdatePollingService records the updates each answer confirms and 
         return [entry.kind];
     }
   });
-  if (
-    JSON.stringify(summary) !== JSON.stringify([
-      ['delivered', 1, 'polling'],
-      ['delivered', 2, 'polling'],
-      ['confirmed', 1, 'polling'],
-      ['delivered', 2, 'polling'],
-      ['confirmed', 2, 'polling'],
-      ['delivered', 3, 'polling'],
-    ])
-  ) {
-    throw new Error(
-      `Expected confirmations before the deliveries of each answer, received ${
-        JSON.stringify(summary)
-      }`,
-    );
-  }
+  assertEquals(summary, [
+    ['delivered', 1, 'polling'],
+    ['delivered', 2, 'polling'],
+    ['confirmed', 1, 'polling'],
+    ['delivered', 2, 'polling'],
+    ['confirmed', 2, 'polling'],
+    ['delivered', 3, 'polling'],
+  ], 'Expected confirmations before the deliveries of each answer');
 });
 
 function createPollingFixture() {

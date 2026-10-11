@@ -1,3 +1,4 @@
+import { assertEquals } from '@std/assert';
 import { CallbackQueryRepository } from '../src/repositories/callback_query.ts';
 
 const CALLBACK_QUERY_INPUT = {
@@ -42,12 +43,14 @@ Deno.test('CallbackQueryRepository records one answer per awaiting callback quer
   const answer = { text: 'Saved', showAlert: true, cacheTimeSeconds: 5 };
 
   const answeredQuery = callbackQueries.recordAnswer(callbackQuery.id, answer);
-  if (
-    JSON.stringify(answeredQuery.state) !== JSON.stringify({ status: 'answered', answer }) ||
-    callbackQueries.getCallbackQuery(callbackQuery.id) !== answeredQuery
-  ) {
+  if (callbackQueries.getCallbackQuery(callbackQuery.id) !== answeredQuery) {
     throw new Error('Expected the answer to be recorded on the stored query');
   }
+  assertEquals(
+    answeredQuery.state,
+    { status: 'answered', answer },
+    'Expected the answer to be recorded on the stored query',
+  );
 
   for (const endedQuery of [answeredQuery, expiredQuery]) {
     let rejected = false;

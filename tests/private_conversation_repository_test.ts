@@ -95,13 +95,11 @@ Deno.test('PrivateConversationRepository starts a conversation only when the acc
     privateConversations.isPrivateConversationStarted(conversationKey),
     privateConversations.isPrivateConversationStarted({ accountId: 1, botId: 3 }),
   ];
-  if (JSON.stringify(outcomes) !== JSON.stringify([false, true, true, true, false])) {
-    throw new Error(
-      `Expected an opened conversation to stay unstarted until the account starts it, received ${
-        JSON.stringify(outcomes)
-      }`,
-    );
-  }
+  assertEquals(
+    outcomes,
+    [false, true, true, true, false],
+    'Expected an opened conversation to stay unstarted until the account starts it',
+  );
 });
 
 Deno.test('PrivateConversationRepository forgets the writes of a transaction that aborts', () => {

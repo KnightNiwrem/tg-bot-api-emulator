@@ -1,3 +1,4 @@
+import { assertEquals } from '@std/assert';
 import {
   checkLink,
   getCheckedLink,
@@ -144,13 +145,7 @@ Deno.test('getLinkCustomEmojiId and getLinkDateTime read tg:// entity links', ()
   ] as const;
   for (const [link, expected] of dateTimes) {
     const dateTime = getLinkDateTime(link);
-    if (JSON.stringify(dateTime) !== JSON.stringify(expected)) {
-      throw new Error(
-        `Expected ${link} to show ${JSON.stringify(expected)}, received ${
-          JSON.stringify(dateTime)
-        }`,
-      );
-    }
+    assertEquals(dateTime, expected, `Expected ${link} to show ${JSON.stringify(expected)}`);
   }
   for (const link of ['tg://time?format=r', 'tg://time?unix=0', 'tg://time?unix=5&format=rt']) {
     if (getLinkDateTime(link) !== undefined) {

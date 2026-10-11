@@ -1,3 +1,4 @@
+import { assertEquals } from '@std/assert';
 import {
   type ChatMembership,
   type ChatMemberStatus,
@@ -167,9 +168,7 @@ Deno.test('getContentSendPermissions requires a permission per kind and every ri
   ];
   const received = cases.map(([content]) => getContentSendPermissions(content));
   const expected = cases.map(([, permissions]) => permissions);
-  if (JSON.stringify(received) !== JSON.stringify(expected)) {
-    throw new Error(`Expected ${JSON.stringify(expected)}, received ${JSON.stringify(received)}`);
-  }
+  assertEquals(received, expected, `Expected ${JSON.stringify(expected)}`);
 });
 
 Deno.test('a restricted user is a member while it is in the chat, and no administrator', () => {
@@ -212,11 +211,9 @@ function assertPermissions(
 ): void {
   const receivedNames = CHAT_PERMISSIONS.filter((permission) => received.has(permission));
   const expectedNames = CHAT_PERMISSIONS.filter((permission) => expected.includes(permission));
-  if (JSON.stringify(receivedNames) !== JSON.stringify(expectedNames)) {
-    throw new Error(
-      `Expected ${holder} to hold ${JSON.stringify(expectedNames)}, received ${
-        JSON.stringify(receivedNames)
-      }`,
-    );
-  }
+  assertEquals(
+    receivedNames,
+    expectedNames,
+    `Expected ${holder} to hold ${JSON.stringify(expectedNames)}`,
+  );
 }

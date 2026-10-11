@@ -1,5 +1,7 @@
+import { assertEquals } from '@std/assert';
 import { accountProfileSchema } from '../../control_contracts/accounts.ts';
 import { TEST_PUBLIC_ORIGIN } from '../../tests/support/emulation_api.ts';
+import { assertEqualsInFieldOrder } from '../../tests/support/field_order_assertion.ts';
 import { createTestInProcessEmulator } from '../../tests/support/emulation_api.ts';
 import { MAX_TELEGRAM_USER_ID } from './constants.ts';
 import {
@@ -69,9 +71,11 @@ Deno.test('TypeScript client manages all currently implemented session resources
   }
 
   const authenticatedBot = await session.getMe(createdBot.token);
-  if (JSON.stringify(authenticatedBot) !== JSON.stringify(createdBot.bot)) {
-    throw new Error('Expected getMe to return the created bot profile');
-  }
+  assertEqualsInFieldOrder(
+    authenticatedBot,
+    createdBot.bot,
+    'Expected getMe to return the created bot profile',
+  );
 
   const { result: sentMessage } = await createdAccount.account.sendMessage({
     to: { type: 'private', botId: createdBot.bot.id },
@@ -88,13 +92,14 @@ Deno.test('TypeScript client manages all currently implemented session resources
     to: { type: 'private', botId: createdBot.bot.id },
     text: '/start',
   });
-  if (
-    sentMessage.entities !== undefined ||
-    JSON.stringify(sentCommand.entities) !==
-      JSON.stringify([{ type: 'bot_command', offset: 0, length: 6 }])
-  ) {
+  if (sentMessage.entities !== undefined) {
     throw new Error('Expected the client to return bot command entities only where present');
   }
+  assertEqualsInFieldOrder(
+    sentCommand.entities,
+    [{ type: 'bot_command', offset: 0, length: 6 }],
+    'Expected the client to return bot command entities only where present',
+  );
 
   const replyResponse = await emulator.request(
     `/sessions/${session.id}/bot-api/bot${createdBot.token}/sendMessage`,
@@ -133,14 +138,10 @@ Deno.test('TypeScript client manages all currently implemented session resources
     first_name: 'Test Bot',
     username: 'test_bot',
   };
-  if (
-    JSON.stringify(history[2].entities) !== JSON.stringify([
-      { type: 'bold', offset: 0, length: 5 },
-      { type: 'text_mention', offset: 15, length: 3, user: mentionedBot },
-    ])
-  ) {
-    throw new Error('Expected the client to return the formatting of a bot message');
-  }
+  assertEqualsInFieldOrder(history[2].entities, [
+    { type: 'bold', offset: 0, length: 5 },
+    { type: 'text_mention', offset: 15, length: 3, user: mentionedBot },
+  ], 'Expected the client to return the formatting of a bot message');
   const { result: accountReply } = await createdAccount.account.sendMessage({
     to: { type: 'private', botId: createdBot.bot.id },
     text: 'Thanks',
@@ -149,11 +150,15 @@ Deno.test('TypeScript client manages all currently implemented session resources
   const { reply_to_message: _, ...repliedBotMessage } = history[2];
   if (
     history[2].reply_to_message?.message_id !== sentCommand.message_id ||
-    history[2].has_protected_content !== true ||
-    JSON.stringify(accountReply.reply_to_message) !== JSON.stringify(repliedBotMessage)
+    history[2].has_protected_content !== true
   ) {
     throw new Error('Expected the client to send and return replies and protected messages');
   }
+  assertEqualsInFieldOrder(
+    accountReply.reply_to_message,
+    repliedBotMessage,
+    'Expected the client to send and return replies and protected messages',
+  );
 
   const botApiPath = `/sessions/${session.id}/bot-api/bot${createdBot.token}`;
   const menuResponse = await emulator.request(`${botApiPath}/sendMessage`, {
@@ -180,31 +185,28 @@ Deno.test('TypeScript client manages all currently implemented session resources
   const menu = (await createdAccount.account.getMessages({
     chat: { type: 'private', botId: createdBot.bot.id },
   })).at(-1);
-  if (
-    menu === undefined ||
-    JSON.stringify(menu.reply_markup) !==
-      JSON.stringify({
-        inline_keyboard: [
-          [{ text: 'Yes', style: 'success', callback_data: 'yes' }],
-          [
-            { text: 'Copy', copy_text: { text: 'yes' } },
-            {
-              text: 'Ask',
-              switch_inline_query_chosen_chat: {
-                query: '',
-                allow_user_chats: false,
-                allow_bot_chats: false,
-                allow_group_chats: true,
-                allow_channel_chats: false,
-              },
-            },
-            { text: 'Later', disabled: {} },
-          ],
-        ],
-      })
-  ) {
+  if (menu === undefined) {
     throw new Error('Expected the client to return the inline keyboard of a bot message');
   }
+  assertEqualsInFieldOrder(menu.reply_markup, {
+    inline_keyboard: [
+      [{ text: 'Yes', style: 'success', callback_data: 'yes' }],
+      [
+        { text: 'Copy', copy_text: { text: 'yes' } },
+        {
+          text: 'Ask',
+          switch_inline_query_chosen_chat: {
+            query: '',
+            allow_user_chats: false,
+            allow_bot_chats: false,
+            allow_group_chats: true,
+            allow_channel_chats: false,
+          },
+        },
+        { text: 'Later', disabled: {} },
+      ],
+    ],
+  }, 'Expected the client to return the inline keyboard of a bot message');
 
   const { result: callbackQuery } = await createdAccount.account.pressCallbackButton({
     chat: { type: 'private', botId: createdBot.bot.id },
@@ -226,13 +228,14 @@ Deno.test('TypeScript client manages all currently implemented session resources
     throw new Error(`Expected the answer to be accepted, received ${answerResponse.status}`);
   }
   const answeredCallbackQuery = await createdAccount.account.getCallbackQuery(callbackQuery.id);
-  if (
-    answeredCallbackQuery.status !== 'answered' ||
-    JSON.stringify(answeredCallbackQuery.answer) !==
-      JSON.stringify({ text: 'Saved', show_alert: false, cache_time: 0 })
-  ) {
+  if (answeredCallbackQuery.status !== 'answered') {
     throw new Error("Expected the client to return the bot's answer");
   }
+  assertEqualsInFieldOrder(
+    answeredCallbackQuery.answer,
+    { text: 'Saved', show_alert: false, cache_time: 0 },
+    "Expected the client to return the bot's answer",
+  );
 
   const { result: expiredOnCreation } = await createdAccount.account.pressCallbackButton({
     chat: { type: 'private', botId: createdBot.bot.id },
@@ -255,14 +258,11 @@ Deno.test('TypeScript client manages all currently implemented session resources
   const commands = await createdAccount.account.getBotCommands({
     chat: { type: 'private', botId: createdBot.bot.id },
   });
-  if (
-    JSON.stringify(commands) !==
-      JSON.stringify([{ command: 'start', description: 'Start over', is_ephemeral: false }])
-  ) {
-    throw new Error(
-      `Expected the client to return the bot's commands, received ${JSON.stringify(commands)}`,
-    );
-  }
+  assertEqualsInFieldOrder(
+    commands,
+    [{ command: 'start', description: 'Start over', is_ephemeral: false }],
+    "Expected the client to return the bot's commands",
+  );
 
   const setMenuButtonResponse = await emulator.request(`${botApiPath}/setChatMenuButton`, {
     method: 'POST',
@@ -275,11 +275,11 @@ Deno.test('TypeScript client manages all currently implemented session resources
   const menuButton = await createdAccount.account.getMenuButton({
     chat: { type: 'private', botId: createdBot.bot.id },
   });
-  if (JSON.stringify(menuButton) !== JSON.stringify({ type: 'commands' })) {
-    throw new Error(
-      `Expected the client to return the bot's menu button, received ${JSON.stringify(menuButton)}`,
-    );
-  }
+  assertEqualsInFieldOrder(
+    menuButton,
+    { type: 'commands' },
+    "Expected the client to return the bot's menu button",
+  );
 
   const chat = { type: 'private', botId: createdBot.bot.id } as const;
   if (await createdAccount.account.getReplyInterface({ chat }) !== null) {
@@ -304,22 +304,22 @@ Deno.test('TypeScript client manages all currently implemented session resources
     text: 'Green',
   });
   if (
-    JSON.stringify(replyInterface) !== JSON.stringify({
-        type: 'keyboard',
-        message_id: keyboardMessageId,
-        keyboard: [[{ text: 'Red' }, {
-          text: 'Green',
-          icon_custom_emoji_id: '5368324170671202286',
-        }]],
-        is_persistent: true,
-        resize_keyboard: false,
-        one_time_keyboard: false,
-      }) ||
     pressedButtonMessage.text !== 'Green' ||
     pressedButtonMessage.from.id !== createdAccount.account.id
   ) {
     throw new Error('Expected the client to read and press the reply keyboard');
   }
+  assertEqualsInFieldOrder(replyInterface, {
+    type: 'keyboard',
+    message_id: keyboardMessageId,
+    keyboard: [[{ text: 'Red' }, {
+      text: 'Green',
+      icon_custom_emoji_id: '5368324170671202286',
+    }]],
+    is_persistent: true,
+    resize_keyboard: false,
+    one_time_keyboard: false,
+  }, 'Expected the client to read and press the reply keyboard');
 
   const { result: editedMessage } = await createdAccount.account.editMessage({
     chat,
@@ -421,18 +421,21 @@ Deno.test('TypeScript client runs supergroups with members, messages, and button
     callback_data: 'yes',
   });
   if (
-    greeting.chat.title !== 'Team' || edited.edit_date === undefined ||
-    JSON.stringify(history.map(({ message_id, text, new_chat_members }) => [
-        message_id,
-        text ?? new_chat_members?.map(({ id }) => id),
-      ]
-      )) !==
-      JSON.stringify([[1, [member.id]], [2, [bot.id]], [3, 'Hello everyone'], [4, 'Continue?']]) ||
+    greeting.chat.title !== 'Team' ||
+    edited.edit_date === undefined ||
     menu.reply_to_message?.text !== 'Hello everyone' ||
     callbackQuery.status !== 'awaiting_answer'
   ) {
     throw new Error('Expected the client to exchange messages and press buttons in the supergroup');
   }
+  assertEquals(
+    history.map(({ message_id, text, new_chat_members }) => [
+      message_id,
+      text ?? new_chat_members?.map(({ id }) => id),
+    ]),
+    [[1, [member.id]], [2, [bot.id]], [3, 'Hello everyone'], [4, 'Continue?']],
+    'Expected the client to exchange messages and press buttons in the supergroup',
+  );
 
   const chatActionResponse = await emulator.request(`${botApiPath}/sendChatAction`, {
     method: 'POST',
@@ -441,13 +444,19 @@ Deno.test('TypeScript client runs supergroups with members, messages, and button
   });
   const chatActions = await member.getChatActions({ chat });
   const notifications = await member.getNotifications({ chat });
-  if (
-    chatActionResponse.status !== 200 ||
-    JSON.stringify(chatActions) !== JSON.stringify([{ bot_id: bot.id, action: 'typing' }]) ||
-    JSON.stringify(notifications.at(-1)) !== JSON.stringify({ message_id: 4, is_silent: false })
-  ) {
+  if (chatActionResponse.status !== 200) {
     throw new Error(`Expected the client to see the bot typing, received ${chatActions}`);
   }
+  assertEqualsInFieldOrder(
+    chatActions,
+    [{ bot_id: bot.id, action: 'typing' }],
+    'Expected the client to see the bot typing',
+  );
+  assertEqualsInFieldOrder(
+    notifications.at(-1),
+    { message_id: 4, is_silent: false },
+    'Expected the client to see the bot typing',
+  );
 
   const groupCommandsResponse = await emulator.request(`${botApiPath}/setMyCommands`, {
     method: 'POST',
@@ -458,19 +467,17 @@ Deno.test('TypeScript client runs supergroups with members, messages, and button
     }),
   });
   const groupCommands = await member.getSupergroupBotCommands({ chat });
-  if (
-    groupCommandsResponse.status !== 200 ||
-    JSON.stringify(groupCommands) !== JSON.stringify([{
-        bot_id: bot.id,
-        commands: [{ command: 'poll', description: 'Start a poll', is_ephemeral: false }],
-      }])
-  ) {
+  if (groupCommandsResponse.status !== 200) {
     throw new Error(
       `Expected the client to return the supergroup's commands, received ${
         JSON.stringify(groupCommands)
       }`,
     );
   }
+  assertEqualsInFieldOrder(groupCommands, [{
+    bot_id: bot.id,
+    commands: [{ command: 'poll', description: 'Start a poll', is_ephemeral: false }],
+  }], "Expected the client to return the supergroup's commands");
 
   const { result: forward } = await owner.forwardMessage({
     from: chat,
@@ -478,15 +485,19 @@ Deno.test('TypeScript client runs supergroups with members, messages, and button
     to: { type: 'private', botId: bot.id },
   });
   if (
-    forward.chat.id !== owner.id || forward.text !== 'Hello everyone' ||
-    JSON.stringify(forward.forward_origin) !==
-      JSON.stringify({ type: 'hidden_user', sender_user_name: 'Grace', date: greeting.date }) ||
+    forward.chat.id !== owner.id ||
+    forward.text !== 'Hello everyone' ||
     forward.forward_sender_name !== 'Grace'
   ) {
     throw new Error(
       `Expected the client to forward a message, received ${JSON.stringify(forward)}`,
     );
   }
+  assertEqualsInFieldOrder(forward.forward_origin, {
+    type: 'hidden_user',
+    sender_user_name: 'Grace',
+    date: greeting.date,
+  }, 'Expected the client to forward a message');
 
   const externalReplyResponse = await emulator.request(`${botApiPath}/sendMessage`, {
     method: 'POST',
@@ -596,16 +607,10 @@ Deno.test('TypeScript client runs supergroups with members, messages, and button
   await owner.removeChatMember({ chat, userId: bot.id });
   await member.leaveChat({ chat });
   const departures = (await owner.getMessages({ chat })).slice(-2);
-  if (
-    JSON.stringify(
-      departures.map(({ from, left_chat_member }) => [from.id, left_chat_member?.id]),
-    ) !==
-      JSON.stringify([[owner.id, bot.id], [member.id, member.id]])
-  ) {
-    throw new Error(
-      `Expected the client to remove the bot and leave, received ${JSON.stringify(departures)}`,
-    );
-  }
+  assertEquals(departures.map(({ from, left_chat_member }) => [from.id, left_chat_member?.id]), [[
+    owner.id,
+    bot.id,
+  ], [member.id, member.id]], 'Expected the client to remove the bot and leave');
 
   const { result: { account: stranger } } = await session.createAccount({ first_name: 'Linus' });
   try {
@@ -672,11 +677,11 @@ Deno.test('TypeScript client restricts members and changes what members may do b
     afterExpiry,
     underDefaults,
   ];
-  if (JSON.stringify(outcomes) !== JSON.stringify([403, 'sent', 403, 'member', 'sent', 403])) {
-    throw new Error(
-      `Expected permissions to decide what the member sends, received ${JSON.stringify(outcomes)}`,
-    );
-  }
+  assertEquals(
+    outcomes,
+    [403, 'sent', 403, 'member', 'sent', 403],
+    'Expected permissions to decide what the member sends',
+  );
   await session.end();
 });
 
@@ -738,11 +743,10 @@ Deno.test('TypeScript client lets administrator accounts promote and restrict wi
   );
 
   if (
-    JSON.stringify(outcomes) !==
-      JSON.stringify([204, 403, 409, 403, 403, 204, 403, 403, 204]) ||
     hopperAsGraceSees?.status !== 'administrator' ||
-    hopperAsGraceSees.promoted_by_user_id !== grace.id || !hopperAsGraceSees.can_be_edited ||
-    demotion !== 204 || JSON.stringify(administratorIds) !== JSON.stringify([owner.id, grace.id])
+    hopperAsGraceSees.promoted_by_user_id !== grace.id ||
+    !hopperAsGraceSees.can_be_edited ||
+    demotion !== 204
   ) {
     throw new Error(
       `Expected Grace to administer within her rights, received ${
@@ -750,6 +754,16 @@ Deno.test('TypeScript client lets administrator accounts promote and restrict wi
       }`,
     );
   }
+  assertEquals(
+    outcomes,
+    [204, 403, 409, 403, 403, 204, 403, 403, 204],
+    'Expected Grace to administer within her rights',
+  );
+  assertEquals(
+    administratorIds,
+    [owner.id, grace.id],
+    'Expected Grace to administer within her rights',
+  );
   await session.end();
 });
 
@@ -823,9 +837,7 @@ Deno.test('TypeScript client joins supergroups through invite links and by usern
     [[true, 2, 1]],
     [hopper.id],
   ];
-  if (JSON.stringify(outcomes) !== JSON.stringify(expected)) {
-    throw new Error(`Expected the joins to follow the links, received ${JSON.stringify(outcomes)}`);
-  }
+  assertEqualsInFieldOrder(outcomes, expected, 'Expected the joins to follow the links');
   await session.end();
 });
 
@@ -864,11 +876,11 @@ Deno.test('TypeScript client requests to join through a link and lists pending r
     pendingRequests.map(({ user_id, invite_link }) => [user_id, invite_link === inviteLink]),
     link?.pending_join_request_count,
   ];
-  if (
-    JSON.stringify(outcomes) !== JSON.stringify(['join_request_sent', [[grace.id, true]], 1])
-  ) {
-    throw new Error(`Expected Grace's request to be pending, received ${JSON.stringify(outcomes)}`);
-  }
+  assertEquals(
+    outcomes,
+    ['join_request_sent', [[grace.id, true]], 1],
+    "Expected Grace's request to be pending",
+  );
   await session.end();
 });
 
@@ -923,11 +935,7 @@ Deno.test('TypeScript client approves and declines join requests as an administr
     await refusalStatus(hopper.approveChatJoinRequest({ chat, userId: grace.id })),
   ];
   const expected = [3, [], [grace.id], 409, 404, 403];
-  if (JSON.stringify(outcomes) !== JSON.stringify(expected)) {
-    throw new Error(
-      `Expected each request to be decided once, received ${JSON.stringify(outcomes)}`,
-    );
-  }
+  assertEquals(outcomes, expected, 'Expected each request to be decided once');
   await session.end();
 });
 
@@ -1013,11 +1021,7 @@ Deno.test('TypeScript client follows an invite link through its edits and revoca
     ['join_request_sent', [true, true, 1, false, false]],
     [true, 410, [true, true, 1, false, true], 409, [hopper.id]],
   ];
-  if (JSON.stringify(outcomes) !== JSON.stringify(expected)) {
-    throw new Error(
-      `Expected the link to follow its lifecycle, received ${JSON.stringify(outcomes)}`,
-    );
-  }
+  assertEquals(outcomes, expected, 'Expected the link to follow its lifecycle');
   await session.end();
 });
 
@@ -1085,9 +1089,7 @@ Deno.test('TypeScript client shows and expires the contact of a pending join req
     400,
     409,
   ];
-  if (JSON.stringify(outcomes) !== JSON.stringify(expected)) {
-    throw new Error(`Expected the contact to end on expiry, received ${JSON.stringify(outcomes)}`);
-  }
+  assertEqualsInFieldOrder(outcomes, expected, 'Expected the contact to end on expiry');
   await session.end();
 });
 
@@ -1134,9 +1136,7 @@ Deno.test('TypeScript client pins and unpins messages and reads the pinned ones'
   await account.unpinMessage({ chat, message_id: second.message_id });
   await account.pinMessage({ chat, message_id: second.message_id });
   const pinnedTexts = (await account.getPinnedMessages({ chat })).map(({ text }) => text);
-  if (JSON.stringify(pinnedTexts) !== JSON.stringify(['second', 'first'])) {
-    throw new Error(`Expected the pinned messages newest first, received ${pinnedTexts}`);
-  }
+  assertEquals(pinnedTexts, ['second', 'first'], 'Expected the pinned messages newest first');
   const [pinServiceMessage] = (await account.getMessages({ chat })).slice(-1);
   const pinnedMessage = pinServiceMessage?.pinned_message;
   if (
@@ -1217,13 +1217,17 @@ Deno.test('TypeScript client sends, edits, and downloads photos and documents', 
   });
   const [boldEntity, mentionEntity] = formattedMessage.entities ?? [];
   if (
-    boldEntity?.type !== 'bold' || mentionEntity?.type !== 'text_mention' ||
-    mentionEntity.user.first_name !== account.first_name ||
-    JSON.stringify(editedFormattedMessage.entities) !==
-      JSON.stringify([{ type: 'italic', offset: 3, length: 3 }])
+    boldEntity?.type !== 'bold' ||
+    mentionEntity?.type !== 'text_mention' ||
+    mentionEntity.user.first_name !== account.first_name
   ) {
     throw new Error('Expected the client to send and edit formatted text');
   }
+  assertEqualsInFieldOrder(
+    editedFormattedMessage.entities,
+    [{ type: 'italic', offset: 3, length: 3 }],
+    'Expected the client to send and edit formatted text',
+  );
 
   const { result: photo } = await account.sendPhoto({
     to,
@@ -1321,22 +1325,28 @@ Deno.test('TypeScript client sends videos and voice notes that bots receive and 
   });
   const downloaded = await session.downloadFile(video.video?.file_unique_id ?? '');
   if (
-    JSON.stringify(video.video) !== JSON.stringify({
-        duration: 4,
-        width: 640,
-        height: 360,
-        file_name: 'clip.webm',
-        mime_type: 'video/webm',
-        file_id: video.video?.file_id,
-        file_unique_id: video.video?.file_unique_id,
-        file_size: content.length,
-      }) ||
-    video.caption !== 'Clip' || unnamedVideo.chat.id !== supergroup.id ||
-    unnamedVideo.video?.mime_type !== 'video/mp4' || unnamedVideo.video.duration !== 0 ||
-    editedVideo.caption !== 'My clip' || downloaded.toBase64() !== content.toBase64()
+    video.caption !== 'Clip' ||
+    unnamedVideo.chat.id !== supergroup.id ||
+    unnamedVideo.video?.mime_type !== 'video/mp4' ||
+    unnamedVideo.video.duration !== 0 ||
+    editedVideo.caption !== 'My clip' ||
+    downloaded.toBase64() !== content.toBase64()
   ) {
     throw new Error(`Expected the client to send videos, received ${JSON.stringify(video)}`);
   }
+  if (video.video === undefined) {
+    throw new Error('Expected the message to carry its video');
+  }
+  assertEqualsInFieldOrder(video.video, {
+    duration: 4,
+    width: 640,
+    height: 360,
+    file_name: 'clip.webm',
+    mime_type: 'video/webm',
+    file_id: video.video.file_id,
+    file_unique_id: video.video.file_unique_id,
+    file_size: content.length,
+  }, 'Expected the client to send videos');
 
   const botReply = await emulator.request(`/sessions/${session.id}/bot-api/bot${token}/sendVideo`, {
     method: 'POST',
@@ -1366,16 +1376,21 @@ Deno.test('TypeScript client sends videos and voice notes that bots receive and 
     reply_to_message_id: video.message_id,
   });
   if (
-    JSON.stringify(voice.voice) !== JSON.stringify({
-        duration: 5,
-        mime_type: 'audio/ogg',
-        file_id: voice.voice?.file_id,
-        file_unique_id: voice.voice?.file_unique_id,
-        file_size: 9,
-      }) || voice.caption !== 'Memo' || voice.reply_to_message?.message_id !== video.message_id
+    voice.caption !== 'Memo' ||
+    voice.reply_to_message?.message_id !== video.message_id
   ) {
     throw new Error(`Expected the client to send a voice note, received ${JSON.stringify(voice)}`);
   }
+  if (voice.voice === undefined) {
+    throw new Error('Expected the message to carry its voice note');
+  }
+  assertEqualsInFieldOrder(voice.voice, {
+    duration: 5,
+    mime_type: 'audio/ogg',
+    file_id: voice.voice.file_id,
+    file_unique_id: voice.voice.file_unique_id,
+    file_size: 9,
+  }, 'Expected the client to send a voice note');
   const botVoiceReply = await emulator.request(
     `/sessions/${session.id}/bot-api/bot${token}/sendVoice`,
     {
@@ -1439,24 +1454,30 @@ Deno.test("TypeScript client sends audio files and albums, and reads the bot's a
   const sentAudio: Audio | undefined = sent.audio;
   const downloaded = await session.downloadFile(sentAudio?.file_unique_id ?? '');
   if (
-    JSON.stringify(sentAudio) !== JSON.stringify({
-        duration: 215,
-        file_name: 'engines.m4a',
-        mime_type: 'audio/mp4',
-        title: 'Engines',
-        performer: 'Ada',
-        file_id: sent.audio?.file_id,
-        file_unique_id: sent.audio?.file_unique_id,
-        file_size: track.length,
-      }) ||
     sent.caption !== 'Listen' ||
     new TextDecoder().decode(downloaded) !== 'ID3 track' ||
-    JSON.stringify(album.map((message) => [message.audio?.title, message.audio?.performer])) !==
-      JSON.stringify([['One', undefined], [undefined, 'Grace']]) ||
-    album[1]?.media_group_id === undefined || album[1].media_group_id !== album[0]?.media_group_id
+    album[1]?.media_group_id === undefined ||
+    album[1].media_group_id !== album[0]?.media_group_id
   ) {
     throw new Error(`Expected the client to send audio files, received ${JSON.stringify(sent)}`);
   }
+  if (sentAudio === undefined) {
+    throw new Error('Expected the message to carry its audio file');
+  }
+  assertEqualsInFieldOrder(sentAudio, {
+    duration: 215,
+    file_name: 'engines.m4a',
+    mime_type: 'audio/mp4',
+    title: 'Engines',
+    performer: 'Ada',
+    file_id: sentAudio.file_id,
+    file_unique_id: sentAudio.file_unique_id,
+    file_size: track.length,
+  }, 'Expected the client to send audio files');
+  assertEquals(album.map((message) => [message.audio?.title, message.audio?.performer]), [[
+    'One',
+    undefined,
+  ], [undefined, 'Grace']], 'Expected the client to send audio files');
 
   // The bot sends a track back with a cover, which the client reads as Telegram shows it.
   const form = new FormData();
@@ -1511,12 +1532,17 @@ Deno.test("TypeScript client sends audio files and albums, and reads the bot's a
     result_id: 'again',
   });
   if (
-    JSON.stringify(answeredQuery.answer?.results) !==
-      JSON.stringify([{ type: 'audio', id: 'again', title: 'Again', description: 'Ada' }]) ||
-    chosen.audio?.file_unique_id !== sent.audio?.file_unique_id || chosen.audio?.title !== 'Engines'
+    chosen.audio?.file_unique_id !== sent.audio?.file_unique_id ||
+    chosen.audio?.title !== 'Engines'
   ) {
     throw new Error(`Expected the inline audio result, received ${JSON.stringify(chosen)}`);
   }
+  assertEqualsInFieldOrder(answeredQuery.answer?.results, [{
+    type: 'audio',
+    id: 'again',
+    title: 'Again',
+    description: 'Ada',
+  }], 'Expected the inline audio result');
   await session.end();
 });
 
@@ -1559,15 +1585,22 @@ Deno.test('TypeScript client sends albums to private chats and supergroups', asy
   });
   const [front, back] = privateAlbum;
   if (
-    privateAlbum.length !== 2 || front.media_group_id === undefined ||
-    back.media_group_id !== front.media_group_id || !('photo' in front) || !('photo' in back) ||
-    front.caption !== 'Front' || back.caption !== undefined ||
-    JSON.stringify(front.caption_entities) !==
-      JSON.stringify([{ type: 'bold', offset: 0, length: 5 }]) ||
+    privateAlbum.length !== 2 ||
+    front.media_group_id === undefined ||
+    back.media_group_id !== front.media_group_id ||
+    !('photo' in front) ||
+    !('photo' in back) ||
+    front.caption !== 'Front' ||
+    back.caption !== undefined ||
     back.reply_to_message?.message_id !== greeting.message_id
   ) {
     throw new Error(`Expected the private album, received ${JSON.stringify(privateAlbum)}`);
   }
+  assertEqualsInFieldOrder(
+    front.caption_entities,
+    [{ type: 'bold', offset: 0, length: 5 }],
+    'Expected the private album',
+  );
 
   const { result: supergroup } = await account.createSupergroup({ title: 'Team' });
   const { result: mixedAlbum } = await account.sendMediaGroup({
@@ -1597,16 +1630,19 @@ Deno.test('TypeScript client sends albums to private chats and supergroups', asy
   });
   const [plan, notes] = supergroupAlbum;
   if (
-    supergroupAlbum.length !== 2 || plan.chat.id !== supergroup.id ||
-    plan.media_group_id === undefined || notes.media_group_id !== plan.media_group_id ||
+    supergroupAlbum.length !== 2 ||
+    plan.chat.id !== supergroup.id ||
+    plan.media_group_id === undefined ||
+    notes.media_group_id !== plan.media_group_id ||
     plan.media_group_id === front.media_group_id ||
-    plan.document?.file_name !== 'plan.txt' || notes.document?.file_name !== 'notes.txt' ||
+    plan.document?.file_name !== 'plan.txt' ||
+    notes.document?.file_name !== 'notes.txt' ||
     plan.caption !== undefined ||
-    notes.caption !== 'Notes' ||
-    JSON.stringify(history.slice(-2)) !== JSON.stringify(supergroupAlbum)
+    notes.caption !== 'Notes'
   ) {
     throw new Error(`Expected the supergroup album, received ${JSON.stringify(supergroupAlbum)}`);
   }
+  assertEqualsInFieldOrder(history.slice(-2), supergroupAlbum, 'Expected the supergroup album');
   await session.end();
 });
 
@@ -1660,13 +1696,19 @@ Deno.test('TypeScript client reads video and voice note blocks of rich messages'
     : [];
   if (
     shownMessage?.rich_message === undefined ||
-    JSON.stringify(shownMessage.rich_message) !== JSON.stringify(sentMessage.rich_message) ||
-    videoBlock?.type !== 'video' || videoBlock.video.thumbnail?.width !== 32 ||
-    voiceNoteBlock?.type !== 'voice_note' || voiceNoteBlock.voice_note.duration !== 3 ||
+    videoBlock?.type !== 'video' ||
+    videoBlock.video.thumbnail?.width !== 32 ||
+    voiceNoteBlock?.type !== 'voice_note' ||
+    voiceNoteBlock.voice_note.duration !== 3 ||
     richMessageToPlainText(shownMessage.rich_message) !== 'Launch\nAda\nMemo'
   ) {
     throw new Error(`Expected the client to read the blocks, got ${JSON.stringify(shownMessage)}`);
   }
+  assertEqualsInFieldOrder(
+    shownMessage.rich_message,
+    sentMessage.rich_message,
+    'Expected the client to read the blocks',
+  );
 });
 
 Deno.test('TypeScript client reads rich messages and presses their buttons', async () => {
@@ -1737,11 +1779,15 @@ Deno.test('TypeScript client reads rich messages and presses their buttons', asy
   const shownMessage = history.at(-1);
   if (
     shownMessage?.rich_message === undefined ||
-    JSON.stringify(shownMessage.rich_message) !== JSON.stringify(sentMessage.rich_message) ||
     shownMessage.rich_message.blocks[0]?.type !== 'heading'
   ) {
     throw new Error('Expected the client to read the rich message the bot sent');
   }
+  assertEqualsInFieldOrder(
+    shownMessage.rich_message,
+    sentMessage.rich_message,
+    'Expected the client to read the rich message the bot sent',
+  );
 
   const { result: callbackQuery } = await account.pressCallbackButton({
     chat: to,
@@ -1813,13 +1859,15 @@ Deno.test('TypeScript client votes in polls of private chats and supergroups', a
     option_ids: [1],
   });
   const readAnswer = await account.getPollAnswer({ chat: privateChat, message_id: privatePollId });
-  if (
-    JSON.stringify(vote.poll_answer.option_persistent_ids) !== JSON.stringify(['1']) ||
-    vote.message.poll?.options[1].voter_count !== 1 ||
-    JSON.stringify(readAnswer) !== JSON.stringify(vote)
-  ) {
+  if (vote.message.poll?.options[1].voter_count !== 1) {
     throw new Error(`Expected the client to vote in the poll, received ${JSON.stringify(vote)}`);
   }
+  assertEquals(
+    vote.poll_answer.option_persistent_ids,
+    ['1'],
+    'Expected the client to vote in the poll',
+  );
+  assertEqualsInFieldOrder(readAnswer, vote, 'Expected the client to vote in the poll');
   await account.retractPollAnswer({ chat: privateChat, message_id: privatePollId });
   const retracted = await account.getPollAnswer({ chat: privateChat, message_id: privatePollId });
   if (
@@ -1917,16 +1965,23 @@ Deno.test('TypeScript client sends inline queries and results through an inline 
     result_id: 'fact',
   });
   if (
-    bot.supports_inline_queries !== true || inlineQuery.status !== 'awaiting_answer' ||
-    JSON.stringify(inlineQuery.location) !==
-      JSON.stringify({ latitude: 51.5, longitude: -0.12, horizontal_accuracy: 20 }) ||
-    answerResponse.status !== 200 || answeredQuery.answer?.results[0]?.title !== 'Cat fact' ||
-    answeredQuery.answer.button === undefined || !('web_app' in answeredQuery.answer.button) ||
-    message.text !== 'Cats sleep a lot' || message.via_bot?.username !== 'cats_bot' ||
+    bot.supports_inline_queries !== true ||
+    inlineQuery.status !== 'awaiting_answer' ||
+    answerResponse.status !== 200 ||
+    answeredQuery.answer?.results[0]?.title !== 'Cat fact' ||
+    answeredQuery.answer.button === undefined ||
+    !('web_app' in answeredQuery.answer.button) ||
+    message.text !== 'Cats sleep a lot' ||
+    message.via_bot?.username !== 'cats_bot' ||
     message.chat.type !== 'supergroup'
   ) {
     throw new Error('Expected the client to send an inline query and its chosen result');
   }
+  assertEqualsInFieldOrder(
+    inlineQuery.location,
+    { latitude: 51.5, longitude: -0.12, horizontal_accuracy: 20 },
+    'Expected the client to send an inline query and its chosen result',
+  );
   await session.end();
 });
 
@@ -1949,12 +2004,16 @@ Deno.test('TypeScript client queues rate limit answers for a bot', async () => {
   );
   const remaining = await session.getRateLimitResponses(createdBot.bot.id);
   if (
-    JSON.stringify(queued) !==
-      JSON.stringify({ method: 'getMe', retry_after: 2, remaining_count: 1 }) ||
-    limitedResponse.status !== 429 || remaining.length !== 0
+    limitedResponse.status !== 429 ||
+    remaining.length !== 0
   ) {
     throw new Error('Expected the queued answer to limit the next getMe call');
   }
+  assertEqualsInFieldOrder(
+    queued,
+    { method: 'getMe', retry_after: 2, remaining_count: 1 },
+    'Expected the queued answer to limit the next getMe call',
+  );
   await session.end();
 });
 
@@ -2025,23 +2084,21 @@ Deno.test('TypeScript client shares contacts and locations and answers their req
     to,
     reply_to_message_id: written.message_id,
   });
-  if (
-    JSON.stringify(written.contact) !== JSON.stringify({
-        phone_number: '+1 555 0199',
-        first_name: 'Grace',
-        vcard: 'BEGIN:VCARD\nEND:VCARD',
-      }) ||
-    JSON.stringify(own.contact) !== JSON.stringify({
-        phone_number: '15550100',
-        first_name: 'Ada',
-        user_id: account.id,
-      }) ||
-    own.reply_to_message?.contact?.first_name !== 'Grace'
-  ) {
+  if (own.reply_to_message?.contact?.first_name !== 'Grace') {
     throw new Error(
       `Expected the client to send contacts, received ${JSON.stringify([written, own])}`,
     );
   }
+  assertEqualsInFieldOrder(written.contact, {
+    phone_number: '+1 555 0199',
+    first_name: 'Grace',
+    vcard: 'BEGIN:VCARD\nEND:VCARD',
+  }, 'Expected the client to send contacts');
+  assertEqualsInFieldOrder(own.contact, {
+    phone_number: '15550100',
+    first_name: 'Ada',
+    user_id: account.id,
+  }, 'Expected the client to send contacts');
 
   const keyboard = await emulator.request(
     `/sessions/${session.id}/bot-api/bot${token}/sendMessage`,
@@ -2060,8 +2117,6 @@ Deno.test('TypeScript client shares contacts and locations and answers their req
   const replyInterface = await account.getReplyInterface({ chat: to });
   const { result: shared } = await account.pressReplyKeyboardButton({ chat: to, text: 'Share' });
   if (
-    JSON.stringify(replyInterface?.type === 'keyboard' ? replyInterface.keyboard : null) !==
-      JSON.stringify([[{ text: 'Share', request_contact: true }]]) ||
     shared.contact?.user_id !== account.id ||
     shared.reply_to_message?.message_id !== keyboardMessageId
   ) {
@@ -2069,6 +2124,10 @@ Deno.test('TypeScript client shares contacts and locations and answers their req
       `Expected the press to share the own contact, received ${JSON.stringify(shared)}`,
     );
   }
+  assertEqualsInFieldOrder(replyInterface?.type === 'keyboard' ? replyInterface.keyboard : null, [[{
+    text: 'Share',
+    request_contact: true,
+  }]], 'Expected the press to share the own contact');
   const history = await account.getMessages({ chat: to });
   if (history.at(-1)?.contact?.phone_number !== '15550100') {
     throw new Error('Expected the history to end with the shared contact');
@@ -2092,18 +2151,16 @@ Deno.test('TypeScript client shares contacts and locations and answers their req
     text: 'Here',
     location: { latitude: 48.8584, longitude: 2.2945 },
   });
-  if (
-    JSON.stringify(location.location) !==
-      JSON.stringify({ latitude: 51.5007, longitude: -0.1246, horizontal_accuracy: 8 }) ||
-    JSON.stringify(pressedLocation.location) !==
-      JSON.stringify({ latitude: 48.8584, longitude: 2.2945 })
-  ) {
-    throw new Error(
-      `Expected the client to share locations, received ${
-        JSON.stringify([location, pressedLocation])
-      }`,
-    );
-  }
+  assertEqualsInFieldOrder(
+    location.location,
+    { latitude: 51.5007, longitude: -0.1246, horizontal_accuracy: 8 },
+    'Expected the client to share locations',
+  );
+  assertEqualsInFieldOrder(
+    pressedLocation.location,
+    { latitude: 48.8584, longitude: 2.2945 },
+    'Expected the client to share locations',
+  );
 
   const { result: supergroup } = await account.createSupergroup({ title: 'Team' });
   const groupChat = { type: 'supergroup', chatId: supergroup.id } as const;
@@ -2122,16 +2179,11 @@ Deno.test('TypeScript client shares contacts and locations and answers their req
   const externalReplies = (await account.getMessages({ chat: groupChat }))
     .slice(-2)
     .map(({ external_reply }) => [external_reply?.contact?.user_id, external_reply?.location]);
-  if (
-    JSON.stringify(externalReplies) !==
-      JSON.stringify([[account.id, undefined], [undefined, location.location]])
-  ) {
-    throw new Error(
-      `Expected replies to show the contact and location, received ${
-        JSON.stringify(externalReplies)
-      }`,
-    );
-  }
+  assertEqualsInFieldOrder(
+    externalReplies,
+    [[account.id, undefined], [undefined, location.location]],
+    'Expected replies to show the contact and location',
+  );
 
   try {
     await stranger.shareOwnContact({ to });
@@ -2161,16 +2213,12 @@ Deno.test('TypeScript client registers web resources that bots send files from',
     content_type: 'application/zip',
     content,
   });
-  if (
-    JSON.stringify(resource) !== JSON.stringify({
-      url: 'https://files.example.com/Archive.zip',
-      status: 200,
-      content_type: 'application/zip',
-      content_length: content.length,
-    })
-  ) {
-    throw new Error(`Expected the registered resource, received ${JSON.stringify(resource)}`);
-  }
+  assertEqualsInFieldOrder(resource, {
+    url: 'https://files.example.com/Archive.zip',
+    status: 200,
+    content_type: 'application/zip',
+    content_length: content.length,
+  }, 'Expected the registered resource');
 
   const response = await fetch(`${session.botApiRoot}/bot${token}/sendDocument`, {
     method: 'POST',
