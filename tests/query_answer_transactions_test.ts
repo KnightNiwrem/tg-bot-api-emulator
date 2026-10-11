@@ -159,9 +159,9 @@ async function createQueryFixture() {
     throw new Error(`Expected Alpha to be created: ${creation.reason}`);
   }
   const alpha = creation.bot.profile;
-  const start = session.privateMessaging.sendAccountMessage({
+  const start = session.messageSending.sendAccountPrivateChatMessage({
     fromAccountId: adaId,
-    to: { type: 'private', botId: alpha.id },
+    chat: { type: 'private', peerId: alpha.id },
     content: { kind: 'text', text: '/start' },
   });
   if (!start.sent) {

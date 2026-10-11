@@ -66,10 +66,7 @@ import {
 } from './message_content.ts';
 import { findStoppablePoll, type PollStopFailureReason } from './poll.ts';
 import { createSessionUserMentionContext } from './session_user_mention.ts';
-import {
-  findMissingSendPermission,
-  type SendPermissionMissingFailure,
-} from './supergroup_messaging.ts';
+import { findMissingSendPermission, type SendPermissionMissingFailure } from './message_sending.ts';
 
 /** A message of the bot's private chat with an account, which the bot edits. */
 export interface BotPrivateChatMessageTarget {

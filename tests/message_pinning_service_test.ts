@@ -63,9 +63,9 @@ function createPinningFixture() {
   });
 
   const sendToSupergroup = (accountId: number, text: string) => {
-    const result = session.supergroupMessaging.sendAccountMessage({
+    const result = session.messageSending.sendAccountSupergroupMessage({
       fromAccountId: accountId,
-      chatId,
+      chat: { type: 'supergroup', chatId },
       content: { kind: 'text', text },
     });
     if (!result.sent) {
@@ -74,9 +74,9 @@ function createPinningFixture() {
     return messageIdIn(session, chatId, result.message);
   };
   const sendToPinningBot = (text: string) => {
-    const result = session.privateMessaging.sendAccountMessage({
+    const result = session.messageSending.sendAccountPrivateChatMessage({
       fromAccountId: ada,
-      to: { type: 'private', botId: pinningBot },
+      chat: { type: 'private', peerId: pinningBot },
       content: { kind: 'text', text },
     });
     if (!result.sent) {
@@ -403,9 +403,9 @@ Deno.test('a public supergroup ignores its default permissions for pins', () => 
   for (const memberId of [grace, memberBot]) {
     session.sharedChatAdministration.addChatMember({ actorAccountId: ada, chatId, memberId });
   }
-  const sent = session.supergroupMessaging.sendAccountMessage({
+  const sent = session.messageSending.sendAccountSupergroupMessage({
     fromAccountId: ada,
-    chatId,
+    chat: { type: 'supergroup', chatId },
     content: { kind: 'text', text: 'public rules' },
   });
   if (!sent.sent) {
@@ -518,9 +518,9 @@ Deno.test('unpinning all clears every pin of one chat, whoever wrote or pinned i
       true,
       `message ${messageId} is pinned`,
     );
-  const botNotice = session.supergroupMessaging.sendBotMessage({
+  const botNotice = session.messageSending.sendSupergroupMessage({
     fromBotId: pinningBot,
-    chatId,
+    chat: { type: 'supergroup', chatId },
     content: { kind: 'text', text: 'bot notice' },
   });
   if (!botNotice.sent) {
@@ -536,18 +536,18 @@ Deno.test('unpinning all clears every pin of one chat, whoever wrote or pinned i
     'messages by the bot and by accounts are pinned in the supergroup',
   );
   pin(adaPinner, { type: 'private', peerId: pinningBot }, sendToPinningBot("ada's"));
-  const botReply = session.privateMessaging.sendBotMessage({
+  const botReply = session.messageSending.sendPrivateChatMessage({
     fromBotId: pinningBot,
-    to: { type: 'private', accountId: ada },
+    chat: { type: 'private', peerId: ada },
     content: { kind: 'text', text: 'bot reply' },
   });
   if (!botReply.sent) {
     throw new Error(`Private bot message was not sent: ${botReply.reason}`);
   }
   pin(botPinner, pinningBotChat, messageIdIn(session, pinningBot, botReply.message));
-  const otherBotMessage = session.privateMessaging.sendAccountMessage({
+  const otherBotMessage = session.messageSending.sendAccountPrivateChatMessage({
     fromAccountId: ada,
-    to: { type: 'private', botId: memberBot },
+    chat: { type: 'private', peerId: memberBot },
     content: { kind: 'text', text: 'other bot' },
   });
   if (!otherBotMessage.sent) {

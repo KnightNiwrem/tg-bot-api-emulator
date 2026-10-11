@@ -123,9 +123,9 @@ function createDraftFixture() {
   const { session } = harness;
   const adaId = harness.createAccount('Ada');
   const alpha = harness.createBot('alpha_bot');
-  const start = session.privateMessaging.sendAccountMessage({
+  const start = session.messageSending.sendAccountPrivateChatMessage({
     fromAccountId: adaId,
-    to: { type: 'private', botId: alpha.id },
+    chat: { type: 'private', peerId: alpha.id },
     content: { kind: 'text', text: '/start' },
   });
   if (!start.sent) {

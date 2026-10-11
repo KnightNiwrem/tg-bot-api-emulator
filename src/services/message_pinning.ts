@@ -296,17 +296,15 @@ interface BotLookup {
   getById(botId: number): VirtualBot | undefined;
 }
 
-interface PrivatePinServiceMessages {
-  recordServiceMessage(input: {
+/** Records the service messages of pins, in a chat of either type. */
+interface PinServiceMessageRecording {
+  recordPrivateChatServiceMessage(input: {
     readonly conversation: PrivateConversationKey;
     readonly sender: PrivateConversationRole;
     readonly content: MessagePinnedContent;
     readonly isSilent: boolean;
   }): PrivateMessage;
-}
-
-interface SupergroupPinServiceMessages {
-  recordServiceMessage(input: {
+  recordSupergroupServiceMessage(input: {
     readonly chatId: number;
     readonly sender: SupergroupMessageSender;
     readonly content: MessagePinnedContent;
@@ -339,10 +337,7 @@ interface MessagePinningServiceDependencies {
   readonly bots: BotLookup;
   readonly privateChats: PrivateChatPinningPolicy;
   readonly supergroups: SupergroupPinningPolicy;
-  /** Records the service messages of pins in private chats. */
-  readonly privateMessages: PrivatePinServiceMessages;
-  /** Records the service messages of pins in supergroups. */
-  readonly supergroupMessages: SupergroupPinServiceMessages;
+  readonly serviceMessages: PinServiceMessageRecording;
   readonly messages: PinnedMessageStore;
   readonly currentUnixTimeSeconds: () => number;
 }
@@ -379,8 +374,7 @@ export class MessagePinningService {
       bots,
       privateChats,
       supergroups,
-      privateMessages,
-      supergroupMessages,
+      serviceMessages,
       messages,
       currentUnixTimeSeconds,
     }: MessagePinningServiceDependencies,
@@ -391,7 +385,7 @@ export class MessagePinningService {
     this.#privateChats = privateChats;
     this.#supergroups = supergroups;
     this.#botPrivateChatTargeting = {
-      ...createPrivateChatPinning(privateChats, privateMessages, 'bot'),
+      ...createPrivateChatPinning(privateChats, serviceMessages, 'bot'),
       reachChatToChangePins: (botId, chat) => {
         const identification = privateChats.identifyChatForBot(botId, chat);
         if (!identification.identified) {
@@ -409,7 +403,7 @@ export class MessagePinningService {
     this.#botSupergroupTargeting = {
       ...createSupergroupPinning(
         supergroups,
-        supergroupMessages,
+        serviceMessages,
         currentUnixTimeSeconds,
         (botId) => ({ kind: 'bot', botId }),
       ),
@@ -433,7 +427,7 @@ export class MessagePinningService {
       },
     };
     this.#accountPrivateChatTargeting = {
-      ...createPrivateChatPinning(privateChats, privateMessages, 'account'),
+      ...createPrivateChatPinning(privateChats, serviceMessages, 'account'),
       reachChatToChangePins: (accountId, chat) => {
         const identification = privateChats.identifyChatForAccount(accountId, chat);
         if (!identification.identified) {
@@ -447,7 +441,7 @@ export class MessagePinningService {
     this.#accountSupergroupTargeting = {
       ...createSupergroupPinning(
         supergroups,
-        supergroupMessages,
+        serviceMessages,
         currentUnixTimeSeconds,
         (accountId) => ({ kind: 'account', accountId }),
       ),
@@ -699,7 +693,7 @@ export class MessagePinningService {
  */
 function createPrivateChatPinning(
   privateChats: PrivateChatPinningPolicy,
-  privateMessages: PrivatePinServiceMessages,
+  serviceMessages: PinServiceMessageRecording,
   pinnerRole: PrivateConversationRole,
 ): Pick<
   PinningTargeting<BotPrivateChatPinningTypes | AccountPrivateChatPinningTypes>,
@@ -709,7 +703,7 @@ function createPrivateChatPinning(
     findMessage: ({ key }, messageId) => privateChats.findMessageByChatMessageId(key, messageId),
     findRightRefusal: () => undefined,
     recordPin: ({ key }, _pinnerId, pinnedMessageId) => {
-      privateMessages.recordServiceMessage({
+      serviceMessages.recordPrivateChatServiceMessage({
         conversation: key.conversation,
         sender: pinnerRole,
         content: { kind: 'message_pinned', pinnedMessageId },
@@ -726,7 +720,7 @@ function createPrivateChatPinning(
  */
 function createSupergroupPinning(
   supergroups: SupergroupPinningPolicy,
-  supergroupMessages: SupergroupPinServiceMessages,
+  serviceMessages: PinServiceMessageRecording,
   currentUnixTimeSeconds: () => number,
   toPinner: (pinnerId: number) => ChatActor,
 ): Pick<
@@ -737,7 +731,7 @@ function createSupergroupPinning(
     findMessage: ({ key }, messageId) => supergroups.findMessageByChatMessageId(key, messageId),
     findRightRefusal: ({ canPinMessages }) => canPinMessages ? undefined : 'not_enough_rights',
     recordPin: ({ key }, pinnerId, pinnedMessageId, isSilent) => {
-      supergroupMessages.recordServiceMessage({
+      serviceMessages.recordSupergroupServiceMessage({
         chatId: key.chatId,
         sender: toPinner(pinnerId),
         content: { kind: 'message_pinned', pinnedMessageId },

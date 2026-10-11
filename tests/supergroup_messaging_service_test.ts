@@ -16,6 +16,7 @@ import { PrivateChatPolicy } from '../src/services/private_chat_policy.ts';
 import { SupergroupChatPolicy } from '../src/services/supergroup_chat_policy.ts';
 import { SupergroupMessagingService } from '../src/services/supergroup_messaging.ts';
 import { VirtualUserService } from '../src/services/virtual_user.ts';
+import { createMessageSendingServices } from './support/message_sending_services.ts';
 import type { ChatDomainEvent } from '../src/types/chat_domain_event.ts';
 import { grantSupergroupAdministratorRights } from '../src/types/chat_membership.ts';
 import { createMessageForward } from '../src/types/message_forward.ts';
@@ -29,24 +30,24 @@ import {
 } from '../src/types/virtual_message.ts';
 
 Deno.test('SupergroupMessagingService numbers messages once for the supergroup and publishes them', () => {
-  const { supergroupMessaging, messageBoxes, publishedEvents, owner, bot, supergroup } =
+  const { messageBoxes, publishedEvents, owner, bot, supergroup, messageSending } =
     createSupergroupMessagingFixture();
 
-  const accountMessage = expectSent(supergroupMessaging.sendAccountMessage({
+  const accountMessage = expectSent(messageSending.sendAccountSupergroupMessage({
     fromAccountId: owner.profile.id,
-    chatId: supergroup.id,
+    chat: { type: 'supergroup', chatId: supergroup.id },
     content: { kind: 'text', text: '  /start  ' },
   }));
-  const botMessage = expectSent(supergroupMessaging.sendBotMessage({
+  const botMessage = expectSent(messageSending.sendSupergroupMessage({
     fromBotId: bot.profile.id,
-    chatId: supergroup.id,
+    chat: { type: 'supergroup', chatId: supergroup.id },
     replyTo: { messageId: 2, allowSendingWithoutReply: false },
     isContentProtected: true,
     content: { kind: 'text', text: 'Welcome' },
   }));
-  const replyToMissing = expectSent(supergroupMessaging.sendBotMessage({
+  const replyToMissing = expectSent(messageSending.sendSupergroupMessage({
     fromBotId: bot.profile.id,
-    chatId: supergroup.id,
+    chat: { type: 'supergroup', chatId: supergroup.id },
     replyTo: { messageId: 99, allowSendingWithoutReply: true },
     content: { kind: 'text', text: 'Anyone?' },
   }));
@@ -79,15 +80,8 @@ Deno.test('SupergroupMessagingService numbers messages once for the supergroup a
 });
 
 Deno.test('SupergroupMessagingService sends albums whole, numbered in order for the supergroup', () => {
-  const {
-    supergroupMessaging,
-    messageBoxes,
-    publishedEvents,
-    virtualUsers,
-    owner,
-    bot,
-    supergroup,
-  } = createSupergroupMessagingFixture();
+  const { messageBoxes, publishedEvents, virtualUsers, owner, bot, supergroup, messageSending } =
+    createSupergroupMessagingFixture();
   const photo = (caption: string): MediaContent => ({
     kind: 'photo',
     photo: { kind: 'upload', upload: photoUpload() },
@@ -96,9 +90,9 @@ Deno.test('SupergroupMessagingService sends albums whole, numbered in order for 
     showsCaptionAboveMedia: false,
   });
 
-  const accountAlbum = supergroupMessaging.sendAccountAlbum({
+  const accountAlbum = messageSending.sendAccountSupergroupAlbum({
     fromAccountId: owner.profile.id,
-    chatId: supergroup.id,
+    chat: { type: 'supergroup', chatId: supergroup.id },
     contents: [
       { kind: 'media', upload: photoUpload(), caption: 'Before' },
       { kind: 'media', upload: photoUpload(), caption: 'After' },
@@ -107,9 +101,9 @@ Deno.test('SupergroupMessagingService sends albums whole, numbered in order for 
   if (!accountAlbum.sent) {
     throw new Error(`Expected the account's album to be sent, received ${accountAlbum.reason}`);
   }
-  const botAlbum = supergroupMessaging.sendBotAlbum({
+  const botAlbum = messageSending.sendSupergroupAlbum({
     fromBotId: bot.profile.id,
-    chatId: supergroup.id,
+    chat: { type: 'supergroup', chatId: supergroup.id },
     contents: [photo('Reply'), photo('')],
     replyTo: { messageId: 3, allowSendingWithoutReply: false },
     isContentProtected: true,
@@ -137,31 +131,31 @@ Deno.test('SupergroupMessagingService sends albums whole, numbered in order for 
 
   const stranger = createAccount(virtualUsers, 'Grace');
   const failures = [
-    supergroupMessaging.sendAccountAlbum({
+    messageSending.sendAccountSupergroupAlbum({
       fromAccountId: stranger.profile.id,
-      chatId: supergroup.id,
+      chat: { type: 'supergroup', chatId: supergroup.id },
       contents: [{ kind: 'media', upload: photoUpload(), caption: '' }],
     }),
-    supergroupMessaging.sendBotAlbum({
+    messageSending.sendSupergroupAlbum({
       fromBotId: bot.profile.id,
-      chatId: supergroup.id,
+      chat: { type: 'supergroup', chatId: supergroup.id },
       contents: [photo(''), photo('')],
       replyTo: { messageId: 99, allowSendingWithoutReply: false },
     }),
-    supergroupMessaging.sendBotAlbum({
+    messageSending.sendSupergroupAlbum({
       fromBotId: bot.profile.id,
-      chatId: supergroup.id,
+      chat: { type: 'supergroup', chatId: supergroup.id },
       contents: [photo(''), photo('')],
       messageEffectId: '5104841245755180586',
     }),
-    supergroupMessaging.sendBotAlbum({
+    messageSending.sendSupergroupAlbum({
       fromBotId: bot.profile.id,
-      chatId: supergroup.id,
+      chat: { type: 'supergroup', chatId: supergroup.id },
       contents: [photo('Fits'), photo('x'.repeat(MAX_CAPTION_LENGTH + 1))],
     }),
-    supergroupMessaging.sendBotAlbum({
+    messageSending.sendSupergroupAlbum({
       fromBotId: bot.profile.id,
-      chatId: supergroup.id,
+      chat: { type: 'supergroup', chatId: supergroup.id },
       contents: Array.from({ length: 11 }, () => photo('')),
     }),
   ].map((result) => result.sent ? 'sent' : result.reason);
@@ -180,9 +174,9 @@ Deno.test('SupergroupMessagingService sends albums whole, numbered in order for 
     );
   }
 
-  const albumWithoutReply = supergroupMessaging.sendBotAlbum({
+  const albumWithoutReply = messageSending.sendSupergroupAlbum({
     fromBotId: bot.profile.id,
-    chatId: supergroup.id,
+    chat: { type: 'supergroup', chatId: supergroup.id },
     contents: [photo(''), photo('')],
     replyTo: { messageId: 99, allowSendingWithoutReply: true },
   });
@@ -195,75 +189,82 @@ Deno.test('SupergroupMessagingService sends albums whole, numbered in order for 
 });
 
 Deno.test('SupergroupMessagingService lets only members write and read', () => {
-  const { supergroupMessaging, virtualUsers, publishedEvents, owner, bot, supergroup } =
-    createSupergroupMessagingFixture();
+  const {
+    supergroupMessaging,
+    virtualUsers,
+    publishedEvents,
+    owner,
+    bot,
+    supergroup,
+    messageSending,
+  } = createSupergroupMessagingFixture();
   const stranger = createAccount(virtualUsers, 'Grace');
   const strangerBot = createBot(virtualUsers, 'stranger_bot');
   const publishedEventCount = publishedEvents.length;
 
   const accountFailures = [
-    supergroupMessaging.sendAccountMessage({
+    messageSending.sendAccountSupergroupMessage({
       fromAccountId: 999,
-      chatId: supergroup.id,
+      chat: { type: 'supergroup', chatId: supergroup.id },
       content: { kind: 'text', text: 'Hi' },
     }),
-    supergroupMessaging.sendAccountMessage({
+    messageSending.sendAccountSupergroupMessage({
       fromAccountId: owner.profile.id,
-      chatId: -1_000_000_009_999,
+      chat: { type: 'supergroup', chatId: -1_000_000_009_999 },
       content: { kind: 'text', text: 'Hi' },
     }),
-    supergroupMessaging.sendAccountMessage({
+    messageSending.sendAccountSupergroupMessage({
       fromAccountId: stranger.profile.id,
-      chatId: supergroup.id,
+      chat: { type: 'supergroup', chatId: supergroup.id },
       content: { kind: 'text', text: 'Hi' },
     }),
-    supergroupMessaging.sendAccountMessage({
+    messageSending.sendAccountSupergroupMessage({
       fromAccountId: owner.profile.id,
-      chatId: supergroup.id,
+      chat: { type: 'supergroup', chatId: supergroup.id },
       content: { kind: 'text', text: '' },
     }),
-    supergroupMessaging.sendAccountMessage({
+    messageSending.sendAccountSupergroupMessage({
       fromAccountId: owner.profile.id,
-      chatId: supergroup.id,
+      chat: { type: 'supergroup', chatId: supergroup.id },
       content: { kind: 'text', text: 'x'.repeat(4_097) },
     }),
-    supergroupMessaging.sendAccountMessage({
+    messageSending.sendAccountSupergroupMessage({
       fromAccountId: owner.profile.id,
-      chatId: supergroup.id,
+      chat: { type: 'supergroup', chatId: supergroup.id },
       replyToMessageId: 99,
       content: { kind: 'text', text: 'Hi' },
     }),
   ].map((result) => result.sent ? 'sent' : result.reason);
   const botFailures = [
-    supergroupMessaging.sendBotMessage({
+    messageSending.sendSupergroupMessage({
       fromBotId: 999,
-      chatId: supergroup.id,
+      chat: { type: 'supergroup', chatId: supergroup.id },
       content: { kind: 'text', text: 'Hi' },
     }),
-    supergroupMessaging.sendBotMessage({
+    messageSending.sendSupergroupMessage({
       fromBotId: bot.profile.id,
-      chatId: supergroup.id,
+      chat: { type: 'supergroup', chatId: supergroup.id },
       content: { kind: 'text', text: '' },
     }),
-    supergroupMessaging.sendBotMessage({
+    messageSending.sendSupergroupMessage({
       fromBotId: strangerBot.profile.id,
-      chatId: supergroup.id,
+      chat: { type: 'supergroup', chatId: supergroup.id },
       content: { kind: 'text', text: 'Hi' },
     }),
-    supergroupMessaging.sendBotMessage({
+    messageSending.sendSupergroupMessage({
       fromBotId: bot.profile.id,
-      chatId: supergroup.id,
+      chat: { type: 'supergroup', chatId: supergroup.id },
       replyTo: { messageId: 99, allowSendingWithoutReply: false },
       content: { kind: 'text', text: 'Hi' },
     }),
-    supergroupMessaging.sendBotMessage({
+    messageSending.sendSupergroupMessage({
       fromBotId: bot.profile.id,
-      chatId: supergroup.id,
+      chat: { type: 'supergroup', chatId: supergroup.id },
       content: { kind: 'text', text: '   ' },
     }),
-    supergroupMessaging.sendBotMessage({
+    messageSending.sendSupergroupMessage({
       fromBotId: bot.profile.id,
-      chatId: supergroup.id,
+      chat: { type: 'supergroup', chatId: supergroup.id },
       inlineKeyboard: [[{ kind: 'callback', text: 'A', callbackData: 'a'.repeat(65) }]],
       content: { kind: 'text', text: 'Pick' },
     }),
@@ -318,6 +319,7 @@ Deno.test("SupergroupMessagingService edits and deletes only the author's own me
     supergroup,
     messageEditing,
     messageDeletion,
+    messageSending,
   } = createSupergroupMessagingFixture();
   const otherBot = createBot(virtualUsers, 'other_bot');
   sharedChatAdministration.addChatMember({
@@ -325,14 +327,14 @@ Deno.test("SupergroupMessagingService edits and deletes only the author's own me
     chatId: supergroup.id,
     memberId: otherBot.profile.id,
   });
-  expectSent(supergroupMessaging.sendAccountMessage({
+  expectSent(messageSending.sendAccountSupergroupMessage({
     fromAccountId: owner.profile.id,
-    chatId: supergroup.id,
+    chat: { type: 'supergroup', chatId: supergroup.id },
     content: { kind: 'text', text: 'Hello' },
   }));
-  expectSent(supergroupMessaging.sendBotMessage({
+  expectSent(messageSending.sendSupergroupMessage({
     fromBotId: bot.profile.id,
-    chatId: supergroup.id,
+    chat: { type: 'supergroup', chatId: supergroup.id },
     content: { kind: 'text', text: 'Menu' },
   }));
 
@@ -443,7 +445,6 @@ Deno.test("SupergroupMessagingService edits and deletes only the author's own me
 
 Deno.test('SupergroupMessagingService lets the inline bot edit a message sent through it by its chat', () => {
   const {
-    supergroupMessaging,
     virtualUsers,
     sharedChatAdministration,
     messageBoxes,
@@ -451,6 +452,7 @@ Deno.test('SupergroupMessagingService lets the inline bot edit a message sent th
     bot,
     supergroup,
     messageEditing,
+    messageSending,
   } = createSupergroupMessagingFixture();
   const otherBot = createBot(virtualUsers, 'other_bot');
   const outsiderBot = createBot(virtualUsers, 'outsider_bot');
@@ -460,9 +462,9 @@ Deno.test('SupergroupMessagingService lets the inline bot edit a message sent th
     memberId: otherBot.profile.id,
   });
   const sendThrough = (viaBotId: number) => {
-    const message = expectSent(supergroupMessaging.sendAccountInlineResult({
+    const message = expectSent(messageSending.sendAccountSupergroupInlineResult({
       fromAccountId: owner.profile.id,
-      chatId: supergroup.id,
+      chat: { type: 'supergroup', chatId: supergroup.id },
       viaBotId,
       content: { kind: 'text', text: 'Cats', entities: [] },
     }));
@@ -524,11 +526,18 @@ Deno.test('SupergroupMessagingService lets the inline bot edit a message sent th
 });
 
 Deno.test('SupergroupMessagingService lets bots with the right delete any message', () => {
-  const { supergroupMessaging, sharedChatAdministration, owner, bot, supergroup, messageDeletion } =
-    createSupergroupMessagingFixture();
-  expectSent(supergroupMessaging.sendAccountMessage({
+  const {
+    supergroupMessaging,
+    sharedChatAdministration,
+    owner,
+    bot,
+    supergroup,
+    messageDeletion,
+    messageSending,
+  } = createSupergroupMessagingFixture();
+  expectSent(messageSending.sendAccountSupergroupMessage({
     fromAccountId: owner.profile.id,
-    chatId: supergroup.id,
+    chat: { type: 'supergroup', chatId: supergroup.id },
     content: { kind: 'text', text: 'Spam' },
   }));
   const deleteAccountMessages = () => {
@@ -578,6 +587,7 @@ Deno.test('SupergroupMessagingService turns away bots that left or were removed'
     supergroup,
     messageEditing,
     messageDeletion,
+    messageSending,
   } = createSupergroupMessagingFixture();
   const removedBot = createBot(virtualUsers, 'removed_bot');
   sharedChatAdministration.addChatMember({
@@ -585,9 +595,9 @@ Deno.test('SupergroupMessagingService turns away bots that left or were removed'
     chatId: supergroup.id,
     memberId: removedBot.profile.id,
   });
-  const botMessage = expectSent(supergroupMessaging.sendBotMessage({
+  const botMessage = expectSent(messageSending.sendSupergroupMessage({
     fromBotId: bot.profile.id,
-    chatId: supergroup.id,
+    chat: { type: 'supergroup', chatId: supergroup.id },
     content: { kind: 'text', text: 'Bye' },
   }));
   sharedChatAdministration.leaveChat({ memberId: bot.profile.id, chatId: supergroup.id });
@@ -599,9 +609,9 @@ Deno.test('SupergroupMessagingService turns away bots that left or were removed'
 
   const failures = [bot, removedBot].flatMap(({ profile: { id: fromBotId } }) =>
     [
-      supergroupMessaging.sendBotMessage({
+      messageSending.sendSupergroupMessage({
         fromBotId,
-        chatId: supergroup.id,
+        chat: { type: 'supergroup', chatId: supergroup.id },
         content: { kind: 'text', text: 'Hi' },
       }),
       supergroupMessaging.checkBotChatActionAccess({ fromBotId, chatId: supergroup.id }),
@@ -649,7 +659,6 @@ Deno.test('SupergroupMessagingService turns away bots that left or were removed'
 
 Deno.test('SupergroupMessagingService sends only what a member may send', () => {
   const {
-    supergroupMessaging,
     sharedChatAdministration,
     sharedChats,
     virtualUsers,
@@ -657,6 +666,7 @@ Deno.test('SupergroupMessagingService sends only what a member may send', () => 
     owner,
     bot,
     supergroup,
+    messageSending,
   } = createSupergroupMessagingFixture();
   const member = createAccount(virtualUsers, 'Grace');
   sharedChatAdministration.addChatMember({
@@ -664,9 +674,9 @@ Deno.test('SupergroupMessagingService sends only what a member may send', () => 
     chatId: supergroup.id,
     memberId: member.profile.id,
   });
-  const ownerPhoto = expectSent(supergroupMessaging.sendAccountMessage({
+  const ownerPhoto = expectSent(messageSending.sendAccountSupergroupMessage({
     fromAccountId: owner.profile.id,
-    chatId: supergroup.id,
+    chat: { type: 'supergroup', chatId: supergroup.id },
     content: { kind: 'media', upload: photoUpload(), caption: '' },
   }));
   sharedChats.updateChatMemberStatus(supergroup.id, member.profile.id, {
@@ -683,32 +693,32 @@ Deno.test('SupergroupMessagingService sends only what a member may send', () => 
 
   // The restriction leaves the member text, and nothing else, which no album or forward bypasses.
   const restrictedSends = [
-    supergroupMessaging.sendAccountMessage({
+    messageSending.sendAccountSupergroupMessage({
       fromAccountId: member.profile.id,
-      chatId: supergroup.id,
+      chat: { type: 'supergroup', chatId: supergroup.id },
       content: { kind: 'text', text: 'Hello' },
     }),
-    supergroupMessaging.sendAccountMessage({
+    messageSending.sendAccountSupergroupMessage({
       fromAccountId: member.profile.id,
-      chatId: supergroup.id,
+      chat: { type: 'supergroup', chatId: supergroup.id },
       content: { kind: 'media', upload: photoUpload(), caption: 'Look' },
     }),
-    supergroupMessaging.sendAccountAlbum({
+    messageSending.sendAccountSupergroupAlbum({
       fromAccountId: member.profile.id,
-      chatId: supergroup.id,
+      chat: { type: 'supergroup', chatId: supergroup.id },
       contents: [
         { kind: 'media', upload: photoUpload(), caption: '' },
         { kind: 'media', upload: photoUpload(), caption: '' },
       ],
     }),
-    supergroupMessaging.sendAccountForward({
+    messageSending.sendAccountSupergroupForward({
       fromAccountId: member.profile.id,
-      chatId: supergroup.id,
+      chat: { type: 'supergroup', chatId: supergroup.id },
       forward: createMessageForward(expectContentMessage(ownerPhoto), () => undefined),
     }),
-    supergroupMessaging.sendAccountInlineResult({
+    messageSending.sendAccountSupergroupInlineResult({
       fromAccountId: member.profile.id,
-      chatId: supergroup.id,
+      chat: { type: 'supergroup', chatId: supergroup.id },
       viaBotId: bot.profile.id,
       content: { kind: 'text', text: 'Result', entities: [] },
     }),
@@ -733,24 +743,24 @@ Deno.test('SupergroupMessagingService sends only what a member may send', () => 
   sharedChats.updateSupergroupDefaultPermissions(supergroup.id, new Set(['can_send_photos']));
   const defaultSends = () =>
     [
-      supergroupMessaging.sendAccountMessage({
+      messageSending.sendAccountSupergroupMessage({
         fromAccountId: member.profile.id,
-        chatId: supergroup.id,
+        chat: { type: 'supergroup', chatId: supergroup.id },
         content: { kind: 'text', text: 'Still here' },
       }),
-      supergroupMessaging.sendAccountMessage({
+      messageSending.sendAccountSupergroupMessage({
         fromAccountId: owner.profile.id,
-        chatId: supergroup.id,
+        chat: { type: 'supergroup', chatId: supergroup.id },
         content: { kind: 'text', text: 'Quiet, please' },
       }),
-      supergroupMessaging.sendBotMessage({
+      messageSending.sendSupergroupMessage({
         fromBotId: bot.profile.id,
-        chatId: supergroup.id,
+        chat: { type: 'supergroup', chatId: supergroup.id },
         content: { kind: 'text', text: 'Noted' },
       }),
-      supergroupMessaging.sendBotAlbum({
+      messageSending.sendSupergroupAlbum({
         fromBotId: bot.profile.id,
-        chatId: supergroup.id,
+        chat: { type: 'supergroup', chatId: supergroup.id },
         contents: [{
           kind: 'photo',
           photo: { kind: 'upload', upload: photoUpload() },
@@ -787,14 +797,14 @@ Deno.test('SupergroupMessagingService sends only what a member may send', () => 
 });
 
 Deno.test('SupergroupMessagingService lets a text mention name any user of the session', () => {
-  const { virtualUsers, supergroupMessaging, owner, bot, supergroup } =
+  const { virtualUsers, owner, bot, supergroup, messageSending } =
     createSupergroupMessagingFixture();
   const outsideAccount = createAccount(virtualUsers, 'Grace');
   const outsideBot = createBot(virtualUsers, 'outside_bot');
   const sendMention = (userId: number) =>
-    supergroupMessaging.sendBotMessage({
+    messageSending.sendSupergroupMessage({
       fromBotId: bot.profile.id,
-      chatId: supergroup.id,
+      chat: { type: 'supergroup', chatId: supergroup.id },
       content: {
         kind: 'text',
         text: 'Hi',
@@ -844,11 +854,7 @@ function createSupergroupMessagingFixture() {
     bots,
     sharedChats,
     messages,
-    files,
-    polls,
     messageBoxes,
-    events,
-    currentUnixTimeSeconds,
   });
   const privateConversations = new PrivateConversationRepository();
   // These tests send no private messages, so none is found.
@@ -863,6 +869,20 @@ function createSupergroupMessagingFixture() {
   const supergroups = new SupergroupChatPolicy({
     sharedChats,
     supergroupMessages: supergroupMessaging,
+  });
+  const { messageCommitter, messageSending } = createMessageSendingServices({
+    accounts,
+    bots,
+    privateChats,
+    supergroups,
+    privateConversations,
+    sharedChats,
+    messages,
+    files,
+    polls,
+    messageBoxes,
+    events,
+    currentUnixTimeSeconds,
   });
   const messageEditing = new MessageEditingService({
     accounts,
@@ -890,7 +910,7 @@ function createSupergroupMessagingFixture() {
     accounts,
     bots,
     sharedChats,
-    supergroupMessages: supergroupMessaging,
+    serviceMessages: messageCommitter,
     transactions: { ...events, withinTransaction: (command) => command() },
     currentUnixTimeSeconds,
   });
@@ -919,6 +939,7 @@ function createSupergroupMessagingFixture() {
     sharedChats,
     sharedChatAdministration,
     supergroupMessaging,
+    messageSending,
     messageEditing,
     messageDeletion,
     messageBoxes,

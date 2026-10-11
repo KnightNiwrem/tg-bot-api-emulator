@@ -10,9 +10,9 @@ Deno.test('A session dates Telegram messages by its own wall clock', async () =>
   using session = buildSessionServices({ wallClock, scheduler: new ControlledScheduler() });
   const { accountId, bot } = createAccountAndBot(session);
 
-  session.privateMessaging.sendAccountMessage({
+  session.messageSending.sendAccountPrivateChatMessage({
     fromAccountId: accountId,
-    to: { type: 'private', botId: bot.id },
+    chat: { type: 'private', peerId: bot.id },
     content: { kind: 'text', text: '/start' },
   });
 
@@ -31,9 +31,9 @@ Deno.test('A session times long polls and activity reads by its scheduler alone'
   const scheduler = new ControlledScheduler();
   using session = buildSessionServices({ wallClock, scheduler });
   const { accountId, bot } = createAccountAndBot(session);
-  session.privateMessaging.sendAccountMessage({
+  session.messageSending.sendAccountPrivateChatMessage({
     fromAccountId: accountId,
-    to: { type: 'private', botId: bot.id },
+    chat: { type: 'private', peerId: bot.id },
     content: { kind: 'text', text: '/start' },
   });
   await session.botApi.getUpdates(bot, { offset: 2, limit: 100, timeoutSeconds: 0 });

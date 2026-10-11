@@ -292,6 +292,8 @@
           "src/services/message_content.ts",
           "src/services/message_deletion.ts",
           "src/services/message_editing.ts",
+          "src/services/message_commit.ts",
+          "src/services/message_sending.ts",
           "src/services/poll.ts",
           "src/services/poll_normalization.ts",
           "src/services/rich_message_normalization.ts",

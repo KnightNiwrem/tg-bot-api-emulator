@@ -181,7 +181,7 @@ import type {
 } from './message_reaction.ts';
 import type { PollStopFailureReason } from './poll.ts';
 import type { PollLimitFailure } from './poll_normalization.ts';
-import type { SendPermissionMissingFailure } from './supergroup_messaging.ts';
+import type { SendPermissionMissingFailure } from './message_sending.ts';
 
 /** The most UTF-8 bytes of text the Bot API reads before applying its formatting. */
 const MAX_FORMATTED_TEXT_BYTES = 1 << 15;
@@ -1978,8 +1978,8 @@ interface BotApiServiceDependencies {
   readonly callbackQueries: CallbackQueryAnswering;
   readonly inlineQueries: InlineQueryAnswering;
   /**
-   * Normalizes the captions of an album, which are checked before the album is handed to the
-   * messaging services, as they normalize the caption of a bot's media.
+   * Normalizes the captions of an album, which are checked before the album is handed to
+   * sending, as it normalizes the caption of a bot's media.
    */
   readonly botCaptions: BotCaptionNormalizer;
   readonly botCommands: BotCommandLists;
@@ -2492,8 +2492,8 @@ export class BotApiService {
         return { sent: false, ...resolution.failure };
       }
       // As TDLib's `get_input_message_content` does, each message's caption is checked once its
-      // file is read, before the next message; the messaging service checks it again when it
-      // stores the album.
+      // file is read, before the next message; sending checks it again when it stores the
+      // album.
       const captionNormalization = this.#botCaptions.normalizeBotCaption({
         caption: member.caption.text,
         captionEntities: member.caption.entities,
@@ -3558,7 +3558,7 @@ export class BotApiService {
   /**
    * Stops a poll the bot sent, as the official Bot API server's `process_stop_poll_query` and
    * TDLib's `stop_poll` do, and answers with the closed poll. The message is found as an edit finds
-   * it, then the poll as the messaging services find it; stopping a closed poll fails. The message
+   * it, then the poll as `findStoppablePoll` finds it; stopping a closed poll fails. The message
    * shows the new keyboard, or none; no bot receives an `edited_message` update for it.
    */
   stopPoll(

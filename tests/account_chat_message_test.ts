@@ -18,6 +18,7 @@ import { PrivateMessagingService } from '../src/services/private_messaging.ts';
 import { SupergroupChatPolicy } from '../src/services/supergroup_chat_policy.ts';
 import { SupergroupMessagingService } from '../src/services/supergroup_messaging.ts';
 import { VirtualUserService } from '../src/services/virtual_user.ts';
+import { createMessageSendingServices } from './support/message_sending_services.ts';
 import { ALL_CHAT_PERMISSIONS } from '../src/types/chat_permissions.ts';
 import type { AccountChatAddress } from '../src/types/virtual_chat.ts';
 import type { ChatMessage } from '../src/types/virtual_message.ts';
@@ -148,41 +149,57 @@ function createReaderFixture() {
     bots,
     privateConversations,
     messages,
-    files,
-    polls,
     messageBoxes,
     blockedUsers,
-    joinRequesterContacts,
-    events,
-    // No draft is shown in these chats; a bot's message has none to remove.
-    messageDrafts: { clearBotDraft: () => {} },
-    currentUnixTimeSeconds,
   });
   const supergroupMessaging = new SupergroupMessagingService({
     accounts,
     bots,
     sharedChats,
     messages,
+    messageBoxes,
+  });
+  const privateChats = new PrivateChatPolicy({
+    accounts,
+    bots,
+    privateConversations,
+    blockedUsers,
+    joinRequesterContacts,
+    privateMessages: privateMessaging,
+  });
+  const supergroups = new SupergroupChatPolicy({
+    sharedChats,
+    supergroupMessages: supergroupMessaging,
+  });
+  const { messageSending } = createMessageSendingServices({
+    accounts,
+    bots,
+    privateChats,
+    supergroups,
+    privateConversations,
+    sharedChats,
+    messages,
     files,
     polls,
     messageBoxes,
     events,
+    joinRequesterContacts,
     currentUnixTimeSeconds,
   });
 
-  const adaStart = privateMessaging.sendAccountMessage({
+  const adaStart = messageSending.sendAccountPrivateChatMessage({
     fromAccountId: ada.profile.id,
-    to: { type: 'private', botId: bot.profile.id },
+    chat: { type: 'private', peerId: bot.profile.id },
     content: { kind: 'text', text: '/start' },
   });
-  const adaBotReply = privateMessaging.sendBotMessage({
+  const adaBotReply = messageSending.sendPrivateChatMessage({
     fromBotId: bot.profile.id,
-    to: { type: 'private', accountId: ada.profile.id },
+    chat: { type: 'private', peerId: ada.profile.id },
     content: { kind: 'text', text: 'Hello' },
   });
-  const gracePrompt = privateMessaging.sendBotMessage({
+  const gracePrompt = messageSending.sendPrivateChatMessage({
     fromBotId: bot.profile.id,
-    to: { type: 'private', accountId: grace.profile.id },
+    chat: { type: 'private', peerId: grace.profile.id },
     content: { kind: 'text', text: 'Press the button to join' },
   });
   if (!adaStart.sent || !adaBotReply.sent || !gracePrompt.sent) {
@@ -211,9 +228,9 @@ function createReaderFixture() {
   if (!basicGroupRegistration.registered || !supergroupRegistration.registered) {
     throw new Error('Expected the fixture chats to be registered');
   }
-  const supergroupMessage = supergroupMessaging.sendAccountMessage({
+  const supergroupMessage = messageSending.sendAccountSupergroupMessage({
     fromAccountId: ada.profile.id,
-    chatId: supergroup.id,
+    chat: { type: 'supergroup', chatId: supergroup.id },
     content: { kind: 'text', text: 'Welcome' },
   });
   if (!supergroupMessage.sent) {
@@ -230,21 +247,7 @@ function createReaderFixture() {
   };
 
   return {
-    reader: createAccountChatMessageReader({
-      accounts,
-      privateChats: new PrivateChatPolicy({
-        accounts,
-        bots,
-        privateConversations,
-        blockedUsers,
-        joinRequesterContacts,
-        privateMessages: privateMessaging,
-      }),
-      supergroups: new SupergroupChatPolicy({
-        sharedChats,
-        supergroupMessages: supergroupMessaging,
-      }),
-    }),
+    reader: createAccountChatMessageReader({ accounts, privateChats, supergroups }),
     privateConversations,
     ada,
     grace,

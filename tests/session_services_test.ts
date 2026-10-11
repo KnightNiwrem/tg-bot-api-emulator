@@ -88,9 +88,9 @@ async function readFirstMessageDate(session: EmulationSession): Promise<number |
     first_name: 'Test Bot',
     username: 'test_bot',
   });
-  session.privateMessaging.sendAccountMessage({
+  session.messageSending.sendAccountPrivateChatMessage({
     fromAccountId: adaId,
-    to: { type: 'private', botId: bot.profile.id },
+    chat: { type: 'private', peerId: bot.profile.id },
     content: { kind: 'text', text: 'Hello' },
   });
   const result = await session.botApi.getUpdates(bot.profile, { limit: 100, timeoutSeconds: 0 });

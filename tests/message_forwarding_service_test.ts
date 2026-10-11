@@ -152,14 +152,12 @@ function createForwardingFixture(lookupResult: AccountChatMessageLookupResult) {
         return lookupResult;
       },
     },
-    privateMessages: {
-      sendAccountForward: ({ forward }) => {
+    messageSending: {
+      sendAccountPrivateChatForward: ({ forward }) => {
         sentForwards.push({ destination: 'private', forward });
         return { sent: true, message: privateMessage };
       },
-    },
-    supergroupMessages: {
-      sendAccountForward: ({ forward }) => {
+      sendAccountSupergroupForward: ({ forward }) => {
         sentForwards.push({ destination: 'supergroup', forward });
         return { sent: true, message: supergroupMessage };
       },

@@ -14,7 +14,9 @@ import { PrivateChatPolicy } from '../src/services/private_chat_policy.ts';
 import { PrivateMessagingService } from '../src/services/private_messaging.ts';
 import { SupergroupChatPolicy } from '../src/services/supergroup_chat_policy.ts';
 import { SupergroupMessagingService } from '../src/services/supergroup_messaging.ts';
+import type { MessageSendingService } from '../src/services/message_sending.ts';
 import { VirtualUserService } from '../src/services/virtual_user.ts';
+import { createMessageSendingServices } from './support/message_sending_services.ts';
 import { ALL_CHAT_PERMISSIONS } from '../src/types/chat_permissions.ts';
 import { privateChatMessagePolicy, supergroupMessagePolicy } from '../src/types/chat_policy.ts';
 import type {
@@ -30,7 +32,7 @@ import type {
 } from '../src/types/virtual_message.ts';
 
 Deno.test('private chats number messages in one box per participant, across its private chats', () => {
-  const { privateMessaging, messageBoxes, ada, grace, bot, otherBot } = createChatPolicyFixture();
+  const { messageBoxes, ada, grace, bot, otherBot, messageSending } = createChatPolicyFixture();
   const adaChat = privateChatKey(ada, bot);
   const adaOtherChat = privateChatKey(ada, otherBot);
   const graceChat = privateChatKey(grace, bot);
@@ -41,12 +43,12 @@ Deno.test('private chats number messages in one box per participant, across its 
     );
 
   // Ada and Grace started their chats in the fixture; these messages interleave the three chats.
-  const adaToBot = sendAccountText(privateMessaging, ada, bot, 'Ada to the bot');
-  const graceToBot = sendAccountText(privateMessaging, grace, bot, 'Grace to the bot');
-  const adaToOtherBot = sendAccountText(privateMessaging, ada, otherBot, 'Ada to the other bot');
-  const botToAda = sendBotText(privateMessaging, bot, ada, 'The bot to Ada');
-  const otherBotToAda = sendBotText(privateMessaging, otherBot, ada, 'The other bot to Ada');
-  const botToGrace = sendBotText(privateMessaging, bot, grace, 'The bot to Grace');
+  const adaToBot = sendAccountText(messageSending, ada, bot, 'Ada to the bot');
+  const graceToBot = sendAccountText(messageSending, grace, bot, 'Grace to the bot');
+  const adaToOtherBot = sendAccountText(messageSending, ada, otherBot, 'Ada to the other bot');
+  const botToAda = sendBotText(messageSending, bot, ada, 'The bot to Ada');
+  const otherBotToAda = sendBotText(messageSending, otherBot, ada, 'The other bot to Ada');
+  const botToGrace = sendBotText(messageSending, bot, grace, 'The bot to Grace');
 
   assertEquals(privateChatMessagePolicy.getNumberingBoxOwnerIds(adaChat), [ada, bot]);
   assertEquals(
@@ -81,12 +83,12 @@ Deno.test('private chats number messages in one box per participant, across its 
 });
 
 Deno.test('a private chat finds its messages by bot box ID, but not by the IDs of other chats', () => {
-  const { privateMessaging, messageDeletion, privateChats, messageBoxes, ada, grace, bot } =
+  const { messageDeletion, privateChats, messageBoxes, ada, grace, bot, messageSending } =
     createChatPolicyFixture();
   const adaChat = privateChatKey(ada, bot);
   const graceChat = privateChatKey(grace, bot);
-  const adaMessage = sendAccountText(privateMessaging, ada, bot, 'Ada to the bot');
-  const graceMessage = sendAccountText(privateMessaging, grace, bot, 'Grace to the bot');
+  const adaMessage = sendAccountText(messageSending, ada, bot, 'Ada to the bot');
+  const graceMessage = sendAccountText(messageSending, grace, bot, 'Grace to the bot');
   const botBoxId = (message: ChatMessage) => requireMessageId(messageBoxes, bot, message);
 
   assertEquals(
@@ -104,7 +106,7 @@ Deno.test('a private chat finds its messages by bot box ID, but not by the IDs o
     chat: { type: 'private', peerId: bot },
     messageId: botBoxId(adaMessage),
   });
-  const laterMessage = sendAccountText(privateMessaging, ada, bot, 'Ada again');
+  const laterMessage = sendAccountText(messageSending, ada, bot, 'Ada again');
   assertEquals(
     [
       deletion.deleted,
@@ -116,7 +118,7 @@ Deno.test('a private chat finds its messages by bot box ID, but not by the IDs o
 });
 
 Deno.test('a private chat address identifies an existing peer without deciding access', () => {
-  const { privateMessaging, privateChats, blockedUsers, ada, grace, hopper, bot } =
+  const { privateChats, blockedUsers, ada, grace, hopper, bot, messageSending } =
     createChatPolicyFixture();
   const identifyForBot = (accountId: number) =>
     privateChats.identifyChatForBot(bot, { type: 'private', peerId: accountId });
@@ -138,9 +140,9 @@ Deno.test('a private chat address identifies an existing peer without deciding a
   }
   const hopperChat = hopperIdentification.key;
   const accessBeforeContact = describeAccess(privateChats, hopperChat);
-  const prompt = privateMessaging.sendBotMessage({
+  const prompt = messageSending.sendPrivateChatMessage({
     fromBotId: bot,
-    to: { type: 'private', accountId: hopper },
+    chat: { type: 'private', peerId: hopper },
     content: { kind: 'text', text: 'Press the button to join' },
   });
   blockedUsers.block(ada, bot);
@@ -165,11 +167,11 @@ Deno.test('a private chat address identifies an existing peer without deciding a
 });
 
 Deno.test('private chat updates reach the bot except for its own content messages', () => {
-  const { privateMessaging, ada, bot } = createChatPolicyFixture();
-  const accountMessage = sendAccountText(privateMessaging, ada, bot, 'Hello');
-  const botMessage = sendBotText(privateMessaging, bot, ada, 'Hi');
+  const { ada, bot, messageSending, messageCommitter } = createChatPolicyFixture();
+  const accountMessage = sendAccountText(messageSending, ada, bot, 'Hello');
+  const botMessage = sendBotText(messageSending, bot, ada, 'Hi');
   const recordPin = (sender: PrivateConversationRole) =>
-    privateMessaging.recordServiceMessage({
+    messageCommitter.recordPrivateChatServiceMessage({
       conversation: { accountId: ada, botId: bot },
       sender,
       content: { kind: 'message_pinned', pinnedMessageId: botMessage.id },
@@ -185,18 +187,17 @@ Deno.test('private chat updates reach the bot except for its own content message
 });
 
 Deno.test('a supergroup numbers its messages in one box of its own, which every member observes', () => {
-  const { privateMessaging, supergroupMessaging, sharedChats, messageBoxes, ada, bot } =
-    createChatPolicyFixture();
+  const { sharedChats, messageBoxes, ada, bot, messageSending } = createChatPolicyFixture();
   const team = registerSupergroup(sharedChats, ada, TEAM);
   const club = registerSupergroup(sharedChats, ada, CLUB);
   sharedChats.addChatMember(TEAM.id, bot);
   const teamChat: SupergroupChatKey = { type: 'supergroup', chatId: team.id };
   const clubChat: SupergroupChatKey = { type: 'supergroup', chatId: club.id };
 
-  const teamFirst = sendSupergroupText(supergroupMessaging, ada, team, 'First in the team');
-  const privateMessage = sendAccountText(privateMessaging, ada, bot, 'Between the groups');
-  const clubFirst = sendSupergroupText(supergroupMessaging, ada, club, 'First in the club');
-  const teamSecond = sendSupergroupText(supergroupMessaging, ada, team, 'Second in the team');
+  const teamFirst = sendSupergroupText(messageSending, ada, team, 'First in the team');
+  const privateMessage = sendAccountText(messageSending, ada, bot, 'Between the groups');
+  const clubFirst = sendSupergroupText(messageSending, ada, club, 'First in the club');
+  const teamSecond = sendSupergroupText(messageSending, ada, team, 'Second in the team');
   const observedId = (chat: SupergroupChatKey, message: ChatMessage) =>
     messageBoxes.getMessageId(
       supergroupMessagePolicy.getObserverBoxOwnerId(chat, 'member'),
@@ -217,12 +218,12 @@ Deno.test('a supergroup numbers its messages in one box of its own, which every 
 });
 
 Deno.test('a supergroup finds its messages by its own IDs and rejects IDs it never numbered', () => {
-  const { supergroupMessaging, supergroups, sharedChats, ada } = createChatPolicyFixture();
+  const { supergroups, sharedChats, ada, messageSending } = createChatPolicyFixture();
   const team = registerSupergroup(sharedChats, ada, TEAM);
   const club = registerSupergroup(sharedChats, ada, CLUB);
-  const teamFirst = sendSupergroupText(supergroupMessaging, ada, team, 'First in the team');
-  const teamSecond = sendSupergroupText(supergroupMessaging, ada, team, 'Second in the team');
-  const clubFirst = sendSupergroupText(supergroupMessaging, ada, club, 'First in the club');
+  const teamFirst = sendSupergroupText(messageSending, ada, team, 'First in the team');
+  const teamSecond = sendSupergroupText(messageSending, ada, team, 'Second in the team');
+  const clubFirst = sendSupergroupText(messageSending, ada, club, 'First in the club');
   const find = (supergroup: Supergroup, messageId: number) =>
     supergroups.findMessageByChatMessageId(
       { type: 'supergroup', chatId: supergroup.id },
@@ -288,7 +289,7 @@ Deno.test('a supergroup address identifies an existing supergroup; membership de
 });
 
 Deno.test('supergroup service messages reach every member, their author and a departed member', () => {
-  const { supergroupMessaging, sharedChats, ada, grace, bot, otherBot } = createChatPolicyFixture();
+  const { sharedChats, ada, grace, bot, otherBot, messageCommitter } = createChatPolicyFixture();
   registerSupergroup(sharedChats, ada, TEAM);
   for (const memberId of [grace, bot, otherBot]) {
     sharedChats.addChatMember(TEAM.id, memberId);
@@ -299,7 +300,7 @@ Deno.test('supergroup service messages reach every member, their author and a de
       sharedChats.getChatMemberIds(TEAM.id),
     );
 
-  const titleChange = supergroupMessaging.recordServiceMessage({
+  const titleChange = messageCommitter.recordSupergroupServiceMessage({
     chatId: TEAM.id,
     sender: { kind: 'bot', botId: bot },
     content: { kind: 'title_changed', title: 'Renamed' },
@@ -308,7 +309,7 @@ Deno.test('supergroup service messages reach every member, their author and a de
   });
   const titleChangeRecipients = recipients(titleChange);
   sharedChats.removeChatMember(TEAM.id, otherBot, { status: 'kicked' });
-  const removal = supergroupMessaging.recordServiceMessage({
+  const removal = messageCommitter.recordSupergroupServiceMessage({
     chatId: TEAM.id,
     sender: { kind: 'bot', botId: bot },
     content: { kind: 'member_left', memberId: otherBot },
@@ -373,26 +374,15 @@ function createChatPolicyFixture() {
     bots,
     privateConversations,
     messages,
-    files,
-    polls,
     messageBoxes,
     blockedUsers,
-    joinRequesterContacts,
-    events,
-    // No draft is shown in these chats; a bot's message has none to remove.
-    messageDrafts: { clearBotDraft: () => {} },
-    currentUnixTimeSeconds,
   });
   const supergroupMessaging = new SupergroupMessagingService({
     accounts,
     bots,
     sharedChats,
     messages,
-    files,
-    polls,
     messageBoxes,
-    events,
-    currentUnixTimeSeconds,
   });
 
   for (const [accountId, botId] of [[ada, bot], [grace, bot], [ada, otherBot]]) {
@@ -414,9 +404,25 @@ function createChatPolicyFixture() {
     sharedChats,
     supergroupMessages: supergroupMessaging,
   });
+  const { messageCommitter, messageSending } = createMessageSendingServices({
+    accounts,
+    bots,
+    privateChats,
+    supergroups,
+    privateConversations,
+    sharedChats,
+    messages,
+    files,
+    polls,
+    messageBoxes,
+    events,
+    joinRequesterContacts,
+    currentUnixTimeSeconds,
+  });
   return {
     privateMessaging,
-    supergroupMessaging,
+    messageSending,
+    messageCommitter,
     messageDeletion: new MessageDeletionService({
       accounts,
       bots,
@@ -456,14 +462,14 @@ function registerSupergroup(
 }
 
 function sendAccountText(
-  privateMessaging: PrivateMessagingService,
+  messageSending: MessageSendingService,
   accountId: number,
   botId: number,
   text: string,
 ): PrivateMessage {
-  const result = privateMessaging.sendAccountMessage({
+  const result = messageSending.sendAccountPrivateChatMessage({
     fromAccountId: accountId,
-    to: { type: 'private', botId },
+    chat: { type: 'private', peerId: botId },
     content: { kind: 'text', text },
   });
   if (!result.sent) {
@@ -473,14 +479,14 @@ function sendAccountText(
 }
 
 function sendBotText(
-  privateMessaging: PrivateMessagingService,
+  messageSending: MessageSendingService,
   botId: number,
   accountId: number,
   text: string,
 ): PrivateMessage {
-  const result = privateMessaging.sendBotMessage({
+  const result = messageSending.sendPrivateChatMessage({
     fromBotId: botId,
-    to: { type: 'private', accountId },
+    chat: { type: 'private', peerId: accountId },
     content: { kind: 'text', text },
   });
   if (!result.sent) {
@@ -490,14 +496,14 @@ function sendBotText(
 }
 
 function sendSupergroupText(
-  supergroupMessaging: SupergroupMessagingService,
+  messageSending: MessageSendingService,
   accountId: number,
   supergroup: Supergroup,
   text: string,
 ) {
-  const result = supergroupMessaging.sendAccountMessage({
+  const result = messageSending.sendAccountSupergroupMessage({
     fromAccountId: accountId,
-    chatId: supergroup.id,
+    chat: { type: 'supergroup', chatId: supergroup.id },
     content: { kind: 'text', text },
   });
   if (!result.sent) {

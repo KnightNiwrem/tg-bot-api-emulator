@@ -14,7 +14,7 @@ import {
   SharedChatAdministrationService,
   type SupergroupCreationResult,
 } from '../src/services/shared_chat_administration.ts';
-import type { RecordSupergroupServiceMessageInput } from '../src/services/supergroup_messaging.ts';
+import type { SupergroupServiceMessageRecord } from '../src/services/message_commit.ts';
 import { VirtualUserService } from '../src/services/virtual_user.ts';
 import type { ChatDomainEvent } from '../src/types/chat_domain_event.ts';
 import {
@@ -1574,14 +1574,14 @@ function createSharedChatAdministrationFixture() {
   const virtualUsers = new VirtualUserService({ identities, accounts, bots });
   const sharedChats = new SharedChatRepository();
   const publishedEvents: ChatDomainEvent[] = [];
-  const recordedServiceMessages: RecordSupergroupServiceMessageInput[] = [];
+  const recordedServiceMessages: SupergroupServiceMessageRecord[] = [];
   const sharedChatAdministration = new SharedChatAdministrationService({
     identities,
     accounts,
     bots,
     sharedChats,
-    supergroupMessages: {
-      recordServiceMessage: (change) => recordedServiceMessages.push(change),
+    serviceMessages: {
+      recordSupergroupServiceMessage: (change) => recordedServiceMessages.push(change),
     },
     // The repositories are not staged, so each command runs as it is called.
     transactions: {

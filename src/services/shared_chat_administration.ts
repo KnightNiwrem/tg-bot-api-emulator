@@ -787,7 +787,7 @@ interface SharedChatAdministrationTransactions {
 }
 
 interface SupergroupServiceMessageRecorder {
-  recordServiceMessage(input: {
+  recordSupergroupServiceMessage(input: {
     readonly chatId: number;
     readonly sender: SupergroupMessageSender;
     readonly content: SupergroupServiceContent;
@@ -800,7 +800,8 @@ interface SharedChatAdministrationServiceDependencies {
   readonly accounts: AccountLookup;
   readonly bots: BotLookup;
   readonly sharedChats: SharedChatStore;
-  readonly supergroupMessages: SupergroupServiceMessageRecorder;
+  /** Records the service messages of the supergroup changes it makes. */
+  readonly serviceMessages: SupergroupServiceMessageRecorder;
   /**
    * Runs each command that changes the session as one transaction, which receives each change of
    * a standing.
@@ -881,7 +882,7 @@ export class SharedChatAdministrationService {
   readonly #accounts: AccountLookup;
   readonly #bots: BotLookup;
   readonly #sharedChats: SharedChatStore;
-  readonly #supergroupMessages: SupergroupServiceMessageRecorder;
+  readonly #serviceMessages: SupergroupServiceMessageRecorder;
   readonly #transactions: SharedChatAdministrationTransactions;
   readonly #currentUnixTimeSeconds: () => number;
 
@@ -891,7 +892,7 @@ export class SharedChatAdministrationService {
       accounts,
       bots,
       sharedChats,
-      supergroupMessages,
+      serviceMessages,
       transactions,
       currentUnixTimeSeconds,
     }: SharedChatAdministrationServiceDependencies,
@@ -900,7 +901,7 @@ export class SharedChatAdministrationService {
     this.#accounts = accounts;
     this.#bots = bots;
     this.#sharedChats = sharedChats;
-    this.#supergroupMessages = supergroupMessages;
+    this.#serviceMessages = serviceMessages;
     this.#transactions = transactions;
     this.#currentUnixTimeSeconds = currentUnixTimeSeconds;
   }
@@ -2491,7 +2492,7 @@ export class SharedChatAdministrationService {
     },
   ): void {
     if (chat.kind === 'supergroup') {
-      this.#supergroupMessages.recordServiceMessage({ chatId: chat.id, ...change });
+      this.#serviceMessages.recordSupergroupServiceMessage({ chatId: chat.id, ...change });
     }
   }
 

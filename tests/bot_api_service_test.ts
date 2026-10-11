@@ -11,13 +11,13 @@ import { createVirtualAccount, createVirtualBot } from './support/virtual_users.
 
 Deno.test('BotApiService reports why a bot cannot address a private chat, for the Bot API to present', () => {
   using session = buildSessionServices();
-  const { virtualUsers, privateMessaging, botApi } = session;
+  const { virtualUsers, messageSending, botApi } = session;
   const bot = createBot(virtualUsers, 'test_bot');
   const account = createAccount(virtualUsers);
   const strangerAccount = createAccount(virtualUsers);
-  privateMessaging.sendAccountMessage({
+  messageSending.sendAccountPrivateChatMessage({
     fromAccountId: account.profile.id,
-    to: { type: 'private', botId: bot.profile.id },
+    chat: { type: 'private', peerId: bot.profile.id },
     content: { kind: 'text', text: '/start' },
   });
   // Telegram reports both as an unknown chat; where the messaging services tell them apart, the
@@ -93,12 +93,12 @@ Deno.test('BotApiService reports why a bot cannot address a private chat, for th
 
 Deno.test('BotApiService sends a contact without a user its caller passes along', () => {
   using session = buildSessionServices();
-  const { virtualUsers, privateMessaging, botApi } = session;
+  const { virtualUsers, messageSending, botApi } = session;
   const bot = createBot(virtualUsers, 'test_bot');
   const account = createAccount(virtualUsers);
-  privateMessaging.sendAccountMessage({
+  messageSending.sendAccountPrivateChatMessage({
     fromAccountId: account.profile.id,
-    to: { type: 'private', botId: bot.profile.id },
+    chat: { type: 'private', peerId: bot.profile.id },
     content: { kind: 'text', text: '/start' },
   });
   const contactWithUser = {
@@ -167,7 +167,8 @@ Deno.test('BotApiService reads text with its parse mode or entities', () => {
 
 Deno.test('BotApiService sends, forwards and copies to a supergroup only what the bot may send', () => {
   using session = buildSessionServices();
-  const { virtualUsers, sharedChatAdministration, supergroupMessaging, botApi } = session;
+  const { virtualUsers, sharedChatAdministration, supergroupMessaging, messageSending, botApi } =
+    session;
   const owner = createAccount(virtualUsers);
   const bot = createBot(virtualUsers, 'test_bot');
   const creation = sharedChatAdministration.createSupergroup({
@@ -184,11 +185,11 @@ Deno.test('BotApiService sends, forwards and copies to a supergroup only what th
     memberId: bot.profile.id,
   });
   const sendOwnerContent = (
-    content: Parameters<typeof supergroupMessaging.sendAccountMessage>[0]['content'],
+    content: Parameters<typeof messageSending.sendAccountSupergroupMessage>[0]['content'],
   ) => {
-    const result = supergroupMessaging.sendAccountMessage({
+    const result = messageSending.sendAccountSupergroupMessage({
       fromAccountId: owner.profile.id,
-      chatId,
+      chat: { type: 'supergroup', chatId },
       content,
     });
     if (!result.sent) {

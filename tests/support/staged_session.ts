@@ -4,6 +4,7 @@
  * journal that consumers register with, and the session's end.
  */
 import { AccountRepository } from '../../src/repositories/account.ts';
+import { BlockedUserRepository } from '../../src/repositories/blocked_user.ts';
 import { BotRepository } from '../../src/repositories/bot.ts';
 import { BotActivityLogRepository } from '../../src/repositories/bot_activity_log.ts';
 import { BotUpdateRepository } from '../../src/repositories/bot_update.ts';
@@ -14,13 +15,16 @@ import { LastMessageSendingBotRepository } from '../../src/repositories/last_mes
 import { MessageRepository } from '../../src/repositories/message.ts';
 import { MessageBoxRepository } from '../../src/repositories/message_box.ts';
 import { PollRepository } from '../../src/repositories/poll.ts';
+import { PrivateConversationRepository } from '../../src/repositories/private_conversation.ts';
 import { SharedChatRepository } from '../../src/repositories/shared_chat.ts';
 import { TelegramIdentityRepository } from '../../src/repositories/telegram_identity.ts';
 import { BotMessageViewService } from '../../src/services/bot_message_view.ts';
 import { BotUpdateDeliveryService } from '../../src/services/bot_update_delivery.ts';
 import { ChatAdmissionService } from '../../src/services/chat_admission.ts';
+import { PrivateChatPolicy } from '../../src/services/private_chat_policy.ts';
 import { SessionLifetime } from '../../src/services/session_lifetime.ts';
 import { SharedChatAdministrationService } from '../../src/services/shared_chat_administration.ts';
+import { SupergroupChatPolicy } from '../../src/services/supergroup_chat_policy.ts';
 import { SupergroupMessagingService } from '../../src/services/supergroup_messaging.ts';
 import { VirtualUserService } from '../../src/services/virtual_user.ts';
 import { SessionChangeJournal } from '../../src/transactions/change_staging.ts';
@@ -29,6 +33,7 @@ import type { BotApiChatMemberUpdated, BotApiSupergroupMessage } from '../../src
 import type { ChatMemberStatusChangedEvent } from '../../src/types/chat_domain_event.ts';
 import type { PhotoUpload } from '../../src/types/stored_file.ts';
 import type { SupergroupMessage } from '../../src/types/virtual_message.ts';
+import { createMessageSendingServices } from './message_sending_services.ts';
 
 /** The error a failing view throws. */
 export const FAILED_VIEW_MESSAGE = 'The view failed';
@@ -124,6 +129,25 @@ export function createStagedSessionFixture({ privacyMode }: { readonly privacyMo
     bots,
     sharedChats,
     messages,
+    messageBoxes,
+  });
+  const privateConversations = new PrivateConversationRepository(journal);
+  const { messageCommitter, messageSending } = createMessageSendingServices({
+    accounts,
+    bots,
+    // These sessions send no private messages, so none is found.
+    privateChats: new PrivateChatPolicy({
+      accounts,
+      bots,
+      privateConversations,
+      blockedUsers: new BlockedUserRepository(),
+      joinRequesterContacts: { mayContactJoinRequester: () => false },
+      privateMessages: { getPrivateMessageByBotMessageId: () => undefined },
+    }),
+    supergroups: new SupergroupChatPolicy({ sharedChats, supergroupMessages: supergroupMessaging }),
+    privateConversations,
+    sharedChats,
+    messages,
     files,
     polls,
     messageBoxes,
@@ -135,7 +159,7 @@ export function createStagedSessionFixture({ privacyMode }: { readonly privacyMo
     accounts,
     bots,
     sharedChats,
-    supergroupMessages: supergroupMessaging,
+    serviceMessages: messageCommitter,
     transactions,
     currentUnixTimeSeconds,
   });
@@ -210,33 +234,33 @@ export function createStagedSessionFixture({ privacyMode }: { readonly privacyMo
     endSession: () => sessionEnd.abort(),
     sendAccountText: (text: string) =>
       expectSent(
-        supergroupMessaging.sendAccountMessage({
+        messageSending.sendAccountSupergroupMessage({
           fromAccountId: adaId,
-          chatId,
+          chat: { type: 'supergroup', chatId },
           content: { kind: 'text', text },
         }),
       ),
     sendAccountPhoto: (caption: string) =>
       expectSent(
-        supergroupMessaging.sendAccountMessage({
+        messageSending.sendAccountSupergroupMessage({
           fromAccountId: adaId,
-          chatId,
+          chat: { type: 'supergroup', chatId },
           content: { kind: 'media', upload: photoUpload(), caption },
         }),
       ),
     sendAccountAlbum: (captions: readonly string[]) =>
       expectSent(
-        supergroupMessaging.sendAccountAlbum({
+        messageSending.sendAccountSupergroupAlbum({
           fromAccountId: adaId,
-          chatId,
+          chat: { type: 'supergroup', chatId },
           contents: captions.map((caption) => ({ kind: 'media', upload: photoUpload(), caption })),
         }),
       ),
     sendBotText: (botId: number, text: string) =>
       expectSent(
-        supergroupMessaging.sendBotMessage({
+        messageSending.sendSupergroupMessage({
           fromBotId: botId,
-          chatId,
+          chat: { type: 'supergroup', chatId },
           content: { kind: 'text', text },
         }),
       ),
