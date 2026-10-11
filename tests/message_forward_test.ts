@@ -1,3 +1,4 @@
+import { assertEquals } from '@std/assert';
 import {
   createMessageForward,
   isForwardable,
@@ -6,6 +7,7 @@ import {
 import type {
   MessageContent,
   MessageForwardInfo,
+  MessageOriginSender,
   PrivateContentMessage,
   SupergroupMessage,
 } from '../src/types/virtual_message.ts';
@@ -42,17 +44,14 @@ Deno.test('createMessageForward shows the original sender and the inline bot of 
     noPrivateForwards,
   );
 
-  const expected = {
+  assertEquals(forward, {
     content: { kind: 'text', text: 'Hello', entities: [] },
     forwardInfo: {
       originalSender: { kind: 'user', userId: ACCOUNT_ID },
       originalSentAtUnixSeconds: 1_700_000_000,
       viaBotId: INLINE_BOT_ID,
     },
-  };
-  if (JSON.stringify(forward) !== JSON.stringify(expected)) {
-    throw new Error(`Expected the forward to show its origin, received ${JSON.stringify(forward)}`);
-  }
+  }, 'Expected the forward to show its origin');
 });
 
 Deno.test('createMessageForward keeps the origin of a forward and only URL keyboards', () => {
@@ -78,9 +77,6 @@ Deno.test('createMessageForward keeps the origin of a forward and only URL keybo
   );
   if (
     forwardOfForward.forwardInfo !== originalForwardInfo ||
-    JSON.stringify(forwardOfForward.inlineKeyboard) !== JSON.stringify(urlKeyboard) ||
-    JSON.stringify(forwardOfCallbackKeyboard.forwardInfo.originalSender) !==
-      JSON.stringify({ kind: 'user', userId: BOT_ID }) ||
     forwardOfCallbackKeyboard.inlineKeyboard !== undefined
   ) {
     throw new Error(
@@ -89,6 +85,15 @@ Deno.test('createMessageForward keeps the origin of a forward and only URL keybo
       }`,
     );
   }
+  assertEquals(
+    forwardOfForward.inlineKeyboard,
+    urlKeyboard,
+    'Expected forwards to keep origins and URL keyboards',
+  );
+  assertEquals(forwardOfCallbackKeyboard.forwardInfo.originalSender, {
+    kind: 'user',
+    userId: BOT_ID,
+  }, 'Expected forwards to keep origins and URL keyboards');
 });
 
 Deno.test('createMessageForward shows only the name of a sender with private forwards', () => {
@@ -109,22 +114,21 @@ Deno.test('createMessageForward shows only the name of a sender with private for
     accountHasPrivateForwards,
   );
 
-  const hiddenAccount = { kind: 'hidden_user', name: 'Ada' };
-  if (
-    JSON.stringify(forward.forwardInfo.originalSender) !== JSON.stringify(hiddenAccount) ||
-    JSON.stringify(forwardOfForward.forwardInfo) !== JSON.stringify({
-        originalSender: hiddenAccount,
-        originalSentAtUnixSeconds: 1_600_000_000,
-      }) ||
-    JSON.stringify(forwardOfBotMessage.forwardInfo.originalSender) !==
-      JSON.stringify({ kind: 'user', userId: BOT_ID })
-  ) {
-    throw new Error(
-      `Expected only the account to be hidden, received ${
-        JSON.stringify({ forward, forwardOfForward, forwardOfBotMessage })
-      }`,
-    );
-  }
+  const hiddenAccount: MessageOriginSender = { kind: 'hidden_user', name: 'Ada' };
+  assertEquals(
+    forward.forwardInfo.originalSender,
+    hiddenAccount,
+    'Expected only the account to be hidden',
+  );
+  assertEquals(forwardOfForward.forwardInfo, {
+    originalSender: hiddenAccount,
+    originalSentAtUnixSeconds: 1_600_000_000,
+  }, 'Expected only the account to be hidden');
+  assertEquals(
+    forwardOfBotMessage.forwardInfo.originalSender,
+    { kind: 'user', userId: BOT_ID },
+    'Expected only the account to be hidden',
+  );
 });
 
 Deno.test('withVideoStartTimestamp changes where a video plays and keeps other content', () => {
@@ -145,13 +149,14 @@ Deno.test('withVideoStartTimestamp changes where a video plays and keeps other c
     showsCaptionAboveMedia: false,
   };
 
-  if (
-    JSON.stringify(withVideoStartTimestamp(video, 0)) !==
-      JSON.stringify({ ...video, startTimestampSeconds: 0 }) ||
-    withVideoStartTimestamp(photo, 30) !== photo
-  ) {
+  if (withVideoStartTimestamp(photo, 30) !== photo) {
     throw new Error('Expected only the video to take the new start timestamp');
   }
+  assertEquals(
+    withVideoStartTimestamp(video, 0),
+    { ...video, startTimestampSeconds: 0 },
+    'Expected only the video to take the new start timestamp',
+  );
 });
 
 Deno.test('isForwardable refuses content its sender or chat protects, and service messages', () => {
@@ -173,9 +178,9 @@ Deno.test('isForwardable refuses content its sender or chat protects, and servic
     isForwardable(accountMessage(), true),
     isForwardable(serviceMessage, false),
   ];
-  if (JSON.stringify(forwardability) !== JSON.stringify([true, false, false, false])) {
-    throw new Error(
-      `Expected only unprotected content to be forwardable, received ${forwardability}`,
-    );
-  }
+  assertEquals(
+    forwardability,
+    [true, false, false, false],
+    'Expected only unprotected content to be forwardable',
+  );
 });

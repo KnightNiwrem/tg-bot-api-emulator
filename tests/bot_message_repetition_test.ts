@@ -1,3 +1,4 @@
+import { assertEquals } from '@std/assert';
 import type { MessageTarget, SendRequestOptions, SendResult } from '../src/services/bot_api.ts';
 import { BotMessageRepeater } from '../src/services/bot_message_repetition.ts';
 import type {
@@ -55,18 +56,23 @@ Deno.test('BotMessageRepeater requires increasing IDs only of the messages it fi
 
   // A missing message between them leaves the found messages 2 and 3 in order.
   const forwarded = repeater.forwardMessages(BOT_ID, { ...request, messageIds: [2, 1_000, 3] });
-  if (
-    !forwarded.sent ||
-    JSON.stringify(forwarded.messageIds) !==
-      JSON.stringify([FIRST_SENT_MESSAGE_ID, FIRST_SENT_MESSAGE_ID + 1]) ||
-    JSON.stringify(sentRepetitions.map(describeSentText)) !== JSON.stringify(['Second', 'Third'])
-  ) {
+  if (!forwarded.sent) {
     throw new Error(
       `Expected the found messages to be forwarded, received ${
         JSON.stringify({ forwarded, sentRepetitions })
       }`,
     );
   }
+  assertEquals(
+    forwarded.messageIds,
+    [FIRST_SENT_MESSAGE_ID, FIRST_SENT_MESSAGE_ID + 1],
+    'Expected the found messages to be forwarded',
+  );
+  assertEquals(
+    sentRepetitions.map(describeSentText),
+    ['Second', 'Third'],
+    'Expected the found messages to be forwarded',
+  );
 });
 
 Deno.test('BotMessageRepeater replies only to the repetitions of earlier messages of the request', () => {
@@ -99,11 +105,12 @@ Deno.test('BotMessageRepeater replies only to the repetitions of earlier message
     ['About the protected answer', undefined],
     ['About another message', undefined],
   ];
-  if (!forwarded.sent || JSON.stringify(sentReplies) !== JSON.stringify(expectedReplies)) {
+  if (!forwarded.sent) {
     throw new Error(
       `Expected replies within the request to be kept, received ${JSON.stringify(sentReplies)}`,
     );
   }
+  assertEquals(sentReplies, expectedReplies, 'Expected replies within the request to be kept');
 });
 
 Deno.test('BotMessageRepeater regroups what is left of an album and sends a lone member alone', () => {
@@ -136,16 +143,23 @@ Deno.test('BotMessageRepeater regroups what is left of an album and sends a lone
   );
   // The protected photos are skipped: two photos of the first album remain and form a new album,
   // while the one remaining photo of the second album is sent outside any album.
-  if (
-    !forwarded.sent || JSON.stringify(issuedMediaGroupIds) !== JSON.stringify(['album-1']) ||
-    JSON.stringify(sentMediaGroupIds) !== JSON.stringify(['album-1', 'album-1', undefined])
-  ) {
+  if (!forwarded.sent) {
     throw new Error(
       `Expected the remaining photos to form new albums, received ${
         JSON.stringify({ forwarded, sentMediaGroupIds, issuedMediaGroupIds })
       }`,
     );
   }
+  assertEquals(
+    issuedMediaGroupIds,
+    ['album-1'],
+    'Expected the remaining photos to form new albums',
+  );
+  assertEquals(
+    sentMediaGroupIds,
+    ['album-1', 'album-1', undefined],
+    'Expected the remaining photos to form new albums',
+  );
 });
 
 Deno.test('BotMessageRepeater copies a quiz only where the bot sees its solution', () => {
@@ -191,11 +205,13 @@ Deno.test('BotMessageRepeater copies a quiz only where the bot sees its solution
   const sentKinds = sentRepetitions.map(({ content }) => content.kind);
   const quizCopyContent = sentRepetitions.at(-1)?.content;
   if (
-    refusedCopy.sent || refusedCopy.reason !== 'message_not_copyable' || sentAfterRefusal !== 0 ||
-    !copies.sent || copies.messageIds.length !== 1 || !shownQuizCopy.sent ||
-    JSON.stringify(sentKinds) !== JSON.stringify(['existing', 'poll']) ||
-    quizCopyContent?.kind !== 'poll' ||
-    JSON.stringify(quizCopyContent.poll.type) !== JSON.stringify(quizType)
+    refusedCopy.sent ||
+    refusedCopy.reason !== 'message_not_copyable' ||
+    sentAfterRefusal !== 0 ||
+    !copies.sent ||
+    copies.messageIds.length !== 1 ||
+    !shownQuizCopy.sent ||
+    quizCopyContent?.kind !== 'poll'
   ) {
     throw new Error(
       `Expected only the quiz whose solution the bot sees to be copied, received ${
@@ -203,6 +219,16 @@ Deno.test('BotMessageRepeater copies a quiz only where the bot sees its solution
       }`,
     );
   }
+  assertEquals(
+    sentKinds,
+    ['existing', 'poll'],
+    'Expected only the quiz whose solution the bot sees to be copied',
+  );
+  assertEquals(
+    quizCopyContent.poll.type,
+    quizType,
+    'Expected only the quiz whose solution the bot sees to be copied',
+  );
 });
 
 Deno.test('BotMessageRepeater copies a poll as a new open poll of the bot, timed from now', () => {
@@ -240,13 +266,14 @@ Deno.test('BotMessageRepeater copies a poll as a new open poll of the bot, timed
     },
   };
   if (
-    !copy.sent || sentRepetitions.length !== 1 ||
-    JSON.stringify(sentCopy.content) !== JSON.stringify(expectedContent)
+    !copy.sent ||
+    sentRepetitions.length !== 1
   ) {
     throw new Error(
       `Expected a new open poll of the bot, received ${JSON.stringify(sentRepetitions)}`,
     );
   }
+  assertEquals(sentCopy.content, expectedContent, 'Expected a new open poll of the bot');
 });
 
 /**
