@@ -55,6 +55,42 @@ Deno.test('the editing methods name the parameter that does not fit their schema
   );
 });
 
+Deno.test('the forward and copy methods name the parameter that does not fit their schema', async () => {
+  const { api, botApiPath } = await createFixture();
+  const cases: readonly [method: string, parameters: object, description: string][] = [
+    [
+      'forwardMessage',
+      { chat_id: 1, from_chat_id: 1, message_id: 1, reply_markup: '{}' },
+      'Bad Request: invalid forwardMessage parameters: reply_markup',
+    ],
+    [
+      'copyMessage',
+      { chat_id: 1, from_chat_id: 'secret-chat', message_id: 1 },
+      'Bad Request: invalid copyMessage parameters: from_chat_id',
+    ],
+    [
+      'forwardMessages',
+      { chat_id: 1, from_chat_id: 1, message_ids: [1, 'secret'] },
+      'Bad Request: invalid forwardMessages parameters: message_ids[1]',
+    ],
+    [
+      'copyMessages',
+      { chat_id: 1, from_chat_id: 1, message_ids: [1], remove_caption: 'secret' },
+      'Bad Request: invalid copyMessages parameters: remove_caption',
+    ],
+  ];
+
+  const answers = [];
+  for (const [method, parameters] of cases) {
+    answers.push(await callBotApi(api, `${botApiPath}/${method}`, parameters));
+  }
+  assertJson(
+    answers,
+    cases.map(([, , description]) => [400, description]),
+    'Expected each refusal to name the first offending parameter path, without its value',
+  );
+});
+
 Deno.test('parameters a reader refuses after the schema keep the description without a path', async () => {
   const { api, botApiPath } = await createFixture();
   // `media` is text to the schema; its reader refuses JSON it cannot read.
@@ -67,6 +103,19 @@ Deno.test('parameters a reader refuses after the schema keep the description wit
     answer,
     [400, 'Bad Request: invalid editMessageMedia parameters'],
     'Expected the reader to keep its description',
+  );
+  // Caption entities are a list to the schema; their reader refuses an offset written as text.
+  const copyAnswer = await callBotApi(api, `${botApiPath}/copyMessage`, {
+    chat_id: 1,
+    from_chat_id: 1,
+    message_id: 1,
+    caption: 'Hi',
+    caption_entities: [{ type: 'bold', offset: '0', length: 2 }],
+  });
+  assertJson(
+    copyAnswer,
+    [400, 'Bad Request: invalid copyMessage parameters'],
+    'Expected the caption reader to keep its description',
   );
 });
 

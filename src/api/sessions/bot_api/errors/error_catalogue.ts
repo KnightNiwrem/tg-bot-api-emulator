@@ -72,6 +72,9 @@ const LOCAL_FILE_CHECKS = tdlibSource('td/telegram/files/FileLoaderUtils.cpp#L27
 /** The official Bot API server's `check_message`, which words a missing message by its role. */
 const CHECK_MESSAGE = botApiServerSource('telegram-bot-api/Client.cpp#L9084-L9104');
 
+/** TDLib's `forward_message`, which refuses a forward or copy that its checks skipped. */
+const FORWARDED_MESSAGE_SKIPPED = tdlibSource('td/telegram/MessagesManager.cpp#L24490-L24493');
+
 /**
  * The errors with which the Bot API answers a refused call, as templates over each failure's
  * details, with where each description comes from. Presenters map an operation's domain failures
@@ -411,6 +414,126 @@ export const BOT_API_ERRORS = {
     400,
     'Bad Request: poll has already been closed',
     tdlibSource('td/telegram/PollManager.cpp#L1717-L1746'),
+  ),
+
+  // Forwards and copies of messages.
+  messageToForwardNotFound: fixedBotApiError(
+    400,
+    'Bad Request: message to forward not found',
+    CHECK_MESSAGE,
+  ),
+  messageToCopyNotFound: fixedBotApiError(
+    400,
+    'Bad Request: message to copy not found',
+    CHECK_MESSAGE,
+  ),
+  messageNotForwardable: fixedBotApiError(
+    400,
+    "Bad Request: the message can't be forwarded",
+    FORWARDED_MESSAGE_SKIPPED,
+  ),
+  messageNotCopyable: fixedBotApiError(
+    400,
+    "Bad Request: the message can't be copied",
+    FORWARDED_MESSAGE_SKIPPED,
+  ),
+  /** TDLib words this alike for forwards and copies of several messages, which both forward. */
+  noMessagesToForward: fixedBotApiError(
+    400,
+    'Bad Request: there are no messages to forward',
+    tdlibSource('td/telegram/MessagesManager.cpp#L24824-L24826'),
+  ),
+  repeatedMessageIdsNotIncreasing: fixedBotApiError(
+    400,
+    'Bad Request: message identifiers must be in a strictly increasing order',
+    tdlibSource('td/telegram/MessagesManager.cpp#L24653-L24655'),
+  ),
+  /** Every message of a forward or copy of several messages was skipped. */
+  messagesNotForwardable: fixedBotApiError(
+    400,
+    "Bad Request: messages can't be forwarded",
+    botApiServerSource('telegram-bot-api/Client.cpp#L6947-L6949'),
+  ),
+  /** A message effect on a forward or copy of more than one message. */
+  messageEffectNotAllowedInMethod: fixedBotApiError(
+    400,
+    "Bad Request: can't use message effects in the method",
+    tdlibSource('td/telegram/MessageSendOptions.cpp#L161-L170'),
+  ),
+
+  // Deleted messages.
+  messageToDeleteNotFound: fixedBotApiError(
+    400,
+    'Bad Request: message to delete not found',
+    CHECK_MESSAGE,
+  ),
+  /** The official server's wording of Telegram's `MESSAGE_DELETE_FORBIDDEN`. */
+  messageNotDeletable: fixedBotApiError(
+    400,
+    "Bad Request: message can't be deleted",
+    botApiServerSource('telegram-bot-api/Client.cpp#L151-L153'),
+  ),
+
+  // Pinned messages.
+  messageToPinNotFound: fixedBotApiError(
+    400,
+    'Bad Request: message to pin not found',
+    CHECK_MESSAGE,
+  ),
+  /**
+   * A message to unpin that the chat does not have, or, for an unpin without a target, no pinned
+   * message, which the official server's `TdOnGetChatPinnedMessageToUnpinCallback` words alike.
+   */
+  messageToUnpinNotFound: fixedBotApiError(
+    400,
+    'Bad Request: message to unpin not found',
+    CHECK_MESSAGE,
+  ),
+  notEnoughRightsToManagePinnedMessages: fixedBotApiError(
+    400,
+    'Bad Request: not enough rights to manage pinned messages in the chat',
+    tdlibSource('td/telegram/DialogManager.cpp#L2902-L2925'),
+  ),
+  serviceMessageNotPinnable: fixedBotApiError(
+    400,
+    "Bad Request: service messages can't be pinned",
+    tdlibSource('td/telegram/MessagesManager.cpp#L23333-L23335'),
+  ),
+  /** Telegram's servers refuse a pin or an unpin that changes nothing. */
+  pinnedMessagesNotModified: fixedBotApiError(
+    400,
+    'Bad Request: CHAT_NOT_MODIFIED',
+    telegramApiDocumentation('messages.updatePinnedMessage'),
+  ),
+
+  // Reactions to messages.
+  messageToReactNotFound: fixedBotApiError(
+    400,
+    'Bad Request: message to react not found',
+    CHECK_MESSAGE,
+  ),
+  /** A reaction the message does not allow, such as a custom emoji, or a message without any. */
+  reactionInvalid: fixedBotApiError(
+    400,
+    'Bad Request: REACTION_INVALID',
+    telegramApiDocumentation('messages.sendReaction'),
+  ),
+  /** More reactions than a user may choose, or than a message may show. */
+  reactionsTooMany: fixedBotApiError(
+    400,
+    'Bad Request: REACTIONS_TOO_MANY',
+    telegramApiDocumentation('messages.sendReaction'),
+  ),
+  /** A member whom the supergroup does not let react. */
+  reactionNotPermitted: fixedBotApiError(
+    403,
+    'Forbidden: CHAT_WRITE_FORBIDDEN',
+    telegramApiDocumentation('messages.sendReaction'),
+  ),
+  privateChatReactionsUnsupported: fixedBotApiError(
+    400,
+    'Bad Request: reactions in private chats are not supported',
+    emulatorInference('The emulator supports reactions in supergroups only'),
   ),
 
   // Parameters the emulator cannot read.

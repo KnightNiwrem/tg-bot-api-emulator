@@ -562,10 +562,13 @@ export interface ForwardMessageRequest {
   readonly messageEffectId?: string;
 }
 
-/** A failure of a forward or copy that a send cannot have. */
+/**
+ * A failure of a forward or copy that a send cannot have: the repeated message is not found, or it
+ * cannot be repeated.
+ */
 type RepetitionFailure<NotRepeatableReason extends string> = {
   readonly sent: false;
-  readonly reason: 'repeated_message_not_found' | NotRepeatableReason;
+  readonly reason: 'message_not_found' | NotRepeatableReason;
 };
 
 export type ForwardMessageResult = SendResult | RepetitionFailure<'message_not_forwardable'>;
@@ -1242,15 +1245,21 @@ export type BotApiSetMessageReactionResult =
 
 export type DeleteMessageRequest = MessageTarget;
 
+/**
+ * Why a bot cannot delete messages of a chat: it cannot address the chat, or a message is not
+ * one it may delete.
+ */
+type MessageDeletionFailureReason =
+  | 'chat_not_found'
+  | BotPrivateChatAccessFailureReason
+  | FormerSupergroupMemberFailureReason
+  | 'message_not_deletable';
+
 export type DeleteMessageResult =
   | { readonly deleted: true }
   | {
     readonly deleted: false;
-    readonly reason:
-      | 'chat_not_found'
-      | FormerSupergroupMemberFailureReason
-      | 'message_not_found'
-      | 'message_not_deletable';
+    readonly reason: MessageDeletionFailureReason | 'message_not_found';
   };
 
 export interface DeleteMessagesRequest {
@@ -1262,13 +1271,7 @@ export interface DeleteMessagesRequest {
 
 export type DeleteMessagesResult =
   | { readonly deleted: true }
-  | {
-    readonly deleted: false;
-    readonly reason:
-      | 'chat_not_found'
-      | FormerSupergroupMemberFailureReason
-      | 'message_not_deletable';
-  };
+  | { readonly deleted: false; readonly reason: MessageDeletionFailureReason };
 
 /** Why a bot cannot address a chat whose members it asks about or moderates. */
 export type ChatMemberAccessFailureReason = 'chat_not_found' | FormerSupergroupMemberFailureReason;
@@ -4476,13 +4479,7 @@ export class BotApiService {
     messageIds: readonly number[],
   ):
     | { readonly deleted: true; readonly deletedMessageCount: number }
-    | {
-      readonly deleted: false;
-      readonly reason:
-        | 'chat_not_found'
-        | FormerSupergroupMemberFailureReason
-        | 'message_not_deletable';
-    } {
+    | { readonly deleted: false; readonly reason: MessageDeletionFailureReason } {
     const result = isUserId(chatId)
       ? this.#botMessages.deleteMessagesByBot({
         fromBotId: authenticatedBot.id,
@@ -4500,14 +4497,12 @@ export class BotApiService {
 
     switch (result.reason) {
       case 'chat_not_found':
+      case 'account_not_found':
+      case 'conversation_not_started':
       case 'bot_not_a_member':
       case 'bot_kicked':
       case 'message_not_deletable':
         return { deleted: false, reason: result.reason };
-      // As for sending, a chat the bot cannot address is not found.
-      case 'account_not_found':
-      case 'conversation_not_started':
-        return { deleted: false, reason: 'chat_not_found' };
       case 'bot_not_found':
         throw new Error(`Authenticated bot ${authenticatedBot.id} does not exist`);
       default: {

@@ -225,15 +225,18 @@ The corresponding upstream paths are [`HttpReader::read_next`][http-reader],
 [`Client::process_get_updates_query`][polling]. This does not imply that all malformed requests are
 accepted upstream; low-level HTTP errors and size limits can still fail there.
 
-`editMessageText`, `editMessageCaption`, `editMessageMedia`, `editMessageReplyMarkup` and `stopPoll`
-name the first parameter their schema refuses after the description, as a path into the call's
-parameters:
+The message editing methods (`editMessageText`, `editMessageCaption`, `editMessageMedia`,
+`editMessageReplyMarkup` and `stopPoll`) and the forward and copy methods (`forwardMessage`,
+`forwardMessages`, `copyMessage` and `copyMessages`) name the first parameter their schema refuses
+after the description, as a path into the call's parameters:
 `Bad Request: invalid editMessageReplyMarkup parameters: reply_markup.inline_keyboard[0][1]` for a
-button with no action, or `Bad Request: invalid stopPoll parameters: open_period` for a parameter
-the method does not take. A key that is not a plain name is written as a JSON string in brackets,
-such as `["odd key"]`; the path never includes a parameter's value. A parameter that the schema
-reads as text and a later reader refuses, such as `editMessageMedia`'s `media`, keeps the
-description without a path, as do the other methods.
+button with no action, `Bad Request: invalid forwardMessages parameters: message_ids[1]` for an
+identifier that is not an integer, or `Bad Request: invalid stopPoll parameters: open_period` for a
+parameter the method does not take. A key that is not a plain name is written as a JSON string in
+brackets, such as `["odd key"]`; the path never includes a parameter's value. A parameter that the
+schema reads as text or as a list and a later reader refuses, such as `editMessageMedia`'s `media`
+or `copyMessage`'s `caption_entities`, keeps the description without a path, as do the other
+methods.
 
 ## Accepted options without their Telegram effects
 
