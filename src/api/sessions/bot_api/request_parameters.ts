@@ -412,12 +412,21 @@ export function optionalInt64Identifier() {
  * cannot read as JSON carries `unparsableJsonDescription`, Telegram's description for the
  * parameter, if it has one, as `findTelegramIssueDescription` finds it; without one, the method's
  * own description of parameters that do not fit its schema answers that text.
+ *
+ * `emptyText` gives the value the official server reads empty text as, for a parameter it reads
+ * as unspecified before it decodes any JSON; without it, empty text is JSON it cannot parse.
  */
 export function jsonParameter<Output>(
   valueSchema: z.ZodType<Output>,
-  { unparsableJsonDescription }: { readonly unparsableJsonDescription?: string } = {},
+  { unparsableJsonDescription, emptyText }: {
+    readonly unparsableJsonDescription?: string;
+    readonly emptyText?: { readonly readAs: unknown };
+  } = {},
 ) {
   return z.string().transform((text, context): unknown => {
+    if (text.length === 0 && emptyText !== undefined) {
+      return emptyText.readAs;
+    }
     const parsedParameter = parseBotApiJsonParameter(text);
     if (parsedParameter === undefined) {
       context.issues.push({

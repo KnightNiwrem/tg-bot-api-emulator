@@ -10,6 +10,13 @@ Bots store, read and delete command lists with `setMyCommands`, `getMyCommands` 
 list, without applying the fallback used by a user's command menu. A missing/empty list in
 `setMyCommands` deletes the entry.
 
+As the official server's [`get_bot_commands` and `get_bot_command_scope`][command-parameters] read
+them, empty `commands` text is no commands and empty `scope` text is the default scope. Text that is
+not JSON the server can read, nested too deeply included, is refused with
+`Bad Request: can't parse commands JSON object` or
+`Bad Request: can't parse BotCommandScope JSON object`. `setMyCommands` reads the commands before
+the scope.
+
 Commands are cleaned and trimmed, with a leading slash removed, before validation. Names contain
 1–32 lowercase Latin letters, digits or underscores; descriptions contain 1–256 Unicode code points.
 A list holds at most 100 commands. `is_ephemeral` is stored and returned, but the emulator has no
@@ -125,3 +132,4 @@ Changing supported BotFather-style settings after bot creation is also a
 [menu-button-parameter]: https://github.com/tdlib/telegram-bot-api/blob/e3e9dd8e5b3d7ab8537cd5a10dc31d5ffa8f82d1/telegram-bot-api/Client.cpp#L11393-L11436
 [set-menu-button]: https://github.com/tdlib/td/blob/bc9c263e2bfee06aaab41e82db51a103376030bc/td/telegram/BotMenuButton.cpp#L126-L155
 [menu-button-json]: https://github.com/tdlib/telegram-bot-api/blob/e3e9dd8e5b3d7ab8537cd5a10dc31d5ffa8f82d1/telegram-bot-api/Client.cpp#L5711-L5728
+[command-parameters]: https://github.com/tdlib/telegram-bot-api/blob/e3e9dd8e5b3d7ab8537cd5a10dc31d5ffa8f82d1/telegram-bot-api/Client.cpp#L11344-L11392

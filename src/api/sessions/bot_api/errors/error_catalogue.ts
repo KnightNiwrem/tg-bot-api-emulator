@@ -129,6 +129,12 @@ export const BOT_API_ERRORS = {
     'Bad Request: invalid user_id specified',
     botApiServerSource('telegram-bot-api/Client.cpp#L13548-L13554'),
   ),
+  /** A `chat_id` that must name a user, as a menu button's does, read by `get_user_id`. */
+  userChatIdInvalid: fixedBotApiError(
+    400,
+    'Bad Request: invalid chat_id specified',
+    botApiServerSource('telegram-bot-api/Client.cpp#L13548-L13554'),
+  ),
 
   // Chats the bot cannot address.
   chatNotFound: fixedBotApiError(

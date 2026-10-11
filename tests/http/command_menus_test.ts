@@ -1,3 +1,5 @@
+import { assertEquals } from '@std/assert';
+
 import { isBadRequestResponse } from '../support/http_response_guards.ts';
 import { callBotApi } from '../support/bot_api_requests.ts';
 import {
@@ -96,7 +98,18 @@ Deno.test('setMyCommands, getMyCommands, and deleteMyCommands follow Telegram ch
   await expectBadRequest(
     'setMyCommands',
     { commands: [{ command: 'start' }] },
-    'Bad Request: invalid setMyCommands parameters',
+    'Bad Request: invalid setMyCommands parameters: commands[0].description',
+  );
+  // The official server reads commands before the scope, each refused as JSON it cannot parse.
+  await expectBadRequest(
+    'setMyCommands',
+    { commands: 'not JSON', scope: 'not JSON' },
+    "Bad Request: can't parse commands JSON object",
+  );
+  await expectBadRequest(
+    'deleteMyCommands',
+    { scope: '{"type": "default"' },
+    "Bad Request: can't parse BotCommandScope JSON object",
   );
 
   await sendText('Hi');
@@ -211,7 +224,7 @@ Deno.test('bots set and read their descriptions and short descriptions by langua
     [
       'setMyDescription',
       { description: 'Hi', short_description: 'Hi' },
-      'Bad Request: invalid setMyDescription parameters',
+      'Bad Request: invalid setMyDescription parameters: short_description',
     ],
   ] as const;
   for (const [methodName, parameters, expectedDescription] of failures) {
@@ -441,7 +454,11 @@ Deno.test('bots choose the menu button accounts see in their private chats', asy
     ],
     ['setChatMenuButton', { chat_id: -1 }, 'Bad Request: invalid chat_id specified'],
     ['getChatMenuButton', { chat_id: createdBot.bot.id }, 'Bad Request: user not found'],
-    ['getChatMenuButton', { chat_id: 'Ada' }, 'Bad Request: invalid getChatMenuButton parameters'],
+    [
+      'getChatMenuButton',
+      { chat_id: 'Ada' },
+      'Bad Request: invalid getChatMenuButton parameters: chat_id',
+    ],
   ] as const;
   for (const [methodName, parameters, expectedDescription] of failures) {
     const { status, body } = await callBot(methodName, parameters);
@@ -526,4 +543,29 @@ Deno.test('bots set supergroup command scopes that members see in their menus', 
   if ((await menuOf(stranger.id)).status !== 403) {
     throw new Error('Expected a non-member to be forbidden from the supergroup menu');
   }
+});
+
+Deno.test('empty commands and scope are read as no commands and the default scope', async () => {
+  const { api, botApiPath } = await createPrivateConversationFixture();
+  const call = async (methodName: string, parameters: Record<string, string>) => {
+    const { status, body } = await callBotApi(api, `${botApiPath}/${methodName}`, parameters);
+    return [status, body];
+  };
+  const commands = [{ command: 'start', description: 'Start over' }];
+
+  assertEquals(
+    [
+      await call('setMyCommands', { commands: JSON.stringify(commands) }),
+      await call('getMyCommands', { scope: '' }),
+      await call('setMyCommands', { commands: '', scope: '' }),
+      await call('getMyCommands', {}),
+    ],
+    [
+      [200, { ok: true, result: true }],
+      [200, { ok: true, result: commands }],
+      [200, { ok: true, result: true }],
+      [200, { ok: true, result: [] }],
+    ],
+    'Expected empty text to be read as the official server reads it, not as JSON',
+  );
 });

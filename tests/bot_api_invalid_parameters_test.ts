@@ -228,6 +228,44 @@ Deno.test('the update delivery methods name the parameter that does not fit thei
   );
 });
 
+Deno.test('the bot settings methods name the parameter that does not fit their schema', async () => {
+  const { api, botApiPath } = await createFixture();
+  const cases: readonly [method: string, parameters: object, description: string][] = [
+    ['getMe', { secret: 1 }, 'Bad Request: invalid getMe parameters: secret'],
+    [
+      'getMyDefaultAdministratorRights',
+      { for_channels: 'secret' },
+      'Bad Request: invalid getMyDefaultAdministratorRights parameters: for_channels',
+    ],
+    [
+      'setMyShortDescription',
+      { short_description: 'Hi', description: 'Hi' },
+      'Bad Request: invalid setMyShortDescription parameters: description',
+    ],
+    [
+      'setChatMenuButton',
+      { chat_id: 'secret', menu_button: { type: 'commands' } },
+      'Bad Request: invalid setChatMenuButton parameters: chat_id',
+    ],
+    // A scope's chat ID written as text is refused by the scope's reader, without a path.
+    [
+      'getMyCommands',
+      { scope: { type: 'chat', chat_id: '1' } },
+      'Bad Request: invalid getMyCommands parameters',
+    ],
+  ];
+
+  const answers = [];
+  for (const [method, parameters] of cases) {
+    answers.push(await callBotApi(api, `${botApiPath}/${method}`, parameters));
+  }
+  assertEquals(
+    answers,
+    cases.map(([, , description]) => [400, description]),
+    'Expected a schema refusal to name its path, and a reader refusal to keep its description',
+  );
+});
+
 /** Creates a session holding a bot. */
 async function createFixture() {
   const { api, sessionPath } = await createTestSession();
