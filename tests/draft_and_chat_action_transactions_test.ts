@@ -8,7 +8,7 @@ import {
 const FAILED_VIEW_MESSAGE = 'The view failed';
 
 Deno.test('a chat action or a draft whose record fails shows nothing', async () => {
-  const fixture = createDraftFixture();
+  using fixture = createDraftFixture();
   const changes = [
     ['sendChatAction', { chat_id: String(fixture.adaId), action: 'typing' }],
     ['sendMessageDraft', { chat_id: String(fixture.adaId), draft_id: '7', text: 'Thinking' }],
@@ -36,7 +36,7 @@ Deno.test('a chat action or a draft whose record fails shows nothing', async () 
 });
 
 Deno.test('a stop of a draft whose projection fails leaves the draft shown', async () => {
-  const fixture = createDraftFixture();
+  using fixture = createDraftFixture();
   const { session } = fixture;
   await fixture.callMethodExpectingResult(fixture.alpha, 'sendMessageDraft', {
     chat_id: String(fixture.adaId),
@@ -66,7 +66,7 @@ Deno.test('a stop of a draft whose projection fails leaves the draft shown', asy
 });
 
 Deno.test('a chat action prepared before the account blocked the bot is not shown', async () => {
-  const fixture = createDraftFixture();
+  using fixture = createDraftFixture();
   const reply = fixture.holdWebhookReply(fixture.alpha, {
     method: 'sendChatAction',
     chat_id: String(fixture.adaId),
@@ -93,7 +93,7 @@ Deno.test('a chat action prepared before the account blocked the bot is not show
 });
 
 Deno.test('a chat action or a draft prepared before its session ended shows nothing', async () => {
-  const fixture = createDraftFixture();
+  using fixture = createDraftFixture();
   const replies = [
     fixture.holdWebhookReply(fixture.alpha, {
       method: 'sendChatAction',

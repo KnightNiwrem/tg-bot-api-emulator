@@ -22,7 +22,8 @@ import {
 const MAX_TEXT_LENGTH = 4_096;
 
 Deno.test('a bot streams drafts that its account sees apart from the chat history', async () => {
-  const { api, session, bot, ada, privateChat, callBot } = await createDraftFixture();
+  await using fixture = await createDraftFixture();
+  const { api, session, bot, ada, privateChat, callBot } = fixture;
   try {
     const historyBefore = await ada.getMessages({ chat: privateChat });
     const drafts: (MessageDraft | null)[] = [await ada.getMessageDraft({ chat: privateChat })];
@@ -122,7 +123,8 @@ Deno.test('a bot streams drafts that its account sees apart from the chat histor
 });
 
 Deno.test('sendMessageDraft refuses what Telegram refuses and leaves the chat as it was', async () => {
-  const { session, bot, ada, privateChat, callBot } = await createDraftFixture();
+  await using fixture = await createDraftFixture();
+  const { session, bot, ada, privateChat, callBot } = fixture;
   try {
     const { account: grace } = await session.createAccount({ first_name: 'Grace' });
     const memberSupergroup = await ada.createSupergroup({ title: 'Study group' });
@@ -244,7 +246,8 @@ Deno.test('sendMessageDraft refuses what Telegram refuses and leaves the chat as
 });
 
 Deno.test('a test expires the draft an account sees, which the bot can show again', async () => {
-  const { api, session, ada, privateChat, callBot } = await createDraftFixture();
+  await using fixture = await createDraftFixture();
+  const { api, session, ada, privateChat, callBot } = fixture;
   try {
     const expiryOutcome = async (draftId?: string) => {
       try {
@@ -339,8 +342,9 @@ Deno.test('a test expires the draft an account sees, which the bot can show agai
 
 Deno.test('drafts stay within their own chat, bot and session', async () => {
   await using api = createTestInProcessEmulator();
-  const { session, bot, ada, privateChat, callBot } = await createDraftFixture(api);
-  const other = await createDraftFixture(api);
+  await using fixture = await createDraftFixture(api);
+  const { session, bot, ada, privateChat, callBot } = fixture;
+  await using other = await createDraftFixture(api);
   try {
     const { account: grace } = await session.createAccount({ first_name: 'Grace' });
     await grace.sendMessage({ to: privateChat, text: '/start' });
@@ -390,7 +394,8 @@ Deno.test('drafts stay within their own chat, bot and session', async () => {
 });
 
 Deno.test("only the bot's messages that reach the chat remove its draft", async () => {
-  const { api, session, bot, ada, privateChat, callBot } = await createDraftFixture();
+  await using fixture = await createDraftFixture();
+  const { api, session, bot, ada, privateChat, callBot } = fixture;
   try {
     const { account: grace } = await session.createAccount({ first_name: 'Grace' });
     await grace.sendMessage({ to: privateChat, text: '/start' });
@@ -476,7 +481,8 @@ Deno.test("only the bot's messages that reach the chat remove its draft", async 
 });
 
 Deno.test('a grammY bot streams a draft the account watches until the answer arrives', async () => {
-  const { session, fetch, bot, ada, privateChat } = await createDraftFixture();
+  await using fixture = await createDraftFixture();
+  const { session, fetch, bot, ada, privateChat } = fixture;
   const grammyBot = new Bot(bot.token, { client: { apiRoot: session.botApiRoot, fetch } });
   const nextChunk = Promise.withResolvers<void>();
   const answerReady = Promise.withResolvers<void>();
@@ -549,7 +555,8 @@ Deno.test('a grammY bot streams a draft the account watches until the answer arr
 });
 
 Deno.test('an account stops a draft and its bot alone receives the stop', async () => {
-  const { api, session, bot, ada, privateChat, callBot } = await createDraftFixture();
+  await using fixture = await createDraftFixture();
+  const { api, session, bot, ada, privateChat, callBot } = fixture;
   try {
     const { account: grace } = await session.createAccount({ first_name: 'Grace' });
     await grace.sendMessage({ to: privateChat, text: '/start' });
@@ -608,7 +615,8 @@ Deno.test('an account stops a draft and its bot alone receives the stop', async 
 });
 
 Deno.test('a kept draft stays stopped until it expires or the bot sends the partial answer', async () => {
-  const { session, ada, privateChat, callBot } = await createDraftFixture();
+  await using fixture = await createDraftFixture();
+  const { session, ada, privateChat, callBot } = fixture;
   try {
     const stopOutcome = () => draftActionOutcome(ada.stopMessageDraft({ chat: privateChat }));
     const readDraft = () => ada.getMessageDraft({ chat: privateChat });
@@ -673,8 +681,9 @@ Deno.test('a kept draft stays stopped until it expires or the bot sends the part
 
 Deno.test('refused stops leave the draft shown and tell the bot nothing', async () => {
   await using api = createTestInProcessEmulator();
-  const { session, bot, ada, privateChat, callBot } = await createDraftFixture(api);
-  const other = await createDraftFixture(api);
+  await using fixture = await createDraftFixture(api);
+  const { session, bot, ada, privateChat, callBot } = fixture;
+  await using other = await createDraftFixture(api);
   try {
     const { account: grace } = await session.createAccount({ first_name: 'Grace' });
     await grace.sendMessage({ to: privateChat, text: '/start' });
@@ -740,7 +749,8 @@ Deno.test('refused stops leave the draft shown and tell the bot nothing', async 
 });
 
 Deno.test('a bot receives stops only while it subscribes to them', async () => {
-  const { session, ada, privateChat, callBot } = await createDraftFixture();
+  await using fixture = await createDraftFixture();
+  const { session, ada, privateChat, callBot } = fixture;
   try {
     const stopNewDraft = async (draftId: number) => {
       await callBot('sendMessageDraft', { chat_id: ada.id, draft_id: draftId, can_stop: true });
@@ -766,7 +776,8 @@ Deno.test('a bot receives stops only while it subscribes to them', async () => {
 });
 
 Deno.test('a grammY bot receives a stop through its webhook', async () => {
-  const { api, session, fetch, bot, ada, privateChat } = await createDraftFixture();
+  await using fixture = await createDraftFixture();
+  const { api, session, fetch, bot, ada, privateChat } = fixture;
   const grammyBot = new Bot(bot.token, { client: { apiRoot: session.botApiRoot, fetch } });
   const received = Promise.withResolvers<readonly unknown[]>();
   grammyBot.on('stopped_message_generation', (context) => {
@@ -805,7 +816,8 @@ Deno.test('a grammY bot receives a stop through its webhook', async () => {
 // Follows "Stopping a streamed answer" in docs/clients/typescript/messages.md, with grammY's runner
 // in place of the guide's fixture.
 Deno.test('a grammY bot aborts its generator when the account stops its draft', async () => {
-  const { session, fetch, bot, ada, privateChat } = await createDraftFixture();
+  await using fixture = await createDraftFixture();
+  const { session, fetch, bot, ada, privateChat } = fixture;
   const grammyBot = new Bot(bot.token, { client: { apiRoot: session.botApiRoot, fetch } });
   const chunks = ['The', ' answer', ' is', ' 42'];
   // The test releases each chunk, so the generator never runs ahead of what it observed.
@@ -935,7 +947,7 @@ type BotApiCaller = (
   parameters: Record<string, unknown>,
 ) => Promise<BotApiCallResult>;
 
-interface DraftFixture {
+interface DraftFixture extends AsyncDisposable {
   readonly api: EmulationApi;
   readonly session: EmulationSessionClient;
   readonly fetch: typeof globalThis.fetch;
@@ -945,16 +957,20 @@ interface DraftFixture {
   readonly callBot: BotApiCaller;
 }
 
-/** A session in which Ada started a chat with the bot, which answers Bot API calls. */
-async function createDraftFixture(
-  api: TestInProcessEmulator = createTestInProcessEmulator(),
-): Promise<DraftFixture> {
+/**
+ * A session in which Ada started a chat with the bot, which answers Bot API calls, on `sharedApi`
+ * or else on an emulator of its own, which disposing of the fixture disposes of.
+ */
+async function createDraftFixture(sharedApi?: TestInProcessEmulator): Promise<DraftFixture> {
+  await using disposalOnFailure = new AsyncDisposableStack();
+  const api = sharedApi ?? disposalOnFailure.use(createTestInProcessEmulator());
   const { fetch } = api;
   const session = await api.client.createSession();
   const createdBot = await session.createBot({ first_name: 'Answer Bot', username: 'answer_bot' });
   const { account: ada } = await session.createAccount({ first_name: 'Ada' });
   const privateChat: PrivateMessageTarget = { type: 'private', botId: createdBot.bot.id };
   await ada.sendMessage({ to: privateChat, text: '/start' });
+  const emulatorDisposal = disposalOnFailure.move();
   return {
     api,
     session,
@@ -963,6 +979,7 @@ async function createDraftFixture(
     ada,
     privateChat,
     callBot: callBotWith(api, session, createdBot.token),
+    [Symbol.asyncDispose]: () => emulatorDisposal.disposeAsync(),
   };
 }
 

@@ -29,10 +29,11 @@ const REPLACEMENT_KEYBOARD = { inline_keyboard: [[{ text: 'Less', callback_data:
  * Creates a session where Ada sends, through an inline bot that receives chosen results, an
  * article with `SENT_KEYBOARD`, in her private chat with the bot or in a supergroup she owns that
  * the bot is a member of. Returns the message the bot received and the inline message ID of the
- * chosen result.
+ * chosen result; disposing of the result disposes of the session's emulator.
  */
 async function sendInlineArticleWithKeyboard(chatType: InlineQueryChat['type']) {
-  const { api, sessionPath } = await createTestSession();
+  await using disposalOnFailure = new AsyncDisposableStack();
+  const { api, sessionPath } = disposalOnFailure.use(await createTestSession());
   const ada = await createAccount(api, sessionPath, 'Ada');
   const { bot, botApiPath } = await createBot(api, sessionPath, 'cats_bot', {
     first_name: 'Cats Bot',
@@ -76,7 +77,15 @@ async function sendInlineArticleWithKeyboard(chatType: InlineQueryChat['type']) 
     ['Cats sleep a lot', SENT_KEYBOARD, false],
     'Expected the bot to receive the unedited article',
   );
-  return { api, botApiPath, readUpdates, sentMessage, inlineMessageId };
+  const emulatorDisposal = disposalOnFailure.move();
+  return {
+    api,
+    botApiPath,
+    readUpdates,
+    sentMessage,
+    inlineMessageId,
+    [Symbol.asyncDispose]: () => emulatorDisposal.disposeAsync(),
+  };
 }
 
 /** Starts Ada's private chat with the bot, or creates her supergroup and adds the bot to it. */
@@ -117,8 +126,8 @@ async function expectBotApiResult(
 
 for (const chatType of ['private', 'supergroup'] as const) {
   Deno.test(`a keyboard-only edit of an account's inline message in a ${chatType} chat reaches its bot without edit_date`, async () => {
-    const { api, botApiPath, readUpdates, sentMessage, inlineMessageId } =
-      await sendInlineArticleWithKeyboard(chatType);
+    await using fixture = await sendInlineArticleWithKeyboard(chatType);
+    const { api, botApiPath, readUpdates, sentMessage, inlineMessageId } = fixture;
 
     await expectBotApiResult(api, botApiPath, 'editMessageReplyMarkup', {
       inline_message_id: inlineMessageId,

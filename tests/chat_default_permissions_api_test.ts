@@ -48,7 +48,8 @@ const PHOTO_BYTES = new Uint8Array([
  * member bot.
  */
 async function createDefaultPermissionsFixture() {
-  const { api, sessionPath } = await createTestSession();
+  await using disposalOnFailure = new AsyncDisposableStack();
+  const { api, sessionPath } = disposalOnFailure.use(await createTestSession());
   const ada = await createAccount(api, sessionPath, 'Ada');
   const grace = await createAccount(api, sessionPath, 'Grace');
   const linus = await createAccount(api, sessionPath, 'Linus');
@@ -147,6 +148,7 @@ async function createDefaultPermissionsFixture() {
   const readUpdates = (bot: { botApiPath: string }) =>
     readBotUpdates(bot.botApiPath, ['message', 'chat_member', 'my_chat_member']);
 
+  const emulatorDisposal = disposalOnFailure.move();
   return {
     api,
     sessionPath,
@@ -164,6 +166,7 @@ async function createDefaultPermissionsFixture() {
     getDefaults,
     sendAsAccount,
     sendAsBot,
+    [Symbol.asyncDispose]: () => emulatorDisposal.disposeAsync(),
   };
 }
 
@@ -189,6 +192,7 @@ const ACCOUNT_CONTENTS = {
 const ALL_PERMISSIONS = Object.fromEntries(CHAT_PERMISSION_NAMES.map((name) => [name, true]));
 
 Deno.test('a bot changes default permissions, which members obey and getChat reports', async () => {
+  await using fixture = await createDefaultPermissionsFixture();
   const {
     api,
     ada,
@@ -203,7 +207,7 @@ Deno.test('a bot changes default permissions, which members obey and getChat rep
     readUpdates,
     sendAsAccount,
     sendAsBot,
-  } = await createDefaultPermissionsFixture();
+  } = fixture;
   const initialDefaults = await getDefaults();
   await readUpdates(moderatorBot);
   await readUpdates(memberBot);
@@ -265,8 +269,9 @@ Deno.test('a bot changes default permissions, which members obey and getChat rep
 });
 
 Deno.test('setChatPermissions refuses what Telegram refuses, without changing anything', async () => {
+  await using fixture = await createDefaultPermissionsFixture();
   const { grace, memberBot, moderatorBot, supergroup, sessionPath, api, callBot, getDefaults } =
-    await createDefaultPermissionsFixture();
+    fixture;
   // A private chat the bot knows, and one it does not.
   await requestJson(api, 'POST', `${sessionPath}/accounts/${grace.id}/messages`, {
     to: { type: 'private', botId: moderatorBot.bot.id },
@@ -329,6 +334,7 @@ Deno.test('setChatPermissions refuses what Telegram refuses, without changing an
 });
 
 Deno.test('default permissions decide information changes and inline bots, never for bots', async () => {
+  await using fixture = await createDefaultPermissionsFixture();
   const {
     ada,
     grace,
@@ -340,7 +346,7 @@ Deno.test('default permissions decide information changes and inline bots, never
     supergroupPath,
     api,
     callBot,
-  } = await createDefaultPermissionsFixture();
+  } = fixture;
   const changeTitle = async (accountId: number, title: string) =>
     (await requestJson(api, 'PUT', `${supergroupPath(accountId)}/title`, { title })).status;
   const changeDefaultsAs = async (accountId: number, permissions: object) =>
@@ -423,8 +429,8 @@ Deno.test('default permissions decide information changes and inline bots, never
 });
 
 Deno.test('each kind of content needs its own permission, for accounts and bots alike', async () => {
-  const { memberBot, moderatorBot, grace, setDefaults, sendAsAccount, sendAsBot } =
-    await createDefaultPermissionsFixture();
+  await using fixture = await createDefaultPermissionsFixture();
+  const { memberBot, moderatorBot, grace, setDefaults, sendAsAccount, sendAsBot } = fixture;
   const accountKinds = Object.keys(ACCOUNT_CONTENTS) as Array<keyof typeof ACCOUNT_CONTENTS>;
   const botKinds: BotContentKind[] = [
     'text',

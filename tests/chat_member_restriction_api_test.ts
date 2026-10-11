@@ -65,7 +65,8 @@ const PHOTO_BASE64 = btoa(
  * is an account outside the supergroup.
  */
 async function createRestrictionFixture() {
-  const { api, sessionPath } = await createTestSession();
+  await using disposalOnFailure = new AsyncDisposableStack();
+  const { api, sessionPath } = disposalOnFailure.use(await createTestSession());
   const ada = await createAccount(api, sessionPath, 'Ada');
   const grace = await createAccount(api, sessionPath, 'Grace');
   const linus = await createAccount(api, sessionPath, 'Linus');
@@ -129,6 +130,7 @@ async function createRestrictionFixture() {
       { to: { type: 'supergroup', chatId: supergroup.id }, ...content },
     );
 
+  const emulatorDisposal = disposalOnFailure.move();
   return {
     api,
     sessionPath,
@@ -145,6 +147,7 @@ async function createRestrictionFixture() {
     describeCall,
     getChatMember,
     sendAccountMessage,
+    [Symbol.asyncDispose]: () => emulatorDisposal.disposeAsync(),
   };
 }
 
@@ -203,6 +206,7 @@ function nowUnixSeconds(): number {
 }
 
 Deno.test('a bot restricts a member, whose prohibited sends fail until the bot lifts it', async () => {
+  await using fixture = await createRestrictionFixture();
   const {
     grace,
     moderatorBot,
@@ -214,7 +218,7 @@ Deno.test('a bot restricts a member, whose prohibited sends fail until the bot l
     callBot,
     getChatMember,
     sendAccountMessage,
-  } = await createRestrictionFixture();
+  } = fixture;
   const untilDate = nowUnixSeconds() + 3_600;
   const restrict = (permissions: object) =>
     callBot(moderatorBot, 'restrictChatMember', {
@@ -278,8 +282,8 @@ Deno.test('a bot restricts a member, whose prohibited sends fail until the bot l
 });
 
 Deno.test('restrictChatMember reads permissions with the official server implications', async () => {
-  const { grace, moderatorBot, supergroup, callBot, getChatMember } =
-    await createRestrictionFixture();
+  await using fixture = await createRestrictionFixture();
+  const { grace, moderatorBot, supergroup, callBot, getChatMember } = fixture;
   const restrictionOf = async (permissions: object, usesIndependentPermissions = false) => {
     const { body } = await callBot(moderatorBot, 'restrictChatMember', {
       chat_id: supergroup.id,
@@ -345,6 +349,7 @@ Deno.test('restrictChatMember reads permissions with the official server implica
 });
 
 Deno.test('restrictChatMember refuses what Telegram refuses, without changing anything', async () => {
+  await using fixture = await createRestrictionFixture();
   const {
     ada,
     grace,
@@ -358,7 +363,7 @@ Deno.test('restrictChatMember refuses what Telegram refuses, without changing an
     readUpdates,
     describeCall,
     getChatMember,
-  } = await createRestrictionFixture();
+  } = fixture;
   const restrict = (
     bot: { botApiPath: string },
     parameters: Record<string, unknown>,
@@ -483,6 +488,7 @@ Deno.test('restrictChatMember refuses what Telegram refuses, without changing an
 });
 
 Deno.test('a restricted bot cannot send or forward what it may not, nor lift its restriction', async () => {
+  await using fixture = await createRestrictionFixture();
   const {
     ada,
     otherBot,
@@ -492,7 +498,7 @@ Deno.test('a restricted bot cannot send or forward what it may not, nor lift its
     readUpdates,
     describeCall,
     sendAccountMessage,
-  } = await createRestrictionFixture();
+  } = fixture;
   const photoMessage = await sendAccountMessage(ada.id, {
     photo: { content_base64: PHOTO_BASE64 },
   });
@@ -587,8 +593,8 @@ Deno.test('a restricted bot cannot send or forward what it may not, nor lift its
 });
 
 Deno.test('accounts without the right restrict nobody through the emulation API', async () => {
-  const { ada, grace, linus, accountPath, supergroupPath, api, getChatMember } =
-    await createRestrictionFixture();
+  await using fixture = await createRestrictionFixture();
+  const { ada, grace, linus, accountPath, supergroupPath, api, getChatMember } = fixture;
   const restrictAs = (accountId: number, userId: number, body: unknown) =>
     api.request(`${supergroupPath(accountId)}/restrictions/${userId}`, jsonRequest('PUT', body));
   const restriction = { permissions: { can_send_messages: true } };
@@ -636,6 +642,7 @@ Deno.test('accounts without the right restrict nobody through the emulation API'
 });
 
 Deno.test('an administrator account restricts users and lifts restrictions within its rights', async () => {
+  await using fixture = await createRestrictionFixture();
   const {
     api,
     ada,
@@ -648,7 +655,7 @@ Deno.test('an administrator account restricts users and lifts restrictions withi
     readUpdates,
     describeCall,
     getChatMember,
-  } = await createRestrictionFixture();
+  } = fixture;
   await expectStatus(
     api.request(
       `${supergroupPath(ada.id)}/administrators/${grace.id}`,
@@ -766,6 +773,7 @@ Deno.test('an administrator account restricts users and lifts restrictions withi
 });
 
 Deno.test('tests end temporary restrictions explicitly, as their dates normalize', async () => {
+  await using fixture = await createRestrictionFixture();
   const {
     grace,
     linus,
@@ -776,7 +784,7 @@ Deno.test('tests end temporary restrictions explicitly, as their dates normalize
     readUpdates,
     callBot,
     getChatMember,
-  } = await createRestrictionFixture();
+  } = fixture;
   const restrictUntil = async (userId: number, untilDate: number) => {
     await callBot(moderatorBot, 'restrictChatMember', {
       chat_id: supergroup.id,
@@ -839,6 +847,7 @@ Deno.test('tests end temporary restrictions explicitly, as their dates normalize
 });
 
 Deno.test('a grammY bot mutes a member through its webhook and observes the change', async () => {
+  await using fixture = await createRestrictionFixture();
   const {
     api,
     sessionPath,
@@ -847,7 +856,7 @@ Deno.test('a grammY bot mutes a member through its webhook and observes the chan
     moderatorBot,
     getChatMember,
     sendAccountMessage,
-  } = await createRestrictionFixture();
+  } = fixture;
   const grammyBot = new Bot(moderatorBot.token, {
     client: {
       apiRoot: `${TEST_PUBLIC_ORIGIN}${sessionPath}/bot-api`,
