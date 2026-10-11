@@ -205,7 +205,7 @@ export function createEmulationSession(
     sharedChats,
     supergroupMessages: supergroupMessaging,
     messages,
-    events: transactions,
+    transactions,
     currentUnixTimeSeconds,
   });
   const privateChats = new PrivateChatPolicy({

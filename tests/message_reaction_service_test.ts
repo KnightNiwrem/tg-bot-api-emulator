@@ -398,7 +398,8 @@ function createReactionFixture() {
     sharedChats,
     supergroupMessages: supergroupMessaging,
     messages,
-    events,
+    // The repositories are not staged, so each choice runs as it is called.
+    transactions: { ...events, withinTransaction: (command) => command() },
     currentUnixTimeSeconds,
   });
 
