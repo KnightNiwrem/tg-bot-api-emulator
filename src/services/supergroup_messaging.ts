@@ -14,7 +14,6 @@ import {
   type PermissionGovernedContent,
 } from '../types/chat_permissions.ts';
 import type { InlineKeyboard } from '../types/inline_keyboard.ts';
-import type { Poll, PollId } from '../types/poll.ts';
 import { type AlbumCompositionFailureReason, formsAlbum } from '../types/media_album.ts';
 import type { ExternalReplyTarget } from '../types/message_reply.ts';
 import type { MessageForward } from '../types/message_forward.ts';
@@ -29,19 +28,14 @@ import type { VirtualAccount } from '../types/virtual_account.ts';
 import type { VirtualBot } from '../types/virtual_bot.ts';
 import type { ChatActor, Supergroup, SupergroupChatKey } from '../types/virtual_chat.ts';
 import {
-  canBotEditMessage,
   type CanonicalMessageId,
-  type ChatMessage,
   getMessageSenderId,
-  type InlineMessageId,
   isSupergroupContentMessage,
   type MediaGroupId,
   mentionsUser,
   type MessageContent,
-  type MessageEdit,
   type MessageForwardInfo,
   type NewSupergroupMessage,
-  type SupergroupContentMessage,
   type SupergroupMessage,
   type SupergroupMessageSender,
   type SupergroupServiceContent,
@@ -50,18 +44,12 @@ import type { FormattedTextFixingContext } from '../text_entities/formatted_text
 import {
   type AccountAlbumMediaContent,
   type AccountMessageContent,
-  type AccountMessageEdit,
-  checkBotMessageEdit,
   type ContentNormalizationFailure,
-  type ContentReplacement,
   type ContentTextNormalizationFailure,
   type FileUploadStore,
   getReplyQuoteSource,
   hasOnlyValidButtonCallbackData,
-  hasOnlyValidCallbackData,
   hasWebAppButton,
-  isSameMessageContent,
-  isUnchangedContent,
   type MediaContent,
   type NewPollStore,
   type NormalizedOutgoingContent,
@@ -69,21 +57,12 @@ import {
   normalizeOutgoingContent,
   type OutgoingContentNormalization,
   type OutgoingMessageContent,
-  replaceAccountMessageContent,
-  replaceMessageCaption,
-  replaceMessageMedia,
-  replaceMessageText,
   resolveReplyQuote,
-  type SpecifiedCaption,
   type SpecifiedQuote,
   storeOutgoingContent,
-  type TextInvalidFailure,
-  type TextMessageReplacement,
-  toContentOfStoredFile,
   toOutgoingAccountContent,
   toOutgoingAccountMedia,
 } from './message_content.ts';
-import { findStoppablePoll, type PollStopFailureReason } from './poll.ts';
 import { createSessionUserMentionContext } from './session_user_mention.ts';
 
 /**
@@ -335,146 +314,6 @@ export type PressSupergroupReplyKeyboardButtonResult =
   | SendSupergroupAccountMessageResult
   | { readonly sent: false; readonly reason: ReplyKeyboardButtonSelectionFailureReason };
 
-/**
- * The message a bot edits: one it sent to a supergroup, or one an account sent to a supergroup
- * through the bot's inline mode, which the bot addresses without being a member.
- */
-type EditSupergroupBotMessageTarget =
-  | {
-    readonly fromBotId: number;
-    readonly chatId: number;
-    /** The supergroup's ID of the message. */
-    readonly messageId: number;
-  }
-  | {
-    readonly fromBotId: number;
-    readonly inlineMessageId: InlineMessageId;
-  };
-
-export type EditSupergroupBotMessageTextInput = EditSupergroupBotMessageTarget & {
-  /**
-   * New text with the formatting the bot specified, which Telegram validates and normalizes, or a
-   * new rich message.
-   */
-  readonly content: TextMessageReplacement;
-  /** The keyboard the edited message shows; omitting it removes the message's keyboard. */
-  readonly inlineKeyboard?: InlineKeyboard;
-};
-
-export type EditSupergroupBotMessageCaptionInput =
-  & EditSupergroupBotMessageTarget
-  & SpecifiedCaption
-  & {
-    /** Whether a photo or video shows its caption above itself; other media ignores it. */
-    readonly showsCaptionAboveMedia: boolean;
-    /** The keyboard the edited message shows; omitting it removes the message's keyboard. */
-    readonly inlineKeyboard?: InlineKeyboard;
-  };
-
-export type EditSupergroupBotMessageMediaInput = EditSupergroupBotMessageTarget & {
-  /** The new media and its caption with the formatting the bot specified. */
-  readonly media: MediaContent;
-  /** The keyboard the edited message shows; omitting it removes the message's keyboard. */
-  readonly inlineKeyboard?: InlineKeyboard;
-};
-
-export type EditSupergroupBotMessageInlineKeyboardInput = EditSupergroupBotMessageTarget & {
-  /** The keyboard the edited message shows; omitting it removes the message's keyboard. */
-  readonly inlineKeyboard?: InlineKeyboard;
-};
-
-export type EditSupergroupBotMessageInlineKeyboardFailureReason =
-  | 'bot_not_found'
-  | SupergroupBotAccessFailureReason
-  | 'message_not_found'
-  | 'message_not_editable'
-  | 'callback_data_invalid'
-  | 'button_type_invalid'
-  | 'message_not_modified';
-
-/** A poll a bot stops through its message in a supergroup. */
-export interface StopSupergroupBotPollInput {
-  readonly fromBotId: number;
-  readonly chatId: number;
-  /** The supergroup's ID of the poll's message. */
-  readonly messageId: number;
-  /** The keyboard the poll's message shows once stopped; omitting it removes the keyboard. */
-  readonly inlineKeyboard?: InlineKeyboard;
-}
-
-export type StopSupergroupBotPollResult =
-  | { readonly stopped: true; readonly message: SupergroupMessage; readonly poll: Poll }
-  | {
-    readonly stopped: false;
-    readonly reason:
-      | 'bot_not_found'
-      | SupergroupBotAccessFailureReason
-      | 'message_not_found'
-      | PollStopFailureReason
-      | 'button_type_invalid'
-      | 'callback_data_invalid';
-  };
-
-export type EditSupergroupBotMessageTextFailureReason =
-  | EditSupergroupBotMessageInlineKeyboardFailureReason
-  | 'message_text_empty'
-  | 'message_has_no_text'
-  | 'message_text_too_long';
-
-export type EditSupergroupBotMessageCaptionFailureReason =
-  | EditSupergroupBotMessageInlineKeyboardFailureReason
-  | 'message_has_no_caption'
-  | 'caption_too_long';
-
-export type EditSupergroupBotMessageMediaFailureReason =
-  | EditSupergroupBotMessageInlineKeyboardFailureReason
-  /** As `EditBotMessageMediaFailureReason` describes it. */
-  | 'message_media_not_editable'
-  | 'caption_too_long'
-  | 'album_media_kind_changed'
-  | 'message_media_not_editable';
-
-export type SupergroupMessageEditResult<FailureReason extends string> =
-  | { readonly edited: true; readonly message: SupergroupMessage }
-  | { readonly edited: false; readonly reason: FailureReason };
-
-export type EditSupergroupBotMessageTextResult =
-  | SupergroupMessageEditResult<EditSupergroupBotMessageTextFailureReason>
-  | ({ readonly edited: false } & (TextInvalidFailure | SendPermissionMissingFailure));
-
-export type EditSupergroupBotMessageCaptionResult =
-  | SupergroupMessageEditResult<EditSupergroupBotMessageCaptionFailureReason>
-  | ({ readonly edited: false } & TextInvalidFailure);
-
-export type EditSupergroupBotMessageMediaResult =
-  | SupergroupMessageEditResult<EditSupergroupBotMessageMediaFailureReason>
-  | ({ readonly edited: false } & (TextInvalidFailure | SendPermissionMissingFailure));
-
-export interface EditSupergroupAccountMessageInput {
-  readonly fromAccountId: number;
-  readonly chatId: number;
-  /** The supergroup's ID of the message. */
-  readonly messageId: number;
-  readonly edit: AccountMessageEdit;
-}
-
-export type EditSupergroupAccountMessageFailureReason =
-  | 'account_not_found'
-  | 'chat_not_found'
-  | 'not_a_member'
-  | 'message_not_found'
-  | 'message_not_editable'
-  | 'message_text_empty'
-  | 'message_has_no_text'
-  | 'message_text_too_long'
-  | 'message_has_no_caption'
-  | 'caption_too_long'
-  | 'message_not_modified';
-
-export type EditSupergroupAccountMessageResult =
-  | SupergroupMessageEditResult<EditSupergroupAccountMessageFailureReason>
-  | ({ readonly edited: false } & TextInvalidFailure);
-
 export interface DeleteSupergroupMessagesByBotInput {
   readonly fromBotId: number;
   readonly chatId: number;
@@ -592,20 +431,8 @@ interface SupergroupMessageStore {
     chat: SupergroupChatKey,
     messageId: CanonicalMessageId,
   ): SupergroupMessage | undefined;
-  getMessageByInlineMessageId(inlineMessageId: InlineMessageId): ChatMessage | undefined;
-  editMessage(
-    chat: SupergroupChatKey,
-    messageId: CanonicalMessageId,
-    edit: MessageEdit,
-  ): SupergroupMessage;
   deleteMessage(messageId: CanonicalMessageId): void;
   getChatMessages(chat: SupergroupChatKey): readonly SupergroupMessage[];
-}
-
-/** Stores the polls bots send and closes the polls they stop. */
-interface PollStore extends NewPollStore {
-  getPoll(pollId: PollId): Poll | undefined;
-  closePoll(pollId: PollId): Poll;
 }
 
 interface MessageBoxStore {
@@ -625,7 +452,7 @@ interface SupergroupMessagingServiceDependencies {
   readonly sharedChats: SupergroupMemberStore;
   readonly messages: SupergroupMessageStore;
   readonly files: FileUploadStore;
-  readonly polls: PollStore;
+  readonly polls: NewPollStore;
   readonly messageBoxes: MessageBoxStore;
   readonly events: ChatDomainEventSink;
   readonly currentUnixTimeSeconds: () => number;
@@ -638,11 +465,11 @@ interface SupergroupMessagingServiceDependencies {
  * the supergroup's own message box, then published. Only members write to a supergroup or read its
  * messages.
  *
- * Bots attach inline keyboards, edit their own messages, and delete them; as on Telegram, only an
+ * Bots attach inline keyboards to their messages, and delete them; as on Telegram, only an
  * administrator bot with the right to delete messages deletes other members'. Bots also show reply
  * keyboards and forced replies to all members or to chosen ones, which account members press or
- * answer. Accounts edit the text or caption of their own messages, and send inline query results
- * through inline bots, which edit the messages sent through them without being members.
+ * answer. Accounts send inline query results through inline bots. `MessageEditingService` edits
+ * the messages of supergroups, as it edits those of every chat type.
  *
  * Results carry canonical messages; presenting them to an observer is left to the caller.
  */
@@ -653,7 +480,7 @@ export class SupergroupMessagingService {
   readonly #sharedChats: SupergroupMemberStore;
   readonly #messages: SupergroupMessageStore;
   readonly #files: FileUploadStore;
-  readonly #polls: PollStore;
+  readonly #polls: NewPollStore;
   readonly #messageBoxes: MessageBoxStore;
   readonly #events: ChatDomainEventSink;
   readonly #currentUnixTimeSeconds: () => number;
@@ -687,7 +514,7 @@ export class SupergroupMessagingService {
    * Sends text, captioned media, a contact, a location, or a new poll from an account to a
    * supergroup it is a member of. As a Telegram client does, the text or caption is normalized,
    * which marks bot commands, and a poll is checked as `normalizeNewPoll` checks it; then the
-   * account must be allowed to send the content, as `#findMissingSendPermission` decides.
+   * account must be allowed to send the content, as `findMissingSendPermission` decides.
    * The account's own contact needs the phone number the account was created with.
    */
   sendAccountMessage(input: SendSupergroupAccountMessageInput): SendSupergroupAccountMessageResult {
@@ -706,7 +533,7 @@ export class SupergroupMessagingService {
     if (!contentNormalization.normalized) {
       return { sent: false, ...contentNormalization.failure };
     }
-    const permissionFailure = this.#findMissingSendPermission(
+    const permissionFailure = findMissingSendPermission(
       memberResolution,
       { kind: 'account', accountId: input.fromAccountId },
       [contentNormalization.content],
@@ -752,7 +579,7 @@ export class SupergroupMessagingService {
     if (!albumNormalization.normalized) {
       return { sent: false, ...albumNormalization.failure };
     }
-    const permissionFailure = this.#findMissingSendPermission(
+    const permissionFailure = findMissingSendPermission(
       memberResolution,
       { kind: 'account', accountId: input.fromAccountId },
       albumNormalization.contents,
@@ -791,10 +618,10 @@ export class SupergroupMessagingService {
       return { sent: false, reason: memberResolution.reason };
     }
     const actor: ChatActor = { kind: 'account', accountId: input.fromAccountId };
-    if (!this.#getEffectivePermissions(memberResolution, actor).has('can_send_other_messages')) {
+    if (!getMemberPermissions(memberResolution, actor).has('can_send_other_messages')) {
       return { sent: false, reason: 'inline_bots_not_permitted' };
     }
-    const permissionFailure = this.#findMissingSendPermission(memberResolution, actor, [
+    const permissionFailure = findMissingSendPermission(memberResolution, actor, [
       input.content,
     ]);
     if (permissionFailure !== undefined) {
@@ -823,7 +650,7 @@ export class SupergroupMessagingService {
     if (!memberResolution.resolved) {
       return { sent: false, reason: memberResolution.reason };
     }
-    const permissionFailure = this.#findMissingSendPermission(
+    const permissionFailure = findMissingSendPermission(
       memberResolution,
       { kind: 'account', accountId: fromAccountId },
       [{ kind: 'existing', content: forward.content }],
@@ -851,7 +678,7 @@ export class SupergroupMessagingService {
    * the replied message is looked up after it; a message effect is then refused, as TDLib's
    * `MessageSendOptions::get_message_send_options` refuses it outside private chats. The text or
    * caption is normalized with its entities next, and the result is checked for length. The bot
-   * must then be allowed to send the content, as `#findMissingSendPermission` decides. Callback
+   * must then be allowed to send the content, as `findMissingSendPermission` decides. Callback
    * data is checked next, and a quote last, as Telegram's servers check it.
    */
   sendBotMessage(input: SendSupergroupBotMessageInput): SendSupergroupBotMessageResult {
@@ -881,7 +708,7 @@ export class SupergroupMessagingService {
     if (!contentNormalization.normalized) {
       return { sent: false, ...contentNormalization.failure };
     }
-    const permissionFailure = this.#findMissingSendPermission(
+    const permissionFailure = findMissingSendPermission(
       botMembership,
       { kind: 'bot', botId: input.fromBotId },
       [contentNormalization.content],
@@ -937,7 +764,7 @@ export class SupergroupMessagingService {
   ): boolean {
     const botMembership = resolveSupergroupBotMembership(this.#sharedChats, botId, chatId);
     return botMembership.resolved &&
-      this.#findMissingSendPermission(botMembership, { kind: 'bot', botId }, [content]) !==
+      findMissingSendPermission(botMembership, { kind: 'bot', botId }, [content]) !==
         undefined;
   }
 
@@ -976,7 +803,7 @@ export class SupergroupMessagingService {
     if (!albumNormalization.normalized) {
       return { sent: false, ...albumNormalization.failure };
     }
-    const permissionFailure = this.#findMissingSendPermission(
+    const permissionFailure = findMissingSendPermission(
       botMembership,
       { kind: 'bot', botId: input.fromBotId },
       albumNormalization.contents,
@@ -1005,194 +832,6 @@ export class SupergroupMessagingService {
         isSilent: input.isSilent,
       }, repliedMessage),
     };
-  }
-
-  /**
-   * Replaces the text, entities, and inline keyboard of a text or rich message the bot sent, or
-   * that was sent through its inline mode, with new text or a rich message, which may change the
-   * message's kind. Only changed content dates the edit. As on Telegram, no bot receives an update
-   * for a bot's message's edit; an edit of an account's message sent through a bot reaches the
-   * supergroup's bots as the account's edited message.
-   */
-  editBotMessageText(input: EditSupergroupBotMessageTextInput): EditSupergroupBotMessageTextResult {
-    if (this.#bots.getById(input.fromBotId) === undefined) {
-      return { edited: false, reason: 'bot_not_found' };
-    }
-    if (input.content.kind === 'text' && input.content.text.length === 0) {
-      return { edited: false, reason: 'message_text_empty' };
-    }
-    const resolution = this.#resolveEditableBotMessage(input);
-    if (!resolution.resolved) {
-      return { edited: false, reason: resolution.reason };
-    }
-    const { message } = resolution;
-    const replacement = replaceMessageText(message.content, input.content, this.#textFixingContext);
-    // As TDLib's `edit_message_text` does, only a rich message is checked as new content.
-    const permissionFailure = replacement.replaced && replacement.content.kind === 'rich_message'
-      ? this.#findMissingEditPermission(input, replacement.content)
-      : undefined;
-    if (permissionFailure !== undefined) {
-      return { edited: false, ...permissionFailure };
-    }
-    return this.#editBotMessageContent(message, replacement, input.inlineKeyboard);
-  }
-
-  /**
-   * Replaces the caption, its entities, and the inline keyboard of captioned media the bot
-   * sent, or that was sent through its inline mode; an empty caption removes it. Only a changed
-   * caption dates the edit. Updates follow `editBotMessageText`.
-   */
-  editBotMessageCaption(
-    input: EditSupergroupBotMessageCaptionInput,
-  ): EditSupergroupBotMessageCaptionResult {
-    if (this.#bots.getById(input.fromBotId) === undefined) {
-      return { edited: false, reason: 'bot_not_found' };
-    }
-    const resolution = this.#resolveEditableBotMessage(input);
-    if (!resolution.resolved) {
-      return { edited: false, reason: resolution.reason };
-    }
-    const { message } = resolution;
-    return this.#editBotMessageContent(
-      message,
-      replaceMessageCaption(message.content, input, 'bot', this.#textFixingContext),
-      input.inlineKeyboard,
-    );
-  }
-
-  /**
-   * Replaces the content, with its caption, and the inline keyboard of a message the bot sent, or
-   * that was sent through its inline mode, with new media, as `replaceMessageMedia` replaces it.
-   * Only changed content dates the edit. Updates follow `editBotMessageText`.
-   */
-  editBotMessageMedia(
-    input: EditSupergroupBotMessageMediaInput,
-  ): EditSupergroupBotMessageMediaResult {
-    if (this.#bots.getById(input.fromBotId) === undefined) {
-      return { edited: false, reason: 'bot_not_found' };
-    }
-    const resolution = this.#resolveEditableBotMessage(input);
-    if (!resolution.resolved) {
-      return { edited: false, reason: resolution.reason };
-    }
-    const { message } = resolution;
-    const replacement = replaceMessageMedia(message, input.media, this.#textFixingContext);
-    const permissionFailure = replacement.replaced
-      ? this.#findMissingEditPermission(input, replacement.content)
-      : undefined;
-    if (permissionFailure !== undefined) {
-      return { edited: false, ...permissionFailure };
-    }
-    return this.#editBotMessageContent(message, replacement, input.inlineKeyboard);
-  }
-
-  /**
-   * Replaces the inline keyboard of a message the bot sent, or that was sent through its inline
-   * mode, leaving its content as it is.
-   */
-  editBotMessageInlineKeyboard(
-    input: EditSupergroupBotMessageInlineKeyboardInput,
-  ): SupergroupMessageEditResult<EditSupergroupBotMessageInlineKeyboardFailureReason> {
-    if (this.#bots.getById(input.fromBotId) === undefined) {
-      return { edited: false, reason: 'bot_not_found' };
-    }
-    const resolution = this.#resolveEditableBotMessage(input);
-    if (!resolution.resolved) {
-      return { edited: false, reason: resolution.reason };
-    }
-
-    const { message } = resolution;
-    return this.#editBotMessage(message, {
-      content: { kind: 'existing', content: message.content },
-      inlineKeyboard: input.inlineKeyboard,
-      contentEditedAtUnixSeconds: message.contentEditedAtUnixSeconds,
-    });
-  }
-
-  /**
-   * Stops a poll the bot sent to a supergroup it is a member of, as for a private chat. As for
-   * other edits in a supergroup, the new keyboard has no Web App button, which Telegram allows only
-   * in private chats.
-   */
-  stopBotPoll(input: StopSupergroupBotPollInput): StopSupergroupBotPollResult {
-    if (this.#bots.getById(input.fromBotId) === undefined) {
-      return { stopped: false, reason: 'bot_not_found' };
-    }
-    const lookup = this.#findBotEditTarget(input);
-    if (!lookup.resolved) {
-      return { stopped: false, reason: lookup.reason };
-    }
-    const { message } = lookup;
-    const pollLookup = findStoppablePoll(message, input.fromBotId, this.#polls);
-    if (!pollLookup.found) {
-      return { stopped: false, reason: pollLookup.reason };
-    }
-    if (!isSupergroupContentMessage(message)) {
-      throw new Error(`Service message ${message.id} shows poll ${pollLookup.poll.id}`);
-    }
-    const { inlineKeyboard } = input;
-    if (inlineKeyboard !== undefined) {
-      if (hasWebAppButton(inlineKeyboard, { kind: 'existing', content: message.content })) {
-        return { stopped: false, reason: 'button_type_invalid' };
-      }
-      if (!hasOnlyValidCallbackData(inlineKeyboard)) {
-        return { stopped: false, reason: 'callback_data_invalid' };
-      }
-    }
-
-    const stoppedPoll = this.#polls.closePoll(pollLookup.poll.id);
-    const editedMessage = this.#messages.editMessage(message.chat, message.id, {
-      content: message.content,
-      inlineKeyboard,
-      contentEditedAtUnixSeconds: message.contentEditedAtUnixSeconds,
-    });
-    this.#events.emit({ type: 'poll_closed', poll: stoppedPoll });
-    return { stopped: true, message: editedMessage, poll: stoppedPoll };
-  }
-
-  /**
-   * Replaces the text or caption of a message the account wrote to the supergroup, which the
-   * supergroup's bots may receive as an `edited_message` update. As when sending, the text is
-   * normalized as a Telegram client does.
-   */
-  editAccountMessage(input: EditSupergroupAccountMessageInput): EditSupergroupAccountMessageResult {
-    const memberResolution = this.#resolveAccountMember(input.fromAccountId, input.chatId);
-    if (!memberResolution.resolved) {
-      return { edited: false, reason: memberResolution.reason };
-    }
-    const message = this.getMessageByChatMessageId(input.chatId, input.messageId);
-    if (message === undefined) {
-      return { edited: false, reason: 'message_not_found' };
-    }
-    // As in TDLib, only the inline bot edits a message sent through it, and no one edits a forward.
-    if (
-      !isSupergroupContentMessage(message) || message.sender.kind !== 'account' ||
-      message.sender.accountId !== input.fromAccountId || message.viaBot !== undefined ||
-      message.forwardInfo !== undefined
-    ) {
-      return { edited: false, reason: 'message_not_editable' };
-    }
-    const replacement = replaceAccountMessageContent(
-      message.content,
-      input.edit,
-      this.#textFixingContext,
-    );
-    if (!replacement.replaced) {
-      return { edited: false, ...replacement.failure };
-    }
-    // An account edits only the text or caption of its message, which uploads no file.
-    const content = toContentOfStoredFile(replacement.content);
-    if (isSameMessageContent(content, message.content)) {
-      return { edited: false, reason: 'message_not_modified' };
-    }
-
-    const editedMessage = this.#messages.editMessage(message.chat, message.id, {
-      content,
-      inlineKeyboard: message.inlineKeyboard,
-      contentEditedAtUnixSeconds: this.#currentUnixTimeSeconds(),
-    });
-    this.#events.emit({ type: 'message_edited', message: editedMessage });
-    return { edited: true, message: editedMessage };
   }
 
   /**
@@ -1447,189 +1086,10 @@ export class SupergroupMessagingService {
     return { resolved: true, account, supergroup: chat, membership };
   }
 
-  /** What a member may do in its supergroup, as `getEffectiveChatPermissions` decides. */
-  #getEffectivePermissions(
-    { supergroup, membership }: {
-      readonly supergroup: Supergroup;
-      readonly membership: ChatMembership;
-    },
-    member: ChatActor,
-  ): ChatPermissions {
-    return getEffectiveChatPermissions(membership, {
-      defaultPermissions: supergroup.defaultPermissions,
-      isBot: member.kind === 'bot',
-    });
-  }
-
-  /**
-   * Finds the first content, in order, that a member may not send, as TDLib's
-   * `can_send_message_content` checks each message, and reports its kind; `undefined` when the
-   * member may send them all.
-   */
-  #findMissingSendPermission(
-    memberResolution: {
-      readonly supergroup: Supergroup;
-      readonly membership: ChatMembership;
-    },
-    member: ChatActor,
-    contents: readonly (OutgoingMessageContent | NormalizedOutgoingContent)[],
-  ): SendPermissionMissingFailure | undefined {
-    const permissions = this.#getEffectivePermissions(memberResolution, member);
-    for (const content of contents) {
-      const governedContent = toPermissionGovernedContent(content);
-      if (
-        !getContentSendPermissions(governedContent).every((permission) =>
-          permissions.has(permission)
-        )
-      ) {
-        return { reason: 'send_permission_missing', contentKind: governedContent.kind };
-      }
-    }
-    return undefined;
-  }
-
   /** Checks that the bot is a member of the supergroup, which it needs to act there. */
   #checkBotAccess(botId: number, chatId: number): SupergroupBotAccessFailureReason | undefined {
     const resolution = resolveSupergroupBotMembership(this.#sharedChats, botId, chatId);
     return resolution.resolved ? undefined : resolution.reason;
-  }
-
-  /**
-   * Finds a permission the bot lacks for the new content of an edit, as TDLib's
-   * `edit_message_media` and `edit_message_text` check new media and rich messages with
-   * `can_send_message_content`. TDLib checks no permission for a message addressed by its inline
-   * message identifier, which has no chat to check it in.
-   */
-  #findMissingEditPermission(
-    target: EditSupergroupBotMessageTarget,
-    content: NormalizedOutgoingContent,
-  ): SendPermissionMissingFailure | undefined {
-    if ('inlineMessageId' in target) {
-      return undefined;
-    }
-    const botMembership = resolveSupergroupBotMembership(
-      this.#sharedChats,
-      target.fromBotId,
-      target.chatId,
-    );
-    if (!botMembership.resolved) {
-      throw new Error(`Bot ${target.fromBotId} edits in chat ${target.chatId} as no member`);
-    }
-    return this.#findMissingSendPermission(
-      botMembership,
-      { kind: 'bot', botId: target.fromBotId },
-      [content],
-    );
-  }
-
-  /**
-   * Resolves the message an edit targets, found as `#findBotEditTarget` does, which the bot must
-   * be allowed to edit. A service message has no content to edit.
-   */
-  #resolveEditableBotMessage(
-    target: EditSupergroupBotMessageTarget,
-  ):
-    | { readonly resolved: true; readonly message: SupergroupContentMessage }
-    | {
-      readonly resolved: false;
-      readonly reason:
-        | SupergroupBotAccessFailureReason
-        | 'message_not_found'
-        | 'message_not_editable';
-    } {
-    const lookup = this.#findBotEditTarget(target);
-    if (!lookup.resolved) {
-      return lookup;
-    }
-    const { message } = lookup;
-    return isSupergroupContentMessage(message) && canBotEditMessage(message, target.fromBotId)
-      ? { resolved: true, message }
-      : { resolved: false, reason: 'message_not_editable' };
-  }
-
-  /**
-   * Finds the message an edit targets: a message of a supergroup the bot is a member of, or a
-   * message sent through the bot's inline mode, which only that bot finds by its inline message
-   * identifier, even outside its chats.
-   */
-  #findBotEditTarget(
-    target: EditSupergroupBotMessageTarget,
-  ):
-    | { readonly resolved: true; readonly message: SupergroupMessage }
-    | {
-      readonly resolved: false;
-      readonly reason: SupergroupBotAccessFailureReason | 'message_not_found';
-    } {
-    if ('inlineMessageId' in target) {
-      const message = this.#messages.getMessageByInlineMessageId(target.inlineMessageId);
-      return message?.kind === 'supergroup_message' && message.viaBot?.botId === target.fromBotId
-        ? { resolved: true, message }
-        : { resolved: false, reason: 'message_not_found' };
-    }
-    const { fromBotId, chatId, messageId } = target;
-    const accessFailure = this.#checkBotAccess(fromBotId, chatId);
-    if (accessFailure !== undefined) {
-      return { resolved: false, reason: accessFailure };
-    }
-    const message = this.getMessageByChatMessageId(chatId, messageId);
-    return message === undefined
-      ? { resolved: false, reason: 'message_not_found' }
-      : { resolved: true, message };
-  }
-
-  /**
-   * Applies a bot's replacement of its message's content with the given keyboard; only changed
-   * content dates the edit.
-   */
-  #editBotMessageContent<FailureReason extends string>(
-    message: SupergroupContentMessage,
-    replacement: ContentReplacement<FailureReason>,
-    inlineKeyboard: InlineKeyboard | undefined,
-  ):
-    | SupergroupMessageEditResult<
-      FailureReason | 'callback_data_invalid' | 'button_type_invalid' | 'message_not_modified'
-    >
-    | ({ readonly edited: false } & TextInvalidFailure) {
-    if (!replacement.replaced) {
-      return { edited: false, ...replacement.failure };
-    }
-    return this.#editBotMessage(message, {
-      content: replacement.content,
-      inlineKeyboard,
-      contentEditedAtUnixSeconds: isUnchangedContent(replacement.content, message.content)
-        ? message.contentEditedAtUnixSeconds
-        : this.#currentUnixTimeSeconds(),
-    });
-  }
-
-  /**
-   * Validates, stores, and publishes a bot's edit of its message, which must change it. The new
-   * content's upload is stored only once the edit passes its checks.
-   */
-  #editBotMessage(
-    message: SupergroupContentMessage,
-    { content, ...edit }: {
-      readonly content: NormalizedOutgoingContent;
-      readonly inlineKeyboard: InlineKeyboard | undefined;
-      readonly contentEditedAtUnixSeconds: number | undefined;
-    },
-  ): SupergroupMessageEditResult<
-    'callback_data_invalid' | 'button_type_invalid' | 'message_not_modified'
-  > {
-    if (hasWebAppButton(edit.inlineKeyboard, content)) {
-      return { edited: false, reason: 'button_type_invalid' };
-    }
-    const editFailure = checkBotMessageEdit(message, { content, ...edit });
-    if (editFailure !== undefined) {
-      return { edited: false, reason: editFailure };
-    }
-
-    const editedMessage = this.#messages.editMessage(message.chat, message.id, {
-      ...edit,
-      content: storeOutgoingContent(content, this.#files, this.#polls),
-    });
-    this.#events.emit({ type: 'message_edited', message: editedMessage });
-    return { edited: true, message: editedMessage };
   }
 
   /**
@@ -1778,6 +1238,45 @@ export class SupergroupMessagingService {
     }
     return { message, replyInterface };
   }
+}
+
+/** A member's standing in its supergroup, which decides what it may send there. */
+interface SupergroupMemberStanding {
+  readonly supergroup: Supergroup;
+  readonly membership: ChatMembership;
+}
+
+/** What a member may do in its supergroup, as `getEffectiveChatPermissions` decides. */
+function getMemberPermissions(
+  { supergroup, membership }: SupergroupMemberStanding,
+  member: ChatActor,
+): ChatPermissions {
+  return getEffectiveChatPermissions(membership, {
+    defaultPermissions: supergroup.defaultPermissions,
+    isBot: member.kind === 'bot',
+  });
+}
+
+/**
+ * Finds the first content, in order, that a member may not send, as TDLib's
+ * `can_send_message_content` checks each message, and reports its kind; `undefined` when the
+ * member may send them all.
+ */
+export function findMissingSendPermission(
+  standing: SupergroupMemberStanding,
+  member: ChatActor,
+  contents: readonly (OutgoingMessageContent | NormalizedOutgoingContent)[],
+): SendPermissionMissingFailure | undefined {
+  const permissions = getMemberPermissions(standing, member);
+  for (const content of contents) {
+    const governedContent = toPermissionGovernedContent(content);
+    if (
+      !getContentSendPermissions(governedContent).every((permission) => permissions.has(permission))
+    ) {
+      return { reason: 'send_permission_missing', contentKind: governedContent.kind };
+    }
+  }
+  return undefined;
 }
 
 /** The content whose sending permissions govern, of new content or of an existing message. */

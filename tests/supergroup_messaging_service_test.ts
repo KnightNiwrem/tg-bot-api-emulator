@@ -6,8 +6,13 @@ import { MessageRepository } from '../src/repositories/message.ts';
 import { MessageBoxRepository } from '../src/repositories/message_box.ts';
 import { SharedChatRepository } from '../src/repositories/shared_chat.ts';
 import { TelegramIdentityRepository } from '../src/repositories/telegram_identity.ts';
+import { BlockedUserRepository } from '../src/repositories/blocked_user.ts';
+import { PrivateConversationRepository } from '../src/repositories/private_conversation.ts';
 import { SharedChatAdministrationService } from '../src/services/shared_chat_administration.ts';
 import type { MediaContent } from '../src/services/message_content.ts';
+import { MessageEditingService } from '../src/services/message_editing.ts';
+import { PrivateChatPolicy } from '../src/services/private_chat_policy.ts';
+import { SupergroupChatPolicy } from '../src/services/supergroup_chat_policy.ts';
 import { SupergroupMessagingService } from '../src/services/supergroup_messaging.ts';
 import { VirtualUserService } from '../src/services/virtual_user.ts';
 import type { ChatDomainEvent } from '../src/types/chat_domain_event.ts';
@@ -310,6 +315,7 @@ Deno.test("SupergroupMessagingService edits and deletes only the author's own me
     owner,
     bot,
     supergroup,
+    messageEditing,
   } = createSupergroupMessagingFixture();
   const otherBot = createBot(virtualUsers, 'other_bot');
   sharedChatAdministration.addChatMember({
@@ -329,44 +335,44 @@ Deno.test("SupergroupMessagingService edits and deletes only the author's own me
   }));
 
   const editFailures = [
-    supergroupMessaging.editBotMessageText({
+    messageEditing.editSupergroupMessageText({
       fromBotId: bot.profile.id,
-      chatId: supergroup.id,
+      chat: { type: 'supergroup', chatId: supergroup.id },
       messageId: 3,
       content: { kind: 'text', text: 'Changed' },
     }),
-    supergroupMessaging.editBotMessageText({
+    messageEditing.editSupergroupMessageText({
       fromBotId: otherBot.profile.id,
-      chatId: supergroup.id,
+      chat: { type: 'supergroup', chatId: supergroup.id },
       messageId: 4,
       content: { kind: 'text', text: 'Changed' },
     }),
-    supergroupMessaging.editBotMessageText({
+    messageEditing.editSupergroupMessageText({
       fromBotId: bot.profile.id,
-      chatId: supergroup.id,
+      chat: { type: 'supergroup', chatId: supergroup.id },
       messageId: 99,
       content: { kind: 'text', text: 'Changed' },
     }),
-    supergroupMessaging.editBotMessageInlineKeyboard({
+    messageEditing.editSupergroupMessageKeyboard({
       fromBotId: bot.profile.id,
-      chatId: supergroup.id,
+      chat: { type: 'supergroup', chatId: supergroup.id },
       messageId: 4,
     }),
-    supergroupMessaging.editAccountMessage({
+    messageEditing.editAccountSupergroupMessage({
       fromAccountId: owner.profile.id,
-      chatId: supergroup.id,
+      chat: { type: 'supergroup', chatId: supergroup.id },
       messageId: 4,
       edit: { kind: 'text', text: 'Changed' },
     }),
-    supergroupMessaging.editAccountMessage({
+    messageEditing.editAccountSupergroupMessage({
       fromAccountId: owner.profile.id,
-      chatId: supergroup.id,
+      chat: { type: 'supergroup', chatId: supergroup.id },
       messageId: 3,
       edit: { kind: 'text', text: 'Hello' },
     }),
-    supergroupMessaging.editAccountMessage({
+    messageEditing.editAccountSupergroupMessage({
       fromAccountId: owner.profile.id,
-      chatId: supergroup.id,
+      chat: { type: 'supergroup', chatId: supergroup.id },
       messageId: 1,
       edit: { kind: 'text', text: 'Hello' },
     }),
@@ -402,9 +408,9 @@ Deno.test("SupergroupMessagingService edits and deletes only the author's own me
   }
 
   const publishedEventCount = publishedEvents.length;
-  const accountEdit = supergroupMessaging.editAccountMessage({
+  const accountEdit = messageEditing.editAccountSupergroupMessage({
     fromAccountId: owner.profile.id,
-    chatId: supergroup.id,
+    chat: { type: 'supergroup', chatId: supergroup.id },
     messageId: 3,
     edit: { kind: 'text', text: 'Hello /help' },
   });
@@ -442,6 +448,7 @@ Deno.test('SupergroupMessagingService lets the inline bot edit a message sent th
     owner,
     bot,
     supergroup,
+    messageEditing,
   } = createSupergroupMessagingFixture();
   const otherBot = createBot(virtualUsers, 'other_bot');
   const outsiderBot = createBot(virtualUsers, 'outsider_bot');
@@ -464,18 +471,18 @@ Deno.test('SupergroupMessagingService lets the inline bot edit a message sent th
     return { message, messageId, inlineMessageId: message.viaBot.inlineMessageId };
   };
   const editText = (fromBotId: number, messageId: number, text: string) =>
-    supergroupMessaging.editBotMessageText({
+    messageEditing.editSupergroupMessageText({
       fromBotId,
-      chatId: supergroup.id,
+      chat: { type: 'supergroup', chatId: supergroup.id },
       messageId,
       content: { kind: 'text', text },
     });
 
   const inlineMessage = sendThrough(bot.profile.id);
   const textEdit = editText(bot.profile.id, inlineMessage.messageId, 'Dogs');
-  const keyboardEdit = supergroupMessaging.editBotMessageInlineKeyboard({
+  const keyboardEdit = messageEditing.editSupergroupMessageKeyboard({
     fromBotId: bot.profile.id,
-    chatId: supergroup.id,
+    chat: { type: 'supergroup', chatId: supergroup.id },
     messageId: inlineMessage.messageId,
     inlineKeyboard: [[{ kind: 'callback', text: 'More', callbackData: 'more' }]],
   });
@@ -497,7 +504,7 @@ Deno.test('SupergroupMessagingService lets the inline bot edit a message sent th
   // Only its inline message identifier reaches a message outside the inline bot's chats.
   const outsiderMessage = sendThrough(outsiderBot.profile.id);
   const outsiderChatEdit = editText(outsiderBot.profile.id, outsiderMessage.messageId, 'Dogs');
-  const outsiderInlineEdit = supergroupMessaging.editBotMessageText({
+  const outsiderInlineEdit = messageEditing.editInlineMessageText({
     fromBotId: outsiderBot.profile.id,
     inlineMessageId: outsiderMessage.inlineMessageId,
     content: { kind: 'text', text: 'Dogs' },
@@ -560,8 +567,15 @@ Deno.test('SupergroupMessagingService lets bots with the right delete any messag
 });
 
 Deno.test('SupergroupMessagingService turns away bots that left or were removed', () => {
-  const { supergroupMessaging, virtualUsers, sharedChatAdministration, owner, bot, supergroup } =
-    createSupergroupMessagingFixture();
+  const {
+    supergroupMessaging,
+    virtualUsers,
+    sharedChatAdministration,
+    owner,
+    bot,
+    supergroup,
+    messageEditing,
+  } = createSupergroupMessagingFixture();
   const removedBot = createBot(virtualUsers, 'removed_bot');
   sharedChatAdministration.addChatMember({
     actorAccountId: owner.profile.id,
@@ -588,9 +602,9 @@ Deno.test('SupergroupMessagingService turns away bots that left or were removed'
         content: { kind: 'text', text: 'Hi' },
       }),
       supergroupMessaging.checkBotChatActionAccess({ fromBotId, chatId: supergroup.id }),
-      supergroupMessaging.editBotMessageInlineKeyboard({
+      messageEditing.editSupergroupMessageKeyboard({
         fromBotId,
-        chatId: supergroup.id,
+        chat: { type: 'supergroup', chatId: supergroup.id },
         messageId: 3,
       }),
       supergroupMessaging.deleteMessagesByBot({
@@ -819,14 +833,36 @@ function createSupergroupMessagingFixture() {
   const publishedEvents: ChatDomainEvent[] = [];
   const events = { emit: (event: ChatDomainEvent) => publishedEvents.push(event) };
   const currentUnixTimeSeconds = () => 1_700_000_000;
+  const messages = new MessageRepository();
+  const files = new FileRepository();
+  const polls = new PollRepository();
   const supergroupMessaging = new SupergroupMessagingService({
     accounts,
     bots,
     sharedChats,
-    messages: new MessageRepository(),
-    files: new FileRepository(),
-    polls: new PollRepository(),
+    messages,
+    files,
+    polls,
     messageBoxes,
+    events,
+    currentUnixTimeSeconds,
+  });
+  const messageEditing = new MessageEditingService({
+    accounts,
+    bots,
+    // These tests send no private messages, so none is found.
+    privateChats: new PrivateChatPolicy({
+      accounts,
+      bots,
+      privateConversations: new PrivateConversationRepository(),
+      blockedUsers: new BlockedUserRepository(),
+      joinRequesterContacts: { mayContactJoinRequester: () => false },
+      privateMessages: { getPrivateMessageByBotMessageId: () => undefined },
+    }),
+    supergroups: new SupergroupChatPolicy({ sharedChats, supergroupMessages: supergroupMessaging }),
+    messages,
+    files,
+    polls,
     events,
     currentUnixTimeSeconds,
   });
@@ -864,6 +900,7 @@ function createSupergroupMessagingFixture() {
     sharedChats,
     sharedChatAdministration,
     supergroupMessaging,
+    messageEditing,
     messageBoxes,
     publishedEvents,
     owner,

@@ -51,6 +51,7 @@ import { InlineQueryService } from '../services/inline_query.ts';
 import { MediaFileService } from '../services/media_file.ts';
 import { normalizeBotDraftText, normalizeCaption } from '../services/message_content.ts';
 import { MessageDraftService } from '../services/message_draft.ts';
+import { MessageEditingService } from '../services/message_editing.ts';
 import { MessageForwardingService } from '../services/message_forwarding.ts';
 import { MessagePinningService } from '../services/message_pinning.ts';
 import { MessageReactionService } from '../services/message_reaction.ts';
@@ -206,17 +207,33 @@ export function createEmulationSession(
     events: transactions,
     currentUnixTimeSeconds,
   });
+  const privateChats = new PrivateChatPolicy({
+    accounts,
+    bots,
+    privateConversations,
+    blockedUsers,
+    joinRequesterContacts: chatAdmission,
+    privateMessages: privateMessaging,
+  });
+  const supergroups = new SupergroupChatPolicy({
+    sharedChats,
+    supergroupMessages: supergroupMessaging,
+  });
+  const messageEditing = new MessageEditingService({
+    accounts,
+    bots,
+    privateChats,
+    supergroups,
+    messages,
+    files,
+    polls,
+    events: transactions,
+    currentUnixTimeSeconds,
+  });
   const accountChatMessages = createAccountChatMessageReader({
     accounts,
-    privateChats: new PrivateChatPolicy({
-      accounts,
-      bots,
-      privateConversations,
-      blockedUsers,
-      joinRequesterContacts: chatAdmission,
-      privateMessages: privateMessaging,
-    }),
-    supergroups: new SupergroupChatPolicy({ sharedChats, supergroupMessages: supergroupMessaging }),
+    privateChats,
+    supergroups,
   });
   const messageForwarding = new MessageForwardingService({
     accountChatMessages,
@@ -365,6 +382,7 @@ export function createEmulationSession(
     updateConsumers,
     botMessages: privateMessaging,
     supergroupBotMessages: supergroupMessaging,
+    messageEditing,
     messageSender: botMessageSender,
     messageRepeater: new BotMessageRepeater({
       messageSender: botMessageSender,
@@ -382,7 +400,6 @@ export function createEmulationSession(
     mediaFiles,
     callbackQueries,
     inlineQueries,
-    inlineMessages: messages,
     botCaptions: {
       normalizeBotCaption: (caption) => normalizeCaption(caption, 'bot', sessionTextFixingContext),
     },
@@ -407,6 +424,7 @@ export function createEmulationSession(
     chatAdmission,
     privateMessaging,
     supergroupMessaging,
+    messageEditing,
     messageForwarding,
     messagePinning,
     messageReactions,

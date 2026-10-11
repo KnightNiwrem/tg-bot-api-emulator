@@ -236,6 +236,7 @@ public.
 [Inline query service](../../src/services/inline_query.ts),
 [result parsing](../../src/api/sessions/bot_api/inline_query_answer_parameters.ts),
 [message edit permissions](../../src/types/virtual_message.ts),
+[inline message edits](../../src/services/message_editing.ts),
 [inline tests](../../tests/inline_query_service_test.ts),
 [HTTP tests](../../tests/http/inline_mode_test.ts),
 [answer cache API tests](../../tests/inline_answer_cache_api_test.ts),

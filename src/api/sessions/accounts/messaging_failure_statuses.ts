@@ -48,7 +48,10 @@ type SupergroupAccountFailureReason =
     ReturnType<SupergroupMessaging['pressReplyKeyboardButton']>,
     { sent: false }
   >['reason']
-  | Extract<ReturnType<SupergroupMessaging['editAccountMessage']>, { edited: false }>['reason']
+  | Extract<
+    ReturnType<EmulationSession['messageEditing']['editAccountSupergroupMessage']>,
+    { edited: false }
+  >['reason']
   | Extract<ReturnType<SupergroupMessaging['getMessageHistory']>, { found: false }>['reason'];
 
 /**
