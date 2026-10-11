@@ -446,10 +446,13 @@ export class WebhookDeliveryService {
     if (!deliveryRecording.executed) {
       return { outcome: 'cancelled' };
     }
-    const responseArrival = await settleUnlessAborted(
-      this.#sendWebhookRequest(request),
-      attemptSignal,
-      { disposeLateValue: disposeResponse },
+    // The delivery waits on each step through the attempt's wait tracker, so the attempt is awake
+    // from the moment a step settles, however it settles, until the delivery acts on it.
+    const responseArrival = await attempt.wait.waitOn((endWait) =>
+      settleUnlessAborted(this.#sendWebhookRequest(request), attemptSignal, {
+        disposeLateValue: disposeResponse,
+        onSettle: endWait,
+      })
     );
     if (responseArrival.settlement !== 'fulfilled') {
       // Telegram reports other failures to connect without their cause.
@@ -462,17 +465,18 @@ export class WebhookDeliveryService {
     const { status, statusText, headers } = response;
     const isSuccessful = status >= 200 && status <= 299;
     let isAccepted = false;
-    const bodyArrival = await settleUnlessAborted(response.arrayBuffer(), attemptSignal, {
-      onFulfilledFirst: (body) => {
-        // The attempt no longer waits for the webhook, whatever its delivery decides next.
-        attempt.noteCompleteResponse();
-        if (isSuccessful) {
-          isAccepted = acceptUpdate(
-            new Response(body.byteLength === 0 ? null : body, { status, statusText, headers }),
-          );
-        }
-      },
-    });
+    const bodyArrival = await attempt.wait.waitOn((endWait) =>
+      settleUnlessAborted(response.arrayBuffer(), attemptSignal, {
+        onFulfilledFirst: (body) => {
+          if (isSuccessful) {
+            isAccepted = acceptUpdate(
+              new Response(body.byteLength === 0 ? null : body, { status, statusText, headers }),
+            );
+          }
+        },
+        onSettle: endWait,
+      })
+    );
     if (bodyArrival.settlement !== 'fulfilled') {
       // Telegram reports a response cut short by its connection closing without a description.
       return describeUnfinishedAttempt(bodyArrival, deliverySignal, {
@@ -640,9 +644,11 @@ type AttemptStepSettlement<T> =
 function settleUnlessAborted<T>(
   promise: Promise<T>,
   signal: AbortSignal,
-  { onFulfilledFirst = () => {}, disposeLateValue = () => {} }: {
+  { onFulfilledFirst = () => {}, disposeLateValue = () => {}, onSettle = () => {} }: {
     readonly onFulfilledFirst?: (value: T) => void;
     readonly disposeLateValue?: (value: T) => void;
+    /** Called synchronously as the step settles, however it settles, before the result resolves. */
+    readonly onSettle?: () => void;
   } = {},
 ): Promise<AttemptStepSettlement<T>> {
   return new Promise((resolve) => {
@@ -650,6 +656,7 @@ function settleUnlessAborted<T>(
     const settle = (settlement: AttemptStepSettlement<T>) => {
       isSettled = true;
       signal.removeEventListener('abort', settleByAbort);
+      onSettle();
       resolve(settlement);
     };
     const settleByAbort = () => settle({ settlement: 'aborted', abortReason: signal.reason });

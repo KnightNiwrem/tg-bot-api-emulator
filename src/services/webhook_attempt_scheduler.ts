@@ -9,6 +9,7 @@ import {
 } from '../types/bot_webhook.ts';
 import type { VirtualBot } from '../types/virtual_bot.ts';
 import type { Scheduler } from '../timing/session_timing.ts';
+import { WaitTracker } from '../timing/wait_tracker.ts';
 
 /**
  * How long a webhook may take to answer an update under automatic scheduling. Telegram's webhook
@@ -56,10 +57,10 @@ export interface WebhookAttemptHandle {
    */
   readonly deadlineSignal: AbortSignal;
   /**
-   * Records that the webhook's complete response arrived, which the delivery has yet to act on:
-   * the attempt no longer waits for the webhook.
+   * Whether the attempt's delivery waits, for the webhook or for its deadline: the delivery waits
+   * on each step through it, and the attempt is awake whenever no step is pending.
    */
-  noteCompleteResponse(): void;
+  readonly wait: WaitTracker;
   /** Records that the webhook accepted the update; ignored once the attempt is no longer in flight. */
   accept(): void;
   /**
@@ -110,8 +111,8 @@ interface OpenWebhookAttempt {
   readonly settled: PromiseWithResolvers<void>;
   /** Aborts when delivery to the attempt's webhook stops. */
   readonly deliverySignal: AbortSignal;
-  /** Whether the webhook's complete response arrived, which the delivery has yet to act on. */
-  hasCompleteResponse: boolean;
+  /** Whether the attempt's delivery waits on a step of the attempt. */
+  readonly wait: WaitTracker;
 }
 
 /**
@@ -167,15 +168,14 @@ export class WebhookAttemptScheduler {
   }
 
   /**
-   * Whether an attempt in flight no longer waits for its webhook, though its delivery has yet to
-   * act on it: its complete response arrived, its deadline arrived, or its delivery stopped. False
-   * for an attempt that is not in flight.
+   * Whether an attempt in flight is awake: no step its delivery waits on is pending, because the
+   * step settled, however it settled, and its delivery has yet to act on that. False for an attempt
+   * that is not in flight.
    */
   isAttemptAwake(attemptId: number): boolean {
     const openAttempt = this.#openAttemptsById.get(attemptId);
-    return this.#attemptsById.get(attemptId)?.status === 'in_flight' && openAttempt !== undefined &&
-      (openAttempt.hasCompleteResponse || openAttempt.deadline.signal.aborted ||
-        openAttempt.deliverySignal.aborted);
+    return this.#attemptsById.get(attemptId)?.status === 'in_flight' &&
+      openAttempt !== undefined && openAttempt.wait.isAwake;
   }
 
   /** Lists the bot's attempts, earliest first. */
@@ -252,7 +252,7 @@ export class WebhookAttemptScheduler {
       retryRelease: new AbortController(),
       settled: Promise.withResolvers(),
       deliverySignal,
-      hasCompleteResponse: false,
+      wait: new WaitTracker(),
     };
     this.#attemptsById.set(identity.id, { ...identity, status: 'in_flight' });
     this.#openAttemptsById.set(identity.id, openAttempt);
@@ -297,9 +297,7 @@ export class WebhookAttemptScheduler {
     return {
       id: identity.id,
       deadlineSignal: openAttempt.deadline.signal,
-      noteCompleteResponse: () => {
-        openAttempt.hasCompleteResponse = true;
-      },
+      wait: openAttempt.wait,
       accept: () => {
         if (end({ status: 'accepted' })) {
           close();

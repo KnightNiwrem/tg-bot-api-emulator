@@ -20,6 +20,11 @@ export interface NotificationWaitInput {
   readonly deadline?: Deadline;
   /** Ends the wait when it aborts. */
   readonly signal?: AbortSignal;
+  /**
+   * Called synchronously as the wait ends, however it ends, before its promise resolves; for a
+   * `WaitTracker`, whose reader then sees the wait over in the same step.
+   */
+  readonly onEnd?: () => void;
 }
 
 /** Why a wait ended: its wake source fired, its deadline arrived, or its signal aborted. */
@@ -33,7 +38,7 @@ export type NotificationWaitEnd = 'notified' | 'deadline_arrived' | 'aborted';
  * deadline has already arrived as `deadline_arrived`, before the change is checked.
  */
 export function waitForNotification(
-  { subscribe, hasChanged, deadline, signal }: NotificationWaitInput,
+  { subscribe, hasChanged, deadline, signal, onEnd }: NotificationWaitInput,
 ): Promise<NotificationWaitEnd> {
   return new Promise((resolve) => {
     let hasEnded = false;
@@ -47,6 +52,7 @@ export function waitForNotification(
       unsubscribe();
       deadline?.signal.removeEventListener('abort', endForDeadline);
       signal?.removeEventListener('abort', endForAbort);
+      onEnd?.();
       resolve(waitEnd);
     };
     const endForDeadline = () => end('deadline_arrived');

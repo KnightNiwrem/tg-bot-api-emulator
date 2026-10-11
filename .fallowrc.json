@@ -69,6 +69,12 @@
         ]
       },
       {
+        "name": "wait-tracking",
+        "patterns": [
+          "src/timing/wait_tracker.ts"
+        ]
+      },
+      {
         "name": "system-timing",
         "patterns": [
           "src/timing/system_timing.ts"
@@ -456,6 +462,10 @@
         "allow": []
       },
       {
+        "from": "wait-tracking",
+        "allow": []
+      },
+      {
         "from": "system-timing",
         "allow": [],
         "allowTypeOnly": [
@@ -732,7 +742,8 @@
       {
         "from": "update-polling",
         "allow": [
-          "domain"
+          "domain",
+          "wait-tracking"
         ],
         "allowTypeOnly": [
           "session-timing"
@@ -741,7 +752,8 @@
       {
         "from": "webhook-delivery",
         "allow": [
-          "domain"
+          "domain",
+          "wait-tracking"
         ],
         "allowTypeOnly": [
           "session-timing"

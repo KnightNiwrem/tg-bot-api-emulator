@@ -329,8 +329,9 @@ These blockers are runnable, because the emulator will act on them by itself:
 - an update sent to a webhook under `automatic` scheduling that has not answered
   (`webhook_attempt`). Its deadline fails the attempt by itself `timeout_seconds` after it began,
   and schedules a retry;
-- an update sent to a webhook under `manual` scheduling (`webhook_attempt`) whose complete response
-  or expiry arrived, or whose delivery stopped, until the delivery has acted on it;
+- an update sent to a webhook under `manual` scheduling (`webhook_attempt`) whose request or
+  response ended, however it ended, until the delivery has acted on it. That includes an attempt a
+  deleted or replaced webhook stopped, which stays listed until its delivery cancels it;
 - an automatic retry waiting `delay_seconds` on its timer (`webhook_retry`);
 - an update about to be sent to the bot's webhook (`webhook_delivery_due`). A released retry's
   update is one.

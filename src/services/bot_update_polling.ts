@@ -1,5 +1,6 @@
 import type { BotApiUpdate } from '../types/bot_api.ts';
 import type { Deadline, Scheduler } from '../timing/session_timing.ts';
+import { WaitTracker } from '../timing/wait_tracker.ts';
 
 export interface GetUpdatesRequest {
   readonly offset?: number;
@@ -36,16 +37,18 @@ interface PendingUpdateQueue {
       readonly awaitedUpdateId: number;
       readonly deadline: Deadline;
       readonly signal: AbortSignal;
+      readonly onEnd: () => void;
     },
   ): Promise<unknown>;
 }
 
 interface HeldLongPoll {
+  readonly botId: number;
   /** Aborted to terminate the long poll. */
   readonly controller: AbortController;
   terminationReason?: LongPollTerminationReason;
-  /** Whether the poll's wait is over, though the poll has not been answered yet. */
-  isAwake: () => boolean;
+  /** Whether the poll waits for an update, or is awake until it is answered. */
+  readonly wait: WaitTracker;
 }
 
 /** Records the updates `getUpdates` answers deliver and confirm in the session's bot activity. */
@@ -104,6 +107,11 @@ export class BotUpdatePollingService {
   readonly #sessionLifetime: SessionEnd;
   readonly #transactions: PollingTransactions;
   readonly #heldLongPollsByBotId = new Map<number, HeldLongPoll>();
+  /**
+   * Every long poll held and not answered yet, which a newer poll or a webhook may have terminated:
+   * it is in progress until its continuation answers it.
+   */
+  readonly #longPollsInProgress = new Set<HeldLongPoll>();
 
   constructor(
     { botUpdates, updateActivity, scheduler, sessionLifetime, transactions }:
@@ -164,39 +172,40 @@ export class BotUpdatePollingService {
       waitEndingSignals.push(signal);
     }
     const longPollEnd = new AbortController();
-    const deadline = this.#scheduler.deadline(timeoutSeconds * 1_000, longPollEnd.signal);
-    const waitEnd = AbortSignal.any(waitEndingSignals);
-    // The wait is over as soon as an update it awaits is published, its deadline arrives, or a
-    // signal ends it, before the continuation that answers the poll runs.
-    heldLongPoll.isAwake = () =>
-      this.#botUpdates.getNextUpdateId(botId) > nextUpdateId || deadline.signal.aborted ||
-      waitEnd.aborted;
     try {
-      await this.#botUpdates.waitForUpdate(botId, {
-        awaitedUpdateId: nextUpdateId,
-        deadline,
-        signal: waitEnd,
-      });
-    } finally {
-      longPollEnd.abort();
-      if (this.#heldLongPollsByBotId.get(botId) === heldLongPoll) {
-        this.#heldLongPollsByBotId.delete(botId);
+      try {
+        await heldLongPoll.wait.waitOn((endWait) =>
+          this.#botUpdates.waitForUpdate(botId, {
+            awaitedUpdateId: nextUpdateId,
+            deadline: this.#scheduler.deadline(timeoutSeconds * 1_000, longPollEnd.signal),
+            signal: AbortSignal.any(waitEndingSignals),
+            onEnd: endWait,
+          })
+        );
+      } finally {
+        longPollEnd.abort();
+        if (this.#heldLongPollsByBotId.get(botId) === heldLongPoll) {
+          this.#heldLongPollsByBotId.delete(botId);
+        }
       }
-    }
 
-    // A poll that a conflict terminated but that is answered only after the session ended is
-    // answered as any other poll the end finds unanswered.
-    const answer = this.#transactions.execute((): GetUpdatesResult => {
-      const { terminationReason } = heldLongPoll;
-      if (terminationReason !== undefined) {
-        return { retrieved: false, reason: terminationReason };
-      }
-      return this.#deliverUpdates(
-        botId,
-        this.#confirmAndReadPendingUpdates(botId, firstUnconfirmedUpdateId, limit),
-      );
-    });
-    return answer.executed ? answer.result : { retrieved: false, reason: 'session_ended' };
+      // A poll that a conflict terminated but that is answered only after the session ended is
+      // answered as any other poll the end finds unanswered.
+      const answer = this.#transactions.execute((): GetUpdatesResult => {
+        const { terminationReason } = heldLongPoll;
+        if (terminationReason !== undefined) {
+          return { retrieved: false, reason: terminationReason };
+        }
+        return this.#deliverUpdates(
+          botId,
+          this.#confirmAndReadPendingUpdates(botId, firstUnconfirmedUpdateId, limit),
+        );
+      });
+      return answer.executed ? answer.result : { retrieved: false, reason: 'session_ended' };
+    } finally {
+      // The poll is in progress, awake once its wait is over, until it is answered.
+      this.#longPollsInProgress.delete(heldLongPoll);
+    }
   }
 
   /** Terminates the bot's held long poll, as setting a webhook does on Telegram. */
@@ -209,9 +218,9 @@ export class BotUpdatePollingService {
    * over and until the poll is answered.
    */
   listHeldLongPolls(): readonly { readonly botId: number; readonly isAwake: boolean }[] {
-    return [...this.#heldLongPollsByBotId].map(([botId, heldLongPoll]) => ({
+    return [...this.#longPollsInProgress].map(({ botId, wait }) => ({
       botId,
-      isAwake: heldLongPoll.isAwake(),
+      isAwake: wait.isAwake,
     }));
   }
 
@@ -236,8 +245,13 @@ export class BotUpdatePollingService {
   /** Terminates the bot's previously held long poll and makes the returned one current. */
   #holdLongPoll(botId: number): HeldLongPoll {
     this.#terminateHeldLongPoll(botId, 'terminated_by_other_long_poll');
-    const heldLongPoll: HeldLongPoll = { controller: new AbortController(), isAwake: () => false };
+    const heldLongPoll: HeldLongPoll = {
+      botId,
+      controller: new AbortController(),
+      wait: new WaitTracker(),
+    };
     this.#heldLongPollsByBotId.set(botId, heldLongPoll);
+    this.#longPollsInProgress.add(heldLongPoll);
     return heldLongPoll;
   }
 

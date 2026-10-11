@@ -196,6 +196,85 @@ Deno.test('a manual attempt the test expires is runnable until its delivery acts
   );
 });
 
+Deno.test('a manual attempt is runnable once its request or its response body fails, before the failure is recorded', async () => {
+  for (const failingStep of ['request', 'response body'] as const) {
+    const failure = Promise.withResolvers<never>();
+    let isBodyRequested = false;
+    using fixture = createWebhookFixture(() => {
+      if (failingStep === 'request') {
+        return failure.promise;
+      }
+      // The response's headers arrive; its body fails to.
+      const response = new Response(null, { status: 200 });
+      response.arrayBuffer = () => {
+        isBodyRequested = true;
+        return failure.promise;
+      };
+      return response;
+    });
+    const { session, bot, adaId, webhookAttempts } = fixture;
+    webhookAttempts.setScheduling(bot.id, 'manual');
+    fixture.sendAccountMessage(adaId);
+    fixture.setWebhook();
+    await fixture.waitForEntry({ kind: 'update_delivered' });
+    // The body is read once the headers' arrival is acted on.
+    if (failingStep === 'response body') {
+      await waitUntil(() => isBodyRequested && !session.webhookAttempts.isAttemptAwake(1));
+    }
+    const whileWaiting = fixture.readBlockers();
+
+    failure.reject(new Error('The connection failed'));
+    // The read runs as soon as a reader can learn of the failure, before the delivery records it.
+    await failure.promise.catch(() => {});
+    const onceFailed = session.settledness.readSettledness();
+    const failureRecorded = (await fixture.readEntries({ kind: 'webhook_attempt_failed' })).length;
+
+    assertEquals(
+      [failingStep, whileWaiting[0].runnable, onceFailed.settled, onceFailed.blockers[0]],
+      [failingStep, false, false, {
+        kind: 'webhook_attempt',
+        runnable: true,
+        botId: bot.id,
+        updateId: 1,
+        webhookAttemptId: 1,
+        scheduling: 'manual',
+      }],
+    );
+    assertEquals(failureRecorded, 0);
+    await fixture.waitForEntry({ kind: 'webhook_attempt_failed' });
+  }
+});
+
+Deno.test('deleting a webhook leaves its stopped attempt runnable until its delivery cancels it', async () => {
+  using fixture = createWebhookFixture(respondOnlyByAborting);
+  const { session, bot, adaId, webhookAttempts } = fixture;
+  webhookAttempts.setScheduling(bot.id, 'manual');
+  fixture.sendAccountMessage(adaId);
+  fixture.setWebhook();
+  await fixture.waitForEntry({ kind: 'update_delivered' });
+
+  // The bot polls from now on, but its attempt in flight is stopped, not yet cancelled.
+  session.botApi.deleteWebhook(bot, { dropPendingUpdates: false });
+  const atDeletion = session.settledness.readSettledness();
+  await waitUntil(() => session.settledness.readSettledness().settled);
+
+  assertEquals(
+    [atDeletion.settled, atDeletion.blockers, fixture.readBlockers()],
+    [
+      false,
+      [{
+        kind: 'webhook_attempt',
+        runnable: true,
+        botId: bot.id,
+        updateId: 1,
+        webhookAttemptId: 1,
+        scheduling: 'manual',
+      }],
+      [{ kind: 'undelivered_update', runnable: false, botId: bot.id, updateId: 1 }],
+    ],
+  );
+});
+
 Deno.test('a held long poll is runnable as soon as an update it awaits is published', async () => {
   using fixture = createBotApiCommandSession('session-settledness-woken-poll');
   const { session } = fixture;

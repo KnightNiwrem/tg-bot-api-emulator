@@ -45,6 +45,8 @@ interface WaitForUpdateInput {
   /** Omitted to wait without a time limit. */
   readonly deadline?: Deadline;
   readonly signal?: AbortSignal;
+  /** As `NotificationWaitInput.onEnd` describes it. */
+  readonly onEnd?: () => void;
 }
 
 interface BotUpdateMailbox {
@@ -240,11 +242,12 @@ export class BotUpdateRepository {
    */
   waitForUpdate(
     botId: number,
-    { awaitedUpdateId, deadline, signal }: WaitForUpdateInput,
+    { awaitedUpdateId, deadline, signal, onEnd }: WaitForUpdateInput,
   ): Promise<NotificationWaitEnd> {
     return waitForNotification({
       subscribe: (notify) => this.#subscribeToEnqueues(botId, notify),
       hasChanged: () => this.getNextUpdateId(botId) > awaitedUpdateId,
+      onEnd,
       deadline,
       signal,
     });

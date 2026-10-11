@@ -63,8 +63,8 @@ const settlednessBlockerSchema = z.discriminatedUnion('kind', [
    * An update sent to the bot's webhook, waiting for the webhook's complete response. Under
    * `automatic` scheduling the attempt's deadline fails it by itself `timeout_seconds` after it
    * began, so it is runnable. Under `manual` scheduling only the test expires it, so it is not,
-   * until its complete response or its expiry arrives, or its delivery stops, which leave the
-   * delivery to act by itself; `timeout_seconds` is omitted.
+   * until the step its delivery waits on settles, however it settles, which leaves the
+   * delivery to act by itself; `timeout_seconds` is omitted. A stopped attempt stays until then.
    */
   z.strictObject({
     kind: z.literal('webhook_attempt'),

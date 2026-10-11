@@ -59,8 +59,8 @@ export type SettlednessBlocker =
    * An update sent to the bot's webhook, waiting for the webhook's complete response. Under
    * automatic scheduling the attempt's deadline fails it by itself once `timeoutSeconds` pass after
    * it began, and schedules its retry, so it is runnable. Under manual scheduling only the test
-   * expires it, so it waits passively until it is awake: once its complete response or its expiry
-   * arrived, or its delivery stopped, the delivery acts on it by itself, so it is runnable.
+   * expires it, so it waits passively until it is awake: once the step its delivery waits on
+   * settles, however it settles, the delivery acts on it by itself, so it is runnable.
    */
   | WebhookAttemptIdentity
     & (
@@ -237,11 +237,8 @@ export class SessionSettlednessService {
         pendingUpdateCount: pendingUpdates.length,
         drained: pendingUpdates.length === 0,
       });
-      const registration = this.#webhooks.get(botId);
       blockers.push(
-        ...(registration === undefined
-          ? this.#findPollingUpdateBlockers(botId, pendingUpdates)
-          : this.#findWebhookUpdateBlockers(botId, registration.webhook, pendingUpdates)),
+        ...this.#findUpdateBlockers(botId, this.#webhooks.get(botId)?.webhook, pendingUpdates),
       );
     }
     return {
@@ -315,12 +312,15 @@ export class SessionSettlednessService {
   }
 
   /**
-   * A webhook bot's pending updates, each as its latest attempt stands: in flight, waiting for its
-   * retry, or due to be sent, unless its queue or the webhook's connections are taken.
+   * A bot's pending updates. One whose latest webhook attempt is in flight, or waits for its retry,
+   * stands as that attempt does, whether or not the bot still has the webhook: a replaced or
+   * deleted webhook stops the attempt, which stays in flight, and awake, until its delivery cancels
+   * it. With a webhook, every other update is due to be sent, unless its queue or the webhook's
+   * connections are taken; without one, it waits for the bot to poll.
    */
-  #findWebhookUpdateBlockers(
+  #findUpdateBlockers(
     botId: number,
-    webhook: BotWebhook,
+    webhook: BotWebhook | undefined,
     pendingUpdates: readonly BotApiUpdate[],
   ): SettlednessBlocker[] {
     const listing = this.#webhookAttempts.listAttempts(botId);
@@ -372,6 +372,9 @@ export class SessionSettlednessService {
       } else {
         dueUpdates.push(update);
       }
+    }
+    if (webhook === undefined) {
+      return [...blockers, ...this.#findPollingUpdateBlockers(botId, dueUpdates)];
     }
     for (const update of dueUpdates) {
       const queueKey = getWebhookUpdateQueueKey(update);
