@@ -11,6 +11,7 @@ import type { z } from 'zod';
 
 import { isMediaRange } from '../../http_grammar/media_type.ts';
 import { actionReceiptHeadersSchema, type ActionReceiptSource } from './action_receipts.ts';
+import type { ReadonlySnapshot } from './readonly_snapshot.ts';
 
 export type ControlHttpMethod = 'DELETE' | 'GET' | 'PATCH' | 'POST' | 'PUT';
 
@@ -186,6 +187,8 @@ export function readPathPlaceholders(pathTemplate: string): string[] {
 /**
  * What a client sends for an operation, in input semantics: a field the server defaults is
  * optional. A part the operation does not read is absent, and an optional body may be left out.
+ * The body is readonly all the way down, as a client only serializes it, so that a caller sends
+ * its own values as they are rather than copies.
  */
 export type ControlOperationRequest<Contract extends ControlOperationContract> =
   & (Contract['params'] extends z.ZodObject ? { readonly params: z.input<Contract['params']> }
@@ -194,8 +197,8 @@ export type ControlOperationRequest<Contract extends ControlOperationContract> =
     : { readonly query?: never })
   & (Contract['body'] extends RequestBodyContract
     ? Contract['body']['required'] extends true
-      ? { readonly body: z.input<Contract['body']['schema']> }
-    : { readonly body?: z.input<Contract['body']['schema']> }
+      ? { readonly body: ReadonlySnapshot<z.input<Contract['body']['schema']>> }
+    : { readonly body?: ReadonlySnapshot<z.input<Contract['body']['schema']>> }
     : { readonly body?: never });
 
 /**

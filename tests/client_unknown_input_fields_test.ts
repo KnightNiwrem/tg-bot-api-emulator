@@ -7,7 +7,11 @@
  */
 import { assertEquals, assertRejects } from '@std/assert';
 
-import { EmulationControlError, type PrivateMessageTarget } from '../clients/typescript/mod.ts';
+import {
+  type AccountPollInput,
+  EmulationControlError,
+  type PrivateMessageTarget,
+} from '../clients/typescript/mod.ts';
 import { createTestInProcessEmulator } from './support/emulation_api.ts';
 import { gifImage } from './support/media_samples.ts';
 
@@ -107,6 +111,14 @@ Deno.test('An account action refuses a field it does not take, whatever its faç
   );
   await assertRefusedAsInvalid(
     () =>
+      account.sendMediaGroup({
+        to: chat,
+        media: [withUnknownField({ photo: gifImage(1, 1) }), { photo: gifImage(2, 2) }],
+      }),
+    'an album item with an unknown field',
+  );
+  await assertRefusedAsInvalid(
+    () =>
       account.answerPoll(withUnknownField({
         chat,
         message_id: poll.message_id,
@@ -119,5 +131,47 @@ Deno.test('An account action refuses a field it does not take, whatever its faç
     await account.getMessages({ chat }),
     historyBefore,
     'Expected no refused action to change the chat',
+  );
+});
+
+Deno.test('An account action sends a value its input leaves out as left out', async () => {
+  await using fixture = await createAccountFixture();
+  const { account, chat } = fixture;
+  const quizWithoutCorrectOptions = {
+    question: 'Capital of France?',
+    options: [{ text: 'Paris' }, { text: 'Lyon' }],
+    type: 'quiz',
+  } as unknown as AccountPollInput;
+
+  const quizRefusal = await assertRejects(
+    () => account.sendPoll({ to: chat, poll: quizWithoutCorrectOptions }),
+    EmulationControlError,
+  );
+  const pressRefusal = await assertRejects(
+    () => account.pressReplyKeyboardButton({ chat, text: 'Quiz', poll: quizWithoutCorrectOptions }),
+    EmulationControlError,
+  );
+  const { result: album } = await account.sendMediaGroup({
+    to: chat,
+    media: [{ photo: gifImage(1, 1), caption: 'One' }, { photo: gifImage(2, 2) }],
+  });
+
+  assertEquals(
+    quizRefusal.body.reason,
+    'quiz_correct_options_missing',
+    'Expected a quiz without correct options refused by the emulator',
+  );
+  assertEquals(
+    pressRefusal.status,
+    400,
+    'Expected a press with such a quiz answered by the emulator, not refused by the client',
+  );
+  assertEquals(
+    album.map(({ caption, caption_entities }) => ({ caption, caption_entities })),
+    [{ caption: 'One', caption_entities: undefined }, {
+      caption: undefined,
+      caption_entities: undefined,
+    }],
+    'Expected an album whose media leave out their entities sent without them',
   );
 });

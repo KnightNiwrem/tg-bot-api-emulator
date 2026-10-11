@@ -144,7 +144,6 @@ import type {
   AccountPinMessageInput,
   AccountPinnedMessagesInput,
   AccountPollAnswer,
-  AccountPollInput,
   AccountPollMessageInput,
   AccountReactionMessageInput,
   AccountReplyInterfaceInput,
@@ -195,7 +194,6 @@ import type {
   LiftChatMemberRestrictionInput,
   MenuButton,
   MessageDraft,
-  MessageEntityInput,
   MessageIn,
   MessageReactions,
   MessageTarget,
@@ -707,53 +705,46 @@ function createVirtualAccountClient(
     sendMessage<Target extends MessageTarget>(
       input: AccountSendMessageInput<Target>,
     ): Promise<ActionOutcome<MessageIn<Target>>> {
-      return sendMessageTo(input.to, { ...input, entities: copyEntities(input.entities) });
+      return sendMessageTo(input.to, input);
     },
     sendPhoto<Target extends MessageTarget>(
-      { photo, caption_entities, ...message }: AccountSendPhotoInput<Target>,
+      { photo, ...message }: AccountSendPhotoInput<Target>,
     ): Promise<ActionOutcome<MessageIn<Target>>> {
       return sendMessageTo(message.to, {
         ...message,
-        photo: { content_base64: photo.toBase64() },
-        caption_entities: copyEntities(caption_entities),
+        photo: { content_base64: toBase64Content(photo) },
       });
     },
     sendDocument<Target extends MessageTarget>(
-      { document, file_name, caption_entities, ...message }: AccountSendDocumentInput<Target>,
+      { document, file_name, ...message }: AccountSendDocumentInput<Target>,
     ): Promise<ActionOutcome<MessageIn<Target>>> {
       return sendMessageTo(message.to, {
         ...message,
-        document: { content_base64: document.toBase64(), file_name },
-        caption_entities: copyEntities(caption_entities),
+        document: { content_base64: toBase64Content(document), file_name },
       });
     },
     sendVideo<Target extends MessageTarget>(
-      { video, file_name, duration, width, height, caption_entities, ...message }:
-        AccountSendVideoInput<Target>,
+      { video, file_name, duration, width, height, ...message }: AccountSendVideoInput<Target>,
     ): Promise<ActionOutcome<MessageIn<Target>>> {
       return sendMessageTo(message.to, {
         ...message,
         video: toAccountVideoUpload({ video, file_name, duration, width, height }),
-        caption_entities: copyEntities(caption_entities),
       });
     },
     sendVoice<Target extends MessageTarget>(
-      { voice, duration, caption_entities, ...message }: AccountSendVoiceInput<Target>,
+      { voice, duration, ...message }: AccountSendVoiceInput<Target>,
     ): Promise<ActionOutcome<MessageIn<Target>>> {
       return sendMessageTo(message.to, {
         ...message,
-        voice: { content_base64: voice.toBase64(), duration },
-        caption_entities: copyEntities(caption_entities),
+        voice: { content_base64: toBase64Content(voice), duration },
       });
     },
     sendAudio<Target extends MessageTarget>(
-      { audio, file_name, duration, performer, title, caption_entities, ...message }:
-        AccountSendAudioInput<Target>,
+      { audio, file_name, duration, performer, title, ...message }: AccountSendAudioInput<Target>,
     ): Promise<ActionOutcome<MessageIn<Target>>> {
       return sendMessageTo(message.to, {
         ...message,
         audio: toAccountAudioUpload({ audio, file_name, duration, performer, title }),
-        caption_entities: copyEntities(caption_entities),
       });
     },
     sendContact<Target extends MessageTarget>(
@@ -774,7 +765,7 @@ function createVirtualAccountClient(
     sendPoll<Target extends MessageTarget>(
       input: AccountSendPollInput<Target>,
     ): Promise<ActionOutcome<MessageIn<Target>>> {
-      return sendMessageTo(input.to, { ...input, poll: toAccountPollBody(input.poll) });
+      return sendMessageTo(input.to, input);
     },
     async sendMediaGroup<Target extends MessageTarget>(
       { media, ...album }: AccountSendMediaGroupInput<Target>,
@@ -784,11 +775,7 @@ function createVirtualAccountClient(
         params: accountParams,
         body: {
           ...album,
-          media: media.map((item) => ({
-            ...toAccountMediaGroupFile(item),
-            caption: item.caption,
-            caption_entities: copyEntities(item.caption_entities),
-          })),
+          media: toAccountMediaGroupBody(media),
         },
       };
       const sending = await callJsonAction(transport, sendAccountMediaGroupContract, request);
@@ -804,20 +791,14 @@ function createVirtualAccountClient(
       return sendMessageTo(message.to, { ...message, forward: { chat: from, message_id } });
     },
     editMessage<Target extends MessageTarget>(
-      { chat, message_id, entities, ...edit }: AccountEditMessageInput<Target>,
+      { chat, message_id, ...edit }: AccountEditMessageInput<Target>,
     ): Promise<ActionOutcome<MessageIn<Target>>> {
-      return chatMessageOperationsFor(chat).editMessage(message_id, {
-        ...edit,
-        entities: copyEntities(entities),
-      });
+      return chatMessageOperationsFor(chat).editMessage(message_id, edit);
     },
     editMessageCaption<Target extends MessageTarget>(
-      { chat, message_id, caption_entities, ...edit }: AccountEditMessageCaptionInput<Target>,
+      { chat, message_id, ...edit }: AccountEditMessageCaptionInput<Target>,
     ): Promise<ActionOutcome<MessageIn<Target>>> {
-      return chatMessageOperationsFor(chat).editMessage(message_id, {
-        ...edit,
-        caption_entities: copyEntities(caption_entities),
-      });
+      return chatMessageOperationsFor(chat).editMessage(message_id, edit);
     },
     deleteMessage(
       { chat, message_id: messageId }: AccountDeleteMessageInput,
@@ -1088,12 +1069,9 @@ function createVirtualAccountClient(
       return response.callback_query;
     },
     answerPoll<Target extends MessageTarget>(
-      { chat, message_id, option_ids, ...answer }: AnswerPollInput<Target>,
+      { chat, message_id, ...answer }: AnswerPollInput<Target>,
     ): Promise<ActionOutcome<AccountPollAnswer<Target>>> {
-      return chatMessageOperationsFor(chat).answerPoll(message_id, {
-        ...answer,
-        option_ids: [...option_ids],
-      });
+      return chatMessageOperationsFor(chat).answerPoll(message_id, answer);
     },
     getPollAnswer<Target extends MessageTarget>(
       input: AccountPollMessageInput<Target>,
@@ -1117,11 +1095,11 @@ function createVirtualAccountClient(
       return chatMessageOperationsFor(input.chat).stopPoll(input.message_id);
     },
     setMessageReaction(
-      { chat, message_id: messageId, reaction, ...choice }: SetMessageReactionInput,
+      { chat, message_id: messageId, ...choice }: SetMessageReactionInput,
     ): Promise<ActionOutcome<MessageReactions>> {
       return callJsonAction(transport, setSupergroupAccountMessageReactionContract, {
         params: { ...supergroupParams(chat), messageId },
-        body: { ...choice, reaction: [...reaction] },
+        body: choice,
       });
     },
     getMessageReactions(
@@ -1191,48 +1169,18 @@ function createVirtualAccountClient(
       return response.reply_interface;
     },
     async pressReplyKeyboardButton<Target extends MessageTarget>(
-      { chat, shared_user_ids, poll, ...answer }: PressReplyKeyboardButtonInput<Target>,
+      input: PressReplyKeyboardButtonInput<Target>,
     ): Promise<ActionOutcome<MessageIn<Target>>> {
-      const request = {
-        params: accountParams,
-        body: {
-          chat,
-          ...answer,
-          ...(shared_user_ids === undefined ? {} : { shared_user_ids: [...shared_user_ids] }),
-          ...(poll === undefined ? {} : { poll: toAccountPollBody(poll) }),
-        },
-      };
+      const request = { params: accountParams, body: input };
       const press = await callJsonAction(transport, pressReplyKeyboardButtonContract, request);
       const call = describeOperationCall(transport, pressReplyKeyboardButtonContract, request);
-      return selectResult(press, ({ message }) => messageInChat(chat, message, call));
+      return selectResult(press, ({ message }) => messageInChat(input.chat, message, call));
     },
   });
 }
 
 /** The body of a message an account sends. */
 type SendAccountMessageBody = ControlOperationRequest<typeof sendAccountMessageContract>['body'];
-
-/**
- * A poll an account creates, as a request body takes it: with lists of its own, and every field
- * the input gives, which the emulator checks.
- */
-function toAccountPollBody(poll: AccountPollInput) {
-  const lists = {
-    question_entities: copyEntities(poll.question_entities),
-    options: poll.options.map((option) => ({
-      ...option,
-      text_entities: copyEntities(option.text_entities),
-    })),
-  };
-  return poll.type === 'quiz'
-    ? {
-      ...poll,
-      ...lists,
-      correct_option_ids: [...poll.correct_option_ids],
-      explanation_entities: copyEntities(poll.explanation_entities),
-    }
-    : { ...poll, ...lists };
-}
 
 /** The body of an account's answer to a poll: the options it chooses. */
 type AnswerPollBody = ControlOperationRequest<typeof answerAccountPollContract>['body'];
@@ -1259,13 +1207,6 @@ interface ChatMessageOperations<Target extends MessageTarget> {
   stopPoll(messageId: number): Promise<ActionOutcome<MessageIn<Target>>>;
 }
 
-/** Entities as a request body takes them: a list of its own, or none. */
-function copyEntities(
-  entities: readonly MessageEntityInput[] | undefined,
-): MessageEntityInput[] | undefined {
-  return entities === undefined ? undefined : [...entities];
-}
-
 /** An action's outcome with its result replaced by what `select` takes from it. */
 function selectResult<Body, Result>(
   { result, receipt }: ActionOutcome<Body>,
@@ -1281,7 +1222,7 @@ function toAccountVideoUpload(
     'video' | 'file_name' | 'duration' | 'width' | 'height'
   >,
 ) {
-  return { content_base64: video.toBase64(), file_name, duration, width, height };
+  return { content_base64: toBase64Content(video), file_name, duration, width, height };
 }
 
 /** An audio file an account uploads, as the emulation API reads it. */
@@ -1291,16 +1232,62 @@ function toAccountAudioUpload(
     'audio' | 'file_name' | 'duration' | 'performer' | 'title'
   >,
 ) {
-  return { content_base64: audio.toBase64(), file_name, duration, performer, title };
+  return { content_base64: toBase64Content(audio), file_name, duration, performer, title };
+}
+
+/**
+ * Bytes an account uploads, as the base64 text the emulation API reads. Any other value, which
+ * only an input its type does not describe can give, is sent as it is, for the emulator to refuse.
+ */
+function toBase64Content(content: Uint8Array): string {
+  return content instanceof Uint8Array ? content.toBase64() : content;
+}
+
+/**
+ * The photos, videos, documents, or audio files of an album, as the emulation API reads them, each
+ * with every field its input gives. A value that is no list, or an item that is no object, is sent
+ * as it is, for the emulator to refuse.
+ */
+function toAccountMediaGroupBody(media: readonly AccountMediaGroupItem[]) {
+  if (!isList(media)) {
+    return media;
+  }
+  return media.map((item) => {
+    if (typeof item !== 'object' || item === null) {
+      return item;
+    }
+    // The upload's own fields go into the upload the item names; its others stay the item's.
+    const {
+      photo: _photo,
+      document: _document,
+      video: _video,
+      audio: _audio,
+      file_name: _fileName,
+      duration: _duration,
+      width: _width,
+      height: _height,
+      performer: _performer,
+      title: _title,
+      ...fields
+    } = item;
+    return { ...fields, ...toAccountMediaGroupFile(item) };
+  });
+}
+
+/** Whether a value is a list, readonly or not. */
+function isList(value: unknown): value is readonly unknown[] {
+  return Array.isArray(value);
 }
 
 /** The file of an album's photo, document, video, or audio file, as the emulation API reads it. */
 function toAccountMediaGroupFile(item: AccountMediaGroupItem) {
   if (item.photo !== undefined) {
-    return { photo: { content_base64: item.photo.toBase64() } };
+    return { photo: { content_base64: toBase64Content(item.photo) } };
   }
   if (item.document !== undefined) {
-    return { document: { content_base64: item.document.toBase64(), file_name: item.file_name } };
+    return {
+      document: { content_base64: toBase64Content(item.document), file_name: item.file_name },
+    };
   }
   if (item.audio !== undefined) {
     return { audio: toAccountAudioUpload(item) };
