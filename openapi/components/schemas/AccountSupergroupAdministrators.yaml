@@ -15,7 +15,7 @@ properties:
           - status
         properties:
           user_id:
-            type: integer
+            $ref: ./TelegramUserId.yaml
           status:
             type: string
             const: owner
@@ -32,7 +32,7 @@ properties:
         - can_be_edited
       properties:
         user_id:
-          type: integer
+          $ref: ./TelegramUserId.yaml
         status:
           type: string
           const: administrator
@@ -87,7 +87,7 @@ properties:
         custom_title:
           $ref: ./CustomTitle.yaml
         promoted_by_user_id:
-          type: integer
+          $ref: ./TelegramUserId.yaml
           description: >-
             The owner or administrator that last set the administrator's rights, as Telegram
             records it in `promoted_by`, even once that promoter's tenure has ended.

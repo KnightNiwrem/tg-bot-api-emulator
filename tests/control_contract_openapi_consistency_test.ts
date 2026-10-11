@@ -16,6 +16,20 @@ import {
 } from '../control_contracts/operation_contract.ts';
 import { createSessionContract, deleteSessionContract } from '../control_contracts/sessions.ts';
 import {
+  changeSupergroupDescriptionContract,
+  changeSupergroupTitleContract,
+  demoteSupergroupMemberContract,
+  expireSupergroupMemberRestrictionContract,
+  getSupergroupAdministratorsContract,
+  liftSupergroupMemberRestrictionContract,
+  promoteSupergroupMemberContract,
+  protectSupergroupContentContract,
+  restrictSupergroupMemberContract,
+  setSupergroupCustomTitleContract,
+  setSupergroupDefaultPermissionsContract,
+  unprotectSupergroupContentContract,
+} from '../control_contracts/supergroup_administration.ts';
+import {
   addSupergroupMemberContract,
   createSupergroupContract,
   decideSupergroupJoinRequestContract,
@@ -52,6 +66,18 @@ const CONTROL_OPERATION_CONTRACTS: readonly ControlOperationContract[] = [
   expireChatInviteLinkContract,
   expireJoinRequesterContactContract,
   downloadFileContract,
+  getSupergroupAdministratorsContract,
+  promoteSupergroupMemberContract,
+  demoteSupergroupMemberContract,
+  setSupergroupCustomTitleContract,
+  restrictSupergroupMemberContract,
+  liftSupergroupMemberRestrictionContract,
+  setSupergroupDefaultPermissionsContract,
+  protectSupergroupContentContract,
+  unprotectSupergroupContentContract,
+  changeSupergroupTitleContract,
+  changeSupergroupDescriptionContract,
+  expireSupergroupMemberRestrictionContract,
 ];
 
 const document = readOpenApiDocument();

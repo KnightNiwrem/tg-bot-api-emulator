@@ -16,7 +16,6 @@ export const SUPERGROUP_CONVERSATION_PATH =
 export const SUPERGROUP_MESSAGE_HISTORY_PATH = `${SUPERGROUP_CONVERSATION_PATH}/messages` as const;
 export const SUPERGROUP_MESSAGE_PATH =
   `${SUPERGROUP_MESSAGE_HISTORY_PATH}/:${MESSAGE_ID_PARAMETER}` as const;
-export const USER_ID_PARAMETER = 'userId';
 
 const telegramUserIdPathParameterSchema = z.coerce.number().pipe(telegramUserIdSchema);
 const supergroupChatIdPathParameterSchema = z.coerce.number().pipe(supergroupChatIdSchema);
@@ -42,10 +41,6 @@ export const supergroupConversationPathSchema = accountPathSchema.extend({
 /** The path parameters of a supergroup message as an account addresses it. */
 export const supergroupMessagePathSchema = supergroupConversationPathSchema.extend({
   [MESSAGE_ID_PARAMETER]: messageIdPathParameterSchema,
-});
-/** The path parameters of a supergroup member as an account addresses it. */
-export const supergroupMemberPathSchema = supergroupConversationPathSchema.extend({
-  [USER_ID_PARAMETER]: telegramUserIdPathParameterSchema,
 });
 /** The path parameters of a bot in a supergroup as an account addresses it. */
 export const supergroupBotPathSchema = supergroupConversationPathSchema.extend({

@@ -12,6 +12,11 @@ import type {
 } from '../../control_contracts/bot_activity.ts';
 import type { botProfileSchema, createBotContract } from '../../control_contracts/bots.ts';
 import type {
+  CHAT_PERMISSIONS,
+  getSupergroupAdministratorsContract,
+  SUPERGROUP_ADMINISTRATOR_RIGHTS,
+} from '../../control_contracts/supergroup_administration.ts';
+import type {
   CONTROL_REQUEST_ISSUE_CODES,
   CONTROL_REQUEST_ISSUE_SOURCES,
 } from '../../control_contracts/control_errors.ts';
@@ -567,21 +572,7 @@ export interface ExpireChatInviteLinkInput {
  * A supergroup administrator right, by the Bot API's name. Any right includes `can_manage_chat`,
  * as on Telegram.
  */
-export type SupergroupAdministratorRight =
-  | 'can_manage_chat'
-  | 'can_change_info'
-  | 'can_delete_messages'
-  | 'can_invite_users'
-  | 'can_restrict_members'
-  | 'can_pin_messages'
-  | 'can_manage_topics'
-  | 'can_promote_members'
-  | 'can_manage_video_chats'
-  | 'can_post_stories'
-  | 'can_edit_stories'
-  | 'can_delete_stories'
-  | 'can_manage_tags'
-  | 'can_send_welcome_messages';
+export type SupergroupAdministratorRight = typeof SUPERGROUP_ADMINISTRATOR_RIGHTS[number];
 
 export interface PromoteChatMemberInput {
   readonly chat: SupergroupMessageTarget;
@@ -596,31 +587,9 @@ export interface AccountChatAdministratorsInput {
 }
 
 /** The owner or an administrator of a supergroup, as a member account inspects it. */
-export type SupergroupAdministrator =
-  | {
-    readonly user_id: number;
-    readonly status: 'owner';
-    readonly custom_title?: string;
-  }
-  | {
-    readonly user_id: number;
-    readonly status: 'administrator';
-    /** Every supergroup right, held or not. */
-    readonly rights: Readonly<Record<SupergroupAdministratorRight, boolean>>;
-    readonly custom_title?: string;
-    /**
-     * The owner or administrator that last set the administrator's rights, even once that
-     * promoter's tenure has ended.
-     */
-    readonly promoted_by_user_id: number;
-    /**
-     * Whether this account may change the administrator's rights or demote it: it owns the
-     * supergroup, or it holds `can_promote_members` and promoted the administrator, directly or
-     * through administrators it promoted, during administrator tenures that still last. No
-     * account may edit itself.
-     */
-    readonly can_be_edited: boolean;
-  };
+export type SupergroupAdministrator = ReadonlySnapshot<
+  ControlOperationResult<typeof getSupergroupAdministratorsContract>['administrators'][number]
+>;
 
 export interface DemoteChatMemberInput {
   readonly chat: SupergroupMessageTarget;
@@ -632,23 +601,7 @@ export interface DemoteChatMemberInput {
  * A permission a supergroup grants its members, by the Bot API's `ChatPermissions` name.
  * `can_send_media_messages`, which the Bot API derives from the media permissions, is none.
  */
-export type ChatPermission =
-  | 'can_send_messages'
-  | 'can_send_audios'
-  | 'can_send_documents'
-  | 'can_send_photos'
-  | 'can_send_videos'
-  | 'can_send_video_notes'
-  | 'can_send_voice_notes'
-  | 'can_send_polls'
-  | 'can_send_other_messages'
-  | 'can_add_web_page_previews'
-  | 'can_react_to_messages'
-  | 'can_edit_tag'
-  | 'can_change_info'
-  | 'can_invite_users'
-  | 'can_pin_messages'
-  | 'can_manage_topics';
+export type ChatPermission = typeof CHAT_PERMISSIONS[number];
 
 export interface RestrictChatMemberInput {
   readonly chat: SupergroupMessageTarget;

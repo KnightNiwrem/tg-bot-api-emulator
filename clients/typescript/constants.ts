@@ -4,9 +4,6 @@
  */
 import type { BotActivityKind } from './types.ts';
 
-/** The most characters, counted by code point, of a supergroup member's custom title. */
-export const MAX_CUSTOM_TITLE_LENGTH = 16;
-
 export const MIN_TELEGRAM_USER_ID = 1;
 export const MAX_TELEGRAM_USER_ID = 0xff_ffff_ffff;
 
