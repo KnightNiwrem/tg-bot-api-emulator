@@ -6,9 +6,10 @@ import { presentFixedBotApiError } from '../errors/error_template.ts';
 import { presentMessageReactionFailure } from '../errors/message_reaction_failure_presenter.ts';
 import { messageIdOrNone } from '../message_identifiers.ts';
 import {
+  answeredPreparation,
+  type BotApiCallPreparation,
   botApiError,
   type BotApiMethod,
-  type BotApiMethodAnswer,
   type BotApiMethodContext,
   botApiResult,
 } from '../method_call.ts';
@@ -19,9 +20,12 @@ import {
   integerParameter,
 } from '../request_parameters.ts';
 
-/** The methods that set the bot's reactions to a message. */
+/**
+ * The methods that set the bot's reactions to a message, each executed as a command in its call's
+ * transaction.
+ */
 export const MESSAGE_REACTION_METHODS: readonly BotApiMethod[] = [
-  { name: 'setMessageReaction', recordsActivity: true, handler: handleSetMessageReaction },
+  { name: 'setMessageReaction', recordsActivity: true, prepare: prepareSetMessageReaction },
 ];
 
 /** The emulator's description for setMessageReaction parameters it cannot read. */
@@ -40,15 +44,18 @@ const setMessageReactionParametersSchema = z.strictObject({
  * Sets the bot's reactions to a supergroup message, checking in the official server's order: the
  * `reaction` parameter is read first, then the chat and the message, as `check_message` finds them,
  * and Telegram's servers check the reactions last. A custom emoji is refused right after reading,
- * since no emulated chat allows one.
+ * since no emulated chat allows one. Preparing it reads the parameters; finding the chat and the
+ * message, and checking the reactions, wait for the call's execution.
  */
-function handleSetMessageReaction(
+function prepareSetMessageReaction(
   context: BotApiMethodContext,
   parameters: BotApiRequestParameters,
-): BotApiMethodAnswer {
+): BotApiCallPreparation {
   const parsedParameters = setMessageReactionParametersSchema.safeParse(parameters);
   if (!parsedParameters.success) {
-    return botApiError(400, SET_MESSAGE_REACTION_PARAMETERS_INVALID_DESCRIPTION);
+    return answeredPreparation(
+      botApiError(400, SET_MESSAGE_REACTION_PARAMETERS_INVALID_DESCRIPTION),
+    );
   }
   const { chat_id: chatId, message_id: messageId, reaction } = parsedParameters.data;
   const reactionTypes = readReactionTypesParameter(
@@ -56,19 +63,25 @@ function handleSetMessageReaction(
     SET_MESSAGE_REACTION_PARAMETERS_INVALID_DESCRIPTION,
   );
   if (!reactionTypes.read) {
-    return botApiError(400, reactionTypes.description);
+    return answeredPreparation(botApiError(400, reactionTypes.description));
   }
   if (reactionTypes.hasCustomEmoji) {
-    return presentFixedBotApiError(BOT_API_ERRORS.reactionInvalid);
+    return answeredPreparation(presentFixedBotApiError(BOT_API_ERRORS.reactionInvalid));
   }
   if (chatId === undefined) {
-    return botApiError(400, CHAT_ID_EMPTY_DESCRIPTION);
+    return answeredPreparation(botApiError(400, CHAT_ID_EMPTY_DESCRIPTION));
   }
 
-  const result = context.session.botApi.setMessageReaction(context.bot, {
-    chatId,
-    messageId: messageIdOrNone(messageId),
-    emojis: reactionTypes.emojis,
-  });
-  return result.set ? botApiResult(true) : presentMessageReactionFailure(result);
+  const { emojis } = reactionTypes;
+  return {
+    kind: 'command',
+    execute: () => {
+      const result = context.session.botApi.setMessageReaction(context.bot, {
+        chatId,
+        messageId: messageIdOrNone(messageId),
+        emojis,
+      });
+      return result.set ? botApiResult(true) : presentMessageReactionFailure(result);
+    },
+  };
 }

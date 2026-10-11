@@ -652,7 +652,7 @@ function createBotApiFixture() {
       sharedChats,
       supergroupMessages: supergroupMessaging,
       messages,
-      events,
+      transactions: { ...events, withinTransaction: (command) => command() },
       currentUnixTimeSeconds: () => 1_700_000_000,
     }),
     botMedia: new BotMediaResolver({ mediaFiles }),

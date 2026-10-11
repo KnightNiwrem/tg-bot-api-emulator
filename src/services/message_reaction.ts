@@ -134,8 +134,10 @@ interface SupergroupMessageReactionStore {
   ): SupergroupMessage;
 }
 
-/** Takes each event into the transaction of the command that caused it. */
-interface ChatDomainEventSink {
+/** The session's transactions: each choice of reactions runs in one, and emits its event into it. */
+interface MessageReactionTransactions {
+  /** Runs a command in the transaction of the command executing, or in one of its own. */
+  withinTransaction<Result>(command: () => Result): Result;
   emit(event: ChatDomainEvent): void;
 }
 
@@ -145,7 +147,8 @@ interface MessageReactionServiceDependencies {
   readonly sharedChats: SupergroupMembershipLookup;
   readonly supergroupMessages: SupergroupMessageLookup;
   readonly messages: SupergroupMessageReactionStore;
-  readonly events: ChatDomainEventSink;
+  /** Runs each choice of reactions as one transaction, which receives the choice's event. */
+  readonly transactions: MessageReactionTransactions;
   readonly currentUnixTimeSeconds: () => number;
 }
 
@@ -179,6 +182,11 @@ type ReactionChoiceResult =
  * supergroup's administrator bots to observe; a bot's reactions are stored for inspection but
  * published to no one, as the Bot API documents that `message_reaction` updates are not received
  * for reactions set by bots. A choice that changes nothing publishes nothing.
+ *
+ * Each choice runs as one transaction: the reactions it stores and the updates its event becomes
+ * are published together, or, should any step fail, not at all. Every condition a choice depends
+ * on is checked in that transaction, so a choice prepared earlier is never committed against
+ * changed state.
  */
 export class MessageReactionService {
   readonly #accounts: AccountLookup;
@@ -186,7 +194,7 @@ export class MessageReactionService {
   readonly #sharedChats: SupergroupMembershipLookup;
   readonly #supergroupMessages: SupergroupMessageLookup;
   readonly #messages: SupergroupMessageReactionStore;
-  readonly #events: ChatDomainEventSink;
+  readonly #transactions: MessageReactionTransactions;
   readonly #currentUnixTimeSeconds: () => number;
 
   constructor(
@@ -196,7 +204,7 @@ export class MessageReactionService {
       sharedChats,
       supergroupMessages,
       messages,
-      events,
+      transactions,
       currentUnixTimeSeconds,
     }: MessageReactionServiceDependencies,
   ) {
@@ -205,7 +213,7 @@ export class MessageReactionService {
     this.#sharedChats = sharedChats;
     this.#supergroupMessages = supergroupMessages;
     this.#messages = messages;
-    this.#events = events;
+    this.#transactions = transactions;
     this.#currentUnixTimeSeconds = currentUnixTimeSeconds;
   }
 
@@ -232,25 +240,27 @@ export class MessageReactionService {
   setAccountMessageReaction(
     input: SetAccountMessageReactionInput,
   ): SetAccountMessageReactionResult {
-    const resolution = this.#resolveAccountReactionContext(input);
-    if (!resolution.resolved) {
-      return { set: false, reason: resolution.reason };
-    }
-    const choice = this.#chooseReactions(resolution.context, input.emojis);
-    if (!choice.chosen) {
-      return { set: false, reason: choice.reason };
-    }
-    if (!isSameReactionEmojis(choice.oldEmojis, choice.newEmojis)) {
-      this.#events.emit({
-        type: 'message_reaction_changed',
-        message: choice.message,
-        accountId: input.accountId,
-        oldEmojis: choice.oldEmojis,
-        newEmojis: choice.newEmojis,
-        changedAtUnixSeconds: this.#currentUnixTimeSeconds(),
-      });
-    }
-    return { set: true, message: choice.message, reactions: choice.message.reactions ?? [] };
+    return this.#transactions.withinTransaction(() => {
+      const resolution = this.#resolveAccountReactionContext(input);
+      if (!resolution.resolved) {
+        return { set: false, reason: resolution.reason };
+      }
+      const choice = this.#chooseReactions(resolution.context, input.emojis);
+      if (!choice.chosen) {
+        return { set: false, reason: choice.reason };
+      }
+      if (!isSameReactionEmojis(choice.oldEmojis, choice.newEmojis)) {
+        this.#transactions.emit({
+          type: 'message_reaction_changed',
+          message: choice.message,
+          accountId: input.accountId,
+          oldEmojis: choice.oldEmojis,
+          newEmojis: choice.newEmojis,
+          changedAtUnixSeconds: this.#currentUnixTimeSeconds(),
+        });
+      }
+      return { set: true, message: choice.message, reactions: choice.message.reactions ?? [] };
+    });
   }
 
   /**
@@ -259,32 +269,34 @@ export class MessageReactionService {
    * the checks of `ReactionChoiceFailureReason`. No bot receives an update for it.
    */
   setBotMessageReaction(input: SetBotMessageReactionInput): SetBotMessageReactionResult {
-    if (this.#bots.getById(input.botId) === undefined) {
-      return { set: false, reason: 'bot_not_found' };
-    }
-    const botMembership = resolveSupergroupBotMembership(
-      this.#sharedChats,
-      input.botId,
-      input.chatId,
-    );
-    if (!botMembership.resolved) {
-      return { set: false, reason: botMembership.reason };
-    }
-    const message = this.#supergroupMessages.getMessageByChatMessageId(
-      input.chatId,
-      input.messageId,
-    );
-    if (message === undefined) {
-      return { set: false, reason: 'message_not_found' };
-    }
-    const choice = this.#chooseReactions({
-      reactorId: input.botId,
-      isBot: true,
-      supergroup: botMembership.supergroup,
-      membership: botMembership.membership,
-      message: this.#findReactionHolder(message),
-    }, input.emojis);
-    return choice.chosen ? { set: true } : { set: false, reason: choice.reason };
+    return this.#transactions.withinTransaction(() => {
+      if (this.#bots.getById(input.botId) === undefined) {
+        return { set: false, reason: 'bot_not_found' };
+      }
+      const botMembership = resolveSupergroupBotMembership(
+        this.#sharedChats,
+        input.botId,
+        input.chatId,
+      );
+      if (!botMembership.resolved) {
+        return { set: false, reason: botMembership.reason };
+      }
+      const message = this.#supergroupMessages.getMessageByChatMessageId(
+        input.chatId,
+        input.messageId,
+      );
+      if (message === undefined) {
+        return { set: false, reason: 'message_not_found' };
+      }
+      const choice = this.#chooseReactions({
+        reactorId: input.botId,
+        isBot: true,
+        supergroup: botMembership.supergroup,
+        membership: botMembership.membership,
+        message: this.#findReactionHolder(message),
+      }, input.emojis);
+      return choice.chosen ? { set: true } : { set: false, reason: choice.reason };
+    });
   }
 
   #resolveAccountReactionContext(
