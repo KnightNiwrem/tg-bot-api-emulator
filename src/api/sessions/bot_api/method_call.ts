@@ -35,6 +35,8 @@ export interface BotApiMethodContext {
     | 'chatAdmission'
     | 'botMessageViews'
     | 'messagePinning'
+    | 'messageDeletion'
+    | 'messageReactions'
     | 'lifetime'
   >;
   /** The bot whose token authenticated the call. */

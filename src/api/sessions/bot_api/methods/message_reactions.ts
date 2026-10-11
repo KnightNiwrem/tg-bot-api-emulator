@@ -1,11 +1,13 @@
 import { z } from 'zod';
 
+import { getBotApiChatAddress } from '../../../../types/virtual_chat.ts';
+import { excludeMissingBotFailure } from '../authenticated_bot_failures.ts';
 import { requireSpecifiedChatId } from '../chat_access.ts';
 import { BOT_API_ERRORS } from '../errors/error_catalogue.ts';
 import { presentFixedBotApiError } from '../errors/error_template.ts';
 import { presentMessageReactionFailure } from '../errors/message_reaction_failure_presenter.ts';
 import { messageIdOrNone } from '../message_identifiers.ts';
-import { type BotApiMethod, botApiResult } from '../method_call.ts';
+import { type BotApiFamilyContext, type BotApiMethod, botApiResult } from '../method_call.ts';
 import {
   answerWith,
   answerWithBadRequest,
@@ -28,6 +30,9 @@ const setMessageReactionParametersSchema = z.strictObject({
 
 type SetMessageReactionParameters = z.output<typeof setMessageReactionParametersSchema>;
 
+/** What the message reaction methods use: the service that keeps messages' reactions. */
+type MessageReactionContext = BotApiFamilyContext<'messageReactions'>;
+
 /**
  * The methods that set the bot's reactions to a message, each executed as a command in its call's
  * transaction.
@@ -44,13 +49,27 @@ export const MESSAGE_REACTION_METHODS: readonly BotApiMethod[] = [
       startSteps(call.parameters)
         .andThen((parameters) => readReactionEmojis(call, parameters))
         .andThen(requireSpecifiedChatId),
-    execute: (context, { chat_id: chatId, message_id: messageId, emojis }) => {
-      const result = context.session.botApi.setMessageReaction(context.bot, {
+    // Reactions in private chats are not supported.
+    execute: (
+      context: MessageReactionContext,
+      { chat_id: chatId, message_id: messageId, emojis },
+    ) => {
+      if (getBotApiChatAddress(chatId).type === 'private') {
+        return presentMessageReactionFailure({
+          set: false,
+          reason: 'private_chat_reactions_unsupported',
+        });
+      }
+      const result = context.session.messageReactions.setBotMessageReaction({
+        botId: context.bot.id,
         chatId,
         messageId: messageIdOrNone(messageId),
         emojis,
       });
-      return result.set ? botApiResult(true) : presentMessageReactionFailure(result);
+      return result.set ? botApiResult(true) : presentMessageReactionFailure({
+        set: false,
+        reason: excludeMissingBotFailure(context.bot, result.reason),
+      });
     },
   }),
 ];

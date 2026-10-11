@@ -432,7 +432,6 @@ export function createEmulationSession(
     botMessages: privateMessaging,
     supergroupBotMessages: supergroupMessaging,
     messageEditing,
-    messageDeletion,
     messageSender: botMessageSender,
     messageRepeater: new BotMessageRepeater({
       messageSender: botMessageSender,
@@ -442,8 +441,6 @@ export function createEmulationSession(
       currentUnixTimeSeconds,
     }),
     botMessageViews,
-    messagePinning,
-    messageReactions,
     botMedia: botMediaResolver,
     botCaptions: {
       normalizeBotCaption: (caption) => normalizeCaption(caption, 'bot', sessionTextFixingContext),

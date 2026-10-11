@@ -1,18 +1,8 @@
 import { isParseMode, parseMarkup } from '../../text_entities/parse_mode.ts';
 import { checkLink, getLinkUserId } from '../../text_entities/telegram_link.ts';
-import type {
-  BotApiChatFullInfo,
-  BotApiChatInviteLink,
-  BotApiChatMember,
-  BotApiMessage,
-} from '../../types/bot_api.ts';
+import type { BotApiMessage } from '../../types/bot_api.ts';
 import type { BotApiPoll } from '../../types/bot_api_poll.ts';
-import type { ChatInviteLink } from '../../types/chat_invite_link.ts';
-import {
-  type ChatMemberStatus,
-  type FormerSupergroupMemberFailureReason,
-  type SupergroupBotAccessFailureReason,
-} from '../../types/chat_membership.ts';
+import type { FormerSupergroupMemberFailureReason } from '../../types/chat_membership.ts';
 import { createWrittenContact, type WrittenContact } from '../../types/contact.ts';
 import type { GeoLocation } from '../../types/geo_location.ts';
 import {
@@ -69,8 +59,6 @@ import {
   type ChatMessage,
   type FormattedText,
   type InlineMessageId,
-  type PrivateMessage,
-  type SupergroupMessage,
   type TextEntity,
 } from '../../types/virtual_message.ts';
 import type { PhotoTooBigFailure } from '../domain/media_file.ts';
@@ -86,14 +74,7 @@ import type {
   TextInvalidFailure,
   TextMessageReplacement,
 } from '../domain/message_content.ts';
-import type { MessageDeletionService } from '../domain/message_deletion.ts';
 import type { BotChatMessageTarget, MessageEditingService } from '../domain/message_editing.ts';
-import type { MessagePinningService } from '../domain/message_pinning.ts';
-import type {
-  ReactionChoiceFailureReason,
-  SetBotMessageReactionInput,
-  SetBotMessageReactionResult,
-} from '../domain/message_reaction.ts';
 import type { PollStopFailureReason } from '../domain/poll.ts';
 import type { PollLimitFailure } from '../domain/poll_normalization.ts';
 import type { SendPermissionMissingFailure } from '../domain/message_sending.ts';
@@ -842,121 +823,6 @@ export type SendMessageDraftResult =
     )
   );
 
-export interface PinChatMessageRequest {
-  /** The Bot API `chat_id`, as `SendRequestOptions` describes it. */
-  readonly chatId: number;
-  /** The message's ID in the bot's chat. */
-  readonly messageId: number;
-  /** Notifies the supergroup's members of the pin without sound, as `disable_notification` asks. */
-  readonly isSilent: boolean;
-}
-
-export interface UnpinChatMessageRequest {
-  /** The Bot API `chat_id`, as `SendRequestOptions` describes it. */
-  readonly chatId: number;
-  /** The message's ID in the bot's chat; omitted to unpin the chat's newest pinned message. */
-  readonly messageId?: number;
-}
-
-/** Why a bot cannot pin or unpin a message, in the order the official server and TDLib check. */
-type BotPinChangeFailureReason =
-  | 'chat_not_found'
-  /** The account of the bot's private chat does not exist, or never started the chat. */
-  | 'account_not_found'
-  | 'conversation_not_started'
-  | FormerSupergroupMemberFailureReason
-  /** The account of the bot's private chat blocks the bot. */
-  | 'bot_blocked'
-  /** No such message is in the chat; for an unpin without a target, no message is pinned. */
-  | 'message_not_found'
-  /** The bot lacks the `can_pin_messages` administrator right in a supergroup. */
-  | 'not_enough_rights'
-  | 'service_message_not_pinnable';
-
-export type BotApiPinChatMessageResult =
-  | { readonly pinned: true }
-  | {
-    readonly pinned: false;
-    /** `message_already_pinned`: Telegram's servers refuse a pin that changes nothing. */
-    readonly reason: BotPinChangeFailureReason | 'message_already_pinned';
-  };
-
-export type BotApiUnpinChatMessageResult =
-  | { readonly unpinned: true }
-  | {
-    readonly unpinned: false;
-    /** `message_not_pinned`: Telegram's servers refuse an unpin that changes nothing. */
-    readonly reason: BotPinChangeFailureReason | 'message_not_pinned';
-  };
-
-export interface UnpinAllChatMessagesRequest {
-  /** The Bot API `chat_id`, as `SendRequestOptions` describes it. */
-  readonly chatId: number;
-}
-
-export type BotApiUnpinAllChatMessagesResult =
-  /** The chat pins nothing now, including when it pinned nothing before. */
-  | { readonly unpinned: true }
-  | {
-    readonly unpinned: false;
-    /** As for a single unpin, except that no message is looked up. */
-    readonly reason: Exclude<
-      BotPinChangeFailureReason,
-      'message_not_found' | 'service_message_not_pinnable'
-    >;
-  };
-
-export interface SetMessageReactionRequest {
-  /** The Bot API `chat_id`, as `SendRequestOptions` describes it. */
-  readonly chatId: number;
-  /** The message's ID in the bot's chat. */
-  readonly messageId: number;
-  /** The emoji of the Bot API `reaction`, in order; none removes the bot's reactions. */
-  readonly emojis: readonly string[];
-}
-
-export type BotApiSetMessageReactionResult =
-  | { readonly set: true }
-  | {
-    readonly set: false;
-    readonly reason:
-      | SupergroupBotAccessFailureReason
-      | 'message_not_found'
-      | ReactionChoiceFailureReason
-      /** The emulator supports reactions in supergroups only. */
-      | 'private_chat_reactions_unsupported';
-  };
-
-export type DeleteMessageRequest = MessageTarget;
-
-/**
- * Why a bot cannot delete messages of a chat: it cannot address the chat, or a message is not
- * one it may delete.
- */
-type MessageDeletionFailureReason =
-  | 'chat_not_found'
-  | BotPrivateChatAccessFailureReason
-  | FormerSupergroupMemberFailureReason
-  | 'message_not_deletable';
-
-export type DeleteMessageResult =
-  | { readonly deleted: true }
-  | {
-    readonly deleted: false;
-    readonly reason: MessageDeletionFailureReason | 'message_not_found';
-  };
-
-export interface DeleteMessagesRequest {
-  /** The Bot API `chat_id`, as `SendRequestOptions` describes it. */
-  readonly chatId: number;
-  /** The messages' IDs in the bot's chat. */
-  readonly messageIds: readonly number[];
-}
-
-export type DeleteMessagesResult =
-  | { readonly deleted: true }
-  | { readonly deleted: false; readonly reason: MessageDeletionFailureReason };
-
 interface BotCredentialLookup {
   getByToken(token: string): VirtualBot | undefined;
 }
@@ -988,9 +854,6 @@ interface SupergroupBotMessaging {
       readonly reason: 'bot_not_found' | 'chat_not_found' | FormerSupergroupMemberFailureReason;
     };
 }
-
-/** The message deletion that `deleteMessage` and `deleteMessages` carry out, by the chat's address. */
-type BotMessageDeletion = Pick<MessageDeletionService, 'deleteChatMessages'>;
 
 /**
  * The message editing that the edit methods and `stopPoll` carry out, by the target each addresses:
@@ -1049,32 +912,6 @@ interface BotDraftTextNormalizer {
 interface BotMessageViews {
   viewPollForCreator(poll: Poll): BotApiPoll;
   viewMessageForBot(message: ChatMessage, botId: number): BotApiMessage;
-  viewChatMember(input: {
-    readonly chatId: number;
-    readonly userId: number;
-    readonly status: ChatMemberStatus;
-    readonly observerBotId: number;
-  }): BotApiChatMember | undefined;
-  viewPrivateChatFullInfo(input: {
-    readonly accountId: number;
-    readonly pinnedMessage: PrivateMessage | undefined;
-  }): BotApiChatFullInfo | undefined;
-  viewSupergroupChatFullInfo(input: {
-    readonly chatId: number;
-    readonly observerBotId: number;
-    readonly pinnedMessage: SupergroupMessage | undefined;
-    readonly primaryInviteLink: ChatInviteLink | undefined;
-  }): BotApiChatFullInfo | undefined;
-  viewChatInviteLink(link: ChatInviteLink, observerId: number): BotApiChatInviteLink;
-}
-
-type MessagePinning = Pick<
-  MessagePinningService,
-  'pinMessageByBot' | 'unpinMessageByBot' | 'unpinAllMessagesByBot'
->;
-
-interface MessageReactions {
-  setBotMessageReaction(input: SetBotMessageReactionInput): SetBotMessageReactionResult;
 }
 
 interface ChatActions {
@@ -1097,8 +934,6 @@ interface BotApiServiceDependencies {
    * Edits the bot's messages and the messages sent through its inline mode, and stops its polls.
    */
   readonly messageEditing: BotMessageEditing;
-  /** Deletes messages of the bot's chats. */
-  readonly messageDeletion: BotMessageDeletion;
   /**
    * Sends the bot's messages and albums to its chats, as every send method sends them, resolving
    * what they reply to in other chats.
@@ -1107,10 +942,6 @@ interface BotApiServiceDependencies {
   /** Forwards and copies messages of the bot's chats, one or many at once. */
   readonly messageRepeater: BotMessageRepetition;
   readonly botMessageViews: BotMessageViews;
-  /** Pins and unpins messages. */
-  readonly messagePinning: MessagePinning;
-  /** Sets the bot's reactions to supergroup messages. */
-  readonly messageReactions: MessageReactions;
   /**
    * Turns the files that requests send, by `file_id`, upload or URL, into the files of the
    * messages they send, without storing any.
@@ -1148,12 +979,9 @@ export class BotApiService {
   readonly #botMessages: BotMessaging;
   readonly #supergroupBotMessages: SupergroupBotMessaging;
   readonly #messageEditing: BotMessageEditing;
-  readonly #messageDeletion: BotMessageDeletion;
   readonly #messageSender: BotMessageSending;
   readonly #messageRepeater: BotMessageRepetition;
   readonly #botMessageViews: BotMessageViews;
-  readonly #messagePinning: MessagePinning;
-  readonly #messageReactions: MessageReactions;
   readonly #botMedia: BotMediaResolution;
   readonly #botCaptions: BotCaptionNormalizer;
   readonly #chatActions: ChatActions;
@@ -1168,12 +996,9 @@ export class BotApiService {
       botMessages,
       supergroupBotMessages,
       messageEditing,
-      messageDeletion,
       messageSender,
       messageRepeater,
       botMessageViews,
-      messagePinning,
-      messageReactions,
       botMedia,
       botCaptions,
       chatActions,
@@ -1187,12 +1012,9 @@ export class BotApiService {
     this.#botMessages = botMessages;
     this.#supergroupBotMessages = supergroupBotMessages;
     this.#messageEditing = messageEditing;
-    this.#messageDeletion = messageDeletion;
     this.#messageSender = messageSender;
     this.#messageRepeater = messageRepeater;
     this.#botMessageViews = botMessageViews;
-    this.#messagePinning = messagePinning;
-    this.#messageReactions = messageReactions;
     this.#botMedia = botMedia;
     this.#botCaptions = botCaptions;
     this.#chatActions = chatActions;
@@ -2011,119 +1833,6 @@ export class BotApiService {
   }
 
   /**
-   * Pins a message of a bot's chat, as `MessagePinningService.pinMessageByBot` pins it,
-   * which then receives the pin's service message, as the official server's
-   * `need_skip_update_message` keeps a bot's own pins.
-   */
-  pinChatMessage(
-    authenticatedBot: VirtualBotProfile,
-    { chatId, messageId, isSilent }: PinChatMessageRequest,
-  ): BotApiPinChatMessageResult {
-    const result = this.#messagePinning.pinMessageByBot({
-      fromBotId: authenticatedBot.id,
-      chat: getBotApiChatAddress(chatId),
-      messageId,
-      isSilent,
-    });
-    return result.pinned
-      ? { pinned: true }
-      : { pinned: false, reason: excludeMissingBotFailure(authenticatedBot, result.reason) };
-  }
-
-  /**
-   * Unpins a message of a bot's chat, or, without one, the chat's newest pinned message, as
-   * `MessagePinningService.unpinMessageByBot` unpins it. No service message records it.
-   */
-  unpinChatMessage(
-    authenticatedBot: VirtualBotProfile,
-    { chatId, messageId }: UnpinChatMessageRequest,
-  ): BotApiUnpinChatMessageResult {
-    const result = this.#messagePinning.unpinMessageByBot({
-      fromBotId: authenticatedBot.id,
-      chat: getBotApiChatAddress(chatId),
-      messageId,
-    });
-    return result.unpinned
-      ? { unpinned: true }
-      : { unpinned: false, reason: excludeMissingBotFailure(authenticatedBot, result.reason) };
-  }
-
-  /**
-   * Unpins every message of a bot's chat, as `MessagePinningService.unpinAllMessagesByBot` unpins
-   * them. No service message records it.
-   */
-  unpinAllChatMessages(
-    authenticatedBot: VirtualBotProfile,
-    { chatId }: UnpinAllChatMessagesRequest,
-  ): BotApiUnpinAllChatMessagesResult {
-    const result = this.#messagePinning.unpinAllMessagesByBot({
-      fromBotId: authenticatedBot.id,
-      chat: getBotApiChatAddress(chatId),
-    });
-    return result.unpinned
-      ? { unpinned: true }
-      : { unpinned: false, reason: excludeMissingBotFailure(authenticatedBot, result.reason) };
-  }
-
-  /**
-   * Replaces the bot's reactions to a message of a supergroup it is a member of, as
-   * `MessageReactionService.setBotMessageReaction` replaces them. Reactions in private chats are
-   * not supported.
-   */
-  setMessageReaction(
-    authenticatedBot: VirtualBotProfile,
-    { chatId, messageId, emojis }: SetMessageReactionRequest,
-  ): BotApiSetMessageReactionResult {
-    if (getBotApiChatAddress(chatId).type === 'private') {
-      return { set: false, reason: 'private_chat_reactions_unsupported' };
-    }
-    const result = this.#messageReactions.setBotMessageReaction({
-      botId: authenticatedBot.id,
-      chatId,
-      messageId,
-      emojis,
-    });
-    if (result.set) {
-      return result;
-    }
-    if (result.reason === 'bot_not_found') {
-      throw new Error(`Authenticated bot ${authenticatedBot.id} does not exist`);
-    }
-    return { set: false, reason: result.reason };
-  }
-
-  /**
-   * Deletes a message of a chat: in a private chat, a message of either participant; in a
-   * supergroup, one of the bot's own messages, or any message as an administrator with the
-   * `can_delete_messages` right. Unlike `deleteMessages`, it fails when the ID identifies no
-   * message of the chat, as on Telegram.
-   */
-  deleteMessage(
-    authenticatedBot: VirtualBotProfile,
-    { chatId, messageId }: DeleteMessageRequest,
-  ): DeleteMessageResult {
-    const result = this.#deleteChatMessages(authenticatedBot, chatId, [messageId]);
-    if (!result.deleted) {
-      return result;
-    }
-    return result.deletedMessageCount === 0
-      ? { deleted: false, reason: 'message_not_found' }
-      : { deleted: true };
-  }
-
-  /**
-   * Deletes messages of a chat, as `deleteMessage` does. As on Telegram, IDs that identify no
-   * message of the chat are skipped.
-   */
-  deleteMessages(
-    authenticatedBot: VirtualBotProfile,
-    { chatId, messageIds }: DeleteMessagesRequest,
-  ): DeleteMessagesResult {
-    const result = this.#deleteChatMessages(authenticatedBot, chatId, messageIds);
-    return result.deleted ? { deleted: true } : result;
-  }
-
-  /**
    * Replaces the content and inline keyboard of a text or rich message sent through the bot, as
    * `editMessageText` replaces them. As TDLib's `edit_inline_message_text` requires, a rich
    * message may reuse files by their `file_id` but upload none.
@@ -2284,39 +1993,6 @@ export class BotApiService {
     messageId: number,
   ): BotChatMessageTarget {
     return { fromBotId: authenticatedBot.id, chat: getBotApiChatAddress(chatId), messageId };
-  }
-
-  #deleteChatMessages(
-    authenticatedBot: VirtualBotProfile,
-    chatId: number,
-    messageIds: readonly number[],
-  ):
-    | { readonly deleted: true; readonly deletedMessageCount: number }
-    | { readonly deleted: false; readonly reason: MessageDeletionFailureReason } {
-    const result = this.#messageDeletion.deleteChatMessages({
-      fromBotId: authenticatedBot.id,
-      chat: getBotApiChatAddress(chatId),
-      messageIds,
-    });
-    if (result.deleted) {
-      return result;
-    }
-
-    switch (result.reason) {
-      case 'chat_not_found':
-      case 'account_not_found':
-      case 'conversation_not_started':
-      case 'bot_not_a_member':
-      case 'bot_kicked':
-      case 'message_not_deletable':
-        return { deleted: false, reason: result.reason };
-      case 'bot_not_found':
-        throw new Error(`Authenticated bot ${authenticatedBot.id} does not exist`);
-      default: {
-        const unhandledReason: never = result.reason;
-        throw new Error(`Unhandled bot message deletion failure: ${unhandledReason}`);
-      }
-    }
   }
 
   /** Shows the bot the message its edit of a chat message left, as the bot sees its chat. */

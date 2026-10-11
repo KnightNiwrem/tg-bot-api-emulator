@@ -5,6 +5,7 @@ import type {
 } from '../src/services/domain/shared_chat_administration.ts';
 import type { VirtualUserService } from '../src/services/domain/virtual_user.ts';
 import type { PhotoUpload } from '../src/types/stored_file.ts';
+import { getBotApiChatAddress } from '../src/types/virtual_chat.ts';
 import { assertEqualsInFieldOrder } from './support/field_order_assertion.ts';
 import { buildSessionServices } from './support/session_services.ts';
 import { createVirtualAccount, createVirtualBot } from './support/virtual_users.ts';
@@ -57,12 +58,20 @@ Deno.test('BotApiService reports why a bot cannot address a private chat, for th
     ],
     [
       'deleteMessage',
-      botApi.deleteMessage(bot.profile, { chatId, messageId: 1 }),
+      session.messageDeletion.deleteChatMessages({
+        fromBotId: bot.profile.id,
+        chat: getBotApiChatAddress(chatId),
+        messageIds: [1],
+      }),
       'conversation_not_started',
     ],
     [
       'deleteMessages',
-      botApi.deleteMessages(bot.profile, { chatId: unknownAccountId, messageIds: [1] }),
+      session.messageDeletion.deleteChatMessages({
+        fromBotId: bot.profile.id,
+        chat: getBotApiChatAddress(unknownAccountId),
+        messageIds: [1],
+      }),
       'account_not_found',
     ],
     [
