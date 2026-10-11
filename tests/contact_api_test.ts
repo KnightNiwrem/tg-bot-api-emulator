@@ -1,3 +1,5 @@
+import { assertEquals } from '@std/assert';
+import { assertEqualsInFieldOrder } from './support/field_order_assertion.ts';
 import { createTestSession, type EmulationApi, requestJson } from './support/emulation_api.ts';
 
 interface TestContact {
@@ -119,14 +121,6 @@ function createUpdateReader(api: EmulationApi, botApiPath: string) {
   };
 }
 
-function expectEqual(actual: unknown, expected: unknown, message: string): void {
-  if (JSON.stringify(actual) !== JSON.stringify(expected)) {
-    throw new Error(
-      `${message}: expected ${JSON.stringify(expected)}, received ${JSON.stringify(actual)}`,
-    );
-  }
-}
-
 Deno.test('a bot sends a contact whose texts Telegram cleans and whose user stays unknown', async () => {
   const { ada, privateChat, callBot, getHistory } = await createContactFixture();
   const sent = await callBot('sendContact', {
@@ -137,7 +131,7 @@ Deno.test('a bot sends a contact whose texts Telegram cleans and whose user stay
     vcard: 'BEGIN:VCARD\nVERSION:3.0\nFN:Grace Hopper\nEND:VCARD',
   });
   const sentMessage = sent.body.result as TestMessage;
-  expectEqual(
+  assertEqualsInFieldOrder(
     sentMessage.contact,
     {
       phone_number: '+1 (555) 010-0200',
@@ -152,12 +146,12 @@ Deno.test('a bot sends a contact whose texts Telegram cleans and whose user stay
     phone_number: '12345',
     first_name: 'Linus',
   });
-  expectEqual(
+  assertEqualsInFieldOrder(
     (minimal.body.result as TestMessage).contact,
     { phone_number: '12345', first_name: 'Linus' },
     'Expected an empty last name and vCard to be omitted',
   );
-  expectEqual(
+  assertEqualsInFieldOrder(
     (await getHistory(ada.id, privateChat)).slice(-2).map((message) => message.contact),
     [sentMessage.contact, { phone_number: '12345', first_name: 'Linus' }],
     'Expected the account history to show both contacts',
@@ -186,7 +180,7 @@ Deno.test('sendContact refuses missing, malformed and over-long contacts without
   ] as const;
   for (const [parameters, description] of refusals) {
     const { status, body } = await callBot('sendContact', parameters);
-    expectEqual(
+    assertEquals(
       [status, body.description],
       [400, description],
       `Expected ${JSON.stringify(parameters)} to be refused`,
@@ -197,8 +191,8 @@ Deno.test('sendContact refuses missing, malformed and over-long contacts without
     first_name: '😀'.repeat(64),
     vcard: 'é'.repeat(1024),
   });
-  expectEqual(accepted.status, 200, 'Expected names and a vCard at their limits to be sent');
-  expectEqual(
+  assertEquals(accepted.status, 200, 'Expected names and a vCard at their limits to be sent');
+  assertEquals(
     (await getHistory(ada.id, privateChat)).length,
     historyLength + 1,
     'Expected only the accepted contact to be sent',
@@ -228,19 +222,19 @@ Deno.test('an account answers a request_contact button with its own contact, rep
     last_name: 'Lovelace',
     user_id: ada.id,
   };
-  expectEqual(
+  assertEqualsInFieldOrder(
     [press.status, press.body.message.contact, press.body.message.reply_to_message?.message_id],
     [201, ownContact, keyboardMessageId],
     'Expected the press to share the own contact in reply to the keyboard',
   );
   const [update] = await readUpdates();
   const received = (update as { message: TestMessage }).message;
-  expectEqual(
+  assertEqualsInFieldOrder(
     [received.from?.id, received.contact, received.reply_to_message?.message_id],
     [ada.id, ownContact, keyboardMessageId],
     'Expected the bot to receive the shared contact as an ordinary message',
   );
-  expectEqual(
+  assertEquals(
     received.contact?.user_id === received.from?.id,
     true,
     'Expected the bot to verify that the account shared its own contact',
@@ -252,8 +246,8 @@ Deno.test('an account answers a request_contact button with its own contact, rep
     reply_parameters: { message_id: received.message_id },
     reply_markup: { remove_keyboard: true },
   });
-  expectEqual(answer.status, 200, 'Expected the bot to answer the shared contact');
-  expectEqual(bot.id, privateChat.botId, 'Expected the press to reach the keyboard bot');
+  assertEquals(answer.status, 200, 'Expected the bot to answer the shared contact');
+  assertEquals(bot.id, privateChat.botId, 'Expected the press to reach the keyboard bot');
 });
 
 Deno.test('a request_contact press without a phone number shares nothing', async () => {
@@ -275,12 +269,12 @@ Deno.test('a request_contact press without a phone number shares nothing', async
     body: JSON.stringify({ chat: graceChat, text: 'Share' }),
   });
   const ownContact = await sendAccountMessage(grace.id, { to: graceChat, own_contact: true });
-  expectEqual(
+  assertEquals(
     [press.status, ownContact.status],
     [409, 409],
     'Expected an account without a phone number to have no contact of its own',
   );
-  expectEqual(
+  assertEquals(
     [(await getHistory(grace.id, graceChat)).length, await readUpdates()],
     [historyLength, []],
     'Expected the refusals to send nothing',
@@ -294,13 +288,13 @@ Deno.test('accounts share their own or written contacts in private chats and sup
     to: privateChat,
     contact: { phone_number: '15550100', first_name: 'Ada', last_name: 'Lovelace' },
   });
-  expectEqual(
+  assertEqualsInFieldOrder(
     [written.status, written.body.message.contact],
     [201, { phone_number: '15550100', first_name: 'Ada', last_name: 'Lovelace' }],
     "Expected a written contact to show no user, even with the account's own number",
   );
   const own = await sendAccountMessage(ada.id, { to: supergroupChat, own_contact: true });
-  expectEqual(
+  assertEquals(
     [own.status, own.body.message.contact?.user_id],
     [201, ada.id],
     'Expected the own contact to show the account as its user in the supergroup',
@@ -310,7 +304,7 @@ Deno.test('accounts share their own or written contacts in private chats and sup
     reply_to_message_id: own.body.message.message_id,
     contact: { phone_number: '15550199', first_name: 'Grace', vcard: 'BEGIN:VCARD\nEND:VCARD' },
   });
-  expectEqual(
+  assertEqualsInFieldOrder(
     [reply.status, reply.body.message.contact, reply.body.message.reply_to_message?.message_id],
     [
       201,
@@ -319,13 +313,13 @@ Deno.test('accounts share their own or written contacts in private chats and sup
     ],
     'Expected a member to reply with a written contact',
   );
-  expectEqual(
+  assertEqualsInFieldOrder(
     (await getHistory(grace.id, supergroupChat)).slice(-2).map((message) => message.contact),
     [own.body.message.contact, reply.body.message.contact],
     'Expected the supergroup history to keep both contacts',
   );
   const updates = await readUpdates();
-  expectEqual(
+  assertEquals(
     updates.map((update) => (update as { message: TestMessage }).message.contact?.first_name),
     ['Ada'],
     'Expected the privacy-mode bot to receive only the private contact',
@@ -345,9 +339,9 @@ Deno.test('accounts share their own or written contacts in private chats and sup
   const privateHistoryLength = (await getHistory(ada.id, privateChat)).length;
   for (const body of refusedBodies) {
     const { status } = await sendAccountMessage(ada.id, body);
-    expectEqual(status, 400, `Expected ${JSON.stringify(body)} to be refused`);
+    assertEquals(status, 400, `Expected ${JSON.stringify(body)} to be refused`);
   }
-  expectEqual(
+  assertEquals(
     [(await getHistory(ada.id, privateChat)).length, await readUpdates()],
     [privateHistoryLength, []],
     'Expected refused contacts to send nothing',
@@ -370,7 +364,7 @@ Deno.test('sign-up names fit in contacts, and phone numbers are the digits of an
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ ...profile, phone_number: '15550111' }),
     });
-    expectEqual(response.status, 400, `Expected ${JSON.stringify(profile)} to be refused`);
+    assertEquals(response.status, 400, `Expected ${JSON.stringify(profile)} to be refused`);
   }
   for (const name of ['x'.repeat(65), '😀'.repeat(65)]) {
     for (const profile of [{ first_name: name }, { first_name: 'Linus', last_name: name }]) {
@@ -379,7 +373,7 @@ Deno.test('sign-up names fit in contacts, and phone numbers are the digits of an
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(profile),
       });
-      expectEqual(response.status, 400, 'Expected a name over 64 characters to be refused');
+      assertEquals(response.status, 400, 'Expected a name over 64 characters to be refused');
     }
   }
   for (const phoneNumber of ['+15550100', '015550100', '1555 0100', '', '1234567890123456', 5]) {
@@ -388,7 +382,7 @@ Deno.test('sign-up names fit in contacts, and phone numbers are the digits of an
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ first_name: 'Linus', phone_number: phoneNumber }),
     });
-    expectEqual(response.status, 400, `Expected phone number ${phoneNumber} to be refused`);
+    assertEquals(response.status, 400, `Expected phone number ${phoneNumber} to be refused`);
   }
 });
 
@@ -409,7 +403,7 @@ Deno.test('contacts need the permission to send messages in supergroups', async 
     `${supergroupPath(ada.id)}/permissions`,
     { permissions: { can_send_photos: true } },
   );
-  expectEqual(restriction.status, 204, 'Expected the owner to withhold sending messages');
+  assertEquals(restriction.status, 204, 'Expected the owner to withhold sending messages');
   const historyLength = (await getHistory(ada.id, supergroupChat)).length;
 
   const accountContact = await sendAccountMessage(grace.id, {
@@ -422,12 +416,12 @@ Deno.test('contacts need the permission to send messages in supergroups', async 
     first_name: 'Bot',
   });
   const ownerContact = await sendAccountMessage(ada.id, { to: supergroupChat, own_contact: true });
-  expectEqual(
+  assertEquals(
     [accountContact.status, botContact.status, botContact.body.description, ownerContact.status],
     [403, 400, 'Bad Request: not enough rights to send contacts to the chat', 201],
     'Expected only the owner to send a contact without the permission',
   );
-  expectEqual(
+  assertEquals(
     (await getHistory(ada.id, supergroupChat)).length,
     historyLength + 1,
     'Expected the refused contacts to be missing from the history',
@@ -460,7 +454,7 @@ Deno.test('a contact message keeps its contact through edits of its keyboard onl
     ...target,
     reply_markup: { inline_keyboard: [[{ text: 'Text', callback_data: 'text' }]] },
   });
-  expectEqual(
+  assertEqualsInFieldOrder(
     [
       textEdit.body.description,
       captionEdit.body.description,
