@@ -78,9 +78,15 @@ Deno.test('a promotion, restriction or chat change whose record fails commits no
     restoreRecording();
     assertEquals(fixture.readState(), stateBefore, `${methodName} left a change behind`);
 
-    // The same call changes the supergroup once its record succeeds.
+    // The same call changes Grace's standing or the supergroup once its record succeeds; its own
+    // record would differ either way, so only the change itself is compared.
     await fixture.callMethodExpectingResult(fixture.alpha, methodName, parameters);
-    assertNotEquals(fixture.readState(), stateBefore, `${methodName} changed nothing`);
+    const stateAfter = fixture.readState();
+    assertNotEquals(
+      { graceStatus: stateAfter.graceStatus, supergroup: stateAfter.supergroup },
+      { graceStatus: stateBefore.graceStatus, supergroup: stateBefore.supergroup },
+      `${methodName} changed nothing`,
+    );
   }
 });
 
