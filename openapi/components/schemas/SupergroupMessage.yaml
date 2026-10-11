@@ -1,3 +1,4 @@
+x-telegram-type: Message
 type: object
 additionalProperties: false
 description: >-

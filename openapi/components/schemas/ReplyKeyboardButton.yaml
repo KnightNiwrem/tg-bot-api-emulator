@@ -1,3 +1,4 @@
+x-telegram-type: KeyboardButton
 description: >-
   A reply keyboard button: a button that sends its text, or one with a request that asks the
   client to share something instead. As TDLib does, only a private chat allows buttons with a

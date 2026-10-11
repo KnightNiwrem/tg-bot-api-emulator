@@ -13,7 +13,7 @@ properties:
         - action
       properties:
         bot_id:
-          type: integer
+          $ref: ./TelegramUserId.yaml
         action:
           type: string
           description: The action by its Bot API name, in lowercase.

@@ -14,3 +14,4 @@ properties:
       The ID of the bot message the client shows a reply interface to, as the bot sees it.
   input_field_placeholder:
     type: string
+    minLength: 1

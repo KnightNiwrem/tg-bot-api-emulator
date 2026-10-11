@@ -34,3 +34,4 @@ properties:
       its buttons can still be pressed.
   input_field_placeholder:
     type: string
+    minLength: 1
