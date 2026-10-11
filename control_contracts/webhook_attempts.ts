@@ -11,7 +11,7 @@ export const webhookAttemptFailureSchema = z.discriminatedUnion('reason', [
   z.strictObject({
     reason: z.literal('http_error'),
     status_code: z.int().min(100).max(599),
-    error_message: z.string(),
+    error_message: z.string().min(1),
   }),
   /**
    * The webhook could not be reached (`connection_failed`), or did not answer completely before
@@ -19,7 +19,7 @@ export const webhookAttemptFailureSchema = z.discriminatedUnion('reason', [
    */
   z.strictObject({
     reason: z.enum(['connection_failed', 'timed_out']),
-    error_message: z.string(),
+    error_message: z.string().min(1),
   }),
   /** The connection closed before the whole response arrived. */
   z.strictObject({ reason: z.literal('response_interrupted') }),

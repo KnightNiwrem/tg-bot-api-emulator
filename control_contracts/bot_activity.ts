@@ -81,9 +81,9 @@ export const botApiCallEntrySchema = z.strictObject({
    * The method's current name, whichever name the bot called it by; the name as called for a
    * method the emulator does not implement.
    */
-  method: z.string(),
+  method: z.string().min(1),
   /** The method name as the bot called it. */
-  requested_method: z.string(),
+  requested_method: z.string().min(1),
   /** Whether the call was an HTTP request or a webhook's response to an update. */
   via: z.enum(['http', 'webhook_reply']),
   /**
