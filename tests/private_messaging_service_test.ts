@@ -2841,7 +2841,8 @@ function createPrivateMessagingFixture() {
     messages,
     files: uploadRecordingFiles,
     polls,
-    events,
+    // The repositories are not staged, so each edit runs as it is called.
+    transactions: { ...events, withinTransaction: (command) => command() },
     currentUnixTimeSeconds: () => currentUnixTimeSeconds,
   });
   const messageDeletion = new MessageDeletionService({
@@ -2851,6 +2852,7 @@ function createPrivateMessagingFixture() {
     supergroups,
     messages,
     privateReplyInterfaces: privateConversations,
+    transactions: { withinTransaction: (command) => command() },
   });
   const advanceClockSeconds = (seconds: number) => {
     currentUnixTimeSeconds += seconds;

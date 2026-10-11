@@ -11,6 +11,7 @@ import {
 } from '../src/types/chat_membership.ts';
 import type { ChatMemberStatusChangedEvent } from '../src/types/chat_domain_event.ts';
 import type { VirtualBotProfile } from '../src/types/virtual_bot.ts';
+import { HeldWebhookReply } from './support/bot_api_command_session.ts';
 import { createStagedSessionFixture, FAILED_VIEW_MESSAGE } from './support/staged_session.ts';
 
 const SUBSCRIBED_UPDATE_TYPES: ReadonlySet<BotApiUpdateType> = new Set([
@@ -153,7 +154,7 @@ Deno.test('approveChatJoinRequest records nothing when its projection fails', as
 
 Deno.test('a decision prepared before the bot lost its right is not committed', async () => {
   const fixture = await createSessionFixture();
-  const reply = new HeldReply(fixture.approvalParameters('approveChatJoinRequest'));
+  const reply = new HeldWebhookReply(fixture.approvalParameters('approveChatJoinRequest'));
   const replying = runWebhookReply(fixture.replyContext(fixture.alpha), reply.response);
 
   // The owner takes Alpha's right to invite users while the reply is still being read.
@@ -181,7 +182,7 @@ Deno.test('a decision prepared before the bot lost its right is not committed', 
 
 Deno.test('a decision prepared before the request was decided is not committed again', async () => {
   const fixture = await createSessionFixture();
-  const reply = new HeldReply(fixture.approvalParameters('approveChatJoinRequest'));
+  const reply = new HeldWebhookReply(fixture.approvalParameters('approveChatJoinRequest'));
   const replying = runWebhookReply(fixture.replyContext(fixture.alpha), reply.response);
 
   // Ada approves the request herself while Alpha's reply is still being read.
@@ -207,7 +208,7 @@ Deno.test('a decision prepared before the request was decided is not committed a
 
 Deno.test('a decision prepared before its session ended changes and records nothing', async () => {
   const fixture = await createSessionFixture();
-  const reply = new HeldReply(fixture.approvalParameters('approveChatJoinRequest'));
+  const reply = new HeldWebhookReply(fixture.approvalParameters('approveChatJoinRequest'));
   const replying = runWebhookReply(fixture.replyContext(fixture.alpha), reply.response);
   const stateBefore = fixture.readState();
 
@@ -409,28 +410,6 @@ async function createSessionFixture() {
       };
     },
   };
-}
-
-/** A webhook's response naming a method, whose body arrives only once the test releases it. */
-class HeldReply {
-  readonly response: Response;
-  readonly #body: Uint8Array;
-  #controller: ReadableStreamDefaultController<Uint8Array> | undefined;
-
-  constructor(parameters: Record<string, string>) {
-    this.#body = new TextEncoder().encode(JSON.stringify(parameters));
-    const stream = new ReadableStream<Uint8Array>({
-      start: (controller) => {
-        this.#controller = controller;
-      },
-    });
-    this.response = new Response(stream, { headers: { 'Content-Type': 'application/json' } });
-  }
-
-  release(): void {
-    this.#controller?.enqueue(this.#body);
-    this.#controller?.close();
-  }
 }
 
 function captureError(run: () => unknown): string {

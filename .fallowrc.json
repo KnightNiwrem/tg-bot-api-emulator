@@ -461,7 +461,8 @@
       {
         "from": "private-conversation-repository",
         "allow": [
-          "domain"
+          "domain",
+          "change-staging"
         ]
       },
       {

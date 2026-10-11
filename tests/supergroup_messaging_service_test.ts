@@ -872,7 +872,8 @@ function createSupergroupMessagingFixture() {
     messages,
     files,
     polls,
-    events,
+    // The repositories are not staged, so each edit runs as it is called.
+    transactions: { ...events, withinTransaction: (command) => command() },
     currentUnixTimeSeconds,
   });
   const messageDeletion = new MessageDeletionService({
@@ -882,6 +883,7 @@ function createSupergroupMessagingFixture() {
     supergroups,
     messages,
     privateReplyInterfaces: privateConversations,
+    transactions: { withinTransaction: (command) => command() },
   });
   const sharedChatAdministration = new SharedChatAdministrationService({
     identities,

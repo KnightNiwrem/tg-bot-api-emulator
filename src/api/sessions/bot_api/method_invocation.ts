@@ -6,6 +6,7 @@ import { BOT_API_ERRORS } from './errors/error_catalogue.ts';
 import { presentFixedBotApiError } from './errors/error_template.ts';
 import {
   answeredPreparation,
+  answeredPreparationUnlessEnded,
   type BotApiCallContext,
   type BotApiCallOutcome,
   type BotApiCallPreparation,
@@ -168,8 +169,9 @@ async function prepareBotApiMethodCall(
   if ('prepare' in method) {
     return await method.prepare(context, chatResolution.parameters, uploadedFiles);
   }
-  const outcome = await method.handler(context, chatResolution.parameters, uploadedFiles);
-  return outcome === SESSION_ENDED ? SESSION_ENDED : answeredPreparation(outcome);
+  return answeredPreparationUnlessEnded(
+    await method.handler(context, chatResolution.parameters, uploadedFiles),
+  );
 }
 
 const namedChatIdSchema = integerParameter(z.int());

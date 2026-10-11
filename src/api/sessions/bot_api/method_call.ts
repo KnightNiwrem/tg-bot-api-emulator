@@ -83,6 +83,16 @@ export function answeredPreparation(answer: BotApiMethodAnswer): BotApiCallPrepa
 }
 
 /**
+ * The preparation of a call that preparing already answered with `outcome`, or `SESSION_ENDED` when
+ * the outcome is the refusal of an ended session.
+ */
+export function answeredPreparationUnlessEnded(
+  outcome: BotApiMethodOutcome,
+): BotApiCallPreparation | typeof SESSION_ENDED {
+  return outcome === SESSION_ENDED ? SESSION_ENDED : answeredPreparation(outcome);
+}
+
+/**
  * Prepares a call of a method that executes as a command: it reads the call's parameters and
  * waits for what they name, such as downloads, producing plain values without changing the
  * session. Read-only checks of the session's state that the method's error precedence puts first

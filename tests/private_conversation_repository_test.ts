@@ -1,4 +1,7 @@
+import { assertEquals } from '@std/assert';
+
 import { PrivateConversationRepository } from '../src/repositories/private_conversation.ts';
+import { SessionChangeJournal } from '../src/transactions/change_staging.ts';
 
 Deno.test('PrivateConversationRepository stores one private conversation per account and bot pair', () => {
   const privateConversations = new PrivateConversationRepository();
@@ -99,4 +102,37 @@ Deno.test('PrivateConversationRepository starts a conversation only when the acc
       }`,
     );
   }
+});
+
+Deno.test('PrivateConversationRepository forgets the writes of a transaction that aborts', () => {
+  const journal = new SessionChangeJournal({
+    reportNotificationFailure: (error) => {
+      throw error;
+    },
+  });
+  const privateConversations = new PrivateConversationRepository(journal);
+  const startedKey = { accountId: 1, botId: 2 };
+  const conversation = privateConversations.startPrivateConversation(startedKey);
+  privateConversations.setReplyInterfaceMessageId(startedKey, 'keyboard-message');
+  const unstartedKey = { accountId: 1, botId: 3 };
+  const readState = () => ({
+    startedConversation: privateConversations.getPrivateConversation(startedKey),
+    replyInterfaceMessageId: privateConversations.getReplyInterfaceMessageId(startedKey),
+    unstartedConversation: privateConversations.getPrivateConversation(unstartedKey) ?? null,
+    unstartedIsStarted: privateConversations.isPrivateConversationStarted(unstartedKey),
+  });
+  const stateBefore = readState();
+
+  journal.begin();
+  privateConversations.setReplyInterfaceMessageId(startedKey, undefined);
+  privateConversations.startPrivateConversation(unstartedKey);
+  journal.abort();
+
+  assertEquals(stateBefore, {
+    startedConversation: conversation,
+    replyInterfaceMessageId: 'keyboard-message',
+    unstartedConversation: null,
+    unstartedIsStarted: false,
+  });
+  assertEquals(readState(), stateBefore);
 });
