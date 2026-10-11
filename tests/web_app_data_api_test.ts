@@ -25,7 +25,8 @@ const DATES_APP_URL = 'https://hotel.example/dates';
 const MAX_WEB_APP_DATA_BYTES = 4_096;
 
 Deno.test('a grammY bot answers the dates its keyboard Web App sends', async () => {
-  const { session, fetch, bot, ada, privateChat } = await createWebAppFixture();
+  await using fixture = await createWebAppFixture();
+  const { session, fetch, bot, ada, privateChat } = fixture;
   const grammyBot = new Bot(bot.token, { client: { apiRoot: session.botApiRoot, fetch } });
   grammyBot.command('book', (context) =>
     context.reply('When do you arrive?', {
@@ -114,7 +115,8 @@ Deno.test('a grammY bot answers the dates its keyboard Web App sends', async () 
 });
 
 Deno.test('a grammY bot receives Web App data through its webhook', async () => {
-  const { api, session, fetch, bot, ada, privateChat } = await createWebAppFixture();
+  await using fixture = await createWebAppFixture();
+  const { api, session, fetch, bot, ada, privateChat } = fixture;
   const grammyBot = new Bot(bot.token, { client: { apiRoot: session.botApiRoot, fetch } });
   const received = Promise.withResolvers<string>();
   grammyBot.on('message:web_app_data', (context) => {
@@ -158,7 +160,8 @@ Deno.test('a grammY bot receives Web App data through its webhook', async () => 
 });
 
 Deno.test('Web App data reaches the bot exactly as sent, up to 4096 UTF-8 bytes', async () => {
-  const { session, ada, privateChat, callBot } = await createWebAppFixture();
+  await using fixture = await createWebAppFixture();
+  const { session, ada, privateChat, callBot } = fixture;
   await showDatesKeyboard(callBot, ada.id);
   // The euro sign takes 3 bytes in UTF-8 but 1 UTF-16 code unit, and an emoji 4 bytes but 2.
   const sendableData = [
@@ -211,7 +214,7 @@ Deno.test('Web App data reaches the bot exactly as sent, up to 4096 UTF-8 bytes'
 });
 
 Deno.test('refused Web App submissions change nothing', async () => {
-  const fixture = await createWebAppFixture();
+  await using fixture = await createWebAppFixture();
   const { api, session, bot, ada, privateChat, callBot } = fixture;
   const team = await ada.createSupergroup({ title: 'Team' });
   await ada.addChatMember({ chat: { type: 'supergroup', chatId: team.id }, userId: bot.id });
@@ -337,7 +340,8 @@ Deno.test('refused Web App submissions change nothing', async () => {
 });
 
 Deno.test('a submission answers the keyboard shown when it is sent', async () => {
-  const { session, ada, privateChat, callBot } = await createWebAppFixture();
+  await using fixture = await createWebAppFixture();
+  const { session, ada, privateChat, callBot } = fixture;
   await callBot('sendMessage', {
     chat_id: ada.id,
     text: 'When do you arrive?',
@@ -410,7 +414,8 @@ Deno.test('a submission selects the Web App button among buttons that share its 
     ['the Web App button a row above', [[webAppButton], [plainButton]]],
   ];
   for (const [arrangement, keyboard] of keyboards) {
-    const { session, ada, privateChat, callBot } = await createWebAppFixture();
+    await using fixture = await createWebAppFixture();
+    const { session, ada, privateChat, callBot } = fixture;
     const shown = await callBot('sendMessage', {
       chat_id: ada.id,
       text: 'Which?',
@@ -457,7 +462,8 @@ Deno.test('a submission selects the Web App button among buttons that share its 
 });
 
 Deno.test('a submission is stored but not delivered when the bot excludes message updates', async () => {
-  const { session, ada, privateChat, callBot } = await createWebAppFixture();
+  await using fixture = await createWebAppFixture();
+  const { session, ada, privateChat, callBot } = fixture;
   await showDatesKeyboard(callBot, ada.id);
   const offset = await readUpdatesOffset(callBot);
   await callBot('getUpdates', { offset, allowed_updates: ['callback_query'] });
@@ -482,8 +488,8 @@ Deno.test('a submission is stored but not delivered when the bot excludes messag
 
 Deno.test('Web App submissions stay within their session', async () => {
   await using api = createTestInProcessEmulator();
-  const first = await createWebAppFixture(api);
-  const second = await createWebAppFixture(api);
+  await using first = await createWebAppFixture(api);
+  await using second = await createWebAppFixture(api);
   await showDatesKeyboard(first.callBot, first.ada.id);
 
   await expectRefused(
@@ -511,7 +517,7 @@ Deno.test('Web App submissions stay within their session', async () => {
   await second.session.end();
 });
 
-interface WebAppFixture {
+interface WebAppFixture extends AsyncDisposable {
   readonly api: EmulationApi;
   readonly session: EmulationSessionClient;
   readonly fetch: typeof globalThis.fetch;
@@ -526,10 +532,13 @@ type BotApiCaller = (
   parameters: Record<string, unknown>,
 ) => Promise<{ ok: boolean; result?: unknown; description?: string }>;
 
-/** Creates a session whose bot Ada has started a private chat with. */
-async function createWebAppFixture(
-  api: TestInProcessEmulator = createTestInProcessEmulator(),
-): Promise<WebAppFixture> {
+/**
+ * Creates a session whose bot Ada has started a private chat with, on `sharedApi` or else on an
+ * emulator of its own, which disposing of the fixture disposes of.
+ */
+async function createWebAppFixture(sharedApi?: TestInProcessEmulator): Promise<WebAppFixture> {
+  await using disposalOnFailure = new AsyncDisposableStack();
+  const api = sharedApi ?? disposalOnFailure.use(createTestInProcessEmulator());
   const { fetch } = api;
   const session = await api.client.createSession();
   const createdBot = await session.createBot({ first_name: 'Hotel Bot', username: 'hotel_bot' });
@@ -544,6 +553,7 @@ async function createWebAppFixture(
     });
     return await response.json() as { ok: boolean; result?: unknown; description?: string };
   };
+  const emulatorDisposal = disposalOnFailure.move();
   return {
     api,
     session,
@@ -552,6 +562,7 @@ async function createWebAppFixture(
     ada,
     privateChat,
     callBot,
+    [Symbol.asyncDispose]: () => emulatorDisposal.disposeAsync(),
   };
 }
 

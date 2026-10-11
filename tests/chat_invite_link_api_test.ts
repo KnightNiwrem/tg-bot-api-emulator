@@ -46,7 +46,8 @@ const INVITER_RIGHTS = { can_invite_users: true };
  * membership updates and messages.
  */
 async function createInviteLinkFixture() {
-  const { api, sessionPath } = await createTestSession();
+  await using disposalOnFailure = new AsyncDisposableStack();
+  const { api, sessionPath } = disposalOnFailure.use(await createTestSession());
   const ada = await createAccount(api, sessionPath, 'Ada');
   const grace = await createAccount(api, sessionPath, 'Grace');
   const hopper = await createAccount(api, sessionPath, 'Hopper');
@@ -145,6 +146,7 @@ async function createInviteLinkFixture() {
   const getMemberCount = async () =>
     (await callBot(inviterBot, 'getChatMemberCount', { chat_id: supergroup.id })).body.result;
 
+  const emulatorDisposal = disposalOnFailure.move();
   return {
     api,
     sessionPath,
@@ -168,6 +170,7 @@ async function createInviteLinkFixture() {
     getInviteLinks,
     getMemberStatus,
     getMemberCount,
+    [Symbol.asyncDispose]: () => emulatorDisposal.disposeAsync(),
   };
 }
 
@@ -232,7 +235,8 @@ function nowUnixSeconds(): number {
 }
 
 Deno.test('an administrator bot creates invite links that keep the settings it chose', async () => {
-  const { ada, inviterBot, createLink, getInviteLinks } = await createInviteLinkFixture();
+  await using fixture = await createInviteLinkFixture();
+  const { ada, inviterBot, createLink, getInviteLinks } = fixture;
   const expireDate = nowUnixSeconds() + 3_600;
 
   const namedLink = await createLink({
@@ -347,6 +351,7 @@ Deno.test('an administrator bot creates invite links that keep the settings it c
 });
 
 Deno.test('createChatInviteLink refuses invalid settings and bots without the right', async () => {
+  await using fixture = await createInviteLinkFixture();
   const {
     api,
     sessionPath,
@@ -358,7 +363,7 @@ Deno.test('createChatInviteLink refuses invalid settings and bots without the ri
     supergroup,
     callBot,
     getInviteLinks,
-  } = await createInviteLinkFixture();
+  } = fixture;
   // Grace starts a private chat with the inviter, which has no invite links.
   await expectStatus(
     api.request(
@@ -450,6 +455,7 @@ Deno.test('createChatInviteLink refuses invalid settings and bots without the ri
 });
 
 Deno.test('an account joins through an invite link, and bots see the link it used', async () => {
+  await using fixture = await createInviteLinkFixture();
   const {
     api,
     grace,
@@ -464,7 +470,7 @@ Deno.test('an account joins through an invite link, and bots see the link it use
     getInviteLinks,
     getMemberStatus,
     getMemberCount,
-  } = await createInviteLinkFixture();
+  } = fixture;
   const link = await createLink({ name: 'Friends', member_limit: 3 });
   const memberCountBefore = await getMemberCount();
 
@@ -545,6 +551,7 @@ Deno.test('an account joins through an invite link, and bots see the link it use
 });
 
 Deno.test('using an invite link has an explicit outcome for each standing and link', async () => {
+  await using fixture = await createInviteLinkFixture();
   const {
     api,
     sessionPath,
@@ -562,7 +569,7 @@ Deno.test('using an invite link has an explicit outcome for each standing and li
     joinByLink,
     getMemberStatus,
     getMemberCount,
-  } = await createInviteLinkFixture();
+  } = fixture;
   const link = await createLink();
   // Hopper is banned by his removal; Linus is restricted before he joins.
   await addMember(hopper.id);
@@ -621,6 +628,7 @@ Deno.test('using an invite link has an explicit outcome for each standing and li
 });
 
 Deno.test('a member limit counts members that joined through the link while they stay', async () => {
+  await using fixture = await createInviteLinkFixture();
   const {
     api,
     ada,
@@ -632,7 +640,7 @@ Deno.test('a member limit counts members that joined through the link while they
     createLink,
     joinByLink,
     getInviteLinks,
-  } = await createInviteLinkFixture();
+  } = fixture;
   const link = await createLink({ member_limit: 1 });
   const leave = (account: FixtureAccount) =>
     expectStatus(
@@ -670,6 +678,7 @@ Deno.test('a member limit counts members that joined through the link while they
 });
 
 Deno.test('a test makes an invite link expire, after which it admits nobody', async () => {
+  await using fixture = await createInviteLinkFixture();
   const {
     api,
     sessionPath,
@@ -681,7 +690,7 @@ Deno.test('a test makes an invite link expire, after which it admits nobody', as
     joinByLink,
     getInviteLinks,
     getMemberStatus,
-  } = await createInviteLinkFixture();
+  } = fixture;
   const expireDate = nowUnixSeconds() + 3_600;
   const expiringLink = await createLink({ expire_date: expireDate });
   const lastingLink = await createLink();
@@ -735,8 +744,8 @@ Deno.test('a test makes an invite link expire, after which it admits nobody', as
 });
 
 Deno.test('only the owner inspects the invite links of a supergroup', async () => {
-  const { api, sessionPath, ada, grace, inviterBot, addMember, promote, getInviteLinks } =
-    await createInviteLinkFixture();
+  await using fixture = await createInviteLinkFixture();
+  const { api, sessionPath, ada, grace, inviterBot, addMember, promote, getInviteLinks } = fixture;
   await addMember(grace.id);
   await promote(grace.id, { can_invite_users: true });
 
@@ -757,8 +766,8 @@ Deno.test('only the owner inspects the invite links of a supergroup', async () =
 });
 
 Deno.test('accounts join a public supergroup by themselves, without an invite link', async () => {
-  const { api, sessionPath, ada, grace, hopper, inviterBot, readUpdates, callBot } =
-    await createInviteLinkFixture();
+  await using fixture = await createInviteLinkFixture();
+  const { api, sessionPath, ada, grace, hopper, inviterBot, readUpdates, callBot } = fixture;
   const createSupergroup = async (body: object) =>
     (await requestJson<{ supergroup: { id: number } }>(
       api,
@@ -815,7 +824,8 @@ Deno.test('accounts join a public supergroup by themselves, without an invite li
  * bot, list the owner's view of the pending join requests, and make a link's expiry date arrive.
  */
 async function createInviteLinkLifecycleFixture() {
-  const fixture = await createInviteLinkFixture();
+  await using disposalOnFailure = new AsyncDisposableStack();
+  const fixture = disposalOnFailure.use(await createInviteLinkFixture());
   const { api, sessionPath, ada, supergroup, inviterBot, callBot, supergroupPath } = fixture;
   const editLink = (inviteLink: string, parameters: object = {}, bot = inviterBot) =>
     callBot(bot, 'editChatInviteLink', {
@@ -847,10 +857,20 @@ async function createInviteLinkLifecycleFixture() {
   const inspectLink = async (inviteLink: string) =>
     (await fixture.getInviteLinks()).body.invite_links
       .find(({ invite_link }) => invite_link === inviteLink);
-  return { ...fixture, editLink, revokeLink, getJoinRequests, expireLink, inspectLink };
+  const emulatorDisposal = disposalOnFailure.move();
+  return {
+    ...fixture,
+    editLink,
+    revokeLink,
+    getJoinRequests,
+    expireLink,
+    inspectLink,
+    [Symbol.asyncDispose]: () => emulatorDisposal.disposeAsync(),
+  };
 }
 
 Deno.test('editChatInviteLink replaces the settings of a link, which its later uses follow', async () => {
+  await using fixture = await createInviteLinkLifecycleFixture();
   const {
     grace,
     hopper,
@@ -863,7 +883,7 @@ Deno.test('editChatInviteLink replaces the settings of a link, which its later u
     expireLink,
     inspectLink,
     getJoinRequests,
-  } = await createInviteLinkLifecycleFixture();
+  } = fixture;
   const expireDate = nowUnixSeconds() + 3_600;
   const link = await createLink({ name: 'Spring', expire_date: expireDate, member_limit: 1 });
   await joinByLink(grace, link.invite_link);
@@ -970,6 +990,7 @@ Deno.test('editChatInviteLink replaces the settings of a link, which its later u
 });
 
 Deno.test('revokeChatInviteLink ends a link for good while its members and pending requests stay', async () => {
+  await using fixture = await createInviteLinkLifecycleFixture();
   const {
     grace,
     hopper,
@@ -987,7 +1008,7 @@ Deno.test('revokeChatInviteLink ends a link for good while its members and pendi
     getJoinRequests,
     getMemberStatus,
     callBot,
-  } = await createInviteLinkLifecycleFixture();
+  } = fixture;
   const expireDate = nowUnixSeconds() + 3_600;
   const directLink = await createLink({ member_limit: 3 });
   const requestLink = await createLink({ expire_date: expireDate, creates_join_request: true });
@@ -1105,6 +1126,7 @@ Deno.test('revokeChatInviteLink ends a link for good while its members and pendi
 });
 
 Deno.test('editChatInviteLink and revokeChatInviteLink refuse invalid calls without a change', async () => {
+  await using fixture = await createInviteLinkFixture();
   const {
     api,
     sessionPath,
@@ -1118,7 +1140,7 @@ Deno.test('editChatInviteLink and revokeChatInviteLink refuse invalid calls with
     createLink,
     callBot,
     getInviteLinks,
-  } = await createInviteLinkFixture();
+  } = fixture;
   // Grace starts a private chat with the inviter, which has no invite links.
   await expectStatus(
     api.request(
@@ -1263,8 +1285,8 @@ Deno.test('editChatInviteLink and revokeChatInviteLink refuse invalid calls with
 });
 
 Deno.test('a session edits and revokes only its own invite links, primary or additional', async () => {
-  const first = await createInviteLinkLifecycleFixture();
-  const second = await createInviteLinkLifecycleFixture();
+  await using first = await createInviteLinkLifecycleFixture();
+  await using second = await createInviteLinkLifecycleFixture();
   const link = await first.createLink({ name: 'First' });
   const primaryLink = await first.exportLink();
   const linksBefore = await first.getInviteLinks();
@@ -1309,6 +1331,7 @@ function describeInspectedLink(link: Record<string, unknown>) {
 }
 
 Deno.test('exportChatInviteLink replaces the primary link of the bot, whose members stay', async () => {
+  await using fixture = await createInviteLinkFixture();
   const {
     grace,
     hopper,
@@ -1320,7 +1343,7 @@ Deno.test('exportChatInviteLink replaces the primary link of the bot, whose memb
     joinByLink,
     getInviteLinks,
     getMemberStatus,
-  } = await createInviteLinkFixture();
+  } = fixture;
 
   const beforeExport = await getChatInviteLink();
   const firstLink = await exportLink();
@@ -1385,6 +1408,7 @@ Deno.test('exportChatInviteLink replaces the primary link of the bot, whose memb
 });
 
 Deno.test('revoking the primary link answers it revoked and gives the bot a replacement', async () => {
+  await using fixture = await createInviteLinkFixture();
   const {
     grace,
     hopper,
@@ -1395,7 +1419,7 @@ Deno.test('revoking the primary link answers it revoked and gives the bot a repl
     getChatInviteLink,
     joinByLink,
     getMemberStatus,
-  } = await createInviteLinkFixture();
+  } = fixture;
   const revokedLink = await exportLink();
   await joinByLink(grace, revokedLink);
 
@@ -1453,6 +1477,7 @@ Deno.test('revoking the primary link answers it revoked and gives the bot a repl
 });
 
 Deno.test('each administrator bot replaces only its own primary link', async () => {
+  await using fixture = await createInviteLinkFixture();
   const {
     grace,
     inviterBot,
@@ -1465,7 +1490,7 @@ Deno.test('each administrator bot replaces only its own primary link', async () 
     getChatInviteLink,
     joinByLink,
     getInviteLinks,
-  } = await createInviteLinkFixture();
+  } = fixture;
   await promote(observerBot.bot.id, INVITER_RIGHTS);
   const additionalLink = await createLink({ name: 'Extra' });
   const inviterFirst = await exportLink();
@@ -1511,6 +1536,7 @@ Deno.test('each administrator bot replaces only its own primary link', async () 
 });
 
 Deno.test('exportChatInviteLink and primary link edits refuse invalid calls without a change', async () => {
+  await using fixture = await createInviteLinkFixture();
   const {
     api,
     sessionPath,
@@ -1525,7 +1551,7 @@ Deno.test('exportChatInviteLink and primary link edits refuse invalid calls with
     getChatInviteLink,
     getInviteLinks,
     getMemberCount,
-  } = await createInviteLinkFixture();
+  } = fixture;
   // Grace starts a private chat with the inviter, which has no invite links.
   await expectStatus(
     api.request(
@@ -1626,7 +1652,8 @@ Deno.test('exportChatInviteLink and primary link edits refuse invalid calls with
 });
 
 Deno.test('concurrent exports leave the bot exactly one primary link that is not revoked', async () => {
-  const { exportLink, getChatInviteLink, getInviteLinks } = await createInviteLinkFixture();
+  await using fixture = await createInviteLinkFixture();
+  const { exportLink, getChatInviteLink, getInviteLinks } = fixture;
 
   const exportedLinks = await Promise.all(Array.from({ length: 5 }, () => exportLink()));
   const inspectedLinks = (await getInviteLinks()).body.invite_links;

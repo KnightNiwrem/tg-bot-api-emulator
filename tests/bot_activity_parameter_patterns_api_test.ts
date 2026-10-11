@@ -19,7 +19,8 @@ interface ControlValidationErrorBody {
 }
 
 Deno.test('parameters_json matches JSON sent as a body object or as form text, in any member order', async () => {
-  const { api, activityPath, botApiPath, account } = await createFixture();
+  await using fixture = await createFixture();
+  const { api, activityPath, botApiPath, account } = fixture;
   const replyParameters = { message_id: 7, allow_sending_without_reply: true };
   await callBotApiWithJson(api, `${botApiPath}/sendMessage`, {
     chat_id: account.id,
@@ -70,7 +71,8 @@ Deno.test('parameters_json matches JSON sent as a body object or as form text, i
 });
 
 Deno.test('parameters_json applies its rules to nested values and arrays', async () => {
-  const { api, activityPath, botApiPath } = await createFixture();
+  await using fixture = await createFixture();
+  const { api, activityPath, botApiPath } = fixture;
   await callBotApiWithJson(api, `${botApiPath}/recordShapes`, {
     reply_markup: {
       inline_keyboard: [
@@ -122,7 +124,8 @@ Deno.test('parameters_json applies its rules to nested values and arrays', async
 });
 
 Deno.test('parameters_json compares numbers by the exact decimal value their text spells', async () => {
-  const { api, activityPath, botApiPath } = await createFixture();
+  await using fixture = await createFixture();
+  const { api, activityPath, botApiPath } = fixture;
   // Sent as form text, which is recorded as it is, so that the numbers keep spellings JavaScript
   // would not keep.
   await callBotApiWithForm(api, `${botApiPath}/recordShapes`, {
@@ -157,7 +160,8 @@ Deno.test('parameters_json compares numbers by the exact decimal value their tex
 });
 
 Deno.test('A parameter nested beyond the limit matches no pattern', async () => {
-  const { api, activityPath, botApiPath } = await createFixture();
+  await using fixture = await createFixture();
+  const { api, activityPath, botApiPath } = fixture;
   const depth = 100_000;
   await callBotApiWithRawJsonBody(
     api,
@@ -174,7 +178,8 @@ Deno.test('A parameter nested beyond the limit matches no pattern', async () => 
 });
 
 Deno.test('Text that looks like JSON is compared as text unless parameters_json asks', async () => {
-  const { api, activityPath, botApiPath } = await createFixture();
+  await using fixture = await createFixture();
+  const { api, activityPath, botApiPath } = fixture;
   await callBotApiWithJson(api, `${botApiPath}/recordShapes`, { text: '{"a": 1}' });
 
   await assertPositions(
@@ -198,7 +203,8 @@ Deno.test('Text that looks like JSON is compared as text unless parameters_json 
 });
 
 Deno.test('parameters_json names parameters and members of any name as own members', async () => {
-  const { api, activityPath, botApiPath } = await createFixture();
+  await using fixture = await createFixture();
+  const { api, activityPath, botApiPath } = fixture;
   await callBotApiWithRawJsonBody(
     api,
     `${botApiPath}/recordShapes`,
@@ -224,7 +230,8 @@ Deno.test('parameters_json names parameters and members of any name as own membe
 });
 
 Deno.test('parameters_json, even empty, matches only calls', async () => {
-  const { api, activityPath, botApiPath, sendText } = await createFixture();
+  await using fixture = await createFixture();
+  const { api, activityPath, botApiPath, sendText } = fixture;
   await sendText('/start');
   await callBotApiWithJson(api, `${botApiPath}/getUpdates`, {});
   await callBotApiWithJson(api, `${botApiPath}/recordShapes`, { shape: {} });
@@ -240,7 +247,8 @@ Deno.test('parameters_json, even empty, matches only calls', async () => {
 });
 
 Deno.test('A malformed parameters_json is an issue at its place in the JSON', async () => {
-  const { api, activityPath } = await createFixture();
+  await using fixture = await createFixture();
+  const { api, activityPath } = fixture;
   const cases: ReadonlyArray<
     readonly [string, ReadonlyArray<readonly [readonly (string | number)[], string]>]
   > = [
@@ -287,7 +295,8 @@ Deno.test('A malformed parameters_json is an issue at its place in the JSON', as
 });
 
 Deno.test('A parameters_json issue is reported with the other issues of the query', async () => {
-  const { api, activityPath } = await createFixture();
+  await using fixture = await createFixture();
+  const { api, activityPath } = fixture;
 
   await assertIssues(api, `${activityPath}?limit=-1&parameters_json=${encodeURIComponent('[')}`, [
     [['limit'], 'too_small'],
@@ -300,7 +309,8 @@ Deno.test('A parameters_json issue is reported with the other issues of the quer
 
 /** Creates a session holding a bot and an account that can message it. */
 async function createFixture() {
-  const { api, sessionPath } = await createTestSession();
+  await using disposalOnFailure = new AsyncDisposableStack();
+  const { api, sessionPath } = disposalOnFailure.use(await createTestSession());
   const createdBot = await createBot(api, sessionPath, 'test_bot');
   const account = await createAccount(api, sessionPath, 'Ada');
   const sendText = async (text: string) => {
@@ -309,12 +319,14 @@ async function createFixture() {
       text,
     });
   };
+  const emulatorDisposal = disposalOnFailure.move();
   return {
     api,
     activityPath: `${sessionPath}/bot-activity`,
     botApiPath: createdBot.botApiPath,
     account,
     sendText,
+    [Symbol.asyncDispose]: () => emulatorDisposal.disposeAsync(),
   };
 }
 

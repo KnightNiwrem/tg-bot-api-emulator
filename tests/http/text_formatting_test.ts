@@ -8,7 +8,8 @@ import { createAccount, createPrivateConversationFixture } from '../support/http
 import { gifImage } from '../support/media_samples.ts';
 
 Deno.test('grammY command handlers match account-sent bot commands', async () => {
-  const { api, sessionPath, createdBot, sendText } = await createPrivateConversationFixture();
+  await using fixture = await createPrivateConversationFixture();
+  const { api, sessionPath, createdBot, sendText } = fixture;
 
   for (const text of ['/start', '/start@test_bot payload', 'hello /start']) {
     await sendText(text);
@@ -40,8 +41,8 @@ Deno.test('grammY command handlers match account-sent bot commands', async () =>
 });
 
 Deno.test('messages carry the entities Telegram detects in their text', async () => {
-  const { api, sessionPath, botApiPath, createdBot, createdAccount } =
-    await createPrivateConversationFixture();
+  await using fixture = await createPrivateConversationFixture();
+  const { api, sessionPath, botApiPath, createdBot, createdAccount } = fixture;
   const accountId = createdAccount.account.id;
   const grammyBot = new Bot(createdBot.token, {
     client: {
@@ -94,8 +95,8 @@ Deno.test('messages carry the entities Telegram detects in their text', async ()
 });
 
 Deno.test('accounts send and edit text and captions with the formatting they choose', async () => {
-  const { api, sessionPath, botApiPath, createdBot, createdAccount } =
-    await createPrivateConversationFixture();
+  await using fixture = await createPrivateConversationFixture();
+  const { api, sessionPath, botApiPath, createdBot, createdAccount } = fixture;
   const grace = await createAccount(api, sessionPath, 'Grace');
   const accountPath = `${sessionPath}/accounts/${createdAccount.account.id}`;
   const historyPath = `${accountPath}/conversations/private/${createdBot.bot.id}/messages`;
@@ -221,8 +222,8 @@ Deno.test('accounts send and edit text and captions with the formatting they cho
 });
 
 Deno.test('sendMessage and editMessageText format text from parse_mode or entities', async () => {
-  const { api, sessionPath, botApiPath, createdBot, createdAccount, sendText } =
-    await createPrivateConversationFixture();
+  await using fixture = await createPrivateConversationFixture();
+  const { api, sessionPath, botApiPath, createdBot, createdAccount, sendText } = fixture;
   const accountId = createdAccount.account.id;
   await sendText('Hi');
   const expectBadRequest = async (
@@ -386,7 +387,8 @@ Deno.test('sendMessage and editMessageText format text from parse_mode or entiti
 });
 
 Deno.test('sendMessage reads and reports date and time entities as Telegram does', async () => {
-  const { api, botApiPath, createdAccount, sendText } = await createPrivateConversationFixture();
+  await using fixture = await createPrivateConversationFixture();
+  const { api, botApiPath, createdAccount, sendText } = fixture;
   const accountId = createdAccount.account.id;
   await sendText('Hi');
   const sendMessage = async (parameters: Record<string, unknown>) =>
@@ -460,8 +462,8 @@ Deno.test('sendMessage reads and reports date and time entities as Telegram does
 });
 
 Deno.test('a grammY bot replies with HTML and receives Telegram errors for bad MarkdownV2', async () => {
-  const { api, sessionPath, createdBot, createdAccount, sendText } =
-    await createPrivateConversationFixture();
+  await using fixture = await createPrivateConversationFixture();
+  const { api, sessionPath, createdBot, createdAccount, sendText } = fixture;
   const grammyBot = new Bot(createdBot.token, {
     client: {
       apiRoot: `${TEST_PUBLIC_ORIGIN}${sessionPath}/bot-api`,

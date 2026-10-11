@@ -106,8 +106,8 @@ async function echoMessages(api: EmulationApi, botApiPath: string, replyCount: n
 }
 
 Deno.test('A control action answers with its session and the log head before it', async () => {
-  const { api, sessionPath, botApiPath, createdBot, createdAccount } =
-    await createPrivateConversationFixture();
+  await using fixture = await createPrivateConversationFixture();
+  const { api, sessionPath, botApiPath, createdBot, createdAccount } = fixture;
   const accountPath = `${sessionPath}/accounts/${createdAccount.account.id}`;
   await callBotApi(api, `${botApiPath}/getMe`, {});
   await callBotApi(api, `${botApiPath}/getMe`, {});
@@ -140,7 +140,8 @@ Deno.test('A control action answers with its session and the log head before it'
 });
 
 Deno.test('A refused control action answers without a receipt', async () => {
-  const { api, sessionPath, createdBot, createdAccount } = await createPrivateConversationFixture();
+  await using fixture = await createPrivateConversationFixture();
+  const { api, sessionPath, createdBot, createdAccount } = fixture;
   const accountPath = `${sessionPath}/accounts/${createdAccount.account.id}`;
   const refusals = [
     await api.request(`${accountPath}/blocked-bots/999`, { method: 'PUT' }),
@@ -168,8 +169,8 @@ Deno.test('A refused control action answers without a receipt', async () => {
 });
 
 Deno.test('A control action that changes nothing answers with the head as it is', async () => {
-  const { api, sessionPath, botApiPath, createdBot, createdAccount } =
-    await createPrivateConversationFixture();
+  await using fixture = await createPrivateConversationFixture();
+  const { api, sessionPath, botApiPath, createdBot, createdAccount } = fixture;
   const blockPath =
     `${sessionPath}/accounts/${createdAccount.account.id}/blocked-bots/${createdBot.bot.id}`;
 
@@ -185,7 +186,8 @@ Deno.test('A control action that changes nothing answers with the head as it is'
 });
 
 Deno.test('Creating a session answers with its receipt, and ending one with none', async () => {
-  const { api, sessionPath } = await createPrivateConversationFixture();
+  await using fixture = await createPrivateConversationFixture();
+  const { api, sessionPath } = fixture;
 
   const createResponse = await api.request('/sessions', { method: 'POST' });
   const created = await createResponse.json() as { id: string };
@@ -200,8 +202,8 @@ Deno.test('Creating a session answers with its receipt, and ending one with none
 });
 
 Deno.test('A bot reply sent as soon as an action is delivered follows its receipt', async () => {
-  const { api, sessionPath, botApiPath, createdBot, createdAccount } =
-    await createPrivateConversationFixture();
+  await using fixture = await createPrivateConversationFixture();
+  const { api, sessionPath, botApiPath, createdBot, createdAccount } = fixture;
   const accountId = createdAccount.account.id;
   // The bot's poll is held before the action, so the update is handed over the moment the action
   // publishes it, and the bot replies at once.
@@ -230,8 +232,8 @@ Deno.test('A bot reply sent as soon as an action is delivered follows its receip
 });
 
 Deno.test('An update a contract route hands over at once follows its receipt', async () => {
-  const { api, sessionPath, botApiPath, createdBot, createdAccount } =
-    await createPrivateConversationFixture();
+  await using fixture = await createPrivateConversationFixture();
+  const { api, sessionPath, botApiPath, createdBot, createdAccount } = fixture;
   const { body: { supergroup } } = await requestJson<{ supergroup: { id: number } }>(
     api,
     'POST',
@@ -258,8 +260,8 @@ Deno.test('An update a contract route hands over at once follows its receipt', a
 });
 
 Deno.test('Overlapping actions each precede what they cause, among unrelated activity', async () => {
-  const { api, sessionPath, botApiPath, createdBot, createdAccount } =
-    await createPrivateConversationFixture();
+  await using fixture = await createPrivateConversationFixture();
+  const { api, sessionPath, botApiPath, createdBot, createdAccount } = fixture;
   const grace = await createAccount(api, sessionPath, 'Grace');
   const otherBot = await createBot(api, sessionPath, 'other_bot');
   const senders = [createdAccount.account.id, grace.id];
@@ -307,8 +309,8 @@ Deno.test('Overlapping actions each precede what they cause, among unrelated act
 });
 
 Deno.test('An effect recorded before an action answers still follows its receipt', async () => {
-  const { api, sessionPath, botApiPath, createdBot, sendText } =
-    await createPrivateConversationFixture();
+  await using fixture = await createPrivateConversationFixture();
+  const { api, sessionPath, botApiPath, createdBot, sendText } = fixture;
   const botId = createdBot.bot.id;
   // The webhook never answers, so its attempt stays in flight until the test expires it.
   const closing = Promise.withResolvers<void>();

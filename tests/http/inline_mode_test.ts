@@ -23,7 +23,8 @@ import {
 import { gifImage } from '../support/media_samples.ts';
 
 Deno.test('an account sends an inline query, a bot answers, and the account sends a result', async () => {
-  const { api, sessionPath } = await createTestSession();
+  await using testSession = await createTestSession();
+  const { api, sessionPath } = testSession;
   const account = await createAccount(api, sessionPath, 'Ada');
   const inlineBot = await createBot(api, sessionPath, 'cats_bot', {
     supports_inline_queries: true,
@@ -249,7 +250,8 @@ Deno.test('an account sends an inline query, a bot answers, and the account send
 });
 
 Deno.test('repeated inline queries reuse the answer within its cache time', async () => {
-  const { api, sessionPath } = await createTestSession();
+  await using testSession = await createTestSession();
+  const { api, sessionPath } = testSession;
   const ada = await createAccount(api, sessionPath, 'Ada');
   const grace = await createAccount(api, sessionPath, 'Grace');
   const inlineBot = await createBot(api, sessionPath, 'cats_bot', {
@@ -313,7 +315,8 @@ Deno.test('repeated inline queries reuse the answer within its cache time', asyn
 });
 
 Deno.test('accounts share their location with inline bots that request it', async () => {
-  const { api, sessionPath } = await createTestSession();
+  await using testSession = await createTestSession();
+  const { api, sessionPath } = testSession;
   const account = await createAccount(api, sessionPath, 'Ada');
   const nearbyBot = await createBot(api, sessionPath, 'nearby_bot', {
     supports_inline_queries: true,
@@ -440,8 +443,8 @@ Deno.test('accounts share their location with inline bots that request it', asyn
 });
 
 Deno.test('answerInlineQuery and the inline query routes follow Telegram checks', async () => {
-  const { api, sessionPath, createdBot: plainBot, createdAccount, sendText } =
-    await createPrivateConversationFixture();
+  await using fixture = await createPrivateConversationFixture();
+  const { api, sessionPath, createdBot: plainBot, createdAccount, sendText } = fixture;
   const accountPath = `${sessionPath}/accounts/${createdAccount.account.id}`;
   const inlineBot = await createBot(api, sessionPath, 'cats_bot', {
     supports_inline_queries: true,
@@ -608,7 +611,8 @@ Deno.test('answerInlineQuery and the inline query routes follow Telegram checks'
 });
 
 Deno.test('inline query results send rich messages that reuse files', async () => {
-  const { api, sessionPath } = await createTestSession();
+  await using testSession = await createTestSession();
+  const { api, sessionPath } = testSession;
   const account = await createAccount(api, sessionPath, 'Ada');
   const inlineBot = await createBot(api, sessionPath, 'cats_bot', {
     supports_inline_queries: true,
@@ -720,7 +724,8 @@ Deno.test('inline query results send rich messages that reuse files', async () =
 });
 
 Deno.test('a grammY bot answers inline queries and edits the message it sent to a group', async () => {
-  const { api, sessionPath, owner, supergroup, supergroupPath } = await createSupergroupFixture();
+  await using fixture = await createSupergroupFixture();
+  const { api, sessionPath, owner, supergroup, supergroupPath } = fixture;
   const inlineBot = await createBot(api, sessionPath, 'cats_bot', {
     supports_inline_queries: true,
     receives_chosen_inline_results: true,

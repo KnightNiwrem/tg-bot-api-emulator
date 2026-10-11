@@ -22,8 +22,9 @@ import {
 import { gifImage } from '../support/media_samples.ts';
 
 Deno.test('editMessageMedia puts videos in messages and albums, keeping their place', async () => {
+  await using fixture = await createSupergroupFixture();
   const { api, owner, member, bot, readerBot, supergroup, supergroupPath, sendSupergroupText } =
-    await createSupergroupFixture();
+    fixture;
   const chatId = String(supergroup.id);
   const question = await sendSupergroupText(member.id, 'What happened?');
   const editMedia = (messageId: unknown, media: unknown, files: Record<string, File> = {}) =>
@@ -161,8 +162,8 @@ Deno.test('editMessageMedia puts videos in messages and albums, keeping their pl
 });
 
 Deno.test('an inline message takes a video by file_id or URL but not by upload', async () => {
-  const { api, sessionPath, createdBot, createdAccount, sendText } =
-    await createPrivateConversationFixture();
+  await using fixture = await createPrivateConversationFixture();
+  const { api, sessionPath, createdBot, createdAccount, sendText } = fixture;
   await sendText('/start');
   const chatId = createdAccount.account.id;
   const accountPath = `${sessionPath}/accounts/${chatId}`;
@@ -263,8 +264,8 @@ Deno.test('an inline message takes a video by file_id or URL but not by upload',
 });
 
 Deno.test('an account and a bot exchange a video, which the bot downloads and sends again', async () => {
-  const { api, sessionPath, botApiPath, createdBot, createdAccount } =
-    await createPrivateConversationFixture();
+  await using fixture = await createPrivateConversationFixture();
+  const { api, sessionPath, botApiPath, createdBot, createdAccount } = fixture;
   const accountPath = `${sessionPath}/accounts/${createdAccount.account.id}`;
   const historyPath = `${accountPath}/conversations/private/${createdBot.bot.id}/messages`;
   const videoContent = new TextEncoder().encode('bytes the emulator never decodes');
@@ -391,8 +392,8 @@ Deno.test('an account and a bot exchange a video, which the bot downloads and se
 });
 
 Deno.test('sendVideo keeps the attributes bots define and follows Telegram checks', async () => {
-  const { api, sessionPath, botApiPath, createdBot, createdAccount, sendText } =
-    await createPrivateConversationFixture();
+  await using fixture = await createPrivateConversationFixture();
+  const { api, sessionPath, botApiPath, createdBot, createdAccount, sendText } = fixture;
   await sendText('/start');
   const chatId = String(createdAccount.account.id);
   const sendVideo = async (parameters: Record<string, string>, files: Record<string, File>) => {
@@ -606,9 +607,9 @@ Deno.test('sendVideo keeps the attributes bots define and follows Telegram check
 });
 
 Deno.test('bots reuse only video file IDs they know, in their own session', async () => {
-  const { api, sessionPath, botApiPath, createdBot, createdAccount, sendText } =
-    await createPrivateConversationFixture();
-  const otherSession = await createPrivateConversationFixture();
+  await using fixture = await createPrivateConversationFixture();
+  const { api, sessionPath, botApiPath, createdBot, createdAccount, sendText } = fixture;
+  await using otherSession = await createPrivateConversationFixture();
   await sendText('/start');
   await otherSession.sendText('/start');
   const otherBot = await createBot(api, sessionPath, 'other_bot');
@@ -667,8 +668,8 @@ Deno.test('bots reuse only video file IDs they know, in their own session', asyn
 });
 
 Deno.test('supergroup bots receive videos as they would other messages, each by its own file_id', async () => {
-  const { api, owner, member, bot, readerBot, supergroup, supergroupPath, sessionPath } =
-    await createSupergroupFixture();
+  await using fixture = await createSupergroupFixture();
+  const { api, owner, member, bot, readerBot, supergroup, supergroupPath, sessionPath } = fixture;
   const lastUpdateId = async (botApiPath: string, allowedUpdates: readonly string[]) => {
     const { body } = await callBotApi(api, `${botApiPath}/getUpdates`, {
       allowed_updates: allowedUpdates,
@@ -744,7 +745,8 @@ Deno.test('supergroup bots receive videos as they would other messages, each by 
 });
 
 Deno.test('forwards, copies and replies from other chats show videos with their start', async () => {
-  const { api, sessionPath, member, bot, supergroup } = await createSupergroupFixture();
+  await using fixture = await createSupergroupFixture();
+  const { api, sessionPath, member, bot, supergroup } = fixture;
   const privateChatId = member.id;
   const started = await api.request(
     `${sessionPath}/accounts/${member.id}/messages`,
@@ -848,8 +850,8 @@ Deno.test('forwards, copies and replies from other chats show videos with their 
 });
 
 Deno.test('bots and accounts edit the captions and media of video messages', async () => {
-  const { api, sessionPath, botApiPath, createdBot, createdAccount, sendText } =
-    await createPrivateConversationFixture();
+  await using fixture = await createPrivateConversationFixture();
+  const { api, sessionPath, botApiPath, createdBot, createdAccount, sendText } = fixture;
   await sendText('/start');
   const chatId = createdAccount.account.id;
   const accountPath = `${sessionPath}/accounts/${chatId}`;
@@ -926,7 +928,8 @@ Deno.test('bots and accounts edit the captions and media of video messages', asy
 });
 
 Deno.test('a grammY bot receives a video through its webhook and answers with one', async () => {
-  const { api, sessionPath, createdBot, createdAccount } = await createPrivateConversationFixture();
+  await using fixture = await createPrivateConversationFixture();
+  const { api, sessionPath, createdBot, createdAccount } = fixture;
   const grammyBot = new Bot(createdBot.token, {
     client: {
       apiRoot: `${TEST_PUBLIC_ORIGIN}${sessionPath}/bot-api`,

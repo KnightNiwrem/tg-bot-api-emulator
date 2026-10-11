@@ -8,7 +8,8 @@ import type { ControlErrorBody } from '../../clients/typescript/mod.ts';
 import { createTestSession, requestJson } from '../support/emulation_api.ts';
 
 Deno.test('Web resource content is base64 text, with or without its padding', async () => {
-  const { api, sessionPath } = await createTestSession();
+  await using testSession = await createTestSession();
+  const { api, sessionPath } = testSession;
   const register = (contentBase64: string) =>
     requestJson<{ content_length: number }>(api, 'POST', `${sessionPath}/web-resources`, {
       url: 'https://cdn.example.com/a.txt',
@@ -25,7 +26,8 @@ Deno.test('Web resource content is base64 text, with or without its padding', as
 });
 
 Deno.test('Web resource content that is not base64 is an issue of its field', async () => {
-  const { api, sessionPath } = await createTestSession();
+  await using testSession = await createTestSession();
+  const { api, sessionPath } = testSession;
 
   const refusal = await requestJson<ControlErrorBody>(
     api,

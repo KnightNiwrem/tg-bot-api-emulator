@@ -42,7 +42,8 @@ function describeRefusal(
 }
 
 Deno.test('Bot controls take bot IDs written in decimal digits within the user ID range', async () => {
-  const { api, sessionPath } = await createTestSession();
+  await using testSession = await createTestSession();
+  const { api, sessionPath } = testSession;
 
   for (
     const [botId, code] of [
@@ -78,7 +79,8 @@ Deno.test('Bot controls take bot IDs written in decimal digits within the user I
 });
 
 Deno.test('Webhook attempt controls take attempt IDs written in decimal digits from 1', async () => {
-  const { api, sessionPath } = await createTestSession();
+  await using testSession = await createTestSession();
+  const { api, sessionPath } = testSession;
   const { bot } = await createBot(api, sessionPath, 'paths_bot');
 
   const refusals = [];
@@ -122,7 +124,8 @@ Deno.test('Webhook attempt controls take attempt IDs written in decimal digits f
 });
 
 Deno.test('A queued answer for a method the emulator does not implement is an issue of its body', async () => {
-  const { api, sessionPath } = await createTestSession();
+  await using testSession = await createTestSession();
+  const { api, sessionPath } = testSession;
   const { bot } = await createBot(api, sessionPath, 'paths_bot');
 
   const refusals = [

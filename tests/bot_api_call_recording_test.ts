@@ -12,7 +12,8 @@ interface BotApiCallActivityEntry {
 }
 
 Deno.test('getUpdates calls are not recorded, whatever they are answered', async () => {
-  const { api, sessionPath, botApiPath, bot } = await createFixture();
+  await using fixture = await createFixture();
+  const { api, sessionPath, botApiPath, bot } = fixture;
   await requestJson(api, 'POST', `${sessionPath}/bots/${bot.id}/server-error-responses`, {
     method: 'GETUPDATES',
     error_code: 500,
@@ -41,7 +42,8 @@ Deno.test('getUpdates calls are not recorded, whatever they are answered', async
 });
 
 Deno.test('Bot API HTTP admission answers and records rejected calls in its order', async () => {
-  const { api, sessionPath, botApiPath } = await createFixture();
+  await using fixture = await createFixture();
+  const { api, sessionPath, botApiPath } = fixture;
   const unknownTokenPath = `${sessionPath}/bot-api/bot0:unknown`;
 
   const answers = [
@@ -85,9 +87,17 @@ Deno.test('Bot API HTTP admission answers and records rejected calls in its orde
 
 /** Creates a session holding a bot. */
 async function createFixture() {
-  const { api, sessionPath } = await createTestSession();
+  await using disposalOnFailure = new AsyncDisposableStack();
+  const { api, sessionPath } = disposalOnFailure.use(await createTestSession());
   const { botApiPath, bot } = await createBot(api, sessionPath, 'test_bot');
-  return { api, sessionPath, botApiPath, bot };
+  const emulatorDisposal = disposalOnFailure.move();
+  return {
+    api,
+    sessionPath,
+    botApiPath,
+    bot,
+    [Symbol.asyncDispose]: () => emulatorDisposal.disposeAsync(),
+  };
 }
 
 async function postBotApi(api: EmulationApi, path: string, body: string): Promise<number> {
