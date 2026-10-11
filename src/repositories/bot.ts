@@ -17,6 +17,11 @@ export class BotRepository {
     return this.#botsById.get(id);
   }
 
+  /** Every bot of the session, in the order they were created. */
+  listBots(): readonly VirtualBot[] {
+    return [...this.#botsById.values()];
+  }
+
   getByToken(token: string): VirtualBot | undefined {
     return this.#botsByToken.get(token);
   }

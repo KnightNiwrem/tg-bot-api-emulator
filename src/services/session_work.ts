@@ -1,0 +1,46 @@
+/**
+ * The work a session has in progress, which its settledness read reports: each Bot API call from
+ * its admission until it is answered, however it arrived.
+ *
+ * @module
+ */
+import type { BotApiCallTransport } from '../types/bot_activity.ts';
+
+/** A bot's call of a Bot API method that the session admitted and has not answered yet. */
+export interface BotApiCallWork {
+  readonly kind: 'bot_api_call';
+  readonly botId: number;
+  readonly via: BotApiCallTransport;
+  /**
+   * The method's current name, once known: an HTTP call names it in its path, while a webhook
+   * reply names it only in its body, which may still be arriving.
+   */
+  readonly method?: string;
+}
+
+/**
+ * Registers the work a session has in progress. Work is registered when it is admitted, before it
+ * first waits, and ends however it ends, so a synchronous read never misses work that has started
+ * and not finished.
+ */
+export class SessionWorkRegistry {
+  /** Each registration, by its own identity, so equal work registered twice is counted twice. */
+  readonly #inProgress = new Set<{ readonly work: BotApiCallWork }>();
+
+  /**
+   * Registers `work` as in progress, and returns the function that ends it. Ending it again does
+   * nothing.
+   */
+  begin(work: BotApiCallWork): () => void {
+    const registration = { work };
+    this.#inProgress.add(registration);
+    return () => {
+      this.#inProgress.delete(registration);
+    };
+  }
+
+  /** The work in progress, in the order it began. */
+  listInProgress(): readonly BotApiCallWork[] {
+    return [...this.#inProgress].map(({ work }) => work);
+  }
+}

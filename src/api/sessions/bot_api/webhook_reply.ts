@@ -47,6 +47,21 @@ export async function runWebhookReply(
   context: BotApiCallContext,
   reply: Response,
 ): Promise<void> {
+  // The reply is in progress from the moment it starts, before its body is read, until its method
+  // is answered.
+  const endReply = context.session.work.begin({
+    kind: 'bot_api_call',
+    botId: context.bot.id,
+    via: 'webhook_reply',
+  });
+  try {
+    await runReplyMethod(context, reply);
+  } finally {
+    endReply();
+  }
+}
+
+async function runReplyMethod(context: BotApiCallContext, reply: Response): Promise<void> {
   const decoding = await decodeBotApiBodyParameters(reply);
   if (!decoding.decoded) {
     return;

@@ -7,6 +7,7 @@ import {
   type BotApiCallContext,
   type BotApiCallOutcome,
   botApiError,
+  type BotApiMethod,
   type BotApiMethodAnswer,
 } from './method_call.ts';
 import { findBotApiMethod } from './method_catalogue.ts';
@@ -80,49 +81,71 @@ export function createBotApiRoutes(): Hono<BotApiRouteContextTypes> {
   botApiRoutes.on(['GET', 'POST'], BOT_API_METHOD_PATH, async (context) => {
     const requestedMethodName = context.req.param(BOT_API_METHOD_NAME_PARAMETER);
     const method = findBotApiMethod(requestedMethodName);
-    const parametersDecoding = await decodeBotApiRequestParameters(context.req.raw);
     const session = context.get('emulationSession');
-    const callContext: BotApiCallContext = {
-      session,
-      bot: context.get('authenticatedBot'),
-      signal: session.lifetime.bind(context.req.raw.signal),
+    // The call is in progress from its admission, before its parameters arrive, until it is
+    // answered.
+    const endCall = session.work.begin({
+      kind: 'bot_api_call',
+      botId: context.get('authenticatedBot').id,
       via: 'http',
-    };
-    if (method === undefined) {
-      const { parameters, uploadedFiles } = parametersDecoding.decoded
-        ? parametersDecoding
-        : { parameters: {}, uploadedFiles: new Map() };
-      return botApiCallResponse(
-        context,
-        rejectUnknownBotApiMethod(callContext, requestedMethodName, parameters, uploadedFiles),
-      );
+      method: method?.name ?? requestedMethodName,
+    });
+    try {
+      return await answerBotApiCall(context, requestedMethodName, method);
+    } finally {
+      endCall();
     }
-    if (!parametersDecoding.decoded) {
-      return botApiCallResponse(
-        context,
-        rejectUndecodableBotApiCall(
-          callContext,
-          method,
-          requestedMethodName,
-          parametersDecoding.description,
-        ),
-      );
-    }
-    return botApiCallResponse(
-      context,
-      await callBotApiMethod(callContext, {
-        method,
-        requestedMethodName,
-        parameters: parametersDecoding.parameters,
-        uploadedFiles: parametersDecoding.uploadedFiles,
-      }),
-    );
   });
 
   // Telegram answers every other path in its Bot API namespace with a Bot API error.
   botApiRoutes.all('*', (context) => botApiResponse(context, botApiError(404, 'Not Found')));
 
   return botApiRoutes;
+}
+
+/** Reads a call's parameters, runs the method it names, and answers it. */
+async function answerBotApiCall(
+  context: Context<BotApiRouteContextTypes>,
+  requestedMethodName: string,
+  method: BotApiMethod | undefined,
+): Promise<Response> {
+  const parametersDecoding = await decodeBotApiRequestParameters(context.req.raw);
+  const session = context.get('emulationSession');
+  const callContext: BotApiCallContext = {
+    session,
+    bot: context.get('authenticatedBot'),
+    signal: session.lifetime.bind(context.req.raw.signal),
+    via: 'http',
+  };
+  if (method === undefined) {
+    const { parameters, uploadedFiles } = parametersDecoding.decoded
+      ? parametersDecoding
+      : { parameters: {}, uploadedFiles: new Map() };
+    return botApiCallResponse(
+      context,
+      rejectUnknownBotApiMethod(callContext, requestedMethodName, parameters, uploadedFiles),
+    );
+  }
+  if (!parametersDecoding.decoded) {
+    return botApiCallResponse(
+      context,
+      rejectUndecodableBotApiCall(
+        callContext,
+        method,
+        requestedMethodName,
+        parametersDecoding.description,
+      ),
+    );
+  }
+  return botApiCallResponse(
+    context,
+    await callBotApiMethod(callContext, {
+      method,
+      requestedMethodName,
+      parameters: parametersDecoding.parameters,
+      uploadedFiles: parametersDecoding.uploadedFiles,
+    }),
+  );
 }
 
 /**

@@ -16,6 +16,7 @@ import { createFileRoutes } from './files/mod.ts';
 import { createInlineQueryCacheRoutes } from './inline_queries/mod.ts';
 import { createPollRoutes } from './polls/mod.ts';
 import type { SessionRouteContextTypes } from './session_route_context_types.ts';
+import { createSettlednessRoutes } from './settledness/mod.ts';
 import { createSupergroupRoutes } from './supergroups/mod.ts';
 import { createWebResourceRoutes } from './web_resources/mod.ts';
 
@@ -25,6 +26,7 @@ const ACCOUNT_COLLECTION_PATH = `${SESSION_PATH}/accounts` as const;
 const BOT_COLLECTION_PATH = `${SESSION_PATH}/bots` as const;
 const BOT_API_PATH = `${SESSION_PATH}/bot-api` as const;
 const BOT_ACTIVITY_PATH = `${SESSION_PATH}/bot-activity` as const;
+const SETTLEDNESS_PATH = `${SESSION_PATH}/settledness` as const;
 const FILE_COLLECTION_PATH = `${SESSION_PATH}/files` as const;
 const WEB_RESOURCE_COLLECTION_PATH = `${SESSION_PATH}/web-resources` as const;
 const POLL_COLLECTION_PATH = `${SESSION_PATH}/polls` as const;
@@ -103,6 +105,7 @@ export function createSessionRoutes(
     [ACCOUNT_COLLECTION_PATH, createAccountRoutes()],
     [BOT_COLLECTION_PATH, createBotRoutes()],
     [BOT_ACTIVITY_PATH, createBotActivityRoutes()],
+    [SETTLEDNESS_PATH, createSettlednessRoutes()],
     [FILE_COLLECTION_PATH, createFileRoutes()],
     [WEB_RESOURCE_COLLECTION_PATH, createWebResourceRoutes()],
     [POLL_COLLECTION_PATH, createPollRoutes()],

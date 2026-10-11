@@ -1,0 +1,73 @@
+description: >-
+  What the emulator still has to do in the session, what each bot's mailbox holds, and what the
+  session waits on, read in one step together with the head of the bot activity log. It describes
+  the emulator only: a bot that confirmed an update may still be working on it, so asserting that a
+  bot did not do something still needs a completion fence.
+parameters:
+  - $ref: ../components/parameters/SessionId.yaml
+get:
+  operationId: readSessionSettledness
+  summary: Read whether the emulator has work left in the session
+  responses:
+    '200':
+      description: >-
+        The session's settledness. It is `settled` when every blocker waits passively, for a bot
+        or the test; a bot is `drained` when it has no pending update. A change and the work it
+        starts are published together, so no read sees an accepted webhook update confirmed
+        before its reply is in progress.
+      content:
+        application/json:
+          schema:
+            type: object
+            additionalProperties: false
+            required:
+              - activity_position
+              - settled
+              - bots
+              - blockers
+            properties:
+              activity_position:
+                type: integer
+                minimum: 0
+                description: >-
+                  The position of the bot activity log's latest entry at the read; 0 while it is
+                  empty.
+              settled:
+                type: boolean
+                description: Whether the emulator has no runnable work.
+              bots:
+                type: array
+                description: Each bot's mailbox, in the order the bots were created.
+                items:
+                  type: object
+                  additionalProperties: false
+                  required:
+                    - bot_id
+                    - pending_update_count
+                    - drained
+                  properties:
+                    bot_id:
+                      type: integer
+                    pending_update_count:
+                      type: integer
+                      minimum: 0
+                    drained:
+                      type: boolean
+                      description: >-
+                        Whether no update waits to be delivered to the bot or confirmed by it.
+              blockers:
+                type: array
+                description: What the session waits on, runnable or passive.
+                items:
+                  $ref: ../components/schemas/SettlednessBlocker.yaml
+    '404':
+      description: No active test session has the supplied identifier.
+      content:
+        application/json:
+          schema:
+            allOf:
+              - $ref: ../components/schemas/ControlError.yaml
+              - properties:
+                  reason:
+                    enum:
+                      - session_not_found

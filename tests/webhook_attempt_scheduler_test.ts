@@ -37,7 +37,11 @@ Deno.test('Manual scheduling waits for a test to release each retry and expire e
 
   const firstFailure = await fixture.waitForEntry({ kind: 'webhook_attempt_failed' });
   // Telegram would send the update again at once; manual scheduling waits for the test.
-  await new Promise((resolve) => setTimeout(resolve, 20));
+  assertEquals(
+    fixture.session.settledness.readSettledness().settled,
+    true,
+    'Expected the emulator to have nothing left to do by itself while the retry waits',
+  );
   assertEquals(
     [receivedRequests.length, listAttempts(webhookAttempts, botId)],
     [1, [{
@@ -340,7 +344,11 @@ Deno.test('An attempt and its retry follow the scheduling of their bot when the 
 
   // The manual attempt's retry still waits for the test after scheduling turns automatic.
   webhookAttempts.setScheduling(botId, 'automatic');
-  await new Promise((resolve) => setTimeout(resolve, 20));
+  assertEquals(
+    fixture.session.settledness.readSettledness().settled,
+    true,
+    'Expected the emulator to have nothing left to do by itself before the release',
+  );
   const sentBeforeRelease = receivedRequests.length;
   webhookAttempts.releaseRetry(botId, 1);
   await fixture.waitForEntry({ kind: 'update_confirmed' });

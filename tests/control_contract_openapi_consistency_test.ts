@@ -8,6 +8,7 @@ import { z } from 'zod';
 
 import { createAccountContract } from '../control_contracts/accounts.ts';
 import { readBotActivityContract } from '../control_contracts/bot_activity.ts';
+import { readSessionSettlednessContract } from '../control_contracts/session_settledness.ts';
 import { downloadFileContract } from '../control_contracts/files.ts';
 import { createBotContract } from '../control_contracts/bots.ts';
 import { controlRefusalSchema } from '../control_contracts/control_errors.ts';
@@ -91,6 +92,7 @@ const CONTROL_OPERATION_CONTRACTS: readonly ControlOperationContract[] = [
   createBotContract,
   createAccountContract,
   readBotActivityContract,
+  readSessionSettlednessContract,
   createSupergroupContract,
   addSupergroupMemberContract,
   removeSupergroupMemberContract,

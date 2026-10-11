@@ -304,6 +304,38 @@ A bot handling updates one at a time confirms each update only after handling it
 for the handler. Work that a handler starts without awaiting it falls outside every fence, and so
 does a method a webhook's answer names, which runs after the confirmation.
 
+## Settledness
+
+`GET /sessions/{sessionId}/settledness` reads, in one step, whether the emulator itself still has
+work to do in the session. It answers with:
+
+- `activity_position`, the head of the log at the read;
+- `settled`, which is true when the emulator has no runnable work;
+- `bots`, each bot's mailbox with its `pending_update_count`, `drained` when none is pending;
+- `blockers`, everything the session waits on, each marked `runnable` or not.
+
+These blockers are runnable, because the emulator will act on them by itself:
+
+- a Bot API call from its admission until it is answered (`bot_api_call`). That includes the method
+  a webhook's answer names, which is in progress from the moment its update is confirmed;
+- an automatic retry waiting on its timer (`webhook_retry` under `automatic` scheduling);
+- an update about to be sent to the bot's webhook (`webhook_delivery_due`).
+
+These blockers are passive. They wait for a bot or the test:
+
+- a held `getUpdates` call (`held_long_poll`);
+- an update no poll has read yet (`undelivered_update`);
+- an update a poll delivered whose confirmation is still to come (`unconfirmed_delivery`);
+- an update sent to a webhook that has not answered (`webhook_attempt`);
+- a manual retry waiting for the test (`webhook_retry` under `manual` scheduling);
+- an update queued behind one of those (`queued_webhook_update`).
+
+A test can read the settledness instead of sleeping to show that the emulator does nothing more on
+its own. For example, a manual retry is not sent while the session is settled. The read describes
+the emulator only. A bot can confirm an update and still be working on it, so a session that is
+settled with every mailbox drained does not mean the bot has finished, and asserting that a bot did
+not do something still needs a fence.
+
 ## Local evidence
 
 [Log entries](../../src/types/bot_activity.ts),
@@ -318,7 +350,10 @@ does a method a webhook's answer names, which runs after the confirmation.
 [HTTP tests](../../tests/bot_activity_api_test.ts),
 [call recording tests](../../tests/bot_api_call_recording_test.ts),
 [client tests](../../clients/typescript/bot_activity_log_test.ts),
-[client wait tests](../../clients/typescript/bot_activity_wait_deadline_test.ts) and
+[client wait tests](../../clients/typescript/bot_activity_wait_deadline_test.ts),
+[settledness](../../src/services/session_settledness.ts),
+[work in progress](../../src/services/session_work.ts),
+[settledness tests](../../tests/session_settledness_test.ts) and
 [grammY runner tests](../../tests/grammy_runner_bot_activity_test.ts).
 
 [webhook-actor-answer]: https://github.com/tdlib/telegram-bot-api/blob/e3e9dd8e5b3d7ab8537cd5a10dc31d5ffa8f82d1/telegram-bot-api/WebhookActor.cpp#L619-L672

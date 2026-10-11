@@ -382,6 +382,18 @@
         ]
       },
       {
+        "name": "session-work",
+        "patterns": [
+          "src/services/session_work.ts"
+        ]
+      },
+      {
+        "name": "session-settledness",
+        "patterns": [
+          "src/services/session_settledness.ts"
+        ]
+      },
+      {
         "name": "application-services",
         "patterns": [
           "src/services/session_lifecycle.ts"
@@ -657,7 +669,9 @@
           "bot-api-service",
           "bot-message-view",
           "bot-activity",
-          "webhook-delivery"
+          "webhook-delivery",
+          "session-work",
+          "session-settledness"
         ]
       },
       {
@@ -797,6 +811,21 @@
         ]
       },
       {
+        "from": "session-work",
+        "allow": [
+          "domain"
+        ]
+      },
+      {
+        "from": "session-settledness",
+        "allow": [
+          "domain"
+        ],
+        "allowTypeOnly": [
+          "session-work"
+        ]
+      },
+      {
         "from": "application-services",
         "allow": [],
         "allowTypeOnly": [
@@ -851,6 +880,8 @@
           "bot-message-sending",
           "bot-message-repetition",
           "bot-activity",
+          "session-work",
+          "session-settledness",
           "application-services",
           "session",
           "transport"

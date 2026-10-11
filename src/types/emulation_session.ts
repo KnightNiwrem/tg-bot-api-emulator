@@ -22,6 +22,8 @@ import type { PollService } from '../services/poll.ts';
 import type { PrivateMessagingService } from '../services/private_messaging.ts';
 import type { ReplyInterfaceService } from '../services/reply_interface.ts';
 import type { SessionLifetime } from '../services/session_lifetime.ts';
+import type { SessionSettlednessService } from '../services/session_settledness.ts';
+import type { SessionWorkRegistry } from '../services/session_work.ts';
 import type { SharedChatAdministrationService } from '../services/shared_chat_administration.ts';
 import type { SupergroupMessagingService } from '../services/supergroup_messaging.ts';
 import type { VirtualUserService } from '../services/virtual_user.ts';
@@ -74,6 +76,10 @@ export interface EmulationSession extends EmulationSessionOptions {
   readonly lifetime: SessionLifetime;
   /** The transactions in which the session's commands change it, and are published. */
   readonly transactions: SessionTransactions;
+  /** The Bot API calls the session has admitted and not answered yet. */
+  readonly work: SessionWorkRegistry;
+  /** What the emulator still has to do in the session, and what each bot's mailbox holds. */
+  readonly settledness: SessionSettlednessService;
   /**
    * Ends the session for good. Its lifetime's signal aborts and its commit gate closes, so Bot API
    * calls still running, webhook replies included, change nothing more: their downloads stop, and

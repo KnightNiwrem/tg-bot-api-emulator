@@ -37,7 +37,10 @@ export interface BotApiMethodContext {
 export interface BotApiCallContext extends BotApiMethodContext {
   readonly session:
     & BotApiMethodContext['session']
-    & Pick<EmulationSession, 'botRateLimits' | 'botServerErrors' | 'botActivity' | 'transactions'>;
+    & Pick<
+      EmulationSession,
+      'botRateLimits' | 'botServerErrors' | 'botActivity' | 'transactions' | 'work'
+    >;
   readonly via: BotApiCallTransport;
 }
 

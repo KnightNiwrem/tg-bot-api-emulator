@@ -195,6 +195,11 @@ export class BotUpdatePollingService {
     this.#terminateHeldLongPoll(botId, 'terminated_by_webhook');
   }
 
+  /** The bots whose long poll is held, each waiting passively for an update. */
+  listHeldLongPollBotIds(): readonly number[] {
+    return [...this.#heldLongPollsByBotId.keys()];
+  }
+
   #confirmAndReadPendingUpdates(
     botId: number,
     firstUnconfirmedUpdateId: number | undefined,

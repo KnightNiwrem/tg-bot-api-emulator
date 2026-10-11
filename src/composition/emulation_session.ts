@@ -63,6 +63,8 @@ import { PrivateChatPolicy } from '../services/private_chat_policy.ts';
 import { PrivateMessagingService } from '../services/private_messaging.ts';
 import { ReplyInterfaceService } from '../services/reply_interface.ts';
 import { SessionLifetime } from '../services/session_lifetime.ts';
+import { SessionSettlednessService } from '../services/session_settledness.ts';
+import { SessionWorkRegistry } from '../services/session_work.ts';
 import { createSessionUserMentionContext } from '../services/session_user_mention.ts';
 import { SharedChatAdministrationService } from '../services/shared_chat_administration.ts';
 import { SupergroupChatPolicy } from '../services/supergroup_chat_policy.ts';
@@ -96,6 +98,7 @@ export function createEmulationSession(
 ): EmulationSession {
   const sessionEnd = new AbortController();
   const lifetime = new SessionLifetime(sessionEnd.signal);
+  const work = new SessionWorkRegistry();
   // The repositories given the journal stage their writes in the session's transactions; the
   // others' writes are final at once.
   const journal = new SessionChangeJournal({
@@ -359,8 +362,9 @@ export function createEmulationSession(
     serverErrorResponses: new QueuedBotApiAnswerRepository(journal),
   });
 
+  const activityLog = new BotActivityLogRepository(journal);
   const botActivity = new BotActivityService({
-    log: new BotActivityLogRepository(journal),
+    log: activityLog,
     scheduler,
   });
   const botUpdatePolling = new BotUpdatePollingService({
@@ -496,6 +500,16 @@ export function createEmulationSession(
     webhookAttempts,
     lifetime,
     transactions,
+    work,
+    settledness: new SessionSettlednessService({
+      bots,
+      work,
+      heldLongPolls: botUpdatePolling,
+      pendingUpdates: botUpdates,
+      webhooks,
+      webhookAttempts,
+      activityLog,
+    }),
     end: () => {
       // The commit gate closes first, so that nothing the rest of the teardown wakes can commit.
       // Long polls and webhook deliveries follow the session's end themselves.

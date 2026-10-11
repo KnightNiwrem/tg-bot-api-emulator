@@ -1,0 +1,192 @@
+description: >-
+  Something the session waits on: work the emulator will do by itself, which is `runnable`, or a
+  wait for a bot or the test, which is not.
+oneOf:
+  - type: object
+    additionalProperties: false
+    description: >-
+      A bot's call the emulator is preparing or executing, from its admission until it is
+      answered: its request is arriving, its files are downloading, or its method runs. A webhook
+      reply counts from the moment its update is accepted.
+    required:
+      - kind
+      - runnable
+      - bot_id
+      - via
+    properties:
+      kind:
+        type: string
+        const: bot_api_call
+      runnable:
+        type: boolean
+        const: true
+      bot_id:
+        type: integer
+      via:
+        type: string
+        enum:
+          - http
+          - webhook_reply
+      method:
+        type: string
+        description: >-
+          The method's current name; omitted for a webhook reply whose body has not named its
+          method yet.
+  - type: object
+    additionalProperties: false
+    description: >-
+      A `getUpdates` call held until an update arrives, its timeout passes, or another call ends
+      it. It waits passively.
+    required:
+      - kind
+      - runnable
+      - bot_id
+    properties:
+      kind:
+        type: string
+        const: held_long_poll
+      runnable:
+        type: boolean
+        const: false
+      bot_id:
+        type: integer
+  - type: object
+    additionalProperties: false
+    description: An update waiting for its polling bot to read it.
+    required:
+      - kind
+      - runnable
+      - bot_id
+      - update_id
+    properties:
+      kind:
+        type: string
+        const: undelivered_update
+      runnable:
+        type: boolean
+        const: false
+      bot_id:
+        type: integer
+      update_id:
+        type: integer
+  - type: object
+    additionalProperties: false
+    description: >-
+      An update a `getUpdates` answer delivered, waiting for a later offset to confirm it.
+    required:
+      - kind
+      - runnable
+      - bot_id
+      - update_id
+    properties:
+      kind:
+        type: string
+        const: unconfirmed_delivery
+      runnable:
+        type: boolean
+        const: false
+      bot_id:
+        type: integer
+      update_id:
+        type: integer
+  - type: object
+    additionalProperties: false
+    description: >-
+      An update sent to the bot's webhook, waiting for the webhook's complete response, under
+      either scheduling.
+    required:
+      - kind
+      - runnable
+      - bot_id
+      - update_id
+      - webhook_attempt_id
+      - scheduling
+    properties:
+      kind:
+        type: string
+        const: webhook_attempt
+      runnable:
+        type: boolean
+        const: false
+      bot_id:
+        type: integer
+      update_id:
+        type: integer
+      webhook_attempt_id:
+        type: integer
+        minimum: 1
+      scheduling:
+        type: string
+        enum:
+          - automatic
+          - manual
+  - type: object
+    additionalProperties: false
+    description: >-
+      A failed update waiting to be sent again: on its timer under `automatic` scheduling, which is
+      runnable, or until the test releases it under `manual` scheduling, which is not.
+    required:
+      - kind
+      - runnable
+      - bot_id
+      - update_id
+      - webhook_attempt_id
+      - scheduling
+    properties:
+      kind:
+        type: string
+        const: webhook_retry
+      runnable:
+        type: boolean
+      bot_id:
+        type: integer
+      update_id:
+        type: integer
+      webhook_attempt_id:
+        type: integer
+        minimum: 1
+      scheduling:
+        type: string
+        enum:
+          - automatic
+          - manual
+  - type: object
+    additionalProperties: false
+    description: >-
+      An update of the bot's webhook that waits behind an earlier update of its queue, or for one
+      of the webhook's connections, which updates waiting passively hold.
+    required:
+      - kind
+      - runnable
+      - bot_id
+      - update_id
+    properties:
+      kind:
+        type: string
+        const: queued_webhook_update
+      runnable:
+        type: boolean
+        const: false
+      bot_id:
+        type: integer
+      update_id:
+        type: integer
+  - type: object
+    additionalProperties: false
+    description: An update the emulator is about to send to the bot's webhook.
+    required:
+      - kind
+      - runnable
+      - bot_id
+      - update_id
+    properties:
+      kind:
+        type: string
+        const: webhook_delivery_due
+      runnable:
+        type: boolean
+        const: true
+      bot_id:
+        type: integer
+      update_id:
+        type: integer
