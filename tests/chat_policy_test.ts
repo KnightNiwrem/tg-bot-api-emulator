@@ -415,7 +415,7 @@ function createChatPolicyFixture() {
     files,
     polls,
     messageBoxes,
-    events,
+    transactions: { ...events, withinTransaction: (command) => command() },
     joinRequesterContacts,
     currentUnixTimeSeconds,
   });

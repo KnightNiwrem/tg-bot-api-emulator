@@ -2871,7 +2871,7 @@ function createPrivateMessagingFixture() {
     files: uploadRecordingFiles,
     polls,
     messageBoxes,
-    events,
+    transactions: { ...events, withinTransaction: (command) => command() },
     joinRequesterContacts,
     currentUnixTimeSeconds: () => currentUnixTimeSeconds,
   });

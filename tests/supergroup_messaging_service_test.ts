@@ -881,7 +881,7 @@ function createSupergroupMessagingFixture() {
     files,
     polls,
     messageBoxes,
-    events,
+    transactions: { ...events, withinTransaction: (command) => command() },
     currentUnixTimeSeconds,
   });
   const messageEditing = new MessageEditingService({

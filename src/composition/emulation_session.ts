@@ -163,7 +163,7 @@ export function createEmulationSession(
     messageBoxes,
     privateReplyInterfaces: privateConversations,
     supergroupMembers: sharedChats,
-    events: transactions,
+    transactions,
     messageDrafts,
     currentUnixTimeSeconds,
   });
@@ -225,6 +225,7 @@ export function createEmulationSession(
     files,
     polls,
     commits: messageCommitter,
+    transactions,
     currentUnixTimeSeconds,
   });
   const messagePinning = new MessagePinningService({

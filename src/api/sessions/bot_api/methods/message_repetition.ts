@@ -17,6 +17,8 @@ import {
   TOO_MANY_MESSAGE_IDENTIFIERS_DESCRIPTION,
 } from '../message_identifiers.ts';
 import {
+  answeredPreparation,
+  type BotApiCallPreparation,
   botApiError,
   type BotApiMethod,
   type BotApiMethodAnswer,
@@ -36,12 +38,16 @@ import {
   sendOptionsParametersShape,
 } from '../send_options.ts';
 
-/** The methods that forward or copy existing messages. */
+/**
+ * The methods that forward or copy existing messages, each executed as a command in its call's
+ * transaction: preparation reads the parameters, and execution finds the messages and both chats,
+ * makes every check, and sends every new message, or none.
+ */
 export const MESSAGE_REPETITION_METHODS: readonly BotApiMethod[] = [
-  { name: 'copyMessage', recordsActivity: true, handler: handleCopyMessage },
-  { name: 'copyMessages', recordsActivity: true, handler: handleCopyMessages },
-  { name: 'forwardMessage', recordsActivity: true, handler: handleForwardMessage },
-  { name: 'forwardMessages', recordsActivity: true, handler: handleForwardMessages },
+  { name: 'copyMessage', recordsActivity: true, prepare: prepareCopyMessage },
+  { name: 'copyMessages', recordsActivity: true, prepare: prepareCopyMessages },
+  { name: 'forwardMessage', recordsActivity: true, prepare: prepareForwardMessage },
+  { name: 'forwardMessages', recordsActivity: true, prepare: prepareForwardMessages },
 ];
 
 /** Telegram's description for a forward or copy that names no chat to repeat from. */
@@ -106,13 +112,15 @@ const copyMessagesParametersSchema = z.strictObject({
 /** The messages that `forwardMessages` or `copyMessages` repeats, and the chat they go to. */
 type RepeatMessagesRequest = Parameters<EmulationSession['botApi']['forwardMessages']>[1];
 
-function handleForwardMessage(
+function prepareForwardMessage(
   context: BotApiMethodContext,
   parameters: BotApiRequestParameters,
-): BotApiMethodAnswer {
+): BotApiCallPreparation {
   const parsedParameters = forwardMessageParametersSchema.safeParse(parameters);
   if (!parsedParameters.success) {
-    return invalidMethodParametersAnswer('forwardMessage', parsedParameters.error);
+    return answeredPreparation(
+      invalidMethodParametersAnswer('forwardMessage', parsedParameters.error),
+    );
   }
   const {
     chat_id: chatId,
@@ -124,42 +132,50 @@ function handleForwardMessage(
     message_effect_id: messageEffectId,
   } = parsedParameters.data;
   if (fromChatId === undefined) {
-    return botApiError(400, FROM_CHAT_ID_REQUIRED_DESCRIPTION);
+    return answeredPreparation(botApiError(400, FROM_CHAT_ID_REQUIRED_DESCRIPTION));
   }
   // Telegram looks for the forwarded message before it looks at chat_id; the emulator reports a
   // missing chat_id first.
   if (chatId === undefined) {
-    return botApiError(400, CHAT_ID_EMPTY_DESCRIPTION);
+    return answeredPreparation(botApiError(400, CHAT_ID_EMPTY_DESCRIPTION));
   }
 
-  const result = context.session.botApi.forwardMessage(
-    context.bot,
-    {
-      chatId,
-      forwardedMessage: { chatId: fromChatId, messageId: messageIdOrNone(messageId) },
-      ...(videoStartTimestampSeconds === undefined ? {} : { videoStartTimestampSeconds }),
-      isContentProtected,
-      isSilent,
-      messageEffectId,
+  return {
+    kind: 'command',
+    execute: () => {
+      const result = context.session.botApi.forwardMessage(
+        context.bot,
+        {
+          chatId,
+          forwardedMessage: { chatId: fromChatId, messageId: messageIdOrNone(messageId) },
+          ...(videoStartTimestampSeconds === undefined ? {} : { videoStartTimestampSeconds }),
+          isContentProtected,
+          isSilent,
+          messageEffectId,
+        },
+      );
+      return result.sent
+        ? botApiResult(result.message)
+        : presentMessageRepetitionFailure('message_forward', result);
     },
-  );
-  return result.sent
-    ? botApiResult(result.message)
-    : presentMessageRepetitionFailure('message_forward', result);
+  };
 }
 
-function handleCopyMessage(
+function prepareCopyMessage(
   context: BotApiMethodContext,
   parameters: BotApiRequestParameters,
-): BotApiMethodAnswer {
+): BotApiCallPreparation {
   const invalidParametersDescription = describeInvalidMethodParameters('copyMessage');
   const parsedParameters = copyMessageParametersSchema.safeParse(parameters);
   if (!parsedParameters.success) {
-    return invalidMethodParametersAnswer('copyMessage', parsedParameters.error);
+    return answeredPreparation(
+      invalidMethodParametersAnswer('copyMessage', parsedParameters.error),
+    );
   }
   const { data } = parsedParameters;
-  if (data.from_chat_id === undefined) {
-    return botApiError(400, FROM_CHAT_ID_REQUIRED_DESCRIPTION);
+  const fromChatId = data.from_chat_id;
+  if (fromChatId === undefined) {
+    return answeredPreparation(botApiError(400, FROM_CHAT_ID_REQUIRED_DESCRIPTION));
   }
   // Telegram reads a new caption and its formatting before it looks at either chat.
   const { caption } = data;
@@ -167,68 +183,83 @@ function handleCopyMessage(
     ? undefined
     : readSpecifiedCaption(context, { ...data, caption }, invalidParametersDescription);
   if (captionReading?.read === false) {
-    return captionReading.errorAnswer;
+    return answeredPreparation(captionReading.errorAnswer);
   }
   // As for forwardMessage, the emulator reports a missing chat_id before the copied message.
   const optionsReading = readSendOptions(context, data, invalidParametersDescription);
   if (!optionsReading.read) {
-    return optionsReading.errorAnswer;
+    return answeredPreparation(optionsReading.errorAnswer);
   }
 
-  const result = context.session.botApi.copyMessage(
-    context.bot,
-    {
-      ...optionsReading.options,
-      copiedMessage: { chatId: data.from_chat_id, messageId: messageIdOrNone(data.message_id) },
-      ...(data.video_start_timestamp === undefined
-        ? {}
-        : { videoStartTimestampSeconds: data.video_start_timestamp }),
-      caption: captionReading?.formattedText,
-      showsCaptionAboveMedia: data.show_caption_above_media,
+  return {
+    kind: 'command',
+    execute: () => {
+      const result = context.session.botApi.copyMessage(
+        context.bot,
+        {
+          ...optionsReading.options,
+          copiedMessage: { chatId: fromChatId, messageId: messageIdOrNone(data.message_id) },
+          ...(data.video_start_timestamp === undefined
+            ? {}
+            : { videoStartTimestampSeconds: data.video_start_timestamp }),
+          caption: captionReading?.formattedText,
+          showsCaptionAboveMedia: data.show_caption_above_media,
+        },
+      );
+      return result.sent
+        ? botApiResult({ message_id: result.messageId } satisfies BotApiMessageId)
+        : presentMessageRepetitionFailure('message_copy', result);
     },
-  );
-  return result.sent
-    ? botApiResult({ message_id: result.messageId } satisfies BotApiMessageId)
-    : presentMessageRepetitionFailure('message_copy', result);
+  };
 }
 
-function handleForwardMessages(
+function prepareForwardMessages(
   context: BotApiMethodContext,
   parameters: BotApiRequestParameters,
-): BotApiMethodAnswer {
+): BotApiCallPreparation {
   const parsedParameters = forwardMessagesParametersSchema.safeParse(parameters);
   if (!parsedParameters.success) {
-    return invalidMethodParametersAnswer('forwardMessages', parsedParameters.error);
+    return answeredPreparation(
+      invalidMethodParametersAnswer('forwardMessages', parsedParameters.error),
+    );
   }
   const reading = readRepeatMessagesRequest(parsedParameters.data);
   if (!reading.read) {
-    return reading.errorAnswer;
+    return answeredPreparation(reading.errorAnswer);
   }
-  return repeatMessagesAnswer(
-    'message_forward',
-    context.session.botApi.forwardMessages(context.bot, reading.request),
-  );
+  return {
+    kind: 'command',
+    execute: () =>
+      repeatMessagesAnswer(
+        'message_forward',
+        context.session.botApi.forwardMessages(context.bot, reading.request),
+      ),
+  };
 }
 
-function handleCopyMessages(
+function prepareCopyMessages(
   context: BotApiMethodContext,
   parameters: BotApiRequestParameters,
-): BotApiMethodAnswer {
+): BotApiCallPreparation {
   const parsedParameters = copyMessagesParametersSchema.safeParse(parameters);
   if (!parsedParameters.success) {
-    return invalidMethodParametersAnswer('copyMessages', parsedParameters.error);
+    return answeredPreparation(
+      invalidMethodParametersAnswer('copyMessages', parsedParameters.error),
+    );
   }
   const reading = readRepeatMessagesRequest(parsedParameters.data);
   if (!reading.read) {
-    return reading.errorAnswer;
+    return answeredPreparation(reading.errorAnswer);
   }
-  return repeatMessagesAnswer(
-    'message_copy',
-    context.session.botApi.copyMessages(context.bot, {
-      ...reading.request,
-      removesCaptions: parsedParameters.data.remove_caption,
-    }),
-  );
+  const removesCaptions = parsedParameters.data.remove_caption;
+  return {
+    kind: 'command',
+    execute: () =>
+      repeatMessagesAnswer(
+        'message_copy',
+        context.session.botApi.copyMessages(context.bot, { ...reading.request, removesCaptions }),
+      ),
+  };
 }
 
 /**

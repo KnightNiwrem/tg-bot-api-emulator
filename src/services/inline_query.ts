@@ -590,17 +590,20 @@ export class InlineQueryService {
     if (!contentPreparation.prepared) {
       return { chosen: false, reason: contentPreparation.reason };
     }
-    const sending = this.#sendResult(inlineQuery, result, contentPreparation.content);
-    if (!sending.sent) {
-      return { chosen: false, reason: sending.reason };
-    }
-    this.#transactions.emit({
-      type: 'inline_query_result_chosen',
-      inlineQuery,
-      resultId: result.id,
-      message: sending.message,
+    // The result's message and the bot's news of the choice commit together, or neither does.
+    return this.#transactions.withinTransaction(() => {
+      const sending = this.#sendResult(inlineQuery, result, contentPreparation.content);
+      if (!sending.sent) {
+        return { chosen: false, reason: sending.reason };
+      }
+      this.#transactions.emit({
+        type: 'inline_query_result_chosen',
+        inlineQuery,
+        resultId: result.id,
+        message: sending.message,
+      });
+      return { chosen: true, message: sending.message };
     });
-    return { chosen: true, message: sending.message };
   }
 
   /**
