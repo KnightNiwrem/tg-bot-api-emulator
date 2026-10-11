@@ -1,3 +1,5 @@
+import { assertEquals } from '@std/assert';
+import { assertEqualsInFieldOrder } from './support/field_order_assertion.ts';
 import { Bot } from 'https://cdn.jsdelivr.net/gh/grammyjs/grammY@^1.46.0/src/bot.ts';
 import { webhookCallback } from 'https://cdn.jsdelivr.net/gh/grammyjs/grammY@^1.46.0/src/convenience/webhook.ts';
 import {
@@ -232,14 +234,6 @@ async function expectStatus(
   }
 }
 
-function expectEqual(actual: unknown, expected: unknown, message: string): void {
-  if (JSON.stringify(actual) !== JSON.stringify(expected)) {
-    throw new Error(
-      `${message}: expected ${JSON.stringify(expected)}, received ${JSON.stringify(actual)}`,
-    );
-  }
-}
-
 function nowUnixSeconds(): number {
   return Math.floor(Date.now() / 1_000);
 }
@@ -267,7 +261,7 @@ Deno.test('a bot restricts a member, whose prohibited sends fail until the bot l
     });
   const photo = { photo: { content_base64: PHOTO_BASE64 } };
 
-  expectEqual((await restrict({ can_send_messages: true })).body.result, true, 'Restriction');
+  assertEquals((await restrict({ can_send_messages: true })).body.result, true, 'Restriction');
   const sendsWhileRestricted = [
     (await sendAccountMessage(grace.id, { text: 'Allowed' })).status,
     (await sendAccountMessage(grace.id, photo)).status,
@@ -277,23 +271,23 @@ Deno.test('a bot restricts a member, whose prohibited sends fail until the bot l
   await restrict({ can_send_messages: true });
   const moderatorUpdates = await readUpdates(moderatorBot.botApiPath);
   const otherBotUpdates = await readUpdates(otherBot.botApiPath);
-  expectEqual(sendsWhileRestricted, [201, 403], 'Expected only the text to be sent');
-  expectEqual(
+  assertEquals(sendsWhileRestricted, [201, 403], 'Expected only the text to be sent');
+  assertEqualsInFieldOrder(
     restricted,
     restrictedMember(grace, ['can_send_messages', 'can_react_to_messages'], { untilDate }),
     'Expected getChatMember to show the restriction',
   );
   // The administrator bot observes the change and the text; the other bot, in privacy mode, sees
   // neither, as it administers nothing.
-  expectEqual(
+  assertEquals(
     describeMembershipUpdates(moderatorUpdates),
     [`chat_member ${grace.id}: member -> restricted`, 'message'],
     'Expected the administrator bot to observe the restriction once',
   );
-  expectEqual(otherBotUpdates, [], 'Expected the other bot to observe nothing');
+  assertEquals(otherBotUpdates, [], 'Expected the other bot to observe nothing');
 
   // Every permission lifts the restriction, after which the photo is sent.
-  expectEqual((await restrict(ALL_PERMISSIONS)).body.result, true, 'Lifting the restriction');
+  assertEquals((await restrict(ALL_PERMISSIONS)).body.result, true, 'Lifting the restriction');
   const lifted = await getChatMember(grace.id);
   const sentPhoto = await sendAccountMessage(grace.id, photo);
   const history = await requestJson<{ messages: Array<Record<string, unknown>> }>(
@@ -301,14 +295,18 @@ Deno.test('a bot restricts a member, whose prohibited sends fail until the bot l
     'GET',
     `${supergroupPath(grace.id)}/messages`,
   );
-  expectEqual(lifted, { user: grace, status: 'member' }, 'Expected a plain member again');
-  expectEqual(sentPhoto.status, 201, 'Expected the photo to be sent once allowed');
-  expectEqual(
+  assertEqualsInFieldOrder(
+    lifted,
+    { user: grace, status: 'member' },
+    'Expected a plain member again',
+  );
+  assertEquals(sentPhoto.status, 201, 'Expected the photo to be sent once allowed');
+  assertEquals(
     history.body.messages.slice(-2).map((message) => 'photo' in message ? 'photo' : message.text),
     ['Allowed', 'photo'],
     "Expected the history to hold only the member's sent messages",
   );
-  expectEqual(
+  assertEquals(
     describeMembershipUpdates(await readUpdates(moderatorBot.botApiPath)),
     [`chat_member ${grace.id}: restricted -> member`, 'message'],
     'Expected the administrator bot to observe the restriction lifted',
@@ -372,7 +370,7 @@ Deno.test('restrictChatMember reads permissions with the official server implica
     ]],
   ];
   for (const [permissions, usesIndependentPermissions, expected] of cases) {
-    expectEqual(
+    assertEquals(
       await restrictionOf(permissions, usesIndependentPermissions),
       expected,
       `Expected the permissions of ${JSON.stringify(permissions)}${
@@ -438,7 +436,7 @@ Deno.test('restrictChatMember refuses what Telegram refuses, without changing an
     await restrict(moderatorBot, { user_id: grace.id, permissions: { can_fly: true } }),
     await restrict(moderatorBot, { user_id: grace.id, can_send_messages: true }),
   ];
-  expectEqual(
+  assertEquals(
     refusals,
     [
       [400, notEnoughRights],
@@ -467,12 +465,12 @@ Deno.test('restrictChatMember refuses what Telegram refuses, without changing an
     ],
     'Expected Telegram refusals',
   );
-  expectEqual(
+  assertEqualsInFieldOrder(
     [await getChatMember(grace.id), (await getChatMember(otherBot.bot.id)).status],
     [{ user: grace, status: 'member' }, 'administrator'],
     'Expected refused restrictions to change nothing',
   );
-  expectEqual(
+  assertEquals(
     [...await readUpdates(moderatorBot.botApiPath), ...await readUpdates(otherBot.botApiPath)],
     [],
     'Expected refused restrictions to deliver nothing',
@@ -483,7 +481,7 @@ Deno.test('restrictChatMember refuses what Telegram refuses, without changing an
     to: { type: 'private', botId: moderatorBot.bot.id },
     text: '/start',
   });
-  expectEqual(
+  assertEquals(
     await describeCall(moderatorBot, 'restrictChatMember', {
       chat_id: grace.id,
       user_id: grace.id,
@@ -494,14 +492,14 @@ Deno.test('restrictChatMember refuses what Telegram refuses, without changing an
   await readUpdates(moderatorBot.botApiPath);
 
   // A user outside the supergroup is restricted before it joins, and joins restricted.
-  expectEqual(
+  assertEquals(
     await restrict(moderatorBot, { user_id: linus.id }),
     [200, true],
     'Expected a non-member to be restricted',
   );
   const restrictedOutsider = await getChatMember(linus.id);
   await api.request(`${supergroupPath(ada.id)}/members/${linus.id}`, { method: 'PUT' });
-  expectEqual(
+  assertEqualsInFieldOrder(
     [restrictedOutsider, await getChatMember(linus.id)],
     [
       restrictedMember(linus, ['can_send_messages', 'can_react_to_messages'], { isMember: false }),
@@ -509,7 +507,7 @@ Deno.test('restrictChatMember refuses what Telegram refuses, without changing an
     ],
     'Expected the outsider to join with its restriction',
   );
-  expectEqual(
+  assertEquals(
     describeMembershipUpdates(await readUpdates(moderatorBot.botApiPath)),
     [
       `chat_member ${linus.id}: left -> restricted`,
@@ -572,7 +570,7 @@ Deno.test('a restricted bot cannot send or forward what it may not, nor lift its
       permissions: ALL_PERMISSIONS,
     }),
   ].map(([status, result]) => [status, typeof result === 'string' ? result : 'sent']);
-  expectEqual(
+  assertEquals(
     calls,
     [
       [200, 'sent'],
@@ -587,7 +585,7 @@ Deno.test('a restricted bot cannot send or forward what it may not, nor lift its
   const myChatMember = (await readUpdates(otherBot.botApiPath)).find((update) =>
     'my_chat_member' in update
   )?.my_chat_member as { from: { id: number }; new_chat_member: Record<string, unknown> };
-  expectEqual(
+  assertEquals(
     [
       myChatMember.from.id,
       myChatMember.new_chat_member.status,
@@ -608,7 +606,7 @@ Deno.test('a restricted bot cannot send or forward what it may not, nor lift its
       'Expected the owner to lift the restriction',
     );
   }
-  expectEqual(
+  assertEquals(
     (await describeCall(otherBot, 'sendPoll', {
       chat_id: supergroup.id,
       question: 'Lunch?',
@@ -617,7 +615,7 @@ Deno.test('a restricted bot cannot send or forward what it may not, nor lift its
     200,
     'Expected the poll to be sent once the restriction is lifted',
   );
-  expectEqual(
+  assertEquals(
     describeMembershipUpdates(await readUpdates(otherBot.botApiPath)),
     [`my_chat_member ${otherBot.bot.id}: restricted -> member`],
     'Expected one update for the lifted restriction',
@@ -646,12 +644,12 @@ Deno.test('accounts without the right restrict nobody through the emulation API'
   const ownerLift = await api.request(`${supergroupPath(ada.id)}/restrictions/${ada.id}`, {
     method: 'DELETE',
   });
-  expectEqual(
+  assertEquals(
     [...statuses, ownerLift.status],
     [403, 409, 404, 400, 400, 404, 409],
     'Expected the restriction checks',
   );
-  expectEqual(
+  assertEqualsInFieldOrder(
     await getChatMember(grace.id),
     { user: grace, status: 'member' },
     'Expected refused restrictions to change nothing',
@@ -663,7 +661,7 @@ Deno.test('accounts without the right restrict nobody through the emulation API'
     until_date: nowUnixSeconds() + 60,
   });
   const member = await getChatMember(grace.id);
-  expectEqual(
+  assertEquals(
     CHAT_PERMISSION_NAMES.filter((name) => member[name] === true),
     ['can_send_polls', 'can_pin_messages'],
     'Expected only the listed permissions',
@@ -758,7 +756,7 @@ Deno.test('an administrator account restricts users and lifts restrictions withi
     await readUpdates(otherBot.botApiPath),
   ];
 
-  expectEqual(
+  assertEqualsInFieldOrder(
     [restriction, restricted, pollWhileRestricted],
     [
       204,
@@ -770,7 +768,7 @@ Deno.test('an administrator account restricts users and lifts restrictions withi
     ],
     'Expected the restriction to show and to bind the bot',
   );
-  expectEqual(
+  assertEquals(
     restrictionUpdates,
     [
       [`chat_member ${otherBot.bot.id}: member -> restricted by ${grace.id}`],
@@ -778,22 +776,22 @@ Deno.test('an administrator account restricts users and lifts restrictions withi
     ],
     'Expected each bot to observe the restriction once, from Grace',
   );
-  expectEqual(
+  assertEquals(
     refusals,
     [403, 403, 409, 403, 403, 403, 404],
     'Expected each refusal',
   );
-  expectEqual(
+  assertEqualsInFieldOrder(
     afterRefusals,
     [restricted, 'administrator', [], []],
     'Expected refusals to change nothing and to send no update',
   );
-  expectEqual(
+  assertEquals(
     [lifts, pollAfterLifting],
     [[204, 204], 200],
     'Expected Grace to lift the restriction once',
   );
-  expectEqual(
+  assertEquals(
     liftUpdates.map(describeAttributedUpdates),
     [
       [`chat_member ${otherBot.bot.id}: restricted -> member by ${grace.id}`],
@@ -834,7 +832,7 @@ Deno.test('tests end temporary restrictions explicitly, as their dates normalize
     await restrictUntil(grace.id, now + 400 * 24 * 60 * 60),
     await restrictUntil(grace.id, now + 3_600),
   ];
-  expectEqual(untilDates, [0, 0, now + 3_600], 'Expected normalized restriction ends');
+  assertEquals(untilDates, [0, 0, now + 3_600], 'Expected normalized restriction ends');
   await readUpdates(moderatorBot.botApiPath);
 
   // A stored date alone ends nothing; the test makes the end arrive.
@@ -844,12 +842,12 @@ Deno.test('tests end temporary restrictions explicitly, as their dates normalize
     'POST',
     expiryPath(supergroup.id, grace.id),
   );
-  expectEqual(
+  assertEqualsInFieldOrder(
     [beforeExpiry, expiry.status, expiry.body.chat_member, await getChatMember(grace.id)],
     ['restricted', 200, { user: grace, status: 'member' }, { user: grace, status: 'member' }],
     'Expected the restriction to end when the test ends it',
   );
-  expectEqual(
+  assertEquals(
     await readUpdates(moderatorBot.botApiPath),
     [],
     'Expected no update for an ended restriction, as Telegram announces none',
@@ -869,7 +867,7 @@ Deno.test('tests end temporary restrictions explicitly, as their dates normalize
     (await api.request(expiryPath(-1_000_000_999_999, grace.id), { method: 'POST' })).status,
     (await api.request(expiryPath(supergroup.id, 999_999), { method: 'POST' })).status,
   ];
-  expectEqual(
+  assertEqualsInFieldOrder(
     [outsiderExpiry.body.chat_member, statuses],
     [{ user: linus, status: 'left' }, [409, 409, 404, 404]],
     'Expected only temporary restrictions to end',
@@ -926,12 +924,12 @@ Deno.test('a grammY bot mutes a member through its webhook and observes the chan
         );
       }),
     ]).finally(() => clearTimeout(timeoutId));
-    expectEqual(
+    assertEquals(
       [observedStatus, (await getChatMember(grace.id)).can_send_messages],
       ['restricted', false],
       'Expected the bot to mute the member',
     );
-    expectEqual(
+    assertEquals(
       (await sendAccountMessage(grace.id, { text: 'Still buying?' })).status,
       403,
       'Expected the muted member to be refused',

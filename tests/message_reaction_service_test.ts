@@ -1,3 +1,4 @@
+import { assertEquals } from '@std/assert';
 import { AccountRepository } from '../src/repositories/account.ts';
 import { BotRepository } from '../src/repositories/bot.ts';
 import { FileRepository } from '../src/repositories/file.ts';
@@ -33,7 +34,7 @@ Deno.test('MessageReactionService records an account adding, changing and removi
   if (!added.set || !repeated.set || !changed.set || !removed.set || !removedAgain.set) {
     throw new Error('Expected every reaction change to be accepted');
   }
-  expectEqual(
+  assertEquals(
     [added.reactions, changed.reactions, removed.reactions, removed.message.reactions],
     [
       [{ userId: ada.profile.id, emojis: ['👍'] }],
@@ -43,7 +44,7 @@ Deno.test('MessageReactionService records an account adding, changing and removi
     ],
     'Expected the message to hold the account reaction after each change',
   );
-  expectEqual(
+  assertEquals(
     publishedEvents.map((event) =>
       event.type === 'message_reaction_changed'
         ? [event.accountId, event.message.id, event.oldEmojis, event.newEmojis]
@@ -87,7 +88,7 @@ Deno.test('MessageReactionService keeps one entry per user in the order of their
   if (!inspection.found) {
     throw new Error(`Expected the reactions to be found, received ${inspection.reason}`);
   }
-  expectEqual(inspection.reactions, [
+  assertEquals(inspection.reactions, [
     { userId: bot.profile.id, emojis: ['👌'] },
     { userId: grace.profile.id, emojis: ['🔥'] },
     { userId: ada.profile.id, emojis: ['🎉'] },
@@ -109,7 +110,7 @@ Deno.test('MessageReactionService stores a bot reaction without publishing it', 
   });
   const removed = messageReactions.setBotMessageReaction({ ...botKey, emojis: [] });
 
-  expectEqual(
+  assertEquals(
     [set, repeated, removed],
     [{ set: true }, { set: true }, { set: true }],
     'Expected the bot reaction changes to be accepted',
@@ -117,12 +118,12 @@ Deno.test('MessageReactionService stores a bot reaction without publishing it', 
   if (!inspection.found) {
     throw new Error(`Expected the reactions to be found, received ${inspection.reason}`);
   }
-  expectEqual(
+  assertEquals(
     inspection.reactions,
     [{ userId: bot.profile.id, emojis: ['👀'] }],
     'Expected the bot reaction to be inspectable',
   );
-  expectEqual(publishedEvents, [], 'Expected no published event for bot reactions');
+  assertEquals(publishedEvents, [], 'Expected no published event for bot reactions');
 });
 
 Deno.test('MessageReactionService accepts exactly the documented emoji, one per user', () => {
@@ -140,7 +141,7 @@ Deno.test('MessageReactionService accepts exactly the documented emoji, one per 
     messageReactions.setAccountMessageReaction({ ...key, emojis: [emoji] }).set
   );
 
-  expectEqual(
+  assertEquals(
     failures.map((result) => result.set ? 'set' : result.reason),
     [
       'reaction_emoji_unsupported',
@@ -150,7 +151,7 @@ Deno.test('MessageReactionService accepts exactly the documented emoji, one per 
     ],
     'Expected unsupported emoji and several reactions to be refused',
   );
-  expectEqual([REACTION_EMOJIS.length, accepted], [73, true], 'Expected every documented emoji');
+  assertEquals([REACTION_EMOJIS.length, accepted], [73, true], 'Expected every documented emoji');
 });
 
 Deno.test('MessageReactionService refuses reactions to service messages and without permission', () => {
@@ -207,7 +208,7 @@ Deno.test('MessageReactionService refuses reactions to service messages and with
     emojis: ['🙏'],
   });
 
-  expectEqual(
+  assertEquals(
     [serviceReaction, withoutPermission].map((result) => result.set ? 'set' : result.reason),
     ['message_not_reactable', 'reaction_not_permitted'],
     'Expected a service message and a member without the permission to be refused',
@@ -215,7 +216,7 @@ Deno.test('MessageReactionService refuses reactions to service messages and with
   if (!ownerReaction.set || !reactionOnly.set) {
     throw new Error('Expected the owner, and a member allowed only to react, to react');
   }
-  expectEqual(
+  assertEquals(
     publishedEvents.filter((event) => event.type === 'message_reaction_changed').map((event) =>
       event.type === 'message_reaction_changed' ? event.accountId : undefined
     ),
@@ -261,7 +262,7 @@ Deno.test('MessageReactionService limits a message to eleven distinct reactions'
     emojis: [REACTION_EMOJIS[0]],
   });
 
-  expectEqual(
+  assertEquals(
     [distinctResults.every(Boolean), twelfth.set ? 'set' : twelfth.reason, shown.set],
     [true, 'too_many_distinct_reactions', true],
     'Expected a twelfth distinct reaction to be refused and a shown one accepted',
@@ -297,7 +298,7 @@ Deno.test('MessageReactionService finds messages only for members and bots of th
     { ...chatKey, botId: bot.profile.id },
   ].map((key) => messageReactions.setBotMessageReaction({ ...key, emojis: ['👍'] }));
 
-  expectEqual(
+  assertEquals(
     [...accountResults, ...botResults].map((result) => result.set ? 'set' : result.reason),
     [
       'account_not_found',
@@ -309,7 +310,7 @@ Deno.test('MessageReactionService finds messages only for members and bots of th
     ],
     'Expected each unreachable message to be refused',
   );
-  expectEqual(
+  assertEquals(
     publishedEvents.filter((event) => event.type === 'message_reaction_changed'),
     [],
     'Expected refused reactions to publish nothing',
@@ -331,7 +332,7 @@ Deno.test('MessageReactionService loses the reactions of a deleted message', () 
 
   const inspection = messageReactions.getAccountMessageReactions(key);
   const reaction = messageReactions.setAccountMessageReaction({ ...key, emojis: ['😁'] });
-  expectEqual(
+  assertEquals(
     [inspection.found ? 'found' : inspection.reason, reaction.set ? 'set' : reaction.reason],
     ['message_not_found', 'message_not_found'],
     'Expected a deleted message to have no reactions to inspect or change',
@@ -477,12 +478,4 @@ function createBot(virtualUsers: VirtualUserService, username: string) {
     throw new Error(`Expected bot creation to succeed, received ${result.reason}`);
   }
   return result.bot;
-}
-
-function expectEqual(actual: unknown, expected: unknown, message: string): void {
-  if (JSON.stringify(actual) !== JSON.stringify(expected)) {
-    throw new Error(
-      `${message}: expected ${JSON.stringify(expected)}, received ${JSON.stringify(actual)}`,
-    );
-  }
 }

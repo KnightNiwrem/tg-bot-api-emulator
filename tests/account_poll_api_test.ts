@@ -1,3 +1,4 @@
+import { assertEquals } from '@std/assert';
 import { Bot } from 'https://cdn.jsdelivr.net/gh/grammyjs/grammY@^1.46.0/src/bot.ts';
 import { run } from '@grammyjs/runner/runner.ts';
 
@@ -49,12 +50,12 @@ Deno.test('a grammY bot inspects and answers the poll an account sends to its pr
 
   try {
     const quizMessage = await ada.sendPoll({ to: privateChat, poll: CAPITAL_QUIZ });
-    expectEqual(
+    assertEquals(
       [quizMessage.from.id, quizMessage.poll?.type, quizMessage.poll?.correct_option_ids],
       [ada.id, 'quiz', [1]],
       'Expected the quiz to come from Ada, with its solution shown to the bot of its private chat',
     );
-    expectEqual(
+    assertEquals(
       [
         quizMessage.poll?.is_closed,
         quizMessage.poll?.allows_revoting,
@@ -72,7 +73,7 @@ Deno.test('a grammY bot inspects and answers the poll an account sends to its pr
     const answer = (await ada.getMessages({ chat: privateChat })).find((message) =>
       message.from.id === bot.id && message.reply_to_message?.message_id === quizMessage.message_id
     );
-    expectEqual(
+    assertEquals(
       answer?.reply_to_message?.poll?.id,
       quizMessage.poll?.id,
       'Expected the bot to reply to the poll message, which the reply shows',
@@ -85,13 +86,13 @@ Deno.test('a grammY bot inspects and answers the poll an account sends to its pr
       message_id: quizMessage.message_id,
       option_ids: [0],
     });
-    expectEqual(
+    assertEquals(
       voted.message.poll?.options.map(({ voter_count }) => voter_count),
       [1, 0],
       'Expected the vote to count',
     );
     const stopped = await ada.stopPoll({ chat: privateChat, message_id: quizMessage.message_id });
-    expectEqual(stopped.poll?.is_closed, true, 'Expected the owner to stop its poll');
+    assertEquals(stopped.poll?.is_closed, true, 'Expected the owner to stop its poll');
     await ada.sendMessage({ to: privateChat, text: 'done' });
     const echo = await activity.waitFor({
       method: 'sendMessage',
@@ -144,7 +145,7 @@ Deno.test('supergroup members vote in an account poll and forward it with the sa
       message_id: pollMessage.message_id,
       to: { type: 'private', botId: bot.id },
     });
-    expectEqual(
+    assertEquals(
       [forward.poll?.id, forward.poll?.total_voter_count, forward.forward_origin?.type],
       [pollId, 2, 'user'],
       'Expected the forward to show the same poll with its counts',
@@ -161,20 +162,20 @@ Deno.test('supergroup members vote in an account poll and forward it with the sa
       message_id: forward.message_id,
       option_ids: [2],
     });
-    expectEqual(
+    assertEquals(
       changed.message.poll?.options.map(({ voter_count }) => voter_count),
       [1, 0, 1],
       'Expected a vote through the forward to replace the voter answer',
     );
     const inGroup = await linus.getPollAnswer({ chat: group, message_id: pollMessage.message_id })
       .catch((error) => error);
-    expectEqual(
+    assertEquals(
       inGroup instanceof EmulationClientError ? inGroup.status : inGroup,
       403,
       'Expected an account outside the supergroup to be refused',
     );
     const seenByAda = await ada.getPollAnswer({ chat: group, message_id: pollMessage.message_id });
-    expectEqual(
+    assertEquals(
       [seenByAda.poll_answer.option_ids, seenByAda.message.poll?.options.map((o) => o.voter_count)],
       [[0], [1, 0, 1]],
       'Expected the supergroup message to show the counts the forward shows',
@@ -221,30 +222,30 @@ Deno.test('only the account that sent a poll stops it, through its own message',
     chat_id: group.chatId,
     message_id: pollMessage.message_id,
   });
-  expectEqual(
+  assertEquals(
     [botStop.ok, botStop.description],
     [false, "Bad Request: poll can't be stopped"],
     'Expected a bot to be unable to stop an account poll',
   );
   const unchanged = await grace.getPollAnswer({ chat: group, message_id: pollMessage.message_id });
-  expectEqual(
+  assertEquals(
     [unchanged.message.poll?.is_closed, unchanged.message.poll?.total_voter_count],
     [false, 1],
     'Expected refused stops to leave the poll open with its votes',
   );
 
   const stopped = await ada.stopPoll({ chat: group, message_id: pollMessage.message_id });
-  expectEqual(
+  assertEquals(
     [stopped.poll?.is_closed, stopped.poll?.options.map(({ voter_count }) => voter_count)],
     [true, [0, 0, 1]],
     'Expected the stopped poll to keep its votes',
   );
-  expectEqual(stopped.edit_date, undefined, 'Expected stopping to add no edit date');
+  assertEquals(stopped.edit_date, undefined, 'Expected stopping to add no edit date');
   const forwardView = await ada.getPollAnswer({
     chat: privateChat,
     message_id: forward.message_id,
   });
-  expectEqual(forwardView.message.poll?.is_closed, true, 'Expected the forward to show it closed');
+  assertEquals(forwardView.message.poll?.is_closed, true, 'Expected the forward to show it closed');
   await expectRefused(
     ada.stopPoll({ chat: group, message_id: pollMessage.message_id }),
     409,
@@ -272,7 +273,7 @@ Deno.test('only the account that sent a poll stops it, through its own message',
     chat_id: group.chatId,
     message_id: botPollMessageId,
   });
-  expectEqual(botStopped.ok, true, 'Expected the bot to stop its own poll');
+  assertEquals(botStopped.ok, true, 'Expected the bot to stop its own poll');
 
   const textMessage = await ada.sendMessage({ to: group, text: 'not a poll' });
   await expectRefused(
@@ -334,17 +335,17 @@ Deno.test('account polls are checked as Telegram checks them and refused ones ch
   await expectRefused(ada.sendPoll({ to: privateChat, poll: LUNCH_POLL }), 409, 'a blocked bot');
   await ada.unblockBot({ botId: bot.id });
 
-  expectEqual(
+  assertEquals(
     (await ada.getMessages({ chat: privateChat })).length,
     privateHistory.length,
     'Expected refused polls to add no private message',
   );
-  expectEqual(
+  assertEquals(
     (await ada.getMessages({ chat: group })).length,
     groupHistory.length,
     'Expected refused polls to add no supergroup message',
   );
-  expectEqual(
+  assertEquals(
     (await pendingUpdates(callBotApi)).slice(updatesBefore.length).map((update) =>
       Object.keys(update).filter((key) => key !== 'update_id')
     ),
@@ -357,7 +358,7 @@ Deno.test('account polls are checked as Telegram checks them and refused ones ch
     to: group,
     poll: { ...LUNCH_POLL, question: 'q'.repeat(255) },
   });
-  expectEqual(owned.poll?.question.length, 255, 'Expected the owner to send the poll');
+  assertEquals(owned.poll?.question.length, 255, 'Expected the owner to send the poll');
   await session.end();
 });
 
@@ -423,14 +424,14 @@ Deno.test('a grammY bot receives the poll an account creates through a request_p
       400,
       'a keyboard shown only to another account',
     );
-    expectEqual(
+    assertEquals(
       (await ada.getMessages({ chat: privateChat })).length,
       historyLength,
       'Expected refused presses to send nothing',
     );
 
     const quiz = await press('Quiz', { poll: CAPITAL_QUIZ });
-    expectEqual(
+    assertEquals(
       [quiz.from.id, quiz.poll?.type, quiz.reply_to_message, quiz.text],
       [ada.id, 'quiz', undefined, undefined],
       "Expected the quiz to be sent as Ada's poll message that replies to nothing",
@@ -442,7 +443,7 @@ Deno.test('a grammY bot receives the poll an account creates through a request_p
     }, { after: start });
     const regular = await press('Regular', { poll: LUNCH_POLL });
     const either = await press('Any poll', { poll: CAPITAL_QUIZ });
-    expectEqual(
+    assertEquals(
       [regular.poll?.type, either.poll?.type],
       ['regular', 'quiz'],
       'Expected each button to send the polls it allows',
@@ -461,7 +462,7 @@ Deno.test('a grammY bot receives the poll an account creates through a request_p
     }, { after: start });
     const beforeStale = (await ada.getMessages({ chat: privateChat })).length;
     await expectRefused(press('Quiz', { poll: CAPITAL_QUIZ }), 400, 'a removed keyboard');
-    expectEqual(
+    assertEquals(
       (await ada.getMessages({ chat: privateChat })).length,
       beforeStale,
       'Expected a press of a removed keyboard to send nothing',
@@ -482,7 +483,7 @@ Deno.test('a bot copies an account quiz only where it sees its solution', async 
     from_chat_id: group.chatId,
     message_id: groupQuiz.message_id,
   })).result as { poll?: { correct_option_ids?: readonly number[] } };
-  expectEqual(
+  assertEquals(
     groupView.poll?.correct_option_ids,
     undefined,
     'Expected a forward of a supergroup quiz to hide its solution from the bot',
@@ -498,7 +499,7 @@ Deno.test('a bot copies an account quiz only where it sees its solution', async 
     from_chat_id: group.chatId,
     message_id: groupQuiz.message_id,
   });
-  expectEqual(
+  assertEquals(
     [privateCopy.ok, groupCopy.ok, groupCopy.description],
     [true, false, "Bad Request: the message can't be copied"],
     'Expected the bot to copy only the quiz whose solution it sees',
@@ -538,7 +539,7 @@ Deno.test('account polls stay within their session', async () => {
     404,
     'voting in a poll of another session',
   );
-  expectEqual(
+  assertEquals(
     (await second.ada.getMessages({ chat: second.privateChat })).filter((message) =>
       message.poll !== undefined
     ),
@@ -549,7 +550,7 @@ Deno.test('account polls stay within their session', async () => {
     chat: first.privateChat,
     message_id: pollMessage.message_id,
   });
-  expectEqual(stillOpen.message.poll?.is_closed, false, 'Expected the poll to stay open');
+  assertEquals(stillOpen.message.poll?.is_closed, false, 'Expected the poll to stay open');
   await first.session.end();
   await second.session.end();
 });
@@ -631,12 +632,4 @@ async function expectRefused(
     });
   }
   throw new Error(`Expected ${description} to be refused with ${expectedStatus}`);
-}
-
-function expectEqual(actual: unknown, expected: unknown, message: string): void {
-  if (JSON.stringify(actual) !== JSON.stringify(expected)) {
-    throw new Error(
-      `${message}: expected ${JSON.stringify(expected)}, received ${JSON.stringify(actual)}`,
-    );
-  }
 }

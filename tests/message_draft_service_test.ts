@@ -1,3 +1,4 @@
+import { assertEquals } from '@std/assert';
 import { AccountRepository } from '../src/repositories/account.ts';
 import { BotRepository } from '../src/repositories/bot.ts';
 import { MessageDraftRepository } from '../src/repositories/message_draft.ts';
@@ -30,7 +31,7 @@ Deno.test('MessageDraftService changes a draft by its ID and replaces it with an
   messageDrafts.showBotDraft(conversation, plainDraft('-9223372036854775808', 'Other'));
   const replaced = shown();
 
-  expectEqual(
+  assertEquals(
     [beforeWrite, thinking, changed, replaced],
     [
       null,
@@ -68,7 +69,7 @@ Deno.test('MessageDraftService expires the shown draft only as a test asks', () 
   const rewritten = shown();
   const unguarded = expire();
 
-  expectEqual(
+  assertEquals(
     [withoutDraft, mismatch, afterMismatch, matching, afterExpiry, repeated, rewritten, unguarded],
     [
       'draft_not_found',
@@ -98,7 +99,7 @@ Deno.test("MessageDraftService keeps each conversation's draft apart", () => {
   );
   messageDrafts.clearBotDraft(otherBotChat);
 
-  expectEqual(
+  assertEquals(
     [
       describeDraft(messageDrafts.getPrivateMessageDraft(conversation)),
       describeDraft(messageDrafts.getPrivateMessageDraft(otherAccountChat)),
@@ -128,7 +129,7 @@ Deno.test('MessageDraftService tells the bot once when the account stops a draft
   const afterStop = shown();
   const repeated = stop('2');
 
-  expectEqual(
+  assertEquals(
     [withoutDraft, notStoppable, mismatch, stopped, afterStop, repeated],
     [
       'draft_not_found',
@@ -140,7 +141,7 @@ Deno.test('MessageDraftService tells the bot once when the account stops a draft
     ],
     'Expected only a shown draft with a Stop button to stop, which removes it',
   );
-  expectEqual(
+  assertEquals(
     publishedEvents,
     [{
       type: 'message_generation_stopped',
@@ -170,7 +171,7 @@ Deno.test('MessageDraftService keeps a stopped draft without its Stop button unt
   const secondStop = stop();
   messageDrafts.clearBotDraft(conversation);
 
-  expectEqual(
+  assertEquals(
     [firstStop, afterFirstStop, repeated, expiry, afterExpiry, lateWrite, secondStop, shown()],
     [
       'stopped',
@@ -184,7 +185,7 @@ Deno.test('MessageDraftService keeps a stopped draft without its Stop button unt
     ],
     'Expected a kept draft to stay stopped until it expires, and a late write to be stoppable',
   );
-  expectEqual(
+  assertEquals(
     publishedEvents.map((event) => event.type === 'message_generation_stopped' && event.draftId),
     ['1', '1'],
     'Expected each successful stop, and only those, to tell the bot',
@@ -196,7 +197,7 @@ Deno.test('MessageDraftService reports unknown accounts and bots', () => {
   const unknownAccount = { accountId: 999, botId: conversation.botId };
   const unknownBot = { accountId: conversation.accountId, botId: 999 };
 
-  expectEqual(
+  assertEquals(
     [
       describeDraft(messageDrafts.getPrivateMessageDraft(unknownAccount)),
       describeDraft(messageDrafts.getPrivateMessageDraft(unknownBot)),
@@ -287,12 +288,4 @@ function createBot(virtualUsers: VirtualUserService, username: string): number {
     throw new Error(`Expected bot creation to succeed, received ${result.reason}`);
   }
   return result.bot.profile.id;
-}
-
-function expectEqual(actual: unknown, expected: unknown, message: string): void {
-  if (JSON.stringify(actual) !== JSON.stringify(expected)) {
-    throw new Error(
-      `${message}: expected ${JSON.stringify(expected)}, received ${JSON.stringify(actual)}`,
-    );
-  }
 }

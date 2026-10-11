@@ -1,3 +1,5 @@
+import { assertEquals } from '@std/assert';
+import { assertEqualsInFieldOrder } from './support/field_order_assertion.ts';
 import { Bot } from 'https://cdn.jsdelivr.net/gh/grammyjs/grammY@^1.46.0/src/bot.ts';
 import { run } from '@grammyjs/runner/runner.ts';
 import { parse as parseYaml } from '@std/yaml';
@@ -41,7 +43,7 @@ Deno.test('a grammY bot answers an account reaction with a reaction of its own',
       message_id: proposal.message_id,
       reaction: [{ type: 'emoji', emoji: '👍' }],
     });
-    expectEqual(
+    assertEqualsInFieldOrder(
       reacted.reactions,
       [{ user_id: ada.id, reaction: [{ type: 'emoji', emoji: '👍' }] }],
       'Expected the account reaction to be recorded',
@@ -56,7 +58,7 @@ Deno.test('a grammY bot answers an account reaction with a reaction of its own',
       chat: team,
       message_id: proposal.message_id,
     });
-    expectEqual(
+    assertEqualsInFieldOrder(
       [reactions.message.message_id, reactions.reactions],
       [proposal.message_id, [
         { user_id: ada.id, reaction: [{ type: 'emoji', emoji: '👍' }] },
@@ -89,7 +91,7 @@ Deno.test('message_reaction updates reach only subscribed administrator bots, on
     await ada.setMessageReaction({ ...key, reaction: [{ type: 'emoji', emoji: '❤' }] });
     await ada.removeMessageReaction(key);
     await ada.removeMessageReaction(key);
-    expectEqual(
+    assertEqualsInFieldOrder(
       await callBotApi(fixture, adminBot, 'setMessageReaction', {
         chat_id: team.chatId,
         message_id: message.message_id,
@@ -115,7 +117,7 @@ Deno.test('message_reaction updates reach only subscribed administrator bots, on
       old_reaction: oldReaction,
       new_reaction: newReaction,
     }));
-    expectEqual(
+    assertEqualsInFieldOrder(
       adminUpdates.map((update) => ({ ...update.message_reaction, date: 'any' })),
       expected,
       'Expected one update per change, with the fields in the official order',
@@ -123,12 +125,12 @@ Deno.test('message_reaction updates reach only subscribed administrator bots, on
     if (adminUpdates.some((update) => typeof update.message_reaction?.date !== 'number')) {
       throw new Error('Expected every update to carry a date');
     }
-    expectEqual(
+    assertEqualsInFieldOrder(
       (await readUpdates(fixture, otherAdminBot)).map((update) => update.message_reaction),
       adminUpdates.map((update) => update.message_reaction),
       'Expected every subscribed administrator bot to receive the same updates',
     );
-    expectEqual(
+    assertEquals(
       [
         (await readUpdates(fixture, memberBot)).length,
         (await readUpdates(fixture, unsubscribedBot)).length,
@@ -222,7 +224,7 @@ Deno.test('rejected reactions leave reactions and updates unchanged', async () =
         body: JSON.stringify({ reaction: [{ type: 'emoji', emoji: '👍', is_big: true }] }),
       },
     );
-    expectEqual(invalidBody.status, 400, 'Expected an unknown reaction field to be rejected');
+    assertEquals(invalidBody.status, 400, 'Expected an unknown reaction field to be rejected');
     await invalidBody.body?.cancel();
 
     await owner.setChatPermissions({ chat: team, permissions: { can_send_messages: true } });
@@ -306,7 +308,7 @@ Deno.test('rejected reactions leave reactions and updates unchanged', async () =
       }, 'Bad Request: REACTIONS_TOO_MANY'],
     ];
     for (const [parameters, description] of botCalls) {
-      expectEqual(
+      assertEqualsInFieldOrder(
         await callBotApi(fixture, adminBot, 'setMessageReaction', parameters),
         { ok: false, error_code: 400, description },
         `Expected setMessageReaction ${JSON.stringify(parameters)} to be refused`,
@@ -314,7 +316,7 @@ Deno.test('rejected reactions leave reactions and updates unchanged', async () =
     }
     const memberBot = await addBot(fixture, 'restricted_bot', { promote: false });
     await owner.setChatPermissions({ chat: team, permissions: { can_send_messages: true } });
-    expectEqual(
+    assertEqualsInFieldOrder(
       await callBotApi(fixture, memberBot, 'setMessageReaction', {
         chat_id: team.chatId,
         message_id: message.message_id,
@@ -324,7 +326,7 @@ Deno.test('rejected reactions leave reactions and updates unchanged', async () =
       'Expected a bot without can_react_to_messages to be refused',
     );
     await owner.removeChatMember({ chat: team, userId: memberBot.id });
-    expectEqual(
+    assertEqualsInFieldOrder(
       await callBotApi(fixture, memberBot, 'setMessageReaction', {
         chat_id: team.chatId,
         message_id: message.message_id,
@@ -338,12 +340,12 @@ Deno.test('rejected reactions leave reactions and updates unchanged', async () =
       'Expected a removed bot to be refused',
     );
 
-    expectEqual(
+    assertEquals(
       (await owner.getMessageReactions(key)).reactions,
       [],
       'Expected no refused reaction to be recorded',
     );
-    expectEqual(await readUpdates(fixture, adminBot), [], 'Expected no update for refusals');
+    assertEquals(await readUpdates(fixture, adminBot), [], 'Expected no update for refusals');
   } finally {
     await session.end();
   }
@@ -365,7 +367,7 @@ Deno.test('album reactions go to the first message that is not deleted', async (
       message_id: third,
       reaction: [{ type: 'emoji', emoji: '😍' }],
     });
-    expectEqual(
+    assertEqualsInFieldOrder(
       await callBotApi(fixture, adminBot, 'setMessageReaction', {
         chat_id: team.chatId,
         message_id: second,
@@ -375,7 +377,7 @@ Deno.test('album reactions go to the first message that is not deleted', async (
       'Expected the bot reaction to an album member to succeed',
     );
     const throughSecond = await ada.getMessageReactions({ chat: team, message_id: second });
-    expectEqual(
+    assertEqualsInFieldOrder(
       [throughThird.message.message_id, throughSecond.message.message_id, throughSecond.reactions],
       [first, first, [
         { user_id: owner.id, reaction: [{ type: 'emoji', emoji: '😍' }] },
@@ -383,7 +385,7 @@ Deno.test('album reactions go to the first message that is not deleted', async (
       ]],
       "Expected the album's first message to hold every reaction",
     );
-    expectEqual(
+    assertEquals(
       (await readUpdates(fixture, adminBot)).map((update) => update.message_reaction?.message_id),
       [first],
       'Expected the update to name the message that holds the reaction',
@@ -391,7 +393,7 @@ Deno.test('album reactions go to the first message that is not deleted', async (
 
     await ada.deleteMessage({ chat: team, message_id: first });
     const afterDeletion = await ada.getMessageReactions({ chat: team, message_id: third });
-    expectEqual(
+    assertEquals(
       [afterDeletion.message.message_id, afterDeletion.reactions],
       [second, []],
       "Expected the deleted message's reactions to go with it, and the next one to hold reactions",
@@ -401,7 +403,7 @@ Deno.test('album reactions go to the first message that is not deleted', async (
       message_id: third,
       reaction: [{ type: 'emoji', emoji: '🎉' }],
     });
-    expectEqual(
+    assertEquals(
       (await readUpdates(fixture, adminBot)).map((update) => update.message_reaction?.message_id),
       [second],
       'Expected the next reaction to go to the first remaining message',
@@ -428,7 +430,7 @@ Deno.test("an account's poll takes reactions, which stopping the poll keeps", as
     const key = { chat: team, message_id: pollMessage.message_id };
 
     await owner.setMessageReaction({ ...key, reaction: [{ type: 'emoji', emoji: '🍌' }] });
-    expectEqual(
+    assertEqualsInFieldOrder(
       await callBotApi(fixture, adminBot, 'setMessageReaction', {
         chat_id: team.chatId,
         message_id: pollMessage.message_id,
@@ -440,7 +442,7 @@ Deno.test("an account's poll takes reactions, which stopping the poll keeps", as
     const stopped = await ada.stopPoll(key);
     const afterStop = await owner.getMessageReactions(key);
 
-    expectEqual(
+    assertEqualsInFieldOrder(
       [stopped.poll?.is_closed, afterStop.message.poll?.is_closed, afterStop.reactions],
       [true, true, [
         { user_id: owner.id, reaction: [{ type: 'emoji', emoji: '🍌' }] },
@@ -448,7 +450,7 @@ Deno.test("an account's poll takes reactions, which stopping the poll keeps", as
       ]],
       'Expected the closed poll to keep its reactions',
     );
-    expectEqual(
+    assertEquals(
       (await readUpdates(fixture, adminBot)).map((update) => update.message_reaction?.message_id),
       [pollMessage.message_id],
       "Expected one update, for the account's reaction",
@@ -469,7 +471,7 @@ Deno.test('reactions stay inside their session', async () => {
       to: second.team,
       text: 'Second session',
     });
-    expectEqual(
+    assertEquals(
       [second.team.chatId, secondMessage.message_id],
       [first.team.chatId, firstMessage.message_id],
       'Expected both sessions to number the supergroup and message alike',
@@ -493,7 +495,7 @@ Deno.test('reactions stay inside their session', async () => {
       });
     }
 
-    expectEqual(
+    assertEquals(
       (await second.ada.getMessageReactions({
         chat: second.team,
         message_id: secondMessage.message_id,
@@ -501,7 +503,7 @@ Deno.test('reactions stay inside their session', async () => {
       [],
       'Expected a reaction in one session not to show under the same IDs in another',
     );
-    expectEqual(
+    assertEquals(
       await readUpdates(second, second.adminBot),
       [],
       "Expected another session's bots to receive nothing",
@@ -514,7 +516,7 @@ Deno.test('reactions stay inside their session', async () => {
       404,
       'a supergroup of another session',
     );
-    expectEqual(
+    assertEqualsInFieldOrder(
       await callBotApi(second, second.adminBot, 'setMessageReaction', {
         chat_id: onlyFirst.id,
         message_id: onlyFirstMessage.message_id,
@@ -534,9 +536,9 @@ Deno.test('the OpenAPI reaction emoji list is the list the server accepts', () =
     properties: z.object({ emoji: z.object({ enum: z.array(z.string()) }) }),
   })
     .parse(parseYaml(reactionTypeEmojiYaml));
-  expectEqual(
+  assertEquals(
     schema.properties.emoji.enum,
-    REACTION_EMOJIS,
+    [...REACTION_EMOJIS],
     'Expected ReactionTypeEmoji.yaml to list REACTION_EMOJIS',
   );
 });
@@ -650,12 +652,4 @@ async function expectRefused(
     });
   }
   throw new Error(`Expected ${description} to be refused with ${expectedStatus}`);
-}
-
-function expectEqual(actual: unknown, expected: unknown, message: string): void {
-  if (JSON.stringify(actual) !== JSON.stringify(expected)) {
-    throw new Error(
-      `${message}: expected ${JSON.stringify(expected)}, received ${JSON.stringify(actual)}`,
-    );
-  }
 }

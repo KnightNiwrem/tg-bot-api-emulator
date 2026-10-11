@@ -1,3 +1,4 @@
+import { assertEquals } from '@std/assert';
 import { createTestSession, requestJson } from './support/emulation_api.ts';
 
 interface BotApiResponse {
@@ -212,14 +213,6 @@ const ACCOUNT_CONTENTS = {
   voice: { voice: { content_base64: 'Ynl0ZXM=' } },
 } as const;
 
-function expectEqual(actual: unknown, expected: unknown, message: string): void {
-  if (JSON.stringify(actual) !== JSON.stringify(expected)) {
-    throw new Error(
-      `${message}: expected ${JSON.stringify(expected)}, received ${JSON.stringify(actual)}`,
-    );
-  }
-}
-
 /** A `ChatPermissions` object that grants every permission. */
 const ALL_PERMISSIONS = Object.fromEntries(CHAT_PERMISSION_NAMES.map((name) => [name, true]));
 
@@ -243,20 +236,20 @@ Deno.test('a bot changes default permissions, which members obey and getChat rep
   await readUpdates(moderatorBot);
   await readUpdates(memberBot);
 
-  expectEqual(await setDefaults(moderatorBot, { can_send_messages: true }), [200, 'ok'], 'Change');
-  expectEqual(initialDefaults, CHAT_PERMISSION_NAMES, 'Expected every permission at first');
-  expectEqual(
+  assertEquals(await setDefaults(moderatorBot, { can_send_messages: true }), [200, 'ok'], 'Change');
+  assertEquals(initialDefaults, [...CHAT_PERMISSION_NAMES], 'Expected every permission at first');
+  assertEquals(
     await getDefaults(),
     ['can_send_messages', 'can_react_to_messages'],
     'Expected getChat to show the new default permissions',
   );
-  expectEqual(
+  assertEquals(
     [...await readUpdates(moderatorBot), ...await readUpdates(memberBot)],
     [],
     'Expected no update for changed default permissions',
   );
   // Members, bots included, obey the defaults; the owner and administrators are exempt.
-  expectEqual(
+  assertEquals(
     [
       await sendAsAccount(grace.id, ACCOUNT_CONTENTS.text),
       await sendAsAccount(grace.id, ACCOUNT_CONTENTS.photo),
@@ -292,7 +285,7 @@ Deno.test('a bot changes default permissions, which members obey and getChat rep
     `${moderatorBot.botApiPath}/getChatMember`,
     { chat_id: supergroup.id, user_id: grace.id },
   );
-  expectEqual(
+  assertEquals(
     [whileBothWithhold, onceDefaultsGrantAll, member.result.can_send_photos],
     [[403, 403], [403, 201], true],
     "Expected the member's restriction to apply within the defaults",
@@ -329,7 +322,7 @@ Deno.test('setChatPermissions refuses what Telegram refuses, without changing an
     await setPermissions(moderatorBot, { can_send_messages: true }),
   ];
   const notEnoughRights = 'Bad Request: not enough rights to change chat permissions';
-  expectEqual(
+  assertEquals(
     refusals,
     [
       [400, notEnoughRights],
@@ -349,10 +342,10 @@ Deno.test('setChatPermissions refuses what Telegram refuses, without changing an
     ],
     'Expected Telegram refusals',
   );
-  expectEqual(await getDefaults(), CHAT_PERMISSION_NAMES, 'Expected the defaults to stay');
+  assertEquals(await getDefaults(), [...CHAT_PERMISSION_NAMES], 'Expected the defaults to stay');
 
   // The permissions the supergroup has change nothing, and missing permissions withhold all.
-  expectEqual(
+  assertEquals(
     [
       await setPermissions(moderatorBot, { permissions: ALL_PERMISSIONS }),
       await setPermissions(moderatorBot, { permissions: undefined }),
@@ -404,7 +397,7 @@ Deno.test('default permissions decide information changes and inline bots, never
     await changeTitle(linus.id, 'Administrators again'),
     await changeTitle(ada.id, 'Owners'),
   ];
-  expectEqual(
+  assertEquals(
     [withChangeInfo, defaultsChanges, withoutChangeInfo],
     [
       [204, 204, 'Bad Request: not enough rights to change chat title'],
@@ -452,7 +445,7 @@ Deno.test('default permissions decide information changes and inline bots, never
     )).status;
   const withoutInlineBots = await chooseResult();
   await changeDefaultsAs(ada.id, { can_send_messages: true, can_send_other_messages: true });
-  expectEqual(
+  assertEquals(
     [withoutInlineBots, await chooseResult()],
     [403, 201],
     'Expected inline results to need can_send_other_messages',
@@ -494,12 +487,12 @@ Deno.test('each kind of content needs its own permission, for accounts and bots 
       botOutcomes.push([kind, await sendAsBot(memberBot, kind)]);
     }
     const isSendable = (kind: string) => (sendableKinds as readonly string[]).includes(kind);
-    expectEqual(
+    assertEquals(
       accountOutcomes,
       accountKinds.map((kind) => [kind, isSendable(kind) ? 201 : 403]),
       `Expected an account to send only what ${permission} allows`,
     );
-    expectEqual(
+    assertEquals(
       botOutcomes,
       botKinds.map((kind) => [kind, isSendable(kind) ? 'ok' : BOT_REFUSALS[kind]]),
       `Expected a bot to send only what ${permission} allows`,
