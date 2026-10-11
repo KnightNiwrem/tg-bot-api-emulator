@@ -5,18 +5,20 @@
  * the same edits in a private chat and in a supergroup, so the expectations of the two chat types
  * can be compared row by row.
  */
-import { callBotApi, createUpdateReader } from '../support/bot_api_requests.ts';
-import {
-  createTestSession,
-  type EmulationApi,
-  jsonRequest,
-  requestJson,
-} from '../support/emulation_api.ts';
+import { createUpdateReader } from '../support/bot_api_requests.ts';
+import { type EmulationApi, jsonRequest, requestJson } from '../support/emulation_api.ts';
 import { createAccount, createBot } from '../support/http_fixtures.ts';
-
-type ChatType = 'private' | 'supergroup';
-
-const CHAT_TYPES: readonly ChatType[] = ['private', 'supergroup'];
+import {
+  type CallOutcome,
+  CHAT_TYPES,
+  createChatScenario,
+  type CreatedBot,
+  createJoinRequesterChatScenario,
+  describeCall,
+  expectEqual,
+  expectStatus,
+  sendBotMessage,
+} from '../support/chat_type_scenarios.ts';
 
 const NOT_MODIFIED =
   'Bad Request: message is not modified: specified new message content and reply markup are exactly the same as a current content and reply markup of the message';
@@ -33,113 +35,6 @@ const WEB_APP_KEYBOARD = {
   inline_keyboard: [[{ text: 'Open', web_app: { url: 'https://example.com/app' } }]],
 };
 
-type CreatedBot = Awaited<ReturnType<typeof createBot>>;
-
-/** A Bot API call's outcome as `[HTTP status, result or error description]`. */
-type CallOutcome = readonly [status: number, resultOrDescription: unknown];
-
-/**
- * A session with Ada and the bot in a chat of the given type, where Ada wrote "Hello" and the bot
- * answered "Menu" with a keyboard. In a supergroup, which Ada owns, Grace is a member too, and the
- * bot reads every message.
- */
-async function createEditingChat(chatType: ChatType) {
-  const { api, sessionPath } = await createTestSession();
-  const ada = await createAccount(api, sessionPath, 'Ada');
-  const grace = await createAccount(api, sessionPath, 'Grace');
-  const bot = await createBot(api, sessionPath, 'test_bot', { can_read_all_group_messages: true });
-  const readUpdates = createUpdateReader(api);
-
-  let chatId: number;
-  /** The path of the account's messages in the chat, as the control API addresses them. */
-  let accountMessagesPath: (accountId: number) => string;
-  if (chatType === 'private') {
-    chatId = ada.id;
-    accountMessagesPath = (accountId) =>
-      `${sessionPath}/accounts/${accountId}/conversations/private/${bot.bot.id}/messages`;
-  } else {
-    const { body: { supergroup } } = await requestJson<{ supergroup: { id: number } }>(
-      api,
-      'POST',
-      `${sessionPath}/accounts/${ada.id}/supergroups`,
-      { title: 'Team' },
-    );
-    chatId = supergroup.id;
-    accountMessagesPath = (accountId) =>
-      `${sessionPath}/accounts/${accountId}/conversations/supergroup/${chatId}/messages`;
-    for (const memberId of [grace.id, bot.bot.id]) {
-      await expectStatus(
-        api,
-        `${sessionPath}/accounts/${ada.id}/conversations/supergroup/${chatId}/members/${memberId}`,
-        { method: 'PUT' },
-        204,
-      );
-    }
-  }
-  const to = chatType === 'private'
-    ? { type: 'private', botId: bot.bot.id }
-    : { type: 'supergroup', chatId };
-  const sendAccountText = async (accountId: number, text: string) => {
-    const { status, body } = await requestJson<{ message: { message_id: number } }>(
-      api,
-      'POST',
-      `${sessionPath}/accounts/${accountId}/messages`,
-      { to, text },
-    );
-    if (status !== 201) {
-      throw new Error(`Expected "${text}" to be sent, received ${status}`);
-    }
-    return body.message.message_id;
-  };
-  const accountMessageId = await sendAccountText(ada.id, 'Hello');
-  const botMessageId = await sendBotMessage(api, bot, {
-    chat_id: chatId,
-    text: 'Menu',
-    reply_markup: { inline_keyboard: [[{ text: 'Go', callback_data: 'go' }]] },
-  });
-  await readUpdates(bot.botApiPath);
-
-  return {
-    api,
-    sessionPath,
-    ada,
-    grace,
-    bot,
-    chatId,
-    accountMessageId,
-    botMessageId,
-    accountMessagesPath,
-    sendAccountText,
-    readUpdates,
-  };
-}
-
-async function sendBotMessage(
-  api: EmulationApi,
-  bot: CreatedBot,
-  parameters: Record<string, unknown>,
-  method = 'sendMessage',
-): Promise<number> {
-  const { status, body } = await callBotApi(api, `${bot.botApiPath}/${method}`, parameters);
-  const messageId = (body as { result?: { message_id?: number } }).result?.message_id;
-  if (status !== 200 || messageId === undefined) {
-    throw new Error(`Expected ${method} to succeed, received ${status} ${JSON.stringify(body)}`);
-  }
-  return messageId;
-}
-
-/** Calls a Bot API method and describes its outcome as a `CallOutcome`. */
-async function describeCall(
-  api: EmulationApi,
-  bot: CreatedBot,
-  method: string,
-  parameters: Record<string, unknown>,
-): Promise<CallOutcome> {
-  const { status, body } = await callBotApi(api, `${bot.botApiPath}/${method}`, parameters);
-  const { result, description } = body as { result?: unknown; description?: string };
-  return [status, status === 200 ? result : description];
-}
-
 /** The outcome of a successful edit, which answers with the edited message: its ID and text. */
 async function describeEdit(
   api: EmulationApi,
@@ -155,31 +50,10 @@ async function describeEdit(
   return [status, { message_id: messageId, text }];
 }
 
-async function expectStatus(
-  api: EmulationApi,
-  path: string,
-  init: RequestInit,
-  expectedStatus: number,
-): Promise<void> {
-  const response = await api.request(path, init);
-  await response.body?.cancel();
-  if (response.status !== expectedStatus) {
-    throw new Error(`Expected ${path} to answer ${expectedStatus}, received ${response.status}`);
-  }
-}
-
-function expectEqual(actual: unknown, expected: unknown, message: string): void {
-  if (JSON.stringify(actual) !== JSON.stringify(expected)) {
-    throw new Error(
-      `${message}:\nexpected ${JSON.stringify(expected)}\nreceived ${JSON.stringify(actual)}`,
-    );
-  }
-}
-
 for (const chatType of CHAT_TYPES) {
   Deno.test(`a bot's edit in a ${chatType} chat reports the first of competing failures`, async () => {
     const { api, sessionPath, bot, chatId, accountMessageId, botMessageId } =
-      await createEditingChat(chatType);
+      await createChatScenario(chatType);
     /** An ID of a chat the bot cannot reach: an unknown user, or an unknown supergroup. */
     const unreachableChatId = chatType === 'private' ? 999_999 : -1_009_999_999_999;
     const pollMessageId = await sendBotMessage(api, bot, {
@@ -305,7 +179,7 @@ for (const chatType of CHAT_TYPES) {
 
   Deno.test(`an account's edit in a ${chatType} chat reports the first of competing failures`, async () => {
     const { api, sessionPath, ada, grace, botMessageId, accountMessageId, accountMessagesPath } =
-      await createEditingChat(chatType);
+      await createChatScenario(chatType);
     const linus = await createAccount(api, sessionPath, 'Linus');
     const editAsAccount = async (path: string, body: Record<string, unknown>) => {
       const { status, body: responseBody } = await requestJson<
@@ -363,7 +237,7 @@ for (const chatType of CHAT_TYPES) {
       accountMessageId,
       accountMessagesPath,
       readUpdates,
-    } = await createEditingChat(chatType);
+    } = await createChatScenario(chatType);
 
     const botEdit = await describeEdit(api, bot, 'editMessageText', {
       chat_id: chatId,
@@ -395,7 +269,7 @@ for (const chatType of CHAT_TYPES) {
   });
 
   Deno.test(`an account's ${chatType} inline message is edited only by its inline bot, which need not be in the chat`, async () => {
-    const { api, sessionPath, ada, bot, chatId } = await createEditingChat(chatType);
+    const { api, sessionPath, ada, bot, chatId } = await createChatScenario(chatType);
     const inlineBot = await createBot(api, sessionPath, 'inline_bot', {
       supports_inline_queries: true,
       receives_chosen_inline_results: true,
@@ -523,7 +397,7 @@ for (const chatType of CHAT_TYPES) {
   });
 
   Deno.test(`an edit in a ${chatType} chat finds a message only by that chat's own numbering`, async () => {
-    const { api, sessionPath, bot, chatId, botMessageId } = await createEditingChat(chatType);
+    const { api, sessionPath, bot, chatId, botMessageId } = await createChatScenario(chatType);
     // A second chat of the same type, where the bot writes after its first chat's message.
     const linus = await createAccount(api, sessionPath, 'Linus');
     let otherChatId: number;
@@ -591,7 +465,7 @@ for (const chatType of CHAT_TYPES) {
 }
 
 Deno.test("a supergroup checks a restricted bot's right to show new content only for rich or media content", async () => {
-  const { api, sessionPath, ada, bot, chatId, botMessageId } = await createEditingChat(
+  const { api, sessionPath, ada, bot, chatId, botMessageId } = await createChatScenario(
     'supergroup',
   );
   await expectStatus(
@@ -632,31 +506,7 @@ Deno.test("a supergroup checks a restricted bot's right to show new content only
 });
 
 Deno.test("a join request's contact grant lets a bot write to the requester, but not edit there", async () => {
-  const { api, sessionPath } = await createTestSession();
-  const ada = await createAccount(api, sessionPath, 'Ada');
-  const grace = await createAccount(api, sessionPath, 'Grace');
-  const bot = await createBot(api, sessionPath, 'inviter_bot');
-  const { body: { supergroup } } = await requestJson<{ supergroup: { id: number } }>(
-    api,
-    'POST',
-    `${sessionPath}/accounts/${ada.id}/supergroups`,
-    { title: 'Team' },
-  );
-  const ownerPath = `${sessionPath}/accounts/${ada.id}/conversations/supergroup/${supergroup.id}`;
-  await expectStatus(api, `${ownerPath}/members/${bot.bot.id}`, { method: 'PUT' }, 204);
-  await expectStatus(
-    api,
-    `${ownerPath}/administrators/${bot.bot.id}`,
-    jsonRequest('PUT', { can_invite_users: true }),
-    204,
-  );
-  const [, link] = await describeCall(api, bot, 'createChatInviteLink', {
-    chat_id: supergroup.id,
-    creates_join_request: true,
-  });
-  await requestJson(api, 'POST', `${sessionPath}/accounts/${grace.id}/chat-joins`, {
-    invite_link: (link as { invite_link: string }).invite_link,
-  });
+  const { api, sessionPath, grace, bot } = await createJoinRequesterChatScenario();
   const promptId = await sendBotMessage(api, bot, {
     chat_id: grace.id,
     text: 'Press the button to join',
@@ -708,7 +558,7 @@ Deno.test("a join request's contact grant lets a bot write to the requester, but
 });
 
 Deno.test('a supergroup turns a former member bot away before it looks for the message', async () => {
-  const { api, sessionPath, ada, chatId } = await createEditingChat('supergroup');
+  const { api, sessionPath, ada, chatId } = await createChatScenario('supergroup');
   const ownerPath = `${sessionPath}/accounts/${ada.id}/conversations/supergroup/${chatId}`;
   const removedBot = await createBot(api, sessionPath, 'removed_bot');
   const leavingBot = await createBot(api, sessionPath, 'leaving_bot');
