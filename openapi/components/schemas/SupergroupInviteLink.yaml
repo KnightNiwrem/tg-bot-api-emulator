@@ -27,6 +27,7 @@ properties:
     description: The administrator bot that created the link.
   expire_date:
     type: integer
+    minimum: 1
     description: Unix time when the link stops working; omitted for no expiry date.
   member_limit:
     type: integer

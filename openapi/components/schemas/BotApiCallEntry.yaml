@@ -25,11 +25,13 @@ properties:
     $ref: ./TelegramUserId.yaml
   method:
     type: string
+    minLength: 1
     description: >-
       The method's current name, whichever name the bot called it by; the name as called for a
       method the emulator does not implement.
   requested_method:
     type: string
+    minLength: 1
     description: The method name as the bot called it.
   via:
     type: string

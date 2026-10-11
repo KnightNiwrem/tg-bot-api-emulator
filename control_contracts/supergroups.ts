@@ -49,10 +49,10 @@ const supergroupSchema = z.strictObject({
   /** The Bot API `chat_id` of the supergroup, a negative number. */
   id: supergroupChatIdSchema,
   type: z.literal('supergroup'),
-  title: z.string(),
+  title: z.string().min(1),
   /** The username of a public supergroup; omitted for a private one. */
-  username: z.string().optional(),
-  description: z.string().optional(),
+  username: z.string().min(1).optional(),
+  description: z.string().min(1).optional(),
 });
 
 const createSupergroupRequestSchema = z.strictObject({
@@ -182,7 +182,7 @@ const supergroupInviteLinkSchema = z.strictObject({
   /** The administrator bot that created the link. */
   creator_user_id: telegramUserIdSchema,
   /** When the link stops working, as a Unix time in seconds; omitted for no expiry date. */
-  expire_date: z.int().optional(),
+  expire_date: z.int().min(1).optional(),
   /** How many users that joined through the link may be members at once; omitted for no limit. */
   member_limit: z.int().min(1).max(99_999).optional(),
   /** How many members joined through the link and still are, which its member limit counts. */
