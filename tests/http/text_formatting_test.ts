@@ -1,7 +1,9 @@
+import { assertEquals } from '@std/assert';
 import { Bot } from 'https://cdn.jsdelivr.net/gh/grammyjs/grammY@^1.46.0/src/bot.ts';
 import { GrammyError } from 'https://cdn.jsdelivr.net/gh/grammyjs/grammY@^1.46.0/src/core/error.ts';
 
 import { jsonRequest, TEST_PUBLIC_ORIGIN } from '../support/emulation_api.ts';
+import { assertEqualsInFieldOrder } from '../support/field_order_assertion.ts';
 import { isBadRequestResponse, isMessageHistoryResponse } from '../support/http_response_guards.ts';
 import { botApiResult, callBotApi, updateMessages } from '../support/bot_api_requests.ts';
 import { createAccount, createPrivateConversationFixture } from '../support/http_fixtures.ts';
@@ -31,13 +33,11 @@ Deno.test('grammY command handlers match account-sent bot commands', async () =>
   }
 
   // A command that does not start the message is marked, but grammY only handles leading commands.
-  if (JSON.stringify(startCommandPayloads) !== JSON.stringify(['', 'payload'])) {
-    throw new Error(
-      `Expected the start handler to run for leading commands, received ${
-        JSON.stringify(startCommandPayloads)
-      }`,
-    );
-  }
+  assertEquals(
+    startCommandPayloads,
+    ['', 'payload'],
+    'Expected the start handler to run for leading commands',
+  );
 });
 
 Deno.test('messages carry the entities Telegram detects in their text', async () => {
@@ -64,11 +64,11 @@ Deno.test('messages carry the entities Telegram detects in their text', async ()
       }),
     );
     const receivedLinks = await Promise.race([linkReceived.promise, polling.then(() => [])]);
-    if (
-      JSON.stringify(receivedLinks) !== JSON.stringify(['https://grammy.dev/guide', 'grammy.dev'])
-    ) {
-      throw new Error(`Expected the bot to receive both links, received ${receivedLinks}`);
-    }
+    assertEquals(
+      receivedLinks,
+      ['https://grammy.dev/guide', 'grammy.dev'],
+      'Expected the bot to receive both links',
+    );
   } finally {
     await grammyBot.stop();
     await polling;
@@ -83,15 +83,11 @@ Deno.test('messages carry the entities Telegram detects in their text', async ()
     { type: 'mention', offset: 9, length: 12 },
     { type: 'email', offset: 25, length: 18 },
   ];
-  if (
-    JSON.stringify(botApiResult(reply.body)?.entities) !== JSON.stringify(expectedEntities)
-  ) {
-    throw new Error(
-      `Expected detected entities instead of the supplied one, received ${
-        JSON.stringify(reply.body)
-      }`,
-    );
-  }
+  assertEqualsInFieldOrder(
+    botApiResult(reply.body)?.entities,
+    expectedEntities,
+    'Expected detected entities instead of the supplied one',
+  );
 });
 
 Deno.test('accounts send and edit text and captions with the formatting they choose', async () => {
@@ -147,16 +143,12 @@ Deno.test('accounts send and edit text and captions with the formatting they cho
     readEntities(sentPhoto.body?.message),
     readEntities(deliveredMessages[1]),
   ];
-  if (
-    JSON.stringify(formattingSeen) !== JSON.stringify([
-      expectedTextEntities,
-      expectedTextEntities,
-      expectedCaptionEntities,
-      expectedCaptionEntities,
-    ])
-  ) {
-    throw new Error(`Expected the chosen formatting, received ${JSON.stringify(formattingSeen)}`);
-  }
+  assertEqualsInFieldOrder(formattingSeen, [
+    expectedTextEntities,
+    expectedTextEntities,
+    expectedCaptionEntities,
+    expectedCaptionEntities,
+  ], 'Expected the chosen formatting');
 
   const textEdit = await api.request(
     `${historyPath}/${sentText.body?.message.message_id}`,
@@ -183,16 +175,12 @@ Deno.test('accounts send and edit text and captions with the formatting they cho
   ];
   const expectedEditedText = [{ type: 'underline', offset: 3, length: 5 }];
   const expectedEditedCaption = [{ type: 'code', offset: 5, length: 6 }];
-  if (
-    JSON.stringify(editedFormatting) !== JSON.stringify([
-      expectedEditedText,
-      expectedEditedText,
-      expectedEditedCaption,
-      expectedEditedCaption,
-    ])
-  ) {
-    throw new Error(`Expected the edited formatting, received ${JSON.stringify(editedFormatting)}`);
-  }
+  assertEqualsInFieldOrder(editedFormatting, [
+    expectedEditedText,
+    expectedEditedText,
+    expectedEditedCaption,
+    expectedEditedCaption,
+  ], 'Expected the edited formatting');
 
   // Formatting Telegram cannot parse or apply stores no message.
   const rejectedStatuses = await Promise.all([
@@ -209,16 +197,18 @@ Deno.test('accounts send and edit text and captions with the formatting they cho
     },
   ].map(async (body) => (await sendAccountMessage(body)).status));
   const history = await (await api.request(historyPath)).json() as { messages: unknown[] };
-  if (
-    JSON.stringify(rejectedStatuses) !== JSON.stringify([400, 400, 400, 400, 400, 400]) ||
-    history.messages.length !== 2
-  ) {
+  if (history.messages.length !== 2) {
     throw new Error(
       `Expected rejected formatting to store nothing, received ${
         JSON.stringify({ rejectedStatuses, stored: history.messages.length })
       }`,
     );
   }
+  assertEquals(
+    rejectedStatuses,
+    [400, 400, 400, 400, 400, 400],
+    'Expected rejected formatting to store nothing',
+  );
 });
 
 Deno.test('sendMessage and editMessageText format text from parse_mode or entities', async () => {
@@ -254,14 +244,16 @@ Deno.test('sendMessage and editMessageText format text from parse_mode or entiti
     { type: 'text_link', offset: 12, length: 4, url: 'http://grammy.dev/' },
     { type: 'pre', offset: 17, length: 12, language: 'ts' },
   ];
-  if (
-    htmlMessage?.text !== 'Hello, Ada! Docs\nbot.start();' ||
-    JSON.stringify(htmlMessage.entities) !== JSON.stringify(expectedHtmlEntities)
-  ) {
+  if (htmlMessage?.text !== 'Hello, Ada! Docs\nbot.start();') {
     throw new Error(
       `Expected the HTML to be parsed, received ${JSON.stringify(htmlResponse.body)}`,
     );
   }
+  assertEqualsInFieldOrder(
+    htmlMessage.entities,
+    expectedHtmlEntities,
+    'Expected the HTML to be parsed',
+  );
 
   // A form-encoded request sends entities as JSON text; types Telegram detects itself are ignored.
   const entitiesResponse = await api.request(`${botApiPath}/sendMessage`, {
@@ -277,17 +269,11 @@ Deno.test('sendMessage and editMessageText format text from parse_mode or entiti
     }),
   });
   const entitiesMessage = botApiResult(await entitiesResponse.json());
-  if (
-    JSON.stringify(entitiesMessage?.entities) !== JSON.stringify([
-      { type: 'bot_command', offset: 4, length: 6 },
-      { type: 'italic', offset: 9, length: 1 },
-      { type: 'italic', offset: 10, length: 2 },
-    ])
-  ) {
-    throw new Error(
-      `Expected specified and detected entities, received ${JSON.stringify(entitiesMessage)}`,
-    );
-  }
+  assertEqualsInFieldOrder(entitiesMessage?.entities, [
+    { type: 'bot_command', offset: 4, length: 6 },
+    { type: 'italic', offset: 9, length: 1 },
+    { type: 'italic', offset: 10, length: 2 },
+  ], 'Expected specified and detected entities');
 
   const markdownV2Error =
     "Bad Request: can't parse entities: Character '.' is reserved and must be escaped with the preceding '\\'";
@@ -359,14 +345,17 @@ Deno.test('sendMessage and editMessageText format text from parse_mode or entiti
   const editedMessage = botApiResult(editResponse.body);
   if (
     editedMessage?.text !== 'Plain text' ||
-    JSON.stringify(editedMessage.entities) !==
-      JSON.stringify([{ type: 'bold', offset: 6, length: 4 }]) ||
     typeof editedMessage.edit_date !== 'number'
   ) {
     throw new Error(
       `Expected the edit to apply formatting, received ${JSON.stringify(editResponse.body)}`,
     );
   }
+  assertEqualsInFieldOrder(
+    editedMessage.entities,
+    [{ type: 'bold', offset: 6, length: 4 }],
+    'Expected the edit to apply formatting',
+  );
   await expectBadRequest(
     'editMessageText',
     editParameters,
@@ -379,11 +368,11 @@ Deno.test('sendMessage and editMessageText format text from parse_mode or entiti
   const storedEdit = isMessageHistoryResponse(historyBody)
     ? historyBody.messages.find((message) => message.message_id === plainMessage.message_id)
     : undefined;
-  if (JSON.stringify(storedEdit?.entities) !== JSON.stringify(editedMessage.entities)) {
-    throw new Error(
-      `Expected history to show the formatted edit, received ${JSON.stringify(historyBody)}`,
-    );
-  }
+  assertEqualsInFieldOrder(
+    storedEdit?.entities,
+    editedMessage.entities,
+    'Expected history to show the formatted edit',
+  );
 });
 
 Deno.test('sendMessage reads and reports date and time entities as Telegram does', async () => {
@@ -405,9 +394,7 @@ Deno.test('sendMessage reads and reports date and time entities as Telegram does
     { type: 'bold', offset: 0, length: 4 },
     { type: 'date_time', offset: 4, length: 8, unix_time: 1700000000, date_time_format: 'wdt' },
   ];
-  if (JSON.stringify(htmlMessage?.entities) !== JSON.stringify(expectedHtmlEntities)) {
-    throw new Error(`Expected a date entity, received ${JSON.stringify(htmlMessage)}`);
-  }
+  assertEqualsInFieldOrder(htmlMessage?.entities, expectedHtmlEntities, 'Expected a date entity');
 
   // The last letter for a part decides its precision, and a date without a format reports an
   // empty one.
@@ -431,9 +418,7 @@ Deno.test('sendMessage reads and reports date and time entities as Telegram does
   );
   const reportedFormats = (entitiesMessage?.entities as Array<{ date_time_format?: string }>)
     ?.map(({ date_time_format }) => date_time_format);
-  if (JSON.stringify(reportedFormats) !== JSON.stringify(['T', 'w', '', 'r'])) {
-    throw new Error(`Expected normalized formats, received ${JSON.stringify(entitiesMessage)}`);
-  }
+  assertEquals(reportedFormats, ['T', 'w', '', 'r'], 'Expected normalized formats');
 
   const failures = [
     [
@@ -498,14 +483,16 @@ Deno.test('a grammY bot replies with HTML and receives Telegram errors for bad M
       `${sessionPath}/accounts/${createdAccount.account.id}/conversations/private/${createdBot.bot.id}/messages`,
     )).json();
     const reply = isMessageHistoryResponse(historyBody) ? historyBody.messages.at(-1) : undefined;
-    if (
-      reply?.text !== 'Welcome, Ada!' ||
-      JSON.stringify(reply.entities) !== JSON.stringify([{ type: 'bold', offset: 0, length: 7 }])
-    ) {
+    if (reply?.text !== 'Welcome, Ada!') {
       throw new Error(
         `Expected the formatted welcome as the last message, received ${JSON.stringify(reply)}`,
       );
     }
+    assertEqualsInFieldOrder(
+      reply.entities,
+      [{ type: 'bold', offset: 0, length: 7 }],
+      'Expected the formatted welcome as the last message',
+    );
   } finally {
     await grammyBot.stop();
     await polling;

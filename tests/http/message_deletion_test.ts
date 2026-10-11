@@ -19,8 +19,9 @@ import {
 
 for (const chatType of CHAT_TYPES) {
   Deno.test(`a bot's deletion in a ${chatType} chat reports the first of competing failures`, async () => {
+    await using scenario = await createChatScenario(chatType);
     const { api, sessionPath, ada, bot, chatId, accountMessageId, botMessageId, readUpdates } =
-      await createChatScenario(chatType);
+      scenario;
     /** An ID of a chat the bot cannot reach: an unknown user, or an unknown supergroup. */
     const unreachableChatId = chatType === 'private' ? 999_999 : -1_009_999_999_999;
     const outsider = await createBot(api, sessionPath, 'outsider_bot');
@@ -74,7 +75,8 @@ for (const chatType of CHAT_TYPES) {
   });
 
   Deno.test(`a deleted message of a ${chatType} chat keeps its ID, which no later message reuses`, async () => {
-    const { api, bot, chatId, botMessageId } = await createChatScenario(chatType);
+    await using scenario = await createChatScenario(chatType);
+    const { api, bot, chatId, botMessageId } = scenario;
 
     const deletion = await describeCall(api, bot, 'deleteMessage', {
       chat_id: chatId,
@@ -107,6 +109,7 @@ for (const chatType of CHAT_TYPES) {
   });
 
   Deno.test(`an account's deletion in a ${chatType} chat reports the first of competing failures`, async () => {
+    await using scenario = await createChatScenario(chatType);
     const {
       api,
       sessionPath,
@@ -118,7 +121,7 @@ for (const chatType of CHAT_TYPES) {
       accountMessagesPath,
       sendAccountText,
       readUpdates,
-    } = await createChatScenario(chatType);
+    } = scenario;
     const linus = await createAccount(api, sessionPath, 'Linus');
     const deleteAsAccount = async (path: string) => {
       const response = await api.request(path, { method: 'DELETE' });
@@ -182,8 +185,8 @@ for (const chatType of CHAT_TYPES) {
 }
 
 Deno.test("a supergroup lets a bot delete other members' messages only with the right to", async () => {
-  const { api, sessionPath, ada, bot, chatId, accountMessageId, botMessageId } =
-    await createChatScenario('supergroup');
+  await using scenario = await createChatScenario('supergroup');
+  const { api, sessionPath, ada, bot, chatId, accountMessageId, botMessageId } = scenario;
   const ownerPath = `${sessionPath}/accounts/${ada.id}/conversations/supergroup/${chatId}`;
   const removedBot = await createBot(api, sessionPath, 'removed_bot');
   await expectStatus(api, `${ownerPath}/members/${removedBot.bot.id}`, { method: 'PUT' }, 204);
@@ -232,7 +235,8 @@ Deno.test("a supergroup lets a bot delete other members' messages only with the 
 });
 
 Deno.test('deleting the private message whose reply keyboard the account sees removes it', async () => {
-  const { api, sessionPath, ada, bot, chatId } = await createChatScenario('private');
+  await using scenario = await createChatScenario('private');
+  const { api, sessionPath, ada, bot, chatId } = scenario;
   const replyInterfacePath =
     `${sessionPath}/accounts/${ada.id}/conversations/private/${bot.bot.id}/reply-interface`;
   const readReplyInterface = async () =>
@@ -255,7 +259,8 @@ Deno.test('deleting the private message whose reply keyboard the account sees re
 });
 
 Deno.test("a join request's contact grant lets a bot write to the requester, but not delete there", async () => {
-  const { api, sessionPath, grace, bot } = await createJoinRequesterChatScenario();
+  await using scenario = await createJoinRequesterChatScenario();
+  const { api, sessionPath, grace, bot } = scenario;
   const promptId = await sendBotMessage(api, bot, {
     chat_id: grace.id,
     text: 'Press the button to join',

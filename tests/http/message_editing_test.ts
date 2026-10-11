@@ -53,8 +53,8 @@ async function describeEdit(
 
 for (const chatType of CHAT_TYPES) {
   Deno.test(`a bot's edit in a ${chatType} chat reports the first of competing failures`, async () => {
-    const { api, sessionPath, bot, chatId, accountMessageId, botMessageId } =
-      await createChatScenario(chatType);
+    await using scenario = await createChatScenario(chatType);
+    const { api, sessionPath, bot, chatId, accountMessageId, botMessageId } = scenario;
     /** An ID of a chat the bot cannot reach: an unknown user, or an unknown supergroup. */
     const unreachableChatId = chatType === 'private' ? 999_999 : -1_009_999_999_999;
     const pollMessageId = await sendBotMessage(api, bot, {
@@ -179,8 +179,9 @@ for (const chatType of CHAT_TYPES) {
   });
 
   Deno.test(`an account's edit in a ${chatType} chat reports the first of competing failures`, async () => {
+    await using scenario = await createChatScenario(chatType);
     const { api, sessionPath, ada, grace, botMessageId, accountMessageId, accountMessagesPath } =
-      await createChatScenario(chatType);
+      scenario;
     const linus = await createAccount(api, sessionPath, 'Linus');
     const editAsAccount = async (path: string, body: Record<string, unknown>) => {
       const { status, body: responseBody } = await requestJson<
@@ -229,6 +230,7 @@ for (const chatType of CHAT_TYPES) {
   });
 
   Deno.test(`an edit in a ${chatType} chat reaches the chat's bot only for an account's message`, async () => {
+    await using scenario = await createChatScenario(chatType);
     const {
       api,
       ada,
@@ -238,7 +240,7 @@ for (const chatType of CHAT_TYPES) {
       accountMessageId,
       accountMessagesPath,
       readUpdates,
-    } = await createChatScenario(chatType);
+    } = scenario;
 
     const botEdit = await describeEdit(api, bot, 'editMessageText', {
       chat_id: chatId,
@@ -270,7 +272,8 @@ for (const chatType of CHAT_TYPES) {
   });
 
   Deno.test(`an account's ${chatType} inline message is edited only by its inline bot, which need not be in the chat`, async () => {
-    const { api, sessionPath, ada, bot, chatId } = await createChatScenario(chatType);
+    await using scenario = await createChatScenario(chatType);
+    const { api, sessionPath, ada, bot, chatId } = scenario;
     const inlineBot = await createBot(api, sessionPath, 'inline_bot', {
       supports_inline_queries: true,
       receives_chosen_inline_results: true,
@@ -398,7 +401,8 @@ for (const chatType of CHAT_TYPES) {
   });
 
   Deno.test(`an edit in a ${chatType} chat finds a message only by that chat's own numbering`, async () => {
-    const { api, sessionPath, bot, chatId, botMessageId } = await createChatScenario(chatType);
+    await using scenario = await createChatScenario(chatType);
+    const { api, sessionPath, bot, chatId, botMessageId } = scenario;
     // A second chat of the same type, where the bot writes after its first chat's message.
     const linus = await createAccount(api, sessionPath, 'Linus');
     let otherChatId: number;
@@ -466,9 +470,10 @@ for (const chatType of CHAT_TYPES) {
 }
 
 Deno.test("a supergroup checks a restricted bot's right to show new content only for rich or media content", async () => {
-  const { api, sessionPath, ada, bot, chatId, botMessageId } = await createChatScenario(
+  await using scenario = await createChatScenario(
     'supergroup',
   );
+  const { api, sessionPath, ada, bot, chatId, botMessageId } = scenario;
   await expectStatus(
     api,
     `${sessionPath}/accounts/${ada.id}/conversations/supergroup/${chatId}/restrictions/${bot.bot.id}`,
@@ -507,7 +512,8 @@ Deno.test("a supergroup checks a restricted bot's right to show new content only
 });
 
 Deno.test("a join request's contact grant lets a bot write to the requester, but not edit there", async () => {
-  const { api, sessionPath, grace, bot } = await createJoinRequesterChatScenario();
+  await using scenario = await createJoinRequesterChatScenario();
+  const { api, sessionPath, grace, bot } = scenario;
   const promptId = await sendBotMessage(api, bot, {
     chat_id: grace.id,
     text: 'Press the button to join',
@@ -559,7 +565,8 @@ Deno.test("a join request's contact grant lets a bot write to the requester, but
 });
 
 Deno.test('a supergroup turns a former member bot away before it looks for the message', async () => {
-  const { api, sessionPath, ada, chatId } = await createChatScenario('supergroup');
+  await using scenario = await createChatScenario('supergroup');
+  const { api, sessionPath, ada, chatId } = scenario;
   const ownerPath = `${sessionPath}/accounts/${ada.id}/conversations/supergroup/${chatId}`;
   const removedBot = await createBot(api, sessionPath, 'removed_bot');
   const leavingBot = await createBot(api, sessionPath, 'leaving_bot');

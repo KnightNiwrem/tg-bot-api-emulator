@@ -1,3 +1,4 @@
+import { assertEquals } from '@std/assert';
 import { Bot } from 'https://cdn.jsdelivr.net/gh/grammyjs/grammY@^1.46.0/src/bot.ts';
 import {
   InlineKeyboard,
@@ -6,6 +7,7 @@ import { GrammyError } from 'https://cdn.jsdelivr.net/gh/grammyjs/grammY@^1.46.0
 
 import { MAX_TELEGRAM_USER_ID } from '../../src/types/telegram_identity.ts';
 import { createTestSession, jsonRequest, TEST_PUBLIC_ORIGIN } from '../support/emulation_api.ts';
+import { assertEqualsInFieldOrder } from '../support/field_order_assertion.ts';
 import { expectSettlementWithin } from '../support/settlement.ts';
 import {
   isBadRequestResponse,
@@ -75,17 +77,16 @@ Deno.test('sendMessage replies only in private chats the account has started', a
   if (
     reply.message_id !== 2 ||
     reply.chat.id !== accountId ||
-    JSON.stringify(reply.from) !==
-      JSON.stringify({
-        id: createdBot.bot.id,
-        is_bot: true,
-        first_name: 'Test Bot',
-        username: 'test_bot',
-      }) ||
     reply.text !== 'Try /help'
   ) {
     throw new Error("Expected the sent message in the bot's private chat with the account");
   }
+  assertEqualsInFieldOrder(reply.from, {
+    id: createdBot.bot.id,
+    is_bot: true,
+    first_name: 'Test Bot',
+    username: 'test_bot',
+  }, "Expected the sent message in the bot's private chat with the account");
 
   await expectBadRequest({ text: '' }, 'Bad Request: message text is empty');
   await expectBadRequest({ text: 'Hello' }, 'Bad Request: chat_id is empty');
@@ -105,13 +106,14 @@ Deno.test('sendMessage replies only in private chats the account has started', a
 
   const updatesResponse = await api.request(`${botApiPath}/getUpdates`);
   const updatesBody: unknown = await updatesResponse.json();
-  if (
-    !isGetUpdatesResponse(updatesBody) ||
-    JSON.stringify(updatesBody.result.map((update) => update.message.text)) !==
-      JSON.stringify(['Hi'])
-  ) {
+  if (!isGetUpdatesResponse(updatesBody)) {
     throw new Error('Expected the bot to receive no update for its own message');
   }
+  assertEquals(
+    updatesBody.result.map((update) => update.message.text),
+    ['Hi'],
+    'Expected the bot to receive no update for its own message',
+  );
 });
 
 Deno.test('deleteMessage and deleteMessages follow Telegram checks', async () => {
@@ -144,12 +146,18 @@ Deno.test('deleteMessage and deleteMessages follow Telegram checks', async () =>
   };
   const expectDeletion = async (method: string, parameters: Record<string, unknown>) => {
     const { status, body } = await callBotApi(api, `${botApiPath}/${method}`, parameters);
-    if (status !== 200 || JSON.stringify(body) !== JSON.stringify({ ok: true, result: true })) {
+    if (status !== 200) {
       throw new Error(
         `Expected ${method} ${JSON.stringify(parameters)} to succeed, ` +
           `received ${status} ${JSON.stringify(body)}`,
       );
     }
+    assertEqualsInFieldOrder(
+      body,
+      { ok: true, result: true },
+      `Expected ${method} ${JSON.stringify(parameters)} to succeed, ` +
+        `received ${status} ${JSON.stringify(body)}`,
+    );
   };
   const expectHistoryTexts = async (expectedTexts: readonly string[]) => {
     const historyBody: unknown = await (await api.request(
@@ -158,9 +166,11 @@ Deno.test('deleteMessage and deleteMessages follow Telegram checks', async () =>
     const texts = isMessageHistoryResponse(historyBody)
       ? historyBody.messages.map((message) => message.text)
       : [];
-    if (JSON.stringify(texts) !== JSON.stringify(expectedTexts)) {
-      throw new Error(`Expected history ${JSON.stringify(expectedTexts)}, received ${texts}`);
-    }
+    assertEqualsInFieldOrder(
+      texts,
+      expectedTexts,
+      `Expected history ${JSON.stringify(expectedTexts)}`,
+    );
   };
 
   await expectDeletionFailure(
@@ -308,11 +318,7 @@ Deno.test('a grammY bot deletes an incoming secret and its menu after a button p
     const texts = isMessageHistoryResponse(historyBody)
       ? historyBody.messages.map((message) => message.text)
       : undefined;
-    if (JSON.stringify(texts) !== JSON.stringify(['Password forgotten.'])) {
-      throw new Error(
-        `Expected only the final reply to remain, received ${JSON.stringify(historyBody)}`,
-      );
-    }
+    assertEquals(texts, ['Password forgotten.'], 'Expected only the final reply to remain');
     const pressOnDeletedMenu = await pressForget();
     if (pressOnDeletedMenu.status !== 404) {
       throw new Error(
@@ -420,9 +426,6 @@ Deno.test('accounts see the chat action a bot shows until its next message', asy
   );
   if (
     actionResponse.status !== 200 ||
-    JSON.stringify(whileUploading) !==
-      JSON.stringify({ chat_actions: [{ bot_id: createdBot.bot.id, action: 'upload_photo' }] }) ||
-    JSON.stringify(afterMessage) !== JSON.stringify({ chat_actions: [] }) ||
     unknownBotResponse.status !== 404
   ) {
     throw new Error(
@@ -431,6 +434,14 @@ Deno.test('accounts see the chat action a bot shows until its next message', asy
       }`,
     );
   }
+  assertEqualsInFieldOrder(whileUploading, {
+    chat_actions: [{ bot_id: createdBot.bot.id, action: 'upload_photo' }],
+  }, "Expected the action until the bot's message");
+  assertEqualsInFieldOrder(
+    afterMessage,
+    { chat_actions: [] },
+    "Expected the action until the bot's message",
+  );
 });
 
 Deno.test('accounts see which bot messages notify them silently', async () => {
@@ -483,17 +494,8 @@ Deno.test('accounts see which bot messages notify them silently', async () => {
   const outsider = await createAccount(api, sessionPath, 'Linus');
   const outsiderResponse = await api.request(`${supergroupPath(outsider.id)}/notifications`);
   if (
-    invalid.status !== 400 || outsiderResponse.status !== 403 ||
-    JSON.stringify(privateNotifications) !== JSON.stringify({
-        notifications: [
-          { message_id: loud?.message_id, is_silent: false },
-          { message_id: quiet?.message_id, is_silent: true },
-          { message_id: quietCopies?.[0]?.message_id, is_silent: true },
-        ],
-      }) ||
-    // The member's own message gives it no notification.
-    JSON.stringify(memberNotifications.notifications.slice(-1)) !==
-      JSON.stringify([{ message_id: quietForward?.message_id, is_silent: true }]) ||
+    invalid.status !== 400 ||
+    outsiderResponse.status !== 403 ||
     memberNotifications.notifications.some(({ message_id }) =>
       message_id === memberMessage.message_id
     )
@@ -509,6 +511,18 @@ Deno.test('accounts see which bot messages notify them silently', async () => {
       }`,
     );
   }
+  // The member's own message gives it no notification.
+  assertEqualsInFieldOrder(memberNotifications.notifications.slice(-1), [{
+    message_id: quietForward?.message_id,
+    is_silent: true,
+  }], 'Expected silent notifications for silent messages only');
+  assertEqualsInFieldOrder(privateNotifications, {
+    notifications: [
+      { message_id: loud?.message_id, is_silent: false },
+      { message_id: quiet?.message_id, is_silent: true },
+      { message_id: quietCopies?.[0]?.message_id, is_silent: true },
+    ],
+  }, 'Expected silent notifications for silent messages only');
 });
 
 Deno.test('sendChatAction accepts Telegram actions in started private chats', async () => {
@@ -532,11 +546,12 @@ Deno.test('sendChatAction accepts Telegram actions in started private chats', as
   await sendText('Hi');
   for (const action of ['typing', 'UPLOAD_PHOTO', 'record_audio', 'cancel']) {
     const { status, body } = await sendChatAction({ chat_id: accountId, action });
-    if (status !== 200 || JSON.stringify(body) !== JSON.stringify({ ok: true, result: true })) {
+    if (status !== 200) {
       throw new Error(
         `Expected ${action} to be accepted, received ${status} ${JSON.stringify(body)}`,
       );
     }
+    assertEqualsInFieldOrder(body, { ok: true, result: true }, `Expected ${action} to be accepted`);
   }
   // Telegram reads the action before the chat.
   await expectDescription({ action: 'dancing' }, 'Bad Request: wrong parameter action in request');
@@ -621,14 +636,18 @@ Deno.test('sendMessage replies to messages of the chat and accepts Telegram mess
   });
   const quoteResult = botApiResult(quotedReply.body)?.quote;
   if (
-    quotedReply.status !== 200 || repliedMessageIdOf(quotedReply.body) !== 1 ||
-    JSON.stringify(quoteResult) !==
-      JSON.stringify({ text: 'Question', position: 0, is_manual: true })
+    quotedReply.status !== 200 ||
+    repliedMessageIdOf(quotedReply.body) !== 1
   ) {
     throw new Error(
       `Expected a reply with a chosen quote, received ${JSON.stringify(quotedReply)}`,
     );
   }
+  assertEqualsInFieldOrder(
+    quoteResult,
+    { text: 'Question', position: 0, is_manual: true },
+    'Expected a reply with a chosen quote',
+  );
 
   const rejections: [Record<string, unknown>, string][] = [
     [{ reply_parameters: { message_id: 99 } }, 'Bad Request: message to be replied not found'],
@@ -692,20 +711,25 @@ Deno.test('sendMessage replies to messages of the chat and accepts Telegram mess
   const accountReplyBody: unknown = await accountReply.json();
   const missingReplyTarget = await sendAccountReply(99);
   if (
-    accountReply.status !== 201 || !isSentMessageResponse(accountReplyBody) ||
-    JSON.stringify(accountReplyBody.message) !==
-      JSON.stringify({ ...accountReplyBody.message, reply_to_message: repliedBotMessage }) ||
+    accountReply.status !== 201 ||
+    !isSentMessageResponse(accountReplyBody) ||
     missingReplyTarget.status !== 400
   ) {
     throw new Error("Expected the account to reply only to its chat's messages");
   }
+  assertEqualsInFieldOrder(accountReplyBody.message, {
+    ...accountReplyBody.message,
+    reply_to_message: repliedBotMessage,
+  }, "Expected the account to reply only to its chat's messages");
   const updatesBody: unknown = await (await api.request(`${botApiPath}/getUpdates`)).json();
   const updatedMessage = isGetUpdatesResponse(updatesBody)
     ? updatesBody.result.at(-1)?.message
     : undefined;
-  if (JSON.stringify(updatedMessage) !== JSON.stringify(accountReplyBody.message)) {
-    throw new Error('Expected the bot to receive the account reply with the replied message');
-  }
+  assertEqualsInFieldOrder(
+    updatedMessage,
+    accountReplyBody.message,
+    'Expected the bot to receive the account reply with the replied message',
+  );
 });
 
 Deno.test('a grammY bot asks a question in a reply and reads the account reply to it', async () => {
@@ -774,19 +798,12 @@ Deno.test('a grammY bot asks a question in a reply and reads the account reply t
       return [text, reply_to_message?.text ?? null, has_protected_content ?? false];
     })
     : undefined;
-  if (
-    JSON.stringify(history) !==
-      JSON.stringify([
-        ['/start', null, false],
-        ['What is your name?', '/start', false],
-        ['Ada', 'What is your name?', false],
-        ['Nice to meet you, Ada!', null, true],
-      ])
-  ) {
-    throw new Error(
-      `Expected the question and answer as replies, received ${JSON.stringify(history)}`,
-    );
-  }
+  assertEquals(history, [
+    ['/start', null, false],
+    ['What is your name?', '/start', false],
+    ['Ada', 'What is your name?', false],
+    ['Nice to meet you, Ada!', null, true],
+  ], 'Expected the question and answer as replies');
 });
 
 Deno.test('an account blocks a bot, which receives my_chat_member updates and Telegram 403s', async () => {
@@ -823,9 +840,10 @@ Deno.test('an account blocks a bot, which receives my_chat_member updates and Te
     ] as const
   ) {
     const { status, body } = await callBotApi(api, `${botApiPath}/${method}`, parameters);
-    if (status !== 403 || JSON.stringify(body) !== JSON.stringify(blockedDescription)) {
+    if (status !== 403) {
       throw new Error(`Expected ${method} to be forbidden, received ${JSON.stringify(body)}`);
     }
+    assertEqualsInFieldOrder(body, blockedDescription, `Expected ${method} to be forbidden`);
   }
   const accountWrites = [
     await api.request(`${accountPath}/messages`, {
@@ -878,15 +896,13 @@ Deno.test('an account blocks a bot, which receives my_chat_member updates and Te
   });
   const member = { user: botUser, status: 'member' };
   const kicked = { user: botUser, status: 'kicked', until_date: 0 };
-  if (
-    updates.length !== 3 ||
-    JSON.stringify(memberChanges) !== JSON.stringify([
-        [accountId, accountId, member, kicked],
-        [accountId, accountId, kicked, member],
-      ])
-  ) {
+  if (updates.length !== 3) {
     throw new Error(`Expected one update per block change, received ${JSON.stringify(updates)}`);
   }
+  assertEqualsInFieldOrder(memberChanges, [
+    [accountId, accountId, member, kicked],
+    [accountId, accountId, kicked, member],
+  ], 'Expected one update per block change');
 
   const invalidRequests = [
     [`${accountPath}/blocked-bots/${MAX_TELEGRAM_USER_ID}`, 'PUT', 404],
@@ -953,15 +969,10 @@ Deno.test('accounts delete messages, which bots then no longer find', async () =
   const { messages: privateHistory } = await (await api.request(`${privatePath}/messages`))
     .json() as { messages: unknown[] };
   if (
-    JSON.stringify(privateDeletions) !== JSON.stringify([204, 204, 404, 400]) ||
-    JSON.stringify(edit.body) !== JSON.stringify({
-        ok: false,
-        error_code: 400,
-        description: 'Bad Request: message to edit not found',
-      }) ||
     (reply.body as { description?: string }).description !==
       'Bad Request: message to be replied not found' ||
-    reply_interface !== null || privateHistory.length !== 0 ||
+    reply_interface !== null ||
+    privateHistory.length !== 0 ||
     (await readUpdates(bot.botApiPath)).length !== 0
   ) {
     throw new Error(
@@ -970,6 +981,16 @@ Deno.test('accounts delete messages, which bots then no longer find', async () =
       }`,
     );
   }
+  assertEquals(
+    privateDeletions,
+    [204, 204, 404, 400],
+    'Expected the account to delete its private messages',
+  );
+  assertEqualsInFieldOrder(edit.body, {
+    ok: false,
+    error_code: 400,
+    description: 'Bad Request: message to edit not found',
+  }, 'Expected the account to delete its private messages');
 
   // A member deletes only its own messages; the owner deletes any.
   const memberMessage = await sendSupergroupText(member.id, 'Oops');
@@ -999,8 +1020,6 @@ Deno.test('accounts delete messages, which bots then no longer find', async () =
     `${supergroupPath(member.id)}/messages`,
   )).json() as { messages: Array<{ message_id: number }> };
   if (
-    JSON.stringify(supergroupDeletions) !==
-      JSON.stringify([403, 403, 403, 403, 204, 204, 404]) ||
     supergroupHistory.some(({ message_id }) =>
       message_id === memberMessage.message_id || message_id === botMessage?.message_id
     ) ||
@@ -1012,6 +1031,11 @@ Deno.test('accounts delete messages, which bots then no longer find', async () =
       }`,
     );
   }
+  assertEquals(
+    supergroupDeletions,
+    [403, 403, 403, 403, 204, 204, 404],
+    'Expected members to delete the messages they may delete',
+  );
 });
 
 Deno.test('PATCH on an account message edits it and sends the bot an edited_message update', async () => {
@@ -1039,25 +1063,27 @@ Deno.test('PATCH on an account message edits it and sends the bot an edited_mess
   }
   const editedMessage = responseBody.message as TestPrivateMessage & { edit_date?: number };
   if (
-    editedMessage.message_id !== 1 || editedMessage.text !== 'Hello /help' ||
-    editedMessage.edit_date === undefined ||
-    JSON.stringify(editedMessage.entities) !==
-      JSON.stringify([{ type: 'bot_command', offset: 6, length: 5 }])
+    editedMessage.message_id !== 1 ||
+    editedMessage.text !== 'Hello /help' ||
+    editedMessage.edit_date === undefined
   ) {
     throw new Error(`Expected the edited message, received ${JSON.stringify(editedMessage)}`);
   }
+  assertEqualsInFieldOrder(
+    editedMessage.entities,
+    [{ type: 'bot_command', offset: 6, length: 5 }],
+    'Expected the edited message',
+  );
 
   const { body: updatesBody } = await callBotApi(api, `${botApiPath}/getUpdates`, {});
   const updates = (updatesBody as { result: Array<Record<string, unknown>> }).result;
-  if (
-    updates.length !== 2 || JSON.stringify(updates[1]) !==
-      JSON.stringify({
-        update_id: updates[0].update_id as number + 1,
-        edited_message: editedMessage,
-      })
-  ) {
+  if (updates.length !== 2) {
     throw new Error(`Expected an edited_message update, received ${JSON.stringify(updates)}`);
   }
+  assertEqualsInFieldOrder(updates[1], {
+    update_id: updates[0].update_id as number + 1,
+    edited_message: editedMessage,
+  }, 'Expected an edited_message update');
 
   const invalidEdits = [
     [1, { text: 'Hello /help' }, 400],
@@ -1161,17 +1187,15 @@ Deno.test('a grammY bot answers an edited message and forgets a user who blocks 
   const historyBody: unknown = await (await api.request(
     `${accountPath}/conversations/private/${createdBot.bot.id}/messages`,
   )).json();
-  if (
-    !isMessageHistoryResponse(historyBody) ||
-    JSON.stringify(historyBody.messages.map(({ text }) => text)) !== JSON.stringify([
-        '/subscribe',
-        'Subscribed',
-        'Hello there',
-        'You changed it to: Hello there',
-      ])
-  ) {
+  if (!isMessageHistoryResponse(historyBody)) {
     throw new Error('Expected history to hold the edited message and the reply to the edit');
   }
+  assertEquals(historyBody.messages.map(({ text }) => text), [
+    '/subscribe',
+    'Subscribed',
+    'Hello there',
+    'You changed it to: Hello there',
+  ], 'Expected history to hold the edited message and the reply to the edit');
 });
 
 Deno.test('bots reply to messages of their other chats with an external reply', async () => {
@@ -1209,13 +1233,8 @@ Deno.test('bots reply to messages of their other chats with an external reply', 
     message_id: announcementId,
   };
   if (
-    privateReply.status !== 200 || privateReply.message?.reply_to_message !== undefined ||
-    JSON.stringify(privateReply.message?.external_reply) !== JSON.stringify(expectedPrivateReply) ||
-    JSON.stringify(privateReply.message?.quote) !== JSON.stringify({
-        text: 'Ship it now',
-        entities: [{ type: 'bold', offset: 0, length: 4 }],
-        position: 0,
-      })
+    privateReply.status !== 200 ||
+    privateReply.message?.reply_to_message !== undefined
   ) {
     throw new Error(
       `Expected an external reply to the supergroup message, received ${
@@ -1223,6 +1242,16 @@ Deno.test('bots reply to messages of their other chats with an external reply', 
       }`,
     );
   }
+  assertEqualsInFieldOrder(
+    privateReply.message?.external_reply,
+    expectedPrivateReply,
+    'Expected an external reply to the supergroup message',
+  );
+  assertEqualsInFieldOrder(privateReply.message?.quote, {
+    text: 'Ship it now',
+    entities: [{ type: 'bold', offset: 0, length: 4 }],
+    position: 0,
+  }, 'Expected an external reply to the supergroup message');
 
   // A chosen quote replaces the automatic one.
   const quotedPrivateReply = await sendMessage({
@@ -1230,16 +1259,11 @@ Deno.test('bots reply to messages of their other chats with an external reply', 
     text: 'Now?',
     reply_parameters: { chat_id: supergroup.id, message_id: announcementId, quote: 'now' },
   });
-  if (
-    JSON.stringify(quotedPrivateReply.message?.quote) !==
-      JSON.stringify({ text: 'now', position: 8, is_manual: true })
-  ) {
-    throw new Error(
-      `Expected the chosen quote of the supergroup message, received ${
-        JSON.stringify(quotedPrivateReply.body)
-      }`,
-    );
-  }
+  assertEqualsInFieldOrder(quotedPrivateReply.message?.quote, {
+    text: 'now',
+    position: 8,
+    is_manual: true,
+  }, 'Expected the chosen quote of the supergroup message');
 
   const supergroupReply = await sendMessage({
     chat_id: supergroup.id,
@@ -1256,21 +1280,26 @@ Deno.test('bots reply to messages of their other chats with an external reply', 
     quote: { text: 'Hello', position: 0 },
   };
   const shownReply = supergroupHistory.messages.at(-1);
-  if (
-    supergroupReply.status !== 200 ||
-    JSON.stringify({
-        external_reply: supergroupReply.message?.external_reply,
-        quote: supergroupReply.message?.quote,
-      }) !== JSON.stringify(expectedSupergroupReply) ||
-    JSON.stringify({ external_reply: shownReply?.external_reply, quote: shownReply?.quote }) !==
-      JSON.stringify(expectedSupergroupReply)
-  ) {
+  if (supergroupReply.status !== 200) {
     throw new Error(
       `Expected an external reply to the private message without its chat, received ${
         JSON.stringify(supergroupReply.body)
       }`,
     );
   }
+  assertEqualsInFieldOrder(
+    {
+      external_reply: supergroupReply.message?.external_reply,
+      quote: supergroupReply.message?.quote,
+    },
+    expectedSupergroupReply,
+    'Expected an external reply to the private message without its chat',
+  );
+  assertEqualsInFieldOrder(
+    { external_reply: shownReply?.external_reply, quote: shownReply?.quote },
+    expectedSupergroupReply,
+    'Expected an external reply to the private message without its chat',
+  );
 
   // As TDLib does, a message that cannot be forwarded is silently not replied to.
   const protectedMessage = await sendMessage({
@@ -1347,14 +1376,18 @@ Deno.test('forwardMessage forwards messages with their origin and follows Telegr
   };
   const { forward_origin, forward_from, forward_date, text } = forward ?? {};
   if (
-    forward?.chat === undefined || (forward.from as { id: number }).id !== bot.bot.id ||
-    JSON.stringify({ forward_origin, forward_from, forward_date, text }) !==
-      JSON.stringify(expectedForwardFields)
+    forward?.chat === undefined ||
+    (forward.from as { id: number }).id !== bot.bot.id
   ) {
     throw new Error(
       `Expected the bot's forward to show its origin, received ${JSON.stringify(forward)}`,
     );
   }
+  assertEqualsInFieldOrder(
+    { forward_origin, forward_from, forward_date, text },
+    expectedForwardFields,
+    "Expected the bot's forward to show its origin",
+  );
 
   // A forward of a forward keeps the original's origin.
   const forwardOfForward = botApiResult(
@@ -1364,13 +1397,11 @@ Deno.test('forwardMessage forwards messages with their origin and follows Telegr
       message_id: forward.message_id,
     })).body,
   );
-  if (JSON.stringify(forwardOfForward?.forward_origin) !== JSON.stringify(expectedOrigin)) {
-    throw new Error(
-      `Expected a forward of a forward to keep its origin, received ${
-        JSON.stringify(forwardOfForward)
-      }`,
-    );
-  }
+  assertEqualsInFieldOrder(
+    forwardOfForward?.forward_origin,
+    expectedOrigin,
+    'Expected a forward of a forward to keep its origin',
+  );
 
   // Only a keyboard of URL buttons stays on a forward.
   const sendMenu = async (inlineKeyboard: unknown) =>
@@ -1399,12 +1430,11 @@ Deno.test('forwardMessage forwards messages with their origin and follows Telegr
       )?.reply_markup,
     );
   }
-  if (
-    JSON.stringify(forwardedMarkups) !==
-      JSON.stringify([{ inline_keyboard: urlKeyboard }, undefined])
-  ) {
-    throw new Error(`Expected only URL keyboards on forwards, received ${forwardedMarkups}`);
-  }
+  assertEqualsInFieldOrder(
+    forwardedMarkups,
+    [{ inline_keyboard: urlKeyboard }, undefined],
+    'Expected only URL keyboards on forwards',
+  );
 
   // A forward cannot be edited.
   const editOfForward = await callBotApi(api, `${bot.botApiPath}/editMessageText`, {
@@ -1552,21 +1582,23 @@ Deno.test('forwardMessages and copyMessages repeat messages that can be repeated
   const [forwardedQuestion] = forwards;
   const originDate = (forwardedQuestion?.forward_origin as { date?: number } | undefined)?.date;
   if (
-    forwarded.status !== 200 || originDate === undefined ||
-    JSON.stringify(forwards.map(describe)) !== JSON.stringify([
-        { text: 'Where is my order?', originDate },
-        {
-          text: 'It was due today',
-          originDate,
-          repliedMessageId: forwardedQuestion?.message_id,
-        },
-        { text: 'Receipt', originDate },
-      ])
+    forwarded.status !== 200 ||
+    originDate === undefined
   ) {
     throw new Error(
       `Expected the repeatable messages to be forwarded, received ${JSON.stringify(forwarded)}`,
     );
   }
+  // A message that replies to none describes no replied message.
+  assertEqualsInFieldOrder(forwards.map(describe), [
+    { text: 'Where is my order?', originDate, repliedMessageId: undefined },
+    {
+      text: 'It was due today',
+      originDate,
+      repliedMessageId: forwardedQuestion?.message_id,
+    },
+    { text: 'Receipt', originDate, repliedMessageId: undefined },
+  ], 'Expected the repeatable messages to be forwarded');
 
   // A bot may copy a protected message, and captions can be removed.
   const copied = await repeatMessages('copyMessages', {
@@ -1578,16 +1610,21 @@ Deno.test('forwardMessages and copyMessages repeat messages that can be repeated
   const copies = await readSupergroupMessages(botApiResult(copied.body));
   if (
     copied.status !== 200 ||
-    JSON.stringify(copies.map(describe)) !== JSON.stringify([
-        { text: 'Where is my order?' },
-        { text: 'It was due today', repliedMessageId: copies[0]?.message_id },
-        { text: 'Your code is 1234' },
-        {},
-      ]) ||
     photoSizeOf(copies[3]) === undefined
   ) {
     throw new Error(`Expected the messages to be copied, received ${JSON.stringify(copied)}`);
   }
+  // Copies show no origin; the receipt's caption was removed.
+  assertEqualsInFieldOrder(copies.map(describe), [
+    { text: 'Where is my order?', originDate: undefined, repliedMessageId: undefined },
+    {
+      text: 'It was due today',
+      originDate: undefined,
+      repliedMessageId: copies[0]?.message_id,
+    },
+    { text: 'Your code is 1234', originDate: undefined, repliedMessageId: undefined },
+    { text: undefined, originDate: undefined, repliedMessageId: undefined },
+  ], 'Expected the messages to be copied');
 
   const history = await (await api.request(`${supergroupPath(owner.id)}/messages`)).json() as {
     messages: Array<{ message_id: number }>;
@@ -1853,20 +1890,34 @@ Deno.test('copyMessage copies messages without their origin and follows Telegram
     });
   }
   const photoFileUniqueId = photoMessage.photo[0].file_unique_id;
+  // No copy shows the photo's origin, and only a copy with entities and placement shows them.
   const expectedCopies = [
-    { fromId: bot.bot.id, fileUniqueId: photoFileUniqueId, caption: 'Receipt' },
+    {
+      fromId: bot.bot.id,
+      fileUniqueId: photoFileUniqueId,
+      caption: 'Receipt',
+      caption_entities: undefined,
+      show_caption_above_media: undefined,
+      forward_origin: undefined,
+    },
     {
       fromId: bot.bot.id,
       fileUniqueId: photoFileUniqueId,
       caption: 'Paid receipt',
       caption_entities: [{ type: 'bold', offset: 0, length: 4 }],
       show_caption_above_media: true,
+      forward_origin: undefined,
     },
-    { fromId: bot.bot.id, fileUniqueId: photoFileUniqueId },
+    {
+      fromId: bot.bot.id,
+      fileUniqueId: photoFileUniqueId,
+      caption: undefined,
+      caption_entities: undefined,
+      show_caption_above_media: undefined,
+      forward_origin: undefined,
+    },
   ];
-  if (JSON.stringify(copies) !== JSON.stringify(expectedCopies)) {
-    throw new Error(`Expected copies with the chosen captions, received ${JSON.stringify(copies)}`);
-  }
+  assertEqualsInFieldOrder(copies, expectedCopies, 'Expected copies with the chosen captions');
 
   // A copy takes the reply and keyboard of the request, keeps text as it is, and a bot may copy a
   // protected message; a copy of a forward does not show the forward's origin.
@@ -1907,11 +1958,12 @@ Deno.test('copyMessage copies messages without their origin and follows Telegram
     message_id === copyOfForwardId
   );
   if (
-    textCopy?.text !== 'Your code is 1234' || textCopy.has_protected_content !== undefined ||
+    textCopy?.text !== 'Your code is 1234' ||
+    textCopy.has_protected_content !== undefined ||
     (textCopy.reply_to_message as { message_id?: number } | undefined)?.message_id !==
       forwardId ||
-    JSON.stringify(textCopy.reply_markup) !== JSON.stringify({ inline_keyboard: inlineKeyboard }) ||
-    copyOfForward === undefined || 'forward_origin' in copyOfForward ||
+    copyOfForward === undefined ||
+    'forward_origin' in copyOfForward ||
     copyOfForward.caption !== 'Receipt'
   ) {
     throw new Error(
@@ -1920,6 +1972,11 @@ Deno.test('copyMessage copies messages without their origin and follows Telegram
       }`,
     );
   }
+  assertEqualsInFieldOrder(
+    textCopy.reply_markup,
+    { inline_keyboard: inlineKeyboard },
+    "Expected copies to take the request's options",
+  );
 
   const history = await (await api.request(`${supergroupPath(owner.id)}/messages`)).json() as {
     messages: Array<{ message_id: number }>;
@@ -1991,8 +2048,6 @@ Deno.test('an account forwards messages to bots, which receive their origin', as
   const expectedOrigin = { type: 'user', sender_user: member, date: groupMessage.date };
   if (
     forwardResponse.status !== 201 ||
-    JSON.stringify(shownForward.forward_origin) !== JSON.stringify(expectedOrigin) ||
-    JSON.stringify(receivedForward) !== JSON.stringify(shownForward) ||
     (receivedForward?.from as { id?: number } | undefined)?.id !== owner.id ||
     receivedForward?.text !== 'Lunch at noon?'
   ) {
@@ -2002,6 +2057,16 @@ Deno.test('an account forwards messages to bots, which receive their origin', as
       }`,
     );
   }
+  assertEqualsInFieldOrder(
+    shownForward.forward_origin,
+    expectedOrigin,
+    "Expected the bot to receive the account's forward",
+  );
+  assertEqualsInFieldOrder(
+    receivedForward,
+    shownForward,
+    "Expected the bot to receive the account's forward",
+  );
 
   // The account edits nothing of a forward, and cannot forward protected content.
   const editResponse = await api.request(
@@ -2036,9 +2101,7 @@ Deno.test('an account forwards messages to bots, which receive their origin', as
       text: 'Also text',
     })).status,
   ];
-  if (JSON.stringify(failureStatuses) !== JSON.stringify([400, 400, 404, 403, 400])) {
-    throw new Error(`Expected forwards to be refused, received ${failureStatuses}`);
-  }
+  assertEquals(failureStatuses, [400, 400, 404, 403, 400], 'Expected forwards to be refused');
 
   const history = await (await api.request(`${supergroupPath(owner.id)}/messages`)).json() as {
     messages: unknown[];
@@ -2105,30 +2168,36 @@ Deno.test('forwards and external replies show only the name of an account with p
   };
   const { forward_origin, forward_from, forward_sender_name, forward_date } = forward ?? {};
   if (
-    accountResponse.status !== 201 || invalidAccountResponse.status !== 400 ||
-    JSON.stringify({ forward_origin, forward_from, forward_sender_name, forward_date }) !==
-      JSON.stringify({
-        forward_origin: hiddenOrigin,
-        forward_sender_name: 'Hedy Lamarr',
-        forward_date: hedyMessage.date,
-      }) ||
-    JSON.stringify((reply?.external_reply as Record<string, unknown>)?.origin) !==
-      JSON.stringify(hiddenOrigin) ||
-    JSON.stringify((accountForwardUpdate?.message as Record<string, unknown>)?.forward_origin) !==
-      JSON.stringify(hiddenOrigin)
+    accountResponse.status !== 201 ||
+    invalidAccountResponse.status !== 400
   ) {
-    throw new Error(
-      `Expected the origins to hide the account, received ${
-        JSON.stringify({
-          accountStatus: accountResponse.status,
-          invalidAccountStatus: invalidAccountResponse.status,
-          forward,
-          reply,
-          accountForwardUpdate,
-        })
-      }`,
-    );
+    throw new Error(`Expected the origins to hide the account, received ${
+      JSON.stringify({
+        accountStatus: accountResponse.status,
+        invalidAccountStatus: invalidAccountResponse.status,
+        forward,
+        reply,
+        accountForwardUpdate,
+      })
+    }`);
   }
+  assertEqualsInFieldOrder({ forward_origin, forward_from, forward_sender_name, forward_date }, {
+    forward_origin: hiddenOrigin,
+    // A hidden account is named, not shown as a user.
+    forward_from: undefined,
+    forward_sender_name: 'Hedy Lamarr',
+    forward_date: hedyMessage.date,
+  }, 'Expected the origins to hide the account');
+  assertEqualsInFieldOrder(
+    (reply?.external_reply as Record<string, unknown>)?.origin,
+    hiddenOrigin,
+    'Expected the origins to hide the account',
+  );
+  assertEqualsInFieldOrder(
+    (accountForwardUpdate?.message as Record<string, unknown>)?.forward_origin,
+    hiddenOrigin,
+    'Expected the origins to hide the account',
+  );
 });
 
 Deno.test('a grammY support bot forwards questions to its team and copies answers back', async () => {
@@ -2183,10 +2252,8 @@ Deno.test('a grammY support bot forwards questions to its team and copies answer
     `${sessionPath}/accounts/${customer.id}/conversations/private/${bot.bot.id}/messages`,
   )).json() as { messages: Array<{ from: { id: number }; text: string }> };
   const shownMessages = customerHistory.messages.map(({ from, text }) => [from.id, text]);
-  if (
-    JSON.stringify(shownMessages) !==
-      JSON.stringify([[customer.id, 'Is it open?'], [bot.bot.id, 'Yes, until 6pm.']])
-  ) {
-    throw new Error(`Expected the team's answer to be copied back, received ${shownMessages}`);
-  }
+  assertEqualsInFieldOrder(shownMessages, [[customer.id, 'Is it open?'], [
+    bot.bot.id,
+    'Yes, until 6pm.',
+  ]], "Expected the team's answer to be copied back");
 });

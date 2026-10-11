@@ -1,7 +1,9 @@
+import { assertEquals } from '@std/assert';
 import { Bot } from 'https://cdn.jsdelivr.net/gh/grammyjs/grammY@^1.46.0/src/bot.ts';
 import { InputFile } from 'https://cdn.jsdelivr.net/gh/grammyjs/grammY@^1.46.0/src/types.ts';
 
 import { jsonRequest, TEST_PUBLIC_ORIGIN } from '../support/emulation_api.ts';
+import { assertEqualsInFieldOrder } from '../support/field_order_assertion.ts';
 import { isBadRequestResponse } from '../support/http_response_guards.ts';
 import {
   botApiResult,
@@ -184,20 +186,27 @@ Deno.test('sendRichMessage sends blocks that accounts see and press as the bot s
     is_rtl: true,
   };
   if (
-    sent.status !== 200 || typeof coverSize?.file_id !== 'string' ||
-    JSON.stringify(message?.rich_message) !== JSON.stringify(expectedRichMessage) ||
+    sent.status !== 200 ||
+    typeof coverSize?.file_id !== 'string' ||
     message !== undefined && 'text' in message
   ) {
     throw new Error(`Expected the sent rich message, received ${JSON.stringify(sent.body)}`);
   }
+  assertEqualsInFieldOrder(
+    message?.rich_message,
+    expectedRichMessage,
+    'Expected the sent rich message',
+  );
 
   const historyResponse = await api.request(
     `${sessionPath}/accounts/${accountId}/conversations/private/${createdBot.bot.id}/messages`,
   );
   const history = await historyResponse.json() as { messages: unknown[] };
-  if (JSON.stringify(history.messages.at(-1)) !== JSON.stringify(message)) {
-    throw new Error(`Expected the account to see the rich message, received ${history}`);
-  }
+  assertEqualsInFieldOrder(
+    history.messages.at(-1),
+    message,
+    'Expected the account to see the rich message',
+  );
 
   const readUpdates = createUpdateReader(api);
   await readUpdates(botApiPath);
@@ -214,13 +223,17 @@ Deno.test('sendRichMessage sends blocks that accounts see and press as the bot s
     ?.message as Record<string, unknown> | undefined;
   if (
     pressResponse.status !== 201 ||
-    (pressUpdate?.callback_query as Record<string, unknown> | undefined)?.data !== 'done' ||
-    JSON.stringify(pressedMessage?.rich_message) !== JSON.stringify(expectedRichMessage)
+    (pressUpdate?.callback_query as Record<string, unknown> | undefined)?.data !== 'done'
   ) {
     throw new Error(
       `Expected the press of a rich message button, received ${pressResponse.status}`,
     );
   }
+  assertEqualsInFieldOrder(
+    pressedMessage?.rich_message,
+    expectedRichMessage,
+    'Expected the press of a rich message button',
+  );
 
   // Forwards and copies keep URL buttons, while other buttons keep their look but do nothing.
   const repeatedButtons = {
@@ -251,8 +264,6 @@ Deno.test('sendRichMessage sends blocks that accounts see and press as the bot s
   const copiedMessage = copyHistory.messages.at(-1);
   const copiedBlocks = (copiedMessage?.rich_message as { blocks?: unknown[] } | undefined)?.blocks;
   if (
-    JSON.stringify(forwardedBlocks?.at(-1)) !== JSON.stringify(repeatedButtons) ||
-    JSON.stringify(copiedBlocks?.at(-1)) !== JSON.stringify(repeatedButtons) ||
     copiedMessage?.message_id !== botApiResult(copy.body)?.message_id ||
     copiedMessage !== undefined && 'caption' in copiedMessage
   ) {
@@ -262,6 +273,16 @@ Deno.test('sendRichMessage sends blocks that accounts see and press as the bot s
       }`,
     );
   }
+  assertEqualsInFieldOrder(
+    forwardedBlocks?.at(-1),
+    repeatedButtons,
+    'Expected forwards and copies to disable callback buttons',
+  );
+  assertEqualsInFieldOrder(
+    copiedBlocks?.at(-1),
+    repeatedButtons,
+    'Expected forwards and copies to disable callback buttons',
+  );
   const pressOfCopy = await api.request(
     `${sessionPath}/accounts/${accountId}/callback-queries`,
     jsonRequest('POST', {
@@ -299,12 +320,14 @@ Deno.test('editMessageText turns text into a rich message and back', async () =>
   });
   const richResult = botApiResult(toRich.body);
   if (
-    JSON.stringify(richResult?.rich_message) !==
-      JSON.stringify({ blocks: [{ type: 'paragraph', text: 'Final for @ada_writer' }] }) ||
-    richResult !== undefined && 'text' in richResult || typeof richResult?.edit_date !== 'number'
+    richResult !== undefined && 'text' in richResult ||
+    typeof richResult?.edit_date !== 'number'
   ) {
     throw new Error(`Expected the text to become rich, received ${JSON.stringify(toRich.body)}`);
   }
+  assertEqualsInFieldOrder(richResult?.rich_message, {
+    blocks: [{ type: 'paragraph', text: 'Final for @ada_writer' }],
+  }, 'Expected the text to become rich');
 
   const unchanged = await callBotApi(api, `${botApiPath}/editMessageText`, {
     chat_id: chatId,
@@ -325,15 +348,11 @@ Deno.test('editMessageText turns text into a rich message and back', async () =>
   const failures = [unchanged, captionEdit, emptyRichMessage].map(({ body }) =>
     isBadRequestResponse(body) ? body.description : JSON.stringify(body)
   );
-  if (
-    JSON.stringify(failures) !== JSON.stringify([
-      'Bad Request: message is not modified: specified new message content and reply markup are exactly the same as a current content and reply markup of the message',
-      'Bad Request: there is no caption in the message to edit',
-      'Bad Request: rich message must be non-empty',
-    ])
-  ) {
-    throw new Error(`Expected Telegram's refusals of the edits, received ${failures.join()}`);
-  }
+  assertEquals(failures, [
+    'Bad Request: message is not modified: specified new message content and reply markup are exactly the same as a current content and reply markup of the message',
+    'Bad Request: there is no caption in the message to edit',
+    'Bad Request: rich message must be non-empty',
+  ], "Expected Telegram's refusals of the edits");
 
   const withPhoto = await callBotApiWithFiles(api, `${botApiPath}/editMessageText`, {
     chat_id: String(chatId),
@@ -537,15 +556,16 @@ Deno.test('bots send and edit rich messages in supergroups and inline messages',
       text: ['Hi ', { type: 'mention', text: '@ada_writer', username: 'ada_writer' }],
     }],
   };
-  if (
-    JSON.stringify(botApiResult(sent.body)?.rich_message) !==
-      JSON.stringify(expectedRichMessage) ||
-    JSON.stringify(history.messages.at(-1)?.rich_message) !== JSON.stringify(expectedRichMessage)
-  ) {
-    throw new Error(
-      `Expected the supergroup's rich message, received ${JSON.stringify(sent.body)}`,
-    );
-  }
+  assertEqualsInFieldOrder(
+    botApiResult(sent.body)?.rich_message,
+    expectedRichMessage,
+    "Expected the supergroup's rich message",
+  );
+  assertEqualsInFieldOrder(
+    history.messages.at(-1)?.rich_message,
+    expectedRichMessage,
+    "Expected the supergroup's rich message",
+  );
 
   const inlineBot = await createBot(api, sessionPath, 'cats_bot', {
     supports_inline_queries: true,
@@ -597,11 +617,8 @@ Deno.test('bots send and edit rich messages in supergroups and inline messages',
     `${accountPath}/conversations/private/${inlineBot.bot.id}/messages`,
   )).json() as { messages: Array<Record<string, unknown>> };
   if (
-    JSON.stringify(richEdit.body) !== JSON.stringify({ ok: true, result: true }) ||
     !isBadRequestResponse(uploadEdit.body) ||
-    uploadEdit.body.description !== 'Bad Request: invalid message content specified' ||
-    JSON.stringify(inlineHistory.messages.at(-1)?.rich_message) !==
-      JSON.stringify({ blocks: [{ type: 'heading', text: 'Cats', size: 1 }] })
+    uploadEdit.body.description !== 'Bad Request: invalid message content specified'
   ) {
     throw new Error(
       `Expected an inline message to become rich without uploads, received ${
@@ -609,6 +626,14 @@ Deno.test('bots send and edit rich messages in supergroups and inline messages',
       }`,
     );
   }
+  assertEqualsInFieldOrder(
+    richEdit.body,
+    { ok: true, result: true },
+    'Expected an inline message to become rich without uploads',
+  );
+  assertEqualsInFieldOrder(inlineHistory.messages.at(-1)?.rich_message, {
+    blocks: [{ type: 'heading', text: 'Cats', size: 1 }],
+  }, 'Expected an inline message to become rich without uploads');
 });
 
 Deno.test('a grammY bot sends a rich message with an uploaded photo', async () => {
@@ -633,13 +658,13 @@ Deno.test('a grammY bot sends a rich message with an uploaded photo', async () =
   });
   const [paragraph, photo] = message.rich_message?.blocks ?? [];
   if (
-    JSON.stringify(paragraph) !==
-      JSON.stringify({
-        type: 'paragraph',
-        text: ['Our ', { type: 'italic', text: 'new' }, ' logo'],
-      }) ||
-    photo?.type !== 'photo' || photo.photo[0]?.width !== 32
+    photo?.type !== 'photo' ||
+    photo.photo[0]?.width !== 32
   ) {
     throw new Error(`Expected grammY's rich message, received ${JSON.stringify(message)}`);
   }
+  assertEqualsInFieldOrder(paragraph, {
+    type: 'paragraph',
+    text: ['Our ', { type: 'italic', text: 'new' }, ' logo'],
+  }, "Expected grammY's rich message");
 });
