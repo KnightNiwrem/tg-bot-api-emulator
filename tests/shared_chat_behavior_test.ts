@@ -384,14 +384,16 @@ const SHARED_BEHAVIORS: readonly SharedBehavior[] = [
       const message = expectSent(subject.sendBotMessage({
         content: { kind: 'text', text: 'Continue?' },
       }));
+      const messageId = subject.messageIdOf(message);
       subject.advanceClockSeconds(5);
-      const edit = expectEdited(
-        subject.editBotKeyboard(subject.messageIdOf(message), YES_NO_KEYBOARD),
-      );
+      expectEdited(subject.editBotText(messageId, { content: { kind: 'text', text: 'Choose' } }));
+      subject.advanceClockSeconds(5);
+      const edit = expectEdited(subject.editBotKeyboard(messageId, YES_NO_KEYBOARD));
+      // The status quo pending #241 (does Telegram date a keyboard-only edit?), which may change it.
       assertEquals(
         [getContentText(edit.content).text, edit.contentEditedAtUnixSeconds, edit.inlineKeyboard],
-        ['Continue?', undefined, YES_NO_KEYBOARD],
-        'Expected only the keyboard to change',
+        ['Choose', TEST_UNIX_TIME_SECONDS + 5, YES_NO_KEYBOARD],
+        'Expected only the keyboard to change, keeping the date of the text edit',
       );
     },
   },
