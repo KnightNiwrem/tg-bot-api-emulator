@@ -9,9 +9,9 @@ import {
   type ControlOperationContract,
   type ControlOperationResponse,
   type DecodedControlRequest,
-  isMediaTypeInRange,
   readPathPlaceholders,
 } from '../../control_contracts/operation_contract.ts';
+import { isContentTypeInRange } from '../../control_contracts/media_type.ts';
 import { invalidControlRequestResponse } from './control_error_response.ts';
 import {
   createPathParameterReader,
@@ -165,7 +165,7 @@ function serializeControlResponse(
       if (!(body instanceof Uint8Array) || mediaType === undefined) {
         throw new Error(`${contract.operationId} answered without bytes and their media type`);
       }
-      if (!isMediaTypeInRange(mediaType, successBody.mediaTypeRange)) {
+      if (!isContentTypeInRange(mediaType, successBody.mediaTypeRange)) {
         throw new Error(
           `${contract.operationId} answered with bytes outside ${successBody.mediaTypeRange}`,
         );

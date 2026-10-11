@@ -8,10 +8,8 @@ import { z } from 'zod';
 
 import { registerControlOperation } from '../../src/api/control_operation_route.ts';
 import { controlRefusalSchema } from '../../control_contracts/control_errors.ts';
-import {
-  defineControlOperation,
-  isMediaTypeInRange,
-} from '../../control_contracts/operation_contract.ts';
+import { isContentTypeInRange } from '../../control_contracts/media_type.ts';
+import { defineControlOperation } from '../../control_contracts/operation_contract.ts';
 import {
   callBytesOperation,
   callEmptyOperation,
@@ -269,26 +267,56 @@ Deno.test('A route answering bytes outside its media type range is a server faul
   assertEquals(response.status, 500, 'Expected the route to fail rather than answer an image');
 });
 
-Deno.test('A concrete media type is within a range of its type, its exact value, or every type', () => {
+Deno.test('A Content-Type is within a range when it is well formed and its media type matches', () => {
   const cases: readonly (readonly [contentType: string, range: string, within: boolean])[] = [
+    // Ranges.
     ['image/png', '*/*', true],
     ['image/png', 'image/*', true],
-    ['Image/PNG', 'image/png', true],
-    ['image/png; q=1', 'image/png', true],
+    ['image/png', 'image/png', true],
     ['image/png', 'image/jpeg', false],
     ['image/png', 'text/*', false],
-    ['image', '*/*', false],
-    ['image/png/x', '*/*', false],
-    ['', '*/*', false],
+    // Letter case, of the media type and of the range.
+    ['Image/PNG', 'image/png', true],
+    ['image/png', 'IMAGE/*', true],
+    // Wildcards, which only a range may hold.
     ['text/*', 'text/*', false],
     ['*/*', '*/*', false],
     ['*/plain', '*/*', false],
     ['text/plain', '*/plain', false],
+    // Malformed media types.
+    ['image', '*/*', false],
+    ['image/png/x', '*/*', false],
+    ['', '*/*', false],
+    [' text/plain', '*/*', false],
+    ['text /plain', '*/*', false],
+    ['text/plain, text/html', '*/*', false],
+    // Parameters, of any case, around semicolons with optional spaces and tabs.
+    ['text/plain;charset=utf-8', 'text/plain', true],
+    ['text/plain ; Charset=UTF-8', 'text/plain', true],
+    ['text/plain;\tcharset=utf-8;\tformat=flowed', 'text/plain', true],
+    // Empty parameters, which the grammar allows.
+    ['text/plain;', 'text/plain', true],
+    ['text/plain; ;charset=utf-8;;', 'text/plain', true],
+    // A name without a value, a value without a name, or text that is no parameter.
+    ['text/plain; charset', 'text/plain', false],
+    ['text/plain; charset=', 'text/plain', false],
+    ['text/plain; =utf-8', 'text/plain', false],
+    ['text/plain; garbage', 'text/plain', false],
+    // Whitespace around the equals sign.
+    ['text/plain; charset =utf-8', 'text/plain', false],
+    ['text/plain; charset= utf-8', 'text/plain', false],
+    // Quoted values, which may hold a semicolon, spaces and escaped quotes.
+    ['text/plain; name="a;b c"', 'text/plain', true],
+    ['text/plain; name="say \\"hi\\""', 'text/plain', true],
+    ['text/plain; name=""', 'text/plain', true],
+    ['text/plain; name="unterminated', 'text/plain', false],
+    ['text/plain; name="a"b', 'text/plain', false],
+    ['text/plain; name=a b', 'text/plain', false],
   ];
   assertEquals(
-    cases.map(([contentType, range]) => isMediaTypeInRange(contentType, range)),
+    cases.map(([contentType, range]) => isContentTypeInRange(contentType, range)),
     cases.map(([, , within]) => within),
-    'Expected each media type judged against its range',
+    'Expected each Content-Type judged against its range',
   );
 });
 

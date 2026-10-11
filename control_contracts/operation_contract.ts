@@ -9,6 +9,8 @@
  */
 import type { z } from 'zod';
 
+import { isMediaRange } from './media_type.ts';
+
 export type ControlHttpMethod = 'DELETE' | 'GET' | 'PATCH' | 'POST' | 'PUT';
 
 /** A JSON request body, which the operation may let a request leave out. */
@@ -37,49 +39,6 @@ export interface BytesResponseBodyContract {
    * the range of every media type; the response's `Content-Type` names the exact one.
    */
   readonly mediaTypeRange: string;
-}
-
-/** A type and a subtype, each an HTTP token, in lowercase, as RFC 9110 writes a media type. */
-const MEDIA_TYPE_PATTERN = /^([!#$%&'*+.^_`|~0-9a-z-]+)\/([!#$%&'*+.^_`|~0-9a-z-]+)$/;
-
-/** The wildcard that a media range writes for any type or subtype. */
-const MEDIA_RANGE_WILDCARD = '*';
-
-/**
- * The type and subtype of a media range, lowercased, as RFC 9110 §12.5.1 writes one: `type/subtype`,
- * `type/*`, or the range of every media type, whose type is a wildcard only with its subtype;
- * `undefined` for text that is no media range.
- */
-function readMediaRange(text: string): readonly [type: string, subtype: string] | undefined {
-  const match = MEDIA_TYPE_PATTERN.exec(text.toLowerCase());
-  if (match === null) return undefined;
-  const [, type, subtype] = match;
-  return type === MEDIA_RANGE_WILDCARD && subtype !== MEDIA_RANGE_WILDCARD
-    ? undefined
-    : [type, subtype];
-}
-
-/** Whether text is a media range a bytes body may declare, such as `image/png` or `image/*`. */
-function isMediaTypeRange(text: string): boolean {
-  return readMediaRange(text) !== undefined;
-}
-
-/**
- * Whether a `Content-Type`'s media type, without its parameters such as `charset`, is within a
- * media range, as RFC 9110 §12.5.1 matches them: equal to it, of its type when it is `type/*`, or
- * any when it is every type's. The media type must be concrete, without a wildcard, which only a
- * range may hold. Media types are compared without regard to letter case.
- */
-export function isMediaTypeInRange(contentType: string, mediaTypeRange: string): boolean {
-  const [mediaTypeText = ''] = contentType.split(';');
-  const mediaType = MEDIA_TYPE_PATTERN.exec(mediaTypeText.trim().toLowerCase());
-  const range = readMediaRange(mediaTypeRange);
-  if (mediaType === null || range === undefined) return false;
-  const [, type, subtype] = mediaType;
-  const [rangeType, rangeSubtype] = range;
-  if (type === MEDIA_RANGE_WILDCARD || subtype === MEDIA_RANGE_WILDCARD) return false;
-  if (rangeType === MEDIA_RANGE_WILDCARD) return true;
-  return rangeType === type && (rangeSubtype === MEDIA_RANGE_WILDCARD || rangeSubtype === subtype);
 }
 
 export type ResponseBodyContract =
@@ -162,7 +121,7 @@ export function defineControlOperation<const Contract extends ControlOperationCo
     }
   }
   const successBody = contract.success.body;
-  if (successBody.kind === 'bytes' && !isMediaTypeRange(successBody.mediaTypeRange)) {
+  if (successBody.kind === 'bytes' && !isMediaRange(successBody.mediaTypeRange)) {
     throw new Error(
       `${contract.operationId} declares ${successBody.mediaTypeRange}, which is no media range`,
     );

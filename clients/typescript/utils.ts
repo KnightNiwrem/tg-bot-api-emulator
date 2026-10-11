@@ -1,6 +1,6 @@
 import { z } from 'zod';
 
-import { isMediaTypeInRange } from '../../control_contracts/operation_contract.ts';
+import { isContentTypeInRange } from '../../control_contracts/media_type.ts';
 import { EmulationClientError, EmulationControlError } from './emulation_client_error.ts';
 import { controlErrorBodySchema } from './schemas.ts';
 import type { ControlErrorBody, ControlRequestIssue, RequestDetails } from './types.ts';
@@ -82,7 +82,7 @@ export async function requestBytes(
     assertResponseStatus(response, responseBody, request);
   }
   const contentType = response.headers.get('Content-Type');
-  if (contentType === null || !isMediaTypeInRange(contentType, request.mediaTypeRange)) {
+  if (contentType === null || !isContentTypeInRange(contentType, request.mediaTypeRange)) {
     // The body is left unread; cancelling it releases the transport, however the cancel settles.
     response.body?.cancel().catch(() => {});
     throw new EmulationClientError(
