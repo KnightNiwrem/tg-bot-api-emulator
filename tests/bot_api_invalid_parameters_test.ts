@@ -324,6 +324,93 @@ Deno.test('the query answer methods name the parameter that does not fit their s
   );
 });
 
+Deno.test('the deletion and reaction methods name the parameter that does not fit their schema', async () => {
+  const { api, botApiPath } = await createFixture();
+  const unparsableMessageIds = "Bad Request: can't parse message_ids JSON object";
+  const cases: readonly [method: string, parameters: object, description: string][] = [
+    [
+      'deleteMessage',
+      { chat_id: 1, message_id: 'secret' },
+      'Bad Request: invalid deleteMessage parameters: message_id',
+    ],
+    [
+      'deleteMessages',
+      { chat_id: 'secret-chat', message_ids: [1] },
+      'Bad Request: invalid deleteMessages parameters: chat_id',
+    ],
+    ['deleteMessages', { chat_id: 1, message_ids: 'not JSON' }, unparsableMessageIds],
+    [
+      'deleteMessages',
+      { chat_id: 1, message_ids: `${'['.repeat(101)}1${']'.repeat(101)}` },
+      unparsableMessageIds,
+    ],
+    // Empty text names no messages, as the official server reads it.
+    [
+      'deleteMessages',
+      { chat_id: 1, message_ids: '' },
+      'Bad Request: message identifiers are not specified',
+    ],
+    [
+      'setMessageReaction',
+      { chat_id: 1, message_id: 1, is_big: 'secret' },
+      'Bad Request: invalid setMessageReaction parameters: is_big',
+    ],
+  ];
+
+  const answers = [];
+  for (const [method, parameters] of cases) {
+    answers.push(await callBotApi(api, `${botApiPath}/${method}`, parameters));
+  }
+  assertEquals(
+    answers,
+    cases.map(([, , description]) => [400, description]),
+    "Expected a schema refusal to name its path, or to give Telegram's own description",
+  );
+});
+
+Deno.test('link_preview_options that is not JSON gets the official server description', async () => {
+  const { api, botApiPath } = await createFixture();
+  const unparsableOptions = "Bad Request: can't parse link preview options JSON object";
+  const cases: readonly [method: string, parameters: object, description: string][] = [
+    [
+      'editMessageText',
+      { chat_id: 1, message_id: 1, text: 'Hi', link_preview_options: 'not JSON' },
+      unparsableOptions,
+    ],
+    [
+      'editMessageText',
+      {
+        chat_id: 1,
+        message_id: 1,
+        text: 'Hi',
+        link_preview_options: `${'['.repeat(101)}1${']'.repeat(101)}`,
+      },
+      unparsableOptions,
+    ],
+    [
+      'sendMessage',
+      { chat_id: 1, text: 'Hi', link_preview_options: 'not JSON' },
+      unparsableOptions,
+    ],
+    // Empty text is no options, as the official server reads it, so the message is read next.
+    [
+      'editMessageText',
+      { message_id: 1, text: 'Hi', link_preview_options: '' },
+      'Bad Request: chat_id is empty',
+    ],
+  ];
+
+  const answers = [];
+  for (const [method, parameters] of cases) {
+    answers.push(await callBotApi(api, `${botApiPath}/${method}`, parameters));
+  }
+  assertEquals(
+    answers,
+    cases.map(([, , description]) => [400, description]),
+    "Expected Telegram's description for options it cannot read, and empty text read as none",
+  );
+});
+
 Deno.test('the member administration methods name the parameter that does not fit their schema', async () => {
   await using fixture = await createFixture();
   const { api, botApiPath } = fixture;

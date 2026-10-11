@@ -1,36 +1,22 @@
 import { z } from 'zod';
 
-import { CHAT_ID_EMPTY_DESCRIPTION } from '../chat_access.ts';
+import { requireSpecifiedChatId } from '../chat_access.ts';
 import { BOT_API_ERRORS } from '../errors/error_catalogue.ts';
 import { presentFixedBotApiError } from '../errors/error_template.ts';
 import { presentMessageReactionFailure } from '../errors/message_reaction_failure_presenter.ts';
 import { messageIdOrNone } from '../message_identifiers.ts';
+import { type BotApiMethod, botApiResult } from '../method_call.ts';
 import {
-  answeredPreparation,
-  type BotApiCallPreparation,
-  botApiError,
-  type BotApiMethod,
-  type BotApiMethodContext,
-  botApiResult,
-} from '../method_call.ts';
+  answerWith,
+  answerWithBadRequest,
+  type BotApiStepCall,
+  type BotApiStepResult,
+  commandMethodOfSteps,
+  proceedWith,
+  startSteps,
+} from '../method_steps.ts';
 import { readReactionTypesParameter } from '../reaction_type_parameter.ts';
-import {
-  booleanParameter,
-  type BotApiRequestParameters,
-  integerParameter,
-} from '../request_parameters.ts';
-
-/**
- * The methods that set the bot's reactions to a message, each executed as a command in its call's
- * transaction.
- */
-export const MESSAGE_REACTION_METHODS: readonly BotApiMethod[] = [
-  { name: 'setMessageReaction', recordsActivity: true, prepare: prepareSetMessageReaction },
-];
-
-/** The emulator's description for setMessageReaction parameters it cannot read. */
-const SET_MESSAGE_REACTION_PARAMETERS_INVALID_DESCRIPTION =
-  'Bad Request: invalid setMessageReaction parameters';
+import { booleanParameter, integerParameter } from '../request_parameters.ts';
 
 // Business connections are not supported. `is_big` changes only how clients animate the reaction.
 const setMessageReactionParametersSchema = z.strictObject({
@@ -40,42 +26,25 @@ const setMessageReactionParametersSchema = z.strictObject({
   is_big: booleanParameter().default(false),
 });
 
-/**
- * Sets the bot's reactions to a supergroup message, checking in the official server's order: the
- * `reaction` parameter is read first, then the chat and the message, as `check_message` finds them,
- * and Telegram's servers check the reactions last. A custom emoji is refused right after reading,
- * since no emulated chat allows one. Preparing it reads the parameters; finding the chat and the
- * message, and checking the reactions, wait for the call's execution.
- */
-function prepareSetMessageReaction(
-  context: BotApiMethodContext,
-  parameters: BotApiRequestParameters,
-): BotApiCallPreparation {
-  const parsedParameters = setMessageReactionParametersSchema.safeParse(parameters);
-  if (!parsedParameters.success) {
-    return answeredPreparation(
-      botApiError(400, SET_MESSAGE_REACTION_PARAMETERS_INVALID_DESCRIPTION),
-    );
-  }
-  const { chat_id: chatId, message_id: messageId, reaction } = parsedParameters.data;
-  const reactionTypes = readReactionTypesParameter(
-    reaction,
-    SET_MESSAGE_REACTION_PARAMETERS_INVALID_DESCRIPTION,
-  );
-  if (!reactionTypes.read) {
-    return answeredPreparation(botApiError(400, reactionTypes.description));
-  }
-  if (reactionTypes.hasCustomEmoji) {
-    return answeredPreparation(presentFixedBotApiError(BOT_API_ERRORS.reactionInvalid));
-  }
-  if (chatId === undefined) {
-    return answeredPreparation(botApiError(400, CHAT_ID_EMPTY_DESCRIPTION));
-  }
+type SetMessageReactionParameters = z.output<typeof setMessageReactionParametersSchema>;
 
-  const { emojis } = reactionTypes;
-  return {
-    kind: 'command',
-    execute: () => {
+/**
+ * The methods that set the bot's reactions to a message, each executed as a command in its call's
+ * transaction.
+ */
+export const MESSAGE_REACTION_METHODS: readonly BotApiMethod[] = [
+  // Checked in the official server's order: the `reaction` parameter is read first, then the chat
+  // and the message, as `check_message` finds them, and Telegram's servers check the reactions
+  // last, once the call executes.
+  commandMethodOfSteps({
+    name: 'setMessageReaction',
+    recordsActivity: true,
+    parameters: setMessageReactionParametersSchema,
+    steps: (call) =>
+      startSteps(call.parameters)
+        .andThen((parameters) => readReactionEmojis(call, parameters))
+        .andThen(requireSpecifiedChatId),
+    execute: (context, { chat_id: chatId, message_id: messageId, emojis }) => {
       const result = context.session.botApi.setMessageReaction(context.bot, {
         chatId,
         messageId: messageIdOrNone(messageId),
@@ -83,5 +52,26 @@ function prepareSetMessageReaction(
       });
       return result.set ? botApiResult(true) : presentMessageReactionFailure(result);
     },
-  };
+  }),
+];
+
+/**
+ * The step that reads the `reaction` parameter as `readReactionTypesParameter` does. A custom
+ * emoji is refused right after reading, since no emulated chat allows one.
+ */
+function readReactionEmojis(
+  { invalidParametersDescription }: BotApiStepCall<unknown>,
+  parameters: SetMessageReactionParameters,
+): BotApiStepResult<SetMessageReactionParameters & { readonly emojis: readonly string[] }> {
+  const reactionTypes = readReactionTypesParameter(
+    parameters.reaction,
+    invalidParametersDescription,
+  );
+  if (!reactionTypes.read) {
+    return answerWithBadRequest(reactionTypes.description);
+  }
+  if (reactionTypes.hasCustomEmoji) {
+    return answerWith(presentFixedBotApiError(BOT_API_ERRORS.reactionInvalid));
+  }
+  return proceedWith({ ...parameters, emojis: reactionTypes.emojis });
 }

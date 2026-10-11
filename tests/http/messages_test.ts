@@ -182,7 +182,7 @@ Deno.test('deleteMessage and deleteMessages follow Telegram checks', async () =>
   await expectDeletionFailure(
     'deleteMessage',
     { chat_id: accountId, message_id: 'first' },
-    'Bad Request: invalid deleteMessage parameters',
+    'Bad Request: invalid deleteMessage parameters: message_id',
   );
   await expectDeletionFailure(
     'deleteMessages',
@@ -212,7 +212,7 @@ Deno.test('deleteMessage and deleteMessages follow Telegram checks', async () =>
   await expectDeletionFailure(
     'deleteMessages',
     { chat_id: accountId, message_ids: ['1'] },
-    'Bad Request: invalid deleteMessages parameters',
+    'Bad Request: invalid deleteMessages parameters: message_ids[0]',
   );
   await expectHistoryTexts(['/start', 'First', 'Second']);
 
