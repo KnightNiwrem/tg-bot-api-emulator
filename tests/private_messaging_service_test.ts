@@ -16,11 +16,11 @@ import { BotMessageViewService } from '../src/services/bot_message_view.ts';
 import { BotUpdateDeliveryService } from '../src/services/bot_update_delivery.ts';
 import {
   type BotMessageReplyTarget,
-  type PressReplyKeyboardButtonResult,
   PrivateMessagingService,
   type SendBotMessageResult,
 } from '../src/services/private_messaging.ts';
 import type { MediaContent } from '../src/services/message_content.ts';
+import { ReplyInterfaceService } from '../src/services/reply_interface.ts';
 import { MessageDeletionService } from '../src/services/message_deletion.ts';
 import { MessageEditingService } from '../src/services/message_editing.ts';
 import { PrivateChatPolicy } from '../src/services/private_chat_policy.ts';
@@ -484,7 +484,7 @@ Deno.test('PrivateMessagingService stores replies only to messages of the same c
 });
 
 Deno.test('PrivateMessagingService shows the reply interface the latest bot message set', () => {
-  const { virtualUsers, messageBoxes, privateMessaging, messageDeletion } =
+  const { virtualUsers, messageBoxes, privateMessaging, replyInterfaces, messageDeletion } =
     createPrivateMessagingFixture();
   const account = createAccount(virtualUsers, 'Ada');
   const bot = createBot(virtualUsers, 'Test Bot', 'test_bot');
@@ -503,16 +503,19 @@ Deno.test('PrivateMessagingService shows the reply interface the latest bot mess
     return result.message;
   };
   const shownReplyInterface = () => {
-    const result = privateMessaging.getPrivateChatReplyInterface(chat);
+    const result = replyInterfaces.getPrivateChatReplyInterface({
+      accountId: chat.accountId,
+      chat: { type: 'private', peerId: chat.botId },
+    });
     if (!result.found) {
       throw new Error(`Expected the chat's reply interface, received ${result.reason}`);
     }
     return result.shownReplyInterface;
   };
   const pressButton = (text: string) =>
-    privateMessaging.pressReplyKeyboardButton({
+    replyInterfaces.pressPrivateChatReplyKeyboardButton({
       fromAccountId: account.profile.id,
-      chat: { type: 'private', botId: bot.profile.id },
+      chat: { type: 'private', peerId: bot.profile.id },
       text,
     });
 
@@ -561,13 +564,13 @@ Deno.test('PrivateMessagingService shows the reply interface the latest bot mess
     throw new Error("Expected deleting the keyboard's message to clear it");
   }
 
-  const unknownAccount = privateMessaging.getPrivateChatReplyInterface({
+  const unknownAccount = replyInterfaces.getPrivateChatReplyInterface({
     accountId: 999,
-    botId: bot.profile.id,
+    chat: { type: 'private', peerId: bot.profile.id },
   });
-  const pressForUnknownBot = privateMessaging.pressReplyKeyboardButton({
+  const pressForUnknownBot = replyInterfaces.pressPrivateChatReplyKeyboardButton({
     fromAccountId: account.profile.id,
-    chat: { type: 'private', botId: 999 },
+    chat: { type: 'private', peerId: 999 },
     text: 'Red',
   });
   if (
@@ -831,6 +834,7 @@ Deno.test('PrivateMessagingService refuses edits of messages with reply markup o
     messages,
     publishedEvents,
     privateMessaging,
+    replyInterfaces,
     messageEditing,
   } = createPrivateMessagingFixture();
   const account = createAccount(virtualUsers, 'Ada');
@@ -908,9 +912,9 @@ Deno.test('PrivateMessagingService refuses edits of messages with reply markup o
   // A keyboard stays with its message after a later message removes it from the client.
   const keyboardMessage = sendBotText({ replyInterfaceMarkup: COLOR_KEYBOARD });
   sendBotText({ replyInterfaceMarkup: { kind: 'reply_keyboard_removal', isSelective: false } });
-  const shown = privateMessaging.getPrivateChatReplyInterface({
+  const shown = replyInterfaces.getPrivateChatReplyInterface({
     accountId: account.profile.id,
-    botId: bot.profile.id,
+    chat: { type: 'private', peerId: bot.profile.id },
   });
   if (!keyboardMessage.sent || !shown.found || shown.shownReplyInterface !== undefined) {
     throw new Error('Expected the removal to leave the client without a reply interface');
@@ -2202,7 +2206,7 @@ Deno.test('PrivateMessagingService lets a join request contact grant send messag
 });
 
 Deno.test('PrivateMessagingService shares chosen users as a service message of the account', () => {
-  const { virtualUsers, botUpdates, publishedEvents, privateMessaging } =
+  const { virtualUsers, botUpdates, publishedEvents, privateMessaging, replyInterfaces } =
     createPrivateMessagingFixture();
   const account = createAccount(virtualUsers, 'Ada');
   const grace = createAccount(virtualUsers, 'Grace');
@@ -2252,14 +2256,16 @@ Deno.test('PrivateMessagingService shares chosen users as a service message of t
   }
   const eventCountBeforePresses = publishedEvents.length;
   const press = (text: string, answer?: ReplyKeyboardRequestAnswer) =>
-    privateMessaging.pressReplyKeyboardButton({
+    replyInterfaces.pressPrivateChatReplyKeyboardButton({
       fromAccountId: account.profile.id,
-      chat: { type: 'private', botId: bot.profile.id },
+      chat: { type: 'private', peerId: bot.profile.id },
       text,
       ...(answer === undefined ? {} : { answer }),
     });
   const graceAnswer: ReplyKeyboardRequestAnswer = { kind: 'users', userIds: [grace.profile.id] };
-  const refusals: Array<[PressReplyKeyboardButtonResult, string]> = [
+  const refusals: Array<
+    [ReturnType<ReplyInterfaceService['pressPrivateChatReplyKeyboardButton']>, string]
+  > = [
     [press('Friends'), 'reply_keyboard_button_answer_missing'],
     [press('Group'), 'reply_keyboard_button_answer_missing'],
     [press('Plain', graceAnswer), 'reply_keyboard_button_answer_not_requested'],
@@ -2321,7 +2327,7 @@ Deno.test('PrivateMessagingService shares chosen users as a service message of t
 });
 
 Deno.test('PrivateMessagingService sends Web App data as a service message of the account', () => {
-  const { virtualUsers, botUpdates, publishedEvents, privateMessaging } =
+  const { virtualUsers, botUpdates, publishedEvents, privateMessaging, replyInterfaces } =
     createPrivateMessagingFixture();
   const account = createAccount(virtualUsers, 'Ada');
   const bot = createBot(virtualUsers, 'Test Bot', 'test_bot');
@@ -2350,14 +2356,16 @@ Deno.test('PrivateMessagingService sends Web App data as a service message of th
   const updateCountBeforePresses = pendingUpdates().length;
   const eventCountBeforePresses = publishedEvents.length;
   const press = (text: string, answer?: ReplyKeyboardRequestAnswer) =>
-    privateMessaging.pressReplyKeyboardButton({
+    replyInterfaces.pressPrivateChatReplyKeyboardButton({
       fromAccountId: account.profile.id,
-      chat: { type: 'private', botId: bot.profile.id },
+      chat: { type: 'private', peerId: bot.profile.id },
       text,
       ...(answer === undefined ? {} : { answer }),
     });
   const dates: ReplyKeyboardRequestAnswer = { kind: 'web_app', data: '{"nights":3}' };
-  const refusals: Array<[PressReplyKeyboardButtonResult, string]> = [
+  const refusals: Array<
+    [ReturnType<ReplyInterfaceService['pressPrivateChatReplyKeyboardButton']>, string]
+  > = [
     [press('Choose dates'), 'reply_keyboard_button_answer_missing'],
     [press('Plain', dates), 'reply_keyboard_button_answer_not_requested'],
     [
@@ -2408,7 +2416,7 @@ Deno.test('PrivateMessagingService sends Web App data as a service message of th
 });
 
 Deno.test('PrivateMessagingService answers the button that takes the answer among buttons that share a label', () => {
-  const { virtualUsers, botUpdates, publishedEvents, privateMessaging } =
+  const { virtualUsers, botUpdates, publishedEvents, privateMessaging, replyInterfaces } =
     createPrivateMessagingFixture();
   const account = createAccount(virtualUsers, 'Ada');
   const grace = createAccount(virtualUsers, 'Grace');
@@ -2469,14 +2477,17 @@ Deno.test('PrivateMessagingService answers the button that takes the answer amon
     botUpdates.confirmAndReadPendingUpdates(bot.profile.id, { limit: 100 });
   const readState = () => ({
     history: privateMessaging.getPrivateMessageHistory(conversation),
-    replyInterface: privateMessaging.getPrivateChatReplyInterface(conversation),
+    replyInterface: replyInterfaces.getPrivateChatReplyInterface({
+      accountId: conversation.accountId,
+      chat: { type: 'private', peerId: conversation.botId },
+    }),
     updateCount: pendingUpdates().length,
     eventCount: publishedEvents.length,
   });
   const press = (answer?: ReplyKeyboardRequestAnswer) =>
-    privateMessaging.pressReplyKeyboardButton({
+    replyInterfaces.pressPrivateChatReplyKeyboardButton({
       fromAccountId: account.profile.id,
-      chat: { type: 'private', botId: bot.profile.id },
+      chat: { type: 'private', peerId: bot.profile.id },
       text: 'Answer',
       ...(answer === undefined ? {} : { answer }),
     });
@@ -2495,7 +2506,9 @@ Deno.test('PrivateMessagingService answers the button that takes the answer amon
   });
 
   const stateBeforeRefusals = readState();
-  const refusals: Array<[PressReplyKeyboardButtonResult, string]> = [
+  const refusals: Array<
+    [ReturnType<ReplyInterfaceService['pressPrivateChatReplyKeyboardButton']>, string]
+  > = [
     [
       press({ kind: 'users', userIds: [grace.profile.id, account.profile.id] }),
       'shared_users_too_many',
@@ -2611,7 +2624,7 @@ Deno.test('PrivateMessagingService answers the button that takes the answer amon
 });
 
 Deno.test('PrivateMessagingService refuses a press whose label leaves buttons that request different things', () => {
-  const { virtualUsers, botUpdates, publishedEvents, privateMessaging } =
+  const { virtualUsers, botUpdates, publishedEvents, privateMessaging, replyInterfaces } =
     createPrivateMessagingFixture();
   const account = createAccount(virtualUsers, 'Ada');
   const grace = createAccount(virtualUsers, 'Grace');
@@ -2659,19 +2672,24 @@ Deno.test('PrivateMessagingService refuses a press whose label leaves buttons th
   }
   const readState = () => ({
     history: privateMessaging.getPrivateMessageHistory(conversation),
-    replyInterface: privateMessaging.getPrivateChatReplyInterface(conversation),
+    replyInterface: replyInterfaces.getPrivateChatReplyInterface({
+      accountId: conversation.accountId,
+      chat: { type: 'private', peerId: conversation.botId },
+    }),
     updateCount: botUpdates.confirmAndReadPendingUpdates(bot.profile.id, { limit: 100 }).length,
     eventCount: publishedEvents.length,
   });
   const press = (text: string, answer?: ReplyKeyboardRequestAnswer) =>
-    privateMessaging.pressReplyKeyboardButton({
+    replyInterfaces.pressPrivateChatReplyKeyboardButton({
       fromAccountId: account.profile.id,
-      chat: { type: 'private', botId: bot.profile.id },
+      chat: { type: 'private', peerId: bot.profile.id },
       text,
       ...(answer === undefined ? {} : { answer }),
     });
   const stateBeforeRefusals = readState();
-  const refusals: Array<[PressReplyKeyboardButtonResult, string]> = [
+  const refusals: Array<
+    [ReturnType<ReplyInterfaceService['pressPrivateChatReplyKeyboardButton']>, string]
+  > = [
     [press('Share'), 'reply_keyboard_button_ambiguous'],
     [
       press('Friends', { kind: 'users', userIds: [grace.profile.id] }),
@@ -2807,7 +2825,6 @@ function createPrivateMessagingFixture() {
   const privateMessaging = new PrivateMessagingService({
     accounts,
     bots,
-    sharedChats,
     privateConversations,
     messages,
     files: uploadRecordingFiles,
@@ -2854,6 +2871,23 @@ function createPrivateMessagingFixture() {
     privateReplyInterfaces: privateConversations,
     transactions: { withinTransaction: (command) => command() },
   });
+  const replyInterfaces = new ReplyInterfaceService({
+    accounts,
+    privateChats,
+    supergroups,
+    messages,
+    messageBoxes,
+    privateReplyInterfaces: privateConversations,
+    supergroupReplyInterfaces: sharedChats,
+    privateMessages: privateMessaging,
+    // These tests send no supergroup messages.
+    supergroupMessages: {
+      sendAccountMessage: () => {
+        throw new Error('No supergroup message is sent in these tests');
+      },
+    },
+    sharedPeers: { accounts, bots, sharedChats },
+  });
   const advanceClockSeconds = (seconds: number) => {
     currentUnixTimeSeconds += seconds;
   };
@@ -2869,6 +2903,7 @@ function createPrivateMessagingFixture() {
     joinRequesterGrants,
     publishedEvents,
     privateMessaging,
+    replyInterfaces,
     messageEditing,
     messageDeletion,
     advanceClockSeconds,

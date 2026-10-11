@@ -86,18 +86,16 @@ export function createReplyKeyboardPressRoutes(): Hono<SessionRouteContextTypes>
     }
     const requestBody = requestBodyReading.value;
 
-    const { privateMessaging, supergroupMessaging, botMessageViews } = context.get(
-      'emulationSession',
-    );
+    const { replyInterfaces, botMessageViews } = context.get('emulationSession');
     const { chat, text, answer } = requestBody;
     if (chat.type === 'supergroup') {
       // Only private chats show buttons with a request, so no supergroup button takes an answer.
       if (answer !== undefined) {
         return controlErrorResponse(context, 400, 'reply_keyboard_button_answer_not_requested');
       }
-      const result = supergroupMessaging.pressReplyKeyboardButton({
+      const result = replyInterfaces.pressSupergroupReplyKeyboardButton({
         fromAccountId: accountId,
-        chatId: chat.chatId,
+        chat,
         text,
       });
       if (!result.sent) {
@@ -112,9 +110,9 @@ export function createReplyKeyboardPressRoutes(): Hono<SessionRouteContextTypes>
         201,
       );
     }
-    const result = privateMessaging.pressReplyKeyboardButton({
+    const result = replyInterfaces.pressPrivateChatReplyKeyboardButton({
       fromAccountId: accountId,
-      chat,
+      chat: { type: 'private', peerId: chat.botId },
       text,
       ...(answer === undefined ? {} : { answer }),
     });

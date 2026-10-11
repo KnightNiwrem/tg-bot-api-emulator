@@ -19,6 +19,7 @@ import type { MessagePinningService } from '../services/message_pinning.ts';
 import type { MessageReactionService } from '../services/message_reaction.ts';
 import type { PollService } from '../services/poll.ts';
 import type { PrivateMessagingService } from '../services/private_messaging.ts';
+import type { ReplyInterfaceService } from '../services/reply_interface.ts';
 import type { SessionLifetime } from '../services/session_lifetime.ts';
 import type { SharedChatAdministrationService } from '../services/shared_chat_administration.ts';
 import type { SupergroupMessagingService } from '../services/supergroup_messaging.ts';
@@ -50,6 +51,7 @@ export interface EmulationSession extends EmulationSessionOptions {
   readonly messageForwarding: MessageForwardingService;
   readonly messagePinning: MessagePinningService;
   readonly messageReactions: MessageReactionService;
+  readonly replyInterfaces: ReplyInterfaceService;
   readonly botBlocking: BotBlockingService;
   readonly callbackQueries: CallbackQueryService;
   readonly polls: PollService;

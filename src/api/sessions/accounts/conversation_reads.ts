@@ -140,10 +140,10 @@ export function createConversationReadRoutes(): Hono<SessionRouteContextTypes> {
     }
     const { accountId, chatId } = conversationPath.value;
 
-    const { supergroupMessaging, botMessageViews } = context.get('emulationSession');
-    const result = supergroupMessaging.getReplyInterface({
+    const { replyInterfaces, botMessageViews } = context.get('emulationSession');
+    const result = replyInterfaces.getSupergroupReplyInterface({
       accountId,
-      chatId,
+      chat: { type: 'supergroup', chatId },
     });
     if (!result.found) {
       return controlErrorResponse(
@@ -248,10 +248,10 @@ export function createConversationReadRoutes(): Hono<SessionRouteContextTypes> {
     }
     const { accountId, botId } = conversationPath.value;
 
-    const { privateMessaging, botMessageViews } = context.get('emulationSession');
-    const result = privateMessaging.getPrivateChatReplyInterface({
+    const { replyInterfaces, botMessageViews } = context.get('emulationSession');
+    const result = replyInterfaces.getPrivateChatReplyInterface({
       accountId,
-      botId,
+      chat: { type: 'private', peerId: botId },
     });
     if (!result.found) {
       return controlErrorResponse(context, 404, result.reason);

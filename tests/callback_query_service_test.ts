@@ -452,7 +452,6 @@ function createCallbackQueryFixture() {
   const privateMessaging = new PrivateMessagingService({
     accounts,
     bots,
-    sharedChats,
     privateConversations,
     messages,
     files,

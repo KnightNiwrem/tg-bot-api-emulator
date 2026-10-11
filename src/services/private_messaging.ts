@@ -4,14 +4,7 @@ import type { InlineKeyboard } from '../types/inline_keyboard.ts';
 import { type AlbumCompositionFailureReason, formsAlbum } from '../types/media_album.ts';
 import type { ExternalReplyTarget } from '../types/message_reply.ts';
 import type { MessageForward } from '../types/message_forward.ts';
-import {
-  type BotMessageReplyMarkup,
-  isRequestedPollType,
-  type ReplyInterface,
-  type ReplyKeyboardButtonSelectionFailureReason,
-  type ReplyKeyboardRequestAnswer,
-  selectReplyKeyboardButton,
-} from '../types/reply_interface.ts';
+import type { BotMessageReplyMarkup } from '../types/reply_interface.ts';
 import type { VirtualAccount } from '../types/virtual_account.ts';
 import type { VirtualBot } from '../types/virtual_bot.ts';
 import type {
@@ -52,14 +45,11 @@ import {
   toOutgoingAccountContent,
   toOutgoingAccountMedia,
 } from './message_content.ts';
-import {
-  resolveSharedChat,
-  resolveSharedUsers,
-  type SharedChatFailureReason,
-  type SharedChatResolution,
-  type SharedPeerLookups,
-  type SharedUsersFailureReason,
-  type SharedUsersResolution,
+import type {
+  SharedChatFailureReason,
+  SharedChatResolution,
+  SharedUsersFailureReason,
+  SharedUsersResolution,
 } from './requested_peer_sharing.ts';
 import { createSessionUserMentionContext } from './session_user_mention.ts';
 
@@ -285,54 +275,26 @@ export type CheckBotChatActionAccessResult =
       | 'bot_blocked';
   };
 
-/** The message whose reply interface an account's client shows, with that interface. */
-export interface ShownReplyInterface {
-  readonly message: PrivateMessage;
-  readonly replyInterface: ReplyInterface;
-}
-
-export type GetPrivateChatReplyInterfaceResult =
-  | {
-    readonly found: true;
-    /** Omitted when the client shows its usual input. */
-    readonly shownReplyInterface?: ShownReplyInterface;
-  }
-  | { readonly found: false; readonly reason: 'account_not_found' | 'bot_not_found' };
-
-export interface PressReplyKeyboardButtonInput {
-  readonly fromAccountId: number;
-  readonly chat: AccountPrivateChatAddress;
-  /**
-   * The text of the button to press. Buttons may share it, so the answer's kind also selects the
-   * button, as `selectReplyKeyboardButton` describes.
-   */
-  readonly text: string;
-  /**
-   * What the account's client answers the button's request with, which only a button with a
-   * request of the same kind takes and requires; omitted for any other button.
-   */
-  readonly answer?: ReplyKeyboardRequestAnswer;
-}
-
-export type PressReplyKeyboardButtonResult =
-  | SendAccountMessageResult
-  | {
-    readonly sent: false;
-    readonly reason:
-      | ReplyKeyboardButtonSelectionFailureReason
-      | 'requested_poll_type_mismatch'
-      | SharedUsersFailureReason
-      | SharedChatFailureReason;
-  };
-
 /**
  * The service message content that an account's answer to a reply keyboard button's request
  * resolves to, or why the answer is refused.
  */
-type AccountServiceContentResolution =
+export type AccountServiceContentResolution =
   | SharedUsersResolution
   | SharedChatResolution
   | { readonly resolved: true; readonly content: WebAppDataMessageContent };
+
+export type SendAccountServiceMessageResult =
+  | { readonly sent: true; readonly message: PrivateMessage }
+  | {
+    readonly sent: false;
+    readonly reason:
+      | 'account_not_found'
+      | 'bot_not_found'
+      | 'bot_blocked'
+      | SharedUsersFailureReason
+      | SharedChatFailureReason;
+  };
 
 export interface RecordPrivateServiceMessageInput {
   readonly conversation: PrivateConversationKey;
@@ -340,7 +302,7 @@ export interface RecordPrivateServiceMessageInput {
   readonly sender: PrivateConversationRole;
   /**
    * The pin, the one change a caller records; users and chats an account shares, and data a Web
-   * App sends, are recorded only through `pressReplyKeyboardButton`, which validates them.
+   * App sends, are recorded only through `sendAccountServiceMessage`, whose caller validates them.
    */
   readonly content: MessagePinnedContent;
   /** Whether the service message notifies the other participant without sound. */
@@ -439,8 +401,6 @@ interface JoinRequesterContactGrants {
 interface PrivateMessagingServiceDependencies {
   readonly accounts: AccountLookup;
   readonly bots: BotLookup;
-  /** The supergroups and memberships an account's chat sharing reads. */
-  readonly sharedChats: SharedPeerLookups['sharedChats'];
   readonly privateConversations: PrivateConversationStore;
   readonly messages: PrivateMessageStore;
   readonly files: FileUploadStore;
@@ -475,9 +435,9 @@ interface ParticipantMessage extends Omit<NewPrivateMessage, 'chat' | 'sentAtUni
  * bot, and commits each accepted message: its upload stored, the message stored, numbered for both
  * participants, then published. Bots can attach inline keyboards to their messages. A bot's
  * message can also change the reply interface the account's client shows, such as a reply
- * keyboard whose buttons the account presses. An account sends inline query results through
- * inline bots. `MessageEditingService` edits, and `MessageDeletionService` deletes, the messages
- * of private chats, as they do those of every chat type.
+ * keyboard, whose buttons `ReplyInterfaceService` presses. An account sends inline query results
+ * through inline bots. `MessageEditingService` edits, and `MessageDeletionService` deletes, the
+ * messages of private chats, as they do those of every chat type.
  *
  * While an account blocks a bot, neither can write to the other, as on Telegram, where the bot's
  * sends fail and a client asks the user to unblock the bot before writing to it.
@@ -488,7 +448,6 @@ interface ParticipantMessage extends Omit<NewPrivateMessage, 'chat' | 'sentAtUni
 export class PrivateMessagingService {
   readonly #accounts: AccountLookup;
   readonly #bots: BotLookup;
-  readonly #sharedPeers: SharedPeerLookups;
   readonly #textFixingContext: FormattedTextFixingContext;
   readonly #privateConversations: PrivateConversationStore;
   readonly #messages: PrivateMessageStore;
@@ -505,7 +464,6 @@ export class PrivateMessagingService {
     {
       accounts,
       bots,
-      sharedChats,
       privateConversations,
       messages,
       files,
@@ -520,7 +478,6 @@ export class PrivateMessagingService {
   ) {
     this.#accounts = accounts;
     this.#bots = bots;
-    this.#sharedPeers = { accounts, bots, sharedChats };
     this.#textFixingContext = createSessionUserMentionContext({ accounts, bots });
     this.#privateConversations = privateConversations;
     this.#messages = messages;
@@ -865,163 +822,15 @@ export class PrivateMessagingService {
   }
 
   /**
-   * Returns the reply interface the account's client shows in its private chat with the bot: the
-   * one the latest message that set it asked for, unless a later message removed it or that
-   * message was deleted.
-   */
-  getPrivateChatReplyInterface(
-    { accountId, botId }: PrivateConversationKey,
-  ): GetPrivateChatReplyInterfaceResult {
-    if (this.#accounts.getById(accountId) === undefined) {
-      return { found: false, reason: 'account_not_found' };
-    }
-    if (this.#bots.getById(botId) === undefined) {
-      return { found: false, reason: 'bot_not_found' };
-    }
-    const shownReplyInterface = this.#findShownReplyInterface({ accountId, botId });
-    return shownReplyInterface === undefined
-      ? { found: true }
-      : { found: true, shownReplyInterface };
-  }
-
-  /**
-   * Presses a button of the reply keyboard the account's client shows, which, as on Telegram,
-   * sends the button's text to the bot as the account's message. The keyboard stays shown, even a
-   * one-time keyboard, which Telegram clients only hide until the user shows it again.
-   *
-   * A button that requests the user's contact instead shares the account's own contact, as
-   * `sendAccountMessage` sends it, in reply to the keyboard's message, as Telegram Desktop's
-   * `ActivateBotCommand` and Telegram for Android's `shareMyContact` do once the user confirms.
-   * A button that requests the user's location likewise shares the location the press answers
-   * with, as Telegram for Android's `sendLocation` replies with the device's location. The bot
-   * receives an ordinary contact or location message, which only its reply ties to the keyboard.
-   *
-   * A button that requests users or a chat shares those the press answers with, as
-   * `resolveSharedUsers` and `resolveSharedChat` accept them, in a service message of the account
-   * that carries the request's ID and replies to nothing, as TDLib shows it. A button that requests
-   * a poll sends the poll the press answers with, as `sendAccountMessage` sends one, if it is of
-   * the requested type; it replies to nothing, as Telegram Desktop's `ActivateBotCommand` opens
-   * poll creation without a reply.
-   *
-   * A button that opens a Web App sends the data the press answers with, as the Web App's
-   * `Telegram.WebApp.sendData` does, in a service message of the account that carries the button's
-   * text and replies to nothing, as Telegram's `messages.sendWebViewData` takes no reply. The press
-   * stands for opening the Web App and the Web App sending its data at once, so the button must be
-   * shown when the data is sent; the emulator keeps no Web App open across later keyboards. A
-   * press that fails changes nothing.
-   */
-  pressReplyKeyboardButton(input: PressReplyKeyboardButtonInput): PressReplyKeyboardButtonResult {
-    if (this.#accounts.getById(input.fromAccountId) === undefined) {
-      return { sent: false, reason: 'account_not_found' };
-    }
-    if (this.#bots.getById(input.chat.botId) === undefined) {
-      return { sent: false, reason: 'bot_not_found' };
-    }
-    const shownReplyInterface = this.#findShownReplyInterface({
-      accountId: input.fromAccountId,
-      botId: input.chat.botId,
-    });
-    if (shownReplyInterface?.replyInterface.kind !== 'reply_keyboard') {
-      return { sent: false, reason: 'reply_keyboard_button_not_found' };
-    }
-    const { answer } = input;
-    const selection = selectReplyKeyboardButton(
-      shownReplyInterface.replyInterface,
-      input.text,
-      answer?.kind,
-    );
-    if (!selection.selected) {
-      return { sent: false, reason: selection.reason };
-    }
-    const { button } = selection;
-    const { request } = button;
-
-    // The selection leaves only a button that takes the answer's kind, or no answer; each case
-    // narrows the answer to its request's kind.
-    switch (request?.kind) {
-      case undefined:
-        return this.sendAccountMessage({
-          fromAccountId: input.fromAccountId,
-          to: input.chat,
-          content: { kind: 'text', text: input.text },
-        });
-      case 'contact':
-        return this.sendAccountMessage({
-          fromAccountId: input.fromAccountId,
-          to: input.chat,
-          content: { kind: 'own_contact' },
-          replyToBotMessageId: this.#getBotMessageId(
-            input.chat.botId,
-            shownReplyInterface.message,
-          ),
-        });
-      case 'location':
-        if (answer?.kind !== 'location') {
-          return { sent: false, reason: 'reply_keyboard_button_answer_missing' };
-        }
-        return this.sendAccountMessage({
-          fromAccountId: input.fromAccountId,
-          to: input.chat,
-          content: { kind: 'location', location: answer.location },
-          replyToBotMessageId: this.#getBotMessageId(
-            input.chat.botId,
-            shownReplyInterface.message,
-          ),
-        });
-      case 'users':
-        if (answer?.kind !== 'users') {
-          return { sent: false, reason: 'reply_keyboard_button_answer_missing' };
-        }
-        return this.#sendAccountServiceMessage(
-          input,
-          () => resolveSharedUsers(request, answer.userIds, this.#sharedPeers),
-        );
-      case 'chat':
-        if (answer?.kind !== 'chat') {
-          return { sent: false, reason: 'reply_keyboard_button_answer_missing' };
-        }
-        return this.#sendAccountServiceMessage(
-          input,
-          (conversation) =>
-            resolveSharedChat(request, answer.chatId, conversation, this.#sharedPeers),
-        );
-      case 'poll':
-        if (answer?.kind !== 'poll') {
-          return { sent: false, reason: 'reply_keyboard_button_answer_missing' };
-        }
-        if (!isRequestedPollType(request, answer.poll)) {
-          return { sent: false, reason: 'requested_poll_type_mismatch' };
-        }
-        return this.sendAccountMessage({
-          fromAccountId: input.fromAccountId,
-          to: input.chat,
-          content: { kind: 'poll', poll: answer.poll },
-        });
-      case 'web_app':
-        if (answer?.kind !== 'web_app') {
-          return { sent: false, reason: 'reply_keyboard_button_answer_missing' };
-        }
-        return this.#sendAccountServiceMessage(input, () => ({
-          resolved: true,
-          content: { kind: 'web_app_data', buttonText: button.text, data: answer.data },
-        }));
-      default: {
-        const unhandledRequest: never = request;
-        throw new Error(`Unhandled reply keyboard request: ${JSON.stringify(unhandledRequest)}`);
-      }
-    }
-  }
-
-  /**
    * Sends what an account's client answered a reply keyboard button's request with to the bot of
    * its private chat, as a service message of the account that starts the chat, once the account
-   * may write to the bot and the answer is resolved.
+   * may write to the bot and `resolveContent` resolved the answer, which the caller validates.
    */
-  #sendAccountServiceMessage(
-    { fromAccountId, chat }: PressReplyKeyboardButtonInput,
-    resolve: (conversation: PrivateConversationKey) => AccountServiceContentResolution,
-  ): PressReplyKeyboardButtonResult {
-    const senderResolution = this.#resolveAccountSender(fromAccountId, chat.botId);
+  sendAccountServiceMessage(
+    { fromAccountId, botId }: { readonly fromAccountId: number; readonly botId: number },
+    resolveContent: (conversation: PrivateConversationKey) => AccountServiceContentResolution,
+  ): SendAccountServiceMessageResult {
+    const senderResolution = this.#resolveAccountSender(fromAccountId, botId);
     if (!senderResolution.resolved) {
       return { sent: false, reason: senderResolution.reason };
     }
@@ -1030,7 +839,7 @@ export class PrivateMessagingService {
       accountId: account.profile.id,
       botId: bot.profile.id,
     };
-    const resolution = resolve(conversation);
+    const resolution = resolveContent(conversation);
     if (!resolution.resolved) {
       return { sent: false, reason: resolution.reason };
     }
@@ -1046,15 +855,6 @@ export class PrivateMessagingService {
         content: resolution.content,
       }),
     };
-  }
-
-  /** The ID by which a bot sees a message of its private chat, which its message box holds. */
-  #getBotMessageId(botId: number, message: PrivateMessage): number {
-    const botMessageId = this.#messageBoxes.getMessageId(botId, message.id);
-    if (botMessageId === undefined) {
-      throw new Error(`Message ${message.id} is missing from the message box of bot ${botId}`);
-    }
-    return botMessageId;
   }
 
   /**
@@ -1190,22 +990,6 @@ export class PrivateMessagingService {
       return { resolved: true, repliedMessage };
     }
     return replyTo.allowSendingWithoutReply ? { resolved: true } : { resolved: false };
-  }
-
-  #findShownReplyInterface(conversation: PrivateConversationKey): ShownReplyInterface | undefined {
-    const messageId = this.#privateConversations.getReplyInterfaceMessageId(conversation);
-    if (messageId === undefined) {
-      return undefined;
-    }
-    const message = this.#messages.findChatMessage({ type: 'private', conversation }, messageId);
-    const replyInterface = message?.replyInterfaceMarkup;
-    if (
-      message === undefined || replyInterface === undefined ||
-      replyInterface.kind === 'reply_keyboard_removal'
-    ) {
-      throw new Error(`Reply interface message ${messageId} has no stored reply interface`);
-    }
-    return { message, replyInterface };
   }
 
   /**
