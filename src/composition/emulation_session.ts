@@ -167,7 +167,7 @@ export function createEmulationSession(
     currentUnixTimeSeconds,
   });
   const privateConversations = new PrivateConversationRepository(journal);
-  const blockedUsers = new BlockedUserRepository();
+  const blockedUsers = new BlockedUserRepository(journal);
   const messageDrafts = new MessageDraftService({
     accounts,
     bots,
@@ -277,7 +277,7 @@ export function createEmulationSession(
     accounts,
     bots,
     blockedUsers,
-    events: transactions,
+    transactions,
     currentUnixTimeSeconds,
   });
   const callbackQueries = new CallbackQueryService({
