@@ -10,7 +10,8 @@ export function fileDownloadResponse(context: Context, file: StoredFile): Respon
   return context.body(file.content, 200, { 'Content-Type': getFileContentType(file) });
 }
 
-function getFileContentType(file: StoredFile): string {
+/** The media type a stored file is served in, as `fileDownloadResponse` serves it. */
+export function getFileContentType(file: StoredFile): string {
   switch (file.type) {
     case 'document':
     case 'video':

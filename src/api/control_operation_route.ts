@@ -9,6 +9,7 @@ import {
   type ControlOperationContract,
   type ControlOperationResponse,
   type DecodedControlRequest,
+  isMediaTypeInRange,
   readPathPlaceholders,
 } from '../../control_contracts/operation_contract.ts';
 import { invalidControlRequestResponse } from './control_error_response.ts';
@@ -139,7 +140,8 @@ async function decodeControlRequest<Contract extends ControlOperationContract>(
  * an empty success without content, and a bytes success as its media type.
  *
  * @throws {Error} when the handler gave a status the operation does not declare, or a bytes body
- * that is not bytes, which only a handler its types do not describe can give.
+ * that is not bytes, which only a handler its types do not describe can give, or bytes of a media
+ * type outside the contract's range.
  */
 function serializeControlResponse(
   contract: ControlOperationContract,
@@ -162,6 +164,11 @@ function serializeControlResponse(
     case 'bytes':
       if (!(body instanceof Uint8Array) || mediaType === undefined) {
         throw new Error(`${contract.operationId} answered without bytes and their media type`);
+      }
+      if (!isMediaTypeInRange(mediaType, successBody.mediaTypeRange)) {
+        throw new Error(
+          `${contract.operationId} answered with bytes outside ${successBody.mediaTypeRange}`,
+        );
       }
       return new Response(toArrayBufferBytes(body), {
         status,

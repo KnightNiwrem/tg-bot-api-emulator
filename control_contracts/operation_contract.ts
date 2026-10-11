@@ -32,6 +32,30 @@ export interface EmptyResponseBodyContract {
 /** A success response whose content is bytes of a media type the response names, such as a file. */
 export interface BytesResponseBodyContract {
   readonly kind: 'bytes';
+  /**
+   * The media type of the bytes, or the range of media types they may have, such as `image/*` or
+   * the range of every media type; the response's `Content-Type` names the exact one.
+   */
+  readonly mediaTypeRange: string;
+}
+
+/** A type and a subtype, each an HTTP token, in lowercase, as RFC 9110 writes a media type. */
+const MEDIA_TYPE_PATTERN = /^([!#$%&'*+.^_`|~0-9a-z-]+)\/([!#$%&'*+.^_`|~0-9a-z-]+)$/;
+
+/**
+ * Whether a `Content-Type`'s media type, without its parameters such as `charset`, is within a
+ * media type range: equal to it, of its type when it is `type/*`, or any when it is every type's.
+ * Media types are compared without regard to letter case.
+ */
+export function isMediaTypeInRange(contentType: string, mediaTypeRange: string): boolean {
+  const [mediaTypeText = ''] = contentType.split(';');
+  const mediaType = MEDIA_TYPE_PATTERN.exec(mediaTypeText.trim().toLowerCase());
+  const range = MEDIA_TYPE_PATTERN.exec(mediaTypeRange.toLowerCase());
+  if (mediaType === null || range === null) return false;
+  const [, type, subtype] = mediaType;
+  const [, rangeType, rangeSubtype] = range;
+  return (rangeType === '*' && rangeSubtype === '*') ||
+    (rangeType === type && (rangeSubtype === '*' || rangeSubtype === subtype));
 }
 
 export type ResponseBodyContract =

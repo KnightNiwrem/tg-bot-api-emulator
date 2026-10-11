@@ -2,6 +2,7 @@ import type { z } from 'zod';
 
 import { createAccountContract } from '../../control_contracts/accounts.ts';
 import { createBotContract } from '../../control_contracts/bots.ts';
+import { downloadFileContract } from '../../control_contracts/files.ts';
 import { deleteSessionContract } from '../../control_contracts/sessions.ts';
 import {
   addSupergroupMemberContract,
@@ -18,6 +19,7 @@ import { createHttpBotActivityPageReader } from './bot_activity_http_page_reader
 import { createBotActivityLog } from './bot_activity_log.ts';
 import { HTTP_STATUS_CREATED, HTTP_STATUS_NO_CONTENT, HTTP_STATUS_OK } from './constants.ts';
 import {
+  callBytesOperation,
   callEmptyOperation,
   callJsonOperation,
   type ControlOperationTransport,
@@ -163,7 +165,7 @@ import type {
   WebhookDelivery,
   WebResource,
 } from './types.ts';
-import { normalizeUrlRoot, requestBytes, requestEmptyResponse, requestJson } from './utils.ts';
+import { normalizeUrlRoot, requestEmptyResponse, requestJson } from './utils.ts';
 
 export interface EmulationSessionClient extends EmulationSession {
   /** Ends the session and discards all state owned by it. */
@@ -429,10 +431,8 @@ class HttpEmulationSessionClient implements EmulationSessionClient {
   }
 
   downloadFile(fileUniqueId: string): Promise<Uint8Array> {
-    return requestBytes(this.#fetch, {
-      method: 'GET',
-      url: `${this.#sessionUrl}/files/${encodeURIComponent(fileUniqueId)}`,
-      expectedStatus: HTTP_STATUS_OK,
+    return callBytesOperation(this.#transport, downloadFileContract, {
+      params: { sessionId: this.id, fileUniqueId },
     });
   }
 

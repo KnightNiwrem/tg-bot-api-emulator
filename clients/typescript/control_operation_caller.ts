@@ -62,7 +62,10 @@ export function callEmptyOperation<Contract extends EmptySuccessContract>(
   });
 }
 
-/** Calls an operation whose success response is bytes, and returns them. */
+/**
+ * Calls an operation whose success response is bytes, and returns them once their media type is
+ * within the contract's range.
+ */
 export function callBytesOperation<Contract extends BytesSuccessContract>(
   transport: ControlOperationTransport,
   contract: Contract,
@@ -72,6 +75,7 @@ export function callBytesOperation<Contract extends BytesSuccessContract>(
     method: contract.method,
     url: buildOperationUrl(transport.serverRoot, contract, request),
     expectedStatus: contract.success.status,
+    mediaTypeRange: contract.success.body.mediaTypeRange,
     body: request.body,
   });
 }

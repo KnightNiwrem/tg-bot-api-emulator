@@ -200,11 +200,17 @@ function findResponseDrift(
       case 'empty':
         if (success.content.size > 0) drift.push(`${label}: only the document has content`);
         break;
-      case 'bytes':
-        if (success.content.size === 0 || success.content.has(JSON_MEDIA_TYPE)) {
-          drift.push(`${label}: the document does not describe bytes of a non-JSON media type`);
+      case 'bytes': {
+        const mediaTypes = [...success.content.keys()];
+        if (mediaTypes.length !== 1 || mediaTypes[0] !== body.mediaTypeRange.toLowerCase()) {
+          drift.push(
+            `${label}: the document gives ${
+              mediaTypes.join(', ') || 'no'
+            } content, not ${body.mediaTypeRange}`,
+          );
         }
         break;
+      }
       default: {
         const unhandledBody: never = body;
         throw new Error(`Unhandled response body: ${JSON.stringify(unhandledBody)}`);
