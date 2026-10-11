@@ -824,8 +824,12 @@ const inlineQueryResultsButtonSchema = z.union([
 /**
  * A `button` parameter of `answerInlineQuery`: a JSON `InlineQueryResultsButton` that opens the
  * bot's private chat with a start parameter or a Web App. As on Telegram, it has exactly one of
- * them.
+ * them. As the official server's `get_inline_query_results_button` reads it, empty text is no
+ * button, and text it cannot read as JSON is refused with its description.
  */
 export function inlineQueryResultsButtonParameter() {
-  return jsonParameter(inlineQueryResultsButtonSchema);
+  return jsonParameter(inlineQueryResultsButtonSchema.optional(), {
+    unparsableJsonDescription: "Bad Request: can't parse inline query results button JSON object",
+    emptyText: { readAs: undefined },
+  });
 }

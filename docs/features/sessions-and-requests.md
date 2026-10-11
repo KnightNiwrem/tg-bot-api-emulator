@@ -256,9 +256,10 @@ The message editing methods (`editMessageText`, `editMessageCaption`, `editMessa
 the join request methods (`approveChatJoinRequest` and `declineChatJoinRequest`), the chat
 information methods (`getChat`, `setChatTitle`, `setChatDescription` and `setChatPermissions`),
 `getFile`, the update delivery methods (`getUpdates`, `setWebhook`, `deleteWebhook` and
-`getWebhookInfo`) and the bot settings methods (`getMe`, the command, description and menu button
-methods, and the default administrator rights methods) name the first parameter their schema refuses
-after the description, as a path into the call's parameters:
+`getWebhookInfo`), the bot settings methods (`getMe`, the command, description and menu button
+methods, and the default administrator rights methods) and the query answer methods
+(`answerCallbackQuery` and `answerInlineQuery`) name the first parameter their schema refuses after
+the description, as a path into the call's parameters:
 `Bad Request: invalid editMessageReplyMarkup parameters: reply_markup.inline_keyboard[0][1]` for a
 button with no action, `Bad Request: invalid forwardMessages parameters: message_ids[1]` for an
 identifier that is not an integer, or `Bad Request: invalid stopPoll parameters: open_period` for a

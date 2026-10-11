@@ -53,7 +53,10 @@ bytes and a `next_offset` of at most 64 UTF-8 bytes. As TDLib's
 description with `clean_input_string` before listing them, and refuses text that is not well-formed
 Unicode with `Bad Request: strings must be encoded in UTF-8`. The emulator checks button options,
 result count and message content before query state and result metadata, producing errors such as
-`RESULT_ID_DUPLICATE` and the query-too-old error.
+`RESULT_ID_DUPLICATE` and the query-too-old error. As the official server's
+[`process_answer_inline_query_query`][answer-inline-query] does, the button is read before the
+results. Empty `button` text is no button, and a `button` that is not JSON the server can read is
+refused with `Bad Request: can't parse inline query results button JSON object`.
 
 With `receives_chosen_inline_results: true`, a choice also generates `chosen_inline_result` for the
 inline bot. If the result has an inline keyboard, that update supplies `inline_message_id`. Callback
@@ -251,3 +254,4 @@ public.
 [inline-rich-message]: https://github.com/tdlib/td/blob/bc9c263e2bfee06aaab41e82db51a103376030bc/td/telegram/InlineQueriesManager.cpp#L584-L598
 [cache]: https://github.com/tdlib/td/blob/bc9c263e2bfee06aaab41e82db51a103376030bc/td/telegram/InlineQueriesManager.cpp#L1335-L1410
 [cache-expiry]: https://github.com/tdlib/td/blob/bc9c263e2bfee06aaab41e82db51a103376030bc/td/telegram/InlineQueriesManager.cpp#L2280-L2320
+[answer-inline-query]: https://github.com/tdlib/telegram-bot-api/blob/e3e9dd8e5b3d7ab8537cd5a10dc31d5ffa8f82d1/telegram-bot-api/Client.cpp#L15449-L15474
