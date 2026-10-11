@@ -27,6 +27,9 @@ export interface BotApiMethodContext {
     | 'botDescriptions'
     | 'botDefaultAdministratorRights'
     | 'botMenuButtons'
+    | 'callbackQueries'
+    | 'inlineQueries'
+    | 'botMediaResolver'
     | 'lifetime'
   >;
   /** The bot whose token authenticated the call. */

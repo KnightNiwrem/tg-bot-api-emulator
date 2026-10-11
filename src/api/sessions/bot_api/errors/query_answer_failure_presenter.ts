@@ -1,4 +1,5 @@
 import type { EmulationSession } from '../../../../session/emulation_session.ts';
+import type { InlineQueryResultResolutionFailure } from '../inline_query_result_resolution.ts';
 import type { BotApiMethodAnswer } from '../method_call.ts';
 import { BOT_API_ERRORS } from './error_catalogue.ts';
 import {
@@ -7,19 +8,19 @@ import {
   presentFixedBotApiError,
 } from './error_template.ts';
 
-type BotApi = EmulationSession['botApi'];
-
 /** Why a callback query was not answered. */
 type CallbackQueryAnswerFailure = Extract<
-  ReturnType<BotApi['answerCallbackQuery']>,
+  ReturnType<EmulationSession['callbackQueries']['answerCallbackQuery']>,
   { readonly answered: false }
 >;
 
-/** Why an inline query was not answered. */
-type InlineQueryAnswerFailure = Extract<
-  ReturnType<BotApi['answerInlineQuery']>,
-  { readonly answered: false }
->;
+/** Why an inline query was not answered: one of its results, or the answer as a whole. */
+type InlineQueryAnswerFailure =
+  | ({ readonly answered: false } & InlineQueryResultResolutionFailure)
+  | Extract<
+    ReturnType<EmulationSession['inlineQueries']['answerInlineQuery']>,
+    { readonly answered: false }
+  >;
 
 /**
  * Telegram's errors for the failures of the query answer family that carry no details, by reason.

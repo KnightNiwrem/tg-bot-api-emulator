@@ -1,4 +1,5 @@
 import type { AuthenticatedBotFailure } from '../src/api/sessions/bot_api/authenticated_bot_failures.ts';
+import type { InlineQueryResultResolutionFailure } from '../src/api/sessions/bot_api/inline_query_result_resolution.ts';
 import { presentBotProfileFailure } from '../src/api/sessions/bot_api/errors/bot_profile_failure_presenter.ts';
 import { presentFilePreparationFailure } from '../src/api/sessions/bot_api/errors/file_failure_presenter.ts';
 import { presentQueryAnswerFailure } from '../src/api/sessions/bot_api/errors/query_answer_failure_presenter.ts';
@@ -12,8 +13,6 @@ import {
 
 // The families of the bot's own settings, its answers to queries, the files it downloads, and how
 // it receives updates. Each case is Telegram's literal answer.
-
-type BotApi = EmulationSession['botApi'];
 
 type BotCommands = EmulationSession['botCommands'];
 type BotDescriptions = EmulationSession['botDescriptions'];
@@ -41,13 +40,15 @@ type MenuButtonReadFailure = AuthenticatedBotFailure<
   Extract<ReturnType<BotMenuButtons['getBotMenuButton']>, { readonly found: false }>
 >;
 type CallbackQueryAnswerFailure = Extract<
-  ReturnType<BotApi['answerCallbackQuery']>,
+  ReturnType<EmulationSession['callbackQueries']['answerCallbackQuery']>,
   { readonly answered: false }
 >;
-type InlineQueryAnswerFailure = Extract<
-  ReturnType<BotApi['answerInlineQuery']>,
-  { readonly answered: false }
->;
+type InlineQueryAnswerFailure =
+  | ({ readonly answered: false } & InlineQueryResultResolutionFailure)
+  | Extract<
+    ReturnType<EmulationSession['inlineQueries']['answerInlineQuery']>,
+    { readonly answered: false }
+  >;
 /** A poll that its session ended is refused without an answer, so the presenter never sees it. */
 type FilePreparationFailure = Extract<
   ReturnType<EmulationSession['mediaFiles']['getBotFile']>,

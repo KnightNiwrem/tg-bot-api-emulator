@@ -275,6 +275,7 @@
           "domain",
           "domain-services",
           "bot-api-service",
+          "bot-media-resolution",
           "bot-message-view",
           "bot-activity",
           "update-consumers",
@@ -467,6 +468,7 @@
           "domain",
           "control-contracts",
           "http-grammar",
+          "text-entity-detection",
           "transport"
         ],
         "allowTypeOnly": [

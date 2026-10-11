@@ -426,6 +426,7 @@ export function createEmulationSession(
     chatActions,
     getPrivateForwardName: getAccountPrivateForwardName,
   });
+  const botMediaResolver = new BotMediaResolver({ mediaFiles });
   const botApi = new BotApiService({
     bots,
     botMessages: privateMessaging,
@@ -445,9 +446,7 @@ export function createEmulationSession(
     botMessageViews,
     messagePinning,
     messageReactions,
-    botMedia: new BotMediaResolver({ mediaFiles }),
-    callbackQueries,
-    inlineQueries,
+    botMedia: botMediaResolver,
     botCaptions: {
       normalizeBotCaption: (caption) => normalizeCaption(caption, 'bot', sessionTextFixingContext),
     },
@@ -491,6 +490,7 @@ export function createEmulationSession(
     botRateLimits,
     botServerErrors,
     botApi,
+    botMediaResolver,
     botUpdateConsumers,
     botActivity,
     webhookAttempts,

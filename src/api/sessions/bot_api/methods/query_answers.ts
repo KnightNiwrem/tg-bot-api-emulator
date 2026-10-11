@@ -1,7 +1,6 @@
 import { z } from 'zod';
 
 import { MAX_CALLBACK_QUERY_ANSWER_TEXT_LENGTH } from '../../../../types/callback_query.ts';
-import type { EmulationSession } from '../../../../session/emulation_session.ts';
 import {
   readEmbeddedFormattedText,
   type SpecifiedFormattedText,
@@ -14,10 +13,17 @@ import {
   readUnreadLocation,
   type UnreadInputMessageContent,
 } from '../inline_query_answer_parameters.ts';
+import {
+  type InlineQueryAnswerRequest,
+  type InlineQueryResultRequest,
+  type InlineResultMessageContentRequest,
+  resolveInlineQueryResults,
+} from '../inline_query_result_resolution.ts';
 import { BOT_API_ERRORS } from '../errors/error_catalogue.ts';
 import { presentQueryAnswerFailure } from '../errors/query_answer_failure_presenter.ts';
 import {
   badRequestDescription,
+  type BotApiFamilyContext,
   type BotApiMethod,
   type BotApiMethodContext,
   botApiResult,
@@ -87,12 +93,13 @@ const answerInlineQueryParametersSchema = z.strictObject({
 
 type AnswerInlineQueryParameters = z.output<typeof answerInlineQueryParametersSchema>;
 
-type InlineQueryAnswerRequest = Parameters<EmulationSession['botApi']['answerInlineQuery']>[1];
-
-type InlineQueryResultRequest = InlineQueryAnswerRequest['results'][number];
-
-/** What an inline query result's `input_message_content` sends, as the service reads it. */
-type InlineResultMessageContentRequest = NonNullable<InlineQueryResultRequest['messageContent']>;
+/**
+ * What the query answer methods use: the services that answer callback and inline queries, and
+ * the resolver of the files that inline query results send.
+ */
+type QueryAnswerContext = BotApiFamilyContext<
+  'callbackQueries' | 'inlineQueries' | 'botMediaResolver'
+>;
 
 /**
  * The methods that answer a user's callback query or inline query, each executed as a command in
@@ -104,8 +111,9 @@ export const QUERY_ANSWER_METHODS: readonly BotApiMethod[] = [
     recordsActivity: true,
     parameters: answerCallbackQueryParametersSchema,
     steps: ({ parameters }) => startSteps(parameters),
-    execute: (context, parameters) => {
-      const result = context.session.botApi.answerCallbackQuery(context.bot, {
+    execute: (context: QueryAnswerContext, parameters) => {
+      const result = context.session.callbackQueries.answerCallbackQuery({
+        fromBotId: context.bot.id,
         callbackQueryId: parameters.callback_query_id,
         text: parameters.text,
         showAlert: parameters.show_alert,
@@ -126,8 +134,20 @@ export const QUERY_ANSWER_METHODS: readonly BotApiMethod[] = [
         .andThen(readInlineQueryAnswerButton)
         .andThen((answer) => parseInlineQueryAnswerResults(call, answer))
         .andThen((answer) => checkInlineQueryAnswerResults(call.context, answer)),
-    execute: (context, request) => {
-      const result = context.session.botApi.answerInlineQuery(context.bot, request);
+    execute: (context: QueryAnswerContext, request) => {
+      const resolution = resolveInlineQueryResults(context, request.results);
+      if (!resolution.resolved) {
+        return presentQueryAnswerFailure({ answered: false, ...resolution.failure });
+      }
+      const result = context.session.inlineQueries.answerInlineQuery({
+        fromBotId: context.bot.id,
+        inlineQueryId: request.inlineQueryId,
+        results: resolution.results,
+        cacheTimeSeconds: request.cacheTimeSeconds,
+        isPersonal: request.isPersonal,
+        nextOffset: request.nextOffset,
+        button: request.button,
+      });
       return result.answered ? botApiResult(true) : presentQueryAnswerFailure(result);
     },
   }),
