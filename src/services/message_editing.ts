@@ -418,8 +418,10 @@ interface PollStore extends NewPollStore {
   closePoll(pollId: PollId): Poll;
 }
 
-/** Takes each event into the transaction of the command that caused it. */
-interface ChatDomainEventSink {
+/** The session's transactions: each edit runs in one, and emits its events into it. */
+interface MessageEditingTransactions {
+  /** Runs a command in the transaction of the command executing, or in one of its own. */
+  withinTransaction<Result>(command: () => Result): Result;
   emit(event: ChatDomainEvent): void;
 }
 
@@ -431,7 +433,8 @@ interface MessageEditingDependencies {
   readonly messages: EditedMessageStore;
   readonly files: FileUploadStore;
   readonly polls: PollStore;
-  readonly events: ChatDomainEventSink;
+  /** Runs each edit as one transaction, which receives the edit's events. */
+  readonly transactions: MessageEditingTransactions;
   readonly currentUnixTimeSeconds: () => number;
 }
 
@@ -445,6 +448,13 @@ interface MessageEditingDependencies {
  * can produce, in Telegram's order. Only changed content dates an edit. As on Telegram, no bot
  * receives an update for a bot's edit; an edit of an account's message, sent directly or through
  * an inline bot, reaches the chat's bots as the account's edited message.
+ *
+ * Each edit runs as one transaction: the files its new content uploads, the edited message and the
+ * updates its event becomes are published together, or, should any step fail, not at all. Every
+ * condition an edit depends on is checked in that transaction, so an edit prepared earlier is
+ * never committed against changed state. Stopping a poll does not run in a transaction of its own
+ * yet: it joins the transaction of a command executing it, and its event is otherwise projected
+ * in a transaction of its own.
  */
 export class MessageEditingService {
   readonly #accounts: AccountLookup;
@@ -453,7 +463,7 @@ export class MessageEditingService {
   readonly #textFixingContext: FormattedTextFixingContext;
   readonly #files: FileUploadStore;
   readonly #polls: PollStore;
-  readonly #events: ChatDomainEventSink;
+  readonly #transactions: MessageEditingTransactions;
   readonly #currentUnixTimeSeconds: () => number;
   readonly #privateChatTargeting: BotEditTargeting<BotPrivateChatEditTypes>;
   readonly #supergroupTargeting: BotEditTargeting<BotSupergroupEditTypes>;
@@ -470,7 +480,7 @@ export class MessageEditingService {
       messages,
       files,
       polls,
-      events,
+      transactions,
       currentUnixTimeSeconds,
     }: MessageEditingDependencies,
   ) {
@@ -480,7 +490,7 @@ export class MessageEditingService {
     this.#messages = messages;
     this.#files = files;
     this.#polls = polls;
-    this.#events = events;
+    this.#transactions = transactions;
     this.#currentUnixTimeSeconds = currentUnixTimeSeconds;
 
     this.#privateChatTargeting = createBotPrivateChatTargeting(privateChats, messages);
@@ -651,86 +661,98 @@ export class MessageEditingService {
     targeting: BotEditTargeting<Types>,
     input: Types['target'] & BotTextEdit,
   ): BotTextEditResult<Types> {
-    if (this.#bots.getById(input.fromBotId) === undefined) {
-      return { edited: false, reason: 'bot_not_found' };
-    }
-    if (input.content.kind === 'text' && input.content.text.length === 0) {
-      return { edited: false, reason: 'message_text_empty' };
-    }
-    const target = this.#reachEditableMessage(targeting, input);
-    if (!target.found) {
-      return { edited: false, reason: target.reason };
-    }
-    const { reached, message } = target;
-    const replacement = replaceMessageText(message.content, input.content, this.#textFixingContext);
-    // As TDLib's `edit_message_text` does, only a rich message is checked as new content.
-    const permissionFailure = replacement.replaced && replacement.content.kind === 'rich_message'
-      ? targeting.findMissingContentPermission(reached, input.fromBotId, replacement.content)
-      : undefined;
-    if (permissionFailure !== undefined) {
-      return { edited: false, ...permissionFailure };
-    }
-    return this.#applyContentReplacement(targeting, message, replacement, input.inlineKeyboard);
+    return this.#transactions.withinTransaction(() => {
+      if (this.#bots.getById(input.fromBotId) === undefined) {
+        return { edited: false, reason: 'bot_not_found' };
+      }
+      if (input.content.kind === 'text' && input.content.text.length === 0) {
+        return { edited: false, reason: 'message_text_empty' };
+      }
+      const target = this.#reachEditableMessage(targeting, input);
+      if (!target.found) {
+        return { edited: false, reason: target.reason };
+      }
+      const { reached, message } = target;
+      const replacement = replaceMessageText(
+        message.content,
+        input.content,
+        this.#textFixingContext,
+      );
+      // As TDLib's `edit_message_text` does, only a rich message is checked as new content.
+      const permissionFailure = replacement.replaced && replacement.content.kind === 'rich_message'
+        ? targeting.findMissingContentPermission(reached, input.fromBotId, replacement.content)
+        : undefined;
+      if (permissionFailure !== undefined) {
+        return { edited: false, ...permissionFailure };
+      }
+      return this.#applyContentReplacement(targeting, message, replacement, input.inlineKeyboard);
+    });
   }
 
   #editCaption<Types extends BotEditTargetingTypes>(
     targeting: BotEditTargeting<Types>,
     input: Types['target'] & BotCaptionEdit,
   ): BotCaptionEditResult<Types> {
-    if (this.#bots.getById(input.fromBotId) === undefined) {
-      return { edited: false, reason: 'bot_not_found' };
-    }
-    const target = this.#reachEditableMessage(targeting, input);
-    if (!target.found) {
-      return { edited: false, reason: target.reason };
-    }
-    const { message } = target;
-    return this.#applyContentReplacement(
-      targeting,
-      message,
-      replaceMessageCaption(message.content, input, 'bot', this.#textFixingContext),
-      input.inlineKeyboard,
-    );
+    return this.#transactions.withinTransaction(() => {
+      if (this.#bots.getById(input.fromBotId) === undefined) {
+        return { edited: false, reason: 'bot_not_found' };
+      }
+      const target = this.#reachEditableMessage(targeting, input);
+      if (!target.found) {
+        return { edited: false, reason: target.reason };
+      }
+      const { message } = target;
+      return this.#applyContentReplacement(
+        targeting,
+        message,
+        replaceMessageCaption(message.content, input, 'bot', this.#textFixingContext),
+        input.inlineKeyboard,
+      );
+    });
   }
 
   #editMedia<Types extends BotEditTargetingTypes>(
     targeting: BotEditTargeting<Types>,
     input: Types['target'] & BotMediaEdit,
   ): BotMediaEditResult<Types> {
-    if (this.#bots.getById(input.fromBotId) === undefined) {
-      return { edited: false, reason: 'bot_not_found' };
-    }
-    const target = this.#reachEditableMessage(targeting, input);
-    if (!target.found) {
-      return { edited: false, reason: target.reason };
-    }
-    const { reached, message } = target;
-    const replacement = replaceMessageMedia(message, input.media, this.#textFixingContext);
-    const permissionFailure = replacement.replaced
-      ? targeting.findMissingContentPermission(reached, input.fromBotId, replacement.content)
-      : undefined;
-    if (permissionFailure !== undefined) {
-      return { edited: false, ...permissionFailure };
-    }
-    return this.#applyContentReplacement(targeting, message, replacement, input.inlineKeyboard);
+    return this.#transactions.withinTransaction(() => {
+      if (this.#bots.getById(input.fromBotId) === undefined) {
+        return { edited: false, reason: 'bot_not_found' };
+      }
+      const target = this.#reachEditableMessage(targeting, input);
+      if (!target.found) {
+        return { edited: false, reason: target.reason };
+      }
+      const { reached, message } = target;
+      const replacement = replaceMessageMedia(message, input.media, this.#textFixingContext);
+      const permissionFailure = replacement.replaced
+        ? targeting.findMissingContentPermission(reached, input.fromBotId, replacement.content)
+        : undefined;
+      if (permissionFailure !== undefined) {
+        return { edited: false, ...permissionFailure };
+      }
+      return this.#applyContentReplacement(targeting, message, replacement, input.inlineKeyboard);
+    });
   }
 
   #editKeyboard<Types extends BotEditTargetingTypes>(
     targeting: BotEditTargeting<Types>,
     input: Types['target'] & BotKeyboardEdit,
   ): BotKeyboardEditResult<Types> {
-    if (this.#bots.getById(input.fromBotId) === undefined) {
-      return { edited: false, reason: 'bot_not_found' };
-    }
-    const target = this.#reachEditableMessage(targeting, input);
-    if (!target.found) {
-      return { edited: false, reason: target.reason };
-    }
-    const { message } = target;
-    return this.#commitBotEdit(targeting, message, {
-      content: { kind: 'existing', content: message.content },
-      inlineKeyboard: input.inlineKeyboard,
-      contentEditedAtUnixSeconds: message.contentEditedAtUnixSeconds,
+    return this.#transactions.withinTransaction(() => {
+      if (this.#bots.getById(input.fromBotId) === undefined) {
+        return { edited: false, reason: 'bot_not_found' };
+      }
+      const target = this.#reachEditableMessage(targeting, input);
+      if (!target.found) {
+        return { edited: false, reason: target.reason };
+      }
+      const { message } = target;
+      return this.#commitBotEdit(targeting, message, {
+        content: { kind: 'existing', content: message.content },
+        inlineKeyboard: input.inlineKeyboard,
+        contentEditedAtUnixSeconds: message.contentEditedAtUnixSeconds,
+      });
     });
   }
 
@@ -772,7 +794,7 @@ export class MessageEditingService {
       inlineKeyboard,
       contentEditedAtUnixSeconds: message.contentEditedAtUnixSeconds,
     });
-    this.#events.emit({ type: 'poll_closed', poll: stoppedPoll });
+    this.#transactions.emit({ type: 'poll_closed', poll: stoppedPoll });
     return { stopped: true, message: stoppedMessage, poll: stoppedPoll };
   }
 
@@ -780,40 +802,42 @@ export class MessageEditingService {
     targeting: AccountEditTargeting<Types>,
     input: Types['target'] & { readonly edit: AccountMessageEdit },
   ): AccountEditResult<Types> {
-    if (this.#accounts.getById(input.fromAccountId) === undefined) {
-      return { edited: false, reason: 'account_not_found' };
-    }
-    const target = targeting.reachMessage(input);
-    if (!target.reached) {
-      return { edited: false, reason: target.reason };
-    }
-    const { message } = target;
-    // As in TDLib, only the inline bot edits a message sent through it, and no one edits a forward
-    // or a service message.
-    if (!isContentMessage(message) || !canAccountEditMessage(message, input.fromAccountId)) {
-      return { edited: false, reason: 'message_not_editable' };
-    }
-    const replacement = replaceAccountMessageContent(
-      message.content,
-      input.edit,
-      this.#textFixingContext,
-    );
-    if (!replacement.replaced) {
-      return { edited: false, ...replacement.failure };
-    }
-    // An account edits only the text or caption of its message, which uploads no file.
-    const content = toContentOfStoredFile(replacement.content);
-    if (isSameMessageContent(content, message.content)) {
-      return { edited: false, reason: 'message_not_modified' };
-    }
+    return this.#transactions.withinTransaction(() => {
+      if (this.#accounts.getById(input.fromAccountId) === undefined) {
+        return { edited: false, reason: 'account_not_found' };
+      }
+      const target = targeting.reachMessage(input);
+      if (!target.reached) {
+        return { edited: false, reason: target.reason };
+      }
+      const { message } = target;
+      // As in TDLib, only the inline bot edits a message sent through it, and no one edits a forward
+      // or a service message.
+      if (!isContentMessage(message) || !canAccountEditMessage(message, input.fromAccountId)) {
+        return { edited: false, reason: 'message_not_editable' };
+      }
+      const replacement = replaceAccountMessageContent(
+        message.content,
+        input.edit,
+        this.#textFixingContext,
+      );
+      if (!replacement.replaced) {
+        return { edited: false, ...replacement.failure };
+      }
+      // An account edits only the text or caption of its message, which uploads no file.
+      const content = toContentOfStoredFile(replacement.content);
+      if (isSameMessageContent(content, message.content)) {
+        return { edited: false, reason: 'message_not_modified' };
+      }
 
-    const editedMessage = targeting.storeEdit(message, {
-      content,
-      inlineKeyboard: message.inlineKeyboard,
-      contentEditedAtUnixSeconds: this.#currentUnixTimeSeconds(),
+      const editedMessage = targeting.storeEdit(message, {
+        content,
+        inlineKeyboard: message.inlineKeyboard,
+        contentEditedAtUnixSeconds: this.#currentUnixTimeSeconds(),
+      });
+      this.#transactions.emit({ type: 'message_edited', message: editedMessage });
+      return { edited: true, message: editedMessage };
     });
-    this.#events.emit({ type: 'message_edited', message: editedMessage });
-    return { edited: true, message: editedMessage };
   }
 
   /**
@@ -897,7 +921,7 @@ export class MessageEditingService {
       ...edit,
       content: storeOutgoingContent(content, this.#files, this.#polls),
     });
-    this.#events.emit({ type: 'message_edited', message: editedMessage });
+    this.#transactions.emit({ type: 'message_edited', message: editedMessage });
     return { edited: true, message: editedMessage };
   }
 }

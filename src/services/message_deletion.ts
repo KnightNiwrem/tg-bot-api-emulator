@@ -218,6 +218,12 @@ type SupergroupDeletionPolicy =
   & SupergroupAccessPredicates
   & ChatMessageLookup<SupergroupChatKey, SupergroupMessage>;
 
+/** The session's transactions, each of which runs one deletion. */
+interface MessageDeletionTransactions {
+  /** Runs a command in the transaction of the command executing, or in one of its own. */
+  withinTransaction<Result>(command: () => Result): Result;
+}
+
 interface MessageDeletionDependencies {
   readonly accounts: AccountLookup;
   readonly bots: BotLookup;
@@ -225,6 +231,8 @@ interface MessageDeletionDependencies {
   readonly supergroups: SupergroupDeletionPolicy;
   readonly messages: DeletedMessageStore;
   readonly privateReplyInterfaces: PrivateReplyInterfaceStore;
+  /** Runs each deletion as one transaction. */
+  readonly transactions: MessageDeletionTransactions;
 }
 
 /**
@@ -235,21 +243,28 @@ interface MessageDeletionDependencies {
  *
  * Each sender and chat type has its own entry point, which reports exactly the failures its chat
  * type can produce, in Telegram's order.
+ *
+ * Each deletion runs as one transaction: the messages it deletes, and the reply interface a
+ * deleted message took with it, go together, or, should any step fail, not at all. Every condition
+ * a deletion depends on is checked in that transaction, so a deletion prepared earlier is never
+ * committed against changed state.
  */
 export class MessageDeletionService {
   readonly #accounts: AccountLookup;
   readonly #bots: BotLookup;
+  readonly #transactions: MessageDeletionTransactions;
   readonly #botPrivateChatTargeting: DeletionTargeting<BotPrivateChatDeletionTypes>;
   readonly #botSupergroupTargeting: DeletionTargeting<BotSupergroupDeletionTypes>;
   readonly #accountPrivateChatTargeting: DeletionTargeting<AccountPrivateChatDeletionTypes>;
   readonly #accountSupergroupTargeting: DeletionTargeting<AccountSupergroupDeletionTypes>;
 
   constructor(
-    { accounts, bots, privateChats, supergroups, messages, privateReplyInterfaces }:
+    { accounts, bots, privateChats, supergroups, messages, privateReplyInterfaces, transactions }:
       MessageDeletionDependencies,
   ) {
     this.#accounts = accounts;
     this.#bots = bots;
+    this.#transactions = transactions;
     const privateChatMessages = createPrivateChatMessageDeletion(
       privateChats,
       messages,
@@ -366,31 +381,33 @@ export class MessageDeletionService {
       readonly messageIds: readonly number[];
     },
   ): BotDeletionResult<Types> {
-    if (this.#bots.getById(fromBotId) === undefined) {
-      return { deleted: false, reason: 'bot_not_found' };
-    }
-    const reach = targeting.reachChat(fromBotId, chat);
-    if (!reach.reached) {
-      return { deleted: false, reason: reach.reason };
-    }
+    return this.#transactions.withinTransaction(() => {
+      if (this.#bots.getById(fromBotId) === undefined) {
+        return { deleted: false, reason: 'bot_not_found' };
+      }
+      const reach = targeting.reachChat(fromBotId, chat);
+      if (!reach.reached) {
+        return { deleted: false, reason: reach.reason };
+      }
 
-    // An ID repeated, or naming a message already found, deletes that message once.
-    const messages = new Map<CanonicalMessageId, Types['message']>();
-    for (const messageId of messageIds) {
-      const message = targeting.findMessage(reach, messageId);
-      if (message === undefined) {
-        continue;
+      // An ID repeated, or naming a message already found, deletes that message once.
+      const messages = new Map<CanonicalMessageId, Types['message']>();
+      for (const messageId of messageIds) {
+        const message = targeting.findMessage(reach, messageId);
+        if (message === undefined) {
+          continue;
+        }
+        const refusal = targeting.findRefusal(reach, fromBotId, message);
+        if (refusal !== undefined) {
+          return { deleted: false, reason: refusal };
+        }
+        messages.set(message.id, message);
       }
-      const refusal = targeting.findRefusal(reach, fromBotId, message);
-      if (refusal !== undefined) {
-        return { deleted: false, reason: refusal };
+      for (const message of messages.values()) {
+        targeting.deleteMessage(reach, message);
       }
-      messages.set(message.id, message);
-    }
-    for (const message of messages.values()) {
-      targeting.deleteMessage(reach, message);
-    }
-    return { deleted: true, deletedMessageCount: messages.size };
+      return { deleted: true, deletedMessageCount: messages.size };
+    });
   }
 
   #deleteAccountMessage<Types extends DeletionTargetingTypes>(
@@ -401,23 +418,25 @@ export class MessageDeletionService {
       readonly messageId: number;
     },
   ): AccountDeletionResult<Types> {
-    if (this.#accounts.getById(fromAccountId) === undefined) {
-      return { deleted: false, reason: 'account_not_found' };
-    }
-    const reach = targeting.reachChat(fromAccountId, chat);
-    if (!reach.reached) {
-      return { deleted: false, reason: reach.reason };
-    }
-    const message = targeting.findMessage(reach, messageId);
-    if (message === undefined) {
-      return { deleted: false, reason: 'message_not_found' };
-    }
-    const refusal = targeting.findRefusal(reach, fromAccountId, message);
-    if (refusal !== undefined) {
-      return { deleted: false, reason: refusal };
-    }
-    targeting.deleteMessage(reach, message);
-    return { deleted: true };
+    return this.#transactions.withinTransaction(() => {
+      if (this.#accounts.getById(fromAccountId) === undefined) {
+        return { deleted: false, reason: 'account_not_found' };
+      }
+      const reach = targeting.reachChat(fromAccountId, chat);
+      if (!reach.reached) {
+        return { deleted: false, reason: reach.reason };
+      }
+      const message = targeting.findMessage(reach, messageId);
+      if (message === undefined) {
+        return { deleted: false, reason: 'message_not_found' };
+      }
+      const refusal = targeting.findRefusal(reach, fromAccountId, message);
+      if (refusal !== undefined) {
+        return { deleted: false, reason: refusal };
+      }
+      targeting.deleteMessage(reach, message);
+      return { deleted: true };
+    });
   }
 }
 

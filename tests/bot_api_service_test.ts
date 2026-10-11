@@ -605,7 +605,7 @@ function createBotApiFixture() {
       messages,
       files,
       polls,
-      events,
+      transactions: { ...events, withinTransaction: (command) => command() },
       currentUnixTimeSeconds: () => 1_700_000_000,
     }),
     messageDeletion: new MessageDeletionService({
@@ -615,6 +615,7 @@ function createBotApiFixture() {
       supergroups,
       messages,
       privateReplyInterfaces: privateConversations,
+      transactions: { withinTransaction: (command) => command() },
     }),
     messageRepeater: new BotMessageRepeater({
       messageSender,

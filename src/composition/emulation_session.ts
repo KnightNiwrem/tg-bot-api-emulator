@@ -165,7 +165,7 @@ export function createEmulationSession(
     transactions,
     currentUnixTimeSeconds,
   });
-  const privateConversations = new PrivateConversationRepository();
+  const privateConversations = new PrivateConversationRepository(journal);
   const blockedUsers = new BlockedUserRepository();
   const messageDrafts = new MessageDraftService({
     accounts,
@@ -228,7 +228,7 @@ export function createEmulationSession(
     messages,
     files,
     polls,
-    events: transactions,
+    transactions,
     currentUnixTimeSeconds,
   });
   const messageDeletion = new MessageDeletionService({
@@ -238,6 +238,7 @@ export function createEmulationSession(
     supergroups,
     messages,
     privateReplyInterfaces: privateConversations,
+    transactions,
   });
   const accountChatMessages = createAccountChatMessageReader({
     accounts,

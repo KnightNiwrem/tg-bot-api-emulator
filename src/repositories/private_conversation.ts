@@ -1,3 +1,5 @@
+import { type ChangeStaging, UNSTAGED_CHANGES } from '../transactions/change_staging.ts';
+import { TransactionalMap, TransactionalSet } from '../transactions/transactional_collections.ts';
 import {
   createChatInstance,
   type PrivateConversation,
@@ -11,14 +13,26 @@ import type { CanonicalMessageId } from '../types/virtual_message.ts';
  * to the account at any time.
  */
 export class PrivateConversationRepository {
-  readonly #privateConversationsByAccountId = new Map<number, Map<number, PrivateConversation>>();
-  /** The bot IDs of the conversations each account started, keyed by account ID. */
-  readonly #startedBotIdsByAccountId = new Map<number, Set<number>>();
-  /** Keyed like conversations: by account ID, then by bot ID. */
-  readonly #replyInterfaceMessageIdsByAccountId = new Map<
+  readonly #staging: ChangeStaging;
+  readonly #privateConversationsByAccountId: TransactionalMap<
     number,
-    Map<number, CanonicalMessageId>
-  >();
+    TransactionalMap<number, PrivateConversation>
+  >;
+  /** The bot IDs of the conversations each account started, keyed by account ID. */
+  readonly #startedBotIdsByAccountId: TransactionalMap<number, TransactionalSet<number>>;
+  /** Keyed like conversations: by account ID, then by bot ID. */
+  readonly #replyInterfaceMessageIdsByAccountId: TransactionalMap<
+    number,
+    TransactionalMap<number, CanonicalMessageId>
+  >;
+
+  /** `staging` decides how the repository's writes take part in its session's transactions. */
+  constructor(staging: ChangeStaging = UNSTAGED_CHANGES) {
+    this.#staging = staging;
+    this.#privateConversationsByAccountId = new TransactionalMap(staging);
+    this.#startedBotIdsByAccountId = new TransactionalMap(staging);
+    this.#replyInterfaceMessageIdsByAccountId = new TransactionalMap(staging);
+  }
 
   /**
    * Records that the account started its conversation with the bot, which creates the
@@ -26,7 +40,8 @@ export class PrivateConversationRepository {
    */
   startPrivateConversation(key: PrivateConversationKey): PrivateConversation {
     const conversation = this.openPrivateConversation(key);
-    const startedBotIds = this.#startedBotIdsByAccountId.get(key.accountId) ?? new Set<number>();
+    const startedBotIds = this.#startedBotIdsByAccountId.get(key.accountId) ??
+      new TransactionalSet<number>(this.#staging);
     startedBotIds.add(key.botId);
     this.#startedBotIdsByAccountId.set(key.accountId, startedBotIds);
     return conversation;
@@ -56,7 +71,7 @@ export class PrivateConversationRepository {
       chatInstance: createChatInstance(),
     };
     const conversationsByBotId = this.#privateConversationsByAccountId.get(input.accountId) ??
-      new Map<number, PrivateConversation>();
+      new TransactionalMap<number, PrivateConversation>(this.#staging);
     conversationsByBotId.set(input.botId, conversation);
     this.#privateConversationsByAccountId.set(input.accountId, conversationsByBotId);
 
@@ -90,7 +105,7 @@ export class PrivateConversationRepository {
       );
     }
     const messageIdsByBotId = this.#replyInterfaceMessageIdsByAccountId.get(accountId) ??
-      new Map<number, CanonicalMessageId>();
+      new TransactionalMap<number, CanonicalMessageId>(this.#staging);
     if (messageId === undefined) {
       messageIdsByBotId.delete(botId);
     } else {

@@ -390,6 +390,7 @@ function createReactionFixture() {
     supergroups: new SupergroupChatPolicy({ sharedChats, supergroupMessages: supergroupMessaging }),
     messages,
     privateReplyInterfaces: privateConversations,
+    transactions: { withinTransaction: (command) => command() },
   });
   const messageReactions = new MessageReactionService({
     accounts,

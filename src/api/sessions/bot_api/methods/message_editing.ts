@@ -25,11 +25,13 @@ import {
 import { messageEntitiesParameter } from '../message_entities_parameter.ts';
 import { messageIdOrNone, NO_MESSAGE_ID } from '../message_identifiers.ts';
 import {
+  answeredPreparation,
+  answeredPreparationUnlessEnded,
+  type BotApiCallPreparation,
   botApiError,
   type BotApiMethod,
   type BotApiMethodAnswer,
   type BotApiMethodContext,
-  type BotApiMethodOutcome,
   botApiResult,
   SESSION_ENDED,
 } from '../method_call.ts';
@@ -52,12 +54,15 @@ import {
   type WebFileResolution,
 } from '../web_file_parameter.ts';
 
-/** The methods that edit a sent message, or stop its poll. */
+/**
+ * The methods that edit a sent message, each executed as a command in its call's transaction, and
+ * `stopPoll`, which stops a sent message's poll.
+ */
 export const MESSAGE_EDITING_METHODS: readonly BotApiMethod[] = [
-  { name: 'editMessageCaption', recordsActivity: true, handler: handleEditMessageCaption },
-  { name: 'editMessageMedia', recordsActivity: true, handler: handleEditMessageMedia },
-  { name: 'editMessageReplyMarkup', recordsActivity: true, handler: handleEditMessageReplyMarkup },
-  { name: 'editMessageText', recordsActivity: true, handler: handleEditMessageText },
+  { name: 'editMessageCaption', recordsActivity: true, prepare: prepareEditMessageCaption },
+  { name: 'editMessageMedia', recordsActivity: true, prepare: prepareEditMessageMedia },
+  { name: 'editMessageReplyMarkup', recordsActivity: true, prepare: prepareEditMessageReplyMarkup },
+  { name: 'editMessageText', recordsActivity: true, prepare: prepareEditMessageText },
   { name: 'stopPoll', recordsActivity: true, handler: handleStopPoll },
 ];
 
@@ -141,15 +146,22 @@ type EditedMessageTargetReading =
   }
   | { readonly read: false; readonly errorAnswer: BotApiMethodAnswer };
 
-async function handleEditMessageText(
+/**
+ * Prepares `editMessageText`: it reads the new content, the message and the keyboard, and
+ * downloads the files new rich content names by URL. Finding the message, with every check of the
+ * bot's access to it, waits for the call's execution.
+ */
+async function prepareEditMessageText(
   context: BotApiMethodContext,
   parameters: BotApiRequestParameters,
   uploadedFiles: BotApiUploadedFiles,
-): Promise<BotApiMethodOutcome> {
+): Promise<BotApiCallPreparation | typeof SESSION_ENDED> {
   const invalidParametersDescription = describeInvalidMethodParameters('editMessageText');
   const parsedParameters = editMessageTextParametersSchema.safeParse(parameters);
   if (!parsedParameters.success) {
-    return invalidMethodParametersAnswer('editMessageText', parsedParameters.error);
+    return answeredPreparation(
+      invalidMethodParametersAnswer('editMessageText', parsedParameters.error),
+    );
   }
   // Telegram reads the new content before it looks for the message.
   const contentReading = readTextMessageReplacement(
@@ -159,16 +171,16 @@ async function handleEditMessageText(
     invalidParametersDescription,
   );
   if (!contentReading.read) {
-    return contentReading.errorAnswer;
+    return answeredPreparation(contentReading.errorAnswer);
   }
   const targetReading = readEditedMessageTarget(parsedParameters.data);
   if (!targetReading.read) {
-    return targetReading.errorAnswer;
+    return answeredPreparation(targetReading.errorAnswer);
   }
 
   const keyboardReading = readInlineKeyboardParameter(context, parsedParameters.data.reply_markup);
   if (!keyboardReading.read) {
-    return keyboardReading.errorAnswer;
+    return answeredPreparation(keyboardReading.errorAnswer);
   }
 
   const contentResolution = await resolveTextMessageReplacement(context, contentReading.content);
@@ -176,15 +188,20 @@ async function handleEditMessageText(
     return SESSION_ENDED;
   }
   if (!contentResolution.resolved) {
-    return contentResolution.errorAnswer;
+    return answeredPreparationUnlessEnded(contentResolution.errorAnswer);
   }
 
   const { target } = targetReading;
-  const { botApi } = context.session;
   const edit = { content: contentResolution.value, inlineKeyboard: keyboardReading.inlineKeyboard };
-  return target.kind === 'inline_message'
-    ? inlineMessageEditAnswer(botApi.editInlineMessageText(context.bot, { ...target, ...edit }))
-    : chatMessageEditAnswer(botApi.editMessageText(context.bot, { ...target, ...edit }));
+  return {
+    kind: 'command',
+    execute: () => {
+      const { botApi } = context.session;
+      return target.kind === 'inline_message'
+        ? inlineMessageEditAnswer(botApi.editInlineMessageText(context.bot, { ...target, ...edit }))
+        : chatMessageEditAnswer(botApi.editMessageText(context.bot, { ...target, ...edit }));
+    },
+  };
 }
 
 /** Downloads the files that new rich message content names by URL; text has none. */
@@ -240,58 +257,72 @@ function readTextMessageReplacement(
     : formattedTextReading;
 }
 
-function handleEditMessageCaption(
+/**
+ * Prepares `editMessageCaption`: it reads the caption, the message and the keyboard; finding the
+ * message waits for the call's execution.
+ */
+function prepareEditMessageCaption(
   context: BotApiMethodContext,
   parameters: BotApiRequestParameters,
-): BotApiMethodAnswer {
+): BotApiCallPreparation {
   const invalidParametersDescription = describeInvalidMethodParameters('editMessageCaption');
   const parsedParameters = editMessageCaptionParametersSchema.safeParse(parameters);
   if (!parsedParameters.success) {
-    return invalidMethodParametersAnswer('editMessageCaption', parsedParameters.error);
+    return answeredPreparation(
+      invalidMethodParametersAnswer('editMessageCaption', parsedParameters.error),
+    );
   }
   const { data } = parsedParameters;
   // Telegram reads the caption and its formatting before it looks for the message.
   const captionReading = readSpecifiedCaption(context, data, invalidParametersDescription);
   if (!captionReading.read) {
-    return captionReading.errorAnswer;
+    return answeredPreparation(captionReading.errorAnswer);
   }
   const targetReading = readEditedMessageTarget(data);
   if (!targetReading.read) {
-    return targetReading.errorAnswer;
+    return answeredPreparation(targetReading.errorAnswer);
   }
   const keyboardReading = readInlineKeyboardParameter(context, data.reply_markup);
   if (!keyboardReading.read) {
-    return keyboardReading.errorAnswer;
+    return answeredPreparation(keyboardReading.errorAnswer);
   }
 
   const { target } = targetReading;
-  const { botApi } = context.session;
   const edit = {
     caption: captionReading.formattedText,
     showsCaptionAboveMedia: data.show_caption_above_media,
     inlineKeyboard: keyboardReading.inlineKeyboard,
   };
-  return target.kind === 'inline_message'
-    ? inlineMessageEditAnswer(
-      botApi.editInlineMessageCaption(context.bot, { ...target, ...edit }),
-    )
-    : chatMessageEditAnswer(botApi.editMessageCaption(context.bot, { ...target, ...edit }));
+  return {
+    kind: 'command',
+    execute: () => {
+      const { botApi } = context.session;
+      return target.kind === 'inline_message'
+        ? inlineMessageEditAnswer(
+          botApi.editInlineMessageCaption(context.bot, { ...target, ...edit }),
+        )
+        : chatMessageEditAnswer(botApi.editMessageCaption(context.bot, { ...target, ...edit }));
+    },
+  };
 }
 
 /**
  * Replaces a message's media, as the official Bot API server's `process_edit_message_media_query`
  * does: the `media` parameter is read as `readInputMediaParameter` reads it, with its caption
- * reported as media Telegram cannot read, before the message is looked for.
+ * reported as media Telegram cannot read, before the message is looked for. Preparing it reads the
+ * parameters and downloads a file named by URL; finding the message waits for the call's execution.
  */
-async function handleEditMessageMedia(
+async function prepareEditMessageMedia(
   context: BotApiMethodContext,
   parameters: BotApiRequestParameters,
   uploadedFiles: BotApiUploadedFiles,
-): Promise<BotApiMethodOutcome> {
+): Promise<BotApiCallPreparation | typeof SESSION_ENDED> {
   const invalidParametersDescription = describeInvalidMethodParameters('editMessageMedia');
   const parsedParameters = editMessageMediaParametersSchema.safeParse(parameters);
   if (!parsedParameters.success) {
-    return invalidMethodParametersAnswer('editMessageMedia', parsedParameters.error);
+    return answeredPreparation(
+      invalidMethodParametersAnswer('editMessageMedia', parsedParameters.error),
+    );
   }
   const { data } = parsedParameters;
   const mediaReading = readInputMediaParameter(
@@ -300,7 +331,7 @@ async function handleEditMessageMedia(
     invalidParametersDescription,
   );
   if (!mediaReading.read) {
-    return botApiError(400, mediaReading.description);
+    return answeredPreparation(botApiError(400, mediaReading.description));
   }
   const captionReading = readEmbeddedFormattedText(
     context,
@@ -309,15 +340,15 @@ async function handleEditMessageMedia(
     INPUT_MEDIA_ERROR_PREFIX,
   );
   if (!captionReading.read) {
-    return botApiError(400, captionReading.description);
+    return answeredPreparation(botApiError(400, captionReading.description));
   }
   const targetReading = readEditedMessageTarget(data);
   if (!targetReading.read) {
-    return targetReading.errorAnswer;
+    return answeredPreparation(targetReading.errorAnswer);
   }
   const keyboardReading = readInlineKeyboardParameter(context, data.reply_markup);
   if (!keyboardReading.read) {
-    return keyboardReading.errorAnswer;
+    return answeredPreparation(keyboardReading.errorAnswer);
   }
 
   const { media } = mediaReading;
@@ -330,49 +361,67 @@ async function handleEditMessageMedia(
     return SESSION_ENDED;
   }
   if (!fileResolution.resolved) {
-    return fileResolution.errorAnswer;
+    return answeredPreparationUnlessEnded(fileResolution.errorAnswer);
   }
 
   const { target } = targetReading;
-  const { botApi } = context.session;
   const edit = {
     media: toMediaReplacementRequest(media, fileResolution.value, captionReading.formattedText),
     inlineKeyboard: keyboardReading.inlineKeyboard,
   };
-  return target.kind === 'inline_message'
-    ? inlineMessageEditAnswer(botApi.editInlineMessageMedia(context.bot, { ...target, ...edit }))
-    : chatMessageEditAnswer(botApi.editMessageMedia(context.bot, { ...target, ...edit }));
+  return {
+    kind: 'command',
+    execute: () => {
+      const { botApi } = context.session;
+      return target.kind === 'inline_message'
+        ? inlineMessageEditAnswer(
+          botApi.editInlineMessageMedia(context.bot, { ...target, ...edit }),
+        )
+        : chatMessageEditAnswer(botApi.editMessageMedia(context.bot, { ...target, ...edit }));
+    },
+  };
 }
 
-function handleEditMessageReplyMarkup(
+/**
+ * Prepares `editMessageReplyMarkup`: it reads the message and the keyboard; finding the message
+ * waits for the call's execution.
+ */
+function prepareEditMessageReplyMarkup(
   context: BotApiMethodContext,
   parameters: BotApiRequestParameters,
-): BotApiMethodAnswer {
+): BotApiCallPreparation {
   const parsedParameters = editMessageReplyMarkupParametersSchema.safeParse(parameters);
   if (!parsedParameters.success) {
-    return invalidMethodParametersAnswer('editMessageReplyMarkup', parsedParameters.error);
+    return answeredPreparation(
+      invalidMethodParametersAnswer('editMessageReplyMarkup', parsedParameters.error),
+    );
   }
   const targetReading = readEditedMessageTarget(parsedParameters.data);
   if (!targetReading.read) {
-    return targetReading.errorAnswer;
+    return answeredPreparation(targetReading.errorAnswer);
   }
 
   const keyboardReading = readInlineKeyboardParameter(context, parsedParameters.data.reply_markup);
   if (!keyboardReading.read) {
-    return keyboardReading.errorAnswer;
+    return answeredPreparation(keyboardReading.errorAnswer);
   }
 
   const { target } = targetReading;
-  const { botApi } = context.session;
   const { inlineKeyboard } = keyboardReading;
-  return target.kind === 'inline_message'
-    ? inlineMessageEditAnswer(botApi.editInlineMessageReplyMarkup(context.bot, {
-      ...target,
-      inlineKeyboard,
-    }))
-    : chatMessageEditAnswer(
-      botApi.editMessageReplyMarkup(context.bot, { ...target, inlineKeyboard }),
-    );
+  return {
+    kind: 'command',
+    execute: () => {
+      const { botApi } = context.session;
+      return target.kind === 'inline_message'
+        ? inlineMessageEditAnswer(botApi.editInlineMessageReplyMarkup(context.bot, {
+          ...target,
+          inlineKeyboard,
+        }))
+        : chatMessageEditAnswer(
+          botApi.editMessageReplyMarkup(context.bot, { ...target, inlineKeyboard }),
+        );
+    },
+  };
 }
 
 /**

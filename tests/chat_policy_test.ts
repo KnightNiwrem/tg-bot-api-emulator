@@ -425,6 +425,7 @@ function createChatPolicyFixture() {
       supergroups,
       messages,
       privateReplyInterfaces: privateConversations,
+      transactions: { withinTransaction: (command) => command() },
     }),
     privateChats,
     supergroups,
