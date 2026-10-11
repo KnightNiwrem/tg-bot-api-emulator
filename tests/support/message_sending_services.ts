@@ -22,7 +22,10 @@ export interface MessageSendingServiceSources {
   readonly files: SendingDependencies['files'];
   readonly polls: SendingDependencies['polls'];
   readonly messageBoxes: CommitterDependencies['messageBoxes'];
-  readonly events: CommitterDependencies['events'];
+  /** The transactions each send and commit runs in, and that receives their events. */
+  readonly transactions:
+    & CommitterDependencies['transactions']
+    & SendingDependencies['transactions'];
   /** Omitted where no join request lets a bot write to an account that never started the chat. */
   readonly joinRequesterContacts?: SendingDependencies['joinRequesterContacts'];
   /** Omitted where no bot shows a message draft, which a bot's message would remove. */
@@ -42,7 +45,7 @@ export function createMessageSendingServices(
     files,
     polls,
     messageBoxes,
-    events,
+    transactions,
     joinRequesterContacts = {
       claimJoinRequesterContact: () => {
         throw new Error('No join request lets a bot contact an account in this test');
@@ -59,7 +62,7 @@ export function createMessageSendingServices(
     messageBoxes,
     privateReplyInterfaces: privateConversations,
     supergroupMembers: sharedChats,
-    events,
+    transactions,
     messageDrafts,
     currentUnixTimeSeconds,
   });
@@ -74,6 +77,7 @@ export function createMessageSendingServices(
     files,
     polls,
     commits: messageCommitter,
+    transactions,
     currentUnixTimeSeconds,
   });
   return { messageCommitter, messageSending };

@@ -40,12 +40,12 @@ import {
 import { messageEntitiesParameter } from '../message_entities_parameter.ts';
 import {
   answeredPreparation,
+  answeredPreparationUnlessEnded,
   type BotApiCallPreparation,
   botApiError,
   type BotApiMethod,
   type BotApiMethodAnswer,
   type BotApiMethodContext,
-  type BotApiMethodOutcome,
   botApiResult,
   SESSION_ENDED,
 } from '../method_call.ts';
@@ -73,23 +73,25 @@ import {
 import { resolveRequestedInputFile } from '../web_file_parameter.ts';
 
 /**
- * The methods that send a new message, or show a chat action or a draft before one. Showing a chat
- * action or a draft is executed as a command in its call's transaction.
+ * The methods that send a new message, or show a chat action or a draft before one, each executed
+ * as a command in its call's transaction. Preparation reads the parameters, including the send
+ * options, whose reply to another chat is read from the session, and downloads the files named by
+ * URL; execution reaches the chat and makes every other check before it sends.
  */
 export const MESSAGE_SENDING_METHODS: readonly BotApiMethod[] = [
-  { name: 'sendAudio', recordsActivity: true, handler: handleSendAudio },
+  { name: 'sendAudio', recordsActivity: true, prepare: prepareSendAudio },
   { name: 'sendChatAction', recordsActivity: true, prepare: prepareSendChatAction },
-  { name: 'sendContact', recordsActivity: true, handler: handleSendContact },
-  { name: 'sendDocument', recordsActivity: true, handler: handleSendDocument },
-  { name: 'sendLocation', recordsActivity: true, handler: handleSendLocation },
-  { name: 'sendMediaGroup', recordsActivity: true, handler: handleSendMediaGroup },
-  { name: 'sendMessage', recordsActivity: true, handler: handleSendMessage },
+  { name: 'sendContact', recordsActivity: true, prepare: prepareSendContact },
+  { name: 'sendDocument', recordsActivity: true, prepare: prepareSendDocument },
+  { name: 'sendLocation', recordsActivity: true, prepare: prepareSendLocation },
+  { name: 'sendMediaGroup', recordsActivity: true, prepare: prepareSendMediaGroup },
+  { name: 'sendMessage', recordsActivity: true, prepare: prepareSendMessage },
   { name: 'sendMessageDraft', recordsActivity: true, prepare: prepareSendMessageDraft },
-  { name: 'sendPhoto', recordsActivity: true, handler: handleSendPhoto },
-  { name: 'sendPoll', recordsActivity: true, handler: handleSendPoll },
-  { name: 'sendRichMessage', recordsActivity: true, handler: handleSendRichMessage },
-  { name: 'sendVideo', recordsActivity: true, handler: handleSendVideo },
-  { name: 'sendVoice', recordsActivity: true, handler: handleSendVoice },
+  { name: 'sendPhoto', recordsActivity: true, prepare: prepareSendPhoto },
+  { name: 'sendPoll', recordsActivity: true, prepare: prepareSendPoll },
+  { name: 'sendRichMessage', recordsActivity: true, prepare: prepareSendRichMessage },
+  { name: 'sendVideo', recordsActivity: true, prepare: prepareSendVideo },
+  { name: 'sendVoice', recordsActivity: true, prepare: prepareSendVoice },
 ];
 
 /** Chat actions by the lowercase names Telegram reads, including its older aliases. */
@@ -276,6 +278,8 @@ const sendChatActionParametersSchema = z.strictObject({
   action: z.string().default(''),
 });
 
+type SendResult = ReturnType<EmulationSession['botApi']['sendMessage']>;
+
 type SendMediaGroupResult = ReturnType<EmulationSession['botApi']['sendMediaGroup']>;
 
 /**
@@ -289,14 +293,16 @@ type MediaReplacementRequest = Parameters<
 /** A poll's type as `sendPoll` takes it. */
 type PollTypeRequest = Parameters<EmulationSession['botApi']['sendPoll']>[1]['type'];
 
-function handleSendMessage(
+function prepareSendMessage(
   context: BotApiMethodContext,
   parameters: BotApiRequestParameters,
-): BotApiMethodAnswer {
+): BotApiCallPreparation {
   const invalidParametersDescription = 'Bad Request: invalid sendMessage parameters';
   const parsedParameters = sendMessageParametersSchema.safeParse(parameters);
   if (!parsedParameters.success) {
-    return parameterSchemaFailureAnswer(parsedParameters.error, invalidParametersDescription);
+    return answeredPreparation(
+      parameterSchemaFailureAnswer(parsedParameters.error, invalidParametersDescription),
+    );
   }
   const { text, parse_mode: parseMode, entities } = parsedParameters.data;
   // Telegram reads the text and its formatting before it looks at the chat.
@@ -306,7 +312,7 @@ function handleSendMessage(
     invalidParametersDescription,
   );
   if (!formattedTextReading.read) {
-    return formattedTextReading.errorAnswer;
+    return answeredPreparation(formattedTextReading.errorAnswer);
   }
   const optionsReading = readSendOptions(
     context,
@@ -314,13 +320,15 @@ function handleSendMessage(
     invalidParametersDescription,
   );
   if (!optionsReading.read) {
-    return optionsReading.errorAnswer;
+    return answeredPreparation(optionsReading.errorAnswer);
   }
 
-  return sendMethodAnswer(context.session.botApi.sendMessage(context.bot, {
-    ...optionsReading.options,
-    ...formattedTextReading.formattedText,
-  }));
+  return sendingCommand(() =>
+    context.session.botApi.sendMessage(context.bot, {
+      ...optionsReading.options,
+      ...formattedTextReading.formattedText,
+    })
+  );
 }
 
 /**
@@ -328,36 +336,42 @@ function handleSendMessage(
  * the chat: a phone number and a first name, each required, and an optional last name and vCard.
  * As that method does, a bot names no Telegram user for the contact.
  */
-function handleSendContact(
+function prepareSendContact(
   context: BotApiMethodContext,
   parameters: BotApiRequestParameters,
-): BotApiMethodAnswer {
+): BotApiCallPreparation {
   const invalidParametersDescription = 'Bad Request: invalid sendContact parameters';
   const parsedParameters = sendContactParametersSchema.safeParse(parameters);
   if (!parsedParameters.success) {
-    return parameterSchemaFailureAnswer(parsedParameters.error, invalidParametersDescription);
+    return answeredPreparation(
+      parameterSchemaFailureAnswer(parsedParameters.error, invalidParametersDescription),
+    );
   }
   const { data } = parsedParameters;
   if (data.phone_number.length === 0) {
-    return botApiError(400, 'Bad Request: parameter "phone_number" is required');
+    return answeredPreparation(
+      botApiError(400, 'Bad Request: parameter "phone_number" is required'),
+    );
   }
   if (data.first_name.length === 0) {
-    return botApiError(400, 'Bad Request: parameter "first_name" is required');
+    return answeredPreparation(botApiError(400, 'Bad Request: parameter "first_name" is required'));
   }
   const optionsReading = readSendOptions(context, data, invalidParametersDescription);
   if (!optionsReading.read) {
-    return optionsReading.errorAnswer;
+    return answeredPreparation(optionsReading.errorAnswer);
   }
 
-  return sendMethodAnswer(context.session.botApi.sendContact(context.bot, {
-    ...optionsReading.options,
-    contact: {
-      phoneNumber: data.phone_number,
-      firstName: data.first_name,
-      lastName: data.last_name,
-      vcard: data.vcard,
-    },
-  }));
+  return sendingCommand(() =>
+    context.session.botApi.sendContact(context.bot, {
+      ...optionsReading.options,
+      contact: {
+        phoneNumber: data.phone_number,
+        firstName: data.first_name,
+        lastName: data.last_name,
+        vcard: data.vcard,
+      },
+    })
+  );
 }
 
 /**
@@ -368,45 +382,49 @@ function handleSendContact(
  * `chat_id` and the reply markup, but before it looks the chat up, while TDLib checks them once
  * the chat is found.
  */
-function handleSendLocation(
+function prepareSendLocation(
   context: BotApiMethodContext,
   parameters: BotApiRequestParameters,
-): BotApiMethodAnswer {
+): BotApiCallPreparation {
   const invalidParametersDescription = 'Bad Request: invalid sendLocation parameters';
   const parsedParameters = sendLocationParametersSchema.safeParse(parameters);
   if (!parsedParameters.success) {
-    return parameterSchemaFailureAnswer(parsedParameters.error, invalidParametersDescription);
+    return answeredPreparation(
+      parameterSchemaFailureAnswer(parsedParameters.error, invalidParametersDescription),
+    );
   }
   const { data } = parsedParameters;
   if (data.latitude === undefined) {
-    return botApiError(400, 'Bad Request: latitude is empty');
+    return answeredPreparation(botApiError(400, 'Bad Request: latitude is empty'));
   }
   if (data.longitude === undefined) {
-    return botApiError(400, 'Bad Request: longitude is empty');
+    return answeredPreparation(botApiError(400, 'Bad Request: longitude is empty'));
   }
   const optionsReading = readSendOptions(context, data, invalidParametersDescription);
   if (!optionsReading.read) {
-    return optionsReading.errorAnswer;
+    return answeredPreparation(optionsReading.errorAnswer);
   }
   if (!isPointOnEarth(data.latitude, data.longitude)) {
-    return botApiError(400, LOCATION_INVALID_DESCRIPTION);
+    return answeredPreparation(botApiError(400, LOCATION_INVALID_DESCRIPTION));
   }
 
-  return sendMethodAnswer(context.session.botApi.sendLocation(context.bot, {
-    ...optionsReading.options,
-    location: createGeoLocation(data.latitude, data.longitude, data.horizontal_accuracy ?? 0),
-  }));
+  const location = createGeoLocation(data.latitude, data.longitude, data.horizontal_accuracy ?? 0);
+  return sendingCommand(() =>
+    context.session.botApi.sendLocation(context.bot, { ...optionsReading.options, location })
+  );
 }
 
-async function handleSendRichMessage(
+async function prepareSendRichMessage(
   context: BotApiMethodContext,
   parameters: BotApiRequestParameters,
   uploadedFiles: BotApiUploadedFiles,
-): Promise<BotApiMethodOutcome> {
+): Promise<BotApiCallPreparation | typeof SESSION_ENDED> {
   const invalidParametersDescription = 'Bad Request: invalid sendRichMessage parameters';
   const parsedParameters = sendRichMessageParametersSchema.safeParse(parameters);
   if (!parsedParameters.success) {
-    return parameterSchemaFailureAnswer(parsedParameters.error, invalidParametersDescription);
+    return answeredPreparation(
+      parameterSchemaFailureAnswer(parsedParameters.error, invalidParametersDescription),
+    );
   }
   const { data } = parsedParameters;
   // Telegram reads the rich message before it looks at the chat.
@@ -417,11 +435,11 @@ async function handleSendRichMessage(
     invalidParametersDescription,
   );
   if (!richMessageReading.read) {
-    return richMessageReading.errorAnswer;
+    return answeredPreparation(richMessageReading.errorAnswer);
   }
   const optionsReading = readSendOptions(context, data, invalidParametersDescription);
   if (!optionsReading.read) {
-    return optionsReading.errorAnswer;
+    return answeredPreparation(optionsReading.errorAnswer);
   }
 
   const richMessageResolution = await resolveSpecifiedRichMessage(
@@ -432,13 +450,15 @@ async function handleSendRichMessage(
     return SESSION_ENDED;
   }
   if (!richMessageResolution.resolved) {
-    return richMessageResolution.errorAnswer;
+    return answeredPreparationUnlessEnded(richMessageResolution.errorAnswer);
   }
 
-  return sendMethodAnswer(context.session.botApi.sendRichMessage(context.bot, {
-    ...optionsReading.options,
-    ...richMessageResolution.value,
-  }));
+  return sendingCommand(() =>
+    context.session.botApi.sendRichMessage(context.bot, {
+      ...optionsReading.options,
+      ...richMessageResolution.value,
+    })
+  );
 }
 
 /**
@@ -449,14 +469,16 @@ async function handleSendRichMessage(
  * ignores, and both `open_period` and `close_date`, of which the server ignores `close_date`, are
  * rejected to surface the bot's mistake.
  */
-function handleSendPoll(
+function prepareSendPoll(
   context: BotApiMethodContext,
   parameters: BotApiRequestParameters,
-): BotApiMethodAnswer {
+): BotApiCallPreparation {
   const invalidParametersDescription = 'Bad Request: invalid sendPoll parameters';
   const parsedParameters = sendPollParametersSchema.safeParse(parameters);
   if (!parsedParameters.success) {
-    return parameterSchemaFailureAnswer(parsedParameters.error, invalidParametersDescription);
+    return answeredPreparation(
+      parameterSchemaFailureAnswer(parsedParameters.error, invalidParametersDescription),
+    );
   }
   const { data } = parsedParameters;
   const questionReading = readFormattedTextParameters(
@@ -465,11 +487,11 @@ function handleSendPoll(
     invalidParametersDescription,
   );
   if (!questionReading.read) {
-    return botApiError(400, questionReading.description);
+    return answeredPreparation(botApiError(400, questionReading.description));
   }
   const optionsReading = readInputPollOptionsParameter(data.options, invalidParametersDescription);
   if (!optionsReading.read) {
-    return botApiError(400, optionsReading.description);
+    return answeredPreparation(botApiError(400, optionsReading.description));
   }
   const pollOptions: SpecifiedFormattedText[] = [];
   for (const option of optionsReading.options) {
@@ -479,43 +501,47 @@ function handleSendPoll(
       invalidParametersDescription,
     );
     if (!optionReading.read) {
-      return botApiError(
+      return answeredPreparation(botApiError(
         400,
         optionReading.description === invalidParametersDescription
           ? invalidParametersDescription
           : describeInputPollOptionTextError(optionReading.description),
-      );
+      ));
     }
     pollOptions.push(optionReading.formattedText);
   }
   const typeReading = readPollTypeParameters(context, data, invalidParametersDescription);
   if (!typeReading.read) {
-    return typeReading.errorAnswer;
+    return answeredPreparation(typeReading.errorAnswer);
   }
   if (data.open_period !== undefined && data.close_date !== undefined) {
-    return botApiError(400, "Bad Request: open_period and close_date can't be used together");
+    return answeredPreparation(
+      botApiError(400, "Bad Request: open_period and close_date can't be used together"),
+    );
   }
   const sendOptionsReading = readSendOptions(context, data, invalidParametersDescription);
   if (!sendOptionsReading.read) {
-    return sendOptionsReading.errorAnswer;
+    return answeredPreparation(sendOptionsReading.errorAnswer);
   }
 
-  return sendMethodAnswer(context.session.botApi.sendPoll(context.bot, {
-    ...sendOptionsReading.options,
-    question: questionReading.formattedText,
-    pollOptions,
-    isAnonymous: data.is_anonymous,
-    allowsMultipleAnswers: data.allows_multiple_answers,
-    allowsRevoting: data.allows_revoting ?? typeReading.type.kind === 'regular',
-    type: typeReading.type,
-    isClosed: data.is_closed,
-    ...(data.open_period === undefined
-      ? {}
-      : { closingTime: { kind: 'open_period', openPeriodSeconds: data.open_period } }),
-    ...(data.close_date === undefined
-      ? {}
-      : { closingTime: { kind: 'close_date', closeDateUnixSeconds: data.close_date } }),
-  }));
+  return sendingCommand(() =>
+    context.session.botApi.sendPoll(context.bot, {
+      ...sendOptionsReading.options,
+      question: questionReading.formattedText,
+      pollOptions,
+      isAnonymous: data.is_anonymous,
+      allowsMultipleAnswers: data.allows_multiple_answers,
+      allowsRevoting: data.allows_revoting ?? typeReading.type.kind === 'regular',
+      type: typeReading.type,
+      isClosed: data.is_closed,
+      ...(data.open_period === undefined
+        ? {}
+        : { closingTime: { kind: 'open_period', openPeriodSeconds: data.open_period } }),
+      ...(data.close_date === undefined
+        ? {}
+        : { closingTime: { kind: 'close_date', closeDateUnixSeconds: data.close_date } }),
+    })
+  );
 }
 
 /**
@@ -587,29 +613,31 @@ function readPollTypeParameters(
   };
 }
 
-async function handleSendPhoto(
+async function prepareSendPhoto(
   context: BotApiMethodContext,
   parameters: BotApiRequestParameters,
   uploadedFiles: BotApiUploadedFiles,
-): Promise<BotApiMethodOutcome> {
+): Promise<BotApiCallPreparation | typeof SESSION_ENDED> {
   const invalidParametersDescription = 'Bad Request: invalid sendPhoto parameters';
   const parsedParameters = sendPhotoParametersSchema.safeParse(parameters);
   if (!parsedParameters.success) {
-    return parameterSchemaFailureAnswer(parsedParameters.error, invalidParametersDescription);
+    return answeredPreparation(
+      parameterSchemaFailureAnswer(parsedParameters.error, invalidParametersDescription),
+    );
   }
   const { data } = parsedParameters;
   // Telegram reads the file, then the caption and its formatting, before it looks at the chat.
   const photoReading = readInputFileParameter('photo', data.photo, uploadedFiles);
   if (!photoReading.read) {
-    return missingInputFileError('photo');
+    return answeredPreparation(missingInputFileError('photo'));
   }
   const captionReading = readSpecifiedCaption(context, data, invalidParametersDescription);
   if (!captionReading.read) {
-    return captionReading.errorAnswer;
+    return answeredPreparation(captionReading.errorAnswer);
   }
   const optionsReading = readSendOptions(context, data, invalidParametersDescription);
   if (!optionsReading.read) {
-    return optionsReading.errorAnswer;
+    return answeredPreparation(optionsReading.errorAnswer);
   }
 
   const photoResolution = await resolveRequestedInputFile(context, photoReading.inputFile, 'photo');
@@ -617,41 +645,45 @@ async function handleSendPhoto(
     return SESSION_ENDED;
   }
   if (!photoResolution.resolved) {
-    return photoResolution.errorAnswer;
+    return answeredPreparationUnlessEnded(photoResolution.errorAnswer);
   }
 
-  return sendMethodAnswer(context.session.botApi.sendPhoto(context.bot, {
-    ...optionsReading.options,
-    photo: photoResolution.value,
-    caption: captionReading.formattedText,
-    hasSpoiler: data.has_spoiler,
-    showsCaptionAboveMedia: data.show_caption_above_media,
-  }));
+  return sendingCommand(() =>
+    context.session.botApi.sendPhoto(context.bot, {
+      ...optionsReading.options,
+      photo: photoResolution.value,
+      caption: captionReading.formattedText,
+      hasSpoiler: data.has_spoiler,
+      showsCaptionAboveMedia: data.show_caption_above_media,
+    })
+  );
 }
 
-async function handleSendDocument(
+async function prepareSendDocument(
   context: BotApiMethodContext,
   parameters: BotApiRequestParameters,
   uploadedFiles: BotApiUploadedFiles,
-): Promise<BotApiMethodOutcome> {
+): Promise<BotApiCallPreparation | typeof SESSION_ENDED> {
   const invalidParametersDescription = 'Bad Request: invalid sendDocument parameters';
   const parsedParameters = sendDocumentParametersSchema.safeParse(parameters);
   if (!parsedParameters.success) {
-    return parameterSchemaFailureAnswer(parsedParameters.error, invalidParametersDescription);
+    return answeredPreparation(
+      parameterSchemaFailureAnswer(parsedParameters.error, invalidParametersDescription),
+    );
   }
   const { data } = parsedParameters;
   // Telegram reads the file, then the caption and its formatting, before it looks at the chat.
   const documentReading = readInputFileParameter('document', data.document, uploadedFiles);
   if (!documentReading.read) {
-    return missingInputFileError('document');
+    return answeredPreparation(missingInputFileError('document'));
   }
   const captionReading = readSpecifiedCaption(context, data, invalidParametersDescription);
   if (!captionReading.read) {
-    return captionReading.errorAnswer;
+    return answeredPreparation(captionReading.errorAnswer);
   }
   const optionsReading = readSendOptions(context, data, invalidParametersDescription);
   if (!optionsReading.read) {
-    return optionsReading.errorAnswer;
+    return answeredPreparation(optionsReading.errorAnswer);
   }
 
   const documentResolution = await resolveRequestedInputFile(
@@ -663,41 +695,45 @@ async function handleSendDocument(
     return SESSION_ENDED;
   }
   if (!documentResolution.resolved) {
-    return documentResolution.errorAnswer;
+    return answeredPreparationUnlessEnded(documentResolution.errorAnswer);
   }
 
   const thumbnail = readThumbnailParameter(data, uploadedFiles);
-  return sendMethodAnswer(context.session.botApi.sendDocument(context.bot, {
-    ...optionsReading.options,
-    document: documentResolution.value,
-    ...(thumbnail === undefined ? {} : { thumbnail }),
-    caption: captionReading.formattedText,
-  }));
+  return sendingCommand(() =>
+    context.session.botApi.sendDocument(context.bot, {
+      ...optionsReading.options,
+      document: documentResolution.value,
+      ...(thumbnail === undefined ? {} : { thumbnail }),
+      caption: captionReading.formattedText,
+    })
+  );
 }
 
-async function handleSendVideo(
+async function prepareSendVideo(
   context: BotApiMethodContext,
   parameters: BotApiRequestParameters,
   uploadedFiles: BotApiUploadedFiles,
-): Promise<BotApiMethodOutcome> {
+): Promise<BotApiCallPreparation | typeof SESSION_ENDED> {
   const invalidParametersDescription = 'Bad Request: invalid sendVideo parameters';
   const parsedParameters = sendVideoParametersSchema.safeParse(parameters);
   if (!parsedParameters.success) {
-    return parameterSchemaFailureAnswer(parsedParameters.error, invalidParametersDescription);
+    return answeredPreparation(
+      parameterSchemaFailureAnswer(parsedParameters.error, invalidParametersDescription),
+    );
   }
   const { data } = parsedParameters;
   // Telegram reads the file, then the caption and its formatting, before it looks at the chat.
   const videoReading = readInputFileParameter('video', data.video, uploadedFiles);
   if (!videoReading.read) {
-    return missingInputFileError('video');
+    return answeredPreparation(missingInputFileError('video'));
   }
   const captionReading = readSpecifiedCaption(context, data, invalidParametersDescription);
   if (!captionReading.read) {
-    return captionReading.errorAnswer;
+    return answeredPreparation(captionReading.errorAnswer);
   }
   const optionsReading = readSendOptions(context, data, invalidParametersDescription);
   if (!optionsReading.read) {
-    return optionsReading.errorAnswer;
+    return answeredPreparation(optionsReading.errorAnswer);
   }
 
   const videoResolution = await resolveRequestedInputFile(
@@ -709,45 +745,49 @@ async function handleSendVideo(
     return SESSION_ENDED;
   }
   if (!videoResolution.resolved) {
-    return videoResolution.errorAnswer;
+    return answeredPreparationUnlessEnded(videoResolution.errorAnswer);
   }
 
   const thumbnail = readThumbnailParameter(data, uploadedFiles);
-  return sendMethodAnswer(context.session.botApi.sendVideo(context.bot, {
-    ...optionsReading.options,
-    video: videoResolution.value,
-    attributes: { durationSeconds: data.duration, width: data.width, height: data.height },
-    ...(thumbnail === undefined ? {} : { thumbnail }),
-    startTimestampSeconds: data.start_timestamp,
-    caption: captionReading.formattedText,
-    hasSpoiler: data.has_spoiler,
-    showsCaptionAboveMedia: data.show_caption_above_media,
-  }));
+  return sendingCommand(() =>
+    context.session.botApi.sendVideo(context.bot, {
+      ...optionsReading.options,
+      video: videoResolution.value,
+      attributes: { durationSeconds: data.duration, width: data.width, height: data.height },
+      ...(thumbnail === undefined ? {} : { thumbnail }),
+      startTimestampSeconds: data.start_timestamp,
+      caption: captionReading.formattedText,
+      hasSpoiler: data.has_spoiler,
+      showsCaptionAboveMedia: data.show_caption_above_media,
+    })
+  );
 }
 
-async function handleSendVoice(
+async function prepareSendVoice(
   context: BotApiMethodContext,
   parameters: BotApiRequestParameters,
   uploadedFiles: BotApiUploadedFiles,
-): Promise<BotApiMethodOutcome> {
+): Promise<BotApiCallPreparation | typeof SESSION_ENDED> {
   const invalidParametersDescription = 'Bad Request: invalid sendVoice parameters';
   const parsedParameters = sendVoiceParametersSchema.safeParse(parameters);
   if (!parsedParameters.success) {
-    return parameterSchemaFailureAnswer(parsedParameters.error, invalidParametersDescription);
+    return answeredPreparation(
+      parameterSchemaFailureAnswer(parsedParameters.error, invalidParametersDescription),
+    );
   }
   const { data } = parsedParameters;
   // Telegram reads the file, then the caption and its formatting, before it looks at the chat.
   const voiceReading = readInputFileParameter('voice', data.voice, uploadedFiles);
   if (!voiceReading.read) {
-    return missingInputFileError('voice');
+    return answeredPreparation(missingInputFileError('voice'));
   }
   const captionReading = readSpecifiedCaption(context, data, invalidParametersDescription);
   if (!captionReading.read) {
-    return captionReading.errorAnswer;
+    return answeredPreparation(captionReading.errorAnswer);
   }
   const optionsReading = readSendOptions(context, data, invalidParametersDescription);
   if (!optionsReading.read) {
-    return optionsReading.errorAnswer;
+    return answeredPreparation(optionsReading.errorAnswer);
   }
 
   const voiceResolution = await resolveRequestedInputFile(
@@ -759,40 +799,44 @@ async function handleSendVoice(
     return SESSION_ENDED;
   }
   if (!voiceResolution.resolved) {
-    return voiceResolution.errorAnswer;
+    return answeredPreparationUnlessEnded(voiceResolution.errorAnswer);
   }
 
-  return sendMethodAnswer(context.session.botApi.sendVoice(context.bot, {
-    ...optionsReading.options,
-    voice: voiceResolution.value,
-    durationSeconds: data.duration,
-    caption: captionReading.formattedText,
-  }));
+  return sendingCommand(() =>
+    context.session.botApi.sendVoice(context.bot, {
+      ...optionsReading.options,
+      voice: voiceResolution.value,
+      durationSeconds: data.duration,
+      caption: captionReading.formattedText,
+    })
+  );
 }
 
-async function handleSendAudio(
+async function prepareSendAudio(
   context: BotApiMethodContext,
   parameters: BotApiRequestParameters,
   uploadedFiles: BotApiUploadedFiles,
-): Promise<BotApiMethodOutcome> {
+): Promise<BotApiCallPreparation | typeof SESSION_ENDED> {
   const invalidParametersDescription = 'Bad Request: invalid sendAudio parameters';
   const parsedParameters = sendAudioParametersSchema.safeParse(parameters);
   if (!parsedParameters.success) {
-    return parameterSchemaFailureAnswer(parsedParameters.error, invalidParametersDescription);
+    return answeredPreparation(
+      parameterSchemaFailureAnswer(parsedParameters.error, invalidParametersDescription),
+    );
   }
   const { data } = parsedParameters;
   // Telegram reads the file, then the caption and its formatting, before it looks at the chat.
   const audioReading = readInputFileParameter('audio', data.audio, uploadedFiles);
   if (!audioReading.read) {
-    return missingInputFileError('audio');
+    return answeredPreparation(missingInputFileError('audio'));
   }
   const captionReading = readSpecifiedCaption(context, data, invalidParametersDescription);
   if (!captionReading.read) {
-    return captionReading.errorAnswer;
+    return answeredPreparation(captionReading.errorAnswer);
   }
   const optionsReading = readSendOptions(context, data, invalidParametersDescription);
   if (!optionsReading.read) {
-    return optionsReading.errorAnswer;
+    return answeredPreparation(optionsReading.errorAnswer);
   }
 
   const audioResolution = await resolveRequestedInputFile(
@@ -804,33 +848,37 @@ async function handleSendAudio(
     return SESSION_ENDED;
   }
   if (!audioResolution.resolved) {
-    return audioResolution.errorAnswer;
+    return answeredPreparationUnlessEnded(audioResolution.errorAnswer);
   }
 
   const thumbnail = readThumbnailParameter(data, uploadedFiles);
-  return sendMethodAnswer(context.session.botApi.sendAudio(context.bot, {
-    ...optionsReading.options,
-    audio: audioResolution.value,
-    attributes: { durationSeconds: data.duration, performer: data.performer, title: data.title },
-    ...(thumbnail === undefined ? {} : { thumbnail }),
-    caption: captionReading.formattedText,
-  }));
+  return sendingCommand(() =>
+    context.session.botApi.sendAudio(context.bot, {
+      ...optionsReading.options,
+      audio: audioResolution.value,
+      attributes: { durationSeconds: data.duration, performer: data.performer, title: data.title },
+      ...(thumbnail === undefined ? {} : { thumbnail }),
+      caption: captionReading.formattedText,
+    })
+  );
 }
 
 /**
- * Sends an album, as `BotApiService.sendMediaGroup` does. As the official Bot API server reads
- * them, the media and their captions are read before the chat; the files the media name by URL are
- * then downloaded in order, as for `sendPhoto`.
+ * Prepares an album, which `BotApiService.sendMediaGroup` sends once the call executes. As the
+ * official Bot API server reads them, the media and their captions are read before the chat; the
+ * files the media name by URL are then downloaded in order, as for `sendPhoto`.
  */
-async function handleSendMediaGroup(
+async function prepareSendMediaGroup(
   context: BotApiMethodContext,
   parameters: BotApiRequestParameters,
   uploadedFiles: BotApiUploadedFiles,
-): Promise<BotApiMethodOutcome> {
+): Promise<BotApiCallPreparation | typeof SESSION_ENDED> {
   const invalidParametersDescription = 'Bad Request: invalid sendMediaGroup parameters';
   const parsedParameters = sendMediaGroupParametersSchema.safeParse(parameters);
   if (!parsedParameters.success) {
-    return parameterSchemaFailureAnswer(parsedParameters.error, invalidParametersDescription);
+    return answeredPreparation(
+      parameterSchemaFailureAnswer(parsedParameters.error, invalidParametersDescription),
+    );
   }
   const { data } = parsedParameters;
   const mediaReading = readInputMediaGroupParameter(
@@ -839,7 +887,7 @@ async function handleSendMediaGroup(
     invalidParametersDescription,
   );
   if (!mediaReading.read) {
-    return botApiError(400, mediaReading.description);
+    return answeredPreparation(botApiError(400, mediaReading.description));
   }
   const captions: SpecifiedFormattedText[] = [];
   for (const { caption } of mediaReading.media) {
@@ -850,13 +898,13 @@ async function handleSendMediaGroup(
       INPUT_MEDIA_ERROR_PREFIX,
     );
     if (!captionReading.read) {
-      return botApiError(400, captionReading.description);
+      return answeredPreparation(botApiError(400, captionReading.description));
     }
     captions.push(captionReading.formattedText);
   }
   const optionsReading = readSendOptions(context, data, invalidParametersDescription);
   if (!optionsReading.read) {
-    return optionsReading.errorAnswer;
+    return answeredPreparation(optionsReading.errorAnswer);
   }
 
   const media: MediaReplacementRequest[] = [];
@@ -871,20 +919,35 @@ async function handleSendMediaGroup(
       return SESSION_ENDED;
     }
     if (!fileResolution.resolved) {
-      return fileResolution.errorAnswer;
+      return answeredPreparationUnlessEnded(fileResolution.errorAnswer);
     }
     media.push(toMediaReplacementRequest(member, fileResolution.value, captions[memberIndex]));
   }
 
   const { chatId, replyTo, isContentProtected, isSilent, messageEffectId } = optionsReading.options;
-  return sendMediaGroupAnswer(context.session.botApi.sendMediaGroup(context.bot, {
-    chatId,
-    replyTo,
-    isContentProtected,
-    isSilent,
-    messageEffectId,
-    media,
-  }));
+  return albumSendingCommand(() =>
+    context.session.botApi.sendMediaGroup(context.bot, {
+      chatId,
+      replyTo,
+      isContentProtected,
+      isSilent,
+      messageEffectId,
+      media,
+    })
+  );
+}
+
+/**
+ * The command that sends the message a call prepared: `send` reaches the chat, makes every check
+ * that depends on the session's state, and sends the message, once the call executes.
+ */
+function sendingCommand(send: () => SendResult): BotApiCallPreparation {
+  return { kind: 'command', execute: () => sendMethodAnswer(send()) };
+}
+
+/** The command that sends the album a call prepared, as `sendingCommand` sends a message. */
+function albumSendingCommand(send: () => SendMediaGroupResult): BotApiCallPreparation {
+  return { kind: 'command', execute: () => sendMediaGroupAnswer(send()) };
 }
 
 /** Telegram's answer to `sendMediaGroup`: the album's messages, or its error for why none was sent. */

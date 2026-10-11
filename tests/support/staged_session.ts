@@ -151,7 +151,7 @@ export function createStagedSessionFixture({ privacyMode }: { readonly privacyMo
     files,
     polls,
     messageBoxes,
-    events: transactions,
+    transactions,
     currentUnixTimeSeconds,
   });
   const administration = new SharedChatAdministrationService({
@@ -222,6 +222,7 @@ export function createStagedSessionFixture({ privacyMode }: { readonly privacyMo
     polls,
     botUpdates,
     updateSubscriptions,
+    messageSending,
     administration,
     chatAdmission,
     notificationFailures,

@@ -387,7 +387,7 @@ function createReactionFixture() {
     files: new FileRepository(),
     polls: new PollRepository(),
     messageBoxes,
-    events,
+    transactions: { ...events, withinTransaction: (command) => command() },
     currentUnixTimeSeconds,
   });
   const sharedChatAdministration = new SharedChatAdministrationService({

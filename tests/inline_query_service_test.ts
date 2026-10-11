@@ -856,7 +856,7 @@ function createInlineQueryFixture() {
     files: messageFiles,
     polls,
     messageBoxes,
-    events,
+    transactions: { ...events, withinTransaction: (command) => command() },
     currentUnixTimeSeconds: () => 1_700_000_000,
   });
   // What the emulated web serves at each URL, as `formatHttpUrl` spells it; other URLs fail.

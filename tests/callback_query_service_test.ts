@@ -480,7 +480,7 @@ function createCallbackQueryFixture() {
     files,
     polls,
     messageBoxes,
-    events,
+    transactions: { ...events, withinTransaction: (command) => command() },
     joinRequesterContacts,
     currentUnixTimeSeconds: () => 1_700_000_000,
   });

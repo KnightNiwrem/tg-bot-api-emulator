@@ -6,6 +6,9 @@
  * only some chats make, at the positions their order requires. `MessageCommitter` commits each
  * accepted message in its chat type's order.
  *
+ * Each send is one transaction, checks included: a message, or every message of an album, is
+ * committed together with its uploads, its poll and what admitting it changes, or none of it is.
+ *
  * @module
  */
 import {
@@ -579,6 +582,12 @@ type SupergroupSendingPolicy =
   & SupergroupAccessPredicates
   & ChatMessageLookup<SupergroupChatKey, SupergroupMessage>;
 
+/** The session's transactions, in which each send runs. */
+interface MessageSendingTransactions {
+  /** Runs a command in the transaction of the command executing, or in one of its own. */
+  withinTransaction<Result>(command: () => Result): Result;
+}
+
 interface MessageSendingServiceDependencies {
   readonly accounts: AccountLookup;
   readonly bots: BotLookup;
@@ -590,6 +599,8 @@ interface MessageSendingServiceDependencies {
   readonly files: FileUploadStore;
   readonly polls: NewPollStore;
   readonly commits: ChatMessageCommitting;
+  /** Runs each send as one transaction. */
+  readonly transactions: MessageSendingTransactions;
   readonly currentUnixTimeSeconds: () => number;
 }
 
@@ -615,6 +626,7 @@ export class MessageSendingService {
   readonly #files: FileUploadStore;
   readonly #polls: NewPollStore;
   readonly #commits: ChatMessageCommitting;
+  readonly #transactions: MessageSendingTransactions;
   readonly #currentUnixTimeSeconds: () => number;
   readonly #accountPrivateChatTargeting: AccountSendingTargeting<AccountPrivateChatSendingTypes>;
   readonly #accountSupergroupTargeting: AccountSendingTargeting<AccountSupergroupSendingTypes>;
@@ -633,6 +645,7 @@ export class MessageSendingService {
       files,
       polls,
       commits,
+      transactions,
       currentUnixTimeSeconds,
     }: MessageSendingServiceDependencies,
   ) {
@@ -644,6 +657,7 @@ export class MessageSendingService {
     this.#files = files;
     this.#polls = polls;
     this.#commits = commits;
+    this.#transactions = transactions;
     this.#currentUnixTimeSeconds = currentUnixTimeSeconds;
 
     const findPrivateChatMessage = (
@@ -931,28 +945,30 @@ export class MessageSendingService {
   sendAccountPrivateChatServiceMessage(
     { fromAccountId, chat, resolveContent }: AccountPrivateChatServiceMessage,
   ): AccountPrivateChatServiceMessageSendResult {
-    if (this.#accounts.getById(fromAccountId) === undefined) {
-      return { sent: false, reason: 'account_not_found' };
-    }
-    const targeting = this.#accountPrivateChatTargeting;
-    const reach = targeting.reachChat(fromAccountId, chat);
-    if (!reach.reached) {
-      return { sent: false, reason: reach.reason };
-    }
-    const resolution = resolveContent(reach.key.conversation);
-    if (!resolution.resolved) {
-      return { sent: false, reason: resolution.reason };
-    }
-    targeting.admitMessage(reach);
-    return {
-      sent: true,
-      message: this.#commits.commitPrivateMessage({
-        chat: reach.key,
-        sender: 'account',
-        content: resolution.content,
-        sentAtUnixSeconds: this.#currentUnixTimeSeconds(),
-      }),
-    };
+    return this.#transactions.withinTransaction(() => {
+      if (this.#accounts.getById(fromAccountId) === undefined) {
+        return { sent: false, reason: 'account_not_found' };
+      }
+      const targeting = this.#accountPrivateChatTargeting;
+      const reach = targeting.reachChat(fromAccountId, chat);
+      if (!reach.reached) {
+        return { sent: false, reason: reach.reason };
+      }
+      const resolution = resolveContent(reach.key.conversation);
+      if (!resolution.resolved) {
+        return { sent: false, reason: resolution.reason };
+      }
+      targeting.admitMessage(reach);
+      return {
+        sent: true,
+        message: this.#commits.commitPrivateMessage({
+          chat: reach.key,
+          sender: 'account',
+          content: resolution.content,
+          sentAtUnixSeconds: this.#currentUnixTimeSeconds(),
+        }),
+      };
+    });
   }
 
   /**
@@ -967,75 +983,77 @@ export class MessageSendingService {
     targeting: BotSendingTargeting<Types>,
     input: BotMessage<Types['address']>,
   ): BotMessageSendResult<Types> {
-    if (this.#bots.getById(input.fromBotId) === undefined) {
-      return { sent: false, reason: 'bot_not_found' };
-    }
-    if (input.content.kind === 'text' && input.content.text.length === 0) {
-      return { sent: false, reason: 'message_text_empty' };
-    }
-    const reach = targeting.reachChat(input.fromBotId, input.chat);
-    if (!reach.reached) {
-      return { sent: false, reason: reach.reason };
-    }
-    const replyResolution = this.#resolveBotReplyTarget(targeting, reach, input.replyTo);
-    if (!replyResolution.resolved) {
-      return { sent: false, reason: 'reply_message_not_found' };
-    }
-    const { repliedMessage } = replyResolution;
-    const effect = targeting.resolveMessageEffect(input.messageEffectId);
-    if (!effect.resolved) {
-      return { sent: false, reason: effect.reason };
-    }
-    const contentNormalization = normalizeOutgoingContent(
-      input.content,
-      'bot',
-      this.#textFixingContext,
-    );
-    if (!contentNormalization.normalized) {
-      return { sent: false, ...contentNormalization.failure };
-    }
-    const { content } = contentNormalization;
-    const contentRefusal = targeting.findContentRefusal(reach, input.fromBotId, [content]);
-    if (contentRefusal !== undefined) {
-      return { sent: false, ...contentRefusal };
-    }
-    if (!hasOnlyValidButtonCallbackData(input.inlineKeyboard, content)) {
-      return { sent: false, reason: 'callback_data_invalid' };
-    }
-    const keyboardRefusal = targeting.findKeyboardRefusal(input.inlineKeyboard, content);
-    if (keyboardRefusal !== undefined) {
-      return { sent: false, reason: keyboardRefusal };
-    }
-    const quoteResolution = resolveReplyQuote(
-      getReplyQuoteSource(repliedMessage, input.externalReply),
-      input.quote,
-      this.#textFixingContext,
-    );
-    if (!quoteResolution.resolved) {
-      return { sent: false, reason: quoteResolution.reason };
-    }
-    const lateRefusal = targeting.findLateRefusal(reach);
-    if (lateRefusal !== undefined) {
-      return { sent: false, reason: lateRefusal };
-    }
+    return this.#transactions.withinTransaction(() => {
+      if (this.#bots.getById(input.fromBotId) === undefined) {
+        return { sent: false, reason: 'bot_not_found' };
+      }
+      if (input.content.kind === 'text' && input.content.text.length === 0) {
+        return { sent: false, reason: 'message_text_empty' };
+      }
+      const reach = targeting.reachChat(input.fromBotId, input.chat);
+      if (!reach.reached) {
+        return { sent: false, reason: reach.reason };
+      }
+      const replyResolution = this.#resolveBotReplyTarget(targeting, reach, input.replyTo);
+      if (!replyResolution.resolved) {
+        return { sent: false, reason: 'reply_message_not_found' };
+      }
+      const { repliedMessage } = replyResolution;
+      const effect = targeting.resolveMessageEffect(input.messageEffectId);
+      if (!effect.resolved) {
+        return { sent: false, reason: effect.reason };
+      }
+      const contentNormalization = normalizeOutgoingContent(
+        input.content,
+        'bot',
+        this.#textFixingContext,
+      );
+      if (!contentNormalization.normalized) {
+        return { sent: false, ...contentNormalization.failure };
+      }
+      const { content } = contentNormalization;
+      const contentRefusal = targeting.findContentRefusal(reach, input.fromBotId, [content]);
+      if (contentRefusal !== undefined) {
+        return { sent: false, ...contentRefusal };
+      }
+      if (!hasOnlyValidButtonCallbackData(input.inlineKeyboard, content)) {
+        return { sent: false, reason: 'callback_data_invalid' };
+      }
+      const keyboardRefusal = targeting.findKeyboardRefusal(input.inlineKeyboard, content);
+      if (keyboardRefusal !== undefined) {
+        return { sent: false, reason: keyboardRefusal };
+      }
+      const quoteResolution = resolveReplyQuote(
+        getReplyQuoteSource(repliedMessage, input.externalReply),
+        input.quote,
+        this.#textFixingContext,
+      );
+      if (!quoteResolution.resolved) {
+        return { sent: false, reason: quoteResolution.reason };
+      }
+      const lateRefusal = targeting.findLateRefusal(reach);
+      if (lateRefusal !== undefined) {
+        return { sent: false, reason: lateRefusal };
+      }
 
-    targeting.admitMessage(reach);
-    return {
-      sent: true,
-      message: targeting.commitMessage(reach, input.fromBotId, {
-        ...effect.fields,
-        content: storeOutgoingContent(content, this.#files, this.#polls),
-        replyToMessageId: repliedMessage?.id,
-        externalReply: input.externalReply?.externalReply,
-        quote: quoteResolution.quote,
-        inlineKeyboard: input.inlineKeyboard,
-        replyInterfaceMarkup: input.replyInterfaceMarkup,
-        forwardInfo: input.forwardInfo,
-        mediaGroupId: input.mediaGroupId,
-        isContentProtected: input.isContentProtected,
-        isSilent: input.isSilent,
-      }, repliedMessage),
-    };
+      targeting.admitMessage(reach);
+      return {
+        sent: true,
+        message: targeting.commitMessage(reach, input.fromBotId, {
+          ...effect.fields,
+          content: storeOutgoingContent(content, this.#files, this.#polls),
+          replyToMessageId: repliedMessage?.id,
+          externalReply: input.externalReply?.externalReply,
+          quote: quoteResolution.quote,
+          inlineKeyboard: input.inlineKeyboard,
+          replyInterfaceMarkup: input.replyInterfaceMarkup,
+          forwardInfo: input.forwardInfo,
+          mediaGroupId: input.mediaGroupId,
+          isContentProtected: input.isContentProtected,
+          isSilent: input.isSilent,
+        }, repliedMessage),
+      };
+    });
   }
 
   /**
@@ -1048,70 +1066,72 @@ export class MessageSendingService {
     targeting: BotSendingTargeting<Types>,
     input: BotAlbum<Types['address']>,
   ): BotAlbumSendResult<Types> {
-    if (this.#bots.getById(input.fromBotId) === undefined) {
-      return { sent: false, reason: 'bot_not_found' };
-    }
-    const reach = targeting.reachChat(input.fromBotId, input.chat);
-    if (!reach.reached) {
-      return { sent: false, reason: reach.reason };
-    }
-    const replyResolution = this.#resolveBotReplyTarget(targeting, reach, input.replyTo);
-    if (!replyResolution.resolved) {
-      return { sent: false, reason: 'reply_message_not_found' };
-    }
-    const { repliedMessage } = replyResolution;
-    const effect = targeting.resolveMessageEffect(input.messageEffectId);
-    if (!effect.resolved) {
-      return { sent: false, reason: effect.reason };
-    }
-    const albumNormalization = normalizeOutgoingAlbum(
-      input.contents,
-      'bot',
-      this.#textFixingContext,
-    );
-    if (!albumNormalization.normalized) {
-      return { sent: false, ...albumNormalization.failure };
-    }
-    const contentRefusal = targeting.findContentRefusal(
-      reach,
-      input.fromBotId,
-      albumNormalization.contents,
-    );
-    if (contentRefusal !== undefined) {
-      return { sent: false, ...contentRefusal };
-    }
-    const quoteResolution = resolveReplyQuote(
-      getReplyQuoteSource(repliedMessage, input.externalReply),
-      input.quote,
-      this.#textFixingContext,
-    );
-    if (!quoteResolution.resolved) {
-      return { sent: false, reason: quoteResolution.reason };
-    }
-    const lateRefusal = targeting.findLateRefusal(reach);
-    if (lateRefusal !== undefined) {
-      return { sent: false, reason: lateRefusal };
-    }
-
-    targeting.admitMessage(reach);
-    return {
-      sent: true,
-      messages: this.#commitAlbum(
-        targeting,
+    return this.#transactions.withinTransaction(() => {
+      if (this.#bots.getById(input.fromBotId) === undefined) {
+        return { sent: false, reason: 'bot_not_found' };
+      }
+      const reach = targeting.reachChat(input.fromBotId, input.chat);
+      if (!reach.reached) {
+        return { sent: false, reason: reach.reason };
+      }
+      const replyResolution = this.#resolveBotReplyTarget(targeting, reach, input.replyTo);
+      if (!replyResolution.resolved) {
+        return { sent: false, reason: 'reply_message_not_found' };
+      }
+      const { repliedMessage } = replyResolution;
+      const effect = targeting.resolveMessageEffect(input.messageEffectId);
+      if (!effect.resolved) {
+        return { sent: false, reason: effect.reason };
+      }
+      const albumNormalization = normalizeOutgoingAlbum(
+        input.contents,
+        'bot',
+        this.#textFixingContext,
+      );
+      if (!albumNormalization.normalized) {
+        return { sent: false, ...albumNormalization.failure };
+      }
+      const contentRefusal = targeting.findContentRefusal(
         reach,
         input.fromBotId,
         albumNormalization.contents,
-        {
-          ...effect.fields,
-          replyToMessageId: repliedMessage?.id,
-          externalReply: input.externalReply?.externalReply,
-          quote: quoteResolution.quote,
-          isContentProtected: input.isContentProtected,
-          isSilent: input.isSilent,
-        },
-        repliedMessage,
-      ),
-    };
+      );
+      if (contentRefusal !== undefined) {
+        return { sent: false, ...contentRefusal };
+      }
+      const quoteResolution = resolveReplyQuote(
+        getReplyQuoteSource(repliedMessage, input.externalReply),
+        input.quote,
+        this.#textFixingContext,
+      );
+      if (!quoteResolution.resolved) {
+        return { sent: false, reason: quoteResolution.reason };
+      }
+      const lateRefusal = targeting.findLateRefusal(reach);
+      if (lateRefusal !== undefined) {
+        return { sent: false, reason: lateRefusal };
+      }
+
+      targeting.admitMessage(reach);
+      return {
+        sent: true,
+        messages: this.#commitAlbum(
+          targeting,
+          reach,
+          input.fromBotId,
+          albumNormalization.contents,
+          {
+            ...effect.fields,
+            replyToMessageId: repliedMessage?.id,
+            externalReply: input.externalReply?.externalReply,
+            quote: quoteResolution.quote,
+            isContentProtected: input.isContentProtected,
+            isSilent: input.isSilent,
+          },
+          repliedMessage,
+        ),
+      };
+    });
   }
 
   /**
@@ -1125,50 +1145,52 @@ export class MessageSendingService {
     targeting: AccountSendingTargeting<Types>,
     { fromAccountId, chat, content, replyToMessageId }: AccountMessage<Types['address']>,
   ): AccountMessageSendResult<Types> {
-    const account = this.#accounts.getById(fromAccountId);
-    if (account === undefined) {
-      return { sent: false, reason: 'account_not_found' };
-    }
-    const reach = targeting.reachChat(fromAccountId, chat);
-    if (!reach.reached) {
-      return { sent: false, reason: reach.reason };
-    }
-    if (content.kind === 'text' && content.text.length === 0) {
-      return { sent: false, reason: 'message_text_empty' };
-    }
-    const outgoingContent = toOutgoingAccountContent(content, account);
-    if (outgoingContent === undefined) {
-      return { sent: false, reason: 'account_phone_number_missing' };
-    }
-    const contentNormalization = normalizeOutgoingContent(
-      outgoingContent,
-      'account',
-      this.#textFixingContext,
-    );
-    if (!contentNormalization.normalized) {
-      return { sent: false, ...contentNormalization.failure };
-    }
-    const contentRefusal = targeting.findContentRefusal(reach, fromAccountId, [
-      contentNormalization.content,
-    ]);
-    if (contentRefusal !== undefined) {
-      return { sent: false, ...contentRefusal };
-    }
-    const repliedMessage = replyToMessageId === undefined
-      ? undefined
-      : targeting.findMessage(reach, replyToMessageId);
-    if (replyToMessageId !== undefined && repliedMessage === undefined) {
-      return { sent: false, reason: 'reply_message_not_found' };
-    }
+    return this.#transactions.withinTransaction(() => {
+      const account = this.#accounts.getById(fromAccountId);
+      if (account === undefined) {
+        return { sent: false, reason: 'account_not_found' };
+      }
+      const reach = targeting.reachChat(fromAccountId, chat);
+      if (!reach.reached) {
+        return { sent: false, reason: reach.reason };
+      }
+      if (content.kind === 'text' && content.text.length === 0) {
+        return { sent: false, reason: 'message_text_empty' };
+      }
+      const outgoingContent = toOutgoingAccountContent(content, account);
+      if (outgoingContent === undefined) {
+        return { sent: false, reason: 'account_phone_number_missing' };
+      }
+      const contentNormalization = normalizeOutgoingContent(
+        outgoingContent,
+        'account',
+        this.#textFixingContext,
+      );
+      if (!contentNormalization.normalized) {
+        return { sent: false, ...contentNormalization.failure };
+      }
+      const contentRefusal = targeting.findContentRefusal(reach, fromAccountId, [
+        contentNormalization.content,
+      ]);
+      if (contentRefusal !== undefined) {
+        return { sent: false, ...contentRefusal };
+      }
+      const repliedMessage = replyToMessageId === undefined
+        ? undefined
+        : targeting.findMessage(reach, replyToMessageId);
+      if (replyToMessageId !== undefined && repliedMessage === undefined) {
+        return { sent: false, reason: 'reply_message_not_found' };
+      }
 
-    targeting.admitMessage(reach);
-    return {
-      sent: true,
-      message: targeting.commitMessage(reach, fromAccountId, {
-        content: storeOutgoingContent(contentNormalization.content, this.#files, this.#polls),
-        replyToMessageId: repliedMessage?.id,
-      }, repliedMessage),
-    };
+      targeting.admitMessage(reach);
+      return {
+        sent: true,
+        message: targeting.commitMessage(reach, fromAccountId, {
+          content: storeOutgoingContent(contentNormalization.content, this.#files, this.#polls),
+          replyToMessageId: repliedMessage?.id,
+        }, repliedMessage),
+      };
+    });
   }
 
   /**
@@ -1181,48 +1203,50 @@ export class MessageSendingService {
     targeting: AccountSendingTargeting<Types>,
     { fromAccountId, chat, contents, replyToMessageId }: AccountAlbum<Types['address']>,
   ): AccountAlbumSendResult<Types> {
-    if (this.#accounts.getById(fromAccountId) === undefined) {
-      return { sent: false, reason: 'account_not_found' };
-    }
-    const reach = targeting.reachChat(fromAccountId, chat);
-    if (!reach.reached) {
-      return { sent: false, reason: reach.reason };
-    }
-    const albumNormalization = normalizeOutgoingAlbum(
-      contents.map((content) => toOutgoingAccountMedia(content)),
-      'account',
-      this.#textFixingContext,
-    );
-    if (!albumNormalization.normalized) {
-      return { sent: false, ...albumNormalization.failure };
-    }
-    const contentRefusal = targeting.findContentRefusal(
-      reach,
-      fromAccountId,
-      albumNormalization.contents,
-    );
-    if (contentRefusal !== undefined) {
-      return { sent: false, ...contentRefusal };
-    }
-    const repliedMessage = replyToMessageId === undefined
-      ? undefined
-      : targeting.findMessage(reach, replyToMessageId);
-    if (replyToMessageId !== undefined && repliedMessage === undefined) {
-      return { sent: false, reason: 'reply_message_not_found' };
-    }
-
-    targeting.admitMessage(reach);
-    return {
-      sent: true,
-      messages: this.#commitAlbum(
-        targeting,
+    return this.#transactions.withinTransaction(() => {
+      if (this.#accounts.getById(fromAccountId) === undefined) {
+        return { sent: false, reason: 'account_not_found' };
+      }
+      const reach = targeting.reachChat(fromAccountId, chat);
+      if (!reach.reached) {
+        return { sent: false, reason: reach.reason };
+      }
+      const albumNormalization = normalizeOutgoingAlbum(
+        contents.map((content) => toOutgoingAccountMedia(content)),
+        'account',
+        this.#textFixingContext,
+      );
+      if (!albumNormalization.normalized) {
+        return { sent: false, ...albumNormalization.failure };
+      }
+      const contentRefusal = targeting.findContentRefusal(
         reach,
         fromAccountId,
         albumNormalization.contents,
-        { replyToMessageId: repliedMessage?.id },
-        repliedMessage,
-      ),
-    };
+      );
+      if (contentRefusal !== undefined) {
+        return { sent: false, ...contentRefusal };
+      }
+      const repliedMessage = replyToMessageId === undefined
+        ? undefined
+        : targeting.findMessage(reach, replyToMessageId);
+      if (replyToMessageId !== undefined && repliedMessage === undefined) {
+        return { sent: false, reason: 'reply_message_not_found' };
+      }
+
+      targeting.admitMessage(reach);
+      return {
+        sent: true,
+        messages: this.#commitAlbum(
+          targeting,
+          reach,
+          fromAccountId,
+          albumNormalization.contents,
+          { replyToMessageId: repliedMessage?.id },
+          repliedMessage,
+        ),
+      };
+    });
   }
 
   /**
@@ -1235,27 +1259,29 @@ export class MessageSendingService {
       Types['address']
     >,
   ): AccountInlineResultSendResult<Types> {
-    if (this.#accounts.getById(fromAccountId) === undefined) {
-      return { sent: false, reason: 'account_not_found' };
-    }
-    const reach = targeting.reachChat(fromAccountId, chat);
-    if (!reach.reached) {
-      return { sent: false, reason: reach.reason };
-    }
-    const refusal = targeting.findInlineResultRefusal(reach, fromAccountId, content);
-    if (refusal !== undefined) {
-      return { sent: false, ...refusal };
-    }
+    return this.#transactions.withinTransaction(() => {
+      if (this.#accounts.getById(fromAccountId) === undefined) {
+        return { sent: false, reason: 'account_not_found' };
+      }
+      const reach = targeting.reachChat(fromAccountId, chat);
+      if (!reach.reached) {
+        return { sent: false, reason: reach.reason };
+      }
+      const refusal = targeting.findInlineResultRefusal(reach, fromAccountId, content);
+      if (refusal !== undefined) {
+        return { sent: false, ...refusal };
+      }
 
-    targeting.admitMessage(reach);
-    return {
-      sent: true,
-      message: targeting.commitMessage(reach, fromAccountId, {
-        content: storeOutgoingContent(content, this.#files, this.#polls),
-        inlineKeyboard,
-        viaBotId,
-      }, undefined),
-    };
+      targeting.admitMessage(reach);
+      return {
+        sent: true,
+        message: targeting.commitMessage(reach, fromAccountId, {
+          content: storeOutgoingContent(content, this.#files, this.#polls),
+          inlineKeyboard,
+          viaBotId,
+        }, undefined),
+      };
+    });
   }
 
   /** Sends a forward as the account's message, once the chat accepts its content from the account. */
@@ -1263,25 +1289,27 @@ export class MessageSendingService {
     targeting: AccountSendingTargeting<Types>,
     { fromAccountId, chat, forward }: AccountForward<Types['address']>,
   ): AccountForwardSendResult<Types> {
-    if (this.#accounts.getById(fromAccountId) === undefined) {
-      return { sent: false, reason: 'account_not_found' };
-    }
-    const reach = targeting.reachChat(fromAccountId, chat);
-    if (!reach.reached) {
-      return { sent: false, reason: reach.reason };
-    }
-    const refusal = targeting.findContentRefusal(reach, fromAccountId, [
-      { kind: 'existing', content: forward.content },
-    ]);
-    if (refusal !== undefined) {
-      return { sent: false, ...refusal };
-    }
+    return this.#transactions.withinTransaction(() => {
+      if (this.#accounts.getById(fromAccountId) === undefined) {
+        return { sent: false, reason: 'account_not_found' };
+      }
+      const reach = targeting.reachChat(fromAccountId, chat);
+      if (!reach.reached) {
+        return { sent: false, reason: reach.reason };
+      }
+      const refusal = targeting.findContentRefusal(reach, fromAccountId, [
+        { kind: 'existing', content: forward.content },
+      ]);
+      if (refusal !== undefined) {
+        return { sent: false, ...refusal };
+      }
 
-    targeting.admitMessage(reach);
-    return {
-      sent: true,
-      message: targeting.commitMessage(reach, fromAccountId, forward, undefined),
-    };
+      targeting.admitMessage(reach);
+      return {
+        sent: true,
+        message: targeting.commitMessage(reach, fromAccountId, forward, undefined),
+      };
+    });
   }
 
   /**

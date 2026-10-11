@@ -1,12 +1,14 @@
 /**
  * Committing messages to their chats: a message that passed its checks is stored, numbered in the
- * message boxes its chat type chooses, published, and its change of the reply interface the chat's
+ * message boxes its chat type chooses, emitted, and its change of the reply interface the chat's
  * accounts see is applied, each chat type in its own order. Sending commits the messages senders
  * write, and other features record the service messages of the changes they make.
  *
- * A private chat changes the reply interface the account's client shows before it publishes the
- * message; a supergroup publishes first and then changes its members' interfaces, as TDLib does.
- * That sequencing is #168's to decide, so each chat type keeps its own.
+ * Each commit is one transaction, which joins the transaction of the command that commits the
+ * message, so all of it is published together or not at all. A private chat changes the reply
+ * interface the account's client shows before it emits the message; a supergroup emits it first
+ * and then changes its members' interfaces, as TDLib does. The order decides only what the
+ * message's projection sees of the staged state.
  *
  * @module
  */
@@ -101,8 +103,10 @@ interface SupergroupMemberStore {
   ): void;
 }
 
-/** Takes each event into the transaction of the command that caused it. */
-interface ChatDomainEventSink {
+/** The session's transactions: each commit runs in one, and emits its message's event into it. */
+interface MessageCommitTransactions {
+  /** Runs a command in the transaction of the command executing, or in one of its own. */
+  withinTransaction<Result>(command: () => Result): Result;
   emit(event: ChatDomainEvent): void;
 }
 
@@ -117,7 +121,8 @@ interface MessageCommitterDependencies {
   readonly messageBoxes: MessageBoxNumbering;
   readonly privateReplyInterfaces: PrivateReplyInterfaceStore;
   readonly supergroupMembers: SupergroupMemberStore;
-  readonly events: ChatDomainEventSink;
+  /** Runs each commit as one transaction, which receives the message's event. */
+  readonly transactions: MessageCommitTransactions;
   /** Removes the message draft that any message from the bot removes from the chat. */
   readonly messageDrafts: MessageDraftClearing;
   readonly currentUnixTimeSeconds: () => number;
@@ -135,7 +140,7 @@ export class MessageCommitter {
   readonly #messageBoxes: MessageBoxNumbering;
   readonly #privateReplyInterfaces: PrivateReplyInterfaceStore;
   readonly #supergroupMembers: SupergroupMemberStore;
-  readonly #events: ChatDomainEventSink;
+  readonly #transactions: MessageCommitTransactions;
   readonly #messageDrafts: MessageDraftClearing;
   readonly #currentUnixTimeSeconds: () => number;
 
@@ -147,7 +152,7 @@ export class MessageCommitter {
       messageBoxes,
       privateReplyInterfaces,
       supergroupMembers,
-      events,
+      transactions,
       messageDrafts,
       currentUnixTimeSeconds,
     }: MessageCommitterDependencies,
@@ -158,56 +163,62 @@ export class MessageCommitter {
     this.#messageBoxes = messageBoxes;
     this.#privateReplyInterfaces = privateReplyInterfaces;
     this.#supergroupMembers = supergroupMembers;
-    this.#events = events;
+    this.#transactions = transactions;
     this.#messageDrafts = messageDrafts;
     this.#currentUnixTimeSeconds = currentUnixTimeSeconds;
   }
 
   /**
    * Commits a message of a private conversation: stores it, numbers it in both participants'
-   * message boxes, applies its change of the account's reply interface, and then publishes it.
+   * message boxes, applies its change of the account's reply interface, and then emits it, all in
+   * one transaction.
    */
   commitPrivateMessage(message: NewPrivateMessage): PrivateMessage {
-    const storedMessage = this.#messages.addMessage(message);
-    const { chat, replyInterfaceMarkup } = storedMessage;
-    // Only the bot's numbering is projected today; the account's keeps the stored model faithful
-    // to Telegram.
-    for (const boxOwnerId of privateChatMessagePolicy.getNumberingBoxOwnerIds(chat)) {
-      this.#messageBoxes.assignMessageId(boxOwnerId, storedMessage.id);
-    }
-    // As TDLib does for a private chat: a keyboard or forced reply replaces what the client shows,
-    // and a removal clears it.
-    if (replyInterfaceMarkup !== undefined) {
-      this.#privateReplyInterfaces.setReplyInterfaceMessageId(
-        chat.conversation,
-        replyInterfaceMarkup.kind === 'reply_keyboard_removal' ? undefined : storedMessage.id,
-      );
-    }
-    // As TDLib's `updatePendingMessage` tells clients, any incoming message removes the bot's
-    // draft: a sent, forwarded or copied message, an album's, or a service message of its pin.
-    if (storedMessage.sender === 'bot') {
-      this.#messageDrafts.clearBotDraft(chat.conversation);
-    }
-    this.#events.emit({ type: 'message_created', message: storedMessage });
-    return storedMessage;
+    return this.#transactions.withinTransaction(() => {
+      const storedMessage = this.#messages.addMessage(message);
+      const { chat, replyInterfaceMarkup } = storedMessage;
+      // Only the bot's numbering is projected today; the account's keeps the stored model faithful
+      // to Telegram.
+      for (const boxOwnerId of privateChatMessagePolicy.getNumberingBoxOwnerIds(chat)) {
+        this.#messageBoxes.assignMessageId(boxOwnerId, storedMessage.id);
+      }
+      // As TDLib does for a private chat: a keyboard or forced reply replaces what the client
+      // shows, and a removal clears it.
+      if (replyInterfaceMarkup !== undefined) {
+        this.#privateReplyInterfaces.setReplyInterfaceMessageId(
+          chat.conversation,
+          replyInterfaceMarkup.kind === 'reply_keyboard_removal' ? undefined : storedMessage.id,
+        );
+      }
+      // As TDLib's `updatePendingMessage` tells clients, any incoming message removes the bot's
+      // draft: a sent, forwarded or copied message, an album's, or a service message of its pin.
+      if (storedMessage.sender === 'bot') {
+        this.#messageDrafts.clearBotDraft(chat.conversation);
+      }
+      this.#transactions.emit({ type: 'message_created', message: storedMessage });
+      return storedMessage;
+    });
   }
 
   /**
-   * Commits a message of a supergroup: stores it, numbers it in the supergroup's box, publishes
-   * it, and then changes the reply interface of the members' clients as it asks, which TDLib does
-   * after announcing the message. `repliedMessage` is the message of the supergroup it replies to.
+   * Commits a message of a supergroup: stores it, numbers it in the supergroup's box, emits it,
+   * and then changes the reply interface of the members' clients as it asks, which TDLib does
+   * after announcing the message, all in one transaction. `repliedMessage` is the message of the
+   * supergroup it replies to.
    */
   commitSupergroupMessage(
     message: NewSupergroupMessage,
     repliedMessage: SupergroupMessage | undefined,
   ): SupergroupMessage {
-    const storedMessage = this.#messages.addMessage(message);
-    for (const boxOwnerId of supergroupMessagePolicy.getNumberingBoxOwnerIds(message.chat)) {
-      this.#messageBoxes.assignMessageId(boxOwnerId, storedMessage.id);
-    }
-    this.#events.emit({ type: 'message_created', message: storedMessage });
-    this.#updateMemberReplyInterfaces(storedMessage, repliedMessage);
-    return storedMessage;
+    return this.#transactions.withinTransaction(() => {
+      const storedMessage = this.#messages.addMessage(message);
+      for (const boxOwnerId of supergroupMessagePolicy.getNumberingBoxOwnerIds(message.chat)) {
+        this.#messageBoxes.assignMessageId(boxOwnerId, storedMessage.id);
+      }
+      this.#transactions.emit({ type: 'message_created', message: storedMessage });
+      this.#updateMemberReplyInterfaces(storedMessage, repliedMessage);
+      return storedMessage;
+    });
   }
 
   /**
