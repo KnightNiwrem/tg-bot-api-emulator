@@ -674,6 +674,14 @@ function createVirtualAccountClient(
   }
 
   /** Sends a message as the account to `to`, which the message shows as its chat. */
+  // The calls whose uploads a façade converts, which an upload it cannot convert names.
+  const sendCall = describeOperationCall(transport, sendAccountMessageContract, {
+    params: accountParams,
+  });
+  const albumCall = describeOperationCall(transport, sendAccountMediaGroupContract, {
+    params: accountParams,
+  });
+
   async function sendMessageTo<Target extends MessageTarget>(
     to: Target,
     body: SendAccountMessageBody,
@@ -707,44 +715,57 @@ function createVirtualAccountClient(
     ): Promise<ActionOutcome<MessageIn<Target>>> {
       return sendMessageTo(input.to, input);
     },
-    sendPhoto<Target extends MessageTarget>(
+    async sendPhoto<Target extends MessageTarget>(
       { photo, ...message }: AccountSendPhotoInput<Target>,
     ): Promise<ActionOutcome<MessageIn<Target>>> {
-      return sendMessageTo(message.to, {
+      // Awaited, so that an upload the façade cannot convert rejects the returned promise.
+      return await sendMessageTo(message.to, {
         ...message,
-        photo: { content_base64: toBase64Content(photo) },
+        photo: { content_base64: toBase64Content(photo, 'photo', sendCall) },
       });
     },
-    sendDocument<Target extends MessageTarget>(
+    async sendDocument<Target extends MessageTarget>(
       { document, file_name, ...message }: AccountSendDocumentInput<Target>,
     ): Promise<ActionOutcome<MessageIn<Target>>> {
-      return sendMessageTo(message.to, {
+      // Awaited, so that an upload the façade cannot convert rejects the returned promise.
+      return await sendMessageTo(message.to, {
         ...message,
-        document: { content_base64: toBase64Content(document), file_name },
+        document: { content_base64: toBase64Content(document, 'document', sendCall), file_name },
       });
     },
-    sendVideo<Target extends MessageTarget>(
+    async sendVideo<Target extends MessageTarget>(
       { video, file_name, duration, width, height, ...message }: AccountSendVideoInput<Target>,
     ): Promise<ActionOutcome<MessageIn<Target>>> {
-      return sendMessageTo(message.to, {
+      // Awaited, so that an upload the façade cannot convert rejects the returned promise.
+      return await sendMessageTo(message.to, {
         ...message,
-        video: toAccountVideoUpload({ video, file_name, duration, width, height }),
+        video: toAccountVideoUpload(
+          { video, file_name, duration, width, height },
+          'video',
+          sendCall,
+        ),
       });
     },
-    sendVoice<Target extends MessageTarget>(
+    async sendVoice<Target extends MessageTarget>(
       { voice, duration, ...message }: AccountSendVoiceInput<Target>,
     ): Promise<ActionOutcome<MessageIn<Target>>> {
-      return sendMessageTo(message.to, {
+      // Awaited, so that an upload the façade cannot convert rejects the returned promise.
+      return await sendMessageTo(message.to, {
         ...message,
-        voice: { content_base64: toBase64Content(voice), duration },
+        voice: { content_base64: toBase64Content(voice, 'voice', sendCall), duration },
       });
     },
-    sendAudio<Target extends MessageTarget>(
+    async sendAudio<Target extends MessageTarget>(
       { audio, file_name, duration, performer, title, ...message }: AccountSendAudioInput<Target>,
     ): Promise<ActionOutcome<MessageIn<Target>>> {
-      return sendMessageTo(message.to, {
+      // Awaited, so that an upload the façade cannot convert rejects the returned promise.
+      return await sendMessageTo(message.to, {
         ...message,
-        audio: toAccountAudioUpload({ audio, file_name, duration, performer, title }),
+        audio: toAccountAudioUpload(
+          { audio, file_name, duration, performer, title },
+          'audio',
+          sendCall,
+        ),
       });
     },
     sendContact<Target extends MessageTarget>(
@@ -775,7 +796,7 @@ function createVirtualAccountClient(
         params: accountParams,
         body: {
           ...album,
-          media: toAccountMediaGroupBody(media),
+          media: toAccountMediaGroupBody(media, albumCall),
         },
       };
       const sending = await callJsonAction(transport, sendAccountMediaGroupContract, request);
@@ -1215,44 +1236,76 @@ function selectResult<Body, Result>(
   return { result: select(result), receipt };
 }
 
-/** A video an account uploads, as the emulation API reads it. */
+/** A video an account uploads at the input field `field`, as the emulation API reads it. */
 function toAccountVideoUpload(
   { video, file_name, duration, width, height }: Pick<
     AccountSendVideoInput,
     'video' | 'file_name' | 'duration' | 'width' | 'height'
   >,
+  field: string,
+  call: RequestDetails,
 ) {
-  return { content_base64: toBase64Content(video), file_name, duration, width, height };
+  return {
+    content_base64: toBase64Content(video, field, call),
+    file_name,
+    duration,
+    width,
+    height,
+  };
 }
 
-/** An audio file an account uploads, as the emulation API reads it. */
+/** An audio file an account uploads at the input field `field`, as the emulation API reads it. */
 function toAccountAudioUpload(
   { audio, file_name, duration, performer, title }: Pick<
     AccountSendAudioInput,
     'audio' | 'file_name' | 'duration' | 'performer' | 'title'
   >,
+  field: string,
+  call: RequestDetails,
 ) {
-  return { content_base64: toBase64Content(audio), file_name, duration, performer, title };
+  return {
+    content_base64: toBase64Content(audio, field, call),
+    file_name,
+    duration,
+    performer,
+    title,
+  };
 }
 
 /**
- * Bytes an account uploads, as the base64 text the emulation API reads. Any other value, which
- * only an input its type does not describe can give, is sent as it is, for the emulator to refuse.
+ * The bytes of a file an account uploads at the input field `field`, as the base64 text the
+ * emulation API reads.
+ *
+ * The façades follow one rule for their inputs. A value a façade converts, which today is only an
+ * upload's bytes, is checked by the façade, since a converted value of the wrong type could read
+ * as valid on the wire: text such as `YQ==` is itself base64. Every other value is sent as given,
+ * for the emulator to accept or refuse.
+ *
+ * @throws {EmulationClientError} when the value is not a `Uint8Array`, before anything is sent.
  */
-function toBase64Content(content: Uint8Array): string {
-  return content instanceof Uint8Array ? content.toBase64() : content;
+function toBase64Content(content: Uint8Array, field: string, call: RequestDetails): string {
+  if (!(content instanceof Uint8Array)) {
+    throw new EmulationClientError(
+      `${call.method} ${call.url} was not sent: ${field} must be the file's bytes as a Uint8Array`,
+      call,
+    );
+  }
+  return content.toBase64();
 }
 
 /**
  * The photos, videos, documents, or audio files of an album, as the emulation API reads them, each
  * with every field its input gives. A value that is no list, or an item that is no object, is sent
  * as it is, for the emulator to refuse.
+ *
+ * @throws {EmulationClientError} when an item's upload is not a `Uint8Array`, before anything is
+ * sent.
  */
-function toAccountMediaGroupBody(media: readonly AccountMediaGroupItem[]) {
+function toAccountMediaGroupBody(media: readonly AccountMediaGroupItem[], call: RequestDetails) {
   if (!isList(media)) {
     return media;
   }
-  return media.map((item) => {
+  return media.map((item, index) => {
     if (typeof item !== 'object' || item === null) {
       return item;
     }
@@ -1270,7 +1323,7 @@ function toAccountMediaGroupBody(media: readonly AccountMediaGroupItem[]) {
       title: _title,
       ...fields
     } = item;
-    return { ...fields, ...toAccountMediaGroupFile(item) };
+    return { ...fields, ...toAccountMediaGroupFile(item, `media[${index}]`, call) };
   });
 }
 
@@ -1279,20 +1332,26 @@ function isList(value: unknown): value is readonly unknown[] {
   return Array.isArray(value);
 }
 
-/** The file of an album's photo, document, video, or audio file, as the emulation API reads it. */
-function toAccountMediaGroupFile(item: AccountMediaGroupItem) {
+/**
+ * The file of an album's photo, document, video, or audio file at the input field `field`, as the
+ * emulation API reads it. An item that names no other upload is read as a video.
+ */
+function toAccountMediaGroupFile(item: AccountMediaGroupItem, field: string, call: RequestDetails) {
   if (item.photo !== undefined) {
-    return { photo: { content_base64: toBase64Content(item.photo) } };
+    return { photo: { content_base64: toBase64Content(item.photo, `${field}.photo`, call) } };
   }
   if (item.document !== undefined) {
     return {
-      document: { content_base64: toBase64Content(item.document), file_name: item.file_name },
+      document: {
+        content_base64: toBase64Content(item.document, `${field}.document`, call),
+        file_name: item.file_name,
+      },
     };
   }
   if (item.audio !== undefined) {
-    return { audio: toAccountAudioUpload(item) };
+    return { audio: toAccountAudioUpload(item, `${field}.audio`, call) };
   }
-  return { video: toAccountVideoUpload(item) };
+  return { video: toAccountVideoUpload(item, `${field}.video`, call) };
 }
 
 /**

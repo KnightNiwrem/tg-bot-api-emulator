@@ -9,6 +9,7 @@ import { assertEquals, assertRejects } from '@std/assert';
 
 import {
   type AccountPollInput,
+  EmulationClientError,
   EmulationControlError,
   type PrivateMessageTarget,
 } from '../clients/typescript/mod.ts';
@@ -173,5 +174,45 @@ Deno.test('An account action sends a value its input leaves out as left out', as
       caption_entities: undefined,
     }],
     'Expected an album whose media leave out their entities sent without them',
+  );
+});
+
+Deno.test('An upload that is no bytes is refused by the client, which converts it', async () => {
+  await using fixture = await createAccountFixture();
+  const { account, chat } = fixture;
+  await account.sendMessage({ to: chat, text: 'Hello' });
+  const historyBefore = await account.getMessages({ chat });
+  // Text that is itself valid base64, which the emulator would read as a file.
+  const base64Text = 'YQ==' as unknown as Uint8Array;
+
+  const refusals = [
+    await assertRejects(
+      () => account.sendDocument({ to: chat, document: base64Text, file_name: 'a.txt' }),
+      EmulationClientError,
+    ),
+    await assertRejects(
+      () =>
+        account.sendMediaGroup({
+          to: chat,
+          media: [{ photo: gifImage(1, 1) }, { photo: base64Text }],
+        }),
+      EmulationClientError,
+    ),
+  ];
+
+  assertEquals(
+    refusals.map((error) => ({
+      sent: error instanceof EmulationControlError,
+      namesField: ['document', 'media[1].photo'].some((field) =>
+        error.message.includes(`${field} must be the file's bytes`)
+      ),
+    })),
+    [{ sent: false, namesField: true }, { sent: false, namesField: true }],
+    'Expected each upload refused before sending, naming its field',
+  );
+  assertEquals(
+    await account.getMessages({ chat }),
+    historyBefore,
+    'Expected no refused upload to change the chat',
   );
 });
