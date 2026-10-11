@@ -28,7 +28,7 @@ import { readInputFileParameter, readThumbnailParameter } from './input_file_par
 import { clampedIntegerField } from './input_media_parameter.ts';
 import { readDateTimeFormat } from './message_entities_parameter.ts';
 import { buttonSchema } from './reply_markup_parameter.ts';
-import type { BotApiUploadedFiles } from './request_parameters.ts';
+import { type BotApiUploadedFiles, parseBotApiJsonParameter } from './request_parameters.ts';
 import type { RequestedRichMessageFileTypes } from './web_file_parameter.ts';
 
 /** A rich message as a bot specified it, with the files it names. */
@@ -427,12 +427,11 @@ class RichMessageReader {
     if (parameter.length === 0) {
       throw new RichMessageParameterError(RICH_MESSAGE_EMPTY_DESCRIPTION);
     }
-    let value: unknown;
-    try {
-      value = JSON.parse(parameter);
-    } catch {
+    const parsedParameter = parseBotApiJsonParameter(parameter);
+    if (parsedParameter === undefined) {
       throw new RichMessageParameterError(RICH_MESSAGE_JSON_INVALID_DESCRIPTION);
     }
+    const { value } = parsedParameter;
     if (!isJsonObject(value)) {
       throw new RichMessageParameterError(RICH_MESSAGE_NOT_OBJECT_DESCRIPTION);
     }

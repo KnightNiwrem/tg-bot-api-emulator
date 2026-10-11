@@ -1,6 +1,7 @@
 import type { z } from 'zod';
 
-import type { BotApiMethodAnswer } from '../method_call.ts';
+import { botApiError, type BotApiMethodAnswer } from '../method_call.ts';
+import { findTelegramIssueDescription } from '../request_parameters.ts';
 import { BOT_API_ERRORS } from './error_catalogue.ts';
 import { presentBotApiError } from './error_template.ts';
 
@@ -16,19 +17,42 @@ export function describeInvalidMethodParameters(methodName: string): string {
 }
 
 /**
- * The emulator's answer to parameters that do not fit a method's schema, naming the path of the
- * first problem the schema reports, such as `reply_markup.inline_keyboard[0][1]`. An unknown key
- * is named by its own path, and a value no alternative of a union accepts by the union's path. The
- * path never includes a parameter's value, so the description does not echo the bot's data.
+ * The answer to parameters that do not fit a method's schema, for a method whose description of
+ * them is `invalidParametersDescription`: Telegram's description of the first problem the schema
+ * reports, if a parameter gives one, such as `reply_markup` text that is not JSON, and otherwise
+ * `invalidParametersDescription`.
+ */
+export function parameterSchemaFailureAnswer(
+  error: z.ZodError,
+  invalidParametersDescription: string,
+): BotApiMethodAnswer {
+  return botApiError(400, findFirstTelegramIssueDescription(error) ?? invalidParametersDescription);
+}
+
+/**
+ * The answer to parameters that do not fit a method's schema: Telegram's description of the first
+ * problem the schema reports, if a parameter gives one, as `parameterSchemaFailureAnswer` answers,
+ * and otherwise the emulator's description naming the problem's path, such as
+ * `reply_markup.inline_keyboard[0][1]`. An unknown key is named by its own path, and a value no
+ * alternative of a union accepts by the union's path. The path never includes a parameter's value,
+ * so the description does not echo the bot's data.
  */
 export function invalidMethodParametersAnswer(
   methodName: string,
   error: z.ZodError,
 ): BotApiMethodAnswer {
-  return presentBotApiError(BOT_API_ERRORS.invalidMethodParameters, {
-    methodName,
-    parameterPath: describeFirstIssuePath(error),
-  });
+  const telegramDescription = findFirstTelegramIssueDescription(error);
+  return telegramDescription === undefined
+    ? presentBotApiError(BOT_API_ERRORS.invalidMethodParameters, {
+      methodName,
+      parameterPath: describeFirstIssuePath(error),
+    })
+    : botApiError(400, telegramDescription);
+}
+
+function findFirstTelegramIssueDescription(error: z.ZodError): string | undefined {
+  const [issue] = error.issues;
+  return issue === undefined ? undefined : findTelegramIssueDescription(issue);
 }
 
 /** The path of the first issue the schema reports, or `undefined` for one at the top level. */

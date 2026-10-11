@@ -37,7 +37,7 @@ Deno.test('the editing methods name the parameter that does not fit their schema
     [
       'editMessageMedia',
       { chat_id: 1, message_id: 1, reply_markup: 'not JSON' },
-      'Bad Request: invalid editMessageMedia parameters: reply_markup',
+      "Bad Request: can't parse reply keyboard markup JSON object",
     ],
     [
       'stopPoll',

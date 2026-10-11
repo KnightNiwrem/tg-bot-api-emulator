@@ -1,6 +1,7 @@
 import { z } from 'zod';
 
 import type { UnreadFormattedText } from './inline_query_answer_parameters.ts';
+import { parseBotApiJsonParameter } from './request_parameters.ts';
 
 export type InputPollOptionsParameterReading =
   | { readonly read: true; readonly options: readonly UnreadFormattedText[] }
@@ -34,12 +35,11 @@ export function readInputPollOptionsParameter(
     read: false,
     description,
   });
-  let value: unknown;
-  try {
-    value = JSON.parse(text ?? '');
-  } catch {
+  const parsedParameter = parseBotApiJsonParameter(text ?? '');
+  if (parsedParameter === undefined) {
     return failure("Bad Request: can't parse options JSON object");
   }
+  const { value } = parsedParameter;
   if (value === null) {
     return { read: true, options: [] };
   }

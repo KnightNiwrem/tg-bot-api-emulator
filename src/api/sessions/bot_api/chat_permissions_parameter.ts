@@ -1,4 +1,5 @@
 import type { ChatPermission, ChatPermissions } from '../../../types/chat_permissions.ts';
+import { parseBotApiJsonParameter } from './request_parameters.ts';
 
 export type ChatPermissionsParameterReading =
   | { readonly read: true; readonly permissions: ChatPermissions }
@@ -66,12 +67,11 @@ export function readChatPermissionsParameter(
   if (text === undefined) {
     return { read: true, permissions: new Set() };
   }
-  let value: unknown;
-  try {
-    value = JSON.parse(text);
-  } catch {
+  const parsedParameter = parseBotApiJsonParameter(text);
+  if (parsedParameter === undefined) {
     return { read: false, description: "Bad Request: can't parse permissions JSON object" };
   }
+  const { value } = parsedParameter;
   if (typeof value !== 'object' || value === null || Array.isArray(value)) {
     return { read: false, description: 'Bad Request: object expected as permissions' };
   }

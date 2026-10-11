@@ -14,6 +14,7 @@ import type { ChatAction } from '../../../../types/virtual_chat.ts';
 import { CHAT_ID_EMPTY_DESCRIPTION } from '../chat_access.ts';
 import { BOT_API_ERRORS } from '../errors/error_catalogue.ts';
 import { presentFixedBotApiError } from '../errors/error_template.ts';
+import { parameterSchemaFailureAnswer } from '../errors/invalid_parameters.ts';
 import { presentMessageSendingFailure } from '../errors/message_sending_failure_presenter.ts';
 import { contactNameSchema, contactVcardSchema } from '../contact_parameter.ts';
 import {
@@ -290,7 +291,7 @@ function handleSendMessage(
   const invalidParametersDescription = 'Bad Request: invalid sendMessage parameters';
   const parsedParameters = sendMessageParametersSchema.safeParse(parameters);
   if (!parsedParameters.success) {
-    return botApiError(400, invalidParametersDescription);
+    return parameterSchemaFailureAnswer(parsedParameters.error, invalidParametersDescription);
   }
   const { text, parse_mode: parseMode, entities } = parsedParameters.data;
   // Telegram reads the text and its formatting before it looks at the chat.
@@ -329,7 +330,7 @@ function handleSendContact(
   const invalidParametersDescription = 'Bad Request: invalid sendContact parameters';
   const parsedParameters = sendContactParametersSchema.safeParse(parameters);
   if (!parsedParameters.success) {
-    return botApiError(400, invalidParametersDescription);
+    return parameterSchemaFailureAnswer(parsedParameters.error, invalidParametersDescription);
   }
   const { data } = parsedParameters;
   if (data.phone_number.length === 0) {
@@ -369,7 +370,7 @@ function handleSendLocation(
   const invalidParametersDescription = 'Bad Request: invalid sendLocation parameters';
   const parsedParameters = sendLocationParametersSchema.safeParse(parameters);
   if (!parsedParameters.success) {
-    return botApiError(400, invalidParametersDescription);
+    return parameterSchemaFailureAnswer(parsedParameters.error, invalidParametersDescription);
   }
   const { data } = parsedParameters;
   if (data.latitude === undefined) {
@@ -400,7 +401,7 @@ async function handleSendRichMessage(
   const invalidParametersDescription = 'Bad Request: invalid sendRichMessage parameters';
   const parsedParameters = sendRichMessageParametersSchema.safeParse(parameters);
   if (!parsedParameters.success) {
-    return botApiError(400, invalidParametersDescription);
+    return parameterSchemaFailureAnswer(parsedParameters.error, invalidParametersDescription);
   }
   const { data } = parsedParameters;
   // Telegram reads the rich message before it looks at the chat.
@@ -450,7 +451,7 @@ function handleSendPoll(
   const invalidParametersDescription = 'Bad Request: invalid sendPoll parameters';
   const parsedParameters = sendPollParametersSchema.safeParse(parameters);
   if (!parsedParameters.success) {
-    return botApiError(400, invalidParametersDescription);
+    return parameterSchemaFailureAnswer(parsedParameters.error, invalidParametersDescription);
   }
   const { data } = parsedParameters;
   const questionReading = readFormattedTextParameters(
@@ -589,7 +590,7 @@ async function handleSendPhoto(
   const invalidParametersDescription = 'Bad Request: invalid sendPhoto parameters';
   const parsedParameters = sendPhotoParametersSchema.safeParse(parameters);
   if (!parsedParameters.success) {
-    return botApiError(400, invalidParametersDescription);
+    return parameterSchemaFailureAnswer(parsedParameters.error, invalidParametersDescription);
   }
   const { data } = parsedParameters;
   // Telegram reads the file, then the caption and its formatting, before it looks at the chat.
@@ -631,7 +632,7 @@ async function handleSendDocument(
   const invalidParametersDescription = 'Bad Request: invalid sendDocument parameters';
   const parsedParameters = sendDocumentParametersSchema.safeParse(parameters);
   if (!parsedParameters.success) {
-    return botApiError(400, invalidParametersDescription);
+    return parameterSchemaFailureAnswer(parsedParameters.error, invalidParametersDescription);
   }
   const { data } = parsedParameters;
   // Telegram reads the file, then the caption and its formatting, before it looks at the chat.
@@ -677,7 +678,7 @@ async function handleSendVideo(
   const invalidParametersDescription = 'Bad Request: invalid sendVideo parameters';
   const parsedParameters = sendVideoParametersSchema.safeParse(parameters);
   if (!parsedParameters.success) {
-    return botApiError(400, invalidParametersDescription);
+    return parameterSchemaFailureAnswer(parsedParameters.error, invalidParametersDescription);
   }
   const { data } = parsedParameters;
   // Telegram reads the file, then the caption and its formatting, before it looks at the chat.
@@ -727,7 +728,7 @@ async function handleSendVoice(
   const invalidParametersDescription = 'Bad Request: invalid sendVoice parameters';
   const parsedParameters = sendVoiceParametersSchema.safeParse(parameters);
   if (!parsedParameters.success) {
-    return botApiError(400, invalidParametersDescription);
+    return parameterSchemaFailureAnswer(parsedParameters.error, invalidParametersDescription);
   }
   const { data } = parsedParameters;
   // Telegram reads the file, then the caption and its formatting, before it looks at the chat.
@@ -772,7 +773,7 @@ async function handleSendAudio(
   const invalidParametersDescription = 'Bad Request: invalid sendAudio parameters';
   const parsedParameters = sendAudioParametersSchema.safeParse(parameters);
   if (!parsedParameters.success) {
-    return botApiError(400, invalidParametersDescription);
+    return parameterSchemaFailureAnswer(parsedParameters.error, invalidParametersDescription);
   }
   const { data } = parsedParameters;
   // Telegram reads the file, then the caption and its formatting, before it looks at the chat.
@@ -824,7 +825,7 @@ async function handleSendMediaGroup(
   const invalidParametersDescription = 'Bad Request: invalid sendMediaGroup parameters';
   const parsedParameters = sendMediaGroupParametersSchema.safeParse(parameters);
   if (!parsedParameters.success) {
-    return botApiError(400, invalidParametersDescription);
+    return parameterSchemaFailureAnswer(parsedParameters.error, invalidParametersDescription);
   }
   const { data } = parsedParameters;
   const mediaReading = readInputMediaGroupParameter(
@@ -907,7 +908,7 @@ function handleSendMessageDraft(
   const invalidParametersDescription = 'Bad Request: invalid sendMessageDraft parameters';
   const parsedParameters = sendMessageDraftParametersSchema.safeParse(parameters);
   if (!parsedParameters.success) {
-    return botApiError(400, invalidParametersDescription);
+    return parameterSchemaFailureAnswer(parsedParameters.error, invalidParametersDescription);
   }
   const { data } = parsedParameters;
   const formattedTextReading = readFormattedTextParameters(

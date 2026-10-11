@@ -384,6 +384,13 @@ const forcedReplySchema = z.strictObject({
 }));
 
 /**
+ * Telegram's description of `reply_markup` text that is not JSON the official Bot API server can
+ * read, from its `get_reply_markup`.
+ */
+const UNPARSABLE_REPLY_MARKUP_DESCRIPTION =
+  "Bad Request: can't parse reply keyboard markup JSON object";
+
+/**
  * A `reply_markup` parameter holding an inline keyboard of callback, URL, copy-text,
  * switch-inline, login, Web App and disabled buttons, for methods that edit a message.
  *
@@ -391,10 +398,13 @@ const forcedReplySchema = z.strictObject({
  * Telegram also accepts game and payment buttons and buttons with several actions, using the first
  * action it recognizes; rejecting them instead surfaces unsupported or ambiguous markup in tests.
  * Telegram rejects callback data longer than 64 bytes only when sending, so that limit is checked
- * there.
+ * there. Text the official server cannot read as JSON, including JSON nested too deeply, is refused
+ * with Telegram's description.
  */
 export function inlineKeyboardMarkupParameter() {
-  return jsonParameter(inlineKeyboardMarkupSchema);
+  return jsonParameter(inlineKeyboardMarkupSchema, {
+    unparsableJsonDescription: UNPARSABLE_REPLY_MARKUP_DESCRIPTION,
+  });
 }
 
 /**
@@ -415,5 +425,6 @@ export function messageReplyMarkupParameter() {
           replyInterfaceMarkup === undefined ? {} : { replyInterfaceMarkup }
         ),
     ]),
+    { unparsableJsonDescription: UNPARSABLE_REPLY_MARKUP_DESCRIPTION },
   );
 }

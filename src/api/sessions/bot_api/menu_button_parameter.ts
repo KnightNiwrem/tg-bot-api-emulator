@@ -1,6 +1,7 @@
 import { z } from 'zod';
 
 import type { BotMenuButton } from '../../../types/bot_menu_button.ts';
+import { parseBotApiJsonParameter } from './request_parameters.ts';
 
 export type MenuButtonParameterReading =
   | { readonly read: true; readonly menuButton: BotMenuButton }
@@ -30,12 +31,11 @@ export function readMenuButtonParameter(
   if (text === undefined || text.length === 0) {
     return { read: true, menuButton: { kind: 'default' } };
   }
-  let value: unknown;
-  try {
-    value = JSON.parse(text);
-  } catch {
+  const parsedParameter = parseBotApiJsonParameter(text);
+  if (parsedParameter === undefined) {
     return { read: false, description: "Bad Request: can't parse menu button JSON object" };
   }
+  const { value } = parsedParameter;
   const menuButtonError = (error: string): MenuButtonParameterReading => ({
     read: false,
     description: `Bad Request: can't parse menu button: ${error}`,

@@ -17,7 +17,10 @@ info:
     part with a file name: the part named after the file parameter, or the part that the
     parameter names as `attach://<part name>`. Telegram tolerates unknown parameters, malformed values, and
     bodies it cannot decode; the emulator rejects them with a `400` Bot API error so that tests
-    surface the mistake.
+    surface the mistake. As on Telegram, JSON nests at most 100 levels deep: a JSON body member
+    other than a string that nests deeper is refused before any method runs with `Bad Request:
+    can't parse parameter value: Too big object depth`, and a JSON-typed parameter that nests
+    deeper, in any encoding, is refused as JSON its reader cannot parse.
 
 
     As on Telegram, a method the emulator does not implement is answered, after the token is

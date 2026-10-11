@@ -77,7 +77,6 @@ Deno.test('sendMessage attaches an inline keyboard from every request encoding',
     { inline_keyboard: [[{ text: 'Both', callback_data: 'yes', url: 'https://grammy.dev' }]] },
     { inline_keyboard: [[{ text: 'Pay', pay: true }]] },
     { inline_keyboard: [[]] },
-    'not JSON',
   ];
   for (const replyMarkup of invalidMarkups) {
     const { status, body } = await callBotApi(api, `${botApiPath}/sendMessage`, {
@@ -91,6 +90,18 @@ Deno.test('sendMessage attaches an inline keyboard from every request encoding',
     ) {
       throw new Error(`Expected ${JSON.stringify(replyMarkup)} to be rejected`);
     }
+  }
+  const unparsableMarkup = await callBotApi(api, `${botApiPath}/sendMessage`, {
+    chat_id: accountId,
+    text: 'Hello',
+    reply_markup: 'not JSON',
+  });
+  if (
+    unparsableMarkup.status !== 400 || !isBadRequestResponse(unparsableMarkup.body) ||
+    unparsableMarkup.body.description !==
+      "Bad Request: can't parse reply keyboard markup JSON object"
+  ) {
+    throw new Error("Expected markup that is not JSON to be rejected with Telegram's description");
   }
   const oversizedCallbackData = await callBotApi(api, `${botApiPath}/sendMessage`, {
     chat_id: accountId,

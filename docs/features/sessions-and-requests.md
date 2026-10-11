@@ -61,6 +61,17 @@ becomes its content, and any other member keeps its exact source text, nested nu
 parameter reads the same whichever encoding carries it. This follows TDLib's
 [HTTP parameter reader][http-reader] and the Bot API's [query handling][query-source].
 
+As on the official server, JSON nests at most 100 levels deep: a value may sit within at most 100
+arrays and objects, and an empty array or object one level deeper still passes, since it holds no
+value. A JSON body's member other than a string that nests deeper is refused before any method runs
+with `Bad Request: can't parse parameter value: Too big object depth`, as TDLib's
+[`HttpReader::parse_json_parameters`][json-body-depth] refuses it with
+[`do_json_skip`][json-depth-check]. A JSON-typed parameter that nests deeper, whichever encoding
+carries it, is refused as JSON that TDLib's [`json_decode`][json-decode] cannot read, with that
+parameter's description: `reply_markup`, for example, with
+`Bad Request: can't parse reply keyboard markup JSON object`. Telegram's documentation does not
+state this limit.
+
 ### Chat usernames
 
 A supergroup created with a `username` is public. Wherever a method takes a chat, in `chat_id`,
@@ -238,10 +249,12 @@ after the description, as a path into the call's parameters:
 button with no action, `Bad Request: invalid forwardMessages parameters: message_ids[1]` for an
 identifier that is not an integer, or `Bad Request: invalid stopPoll parameters: open_period` for a
 parameter the method does not take. A key that is not a plain name is written as a JSON string in
-brackets, such as `["odd key"]`; the path never includes a parameter's value. A parameter that the
-schema reads as text or as a list and a later reader refuses, such as `editMessageMedia`'s `media`
-or `copyMessage`'s `caption_entities`, keeps the description without a path, as do the other
-methods.
+brackets, such as `["odd key"]`; the path never includes a parameter's value. A `reply_markup` that
+is not JSON the official server can read is answered with Telegram's
+`Bad Request: can't parse reply keyboard markup JSON object` instead, by every method that takes it.
+A parameter that the schema reads as text or as a list and a later reader refuses, such as
+`editMessageMedia`'s `media` or `copyMessage`'s `caption_entities`, keeps the description without a
+path, as do the other methods.
 
 ## Accepted options without their Telegram effects
 
@@ -285,7 +298,8 @@ where each description comes from, and its
 [server error answers](../../src/services/bot_server_error.ts) and
 [their dispatch](../../src/api/sessions/bot_api/queued_answer.ts),
 [session timing tests](../../tests/session_timing_test.ts),
-[request decoding tests](../../tests/bot_api_request_parameters_test.ts) and
+[request decoding tests](../../tests/bot_api_request_parameters_test.ts),
+[JSON depth tests](../../tests/http/bot_api_json_depth_test.ts) and
 [HTTP tests](../../tests/http/sessions_and_requests_test.ts), including
 [server error answer tests](../../tests/bot_server_error_api_test.ts),
 [control API errors](../../src/api/control_error_response.ts) with
@@ -294,6 +308,9 @@ where each description comes from, and its
 
 [http-reader]: https://github.com/tdlib/td/blob/bc9c263e2bfee06aaab41e82db51a103376030bc/tdnet/td/net/HttpReader.cpp#L110-L233
 [query-source]: https://github.com/tdlib/telegram-bot-api/blob/e3e9dd8e5b3d7ab8537cd5a10dc31d5ffa8f82d1/telegram-bot-api/Query.cpp
+[json-body-depth]: https://github.com/tdlib/td/blob/bc9c263e2bfee06aaab41e82db51a103376030bc/tdnet/td/net/HttpReader.cpp#L682-L699
+[json-depth-check]: https://github.com/tdlib/td/blob/bc9c263e2bfee06aaab41e82db51a103376030bc/tdutils/td/utils/JsonBuilder.cpp#L416-L419
+[json-decode]: https://github.com/tdlib/td/blob/bc9c263e2bfee06aaab41e82db51a103376030bc/tdutils/td/utils/JsonBuilder.h#L796-L799
 [booleans]: https://github.com/tdlib/telegram-bot-api/blob/e3e9dd8e5b3d7ab8537cd5a10dc31d5ffa8f82d1/telegram-bot-api/Client.cpp#L10051-L10057
 [integers]: https://github.com/tdlib/telegram-bot-api/blob/e3e9dd8e5b3d7ab8537cd5a10dc31d5ffa8f82d1/telegram-bot-api/Client.cpp#L13457-L13462
 [json-fields]: https://github.com/tdlib/td/blob/bc9c263e2bfee06aaab41e82db51a103376030bc/tdutils/td/utils/JsonBuilder.cpp#L625-L740
