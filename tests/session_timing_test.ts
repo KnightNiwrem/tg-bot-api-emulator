@@ -16,7 +16,10 @@ Deno.test('A session dates Telegram messages by its own wall clock', async () =>
     content: { kind: 'text', text: '/start' },
   });
 
-  const result = await session.botApi.getUpdates(bot, { limit: 100, timeoutSeconds: 0 });
+  const result = await session.botUpdateConsumers.getUpdates(bot.id, {
+    limit: 100,
+    timeoutSeconds: 0,
+  });
   const [update] = result.retrieved ? result.updates : [];
   if (update === undefined || !('message' in update) || update.message.date !== 1_234_567_890) {
     throw new Error(
@@ -36,10 +39,14 @@ Deno.test('A session times long polls and activity reads by its scheduler alone'
     chat: { type: 'private', peerId: bot.id },
     content: { kind: 'text', text: '/start' },
   });
-  await session.botApi.getUpdates(bot, { offset: 2, limit: 100, timeoutSeconds: 0 });
+  await session.botUpdateConsumers.getUpdates(bot.id, { offset: 2, limit: 100, timeoutSeconds: 0 });
 
   let longPollAnswered = false;
-  const longPoll = session.botApi.getUpdates(bot, { offset: 2, limit: 100, timeoutSeconds: 30 })
+  const longPoll = session.botUpdateConsumers.getUpdates(bot.id, {
+    offset: 2,
+    limit: 100,
+    timeoutSeconds: 30,
+  })
     .finally(() => {
       longPollAnswered = true;
     });

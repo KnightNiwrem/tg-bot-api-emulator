@@ -230,7 +230,7 @@ Deno.test('a long poll that starts after its session ended finds no updates and 
     parameters: { offset: '2', timeout: '50' },
     uploadedFiles: new Map(),
   });
-  const webhookInfo = fixture.session.botApi.getWebhookInfo(fixture.bot);
+  const webhookInfo = fixture.session.botUpdateConsumers.getWebhookInfo(fixture.bot.id);
   assertEqualsInFieldOrder(
     [outcome, webhookInfo.pending_update_count],
     [{ answered: true, answer: { status: 200, body: { ok: true, result: [] } } }, 1],

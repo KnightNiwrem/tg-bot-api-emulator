@@ -26,7 +26,7 @@ Deno.test('a setWebhook whose record fails sets no webhook and leaves its long p
   const restoreRecording = fixture.failCallRecording();
   await assertRejects(setWebhook, Error, FAILED_RECORDING_MESSAGE);
   restoreRecording();
-  const webhookAfterFailure = fixture.session.botApi.getWebhookInfo(alpha).url;
+  const webhookAfterFailure = fixture.session.botUpdateConsumers.getWebhookInfo(alpha.id).url;
   fixture.sendAdaText('Hello');
   const poll = await heldPoll;
 
@@ -41,14 +41,14 @@ Deno.test('a setWebhook whose record fails sets no webhook and leaves its long p
   assertEquals(fixture.webhookRequests.length, 0);
   // Once the record works, the same call sets the webhook.
   await fixture.expectResult(setWebhook());
-  assertEquals(fixture.session.botApi.getWebhookInfo(alpha).url, WEBHOOK_URL);
+  assertEquals(fixture.session.botUpdateConsumers.getWebhookInfo(alpha.id).url, WEBHOOK_URL);
 });
 
 Deno.test('a deleteWebhook dropping pending updates whose record fails keeps both', async () => {
   using fixture = createDeliveryFixture();
   const { alpha, session } = fixture;
   await fixture.callMethodExpectingResult(alpha, 'setWebhook', { url: WEBHOOK_URL });
-  const webhookBefore = session.botApi.getWebhookInfo(alpha);
+  const webhookBefore = session.botUpdateConsumers.getWebhookInfo(alpha.id);
 
   const restoreRecording = fixture.failCallRecording();
   await assertRejects(
@@ -59,7 +59,7 @@ Deno.test('a deleteWebhook dropping pending updates whose record fails keeps bot
   restoreRecording();
 
   assertEquals(webhookBefore.pending_update_count, 1);
-  assertEquals(session.botApi.getWebhookInfo(alpha), webhookBefore);
+  assertEquals(session.botUpdateConsumers.getWebhookInfo(alpha.id), webhookBefore);
 });
 
 Deno.test("a getUpdates whose confirmations fail to be recorded confirms nothing and keeps the bot's subscription", async () => {
@@ -71,7 +71,7 @@ Deno.test("a getUpdates whose confirmations fail to be recorded confirms nothing
       offset: String(update.update_id + 1),
       allowed_updates: JSON.stringify(['callback_query']),
     });
-  const webhookInfoBefore = session.botApi.getWebhookInfo(alpha);
+  const webhookInfoBefore = session.botUpdateConsumers.getWebhookInfo(alpha.id);
   const activity = session.botActivity;
   const recordUpdateConfirmations = activity.recordUpdateConfirmations.bind(activity);
   // The subscription and the confirmation are staged before the confirmation's record fails.
@@ -81,12 +81,12 @@ Deno.test("a getUpdates whose confirmations fail to be recorded confirms nothing
 
   await assertRejects(pollPastUpdate, Error, FAILED_RECORDING_MESSAGE);
   activity.recordUpdateConfirmations = recordUpdateConfirmations;
-  const webhookInfoAfterFailure = session.botApi.getWebhookInfo(alpha);
+  const webhookInfoAfterFailure = session.botUpdateConsumers.getWebhookInfo(alpha.id);
   await fixture.expectResult(pollPastUpdate());
 
   assertEquals(webhookInfoAfterFailure, webhookInfoBefore);
   assertEquals(webhookInfoBefore.pending_update_count, 1);
-  assertEquals(session.botApi.getWebhookInfo(alpha), {
+  assertEquals(session.botUpdateConsumers.getWebhookInfo(alpha.id), {
     ...webhookInfoBefore,
     pending_update_count: 0,
     allowed_updates: ['callback_query'],
@@ -156,7 +156,7 @@ Deno.test("a webhook acceptance whose record fails runs no reply, and the update
       replyCount: (await fixture.readActivity({ kind: 'bot_api_call', method: 'sendMessage' }))
         .length,
       adaMessageCount: fixture.countAdaChatMessages(),
-      pendingUpdateCount: session.botApi.getWebhookInfo(alpha).pending_update_count,
+      pendingUpdateCount: session.botUpdateConsumers.getWebhookInfo(alpha.id).pending_update_count,
     },
     {
       requestCount: 2,
@@ -185,7 +185,7 @@ Deno.test('a webhook failure whose record fails strands no update and records no
 
   await fixture.callMethodExpectingResult(alpha, 'setWebhook', { url: WEBHOOK_URL });
   const [confirmation] = await fixture.readActivity({ kind: 'update_confirmed' });
-  const webhookInfo = session.botApi.getWebhookInfo(alpha);
+  const webhookInfo = session.botUpdateConsumers.getWebhookInfo(alpha.id);
 
   assertEquals(
     {

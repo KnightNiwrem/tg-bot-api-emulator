@@ -40,7 +40,10 @@ Deno.test('disposing of a session built for a test ends it, answering its held l
       first_name: 'Test Bot',
       username: 'test_bot',
     });
-    heldPoll = session.botApi.getUpdates(bot.profile, { limit: 100, timeoutSeconds: 30 });
+    heldPoll = session.botUpdateConsumers.getUpdates(bot.profile.id, {
+      limit: 100,
+      timeoutSeconds: 30,
+    });
     endedSession = session;
   }
 
@@ -128,13 +131,13 @@ function sendUpdateToWebhook(session: EmulationSession): () => BotApiWebhookInfo
     first_name: 'Test Bot',
     username: 'test_bot',
   }).profile;
-  session.botApi.setWebhook(bot, webhookRequest());
+  session.botUpdateConsumers.setWebhook(bot.id, webhookRequest());
   session.messageSending.sendAccountPrivateChatMessage({
     fromAccountId: adaId,
     chat: { type: 'private', peerId: bot.id },
     content: { kind: 'text', text: 'Hello' },
   });
-  return () => session.botApi.getWebhookInfo(bot);
+  return () => session.botUpdateConsumers.getWebhookInfo(bot.id);
 }
 
 /** Ada writes to a bot in `session`, and the date of that message as the bot receives it. */
@@ -149,7 +152,10 @@ async function readFirstMessageDate(session: EmulationSession): Promise<number |
     chat: { type: 'private', peerId: bot.profile.id },
     content: { kind: 'text', text: 'Hello' },
   });
-  const result = await session.botApi.getUpdates(bot.profile, { limit: 100, timeoutSeconds: 0 });
+  const result = await session.botUpdateConsumers.getUpdates(bot.profile.id, {
+    limit: 100,
+    timeoutSeconds: 0,
+  });
   const [update] = result.retrieved ? result.updates : [];
   return update !== undefined && 'message' in update ? update.message.date : undefined;
 }

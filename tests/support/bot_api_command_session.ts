@@ -141,7 +141,7 @@ export function createBotApiCommandSession(
     },
     /** How many updates wait for each bot, as `getWebhookInfo` reports them. */
     countPendingUpdates: (bots: readonly VirtualBotProfile[]) =>
-      bots.map((bot) => session.botApi.getWebhookInfo(bot).pending_update_count),
+      bots.map((bot) => session.botUpdateConsumers.getWebhookInfo(bot.id).pending_update_count),
     [Symbol.dispose]: () => session[Symbol.dispose](),
   };
 }

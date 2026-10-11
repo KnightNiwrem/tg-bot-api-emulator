@@ -6,6 +6,7 @@ import type { BotMenuButtonService } from '../services/domain/bot_menu_button.ts
 import type { BotMessageViewService } from '../services/bot_message_view/bot_message_view.ts';
 import type { BotRateLimitService } from '../services/domain/bot_rate_limit.ts';
 import type { BotServerErrorService } from '../services/domain/bot_server_error.ts';
+import type { BotUpdateConsumerService } from '../services/update_consumers/bot_update_consumer.ts';
 import type { CallbackQueryService } from '../services/domain/callback_query.ts';
 import type { ChatActionService } from '../services/domain/chat_action.ts';
 import type { ChatAdmissionService } from '../services/domain/chat_admission.ts';
@@ -68,6 +69,8 @@ export interface EmulationSession extends EmulationSessionOptions {
   readonly botRateLimits: BotRateLimitService;
   readonly botServerErrors: BotServerErrorService;
   readonly botApi: BotApiService;
+  /** How each bot receives its updates: by polling or by webhook, never both. */
+  readonly botUpdateConsumers: BotUpdateConsumerService;
   readonly botActivity: BotActivityService;
   readonly webhookAttempts: WebhookAttemptScheduler;
   /** When the session ends, and whether work may still change it. */

@@ -151,8 +151,8 @@ export interface WebhookSession extends Disposable {
   /** Sets the bot's webhook as `webhookRequest()` does, with the changes `request` makes. */
   setWebhook(
     request?: Partial<SetWebhookRequest>,
-  ): ReturnType<SessionServices['botApi']['setWebhook']>;
-  getWebhookInfo(): ReturnType<SessionServices['botApi']['getWebhookInfo']>;
+  ): ReturnType<SessionServices['botUpdateConsumers']['setWebhook']>;
+  getWebhookInfo(): ReturnType<SessionServices['botUpdateConsumers']['getWebhookInfo']>;
 }
 
 /**
@@ -200,8 +200,8 @@ export function createWebhookSession(
       }
     },
     setWebhook: (request = {}) =>
-      session.botApi.setWebhook(bot, { ...webhookRequest(), ...request }),
-    getWebhookInfo: () => session.botApi.getWebhookInfo(bot),
+      session.botUpdateConsumers.setWebhook(bot.id, { ...webhookRequest(), ...request }),
+    getWebhookInfo: () => session.botUpdateConsumers.getWebhookInfo(bot.id),
     [Symbol.dispose]: () => session[Symbol.dispose](),
   };
 }

@@ -1,7 +1,12 @@
 import { z } from 'zod';
 
 import { presentUpdateDeliveryFailure } from '../errors/update_delivery_failure_presenter.ts';
-import { type BotApiMethod, botApiResult, SESSION_ENDED } from '../method_call.ts';
+import {
+  type BotApiFamilyContext,
+  type BotApiMethod,
+  botApiResult,
+  SESSION_ENDED,
+} from '../method_call.ts';
 import {
   answerWithBadRequest,
   type BotApiStepResult,
@@ -72,6 +77,12 @@ const getUpdatesParametersSchema = z.strictObject({
 type SetWebhookParameters = z.output<typeof setWebhookParametersSchema>;
 
 /**
+ * What the update delivery methods use: the bot's update consumers, which keep polling and webhook
+ * delivery exclusive.
+ */
+type UpdateDeliveryContext = BotApiFamilyContext<'botUpdateConsumers'>;
+
+/**
  * The methods by which a bot receives updates: polling with `getUpdates`, or a webhook. Setting and
  * deleting a webhook execute as commands in their call's transaction; a `getUpdates` call executes
  * a command when it arrives, and another when its long poll's wait ends.
@@ -82,8 +93,13 @@ export const UPDATE_DELIVERY_METHODS: readonly BotApiMethod[] = [
     recordsActivity: true,
     parameters: deleteWebhookParametersSchema,
     steps: ({ parameters }) => startSteps(parameters),
-    execute: (context, { drop_pending_updates: dropPendingUpdates }) => {
-      const outcome = context.session.botApi.deleteWebhook(context.bot, { dropPendingUpdates });
+    execute: (
+      context: UpdateDeliveryContext,
+      { drop_pending_updates: dropPendingUpdates },
+    ) => {
+      const outcome = context.session.botUpdateConsumers.deleteWebhook(context.bot.id, {
+        dropPendingUpdates,
+      });
       return botApiResult(true, SET_WEBHOOK_OUTCOME_DESCRIPTIONS[outcome]);
     },
   }),
@@ -92,8 +108,11 @@ export const UPDATE_DELIVERY_METHODS: readonly BotApiMethod[] = [
     recordsActivity: false,
     parameters: getUpdatesParametersSchema,
     steps: ({ parameters }) => startSteps(parameters),
-    execute: async (context, { offset, limit, timeout, allowed_updates: allowedUpdates }) => {
-      const result = await context.session.botApi.getUpdates(context.bot, {
+    execute: async (
+      context: UpdateDeliveryContext,
+      { offset, limit, timeout, allowed_updates: allowedUpdates },
+    ) => {
+      const result = await context.session.botUpdateConsumers.getUpdates(context.bot.id, {
         offset,
         limit,
         timeoutSeconds: timeout,
@@ -118,7 +137,8 @@ export const UPDATE_DELIVERY_METHODS: readonly BotApiMethod[] = [
     recordsActivity: true,
     parameters: getWebhookInfoParametersSchema,
     steps: ({ parameters }) => startSteps(parameters),
-    execute: (context) => botApiResult(context.session.botApi.getWebhookInfo(context.bot)),
+    execute: (context: UpdateDeliveryContext) =>
+      botApiResult(context.session.botUpdateConsumers.getWebhookInfo(context.bot.id)),
   }),
   commandMethodOfSteps({
     name: 'setWebhook',
@@ -128,8 +148,8 @@ export const UPDATE_DELIVERY_METHODS: readonly BotApiMethod[] = [
       startSteps(parameters)
         .andThen(refuseWebhookIpAddress)
         .andThen((webhookParameters) => refuseWebhookCertificate(webhookParameters, uploadedFiles)),
-    execute: (context, parameters) => {
-      const result = context.session.botApi.setWebhook(context.bot, {
+    execute: (context: UpdateDeliveryContext, parameters) => {
+      const result = context.session.botUpdateConsumers.setWebhook(context.bot.id, {
         url: parameters.url,
         secretToken: parameters.secret_token,
         maxConnections: parameters.max_connections,

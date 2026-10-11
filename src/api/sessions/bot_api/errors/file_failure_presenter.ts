@@ -5,7 +5,7 @@ import { type FixedBotApiError, presentFixedBotApiError } from './error_template
 
 /** Why `getFile` prepared no file for the bot to download. */
 type FilePreparationFailure = Extract<
-  ReturnType<EmulationSession['botApi']['getFile']>,
+  ReturnType<EmulationSession['mediaFiles']['getBotFile']>,
   { readonly found: false }
 >;
 

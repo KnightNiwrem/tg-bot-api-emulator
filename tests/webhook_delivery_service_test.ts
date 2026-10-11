@@ -48,8 +48,8 @@ Deno.test('Webhook delivery sets, keeps, replaces, and deletes webhooks as Teleg
   setWebhook({});
   assertEquals(
     [
-      session.botApi.deleteWebhook(bot, { dropPendingUpdates: false }),
-      session.botApi.deleteWebhook(bot, { dropPendingUpdates: true }),
+      session.botUpdateConsumers.deleteWebhook(bot.id, { dropPendingUpdates: false }),
+      session.botUpdateConsumers.deleteWebhook(bot.id, { dropPendingUpdates: true }),
     ],
     ['webhook_deleted', 'webhook_already_deleted'],
     'Expected deleteWebhook to delete once',
