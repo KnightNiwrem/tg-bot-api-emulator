@@ -104,13 +104,30 @@ export interface ControlOperationContract {
 const PATH_PLACEHOLDER_PATTERN = /\{([^{}]+)\}/g;
 
 /**
+ * A header name as HTTP compares field names: without regard to the case of its ASCII letters, so
+ * that `Location` and `location` name one header.
+ */
+export function normalizeHeaderName(name: string): string {
+  return name.replace(/[A-Z]/g, (letter) => letter.toLowerCase());
+}
+
+/**
+ * The headers a route writes itself, which a contract cannot declare as its own: the media type of
+ * its body, and its action receipt.
+ */
+const ROUTE_WRITTEN_HEADER_NAMES: ReadonlySet<string> = new Set(
+  ['Content-Type', ...Object.keys(actionReceiptHeadersSchema.shape)].map(normalizeHeaderName),
+);
+
+/**
  * Declares an operation's contract, keeping its literal types for the server and client to infer
  * from.
  *
  * @throws {Error} when `params` does not name exactly the placeholders of `path`,
  * `querySerialization` names a parameter that `query` does not, a bytes success declares text that
- * is no media range, a `GET` declares an action receipt, the success headers name a receipt
- * header themselves, or a refusal status is not an error status.
+ * is no media range, a `GET` declares an action receipt, the success headers name one header
+ * twice or name a header the route writes, `Content-Type` or a receipt's, in any letter case, or a
+ * refusal status is not an error status.
  */
 export function defineControlOperation<const Contract extends ControlOperationContract>(
   contract: Contract,
@@ -140,10 +157,18 @@ export function defineControlOperation<const Contract extends ControlOperationCo
   if (contract.method === 'GET' && contract.success.actionReceipt !== undefined) {
     throw new Error(`${contract.operationId} reads, so it answers with no action receipt`);
   }
+  const declaredHeaderNames = new Set<string>();
   for (const name of Object.keys(contract.success.headers?.shape ?? {})) {
-    if (Object.hasOwn(actionReceiptHeadersSchema.shape, name)) {
-      throw new Error(`${contract.operationId} declares the receipt header ${name} as its own`);
+    const normalizedName = normalizeHeaderName(name);
+    if (ROUTE_WRITTEN_HEADER_NAMES.has(normalizedName)) {
+      throw new Error(
+        `${contract.operationId} declares the ${name} header, which its route writes`,
+      );
     }
+    if (declaredHeaderNames.has(normalizedName)) {
+      throw new Error(`${contract.operationId} declares the ${name} header twice`);
+    }
+    declaredHeaderNames.add(normalizedName);
   }
   for (const status of Object.keys(contract.refusals).map(Number)) {
     if (!Number.isInteger(status) || status < 400 || status > 599) {

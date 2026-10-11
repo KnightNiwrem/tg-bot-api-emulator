@@ -345,3 +345,17 @@ Deno.test('every schema in openapi/openapi.yaml compiles with unknown keywords r
     }
   }
 });
+
+Deno.test('a document naming a response header twice, in two letter cases, is refused', () => {
+  let message = '';
+  try {
+    readOpenApiDocument(
+      new URL('./fixtures/openapi_conformance/repeated_header.yaml', import.meta.url),
+    );
+  } catch (error) {
+    message = error instanceof Error ? error.message : String(error);
+  }
+  if (!message.includes('the location header twice')) {
+    throw new Error(`Expected the repeated header refused, received ${JSON.stringify(message)}`);
+  }
+});

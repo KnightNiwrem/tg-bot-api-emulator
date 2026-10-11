@@ -1,0 +1,23 @@
+openapi: 3.1.1
+info:
+  title: Repeated response header fixture
+  version: 0.0.0
+  description: >-
+    A document whose response names one header twice, in two letter cases, which HTTP reads as one
+    header.
+paths:
+  /widgets:
+    post:
+      operationId: createWidget
+      responses:
+        '201':
+          description: The widget was created.
+          headers:
+            Location:
+              required: true
+              schema:
+                type: string
+            location:
+              required: true
+              schema:
+                type: string

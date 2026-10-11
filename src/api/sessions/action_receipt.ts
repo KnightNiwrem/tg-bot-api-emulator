@@ -62,6 +62,8 @@ export async function answerWithActionReceipt(
   const receipt = captureActionReceipt(session);
   const response = await act(session);
   if (response.ok) {
+    // `Headers` names each header without regard to letter case, so a receipt header the action
+    // happened to give is replaced, not joined.
     for (const [name, value] of Object.entries(writeActionReceiptHeaders(receipt))) {
       response.headers.set(name, value);
     }

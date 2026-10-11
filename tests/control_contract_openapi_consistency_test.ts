@@ -227,6 +227,24 @@ Deno.test('An action receipt only one side declares is drift', () => {
   ]);
 });
 
+Deno.test('A header the contract declares in two letter cases is drift', () => {
+  const documented = findOperation('createBot');
+  // A contract that `defineControlOperation` would refuse, compared as it stands.
+  const contract: ControlOperationContract = {
+    ...createBotContract,
+    success: {
+      ...createBotContract.success,
+      headers: z.object({ Location: z.string(), location: z.string() }),
+    },
+  };
+
+  const drift = findContractDrift(contract, [documented], canonicalizer);
+
+  if (!drift.includes('response 201 header location: the contract declares it twice')) {
+    throw new Error(`Expected the repeated header as drift, found:\n${drift.join('\n')}`);
+  }
+});
+
 Deno.test('A wire schema whose JSON Schema would leave out a check is refused', () => {
   const cases: readonly (readonly [label: string, schema: z.ZodType])[] = [
     ['a refinement', z.strictObject({ name: z.string().refine((name) => name !== 'root') })],

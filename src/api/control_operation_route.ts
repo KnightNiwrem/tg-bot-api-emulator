@@ -209,17 +209,17 @@ function serializeControlResponse(
   receiptBeforeAction: ActionReceipt | undefined,
 ): Response {
   const { status, body, mediaType } = response;
-  const ownHeaders = toHeaderValues(contract, response.headers ?? {});
+  const headers = toHeaders(contract, response.headers ?? {});
   if (status !== contract.success.status) {
     if (!Object.hasOwn(contract.refusals, status)) {
       throw new Error(`${contract.operationId} does not declare a ${status} response`);
     }
-    return jsonResponse(status, ownHeaders, body);
+    return jsonResponse(status, headers, body);
   }
   const receipt = readSuccessReceipt(contract, response, receiptBeforeAction);
-  const headers = receipt === undefined
-    ? ownHeaders
-    : { ...ownHeaders, ...writeActionReceiptHeaders(receipt) };
+  if (receipt !== undefined) {
+    setHeaders(headers, writeActionReceiptHeaders(receipt));
+  }
   const successBody = contract.success.body;
   switch (successBody.kind) {
     case 'json':
@@ -235,10 +235,8 @@ function serializeControlResponse(
           `${contract.operationId} answered with bytes outside ${successBody.mediaTypeRange}`,
         );
       }
-      return new Response(toArrayBufferBytes(body), {
-        status,
-        headers: { ...headers, 'Content-Type': mediaType },
-      });
+      headers.set('Content-Type', mediaType);
+      return new Response(toArrayBufferBytes(body), { status, headers });
     default: {
       const unhandledBody: never = successBody;
       throw new Error(`Unhandled response body: ${JSON.stringify(unhandledBody)}`);
@@ -247,24 +245,33 @@ function serializeControlResponse(
 }
 
 /**
- * The response's headers as text, leaving out an optional header the response does not carry.
+ * The headers a handler gave its response, leaving out an optional header the response does not
+ * carry. They are kept as `Headers`, which name each header without regard to letter case, so
+ * that a header the route writes later replaces any the handler gave rather than joining it.
  *
  * @throws {Error} when a header's value is not text, which only a contract whose header schema
  * gives another type can make.
  */
-function toHeaderValues(
+function toHeaders(
   contract: ControlOperationContract,
-  headers: Readonly<Record<string, unknown>>,
-): Record<string, string> {
-  const headerValues: Record<string, string> = {};
-  for (const [name, value] of Object.entries(headers)) {
+  handlerHeaders: Readonly<Record<string, unknown>>,
+): Headers {
+  const headers = new Headers();
+  for (const [name, value] of Object.entries(handlerHeaders)) {
     if (value === undefined) continue;
     if (typeof value !== 'string') {
       throw new Error(`${contract.operationId} gave its ${name} header a value that is not text`);
     }
-    headerValues[name] = value;
+    headers.set(name, value);
   }
-  return headerValues;
+  return headers;
+}
+
+/** Sets each of the headers by name, replacing a header of that name in any letter case. */
+function setHeaders(headers: Headers, values: Readonly<Record<string, string>>): void {
+  for (const [name, value] of Object.entries(values)) {
+    headers.set(name, value);
+  }
 }
 
 /** The same bytes over an `ArrayBuffer`, which a response body needs, copying only shared memory. */
@@ -274,13 +281,7 @@ function toArrayBufferBytes(bytes: Uint8Array): Uint8Array<ArrayBuffer> {
     : new Uint8Array(bytes);
 }
 
-function jsonResponse(
-  status: number,
-  headers: Readonly<Record<string, string>>,
-  body: unknown,
-): Response {
-  return new Response(JSON.stringify(body), {
-    status,
-    headers: { ...headers, 'Content-Type': JSON_MEDIA_TYPE },
-  });
+function jsonResponse(status: number, headers: Headers, body: unknown): Response {
+  headers.set('Content-Type', JSON_MEDIA_TYPE);
+  return new Response(JSON.stringify(body), { status, headers });
 }

@@ -63,17 +63,38 @@ Deno.test('A contract refuses a receipt on a read, or receipt headers of its own
     Error,
     'answers with no action receipt',
   );
+  // HTTP compares header names without regard to letter case.
+  for (
+    const name of [
+      ACTION_RECEIPT_SESSION_ID_HEADER,
+      'action-receipt-session-id',
+      'ACTION-RECEIPT-ACTIVITY-POSITION',
+      'Content-Type',
+      'content-type',
+    ]
+  ) {
+    assertThrows(
+      () =>
+        defineControlOperation({
+          ...touchNoteContract,
+          success: { ...touchNoteContract.success, headers: z.object({ [name]: z.string() }) },
+        }),
+      Error,
+      'which its route writes',
+      `Expected ${name} refused`,
+    );
+  }
   assertThrows(
     () =>
       defineControlOperation({
         ...touchNoteContract,
         success: {
           ...touchNoteContract.success,
-          headers: z.object({ [ACTION_RECEIPT_SESSION_ID_HEADER]: z.string() }),
+          headers: z.object({ Location: z.string(), location: z.string() }),
         },
       }),
     Error,
-    'declares the receipt header',
+    'header twice',
   );
 });
 
@@ -128,6 +149,48 @@ Deno.test('An entry an action records before it answers follows its receipt', as
       ]),
       [['receipts', '0'], ['receipts', '1']],
       'Expected each receipt to be the head before its action recorded its entry',
+    );
+  } finally {
+    session.end();
+  }
+});
+
+Deno.test("A route writes its own headers over a handler's, whatever their letter case", async () => {
+  const session = createEmulationSession(
+    'receipts',
+    { uploadProfile: 'cloud' },
+    createSystemSessionTiming(),
+  );
+  const routes = new Hono<SessionRouteContextTypes>();
+  routes.use('*', (context, next) => {
+    context.set('emulationSession', session);
+    return next();
+  });
+  // A contract that `defineControlOperation` would refuse, as a handler its types do not describe.
+  const contract = {
+    ...touchNoteContract,
+    success: {
+      status: 200,
+      body: { kind: 'json', schema: z.strictObject({}) },
+      headers: z.object({ 'action-receipt-session-id': z.string(), 'content-type': z.string() }),
+      actionReceipt: 'before_action',
+    },
+  } as const;
+  registerControlOperation(routes, '', contract, () => ({
+    status: 200,
+    headers: { 'action-receipt-session-id': 'forged', 'content-type': 'text/plain' },
+    body: {},
+  }));
+  const app = new Hono().route('/', routes);
+
+  try {
+    const response = await app.request('http://notes.example/notes/1/touches', { method: 'POST' });
+    await response.body?.cancel();
+
+    assertEquals(
+      [response.headers.get('Action-Receipt-Session-Id'), response.headers.get('Content-Type')],
+      ['receipts', 'application/json'],
+      "Expected the receipt and media type the route wrote, not joined to the handler's",
     );
   } finally {
     session.end();
