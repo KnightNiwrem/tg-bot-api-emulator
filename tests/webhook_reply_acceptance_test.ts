@@ -91,9 +91,13 @@ Deno.test("an accepted update's reply is started before its confirmation is reco
   const { botId, botUpdates, updateConsumers, publications, endSession } = fixture;
 
   try {
+    // A reader of the activity log learns of the confirmation as soon as it can.
+    const confirmationRead = fixture.waitForEntry({ kind: 'update_confirmed' }).then(() => {
+      publications.push('update_confirmed');
+    });
     botUpdates.enqueueMessageUpdate(botId, createPrivateMessage(1));
     updateConsumers.setWebhook(botId, webhookRequest());
-    await fixture.waitForEntry({ kind: 'update_confirmed' });
+    await confirmationRead;
     assertEquals(
       publications,
       ['reply_started', 'update_confirmed'],
@@ -557,10 +561,7 @@ function createAcceptanceFixture(
         deliveryBotId: number,
         update: BotApiUpdate,
         webhookAttemptId: number,
-      ) => {
-        publications.push('update_confirmed');
-        botActivity.recordWebhookUpdateConfirmation(deliveryBotId, update, webhookAttemptId);
-      },
+      ) => botActivity.recordWebhookUpdateConfirmation(deliveryBotId, update, webhookAttemptId),
       recordWebhookAttemptFailure: (failure) => botActivity.recordWebhookAttemptFailure(failure),
       recordUpdateDeliveries: (deliveryBotId, updates, via) =>
         botActivity.recordUpdateDeliveries(deliveryBotId, updates, via),
@@ -674,6 +675,9 @@ function createUpdateConsumers(
       startWebhookReply,
       attempts,
       transactions,
+      reportDeliveryChangeFailure: (error) => {
+        throw error;
+      },
       currentUnixTimeSeconds: () => NOW_UNIX_SECONDS,
     }),
     sessionLifetime,

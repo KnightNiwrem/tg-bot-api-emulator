@@ -398,6 +398,11 @@ export function createEmulationSession(
     },
     attempts: webhookAttempts,
     transactions,
+    reportDeliveryChangeFailure: (error) =>
+      console.error(
+        'A webhook delivery failed to change the session, which it left as it was',
+        error,
+      ),
     currentUnixTimeSeconds,
   });
   const updateConsumers = new BotUpdateConsumerService({

@@ -3,6 +3,8 @@ import { assertEquals, assertRejects, assertThrows } from '@std/assert';
 import { QueuedBotApiAnswerRepository } from '../src/repositories/queued_bot_api_answer.ts';
 import { SessionLifetime } from '../src/services/session_lifetime.ts';
 import { SessionChangeJournal } from '../src/transactions/change_staging.ts';
+import type { WebhookTransport } from '../src/services/webhook_delivery.ts';
+import type { BotActivityEntry, BotActivityFilter } from '../src/types/bot_activity.ts';
 import type { QueuedRateLimitResponses } from '../src/types/bot_rate_limit.ts';
 import {
   createBotApiCommandSession,
@@ -118,6 +120,91 @@ Deno.test('a queued answer whose record fails stays queued for the next call', a
   });
 });
 
+Deno.test("a webhook acceptance whose record fails runs no reply, and the update's resend runs it once", async () => {
+  let requestCount = 0;
+  using fixture = createDeliveryFixture((request) => {
+    requestCount++;
+    return Promise.resolve(Response.json({
+      method: 'sendMessage',
+      chat_id: new URL(request.url).searchParams.get('chat') ?? '',
+      text: 'Thanks',
+    }));
+  });
+  const { alpha, adaId, session } = fixture;
+  const activity = session.botActivity;
+  const recordConfirmation = activity.recordWebhookUpdateConfirmation.bind(activity);
+  let failingRecordCount = 1;
+  // The first acceptance's confirmation is staged before its record fails.
+  activity.recordWebhookUpdateConfirmation = (...input) => {
+    if (failingRecordCount-- > 0) {
+      throw new Error(FAILED_RECORDING_MESSAGE);
+    }
+    recordConfirmation(...input);
+  };
+
+  await fixture.callMethodExpectingResult(alpha, 'setWebhook', {
+    url: `${WEBHOOK_URL}?chat=${adaId}`,
+  });
+  const [reply] = await fixture.readActivity({ kind: 'bot_api_call', method: 'sendMessage' });
+  const [confirmation] = await fixture.readActivity({ kind: 'update_confirmed' });
+
+  assertEquals(
+    {
+      requestCount,
+      replyMethod: reply.kind === 'bot_api_call' ? reply.method : reply.kind,
+      confirmedBefore: confirmation.position < reply.position,
+      replyCount: (await fixture.readActivity({ kind: 'bot_api_call', method: 'sendMessage' }))
+        .length,
+      adaMessageCount: fixture.countAdaChatMessages(),
+      pendingUpdateCount: session.botApi.getWebhookInfo(alpha).pending_update_count,
+    },
+    {
+      requestCount: 2,
+      replyMethod: 'sendMessage',
+      confirmedBefore: true,
+      replyCount: 1,
+      adaMessageCount: 2,
+      pendingUpdateCount: 0,
+    },
+  );
+});
+
+Deno.test('a webhook failure whose record fails strands no update and records no error', async () => {
+  const responses = [new Response(null, { status: 500 }), new Response(null, { status: 200 })];
+  using fixture = createDeliveryFixture(() =>
+    Promise.resolve(responses.shift() ?? new Response(null, { status: 200 }))
+  );
+  const { alpha, session } = fixture;
+  const activity = session.botActivity;
+  const recordFailure = activity.recordWebhookAttemptFailure.bind(activity);
+  // The failure's delivery error is staged before its record fails.
+  activity.recordWebhookAttemptFailure = () => {
+    activity.recordWebhookAttemptFailure = recordFailure;
+    throw new Error(FAILED_RECORDING_MESSAGE);
+  };
+
+  await fixture.callMethodExpectingResult(alpha, 'setWebhook', { url: WEBHOOK_URL });
+  const [confirmation] = await fixture.readActivity({ kind: 'update_confirmed' });
+  const webhookInfo = session.botApi.getWebhookInfo(alpha);
+
+  assertEquals(
+    {
+      confirmed: confirmation.kind,
+      failures: (await fixture.readActivity({ kind: 'webhook_attempt_failed' }, 0)).length,
+      attempts: fixture.listAttemptStatuses(),
+      pendingUpdateCount: webhookInfo.pending_update_count,
+      lastErrorMessage: webhookInfo.last_error_message ?? null,
+    },
+    {
+      confirmed: 'update_confirmed',
+      failures: 0,
+      attempts: ['cancelled', 'accepted'],
+      pendingUpdateCount: 0,
+      lastErrorMessage: null,
+    },
+  );
+});
+
 Deno.test('effects run once their command is published, in order, and never for one that aborts', () => {
   const transactions = createUnprojectedTransactions(
     new SessionLifetime(new AbortController().signal),
@@ -161,14 +248,17 @@ Deno.test('a queued answer taken in a transaction that aborts stays queued', () 
 
 /**
  * Ada's private chat with Alpha, which Ada started, so that Alpha has her message pending, in a
- * session whose webhook requests are recorded and never answered.
+ * session whose webhook requests are recorded and answered by `answerWebhookRequest`, which by
+ * default never answers.
  */
-function createDeliveryFixture() {
+function createDeliveryFixture(
+  answerWebhookRequest: WebhookTransport = () => new Promise(() => {}),
+) {
   const webhookRequests: Request[] = [];
   const harness = createBotApiCommandSession('update-delivery-transactions', {
     webhookTransport: (request) => {
       webhookRequests.push(request);
-      return new Promise(() => {});
+      return answerWebhookRequest(request);
     },
   });
   const { session } = harness;
@@ -211,6 +301,35 @@ function createDeliveryFixture() {
     sendAdaText,
     expectResult,
     readUpdates,
+    /**
+     * Alpha's entries of the session's activity that match `filter`, once there is one, or none
+     * after waiting `waitMilliseconds`.
+     */
+    readActivity: async (
+      filter: Omit<BotActivityFilter, 'botId'>,
+      waitMilliseconds = 1_000,
+    ): Promise<readonly BotActivityEntry[]> => {
+      const reading = await session.botActivity.readEntries({
+        after: 0,
+        filter: { ...filter, botId: alpha.id },
+        limit: 100,
+        waitMilliseconds,
+      });
+      return reading.read ? reading.entries : [];
+    },
+    /** The statuses of Alpha's webhook attempts, earliest first. */
+    listAttemptStatuses: () => {
+      const listing = session.webhookAttempts.listAttempts(alpha.id);
+      return listing.found ? listing.attempts.map(({ status }) => status) : listing.reason;
+    },
+    /** How many messages Ada's private chat with Alpha holds. */
+    countAdaChatMessages: () => {
+      const history = session.privateMessaging.getPrivateMessageHistory({
+        accountId: adaId,
+        botId: alpha.id,
+      });
+      return history.found ? history.messages.length : history.reason;
+    },
     /** Confirms every update waiting for Alpha. */
     confirmEveryUpdate: async () => {
       const lastUpdate = (await readUpdates()).at(-1);
