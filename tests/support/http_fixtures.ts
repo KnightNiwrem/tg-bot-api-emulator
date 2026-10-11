@@ -9,6 +9,7 @@ import {
   type EmulationApi,
   jsonRequest,
   type SessionSettings,
+  type TestEmulatorOptions,
 } from './emulation_api.ts';
 import {
   isCreatedAccountResponse,
@@ -16,10 +17,18 @@ import {
   isSentMessageResponse,
 } from './http_response_guards.ts';
 
-/** Creates a session holding a bot and an account that can message it. */
-export async function createPrivateConversationFixture(sessionSettings?: SessionSettings) {
+/**
+ * Creates a session holding a bot and an account that can message it, on an emulator built with
+ * `emulatorOptions`.
+ */
+export async function createPrivateConversationFixture(
+  sessionSettings?: SessionSettings,
+  emulatorOptions?: TestEmulatorOptions,
+) {
   await using disposalOnFailure = new AsyncDisposableStack();
-  const { api, sessionPath } = disposalOnFailure.use(await createTestSession(sessionSettings));
+  const { api, sessionPath } = disposalOnFailure.use(
+    await createTestSession(sessionSettings, emulatorOptions),
+  );
   const { botApiPath, ...createdBot } = await createBot(api, sessionPath, 'test_bot');
   const createdAccount = { account: await createAccount(api, sessionPath, 'Ada') };
 
@@ -47,11 +56,14 @@ export async function createPrivateConversationFixture(sessionSettings?: Session
 
 /**
  * Creates a session with a supergroup that its owner, Ada, created, and to which Ada added Grace,
- * a bot in privacy mode, and a bot that reads all group messages.
+ * a bot in privacy mode, and a bot that reads all group messages, on an emulator built with
+ * `emulatorOptions`.
  */
-export async function createSupergroupFixture() {
+export async function createSupergroupFixture(emulatorOptions?: TestEmulatorOptions) {
   await using disposalOnFailure = new AsyncDisposableStack();
-  const { api, sessionPath } = disposalOnFailure.use(await createTestSession());
+  const { api, sessionPath } = disposalOnFailure.use(
+    await createTestSession(undefined, emulatorOptions),
+  );
   const owner = await createAccount(api, sessionPath, 'Ada');
   const member = await createAccount(api, sessionPath, 'Grace');
   const bot = await createBot(api, sessionPath, 'test_bot');
