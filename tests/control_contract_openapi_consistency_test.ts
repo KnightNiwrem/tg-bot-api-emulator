@@ -103,10 +103,16 @@ import {
   setSupergroupAccountMessageReactionContract,
 } from '../src/api/contracts/message_reactions.ts';
 import {
+  chooseInlineQueryResultContract,
   expireInlineAnswerCacheContract,
   getInlineQueryContract,
   sendInlineQueryContract,
 } from '../src/api/contracts/inline_queries.ts';
+import {
+  sendAccountMediaGroupContract,
+  sendAccountMessageContract,
+} from '../src/api/contracts/message_sending.ts';
+import { pressReplyKeyboardButtonContract } from '../src/api/contracts/reply_keyboard_presses.ts';
 import { blockBotContract, unblockBotContract } from '../src/api/contracts/blocked_bots.ts';
 import {
   getCallbackQueryContract,
@@ -210,6 +216,10 @@ const CONTROL_OPERATION_CONTRACTS: readonly ControlOperationContract[] = [
   getSupergroupMessageReactionsContract,
   setSupergroupAccountMessageReactionContract,
   removeSupergroupAccountMessageReactionContract,
+  sendAccountMessageContract,
+  sendAccountMediaGroupContract,
+  pressReplyKeyboardButtonContract,
+  chooseInlineQueryResultContract,
 ];
 
 const document = readOpenApiDocument();

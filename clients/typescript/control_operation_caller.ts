@@ -15,7 +15,7 @@ import {
   type JsonSuccessContract,
   readPathPlaceholders,
 } from '../../src/api/contracts/operation_contract.ts';
-import type { ActionOutcome, ActionReceipt } from './types.ts';
+import type { ActionOutcome, ActionReceipt, RequestDetails } from './types.ts';
 import {
   requestBytes,
   requestEmptyAction,
@@ -135,6 +135,18 @@ export function callBytesOperation<Contract extends BytesSuccessContract & NonAc
     mediaTypeRange: contract.success.body.mediaTypeRange,
     body: request.body,
   });
+}
+
+/** The method and absolute URL of a call of an operation, as an error describes the request. */
+export function describeOperationCall(
+  transport: ControlOperationTransport,
+  contract: ControlOperationContract,
+  request: { readonly params?: object; readonly query?: object },
+): RequestDetails {
+  return {
+    method: contract.method,
+    url: buildOperationUrl(transport.serverRoot, contract, request),
+  };
 }
 
 /**

@@ -10,6 +10,12 @@ import {
 } from '../src/api/contracts/account_messages.ts';
 import { SHOWN_CHAT_ACTIONS } from '../src/api/contracts/chat_actions.ts';
 import { REACTION_EMOJIS as CONTRACT_REACTION_EMOJIS } from '../src/api/contracts/message_reactions.ts';
+import {
+  MAX_ALBUM_MESSAGE_COUNT as CONTRACT_MAX_ALBUM_MESSAGE_COUNT,
+  MAX_CONTACT_NAME_LENGTH as CONTRACT_MAX_CONTACT_NAME_LENGTH,
+  MAX_MEDIA_DURATION_SECONDS as CONTRACT_MAX_MEDIA_DURATION_SECONDS,
+  MAX_VIDEO_SIDE_LENGTH as CONTRACT_MAX_VIDEO_SIDE_LENGTH,
+} from '../src/api/contracts/message_sending.ts';
 import { BOT_ACTIVITY_KINDS as CONTRACT_BOT_ACTIVITY_KINDS } from '../src/api/contracts/bot_activity.ts';
 import { QUEUEABLE_SERVER_ERROR_CODES as CONTRACT_QUEUEABLE_SERVER_ERROR_CODES } from '../src/api/contracts/queued_bot_api_answers.ts';
 import { PLAIN_MESSAGE_ENTITY_TYPES } from '../src/api/contracts/message_entities.ts';
@@ -58,6 +64,9 @@ import {
 import { MAX_HORIZONTAL_ACCURACY_METERS } from '../src/types/geo_location.ts';
 import { MAX_INLINE_QUERY_LENGTH } from '../src/types/inline_query.ts';
 import { REACTION_EMOJIS } from '../src/types/message_reaction.ts';
+import { MAX_CONTACT_NAME_LENGTH } from '../src/types/contact.ts';
+import { MAX_ALBUM_MESSAGE_COUNT } from '../src/types/media_album.ts';
+import { MAX_MEDIA_DURATION_SECONDS, MAX_VIDEO_SIDE_LENGTH } from '../src/types/stored_file.ts';
 import { UPLOAD_PROFILES } from '../src/types/upload_profile.ts';
 import type { ShownChatActionType } from '../src/types/virtual_chat.ts';
 import { MAX_TEXT_MESSAGE_LENGTH, type PlainTextEntityType } from '../src/types/virtual_message.ts';
@@ -253,5 +262,23 @@ Deno.test('The contracts show exactly the reaction emoji the emulator accepts', 
     [...CONTRACT_REACTION_EMOJIS],
     [...REACTION_EMOJIS],
     'Expected the same emoji, in order',
+  );
+});
+
+Deno.test('The contracts limit what accounts send as the emulator does', () => {
+  assertEquals(
+    [
+      CONTRACT_MAX_MEDIA_DURATION_SECONDS,
+      CONTRACT_MAX_VIDEO_SIDE_LENGTH,
+      CONTRACT_MAX_CONTACT_NAME_LENGTH,
+      CONTRACT_MAX_ALBUM_MESSAGE_COUNT,
+    ],
+    [
+      MAX_MEDIA_DURATION_SECONDS,
+      MAX_VIDEO_SIDE_LENGTH,
+      MAX_CONTACT_NAME_LENGTH,
+      MAX_ALBUM_MESSAGE_COUNT,
+    ],
+    'Expected the same media duration, video side, contact name and album limits',
   );
 });
