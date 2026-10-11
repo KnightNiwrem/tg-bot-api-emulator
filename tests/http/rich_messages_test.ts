@@ -400,8 +400,29 @@ Deno.test('sendRichMessage refuses rich messages as Telegram does', async () => 
       { html: '<b>Hi</b>' },
       'Bad Request: rich messages written in HTML or Markdown are not supported',
     ],
+    [{}, 'Bad Request: rich message must be non-empty'],
     [{ blocks: [] }, 'Bad Request: rich message must be non-empty'],
     [{ blocks: [1] }, 'Bad Request: object expected as InputRichMessageBlock'],
+    [
+      { blocks: [{ type: 'list', items: [1] }] },
+      'Bad Request: object expected as InputRichBlockListItem',
+    ],
+    [
+      { blocks: [{ type: 'map', location: { latitude: 52, longitude: 13 }, caption: 1 }] },
+      'Bad Request: richBlockCaption must be an object',
+    ],
+    [
+      { blocks: [{ type: 'table', cells: [[1]] }] },
+      'Bad Request: richBlockTableCell must be an object',
+    ],
+    [
+      { blocks: [{ type: 'table', cells: [[{ text: 'A', valign: 'sideways' }]] }] },
+      'Bad Request: invalid vertical alignment specified',
+    ],
+    [
+      { blocks: [{ type: 'table', cells: [[{ text: 'A', rowspan: -1 }]] }] },
+      'Bad Request: invalid table cell rowspan specified',
+    ],
     [{ blocks: [{ type: 'marquee' }] }, 'Bad Request: type "marquee" is unsupported'],
     [
       { blocks: [{ type: 'audio', audio: { type: 'audio', media: 'attach://song' } }] },
@@ -469,6 +490,7 @@ Deno.test('sendRichMessage refuses rich messages as Telegram does', async () => 
       'Bad Request: invalid map properties specified',
     ],
     [buttonRow([]), 'Bad Request: button row must be non-empty'],
+    [buttonRow([1]), 'Bad Request: inlineButton must be an Object'],
     [
       buttonRow(
         Array.from({ length: 9 }, (_, index) => ({ text: 'Go', callback_data: `${index}` })),

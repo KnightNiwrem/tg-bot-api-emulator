@@ -23,6 +23,7 @@ import {
   type VerticalAlignment,
 } from '../../../types/rich_message.ts';
 import { MAX_MEDIA_DURATION_SECONDS, MAX_VIDEO_SIDE_LENGTH } from '../../../types/stored_file.ts';
+import { BOT_API_ERRORS } from './errors/error_catalogue.ts';
 import { readInputFileParameter, readThumbnailParameter } from './input_file_parameter.ts';
 import { clampedIntegerField } from './input_media_parameter.ts';
 import { readDateTimeFormat } from './message_entities_parameter.ts';
@@ -48,60 +49,6 @@ type SpecifiedRichBlock = RichBlock<SpecifiedRichMessageFileTypes>;
 export type RichMessageParameterReading =
   | ({ readonly read: true } & SpecifiedRichMessage)
   | { readonly read: false; readonly description: string };
-
-/** Telegram's descriptions for a `rich_message` it cannot read. */
-const RICH_MESSAGE_EMPTY_DESCRIPTION = 'Bad Request: rich message must be non-empty';
-const RICH_MESSAGE_JSON_INVALID_DESCRIPTION = "Bad Request: can't parse rich message JSON object";
-const RICH_MESSAGE_NOT_OBJECT_DESCRIPTION = 'Bad Request: object expected as rich message';
-const BLOCK_NOT_OBJECT_DESCRIPTION = 'Bad Request: object expected as InputRichMessageBlock';
-const LIST_ITEM_NOT_OBJECT_DESCRIPTION = 'Bad Request: object expected as InputRichBlockListItem';
-const CAPTION_NOT_OBJECT_DESCRIPTION = 'Bad Request: richBlockCaption must be an object';
-const TABLE_CELL_NOT_OBJECT_DESCRIPTION = 'Bad Request: richBlockTableCell must be an object';
-const BUTTON_NOT_OBJECT_DESCRIPTION = 'Bad Request: inlineButton must be an Object';
-const RICH_TEXT_INVALID_DESCRIPTION = 'Bad Request: invalid rich text specified';
-const RICH_TEXT_TYPE_UNSUPPORTED_DESCRIPTION = 'Bad Request: unsupported rich text type';
-const DATE_TIME_FORMAT_INVALID_DESCRIPTION = 'Bad Request: invalid date-time format specified';
-const DATE_INVALID_DESCRIPTION = 'Bad Request: invalid date specified';
-const CUSTOM_EMOJI_ID_INVALID_DESCRIPTION =
-  'Bad Request: invalid custom emoji identifier specified';
-const BUTTON_STYLE_INVALID_DESCRIPTION = 'Bad Request: invalid button style specified';
-const HORIZONTAL_ALIGNMENT_INVALID_DESCRIPTION =
-  'Bad Request: invalid horizontal alignment specified';
-const VERTICAL_ALIGNMENT_INVALID_DESCRIPTION = 'Bad Request: invalid vertical alignment specified';
-const HEADING_SIZE_INVALID_DESCRIPTION = 'Bad Request: invalid section heading size specified';
-const LIST_EMPTY_DESCRIPTION = 'Bad Request: list must be non-empty';
-const LIST_MIXED_DESCRIPTION = 'Bad Request: list must be either ordered or unordered';
-const LIST_ITEM_TYPE_INVALID_DESCRIPTION = 'Bad Request: invalid list item type specified';
-const TABLE_CELL_COLUMN_SPAN_INVALID_DESCRIPTION =
-  'Bad Request: invalid table cell colspan specified';
-const TABLE_CELL_ROW_SPAN_INVALID_DESCRIPTION = 'Bad Request: invalid table cell rowspan specified';
-/** TDLib's description of coordinates that name no point on Earth, as `isPointOnEarth` decides. */
-export const LOCATION_INVALID_DESCRIPTION = 'Bad Request: invalid location specified';
-const MAP_PROPERTIES_INVALID_DESCRIPTION = 'Bad Request: invalid map properties specified';
-const BUTTON_ROW_EMPTY_DESCRIPTION = 'Bad Request: button row must be non-empty';
-const MEDIA_NOT_FOUND_DESCRIPTION = 'Bad Request: media not found';
-
-/**
- * The emulator's descriptions for rich messages it does not support: messages written in HTML or
- * Markdown, which Telegram's servers parse by rules the open-source code does not contain, and
- * blocks with animations, which the emulator lacks, or audio files, which it has no blocks for.
- */
-const MARKUP_RICH_MESSAGE_UNSUPPORTED_DESCRIPTION =
-  'Bad Request: rich messages written in HTML or Markdown are not supported';
-const MEDIA_BLOCK_UNSUPPORTED_DESCRIPTION =
-  'Bad Request: rich message blocks with an animation or an audio file are not supported';
-
-/**
- * The emulator's descriptions for rich messages that break rules the Bot API documents and
- * Telegram's servers check by rules the open-source code does not contain.
- */
-const THINKING_BLOCK_NOT_ALLOWED_DESCRIPTION =
-  'Bad Request: thinking blocks can be used only in rich message drafts';
-const BUTTON_ROW_TOO_LONG_DESCRIPTION = 'Bad Request: a button row can have at most 8 buttons';
-const LINK_BUTTON_STYLE_NOT_ALLOWED_DESCRIPTION =
-  'Bad Request: only callback buttons can have the link style';
-const BUTTON_TEXT_FORMATTING_NOT_ALLOWED_DESCRIPTION =
-  'Bad Request: button text can have only custom emoji and dates';
 
 /** The Bot API's documented limit on the buttons of a row of a rich message. */
 const MAX_BUTTON_ROW_LENGTH = 8;
@@ -430,15 +377,15 @@ class RichMessageReader {
    */
   readRichMessage(parameter: string): SpecifiedRichMessage {
     if (parameter.length === 0) {
-      throw new RichMessageParameterError(RICH_MESSAGE_EMPTY_DESCRIPTION);
+      throw new RichMessageParameterError(BOT_API_ERRORS.richMessageEmpty.description());
     }
     const parsedParameter = parseBotApiJsonParameter(parameter);
     if (parsedParameter === undefined) {
-      throw new RichMessageParameterError(RICH_MESSAGE_JSON_INVALID_DESCRIPTION);
+      throw new RichMessageParameterError(BOT_API_ERRORS.richMessageJsonInvalid.description());
     }
     const { value } = parsedParameter;
     if (!isJsonObject(value)) {
-      throw new RichMessageParameterError(RICH_MESSAGE_NOT_OBJECT_DESCRIPTION);
+      throw new RichMessageParameterError(BOT_API_ERRORS.richMessageNotObject.description());
     }
     const { blocks, html, markdown, media, is_rtl, skip_entity_detection } = this.#parse(
       richMessageSchema,
@@ -447,15 +394,15 @@ class RichMessageReader {
     if (blocks === undefined) {
       throw new RichMessageParameterError(
         html === undefined && markdown === undefined
-          ? RICH_MESSAGE_EMPTY_DESCRIPTION
-          : MARKUP_RICH_MESSAGE_UNSUPPORTED_DESCRIPTION,
+          ? BOT_API_ERRORS.richMessageSourceMissing.description()
+          : BOT_API_ERRORS.richMessageMarkupUnsupported.description(),
       );
     }
     if (html !== undefined || markdown !== undefined || media !== undefined) {
       throw new RichMessageParameterError(this.#invalidParametersDescription);
     }
     if (blocks.length === 0) {
-      throw new RichMessageParameterError(RICH_MESSAGE_EMPTY_DESCRIPTION);
+      throw new RichMessageParameterError(BOT_API_ERRORS.richMessageBlocksEmpty.description());
     }
     return {
       richMessage: { blocks: this.#readBlocks(blocks), isRightToLeft: is_rtl },
@@ -470,7 +417,7 @@ class RichMessageReader {
   /** Reads an `InputRichBlock` as the Bot API server's `get_input_page_block` reads it. */
   #readBlock(value: unknown): SpecifiedRichBlock {
     if (!isJsonObject(value)) {
-      throw new RichMessageParameterError(BLOCK_NOT_OBJECT_DESCRIPTION);
+      throw new RichMessageParameterError(BOT_API_ERRORS.richBlockNotObject.description());
     }
     const { type } = this.#parse(blockTypeSchema, value);
     switch (type) {
@@ -481,7 +428,7 @@ class RichMessageReader {
         const block = this.#parse(headingBlockSchema, value);
         const text = this.#readRichText(block.text);
         if (!isRichHeadingSize(block.size)) {
-          throw new RichMessageParameterError(HEADING_SIZE_INVALID_DESCRIPTION);
+          throw new RichMessageParameterError(BOT_API_ERRORS.richHeadingSizeInvalid.description());
         }
         return { kind: 'heading', text, size: block.size };
       }
@@ -555,12 +502,14 @@ class RichMessageReader {
       case 'voice_note':
         return this.#readVoiceNoteBlock(this.#parse(voiceNoteBlockSchema, value));
       case 'thinking':
-        throw new RichMessageParameterError(THINKING_BLOCK_NOT_ALLOWED_DESCRIPTION);
+        throw new RichMessageParameterError(
+          BOT_API_ERRORS.richThinkingBlockNotAllowed.description(),
+        );
       default:
         throw new RichMessageParameterError(
           isOneOf(type, MEDIA_BLOCK_TYPES_UNSUPPORTED)
-            ? MEDIA_BLOCK_UNSUPPORTED_DESCRIPTION
-            : `Bad Request: type "${type}" is unsupported`,
+            ? BOT_API_ERRORS.richMediaBlockUnsupported.description()
+            : BOT_API_ERRORS.richBlockTypeUnsupported.description({ blockType: type }),
         );
     }
   }
@@ -573,12 +522,12 @@ class RichMessageReader {
   #readList(itemValues: readonly unknown[]): SpecifiedRichBlock {
     const items = itemValues.map((itemValue): RichListItem<SpecifiedRichMessageFileTypes> => {
       if (!isJsonObject(itemValue)) {
-        throw new RichMessageParameterError(LIST_ITEM_NOT_OBJECT_DESCRIPTION);
+        throw new RichMessageParameterError(BOT_API_ERRORS.richListItemNotObject.description());
       }
       const item = this.#parse(listItemSchema, itemValue);
       const blocks = this.#readBlocks(item.blocks);
       if (item.type.length > 0 && !isOneOf(item.type, ORDERED_LIST_ITEM_LABEL_TYPES)) {
-        throw new RichMessageParameterError(LIST_ITEM_TYPE_INVALID_DESCRIPTION);
+        throw new RichMessageParameterError(BOT_API_ERRORS.richListItemTypeInvalid.description());
       }
       return {
         blocks: blocks.length === 0 ? [{ kind: 'paragraph', text: EMPTY_RICH_TEXT }] : blocks,
@@ -590,11 +539,11 @@ class RichMessageReader {
       };
     });
     if (items.length === 0) {
-      throw new RichMessageParameterError(LIST_EMPTY_DESCRIPTION);
+      throw new RichMessageParameterError(BOT_API_ERRORS.richListEmpty.description());
     }
     const isOrdered = items[0].number !== undefined;
     if (items.some((item) => (item.number !== undefined) !== isOrdered)) {
-      throw new RichMessageParameterError(LIST_MIXED_DESCRIPTION);
+      throw new RichMessageParameterError(BOT_API_ERRORS.richListMixed.description());
     }
     return { kind: 'list', items };
   }
@@ -608,7 +557,7 @@ class RichMessageReader {
     const rows = block.cells.map((row) =>
       row.map((cellValue): RichTableCell => {
         if (!isJsonObject(cellValue)) {
-          throw new RichMessageParameterError(TABLE_CELL_NOT_OBJECT_DESCRIPTION);
+          throw new RichMessageParameterError(BOT_API_ERRORS.richTableCellNotObject.description());
         }
         const cell = this.#parse(tableCellSchema, cellValue);
         const text = cell.text === undefined ? EMPTY_RICH_TEXT : this.#readRichText(cell.text);
@@ -616,19 +565,27 @@ class RichMessageReader {
           cell.align.length === 0 ? (cell.is_header ? 'center' : 'left') : cell.align,
         );
         if (alignment === undefined) {
-          throw new RichMessageParameterError(HORIZONTAL_ALIGNMENT_INVALID_DESCRIPTION);
+          throw new RichMessageParameterError(
+            BOT_API_ERRORS.richTableCellAlignmentInvalid.description(),
+          );
         }
         const verticalAlignment = readVerticalAlignment(
           cell.valign.length === 0 ? 'middle' : cell.valign,
         );
         if (verticalAlignment === undefined) {
-          throw new RichMessageParameterError(VERTICAL_ALIGNMENT_INVALID_DESCRIPTION);
+          throw new RichMessageParameterError(
+            BOT_API_ERRORS.richTableCellVerticalAlignmentInvalid.description(),
+          );
         }
         if (cell.colspan < 0) {
-          throw new RichMessageParameterError(TABLE_CELL_COLUMN_SPAN_INVALID_DESCRIPTION);
+          throw new RichMessageParameterError(
+            BOT_API_ERRORS.richTableCellColumnSpanInvalid.description(),
+          );
         }
         if (cell.rowspan < 0) {
-          throw new RichMessageParameterError(TABLE_CELL_ROW_SPAN_INVALID_DESCRIPTION);
+          throw new RichMessageParameterError(
+            BOT_API_ERRORS.richTableCellRowSpanInvalid.description(),
+          );
         }
         return {
           ...(isEmptyRichText(text) ? {} : { text }),
@@ -662,7 +619,7 @@ class RichMessageReader {
     const caption = this.#readCaption(block.caption);
     const { latitude, longitude, horizontal_accuracy } = block.location;
     if (!isPointOnEarth(latitude, longitude)) {
-      throw new RichMessageParameterError(LOCATION_INVALID_DESCRIPTION);
+      throw new RichMessageParameterError(BOT_API_ERRORS.richMapLocationInvalid.description());
     }
     const { zoom, width, height } = block;
     if (
@@ -670,7 +627,7 @@ class RichMessageReader {
       height > MAX_MAP_DIMENSION || width + height > MAX_MAP_DIMENSION ||
       width > height * MAX_MAP_ASPECT_RATIO || height > width * MAX_MAP_ASPECT_RATIO
     ) {
-      throw new RichMessageParameterError(MAP_PROPERTIES_INVALID_DESCRIPTION);
+      throw new RichMessageParameterError(BOT_API_ERRORS.richMapPropertiesInvalid.description());
     }
     const hasDimensions = width > 0 && height > 0;
     return {
@@ -692,13 +649,15 @@ class RichMessageReader {
     const alignment = block.align.length === 0 ? undefined : readHorizontalAlignment(block.align);
     const buttons = block.buttons.map((buttonValue) => this.#readButton(buttonValue));
     if (block.align.length > 0 && alignment === undefined) {
-      throw new RichMessageParameterError(HORIZONTAL_ALIGNMENT_INVALID_DESCRIPTION);
+      throw new RichMessageParameterError(
+        BOT_API_ERRORS.richButtonRowAlignmentInvalid.description(),
+      );
     }
     if (buttons.length === 0) {
-      throw new RichMessageParameterError(BUTTON_ROW_EMPTY_DESCRIPTION);
+      throw new RichMessageParameterError(BOT_API_ERRORS.richButtonRowEmpty.description());
     }
     if (buttons.length > MAX_BUTTON_ROW_LENGTH) {
-      throw new RichMessageParameterError(BUTTON_ROW_TOO_LONG_DESCRIPTION);
+      throw new RichMessageParameterError(BOT_API_ERRORS.richButtonRowTooLong.description());
     }
     return {
       kind: 'buttons',
@@ -715,19 +674,23 @@ class RichMessageReader {
    */
   #readButton(value: unknown): RichMessageButton {
     if (!isJsonObject(value)) {
-      throw new RichMessageParameterError(BUTTON_NOT_OBJECT_DESCRIPTION);
+      throw new RichMessageParameterError(BOT_API_ERRORS.richButtonNotObject.description());
     }
     const { face, action } = this.#parse(richMessageButtonSchema, value);
     const text = this.#readRichText(face.text);
     const style = readRichMessageButtonStyle(face.style ?? '');
     if (style === null) {
-      throw new RichMessageParameterError(BUTTON_STYLE_INVALID_DESCRIPTION);
+      throw new RichMessageParameterError(BOT_API_ERRORS.richButtonStyleInvalid.description());
     }
     if (style === 'link' && action.kind !== 'callback') {
-      throw new RichMessageParameterError(LINK_BUTTON_STYLE_NOT_ALLOWED_DESCRIPTION);
+      throw new RichMessageParameterError(
+        BOT_API_ERRORS.richLinkButtonStyleNotAllowed.description(),
+      );
     }
     if (!isButtonText(text)) {
-      throw new RichMessageParameterError(BUTTON_TEXT_FORMATTING_NOT_ALLOWED_DESCRIPTION);
+      throw new RichMessageParameterError(
+        BOT_API_ERRORS.richButtonTextFormattingNotAllowed.description(),
+      );
     }
     return { text, ...(style === undefined ? {} : { style }), action };
   }
@@ -803,7 +766,7 @@ class RichMessageReader {
   #readMediaFile(media: string) {
     const reading = readInputFileParameter('', media, this.#uploadedFiles);
     if (!reading.read) {
-      throw new RichMessageParameterError(MEDIA_NOT_FOUND_DESCRIPTION);
+      throw new RichMessageParameterError(BOT_API_ERRORS.richBlockMediaNotFound.description());
     }
     return reading.inputFile;
   }
@@ -817,7 +780,7 @@ class RichMessageReader {
       return {};
     }
     if (!isJsonObject(value)) {
-      throw new RichMessageParameterError(CAPTION_NOT_OBJECT_DESCRIPTION);
+      throw new RichMessageParameterError(BOT_API_ERRORS.richBlockCaptionNotObject.description());
     }
     const caption = this.#parse(captionSchema, value);
     const text = this.#readRichText(caption.text);
@@ -852,7 +815,7 @@ class RichMessageReader {
         : { kind: 'concatenation', texts: value.map((part) => this.#readRichText(part)) };
     }
     if (typeof value === 'number' || typeof value === 'boolean') {
-      throw new RichMessageParameterError(RICH_TEXT_INVALID_DESCRIPTION);
+      throw new RichMessageParameterError(BOT_API_ERRORS.richTextInvalid.description());
     }
     if (!isJsonObject(value)) {
       throw new RichMessageParameterError(this.#invalidParametersDescription);
@@ -921,7 +884,9 @@ class RichMessageReader {
       case 'custom_emoji': {
         const customEmoji = this.#parse(customEmojiTextSchema, value);
         if (!/^-?[1-9]\d*$/.test(customEmoji.custom_emoji_id)) {
-          throw new RichMessageParameterError(CUSTOM_EMOJI_ID_INVALID_DESCRIPTION);
+          throw new RichMessageParameterError(
+            BOT_API_ERRORS.richTextCustomEmojiIdInvalid.description(),
+          );
         }
         return {
           kind: 'custom_emoji',
@@ -942,7 +907,7 @@ class RichMessageReader {
           button: this.#readButton(this.#parse(buttonTextSchema, value).button),
         };
       default:
-        throw new RichMessageParameterError(RICH_TEXT_TYPE_UNSUPPORTED_DESCRIPTION);
+        throw new RichMessageParameterError(BOT_API_ERRORS.richTextTypeUnsupported.description());
     }
   }
 
@@ -963,10 +928,12 @@ class RichMessageReader {
     const text = this.#readRichText(dateTime.text);
     const formatReading = readDateTimeFormat(dateTime.date_time_format);
     if (!formatReading.valid) {
-      throw new RichMessageParameterError(DATE_TIME_FORMAT_INVALID_DESCRIPTION);
+      throw new RichMessageParameterError(
+        BOT_API_ERRORS.richTextDateTimeFormatInvalid.description(),
+      );
     }
     if (dateTime.unix_time <= 0) {
-      throw new RichMessageParameterError(DATE_INVALID_DESCRIPTION);
+      throw new RichMessageParameterError(BOT_API_ERRORS.richTextDateInvalid.description());
     }
     const { format } = formatReading;
     return {
@@ -997,7 +964,7 @@ function checkMediaType(
 ): void {
   if (mediaType !== blockType) {
     throw new RichMessageParameterError(
-      `Bad Request: unexpected media type "${mediaType}" for block "${blockType}"`,
+      BOT_API_ERRORS.richBlockMediaTypeUnexpected.description({ mediaType, blockType }),
     );
   }
 }
