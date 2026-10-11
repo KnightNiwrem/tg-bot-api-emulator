@@ -1,13 +1,14 @@
 /**
  * The contracts of the chat actions, such as typing, that bots show an account in its private chat
- * with a bot, and of the test control that expires one, as Telegram's clients stop showing an
- * action 5.5 seconds after the bot last sent it.
+ * with a bot or in a supergroup it is a member of, and of the test control that expires one, as
+ * Telegram's clients stop showing an action 5.5 seconds after the bot last sent it.
  */
 import { z } from 'zod';
 
 import { accountPrivateChatPathSchema } from './accounts.ts';
 import { controlRefusalSchema, controlValidationErrorSchema } from './control_errors.ts';
 import { defineControlOperation } from './operation_contract.ts';
+import { accountSupergroupPathSchema } from './supergroups.ts';
 import { telegramUserIdSchema } from './wire_fields.ts';
 
 /** The actions a bot shows, by their lowercase Bot API names; `cancel` shows none. */
@@ -67,6 +68,46 @@ export const expirePrivateChatActionContract = defineControlOperation({
   success: { status: 204, body: { kind: 'empty' }, actionReceipt: 'before_action' },
   refusals: {
     400: controlValidationErrorSchema,
+    404: controlRefusalSchema([
+      'account_not_found',
+      'bot_not_found',
+      'chat_action_not_found',
+      'chat_not_found',
+      'session_not_found',
+    ]),
+  },
+});
+
+/** Returns the chat actions the supergroup's bots show the account, a member. */
+export const getSupergroupChatActionsContract = defineControlOperation({
+  operationId: 'getSupergroupChatActions',
+  method: 'GET',
+  path: '/sessions/{sessionId}/accounts/{accountId}/conversations/supergroup/{chatId}/chat-actions',
+  params: accountSupergroupPathSchema,
+  success: { status: 200, body: { kind: 'json', schema: chatActionsResponseSchema } },
+  refusals: {
+    400: controlValidationErrorSchema,
+    403: controlRefusalSchema(['not_a_member']),
+    404: controlRefusalSchema([
+      'account_not_found',
+      'bot_not_found',
+      'chat_not_found',
+      'session_not_found',
+    ]),
+  },
+});
+
+/** Stops showing the chat action one bot shows in a supergroup the account is a member of. */
+export const expireSupergroupChatActionContract = defineControlOperation({
+  operationId: 'expireSupergroupChatAction',
+  method: 'POST',
+  path:
+    '/sessions/{sessionId}/accounts/{accountId}/conversations/supergroup/{chatId}/chat-actions/{botId}/expiry',
+  params: accountSupergroupPathSchema.extend({ botId: telegramUserIdSchema }),
+  success: { status: 204, body: { kind: 'empty' }, actionReceipt: 'before_action' },
+  refusals: {
+    400: controlValidationErrorSchema,
+    403: controlRefusalSchema(['not_a_member']),
     404: controlRefusalSchema([
       'account_not_found',
       'bot_not_found',

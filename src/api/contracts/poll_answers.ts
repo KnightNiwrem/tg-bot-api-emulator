@@ -5,7 +5,7 @@
 import { z } from 'zod';
 
 import { accountPrivateMessagePathSchema } from './accounts.ts';
-import { privateMessageSchema } from './chat_messages.ts';
+import { privateMessageSchema, supergroupMessageSchema } from './chat_messages.ts';
 import { controlRefusalSchema, controlValidationErrorSchema } from './control_errors.ts';
 import { defineControlOperation } from './operation_contract.ts';
 import { pollIdSchema } from './polls.ts';
@@ -15,7 +15,7 @@ import { accountSupergroupMessagePathSchema } from './supergroups.ts';
  * The options an account chose in a poll, as the Bot API's `PollAnswer` names them; both lists
  * are empty while the account has no answer.
  */
-export const pollAnswerSchema = z.strictObject({
+const pollAnswerSchema = z.strictObject({
   poll_id: pollIdSchema,
   /** The chosen options' positions, counted from 0, in increasing order. */
   option_ids: z.array(z.int().min(0)),
@@ -30,6 +30,15 @@ export const pollAnswerSchema = z.strictObject({
 const privatePollAnswerResponseSchema = z.strictObject({
   poll_answer: pollAnswerSchema,
   message: privateMessageSchema,
+});
+
+/**
+ * An account's answer to a poll of a supergroup, with the message showing the poll as the account
+ * sees it.
+ */
+const supergroupPollAnswerResponseSchema = z.strictObject({
+  poll_answer: pollAnswerSchema,
+  message: supergroupMessageSchema,
 });
 
 /**
@@ -145,6 +154,65 @@ export const stopAccountPollContract = defineControlOperation({
   success: {
     status: 200,
     body: { kind: 'json', schema: z.strictObject({ message: privateMessageSchema }) },
+    actionReceipt: 'before_action',
+  },
+  refusals: {
+    400: controlValidationErrorSchema,
+    403: controlRefusalSchema(['not_a_member', 'poll_not_stoppable']),
+    404: pollMessageNotFoundSchema,
+    409: controlRefusalSchema(['poll_already_closed']),
+  },
+});
+
+/** Returns the account's answer to the poll a supergroup message shows. */
+export const getSupergroupAccountPollAnswerContract = defineControlOperation({
+  operationId: 'getSupergroupAccountPollAnswer',
+  method: 'GET',
+  path:
+    '/sessions/{sessionId}/accounts/{accountId}/conversations/supergroup/{chatId}/messages/{messageId}/poll-answer',
+  params: accountSupergroupMessagePathSchema,
+  success: { status: 200, body: { kind: 'json', schema: supergroupPollAnswerResponseSchema } },
+  refusals: {
+    400: controlValidationErrorSchema,
+    403: controlRefusalSchema(['not_a_member']),
+    404: pollMessageNotFoundSchema,
+  },
+});
+
+/** Replaces the account's answer to the poll a supergroup message shows, as for a private chat. */
+export const answerSupergroupAccountPollContract = defineControlOperation({
+  operationId: 'answerSupergroupAccountPoll',
+  method: 'PUT',
+  path:
+    '/sessions/{sessionId}/accounts/{accountId}/conversations/supergroup/{chatId}/messages/{messageId}/poll-answer',
+  params: accountSupergroupMessagePathSchema,
+  body: { required: true, schema: setPollAnswerRequestSchema },
+  success: {
+    status: 200,
+    body: { kind: 'json', schema: supergroupPollAnswerResponseSchema },
+    actionReceipt: 'before_action',
+  },
+  refusals: {
+    400: pollAnswerRejectionSchema,
+    403: controlRefusalSchema(['not_a_member']),
+    404: pollMessageNotFoundSchema,
+    409: pollAnswerConflictSchema,
+  },
+});
+
+/**
+ * Stops the poll the account sent in a supergroup message, as for a private chat, and returns the
+ * message, whose poll is now closed.
+ */
+export const stopSupergroupAccountPollContract = defineControlOperation({
+  operationId: 'stopSupergroupAccountPoll',
+  method: 'POST',
+  path:
+    '/sessions/{sessionId}/accounts/{accountId}/conversations/supergroup/{chatId}/messages/{messageId}/poll-closure',
+  params: accountSupergroupMessagePathSchema,
+  success: {
+    status: 200,
+    body: { kind: 'json', schema: z.strictObject({ message: supergroupMessageSchema }) },
     actionReceipt: 'before_action',
   },
   refusals: {

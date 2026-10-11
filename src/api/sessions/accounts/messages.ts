@@ -7,7 +7,9 @@ import { MAX_MEDIA_DURATION_SECONDS, MAX_VIDEO_SIDE_LENGTH } from '../../../type
 import { countTextCharacters, MAX_TEXT_MESSAGE_LENGTH } from '../../../types/virtual_message.ts';
 import {
   deleteAccountMessageContract,
+  deleteSupergroupAccountMessageContract,
   editAccountMessageContract,
+  editSupergroupAccountMessageContract,
 } from '../../contracts/account_messages.ts';
 import { INVALID_REQUEST_REASON } from '../../contracts/control_errors.ts';
 import type {
@@ -24,12 +26,7 @@ import { base64ContentSchema } from '../base64_content.ts';
 import { readPathParameters } from '../control_request_input.ts';
 import { readJsonRequestBody } from '../json_request_body.ts';
 import type { SessionRouteContextTypes } from '../session_route_context_types.ts';
-import {
-  ACCOUNT_ID_PARAMETER,
-  accountPathSchema,
-  SUPERGROUP_MESSAGE_PATH,
-  supergroupMessagePathSchema,
-} from './account_paths.ts';
+import { ACCOUNT_ID_PARAMETER, accountPathSchema } from './account_paths.ts';
 import {
   type AccountMessageEntitiesReading,
   readAccountMessageEntities,
@@ -201,12 +198,6 @@ const sendMediaGroupRequestSchema = z.strictObject({
   ])),
 });
 
-/** New text for a text message, or a new caption for captioned media; empty removes it. */
-const editMessageRequestSchema = z.union([
-  z.strictObject({ text: messageTextSchema, entities: messageEntitiesSchema }),
-  z.strictObject({ caption: z.string(), caption_entities: messageEntitiesSchema }),
-]);
-
 /**
  * Routes through which an account sends messages and albums to its chats, forwards messages, and
  * edits and deletes its messages.
@@ -374,72 +365,66 @@ export function createMessageRoutes(): Hono<SessionRouteContextTypes> {
     );
   });
 
-  accountRoutes.patch(SUPERGROUP_MESSAGE_PATH, async (context) => {
-    const messagePath = readPathParameters(supergroupMessagePathSchema, context.req.param());
-    if (!messagePath.valid) {
-      return invalidControlRequestResponse(context, messagePath.issues);
-    }
-    const { accountId, chatId, messageId } = messagePath.value;
-
-    const requestBodyReading = await readJsonRequestBody(context.req, editMessageRequestSchema);
-    if (!requestBodyReading.valid) {
-      return invalidControlRequestResponse(context, requestBodyReading.issues);
-    }
-    const requestBody = requestBodyReading.value;
-
-    return answerWithActionReceipt(context, ({ messageEditing, botMessageViews }) => {
+  registerControlOperation(
+    accountRoutes,
+    ACCOUNT_COLLECTION_MOUNT_PATH,
+    editSupergroupAccountMessageContract,
+    ({ params: { accountId, chatId, messageId }, body }, context) => {
+      const editReading = readMessageEditRequest(body);
+      if (!editReading.read) {
+        return {
+          status: 400,
+          body: { reason: INVALID_REQUEST_REASON, issues: [editReading.issue] },
+        };
+      }
+      const { messageEditing, botMessageViews } = context.get('emulationSession');
       const result = messageEditing.editAccountSupergroupMessage({
         fromAccountId: accountId,
         chat: { type: 'supergroup', chatId },
         messageId,
-        edit: readAccountMessageEdit(requestBody),
+        edit: editReading.edit,
       });
       if (!result.edited) {
-        return controlErrorResponse(
-          context,
-          supergroupMemberFailureStatus(result.reason),
-          result.reason,
-        );
+        return refuseSupergroupMessageEdit(result.reason);
       }
-      return context.json({
-        message: botMessageViews.viewSupergroupMessage(result.message, accountId),
-      });
-    });
-  });
+      return {
+        status: 200,
+        body: { message: botMessageViews.viewSupergroupMessage(result.message, accountId) },
+      };
+    },
+  );
 
   // The account deletes the message for every member, as Telegram's clients do.
-  accountRoutes.delete(SUPERGROUP_MESSAGE_PATH, (context) => {
-    const messagePath = readPathParameters(supergroupMessagePathSchema, context.req.param());
-    if (!messagePath.valid) {
-      return invalidControlRequestResponse(context, messagePath.issues);
-    }
-    const { accountId, chatId, messageId } = messagePath.value;
-
-    return answerWithActionReceipt(context, ({ messageDeletion }) => {
-      const result = messageDeletion.deleteAccountSupergroupMessage({
-        fromAccountId: accountId,
-        chat: { type: 'supergroup', chatId },
-        messageId,
-      });
+  registerControlOperation(
+    accountRoutes,
+    ACCOUNT_COLLECTION_MOUNT_PATH,
+    deleteSupergroupAccountMessageContract,
+    ({ params: { accountId, chatId, messageId } }, context) => {
+      const result = context.get('emulationSession').messageDeletion
+        .deleteAccountSupergroupMessage({
+          fromAccountId: accountId,
+          chat: { type: 'supergroup', chatId },
+          messageId,
+        });
       if (result.deleted) {
-        return context.body(null, 204);
+        return { status: 204 };
       }
-      return controlErrorResponse(
-        context,
-        result.reason === 'message_not_deletable'
-          ? 403
-          : supergroupMemberFailureStatus(result.reason),
-        result.reason,
-      );
-    });
-  });
+      switch (result.reason) {
+        case 'message_not_deletable':
+        case 'not_a_member':
+          return { status: 403, body: { reason: result.reason } };
+        default:
+          return { status: 404, body: { reason: result.reason } };
+      }
+    },
+  );
 
   registerControlOperation(
     accountRoutes,
     ACCOUNT_COLLECTION_MOUNT_PATH,
     editAccountMessageContract,
     ({ params: { accountId, botId, messageId }, body }, context) => {
-      const editReading = readPrivateMessageEdit(body);
+      const editReading = readMessageEditRequest(body);
       if (!editReading.read) {
         return {
           status: 400,
@@ -636,23 +621,15 @@ type AccountMessageEdit = Parameters<
   EmulationSession['messageEditing']['editAccountPrivateChatMessage']
 >[0]['edit'];
 
-function readAccountMessageEdit(
-  request: z.infer<typeof editMessageRequestSchema>,
-): AccountMessageEdit {
-  return 'text' in request
-    ? { kind: 'text', text: request.text, entities: request.entities }
-    : { kind: 'caption', caption: request.caption, captionEntities: request.caption_entities };
-}
-
-/** An edit of a private message, as the domain reads it, or the issue with its entities. */
-type PrivateMessageEditReading =
+/** An edit of an account's message, as the domain reads it, or the issue with its entities. */
+type MessageEditReading =
   | { readonly read: true; readonly edit: AccountMessageEdit }
   | Extract<AccountMessageEntitiesReading, { readonly read: false }>;
 
-/** Reads an edit of a private message from its request, with the entities Telegram reads. */
-function readPrivateMessageEdit(
+/** Reads an edit of an account's message from its request, with the entities Telegram reads. */
+function readMessageEditRequest(
   request: DecodedControlRequest<typeof editAccountMessageContract>['body'],
-): PrivateMessageEditReading {
+): MessageEditReading {
   if ('text' in request) {
     const entitiesReading = readAccountMessageEntities(request.entities, ['entities']);
     return entitiesReading.read
@@ -690,6 +667,28 @@ function refusePrivateMessageEdit(
     case 'bot_not_found':
     case 'message_not_found':
       return { status: 404, body: { reason } };
+    default:
+      return { status: 400, body: { reason } };
+  }
+}
+
+/**
+ * A missing account, supergroup, or message is not found; an account that is not a member is
+ * forbidden from the supergroup; any other failure rejects the edit.
+ */
+function refuseSupergroupMessageEdit(
+  reason: Extract<
+    ReturnType<EmulationSession['messageEditing']['editAccountSupergroupMessage']>,
+    { readonly edited: false }
+  >['reason'],
+): ControlOperationRefusal<typeof editSupergroupAccountMessageContract> {
+  switch (reason) {
+    case 'account_not_found':
+    case 'chat_not_found':
+    case 'message_not_found':
+      return { status: 404, body: { reason } };
+    case 'not_a_member':
+      return { status: 403, body: { reason } };
     default:
       return { status: 400, body: { reason } };
   }

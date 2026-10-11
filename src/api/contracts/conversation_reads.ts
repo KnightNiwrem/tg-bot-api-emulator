@@ -1,7 +1,8 @@
 /**
- * The contracts of what an account's client shows of its private chat with a bot besides the
- * messages: the bot's commands and menu button, the notifications of the bot's messages, and the
- * reply interface the bot asked for.
+ * The contracts of what an account's client shows of its private chat with a bot, or of a
+ * supergroup it is a member of, besides the messages: the bots' commands and the private chat's
+ * menu button, the notifications of other participants' messages, and the reply interface a bot
+ * asked for.
  */
 import { z } from 'zod';
 
@@ -9,10 +10,11 @@ import { accountPrivateChatPathSchema } from './accounts.ts';
 import { controlRefusalSchema, controlValidationErrorSchema } from './control_errors.ts';
 import { replyKeyboardButtonSchema } from './keyboard_buttons.ts';
 import { defineControlOperation } from './operation_contract.ts';
-import { TELEGRAM_TYPE_ANNOTATION } from './wire_fields.ts';
+import { accountSupergroupPathSchema } from './supergroups.ts';
+import { TELEGRAM_TYPE_ANNOTATION, telegramUserIdSchema } from './wire_fields.ts';
 
 /** A bot command as an account's client lists it. */
-export const accountBotCommandSchema = z.strictObject({
+const accountBotCommandSchema = z.strictObject({
   /** The command without its leading slash. */
   command: z.string().min(1),
   description: z.string().min(1),
@@ -142,4 +144,60 @@ export const getPrivateChatReplyInterfaceContract = defineControlOperation({
     body: { kind: 'json', schema: replyInterfaceResponseSchema },
   },
   refusals: { 400: controlValidationErrorSchema, 404: privateChatParticipantNotFoundSchema },
+});
+
+/** A member that is not one, or a missing session, account, or supergroup. */
+const supergroupMemberRefusals = {
+  400: controlValidationErrorSchema,
+  403: controlRefusalSchema(['not_a_member']),
+  404: controlRefusalSchema(['account_not_found', 'chat_not_found', 'session_not_found']),
+};
+
+/** Returns the commands the account sees in a supergroup it is a member of, for each bot. */
+export const getSupergroupBotCommandsContract = defineControlOperation({
+  operationId: 'getSupergroupBotCommands',
+  method: 'GET',
+  path: '/sessions/{sessionId}/accounts/{accountId}/conversations/supergroup/{chatId}/commands',
+  params: accountSupergroupPathSchema,
+  success: {
+    status: 200,
+    body: {
+      kind: 'json',
+      schema: z.strictObject({
+        bot_commands: z.array(z.strictObject({
+          bot_id: telegramUserIdSchema,
+          commands: z.array(accountBotCommandSchema),
+        })),
+      }),
+    },
+  },
+  refusals: supergroupMemberRefusals,
+});
+
+/**
+ * Returns a notification for each other member's message of a supergroup the account is a member
+ * of, in order.
+ */
+export const getSupergroupNotificationsContract = defineControlOperation({
+  operationId: 'getSupergroupNotifications',
+  method: 'GET',
+  path:
+    '/sessions/{sessionId}/accounts/{accountId}/conversations/supergroup/{chatId}/notifications',
+  params: accountSupergroupPathSchema,
+  success: { status: 200, body: { kind: 'json', schema: notificationsResponseSchema } },
+  refusals: supergroupMemberRefusals,
+});
+
+/**
+ * Returns the reply keyboard or forced reply the account's client shows in a supergroup it is a
+ * member of, or `null` for none.
+ */
+export const getSupergroupReplyInterfaceContract = defineControlOperation({
+  operationId: 'getSupergroupReplyInterface',
+  method: 'GET',
+  path:
+    '/sessions/{sessionId}/accounts/{accountId}/conversations/supergroup/{chatId}/reply-interface',
+  params: accountSupergroupPathSchema,
+  success: { status: 200, body: { kind: 'json', schema: replyInterfaceResponseSchema } },
+  refusals: supergroupMemberRefusals,
 });

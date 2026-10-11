@@ -32,3 +32,20 @@ export function viewPrivateChatMessageForBot(
   }
   return botMessageViews.viewPrivateMessageForBot(message);
 }
+
+/**
+ * Shows a message that a lookup in a supergroup found, as the requesting account sees it, which is
+ * how the account routes show supergroup messages.
+ *
+ * @throws {Error} when the message is a private chat's, which a supergroup never holds.
+ */
+export function viewSupergroupChatMessageForAccount(
+  botMessageViews: BotMessageViews,
+  message: ChatMessage,
+  accountId: number,
+): ReturnType<BotMessageViews['viewSupergroupMessage']> {
+  if (message.kind === 'private_message') {
+    throw new Error(`A supergroup's lookup found a ${message.kind}`);
+  }
+  return botMessageViews.viewSupergroupMessage(message, accountId);
+}

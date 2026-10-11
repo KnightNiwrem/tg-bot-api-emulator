@@ -58,31 +58,50 @@ import { registerWebResourceContract } from '../src/api/contracts/web_resources.
 import { expirePollContract } from '../src/api/contracts/polls.ts';
 import {
   answerAccountPollContract,
+  answerSupergroupAccountPollContract,
   getAccountPollAnswerContract,
+  getSupergroupAccountPollAnswerContract,
   retractAccountPollAnswerContract,
   retractSupergroupAccountPollAnswerContract,
   stopAccountPollContract,
+  stopSupergroupAccountPollContract,
 } from '../src/api/contracts/poll_answers.ts';
 import {
   deleteAccountMessageContract,
+  deleteSupergroupAccountMessageContract,
   editAccountMessageContract,
+  editSupergroupAccountMessageContract,
   getPrivateMessageHistoryContract,
+  getSupergroupMessageHistoryContract,
 } from '../src/api/contracts/account_messages.ts';
 import {
   getPrivatePinnedMessagesContract,
+  getSupergroupPinnedMessagesContract,
   pinPrivateMessageContract,
+  pinSupergroupMessageContract,
   unpinPrivateMessageContract,
+  unpinSupergroupMessageContract,
 } from '../src/api/contracts/pinned_messages.ts';
 import {
   expirePrivateChatActionContract,
+  expireSupergroupChatActionContract,
   getPrivateChatActionsContract,
+  getSupergroupChatActionsContract,
 } from '../src/api/contracts/chat_actions.ts';
 import {
   getPrivateChatBotCommandsContract,
   getPrivateChatMenuButtonContract,
   getPrivateChatNotificationsContract,
   getPrivateChatReplyInterfaceContract,
+  getSupergroupBotCommandsContract,
+  getSupergroupNotificationsContract,
+  getSupergroupReplyInterfaceContract,
 } from '../src/api/contracts/conversation_reads.ts';
+import {
+  getSupergroupMessageReactionsContract,
+  removeSupergroupAccountMessageReactionContract,
+  setSupergroupAccountMessageReactionContract,
+} from '../src/api/contracts/message_reactions.ts';
 import {
   expireInlineAnswerCacheContract,
   getInlineQueryContract,
@@ -174,6 +193,23 @@ const CONTROL_OPERATION_CONTRACTS: readonly ControlOperationContract[] = [
   getAccountPollAnswerContract,
   answerAccountPollContract,
   stopAccountPollContract,
+  getSupergroupMessageHistoryContract,
+  editSupergroupAccountMessageContract,
+  deleteSupergroupAccountMessageContract,
+  getSupergroupPinnedMessagesContract,
+  pinSupergroupMessageContract,
+  unpinSupergroupMessageContract,
+  getSupergroupChatActionsContract,
+  expireSupergroupChatActionContract,
+  getSupergroupBotCommandsContract,
+  getSupergroupNotificationsContract,
+  getSupergroupReplyInterfaceContract,
+  getSupergroupAccountPollAnswerContract,
+  answerSupergroupAccountPollContract,
+  stopSupergroupAccountPollContract,
+  getSupergroupMessageReactionsContract,
+  setSupergroupAccountMessageReactionContract,
+  removeSupergroupAccountMessageReactionContract,
 ];
 
 const document = readOpenApiDocument();
