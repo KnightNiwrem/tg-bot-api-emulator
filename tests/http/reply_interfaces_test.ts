@@ -71,7 +71,7 @@ function createReplyInterfaceCalls(
 
 for (const chatType of CHAT_TYPES) {
   Deno.test(`an account's press in a ${chatType} chat reports the first of competing failures`, async () => {
-    const scenario = await createChatScenario(chatType);
+    await using scenario = await createChatScenario(chatType);
     const { api, sessionPath, ada, bot, chatId, readUpdates } = scenario;
     const { conversationPath, readReplyInterface, press } = createReplyInterfaceCalls(
       scenario,
@@ -150,7 +150,7 @@ for (const chatType of CHAT_TYPES) {
   });
 
   Deno.test(`a ${chatType} chat stops showing a keyboard its bot removes or deletes`, async () => {
-    const scenario = await createChatScenario(chatType);
+    await using scenario = await createChatScenario(chatType);
     const { api, ada, bot, chatId } = scenario;
     const { conversationPath, readReplyInterface, press } = createReplyInterfaceCalls(
       scenario,
@@ -213,7 +213,7 @@ for (const chatType of CHAT_TYPES) {
   });
 
   Deno.test(`an account that may no longer write to a ${chatType} chat cannot press its keyboard`, async () => {
-    const scenario = await createChatScenario(chatType);
+    await using scenario = await createChatScenario(chatType);
     const { api, sessionPath, ada, grace, bot, chatId } = scenario;
     const { conversationPath, readReplyInterface, press } = createReplyInterfaceCalls(
       scenario,
@@ -266,7 +266,7 @@ for (const chatType of CHAT_TYPES) {
 }
 
 Deno.test('a supergroup press answers no request, which is refused before the member is checked', async () => {
-  const scenario = await createChatScenario('supergroup');
+  await using scenario = await createChatScenario('supergroup');
   const { api, sessionPath } = scenario;
   const { press } = createReplyInterfaceCalls(scenario, 'supergroup');
   const linus = await createAccount(api, sessionPath, 'Linus');
@@ -279,7 +279,7 @@ Deno.test('a supergroup press answers no request, which is refused before the me
 });
 
 Deno.test("a private chat's request button checks its answer before the bot's block", async () => {
-  const scenario = await createChatScenario('private');
+  await using scenario = await createChatScenario('private');
   const { api, sessionPath, ada, bot, chatId } = scenario;
   const { press } = createReplyInterfaceCalls(scenario, 'private');
   await sendBotMessage(api, bot, {

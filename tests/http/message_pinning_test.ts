@@ -64,8 +64,8 @@ async function changePinAsAccount(
 
 for (const chatType of CHAT_TYPES) {
   Deno.test(`a bot's pin in a ${chatType} chat reports the first of competing failures`, async () => {
-    const { api, sessionPath, bot, chatId, accountMessageId, readUpdates } =
-      await createChatScenario(chatType);
+    await using scenario = await createChatScenario(chatType);
+    const { api, sessionPath, bot, chatId, accountMessageId, readUpdates } = scenario;
     /** An ID of a chat the bot cannot reach: an unknown user, or an unknown supergroup. */
     const unreachableChatId = chatType === 'private' ? 999_999 : -1_009_999_999_999;
     const outsider = await createBot(api, sessionPath, 'outsider_bot');
@@ -123,8 +123,9 @@ for (const chatType of CHAT_TYPES) {
   });
 
   Deno.test(`a bot that may pin in a ${chatType} chat pins, unpins and receives its pins`, async () => {
+    await using scenario = await createChatScenario(chatType);
     const { api, sessionPath, ada, bot, chatId, accountMessageId, botMessageId, readUpdates } =
-      await createChatScenario(chatType);
+      scenario;
     if (chatType === 'supergroup') {
       await expectStatus(
         api,
@@ -228,8 +229,8 @@ for (const chatType of CHAT_TYPES) {
   });
 
   Deno.test(`an account's pin in a ${chatType} chat reports the first of competing failures`, async () => {
-    const { api, sessionPath, ada, bot, chatId, accountMessageId, botMessageId } =
-      await createChatScenario(chatType);
+    await using scenario = await createChatScenario(chatType);
+    const { api, sessionPath, ada, bot, chatId, accountMessageId, botMessageId } = scenario;
     const linus = await createAccount(api, sessionPath, 'Linus');
     const pinnedMessagesPath = (accountId: number) =>
       `${
@@ -292,9 +293,10 @@ for (const chatType of CHAT_TYPES) {
   });
 
   Deno.test(`a former participant of a ${chatType} chat is turned away before its message is looked up`, async () => {
-    const { api, sessionPath, ada, bot, chatId, accountMessageId } = await createChatScenario(
+    await using scenario = await createChatScenario(
       chatType,
     );
+    const { api, sessionPath, ada, bot, chatId, accountMessageId } = scenario;
     const adaPinnedMessagesPath = `${
       conversationPathOf(sessionPath, chatType, { accountId: ada.id, botId: bot.bot.id, chatId })
     }/pinned-messages`;
@@ -342,7 +344,8 @@ for (const chatType of CHAT_TYPES) {
 }
 
 Deno.test('a bot that left a supergroup is no member there to pin', async () => {
-  const { api, bot, chatId, accountMessageId } = await createChatScenario('supergroup');
+  await using scenario = await createChatScenario('supergroup');
+  const { api, bot, chatId, accountMessageId } = scenario;
   await describeCall(api, bot, 'leaveChat', { chat_id: chatId });
 
   assertEquals(
@@ -362,7 +365,8 @@ Deno.test('a bot that left a supergroup is no member there to pin', async () => 
 });
 
 Deno.test("a private chat's message IDs name none of the bot's other private chats' messages", async () => {
-  const { api, sessionPath, ada, grace, bot, chatId } = await createChatScenario('private');
+  await using scenario = await createChatScenario('private');
+  const { api, sessionPath, ada, grace, bot, chatId } = scenario;
   // Grace's first message takes the next ID of the bot's message box, which numbers every one of
   // the bot's private chats.
   const { body } = await requestJson<{ message: { message_id: number } }>(
@@ -399,7 +403,8 @@ Deno.test("a private chat's message IDs name none of the bot's other private cha
 });
 
 Deno.test("a join request's contact grant lets a bot write to the requester, but not pin there", async () => {
-  const { api, sessionPath, grace, bot } = await createJoinRequesterChatScenario();
+  await using scenario = await createJoinRequesterChatScenario();
+  const { api, sessionPath, grace, bot } = scenario;
   const promptId = await sendBotMessage(api, bot, {
     chat_id: grace.id,
     text: 'Press the button to join',

@@ -1,3 +1,4 @@
+import { assertEquals } from '@std/assert';
 import { Bot } from 'https://cdn.jsdelivr.net/gh/grammyjs/grammY@^1.46.0/src/bot.ts';
 import {
   InlineKeyboard,
@@ -5,6 +6,7 @@ import {
 } from 'https://cdn.jsdelivr.net/gh/grammyjs/grammY@^1.46.0/src/convenience/keyboard.ts';
 
 import { createTestSession, jsonRequest, TEST_PUBLIC_ORIGIN } from '../support/emulation_api.ts';
+import { assertEqualsInFieldOrder } from '../support/field_order_assertion.ts';
 import { expectSettlementWithin } from '../support/settlement.ts';
 import {
   isBadRequestResponse,
@@ -144,9 +146,10 @@ Deno.test('URL buttons follow Telegram link rules', async () => {
   const sentUrls =
     (sentMessage?.reply_markup as { inline_keyboard: { url: string }[][] } | undefined)
       ?.inline_keyboard[0].map(({ url }) => url);
-  if (reply.status !== 200 || JSON.stringify(sentUrls) !== JSON.stringify(expectedUrls)) {
+  if (reply.status !== 200) {
     throw new Error(`Expected Telegram's normalized links, received ${JSON.stringify(sentUrls)}`);
   }
+  assertEqualsInFieldOrder(sentUrls, expectedUrls, "Expected Telegram's normalized links");
 
   const invalidLinks = [
     ['grammy', "Bad Request: inline keyboard button URL 'grammy' is invalid: Wrong HTTP URL"],
@@ -228,15 +231,16 @@ Deno.test('copy-text, switch-inline and disabled buttons follow Telegram rules',
     },
     { text: 'Sold out', disabled: {} },
   ];
-  if (
-    reply.status !== 200 ||
-    JSON.stringify(sentMessage?.reply_markup) !==
-      JSON.stringify({ inline_keyboard: [expectedButtons] })
-  ) {
+  if (reply.status !== 200) {
     throw new Error(
       `Expected the buttons as Telegram shows them, received ${JSON.stringify(reply)}`,
     );
   }
+  assertEqualsInFieldOrder(
+    sentMessage?.reply_markup,
+    { inline_keyboard: [expectedButtons] },
+    'Expected the buttons as Telegram shows them',
+  );
 
   const history = await (await api.request(
     `${sessionPath}/accounts/${accountId}/conversations/private/${createdBot.bot.id}/messages`,
@@ -244,12 +248,11 @@ Deno.test('copy-text, switch-inline and disabled buttons follow Telegram rules',
   const accountView = history.messages.find(({ message_id }) =>
     message_id === sentMessage?.message_id
   );
-  if (
-    JSON.stringify(accountView?.reply_markup) !==
-      JSON.stringify({ inline_keyboard: [expectedButtons] })
-  ) {
-    throw new Error(`Expected the account to see the buttons, received ${JSON.stringify(history)}`);
-  }
+  assertEqualsInFieldOrder(
+    accountView?.reply_markup,
+    { inline_keyboard: [expectedButtons] },
+    'Expected the account to see the buttons',
+  );
 
   const edit = (buttons: readonly unknown[]) =>
     callBotApi(api, `${botApiPath}/editMessageReplyMarkup`, {
@@ -325,16 +328,12 @@ Deno.test('login and Web App buttons follow Telegram rules', async () => {
     { text: 'Open', web_app: { url: 'HTTPS://grammy.dev/app' } },
   ]);
   const sentMessage = botApiResult(reply.body);
-  if (
-    JSON.stringify(sentMessage?.reply_markup) !== JSON.stringify({
-      inline_keyboard: [[
-        { text: 'Log in', url: 'https://grammy.dev/login' },
-        { text: 'Open', web_app: { url: 'https://grammy.dev/app' } },
-      ]],
-    })
-  ) {
-    throw new Error(`Expected a login button shown by its URL, received ${JSON.stringify(reply)}`);
-  }
+  assertEqualsInFieldOrder(sentMessage?.reply_markup, {
+    inline_keyboard: [[
+      { text: 'Log in', url: 'https://grammy.dev/login' },
+      { text: 'Open', web_app: { url: 'https://grammy.dev/app' } },
+    ]],
+  }, 'Expected a login button shown by its URL');
 
   const editLoginButton = (loginUrl: Record<string, unknown>) =>
     callBotApi(api, `${botApiPath}/editMessageReplyMarkup`, {
@@ -391,18 +390,10 @@ Deno.test('login and Web App buttons follow Telegram rules', async () => {
     await forward(sentMessage?.message_id),
     await forward(webAppMessage?.message_id),
   ];
-  if (
-    JSON.stringify(forwardedMarkups) !== JSON.stringify([
-      { inline_keyboard: [[{ text: 'Sign in', url: 'https://grammy.dev/login' }]] },
-      undefined,
-    ])
-  ) {
-    throw new Error(
-      `Expected forwards to keep only login buttons, with their forward text, received ${
-        JSON.stringify(forwardedMarkups)
-      }`,
-    );
-  }
+  assertEqualsInFieldOrder(forwardedMarkups, [
+    { inline_keyboard: [[{ text: 'Sign in', url: 'https://grammy.dev/login' }]] },
+    undefined,
+  ], 'Expected forwards to keep only login buttons, with their forward text');
 
   const refusedButtons: Array<[unknown, string]> = [
     [
@@ -500,12 +491,6 @@ Deno.test('Web App buttons work only in private chats', async () => {
   );
   if (
     loginSend.status !== 200 ||
-    JSON.stringify(descriptions) !== JSON.stringify([
-        'Bad Request: BUTTON_TYPE_INVALID',
-        'Bad Request: BUTTON_TYPE_INVALID',
-        'Bad Request: BUTTON_TYPE_INVALID',
-        'Bad Request: bot username must be empty for login_url buttons in rich messages',
-      ]) ||
     history.messages.filter(({ text }) => text === 'Play').length !== 1
   ) {
     throw new Error(
@@ -514,6 +499,12 @@ Deno.test('Web App buttons work only in private chats', async () => {
       }`,
     );
   }
+  assertEquals(descriptions, [
+    'Bad Request: BUTTON_TYPE_INVALID',
+    'Bad Request: BUTTON_TYPE_INVALID',
+    'Bad Request: BUTTON_TYPE_INVALID',
+    'Bad Request: bot username must be empty for login_url buttons in rich messages',
+  ], 'Expected only the login button in the supergroup');
 });
 
 Deno.test('forwards keep switch-inline buttons only of messages sent through an inline bot', async () => {
@@ -584,13 +575,11 @@ Deno.test('forwards keep switch-inline buttons only of messages sent through an 
     },
     undefined,
   ];
-  if (JSON.stringify(forwardedMarkups) !== JSON.stringify(expectedMarkups)) {
-    throw new Error(
-      `Expected a switch to any chat only on the inline message's forward, received ${
-        JSON.stringify(forwardedMarkups)
-      }`,
-    );
-  }
+  assertEqualsInFieldOrder(
+    forwardedMarkups,
+    expectedMarkups,
+    "Expected a switch to any chat only on the inline message's forward",
+  );
 });
 
 Deno.test('keyboard buttons keep their style and custom emoji icon', async () => {
@@ -619,12 +608,14 @@ Deno.test('keyboard buttons keep their style and custom emoji icon', async () =>
       { text: 'Docs', style: 'danger', url: 'https://grammy.dev/' },
     ]],
   };
-  if (
-    styledReply.status !== 200 ||
-    JSON.stringify(styledMessage?.reply_markup) !== JSON.stringify(expectedMarkup)
-  ) {
+  if (styledReply.status !== 200) {
     throw new Error(`Expected the buttons' appearance, received ${JSON.stringify(styledMessage)}`);
   }
+  assertEqualsInFieldOrder(
+    styledMessage?.reply_markup,
+    expectedMarkup,
+    "Expected the buttons' appearance",
+  );
 
   const restyle = await callBotApi(api, `${botApiPath}/editMessageReplyMarkup`, {
     chat_id: accountId,
@@ -655,20 +646,17 @@ Deno.test('keyboard buttons keep their style and custom emoji icon', async () =>
   const replyInterfaceBody = await (await api.request(
     `${sessionPath}/accounts/${accountId}/conversations/private/${createdBot.bot.id}/reply-interface`,
   )).json() as { reply_interface: { keyboard?: unknown } | null };
-  if (
-    keyboardReply.status !== 200 ||
-    JSON.stringify(replyInterfaceBody.reply_interface?.keyboard) !==
-      JSON.stringify([[
-        { text: 'Plain' },
-        { text: 'Stop', icon_custom_emoji_id: iconId, style: 'danger' },
-      ]])
-  ) {
+  if (keyboardReply.status !== 200) {
     throw new Error(
       `Expected the account to see the reply buttons' appearance, received ${
         JSON.stringify(replyInterfaceBody)
       }`,
     );
   }
+  assertEqualsInFieldOrder(replyInterfaceBody.reply_interface?.keyboard, [[
+    { text: 'Plain' },
+    { text: 'Stop', icon_custom_emoji_id: iconId, style: 'danger' },
+  ]], "Expected the account to see the reply buttons' appearance");
 
   const invalidButtons: unknown[] = [
     { text: 'Link', callback_data: 'x', style: 'link' },
@@ -733,7 +721,6 @@ Deno.test('an account presses a callback button and reads the bot answer', async
   const callbackMessage = callbackQuery?.message as Record<string, unknown> | undefined;
   if (
     callbackQuery?.id !== callbackQueryId ||
-    JSON.stringify(callbackQuery.from) !== JSON.stringify(createdAccount.account) ||
     typeof callbackQuery.chat_instance !== 'string' ||
     callbackQuery.data !== 'yes' ||
     callbackMessage?.message_id !== replyMessageId ||
@@ -741,6 +728,11 @@ Deno.test('an account presses a callback button and reads the bot answer', async
   ) {
     throw new Error(`Expected a callback_query update, received ${JSON.stringify(updatesBody)}`);
   }
+  assertEqualsInFieldOrder(
+    callbackQuery.from,
+    createdAccount.account,
+    'Expected a callback_query update',
+  );
 
   const startLink = `https://t.me/${createdBot.bot.username}?start=saved`;
   const answerResponse = await callBotApi(api, `${botApiPath}/answerCallbackQuery`, {
@@ -749,21 +741,25 @@ Deno.test('an account presses a callback button and reads the bot answer', async
     show_alert: true,
     url: startLink,
   });
-  if (JSON.stringify(answerResponse.body) !== JSON.stringify({ ok: true, result: true })) {
-    throw new Error(`Expected the answer to be accepted, received ${answerResponse.status}`);
-  }
+  assertEqualsInFieldOrder(
+    answerResponse.body,
+    { ok: true, result: true },
+    'Expected the answer to be accepted',
+  );
   const answeredBody: unknown = await (await api.request(
     `${callbackQueriesPath}/${callbackQueryId}`,
   )).json();
-  if (
-    !isCallbackQueryResponse(answeredBody) ||
-    JSON.stringify(answeredBody.callback_query.answer) !==
-      JSON.stringify({ text: 'Saved', show_alert: true, url: startLink, cache_time: 0 })
-  ) {
+  if (!isCallbackQueryResponse(answeredBody)) {
     throw new Error(
       `Expected the account to see the answer, received ${JSON.stringify(answeredBody)}`,
     );
   }
+  assertEqualsInFieldOrder(answeredBody.callback_query.answer, {
+    text: 'Saved',
+    show_alert: true,
+    url: startLink,
+    cache_time: 0,
+  }, 'Expected the account to see the answer');
 
   const queryIdInvalid =
     'Bad Request: query is too old and response timeout expired or query ID is invalid';
@@ -799,16 +795,11 @@ Deno.test('an account presses a callback button and reads the bot answer', async
     api.request(`${sessionPath}/accounts/${createdBot.bot.id}/callback-queries/${callbackQueryId}`),
     api.request(`${callbackQueriesPath}/999`),
   ]);
-  if (
-    JSON.stringify(pressFailures.map((response) => response.status)) !==
-      JSON.stringify([404, 404, 400, 400, 404, 404])
-  ) {
-    throw new Error(
-      `Expected missing resources and bad presses to be rejected, received ${
-        pressFailures.map((response) => response.status).join()
-      }`,
-    );
-  }
+  assertEquals(
+    pressFailures.map((response) => response.status),
+    [404, 404, 400, 400, 404, 404],
+    'Expected missing resources and bad presses to be rejected',
+  );
 });
 
 Deno.test('a callback query created expired reaches the bot but refuses its answer', async () => {
@@ -965,12 +956,17 @@ Deno.test('editMessageText and editMessageReplyMarkup follow Telegram checks', a
   });
   const textEditResult = botApiResult(textEdit.body);
   if (
-    textEdit.status !== 200 || textEditResult?.text !== 'Done' ||
-    typeof textEditResult.edit_date !== 'number' ||
-    JSON.stringify(textEditResult.reply_markup) !== JSON.stringify(keyboard)
+    textEdit.status !== 200 ||
+    textEditResult?.text !== 'Done' ||
+    typeof textEditResult.edit_date !== 'number'
   ) {
     throw new Error('Expected editMessageText to replace the text and keyboard with an edit date');
   }
+  assertEqualsInFieldOrder(
+    textEditResult.reply_markup,
+    keyboard,
+    'Expected editMessageText to replace the text and keyboard with an edit date',
+  );
 });
 
 Deno.test('a grammY bot answers an inline keyboard press and edits its message', async () => {
@@ -1108,11 +1104,7 @@ Deno.test("sendMessage changes the reply interface the account's client shows", 
     one_time_keyboard: true,
     input_field_placeholder: 'Color',
   };
-  if (JSON.stringify(await readReplyInterface()) !== JSON.stringify(expectedKeyboard)) {
-    throw new Error(
-      `Expected the keyboard, received ${JSON.stringify(await readReplyInterface())}`,
-    );
-  }
+  assertEqualsInFieldOrder(await readReplyInterface(), expectedKeyboard, 'Expected the keyboard');
 
   const press = await pressButton('Green');
   const pressBody: unknown = await press.json();
@@ -1125,20 +1117,21 @@ Deno.test("sendMessage changes the reply interface the account's client shows", 
     throw new Error("Expected only the keyboard's buttons to send their text");
   }
   const updatesBody: unknown = await (await api.request(`${botApiPath}/getUpdates`)).json();
-  if (
-    !isGetUpdatesResponse(updatesBody) ||
-    JSON.stringify(updatesBody.result.at(-1)?.message) !== JSON.stringify(pressBody.message)
-  ) {
+  if (!isGetUpdatesResponse(updatesBody)) {
     throw new Error('Expected the bot to receive the pressed button text as a message');
   }
+  assertEqualsInFieldOrder(
+    updatesBody.result.at(-1)?.message,
+    pressBody.message,
+    'Expected the bot to receive the pressed button text as a message',
+  );
 
   await sendMarkup({ force_reply: true, input_field_placeholder: 'Your name' });
-  if (
-    JSON.stringify(await readReplyInterface()) !==
-      JSON.stringify({ type: 'force_reply', message_id: 4, input_field_placeholder: 'Your name' })
-  ) {
-    throw new Error('Expected a forced reply to replace the keyboard');
-  }
+  assertEqualsInFieldOrder(await readReplyInterface(), {
+    type: 'force_reply',
+    message_id: 4,
+    input_field_placeholder: 'Your name',
+  }, 'Expected a forced reply to replace the keyboard');
   await sendMarkup({ keyboard: [['Red']] });
   await sendMarkup({ remove_keyboard: true });
   if (await readReplyInterface() !== null || (await pressButton('Red')).status !== 400) {
@@ -1275,16 +1268,18 @@ Deno.test('reply keyboard buttons request data only in private chats', async () 
       },
     }],
   ];
-  if (
-    sent.status !== 200 ||
-    JSON.stringify(replyInterface?.keyboard) !== JSON.stringify(expectedKeyboard)
-  ) {
+  if (sent.status !== 200) {
     throw new Error(
       `Expected the account to see every request, received ${
         JSON.stringify([sent, replyInterface])
       }`,
     );
   }
+  assertEqualsInFieldOrder(
+    replyInterface?.keyboard,
+    expectedKeyboard,
+    'Expected the account to see every request',
+  );
 
   const press = await api.request(
     `${accountPath}/reply-keyboard-presses`,
@@ -1387,11 +1382,11 @@ Deno.test('a grammY bot runs a menu on a reply keyboard and asks with a forced r
     // Polling ends only when stopped, so settling first means the bot failed.
     await Promise.race([handled.menu.promise, polling]);
     const menu = await readReplyInterface();
-    if (
-      JSON.stringify(menu?.keyboard) !== JSON.stringify([[{ text: 'Rename' }, { text: 'Quit' }]])
-    ) {
-      throw new Error(`Expected the menu keyboard, received ${JSON.stringify(menu)}`);
-    }
+    assertEqualsInFieldOrder(
+      menu?.keyboard,
+      [[{ text: 'Rename' }, { text: 'Quit' }]],
+      'Expected the menu keyboard',
+    );
     await api.request(`${accountPath}/reply-keyboard-presses`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -1491,18 +1486,10 @@ Deno.test('bots show reply keyboards and forced replies to all or chosen supergr
     await shownInterface(owner.id),
     await shownInterface(member.id),
   ];
-  if (
-    JSON.stringify(shownAfterSelectiveMarkup) !== JSON.stringify([
-      null,
-      { type: 'force_reply', message_id: forcedReply?.message_id },
-    ])
-  ) {
-    throw new Error(
-      `Expected selective markup to reach only its targets, received ${
-        JSON.stringify(shownAfterSelectiveMarkup)
-      }`,
-    );
-  }
+  assertEqualsInFieldOrder(shownAfterSelectiveMarkup, [
+    null,
+    { type: 'force_reply', message_id: forcedReply?.message_id },
+  ], 'Expected selective markup to reach only its targets');
 
   // Removing the bot removes the interfaces it set.
   await api.request(`${supergroupPath(owner.id)}/members/${bot.bot.id}`, { method: 'DELETE' });

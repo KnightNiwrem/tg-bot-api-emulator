@@ -83,7 +83,7 @@ const MESSAGE_EFFECT_ID = '5104841245755180586';
 
 for (const chatType of CHAT_TYPES) {
   Deno.test(`a bot's message to a ${chatType} chat reports the first of competing failures`, async () => {
-    const scenario = await createChatScenario(chatType);
+    await using scenario = await createChatScenario(chatType);
     const { api, sessionPath, bot, chatId, accountMessageId, readUpdates } = scenario;
     const outsider = await createBot(api, sessionPath, 'outsider_bot');
     const send = (parameters: Record<string, unknown>) =>
@@ -164,7 +164,7 @@ for (const chatType of CHAT_TYPES) {
   });
 
   Deno.test(`a ${chatType} chat that no longer admits its bot turns it away in its own order`, async () => {
-    const scenario = await createChatScenario(chatType);
+    await using scenario = await createChatScenario(chatType);
     const { api, sessionPath, ada, bot, chatId, accountMessageId } = scenario;
     // Ada blocks the bot of her private chat, or removes it from her supergroup.
     if (chatType === 'private') {
@@ -224,7 +224,7 @@ for (const chatType of CHAT_TYPES) {
   });
 
   Deno.test(`an account's message to a ${chatType} chat reports the first of competing failures`, async () => {
-    const scenario = await createChatScenario(chatType);
+    await using scenario = await createChatScenario(chatType);
     const { api, sessionPath, ada, bot, botMessageId, readUpdates } = scenario;
     const linus = await createAccount(api, sessionPath, 'Linus');
     const to = accountChatOf(scenario, chatType);
@@ -266,7 +266,7 @@ for (const chatType of CHAT_TYPES) {
   });
 
   Deno.test(`an account that may not write to a ${chatType} chat is refused before its reply is looked up`, async () => {
-    const scenario = await createChatScenario(chatType);
+    await using scenario = await createChatScenario(chatType);
     const { api, sessionPath, ada, grace, bot, chatId } = scenario;
     const to = accountChatOf(scenario, chatType);
     // Ada blocks the bot of her private chat; the supergroup's defaults stop members writing.
@@ -300,7 +300,7 @@ for (const chatType of CHAT_TYPES) {
   });
 
   Deno.test(`each observer's box numbers the messages of interleaved ${chatType} chats`, async () => {
-    const scenario = await createChatScenario(chatType);
+    await using scenario = await createChatScenario(chatType);
     const { api, sessionPath, ada, grace, bot, chatId, botMessageId } = scenario;
     // Another chat of the bot gets a message in between: Grace's private chat with the bot, which
     // the bot's box numbers too, or a second supergroup, which numbers its own messages.
@@ -354,7 +354,7 @@ for (const chatType of CHAT_TYPES) {
   });
 
   Deno.test(`a bot's file for a ${chatType} chat is downloaded after its options are read and before its chat is checked`, async () => {
-    const scenario = await createChatScenario(chatType);
+    await using scenario = await createChatScenario(chatType);
     const { api, sessionPath, bot } = scenario;
     const registeredUrl = 'https://cdn.example.com/cat.gif';
     await expectStatus(
@@ -393,7 +393,7 @@ for (const chatType of CHAT_TYPES) {
   });
 
   Deno.test(`an album for a ${chatType} chat refuses a message effect only outside private chats`, async () => {
-    const scenario = await createChatScenario(chatType);
+    await using scenario = await createChatScenario(chatType);
     const { api, sessionPath, bot, chatId } = scenario;
     await expectStatus(
       api,
@@ -439,7 +439,8 @@ for (const chatType of CHAT_TYPES) {
 }
 
 Deno.test("a join request's contact grant lets a bot send to the requester before the chat starts", async () => {
-  const { api, sessionPath, grace, bot } = await createJoinRequesterChatScenario();
+  await using scenario = await createJoinRequesterChatScenario();
+  const { api, sessionPath, grace, bot } = scenario;
 
   const sends = [
     await describeCall(api, bot, 'sendMessage', { chat_id: grace.id, text: 'Welcome' }),
