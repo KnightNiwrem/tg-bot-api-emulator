@@ -21,12 +21,11 @@ import type {
   FileIdFailure,
   FileResolution,
   FileResolutionFailure,
-  InlineResultFileRequest,
-  InlineResultFileResolution,
   MediaReplacementRequest,
   RichMessageFilesResolution,
   SpecifiedVoice,
 } from '../bot_api/bot_api.ts';
+import type { SpecifiedInlineResultFile } from '../domain/inline_query.ts';
 import type {
   AudioUploadPreparation,
   AudioUploadRequest,
@@ -88,6 +87,19 @@ type UploadPreparation<Upload extends FileUpload> =
 
 /** A file uploaded with a request, under the name its sender gave it. */
 type RequestUpload = Extract<BotApiInputFile, { readonly kind: 'upload' }>;
+
+/**
+ * The file of an inline query's media result: one the bot knows by `file_id`, or one it names by
+ * URL, which Telegram downloads when an account sends the result.
+ */
+export type InlineResultFileRequest =
+  | { readonly kind: 'file_id'; readonly fileId: string }
+  | { readonly kind: 'url'; readonly url: string };
+
+/** The file of an inline query result, resolved to list, or why its `file_id` cannot be used. */
+export type InlineResultFileResolution<Stored extends StoredFile> =
+  | { readonly resolved: true; readonly file: SpecifiedInlineResultFile<Stored> }
+  | { readonly resolved: false; readonly failure: FileIdFailure };
 
 type StoredFileOfType<Type extends StoredFile['type']> = Extract<
   StoredFile,
