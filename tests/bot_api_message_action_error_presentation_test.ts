@@ -1,6 +1,18 @@
-import { presentMessageDeletionFailure } from '../src/api/sessions/bot_api/errors/message_deletion_failure_presenter.ts';
-import { presentMessagePinningFailure } from '../src/api/sessions/bot_api/errors/message_pinning_failure_presenter.ts';
-import { presentMessageReactionFailure } from '../src/api/sessions/bot_api/errors/message_reaction_failure_presenter.ts';
+import {
+  type MessageListDeletionFailure,
+  presentMessageDeletionFailure,
+  type SingleMessageDeletionFailure,
+} from '../src/api/sessions/bot_api/errors/message_deletion_failure_presenter.ts';
+import {
+  type AllMessagesUnpinFailure,
+  type MessagePinFailure,
+  presentMessagePinningFailure,
+  type SingleMessageUnpinFailure,
+} from '../src/api/sessions/bot_api/errors/message_pinning_failure_presenter.ts';
+import {
+  type MessageReactionFailure,
+  presentMessageReactionFailure,
+} from '../src/api/sessions/bot_api/errors/message_reaction_failure_presenter.ts';
 import { presentMessageRepetitionFailure } from '../src/api/sessions/bot_api/errors/message_repetition_failure_presenter.ts';
 import type { EmulationSession } from '../src/session/emulation_session.ts';
 import {
@@ -34,19 +46,10 @@ type SeveralRepetitionOnlyFailure = Exclude<
   Extract<ReturnType<BotApi['forwardMessages']>, { readonly sent: false }>,
   SendFailure
 >;
-type DeletionFailure = Extract<
-  ReturnType<BotApi['deleteMessage'] | BotApi['deleteMessages']>,
-  { readonly deleted: false }
->;
-type PinFailure = Extract<ReturnType<BotApi['pinChatMessage']>, { readonly pinned: false }>;
-type UnpinFailure = Extract<
-  ReturnType<BotApi['unpinChatMessage'] | BotApi['unpinAllChatMessages']>,
-  { readonly unpinned: false }
->;
-type ReactionFailure = Extract<
-  ReturnType<BotApi['setMessageReaction']>,
-  { readonly set: false }
->;
+type DeletionFailure = SingleMessageDeletionFailure | MessageListDeletionFailure;
+type PinFailure = MessagePinFailure;
+type UnpinFailure = SingleMessageUnpinFailure | AllMessagesUnpinFailure;
+type ReactionFailure = MessageReactionFailure;
 
 const FORWARD_CASES: CasesByReason<ForwardOnlyFailure, 'sent'> = {
   message_not_found: [

@@ -1,14 +1,20 @@
 import type { EmulationSession } from '../../../../session/emulation_session.ts';
+import type { AuthenticatedBotFailure } from '../authenticated_bot_failures.ts';
 import { BOT_CHAT_ACCESS_ERRORS } from '../chat_access.ts';
 import type { BotApiMethodAnswer } from '../method_call.ts';
 import { BOT_API_ERRORS } from './error_catalogue.ts';
 import { type FixedBotApiError, presentFixedBotApiError } from './error_template.ts';
 
 /** Why `setMessageReaction` changed no reaction. */
-type MessageReactionFailure = Extract<
-  ReturnType<EmulationSession['botApi']['setMessageReaction']>,
-  { readonly set: false }
->;
+export type MessageReactionFailure =
+  | AuthenticatedBotFailure<
+    Extract<
+      ReturnType<EmulationSession['messageReactions']['setBotMessageReaction']>,
+      { readonly set: false }
+    >
+  >
+  /** The emulator supports reactions in supergroups only. */
+  | { readonly set: false; readonly reason: 'private_chat_reactions_unsupported' };
 
 /**
  * Telegram's errors for the failures of the message reaction family, by reason. Telegram's servers
