@@ -304,7 +304,7 @@ export function createEmulationSession(
   const pollService = new PollService({
     accountChatMessages,
     polls,
-    events: transactions,
+    transactions,
   });
   const inlineQueries = new InlineQueryService({
     accounts,

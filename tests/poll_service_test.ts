@@ -67,7 +67,8 @@ Deno.test('PollService reports why the account cannot read a poll message, befor
           throw new Error('Unexpected poll closure');
         },
       },
-      events: {
+      transactions: {
+        withinTransaction: (command) => command(),
         emit: () => {
           throw new Error('Unexpected event');
         },

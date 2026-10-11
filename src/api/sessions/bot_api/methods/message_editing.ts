@@ -55,15 +55,15 @@ import {
 } from '../web_file_parameter.ts';
 
 /**
- * The methods that edit a sent message, each executed as a command in its call's transaction, and
- * `stopPoll`, which stops a sent message's poll.
+ * The methods that edit a sent message, and `stopPoll`, which stops a sent message's poll, each
+ * executed as a command in its call's transaction.
  */
 export const MESSAGE_EDITING_METHODS: readonly BotApiMethod[] = [
   { name: 'editMessageCaption', recordsActivity: true, prepare: prepareEditMessageCaption },
   { name: 'editMessageMedia', recordsActivity: true, prepare: prepareEditMessageMedia },
   { name: 'editMessageReplyMarkup', recordsActivity: true, prepare: prepareEditMessageReplyMarkup },
   { name: 'editMessageText', recordsActivity: true, prepare: prepareEditMessageText },
-  { name: 'stopPoll', recordsActivity: true, handler: handleStopPoll },
+  { name: 'stopPoll', recordsActivity: true, prepare: prepareStopPoll },
 ];
 
 /** Where an edit method finds the message: in a chat, or sent through the bot's inline mode. */
@@ -428,32 +428,42 @@ function prepareEditMessageReplyMarkup(
  * Stops a poll as the official Bot API server's `process_stop_poll_query` reads it: the new
  * keyboard, then the chat and the message, which must be positive to be found.
  */
-function handleStopPoll(
+/**
+ * Prepares `stopPoll`: it reads the keyboard and the message. Finding the message and its poll,
+ * with every check of the bot's right to stop it, waits for the call's execution.
+ */
+function prepareStopPoll(
   context: BotApiMethodContext,
   parameters: BotApiRequestParameters,
-): BotApiMethodAnswer {
+): BotApiCallPreparation {
   const parsedParameters = stopPollParametersSchema.safeParse(parameters);
   if (!parsedParameters.success) {
-    return invalidMethodParametersAnswer('stopPoll', parsedParameters.error);
+    return answeredPreparation(invalidMethodParametersAnswer('stopPoll', parsedParameters.error));
   }
   const { chat_id: chatId, message_id: messageId, reply_markup: replyMarkup } =
     parsedParameters.data;
   const keyboardReading = readInlineKeyboardParameter(context, replyMarkup);
   if (!keyboardReading.read) {
-    return keyboardReading.errorAnswer;
+    return answeredPreparation(keyboardReading.errorAnswer);
   }
   if (chatId === undefined) {
-    return botApiError(400, CHAT_ID_EMPTY_DESCRIPTION);
+    return answeredPreparation(botApiError(400, CHAT_ID_EMPTY_DESCRIPTION));
   }
 
-  const result = context.session.botApi.stopPoll(context.bot, {
-    chatId,
-    messageId: messageIdOrNone(messageId),
-    inlineKeyboard: keyboardReading.inlineKeyboard,
-  });
-  return result.stopped
-    ? botApiResult(result.poll)
-    : presentMessageEditingFailure('poll_stop', result);
+  const { inlineKeyboard } = keyboardReading;
+  return {
+    kind: 'command',
+    execute: () => {
+      const result = context.session.botApi.stopPoll(context.bot, {
+        chatId,
+        messageId: messageIdOrNone(messageId),
+        inlineKeyboard,
+      });
+      return result.stopped
+        ? botApiResult(result.poll)
+        : presentMessageEditingFailure('poll_stop', result);
+    },
+  };
 }
 
 /**
