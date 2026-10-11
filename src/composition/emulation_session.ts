@@ -116,7 +116,7 @@ export function createEmulationSession(
   const polls = new PollRepository(journal);
   const messageBoxes = new MessageBoxRepository(journal);
   const botUpdates = new BotUpdateRepository(journal);
-  const updateSubscriptions = new BotUpdateSubscriptionRepository();
+  const updateSubscriptions = new BotUpdateSubscriptionRepository(journal);
   const botMessageViews = new BotMessageViewService({
     accounts,
     bots,
@@ -351,12 +351,12 @@ export function createEmulationSession(
 
   const botRateLimits = new BotRateLimitService({
     bots,
-    rateLimitResponses: new QueuedBotApiAnswerRepository(),
+    rateLimitResponses: new QueuedBotApiAnswerRepository(journal),
   });
 
   const botServerErrors = new BotServerErrorService({
     bots,
-    serverErrorResponses: new QueuedBotApiAnswerRepository(),
+    serverErrorResponses: new QueuedBotApiAnswerRepository(journal),
   });
 
   const botActivity = new BotActivityService({
@@ -368,13 +368,14 @@ export function createEmulationSession(
     updateActivity: botActivity,
     scheduler,
     sessionLifetime: lifetime,
+    transactions,
   });
   const webhookAttempts = new WebhookAttemptScheduler({
     bots,
     attemptTimeoutMilliseconds: WEBHOOK_ATTEMPT_TIMEOUT_MILLISECONDS,
     scheduler,
   });
-  const webhooks = new BotWebhookRepository();
+  const webhooks = new BotWebhookRepository(journal);
   const webhookDelivery = new WebhookDeliveryService({
     pendingUpdates: botUpdates,
     deliveryErrors: webhooks,
@@ -396,6 +397,12 @@ export function createEmulationSession(
       }, reply).catch(() => {});
     },
     attempts: webhookAttempts,
+    transactions,
+    reportDeliveryChangeFailure: (error) =>
+      console.error(
+        'A webhook delivery failed to change the session, which it left as it was',
+        error,
+      ),
     currentUnixTimeSeconds,
   });
   const updateConsumers = new BotUpdateConsumerService({
@@ -405,6 +412,7 @@ export function createEmulationSession(
     polling: botUpdatePolling,
     webhookDelivery,
     sessionLifetime: lifetime,
+    transactions,
   });
   const sessionTextFixingContext = createSessionUserMentionContext({ accounts, bots });
   const botMessageSender = new BotMessageSender({

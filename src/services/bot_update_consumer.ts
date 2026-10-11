@@ -84,8 +84,23 @@ interface BotUpdateSubscriptionStore {
 
 /** Answers `getUpdates` requests, holding at most one long poll per bot. */
 interface UpdatePolling {
-  getUpdates(botId: number, request: PollRequest): Promise<PollResult>;
+  /** `changeOnArrival` runs in the transaction of the request's arrival. */
+  getUpdates(
+    botId: number,
+    request: PollRequest,
+    changeOnArrival: () => void,
+  ): Promise<PollResult>;
   terminateLongPollForWebhook(botId: number): void;
+}
+
+/**
+ * The session's transactions: each change of a bot's delivery runs in one, and what it starts or
+ * stops beyond the session's state waits for its publication.
+ */
+interface UpdateConsumerTransactions {
+  /** Runs a command in the transaction of the command executing, or in one of its own. */
+  withinTransaction<Result>(command: () => Result): Result;
+  runAfterPublication(effect: () => void): void;
 }
 
 /** Delivers a bot's pending updates to one webhook generation at a time. */
@@ -106,6 +121,8 @@ interface BotUpdateConsumerServiceDependencies {
   readonly polling: UpdatePolling;
   readonly webhookDelivery: WebhookDelivery;
   readonly sessionLifetime: SessionCommitGate;
+  /** Runs each webhook change as one transaction, and its delivery's start or stop after it. */
+  readonly transactions: UpdateConsumerTransactions;
 }
 
 /**
@@ -126,6 +143,7 @@ export class BotUpdateConsumerService {
   readonly #polling: UpdatePolling;
   readonly #webhookDelivery: WebhookDelivery;
   readonly #sessionLifetime: SessionCommitGate;
+  readonly #transactions: UpdateConsumerTransactions;
   /** The running generation of each bot that has a webhook. */
   readonly #webhookGenerationsByBotId = new Map<number, WebhookGeneration>();
 
@@ -137,6 +155,7 @@ export class BotUpdateConsumerService {
       polling,
       webhookDelivery,
       sessionLifetime,
+      transactions,
     }: BotUpdateConsumerServiceDependencies,
   ) {
     this.#webhooks = webhooks;
@@ -145,6 +164,7 @@ export class BotUpdateConsumerService {
     this.#polling = polling;
     this.#webhookDelivery = webhookDelivery;
     this.#sessionLifetime = sessionLifetime;
+    this.#transactions = transactions;
     sessionLifetime.endSignal.addEventListener('abort', () => this.#stopEveryWebhookGeneration(), {
       once: true,
     });
@@ -153,8 +173,9 @@ export class BotUpdateConsumerService {
   /**
    * Polls the bot's pending updates. As on Telegram, a bot with a webhook cannot poll, and its
    * subscription is left unchanged; otherwise the request changes the bot's subscription before
-   * reading its queue. The new subscription applies only to updates created afterward; pending
-   * updates are still returned. Once the session has ended, nothing changes.
+   * reading its queue, in the transaction of its arrival. The new subscription applies only to
+   * updates created afterward; pending updates are still returned. Once the session has ended,
+   * nothing changes.
    */
   async getUpdates(
     botId: number,
@@ -166,8 +187,11 @@ export class BotUpdateConsumerService {
     if (this.#webhooks.get(botId) !== undefined) {
       return { retrieved: false, reason: 'webhook_active' };
     }
-    this.#updateSubscription(botId, allowedUpdates);
-    return await this.#polling.getUpdates(botId, pollRequest);
+    return await this.#polling.getUpdates(
+      botId,
+      pollRequest,
+      () => this.#updateSubscription(botId, allowedUpdates),
+    );
   }
 
   /**
@@ -179,8 +203,25 @@ export class BotUpdateConsumerService {
    *
    * Telegram validates the URL and secret token only after it has removed the previous webhook
    * and dropped pending updates; the emulator rejects them before changing anything.
+   *
+   * The change is one transaction. The generations it stops and starts, and the long poll it
+   * terminates, follow its publication, so a change that aborts leaves delivery as it was.
    */
   setWebhook(botId: number, request: SetWebhookRequest): SetWebhookResult {
+    return this.#transactions.withinTransaction(() => this.#setWebhook(botId, request));
+  }
+
+  /**
+   * Deletes the bot's webhook, as `setWebhook` with an empty URL does, in one transaction. A held
+   * long poll is left running, as on Telegram.
+   */
+  deleteWebhook(botId: number, { dropPendingUpdates }: DeleteWebhookRequest): DeleteWebhookOutcome {
+    return this.#transactions.withinTransaction(() =>
+      this.#removeWebhook(botId, { dropPendingUpdates })
+    );
+  }
+
+  #setWebhook(botId: number, request: SetWebhookRequest): SetWebhookResult {
     if (request.url.length === 0) {
       return { accepted: true, outcome: this.#removeWebhook(botId, request) };
     }
@@ -203,23 +244,17 @@ export class BotUpdateConsumerService {
       return { accepted: true, outcome: 'webhook_already_set' };
     }
 
-    this.#stopWebhookGeneration(botId);
+    this.#transactions.runAfterPublication(() => this.#stopWebhookGeneration(botId));
     if (request.dropPendingUpdates) {
       this.#pendingUpdates.discardPendingUpdates(botId);
     }
     this.#webhooks.set(botId, requestedWebhook);
     this.#updateSubscription(botId, request.allowedUpdates);
-    this.#startWebhookGeneration(botId, requestedWebhook);
-    this.#polling.terminateLongPollForWebhook(botId);
+    this.#transactions.runAfterPublication(() => {
+      this.#startWebhookGeneration(botId, requestedWebhook);
+      this.#polling.terminateLongPollForWebhook(botId);
+    });
     return { accepted: true, outcome: 'webhook_set' };
-  }
-
-  /**
-   * Deletes the bot's webhook, as `setWebhook` with an empty URL does. A held long poll is left
-   * running, as on Telegram.
-   */
-  deleteWebhook(botId: number, { dropPendingUpdates }: DeleteWebhookRequest): DeleteWebhookOutcome {
-    return this.#removeWebhook(botId, { dropPendingUpdates });
   }
 
   getWebhookInfo(botId: number): BotApiWebhookInfo {
@@ -258,7 +293,7 @@ export class BotUpdateConsumerService {
       return 'webhook_already_deleted';
     }
 
-    this.#stopWebhookGeneration(botId);
+    this.#transactions.runAfterPublication(() => this.#stopWebhookGeneration(botId));
     if (dropPendingUpdates) {
       this.#pendingUpdates.discardPendingUpdates(botId);
     }

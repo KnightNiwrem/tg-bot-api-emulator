@@ -67,18 +67,35 @@ export async function callBotApiMethod(
   if (!context.session.lifetime.admitsCommits) {
     return endedSessionCallOutcome(method);
   }
-  const preparation = await prepareBotApiMethodCall(context, method, parameters, uploadedFiles);
-  if (preparation === SESSION_ENDED) {
-    return endedSessionCallOutcome(method);
-  }
-  const execution = context.session.transactions.execute(() => {
-    const answer = preparation.kind === 'command' ? preparation.execute() : preparation.answer;
+  const recordCall = (answer: BotApiMethodAnswer) =>
     recordImplementedMethodCall(context, method, {
       requestedMethodName,
       parameters,
       uploadedFiles,
       chatId: findNamedChatId(context, parameters),
     }, answer);
+  // A queued answer is taken and recorded in one command, so a call that fails to be recorded
+  // leaves the answer queued for the next call.
+  const queuedAnswerTaking = context.session.transactions.execute(() => {
+    const queuedAnswer = takeQueuedAnswer(context, method.name);
+    if (queuedAnswer !== undefined) {
+      recordCall(queuedAnswer);
+    }
+    return queuedAnswer;
+  });
+  if (!queuedAnswerTaking.executed) {
+    return endedSessionCallOutcome(method);
+  }
+  if (queuedAnswerTaking.result !== undefined) {
+    return { answered: true, answer: queuedAnswerTaking.result };
+  }
+  const preparation = await prepareBotApiMethodCall(context, method, parameters, uploadedFiles);
+  if (preparation === SESSION_ENDED) {
+    return endedSessionCallOutcome(method);
+  }
+  const execution = context.session.transactions.execute(() => {
+    const answer = preparation.kind === 'command' ? preparation.execute() : preparation.answer;
+    recordCall(answer);
     return answer;
   });
   return execution.executed
@@ -148,9 +165,9 @@ function recordImplementedMethodCall(
 }
 
 /**
- * Prepares a call up to its commit boundary: a queued answer, a username that names no chat, and
- * whatever the method's preparation decides answer it there. A method with a handler runs it
- * here, committing its own changes, and its answer is all that is left to commit.
+ * Prepares a call that no queued answer answered up to its commit boundary: a username that names
+ * no chat, and whatever the method's preparation decides, answer it there. A method with a handler
+ * runs it here, committing its own changes, and its answer is all that is left to commit.
  */
 async function prepareBotApiMethodCall(
   context: BotApiCallContext,
@@ -158,10 +175,6 @@ async function prepareBotApiMethodCall(
   parameters: BotApiRequestParameters,
   uploadedFiles: BotApiUploadedFiles,
 ): Promise<BotApiCallPreparation | typeof SESSION_ENDED> {
-  const queuedAnswer = takeQueuedAnswer(context, method.name);
-  if (queuedAnswer !== undefined) {
-    return answeredPreparation(queuedAnswer);
-  }
   const chatResolution = resolveChatUsernameParameters(context, parameters);
   if (!chatResolution.resolved) {
     return answeredPreparation(chatResolution.errorAnswer);

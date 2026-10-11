@@ -5,6 +5,7 @@ import { BotUpdatePollingService } from '../src/services/bot_update_polling.ts';
 import { SessionLifetime } from '../src/services/session_lifetime.ts';
 import type { BotApiUpdate } from '../src/types/bot_api.ts';
 import { ControlledDeadline, ControlledScheduler } from './support/scheduler.ts';
+import { createUnprojectedTransactions } from './support/unprojected_transactions.ts';
 import { createPrivateMessage } from './support/webhook_delivery.ts';
 
 const BOT_ID = 10;
@@ -86,11 +87,13 @@ Deno.test('BotActivityService answers a read with an entry recorded as its deadl
 Deno.test('BotUpdatePollingService answers a long poll with an update enqueued as its deadline starts', async () => {
   const scheduler = new ControlledScheduler();
   const botUpdates = new BotUpdateRepository();
+  const sessionLifetime = new SessionLifetime(new AbortController().signal);
   const botUpdatePolling = new BotUpdatePollingService({
     botUpdates,
     updateActivity: new BotActivityService({ log: new BotActivityLogRepository(), scheduler }),
     scheduler,
-    sessionLifetime: new SessionLifetime(new AbortController().signal),
+    sessionLifetime,
+    transactions: createUnprojectedTransactions(sessionLifetime),
   });
   scheduler.onDeadlineStart = () => {
     botUpdates.enqueueMessageUpdate(BOT_ID, createPrivateMessage(1));

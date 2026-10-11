@@ -1,8 +1,15 @@
+import { type ChangeStaging, UNSTAGED_CHANGES } from '../transactions/change_staging.ts';
+import { TransactionalMap } from '../transactions/transactional_collections.ts';
 import { type BotApiUpdateType, DEFAULT_ALLOWED_UPDATE_TYPES } from '../types/bot_api.ts';
 
 /** Owns the update types each bot has subscribed to through `allowed_updates`. */
 export class BotUpdateSubscriptionRepository {
-  readonly #allowedUpdateTypesByBotId = new Map<number, ReadonlySet<BotApiUpdateType>>();
+  readonly #allowedUpdateTypesByBotId: TransactionalMap<number, ReadonlySet<BotApiUpdateType>>;
+
+  /** `staging` decides how the repository's writes take part in its session's transactions. */
+  constructor(staging: ChangeStaging = UNSTAGED_CHANGES) {
+    this.#allowedUpdateTypesByBotId = new TransactionalMap(staging);
+  }
 
   /** Returns the default subscription for a bot that has never chosen one. */
   getAllowedUpdateTypes(botId: number): ReadonlySet<BotApiUpdateType> {

@@ -26,6 +26,7 @@ import type { BotApiUpdate } from '../src/types/bot_api.ts';
 import type { BotActivityEntry, BotActivityFilter } from '../src/types/bot_activity.ts';
 import type { WebhookAttempt } from '../src/types/bot_webhook.ts';
 import { createRealTimeScheduler } from './support/scheduler.ts';
+import { createUnprojectedTransactions } from './support/unprojected_transactions.ts';
 import { createVirtualBot } from './support/virtual_users.ts';
 import {
   createPrivateMessage,
@@ -90,9 +91,13 @@ Deno.test("an accepted update's reply is started before its confirmation is reco
   const { botId, botUpdates, updateConsumers, publications, endSession } = fixture;
 
   try {
+    // A reader of the activity log learns of the confirmation as soon as it can.
+    const confirmationRead = fixture.waitForEntry({ kind: 'update_confirmed' }).then(() => {
+      publications.push('update_confirmed');
+    });
     botUpdates.enqueueMessageUpdate(botId, createPrivateMessage(1));
     updateConsumers.setWebhook(botId, webhookRequest());
-    await fixture.waitForEntry({ kind: 'update_confirmed' });
+    await confirmationRead;
     assertEquals(
       publications,
       ['reply_started', 'update_confirmed'],
@@ -556,10 +561,7 @@ function createAcceptanceFixture(
         deliveryBotId: number,
         update: BotApiUpdate,
         webhookAttemptId: number,
-      ) => {
-        publications.push('update_confirmed');
-        botActivity.recordWebhookUpdateConfirmation(deliveryBotId, update, webhookAttemptId);
-      },
+      ) => botActivity.recordWebhookUpdateConfirmation(deliveryBotId, update, webhookAttemptId),
       recordWebhookAttemptFailure: (failure) => botActivity.recordWebhookAttemptFailure(failure),
       recordUpdateDeliveries: (deliveryBotId, updates, via) =>
         botActivity.recordUpdateDeliveries(deliveryBotId, updates, via),
@@ -652,6 +654,7 @@ function createUpdateConsumers(
 ): { readonly updateConsumers: BotUpdateConsumerService; readonly endSession: () => void } {
   const sessionEnd = new AbortController();
   const sessionLifetime = new SessionLifetime(sessionEnd.signal);
+  const transactions = createUnprojectedTransactions(sessionLifetime);
   const webhooks = new BotWebhookRepository();
   const updateConsumers = new BotUpdateConsumerService({
     webhooks,
@@ -662,6 +665,7 @@ function createUpdateConsumers(
       updateActivity,
       scheduler: createRealTimeScheduler(),
       sessionLifetime,
+      transactions,
     }),
     webhookDelivery: new WebhookDeliveryService({
       pendingUpdates: botUpdates,
@@ -670,9 +674,14 @@ function createUpdateConsumers(
       sendWebhookRequest,
       startWebhookReply,
       attempts,
+      transactions,
+      reportDeliveryChangeFailure: (error) => {
+        throw error;
+      },
       currentUnixTimeSeconds: () => NOW_UNIX_SECONDS,
     }),
     sessionLifetime,
+    transactions,
   });
   return { updateConsumers, endSession: () => sessionEnd.abort() };
 }

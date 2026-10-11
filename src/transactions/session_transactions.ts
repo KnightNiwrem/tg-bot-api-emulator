@@ -3,6 +3,8 @@ import type { ChatDomainEvent } from '../types/chat_domain_event.ts';
 /** The staging that a session's transactions open, publish and abort. */
 interface TransactionJournal {
   readonly isStaging: boolean;
+  /** As `ChangeStaging.notifyAfterPublication` describes it. */
+  notifyAfterPublication(notify: () => void): void;
   begin(): void;
   publish(): void;
   abort(): void;
@@ -87,6 +89,18 @@ export class SessionTransactions {
    */
   emit(event: ChatDomainEvent): void {
     this.withinTransaction(() => this.#projector.project(event));
+  }
+
+  /**
+   * Runs an effect beyond the session's state, such as starting or stopping a webhook delivery or
+   * ending a held long poll, once the executing command's transaction is published, or at once
+   * outside a command. Effects run among the notifications of the transaction's writes, in the
+   * order all of them were asked for. An effect never runs for a transaction that aborts, so the
+   * command's effects follow only the changes they belong to; one that throws is reported, and
+   * undoes nothing.
+   */
+  runAfterPublication(effect: () => void): void {
+    this.#journal.notifyAfterPublication(effect);
   }
 
   #runTransaction<Result>(change: () => Result): Result {
