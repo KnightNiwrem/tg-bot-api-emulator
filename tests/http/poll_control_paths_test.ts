@@ -31,7 +31,8 @@ function describeRefusal(
 }
 
 Deno.test('A poll expiry takes a poll ID only as the decimal text of a positive integer', async () => {
-  const { api, sessionPath } = await createTestSession();
+  await using testSession = await createTestSession();
+  const { api, sessionPath } = testSession;
   const expire = (pollId: string) =>
     requestJson<ControlErrorBody>(api, 'POST', `${sessionPath}/polls/${pollId}/expiry`);
 
@@ -81,7 +82,8 @@ Deno.test('Decimal text is a signed 64-bit integer exactly within its range', ()
 });
 
 Deno.test('A poll answer retraction takes IDs written only in decimal digits', async () => {
-  const { api, sessionPath } = await createTestSession();
+  await using testSession = await createTestSession();
+  const { api, sessionPath } = testSession;
   const account = await createAccount(api, sessionPath, 'Ada');
   const { bot } = await createBot(api, sessionPath, 'poll_bot');
   const accountPath = `${sessionPath}/accounts/${account.id}`;
