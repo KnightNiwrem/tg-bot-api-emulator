@@ -31,9 +31,12 @@ export function createBotActivityRoutes(): Hono<SessionRouteContextTypes> {
     BOT_ACTIVITY_MOUNT_PATH,
     readBotActivityContract,
     async ({ query }, context): Promise<ReadBotActivityResponse> => {
-      const boundIssue = findReadBoundIssue(query);
-      if (boundIssue !== undefined) {
-        return { status: 400, body: { reason: INVALID_REQUEST_REASON, issues: [boundIssue] } };
+      const [firstBoundIssue, ...otherBoundIssues] = findReadBoundIssues(query);
+      if (firstBoundIssue !== undefined) {
+        return {
+          status: 400,
+          body: { reason: INVALID_REQUEST_REASON, issues: [firstBoundIssue, ...otherBoundIssues] },
+        };
       }
       const result = await context.get('emulationSession').botActivity.readEntries({
         after: query.after,
@@ -60,30 +63,31 @@ export function createBotActivityRoutes(): Hono<SessionRouteContextTypes> {
 }
 
 /**
- * The issue with a read's bounds that their schemas cannot state, if any: a range must end after
- * it starts, and a read of a range that ends does not wait.
+ * The issues with a read's bounds that their schemas cannot state, each reported: a range must end
+ * after it starts, and a read of a range that ends does not wait.
  */
-function findReadBoundIssue(
+function findReadBoundIssues(
   { after, before, wait_ms }: ReadBotActivityQuery,
-): z.output<typeof controlRequestIssueSchema> | undefined {
-  if (before === undefined) return undefined;
-  if (before <= after) {
-    return {
-      source: 'query',
-      path: ['before'],
-      code: 'invalid_value',
-      message: 'A range must end after it starts',
-    };
-  }
-  if (wait_ms !== 0) {
-    return {
-      source: 'query',
-      path: ['wait_ms'],
-      code: 'invalid_value',
-      message: 'A read of a range that ends does not wait',
-    };
-  }
-  return undefined;
+): z.output<typeof controlRequestIssueSchema>[] {
+  if (before === undefined) return [];
+  return [
+    ...(before <= after
+      ? [{
+        source: 'query' as const,
+        path: ['before'],
+        code: 'invalid_value' as const,
+        message: 'A range must end after it starts',
+      }]
+      : []),
+    ...(wait_ms !== 0
+      ? [{
+        source: 'query' as const,
+        path: ['wait_ms'],
+        code: 'invalid_value' as const,
+        message: 'A read of a range that ends does not wait',
+      }]
+      : []),
+  ];
 }
 
 function toBotActivityFilter(query: ReadBotActivityQuery): BotActivityFilter {

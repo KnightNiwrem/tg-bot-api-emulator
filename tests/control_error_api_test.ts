@@ -264,6 +264,11 @@ Deno.test('A read range that cannot be read names the parameter that breaks it',
     'GET',
     `${sessionPath}/bot-activity?after=2&before=1`,
   );
+  const reversedAndWaiting = await requestJson<ControlErrorBody>(
+    api,
+    'GET',
+    `${sessionPath}/bot-activity?after=2&before=1&wait_ms=10`,
+  );
   const beyondHead = await requestJson<ControlErrorBody>(
     api,
     'GET',
@@ -275,6 +280,12 @@ Deno.test('A read range that cannot be read names the parameter that breaks it',
     reversed.body.issues?.map(({ path, code }) => ({ path, code })),
     [{ path: ['before'], code: 'invalid_value' }],
     'Expected a range that ends before it starts to be an issue of its end',
+  );
+  assertStatus(reversedAndWaiting.status, 400);
+  assertEquals(
+    reversedAndWaiting.body.issues?.map(({ path, code }) => ({ path, code })),
+    [{ path: ['before'], code: 'invalid_value' }, { path: ['wait_ms'], code: 'invalid_value' }],
+    'Expected a reversed range that also waits to report both of its issues',
   );
   assertStatus(beyondHead.status, 400);
   assertEquals(

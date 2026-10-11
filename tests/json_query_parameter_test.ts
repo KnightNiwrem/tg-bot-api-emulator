@@ -3,6 +3,8 @@
  * the cost of scanning it, which must stay in proportion to the text's length however the value
  * nests or repeats members.
  */
+import { assertEquals } from '@std/assert';
+
 import { readJsonQueryParameter } from '../src/api/json_query_parameter.ts';
 import { MAX_JSON_NESTING_DEPTH } from '../src/types/json_pattern.ts';
 
@@ -27,13 +29,11 @@ Deno.test('parameters_json may nest objects and arrays up to the limit', () => {
   const beyondLimit = readParameterPatterns(
     nestedArrayPatterns(MAX_JSON_NESTING_DEPTH + 1),
   );
-  const issues = beyondLimit.issues.map(({ source, path, code }) => ({ source, path, code }));
-  if (
-    JSON.stringify(issues) !==
-      JSON.stringify([{ source: 'query', path: ['parameters_json'], code: 'too_big' }])
-  ) {
-    throw new Error(`Expected one too_big issue beyond the limit: ${JSON.stringify(issues)}`);
-  }
+  assertEquals(
+    beyondLimit.issues.map(({ source, path, code }) => ({ source, path, code })),
+    [{ source: 'query', path: ['parameters_json'], code: 'too_big' }],
+    'Expected one too_big issue beyond the limit',
+  );
 });
 
 Deno.test('A parameters_json nested far beyond the limit is refused in linear time', () => {

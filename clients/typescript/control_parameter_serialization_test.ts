@@ -2,6 +2,7 @@
  * Path and query parameters that are not plain text, written by the typed caller and read back by
  * the contract-driven route registration: integers, booleans, `deepObject` objects and JSON values.
  */
+import { assertEquals } from '@std/assert';
 import { Hono } from 'hono';
 import { z } from 'zod';
 
@@ -61,7 +62,7 @@ Deno.test('Integers, booleans, objects and JSON values are written as their seri
     },
   });
 
-  assertEqual(
+  assertEquals(
     [...requestedUrls[0].searchParams],
     [
       ['after', '3'],
@@ -76,7 +77,7 @@ Deno.test('Integers, booleans, objects and JSON values are written as their seri
     params: { shelfId: unknown };
     query: { after: unknown; archived: unknown; tags: unknown };
   }[];
-  assertEqual(
+  assertEquals(
     [decoded.params.shelfId, decoded.query.after, decoded.query.archived, decoded.query.tags],
     [7, 3, false, { 'a b': 'x&y', colour: 'red' }],
     'Expected the server to read back the values the client wrote',
@@ -90,8 +91,8 @@ Deno.test('A text that writes no integer or boolean is a value of the wrong type
     'http://items.example/shelves/1e3/items?after=0x1&archived=yes&tags=red',
   );
 
-  assertEqual(response.status, 400, 'Expected the request refused');
-  assertEqual(
+  assertEquals(response.status, 400, 'Expected the request refused');
+  assertEquals(
     (await response.json()).issues.map(({ source, path, code }: Record<string, unknown>) => ({
       source,
       path,
@@ -117,9 +118,9 @@ Deno.test('A __proto__ member is read and checked as any other member', async ()
     'http://items.example/shelves/1/items?filter=%7B%22__proto__%22%3A%22red%22%7D',
   );
 
-  assertEqual(accepted.status, 200, 'Expected __proto__ members of the right type accepted');
+  assertEquals(accepted.status, 200, 'Expected __proto__ members of the right type accepted');
   const [decoded] = decodedRequests as { query: { tags: object; filter: object } }[];
-  assertEqual(
+  assertEquals(
     [
       Object.hasOwn(decoded.query.tags, '__proto__'),
       Object.hasOwn(decoded.query.filter, '__proto__'),
@@ -127,8 +128,8 @@ Deno.test('A __proto__ member is read and checked as any other member', async ()
     [true, true],
     'Expected each __proto__ member kept as an own member',
   );
-  assertEqual(refused.status, 400, 'Expected a __proto__ member of the wrong type refused');
-  assertEqual(
+  assertEquals(refused.status, 400, 'Expected a __proto__ member of the wrong type refused');
+  assertEquals(
     (await refused.json()).issues.map(({ path, code }: Record<string, unknown>) => ({
       path,
       code,
@@ -159,11 +160,3 @@ Deno.test('A parameter whose value no text writes cannot be registered', () => {
     throw new Error(`Expected the registration refused for ratio, received ${refusal}`);
   }
 });
-
-function assertEqual(actual: unknown, expected: unknown, message: string): void {
-  if (JSON.stringify(actual) !== JSON.stringify(expected)) {
-    throw new Error(
-      `${message}: expected ${JSON.stringify(expected)}, received ${JSON.stringify(actual)}`,
-    );
-  }
-}
