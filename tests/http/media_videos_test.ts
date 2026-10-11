@@ -590,8 +590,8 @@ Deno.test('sendVideo keeps the attributes bots define and follows Telegram check
     'Bad Request: wrong type of the web page content',
     'Bad Request: failed to get HTTP URL content',
     'Bad Request: message caption is too long',
-    'Bad Request: invalid sendVideo parameters',
-    'Bad Request: invalid sendVideo parameters',
+    'Bad Request: invalid sendVideo parameters: cover',
+    'Bad Request: invalid sendVideo parameters: duration',
     'Bad Request: chat_id is empty',
   ];
   if (

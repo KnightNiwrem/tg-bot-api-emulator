@@ -113,7 +113,7 @@ Deno.test('reply_markup nested beyond 100 levels is refused in every encoding', 
   const methodPath = `${botApiPath}/sendMessage`;
   // Within the limit, the markup is JSON that is no keyboard, so the method's schema refuses it.
   const cases: ReadonlyArray<readonly [replyMarkup: string, description: string]> = [
-    [nestedArrays(100), 'Bad Request: invalid sendMessage parameters'],
+    [nestedArrays(100), 'Bad Request: invalid sendMessage parameters: reply_markup'],
     [nestedArrays(101), UNPARSABLE_REPLY_MARKUP_DESCRIPTION],
     [nestedObjects(101), UNPARSABLE_REPLY_MARKUP_DESCRIPTION],
     ['not JSON', UNPARSABLE_REPLY_MARKUP_DESCRIPTION],
@@ -156,7 +156,7 @@ Deno.test('reply_markup nested beyond 100 levels is refused in every encoding', 
       }),
     ],
     [
-      { status: 400, description: 'Bad Request: invalid sendMessage parameters' },
+      { status: 400, description: 'Bad Request: invalid sendMessage parameters: reply_markup' },
       refusedAsTooDeep(),
     ],
     'Expected the body member beyond the limit to be refused as the body',

@@ -151,10 +151,16 @@ Deno.test('sendContact refuses missing, malformed and over-long contacts without
     [{ ...valid, vcard: '\ud800' }, 'Bad Request: vCard must be encoded in UTF-8'],
     [{ ...valid, phone_number: '\r' }, 'Bad Request: phone number must be non-empty'],
     [{ ...valid, first_name: '\r\r' }, 'Bad Request: first name must be non-empty'],
-    [{ ...valid, first_name: 'x'.repeat(65) }, 'Bad Request: invalid sendContact parameters'],
-    [{ ...valid, last_name: '😀'.repeat(65) }, 'Bad Request: invalid sendContact parameters'],
-    [{ ...valid, vcard: 'é'.repeat(1025) }, 'Bad Request: invalid sendContact parameters'],
-    [{ ...valid, user_id: ada.id }, 'Bad Request: invalid sendContact parameters'],
+    [
+      { ...valid, first_name: 'x'.repeat(65) },
+      'Bad Request: invalid sendContact parameters: first_name',
+    ],
+    [
+      { ...valid, last_name: '😀'.repeat(65) },
+      'Bad Request: invalid sendContact parameters: last_name',
+    ],
+    [{ ...valid, vcard: 'é'.repeat(1025) }, 'Bad Request: invalid sendContact parameters: vcard'],
+    [{ ...valid, user_id: ada.id }, 'Bad Request: invalid sendContact parameters: user_id'],
     [{ phone_number: '12345', first_name: 'Linus' }, 'Bad Request: chat_id is empty'],
   ] as const;
   for (const [parameters, description] of refusals) {

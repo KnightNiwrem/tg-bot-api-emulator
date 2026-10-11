@@ -94,10 +94,10 @@ coordinates and accuracy, which the emulation API checks against the same ranges
 Live locations are [not supported](#real-gaps). The official server's
 [`process_send_location_query`][send-location] sends a live location for any nonzero `live_period`
 and passes `heading` and `proximity_alert_radius` with it. The emulator rejects all three parameters
-as unknown, with `Bad Request: invalid sendLocation parameters`, even a `live_period` of 0 or a
-`heading` without a live period, which send a static location on Telegram. Accounts' locations take
-none of them either, and `editMessageLiveLocation` and `stopMessageLiveLocation` answer `404` like
-every other unimplemented method.
+as unknown, naming each, as in `Bad Request: invalid sendLocation parameters: live_period`, even a
+`live_period` of 0 or a `heading` without a live period, which send a static location on Telegram.
+Accounts' locations take none of them either, and `editMessageLiveLocation` and
+`stopMessageLiveLocation` answer `404` like every other unimplemented method.
 
 ### Answering location requests
 

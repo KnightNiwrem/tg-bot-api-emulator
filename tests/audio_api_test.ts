@@ -430,7 +430,7 @@ Deno.test('a bot uploads a track with a cover and sends one by URL with the meta
       'Bad Request: there is no audio in the request',
       'Bad Request: audio title must be encoded in UTF-8',
       'Bad Request: audio performer must be encoded in UTF-8',
-      'Bad Request: invalid sendAudio parameters',
+      'Bad Request: invalid sendAudio parameters: has_spoiler',
     ],
     'Expected unusable tracks to be refused',
   );

@@ -86,9 +86,9 @@ Deno.test('sendMessage attaches an inline keyboard from every request encoding',
     });
     if (
       status !== 400 || !isBadRequestResponse(body) ||
-      body.description !== 'Bad Request: invalid sendMessage parameters'
+      !body.description.startsWith('Bad Request: invalid sendMessage parameters: reply_markup')
     ) {
-      throw new Error(`Expected ${JSON.stringify(replyMarkup)} to be rejected`);
+      throw new Error(`Expected ${JSON.stringify(replyMarkup)} to be rejected at reply_markup`);
     }
   }
   const unparsableMarkup = await callBotApi(api, `${botApiPath}/sendMessage`, {
@@ -1178,9 +1178,9 @@ Deno.test("sendMessage changes the reply interface the account's client shows", 
     const { status, body } = await sendMarkup(replyMarkup);
     if (
       status !== 400 || !isBadRequestResponse(body) ||
-      body.description !== 'Bad Request: invalid sendMessage parameters'
+      !body.description.startsWith('Bad Request: invalid sendMessage parameters: reply_markup')
     ) {
-      throw new Error(`Expected ${JSON.stringify(replyMarkup)} to be rejected`);
+      throw new Error(`Expected ${JSON.stringify(replyMarkup)} to be rejected at reply_markup`);
     }
   }
   if (

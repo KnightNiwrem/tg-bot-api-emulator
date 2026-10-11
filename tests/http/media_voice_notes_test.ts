@@ -193,7 +193,7 @@ Deno.test('sendVoice follows Telegram checks and sends long voice notes by URL a
     'Bad Request: wrong file identifier/HTTP URL specified',
     'Bad Request: wrong type of the web page content',
     'Bad Request: message caption is too long',
-    'Bad Request: invalid sendVoice parameters',
+    'Bad Request: invalid sendVoice parameters: has_spoiler',
   ];
   if (
     JSON.stringify(descriptions) !== JSON.stringify(expectedDescriptions) ||

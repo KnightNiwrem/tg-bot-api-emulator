@@ -246,8 +246,9 @@ another chat to a poll's message shows the poll in `external_reply.poll`, as it 
 - **Strict input.** The official server ignores unknown parameters and unknown fields of an option,
   reads fields of the wrong JSON type leniently, ignores the quiz parameters of a regular poll, and
   ignores `close_date` beside `open_period`. The emulator rejects them with
-  `Bad Request: invalid sendPoll parameters`, to surface the bot's mistake in tests, rejects options
-  with media with a description of its own, and rejects `open_period` with `close_date` with
+  `Bad Request: invalid sendPoll parameters`, naming an unknown parameter's path after it, to
+  surface the bot's mistake in tests, rejects options with media with a description of its own, and
+  rejects `open_period` with `close_date` with
   `Bad Request: open_period and close_date can't be used together`.
 - **Closing times without elapsed time.** Telegram closes a poll when its closing time passes. The
   emulator closes it only when a test makes its closing time arrive, so tests decide the moment

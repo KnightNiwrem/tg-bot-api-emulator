@@ -141,10 +141,14 @@ Deno.test('sendMessageDraft refuses what Telegram refuses and leaves the chat as
     const cases: readonly (readonly [Record<string, unknown>, number, string])[] = [
       [{ chat_id: ada.id, draft_id: 0, text: 'x' }, 400, 'Bad Request: RANDOM_ID_INVALID'],
       [{ chat_id: ada.id, text: 'x' }, 400, 'Bad Request: RANDOM_ID_INVALID'],
-      [{ chat_id: ada.id, draft_id: 'next', text: 'x' }, 400, invalidParameters],
-      [{ chat_id: ada.id, draft_id: '9223372036854775808' }, 400, invalidParameters],
-      [{ chat_id: ada.id, draft_id: 2, message_thread_id: 3 }, 400, invalidParameters],
-      [{ chat_id: ada.id, draft_id: 2, can_stop: 'maybe' }, 400, invalidParameters],
+      [{ chat_id: ada.id, draft_id: 'next', text: 'x' }, 400, `${invalidParameters}: draft_id`],
+      [{ chat_id: ada.id, draft_id: '9223372036854775808' }, 400, `${invalidParameters}: draft_id`],
+      [
+        { chat_id: ada.id, draft_id: 2, message_thread_id: 3 },
+        400,
+        `${invalidParameters}: message_thread_id`,
+      ],
+      [{ chat_id: ada.id, draft_id: 2, can_stop: 'maybe' }, 400, `${invalidParameters}: can_stop`],
       [{ draft_id: 2, text: 'x' }, 400, 'Bad Request: chat_id is empty'],
       [{ chat_id: 999, draft_id: 2, text: 'x' }, 400, 'Bad Request: chat not found'],
       [{ chat_id: grace.id, draft_id: 2, text: 'x' }, 400, 'Bad Request: chat not found'],
