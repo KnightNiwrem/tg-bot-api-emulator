@@ -1,3 +1,5 @@
+import { type ChangeStaging, UNSTAGED_CHANGES } from '../transactions/change_staging.ts';
+import { TransactionalMap } from '../transactions/transactional_collections.ts';
 import type {
   CallbackQuery,
   CallbackQueryAnswer,
@@ -19,12 +21,23 @@ export interface AddCallbackQueryInput {
 
 /** Stores callback queries and how each one ended under session-unique identifiers. */
 export class CallbackQueryRepository {
-  readonly #callbackQueriesById = new Map<CallbackQueryId, CallbackQuery>();
+  readonly #staging: ChangeStaging;
+  readonly #callbackQueriesById: TransactionalMap<CallbackQueryId, CallbackQuery>;
   #nextCallbackQueryNumber = 1;
 
+  /** `staging` decides how the repository's writes take part in its session's transactions. */
+  constructor(staging: ChangeStaging = UNSTAGED_CHANGES) {
+    this.#staging = staging;
+    this.#callbackQueriesById = new TransactionalMap(staging);
+  }
+
   addCallbackQuery(input: AddCallbackQueryInput): CallbackQuery {
+    const callbackQueryNumber = this.#nextCallbackQueryNumber++;
+    this.#staging.recordRevert(() => {
+      this.#nextCallbackQueryNumber = callbackQueryNumber;
+    });
     const callbackQuery: CallbackQuery = {
-      id: String(this.#nextCallbackQueryNumber++),
+      id: String(callbackQueryNumber),
       accountId: input.accountId,
       botId: input.botId,
       messageId: input.messageId,

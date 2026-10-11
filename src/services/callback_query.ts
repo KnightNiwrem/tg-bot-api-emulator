@@ -84,8 +84,10 @@ interface CallbackQueryStore {
   recordAnswer(callbackQueryId: CallbackQueryId, answer: CallbackQueryAnswer): CallbackQuery;
 }
 
-/** Takes each event into the transaction of the command that caused it. */
-interface ChatDomainEventSink {
+/** The session's transactions: each command of the service runs in one, and emits its event into it. */
+interface CallbackQueryTransactions {
+  /** Runs a command in the transaction of the command executing, or in one of its own. */
+  withinTransaction<Result>(command: () => Result): Result;
   emit(event: ChatDomainEvent): void;
 }
 
@@ -94,7 +96,8 @@ interface CallbackQueryServiceDependencies {
   /** Finds the username of an answering bot, whose start links an answer's URL may open. */
   readonly bots: BotLookup;
   readonly callbackQueries: CallbackQueryStore;
-  readonly events: ChatDomainEventSink;
+  /** Runs each command that changes the session as one transaction, which receives its event. */
+  readonly transactions: CallbackQueryTransactions;
 }
 
 /**
@@ -102,20 +105,24 @@ interface CallbackQueryServiceDependencies {
  * message sent through a bot's inline mode, and the bot answers once with an optional notification
  * for the account. A press can create the query already expired; the emulator does not otherwise
  * expire queries by time.
+ *
+ * A press and an answer each run as one transaction: the query a press creates and the update it
+ * becomes, or the answer a bot records, are published together with whatever else the command
+ * that runs them commits, or, should any step fail, not at all.
  */
 export class CallbackQueryService {
   readonly #accountChatMessages: AccountChatMessageReader;
   readonly #bots: BotLookup;
   readonly #callbackQueries: CallbackQueryStore;
-  readonly #events: ChatDomainEventSink;
+  readonly #transactions: CallbackQueryTransactions;
 
   constructor(
-    { accountChatMessages, bots, callbackQueries, events }: CallbackQueryServiceDependencies,
+    { accountChatMessages, bots, callbackQueries, transactions }: CallbackQueryServiceDependencies,
   ) {
     this.#accountChatMessages = accountChatMessages;
     this.#bots = bots;
     this.#callbackQueries = callbackQueries;
-    this.#events = events;
+    this.#transactions = transactions;
   }
 
   /**
@@ -125,31 +132,33 @@ export class CallbackQueryService {
    * message sent through it knows the message only by its inline message identifier.
    */
   pressCallbackButton(input: PressCallbackButtonInput): PressCallbackButtonResult {
-    const lookup = this.#accountChatMessages.findMessage({
-      accountId: input.fromAccountId,
-      chat: input.chat,
-      messageId: input.messageId,
-    });
-    if (!lookup.found) {
-      return { pressed: false, reason: lookup.reason };
-    }
-    const { message } = lookup;
-    const botId = getInlineKeyboardOwnerId(message);
-    if (botId === undefined || !hasCallbackButton(message, input.callbackData)) {
-      return { pressed: false, reason: 'callback_button_not_found' };
-    }
+    return this.#transactions.withinTransaction(() => {
+      const lookup = this.#accountChatMessages.findMessage({
+        accountId: input.fromAccountId,
+        chat: input.chat,
+        messageId: input.messageId,
+      });
+      if (!lookup.found) {
+        return { pressed: false, reason: lookup.reason };
+      }
+      const { message } = lookup;
+      const botId = getInlineKeyboardOwnerId(message);
+      if (botId === undefined || !hasCallbackButton(message, input.callbackData)) {
+        return { pressed: false, reason: 'callback_button_not_found' };
+      }
 
-    const callbackQuery = this.#callbackQueries.addCallbackQuery({
-      accountId: input.fromAccountId,
-      botId,
-      messageId: message.id,
-      inlineMessageId: message.viaBot?.inlineMessageId,
-      chatInstance: lookup.chat.chatInstance,
-      callbackData: input.callbackData,
-      expired: input.expired,
+      const callbackQuery = this.#callbackQueries.addCallbackQuery({
+        accountId: input.fromAccountId,
+        botId,
+        messageId: message.id,
+        inlineMessageId: message.viaBot?.inlineMessageId,
+        chatInstance: lookup.chat.chatInstance,
+        callbackData: input.callbackData,
+        expired: input.expired,
+      });
+      this.#transactions.emit({ type: 'callback_query_created', callbackQuery, message });
+      return { pressed: true, callbackQuery };
     });
-    this.#events.emit({ type: 'callback_query_created', callbackQuery, message });
-    return { pressed: true, callbackQuery };
   }
 
   /**
@@ -163,28 +172,30 @@ export class CallbackQueryService {
    * not allow.
    */
   answerCallbackQuery(input: BotCallbackQueryAnswerInput): BotCallbackQueryAnswerResult {
-    const callbackQuery = this.#callbackQueries.getCallbackQuery(input.callbackQueryId);
-    if (
-      callbackQuery === undefined ||
-      callbackQuery.botId !== input.fromBotId ||
-      callbackQuery.state.status !== 'awaiting_answer'
-    ) {
-      return { answered: false, reason: 'callback_query_not_answerable' };
-    }
-    const url = input.url === undefined || input.url.length === 0 ? undefined : input.url;
-    if (url !== undefined && !this.#isStartLinkOfBot(url, input.fromBotId)) {
-      return { answered: false, reason: 'url_invalid' };
-    }
+    return this.#transactions.withinTransaction(() => {
+      const callbackQuery = this.#callbackQueries.getCallbackQuery(input.callbackQueryId);
+      if (
+        callbackQuery === undefined ||
+        callbackQuery.botId !== input.fromBotId ||
+        callbackQuery.state.status !== 'awaiting_answer'
+      ) {
+        return { answered: false, reason: 'callback_query_not_answerable' };
+      }
+      const url = input.url === undefined || input.url.length === 0 ? undefined : input.url;
+      if (url !== undefined && !this.#isStartLinkOfBot(url, input.fromBotId)) {
+        return { answered: false, reason: 'url_invalid' };
+      }
 
-    return {
-      answered: true,
-      callbackQuery: this.#callbackQueries.recordAnswer(callbackQuery.id, {
-        ...(input.text === undefined || input.text.length === 0 ? {} : { text: input.text }),
-        showAlert: input.showAlert,
-        cacheTimeSeconds: input.cacheTimeSeconds,
-        ...(url === undefined ? {} : { url }),
-      }),
-    };
+      return {
+        answered: true,
+        callbackQuery: this.#callbackQueries.recordAnswer(callbackQuery.id, {
+          ...(input.text === undefined || input.text.length === 0 ? {} : { text: input.text }),
+          showAlert: input.showAlert,
+          cacheTimeSeconds: input.cacheTimeSeconds,
+          ...(url === undefined ? {} : { url }),
+        }),
+      };
+    });
   }
 
   /** Whether a link starts the bot with a parameter; usernames match regardless of case. */

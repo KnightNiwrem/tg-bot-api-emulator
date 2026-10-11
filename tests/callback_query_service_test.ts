@@ -493,7 +493,7 @@ function createCallbackQueryFixture() {
     }),
     bots,
     callbackQueries: new CallbackQueryRepository(),
-    events,
+    transactions: { ...events, withinTransaction: (command) => command() },
   });
 
   const account = createAccount(virtualUsers, 'Ada');

@@ -283,8 +283,8 @@ export function createEmulationSession(
   const callbackQueries = new CallbackQueryService({
     accountChatMessages,
     bots,
-    callbackQueries: new CallbackQueryRepository(),
-    events: transactions,
+    callbackQueries: new CallbackQueryRepository(journal),
+    transactions,
   });
   const pollService = new PollService({
     accountChatMessages,
@@ -297,9 +297,9 @@ export function createEmulationSession(
     sharedChats,
     privateMessages: privateMessaging,
     supergroupMessages: supergroupMessaging,
-    inlineQueries: new InlineQueryRepository(),
+    inlineQueries: new InlineQueryRepository(journal),
     webMediaFiles: mediaFiles,
-    events: transactions,
+    transactions,
   });
 
   const chatActions = new ChatActionService({
