@@ -611,7 +611,7 @@ function createBotApiFixture() {
       sharedChats,
       inviteLinks: new ChatInviteLinkRepository(),
       memberships: sharedChatAdministration,
-      events,
+      transactions: { ...events, withinTransaction: (command) => command() },
       currentUnixTimeSeconds: () => 1_700_000_000,
     }),
     botMessageViews,

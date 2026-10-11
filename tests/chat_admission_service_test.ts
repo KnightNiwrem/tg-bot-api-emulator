@@ -48,7 +48,11 @@ function createAdmissionFixture() {
     sharedChats,
     inviteLinks: new ChatInviteLinkRepository(),
     memberships: sharedChatAdministration,
-    events: { emit: (event) => publishedEvents.push(event) },
+    // The repositories are not staged, so each command runs as it is called.
+    transactions: {
+      withinTransaction: (command) => command(),
+      emit: (event) => publishedEvents.push(event),
+    },
     currentUnixTimeSeconds,
   });
 

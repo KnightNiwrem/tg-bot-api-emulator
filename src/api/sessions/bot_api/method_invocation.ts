@@ -5,13 +5,14 @@ import { resolveChatIdentifier } from './chat_access.ts';
 import { BOT_API_ERRORS } from './errors/error_catalogue.ts';
 import { presentFixedBotApiError } from './errors/error_template.ts';
 import {
+  answeredPreparation,
   type BotApiCallContext,
   type BotApiCallOutcome,
+  type BotApiCallPreparation,
   botApiError,
   type BotApiMethod,
   type BotApiMethodAnswer,
   type BotApiMethodContext,
-  type BotApiMethodOutcome,
   SESSION_ENDED,
 } from './method_call.ts';
 import { takeQueuedAnswer } from './queued_answer.ts';
@@ -48,7 +49,9 @@ function endedSessionCallOutcome({ answerOnceSessionEnded }: BotApiMethod): BotA
  * Runs a bot's call of a method, however the call arrived, unless a test queued a rate limit or
  * server error answer for it, which the call receives instead, before the method reads its
  * parameters or changes anything. The call and its answer are recorded as bot activity if the
- * method's calls are, in a transaction of the session.
+ * method's calls are, in a transaction of the session. The call of a method that executes as a
+ * command is prepared first, then executed in that same transaction, so its changes and its
+ * record are committed together, or, should the execution fail, not at all.
  *
  * Once the session has ended, a call changes and records nothing, and gets its method's
  * ended-session outcome, whatever it would otherwise have been answered: a refusal, or, for a
@@ -63,19 +66,23 @@ export async function callBotApiMethod(
   if (!context.session.lifetime.admitsCommits) {
     return endedSessionCallOutcome(method);
   }
-  const outcome = await answerBotApiMethodCall(context, method, parameters, uploadedFiles);
-  if (outcome === SESSION_ENDED) {
+  const preparation = await prepareBotApiMethodCall(context, method, parameters, uploadedFiles);
+  if (preparation === SESSION_ENDED) {
     return endedSessionCallOutcome(method);
   }
-  const recording = context.session.transactions.execute(() =>
+  const execution = context.session.transactions.execute(() => {
+    const answer = preparation.kind === 'command' ? preparation.execute() : preparation.answer;
     recordImplementedMethodCall(context, method, {
       requestedMethodName,
       parameters,
       uploadedFiles,
       chatId: findNamedChatId(context, parameters),
-    }, outcome)
-  );
-  return recording.executed ? { answered: true, answer: outcome } : endedSessionCallOutcome(method);
+    }, answer);
+    return answer;
+  });
+  return execution.executed
+    ? { answered: true, answer: execution.result }
+    : endedSessionCallOutcome(method);
 }
 
 /**
@@ -139,20 +146,30 @@ function recordImplementedMethodCall(
   }
 }
 
-async function answerBotApiMethodCall(
+/**
+ * Prepares a call up to its commit boundary: a queued answer, a username that names no chat, and
+ * whatever the method's preparation decides answer it there. A method with a handler runs it
+ * here, committing its own changes, and its answer is all that is left to commit.
+ */
+async function prepareBotApiMethodCall(
   context: BotApiCallContext,
-  { name, handler }: BotApiMethod,
+  method: BotApiMethod,
   parameters: BotApiRequestParameters,
   uploadedFiles: BotApiUploadedFiles,
-): Promise<BotApiMethodOutcome> {
-  const queuedAnswer = takeQueuedAnswer(context, name);
+): Promise<BotApiCallPreparation | typeof SESSION_ENDED> {
+  const queuedAnswer = takeQueuedAnswer(context, method.name);
   if (queuedAnswer !== undefined) {
-    return queuedAnswer;
+    return answeredPreparation(queuedAnswer);
   }
   const chatResolution = resolveChatUsernameParameters(context, parameters);
-  return chatResolution.resolved
-    ? await handler(context, chatResolution.parameters, uploadedFiles)
-    : chatResolution.errorAnswer;
+  if (!chatResolution.resolved) {
+    return answeredPreparation(chatResolution.errorAnswer);
+  }
+  if ('prepare' in method) {
+    return await method.prepare(context, chatResolution.parameters, uploadedFiles);
+  }
+  const outcome = await method.handler(context, chatResolution.parameters, uploadedFiles);
+  return outcome === SESSION_ENDED ? SESSION_ENDED : answeredPreparation(outcome);
 }
 
 const namedChatIdSchema = integerParameter(z.int());

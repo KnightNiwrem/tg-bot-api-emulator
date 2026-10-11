@@ -3,9 +3,10 @@ import { z } from 'zod';
 import { CHAT_ID_EMPTY_DESCRIPTION } from '../chat_access.ts';
 import { presentChatInviteLinkFailure } from '../errors/chat_invite_link_failure_presenter.ts';
 import {
+  answeredPreparation,
+  type BotApiCallPreparation,
   botApiError,
   type BotApiMethod,
-  type BotApiMethodAnswer,
   type BotApiMethodContext,
   botApiResult,
 } from '../method_call.ts';
@@ -15,12 +16,15 @@ import {
   integerParameter,
 } from '../request_parameters.ts';
 
-/** The methods that manage a chat's invite links: the bot's primary link and additional links. */
+/**
+ * The methods that manage a chat's invite links, the bot's primary link and additional links, each
+ * executed as a command in its call's transaction.
+ */
 export const CHAT_INVITE_LINK_METHODS: readonly BotApiMethod[] = [
-  { name: 'exportChatInviteLink', recordsActivity: true, handler: handleExportChatInviteLink },
-  { name: 'createChatInviteLink', recordsActivity: true, handler: handleCreateChatInviteLink },
-  { name: 'editChatInviteLink', recordsActivity: true, handler: handleEditChatInviteLink },
-  { name: 'revokeChatInviteLink', recordsActivity: true, handler: handleRevokeChatInviteLink },
+  { name: 'exportChatInviteLink', recordsActivity: true, prepare: prepareExportChatInviteLink },
+  { name: 'createChatInviteLink', recordsActivity: true, prepare: prepareCreateChatInviteLink },
+  { name: 'editChatInviteLink', recordsActivity: true, prepare: prepareEditChatInviteLink },
+  { name: 'revokeChatInviteLink', recordsActivity: true, prepare: prepareRevokeChatInviteLink },
 ];
 
 // Telegram reads a missing name as empty, and a missing or zero `expire_date` or `member_limit` as
@@ -54,98 +58,136 @@ const revokeChatInviteLinkParametersSchema = z.strictObject({
 });
 
 /**
- * Answers `exportChatInviteLink` with the bot's new primary link as a bare string, as the official
- * server's `TdOnReplacePrimaryChatInviteLinkCallback` answers it.
+ * Prepares `exportChatInviteLink`, which answers with the bot's new primary link as a bare
+ * string, as the official server's `TdOnReplacePrimaryChatInviteLinkCallback` answers it.
  */
-function handleExportChatInviteLink(
+function prepareExportChatInviteLink(
   context: BotApiMethodContext,
   parameters: BotApiRequestParameters,
-): BotApiMethodAnswer {
+): BotApiCallPreparation {
   const parsedParameters = exportChatInviteLinkParametersSchema.safeParse(parameters);
   if (!parsedParameters.success) {
-    return botApiError(400, 'Bad Request: invalid exportChatInviteLink parameters');
+    return answeredPreparation(
+      botApiError(400, 'Bad Request: invalid exportChatInviteLink parameters'),
+    );
   }
   const { data } = parsedParameters;
-  if (data.chat_id === undefined) {
-    return botApiError(400, CHAT_ID_EMPTY_DESCRIPTION);
+  const chatId = data.chat_id;
+  if (chatId === undefined) {
+    return answeredPreparation(botApiError(400, CHAT_ID_EMPTY_DESCRIPTION));
   }
 
-  const result = context.session.botApi.exportChatInviteLink(context.bot, {
-    chatId: data.chat_id,
-  });
-  return result.exported ? botApiResult(result.inviteLink) : presentChatInviteLinkFailure(result);
+  return {
+    kind: 'command',
+    execute: () => {
+      const result = context.session.botApi.exportChatInviteLink(context.bot, {
+        chatId,
+      });
+      return result.exported
+        ? botApiResult(result.inviteLink)
+        : presentChatInviteLinkFailure(result);
+    },
+  };
 }
 
-/** Answers `createChatInviteLink` with the new link as its creator sees it. */
-function handleCreateChatInviteLink(
+/** Prepares `createChatInviteLink`, which answers with the new link as its creator sees it. */
+function prepareCreateChatInviteLink(
   context: BotApiMethodContext,
   parameters: BotApiRequestParameters,
-): BotApiMethodAnswer {
+): BotApiCallPreparation {
   const parsedParameters = createChatInviteLinkParametersSchema.safeParse(parameters);
   if (!parsedParameters.success) {
-    return botApiError(400, 'Bad Request: invalid createChatInviteLink parameters');
+    return answeredPreparation(
+      botApiError(400, 'Bad Request: invalid createChatInviteLink parameters'),
+    );
   }
   const { data } = parsedParameters;
-  if (data.chat_id === undefined) {
-    return botApiError(400, CHAT_ID_EMPTY_DESCRIPTION);
+  const chatId = data.chat_id;
+  if (chatId === undefined) {
+    return answeredPreparation(botApiError(400, CHAT_ID_EMPTY_DESCRIPTION));
   }
 
-  const result = context.session.botApi.createChatInviteLink(context.bot, {
-    chatId: data.chat_id,
-    ...readInviteLinkSettingsParameters(data),
-  });
-  return result.created ? botApiResult(result.inviteLink) : presentChatInviteLinkFailure(result);
+  return {
+    kind: 'command',
+    execute: () => {
+      const result = context.session.botApi.createChatInviteLink(context.bot, {
+        chatId,
+        ...readInviteLinkSettingsParameters(data),
+      });
+      return result.created
+        ? botApiResult(result.inviteLink)
+        : presentChatInviteLinkFailure(result);
+    },
+  };
 }
 
 /**
- * Answers `editChatInviteLink` with the edited link as its creator sees it. As the official
- * server's `process_edit_chat_invite_link_query` passes every setting on to TDLib, which replaces
- * them all, an omitted setting becomes none.
+ * Prepares `editChatInviteLink`, which answers with the edited link as its creator sees it. As
+ * the official server's `process_edit_chat_invite_link_query` passes every setting on to TDLib,
+ * which replaces them all, an omitted setting becomes none.
  */
-function handleEditChatInviteLink(
+function prepareEditChatInviteLink(
   context: BotApiMethodContext,
   parameters: BotApiRequestParameters,
-): BotApiMethodAnswer {
+): BotApiCallPreparation {
   const parsedParameters = editChatInviteLinkParametersSchema.safeParse(parameters);
   if (!parsedParameters.success) {
-    return botApiError(400, 'Bad Request: invalid editChatInviteLink parameters');
+    return answeredPreparation(
+      botApiError(400, 'Bad Request: invalid editChatInviteLink parameters'),
+    );
   }
   const { data } = parsedParameters;
-  if (data.chat_id === undefined) {
-    return botApiError(400, CHAT_ID_EMPTY_DESCRIPTION);
+  const chatId = data.chat_id;
+  if (chatId === undefined) {
+    return answeredPreparation(botApiError(400, CHAT_ID_EMPTY_DESCRIPTION));
   }
 
-  const result = context.session.botApi.editChatInviteLink(context.bot, {
-    chatId: data.chat_id,
-    inviteLink: data.invite_link,
-    ...readInviteLinkSettingsParameters(data),
-  });
-  return result.edited ? botApiResult(result.inviteLink) : presentChatInviteLinkFailure(result);
+  return {
+    kind: 'command',
+    execute: () => {
+      const result = context.session.botApi.editChatInviteLink(context.bot, {
+        chatId,
+        inviteLink: data.invite_link,
+        ...readInviteLinkSettingsParameters(data),
+      });
+      return result.edited ? botApiResult(result.inviteLink) : presentChatInviteLinkFailure(result);
+    },
+  };
 }
 
 /**
- * Answers `revokeChatInviteLink` with the revoked link as its creator sees it, as the official
- * server's `TdOnGetChatInviteLinkCallback` answers the first link TDLib returns, even when
- * revoking a primary link also returned its replacement.
+ * Prepares `revokeChatInviteLink`, which answers with the revoked link as its creator sees it,
+ * as the official server's `TdOnGetChatInviteLinkCallback` answers the first link TDLib returns,
+ * even when revoking a primary link also returned its replacement.
  */
-function handleRevokeChatInviteLink(
+function prepareRevokeChatInviteLink(
   context: BotApiMethodContext,
   parameters: BotApiRequestParameters,
-): BotApiMethodAnswer {
+): BotApiCallPreparation {
   const parsedParameters = revokeChatInviteLinkParametersSchema.safeParse(parameters);
   if (!parsedParameters.success) {
-    return botApiError(400, 'Bad Request: invalid revokeChatInviteLink parameters');
+    return answeredPreparation(
+      botApiError(400, 'Bad Request: invalid revokeChatInviteLink parameters'),
+    );
   }
   const { data } = parsedParameters;
-  if (data.chat_id === undefined) {
-    return botApiError(400, CHAT_ID_EMPTY_DESCRIPTION);
+  const chatId = data.chat_id;
+  if (chatId === undefined) {
+    return answeredPreparation(botApiError(400, CHAT_ID_EMPTY_DESCRIPTION));
   }
 
-  const result = context.session.botApi.revokeChatInviteLink(context.bot, {
-    chatId: data.chat_id,
-    inviteLink: data.invite_link,
-  });
-  return result.revoked ? botApiResult(result.inviteLink) : presentChatInviteLinkFailure(result);
+  return {
+    kind: 'command',
+    execute: () => {
+      const result = context.session.botApi.revokeChatInviteLink(context.bot, {
+        chatId,
+        inviteLink: data.invite_link,
+      });
+      return result.revoked
+        ? botApiResult(result.inviteLink)
+        : presentChatInviteLinkFailure(result);
+    },
+  };
 }
 
 /**

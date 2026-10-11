@@ -1,3 +1,5 @@
+import { type ChangeStaging, UNSTAGED_CHANGES } from '../transactions/change_staging.ts';
+import { TransactionalMap, TransactionalSet } from '../transactions/transactional_collections.ts';
 import {
   type ChatInviteLink,
   type ChatInviteLinkSettings,
@@ -30,8 +32,17 @@ export interface PrimaryChatInviteLinkReplacement {
  * most one primary link per chat and administrator that is not revoked.
  */
 export class ChatInviteLinkRepository {
-  readonly #linksByUrl = new Map<string, ChatInviteLink>();
-  readonly #linkUrlsByChatId = new Map<number, string[]>();
+  readonly #staging: ChangeStaging;
+  readonly #linksByUrl: TransactionalMap<string, ChatInviteLink>;
+  /** Each chat's link URLs, in the order the links were created. */
+  readonly #linkUrlsByChatId: TransactionalMap<number, TransactionalSet<string>>;
+
+  /** `staging` decides how the repository's writes take part in its session's transactions. */
+  constructor(staging: ChangeStaging = UNSTAGED_CHANGES) {
+    this.#staging = staging;
+    this.#linksByUrl = new TransactionalMap(staging);
+    this.#linkUrlsByChatId = new TransactionalMap(staging);
+  }
 
   /**
    * Stores a new additional link under a URL with a random hash that no link of the session has.
@@ -74,7 +85,7 @@ export class ChatInviteLinkRepository {
 
   /** Returns a chat's invite links in the order they were created. */
   listChatInviteLinks(chatId: number): readonly ChatInviteLink[] {
-    return (this.#linkUrlsByChatId.get(chatId) ?? []).map((url) => {
+    return [...(this.#linkUrlsByChatId.get(chatId) ?? [])].map((url) => {
       const link = this.#linksByUrl.get(url);
       if (link === undefined) {
         throw new Error(`Invite link ${url} of chat ${chatId} is not stored`);
@@ -127,8 +138,9 @@ export class ChatInviteLinkRepository {
 
     const link: ChatInviteLink = { ...newLink, url, hasExpired: false, isRevoked: false };
     this.#linksByUrl.set(url, link);
-    const chatLinkUrls = this.#linkUrlsByChatId.get(link.chatId) ?? [];
-    chatLinkUrls.push(url);
+    const chatLinkUrls = this.#linkUrlsByChatId.get(link.chatId) ??
+      new TransactionalSet<string>(this.#staging);
+    chatLinkUrls.add(url);
     this.#linkUrlsByChatId.set(link.chatId, chatLinkUrls);
     return link;
   }
