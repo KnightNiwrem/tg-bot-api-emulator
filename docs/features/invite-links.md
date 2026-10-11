@@ -358,8 +358,8 @@ create links, any other account is answered `403`.
   end, so tests decide the moment deterministically.
 - **Strict parameters.** A negative `expire_date` or `member_limit`, which the official server's
   `get_integer_arg` clamps to zero, is rejected as
-  `Bad Request: invalid createChatInviteLink parameters`, or as invalid `editChatInviteLink`
-  parameters, to surface the bot's mistake.
+  `Bad Request: invalid createChatInviteLink parameters: member_limit`, or as invalid
+  `editChatInviteLink` parameters, naming the parameter, to surface the bot's mistake.
 - **Exact links.** Accounts use a link exactly as the bot received it; the `t.me/joinchat/` and
   `tg://join` forms that Telegram's clients also accept are unknown links.
 

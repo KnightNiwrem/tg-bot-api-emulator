@@ -242,9 +242,11 @@ The corresponding upstream paths are [`HttpReader::read_next`][http-reader],
 accepted upstream; low-level HTTP errors and size limits can still fail there.
 
 The message editing methods (`editMessageText`, `editMessageCaption`, `editMessageMedia`,
-`editMessageReplyMarkup` and `stopPoll`) and the forward and copy methods (`forwardMessage`,
-`forwardMessages`, `copyMessage` and `copyMessages`) name the first parameter their schema refuses
-after the description, as a path into the call's parameters:
+`editMessageReplyMarkup` and `stopPoll`), the forward and copy methods (`forwardMessage`,
+`forwardMessages`, `copyMessage` and `copyMessages`), the invite link methods
+(`exportChatInviteLink`, `createChatInviteLink`, `editChatInviteLink` and `revokeChatInviteLink`)
+and the join request methods (`approveChatJoinRequest` and `declineChatJoinRequest`) name the first
+parameter their schema refuses after the description, as a path into the call's parameters:
 `Bad Request: invalid editMessageReplyMarkup parameters: reply_markup.inline_keyboard[0][1]` for a
 button with no action, `Bad Request: invalid forwardMessages parameters: message_ids[1]` for an
 identifier that is not an integer, or `Bad Request: invalid stopPoll parameters: open_period` for a
@@ -289,6 +291,8 @@ managing individual profiles is missing.
 [session clocks and scheduler](../../src/timing/session_timing.ts),
 [request decoding](../../src/api/sessions/bot_api/request_parameters.ts),
 [method invocation](../../src/api/sessions/bot_api/method_invocation.ts),
+[method steps](../../src/api/sessions/bot_api/method_steps.ts) with
+[their tests](../../tests/bot_api_method_steps_test.ts),
 [method schemas](../../src/api/sessions/bot_api/methods/),
 [Bot API error catalogue](../../src/api/sessions/bot_api/errors/error_catalogue.ts), which records
 where each description comes from, and its

@@ -1110,7 +1110,7 @@ Deno.test('deciding a request has an explicit outcome for each standing, right a
     [
       [400, 'Bad Request: invalid user_id specified'],
       [400, 'Bad Request: chat_id is empty'],
-      [400, 'Bad Request: invalid approveChatJoinRequest parameters'],
+      [400, 'Bad Request: invalid approveChatJoinRequest parameters: extra'],
       [400, 'Bad Request: chat not found'],
       [400, "Bad Request: the chat can't have join requests"],
       [400, 'Bad Request: not enough rights to manage chat join requests'],
