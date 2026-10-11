@@ -11,10 +11,11 @@ import type {
   Supergroup,
   SupergroupChatKey,
 } from '../src/types/virtual_chat.ts';
-import type {
-  ChatMessage,
-  PrivateMessage,
-  SupergroupMessage,
+import {
+  type ChatMessage,
+  isMessageOfChatType,
+  type PrivateMessage,
+  type SupergroupMessage,
 } from '../src/types/virtual_message.ts';
 import { createChatMessagingServices } from './support/chat_messaging_services.ts';
 import { createVirtualAccount, createVirtualBot } from './support/virtual_users.ts';
@@ -128,7 +129,7 @@ Deno.test('a private chat address identifies an existing peer without deciding a
   }
   const hopperChat = hopperIdentification.key;
   const accessBeforeContact = describeAccess(privateChats, hopperChat);
-  const prompt = messageSending.sendPrivateChatMessage({
+  const prompt = messageSending.sendChatMessage({
     fromBotId: bot,
     chat: { type: 'private', peerId: hopper },
     content: { kind: 'text', text: 'Press the button to join' },
@@ -402,13 +403,16 @@ function sendBotText(
   accountId: number,
   text: string,
 ): PrivateMessage {
-  const result = messageSending.sendPrivateChatMessage({
+  const result = messageSending.sendChatMessage({
     fromBotId: botId,
     chat: { type: 'private', peerId: accountId },
     content: { kind: 'text', text },
   });
   if (!result.sent) {
     throw new Error(`Expected the bot's message to be sent, received ${result.reason}`);
+  }
+  if (!isMessageOfChatType(result.message, 'private')) {
+    throw new Error("Expected the bot's message to be a private message");
   }
   return result.message;
 }

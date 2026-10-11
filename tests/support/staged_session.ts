@@ -206,7 +206,7 @@ export function createStagedSessionFixture({ privacyMode }: { readonly privacyMo
       ),
     sendBotText: (botId: number, text: string) =>
       expectSent(
-        messageSending.sendSupergroupMessage({
+        messageSending.sendChatMessage({
           fromBotId: botId,
           chat: { type: 'supergroup', chatId },
           content: { kind: 'text', text },

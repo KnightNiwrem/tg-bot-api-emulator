@@ -84,10 +84,13 @@ import type { WrittenMessageDraft } from '../../types/message_draft.ts';
 import {
   type ChatAction,
   type ChatActor,
+  type ChatAddress,
   type ChatKey,
   getBotApiChatAddress,
-  getBotApiChatKey,
+  getBotChatKey,
+  type PrivateChatAddress,
   type PrivateConversationKey,
+  type SupergroupChatAddress,
 } from '../../types/virtual_chat.ts';
 import {
   type ChatMessage,
@@ -1525,18 +1528,13 @@ interface BotUpdateConsumers {
   getWebhookInfo(botId: number): BotApiWebhookInfo;
 }
 
-interface BotPrivateChat {
-  readonly type: 'private';
-  readonly accountId: number;
-}
-
 interface BotMessaging {
   isPrivateConversationStarted(
     key: { readonly accountId: number; readonly botId: number },
   ): boolean;
   checkBotChatActionAccess(input: {
     readonly fromBotId: number;
-    readonly to: BotPrivateChat;
+    readonly chat: PrivateChatAddress;
   }):
     | { readonly allowed: true }
     | {
@@ -1552,7 +1550,7 @@ interface BotMessaging {
 interface SupergroupBotMessaging {
   checkBotChatActionAccess(input: {
     readonly fromBotId: number;
-    readonly chatId: number;
+    readonly chat: SupergroupChatAddress;
   }):
     | { readonly allowed: true }
     | {
@@ -2716,13 +2714,14 @@ export class BotApiService {
     authenticatedBot: VirtualBotProfile,
     { chatId, action }: SendChatActionRequest,
   ): SendChatActionResult {
-    const access = this.#checkBotChatActionAccess(authenticatedBot.id, chatId);
+    const chat = getBotApiChatAddress(chatId);
+    const access = this.#checkBotChatActionAccess(authenticatedBot.id, chat);
     if (!access.allowed) {
       return { sent: false, reason: access.reason };
     }
     this.#chatActions.recordBotChatAction({
       botId: authenticatedBot.id,
-      chat: getBotApiChatKey(authenticatedBot.id, chatId),
+      chat: getBotChatKey(authenticatedBot.id, chat),
       action,
     });
     return { sent: true };
@@ -2742,7 +2741,8 @@ export class BotApiService {
     authenticatedBot: VirtualBotProfile,
     { chatId, draftId, text, canStop, keepOnStop }: SendMessageDraftRequest,
   ): SendMessageDraftResult {
-    const access = this.#checkBotChatActionAccess(authenticatedBot.id, chatId);
+    const chat = getBotApiChatAddress(chatId);
+    const access = this.#checkBotChatActionAccess(authenticatedBot.id, chat);
     if (!access.allowed && access.reason !== 'bot_blocked') {
       return { sent: false, reason: access.reason };
     }
@@ -2753,7 +2753,7 @@ export class BotApiService {
     if (!textNormalization.normalized && textNormalization.failure.reason === 'text_invalid') {
       return { sent: false, ...textNormalization.failure };
     }
-    if (!isUserId(chatId)) {
+    if (chat.type !== 'private') {
       return { sent: false, reason: 'draft_chat_not_private' };
     }
     if (!access.allowed) {
@@ -2766,7 +2766,7 @@ export class BotApiService {
       return { sent: false, ...textNormalization.failure };
     }
     this.#messageDrafts.showBotDraft(
-      { accountId: chatId, botId: authenticatedBot.id },
+      { accountId: chat.peerId, botId: authenticatedBot.id },
       { draftId, text: textNormalization.formattedText, canStop, keepOnStop },
     );
     return { sent: true };
@@ -2778,34 +2778,20 @@ export class BotApiService {
    */
   #checkBotChatActionAccess(
     botId: number,
-    chatId: number,
+    chat: ChatAddress,
   ):
     | { readonly allowed: true }
     | { readonly allowed: false; readonly reason: BotChatActionAccessFailureReason } {
-    if (!isUserId(chatId)) {
-      const supergroupAccess = this.#supergroupBotMessages.checkBotChatActionAccess({
-        fromBotId: botId,
-        chatId,
-      });
-      if (supergroupAccess.allowed) {
-        return supergroupAccess;
-      }
-      if (supergroupAccess.reason === 'bot_not_found') {
-        throw new Error(`Authenticated bot ${botId} does not exist`);
-      }
-      return { allowed: false, reason: supergroupAccess.reason };
+    const access = chat.type === 'private'
+      ? this.#botMessages.checkBotChatActionAccess({ fromBotId: botId, chat })
+      : this.#supergroupBotMessages.checkBotChatActionAccess({ fromBotId: botId, chat });
+    if (access.allowed) {
+      return access;
     }
-    const privateAccess = this.#botMessages.checkBotChatActionAccess({
-      fromBotId: botId,
-      to: { type: 'private', accountId: chatId },
-    });
-    if (privateAccess.allowed) {
-      return privateAccess;
-    }
-    if (privateAccess.reason === 'bot_not_found') {
+    if (access.reason === 'bot_not_found') {
       throw new Error(`Authenticated bot ${botId} does not exist`);
     }
-    return { allowed: false, reason: privateAccess.reason };
+    return { allowed: false, reason: access.reason };
   }
 
   /**

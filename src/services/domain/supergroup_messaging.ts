@@ -5,12 +5,16 @@ import {
 } from '../../types/chat_membership.ts';
 import type { VirtualAccount } from '../../types/virtual_account.ts';
 import type { VirtualBot } from '../../types/virtual_bot.ts';
-import type { Supergroup, SupergroupChatKey } from '../../types/virtual_chat.ts';
+import type {
+  Supergroup,
+  SupergroupChatAddress,
+  SupergroupChatKey,
+} from '../../types/virtual_chat.ts';
 import type { CanonicalMessageId, SupergroupMessage } from '../../types/virtual_message.ts';
 
 export interface CheckSupergroupBotChatActionAccessInput {
   readonly fromBotId: number;
-  readonly chatId: number;
+  readonly chat: SupergroupChatAddress;
 }
 
 export type CheckSupergroupBotChatActionAccessResult =
@@ -22,7 +26,7 @@ export type CheckSupergroupBotChatActionAccessResult =
 
 export interface GetSupergroupMessageForBotInput {
   readonly botId: number;
-  readonly chatId: number;
+  readonly chat: SupergroupChatAddress;
   /** The supergroup's ID of the message. */
   readonly messageId: number;
 }
@@ -105,12 +109,12 @@ export class SupergroupMessagingService {
    * The caller records the action members' clients show.
    */
   checkBotChatActionAccess(
-    { fromBotId, chatId }: CheckSupergroupBotChatActionAccessInput,
+    { fromBotId, chat }: CheckSupergroupBotChatActionAccessInput,
   ): CheckSupergroupBotChatActionAccessResult {
     if (this.#bots.getById(fromBotId) === undefined) {
       return { allowed: false, reason: 'bot_not_found' };
     }
-    const resolution = resolveSupergroupBotMembership(this.#sharedChats, fromBotId, chatId);
+    const resolution = resolveSupergroupBotMembership(this.#sharedChats, fromBotId, chat.chatId);
     return resolution.resolved ? { allowed: true } : { allowed: false, reason: resolution.reason };
   }
 
@@ -139,16 +143,16 @@ export class SupergroupMessagingService {
    * forwards or copies.
    */
   getMessageForBot(
-    { botId, chatId, messageId }: GetSupergroupMessageForBotInput,
+    { botId, chat, messageId }: GetSupergroupMessageForBotInput,
   ): GetSupergroupMessageForBotResult {
     if (this.#bots.getById(botId) === undefined) {
       return { found: false, reason: 'bot_not_found' };
     }
-    const access = resolveSupergroupBotMembership(this.#sharedChats, botId, chatId);
+    const access = resolveSupergroupBotMembership(this.#sharedChats, botId, chat.chatId);
     if (!access.resolved) {
       return { found: false, reason: access.reason };
     }
-    const message = this.getMessageByChatMessageId(chatId, messageId);
+    const message = this.getMessageByChatMessageId(chat.chatId, messageId);
     return message === undefined
       ? { found: false, reason: 'message_not_found' }
       : { found: true, message, supergroup: access.supergroup };

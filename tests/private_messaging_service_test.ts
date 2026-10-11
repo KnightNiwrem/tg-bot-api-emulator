@@ -23,6 +23,7 @@ import type {
 import type { DocumentUpload, PhotoUpload } from '../src/types/stored_file.ts';
 import {
   getContentText,
+  isMessageOfChatType,
   MAX_CAPTION_LENGTH,
   MAX_TEXT_MESSAGE_LENGTH,
   type PrivateMessage,
@@ -285,7 +286,7 @@ Deno.test('PrivateMessagingService stores a bot reply in the private conversatio
   const bot = createVirtualBot(virtualUsers, { first_name: 'Test Bot', username: 'test_bot' });
   const incomingMessage = sendPrivateText(messageSending, account.profile.id, bot);
 
-  const replyResult = messageSending.sendPrivateChatMessage({
+  const replyResult = messageSending.sendChatMessage({
     fromBotId: bot.profile.id,
     chat: { type: 'private', peerId: account.profile.id },
     content: { kind: 'text', text: 'See /help' },
@@ -366,7 +367,7 @@ Deno.test('PrivateMessagingService validates bot messages in Telegram order befo
     text: string;
     replyTo?: BotMessageReplyTarget;
     expectedReason: Extract<
-      ReturnType<MessageSendingService['sendPrivateChatMessage']>,
+      ReturnType<MessageSendingService['sendChatMessage']>,
       { readonly sent: false }
     >['reason'];
   }[] = [
@@ -401,7 +402,7 @@ Deno.test('PrivateMessagingService validates bot messages in Telegram order befo
   ];
 
   for (const { fromBotId, accountId, text, replyTo, expectedReason } of cases) {
-    const result = messageSending.sendPrivateChatMessage({
+    const result = messageSending.sendChatMessage({
       fromBotId,
       chat: { type: 'private', peerId: accountId },
       replyTo,
@@ -427,7 +428,7 @@ Deno.test('PrivateMessagingService stores replies only to messages of the same c
   const otherChatMessageId = 1;
   const questionId = 2;
 
-  const botReply = messageSending.sendPrivateChatMessage({
+  const botReply = messageSending.sendChatMessage({
     fromBotId: bot.profile.id,
     chat: { type: 'private', peerId: account.profile.id },
     replyTo: { messageId: questionId, allowSendingWithoutReply: false },
@@ -450,7 +451,7 @@ Deno.test('PrivateMessagingService stores replies only to messages of the same c
   }
 
   const eventCountBeforeRejections = publishedEvents.length;
-  const botReplyToOtherChat = messageSending.sendPrivateChatMessage({
+  const botReplyToOtherChat = messageSending.sendChatMessage({
     fromBotId: bot.profile.id,
     chat: { type: 'private', peerId: account.profile.id },
     replyTo: { messageId: otherChatMessageId, allowSendingWithoutReply: false },
@@ -476,7 +477,7 @@ Deno.test('PrivateMessagingService stores replies only to messages of the same c
     chat: { type: 'private', peerId: account.profile.id },
     messageIds: [questionId],
   });
-  const replyToDeletedMessage = messageSending.sendPrivateChatMessage({
+  const replyToDeletedMessage = messageSending.sendChatMessage({
     fromBotId: bot.profile.id,
     chat: { type: 'private', peerId: account.profile.id },
     replyTo: { messageId: questionId, allowSendingWithoutReply: true },
@@ -500,7 +501,7 @@ Deno.test('PrivateMessagingService shows the reply interface the latest bot mess
   const chat = { accountId: account.profile.id, botId: bot.profile.id };
   sendPrivateText(messageSending, account.profile.id, bot);
   const sendWithReplyInterfaceMarkup = (replyInterfaceMarkup: ReplyInterfaceMarkup) => {
-    const result = messageSending.sendPrivateChatMessage({
+    const result = messageSending.sendChatMessage({
       fromBotId: bot.profile.id,
       chat: { type: 'private', peerId: account.profile.id },
       replyInterfaceMarkup,
@@ -599,7 +600,7 @@ Deno.test('PrivateMessagingService stores an inline keyboard whose callback data
   const bot = createVirtualBot(virtualUsers, { first_name: 'Test Bot', username: 'test_bot' });
   sendPrivateText(messageSending, account.profile.id, bot);
   const send = (inlineKeyboard: InlineKeyboard) =>
-    messageSending.sendPrivateChatMessage({
+    messageSending.sendChatMessage({
       fromBotId: bot.profile.id,
       chat: { type: 'private', peerId: account.profile.id },
       inlineKeyboard,
@@ -861,14 +862,14 @@ Deno.test('PrivateMessagingService refuses edits of messages with reply markup o
   sendPrivateText(messageSending, account.profile.id, bot);
   const chat = { type: 'private', peerId: account.profile.id } as const;
   const sendBotText = (markup: BotMessageReplyMarkup) =>
-    messageSending.sendPrivateChatMessage({
+    messageSending.sendChatMessage({
       fromBotId: bot.profile.id,
       chat,
       ...markup,
       content: { kind: 'text', text: 'Choose' },
     });
   const sendBotPhoto = (markup: BotMessageReplyMarkup) =>
-    messageSending.sendPrivateChatMessage({
+    messageSending.sendChatMessage({
       fromBotId: bot.profile.id,
       chat,
       ...markup,
@@ -1085,7 +1086,7 @@ Deno.test('PrivateMessagingService normalizes bot text and entities as Telegram 
   const bot = createVirtualBot(virtualUsers, { first_name: 'Test Bot', username: 'test_bot' });
   sendPrivateText(messageSending, account.profile.id, bot);
 
-  const result = messageSending.sendPrivateChatMessage({
+  const result = messageSending.sendChatMessage({
     fromBotId: bot.profile.id,
     chat: { type: 'private', peerId: account.profile.id },
     content: {
@@ -1135,7 +1136,7 @@ Deno.test('PrivateMessagingService rejects bot text Telegram cannot normalize af
   const bot = createVirtualBot(virtualUsers, { first_name: 'Test Bot', username: 'test_bot' });
   sendPrivateText(messageSending, account.profile.id, bot);
   const send = (accountId: number, text: string, entities: readonly TextEntity[] = []) =>
-    messageSending.sendPrivateChatMessage({
+    messageSending.sendChatMessage({
       fromBotId: bot.profile.id,
       chat: { type: 'private', peerId: accountId },
       content: { kind: 'text', text, entities },
@@ -1196,7 +1197,7 @@ Deno.test('PrivateMessagingService limits text by its characters, not its UTF-16
   const bot = createVirtualBot(virtualUsers, { first_name: 'Test Bot', username: 'test_bot' });
   sendPrivateText(messageSending, account.profile.id, bot);
   const send = (text: string, entities: readonly TextEntity[] = []) =>
-    messageSending.sendPrivateChatMessage({
+    messageSending.sendChatMessage({
       fromBotId: bot.profile.id,
       chat: { type: 'private', peerId: account.profile.id },
       content: { kind: 'text', text, entities },
@@ -1345,7 +1346,7 @@ Deno.test('PrivateMessagingService lets a bot show chat actions only in started 
   const checkAccess = (fromBotId: number, accountId: number) =>
     privateMessaging.checkBotChatActionAccess({
       fromBotId,
-      to: { type: 'private', accountId },
+      chat: { type: 'private', peerId: accountId },
     });
 
   const cases = [
@@ -1403,7 +1404,7 @@ Deno.test('PrivateMessagingService sends photos and documents with normalized ca
     entities: [{ type: 'bot_command', offset: 0, length: 6 }],
   }, 'Expected the bot to receive the captioned photo');
 
-  const botDocument = messageSending.sendPrivateChatMessage({
+  const botDocument = messageSending.sendChatMessage({
     fromBotId: bot.profile.id,
     chat: { type: 'private', peerId: account.profile.id },
     content: {
@@ -1421,7 +1422,7 @@ Deno.test('PrivateMessagingService sends photos and documents with normalized ca
       captionEntities: [{ type: 'bold', offset: 0, length: 6 }],
     },
   });
-  const reusedPhoto = messageSending.sendPrivateChatMessage({
+  const reusedPhoto = messageSending.sendChatMessage({
     fromBotId: bot.profile.id,
     chat: { type: 'private', peerId: account.profile.id },
     content: {
@@ -1460,7 +1461,7 @@ Deno.test('PrivateMessagingService limits captions and stores no upload of a ref
   const bot = createVirtualBot(virtualUsers, { first_name: 'Test Bot', username: 'test_bot' });
   sendPrivateText(messageSending, account.profile.id, bot);
   const sendCaptionedPhoto = (caption: string) =>
-    messageSending.sendPrivateChatMessage({
+    messageSending.sendChatMessage({
       fromBotId: bot.profile.id,
       chat: { type: 'private', peerId: account.profile.id },
       content: {
@@ -1482,7 +1483,7 @@ Deno.test('PrivateMessagingService limits captions and stores no upload of a ref
     throw new Error('Expected captions to be limited by their characters');
   }
 
-  const unknownChatPhoto = messageSending.sendPrivateChatMessage({
+  const unknownChatPhoto = messageSending.sendChatMessage({
     fromBotId: bot.profile.id,
     chat: { type: 'private', peerId: 999 },
     content: {
@@ -1548,7 +1549,7 @@ Deno.test('PrivateMessagingService sends albums as ordered messages that share a
     },
     caption: '',
   });
-  const botAlbum = messageSending.sendPrivateChatAlbum({
+  const botAlbum = messageSending.sendChatAlbum({
     fromBotId: bot.profile.id,
     chat: { type: 'private', peerId: account.profile.id },
     contents: [document('a.txt'), document('b.txt')],
@@ -1559,7 +1560,7 @@ Deno.test('PrivateMessagingService sends albums as ordered messages that share a
     isSilent: true,
     messageEffectId: '5104841245755180586',
   });
-  const singleAlbum = messageSending.sendPrivateChatAlbum({
+  const singleAlbum = messageSending.sendChatAlbum({
     fromBotId: bot.profile.id,
     chat: { type: 'private', peerId: account.profile.id },
     contents: [document('c.txt')],
@@ -1573,6 +1574,7 @@ Deno.test('PrivateMessagingService sends albums as ordered messages that share a
     firstDocument.mediaGroupId === firstPhoto.mediaGroupId ||
     secondDocument.mediaGroupId !== firstDocument.mediaGroupId ||
     botAlbum.messages.some((message) =>
+      !isMessageOfChatType(message, 'private') ||
       message.replyToMessageId !== secondPhoto.id || !message.isSilent ||
       message.messageEffectId !== '5104841245755180586'
     ) ||
@@ -1619,7 +1621,7 @@ Deno.test('PrivateMessagingService checks every message of an album before stori
     caption: '',
   };
   const sendBotAlbum = (contents: readonly MediaContent[]) =>
-    messageSending.sendPrivateChatAlbum({
+    messageSending.sendChatAlbum({
       fromBotId: bot.profile.id,
       chat: { type: 'private', peerId: account.profile.id },
       contents,
@@ -1691,13 +1693,13 @@ Deno.test('PrivateMessagingService stores the uploads of rich messages only once
     detectsEntities: true,
   } as const;
 
-  const sendBeforeStart = messageSending.sendPrivateChatMessage({
+  const sendBeforeStart = messageSending.sendChatMessage({
     fromBotId: bot.profile.id,
     chat,
     content: richMessageWithPhoto,
   });
   sendPrivateText(messageSending, account.profile.id, bot);
-  const sent = messageSending.sendPrivateChatMessage({
+  const sent = messageSending.sendChatMessage({
     fromBotId: bot.profile.id,
     chat,
     content: { kind: 'text', text: 'Draft' },
@@ -1743,12 +1745,12 @@ Deno.test('PrivateMessagingService edits captions and refuses edits of the other
   const account = createVirtualAccount(virtualUsers, { first_name: 'Ada' });
   const bot = createVirtualBot(virtualUsers, { first_name: 'Test Bot', username: 'test_bot' });
   sendPrivateText(messageSending, account.profile.id, bot);
-  const botText = messageSending.sendPrivateChatMessage({
+  const botText = messageSending.sendChatMessage({
     fromBotId: bot.profile.id,
     chat: { type: 'private', peerId: account.profile.id },
     content: { kind: 'text', text: 'Hi' },
   });
-  const photo = messageSending.sendPrivateChatMessage({
+  const photo = messageSending.sendChatMessage({
     fromBotId: bot.profile.id,
     chat: { type: 'private', peerId: account.profile.id },
     content: {
@@ -2001,7 +2003,7 @@ Deno.test('PrivateMessagingService refuses writing either way while the account 
   blockedUsers.block(account.profile.id, bot.profile.id);
   const publishedEventCount = publishedEvents.length;
   const sendBotText = (text: string, replyToBotMessageId?: number) =>
-    messageSending.sendPrivateChatMessage({
+    messageSending.sendChatMessage({
       fromBotId: bot.profile.id,
       chat: { type: 'private', peerId: account.profile.id },
       replyTo: replyToBotMessageId === undefined
@@ -2031,7 +2033,7 @@ Deno.test('PrivateMessagingService refuses writing either way while the account 
   }
   const chatActionAccess = privateMessaging.checkBotChatActionAccess({
     fromBotId: bot.profile.id,
-    to: { type: 'private', accountId: account.profile.id },
+    chat: { type: 'private', peerId: account.profile.id },
   });
   if (chatActionAccess.allowed || chatActionAccess.reason !== 'bot_blocked') {
     throw new Error(`Expected bot_blocked, received ${JSON.stringify(chatActionAccess)}`);
@@ -2142,16 +2144,15 @@ Deno.test('PrivateMessagingService lets a join request contact grant send messag
   });
   const accountId = account.profile.id;
   const conversation = { accountId, botId: bot.profile.id };
-  const to = { type: 'private', accountId } as const;
   const chat = { type: 'private', peerId: accountId } as const;
   const sendText = (text: string) =>
-    messageSending.sendPrivateChatMessage({
+    messageSending.sendChatMessage({
       fromBotId: bot.profile.id,
       chat,
       content: { kind: 'text', text },
       inlineKeyboard: YES_NO_KEYBOARD,
     });
-  const describeSend = (result: ReturnType<MessageSendingService['sendPrivateChatMessage']>) =>
+  const describeSend = (result: ReturnType<MessageSendingService['sendChatMessage']>) =>
     result.sent ? getContentText(result.message.content).text : result.reason;
 
   const withoutGrant = describeSend(sendText('Solve this'));
@@ -2161,7 +2162,7 @@ Deno.test('PrivateMessagingService lets a join request contact grant send messag
   blockedUsers.unblock(accountId, bot.profile.id);
   const eventCountBeforeGrantedSends = publishedEvents.length;
   const prompt = sendText('Solve this');
-  const album = messageSending.sendPrivateChatAlbum({
+  const album = messageSending.sendChatAlbum({
     fromBotId: bot.profile.id,
     chat,
     contents: [photoMedia(), photoMedia()],
@@ -2200,18 +2201,18 @@ Deno.test('PrivateMessagingService lets a join request contact grant send messag
   const promptId = expectBotMessageId(messageBoxes, bot, prompt.message.id);
   const edit = messageEditing.editChatMessageText({
     fromBotId: bot.profile.id,
-    chat: { type: 'private', peerId: to.accountId },
+    chat,
     messageId: promptId,
     content: { kind: 'text', text: 'Solved' },
   });
   const deletion = messageDeletion.deleteChatMessages({
     fromBotId: bot.profile.id,
-    chat: { type: 'private', peerId: to.accountId },
+    chat,
     messageIds: [promptId],
   });
   const chatActionAccess = privateMessaging.checkBotChatActionAccess({
     fromBotId: bot.profile.id,
-    to,
+    chat,
   });
   joinRequesterGrants.contactableBotIdsByAccountId.delete(accountId);
   const afterGrant = describeSend(sendText('Still there?'));
@@ -2254,7 +2255,7 @@ Deno.test('PrivateMessagingService shares chosen users as a service message of t
   const grace = createVirtualAccount(virtualUsers, { first_name: 'Grace' });
   const bot = createVirtualBot(virtualUsers, { first_name: 'Test Bot', username: 'test_bot' });
   sendPrivateText(messageSending, account.profile.id, bot);
-  const keyboard = messageSending.sendPrivateChatMessage({
+  const keyboard = messageSending.sendChatMessage({
     fromBotId: bot.profile.id,
     chat: { type: 'private', peerId: account.profile.id },
     replyInterfaceMarkup: {
@@ -2381,7 +2382,7 @@ Deno.test('PrivateMessagingService sends Web App data as a service message of th
   const account = createVirtualAccount(virtualUsers, { first_name: 'Ada' });
   const bot = createVirtualBot(virtualUsers, { first_name: 'Test Bot', username: 'test_bot' });
   sendPrivateText(messageSending, account.profile.id, bot);
-  const keyboard = messageSending.sendPrivateChatMessage({
+  const keyboard = messageSending.sendChatMessage({
     fromBotId: bot.profile.id,
     chat: { type: 'private', peerId: account.profile.id },
     replyInterfaceMarkup: {
@@ -2482,7 +2483,7 @@ Deno.test('PrivateMessagingService answers the button that takes the answer amon
   sendPrivateText(messageSending, account.profile.id, bot);
   const conversation = { accountId: account.profile.id, botId: bot.profile.id };
   // The text button comes first, so a press that answers a request must look past it.
-  const keyboard = messageSending.sendPrivateChatMessage({
+  const keyboard = messageSending.sendChatMessage({
     fromBotId: bot.profile.id,
     chat: { type: 'private', peerId: account.profile.id },
     replyInterfaceMarkup: {
@@ -2645,7 +2646,7 @@ Deno.test('PrivateMessagingService answers the button that takes the answer amon
   );
 
   // A press answers the keyboard shown when it is sent.
-  messageSending.sendPrivateChatMessage({
+  messageSending.sendChatMessage({
     fromBotId: bot.profile.id,
     chat: { type: 'private', peerId: account.profile.id },
     replyInterfaceMarkup: {
@@ -2667,7 +2668,7 @@ Deno.test('PrivateMessagingService answers the button that takes the answer amon
     'reply_keyboard_button_answer_missing',
     'Expected the replacement keyboard to leave only the Web App button',
   );
-  messageSending.sendPrivateChatMessage({
+  messageSending.sendChatMessage({
     fromBotId: bot.profile.id,
     chat: { type: 'private', peerId: account.profile.id },
     replyInterfaceMarkup: { kind: 'reply_keyboard_removal', isSelective: false },
@@ -2703,7 +2704,7 @@ Deno.test('PrivateMessagingService refuses a press whose label leaves buttons th
     requestsUsername: false,
     requestsPhoto: false,
   });
-  const keyboard = messageSending.sendPrivateChatMessage({
+  const keyboard = messageSending.sendChatMessage({
     fromBotId: bot.profile.id,
     chat: { type: 'private', peerId: account.profile.id },
     replyInterfaceMarkup: {
@@ -2805,7 +2806,7 @@ function sendBotMessage(
   bot: VirtualBot,
   inlineKeyboard?: InlineKeyboard,
 ): PrivateMessage {
-  const result = messageSending.sendPrivateChatMessage({
+  const result = messageSending.sendChatMessage({
     fromBotId: bot.profile.id,
     chat: { type: 'private', peerId: accountId },
     inlineKeyboard,
@@ -2813,6 +2814,9 @@ function sendBotMessage(
   });
   if (!result.sent) {
     throw new Error(`Expected the bot message to be sent, received ${result.reason}`);
+  }
+  if (!isMessageOfChatType(result.message, 'private')) {
+    throw new Error('Expected the bot message to be a private message');
   }
   return result.message;
 }

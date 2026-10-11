@@ -1,6 +1,7 @@
 import type { VirtualAccount } from '../../types/virtual_account.ts';
 import type { VirtualBot } from '../../types/virtual_bot.ts';
 import type {
+  PrivateChatAddress,
   PrivateChatKey,
   PrivateConversation,
   PrivateConversationKey,
@@ -21,15 +22,10 @@ export type PrivateConversationActivationResult =
     readonly reason: PrivateConversationActivationFailureReason;
   };
 
-/** A bot's private chat, identified by the account at its other end. */
-export interface BotPrivateChat {
-  readonly type: 'private';
-  readonly accountId: number;
-}
-
 export interface CheckBotChatActionAccessInput {
   readonly fromBotId: number;
-  readonly to: BotPrivateChat;
+  /** The bot's private chat, by the account it is with. */
+  readonly chat: PrivateChatAddress;
 }
 
 export type CheckBotChatActionAccessResult =
@@ -45,10 +41,10 @@ export type CheckBotChatActionAccessResult =
 
 export interface GetMessageForBotInput {
   readonly botId: number;
-  /** The account at the other end of the bot's private chat. */
-  readonly accountId: number;
+  /** The bot's private chat, by the account it is with. */
+  readonly chat: PrivateChatAddress;
   /** The message's ID in the bot's message box. */
-  readonly botMessageId: number;
+  readonly messageId: number;
 }
 
 export type GetMessageForBotResult =
@@ -179,23 +175,23 @@ export class PrivateMessagingService {
    * account's client shows.
    */
   checkBotChatActionAccess(
-    { fromBotId, to }: CheckBotChatActionAccessInput,
+    { fromBotId, chat }: CheckBotChatActionAccessInput,
   ): CheckBotChatActionAccessResult {
     if (this.#bots.getById(fromBotId) === undefined) {
       return { allowed: false, reason: 'bot_not_found' };
     }
-    if (this.#accounts.getById(to.accountId) === undefined) {
+    if (this.#accounts.getById(chat.peerId) === undefined) {
       return { allowed: false, reason: 'account_not_found' };
     }
     if (
       !this.#privateConversations.isPrivateConversationStarted({
-        accountId: to.accountId,
+        accountId: chat.peerId,
         botId: fromBotId,
       })
     ) {
       return { allowed: false, reason: 'conversation_not_started' };
     }
-    return this.#blockedUsers.isBlocked(to.accountId, fromBotId)
+    return this.#blockedUsers.isBlocked(chat.peerId, fromBotId)
       ? { allowed: false, reason: 'bot_blocked' }
       : { allowed: true };
   }
@@ -223,19 +219,19 @@ export class PrivateMessagingService {
    * the account has started a conversation with it.
    */
   getMessageForBot(
-    { botId, accountId, botMessageId }: GetMessageForBotInput,
+    { botId, chat, messageId }: GetMessageForBotInput,
   ): GetMessageForBotResult {
     if (this.#bots.getById(botId) === undefined) {
       return { found: false, reason: 'bot_not_found' };
     }
-    if (this.#accounts.getById(accountId) === undefined) {
+    if (this.#accounts.getById(chat.peerId) === undefined) {
       return { found: false, reason: 'account_not_found' };
     }
-    const conversation: PrivateConversationKey = { accountId, botId };
+    const conversation: PrivateConversationKey = { accountId: chat.peerId, botId };
     if (!this.#privateConversations.isPrivateConversationStarted(conversation)) {
       return { found: false, reason: 'conversation_not_started' };
     }
-    const message = this.getPrivateMessageByBotMessageId(conversation, botMessageId);
+    const message = this.getPrivateMessageByBotMessageId(conversation, messageId);
     return message === undefined
       ? { found: false, reason: 'message_not_found' }
       : { found: true, message };

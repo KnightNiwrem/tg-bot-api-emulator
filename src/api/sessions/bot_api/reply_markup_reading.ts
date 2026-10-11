@@ -1,6 +1,6 @@
 import type { InlineKeyboard } from '../../../types/inline_keyboard.ts';
 import type { BotMessageReplyMarkup } from '../../../types/reply_interface.ts';
-import { isUserId } from '../../../types/telegram_identity.ts';
+import { getBotApiChatAddress } from '../../../types/virtual_chat.ts';
 import {
   badRequestDescription,
   botApiError,
@@ -24,7 +24,7 @@ export function readMessageReplyMarkupParameter(
   if (replyMarkup.replyInterfaceMarkup !== undefined) {
     const reading = context.session.botApi.readReplyInterfaceMarkup(
       replyMarkup.replyInterfaceMarkup,
-      { allowsRequestButtons: isUserId(chatId) },
+      { allowsRequestButtons: getBotApiChatAddress(chatId).type === 'private' },
     );
     return reading.read
       ? { read: true, replyMarkup: { replyInterfaceMarkup: reading.replyInterfaceMarkup } }
