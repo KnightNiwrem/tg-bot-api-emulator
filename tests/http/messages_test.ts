@@ -27,6 +27,7 @@ import {
   createPrivateConversationFixture,
   createSupergroupFixture,
 } from '../support/http_fixtures.ts';
+import { FIXED_WALL_CLOCK } from '../support/fixed_wall_clock.ts';
 import { gifImage } from '../support/media_samples.ts';
 
 Deno.test('sendMessage replies only in private chats the account has started', async () => {
@@ -1492,8 +1493,10 @@ Deno.test('forwardMessage forwards messages with their origin and follows Telegr
 });
 
 Deno.test('forwardMessages and copyMessages repeat messages that can be repeated, in order', async () => {
+  // The calendar time stands still, since the forwards' origin dates of messages sent by separate
+  // requests are compared.
   const { api, sessionPath, owner, bot, supergroup, supergroupPath } =
-    await createSupergroupFixture();
+    await createSupergroupFixture({ wallClock: FIXED_WALL_CLOCK });
   const sendAccountMessage = async (message: Record<string, unknown>) => {
     const response = await api.request(
       `${sessionPath}/accounts/${owner.id}/messages`,

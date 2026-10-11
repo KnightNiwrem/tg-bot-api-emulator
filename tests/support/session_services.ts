@@ -10,13 +10,8 @@ import { createEmulationSession } from '../../src/composition/emulation_session.
 import type { Scheduler, WallClock } from '../../src/timing/session_timing.ts';
 import type { EmulationSession } from '../../src/types/emulation_session.ts';
 import type { UploadProfile } from '../../src/types/upload_profile.ts';
+import { FIXED_WALL_CLOCK } from './fixed_wall_clock.ts';
 import { createRealTimeScheduler } from './scheduler.ts';
-
-/** The calendar time a session built for a test tells unless the test gives it a wall clock. */
-export const TEST_UNIX_TIME_SECONDS = 1_700_000_000;
-
-/** A wall clock that always tells `TEST_UNIX_TIME_SECONDS`, so that message dates are known. */
-const TEST_WALL_CLOCK: WallClock = { currentUnixTimeSeconds: () => TEST_UNIX_TIME_SECONDS };
 
 export interface SessionServicesOptions {
   /** The session's ID; `test-session` when omitted. */
@@ -50,7 +45,7 @@ export function buildSessionServices(
   {
     id = 'test-session',
     uploadProfile = 'cloud',
-    wallClock = TEST_WALL_CLOCK,
+    wallClock = FIXED_WALL_CLOCK,
     scheduler = createRealTimeScheduler(),
   }: SessionServicesOptions = {},
 ): SessionServices {

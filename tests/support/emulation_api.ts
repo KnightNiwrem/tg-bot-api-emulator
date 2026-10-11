@@ -3,12 +3,14 @@
  * building the emulator, creating sessions on it, and exchanging JSON with its routes.
  */
 import { createEmulationApi } from '../../src/api/mod.ts';
+import type { WallClock } from '../../src/timing/session_timing.ts';
 import type { UploadProfile } from '../../src/types/upload_profile.ts';
 import {
   createInProcessEmulatorWithHandler,
   type InProcessEmulator,
 } from '../../in_process/in_process_emulator.ts';
 import { withOpenApiConformanceCheck } from './openapi_conformance/conformance_middleware.ts';
+import { createRealTimeScheduler } from './scheduler.ts';
 
 /** The public origin a test emulator names in the absolute URLs it returns. */
 export const TEST_PUBLIC_ORIGIN = 'http://emulator.example:9000';
@@ -30,18 +32,34 @@ export interface SessionSettings {
   readonly upload_profile?: UploadProfile;
 }
 
+/** How a test emulator is built. */
+export interface TestEmulatorOptions {
+  /** The origin the emulator names in the absolute URLs it returns; `TEST_PUBLIC_ORIGIN` by default. */
+  readonly publicOrigin?: string;
+  /**
+   * The calendar time every session of the emulator dates messages and updates by, such as
+   * `FIXED_WALL_CLOCK`; real time when omitted.
+   */
+  readonly wallClock?: WallClock;
+}
+
 /**
- * Creates an in-process emulator with its own, empty set of sessions, naming `publicOrigin` in the
- * absolute URLs it returns. It is the supported entry point's emulator with the OpenAPI conformance
- * check in front of its HTTP handler: a response that departs from `openapi/openapi.yaml` rejects
- * the request with an `OpenApiConformanceError` instead of reaching the test.
+ * Creates an in-process emulator with its own, empty set of sessions. It is the supported entry
+ * point's emulator with the OpenAPI conformance check in front of its HTTP handler: a response
+ * that departs from `openapi/openapi.yaml` rejects the request with an `OpenApiConformanceError`
+ * instead of reaching the test.
  */
 export function createTestInProcessEmulator(
-  publicOrigin: string = TEST_PUBLIC_ORIGIN,
+  { publicOrigin = TEST_PUBLIC_ORIGIN, wallClock }: TestEmulatorOptions = {},
 ): TestInProcessEmulator {
   const emulator = createInProcessEmulatorWithHandler(
     (dependencies) => withOpenApiConformanceCheck(createEmulationApi(dependencies)).fetch,
-    { publicOrigin },
+    {
+      publicOrigin,
+      createSessionTiming: wallClock === undefined
+        ? undefined
+        : () => ({ wallClock, scheduler: createRealTimeScheduler() }),
+    },
   );
   return {
     client: emulator.client,
@@ -84,12 +102,15 @@ export interface TestSession extends AsyncDisposable {
 }
 
 /**
- * Creates an in-process test emulator holding one session, created with `sessionSettings`. The
- * emulator is disposed of again if the session cannot be created.
+ * Creates an in-process test emulator, built with `emulatorOptions`, holding one session, created
+ * with `sessionSettings`. The emulator is disposed of again if the session cannot be created.
  */
-export async function createTestSession(sessionSettings?: SessionSettings): Promise<TestSession> {
+export async function createTestSession(
+  sessionSettings?: SessionSettings,
+  emulatorOptions?: TestEmulatorOptions,
+): Promise<TestSession> {
   await using disposalOnFailure = new AsyncDisposableStack();
-  const api = disposalOnFailure.use(createTestInProcessEmulator());
+  const api = disposalOnFailure.use(createTestInProcessEmulator(emulatorOptions));
   const sessionPath = await createSession(api, sessionSettings);
   const emulatorDisposal = disposalOnFailure.move();
   return { api, sessionPath, [Symbol.asyncDispose]: () => emulatorDisposal.disposeAsync() };

@@ -12,6 +12,7 @@ import { createEmulationApi } from '../src/api/mod.ts';
 import type { SessionLifecycle } from '../src/api/sessions/mod.ts';
 import { createSessionLifecycleService } from '../src/composition/session_lifecycle.ts';
 import { type HttpRequestHandler, TelegramEmulationServer } from '../src/server.ts';
+import { SYSTEM_MONOTONIC_CLOCK, TimerScheduler } from '../src/timing/system_timing.ts';
 
 /** An emulator a test reaches through `client`, and whose bot reaches it through `fetch`. */
 interface RunningEmulator extends AsyncDisposable {
@@ -154,6 +155,27 @@ Deno.test('Disposing of an in-process emulator ends a session created while it w
   if (sessionLifecycle?.getSessionById(session.id) !== undefined) {
     throw new Error('Expected the session created while disposing to have ended');
   }
+});
+
+Deno.test('An in-process emulator composed with session timing dates messages by it', async () => {
+  const wallClock = { currentUnixTimeSeconds: () => 1_234_567_890 };
+  await using emulator = createInProcessEmulatorWithHandler(
+    (dependencies) => createEmulationApi(dependencies).fetch,
+    {
+      createSessionTiming: () => ({
+        wallClock,
+        scheduler: new TimerScheduler(SYSTEM_MONOTONIC_CLOCK),
+      }),
+    },
+  );
+  const session = await emulator.client.createSession();
+  const { bot } = await session.createBot({ first_name: 'Clock', username: 'clock_bot' });
+  const { account } = await session.createAccount({ first_name: 'Ada' });
+  const chat = { type: 'private', botId: bot.id } as const;
+  await account.sendMessage({ to: chat, text: '/start' });
+
+  const received = (await account.getMessages({ chat })).at(-1);
+  assertEqual(received?.date, 1_234_567_890, "Expected the message dated by the session's clock");
 });
 
 Deno.test('An in-process request rejects with its signal reason once it aborts', async () => {

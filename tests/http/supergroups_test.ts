@@ -13,10 +13,17 @@ import {
   createPrivateConversationFixture,
   createSupergroupFixture,
 } from '../support/http_fixtures.ts';
+import { FIXED_WALL_CLOCK, TEST_UNIX_TIME_SECONDS } from '../support/fixed_wall_clock.ts';
+
+/**
+ * Every emulator here keeps a fixed calendar time, since these tests compare the dates of updates
+ * and service messages that separate requests create.
+ */
+const FIXED_CLOCK_EMULATOR = { wallClock: FIXED_WALL_CLOCK } as const;
 
 Deno.test('an account creates a supergroup and adds a bot, which receives my_chat_member', async () => {
   const { api, sessionPath, owner, member, bot, readerBot, supergroup, supergroupPath } =
-    await createSupergroupFixture();
+    await createSupergroupFixture(FIXED_CLOCK_EMULATOR);
   if (
     supergroup.type !== 'supergroup' || supergroup.title !== 'Team' ||
     supergroup.id > -1_000_000_000_000
@@ -120,7 +127,7 @@ Deno.test('an account creates a supergroup and adds a bot, which receives my_cha
 
 Deno.test('bots in privacy mode receive only supergroup messages addressed to them', async () => {
   const { api, owner, member, bot, readerBot, supergroup, sendSupergroupText } =
-    await createSupergroupFixture();
+    await createSupergroupFixture(FIXED_CLOCK_EMULATOR);
   const { body: joinBody } = await callBotApi(api, `${bot.botApiPath}/getUpdates`, {});
   const joinUpdates = (joinBody as { result: Array<{ update_id: number }> }).result;
   const { body: readerJoinBody } = await callBotApi(api, `${readerBot.botApiPath}/getUpdates`, {});
@@ -183,7 +190,7 @@ Deno.test('bots in privacy mode receive only supergroup messages addressed to th
 
 Deno.test('supergroup members see the same message IDs and replies', async () => {
   const { api, sessionPath, owner, member, bot, supergroup, supergroupPath, sendSupergroupText } =
-    await createSupergroupFixture();
+    await createSupergroupFixture(FIXED_CLOCK_EMULATOR);
   const question = await sendSupergroupText(owner.id, '/poll');
   const answer = await callBotApi(api, `${bot.botApiPath}/sendMessage`, {
     chat_id: supergroup.id,
@@ -262,7 +269,7 @@ Deno.test('supergroup members see the same message IDs and replies', async () =>
 
 Deno.test('Bot API methods follow Telegram checks in supergroups', async () => {
   const { api, sessionPath, owner, bot, supergroup, supergroupPath, sendSupergroupText } =
-    await createSupergroupFixture();
+    await createSupergroupFixture(FIXED_CLOCK_EMULATOR);
   const accountMessage = await sendSupergroupText(owner.id, 'Hello');
   const botMessage = botApiResult(
     (await callBotApi(api, `${bot.botApiPath}/sendMessage`, {
@@ -368,7 +375,7 @@ Deno.test('Bot API methods follow Telegram checks in supergroups', async () => {
 
 Deno.test('a grammY bot runs a vote with an inline keyboard in a supergroup', async () => {
   const { api, sessionPath, owner, member, bot, supergroup, supergroupPath, sendSupergroupText } =
-    await createSupergroupFixture();
+    await createSupergroupFixture(FIXED_CLOCK_EMULATOR);
   const grammyBot = new Bot(bot.token, {
     client: {
       apiRoot: `${TEST_PUBLIC_ORIGIN}${sessionPath}/bot-api`,
@@ -462,7 +469,7 @@ Deno.test('a grammY bot runs a vote with an inline keyboard in a supergroup', as
 
 Deno.test('members leave or are removed from supergroups, which bots see as service messages', async () => {
   const { api, sessionPath, owner, member, bot, readerBot, supergroup, supergroupPath } =
-    await createSupergroupFixture();
+    await createSupergroupFixture(FIXED_CLOCK_EMULATOR);
   const readNewUpdates = createUpdateReader(api);
   await readNewUpdates(bot.botApiPath);
   await readNewUpdates(readerBot.botApiPath);
@@ -667,7 +674,7 @@ Deno.test('members leave or are removed from supergroups, which bots see as serv
 
 Deno.test('leaveChat follows Telegram checks outside supergroups', async () => {
   const { api, sessionPath, botApiPath, createdAccount, sendText } =
-    await createPrivateConversationFixture();
+    await createPrivateConversationFixture(undefined, FIXED_CLOCK_EMULATOR);
   const stranger = await createAccount(api, sessionPath, 'Grace');
   await sendText('/start');
 
@@ -693,7 +700,9 @@ Deno.test('leaveChat follows Telegram checks outside supergroups', async () => {
 });
 
 Deno.test('a grammY bot welcomes new members and learns it was removed', async () => {
-  const { api, sessionPath, owner, bot, supergroupPath } = await createSupergroupFixture();
+  const { api, sessionPath, owner, bot, supergroupPath } = await createSupergroupFixture(
+    FIXED_CLOCK_EMULATOR,
+  );
   const newcomer = await createAccount(api, sessionPath, 'Linus');
   const grammyBot = new Bot(bot.token, {
     client: {
@@ -768,7 +777,7 @@ Deno.test('a grammY bot welcomes new members and learns it was removed', async (
 
 Deno.test('the owner promotes administrators, whom bots find with getChatMember and getChatAdministrators', async () => {
   const { api, sessionPath, owner, member, bot, readerBot, supergroup, supergroupPath } =
-    await createSupergroupFixture();
+    await createSupergroupFixture(FIXED_CLOCK_EMULATOR);
   const outsider = await createAccount(api, sessionPath, 'Linus');
   const readNewUpdates = createUpdateReader(api);
   await readNewUpdates(bot.botApiPath);
@@ -928,7 +937,7 @@ Deno.test('the owner promotes administrators, whom bots find with getChatMember 
 
 Deno.test('getChat shows private chats and supergroups as the official server does', async () => {
   const { api, sessionPath, owner, bot, readerBot, supergroup, supergroupPath } =
-    await createSupergroupFixture();
+    await createSupergroupFixture(FIXED_CLOCK_EMULATOR);
   const getChat = async (chatId: number | string, botApiPath = bot.botApiPath) => {
     const { status, body } = await callBotApi(api, `${botApiPath}/getChat`, { chat_id: chatId });
     return { status, body: body as { result?: unknown; description?: string } };
@@ -1079,7 +1088,7 @@ Deno.test('getChat shows private chats and supergroups as the official server do
 
 Deno.test('the owner sets custom titles, which bots see but cannot change', async () => {
   const { api, sessionPath, owner, member, bot, readerBot, supergroup, supergroupPath } =
-    await createSupergroupFixture();
+    await createSupergroupFixture(FIXED_CLOCK_EMULATOR);
   const readNewUpdates = createUpdateReader(api);
   const administratorsPath = `${supergroupPath(owner.id)}/administrators`;
   const setCustomTitle = async (userId: number, customTitle: unknown, actorId = owner.id) =>
@@ -1202,8 +1211,9 @@ Deno.test('the owner sets custom titles, which bots see but cannot change', asyn
 });
 
 Deno.test('bots with can_change_info change a supergroup title and description', async () => {
-  const { api, owner, bot, readerBot, supergroup, supergroupPath } =
-    await createSupergroupFixture();
+  const { api, owner, bot, readerBot, supergroup, supergroupPath } = await createSupergroupFixture(
+    FIXED_CLOCK_EMULATOR,
+  );
   const readUpdates = createUpdateReader(api);
   const setTitle = (title: string) =>
     callBotApi(api, `${bot.botApiPath}/setChatTitle`, { chat_id: supergroup.id, title });
@@ -1287,7 +1297,7 @@ Deno.test('bots with can_change_info change a supergroup title and description',
     throw new Error('Expected one service message for the changed title, seen by every bot');
   }
 
-  const privateChat = await createPrivateConversationFixture();
+  const privateChat = await createPrivateConversationFixture(undefined, FIXED_CLOCK_EMULATOR);
   await privateChat.sendText('/start');
   const privateDescription = await callBotApi(
     privateChat.api,
@@ -1312,7 +1322,9 @@ Deno.test('bots with can_change_info change a supergroup title and description',
 });
 
 Deno.test('accounts change a supergroup title that bots see as a service message', async () => {
-  const { api, sessionPath, member, bot, supergroupPath } = await createSupergroupFixture();
+  const { api, sessionPath, member, bot, supergroupPath } = await createSupergroupFixture(
+    FIXED_CLOCK_EMULATOR,
+  );
   const readUpdates = createUpdateReader(api);
   await readUpdates(bot.botApiPath);
   const outsider = await createAccount(api, sessionPath, 'Linus');
@@ -1349,7 +1361,7 @@ Deno.test('accounts change a supergroup title that bots see as a service message
 
 Deno.test('the owner protects all supergroup content from forwarding and saving', async () => {
   const { api, sessionPath, owner, member, bot, supergroup, supergroupPath, sendSupergroupText } =
-    await createSupergroupFixture();
+    await createSupergroupFixture(FIXED_CLOCK_EMULATOR);
   const readUpdates = createUpdateReader(api);
   const contentProtectionPath = (accountId: number) =>
     `${supergroupPath(accountId)}/content-protection`;
@@ -1449,7 +1461,7 @@ Deno.test('the owner protects all supergroup content from forwarding and saving'
 });
 
 Deno.test('bots address public supergroups by their usernames', async () => {
-  const { api, sessionPath } = await createTestSession();
+  const { api, sessionPath } = await createTestSession(undefined, FIXED_CLOCK_EMULATOR);
   const owner = await createAccount(api, sessionPath, 'Ada');
   await createAccount(api, sessionPath, 'Grace', { username: 'grace' });
   const bot = await createBot(api, sessionPath, 'team_bot');
@@ -1560,7 +1572,7 @@ Deno.test('bots address public supergroups by their usernames', async () => {
 
 Deno.test('administrator bots that request chat_member updates observe members joining', async () => {
   const { api, sessionPath, owner, bot, readerBot, supergroup, supergroupPath } =
-    await createSupergroupFixture();
+    await createSupergroupFixture(FIXED_CLOCK_EMULATOR);
   const outsider = await createAccount(api, sessionPath, 'Linus');
   const promotion = await api.request(
     `${supergroupPath(owner.id)}/administrators/${bot.bot.id}`,
@@ -1621,7 +1633,7 @@ Deno.test('banChatMember, unbanChatMember, and deleteMessage follow Telegram che
     supergroup,
     supergroupPath,
     sendSupergroupText,
-  } = await createSupergroupFixture();
+  } = await createSupergroupFixture(FIXED_CLOCK_EMULATOR);
   const outsider = await createAccount(api, sessionPath, 'Linus');
   const readNewUpdates = createUpdateReader(api);
   await readNewUpdates(bot.botApiPath);
@@ -1673,7 +1685,7 @@ Deno.test('banChatMember, unbanChatMember, and deleteMessage follow Telegram che
   // An administrator bot receives every message, deletes any, and bans members, which a service
   // message of the bot records; as bots never see other bots' messages, only the bot receives it.
   const spam = await sendSupergroupText(member.id, 'Buy now!');
-  const untilDate = Math.floor(Date.now() / 1_000) + 3_600;
+  const untilDate = TEST_UNIX_TIME_SECONDS + 3_600;
   const moderation = describe(
     await Promise.all([
       callBot('deleteMessage', { chat_id: supergroup.id, message_id: spam.message_id }),
@@ -1789,7 +1801,7 @@ Deno.test('banChatMember, unbanChatMember, and deleteMessage follow Telegram che
 
 Deno.test('a grammY bot bans a spammer for an administrator and deletes the spam', async () => {
   const { api, sessionPath, owner, member, bot, supergroupPath, sendSupergroupText } =
-    await createSupergroupFixture();
+    await createSupergroupFixture(FIXED_CLOCK_EMULATOR);
   await api.request(
     `${supergroupPath(owner.id)}/administrators/${bot.bot.id}`,
     jsonRequest('PUT', { can_restrict_members: true, can_delete_messages: true }),

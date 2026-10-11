@@ -6,7 +6,10 @@
  * independent of the server's source.
  */
 import { createEmulationApi, type EmulationApiDependencies } from '../src/api/mod.ts';
-import { createSessionLifecycleService } from '../src/composition/session_lifecycle.ts';
+import {
+  createSessionLifecycleService,
+  type SessionTimingSource,
+} from '../src/composition/session_lifecycle.ts';
 import type { HttpRequestHandler } from '../src/server.ts';
 import { TelegramEmulationClient } from '../clients/typescript/mod.ts';
 
@@ -58,17 +61,25 @@ export type InProcessRequestHandlerComposer = (
   dependencies: EmulationApiDependencies,
 ) => HttpRequestHandler;
 
+/** How {@link createInProcessEmulatorWithHandler} composes an emulator, beyond its public options. */
+export interface InProcessEmulatorComposition extends InProcessEmulatorOptions {
+  /** Gives each session its time sources; every session keeps real time when omitted. */
+  readonly createSessionTiming?: SessionTimingSource;
+}
+
 /**
  * Creates an in-process emulator that answers with the handler `composeRequestHandler` builds
  * from the emulator's own session lifecycle and public origin. {@link createInProcessEmulator}
- * builds the emulation API itself; tests put checks in front of it.
+ * builds the emulation API itself; tests put checks in front of it, and may give the sessions
+ * their own time sources.
  */
 export function createInProcessEmulatorWithHandler(
   composeRequestHandler: InProcessRequestHandlerComposer,
-  { publicOrigin = DEFAULT_IN_PROCESS_PUBLIC_ORIGIN }: InProcessEmulatorOptions = {},
+  { publicOrigin = DEFAULT_IN_PROCESS_PUBLIC_ORIGIN, createSessionTiming }:
+    InProcessEmulatorComposition = {},
 ): InProcessEmulator {
   const origin = parsePublicOrigin(publicOrigin);
-  const sessionLifecycle = createSessionLifecycleService();
+  const sessionLifecycle = createSessionLifecycleService(createSessionTiming);
   const handleRequest = composeRequestHandler({ sessionLifecycle, publicOrigin: origin });
   const requestsBeingAnswered = new Set<Promise<Response>>();
   let disposal: Promise<void> | undefined;

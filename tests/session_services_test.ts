@@ -6,7 +6,8 @@ import {
   createSupergroupFixture,
 } from './support/http_fixtures.ts';
 import { ControlledScheduler } from './support/scheduler.ts';
-import { buildSessionServices, TEST_UNIX_TIME_SECONDS } from './support/session_services.ts';
+import { TEST_UNIX_TIME_SECONDS } from './support/fixed_wall_clock.ts';
+import { buildSessionServices } from './support/session_services.ts';
 import { createVirtualAccount, createVirtualBot } from './support/virtual_users.ts';
 
 Deno.test('a session built for a test dates messages by a fixed clock unless given its own', async () => {
