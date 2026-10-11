@@ -1,6 +1,7 @@
 /**
  * The composition of a Bot API method's steps: they run in order, the first that answers the call
- * ends it, and a method of steps executes its command only once its call's transaction runs it.
+ * ends it, a method of steps executes its command only once its call's transaction runs it, and a
+ * handled method of steps executes once its steps proceed.
  */
 import { assertEquals } from '@std/assert';
 import { z } from 'zod';
@@ -14,8 +15,10 @@ import {
 } from '../src/api/sessions/bot_api/method_call.ts';
 import {
   answerWith,
+  answerWithBadRequest,
   type BotApiStepResult,
   commandMethodOfSteps,
+  handledMethodOfSteps,
   proceedWith,
   startSteps,
 } from '../src/api/sessions/bot_api/method_steps.ts';
@@ -118,6 +121,44 @@ Deno.test('a method of steps executes its command only when its call executes it
     : undefined;
 
   assertEquals([executionsAfterPreparation, answer, executions], [[], botApiResult(3), [3]]);
+});
+
+Deno.test('a handled method of steps executes once its steps proceed, with its own description', async () => {
+  const executions: string[] = [];
+  const method = handledMethodOfSteps({
+    name: 'labelThings',
+    recordsActivity: true,
+    parameters: z.strictObject({ label: z.string().optional() }),
+    steps: ({ parameters, invalidParametersDescription }) =>
+      startSteps(parameters).andThen(({ label }) =>
+        label === undefined
+          ? answerWithBadRequest(invalidParametersDescription)
+          : proceedWith(label)
+      ),
+    execute: (_context, label) => {
+      executions.push(label);
+      return botApiResult(label);
+    },
+  });
+  if (!('handler' in method)) {
+    throw new Error('Expected a handled method of steps to have a handler');
+  }
+  const context = createMethodContext();
+
+  const answers = [
+    await method.handler(context, { label: 'Hi', other: 'x' }, new Map()),
+    await method.handler(context, {}, new Map()),
+    await method.handler(context, { label: 'Hi' }, new Map()),
+  ];
+
+  assertEquals([answers, executions], [
+    [
+      botApiError(400, 'Bad Request: invalid labelThings parameters: other'),
+      botApiError(400, 'Bad Request: invalid labelThings parameters'),
+      botApiResult('Hi'),
+    ],
+    ['Hi'],
+  ]);
 });
 
 /** The context of a call by a bot of a new session. */

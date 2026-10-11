@@ -310,7 +310,7 @@ Deno.test('setChatPermissions refuses what Telegram refuses, without changing an
         'Bad Request: can\'t parse chat permissions: Field "can_send_photos" must be of type Boolean',
       ],
       [400, 'Bad Request: invalid setChatPermissions parameters'],
-      [400, 'Bad Request: invalid setChatPermissions parameters'],
+      [400, 'Bad Request: invalid setChatPermissions parameters: can_send_messages'],
     ],
     'Expected Telegram refusals',
   );

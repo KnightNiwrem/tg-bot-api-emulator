@@ -121,6 +121,47 @@ Deno.test('parameters a reader refuses after the schema keep the description wit
   );
 });
 
+Deno.test('the chat information methods name the parameter that does not fit their schema', async () => {
+  const { api, botApiPath } = await createFixture();
+  const cases: readonly [method: string, parameters: object, description: string][] = [
+    ['getChat', { chat_id: 'secret-chat' }, 'Bad Request: invalid getChat parameters: chat_id'],
+    ['getChat', {}, 'Bad Request: chat_id is empty'],
+    [
+      'setChatTitle',
+      { chat_id: 1, title: 'Team', photo: 'secret' },
+      'Bad Request: invalid setChatTitle parameters: photo',
+    ],
+    ['setChatTitle', { title: 'Team' }, 'Bad Request: chat_id is empty'],
+    [
+      'setChatDescription',
+      { chat_id: 1, description: 'About', 'odd key': 1 },
+      'Bad Request: invalid setChatDescription parameters: ["odd key"]',
+    ],
+    [
+      'setChatPermissions',
+      { chat_id: 1, use_independent_chat_permissions: 'secret' },
+      'Bad Request: invalid setChatPermissions parameters: use_independent_chat_permissions',
+    ],
+    // The permissions are read before the chat, and a field they do not know has no path.
+    [
+      'setChatPermissions',
+      { permissions: { can_send_stickers: true } },
+      'Bad Request: invalid setChatPermissions parameters',
+    ],
+    ['setChatPermissions', { permissions: {} }, 'Bad Request: chat_id is empty'],
+  ];
+
+  const answers = [];
+  for (const [method, parameters] of cases) {
+    answers.push(await callBotApi(api, `${botApiPath}/${method}`, parameters));
+  }
+  assertEquals(
+    answers,
+    cases.map(([, , description]) => [400, description]),
+    'Expected each refusal from the first step that refuses, naming a schema path without its value',
+  );
+});
+
 /** Creates a session holding a bot. */
 async function createFixture() {
   const { api, sessionPath } = await createTestSession();
