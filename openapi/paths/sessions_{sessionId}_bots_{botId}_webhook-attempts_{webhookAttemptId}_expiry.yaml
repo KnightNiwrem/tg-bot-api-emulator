@@ -21,6 +21,12 @@ post:
         application/json:
           schema:
             $ref: ../components/schemas/WebhookAttempt.yaml
+    '400':
+      description: The bot or attempt path identifier is invalid.
+      content:
+        application/json:
+          schema:
+            $ref: ../components/schemas/ControlValidationError.yaml
     '404':
       description: >-
         No active test session or virtual bot has the supplied identifier, or the bot has no such

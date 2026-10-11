@@ -7,9 +7,12 @@ import type {
   BotApiCallEntry,
   ChatJoinRequest,
   EmulationSession,
+  RateLimitResponses,
   SupergroupInviteLink,
   UpdateDeliveredEntry,
+  WebhookAttempt,
   WebhookAttemptFailedEntry,
+  WebhookRetry,
 } from './mod.ts';
 
 /** Mutations of nested fields and lists that the snapshot types must refuse; never called. */
@@ -20,6 +23,9 @@ export function mutateSnapshots(
   call: BotApiCallEntry,
   delivery: UpdateDeliveredEntry,
   failure: WebhookAttemptFailedEntry,
+  rateLimits: RateLimitResponses,
+  attempt: WebhookAttempt,
+  retry: WebhookRetry,
 ): void {
   // @ts-expect-error A snapshot's own field is readonly.
   session.uploadProfile = 'local';
@@ -43,6 +49,12 @@ export function mutateSnapshots(
   delivery.update.update_id = 0;
   // @ts-expect-error A nested union's fields are readonly.
   failure.failure.reason = 'timed_out';
+  // @ts-expect-error A snapshot's own field is readonly.
+  rateLimits.remaining_count = 0;
+  // @ts-expect-error A union's own field is readonly.
+  attempt.scheduling = 'manual';
+  // @ts-expect-error A nested object's field is readonly.
+  retry.status = 'released';
 }
 
 Deno.test('Response snapshots are readonly all the way down', () => {

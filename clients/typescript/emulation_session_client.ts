@@ -3,6 +3,12 @@ import type { z } from 'zod';
 import { createAccountContract } from '../../control_contracts/accounts.ts';
 import { createBotContract } from '../../control_contracts/bots.ts';
 import { downloadFileContract } from '../../control_contracts/files.ts';
+import {
+  listRateLimitResponsesContract,
+  listServerErrorResponsesContract,
+  queueRateLimitResponsesContract,
+  queueServerErrorResponsesContract,
+} from '../../control_contracts/queued_bot_api_answers.ts';
 import { deleteSessionContract } from '../../control_contracts/sessions.ts';
 import {
   changeSupergroupDescriptionContract,
@@ -29,6 +35,13 @@ import {
   joinChatByInviteLinkContract,
   removeSupergroupMemberContract,
 } from '../../control_contracts/supergroups.ts';
+import {
+  expireWebhookAttemptContract,
+  getWebhookDeliveryContract,
+  listWebhookAttemptsContract,
+  releaseWebhookRetryContract,
+  setWebhookDeliveryContract,
+} from '../../control_contracts/webhook_attempts.ts';
 import { createHttpBotActivityPageReader } from './bot_activity_http_page_reader.ts';
 import { createBotActivityLog } from './bot_activity_log.ts';
 import { HTTP_STATUS_CREATED, HTTP_STATUS_NO_CONTENT, HTTP_STATUS_OK } from './constants.ts';
@@ -53,21 +66,14 @@ import {
   messageReactionsResponseSchema,
   notificationsResponseSchema,
   pollAnswerResponseSchema,
-  rateLimitResponsesListSchema,
-  rateLimitResponsesSchema,
   replyInterfaceResponseSchema,
   sentMediaGroupResponseSchema,
   sentMessageResponseSchema,
   sentSupergroupMediaGroupResponseSchema,
   sentSupergroupMessageResponseSchema,
-  serverErrorResponsesListSchema,
-  serverErrorResponsesSchema,
   supergroupBotCommandsResponseSchema,
   supergroupMessageHistoryResponseSchema,
   supergroupPollAnswerResponseSchema,
-  webhookAttemptListSchema,
-  webhookAttemptSchema,
-  webhookDeliverySchema,
   webResourceSchema,
 } from './schemas.ts';
 import type {
@@ -350,95 +356,68 @@ class HttpEmulationSessionClient implements EmulationSessionClient {
   }
 
   queueRateLimitResponses(
-    { bot_id: botId, ...request }: QueueRateLimitResponsesInput,
+    { bot_id: botId, ...body }: QueueRateLimitResponsesInput,
   ): Promise<RateLimitResponses> {
-    return requestJson(this.#fetch, {
-      method: 'POST',
-      url: `${this.#sessionUrl}/bots/${botId}/rate-limit-responses`,
-      expectedStatus: HTTP_STATUS_CREATED,
-      responseSchema: rateLimitResponsesSchema,
-      body: request,
+    return callJsonOperation(this.#transport, queueRateLimitResponsesContract, {
+      params: { sessionId: this.id, botId },
+      body,
     });
   }
 
   async getRateLimitResponses(botId: number): Promise<readonly RateLimitResponses[]> {
-    const response = await requestJson(this.#fetch, {
-      method: 'GET',
-      url: `${this.#sessionUrl}/bots/${botId}/rate-limit-responses`,
-      expectedStatus: HTTP_STATUS_OK,
-      responseSchema: rateLimitResponsesListSchema,
+    const response = await callJsonOperation(this.#transport, listRateLimitResponsesContract, {
+      params: { sessionId: this.id, botId },
     });
     return response.rate_limit_responses;
   }
 
   queueServerErrorResponses(
-    { bot_id: botId, ...request }: QueueServerErrorResponsesInput,
+    { bot_id: botId, ...body }: QueueServerErrorResponsesInput,
   ): Promise<ServerErrorResponses> {
-    return requestJson(this.#fetch, {
-      method: 'POST',
-      url: `${this.#sessionUrl}/bots/${botId}/server-error-responses`,
-      expectedStatus: HTTP_STATUS_CREATED,
-      responseSchema: serverErrorResponsesSchema,
-      body: request,
+    return callJsonOperation(this.#transport, queueServerErrorResponsesContract, {
+      params: { sessionId: this.id, botId },
+      body,
     });
   }
 
   async getServerErrorResponses(botId: number): Promise<readonly ServerErrorResponses[]> {
-    const response = await requestJson(this.#fetch, {
-      method: 'GET',
-      url: `${this.#sessionUrl}/bots/${botId}/server-error-responses`,
-      expectedStatus: HTTP_STATUS_OK,
-      responseSchema: serverErrorResponsesListSchema,
+    const response = await callJsonOperation(this.#transport, listServerErrorResponsesContract, {
+      params: { sessionId: this.id, botId },
     });
     return response.server_error_responses;
   }
 
   setWebhookDelivery(
-    { bot_id: botId, ...request }: SetWebhookDeliveryInput,
+    { bot_id: botId, ...body }: SetWebhookDeliveryInput,
   ): Promise<WebhookDelivery> {
-    return requestJson(this.#fetch, {
-      method: 'PUT',
-      url: `${this.#sessionUrl}/bots/${botId}/webhook-delivery`,
-      expectedStatus: HTTP_STATUS_OK,
-      responseSchema: webhookDeliverySchema,
-      body: request,
+    return callJsonOperation(this.#transport, setWebhookDeliveryContract, {
+      params: { sessionId: this.id, botId },
+      body,
     });
   }
 
   getWebhookDelivery(botId: number): Promise<WebhookDelivery> {
-    return requestJson(this.#fetch, {
-      method: 'GET',
-      url: `${this.#sessionUrl}/bots/${botId}/webhook-delivery`,
-      expectedStatus: HTTP_STATUS_OK,
-      responseSchema: webhookDeliverySchema,
+    return callJsonOperation(this.#transport, getWebhookDeliveryContract, {
+      params: { sessionId: this.id, botId },
     });
   }
 
   async getWebhookAttempts(botId: number): Promise<readonly WebhookAttempt[]> {
-    const response = await requestJson(this.#fetch, {
-      method: 'GET',
-      url: `${this.#sessionUrl}/bots/${botId}/webhook-attempts`,
-      expectedStatus: HTTP_STATUS_OK,
-      responseSchema: webhookAttemptListSchema,
+    const response = await callJsonOperation(this.#transport, listWebhookAttemptsContract, {
+      params: { sessionId: this.id, botId },
     });
     return response.webhook_attempts;
   }
 
   releaseWebhookRetry({ botId, attemptId }: WebhookAttemptControlInput): Promise<WebhookAttempt> {
-    return requestJson(this.#fetch, {
-      method: 'POST',
-      url: `${this.#sessionUrl}/bots/${botId}/webhook-attempts/${attemptId}/retry-release`,
-      expectedStatus: HTTP_STATUS_OK,
-      responseSchema: webhookAttemptSchema,
+    return callJsonOperation(this.#transport, releaseWebhookRetryContract, {
+      params: { sessionId: this.id, botId, webhookAttemptId: attemptId },
     });
   }
 
   expireWebhookAttempt({ botId, attemptId }: WebhookAttemptControlInput): Promise<WebhookAttempt> {
-    return requestJson(this.#fetch, {
-      method: 'POST',
-      url: `${this.#sessionUrl}/bots/${botId}/webhook-attempts/${attemptId}/expiry`,
-      expectedStatus: HTTP_STATUS_OK,
-      responseSchema: webhookAttemptSchema,
+    return callJsonOperation(this.#transport, expireWebhookAttemptContract, {
+      params: { sessionId: this.id, botId, webhookAttemptId: attemptId },
     });
   }
 

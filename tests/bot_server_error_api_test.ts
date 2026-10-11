@@ -167,11 +167,11 @@ Deno.test('rejected server error queue requests leave the queued answers intact'
     ],
     [
       201,
-      [400, 400, 400, 400, 400, 400, 400, 400, 400, 404, 404, 404],
+      [400, 400, 400, 400, 400, 400, 400, 400, 400, 404, 400, 404],
       { server_error_responses: [{ method: 'getMe', error_code: 503, remaining_count: 2 }] },
       404,
     ],
-    'Expected malformed requests and unknown bots refused, and the queue unchanged',
+    'Expected malformed requests, bot IDs no bot can have and unknown bots refused, and the queue unchanged',
   );
 });
 

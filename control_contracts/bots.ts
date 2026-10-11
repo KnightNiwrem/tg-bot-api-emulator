@@ -11,6 +11,18 @@ import {
   telegramUsernameSchema,
 } from './wire_fields.ts';
 
+/** The path parameters of a bot, as a session's bot controls address it. */
+export const botPathSchema = z.strictObject({
+  sessionId: sessionIdParameterSchema,
+  botId: telegramUserIdSchema,
+});
+
+/**
+ * The refusal of a request to a bot the session does not have, or under a session that does not
+ * exist or has ended.
+ */
+export const botNotFoundSchema = controlRefusalSchema(['bot_not_found', 'session_not_found']);
+
 /** A bot's profile, as `getMe` returns it. */
 export const botProfileSchema = z.strictObject({
   id: telegramUserIdSchema,

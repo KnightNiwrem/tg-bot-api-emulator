@@ -25,8 +25,8 @@ post:
             $ref: ../components/schemas/RateLimitResponses.yaml
     '400':
       description: >-
-        The request body is malformed, or `method` names no Bot API method the emulator
-        implements.
+        The bot path identifier or the request body is malformed, or `method` names no Bot API
+        method the emulator implements.
       content:
         application/json:
           schema:
@@ -61,6 +61,12 @@ get:
                 type: array
                 items:
                   $ref: ../components/schemas/RateLimitResponses.yaml
+    '400':
+      description: The bot path identifier is invalid.
+      content:
+        application/json:
+          schema:
+            $ref: ../components/schemas/ControlValidationError.yaml
     '404':
       description: No active test session or virtual bot has the supplied identifier.
       content:

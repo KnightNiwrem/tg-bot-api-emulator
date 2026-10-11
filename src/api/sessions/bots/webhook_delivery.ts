@@ -1,135 +1,98 @@
 import { Hono } from 'hono';
-import { z } from 'zod';
 
-import { WEBHOOK_SCHEDULINGS } from '../../../types/bot_webhook.ts';
 import {
-  controlErrorResponse,
-  invalidControlRequestResponse,
-} from '../../control_error_response.ts';
-import { readJsonRequestBody } from '../json_request_body.ts';
+  expireWebhookAttemptContract,
+  getWebhookDeliveryContract,
+  listWebhookAttemptsContract,
+  releaseWebhookRetryContract,
+  setWebhookDeliveryContract,
+} from '../../../../control_contracts/webhook_attempts.ts';
+import { registerControlOperation } from '../../control_operation_route.ts';
 import type { SessionRouteContextTypes } from '../session_route_context_types.ts';
 import { presentWebhookAttempt } from '../webhook_attempt_presentation.ts';
-import {
-  BOT_ID_PARAMETER,
-  BOT_NOT_FOUND_REASON,
-  botIdPathParameterSchema,
-} from './bot_id_path_parameter.ts';
-
-const WEBHOOK_ATTEMPT_ID_PARAMETER = 'webhookAttemptId';
-const WEBHOOK_DELIVERY_PATH = `/:${BOT_ID_PARAMETER}/webhook-delivery` as const;
-const WEBHOOK_ATTEMPTS_PATH = `/:${BOT_ID_PARAMETER}/webhook-attempts` as const;
-const WEBHOOK_ATTEMPT_PATH = `${WEBHOOK_ATTEMPTS_PATH}/:${WEBHOOK_ATTEMPT_ID_PARAMETER}` as const;
-const WEBHOOK_RETRY_RELEASE_PATH = `${WEBHOOK_ATTEMPT_PATH}/retry-release` as const;
-const WEBHOOK_ATTEMPT_EXPIRY_PATH = `${WEBHOOK_ATTEMPT_PATH}/expiry` as const;
-
-/** The reason for an attempt the bot does not have, as the service names it. */
-const WEBHOOK_ATTEMPT_NOT_FOUND_REASON = 'attempt_not_found';
-
-const webhookAttemptIdPathParameterSchema = z.coerce.number().pipe(
-  z.int().min(1).max(Number.MAX_SAFE_INTEGER),
-);
-
-const webhookDeliveryRequestSchema = z.strictObject({
-  scheduling: z.enum(WEBHOOK_SCHEDULINGS),
-});
 
 /**
  * Routes that let a test decide when a bot's webhook delivery attempts time out and when their
- * retries are sent, and inspect each attempt. These are emulator controls, not Telegram behavior.
+ * retries are sent, and inspect each attempt, served within the path template `mountPath`, such as
+ * `/sessions/{sessionId}/bots`. These are emulator controls, not Telegram behavior.
  */
-export function createWebhookDeliveryRoutes(): Hono<SessionRouteContextTypes> {
+export function createWebhookDeliveryRoutes(mountPath: string): Hono<SessionRouteContextTypes> {
   const webhookDeliveryRoutes = new Hono<SessionRouteContextTypes>();
 
-  webhookDeliveryRoutes.get(WEBHOOK_DELIVERY_PATH, (context) => {
-    const botId = botIdPathParameterSchema.safeParse(context.req.param(BOT_ID_PARAMETER));
-    if (!botId.success) {
-      return controlErrorResponse(context, 404, BOT_NOT_FOUND_REASON);
-    }
-    const result = context.get('emulationSession').webhookAttempts.getScheduling(botId.data);
-    return result.found
-      ? context.json({ scheduling: result.scheduling })
-      : controlErrorResponse(context, 404, result.reason);
-  });
+  registerControlOperation(
+    webhookDeliveryRoutes,
+    mountPath,
+    getWebhookDeliveryContract,
+    ({ params: { botId } }, context) => {
+      const result = context.get('emulationSession').webhookAttempts.getScheduling(botId);
+      return result.found
+        ? { status: 200, body: { scheduling: result.scheduling } }
+        : { status: 404, body: { reason: result.reason } };
+    },
+  );
 
-  webhookDeliveryRoutes.put(WEBHOOK_DELIVERY_PATH, async (context) => {
-    const botId = botIdPathParameterSchema.safeParse(context.req.param(BOT_ID_PARAMETER));
-    if (!botId.success) {
-      return controlErrorResponse(context, 404, BOT_NOT_FOUND_REASON);
-    }
-    const requestBodyReading = await readJsonRequestBody(context.req, webhookDeliveryRequestSchema);
-    if (!requestBodyReading.valid) {
-      return invalidControlRequestResponse(context, requestBodyReading.issues);
-    }
-    const requestBody = requestBodyReading.value;
-    const result = context.get('emulationSession').webhookAttempts.setScheduling(
-      botId.data,
-      requestBody.scheduling,
-    );
-    return result.found
-      ? context.json({ scheduling: result.scheduling })
-      : controlErrorResponse(context, 404, result.reason);
-  });
-
-  webhookDeliveryRoutes.get(WEBHOOK_ATTEMPTS_PATH, (context) => {
-    const botId = botIdPathParameterSchema.safeParse(context.req.param(BOT_ID_PARAMETER));
-    if (!botId.success) {
-      return controlErrorResponse(context, 404, BOT_NOT_FOUND_REASON);
-    }
-    const result = context.get('emulationSession').webhookAttempts.listAttempts(botId.data);
-    return result.found
-      ? context.json({ webhook_attempts: result.attempts.map(presentWebhookAttempt) })
-      : controlErrorResponse(context, 404, result.reason);
-  });
-
-  webhookDeliveryRoutes.post(WEBHOOK_RETRY_RELEASE_PATH, (context) => {
-    const botId = botIdPathParameterSchema.safeParse(context.req.param(BOT_ID_PARAMETER));
-    const attemptId = webhookAttemptIdPathParameterSchema.safeParse(
-      context.req.param(WEBHOOK_ATTEMPT_ID_PARAMETER),
-    );
-    if (!botId.success) {
-      return controlErrorResponse(context, 404, BOT_NOT_FOUND_REASON);
-    }
-    if (!attemptId.success) {
-      return controlErrorResponse(context, 404, WEBHOOK_ATTEMPT_NOT_FOUND_REASON);
-    }
-    const result = context.get('emulationSession').webhookAttempts.releaseRetry(
-      botId.data,
-      attemptId.data,
-    );
-    if (!result.released) {
-      return controlErrorResponse(
-        context,
-        result.reason === 'retry_not_waiting' ? 409 : 404,
-        result.reason,
+  registerControlOperation(
+    webhookDeliveryRoutes,
+    mountPath,
+    setWebhookDeliveryContract,
+    ({ params: { botId }, body }, context) => {
+      const result = context.get('emulationSession').webhookAttempts.setScheduling(
+        botId,
+        body.scheduling,
       );
-    }
-    return context.json(presentWebhookAttempt(result.attempt));
-  });
+      return result.found
+        ? { status: 200, body: { scheduling: result.scheduling } }
+        : { status: 404, body: { reason: result.reason } };
+    },
+  );
 
-  webhookDeliveryRoutes.post(WEBHOOK_ATTEMPT_EXPIRY_PATH, async (context) => {
-    const botId = botIdPathParameterSchema.safeParse(context.req.param(BOT_ID_PARAMETER));
-    const attemptId = webhookAttemptIdPathParameterSchema.safeParse(
-      context.req.param(WEBHOOK_ATTEMPT_ID_PARAMETER),
-    );
-    if (!botId.success) {
-      return controlErrorResponse(context, 404, BOT_NOT_FOUND_REASON);
-    }
-    if (!attemptId.success) {
-      return controlErrorResponse(context, 404, WEBHOOK_ATTEMPT_NOT_FOUND_REASON);
-    }
-    const result = await context.get('emulationSession').webhookAttempts.expireAttempt(
-      botId.data,
-      attemptId.data,
-    );
-    if (!result.expired) {
-      return controlErrorResponse(
-        context,
-        result.reason === 'attempt_not_in_flight' ? 409 : 404,
-        result.reason,
+  registerControlOperation(
+    webhookDeliveryRoutes,
+    mountPath,
+    listWebhookAttemptsContract,
+    ({ params: { botId } }, context) => {
+      const result = context.get('emulationSession').webhookAttempts.listAttempts(botId);
+      return result.found
+        ? { status: 200, body: { webhook_attempts: result.attempts.map(presentWebhookAttempt) } }
+        : { status: 404, body: { reason: result.reason } };
+    },
+  );
+
+  registerControlOperation(
+    webhookDeliveryRoutes,
+    mountPath,
+    releaseWebhookRetryContract,
+    ({ params: { botId, webhookAttemptId } }, context) => {
+      const result = context.get('emulationSession').webhookAttempts.releaseRetry(
+        botId,
+        webhookAttemptId,
       );
-    }
-    return context.json(presentWebhookAttempt(result.attempt));
-  });
+      if (result.released) {
+        return { status: 200, body: presentWebhookAttempt(result.attempt) };
+      }
+      return result.reason === 'retry_not_waiting'
+        ? { status: 409, body: { reason: result.reason } }
+        : { status: 404, body: { reason: result.reason } };
+    },
+  );
+
+  registerControlOperation(
+    webhookDeliveryRoutes,
+    mountPath,
+    expireWebhookAttemptContract,
+    async ({ params: { botId, webhookAttemptId } }, context) => {
+      const result = await context.get('emulationSession').webhookAttempts.expireAttempt(
+        botId,
+        webhookAttemptId,
+      );
+      if (result.expired) {
+        return { status: 200, body: presentWebhookAttempt(result.attempt) };
+      }
+      return result.reason === 'attempt_not_in_flight'
+        ? { status: 409, body: { reason: result.reason } }
+        : { status: 404, body: { reason: result.reason } };
+    },
+  );
 
   return webhookDeliveryRoutes;
 }

@@ -314,7 +314,6 @@ Deno.test('Missing resources are refused with the reason that names them', async
     ],
     ['PUT', `${sessionPath}/accounts/999999/blocked-bots/1`, 'account_not_found'],
     ['GET', `${sessionPath}/bots/1/webhook-delivery`, 'bot_not_found'],
-    ['GET', `${sessionPath}/bots/not-a-bot/webhook-delivery`, 'bot_not_found'],
     ['GET', `${sessionPath}/files/no-such-file`, 'file_not_found'],
     ['GET', `${sessionPath}/accounts/${account.id}/callback-queries/1`, 'callback_query_not_found'],
   ];

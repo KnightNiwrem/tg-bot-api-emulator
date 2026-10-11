@@ -14,6 +14,12 @@ import {
   type ControlOperationContract,
   defineControlOperation,
 } from '../control_contracts/operation_contract.ts';
+import {
+  listRateLimitResponsesContract,
+  listServerErrorResponsesContract,
+  queueRateLimitResponsesContract,
+  queueServerErrorResponsesContract,
+} from '../control_contracts/queued_bot_api_answers.ts';
 import { createSessionContract, deleteSessionContract } from '../control_contracts/sessions.ts';
 import {
   changeSupergroupDescriptionContract,
@@ -40,6 +46,13 @@ import {
   joinChatByInviteLinkContract,
   removeSupergroupMemberContract,
 } from '../control_contracts/supergroups.ts';
+import {
+  expireWebhookAttemptContract,
+  getWebhookDeliveryContract,
+  listWebhookAttemptsContract,
+  releaseWebhookRetryContract,
+  setWebhookDeliveryContract,
+} from '../control_contracts/webhook_attempts.ts';
 import { findContractDrift } from './support/control_contract_consistency/contract_drift.ts';
 import { JsonSchemaCanonicalizer } from './support/control_contract_consistency/json_schema_canonical_form.ts';
 import { readWireJsonSchema } from './support/control_contract_consistency/wire_json_schema.ts';
@@ -78,6 +91,15 @@ const CONTROL_OPERATION_CONTRACTS: readonly ControlOperationContract[] = [
   changeSupergroupTitleContract,
   changeSupergroupDescriptionContract,
   expireSupergroupMemberRestrictionContract,
+  queueRateLimitResponsesContract,
+  listRateLimitResponsesContract,
+  queueServerErrorResponsesContract,
+  listServerErrorResponsesContract,
+  getWebhookDeliveryContract,
+  setWebhookDeliveryContract,
+  listWebhookAttemptsContract,
+  releaseWebhookRetryContract,
+  expireWebhookAttemptContract,
 ];
 
 const document = readOpenApiDocument();

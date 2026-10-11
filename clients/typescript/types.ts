@@ -24,6 +24,11 @@ import type {
   ControlOperationRequest,
   ControlOperationResult,
 } from '../../control_contracts/operation_contract.ts';
+import type {
+  QUEUEABLE_SERVER_ERROR_CODES,
+  queueRateLimitResponsesContract,
+  queueServerErrorResponsesContract,
+} from '../../control_contracts/queued_bot_api_answers.ts';
 import type { createSessionContract } from '../../control_contracts/sessions.ts';
 import type {
   createSupergroupContract,
@@ -31,7 +36,13 @@ import type {
   getSupergroupJoinRequestsContract,
   joinChatByInviteLinkContract,
 } from '../../control_contracts/supergroups.ts';
-import type { webhookAttemptFailureSchema } from '../../control_contracts/webhook_attempts.ts';
+import type {
+  getWebhookDeliveryContract,
+  setWebhookDeliveryContract,
+  WEBHOOK_SCHEDULINGS,
+  webhookAttemptFailureSchema,
+  webhookAttemptSchema,
+} from '../../control_contracts/webhook_attempts.ts';
 import type { ControlRefusalReason } from './control_refusal_reasons.ts';
 
 /**
@@ -75,33 +86,23 @@ export type CreatedVirtualBot = ReadonlySnapshot<ControlOperationResult<typeof c
  * `429 Too Many Requests` answers queued for a bot's next Bot API calls, which receive them
  * instead of running.
  */
-export interface RateLimitResponses {
-  /** The method whose calls receive the answers, by its current name; omitted for every method. */
-  readonly method?: string;
-  /** The `retry_after`, in seconds, of every answer. */
-  readonly retry_after: number;
-  /** How many of the bot's next matching calls still receive an answer. */
-  readonly remaining_count: number;
-}
+export type RateLimitResponses = ReadonlySnapshot<
+  ControlOperationResult<typeof queueRateLimitResponsesContract>
+>;
 
 /**
  * The HTTP status of a queued server error answer: `500 Internal Server Error` or
  * `503 Service Unavailable`.
  */
-export type ServerErrorCode = 500 | 503;
+export type ServerErrorCode = typeof QUEUEABLE_SERVER_ERROR_CODES[number];
 
 /**
  * Server error answers queued for a bot's next Bot API calls, which receive them instead of
  * running. They are emulator fault injection, not a reproduction of when Telegram fails calls.
  */
-export interface ServerErrorResponses {
-  /** The method whose calls receive the answers, by its current name; omitted for every method. */
-  readonly method?: string;
-  /** The HTTP status and `error_code` of every answer. */
-  readonly error_code: ServerErrorCode;
-  /** How many of the bot's next matching calls still receive an answer. */
-  readonly remaining_count: number;
-}
+export type ServerErrorResponses = ReadonlySnapshot<
+  ControlOperationResult<typeof queueServerErrorResponsesContract>
+>;
 
 /**
  * What a URL of the session's emulated web serves. Telegram downloads the files bots send by URL;
@@ -133,42 +134,32 @@ export interface WebResource {
   readonly content_length: number;
 }
 
-export interface QueueRateLimitResponsesInput {
-  readonly bot_id: number;
-  /** An implemented Bot API method, by any name Telegram accepts; omit it for every method. */
-  readonly method?: string;
-  /** The `retry_after`, in seconds, of every answer; at least 1. */
-  readonly retry_after: number;
-  /** How many of the bot's next matching calls receive an answer. Defaults to 1. */
-  readonly count?: number;
-}
+/** The bot whose next calls receive the answers, and the answers to queue. */
+export type QueueRateLimitResponsesInput =
+  & { readonly bot_id: number }
+  & Readonly<ControlOperationRequest<typeof queueRateLimitResponsesContract>['body']>;
 
-export interface QueueServerErrorResponsesInput {
-  readonly bot_id: number;
-  /** An implemented Bot API method, by any name Telegram accepts; omit it for every method. */
-  readonly method?: string;
-  /** The HTTP status and `error_code` of every answer. */
-  readonly error_code: ServerErrorCode;
-  /** How many of the bot's next matching calls receive an answer. Defaults to 1. */
-  readonly count?: number;
-}
+/** The bot whose next calls receive the answers, and the answers to queue. */
+export type QueueServerErrorResponsesInput =
+  & { readonly bot_id: number }
+  & Readonly<ControlOperationRequest<typeof queueServerErrorResponsesContract>['body']>;
 
 /**
  * Who ends a bot's webhook delivery attempts and retry waits: the emulator by its own timing
  * (`automatic`, the default), or only the test, by expiring attempts and releasing retries
  * (`manual`). These are emulator controls; they do not reproduce Telegram's timing.
  */
-export type WebhookScheduling = 'automatic' | 'manual';
+export type WebhookScheduling = typeof WEBHOOK_SCHEDULINGS[number];
 
 /** How a bot's webhook updates are delivered. */
-export interface WebhookDelivery {
-  /** The scheduling of the attempts that begin from now on. */
-  readonly scheduling: WebhookScheduling;
-}
+export type WebhookDelivery = ReadonlySnapshot<
+  ControlOperationResult<typeof getWebhookDeliveryContract>
+>;
 
-export interface SetWebhookDeliveryInput extends WebhookDelivery {
-  readonly bot_id: number;
-}
+/** The bot whose webhook delivery to set, and how its updates are delivered from now on. */
+export type SetWebhookDeliveryInput =
+  & { readonly bot_id: number }
+  & Readonly<ControlOperationRequest<typeof setWebhookDeliveryContract>['body']>;
 
 /**
  * Why an attempt to deliver an update to a webhook failed. `error_message` is the description
@@ -176,39 +167,11 @@ export interface SetWebhookDeliveryInput extends WebhookDelivery {
  */
 export type WebhookAttemptFailure = ReadonlySnapshot<z.output<typeof webhookAttemptFailureSchema>>;
 
-/** The wait that a failed attempt schedules before its update is sent again. */
-export interface WebhookRetry {
-  /** The wait, in seconds, that `automatic` scheduling observes; `manual` scheduling ignores it. */
-  readonly delay_seconds: number;
-  /**
-   * `waiting` until the delay passes or the test releases the retry, then `released`; `cancelled`
-   * when the webhook was replaced or deleted, or the session ended, during the wait.
-   */
-  readonly status: 'waiting' | 'released' | 'cancelled';
-}
-
-interface WebhookAttemptIdentity {
-  /** Identifies the attempt among every attempt of the session; the first is 1. */
-  readonly id: number;
-  readonly update_id: number;
-  /** The scheduling the attempt and its retry follow: the bot's when the attempt began. */
-  readonly scheduling: WebhookScheduling;
-}
-
 /** One request that delivers an update to a bot's webhook, and its outcome. */
-export type WebhookAttempt =
-  | WebhookAttemptIdentity & {
-    /**
-     * `in_flight` while the request runs, `accepted` once the webhook accepted the update, or
-     * `cancelled` when delivery stopped before an outcome, which leaves the update pending.
-     */
-    readonly status: 'in_flight' | 'accepted' | 'cancelled';
-  }
-  | WebhookAttemptIdentity & {
-    readonly status: 'failed';
-    readonly failure: WebhookAttemptFailure;
-    readonly retry: WebhookRetry;
-  };
+export type WebhookAttempt = ReadonlySnapshot<z.output<typeof webhookAttemptSchema>>;
+
+/** The wait that a failed attempt schedules before its update is sent again. */
+export type WebhookRetry = Extract<WebhookAttempt, { readonly status: 'failed' }>['retry'];
 
 /** Names one attempt of one bot, which a control applies to. */
 export interface WebhookAttemptControlInput {

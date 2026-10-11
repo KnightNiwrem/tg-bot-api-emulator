@@ -16,6 +16,12 @@ get:
         application/json:
           schema:
             $ref: ../components/schemas/WebhookDelivery.yaml
+    '400':
+      description: The bot path identifier is invalid.
+      content:
+        application/json:
+          schema:
+            $ref: ../components/schemas/ControlValidationError.yaml
     '404':
       description: No active test session or virtual bot has the supplied identifier.
       content:
@@ -45,7 +51,7 @@ put:
           schema:
             $ref: ../components/schemas/WebhookDelivery.yaml
     '400':
-      description: The request body is malformed.
+      description: The bot path identifier or the request body is malformed.
       content:
         application/json:
           schema:

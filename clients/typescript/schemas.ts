@@ -4,10 +4,6 @@ import { accountProfileSchema } from '../../control_contracts/accounts.ts';
 import { botProfileSchema } from '../../control_contracts/bots.ts';
 import { controlValidationErrorSchema } from '../../control_contracts/control_errors.ts';
 import {
-  webhookAttemptFailureSchema,
-  webhookAttemptIdSchema,
-} from '../../control_contracts/webhook_attempts.ts';
-import {
   MAX_SUPERGROUP_OR_CHANNEL_ID,
   MAX_TELEGRAM_USER_ID,
   MIN_SUPERGROUP_OR_CHANNEL_ID,
@@ -26,7 +22,6 @@ import type {
   Poll,
   PollAnswer,
   PrivateMessage,
-  RateLimitResponses,
   ReactionTypeEmoji,
   ReplyInterface,
   ReplyKeyboardButton,
@@ -35,11 +30,8 @@ import type {
   RichMessageButton,
   RichText,
   RichTextObject,
-  ServerErrorResponses,
   SupergroupMessage,
   UserReaction,
-  WebhookAttempt,
-  WebhookDelivery,
   WebResource,
 } from './types.ts';
 
@@ -57,58 +49,6 @@ export const webResourceSchema: z.ZodType<WebResource> = z.strictObject({
   content_type: z.string().min(1).optional(),
   location: z.string().min(1).optional(),
   content_length: z.int().nonnegative(),
-});
-
-export const rateLimitResponsesSchema: z.ZodType<RateLimitResponses> = z.strictObject({
-  method: z.string().min(1).optional(),
-  retry_after: z.int().positive(),
-  remaining_count: z.int().positive(),
-});
-
-export const rateLimitResponsesListSchema = z.strictObject({
-  rate_limit_responses: z.array(rateLimitResponsesSchema),
-});
-
-export const serverErrorResponsesSchema: z.ZodType<ServerErrorResponses> = z.strictObject({
-  method: z.string().min(1).optional(),
-  error_code: z.literal([500, 503]),
-  remaining_count: z.int().positive(),
-});
-
-export const serverErrorResponsesListSchema = z.strictObject({
-  server_error_responses: z.array(serverErrorResponsesSchema),
-});
-
-const webhookSchedulingSchema = z.enum(['automatic', 'manual']);
-
-export const webhookDeliverySchema: z.ZodType<WebhookDelivery> = z.strictObject({
-  scheduling: webhookSchedulingSchema,
-});
-
-const webhookAttemptIdentityShape = {
-  id: webhookAttemptIdSchema,
-  update_id: z.int(),
-  scheduling: webhookSchedulingSchema,
-};
-
-export const webhookAttemptSchema: z.ZodType<WebhookAttempt> = z.discriminatedUnion('status', [
-  z.strictObject({
-    ...webhookAttemptIdentityShape,
-    status: z.enum(['in_flight', 'accepted', 'cancelled']),
-  }),
-  z.strictObject({
-    ...webhookAttemptIdentityShape,
-    status: z.literal('failed'),
-    failure: webhookAttemptFailureSchema,
-    retry: z.strictObject({
-      delay_seconds: z.int().nonnegative(),
-      status: z.enum(['waiting', 'released', 'cancelled']),
-    }),
-  }),
-]);
-
-export const webhookAttemptListSchema = z.strictObject({
-  webhook_attempts: z.array(webhookAttemptSchema),
 });
 
 export const getMeResponseSchema = z.strictObject({
