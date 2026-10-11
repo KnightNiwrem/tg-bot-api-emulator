@@ -95,6 +95,47 @@ Deno.test('the forward and copy methods name the parameter that does not fit the
   );
 });
 
+Deno.test('the forward and copy methods give the official server descriptions for JSON parameters', async () => {
+  const { api, botApiPath } = await createFixture();
+  const notSpecified = 'Bad Request: message identifiers are not specified';
+  const cases: readonly [method: string, parameters: object, description: string][] = [
+    [
+      'forwardMessages',
+      { chat_id: 1, from_chat_id: 1, message_ids: 'not JSON' },
+      "Bad Request: can't parse message_ids JSON object",
+    ],
+    [
+      'copyMessages',
+      { chat_id: 1, from_chat_id: 1, message_ids: `${'['.repeat(101)}1${']'.repeat(101)}` },
+      "Bad Request: can't parse message_ids JSON object",
+    ],
+    // Empty text names no messages, as the official server reads it, and so does an empty list.
+    ['forwardMessages', { chat_id: 1, from_chat_id: 1, message_ids: '' }, notSpecified],
+    ['copyMessages', { chat_id: 1, from_chat_id: 1, message_ids: [] }, notSpecified],
+    [
+      'copyMessage',
+      { chat_id: 1, from_chat_id: 1, message_id: 1, reply_parameters: 'not JSON' },
+      "Bad Request: can't parse reply parameters JSON object",
+    ],
+    // Empty text is no reply, as the official server reads it, so the chat is read next.
+    [
+      'copyMessage',
+      { from_chat_id: 1, message_id: 1, reply_parameters: '' },
+      'Bad Request: chat_id is empty',
+    ],
+  ];
+
+  const answers = [];
+  for (const [method, parameters] of cases) {
+    answers.push(await callBotApi(api, `${botApiPath}/${method}`, parameters));
+  }
+  assertEquals(
+    answers,
+    cases.map(([, , description]) => [400, description]),
+    "Expected Telegram's description for JSON it cannot read, and empty text read as none",
+  );
+});
+
 Deno.test('parameters a reader refuses after the schema keep the description without a path', async () => {
   await using fixture = await createFixture();
   const { api, botApiPath } = fixture;

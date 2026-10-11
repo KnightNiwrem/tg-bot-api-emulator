@@ -38,8 +38,10 @@ export interface ReplyTargetParameters {
 }
 
 /**
- * A `reply_parameters` parameter: a JSON `ReplyParameters` object. As on Telegram, an empty
- * object or a non-positive message ID specifies no reply.
+ * A `reply_parameters` parameter: a JSON `ReplyParameters` object, read as the official Bot API
+ * server's `get_reply_parameters` reads it. Empty text, an empty object or a non-positive message
+ * ID specifies no reply, which the older `reply_to_message_id` cannot then specify either, and
+ * text the server cannot read as JSON is refused with its description.
  *
  * Checklist tasks and poll options are not supported, so those fields are rejected.
  */
@@ -54,6 +56,10 @@ export function replyParametersParameter() {
       quote_entities: z.array(z.unknown()).optional(),
       quote_position: z.int().default(0),
     }),
+    {
+      unparsableJsonDescription: "Bad Request: can't parse reply parameters JSON object",
+      emptyText: { readAs: {} },
+    },
   ).transform((parameters): ReplyParameters => {
     const { message_id, chat_id, allow_sending_without_reply, quote } = parameters;
     return {
