@@ -24,6 +24,7 @@ import type { Poll, PollId } from '../../types/poll.ts';
 import type { VirtualAccount } from '../../types/virtual_account.ts';
 import type { VirtualBot } from '../../types/virtual_bot.ts';
 import type {
+  ChatAddress,
   ChatKeyOfType,
   ChatType,
   PrivateChatAddress,
@@ -85,6 +86,18 @@ export interface BotSupergroupMessageTarget {
   readonly fromBotId: number;
   readonly chat: SupergroupChatAddress;
   /** The supergroup's ID of the message. */
+  readonly messageId: number;
+}
+
+/**
+ * A message of one of the bot's chats, which the bot edits by the chat's address: a message of its
+ * private chat with an account, as `BotPrivateChatMessageTarget` addresses it, or of a supergroup,
+ * as `BotSupergroupMessageTarget` does. The address's type selects the chat type's targeting.
+ */
+export interface BotChatMessageTarget {
+  readonly fromBotId: number;
+  readonly chat: ChatAddress;
+  /** The ID by which the chat's messages are addressed, as its chat type's target names it. */
   readonly messageId: number;
 }
 
@@ -252,6 +265,12 @@ export interface BotInlineMessageEditTypes {
   readonly buttonFailureReason: 'button_type_invalid';
   readonly permissionFailure: never;
 }
+
+/**
+ * The types of a bot's edit of a message of one of its chats, whichever chat type its address
+ * selects: the private chat's or the supergroup's failures and messages, and no inline message's.
+ */
+export type BotChatEditTypes = BotPrivateChatEditTypes | BotSupergroupEditTypes;
 
 /** The edited message, or why the edit failed. */
 type MessageEditOutcome<Edited extends ChatMessage, Failure extends { readonly reason: string }> =
@@ -444,10 +463,12 @@ interface MessageEditingDependencies {
  * identifiers in any chat; it stops its own polls. An account edits the text or caption of its own
  * messages, other than those sent through an inline bot, which only that bot edits.
  *
- * Each sender and target has its own entry point, which reports exactly the failures its chat type
- * can produce, in Telegram's order. Only changed content dates an edit. As on Telegram, no bot
- * receives an update for a bot's edit; an edit of an account's message, sent directly or through
- * an inline bot, reaches the chat's bots as the account's edited message.
+ * Each sender and kind of target has its own entry point, which reports exactly the failures its
+ * targets can produce, in Telegram's order: a bot's edit of a chat message selects its chat type's
+ * targeting by the chat's address, an inline message has its own, and an account's edit has one
+ * per chat type. Only changed content dates an edit. As on Telegram, no bot receives an update for
+ * a bot's edit; an edit of an account's message, sent directly or through an inline bot, reaches
+ * the chat's bots as the account's edited message.
  *
  * Each edit runs as one transaction: the files its new content uploads, the edited message and the
  * updates its event becomes are published together, or, should any step fail, not at all. Every
@@ -508,27 +529,20 @@ export class MessageEditingService {
   }
 
   /**
-   * Replaces the text, entities, and inline keyboard of a text or rich message of the bot's
-   * private chat with new text or a rich message, which may change the message's kind.
+   * Replaces the text, entities, and inline keyboard of a text or rich message of one of the bot's
+   * chats with new text or a rich message, which may change the message's kind.
    *
    * Checks follow Telegram's order: text is checked for emptiness before the message is found;
-   * the content is then normalized, and text is checked for length.
+   * the content is then normalized, and text is checked for length. As TDLib's
+   * `edit_message_text` does, a supergroup checks only a rich message as new content, against the
+   * bot's rights there.
    */
-  editPrivateChatMessageText(
-    input: BotPrivateChatMessageTarget & BotTextEdit,
-  ): BotTextEditResult<BotPrivateChatEditTypes> {
-    return this.#editText(this.#privateChatTargeting, input);
-  }
-
-  /**
-   * Replaces the text of a text or rich message of a supergroup, as in a private chat. As TDLib's
-   * `edit_message_text` does, only a rich message is checked as new content, against the bot's
-   * rights in the supergroup.
-   */
-  editSupergroupMessageText(
-    input: BotSupergroupMessageTarget & BotTextEdit,
-  ): BotTextEditResult<BotSupergroupEditTypes> {
-    return this.#editText(this.#supergroupTargeting, input);
+  editChatMessageText(
+    { chat, ...input }: BotChatMessageTarget & BotTextEdit,
+  ): BotTextEditResult<BotChatEditTypes> {
+    return chat.type === 'private'
+      ? this.#editText(this.#privateChatTargeting, { ...input, chat })
+      : this.#editText(this.#supergroupTargeting, { ...input, chat });
   }
 
   /** Replaces the text of an inline message sent through the bot, as in its chat. */
@@ -539,20 +553,15 @@ export class MessageEditingService {
   }
 
   /**
-   * Replaces the caption, its entities, and the inline keyboard of captioned media of the bot's
-   * private chat; an empty caption removes it. Only a changed caption dates the edit.
+   * Replaces the caption, its entities, and the inline keyboard of captioned media of one of the
+   * bot's chats; an empty caption removes it. Only a changed caption dates the edit.
    */
-  editPrivateChatMessageCaption(
-    input: BotPrivateChatMessageTarget & BotCaptionEdit,
-  ): BotCaptionEditResult<BotPrivateChatEditTypes> {
-    return this.#editCaption(this.#privateChatTargeting, input);
-  }
-
-  /** Replaces the caption of captioned media of a supergroup, as in a private chat. */
-  editSupergroupMessageCaption(
-    input: BotSupergroupMessageTarget & BotCaptionEdit,
-  ): BotCaptionEditResult<BotSupergroupEditTypes> {
-    return this.#editCaption(this.#supergroupTargeting, input);
+  editChatMessageCaption(
+    { chat, ...input }: BotChatMessageTarget & BotCaptionEdit,
+  ): BotCaptionEditResult<BotChatEditTypes> {
+    return chat.type === 'private'
+      ? this.#editCaption(this.#privateChatTargeting, { ...input, chat })
+      : this.#editCaption(this.#supergroupTargeting, { ...input, chat });
   }
 
   /** Replaces the caption of captioned media sent through the bot, as in its chat. */
@@ -563,23 +572,16 @@ export class MessageEditingService {
   }
 
   /**
-   * Replaces the content, with its caption, and the inline keyboard of a message of the bot's
-   * private chat with new media, as `replaceMessageMedia` replaces it.
+   * Replaces the content, with its caption, and the inline keyboard of a message of one of the
+   * bot's chats with new media, as `replaceMessageMedia` replaces it. As TDLib's
+   * `edit_message_media` does, a supergroup checks the new media against the bot's rights there.
    */
-  editPrivateChatMessageMedia(
-    input: BotPrivateChatMessageTarget & BotMediaEdit,
-  ): BotMediaEditResult<BotPrivateChatEditTypes> {
-    return this.#editMedia(this.#privateChatTargeting, input);
-  }
-
-  /**
-   * Replaces the media of a message of a supergroup, as in a private chat. As TDLib's
-   * `edit_message_media` does, the new media is checked against the bot's rights there.
-   */
-  editSupergroupMessageMedia(
-    input: BotSupergroupMessageTarget & BotMediaEdit,
-  ): BotMediaEditResult<BotSupergroupEditTypes> {
-    return this.#editMedia(this.#supergroupTargeting, input);
+  editChatMessageMedia(
+    { chat, ...input }: BotChatMessageTarget & BotMediaEdit,
+  ): BotMediaEditResult<BotChatEditTypes> {
+    return chat.type === 'private'
+      ? this.#editMedia(this.#privateChatTargeting, { ...input, chat })
+      : this.#editMedia(this.#supergroupTargeting, { ...input, chat });
   }
 
   /** Replaces the media of a message sent through the bot, as in its chat. */
@@ -590,20 +592,15 @@ export class MessageEditingService {
   }
 
   /**
-   * Replaces the inline keyboard of a message of the bot's private chat, leaving its content and
+   * Replaces the inline keyboard of a message of one of the bot's chats, leaving its content and
    * edit date as they are.
    */
-  editPrivateChatMessageKeyboard(
-    input: BotPrivateChatMessageTarget & BotKeyboardEdit,
-  ): BotKeyboardEditResult<BotPrivateChatEditTypes> {
-    return this.#editKeyboard(this.#privateChatTargeting, input);
-  }
-
-  /** Replaces the inline keyboard of a message of a supergroup, as in a private chat. */
-  editSupergroupMessageKeyboard(
-    input: BotSupergroupMessageTarget & BotKeyboardEdit,
-  ): BotKeyboardEditResult<BotSupergroupEditTypes> {
-    return this.#editKeyboard(this.#supergroupTargeting, input);
+  editChatMessageKeyboard(
+    { chat, ...input }: BotChatMessageTarget & BotKeyboardEdit,
+  ): BotKeyboardEditResult<BotChatEditTypes> {
+    return chat.type === 'private'
+      ? this.#editKeyboard(this.#privateChatTargeting, { ...input, chat })
+      : this.#editKeyboard(this.#supergroupTargeting, { ...input, chat });
   }
 
   /** Replaces the inline keyboard of a message sent through the bot, as in its chat. */
@@ -614,25 +611,18 @@ export class MessageEditingService {
   }
 
   /**
-   * Stops a poll the bot sent to its private chat, as TDLib's `stop_poll` does: once the message
+   * Stops a poll the bot sent to one of its chats, as TDLib's `stop_poll` does: once the message
    * is found, the poll is found as `findStoppablePoll` finds it, and the new keyboard's callback
-   * data must fit. The poll then accepts no more answers and keeps its votes, the message shows
-   * the new keyboard, and the bot that sent the poll learns of its closure.
+   * data must fit; in a supergroup, as for its edits, the keyboard has no Web App button. The poll
+   * then accepts no more answers and keeps its votes, the message shows the new keyboard, and the
+   * bot that sent the poll learns of its closure.
    */
-  stopPrivateChatPoll(
-    input: BotPrivateChatMessageTarget & BotPollStop,
-  ): BotPollStopResult<BotPrivateChatEditTypes> {
-    return this.#stopPoll(this.#privateChatTargeting, input);
-  }
-
-  /**
-   * Stops a poll the bot sent to a supergroup it is a member of, as in a private chat; as for its
-   * edits, the new keyboard has no Web App button.
-   */
-  stopSupergroupPoll(
-    input: BotSupergroupMessageTarget & BotPollStop,
-  ): BotPollStopResult<BotSupergroupEditTypes> {
-    return this.#stopPoll(this.#supergroupTargeting, input);
+  stopPoll(
+    { chat, ...input }: BotChatMessageTarget & BotPollStop,
+  ): BotPollStopResult<BotChatEditTypes> {
+    return chat.type === 'private'
+      ? this.#stopPoll(this.#privateChatTargeting, { ...input, chat })
+      : this.#stopPoll(this.#supergroupTargeting, { ...input, chat });
   }
 
   /**

@@ -37,7 +37,9 @@ export interface AccountPrivateChatAddress {
 
 /**
  * The chat a bot addresses by a Bot API `chat_id`: a user's ID names the bot's private chat with
- * that user, and any other ID a supergroup.
+ * that user, and any other ID a supergroup. It is where the Bot API decides a chat reference's chat
+ * type, once per reference; what the bot may do there, and whether the chat exists, each operation
+ * decides from the address it is given.
  */
 export function getBotApiChatAddress(chatId: number): ChatAddress {
   return isUserId(chatId) ? { type: 'private', peerId: chatId } : { type: 'supergroup', chatId };
@@ -72,13 +74,13 @@ export type ChatActor =
   | { readonly kind: 'bot'; readonly botId: number };
 
 /**
- * The chat a bot addresses by a Bot API `chat_id`, as `getBotApiChatAddress` finds it, identified
- * without checking that it exists: its private conversation with the user, or the supergroup.
+ * The chat a bot's address names, identified without checking that it exists: its private
+ * conversation with the account, or the supergroup.
  */
-export function getBotApiChatKey(botId: number, chatId: number): ChatKey {
-  return isUserId(chatId)
-    ? { type: 'private', conversation: { accountId: chatId, botId } }
-    : { type: 'supergroup', chatId };
+export function getBotChatKey(botId: number, address: ChatAddress): ChatKey {
+  return address.type === 'private'
+    ? { type: 'private', conversation: { accountId: address.peerId, botId } }
+    : { type: 'supergroup', chatId: address.chatId };
 }
 
 /**

@@ -1,22 +1,13 @@
-import type { BotApiPrivateMessage, BotApiSupergroupMessage } from '../../types/bot_api.ts';
+import type { BotApiMessage } from '../../types/bot_api.ts';
 import type { FormerSupergroupMemberFailureReason } from '../../types/chat_membership.ts';
 import { isForwardable, type PrivateForwardNameLookup } from '../../types/message_forward.ts';
 import { createExternalReply, type ExternalReplyTarget } from '../../types/message_reply.ts';
-import { isUserId } from '../../types/telegram_identity.ts';
-import { type ChatKey, getBotApiChatKey } from '../../types/virtual_chat.ts';
-import type {
-  ChatMessage,
-  MediaGroupId,
-  MessageForwardInfo,
-  PrivateMessage,
-  SupergroupMessage,
-} from '../../types/virtual_message.ts';
+import { type ChatKey, getBotApiChatAddress, getBotChatKey } from '../../types/virtual_chat.ts';
+import type { ChatMessage, MediaGroupId, MessageForwardInfo } from '../../types/virtual_message.ts';
 import type {
   BotPrivateChatAccessFailureReason,
   MessageTarget,
   ReplyTarget,
-  SendDeliveryOptions,
-  SendDestinationOptions,
   SendMediaGroupRequest,
   SendMediaGroupResult,
   SendRequestOptions,
@@ -42,19 +33,14 @@ interface SupergroupMessageReading {
   getMessageForBot(input: GetSupergroupMessageForBotInput): GetSupergroupMessageForBotResult;
 }
 
-/** The sending that a bot's messages and albums go through, by chat type. */
+/** The sending that a bot's messages and albums go through, by the address of their chat. */
 type BotMessageSending = Pick<
   MessageSendingService,
-  | 'sendPrivateChatMessage'
-  | 'sendSupergroupMessage'
-  | 'sendPrivateChatAlbum'
-  | 'sendSupergroupAlbum'
-  | 'lacksSupergroupSendPermission'
+  'sendChatMessage' | 'sendChatAlbum' | 'lacksSendPermission'
 >;
 
 interface BotMessageViews {
-  viewPrivateMessageForBot(message: PrivateMessage): BotApiPrivateMessage;
-  viewSupergroupMessage(message: SupergroupMessage, observerId: number): BotApiSupergroupMessage;
+  viewMessageForBot(message: ChatMessage, botId: number): BotApiMessage;
 }
 
 interface ChatActionEnding {
@@ -122,9 +108,8 @@ type OutgoingReply =
   };
 
 /**
- * Sends a bot's messages and albums to its private chats and supergroups, each through the
- * sending entry point of its chat type, and shows the bot what it sent, as the Bot API answers
- * with it.
+ * Sends a bot's messages and albums to its private chats and supergroups, each to the chat its
+ * Bot API `chat_id` addresses, and shows the bot what it sent, as the Bot API answers with it.
  *
  * Every Bot API method that sends a message goes through here, so what a message replies to in
  * another chat is resolved alike for all of them, by the same lookup that finds the messages of
@@ -167,25 +152,36 @@ export class BotMessageSender {
   send(
     botId: number,
     content: OutgoingMessageContent,
-    { replyTo, ...options }: SendRequestOptions,
-    repetitionDetails: RepetitionDetails = {},
+    { replyTo, chatId, isContentProtected, isSilent, messageEffectId, ...replyMarkup }:
+      SendRequestOptions,
+    { forwardInfo, mediaGroupId }: RepetitionDetails = {},
   ): SendResult {
     const replyResolution = this.#resolveOutgoingReply(botId, replyTo);
     if (!replyResolution.resolved) {
       return { sent: false, reason: replyResolution.reason };
     }
-    const { reply } = replyResolution;
-    const result = isUserId(options.chatId)
-      ? this.#sendPrivateMessage(botId, content, options, reply, repetitionDetails)
-      : this.#sendSupergroupMessage(botId, content, options, reply, repetitionDetails);
-    if (result.sent) {
-      // As TDLib's `DialogActionManager` does, a bot's message ends its chat action.
-      this.#chatActions.endBotChatAction({
-        botId,
-        chat: getBotApiChatKey(botId, options.chatId),
-      });
+    const chat = getBotApiChatAddress(chatId);
+    const result = this.#messageSending.sendChatMessage({
+      ...replyMarkup,
+      fromBotId: botId,
+      chat,
+      content,
+      ...replyResolution.reply,
+      isContentProtected,
+      isSilent,
+      forwardInfo,
+      mediaGroupId,
+      messageEffectId,
+    });
+    if (!result.sent) {
+      return result.reason === 'text_invalid' || result.reason === 'send_permission_missing'
+        ? result
+        : { sent: false, reason: excludeMissingSenderFailure(botId, result.reason) };
     }
-    return result;
+    const message = this.#botMessageViews.viewMessageForBot(result.message, botId);
+    // As TDLib's `DialogActionManager` does, a bot's message ends its chat action.
+    this.#chatActions.endBotChatAction({ botId, chat: getBotChatKey(botId, chat) });
+    return { sent: true, message };
   }
 
   /**
@@ -196,57 +192,67 @@ export class BotMessageSender {
   sendAlbum(
     botId: number,
     contents: readonly MediaContent[],
-    { replyTo, ...options }: Omit<SendMediaGroupRequest, 'media'>,
+    { replyTo, chatId, isContentProtected, isSilent, messageEffectId }: Omit<
+      SendMediaGroupRequest,
+      'media'
+    >,
   ): SendMediaGroupResult {
     const replyResolution = this.#resolveOutgoingReply(botId, replyTo);
     if (!replyResolution.resolved) {
       return { sent: false, reason: replyResolution.reason };
     }
-    const result = isUserId(options.chatId)
-      ? this.#sendPrivateAlbum(botId, contents, options, replyResolution.reply)
-      : this.#sendSupergroupAlbum(botId, contents, options, replyResolution.reply);
-    if (result.sent) {
-      // As for a single message, the album ends the bot's chat action.
-      this.#chatActions.endBotChatAction({
-        botId,
-        chat: getBotApiChatKey(botId, options.chatId),
-      });
+    const chat = getBotApiChatAddress(chatId);
+    const result = this.#messageSending.sendChatAlbum({
+      fromBotId: botId,
+      chat,
+      contents,
+      ...replyResolution.reply,
+      isContentProtected,
+      isSilent,
+      messageEffectId,
+    });
+    if (!result.sent) {
+      return result.reason === 'text_invalid' || result.reason === 'send_permission_missing'
+        ? result
+        : { sent: false, reason: excludeMissingSenderFailure(botId, result.reason) };
     }
-    return result;
+    const messages = result.messages.map((message) =>
+      this.#botMessageViews.viewMessageForBot(message, botId)
+    );
+    // As for a single message, the album ends the bot's chat action.
+    this.#chatActions.endBotChatAction({ botId, chat: getBotChatKey(botId, chat) });
+    return { sent: true, messages };
   }
 
   /** Finds a message of one of the bot's chats, which the bot may repeat or reply to from another chat. */
   findBotChatMessage(botId: number, { chatId, messageId }: MessageTarget): BotChatMessageLookup {
-    const lookup = isUserId(chatId)
-      ? this.#privateChatMessages.getMessageForBot({
-        botId,
-        accountId: chatId,
-        botMessageId: messageId,
-      })
-      : this.#supergroupMessages.getMessageForBot({ botId, chatId, messageId });
-    if (lookup.found) {
-      return {
+    const chat = getBotApiChatAddress(chatId);
+    if (chat.type === 'private') {
+      const lookup = this.#privateChatMessages.getMessageForBot({ botId, chat, messageId });
+      return lookup.found
+        ? { found: true, message: lookup.message, chatProtectsContent: false }
+        : { found: false, reason: excludeMissingSenderFailure(botId, lookup.reason) };
+    }
+    const lookup = this.#supergroupMessages.getMessageForBot({ botId, chat, messageId });
+    return lookup.found
+      ? {
         found: true,
         message: lookup.message,
-        chatProtectsContent: 'supergroup' in lookup && lookup.supergroup.hasProtectedContent,
-      };
-    }
-
-    return { found: false, reason: excludeMissingSenderFailure(botId, lookup.reason) };
+        chatProtectsContent: lookup.supergroup.hasProtectedContent,
+      }
+      : { found: false, reason: excludeMissingSenderFailure(botId, lookup.reason) };
   }
 
   /**
-   * Whether the bot lacks a permission it needs to send content to a supergroup it is a member of,
-   * as `MessageSendingService.lacksSupergroupSendPermission` decides; a private chat restricts no
-   * content.
+   * Whether the bot lacks a permission it needs to send content to a chat, as
+   * `MessageSendingService.lacksSendPermission` decides: only a supergroup restricts content.
    */
   lacksSendPermission(botId: number, chatId: number, content: OutgoingMessageContent): boolean {
-    return !isUserId(chatId) &&
-      this.#messageSending.lacksSupergroupSendPermission({
-        botId,
-        chat: { type: 'supergroup', chatId },
-        content,
-      });
+    return this.#messageSending.lacksSendPermission({
+      botId,
+      chat: getBotApiChatAddress(chatId),
+      content,
+    });
   }
 
   /**
@@ -295,136 +301,6 @@ export class BotMessageSender {
         }
         : {},
     };
-  }
-
-  #sendPrivateMessage(
-    botId: number,
-    content: OutgoingMessageContent,
-    { chatId, isContentProtected, isSilent, messageEffectId, ...replyMarkup }:
-      SendDestinationOptions,
-    { replyTo, externalReply, quote }: OutgoingReply,
-    { forwardInfo, mediaGroupId }: RepetitionDetails,
-  ): SendResult {
-    const result = this.#messageSending.sendPrivateChatMessage({
-      ...replyMarkup,
-      fromBotId: botId,
-      chat: { type: 'private', peerId: chatId },
-      content,
-      replyTo,
-      externalReply,
-      quote,
-      isContentProtected,
-      isSilent,
-      forwardInfo,
-      mediaGroupId,
-      messageEffectId,
-    });
-    if (result.sent) {
-      return {
-        sent: true,
-        message: this.#botMessageViews.viewPrivateMessageForBot(result.message),
-      };
-    }
-
-    return result.reason === 'text_invalid'
-      ? result
-      : { sent: false, reason: excludeMissingSenderFailure(botId, result.reason) };
-  }
-
-  #sendSupergroupMessage(
-    botId: number,
-    content: OutgoingMessageContent,
-    { chatId, isContentProtected, isSilent, messageEffectId, ...replyMarkup }:
-      SendDestinationOptions,
-    { replyTo, externalReply, quote }: OutgoingReply,
-    { forwardInfo, mediaGroupId }: RepetitionDetails,
-  ): SendResult {
-    const result = this.#messageSending.sendSupergroupMessage({
-      ...replyMarkup,
-      fromBotId: botId,
-      chat: { type: 'supergroup', chatId },
-      content,
-      replyTo,
-      externalReply,
-      quote,
-      isContentProtected,
-      isSilent,
-      forwardInfo,
-      mediaGroupId,
-      messageEffectId,
-    });
-    if (result.sent) {
-      return {
-        sent: true,
-        message: this.#botMessageViews.viewSupergroupMessage(result.message, botId),
-      };
-    }
-
-    return result.reason === 'text_invalid' || result.reason === 'send_permission_missing'
-      ? result
-      : { sent: false, reason: excludeMissingSenderFailure(botId, result.reason) };
-  }
-
-  #sendPrivateAlbum(
-    botId: number,
-    contents: readonly MediaContent[],
-    { chatId, isContentProtected, isSilent, messageEffectId }: SendDeliveryOptions,
-    { replyTo, externalReply, quote }: OutgoingReply,
-  ): SendMediaGroupResult {
-    const result = this.#messageSending.sendPrivateChatAlbum({
-      fromBotId: botId,
-      chat: { type: 'private', peerId: chatId },
-      contents,
-      replyTo,
-      externalReply,
-      quote,
-      isContentProtected,
-      isSilent,
-      messageEffectId,
-    });
-    if (result.sent) {
-      return {
-        sent: true,
-        messages: result.messages.map((message) =>
-          this.#botMessageViews.viewPrivateMessageForBot(message)
-        ),
-      };
-    }
-
-    return result.reason === 'text_invalid'
-      ? result
-      : { sent: false, reason: excludeMissingSenderFailure(botId, result.reason) };
-  }
-
-  #sendSupergroupAlbum(
-    botId: number,
-    contents: readonly MediaContent[],
-    { chatId, isContentProtected, isSilent, messageEffectId }: SendDeliveryOptions,
-    { replyTo, externalReply, quote }: OutgoingReply,
-  ): SendMediaGroupResult {
-    const result = this.#messageSending.sendSupergroupAlbum({
-      fromBotId: botId,
-      chat: { type: 'supergroup', chatId },
-      contents,
-      replyTo,
-      externalReply,
-      quote,
-      isContentProtected,
-      isSilent,
-      messageEffectId,
-    });
-    if (result.sent) {
-      return {
-        sent: true,
-        messages: result.messages.map((message) =>
-          this.#botMessageViews.viewSupergroupMessage(message, botId)
-        ),
-      };
-    }
-
-    return result.reason === 'text_invalid' || result.reason === 'send_permission_missing'
-      ? result
-      : { sent: false, reason: excludeMissingSenderFailure(botId, result.reason) };
   }
 }
 

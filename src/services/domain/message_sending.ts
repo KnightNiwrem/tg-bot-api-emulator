@@ -425,6 +425,12 @@ export interface BotSupergroupSendingTypes {
   readonly lateRefusalReason: never;
 }
 
+/**
+ * The types of a bot's send to one of its chats, whichever chat type its address selects: the
+ * private chat's or the supergroup's failures and messages.
+ */
+export type BotChatSendingTypes = BotPrivateChatSendingTypes | BotSupergroupSendingTypes;
+
 export type BotMessageSendResult<Types extends BotSendingTargetingTypes> =
   | { readonly sent: true; readonly message: Types['message'] }
   | (
@@ -613,9 +619,10 @@ interface MessageSendingServiceDependencies {
  * inline bots. While an account blocks a bot, neither can write to the other, as on Telegram,
  * where the bot's sends fail and a client asks the user to unblock the bot before writing to it.
  *
- * Each sender and chat type has its own entry points, which report exactly the failures its chat
- * type can produce, in Telegram's order. Results carry canonical messages; presenting them to an
- * observer is left to the caller.
+ * A bot's sends select their chat type's targeting by the chat's address, and an account's have
+ * entry points per chat type; each reports exactly the failures its chat types can produce, in
+ * Telegram's order. Results carry canonical messages; presenting them to an observer is left to
+ * the caller.
  */
 export class MessageSendingService {
   readonly #accounts: AccountLookup;
@@ -813,48 +820,42 @@ export class MessageSendingService {
   }
 
   /**
-   * Sends text, captioned media or other content from a bot to an account, or the content of an
-   * existing message as a forward or copy of it, as `#sendBotMessage` checks it.
+   * Sends text, captioned media or other content from a bot to one of its chats, its private
+   * chat with an account or a supergroup it is a member of, or the content of an existing message
+   * as a forward or copy of it, as `#sendBotMessage` checks it.
    */
-  sendPrivateChatMessage(
-    input: BotMessage<PrivateChatAddress>,
-  ): BotMessageSendResult<BotPrivateChatSendingTypes> {
-    return this.#sendBotMessage(this.#botPrivateChatTargeting, input);
+  sendChatMessage({ chat, ...input }: BotMessage<ChatAddress>): BotMessageSendResult<
+    BotChatSendingTypes
+  > {
+    return chat.type === 'private'
+      ? this.#sendBotMessage(this.#botPrivateChatTargeting, { ...input, chat })
+      : this.#sendBotMessage(this.#botSupergroupTargeting, { ...input, chat });
   }
 
-  /** Sends content from a bot to a supergroup it is a member of, as `#sendBotMessage` checks it. */
-  sendSupergroupMessage(
-    input: BotMessage<SupergroupChatAddress>,
-  ): BotMessageSendResult<BotSupergroupSendingTypes> {
-    return this.#sendBotMessage(this.#botSupergroupTargeting, input);
-  }
-
-  /** Sends a media album from a bot to an account, as `#sendBotAlbum` checks it. */
-  sendPrivateChatAlbum(
-    input: BotAlbum<PrivateChatAddress>,
-  ): BotAlbumSendResult<BotPrivateChatSendingTypes> {
-    return this.#sendBotAlbum(this.#botPrivateChatTargeting, input);
-  }
-
-  /** Sends a media album from a bot to a supergroup it is a member of, as `#sendBotAlbum` checks it. */
-  sendSupergroupAlbum(
-    input: BotAlbum<SupergroupChatAddress>,
-  ): BotAlbumSendResult<BotSupergroupSendingTypes> {
-    return this.#sendBotAlbum(this.#botSupergroupTargeting, input);
+  /** Sends a media album from a bot to one of its chats, as `#sendBotAlbum` checks it. */
+  sendChatAlbum({ chat, ...input }: BotAlbum<ChatAddress>): BotAlbumSendResult<
+    BotChatSendingTypes
+  > {
+    return chat.type === 'private'
+      ? this.#sendBotAlbum(this.#botPrivateChatTargeting, { ...input, chat })
+      : this.#sendBotAlbum(this.#botSupergroupTargeting, { ...input, chat });
   }
 
   /**
-   * Whether a bot that is a member of a supergroup lacks a permission it needs to send content
-   * there, as a send checks it; false for a bot that is not a member, whose sending fails for that
-   * instead.
+   * Whether a bot lacks a permission it needs to send content to one of its chats, as a send
+   * checks it: only a supergroup restricts content, and only for a bot that is a member, as one
+   * that is not fails to send for that instead.
    */
-  lacksSupergroupSendPermission(
+  lacksSendPermission(
     { botId, chat, content }: {
       readonly botId: number;
-      readonly chat: SupergroupChatAddress;
+      readonly chat: ChatAddress;
       readonly content: OutgoingMessageContent;
     },
   ): boolean {
+    if (chat.type === 'private') {
+      return false;
+    }
     const identification = this.#supergroups.identifyChatForBot(botId, chat);
     if (!identification.identified) {
       return false;

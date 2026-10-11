@@ -576,7 +576,9 @@ export class MessagePinningService {
    * pinned message by sending date, as TDLib's `last_pinned_message_id` is the greatest pinned
    * message ID; `undefined` when the chat pins none. The caller checks the reader's access.
    */
-  findNewestPinnedMessage(chat: ChatKey): ChatMessage | undefined {
+  findNewestPinnedMessage<Type extends ChatType>(
+    chat: ChatKeyOfType<Type>,
+  ): ChatMessageOfType<Type> | undefined {
     return this.#listPinnedMessages(chat)[0];
   }
 
@@ -703,7 +705,9 @@ export class MessagePinningService {
   }
 
   /** A chat's pinned messages, newest first: its history lists messages oldest first. */
-  #listPinnedMessages(chat: ChatKey): readonly ChatMessage[] {
+  #listPinnedMessages<Type extends ChatType>(
+    chat: ChatKeyOfType<Type>,
+  ): readonly ChatMessageOfType<Type>[] {
     return this.#messages.getChatMessages(chat).filter((message) => message.isPinned).reverse();
   }
 }

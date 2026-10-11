@@ -10,8 +10,6 @@ import type {
   BotApiDownloadableFile,
   BotApiMenuButton,
   BotApiMessage,
-  BotApiPrivateMessage,
-  BotApiSupergroupMessage,
   BotApiWebhookInfo,
 } from '../../types/bot_api.ts';
 import type { BotApiPoll } from '../../types/bot_api_poll.ts';
@@ -86,10 +84,13 @@ import type { WrittenMessageDraft } from '../../types/message_draft.ts';
 import {
   type ChatAction,
   type ChatActor,
+  type ChatAddress,
   type ChatKey,
   getBotApiChatAddress,
-  getBotApiChatKey,
+  getBotChatKey,
+  type PrivateChatAddress,
   type PrivateConversationKey,
+  type SupergroupChatAddress,
 } from '../../types/virtual_chat.ts';
 import {
   type ChatMessage,
@@ -167,12 +168,7 @@ import type {
   TextMessageReplacement,
 } from '../domain/message_content.ts';
 import type { MessageDeletionService } from '../domain/message_deletion.ts';
-import type {
-  BotCaptionEdit,
-  BotPrivateChatMessageTarget,
-  BotSupergroupMessageTarget,
-  MessageEditingService,
-} from '../domain/message_editing.ts';
+import type { BotChatMessageTarget, MessageEditingService } from '../domain/message_editing.ts';
 import type { MessagePinningService } from '../domain/message_pinning.ts';
 import type {
   ReactionChoiceFailureReason,
@@ -1534,18 +1530,13 @@ interface BotUpdateConsumers {
   getWebhookInfo(botId: number): BotApiWebhookInfo;
 }
 
-interface BotPrivateChat {
-  readonly type: 'private';
-  readonly accountId: number;
-}
-
 interface BotMessaging {
   isPrivateConversationStarted(
     key: { readonly accountId: number; readonly botId: number },
   ): boolean;
   checkBotChatActionAccess(input: {
     readonly fromBotId: number;
-    readonly to: BotPrivateChat;
+    readonly chat: PrivateChatAddress;
   }):
     | { readonly allowed: true }
     | {
@@ -1561,7 +1552,7 @@ interface BotMessaging {
 interface SupergroupBotMessaging {
   checkBotChatActionAccess(input: {
     readonly fromBotId: number;
-    readonly chatId: number;
+    readonly chat: SupergroupChatAddress;
   }):
     | { readonly allowed: true }
     | {
@@ -1570,33 +1561,25 @@ interface SupergroupBotMessaging {
     };
 }
 
-/** The message deletion that `deleteMessage` and `deleteMessages` carry out, by chat type. */
-type BotMessageDeletion = Pick<
-  MessageDeletionService,
-  'deletePrivateChatMessages' | 'deleteSupergroupMessages'
->;
+/** The message deletion that `deleteMessage` and `deleteMessages` carry out, by the chat's address. */
+type BotMessageDeletion = Pick<MessageDeletionService, 'deleteChatMessages'>;
 
 /**
  * The message editing that the edit methods and `stopPoll` carry out, by the target each addresses:
- * a message of a private chat or a supergroup, or an inline message.
+ * a message of one of the bot's chats, by the chat's address, or an inline message.
  */
 type BotMessageEditing = Pick<
   MessageEditingService,
   | 'findBotInlineMessage'
-  | 'editPrivateChatMessageText'
-  | 'editSupergroupMessageText'
+  | 'editChatMessageText'
   | 'editInlineMessageText'
-  | 'editPrivateChatMessageCaption'
-  | 'editSupergroupMessageCaption'
+  | 'editChatMessageCaption'
   | 'editInlineMessageCaption'
-  | 'editPrivateChatMessageMedia'
-  | 'editSupergroupMessageMedia'
+  | 'editChatMessageMedia'
   | 'editInlineMessageMedia'
-  | 'editPrivateChatMessageKeyboard'
-  | 'editSupergroupMessageKeyboard'
+  | 'editChatMessageKeyboard'
   | 'editInlineMessageKeyboard'
-  | 'stopPrivateChatPoll'
-  | 'stopSupergroupPoll'
+  | 'stopPoll'
 >;
 
 interface ChatMemberships {
@@ -1888,18 +1871,21 @@ interface BotDraftTextNormalizer {
 
 interface BotMessageViews {
   viewPollForCreator(poll: Poll): BotApiPoll;
-  viewPrivateMessageForBot(message: PrivateMessage): BotApiPrivateMessage;
-  viewSupergroupMessage(message: SupergroupMessage, observerId: number): BotApiSupergroupMessage;
+  viewMessageForBot(message: ChatMessage, botId: number): BotApiMessage;
   viewChatMember(input: {
     readonly chatId: number;
     readonly userId: number;
     readonly status: ChatMemberStatus;
     readonly observerBotId: number;
   }): BotApiChatMember | undefined;
-  viewChatFullInfo(input: {
+  viewPrivateChatFullInfo(input: {
+    readonly accountId: number;
+    readonly pinnedMessage: PrivateMessage | undefined;
+  }): BotApiChatFullInfo | undefined;
+  viewSupergroupChatFullInfo(input: {
     readonly chatId: number;
     readonly observerBotId: number;
-    readonly pinnedMessage: ChatMessage | undefined;
+    readonly pinnedMessage: SupergroupMessage | undefined;
     readonly primaryInviteLink: ChatInviteLink | undefined;
   }): BotApiChatFullInfo | undefined;
   viewChatInviteLink(link: ChatInviteLink, observerId: number): BotApiChatInviteLink;
@@ -2734,13 +2720,14 @@ export class BotApiService {
     authenticatedBot: VirtualBotProfile,
     { chatId, action }: SendChatActionRequest,
   ): SendChatActionResult {
-    const access = this.#checkBotChatActionAccess(authenticatedBot.id, chatId);
+    const chat = getBotApiChatAddress(chatId);
+    const access = this.#checkBotChatActionAccess(authenticatedBot.id, chat);
     if (!access.allowed) {
       return { sent: false, reason: access.reason };
     }
     this.#chatActions.recordBotChatAction({
       botId: authenticatedBot.id,
-      chat: getBotApiChatKey(authenticatedBot.id, chatId),
+      chat: getBotChatKey(authenticatedBot.id, chat),
       action,
     });
     return { sent: true };
@@ -2760,7 +2747,8 @@ export class BotApiService {
     authenticatedBot: VirtualBotProfile,
     { chatId, draftId, text, canStop, keepOnStop }: SendMessageDraftRequest,
   ): SendMessageDraftResult {
-    const access = this.#checkBotChatActionAccess(authenticatedBot.id, chatId);
+    const chat = getBotApiChatAddress(chatId);
+    const access = this.#checkBotChatActionAccess(authenticatedBot.id, chat);
     if (!access.allowed && access.reason !== 'bot_blocked') {
       return { sent: false, reason: access.reason };
     }
@@ -2771,7 +2759,7 @@ export class BotApiService {
     if (!textNormalization.normalized && textNormalization.failure.reason === 'text_invalid') {
       return { sent: false, ...textNormalization.failure };
     }
-    if (!isUserId(chatId)) {
+    if (chat.type !== 'private') {
       return { sent: false, reason: 'draft_chat_not_private' };
     }
     if (!access.allowed) {
@@ -2784,7 +2772,7 @@ export class BotApiService {
       return { sent: false, ...textNormalization.failure };
     }
     this.#messageDrafts.showBotDraft(
-      { accountId: chatId, botId: authenticatedBot.id },
+      { accountId: chat.peerId, botId: authenticatedBot.id },
       { draftId, text: textNormalization.formattedText, canStop, keepOnStop },
     );
     return { sent: true };
@@ -2796,34 +2784,20 @@ export class BotApiService {
    */
   #checkBotChatActionAccess(
     botId: number,
-    chatId: number,
+    chat: ChatAddress,
   ):
     | { readonly allowed: true }
     | { readonly allowed: false; readonly reason: BotChatActionAccessFailureReason } {
-    if (!isUserId(chatId)) {
-      const supergroupAccess = this.#supergroupBotMessages.checkBotChatActionAccess({
-        fromBotId: botId,
-        chatId,
-      });
-      if (supergroupAccess.allowed) {
-        return supergroupAccess;
-      }
-      if (supergroupAccess.reason === 'bot_not_found') {
-        throw new Error(`Authenticated bot ${botId} does not exist`);
-      }
-      return { allowed: false, reason: supergroupAccess.reason };
+    const access = chat.type === 'private'
+      ? this.#botMessages.checkBotChatActionAccess({ fromBotId: botId, chat })
+      : this.#supergroupBotMessages.checkBotChatActionAccess({ fromBotId: botId, chat });
+    if (access.allowed) {
+      return access;
     }
-    const privateAccess = this.#botMessages.checkBotChatActionAccess({
-      fromBotId: botId,
-      to: { type: 'private', accountId: chatId },
-    });
-    if (privateAccess.allowed) {
-      return privateAccess;
-    }
-    if (privateAccess.reason === 'bot_not_found') {
+    if (access.reason === 'bot_not_found') {
       throw new Error(`Authenticated bot ${botId} does not exist`);
     }
-    return { allowed: false, reason: privateAccess.reason };
+    return { allowed: false, reason: access.reason };
   }
 
   /**
@@ -2835,11 +2809,13 @@ export class BotApiService {
     authenticatedBot: VirtualBotProfile,
     { chatId, title }: SetChatTitleRequest,
   ): BotApiSetChatTitleResult {
-    if (isUserId(chatId)) {
-      return {
-        set: false,
-        reason: this.#getPrivateChatInfoChangeFailureReason(authenticatedBot, chatId),
-      };
+    const privateChatRefusal = this.#findPrivateChatRefusal(
+      authenticatedBot,
+      chatId,
+      'private_chat_info_unchangeable',
+    );
+    if (privateChatRefusal !== undefined) {
+      return { set: false, reason: privateChatRefusal };
     }
     const result = this.#chatMemberships.changeSupergroupTitle({
       actor: { kind: 'bot', botId: authenticatedBot.id },
@@ -2861,11 +2837,13 @@ export class BotApiService {
     authenticatedBot: VirtualBotProfile,
     { chatId, description }: SetChatDescriptionRequest,
   ): BotApiSetChatDescriptionResult {
-    if (isUserId(chatId)) {
-      return {
-        set: false,
-        reason: this.#getPrivateChatInfoChangeFailureReason(authenticatedBot, chatId),
-      };
+    const privateChatRefusal = this.#findPrivateChatRefusal(
+      authenticatedBot,
+      chatId,
+      'private_chat_info_unchangeable',
+    );
+    if (privateChatRefusal !== undefined) {
+      return { set: false, reason: privateChatRefusal };
     }
     const result = this.#chatMemberships.changeSupergroupDescription({
       actor: { kind: 'bot', botId: authenticatedBot.id },
@@ -2887,13 +2865,13 @@ export class BotApiService {
     authenticatedBot: VirtualBotProfile,
     { chatId, permissions }: SetChatPermissionsRequest,
   ): BotApiSetChatPermissionsResult {
-    if (isUserId(chatId)) {
-      return {
-        set: false,
-        reason: this.#isPrivateChatKnown(authenticatedBot, chatId)
-          ? 'private_chat_permissions_unchangeable'
-          : 'chat_not_found',
-      };
+    const privateChatRefusal = this.#findPrivateChatRefusal(
+      authenticatedBot,
+      chatId,
+      'private_chat_permissions_unchangeable',
+    );
+    if (privateChatRefusal !== undefined) {
+      return { set: false, reason: privateChatRefusal };
     }
     const result = this.#chatMemberships.changeDefaultPermissions({
       actor: { kind: 'bot', botId: authenticatedBot.id },
@@ -2907,19 +2885,6 @@ export class BotApiService {
   }
 
   /**
-   * Why a bot cannot change the information of a private chat: it has none to change, or, as for
-   * any method, the bot does not know the chat.
-   */
-  #getPrivateChatInfoChangeFailureReason(
-    authenticatedBot: VirtualBotProfile,
-    chatId: number,
-  ): 'chat_not_found' | 'private_chat_info_unchangeable' {
-    return this.#isPrivateChatKnown(authenticatedBot, chatId)
-      ? 'private_chat_info_unchangeable'
-      : 'chat_not_found';
-  }
-
-  /**
    * Leaves a supergroup, which the bot's own `my_chat_member` update and a service message record.
    * As on Telegram, a private chat cannot be left, and a supergroup the bot already left or was
    * removed from turns it away.
@@ -2928,13 +2893,13 @@ export class BotApiService {
     authenticatedBot: VirtualBotProfile,
     { chatId }: LeaveChatRequest,
   ): BotApiLeaveChatResult {
-    if (isUserId(chatId)) {
-      return {
-        left: false,
-        reason: this.#isPrivateChatKnown(authenticatedBot, chatId)
-          ? 'private_chat_not_leavable'
-          : 'chat_not_found',
-      };
+    const privateChatRefusal = this.#findPrivateChatRefusal(
+      authenticatedBot,
+      chatId,
+      'private_chat_not_leavable',
+    );
+    if (privateChatRefusal !== undefined) {
+      return { left: false, reason: privateChatRefusal };
     }
     const result = this.#chatMemberships.leaveChat({ memberId: authenticatedBot.id, chatId });
     if (result.left) {
@@ -2964,11 +2929,12 @@ export class BotApiService {
     authenticatedBot: VirtualBotProfile,
     { chatId, userId }: GetChatMemberRequest,
   ): GetChatMemberResult {
-    if (isUserId(chatId)) {
-      if (!this.#isPrivateChatKnown(authenticatedBot, chatId)) {
+    const chat = getBotApiChatAddress(chatId);
+    if (chat.type === 'private') {
+      if (!this.#isPrivateChatKnown(authenticatedBot, chat)) {
         return { found: false, reason: 'chat_not_found' };
       }
-      return userId === authenticatedBot.id || userId === chatId
+      return userId === authenticatedBot.id || userId === chat.peerId
         ? {
           found: true,
           member: this.#viewChatMember(authenticatedBot, {
@@ -3002,13 +2968,13 @@ export class BotApiService {
     authenticatedBot: VirtualBotProfile,
     { chatId, userId, customTitle }: SetChatAdministratorCustomTitleRequest,
   ): BotApiSetChatAdministratorCustomTitleResult {
-    if (isUserId(chatId)) {
-      return {
-        set: false,
-        reason: this.#isPrivateChatKnown(authenticatedBot, chatId)
-          ? 'method_unavailable_outside_groups'
-          : 'chat_not_found',
-      };
+    const privateChatRefusal = this.#findPrivateChatRefusal(
+      authenticatedBot,
+      chatId,
+      'method_unavailable_outside_groups',
+    );
+    if (privateChatRefusal !== undefined) {
+      return { set: false, reason: privateChatRefusal };
     }
     const result = this.#chatMemberships.setCustomTitleAsBot({
       actorBotId: authenticatedBot.id,
@@ -3030,13 +2996,13 @@ export class BotApiService {
     authenticatedBot: VirtualBotProfile,
     { chatId, includesOtherBots }: GetChatAdministratorsRequest,
   ): BotApiGetChatAdministratorsResult {
-    if (isUserId(chatId)) {
-      return {
-        found: false,
-        reason: this.#isPrivateChatKnown(authenticatedBot, chatId)
-          ? 'private_chat_has_no_administrators'
-          : 'chat_not_found',
-      };
+    const privateChatRefusal = this.#findPrivateChatRefusal(
+      authenticatedBot,
+      chatId,
+      'private_chat_has_no_administrators',
+    );
+    if (privateChatRefusal !== undefined) {
+      return { found: false, reason: privateChatRefusal };
     }
     const result = this.#chatMemberships.getChatAdministrators({
       observerBotId: authenticatedBot.id,
@@ -3061,16 +3027,19 @@ export class BotApiService {
    * link, as `ChatAdmissionService.findPrimaryInviteLinkOfBot` finds it.
    */
   getChat(authenticatedBot: VirtualBotProfile, { chatId }: GetChatRequest): BotApiGetChatResult {
-    let pinnedMessagesChat: ChatKey;
-    let primaryInviteLink: ChatInviteLink | undefined;
-    if (isUserId(chatId)) {
-      if (!this.#isPrivateChatKnown(authenticatedBot, chatId)) {
+    const chat = getBotApiChatAddress(chatId);
+    let fullInfo: BotApiChatFullInfo | undefined;
+    if (chat.type === 'private') {
+      if (!this.#isPrivateChatKnown(authenticatedBot, chat)) {
         return { found: false, reason: 'chat_not_found' };
       }
-      pinnedMessagesChat = {
-        type: 'private',
-        conversation: { accountId: chatId, botId: authenticatedBot.id },
-      };
+      fullInfo = this.#botMessageViews.viewPrivateChatFullInfo({
+        accountId: chat.peerId,
+        pinnedMessage: this.#messagePinning.findNewestPinnedMessage({
+          type: 'private',
+          conversation: { accountId: chat.peerId, botId: authenticatedBot.id },
+        }),
+      });
     } else {
       const result = this.#chatMemberships.getReadableSupergroup({
         observerBotId: authenticatedBot.id,
@@ -3079,22 +3048,21 @@ export class BotApiService {
       if (!result.found) {
         return { found: false, reason: excludeMissingBotFailure(authenticatedBot, result.reason) };
       }
-      pinnedMessagesChat = { type: 'supergroup', chatId };
-      primaryInviteLink = this.#chatAdmission.findPrimaryInviteLinkOfBot({
+      const primaryInviteLink = this.#chatAdmission.findPrimaryInviteLinkOfBot({
         botId: authenticatedBot.id,
         chatId,
       });
+      fullInfo = this.#botMessageViews.viewSupergroupChatFullInfo({
+        chatId,
+        observerBotId: authenticatedBot.id,
+        pinnedMessage: this.#messagePinning.findNewestPinnedMessage({ type: 'supergroup', chatId }),
+        primaryInviteLink,
+      });
     }
-    const chat = this.#botMessageViews.viewChatFullInfo({
-      chatId,
-      observerBotId: authenticatedBot.id,
-      pinnedMessage: this.#messagePinning.findNewestPinnedMessage(pinnedMessagesChat),
-      primaryInviteLink,
-    });
-    if (chat === undefined) {
+    if (fullInfo === undefined) {
       throw new Error(`Chat ${chatId} was found but cannot be shown`);
     }
-    return { found: true, chat };
+    return { found: true, chat: fullInfo };
   }
 
   /** Returns how many members a chat has: both participants of a private chat, or a supergroup's. */
@@ -3102,8 +3070,9 @@ export class BotApiService {
     authenticatedBot: VirtualBotProfile,
     { chatId }: GetChatMemberCountRequest,
   ): BotApiGetChatMemberCountResult {
-    if (isUserId(chatId)) {
-      return this.#isPrivateChatKnown(authenticatedBot, chatId)
+    const chat = getBotApiChatAddress(chatId);
+    if (chat.type === 'private') {
+      return this.#isPrivateChatKnown(authenticatedBot, chat)
         ? { found: true, memberCount: 2 }
         : { found: false, reason: 'chat_not_found' };
     }
@@ -3124,13 +3093,13 @@ export class BotApiService {
     authenticatedBot: VirtualBotProfile,
     { chatId, userId, untilUnixSeconds }: BanChatMemberRequest,
   ): BotApiBanChatMemberResult {
-    if (isUserId(chatId)) {
-      return {
-        banned: false,
-        reason: this.#isPrivateChatKnown(authenticatedBot, chatId)
-          ? 'private_chat_members_not_bannable'
-          : 'chat_not_found',
-      };
+    const privateChatRefusal = this.#findPrivateChatRefusal(
+      authenticatedBot,
+      chatId,
+      'private_chat_members_not_bannable',
+    );
+    if (privateChatRefusal !== undefined) {
+      return { banned: false, reason: privateChatRefusal };
     }
     const result = this.#chatMemberships.banChatMember({
       actorBotId: authenticatedBot.id,
@@ -3153,13 +3122,13 @@ export class BotApiService {
     authenticatedBot: VirtualBotProfile,
     { chatId, userId, permissions, untilUnixSeconds }: RestrictChatMemberRequest,
   ): BotApiRestrictChatMemberResult {
-    if (isUserId(chatId)) {
-      return {
-        restricted: false,
-        reason: this.#isPrivateChatKnown(authenticatedBot, chatId)
-          ? 'method_unavailable_outside_supergroups'
-          : 'chat_not_found',
-      };
+    const privateChatRefusal = this.#findPrivateChatRefusal(
+      authenticatedBot,
+      chatId,
+      'method_unavailable_outside_supergroups',
+    );
+    if (privateChatRefusal !== undefined) {
+      return { restricted: false, reason: privateChatRefusal };
     }
     const result = this.#chatMemberships.restrictChatMember({
       actorBotId: authenticatedBot.id,
@@ -3184,13 +3153,13 @@ export class BotApiService {
     authenticatedBot: VirtualBotProfile,
     { chatId, userId, rights }: PromoteChatMemberRequest,
   ): BotApiPromoteChatMemberResult {
-    if (isUserId(chatId)) {
-      return {
-        promoted: false,
-        reason: this.#isPrivateChatKnown(authenticatedBot, chatId)
-          ? 'method_unavailable_in_private_chats'
-          : 'chat_not_found',
-      };
+    const privateChatRefusal = this.#findPrivateChatRefusal(
+      authenticatedBot,
+      chatId,
+      'method_unavailable_in_private_chats',
+    );
+    if (privateChatRefusal !== undefined) {
+      return { promoted: false, reason: privateChatRefusal };
     }
     const result = this.#chatMemberships.promoteChatMemberAsBot({
       actorBotId: authenticatedBot.id,
@@ -3212,13 +3181,13 @@ export class BotApiService {
     authenticatedBot: VirtualBotProfile,
     { chatId, userId, onlyIfBanned }: UnbanChatMemberRequest,
   ): BotApiUnbanChatMemberResult {
-    if (isUserId(chatId)) {
-      return {
-        unbanned: false,
-        reason: this.#isPrivateChatKnown(authenticatedBot, chatId)
-          ? 'method_unavailable_in_private_chats'
-          : 'chat_not_found',
-      };
+    const privateChatRefusal = this.#findPrivateChatRefusal(
+      authenticatedBot,
+      chatId,
+      'method_unavailable_in_private_chats',
+    );
+    if (privateChatRefusal !== undefined) {
+      return { unbanned: false, reason: privateChatRefusal };
     }
     const result = this.#chatMemberships.unbanChatMember({
       actorBotId: authenticatedBot.id,
@@ -3241,11 +3210,13 @@ export class BotApiService {
     authenticatedBot: VirtualBotProfile,
     { chatId }: ExportChatInviteLinkRequest,
   ): BotApiExportChatInviteLinkResult {
-    if (isUserId(chatId)) {
-      return {
-        exported: false,
-        reason: this.#describePrivateChatInviteLinkFailure(authenticatedBot, chatId),
-      };
+    const privateChatRefusal = this.#findPrivateChatRefusal(
+      authenticatedBot,
+      chatId,
+      'private_chat_has_no_invite_links',
+    );
+    if (privateChatRefusal !== undefined) {
+      return { exported: false, reason: privateChatRefusal };
     }
     const result = this.#chatAdmission.exportPrimaryInviteLinkAsBot({
       exporterBotId: authenticatedBot.id,
@@ -3266,11 +3237,13 @@ export class BotApiService {
     { chatId, name, expiresAtUnixSeconds, memberLimit, createsJoinRequest }:
       CreateChatInviteLinkRequest,
   ): BotApiCreateChatInviteLinkResult {
-    if (isUserId(chatId)) {
-      return {
-        created: false,
-        reason: this.#describePrivateChatInviteLinkFailure(authenticatedBot, chatId),
-      };
+    const privateChatRefusal = this.#findPrivateChatRefusal(
+      authenticatedBot,
+      chatId,
+      'private_chat_has_no_invite_links',
+    );
+    if (privateChatRefusal !== undefined) {
+      return { created: false, reason: privateChatRefusal };
     }
     const result = this.#chatAdmission.createInviteLinkAsBot({
       creatorBotId: authenticatedBot.id,
@@ -3298,11 +3271,13 @@ export class BotApiService {
     { chatId, inviteLink, name, expiresAtUnixSeconds, memberLimit, createsJoinRequest }:
       EditChatInviteLinkRequest,
   ): BotApiEditChatInviteLinkResult {
-    if (isUserId(chatId)) {
-      return {
-        edited: false,
-        reason: this.#describePrivateChatInviteLinkFailure(authenticatedBot, chatId),
-      };
+    const privateChatRefusal = this.#findPrivateChatRefusal(
+      authenticatedBot,
+      chatId,
+      'private_chat_has_no_invite_links',
+    );
+    if (privateChatRefusal !== undefined) {
+      return { edited: false, reason: privateChatRefusal };
     }
     const result = this.#chatAdmission.editInviteLinkAsBot({
       editorBotId: authenticatedBot.id,
@@ -3331,11 +3306,13 @@ export class BotApiService {
     authenticatedBot: VirtualBotProfile,
     { chatId, inviteLink }: RevokeChatInviteLinkRequest,
   ): BotApiRevokeChatInviteLinkResult {
-    if (isUserId(chatId)) {
-      return {
-        revoked: false,
-        reason: this.#describePrivateChatInviteLinkFailure(authenticatedBot, chatId),
-      };
+    const privateChatRefusal = this.#findPrivateChatRefusal(
+      authenticatedBot,
+      chatId,
+      'private_chat_has_no_invite_links',
+    );
+    if (privateChatRefusal !== undefined) {
+      return { revoked: false, reason: privateChatRefusal };
     }
     const result = this.#chatAdmission.revokeInviteLinkAsBot({
       revokerBotId: authenticatedBot.id,
@@ -3349,19 +3326,6 @@ export class BotApiService {
       revoked: true,
       inviteLink: this.#botMessageViews.viewChatInviteLink(result.link, authenticatedBot.id),
     };
-  }
-
-  /**
-   * Why a bot cannot manage invite links in a private chat, which has none, as TDLib's
-   * `can_manage_dialog_invite_links` refuses; a private chat the bot does not know is not found.
-   */
-  #describePrivateChatInviteLinkFailure(
-    authenticatedBot: VirtualBotProfile,
-    chatId: number,
-  ): 'private_chat_has_no_invite_links' | 'chat_not_found' {
-    return this.#isPrivateChatKnown(authenticatedBot, chatId)
-      ? 'private_chat_has_no_invite_links'
-      : 'chat_not_found';
   }
 
   /**
@@ -3400,13 +3364,13 @@ export class BotApiService {
     { chatId, userId }: DecideChatJoinRequestRequest,
     decide: (input: DecideJoinRequestAsBotInput) => DecideJoinRequestAsBotResult,
   ): BotApiDecideChatJoinRequestResult {
-    if (isUserId(chatId)) {
-      return {
-        decided: false,
-        reason: this.#isPrivateChatKnown(authenticatedBot, chatId)
-          ? 'private_chat_has_no_join_requests'
-          : 'chat_not_found',
-      };
+    const privateChatRefusal = this.#findPrivateChatRefusal(
+      authenticatedBot,
+      chatId,
+      'private_chat_has_no_join_requests',
+    );
+    if (privateChatRefusal !== undefined) {
+      return { decided: false, reason: privateChatRefusal };
     }
     const result = decide({ deciderBotId: authenticatedBot.id, chatId, userId });
     return result.decided
@@ -3427,19 +3391,14 @@ export class BotApiService {
     if (!replacement.resolved) {
       return { edited: false, ...replacement.failure };
     }
-    const edit = { content: replacement.content, inlineKeyboard };
-    const result = isUserId(chatId)
-      ? this.#presentPrivateEdit(this.#messageEditing.editPrivateChatMessageText({
-        ...this.#privateChatMessageTarget(authenticatedBot, chatId, messageId),
-        ...edit,
-      }))
-      : this.#presentSupergroupEdit(
-        authenticatedBot,
-        this.#messageEditing.editSupergroupMessageText({
-          ...this.#supergroupMessageTarget(authenticatedBot, chatId, messageId),
-          ...edit,
-        }),
-      );
+    const result = this.#presentChatMessageEdit(
+      authenticatedBot,
+      this.#messageEditing.editChatMessageText({
+        ...this.#chatMessageTarget(authenticatedBot, chatId, messageId),
+        content: replacement.content,
+        inlineKeyboard,
+      }),
+    );
     if (result.edited) {
       return result;
     }
@@ -3462,24 +3421,16 @@ export class BotApiService {
     { chatId, messageId, caption, showsCaptionAboveMedia, inlineKeyboard }:
       EditMessageCaptionRequest,
   ): EditMessageCaptionResult {
-    const captionEdit: BotCaptionEdit = {
-      caption: caption.text,
-      captionEntities: caption.entities,
-      showsCaptionAboveMedia,
-      inlineKeyboard,
-    };
-    const result = isUserId(chatId)
-      ? this.#presentPrivateEdit(this.#messageEditing.editPrivateChatMessageCaption({
-        ...this.#privateChatMessageTarget(authenticatedBot, chatId, messageId),
-        ...captionEdit,
-      }))
-      : this.#presentSupergroupEdit(
-        authenticatedBot,
-        this.#messageEditing.editSupergroupMessageCaption({
-          ...this.#supergroupMessageTarget(authenticatedBot, chatId, messageId),
-          ...captionEdit,
-        }),
-      );
+    const result = this.#presentChatMessageEdit(
+      authenticatedBot,
+      this.#messageEditing.editChatMessageCaption({
+        ...this.#chatMessageTarget(authenticatedBot, chatId, messageId),
+        caption: caption.text,
+        captionEntities: caption.entities,
+        showsCaptionAboveMedia,
+        inlineKeyboard,
+      }),
+    );
     if (result.edited) {
       return result;
     }
@@ -3506,19 +3457,14 @@ export class BotApiService {
     if (!mediaResolution.resolved) {
       return { edited: false, ...mediaResolution.failure };
     }
-    const edit = { media: mediaResolution.file, inlineKeyboard };
-    const result = isUserId(chatId)
-      ? this.#presentPrivateEdit(this.#messageEditing.editPrivateChatMessageMedia({
-        ...this.#privateChatMessageTarget(authenticatedBot, chatId, messageId),
-        ...edit,
-      }))
-      : this.#presentSupergroupEdit(
-        authenticatedBot,
-        this.#messageEditing.editSupergroupMessageMedia({
-          ...this.#supergroupMessageTarget(authenticatedBot, chatId, messageId),
-          ...edit,
-        }),
-      );
+    const result = this.#presentChatMessageEdit(
+      authenticatedBot,
+      this.#messageEditing.editChatMessageMedia({
+        ...this.#chatMessageTarget(authenticatedBot, chatId, messageId),
+        media: mediaResolution.file,
+        inlineKeyboard,
+      }),
+    );
     if (result.edited) {
       return result;
     }
@@ -3537,18 +3483,13 @@ export class BotApiService {
     authenticatedBot: VirtualBotProfile,
     { chatId, messageId, inlineKeyboard }: EditMessageReplyMarkupRequest,
   ): EditMessageResult<EditMessageReplyMarkupFailureReason> {
-    const result = isUserId(chatId)
-      ? this.#presentPrivateEdit(this.#messageEditing.editPrivateChatMessageKeyboard({
-        ...this.#privateChatMessageTarget(authenticatedBot, chatId, messageId),
+    const result = this.#presentChatMessageEdit(
+      authenticatedBot,
+      this.#messageEditing.editChatMessageKeyboard({
+        ...this.#chatMessageTarget(authenticatedBot, chatId, messageId),
         inlineKeyboard,
-      }))
-      : this.#presentSupergroupEdit(
-        authenticatedBot,
-        this.#messageEditing.editSupergroupMessageKeyboard({
-          ...this.#supergroupMessageTarget(authenticatedBot, chatId, messageId),
-          inlineKeyboard,
-        }),
-      );
+      }),
+    );
     if (result.edited) {
       return result;
     }
@@ -3565,15 +3506,10 @@ export class BotApiService {
     authenticatedBot: VirtualBotProfile,
     { chatId, messageId, inlineKeyboard }: StopPollRequest,
   ): StopPollResult {
-    const result = isUserId(chatId)
-      ? this.#messageEditing.stopPrivateChatPoll({
-        ...this.#privateChatMessageTarget(authenticatedBot, chatId, messageId),
-        inlineKeyboard,
-      })
-      : this.#messageEditing.stopSupergroupPoll({
-        ...this.#supergroupMessageTarget(authenticatedBot, chatId, messageId),
-        inlineKeyboard,
-      });
+    const result = this.#messageEditing.stopPoll({
+      ...this.#chatMessageTarget(authenticatedBot, chatId, messageId),
+      inlineKeyboard,
+    });
     if (result.stopped) {
       return { stopped: true, poll: this.#botMessageViews.viewPollForCreator(result.poll) };
     }
@@ -3644,7 +3580,7 @@ export class BotApiService {
     authenticatedBot: VirtualBotProfile,
     { chatId, messageId, emojis }: SetMessageReactionRequest,
   ): BotApiSetMessageReactionResult {
-    if (isUserId(chatId)) {
+    if (getBotApiChatAddress(chatId).type === 'private') {
       return { set: false, reason: 'private_chat_reactions_unsupported' };
     }
     const result = this.#messageReactions.setBotMessageReaction({
@@ -4307,22 +4243,16 @@ export class BotApiService {
       undefined;
   }
 
-  /** The message of the bot's private chat with a user that a chat message edit addresses. */
-  #privateChatMessageTarget(
+  /**
+   * The message of one of the bot's chats that a chat message edit addresses, by the chat its
+   * `chat_id` names and the ID by which that chat's messages are addressed.
+   */
+  #chatMessageTarget(
     authenticatedBot: VirtualBotProfile,
     chatId: number,
     messageId: number,
-  ): BotPrivateChatMessageTarget {
-    return { fromBotId: authenticatedBot.id, chat: { type: 'private', peerId: chatId }, messageId };
-  }
-
-  /** The supergroup message that a chat message edit addresses. */
-  #supergroupMessageTarget(
-    authenticatedBot: VirtualBotProfile,
-    chatId: number,
-    messageId: number,
-  ): BotSupergroupMessageTarget {
-    return { fromBotId: authenticatedBot.id, chat: { type: 'supergroup', chatId }, messageId };
+  ): BotChatMessageTarget {
+    return { fromBotId: authenticatedBot.id, chat: getBotApiChatAddress(chatId), messageId };
   }
 
   #deleteChatMessages(
@@ -4332,17 +4262,11 @@ export class BotApiService {
   ):
     | { readonly deleted: true; readonly deletedMessageCount: number }
     | { readonly deleted: false; readonly reason: MessageDeletionFailureReason } {
-    const result = isUserId(chatId)
-      ? this.#messageDeletion.deletePrivateChatMessages({
-        fromBotId: authenticatedBot.id,
-        chat: { type: 'private', peerId: chatId },
-        messageIds,
-      })
-      : this.#messageDeletion.deleteSupergroupMessages({
-        fromBotId: authenticatedBot.id,
-        chat: { type: 'supergroup', chatId },
-        messageIds,
-      });
+    const result = this.#messageDeletion.deleteChatMessages({
+      fromBotId: authenticatedBot.id,
+      chat: getBotApiChatAddress(chatId),
+      messageIds,
+    });
     if (result.deleted) {
       return result;
     }
@@ -4358,20 +4282,37 @@ export class BotApiService {
       case 'bot_not_found':
         throw new Error(`Authenticated bot ${authenticatedBot.id} does not exist`);
       default: {
-        const unhandledFailure: never = result;
-        throw new Error(
-          `Unhandled bot message deletion failure: ${JSON.stringify(unhandledFailure)}`,
-        );
+        const unhandledReason: never = result.reason;
+        throw new Error(`Unhandled bot message deletion failure: ${unhandledReason}`);
       }
     }
   }
 
   /** A bot knows a private chat once its account has written to it. */
-  #isPrivateChatKnown(authenticatedBot: VirtualBotProfile, accountId: number): boolean {
+  #isPrivateChatKnown(authenticatedBot: VirtualBotProfile, chat: PrivateChatAddress): boolean {
     return this.#botMessages.isPrivateConversationStarted({
-      accountId,
+      accountId: chat.peerId,
       botId: authenticatedBot.id,
     });
+  }
+
+  /**
+   * Why a method that only supergroups support refuses the chat a bot's `chat_id` addresses: a
+   * private chat the bot knows refuses it for the method's own reason, and one it does not know
+   * is not found, as for any method; `undefined` for a supergroup, which the method reaches itself.
+   */
+  #findPrivateChatRefusal<PrivateChatRefusalReason extends string>(
+    authenticatedBot: VirtualBotProfile,
+    chatId: number,
+    privateChatRefusalReason: PrivateChatRefusalReason,
+  ): PrivateChatRefusalReason | 'chat_not_found' | undefined {
+    const chat = getBotApiChatAddress(chatId);
+    if (chat.type === 'supergroup') {
+      return undefined;
+    }
+    return this.#isPrivateChatKnown(authenticatedBot, chat)
+      ? privateChatRefusalReason
+      : 'chat_not_found';
   }
 
   /**
@@ -4398,25 +4339,15 @@ export class BotApiService {
     return member;
   }
 
-  #presentPrivateEdit<Failure extends { readonly edited: false }>(
-    result: { readonly edited: true; readonly message: PrivateMessage } | Failure,
-  ): { readonly edited: true; readonly message: BotApiMessage } | Failure {
-    return result.edited
-      ? {
-        edited: true,
-        message: this.#botMessageViews.viewPrivateMessageForBot(result.message),
-      }
-      : result;
-  }
-
-  #presentSupergroupEdit<Failure extends { readonly edited: false }>(
+  /** Shows the bot the message its edit of a chat message left, as the bot sees its chat. */
+  #presentChatMessageEdit<Failure extends { readonly edited: false }>(
     authenticatedBot: VirtualBotProfile,
-    result: { readonly edited: true; readonly message: SupergroupMessage } | Failure,
+    result: { readonly edited: true; readonly message: ChatMessage } | Failure,
   ): { readonly edited: true; readonly message: BotApiMessage } | Failure {
     return result.edited
       ? {
         edited: true,
-        message: this.#botMessageViews.viewSupergroupMessage(result.message, authenticatedBot.id),
+        message: this.#botMessageViews.viewMessageForBot(result.message, authenticatedBot.id),
       }
       : result;
   }

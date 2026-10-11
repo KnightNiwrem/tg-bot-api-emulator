@@ -8,7 +8,7 @@ import {
   withVideoStartTimestamp,
 } from '../../types/message_forward.ts';
 import { type Poll, type PollId, showsQuizSolution } from '../../types/poll.ts';
-import { isUserId } from '../../types/telegram_identity.ts';
+import { getBotApiChatAddress } from '../../types/virtual_chat.ts';
 import {
   type CanonicalMessageId,
   type ChatMessage,
@@ -283,7 +283,7 @@ export class BotMessageRepeater {
       return { sent: false, reason: 'repeated_messages_not_found' };
     }
     if (messageEffectId !== undefined) {
-      if (!isUserId(chatId)) {
+      if (getBotApiChatAddress(chatId).type !== 'private') {
         return { sent: false, reason: 'message_effect_not_allowed_in_chat' };
       }
       if (repeatedMessages.length > 1) {

@@ -2,7 +2,7 @@ import { assertEquals, assertRejects, assertThrows } from '@std/assert';
 
 import { grantSupergroupAdministratorRights } from '../src/types/chat_membership.ts';
 import type { VirtualBotProfile } from '../src/types/virtual_bot.ts';
-import type { SupergroupMessage } from '../src/types/virtual_message.ts';
+import type { ChatMessage, SupergroupMessage } from '../src/types/virtual_message.ts';
 import {
   createBotApiCommandSession,
   FAILED_RECORDING_MESSAGE,
@@ -232,7 +232,7 @@ function createEditingFixture() {
     return sending.message;
   };
   const adaMessage = sendAdaText('Hello');
-  const alphaSending = session.messageSending.sendSupergroupMessage({
+  const alphaSending = session.messageSending.sendChatMessage({
     fromBotId: alpha.id,
     chat: { type: 'supergroup', chatId },
     content: { kind: 'text', text: 'Hi' },
@@ -248,8 +248,8 @@ function createEditingFixture() {
   if (!privateStart.sent) {
     throw new Error(`Expected Ada to start her chat: ${JSON.stringify(privateStart)}`);
   }
-  const chatMessageIdOf = (message: SupergroupMessage) =>
-    session.botMessageViews.viewSupergroupMessage(message, alpha.id).message_id;
+  const chatMessageIdOf = (message: ChatMessage) =>
+    session.botMessageViews.viewMessageForBot(message, alpha.id).message_id;
 
   return {
     ...harness,

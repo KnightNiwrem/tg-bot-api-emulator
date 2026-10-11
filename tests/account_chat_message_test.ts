@@ -132,12 +132,12 @@ function createReaderFixture() {
     chat: { type: 'private', peerId: bot.profile.id },
     content: { kind: 'text', text: '/start' },
   });
-  const adaBotReply = messageSending.sendPrivateChatMessage({
+  const adaBotReply = messageSending.sendChatMessage({
     fromBotId: bot.profile.id,
     chat: { type: 'private', peerId: ada.profile.id },
     content: { kind: 'text', text: 'Hello' },
   });
-  const gracePrompt = messageSending.sendPrivateChatMessage({
+  const gracePrompt = messageSending.sendChatMessage({
     fromBotId: bot.profile.id,
     chat: { type: 'private', peerId: grace.profile.id },
     content: { kind: 'text', text: 'Press the button to join' },

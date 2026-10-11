@@ -53,6 +53,19 @@ export interface BotSupergroupMessagesDeletion {
   readonly messageIds: readonly number[];
 }
 
+/**
+ * Messages of one of the bot's chats, which the bot deletes by the chat's address: messages of its
+ * private chat with an account, as `BotPrivateChatMessagesDeletion` addresses them, or of a
+ * supergroup, as `BotSupergroupMessagesDeletion` does. The address's type selects the chat type's
+ * targeting.
+ */
+export interface BotChatMessagesDeletion {
+  readonly fromBotId: number;
+  readonly chat: ChatAddress;
+  /** The IDs by which the chat's messages are addressed, as its chat type's deletion names them. */
+  readonly messageIds: readonly number[];
+}
+
 /** A message of an account's private chat with a bot, which the account deletes. */
 export interface AccountPrivateChatMessageDeletion {
   readonly fromAccountId: number;
@@ -163,6 +176,12 @@ export interface AccountSupergroupDeletionTypes {
   readonly refusalReason: 'message_not_deletable';
 }
 
+/**
+ * The types of a bot's deletion in one of its chats, whichever chat type its address selects: the
+ * private chat's or the supergroup's failures.
+ */
+export type BotChatDeletionTypes = BotPrivateChatDeletionTypes | BotSupergroupDeletionTypes;
+
 export type BotDeletionResult<Types extends DeletionTargetingTypes> =
   | {
     readonly deleted: true;
@@ -241,8 +260,9 @@ interface MessageDeletionDependencies {
  * deletion limit never applies. A deleted message keeps its ID in each message box, because
  * Telegram never reuses message IDs.
  *
- * Each sender and chat type has its own entry point, which reports exactly the failures its chat
- * type can produce, in Telegram's order.
+ * A bot's deletion selects its chat type's targeting by the chat's address, and an account's has
+ * an entry point per chat type; each reports exactly the failures its chat types can produce, in
+ * Telegram's order.
  *
  * Each deletion runs as one transaction: the messages it deletes, and the reply interface a
  * deleted message took with it, go together, or, should any step fail, not at all. Every condition
@@ -337,23 +357,17 @@ export class MessageDeletionService {
   }
 
   /**
-   * Deletes messages of the bot's private chat, of either participant. IDs that identify no
-   * message of the chat, including messages already deleted, are skipped.
+   * Deletes messages of one of the bot's chats: in its private chat, messages of either
+   * participant; in a supergroup, only once the bot may delete every message it finds, and
+   * otherwise none. IDs that identify no message of the chat, including messages already deleted,
+   * are skipped.
    */
-  deletePrivateChatMessages(
-    input: BotPrivateChatMessagesDeletion,
-  ): BotDeletionResult<BotPrivateChatDeletionTypes> {
-    return this.#deleteMessagesByBot(this.#botPrivateChatTargeting, input);
-  }
-
-  /**
-   * Deletes messages of a supergroup, as in a private chat, once the bot may delete every message
-   * it finds; otherwise it deletes none.
-   */
-  deleteSupergroupMessages(
-    input: BotSupergroupMessagesDeletion,
-  ): BotDeletionResult<BotSupergroupDeletionTypes> {
-    return this.#deleteMessagesByBot(this.#botSupergroupTargeting, input);
+  deleteChatMessages(
+    { chat, ...input }: BotChatMessagesDeletion,
+  ): BotDeletionResult<BotChatDeletionTypes> {
+    return chat.type === 'private'
+      ? this.#deleteMessagesByBot(this.#botPrivateChatTargeting, { ...input, chat })
+      : this.#deleteMessagesByBot(this.#botSupergroupTargeting, { ...input, chat });
   }
 
   /**

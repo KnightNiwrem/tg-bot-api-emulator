@@ -92,7 +92,6 @@ import {
   listRichMessageFiles,
   type RichMessage,
 } from '../../types/rich_message.ts';
-import { isUserId } from '../../types/telegram_identity.ts';
 import type { VirtualAccount } from '../../types/virtual_account.ts';
 import type { VirtualBot } from '../../types/virtual_bot.ts';
 import type {
@@ -521,34 +520,40 @@ export class BotMessageViewService {
   }
 
   /**
-   * Returns everything `getChat` shows a bot about a chat, whose access the caller checked: the
-   * bot's private chat with an account, or a supergroup; `undefined` for neither. The chat's newest
-   * pinned message, if given, is shown as a replied message is, without its own `reply_to_message`.
+   * Returns everything `getChat` shows a bot about its private chat with an account, whose access
+   * the caller checked; `undefined` for an account that does not exist. The chat's newest pinned
+   * message, if given, is shown as a replied message is, without its own `reply_to_message`.
    */
-  viewChatFullInfo(
+  viewPrivateChatFullInfo(
+    { accountId, pinnedMessage }: {
+      readonly accountId: number;
+      /** The chat's newest pinned message; omitted when it pins none. */
+      readonly pinnedMessage: PrivateMessage | undefined;
+    },
+  ): BotApiChatFullInfo | undefined {
+    const account = this.#accounts.getById(accountId);
+    return account === undefined ? undefined : projectPrivateChatFullInfo(
+      account,
+      pinnedMessage === undefined ? undefined : this.#viewPinnedPrivateMessage(pinnedMessage),
+    );
+  }
+
+  /**
+   * Returns everything `getChat` shows a bot about a supergroup, whose access the caller checked;
+   * `undefined` for a chat that is no supergroup. The newest pinned message is shown as for a
+   * private chat, and the observer's own primary invite link in full.
+   */
+  viewSupergroupChatFullInfo(
     { chatId, observerBotId, pinnedMessage, primaryInviteLink }: {
       readonly chatId: number;
       readonly observerBotId: number;
       /** The chat's newest pinned message; omitted when it pins none. */
-      readonly pinnedMessage: ChatMessage | undefined;
-      /** The observer's own primary link of a supergroup to show; omitted for none. */
+      readonly pinnedMessage: SupergroupMessage | undefined;
+      /** The observer's own primary link of the supergroup to show; omitted for none. */
       readonly primaryInviteLink: ChatInviteLink | undefined;
     },
   ): BotApiChatFullInfo | undefined {
-    if (isUserId(chatId)) {
-      const account = this.#accounts.getById(chatId);
-      if (pinnedMessage !== undefined && pinnedMessage.kind !== 'private_message') {
-        throw new Error(`Pinned message ${pinnedMessage.id} is not a private message`);
-      }
-      return account === undefined ? undefined : projectPrivateChatFullInfo(
-        account,
-        pinnedMessage === undefined ? undefined : this.#viewPinnedPrivateMessage(pinnedMessage),
-      );
-    }
     const chat = this.#sharedChats.getSharedChat(chatId);
-    if (pinnedMessage !== undefined && pinnedMessage.kind !== 'supergroup_message') {
-      throw new Error(`Pinned message ${pinnedMessage.id} is not a supergroup message`);
-    }
     return chat?.kind === 'supergroup'
       ? projectSupergroupChatFullInfo(
         chat,

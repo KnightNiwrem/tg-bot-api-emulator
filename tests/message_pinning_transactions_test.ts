@@ -1,7 +1,7 @@
 import { assertEquals, assertRejects, assertThrows } from '@std/assert';
 
 import { grantSupergroupAdministratorRights } from '../src/types/chat_membership.ts';
-import type { SupergroupMessage } from '../src/types/virtual_message.ts';
+import type { ChatMessage } from '../src/types/virtual_message.ts';
 import {
   createBotApiCommandSession,
   FAILED_RECORDING_MESSAGE,
@@ -168,7 +168,7 @@ function createPinningFixture() {
     chat: { type: 'supergroup', chatId },
     content: { kind: 'text', text: 'Hello' },
   });
-  const alphaSending = session.messageSending.sendSupergroupMessage({
+  const alphaSending = session.messageSending.sendChatMessage({
     fromBotId: alpha.id,
     chat: { type: 'supergroup', chatId },
     content: { kind: 'text', text: 'Hi' },
@@ -176,8 +176,8 @@ function createPinningFixture() {
   if (!adaSending.sent || !alphaSending.sent) {
     throw new Error('Expected both messages to be sent');
   }
-  const chatMessageIdOf = (message: SupergroupMessage) =>
-    session.botMessageViews.viewSupergroupMessage(message, alpha.id).message_id;
+  const chatMessageIdOf = (message: ChatMessage) =>
+    session.botMessageViews.viewMessageForBot(message, alpha.id).message_id;
 
   return {
     ...harness,

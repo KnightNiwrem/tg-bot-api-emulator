@@ -66,7 +66,7 @@ Deno.test('CallbackQueryService presses buttons on bot messages in a supergroup 
     chat: { type: 'supergroup', chatId: supergroup.id },
     content: { kind: 'text', text: 'Hello' },
   });
-  const botMessage = messageSending.sendSupergroupMessage({
+  const botMessage = messageSending.sendChatMessage({
     fromBotId: chat.bot.profile.id,
     chat: { type: 'supergroup', chatId: supergroup.id },
     inlineKeyboard: [[{ kind: 'callback', text: 'Yes', callbackData: 'yes' }]],
@@ -423,7 +423,7 @@ function createCallbackQueryFixture() {
     chat: { type: 'private', peerId: bot.profile.id },
     content: { kind: 'text', text: '/start' },
   });
-  const botMessage = messageSending.sendPrivateChatMessage({
+  const botMessage = messageSending.sendChatMessage({
     fromBotId: bot.profile.id,
     chat: { type: 'private', peerId: account.profile.id },
     inlineKeyboard: [[

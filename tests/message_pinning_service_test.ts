@@ -508,7 +508,7 @@ Deno.test('unpinning all clears every pin of one chat, whoever wrote or pinned i
       true,
       `message ${messageId} is pinned`,
     );
-  const botNotice = session.messageSending.sendSupergroupMessage({
+  const botNotice = session.messageSending.sendChatMessage({
     fromBotId: pinningBot,
     chat: { type: 'supergroup', chatId },
     content: { kind: 'text', text: 'bot notice' },
@@ -526,7 +526,7 @@ Deno.test('unpinning all clears every pin of one chat, whoever wrote or pinned i
     'messages by the bot and by accounts are pinned in the supergroup',
   );
   pin(adaPinner, { type: 'private', peerId: pinningBot }, sendToPinningBot("ada's"));
-  const botReply = session.messageSending.sendPrivateChatMessage({
+  const botReply = session.messageSending.sendChatMessage({
     fromBotId: pinningBot,
     chat: { type: 'private', peerId: ada },
     content: { kind: 'text', text: 'bot reply' },

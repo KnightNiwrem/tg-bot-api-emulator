@@ -117,9 +117,9 @@ function createSharedChatSubject(chatType: ChatType): SharedChatSubject {
     return {
       ...common,
       sendBotMessage: (input) =>
-        messageSending.sendPrivateChatMessage({ fromBotId: botId, chat: botChat, ...input }),
+        messageSending.sendChatMessage({ fromBotId: botId, chat: botChat, ...input }),
       sendBotAlbum: (contents) =>
-        messageSending.sendPrivateChatAlbum({ fromBotId: botId, chat: botChat, contents }),
+        messageSending.sendChatAlbum({ fromBotId: botId, chat: botChat, contents }),
       sendAccountText: (text) =>
         messageSending.sendAccountPrivateChatMessage({
           fromAccountId: adaId,
@@ -127,14 +127,14 @@ function createSharedChatSubject(chatType: ChatType): SharedChatSubject {
           content: { kind: 'text', text },
         }),
       editBotText: (messageId, input) =>
-        messageEditing.editPrivateChatMessageText({
+        messageEditing.editChatMessageText({
           fromBotId: botId,
           chat: botChat,
           messageId,
           ...input,
         }),
       editBotKeyboard: (messageId, inlineKeyboard) =>
-        messageEditing.editPrivateChatMessageKeyboard({
+        messageEditing.editChatMessageKeyboard({
           fromBotId: botId,
           chat: botChat,
           messageId,
@@ -185,10 +185,8 @@ function createSharedChatSubject(chatType: ChatType): SharedChatSubject {
   const chat = { type: 'supergroup', chatId } as const satisfies ChatAddress;
   return {
     ...common,
-    sendBotMessage: (input) =>
-      messageSending.sendSupergroupMessage({ fromBotId: botId, chat, ...input }),
-    sendBotAlbum: (contents) =>
-      messageSending.sendSupergroupAlbum({ fromBotId: botId, chat, contents }),
+    sendBotMessage: (input) => messageSending.sendChatMessage({ fromBotId: botId, chat, ...input }),
+    sendBotAlbum: (contents) => messageSending.sendChatAlbum({ fromBotId: botId, chat, contents }),
     sendAccountText: (text) =>
       messageSending.sendAccountSupergroupMessage({
         fromAccountId: adaId,
@@ -196,9 +194,9 @@ function createSharedChatSubject(chatType: ChatType): SharedChatSubject {
         content: { kind: 'text', text },
       }),
     editBotText: (messageId, input) =>
-      messageEditing.editSupergroupMessageText({ fromBotId: botId, chat, messageId, ...input }),
+      messageEditing.editChatMessageText({ fromBotId: botId, chat, messageId, ...input }),
     editBotKeyboard: (messageId, inlineKeyboard) =>
-      messageEditing.editSupergroupMessageKeyboard({
+      messageEditing.editChatMessageKeyboard({
         fromBotId: botId,
         chat,
         messageId,
