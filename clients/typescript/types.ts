@@ -42,6 +42,14 @@ import type {
   getInlineQueryContract,
   sendInlineQueryContract,
 } from '../../control_contracts/inline_queries.ts';
+import type {
+  getCallbackQueryContract,
+  pressCallbackButtonContract,
+} from '../../control_contracts/callback_queries.ts';
+import type {
+  getPrivateMessageDraftContract,
+  stopPrivateMessageDraftContract,
+} from '../../control_contracts/message_drafts.ts';
 import type { createSessionContract } from '../../control_contracts/sessions.ts';
 import type {
   createSupergroupContract,
@@ -676,18 +684,10 @@ export interface AccountPinnedMessagesInput<Target extends MessageTarget = Messa
   readonly chat: Target;
 }
 
-export interface PressCallbackButtonInput {
-  readonly chat: MessageTarget;
-  /** The ID of the message carrying the button, as message history shows it. */
-  readonly message_id: number;
-  /** The callback data of the button to press, in the inline keyboard or the rich message. */
-  readonly callback_data: string;
-  /**
-   * Creates the query already expired: the bot still receives it but cannot answer it, as when a
-   * bot that was offline catches up on queries whose answer deadline has passed.
-   */
-  readonly expired?: boolean;
-}
+/** The callback button to press, on a bot message of a chat of the account. */
+export type PressCallbackButtonInput = ReadonlySnapshot<
+  ControlOperationRequest<typeof pressCallbackButtonContract>['body']
+>;
 
 /** A message showing a poll, in a chat of the account. */
 export interface AccountPollMessageInput<Target extends MessageTarget = MessageTarget> {
@@ -1849,27 +1849,10 @@ export interface ChatAction {
     | 'upload_video_note';
 }
 
-/**
- * The draft of a message a bot is still generating, as an account's client shows it in its private
- * chat with the bot.
- */
-export interface MessageDraft {
-  /**
-   * The draft's 64-bit ID as the bot chose it, in Telegram's decimal text form, as the
-   * `stopped_message_generation` update of the official Bot API server writes it.
-   */
-  readonly draft_id: string;
-  /** The draft's text; empty while the client shows a "Thinking…" placeholder. */
-  readonly text: string;
-  /** Omitted when the text has no entities. */
-  readonly entities?: readonly MessageEntity[];
-  /** Whether the bot asked for a Stop button, which `stopMessageDraft` presses. */
-  readonly can_stop: boolean;
-  /** Whether the draft stays shown once the account presses Stop. */
-  readonly keep_on_stop: boolean;
-  /** Whether the account pressed Stop; the client then shows no Stop button. */
-  readonly is_stopped: boolean;
-}
+/** The draft of a message a bot is generating, as the account's client shows it. */
+export type MessageDraft = NonNullable<
+  ReadonlySnapshot<ControlOperationResult<typeof getPrivateMessageDraftContract>['message_draft']>
+>;
 
 /** The commands one bot of a supergroup suggests to an account. */
 export interface SupergroupBotCommands {
@@ -1877,26 +1860,16 @@ export interface SupergroupBotCommands {
   readonly commands: readonly BotCommand[];
 }
 
-export interface CallbackQueryAnswer {
-  /** Omitted when the answer shows no notification. */
-  readonly text?: string;
-  readonly show_alert: boolean;
-  /** The link that starts the bot, which the client opens; omitted when the answer has none. */
-  readonly url?: string;
-  readonly cache_time: number;
-}
+/** A callback button press by an account, with the bot's answer once it has answered. */
+export type CallbackQuery = ReadonlySnapshot<
+  ControlOperationResult<typeof getCallbackQueryContract>['callback_query']
+>;
 
 /** Whether the bot can still answer a callback query, and if not, why. */
-export type CallbackQueryStatus = 'awaiting_answer' | 'answered' | 'expired';
+export type CallbackQueryStatus = CallbackQuery['status'];
 
-/** A callback button press by an account, with the bot's answer once it has answered. */
-export interface CallbackQuery {
-  readonly id: string;
-  readonly callback_data: string;
-  readonly status: CallbackQueryStatus;
-  /** The bot's answer when `status` is `answered`, and `null` otherwise. */
-  readonly answer: CallbackQueryAnswer | null;
-}
+/** The bot's answer to a callback query. */
+export type CallbackQueryAnswer = NonNullable<CallbackQuery['answer']>;
 
 /** An inline query an account types in a chat, for the inline bot whose username precedes it. */
 export type SendInlineQueryInput = ReadonlySnapshot<
@@ -2429,11 +2402,9 @@ export interface AccountMessageDraftInput {
 }
 
 /** The draft an action applies to: the one a private chat shows. */
-export interface ShownMessageDraftInput {
-  readonly chat: PrivateMessageTarget;
-  /** The ID of the draft the test expects the chat to show; omitted for whichever it shows. */
-  readonly draft_id?: string;
-}
+export type ShownMessageDraftInput =
+  & { readonly chat: PrivateMessageTarget }
+  & Readonly<NonNullable<ControlOperationRequest<typeof stopPrivateMessageDraftContract>['body']>>;
 
 export interface AccountBotCommandsInput {
   readonly chat: PrivateMessageTarget;

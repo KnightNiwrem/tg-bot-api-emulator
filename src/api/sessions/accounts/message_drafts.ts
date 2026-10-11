@@ -1,42 +1,33 @@
-import { type Context, Hono } from 'hono';
-import { z } from 'zod';
+import { Hono } from 'hono';
 
-import type { EmulationSession } from '../../../types/emulation_session.ts';
+import { INVALID_REQUEST_REASON } from '../../../../control_contracts/control_errors.ts';
 import {
-  controlErrorResponse,
-  invalidControlRequestResponse,
-} from '../../control_error_response.ts';
-import { answerWithActionReceipt } from '../action_receipt.ts';
-import { type ControlRequestInputReading, readPathParameters } from '../control_request_input.ts';
-import { readJsonRequestBody } from '../json_request_body.ts';
+  expirePrivateMessageDraftContract,
+  getPrivateMessageDraftContract,
+  stopPrivateMessageDraftContract,
+} from '../../../../control_contracts/message_drafts.ts';
+import type { ControlOperationRefusal } from '../../../../control_contracts/operation_contract.ts';
+import type { EmulationSession } from '../../../types/emulation_session.ts';
+import { isInt64DecimalText } from '../../../types/telegram_int64.ts';
+import { registerControlOperation } from '../../control_operation_route.ts';
 import type { SessionRouteContextTypes } from '../session_route_context_types.ts';
-import { PRIVATE_CONVERSATION_PATH, privateConversationPathSchema } from './account_paths.ts';
 
-const PRIVATE_MESSAGE_DRAFT_PATH = `${PRIVATE_CONVERSATION_PATH}/message-draft` as const;
-const PRIVATE_MESSAGE_DRAFT_EXPIRATION_PATH = `${PRIVATE_MESSAGE_DRAFT_PATH}/expiration` as const;
-const PRIVATE_MESSAGE_DRAFT_STOP_PATH = `${PRIVATE_MESSAGE_DRAFT_PATH}/stop` as const;
-
-/** Telegram's decimal text form of a nonzero 64-bit integer, without leading zeros. */
-const NONZERO_DECIMAL_INTEGER_PATTERN = /^-?[1-9][0-9]*$/;
-
-/** The range of Telegram's 64-bit identifiers. */
-const MIN_INT64 = -(2n ** 63n);
-const MAX_INT64 = 2n ** 63n - 1n;
-
-/** A draft ID in Telegram's decimal text form, which a draft action compares as written. */
-const draftIdSchema = z.string().refine(isDraftIdText, {
-  message: 'Expected a nonzero 64-bit integer in decimal text',
-});
-
-const shownDraftActionRequestSchema = z.strictObject({
-  /** The draft the test expects the chat to show; omitted to act on whichever draft it shows. */
-  draft_id: draftIdSchema.optional(),
-});
+/** Where the account routes are mounted within the server, as a contract path template. */
+const ACCOUNT_COLLECTION_MOUNT_PATH = '/sessions/{sessionId}/accounts';
 
 type MessageDrafts = EmulationSession['messageDrafts'];
 
-/** The draft an action applies to: the one a private chat shows, as the test expects it. */
-type ShownMessageDraftTarget = Parameters<MessageDrafts['stopPrivateMessageDraft']>[0];
+/** Why the draft an action applies to was not found as the test expects it. */
+type ShownDraftLookupFailureReason = Extract<
+  ReturnType<MessageDrafts['expirePrivateMessageDraft']>,
+  { expired: false }
+>['reason'];
+
+/** Why pressing the Stop button of the draft a private chat shows was refused. */
+type DraftStopFailureReason = Extract<
+  ReturnType<MessageDrafts['stopPrivateMessageDraft']>,
+  { stopped: false }
+>['reason'];
 
 /**
  * Routes through which an account reads the message draft a bot streams to its private chat and
@@ -46,118 +37,128 @@ type ShownMessageDraftTarget = Parameters<MessageDrafts['stopPrivateMessageDraft
 export function createMessageDraftRoutes(): Hono<SessionRouteContextTypes> {
   const accountRoutes = new Hono<SessionRouteContextTypes>();
 
-  accountRoutes.get(PRIVATE_MESSAGE_DRAFT_PATH, (context) => {
-    const conversationPath = readPathParameters(privateConversationPathSchema, context.req.param());
-    if (!conversationPath.valid) {
-      return invalidControlRequestResponse(context, conversationPath.issues);
-    }
-    const { messageDrafts, botMessageViews } = context.get('emulationSession');
-    const result = messageDrafts.getPrivateMessageDraft(conversationPath.value);
-    if (!result.found) {
-      return controlErrorResponse(context, 404, result.reason);
-    }
-    const { draft } = result;
-    return context.json({
-      message_draft: draft === undefined ? null : {
-        draft_id: draft.draftId,
-        ...botMessageViews.viewMessageText(draft.text),
-        can_stop: draft.canStop,
-        keep_on_stop: draft.keepOnStop,
-        is_stopped: draft.isStopped,
-      },
-    });
-  });
+  registerControlOperation(
+    accountRoutes,
+    ACCOUNT_COLLECTION_MOUNT_PATH,
+    getPrivateMessageDraftContract,
+    ({ params: { accountId, botId } }, context) => {
+      const { messageDrafts, botMessageViews } = context.get('emulationSession');
+      const result = messageDrafts.getPrivateMessageDraft({ accountId, botId });
+      if (!result.found) {
+        return { status: 404, body: { reason: result.reason } };
+      }
+      const { draft } = result;
+      if (draft === undefined) {
+        return { status: 200, body: { message_draft: null } };
+      }
+      const { text, entities } = botMessageViews.viewMessageText(draft.text);
+      return {
+        status: 200,
+        body: {
+          message_draft: {
+            draft_id: draft.draftId,
+            text,
+            ...(entities === undefined ? {} : { entities: [...entities] }),
+            can_stop: draft.canStop,
+            keep_on_stop: draft.keepOnStop,
+            is_stopped: draft.isStopped,
+          },
+        },
+      };
+    },
+  );
 
-  accountRoutes.post(PRIVATE_MESSAGE_DRAFT_EXPIRATION_PATH, async (context) => {
-    const target = await readShownDraftTarget(context);
-    if (!target.valid) {
-      return invalidControlRequestResponse(context, target.issues);
-    }
-    return answerWithActionReceipt(context, ({ messageDrafts }) => {
-      const result = messageDrafts.expirePrivateMessageDraft(
-        target.value,
-      );
-      return result.expired
-        ? context.body(null, 204)
-        : controlErrorResponse(context, draftActionFailureStatus(result.reason), result.reason);
-    });
-  });
+  registerControlOperation(
+    accountRoutes,
+    ACCOUNT_COLLECTION_MOUNT_PATH,
+    expirePrivateMessageDraftContract,
+    ({ params: { accountId, botId }, body: { draft_id: expectedDraftId } }, context) => {
+      if (expectedDraftId !== undefined && !isInt64DecimalText(expectedDraftId)) {
+        return refuseDraftIdOutOfRange();
+      }
+      const result = context.get('emulationSession').messageDrafts.expirePrivateMessageDraft({
+        accountId,
+        botId,
+        expectedDraftId,
+      });
+      if (result.expired) {
+        return { status: 204 };
+      }
+      return refuseShownDraftLookup(result.reason);
+    },
+  );
 
-  accountRoutes.post(PRIVATE_MESSAGE_DRAFT_STOP_PATH, async (context) => {
-    const target = await readShownDraftTarget(context);
-    if (!target.valid) {
-      return invalidControlRequestResponse(context, target.issues);
-    }
-    return answerWithActionReceipt(context, ({ messageDrafts }) => {
-      const result = messageDrafts.stopPrivateMessageDraft(
-        target.value,
-      );
-      return result.stopped
-        ? context.body(null, 204)
-        : controlErrorResponse(context, draftActionFailureStatus(result.reason), result.reason);
-    });
-  });
+  registerControlOperation(
+    accountRoutes,
+    ACCOUNT_COLLECTION_MOUNT_PATH,
+    stopPrivateMessageDraftContract,
+    ({ params: { accountId, botId }, body: { draft_id: expectedDraftId } }, context) => {
+      if (expectedDraftId !== undefined && !isInt64DecimalText(expectedDraftId)) {
+        return refuseDraftIdOutOfRange();
+      }
+      const result = context.get('emulationSession').messageDrafts.stopPrivateMessageDraft({
+        accountId,
+        botId,
+        expectedDraftId,
+      });
+      return result.stopped ? { status: 204 } : refuseDraftStop(result.reason);
+    },
+  );
 
   return accountRoutes;
 }
 
 /**
- * Reads the draft an action applies to: the private chat's from the path, guarded by the
- * `draft_id` of a body, which may be empty.
+ * The refusal of a `draft_id` outside the signed 64-bit range, a rule its contract's pattern
+ * cannot state.
  */
-async function readShownDraftTarget(
-  context: Context<SessionRouteContextTypes>,
-): Promise<ControlRequestInputReading<ShownMessageDraftTarget>> {
-  const conversationPath = readPathParameters(privateConversationPathSchema, context.req.param());
-  if (!conversationPath.valid) {
-    return conversationPath;
-  }
-  const requestBody = await readJsonRequestBody(context.req, shownDraftActionRequestSchema, {
-    allowsEmptyBody: true,
-  });
-  return requestBody.valid
-    ? {
-      valid: true,
-      value: { ...conversationPath.value, expectedDraftId: requestBody.value.draft_id },
-    }
-    : requestBody;
+function refuseDraftIdOutOfRange(): ControlOperationRefusal<
+  typeof expirePrivateMessageDraftContract
+> {
+  return {
+    status: 400,
+    body: {
+      reason: INVALID_REQUEST_REASON,
+      issues: [{
+        source: 'body',
+        path: ['draft_id'],
+        code: 'invalid_value',
+        message: 'A draft ID is a signed 64-bit integer',
+      }],
+    },
+  };
 }
 
 /**
- * An unknown account or bot, or a chat that shows no draft, is not found; a draft without a Stop
- * button forbids stopping it; and a draft other than the one the test expects, or one already
- * stopped, conflicts with the action.
+ * An unknown account or bot, or a chat that shows no draft, is not found; and a draft other than
+ * the one the test expects conflicts with the action.
  */
-function draftActionFailureStatus(
-  reason:
-    | Extract<ReturnType<MessageDrafts['expirePrivateMessageDraft']>, { expired: false }>['reason']
-    | Extract<ReturnType<MessageDrafts['stopPrivateMessageDraft']>, { stopped: false }>['reason'],
-): 403 | 404 | 409 {
+function refuseShownDraftLookup(reason: ShownDraftLookupFailureReason) {
   switch (reason) {
     case 'account_not_found':
     case 'bot_not_found':
     case 'draft_not_found':
-      return 404;
-    case 'draft_not_stoppable':
-      return 403;
+      return { status: 404, body: { reason } } as const;
     case 'draft_id_mismatch':
-    case 'draft_already_stopped':
-      return 409;
+      return { status: 409, body: { reason } } as const;
     default: {
       const unhandledReason: never = reason;
-      throw new Error(`Unhandled message draft action failure: ${unhandledReason}`);
+      throw new Error(`Unhandled message draft lookup failure: ${unhandledReason}`);
     }
   }
 }
 
 /**
- * Whether text is a nonzero 64-bit draft ID in Telegram's decimal text form. Only text of that
- * form is parsed as a number, so other text is refused without throwing.
+ * Besides the refusals of finding the draft, a draft without a Stop button forbids stopping it,
+ * and a draft already stopped conflicts with stopping it again.
  */
-function isDraftIdText(text: string): boolean {
-  if (!NONZERO_DECIMAL_INTEGER_PATTERN.test(text)) {
-    return false;
+function refuseDraftStop(reason: DraftStopFailureReason) {
+  switch (reason) {
+    case 'draft_not_stoppable':
+      return { status: 403, body: { reason } } as const;
+    case 'draft_already_stopped':
+      return { status: 409, body: { reason } } as const;
+    default:
+      return refuseShownDraftLookup(reason);
   }
-  const draftId = BigInt(text);
-  return draftId >= MIN_INT64 && draftId <= MAX_INT64;
 }
