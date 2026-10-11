@@ -14,18 +14,23 @@ import {
 import { BOT_API_ERRORS } from '../errors/error_catalogue.ts';
 import { presentQueryAnswerFailure } from '../errors/query_answer_failure_presenter.ts';
 import {
-  answeredPreparation,
   badRequestDescription,
-  type BotApiCallPreparation,
-  botApiError,
   type BotApiMethod,
   type BotApiMethodContext,
   botApiResult,
 } from '../method_call.ts';
+import {
+  answerWith,
+  answerWithBadRequest,
+  type BotApiStepCall,
+  type BotApiStepResult,
+  commandMethodOfSteps,
+  proceedWith,
+  startSteps,
+} from '../method_steps.ts';
 import { readInlineKeyboardParameter } from '../reply_markup_reading.ts';
 import {
   booleanParameter,
-  type BotApiRequestParameters,
   type BotApiUploadedFiles,
   integerParameter,
   jsonParameter,
@@ -35,15 +40,6 @@ import {
   readRichMessageParameter,
 } from '../rich_message_parameter.ts';
 import { excludeRichMessageWebFiles } from '../web_file_parameter.ts';
-
-/**
- * The methods that answer a user's callback query or inline query, each executed as a command in
- * its call's transaction.
- */
-export const QUERY_ANSWER_METHODS: readonly BotApiMethod[] = [
-  { name: 'answerCallbackQuery', recordsActivity: true, prepare: prepareAnswerCallbackQuery },
-  { name: 'answerInlineQuery', recordsActivity: true, prepare: prepareAnswerInlineQuery },
-];
 
 /** How the Bot API server reports that it cannot read an inline query result. */
 const INLINE_QUERY_RESULT_ERROR_PREFIX = "can't parse InlineQueryResult: ";
@@ -67,10 +63,11 @@ const answerCallbackQueryParametersSchema = z.strictObject({
 });
 
 // `switch_pm_text` and `switch_pm_parameter` are the older form of a `button` that opens the bot's
-// private chat, which Telegram still accepts.
+// private chat, which Telegram still accepts. The official server's
+// `process_answer_inline_query_query` reads the button before the results, so the schema names a
+// problem with the button first.
 const answerInlineQueryParametersSchema = z.strictObject({
   inline_query_id: z.string().default(''),
-  results: jsonParameter(z.array(z.unknown())).optional(),
   cache_time: integerParameter(
     z.int().transform((cacheTimeSeconds) =>
       Math.min(Math.max(cacheTimeSeconds, 0), MAX_INLINE_QUERY_CACHE_TIME_SECONDS)
@@ -81,67 +78,103 @@ const answerInlineQueryParametersSchema = z.strictObject({
   button: inlineQueryResultsButtonParameter().optional(),
   switch_pm_text: z.string().default(''),
   switch_pm_parameter: z.string().default(''),
+  results: jsonParameter(z.array(z.unknown())).optional(),
 });
 
-type InlineQueryResultRequest = Parameters<
-  EmulationSession['botApi']['answerInlineQuery']
->[1]['results'][number];
+type AnswerInlineQueryParameters = z.output<typeof answerInlineQueryParametersSchema>;
+
+type InlineQueryAnswerRequest = Parameters<EmulationSession['botApi']['answerInlineQuery']>[1];
+
+type InlineQueryResultRequest = InlineQueryAnswerRequest['results'][number];
 
 /** What an inline query result's `input_message_content` sends, as the service reads it. */
 type InlineResultMessageContentRequest = NonNullable<InlineQueryResultRequest['messageContent']>;
 
-function prepareAnswerCallbackQuery(
-  context: BotApiMethodContext,
-  parameters: BotApiRequestParameters,
-): BotApiCallPreparation {
-  const parsedParameters = answerCallbackQueryParametersSchema.safeParse(parameters);
-  if (!parsedParameters.success) {
-    return answeredPreparation(
-      botApiError(400, 'Bad Request: invalid answerCallbackQuery parameters'),
-    );
-  }
-
-  return {
-    kind: 'command',
-    execute: () => {
-      const result = context.session.botApi.answerCallbackQuery(
-        context.bot,
-        {
-          callbackQueryId: parsedParameters.data.callback_query_id,
-          text: parsedParameters.data.text,
-          showAlert: parsedParameters.data.show_alert,
-          cacheTimeSeconds: parsedParameters.data.cache_time,
-          url: parsedParameters.data.url,
-        },
-      );
+/**
+ * The methods that answer a user's callback query or inline query, each executed as a command in
+ * its call's transaction.
+ */
+export const QUERY_ANSWER_METHODS: readonly BotApiMethod[] = [
+  commandMethodOfSteps({
+    name: 'answerCallbackQuery',
+    recordsActivity: true,
+    parameters: answerCallbackQueryParametersSchema,
+    steps: ({ parameters }) => startSteps(parameters),
+    execute: (context, parameters) => {
+      const result = context.session.botApi.answerCallbackQuery(context.bot, {
+        callbackQueryId: parameters.callback_query_id,
+        text: parameters.text,
+        showAlert: parameters.show_alert,
+        cacheTimeSeconds: parameters.cache_time,
+        url: parameters.url,
+      });
       return result.answered ? botApiResult(true) : presentQueryAnswerFailure(result);
     },
-  };
+  }),
+  // As the official server's `process_answer_inline_query_query` reads them, the button comes
+  // before the results.
+  commandMethodOfSteps({
+    name: 'answerInlineQuery',
+    recordsActivity: true,
+    parameters: answerInlineQueryParametersSchema,
+    steps: (call) =>
+      startSteps(call.parameters)
+        .andThen(readInlineQueryAnswerButton)
+        .andThen((answer) => readInlineQueryAnswerResults(call, answer)),
+    execute: (context, request) => {
+      const result = context.session.botApi.answerInlineQuery(context.bot, request);
+      return result.answered ? botApiResult(true) : presentQueryAnswerFailure(result);
+    },
+  }),
+];
+
+/** An inline query's answer as the steps read it, before its results are read. */
+type InlineQueryAnswerWithoutResults = Omit<InlineQueryAnswerRequest, 'results'> & {
+  readonly resultValues: readonly unknown[];
+};
+
+/**
+ * The step that reads an inline query's answer but its results: the `button`, or else the older
+ * `switch_pm_text` and `switch_pm_parameter`, which open the bot's private chat.
+ */
+function readInlineQueryAnswerButton(
+  parameters: AnswerInlineQueryParameters,
+): BotApiStepResult<InlineQueryAnswerWithoutResults> {
+  const button = parameters.button ?? (parameters.switch_pm_text.length === 0 ? undefined : {
+    kind: 'start_bot' as const,
+    text: parameters.switch_pm_text,
+    startParameter: parameters.switch_pm_parameter,
+  });
+  return proceedWith({
+    inlineQueryId: parameters.inline_query_id,
+    cacheTimeSeconds: parameters.cache_time,
+    isPersonal: parameters.is_personal,
+    nextOffset: parameters.next_offset,
+    button,
+    resultValues: parameters.results ?? [],
+  });
 }
 
-function prepareAnswerInlineQuery(
-  context: BotApiMethodContext,
-  parameters: BotApiRequestParameters,
-  uploadedFiles: BotApiUploadedFiles,
-): BotApiCallPreparation {
-  const invalidParametersDescription = 'Bad Request: invalid answerInlineQuery parameters';
-  const parsedParameters = answerInlineQueryParametersSchema.safeParse(parameters);
-  if (!parsedParameters.success) {
-    return answeredPreparation(botApiError(400, invalidParametersDescription));
-  }
-  const { data } = parsedParameters;
+/**
+ * The step that reads an inline query's results until one cannot be read: the fields of every
+ * result first, then, result by result, its inline keyboard and what it sends and shows.
+ */
+function readInlineQueryAnswerResults(
+  { context, uploadedFiles, invalidParametersDescription }: BotApiStepCall<unknown>,
+  { resultValues, ...answer }: InlineQueryAnswerWithoutResults,
+): BotApiStepResult<InlineQueryAnswerRequest> {
   const resultsReading = readInlineQueryResultsParameter(
-    data.results ?? [],
+    resultValues,
     invalidParametersDescription,
   );
   if (!resultsReading.read) {
-    return answeredPreparation(botApiError(400, resultsReading.description));
+    return answerWithBadRequest(resultsReading.description);
   }
   const results: InlineQueryResultRequest[] = [];
   for (const result of resultsReading.results) {
     const keyboardReading = readInlineKeyboardParameter(context, result.inlineKeyboard);
     if (!keyboardReading.read) {
-      return answeredPreparation(keyboardReading.errorAnswer);
+      return answerWith(keyboardReading.errorAnswer);
     }
     const resultReading = readInlineQueryResultContent(
       context,
@@ -150,33 +183,11 @@ function prepareAnswerInlineQuery(
       invalidParametersDescription,
     );
     if (!resultReading.read) {
-      return answeredPreparation(botApiError(400, resultReading.description));
+      return answerWithBadRequest(resultReading.description);
     }
     results.push(resultReading.result);
   }
-  const button = data.button ?? (data.switch_pm_text.length === 0 ? undefined : {
-    kind: 'start_bot' as const,
-    text: data.switch_pm_text,
-    startParameter: data.switch_pm_parameter,
-  });
-
-  return {
-    kind: 'command',
-    execute: () => {
-      const result = context.session.botApi.answerInlineQuery(
-        context.bot,
-        {
-          inlineQueryId: data.inline_query_id,
-          results,
-          cacheTimeSeconds: data.cache_time,
-          isPersonal: data.is_personal,
-          nextOffset: data.next_offset,
-          button,
-        },
-      );
-      return result.answered ? botApiResult(true) : presentQueryAnswerFailure(result);
-    },
-  };
+  return proceedWith({ ...answer, results });
 }
 
 /**

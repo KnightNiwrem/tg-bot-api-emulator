@@ -558,7 +558,7 @@ Deno.test('answerInlineQuery and the inline query routes follow Telegram checks'
       'Bad Request: NEXT_OFFSET_INVALID',
       'Bad Request: RESULT_ID_EMPTY',
       "Bad Request: inline keyboard button URL 'go' is invalid: Wrong HTTP URL",
-      'Bad Request: invalid answerInlineQuery parameters',
+      'Bad Request: invalid answerInlineQuery parameters: results',
       'Bad Request: query is too old and response timeout expired or query ID is invalid',
     ])
   ) {

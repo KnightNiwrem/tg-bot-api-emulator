@@ -266,6 +266,56 @@ Deno.test('the bot settings methods name the parameter that does not fit their s
   );
 });
 
+Deno.test('the query answer methods name the parameter that does not fit their schema', async () => {
+  const { api, botApiPath } = await createFixture();
+  const unparsableButton = "Bad Request: can't parse inline query results button JSON object";
+  const cases: readonly [method: string, parameters: object, description: string][] = [
+    [
+      'answerCallbackQuery',
+      { callback_query_id: '1', text: 'x'.repeat(201) },
+      'Bad Request: invalid answerCallbackQuery parameters: text',
+    ],
+    [
+      'answerInlineQuery',
+      { inline_query_id: '1', results: [], is_personal: 'secret' },
+      'Bad Request: invalid answerInlineQuery parameters: is_personal',
+    ],
+    ['answerInlineQuery', { inline_query_id: '1', button: 'not JSON' }, unparsableButton],
+    [
+      'answerInlineQuery',
+      { inline_query_id: '1', button: `${'['.repeat(101)}1${']'.repeat(101)}` },
+      unparsableButton,
+    ],
+    // The official server reads the button before the results.
+    [
+      'answerInlineQuery',
+      { inline_query_id: '1', button: 'not JSON', results: 'not JSON' },
+      unparsableButton,
+    ],
+    [
+      'answerInlineQuery',
+      { inline_query_id: '1', button: { text: 'Go' } },
+      'Bad Request: invalid answerInlineQuery parameters: button',
+    ],
+    // Empty text is no button, as the official server reads it, so the results are read next.
+    [
+      'answerInlineQuery',
+      { inline_query_id: '1', button: '', results: 'not JSON' },
+      'Bad Request: invalid answerInlineQuery parameters: results',
+    ],
+  ];
+
+  const answers = [];
+  for (const [method, parameters] of cases) {
+    answers.push(await callBotApi(api, `${botApiPath}/${method}`, parameters));
+  }
+  assertEquals(
+    answers,
+    cases.map(([, , description]) => [400, description]),
+    "Expected a schema refusal to name its path, or to give Telegram's own description",
+  );
+});
+
 /** Creates a session holding a bot. */
 async function createFixture() {
   const { api, sessionPath } = await createTestSession();
