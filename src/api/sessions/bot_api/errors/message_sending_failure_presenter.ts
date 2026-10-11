@@ -1,5 +1,9 @@
-import type { EmulationSession } from '../../../../session/emulation_session.ts';
 import { BOT_CHAT_ACCESS_ERRORS } from '../chat_access.ts';
+import type {
+  SendChatActionResult,
+  SendMediaGroupResult,
+  SendMessageDraftResult,
+} from '../message_sends.ts';
 import type { BotApiMethodAnswer } from '../method_call.ts';
 import { BOT_API_ERRORS } from './error_catalogue.ts';
 import {
@@ -12,22 +16,17 @@ import {
   presentDetailedMessageContentFailure,
 } from './message_content_failure_presenter.ts';
 
-type BotApi = EmulationSession['botApi'];
-
 /**
  * Why a message or an album was not sent. An album fails for any reason a single message does,
  * and for its own.
  */
-type MessageSendFailure = Extract<ReturnType<BotApi['sendMediaGroup']>, { readonly sent: false }>;
+type MessageSendFailure = Extract<SendMediaGroupResult, { readonly sent: false }>;
 
 /** Why a chat action was not shown. */
-type ChatActionFailure = Extract<ReturnType<BotApi['sendChatAction']>, { readonly sent: false }>;
+type ChatActionFailure = Extract<SendChatActionResult, { readonly sent: false }>;
 
 /** Why a message draft was not shown. */
-type MessageDraftFailure = Extract<
-  ReturnType<BotApi['sendMessageDraft']>,
-  { readonly sent: false }
->;
+type MessageDraftFailure = Extract<SendMessageDraftResult, { readonly sent: false }>;
 
 /**
  * The operation of the message sending family that failed: sending a message or an album, which

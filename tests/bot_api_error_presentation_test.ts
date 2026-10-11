@@ -15,16 +15,18 @@ import type {
   PollStopResult,
 } from '../src/api/sessions/bot_api/message_edits.ts';
 import type { BotApiMethodAnswer } from '../src/api/sessions/bot_api/method_call.ts';
-import type { EmulationSession } from '../src/session/emulation_session.ts';
+import type {
+  SendChatActionResult,
+  SendMediaGroupResult,
+  SendMessageDraftResult,
+} from '../src/api/sessions/bot_api/message_sends.ts';
 
 // The expected answers are Telegram's literal statuses and descriptions, written out rather than
 // read from the catalogue, so that an edit of a catalogue entry fails these tests.
 
-type BotApi = EmulationSession['botApi'];
-
-type SendFailure = Extract<ReturnType<BotApi['sendMediaGroup']>, { readonly sent: false }>;
-type ChatActionFailure = Extract<ReturnType<BotApi['sendChatAction']>, { readonly sent: false }>;
-type DraftFailure = Extract<ReturnType<BotApi['sendMessageDraft']>, { readonly sent: false }>;
+type SendFailure = Extract<SendMediaGroupResult, { readonly sent: false }>;
+type ChatActionFailure = Extract<SendChatActionResult, { readonly sent: false }>;
+type DraftFailure = Extract<SendMessageDraftResult, { readonly sent: false }>;
 type Failure<Result> = Extract<Result, { readonly edited: false }>;
 type ChatMessageEditFailure =
   | Failure<ChatMessageTextEditResult>

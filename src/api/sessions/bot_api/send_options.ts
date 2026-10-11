@@ -42,14 +42,10 @@ export const replyMarkupParametersShape = {
   reply_markup: messageReplyMarkupParameter().default({}),
 };
 
-/** Removes properties from each member of a union, which keeps the union's alternatives apart. */
-type OmitFromEach<Type, Key extends PropertyKey> = Type extends unknown ? Omit<Type, Key> : never;
-
 /** Where and how a send method sends its message, which every send method takes alike. */
-export type SendRequestOptions = OmitFromEach<
-  Parameters<EmulationSession['botApi']['sendMessage']>[1],
-  'text' | 'entities'
->;
+export type SendRequestOptions = Parameters<
+  EmulationSession['botMessageSending']['sender']['send']
+>[2];
 
 /** The send options of a request, with the reply markup of a method that reads one. */
 export type SendOptionsParameters =
@@ -77,11 +73,11 @@ export function readSendOptions<Send extends { readonly parameters: SendOptionsP
   } = parameters;
   const replyTarget = selectSpecifiedReplyTarget(parameters);
   const quote = replyTarget?.quote;
-  const quoteReading = quote === undefined ? undefined : readFormattedTextParameters(
-    context,
-    { text: quote.text, parseMode: quote.parseMode, entities: quote.entities },
-    invalidParametersDescription,
-  );
+  const quoteReading = quote === undefined ? undefined : readFormattedTextParameters({
+    text: quote.text,
+    parseMode: quote.parseMode,
+    entities: quote.entities,
+  }, invalidParametersDescription);
   if (quoteReading?.read === false) {
     return answerWithBadRequest(quoteReading.description);
   }

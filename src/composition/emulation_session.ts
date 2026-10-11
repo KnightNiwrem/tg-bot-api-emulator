@@ -29,7 +29,6 @@ import { WebResourceRepository } from '../repositories/web_resource/web_resource
 import { MessageBoxRepository } from '../repositories/message_box/message_box.ts';
 import { createAccountChatMessageReader } from '../services/domain/account_chat_message.ts';
 import { BotActivityService } from '../services/bot_activity/bot_activity.ts';
-import { BotApiService } from '../services/bot_api/bot_api.ts';
 import { BotBlockingService } from '../services/domain/bot_blocking.ts';
 import { BotCommandService } from '../services/domain/bot_command.ts';
 import { BotDefaultAdministratorRightsService } from '../services/domain/bot_default_administrator_rights.ts';
@@ -37,7 +36,10 @@ import { BotDescriptionService } from '../services/domain/bot_description.ts';
 import { BotMediaResolver } from '../services/bot_media_resolution/bot_media_resolution.ts';
 import { BotMenuButtonService } from '../services/domain/bot_menu_button.ts';
 import { BotMessageRepeater } from '../services/bot_message_repetition/bot_message_repetition.ts';
-import { BotMessageSender } from '../services/bot_message_sending/bot_message_sending.ts';
+import {
+  BotMessageSender,
+  type BotMessageSendingWorkflows,
+} from '../services/bot_message_sending/bot_message_sending.ts';
 import { BotMessageViewService } from '../services/bot_message_view/bot_message_view.ts';
 import { BotRateLimitService } from '../services/domain/bot_rate_limit.ts';
 import { BotServerErrorService } from '../services/domain/bot_server_error.ts';
@@ -427,30 +429,19 @@ export function createEmulationSession(
     getPrivateForwardName: getAccountPrivateForwardName,
   });
   const botMediaResolver = new BotMediaResolver({ mediaFiles });
-  const botApi = new BotApiService({
-    bots,
-    botMessages: privateMessaging,
-    supergroupBotMessages: supergroupMessaging,
+  const botMessageRepeater = new BotMessageRepeater({
     messageSender: botMessageSender,
-    messageRepeater: new BotMessageRepeater({
-      messageSender: botMessageSender,
-      mediaGroups: messages,
-      polls,
-      getPrivateForwardName: getAccountPrivateForwardName,
-      currentUnixTimeSeconds,
-    }),
-    botMedia: botMediaResolver,
-    botCaptions: {
-      normalizeBotCaption: (caption) => normalizeCaption(caption, 'bot', sessionTextFixingContext),
-    },
-    chatActions,
-    messageDrafts,
-    botDraftTexts: {
-      normalizeBotDraftText: (text) => normalizeBotDraftText(text, sessionTextFixingContext),
-    },
-    publicChats: sharedChatAdministration,
+    mediaGroups: messages,
+    polls,
+    getPrivateForwardName: getAccountPrivateForwardName,
     currentUnixTimeSeconds,
   });
+  const botMessageSending: BotMessageSendingWorkflows = {
+    sender: botMessageSender,
+    normalizeBotCaption: (caption) => normalizeCaption(caption, 'bot', sessionTextFixingContext),
+    normalizeBotDraftText: (text) => normalizeBotDraftText(text, sessionTextFixingContext),
+    currentUnixTimeSeconds,
+  };
 
   const session: EmulationSession = {
     id,
@@ -482,8 +473,9 @@ export function createEmulationSession(
     webResources,
     botRateLimits,
     botServerErrors,
-    botApi,
     botMediaResolver,
+    botMessageSending,
+    botMessageRepeater,
     botUpdateConsumers,
     botActivity,
     webhookAttempts,

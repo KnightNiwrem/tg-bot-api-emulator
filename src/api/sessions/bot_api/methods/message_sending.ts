@@ -1,6 +1,5 @@
 import { z } from 'zod';
 
-import type { EmulationSession } from '../../../../session/emulation_session.ts';
 import {
   createGeoLocation,
   type GeoLocation,
@@ -44,6 +43,22 @@ import {
   readInputPollOptionsParameter,
 } from '../input_poll_option_parameter.ts';
 import { messageEntitiesParameter } from '../message_entities_parameter.ts';
+import {
+  type MediaReplacementRequest,
+  type MessageSendContext,
+  type PollTypeRequest,
+  sendChatAction,
+  sendContact,
+  sendLocation,
+  sendMedia,
+  sendMediaGroup,
+  type SendMediaGroupResult,
+  sendMessage,
+  sendMessageDraft,
+  sendPoll,
+  sendRichMessage,
+  sendVoice,
+} from '../message_sends.ts';
 import {
   type BotApiMethod,
   type BotApiMethodAnswer,
@@ -272,19 +287,6 @@ const sendChatActionParametersSchema = z.strictObject({
 
 type SendPollParameters = z.output<typeof sendPollParametersSchema>;
 
-type SendMediaGroupResult = ReturnType<EmulationSession['botApi']['sendMediaGroup']>;
-
-/**
- * An album's photo, video, document, or audio file as the service sends it, with its file
- * resolved.
- */
-type MediaReplacementRequest = Parameters<
-  EmulationSession['botApi']['sendMediaGroup']
->[1]['media'][number];
-
-/** A poll's type as `sendPoll` takes it. */
-type PollTypeRequest = Parameters<EmulationSession['botApi']['sendPoll']>[1]['type'];
-
 /** The files that send methods send from a parameter of their own name. */
 type SentFileKind = 'photo' | 'document' | 'video' | 'voice' | 'audio';
 
@@ -320,17 +322,20 @@ export const MESSAGE_SENDING_METHODS: readonly BotApiMethod[] = [
     parameters: sendAudioParametersSchema,
     steps: (call) => readMediaSend(call, 'audio').andThen((send) => readThumbnail(call, send)),
     waitFor: (context, send) => waitForMediaFile(context, send, 'audio'),
-    execute: (context, { parameters, file, thumbnail, caption, options }) =>
-      sendMethodAnswer(context.session.botApi.sendAudio(context.bot, {
-        ...options,
-        audio: file,
-        attributes: {
-          durationSeconds: parameters.duration,
-          performer: parameters.performer,
-          title: parameters.title,
+    execute: (context: MessageSendContext, { parameters, file, thumbnail, caption, options }) =>
+      sendMethodAnswer(sendMedia(context, {
+        media: {
+          kind: 'audio',
+          audio: file,
+          attributes: {
+            durationSeconds: parameters.duration,
+            performer: parameters.performer,
+            title: parameters.title,
+          },
+          ...(thumbnail === undefined ? {} : { thumbnail }),
+          caption,
         },
-        ...(thumbnail === undefined ? {} : { thumbnail }),
-        caption,
+        options,
       })),
   }),
   // Telegram reads the action before it looks at the chat.
@@ -340,11 +345,8 @@ export const MESSAGE_SENDING_METHODS: readonly BotApiMethod[] = [
     parameters: sendChatActionParametersSchema,
     steps: ({ parameters }) =>
       startSteps(parameters).andThen(readChatAction).andThen(requireSpecifiedChatId),
-    execute: (context, { chat_id: chatId, chatAction }) => {
-      const result = context.session.botApi.sendChatAction(
-        context.bot,
-        { chatId, action: chatAction },
-      );
+    execute: (context: MessageSendContext, { chat_id: chatId, chatAction }) => {
+      const result = sendChatAction(context, { chatId, action: chatAction });
       return result.sent ? botApiResult(true) : presentMessageSendingFailure('chat_action', result);
     },
   }),
@@ -360,8 +362,8 @@ export const MESSAGE_SENDING_METHODS: readonly BotApiMethod[] = [
         .andThen((parameters) => requireTextParameter(parameters, 'phone_number'))
         .andThen((parameters) => requireTextParameter(parameters, 'first_name'))
         .andThen((parameters) => readSendOptions(call, { parameters })),
-    execute: (context, { parameters, options }) =>
-      sendMethodAnswer(context.session.botApi.sendContact(context.bot, {
+    execute: (context: MessageSendContext, { parameters, options }) =>
+      sendMethodAnswer(sendContact(context, {
         ...options,
         contact: {
           phoneNumber: parameters.phone_number,
@@ -377,12 +379,15 @@ export const MESSAGE_SENDING_METHODS: readonly BotApiMethod[] = [
     parameters: sendDocumentParametersSchema,
     steps: (call) => readMediaSend(call, 'document').andThen((send) => readThumbnail(call, send)),
     waitFor: (context, send) => waitForMediaFile(context, send, 'document'),
-    execute: (context, { file, thumbnail, caption, options }) =>
-      sendMethodAnswer(context.session.botApi.sendDocument(context.bot, {
-        ...options,
-        document: file,
-        ...(thumbnail === undefined ? {} : { thumbnail }),
-        caption,
+    execute: (context: MessageSendContext, { file, thumbnail, caption, options }) =>
+      sendMethodAnswer(sendMedia(context, {
+        media: {
+          kind: 'document',
+          document: file,
+          ...(thumbnail === undefined ? {} : { thumbnail }),
+          caption,
+        },
+        options,
       })),
   }),
   // As the official server's `process_send_location_query` reads it: the latitude and longitude,
@@ -399,10 +404,8 @@ export const MESSAGE_SENDING_METHODS: readonly BotApiMethod[] = [
         .andThen(requireCoordinates)
         .andThen((parameters) => readSendOptions(call, { parameters }))
         .andThen(readSentLocation),
-    execute: (context, { location, options }) =>
-      sendMethodAnswer(
-        context.session.botApi.sendLocation(context.bot, { ...options, location }),
-      ),
+    execute: (context: MessageSendContext, { location, options }) =>
+      sendMethodAnswer(sendLocation(context, { ...options, location })),
   }),
   // As the official server reads them, the media and their captions are read before the chat; the
   // files the media name by URL are then downloaded in order, as for `sendPhoto`.
@@ -415,9 +418,9 @@ export const MESSAGE_SENDING_METHODS: readonly BotApiMethod[] = [
         .andThen((parameters) => readAlbumMedia(call, parameters))
         .andThen((album) => readSendOptions(call, album)),
     waitFor: waitForAlbumFiles,
-    execute: (context, { media, options }) => {
+    execute: (context: MessageSendContext, { media, options }) => {
       const { chatId, replyTo, isContentProtected, isSilent, messageEffectId } = options;
-      return sendMediaGroupAnswer(context.session.botApi.sendMediaGroup(context.bot, {
+      return sendMediaGroupAnswer(sendMediaGroup(context, {
         chatId,
         replyTo,
         isContentProtected,
@@ -436,8 +439,8 @@ export const MESSAGE_SENDING_METHODS: readonly BotApiMethod[] = [
       startSteps(call.parameters)
         .andThen((parameters) => readMessageText(call, parameters))
         .andThen((send) => readSendOptions(call, send)),
-    execute: (context, { text, options }) =>
-      sendMethodAnswer(context.session.botApi.sendMessage(context.bot, { ...options, ...text })),
+    execute: (context: MessageSendContext, { text, options }) =>
+      sendMethodAnswer(sendMessage(context, { ...options, ...text })),
   }),
   // As the official server's `process_send_message_draft_query` reads it: the text and its
   // formatting before the chat, and a missing or zero `draft_id` as none, which Telegram's servers
@@ -450,8 +453,8 @@ export const MESSAGE_SENDING_METHODS: readonly BotApiMethod[] = [
       startSteps(call.parameters)
         .andThen((parameters) => readDraftText(call, parameters))
         .andThen(requireSpecifiedChatId),
-    execute: (context, parameters) => {
-      const result = context.session.botApi.sendMessageDraft(context.bot, {
+    execute: (context: MessageSendContext, parameters) => {
+      const result = sendMessageDraft(context, {
         chatId: parameters.chat_id,
         draftId: parameters.draft_id,
         text: parameters.text,
@@ -469,13 +472,16 @@ export const MESSAGE_SENDING_METHODS: readonly BotApiMethod[] = [
     parameters: sendPhotoParametersSchema,
     steps: (call) => readMediaSend(call, 'photo'),
     waitFor: (context, send) => waitForMediaFile(context, send, 'photo'),
-    execute: (context, { parameters, file, caption, options }) =>
-      sendMethodAnswer(context.session.botApi.sendPhoto(context.bot, {
-        ...options,
-        photo: file,
-        caption,
-        hasSpoiler: parameters.has_spoiler,
-        showsCaptionAboveMedia: parameters.show_caption_above_media,
+    execute: (context: MessageSendContext, { parameters, file, caption, options }) =>
+      sendMethodAnswer(sendMedia(context, {
+        media: {
+          kind: 'photo',
+          photo: file,
+          caption,
+          hasSpoiler: parameters.has_spoiler,
+          showsCaptionAboveMedia: parameters.show_caption_above_media,
+        },
+        options,
       })),
   }),
   // As the official server's `process_send_poll_query` reads it, before the chat: the question and
@@ -495,8 +501,8 @@ export const MESSAGE_SENDING_METHODS: readonly BotApiMethod[] = [
         .andThen((poll) => readPollType(call, poll))
         .andThen(refuseBothPollClosingTimes)
         .andThen((poll) => readSendOptions(call, poll)),
-    execute: (context, { parameters, question, pollOptions, type, options }) =>
-      sendMethodAnswer(context.session.botApi.sendPoll(context.bot, {
+    execute: (context: MessageSendContext, { parameters, question, pollOptions, type, options }) =>
+      sendMethodAnswer(sendPoll(context, {
         ...options,
         question,
         pollOptions,
@@ -529,8 +535,8 @@ export const MESSAGE_SENDING_METHODS: readonly BotApiMethod[] = [
       }
       return toWaitResult(resolution, (resolvedRichMessage) => ({ resolvedRichMessage, options }));
     },
-    execute: (context, { resolvedRichMessage, options }) =>
-      sendMethodAnswer(context.session.botApi.sendRichMessage(context.bot, {
+    execute: (context: MessageSendContext, { resolvedRichMessage, options }) =>
+      sendMethodAnswer(sendRichMessage(context, {
         ...options,
         ...resolvedRichMessage,
       })),
@@ -541,20 +547,23 @@ export const MESSAGE_SENDING_METHODS: readonly BotApiMethod[] = [
     parameters: sendVideoParametersSchema,
     steps: (call) => readMediaSend(call, 'video').andThen((send) => readThumbnail(call, send)),
     waitFor: (context, send) => waitForMediaFile(context, send, 'video'),
-    execute: (context, { parameters, file, thumbnail, caption, options }) =>
-      sendMethodAnswer(context.session.botApi.sendVideo(context.bot, {
-        ...options,
-        video: file,
-        attributes: {
-          durationSeconds: parameters.duration,
-          width: parameters.width,
-          height: parameters.height,
+    execute: (context: MessageSendContext, { parameters, file, thumbnail, caption, options }) =>
+      sendMethodAnswer(sendMedia(context, {
+        media: {
+          kind: 'video',
+          video: file,
+          attributes: {
+            durationSeconds: parameters.duration,
+            width: parameters.width,
+            height: parameters.height,
+          },
+          ...(thumbnail === undefined ? {} : { thumbnail }),
+          startTimestampSeconds: parameters.start_timestamp,
+          caption,
+          hasSpoiler: parameters.has_spoiler,
+          showsCaptionAboveMedia: parameters.show_caption_above_media,
         },
-        ...(thumbnail === undefined ? {} : { thumbnail }),
-        startTimestampSeconds: parameters.start_timestamp,
-        caption,
-        hasSpoiler: parameters.has_spoiler,
-        showsCaptionAboveMedia: parameters.show_caption_above_media,
+        options,
       })),
   }),
   waitingCommandMethodOfSteps({
@@ -563,8 +572,8 @@ export const MESSAGE_SENDING_METHODS: readonly BotApiMethod[] = [
     parameters: sendVoiceParametersSchema,
     steps: (call) => readMediaSend(call, 'voice'),
     waitFor: (context, send) => waitForMediaFile(context, send, 'voice'),
-    execute: (context, { parameters, file, caption, options }) =>
-      sendMethodAnswer(context.session.botApi.sendVoice(context.bot, {
+    execute: (context: MessageSendContext, { parameters, file, caption, options }) =>
+      sendMethodAnswer(sendVoice(context, {
         ...options,
         voice: file,
         durationSeconds: parameters.duration,
@@ -575,14 +584,14 @@ export const MESSAGE_SENDING_METHODS: readonly BotApiMethod[] = [
 
 /** The step that reads the text of `sendMessage` and its formatting. */
 function readMessageText<Parameters extends z.output<typeof sendMessageParametersSchema>>(
-  { context, invalidParametersDescription }: BotApiStepCall<unknown>,
+  { invalidParametersDescription }: BotApiStepCall<unknown>,
   parameters: Parameters,
 ): BotApiStepResult<{ readonly parameters: Parameters; readonly text: SpecifiedFormattedText }> {
-  const textReading = readSpecifiedFormattedText(
-    context,
-    { text: parameters.text, parseMode: parameters.parse_mode, entities: parameters.entities },
-    invalidParametersDescription,
-  );
+  const textReading = readSpecifiedFormattedText({
+    text: parameters.text,
+    parseMode: parameters.parse_mode,
+    entities: parameters.entities,
+  }, invalidParametersDescription);
   return textReading.read
     ? proceedWith({ parameters, text: textReading.formattedText })
     : answerWith(textReading.errorAnswer);
@@ -669,7 +678,7 @@ function readMediaSend<
   call: BotApiStepCall<Parameters>,
   fileKind: FileKind,
 ): BotApiSteps<MediaSendReading<Parameters>> {
-  const { context, uploadedFiles, invalidParametersDescription } = call;
+  const { uploadedFiles, invalidParametersDescription } = call;
   return startSteps(call.parameters)
     .andThen((parameters) => {
       const fileReading = readInputFileParameter(fileKind, parameters[fileKind], uploadedFiles);
@@ -678,11 +687,7 @@ function readMediaSend<
         : answerWith(presentBotApiError(BOT_API_ERRORS.inputFileMissing, { fileKind }));
     })
     .andThen((send) => {
-      const captionReading = readSpecifiedCaption(
-        context,
-        send.parameters,
-        invalidParametersDescription,
-      );
+      const captionReading = readSpecifiedCaption(send.parameters, invalidParametersDescription);
       return captionReading.read
         ? proceedWith({ ...send, caption: captionReading.formattedText })
         : answerWith(captionReading.errorAnswer);
@@ -726,7 +731,7 @@ async function waitForMediaFile<Send extends { readonly requestedFile: Requested
  * each member's caption, which the official server reports as media it cannot read.
  */
 function readAlbumMedia<Parameters extends z.output<typeof sendMediaGroupParametersSchema>>(
-  { context, uploadedFiles, invalidParametersDescription }: BotApiStepCall<unknown>,
+  { uploadedFiles, invalidParametersDescription }: BotApiStepCall<unknown>,
   parameters: Parameters,
 ): BotApiStepResult<{
   readonly parameters: Parameters;
@@ -744,7 +749,6 @@ function readAlbumMedia<Parameters extends z.output<typeof sendMediaGroupParamet
   const captions: SpecifiedFormattedText[] = [];
   for (const { caption } of mediaReading.media) {
     const captionReading = readEmbeddedFormattedText(
-      context,
       caption,
       invalidParametersDescription,
       INPUT_MEDIA_ERROR_PREFIX,
@@ -797,21 +801,17 @@ async function waitForAlbumFiles(
 
 /** The step that reads a poll's question and its formatting. */
 function readPollQuestion(
-  { context, invalidParametersDescription }: BotApiStepCall<unknown>,
+  { invalidParametersDescription }: BotApiStepCall<unknown>,
   parameters: SendPollParameters,
 ): BotApiStepResult<{
   readonly parameters: SendPollParameters;
   readonly question: SpecifiedFormattedText;
 }> {
-  const questionReading = readFormattedTextParameters(
-    context,
-    {
-      text: parameters.question,
-      parseMode: parameters.question_parse_mode,
-      entities: parameters.question_entities,
-    },
-    invalidParametersDescription,
-  );
+  const questionReading = readFormattedTextParameters({
+    text: parameters.question,
+    parseMode: parameters.question_parse_mode,
+    entities: parameters.question_entities,
+  }, invalidParametersDescription);
   return questionReading.read
     ? proceedWith({ parameters, question: questionReading.formattedText })
     : answerWithBadRequest(questionReading.description);
@@ -822,7 +822,7 @@ function readPollQuestion(
  * option's formatting, whose problems the official server reports per option.
  */
 function readPollOptions<Poll extends { readonly parameters: SendPollParameters }>(
-  { context, invalidParametersDescription }: BotApiStepCall<unknown>,
+  { invalidParametersDescription }: BotApiStepCall<unknown>,
   poll: Poll,
 ): BotApiStepResult<Poll & { readonly pollOptions: readonly SpecifiedFormattedText[] }> {
   const optionsReading = readInputPollOptionsParameter(
@@ -834,11 +834,11 @@ function readPollOptions<Poll extends { readonly parameters: SendPollParameters 
   }
   const pollOptions: SpecifiedFormattedText[] = [];
   for (const option of optionsReading.options) {
-    const optionReading = readFormattedTextParameters(
-      context,
-      { text: option.text, parseMode: option.parseMode, entities: option.entities },
-      invalidParametersDescription,
-    );
+    const optionReading = readFormattedTextParameters({
+      text: option.text,
+      parseMode: option.parseMode,
+      entities: option.entities,
+    }, invalidParametersDescription);
     if (!optionReading.read) {
       return answerWithBadRequest(
         optionReading.description === invalidParametersDescription
@@ -858,7 +858,7 @@ function readPollOptions<Poll extends { readonly parameters: SendPollParameters 
  * method's description of parameters that do not fit it.
  */
 function readPollType<Poll extends { readonly parameters: SendPollParameters }>(
-  { context, invalidParametersDescription }: BotApiStepCall<unknown>,
+  { invalidParametersDescription }: BotApiStepCall<unknown>,
   poll: Poll,
 ): BotApiStepResult<Poll & { readonly type: PollTypeRequest }> {
   const {
@@ -884,11 +884,11 @@ function readPollType<Poll extends { readonly parameters: SendPollParameters }>(
   if (type !== 'quiz') {
     return answerWith(presentFixedBotApiError(BOT_API_ERRORS.pollTypeUnsupported));
   }
-  const explanationReading = readFormattedTextParameters(
-    context,
-    { text: explanation ?? '', parseMode: explanationParseMode, entities: explanationEntities },
-    invalidParametersDescription,
-  );
+  const explanationReading = readFormattedTextParameters({
+    text: explanation ?? '',
+    parseMode: explanationParseMode,
+    entities: explanationEntities,
+  }, invalidParametersDescription);
   if (!explanationReading.read) {
     return answerWithBadRequest(explanationReading.description);
   }
@@ -917,14 +917,14 @@ function refuseBothPollClosingTimes<Poll extends { readonly parameters: SendPoll
 
 /** The step that reads a draft's text and its formatting; empty text is allowed. */
 function readDraftText<Parameters extends z.output<typeof sendMessageDraftParametersSchema>>(
-  { context, invalidParametersDescription }: BotApiStepCall<unknown>,
+  { invalidParametersDescription }: BotApiStepCall<unknown>,
   parameters: Parameters,
 ): BotApiStepResult<Omit<Parameters, 'text'> & { readonly text: SpecifiedFormattedText }> {
-  const textReading = readFormattedTextParameters(
-    context,
-    { text: parameters.text, parseMode: parameters.parse_mode, entities: parameters.entities },
-    invalidParametersDescription,
-  );
+  const textReading = readFormattedTextParameters({
+    text: parameters.text,
+    parseMode: parameters.parse_mode,
+    entities: parameters.entities,
+  }, invalidParametersDescription);
   return textReading.read
     ? proceedWith({ ...parameters, text: textReading.formattedText })
     : answerWithBadRequest(textReading.description);

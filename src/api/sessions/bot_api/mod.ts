@@ -44,8 +44,8 @@ export function createBotApiRoutes(): Hono<BotApiRouteContextTypes> {
   // Telegram answers a download with an unknown token or path as not found.
   botApiRoutes.get(BOT_FILE_DOWNLOAD_PATH, (context) => {
     const botTokenPathSegment = context.req.param(BOT_TOKEN_PATH_PARAMETER);
-    const { botApi, mediaFiles } = context.get('emulationSession');
-    const authenticatedBot = botApi.authenticate(
+    const { virtualUsers, mediaFiles } = context.get('emulationSession');
+    const authenticatedBot = virtualUsers.findBotByToken(
       botTokenPathSegment.slice(BOT_TOKEN_PATH_PREFIX.length),
     );
     const file = authenticatedBot === undefined
@@ -66,7 +66,7 @@ export function createBotApiRoutes(): Hono<BotApiRouteContextTypes> {
   botApiRoutes.use(BOT_API_SUBRESOURCE_PATH, async (context, next) => {
     const botTokenPathSegment = context.req.param(BOT_TOKEN_PATH_PARAMETER);
     const token = botTokenPathSegment.slice(BOT_TOKEN_PATH_PREFIX.length);
-    const authenticatedBot = context.get('emulationSession').botApi.authenticate(token);
+    const authenticatedBot = context.get('emulationSession').virtualUsers.findBotByToken(token);
     if (authenticatedBot === undefined) {
       return botApiResponse(context, botApiError(401, 'Unauthorized'));
     }

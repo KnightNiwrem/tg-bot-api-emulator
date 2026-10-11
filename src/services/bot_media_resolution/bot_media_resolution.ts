@@ -4,6 +4,7 @@ import {
   listRichMessageFiles,
   type RichMessage,
 } from '../../types/rich_message.ts';
+import type { BotUploadTooBigFailure } from '../../types/upload_profile.ts';
 import {
   type AudioAttributes,
   type FileUpload,
@@ -12,25 +13,14 @@ import {
   type VideoAttributes,
   type WebFile,
 } from '../../types/stored_file.ts';
-import type {
-  BotApiInputFile,
-  BotApiRichMessageDocument,
-  BotApiRichMessageFileTypes,
-  BotApiRichMessageVideo,
-  BotApiRichMessageVoiceNote,
-  FileIdFailure,
-  FileResolution,
-  FileResolutionFailure,
-  MediaReplacementRequest,
-  RichMessageFilesResolution,
-  SpecifiedVoice,
-} from '../bot_api/bot_api.ts';
 import type { SpecifiedInlineResultFile } from '../domain/inline_query.ts';
 import type {
   AudioUploadPreparation,
   AudioUploadRequest,
   DocumentUploadPreparation,
   DocumentUploadRequest,
+  FileTypeMismatchFailure,
+  PhotoTooBigFailure,
   PhotoUploadPreparation,
   PhotoUploadRequest,
   VideoUploadPreparation,
@@ -45,9 +35,131 @@ import type {
   OutgoingDocument,
   OutgoingFile,
   OutgoingPhoto,
+  OutgoingRichMessage,
   OutgoingVideo,
   OutgoingVoice,
+  SpecifiedFormattedText,
 } from '../domain/message_content.ts';
+
+/**
+ * A file a request sends: one the bot knows by its `file_id`, a file uploaded with the request
+ * under the name its sender gave it, or a file Telegram downloaded from the URL the bot sent.
+ */
+export type BotApiInputFile =
+  | { readonly kind: 'file_id'; readonly fileId: string }
+  | {
+    readonly kind: 'upload';
+    readonly fileName: string;
+    readonly content: Uint8Array<ArrayBuffer>;
+  }
+  | { readonly kind: 'web_file'; readonly webFile: WebFile };
+
+/** A document a request sends in a rich message, with the thumbnail uploaded for it. */
+export interface BotApiRichMessageDocument {
+  readonly document: BotApiInputFile;
+  /** As `SendDocumentRequest` describes it. */
+  readonly thumbnail?: Uint8Array<ArrayBuffer>;
+}
+
+/** A video a request sends in a rich message, with the attributes the bot specified for it. */
+export interface BotApiRichMessageVideo {
+  readonly video: BotApiInputFile;
+  /** As `SpecifiedVideo` describes them. */
+  readonly attributes: VideoAttributes;
+  /** As `SpecifiedVideo` describes it. */
+  readonly thumbnail?: Uint8Array<ArrayBuffer>;
+}
+
+/** A voice note a request sends in a rich message, with the duration the bot specified for it. */
+export interface BotApiRichMessageVoiceNote {
+  readonly voice: BotApiInputFile;
+  /** As `SendVoiceRequest` describes it. */
+  readonly durationSeconds: number;
+}
+
+/** The files of a rich message's media blocks, as a request names them. */
+export interface BotApiRichMessageFileTypes {
+  readonly photo: BotApiInputFile;
+  readonly document: BotApiRichMessageDocument;
+  readonly video: BotApiRichMessageVideo;
+  readonly voice: BotApiRichMessageVoiceNote;
+}
+
+/** A video and how its message shows it, as `sendVideo` and `InputMediaVideo` specify them. */
+export interface SpecifiedVideo {
+  readonly video: BotApiInputFile;
+  /**
+   * The duration and dimensions the bot specified, which a video sent by `file_id` ignores in
+   * favor of its own.
+   */
+  readonly attributes: VideoAttributes;
+  /** As `SendDocumentRequest` describes it; a video sent by `file_id` keeps its own. */
+  readonly thumbnail?: Uint8Array<ArrayBuffer>;
+  /** The Bot API `start_timestamp`, as `VideoMessageContent` describes it. */
+  readonly startTimestampSeconds: number;
+  /** Empty text for no caption. */
+  readonly caption: SpecifiedFormattedText;
+  /** The Bot API `has_spoiler`. */
+  readonly hasSpoiler: boolean;
+  /** The Bot API `show_caption_above_media`. */
+  readonly showsCaptionAboveMedia: boolean;
+}
+
+/** A voice note and its caption, as `sendVoice` specifies them. */
+export interface SpecifiedVoice {
+  readonly voice: BotApiInputFile;
+  /**
+   * The duration, in seconds, that the bot specified, which a voice note sent by `file_id` ignores
+   * in favor of its own.
+   */
+  readonly durationSeconds: number;
+  /** Empty text for no caption. */
+  readonly caption: SpecifiedFormattedText;
+}
+
+/** An audio file and its caption, as `sendAudio` and `InputMediaAudio` specify them. */
+export interface SpecifiedAudio {
+  readonly audio: BotApiInputFile;
+  /**
+   * The duration, performer and title the bot specified, which an audio file sent by `file_id`
+   * ignores in favor of its own.
+   */
+  readonly attributes: AudioAttributes;
+  /**
+   * As `SendDocumentRequest` describes it, such as the cover of the audio file's album; an audio
+   * file sent by `file_id` keeps its own.
+   */
+  readonly thumbnail?: Uint8Array<ArrayBuffer>;
+  /** Empty text for no caption. */
+  readonly caption: SpecifiedFormattedText;
+}
+
+/**
+ * New media of a message and its caption, as `editMessageMedia` specifies them: a photo, a
+ * document, a video, or an audio file, uploaded with the request, reused by the `file_id` the bot
+ * knows it by, or downloaded from a URL.
+ */
+export type MediaReplacementRequest =
+  | {
+    readonly kind: 'photo';
+    readonly photo: BotApiInputFile;
+    /** Empty text for no caption. */
+    readonly caption: SpecifiedFormattedText;
+    /** The Bot API `has_spoiler`. */
+    readonly hasSpoiler: boolean;
+    /** The Bot API `show_caption_above_media`. */
+    readonly showsCaptionAboveMedia: boolean;
+  }
+  | {
+    readonly kind: 'document';
+    readonly document: BotApiInputFile;
+    /** The content of the thumbnail uploaded for the document; omitted for none. */
+    readonly thumbnail?: Uint8Array<ArrayBuffer>;
+    /** Empty text for no caption. */
+    readonly caption: SpecifiedFormattedText;
+  }
+  | ({ readonly kind: 'video' } & SpecifiedVideo)
+  | ({ readonly kind: 'audio' } & SpecifiedAudio);
 
 interface MediaFiles {
   preparePhotoUpload(request: PhotoUploadRequest): PhotoUploadPreparation;
@@ -100,6 +212,29 @@ export type InlineResultFileRequest =
 export type InlineResultFileResolution<Stored extends StoredFile> =
   | { readonly resolved: true; readonly file: SpecifiedInlineResultFile<Stored> }
   | { readonly resolved: false; readonly failure: FileIdFailure };
+
+/**
+ * Why a `file_id` cannot send a file of the expected type: it identifies no file the bot knows, or
+ * a file of another type.
+ */
+export type FileIdFailure = { readonly reason: 'file_id_invalid' } | FileTypeMismatchFailure;
+
+/** Why a file a request sends cannot be used: an upload Telegram refuses, or an unusable `file_id`. */
+export type FileResolutionFailure =
+  | { readonly reason: 'file_empty' | 'image_invalid' | 'photo_dimensions_invalid' }
+  | PhotoTooBigFailure
+  | BotUploadTooBigFailure
+  | FileIdFailure;
+
+/** A file a send method resolved to send, or why it cannot be sent. */
+export type FileResolution<File> =
+  | { readonly resolved: true; readonly file: File }
+  | { readonly resolved: false; readonly failure: FileResolutionFailure };
+
+/** The files of a rich message's media blocks, resolved to send, or why one cannot be sent. */
+export type RichMessageFilesResolution =
+  | { readonly resolved: true; readonly richMessage: OutgoingRichMessage }
+  | { readonly resolved: false; readonly failure: FileResolutionFailure };
 
 type StoredFileOfType<Type extends StoredFile['type']> = Extract<
   StoredFile,

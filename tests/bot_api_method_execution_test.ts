@@ -1,10 +1,17 @@
 import { assertEquals } from '@std/assert';
+import { readFormattedTextParameters } from '../src/api/sessions/bot_api/formatted_text_reading.ts';
 import {
   editChatMessageKeyboard,
   editChatMessageMedia,
   editChatMessageText,
   stopPoll,
 } from '../src/api/sessions/bot_api/message_edits.ts';
+import {
+  sendChatAction,
+  sendContact,
+  sendMedia,
+  sendMessage,
+} from '../src/api/sessions/bot_api/message_sends.ts';
 import type {
   RestrictChatMemberAsAccountInput,
   SharedChatAdministrationService,
@@ -16,9 +23,9 @@ import { assertEqualsInFieldOrder } from './support/field_order_assertion.ts';
 import { buildSessionServices } from './support/session_services.ts';
 import { createVirtualAccount, createVirtualBot } from './support/virtual_users.ts';
 
-Deno.test('BotApiService reports why a bot cannot address a private chat, for the Bot API to present', () => {
+Deno.test('the Bot API methods pass on why a bot cannot address a private chat, for presenting', () => {
   using session = buildSessionServices();
-  const { virtualUsers, messageSending, botApi } = session;
+  const { virtualUsers, messageSending } = session;
   const bot = createBot(virtualUsers, 'test_bot');
   const account = createAccount(virtualUsers);
   const strangerAccount = createAccount(virtualUsers);
@@ -36,12 +43,12 @@ Deno.test('BotApiService reports why a bot cannot address a private chat, for th
   const cases = [
     [
       'sendMessage',
-      botApi.sendMessage(bot.profile, { chatId, text: 'Hello' }),
+      sendMessage(botContext, { chatId, text: 'Hello' }),
       'conversation_not_started',
     ],
     [
       'sendMessage',
-      botApi.sendMessage(bot.profile, { chatId: unknownAccountId, text: 'Hello' }),
+      sendMessage(botContext, { chatId: unknownAccountId, text: 'Hello' }),
       'account_not_found',
     ],
     [
@@ -83,14 +90,14 @@ Deno.test('BotApiService reports why a bot cannot address a private chat, for th
     ],
     [
       'sendChatAction',
-      botApi.sendChatAction(bot.profile, { chatId, action: 'typing' }),
+      sendChatAction(botContext, { chatId, action: 'typing' }),
       'conversation_not_started',
     ],
     // The text is checked before the chat.
-    ['sendMessage', botApi.sendMessage(bot.profile, { chatId, text: '' }), 'message_text_empty'],
+    ['sendMessage', sendMessage(botContext, { chatId, text: '' }), 'message_text_empty'],
     [
       'sendMessage',
-      botApi.sendMessage(bot.profile, {
+      sendMessage(botContext, {
         chatId: account.profile.id,
         text: 'Hello',
         replyTo: { messageId: 99, allowSendingWithoutReply: false },
@@ -107,9 +114,9 @@ Deno.test('BotApiService reports why a bot cannot address a private chat, for th
   }
 });
 
-Deno.test('BotApiService sends a contact without a user its caller passes along', () => {
+Deno.test('sendContact sends a contact without a user its caller passes along', () => {
   using session = buildSessionServices();
-  const { virtualUsers, messageSending, botApi } = session;
+  const { virtualUsers, messageSending } = session;
   const bot = createBot(virtualUsers, 'test_bot');
   const account = createAccount(virtualUsers);
   messageSending.sendAccountPrivateChatMessage({
@@ -124,7 +131,8 @@ Deno.test('BotApiService sends a contact without a user its caller passes along'
     vcard: '',
     userId: account.profile.id,
   };
-  const result = botApi.sendContact(bot.profile, {
+  const botContext = { session, bot: bot.profile, signal: session.lifetime.endSignal };
+  const result = sendContact(botContext, {
     chatId: account.profile.id,
     contact: contactWithUser,
   });
@@ -135,12 +143,10 @@ Deno.test('BotApiService sends a contact without a user its caller passes along'
   );
 });
 
-Deno.test('BotApiService reads text with its parse mode or entities', () => {
-  using session = buildSessionServices();
-  const { botApi } = session;
+Deno.test('the Bot API methods read text with its parse mode or entities', () => {
   const bold = { type: 'bold', offset: 0, length: 2 } as const;
   const read = (text: string, parseMode?: string) =>
-    botApi.readFormattedText({ text, parseMode, entities: [bold] });
+    readFormattedTextParameters({ text, parseMode, entities: [bold] }, INVALID_PARAMETERS);
 
   // Without a parse mode, or with `none`, the specified entities stand.
   for (const parseMode of [undefined, '', 'None']) {
@@ -160,31 +166,32 @@ Deno.test('BotApiService reads text with its parse mode or entities', () => {
     'Expected the markup to be parsed',
   );
 
-  const failures: ReadonlyArray<readonly [ReturnType<typeof read>, string]> = [
-    [read('x'.repeat(2 ** 15 + 1), 'HTML'), 'text_too_long'],
-    [read('x'.repeat(2 ** 15 + 1)), 'text_too_long'],
-    [read('a', 'XML'), 'parse_mode_unsupported'],
-    [read('\ud800', 'HTML'), 'text_encoding_invalid'],
-    [read('<b>', 'HTML'), 'markup_invalid'],
-  ];
-  for (const [result, expectedReason] of failures) {
-    if (result.read || result.reason !== expectedReason) {
-      throw new Error(`Expected ${expectedReason}, received ${JSON.stringify(result)}`);
-    }
-  }
-  const markupFailure = read('<b>', 'HTML');
-  if (
-    markupFailure.read || markupFailure.reason !== 'markup_invalid' ||
-    markupFailure.markupError !== 'Can\'t find end tag corresponding to start tag "b"'
-  ) {
-    throw new Error(`Expected TDLib's markup error, received ${JSON.stringify(markupFailure)}`);
-  }
+  assertEquals(
+    [
+      read('x'.repeat(2 ** 15 + 1), 'HTML'),
+      read('x'.repeat(2 ** 15 + 1)),
+      read('a', 'XML'),
+      read('\ud800', 'HTML'),
+      read('<b>', 'HTML'),
+    ],
+    [
+      { read: false, description: 'Bad Request: text is too long' },
+      { read: false, description: 'Bad Request: text is too long' },
+      { read: false, description: 'Bad Request: unsupported parse_mode' },
+      { read: false, description: 'Bad Request: text must be encoded in UTF-8' },
+      {
+        read: false,
+        description:
+          'Bad Request: can\'t parse entities: Can\'t find end tag corresponding to start tag "b"',
+      },
+    ],
+    'Expected each unreadable text to be refused with its error',
+  );
 });
 
-Deno.test('BotApiService sends, forwards and copies to a supergroup only what the bot may send', () => {
+Deno.test('the Bot API methods send, forward and copy to a supergroup only what the bot may send', () => {
   using session = buildSessionServices();
-  const { virtualUsers, sharedChatAdministration, supergroupMessaging, messageSending, botApi } =
-    session;
+  const { virtualUsers, sharedChatAdministration, supergroupMessaging, messageSending } = session;
   const owner = createAccount(virtualUsers);
   const bot = createBot(virtualUsers, 'test_bot');
   const creation = sharedChatAdministration.createSupergroup({
@@ -216,13 +223,19 @@ Deno.test('BotApiService sends, forwards and copies to a supergroup only what th
   sendOwnerContent({ kind: 'text', text: 'Agenda' });
   sendOwnerContent({ kind: 'media', upload: photoUpload(), caption: '' });
   const [textMessageId, photoMessageId] = [2, 3];
-  const botPhoto = botApi.sendPhoto(bot.profile, {
-    chatId,
-    photo: { kind: 'upload', fileName: 'photo.gif', content: photoUpload().content },
-    caption: { text: '' },
-    hasSpoiler: false,
-    showsCaptionAboveMedia: false,
-  });
+  const botContext = { session, bot: bot.profile, signal: session.lifetime.endSignal };
+  const sendPhoto = () =>
+    sendMedia(botContext, {
+      media: {
+        kind: 'photo',
+        photo: { kind: 'upload', fileName: 'photo.gif', content: photoUpload().content },
+        caption: { text: '' },
+        hasSpoiler: false,
+        showsCaptionAboveMedia: false,
+      },
+      options: { chatId },
+    });
+  const botPhoto = sendPhoto();
   if (!botPhoto.sent) {
     throw new Error(`Expected the bot's photo to be sent, received ${botPhoto.reason}`);
   }
@@ -233,7 +246,6 @@ Deno.test('BotApiService sends, forwards and copies to a supergroup only what th
     permissions: new Set(['can_send_messages']),
   });
   // As TDLib's `edit_message_media` does, new media of an edit needs its permission too.
-  const botContext = { session, bot: bot.profile, signal: session.lifetime.endSignal };
   const mediaEdit = editChatMessageMedia(botContext, {
     chatId,
     messageId: botPhoto.message.message_id,
@@ -256,31 +268,30 @@ Deno.test('BotApiService sends, forwards and copies to a supergroup only what th
   const repeat = { chatId, fromChatId: chatId };
 
   const received = [
-    reasonOf(botApi.sendMessage(bot.profile, { chatId, text: 'Allowed' })),
-    reasonOf(botApi.sendPhoto(bot.profile, {
-      chatId,
-      photo: { kind: 'upload', fileName: 'photo.gif', content: photoUpload().content },
-      caption: { text: '' },
-      hasSpoiler: false,
-      showsCaptionAboveMedia: false,
-    })),
-    reasonOf(botApi.forwardMessage(bot.profile, {
+    reasonOf(sendMessage(botContext, { chatId, text: 'Allowed' })),
+    reasonOf(sendPhoto()),
+    reasonOf(session.botMessageRepeater.forwardMessage(bot.profile.id, {
       chatId,
       forwardedMessage: { chatId, messageId: textMessageId },
     })),
-    reasonOf(botApi.forwardMessage(bot.profile, {
+    reasonOf(session.botMessageRepeater.forwardMessage(bot.profile.id, {
       chatId,
       forwardedMessage: { chatId, messageId: photoMessageId },
     })),
-    reasonOf(botApi.copyMessage(bot.profile, {
+    reasonOf(session.botMessageRepeater.copyMessage(bot.profile.id, {
       chatId,
       copiedMessage: { chatId, messageId: photoMessageId },
       showsCaptionAboveMedia: false,
     })),
-    reasonOf(botApi.forwardMessages(bot.profile, { ...repeat, messageIds: [photoMessageId] })),
+    reasonOf(
+      session.botMessageRepeater.forwardMessages(bot.profile.id, {
+        ...repeat,
+        messageIds: [photoMessageId],
+      }),
+    ),
   ];
   // As TDLib's `forward_messages_impl` does, a batch skips what the bot may not send.
-  const batch = botApi.forwardMessages(bot.profile, {
+  const batch = session.botMessageRepeater.forwardMessages(bot.profile.id, {
     ...repeat,
     messageIds: [textMessageId, photoMessageId],
   });
@@ -313,6 +324,9 @@ function photoUpload(): PhotoUpload {
   content.set([4, 0, 3, 0], 6);
   return { type: 'photo', content, imageFormat: 'gif', width: 4, height: 3 };
 }
+
+/** The description of invalid parameters that the text readers answer for unreadable entities. */
+const INVALID_PARAMETERS = 'Bad Request: invalid test parameters';
 
 function createBot(virtualUsers: VirtualUserService, username: string) {
   return createVirtualBot(virtualUsers, { first_name: 'Test Bot', username });

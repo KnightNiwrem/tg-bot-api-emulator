@@ -311,7 +311,6 @@ function readTextMessageReplacement<Parameters extends EditParameters>(
       : answerWith(richMessageReading.errorAnswer);
   }
   const formattedTextReading = readSpecifiedFormattedText(
-    context,
     { text, parseMode, entities },
     invalidParametersDescription,
   );
@@ -342,14 +341,14 @@ async function resolveTextMessageReplacement(
 
 /** The step that reads the new caption of `editMessageCaption` and its formatting. */
 function readCaptionReplacement<Parameters extends EditParameters>(
-  { context, invalidParametersDescription }: BotApiStepCall<unknown>,
+  { invalidParametersDescription }: BotApiStepCall<unknown>,
   parameters: Parameters & {
     readonly caption: string;
     readonly parse_mode?: string;
     readonly caption_entities?: readonly unknown[];
   },
 ): BotApiStepResult<{ readonly parameters: Parameters; readonly caption: SpecifiedFormattedText }> {
-  const captionReading = readSpecifiedCaption(context, parameters, invalidParametersDescription);
+  const captionReading = readSpecifiedCaption(parameters, invalidParametersDescription);
   return captionReading.read
     ? proceedWith({ parameters, caption: captionReading.formattedText })
     : answerWith(captionReading.errorAnswer);
@@ -361,7 +360,7 @@ function readCaptionReplacement<Parameters extends EditParameters>(
  * `readInputMediaParameter` reads it, with its caption reported as media Telegram cannot read.
  */
 function readMediaReplacement<Parameters extends EditParameters>(
-  { context, uploadedFiles, invalidParametersDescription }: BotApiStepCall<unknown>,
+  { uploadedFiles, invalidParametersDescription }: BotApiStepCall<unknown>,
   parameters: Parameters & { readonly media?: string },
 ): BotApiStepResult<{
   readonly parameters: Parameters;
@@ -377,7 +376,6 @@ function readMediaReplacement<Parameters extends EditParameters>(
     return answerWithBadRequest(mediaReading.description);
   }
   const captionReading = readEmbeddedFormattedText(
-    context,
     mediaReading.media.caption,
     invalidParametersDescription,
     INPUT_MEDIA_ERROR_PREFIX,

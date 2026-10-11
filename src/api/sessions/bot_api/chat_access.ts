@@ -2,11 +2,7 @@ import type { SupergroupBotAccessFailureReason } from '../../../types/chat_membe
 import { getBotApiChatAddress, type PrivateChatAddress } from '../../../types/virtual_chat.ts';
 import { BOT_API_ERRORS } from './errors/error_catalogue.ts';
 import { type FixedBotApiError, presentFixedBotApiError } from './errors/error_template.ts';
-import type {
-  BotApiFamilyContext,
-  BotApiMethodAnswer,
-  BotApiMethodContext,
-} from './method_call.ts';
+import type { BotApiFamilyContext, BotApiMethodAnswer } from './method_call.ts';
 import { answerWith, type BotApiStepResult, proceedWith } from './method_steps.ts';
 import { CHAT_USERNAME_PREFIX, type ChatIdentifier } from './request_parameters.ts';
 
@@ -55,15 +51,18 @@ export const BOT_CHAT_ACCESS_ERRORS = {
 
 /**
  * Finds the ID of the chat a JSON field names by its ID or by a public username after `@`, as
- * `check_chat` does; `undefined` for a username that names no chat a bot may address.
+ * `check_chat` does: a public supergroup, or the private chat with a bot. `undefined` for any other
+ * username, which Telegram answers as a chat it cannot find.
  */
 export function resolveChatIdentifier(
-  context: BotApiMethodContext,
+  context: BotApiFamilyContext<'sharedChatAdministration'>,
   chatIdentifier: ChatIdentifier,
 ): number | undefined {
   return typeof chatIdentifier === 'number'
     ? chatIdentifier
-    : context.session.botApi.findPublicChatId(chatIdentifier.slice(CHAT_USERNAME_PREFIX.length));
+    : context.session.sharedChatAdministration.findPublicChatId(
+      chatIdentifier.slice(CHAT_USERNAME_PREFIX.length),
+    );
 }
 
 /** Telegram's error for a request to a chat the bot cannot address, whichever method made it. */

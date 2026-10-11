@@ -1,8 +1,9 @@
 import type { BotActivityService } from '../services/bot_activity/bot_activity.ts';
-import type { BotApiService } from '../services/bot_api/bot_api.ts';
 import type { BotBlockingService } from '../services/domain/bot_blocking.ts';
 import type { BotCommandService } from '../services/domain/bot_command.ts';
 import type { BotMediaResolver } from '../services/bot_media_resolution/bot_media_resolution.ts';
+import type { BotMessageRepeater } from '../services/bot_message_repetition/bot_message_repetition.ts';
+import type { BotMessageSendingWorkflows } from '../services/bot_message_sending/bot_message_sending.ts';
 import type { BotDefaultAdministratorRightsService } from '../services/domain/bot_default_administrator_rights.ts';
 import type { BotDescriptionService } from '../services/domain/bot_description.ts';
 import type { BotMenuButtonService } from '../services/domain/bot_menu_button.ts';
@@ -73,9 +74,12 @@ export interface EmulationSession extends EmulationSessionOptions {
   readonly webResources: WebResourceService;
   readonly botRateLimits: BotRateLimitService;
   readonly botServerErrors: BotServerErrorService;
-  readonly botApi: BotApiService;
   /** Resolves the files that bots' Bot API requests send, as TDLib reads them. */
   readonly botMediaResolver: BotMediaResolver;
+  /** What the Bot API's sending methods send through, beyond the session's other services. */
+  readonly botMessageSending: BotMessageSendingWorkflows;
+  /** Forwards and copies the messages of bots' chats, as the Bot API's repetition methods do. */
+  readonly botMessageRepeater: BotMessageRepeater;
   /** How each bot receives its updates: by polling or by webhook, never both. */
   readonly botUpdateConsumers: BotUpdateConsumerService;
   readonly botActivity: BotActivityService;

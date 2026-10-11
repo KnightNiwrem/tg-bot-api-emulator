@@ -19,22 +19,104 @@ import {
   type MessageForwardInfo,
 } from '../../types/virtual_message.ts';
 import type {
-  CopyMessageRequest,
-  CopyMessageSendResult,
-  CopyMessagesRequest,
-  ForwardMessageRequest,
-  ForwardMessageResult,
+  BotChatMessageLookup,
   MessageTarget,
-  RepeatMessagesRequest,
-  RepeatMessagesResult,
+  RepetitionDetails,
   SendRequestOptions,
   SendResult,
-} from '../bot_api/bot_api.ts';
-import type {
-  BotChatMessageLookup,
-  RepetitionDetails,
 } from '../bot_message_sending/bot_message_sending.ts';
-import type { CaptionReplacement, OutgoingMessageContent } from '../domain/message_content.ts';
+import type {
+  CaptionReplacement,
+  OutgoingMessageContent,
+  SpecifiedFormattedText,
+} from '../domain/message_content.ts';
+
+export interface ForwardMessageRequest {
+  /** The Bot API `chat_id` of the chat to forward the message to. */
+  readonly chatId: number;
+  /** The forwarded message: the Bot API `from_chat_id` and `message_id`. */
+  readonly forwardedMessage: MessageTarget;
+  /**
+   * The Bot API `video_start_timestamp`: the second from which a forwarded video plays, which
+   * other content ignores; omitted to keep the video's own.
+   */
+  readonly videoStartTimestampSeconds?: number;
+  /** The Bot API `protect_content`; omitted for an unprotected message. */
+  readonly isContentProtected?: boolean;
+  /** As `SendRequestOptions` describes it. */
+  readonly isSilent?: boolean;
+  /** As `SendRequestOptions` describes it. */
+  readonly messageEffectId?: string;
+}
+
+/**
+ * A failure of a forward or copy that a send cannot have: the repeated message is not found, or it
+ * cannot be repeated.
+ */
+export type RepetitionFailure<NotRepeatableReason extends string> = {
+  readonly sent: false;
+  readonly reason: 'message_not_found' | NotRepeatableReason;
+};
+
+export type ForwardMessageResult = SendResult | RepetitionFailure<'message_not_forwardable'>;
+
+export type CopyMessageRequest = SendRequestOptions & {
+  /** The copied message: the Bot API `from_chat_id` and `message_id`. */
+  readonly copiedMessage: MessageTarget;
+  /** As `ForwardMessageRequest` describes it, for the copied video. */
+  readonly videoStartTimestampSeconds?: number;
+  /** A caption that replaces the caption of copied media; omitted to keep it. */
+  readonly caption?: SpecifiedFormattedText;
+  /**
+   * The Bot API `show_caption_above_media`, which applies only with a new caption of a photo or
+   * video.
+   */
+  readonly showsCaptionAboveMedia: boolean;
+};
+
+/** A copy that `copyMessage` sent, with the new message, or why it was not sent. */
+export type CopyMessageSendResult = SendResult | RepetitionFailure<'message_not_copyable'>;
+
+/** Messages of one of the bot's chats that `forwardMessages` or `copyMessages` repeats at once. */
+export interface RepeatMessagesRequest {
+  /** The Bot API `chat_id` of the chat the messages go to. */
+  readonly chatId: number;
+  /** The Bot API `from_chat_id` of the chat of the repeated messages. */
+  readonly fromChatId: number;
+  /** The repeated messages' IDs in the bot's chat, in strictly increasing order. */
+  readonly messageIds: readonly number[];
+  /** The Bot API `protect_content`; omitted for unprotected messages. */
+  readonly isContentProtected?: boolean;
+  /** As `SendRequestOptions` describes it. */
+  readonly isSilent?: boolean;
+  /**
+   * As `SendRequestOptions` describes it. As TDLib's `forward_messages` allows, only a request
+   * that finds a single message may add an effect to it.
+   */
+  readonly messageEffectId?: string;
+}
+
+export type CopyMessagesRequest = RepeatMessagesRequest & {
+  /** The Bot API `remove_caption`, which sends media without their captions. */
+  readonly removesCaptions: boolean;
+};
+
+/**
+ * The Bot API answers `forwardMessages` and `copyMessages` with the new messages' IDs, in the
+ * order of the repeated messages. As TDLib does, a request fails only when no message is left to
+ * repeat: identifiers of no message are skipped, and so are messages that cannot be repeated.
+ */
+export type RepeatMessagesResult =
+  | { readonly sent: true; readonly messageIds: readonly number[] }
+  | Extract<SendResult, { readonly sent: false }>
+  | {
+    readonly sent: false;
+    readonly reason:
+      | 'repeated_messages_not_found'
+      | 'message_effect_not_allowed_for_several_messages'
+      | 'repeated_message_ids_not_increasing'
+      | 'messages_not_repeatable';
+  };
 
 interface BotMessageSending {
   send(

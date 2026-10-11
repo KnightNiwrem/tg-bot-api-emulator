@@ -37,7 +37,7 @@ import {
   proceedWith,
   startSteps,
 } from '../method_steps.ts';
-import { readInlineKeyboardParameter } from '../reply_markup_reading.ts';
+import { readInlineKeyboardParameter, readRichMessageButtons } from '../reply_markup_reading.ts';
 import {
   booleanParameter,
   type BotApiUploadedFiles,
@@ -236,7 +236,7 @@ function parseInlineQueryAnswerResults(
  * any of them as an inline query result it cannot parse.
  */
 function parseInlineQueryResult(
-  { context, uploadedFiles, invalidParametersDescription }: BotApiStepCall<unknown>,
+  { uploadedFiles, invalidParametersDescription }: BotApiStepCall<unknown>,
   resultValue: unknown,
 ): BotApiStepResult<ParsedInlineQueryResult> {
   const fieldsReading = readInlineQueryResultParameter(resultValue, invalidParametersDescription);
@@ -247,7 +247,6 @@ function parseInlineQueryResult(
   const messageContentParsing = fields.messageContent === undefined
     ? undefined
     : parseInlineResultMessageContent(
-      context,
       fields.messageContent,
       uploadedFiles,
       invalidParametersDescription,
@@ -265,7 +264,6 @@ function parseInlineQueryResult(
     return proceedWith(parsedResult);
   }
   const captionReading = readEmbeddedFormattedText(
-    context,
     fields.caption,
     invalidParametersDescription,
     INLINE_QUERY_RESULT_ERROR_PREFIX,
@@ -284,7 +282,6 @@ function parseInlineQueryResult(
  * `sendRichMessage`. A contact and a location need no parsing.
  */
 function parseInlineResultMessageContent(
-  context: BotApiMethodContext,
   content: UnreadInputMessageContent,
   uploadedFiles: BotApiUploadedFiles,
   invalidParametersDescription: string,
@@ -294,7 +291,6 @@ function parseInlineResultMessageContent(
   switch (content.kind) {
     case 'text': {
       const textReading = readEmbeddedFormattedText(
-        context,
         content.text,
         invalidParametersDescription,
         INLINE_QUERY_RESULT_ERROR_PREFIX,
@@ -494,7 +490,7 @@ function checkInlineResultMessageContent(
         : { read: true, content: { kind: 'location', location } };
     }
     case 'rich_message': {
-      const buttonReading = context.session.botApi.readRichMessageButtons(content.richMessage);
+      const buttonReading = readRichMessageButtons(context, content.richMessage);
       if (!buttonReading.read) {
         return { read: false, description: badRequestDescription(buttonReading.keyboardError) };
       }

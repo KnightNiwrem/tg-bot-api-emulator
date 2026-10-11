@@ -3,27 +3,153 @@ import type { FormerSupergroupMemberFailureReason } from '../../types/chat_membe
 import { isForwardable, type PrivateForwardNameLookup } from '../../types/message_forward.ts';
 import { createExternalReply, type ExternalReplyTarget } from '../../types/message_reply.ts';
 import { type ChatKey, getBotApiChatAddress, getBotChatKey } from '../../types/virtual_chat.ts';
-import type { ChatMessage, MediaGroupId, MessageForwardInfo } from '../../types/virtual_message.ts';
 import type {
-  BotPrivateChatAccessFailureReason,
-  MessageTarget,
-  ReplyTarget,
-  SendMediaGroupRequest,
-  SendMediaGroupResult,
-  SendRequestOptions,
-  SendResult,
-} from '../bot_api/bot_api.ts';
+  ChatMessage,
+  FormattedText,
+  MediaGroupId,
+  MessageForwardInfo,
+} from '../../types/virtual_message.ts';
+import type { AlbumCompositionFailureReason } from '../../types/media_album.ts';
+import type { BotMessageReplyMarkup } from '../../types/reply_interface.ts';
+import type { BotUploadTooBigFailure } from '../../types/upload_profile.ts';
+import type { FileTypeMismatchFailure, PhotoTooBigFailure } from '../domain/media_file.ts';
 import type {
+  CaptionNormalization,
   MediaContent,
+  MessageTextNormalization,
   OutgoingMessageContent,
+  SpecifiedCaption,
   SpecifiedQuote,
+  TextInvalidFailure,
 } from '../domain/message_content.ts';
-import type { MessageSendingService } from '../domain/message_sending.ts';
+import type { PollLimitFailure } from '../domain/poll_normalization.ts';
+import type {
+  MessageSendingService,
+  SendPermissionMissingFailure,
+} from '../domain/message_sending.ts';
 import type { GetMessageForBotInput, GetMessageForBotResult } from '../domain/private_messaging.ts';
 import type {
   GetSupergroupMessageForBotInput,
   GetSupergroupMessageForBotResult,
 } from '../domain/supergroup_messaging.ts';
+
+/** The message that a sent message replies to, as `reply_parameters` specify it. */
+export interface ReplyTarget {
+  /** The message's ID in its chat, as the bot knows it. */
+  readonly messageId: number;
+  /**
+   * The Bot API `chat_id` of the replied message's chat when it is another chat than the one the
+   * message is sent to; omitted for that chat.
+   */
+  readonly chatId?: number;
+  /** Sends the message as no reply, rather than failing, when the target is not found. */
+  readonly allowSendingWithoutReply: boolean;
+  /** The part of the replied message the bot chose to quote; omitted for none. */
+  readonly quote?: SpecifiedQuote;
+}
+
+/**
+ * Where and how a send method sends its message, apart from what it replies to. The reply markup
+ * is an inline keyboard or a change of the reply interface.
+ */
+export type SendDestinationOptions = BotMessageReplyMarkup & SendDeliveryOptions;
+
+/** Where and how a send method sends its messages, apart from their reply and reply markup. */
+export interface SendDeliveryOptions {
+  /**
+   * The Bot API `chat_id`: for a private chat, the other user's ID, which is positive; for a
+   * supergroup, its negative chat ID.
+   */
+  readonly chatId: number;
+  /** The Bot API `protect_content`; omitted for an unprotected message. */
+  readonly isContentProtected?: boolean;
+  /** The Bot API `disable_notification`; omitted for a message that notifies with sound. */
+  readonly isSilent?: boolean;
+  /**
+   * The Bot API `message_effect_id`, as the decimal text of a nonzero 64-bit identifier; omitted
+   * for none. The emulator has no catalogue of Telegram's effects, so any identifier is accepted.
+   */
+  readonly messageEffectId?: string;
+}
+
+/** Where and how every send method sends its message. */
+export type SendRequestOptions = SendDestinationOptions & {
+  /** Omitted for a message that replies to none. */
+  readonly replyTo?: ReplyTarget;
+};
+
+/**
+ * Why a bot cannot address a private chat: the account does not exist, or it never started the
+ * bot. Telegram reports both as an unknown chat; the domain keeps them apart.
+ */
+export type BotPrivateChatAccessFailureReason = 'account_not_found' | 'conversation_not_started';
+
+export type SendFailureReason =
+  | 'message_text_empty'
+  | 'chat_not_found'
+  | BotPrivateChatAccessFailureReason
+  | FormerSupergroupMemberFailureReason
+  | 'reply_message_not_found'
+  | 'message_effect_not_allowed_in_chat'
+  | 'message_text_too_long'
+  | 'caption_too_long'
+  | 'callback_data_invalid'
+  | 'button_type_invalid'
+  | 'quote_invalid'
+  | PollLimitFailure['reason']
+  | 'poll_open_period_invalid'
+  | 'poll_close_date_invalid'
+  | 'bot_blocked'
+  | 'file_empty'
+  | 'image_invalid'
+  | 'photo_dimensions_invalid'
+  | 'file_id_invalid';
+
+export type SendResult =
+  | { readonly sent: true; readonly message: BotApiMessage }
+  | (
+    & { readonly sent: false }
+    & (
+      | { readonly reason: SendFailureReason }
+      | TextInvalidFailure
+      | FileTypeMismatchFailure
+      | PhotoTooBigFailure
+      | BotUploadTooBigFailure
+      | SendPermissionMissingFailure
+    )
+  );
+
+/** A message of one of the bot's chats, as Bot API methods address it. */
+export interface MessageTarget {
+  /** The Bot API `chat_id`, as `SendRequestOptions` describes it. */
+  readonly chatId: number;
+  /** The message's ID in the bot's chat. */
+  readonly messageId: number;
+}
+
+/**
+ * An upload of an album's message that Telegram's servers refuse once the album is sent: content
+ * they cannot process as a photo, or a file larger than a local Bot API server lets bots upload.
+ */
+export type ServerRefusedUploadFailure =
+  | { readonly reason: 'image_invalid' | 'photo_dimensions_invalid' }
+  | (BotUploadTooBigFailure & { readonly uploadProfile: 'local' });
+
+/**
+ * The Bot API answers `sendMediaGroup` with the album's messages in order. As the official server's
+ * `on_message_send_failed` does, an upload Telegram's servers refuse fails the album with the
+ * position of the first message whose upload they refuse, counted from 1.
+ */
+export type SendMediaGroupResult =
+  | { readonly sent: true; readonly messages: readonly BotApiMessage[] }
+  | Extract<SendResult, { readonly sent: false }>
+  | { readonly sent: false; readonly reason: AlbumCompositionFailureReason }
+  | {
+    readonly sent: false;
+    readonly reason: 'media_group_member_not_sent';
+    readonly memberPosition: number;
+    readonly failure: ServerRefusedUploadFailure;
+  };
 
 interface PrivateChatMessageReading {
   getMessageForBot(input: GetMessageForBotInput): GetMessageForBotResult;
@@ -115,6 +241,30 @@ type OutgoingReply =
  * another chat is resolved alike for all of them, by the same lookup that finds the messages of
  * the bot's chats that forwards and copies repeat.
  */
+/**
+ * Where and how an album is sent: every message of it alike, each replying to the same message;
+ * none has reply markup, which the Bot API does not read for albums.
+ */
+export type SendAlbumOptions = SendDeliveryOptions & {
+  /** Omitted for an album that replies to no message. */
+  readonly replyTo?: ReplyTarget;
+};
+
+/**
+ * What the Bot API's sending methods use beyond the session's other services: the sender of the
+ * bot's messages, the session's normalization of the text a bot sends, which they apply before
+ * they send an album or show a draft, and the clock that poll closing dates count from.
+ */
+export interface BotMessageSendingWorkflows {
+  readonly sender: BotMessageSender;
+  /** Normalizes a caption of an album, which is checked before the album is handed to sending. */
+  readonly normalizeBotCaption: (caption: SpecifiedCaption) => CaptionNormalization;
+  /** Normalizes a draft's text as TDLib does before a draft is shown. */
+  readonly normalizeBotDraftText: (text: FormattedText) => MessageTextNormalization;
+  /** The time that closing times of polls count from. */
+  readonly currentUnixTimeSeconds: () => number;
+}
+
 export class BotMessageSender {
   readonly #privateChatMessages: PrivateChatMessageReading;
   readonly #supergroupMessages: SupergroupMessageReading;
@@ -192,10 +342,7 @@ export class BotMessageSender {
   sendAlbum(
     botId: number,
     contents: readonly MediaContent[],
-    { replyTo, chatId, isContentProtected, isSilent, messageEffectId }: Omit<
-      SendMediaGroupRequest,
-      'media'
-    >,
+    { replyTo, chatId, isContentProtected, isSilent, messageEffectId }: SendAlbumOptions,
   ): SendMediaGroupResult {
     const replyResolution = this.#resolveOutgoingReply(botId, replyTo);
     if (!replyResolution.resolved) {

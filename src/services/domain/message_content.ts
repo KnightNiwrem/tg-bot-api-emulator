@@ -71,6 +71,16 @@ import {
 import { normalizeNewPoll, type PollLimitFailure } from './poll_normalization.ts';
 import { normalizeRichMessage } from './rich_message_normalization.ts';
 
+/** Formatted text as a bot specified it: entities from `entities` or from parsed markup. */
+export interface SpecifiedFormattedText {
+  readonly text: string;
+  /**
+   * Validated and normalized as Telegram does before the message is stored; omitted for plain
+   * text.
+   */
+  readonly entities?: readonly TextEntity[];
+}
+
 // Telegram's rules for the content of messages, which apply alike in every chat type.
 
 /**

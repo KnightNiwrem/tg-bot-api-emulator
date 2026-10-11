@@ -13,7 +13,12 @@ import {
   messageIdOrNone,
   requireMessageIdentifiers,
 } from '../message_identifiers.ts';
-import { type BotApiMethod, type BotApiMethodAnswer, botApiResult } from '../method_call.ts';
+import {
+  type BotApiFamilyContext,
+  type BotApiMethod,
+  type BotApiMethodAnswer,
+  botApiResult,
+} from '../method_call.ts';
 import {
   answerWith,
   type BotApiStepCall,
@@ -90,8 +95,13 @@ const copyMessagesParametersSchema = z.strictObject({
 
 type RepeatMessagesParameters = z.output<z.ZodObject<typeof repeatMessagesParametersShape>>;
 
+type BotMessageRepeater = EmulationSession['botMessageRepeater'];
+
 /** The messages that `forwardMessages` or `copyMessages` repeats, and the chat they go to. */
-type RepeatMessagesRequest = Parameters<EmulationSession['botApi']['forwardMessages']>[1];
+type RepeatMessagesRequest = Parameters<BotMessageRepeater['forwardMessages']>[1];
+
+/** What the repetition methods use: the repeater of the messages of the bot's chats. */
+type MessageRepetitionContext = BotApiFamilyContext<'botMessageRepeater'>;
 
 /**
  * The methods that forward or copy existing messages, each executed as a command in its call's
@@ -110,9 +120,10 @@ export const MESSAGE_REPETITION_METHODS: readonly BotApiMethod[] = [
         .andThen(requireFromChatId)
         .andThen((parameters) => readCopyCaption(call, parameters))
         .andThen((copy) => readSendOptions(call, copy)),
-    execute: (context, { parameters, caption, options }) => {
-      const result = context.session.botApi.copyMessage(
-        context.bot,
+    // The Bot API answers a copy with the new message's ID rather than the message.
+    execute: (context: MessageRepetitionContext, { parameters, caption, options }) => {
+      const result = context.session.botMessageRepeater.copyMessage(
+        context.bot.id,
         {
           ...options,
           copiedMessage: {
@@ -127,7 +138,7 @@ export const MESSAGE_REPETITION_METHODS: readonly BotApiMethod[] = [
         },
       );
       return result.sent
-        ? botApiResult({ message_id: result.messageId } satisfies BotApiMessageId)
+        ? botApiResult({ message_id: result.message.message_id } satisfies BotApiMessageId)
         : presentMessageRepetitionFailure('message_copy', result);
     },
   }),
@@ -136,10 +147,10 @@ export const MESSAGE_REPETITION_METHODS: readonly BotApiMethod[] = [
     recordsActivity: true,
     parameters: copyMessagesParametersSchema,
     steps: ({ parameters }) => readRepeatMessagesRequest(parameters),
-    execute: (context, { request, parameters }) =>
+    execute: (context: MessageRepetitionContext, { request, parameters }) =>
       repeatMessagesAnswer(
         'message_copy',
-        context.session.botApi.copyMessages(context.bot, {
+        context.session.botMessageRepeater.copyMessages(context.bot.id, {
           ...request,
           removesCaptions: parameters.remove_caption,
         }),
@@ -153,10 +164,10 @@ export const MESSAGE_REPETITION_METHODS: readonly BotApiMethod[] = [
     parameters: forwardMessageParametersSchema,
     steps: ({ parameters }) =>
       startSteps(parameters).andThen(requireFromChatId).andThen(requireSpecifiedChatId),
-    execute: (context, parameters) => {
+    execute: (context: MessageRepetitionContext, parameters) => {
       const videoStartTimestampSeconds = parameters.video_start_timestamp;
-      const result = context.session.botApi.forwardMessage(
-        context.bot,
+      const result = context.session.botMessageRepeater.forwardMessage(
+        context.bot.id,
         {
           chatId: parameters.chat_id,
           forwardedMessage: {
@@ -179,10 +190,10 @@ export const MESSAGE_REPETITION_METHODS: readonly BotApiMethod[] = [
     recordsActivity: true,
     parameters: forwardMessagesParametersSchema,
     steps: ({ parameters }) => readRepeatMessagesRequest(parameters),
-    execute: (context, { request }) =>
+    execute: (context: MessageRepetitionContext, { request }) =>
       repeatMessagesAnswer(
         'message_forward',
-        context.session.botApi.forwardMessages(context.bot, request),
+        context.session.botMessageRepeater.forwardMessages(context.bot.id, request),
       ),
   }),
 ];
@@ -211,7 +222,7 @@ function requireFromChatId<Parameters extends { readonly from_chat_id?: number }
 
 /** The step that reads the new caption of a copied message and its formatting, if it has one. */
 function readCopyCaption(
-  { context, invalidParametersDescription }: BotApiStepCall<unknown>,
+  { invalidParametersDescription }: BotApiStepCall<unknown>,
   parameters: WithFromChatId<CopyMessageParameters>,
 ): BotApiStepResult<{
   readonly parameters: WithFromChatId<CopyMessageParameters>;
@@ -223,7 +234,6 @@ function readCopyCaption(
     return proceedWith({ parameters });
   }
   const captionReading = readSpecifiedCaption(
-    context,
     { ...parameters, caption },
     invalidParametersDescription,
   );
@@ -266,7 +276,7 @@ function readRepeatMessagesRequest<Parameters extends RepeatMessagesParameters>(
 /** Telegram's answer to `forwardMessages` or `copyMessages`: the new messages' IDs, or its error. */
 function repeatMessagesAnswer(
   operation: 'message_forward' | 'message_copy',
-  result: ReturnType<EmulationSession['botApi']['forwardMessages']>,
+  result: ReturnType<BotMessageRepeater['forwardMessages']>,
 ): BotApiMethodAnswer {
   return result.sent
     ? botApiResult(

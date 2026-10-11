@@ -1,13 +1,11 @@
 import { assertEquals } from '@std/assert';
-import type {
-  MessageTarget,
-  SendRequestOptions,
-  SendResult,
-} from '../src/services/bot_api/bot_api.ts';
 import { BotMessageRepeater } from '../src/services/bot_message_repetition/bot_message_repetition.ts';
 import type {
   BotChatMessageLookup,
+  MessageTarget,
   RepetitionDetails,
+  SendRequestOptions,
+  SendResult,
 } from '../src/services/bot_message_sending/bot_message_sending.ts';
 import type { OutgoingMessageContent } from '../src/services/domain/message_content.ts';
 import type { Poll, PollType } from '../src/types/poll.ts';

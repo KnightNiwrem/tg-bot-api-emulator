@@ -76,6 +76,7 @@ interface AccountStore {
 
 interface BotStore {
   add(bot: VirtualBot): boolean;
+  getByToken(token: string): VirtualBot | undefined;
 }
 
 interface VirtualUserServiceDependencies {
@@ -140,6 +141,14 @@ export class VirtualUserService {
     }
 
     return { created: true, account };
+  }
+
+  /**
+   * Finds the bot whose token `token` is, as the Bot API authenticates a call; `undefined` when no
+   * bot has that token.
+   */
+  findBotByToken(token: string): VirtualBotProfile | undefined {
+    return this.#bots.getByToken(token)?.profile;
   }
 
   createBot(input: CreateVirtualBotInput): BotCreationResult {

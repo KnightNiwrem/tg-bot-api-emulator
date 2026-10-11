@@ -14,6 +14,7 @@ import {
   presentMessageReactionFailure,
 } from '../src/api/sessions/bot_api/errors/message_reaction_failure_presenter.ts';
 import { presentMessageRepetitionFailure } from '../src/api/sessions/bot_api/errors/message_repetition_failure_presenter.ts';
+import type { SendResult } from '../src/api/sessions/bot_api/message_sends.ts';
 import type { EmulationSession } from '../src/session/emulation_session.ts';
 import {
   BOT_BLOCKED,
@@ -28,22 +29,22 @@ import {
 // The families that act on messages already sent: forwards and copies, deletions, pins and
 // reactions. Each case is Telegram's literal answer.
 
-type BotApi = EmulationSession['botApi'];
+type BotMessageRepeater = EmulationSession['botMessageRepeater'];
 
-type SendFailure = Extract<ReturnType<BotApi['sendMessage']>, { readonly sent: false }>;
+type SendFailure = Extract<SendResult, { readonly sent: false }>;
 /** The failures of a forward that a send cannot have. */
 type ForwardOnlyFailure = Exclude<
-  Extract<ReturnType<BotApi['forwardMessage']>, { readonly sent: false }>,
+  Extract<ReturnType<BotMessageRepeater['forwardMessage']>, { readonly sent: false }>,
   SendFailure
 >;
 /** The failures of a copy that a send cannot have. */
 type CopyOnlyFailure = Exclude<
-  Extract<ReturnType<BotApi['copyMessage']>, { readonly sent: false }>,
+  Extract<ReturnType<BotMessageRepeater['copyMessage']>, { readonly sent: false }>,
   SendFailure
 >;
 /** The failures of a forward or copy of several messages that a send cannot have. */
 type SeveralRepetitionOnlyFailure = Exclude<
-  Extract<ReturnType<BotApi['forwardMessages']>, { readonly sent: false }>,
+  Extract<ReturnType<BotMessageRepeater['forwardMessages']>, { readonly sent: false }>,
   SendFailure
 >;
 type DeletionFailure = SingleMessageDeletionFailure | MessageListDeletionFailure;

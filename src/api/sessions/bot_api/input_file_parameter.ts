@@ -1,7 +1,14 @@
 import type { EmulationSession } from '../../../session/emulation_session.ts';
 import type { BotApiUploadedFiles } from './request_parameters.ts';
 
-export type BotApiInputFile = Parameters<EmulationSession['botApi']['sendPhoto']>[1]['photo'];
+/**
+ * A file a request sends: one the bot knows by its `file_id`, a file uploaded with the request, or
+ * a file Telegram downloaded from the URL the bot sent.
+ */
+export type BotApiInputFile = Extract<
+  Parameters<EmulationSession['botMediaResolver']['resolveMediaContent']>[1],
+  { readonly kind: 'photo' }
+>['photo'];
 
 /**
  * A file as a request names it: a `file_id`, an uploaded part, or an HTTP URL, which Telegram

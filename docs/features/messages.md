@@ -328,7 +328,7 @@ Other origins are users. Channel and chat origins are [real gaps](#real-gaps).
 
 ## Local evidence
 
-[Bot API service](../../src/services/bot_api/bot_api.ts),
+[Bot API sending](../../src/api/sessions/bot_api/message_sends.ts),
 [bot message sending](../../src/services/bot_message_sending/bot_message_sending.ts),
 [forwarding and copying](../../src/services/bot_message_repetition/bot_message_repetition.ts),
 [message sending](../../src/services/domain/message_sending.ts),
