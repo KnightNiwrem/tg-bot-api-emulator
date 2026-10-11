@@ -1,5 +1,6 @@
 import { assertEquals } from '@std/assert';
 import { createTestSession, type EmulationApi, requestJson } from './support/emulation_api.ts';
+import { createBot } from './support/http_fixtures.ts';
 
 interface BotApiCallActivityEntry {
   readonly kind: string;
@@ -85,18 +86,8 @@ Deno.test('Bot API HTTP admission answers and records rejected calls in its orde
 /** Creates a session holding a bot. */
 async function createFixture() {
   const { api, sessionPath } = await createTestSession();
-  const { body: createdBot } = await requestJson<{ token: string; bot: { id: number } }>(
-    api,
-    'POST',
-    `${sessionPath}/bots`,
-    { first_name: 'Test Bot', username: 'test_bot' },
-  );
-  return {
-    api,
-    sessionPath,
-    botApiPath: `${sessionPath}/bot-api/bot${createdBot.token}`,
-    bot: createdBot.bot,
-  };
+  const { botApiPath, bot } = await createBot(api, sessionPath, 'test_bot');
+  return { api, sessionPath, botApiPath, bot };
 }
 
 async function postBotApi(api: EmulationApi, path: string, body: string): Promise<number> {

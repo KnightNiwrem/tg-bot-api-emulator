@@ -12,6 +12,7 @@ import {
   TEST_PUBLIC_ORIGIN,
   type TestInProcessEmulator,
 } from './support/emulation_api.ts';
+import { createAccount, createBot as createSessionBot } from './support/http_fixtures.ts';
 
 interface BotApiBody {
   readonly ok: boolean;
@@ -379,13 +380,7 @@ Deno.test('queued server errors stay within their session and end with it', asyn
 async function createFixture() {
   const { api, sessionPath } = await createTestSession();
   const bot = await createBot(api, sessionPath);
-  const createdAccount = await requestJson<{ account: { id: number } }>(
-    api,
-    'POST',
-    `${sessionPath}/accounts`,
-    { first_name: 'Ada' },
-  );
-  const account = createdAccount.body.account;
+  const account = await createAccount(api, sessionPath, 'Ada');
   const conversationPath =
     `${sessionPath}/accounts/${account.id}/conversations/private/${bot.id}/messages`;
 
@@ -420,17 +415,13 @@ async function createFixture() {
   };
 }
 
+/** Creates the session's bot `test_bot`, returning its ID and token. */
 async function createBot(
   api: EmulationApi,
   sessionPath: string,
 ): Promise<{ id: number; token: string }> {
-  const created = await requestJson<{ token: string; bot: { id: number } }>(
-    api,
-    'POST',
-    `${sessionPath}/bots`,
-    { first_name: 'Test Bot', username: 'test_bot' },
-  );
-  return { id: created.body.bot.id, token: created.body.token };
+  const { bot, token } = await createSessionBot(api, sessionPath, 'test_bot');
+  return { id: bot.id, token };
 }
 
 function createGrammyBot(

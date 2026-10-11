@@ -16,7 +16,8 @@ import {
 } from '../src/services/media_file.ts';
 import { createSystemSessionTiming } from '../src/timing/system_timing.ts';
 import type { EmulationSession } from '../src/types/emulation_session.ts';
-import { createTestSession, requestJson } from './support/emulation_api.ts';
+import { createTestSession } from './support/emulation_api.ts';
+import { createBot } from './support/http_fixtures.ts';
 
 const DOCUMENT_URL = 'https://files.example/report.pdf';
 const OTHER_DOCUMENT_URL = 'https://files.example/appendix.pdf';
@@ -239,12 +240,7 @@ Deno.test('a long poll that starts after its session ended finds no updates and 
 
 Deno.test('an HTTP Bot API request whose body arrives after its session ended is answered as for an unknown session', async () => {
   const { api, sessionPath } = await createTestSession();
-  const { body: createdBot } = await requestJson<{ token: string }>(
-    api,
-    'POST',
-    `${sessionPath}/bots`,
-    { first_name: 'Test Bot', username: 'test_bot' },
-  );
+  const createdBot = await createBot(api, sessionPath, 'test_bot');
   const body = new TransformStream<Uint8Array, Uint8Array>();
   const bodyWriter = body.writable.getWriter();
   const pendingResponse = api.request(
@@ -271,13 +267,7 @@ Deno.test('an HTTP Bot API request whose body arrives after its session ended is
 
 Deno.test('ending a session answers its held long poll with no updates, and a later poll as an unknown session', async () => {
   const { api, sessionPath } = await createTestSession();
-  const { body: createdBot } = await requestJson<{ token: string }>(
-    api,
-    'POST',
-    `${sessionPath}/bots`,
-    { first_name: 'Test Bot', username: 'test_bot' },
-  );
-  const botApiPath = `${sessionPath}/bot-api/bot${createdBot.token}`;
+  const { botApiPath } = await createBot(api, sessionPath, 'test_bot');
   const heldPoll = api.request(`${botApiPath}/getUpdates?timeout=50`);
   // The poll is decoded and held well within this wait, which its 50-second timeout outlasts.
   await new Promise((resolve) => setTimeout(resolve, 50));

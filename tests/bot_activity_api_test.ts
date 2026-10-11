@@ -1,11 +1,16 @@
 import { assertEquals } from '@std/assert';
 import { Bot } from 'https://cdn.jsdelivr.net/gh/grammyjs/grammY@^1.46.0/src/bot.ts';
 import { webhookCallback } from 'https://cdn.jsdelivr.net/gh/grammyjs/grammY@^1.46.0/src/convenience/webhook.ts';
+import { callBotApi } from './support/bot_api_requests.ts';
 import {
+  createSession,
   createTestInProcessEmulator,
   type EmulationApi,
+  requestJson,
   TEST_PUBLIC_ORIGIN,
 } from './support/emulation_api.ts';
+import { createAccount, createBot } from './support/http_fixtures.ts';
+import { expectSettlementWithin } from './support/settlement.ts';
 
 interface BotActivityReadBody {
   readonly entries: ReadonlyArray<Record<string, unknown>>;
@@ -322,65 +327,34 @@ Deno.test('GET bot-activity records a webhook reply after the confirmation of it
 /** Creates a session on `api` holding a bot and an account that can message it. */
 async function createFixture(api: EmulationApi = createTestInProcessEmulator()) {
   const sessionPath = await createSession(api);
-  const createdBot = await postJson(api, `${sessionPath}/bots`, {
-    first_name: 'Test Bot',
-    username: 'test_bot',
-  }) as { token: string; bot: { id: number } };
-  const { account } = await postJson(api, `${sessionPath}/accounts`, {
-    first_name: 'Ada',
-  }) as { account: { id: number } };
+  const { botApiPath, ...createdBot } = await createBot(api, sessionPath, 'test_bot');
+  const account = await createAccount(api, sessionPath, 'Ada');
 
   const sendText = async (text: string) => {
-    await postJson(api, `${sessionPath}/accounts/${account.id}/messages`, {
-      to: { type: 'private', botId: createdBot.bot.id },
-      text,
-    });
+    const { status } = await requestJson(
+      api,
+      'POST',
+      `${sessionPath}/accounts/${account.id}/messages`,
+      {
+        to: { type: 'private', botId: createdBot.bot.id },
+        text,
+      },
+    );
+    if (status !== 201) {
+      throw new Error(`Expected "${text}" to be sent, received ${status}`);
+    }
   };
 
   return {
     api,
     sessionPath,
     activityPath: `${sessionPath}/bot-activity`,
-    botApiPath: `${sessionPath}/bot-api/bot${createdBot.token}`,
+    botApiPath,
     createdBot,
     bot: createdBot.bot,
     account,
     sendText,
   };
-}
-
-async function createSession(api: EmulationApi): Promise<string> {
-  const response = await api.request('/sessions', { method: 'POST' });
-  const sessionPath = response.headers.get('Location');
-  if (response.status !== 201 || sessionPath === null) {
-    throw new Error(`Expected POST /sessions to create a session, received ${response.status}`);
-  }
-  return sessionPath;
-}
-
-async function postJson(api: EmulationApi, path: string, body: unknown): Promise<unknown> {
-  const response = await api.request(path, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(body),
-  });
-  if (response.status !== 201) {
-    throw new Error(`Expected POST ${path} to create a resource, received ${response.status}`);
-  }
-  return await response.json();
-}
-
-async function callBotApi(
-  api: EmulationApi,
-  methodPath: string,
-  parameters: Record<string, unknown>,
-): Promise<{ status: number; body: unknown }> {
-  const response = await api.request(methodPath, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(parameters),
-  });
-  return { status: response.status, body: await response.json() };
 }
 
 async function readActivity(api: EmulationApi, path: string): Promise<BotActivityReadBody> {
@@ -389,20 +363,4 @@ async function readActivity(api: EmulationApi, path: string): Promise<BotActivit
     throw new Error(`Expected GET ${path} to succeed, received ${response.status}`);
   }
   return await response.json() as BotActivityReadBody;
-}
-
-async function expectSettlementWithin<T>(
-  pending: Promise<T>,
-  milliseconds: number,
-  failureMessage: string,
-): Promise<T> {
-  let timeoutId: ReturnType<typeof setTimeout> | undefined;
-  const timeout = new Promise<never>((_resolve, reject) => {
-    timeoutId = setTimeout(() => reject(new Error(failureMessage)), milliseconds);
-  });
-  try {
-    return await Promise.race([pending, timeout]);
-  } finally {
-    clearTimeout(timeoutId);
-  }
 }

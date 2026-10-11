@@ -18,6 +18,7 @@ import {
   DEFAULT_ALLOWED_UPDATE_TYPES,
 } from '../src/types/bot_api.ts';
 import { createRealTimeScheduler } from './support/scheduler.ts';
+import { expectSettlementWithin } from './support/settlement.ts';
 
 const BOT_ID = 10;
 const OTHER_BOT_ID = 20;
@@ -352,23 +353,6 @@ function expectRetrievedUpdates(result: GetUpdatesResult): readonly BotApiUpdate
     throw new Error(`Expected getUpdates to retrieve updates, received ${result.reason}`);
   }
   return result.updates;
-}
-
-/** Returns what `pending` settles to, failing if it is still pending after `milliseconds`. */
-async function expectSettlementWithin<T>(
-  pending: Promise<T>,
-  milliseconds: number,
-  failureMessage: string,
-): Promise<T> {
-  let timeoutId: ReturnType<typeof setTimeout> | undefined;
-  const timeout = new Promise<never>((_resolve, reject) => {
-    timeoutId = setTimeout(() => reject(new Error(failureMessage)), milliseconds);
-  });
-  try {
-    return await Promise.race([pending, timeout]);
-  } finally {
-    clearTimeout(timeoutId);
-  }
 }
 
 function assertAllowedUpdateTypes(

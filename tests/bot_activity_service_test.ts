@@ -8,6 +8,7 @@ import {
 import type { BotActivityEntry, BotActivityFilter } from '../src/types/bot_activity.ts';
 import type { BotApiUpdate } from '../src/types/bot_api.ts';
 import { createRealTimeScheduler } from './support/scheduler.ts';
+import { expectSettlementWithin } from './support/settlement.ts';
 
 const BOT_ID = 10;
 const OTHER_BOT_ID = 20;
@@ -320,20 +321,4 @@ function supergroupMessageUpdate(updateId: number): BotApiUpdate {
       text: 'Hi',
     },
   };
-}
-
-async function expectSettlementWithin<T>(
-  pending: Promise<T>,
-  milliseconds: number,
-  failureMessage: string,
-): Promise<T> {
-  let timeoutId: ReturnType<typeof setTimeout> | undefined;
-  const timeout = new Promise<never>((_resolve, reject) => {
-    timeoutId = setTimeout(() => reject(new Error(failureMessage)), milliseconds);
-  });
-  try {
-    return await Promise.race([pending, timeout]);
-  } finally {
-    clearTimeout(timeoutId);
-  }
 }

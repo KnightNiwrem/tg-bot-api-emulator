@@ -1,5 +1,6 @@
 import { assertEquals } from '@std/assert';
-import { createTestSession, type EmulationApi, requestJson } from './support/emulation_api.ts';
+import { createTestSession, type EmulationApi } from './support/emulation_api.ts';
+import { createBot } from './support/http_fixtures.ts';
 
 const keyboardWithActionlessButton = JSON.stringify({
   inline_keyboard: [[{ text: 'Yes', callback_data: 'yes' }, { text: 'No' }]],
@@ -123,13 +124,8 @@ Deno.test('parameters a reader refuses after the schema keep the description wit
 /** Creates a session holding a bot. */
 async function createFixture() {
   const { api, sessionPath } = await createTestSession();
-  const { body: createdBot } = await requestJson<{ token: string }>(
-    api,
-    'POST',
-    `${sessionPath}/bots`,
-    { first_name: 'Test Bot', username: 'test_bot' },
-  );
-  return { api, botApiPath: `${sessionPath}/bot-api/bot${createdBot.token}` };
+  const { botApiPath } = await createBot(api, sessionPath, 'test_bot');
+  return { api, botApiPath };
 }
 
 /** Calls a Bot API method with JSON parameters, answering with the status and description. */
