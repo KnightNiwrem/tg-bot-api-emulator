@@ -274,12 +274,15 @@ is not JSON the official server can read is answered with Telegram's
 Likewise, as the server's `get_link_preview_options` reads it, a `link_preview_options` that is not
 JSON it can read is answered with `Bad Request: can't parse link preview options JSON object`, and
 empty text is no options, so that `disable_web_page_preview` applies. As its `get_message_ids` reads
-it, `deleteMessages`' `message_ids` that is not JSON it can read is answered with
-`Bad Request: can't parse message_ids JSON object`, and empty text names no messages, which is
-answered with `Bad Request: message identifiers are not specified`. A parameter that the schema
-reads as text or as a list and a later reader refuses, such as `editMessageMedia`'s `media`,
-`copyMessage`'s `caption_entities` or a field of `setChatPermissions`' `permissions` that Telegram
-does not know, keeps the description without a path, as do the other methods.
+it, a `message_ids` of `deleteMessages`, `forwardMessages` or `copyMessages` that is not JSON it can
+read is answered with `Bad Request: can't parse message_ids JSON object`, and empty text names no
+messages, which is answered with `Bad Request: message identifiers are not specified`. As its
+`get_reply_parameters` reads it, a `reply_parameters` that is not JSON it can read is answered with
+`Bad Request: can't parse reply parameters JSON object`, and empty text specifies no reply, which
+the older `reply_to_message_id` then cannot specify either. A parameter that the schema reads as
+text or as a list and a later reader refuses, such as `editMessageMedia`'s `media`, `copyMessage`'s
+`caption_entities` or a field of `setChatPermissions`' `permissions` that Telegram does not know,
+keeps the description without a path, as do the other methods.
 
 ## Accepted options without their Telegram effects
 

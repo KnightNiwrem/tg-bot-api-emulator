@@ -148,6 +148,18 @@ export const BOT_API_ERRORS = {
     'Bad Request: invalid message identifier specified',
     botApiServerSource('telegram-bot-api/Client.cpp#L13532-L13534'),
   ),
+  /** A forward or copy that names no chat to repeat from, read by `get_required_string_arg`. */
+  fromChatIdRequired: fixedBotApiError(
+    400,
+    'Bad Request: parameter "from_chat_id" is required',
+    botApiServerSource('telegram-bot-api/Client.cpp#L13464-L13470'),
+  ),
+  /** A forward or copy of several messages that names none, after `get_message_ids` read them. */
+  repeatedMessageIdentifiersEmpty: fixedBotApiError(
+    400,
+    'Bad Request: message identifiers are not specified',
+    botApiServerSource('telegram-bot-api/Client.cpp#L14394-L14397'),
+  ),
   /** A `chat_id` that must name a user, as a menu button's does, read by `get_user_id`. */
   userChatIdInvalid: fixedBotApiError(
     400,
