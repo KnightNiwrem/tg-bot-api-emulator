@@ -1,35 +1,35 @@
 import type { z } from 'zod';
 
-import { createAccountContract } from '../../control_contracts/accounts.ts';
-import { blockBotContract, unblockBotContract } from '../../control_contracts/blocked_bots.ts';
-import { createBotContract } from '../../control_contracts/bots.ts';
+import { createAccountContract } from '../../src/api/contracts/accounts.ts';
+import { blockBotContract, unblockBotContract } from '../../src/api/contracts/blocked_bots.ts';
+import { createBotContract } from '../../src/api/contracts/bots.ts';
 import {
   getCallbackQueryContract,
   pressCallbackButtonContract,
-} from '../../control_contracts/callback_queries.ts';
-import { downloadFileContract } from '../../control_contracts/files.ts';
+} from '../../src/api/contracts/callback_queries.ts';
+import { downloadFileContract } from '../../src/api/contracts/files.ts';
 import {
   expireInlineAnswerCacheContract,
   getInlineQueryContract,
   sendInlineQueryContract,
-} from '../../control_contracts/inline_queries.ts';
+} from '../../src/api/contracts/inline_queries.ts';
 import {
   listRateLimitResponsesContract,
   listServerErrorResponsesContract,
   queueRateLimitResponsesContract,
   queueServerErrorResponsesContract,
-} from '../../control_contracts/queued_bot_api_answers.ts';
+} from '../../src/api/contracts/queued_bot_api_answers.ts';
 import {
   expirePrivateMessageDraftContract,
   getPrivateMessageDraftContract,
   stopPrivateMessageDraftContract,
-} from '../../control_contracts/message_drafts.ts';
+} from '../../src/api/contracts/message_drafts.ts';
 import {
   expirePollContract,
   retractAccountPollAnswerContract,
   retractSupergroupAccountPollAnswerContract,
-} from '../../control_contracts/polls.ts';
-import { deleteSessionContract } from '../../control_contracts/sessions.ts';
+} from '../../src/api/contracts/polls.ts';
+import { deleteSessionContract } from '../../src/api/contracts/sessions.ts';
 import {
   changeSupergroupDescriptionContract,
   changeSupergroupTitleContract,
@@ -43,7 +43,7 @@ import {
   setSupergroupCustomTitleContract,
   setSupergroupDefaultPermissionsContract,
   unprotectSupergroupContentContract,
-} from '../../control_contracts/supergroup_administration.ts';
+} from '../../src/api/contracts/supergroup_administration.ts';
 import {
   addSupergroupMemberContract,
   createSupergroupContract,
@@ -54,15 +54,15 @@ import {
   getSupergroupJoinRequestsContract,
   joinChatByInviteLinkContract,
   removeSupergroupMemberContract,
-} from '../../control_contracts/supergroups.ts';
+} from '../../src/api/contracts/supergroups.ts';
 import {
   expireWebhookAttemptContract,
   getWebhookDeliveryContract,
   listWebhookAttemptsContract,
   releaseWebhookRetryContract,
   setWebhookDeliveryContract,
-} from '../../control_contracts/webhook_attempts.ts';
-import { registerWebResourceContract } from '../../control_contracts/web_resources.ts';
+} from '../../src/api/contracts/webhook_attempts.ts';
+import { registerWebResourceContract } from '../../src/api/contracts/web_resources.ts';
 import { createHttpBotActivityPageReader } from './bot_activity_http_page_reader.ts';
 import { createBotActivityLog } from './bot_activity_log.ts';
 import { HTTP_STATUS_CREATED, HTTP_STATUS_NO_CONTENT, HTTP_STATUS_OK } from './constants.ts';

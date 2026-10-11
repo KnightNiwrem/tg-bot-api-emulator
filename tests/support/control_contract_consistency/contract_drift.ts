@@ -10,7 +10,7 @@ import {
   normalizeHeaderName,
   type QueryParameterSerialization,
   readSuccessHeadersSchema,
-} from '../../../control_contracts/operation_contract.ts';
+} from '../../../src/api/contracts/operation_contract.ts';
 import type {
   DocumentedHeader,
   DocumentedMediaType,

@@ -10,8 +10,8 @@ import {
   type ControlOperationResponse,
   type DecodedControlRequest,
   readPathPlaceholders,
-} from '../../control_contracts/operation_contract.ts';
-import { isContentTypeInRange } from '../../http_grammar/media_type.ts';
+} from './contracts/operation_contract.ts';
+import { isContentTypeInRange } from './http_grammar/media_type.ts';
 import type { EmulationSession } from '../types/emulation_session.ts';
 import {
   invalidControlRequestResponse,

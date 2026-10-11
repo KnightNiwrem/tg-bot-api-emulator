@@ -8,9 +8,9 @@ import { assertEquals, assertRejects, assertThrows } from '@std/assert';
 import {
   ACTION_RECEIPT_ACTIVITY_POSITION_HEADER,
   ACTION_RECEIPT_SESSION_ID_HEADER,
-} from '../../control_contracts/action_receipts.ts';
-import { createBotContract } from '../../control_contracts/bots.ts';
-import { addSupergroupMemberContract } from '../../control_contracts/supergroups.ts';
+} from '../../src/api/contracts/action_receipts.ts';
+import { createBotContract } from '../../src/api/contracts/bots.ts';
+import { addSupergroupMemberContract } from '../../src/api/contracts/supergroups.ts';
 import {
   type BotActivityPageReader,
   type BotActivityPageRequest,

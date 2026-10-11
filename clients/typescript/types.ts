@@ -3,68 +3,68 @@ import type { z } from 'zod';
 import type {
   accountProfileSchema,
   createAccountContract,
-} from '../../control_contracts/accounts.ts';
+} from '../../src/api/contracts/accounts.ts';
 import type {
   botApiCallEntrySchema,
   updateConfirmedEntrySchema,
   updateDeliveredEntrySchema,
   webhookAttemptFailedEntrySchema,
-} from '../../control_contracts/bot_activity.ts';
+} from '../../src/api/contracts/bot_activity.ts';
 import type {
   botProfileSchema,
   createBotContract,
   messageSenderBotSchema,
-} from '../../control_contracts/bots.ts';
+} from '../../src/api/contracts/bots.ts';
 import type {
   messageEntitySchema,
   PLAIN_MESSAGE_ENTITY_TYPES,
-} from '../../control_contracts/message_entities.ts';
-import type { pollSchema } from '../../control_contracts/polls.ts';
+} from '../../src/api/contracts/message_entities.ts';
+import type { pollSchema } from '../../src/api/contracts/polls.ts';
 import type {
   CHAT_PERMISSIONS,
   getSupergroupAdministratorsContract,
   SUPERGROUP_ADMINISTRATOR_RIGHTS,
-} from '../../control_contracts/supergroup_administration.ts';
+} from '../../src/api/contracts/supergroup_administration.ts';
 import type {
   CONTROL_REQUEST_ISSUE_CODES,
   CONTROL_REQUEST_ISSUE_SOURCES,
-} from '../../control_contracts/control_errors.ts';
+} from '../../src/api/contracts/control_errors.ts';
 import type {
   ControlOperationRequest,
   ControlOperationResult,
-} from '../../control_contracts/operation_contract.ts';
+} from '../../src/api/contracts/operation_contract.ts';
 import type {
   QUEUEABLE_SERVER_ERROR_CODES,
   queueRateLimitResponsesContract,
   queueServerErrorResponsesContract,
-} from '../../control_contracts/queued_bot_api_answers.ts';
+} from '../../src/api/contracts/queued_bot_api_answers.ts';
 import type {
   getInlineQueryContract,
   sendInlineQueryContract,
-} from '../../control_contracts/inline_queries.ts';
+} from '../../src/api/contracts/inline_queries.ts';
 import type {
   getCallbackQueryContract,
   pressCallbackButtonContract,
-} from '../../control_contracts/callback_queries.ts';
+} from '../../src/api/contracts/callback_queries.ts';
 import type {
   getPrivateMessageDraftContract,
   stopPrivateMessageDraftContract,
-} from '../../control_contracts/message_drafts.ts';
-import type { createSessionContract } from '../../control_contracts/sessions.ts';
+} from '../../src/api/contracts/message_drafts.ts';
+import type { createSessionContract } from '../../src/api/contracts/sessions.ts';
 import type {
   createSupergroupContract,
   getSupergroupInviteLinksContract,
   getSupergroupJoinRequestsContract,
   joinChatByInviteLinkContract,
-} from '../../control_contracts/supergroups.ts';
+} from '../../src/api/contracts/supergroups.ts';
 import type {
   getWebhookDeliveryContract,
   setWebhookDeliveryContract,
   WEBHOOK_SCHEDULINGS,
   webhookAttemptFailureSchema,
   webhookAttemptSchema,
-} from '../../control_contracts/webhook_attempts.ts';
-import type { registerWebResourceContract } from '../../control_contracts/web_resources.ts';
+} from '../../src/api/contracts/webhook_attempts.ts';
+import type { registerWebResourceContract } from '../../src/api/contracts/web_resources.ts';
 import type { ControlRefusalReason } from './control_refusal_reasons.ts';
 
 /**

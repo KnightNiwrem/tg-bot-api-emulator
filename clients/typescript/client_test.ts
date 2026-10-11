@@ -1,5 +1,5 @@
 import { assertEquals } from '@std/assert';
-import { accountProfileSchema } from '../../control_contracts/accounts.ts';
+import { accountProfileSchema } from '../../src/api/contracts/accounts.ts';
 import { TEST_PUBLIC_ORIGIN } from '../../tests/support/emulation_api.ts';
 import { assertEqualsInFieldOrder } from '../../tests/support/field_order_assertion.ts';
 import { createTestInProcessEmulator } from '../../tests/support/emulation_api.ts';

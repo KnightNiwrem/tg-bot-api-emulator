@@ -6,7 +6,7 @@ import {
   listWebhookAttemptsContract,
   releaseWebhookRetryContract,
   setWebhookDeliveryContract,
-} from '../../../../control_contracts/webhook_attempts.ts';
+} from '../../contracts/webhook_attempts.ts';
 import { registerControlOperation } from '../../control_operation_route.ts';
 import type { SessionRouteContextTypes } from '../session_route_context_types.ts';
 import { presentWebhookAttempt } from '../webhook_attempt_presentation.ts';

@@ -1,4 +1,4 @@
-import { readContentTypeMediaType } from '../../http_grammar/media_type.ts';
+import { readContentTypeMediaType } from '../api/http_grammar/media_type.ts';
 import type { Scheduler } from '../timing/session_timing.ts';
 
 /**

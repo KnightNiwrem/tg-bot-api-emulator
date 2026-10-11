@@ -4,30 +4,30 @@
  * check each copy against the domain's value.
  */
 import { assertEquals } from '@std/assert';
-import { BOT_ACTIVITY_KINDS as CONTRACT_BOT_ACTIVITY_KINDS } from '../control_contracts/bot_activity.ts';
-import { QUEUEABLE_SERVER_ERROR_CODES as CONTRACT_QUEUEABLE_SERVER_ERROR_CODES } from '../control_contracts/queued_bot_api_answers.ts';
-import { PLAIN_MESSAGE_ENTITY_TYPES } from '../control_contracts/message_entities.ts';
+import { BOT_ACTIVITY_KINDS as CONTRACT_BOT_ACTIVITY_KINDS } from '../src/api/contracts/bot_activity.ts';
+import { QUEUEABLE_SERVER_ERROR_CODES as CONTRACT_QUEUEABLE_SERVER_ERROR_CODES } from '../src/api/contracts/queued_bot_api_answers.ts';
+import { PLAIN_MESSAGE_ENTITY_TYPES } from '../src/api/contracts/message_entities.ts';
 import {
   MAX_POLL_OPEN_PERIOD_SECONDS as CONTRACT_MAX_POLL_OPEN_PERIOD_SECONDS,
   MAX_POLL_OPTION_COUNT as CONTRACT_MAX_POLL_OPTION_COUNT,
   MAX_QUIZ_EXPLANATION_LENGTH as CONTRACT_MAX_QUIZ_EXPLANATION_LENGTH,
   MIN_POLL_OPEN_PERIOD_SECONDS as CONTRACT_MIN_POLL_OPEN_PERIOD_SECONDS,
-} from '../control_contracts/polls.ts';
-import { MAX_INLINE_QUERY_LENGTH as CONTRACT_MAX_INLINE_QUERY_LENGTH } from '../control_contracts/inline_queries.ts';
-import { uploadProfileSchema } from '../control_contracts/sessions.ts';
+} from '../src/api/contracts/polls.ts';
+import { MAX_INLINE_QUERY_LENGTH as CONTRACT_MAX_INLINE_QUERY_LENGTH } from '../src/api/contracts/inline_queries.ts';
+import { uploadProfileSchema } from '../src/api/contracts/sessions.ts';
 import {
   CHAT_PERMISSIONS as CONTRACT_CHAT_PERMISSIONS,
   getSupergroupAdministratorsContract,
   setSupergroupCustomTitleContract,
   SUPERGROUP_ADMINISTRATOR_RIGHTS as CONTRACT_SUPERGROUP_ADMINISTRATOR_RIGHTS,
-} from '../control_contracts/supergroup_administration.ts';
-import { expireChatInviteLinkContract } from '../control_contracts/supergroups.ts';
-import { WEBHOOK_SCHEDULINGS as CONTRACT_WEBHOOK_SCHEDULINGS } from '../control_contracts/webhook_attempts.ts';
+} from '../src/api/contracts/supergroup_administration.ts';
+import { expireChatInviteLinkContract } from '../src/api/contracts/supergroups.ts';
+import { WEBHOOK_SCHEDULINGS as CONTRACT_WEBHOOK_SCHEDULINGS } from '../src/api/contracts/webhook_attempts.ts';
 import {
   MAX_HORIZONTAL_ACCURACY_METERS as CONTRACT_MAX_HORIZONTAL_ACCURACY_METERS,
   supergroupChatIdSchema,
   telegramUserIdSchema,
-} from '../control_contracts/wire_fields.ts';
+} from '../src/api/contracts/wire_fields.ts';
 import { BOT_ACTIVITY_KINDS } from '../src/types/bot_activity_kind.ts';
 import { QUEUEABLE_SERVER_ERROR_CODES } from '../src/types/bot_server_error.ts';
 import { WEBHOOK_SCHEDULINGS } from '../src/types/bot_webhook.ts';

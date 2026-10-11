@@ -9,7 +9,7 @@
 import { parse as parseYaml } from '@std/yaml';
 import { z } from 'zod';
 
-import { normalizeHeaderName } from '../../../control_contracts/operation_contract.ts';
+import { normalizeHeaderName } from '../../../src/api/contracts/operation_contract.ts';
 
 /** The HTTP methods an OpenAPI path item can describe operations for, as the document spells them. */
 export const DOCUMENTED_HTTP_METHODS = ['get', 'put', 'post', 'delete', 'patch'] as const;

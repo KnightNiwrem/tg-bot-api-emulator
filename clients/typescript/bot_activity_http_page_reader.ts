@@ -1,5 +1,5 @@
-import { readBotActivityContract } from '../../control_contracts/bot_activity.ts';
-import type { ControlOperationRequest } from '../../control_contracts/operation_contract.ts';
+import { readBotActivityContract } from '../../src/api/contracts/bot_activity.ts';
+import type { ControlOperationRequest } from '../../src/api/contracts/operation_contract.ts';
 import {
   type BotActivityPage,
   type BotActivityPageReader,

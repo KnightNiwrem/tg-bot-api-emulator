@@ -4,7 +4,7 @@ import { z } from 'zod';
 import {
   retractAccountPollAnswerContract,
   retractSupergroupAccountPollAnswerContract,
-} from '../../../../control_contracts/polls.ts';
+} from '../../contracts/polls.ts';
 import type { EmulationSession } from '../../../types/emulation_session.ts';
 import {
   controlErrorResponse,

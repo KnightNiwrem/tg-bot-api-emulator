@@ -1,10 +1,10 @@
 import { Hono } from 'hono';
 
-import { INVALID_REQUEST_REASON } from '../../../../control_contracts/control_errors.ts';
+import { INVALID_REQUEST_REASON } from '../../contracts/control_errors.ts';
 import {
   listServerErrorResponsesContract,
   queueServerErrorResponsesContract,
-} from '../../../../control_contracts/queued_bot_api_answers.ts';
+} from '../../contracts/queued_bot_api_answers.ts';
 import type { QueuedServerErrorResponses } from '../../../types/bot_server_error.ts';
 import { registerControlOperation } from '../../control_operation_route.ts';
 import type { SessionRouteContextTypes } from '../session_route_context_types.ts';

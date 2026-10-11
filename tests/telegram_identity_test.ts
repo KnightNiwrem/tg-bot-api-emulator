@@ -1,4 +1,4 @@
-import { telegramUsernameSchema } from '../control_contracts/wire_fields.ts';
+import { telegramUsernameSchema } from '../src/api/contracts/wire_fields.ts';
 
 function isTelegramUsername(username: string): boolean {
   return telegramUsernameSchema.safeParse(username).success;

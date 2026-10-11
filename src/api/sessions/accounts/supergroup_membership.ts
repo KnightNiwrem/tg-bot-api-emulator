@@ -3,7 +3,7 @@ import { Hono } from 'hono';
 import type {
   ControlOperationRefusal,
   ControlOperationResponse,
-} from '../../../../control_contracts/operation_contract.ts';
+} from '../../contracts/operation_contract.ts';
 import {
   addSupergroupMemberContract,
   createSupergroupContract,
@@ -12,7 +12,7 @@ import {
   getSupergroupJoinRequestsContract,
   joinChatByInviteLinkContract,
   removeSupergroupMemberContract,
-} from '../../../../control_contracts/supergroups.ts';
+} from '../../contracts/supergroups.ts';
 import type { EmulationSession } from '../../../types/emulation_session.ts';
 import type { Supergroup } from '../../../types/virtual_chat.ts';
 import { registerControlOperation } from '../../control_operation_route.ts';

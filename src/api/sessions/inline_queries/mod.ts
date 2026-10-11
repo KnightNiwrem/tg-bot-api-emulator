@@ -1,6 +1,6 @@
 import { Hono } from 'hono';
 
-import { expireInlineAnswerCacheContract } from '../../../../control_contracts/inline_queries.ts';
+import { expireInlineAnswerCacheContract } from '../../contracts/inline_queries.ts';
 import { registerControlOperation } from '../../control_operation_route.ts';
 import type { SessionRouteContextTypes } from '../session_route_context_types.ts';
 

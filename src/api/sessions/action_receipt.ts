@@ -1,13 +1,13 @@
 /**
  * Captures and writes the action receipts that successful control actions answer with, as
- * `control_contracts/action_receipts.ts` describes them.
+ * `src/api/contracts/action_receipts.ts` describes them.
  */
 import type { Context } from 'hono';
 
 import {
   ACTION_RECEIPT_ACTIVITY_POSITION_HEADER,
   ACTION_RECEIPT_SESSION_ID_HEADER,
-} from '../../../control_contracts/action_receipts.ts';
+} from '../contracts/action_receipts.ts';
 import type { EmulationSession } from '../../types/emulation_session.ts';
 import { sessionNotFoundResponse } from '../control_error_response.ts';
 import type { SessionRouteContextTypes } from './session_route_context_types.ts';

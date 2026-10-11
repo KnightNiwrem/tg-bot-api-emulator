@@ -6,7 +6,7 @@
  */
 import type { z } from 'zod';
 
-import type { ActionReceiptSource } from '../../control_contracts/action_receipts.ts';
+import type { ActionReceiptSource } from '../../src/api/contracts/action_receipts.ts';
 import {
   type BytesSuccessContract,
   type ControlOperationContract,
@@ -14,7 +14,7 @@ import {
   type EmptySuccessContract,
   type JsonSuccessContract,
   readPathPlaceholders,
-} from '../../control_contracts/operation_contract.ts';
+} from '../../src/api/contracts/operation_contract.ts';
 import type { ActionOutcome, ActionReceipt } from './types.ts';
 import {
   requestBytes,

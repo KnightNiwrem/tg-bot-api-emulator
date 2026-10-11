@@ -1,9 +1,6 @@
 import { Hono } from 'hono';
 
-import {
-  blockBotContract,
-  unblockBotContract,
-} from '../../../../control_contracts/blocked_bots.ts';
+import { blockBotContract, unblockBotContract } from '../../contracts/blocked_bots.ts';
 import { registerControlOperation } from '../../control_operation_route.ts';
 import type { SessionRouteContextTypes } from '../session_route_context_types.ts';
 

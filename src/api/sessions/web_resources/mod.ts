@@ -1,7 +1,7 @@
 import { Hono } from 'hono';
 
-import { INVALID_REQUEST_REASON } from '../../../../control_contracts/control_errors.ts';
-import { registerWebResourceContract } from '../../../../control_contracts/web_resources.ts';
+import { INVALID_REQUEST_REASON } from '../../contracts/control_errors.ts';
+import { registerWebResourceContract } from '../../contracts/web_resources.ts';
 import type { WebResource } from '../../../types/web_resource.ts';
 import { registerControlOperation } from '../../control_operation_route.ts';
 import { decodeBase64Content } from '../base64_content.ts';

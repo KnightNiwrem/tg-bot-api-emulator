@@ -2,14 +2,11 @@ import { Hono } from 'hono';
 import { basePath } from 'hono/route';
 import { z } from 'zod';
 
-import {
-  getInlineQueryContract,
-  sendInlineQueryContract,
-} from '../../../../control_contracts/inline_queries.ts';
+import { getInlineQueryContract, sendInlineQueryContract } from '../../contracts/inline_queries.ts';
 import type {
   ControlOperationRefusal,
   DecodedControlRequest,
-} from '../../../../control_contracts/operation_contract.ts';
+} from '../../contracts/operation_contract.ts';
 import { toBotApiLocation } from '../../../types/bot_api.ts';
 import type { EmulationSession } from '../../../types/emulation_session.ts';
 import { createGeoLocation, type GeoLocation } from '../../../types/geo_location.ts';

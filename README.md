@@ -70,15 +70,16 @@ conventions are more than the schemas model. A request to an undocumented route 
 purpose.
 
 Control operations with a contract module declare their HTTP wire facts once, in
-`control_contracts/`: the method and path, the path and query parameters, the JSON body, and each
+`src/api/contracts/`: the method and path, the path and query parameters, the JSON body, and each
 response's status, headers and body kind (JSON, empty or bytes), as zod schemas without transforms.
 The server registers those routes from their contracts and decodes requests with them, and the
 TypeScript client infers its types for them and calls them through one typed caller. The OpenAPI
 description stays hand-written; `tests/control_contract_openapi_consistency_test.ts` compares each
 contract with the description's entry for the same operation, in both directions, so that a change
-to either one alone fails. The contracts import nothing but zod, so the client uses them without
-depending on the emulator's source; `tests/control_contract_definitions_test.ts` checks the facts
-they share with the emulator's domain, such as the user ID range.
+to either one alone fails. The contracts import nothing but zod and the HTTP grammar beside them in
+`src/api/`, so the client imports them without depending on the rest of the emulator's source;
+`tests/control_contract_definitions_test.ts` checks the facts they share with the emulator's domain,
+such as the user ID range.
 
 ## Commands
 

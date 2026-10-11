@@ -1,6 +1,6 @@
 import { Hono } from 'hono';
 
-import { downloadFileContract } from '../../../../control_contracts/files.ts';
+import { downloadFileContract } from '../../contracts/files.ts';
 import { registerControlOperation } from '../../control_operation_route.ts';
 import { getFileContentType } from '../file_download.ts';
 import type { SessionRouteContextTypes } from '../session_route_context_types.ts';

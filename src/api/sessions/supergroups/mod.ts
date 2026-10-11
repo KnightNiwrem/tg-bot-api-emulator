@@ -1,10 +1,10 @@
 import { Hono } from 'hono';
 
-import { expireSupergroupMemberRestrictionContract } from '../../../../control_contracts/supergroup_administration.ts';
+import { expireSupergroupMemberRestrictionContract } from '../../contracts/supergroup_administration.ts';
 import {
   expireChatInviteLinkContract,
   expireJoinRequesterContactContract,
-} from '../../../../control_contracts/supergroups.ts';
+} from '../../contracts/supergroups.ts';
 import { INVITE_LINK_PREFIX } from '../../../types/chat_invite_link.ts';
 import { registerControlOperation } from '../../control_operation_route.ts';
 import { presentChatInviteLinkUsage, presentChatJoinRequest } from '../invite_link_presentation.ts';
