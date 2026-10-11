@@ -1,17 +1,16 @@
-import { AccountRepository } from '../src/repositories/account.ts';
-import { BotRepository } from '../src/repositories/bot.ts';
-import { BotMenuButtonRepository } from '../src/repositories/bot_menu_button.ts';
-import { TelegramIdentityRepository } from '../src/repositories/telegram_identity.ts';
 import {
   BotMenuButtonService,
   type GetBotMenuButtonResult,
   type SetBotMenuButtonResult,
 } from '../src/services/bot_menu_button.ts';
-import { VirtualUserService } from '../src/services/virtual_user.ts';
 import type { BotMenuButton } from '../src/types/bot_menu_button.ts';
+import { buildSessionServices } from './support/session_services.ts';
+import { createVirtualAccount, createVirtualBot } from './support/virtual_users.ts';
+import { assertEqualsInFieldOrder } from './support/field_order_assertion.ts';
 
 Deno.test('BotMenuButtonService prefers a chat button over the button for all chats', () => {
-  const { menuButtons, botId, accountId, otherAccountId } = createMenuButtonFixture();
+  using fixture = createMenuButtonFixture();
+  const { menuButtons, botId, accountId, otherAccountId } = fixture;
   const webApp: BotMenuButton = { kind: 'web_app', text: 'Shop', url: 'https://shop.example/' };
 
   assertMenuButton(menuButtons.getBotMenuButton({ botId }), { kind: 'default' });
@@ -37,7 +36,8 @@ Deno.test('BotMenuButtonService prefers a chat button over the button for all ch
 });
 
 Deno.test('BotMenuButtonService cleans a Web App button and normalizes its URL', () => {
-  const { menuButtons, botId } = createMenuButtonFixture();
+  using fixture = createMenuButtonFixture();
+  const { menuButtons, botId } = fixture;
 
   assertSet(
     menuButtons.setBotMenuButton({
@@ -54,7 +54,8 @@ Deno.test('BotMenuButtonService cleans a Web App button and normalizes its URL',
 });
 
 Deno.test('BotMenuButtonService rejects buttons and users as TDLib does', () => {
-  const { menuButtons, botId, accountId } = createMenuButtonFixture();
+  using fixture = createMenuButtonFixture();
+  const { menuButtons, botId, accountId } = fixture;
   const webApp = (text: string, url: string): BotMenuButton => ({ kind: 'web_app', text, url });
   assertSet(menuButtons.setBotMenuButton({ botId, menuButton: { kind: 'commands' } }));
 
@@ -96,30 +97,21 @@ Deno.test('BotMenuButtonService rejects buttons and users as TDLib does', () => 
   }
 });
 
+/** A session with a bot and two accounts, Ada and Grace, that can open its menu. */
 function createMenuButtonFixture() {
-  const bots = new BotRepository();
-  const accounts = new AccountRepository();
-  const virtualUsers = new VirtualUserService({
-    identities: new TelegramIdentityRepository(),
-    accounts,
-    bots,
-  });
-  const botCreation = virtualUsers.createBot({ first_name: 'Shop Bot', username: 'shop_bot' });
-  const accountCreation = virtualUsers.createAccount({ first_name: 'Ada' });
-  const otherAccountCreation = virtualUsers.createAccount({ first_name: 'Grace' });
-  if (!botCreation.created || !accountCreation.created || !otherAccountCreation.created) {
-    throw new Error('Expected the bot and accounts to be created');
-  }
-  const menuButtons = new BotMenuButtonService({
-    accounts,
-    bots,
-    menuButtons: new BotMenuButtonRepository(),
-  });
+  const session = buildSessionServices();
+  const botId =
+    createVirtualBot(session.virtualUsers, { first_name: 'Shop Bot', username: 'shop_bot' })
+      .profile.id;
+  const [accountId, otherAccountId] = ['Ada', 'Grace'].map((firstName) =>
+    createVirtualAccount(session.virtualUsers, { first_name: firstName }).profile.id
+  );
   return {
-    menuButtons,
-    botId: botCreation.bot.profile.id,
-    accountId: accountCreation.account.profile.id,
-    otherAccountId: otherAccountCreation.account.profile.id,
+    menuButtons: session.botMenuButtons,
+    botId,
+    accountId,
+    otherAccountId,
+    [Symbol.dispose]: () => session[Symbol.dispose](),
   };
 }
 
@@ -133,9 +125,9 @@ function assertMenuButton(
   result: GetBotMenuButtonResult | ReturnType<BotMenuButtonService['getPrivateChatMenuButton']>,
   expectedMenuButton: BotMenuButton,
 ): void {
-  if (!result.found || JSON.stringify(result.menuButton) !== JSON.stringify(expectedMenuButton)) {
-    throw new Error(
-      `Expected ${JSON.stringify(expectedMenuButton)}, received ${JSON.stringify(result)}`,
-    );
-  }
+  assertEqualsInFieldOrder(
+    result.found ? result.menuButton : result,
+    expectedMenuButton,
+    "Expected the bot's menu button",
+  );
 }

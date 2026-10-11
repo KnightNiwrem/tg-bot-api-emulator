@@ -1,3 +1,4 @@
+import { assertEquals } from '@std/assert';
 import { AccountRepository } from '../src/repositories/account.ts';
 import { BlockedUserRepository } from '../src/repositories/blocked_user.ts';
 import { BotRepository } from '../src/repositories/bot.ts';
@@ -21,6 +22,7 @@ import { SupergroupMessagingService } from '../src/services/supergroup_messaging
 import { VirtualUserService } from '../src/services/virtual_user.ts';
 import type { ChatDomainEvent } from '../src/types/chat_domain_event.ts';
 import { ALL_CHAT_PERMISSIONS } from '../src/types/chat_permissions.ts';
+import { createVirtualAccount, createVirtualBot } from './support/virtual_users.ts';
 
 Deno.test('CallbackQueryService publishes a callback query for a pressed button', () => {
   const { publishedEvents, privateConversations, callbackQueries, chat } =
@@ -103,17 +105,12 @@ Deno.test('CallbackQueryService presses buttons on bot messages in a supergroup 
     press(chat.account.profile.id, supergroup.id, 99),
     press(chat.account.profile.id, supergroup.id, 1),
   ].map((result) => result.pressed ? 'pressed' : result.reason);
-  if (
-    JSON.stringify(failures) !==
-      JSON.stringify([
-        'chat_not_found',
-        'not_a_member',
-        'message_not_found',
-        'callback_button_not_found',
-      ])
-  ) {
-    throw new Error(`Expected supergroup press checks, received ${JSON.stringify(failures)}`);
-  }
+  assertEquals(failures, [
+    'chat_not_found',
+    'not_a_member',
+    'message_not_found',
+    'callback_button_not_found',
+  ], 'Expected supergroup press checks');
 
   const result = press(chat.account.profile.id, supergroup.id, 2);
   if (
@@ -233,16 +230,11 @@ Deno.test('CallbackQueryService lets only the receiving bot answer, and only onc
   }
 
   const firstAnswer = answer(chat.bot.profile.id, 'Saved');
-  if (
-    !firstAnswer.answered ||
-    JSON.stringify(firstAnswer.callbackQuery.state) !==
-      JSON.stringify({
-        status: 'answered',
-        answer: { text: 'Saved', showAlert: true, cacheTimeSeconds: 10 },
-      })
-  ) {
-    throw new Error("Expected the receiving bot's answer to be recorded");
-  }
+  assertEquals(
+    firstAnswer.answered ? firstAnswer.callbackQuery.state : firstAnswer,
+    { status: 'answered', answer: { text: 'Saved', showAlert: true, cacheTimeSeconds: 10 } },
+    "Expected the receiving bot's answer to be recorded",
+  );
   if (answer(chat.bot.profile.id, 'Again').answered) {
     throw new Error('Expected a second answer to be rejected');
   }
@@ -536,17 +528,9 @@ function createCallbackQueryFixture() {
 }
 
 function createAccount(virtualUsers: VirtualUserService, firstName: string) {
-  const result = virtualUsers.createAccount({ first_name: firstName });
-  if (!result.created) {
-    throw new Error(`Expected account creation to succeed, received ${result.reason}`);
-  }
-  return result.account;
+  return createVirtualAccount(virtualUsers, { first_name: firstName });
 }
 
 function createBot(virtualUsers: VirtualUserService, username: string) {
-  const result = virtualUsers.createBot({ first_name: 'Test Bot', username });
-  if (!result.created) {
-    throw new Error(`Expected bot creation to succeed, received ${result.reason}`);
-  }
-  return result.bot;
+  return createVirtualBot(virtualUsers, { first_name: 'Test Bot', username });
 }

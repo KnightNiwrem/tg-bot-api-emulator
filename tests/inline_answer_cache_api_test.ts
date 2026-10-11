@@ -18,8 +18,8 @@ import {
 } from './support/emulation_api.ts';
 
 Deno.test('a test expires a cached inline answer, and the next query reaches the bot', async () => {
-  const { session, ada, grace, bot, privateChat, callBot, takeInlineQueryUpdates } =
-    await createInlineCacheFixture();
+  await using fixture = await createInlineCacheFixture();
+  const { session, ada, grace, bot, privateChat, callBot, takeInlineQueryUpdates } = fixture;
   try {
     const sendQuery = (account: VirtualAccountClient, query = 'cats') =>
       account.sendInlineQuery({ bot_id: bot.id, chat: privateChat, query });
@@ -95,8 +95,8 @@ Deno.test('a test expires a cached inline answer, and the next query reaches the
 
 Deno.test('answer cache expiry follows the request, not the chat, and stays in its session', async () => {
   await using api = createTestInProcessEmulator();
-  const first = await createInlineCacheFixture(api);
-  const second = await createInlineCacheFixture(api);
+  await using first = await createInlineCacheFixture(api);
+  await using second = await createInlineCacheFixture(api);
   try {
     const supergroups = await Promise.all(
       ['Team', 'Club'].map((title) => first.ada.createSupergroup({ title })),
@@ -163,8 +163,8 @@ Deno.test('answer cache expiry follows the request, not the chat, and stays in i
 
 Deno.test('answer cache expiry is refused, changing nothing, when there is no answer to expire', async () => {
   await using api = createTestInProcessEmulator();
-  const { session, ada, bot, privateChat, callBot, takeInlineQueryUpdates } =
-    await createInlineCacheFixture(api);
+  await using fixture = await createInlineCacheFixture(api);
+  const { session, ada, bot, privateChat, callBot, takeInlineQueryUpdates } = fixture;
   try {
     const sendQuery = (query: string) =>
       ada.sendInlineQuery({ bot_id: bot.id, chat: privateChat, query });
@@ -207,7 +207,8 @@ Deno.test('answer cache expiry is refused, changing nothing, when there is no an
 });
 
 Deno.test("a bot's answer after an expiry fills the cache again", async () => {
-  const { session, fetch, ada, bot, privateChat } = await createInlineCacheFixture();
+  await using fixture = await createInlineCacheFixture();
+  const { session, fetch, ada, bot, privateChat } = fixture;
   const answerGate = Promise.withResolvers<void>();
   const grammyBot = new Bot(bot.token, { client: { apiRoot: session.botApiRoot, fetch } });
   let answerCount = 0;
@@ -275,7 +276,7 @@ interface TestBotApiResponse {
   readonly description?: string;
 }
 
-interface InlineCacheFixture {
+interface InlineCacheFixture extends AsyncDisposable {
   readonly session: EmulationSessionClient;
   readonly fetch: typeof globalThis.fetch;
   readonly bot: { readonly id: number; readonly token: string };
@@ -289,11 +290,15 @@ interface InlineCacheFixture {
 
 /**
  * Creates a session where Ada and Grace can type inline queries for an inline bot that requests
- * their location, which the test drives through its Bot API unless it starts a grammY bot.
+ * their location, which the test drives through its Bot API unless it starts a grammY bot. The
+ * session is created on `sharedApi`, or else on an emulator of its own, which disposing of the
+ * fixture disposes of.
  */
 async function createInlineCacheFixture(
-  api: TestInProcessEmulator = createTestInProcessEmulator(),
+  sharedApi?: TestInProcessEmulator,
 ): Promise<InlineCacheFixture> {
+  await using disposalOnFailure = new AsyncDisposableStack();
+  const api = sharedApi ?? disposalOnFailure.use(createTestInProcessEmulator());
   const { fetch } = api;
   const session = await api.client.createSession();
   const createdBot = await session.createBot({
@@ -306,6 +311,7 @@ async function createInlineCacheFixture(
   const { account: grace } = await session.createAccount({ first_name: 'Grace' });
   const callBot = callBotWith(fetch, session, createdBot.token);
   let nextUpdateOffset = 0;
+  const emulatorDisposal = disposalOnFailure.move();
   return {
     session,
     fetch,
@@ -325,6 +331,7 @@ async function createInlineCacheFixture(
         inline_query === undefined ? [] : [inline_query.id]
       );
     },
+    [Symbol.asyncDispose]: () => emulatorDisposal.disposeAsync(),
   };
 }
 

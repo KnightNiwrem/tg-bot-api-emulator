@@ -1,3 +1,4 @@
+import { assertEquals } from '@std/assert';
 import { AccountRepository } from '../src/repositories/account.ts';
 import { BotRepository } from '../src/repositories/bot.ts';
 import { BotDefaultAdministratorRightsRepository } from '../src/repositories/bot_default_administrator_rights.ts';
@@ -7,6 +8,7 @@ import {
   type GetBotDefaultAdministratorRightsResult,
 } from '../src/services/bot_default_administrator_rights.ts';
 import { VirtualUserService } from '../src/services/virtual_user.ts';
+import { createVirtualBot } from './support/virtual_users.ts';
 
 Deno.test('BotDefaultAdministratorRightsService keeps group and channel rights apart', () => {
   const { defaultAdministratorRights, botId } = createFixture();
@@ -77,29 +79,25 @@ function createFixture() {
     accounts: new AccountRepository(),
     bots,
   });
-  const creation = virtualUsers.createBot({ first_name: 'Admin Bot', username: 'admin_bot' });
-  if (!creation.created) {
-    throw new Error(`Expected bot creation to succeed, received ${creation.reason}`);
-  }
+  const botId =
+    createVirtualBot(virtualUsers, { first_name: 'Admin Bot', username: 'admin_bot' }).profile.id;
   const defaultAdministratorRights = new BotDefaultAdministratorRightsService({
     bots,
     defaultAdministratorRights: new BotDefaultAdministratorRightsRepository(),
   });
-  return { defaultAdministratorRights, botId: creation.bot.profile.id };
+  return { defaultAdministratorRights, botId };
 }
 
 function assertRights(
   result: GetBotDefaultAdministratorRightsResult,
   expectedRights: readonly string[],
 ): void {
-  if (
-    !result.found ||
-    JSON.stringify([...result.rights].sort()) !== JSON.stringify([...expectedRights].sort())
-  ) {
-    throw new Error(
-      `Expected ${JSON.stringify(expectedRights)}, received ${
-        JSON.stringify(result.found ? [...result.rights] : result)
-      }`,
-    );
-  }
+  const grantedRights: readonly string[] | undefined = result.found
+    ? [...result.rights].sort()
+    : undefined;
+  assertEquals(
+    grantedRights,
+    [...expectedRights].sort(),
+    'Expected the default administrator rights, in any order',
+  );
 }

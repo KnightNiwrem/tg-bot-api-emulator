@@ -1,3 +1,4 @@
+import { assertEquals } from '@std/assert';
 import { AccountRepository } from '../src/repositories/account.ts';
 import { BotRepository } from '../src/repositories/bot.ts';
 import { BotCommandRepository } from '../src/repositories/bot_command.ts';
@@ -12,6 +13,8 @@ import {
 import { VirtualUserService } from '../src/services/virtual_user.ts';
 import type { BotCommand, BotCommandScope } from '../src/types/bot_command.ts';
 import { ALL_CHAT_PERMISSIONS } from '../src/types/chat_permissions.ts';
+import { createVirtualAccount, createVirtualBot } from './support/virtual_users.ts';
+import { assertEqualsInFieldOrder } from './support/field_order_assertion.ts';
 
 Deno.test('BotCommandService stores commands cleaned and trimmed as Telegram does', () => {
   const { botCommands, bot } = createBotCommandFixture();
@@ -151,8 +154,8 @@ Deno.test('BotCommandService keeps a list per scope and language, and empty list
   set({ type: 'default' }, '', ['start']);
   set({ type: 'default' }, 'de', ['starten']);
   set({ type: 'all_private_chats' }, '', ['private']);
-  if (
-    JSON.stringify([
+  assertEquals(
+    [
       listed({ type: 'default' }, ''),
       listed({ type: 'default' }, 'de'),
       listed(
@@ -160,11 +163,10 @@ Deno.test('BotCommandService keeps a list per scope and language, and empty list
         '',
       ),
       listed({ type: 'all_private_chats' }, 'de'),
-    ]) !==
-      JSON.stringify([['start'], ['starten'], ['private'], []])
-  ) {
-    throw new Error('Expected each scope and language to keep its own list, without fallback');
-  }
+    ],
+    [['start'], ['starten'], ['private'], []],
+    'Expected each scope and language to keep its own list, without fallback',
+  );
 
   set({ type: 'default' }, 'de', []);
   const deletion = botCommands.deleteBotCommands({
@@ -402,9 +404,11 @@ function assertCommands(
   result: ReturnType<BotCommandService['getBotCommands']>,
   expected: readonly BotCommand[],
 ): void {
-  if (!result.found || JSON.stringify(result.commands) !== JSON.stringify(expected)) {
-    throw new Error(`Expected ${JSON.stringify(expected)}, received ${JSON.stringify(result)}`);
-  }
+  assertEqualsInFieldOrder(
+    result.found ? result.commands : result,
+    expected,
+    "Expected the bot's commands",
+  );
 }
 
 function createBotCommandFixture() {
@@ -421,27 +425,20 @@ function createBotCommandFixture() {
     supergroupMembers: sharedChats,
     botCommands: new BotCommandRepository(),
   });
-  const botResult = virtualUsers.createBot({ first_name: 'Test Bot', username: 'test_bot' });
-  if (!botResult.created) {
-    throw new Error(`Expected bot creation to succeed, received ${botResult.reason}`);
-  }
+  const bot = createVirtualBot(virtualUsers, { first_name: 'Test Bot', username: 'test_bot' });
   return {
     botCommands,
     virtualUsers,
     privateConversations,
     sharedChats,
-    bot: botResult.bot,
+    bot,
     account: createAccount(virtualUsers, 'Ada'),
   };
 }
 
 function createAccount(virtualUsers: VirtualUserService, firstName: string, languageCode?: string) {
-  const result = virtualUsers.createAccount({
+  return createVirtualAccount(virtualUsers, {
     first_name: firstName,
     ...(languageCode === undefined ? {} : { language_code: languageCode }),
   });
-  if (!result.created) {
-    throw new Error(`Expected account creation to succeed, received ${result.reason}`);
-  }
-  return result.account;
 }
