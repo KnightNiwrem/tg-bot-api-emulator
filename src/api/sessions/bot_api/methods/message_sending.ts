@@ -39,6 +39,8 @@ import {
 } from '../input_poll_option_parameter.ts';
 import { messageEntitiesParameter } from '../message_entities_parameter.ts';
 import {
+  answeredPreparation,
+  type BotApiCallPreparation,
   botApiError,
   type BotApiMethod,
   type BotApiMethodAnswer,
@@ -70,16 +72,19 @@ import {
 } from '../specified_rich_message.ts';
 import { resolveRequestedInputFile } from '../web_file_parameter.ts';
 
-/** The methods that send a new message, or show a chat action before one. */
+/**
+ * The methods that send a new message, or show a chat action or a draft before one. Showing a chat
+ * action or a draft is executed as a command in its call's transaction.
+ */
 export const MESSAGE_SENDING_METHODS: readonly BotApiMethod[] = [
   { name: 'sendAudio', recordsActivity: true, handler: handleSendAudio },
-  { name: 'sendChatAction', recordsActivity: true, handler: handleSendChatAction },
+  { name: 'sendChatAction', recordsActivity: true, prepare: prepareSendChatAction },
   { name: 'sendContact', recordsActivity: true, handler: handleSendContact },
   { name: 'sendDocument', recordsActivity: true, handler: handleSendDocument },
   { name: 'sendLocation', recordsActivity: true, handler: handleSendLocation },
   { name: 'sendMediaGroup', recordsActivity: true, handler: handleSendMediaGroup },
   { name: 'sendMessage', recordsActivity: true, handler: handleSendMessage },
-  { name: 'sendMessageDraft', recordsActivity: true, handler: handleSendMessageDraft },
+  { name: 'sendMessageDraft', recordsActivity: true, prepare: prepareSendMessageDraft },
   { name: 'sendPhoto', recordsActivity: true, handler: handleSendPhoto },
   { name: 'sendPoll', recordsActivity: true, handler: handleSendPoll },
   { name: 'sendRichMessage', recordsActivity: true, handler: handleSendRichMessage },
@@ -901,14 +906,16 @@ function missingInputFileError(
  * `process_send_message_draft_query` reads it: the text and its formatting before the chat, and a
  * missing or zero `draft_id` as none, which Telegram's servers refuse. Empty text is allowed.
  */
-function handleSendMessageDraft(
+function prepareSendMessageDraft(
   context: BotApiMethodContext,
   parameters: BotApiRequestParameters,
-): BotApiMethodAnswer {
+): BotApiCallPreparation {
   const invalidParametersDescription = 'Bad Request: invalid sendMessageDraft parameters';
   const parsedParameters = sendMessageDraftParametersSchema.safeParse(parameters);
   if (!parsedParameters.success) {
-    return parameterSchemaFailureAnswer(parsedParameters.error, invalidParametersDescription);
+    return answeredPreparation(
+      parameterSchemaFailureAnswer(parsedParameters.error, invalidParametersDescription),
+    );
   }
   const { data } = parsedParameters;
   const formattedTextReading = readFormattedTextParameters(
@@ -917,43 +924,56 @@ function handleSendMessageDraft(
     invalidParametersDescription,
   );
   if (!formattedTextReading.read) {
-    return botApiError(400, formattedTextReading.description);
+    return answeredPreparation(botApiError(400, formattedTextReading.description));
   }
-  if (data.chat_id === undefined) {
-    return botApiError(400, CHAT_ID_EMPTY_DESCRIPTION);
+  const chatId = data.chat_id;
+  if (chatId === undefined) {
+    return answeredPreparation(botApiError(400, CHAT_ID_EMPTY_DESCRIPTION));
   }
 
-  const result = context.session.botApi.sendMessageDraft(context.bot, {
-    chatId: data.chat_id,
-    draftId: data.draft_id,
-    text: formattedTextReading.formattedText,
-    canStop: data.can_stop,
-    keepOnStop: data.keep_on_stop,
-  });
-  return result.sent ? botApiResult(true) : presentMessageSendingFailure('message_draft', result);
+  return {
+    kind: 'command',
+    execute: () => {
+      const result = context.session.botApi.sendMessageDraft(context.bot, {
+        chatId,
+        draftId: data.draft_id,
+        text: formattedTextReading.formattedText,
+        canStop: data.can_stop,
+        keepOnStop: data.keep_on_stop,
+      });
+      return result.sent
+        ? botApiResult(true)
+        : presentMessageSendingFailure('message_draft', result);
+    },
+  };
 }
 
-function handleSendChatAction(
+function prepareSendChatAction(
   context: BotApiMethodContext,
   parameters: BotApiRequestParameters,
-): BotApiMethodAnswer {
+): BotApiCallPreparation {
   const parsedParameters = sendChatActionParametersSchema.safeParse(parameters);
   if (!parsedParameters.success) {
-    return botApiError(400, 'Bad Request: invalid sendChatAction parameters');
+    return answeredPreparation(botApiError(400, 'Bad Request: invalid sendChatAction parameters'));
   }
   const { chat_id: chatId, action: actionName } = parsedParameters.data;
   // Telegram reads the action before it looks at the chat.
   const action = CHAT_ACTIONS_BY_NAME.get(actionName.toLowerCase());
   if (action === undefined) {
-    return presentFixedBotApiError(BOT_API_ERRORS.chatActionInvalid);
+    return answeredPreparation(presentFixedBotApiError(BOT_API_ERRORS.chatActionInvalid));
   }
   if (chatId === undefined) {
-    return botApiError(400, CHAT_ID_EMPTY_DESCRIPTION);
+    return answeredPreparation(botApiError(400, CHAT_ID_EMPTY_DESCRIPTION));
   }
 
-  const result = context.session.botApi.sendChatAction(
-    context.bot,
-    { chatId, action },
-  );
-  return result.sent ? botApiResult(true) : presentMessageSendingFailure('chat_action', result);
+  return {
+    kind: 'command',
+    execute: () => {
+      const result = context.session.botApi.sendChatAction(
+        context.bot,
+        { chatId, action },
+      );
+      return result.sent ? botApiResult(true) : presentMessageSendingFailure('chat_action', result);
+    },
+  };
 }

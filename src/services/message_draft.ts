@@ -57,8 +57,10 @@ interface MessageDraftStore {
   getDraft(conversation: PrivateConversationKey): MessageDraft | undefined;
 }
 
-/** Takes each event into the transaction of the command that caused it. */
-interface ChatDomainEventSink {
+/** The session's transactions: stopping a draft runs in one, and emits its event into it. */
+interface MessageDraftTransactions {
+  /** Runs a command in the transaction of the command executing, or in one of its own. */
+  withinTransaction<Result>(command: () => Result): Result;
   emit(event: ChatDomainEvent): void;
 }
 
@@ -66,7 +68,8 @@ interface MessageDraftServiceDependencies {
   readonly accounts: AccountLookup;
   readonly bots: BotLookup;
   readonly drafts: MessageDraftStore;
-  readonly events: ChatDomainEventSink;
+  /** Runs each stop of a draft as one transaction, which receives the stop's event. */
+  readonly transactions: MessageDraftTransactions;
 }
 
 /**
@@ -76,18 +79,22 @@ interface MessageDraftServiceDependencies {
  *
  * Callers check that the bot may write to the account, and read the draft's text, before showing
  * it.
+ *
+ * Every change of a draft is staged in the transaction of the command that makes it. Stopping a
+ * draft runs as one transaction of its own: the draft it removes or keeps and the update the bot
+ * receives are published together, or, should any step fail, not at all.
  */
 export class MessageDraftService {
   readonly #accounts: AccountLookup;
   readonly #bots: BotLookup;
   readonly #drafts: MessageDraftStore;
-  readonly #events: ChatDomainEventSink;
+  readonly #transactions: MessageDraftTransactions;
 
-  constructor({ accounts, bots, drafts, events }: MessageDraftServiceDependencies) {
+  constructor({ accounts, bots, drafts, transactions }: MessageDraftServiceDependencies) {
     this.#accounts = accounts;
     this.#bots = bots;
     this.#drafts = drafts;
-    this.#events = events;
+    this.#transactions = transactions;
   }
 
   /**
@@ -137,29 +144,31 @@ export class MessageDraftService {
    * cannot be stopped again. The emulator only tells the bot; ending the generation is the bot's.
    */
   stopPrivateMessageDraft(target: ShownMessageDraftTarget): StopMessageDraftResult {
-    const lookup = this.#findShownDraft(target);
-    if (!lookup.found) {
-      return { stopped: false, reason: lookup.reason };
-    }
-    const { draft } = lookup;
-    if (draft.isStopped) {
-      return { stopped: false, reason: 'draft_already_stopped' };
-    }
-    if (!draft.canStop) {
-      return { stopped: false, reason: 'draft_not_stoppable' };
-    }
-    if (draft.keepOnStop) {
-      this.#drafts.showDraft(target, { ...draft, isStopped: true });
-    } else {
-      this.#drafts.removeDraft(target);
-    }
-    this.#events.emit({
-      type: 'message_generation_stopped',
-      accountId: target.accountId,
-      botId: target.botId,
-      draftId: draft.draftId,
+    return this.#transactions.withinTransaction(() => {
+      const lookup = this.#findShownDraft(target);
+      if (!lookup.found) {
+        return { stopped: false, reason: lookup.reason };
+      }
+      const { draft } = lookup;
+      if (draft.isStopped) {
+        return { stopped: false, reason: 'draft_already_stopped' };
+      }
+      if (!draft.canStop) {
+        return { stopped: false, reason: 'draft_not_stoppable' };
+      }
+      if (draft.keepOnStop) {
+        this.#drafts.showDraft(target, { ...draft, isStopped: true });
+      } else {
+        this.#drafts.removeDraft(target);
+      }
+      this.#transactions.emit({
+        type: 'message_generation_stopped',
+        accountId: target.accountId,
+        botId: target.botId,
+        draftId: draft.draftId,
+      });
+      return { stopped: true };
     });
-    return { stopped: true };
   }
 
   /** Finds the draft a test acts on, which must be the one it expects, if it names one. */

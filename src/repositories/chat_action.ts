@@ -1,8 +1,15 @@
+import { type ChangeStaging, UNSTAGED_CHANGES } from '../transactions/change_staging.ts';
+import { TransactionalMap } from '../transactions/transactional_collections.ts';
 import type { ChatKey, VisibleChatAction } from '../types/virtual_chat.ts';
 
 /** Stores the chat actions bots show in each chat, one per bot, in the order the bots sent them. */
 export class ChatActionRepository {
-  readonly #actionsByChatKey = new Map<string, readonly VisibleChatAction[]>();
+  readonly #actionsByChatKey: TransactionalMap<string, readonly VisibleChatAction[]>;
+
+  /** `staging` decides how the repository's writes take part in its session's transactions. */
+  constructor(staging: ChangeStaging = UNSTAGED_CHANGES) {
+    this.#actionsByChatKey = new TransactionalMap(staging);
+  }
 
   /** Replaces the bot's action in the chat with a newly sent one, which becomes the latest. */
   showAction(chat: ChatKey, shownAction: VisibleChatAction): void {
