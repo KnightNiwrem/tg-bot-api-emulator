@@ -6,7 +6,7 @@ import { readEmbeddedFormattedText } from '../formatted_text_reading.ts';
 import {
   type InlineQueryResultParameter,
   inlineQueryResultsButtonParameter,
-  readInlineQueryResultsParameter,
+  readInlineQueryResultParameter,
   readUnreadLocation,
   type UnreadFormattedText,
   type UnreadInputMessageContent,
@@ -156,29 +156,30 @@ function readInlineQueryAnswerButton(
 }
 
 /**
- * The step that reads an inline query's results until one cannot be read: the fields of every
- * result first, then, result by result, its inline keyboard and what it sends and shows.
+ * The step that reads an inline query's results until one cannot be read. Each result is read
+ * fully, its fields, then its inline keyboard, then what it sends and shows, before the next, as
+ * the official server's `get_inline_query_results` reads them one at a time.
  */
 function readInlineQueryAnswerResults(
   { context, uploadedFiles, invalidParametersDescription }: BotApiStepCall<unknown>,
   { resultValues, ...answer }: InlineQueryAnswerWithoutResults,
 ): BotApiStepResult<InlineQueryAnswerRequest> {
-  const resultsReading = readInlineQueryResultsParameter(
-    resultValues,
-    invalidParametersDescription,
-  );
-  if (!resultsReading.read) {
-    return answerWithBadRequest(resultsReading.description);
-  }
   const results: InlineQueryResultRequest[] = [];
-  for (const result of resultsReading.results) {
-    const keyboardReading = readInlineKeyboardParameter(context, result.inlineKeyboard);
+  for (const resultValue of resultValues) {
+    const fieldsReading = readInlineQueryResultParameter(resultValue, invalidParametersDescription);
+    if (!fieldsReading.read) {
+      return answerWithBadRequest(fieldsReading.description);
+    }
+    const keyboardReading = readInlineKeyboardParameter(
+      context,
+      fieldsReading.result.inlineKeyboard,
+    );
     if (!keyboardReading.read) {
       return answerWith(keyboardReading.errorAnswer);
     }
     const resultReading = readInlineQueryResultContent(
       context,
-      { ...result, inlineKeyboard: keyboardReading.inlineKeyboard },
+      { ...fieldsReading.result, inlineKeyboard: keyboardReading.inlineKeyboard },
       uploadedFiles,
       invalidParametersDescription,
     );

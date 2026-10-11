@@ -56,7 +56,10 @@ result count and message content before query state and result metadata, produci
 `RESULT_ID_DUPLICATE` and the query-too-old error. As the official server's
 [`process_answer_inline_query_query`][answer-inline-query] does, the button is read before the
 results. Empty `button` text is no button, and a `button` that is not JSON the server can read is
-refused with `Bad Request: can't parse inline query results button JSON object`.
+refused with `Bad Request: can't parse inline query results button JSON object`. As the server's
+[`get_inline_query_results`][inline-query-results] reads them, results are read one at a time: a
+result's fields, inline keyboard and content are all read before the next result, so a bad keyboard
+or content in an earlier result is reported ahead of malformed fields in a later one.
 
 With `receives_chosen_inline_results: true`, a choice also generates `chosen_inline_result` for the
 inline bot. If the result has an inline keyboard, that update supplies `inline_message_id`. Callback
@@ -243,8 +246,9 @@ public.
 [inline tests](../../tests/inline_query_service_test.ts),
 [HTTP tests](../../tests/http/inline_mode_test.ts),
 [answer cache API tests](../../tests/inline_answer_cache_api_test.ts),
-[URL media tests](../../tests/inline_result_media_api_test.ts) and
-[contact and location result tests](../../tests/inline_result_contact_location_api_test.ts).
+[URL media tests](../../tests/inline_result_media_api_test.ts),
+[contact and location result tests](../../tests/inline_result_contact_location_api_test.ts) and
+[result order tests](../../tests/http/inline_query_answer_order_test.ts).
 
 [edit-inline]: https://github.com/tdlib/td/blob/bc9c263e2bfee06aaab41e82db51a103376030bc/td/telegram/MessagesManager.cpp#L23183-L23292
 [results]: https://github.com/tdlib/td/blob/bc9c263e2bfee06aaab41e82db51a103376030bc/td/telegram/InlineQueriesManager.cpp#L870-L1280
@@ -255,3 +259,4 @@ public.
 [cache]: https://github.com/tdlib/td/blob/bc9c263e2bfee06aaab41e82db51a103376030bc/td/telegram/InlineQueriesManager.cpp#L1335-L1410
 [cache-expiry]: https://github.com/tdlib/td/blob/bc9c263e2bfee06aaab41e82db51a103376030bc/td/telegram/InlineQueriesManager.cpp#L2280-L2320
 [answer-inline-query]: https://github.com/tdlib/telegram-bot-api/blob/e3e9dd8e5b3d7ab8537cd5a10dc31d5ffa8f82d1/telegram-bot-api/Client.cpp#L15449-L15474
+[inline-query-results]: https://github.com/tdlib/telegram-bot-api/blob/e3e9dd8e5b3d7ab8537cd5a10dc31d5ffa8f82d1/telegram-bot-api/Client.cpp#L10994-L11011

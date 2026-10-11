@@ -154,8 +154,8 @@ export type InlineQueryResultParameter =
     readonly messageContent?: UnreadInputMessageContent;
   });
 
-export type InlineQueryResultsParameterReading =
-  | { readonly read: true; readonly results: readonly InlineQueryResultParameter[] }
+export type InlineQueryResultParameterReading =
+  | { readonly read: true; readonly result: InlineQueryResultParameter }
   | { readonly read: false; readonly description: string };
 
 /**
@@ -430,40 +430,36 @@ const locationResultSchema = z.strictObject({
 });
 
 /**
- * Reads the elements of an `answerInlineQuery` `results` parameter as the official Bot API
- * server's `get_inline_query_result` does, failing with Telegram's description for a result it
- * cannot read. Article, contact, static location, photo, document, video, voice, and audio results
- * are supported, the media among them with files given by `file_id` or by URL; other result types fail
- * as unsupported. A result's `input_message_content` may send text, a rich message, a contact, or
- * a static location; a venue or an invoice fails as unsupported.
+ * Reads the fields of one element of an `answerInlineQuery` `results` parameter as the official
+ * Bot API server's `get_inline_query_result` does, failing with Telegram's description for a
+ * result it cannot read. Article, contact, static location, photo, document, video, voice, and
+ * audio results are supported, the media among them with files given by `file_id` or by URL; other
+ * result types fail as unsupported. A result's `input_message_content` may send text, a rich
+ * message, a contact, or a static location; a venue or an invoice fails as unsupported. Its inline
+ * keyboard and the text it sends and shows are read afterwards, by the caller.
  *
  * `invalidParametersDescription` answers results that Telegram would read leniently, such as
  * numbers written as strings, which are rejected instead to surface the bot's mistake in tests.
  */
-export function readInlineQueryResultsParameter(
-  resultValues: readonly unknown[],
+export function readInlineQueryResultParameter(
+  resultValue: unknown,
   invalidParametersDescription: string,
-): InlineQueryResultsParameterReading {
-  const results: InlineQueryResultParameter[] = [];
-  for (const resultValue of resultValues) {
-    const reading = readInlineQueryResult(resultValue);
-    switch (reading.kind) {
-      case 'result':
-        results.push(reading.result);
-        break;
-      case 'failure':
-        return { read: false, description: reading.description };
-      case 'malformed':
-        return { read: false, description: invalidParametersDescription };
-      default: {
-        const unhandledReading: never = reading;
-        throw new Error(
-          `Unhandled inline query result reading: ${JSON.stringify(unhandledReading)}`,
-        );
-      }
+): InlineQueryResultParameterReading {
+  const reading = readInlineQueryResult(resultValue);
+  switch (reading.kind) {
+    case 'result':
+      return { read: true, result: reading.result };
+    case 'failure':
+      return { read: false, description: reading.description };
+    case 'malformed':
+      return { read: false, description: invalidParametersDescription };
+    default: {
+      const unhandledReading: never = reading;
+      throw new Error(
+        `Unhandled inline query result reading: ${JSON.stringify(unhandledReading)}`,
+      );
     }
   }
-  return { read: true, results };
 }
 
 type InlineQueryResultReading =
