@@ -316,24 +316,29 @@ work to do in the session. It answers with:
 
 `settled` promises that the emulator will not change the session by itself. So every timer that can
 change the session by itself is runnable, and its blocker says how long the timer lasts. A timer
-that only the test ends, under `manual` scheduling, is passive.
+that only the test ends, under `manual` scheduling, is passive. A wait that is over, though the code
+that acts on it has not run yet, is runnable too: an update a held poll awaits was published, say.
 
 These blockers are runnable, because the emulator will act on them by itself:
 
 - a Bot API call from its admission until it is answered (`bot_api_call`). That includes the method
   a webhook's answer names, which is in progress from the moment its update is confirmed, and which
   names its `method` once the answer's body is read;
+- a held `getUpdates` call whose wait is over (`held_long_poll`): an update it awaits was published,
+  its timeout passed, or its request stopped. It stays runnable until the call is answered;
 - an update sent to a webhook under `automatic` scheduling that has not answered
   (`webhook_attempt`). Its deadline fails the attempt by itself `timeout_seconds` after it began,
   and schedules a retry;
+- an update sent to a webhook under `manual` scheduling (`webhook_attempt`) whose complete response
+  or expiry arrived, or whose delivery stopped, until the delivery has acted on it;
 - an automatic retry waiting `delay_seconds` on its timer (`webhook_retry`);
-- an update about to be sent to the bot's webhook (`webhook_delivery_due`).
+- an update about to be sent to the bot's webhook (`webhook_delivery_due`). A released retry's
+  update is one.
 
 These blockers are passive. They wait for a bot or the test:
 
-- a held `getUpdates` call (`held_long_poll`). Its timeout answers the call with no updates and
-  changes nothing in the session, since the call already confirmed and recorded everything when it
-  arrived;
+- a held `getUpdates` call that is still waiting (`held_long_poll`). Its timeout would answer the
+  call with no updates, which changes nothing in the session;
 - an update no poll has read yet (`undelivered_update`);
 - an update a poll delivered whose confirmation is still to come (`unconfirmed_delivery`);
 - an update sent to a webhook under `manual` scheduling that has not answered (`webhook_attempt`),

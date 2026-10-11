@@ -1,6 +1,7 @@
 import { assertEquals } from '@std/assert';
 
 import type { BotActivityEntry, BotActivityFilter } from '../src/types/bot_activity.ts';
+import { createBotApiCommandSession } from './support/bot_api_command_session.ts';
 import { createPrivateConversationFixture } from './support/http_fixtures.ts';
 import { jsonRequest } from './support/emulation_api.ts';
 import {
@@ -167,6 +168,75 @@ Deno.test('a manual attempt waits passively for the webhook or the test', async 
       scheduling: 'manual',
     }]],
   );
+});
+
+Deno.test('a manual attempt the test expires is runnable until its delivery acts on it', async () => {
+  using fixture = createWebhookFixture(respondOnlyByAborting);
+  const { session, bot, adaId, webhookAttempts } = fixture;
+  webhookAttempts.setScheduling(bot.id, 'manual');
+  fixture.sendAccountMessage(adaId);
+  fixture.setWebhook();
+  await fixture.waitForEntry({ kind: 'update_delivered' });
+
+  // The expiry ends the attempt's wait at once; its failure is recorded by the delivery later.
+  const expiry = webhookAttempts.expireAttempt(bot.id, 1);
+  const atExpiry = session.settledness.readSettledness();
+  await expiry;
+
+  assertEquals(
+    [atExpiry.settled, atExpiry.blockers[0]],
+    [false, {
+      kind: 'webhook_attempt',
+      runnable: true,
+      botId: bot.id,
+      updateId: 1,
+      webhookAttemptId: 1,
+      scheduling: 'manual',
+    }],
+  );
+});
+
+Deno.test('a held long poll is runnable as soon as an update it awaits is published', async () => {
+  using fixture = createBotApiCommandSession('session-settledness-woken-poll');
+  const { session } = fixture;
+  const adaId = fixture.createAccount('Ada');
+  const alpha = fixture.createBot('alpha_bot');
+  const heldPoll = fixture.callMethod(alpha, 'getUpdates', { timeout: '30' });
+  await waitUntil(() =>
+    session.settledness.readSettledness().blockers.some(({ kind }) => kind === 'held_long_poll')
+  );
+  const whileHeld = session.settledness.readSettledness();
+
+  // In the same step as the update is published, before the poll's continuation runs.
+  const start = session.messageSending.sendAccountPrivateChatMessage({
+    fromAccountId: adaId,
+    chat: { type: 'private', peerId: alpha.id },
+    content: { kind: 'text', text: '/start' },
+  });
+  const atPublication = session.settledness.readSettledness();
+  const poll = await heldPoll;
+
+  assertEquals(start.sent, true);
+  assertEquals(
+    [
+      { settled: whileHeld.settled, blockers: whileHeld.blockers },
+      { settled: atPublication.settled, blockers: atPublication.blockers },
+    ],
+    [
+      {
+        settled: true,
+        blockers: [{ kind: 'held_long_poll', runnable: false, botId: alpha.id }],
+      },
+      {
+        settled: false,
+        blockers: [
+          { kind: 'held_long_poll', runnable: true, botId: alpha.id },
+          { kind: 'undelivered_update', runnable: false, botId: alpha.id, updateId: 1 },
+        ],
+      },
+    ],
+  );
+  assertEquals(poll.answered && poll.answer.body.ok, true);
 });
 
 Deno.test("a webhook reply's call names its method once its body is read, until it is answered", async () => {

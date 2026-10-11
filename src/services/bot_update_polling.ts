@@ -44,6 +44,8 @@ interface HeldLongPoll {
   /** Aborted to terminate the long poll. */
   readonly controller: AbortController;
   terminationReason?: LongPollTerminationReason;
+  /** Whether the poll's wait is over, though the poll has not been answered yet. */
+  isAwake: () => boolean;
 }
 
 /** Records the updates `getUpdates` answers deliver and confirm in the session's bot activity. */
@@ -162,11 +164,18 @@ export class BotUpdatePollingService {
       waitEndingSignals.push(signal);
     }
     const longPollEnd = new AbortController();
+    const deadline = this.#scheduler.deadline(timeoutSeconds * 1_000, longPollEnd.signal);
+    const waitEnd = AbortSignal.any(waitEndingSignals);
+    // The wait is over as soon as an update it awaits is published, its deadline arrives, or a
+    // signal ends it, before the continuation that answers the poll runs.
+    heldLongPoll.isAwake = () =>
+      this.#botUpdates.getNextUpdateId(botId) > nextUpdateId || deadline.signal.aborted ||
+      waitEnd.aborted;
     try {
       await this.#botUpdates.waitForUpdate(botId, {
         awaitedUpdateId: nextUpdateId,
-        deadline: this.#scheduler.deadline(timeoutSeconds * 1_000, longPollEnd.signal),
-        signal: AbortSignal.any(waitEndingSignals),
+        deadline,
+        signal: waitEnd,
       });
     } finally {
       longPollEnd.abort();
@@ -195,9 +204,15 @@ export class BotUpdatePollingService {
     this.#terminateHeldLongPoll(botId, 'terminated_by_webhook');
   }
 
-  /** The bots whose long poll is held, each waiting passively for an update. */
-  listHeldLongPollBotIds(): readonly number[] {
-    return [...this.#heldLongPollsByBotId.keys()];
+  /**
+   * The bots' held long polls, each waiting passively for an update, or `awake` once its wait is
+   * over and until the poll is answered.
+   */
+  listHeldLongPolls(): readonly { readonly botId: number; readonly isAwake: boolean }[] {
+    return [...this.#heldLongPollsByBotId].map(([botId, heldLongPoll]) => ({
+      botId,
+      isAwake: heldLongPoll.isAwake(),
+    }));
   }
 
   #confirmAndReadPendingUpdates(
@@ -221,7 +236,7 @@ export class BotUpdatePollingService {
   /** Terminates the bot's previously held long poll and makes the returned one current. */
   #holdLongPoll(botId: number): HeldLongPoll {
     this.#terminateHeldLongPoll(botId, 'terminated_by_other_long_poll');
-    const heldLongPoll: HeldLongPoll = { controller: new AbortController() };
+    const heldLongPoll: HeldLongPoll = { controller: new AbortController(), isAwake: () => false };
     this.#heldLongPollsByBotId.set(botId, heldLongPoll);
     return heldLongPoll;
   }

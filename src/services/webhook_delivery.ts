@@ -464,6 +464,8 @@ export class WebhookDeliveryService {
     let isAccepted = false;
     const bodyArrival = await settleUnlessAborted(response.arrayBuffer(), attemptSignal, {
       onFulfilledFirst: (body) => {
+        // The attempt no longer waits for the webhook, whatever its delivery decides next.
+        attempt.noteCompleteResponse();
         if (isSuccessful) {
           isAccepted = acceptUpdate(
             new Response(body.byteLength === 0 ? null : body, { status, statusText, headers }),

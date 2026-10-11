@@ -55,6 +55,11 @@ export interface WebhookAttemptHandle {
    * scheduling, or when a test expires it.
    */
   readonly deadlineSignal: AbortSignal;
+  /**
+   * Records that the webhook's complete response arrived, which the delivery has yet to act on:
+   * the attempt no longer waits for the webhook.
+   */
+  noteCompleteResponse(): void;
   /** Records that the webhook accepted the update; ignored once the attempt is no longer in flight. */
   accept(): void;
   /**
@@ -105,6 +110,8 @@ interface OpenWebhookAttempt {
   readonly settled: PromiseWithResolvers<void>;
   /** Aborts when delivery to the attempt's webhook stops. */
   readonly deliverySignal: AbortSignal;
+  /** Whether the webhook's complete response arrived, which the delivery has yet to act on. */
+  hasCompleteResponse: boolean;
 }
 
 /**
@@ -157,6 +164,18 @@ export class WebhookAttemptScheduler {
     }
     this.#schedulingByBotId.set(botId, scheduling);
     return { found: true, scheduling };
+  }
+
+  /**
+   * Whether an attempt in flight no longer waits for its webhook, though its delivery has yet to
+   * act on it: its complete response arrived, its deadline arrived, or its delivery stopped. False
+   * for an attempt that is not in flight.
+   */
+  isAttemptAwake(attemptId: number): boolean {
+    const openAttempt = this.#openAttemptsById.get(attemptId);
+    return this.#attemptsById.get(attemptId)?.status === 'in_flight' && openAttempt !== undefined &&
+      (openAttempt.hasCompleteResponse || openAttempt.deadline.signal.aborted ||
+        openAttempt.deliverySignal.aborted);
   }
 
   /** Lists the bot's attempts, earliest first. */
@@ -233,6 +252,7 @@ export class WebhookAttemptScheduler {
       retryRelease: new AbortController(),
       settled: Promise.withResolvers(),
       deliverySignal,
+      hasCompleteResponse: false,
     };
     this.#attemptsById.set(identity.id, { ...identity, status: 'in_flight' });
     this.#openAttemptsById.set(identity.id, openAttempt);
@@ -277,6 +297,9 @@ export class WebhookAttemptScheduler {
     return {
       id: identity.id,
       deadlineSignal: openAttempt.deadline.signal,
+      noteCompleteResponse: () => {
+        openAttempt.hasCompleteResponse = true;
+      },
       accept: () => {
         if (end({ status: 'accepted' })) {
           close();

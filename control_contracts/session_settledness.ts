@@ -38,10 +38,13 @@ const settlednessBlockerSchema = z.discriminatedUnion('kind', [
     via: z.enum(['http', 'webhook_reply']),
     method: z.string().optional(),
   }),
-  /** A `getUpdates` call held until an update arrives, its timeout passes, or another ends it. */
+  /**
+   * A `getUpdates` call held until an update arrives, its timeout passes, or another ends it:
+   * passive while it waits, and runnable once its wait is over, until it is answered.
+   */
   z.strictObject({
     kind: z.literal('held_long_poll'),
-    runnable: z.literal(false),
+    runnable: z.boolean(),
     bot_id: z.int(),
   }),
   /** An update waiting for its polling bot to read it. */
@@ -59,8 +62,9 @@ const settlednessBlockerSchema = z.discriminatedUnion('kind', [
   /**
    * An update sent to the bot's webhook, waiting for the webhook's complete response. Under
    * `automatic` scheduling the attempt's deadline fails it by itself `timeout_seconds` after it
-   * began, so it is runnable; under `manual` scheduling only the test expires it, so it is not, and
-   * `timeout_seconds` is omitted.
+   * began, so it is runnable. Under `manual` scheduling only the test expires it, so it is not,
+   * until its complete response or its expiry arrives, or its delivery stops, which leave the
+   * delivery to act by itself; `timeout_seconds` is omitted.
    */
   z.strictObject({
     kind: z.literal('webhook_attempt'),

@@ -34,11 +34,13 @@ export type SettlednessBlocker =
     readonly method?: string;
   }
   /**
-   * A `getUpdates` call held until an update arrives, its timeout passes, or another ends it. Its
-   * timeout answers the call with no updates and changes nothing in the session, which confirmed
-   * and recorded everything when the call arrived, so it waits passively.
+   * A `getUpdates` call held until an update arrives, its timeout passes, or another ends it. While
+   * it waits it is passive: its timeout would answer the call with no updates, which changes
+   * nothing in the session. Once its wait is over, because an update it awaits was published, its
+   * timeout passed or its request stopped, it is runnable until it is answered, since answering it
+   * may deliver and record updates.
    */
-  | { readonly kind: 'held_long_poll'; readonly runnable: false; readonly botId: number }
+  | { readonly kind: 'held_long_poll'; readonly runnable: boolean; readonly botId: number }
   /** An update waiting for its polling bot to read it. */
   | {
     readonly kind: 'undelivered_update';
@@ -56,8 +58,9 @@ export type SettlednessBlocker =
   /**
    * An update sent to the bot's webhook, waiting for the webhook's complete response. Under
    * automatic scheduling the attempt's deadline fails it by itself once `timeoutSeconds` pass after
-   * it began, and schedules its retry, so it is runnable; under manual scheduling only the test
-   * expires it, so it waits passively.
+   * it began, and schedules its retry, so it is runnable. Under manual scheduling only the test
+   * expires it, so it waits passively until it is awake: once its complete response or its expiry
+   * arrived, or its delivery stopped, the delivery acts on it by itself, so it is runnable.
    */
   | WebhookAttemptIdentity
     & (
@@ -69,7 +72,7 @@ export type SettlednessBlocker =
       }
       | {
         readonly kind: 'webhook_attempt';
-        readonly runnable: false;
+        readonly runnable: boolean;
         readonly scheduling: 'manual';
       }
     )
@@ -141,7 +144,7 @@ interface WorkInProgress {
 }
 
 interface HeldLongPolls {
-  listHeldLongPollBotIds(): readonly number[];
+  listHeldLongPolls(): readonly { readonly botId: number; readonly isAwake: boolean }[];
 }
 
 interface PendingUpdates {
@@ -158,6 +161,7 @@ interface WebhookAttempts {
   ):
     | { readonly found: true; readonly attempts: readonly WebhookAttempt[] }
     | { readonly found: false };
+  isAttemptAwake(attemptId: number): boolean;
 }
 
 /** The session's bot activity log, which records the updates `getUpdates` answers deliver. */
@@ -249,15 +253,23 @@ export class SessionSettlednessService {
   }
 
   /**
-   * The calls in progress, each runnable but one `getUpdates` call of each bot whose long poll is
-   * held, which waits passively: a held long poll is a call in progress, of its bot and method.
+   * The calls in progress, each runnable, except that one `getUpdates` call of each bot whose long
+   * poll is held is reported as the held poll, passive while it waits and runnable once awake: a
+   * held long poll is a call in progress, of its bot and method.
    */
   #findCallBlockers(): SettlednessBlocker[] {
-    const heldLongPollBotIds = new Set(this.#heldLongPolls.listHeldLongPollBotIds());
+    const heldLongPolls = new Map(
+      this.#heldLongPolls.listHeldLongPolls().map(({ botId, isAwake }) => [botId, isAwake]),
+    );
     const blockers: SettlednessBlocker[] = [];
+    const findHeldLongPollBlocker = (botId: number): SettlednessBlocker =>
+      heldLongPolls.get(botId) === true
+        ? { kind: 'held_long_poll', runnable: true, botId }
+        : { kind: 'held_long_poll', runnable: false, botId };
     for (const { botId, via, method } of this.#work.listInProgress()) {
-      if (method === GET_UPDATES_METHOD_NAME && heldLongPollBotIds.delete(botId)) {
-        blockers.push({ kind: 'held_long_poll', runnable: false, botId });
+      if (method === GET_UPDATES_METHOD_NAME && heldLongPolls.has(botId)) {
+        blockers.push(findHeldLongPollBlocker(botId));
+        heldLongPolls.delete(botId);
       } else {
         blockers.push({
           kind: 'bot_api_call',
@@ -269,9 +281,9 @@ export class SessionSettlednessService {
       }
     }
     // A long poll held by a call the session did not admit through its routes, as a test that
-    // calls a method directly does, still waits passively.
-    for (const botId of heldLongPollBotIds) {
-      blockers.push({ kind: 'held_long_poll', runnable: false, botId });
+    // calls a method directly does, is reported all the same.
+    for (const botId of heldLongPolls.keys()) {
+      blockers.push(findHeldLongPollBlocker(botId));
     }
     return blockers;
   }
@@ -336,7 +348,12 @@ export class SessionSettlednessService {
               scheduling: 'automatic',
               timeoutSeconds: this.#attemptTimeoutMilliseconds / 1_000,
             }
-            : { ...identity, kind: 'webhook_attempt', runnable: false, scheduling: 'manual' },
+            : {
+              ...identity,
+              kind: 'webhook_attempt',
+              runnable: this.#webhookAttempts.isAttemptAwake(attempt.id),
+              scheduling: 'manual',
+            },
         );
       } else if (attempt?.status === 'failed' && attempt.retry.status === 'waiting') {
         busyQueueKeys.add(getWebhookUpdateQueueKey(update));
