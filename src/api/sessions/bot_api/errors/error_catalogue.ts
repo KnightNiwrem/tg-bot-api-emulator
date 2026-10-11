@@ -1556,6 +1556,225 @@ export const BOT_API_ERRORS = {
   /** Coordinates that name no point on Earth, for a location a message or an inline result sends. */
   locationInvalid: fixedBotApiError(400, 'Bad Request: invalid location specified', LOCATION_CHECK),
 
+  // Rich messages, as the official server's `get_input_rich_message` reads them and TDLib's
+  // `RichMessage::get_rich_message` checks their blocks. The server prefixes the errors it finds
+  // inside the blocks with `Can't parse InputRichBlock: `, which the emulator's descriptions omit.
+  /** A `rich_message` given as no text. */
+  richMessageEmpty: fixedBotApiError(
+    400,
+    'Bad Request: rich message must be non-empty',
+    botApiServerSource('telegram-bot-api/Client.cpp#L12449'),
+  ),
+  richMessageJsonInvalid: fixedBotApiError(
+    400,
+    "Bad Request: can't parse rich message JSON object",
+    botApiServerSource('telegram-bot-api/Client.cpp#L12456'),
+  ),
+  richMessageNotObject: fixedBotApiError(
+    400,
+    'Bad Request: object expected as rich message',
+    botApiServerSource('telegram-bot-api/Client.cpp#L12465'),
+  ),
+  /** A rich message without `blocks`, `markdown` or `html`. */
+  richMessageSourceMissing: fixedBotApiError(
+    400,
+    'Bad Request: rich message must be non-empty',
+    botApiServerSource('telegram-bot-api/Client.cpp#L12482-L12484'),
+  ),
+  /** A rich message whose `blocks` are empty, which the emulator words as one without a source. */
+  richMessageBlocksEmpty: fixedBotApiError(
+    400,
+    'Bad Request: rich message must be non-empty',
+    emulatorInference(
+      "TDLib accepts a rich message without blocks and Telegram's servers decide whether it can " +
+        "be sent; the emulator refuses it with TDLib's description of a message without a source",
+    ),
+  ),
+  richMessageMarkupUnsupported: fixedBotApiError(
+    400,
+    'Bad Request: rich messages written in HTML or Markdown are not supported',
+    emulatorInference(
+      "Telegram's servers parse rich messages written in HTML or Markdown by rules the " +
+        'open-source code does not contain, which the emulator does not support',
+    ),
+  ),
+  richBlockNotObject: fixedBotApiError(
+    400,
+    'Bad Request: object expected as InputRichMessageBlock',
+    botApiServerSource('telegram-bot-api/Client.cpp#L12270'),
+  ),
+  /** A block of a type the official server's `get_input_page_block` does not know. */
+  richBlockTypeUnsupported: {
+    status: () => 400,
+    description: ({ blockType }: { readonly blockType: string }) =>
+      `Bad Request: type "${blockType}" is unsupported`,
+    provenance: () => botApiServerSource('telegram-bot-api/Client.cpp#L12389'),
+  },
+  richMediaBlockUnsupported: fixedBotApiError(
+    400,
+    'Bad Request: rich message blocks with an animation or an audio file are not supported',
+    emulatorInference('The emulator lacks animations and has no blocks for audio files'),
+  ),
+  richThinkingBlockNotAllowed: fixedBotApiError(
+    400,
+    'Bad Request: thinking blocks can be used only in rich message drafts',
+    emulatorInference(
+      "The Bot API documents the rule, and Telegram's servers check it by rules the open-source " +
+        "code does not contain, so the description is the emulator's",
+    ),
+  ),
+  richBlockMediaTypeUnexpected: {
+    status: () => 400,
+    description: ({ mediaType, blockType }: {
+      readonly mediaType: string;
+      readonly blockType: string;
+    }) => `Bad Request: unexpected media type "${mediaType}" for block "${blockType}"`,
+    provenance: () => botApiServerSource('telegram-bot-api/Client.cpp#L12394-L12397'),
+  },
+  /** A media block whose `media` names neither an uploaded part, a `file_id` nor a URL. */
+  richBlockMediaNotFound: fixedBotApiError(
+    400,
+    'Bad Request: media not found',
+    botApiServerSource('telegram-bot-api/Client.cpp#L12823'),
+  ),
+  richHeadingSizeInvalid: fixedBotApiError(
+    400,
+    'Bad Request: invalid section heading size specified',
+    tdlibSource('td/telegram/WebPageBlock.cpp#L5548'),
+  ),
+  richListItemNotObject: fixedBotApiError(
+    400,
+    'Bad Request: object expected as InputRichBlockListItem',
+    botApiServerSource('telegram-bot-api/Client.cpp#L12256'),
+  ),
+  richListItemTypeInvalid: fixedBotApiError(
+    400,
+    'Bad Request: invalid list item type specified',
+    tdlibSource('td/telegram/WebPageBlock.cpp#L2188'),
+  ),
+  richListEmpty: fixedBotApiError(
+    400,
+    'Bad Request: list must be non-empty',
+    tdlibSource('td/telegram/WebPageBlock.cpp#L5607'),
+  ),
+  richListMixed: fixedBotApiError(
+    400,
+    'Bad Request: list must be either ordered or unordered',
+    tdlibSource('td/telegram/WebPageBlock.cpp#L5612'),
+  ),
+  richBlockCaptionNotObject: fixedBotApiError(
+    400,
+    'Bad Request: richBlockCaption must be an object',
+    botApiServerSource('telegram-bot-api/Client.cpp#L12068'),
+  ),
+  richTableCellNotObject: fixedBotApiError(
+    400,
+    'Bad Request: richBlockTableCell must be an object',
+    botApiServerSource('telegram-bot-api/Client.cpp#L12074'),
+  ),
+  richTableCellAlignmentInvalid: fixedBotApiError(
+    400,
+    'Bad Request: invalid horizontal alignment specified',
+    botApiServerSource('telegram-bot-api/Client.cpp#L12092'),
+  ),
+  richTableCellVerticalAlignmentInvalid: fixedBotApiError(
+    400,
+    'Bad Request: invalid vertical alignment specified',
+    botApiServerSource('telegram-bot-api/Client.cpp#L12104'),
+  ),
+  richTableCellColumnSpanInvalid: fixedBotApiError(
+    400,
+    'Bad Request: invalid table cell colspan specified',
+    tdlibSource('td/telegram/WebPageBlock.cpp#L920'),
+  ),
+  richTableCellRowSpanInvalid: fixedBotApiError(
+    400,
+    'Bad Request: invalid table cell rowspan specified',
+    tdlibSource('td/telegram/WebPageBlock.cpp#L923'),
+  ),
+  /** A map's coordinates that name no point on Earth, as TDLib's `get_web_page_blocks` checks. */
+  richMapLocationInvalid: fixedBotApiError(
+    400,
+    'Bad Request: invalid location specified',
+    tdlibSource('td/telegram/WebPageBlock.cpp#L5759'),
+  ),
+  richMapPropertiesInvalid: fixedBotApiError(
+    400,
+    'Bad Request: invalid map properties specified',
+    tdlibSource('td/telegram/WebPageBlock.cpp#L5764'),
+  ),
+  richButtonRowAlignmentInvalid: fixedBotApiError(
+    400,
+    'Bad Request: invalid horizontal alignment specified',
+    botApiServerSource('telegram-bot-api/Client.cpp#L12383'),
+  ),
+  richButtonRowEmpty: fixedBotApiError(
+    400,
+    'Bad Request: button row must be non-empty',
+    tdlibSource('td/telegram/WebPageBlock.cpp#L5780'),
+  ),
+  richButtonRowTooLong: fixedBotApiError(
+    400,
+    'Bad Request: a button row can have at most 8 buttons',
+    emulatorInference(
+      "The Bot API documents the limit, and Telegram's servers check it by rules the open-source " +
+        "code does not contain, so the description is the emulator's",
+    ),
+  ),
+  richButtonNotObject: fixedBotApiError(
+    400,
+    'Bad Request: inlineButton must be an Object',
+    botApiServerSource('telegram-bot-api/Client.cpp#L10380'),
+  ),
+  richButtonStyleInvalid: fixedBotApiError(
+    400,
+    'Bad Request: invalid button style specified',
+    botApiServerSource('telegram-bot-api/Client.cpp#L10245'),
+  ),
+  richLinkButtonStyleNotAllowed: fixedBotApiError(
+    400,
+    'Bad Request: only callback buttons can have the link style',
+    emulatorInference(
+      "The Bot API documents the rule, and Telegram's servers check it by rules the open-source " +
+        "code does not contain, so the description is the emulator's",
+    ),
+  ),
+  richButtonTextFormattingNotAllowed: fixedBotApiError(
+    400,
+    'Bad Request: button text can have only custom emoji and dates',
+    emulatorInference(
+      "The Bot API documents the rule, and Telegram's servers check it by rules the open-source " +
+        "code does not contain, so the description is the emulator's",
+    ),
+  ),
+  /** Rich text that is neither a string, an array nor an object, such as a number. */
+  richTextInvalid: fixedBotApiError(
+    400,
+    'Bad Request: invalid rich text specified',
+    botApiServerSource('telegram-bot-api/Client.cpp#L12249'),
+  ),
+  richTextTypeUnsupported: fixedBotApiError(
+    400,
+    'Bad Request: unsupported rich text type',
+    botApiServerSource('telegram-bot-api/Client.cpp#L12246'),
+  ),
+  richTextDateTimeFormatInvalid: fixedBotApiError(
+    400,
+    'Bad Request: invalid date-time format specified',
+    botApiServerSource('telegram-bot-api/Client.cpp#L19829'),
+  ),
+  /** A date and time that is not positive, as TDLib's `FormattedDate::get_formatted_date` checks. */
+  richTextDateInvalid: fixedBotApiError(
+    400,
+    'Bad Request: invalid date specified',
+    tdlibSource('td/telegram/FormattedDate.cpp#L44'),
+  ),
+  richTextCustomEmojiIdInvalid: fixedBotApiError(
+    400,
+    'Bad Request: invalid custom emoji identifier specified',
+    tdlibSource('td/telegram/WebPageBlock.cpp#L314-L317'),
+  ),
+
   // Files a request names by URL, which Telegram downloads.
   /** A URL that TDLib cannot read, with its description of the URL. */
   fileUrlInvalid: {
