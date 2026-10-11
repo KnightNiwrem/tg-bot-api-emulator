@@ -44,3 +44,22 @@ export const telegramUsernameSchema = z.string()
   .min(1)
   .max(MAX_TELEGRAM_USERNAME_LENGTH)
   .regex(TELEGRAM_USERNAME_PATTERN);
+
+/**
+ * The annotation that names the Telegram type of an object a control response carries unchanged,
+ * such as an `Update`, whose fields are Telegram's rather than the control API's. The OpenAPI
+ * document gives its description of the emulator's subset of that type the same annotation.
+ */
+export const TELEGRAM_TYPE_ANNOTATION = 'x-telegram-type';
+
+/**
+ * A Telegram object that a control response carries as the Bot API shows it, of the Telegram type
+ * `telegramTypeName`. The contract checks only the fields of `shape` and lets every other field
+ * through, as Telegram, not the control API, decides them.
+ */
+export function telegramObjectSchema<const Shape extends z.core.$ZodLooseShape>(
+  telegramTypeName: string,
+  shape: Shape,
+) {
+  return z.looseObject(shape).meta({ [TELEGRAM_TYPE_ANNOTATION]: telegramTypeName });
+}

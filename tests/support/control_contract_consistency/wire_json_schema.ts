@@ -18,8 +18,10 @@ export type WireSchemaSemantics = 'input' | 'output';
  */
 const REPRESENTABLE_SCHEMA_TYPES = new Set([
   'object',
+  'record',
   'optional',
   'default',
+  'readonly',
   'array',
   'tuple',
   'union',
@@ -29,6 +31,7 @@ const REPRESENTABLE_SCHEMA_TYPES = new Set([
   'number',
   'boolean',
   'null',
+  'unknown',
 ]);
 
 /**
@@ -75,7 +78,13 @@ function assertRepresentable(schema: z.core.$ZodType, location: string): void {
 /** The schemas a schema is made of, by where they sit in it. */
 function readChildSchemas(schema: z.core.$ZodType): [name: string, child: z.core.$ZodType][] {
   if (schema instanceof z.core.$ZodObject) return Object.entries(schema._zod.def.shape);
-  if (schema instanceof z.core.$ZodOptional || schema instanceof z.core.$ZodDefault) {
+  if (schema instanceof z.core.$ZodRecord) {
+    return [['(keys)', schema._zod.def.keyType], ['(members)', schema._zod.def.valueType]];
+  }
+  if (
+    schema instanceof z.core.$ZodOptional || schema instanceof z.core.$ZodDefault ||
+    schema instanceof z.core.$ZodReadonly
+  ) {
     return [['(inner)', schema._zod.def.innerType]];
   }
   if (schema instanceof z.core.$ZodArray) return [['(items)', schema._zod.def.element]];

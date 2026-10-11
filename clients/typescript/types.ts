@@ -4,6 +4,12 @@ import type {
   accountProfileSchema,
   createAccountContract,
 } from '../../control_contracts/accounts.ts';
+import type {
+  botApiCallEntrySchema,
+  updateConfirmedEntrySchema,
+  updateDeliveredEntrySchema,
+  webhookAttemptFailedEntrySchema,
+} from '../../control_contracts/bot_activity.ts';
 import type { botProfileSchema, createBotContract } from '../../control_contracts/bots.ts';
 import type {
   CONTROL_REQUEST_ISSUE_CODES,
@@ -14,6 +20,7 @@ import type {
   ControlOperationResult,
 } from '../../control_contracts/operation_contract.ts';
 import type { createSessionContract } from '../../control_contracts/sessions.ts';
+import type { webhookAttemptFailureSchema } from '../../control_contracts/webhook_attempts.ts';
 import type { ControlRefusalReason } from './control_refusal_reasons.ts';
 
 /** The server-assigned identity, Bot API location, and settings of an emulation session. */
@@ -146,22 +153,7 @@ export interface SetWebhookDeliveryInput extends WebhookDelivery {
  * Why an attempt to deliver an update to a webhook failed. `error_message` is the description
  * `getWebhookInfo` reports as `last_error_message`; Telegram describes no `response_interrupted`.
  */
-export type WebhookAttemptFailure =
-  | {
-    /** The webhook answered with a status other than 2xx. */
-    readonly reason: 'http_error';
-    readonly status_code: number;
-    readonly error_message: string;
-  }
-  | {
-    /** The webhook could not be reached, or did not answer completely before the deadline. */
-    readonly reason: 'connection_failed' | 'timed_out';
-    readonly error_message: string;
-  }
-  | {
-    /** The connection closed before the whole response arrived. */
-    readonly reason: 'response_interrupted';
-  };
+export type WebhookAttemptFailure = Readonly<z.output<typeof webhookAttemptFailureSchema>>;
 
 /** The wait that a failed attempt schedules before its update is sent again. */
 export interface WebhookRetry {
@@ -2716,115 +2708,38 @@ export interface CreatedVirtualAccount {
 
 export type BotActivityKind = BotActivityEntry['kind'];
 
-/** A file a call uploaded, described without its content. */
-export interface UploadedFileDescription {
-  /** The multipart field that carried the file. */
-  readonly field_name: string;
-  readonly file_name: string;
-  readonly size_bytes: number;
-}
-
-/** The Bot API answer a bot received to a call. */
-export type BotApiCallAnswer =
-  | { readonly ok: true; readonly result: unknown; readonly description?: string }
-  | {
-    readonly ok: false;
-    readonly error_code: number;
-    readonly description: string;
-    readonly parameters?: { readonly retry_after: number };
-  };
-
 /**
  * A bot's call of a Bot API method, whether it ran, failed, or is not implemented. `getUpdates`
  * calls are not recorded; the updates they deliver and confirm are.
  */
-export interface BotApiCallEntry {
-  /** Where the entry stands in the session's log; each entry's is 1 greater than the last. */
-  readonly position: number;
-  readonly kind: 'bot_api_call';
-  readonly bot_id: number;
-  /**
-   * The method's current name, whichever name the bot called it by; the name as called for a
-   * method the emulator does not implement.
-   */
-  readonly method: string;
-  /** The method name as the bot called it. */
-  readonly requested_method: string;
-  /** Whether the call was an HTTP request or a webhook's response to an update. */
-  readonly via: 'http' | 'webhook_reply';
-  /**
-   * The parameters as the bot sent them, as text: `chat_id: 1` is recorded as `"1"`, and structured
-   * parameters such as `reply_markup` as the JSON text the bot wrote, in whichever encoding. Empty
-   * when the request could not be decoded.
-   */
-  readonly parameters: Readonly<Record<string, string>>;
-  readonly uploaded_files: readonly UploadedFileDescription[];
-  /** The chat `chat_id` names, with a public username resolved; omitted when it names none. */
-  readonly chat_id?: number;
-  readonly answer: BotApiCallAnswer;
-}
+export type BotApiCallEntry = Readonly<z.output<typeof botApiCallEntrySchema>>;
 
-/** A Bot API update, such as grammY's `Update` describes. */
-export interface BotApiUpdate {
-  readonly update_id: number;
-  readonly [updateType: string]: unknown;
-}
+/** A file a call uploaded, described without its content. */
+export type UploadedFileDescription = Readonly<BotApiCallEntry['uploaded_files'][number]>;
+
+/** The Bot API answer a bot received to a call. */
+export type BotApiCallAnswer = Readonly<BotApiCallEntry['answer']>;
 
 /**
  * An update handed to a bot, in a `getUpdates` answer or in a request to its webhook; an update
  * handed over again is recorded each time.
  */
-export interface UpdateDeliveredEntry {
-  readonly position: number;
-  readonly kind: 'update_delivered';
-  readonly bot_id: number;
-  readonly via: 'polling' | 'webhook';
-  readonly update: BotApiUpdate;
-  /** The chat the update happened in, as grammY's `ctx.chat` finds it; omitted when it has none. */
-  readonly chat_id?: number;
-  /**
-   * The user whose action caused the update, as grammY's `ctx.from` finds it; omitted for a
-   * poll's new state and a stopped message generation, which name no user.
-   */
-  readonly user_id?: number;
-  /** The webhook attempt that handed the update over; present exactly when `via` is `webhook`. */
-  readonly webhook_attempt_id?: number;
-}
+export type UpdateDeliveredEntry = Readonly<z.output<typeof updateDeliveredEntrySchema>>;
+
+/** A Bot API update, such as grammY's `Update` describes. */
+export type BotApiUpdate = Readonly<UpdateDeliveredEntry['update']>;
 
 /**
  * An update the bot confirmed: by a `getUpdates` offset beyond it, or by its webhook's successful
  * answer to it, after any method the answer names has run.
  */
-export interface UpdateConfirmedEntry {
-  readonly position: number;
-  readonly kind: 'update_confirmed';
-  readonly bot_id: number;
-  readonly via: 'polling' | 'webhook';
-  readonly update_id: number;
-  readonly chat_id?: number;
-  /** As `UpdateDeliveredEntry` describes it. */
-  readonly user_id?: number;
-  /** The webhook attempt the webhook accepted; present exactly when `via` is `webhook`. */
-  readonly webhook_attempt_id?: number;
-}
+export type UpdateConfirmedEntry = Readonly<z.output<typeof updateConfirmedEntrySchema>>;
 
 /**
  * A failed attempt to deliver an update to a webhook, which leaves the update pending until the
  * attempt's retry is released.
  */
-export interface WebhookAttemptFailedEntry {
-  readonly position: number;
-  readonly kind: 'webhook_attempt_failed';
-  readonly bot_id: number;
-  readonly update_id: number;
-  readonly chat_id?: number;
-  /** As `UpdateDeliveredEntry` describes it. */
-  readonly user_id?: number;
-  readonly webhook_attempt_id: number;
-  readonly failure: WebhookAttemptFailure;
-  /** The wait before the update is sent again that `automatic` scheduling observes. */
-  readonly retry_delay_seconds: number;
-}
+export type WebhookAttemptFailedEntry = Readonly<z.output<typeof webhookAttemptFailedEntrySchema>>;
 
 /**
  * An entry of a session's bot activity log. Entries are positioned in the order the emulator

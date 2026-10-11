@@ -1,4 +1,4 @@
-import type { z } from 'zod';
+import { z } from 'zod';
 
 import type {
   ControlRequestIssue,
@@ -23,12 +23,12 @@ export function readPathParameters<Schema extends z.ZodType>(
 }
 
 /** Reads one part of a control request as `schema` describes it, normalizing what it rejects. */
-export function readControlRequestInput<Schema extends z.ZodType>(
+export function readControlRequestInput<Schema extends z.core.$ZodType>(
   schema: Schema,
   input: unknown,
   source: ControlRequestIssueSource,
 ): ControlRequestInputReading<z.output<Schema>> {
-  const parsedInput = schema.safeParse(input);
+  const parsedInput = z.safeParse(schema, input);
   return parsedInput.success
     ? { valid: true, value: parsedInput.data }
     : { valid: false, issues: toControlRequestIssues(parsedInput.error.issues, source, []) };
@@ -65,7 +65,8 @@ function toControlRequestIssues(
 }
 
 /**
- * Describes a value that matches none of a union's alternatives. When exactly one alternative
+ * Describes a value that matches none of a union's alternatives. A value whose type no
+ * alternative takes is reported as of the wrong type. Otherwise, when exactly one alternative
  * accepts the value's type and every field it has, the value was meant as that alternative, so
  * its issues are the ones reported. Otherwise the value is reported as matching no alternative,
  * or, for a union told apart by a field, as having an unknown value there.
@@ -82,6 +83,23 @@ function toUnionIssues(
       path,
       code: 'invalid_value',
       message: 'The value names none of the accepted variants',
+    }];
+  }
+  // A value that every alternative refuses for its type alone, such as text where an object or a
+  // list is expected, or no value at all, is of the wrong type rather than of an unknown form.
+  const expectedTypes = zodIssue.errors.map((alternativeIssues) => {
+    const [alternativeIssue] = alternativeIssues;
+    return alternativeIssues.length === 1 && alternativeIssue?.path.length === 0 &&
+        alternativeIssue.code === 'invalid_type'
+      ? alternativeIssue.expected
+      : undefined;
+  });
+  if (expectedTypes.every((expectedType) => expectedType !== undefined)) {
+    return [{
+      source,
+      path,
+      code: 'invalid_type',
+      message: `Invalid input: expected ${[...new Set(expectedTypes)].join(' or ')}`,
     }];
   }
   const intendedAlternatives = zodIssue.errors.filter((alternativeIssues) =>

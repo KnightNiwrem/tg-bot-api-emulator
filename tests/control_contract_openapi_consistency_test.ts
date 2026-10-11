@@ -6,6 +6,7 @@
 import { z } from 'zod';
 
 import { createAccountContract } from '../control_contracts/accounts.ts';
+import { readBotActivityContract } from '../control_contracts/bot_activity.ts';
 import { createBotContract } from '../control_contracts/bots.ts';
 import { controlRefusalSchema } from '../control_contracts/control_errors.ts';
 import {
@@ -28,6 +29,7 @@ const CONTROL_OPERATION_CONTRACTS: readonly ControlOperationContract[] = [
   deleteSessionContract,
   createBotContract,
   createAccountContract,
+  readBotActivityContract,
 ];
 
 const document = readOpenApiDocument();
@@ -119,7 +121,6 @@ Deno.test('A status, reason or header only one side declares is drift', () => {
     'response 201 header location: only the document has it',
     'response 409 /properties/reason/const: the contract has nothing, the document has "username_taken"',
     'response 409 /properties/reason/enum: the contract has ["username_reserved","username_taken"], the document has nothing',
-    'response 409 /properties/reason/type: the contract has "string", the document has nothing',
   ]);
 });
 

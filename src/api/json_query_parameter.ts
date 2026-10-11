@@ -1,46 +1,54 @@
-import {
-  isJsonObject,
-  type JsonStructure,
-  MAX_JSON_NESTING_DEPTH,
-  readJsonText,
-} from '../../../types/json_pattern.ts';
-import type { ControlRequestIssue } from '../../control_error_response.ts';
-import type { ControlRequestInputReading } from '../control_request_input.ts';
-
 /**
- * The query parameter holding, as JSON text, the patterns a recorded call's JSON parameters must
- * match, by parameter name: `parameters_json={"reply_parameters":{"message_id":5}}`.
+ * Reads a control query parameter that holds JSON text, such as bot activity's `parameters_json`,
+ * reporting the problems with its text that its schema cannot see.
  */
-export const PARAMETER_PATTERNS_QUERY_KEY = 'parameters_json';
+import { type JsonValue, MAX_JSON_NESTING_DEPTH, readJsonText } from '../types/json_pattern.ts';
+import type { ControlRequestIssue } from './control_error_response.ts';
 
 type JsonPathSegment = string | number;
 type JsonPath = readonly JsonPathSegment[];
 
 /**
- * Reads the value of a `parameters_json` query parameter: a JSON object, nested at most
- * `MAX_JSON_NESTING_DEPTH` levels, its own object included, whose members are each a JSON object
- * or array, the pattern for the parameter the member names. Numbers are kept as the exact values
- * their text spells, as recorded parameters are read. A member named twice in any object is
- * reported, as `JSON.parse` would otherwise keep only its last value.
+ * A JSON query parameter's value, read twice: as the emulator's JSON values, whose numbers keep
+ * the exact decimal values their text spells, and as `JSON.parse` reads it, which a schema checks.
  */
-export function readParameterPatterns(
-  queryValue: string,
-): ControlRequestInputReading<ReadonlyMap<string, JsonStructure>> {
-  const reading = readJsonText(queryValue);
+export interface JsonQueryParameterValue {
+  readonly exactValue: JsonValue;
+  readonly parsedValue: unknown;
+}
+
+/**
+ * What reading a JSON query parameter found: its value, when its text is JSON within the nesting
+ * limit, and its issues. A member that an object names more than once is an issue that leaves the
+ * value readable, so that its schema can still report the value's other issues.
+ */
+export interface JsonQueryParameterReading {
+  readonly value: JsonQueryParameterValue | undefined;
+  readonly issues: readonly ControlRequestIssue[];
+}
+
+/**
+ * Reads the text of the query parameter `name`, which must be JSON nested at most
+ * `MAX_JSON_NESTING_DEPTH` levels, its own object or array included. A member named twice in any
+ * object is reported at its path, which continues from `name` into the JSON, as `JSON.parse` would
+ * otherwise keep only its last value.
+ */
+export function readJsonQueryParameter(name: string, text: string): JsonQueryParameterReading {
+  const reading = readJsonText(text);
   if (!reading.read) {
     return {
-      valid: false,
+      value: undefined,
       issues: [
         reading.reason === 'not_json'
           ? {
             source: 'query',
-            path: [PARAMETER_PATTERNS_QUERY_KEY],
+            path: [name],
             code: 'invalid_json',
             message: 'The query parameter is not JSON',
           }
           : {
             source: 'query',
-            path: [PARAMETER_PATTERNS_QUERY_KEY],
+            path: [name],
             code: 'too_big',
             message:
               `The JSON nests objects and arrays more than ${MAX_JSON_NESTING_DEPTH} levels deep`,
@@ -48,38 +56,16 @@ export function readParameterPatterns(
       ],
     };
   }
-  const patternsByParameterName = reading.value;
-  const issues: ControlRequestIssue[] = findRepeatedMemberPaths(queryValue).map((path) => ({
-    source: 'query',
-    path: [PARAMETER_PATTERNS_QUERY_KEY, ...path],
-    code: 'duplicate_field',
-    message: 'The JSON object names this member more than once',
-  }));
-  if (!isJsonObject(patternsByParameterName)) {
-    issues.push({
+  return {
+    // `readJsonText` read the text, so `JSON.parse` reads it too.
+    value: { exactValue: reading.value, parsedValue: JSON.parse(text) },
+    issues: findRepeatedMemberPaths(text).map((path) => ({
       source: 'query',
-      path: [PARAMETER_PATTERNS_QUERY_KEY],
-      code: 'invalid_type',
-      message: 'Expected a JSON object of patterns by parameter name',
-    });
-    return { valid: false, issues };
-  }
-  // Parameter names are the client's, so they are kept in a map, where no name such as
-  // `__proto__` has a special meaning.
-  const patterns = new Map<string, JsonStructure>();
-  for (const [parameterName, pattern] of Object.entries(patternsByParameterName)) {
-    if (isJsonObject(pattern) || Array.isArray(pattern)) {
-      patterns.set(parameterName, pattern);
-    } else {
-      issues.push({
-        source: 'query',
-        path: [PARAMETER_PATTERNS_QUERY_KEY, parameterName],
-        code: 'invalid_type',
-        message: 'Expected a JSON object or array; parameters[name] matches other parameter text',
-      });
-    }
-  }
-  return issues.length === 0 ? { valid: true, value: patterns } : { valid: false, issues };
+      path: [name, ...path],
+      code: 'duplicate_field',
+      message: 'The JSON object names this member more than once',
+    })),
+  };
 }
 
 /**

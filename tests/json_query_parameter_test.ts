@@ -1,8 +1,9 @@
 /**
- * The reading of a `parameters_json` query value: its nesting limit, and the cost of scanning it,
- * which must stay in proportion to the value's length however the value nests or repeats members.
+ * The reading of a JSON query parameter's text, such as `parameters_json`'s: its nesting limit, and
+ * the cost of scanning it, which must stay in proportion to the text's length however the value
+ * nests or repeats members.
  */
-import { readParameterPatterns } from '../src/api/sessions/bot_activity/parameter_patterns_query.ts';
+import { readJsonQueryParameter } from '../src/api/json_query_parameter.ts';
 import { MAX_JSON_NESTING_DEPTH } from '../src/types/json_pattern.ts';
 
 /**
@@ -19,16 +20,14 @@ function nestedArrayPatterns(depth: number): string {
 
 Deno.test('parameters_json may nest objects and arrays up to the limit', () => {
   const atLimit = readParameterPatterns(nestedArrayPatterns(MAX_JSON_NESTING_DEPTH));
-  if (!atLimit.valid) {
+  if (atLimit.value === undefined || atLimit.issues.length > 0) {
     throw new Error(`Expected a value at the limit to be read: ${JSON.stringify(atLimit.issues)}`);
   }
 
   const beyondLimit = readParameterPatterns(
     nestedArrayPatterns(MAX_JSON_NESTING_DEPTH + 1),
   );
-  const issues = beyondLimit.valid
-    ? []
-    : beyondLimit.issues.map(({ source, path, code }) => ({ source, path, code }));
+  const issues = beyondLimit.issues.map(({ source, path, code }) => ({ source, path, code }));
   if (
     JSON.stringify(issues) !==
       JSON.stringify([{ source: 'query', path: ['parameters_json'], code: 'too_big' }])
@@ -44,7 +43,10 @@ Deno.test('A parameters_json nested far beyond the limit is refused in linear ti
   const reading = readParameterPatterns(deeplyNested);
   const elapsedMilliseconds = performance.now() - startedAt;
 
-  if (reading.valid || reading.issues.length !== 1 || reading.issues[0].code !== 'too_big') {
+  if (
+    reading.value !== undefined || reading.issues.length !== 1 ||
+    reading.issues[0].code !== 'too_big'
+  ) {
     throw new Error('Expected the nesting to be refused as too deep');
   }
   if (elapsedMilliseconds > LINEAR_SCAN_BUDGET_MILLISECONDS) {
@@ -65,7 +67,7 @@ Deno.test('Members repeated at the deepest level are each reported once, at thei
   const reading = readParameterPatterns(value);
   const elapsedMilliseconds = performance.now() - startedAt;
 
-  const issues = reading.valid ? [] : reading.issues;
+  const { issues } = reading;
   const expectedPathLength = 1 + holderDepth + 1;
   if (
     issues.length !== repeatCount ||
@@ -83,3 +85,7 @@ Deno.test('Members repeated at the deepest level are each reported once, at thei
     throw new Error("Expected the scan to take time linear in the value's length");
   }
 });
+
+function readParameterPatterns(text: string) {
+  return readJsonQueryParameter('parameters_json', text);
+}

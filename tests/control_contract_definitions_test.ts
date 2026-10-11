@@ -4,10 +4,20 @@
  * check each copy against the domain's value.
  */
 import { assertEquals } from '@std/assert';
+import { BOT_ACTIVITY_KINDS as CONTRACT_BOT_ACTIVITY_KINDS } from '../control_contracts/bot_activity.ts';
 import { uploadProfileSchema } from '../control_contracts/sessions.ts';
 import { telegramUserIdSchema } from '../control_contracts/wire_fields.ts';
+import { BOT_ACTIVITY_KINDS } from '../src/types/bot_activity_kind.ts';
 import { MAX_TELEGRAM_USER_ID, MIN_TELEGRAM_USER_ID } from '../src/types/telegram_identity.ts';
 import { UPLOAD_PROFILES } from '../src/types/upload_profile.ts';
+
+Deno.test('The contracts name exactly the bot activity kinds the emulator records', () => {
+  assertEquals(
+    CONTRACT_BOT_ACTIVITY_KINDS,
+    BOT_ACTIVITY_KINDS,
+    'Expected the same kinds, in order',
+  );
+});
 
 Deno.test('The contracts take exactly the upload profiles the emulator has', () => {
   assertEquals(

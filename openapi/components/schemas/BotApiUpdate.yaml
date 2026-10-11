@@ -1,3 +1,4 @@
+x-telegram-type: Update
 description: An update the emulator delivers to a bot.
 oneOf:
   - $ref: ./MessageUpdate.yaml

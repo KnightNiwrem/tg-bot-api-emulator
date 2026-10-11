@@ -505,10 +505,7 @@ class HttpEmulationSessionClient implements EmulationSessionClient {
     filter?: BotActivityFilterFor<Criteria>,
     options: BotActivityLogOptions = {},
   ): BotActivityLog {
-    const pageReader = createHttpBotActivityPageReader(
-      `${this.#sessionUrl}/bot-activity`,
-      this.#fetch,
-    );
+    const pageReader = createHttpBotActivityPageReader(this.#transport, this.id);
     return createBotActivityLog(pageReader, filter, options);
   }
 }
