@@ -96,7 +96,8 @@ Deno.test('the forward and copy methods name the parameter that does not fit the
 });
 
 Deno.test('the forward and copy methods give the official server descriptions for JSON parameters', async () => {
-  const { api, botApiPath } = await createFixture();
+  await using fixture = await createFixture();
+  const { api, botApiPath } = fixture;
   const notSpecified = 'Bad Request: message identifiers are not specified';
   const cases: readonly [method: string, parameters: object, description: string][] = [
     [
@@ -366,7 +367,8 @@ Deno.test('the query answer methods name the parameter that does not fit their s
 });
 
 Deno.test('the deletion and reaction methods name the parameter that does not fit their schema', async () => {
-  const { api, botApiPath } = await createFixture();
+  await using fixture = await createFixture();
+  const { api, botApiPath } = fixture;
   const unparsableMessageIds = "Bad Request: can't parse message_ids JSON object";
   const cases: readonly [method: string, parameters: object, description: string][] = [
     [
@@ -410,7 +412,8 @@ Deno.test('the deletion and reaction methods name the parameter that does not fi
 });
 
 Deno.test('link_preview_options that is not JSON gets the official server description', async () => {
-  const { api, botApiPath } = await createFixture();
+  await using fixture = await createFixture();
+  const { api, botApiPath } = fixture;
   const unparsableOptions = "Bad Request: can't parse link preview options JSON object";
   const cases: readonly [method: string, parameters: object, description: string][] = [
     [
@@ -453,7 +456,8 @@ Deno.test('link_preview_options that is not JSON gets the official server descri
 });
 
 Deno.test('the sending methods name the parameter that does not fit their schema', async () => {
-  const { api, botApiPath } = await createFixture();
+  await using fixture = await createFixture();
+  const { api, botApiPath } = fixture;
   const cases: readonly [method: string, parameters: object, description: string][] = [
     [
       'sendMessage',

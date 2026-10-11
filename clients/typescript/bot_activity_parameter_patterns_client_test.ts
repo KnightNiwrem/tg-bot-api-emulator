@@ -11,7 +11,8 @@ import { UnexpectedBotActivityError } from './mod.ts';
 import type { BotActivityCriteria, JsonStructure } from './mod.ts';
 
 Deno.test('waitFor, cursors and assertNone match a parameter by its JSON structure', async () => {
-  const { session, bot, account, callBotWithJson, callBotWithForm } = await createFixture();
+  await using fixture = await createFixture();
+  const { session, bot, account, callBotWithJson, callBotWithForm } = fixture;
   const activity = session.botActivity();
   const start = await activity.position();
   const { result: command } = await account.sendMessage({
@@ -63,7 +64,8 @@ Deno.test('waitFor, cursors and assertNone match a parameter by its JSON structu
 });
 
 Deno.test('A view and a read combine their parameter patterns', async () => {
-  const { session, callBotWithJson } = await createFixture();
+  await using fixture = await createFixture();
+  const { session, callBotWithJson } = fixture;
   await callBotWithJson('sendMessage', {
     text: 'Pick one',
     reply_markup: { inline_keyboard: [[{ text: 'A', callback_data: 'a' }]] },
@@ -96,7 +98,8 @@ Deno.test('A view and a read combine their parameter patterns', async () => {
 });
 
 Deno.test('The client refuses patterns that sending as JSON would change', async () => {
-  const { session } = await createFixture();
+  await using fixture = await createFixture();
+  const { session } = fixture;
   const activity = session.botActivity();
   const cyclic: Record<string, unknown> = {};
   cyclic.self = cyclic;
@@ -211,7 +214,8 @@ async function assertTypeError(action: () => Promise<unknown>, message: string):
 }
 
 async function createFixture() {
-  const emulator = createTestInProcessEmulator();
+  await using disposalOnFailure = new AsyncDisposableStack();
+  const emulator = disposalOnFailure.use(createTestInProcessEmulator());
   const { fetch } = emulator;
   const { result: session } = await emulator.client.createSession();
   const { result: { token, bot } } = await session.createBot({
@@ -238,11 +242,13 @@ async function createFixture() {
     });
     await response.body?.cancel();
   };
+  const emulatorDisposal = disposalOnFailure.move();
   return {
     session,
     bot,
     account,
     callBotWithJson,
     callBotWithForm,
+    [Symbol.asyncDispose]: () => emulatorDisposal.disposeAsync(),
   };
 }

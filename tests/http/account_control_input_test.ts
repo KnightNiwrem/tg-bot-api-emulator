@@ -34,14 +34,22 @@ function invalidRequest(source: string, path: string, code: string): RefusalDesc
 }
 
 async function createAccountFixture() {
-  const { api, sessionPath } = await createTestSession();
+  await using disposalOnFailure = new AsyncDisposableStack();
+  const { api, sessionPath } = disposalOnFailure.use(await createTestSession());
   const account = await createAccount(api, sessionPath, 'Ada');
   const { bot } = await createBot(api, sessionPath, 'answer_bot');
-  return { api, accountPath: `${sessionPath}/accounts/${account.id}`, bot };
+  const emulatorDisposal = disposalOnFailure.move();
+  return {
+    api,
+    accountPath: `${sessionPath}/accounts/${account.id}`,
+    bot,
+    [Symbol.asyncDispose]: () => emulatorDisposal.disposeAsync(),
+  };
 }
 
 Deno.test('A draft ID is the decimal text of a nonzero signed 64-bit integer', async () => {
-  const { api, accountPath, bot } = await createAccountFixture();
+  await using fixture = await createAccountFixture();
+  const { api, accountPath, bot } = fixture;
   const draftPath = `${accountPath}/conversations/private/${bot.id}/message-draft`;
 
   const cases: readonly [action: string, draftId: string, refusal: RefusalDescription][] = [
@@ -76,7 +84,8 @@ Deno.test('A draft ID is the decimal text of a nonzero signed 64-bit integer', a
 });
 
 Deno.test('Account controls take path IDs written only in decimal digits', async () => {
-  const { api, accountPath, bot } = await createAccountFixture();
+  await using fixture = await createAccountFixture();
+  const { api, accountPath, bot } = fixture;
 
   const refusals = [
     await requestJson<ControlErrorBody>(api, 'PUT', `${accountPath}/blocked-bots/${bot.id}.0`),
@@ -102,7 +111,8 @@ Deno.test('Account controls take path IDs written only in decimal digits', async
 });
 
 Deno.test('A callback button press names a message by an ID from 1', async () => {
-  const { api, accountPath, bot } = await createAccountFixture();
+  await using fixture = await createAccountFixture();
+  const { api, accountPath, bot } = fixture;
 
   const refusal = await requestJson<ControlErrorBody>(
     api,
