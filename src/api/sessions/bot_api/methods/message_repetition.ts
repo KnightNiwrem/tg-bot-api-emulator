@@ -1,5 +1,6 @@
 import { z } from 'zod';
 
+import type { BotApiMessageId } from '../../../../types/bot_api.ts';
 import type { EmulationSession } from '../../../../types/emulation_session.ts';
 import { CHAT_ID_EMPTY_DESCRIPTION } from '../chat_access.ts';
 import {
@@ -187,7 +188,7 @@ function handleCopyMessage(
     },
   );
   return result.sent
-    ? botApiResult({ message_id: result.messageId })
+    ? botApiResult({ message_id: result.messageId } satisfies BotApiMessageId)
     : presentMessageRepetitionFailure('message_copy', result);
 }
 
@@ -277,6 +278,8 @@ function repeatMessagesAnswer(
   result: ReturnType<EmulationSession['botApi']['forwardMessages']>,
 ): BotApiMethodAnswer {
   return result.sent
-    ? botApiResult(result.messageIds.map((messageId) => ({ message_id: messageId })))
+    ? botApiResult(
+      result.messageIds.map((messageId): BotApiMessageId => ({ message_id: messageId })),
+    )
     : presentMessageRepetitionFailure(operation, result);
 }
