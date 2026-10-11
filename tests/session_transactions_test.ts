@@ -1,3 +1,4 @@
+import { assertEquals } from '@std/assert';
 import type { NewPoll } from '../src/types/poll.ts';
 import { createStagedSessionFixture, FAILED_VIEW_MESSAGE } from './support/staged_session.ts';
 
@@ -24,7 +25,7 @@ Deno.test('a command whose projection fails after one recipient commits nothing 
     ? alphaView.photo.at(-1)
     : undefined;
 
-  assertJson(
+  assertEquals(
     {
       error: commandError,
       state: fixture.readState(committedPoll.id),
@@ -45,7 +46,7 @@ Deno.test('a command whose projection fails after one recipient commits nothing 
   // The next command numbers its messages and updates as though the failed one never ran.
   fixture.views.failingObserverId = undefined;
   transactions.execute(() => fixture.sendAccountPhoto('Notes'));
-  assertJson(
+  assertEquals(
     {
       messageIds: fixture.views.messageViewsSeen.slice(-2).map((message) => message.message_id),
       alphaUpdateIds: fixture.botUpdates.readPendingUpdates(alpha).map((update) =>
@@ -70,7 +71,7 @@ Deno.test('an album whose second member fails to project commits none of its mem
     fixture.transactions.execute(() => fixture.sendAccountAlbum(['First', 'Second']))
   );
 
-  assertJson(
+  assertEquals(
     { error: commandError, state: fixture.readState() },
     { error: FAILED_VIEW_MESSAGE, state: stateBefore },
     "Expected the album's first member to be reverted with the second",
@@ -95,7 +96,7 @@ Deno.test('consumers learn of a command only once it is published, and a failing
     notifications.push(`command ended with ${notifications.length} notifications`);
   });
 
-  assertJson(
+  assertEquals(
     {
       notifications,
       failures: fixture.notificationFailures,
@@ -139,7 +140,7 @@ Deno.test('a command after its session ended does not run, and commands do not n
     ranAfterEnd = true;
   });
 
-  assertJson(
+  assertEquals(
     { nestingError, joinedChangeError, stateAfterFailures, execution, ranAfterEnd },
     {
       nestingError: 'A transaction is already open; transactions do not nest',
@@ -168,7 +169,7 @@ Deno.test('each event of a command is projected against the state the command st
     botUpdates.readPendingUpdates(botId).map((update) =>
       'message' in update && 'text' in update.message ? update.message.text : undefined
     );
-  assertJson(
+  assertEquals(
     { alpha: texts(alpha), beta: texts(beta) },
     { alpha: ['/help', '/start'], beta: ['/help'] },
     'Expected the routing Alpha staged to decide who received the later command',
@@ -193,12 +194,4 @@ function captureError(run: () => unknown): string {
     return error instanceof Error ? error.message : String(error);
   }
   return 'no error';
-}
-
-function assertJson(actual: unknown, expected: unknown, message: string): void {
-  const actualJson = JSON.stringify(actual);
-  const expectedJson = JSON.stringify(expected);
-  if (actualJson !== expectedJson) {
-    throw new Error(`${message}\nExpected: ${expectedJson}\nReceived: ${actualJson}`);
-  }
 }

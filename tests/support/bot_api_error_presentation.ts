@@ -1,3 +1,4 @@
+import { assertEquals } from '@std/assert';
 import type { BotApiMethodAnswer } from '../../src/api/sessions/bot_api/method_call.ts';
 
 // Presenter tests compare answers with Telegram's literal statuses and descriptions, written out
@@ -79,12 +80,9 @@ export function expectAnswer(
   [status, description]: readonly [number, string],
   label: string,
 ): void {
-  const actual = [answer.status, answer.body.ok, answer.body.description];
-  const expected = [status, false, description];
-  if (JSON.stringify(actual) !== JSON.stringify(expected)) {
-    throw new Error(
-      `Expected ${label} to be answered ${JSON.stringify(expected)}, ` +
-        `received ${JSON.stringify(actual)}`,
-    );
-  }
+  assertEquals(
+    [answer.status, answer.body.ok, answer.body.description],
+    [status, false, description],
+    `Expected ${label} to be answered with its error`,
+  );
 }

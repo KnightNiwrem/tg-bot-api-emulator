@@ -1,27 +1,11 @@
 import { assertEquals } from '@std/assert';
-import { AccountRepository } from '../src/repositories/account.ts';
-import { BlockedUserRepository } from '../src/repositories/blocked_user.ts';
-import { BotRepository } from '../src/repositories/bot.ts';
 import { CallbackQueryRepository } from '../src/repositories/callback_query.ts';
-import { FileRepository } from '../src/repositories/file.ts';
-import { PollRepository } from '../src/repositories/poll.ts';
-import { MessageRepository } from '../src/repositories/message.ts';
-import { PrivateConversationRepository } from '../src/repositories/private_conversation.ts';
-import { SharedChatRepository } from '../src/repositories/shared_chat.ts';
-import { TelegramIdentityRepository } from '../src/repositories/telegram_identity.ts';
-import { MessageBoxRepository } from '../src/repositories/message_box.ts';
-import { createAccountChatMessageReader } from '../src/services/account_chat_message.ts';
 import {
   CallbackQueryService,
   type PressCallbackButtonFailureReason,
 } from '../src/services/callback_query.ts';
-import { PrivateChatPolicy } from '../src/services/private_chat_policy.ts';
-import { PrivateMessagingService } from '../src/services/private_messaging.ts';
-import { SupergroupChatPolicy } from '../src/services/supergroup_chat_policy.ts';
-import { SupergroupMessagingService } from '../src/services/supergroup_messaging.ts';
 import { VirtualUserService } from '../src/services/virtual_user.ts';
-import { createMessageSendingServices } from './support/message_sending_services.ts';
-import type { ChatDomainEvent } from '../src/types/chat_domain_event.ts';
+import { createChatMessagingServices } from './support/chat_messaging_services.ts';
 import { ALL_CHAT_PERMISSIONS } from '../src/types/chat_permissions.ts';
 import { createVirtualAccount, createVirtualBot } from './support/virtual_users.ts';
 
@@ -423,72 +407,13 @@ Deno.test('CallbackQueryService sends a press on an inline message to its inline
 });
 
 function createCallbackQueryFixture() {
-  const identities = new TelegramIdentityRepository();
-  const accounts = new AccountRepository();
-  const bots = new BotRepository();
-  const virtualUsers = new VirtualUserService({ identities, accounts, bots });
-  const privateConversations = new PrivateConversationRepository();
-  const messages = new MessageRepository();
-  const files = new FileRepository();
-  const polls = new PollRepository();
-  const messageBoxes = new MessageBoxRepository();
-  const sharedChats = new SharedChatRepository();
-  const blockedUsers = new BlockedUserRepository();
-  const joinRequesterContacts = {
-    mayContactJoinRequester: () => false,
-    claimJoinRequesterContact: () => {
-      throw new Error('Unexpected join requester contact');
-    },
-  };
-  const publishedEvents: ChatDomainEvent[] = [];
-  const events = { emit: (event: ChatDomainEvent) => publishedEvents.push(event) };
-  const privateMessaging = new PrivateMessagingService({
-    accounts,
-    bots,
-    privateConversations,
-    messages,
-    messageBoxes,
-    blockedUsers,
-  });
-  const supergroupMessaging = new SupergroupMessagingService({
-    accounts,
-    bots,
-    sharedChats,
-    messages,
-    messageBoxes,
-  });
-  const privateChats = new PrivateChatPolicy({
-    accounts,
-    bots,
-    privateConversations,
-    blockedUsers,
-    joinRequesterContacts,
-    privateMessages: privateMessaging,
-  });
-  const supergroups = new SupergroupChatPolicy({
-    sharedChats,
-    supergroupMessages: supergroupMessaging,
-  });
-  const { messageSending } = createMessageSendingServices({
-    accounts,
-    bots,
-    privateChats,
-    supergroups,
-    privateConversations,
-    sharedChats,
-    messages,
-    files,
-    polls,
-    messageBoxes,
-    transactions: { ...events, withinTransaction: (command) => command() },
-    joinRequesterContacts,
-    currentUnixTimeSeconds: () => 1_700_000_000,
-  });
+  const services = createChatMessagingServices();
+  const { virtualUsers, messageSending, messageBoxes } = services;
   const callbackQueries = new CallbackQueryService({
-    accountChatMessages: createAccountChatMessageReader({ accounts, privateChats, supergroups }),
-    bots,
+    accountChatMessages: services.accountChatMessages,
+    bots: services.bots,
     callbackQueries: new CallbackQueryRepository(),
-    transactions: { ...events, withinTransaction: (command) => command() },
+    transactions: services.transactions,
   });
 
   const account = createAccount(virtualUsers, 'Ada');
@@ -518,14 +443,7 @@ function createCallbackQueryFixture() {
   }
 
   return {
-    virtualUsers,
-    privateConversations,
-    sharedChats,
-    privateMessaging,
-    supergroupMessaging,
-    messageSending,
-    messageBoxes,
-    publishedEvents,
+    ...services,
     callbackQueries,
     chat: { account, bot, botMessage: botMessage.message, botMessageId, accountMessageId },
   };

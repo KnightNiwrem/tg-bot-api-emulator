@@ -1,11 +1,12 @@
 /**
- * The messaging services of both chat types, wired over fresh repositories as the composition root
+ * The messaging services of both chat types, wired over their repositories as the composition root
  * wires them, for unit tests that observe what a root-backed session keeps private: the domain
  * events each command publishes, the uploads it stores, and the repositories themselves.
  *
- * The repositories are not staged, so each command runs as it is called, and publishes its events
- * as it emits them. Tests that need the session's transactions, views or updates build a session
- * through `buildSessionServices()` instead.
+ * By default the repositories are fresh and unstaged, so each command runs as it is called and
+ * publishes its events as it emits them. A test that needs staging gives the repositories and the
+ * transactions it composed itself. Tests that need the whole session build it through
+ * `buildSessionServices()` instead.
  */
 import { AccountRepository } from '../../src/repositories/account.ts';
 import { BlockedUserRepository } from '../../src/repositories/blocked_user.ts';
@@ -17,8 +18,11 @@ import { PollRepository } from '../../src/repositories/poll.ts';
 import { PrivateConversationRepository } from '../../src/repositories/private_conversation.ts';
 import { SharedChatRepository } from '../../src/repositories/shared_chat.ts';
 import { TelegramIdentityRepository } from '../../src/repositories/telegram_identity.ts';
+import { createAccountChatMessageReader } from '../../src/services/account_chat_message.ts';
+import { MessageCommitter } from '../../src/services/message_commit.ts';
 import { MessageDeletionService } from '../../src/services/message_deletion.ts';
 import { MessageEditingService } from '../../src/services/message_editing.ts';
+import { MessageSendingService } from '../../src/services/message_sending.ts';
 import { PrivateChatPolicy } from '../../src/services/private_chat_policy.ts';
 import { PrivateMessagingService } from '../../src/services/private_messaging.ts';
 import { ReplyInterfaceService } from '../../src/services/reply_interface.ts';
@@ -26,10 +30,10 @@ import { SharedChatAdministrationService } from '../../src/services/shared_chat_
 import { SupergroupChatPolicy } from '../../src/services/supergroup_chat_policy.ts';
 import { SupergroupMessagingService } from '../../src/services/supergroup_messaging.ts';
 import { VirtualUserService } from '../../src/services/virtual_user.ts';
+import type { ChangeStaging } from '../../src/transactions/change_staging.ts';
 import type { ChatDomainEvent } from '../../src/types/chat_domain_event.ts';
 import type { FileUpload } from '../../src/types/stored_file.ts';
 import { TEST_UNIX_TIME_SECONDS } from './fixed_wall_clock.ts';
-import { createMessageSendingServices } from './message_sending_services.ts';
 
 /** Which bots a pending join request lets write to an account that never started their chat. */
 export interface JoinRequesterContacts {
@@ -50,7 +54,26 @@ export interface ChatMessagingServicesOptions {
   readonly createEventObserver?: (
     repositories: ChatMessagingRepositories,
   ) => (event: ChatDomainEvent) => void;
+  /** The repositories the services read and write; fresh unstaged ones when omitted. */
+  readonly repositories?: ChatMessagingRepositories;
+  /**
+   * The transactions the services run their commands in, and which receive their events; when
+   * omitted, each command runs as it is called and its events go nowhere else.
+   */
+  readonly transactions?: ChatMessagingTransactions;
 }
+
+/** Runs the services' commands, and receives the events they publish. */
+export interface ChatMessagingTransactions {
+  withinTransaction<Result>(command: () => Result): Result;
+  emit(event: ChatDomainEvent): void;
+}
+
+/** Commands that run as they are called, outside any transaction, publishing to no one. */
+const IMMEDIATE_TRANSACTIONS: ChatMessagingTransactions = {
+  withinTransaction: (command) => command(),
+  emit: () => {},
+};
 
 /** The repositories the messaging services read and write. */
 export interface ChatMessagingRepositories {
@@ -73,26 +96,37 @@ const NO_JOIN_REQUESTER_CONTACTS: JoinRequesterContacts = {
   },
 };
 
-/** Builds the messaging services of both chat types over fresh repositories. */
+/**
+ * Creates fresh repositories for the messaging services. Those the composition root stages are
+ * staged in `staging` when it is given, and unstaged otherwise.
+ */
+export function createChatMessagingRepositories(
+  staging?: ChangeStaging,
+): ChatMessagingRepositories {
+  return {
+    identities: new TelegramIdentityRepository(staging),
+    accounts: new AccountRepository(),
+    bots: new BotRepository(),
+    privateConversations: new PrivateConversationRepository(staging),
+    blockedUsers: new BlockedUserRepository(staging),
+    sharedChats: new SharedChatRepository(staging),
+    messages: new MessageRepository(staging),
+    files: new FileRepository(staging),
+    polls: new PollRepository(staging),
+    messageBoxes: new MessageBoxRepository(staging),
+  };
+}
+
+/** Builds the messaging services of both chat types over their repositories. */
 export function createChatMessagingServices(
   {
     joinRequesterContacts = NO_JOIN_REQUESTER_CONTACTS,
     currentUnixTimeSeconds = () => TEST_UNIX_TIME_SECONDS,
     createEventObserver = () => () => {},
+    repositories = createChatMessagingRepositories(),
+    transactions: givenTransactions = IMMEDIATE_TRANSACTIONS,
   }: ChatMessagingServicesOptions = {},
 ) {
-  const repositories: ChatMessagingRepositories = {
-    identities: new TelegramIdentityRepository(),
-    accounts: new AccountRepository(),
-    bots: new BotRepository(),
-    privateConversations: new PrivateConversationRepository(),
-    blockedUsers: new BlockedUserRepository(),
-    sharedChats: new SharedChatRepository(),
-    messages: new MessageRepository(),
-    files: new FileRepository(),
-    polls: new PollRepository(),
-    messageBoxes: new MessageBoxRepository(),
-  };
   const {
     identities,
     accounts,
@@ -109,10 +143,12 @@ export function createChatMessagingServices(
 
   const publishedEvents: ChatDomainEvent[] = [];
   const observeEvent = createEventObserver(repositories);
-  const events = {
-    emit: (event: ChatDomainEvent) => {
+  const transactions: ChatMessagingTransactions = {
+    withinTransaction: (command) => givenTransactions.withinTransaction(command),
+    emit: (event) => {
       publishedEvents.push(event);
       observeEvent(event);
+      givenTransactions.emit(event);
     },
   };
   const storedUploads: FileUpload[] = [];
@@ -150,23 +186,30 @@ export function createChatMessagingServices(
     sharedChats,
     supergroupMessages: supergroupMessaging,
   });
-  const immediateTransactions = {
-    ...events,
-    withinTransaction: <Result>(command: () => Result) => command(),
-  };
-  const { messageCommitter, messageSending } = createMessageSendingServices({
+  const messageCommitter = new MessageCommitter({
+    accounts,
+    bots,
+    messages,
+    messageBoxes,
+    privateReplyInterfaces: privateConversations,
+    supergroupMembers: sharedChats,
+    transactions,
+    // No bot shows a message draft here, which a bot's message would otherwise remove.
+    messageDrafts: { clearBotDraft: () => {} },
+    currentUnixTimeSeconds,
+  });
+  const messageSending = new MessageSendingService({
     accounts,
     bots,
     privateChats,
     supergroups,
     privateConversations,
-    sharedChats,
-    messages,
+    joinRequesterContacts,
+    mediaGroups: messages,
     files: uploadRecordingFiles,
     polls,
-    messageBoxes,
-    transactions: immediateTransactions,
-    joinRequesterContacts,
+    commits: messageCommitter,
+    transactions,
     currentUnixTimeSeconds,
   });
 
@@ -177,6 +220,13 @@ export function createChatMessagingServices(
     publishedEvents,
     /** Every upload the services stored, in order. */
     storedUploads,
+    /**
+     * The transactions the services run their commands in, which record each event in
+     * `publishedEvents`. Services a test builds over the same repositories take them too.
+     */
+    transactions,
+    /** Reads the messages of either chat type that an account addresses by its chat's IDs. */
+    accountChatMessages: createAccountChatMessageReader({ accounts, privateChats, supergroups }),
     privateMessaging,
     supergroupMessaging,
     privateChats,
@@ -191,7 +241,7 @@ export function createChatMessagingServices(
       messages,
       files: uploadRecordingFiles,
       polls,
-      transactions: immediateTransactions,
+      transactions: transactions,
       currentUnixTimeSeconds,
     }),
     messageDeletion: new MessageDeletionService({
@@ -201,7 +251,7 @@ export function createChatMessagingServices(
       supergroups,
       messages,
       privateReplyInterfaces: privateConversations,
-      transactions: immediateTransactions,
+      transactions: transactions,
     }),
     replyInterfaces: new ReplyInterfaceService({
       accounts,
@@ -220,7 +270,7 @@ export function createChatMessagingServices(
       bots,
       sharedChats,
       serviceMessages: messageCommitter,
-      transactions: immediateTransactions,
+      transactions: transactions,
       currentUnixTimeSeconds,
     }),
   };

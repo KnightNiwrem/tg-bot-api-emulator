@@ -3,37 +3,26 @@
  * explicit seams for what the full composition hides: a view that fails for a chosen observer, the
  * journal that consumers register with, and the session's end.
  */
-import { AccountRepository } from '../../src/repositories/account.ts';
-import { BlockedUserRepository } from '../../src/repositories/blocked_user.ts';
-import { BotRepository } from '../../src/repositories/bot.ts';
 import { BotActivityLogRepository } from '../../src/repositories/bot_activity_log.ts';
 import { BotUpdateRepository } from '../../src/repositories/bot_update.ts';
 import { BotUpdateSubscriptionRepository } from '../../src/repositories/bot_update_subscription.ts';
 import { ChatInviteLinkRepository } from '../../src/repositories/chat_invite_link.ts';
-import { FileRepository } from '../../src/repositories/file.ts';
 import { LastMessageSendingBotRepository } from '../../src/repositories/last_message_sending_bot.ts';
-import { MessageRepository } from '../../src/repositories/message.ts';
-import { MessageBoxRepository } from '../../src/repositories/message_box.ts';
-import { PollRepository } from '../../src/repositories/poll.ts';
-import { PrivateConversationRepository } from '../../src/repositories/private_conversation.ts';
-import { SharedChatRepository } from '../../src/repositories/shared_chat.ts';
-import { TelegramIdentityRepository } from '../../src/repositories/telegram_identity.ts';
 import { BotMessageViewService } from '../../src/services/bot_message_view.ts';
 import { BotUpdateDeliveryService } from '../../src/services/bot_update_delivery.ts';
 import { ChatAdmissionService } from '../../src/services/chat_admission.ts';
-import { PrivateChatPolicy } from '../../src/services/private_chat_policy.ts';
 import { SessionLifetime } from '../../src/services/session_lifetime.ts';
-import { SharedChatAdministrationService } from '../../src/services/shared_chat_administration.ts';
-import { SupergroupChatPolicy } from '../../src/services/supergroup_chat_policy.ts';
-import { SupergroupMessagingService } from '../../src/services/supergroup_messaging.ts';
-import { VirtualUserService } from '../../src/services/virtual_user.ts';
 import { SessionChangeJournal } from '../../src/transactions/change_staging.ts';
 import { SessionTransactions } from '../../src/transactions/session_transactions.ts';
 import type { BotApiChatMemberUpdated, BotApiSupergroupMessage } from '../../src/types/bot_api.ts';
 import type { ChatMemberStatusChangedEvent } from '../../src/types/chat_domain_event.ts';
 import type { PhotoUpload } from '../../src/types/stored_file.ts';
 import type { SupergroupMessage } from '../../src/types/virtual_message.ts';
-import { createMessageSendingServices } from './message_sending_services.ts';
+import {
+  createChatMessagingRepositories,
+  createChatMessagingServices,
+} from './chat_messaging_services.ts';
+import { TEST_UNIX_TIME_SECONDS } from './fixed_wall_clock.ts';
 
 /** The error a failing view throws. */
 export const FAILED_VIEW_MESSAGE = 'The view failed';
@@ -88,15 +77,8 @@ export function createStagedSessionFixture({ privacyMode }: { readonly privacyMo
       notificationFailures.push(error instanceof Error ? error.message : error),
   });
   const sessionEnd = new AbortController();
-  const identities = new TelegramIdentityRepository(journal);
-  const accounts = new AccountRepository();
-  const bots = new BotRepository();
-  const virtualUsers = new VirtualUserService({ identities, accounts, bots });
-  const sharedChats = new SharedChatRepository(journal);
-  const messages = new MessageRepository(journal);
-  const files = new FileRepository(journal);
-  const polls = new PollRepository(journal);
-  const messageBoxes = new MessageBoxRepository(journal);
+  const repositories = createChatMessagingRepositories(journal);
+  const { accounts, bots, sharedChats, messages, files, polls, messageBoxes } = repositories;
   const botUpdates = new BotUpdateRepository(journal);
   const updateSubscriptions = new BotUpdateSubscriptionRepository();
   const lastMessageSendingBots = new LastMessageSendingBotRepository(journal);
@@ -123,46 +105,11 @@ export function createStagedSessionFixture({ privacyMode }: { readonly privacyMo
       lastMessageSendingBots,
     }),
   });
-  const currentUnixTimeSeconds = () => 1_700_000_000;
-  const supergroupMessaging = new SupergroupMessagingService({
-    accounts,
-    bots,
-    sharedChats,
-    messages,
-    messageBoxes,
-  });
-  const privateConversations = new PrivateConversationRepository(journal);
-  const { messageCommitter, messageSending } = createMessageSendingServices({
-    accounts,
-    bots,
-    // These sessions send no private messages, so none is found.
-    privateChats: new PrivateChatPolicy({
-      accounts,
-      bots,
-      privateConversations,
-      blockedUsers: new BlockedUserRepository(),
-      joinRequesterContacts: { mayContactJoinRequester: () => false },
-      privateMessages: { getPrivateMessageByBotMessageId: () => undefined },
-    }),
-    supergroups: new SupergroupChatPolicy({ sharedChats, supergroupMessages: supergroupMessaging }),
-    privateConversations,
-    sharedChats,
-    messages,
-    files,
-    polls,
-    messageBoxes,
-    transactions,
-    currentUnixTimeSeconds,
-  });
-  const administration = new SharedChatAdministrationService({
-    identities,
-    accounts,
-    bots,
-    sharedChats,
-    serviceMessages: messageCommitter,
-    transactions,
-    currentUnixTimeSeconds,
-  });
+  const {
+    virtualUsers,
+    messageSending,
+    sharedChatAdministration: administration,
+  } = createChatMessagingServices({ repositories, transactions });
   const chatAdmission = new ChatAdmissionService({
     accounts,
     bots,
@@ -170,7 +117,7 @@ export function createStagedSessionFixture({ privacyMode }: { readonly privacyMo
     inviteLinks: new ChatInviteLinkRepository(journal),
     memberships: administration,
     transactions,
-    currentUnixTimeSeconds,
+    currentUnixTimeSeconds: () => TEST_UNIX_TIME_SECONDS,
   });
 
   const createAccount = (firstName: string) => {

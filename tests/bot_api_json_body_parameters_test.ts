@@ -2,6 +2,7 @@
  * Reading a JSON body's members as Bot API parameters: a string member as its content, and any
  * other member as the source text the bot wrote, as the official Bot API server's `HttpReader` does.
  */
+import { assertEquals } from '@std/assert';
 import {
   type BotApiRequestParametersDecoding,
   decodeBotApiBodyParameters,
@@ -154,9 +155,10 @@ function assertDecodedParameters(
   if (!decoding.decoded) {
     throw new Error(`Expected parameters to decode, received "${decoding.description}"`);
   }
-  const received = JSON.stringify(Object.entries(decoding.parameters));
-  const expected = JSON.stringify(Object.entries(expectedParameters));
-  if (received !== expected) {
-    throw new Error(`Expected ${expected}, received ${received}`);
-  }
+  // The entries compare the parameters' order too.
+  assertEquals(
+    Object.entries(decoding.parameters),
+    Object.entries(expectedParameters),
+    'Expected the parameters decoded in this order',
+  );
 }
