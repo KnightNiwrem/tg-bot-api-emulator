@@ -2,18 +2,19 @@ import type { WebhookAttempt, WebhookAttemptFailure } from '../../types/bot_webh
 
 /** Presents an attempt to deliver an update to a webhook, as the emulation API shows it. */
 export function presentWebhookAttempt(attempt: WebhookAttempt) {
-  return {
+  const identity = {
     id: attempt.id,
     update_id: attempt.updateId,
     scheduling: attempt.scheduling,
-    status: attempt.status,
-    ...(attempt.status === 'failed'
-      ? {
-        failure: presentWebhookAttemptFailure(attempt.failure),
-        retry: { delay_seconds: attempt.retry.delaySeconds, status: attempt.retry.status },
-      }
-      : {}),
   };
+  return attempt.status === 'failed'
+    ? {
+      ...identity,
+      status: attempt.status,
+      failure: presentWebhookAttemptFailure(attempt.failure),
+      retry: { delay_seconds: attempt.retry.delaySeconds, status: attempt.retry.status },
+    }
+    : { ...identity, status: attempt.status };
 }
 
 /** Presents why an attempt failed, with the description `getWebhookInfo` reports, if any. */

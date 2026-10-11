@@ -5,6 +5,7 @@
  */
 import { assertEquals } from '@std/assert';
 import { BOT_ACTIVITY_KINDS as CONTRACT_BOT_ACTIVITY_KINDS } from '../control_contracts/bot_activity.ts';
+import { QUEUEABLE_SERVER_ERROR_CODES as CONTRACT_QUEUEABLE_SERVER_ERROR_CODES } from '../control_contracts/queued_bot_api_answers.ts';
 import { uploadProfileSchema } from '../control_contracts/sessions.ts';
 import {
   CHAT_PERMISSIONS as CONTRACT_CHAT_PERMISSIONS,
@@ -13,8 +14,11 @@ import {
   SUPERGROUP_ADMINISTRATOR_RIGHTS as CONTRACT_SUPERGROUP_ADMINISTRATOR_RIGHTS,
 } from '../control_contracts/supergroup_administration.ts';
 import { expireChatInviteLinkContract } from '../control_contracts/supergroups.ts';
+import { WEBHOOK_SCHEDULINGS as CONTRACT_WEBHOOK_SCHEDULINGS } from '../control_contracts/webhook_attempts.ts';
 import { supergroupChatIdSchema, telegramUserIdSchema } from '../control_contracts/wire_fields.ts';
 import { BOT_ACTIVITY_KINDS } from '../src/types/bot_activity_kind.ts';
+import { QUEUEABLE_SERVER_ERROR_CODES } from '../src/types/bot_server_error.ts';
+import { WEBHOOK_SCHEDULINGS } from '../src/types/bot_webhook.ts';
 import { createInviteLinkHash, isInviteLinkHash } from '../src/types/chat_invite_link.ts';
 import {
   MAX_CUSTOM_TITLE_LENGTH,
@@ -42,6 +46,22 @@ Deno.test('The contracts take exactly the upload profiles the emulator has', () 
     uploadProfileSchema.options,
     [...UPLOAD_PROFILES],
     'Expected the same profiles, in order',
+  );
+});
+
+Deno.test('The contracts take exactly the server error codes the emulator can queue', () => {
+  assertEquals(
+    [...CONTRACT_QUEUEABLE_SERVER_ERROR_CODES],
+    [...QUEUEABLE_SERVER_ERROR_CODES],
+    'Expected the same codes, in order',
+  );
+});
+
+Deno.test('The contracts name exactly the webhook schedulings the emulator has', () => {
+  assertEquals(
+    [...CONTRACT_WEBHOOK_SCHEDULINGS],
+    [...WEBHOOK_SCHEDULINGS],
+    'Expected the same schedulings, in order',
   );
 });
 

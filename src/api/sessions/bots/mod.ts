@@ -1,37 +1,22 @@
 import { Hono } from 'hono';
 import { basePath } from 'hono/route';
-import { z } from 'zod';
 
 import { createBotContract } from '../../../../control_contracts/bots.ts';
+import { INVALID_REQUEST_REASON } from '../../../../control_contracts/control_errors.ts';
+import {
+  listRateLimitResponsesContract,
+  queueRateLimitResponsesContract,
+} from '../../../../control_contracts/queued_bot_api_answers.ts';
 import type { QueuedRateLimitResponses } from '../../../types/bot_rate_limit.ts';
 import type { VirtualBotProfile } from '../../../types/virtual_bot.ts';
-import {
-  controlErrorResponse,
-  invalidControlRequestResponse,
-} from '../../control_error_response.ts';
 import { registerControlOperation } from '../../control_operation_route.ts';
-import { readJsonRequestBody } from '../json_request_body.ts';
 import type { SessionRouteContextTypes } from '../session_route_context_types.ts';
-import {
-  BOT_ID_PARAMETER,
-  BOT_NOT_FOUND_REASON,
-  botIdPathParameterSchema,
-} from './bot_id_path_parameter.ts';
 import { readQueuedAnswerMethodName } from './queued_answer_method.ts';
 import { createServerErrorResponseRoutes } from './server_error_responses.ts';
 import { createWebhookDeliveryRoutes } from './webhook_delivery.ts';
 
-const RATE_LIMIT_RESPONSES_PATH = `/:${BOT_ID_PARAMETER}/rate-limit-responses` as const;
-
 /** Where the bot routes are mounted within the server, as a contract path template. */
 const BOT_COLLECTION_MOUNT_PATH = '/sessions/{sessionId}/bots';
-
-const queueRateLimitResponsesRequestSchema = z.strictObject({
-  /** The method whose calls are limited, by any name Telegram accepts; omitted for every method. */
-  method: z.string().optional(),
-  retry_after: z.int().min(1),
-  count: z.int().min(1).default(1),
-});
 
 export function createBotRoutes(): Hono<SessionRouteContextTypes> {
   const botRoutes = new Hono<SessionRouteContextTypes>();
@@ -63,52 +48,43 @@ export function createBotRoutes(): Hono<SessionRouteContextTypes> {
     },
   );
 
-  botRoutes.post(RATE_LIMIT_RESPONSES_PATH, async (context) => {
-    const botId = botIdPathParameterSchema.safeParse(context.req.param(BOT_ID_PARAMETER));
-    if (!botId.success) {
-      return controlErrorResponse(context, 404, BOT_NOT_FOUND_REASON);
-    }
-    const requestBodyReading = await readJsonRequestBody(
-      context.req,
-      queueRateLimitResponsesRequestSchema,
-    );
-    if (!requestBodyReading.valid) {
-      return invalidControlRequestResponse(context, requestBodyReading.issues);
-    }
-    const requestBody = requestBodyReading.value;
-    const methodName = readQueuedAnswerMethodName(requestBody.method);
-    if (!methodName.valid) {
-      return invalidControlRequestResponse(context, methodName.issues);
-    }
+  registerControlOperation(
+    botRoutes,
+    BOT_COLLECTION_MOUNT_PATH,
+    queueRateLimitResponsesContract,
+    ({ params: { botId }, body }, context) => {
+      const method = readQueuedAnswerMethodName(body.method);
+      if (!method.valid) {
+        return { status: 400, body: { reason: INVALID_REQUEST_REASON, issues: [method.issue] } };
+      }
+      const result = context.get('emulationSession').botRateLimits.queueRateLimitResponses(botId, {
+        ...(method.methodName === undefined ? {} : { methodName: method.methodName }),
+        retryAfterSeconds: body.retry_after,
+        remainingCount: body.count,
+      });
+      return result.queued
+        ? { status: 201, body: presentRateLimitResponses(result.responses) }
+        : { status: 404, body: { reason: result.reason } };
+    },
+  );
 
-    const result = context.get('emulationSession').botRateLimits.queueRateLimitResponses(
-      botId.data,
-      {
-        ...(methodName.value === undefined ? {} : { methodName: methodName.value }),
-        retryAfterSeconds: requestBody.retry_after,
-        remainingCount: requestBody.count,
-      },
-    );
-    return result.queued
-      ? context.json(presentRateLimitResponses(result.responses), 201)
-      : controlErrorResponse(context, 404, result.reason);
-  });
+  registerControlOperation(
+    botRoutes,
+    BOT_COLLECTION_MOUNT_PATH,
+    listRateLimitResponsesContract,
+    ({ params: { botId } }, context) => {
+      const result = context.get('emulationSession').botRateLimits.listRateLimitResponses(botId);
+      return result.found
+        ? {
+          status: 200,
+          body: { rate_limit_responses: result.responses.map(presentRateLimitResponses) },
+        }
+        : { status: 404, body: { reason: result.reason } };
+    },
+  );
 
-  botRoutes.get(RATE_LIMIT_RESPONSES_PATH, (context) => {
-    const botId = botIdPathParameterSchema.safeParse(context.req.param(BOT_ID_PARAMETER));
-    if (!botId.success) {
-      return controlErrorResponse(context, 404, BOT_NOT_FOUND_REASON);
-    }
-    const result = context.get('emulationSession').botRateLimits.listRateLimitResponses(
-      botId.data,
-    );
-    return result.found
-      ? context.json({ rate_limit_responses: result.responses.map(presentRateLimitResponses) })
-      : controlErrorResponse(context, 404, result.reason);
-  });
-
-  botRoutes.route('/', createServerErrorResponseRoutes());
-  botRoutes.route('/', createWebhookDeliveryRoutes());
+  botRoutes.route('/', createServerErrorResponseRoutes(BOT_COLLECTION_MOUNT_PATH));
+  botRoutes.route('/', createWebhookDeliveryRoutes(BOT_COLLECTION_MOUNT_PATH));
 
   return botRoutes;
 }

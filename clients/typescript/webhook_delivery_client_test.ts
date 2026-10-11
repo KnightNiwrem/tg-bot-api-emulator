@@ -182,7 +182,7 @@ Deno.test('Webhook delivery controls reject what they cannot apply to', async ()
     ];
     assertEquals(
       httpStatuses,
-      [400, 400, 400, 404, 404, 200, 409],
+      [400, 400, 400, 400, 400, 200, 409],
       'Expected malformed requests refused, and a retry released once',
     );
   } finally {
