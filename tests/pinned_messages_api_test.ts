@@ -21,9 +21,13 @@ interface ShownMessage {
 
 /**
  * Creates a session where Ada has written to a bot and owns a supergroup with Grace, the bot, and
- * Linus, an administrator account without the right to pin.
+ * Linus, an administrator account without the right to pin. The session is created on
+ * `existingApi` when given, or on an emulator of its own, which disposing of the fixture disposes
+ * of.
  */
-async function createPinnedMessagesFixture(api: EmulationApi = createTestInProcessEmulator()) {
+async function createPinnedMessagesFixture(existingApi?: EmulationApi) {
+  await using disposalOnFailure = new AsyncDisposableStack();
+  const api = existingApi ?? disposalOnFailure.use(createTestInProcessEmulator());
   const sessionPath = await createSession(api);
   const createAccount = async (firstName: string) =>
     (await createSessionAccount(api, sessionPath, firstName)).id;
@@ -89,6 +93,7 @@ async function createPinnedMessagesFixture(api: EmulationApi = createTestInProce
   const changePin = async (method: 'PUT' | 'DELETE', chatPath: string, messageId: number) =>
     (await api.request(`${chatPath}/pinned-messages/${messageId}`, { method })).status;
 
+  const emulatorDisposal = disposalOnFailure.move();
   return {
     api,
     sessionPath,
@@ -104,12 +109,13 @@ async function createPinnedMessagesFixture(api: EmulationApi = createTestInProce
     getChat,
     pinnedTexts,
     changePin,
+    [Symbol.asyncDispose]: () => emulatorDisposal.disposeAsync(),
   };
 }
 
 Deno.test('an account pins private messages, which getChat shows the newest of', async () => {
-  const { ada, privatePath, sendToBot, getChat, pinnedTexts, changePin } =
-    await createPinnedMessagesFixture();
+  await using fixture = await createPinnedMessagesFixture();
+  const { ada, privatePath, sendToBot, getChat, pinnedTexts, changePin } = fixture;
   const firstId = await sendToBot('first');
   const secondId = await sendToBot('second');
   assertEquals((await getChat(ada)).pinned_message, undefined, 'no message is pinned at first');
@@ -140,8 +146,8 @@ Deno.test('an account pins private messages, which getChat shows the newest of',
 });
 
 Deno.test('getChat shows a pinned reply without the message it replies to', async () => {
-  const { chatId, ada, supergroupPath, sendToSupergroup, getChat, changePin } =
-    await createPinnedMessagesFixture();
+  await using fixture = await createPinnedMessagesFixture();
+  const { chatId, ada, supergroupPath, sendToSupergroup, getChat, changePin } = fixture;
   const question = await sendToSupergroup(ada, 'question');
   const answer = await sendToSupergroup(ada, 'answer', question.message_id);
   assertEquals(answer.reply_to_message === undefined, false, 'the answer is a reply');
@@ -153,8 +159,9 @@ Deno.test('getChat shows a pinned reply without the message it replies to', asyn
 });
 
 Deno.test('supergroup members pin with can_pin_messages and the same pinned messages', async () => {
+  await using fixture = await createPinnedMessagesFixture();
   const { api, ada, grace, linus, chatId, supergroupPath, sendToSupergroup, getChat, changePin } =
-    await createPinnedMessagesFixture();
+    fixture;
   const messageId = (await sendToSupergroup(grace, 'rules')).message_id;
 
   assertEquals(
@@ -184,8 +191,8 @@ Deno.test('supergroup members pin with can_pin_messages and the same pinned mess
 });
 
 Deno.test('pin routes refuse service messages, non-members, and unknown chats', async () => {
-  const { api, sessionPath, ada, botId, supergroupPath, privatePath, changePin } =
-    await createPinnedMessagesFixture();
+  await using fixture = await createPinnedMessagesFixture();
+  const { api, sessionPath, ada, botId, supergroupPath, privatePath, changePin } = fixture;
   const { body } = await requestJson<{ messages: ShownMessage[] }>(
     api,
     'GET',
@@ -234,8 +241,8 @@ Deno.test('pin routes refuse service messages, non-members, and unknown chats', 
 });
 
 Deno.test('an account that blocks the bot cannot pin in their private chat, but reads pins', async () => {
-  const { api, sessionPath, ada, botId, privatePath, sendToBot, pinnedTexts, changePin } =
-    await createPinnedMessagesFixture();
+  await using fixture = await createPinnedMessagesFixture();
+  const { api, sessionPath, ada, botId, privatePath, sendToBot, pinnedTexts, changePin } = fixture;
   const messageId = await sendToBot('before the block');
   const otherId = await sendToBot('second');
   assertEquals(await changePin('PUT', privatePath(ada), messageId), 204, 'pinned before the block');
@@ -252,8 +259,8 @@ Deno.test('an account that blocks the bot cannot pin in their private chat, but 
 
 Deno.test('pinned messages of one session stay out of another', async () => {
   await using api = createTestInProcessEmulator();
-  const first = await createPinnedMessagesFixture(api);
-  const second = await createPinnedMessagesFixture(api);
+  await using first = await createPinnedMessagesFixture(api);
+  await using second = await createPinnedMessagesFixture(api);
   const messageId = await first.sendToBot('first session');
   await second.sendToBot('second session');
 

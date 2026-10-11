@@ -1,23 +1,4 @@
-import { AccountRepository } from '../src/repositories/account.ts';
-import { BotRepository } from '../src/repositories/bot.ts';
-import { FileRepository } from '../src/repositories/file.ts';
-import { PollRepository } from '../src/repositories/poll.ts';
-import { MessageRepository } from '../src/repositories/message.ts';
-import { MessageBoxRepository } from '../src/repositories/message_box.ts';
-import { SharedChatRepository } from '../src/repositories/shared_chat.ts';
-import { TelegramIdentityRepository } from '../src/repositories/telegram_identity.ts';
-import { BlockedUserRepository } from '../src/repositories/blocked_user.ts';
-import { PrivateConversationRepository } from '../src/repositories/private_conversation.ts';
-import { SharedChatAdministrationService } from '../src/services/shared_chat_administration.ts';
 import type { MediaContent } from '../src/services/message_content.ts';
-import { MessageDeletionService } from '../src/services/message_deletion.ts';
-import { MessageEditingService } from '../src/services/message_editing.ts';
-import { PrivateChatPolicy } from '../src/services/private_chat_policy.ts';
-import { SupergroupChatPolicy } from '../src/services/supergroup_chat_policy.ts';
-import { SupergroupMessagingService } from '../src/services/supergroup_messaging.ts';
-import { VirtualUserService } from '../src/services/virtual_user.ts';
-import { createMessageSendingServices } from './support/message_sending_services.ts';
-import type { ChatDomainEvent } from '../src/types/chat_domain_event.ts';
 import { grantSupergroupAdministratorRights } from '../src/types/chat_membership.ts';
 import { createMessageForward } from '../src/types/message_forward.ts';
 import type { PhotoUpload } from '../src/types/stored_file.ts';
@@ -28,6 +9,8 @@ import {
   type SupergroupContentMessage,
   type SupergroupMessage,
 } from '../src/types/virtual_message.ts';
+import { createChatMessagingServices } from './support/chat_messaging_services.ts';
+import { createVirtualAccount, createVirtualBot } from './support/virtual_users.ts';
 
 Deno.test('SupergroupMessagingService numbers messages once for the supergroup and publishes them', () => {
   const { messageBoxes, publishedEvents, owner, bot, supergroup, messageSending } =
@@ -129,7 +112,7 @@ Deno.test('SupergroupMessagingService sends albums whole, numbered in order for 
     throw new Error('Expected two albums numbered in order, the second replying alike');
   }
 
-  const stranger = createAccount(virtualUsers, 'Grace');
+  const stranger = createVirtualAccount(virtualUsers, { first_name: 'Grace' });
   const failures = [
     messageSending.sendAccountSupergroupAlbum({
       fromAccountId: stranger.profile.id,
@@ -198,8 +181,11 @@ Deno.test('SupergroupMessagingService lets only members write and read', () => {
     supergroup,
     messageSending,
   } = createSupergroupMessagingFixture();
-  const stranger = createAccount(virtualUsers, 'Grace');
-  const strangerBot = createBot(virtualUsers, 'stranger_bot');
+  const stranger = createVirtualAccount(virtualUsers, { first_name: 'Grace' });
+  const strangerBot = createVirtualBot(virtualUsers, {
+    first_name: 'Test Bot',
+    username: 'stranger_bot',
+  });
   const publishedEventCount = publishedEvents.length;
 
   const accountFailures = [
@@ -321,7 +307,10 @@ Deno.test("SupergroupMessagingService edits and deletes only the author's own me
     messageDeletion,
     messageSending,
   } = createSupergroupMessagingFixture();
-  const otherBot = createBot(virtualUsers, 'other_bot');
+  const otherBot = createVirtualBot(virtualUsers, {
+    first_name: 'Test Bot',
+    username: 'other_bot',
+  });
   sharedChatAdministration.addChatMember({
     actorAccountId: owner.profile.id,
     chatId: supergroup.id,
@@ -454,8 +443,14 @@ Deno.test('SupergroupMessagingService lets the inline bot edit a message sent th
     messageEditing,
     messageSending,
   } = createSupergroupMessagingFixture();
-  const otherBot = createBot(virtualUsers, 'other_bot');
-  const outsiderBot = createBot(virtualUsers, 'outsider_bot');
+  const otherBot = createVirtualBot(virtualUsers, {
+    first_name: 'Test Bot',
+    username: 'other_bot',
+  });
+  const outsiderBot = createVirtualBot(virtualUsers, {
+    first_name: 'Test Bot',
+    username: 'outsider_bot',
+  });
   sharedChatAdministration.addChatMember({
     actorAccountId: owner.profile.id,
     chatId: supergroup.id,
@@ -589,7 +584,10 @@ Deno.test('SupergroupMessagingService turns away bots that left or were removed'
     messageDeletion,
     messageSending,
   } = createSupergroupMessagingFixture();
-  const removedBot = createBot(virtualUsers, 'removed_bot');
+  const removedBot = createVirtualBot(virtualUsers, {
+    first_name: 'Test Bot',
+    username: 'removed_bot',
+  });
   sharedChatAdministration.addChatMember({
     actorAccountId: owner.profile.id,
     chatId: supergroup.id,
@@ -668,7 +666,7 @@ Deno.test('SupergroupMessagingService sends only what a member may send', () => 
     supergroup,
     messageSending,
   } = createSupergroupMessagingFixture();
-  const member = createAccount(virtualUsers, 'Grace');
+  const member = createVirtualAccount(virtualUsers, { first_name: 'Grace' });
   sharedChatAdministration.addChatMember({
     actorAccountId: owner.profile.id,
     chatId: supergroup.id,
@@ -799,8 +797,11 @@ Deno.test('SupergroupMessagingService sends only what a member may send', () => 
 Deno.test('SupergroupMessagingService lets a text mention name any user of the session', () => {
   const { virtualUsers, owner, bot, supergroup, messageSending } =
     createSupergroupMessagingFixture();
-  const outsideAccount = createAccount(virtualUsers, 'Grace');
-  const outsideBot = createBot(virtualUsers, 'outside_bot');
+  const outsideAccount = createVirtualAccount(virtualUsers, { first_name: 'Grace' });
+  const outsideBot = createVirtualBot(virtualUsers, {
+    first_name: 'Test Bot',
+    username: 'outside_bot',
+  });
   const sendMention = (userId: number) =>
     messageSending.sendSupergroupMessage({
       fromBotId: bot.profile.id,
@@ -836,87 +837,12 @@ Deno.test('SupergroupMessagingService lets a text mention name any user of the s
   }
 });
 
+/** Ada owns a supergroup the bot is a member of; the events that set it up are cleared. */
 function createSupergroupMessagingFixture() {
-  const identities = new TelegramIdentityRepository();
-  const accounts = new AccountRepository();
-  const bots = new BotRepository();
-  const virtualUsers = new VirtualUserService({ identities, accounts, bots });
-  const sharedChats = new SharedChatRepository();
-  const messageBoxes = new MessageBoxRepository();
-  const publishedEvents: ChatDomainEvent[] = [];
-  const events = { emit: (event: ChatDomainEvent) => publishedEvents.push(event) };
-  const currentUnixTimeSeconds = () => 1_700_000_000;
-  const messages = new MessageRepository();
-  const files = new FileRepository();
-  const polls = new PollRepository();
-  const supergroupMessaging = new SupergroupMessagingService({
-    accounts,
-    bots,
-    sharedChats,
-    messages,
-    messageBoxes,
-  });
-  const privateConversations = new PrivateConversationRepository();
-  // These tests send no private messages, so none is found.
-  const privateChats = new PrivateChatPolicy({
-    accounts,
-    bots,
-    privateConversations,
-    blockedUsers: new BlockedUserRepository(),
-    joinRequesterContacts: { mayContactJoinRequester: () => false },
-    privateMessages: { getPrivateMessageByBotMessageId: () => undefined },
-  });
-  const supergroups = new SupergroupChatPolicy({
-    sharedChats,
-    supergroupMessages: supergroupMessaging,
-  });
-  const { messageCommitter, messageSending } = createMessageSendingServices({
-    accounts,
-    bots,
-    privateChats,
-    supergroups,
-    privateConversations,
-    sharedChats,
-    messages,
-    files,
-    polls,
-    messageBoxes,
-    transactions: { ...events, withinTransaction: (command) => command() },
-    currentUnixTimeSeconds,
-  });
-  const messageEditing = new MessageEditingService({
-    accounts,
-    bots,
-    privateChats,
-    supergroups,
-    messages,
-    files,
-    polls,
-    // The repositories are not staged, so each edit runs as it is called.
-    transactions: { ...events, withinTransaction: (command) => command() },
-    currentUnixTimeSeconds,
-  });
-  const messageDeletion = new MessageDeletionService({
-    accounts,
-    bots,
-    privateChats,
-    supergroups,
-    messages,
-    privateReplyInterfaces: privateConversations,
-    transactions: { withinTransaction: (command) => command() },
-  });
-  const sharedChatAdministration = new SharedChatAdministrationService({
-    identities,
-    accounts,
-    bots,
-    sharedChats,
-    serviceMessages: messageCommitter,
-    transactions: { ...events, withinTransaction: (command) => command() },
-    currentUnixTimeSeconds,
-  });
-
-  const owner = createAccount(virtualUsers, 'Ada');
-  const bot = createBot(virtualUsers, 'test_bot');
+  const services = createChatMessagingServices();
+  const { virtualUsers, sharedChatAdministration, publishedEvents } = services;
+  const owner = createVirtualAccount(virtualUsers, { first_name: 'Ada' });
+  const bot = createVirtualBot(virtualUsers, { first_name: 'Test Bot', username: 'test_bot' });
   const creation = sharedChatAdministration.createSupergroup({
     title: 'Team',
     creatorAccountId: owner.profile.id,
@@ -934,20 +860,7 @@ function createSupergroupMessagingFixture() {
   }
   publishedEvents.splice(0);
 
-  return {
-    virtualUsers,
-    sharedChats,
-    sharedChatAdministration,
-    supergroupMessaging,
-    messageSending,
-    messageEditing,
-    messageDeletion,
-    messageBoxes,
-    publishedEvents,
-    owner,
-    bot,
-    supergroup: creation.supergroup,
-  };
+  return { ...services, owner, bot, supergroup: creation.supergroup };
 }
 
 /** A photo upload of a 4 by 3 GIF image, whose header is all the emulator reads. */
@@ -974,20 +887,4 @@ function expectContentMessage(message: SupergroupMessage): SupergroupContentMess
     throw new Error(`Expected message ${message.id} to have content`);
   }
   return message;
-}
-
-function createAccount(virtualUsers: VirtualUserService, firstName: string) {
-  const result = virtualUsers.createAccount({ first_name: firstName });
-  if (!result.created) {
-    throw new Error(`Expected account creation to succeed, received ${result.reason}`);
-  }
-  return result.account;
-}
-
-function createBot(virtualUsers: VirtualUserService, username: string) {
-  const result = virtualUsers.createBot({ first_name: 'Test Bot', username });
-  if (!result.created) {
-    throw new Error(`Expected bot creation to succeed, received ${result.reason}`);
-  }
-  return result.bot;
 }

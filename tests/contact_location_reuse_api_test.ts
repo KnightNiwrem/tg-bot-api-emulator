@@ -44,7 +44,8 @@ interface TestMessage {
  * location with the bot.
  */
 async function createReuseFixture() {
-  const { api, sessionPath } = await createTestSession();
+  await using disposalOnFailure = new AsyncDisposableStack();
+  const { api, sessionPath } = disposalOnFailure.use(await createTestSession());
   const ada = await createAccount(api, sessionPath, 'Ada', { phone_number: '15550100' });
   const grace = await createAccount(api, sessionPath, 'Grace');
   const createdBot = await createBot(api, sessionPath, 'reuse_bot', { first_name: 'Reuse Bot' });
@@ -104,6 +105,7 @@ async function createReuseFixture() {
         : `${supergroupPath(accountId)}/messages`,
     )).body.messages;
 
+  const emulatorDisposal = disposalOnFailure.move();
   return {
     api,
     sessionPath,
@@ -120,6 +122,7 @@ async function createReuseFixture() {
     sendAccountMessage,
     callBot,
     getHistory,
+    [Symbol.asyncDispose]: () => emulatorDisposal.disposeAsync(),
   };
 }
 
@@ -127,8 +130,8 @@ const OWN_CONTACT = { phone_number: '15550100', first_name: 'Ada' } as const;
 const SHARED_LOCATION = { latitude: 51.5007, longitude: -0.1246, horizontal_accuracy: 3 } as const;
 
 Deno.test("forwards and copies repeat contacts and locations, an own contact's user included", async () => {
-  const { ada, bot, supergroupChat, ownContact, location, callBot, getHistory } =
-    await createReuseFixture();
+  await using fixture = await createReuseFixture();
+  const { ada, bot, supergroupChat, ownContact, location, callBot, getHistory } = fixture;
   const forwarded = await callBot('forwardMessage', {
     chat_id: supergroupChat.chatId,
     from_chat_id: ada.id,
@@ -216,8 +219,9 @@ Deno.test("forwards and copies repeat contacts and locations, an own contact's u
 });
 
 Deno.test('accounts forward contacts and locations between their chats', async () => {
+  await using fixture = await createReuseFixture();
   const { ada, grace, privateChat, supergroupChat, ownContact, location, sendAccountMessage } =
-    await createReuseFixture();
+    fixture;
   const forwardedContact = await sendAccountMessage(ada.id, {
     to: supergroupChat,
     forward: { chat: privateChat, message_id: ownContact.message_id },
@@ -247,8 +251,8 @@ Deno.test('accounts forward contacts and locations between their chats', async (
 });
 
 Deno.test('replies from another chat show the replied contact or location without a quote', async () => {
-  const { ada, supergroupChat, ownContact, location, callBot, getHistory } =
-    await createReuseFixture();
+  await using fixture = await createReuseFixture();
+  const { ada, supergroupChat, ownContact, location, callBot, getHistory } = fixture;
   const contactReply = await callBot('sendMessage', {
     chat_id: supergroupChat.chatId,
     text: 'Ada shared this',
@@ -300,8 +304,9 @@ Deno.test('replies from another chat show the replied contact or location withou
 });
 
 Deno.test('forwards and copies of contacts and locations need the permission to send messages', async () => {
+  await using fixture = await createReuseFixture();
   const { api, ada, supergroupChat, supergroupPath, ownContact, location, callBot, getHistory } =
-    await createReuseFixture();
+    fixture;
   const restriction = await requestJson(api, 'PUT', `${supergroupPath(ada.id)}/permissions`, {
     permissions: { can_send_photos: true },
   });
@@ -334,7 +339,8 @@ Deno.test('forwards and copies of contacts and locations need the permission to 
 });
 
 Deno.test('contact and location updates follow allowed_updates, and bots get none for their own', async () => {
-  const { ada, privateChat, sendAccountMessage, callBot } = await createReuseFixture();
+  await using fixture = await createReuseFixture();
+  const { ada, privateChat, sendAccountMessage, callBot } = fixture;
   const readUpdates = async (allowedUpdates?: readonly string[]) => {
     const { body } = await callBot('getUpdates', {
       offset: -1,
@@ -367,8 +373,8 @@ Deno.test('contact and location updates follow allowed_updates, and bots get non
 });
 
 Deno.test("sessions keep their accounts' own contacts apart", async () => {
-  const first = await createReuseFixture();
-  const second = await createReuseFixture();
+  await using first = await createReuseFixture();
+  await using second = await createReuseFixture();
   const secondContact = await second.sendAccountMessage(second.ada.id, {
     to: second.privateChat,
     own_contact: true,
@@ -388,8 +394,8 @@ Deno.test("sessions keep their accounts' own contacts apart", async () => {
 });
 
 Deno.test('a grammY bot asks for a contact and a location through its webhook and answers both', async () => {
-  const { api, sessionPath, ada, bot, botToken, privateChat, getHistory } =
-    await createReuseFixture();
+  await using fixture = await createReuseFixture();
+  const { api, sessionPath, ada, bot, botToken, privateChat, getHistory } = fixture;
   const grammyBot = new Bot(botToken, {
     client: {
       apiRoot: `${TEST_PUBLIC_ORIGIN}${sessionPath}/bot-api`,

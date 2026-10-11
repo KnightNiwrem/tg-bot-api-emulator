@@ -1,41 +1,26 @@
 import { assertEquals } from '@std/assert';
-import { AccountRepository } from '../src/repositories/account.ts';
-import { BlockedUserRepository } from '../src/repositories/blocked_user.ts';
-import { BotRepository } from '../src/repositories/bot.ts';
 import { BotUpdateRepository } from '../src/repositories/bot_update.ts';
 import { BotUpdateSubscriptionRepository } from '../src/repositories/bot_update_subscription.ts';
-import { FileRepository } from '../src/repositories/file.ts';
 import { LastMessageSendingBotRepository } from '../src/repositories/last_message_sending_bot.ts';
-import { PollRepository } from '../src/repositories/poll.ts';
-import { MessageRepository } from '../src/repositories/message.ts';
-import { PrivateConversationRepository } from '../src/repositories/private_conversation.ts';
-import { SharedChatRepository } from '../src/repositories/shared_chat.ts';
-import { TelegramIdentityRepository } from '../src/repositories/telegram_identity.ts';
-import { MessageBoxRepository } from '../src/repositories/message_box.ts';
+import type { MessageBoxRepository } from '../src/repositories/message_box.ts';
 import { BotMessageViewService } from '../src/services/bot_message_view.ts';
 import { BotUpdateDeliveryService } from '../src/services/bot_update_delivery.ts';
-import { PrivateMessagingService } from '../src/services/private_messaging.ts';
 import type {
   BotMessageReplyTarget,
   MessageSendingService,
 } from '../src/services/message_sending.ts';
 import type { MediaContent } from '../src/services/message_content.ts';
-import { ReplyInterfaceService } from '../src/services/reply_interface.ts';
-import { MessageDeletionService } from '../src/services/message_deletion.ts';
-import { MessageEditingService } from '../src/services/message_editing.ts';
-import { PrivateChatPolicy } from '../src/services/private_chat_policy.ts';
-import { SupergroupChatPolicy } from '../src/services/supergroup_chat_policy.ts';
-import { VirtualUserService } from '../src/services/virtual_user.ts';
-import { createMessageSendingServices } from './support/message_sending_services.ts';
+import type { MessageDeletionService } from '../src/services/message_deletion.ts';
+import type { MessageEditingService } from '../src/services/message_editing.ts';
+import type { ReplyInterfaceService } from '../src/services/reply_interface.ts';
 import type { BotApiMessage, BotApiUpdate } from '../src/types/bot_api.ts';
-import type { ChatDomainEvent } from '../src/types/chat_domain_event.ts';
 import type { InlineKeyboard } from '../src/types/inline_keyboard.ts';
 import type {
   BotMessageReplyMarkup,
   ReplyInterfaceMarkup,
   ReplyKeyboardRequestAnswer,
 } from '../src/types/reply_interface.ts';
-import type { DocumentUpload, FileUpload, PhotoUpload } from '../src/types/stored_file.ts';
+import type { DocumentUpload, PhotoUpload } from '../src/types/stored_file.ts';
 import {
   getContentText,
   MAX_CAPTION_LENGTH,
@@ -44,11 +29,14 @@ import {
   type TextEntity,
 } from '../src/types/virtual_message.ts';
 import type { VirtualBot } from '../src/types/virtual_bot.ts';
+import { createChatMessagingServices } from './support/chat_messaging_services.ts';
+import { TEST_UNIX_TIME_SECONDS } from './support/fixed_wall_clock.ts';
+import { createVirtualAccount, createVirtualBot } from './support/virtual_users.ts';
 
 Deno.test('PrivateMessagingService activates a private conversation only for known participants', () => {
   const { virtualUsers, privateConversations, privateMessaging } = createPrivateMessagingFixture();
-  const account = createAccount(virtualUsers, 'Ada');
-  const bot = createBot(virtualUsers, 'First Bot', 'first_bot');
+  const account = createVirtualAccount(virtualUsers, { first_name: 'Ada' });
+  const bot = createVirtualBot(virtualUsers, { first_name: 'First Bot', username: 'first_bot' });
 
   const missingAccount = privateMessaging.activatePrivateConversation({
     accountId: 999,
@@ -100,8 +88,8 @@ Deno.test('PrivateMessagingService sends, stores, and publishes private account 
     privateMessaging,
     messageSending,
   } = createPrivateMessagingFixture();
-  const account = createAccount(virtualUsers, 'Ada');
-  const bot = createBot(virtualUsers, 'Test Bot', 'test_bot');
+  const account = createVirtualAccount(virtualUsers, { first_name: 'Ada' });
+  const bot = createVirtualBot(virtualUsers, { first_name: 'Test Bot', username: 'test_bot' });
 
   const firstResult = messageSending.sendAccountPrivateChatMessage({
     fromAccountId: account.profile.id,
@@ -186,10 +174,16 @@ Deno.test('PrivateMessagingService sends, stores, and publishes private account 
 Deno.test("PrivateMessagingService numbers private messages in each user's message box", () => {
   const { virtualUsers, messageBoxes, botUpdates, messageSending } =
     createPrivateMessagingFixture();
-  const account = createAccount(virtualUsers, 'Ada');
-  const otherAccount = createAccount(virtualUsers, 'Grace');
-  const firstBot = createBot(virtualUsers, 'First Bot', 'first_bot');
-  const secondBot = createBot(virtualUsers, 'Second Bot', 'second_bot');
+  const account = createVirtualAccount(virtualUsers, { first_name: 'Ada' });
+  const otherAccount = createVirtualAccount(virtualUsers, { first_name: 'Grace' });
+  const firstBot = createVirtualBot(virtualUsers, {
+    first_name: 'First Bot',
+    username: 'first_bot',
+  });
+  const secondBot = createVirtualBot(virtualUsers, {
+    first_name: 'Second Bot',
+    username: 'second_bot',
+  });
 
   const sentMessages = [
     sendPrivateText(messageSending, account.profile.id, firstBot),
@@ -219,8 +213,8 @@ Deno.test("PrivateMessagingService numbers private messages in each user's messa
 Deno.test('PrivateMessagingService validates private messages before changing state', () => {
   const { virtualUsers, privateConversations, messages, botUpdates, messageSending } =
     createPrivateMessagingFixture();
-  const account = createAccount(virtualUsers, 'Ada');
-  const bot = createBot(virtualUsers, 'Test Bot', 'test_bot');
+  const account = createVirtualAccount(virtualUsers, { first_name: 'Ada' });
+  const bot = createVirtualBot(virtualUsers, { first_name: 'Test Bot', username: 'test_bot' });
 
   const failures = [
     messageSending.sendAccountPrivateChatMessage({
@@ -285,8 +279,8 @@ Deno.test('PrivateMessagingService stores a bot reply in the private conversatio
     privateMessaging,
     messageSending,
   } = createPrivateMessagingFixture();
-  const account = createAccount(virtualUsers, 'Ada');
-  const bot = createBot(virtualUsers, 'Test Bot', 'test_bot');
+  const account = createVirtualAccount(virtualUsers, { first_name: 'Ada' });
+  const bot = createVirtualBot(virtualUsers, { first_name: 'Test Bot', username: 'test_bot' });
   const incomingMessage = sendPrivateText(messageSending, account.profile.id, bot);
 
   const replyResult = messageSending.sendPrivateChatMessage({
@@ -349,9 +343,9 @@ Deno.test('PrivateMessagingService stores a bot reply in the private conversatio
 Deno.test('PrivateMessagingService validates bot messages in Telegram order before changing state', () => {
   const { virtualUsers, publishedEvents, privateMessaging, messageSending } =
     createPrivateMessagingFixture();
-  const account = createAccount(virtualUsers, 'Ada');
-  const strangerAccount = createAccount(virtualUsers, 'Grace');
-  const bot = createBot(virtualUsers, 'Test Bot', 'test_bot');
+  const account = createVirtualAccount(virtualUsers, { first_name: 'Ada' });
+  const strangerAccount = createVirtualAccount(virtualUsers, { first_name: 'Grace' });
+  const bot = createVirtualBot(virtualUsers, { first_name: 'Test Bot', username: 'test_bot' });
   privateMessaging.activatePrivateConversation({
     accountId: account.profile.id,
     botId: bot.profile.id,
@@ -417,9 +411,9 @@ Deno.test('PrivateMessagingService validates bot messages in Telegram order befo
 Deno.test('PrivateMessagingService stores replies only to messages of the same chat', () => {
   const { virtualUsers, messages, publishedEvents, messageDeletion, messageSending } =
     createPrivateMessagingFixture();
-  const account = createAccount(virtualUsers, 'Ada');
-  const otherAccount = createAccount(virtualUsers, 'Grace');
-  const bot = createBot(virtualUsers, 'Test Bot', 'test_bot');
+  const account = createVirtualAccount(virtualUsers, { first_name: 'Ada' });
+  const otherAccount = createVirtualAccount(virtualUsers, { first_name: 'Grace' });
+  const bot = createVirtualBot(virtualUsers, { first_name: 'Test Bot', username: 'test_bot' });
   const otherChatMessage = sendPrivateText(messageSending, otherAccount.profile.id, bot);
   const question = sendPrivateText(messageSending, account.profile.id, bot);
   const otherChatMessageId = 1;
@@ -493,8 +487,8 @@ Deno.test('PrivateMessagingService stores replies only to messages of the same c
 Deno.test('PrivateMessagingService shows the reply interface the latest bot message set', () => {
   const { virtualUsers, messageBoxes, replyInterfaces, messageDeletion, messageSending } =
     createPrivateMessagingFixture();
-  const account = createAccount(virtualUsers, 'Ada');
-  const bot = createBot(virtualUsers, 'Test Bot', 'test_bot');
+  const account = createVirtualAccount(virtualUsers, { first_name: 'Ada' });
+  const bot = createVirtualBot(virtualUsers, { first_name: 'Test Bot', username: 'test_bot' });
   const chat = { accountId: account.profile.id, botId: bot.profile.id };
   sendPrivateText(messageSending, account.profile.id, bot);
   const sendWithReplyInterfaceMarkup = (replyInterfaceMarkup: ReplyInterfaceMarkup) => {
@@ -591,8 +585,8 @@ Deno.test('PrivateMessagingService shows the reply interface the latest bot mess
 Deno.test('PrivateMessagingService stores an inline keyboard whose callback data fits 64 bytes', () => {
   const { virtualUsers, messages, publishedEvents, messageSending } =
     createPrivateMessagingFixture();
-  const account = createAccount(virtualUsers, 'Ada');
-  const bot = createBot(virtualUsers, 'Test Bot', 'test_bot');
+  const account = createVirtualAccount(virtualUsers, { first_name: 'Ada' });
+  const bot = createVirtualBot(virtualUsers, { first_name: 'Test Bot', username: 'test_bot' });
   sendPrivateText(messageSending, account.profile.id, bot);
   const send = (inlineKeyboard: InlineKeyboard) =>
     messageSending.sendPrivateChatMessage({
@@ -635,8 +629,8 @@ Deno.test('PrivateMessagingService edits the text and keyboard of a bot message'
     messageEditing,
     messageSending,
   } = createPrivateMessagingFixture();
-  const account = createAccount(virtualUsers, 'Ada');
-  const bot = createBot(virtualUsers, 'Test Bot', 'test_bot');
+  const account = createVirtualAccount(virtualUsers, { first_name: 'Ada' });
+  const bot = createVirtualBot(virtualUsers, { first_name: 'Test Bot', username: 'test_bot' });
   sendPrivateText(messageSending, account.profile.id, bot);
   const botMessage = sendBotMessage(messageSending, account.profile.id, bot, YES_NO_KEYBOARD);
   const botMessageId = expectBotMessageId(messageBoxes, bot, botMessage.id);
@@ -705,10 +699,10 @@ Deno.test('PrivateMessagingService edits the text and keyboard of a bot message'
 Deno.test('PrivateMessagingService validates bot message edits in Telegram order', () => {
   const { virtualUsers, messageBoxes, messages, messageEditing, messageSending } =
     createPrivateMessagingFixture();
-  const account = createAccount(virtualUsers, 'Ada');
-  const strangerAccount = createAccount(virtualUsers, 'Grace');
-  const otherAccount = createAccount(virtualUsers, 'Joan');
-  const bot = createBot(virtualUsers, 'Test Bot', 'test_bot');
+  const account = createVirtualAccount(virtualUsers, { first_name: 'Ada' });
+  const strangerAccount = createVirtualAccount(virtualUsers, { first_name: 'Grace' });
+  const otherAccount = createVirtualAccount(virtualUsers, { first_name: 'Joan' });
+  const bot = createVirtualBot(virtualUsers, { first_name: 'Test Bot', username: 'test_bot' });
   const accountMessage = sendPrivateText(messageSending, account.profile.id, bot);
   const botMessage = sendBotMessage(messageSending, account.profile.id, bot, YES_NO_KEYBOARD);
   const otherChatMessage = sendPrivateText(messageSending, otherAccount.profile.id, bot);
@@ -844,8 +838,8 @@ Deno.test('PrivateMessagingService refuses edits of messages with reply markup o
     messageEditing,
     messageSending,
   } = createPrivateMessagingFixture();
-  const account = createAccount(virtualUsers, 'Ada');
-  const bot = createBot(virtualUsers, 'Test Bot', 'test_bot');
+  const account = createVirtualAccount(virtualUsers, { first_name: 'Ada' });
+  const bot = createVirtualBot(virtualUsers, { first_name: 'Test Bot', username: 'test_bot' });
   sendPrivateText(messageSending, account.profile.id, bot);
   const chat = { type: 'private', peerId: account.profile.id } as const;
   const sendBotText = (markup: BotMessageReplyMarkup) =>
@@ -962,9 +956,9 @@ Deno.test('PrivateMessagingService lets a bot delete messages of its private cha
     messageDeletion,
     messageSending,
   } = createPrivateMessagingFixture();
-  const account = createAccount(virtualUsers, 'Ada');
-  const otherAccount = createAccount(virtualUsers, 'Grace');
-  const bot = createBot(virtualUsers, 'Test Bot', 'test_bot');
+  const account = createVirtualAccount(virtualUsers, { first_name: 'Ada' });
+  const otherAccount = createVirtualAccount(virtualUsers, { first_name: 'Grace' });
+  const bot = createVirtualBot(virtualUsers, { first_name: 'Test Bot', username: 'test_bot' });
   const accountMessage = sendPrivateText(messageSending, account.profile.id, bot);
   const botMessage = sendBotMessage(messageSending, account.profile.id, bot, YES_NO_KEYBOARD);
   const keptMessage = sendBotMessage(messageSending, account.profile.id, bot);
@@ -1030,9 +1024,9 @@ Deno.test('PrivateMessagingService lets a bot delete messages of its private cha
 Deno.test('PrivateMessagingService validates message deletions before changing state', () => {
   const { virtualUsers, messageBoxes, messages, messageDeletion, messageSending } =
     createPrivateMessagingFixture();
-  const account = createAccount(virtualUsers, 'Ada');
-  const strangerAccount = createAccount(virtualUsers, 'Grace');
-  const bot = createBot(virtualUsers, 'Test Bot', 'test_bot');
+  const account = createVirtualAccount(virtualUsers, { first_name: 'Ada' });
+  const strangerAccount = createVirtualAccount(virtualUsers, { first_name: 'Grace' });
+  const bot = createVirtualBot(virtualUsers, { first_name: 'Test Bot', username: 'test_bot' });
   const message = sendPrivateText(messageSending, account.profile.id, bot);
   const botMessageId = expectBotMessageId(messageBoxes, bot, message.id);
   const cases: {
@@ -1069,8 +1063,8 @@ Deno.test('PrivateMessagingService validates message deletions before changing s
 
 Deno.test('PrivateMessagingService normalizes bot text and entities as Telegram does', () => {
   const { virtualUsers, messageSending } = createPrivateMessagingFixture();
-  const account = createAccount(virtualUsers, 'Ada');
-  const bot = createBot(virtualUsers, 'Test Bot', 'test_bot');
+  const account = createVirtualAccount(virtualUsers, { first_name: 'Ada' });
+  const bot = createVirtualBot(virtualUsers, { first_name: 'Test Bot', username: 'test_bot' });
   sendPrivateText(messageSending, account.profile.id, bot);
 
   const result = messageSending.sendPrivateChatMessage({
@@ -1117,9 +1111,9 @@ Deno.test('PrivateMessagingService normalizes bot text and entities as Telegram 
 
 Deno.test('PrivateMessagingService rejects bot text Telegram cannot normalize after the chat check', () => {
   const { virtualUsers, publishedEvents, messageSending } = createPrivateMessagingFixture();
-  const account = createAccount(virtualUsers, 'Ada');
-  const strangerAccount = createAccount(virtualUsers, 'Grace');
-  const bot = createBot(virtualUsers, 'Test Bot', 'test_bot');
+  const account = createVirtualAccount(virtualUsers, { first_name: 'Ada' });
+  const strangerAccount = createVirtualAccount(virtualUsers, { first_name: 'Grace' });
+  const bot = createVirtualBot(virtualUsers, { first_name: 'Test Bot', username: 'test_bot' });
   sendPrivateText(messageSending, account.profile.id, bot);
   const send = (accountId: number, text: string, entities: readonly TextEntity[] = []) =>
     messageSending.sendPrivateChatMessage({
@@ -1179,8 +1173,8 @@ Deno.test('PrivateMessagingService rejects bot text Telegram cannot normalize af
 
 Deno.test('PrivateMessagingService limits text by its characters, not its UTF-16 code units', () => {
   const { virtualUsers, messageEditing, messageSending } = createPrivateMessagingFixture();
-  const account = createAccount(virtualUsers, 'Ada');
-  const bot = createBot(virtualUsers, 'Test Bot', 'test_bot');
+  const account = createVirtualAccount(virtualUsers, { first_name: 'Ada' });
+  const bot = createVirtualBot(virtualUsers, { first_name: 'Test Bot', username: 'test_bot' });
   sendPrivateText(messageSending, account.profile.id, bot);
   const send = (text: string, entities: readonly TextEntity[] = []) =>
     messageSending.sendPrivateChatMessage({
@@ -1243,8 +1237,8 @@ Deno.test('PrivateMessagingService limits text by its characters, not its UTF-16
 
 Deno.test('PrivateMessagingService normalizes account text as a Telegram client does', () => {
   const { virtualUsers, publishedEvents, messageSending } = createPrivateMessagingFixture();
-  const account = createAccount(virtualUsers, 'Ada');
-  const bot = createBot(virtualUsers, 'Test Bot', 'test_bot');
+  const account = createVirtualAccount(virtualUsers, { first_name: 'Ada' });
+  const bot = createVirtualBot(virtualUsers, { first_name: 'Test Bot', username: 'test_bot' });
   const send = (text: string) =>
     messageSending.sendAccountPrivateChatMessage({
       fromAccountId: account.profile.id,
@@ -1272,8 +1266,8 @@ Deno.test('PrivateMessagingService normalizes account text as a Telegram client 
 Deno.test('PrivateMessagingService treats changed entities as an edit of the text', () => {
   const { virtualUsers, messageBoxes, advanceClockSeconds, messageEditing, messageSending } =
     createPrivateMessagingFixture();
-  const account = createAccount(virtualUsers, 'Ada');
-  const bot = createBot(virtualUsers, 'Test Bot', 'test_bot');
+  const account = createVirtualAccount(virtualUsers, { first_name: 'Ada' });
+  const bot = createVirtualBot(virtualUsers, { first_name: 'Test Bot', username: 'test_bot' });
   sendPrivateText(messageSending, account.profile.id, bot);
   const botMessage = sendBotMessage(messageSending, account.profile.id, bot);
   const botMessageId = expectBotMessageId(messageBoxes, bot, botMessage.id);
@@ -1313,9 +1307,9 @@ Deno.test('PrivateMessagingService treats changed entities as an edit of the tex
 Deno.test('PrivateMessagingService lets a bot show chat actions only in started chats', () => {
   const { virtualUsers, publishedEvents, privateMessaging, messageSending } =
     createPrivateMessagingFixture();
-  const account = createAccount(virtualUsers, 'Ada');
-  const strangerAccount = createAccount(virtualUsers, 'Grace');
-  const bot = createBot(virtualUsers, 'Test Bot', 'test_bot');
+  const account = createVirtualAccount(virtualUsers, { first_name: 'Ada' });
+  const strangerAccount = createVirtualAccount(virtualUsers, { first_name: 'Grace' });
+  const bot = createVirtualBot(virtualUsers, { first_name: 'Test Bot', username: 'test_bot' });
   sendPrivateText(messageSending, account.profile.id, bot);
   const checkAccess = (fromBotId: number, accountId: number) =>
     privateMessaging.checkBotChatActionAccess({
@@ -1344,8 +1338,8 @@ Deno.test('PrivateMessagingService lets a bot show chat actions only in started 
 
 Deno.test('PrivateMessagingService sends photos and documents with normalized captions', () => {
   const { virtualUsers, files, botUpdates, messageSending } = createPrivateMessagingFixture();
-  const account = createAccount(virtualUsers, 'Ada');
-  const bot = createBot(virtualUsers, 'Test Bot', 'test_bot');
+  const account = createVirtualAccount(virtualUsers, { first_name: 'Ada' });
+  const bot = createVirtualBot(virtualUsers, { first_name: 'Test Bot', username: 'test_bot' });
 
   const accountPhoto = messageSending.sendAccountPrivateChatMessage({
     fromAccountId: account.profile.id,
@@ -1427,8 +1421,8 @@ Deno.test('PrivateMessagingService sends photos and documents with normalized ca
 
 Deno.test('PrivateMessagingService limits captions and stores no upload of a refused message', () => {
   const { virtualUsers, storedUploads, messageSending } = createPrivateMessagingFixture();
-  const account = createAccount(virtualUsers, 'Ada');
-  const bot = createBot(virtualUsers, 'Test Bot', 'test_bot');
+  const account = createVirtualAccount(virtualUsers, { first_name: 'Ada' });
+  const bot = createVirtualBot(virtualUsers, { first_name: 'Test Bot', username: 'test_bot' });
   sendPrivateText(messageSending, account.profile.id, bot);
   const sendCaptionedPhoto = (caption: string) =>
     messageSending.sendPrivateChatMessage({
@@ -1472,8 +1466,8 @@ Deno.test('PrivateMessagingService limits captions and stores no upload of a ref
 Deno.test('PrivateMessagingService sends albums as ordered messages that share an album', () => {
   const { virtualUsers, messages, messageBoxes, botUpdates, messageSending } =
     createPrivateMessagingFixture();
-  const account = createAccount(virtualUsers, 'Ada');
-  const bot = createBot(virtualUsers, 'Test Bot', 'test_bot');
+  const account = createVirtualAccount(virtualUsers, { first_name: 'Ada' });
+  const bot = createVirtualBot(virtualUsers, { first_name: 'Test Bot', username: 'test_bot' });
 
   const accountAlbum = messageSending.sendAccountPrivateChatAlbum({
     fromAccountId: account.profile.id,
@@ -1567,8 +1561,8 @@ Deno.test('PrivateMessagingService sends albums as ordered messages that share a
 Deno.test('PrivateMessagingService checks every message of an album before storing any', () => {
   const { virtualUsers, messages, storedUploads, publishedEvents, blockedUsers, messageSending } =
     createPrivateMessagingFixture();
-  const account = createAccount(virtualUsers, 'Ada');
-  const bot = createBot(virtualUsers, 'Test Bot', 'test_bot');
+  const account = createVirtualAccount(virtualUsers, { first_name: 'Ada' });
+  const bot = createVirtualBot(virtualUsers, { first_name: 'Test Bot', username: 'test_bot' });
   sendPrivateText(messageSending, account.profile.id, bot);
   const photo = (caption: string, showsCaptionAboveMedia = false): MediaContent => ({
     kind: 'photo',
@@ -1648,8 +1642,8 @@ Deno.test('PrivateMessagingService checks every message of an album before stori
 Deno.test('PrivateMessagingService stores the uploads of rich messages only once they are sent or edited', () => {
   const { virtualUsers, storedUploads, advanceClockSeconds, messageEditing, messageSending } =
     createPrivateMessagingFixture();
-  const account = createAccount(virtualUsers, 'Ada');
-  const bot = createBot(virtualUsers, 'Test Bot', 'test_bot');
+  const account = createVirtualAccount(virtualUsers, { first_name: 'Ada' });
+  const bot = createVirtualBot(virtualUsers, { first_name: 'Test Bot', username: 'test_bot' });
   const chat = { type: 'private', peerId: account.profile.id } as const;
   const richMessageWithPhoto = {
     kind: 'rich_message',
@@ -1713,8 +1707,8 @@ Deno.test('PrivateMessagingService edits captions and refuses edits of the other
     messageEditing,
     messageSending,
   } = createPrivateMessagingFixture();
-  const account = createAccount(virtualUsers, 'Ada');
-  const bot = createBot(virtualUsers, 'Test Bot', 'test_bot');
+  const account = createVirtualAccount(virtualUsers, { first_name: 'Ada' });
+  const bot = createVirtualBot(virtualUsers, { first_name: 'Test Bot', username: 'test_bot' });
   sendPrivateText(messageSending, account.profile.id, bot);
   const botText = messageSending.sendPrivateChatMessage({
     fromBotId: bot.profile.id,
@@ -1832,8 +1826,8 @@ Deno.test('PrivateMessagingService edits the text of an account message and publ
     messageEditing,
     messageSending,
   } = createPrivateMessagingFixture();
-  const account = createAccount(virtualUsers, 'Ada');
-  const bot = createBot(virtualUsers, 'Test Bot', 'test_bot');
+  const account = createVirtualAccount(virtualUsers, { first_name: 'Ada' });
+  const bot = createVirtualBot(virtualUsers, { first_name: 'Test Bot', username: 'test_bot' });
   const accountMessage = sendPrivateText(messageSending, account.profile.id, bot);
   const botMessageId = expectBotMessageId(messageBoxes, bot, accountMessage.id);
   advanceClockSeconds(5);
@@ -1878,9 +1872,9 @@ Deno.test('PrivateMessagingService edits the text of an account message and publ
 Deno.test('PrivateMessagingService validates account message edits before changing state', () => {
   const { virtualUsers, messageBoxes, messages, publishedEvents, messageEditing, messageSending } =
     createPrivateMessagingFixture();
-  const account = createAccount(virtualUsers, 'Ada');
-  const otherAccount = createAccount(virtualUsers, 'Grace');
-  const bot = createBot(virtualUsers, 'Test Bot', 'test_bot');
+  const account = createVirtualAccount(virtualUsers, { first_name: 'Ada' });
+  const otherAccount = createVirtualAccount(virtualUsers, { first_name: 'Grace' });
+  const bot = createVirtualBot(virtualUsers, { first_name: 'Test Bot', username: 'test_bot' });
   const accountMessage = sendPrivateText(messageSending, account.profile.id, bot);
   const otherChatMessage = sendPrivateText(messageSending, otherAccount.profile.id, bot);
   const botMessage = sendBotMessage(messageSending, account.profile.id, bot);
@@ -1958,8 +1952,8 @@ Deno.test('PrivateMessagingService refuses writing either way while the account 
     messageEditing,
     messageSending,
   } = createPrivateMessagingFixture();
-  const account = createAccount(virtualUsers, 'Ada');
-  const bot = createBot(virtualUsers, 'Test Bot', 'test_bot');
+  const account = createVirtualAccount(virtualUsers, { first_name: 'Ada' });
+  const bot = createVirtualBot(virtualUsers, { first_name: 'Test Bot', username: 'test_bot' });
   const accountMessage = sendPrivateText(messageSending, account.profile.id, bot);
   const botMessage = sendBotMessage(messageSending, account.profile.id, bot);
   blockedUsers.block(account.profile.id, bot.profile.id);
@@ -2029,9 +2023,9 @@ Deno.test('PrivateMessagingService refuses writing either way while the account 
 Deno.test('PrivateMessagingService checks the account, bot, and block alike on every account send', () => {
   const { virtualUsers, privateConversations, blockedUsers, publishedEvents, messageSending } =
     createPrivateMessagingFixture();
-  const account = createAccount(virtualUsers, 'Ada');
-  const bot = createBot(virtualUsers, 'Test Bot', 'test_bot');
-  const blockingAccount = createAccount(virtualUsers, 'Grace');
+  const account = createVirtualAccount(virtualUsers, { first_name: 'Ada' });
+  const bot = createVirtualBot(virtualUsers, { first_name: 'Test Bot', username: 'test_bot' });
+  const blockingAccount = createVirtualAccount(virtualUsers, { first_name: 'Grace' });
   blockedUsers.block(blockingAccount.profile.id, bot.profile.id);
   const sendFromEveryAccountPath = (fromAccountId: number, botId: number) =>
     [
@@ -2101,8 +2095,11 @@ Deno.test('PrivateMessagingService lets a join request contact grant send messag
     messageDeletion,
     messageSending,
   } = createPrivateMessagingFixture();
-  const account = createAccount(virtualUsers, 'Grace');
-  const bot = createBot(virtualUsers, 'Gatekeeper', 'gatekeeper_bot');
+  const account = createVirtualAccount(virtualUsers, { first_name: 'Grace' });
+  const bot = createVirtualBot(virtualUsers, {
+    first_name: 'Gatekeeper',
+    username: 'gatekeeper_bot',
+  });
   const accountId = account.profile.id;
   const conversation = { accountId, botId: bot.profile.id };
   const to = { type: 'private', accountId } as const;
@@ -2213,9 +2210,9 @@ Deno.test('PrivateMessagingService lets a join request contact grant send messag
 Deno.test('PrivateMessagingService shares chosen users as a service message of the account', () => {
   const { virtualUsers, botUpdates, publishedEvents, replyInterfaces, messageSending } =
     createPrivateMessagingFixture();
-  const account = createAccount(virtualUsers, 'Ada');
-  const grace = createAccount(virtualUsers, 'Grace');
-  const bot = createBot(virtualUsers, 'Test Bot', 'test_bot');
+  const account = createVirtualAccount(virtualUsers, { first_name: 'Ada' });
+  const grace = createVirtualAccount(virtualUsers, { first_name: 'Grace' });
+  const bot = createVirtualBot(virtualUsers, { first_name: 'Test Bot', username: 'test_bot' });
   sendPrivateText(messageSending, account.profile.id, bot);
   const keyboard = messageSending.sendPrivateChatMessage({
     fromBotId: bot.profile.id,
@@ -2334,8 +2331,8 @@ Deno.test('PrivateMessagingService shares chosen users as a service message of t
 Deno.test('PrivateMessagingService sends Web App data as a service message of the account', () => {
   const { virtualUsers, botUpdates, publishedEvents, replyInterfaces, messageSending } =
     createPrivateMessagingFixture();
-  const account = createAccount(virtualUsers, 'Ada');
-  const bot = createBot(virtualUsers, 'Test Bot', 'test_bot');
+  const account = createVirtualAccount(virtualUsers, { first_name: 'Ada' });
+  const bot = createVirtualBot(virtualUsers, { first_name: 'Test Bot', username: 'test_bot' });
   sendPrivateText(messageSending, account.profile.id, bot);
   const keyboard = messageSending.sendPrivateChatMessage({
     fromBotId: bot.profile.id,
@@ -2429,9 +2426,9 @@ Deno.test('PrivateMessagingService answers the button that takes the answer amon
     replyInterfaces,
     messageSending,
   } = createPrivateMessagingFixture();
-  const account = createAccount(virtualUsers, 'Ada');
-  const grace = createAccount(virtualUsers, 'Grace');
-  const bot = createBot(virtualUsers, 'Test Bot', 'test_bot');
+  const account = createVirtualAccount(virtualUsers, { first_name: 'Ada' });
+  const grace = createVirtualAccount(virtualUsers, { first_name: 'Grace' });
+  const bot = createVirtualBot(virtualUsers, { first_name: 'Test Bot', username: 'test_bot' });
   sendPrivateText(messageSending, account.profile.id, bot);
   const conversation = { accountId: account.profile.id, botId: bot.profile.id };
   // The text button comes first, so a press that answers a request must look past it.
@@ -2643,9 +2640,9 @@ Deno.test('PrivateMessagingService refuses a press whose label leaves buttons th
     replyInterfaces,
     messageSending,
   } = createPrivateMessagingFixture();
-  const account = createAccount(virtualUsers, 'Ada');
-  const grace = createAccount(virtualUsers, 'Grace');
-  const bot = createBot(virtualUsers, 'Test Bot', 'test_bot');
+  const account = createVirtualAccount(virtualUsers, { first_name: 'Ada' });
+  const grace = createVirtualAccount(virtualUsers, { first_name: 'Grace' });
+  const bot = createVirtualBot(virtualUsers, { first_name: 'Test Bot', username: 'test_bot' });
   sendPrivateText(messageSending, account.profile.id, bot);
   const conversation = { accountId: account.profile.id, botId: bot.profile.id };
   const usersRequest = (requestId: number) => ({
@@ -2782,151 +2779,57 @@ function expectBotMessageId(
   return botMessageId;
 }
 
+/**
+ * The messaging services over fresh repositories, with the clock the test advances, the join
+ * requests the test grants, and the bots' updates projected from the published events.
+ */
 function createPrivateMessagingFixture() {
-  const identities = new TelegramIdentityRepository();
-  const accounts = new AccountRepository();
-  const bots = new BotRepository();
-  const virtualUsers = new VirtualUserService({ identities, accounts, bots });
-  const privateConversations = new PrivateConversationRepository();
-  const messages = new MessageRepository();
-  const files = new FileRepository();
-  const polls = new PollRepository();
-  const messageBoxes = new MessageBoxRepository();
-  const botUpdates = new BotUpdateRepository();
-  const sharedChats = new SharedChatRepository();
-  const botUpdateDelivery = new BotUpdateDeliveryService({
-    botMessageViews: new BotMessageViewService({
-      accounts,
-      bots,
-      sharedChats,
-      messageBoxes,
-      messages,
-      files,
-      polls,
-    }),
-    botUpdates,
-    updateSubscriptions: new BotUpdateSubscriptionRepository(),
-    bots,
-    sharedChats,
-    messages,
-    lastMessageSendingBots: new LastMessageSendingBotRepository(),
-  });
-  const publishedEvents: ChatDomainEvent[] = [];
-  let currentUnixTimeSeconds = 1_700_000_000;
-  const blockedUsers = new BlockedUserRepository();
-  const storedUploads: FileUpload[] = [];
+  let currentUnixTimeSeconds = TEST_UNIX_TIME_SECONDS;
   /** The bots a pending join request lets write to each account, and the contacts they claimed. */
   const joinRequesterGrants = {
     contactableBotIdsByAccountId: new Map<number, Set<number>>(),
     claims: [] as Array<readonly [botId: number, accountId: number]>,
   };
-  const uploadRecordingFiles = {
-    addFile: (upload: FileUpload) => {
-      storedUploads.push(upload);
-      return files.addFile(upload);
+  const botUpdates = new BotUpdateRepository();
+  const services = createChatMessagingServices({
+    joinRequesterContacts: {
+      mayContactJoinRequester: (botId, accountId) =>
+        joinRequesterGrants.contactableBotIdsByAccountId.get(accountId)?.has(botId) ?? false,
+      claimJoinRequesterContact: (botId, accountId) => {
+        joinRequesterGrants.claims.push([botId, accountId]);
+      },
     },
-  };
-  const joinRequesterContacts = {
-    mayContactJoinRequester: (botId: number, accountId: number) =>
-      joinRequesterGrants.contactableBotIdsByAccountId.get(accountId)?.has(botId) ?? false,
-    claimJoinRequesterContact: (botId: number, accountId: number) => {
-      joinRequesterGrants.claims.push([botId, accountId]);
-    },
-  };
-  const events = {
-    emit: (event: ChatDomainEvent) => {
-      publishedEvents.push(event);
-      botUpdateDelivery.project(event);
-    },
-  };
-  const privateMessaging = new PrivateMessagingService({
-    accounts,
-    bots,
-    privateConversations,
-    messages,
-    messageBoxes,
-    blockedUsers,
-  });
-  const privateChats = new PrivateChatPolicy({
-    accounts,
-    bots,
-    privateConversations,
-    blockedUsers,
-    joinRequesterContacts,
-    privateMessages: privateMessaging,
-  });
-  // These tests send no supergroup messages, so none is found.
-  const supergroups = new SupergroupChatPolicy({
-    sharedChats,
-    supergroupMessages: { getMessageByChatMessageId: () => undefined },
-  });
-  const { messageSending } = createMessageSendingServices({
-    accounts,
-    bots,
-    privateChats,
-    supergroups,
-    privateConversations,
-    sharedChats,
-    messages,
-    files: uploadRecordingFiles,
-    polls,
-    messageBoxes,
-    transactions: { ...events, withinTransaction: (command) => command() },
-    joinRequesterContacts,
     currentUnixTimeSeconds: () => currentUnixTimeSeconds,
+    createEventObserver: (
+      { accounts, bots, sharedChats, messageBoxes, messages, files, polls },
+    ) => {
+      const botUpdateDelivery = new BotUpdateDeliveryService({
+        botMessageViews: new BotMessageViewService({
+          accounts,
+          bots,
+          sharedChats,
+          messageBoxes,
+          messages,
+          files,
+          polls,
+        }),
+        botUpdates,
+        updateSubscriptions: new BotUpdateSubscriptionRepository(),
+        bots,
+        sharedChats,
+        messages,
+        lastMessageSendingBots: new LastMessageSendingBotRepository(),
+      });
+      return (event) => botUpdateDelivery.project(event);
+    },
   });
-  const messageEditing = new MessageEditingService({
-    accounts,
-    bots,
-    privateChats,
-    supergroups,
-    messages,
-    files: uploadRecordingFiles,
-    polls,
-    // The repositories are not staged, so each edit runs as it is called.
-    transactions: { ...events, withinTransaction: (command) => command() },
-    currentUnixTimeSeconds: () => currentUnixTimeSeconds,
-  });
-  const messageDeletion = new MessageDeletionService({
-    accounts,
-    bots,
-    privateChats,
-    supergroups,
-    messages,
-    privateReplyInterfaces: privateConversations,
-    transactions: { withinTransaction: (command) => command() },
-  });
-  const replyInterfaces = new ReplyInterfaceService({
-    accounts,
-    privateChats,
-    supergroups,
-    messages,
-    messageBoxes,
-    privateReplyInterfaces: privateConversations,
-    supergroupReplyInterfaces: sharedChats,
-    messageSending,
-    sharedPeers: { accounts, bots, sharedChats },
-  });
-  const advanceClockSeconds = (seconds: number) => {
-    currentUnixTimeSeconds += seconds;
-  };
   return {
-    virtualUsers,
-    privateConversations,
-    messages,
-    files,
-    storedUploads,
-    messageBoxes,
+    ...services,
     botUpdates,
-    blockedUsers,
     joinRequesterGrants,
-    publishedEvents,
-    privateMessaging,
-    messageSending,
-    replyInterfaces,
-    messageEditing,
-    messageDeletion,
-    advanceClockSeconds,
+    advanceClockSeconds: (seconds: number) => {
+      currentUnixTimeSeconds += seconds;
+    },
   };
 }
 
@@ -2952,22 +2855,6 @@ function sendPrivateText(
     throw new Error(`Expected message send to succeed, received ${result.reason}`);
   }
   return result.message;
-}
-
-function createAccount(virtualUsers: VirtualUserService, firstName: string) {
-  const result = virtualUsers.createAccount({ first_name: firstName });
-  if (!result.created) {
-    throw new Error(`Expected account creation to succeed, received ${result.reason}`);
-  }
-  return result.account;
-}
-
-function createBot(virtualUsers: VirtualUserService, firstName: string, username: string) {
-  const result = virtualUsers.createBot({ first_name: firstName, username });
-  if (!result.created) {
-    throw new Error(`Expected bot creation to succeed, received ${result.reason}`);
-  }
-  return result.bot;
 }
 
 function messageFromUpdate(update: BotApiUpdate | undefined): BotApiMessage | undefined {

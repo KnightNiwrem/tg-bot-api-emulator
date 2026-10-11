@@ -22,7 +22,8 @@ export type CallOutcome = readonly [status: number, resultOrDescription: unknown
  * bot reads every message.
  */
 export async function createChatScenario(chatType: ChatType) {
-  const { api, sessionPath } = await createTestSession();
+  await using disposalOnFailure = new AsyncDisposableStack();
+  const { api, sessionPath } = disposalOnFailure.use(await createTestSession());
   const ada = await createAccount(api, sessionPath, 'Ada');
   const grace = await createAccount(api, sessionPath, 'Grace');
   const bot = await createBot(api, sessionPath, 'test_bot', { can_read_all_group_messages: true });
@@ -77,6 +78,7 @@ export async function createChatScenario(chatType: ChatType) {
   });
   await readUpdates(bot.botApiPath);
 
+  const emulatorDisposal = disposalOnFailure.move();
   return {
     api,
     sessionPath,
@@ -89,16 +91,18 @@ export async function createChatScenario(chatType: ChatType) {
     accountMessagesPath,
     sendAccountText,
     readUpdates,
+    [Symbol.asyncDispose]: () => emulatorDisposal.disposeAsync(),
   };
 }
 
 /**
  * A session where Grace asked to join Ada's supergroup through a link of the inviter bot, an
  * administrator that may invite users, whose pending request lets the bot write to Grace, who
- * never started a chat with it.
+ * never started a chat with it. Disposing of the scenario disposes of its emulator.
  */
 export async function createJoinRequesterChatScenario() {
-  const { api, sessionPath } = await createTestSession();
+  await using disposalOnFailure = new AsyncDisposableStack();
+  const { api, sessionPath } = disposalOnFailure.use(await createTestSession());
   const ada = await createAccount(api, sessionPath, 'Ada');
   const grace = await createAccount(api, sessionPath, 'Grace');
   const bot = await createBot(api, sessionPath, 'inviter_bot');
@@ -123,7 +127,14 @@ export async function createJoinRequesterChatScenario() {
   await requestJson(api, 'POST', `${sessionPath}/accounts/${grace.id}/chat-joins`, {
     invite_link: (link as { invite_link: string }).invite_link,
   });
-  return { api, sessionPath, grace, bot };
+  const emulatorDisposal = disposalOnFailure.move();
+  return {
+    api,
+    sessionPath,
+    grace,
+    bot,
+    [Symbol.asyncDispose]: () => emulatorDisposal.disposeAsync(),
+  };
 }
 
 /** Sends a bot's message with a Bot API send method and returns its ID in the bot's chat. */

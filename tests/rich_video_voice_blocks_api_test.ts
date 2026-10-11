@@ -57,7 +57,8 @@ const LONG_MEMO_BYTES = 1024 * 1024 + 1;
  * two voice notes.
  */
 async function createRichMediaFixture() {
-  const { api, sessionPath } = await createTestSession();
+  await using disposalOnFailure = new AsyncDisposableStack();
+  const { api, sessionPath } = disposalOnFailure.use(await createTestSession());
   const createAccount = (firstName: string) => createSessionAccount(api, sessionPath, firstName);
   const ada = await createAccount('Ada');
   const grace = await createAccount('Grace');
@@ -148,6 +149,7 @@ async function createRichMediaFixture() {
     };
   };
 
+  const emulatorDisposal = disposalOnFailure.move();
   return {
     api,
     sessionPath,
@@ -166,6 +168,7 @@ async function createRichMediaFixture() {
     readUpdates,
     readOtherBotUpdates,
     uploadAccountMedia,
+    [Symbol.asyncDispose]: () => emulatorDisposal.disposeAsync(),
   };
 }
 
@@ -228,7 +231,8 @@ function listBlockFiles(
 }
 
 Deno.test('a bot sends nested video and voice note blocks that accounts see and bots reuse', async () => {
-  const { api, ada, bot, privateChat, callBot, getHistory } = await createRichMediaFixture();
+  await using fixture = await createRichMediaFixture();
+  const { api, ada, bot, privateChat, callBot, getHistory } = fixture;
   const sent = await callBotWithFiles<TestMessage>(api, `${bot.botApiPath}/sendRichMessage`, {
     chat_id: String(ada.id),
     rich_message: JSON.stringify({
@@ -422,6 +426,7 @@ Deno.test('a bot sends nested video and voice note blocks that accounts see and 
 });
 
 Deno.test('a rich message whose video or voice note fails is sent or edited not at all', async () => {
+  await using fixture = await createRichMediaFixture();
   const {
     api,
     ada,
@@ -434,7 +439,7 @@ Deno.test('a rich message whose video or voice note fails is sent or edited not 
     readUpdates,
     readOtherBotUpdates,
     uploadAccountMedia,
-  } = await createRichMediaFixture();
+  } = fixture;
   const { videoFileId, voiceFileId } = await uploadAccountMedia(readUpdates);
   await sendAccountMessage(ada.id, {
     to: privateChat,
@@ -447,7 +452,7 @@ Deno.test('a rich message whose video or voice note fails is sent or edited not 
     readOtherBotUpdates,
     otherPrivateChat,
   );
-  const otherSession = await createRichMediaFixture();
+  await using otherSession = await createRichMediaFixture();
   const { videoFileId: otherSessionVideoFileId } = await otherSession.uploadAccountMedia(
     otherSession.readUpdates,
   );
@@ -577,6 +582,7 @@ Deno.test('a rich message whose video or voice note fails is sent or edited not 
 });
 
 Deno.test('video and voice note blocks keep observer-specific files through chats, forwards and copies', async () => {
+  await using fixture = await createRichMediaFixture();
   const {
     ada,
     grace,
@@ -590,7 +596,7 @@ Deno.test('video and voice note blocks keep observer-specific files through chat
     readOtherBotUpdates,
     uploadAccountMedia,
     readUpdates,
-  } = await createRichMediaFixture();
+  } = fixture;
   const { videoFileId, voiceFileId } = await uploadAccountMedia(readUpdates);
   const sent = await callBot<TestMessage>(bot.botApiPath, 'sendRichMessage', {
     chat_id: supergroupChat.chatId,
@@ -664,6 +670,7 @@ Deno.test('video and voice note blocks keep observer-specific files through chat
 });
 
 Deno.test('video and voice note blocks need the permissions of their media', async () => {
+  await using fixture = await createRichMediaFixture();
   const {
     api,
     ada,
@@ -677,7 +684,7 @@ Deno.test('video and voice note blocks need the permissions of their media', asy
     getHistory,
     readUpdates,
     uploadAccountMedia,
-  } = await createRichMediaFixture();
+  } = fixture;
   const { videoFileId, voiceFileId } = await uploadAccountMedia(readUpdates);
   const nestedVideo = {
     type: 'details',
@@ -757,6 +764,7 @@ Deno.test('video and voice note blocks need the permissions of their media', asy
 });
 
 Deno.test('inline results send video and voice note blocks the bot knows, but no URLs or uploads', async () => {
+  await using fixture = await createRichMediaFixture();
   const {
     api,
     accountPath,
@@ -770,7 +778,7 @@ Deno.test('inline results send video and voice note blocks the bot knows, but no
     getHistory,
     readUpdates,
     uploadAccountMedia,
-  } = await createRichMediaFixture();
+  } = fixture;
   const { videoFileId, voiceFileId } = await uploadAccountMedia(readUpdates);
   const sendQuery = async (accountId: number, chat: typeof privateChat | typeof supergroupChat) =>
     (await requestJson<{ inline_query: TestInlineQuery }>(

@@ -5,34 +5,22 @@ import type { EmulationSession } from '../src/types/emulation_session.ts';
 import type { ChatActor, ChatAddress } from '../src/types/virtual_chat.ts';
 import type { ChatMessage } from '../src/types/virtual_message.ts';
 import { buildSessionServices } from './support/session_services.ts';
+import { createVirtualAccount, createVirtualBot } from './support/virtual_users.ts';
 
 /**
  * Creates a session where Ada owns a supergroup with Grace, a pinning bot that is an administrator
  * with `can_pin_messages`, a member bot, and a bot Ada removed, and where Ada has started a
- * private chat with the pinning bot.
+ * private chat with the pinning bot. Disposing of it ends the session.
  */
 function createPinningFixture() {
   const session = buildSessionServices({ id: 'pinning' });
-  const createAccount = (firstName: string) => {
-    const result = session.virtualUsers.createAccount({ first_name: firstName });
-    if (!result.created) {
-      throw new Error(`Account ${firstName} was not created: ${result.reason}`);
-    }
-    return result.account.profile.id;
-  };
-  const createBot = (username: string) => {
-    const result = session.virtualUsers.createBot({ first_name: 'Test Bot', username });
-    if (!result.created) {
-      throw new Error(`Bot ${username} was not created: ${result.reason}`);
-    }
-    return result.bot.profile.id;
-  };
-  const ada = createAccount('Ada');
-  const grace = createAccount('Grace');
-  const outsider = createAccount('Linus');
-  const pinningBot = createBot('pinning_bot');
-  const memberBot = createBot('member_bot');
-  const removedBot = createBot('removed_bot');
+  const [ada, grace, outsider] = ['Ada', 'Grace', 'Linus'].map((first_name) =>
+    createVirtualAccount(session.virtualUsers, { first_name }).profile.id
+  );
+  const [pinningBot, memberBot, removedBot] = ['pinning_bot', 'member_bot', 'removed_bot'].map(
+    (username) =>
+      createVirtualBot(session.virtualUsers, { first_name: 'Test Bot', username }).profile.id,
+  );
 
   const creation = session.sharedChatAdministration.createSupergroup({
     title: 'Team',
@@ -91,6 +79,7 @@ function createPinningFixture() {
     chatId,
     sendToSupergroup,
     sendToPinningBot,
+    [Symbol.dispose]: () => session[Symbol.dispose](),
   };
 }
 
@@ -178,7 +167,8 @@ function unpinAllAs(
 }
 
 Deno.test('a chat pins several messages, lists them newest first, and unpins the newest by default', () => {
-  const { session, ada, pinningBot, sendToPinningBot } = createPinningFixture();
+  using fixture = createPinningFixture();
+  const { session, ada, pinningBot, sendToPinningBot } = fixture;
   const firstId = sendToPinningBot('first');
   const secondId = sendToPinningBot('second');
   const thirdId = sendToPinningBot('third');
@@ -226,7 +216,8 @@ Deno.test('a chat pins several messages, lists them newest first, and unpins the
 });
 
 Deno.test('a repeated pin or an unpin of an unpinned message is refused without effect', () => {
-  const { session, ada, pinningBot, sendToPinningBot } = createPinningFixture();
+  using fixture = createPinningFixture();
+  const { session, ada, pinningBot, sendToPinningBot } = fixture;
   const messageId = sendToPinningBot('hello');
   const pinner = { kind: 'bot', botId: pinningBot } as const;
   const chat: PinningChat = { type: 'private', peerId: ada };
@@ -255,6 +246,7 @@ Deno.test('a repeated pin or an unpin of an unpinned message is refused without 
 });
 
 Deno.test('a bot reaches only private chats an account started and supergroups it is in', () => {
+  using fixture = createPinningFixture();
   const {
     session,
     ada,
@@ -265,7 +257,7 @@ Deno.test('a bot reaches only private chats an account started and supergroups i
     chatId,
     sendToSupergroup,
     sendToPinningBot,
-  } = createPinningFixture();
+  } = fixture;
   sendToPinningBot('hi');
   const messageId = sendToSupergroup(grace, 'hello');
 
@@ -342,8 +334,8 @@ Deno.test('a bot reaches only private chats an account started and supergroups i
 });
 
 Deno.test('supergroup pins need can_pin_messages, which bots get only as an administrator right', () => {
-  const { session, ada, grace, pinningBot, memberBot, chatId, sendToSupergroup } =
-    createPinningFixture();
+  using fixture = createPinningFixture();
+  const { session, ada, grace, pinningBot, memberBot, chatId, sendToSupergroup } = fixture;
   const messageId = sendToSupergroup(ada, 'rules');
   const chat: PinningChat = { type: 'supergroup', chatId };
   const pin = (pinner: MessagePinner) =>
@@ -384,8 +376,8 @@ Deno.test('supergroup pins need can_pin_messages, which bots get only as an admi
 });
 
 Deno.test('a public supergroup ignores its default permissions for pins', () => {
-  const { session, ada, grace, memberBot, chatId: privateChatId, sendToSupergroup } =
-    createPinningFixture();
+  using fixture = createPinningFixture();
+  const { session, ada, grace, memberBot, chatId: privateChatId, sendToSupergroup } = fixture;
   const creation = session.sharedChatAdministration.createSupergroup({
     title: 'Public',
     username: 'public_team',
@@ -442,7 +434,8 @@ Deno.test('a public supergroup ignores its default permissions for pins', () => 
 });
 
 Deno.test('a service message cannot be pinned or unpinned, after the right to pin is checked', () => {
-  const { session, ada, memberBot, pinningBot, chatId } = createPinningFixture();
+  using fixture = createPinningFixture();
+  const { session, ada, memberBot, pinningBot, chatId } = fixture;
   const serviceMessage = session.supergroupMessaging.getMessageHistory({ accountId: ada, chatId });
   if (!serviceMessage.found) {
     throw new Error('Expected the supergroup history');
@@ -482,7 +475,8 @@ Deno.test('a service message cannot be pinned or unpinned, after the right to pi
 });
 
 Deno.test('findNewestPinnedMessage returns the pinned message sent last', () => {
-  const { session, ada, grace, pinningBot, chatId, sendToSupergroup } = createPinningFixture();
+  using fixture = createPinningFixture();
+  const { session, ada, grace, pinningBot, chatId, sendToSupergroup } = fixture;
   const olderId = sendToSupergroup(ada, 'older');
   const newerId = sendToSupergroup(grace, 'newer');
   const pinner = { kind: 'bot', botId: pinningBot } as const;
@@ -501,8 +495,9 @@ Deno.test('findNewestPinnedMessage returns the pinned message sent last', () => 
 });
 
 Deno.test('unpinning all clears every pin of one chat, whoever wrote or pinned it, and keeps its messages', () => {
+  using fixture = createPinningFixture();
   const { session, ada, grace, pinningBot, memberBot, chatId, sendToSupergroup, sendToPinningBot } =
-    createPinningFixture();
+    fixture;
   const supergroup: PinningChat = { type: 'supergroup', chatId };
   const pinningBotChat: PinningChat = { type: 'private', peerId: ada };
   const botPinner = { kind: 'bot', botId: pinningBot } as const;
@@ -600,6 +595,7 @@ Deno.test('unpinning all clears every pin of one chat, whoever wrote or pinned i
 });
 
 Deno.test('unpinning all checks access and the right to pin first, even when nothing is pinned', () => {
+  using fixture = createPinningFixture();
   const {
     session,
     ada,
@@ -611,7 +607,7 @@ Deno.test('unpinning all checks access and the right to pin first, even when not
     chatId,
     sendToSupergroup,
     sendToPinningBot,
-  } = createPinningFixture();
+  } = fixture;
   const supergroup: PinningChat = { type: 'supergroup', chatId };
   const pinningBotChat: PinningChat = { type: 'private', peerId: ada };
   const unpinAll = (pinner: MessagePinner, chat: PinningChat) =>

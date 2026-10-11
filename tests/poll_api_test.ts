@@ -51,7 +51,8 @@ interface PollAnswerResponse {
  * account outside the supergroup.
  */
 async function createPollFixture() {
-  const { api, sessionPath } = await createTestSession();
+  await using disposalOnFailure = new AsyncDisposableStack();
+  const { api, sessionPath } = disposalOnFailure.use(await createTestSession());
   const createAccount = (firstName: string) => createSessionAccount(api, sessionPath, firstName);
   const ada = await createAccount('Ada');
   const grace = await createAccount('Grace');
@@ -136,6 +137,7 @@ async function createPollFixture() {
     )).body.messages;
 
   const readBotUpdates = createUpdateReader(api);
+  const emulatorDisposal = disposalOnFailure.move();
   return {
     api,
     sessionPath,
@@ -157,6 +159,7 @@ async function createPollFixture() {
     answerPoll,
     getHistory,
     readUpdates: async (botApiPath: string) => withoutUpdateIds(await readBotUpdates(botApiPath)),
+    [Symbol.asyncDispose]: () => emulatorDisposal.disposeAsync(),
   };
 }
 
@@ -169,6 +172,7 @@ function voterCounts(poll: TestPoll | undefined): string {
 }
 
 Deno.test('a bot sends a poll that an account inspects, votes in, changes and retracts', async () => {
+  await using fixture = await createPollFixture();
   const {
     api,
     ada,
@@ -179,7 +183,7 @@ Deno.test('a bot sends a poll that an account inspects, votes in, changes and re
     pollAnswerPath,
     answerPoll,
     getHistory,
-  } = await createPollFixture();
+  } = fixture;
   const sent = await sendPoll({
     chat_id: ada.id,
     question: 'Lunch?',
@@ -275,6 +279,7 @@ Deno.test('a bot sends a poll that an account inspects, votes in, changes and re
 });
 
 Deno.test('supergroup members vote in a poll whose answers cannot change', async () => {
+  await using fixture = await createPollFixture();
   const {
     api,
     sessionPath,
@@ -286,7 +291,7 @@ Deno.test('supergroup members vote in a poll whose answers cannot change', async
     pollAnswerPath,
     answerPoll,
     getHistory,
-  } = await createPollFixture();
+  } = fixture;
   const sent = await sendPoll({
     chat_id: supergroupChat.chatId,
     question: 'Which days?',
@@ -350,8 +355,8 @@ Deno.test('supergroup members vote in a poll whose answers cannot change', async
 });
 
 Deno.test('a supergroup member retracts its answer to a poll that allows revoting', async () => {
-  const { api, ada, supergroupChat, sendPoll, pollAnswerPath, answerPoll } =
-    await createPollFixture();
+  await using fixture = await createPollFixture();
+  const { api, ada, supergroupChat, sendPoll, pollAnswerPath, answerPoll } = fixture;
   const sent = await sendPoll({
     chat_id: supergroupChat.chatId,
     question: 'Lunch?',
@@ -376,7 +381,8 @@ Deno.test('a supergroup member retracts its answer to a poll that allows revotin
 });
 
 Deno.test('sendPoll refuses polls as Telegram does and stores none of them', async () => {
-  const { ada, bot, privateChat, callBot, getHistory } = await createPollFixture();
+  await using fixture = await createPollFixture();
+  const { ada, bot, privateChat, callBot, getHistory } = fixture;
   const historyBefore = await getHistory(ada.id, privateChat);
   const twelveOptions = Array.from({ length: 12 }, (_, index) => `Option ${index}`);
   const cases: ReadonlyArray<{
@@ -502,7 +508,8 @@ Deno.test('sendPoll refuses polls as Telegram does and stores none of them', asy
 });
 
 Deno.test('poll questions and options keep only their custom emoji', async () => {
-  const { ada, sendPoll } = await createPollFixture();
+  await using fixture = await createPollFixture();
+  const { ada, sendPoll } = fixture;
   const customEmoji = { type: 'custom_emoji', custom_emoji_id: '5368324170671202286' };
   const sent = await sendPoll({
     chat_id: ada.id,
@@ -532,6 +539,7 @@ Deno.test('poll questions and options keep only their custom emoji', async () =>
 });
 
 Deno.test('forwards share the poll they repeat, while copies create new polls', async () => {
+  await using fixture = await createPollFixture();
   const {
     ada,
     grace,
@@ -542,7 +550,7 @@ Deno.test('forwards share the poll they repeat, while copies create new polls', 
     sendAccountMessage,
     answerPoll,
     getHistory,
-  } = await createPollFixture();
+  } = fixture;
   const original = await sendPoll({
     chat_id: ada.id,
     question: 'Lunch?',
@@ -632,7 +640,8 @@ Deno.test('forwards share the poll they repeat, while copies create new polls', 
 });
 
 Deno.test('bots edit only the reply markup of a poll message', async () => {
-  const { api, ada, botApiPath, callBot, sendPoll } = await createPollFixture();
+  await using fixture = await createPollFixture();
+  const { api, ada, botApiPath, callBot, sendPoll } = fixture;
   const sent = await sendPoll({ chat_id: ada.id, question: 'Lunch?', options: ['Pizza'] });
   const documentUpload = new FormData();
   documentUpload.append('chat_id', String(ada.id));
@@ -674,8 +683,8 @@ Deno.test('bots edit only the reply markup of a poll message', async () => {
 });
 
 Deno.test('ending a session discards its polls', async () => {
-  const { api, sessionPath, ada, privateChat, sendPoll, pollAnswerPath, answerPoll } =
-    await createPollFixture();
+  await using fixture = await createPollFixture();
+  const { api, sessionPath, ada, privateChat, sendPoll, pollAnswerPath, answerPoll } = fixture;
   const sent = await sendPoll({ chat_id: ada.id, question: 'Lunch?', options: ['Pizza'] });
   await answerPoll(ada.id, privateChat, sent.message_id, [0]);
 
@@ -689,8 +698,8 @@ Deno.test('ending a session discards its polls', async () => {
 });
 
 Deno.test('a grammY bot sends a poll in reply to a command, and accounts vote in it', async () => {
-  const { api, sessionPath, ada, botToken, privateChat, sendAccountMessage, answerPoll } =
-    await createPollFixture();
+  await using fixture = await createPollFixture();
+  const { api, sessionPath, ada, botToken, privateChat, sendAccountMessage, answerPoll } = fixture;
   const grammyBot = new Bot(botToken, {
     client: {
       apiRoot: `${TEST_PUBLIC_ORIGIN}${sessionPath}/bot-api`,
@@ -729,6 +738,7 @@ Deno.test('a grammY bot sends a poll in reply to a command, and accounts vote in
 });
 
 Deno.test('stopPoll closes a poll, keeps its votes and refuses later answers', async () => {
+  await using fixture = await createPollFixture();
   const {
     api,
     ada,
@@ -741,7 +751,7 @@ Deno.test('stopPoll closes a poll, keeps its votes and refuses later answers', a
     answerPoll,
     pollAnswerPath,
     getHistory,
-  } = await createPollFixture();
+  } = fixture;
   const keyboard = { inline_keyboard: [[{ text: 'Results', callback_data: 'results' }]] };
   const sent = await sendPoll({
     chat_id: ada.id,
@@ -889,7 +899,8 @@ Deno.test('stopPoll closes a poll, keeps its votes and refuses later answers', a
 });
 
 Deno.test('sendPoll sends a closed poll as a preview, which accepts no answers', async () => {
-  const { ada, privateChat, sendPoll, answerPoll, callBot } = await createPollFixture();
+  await using fixture = await createPollFixture();
+  const { ada, privateChat, sendPoll, answerPoll, callBot } = fixture;
   const preview = await sendPoll({
     chat_id: ada.id,
     question: 'Lunch?',
@@ -906,6 +917,7 @@ Deno.test('sendPoll sends a closed poll as a preview, which accepts no answers',
 });
 
 Deno.test('only the bot that sent a poll receives its poll and poll_answer updates', async () => {
+  await using fixture = await createPollFixture();
   const {
     api,
     ada,
@@ -921,7 +933,7 @@ Deno.test('only the bot that sent a poll receives its poll and poll_answer updat
     answerPoll,
     pollAnswerPath,
     readUpdates,
-  } = await createPollFixture();
+  } = fixture;
   await readUpdates(botApiPath);
   await readUpdates(otherBot.botApiPath);
 
@@ -1024,6 +1036,7 @@ Deno.test('only the bot that sent a poll receives its poll and poll_answer updat
 });
 
 Deno.test('a grammY bot thanks voters through its webhook, as the activity log shows', async () => {
+  await using fixture = await createPollFixture();
   const {
     api,
     sessionPath,
@@ -1034,7 +1047,7 @@ Deno.test('a grammY bot thanks voters through its webhook, as the activity log s
     sendPoll,
     answerPoll,
     getHistory,
-  } = await createPollFixture();
+  } = fixture;
   const grammyBot = new Bot(botToken, {
     client: {
       apiRoot: `${TEST_PUBLIC_ORIGIN}${sessionPath}/bot-api`,
@@ -1111,6 +1124,7 @@ Deno.test('a grammY bot thanks voters through its webhook, as the activity log s
 });
 
 Deno.test('quizzes show their solution to their bot, to voters, and to everyone once closed', async () => {
+  await using fixture = await createPollFixture();
   const {
     ada,
     grace,
@@ -1119,7 +1133,7 @@ Deno.test('quizzes show their solution to their bot, to voters, and to everyone 
     sendPoll,
     answerPoll,
     getHistory,
-  } = await createPollFixture();
+  } = fixture;
   const sent = await sendPoll({
     chat_id: supergroupChat.chatId,
     question: 'Which is round?',
@@ -1209,7 +1223,8 @@ Deno.test('quizzes show their solution to their bot, to voters, and to everyone 
 });
 
 Deno.test('sendPoll refuses quizzes and closing times as Telegram does', async () => {
-  const { ada, privateChat, callBot, getHistory } = await createPollFixture();
+  await using fixture = await createPollFixture();
+  const { ada, privateChat, callBot, getHistory } = fixture;
   const historyBefore = await getHistory(ada.id, privateChat);
   const now = Math.floor(Date.now() / 1_000);
   const cases: ReadonlyArray<{
@@ -1310,6 +1325,7 @@ Deno.test('sendPoll refuses quizzes and closing times as Telegram does', async (
 });
 
 Deno.test('tests make a poll closing time arrive, which closes it for its bot to observe', async () => {
+  await using fixture = await createPollFixture();
   const {
     api,
     sessionPath,
@@ -1320,7 +1336,7 @@ Deno.test('tests make a poll closing time arrive, which closes it for its bot to
     sendPoll,
     answerPoll,
     readUpdates,
-  } = await createPollFixture();
+  } = fixture;
   const before = Math.floor(Date.now() / 1_000);
   const timed = await sendPoll({
     chat_id: ada.id,
@@ -1387,6 +1403,7 @@ Deno.test('tests make a poll closing time arrive, which closes it for its bot to
 });
 
 Deno.test('a bot copies a quiz only when it sees its solution', async () => {
+  await using fixture = await createPollFixture();
   const {
     api,
     ada,
@@ -1396,7 +1413,7 @@ Deno.test('a bot copies a quiz only when it sees its solution', async () => {
     callBot,
     sendPoll,
     sendAccountMessage,
-  } = await createPollFixture();
+  } = fixture;
   const quiz = await sendPoll({
     chat_id: supergroupChat.chatId,
     question: 'Which is round?',
