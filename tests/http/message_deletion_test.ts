@@ -4,6 +4,8 @@
  * nothing, that deleted messages keep their IDs, and what a join request's contact grant does not
  * allow. Every table runs the same deletions in a private chat and in a supergroup.
  */
+import { assertEquals } from '@std/assert';
+
 import { jsonRequest, requestJson } from '../support/emulation_api.ts';
 import { createAccount, createBot } from '../support/http_fixtures.ts';
 import {
@@ -11,7 +13,6 @@ import {
   createChatScenario,
   createJoinRequesterChatScenario,
   describeCall,
-  expectEqual,
   expectStatus,
   sendBotMessage,
 } from '../support/chat_type_scenarios.ts';
@@ -53,7 +54,7 @@ for (const chatType of CHAT_TYPES) {
     ];
     const messageIdsAfter = await readMessageIds();
 
-    expectEqual(
+    assertEquals(
       [outcomes, messageIdsAfter, await readUpdates(bot.botApiPath)],
       [
         [
@@ -81,7 +82,7 @@ for (const chatType of CHAT_TYPES) {
     });
     const laterMessageId = await sendBotMessage(api, bot, { chat_id: chatId, text: 'Later' });
 
-    expectEqual(
+    assertEquals(
       [
         deletion,
         laterMessageId,
@@ -152,7 +153,7 @@ for (const chatType of CHAT_TYPES) {
       ]),
     ];
 
-    expectEqual(
+    assertEquals(
       [outcomes, await readUpdates(bot.botApiPath)],
       [
         chatType === 'private'
@@ -203,7 +204,7 @@ Deno.test("a supergroup lets a bot delete other members' messages only with the 
     204,
   );
 
-  expectEqual(
+  assertEquals(
     [
       refusal,
       // A former member is turned away before its message is looked at.
@@ -246,7 +247,7 @@ Deno.test('deleting the private message whose reply keyboard the account sees re
 
   await describeCall(api, bot, 'deleteMessage', { chat_id: chatId, message_id: keyboardMessageId });
 
-  expectEqual(
+  assertEquals(
     [(shownBefore as { message_id?: number } | null)?.message_id, await readReplyInterface()],
     [keyboardMessageId, null],
     'Expected the deleted message to take its reply keyboard with it',
@@ -270,7 +271,7 @@ Deno.test("a join request's contact grant lets a bot write to the requester, but
     text: 'Done',
   });
 
-  expectEqual(
+  assertEquals(
     [
       deletionUnderGrant,
       await describeCall(api, bot, 'deleteMessage', { chat_id: grace.id, message_id: promptId }),

@@ -5,6 +5,8 @@
  * the same edits in a private chat and in a supergroup, so the expectations of the two chat types
  * can be compared row by row.
  */
+import { assertEquals } from '@std/assert';
+
 import { createUpdateReader } from '../support/bot_api_requests.ts';
 import { type EmulationApi, jsonRequest, requestJson } from '../support/emulation_api.ts';
 import { createAccount, createBot } from '../support/http_fixtures.ts';
@@ -15,7 +17,6 @@ import {
   type CreatedBot,
   createJoinRequesterChatScenario,
   describeCall,
-  expectEqual,
   expectStatus,
   sendBotMessage,
 } from '../support/chat_type_scenarios.ts';
@@ -155,7 +156,7 @@ for (const chatType of CHAT_TYPES) {
 
     const privateOrSupergroup = (privateOutcome: CallOutcome, supergroupOutcome: CallOutcome) =>
       chatType === 'private' ? privateOutcome : supergroupOutcome;
-    expectEqual(outcomes, [
+    assertEquals(outcomes, [
       [400, 'Bad Request: message text is empty'],
       [400, 'Bad Request: message text is empty'],
       [400, 'Bad Request: chat not found'],
@@ -215,7 +216,7 @@ for (const chatType of CHAT_TYPES) {
 
     const privateOrSupergroup = (privateOutcome: unknown, supergroupOutcome: unknown) =>
       chatType === 'private' ? privateOutcome : supergroupOutcome;
-    expectEqual(outcomes, [
+    assertEquals(outcomes, [
       privateOrSupergroup([404, 'bot_not_found'], [404, 'chat_not_found']),
       privateOrSupergroup([404, 'message_not_found'], [403, 'not_a_member']),
       [404, 'message_not_found'],
@@ -250,7 +251,7 @@ for (const chatType of CHAT_TYPES) {
     });
     const updatesAfterAccountEdit = await readUpdates(bot.botApiPath);
 
-    expectEqual(
+    assertEquals(
       [
         botEdit,
         updatesAfterBotEdit,
@@ -373,7 +374,7 @@ for (const chatType of CHAT_TYPES) {
       return [edited?.message_id, edited?.text];
     });
 
-    expectEqual(
+    assertEquals(
       [outcomes, updatesOfChatBot],
       [
         [
@@ -425,7 +426,7 @@ for (const chatType of CHAT_TYPES) {
     const otherMessageId = await sendBotMessage(api, bot, { chat_id: otherChatId, text: 'Other' });
     const laterMessageId = await sendBotMessage(api, bot, { chat_id: chatId, text: 'Later' });
 
-    expectEqual(
+    assertEquals(
       [
         [botMessageId, otherMessageId, laterMessageId],
         await describeEdit(api, bot, 'editMessageText', {
@@ -476,7 +477,7 @@ Deno.test("a supergroup checks a restricted bot's right to show new content only
   );
   const richMessage = { blocks: [{ type: 'paragraph', text: 'Rich menu' }] };
 
-  expectEqual(
+  assertEquals(
     [
       // The right is checked once the new content is read, before the keyboard.
       await describeCall(api, bot, 'editMessageText', {
@@ -536,7 +537,7 @@ Deno.test("a join request's contact grant lets a bot write to the requester, but
     text: 'Done',
   });
 
-  expectEqual(
+  assertEquals(
     [
       editsUnderGrant,
       await describeEdit(api, bot, 'editMessageText', {
@@ -588,7 +589,7 @@ Deno.test('a supergroup turns a former member bot away before it looks for the m
     );
   }
 
-  expectEqual(outcomes, [
+  assertEquals(outcomes, [
     [403, 'Forbidden: bot was kicked from the supergroup chat'],
     [400, 'Bad Request: message text is empty'],
     [403, 'Forbidden: bot is not a member of the supergroup chat'],

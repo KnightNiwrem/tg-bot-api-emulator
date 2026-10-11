@@ -165,12 +165,3 @@ export async function expectStatus(
     throw new Error(`Expected ${path} to answer ${expectedStatus}, received ${response.status}`);
   }
 }
-
-/** Compares two values by their JSON text, which shows both in the failure. */
-export function expectEqual(actual: unknown, expected: unknown, message: string): void {
-  if (JSON.stringify(actual) !== JSON.stringify(expected)) {
-    throw new Error(
-      `${message}:\nexpected ${JSON.stringify(expected)}\nreceived ${JSON.stringify(actual)}`,
-    );
-  }
-}
