@@ -6,10 +6,21 @@
 import { assertEquals } from '@std/assert';
 import { BOT_ACTIVITY_KINDS as CONTRACT_BOT_ACTIVITY_KINDS } from '../control_contracts/bot_activity.ts';
 import { uploadProfileSchema } from '../control_contracts/sessions.ts';
+import {
+  CHAT_PERMISSIONS as CONTRACT_CHAT_PERMISSIONS,
+  getSupergroupAdministratorsContract,
+  setSupergroupCustomTitleContract,
+  SUPERGROUP_ADMINISTRATOR_RIGHTS as CONTRACT_SUPERGROUP_ADMINISTRATOR_RIGHTS,
+} from '../control_contracts/supergroup_administration.ts';
 import { expireChatInviteLinkContract } from '../control_contracts/supergroups.ts';
 import { supergroupChatIdSchema, telegramUserIdSchema } from '../control_contracts/wire_fields.ts';
 import { BOT_ACTIVITY_KINDS } from '../src/types/bot_activity_kind.ts';
 import { createInviteLinkHash, isInviteLinkHash } from '../src/types/chat_invite_link.ts';
+import {
+  MAX_CUSTOM_TITLE_LENGTH,
+  SUPERGROUP_ADMINISTRATOR_RIGHTS,
+} from '../src/types/chat_membership.ts';
+import { CHAT_PERMISSIONS } from '../src/types/chat_permissions.ts';
 import {
   MAX_SUPERGROUP_OR_CHANNEL_ID,
   MAX_TELEGRAM_USER_ID,
@@ -76,5 +87,40 @@ Deno.test('The contracts take exactly the invite link hashes the emulator recogn
     texts.map((text) => inviteLinkHashSchema.safeParse(text).success),
     texts.map(isInviteLinkHash),
     'Expected the contract and the domain to agree on every text',
+  );
+});
+
+Deno.test('The contracts name exactly the administrator rights and chat permissions the emulator has', () => {
+  assertEquals(
+    [...CONTRACT_SUPERGROUP_ADMINISTRATOR_RIGHTS],
+    [...SUPERGROUP_ADMINISTRATOR_RIGHTS],
+    'Expected the same rights, in order',
+  );
+  assertEquals(
+    [...CONTRACT_CHAT_PERMISSIONS],
+    [...CHAT_PERMISSIONS],
+    'Expected the same permissions, in order',
+  );
+});
+
+Deno.test('The contracts show custom titles of at most the length the emulator allows', () => {
+  const administrators = getSupergroupAdministratorsContract.success.body.schema;
+  const showsOwnerTitled = (customTitle: string) =>
+    administrators.safeParse({
+      administrators: [{ user_id: 1, status: 'owner', custom_title: customTitle }],
+    }).success;
+
+  assertEquals(
+    [
+      showsOwnerTitled('😀'.repeat(MAX_CUSTOM_TITLE_LENGTH)),
+      showsOwnerTitled('😀'.repeat(MAX_CUSTOM_TITLE_LENGTH + 1)),
+    ],
+    [true, false],
+    'Expected the limit counted by code point',
+  );
+  assertEquals(
+    setSupergroupCustomTitleContract.body.schema.safeParse({ custom_title: '' }).success,
+    true,
+    'Expected an empty title, which removes it, accepted',
   );
 });

@@ -5,12 +5,10 @@
 import { assertEquals } from '@std/assert';
 import { BOT_ACTIVITY_KINDS as SERVER_BOT_ACTIVITY_KINDS } from '../../src/types/bot_activity_kind.ts';
 import { listLegacyBotApiMethodNames } from '../../src/types/bot_api_method_name.ts';
-import { MAX_CUSTOM_TITLE_LENGTH as SERVER_MAX_CUSTOM_TITLE_LENGTH } from '../../src/types/chat_membership.ts';
 import * as serverIdentityRanges from '../../src/types/telegram_identity.ts';
 import { LEGACY_BOT_API_METHOD_NAMES } from './bot_api_method_name.ts';
 import {
   BOT_ACTIVITY_KINDS,
-  MAX_CUSTOM_TITLE_LENGTH,
   MAX_SUPERGROUP_OR_CHANNEL_ID,
   MAX_TELEGRAM_USER_ID,
   MIN_SUPERGROUP_OR_CHANNEL_ID,
@@ -32,14 +30,12 @@ Deno.test('The client knows the legacy Bot API method names the emulator reads',
 Deno.test('The client checks the limits the emulator enforces', () => {
   assertEquals(
     {
-      MAX_CUSTOM_TITLE_LENGTH,
       MIN_TELEGRAM_USER_ID,
       MAX_TELEGRAM_USER_ID,
       MIN_SUPERGROUP_OR_CHANNEL_ID,
       MAX_SUPERGROUP_OR_CHANNEL_ID,
     },
     {
-      MAX_CUSTOM_TITLE_LENGTH: SERVER_MAX_CUSTOM_TITLE_LENGTH,
       MIN_TELEGRAM_USER_ID: serverIdentityRanges.MIN_TELEGRAM_USER_ID,
       MAX_TELEGRAM_USER_ID: serverIdentityRanges.MAX_TELEGRAM_USER_ID,
       MIN_SUPERGROUP_OR_CHANNEL_ID: serverIdentityRanges.MIN_SUPERGROUP_OR_CHANNEL_ID,

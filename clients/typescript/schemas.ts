@@ -8,7 +8,6 @@ import {
   webhookAttemptIdSchema,
 } from '../../control_contracts/webhook_attempts.ts';
 import {
-  MAX_CUSTOM_TITLE_LENGTH,
   MAX_SUPERGROUP_OR_CHANNEL_ID,
   MAX_TELEGRAM_USER_ID,
   MIN_SUPERGROUP_OR_CHANNEL_ID,
@@ -629,13 +628,6 @@ const messageTrailerShape = {
 const messageUserSchema = z.union([accountProfileSchema, messageSenderBotSchema]);
 
 /** A user's standing once its temporary restriction ends, as bots see it. */
-export const expiredRestrictionResponseSchema = z.strictObject({
-  chat_member: z.strictObject({
-    user: messageUserSchema,
-    status: z.enum(['member', 'left']),
-  }),
-});
-
 const membersJoinedContentShape = {
   new_chat_participant: messageUserSchema,
   new_chat_member: messageUserSchema,
@@ -919,49 +911,6 @@ export const notificationsResponseSchema = z.strictObject({
     message_id: z.number().int().positive(),
     is_silent: z.boolean(),
   })),
-});
-
-/** A custom title, which holds at least one and at most 16 characters, counted by code point. */
-const customTitleSchema = z.string().min(1).refine((title) =>
-  [...title].length <= MAX_CUSTOM_TITLE_LENGTH
-);
-
-export const chatAdministratorsResponseSchema = z.strictObject({
-  administrators: z.array(z.discriminatedUnion('status', [
-    z.strictObject({
-      user_id: z.number().int().positive(),
-      status: z.literal('owner'),
-      custom_title: customTitleSchema.optional(),
-    }),
-    z.strictObject({
-      user_id: z.number().int().positive(),
-      status: z.literal('administrator'),
-      rights: z.strictObject({
-        can_manage_chat: z.boolean(),
-        can_change_info: z.boolean(),
-        can_delete_messages: z.boolean(),
-        can_invite_users: z.boolean(),
-        can_restrict_members: z.boolean(),
-        can_pin_messages: z.boolean(),
-        can_manage_topics: z.boolean(),
-        can_promote_members: z.boolean(),
-        can_manage_video_chats: z.boolean(),
-        can_post_stories: z.boolean(),
-        can_edit_stories: z.boolean(),
-        can_delete_stories: z.boolean(),
-        can_manage_tags: z.boolean(),
-        can_send_welcome_messages: z.boolean(),
-      }),
-      custom_title: customTitleSchema.optional(),
-      promoted_by_user_id: z.number().int().positive(),
-      can_be_edited: z.boolean(),
-    }),
-  ])).refine(
-    (administrators) =>
-      administrators[0]?.status === 'owner' &&
-      administrators.slice(1).every(({ status }) => status === 'administrator'),
-    'Expected the owner, then the administrators',
-  ),
 });
 
 export const messageDraftResponseSchema = z.strictObject({

@@ -1,45 +1,17 @@
 import { Hono } from 'hono';
-import { z } from 'zod';
 
+import { expireSupergroupMemberRestrictionContract } from '../../../../control_contracts/supergroup_administration.ts';
 import {
   expireChatInviteLinkContract,
   expireJoinRequesterContactContract,
 } from '../../../../control_contracts/supergroups.ts';
 import { INVITE_LINK_PREFIX } from '../../../types/chat_invite_link.ts';
-import {
-  MAX_SUPERGROUP_OR_CHANNEL_ID,
-  MAX_TELEGRAM_USER_ID,
-  MIN_SUPERGROUP_OR_CHANNEL_ID,
-  MIN_TELEGRAM_USER_ID,
-} from '../../../types/telegram_identity.ts';
-import {
-  controlErrorResponse,
-  invalidControlRequestResponse,
-} from '../../control_error_response.ts';
 import { registerControlOperation } from '../../control_operation_route.ts';
-import { readPathParameters } from '../control_request_input.ts';
 import { presentChatInviteLinkUsage, presentChatJoinRequest } from '../invite_link_presentation.ts';
 import type { SessionRouteContextTypes } from '../session_route_context_types.ts';
 
-const CHAT_ID_PARAMETER = 'chatId';
-const USER_ID_PARAMETER = 'userId';
-const RESTRICTION_EXPIRY_PATH =
-  `/:${CHAT_ID_PARAMETER}/restrictions/:${USER_ID_PARAMETER}/expiry` as const;
-
 /** Where the supergroup routes are mounted within the server, as a contract path template. */
 const SUPERGROUP_COLLECTION_MOUNT_PATH = '/sessions/{sessionId}/supergroups';
-
-const supergroupChatIdPathParameterSchema = z.coerce.number().pipe(
-  z.int().min(MIN_SUPERGROUP_OR_CHANNEL_ID).max(MAX_SUPERGROUP_OR_CHANNEL_ID),
-);
-
-/** The path parameters of a supergroup user, such as one with a restriction or a join request. */
-const supergroupUserPathSchema = z.object({
-  [CHAT_ID_PARAMETER]: supergroupChatIdPathParameterSchema,
-  [USER_ID_PARAMETER]: z.coerce.number().pipe(
-    z.int().min(MIN_TELEGRAM_USER_ID).max(MAX_TELEGRAM_USER_ID),
-  ),
-});
 
 /**
  * Routes that control supergroups' time, which the emulator does not let pass by itself: a test
@@ -49,28 +21,31 @@ const supergroupUserPathSchema = z.object({
 export function createSupergroupRoutes(): Hono<SessionRouteContextTypes> {
   const supergroupRoutes = new Hono<SessionRouteContextTypes>();
 
-  supergroupRoutes.post(RESTRICTION_EXPIRY_PATH, (context) => {
-    const restrictionPath = readPathParameters(supergroupUserPathSchema, context.req.param());
-    if (!restrictionPath.valid) {
-      return invalidControlRequestResponse(context, restrictionPath.issues);
-    }
-    const { chatId, userId } = restrictionPath.value;
-
-    const { sharedChatAdministration, botMessageViews } = context.get('emulationSession');
-    const result = sharedChatAdministration.expireRestriction({ chatId, memberId: userId });
-    if (!result.expired) {
-      return controlErrorResponse(
-        context,
-        result.reason === 'restriction_not_temporary' ? 409 : 404,
-        result.reason,
-      );
-    }
-    const chatMember = botMessageViews.viewChatMember({ chatId, userId, status: result.status });
-    if (chatMember === undefined) {
-      throw new Error(`User ${userId} whose restriction expired does not exist`);
-    }
-    return context.json({ chat_member: chatMember });
-  });
+  registerControlOperation(
+    supergroupRoutes,
+    SUPERGROUP_COLLECTION_MOUNT_PATH,
+    expireSupergroupMemberRestrictionContract,
+    ({ params: { chatId, userId } }, context) => {
+      const { sharedChatAdministration, botMessageViews } = context.get('emulationSession');
+      const result = sharedChatAdministration.expireRestriction({ chatId, memberId: userId });
+      if (!result.expired) {
+        return result.reason === 'restriction_not_temporary'
+          ? { status: 409, body: { reason: result.reason } }
+          : { status: 404, body: { reason: result.reason } };
+      }
+      const chatMember = botMessageViews.viewChatMember({ chatId, userId, status: result.status });
+      if (chatMember === undefined) {
+        throw new Error(`User ${userId} whose restriction expired does not exist`);
+      }
+      // A restriction that ends leaves a member a member, and a user outside the supergroup left.
+      const { status } = chatMember;
+      if (status !== 'member' && status !== 'left') {
+        throw new Error(`User ${userId} whose restriction expired is ${status}`);
+      }
+      // A shallow copy, whose plain object type the contract's open Telegram object describes.
+      return { status: 200, body: { chat_member: { ...chatMember, status } } };
+    },
+  );
 
   registerControlOperation(
     supergroupRoutes,

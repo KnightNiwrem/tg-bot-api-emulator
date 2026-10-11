@@ -1,3 +1,4 @@
+x-telegram-type: ChatMember
 description: >-
   A user's standing in a chat, in the field order Telegram uses. Member tags are not
   supported.

@@ -5,6 +5,20 @@ import { createBotContract } from '../../control_contracts/bots.ts';
 import { downloadFileContract } from '../../control_contracts/files.ts';
 import { deleteSessionContract } from '../../control_contracts/sessions.ts';
 import {
+  changeSupergroupDescriptionContract,
+  changeSupergroupTitleContract,
+  demoteSupergroupMemberContract,
+  expireSupergroupMemberRestrictionContract,
+  getSupergroupAdministratorsContract,
+  liftSupergroupMemberRestrictionContract,
+  promoteSupergroupMemberContract,
+  protectSupergroupContentContract,
+  restrictSupergroupMemberContract,
+  setSupergroupCustomTitleContract,
+  setSupergroupDefaultPermissionsContract,
+  unprotectSupergroupContentContract,
+} from '../../control_contracts/supergroup_administration.ts';
+import {
   addSupergroupMemberContract,
   createSupergroupContract,
   decideSupergroupJoinRequestContract,
@@ -29,10 +43,8 @@ import {
   botCommandsResponseSchema,
   callbackQueryResponseSchema,
   chatActionsResponseSchema,
-  chatAdministratorsResponseSchema,
   chosenInlineResultResponseSchema,
   expiredPollResponseSchema,
-  expiredRestrictionResponseSchema,
   getMeResponseSchema,
   inlineQueryResponseSchema,
   menuButtonResponseSchema,
@@ -449,14 +461,11 @@ class HttpEmulationSessionClient implements EmulationSessionClient {
   async expireChatMemberRestriction(
     { chatId, userId }: ExpireChatMemberRestrictionInput,
   ): Promise<'member' | 'left'> {
-    const response = await requestJson(this.#fetch, {
-      method: 'POST',
-      url: `${this.#sessionUrl}/supergroups/${encodeURIComponent(chatId)}/restrictions/${
-        encodeURIComponent(userId)
-      }/expiry`,
-      expectedStatus: HTTP_STATUS_OK,
-      responseSchema: expiredRestrictionResponseSchema,
-    });
+    const response = await callJsonOperation(
+      this.#transport,
+      expireSupergroupMemberRestrictionContract,
+      { params: { sessionId: this.id, chatId, userId } },
+    );
     return response.chat_member.status;
   }
 
@@ -853,96 +862,69 @@ function createVirtualAccountClient(
         body: { decision: 'decline' },
       });
     },
-    async promoteChatMember(input: PromoteChatMemberInput): Promise<void> {
-      await requestEmptyResponse(fetchImplementation, {
-        method: 'PUT',
-        url: `${conversationUrl(accountUrl, input.chat)}/administrators/${
-          encodeURIComponent(input.userId)
-        }`,
-        expectedStatus: HTTP_STATUS_NO_CONTENT,
+    promoteChatMember(input: PromoteChatMemberInput): Promise<void> {
+      return callEmptyOperation(transport, promoteSupergroupMemberContract, {
+        params: { ...supergroupParams(input.chat), userId: input.userId },
         body: input.rights,
       });
     },
     async getChatAdministrators(
       input: AccountChatAdministratorsInput,
     ): Promise<readonly SupergroupAdministrator[]> {
-      const response = await requestJson(fetchImplementation, {
-        method: 'GET',
-        url: `${conversationUrl(accountUrl, input.chat)}/administrators`,
-        expectedStatus: HTTP_STATUS_OK,
-        responseSchema: chatAdministratorsResponseSchema,
+      const response = await callJsonOperation(transport, getSupergroupAdministratorsContract, {
+        params: supergroupParams(input.chat),
       });
       return response.administrators;
     },
-    async demoteChatMember(input: DemoteChatMemberInput): Promise<void> {
-      await requestEmptyResponse(fetchImplementation, {
-        method: 'DELETE',
-        url: `${conversationUrl(accountUrl, input.chat)}/administrators/${
-          encodeURIComponent(input.userId)
-        }`,
-        expectedStatus: HTTP_STATUS_NO_CONTENT,
+    demoteChatMember(input: DemoteChatMemberInput): Promise<void> {
+      return callEmptyOperation(transport, demoteSupergroupMemberContract, {
+        params: { ...supergroupParams(input.chat), userId: input.userId },
       });
     },
-    async restrictChatMember(input: RestrictChatMemberInput): Promise<void> {
-      await requestEmptyResponse(fetchImplementation, {
-        method: 'PUT',
-        url: `${conversationUrl(accountUrl, input.chat)}/restrictions/${
-          encodeURIComponent(input.userId)
-        }`,
-        expectedStatus: HTTP_STATUS_NO_CONTENT,
+    restrictChatMember(input: RestrictChatMemberInput): Promise<void> {
+      return callEmptyOperation(transport, restrictSupergroupMemberContract, {
+        params: { ...supergroupParams(input.chat), userId: input.userId },
         body: {
           permissions: input.permissions,
           ...(input.untilDate === undefined ? {} : { until_date: input.untilDate }),
         },
       });
     },
-    async liftChatMemberRestriction(input: LiftChatMemberRestrictionInput): Promise<void> {
-      await requestEmptyResponse(fetchImplementation, {
-        method: 'DELETE',
-        url: `${conversationUrl(accountUrl, input.chat)}/restrictions/${
-          encodeURIComponent(input.userId)
-        }`,
-        expectedStatus: HTTP_STATUS_NO_CONTENT,
+    liftChatMemberRestriction(input: LiftChatMemberRestrictionInput): Promise<void> {
+      return callEmptyOperation(transport, liftSupergroupMemberRestrictionContract, {
+        params: { ...supergroupParams(input.chat), userId: input.userId },
       });
     },
-    async setChatPermissions(input: SetChatPermissionsInput): Promise<void> {
-      await requestEmptyResponse(fetchImplementation, {
-        method: 'PUT',
-        url: `${conversationUrl(accountUrl, input.chat)}/permissions`,
-        expectedStatus: HTTP_STATUS_NO_CONTENT,
+    setChatPermissions(input: SetChatPermissionsInput): Promise<void> {
+      return callEmptyOperation(transport, setSupergroupDefaultPermissionsContract, {
+        params: supergroupParams(input.chat),
         body: { permissions: input.permissions },
       });
     },
-    async setCustomTitle(input: SetCustomTitleInput): Promise<void> {
-      await requestEmptyResponse(fetchImplementation, {
-        method: 'PUT',
-        url: `${conversationUrl(accountUrl, input.chat)}/administrators/${
-          encodeURIComponent(input.userId)
-        }/custom-title`,
-        expectedStatus: HTTP_STATUS_NO_CONTENT,
+    setCustomTitle(input: SetCustomTitleInput): Promise<void> {
+      return callEmptyOperation(transport, setSupergroupCustomTitleContract, {
+        params: { ...supergroupParams(input.chat), userId: input.userId },
         body: { custom_title: input.customTitle },
       });
     },
-    async setContentProtection(input: SetContentProtectionInput): Promise<void> {
-      await requestEmptyResponse(fetchImplementation, {
-        method: input.hasProtectedContent ? 'PUT' : 'DELETE',
-        url: `${conversationUrl(accountUrl, input.chat)}/content-protection`,
-        expectedStatus: HTTP_STATUS_NO_CONTENT,
-      });
+    setContentProtection(input: SetContentProtectionInput): Promise<void> {
+      return callEmptyOperation(
+        transport,
+        input.hasProtectedContent
+          ? protectSupergroupContentContract
+          : unprotectSupergroupContentContract,
+        { params: supergroupParams(input.chat) },
+      );
     },
-    async changeSupergroupTitle(input: ChangeSupergroupTitleInput): Promise<void> {
-      await requestEmptyResponse(fetchImplementation, {
-        method: 'PUT',
-        url: `${conversationUrl(accountUrl, input.chat)}/title`,
-        expectedStatus: HTTP_STATUS_NO_CONTENT,
+    changeSupergroupTitle(input: ChangeSupergroupTitleInput): Promise<void> {
+      return callEmptyOperation(transport, changeSupergroupTitleContract, {
+        params: supergroupParams(input.chat),
         body: { title: input.title },
       });
     },
-    async changeSupergroupDescription(input: ChangeSupergroupDescriptionInput): Promise<void> {
-      await requestEmptyResponse(fetchImplementation, {
-        method: 'PUT',
-        url: `${conversationUrl(accountUrl, input.chat)}/description`,
-        expectedStatus: HTTP_STATUS_NO_CONTENT,
+    changeSupergroupDescription(input: ChangeSupergroupDescriptionInput): Promise<void> {
+      return callEmptyOperation(transport, changeSupergroupDescriptionContract, {
+        params: supergroupParams(input.chat),
         body: { description: input.description },
       });
     },
