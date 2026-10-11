@@ -6,7 +6,7 @@
  */
 import { z } from 'zod';
 
-import { accountPathSchema } from './accounts.ts';
+import { accountPathSchema, messageIdParameterSchema } from './accounts.ts';
 import { controlRefusalSchema, controlValidationErrorSchema } from './control_errors.ts';
 import { defineControlOperation } from './operation_contract.ts';
 import {
@@ -25,6 +25,11 @@ const inviteLinkHashSchema = z.string().regex(/^[A-Za-z0-9_-]{16}$/);
 /** The path parameters of a supergroup as an account addresses it. */
 export const accountSupergroupPathSchema = accountPathSchema.extend({
   chatId: supergroupChatIdSchema,
+});
+
+/** The path parameters of a supergroup message as an account addresses it. */
+export const accountSupergroupMessagePathSchema = accountSupergroupPathSchema.extend({
+  messageId: messageIdParameterSchema,
 });
 
 /** The path parameters of a user of a supergroup, such as a member, as an account addresses it. */

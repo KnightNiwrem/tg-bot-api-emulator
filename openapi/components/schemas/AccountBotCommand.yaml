@@ -7,7 +7,10 @@ required:
 properties:
   command:
     type: string
+    minLength: 1
+    description: The command without its leading slash.
   description:
     type: string
+    minLength: 1
   is_ephemeral:
     type: boolean

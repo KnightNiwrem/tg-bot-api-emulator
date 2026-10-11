@@ -6,9 +6,19 @@ import type { EmulationSession } from '../../../session/emulation_session.ts';
 import { MAX_MEDIA_DURATION_SECONDS, MAX_VIDEO_SIDE_LENGTH } from '../../../types/stored_file.ts';
 import { countTextCharacters, MAX_TEXT_MESSAGE_LENGTH } from '../../../types/virtual_message.ts';
 import {
+  deleteAccountMessageContract,
+  editAccountMessageContract,
+} from '../../contracts/account_messages.ts';
+import { INVALID_REQUEST_REASON } from '../../contracts/control_errors.ts';
+import type {
+  ControlOperationRefusal,
+  DecodedControlRequest,
+} from '../../contracts/operation_contract.ts';
+import {
   controlErrorResponse,
   invalidControlRequestResponse,
 } from '../../control_error_response.ts';
+import { registerControlOperation } from '../../control_operation_route.ts';
 import { answerWithActionReceipt } from '../action_receipt.ts';
 import { base64ContentSchema } from '../base64_content.ts';
 import { readPathParameters } from '../control_request_input.ts';
@@ -17,11 +27,13 @@ import type { SessionRouteContextTypes } from '../session_route_context_types.ts
 import {
   ACCOUNT_ID_PARAMETER,
   accountPathSchema,
-  PRIVATE_MESSAGE_PATH,
-  privateMessagePathSchema,
   SUPERGROUP_MESSAGE_PATH,
   supergroupMessagePathSchema,
 } from './account_paths.ts';
+import {
+  type AccountMessageEntitiesReading,
+  readAccountMessageEntities,
+} from './account_message_entities.ts';
 import { viewChatMessageForAccount } from './chat_message_view.ts';
 import {
   accountMessageFailureStatus,
@@ -33,6 +45,9 @@ import {
   chatSchema,
   messageEntitiesSchema,
 } from './request_fields.ts';
+
+/** Where the account routes are mounted within the server, as a contract path template. */
+const ACCOUNT_COLLECTION_MOUNT_PATH = '/sessions/{sessionId}/accounts';
 
 const ACCOUNT_MESSAGE_COLLECTION_PATH = `/:${ACCOUNT_ID_PARAMETER}/messages` as const;
 const ACCOUNT_MEDIA_GROUP_COLLECTION_PATH = `/:${ACCOUNT_ID_PARAMETER}/media-groups` as const;
@@ -419,56 +434,50 @@ export function createMessageRoutes(): Hono<SessionRouteContextTypes> {
     });
   });
 
-  accountRoutes.patch(PRIVATE_MESSAGE_PATH, async (context) => {
-    const messagePath = readPathParameters(privateMessagePathSchema, context.req.param());
-    if (!messagePath.valid) {
-      return invalidControlRequestResponse(context, messagePath.issues);
-    }
-    const { accountId, botId, messageId } = messagePath.value;
-
-    const requestBodyReading = await readJsonRequestBody(context.req, editMessageRequestSchema);
-    if (!requestBodyReading.valid) {
-      return invalidControlRequestResponse(context, requestBodyReading.issues);
-    }
-    const requestBody = requestBodyReading.value;
-
-    return answerWithActionReceipt(context, ({ messageEditing, botMessageViews }) => {
+  registerControlOperation(
+    accountRoutes,
+    ACCOUNT_COLLECTION_MOUNT_PATH,
+    editAccountMessageContract,
+    ({ params: { accountId, botId, messageId }, body }, context) => {
+      const editReading = readPrivateMessageEdit(body);
+      if (!editReading.read) {
+        return {
+          status: 400,
+          body: { reason: INVALID_REQUEST_REASON, issues: [editReading.issue] },
+        };
+      }
+      const { messageEditing, botMessageViews } = context.get('emulationSession');
       const result = messageEditing.editAccountPrivateChatMessage({
         fromAccountId: accountId,
         chat: { type: 'private', peerId: botId },
         messageId,
-        edit: readAccountMessageEdit(requestBody),
+        edit: editReading.edit,
       });
       if (!result.edited) {
-        return controlErrorResponse(
-          context,
-          privateMessageEditFailureStatus(result.reason),
-          result.reason,
-        );
+        return refusePrivateMessageEdit(result.reason);
       }
-      return context.json({ message: botMessageViews.viewPrivateMessageForBot(result.message) });
-    });
-  });
+      return {
+        status: 200,
+        body: { message: botMessageViews.viewPrivateMessageForBot(result.message) },
+      };
+    },
+  );
 
   // The account deletes the message for both participants, as Telegram's clients can.
-  accountRoutes.delete(PRIVATE_MESSAGE_PATH, (context) => {
-    const messagePath = readPathParameters(privateMessagePathSchema, context.req.param());
-    if (!messagePath.valid) {
-      return invalidControlRequestResponse(context, messagePath.issues);
-    }
-    const { accountId, botId, messageId } = messagePath.value;
-
-    return answerWithActionReceipt(context, ({ messageDeletion }) => {
-      const result = messageDeletion.deleteAccountPrivateChatMessage({
-        fromAccountId: accountId,
-        chat: { type: 'private', peerId: botId },
-        messageId,
-      });
-      return result.deleted
-        ? context.body(null, 204)
-        : controlErrorResponse(context, 404, result.reason);
-    });
-  });
+  registerControlOperation(
+    accountRoutes,
+    ACCOUNT_COLLECTION_MOUNT_PATH,
+    deleteAccountMessageContract,
+    ({ params: { accountId, botId, messageId } }, context) => {
+      const result = context.get('emulationSession').messageDeletion
+        .deleteAccountPrivateChatMessage({
+          fromAccountId: accountId,
+          chat: { type: 'private', peerId: botId },
+          messageId,
+        });
+      return result.deleted ? { status: 204 } : { status: 404, body: { reason: result.reason } };
+    },
+  );
 
   return accountRoutes;
 }
@@ -635,20 +644,54 @@ function readAccountMessageEdit(
     : { kind: 'caption', caption: request.caption, captionEntities: request.caption_entities };
 }
 
+/** An edit of a private message, as the domain reads it, or the issue with its entities. */
+type PrivateMessageEditReading =
+  | { readonly read: true; readonly edit: AccountMessageEdit }
+  | Extract<AccountMessageEntitiesReading, { readonly read: false }>;
+
+/** Reads an edit of a private message from its request, with the entities Telegram reads. */
+function readPrivateMessageEdit(
+  request: DecodedControlRequest<typeof editAccountMessageContract>['body'],
+): PrivateMessageEditReading {
+  if ('text' in request) {
+    const entitiesReading = readAccountMessageEntities(request.entities, ['entities']);
+    return entitiesReading.read
+      ? {
+        read: true,
+        edit: { kind: 'text', text: request.text, entities: entitiesReading.entities },
+      }
+      : entitiesReading;
+  }
+  const captionEntitiesReading = readAccountMessageEntities(
+    request.caption_entities,
+    ['caption_entities'],
+  );
+  return captionEntitiesReading.read
+    ? {
+      read: true,
+      edit: {
+        kind: 'caption',
+        caption: request.caption,
+        captionEntities: captionEntitiesReading.entities,
+      },
+    }
+    : captionEntitiesReading;
+}
+
 /** A missing account, bot, or message is not found; any other failure rejects the edit. */
-function privateMessageEditFailureStatus(
+function refusePrivateMessageEdit(
   reason: Extract<
     ReturnType<EmulationSession['messageEditing']['editAccountPrivateChatMessage']>,
     { readonly edited: false }
   >['reason'],
-): 400 | 404 {
+): ControlOperationRefusal<typeof editAccountMessageContract> {
   switch (reason) {
     case 'account_not_found':
     case 'bot_not_found':
     case 'message_not_found':
-      return 404;
+      return { status: 404, body: { reason } };
     default:
-      return 400;
+      return { status: 400, body: { reason } };
   }
 }
 

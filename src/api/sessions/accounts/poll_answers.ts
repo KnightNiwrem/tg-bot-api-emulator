@@ -2,9 +2,11 @@ import { type Context, Hono } from 'hono';
 import { z } from 'zod';
 
 import {
+  answerAccountPollContract,
+  getAccountPollAnswerContract,
   retractAccountPollAnswerContract,
   retractSupergroupAccountPollAnswerContract,
-} from '../../contracts/polls.ts';
+} from '../../contracts/poll_answers.ts';
 import type { EmulationSession } from '../../../session/emulation_session.ts';
 import {
   controlErrorResponse,
@@ -14,11 +16,10 @@ import { registerControlOperation } from '../../control_operation_route.ts';
 import { answerWithActionReceipt } from '../action_receipt.ts';
 import { readJsonRequestBody } from '../json_request_body.ts';
 import type { SessionRouteContextTypes } from '../session_route_context_types.ts';
-import { PRIVATE_MESSAGE_PATH, SUPERGROUP_MESSAGE_PATH } from './account_paths.ts';
-import { viewChatMessageForAccount } from './chat_message_view.ts';
-import { type AccountPollMessageKey, readPollMessageKey } from './poll_message_key.ts';
+import { SUPERGROUP_MESSAGE_PATH } from './account_paths.ts';
+import { viewChatMessageForAccount, viewPrivateChatMessageForBot } from './chat_message_view.ts';
+import { readSupergroupPollMessageKey } from './poll_message_key.ts';
 
-const PRIVATE_MESSAGE_POLL_ANSWER_PATH = `${PRIVATE_MESSAGE_PATH}/poll-answer` as const;
 const SUPERGROUP_MESSAGE_POLL_ANSWER_PATH = `${SUPERGROUP_MESSAGE_PATH}/poll-answer` as const;
 
 /** Where the account routes are mounted within the server, as a contract path template. */
@@ -32,6 +33,8 @@ const setPollAnswerRequestSchema = z.strictObject({
   option_ids: z.array(z.int().nonnegative()).min(1),
 });
 
+type Polls = EmulationSession['polls'];
+
 /**
  * Routes through which an account reads, sets and retracts its answer to the poll of a message in
  * its private chat with a bot or in a supergroup.
@@ -39,49 +42,101 @@ const setPollAnswerRequestSchema = z.strictObject({
 export function createPollAnswerRoutes(): Hono<SessionRouteContextTypes> {
   const accountRoutes = new Hono<SessionRouteContextTypes>();
 
-  for (
-    const [pollAnswerPath, chatType] of [
-      [PRIVATE_MESSAGE_POLL_ANSWER_PATH, 'private'],
-      [SUPERGROUP_MESSAGE_POLL_ANSWER_PATH, 'supergroup'],
-    ] as const
-  ) {
-    accountRoutes.get(pollAnswerPath, (context) => {
-      const pollMessageReading = readPollMessageKey(context.req.param(), chatType);
-      if (!pollMessageReading.valid) {
-        return invalidControlRequestResponse(context, pollMessageReading.issues);
-      }
-      const pollMessage = pollMessageReading.value;
+  registerControlOperation(
+    accountRoutes,
+    ACCOUNT_COLLECTION_MOUNT_PATH,
+    getAccountPollAnswerContract,
+    ({ params: { accountId, botId, messageId } }, context) => {
       const { polls, botMessageViews } = context.get('emulationSession');
-      const result = polls.getAccountPollAnswer(pollMessage);
+      const result = polls.getAccountPollAnswer({
+        accountId,
+        chat: { type: 'private', botId },
+        messageId,
+      });
       if (!result.found) {
+        // Only a supergroup has members; a private chat never refuses an account as one.
+        if (result.reason === 'not_a_member') {
+          throw new Error(`A private chat refused a poll answer's lookup as ${result.reason}`);
+        }
+        return { status: 404, body: { reason: result.reason } };
+      }
+      return {
+        status: 200,
+        body: {
+          poll_answer: presentPollAnswer(result),
+          message: viewPrivateChatMessageForBot(botMessageViews, result.message),
+        },
+      };
+    },
+  );
+
+  registerControlOperation(
+    accountRoutes,
+    ACCOUNT_COLLECTION_MOUNT_PATH,
+    answerAccountPollContract,
+    ({ params: { accountId, botId, messageId }, body: { option_ids } }, context) => {
+      const { polls, botMessageViews } = context.get('emulationSession');
+      const result = polls.setAccountPollAnswer({
+        accountId,
+        chat: { type: 'private', botId },
+        messageId,
+        optionPositions: option_ids,
+      });
+      if (!result.answered) {
+        return refusePrivatePollAnswer(result.reason);
+      }
+      return {
+        status: 200,
+        body: {
+          poll_answer: presentPollAnswer(result),
+          message: viewPrivateChatMessageForBot(botMessageViews, result.message),
+        },
+      };
+    },
+  );
+
+  accountRoutes.get(SUPERGROUP_MESSAGE_POLL_ANSWER_PATH, (context) => {
+    const pollMessageReading = readSupergroupPollMessageKey(context.req.param());
+    if (!pollMessageReading.valid) {
+      return invalidControlRequestResponse(context, pollMessageReading.issues);
+    }
+    const pollMessage = pollMessageReading.value;
+    const { polls, botMessageViews } = context.get('emulationSession');
+    const result = polls.getAccountPollAnswer(pollMessage);
+    if (!result.found) {
+      return pollAnswerRefusalResponse(context, result.reason);
+    }
+    return context.json({
+      poll_answer: presentPollAnswer(result),
+      message: viewChatMessageForAccount(botMessageViews, result.message, pollMessage.accountId),
+    });
+  });
+
+  accountRoutes.put(SUPERGROUP_MESSAGE_POLL_ANSWER_PATH, async (context) => {
+    const pollMessageReading = readSupergroupPollMessageKey(context.req.param());
+    if (!pollMessageReading.valid) {
+      return invalidControlRequestResponse(context, pollMessageReading.issues);
+    }
+    const pollMessage = pollMessageReading.value;
+    const requestBodyReading = await readJsonRequestBody(context.req, setPollAnswerRequestSchema);
+    if (!requestBodyReading.valid) {
+      return invalidControlRequestResponse(context, requestBodyReading.issues);
+    }
+    const requestBody = requestBodyReading.value;
+    return answerWithActionReceipt(context, ({ polls, botMessageViews }) => {
+      const result = polls.setAccountPollAnswer({
+        ...pollMessage,
+        optionPositions: requestBody.option_ids,
+      });
+      if (!result.answered) {
         return pollAnswerRefusalResponse(context, result.reason);
       }
-      return context.json(presentPollAnswerForAccount(botMessageViews, result, pollMessage));
-    });
-
-    accountRoutes.put(pollAnswerPath, async (context) => {
-      const pollMessageReading = readPollMessageKey(context.req.param(), chatType);
-      if (!pollMessageReading.valid) {
-        return invalidControlRequestResponse(context, pollMessageReading.issues);
-      }
-      const pollMessage = pollMessageReading.value;
-      const requestBodyReading = await readJsonRequestBody(context.req, setPollAnswerRequestSchema);
-      if (!requestBodyReading.valid) {
-        return invalidControlRequestResponse(context, requestBodyReading.issues);
-      }
-      const requestBody = requestBodyReading.value;
-      return answerWithActionReceipt(context, ({ polls, botMessageViews }) => {
-        const result = polls.setAccountPollAnswer({
-          ...pollMessage,
-          optionPositions: requestBody.option_ids,
-        });
-        if (!result.answered) {
-          return pollAnswerRefusalResponse(context, result.reason);
-        }
-        return context.json(presentPollAnswerForAccount(botMessageViews, result, pollMessage));
+      return context.json({
+        poll_answer: presentPollAnswer(result),
+        message: viewChatMessageForAccount(botMessageViews, result.message, pollMessage.accountId),
       });
     });
-  }
+  });
 
   // Retracting chooses no options, as TDLib's `setPollAnswer` does with none.
   registerControlOperation(
@@ -95,15 +150,7 @@ export function createPollAnswerRoutes(): Hono<SessionRouteContextTypes> {
         messageId,
         optionPositions: [],
       });
-      if (result.answered) {
-        return { status: 204 };
-      }
-      const refusal = refusePollAnswer(result.reason);
-      // Only a supergroup has members; a private chat never refuses an answer as `not_a_member`.
-      if (refusal.status === 403) {
-        throw new Error(`A private chat refused a poll answer as ${refusal.body.reason}`);
-      }
-      return refusal;
+      return result.answered ? { status: 204 } : refusePrivatePollAnswer(result.reason);
     },
   );
 
@@ -130,38 +177,27 @@ export function createPollAnswerRoutes(): Hono<SessionRouteContextTypes> {
 
 /** A poll an account found, with its own answer. */
 type AccountPollAnswer = Omit<
-  Extract<
-    ReturnType<EmulationSession['polls']['getAccountPollAnswer']>,
-    { readonly found: true }
-  >,
+  Extract<ReturnType<Polls['getAccountPollAnswer']>, { readonly found: true }>,
   'found'
 >;
 
 /**
- * Shows an account's answer to a poll, with the message showing the poll as these routes show
- * messages. Options are identified by position, as `option_ids` of the Bot API's `PollAnswer`
- * numbers them, and by their persistent identifiers.
+ * Shows an account's answer to a poll. Options are identified by position, as `option_ids` of the
+ * Bot API's `PollAnswer` numbers them, and by their persistent identifiers.
  */
-function presentPollAnswerForAccount(
-  botMessageViews: EmulationSession['botMessageViews'],
-  { poll, message, chosenOptionPositions }: AccountPollAnswer,
-  { accountId }: AccountPollMessageKey,
-) {
+function presentPollAnswer({ poll, chosenOptionPositions }: AccountPollAnswer) {
   return {
-    poll_answer: {
-      poll_id: poll.id,
-      option_ids: chosenOptionPositions,
-      option_persistent_ids: chosenOptionPositions.map((optionPosition) =>
-        poll.options[optionPosition].persistentId
-      ),
-    },
-    message: viewChatMessageForAccount(botMessageViews, message, accountId),
+    poll_id: poll.id,
+    option_ids: [...chosenOptionPositions],
+    option_persistent_ids: chosenOptionPositions.map((optionPosition) =>
+      poll.options[optionPosition].persistentId
+    ),
   };
 }
 
 /** Why an account's poll answer was refused. */
 type PollAnswerFailureReason = Extract<
-  ReturnType<EmulationSession['polls']['setAccountPollAnswer']>,
+  ReturnType<Polls['setAccountPollAnswer']>,
   { readonly answered: false }
 >['reason'];
 
@@ -221,6 +257,22 @@ function refusePollAnswer(reason: PollAnswerFailureReason): PollAnswerRefusal {
       throw new Error(`Unhandled poll answer failure: ${unhandledReason}`);
     }
   }
+}
+
+/**
+ * Refuses a poll answer in a private chat as `refusePollAnswer` does.
+ *
+ * @throws {Error} for an account that is not a member, which only a supergroup can refuse.
+ */
+function refusePrivatePollAnswer(
+  reason: PollAnswerFailureReason,
+): Exclude<PollAnswerRefusal, { readonly status: 403 }> {
+  const refusal = refusePollAnswer(reason);
+  // Only a supergroup has members; a private chat never refuses an answer as `not_a_member`.
+  if (refusal.status === 403) {
+    throw new Error(`A private chat refused a poll answer as ${refusal.body.reason}`);
+  }
+  return refusal;
 }
 
 /** Answers a refused poll answer of a route that is not registered from a contract. */

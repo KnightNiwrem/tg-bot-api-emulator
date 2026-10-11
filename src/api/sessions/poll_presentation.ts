@@ -1,12 +1,8 @@
-import type { BotApiMessageEntity } from '../../types/bot_api.ts';
 import type { BotApiPoll, BotApiPollOption } from '../../types/bot_api_poll.ts';
 
 /**
  * Presents a poll as the Bot API shows it, in the poll's field order, with its lists as the plain
  * arrays the control contracts' wire types describe.
- *
- * @throws {Error} when the question or an option holds an entity other than a custom emoji, which
- * Telegram never keeps there.
  */
 export function presentPoll(poll: BotApiPoll) {
   return {
@@ -14,7 +10,7 @@ export function presentPoll(poll: BotApiPoll) {
     question: poll.question,
     ...(poll.question_entities === undefined
       ? {}
-      : { question_entities: poll.question_entities.map(toCustomEmojiEntity) }),
+      : { question_entities: [...poll.question_entities] }),
     options: poll.options.map(presentPollOption),
     total_voter_count: poll.total_voter_count,
     ...(poll.open_period === undefined ? {} : { open_period: poll.open_period }),
@@ -40,16 +36,7 @@ function presentPollOption(option: BotApiPollOption) {
   return {
     persistent_id: option.persistent_id,
     text: option.text,
-    ...(option.text_entities === undefined
-      ? {}
-      : { text_entities: option.text_entities.map(toCustomEmojiEntity) }),
+    ...(option.text_entities === undefined ? {} : { text_entities: [...option.text_entities] }),
     voter_count: option.voter_count,
   };
-}
-
-function toCustomEmojiEntity(entity: BotApiMessageEntity) {
-  if (entity.type !== 'custom_emoji') {
-    throw new Error(`A poll text holds a ${entity.type} entity, which only a custom emoji can be`);
-  }
-  return entity;
 }

@@ -4,11 +4,17 @@ import type { VirtualAccountProfile } from './virtual_account.ts';
 // The Bot API's `Poll`, the types it holds, and `PollAnswer`, in the field order of the official
 // Bot API server's `JsonPoll`, `JsonPollOption`, and `JsonPollAnswer`.
 
+/** A custom emoji, the only entity Telegram keeps in a poll's question and options. */
+export type BotApiCustomEmojiEntity = Extract<
+  BotApiMessageEntity,
+  { readonly type: 'custom_emoji' }
+>;
+
 export interface BotApiPollOption {
   readonly persistent_id: string;
   readonly text: string;
   /** Omitted when the text has no entities, which can only be custom emoji. */
-  readonly text_entities?: readonly BotApiMessageEntity[];
+  readonly text_entities?: readonly BotApiCustomEmojiEntity[];
   readonly voter_count: number;
 }
 
@@ -20,7 +26,7 @@ export interface BotApiPoll {
   readonly id: string;
   readonly question: string;
   /** Omitted when the question has no entities, which can only be custom emoji. */
-  readonly question_entities?: readonly BotApiMessageEntity[];
+  readonly question_entities?: readonly BotApiCustomEmojiEntity[];
   readonly options: readonly BotApiPollOption[];
   readonly total_voter_count: number;
   /** Present, with `close_date`, only for an open poll that closes by itself. */

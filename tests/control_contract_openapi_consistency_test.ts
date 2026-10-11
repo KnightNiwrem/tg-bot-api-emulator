@@ -55,11 +55,34 @@ import {
   setWebhookDeliveryContract,
 } from '../src/api/contracts/webhook_attempts.ts';
 import { registerWebResourceContract } from '../src/api/contracts/web_resources.ts';
+import { expirePollContract } from '../src/api/contracts/polls.ts';
 import {
-  expirePollContract,
+  answerAccountPollContract,
+  getAccountPollAnswerContract,
   retractAccountPollAnswerContract,
   retractSupergroupAccountPollAnswerContract,
-} from '../src/api/contracts/polls.ts';
+  stopAccountPollContract,
+} from '../src/api/contracts/poll_answers.ts';
+import {
+  deleteAccountMessageContract,
+  editAccountMessageContract,
+  getPrivateMessageHistoryContract,
+} from '../src/api/contracts/account_messages.ts';
+import {
+  getPrivatePinnedMessagesContract,
+  pinPrivateMessageContract,
+  unpinPrivateMessageContract,
+} from '../src/api/contracts/pinned_messages.ts';
+import {
+  expirePrivateChatActionContract,
+  getPrivateChatActionsContract,
+} from '../src/api/contracts/chat_actions.ts';
+import {
+  getPrivateChatBotCommandsContract,
+  getPrivateChatMenuButtonContract,
+  getPrivateChatNotificationsContract,
+  getPrivateChatReplyInterfaceContract,
+} from '../src/api/contracts/conversation_reads.ts';
 import {
   expireInlineAnswerCacheContract,
   getInlineQueryContract,
@@ -136,6 +159,21 @@ const CONTROL_OPERATION_CONTRACTS: readonly ControlOperationContract[] = [
   getPrivateMessageDraftContract,
   expirePrivateMessageDraftContract,
   stopPrivateMessageDraftContract,
+  getPrivateMessageHistoryContract,
+  editAccountMessageContract,
+  deleteAccountMessageContract,
+  getPrivatePinnedMessagesContract,
+  pinPrivateMessageContract,
+  unpinPrivateMessageContract,
+  getPrivateChatActionsContract,
+  expirePrivateChatActionContract,
+  getPrivateChatBotCommandsContract,
+  getPrivateChatMenuButtonContract,
+  getPrivateChatNotificationsContract,
+  getPrivateChatReplyInterfaceContract,
+  getAccountPollAnswerContract,
+  answerAccountPollContract,
+  stopAccountPollContract,
 ];
 
 const document = readOpenApiDocument();

@@ -1,5 +1,10 @@
 import type { z } from 'zod';
 
+import {
+  deleteAccountMessageContract,
+  editAccountMessageContract,
+  getPrivateMessageHistoryContract,
+} from '../../src/api/contracts/account_messages.ts';
 import { createAccountContract } from '../../src/api/contracts/accounts.ts';
 import { blockBotContract, unblockBotContract } from '../../src/api/contracts/blocked_bots.ts';
 import { createBotContract } from '../../src/api/contracts/bots.ts';
@@ -7,6 +12,19 @@ import {
   getCallbackQueryContract,
   pressCallbackButtonContract,
 } from '../../src/api/contracts/callback_queries.ts';
+import {
+  chatActionsResponseSchema,
+  expirePrivateChatActionContract,
+  getPrivateChatActionsContract,
+} from '../../src/api/contracts/chat_actions.ts';
+import {
+  getPrivateChatBotCommandsContract,
+  getPrivateChatMenuButtonContract,
+  getPrivateChatNotificationsContract,
+  getPrivateChatReplyInterfaceContract,
+  notificationsResponseSchema,
+  replyInterfaceResponseSchema,
+} from '../../src/api/contracts/conversation_reads.ts';
 import { downloadFileContract } from '../../src/api/contracts/files.ts';
 import {
   expireInlineAnswerCacheContract,
@@ -24,11 +42,20 @@ import {
   getPrivateMessageDraftContract,
   stopPrivateMessageDraftContract,
 } from '../../src/api/contracts/message_drafts.ts';
+import type { ControlOperationRequest } from '../../src/api/contracts/operation_contract.ts';
 import {
-  expirePollContract,
+  getPrivatePinnedMessagesContract,
+  pinPrivateMessageContract,
+  unpinPrivateMessageContract,
+} from '../../src/api/contracts/pinned_messages.ts';
+import {
+  answerAccountPollContract,
+  getAccountPollAnswerContract,
   retractAccountPollAnswerContract,
   retractSupergroupAccountPollAnswerContract,
-} from '../../src/api/contracts/polls.ts';
+  stopAccountPollContract,
+} from '../../src/api/contracts/poll_answers.ts';
+import { expirePollContract } from '../../src/api/contracts/polls.ts';
 import { deleteSessionContract } from '../../src/api/contracts/sessions.ts';
 import {
   changeSupergroupDescriptionContract,
@@ -76,16 +103,9 @@ import {
 } from './control_operation_caller.ts';
 import { ButtonSelectionError, findButton } from './message_buttons.ts';
 import {
-  botCommandsResponseSchema,
-  chatActionsResponseSchema,
   chosenInlineResultResponseSchema,
   getMeResponseSchema,
-  menuButtonResponseSchema,
-  messageHistoryResponseSchema,
   messageReactionsResponseSchema,
-  notificationsResponseSchema,
-  pollAnswerResponseSchema,
-  replyInterfaceResponseSchema,
   sentMediaGroupResponseSchema,
   sentMessageResponseSchema,
   sentSupergroupMediaGroupResponseSchema,
@@ -163,6 +183,7 @@ import type {
   LiftChatMemberRestrictionInput,
   MenuButton,
   MessageDraft,
+  MessageEntityInput,
   MessageIn,
   MessageReactions,
   MessageTarget,
@@ -172,6 +193,7 @@ import type {
   PressCallbackButtonInput,
   PressReplyKeyboardButtonInput,
   PrivateMessage,
+  PrivateMessageTarget,
   PromoteChatMemberInput,
   QueueRateLimitResponsesInput,
   QueueServerErrorResponsesInput,
@@ -541,17 +563,135 @@ function createVirtualAccountClient(
   fetchImplementation: typeof globalThis.fetch,
 ): VirtualAccountClient {
   const accountParams = { sessionId, accountId: profile.id };
+  const privateChatParams = ({ botId }: PrivateMessageTarget) => ({ ...accountParams, botId });
   const supergroupParams = ({ chatId }: SupergroupMessageTarget) => ({ ...accountParams, chatId });
-  async function getMessages<Target extends MessageTarget>(
+
+  function privateChatMessageOperations(
+    chat: PrivateMessageTarget,
+  ): ChatMessageOperations<PrivateMessageTarget> {
+    const params = privateChatParams(chat);
+    return {
+      async readMessages() {
+        const response = await callJsonOperation(transport, getPrivateMessageHistoryContract, {
+          params,
+        });
+        return response.messages;
+      },
+      async readPinnedMessages() {
+        const response = await callJsonOperation(transport, getPrivatePinnedMessagesContract, {
+          params,
+        });
+        return response.messages;
+      },
+      async editMessage(messageId, body) {
+        const edit = await callJsonAction(transport, editAccountMessageContract, {
+          params: { ...params, messageId },
+          body,
+        });
+        return selectResult(edit, ({ message }) => message);
+      },
+      readPollAnswer(messageId) {
+        return callJsonOperation(transport, getAccountPollAnswerContract, {
+          params: { ...params, messageId },
+        });
+      },
+      answerPoll(messageId, optionIds) {
+        return callJsonAction(transport, answerAccountPollContract, {
+          params: { ...params, messageId },
+          body: { option_ids: [...optionIds] },
+        });
+      },
+      async stopPoll(messageId) {
+        const closure = await callJsonAction(transport, stopAccountPollContract, {
+          params: { ...params, messageId },
+        });
+        return selectResult(closure, ({ message }) => message);
+      },
+    };
+  }
+
+  function supergroupMessageOperations(
+    chat: SupergroupMessageTarget,
+  ): ChatMessageOperations<SupergroupMessageTarget> {
+    const chatUrl = conversationUrl(accountUrl, chat);
+    const messageUrl = (messageId: number) =>
+      `${chatUrl}/messages/${encodeURIComponent(messageId)}`;
+    return {
+      async readMessages() {
+        const response = await requestJson(fetchImplementation, {
+          method: 'GET',
+          url: `${chatUrl}/messages`,
+          expectedStatus: HTTP_STATUS_OK,
+          responseSchema: supergroupMessageHistoryResponseSchema,
+        });
+        return response.messages;
+      },
+      async readPinnedMessages() {
+        const response = await requestJson(fetchImplementation, {
+          method: 'GET',
+          url: `${chatUrl}/pinned-messages`,
+          expectedStatus: HTTP_STATUS_OK,
+          responseSchema: supergroupMessageHistoryResponseSchema,
+        });
+        return response.messages;
+      },
+      async editMessage(messageId, body) {
+        const edit = await requestJsonAction(fetchImplementation, {
+          method: 'PATCH',
+          url: messageUrl(messageId),
+          expectedStatus: HTTP_STATUS_OK,
+          responseSchema: sentSupergroupMessageResponseSchema,
+          body,
+        });
+        return selectResult(edit, ({ message }) => message);
+      },
+      readPollAnswer(messageId) {
+        return requestJson(fetchImplementation, {
+          method: 'GET',
+          url: `${messageUrl(messageId)}/poll-answer`,
+          expectedStatus: HTTP_STATUS_OK,
+          responseSchema: supergroupPollAnswerResponseSchema,
+        });
+      },
+      answerPoll(messageId, optionIds) {
+        return requestJsonAction(fetchImplementation, {
+          method: 'PUT',
+          url: `${messageUrl(messageId)}/poll-answer`,
+          expectedStatus: HTTP_STATUS_OK,
+          responseSchema: supergroupPollAnswerResponseSchema,
+          body: { option_ids: optionIds },
+        });
+      },
+      async stopPoll(messageId) {
+        const closure = await requestJsonAction(fetchImplementation, {
+          method: 'POST',
+          url: `${messageUrl(messageId)}/poll-closure`,
+          expectedStatus: HTTP_STATUS_OK,
+          responseSchema: sentSupergroupMessageResponseSchema,
+        });
+        return selectResult(closure, ({ message }) => message);
+      },
+    };
+  }
+
+  /**
+   * The operations on the messages of a chat of the account, for the chat's type. TypeScript
+   * cannot relate the checked chat type to the generic target, so the result is asserted; each
+   * operation validates its response at run time as the messages of exactly that chat type.
+   */
+  function chatMessageOperationsFor<Target extends MessageTarget>(
+    chat: Target,
+  ): ChatMessageOperations<Target> {
+    const operations: ChatMessageOperations<MessageTarget> = chat.type === 'private'
+      ? privateChatMessageOperations(chat)
+      : supergroupMessageOperations(chat);
+    return operations as ChatMessageOperations<Target>;
+  }
+
+  function getMessages<Target extends MessageTarget>(
     input: AccountMessageHistoryInput<Target>,
   ): Promise<readonly MessageIn<Target>[]> {
-    const response = await requestJson(fetchImplementation, {
-      method: 'GET',
-      url: `${conversationUrl(accountUrl, input.chat)}/messages`,
-      expectedStatus: HTTP_STATUS_OK,
-      responseSchema: messageResponseSchemasFor(input.chat).history,
-    });
-    return response.messages;
+    return chatMessageOperationsFor(input.chat).readMessages();
   }
 
   async function pressCallbackButton(
@@ -778,37 +918,33 @@ function createVirtualAccountClient(
       });
       return selectResult(sending, ({ message }) => message);
     },
-    async editMessage<Target extends MessageTarget>(
+    editMessage<Target extends MessageTarget>(
       input: AccountEditMessageInput<Target>,
     ): Promise<ActionOutcome<MessageIn<Target>>> {
-      const messageId = encodeURIComponent(input.message_id);
-      const edit = await requestJsonAction(fetchImplementation, {
-        method: 'PATCH',
-        url: `${conversationUrl(accountUrl, input.chat)}/messages/${messageId}`,
-        expectedStatus: HTTP_STATUS_OK,
-        responseSchema: messageResponseSchemasFor(input.chat).sent,
-        body: { text: input.text, entities: input.entities },
+      return chatMessageOperationsFor(input.chat).editMessage(input.message_id, {
+        text: input.text,
+        entities: copyEntities(input.entities),
       });
-      return selectResult(edit, ({ message }) => message);
     },
-    async editMessageCaption<Target extends MessageTarget>(
+    editMessageCaption<Target extends MessageTarget>(
       input: AccountEditMessageCaptionInput<Target>,
     ): Promise<ActionOutcome<MessageIn<Target>>> {
-      const messageId = encodeURIComponent(input.message_id);
-      const edit = await requestJsonAction(fetchImplementation, {
-        method: 'PATCH',
-        url: `${conversationUrl(accountUrl, input.chat)}/messages/${messageId}`,
-        expectedStatus: HTTP_STATUS_OK,
-        responseSchema: messageResponseSchemasFor(input.chat).sent,
-        body: { caption: input.caption, caption_entities: input.caption_entities },
+      return chatMessageOperationsFor(input.chat).editMessage(input.message_id, {
+        caption: input.caption,
+        caption_entities: copyEntities(input.caption_entities),
       });
-      return selectResult(edit, ({ message }) => message);
     },
-    deleteMessage(input: AccountDeleteMessageInput): Promise<ActionReceipt> {
-      const messageId = encodeURIComponent(input.message_id);
+    deleteMessage(
+      { chat, message_id: messageId }: AccountDeleteMessageInput,
+    ): Promise<ActionReceipt> {
+      if (chat.type === 'private') {
+        return callEmptyAction(transport, deleteAccountMessageContract, {
+          params: { ...privateChatParams(chat), messageId },
+        });
+      }
       return requestEmptyAction(fetchImplementation, {
         method: 'DELETE',
-        url: `${conversationUrl(accountUrl, input.chat)}/messages/${messageId}`,
+        url: `${conversationUrl(accountUrl, chat)}/messages/${encodeURIComponent(messageId)}`,
         expectedStatus: HTTP_STATUS_NO_CONTENT,
       });
     },
@@ -950,44 +1086,69 @@ function createVirtualAccountClient(
       });
     },
     getMessages,
-    pinMessage(input: AccountPinMessageInput): Promise<ActionReceipt> {
+    pinMessage({ chat, message_id: messageId }: AccountPinMessageInput): Promise<ActionReceipt> {
+      if (chat.type === 'private') {
+        return callEmptyAction(transport, pinPrivateMessageContract, {
+          params: { ...privateChatParams(chat), messageId },
+        });
+      }
       return requestEmptyAction(fetchImplementation, {
         method: 'PUT',
-        url: pinnedMessageUrl(accountUrl, input),
+        url: pinnedMessageUrl(accountUrl, chat, messageId),
         expectedStatus: HTTP_STATUS_NO_CONTENT,
       });
     },
-    unpinMessage(input: AccountPinMessageInput): Promise<ActionReceipt> {
+    unpinMessage({ chat, message_id: messageId }: AccountPinMessageInput): Promise<ActionReceipt> {
+      if (chat.type === 'private') {
+        return callEmptyAction(transport, unpinPrivateMessageContract, {
+          params: { ...privateChatParams(chat), messageId },
+        });
+      }
       return requestEmptyAction(fetchImplementation, {
         method: 'DELETE',
-        url: pinnedMessageUrl(accountUrl, input),
+        url: pinnedMessageUrl(accountUrl, chat, messageId),
         expectedStatus: HTTP_STATUS_NO_CONTENT,
       });
     },
-    async getPinnedMessages<Target extends MessageTarget>(
+    getPinnedMessages<Target extends MessageTarget>(
       input: AccountPinnedMessagesInput<Target>,
     ): Promise<readonly MessageIn<Target>[]> {
-      const response = await requestJson(fetchImplementation, {
-        method: 'GET',
-        url: `${conversationUrl(accountUrl, input.chat)}/pinned-messages`,
-        expectedStatus: HTTP_STATUS_OK,
-        responseSchema: messageResponseSchemasFor(input.chat).history,
-      });
-      return response.messages;
+      return chatMessageOperationsFor(input.chat).readPinnedMessages();
     },
-    async getChatActions(input: AccountChatActionsInput): Promise<readonly ChatAction[]> {
-      const response = await requestJson(fetchImplementation, {
-        method: 'GET',
-        url: `${conversationUrl(accountUrl, input.chat)}/chat-actions`,
-        expectedStatus: HTTP_STATUS_OK,
-        responseSchema: chatActionsResponseSchema,
-      });
+    async getChatActions({ chat }: AccountChatActionsInput): Promise<readonly ChatAction[]> {
+      const response = chat.type === 'private'
+        ? await callJsonOperation(transport, getPrivateChatActionsContract, {
+          params: privateChatParams(chat),
+        })
+        : await requestJson(fetchImplementation, {
+          method: 'GET',
+          url: `${conversationUrl(accountUrl, chat)}/chat-actions`,
+          expectedStatus: HTTP_STATUS_OK,
+          responseSchema: chatActionsResponseSchema,
+        });
       return response.chat_actions;
     },
     expireChatAction(input: ExpireChatActionInput): Promise<ActionReceipt> {
+      if (input.chat.type === 'private') {
+        if (input.botId !== undefined) {
+          throw new TypeError(
+            'expireChatAction takes no botId for a private chat, which names its bot',
+          );
+        }
+        return callEmptyAction(transport, expirePrivateChatActionContract, {
+          params: privateChatParams(input.chat),
+        });
+      }
+      if (input.botId === undefined) {
+        throw new TypeError(
+          'expireChatAction needs the botId whose supergroup chat action expires',
+        );
+      }
       return requestEmptyAction(fetchImplementation, {
         method: 'POST',
-        url: chatActionExpiryUrl(accountUrl, input),
+        url: `${conversationUrl(accountUrl, input.chat)}/chat-actions/${
+          encodeURIComponent(input.botId)
+        }/expiry`,
         expectedStatus: HTTP_STATUS_NO_CONTENT,
       });
     },
@@ -1009,13 +1170,17 @@ function createVirtualAccountClient(
         body,
       });
     },
-    async getNotifications(input: AccountNotificationsInput): Promise<readonly Notification[]> {
-      const response = await requestJson(fetchImplementation, {
-        method: 'GET',
-        url: `${conversationUrl(accountUrl, input.chat)}/notifications`,
-        expectedStatus: HTTP_STATUS_OK,
-        responseSchema: notificationsResponseSchema,
-      });
+    async getNotifications({ chat }: AccountNotificationsInput): Promise<readonly Notification[]> {
+      const response = chat.type === 'private'
+        ? await callJsonOperation(transport, getPrivateChatNotificationsContract, {
+          params: privateChatParams(chat),
+        })
+        : await requestJson(fetchImplementation, {
+          method: 'GET',
+          url: `${conversationUrl(accountUrl, chat)}/notifications`,
+          expectedStatus: HTTP_STATUS_OK,
+          responseSchema: notificationsResponseSchema,
+        });
       return response.notifications;
     },
     pressCallbackButton,
@@ -1056,23 +1221,12 @@ function createVirtualAccountClient(
     answerPoll<Target extends MessageTarget>(
       { chat, message_id, option_ids }: AnswerPollInput<Target>,
     ): Promise<ActionOutcome<AccountPollAnswer<Target>>> {
-      return requestJsonAction(fetchImplementation, {
-        method: 'PUT',
-        url: pollAnswerUrl(accountUrl, { chat, message_id }),
-        expectedStatus: HTTP_STATUS_OK,
-        responseSchema: messageResponseSchemasFor(chat).pollAnswer,
-        body: { option_ids },
-      });
+      return chatMessageOperationsFor(chat).answerPoll(message_id, option_ids);
     },
     getPollAnswer<Target extends MessageTarget>(
       input: AccountPollMessageInput<Target>,
     ): Promise<AccountPollAnswer<Target>> {
-      return requestJson(fetchImplementation, {
-        method: 'GET',
-        url: pollAnswerUrl(accountUrl, input),
-        expectedStatus: HTTP_STATUS_OK,
-        responseSchema: messageResponseSchemasFor(input.chat).pollAnswer,
-      });
+      return chatMessageOperationsFor(input.chat).readPollAnswer(input.message_id);
     },
     retractPollAnswer(
       { chat, message_id: messageId }: AccountPollMessageInput,
@@ -1085,16 +1239,10 @@ function createVirtualAccountClient(
           params: { ...supergroupParams(chat), messageId },
         });
     },
-    async stopPoll<Target extends MessageTarget>(
+    stopPoll<Target extends MessageTarget>(
       input: AccountPollMessageInput<Target>,
     ): Promise<ActionOutcome<MessageIn<Target>>> {
-      const closure = await requestJsonAction(fetchImplementation, {
-        method: 'POST',
-        url: `${pollMessageUrl(accountUrl, input)}/poll-closure`,
-        expectedStatus: HTTP_STATUS_OK,
-        responseSchema: messageResponseSchemasFor(input.chat).sent,
-      });
-      return selectResult(closure, ({ message }) => message);
+      return chatMessageOperationsFor(input.chat).stopPoll(input.message_id);
     },
     setMessageReaction(
       { chat, message_id, reaction }: SetMessageReactionInput,
@@ -1148,23 +1296,15 @@ function createVirtualAccountClient(
       });
       return selectResult(choice, ({ message }) => message);
     },
-    async getBotCommands(input: AccountBotCommandsInput): Promise<readonly BotCommand[]> {
-      const botId = encodeURIComponent(input.chat.botId);
-      const response = await requestJson(fetchImplementation, {
-        method: 'GET',
-        url: `${accountUrl}/conversations/private/${botId}/commands`,
-        expectedStatus: HTTP_STATUS_OK,
-        responseSchema: botCommandsResponseSchema,
+    async getBotCommands({ chat }: AccountBotCommandsInput): Promise<readonly BotCommand[]> {
+      const response = await callJsonOperation(transport, getPrivateChatBotCommandsContract, {
+        params: privateChatParams(chat),
       });
       return response.commands;
     },
-    async getMenuButton(input: AccountMenuButtonInput): Promise<MenuButton> {
-      const botId = encodeURIComponent(input.chat.botId);
-      const response = await requestJson(fetchImplementation, {
-        method: 'GET',
-        url: `${accountUrl}/conversations/private/${botId}/menu-button`,
-        expectedStatus: HTTP_STATUS_OK,
-        responseSchema: menuButtonResponseSchema,
+    async getMenuButton({ chat }: AccountMenuButtonInput): Promise<MenuButton> {
+      const response = await callJsonOperation(transport, getPrivateChatMenuButtonContract, {
+        params: privateChatParams(chat),
       });
       return response.menu_button;
     },
@@ -1180,13 +1320,17 @@ function createVirtualAccountClient(
       });
       return response.bot_commands;
     },
-    async getReplyInterface(input: AccountReplyInterfaceInput): Promise<ReplyInterface | null> {
-      const response = await requestJson(fetchImplementation, {
-        method: 'GET',
-        url: `${conversationUrl(accountUrl, input.chat)}/reply-interface`,
-        expectedStatus: HTTP_STATUS_OK,
-        responseSchema: replyInterfaceResponseSchema,
-      });
+    async getReplyInterface({ chat }: AccountReplyInterfaceInput): Promise<ReplyInterface | null> {
+      const response = chat.type === 'private'
+        ? await callJsonOperation(transport, getPrivateChatReplyInterfaceContract, {
+          params: privateChatParams(chat),
+        })
+        : await requestJson(fetchImplementation, {
+          method: 'GET',
+          url: `${conversationUrl(accountUrl, chat)}/reply-interface`,
+          expectedStatus: HTTP_STATUS_OK,
+          responseSchema: replyInterfaceResponseSchema,
+        });
       return response.reply_interface;
     },
     async pressReplyKeyboardButton<Target extends MessageTarget>(
@@ -1202,6 +1346,35 @@ function createVirtualAccountClient(
       return selectResult(press, ({ message }) => message);
     },
   });
+}
+
+/** The body of an edit of an account's message: new text, or a new caption. */
+type AccountMessageEditBody = ControlOperationRequest<typeof editAccountMessageContract>['body'];
+
+/**
+ * What an account does with the messages of one of its chats, each operation answering with the
+ * messages of the chat's type.
+ */
+interface ChatMessageOperations<Target extends MessageTarget> {
+  readMessages(): Promise<readonly MessageIn<Target>[]>;
+  readPinnedMessages(): Promise<readonly MessageIn<Target>[]>;
+  editMessage(
+    messageId: number,
+    body: AccountMessageEditBody,
+  ): Promise<ActionOutcome<MessageIn<Target>>>;
+  readPollAnswer(messageId: number): Promise<AccountPollAnswer<Target>>;
+  answerPoll(
+    messageId: number,
+    optionIds: readonly number[],
+  ): Promise<ActionOutcome<AccountPollAnswer<Target>>>;
+  stopPoll(messageId: number): Promise<ActionOutcome<MessageIn<Target>>>;
+}
+
+/** Entities as a request body takes them: a list of its own, or none. */
+function copyEntities(
+  entities: readonly MessageEntityInput[] | undefined,
+): MessageEntityInput[] | undefined {
+  return entities === undefined ? undefined : [...entities];
 }
 
 /** An action's outcome with its result replaced by what `select` takes from it. */
@@ -1253,42 +1426,13 @@ function conversationUrl(accountUrl: string, chat: MessageTarget): string {
     : `${accountUrl}/conversations/supergroup/${encodeURIComponent(chat.chatId)}`;
 }
 
-/**
- * The URL by which a test expires a bot's chat action in an account's chat: a private chat names
- * its bot, and a supergroup takes the `botId` whose action expires.
- */
-function chatActionExpiryUrl(accountUrl: string, input: ExpireChatActionInput): string {
-  const chatActionsUrl = `${conversationUrl(accountUrl, input.chat)}/chat-actions`;
-  if (input.chat.type === 'private') {
-    if (input.botId !== undefined) {
-      throw new TypeError(
-        'expireChatAction takes no botId for a private chat, which names its bot',
-      );
-    }
-    return `${chatActionsUrl}/expiry`;
-  }
-  if (input.botId === undefined) {
-    throw new TypeError('expireChatAction needs the botId whose supergroup chat action expires');
-  }
-  return `${chatActionsUrl}/${encodeURIComponent(input.botId)}/expiry`;
-}
-
-/** The URL by which an account pins or unpins a message of its chat. */
+/** The URL by which an account pins or unpins a message of a supergroup it is a member of. */
 function pinnedMessageUrl(
   accountUrl: string,
-  { chat, message_id }: AccountPinMessageInput,
+  chat: SupergroupMessageTarget,
+  messageId: number,
 ): string {
-  return `${conversationUrl(accountUrl, chat)}/pinned-messages/${encodeURIComponent(message_id)}`;
-}
-
-/** The URL of a message of an account's chat that shows a poll. */
-function pollMessageUrl(accountUrl: string, { chat, message_id }: AccountPollMessageInput): string {
-  return `${conversationUrl(accountUrl, chat)}/messages/${encodeURIComponent(message_id)}`;
-}
-
-/** The URL of an account's answer to the poll a message of its chat shows. */
-function pollAnswerUrl(accountUrl: string, input: AccountPollMessageInput): string {
-  return `${pollMessageUrl(accountUrl, input)}/poll-answer`;
+  return `${conversationUrl(accountUrl, chat)}/pinned-messages/${encodeURIComponent(messageId)}`;
 }
 
 /** The URL of the reactions to a message of a supergroup the account is a member of. */
@@ -1304,8 +1448,6 @@ function messageReactionsUrl(
 interface MessageResponseSchemas<Target extends MessageTarget> {
   readonly sent: z.ZodType<{ readonly message: MessageIn<Target> }>;
   readonly sentAlbum: z.ZodType<{ readonly messages: readonly MessageIn<Target>[] }>;
-  readonly history: z.ZodType<{ readonly messages: readonly MessageIn<Target>[] }>;
-  readonly pollAnswer: z.ZodType<AccountPollAnswer<Target>>;
 }
 
 /**
@@ -1320,15 +1462,8 @@ function messageResponseSchemasFor<Target extends MessageTarget>(
     ? {
       sent: sentSupergroupMessageResponseSchema,
       sentAlbum: sentSupergroupMediaGroupResponseSchema,
-      history: supergroupMessageHistoryResponseSchema,
-      pollAnswer: supergroupPollAnswerResponseSchema,
     }
-    : {
-      sent: sentMessageResponseSchema,
-      sentAlbum: sentMediaGroupResponseSchema,
-      history: messageHistoryResponseSchema,
-      pollAnswer: pollAnswerResponseSchema,
-    };
+    : { sent: sentMessageResponseSchema, sentAlbum: sentMediaGroupResponseSchema };
   return schemas as MessageResponseSchemas<Target>;
 }
 

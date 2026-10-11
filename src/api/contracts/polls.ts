@@ -1,14 +1,12 @@
 /**
- * The contracts of polls: the poll as the Bot API shows it, the test control that makes a poll's
- * closing time arrive, and an account's retraction of its answer.
+ * The contracts of polls: the poll as the Bot API shows it, and the test control that makes a
+ * poll's closing time arrive.
  */
 import { z } from 'zod';
 
-import { accountPrivateChatPathSchema } from './accounts.ts';
 import { controlRefusalSchema, controlValidationErrorSchema } from './control_errors.ts';
 import { customEmojiEntitySchema, messageEntitySchema } from './message_entities.ts';
 import { defineControlOperation } from './operation_contract.ts';
-import { accountSupergroupPathSchema } from './supergroups.ts';
 import { sessionIdParameterSchema } from './wire_fields.ts';
 
 /** The most options a poll has. */
@@ -91,76 +89,5 @@ export const expirePollContract = defineControlOperation({
     400: controlValidationErrorSchema,
     404: controlRefusalSchema(['poll_not_found', 'session_not_found']),
     409: controlRefusalSchema(['poll_already_closed', 'poll_without_closing_time']),
-  },
-});
-
-/** A message's ID as the chat's bots see it, which is how the account routes show messages. */
-const messageIdParameterSchema = z.int().min(1);
-
-/** The path parameters of a message of an account's private chat with a bot. */
-const accountPrivateMessagePathSchema = accountPrivateChatPathSchema.extend({
-  messageId: messageIdParameterSchema,
-});
-
-/** The path parameters of a supergroup message as an account addresses it. */
-const accountSupergroupMessagePathSchema = accountSupergroupPathSchema.extend({
-  messageId: messageIdParameterSchema,
-});
-
-/** A refusal of an answer the poll cannot accept, or of a request that breaks its contract. */
-const pollAnswerRejectionSchema = z.union([
-  controlValidationErrorSchema,
-  controlRefusalSchema(['multiple_answers_not_allowed', 'poll_option_not_found']),
-]);
-
-/** A missing session, account, bot, chat, or message, or a message that shows no poll. */
-const pollMessageNotFoundSchema = controlRefusalSchema([
-  'account_not_found',
-  'bot_not_found',
-  'chat_not_found',
-  'message_has_no_poll',
-  'message_not_found',
-  'session_not_found',
-]);
-
-/** A closed poll, or one that disallows revoting. */
-const pollAnswerConflictSchema = controlRefusalSchema([
-  'answer_change_not_allowed',
-  'answer_retraction_not_allowed',
-  'poll_closed',
-]);
-
-/**
- * Retracts the account's answer to the poll a message of its private chat with a bot shows, as
- * TDLib's `setPollAnswer` does without options. A poll that disallows revoting refuses the
- * retraction even without an answer; otherwise retracting without an answer changes nothing.
- */
-export const retractAccountPollAnswerContract = defineControlOperation({
-  operationId: 'retractAccountPollAnswer',
-  method: 'DELETE',
-  path:
-    '/sessions/{sessionId}/accounts/{accountId}/conversations/private/{botId}/messages/{messageId}/poll-answer',
-  params: accountPrivateMessagePathSchema,
-  success: { status: 204, body: { kind: 'empty' }, actionReceipt: 'before_action' },
-  refusals: {
-    400: pollAnswerRejectionSchema,
-    404: pollMessageNotFoundSchema,
-    409: pollAnswerConflictSchema,
-  },
-});
-
-/** Retracts the account's answer to the poll a supergroup message shows, as for a private chat. */
-export const retractSupergroupAccountPollAnswerContract = defineControlOperation({
-  operationId: 'retractSupergroupAccountPollAnswer',
-  method: 'DELETE',
-  path:
-    '/sessions/{sessionId}/accounts/{accountId}/conversations/supergroup/{chatId}/messages/{messageId}/poll-answer',
-  params: accountSupergroupMessagePathSchema,
-  success: { status: 204, body: { kind: 'empty' }, actionReceipt: 'before_action' },
-  refusals: {
-    400: pollAnswerRejectionSchema,
-    403: controlRefusalSchema(['not_a_member']),
-    404: pollMessageNotFoundSchema,
-    409: pollAnswerConflictSchema,
   },
 });

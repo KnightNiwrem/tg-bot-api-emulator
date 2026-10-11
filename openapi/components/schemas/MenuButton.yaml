@@ -1,3 +1,4 @@
+x-telegram-type: MenuButton
 description: A Bot API `MenuButton`.
 oneOf:
   - type: object
