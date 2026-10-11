@@ -8,6 +8,7 @@ import {
   type GetBotDescriptionResult,
 } from '../src/services/bot_description.ts';
 import { VirtualUserService } from '../src/services/virtual_user.ts';
+import { createVirtualBot } from './support/virtual_users.ts';
 
 Deno.test('BotDescriptionService keeps each kind and language apart, without fallback', () => {
   const { botDescriptions, botId } = createBotDescriptionFixture();
@@ -83,15 +84,13 @@ function createBotDescriptionFixture() {
     accounts: new AccountRepository(),
     bots,
   });
-  const creation = virtualUsers.createBot({ first_name: 'Pizza Bot', username: 'pizza_bot' });
-  if (!creation.created) {
-    throw new Error(`Expected bot creation to succeed, received ${creation.reason}`);
-  }
+  const botId =
+    createVirtualBot(virtualUsers, { first_name: 'Pizza Bot', username: 'pizza_bot' }).profile.id;
   const botDescriptions = new BotDescriptionService({
     bots,
     botDescriptions: new BotDescriptionRepository(),
   });
-  return { botDescriptions, botId: creation.bot.profile.id };
+  return { botDescriptions, botId };
 }
 
 function assertSet(result: ReturnType<BotDescriptionService['setBotDescription']>): void {

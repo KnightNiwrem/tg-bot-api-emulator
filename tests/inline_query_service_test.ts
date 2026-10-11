@@ -1,3 +1,4 @@
+import { assertEquals } from '@std/assert';
 import { AccountRepository } from '../src/repositories/account.ts';
 import { BlockedUserRepository } from '../src/repositories/blocked_user.ts';
 import { BotRepository } from '../src/repositories/bot.ts';
@@ -24,6 +25,7 @@ import type { ChatDomainEvent } from '../src/types/chat_domain_event.ts';
 import { ALL_CHAT_PERMISSIONS } from '../src/types/chat_permissions.ts';
 import type { FileUpload } from '../src/types/stored_file.ts';
 import type { AccountChatAddress } from '../src/types/virtual_chat.ts';
+import { createVirtualAccount, createVirtualBot } from './support/virtual_users.ts';
 
 const SUPERGROUP = {
   kind: 'supergroup',
@@ -54,18 +56,21 @@ Deno.test('InlineQueryService sends queries only to inline bots in chats the acc
     }),
     send(stranger.profile.id, inlineBot.profile.id, { type: 'supergroup', chatId: SUPERGROUP.id }),
   ].map((result) => result.sent ? 'sent' : result.reason);
-  if (
-    JSON.stringify(failures) !== JSON.stringify([
+  assertEquals(
+    [failures, publishedEvents.length],
+    [
+      [
         'account_not_found',
         'bot_not_found',
         'inline_mode_disabled',
         'chat_not_found',
         'chat_not_found',
         'not_a_member',
-      ]) || publishedEvents.length !== 0
-  ) {
-    throw new Error(`Expected every query to be refused unpublished, received ${failures}`);
-  }
+      ],
+      0,
+    ],
+    'Expected every query to be refused unpublished',
+  );
 
   const result = inlineQueries.sendInlineQuery({
     fromAccountId: account.profile.id,
@@ -165,13 +170,16 @@ Deno.test("InlineQueryService checks answers in Telegram's order", () => {
     recordedAnswer.results.length !== 1 || result?.kind !== 'article' ||
     result.title !== 'Result 1' || result.description !== 'Opens a menu' ||
     result.url !== 'https://grammy.dev' || result.messageContent.kind !== 'text' ||
-    JSON.stringify(result.messageContent.entities) !==
-      JSON.stringify([{ type: 'bot_command', offset: 9, length: 6 }]) ||
     recordedAnswer.cacheTimeSeconds !== 0 || !recordedAnswer.isPersonal ||
     recordedAnswer.nextOffset !== '10' || recordedAnswer.button?.kind !== 'start_bot'
   ) {
     throw new Error(`Expected the normalized answer, received ${JSON.stringify(recordedAnswer)}`);
   }
+  assertEquals(
+    result.messageContent.entities,
+    [{ type: 'bot_command', offset: 9, length: 6 }],
+    'Expected the answer to detect the command in its text',
+  );
   const repeatedAnswer = answer({});
   if (repeatedAnswer.answered || repeatedAnswer.reason !== 'query_id_invalid') {
     throw new Error('Expected an answered query to refuse another answer');
@@ -225,13 +233,9 @@ Deno.test('InlineQueryService lets a result mention any user of the session', ()
     result.messageContent.kind === 'text' ? result.messageContent.entities : undefined
   );
   const expectedEntities = mentionedUserIds.map((userId) => [
-    { type: 'text_mention', offset: 0, length: 2, userId },
+    { type: 'text_mention' as const, offset: 0, length: 2, userId },
   ]);
-  if (JSON.stringify(mentionedEntities) !== JSON.stringify(expectedEntities)) {
-    throw new Error(
-      `Expected the mentions to be kept, received ${JSON.stringify(mentionedEntities)}`,
-    );
-  }
+  assertEquals(mentionedEntities, expectedEntities, 'Expected the mentions to be kept');
 });
 
 Deno.test("InlineQueryService sends a chosen result as the account's message through the bot", async () => {
@@ -299,9 +303,11 @@ Deno.test("InlineQueryService sends a chosen result as the account's message thr
   const failures = [await choose('1', 999), await choose('unknown')].map((result) =>
     result.chosen ? 'chosen' : result.reason
   );
-  if (JSON.stringify(failures) !== JSON.stringify(['inline_query_not_found', 'result_not_found'])) {
-    throw new Error(`Expected unknown queries and results to be refused, received ${failures}`);
-  }
+  assertEquals(
+    failures,
+    ['inline_query_not_found', 'result_not_found'],
+    'Expected unknown queries and results to be refused',
+  );
   const chosenArticle = await choose('1');
   const chosenPhoto = await choose('photo');
   if (!chosenArticle.chosen || !chosenPhoto.chosen) {
@@ -454,16 +460,12 @@ Deno.test('InlineQueryService downloads media named by URL each time a result is
       },
     })]),
   ].map((result) => result.answered ? 'answered' : result.reason);
-  if (
-    JSON.stringify(refusals) !== JSON.stringify([
-      'web_document_url_invalid',
-      'web_document_url_invalid',
-      'photo_thumbnail_url_empty',
-      'caption_too_long',
-    ])
-  ) {
-    throw new Error(`Expected Telegram's checks of media named by URL, received ${refusals}`);
-  }
+  assertEquals(refusals, [
+    'web_document_url_invalid',
+    'web_document_url_invalid',
+    'photo_thumbnail_url_empty',
+    'caption_too_long',
+  ], "Expected Telegram's checks of media named by URL");
 
   const answered = answer([
     webPhoto('photo', 'https://example.com/cat.jpg'),
@@ -483,14 +485,17 @@ Deno.test('InlineQueryService downloads media named by URL each time a result is
   if (
     recordedPhoto.kind !== 'photo' || recordedPhoto.file.source !== 'web' ||
     recordedPhoto.messageContent.kind !== 'web_photo' ||
-    JSON.stringify(recordedPhoto.messageContent.caption.entities) !==
-      JSON.stringify([{ type: 'bot_command', offset: 2, length: 4 }]) ||
     downloadedUrls.length !== 0
   ) {
     throw new Error(
       `Expected the answer to keep the URL undownloaded, received ${JSON.stringify(recordedPhoto)}`,
     );
   }
+  assertEquals(
+    recordedPhoto.messageContent.caption.entities,
+    [{ type: 'bot_command', offset: 2, length: 4 }],
+    "Expected the answer to detect the command in the photo's caption",
+  );
 
   const choose = (resultId: string) =>
     inlineQueries.chooseInlineQueryResult({
@@ -517,12 +522,7 @@ Deno.test('InlineQueryService downloads media named by URL each time a result is
     firstPhotoFile.width !== 4 || firstPhoto.caption.text !== 'A /cat' ||
     !firstPhoto.showsCaptionAboveMedia || firstPhoto.hasSpoiler ||
     documentFile?.type !== 'document' || documentFile.fileName !== 'cats.pdf' ||
-    documentFile.mimeType !== 'application/pdf' || text.kind !== 'text' ||
-    JSON.stringify(downloadedUrls) !== JSON.stringify([
-        'https://example.com/cat.jpg',
-        'https://example.com/cat.jpg',
-        'https://example.com/cats.pdf',
-      ])
+    documentFile.mimeType !== 'application/pdf' || text.kind !== 'text'
   ) {
     throw new Error(
       `Expected each sending to download its media anew, received ${
@@ -530,6 +530,11 @@ Deno.test('InlineQueryService downloads media named by URL each time a result is
       }`,
     );
   }
+  assertEquals(
+    downloadedUrls,
+    ['https://example.com/cat.jpg', 'https://example.com/cat.jpg', 'https://example.com/cats.pdf'],
+    'Expected each sending to download its media anew',
+  );
 
   const publishedEventCount = publishedEvents.length;
   const storedUploadCount = storedUploads.length;
@@ -543,24 +548,27 @@ Deno.test('InlineQueryService downloads media named by URL each time a result is
   // A download that the chat then refuses is not stored either.
   blockedUsers.block(account.profile.id, inlineBot.profile.id);
   const blocked = await choose('photo');
-  if (
-    JSON.stringify([...failures, blocked.chosen ? 'chosen' : blocked.reason]) !==
-      JSON.stringify([
+  assertEquals(
+    [
+      [...failures, blocked.chosen ? 'chosen' : blocked.reason],
+      publishedEvents.length - publishedEventCount,
+      storedUploads.length - storedUploadCount,
+      downloadedUrls.length - downloadCount,
+    ],
+    [
+      [
         'web_media_unavailable',
         'web_media_invalid',
         'web_media_invalid',
         'web_media_invalid',
         'bot_blocked',
-      ]) ||
-    publishedEvents.length !== publishedEventCount ||
-    storedUploads.length !== storedUploadCount || downloadedUrls.length !== downloadCount + 5
-  ) {
-    throw new Error(
-      `Expected refused results to store and publish nothing, received ${failures}, ${
-        JSON.stringify(blocked)
-      }`,
-    );
-  }
+      ],
+      0,
+      0,
+      5,
+    ],
+    'Expected refused results to store and publish nothing',
+  );
 });
 
 Deno.test('InlineQueryService reuses an answer until a test expires its cache', () => {
@@ -639,9 +647,14 @@ Deno.test('InlineQueryService expiry keeps every answer it removes from the cach
     inlineQueryId: otherCopy.id,
     resultId: '1',
   });
+  assertEquals(
+    kept,
+    ['answered', 'answered', 'answered'],
+    'Expected expired answers to stay answered',
+  );
   if (
-    !expiry.expired || JSON.stringify(kept) !== '["answered","answered","answered"]' ||
-    reanswer.answered || reanswer.reason !== 'query_id_invalid' || !chosen.chosen ||
+    !expiry.expired || reanswer.answered || reanswer.reason !== 'query_id_invalid' ||
+    !chosen.chosen ||
     eventsOfExpiry.length !== 0
   ) {
     throw new Error('Expected expired answers to stay answered and selectable, and unannounced');
@@ -693,9 +706,13 @@ Deno.test('InlineQueryService expires every cached answer to a request, from any
     send({}),
     send({ botId: otherBot.profile.id, chat: inFirstGroup }),
   ].map((inlineQuery) => inlineQuery.state.status);
+  assertEquals(
+    afterExpiry,
+    ['awaiting_answer', 'awaiting_answer'],
+    "Expected the request's answers to expire",
+  );
   if (
     selector.state.status !== 'answered' || !expiry.expired ||
-    JSON.stringify(afterExpiry) !== '["awaiting_answer","awaiting_answer"]' ||
     stillCached.some((status) => status !== 'answered')
   ) {
     throw new Error(
@@ -719,17 +736,13 @@ Deno.test('InlineQueryService refuses expiry when the cache holds no answer to e
   const outcomes = [beforeAnswer, withoutCacheTime, unknown, first, repeated].map((result) =>
     result.expired ? 'expired' : result.reason
   );
-  if (
-    JSON.stringify(outcomes) !== JSON.stringify([
-      'answer_not_cached',
-      'answer_not_cached',
-      'inline_query_not_found',
-      'expired',
-      'answer_not_cached',
-    ])
-  ) {
-    throw new Error(`Expected expiry only of a cached answer, received ${outcomes}`);
-  }
+  assertEquals(outcomes, [
+    'answer_not_cached',
+    'answer_not_cached',
+    'inline_query_not_found',
+    'expired',
+    'answer_not_cached',
+  ], 'Expected expiry only of a cached answer');
 });
 
 Deno.test('InlineQueryService caches an answer given after an expiry, and none with no cache time', () => {
@@ -931,11 +944,7 @@ function createInlineQueryFixture() {
 }
 
 function createAccount(virtualUsers: VirtualUserService, firstName: string) {
-  const result = virtualUsers.createAccount({ first_name: firstName });
-  if (!result.created) {
-    throw new Error(`Expected account creation to succeed, received ${result.reason}`);
-  }
-  return result.account;
+  return createVirtualAccount(virtualUsers, { first_name: firstName });
 }
 
 function createBot(
@@ -943,15 +952,11 @@ function createBot(
   username: string,
   { supports_inline_queries }: { readonly supports_inline_queries: boolean },
 ) {
-  const result = virtualUsers.createBot({
+  return createVirtualBot(virtualUsers, {
     first_name: 'Test Bot',
     username,
     supports_inline_queries,
   });
-  if (!result.created) {
-    throw new Error(`Expected bot creation to succeed, received ${result.reason}`);
-  }
-  return result.bot;
 }
 
 /** A JPEG image of only a frame header, which is all the emulator reads of it. */

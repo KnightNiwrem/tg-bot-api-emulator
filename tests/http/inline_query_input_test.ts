@@ -15,7 +15,8 @@ interface SentInlineQuery {
 }
 
 async function createInlineQueryFixture() {
-  const fixture = await createPrivateConversationFixture();
+  await using disposalOnFailure = new AsyncDisposableStack();
+  const fixture = disposalOnFailure.use(await createPrivateConversationFixture());
   const inlineBot = await createBot(fixture.api, fixture.sessionPath, 'cats_bot', {
     supports_inline_queries: true,
     requests_inline_location: true,
@@ -28,11 +29,18 @@ async function createInlineQueryFixture() {
       `${accountPath}/inline-queries`,
       { bot_id: inlineBot.bot.id, chat: { type: 'private', botId: inlineBot.bot.id }, ...body },
     );
-  return { ...fixture, accountPath, sendQuery };
+  const emulatorDisposal = disposalOnFailure.move();
+  return {
+    ...fixture,
+    accountPath,
+    sendQuery,
+    [Symbol.asyncDispose]: () => emulatorDisposal.disposeAsync(),
+  };
 }
 
 Deno.test('An inline query holds up to 256 characters, counted by code point', async () => {
-  const { sendQuery } = await createInlineQueryFixture();
+  await using fixture = await createInlineQueryFixture();
+  const { sendQuery } = fixture;
 
   const longest = await sendQuery({ query: '😀'.repeat(MAX_INLINE_QUERY_LENGTH) });
   const tooLong = await sendQuery({ query: '😀'.repeat(MAX_INLINE_QUERY_LENGTH + 1) });
@@ -53,7 +61,8 @@ Deno.test('An inline query holds up to 256 characters, counted by code point', a
 });
 
 Deno.test('A shared location without an accuracy shows none', async () => {
-  const { sendQuery } = await createInlineQueryFixture();
+  await using fixture = await createInlineQueryFixture();
+  const { sendQuery } = fixture;
 
   const queries = [
     await sendQuery({ location: { latitude: 51.5, longitude: -0.12 } }),
@@ -73,7 +82,8 @@ Deno.test('A shared location without an accuracy shows none', async () => {
 });
 
 Deno.test('Inline query paths take account IDs written only in decimal digits', async () => {
-  const { api, sessionPath, createdAccount } = await createInlineQueryFixture();
+  await using fixture = await createInlineQueryFixture();
+  const { api, sessionPath, createdAccount } = fixture;
 
   const refusals = [
     await requestJson<ControlErrorBody>(
