@@ -154,8 +154,9 @@ newest shows the next newest. As [`JsonChat`][json-chat-pinned] shows it, the pi
 
 - **Negative `message_id` of `unpinChatMessage`.** The official server's
   [`get_message_id`][get-message-id] reads a negative `message_id` as none, which unpins the newest
-  pinned message. The emulator rejects it with `Bad Request: invalid unpinChatMessage parameters` to
-  surface the bot's mistake in tests.
+  pinned message. The emulator rejects it with
+  `Bad Request: invalid unpinChatMessage parameters: message_id` to surface the bot's mistake in
+  tests.
 
 ## Real gaps
 
