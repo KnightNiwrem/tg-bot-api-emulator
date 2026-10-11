@@ -10,7 +10,7 @@ import {
   type RequestedInputFile,
 } from './input_file_parameter.ts';
 import { BAD_REQUEST_PREFIX } from './method_call.ts';
-import type { BotApiUploadedFiles } from './request_parameters.ts';
+import { type BotApiUploadedFiles, parseBotApiJsonParameter } from './request_parameters.ts';
 
 type MediaReplacementRequest = Parameters<
   EmulationSession['botApi']['editMessageMedia']
@@ -160,12 +160,11 @@ export function readInputMediaParameter(
   if (text === undefined || text.length === 0) {
     return { read: false, description: MEDIA_REQUIRED_DESCRIPTION };
   }
-  let value: unknown;
-  try {
-    value = JSON.parse(text);
-  } catch {
+  const parsedParameter = parseBotApiJsonParameter(text);
+  if (parsedParameter === undefined) {
     return { read: false, description: "Bad Request: can't parse input media JSON object" };
   }
+  const { value } = parsedParameter;
   return readInputMedia(value, 'replacement', uploadedFiles, invalidParametersDescription);
 }
 
@@ -184,12 +183,11 @@ export function readInputMediaGroupParameter(
   if (text === undefined || text.length === 0) {
     return { read: false, description: MEDIA_REQUIRED_DESCRIPTION };
   }
-  let value: unknown;
-  try {
-    value = JSON.parse(text);
-  } catch {
+  const parsedParameter = parseBotApiJsonParameter(text);
+  if (parsedParameter === undefined) {
     return { read: false, description: "Bad Request: can't parse media JSON object" };
   }
+  const { value } = parsedParameter;
   if (value === null) {
     return { read: true, media: [] };
   }

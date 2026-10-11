@@ -1,3 +1,5 @@
+import { parseBotApiJsonParameter } from './request_parameters.ts';
+
 /**
  * The reactions a `reaction` parameter names: ordinary emoji, or a custom emoji, which the
  * emulator never allows in a chat, so Telegram's servers would refuse it as `REACTION_INVALID`.
@@ -35,12 +37,11 @@ export function readReactionTypesParameter(
   if (text === undefined || text.length === 0) {
     return { read: true, emojis: [], hasCustomEmoji: false };
   }
-  let value: unknown;
-  try {
-    value = JSON.parse(text);
-  } catch {
+  const parsedParameter = parseBotApiJsonParameter(text);
+  if (parsedParameter === undefined) {
     return { read: false, description: "Bad Request: can't parse reaction types JSON object" };
   }
+  const { value } = parsedParameter;
   if (value === null) {
     return { read: true, emojis: [], hasCustomEmoji: false };
   }

@@ -45,6 +45,9 @@ const FALSE_BOOLEAN_TEXTS = ['false', 'no', '0'] as const;
  * is read character for character, whitespace and member order included, and only the encoding's
  * own escaping is undone.
  *
+ * A JSON body's member other than a string is refused, as Telegram refuses it, if it nests deeper
+ * than `BOT_API_JSON_MAX_DEPTH` allows, before any method reads it.
+ *
  * A multipart body can also upload files, which methods that send files read by part name; as on
  * Telegram, the first file of a name counts, and other methods ignore files.
  *
@@ -172,20 +175,27 @@ function decodeJsonObjectParameterEntries(body: string): BodyParameterEntriesDec
   if (typeof parsedBody !== 'object' || parsedBody === null || Array.isArray(parsedBody)) {
     return { decoded: false, description: 'Bad Request: JSON object expected' };
   }
-  return {
-    decoded: true,
-    parameterEntries: readJsonObjectMemberTexts(body),
-    uploadedFiles: NO_UPLOADED_FILES,
-  };
+  const parameterEntries = readJsonObjectMemberTexts(body);
+  if (parameterEntries === undefined) {
+    return {
+      decoded: false,
+      description: "Bad Request: can't parse parameter value: Too big object depth",
+    };
+  }
+  return { decoded: true, parameterEntries, uploadedFiles: NO_UPLOADED_FILES };
 }
 
 /**
  * Each member of a JSON object's text, in source order, as its name and the text of its value: a
- * string's content, or the source text of any other value, without the whitespace around it.
- * `objectText` must be a JSON object, as `JSON.parse` has checked, so that the scan needs no checks
- * of its own. The scan keeps no stack, so no nesting depth can overflow the call stack.
+ * string's content, or the source text of any other value, without the whitespace around it; or
+ * `undefined` if a member other than a string nests deeper than `BOT_API_JSON_MAX_DEPTH` allows,
+ * as `HttpReader::parse_json_parameters` checks with `do_json_skip`. `objectText` must be a JSON
+ * object, as `JSON.parse` has checked, so that the scan needs no checks of its own. The scan keeps
+ * no stack, so no nesting depth can overflow the call stack.
  */
-function readJsonObjectMemberTexts(objectText: string): Array<readonly [string, string]> {
+function readJsonObjectMemberTexts(
+  objectText: string,
+): Array<readonly [string, string]> | undefined {
   const memberTexts: Array<readonly [string, string]> = [];
   // Past the object's opening brace.
   let position = skipJsonWhitespace(objectText, skipJsonWhitespace(objectText, 0) + 1);
@@ -196,10 +206,13 @@ function readJsonObjectMemberTexts(objectText: string): Array<readonly [string, 
     const valueStart = skipJsonWhitespace(objectText, skipJsonWhitespace(objectText, nameEnd) + 1);
     const valueEnd = jsonValueEnd(objectText, valueStart);
     const valueSource = objectText.slice(valueStart, valueEnd);
-    memberTexts.push([
-      name,
-      objectText[valueStart] === '"' ? decodeJsonString(valueSource) : valueSource,
-    ]);
+    if (objectText[valueStart] === '"') {
+      memberTexts.push([name, decodeJsonString(valueSource)]);
+    } else if (exceedsBotApiJsonDepthLimit(valueSource)) {
+      return undefined;
+    } else {
+      memberTexts.push([name, valueSource]);
+    }
     position = skipJsonWhitespace(objectText, valueEnd);
     if (objectText[position] === ',') {
       position = skipJsonWhitespace(objectText, position + 1);
@@ -273,6 +286,65 @@ function jsonContainerEnd(jsonText: string, start: number): number {
   return position;
 }
 
+/**
+ * How deeply the official Bot API server lets JSON nest. TDLib's `json_decode`, which reads every
+ * JSON-typed parameter, and `do_json_skip`, which skips a JSON body's members, both start a value
+ * with this remaining depth, lower it by one inside each array or object, and fail with `Too big
+ * object depth` at a value, a scalar included, whose remaining depth is below 0. So a value may sit
+ * within at most this many arrays and objects, and an empty array or object one level deeper still
+ * passes, as it holds no value.
+ */
+const BOT_API_JSON_MAX_DEPTH = 100;
+
+/**
+ * Whether a value in JSON text sits within more arrays and objects than `BOT_API_JSON_MAX_DEPTH`
+ * allows, so that the official Bot API server would refuse it. `jsonText` must be JSON, as
+ * `JSON.parse` has checked. A member name counts as deep as its member's value, which follows it.
+ * The scan keeps no stack, so no nesting depth can overflow the call stack.
+ */
+function exceedsBotApiJsonDepthLimit(jsonText: string): boolean {
+  let enclosingContainerCount = 0;
+  let position = 0;
+  while (position < jsonText.length) {
+    const character = jsonText[position];
+    if (character === '}' || character === ']') {
+      enclosingContainerCount--;
+    } else if (
+      character !== ',' && character !== ':' && !JSON_WHITESPACE_CHARACTERS.has(character)
+    ) {
+      // Any other character is part of a value or a member name.
+      if (enclosingContainerCount > BOT_API_JSON_MAX_DEPTH) {
+        return true;
+      }
+      if (character === '"') {
+        position = jsonStringEnd(jsonText, position);
+        continue;
+      }
+      if (character === '{' || character === '[') {
+        enclosingContainerCount++;
+      }
+    }
+    position++;
+  }
+  return false;
+}
+
+/**
+ * The value of a JSON-typed parameter, such as `reply_markup`, as the official Bot API server's
+ * `json_decode` reads it, or `undefined` if that server could not: the text is not JSON, or it
+ * nests deeper than `BOT_API_JSON_MAX_DEPTH` allows. Each parameter's reader answers that with its
+ * own description, whichever encoding carried the parameter.
+ */
+export function parseBotApiJsonParameter(text: string): { readonly value: unknown } | undefined {
+  let value: unknown;
+  try {
+    value = JSON.parse(text);
+  } catch {
+    return undefined;
+  }
+  return exceedsBotApiJsonDepthLimit(text) ? undefined : { value };
+}
+
 /** The content of a JSON string's source text, quotes included. */
 function decodeJsonString(stringSource: string): string {
   const content: unknown = JSON.parse(stringSource);
@@ -334,16 +406,44 @@ export function optionalInt64Identifier() {
     .transform((identifier) => identifier === 0n ? undefined : identifier.toString());
 }
 
-/** A parameter holding JSON text, such as an array serialized by a form-encoded request. */
-export function jsonParameter<Output>(valueSchema: z.ZodType<Output>) {
+/**
+ * A parameter holding JSON text, such as an array serialized by a form-encoded request, read as
+ * `parseBotApiJsonParameter` reads it. Its schema issue for text that the official Bot API server
+ * cannot read as JSON carries `unparsableJsonDescription`, Telegram's description for the
+ * parameter, if it has one, as `findTelegramIssueDescription` finds it; without one, the method's
+ * own description of parameters that do not fit its schema answers that text.
+ */
+export function jsonParameter<Output>(
+  valueSchema: z.ZodType<Output>,
+  { unparsableJsonDescription }: { readonly unparsableJsonDescription?: string } = {},
+) {
   return z.string().transform((text, context): unknown => {
-    try {
-      return JSON.parse(text);
-    } catch {
-      context.issues.push({ code: 'custom', message: 'Expected JSON text', input: text });
+    const parsedParameter = parseBotApiJsonParameter(text);
+    if (parsedParameter === undefined) {
+      context.issues.push({
+        code: 'custom',
+        message: 'Expected JSON text',
+        input: text,
+        ...(unparsableJsonDescription === undefined
+          ? {}
+          : { params: { telegramDescription: unparsableJsonDescription } }),
+      });
       return z.NEVER;
     }
+    return parsedParameter.value;
   }).pipe(valueSchema);
+}
+
+/**
+ * Telegram's description of a problem a parameter schema reports, which a parameter such as a
+ * `jsonParameter` with `unparsableJsonDescription` gives its issue, or `undefined` for a problem
+ * the emulator describes.
+ */
+export function findTelegramIssueDescription(issue: z.core.$ZodIssue): string | undefined {
+  const telegramDescription: unknown = issue.code === 'custom'
+    ? issue.params?.telegramDescription
+    : undefined;
+  return typeof telegramDescription === 'string' ? telegramDescription : undefined;
 }
 
 /** The prefix that marks a chat named by its public username rather than its ID. */

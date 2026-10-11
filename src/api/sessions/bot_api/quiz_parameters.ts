@@ -1,3 +1,5 @@
+import { parseBotApiJsonParameter } from './request_parameters.ts';
+
 export type CorrectOptionIdsParameterReading =
   | { readonly read: true; readonly correctOptionPositions: readonly number[] }
   | { readonly read: false; readonly description: string };
@@ -22,15 +24,14 @@ export function readCorrectOptionIdsParameter(
       correctOptionPositions: correctOptionId === undefined ? [] : [correctOptionId],
     };
   }
-  let value: unknown;
-  try {
-    value = JSON.parse(correctOptionIdsText);
-  } catch {
+  const parsedParameter = parseBotApiJsonParameter(correctOptionIdsText);
+  if (parsedParameter === undefined) {
     return {
       read: false,
       description: "Bad Request: can't parse correct option identifiers JSON object",
     };
   }
+  const { value } = parsedParameter;
   if (!Array.isArray(value)) {
     return {
       read: false,

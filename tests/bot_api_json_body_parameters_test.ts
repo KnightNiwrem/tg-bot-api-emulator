@@ -69,14 +69,27 @@ Deno.test('A JSON body records an empty object as no parameters', async () => {
   }
 });
 
-Deno.test('A JSON body records a deeply nested value as its source text', async () => {
-  const depth = 100_000;
-  const deep = `${'[{"a":'.repeat(depth)}"]}"${'}]'.repeat(depth)}`;
+Deno.test('A JSON body records a value nested to the depth limit as its source text', async () => {
+  // 50 arrays and 50 objects around a string that looks like closing brackets.
+  const deep = `${'[{"a":'.repeat(50)}"]}"${'}]'.repeat(50)}`;
 
   assertDecodedParameters(await decodeJsonBody(`{"deep":${deep},"after":2}`), {
     deep,
     after: '2',
   });
+});
+
+Deno.test('A JSON body refuses a value nested beyond the depth limit, however deep', async () => {
+  for (const pairDepth of [51, 100_000]) {
+    const deep = `${'[{"a":'.repeat(pairDepth)}"]}"${'}]'.repeat(pairDepth)}`;
+    const decoding = await decodeJsonBody(`{"deep":${deep},"after":2}`);
+    if (
+      decoding.decoded ||
+      decoding.description !== "Bad Request: can't parse parameter value: Too big object depth"
+    ) {
+      throw new Error(`Expected ${pairDepth * 2} levels to be refused as too deep`);
+    }
+  }
 });
 
 Deno.test("A webhook's JSON reply records nested numbers as its source text", async () => {

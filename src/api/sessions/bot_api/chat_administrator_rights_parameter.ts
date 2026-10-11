@@ -2,6 +2,7 @@ import {
   CHAT_ADMINISTRATOR_RIGHT_NAMES,
   type ChatAdministratorRightName,
 } from '../../../types/bot_default_administrator_rights.ts';
+import { parseBotApiJsonParameter } from './request_parameters.ts';
 
 export type ChatAdministratorRightsParameterReading =
   | { readonly read: true; readonly requestedRights: readonly ChatAdministratorRightName[] }
@@ -25,15 +26,14 @@ export function readChatAdministratorRightsParameter(
   if (text === undefined || text.length === 0) {
     return { read: true, requestedRights: [] };
   }
-  let value: unknown;
-  try {
-    value = JSON.parse(text);
-  } catch {
+  const parsedParameter = parseBotApiJsonParameter(text);
+  if (parsedParameter === undefined) {
     return {
       read: false,
       description: "Bad Request: can't parse ChatAdministratorRights JSON object",
     };
   }
+  const { value } = parsedParameter;
   const rightsError = (error: string): ChatAdministratorRightsParameterReading => ({
     read: false,
     description: `Bad Request: can't parse ChatAdministratorRights: ${error}`,
