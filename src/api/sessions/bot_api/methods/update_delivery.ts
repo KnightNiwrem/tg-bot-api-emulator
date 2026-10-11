@@ -5,6 +5,7 @@ import { type BotApiMethod, botApiResult, SESSION_ENDED } from '../method_call.t
 import {
   answerWithBadRequest,
   type BotApiStepResult,
+  commandMethodOfSteps,
   handledMethodOfSteps,
   proceedWith,
   startSteps,
@@ -70,9 +71,13 @@ const getUpdatesParametersSchema = z.strictObject({
 
 type SetWebhookParameters = z.output<typeof setWebhookParametersSchema>;
 
-/** The methods by which a bot receives updates: polling with `getUpdates`, or a webhook. */
+/**
+ * The methods by which a bot receives updates: polling with `getUpdates`, or a webhook. Setting and
+ * deleting a webhook execute as commands in their call's transaction; a `getUpdates` call executes
+ * a command when it arrives, and another when its long poll's wait ends.
+ */
 export const UPDATE_DELIVERY_METHODS: readonly BotApiMethod[] = [
-  handledMethodOfSteps({
+  commandMethodOfSteps({
     name: 'deleteWebhook',
     recordsActivity: true,
     parameters: deleteWebhookParametersSchema,
@@ -115,7 +120,7 @@ export const UPDATE_DELIVERY_METHODS: readonly BotApiMethod[] = [
     steps: ({ parameters }) => startSteps(parameters),
     execute: (context) => botApiResult(context.session.botApi.getWebhookInfo(context.bot)),
   }),
-  handledMethodOfSteps({
+  commandMethodOfSteps({
     name: 'setWebhook',
     recordsActivity: true,
     parameters: setWebhookParametersSchema,

@@ -52,18 +52,38 @@ interface UpdateActivityRecorder {
   recordUpdateConfirmations(botId: number, updates: readonly BotApiUpdate[], via: 'polling'): void;
 }
 
-/** The session's end, which stops held long polls, and its commit gate. */
-interface SessionCommitGate {
+/** The session's end, which stops held long polls. */
+interface SessionEnd {
   readonly endSignal: AbortSignal;
-  readonly admitsCommits: boolean;
 }
+
+/** How a command of the session's transactions ended: executed, or refused once the session ended. */
+type CommandExecution<Result> =
+  | { readonly executed: true; readonly result: Result }
+  | { readonly executed: false; readonly reason: 'session_ended' };
+
+/** The session's transactions, which execute each change a request makes, unless it has ended. */
+interface PollingTransactions {
+  execute<Result>(command: () => Result): CommandExecution<Result>;
+}
+
+/** What a request's arrival decided: its answer, or the wait it is held for, and what it reads. */
+type PollArrival =
+  | { readonly held: false; readonly result: GetUpdatesResult }
+  | {
+    readonly held: true;
+    readonly firstUnconfirmedUpdateId: number | undefined;
+    readonly nextUpdateId: number;
+  };
 
 interface BotUpdatePollingServiceDependencies {
   readonly botUpdates: PendingUpdateQueue;
   readonly updateActivity: UpdateActivityRecorder;
   /** Measures how long a long poll is held. */
   readonly scheduler: Pick<Scheduler, 'deadline'>;
-  readonly sessionLifetime: SessionCommitGate;
+  readonly sessionLifetime: SessionEnd;
+  /** Executes a request's arrival, and the end of its wait, each as one command. */
+  readonly transactions: PollingTransactions;
 }
 
 /**
@@ -79,16 +99,19 @@ export class BotUpdatePollingService {
    * Kept apart from the held long poll controllers, so that the session's end is never reported as
    * a conflict with another long poll.
    */
-  readonly #sessionLifetime: SessionCommitGate;
+  readonly #sessionLifetime: SessionEnd;
+  readonly #transactions: PollingTransactions;
   readonly #heldLongPollsByBotId = new Map<number, HeldLongPoll>();
 
   constructor(
-    { botUpdates, updateActivity, scheduler, sessionLifetime }: BotUpdatePollingServiceDependencies,
+    { botUpdates, updateActivity, scheduler, sessionLifetime, transactions }:
+      BotUpdatePollingServiceDependencies,
   ) {
     this.#botUpdates = botUpdates;
     this.#updateActivity = updateActivity;
     this.#scheduler = scheduler;
     this.#sessionLifetime = sessionLifetime;
+    this.#transactions = transactions;
   }
 
   /**
@@ -100,29 +123,38 @@ export class BotUpdatePollingService {
    * The updates the offset confirms and the updates the answer delivers are recorded as bot
    * activity, confirmations first.
    *
-   * The request changes the session twice: once when it arrives, and once more if it was held,
-   * when its wait ends. Once the session has ended, neither happens: the request reads, confirms
-   * and records nothing, and a held one ends at once.
+   * The request changes the session twice, each time as one command of the session's
+   * transactions: once when it arrives, together with `changeOnArrival`, and once more if it was
+   * held, when its wait ends. The wait itself runs outside any transaction. Once the session has
+   * ended, neither command runs: the request reads, confirms and records nothing, and a held one
+   * ends at once.
    */
   async getUpdates(
     botId: number,
     { offset, limit, timeoutSeconds, signal }: GetUpdatesRequest,
+    changeOnArrival: () => void = () => {},
   ): Promise<GetUpdatesResult> {
-    if (!this.#sessionLifetime.admitsCommits) {
+    const arrival = this.#transactions.execute((): PollArrival => {
+      changeOnArrival();
+      // Telegram resolves a negative offset once, when the request arrives, so updates enqueued
+      // while this request waits are not cut from the tail again.
+      const firstUnconfirmedUpdateId = this.#botUpdates.resolveFirstUnconfirmedUpdateId(
+        botId,
+        offset,
+      );
+      const nextUpdateId = this.#botUpdates.getNextUpdateId(botId);
+      const updates = this.#confirmAndReadPendingUpdates(botId, firstUnconfirmedUpdateId, limit);
+      return updates.length > 0 || timeoutSeconds === 0 || signal?.aborted === true
+        ? { held: false, result: this.#deliverUpdates(botId, updates) }
+        : { held: true, firstUnconfirmedUpdateId, nextUpdateId };
+    });
+    if (!arrival.executed) {
       return { retrieved: false, reason: 'session_ended' };
     }
-
-    // Telegram resolves a negative offset once, when the request arrives, so updates enqueued while
-    // this request waits are not cut from the tail again.
-    const firstUnconfirmedUpdateId = this.#botUpdates.resolveFirstUnconfirmedUpdateId(
-      botId,
-      offset,
-    );
-    const nextUpdateId = this.#botUpdates.getNextUpdateId(botId);
-    const updates = this.#confirmAndReadPendingUpdates(botId, firstUnconfirmedUpdateId, limit);
-    if (updates.length > 0 || timeoutSeconds === 0 || signal?.aborted === true) {
-      return this.#deliverUpdates(botId, updates);
+    if (!arrival.result.held) {
+      return arrival.result.result;
     }
+    const { firstUnconfirmedUpdateId, nextUpdateId } = arrival.result;
 
     const heldLongPoll = this.#holdLongPoll(botId);
     const waitEndingSignals = [heldLongPoll.controller.signal, this.#sessionLifetime.endSignal];
@@ -145,16 +177,17 @@ export class BotUpdatePollingService {
 
     // A poll that a conflict terminated but that is answered only after the session ended is
     // answered as any other poll the end finds unanswered.
-    if (!this.#sessionLifetime.admitsCommits) {
-      return { retrieved: false, reason: 'session_ended' };
-    }
-    if (heldLongPoll.terminationReason !== undefined) {
-      return { retrieved: false, reason: heldLongPoll.terminationReason };
-    }
-    return this.#deliverUpdates(
-      botId,
-      this.#confirmAndReadPendingUpdates(botId, firstUnconfirmedUpdateId, limit),
-    );
+    const answer = this.#transactions.execute((): GetUpdatesResult => {
+      const { terminationReason } = heldLongPoll;
+      if (terminationReason !== undefined) {
+        return { retrieved: false, reason: terminationReason };
+      }
+      return this.#deliverUpdates(
+        botId,
+        this.#confirmAndReadPendingUpdates(botId, firstUnconfirmedUpdateId, limit),
+      );
+    });
+    return answer.executed ? answer.result : { retrieved: false, reason: 'session_ended' };
   }
 
   /** Terminates the bot's held long poll, as setting a webhook does on Telegram. */

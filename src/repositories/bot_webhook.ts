@@ -1,3 +1,5 @@
+import { type ChangeStaging, UNSTAGED_CHANGES } from '../transactions/change_staging.ts';
+import { TransactionalMap } from '../transactions/transactional_collections.ts';
 import type { BotWebhook, WebhookDeliveryError } from '../types/bot_webhook.ts';
 
 /** A bot's webhook and the latest failure to deliver to it, which setting a webhook forgets. */
@@ -8,7 +10,12 @@ export interface BotWebhookRegistration {
 
 /** Owns the webhook of each bot that has one. */
 export class BotWebhookRepository {
-  readonly #registrationsByBotId = new Map<number, BotWebhookRegistration>();
+  readonly #registrationsByBotId: TransactionalMap<number, BotWebhookRegistration>;
+
+  /** `staging` decides how the repository's writes take part in its session's transactions. */
+  constructor(staging: ChangeStaging = UNSTAGED_CHANGES) {
+    this.#registrationsByBotId = new TransactionalMap(staging);
+  }
 
   get(botId: number): BotWebhookRegistration | undefined {
     return this.#registrationsByBotId.get(botId);

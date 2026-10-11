@@ -515,13 +515,15 @@
       {
         "from": "bot-update-subscription-repository",
         "allow": [
-          "domain"
+          "domain",
+          "change-staging"
         ]
       },
       {
         "from": "bot-webhook-repository",
         "allow": [
-          "domain"
+          "domain",
+          "change-staging"
         ]
       },
       {
@@ -576,7 +578,8 @@
       {
         "from": "queued-bot-api-answer-repository",
         "allow": [
-          "domain"
+          "domain",
+          "change-staging"
         ]
       },
       {

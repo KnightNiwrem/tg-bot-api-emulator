@@ -18,6 +18,7 @@ import {
   DEFAULT_ALLOWED_UPDATE_TYPES,
 } from '../src/types/bot_api.ts';
 import { createRealTimeScheduler } from './support/scheduler.ts';
+import { createUnprojectedTransactions } from './support/unprojected_transactions.ts';
 import { expectSettlementWithin } from './support/settlement.ts';
 
 const BOT_ID = 10;
@@ -308,11 +309,13 @@ function createPollingFixture() {
   });
   const sessionEnd = new AbortController();
   const sessionLifetime = new SessionLifetime(sessionEnd.signal);
+  const transactions = createUnprojectedTransactions(sessionLifetime);
   const botUpdatePolling = new BotUpdatePollingService({
     botUpdates,
     updateActivity: botActivity,
     scheduler: createRealTimeScheduler(),
     sessionLifetime,
+    transactions,
   });
   // The bots poll and set no webhook, so their subscriptions change only through getUpdates.
   const updateConsumers = new BotUpdateConsumerService({
@@ -326,6 +329,7 @@ function createPollingFixture() {
       },
     },
     sessionLifetime,
+    transactions,
   });
   return {
     botUpdates,

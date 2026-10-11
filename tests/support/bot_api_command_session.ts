@@ -10,7 +10,7 @@ import { callBotApiMethod } from '../../src/api/sessions/bot_api/method_invocati
 import { runWebhookReply } from '../../src/api/sessions/bot_api/webhook_reply.ts';
 import type { BotApiCallAnswer } from '../../src/types/bot_activity.ts';
 import type { VirtualBotProfile } from '../../src/types/virtual_bot.ts';
-import { buildSessionServices } from './session_services.ts';
+import { buildSessionServices, type SessionServicesOptions } from './session_services.ts';
 import { createVirtualAccount, createVirtualBot } from './virtual_users.ts';
 
 /** The error a failing recorder throws. */
@@ -39,11 +39,14 @@ export class HeldWebhookReply {
 }
 
 /**
- * A fresh session, named for the test that uses it, with helpers to drive and read it. Disposing
- * of it, as `using` does, ends the session.
+ * A fresh session, named for the test that uses it and built with `options`, with helpers to drive
+ * and read it. Disposing of it, as `using` does, ends the session.
  */
-export function createBotApiCommandSession(id: string) {
-  const session = buildSessionServices({ id });
+export function createBotApiCommandSession(
+  id: string,
+  options: Omit<SessionServicesOptions, 'id'> = {},
+) {
+  const session = buildSessionServices({ ...options, id });
   const callContext = (bot: VirtualBotProfile): BotApiCallContext => ({
     session,
     bot,

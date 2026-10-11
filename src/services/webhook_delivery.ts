@@ -79,6 +79,16 @@ interface WebhookAttemptTracker {
   beginAttempt(input: BeginWebhookAttemptInput): WebhookAttemptHandle;
 }
 
+/** How a command of the session's transactions ended: executed, or refused once the session ended. */
+type CommandExecution<Result> =
+  | { readonly executed: true; readonly result: Result }
+  | { readonly executed: false; readonly reason: 'session_ended' };
+
+/** The session's transactions, which execute each change a delivery makes, unless it has ended. */
+interface WebhookDeliveryTransactions {
+  execute<Result>(command: () => Result): CommandExecution<Result>;
+}
+
 interface WebhookDeliveryServiceDependencies {
   readonly pendingUpdates: PendingUpdateQueue;
   readonly deliveryErrors: WebhookDeliveryErrorStore;
@@ -93,6 +103,11 @@ interface WebhookDeliveryServiceDependencies {
    */
   readonly startWebhookReply: (botId: number, reply: Response) => void;
   readonly attempts: WebhookAttemptTracker;
+  /**
+   * Executes each change of a delivery as one command: an attempt's start, its acceptance, and its
+   * failure.
+   */
+  readonly transactions: WebhookDeliveryTransactions;
   readonly currentUnixTimeSeconds: () => number;
 }
 
@@ -158,6 +173,11 @@ const INITIAL_UPDATE_RETRY_BACKOFF: UpdateRetryBackoff = { failureCount: 0, dela
  * whatever the sender of its requests does, so a webhook that never answers cannot stall delivery.
  * `attempts` decides when each attempt's deadline arrives and when each failed update's retry is
  * released.
+ *
+ * Each change a delivery makes to the session executes as one command of the session's
+ * transactions: recording an attempt's start, accepting its update with the confirmation's record,
+ * and recording its failure with the webhook's delivery error. None commits once the session has
+ * ended, whatever a sender still running then answers.
  */
 export class WebhookDeliveryService {
   readonly #pendingUpdates: PendingUpdateQueue;
@@ -166,6 +186,7 @@ export class WebhookDeliveryService {
   readonly #sendWebhookRequest: WebhookTransport;
   readonly #startWebhookReply: (botId: number, reply: Response) => void;
   readonly #attempts: WebhookAttemptTracker;
+  readonly #transactions: WebhookDeliveryTransactions;
   readonly #currentUnixTimeSeconds: () => number;
 
   constructor(
@@ -176,6 +197,7 @@ export class WebhookDeliveryService {
       sendWebhookRequest,
       startWebhookReply,
       attempts,
+      transactions,
       currentUnixTimeSeconds,
     }: WebhookDeliveryServiceDependencies,
   ) {
@@ -185,6 +207,7 @@ export class WebhookDeliveryService {
     this.#sendWebhookRequest = sendWebhookRequest;
     this.#startWebhookReply = startWebhookReply;
     this.#attempts = attempts;
+    this.#transactions = transactions;
     this.#currentUnixTimeSeconds = currentUnixTimeSeconds;
   }
 
@@ -279,9 +302,13 @@ export class WebhookDeliveryService {
             // The reply's work is under way before the confirmation is published, so no reader
             // sees the update confirmed while the method its webhook named has not started.
             this.#startWebhookReply(botId, reply);
-            this.#pendingUpdates.confirmPendingUpdate(botId, update.update_id);
-            attempt.accept();
-            this.#updateActivity.recordWebhookUpdateConfirmation(botId, update, attempt.id);
+            // Once the session has ended, the update stays pending, as it does for a webhook
+            // whose delivery the end stopped.
+            this.#transactions.execute(() => {
+              this.#pendingUpdates.confirmPendingUpdate(botId, update.update_id);
+              attempt.accept();
+              this.#updateActivity.recordWebhookUpdateConfirmation(botId, update, attempt.id);
+            });
           },
         });
       } finally {
@@ -296,31 +323,39 @@ export class WebhookDeliveryService {
       }
 
       const { failure } = outcome;
-      // A failure decided just before the webhook was replaced or deleted belongs to a webhook that
-      // is no longer the bot's, so it must not become the current webhook's delivery error.
-      if ('errorMessage' in failure && !signal.aborted) {
-        this.#deliveryErrors.recordDeliveryError(botId, {
-          dateUnixSeconds: this.#currentUnixTimeSeconds(),
-          message: failure.errorMessage,
-        });
-      }
       if (failingUpdateId !== update.update_id) {
         failingUpdateId = update.update_id;
         retryBackoff = INITIAL_UPDATE_RETRY_BACKOFF;
       }
       const retry = scheduleUpdateRetry(retryBackoff, outcome.retryAfterSeconds);
       retryBackoff = retry.backoff;
-      // The retry is scheduled before the failure is recorded, so a reader of the record finds the
-      // retry waiting.
-      const retryRelease = attempt.failAndAwaitRetry(failure, retry.delaySeconds);
-      this.#updateActivity.recordWebhookAttemptFailure({
-        botId,
-        update,
-        webhookAttemptId: attempt.id,
-        failure,
-        retryDelaySeconds: retry.delaySeconds,
+      const failureRecording = this.#transactions.execute(() => {
+        // A failure decided just before the webhook was replaced or deleted belongs to a webhook
+        // that is no longer the bot's, so it must not become the current webhook's delivery error.
+        if ('errorMessage' in failure && !signal.aborted) {
+          this.#deliveryErrors.recordDeliveryError(botId, {
+            dateUnixSeconds: this.#currentUnixTimeSeconds(),
+            message: failure.errorMessage,
+          });
+        }
+        // The retry is scheduled before the failure is recorded, so a reader of the record finds
+        // the retry waiting.
+        const retryRelease = attempt.failAndAwaitRetry(failure, retry.delaySeconds);
+        this.#updateActivity.recordWebhookAttemptFailure({
+          botId,
+          update,
+          webhookAttemptId: attempt.id,
+          failure,
+          retryDelaySeconds: retry.delaySeconds,
+        });
+        return retryRelease;
       });
-      await retryRelease;
+      // A failure decided as the session ended is not recorded; the end stopped the delivery.
+      if (!failureRecording.executed) {
+        attempt.cancel();
+        return;
+      }
+      await failureRecording.result;
     }
   }
 
@@ -352,7 +387,13 @@ export class WebhookDeliveryService {
   ): Promise<UpdateDeliveryOutcome> {
     const attemptSignal = AbortSignal.any([deliverySignal, attempt.deadlineSignal]);
     const request = createWebhookRequest(webhook, update, attemptSignal);
-    this.#updateActivity.recordWebhookUpdateDelivery(botId, update, attempt.id);
+    const deliveryRecording = this.#transactions.execute(() =>
+      this.#updateActivity.recordWebhookUpdateDelivery(botId, update, attempt.id)
+    );
+    // An update the session's end finds unsent is not sent at all.
+    if (!deliveryRecording.executed) {
+      return { outcome: 'cancelled' };
+    }
     const responseArrival = await settleUnlessAborted(
       this.#sendWebhookRequest(request),
       attemptSignal,
