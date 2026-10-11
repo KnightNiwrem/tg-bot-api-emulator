@@ -1,3 +1,5 @@
+import { type ChangeStaging, UNSTAGED_CHANGES } from '../transactions/change_staging.ts';
+import { TransactionalMap, TransactionalSet } from '../transactions/transactional_collections.ts';
 import type { GeoLocation } from '../types/geo_location.ts';
 import type { InlineQuery, InlineQueryAnswer, InlineQueryId } from '../types/inline_query.ts';
 import type { AccountChatAddress } from '../types/virtual_chat.ts';
@@ -16,14 +18,26 @@ export interface AddInlineQueryInput {
  * answer cache holds for later queries to reuse.
  */
 export class InlineQueryRepository {
-  readonly #inlineQueriesById = new Map<InlineQueryId, InlineQuery>();
+  readonly #staging: ChangeStaging;
+  readonly #inlineQueriesById: TransactionalMap<InlineQueryId, InlineQuery>;
   /** The queries whose answers the cache holds, in the order they were answered. */
-  readonly #cachedAnswerQueryIds = new Set<InlineQueryId>();
+  readonly #cachedAnswerQueryIds: TransactionalSet<InlineQueryId>;
   #nextInlineQueryNumber = 1;
 
+  /** `staging` decides how the repository's writes take part in its session's transactions. */
+  constructor(staging: ChangeStaging = UNSTAGED_CHANGES) {
+    this.#staging = staging;
+    this.#inlineQueriesById = new TransactionalMap(staging);
+    this.#cachedAnswerQueryIds = new TransactionalSet(staging);
+  }
+
   addInlineQuery(input: AddInlineQueryInput): InlineQuery {
+    const inlineQueryNumber = this.#nextInlineQueryNumber++;
+    this.#staging.recordRevert(() => {
+      this.#nextInlineQueryNumber = inlineQueryNumber;
+    });
     const inlineQuery: InlineQuery = {
-      id: String(this.#nextInlineQueryNumber++),
+      id: String(inlineQueryNumber),
       accountId: input.accountId,
       botId: input.botId,
       chat: { ...input.chat },

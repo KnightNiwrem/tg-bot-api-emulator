@@ -14,10 +14,11 @@ import {
 import { BOT_API_ERRORS } from '../errors/error_catalogue.ts';
 import { presentQueryAnswerFailure } from '../errors/query_answer_failure_presenter.ts';
 import {
+  answeredPreparation,
   badRequestDescription,
+  type BotApiCallPreparation,
   botApiError,
   type BotApiMethod,
-  type BotApiMethodAnswer,
   type BotApiMethodContext,
   botApiResult,
 } from '../method_call.ts';
@@ -35,10 +36,13 @@ import {
 } from '../rich_message_parameter.ts';
 import { excludeRichMessageWebFiles } from '../web_file_parameter.ts';
 
-/** The methods that answer a user's callback query or inline query. */
+/**
+ * The methods that answer a user's callback query or inline query, each executed as a command in
+ * its call's transaction.
+ */
 export const QUERY_ANSWER_METHODS: readonly BotApiMethod[] = [
-  { name: 'answerCallbackQuery', recordsActivity: true, handler: handleAnswerCallbackQuery },
-  { name: 'answerInlineQuery', recordsActivity: true, handler: handleAnswerInlineQuery },
+  { name: 'answerCallbackQuery', recordsActivity: true, prepare: prepareAnswerCallbackQuery },
+  { name: 'answerInlineQuery', recordsActivity: true, prepare: prepareAnswerInlineQuery },
 ];
 
 /** How the Bot API server reports that it cannot read an inline query result. */
@@ -86,37 +90,44 @@ type InlineQueryResultRequest = Parameters<
 /** What an inline query result's `input_message_content` sends, as the service reads it. */
 type InlineResultMessageContentRequest = NonNullable<InlineQueryResultRequest['messageContent']>;
 
-function handleAnswerCallbackQuery(
+function prepareAnswerCallbackQuery(
   context: BotApiMethodContext,
   parameters: BotApiRequestParameters,
-): BotApiMethodAnswer {
+): BotApiCallPreparation {
   const parsedParameters = answerCallbackQueryParametersSchema.safeParse(parameters);
   if (!parsedParameters.success) {
-    return botApiError(400, 'Bad Request: invalid answerCallbackQuery parameters');
+    return answeredPreparation(
+      botApiError(400, 'Bad Request: invalid answerCallbackQuery parameters'),
+    );
   }
 
-  const result = context.session.botApi.answerCallbackQuery(
-    context.bot,
-    {
-      callbackQueryId: parsedParameters.data.callback_query_id,
-      text: parsedParameters.data.text,
-      showAlert: parsedParameters.data.show_alert,
-      cacheTimeSeconds: parsedParameters.data.cache_time,
-      url: parsedParameters.data.url,
+  return {
+    kind: 'command',
+    execute: () => {
+      const result = context.session.botApi.answerCallbackQuery(
+        context.bot,
+        {
+          callbackQueryId: parsedParameters.data.callback_query_id,
+          text: parsedParameters.data.text,
+          showAlert: parsedParameters.data.show_alert,
+          cacheTimeSeconds: parsedParameters.data.cache_time,
+          url: parsedParameters.data.url,
+        },
+      );
+      return result.answered ? botApiResult(true) : presentQueryAnswerFailure(result);
     },
-  );
-  return result.answered ? botApiResult(true) : presentQueryAnswerFailure(result);
+  };
 }
 
-function handleAnswerInlineQuery(
+function prepareAnswerInlineQuery(
   context: BotApiMethodContext,
   parameters: BotApiRequestParameters,
   uploadedFiles: BotApiUploadedFiles,
-): BotApiMethodAnswer {
+): BotApiCallPreparation {
   const invalidParametersDescription = 'Bad Request: invalid answerInlineQuery parameters';
   const parsedParameters = answerInlineQueryParametersSchema.safeParse(parameters);
   if (!parsedParameters.success) {
-    return botApiError(400, invalidParametersDescription);
+    return answeredPreparation(botApiError(400, invalidParametersDescription));
   }
   const { data } = parsedParameters;
   const resultsReading = readInlineQueryResultsParameter(
@@ -124,13 +135,13 @@ function handleAnswerInlineQuery(
     invalidParametersDescription,
   );
   if (!resultsReading.read) {
-    return botApiError(400, resultsReading.description);
+    return answeredPreparation(botApiError(400, resultsReading.description));
   }
   const results: InlineQueryResultRequest[] = [];
   for (const result of resultsReading.results) {
     const keyboardReading = readInlineKeyboardParameter(context, result.inlineKeyboard);
     if (!keyboardReading.read) {
-      return keyboardReading.errorAnswer;
+      return answeredPreparation(keyboardReading.errorAnswer);
     }
     const resultReading = readInlineQueryResultContent(
       context,
@@ -139,7 +150,7 @@ function handleAnswerInlineQuery(
       invalidParametersDescription,
     );
     if (!resultReading.read) {
-      return botApiError(400, resultReading.description);
+      return answeredPreparation(botApiError(400, resultReading.description));
     }
     results.push(resultReading.result);
   }
@@ -149,18 +160,23 @@ function handleAnswerInlineQuery(
     startParameter: data.switch_pm_parameter,
   });
 
-  const result = context.session.botApi.answerInlineQuery(
-    context.bot,
-    {
-      inlineQueryId: data.inline_query_id,
-      results,
-      cacheTimeSeconds: data.cache_time,
-      isPersonal: data.is_personal,
-      nextOffset: data.next_offset,
-      button,
+  return {
+    kind: 'command',
+    execute: () => {
+      const result = context.session.botApi.answerInlineQuery(
+        context.bot,
+        {
+          inlineQueryId: data.inline_query_id,
+          results,
+          cacheTimeSeconds: data.cache_time,
+          isPersonal: data.is_personal,
+          nextOffset: data.next_offset,
+          button,
+        },
+      );
+      return result.answered ? botApiResult(true) : presentQueryAnswerFailure(result);
     },
-  );
-  return result.answered ? botApiResult(true) : presentQueryAnswerFailure(result);
+  };
 }
 
 /**

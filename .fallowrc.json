@@ -524,13 +524,15 @@
       {
         "from": "callback-query-repository",
         "allow": [
-          "domain"
+          "domain",
+          "change-staging"
         ]
       },
       {
         "from": "inline-query-repository",
         "allow": [
-          "domain"
+          "domain",
+          "change-staging"
         ]
       },
       {

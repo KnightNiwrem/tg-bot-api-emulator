@@ -860,7 +860,7 @@ function createInlineQueryFixture() {
     supergroupMessages: supergroupMessaging,
     inlineQueries: new InlineQueryRepository(),
     webMediaFiles: mediaFiles,
-    events,
+    transactions: { ...events, withinTransaction: (command) => command() },
   });
   const account = createAccount(virtualUsers, 'Ada');
   const inlineBot = createBot(virtualUsers, 'inline_bot', { supports_inline_queries: true });

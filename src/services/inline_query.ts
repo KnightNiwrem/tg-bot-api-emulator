@@ -371,8 +371,10 @@ interface InlineQueryStore {
   removeCachedAnswers(inlineQueryIds: readonly InlineQueryId[]): void;
 }
 
-/** Takes each event into the transaction of the command that caused it. */
-interface ChatDomainEventSink {
+/** The session's transactions: each command of the service runs in one, and emits its event into it. */
+interface InlineQueryTransactions {
+  /** Runs a command in the transaction of the command executing, or in one of its own. */
+  withinTransaction<Result>(command: () => Result): Result;
   emit(event: ChatDomainEvent): void;
 }
 
@@ -396,7 +398,8 @@ interface InlineQueryServiceDependencies {
   readonly supergroupMessages: SupergroupInlineResultMessaging;
   readonly inlineQueries: InlineQueryStore;
   readonly webMediaFiles: InlineResultWebMediaFiles;
-  readonly events: ChatDomainEventSink;
+  /** Runs each command that changes the session as one transaction, which receives its event. */
+  readonly transactions: InlineQueryTransactions;
 }
 
 /** TDLib's `is_base64url_characters`, which a `start_parameter` must satisfy. */
@@ -411,6 +414,11 @@ const utf8Encoder = new TextEncoder();
  *
  * Checks of an answer follow Telegram's order: TDLib checks the button, the number of results, and
  * each result's message content before Telegram's servers check the query and the rest.
+ *
+ * Sending a query, answering it and expiring cached answers each run as one transaction: the query
+ * and the update it becomes, or the answer and the cache it fills or empties, are published
+ * together, or, should any step fail, not at all. Sending a chosen result is message sending, and
+ * joins the transaction of a command that runs it.
  */
 export class InlineQueryService {
   readonly #accounts: AccountLookup;
@@ -421,7 +429,7 @@ export class InlineQueryService {
   readonly #supergroupMessages: SupergroupInlineResultMessaging;
   readonly #inlineQueries: InlineQueryStore;
   readonly #webMediaFiles: InlineResultWebMediaFiles;
-  readonly #events: ChatDomainEventSink;
+  readonly #transactions: InlineQueryTransactions;
 
   constructor(
     {
@@ -432,7 +440,7 @@ export class InlineQueryService {
       supergroupMessages,
       inlineQueries,
       webMediaFiles,
-      events,
+      transactions,
     }: InlineQueryServiceDependencies,
   ) {
     this.#accounts = accounts;
@@ -443,7 +451,7 @@ export class InlineQueryService {
     this.#supergroupMessages = supergroupMessages;
     this.#inlineQueries = inlineQueries;
     this.#webMediaFiles = webMediaFiles;
-    this.#events = events;
+    this.#transactions = transactions;
   }
 
   /**
@@ -458,44 +466,46 @@ export class InlineQueryService {
    * an answer that is not personal for any account.
    */
   sendInlineQuery(input: SendInlineQueryInput): SendInlineQueryResult {
-    if (this.#accounts.getById(input.fromAccountId) === undefined) {
-      return { sent: false, reason: 'account_not_found' };
-    }
-    const bot = this.#bots.getById(input.botId);
-    if (bot === undefined) {
-      return { sent: false, reason: 'bot_not_found' };
-    }
-    if (!bot.profile.supports_inline_queries) {
-      return { sent: false, reason: 'inline_mode_disabled' };
-    }
-    // Telegram's apps share a location only with bots that request it.
-    if (input.userLocation !== undefined && !bot.requestsInlineLocation) {
-      return { sent: false, reason: 'inline_location_not_requested' };
-    }
-    const chatFailure = this.#checkChatAccess(input.fromAccountId, input.chat);
-    if (chatFailure !== undefined) {
-      return { sent: false, reason: chatFailure };
-    }
+    return this.#transactions.withinTransaction(() => {
+      if (this.#accounts.getById(input.fromAccountId) === undefined) {
+        return { sent: false, reason: 'account_not_found' };
+      }
+      const bot = this.#bots.getById(input.botId);
+      if (bot === undefined) {
+        return { sent: false, reason: 'bot_not_found' };
+      }
+      if (!bot.profile.supports_inline_queries) {
+        return { sent: false, reason: 'inline_mode_disabled' };
+      }
+      // Telegram's apps share a location only with bots that request it.
+      if (input.userLocation !== undefined && !bot.requestsInlineLocation) {
+        return { sent: false, reason: 'inline_location_not_requested' };
+      }
+      const chatFailure = this.#checkChatAccess(input.fromAccountId, input.chat);
+      if (chatFailure !== undefined) {
+        return { sent: false, reason: chatFailure };
+      }
 
-    const inlineQuery = this.#inlineQueries.addInlineQuery({
-      accountId: input.fromAccountId,
-      botId: input.botId,
-      chat: input.chat,
-      query: input.query,
-      offset: input.offset,
-      ...(input.userLocation === undefined ? {} : { userLocation: input.userLocation }),
+      const inlineQuery = this.#inlineQueries.addInlineQuery({
+        accountId: input.fromAccountId,
+        botId: input.botId,
+        chat: input.chat,
+        query: input.query,
+        offset: input.offset,
+        ...(input.userLocation === undefined ? {} : { userLocation: input.userLocation }),
+      });
+      const cachedAnswer = this.#findCachedAnswer(inlineQuery);
+      if (cachedAnswer !== undefined) {
+        return {
+          sent: true,
+          inlineQuery: this.#inlineQueries.recordAnswer(inlineQuery.id, cachedAnswer, {
+            addsToCache: false,
+          }),
+        };
+      }
+      this.#transactions.emit({ type: 'inline_query_created', inlineQuery });
+      return { sent: true, inlineQuery };
     });
-    const cachedAnswer = this.#findCachedAnswer(inlineQuery);
-    if (cachedAnswer !== undefined) {
-      return {
-        sent: true,
-        inlineQuery: this.#inlineQueries.recordAnswer(inlineQuery.id, cachedAnswer, {
-          addsToCache: false,
-        }),
-      };
-    }
-    this.#events.emit({ type: 'inline_query_created', inlineQuery });
-    return { sent: true, inlineQuery };
   }
 
   /**
@@ -504,53 +514,57 @@ export class InlineQueryService {
    * be answered.
    */
   answerInlineQuery(input: AnswerInlineQueryInput): AnswerInlineQueryResult {
-    const buttonFailure = input.button === undefined ? undefined : checkResultsButton(input.button);
-    if (buttonFailure !== undefined) {
-      return { answered: false, reason: buttonFailure };
-    }
-    if (input.results.length > MAX_INLINE_QUERY_RESULT_COUNT) {
-      return { answered: false, reason: 'too_many_results' };
-    }
-    const messageContents: NormalizedInlineResultContent[] = [];
-    for (const result of input.results) {
-      const normalization = this.#normalizeResultContent(result.messageContent);
-      if (!normalization.normalized) {
-        return { answered: false, ...normalization.failure };
+    return this.#transactions.withinTransaction(() => {
+      const buttonFailure = input.button === undefined
+        ? undefined
+        : checkResultsButton(input.button);
+      if (buttonFailure !== undefined) {
+        return { answered: false, reason: buttonFailure };
       }
-      messageContents.push(normalization.content);
-    }
+      if (input.results.length > MAX_INLINE_QUERY_RESULT_COUNT) {
+        return { answered: false, reason: 'too_many_results' };
+      }
+      const messageContents: NormalizedInlineResultContent[] = [];
+      for (const result of input.results) {
+        const normalization = this.#normalizeResultContent(result.messageContent);
+        if (!normalization.normalized) {
+          return { answered: false, ...normalization.failure };
+        }
+        messageContents.push(normalization.content);
+      }
 
-    const inlineQuery = this.#inlineQueries.getInlineQuery(input.inlineQueryId);
-    if (
-      inlineQuery === undefined || inlineQuery.botId !== input.fromBotId ||
-      inlineQuery.state.status !== 'awaiting_answer'
-    ) {
-      return { answered: false, reason: 'query_id_invalid' };
-    }
-    if (utf8Encoder.encode(input.nextOffset).length > MAX_INLINE_QUERY_NEXT_OFFSET_BYTES) {
-      return { answered: false, reason: 'next_offset_invalid' };
-    }
-    const resultFailure = checkSpecifiedResults(input.results, messageContents);
-    if (resultFailure !== undefined) {
-      return { answered: false, reason: resultFailure };
-    }
+      const inlineQuery = this.#inlineQueries.getInlineQuery(input.inlineQueryId);
+      if (
+        inlineQuery === undefined || inlineQuery.botId !== input.fromBotId ||
+        inlineQuery.state.status !== 'awaiting_answer'
+      ) {
+        return { answered: false, reason: 'query_id_invalid' };
+      }
+      if (utf8Encoder.encode(input.nextOffset).length > MAX_INLINE_QUERY_NEXT_OFFSET_BYTES) {
+        return { answered: false, reason: 'next_offset_invalid' };
+      }
+      const resultFailure = checkSpecifiedResults(input.results, messageContents);
+      if (resultFailure !== undefined) {
+        return { answered: false, reason: resultFailure };
+      }
 
-    return {
-      answered: true,
-      inlineQuery: this.#inlineQueries.recordAnswer(
-        inlineQuery.id,
-        {
-          results: input.results.map((result, resultIndex) =>
-            toInlineQueryResult(result, toAnsweredResultContent(messageContents[resultIndex]))
-          ),
-          cacheTimeSeconds: input.cacheTimeSeconds,
-          isPersonal: input.isPersonal,
-          nextOffset: input.nextOffset,
-          ...(input.button === undefined ? {} : { button: input.button }),
-        },
-        { addsToCache: input.cacheTimeSeconds > 0 },
-      ),
-    };
+      return {
+        answered: true,
+        inlineQuery: this.#inlineQueries.recordAnswer(
+          inlineQuery.id,
+          {
+            results: input.results.map((result, resultIndex) =>
+              toInlineQueryResult(result, toAnsweredResultContent(messageContents[resultIndex]))
+            ),
+            cacheTimeSeconds: input.cacheTimeSeconds,
+            isPersonal: input.isPersonal,
+            nextOffset: input.nextOffset,
+            ...(input.button === undefined ? {} : { button: input.button }),
+          },
+          { addsToCache: input.cacheTimeSeconds > 0 },
+        ),
+      };
+    });
   }
 
   /**
@@ -560,18 +574,20 @@ export class InlineQueryService {
    * whichever account received it, and each query keeps its answer.
    */
   expireAnswerCache(inlineQueryId: InlineQueryId): ExpireAnswerCacheResult {
-    const inlineQuery = this.#inlineQueries.getInlineQuery(inlineQueryId);
-    if (inlineQuery === undefined) {
-      return { expired: false, reason: 'inline_query_not_found' };
-    }
-    const cachedQueryIds = this.#inlineQueries.listQueriesWithCachedAnswers(inlineQuery.botId)
-      .filter((cachedQuery) => isSameInlineQueryRequest(cachedQuery, inlineQuery))
-      .map((cachedQuery) => cachedQuery.id);
-    if (cachedQueryIds.length === 0) {
-      return { expired: false, reason: 'answer_not_cached' };
-    }
-    this.#inlineQueries.removeCachedAnswers(cachedQueryIds);
-    return { expired: true };
+    return this.#transactions.withinTransaction(() => {
+      const inlineQuery = this.#inlineQueries.getInlineQuery(inlineQueryId);
+      if (inlineQuery === undefined) {
+        return { expired: false, reason: 'inline_query_not_found' };
+      }
+      const cachedQueryIds = this.#inlineQueries.listQueriesWithCachedAnswers(inlineQuery.botId)
+        .filter((cachedQuery) => isSameInlineQueryRequest(cachedQuery, inlineQuery))
+        .map((cachedQuery) => cachedQuery.id);
+      if (cachedQueryIds.length === 0) {
+        return { expired: false, reason: 'answer_not_cached' };
+      }
+      this.#inlineQueries.removeCachedAnswers(cachedQueryIds);
+      return { expired: true };
+    });
   }
 
   /** Returns an inline query the account sent, or `undefined` for any other query. */
@@ -618,7 +634,7 @@ export class InlineQueryService {
     if (!sending.sent) {
       return { chosen: false, reason: sending.reason };
     }
-    this.#events.emit({
+    this.#transactions.emit({
       type: 'inline_query_result_chosen',
       inlineQuery,
       resultId: result.id,

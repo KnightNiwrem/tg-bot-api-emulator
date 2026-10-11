@@ -543,7 +543,7 @@ function createBotApiFixture() {
     accountChatMessages: createAccountChatMessageReader({ accounts, privateChats, supergroups }),
     bots,
     callbackQueries: new CallbackQueryRepository(),
-    events,
+    transactions: { ...events, withinTransaction: (command) => command() },
   });
   const sharedChatAdministration = new SharedChatAdministrationService({
     identities,
@@ -664,7 +664,7 @@ function createBotApiFixture() {
       supergroupMessages: supergroupMessaging,
       inlineQueries: new InlineQueryRepository(),
       webMediaFiles: mediaFiles,
-      events,
+      transactions: { ...events, withinTransaction: (command) => command() },
     }),
     botCaptions: {
       normalizeBotCaption: (caption) => normalizeCaption(caption, 'bot', textFixingContext),
