@@ -262,6 +262,14 @@ Deno.test('rejected reactions leave reactions and updates unchanged', async () =
         'Bad Request: can\'t parse ReactionType: Can\'t find field "emoji"',
       ],
       [
+        {
+          chat_id: team.chatId,
+          message_id: message.message_id,
+          reaction: [{ type: 'custom_emoji' }],
+        },
+        'Bad Request: can\'t parse ReactionType: Can\'t find field "custom_emoji_id"',
+      ],
+      [
         { chat_id: team.chatId, message_id: message.message_id, reaction: [{ type: 'paid' }] },
         "Bad Request: can't parse ReactionType: invalid reaction type specified",
       ],

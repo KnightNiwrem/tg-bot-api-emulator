@@ -1,6 +1,8 @@
 import { assertEquals } from '@std/assert';
 import { BOT_API_ERRORS } from '../src/api/sessions/bot_api/errors/error_catalogue.ts';
 import type { BotApiErrorProvenance } from '../src/api/sessions/bot_api/errors/error_template.ts';
+import type { FormattedTextError } from '../src/api/sessions/bot_api/formatted_text_reading.ts';
+import type { ButtonFailure } from '../src/api/sessions/bot_api/reply_markup_reading.ts';
 import { presentMessageEditingFailure } from '../src/api/sessions/bot_api/errors/message_editing_failure_presenter.ts';
 import { presentMessageSendingFailure } from '../src/api/sessions/bot_api/errors/message_sending_failure_presenter.ts';
 import type {
@@ -508,10 +510,65 @@ Deno.test('every catalogue entry names where its description comes from', () => 
     albumMemberUploadRefused: [
       BOT_API_ERRORS.albumMemberUploadRefused.provenance({ refusal: { reason: 'image_invalid' } }),
       BOT_API_ERRORS.albumMemberUploadRefused.provenance({ refusal: uploadTooBig('local') }),
+      BOT_API_ERRORS.albumMemberUploadRefused.provenance({
+        refusal: { reason: 'web_content_unavailable' },
+      }),
     ],
     inputFileMissing: (['photo', 'document', 'video', 'voice', 'audio'] as const).map((fileKind) =>
       BOT_API_ERRORS.inputFileMissing.provenance({ fileKind })
     ),
+    formattedTextInvalid: FORMATTED_TEXT_ERRORS.map((error) =>
+      BOT_API_ERRORS.formattedTextInvalid.provenance(error)
+    ),
+    buttonInvalid: BUTTON_FAILURES.map((failure) =>
+      BOT_API_ERRORS.buttonInvalid.provenance(failure)
+    ),
+    menuButtonInvalid: [
+      BOT_API_ERRORS.menuButtonInvalid.provenance({ reason: 'menu_button_not_object' }),
+      BOT_API_ERRORS.menuButtonInvalid.provenance({ reason: 'menu_button_type_unsupported' }),
+      BOT_API_ERRORS.menuButtonInvalid.provenance({ reason: 'field_missing', fieldName: 'type' }),
+    ],
+    botCommandScopeInvalid: (
+      ['scope_not_object', 'scope_type_unsupported', 'scope_user_id_invalid'] as const
+    ).map((reason) => BOT_API_ERRORS.botCommandScopeInvalid.provenance({ reason })),
+    chatAdministratorRightsInvalid: [
+      BOT_API_ERRORS.chatAdministratorRightsInvalid.provenance({ reason: 'rights_not_object' }),
+      BOT_API_ERRORS.chatAdministratorRightsInvalid.provenance({
+        reason: 'field_type_invalid',
+        fieldName: 'can_manage_chat',
+        expectedType: 'Boolean',
+      }),
+    ],
+    reactionTypeInvalid: [
+      BOT_API_ERRORS.reactionTypeInvalid.provenance({ reason: 'reaction_type_not_object' }),
+      BOT_API_ERRORS.reactionTypeInvalid.provenance({ reason: 'reaction_type_invalid' }),
+    ],
+    inputMediaInvalid: [
+      ...(['media_not_object', 'animation_in_album', 'media_file_not_found'] as const).map((
+        reason,
+      ) => BOT_API_ERRORS.inputMediaInvalid.provenance({ reason })),
+      BOT_API_ERRORS.inputMediaInvalid.provenance({
+        reason: 'media_type_unsupported',
+        mediaType: 'sticker',
+      }),
+      BOT_API_ERRORS.inputMediaInvalid.provenance({
+        reason: 'caption_invalid',
+        textError: { reason: 'text_too_long' },
+      }),
+    ],
+    pollOptionInvalid: [
+      BOT_API_ERRORS.pollOptionInvalid.provenance({ reason: 'option_not_object' }),
+      BOT_API_ERRORS.pollOptionInvalid.provenance({ reason: 'field_missing', fieldName: 'text' }),
+    ],
+    inlineQueryResultInvalid: [
+      BOT_API_ERRORS.inlineQueryResultInvalid.provenance({
+        reason: 'result_type_unsupported',
+        resultType: 'game',
+      }),
+      BOT_API_ERRORS.inlineQueryResultInvalid.provenance({
+        reason: 'input_message_content_missing',
+      }),
+    ],
   };
   const problems = Object.entries(BOT_API_ERRORS).flatMap(([name, entry]) => {
     const provenances = hasFixedProvenance(entry)
@@ -543,6 +600,36 @@ Deno.test('an upload limit is answered as Telegram answers it under each server'
     'Expected the provenance to vary with the server',
   );
 });
+
+/** One error of each kind that Telegram gives for text it cannot read with its formatting. */
+const FORMATTED_TEXT_ERRORS: readonly FormattedTextError[] = [
+  { reason: 'text_too_long' },
+  { reason: 'parse_mode_unsupported' },
+  { reason: 'text_encoding_invalid' },
+  { reason: 'markup_invalid', markupError: 'Unclosed start tag at byte offset 0' },
+  { reason: 'entity_unparsable', entityError: { reason: 'type_missing' } },
+  { reason: 'entity_unparsable', entityError: { reason: 'type_unsupported' } },
+  { reason: 'entity_unparsable', entityError: { reason: 'date_time_format_invalid' } },
+];
+
+/** One failure of each kind and button that Telegram gives for a button it cannot read. */
+const BUTTON_FAILURES: readonly ButtonFailure[] = [
+  ...(['contact', 'location', 'poll', 'web_app', 'users', 'chat'] as const).map((requestKind) => ({
+    reason: 'request_outside_private_chat' as const,
+    requestKind,
+  })),
+  { reason: 'login_bot_username_in_rich_message' },
+  { reason: 'login_bot_username_invalid' },
+  { reason: 'login_bot_not_found', botUsername: 'grammy_bot' },
+  { reason: 'inline_query_chat_types_empty' },
+  ...(['inline_url', 'inline_login', 'inline_web_app', 'keyboard_web_app'] as const).map((
+    button,
+  ) => ({ reason: 'button_url_invalid' as const, button, linkError: 'URL is invalid' })),
+  ...(['inline_login', 'inline_web_app', 'keyboard_web_app'] as const).map((button) => ({
+    reason: 'user_link_not_allowed' as const,
+    button,
+  })),
+];
 
 function uploadTooBig<UploadProfile extends 'cloud' | 'local'>(uploadProfile: UploadProfile) {
   return {

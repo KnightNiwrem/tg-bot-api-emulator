@@ -12,10 +12,22 @@ import {
   MAX_QUIZ_EXPLANATION_LINE_FEEDS,
   MIN_POLL_OPEN_PERIOD_SECONDS,
 } from '../../../../types/poll.ts';
+import type { ReplyKeyboardButtonRequest } from '../../../../types/reply_interface.ts';
 import { MAX_PHOTO_UPLOAD_BYTES, type StoredFile } from '../../../../types/stored_file.ts';
 import type { BotUploadTooBigFailure } from '../../../../types/upload_profile.ts';
-import { badRequestDescription, describeAlbumMessageNotSent } from '../method_call.ts';
+import type { BotCommandScopeError } from '../bot_command_parameters.ts';
+import type { ChatAdministratorRightsError } from '../chat_administrator_rights_parameter.ts';
+import type { FormattedTextError } from '../formatted_text_reading.ts';
+import type { InlineQueryResultError } from '../inline_query_answer_parameters.ts';
+import type { InputMediaError } from '../input_media_parameter.ts';
+import type { PollOptionError } from '../input_poll_option_parameter.ts';
+import type { MenuButtonError } from '../menu_button_parameter.ts';
+import type { MessageEntityError } from '../message_entities_parameter.ts';
+import type { ReactionTypeError } from '../reaction_type_parameter.ts';
+import type { ButtonFailure, LinkButton } from '../reply_markup_reading.ts';
+import type { JsonObjectFieldError } from '../request_parameters.ts';
 import {
+  type BotApiErrorProvenance,
   type BotApiErrorTemplate,
   botApiServerSource,
   emulatorInference,
@@ -53,11 +65,18 @@ const SEND_PERMISSION_MISSING_DESCRIPTIONS = {
 } as const satisfies Record<PermissionGovernedContent['kind'], string>;
 
 /**
- * An upload of an album's message that Telegram's servers refuse once the album is sent: content
- * they cannot process as a photo, or a file larger than a local Bot API server lets bots upload.
+ * A file of an album's message that Telegram's servers refuse once the album is sent: content
+ * they cannot process as a photo, a file larger than a local Bot API server lets bots upload, or
+ * a file named by URL whose content they cannot download or that is of the wrong type.
  */
 type AlbumMemberUploadRefusal =
-  | { readonly reason: 'image_invalid' | 'photo_dimensions_invalid' }
+  | {
+    readonly reason:
+      | 'image_invalid'
+      | 'photo_dimensions_invalid'
+      | 'web_content_unavailable'
+      | 'web_content_type_invalid';
+  }
   | (BotUploadTooBigFailure & { readonly uploadProfile: 'local' });
 
 /** The emulator's wording of the size checks Telegram makes without a description in the source. */
@@ -123,6 +142,109 @@ const LONG_POLL_ABORT = botApiServerSource('telegram-bot-api/Client.cpp#L17493-L
 
 /** The official server's `process_set_webhook_query`, which checks the webhook's settings. */
 const WEBHOOK_SETTINGS_CHECKS = botApiServerSource('telegram-bot-api/Client.cpp#L17239-L17250');
+
+/**
+ * The emulator's rationale for refusing a request body it cannot decode, which Telegram ignores
+ * instead.
+ */
+const UNDECODABLE_BODY_INFERENCE = emulatorInference(
+  'Telegram ignores a request body it cannot decode; the emulator refuses it, so that strict ' +
+    "validation surfaces the bot's mistake in tests",
+);
+
+/**
+ * TDLib's `JsonObject` field getters, whose errors about a missing field or a field of the wrong
+ * JSON type the official server passes on.
+ */
+const JSON_OBJECT_FIELD_GETTERS = tdlibSource('tdutils/td/utils/JsonBuilder.cpp#L561-L686');
+
+/** The official server's `get_array`, which reads a JSON array of objects of one class. */
+const ARRAY_READING = botApiServerSource('telegram-bot-api/Client.cpp#L10056-L10077');
+
+/** The official server's `get_array_generic`, which reads a JSON array of objects of one class. */
+const GENERIC_ARRAY_READING = botApiServerSource('telegram-bot-api/Client.cpp#L10079-L10099');
+
+/**
+ * TDLib's `process_input_message_location`, which refuses a location whose coordinates name no
+ * point on Earth.
+ */
+const LOCATION_CHECK = tdlibSource('td/telegram/Location.cpp#L158-L168');
+
+/**
+ * The errors of TDLib's `KeyboardButton::get_keyboard_button`, which allows a reply keyboard
+ * button with a request only in a private chat, for each request.
+ */
+const REQUEST_OUTSIDE_PRIVATE_CHAT_ERRORS = {
+  contact: {
+    message: 'Phone number can be requested in private chats only',
+    provenance: tdlibSource('td/telegram/KeyboardButton.cpp#L103'),
+  },
+  location: {
+    message: 'Location can be requested in private chats only',
+    provenance: tdlibSource('td/telegram/KeyboardButton.cpp#L109'),
+  },
+  poll: {
+    message: 'Poll can be requested in private chats only',
+    provenance: tdlibSource('td/telegram/KeyboardButton.cpp#L115'),
+  },
+  web_app: {
+    message: 'Web App buttons can be used in private chats only',
+    provenance: tdlibSource('td/telegram/KeyboardButton.cpp#L132'),
+  },
+  users: {
+    message: 'Users can be requested in private chats only',
+    provenance: tdlibSource('td/telegram/KeyboardButton.cpp#L150'),
+  },
+  chat: {
+    message: 'Chats can be requested in private chats only',
+    provenance: tdlibSource('td/telegram/KeyboardButton.cpp#L159'),
+  },
+} as const satisfies Record<ReplyKeyboardButtonRequest['kind'], TelegramErrorMessage>;
+
+/**
+ * How TDLib names a button that opens a link in its error about the link, and where it writes
+ * that error.
+ */
+const LINK_BUTTON_ERRORS = {
+  inline_url: {
+    buttonName: 'Inline keyboard button',
+    provenance: tdlibSource('td/telegram/InlineKeyboardButton.cpp#L255'),
+  },
+  inline_login: {
+    buttonName: 'Inline keyboard button login',
+    provenance: tdlibSource('td/telegram/InlineKeyboardButton.cpp#L323'),
+  },
+  inline_web_app: {
+    buttonName: 'Inline keyboard button Web App',
+    provenance: tdlibSource('td/telegram/InlineKeyboardButton.cpp#L361'),
+  },
+  keyboard_web_app: {
+    buttonName: 'Keyboard button Web App',
+    provenance: tdlibSource('td/telegram/KeyboardButton.cpp#L142'),
+  },
+} as const satisfies Record<
+  LinkButton,
+  { readonly buttonName: string; readonly provenance: BotApiErrorProvenance }
+>;
+
+/** TDLib's errors for a link to a user on a button that needs an HTTPS link. */
+const USER_LINK_NOT_ALLOWED_ERRORS = {
+  inline_login: {
+    message: "Link to a user can't be used in login URL buttons",
+    provenance: tdlibSource('td/telegram/InlineKeyboardButton.cpp#L319'),
+  },
+  inline_web_app: {
+    message: "Link to a user can't be used in Web App URL buttons",
+    provenance: tdlibSource('td/telegram/InlineKeyboardButton.cpp#L357'),
+  },
+  keyboard_web_app: {
+    message: "Link to a user can't be used in Web App URL buttons",
+    provenance: tdlibSource('td/telegram/KeyboardButton.cpp#L138'),
+  },
+} as const satisfies Record<
+  Exclude<LinkButton, 'inline_url'>,
+  TelegramErrorMessage
+>;
 
 /**
  * The errors with which the Bot API answers a refused call, as templates over each failure's
@@ -451,10 +573,22 @@ export const BOT_API_ERRORS = {
       readonly memberPosition: number;
       readonly refusal: AlbumMemberUploadRefusal;
     }) => describeAlbumMessageNotSent(memberPosition, describeAlbumMemberUploadRefusal(refusal)),
-    provenance: ({ refusal }: { readonly refusal: AlbumMemberUploadRefusal }) =>
-      refusal.reason === 'bot_upload_too_big'
-        ? emulatorInference(UPLOAD_LIMIT_INFERENCE)
-        : telegramApiDocumentation('messages.uploadMedia'),
+    provenance: ({ refusal }: { readonly refusal: AlbumMemberUploadRefusal }) => {
+      switch (refusal.reason) {
+        case 'bot_upload_too_big':
+          return emulatorInference(UPLOAD_LIMIT_INFERENCE);
+        case 'web_content_unavailable':
+        case 'web_content_type_invalid':
+          return telegramApiDocumentation('messages.sendMedia');
+        case 'image_invalid':
+        case 'photo_dimensions_invalid':
+          return telegramApiDocumentation('messages.uploadMedia');
+        default: {
+          const unhandledRefusal: never = refusal;
+          throw new Error(`Unhandled refused upload: ${JSON.stringify(unhandledRefusal)}`);
+        }
+      }
+    },
   },
 
   // Drafts and chat actions.
@@ -1134,6 +1268,45 @@ export const BOT_API_ERRORS = {
     'Bad Request: field "first_name" must be non-empty',
     INLINE_CONTACT_RESULT_CHECKS,
   ),
+  /** A result that the official server's `get_inline_query_result` cannot read. */
+  inlineQueryResultInvalid: messageErrorTemplate(
+    "Can't parse InlineQueryResult: ",
+    describeInlineQueryResultError,
+  ),
+  /** A document result whose file, named by URL, is neither a PDF nor a ZIP file. */
+  inlineQueryDocumentMimeTypeInvalid: fixedBotApiError(
+    400,
+    'Bad Request: unallowed document MIME type',
+    tdlibSource('td/telegram/InlineQueriesManager.cpp#L1022'),
+  ),
+  /** A video result whose file, named by URL, is neither an MP4 file nor a web page. */
+  inlineQueryVideoMimeTypeInvalid: fixedBotApiError(
+    400,
+    'Bad Request: unallowed video MIME type',
+    tdlibSource('td/telegram/InlineQueriesManager.cpp#L1146'),
+  ),
+  inlineQueryEmbeddedVideoPlayerContentMissing: fixedBotApiError(
+    400,
+    'Bad Request: inline query results with an embedded video player must specify ' +
+      'input_message_content',
+    emulatorInference(
+      'The Bot API documents that a result with an embedded video player must specify ' +
+        'input_message_content, which the player cannot be sent without; what Telegram answers ' +
+        'otherwise is not documented',
+    ),
+  ),
+  inlineQueryResultTypeUnsupported: {
+    status: () => 400,
+    description: ({ resultType }: { readonly resultType: string }) =>
+      `Bad Request: inline query results of type "${resultType}" are not supported`,
+    provenance: () =>
+      emulatorInference('The emulator lacks games, animations, stickers and venues'),
+  },
+  inlineQueryVenueOrInvoiceContentUnsupported: fixedBotApiError(
+    400,
+    'Bad Request: inline query results sending a venue or invoice are not supported',
+    emulatorInference('The emulator lacks venues and invoices'),
+  ),
 
   // Files the bot downloads.
   /** A `file_id` of no file the bot knows, as the official server's `TdOnGetFileCallback` words it. */
@@ -1183,6 +1356,244 @@ export const BOT_API_ERRORS = {
     WEBHOOK_SETTINGS_CHECKS,
   ),
 
+  // Request bodies, which the emulator decodes before any method reads its parameters.
+  requestBodyMultipartInvalid: fixedBotApiError(
+    400,
+    'Bad Request: invalid multipart/form-data body',
+    UNDECODABLE_BODY_INFERENCE,
+  ),
+  /** A body of a media type other than the three that the emulator decodes. */
+  requestBodyContentTypeUnsupported: {
+    status: () => 400,
+    description: ({ jsonMediaType, urlEncodedFormMediaType, multipartFormMediaType }: {
+      readonly jsonMediaType: string;
+      readonly urlEncodedFormMediaType: string;
+      readonly multipartFormMediaType: string;
+    }) =>
+      `Bad Request: unsupported Content-Type; use ${jsonMediaType}, ${urlEncodedFormMediaType}, ` +
+      `or ${multipartFormMediaType}`,
+    provenance: () => UNDECODABLE_BODY_INFERENCE,
+  },
+  requestBodyJsonInvalid: fixedBotApiError(
+    400,
+    'Bad Request: invalid JSON body',
+    UNDECODABLE_BODY_INFERENCE,
+  ),
+  requestBodyNotJsonObject: fixedBotApiError(
+    400,
+    'Bad Request: JSON object expected',
+    UNDECODABLE_BODY_INFERENCE,
+  ),
+  /** A JSON body's member nested deeper than TDLib's `json_decode` reads, as `HttpReader` reads it. */
+  requestBodyJsonTooDeep: fixedBotApiError(
+    400,
+    "Bad Request: can't parse parameter value: Too big object depth",
+    tdlibSource('tdnet/td/net/HttpReader.cpp#L696-L698'),
+  ),
+
+  // JSON-typed parameters that the official server cannot read as JSON.
+  replyMarkupJsonInvalid: fixedBotApiError(
+    400,
+    "Bad Request: can't parse reply keyboard markup JSON object",
+    botApiServerSource('telegram-bot-api/Client.cpp#L10515'),
+  ),
+  replyParametersJsonInvalid: fixedBotApiError(
+    400,
+    "Bad Request: can't parse reply parameters JSON object",
+    botApiServerSource('telegram-bot-api/Client.cpp#L10147'),
+  ),
+  linkPreviewOptionsJsonInvalid: fixedBotApiError(
+    400,
+    "Bad Request: can't parse link preview options JSON object",
+    botApiServerSource('telegram-bot-api/Client.cpp#L12019'),
+  ),
+  /** `get_message_ids` names the parameter it reads, which is `message_ids` for every method. */
+  messageIdentifiersJsonInvalid: fixedBotApiError(
+    400,
+    "Bad Request: can't parse message_ids JSON object",
+    botApiServerSource('telegram-bot-api/Client.cpp#L13508'),
+  ),
+  botCommandsJsonInvalid: fixedBotApiError(
+    400,
+    "Bad Request: can't parse commands JSON object",
+    botApiServerSource('telegram-bot-api/Client.cpp#L11387'),
+  ),
+  botCommandScopeJsonInvalid: fixedBotApiError(
+    400,
+    "Bad Request: can't parse BotCommandScope JSON object",
+    botApiServerSource('telegram-bot-api/Client.cpp#L11354'),
+  ),
+  menuButtonJsonInvalid: fixedBotApiError(
+    400,
+    "Bad Request: can't parse menu button JSON object",
+    botApiServerSource('telegram-bot-api/Client.cpp#L11428'),
+  ),
+  chatPermissionsJsonInvalid: fixedBotApiError(
+    400,
+    "Bad Request: can't parse permissions JSON object",
+    botApiServerSource('telegram-bot-api/Client.cpp#L12561'),
+  ),
+  chatAdministratorRightsJsonInvalid: fixedBotApiError(
+    400,
+    "Bad Request: can't parse ChatAdministratorRights JSON object",
+    botApiServerSource('telegram-bot-api/Client.cpp#L11481'),
+  ),
+  reactionTypesJsonInvalid: fixedBotApiError(
+    400,
+    "Bad Request: can't parse reaction types JSON object",
+    botApiServerSource('telegram-bot-api/Client.cpp#L13236'),
+  ),
+  /** The `media` of `editMessageMedia`. */
+  inputMediaJsonInvalid: fixedBotApiError(
+    400,
+    "Bad Request: can't parse input media JSON object",
+    botApiServerSource('telegram-bot-api/Client.cpp#L12875'),
+  ),
+  /** The `media` of `sendMediaGroup`. */
+  mediaGroupJsonInvalid: fixedBotApiError(
+    400,
+    "Bad Request: can't parse media JSON object",
+    botApiServerSource('telegram-bot-api/Client.cpp#L13005'),
+  ),
+  pollOptionsJsonInvalid: fixedBotApiError(
+    400,
+    "Bad Request: can't parse options JSON object",
+    botApiServerSource('telegram-bot-api/Client.cpp#L13180'),
+  ),
+  correctOptionIdsJsonInvalid: fixedBotApiError(
+    400,
+    "Bad Request: can't parse correct option identifiers JSON object",
+    botApiServerSource('telegram-bot-api/Client.cpp#L14278'),
+  ),
+  inlineQueryResultsButtonJsonInvalid: fixedBotApiError(
+    400,
+    "Bad Request: can't parse inline query results button JSON object",
+    botApiServerSource('telegram-bot-api/Client.cpp#L10983'),
+  ),
+
+  // Objects and arrays that a parameter holds as JSON, which the official server cannot read.
+  chatPermissionsNotObject: fixedBotApiError(
+    400,
+    'Bad Request: object expected as permissions',
+    botApiServerSource('telegram-bot-api/Client.cpp#L12566'),
+  ),
+  /** A permission that is not a boolean, which `get_chat_permissions` reports with its name. */
+  chatPermissionsFieldInvalid: {
+    status: () => 400,
+    description: ({ fieldName }: { readonly fieldName: string }) =>
+      `Bad Request: can't parse chat permissions: Field "${fieldName}" must be of type Boolean`,
+    provenance: () => JSON_OBJECT_FIELD_GETTERS,
+  },
+  chatAdministratorRightsInvalid: messageErrorTemplate(
+    "Can't parse ChatAdministratorRights: ",
+    describeChatAdministratorRightsError,
+  ),
+  menuButtonInvalid: messageErrorTemplate("Can't parse menu button: ", describeMenuButtonError),
+  botCommandScopeInvalid: messageErrorTemplate(
+    "Can't parse BotCommandScope: ",
+    describeBotCommandScopeError,
+  ),
+  reactionTypesNotArray: fixedBotApiError(
+    400,
+    'Bad Request: expected an Array of ReactionType',
+    ARRAY_READING,
+  ),
+  reactionTypeInvalid: messageErrorTemplate(
+    "Can't parse ReactionType: ",
+    describeReactionTypeError,
+  ),
+  /** An emoji that TDLib reads as no reaction, which `set_message_reactions` refuses. */
+  reactionEmojiEmpty: fixedBotApiError(
+    400,
+    'Bad Request: invalid reaction type specified',
+    tdlibSource('td/telegram/MessageReaction.cpp#L1128-L1131'),
+  ),
+  mediaGroupNotArray: fixedBotApiError(
+    400,
+    'Bad Request: expected an Array of InputMedia',
+    GENERIC_ARRAY_READING,
+  ),
+  /** New media or an album's media that the official server's `get_input_media` cannot read. */
+  inputMediaInvalid: messageErrorTemplate("Can't parse InputMedia: ", describeInputMediaError),
+  inputMediaTypeUnsupported: {
+    status: () => 400,
+    description: ({ mediaType }: { readonly mediaType: string }) =>
+      `Bad Request: InputMedia of type "${mediaType}" is not supported`,
+    provenance: () => emulatorInference('The emulator lacks animations and live photos'),
+  },
+  pollOptionsNotArray: fixedBotApiError(
+    400,
+    'Bad Request: expected an Array of InputPollOption',
+    GENERIC_ARRAY_READING,
+  ),
+  pollOptionInvalid: messageErrorTemplate("Can't parse InputPollOption: ", describePollOptionError),
+  pollOptionMediaUnsupported: fixedBotApiError(
+    400,
+    'Bad Request: media of poll options is not supported',
+    emulatorInference('The emulator does not support media of poll options'),
+  ),
+  correctOptionIdsNotArray: fixedBotApiError(
+    400,
+    'Bad Request: expected an Array of correct option identifiers',
+    botApiServerSource('telegram-bot-api/Client.cpp#L14282'),
+  ),
+  correctOptionIdNotNumber: fixedBotApiError(
+    400,
+    'Bad Request: correct option identifier must be of type Number',
+    botApiServerSource('telegram-bot-api/Client.cpp#L14287'),
+  ),
+  correctOptionIdInvalid: fixedBotApiError(
+    400,
+    'Bad Request: invalid correct option identifier specified',
+    botApiServerSource('telegram-bot-api/Client.cpp#L14291'),
+  ),
+
+  // Formatted text and buttons, as the official server and TDLib read them.
+  /** Text with its parse mode or entities that `get_formatted_text` cannot read. */
+  formattedTextInvalid: messageErrorTemplate('', describeFormattedTextError),
+  /** A button of a keyboard or a rich message that Telegram cannot read. */
+  buttonInvalid: messageErrorTemplate('', describeButtonFailure),
+  /** Coordinates that name no point on Earth, for a location a message or an inline result sends. */
+  locationInvalid: fixedBotApiError(400, 'Bad Request: invalid location specified', LOCATION_CHECK),
+
+  // Files a request names by URL, which Telegram downloads.
+  /** A URL that TDLib cannot read, with its description of the URL. */
+  fileUrlInvalid: {
+    status: () => 400,
+    description: ({ urlError }: { readonly urlError: string }) =>
+      `Bad Request: invalid file HTTP URL specified: ${urlError}`,
+    provenance: () => tdlibSource('td/telegram/files/FileManager.cpp#L3998'),
+  },
+  /** The official server's wording of Telegram's `WEBPAGE_CURL_FAILED`. */
+  webContentUnavailable: fixedBotApiError(
+    400,
+    'Bad Request: failed to get HTTP URL content',
+    botApiServerSource('telegram-bot-api/Client.cpp#L116-L117'),
+  ),
+  /** The official server's wording of Telegram's `WEBPAGE_MEDIA_EMPTY`. */
+  webContentTypeInvalid: fixedBotApiError(
+    400,
+    'Bad Request: wrong type of the web page content',
+    botApiServerSource('telegram-bot-api/Client.cpp#L118-L119'),
+  ),
+
+  // Options the emulator does not support.
+  webhookIpAddressUnsupported: fixedBotApiError(
+    400,
+    'Bad Request: webhook IP addresses are not supported',
+    emulatorInference('The emulator does not connect to a webhook at a given IP address'),
+  ),
+  webhookCertificateUnsupported: fixedBotApiError(
+    400,
+    'Bad Request: custom webhook certificates are not supported',
+    emulatorInference("The emulator does not trust a webhook's self-signed certificate"),
+  ),
+  anonymousAdministratorsUnsupported: fixedBotApiError(
+    400,
+    'Bad Request: anonymous administrators are not supported',
+    emulatorInference('The emulator lacks anonymous administrators'),
+  ),
+
   // Parameters the emulator cannot read.
   /**
    * Parameters that do not fit a method's schema. Telegram ignores or coerces most of them; the
@@ -1204,6 +1615,29 @@ export const BOT_API_ERRORS = {
   },
 } as const satisfies Readonly<Record<string, BotApiErrorTemplate<never>>>;
 
+/**
+ * Words a TDLib error message as the Bot API server's `fail_query_with_error` does for a bad
+ * request: prefixed, with its first letter lowercased unless it begins an error code or acronym.
+ */
+function badRequestDescription(tdlibErrorMessage: string): string {
+  const secondCharacter = tdlibErrorMessage[1] ?? '';
+  const keepsCase = secondCharacter === '_' || /[A-Z]/.test(secondCharacter);
+  const message = keepsCase
+    ? tdlibErrorMessage
+    : tdlibErrorMessage.charAt(0).toLowerCase() + tdlibErrorMessage.slice(1);
+  return `Bad Request: ${message}`;
+}
+
+/**
+ * Telegram's description of an album whose message Telegram's servers refused once the album was
+ * sent, as the official Bot API server's `on_message_send_failed` writes it: the first such
+ * message's position in the album, counted from 1, and the error Telegram's servers gave, which,
+ * unlike the error of a single message, the server does not reword.
+ */
+function describeAlbumMessageNotSent(memberPosition: number, telegramError: string): string {
+  return `Bad Request: failed to send message #${memberPosition} with the error message "${telegramError}"`;
+}
+
 /** The error Telegram's servers give for an album member's upload they refuse. */
 function describeAlbumMemberUploadRefusal(refusal: AlbumMemberUploadRefusal): string {
   switch (refusal.reason) {
@@ -1211,12 +1645,293 @@ function describeAlbumMemberUploadRefusal(refusal: AlbumMemberUploadRefusal): st
       return 'IMAGE_PROCESS_FAILED';
     case 'photo_dimensions_invalid':
       return 'PHOTO_INVALID_DIMENSIONS';
+    case 'web_content_unavailable':
+      return 'WEBPAGE_CURL_FAILED';
+    case 'web_content_type_invalid':
+      return 'WEBPAGE_MEDIA_EMPTY';
     case 'bot_upload_too_big':
       return `File of size ${refusal.fileSizeBytes} bytes is too big; ` +
         `the maximum size is ${refusal.maxFileSizeBytes} bytes`;
     default: {
       const unhandledRefusal: never = refusal;
       throw new Error(`Unhandled refused upload: ${JSON.stringify(unhandledRefusal)}`);
+    }
+  }
+}
+
+/** Telegram's message for a problem, as the code that finds it words it, and where it does. */
+interface TelegramErrorMessage {
+  readonly message: string;
+  readonly provenance: BotApiErrorProvenance;
+}
+
+/**
+ * An error that the official server describes by the message of a problem it found, after a
+ * `prefix` that names the object it was reading, if any, worded as its `fail_query_with_error`
+ * words a bad request: its first letter lowercased. The provenance is the problem's, which varies
+ * with the problem.
+ */
+function messageErrorTemplate<Problem>(
+  prefix: string,
+  describeProblem: (problem: Problem) => TelegramErrorMessage,
+): BotApiErrorTemplate<Problem> {
+  return {
+    status: () => 400,
+    description: (problem) => badRequestDescription(`${prefix}${describeProblem(problem).message}`),
+    provenance: (problem) => describeProblem(problem).provenance,
+  };
+}
+
+function describeJsonObjectFieldError(error: JsonObjectFieldError): TelegramErrorMessage {
+  switch (error.reason) {
+    case 'field_missing':
+      return {
+        message: `Can't find field "${error.fieldName}"`,
+        provenance: JSON_OBJECT_FIELD_GETTERS,
+      };
+    case 'field_type_invalid':
+      return {
+        message: `Field "${error.fieldName}" must be of type ${error.expectedType}`,
+        provenance: JSON_OBJECT_FIELD_GETTERS,
+      };
+    default: {
+      const unhandledError: never = error;
+      throw new Error(`Unhandled JSON field error: ${JSON.stringify(unhandledError)}`);
+    }
+  }
+}
+
+function describeFormattedTextError(error: FormattedTextError): TelegramErrorMessage {
+  switch (error.reason) {
+    case 'text_too_long':
+      return {
+        message: 'Text is too long',
+        provenance: botApiServerSource('telegram-bot-api/Client.cpp#L11957-L11959'),
+      };
+    case 'parse_mode_unsupported':
+      return {
+        message: 'Unsupported parse_mode',
+        provenance: botApiServerSource('telegram-bot-api/Client.cpp#L11971'),
+      };
+    case 'text_encoding_invalid':
+      return {
+        message: 'Text must be encoded in UTF-8',
+        provenance: tdlibSource('td/telegram/SynchronousRequests.cpp#L150-L152'),
+      };
+    case 'markup_invalid':
+      return {
+        message: `Can't parse entities: ${error.markupError}`,
+        provenance: tdlibSource('td/telegram/SynchronousRequests.cpp#L179-L181'),
+      };
+    case 'entity_unparsable': {
+      const entityError = describeMessageEntityError(error.entityError);
+      return {
+        message: `Can't parse MessageEntity: ${entityError.message}`,
+        provenance: entityError.provenance,
+      };
+    }
+    default: {
+      const unhandledError: never = error;
+      throw new Error(`Unhandled formatted text error: ${JSON.stringify(unhandledError)}`);
+    }
+  }
+}
+
+function describeMessageEntityError({ reason }: MessageEntityError): TelegramErrorMessage {
+  switch (reason) {
+    case 'type_missing':
+      return {
+        message: 'Type is not specified',
+        provenance: botApiServerSource('telegram-bot-api/Client.cpp#L11875'),
+      };
+    case 'type_unsupported':
+      return {
+        message: 'Unsupported type specified',
+        provenance: botApiServerSource('telegram-bot-api/Client.cpp#L11935'),
+      };
+    case 'date_time_format_invalid':
+      return {
+        message: 'Invalid date-time format specified',
+        provenance: botApiServerSource('telegram-bot-api/Client.cpp#L19829'),
+      };
+    default: {
+      const unhandledReason: never = reason;
+      throw new Error(`Unhandled entity error: ${unhandledReason}`);
+    }
+  }
+}
+
+function describeButtonFailure(failure: ButtonFailure): TelegramErrorMessage {
+  switch (failure.reason) {
+    case 'request_outside_private_chat':
+      return REQUEST_OUTSIDE_PRIVATE_CHAT_ERRORS[failure.requestKind];
+    case 'login_bot_username_in_rich_message':
+      return {
+        message: 'Bot username must be empty for login_url buttons in rich messages',
+        provenance: botApiServerSource('telegram-bot-api/Client.cpp#L10453-L10455'),
+      };
+    case 'login_bot_username_invalid':
+      return {
+        message: 'LoginUrl bot username is invalid',
+        provenance: botApiServerSource('telegram-bot-api/Client.cpp#L10459-L10466'),
+      };
+    case 'login_bot_not_found':
+      return {
+        message: `bot "${failure.botUsername}" not found`,
+        provenance: botApiServerSource('telegram-bot-api/Client.cpp#L9334-L9335'),
+      };
+    case 'inline_query_chat_types_empty':
+      return {
+        message: 'At least one chat type must be allowed',
+        provenance: tdlibSource('td/telegram/TargetDialogTypes.cpp#L54-L56'),
+      };
+    case 'button_url_invalid': {
+      const { buttonName, provenance } = LINK_BUTTON_ERRORS[failure.button];
+      return { message: `${buttonName} ${failure.linkError}`, provenance };
+    }
+    case 'user_link_not_allowed':
+      return USER_LINK_NOT_ALLOWED_ERRORS[failure.button];
+    default: {
+      const unhandledFailure: never = failure;
+      throw new Error(`Unhandled button failure: ${JSON.stringify(unhandledFailure)}`);
+    }
+  }
+}
+
+function describeMenuButtonError(error: MenuButtonError): TelegramErrorMessage {
+  switch (error.reason) {
+    case 'menu_button_not_object':
+      return {
+        message: 'MenuButton must be an Object',
+        provenance: botApiServerSource('telegram-bot-api/Client.cpp#L11395'),
+      };
+    case 'menu_button_type_unsupported':
+      return {
+        message: 'MenuButton has unsupported type',
+        provenance: botApiServerSource('telegram-bot-api/Client.cpp#L11415'),
+      };
+    default:
+      return describeJsonObjectFieldError(error);
+  }
+}
+
+function describeBotCommandScopeError({ reason }: BotCommandScopeError): TelegramErrorMessage {
+  switch (reason) {
+    case 'scope_not_object':
+      return {
+        message: 'BotCommandScope must be an Object',
+        provenance: botApiServerSource('telegram-bot-api/Client.cpp#L11303'),
+      };
+    case 'scope_type_unsupported':
+      return {
+        message: 'Unsupported type specified',
+        provenance: botApiServerSource('telegram-bot-api/Client.cpp#L11322'),
+      };
+    case 'scope_user_id_invalid':
+      return {
+        message: 'Invalid user_id specified',
+        provenance: botApiServerSource('telegram-bot-api/Client.cpp#L11338'),
+      };
+    default: {
+      const unhandledReason: never = reason;
+      throw new Error(`Unhandled command scope error: ${unhandledReason}`);
+    }
+  }
+}
+
+function describeChatAdministratorRightsError(
+  error: ChatAdministratorRightsError,
+): TelegramErrorMessage {
+  return error.reason === 'rights_not_object'
+    ? {
+      message: 'ChatAdministratorRights must be an Object',
+      provenance: botApiServerSource('telegram-bot-api/Client.cpp#L11441'),
+    }
+    : describeJsonObjectFieldError(error);
+}
+
+function describeReactionTypeError(error: ReactionTypeError): TelegramErrorMessage {
+  switch (error.reason) {
+    case 'reaction_type_not_object':
+      return {
+        message: 'expected an Object',
+        provenance: botApiServerSource('telegram-bot-api/Client.cpp#L13210'),
+      };
+    case 'reaction_type_invalid':
+      return {
+        message: 'invalid reaction type specified',
+        provenance: botApiServerSource('telegram-bot-api/Client.cpp#L13224'),
+      };
+    default:
+      return describeJsonObjectFieldError(error);
+  }
+}
+
+function describeInputMediaError(error: InputMediaError): TelegramErrorMessage {
+  switch (error.reason) {
+    case 'media_not_object':
+      return {
+        message: 'expected an Object',
+        provenance: botApiServerSource('telegram-bot-api/Client.cpp#L12798'),
+      };
+    case 'media_file_not_found':
+      return {
+        message: 'media not found',
+        provenance: botApiServerSource('telegram-bot-api/Client.cpp#L12823'),
+      };
+    case 'animation_in_album':
+      return {
+        message: `type "animation" can't be used in sendMediaGroup`,
+        provenance: botApiServerSource('telegram-bot-api/Client.cpp#L12839'),
+      };
+    case 'media_type_not_allowed':
+      return {
+        message: `type "${error.mediaType}" is not allowed`,
+        provenance: botApiServerSource('telegram-bot-api/Client.cpp#L12858'),
+      };
+    case 'media_type_unsupported':
+      return {
+        message: `type "${error.mediaType}" is unsupported`,
+        provenance: botApiServerSource('telegram-bot-api/Client.cpp#L12864'),
+      };
+    case 'caption_invalid':
+      return describeFormattedTextError(error.textError);
+    default:
+      return describeJsonObjectFieldError(error);
+  }
+}
+
+function describePollOptionError(error: PollOptionError): TelegramErrorMessage {
+  switch (error.reason) {
+    case 'option_not_object':
+      return {
+        message: 'Expected InputPollOption to be an Object',
+        provenance: botApiServerSource('telegram-bot-api/Client.cpp#L13201'),
+      };
+    case 'option_text_invalid':
+      return describeFormattedTextError(error.textError);
+    default:
+      return describeJsonObjectFieldError(error);
+  }
+}
+
+function describeInlineQueryResultError(error: InlineQueryResultError): TelegramErrorMessage {
+  switch (error.reason) {
+    case 'result_type_unsupported':
+      return {
+        message: `type "${error.resultType}" is unsupported for the inline query result`,
+        provenance: botApiServerSource('telegram-bot-api/Client.cpp#L11298'),
+      };
+    case 'input_message_content_missing':
+      return {
+        message: 'Input message content is not specified',
+        provenance: botApiServerSource('telegram-bot-api/Client.cpp#L10932-L10934'),
+      };
+    case 'result_text_invalid':
+      return describeFormattedTextError(error.textError);
+    default: {
+      const unhandledError: never = error;
+      throw new Error(`Unhandled inline query result error: ${JSON.stringify(unhandledError)}`);
     }
   }
 }

@@ -1,11 +1,20 @@
 import { z } from 'zod';
 
 import type { BotMenuButton } from '../../../types/bot_menu_button.ts';
-import { parseBotApiJsonParameter } from './request_parameters.ts';
+import { BOT_API_ERRORS } from './errors/error_catalogue.ts';
+import { type JsonObjectFieldError, parseBotApiJsonParameter } from './request_parameters.ts';
 
 export type MenuButtonParameterReading =
   | { readonly read: true; readonly menuButton: BotMenuButton }
   | { readonly read: false; readonly description: string };
+
+/**
+ * Why the official Bot API server's `get_bot_menu_button` cannot read a menu button: it is not an
+ * object, it has a type the server does not know, or a field is missing or not an object.
+ */
+export type MenuButtonError =
+  | { readonly reason: 'menu_button_not_object' | 'menu_button_type_unsupported' }
+  | JsonObjectFieldError;
 
 const menuButtonTypeSchema = z.looseObject({ type: z.string() });
 const buttonWithoutOptionsSchema = z.strictObject({ type: z.enum(['commands', 'default']) });
@@ -33,22 +42,24 @@ export function readMenuButtonParameter(
   }
   const parsedParameter = parseBotApiJsonParameter(text);
   if (parsedParameter === undefined) {
-    return { read: false, description: "Bad Request: can't parse menu button JSON object" };
+    return { read: false, description: BOT_API_ERRORS.menuButtonJsonInvalid.description() };
   }
   const { value } = parsedParameter;
-  const menuButtonError = (error: string): MenuButtonParameterReading => ({
+  const menuButtonError = (error: MenuButtonError): MenuButtonParameterReading => ({
     read: false,
-    description: `Bad Request: can't parse menu button: ${error}`,
+    description: BOT_API_ERRORS.menuButtonInvalid.description(error),
   });
+  const fieldMissing = (fieldName: string): MenuButtonParameterReading =>
+    menuButtonError({ reason: 'field_missing', fieldName });
   const malformedMenuButton: MenuButtonParameterReading = {
     read: false,
     description: invalidParametersDescription,
   };
   if (typeof value !== 'object' || value === null || Array.isArray(value)) {
-    return menuButtonError('MenuButton must be an Object');
+    return menuButtonError({ reason: 'menu_button_not_object' });
   }
   if (!('type' in value)) {
-    return menuButtonError('Can\'t find field "type"');
+    return fieldMissing('type');
   }
   const menuButtonType = menuButtonTypeSchema.safeParse(value);
   if (!menuButtonType.success) {
@@ -65,17 +76,21 @@ export function readMenuButtonParameter(
     }
     case 'web_app': {
       if (!('text' in value)) {
-        return menuButtonError('Can\'t find field "text"');
+        return fieldMissing('text');
       }
       if (!('web_app' in value)) {
-        return menuButtonError('Can\'t find field "web_app"');
+        return fieldMissing('web_app');
       }
       const webApp = value.web_app;
       if (typeof webApp !== 'object' || webApp === null || Array.isArray(webApp)) {
-        return menuButtonError('Field "web_app" must be of type Object');
+        return menuButtonError({
+          reason: 'field_type_invalid',
+          fieldName: 'web_app',
+          expectedType: 'Object',
+        });
       }
       if (!('url' in webApp)) {
-        return menuButtonError('Can\'t find field "url"');
+        return fieldMissing('url');
       }
       const menuButton = webAppButtonSchema.safeParse(value);
       return menuButton.success
@@ -90,6 +105,6 @@ export function readMenuButtonParameter(
         : malformedMenuButton;
     }
     default:
-      return menuButtonError('MenuButton has unsupported type');
+      return menuButtonError({ reason: 'menu_button_type_unsupported' });
   }
 }

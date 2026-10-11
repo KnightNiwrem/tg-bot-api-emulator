@@ -15,9 +15,32 @@ import {
   type VideoAttributes,
 } from '../../../types/stored_file.ts';
 import { contactNameSchema, contactVcardSchema } from './contact_parameter.ts';
+import { BOT_API_ERRORS } from './errors/error_catalogue.ts';
+import type { FormattedTextError } from './formatted_text_reading.ts';
 import { linkPreviewOptionsSchema } from './link_preview_options_parameter.ts';
 import { inlineKeyboardMarkupSchema } from './reply_markup_parameter.ts';
 import { jsonParameter } from './request_parameters.ts';
+
+/**
+ * Why the official Bot API server's `get_inline_query_result` cannot read a result: it has a type
+ * the server does not know, it sends nothing although its type sends only its
+ * `input_message_content`, or Telegram cannot read its text with its formatting.
+ */
+export type InlineQueryResultError =
+  | { readonly reason: 'result_type_unsupported'; readonly resultType: string }
+  | { readonly reason: 'input_message_content_missing' }
+  | { readonly reason: 'result_text_invalid'; readonly textError: FormattedTextError };
+
+/**
+ * Describes text of a result that Telegram cannot read with its formatting, as the official Bot
+ * API server does: as a result it cannot parse.
+ */
+export function describeInlineQueryResultTextError(textError: FormattedTextError): string {
+  return BOT_API_ERRORS.inlineQueryResultInvalid.description({
+    reason: 'result_text_invalid',
+    textError,
+  });
+}
 
 /** Text as a result specifies it, before its `parse_mode` or entities are read. */
 export interface UnreadFormattedText {
@@ -179,25 +202,12 @@ export type InlineQueryResultParameterReading =
  */
 const WEB_DOCUMENT_MIME_TYPES = ['application/pdf', 'application/zip'] as const;
 
-const WEB_DOCUMENT_MIME_TYPE_INVALID_DESCRIPTION = 'Bad Request: unallowed document MIME type';
-
 /**
  * The MIME types TDLib's `get_input_bot_inline_result` allows a video given by URL to declare,
  * matched as prefixes: a video file, or a web page with an embedded video player.
  */
 const WEB_VIDEO_FILE_MIME_TYPE = 'video/mp4';
 const EMBEDDED_VIDEO_PLAYER_MIME_TYPE = 'text/html';
-
-const WEB_VIDEO_MIME_TYPE_INVALID_DESCRIPTION = 'Bad Request: unallowed video MIME type';
-
-/**
- * The emulator's description for an embedded video player without `input_message_content`, which
- * the Bot API requires because the player itself cannot be sent; what Telegram does with one is not
- * documented.
- */
-const EMBEDDED_VIDEO_PLAYER_CONTENT_MISSING_DESCRIPTION =
-  'Bad Request: inline query results with an embedded video player must specify ' +
-  'input_message_content';
 
 /** The result types that the emulator reads, by the lowercase names Telegram matches. */
 const SUPPORTED_RESULT_TYPES = [
@@ -229,9 +239,6 @@ const UNSUPPORTED_RESULT_TYPES = [
  */
 const VENUE_INPUT_MESSAGE_CONTENT_FIELDS = ['latitude', 'longitude', 'title', 'address'] as const;
 const INVOICE_INPUT_MESSAGE_CONTENT_FIELD = 'payload';
-
-const UNSUPPORTED_INPUT_MESSAGE_CONTENT_DESCRIPTION =
-  'Bad Request: inline query results sending a venue or invoice are not supported';
 
 // TDLib reads an empty text as none, so the text of a photo or document result may be empty.
 const inputTextMessageContentSchema = z.strictObject({
@@ -333,7 +340,10 @@ export function checkInlineQueryResultFileType(
         !WEB_DOCUMENT_MIME_TYPES.some((allowedMimeType) =>
           result.mimeType.startsWith(allowedMimeType)
         )
-      ? { read: false, description: WEB_DOCUMENT_MIME_TYPE_INVALID_DESCRIPTION }
+      ? {
+        read: false,
+        description: BOT_API_ERRORS.inlineQueryDocumentMimeTypeInvalid.description(),
+      }
       : { read: true, result };
   }
   if (result.kind !== 'video' || result.video.kind === 'file_id') {
@@ -341,7 +351,10 @@ export function checkInlineQueryResultFileType(
   }
   if (result.mimeType.startsWith(EMBEDDED_VIDEO_PLAYER_MIME_TYPE)) {
     return result.messageContent === undefined
-      ? { read: false, description: EMBEDDED_VIDEO_PLAYER_CONTENT_MISSING_DESCRIPTION }
+      ? {
+        read: false,
+        description: BOT_API_ERRORS.inlineQueryEmbeddedVideoPlayerContentMissing.description(),
+      }
       : {
         read: true,
         result: { ...result, video: { kind: 'embedded_player', url: result.video.url } },
@@ -349,7 +362,7 @@ export function checkInlineQueryResultFileType(
   }
   return result.mimeType.startsWith(WEB_VIDEO_FILE_MIME_TYPE)
     ? { read: true, result }
-    : { read: false, description: WEB_VIDEO_MIME_TYPE_INVALID_DESCRIPTION };
+    : { read: false, description: BOT_API_ERRORS.inlineQueryVideoMimeTypeInvalid.description() };
 }
 
 /**
@@ -529,14 +542,18 @@ function readInlineQueryResult(value: unknown): InlineQueryResultReading {
   if ((UNSUPPORTED_RESULT_TYPES as readonly string[]).includes(type)) {
     return {
       kind: 'failure',
-      description: `Bad Request: inline query results of type "${type}" are not supported`,
+      description: BOT_API_ERRORS.inlineQueryResultTypeUnsupported.description({
+        resultType: type,
+      }),
     };
   }
   if (!isSupportedResultType(type)) {
     return {
       kind: 'failure',
-      description:
-        `Bad Request: can't parse InlineQueryResult: type "${type}" is unsupported for the inline query result`,
+      description: BOT_API_ERRORS.inlineQueryResultInvalid.description({
+        reason: 'result_type_unsupported',
+        resultType: type,
+      }),
     };
   }
   const inputMessageContent = z.looseObject({ input_message_content: z.looseObject({}) })
@@ -545,7 +562,10 @@ function readInlineQueryResult(value: unknown): InlineQueryResultReading {
     inputMessageContent.success &&
     sendsVenueOrInvoice(inputMessageContent.data.input_message_content)
   ) {
-    return { kind: 'failure', description: UNSUPPORTED_INPUT_MESSAGE_CONTENT_DESCRIPTION };
+    return {
+      kind: 'failure',
+      description: BOT_API_ERRORS.inlineQueryVenueOrInvoiceContentUnsupported.description(),
+    };
   }
 
   switch (type) {
@@ -640,8 +660,9 @@ function readArticleResult(value: unknown): InlineQueryResultReading {
   if (messageContent === undefined) {
     return {
       kind: 'failure',
-      description:
-        "Bad Request: can't parse InlineQueryResult: Input message content is not specified",
+      description: BOT_API_ERRORS.inlineQueryResultInvalid.description({
+        reason: 'input_message_content_missing',
+      }),
     };
   }
   return {
@@ -860,7 +881,7 @@ const inlineQueryResultsButtonSchema = z.union([
  */
 export function inlineQueryResultsButtonParameter() {
   return jsonParameter(inlineQueryResultsButtonSchema.optional(), {
-    unparsableJsonDescription: "Bad Request: can't parse inline query results button JSON object",
+    unparsableJsonDescription: BOT_API_ERRORS.inlineQueryResultsButtonJsonInvalid.description(),
     emptyText: { readAs: undefined },
   });
 }

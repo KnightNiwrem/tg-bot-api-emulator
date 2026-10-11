@@ -6,11 +6,33 @@ import type {
   PlainTextEntityType,
   TextEntity,
 } from '../../../types/virtual_message.ts';
+import { BOT_API_ERRORS } from './errors/error_catalogue.ts';
 import { jsonParameter } from './request_parameters.ts';
 
 export type MessageEntitiesParameterReading =
   | { readonly read: true; readonly entities: readonly TextEntity[] }
   | { readonly read: false; readonly description: string };
+
+/**
+ * Why the official Bot API server's `get_text_entity` cannot parse an entity: it has no type, a
+ * type the server does not know, or a `date_time_format` the server cannot read.
+ */
+export type MessageEntityError = {
+  readonly reason: 'type_missing' | 'type_unsupported' | 'date_time_format_invalid';
+};
+
+/**
+ * Entities as `readMessageEntities` reads them: the entities, Telegram's error for the first it
+ * cannot parse, or an entity that Telegram would read leniently.
+ */
+export type MessageEntitiesReading =
+  | { readonly read: true; readonly entities: readonly TextEntity[] }
+  | {
+    readonly read: false;
+    readonly reason: 'entity_unparsable';
+    readonly entityError: MessageEntityError;
+  }
+  | { readonly read: false; readonly reason: 'entity_malformed' };
 
 /**
  * Entity types that Telegram detects in text by itself; it ignores them when a sender specifies
@@ -84,8 +106,8 @@ export function messageEntitiesParameter() {
 }
 
 /**
- * Reads the elements of an `entities` parameter as the official Bot API server's
- * `get_text_entity` does, failing with Telegram's description for an entity it cannot parse.
+ * Reads the elements of an `entities` parameter as `readMessageEntities` does, failing with
+ * Telegram's description for an entity it cannot parse.
  *
  * `invalidParametersDescription` answers entities that Telegram would read leniently, such as
  * numbers written as strings, which are rejected instead to surface the bot's mistake in tests.
@@ -94,6 +116,27 @@ export function readMessageEntitiesParameter(
   entityValues: readonly unknown[],
   invalidParametersDescription: string,
 ): MessageEntitiesParameterReading {
+  const reading = readMessageEntities(entityValues);
+  if (reading.read) {
+    return reading;
+  }
+  return {
+    read: false,
+    description: reading.reason === 'entity_unparsable'
+      ? BOT_API_ERRORS.formattedTextInvalid.description({
+        reason: 'entity_unparsable',
+        entityError: reading.entityError,
+      })
+      : invalidParametersDescription,
+  };
+}
+
+/**
+ * Reads the elements of an `entities` parameter as the official Bot API server's
+ * `get_text_entity` does, stopping at the first entity it cannot parse or that Telegram would
+ * read leniently.
+ */
+export function readMessageEntities(entityValues: readonly unknown[]): MessageEntitiesReading {
   const entities: TextEntity[] = [];
   for (const entityValue of entityValues) {
     const reading = readMessageEntity(entityValue);
@@ -104,12 +147,9 @@ export function readMessageEntitiesParameter(
       case 'ignored':
         break;
       case 'unparsable':
-        return {
-          read: false,
-          description: `Bad Request: can't parse MessageEntity: ${reading.error}`,
-        };
+        return { read: false, reason: 'entity_unparsable', entityError: reading.entityError };
       case 'malformed':
-        return { read: false, description: invalidParametersDescription };
+        return { read: false, reason: 'entity_malformed' };
       default: {
         const unhandledReading: never = reading;
         throw new Error(`Unhandled entity reading: ${JSON.stringify(unhandledReading)}`);
@@ -122,8 +162,8 @@ export function readMessageEntitiesParameter(
 type MessageEntityReading =
   | { readonly kind: 'entity'; readonly entity: TextEntity }
   | { readonly kind: 'ignored' }
-  /** Telegram cannot parse the entity, for the reason `error` gives. */
-  | { readonly kind: 'unparsable'; readonly error: string }
+  /** Telegram cannot parse the entity, for the reason `entityError` gives. */
+  | { readonly kind: 'unparsable'; readonly entityError: MessageEntityError }
   | { readonly kind: 'malformed' };
 
 /** Reads one Bot API `MessageEntity` object, as the Bot API server's `get_text_entity` does. */
@@ -134,7 +174,7 @@ function readMessageEntity(value: unknown): MessageEntityReading {
   }
   const { type } = typeReading.data;
   if (type.length === 0) {
-    return { kind: 'unparsable', error: 'Type is not specified' };
+    return { kind: 'unparsable', entityError: { reason: 'type_missing' } };
   }
 
   if (isOneOf(type, DETECTED_ENTITY_TYPES)) {
@@ -192,7 +232,7 @@ function readMessageEntity(value: unknown): MessageEntityReading {
       const { offset, length, unix_time: unixTime, date_time_format } = entity.data;
       const formatReading = readDateTimeFormat(date_time_format ?? '');
       if (!formatReading.valid) {
-        return { kind: 'unparsable', error: 'Invalid date-time format specified' };
+        return { kind: 'unparsable', entityError: { reason: 'date_time_format_invalid' } };
       }
       const { format } = formatReading;
       return {
@@ -201,7 +241,7 @@ function readMessageEntity(value: unknown): MessageEntityReading {
       };
     }
     default:
-      return { kind: 'unparsable', error: 'Unsupported type specified' };
+      return { kind: 'unparsable', entityError: { reason: 'type_unsupported' } };
   }
 }
 

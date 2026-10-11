@@ -6,10 +6,10 @@ import {
   type RichMessageFile,
 } from '../../../types/rich_message.ts';
 import type { VideoAttributes } from '../../../types/stored_file.ts';
+import { BOT_API_ERRORS } from './errors/error_catalogue.ts';
+import { presentBotApiError, presentFixedBotApiError } from './errors/error_template.ts';
 import type { BotApiInputFile, RequestedInputFile } from './input_file_parameter.ts';
 import {
-  albumMessageNotSentError,
-  botApiError,
   type BotApiMethodContext,
   type BotApiMethodOutcome,
   SESSION_ENDED,
@@ -87,22 +87,13 @@ type WebContentFailureReason = Exclude<
 >;
 
 /**
- * Telegram's errors for a file it cannot download from the URL a bot sent, as its servers give
- * them, and as the official Bot API server's `fail_query_with_error` describes them for a single
- * message.
+ * Telegram's errors for a file it cannot download from the URL a bot sent, as the official Bot API
+ * server's `fail_query_with_error` describes them for a single message.
  */
-const WEB_CONTENT_FAILURES: Readonly<
-  Record<WebContentFailureReason, { readonly telegramError: string; readonly description: string }>
-> = {
-  web_content_unavailable: {
-    telegramError: 'WEBPAGE_CURL_FAILED',
-    description: 'Bad Request: failed to get HTTP URL content',
-  },
-  web_content_type_invalid: {
-    telegramError: 'WEBPAGE_MEDIA_EMPTY',
-    description: 'Bad Request: wrong type of the web page content',
-  },
-};
+const WEB_CONTENT_ERRORS = {
+  web_content_unavailable: BOT_API_ERRORS.webContentUnavailable,
+  web_content_type_invalid: BOT_API_ERRORS.webContentTypeInvalid,
+} as const satisfies Record<WebContentFailureReason, unknown>;
 
 /**
  * Downloads a file that a request names by URL, as Telegram does before it sends the file, from
@@ -141,21 +132,21 @@ export async function resolveRequestedInputFile(
     case 'file_url_invalid':
       return {
         resolved: false,
-        errorAnswer: botApiError(
-          400,
-          `Bad Request: invalid file HTTP URL specified: ${download.urlError}`,
-        ),
+        errorAnswer: presentBotApiError(BOT_API_ERRORS.fileUrlInvalid, {
+          urlError: download.urlError,
+        }),
       };
     case 'web_content_unavailable':
-    case 'web_content_type_invalid': {
-      const { telegramError, description } = WEB_CONTENT_FAILURES[download.reason];
+    case 'web_content_type_invalid':
       return {
         resolved: false,
         errorAnswer: albumMemberPosition === undefined
-          ? botApiError(400, description)
-          : albumMessageNotSentError(albumMemberPosition, telegramError),
+          ? presentFixedBotApiError(WEB_CONTENT_ERRORS[download.reason])
+          : presentBotApiError(BOT_API_ERRORS.albumMemberUploadRefused, {
+            memberPosition: albumMemberPosition,
+            refusal: { reason: download.reason },
+          }),
       };
-    }
     default: {
       const unhandledFailure: never = download;
       throw new Error(`Unhandled web file failure: ${JSON.stringify(unhandledFailure)}`);

@@ -17,6 +17,7 @@ import type {
   ReplyKeyboardButton,
   ReplyKeyboardButtonRequest,
 } from '../../../types/reply_interface.ts';
+import { BOT_API_ERRORS } from './errors/error_catalogue.ts';
 import { jsonParameter, optionalInt64Identifier } from './request_parameters.ts';
 
 /** Telegram's documented limit on an input field placeholder. */
@@ -387,8 +388,7 @@ const forcedReplySchema = z.strictObject({
  * Telegram's description of `reply_markup` text that is not JSON the official Bot API server can
  * read, from its `get_reply_markup`.
  */
-const UNPARSABLE_REPLY_MARKUP_DESCRIPTION =
-  "Bad Request: can't parse reply keyboard markup JSON object";
+const UNPARSABLE_REPLY_MARKUP_DESCRIPTION = BOT_API_ERRORS.replyMarkupJsonInvalid.description();
 
 /**
  * A `reply_markup` parameter holding an inline keyboard of callback, URL, copy-text,

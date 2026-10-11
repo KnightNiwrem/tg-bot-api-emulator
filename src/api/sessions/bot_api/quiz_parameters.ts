@@ -1,3 +1,4 @@
+import { BOT_API_ERRORS } from './errors/error_catalogue.ts';
 import { parseBotApiJsonParameter } from './request_parameters.ts';
 
 export type CorrectOptionIdsParameterReading =
@@ -26,31 +27,19 @@ export function readCorrectOptionIdsParameter(
   }
   const parsedParameter = parseBotApiJsonParameter(correctOptionIdsText);
   if (parsedParameter === undefined) {
-    return {
-      read: false,
-      description: "Bad Request: can't parse correct option identifiers JSON object",
-    };
+    return { read: false, description: BOT_API_ERRORS.correctOptionIdsJsonInvalid.description() };
   }
   const { value } = parsedParameter;
   if (!Array.isArray(value)) {
-    return {
-      read: false,
-      description: 'Bad Request: expected an Array of correct option identifiers',
-    };
+    return { read: false, description: BOT_API_ERRORS.correctOptionIdsNotArray.description() };
   }
   const correctOptionPositions: number[] = [];
   for (const optionId of value) {
     if (typeof optionId !== 'number') {
-      return {
-        read: false,
-        description: 'Bad Request: correct option identifier must be of type Number',
-      };
+      return { read: false, description: BOT_API_ERRORS.correctOptionIdNotNumber.description() };
     }
     if (!Number.isInteger(optionId) || optionId < MIN_INT32 || optionId > MAX_INT32) {
-      return {
-        read: false,
-        description: 'Bad Request: invalid correct option identifier specified',
-      };
+      return { read: false, description: BOT_API_ERRORS.correctOptionIdInvalid.description() };
     }
     correctOptionPositions.push(optionId);
   }

@@ -1,4 +1,5 @@
 import type { ChatPermission, ChatPermissions } from '../../../types/chat_permissions.ts';
+import { BOT_API_ERRORS } from './errors/error_catalogue.ts';
 import { parseBotApiJsonParameter } from './request_parameters.ts';
 
 export type ChatPermissionsParameterReading =
@@ -69,19 +70,20 @@ export function readChatPermissionsParameter(
   }
   const parsedParameter = parseBotApiJsonParameter(text);
   if (parsedParameter === undefined) {
-    return { read: false, description: "Bad Request: can't parse permissions JSON object" };
+    return { read: false, description: BOT_API_ERRORS.chatPermissionsJsonInvalid.description() };
   }
   const { value } = parsedParameter;
   if (typeof value !== 'object' || value === null || Array.isArray(value)) {
-    return { read: false, description: 'Bad Request: object expected as permissions' };
+    return { read: false, description: BOT_API_ERRORS.chatPermissionsNotObject.description() };
   }
   const fields: ReadonlyMap<string, unknown> = new Map(Object.entries(value));
   const reading = readPermissionFields(fields, usesIndependentChatPermissions);
   if (!reading.read) {
     return {
       read: false,
-      description: `Bad Request: can't parse chat permissions: Field "${reading.fieldName}" ` +
-        'must be of type Boolean',
+      description: BOT_API_ERRORS.chatPermissionsFieldInvalid.description({
+        fieldName: reading.fieldName,
+      }),
     };
   }
   if ([...fields.keys()].some((name) => !KNOWN_FIELD_NAMES.has(name))) {

@@ -43,6 +43,8 @@ functions it follows.
   in `src/text_entities/`. The detected-entity cases in
   `tests/fixtures/tdlib_detected_entity_cases.ts` and the date and time cases in
   `tests/fixtures/tdlib_markup_cases.ts` come from its `test/message_entities.cpp`.
+- `td/telegram/SynchronousRequests.cpp`: the errors of `parseTextEntities`, which the Bot API server
+  reports for markup it cannot parse.
 - `td/telegram/misc.cpp`: which usernames and language codes are valid.
 - `td/telegram/Requests.cpp`: how requests for drafts and bot descriptions are read.
 - `td/telegram/MessagesManager.cpp`, `MessageContent.cpp`, `MessageContentType.cpp`,
@@ -52,7 +54,8 @@ functions it follows.
   `VoiceNotesManager.cpp`: media and files.
 - `td/telegram/PollManager.cpp` and `PollOption.cpp`: polls.
 - `td/telegram/InlineKeyboardButton.cpp`, `KeyboardButton.cpp`, `ReplyMarkup.cpp`,
-  `RequestedDialogType.cpp` and `CallbackQueriesManager.cpp`: keyboards and callback queries.
+  `RequestedDialogType.cpp`, `TargetDialogTypes.cpp` and `CallbackQueriesManager.cpp`: keyboards and
+  callback queries.
 - `td/telegram/InlineQueriesManager.cpp`: inline mode.
 - `td/telegram/DialogParticipant.cpp`, `DialogParticipant.h`, `DialogParticipantManager.cpp`,
   `DialogManager.cpp` and `DialogInviteLinkManager.cpp`: supergroups, members, administrator rights

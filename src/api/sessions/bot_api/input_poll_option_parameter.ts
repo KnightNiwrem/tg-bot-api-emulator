@@ -1,16 +1,22 @@
 import { z } from 'zod';
 
+import { BOT_API_ERRORS } from './errors/error_catalogue.ts';
+import type { FormattedTextError } from './formatted_text_reading.ts';
 import type { UnreadFormattedText } from './inline_query_answer_parameters.ts';
-import { parseBotApiJsonParameter } from './request_parameters.ts';
+import { type JsonObjectFieldError, parseBotApiJsonParameter } from './request_parameters.ts';
 
 export type InputPollOptionsParameterReading =
   | { readonly read: true; readonly options: readonly UnreadFormattedText[] }
   | { readonly read: false; readonly description: string };
 
-const BAD_REQUEST_PREFIX = 'Bad Request: ';
-
-/** How the official Bot API server prefixes its description of an option it cannot read. */
-const INPUT_POLL_OPTION_ERROR_PREFIX = "Bad Request: can't parse InputPollOption: ";
+/**
+ * Why the official Bot API server's `get_input_poll_options` cannot read an option: it is neither
+ * a string nor an object, it has no `text`, or Telegram cannot read its text with its formatting.
+ */
+export type PollOptionError =
+  | { readonly reason: 'option_not_object' }
+  | Extract<JsonObjectFieldError, { readonly reason: 'field_missing' }>
+  | { readonly reason: 'option_text_invalid'; readonly textError: FormattedTextError };
 
 const inputPollOptionSchema = z.strictObject({
   text: z.string(),
@@ -37,14 +43,14 @@ export function readInputPollOptionsParameter(
   });
   const parsedParameter = parseBotApiJsonParameter(text ?? '');
   if (parsedParameter === undefined) {
-    return failure("Bad Request: can't parse options JSON object");
+    return failure(BOT_API_ERRORS.pollOptionsJsonInvalid.description());
   }
   const { value } = parsedParameter;
   if (value === null) {
     return { read: true, options: [] };
   }
   if (!Array.isArray(value)) {
-    return failure('Bad Request: expected an Array of InputPollOption');
+    return failure(BOT_API_ERRORS.pollOptionsNotArray.description());
   }
   const options: UnreadFormattedText[] = [];
   for (const optionValue of value) {
@@ -53,13 +59,20 @@ export function readInputPollOptionsParameter(
       continue;
     }
     if (typeof optionValue !== 'object' || optionValue === null || Array.isArray(optionValue)) {
-      return failure(`${INPUT_POLL_OPTION_ERROR_PREFIX}Expected InputPollOption to be an Object`);
+      return failure(
+        BOT_API_ERRORS.pollOptionInvalid.description({ reason: 'option_not_object' }),
+      );
     }
     if (!('text' in optionValue)) {
-      return failure(`${INPUT_POLL_OPTION_ERROR_PREFIX}Can't find field "text"`);
+      return failure(
+        BOT_API_ERRORS.pollOptionInvalid.description({
+          reason: 'field_missing',
+          fieldName: 'text',
+        }),
+      );
     }
     if ('media' in optionValue) {
-      return failure('Bad Request: media of poll options is not supported');
+      return failure(BOT_API_ERRORS.pollOptionMediaUnsupported.description());
     }
     const option = inputPollOptionSchema.safeParse(optionValue);
     if (!option.success) {
@@ -76,16 +89,9 @@ export function readInputPollOptionsParameter(
 }
 
 /**
- * Describes text of an option that cannot be read as the official Bot API server does, which
- * prefixes TDLib's description of the text with the option it parses. `textDescription` is the
- * description of the same text outside an option.
+ * Describes text of an option that Telegram cannot read with its formatting, as the official Bot
+ * API server does: as an option it cannot parse.
  */
-export function describeInputPollOptionTextError(textDescription: string): string {
-  if (!textDescription.startsWith(BAD_REQUEST_PREFIX)) {
-    throw new Error(`Expected a Bad Request description, received ${textDescription}`);
-  }
-  const tdlibDescription = textDescription.slice(BAD_REQUEST_PREFIX.length);
-  return `${INPUT_POLL_OPTION_ERROR_PREFIX}${tdlibDescription.charAt(0).toUpperCase()}${
-    tdlibDescription.slice(1)
-  }`;
+export function describePollOptionTextError(textError: FormattedTextError): string {
+  return BOT_API_ERRORS.pollOptionInvalid.description({ reason: 'option_text_invalid', textError });
 }
