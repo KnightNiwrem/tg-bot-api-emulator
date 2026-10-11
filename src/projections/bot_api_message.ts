@@ -42,7 +42,11 @@ import {
   toBotApiContact,
   toBotApiLocation,
 } from '../types/bot_api.ts';
-import type { BotApiPoll, BotApiPollAnswer } from '../types/bot_api_poll.ts';
+import type {
+  BotApiCustomEmojiEntity,
+  BotApiPoll,
+  BotApiPollAnswer,
+} from '../types/bot_api_poll.ts';
 import type { CallbackQuery } from '../types/callback_query.ts';
 import type {
   BotBlockChangedEvent,
@@ -731,20 +735,17 @@ export function projectPoll(
   { poll, showsQuizSolution, explanationMentionedUsers }: ObservedPoll,
 ): BotApiPoll {
   const { optionVoterCounts, totalVoterCount } = countPollVoters(poll);
-  const noMentionedUsers = new Map<number, BotApiUser>();
   return {
     id: poll.id,
     question: poll.question.text,
     ...(poll.question.entities.length === 0 ? {} : {
-      question_entities: poll.question.entities.map((entity) =>
-        projectTextEntity(entity, noMentionedUsers)
-      ),
+      question_entities: poll.question.entities.map(projectPollTextEntity),
     }),
     options: poll.options.map(({ persistentId, text }, optionPosition) => ({
       persistent_id: persistentId,
       text: text.text,
       ...(text.entities.length === 0 ? {} : {
-        text_entities: text.entities.map((entity) => projectTextEntity(entity, noMentionedUsers)),
+        text_entities: text.entities.map(projectPollTextEntity),
       }),
       voter_count: optionVoterCounts[optionPosition],
     })),
@@ -1172,6 +1173,19 @@ function projectGroupChat(chat: BasicGroup | Supergroup): BotApiGroupChat {
 /** Shows a supergroup as the official Bot API server's `JsonChat` does, with its username. */
 export function projectSupergroupChat({ id, title, username }: Supergroup): BotApiSupergroupChat {
   return { id, title, ...(username === undefined ? {} : { username }), type: 'supergroup' };
+}
+
+/**
+ * Shows an entity of a poll's question or option, which Telegram keeps only as a custom emoji.
+ *
+ * @throws {Error} when the entity is of another type, which a poll's normalization never keeps.
+ */
+function projectPollTextEntity(entity: TextEntity): BotApiCustomEmojiEntity {
+  if (entity.type !== 'custom_emoji') {
+    throw new Error(`A poll text holds a ${entity.type} entity, which only a custom emoji can be`);
+  }
+  const { offset, length, customEmojiId } = entity;
+  return { type: 'custom_emoji', offset, length, custom_emoji_id: customEmojiId };
 }
 
 function projectTextEntity(
