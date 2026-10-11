@@ -142,7 +142,10 @@ Deno.test('Each read sends the text of the patterns as it checked them for that 
   };
   const replyParameters: { message_id: number } = { message_id: 5 };
   const activity = createBotActivityLog(
-    createHttpBotActivityPageReader('http://emulator.example/bot-activity', fetch),
+    createHttpBotActivityPageReader(
+      { serverRoot: new URL('http://emulator.example/'), fetch },
+      'session',
+    ),
     { parameters_json: { reply_parameters: replyParameters } },
     {},
   );
@@ -172,7 +175,10 @@ Deno.test('The HTTP page reader sends parameter patterns as one JSON query param
   };
   const patterns = JSON.parse('{"__proto__":{"a":1},"reply_parameters":{"message_id":5}}');
 
-  await createHttpBotActivityPageReader('http://emulator.example/bot-activity', fetch).readPage({
+  await createHttpBotActivityPageReader(
+    { serverRoot: new URL('http://emulator.example/'), fetch },
+    'session',
+  ).readPage({
     after: 0,
     criteria: { parameters_json: patterns },
     limit: 1,

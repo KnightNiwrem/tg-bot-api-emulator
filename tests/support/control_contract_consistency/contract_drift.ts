@@ -5,7 +5,10 @@
  */
 import type { z } from 'zod';
 
-import type { ControlOperationContract } from '../../../control_contracts/operation_contract.ts';
+import type {
+  ControlOperationContract,
+  QueryParameterSerialization,
+} from '../../../control_contracts/operation_contract.ts';
 import type {
   DocumentedHeader,
   DocumentedMediaType,
@@ -42,8 +45,14 @@ export function findContractDrift(
     );
   }
   drift.push(
-    ...findParameterDrift(operation, 'path', contract.params, compare),
-    ...findParameterDrift(operation, 'query', contract.query, compare),
+    ...findParameterDrift(operation, 'path', contract.params, {}, compare),
+    ...findParameterDrift(
+      operation,
+      'query',
+      contract.query,
+      contract.querySerialization ?? {},
+      compare,
+    ),
   );
   for (const location of ['header', 'cookie'] as const) {
     for (const parameter of operation.parameters.filter((item) => item.location === location)) {
@@ -81,6 +90,7 @@ function findParameterDrift(
   operation: DocumentedOperation,
   location: Extract<ParameterLocation, 'path' | 'query'>,
   contractParameters: z.ZodObject | undefined,
+  serialization: { readonly [name: string]: QueryParameterSerialization },
   compare: SchemaComparison,
 ): string[] {
   const documented = new Map(
@@ -113,11 +123,16 @@ function findParameterDrift(
         `${label}: the contract ${requiredNames.has(name) ? 'requires' : 'does not require'} it`,
       );
     }
-    // The server reads query parameters one value each, as OpenAPI's default `form` style writes
-    // them, and path parameters as `simple` does.
-    const style = location === 'path' ? 'simple' : 'form';
-    if (parameter.style !== style) {
-      drift.push(`${label}: the document serializes it as ${parameter.style}, not ${style}`);
+    // The server reads a path parameter as OpenAPI's `simple` style writes it, and a query
+    // parameter as its default `form` style does unless the contract serializes it otherwise.
+    const contractSerialization = location === 'path' ? 'simple' : serialization[name] ?? 'form';
+    const documentedSerialization = parameter.contentMediaType === JSON_MEDIA_TYPE
+      ? 'json'
+      : parameter.contentMediaType ?? parameter.style;
+    if (documentedSerialization !== contractSerialization) {
+      drift.push(
+        `${label}: the document serializes it as ${documentedSerialization}, not ${contractSerialization}`,
+      );
     }
     drift.push(...compare.describe(label, schema, 'input', parameter.schema));
   }

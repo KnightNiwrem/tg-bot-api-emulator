@@ -12,6 +12,7 @@ import {
 // These tests answer the HTTP page reader's requests from a scripted transport instead of a
 // server, so that a request can stall, or be answered only once the wait has abandoned it.
 
+const SERVER_ROOT = new URL('http://emulator.example/');
 const ACTIVITY_URL = 'http://emulator.example/sessions/session/bot-activity';
 const SHORT_TIMEOUT_MILLISECONDS = 10;
 
@@ -21,7 +22,10 @@ Deno.test('The HTTP page reader sends a read as query parameters and reads the p
     Promise.resolve(Response.json({ entries: [entry], head_position: 7 }))
   );
 
-  const page = await createHttpBotActivityPageReader(ACTIVITY_URL, transport.fetch).readPage({
+  const page = await createHttpBotActivityPageReader({
+    serverRoot: SERVER_ROOT,
+    fetch: transport.fetch,
+  }, 'session').readPage({
     after: 3,
     before: 9,
     criteria: {
@@ -72,7 +76,10 @@ Deno.test('The HTTP page reader sends the kind only when the criteria can match 
       Promise.resolve(Response.json({ entries: [], head_position: 0 }))
     );
 
-    await createHttpBotActivityPageReader(ACTIVITY_URL, transport.fetch).readPage({
+    await createHttpBotActivityPageReader(
+      { serverRoot: SERVER_ROOT, fetch: transport.fetch },
+      'session',
+    ).readPage({
       after: 0,
       criteria,
       limit: 1,
@@ -231,7 +238,10 @@ function createActivityLog(
   transport: ScriptedTransport,
   clock: BotActivityWaitClock,
 ): BotActivityLog {
-  const pageReader = createHttpBotActivityPageReader(ACTIVITY_URL, transport.fetch);
+  const pageReader = createHttpBotActivityPageReader({
+    serverRoot: SERVER_ROOT,
+    fetch: transport.fetch,
+  }, 'session');
   return createBotActivityLog(pageReader, undefined, {}, clock);
 }
 

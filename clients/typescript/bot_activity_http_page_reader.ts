@@ -1,32 +1,33 @@
+import { readBotActivityContract } from '../../control_contracts/bot_activity.ts';
+import type { ControlOperationRequest } from '../../control_contracts/operation_contract.ts';
 import {
   type BotActivityPage,
   type BotActivityPageReader,
   type BotActivityPageRequest,
   kindsMatchableBy,
 } from './bot_activity_log.ts';
-import { HTTP_STATUS_OK } from './constants.ts';
+import { callJsonOperation, type ControlOperationTransport } from './control_operation_caller.ts';
 import { checkJsonPattern } from './json_pattern.ts';
-import { botActivityReadResponseSchema } from './schemas.ts';
-import type { BotActivityCriteria, BotActivityKind } from './types.ts';
-import { requestJson } from './utils.ts';
+import type { BotActivityCriteria, BotActivityKind, JsonStructure } from './types.ts';
+
+type BotActivityReadQuery = ControlOperationRequest<typeof readBotActivityContract>['query'];
 
 /**
- * Reads the pages of a session's bot activity log from the emulator, at its `bot-activity` URL. A
- * read fails as `requestJson` fails, including when its signal abandons it.
+ * Reads the pages of a session's bot activity log from the emulator. A read fails as
+ * `requestJson` fails, including when its signal abandons it.
  */
 export function createHttpBotActivityPageReader(
-  activityUrl: string,
-  fetchImplementation: typeof globalThis.fetch,
+  transport: ControlOperationTransport,
+  sessionId: string,
 ): BotActivityPageReader {
   return {
     async readPage(request, signal) {
-      const { entries, head_position } = await requestJson(fetchImplementation, {
-        method: 'GET',
-        url: `${activityUrl}?${toReadQuery(request)}`,
-        expectedStatus: HTTP_STATUS_OK,
-        responseSchema: botActivityReadResponseSchema,
-        signal,
-      });
+      const { entries, head_position } = await callJsonOperation(
+        transport,
+        readBotActivityContract,
+        { params: { sessionId }, query: toReadQuery(request) },
+        { signal },
+      );
       return { entries, headPosition: head_position } satisfies BotActivityPage;
     },
   };
@@ -34,16 +35,13 @@ export function createHttpBotActivityPageReader(
 
 function toReadQuery(
   { after, before, criteria, limit, waitMilliseconds }: BotActivityPageRequest,
-): URLSearchParams {
-  const query = new URLSearchParams({ after: String(after), limit: String(limit) });
-  if (before !== undefined) {
-    query.set('before', String(before));
-  }
-  if (waitMilliseconds !== undefined) {
-    query.set('wait_ms', String(waitMilliseconds));
-  }
+): BotActivityReadQuery {
   const { bot_id, method, chat_id, user_id, update_id, ok, parameters, parameters_json } = criteria;
-  const queryCriteria = {
+  return {
+    after,
+    limit,
+    before,
+    wait_ms: waitMilliseconds,
     bot_id,
     kind: toReadKind(criteria),
     method,
@@ -51,21 +49,9 @@ function toReadQuery(
     user_id,
     update_id,
     ok,
+    parameters,
+    parameters_json: parameters_json === undefined ? undefined : copyPatterns(parameters_json),
   };
-  for (const [name, value] of Object.entries(queryCriteria)) {
-    if (value !== undefined) {
-      query.set(name, String(value));
-    }
-  }
-  for (const [name, text] of Object.entries(parameters ?? {})) {
-    query.set(`parameters[${name}]`, text);
-  }
-  if (parameters_json !== undefined) {
-    // The text the check writes from the values it read, rather than `JSON.stringify`, which
-    // would run any hook the patterns carry.
-    query.set('parameters_json', checkJsonPattern(parameters_json, 'parameters_json').text);
-  }
-  return query;
 }
 
 /**
@@ -75,4 +61,31 @@ function toReadQuery(
 function toReadKind(criteria: BotActivityCriteria): BotActivityKind | undefined {
   const matchableKinds = kindsMatchableBy(criteria);
   return matchableKinds.length === 1 ? matchableKinds[0] : undefined;
+}
+
+/**
+ * A checked copy of a read's patterns, which the read sends rather than the patterns themselves:
+ * the copy has no hook, such as a `toJSON` method or a getter, that could make its JSON text
+ * differ from what the check read.
+ *
+ * @throws {TypeError} when the patterns are not an object of JSON objects or arrays by parameter
+ * name, or hold a value that JSON cannot carry unchanged.
+ */
+function copyPatterns(
+  patterns: Readonly<Record<string, JsonStructure>>,
+): Readonly<Record<string, JsonStructure>> {
+  const { value: copiedPatterns } = checkJsonPattern(patterns, 'parameters_json');
+  if (Array.isArray(copiedPatterns)) {
+    throw new TypeError('parameters_json must be an object of patterns by parameter name');
+  }
+  return Object.fromEntries(
+    Object.entries(copiedPatterns).map(([name, pattern]) => {
+      if (pattern === null || typeof pattern !== 'object') {
+        throw new TypeError(
+          `The parameters_json pattern for parameter ${name} must be a JSON object or array`,
+        );
+      }
+      return [name, pattern];
+    }),
+  );
 }

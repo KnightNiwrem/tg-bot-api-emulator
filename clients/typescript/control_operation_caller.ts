@@ -22,11 +22,21 @@ export interface ControlOperationTransport {
   readonly fetch: typeof globalThis.fetch;
 }
 
+/** How a call of an operation whose success response is JSON is made. */
+export interface JsonOperationCallOptions {
+  /**
+   * Abandons the call when it aborts, as `requestJson` describes, such as a bot activity read that
+   * a wait no longer needs.
+   */
+  readonly signal?: AbortSignal;
+}
+
 /** Calls an operation whose success response is JSON, and returns it as the contract reads it. */
 export function callJsonOperation<Contract extends JsonSuccessContract>(
   transport: ControlOperationTransport,
   contract: Contract,
   request: ControlOperationRequest<Contract>,
+  { signal }: JsonOperationCallOptions = {},
 ): Promise<z.output<Contract['success']['body']['schema']>> {
   return requestJson<Contract['success']['body']['schema']>(transport.fetch, {
     method: contract.method,
@@ -34,6 +44,7 @@ export function callJsonOperation<Contract extends JsonSuccessContract>(
     expectedStatus: contract.success.status,
     responseSchema: contract.success.body.schema,
     body: request.body,
+    ...(signal === undefined ? {} : { signal }),
   });
 }
 
@@ -68,9 +79,12 @@ export function callBytesOperation<Contract extends BytesSuccessContract>(
 /**
  * The absolute URL of a request: the contract's path with each placeholder replaced by its
  * encoded parameter, and the query's parameters, which an omitted optional one is left out of.
+ * A single-valued parameter is written as its text, an integer in decimal digits, or a boolean as
+ * `true` or `false`; a `deepObject` one as a `name[member]=text` pair per member; and a `json` one
+ * as the text `JSON.stringify` writes, which runs any `toJSON` hook its value has.
  *
- * @throws {TypeError} when a path or query parameter is not text, which only a value its type does
- * not describe can be.
+ * @throws {TypeError} when a parameter's value is not one its serialization writes, which only a
+ * value its type does not describe can be.
  */
 function buildOperationUrl(
   serverRoot: URL,
@@ -82,25 +96,59 @@ function buildOperationUrl(
   for (const name of readPathPlaceholders(contract.path)) {
     path = path.replace(
       `{${name}}`,
-      encodeURIComponent(readTextParameter(contract, name, parameterValues.get(name))),
+      encodeURIComponent(writeParameterText(contract, name, parameterValues.get(name))),
     );
   }
   const url = new URL(path.slice(1), serverRoot);
   for (const [name, value] of Object.entries(query ?? {})) {
-    if (value !== undefined) {
-      url.searchParams.append(name, readTextParameter(contract, name, value));
+    if (value === undefined) continue;
+    const serialization = contract.querySerialization?.[name];
+    switch (serialization) {
+      case undefined:
+        url.searchParams.append(name, writeParameterText(contract, name, value));
+        break;
+      case 'deepObject':
+        for (const [member, memberValue] of readObjectMembers(contract, name, value)) {
+          url.searchParams.append(
+            `${name}[${member}]`,
+            writeParameterText(contract, `${name}[${member}]`, memberValue),
+          );
+        }
+        break;
+      case 'json':
+        url.searchParams.append(name, JSON.stringify(value));
+        break;
+      default: {
+        const unhandledSerialization: never = serialization;
+        throw new Error(`Unhandled query parameter serialization: ${unhandledSerialization}`);
+      }
     }
   }
   return url.href;
 }
 
-function readTextParameter(
+/** The text of a single-valued parameter: text as it is, or a finite number's or boolean's. */
+function writeParameterText(
   contract: ControlOperationContract,
   name: string,
   value: unknown,
 ): string {
-  if (typeof value !== 'string') {
-    throw new TypeError(`${contract.operationId} takes its ${name} parameter as text`);
+  if (typeof value === 'string') return value;
+  if ((typeof value === 'number' && Number.isFinite(value)) || typeof value === 'boolean') {
+    return String(value);
   }
-  return value;
+  throw new TypeError(
+    `${contract.operationId} takes its ${name} parameter as text, a number, or a boolean`,
+  );
+}
+
+function readObjectMembers(
+  contract: ControlOperationContract,
+  name: string,
+  value: unknown,
+): [member: string, value: unknown][] {
+  if (value === null || typeof value !== 'object' || Array.isArray(value)) {
+    throw new TypeError(`${contract.operationId} takes its ${name} parameter as an object`);
+  }
+  return Object.entries(value);
 }

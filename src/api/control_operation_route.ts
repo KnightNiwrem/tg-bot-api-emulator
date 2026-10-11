@@ -11,14 +11,14 @@ import {
   type DecodedControlRequest,
   readPathPlaceholders,
 } from '../../control_contracts/operation_contract.ts';
+import { invalidControlRequestResponse } from './control_error_response.ts';
 import {
-  type ControlRequestIssue,
-  invalidControlRequestResponse,
-} from './control_error_response.ts';
-import {
-  type ControlRequestInputReading,
-  readControlRequestInput,
-} from './sessions/control_request_input.ts';
+  createPathParameterReader,
+  createQueryReader,
+  type PathParameterReader,
+  type QueryReader,
+} from './control_parameter_reading.ts';
+import type { ControlRequestInputReading } from './sessions/control_request_input.ts';
 import { readJsonRequestBody } from './sessions/json_request_body.ts';
 
 /**
@@ -50,7 +50,8 @@ const JSON_MEDIA_TYPE = 'application/json';
  * the server, such as `/sessions/{sessionId}/bots`. A request whose path parameters, query, or
  * body break the contract is answered with `400` and its issues, before `handle` is called.
  *
- * @throws {Error} when the contract's path is not within `mountPath`.
+ * @throws {Error} when the contract's path is not within `mountPath`, or a path or query parameter
+ * takes a value that no parameter text writes.
  */
 export function registerControlOperation<
   Contract extends ControlOperationContract,
@@ -61,8 +62,14 @@ export function registerControlOperation<
   contract: Contract,
   handle: NoInfer<ControlOperationHandler<Contract, RouteEnv>>,
 ): void {
+  const parameterReaders: ParameterReaders = {
+    path: contract.params === undefined
+      ? undefined
+      : createPathParameterReader(contract, contract.params),
+    query: contract.query === undefined ? undefined : createQueryReader(contract, contract.query),
+  };
   routes.on(contract.method, toRoutePath(contract, mountPath), async (context) => {
-    const request = await decodeControlRequest(contract, context);
+    const request = await decodeControlRequest(contract, parameterReaders, context);
     if (!request.valid) {
       return invalidControlRequestResponse(context, request.issues);
     }
@@ -83,23 +90,27 @@ function toRoutePath(contract: ControlOperationContract, mountPath: string): str
   return routePath === '' ? '/' : routePath;
 }
 
+/** The readers of an operation's path parameters and query, for the parts it reads. */
+interface ParameterReaders {
+  readonly path: PathParameterReader | undefined;
+  readonly query: QueryReader | undefined;
+}
+
 /**
  * Reads each part of the request the operation reads with the contract's wire schema, reporting
  * the issues of every part that breaks it.
  */
 async function decodeControlRequest<Contract extends ControlOperationContract>(
   contract: Contract,
+  parameterReaders: ParameterReaders,
   context: Context,
 ): Promise<ControlRequestInputReading<DecodedControlRequest<Contract>>> {
   const readings: [part: string, reading: ControlRequestInputReading<unknown>][] = [];
-  if (contract.params !== undefined) {
-    readings.push([
-      'params',
-      readControlRequestInput(contract.params, context.req.param(), 'path'),
-    ]);
+  if (parameterReaders.path !== undefined) {
+    readings.push(['params', parameterReaders.path(context.req.param())]);
   }
-  if (contract.query !== undefined) {
-    readings.push(['query', readFlatQuery(contract.query, new URL(context.req.url).searchParams)]);
+  if (parameterReaders.query !== undefined) {
+    readings.push(['query', parameterReaders.query(new URL(context.req.url).searchParams)]);
   }
   if (contract.body !== undefined) {
     readings.push([
@@ -121,38 +132,6 @@ async function decodeControlRequest<Contract extends ControlOperationContract>(
   // read is absent, which is what `DecodedControlRequest` describes; TypeScript cannot relate the
   // contract's generic schemas to that conditional type.
   return { valid: true, value: decodedRequest as DecodedControlRequest<Contract> };
-}
-
-/**
- * Reads a query of single-valued parameters, as OpenAPI's `form` style without `explode` arrays
- * writes it, reporting each repeated parameter by the key the request sent.
- */
-function readFlatQuery(
-  schema: NonNullable<ControlOperationContract['query']>,
-  searchParams: URLSearchParams,
-): ControlRequestInputReading<unknown> {
-  // Query keys are the client's, so they are collected in a map and made own properties with
-  // `Object.fromEntries`, which no key such as `__proto__` can turn into a prototype change.
-  const queryValues = new Map<string, string>();
-  const repeatedKeys = new Set<string>();
-  for (const [key, value] of searchParams) {
-    if (queryValues.has(key)) {
-      repeatedKeys.add(key);
-    } else {
-      queryValues.set(key, value);
-    }
-  }
-  const repetitionIssues = [...repeatedKeys].map((key): ControlRequestIssue => ({
-    source: 'query',
-    path: [key],
-    code: 'duplicate_field',
-    message: 'The query parameter is repeated',
-  }));
-  const query = readControlRequestInput(schema, Object.fromEntries(queryValues), 'query');
-  if (!query.valid) {
-    return { valid: false, issues: [...repetitionIssues, ...query.issues] };
-  }
-  return repetitionIssues.length > 0 ? { valid: false, issues: repetitionIssues } : query;
 }
 
 /**

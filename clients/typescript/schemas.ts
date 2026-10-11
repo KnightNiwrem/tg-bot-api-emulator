@@ -4,6 +4,10 @@ import { accountProfileSchema } from '../../control_contracts/accounts.ts';
 import { botProfileSchema } from '../../control_contracts/bots.ts';
 import { controlValidationErrorSchema } from '../../control_contracts/control_errors.ts';
 import {
+  webhookAttemptFailureSchema,
+  webhookAttemptIdSchema,
+} from '../../control_contracts/webhook_attempts.ts';
+import {
   MAX_CUSTOM_TITLE_LENGTH,
   MAX_SUPERGROUP_OR_CHANNEL_ID,
   MAX_TELEGRAM_USER_ID,
@@ -12,7 +16,6 @@ import {
 } from './constants.ts';
 import { CONTROL_REFUSAL_REASONS } from './control_refusal_reasons.ts';
 import type {
-  BotActivityEntry,
   CallbackQuery,
   ControlErrorBody,
   InlineKeyboardMarkup,
@@ -38,7 +41,6 @@ import type {
   SupergroupMessage,
   UserReaction,
   WebhookAttempt,
-  WebhookAttemptFailure,
   WebhookDelivery,
   WebResource,
 } from './types.ts';
@@ -84,24 +86,6 @@ const webhookSchedulingSchema = z.enum(['automatic', 'manual']);
 export const webhookDeliverySchema: z.ZodType<WebhookDelivery> = z.strictObject({
   scheduling: webhookSchedulingSchema,
 });
-
-const webhookAttemptFailureSchema: z.ZodType<WebhookAttemptFailure> = z.discriminatedUnion(
-  'reason',
-  [
-    z.strictObject({
-      reason: z.literal('http_error'),
-      status_code: z.int().min(100).max(599),
-      error_message: z.string().min(1),
-    }),
-    z.strictObject({
-      reason: z.enum(['connection_failed', 'timed_out']),
-      error_message: z.string().min(1),
-    }),
-    z.strictObject({ reason: z.literal('response_interrupted') }),
-  ],
-);
-
-const webhookAttemptIdSchema = z.int().positive();
 
 const webhookAttemptIdentityShape = {
   id: webhookAttemptIdSchema,
@@ -1189,85 +1173,6 @@ export const inlineQueryResponseSchema = z.strictObject({
 /** A message sent from an inline query's answer, to the private chat or supergroup of the query. */
 export const chosenInlineResultResponseSchema = z.strictObject({
   message: z.union([privateMessageSchema, supergroupMessageSchema]),
-});
-
-const botActivityPositionSchema = z.int().min(1);
-
-const botApiCallEntrySchema = z.strictObject({
-  position: botActivityPositionSchema,
-  kind: z.literal('bot_api_call'),
-  bot_id: telegramUserIdSchema,
-  method: z.string().min(1),
-  requested_method: z.string().min(1),
-  via: z.enum(['http', 'webhook_reply']),
-  parameters: z.record(z.string(), z.string()),
-  uploaded_files: z.array(z.strictObject({
-    field_name: z.string(),
-    file_name: z.string(),
-    size_bytes: z.int().nonnegative(),
-  })),
-  chat_id: z.int().optional(),
-  answer: z.union([
-    z.strictObject({
-      ok: z.literal(true),
-      result: z.unknown(),
-      description: z.string().optional(),
-    }),
-    z.strictObject({
-      ok: z.literal(false),
-      error_code: z.int(),
-      description: z.string(),
-      parameters: z.strictObject({ retry_after: z.int().positive() }).optional(),
-    }),
-  ]),
-});
-
-const botUpdateTransportSchema = z.enum(['polling', 'webhook']);
-
-const updateDeliveredEntrySchema = z.strictObject({
-  position: botActivityPositionSchema,
-  kind: z.literal('update_delivered'),
-  bot_id: telegramUserIdSchema,
-  via: botUpdateTransportSchema,
-  update: z.looseObject({ update_id: z.int() }),
-  chat_id: z.int().optional(),
-  user_id: z.int().optional(),
-  webhook_attempt_id: webhookAttemptIdSchema.optional(),
-});
-
-const updateConfirmedEntrySchema = z.strictObject({
-  position: botActivityPositionSchema,
-  kind: z.literal('update_confirmed'),
-  bot_id: telegramUserIdSchema,
-  via: botUpdateTransportSchema,
-  update_id: z.int(),
-  chat_id: z.int().optional(),
-  user_id: z.int().optional(),
-  webhook_attempt_id: webhookAttemptIdSchema.optional(),
-});
-
-const webhookAttemptFailedEntrySchema = z.strictObject({
-  position: botActivityPositionSchema,
-  kind: z.literal('webhook_attempt_failed'),
-  bot_id: telegramUserIdSchema,
-  update_id: z.int(),
-  chat_id: z.int().optional(),
-  user_id: z.int().optional(),
-  webhook_attempt_id: webhookAttemptIdSchema,
-  failure: webhookAttemptFailureSchema,
-  retry_delay_seconds: z.int().nonnegative(),
-});
-
-const botActivityEntrySchema: z.ZodType<BotActivityEntry> = z.discriminatedUnion('kind', [
-  botApiCallEntrySchema,
-  updateDeliveredEntrySchema,
-  updateConfirmedEntrySchema,
-  webhookAttemptFailedEntrySchema,
-]);
-
-export const botActivityReadResponseSchema = z.strictObject({
-  entries: z.array(botActivityEntrySchema),
-  head_position: z.int().nonnegative(),
 });
 
 /**

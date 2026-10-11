@@ -13,6 +13,12 @@ import type { JsonSchema } from './openapi_document.ts';
  */
 const OPENAPI_DISCRIMINATOR_KEYWORD = 'discriminator';
 
+/**
+ * The document's own extension keyword, which only annotates: it names the Telegram type, such as
+ * `Update`, whose emulator subset a schema describes.
+ */
+const TELEGRAM_TYPE_EXTENSION_KEYWORD = 'x-telegram-type';
+
 /** The document's schemas: a validator for them, and the schema files their `$ref`s name. */
 export interface DocumentSchemas {
   readonly validator: JsonSchemaValidator;
@@ -44,6 +50,7 @@ export class JsonSchemaValidator {
     // Unicode, which is what the document means by it.
     this.#ajv.addFormat('iri', (value: string) => URL.canParse(value));
     this.#ajv.addKeyword(OPENAPI_DISCRIMINATOR_KEYWORD);
+    this.#ajv.addKeyword(TELEGRAM_TYPE_EXTENSION_KEYWORD);
     for (const [schemaFileUrl, schema] of schemaFiles) this.#ajv.addSchema(schema, schemaFileUrl);
   }
 

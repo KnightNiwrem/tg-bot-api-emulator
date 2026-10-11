@@ -111,10 +111,15 @@ The codes are `invalid_json` for a body or JSON query parameter that is not JSON
 `too_small`, `too_big`, `invalid_format` and `invalid_value` for a value that is missing or not as
 the operation describes it, `unknown_field` for a field or query parameter it does not take,
 `duplicate_field` for a repeated query parameter or a member a JSON query parameter's object names
-twice, and `no_matching_variant` for a value that matches none of the forms it may take. When
-exactly one form accepts a value's type and every field it has, that form's issues are listed
-instead, so that a text message with a number as its `text` reports its `text`. A message never
-repeats an input value, and its wording is not part of the contract.
+twice, and `no_matching_variant` for a value that matches none of the forms it may take. A value
+whose type none of the forms takes, such as text where an object or a list is expected, is
+`invalid_type`, and when exactly one form accepts a value's type and every field it has, that form's
+issues are listed instead, so that a text message with a number as its `text` reports its `text`. A
+message never repeats an input value, and its wording is not part of the contract.
+
+Path and query parameters are text. An integer parameter is written in decimal digits, after a `-`
+for a negative one, and a boolean parameter as `true` or `false`; any other text, such as `1e3`,
+`0x10` or `yes`, is `invalid_type`.
 
 The emulator keeps rejecting what is malformed; the error bodies explain a rejection without
 relaxing it. The [OpenAPI description](../../openapi/openapi.yaml) lists the reasons each status of

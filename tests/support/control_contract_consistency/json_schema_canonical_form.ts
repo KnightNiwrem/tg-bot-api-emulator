@@ -10,6 +10,7 @@
  */
 import { z } from 'zod';
 
+import { TELEGRAM_TYPE_ANNOTATION } from '../../../control_contracts/wire_fields.ts';
 import type { JsonSchemaValidator } from '../openapi_conformance/json_schema_validator.ts';
 import type { JsonSchema } from '../openapi_conformance/openapi_document.ts';
 
@@ -43,8 +44,8 @@ const SUBSCHEMA_KEYWORDS = ['items', 'not', 'additionalProperties'] as const;
 const SUBSCHEMA_LIST_KEYWORDS = ['prefixItems', 'anyOf', 'oneOf', 'allOf'] as const;
 
 /**
- * The keywords a `const` makes redundant when its value meets them: they cannot reject the only
- * value the schema accepts.
+ * The keywords a `const` or an `enum` makes redundant when each of its values meets them: they
+ * cannot reject a value the schema accepts.
  */
 const CONST_SUBSUMED_KEYWORDS = [
   'type',
@@ -87,6 +88,9 @@ export class JsonSchemaCanonicalizer {
 
   canonicalize(schema: JsonSchema): CanonicalJsonSchema {
     if (typeof schema === 'boolean') return schema;
+    // A Telegram object is the document's to describe; both sides need only name its type.
+    const telegramTypeName = schema[TELEGRAM_TYPE_ANNOTATION];
+    if (telegramTypeName !== undefined) return { [TELEGRAM_TYPE_ANNOTATION]: telegramTypeName };
     const node: SchemaObject = {};
     for (const [keyword, value] of Object.entries(schema)) {
       if (ANNOTATION_KEYWORDS.has(keyword) || keyword.startsWith('x-')) continue;
@@ -216,6 +220,19 @@ export class JsonSchemaCanonicalizer {
   /** Rewrites a schema's equivalent spellings into one, once its subschemas are canonical. */
   #finalize(schema: SchemaObject): CanonicalJsonSchema {
     const node: SchemaObject = { ...schema };
+    // Keywords that accept every value say nothing: any member or item, and JSON's member names,
+    // which are always text.
+    for (const keyword of ['additionalProperties', 'items'] as const) {
+      if (node[keyword] === true || isDeepEqual(node[keyword], {})) delete node[keyword];
+    }
+    if (isDeepEqual(node.propertyNames, { type: 'string' })) delete node.propertyNames;
+    // A list of types accepts a value of any of them, as alternatives of one type each do.
+    if (Array.isArray(node.type)) {
+      if (Object.keys(node).length !== 1) {
+        throw new Error(`A list of types beside other keywords: ${JSON.stringify(node)}`);
+      }
+      return this.#finalize({ anyOf: node.type.map((type: unknown) => ({ type })) });
+    }
     if (Array.isArray(node.enum)) {
       // An enum is a set of values, in whichever order it lists them.
       const values = [...node.enum].sort((left, right) =>
@@ -228,13 +245,24 @@ export class JsonSchemaCanonicalizer {
         node.enum = values;
       }
     }
-    if (Object.hasOwn(node, 'const')) {
+    // The keywords beside a `const` or an `enum` that each of its values meets reject nothing more.
+    const allowedValues = Object.hasOwn(node, 'const')
+      ? [node.const]
+      : Array.isArray(node.enum)
+      ? node.enum
+      : undefined;
+    if (allowedValues !== undefined) {
       const subsumed = Object.fromEntries(
-        CONST_SUBSUMED_KEYWORDS.filter((keyword) => Object.hasOwn(node, keyword)).map((
+        CONST_SUBSUMED_KEYWORDS.filter((keyword) =>
+          keyword !== 'enum' || Object.hasOwn(node, 'const')
+        ).filter((keyword) => Object.hasOwn(node, keyword)).map((keyword) => [
           keyword,
-        ) => [keyword, node[keyword]]),
+          node[keyword],
+        ]),
       );
-      if (this.#validator.findViolations(subsumed, node.const).length === 0) {
+      if (
+        allowedValues.every((value) => this.#validator.findViolations(subsumed, value).length === 0)
+      ) {
         for (const keyword of Object.keys(subsumed)) delete node[keyword];
       }
     }

@@ -37,7 +37,7 @@ get:
     - name: bot_id
       in: query
       schema:
-        $ref: ../components/schemas/TelegramUserId.yaml
+        type: integer
     - name: kind
       in: query
       schema:

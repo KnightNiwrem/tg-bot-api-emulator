@@ -39,6 +39,17 @@ export type ResponseBodyContract =
   | EmptyResponseBodyContract
   | BytesResponseBodyContract;
 
+/**
+ * How a query parameter is written in a URL, other than as one `name=value` pair, which OpenAPI's
+ * default `form` style writes for text, an integer, or a boolean:
+ *
+ * - `deepObject`: an object of text, one `name[member]=value` pair per member, as OpenAPI's
+ *   `deepObject` style writes it;
+ * - `json`: a JSON value, written as its JSON text in one `name=value` pair, as OpenAPI's
+ *   `content: application/json` describes it.
+ */
+export type QueryParameterSerialization = 'deepObject' | 'json';
+
 /** The response of an operation that succeeds. */
 export interface SuccessResponseContract {
   readonly status: number;
@@ -51,9 +62,12 @@ export interface SuccessResponseContract {
  * One control API operation: its route, the parts of a request it reads, and its responses.
  *
  * `path` is an OpenAPI path template from the server root, such as `/sessions/{sessionId}`, and
- * `params` names exactly its placeholders. Path and query values arrive as text, so their schemas
- * take text. A refusal always answers with a JSON error body, so `refusals` gives the body schema
- * of each status the operation refuses a request with, whichever part of the server answers it.
+ * `params` names exactly its placeholders. Path and query parameters arrive as text, and their
+ * schemas describe the values that text stands for, as OpenAPI's parameter schemas do: text, an
+ * integer written in decimal digits, or a boolean written `true` or `false`; or, for a query
+ * parameter that `querySerialization` names, the object or JSON value it writes. A refusal always
+ * answers with a JSON error body, so `refusals` gives the body schema of each status the
+ * operation refuses a request with, whichever part of the server answers it.
  */
 export interface ControlOperationContract {
   /** The OpenAPI document's `operationId` for the operation. */
@@ -62,6 +76,8 @@ export interface ControlOperationContract {
   readonly path: `/${string}`;
   readonly params?: z.ZodObject;
   readonly query?: z.ZodObject;
+  /** How each query parameter that is not one `name=value` pair is written, by its name. */
+  readonly querySerialization?: { readonly [name: string]: QueryParameterSerialization };
   readonly body?: RequestBodyContract;
   readonly success: SuccessResponseContract;
   readonly refusals: { readonly [status: number]: z.ZodType };
@@ -74,8 +90,9 @@ const PATH_PLACEHOLDER_PATTERN = /\{([^{}]+)\}/g;
  * Declares an operation's contract, keeping its literal types for the server and client to infer
  * from.
  *
- * @throws {Error} when `params` does not name exactly the placeholders of `path`, or a refusal
- * status is not an error status.
+ * @throws {Error} when `params` does not name exactly the placeholders of `path`,
+ * `querySerialization` names a parameter that `query` does not, or a refusal status is not an
+ * error status.
  */
 export function defineControlOperation<const Contract extends ControlOperationContract>(
   contract: Contract,
@@ -89,6 +106,12 @@ export function defineControlOperation<const Contract extends ControlOperationCo
     throw new Error(
       `The params of ${contract.operationId} must name exactly the placeholders of ${contract.path}`,
     );
+  }
+  const queryParameterNames = Object.keys(contract.query?.shape ?? {});
+  for (const name of Object.keys(contract.querySerialization ?? {})) {
+    if (!queryParameterNames.includes(name)) {
+      throw new Error(`${contract.operationId} serializes ${name}, which is no query parameter`);
+    }
   }
   for (const status of Object.keys(contract.refusals).map(Number)) {
     if (!Number.isInteger(status) || status < 400 || status > 599) {

@@ -1,172 +1,93 @@
 import { Hono } from 'hono';
-import { z } from 'zod';
+import type { z } from 'zod';
 
+import { readBotActivityContract } from '../../../../control_contracts/bot_activity.ts';
+import {
+  type controlRequestIssueSchema,
+  INVALID_REQUEST_REASON,
+} from '../../../../control_contracts/control_errors.ts';
+import type {
+  ControlOperationResponse,
+  DecodedControlRequest,
+} from '../../../../control_contracts/operation_contract.ts';
 import type { BotActivityEntry, BotActivityFilter } from '../../../types/bot_activity.ts';
-import { BOT_ACTIVITY_KINDS } from '../../../types/bot_activity_kind.ts';
 import { toCurrentBotApiMethodName } from '../../../types/bot_api_method_name.ts';
 import type { JsonStructure } from '../../../types/json_pattern.ts';
-import {
-  controlErrorResponse,
-  type ControlRequestIssue,
-  invalidControlRequestResponse,
-} from '../../control_error_response.ts';
-import { integerParameter } from '../bot_api/request_parameters.ts';
-import {
-  type ControlRequestInputReading,
-  readControlRequestInput,
-} from '../control_request_input.ts';
+import { registerControlOperation } from '../../control_operation_route.ts';
 import type { SessionRouteContextTypes } from '../session_route_context_types.ts';
 import { presentWebhookAttemptFailure } from '../webhook_attempt_presentation.ts';
-import { PARAMETER_PATTERNS_QUERY_KEY, readParameterPatterns } from './parameter_patterns_query.ts';
 
-/**
- * The wrapper of a query parameter naming, in OpenAPI's `deepObject` style, a parameter that a
- * recorded call must have sent: `parameters[text]=Hello`.
- */
-const PARAMETER_FILTER_KEY_PREFIX = 'parameters[';
-const PARAMETER_FILTER_KEY_SUFFIX = ']';
+/** Where the bot activity routes are mounted within the server, as a contract path template. */
+const BOT_ACTIVITY_MOUNT_PATH = '/sessions/{sessionId}/bot-activity';
 
-const DEFAULT_READ_LIMIT = 100;
-const MAX_READ_LIMIT = 1_000;
-/** Longer than any sensible test waits, so that a client's wait takes a single request. */
-const MAX_WAIT_MILLISECONDS = 600_000;
-
-const readBotActivityQuerySchema = z.strictObject({
-  after: integerParameter(z.int().min(0)).default(0),
-  before: integerParameter(z.int().min(1)).optional(),
-  bot_id: integerParameter(z.int()).optional(),
-  kind: z.enum(BOT_ACTIVITY_KINDS).optional(),
-  method: z.string().min(1).optional(),
-  chat_id: integerParameter(z.int()).optional(),
-  user_id: integerParameter(z.int()).optional(),
-  update_id: integerParameter(z.int()).optional(),
-  ok: z.enum(['true', 'false']).transform((text) => text === 'true').optional(),
-  [PARAMETER_PATTERNS_QUERY_KEY]: z.string().optional(),
-  limit: integerParameter(z.int().min(0).max(MAX_READ_LIMIT)).default(DEFAULT_READ_LIMIT),
-  wait_ms: integerParameter(z.int().min(0).max(MAX_WAIT_MILLISECONDS)).default(0),
-}).refine(({ after, before }) => before === undefined || before > after, {
-  message: 'A range must end after it starts',
-  path: ['before'],
-}).refine(({ before, wait_ms }) => before === undefined || wait_ms === 0, {
-  message: 'A read of a range that ends does not wait',
-  path: ['wait_ms'],
-});
-
-type ReadBotActivityQuery =
-  & Omit<
-    z.output<typeof readBotActivityQuerySchema>,
-    typeof PARAMETER_PATTERNS_QUERY_KEY
-  >
-  & {
-    readonly parameters: Readonly<Record<string, string>>;
-    readonly parameterPatterns: ReadonlyMap<string, JsonStructure> | undefined;
-  };
+type ReadBotActivityQuery = DecodedControlRequest<typeof readBotActivityContract>['query'];
+type ReadBotActivityResponse = ControlOperationResponse<typeof readBotActivityContract>;
 
 export function createBotActivityRoutes(): Hono<SessionRouteContextTypes> {
   const botActivityRoutes = new Hono<SessionRouteContextTypes>();
 
-  botActivityRoutes.get('/', async (context) => {
-    const queryReading = readBotActivityQuery(new URL(context.req.url).searchParams);
-    if (!queryReading.valid) {
-      return invalidControlRequestResponse(context, queryReading.issues);
-    }
-    const query = queryReading.value;
-
-    const result = await context.get('emulationSession').botActivity.readEntries({
-      after: query.after,
-      before: query.before,
-      filter: toBotActivityFilter(query),
-      limit: query.limit,
-      waitMilliseconds: query.wait_ms,
-      signal: context.req.raw.signal,
-    });
-    if (!result.read) {
-      return controlErrorResponse(context, 400, result.reason);
-    }
-    return context.json({
-      entries: result.entries.map(presentBotActivityEntry),
-      head_position: result.headPosition,
-    });
-  });
+  registerControlOperation(
+    botActivityRoutes,
+    BOT_ACTIVITY_MOUNT_PATH,
+    readBotActivityContract,
+    async ({ query }, context): Promise<ReadBotActivityResponse> => {
+      const [firstBoundIssue, ...otherBoundIssues] = findReadBoundIssues(query);
+      if (firstBoundIssue !== undefined) {
+        return {
+          status: 400,
+          body: { reason: INVALID_REQUEST_REASON, issues: [firstBoundIssue, ...otherBoundIssues] },
+        };
+      }
+      const result = await context.get('emulationSession').botActivity.readEntries({
+        after: query.after,
+        before: query.before,
+        filter: toBotActivityFilter(query),
+        limit: query.limit,
+        waitMilliseconds: query.wait_ms,
+        signal: context.req.raw.signal,
+      });
+      if (!result.read) {
+        return { status: 400, body: { reason: result.reason } };
+      }
+      return {
+        status: 200,
+        body: {
+          entries: result.entries.map(presentBotActivityEntry),
+          head_position: result.headPosition,
+        },
+      };
+    },
+  );
 
   return botActivityRoutes;
 }
 
 /**
- * Reads the query of a bot activity read, reporting each repeated parameter, each unknown one, and
- * each value the schema rejects, by the query key the request sent, and each problem with the
- * parameter patterns, within the JSON that `parameters_json` holds.
+ * The issues with a read's bounds that their schemas cannot state, each reported: a range must end
+ * after it starts, and a read of a range that ends does not wait.
  */
-function readBotActivityQuery(
-  searchParams: URLSearchParams,
-): ControlRequestInputReading<ReadBotActivityQuery> {
-  // Query keys are the client's, so they are collected in maps and made own properties with
-  // `Object.fromEntries`, which no key such as `__proto__` can turn into a prototype change.
-  const queryValues = new Map<string, string>();
-  const parameterFilters = new Map<string, string>();
-  const repeatedQueryKeys = new Set<string>();
-  for (const [name, value] of searchParams) {
-    const parameterName = readParameterFilterName(name);
-    const values = parameterName === undefined ? queryValues : parameterFilters;
-    const key = parameterName ?? name;
-    if (values.has(key)) {
-      repeatedQueryKeys.add(name);
-      continue;
-    }
-    values.set(key, value);
-  }
-  const repetitionIssues = [...repeatedQueryKeys].map((queryKey): ControlRequestIssue => ({
-    source: 'query',
-    path: [queryKey],
-    code: 'duplicate_field',
-    message: 'The query parameter is repeated',
-  }));
-  const query = readControlRequestInput(
-    readBotActivityQuerySchema,
-    Object.fromEntries(queryValues),
-    'query',
-  );
-  const parameterPatternsText = queryValues.get(PARAMETER_PATTERNS_QUERY_KEY);
-  const parameterPatterns = parameterPatternsText === undefined
-    ? undefined
-    : readParameterPatterns(parameterPatternsText);
-  if (!query.valid || parameterPatterns?.valid === false || repetitionIssues.length > 0) {
-    return {
-      valid: false,
-      issues: [
-        ...repetitionIssues,
-        ...(query.valid ? [] : query.issues),
-        ...(parameterPatterns?.valid === false ? parameterPatterns.issues : []),
-      ],
-    };
-  }
-  const { [PARAMETER_PATTERNS_QUERY_KEY]: _parameterPatternsText, ...criteria } = query.value;
-  return {
-    valid: true,
-    value: {
-      ...criteria,
-      parameters: Object.fromEntries(parameterFilters),
-      parameterPatterns: parameterPatterns?.valid ? parameterPatterns.value : undefined,
-    },
-  };
-}
-
-/**
- * The parameter name a `parameters[name]` query key filters by; `undefined` for any other key,
- * including one that names no parameter. A name may hold any character, line breaks included.
- */
-function readParameterFilterName(queryKey: string): string | undefined {
-  if (
-    !queryKey.startsWith(PARAMETER_FILTER_KEY_PREFIX) ||
-    !queryKey.endsWith(PARAMETER_FILTER_KEY_SUFFIX)
-  ) {
-    return undefined;
-  }
-  const parameterName = queryKey.slice(
-    PARAMETER_FILTER_KEY_PREFIX.length,
-    -PARAMETER_FILTER_KEY_SUFFIX.length,
-  );
-  return parameterName === '' ? undefined : parameterName;
+function findReadBoundIssues(
+  { after, before, wait_ms }: ReadBotActivityQuery,
+): z.output<typeof controlRequestIssueSchema>[] {
+  if (before === undefined) return [];
+  return [
+    ...(before <= after
+      ? [{
+        source: 'query' as const,
+        path: ['before'],
+        code: 'invalid_value' as const,
+        message: 'A range must end after it starts',
+      }]
+      : []),
+    ...(wait_ms !== 0
+      ? [{
+        source: 'query' as const,
+        path: ['wait_ms'],
+        code: 'invalid_value' as const,
+        message: 'A read of a range that ends does not wait',
+      }]
+      : []),
+  ];
 }
 
 function toBotActivityFilter(query: ReadBotActivityQuery): BotActivityFilter {
@@ -179,11 +100,30 @@ function toBotActivityFilter(query: ReadBotActivityQuery): BotActivityFilter {
     ...(query.user_id === undefined ? {} : { userId: query.user_id }),
     ...(query.update_id === undefined ? {} : { updateId: query.update_id }),
     ...(query.ok === undefined ? {} : { ok: query.ok }),
-    ...(Object.keys(query.parameters).length === 0 ? {} : { parameters: query.parameters }),
-    ...(query.parameterPatterns === undefined
+    ...(query.parameters === undefined || Object.keys(query.parameters).length === 0
       ? {}
-      : { parameterPatterns: query.parameterPatterns }),
+      : { parameters: query.parameters }),
+    ...(query.parameters_json === undefined
+      ? {}
+      : { parameterPatterns: toParameterPatterns(query.parameters_json) }),
   };
+}
+
+/**
+ * The patterns of a read by parameter name, kept in a map, where no name such as `__proto__` has a
+ * special meaning.
+ */
+function toParameterPatterns(
+  patternsByParameterName: NonNullable<ReadBotActivityQuery['parameters_json']>,
+): ReadonlyMap<string, JsonStructure> {
+  // The query reader keeps a JSON parameter's value as `readJsonText` read it, with its numbers
+  // exact, and the contract's schema accepted each pattern as an object or array of JSON values;
+  // the schema types those values as unknown, as it cannot name the exact numbers.
+  return new Map(
+    Object.entries(patternsByParameterName).map((
+      [parameterName, pattern],
+    ) => [parameterName, pattern as JsonStructure]),
+  );
 }
 
 function presentBotActivityEntry(entry: BotActivityEntry) {
@@ -212,7 +152,8 @@ function presentBotActivityEntry(entry: BotActivityEntry) {
         kind: entry.kind,
         bot_id: entry.botId,
         via: entry.via,
-        update: entry.update,
+        // A shallow copy, whose plain object type the contract's open Telegram object describes.
+        update: { ...entry.update },
         ...chatIdField,
         ...(entry.userId === undefined ? {} : { user_id: entry.userId }),
         ...presentWebhookAttemptIdField(entry.webhookAttemptId),
