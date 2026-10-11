@@ -29,7 +29,8 @@ const CAPITAL_QUIZ: AccountPollInput = {
 };
 
 Deno.test('a grammY bot inspects and answers the poll an account sends to its private chat', async () => {
-  const { session, fetch, bot, ada, privateChat } = await createAccountPollFixture();
+  await using fixture = await createAccountPollFixture();
+  const { session, fetch, bot, ada, privateChat } = fixture;
   const grammyBot = new Bot(bot.token, { client: { apiRoot: session.botApiRoot, fetch } });
   grammyBot.on('message:poll', (context) => {
     const { poll } = context.msg;
@@ -117,8 +118,8 @@ Deno.test('a grammY bot inspects and answers the poll an account sends to its pr
 });
 
 Deno.test('supergroup members vote in an account poll and forward it with the same counts', async () => {
-  const { session, fetch, bot, ada, grace, linus, privateChat, group } =
-    await createAccountPollFixture();
+  await using fixture = await createAccountPollFixture();
+  const { session, fetch, bot, ada, grace, linus, privateChat, group } = fixture;
   const grammyBot = new Bot(bot.token, { client: { apiRoot: session.botApiRoot, fetch } });
   grammyBot.on(
     'message:poll',
@@ -201,7 +202,8 @@ Deno.test('supergroup members vote in an account poll and forward it with the sa
 });
 
 Deno.test('only the account that sent a poll stops it, through its own message', async () => {
-  const { session, fetch, bot, ada, grace, privateChat, group } = await createAccountPollFixture();
+  await using fixture = await createAccountPollFixture();
+  const { session, fetch, bot, ada, grace, privateChat, group } = fixture;
   const callBotApi = createBotApiCaller({ session, fetch, bot });
   const { result: pollMessage } = await ada.sendPoll({ to: group, poll: LUNCH_POLL });
   await grace.answerPoll({ chat: group, message_id: pollMessage.message_id, option_ids: [2] });
@@ -291,7 +293,8 @@ Deno.test('only the account that sent a poll stops it, through its own message',
 });
 
 Deno.test('account polls are checked as Telegram checks them and refused ones change nothing', async () => {
-  const { session, fetch, bot, ada, grace, privateChat, group } = await createAccountPollFixture();
+  await using fixture = await createAccountPollFixture();
+  const { session, fetch, bot, ada, grace, privateChat, group } = fixture;
   const callBotApi = createBotApiCaller({ session, fetch, bot });
   const updatesBefore = await pendingUpdates(callBotApi);
   const privateHistory = await ada.getMessages({ chat: privateChat });
@@ -369,7 +372,8 @@ Deno.test('account polls are checked as Telegram checks them and refused ones ch
 });
 
 Deno.test('a grammY bot receives the poll an account creates through a request_poll button', async () => {
-  const { session, fetch, bot, ada, grace, privateChat } = await createAccountPollFixture();
+  await using fixture = await createAccountPollFixture();
+  const { session, fetch, bot, ada, grace, privateChat } = fixture;
   await grace.sendMessage({ to: privateChat, text: '/start' });
   const grammyBot = new Bot(bot.token, { client: { apiRoot: session.botApiRoot, fetch } });
   grammyBot.command('survey', (context) =>
@@ -480,7 +484,8 @@ Deno.test('a grammY bot receives the poll an account creates through a request_p
 });
 
 Deno.test('a bot copies an account quiz only where it sees its solution', async () => {
-  const { session, fetch, bot, ada, privateChat, group } = await createAccountPollFixture();
+  await using fixture = await createAccountPollFixture();
+  const { session, fetch, bot, ada, privateChat, group } = fixture;
   const callBotApi = createBotApiCaller({ session, fetch, bot });
   const { result: privateQuiz } = await ada.sendPoll({ to: privateChat, poll: CAPITAL_QUIZ });
   const { result: groupQuiz } = await ada.sendPoll({ to: group, poll: CAPITAL_QUIZ });
@@ -526,8 +531,8 @@ Deno.test('a bot copies an account quiz only where it sees its solution', async 
 
 Deno.test('account polls stay within their session', async () => {
   await using api = createTestInProcessEmulator();
-  const first = await createAccountPollFixture(api);
-  const second = await createAccountPollFixture(api);
+  await using first = await createAccountPollFixture(api);
+  await using second = await createAccountPollFixture(api);
   const { result: pollMessage } = await first.ada.sendPoll({
     to: first.privateChat,
     poll: LUNCH_POLL,
@@ -566,11 +571,13 @@ Deno.test('account polls stay within their session', async () => {
 
 /**
  * Creates a session whose bot, which reads all group messages, Ada has started a private chat
- * with; Ada owns a supergroup with Grace and the bot; Linus is an account outside it.
+ * with; Ada owns a supergroup with Grace and the bot; Linus is an account outside it. The session
+ * is created on `existingApi` when given, or on an emulator of its own, which disposing of the
+ * fixture disposes of.
  */
-async function createAccountPollFixture(
-  api: TestInProcessEmulator = createTestInProcessEmulator(),
-) {
+async function createAccountPollFixture(existingApi?: TestInProcessEmulator) {
+  await using disposalOnFailure = new AsyncDisposableStack();
+  const api = existingApi ?? disposalOnFailure.use(createTestInProcessEmulator());
   const { fetch } = api;
   const { result: session } = await api.client.createSession();
   const { result: createdBot } = await session.createBot({
@@ -587,6 +594,7 @@ async function createAccountPollFixture(
   const group: SupergroupMessageTarget = { type: 'supergroup', chatId: supergroup.id };
   await ada.addChatMember({ chat: group, userId: grace.id });
   await ada.addChatMember({ chat: group, userId: createdBot.bot.id });
+  const emulatorDisposal = disposalOnFailure.move();
   return {
     session,
     fetch,
@@ -596,6 +604,7 @@ async function createAccountPollFixture(
     linus,
     privateChat,
     group,
+    [Symbol.asyncDispose]: () => emulatorDisposal.disposeAsync(),
   };
 }
 

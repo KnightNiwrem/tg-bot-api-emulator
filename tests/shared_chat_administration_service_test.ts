@@ -26,13 +26,14 @@ import {
 import { ALL_CHAT_PERMISSIONS, type ChatPermissions } from '../src/types/chat_permissions.ts';
 import type { BasicGroup, Channel, Supergroup } from '../src/types/virtual_chat.ts';
 import type { ChatActor } from '../src/types/virtual_chat.ts';
+import { createVirtualAccount, createVirtualBot } from './support/virtual_users.ts';
 
 Deno.test('SharedChatAdministrationService creates a basic group with its initial participants', () => {
   const { virtualUsers, identities, sharedChats, sharedChatAdministration } =
     createSharedChatAdministrationFixture();
-  const creator = createAccount(virtualUsers, 'Ada');
-  const member = createAccount(virtualUsers, 'Grace');
-  const bot = createBot(virtualUsers, 'Test Bot', 'test_bot');
+  const creator = createVirtualAccount(virtualUsers, { first_name: 'Ada' });
+  const member = createVirtualAccount(virtualUsers, { first_name: 'Grace' });
+  const bot = createVirtualBot(virtualUsers, { first_name: 'Test Bot', username: 'test_bot' });
 
   const creation = sharedChatAdministration.createBasicGroup({
     title: 'Test Group',
@@ -62,8 +63,8 @@ Deno.test('SharedChatAdministrationService creates a basic group with its initia
 
 Deno.test('SharedChatAdministrationService validates basic-group participants before reserving an ID', () => {
   const { virtualUsers, sharedChatAdministration } = createSharedChatAdministrationFixture();
-  const creator = createAccount(virtualUsers, 'Ada');
-  const member = createAccount(virtualUsers, 'Grace');
+  const creator = createVirtualAccount(virtualUsers, { first_name: 'Ada' });
+  const member = createVirtualAccount(virtualUsers, { first_name: 'Grace' });
 
   const missingCreator = sharedChatAdministration.createBasicGroup({
     title: 'Missing Creator',
@@ -106,8 +107,8 @@ Deno.test('SharedChatAdministrationService validates basic-group participants be
 Deno.test('SharedChatAdministrationService creates owner-only supergroups and channels', () => {
   const { virtualUsers, identities, sharedChats, sharedChatAdministration } =
     createSharedChatAdministrationFixture();
-  const creator = createAccount(virtualUsers, 'Ada');
-  const nonMember = createAccount(virtualUsers, 'Grace');
+  const creator = createVirtualAccount(virtualUsers, { first_name: 'Ada' });
+  const nonMember = createVirtualAccount(virtualUsers, { first_name: 'Grace' });
 
   const supergroup = getCreatedSupergroup(sharedChatAdministration.createSupergroup({
     title: 'Test Supergroup',
@@ -152,7 +153,7 @@ Deno.test('SharedChatAdministrationService validates owners before reserving sha
   });
   assertOwnerOnlyChatCreationFailure(missingChannelOwner, 'creator_account_not_found');
 
-  const creator = createAccount(virtualUsers, 'Ada');
+  const creator = createVirtualAccount(virtualUsers, { first_name: 'Ada' });
   const validChannel = getCreatedChannel(sharedChatAdministration.createChannel({
     title: 'First Valid Shared Chat',
     creatorAccountId: creator.profile.id,
@@ -170,9 +171,9 @@ Deno.test('SharedChatAdministrationService adds permitted members to shared chat
     recordedServiceMessages,
     sharedChatAdministration,
   } = createSharedChatAdministrationFixture();
-  const owner = createAccount(virtualUsers, 'Ada');
-  const account = createAccount(virtualUsers, 'Grace');
-  const bot = createBot(virtualUsers, 'Test Bot', 'test_bot');
+  const owner = createVirtualAccount(virtualUsers, { first_name: 'Ada' });
+  const account = createVirtualAccount(virtualUsers, { first_name: 'Grace' });
+  const bot = createVirtualBot(virtualUsers, { first_name: 'Test Bot', username: 'test_bot' });
   const basicGroup = getCreatedBasicGroup(sharedChatAdministration.createBasicGroup({
     title: 'Test Group',
     creatorAccountId: owner.profile.id,
@@ -255,10 +256,10 @@ Deno.test('SharedChatAdministrationService adds permitted members to shared chat
 Deno.test('SharedChatAdministrationService validates member additions before changing chat state', () => {
   const { virtualUsers, sharedChats, publishedEvents, sharedChatAdministration } =
     createSharedChatAdministrationFixture();
-  const owner = createAccount(virtualUsers, 'Ada');
-  const existingMember = createAccount(virtualUsers, 'Grace');
-  const candidate = createAccount(virtualUsers, 'Linus');
-  const bot = createBot(virtualUsers, 'Test Bot', 'test_bot');
+  const owner = createVirtualAccount(virtualUsers, { first_name: 'Ada' });
+  const existingMember = createVirtualAccount(virtualUsers, { first_name: 'Grace' });
+  const candidate = createVirtualAccount(virtualUsers, { first_name: 'Linus' });
+  const bot = createVirtualBot(virtualUsers, { first_name: 'Test Bot', username: 'test_bot' });
   const channel = getCreatedChannel(sharedChatAdministration.createChannel({
     title: 'Test Channel',
     creatorAccountId: owner.profile.id,
@@ -443,9 +444,9 @@ Deno.test('SharedChatAdministrationService ends memberships as members leave or 
     recordedServiceMessages,
     sharedChatAdministration,
   } = createSharedChatAdministrationFixture();
-  const owner = createAccount(virtualUsers, 'Ada');
-  const member = createAccount(virtualUsers, 'Grace');
-  const bot = createBot(virtualUsers, 'Test Bot', 'test_bot');
+  const owner = createVirtualAccount(virtualUsers, { first_name: 'Ada' });
+  const member = createVirtualAccount(virtualUsers, { first_name: 'Grace' });
+  const bot = createVirtualBot(virtualUsers, { first_name: 'Test Bot', username: 'test_bot' });
   const supergroup = getCreatedSupergroup(sharedChatAdministration.createSupergroup({
     title: 'Team',
     creatorAccountId: owner.profile.id,
@@ -661,7 +662,7 @@ Deno.test('SharedChatAdministrationService lets administrator accounts promote w
     publishedEvents,
     sharedChatAdministration,
   } = fixture;
-  const hopper = createAccount(fixture.virtualUsers, 'Hopper');
+  const hopper = createVirtualAccount(fixture.virtualUsers, { first_name: 'Hopper' });
   assertMemberAdded(sharedChatAdministration.addChatMember({
     actorAccountId: owner.profile.id,
     chatId: supergroup.id,
@@ -851,7 +852,7 @@ Deno.test('SharedChatAdministrationService lets administrator accounts restrict 
     publishedEvents,
     sharedChatAdministration,
   } = fixture;
-  const hopper = createAccount(fixture.virtualUsers, 'Hopper');
+  const hopper = createVirtualAccount(fixture.virtualUsers, { first_name: 'Hopper' });
   assertMemberAdded(sharedChatAdministration.addChatMember({
     actorAccountId: owner.profile.id,
     chatId: supergroup.id,
@@ -1539,11 +1540,17 @@ function createModerationFixture() {
   const fixture = createSharedChatAdministrationFixture();
   const { virtualUsers, sharedChatAdministration, publishedEvents, recordedServiceMessages } =
     fixture;
-  const owner = createAccount(virtualUsers, 'Ada');
-  const member = createAccount(virtualUsers, 'Grace');
-  const stranger = createAccount(virtualUsers, 'Linus');
-  const moderatorBot = createBot(virtualUsers, 'Moderator Bot', 'moderator_bot');
-  const otherBot = createBot(virtualUsers, 'Other Bot', 'other_bot');
+  const owner = createVirtualAccount(virtualUsers, { first_name: 'Ada' });
+  const member = createVirtualAccount(virtualUsers, { first_name: 'Grace' });
+  const stranger = createVirtualAccount(virtualUsers, { first_name: 'Linus' });
+  const moderatorBot = createVirtualBot(virtualUsers, {
+    first_name: 'Moderator Bot',
+    username: 'moderator_bot',
+  });
+  const otherBot = createVirtualBot(virtualUsers, {
+    first_name: 'Other Bot',
+    username: 'other_bot',
+  });
   const supergroup = getCreatedSupergroup(sharedChatAdministration.createSupergroup({
     title: 'Team',
     creatorAccountId: owner.profile.id,
@@ -1598,20 +1605,4 @@ function createSharedChatAdministrationFixture() {
     recordedServiceMessages,
     sharedChatAdministration,
   };
-}
-
-function createAccount(virtualUsers: VirtualUserService, firstName: string) {
-  const result = virtualUsers.createAccount({ first_name: firstName });
-  if (!result.created) {
-    throw new Error(`Expected account creation to succeed, received ${result.reason}`);
-  }
-  return result.account;
-}
-
-function createBot(virtualUsers: VirtualUserService, firstName: string, username: string) {
-  const result = virtualUsers.createBot({ first_name: firstName, username });
-  if (!result.created) {
-    throw new Error(`Expected bot creation to succeed, received ${result.reason}`);
-  }
-  return result.bot;
 }

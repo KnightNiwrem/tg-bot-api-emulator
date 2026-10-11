@@ -1,27 +1,13 @@
 import { assertEquals } from '@std/assert';
-import { AccountRepository } from '../src/repositories/account.ts';
-import { BlockedUserRepository } from '../src/repositories/blocked_user.ts';
-import { BotRepository } from '../src/repositories/bot.ts';
-import { FileRepository } from '../src/repositories/file.ts';
-import { MessageBoxRepository } from '../src/repositories/message_box.ts';
-import { MessageRepository } from '../src/repositories/message.ts';
-import { PollRepository } from '../src/repositories/poll.ts';
-import { PrivateConversationRepository } from '../src/repositories/private_conversation.ts';
-import { SharedChatRepository } from '../src/repositories/shared_chat.ts';
-import { TelegramIdentityRepository } from '../src/repositories/telegram_identity.ts';
 import {
   type AccountChatMessageLookupResult,
   createAccountChatMessageReader,
 } from '../src/services/account_chat_message.ts';
-import { PrivateChatPolicy } from '../src/services/private_chat_policy.ts';
-import { PrivateMessagingService } from '../src/services/private_messaging.ts';
-import { SupergroupChatPolicy } from '../src/services/supergroup_chat_policy.ts';
-import { SupergroupMessagingService } from '../src/services/supergroup_messaging.ts';
-import { VirtualUserService } from '../src/services/virtual_user.ts';
-import { createMessageSendingServices } from './support/message_sending_services.ts';
 import { ALL_CHAT_PERMISSIONS } from '../src/types/chat_permissions.ts';
 import type { AccountChatAddress } from '../src/types/virtual_chat.ts';
 import type { ChatMessage } from '../src/types/virtual_message.ts';
+import { createChatMessagingServices } from './support/chat_messaging_services.ts';
+import { createVirtualAccount, createVirtualBot } from './support/virtual_users.ts';
 
 Deno.test('the account chat-message reader finds private chat messages by their ID in the bot message box', () => {
   const { reader, ada, stranger, bot, adaConversation, adaMessages } = createReaderFixture();
@@ -118,74 +104,28 @@ Deno.test('the account chat-message reader finds supergroup messages only for cu
  * opens her conversation without starting it. Hopper has neither chat.
  */
 function createReaderFixture() {
-  const identities = new TelegramIdentityRepository();
-  const accounts = new AccountRepository();
-  const bots = new BotRepository();
-  const virtualUsers = new VirtualUserService({ identities, accounts, bots });
-  const ada = createAccount(virtualUsers, 'Ada');
-  const grace = createAccount(virtualUsers, 'Grace');
-  const stranger = createAccount(virtualUsers, 'Hopper');
-  const botCreation = virtualUsers.createBot({ first_name: 'Test Bot', username: 'test_bot' });
-  if (!botCreation.created) {
-    throw new Error(`Expected bot creation to succeed, received ${botCreation.reason}`);
-  }
-  const { bot } = botCreation;
-
-  const privateConversations = new PrivateConversationRepository();
-  const blockedUsers = new BlockedUserRepository();
-  const joinRequesterContacts = {
-    mayContactJoinRequester: (_botId: number, accountId: number) => accountId === grace.profile.id,
-    claimJoinRequesterContact: () => {},
-  };
-  const sharedChats = new SharedChatRepository();
-  const messages = new MessageRepository();
-  const files = new FileRepository();
-  const polls = new PollRepository();
-  const messageBoxes = new MessageBoxRepository();
-  const events = { emit: () => {} };
-  const currentUnixTimeSeconds = () => 1_700_000_000;
-  const privateMessaging = new PrivateMessagingService({
-    accounts,
-    bots,
+  /** The accounts whose pending join request lets the bot contact them. */
+  const joinRequesterIds = new Set<number>();
+  const {
+    virtualUsers,
     privateConversations,
-    messages,
-    messageBoxes,
-    blockedUsers,
-  });
-  const supergroupMessaging = new SupergroupMessagingService({
-    accounts,
-    bots,
     sharedChats,
-    messages,
     messageBoxes,
-  });
-  const privateChats = new PrivateChatPolicy({
+    messageSending,
     accounts,
-    bots,
-    privateConversations,
-    blockedUsers,
-    joinRequesterContacts,
-    privateMessages: privateMessaging,
-  });
-  const supergroups = new SupergroupChatPolicy({
-    sharedChats,
-    supergroupMessages: supergroupMessaging,
-  });
-  const { messageSending } = createMessageSendingServices({
-    accounts,
-    bots,
     privateChats,
     supergroups,
-    privateConversations,
-    sharedChats,
-    messages,
-    files,
-    polls,
-    messageBoxes,
-    transactions: { ...events, withinTransaction: (command) => command() },
-    joinRequesterContacts,
-    currentUnixTimeSeconds,
+  } = createChatMessagingServices({
+    joinRequesterContacts: {
+      mayContactJoinRequester: (_botId, accountId) => joinRequesterIds.has(accountId),
+      claimJoinRequesterContact: () => {},
+    },
   });
+  const ada = createVirtualAccount(virtualUsers, { first_name: 'Ada' });
+  const grace = createVirtualAccount(virtualUsers, { first_name: 'Grace' });
+  joinRequesterIds.add(grace.profile.id);
+  const stranger = createVirtualAccount(virtualUsers, { first_name: 'Hopper' });
+  const bot = createVirtualBot(virtualUsers, { first_name: 'Test Bot', username: 'test_bot' });
 
   const adaStart = messageSending.sendAccountPrivateChatMessage({
     fromAccountId: ada.profile.id,
@@ -263,14 +203,6 @@ function createReaderFixture() {
     supergroup,
     supergroupMessage: numbered(supergroup.id, supergroupMessage.message),
   };
-}
-
-function createAccount(virtualUsers: VirtualUserService, firstName: string) {
-  const result = virtualUsers.createAccount({ first_name: firstName });
-  if (!result.created) {
-    throw new Error(`Expected account creation to succeed, received ${result.reason}`);
-  }
-  return result.account;
 }
 
 function describeLookup(result: AccountChatMessageLookupResult): string {

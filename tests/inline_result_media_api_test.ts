@@ -82,7 +82,8 @@ const THUMBNAIL_URL = 'https://cdn.example.com/cat-thumbnail.jpg';
  * PDF document.
  */
 async function createInlineMediaFixture() {
-  const { api, sessionPath } = await createTestSession();
+  await using disposalOnFailure = new AsyncDisposableStack();
+  const { api, sessionPath } = disposalOnFailure.use(await createTestSession());
   const createAccount = (firstName: string) => createSessionAccount(api, sessionPath, firstName);
   const ada = await createAccount('Ada');
   const grace = await createAccount('Grace');
@@ -198,6 +199,7 @@ async function createInlineMediaFixture() {
     return inlineMessageId;
   };
 
+  const emulatorDisposal = disposalOnFailure.move();
   return {
     api,
     ada,
@@ -217,6 +219,7 @@ async function createInlineMediaFixture() {
     chooseResultForInlineMessageId,
     getHistory,
     readUpdates,
+    [Symbol.asyncDispose]: () => emulatorDisposal.disposeAsync(),
   };
 }
 
@@ -261,6 +264,7 @@ const urlDocumentResult = {
 };
 
 Deno.test('an account sends photos and documents that an inline result names by URL', async () => {
+  await using fixture = await createInlineMediaFixture();
   const {
     ada,
     bot,
@@ -271,7 +275,7 @@ Deno.test('an account sends photos and documents that an inline result names by 
     choose,
     getHistory,
     readUpdates,
-  } = await createInlineMediaFixture();
+  } = fixture;
   const inlineQuery = await sendQuery(ada.id);
   const answered = await answer(inlineQuery.id, [urlPhotoResult, urlDocumentResult]);
   assertEqualsInFieldOrder(
@@ -345,7 +349,8 @@ Deno.test('an account sends photos and documents that an inline result names by 
 });
 
 Deno.test('a result naming media by URL sends its input_message_content instead', async () => {
-  const { ada, sendQuery, answer, choose } = await createInlineMediaFixture();
+  await using fixture = await createInlineMediaFixture();
+  const { ada, sendQuery, answer, choose } = fixture;
   const inlineQuery = await sendQuery(ada.id);
   const answered = await answer(inlineQuery.id, [
     {
@@ -368,8 +373,9 @@ Deno.test('a result naming media by URL sends its input_message_content instead'
 });
 
 Deno.test('answerInlineQuery checks results naming media by URL and records no part of a refused answer', async () => {
+  await using fixture = await createInlineMediaFixture();
   const { api, ada, bot, otherBot, accountPath, callBot, sendQuery, getInlineQuery, answer } =
-    await createInlineMediaFixture();
+    fixture;
   await requestJson(api, 'POST', `${accountPath(ada.id)}/messages`, {
     to: { type: 'private', botId: otherBot.id },
     text: '/start',
@@ -439,6 +445,7 @@ Deno.test('answerInlineQuery checks results naming media by URL and records no p
 });
 
 Deno.test('an account cannot send media at a URL the emulated web does not serve as the result kind', async () => {
+  await using fixture = await createInlineMediaFixture();
   const {
     ada,
     privateChat,
@@ -448,7 +455,7 @@ Deno.test('an account cannot send media at a URL the emulated web does not serve
     choose,
     getHistory,
     readUpdates,
-  } = await createInlineMediaFixture();
+  } = fixture;
   const gifImage = new Uint8Array(13);
   gifImage.set(new TextEncoder().encode('GIF89a'));
   gifImage.set([4, 0, 3, 0], 6);
@@ -480,6 +487,7 @@ Deno.test('an account cannot send media at a URL the emulated web does not serve
 });
 
 Deno.test('URL media follows supergroup permissions, blocking, cached answers and inline edits', async () => {
+  await using fixture = await createInlineMediaFixture();
   const {
     api,
     ada,
@@ -496,7 +504,7 @@ Deno.test('URL media follows supergroup permissions, blocking, cached answers an
     choose,
     chooseResultForInlineMessageId,
     getHistory,
-  } = await createInlineMediaFixture();
+  } = fixture;
 
   // Grace may write in the supergroup but not send photos there.
   const permissionsResponse = await requestJson(
@@ -584,6 +592,7 @@ Deno.test('URL media follows supergroup permissions, blocking, cached answers an
 });
 
 Deno.test('a bot edits an inline message into a rich message with files named by URL', async () => {
+  await using fixture = await createInlineMediaFixture();
   const {
     ada,
     bot,
@@ -593,7 +602,7 @@ Deno.test('a bot edits an inline message into a rich message with files named by
     chooseResultForInlineMessageId,
     callBot,
     getHistory,
-  } = await createInlineMediaFixture();
+  } = fixture;
   const inlineQuery = await sendQuery(ada.id);
   await answer(inlineQuery.id, [{
     type: 'article',
@@ -663,8 +672,8 @@ const urlVoiceResult = {
 };
 
 Deno.test('an account sends videos and voice notes that inline results name by file_id or URL', async () => {
-  const { ada, bot, callBot, sendQuery, getInlineQuery, answer, choose } =
-    await createInlineMediaFixture();
+  await using fixture = await createInlineMediaFixture();
+  const { ada, bot, callBot, sendQuery, getInlineQuery, answer, choose } = fixture;
   const sentVideo = (await callBot(bot.botApiPath, 'sendVideo', {
     chat_id: ada.id,
     video: CAT_VIDEO_URL,
@@ -741,7 +750,8 @@ Deno.test('an account sends videos and voice notes that inline results name by f
 });
 
 Deno.test('answerInlineQuery checks video and voice results by their own rules', async () => {
-  const { ada, bot, callBot, sendQuery, answer, choose } = await createInlineMediaFixture();
+  await using fixture = await createInlineMediaFixture();
+  const { ada, bot, callBot, sendQuery, answer, choose } = fixture;
   const sentVideo = (await callBot(bot.botApiPath, 'sendVideo', {
     chat_id: ada.id,
     video: CAT_VIDEO_URL,
@@ -794,6 +804,7 @@ Deno.test('answerInlineQuery checks video and voice results by their own rules',
 });
 
 Deno.test('video and voice results follow the inline media contracts, permissions and edits', async () => {
+  await using fixture = await createInlineMediaFixture();
   const {
     api,
     ada,
@@ -809,7 +820,7 @@ Deno.test('video and voice results follow the inline media contracts, permission
     choose,
     getHistory,
     readUpdates,
-  } = await createInlineMediaFixture();
+  } = fixture;
   // Inline results take only MPEG-4 videos and OGG voice notes.
   await registerWebResource(
     'https://cdn.example.com/clips/purring.webm',

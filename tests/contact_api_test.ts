@@ -26,7 +26,8 @@ interface TestMessage {
  * a private chat with the bot.
  */
 async function createContactFixture() {
-  const { api, sessionPath } = await createTestSession();
+  await using disposalOnFailure = new AsyncDisposableStack();
+  const { api, sessionPath } = disposalOnFailure.use(await createTestSession());
   const ada = await createAccount(api, sessionPath, 'Ada', {
     last_name: 'Lovelace',
     phone_number: '15550100',
@@ -79,6 +80,7 @@ async function createContactFixture() {
   const readUpdates = async () => withoutUpdateIds(await readBotUpdates(botApiPath));
   await readUpdates();
 
+  const emulatorDisposal = disposalOnFailure.move();
   return {
     api,
     ada,
@@ -92,11 +94,13 @@ async function createContactFixture() {
     callBot,
     getHistory,
     readUpdates,
+    [Symbol.asyncDispose]: () => emulatorDisposal.disposeAsync(),
   };
 }
 
 Deno.test('a bot sends a contact whose texts Telegram cleans and whose user stays unknown', async () => {
-  const { ada, privateChat, callBot, getHistory } = await createContactFixture();
+  await using fixture = await createContactFixture();
+  const { ada, privateChat, callBot, getHistory } = fixture;
   const sent = await callBot('sendContact', {
     chat_id: ada.id,
     phone_number: '+1 (555) 010-0200',
@@ -133,7 +137,8 @@ Deno.test('a bot sends a contact whose texts Telegram cleans and whose user stay
 });
 
 Deno.test('sendContact refuses missing, malformed and over-long contacts without sending', async () => {
-  const { ada, privateChat, callBot, getHistory } = await createContactFixture();
+  await using fixture = await createContactFixture();
+  const { ada, privateChat, callBot, getHistory } = fixture;
   const historyLength = (await getHistory(ada.id, privateChat)).length;
   const valid = { chat_id: ada.id, phone_number: '12345', first_name: 'Linus' };
   const refusals = [
@@ -174,8 +179,8 @@ Deno.test('sendContact refuses missing, malformed and over-long contacts without
 });
 
 Deno.test('an account answers a request_contact button with its own contact, replying to the keyboard', async () => {
-  const { api, ada, bot, privateChat, accountPath, callBot, readUpdates } =
-    await createContactFixture();
+  await using fixture = await createContactFixture();
+  const { api, ada, bot, privateChat, accountPath, callBot, readUpdates } = fixture;
   const keyboard = await callBot('sendMessage', {
     chat_id: ada.id,
     text: 'Share your number?',
@@ -225,8 +230,9 @@ Deno.test('an account answers a request_contact button with its own contact, rep
 });
 
 Deno.test('a request_contact press without a phone number shares nothing', async () => {
+  await using fixture = await createContactFixture();
   const { api, grace, bot, accountPath, sendAccountMessage, callBot, getHistory, readUpdates } =
-    await createContactFixture();
+    fixture;
   const graceChat = { type: 'private', botId: bot.id } as const;
   await sendAccountMessage(grace.id, { to: graceChat, text: '/start' });
   await callBot('sendMessage', {
@@ -256,8 +262,9 @@ Deno.test('a request_contact press without a phone number shares nothing', async
 });
 
 Deno.test('accounts share their own or written contacts in private chats and supergroups', async () => {
+  await using fixture = await createContactFixture();
   const { ada, grace, privateChat, supergroupChat, sendAccountMessage, getHistory, readUpdates } =
-    await createContactFixture();
+    fixture;
   const written = await sendAccountMessage(ada.id, {
     to: privateChat,
     contact: { phone_number: '15550100', first_name: 'Ada', last_name: 'Lovelace' },
@@ -323,7 +330,8 @@ Deno.test('accounts share their own or written contacts in private chats and sup
 });
 
 Deno.test('sign-up names fit in contacts, and phone numbers are the digits of an E.164 number', async () => {
-  const { api, accountPath } = await createContactFixture();
+  await using fixture = await createContactFixture();
+  const { api, accountPath } = fixture;
   const accountsPath = accountPath(0).replace(/\/0$/, '');
   const unusableProfiles = [
     { first_name: '\r' },
@@ -361,6 +369,7 @@ Deno.test('sign-up names fit in contacts, and phone numbers are the digits of an
 });
 
 Deno.test('contacts need the permission to send messages in supergroups', async () => {
+  await using fixture = await createContactFixture();
   const {
     api,
     ada,
@@ -370,7 +379,7 @@ Deno.test('contacts need the permission to send messages in supergroups', async 
     sendAccountMessage,
     callBot,
     getHistory,
-  } = await createContactFixture();
+  } = fixture;
   const restriction = await requestJson(
     api,
     'PUT',
@@ -403,7 +412,8 @@ Deno.test('contacts need the permission to send messages in supergroups', async 
 });
 
 Deno.test('a contact message keeps its contact through edits of its keyboard only', async () => {
-  const { ada, privateChat, sendAccountMessage, callBot } = await createContactFixture();
+  await using fixture = await createContactFixture();
+  const { ada, privateChat, sendAccountMessage, callBot } = fixture;
   const document = await sendAccountMessage(ada.id, {
     to: privateChat,
     document: { content_base64: 'aGVsbG8=', file_name: 'notes.txt' },

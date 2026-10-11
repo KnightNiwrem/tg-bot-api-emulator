@@ -36,10 +36,12 @@ interface ShownChat {
 /**
  * Creates a session where Ada owns a supergroup with Grace, a reset bot that is an administrator
  * with `can_pin_messages`, and a member bot, and where Ada has started private chats with both
- * bots. Grace may pin by the supergroup's default permissions.
+ * bots. Grace may pin by the supergroup's default permissions. Disposing of the fixture disposes
+ * of its emulator.
  */
 async function createUnpinAllFixture() {
-  const api = createTestInProcessEmulator();
+  await using disposalOnFailure = new AsyncDisposableStack();
+  const api = disposalOnFailure.use(createTestInProcessEmulator());
   const { fetch } = api;
   const { result: session } = await api.client.createSession();
   const { result: { account: ada } } = await session.createAccount({ first_name: 'Ada' });
@@ -102,6 +104,7 @@ async function createUnpinAllFixture() {
     return (message as ShownMessage).message_id;
   };
 
+  const emulatorDisposal = disposalOnFailure.move();
   return {
     session,
     fetch,
@@ -117,13 +120,14 @@ async function createUnpinAllFixture() {
     pinnedTexts,
     getChatAsBot,
     sendAsBot,
+    [Symbol.asyncDispose]: () => emulatorDisposal.disposeAsync(),
   };
 }
 
 type UnpinAllFixture = Awaited<ReturnType<typeof createUnpinAllFixture>>;
 
 Deno.test('a grammY bot clears every pin on /reset, then pins a fresh notice', async () => {
-  const fixture = await createUnpinAllFixture();
+  await using fixture = await createUnpinAllFixture();
   const {
     session,
     fetch,
@@ -263,8 +267,8 @@ async function pinInEveryChat(
 }
 
 Deno.test('unpinAllChatMessages clears a private chat alone and keeps its history', async () => {
-  const fixture = await createUnpinAllFixture();
-  const otherSession = await createUnpinAllFixture();
+  await using fixture = await createUnpinAllFixture();
+  await using otherSession = await createUnpinAllFixture();
   const {
     ada,
     resetBot,
@@ -349,8 +353,9 @@ Deno.test('unpinAllChatMessages clears a private chat alone and keeps its histor
 });
 
 Deno.test('unpinAllChatMessages refuses before changing any pin, even when nothing is pinned', async () => {
+  await using fixture = await createUnpinAllFixture();
   const { session, ada, grace, resetBot, memberBot, team, resetBotChat, callBot, pinnedTexts } =
-    await createUnpinAllFixture();
+    fixture;
   try {
     const { result: outsiderBot } = await session.createBot({
       first_name: 'Outsider',

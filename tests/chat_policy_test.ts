@@ -1,22 +1,8 @@
 import { assertEquals } from '@std/assert';
-import { AccountRepository } from '../src/repositories/account.ts';
-import { BlockedUserRepository } from '../src/repositories/blocked_user.ts';
-import { BotRepository } from '../src/repositories/bot.ts';
-import { FileRepository } from '../src/repositories/file.ts';
-import { MessageBoxRepository } from '../src/repositories/message_box.ts';
-import { MessageRepository } from '../src/repositories/message.ts';
-import { PollRepository } from '../src/repositories/poll.ts';
-import { PrivateConversationRepository } from '../src/repositories/private_conversation.ts';
-import { SharedChatRepository } from '../src/repositories/shared_chat.ts';
-import { TelegramIdentityRepository } from '../src/repositories/telegram_identity.ts';
-import { MessageDeletionService } from '../src/services/message_deletion.ts';
-import { PrivateChatPolicy } from '../src/services/private_chat_policy.ts';
-import { PrivateMessagingService } from '../src/services/private_messaging.ts';
-import { SupergroupChatPolicy } from '../src/services/supergroup_chat_policy.ts';
-import { SupergroupMessagingService } from '../src/services/supergroup_messaging.ts';
+import type { MessageBoxRepository } from '../src/repositories/message_box.ts';
+import type { SharedChatRepository } from '../src/repositories/shared_chat.ts';
 import type { MessageSendingService } from '../src/services/message_sending.ts';
-import { VirtualUserService } from '../src/services/virtual_user.ts';
-import { createMessageSendingServices } from './support/message_sending_services.ts';
+import type { PrivateChatPolicy } from '../src/services/private_chat_policy.ts';
 import { ALL_CHAT_PERMISSIONS } from '../src/types/chat_permissions.ts';
 import { privateChatMessagePolicy, supergroupMessagePolicy } from '../src/types/chat_policy.ts';
 import type {
@@ -30,6 +16,8 @@ import type {
   PrivateMessage,
   SupergroupMessage,
 } from '../src/types/virtual_message.ts';
+import { createChatMessagingServices } from './support/chat_messaging_services.ts';
+import { createVirtualAccount, createVirtualBot } from './support/virtual_users.ts';
 
 Deno.test('private chats number messages in one box per participant, across its private chats', () => {
   const { messageBoxes, ada, grace, bot, otherBot, messageSending } = createChatPolicyFixture();
@@ -346,44 +334,24 @@ const CLUB = {
  * join request, which lets the bot contact him, and no chat. No supergroup exists yet.
  */
 function createChatPolicyFixture() {
-  const identities = new TelegramIdentityRepository();
-  const accounts = new AccountRepository();
-  const bots = new BotRepository();
-  const virtualUsers = new VirtualUserService({ identities, accounts, bots });
-  const ada = createAccountId(virtualUsers, 'Ada');
-  const grace = createAccountId(virtualUsers, 'Grace');
-  const hopper = createAccountId(virtualUsers, 'Hopper');
-  const bot = createBotId(virtualUsers, 'test_bot');
-  const otherBot = createBotId(virtualUsers, 'other_bot');
-
-  const privateConversations = new PrivateConversationRepository();
-  const blockedUsers = new BlockedUserRepository();
-  const joinRequesterContacts = {
-    mayContactJoinRequester: (_botId: number, accountId: number) => accountId === hopper,
-    claimJoinRequesterContact: () => {},
-  };
-  const sharedChats = new SharedChatRepository();
-  const messages = new MessageRepository();
-  const files = new FileRepository();
-  const polls = new PollRepository();
-  const messageBoxes = new MessageBoxRepository();
-  const events = { emit: () => {} };
-  const currentUnixTimeSeconds = () => NOW;
-  const privateMessaging = new PrivateMessagingService({
-    accounts,
-    bots,
-    privateConversations,
-    messages,
-    messageBoxes,
-    blockedUsers,
+  /** The accounts whose pending join request lets the bot contact them. */
+  const joinRequesterIds = new Set<number>();
+  const services = createChatMessagingServices({
+    currentUnixTimeSeconds: () => NOW,
+    joinRequesterContacts: {
+      mayContactJoinRequester: (_botId, accountId) => joinRequesterIds.has(accountId),
+      claimJoinRequesterContact: () => {},
+    },
   });
-  const supergroupMessaging = new SupergroupMessagingService({
-    accounts,
-    bots,
-    sharedChats,
-    messages,
-    messageBoxes,
-  });
+  const { virtualUsers, privateMessaging } = services;
+  const ada = createVirtualAccount(virtualUsers, { first_name: 'Ada' }).profile.id;
+  const grace = createVirtualAccount(virtualUsers, { first_name: 'Grace' }).profile.id;
+  const hopper = createVirtualAccount(virtualUsers, { first_name: 'Hopper' }).profile.id;
+  joinRequesterIds.add(hopper);
+  const bot =
+    createVirtualBot(virtualUsers, { first_name: 'test_bot', username: 'test_bot' }).profile.id;
+  const otherBot =
+    createVirtualBot(virtualUsers, { first_name: 'other_bot', username: 'other_bot' }).profile.id;
 
   for (const [accountId, botId] of [[ada, bot], [grace, bot], [ada, otherBot]]) {
     const start = privateMessaging.activatePrivateConversation({ accountId, botId });
@@ -392,57 +360,7 @@ function createChatPolicyFixture() {
     }
   }
 
-  const privateChats = new PrivateChatPolicy({
-    accounts,
-    bots,
-    privateConversations,
-    blockedUsers,
-    joinRequesterContacts,
-    privateMessages: privateMessaging,
-  });
-  const supergroups = new SupergroupChatPolicy({
-    sharedChats,
-    supergroupMessages: supergroupMessaging,
-  });
-  const { messageCommitter, messageSending } = createMessageSendingServices({
-    accounts,
-    bots,
-    privateChats,
-    supergroups,
-    privateConversations,
-    sharedChats,
-    messages,
-    files,
-    polls,
-    messageBoxes,
-    transactions: { ...events, withinTransaction: (command) => command() },
-    joinRequesterContacts,
-    currentUnixTimeSeconds,
-  });
-  return {
-    privateMessaging,
-    messageSending,
-    messageCommitter,
-    messageDeletion: new MessageDeletionService({
-      accounts,
-      bots,
-      privateChats,
-      supergroups,
-      messages,
-      privateReplyInterfaces: privateConversations,
-      transactions: { withinTransaction: (command) => command() },
-    }),
-    privateChats,
-    supergroups,
-    sharedChats,
-    blockedUsers,
-    messageBoxes,
-    ada,
-    grace,
-    hopper,
-    bot,
-    otherBot,
-  };
+  return { ...services, ada, grace, hopper, bot, otherBot };
 }
 
 function privateChatKey(accountId: number, botId: number): PrivateChatKey {
@@ -546,20 +464,4 @@ function describeAccess(privateChats: PrivateChatPolicy, chat: PrivateChatKey) {
     blocked: privateChats.isBotBlocked(chat),
     contactable: privateChats.mayBotContactJoinRequester(chat),
   };
-}
-
-function createAccountId(virtualUsers: VirtualUserService, firstName: string): number {
-  const result = virtualUsers.createAccount({ first_name: firstName });
-  if (!result.created) {
-    throw new Error(`Expected account creation to succeed, received ${result.reason}`);
-  }
-  return result.account.profile.id;
-}
-
-function createBotId(virtualUsers: VirtualUserService, username: string): number {
-  const result = virtualUsers.createBot({ first_name: username, username });
-  if (!result.created) {
-    throw new Error(`Expected bot creation to succeed, received ${result.reason}`);
-  }
-  return result.bot.profile.id;
 }

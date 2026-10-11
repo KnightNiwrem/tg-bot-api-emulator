@@ -38,7 +38,8 @@ interface CreatedBot {
  * privacy mode, and an outsider bot is in no chat.
  */
 async function createPinFixture() {
-  const { api, sessionPath } = await createTestSession();
+  await using disposalOnFailure = new AsyncDisposableStack();
+  const { api, sessionPath } = disposalOnFailure.use(await createTestSession());
   const createAccount = async (firstName: string) =>
     (await createSessionAccount(api, sessionPath, firstName)).id;
   const createBot = async (username: string): Promise<CreatedBot> => {
@@ -103,6 +104,7 @@ async function createPinFixture() {
       `${chatPath}/notifications`,
     )).body.notifications;
 
+  const emulatorDisposal = disposalOnFailure.move();
   return {
     api,
     sessionPath,
@@ -122,6 +124,7 @@ async function createPinFixture() {
     readMessages,
     getHistory,
     getNotifications,
+    [Symbol.asyncDispose]: () => emulatorDisposal.disposeAsync(),
   };
 }
 
@@ -136,6 +139,7 @@ function describePin(message: ShownMessage) {
 }
 
 Deno.test('a bot pins private messages, receives the service messages, and unpins by default', async () => {
+  await using fixture = await createPinFixture();
   const {
     ada,
     pinningBot,
@@ -144,7 +148,7 @@ Deno.test('a bot pins private messages, receives the service messages, and unpin
     callBot,
     readMessages,
     getNotifications,
-  } = await createPinFixture();
+  } = fixture;
   const firstId = await sendToPinningBot('first');
   const secondId = await sendToPinningBot('second');
   await readMessages(pinningBot);
@@ -211,8 +215,8 @@ Deno.test('a bot pins private messages, receives the service messages, and unpin
 });
 
 Deno.test('a bot receives the service message of an account pin in its private chat', async () => {
-  const { ada, pinningBot, privatePath, api, sendToPinningBot, readMessages } =
-    await createPinFixture();
+  await using fixture = await createPinFixture();
+  const { ada, pinningBot, privatePath, api, sendToPinningBot, readMessages } = fixture;
   const messageId = await sendToPinningBot('hello');
   await readMessages(pinningBot);
 
@@ -226,6 +230,7 @@ Deno.test('a bot receives the service message of an account pin in its private c
 });
 
 Deno.test('supergroup pins need can_pin_messages and reach every bot as a service message', async () => {
+  await using fixture = await createPinFixture();
   const {
     grace,
     chatId,
@@ -236,7 +241,7 @@ Deno.test('supergroup pins need can_pin_messages and reach every bot as a servic
     callBot,
     readMessages,
     getNotifications,
-  } = await createPinFixture();
+  } = fixture;
   const messageId = await sendToSupergroup(grace, 'rules');
   await readMessages(pinningBot);
   await readMessages(memberBot);
@@ -280,6 +285,7 @@ Deno.test('supergroup pins need can_pin_messages and reach every bot as a servic
 });
 
 Deno.test('pin methods refuse unknown chats and messages, service messages, and bad parameters', async () => {
+  await using fixture = await createPinFixture();
   const {
     api,
     sessionPath,
@@ -292,7 +298,7 @@ Deno.test('pin methods refuse unknown chats and messages, service messages, and 
     getHistory,
     callBot,
     sendToPinningBot,
-  } = await createPinFixture();
+  } = fixture;
   const serviceMessageId = (await getHistory(supergroupPath(ada)))[0].message_id;
   const cases: Array<[CreatedBot, string, object, readonly [number, unknown]]> = [
     [pinningBot, 'pinChatMessage', { message_id: 1 }, [400, 'Bad Request: chat_id is empty']],
@@ -376,8 +382,9 @@ Deno.test('pin methods refuse unknown chats and messages, service messages, and 
 });
 
 Deno.test('a pin service message shows a deleted pinned message as inaccessible', async () => {
+  await using fixture = await createPinFixture();
   const { ada, chatId, pinningBot, supergroupPath, sendToSupergroup, callBot, api, getHistory } =
-    await createPinFixture();
+    fixture;
   const messageId = await sendToSupergroup(ada, 'soon gone');
   await callBot(pinningBot, 'pinChatMessage', { chat_id: chatId, message_id: messageId });
   await api.request(`${supergroupPath(ada)}/messages/${messageId}`, { method: 'DELETE' });
@@ -396,8 +403,8 @@ Deno.test('a pin service message shows a deleted pinned message as inaccessible'
 });
 
 Deno.test('a bot that excludes message updates still pins, and the call is recorded', async () => {
-  const { api, sessionPath, ada, pinningBot, sendToPinningBot, callBot, readMessages } =
-    await createPinFixture();
+  await using fixture = await createPinFixture();
+  const { api, sessionPath, ada, pinningBot, sendToPinningBot, callBot, readMessages } = fixture;
   // Telegram applies a subscription to updates created after it changes.
   await readMessages(pinningBot, ['callback_query']);
   const messageId = await sendToPinningBot('hello');

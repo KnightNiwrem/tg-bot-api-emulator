@@ -22,7 +22,8 @@ interface TestMessage {
  * what privacy mode lets it, and has started a private chat with the bot.
  */
 async function createLocationFixture() {
-  const { api, sessionPath } = await createTestSession();
+  await using disposalOnFailure = new AsyncDisposableStack();
+  const { api, sessionPath } = disposalOnFailure.use(await createTestSession());
   const createAccount = (firstName: string) => createSessionAccount(api, sessionPath, firstName);
   const ada = await createAccount('Ada');
   const grace = await createAccount('Grace');
@@ -80,6 +81,7 @@ async function createLocationFixture() {
   const readUpdates = async () => withoutUpdateIds(await readBotUpdates(botApiPath));
   await readUpdates();
 
+  const emulatorDisposal = disposalOnFailure.move();
   return {
     api,
     ada,
@@ -92,11 +94,13 @@ async function createLocationFixture() {
     pressButton,
     getHistory,
     readUpdates,
+    [Symbol.asyncDispose]: () => emulatorDisposal.disposeAsync(),
   };
 }
 
 Deno.test('a bot sends static locations whose accuracy Telegram keeps in whole meters', async () => {
-  const { ada, privateChat, callBot, getHistory } = await createLocationFixture();
+  await using fixture = await createLocationFixture();
+  const { ada, privateChat, callBot, getHistory } = fixture;
   const accurate = await callBot('sendLocation', {
     chat_id: ada.id,
     latitude: 51.5007,
@@ -139,7 +143,8 @@ Deno.test('a bot sends static locations whose accuracy Telegram keeps in whole m
 });
 
 Deno.test('sendLocation refuses missing, off-Earth and live locations without sending', async () => {
-  const { ada, privateChat, callBot, getHistory } = await createLocationFixture();
+  await using fixture = await createLocationFixture();
+  const { ada, privateChat, callBot, getHistory } = fixture;
   const historyLength = (await getHistory(ada.id, privateChat)).length;
   const valid = { chat_id: ada.id, latitude: 1, longitude: 2 };
   const invalidParameters = 'Bad Request: invalid sendLocation parameters';
@@ -176,8 +181,8 @@ Deno.test('sendLocation refuses missing, off-Earth and live locations without se
 });
 
 Deno.test('an account answers a request_location button with the location its client reports', async () => {
-  const { ada, privateChat, callBot, pressButton, getHistory, readUpdates } =
-    await createLocationFixture();
+  await using fixture = await createLocationFixture();
+  const { ada, privateChat, callBot, pressButton, getHistory, readUpdates } = fixture;
   const keyboard = await callBot('sendMessage', {
     chat_id: ada.id,
     text: 'Where are you?',
@@ -242,6 +247,7 @@ Deno.test('an account answers a request_location button with the location its cl
 });
 
 Deno.test('accounts share locations in private chats and supergroups', async () => {
+  await using fixture = await createLocationFixture();
   const {
     ada,
     grace,
@@ -252,7 +258,7 @@ Deno.test('accounts share locations in private chats and supergroups', async () 
     pressButton,
     getHistory,
     readUpdates,
-  } = await createLocationFixture();
+  } = fixture;
   const shared = await sendAccountMessage(ada.id, {
     to: privateChat,
     location: { latitude: -33.8568, longitude: 151.2153, horizontal_accuracy: 0.4 },
@@ -322,6 +328,7 @@ Deno.test('accounts share locations in private chats and supergroups', async () 
 });
 
 Deno.test('locations need the permission to send messages in supergroups', async () => {
+  await using fixture = await createLocationFixture();
   const {
     api,
     ada,
@@ -331,7 +338,7 @@ Deno.test('locations need the permission to send messages in supergroups', async
     sendAccountMessage,
     callBot,
     getHistory,
-  } = await createLocationFixture();
+  } = fixture;
   const restriction = await requestJson(
     api,
     'PUT',
@@ -366,7 +373,8 @@ Deno.test('locations need the permission to send messages in supergroups', async
 });
 
 Deno.test('a location message keeps its location through edits of its keyboard only', async () => {
-  const { ada, privateChat, sendAccountMessage, callBot } = await createLocationFixture();
+  await using fixture = await createLocationFixture();
+  const { ada, privateChat, sendAccountMessage, callBot } = fixture;
   const document = await sendAccountMessage(ada.id, {
     to: privateChat,
     document: { content_base64: 'aGVsbG8=', file_name: 'notes.txt' },

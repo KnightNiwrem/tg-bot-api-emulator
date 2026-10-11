@@ -30,7 +30,8 @@ interface TestInlineQuery {
  * inline bot, which receives chosen results.
  */
 async function createInlineContentFixture() {
-  const { api, sessionPath } = await createTestSession();
+  await using disposalOnFailure = new AsyncDisposableStack();
+  const { api, sessionPath } = disposalOnFailure.use(await createTestSession());
   const createAccount = (firstName: string) => createSessionAccount(api, sessionPath, firstName);
   const ada = await createAccount('Ada');
   const grace = await createAccount('Grace');
@@ -95,6 +96,7 @@ async function createInlineContentFixture() {
   const readUpdates = async () => withoutUpdateIds(await readBotUpdates(botApiPath));
   await readUpdates();
 
+  const emulatorDisposal = disposalOnFailure.move();
   return {
     api,
     ada,
@@ -111,6 +113,7 @@ async function createInlineContentFixture() {
     answer,
     choose,
     readUpdates,
+    [Symbol.asyncDispose]: () => emulatorDisposal.disposeAsync(),
   };
 }
 
@@ -133,8 +136,8 @@ const locationResult = {
 };
 
 Deno.test('an account sends the contacts and locations that inline results list', async () => {
-  const { ada, bot, sendQuery, getInlineQuery, answer, choose, readUpdates } =
-    await createInlineContentFixture();
+  await using fixture = await createInlineContentFixture();
+  const { ada, bot, sendQuery, getInlineQuery, answer, choose, readUpdates } = fixture;
   const inlineQuery = await sendQuery(ada.id);
   const answered = await answer(inlineQuery.id, [
     {
@@ -213,7 +216,8 @@ Deno.test('an account sends the contacts and locations that inline results list'
 });
 
 Deno.test('input_message_content replaces what a result sends with a contact or location', async () => {
-  const { ada, sendQuery, answer, choose } = await createInlineContentFixture();
+  await using fixture = await createInlineContentFixture();
+  const { ada, sendQuery, answer, choose } = fixture;
   const contactContent = { phone_number: '+44 20 7946 0000', first_name: 'Ada', last_name: '' };
   const locationContent = { latitude: -33.8568, longitude: 151.2153 };
   const inlineQuery = await sendQuery(ada.id);
@@ -245,7 +249,8 @@ Deno.test('input_message_content replaces what a result sends with a contact or 
 });
 
 Deno.test('answerInlineQuery checks contacts and locations and records no part of a refused answer', async () => {
-  const { ada, sendQuery, getInlineQuery, answer } = await createInlineContentFixture();
+  await using fixture = await createInlineContentFixture();
+  const { ada, sendQuery, getInlineQuery, answer } = fixture;
   const inlineQuery = await sendQuery(ada.id);
   const article = (inputMessageContent: Record<string, unknown>) => ({
     type: 'article',
@@ -312,6 +317,7 @@ Deno.test('answerInlineQuery checks contacts and locations and records no part o
 });
 
 Deno.test('contact and location results follow chat access and inline edits', async () => {
+  await using fixture = await createInlineContentFixture();
   const {
     api,
     ada,
@@ -325,7 +331,7 @@ Deno.test('contact and location results follow chat access and inline edits', as
     answer,
     choose,
     readUpdates,
-  } = await createInlineContentFixture();
+  } = fixture;
   const keyboard = { inline_keyboard: [[{ text: 'Open', callback_data: 'open' }]] };
   const groupQuery = await sendQuery(grace.id, supergroupChat);
   await answer(groupQuery.id, [
@@ -390,8 +396,8 @@ Deno.test('contact and location results follow chat access and inline edits', as
 });
 
 Deno.test('a grammY bot answers through its webhook with a location an account sends, as the activity log records', async () => {
-  const { api, ada, sessionPath, botToken, accountPath, sendQuery, choose, readUpdates } =
-    await createInlineContentFixture();
+  await using fixture = await createInlineContentFixture();
+  const { api, ada, sessionPath, botToken, accountPath, sendQuery, choose, readUpdates } = fixture;
   // Confirms Ada's `/start`, which the fixture read, so that the webhook receives only new updates.
   await readUpdates();
   const grammyBot = new Bot(botToken, {

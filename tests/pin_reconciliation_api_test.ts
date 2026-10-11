@@ -33,7 +33,8 @@ interface CreatedBot {
  * administrator with `can_pin_messages`, and an observer bot in privacy mode.
  */
 async function createReconciliationFixture() {
-  const { api, sessionPath } = await createTestSession();
+  await using disposalOnFailure = new AsyncDisposableStack();
+  const { api, sessionPath } = disposalOnFailure.use(await createTestSession());
   const createAccount = async (firstName: string) =>
     (await createSessionAccount(api, sessionPath, firstName)).id;
   const createBot = async (username: string): Promise<CreatedBot> => {
@@ -101,6 +102,7 @@ async function createReconciliationFixture() {
     return (chat as { pinned_message?: ShownMessage }).pinned_message;
   };
 
+  const emulatorDisposal = disposalOnFailure.move();
   return {
     api,
     ada,
@@ -123,10 +125,12 @@ async function createReconciliationFixture() {
     getHistory,
     getPinnedIds,
     getChatPinnedMessage,
+    [Symbol.asyncDispose]: () => emulatorDisposal.disposeAsync(),
   };
 }
 
 Deno.test('an edited pinned message stays pinned and shows its edit wherever it is pinned', async () => {
+  await using fixture = await createReconciliationFixture();
   const {
     api,
     grace,
@@ -139,7 +143,7 @@ Deno.test('an edited pinned message stays pinned and shows its edit wherever it 
     readUpdates,
     getHistory,
     getChatPinnedMessage,
-  } = await createReconciliationFixture();
+  } = fixture;
   const messageId = await sendToSupergroup(grace, 'draft');
   await callBot(pinningBot, 'pinChatMessage', { chat_id: chatId, message_id: messageId });
   await readUpdates(pinningBot);
@@ -178,6 +182,7 @@ Deno.test('an edited pinned message stays pinned and shows its edit wherever it 
 });
 
 Deno.test('deleting a pinned message unpins it, and getChat shows the next newest', async () => {
+  await using fixture = await createReconciliationFixture();
   const {
     api,
     ada,
@@ -187,7 +192,7 @@ Deno.test('deleting a pinned message unpins it, and getChat shows the next newes
     callBot,
     getPinnedIds,
     getChatPinnedMessage,
-  } = await createReconciliationFixture();
+  } = fixture;
   const olderId = await sendToPinningBot('older');
   const newerId = await sendToPinningBot('newer');
   for (const messageId of [olderId, newerId]) {
@@ -221,8 +226,8 @@ Deno.test('deleting a pinned message unpins it, and getChat shows the next newes
 });
 
 Deno.test('a queued pin update keeps the pinned message as it was when it was created', async () => {
-  const { ada, pinningBot, privatePath, api, sendToPinningBot, callBot, readUpdates } =
-    await createReconciliationFixture();
+  await using fixture = await createReconciliationFixture();
+  const { ada, pinningBot, privatePath, api, sendToPinningBot, callBot, readUpdates } = fixture;
   const messageId = await sendToPinningBot('soon gone');
   await readUpdates(pinningBot);
   await callBot(pinningBot, 'pinChatMessage', { chat_id: ada, message_id: messageId });
@@ -238,8 +243,9 @@ Deno.test('a queued pin update keeps the pinned message as it was when it was cr
 });
 
 Deno.test('deleting a pin service message leaves the message pinned', async () => {
+  await using fixture = await createReconciliationFixture();
   const { ada, pinningBot, privatePath, sendToPinningBot, callBot, getHistory, getPinnedIds } =
-    await createReconciliationFixture();
+    fixture;
   const messageId = await sendToPinningBot('keep');
   await callBot(pinningBot, 'pinChatMessage', { chat_id: ada, message_id: messageId });
   const serviceMessageId = (await getHistory(privatePath)).at(-1)?.message_id;
@@ -258,8 +264,9 @@ Deno.test('deleting a pin service message leaves the message pinned', async () =
 });
 
 Deno.test('pinning again after an unpin records another service message', async () => {
+  await using fixture = await createReconciliationFixture();
   const { ada, pinningBot, privatePath, sendToPinningBot, callBot, getHistory, readUpdates } =
-    await createReconciliationFixture();
+    fixture;
   const messageId = await sendToPinningBot('again');
   await readUpdates(pinningBot);
   await callBot(pinningBot, 'pinChatMessage', { chat_id: ada, message_id: messageId });
@@ -280,8 +287,8 @@ Deno.test('pinning again after an unpin records another service message', async 
 });
 
 Deno.test('a reply to a pin service message shows its pin, and nothing once the pin is deleted', async () => {
-  const { ada, pinningBot, privatePath, sendToPinningBot, callBot, api, getHistory } =
-    await createReconciliationFixture();
+  await using fixture = await createReconciliationFixture();
+  const { ada, pinningBot, privatePath, sendToPinningBot, callBot, api, getHistory } = fixture;
   const pinnedId = await sendToPinningBot('pinned');
   await callBot(pinningBot, 'pinChatMessage', { chat_id: ada, message_id: pinnedId });
   const serviceMessageId = (await getHistory(privatePath)).at(-1)?.message_id;
@@ -317,6 +324,7 @@ Deno.test('a reply to a pin service message shows its pin, and nothing once the 
 });
 
 Deno.test('pin service messages cannot be edited, forwarded, or copied, and copies and forwards of a pin are not pinned', async () => {
+  await using fixture = await createReconciliationFixture();
   const {
     ada,
     chatId,
@@ -326,7 +334,7 @@ Deno.test('pin service messages cannot be edited, forwarded, or copied, and copi
     callBot,
     getHistory,
     getPinnedIds,
-  } = await createReconciliationFixture();
+  } = fixture;
   const messageId = await sendToPinningBot('original');
   await callBot(pinningBot, 'pinChatMessage', { chat_id: ada, message_id: messageId });
   const serviceMessageId = (await getHistory(privatePath)).at(-1)?.message_id;

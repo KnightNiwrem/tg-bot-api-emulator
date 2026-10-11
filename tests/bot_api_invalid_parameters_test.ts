@@ -7,7 +7,8 @@ const keyboardWithActionlessButton = JSON.stringify({
 });
 
 Deno.test('the editing methods name the parameter that does not fit their schema', async () => {
-  const { api, botApiPath } = await createFixture();
+  await using fixture = await createFixture();
+  const { api, botApiPath } = fixture;
   const cases: readonly [method: string, parameters: object, description: string][] = [
     [
       'editMessageText',
@@ -58,7 +59,8 @@ Deno.test('the editing methods name the parameter that does not fit their schema
 });
 
 Deno.test('the forward and copy methods name the parameter that does not fit their schema', async () => {
-  const { api, botApiPath } = await createFixture();
+  await using fixture = await createFixture();
+  const { api, botApiPath } = fixture;
   const cases: readonly [method: string, parameters: object, description: string][] = [
     [
       'forwardMessage',
@@ -94,7 +96,8 @@ Deno.test('the forward and copy methods name the parameter that does not fit the
 });
 
 Deno.test('parameters a reader refuses after the schema keep the description without a path', async () => {
-  const { api, botApiPath } = await createFixture();
+  await using fixture = await createFixture();
+  const { api, botApiPath } = fixture;
   // `media` is text to the schema; its reader refuses JSON it cannot read.
   const answer = await callBotApi(api, `${botApiPath}/editMessageMedia`, {
     chat_id: 1,
@@ -122,7 +125,8 @@ Deno.test('parameters a reader refuses after the schema keep the description wit
 });
 
 Deno.test('the chat information methods name the parameter that does not fit their schema', async () => {
-  const { api, botApiPath } = await createFixture();
+  await using fixture = await createFixture();
+  const { api, botApiPath } = fixture;
   const cases: readonly [method: string, parameters: object, description: string][] = [
     ['getChat', { chat_id: 'secret-chat' }, 'Bad Request: invalid getChat parameters: chat_id'],
     ['getChat', {}, 'Bad Request: chat_id is empty'],
@@ -163,7 +167,8 @@ Deno.test('the chat information methods name the parameter that does not fit the
 });
 
 Deno.test('getFile names the parameter that does not fit its schema, then requires a file', async () => {
-  const { api, botApiPath } = await createFixture();
+  await using fixture = await createFixture();
+  const { api, botApiPath } = fixture;
   const cases: readonly [parameters: object, description: string][] = [
     [
       { file_id: 'secret', file_path: 'secret' },
@@ -185,7 +190,8 @@ Deno.test('getFile names the parameter that does not fit its schema, then requir
 });
 
 Deno.test('the update delivery methods name the parameter that does not fit their schema', async () => {
-  const { api, botApiPath } = await createFixture();
+  await using fixture = await createFixture();
+  const { api, botApiPath } = fixture;
   const cases: readonly [method: string, parameters: object, description: string][] = [
     ['getUpdates', { limit: 101 }, 'Bad Request: invalid getUpdates parameters: limit'],
     [
@@ -229,7 +235,8 @@ Deno.test('the update delivery methods name the parameter that does not fit thei
 });
 
 Deno.test('the bot settings methods name the parameter that does not fit their schema', async () => {
-  const { api, botApiPath } = await createFixture();
+  await using fixture = await createFixture();
+  const { api, botApiPath } = fixture;
   const cases: readonly [method: string, parameters: object, description: string][] = [
     ['getMe', { secret: 1 }, 'Bad Request: invalid getMe parameters: secret'],
     [
@@ -267,7 +274,8 @@ Deno.test('the bot settings methods name the parameter that does not fit their s
 });
 
 Deno.test('the query answer methods name the parameter that does not fit their schema', async () => {
-  const { api, botApiPath } = await createFixture();
+  await using fixture = await createFixture();
+  const { api, botApiPath } = fixture;
   const unparsableButton = "Bad Request: can't parse inline query results button JSON object";
   const cases: readonly [method: string, parameters: object, description: string][] = [
     [
@@ -317,7 +325,8 @@ Deno.test('the query answer methods name the parameter that does not fit their s
 });
 
 Deno.test('the member administration methods name the parameter that does not fit their schema', async () => {
-  const { api, botApiPath } = await createFixture();
+  await using fixture = await createFixture();
+  const { api, botApiPath } = fixture;
   const cases: readonly [method: string, parameters: object, description: string][] = [
     [
       'banChatMember',
@@ -380,11 +389,13 @@ Deno.test('the member administration methods name the parameter that does not fi
   );
 });
 
-/** Creates a session holding a bot. */
+/** Creates a session holding a bot, on an emulator that disposing of the fixture disposes of. */
 async function createFixture() {
-  const { api, sessionPath } = await createTestSession();
+  await using disposalOnFailure = new AsyncDisposableStack();
+  const { api, sessionPath } = disposalOnFailure.use(await createTestSession());
   const { botApiPath } = await createBot(api, sessionPath, 'test_bot');
-  return { api, botApiPath };
+  const emulatorDisposal = disposalOnFailure.move();
+  return { api, botApiPath, [Symbol.asyncDispose]: () => emulatorDisposal.disposeAsync() };
 }
 
 /** Calls a Bot API method with JSON parameters, answering with the status and description. */
