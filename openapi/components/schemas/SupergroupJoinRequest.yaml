@@ -12,6 +12,7 @@ properties:
     description: The account that wants to join.
   invite_link:
     type: string
+    pattern: '^https:\/\/t\.me\/\+[A-Za-z0-9_-]{16}$'
     description: The whole invite link the request was sent through.
   date:
     type: integer

@@ -15,6 +15,7 @@ required:
 properties:
   invite_link:
     type: string
+    pattern: '^https:\/\/t\.me\/\+[A-Za-z0-9_-]{16}$'
     description: The whole link, `https://t.me/+` and its hash.
   name:
     type: string
