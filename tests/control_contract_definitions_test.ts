@@ -6,6 +6,13 @@
 import { assertEquals } from '@std/assert';
 import { BOT_ACTIVITY_KINDS as CONTRACT_BOT_ACTIVITY_KINDS } from '../control_contracts/bot_activity.ts';
 import { QUEUEABLE_SERVER_ERROR_CODES as CONTRACT_QUEUEABLE_SERVER_ERROR_CODES } from '../control_contracts/queued_bot_api_answers.ts';
+import { PLAIN_MESSAGE_ENTITY_TYPES } from '../control_contracts/message_entities.ts';
+import {
+  MAX_POLL_OPEN_PERIOD_SECONDS as CONTRACT_MAX_POLL_OPEN_PERIOD_SECONDS,
+  MAX_POLL_OPTION_COUNT as CONTRACT_MAX_POLL_OPTION_COUNT,
+  MAX_QUIZ_EXPLANATION_LENGTH as CONTRACT_MAX_QUIZ_EXPLANATION_LENGTH,
+  MIN_POLL_OPEN_PERIOD_SECONDS as CONTRACT_MIN_POLL_OPEN_PERIOD_SECONDS,
+} from '../control_contracts/polls.ts';
 import { MAX_INLINE_QUERY_LENGTH as CONTRACT_MAX_INLINE_QUERY_LENGTH } from '../control_contracts/inline_queries.ts';
 import { uploadProfileSchema } from '../control_contracts/sessions.ts';
 import {
@@ -36,9 +43,16 @@ import {
   MIN_SUPERGROUP_OR_CHANNEL_ID,
   MIN_TELEGRAM_USER_ID,
 } from '../src/types/telegram_identity.ts';
+import {
+  MAX_POLL_OPEN_PERIOD_SECONDS,
+  MAX_POLL_OPTION_COUNT,
+  MAX_QUIZ_EXPLANATION_LENGTH,
+  MIN_POLL_OPEN_PERIOD_SECONDS,
+} from '../src/types/poll.ts';
 import { MAX_HORIZONTAL_ACCURACY_METERS } from '../src/types/geo_location.ts';
 import { MAX_INLINE_QUERY_LENGTH } from '../src/types/inline_query.ts';
 import { UPLOAD_PROFILES } from '../src/types/upload_profile.ts';
+import type { PlainTextEntityType } from '../src/types/virtual_message.ts';
 
 Deno.test('The contracts name exactly the bot activity kinds the emulator records', () => {
   assertEquals(
@@ -149,6 +163,42 @@ Deno.test('The contracts show custom titles of at most the length the emulator a
     setSupergroupCustomTitleContract.body.schema.safeParse({ custom_title: '' }).success,
     true,
     'Expected an empty title, which removes it, accepted',
+  );
+});
+
+Deno.test('The contracts limit polls as the emulator does', () => {
+  assertEquals(
+    [
+      CONTRACT_MAX_POLL_OPTION_COUNT,
+      CONTRACT_MIN_POLL_OPEN_PERIOD_SECONDS,
+      CONTRACT_MAX_POLL_OPEN_PERIOD_SECONDS,
+      CONTRACT_MAX_QUIZ_EXPLANATION_LENGTH,
+    ],
+    [
+      MAX_POLL_OPTION_COUNT,
+      MIN_POLL_OPEN_PERIOD_SECONDS,
+      MAX_POLL_OPEN_PERIOD_SECONDS,
+      MAX_QUIZ_EXPLANATION_LENGTH,
+    ],
+    'Expected the same option count, open periods and explanation length',
+  );
+});
+
+/** Whether two unions have exactly the same members. */
+type HaveSameMembers<Left, Right> = [Exclude<Left, Right>, Exclude<Right, Left>] extends
+  [never, never] ? true : false;
+
+Deno.test('The contracts name exactly the plain entity types the emulator has', () => {
+  // The emulator keeps these types as a type alone, so the check is that this type-checks.
+  const namesTheSameTypes: HaveSameMembers<
+    typeof PLAIN_MESSAGE_ENTITY_TYPES[number],
+    PlainTextEntityType
+  > = true;
+  assertEquals(namesTheSameTypes, true);
+  assertEquals(
+    new Set(PLAIN_MESSAGE_ENTITY_TYPES).size,
+    PLAIN_MESSAGE_ENTITY_TYPES.length,
+    'Expected each type named once',
   );
 });
 

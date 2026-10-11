@@ -14,6 +14,11 @@ import {
   queueRateLimitResponsesContract,
   queueServerErrorResponsesContract,
 } from '../../control_contracts/queued_bot_api_answers.ts';
+import {
+  expirePollContract,
+  retractAccountPollAnswerContract,
+  retractSupergroupAccountPollAnswerContract,
+} from '../../control_contracts/polls.ts';
 import { deleteSessionContract } from '../../control_contracts/sessions.ts';
 import {
   changeSupergroupDescriptionContract,
@@ -63,7 +68,6 @@ import {
   callbackQueryResponseSchema,
   chatActionsResponseSchema,
   chosenInlineResultResponseSchema,
-  expiredPollResponseSchema,
   getMeResponseSchema,
   menuButtonResponseSchema,
   messageDraftResponseSchema,
@@ -432,11 +436,8 @@ class HttpEmulationSessionClient implements EmulationSessionClient {
   }
 
   async expirePoll(pollId: string): Promise<Poll> {
-    const response = await requestJson(this.#fetch, {
-      method: 'POST',
-      url: `${this.#sessionUrl}/polls/${encodeURIComponent(pollId)}/expiry`,
-      expectedStatus: HTTP_STATUS_OK,
-      responseSchema: expiredPollResponseSchema,
+    const response = await callJsonOperation(this.#transport, expirePollContract, {
+      params: { sessionId: this.id, pollId },
     });
     return response.poll;
   }
@@ -1043,12 +1044,14 @@ function createVirtualAccountClient(
         responseSchema: messageResponseSchemasFor(input.chat).pollAnswer,
       });
     },
-    async retractPollAnswer(input: AccountPollMessageInput): Promise<void> {
-      await requestEmptyResponse(fetchImplementation, {
-        method: 'DELETE',
-        url: pollAnswerUrl(accountUrl, input),
-        expectedStatus: HTTP_STATUS_NO_CONTENT,
-      });
+    retractPollAnswer({ chat, message_id: messageId }: AccountPollMessageInput): Promise<void> {
+      return chat.type === 'private'
+        ? callEmptyOperation(transport, retractAccountPollAnswerContract, {
+          params: { ...accountParams, botId: chat.botId, messageId },
+        })
+        : callEmptyOperation(transport, retractSupergroupAccountPollAnswerContract, {
+          params: { ...supergroupParams(chat), messageId },
+        });
     },
     async stopPoll<Target extends MessageTarget>(
       input: AccountPollMessageInput<Target>,

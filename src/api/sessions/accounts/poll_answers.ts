@@ -1,11 +1,16 @@
-import { Hono } from 'hono';
+import { type Context, Hono } from 'hono';
 import { z } from 'zod';
 
+import {
+  retractAccountPollAnswerContract,
+  retractSupergroupAccountPollAnswerContract,
+} from '../../../../control_contracts/polls.ts';
 import type { EmulationSession } from '../../../types/emulation_session.ts';
 import {
   controlErrorResponse,
   invalidControlRequestResponse,
 } from '../../control_error_response.ts';
+import { registerControlOperation } from '../../control_operation_route.ts';
 import { answerWithActionReceipt } from '../action_receipt.ts';
 import { readJsonRequestBody } from '../json_request_body.ts';
 import type { SessionRouteContextTypes } from '../session_route_context_types.ts';
@@ -15,6 +20,9 @@ import { type AccountPollMessageKey, readPollMessageKey } from './poll_message_k
 
 const PRIVATE_MESSAGE_POLL_ANSWER_PATH = `${PRIVATE_MESSAGE_PATH}/poll-answer` as const;
 const SUPERGROUP_MESSAGE_POLL_ANSWER_PATH = `${SUPERGROUP_MESSAGE_PATH}/poll-answer` as const;
+
+/** Where the account routes are mounted within the server, as a contract path template. */
+const ACCOUNT_COLLECTION_MOUNT_PATH = '/sessions/{sessionId}/accounts';
 
 /**
  * The options an account chooses in a poll, by their positions counted from 0, as the Bot API's
@@ -46,7 +54,7 @@ export function createPollAnswerRoutes(): Hono<SessionRouteContextTypes> {
       const { polls, botMessageViews } = context.get('emulationSession');
       const result = polls.getAccountPollAnswer(pollMessage);
       if (!result.found) {
-        return controlErrorResponse(context, pollAnswerFailureStatus(result.reason), result.reason);
+        return pollAnswerRefusalResponse(context, result.reason);
       }
       return context.json(presentPollAnswerForAccount(botMessageViews, result, pollMessage));
     });
@@ -68,34 +76,54 @@ export function createPollAnswerRoutes(): Hono<SessionRouteContextTypes> {
           optionPositions: requestBody.option_ids,
         });
         if (!result.answered) {
-          return controlErrorResponse(
-            context,
-            pollAnswerFailureStatus(result.reason),
-            result.reason,
-          );
+          return pollAnswerRefusalResponse(context, result.reason);
         }
         return context.json(presentPollAnswerForAccount(botMessageViews, result, pollMessage));
       });
     });
-
-    // Retracting chooses no options, as TDLib's `setPollAnswer` does with none.
-    accountRoutes.delete(pollAnswerPath, (context) => {
-      const pollMessageReading = readPollMessageKey(context.req.param(), chatType);
-      if (!pollMessageReading.valid) {
-        return invalidControlRequestResponse(context, pollMessageReading.issues);
-      }
-      const pollMessage = pollMessageReading.value;
-      return answerWithActionReceipt(context, ({ polls }) => {
-        const result = polls.setAccountPollAnswer({
-          ...pollMessage,
-          optionPositions: [],
-        });
-        return result.answered
-          ? context.body(null, 204)
-          : controlErrorResponse(context, pollAnswerFailureStatus(result.reason), result.reason);
-      });
-    });
   }
+
+  // Retracting chooses no options, as TDLib's `setPollAnswer` does with none.
+  registerControlOperation(
+    accountRoutes,
+    ACCOUNT_COLLECTION_MOUNT_PATH,
+    retractAccountPollAnswerContract,
+    ({ params: { accountId, botId, messageId } }, context) => {
+      const result = context.get('emulationSession').polls.setAccountPollAnswer({
+        accountId,
+        chat: { type: 'private', botId },
+        messageId,
+        optionPositions: [],
+      });
+      if (result.answered) {
+        return { status: 204 };
+      }
+      const refusal = refusePollAnswer(result.reason);
+      // Only a supergroup has members; a private chat never refuses an answer as `not_a_member`.
+      if (refusal.status === 403) {
+        throw new Error(`A private chat refused a poll answer as ${refusal.body.reason}`);
+      }
+      return refusal;
+    },
+  );
+
+  registerControlOperation(
+    accountRoutes,
+    ACCOUNT_COLLECTION_MOUNT_PATH,
+    retractSupergroupAccountPollAnswerContract,
+    ({ params: { accountId, chatId, messageId } }, context) => {
+      const result = context.get('emulationSession').polls.setAccountPollAnswer({
+        accountId,
+        chat: { type: 'supergroup', chatId },
+        messageId,
+        optionPositions: [],
+      });
+      if (result.answered) {
+        return { status: 204 };
+      }
+      return refusePollAnswer(result.reason);
+    },
+  );
 
   return accountRoutes;
 }
@@ -131,37 +159,72 @@ function presentPollAnswerForAccount(
   };
 }
 
+/** Why an account's poll answer was refused. */
+type PollAnswerFailureReason = Extract<
+  ReturnType<EmulationSession['polls']['setAccountPollAnswer']>,
+  { readonly answered: false }
+>['reason'];
+
+/** A refused poll answer's status, with the body naming its reason. */
+type PollAnswerRefusal =
+  | {
+    readonly status: 400;
+    readonly body: { readonly reason: 'multiple_answers_not_allowed' | 'poll_option_not_found' };
+  }
+  | { readonly status: 403; readonly body: { readonly reason: 'not_a_member' } }
+  | {
+    readonly status: 404;
+    readonly body: {
+      readonly reason:
+        | 'account_not_found'
+        | 'bot_not_found'
+        | 'chat_not_found'
+        | 'message_not_found'
+        | 'message_has_no_poll';
+    };
+  }
+  | {
+    readonly status: 409;
+    readonly body: {
+      readonly reason:
+        | 'poll_closed'
+        | 'answer_retraction_not_allowed'
+        | 'answer_change_not_allowed';
+    };
+  };
+
 /**
  * A chat or message the account cannot find, or one without a poll, is not found; a chat the
  * account is no member of forbids voting; an answer the poll cannot accept is rejected; and an
  * answer the poll's state or settings forbid, such as a change of an answer that cannot be
  * changed, conflicts with it.
  */
-function pollAnswerFailureStatus(
-  reason: Extract<
-    ReturnType<EmulationSession['polls']['setAccountPollAnswer']>,
-    { readonly answered: false }
-  >['reason'],
-): 400 | 403 | 404 | 409 {
+function refusePollAnswer(reason: PollAnswerFailureReason): PollAnswerRefusal {
   switch (reason) {
     case 'account_not_found':
     case 'bot_not_found':
     case 'chat_not_found':
     case 'message_not_found':
     case 'message_has_no_poll':
-      return 404;
+      return { status: 404, body: { reason } };
     case 'not_a_member':
-      return 403;
+      return { status: 403, body: { reason } };
     case 'multiple_answers_not_allowed':
     case 'poll_option_not_found':
-      return 400;
+      return { status: 400, body: { reason } };
     case 'poll_closed':
     case 'answer_retraction_not_allowed':
     case 'answer_change_not_allowed':
-      return 409;
+      return { status: 409, body: { reason } };
     default: {
       const unhandledReason: never = reason;
       throw new Error(`Unhandled poll answer failure: ${unhandledReason}`);
     }
   }
+}
+
+/** Answers a refused poll answer of a route that is not registered from a contract. */
+function pollAnswerRefusalResponse(context: Context, reason: PollAnswerFailureReason): Response {
+  const { status, body } = refusePollAnswer(reason);
+  return controlErrorResponse(context, status, body.reason);
 }

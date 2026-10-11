@@ -10,7 +10,16 @@ import type {
   updateDeliveredEntrySchema,
   webhookAttemptFailedEntrySchema,
 } from '../../control_contracts/bot_activity.ts';
-import type { botProfileSchema, createBotContract } from '../../control_contracts/bots.ts';
+import type {
+  botProfileSchema,
+  createBotContract,
+  messageSenderBotSchema,
+} from '../../control_contracts/bots.ts';
+import type {
+  messageEntitySchema,
+  PLAIN_MESSAGE_ENTITY_TYPES,
+} from '../../control_contracts/message_entities.ts';
+import type { pollSchema } from '../../control_contracts/polls.ts';
 import type {
   CHAT_PERMISSIONS,
   getSupergroupAdministratorsContract,
@@ -844,42 +853,10 @@ interface MessageEntitySpan {
  * Entity types that carry nothing beyond their span. Telegram detects mentions, hashtags,
  * cashtags, bot commands, URLs, email addresses and bank card numbers in text by itself.
  */
-export type PlainMessageEntityType =
-  | 'mention'
-  | 'hashtag'
-  | 'cashtag'
-  | 'bot_command'
-  | 'url'
-  | 'email'
-  | 'bank_card_number'
-  | 'bold'
-  | 'italic'
-  | 'underline'
-  | 'strikethrough'
-  | 'spoiler'
-  | 'code'
-  | 'blockquote'
-  | 'expandable_blockquote';
+export type PlainMessageEntityType = typeof PLAIN_MESSAGE_ENTITY_TYPES[number];
 
 /** An entity Telegram detected in a message's text, or formatting its sender applied. */
-export type MessageEntity =
-  | (MessageEntitySpan & { readonly type: PlainMessageEntityType })
-  | (MessageEntitySpan & { readonly type: 'pre'; readonly language?: string })
-  | (MessageEntitySpan & { readonly type: 'text_link'; readonly url: string })
-  | (MessageEntitySpan & {
-    readonly type: 'text_mention';
-    readonly user: VirtualAccountProfile | MessageSenderBot;
-  })
-  | (MessageEntitySpan & { readonly type: 'custom_emoji'; readonly custom_emoji_id: string })
-  | (MessageEntitySpan & {
-    readonly type: 'date_time';
-    readonly unix_time: number;
-    /**
-     * `r` for relative time, otherwise `w` for the day of the week, `d` or `D` for a short or
-     * long date, then `t` or `T` for a short or long time; empty when the bot chose no format.
-     */
-    readonly date_time_format: string;
-  });
+export type MessageEntity = ReadonlySnapshot<z.output<typeof messageEntitySchema>>;
 
 /**
  * Formatting an account applies to its text or caption, as bots specify it; a text mention names
@@ -890,13 +867,7 @@ export type MessageEntityInput =
   | (MessageEntitySpan & { readonly type: 'text_mention'; readonly user: { readonly id: number } });
 
 /** A bot as a message sender, without the capabilities that only getMe reports. */
-export interface MessageSenderBot {
-  readonly id: number;
-  readonly is_bot: true;
-  readonly first_name: string;
-  readonly last_name?: string;
-  readonly username: string;
-}
+export type MessageSenderBot = ReadonlySnapshot<z.output<typeof messageSenderBotSchema>>;
 
 /** A button's text and how Telegram clients draw it. */
 export interface KeyboardButtonFace {
@@ -1241,52 +1212,11 @@ export interface RichMessage {
   readonly is_rtl?: true;
 }
 
-/** An answer option of a poll, with how many accounts chose it. */
-export interface PollOption {
-  /** The option's identifier, which stays the same however options change. */
-  readonly persistent_id: string;
-  readonly text: string;
-  /** Present when the text has custom emoji, its only entities. */
-  readonly text_entities?: readonly MessageEntity[];
-  readonly voter_count: number;
-}
-
 /** A regular poll or a quiz a bot or an account sent, with its votes as they are now. */
-export interface Poll {
-  readonly id: string;
-  readonly question: string;
-  /** Present when the question has custom emoji, its only entities. */
-  readonly question_entities?: readonly MessageEntity[];
-  readonly options: readonly PollOption[];
-  /** How many accounts chose any option. */
-  readonly total_voter_count: number;
-  /**
-   * How long the poll was set to stay open after it was sent, in seconds; present, with
-   * `close_date`, only while a poll sent with a closing time is open. The emulator does not close
-   * polls as time passes: `session.expirePoll` makes the closing time arrive.
-   */
-  readonly open_period?: number;
-  /** When the poll is set to close, as a Unix time in seconds; present only with `open_period`. */
-  readonly close_date?: number;
-  readonly is_closed: boolean;
-  readonly is_anonymous: boolean;
-  readonly allows_multiple_answers: boolean;
-  readonly allows_revoting: boolean;
-  /** The emulator's polls never restrict who may vote. */
-  readonly members_only: false;
-  readonly type: 'regular' | 'quiz';
-  /**
-   * The correct option of a quiz with one, shown to its bot, to accounts that answered, and to
-   * everyone once it is closed.
-   */
-  readonly correct_option_id?: number;
-  /** The correct options of a quiz, shown as `correct_option_id` is. */
-  readonly correct_option_ids?: readonly number[];
-  /** A quiz's explanation, shown as `correct_option_id` is; absent without one. */
-  readonly explanation?: string;
-  /** Present with the explanation, empty when it has no entities. */
-  readonly explanation_entities?: readonly MessageEntity[];
-}
+export type Poll = ReadonlySnapshot<z.output<typeof pollSchema>>;
+
+/** An answer option of a poll, with how many accounts chose it. */
+export type PollOption = Poll['options'][number];
 
 /**
  * Declares fields absent, so that reading them from a value that cannot have them is typed as

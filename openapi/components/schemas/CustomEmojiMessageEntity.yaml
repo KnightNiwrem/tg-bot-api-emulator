@@ -1,0 +1,25 @@
+type: object
+additionalProperties: false
+description: >-
+  A custom emoji, the only entity Telegram keeps in poll questions and options.
+required:
+  - type
+  - offset
+  - length
+  - custom_emoji_id
+properties:
+  type:
+    type: string
+    const: custom_emoji
+  offset:
+    type: integer
+    minimum: 0
+    description: Offset in UTF-16 code units to the start of the entity.
+  length:
+    type: integer
+    minimum: 1
+    description: Length of the entity in UTF-16 code units.
+  custom_emoji_id:
+    type: string
+    pattern: '^-?\d+$'
+    description: The custom emoji's identifier, the decimal text of a 64-bit integer.
