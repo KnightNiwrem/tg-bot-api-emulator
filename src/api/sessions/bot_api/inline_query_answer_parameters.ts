@@ -75,8 +75,9 @@ interface DescribedInlineQueryResultParameter extends InlineQueryResultParameter
 }
 
 /**
- * An inline query result as `answerInlineQuery` specifies it, before its text is read and its
- * file resolved. `messageContent` is what its `input_message_content` sends.
+ * An inline query result as the official Bot API server parses its fields for `answerInlineQuery`,
+ * before its text is read, TDLib checks it and its file is resolved. `messageContent` is what its
+ * `input_message_content` sends.
  */
 export type InlineQueryResultParameter =
   | (DescribedInlineQueryResultParameter & {
@@ -113,6 +114,8 @@ export type InlineQueryResultParameter =
   | (DescribedInlineQueryResultParameter & {
     readonly kind: 'document';
     readonly document: InlineQueryResultFileParameter;
+    /** As the bot declared it; empty for none, which only a document given by `file_id` may be. */
+    readonly mimeType: string;
     /** The URL of the document's thumbnail in the list of results; empty for none. */
     readonly thumbnailUrl: string;
     readonly title: string;
@@ -121,7 +124,10 @@ export type InlineQueryResultParameter =
   })
   | (DescribedInlineQueryResultParameter & {
     readonly kind: 'video';
-    readonly video: InlineQueryResultVideoParameter;
+    /** A video file, or, by its MIME type, a web page with an embedded video player. */
+    readonly video: InlineQueryResultFileParameter;
+    /** As the bot declared it; empty for none, which only a video given by `file_id` may be. */
+    readonly mimeType: string;
     /** The URL of the video's thumbnail in the list of results; empty for none. */
     readonly thumbnailUrl: string;
     readonly title: string;
@@ -129,7 +135,6 @@ export type InlineQueryResultParameter =
     readonly showsCaptionAboveMedia: boolean;
     /** As the bot specified them, clamped as `sendVideo` clamps them. */
     readonly attributes: VideoAttributes;
-    /** Always given for an embedded video player, which cannot be sent itself. */
     readonly messageContent?: UnreadInputMessageContent;
   })
   | (InlineQueryResultParameterBase & {
@@ -154,8 +159,18 @@ export type InlineQueryResultParameter =
     readonly messageContent?: UnreadInputMessageContent;
   });
 
-export type InlineQueryResultsParameterReading =
-  | { readonly read: true; readonly results: readonly InlineQueryResultParameter[] }
+/**
+ * An inline query result once TDLib has checked the MIME type of a file it names by URL, which
+ * makes a video declared as `text/html` an embedded video player.
+ */
+export type CheckedInlineQueryResultParameter =
+  | Exclude<InlineQueryResultParameter, { readonly kind: 'video' }>
+  | (Omit<Extract<InlineQueryResultParameter, { readonly kind: 'video' }>, 'video'> & {
+    readonly video: InlineQueryResultVideoParameter;
+  });
+
+export type InlineQueryResultParameterReading =
+  | { readonly read: true; readonly result: InlineQueryResultParameter }
   | { readonly read: false; readonly description: string };
 
 /**
@@ -302,6 +317,42 @@ export function readUnreadLocation(
 }
 
 /**
+ * Checks the MIME type of a file a document or video result names by URL, as TDLib's
+ * `get_input_bot_inline_result` does once the official server has parsed every result: a document
+ * must be a PDF or ZIP file, and a video an MP4 file or a web page with an embedded video player,
+ * matched as prefixes of the declared type. The Bot API requires `input_message_content` for an
+ * embedded video player, since the player itself cannot be sent; the emulator checks that here.
+ */
+export function checkInlineQueryResultFileType(
+  result: InlineQueryResultParameter,
+):
+  | { readonly read: true; readonly result: CheckedInlineQueryResultParameter }
+  | { readonly read: false; readonly description: string } {
+  if (result.kind === 'document') {
+    return result.document.kind === 'url' &&
+        !WEB_DOCUMENT_MIME_TYPES.some((allowedMimeType) =>
+          result.mimeType.startsWith(allowedMimeType)
+        )
+      ? { read: false, description: WEB_DOCUMENT_MIME_TYPE_INVALID_DESCRIPTION }
+      : { read: true, result };
+  }
+  if (result.kind !== 'video' || result.video.kind === 'file_id') {
+    return { read: true, result };
+  }
+  if (result.mimeType.startsWith(EMBEDDED_VIDEO_PLAYER_MIME_TYPE)) {
+    return result.messageContent === undefined
+      ? { read: false, description: EMBEDDED_VIDEO_PLAYER_CONTENT_MISSING_DESCRIPTION }
+      : {
+        read: true,
+        result: { ...result, video: { kind: 'embedded_player', url: result.video.url } },
+      };
+  }
+  return result.mimeType.startsWith(WEB_VIDEO_FILE_MIME_TYPE)
+    ? { read: true, result }
+    : { read: false, description: WEB_VIDEO_MIME_TYPE_INVALID_DESCRIPTION };
+}
+
+/**
  * Thumbnails, which clients show in the list of results; the emulator validates and ignores
  * them.
  */
@@ -430,40 +481,37 @@ const locationResultSchema = z.strictObject({
 });
 
 /**
- * Reads the elements of an `answerInlineQuery` `results` parameter as the official Bot API
- * server's `get_inline_query_result` does, failing with Telegram's description for a result it
- * cannot read. Article, contact, static location, photo, document, video, voice, and audio results
- * are supported, the media among them with files given by `file_id` or by URL; other result types fail
- * as unsupported. A result's `input_message_content` may send text, a rich message, a contact, or
- * a static location; a venue or an invoice fails as unsupported.
+ * Reads the fields of one element of an `answerInlineQuery` `results` parameter as the official
+ * Bot API server's `get_inline_query_result` does, failing with Telegram's description for a
+ * result it cannot read. Article, contact, static location, photo, document, video, voice, and
+ * audio results are supported, the media among them with files given by `file_id` or by URL; other
+ * result types fail as unsupported. A result's `input_message_content` may send text, a rich
+ * message, a contact, or a static location; a venue or an invoice fails as unsupported. The caller
+ * reads the text it sends and shows next. What TDLib checks once every result is parsed, such as
+ * its files' MIME types, its inline keyboard's buttons and its locations, is checked later.
  *
  * `invalidParametersDescription` answers results that Telegram would read leniently, such as
  * numbers written as strings, which are rejected instead to surface the bot's mistake in tests.
  */
-export function readInlineQueryResultsParameter(
-  resultValues: readonly unknown[],
+export function readInlineQueryResultParameter(
+  resultValue: unknown,
   invalidParametersDescription: string,
-): InlineQueryResultsParameterReading {
-  const results: InlineQueryResultParameter[] = [];
-  for (const resultValue of resultValues) {
-    const reading = readInlineQueryResult(resultValue);
-    switch (reading.kind) {
-      case 'result':
-        results.push(reading.result);
-        break;
-      case 'failure':
-        return { read: false, description: reading.description };
-      case 'malformed':
-        return { read: false, description: invalidParametersDescription };
-      default: {
-        const unhandledReading: never = reading;
-        throw new Error(
-          `Unhandled inline query result reading: ${JSON.stringify(unhandledReading)}`,
-        );
-      }
+): InlineQueryResultParameterReading {
+  const reading = readInlineQueryResult(resultValue);
+  switch (reading.kind) {
+    case 'result':
+      return { read: true, result: reading.result };
+    case 'failure':
+      return { read: false, description: reading.description };
+    case 'malformed':
+      return { read: false, description: invalidParametersDescription };
+    default: {
+      const unhandledReading: never = reading;
+      throw new Error(
+        `Unhandled inline query result reading: ${JSON.stringify(unhandledReading)}`,
+      );
     }
   }
-  return { read: true, results };
 }
 
 type InlineQueryResultReading =
@@ -647,13 +695,6 @@ function readDocumentResult(value: unknown): InlineQueryResultReading {
   if (document === undefined || (data.document_url.length > 0 && data.mime_type === undefined)) {
     return { kind: 'malformed' };
   }
-  const mimeType = data.mime_type ?? '';
-  if (
-    document.kind === 'url' &&
-    !WEB_DOCUMENT_MIME_TYPES.some((allowedMimeType) => mimeType.startsWith(allowedMimeType))
-  ) {
-    return { kind: 'failure', description: WEB_DOCUMENT_MIME_TYPE_INVALID_DESCRIPTION };
-  }
   const messageContent = data.input_message_content;
   return {
     kind: 'result',
@@ -662,6 +703,7 @@ function readDocumentResult(value: unknown): InlineQueryResultReading {
       ...readSharedFields(data),
       description: data.description,
       document,
+      mimeType: data.mime_type ?? '',
       thumbnailUrl: data.thumbnail_url ?? '',
       title: data.title,
       caption: readCaption(data),
@@ -686,26 +728,15 @@ function readVideoResult(value: unknown): InlineQueryResultReading {
   ) {
     return { kind: 'malformed' };
   }
-  const mimeType = data.mime_type ?? '';
-  let video: InlineQueryResultVideoParameter = file;
-  if (file.kind === 'url') {
-    if (mimeType.startsWith(EMBEDDED_VIDEO_PLAYER_MIME_TYPE)) {
-      video = { kind: 'embedded_player', url: file.url };
-    } else if (!mimeType.startsWith(WEB_VIDEO_FILE_MIME_TYPE)) {
-      return { kind: 'failure', description: WEB_VIDEO_MIME_TYPE_INVALID_DESCRIPTION };
-    }
-  }
   const messageContent = data.input_message_content;
-  if (video.kind === 'embedded_player' && messageContent === undefined) {
-    return { kind: 'failure', description: EMBEDDED_VIDEO_PLAYER_CONTENT_MISSING_DESCRIPTION };
-  }
   return {
     kind: 'result',
     result: {
       kind: 'video',
       ...readSharedFields(data),
       description: data.description,
-      video,
+      video: file,
+      mimeType: data.mime_type ?? '',
       thumbnailUrl: data.thumbnail_url,
       title: data.title,
       caption: readCaption(data),
