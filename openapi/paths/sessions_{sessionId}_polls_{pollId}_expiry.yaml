@@ -23,6 +23,12 @@ post:
         application/json:
           schema:
             $ref: ../components/schemas/ExpiredPollResponse.yaml
+    '400':
+      description: The poll path identifier is not the decimal text of a positive 64-bit integer.
+      content:
+        application/json:
+          schema:
+            $ref: ../components/schemas/ControlValidationError.yaml
     '404':
       description: No active test session has the supplied identifier, or the session has no such poll.
       content:

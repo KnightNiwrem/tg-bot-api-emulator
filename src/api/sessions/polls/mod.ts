@@ -1,11 +1,12 @@
 import { Hono } from 'hono';
 
-import { controlErrorResponse } from '../../control_error_response.ts';
-import { answerWithActionReceipt } from '../action_receipt.ts';
+import { expirePollContract } from '../../../../control_contracts/polls.ts';
+import { registerControlOperation } from '../../control_operation_route.ts';
+import { presentPoll } from '../poll_presentation.ts';
 import type { SessionRouteContextTypes } from '../session_route_context_types.ts';
 
-const POLL_ID_PARAMETER = 'pollId';
-const POLL_EXPIRY_PATH = `/:${POLL_ID_PARAMETER}/expiry` as const;
+/** Where the poll routes are mounted within the server, as a contract path template. */
+const POLL_COLLECTION_MOUNT_PATH = '/sessions/{sessionId}/polls';
 
 /**
  * Routes that control polls' time, which the emulator does not let pass by itself: a test makes a
@@ -14,19 +15,24 @@ const POLL_EXPIRY_PATH = `/:${POLL_ID_PARAMETER}/expiry` as const;
 export function createPollRoutes(): Hono<SessionRouteContextTypes> {
   const pollRoutes = new Hono<SessionRouteContextTypes>();
 
-  pollRoutes.post(POLL_EXPIRY_PATH, (context) => {
-    return answerWithActionReceipt(context, ({ polls, botMessageViews }) => {
-      const result = polls.expirePoll(context.req.param(POLL_ID_PARAMETER));
-      if (!result.expired) {
-        return controlErrorResponse(
-          context,
-          result.reason === 'poll_not_found' ? 404 : 409,
-          result.reason,
-        );
+  registerControlOperation(
+    pollRoutes,
+    POLL_COLLECTION_MOUNT_PATH,
+    expirePollContract,
+    ({ params: { pollId } }, context) => {
+      const { polls, botMessageViews } = context.get('emulationSession');
+      const result = polls.expirePoll(pollId);
+      if (result.expired) {
+        return {
+          status: 200,
+          body: { poll: presentPoll(botMessageViews.viewPollForCreator(result.poll)) },
+        };
       }
-      return context.json({ poll: botMessageViews.viewPollForCreator(result.poll) });
-    });
-  });
+      return result.reason === 'poll_not_found'
+        ? { status: 404, body: { reason: result.reason } }
+        : { status: 409, body: { reason: result.reason } };
+    },
+  );
 
   return pollRoutes;
 }

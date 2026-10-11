@@ -55,6 +55,11 @@ import {
 } from '../control_contracts/webhook_attempts.ts';
 import { registerWebResourceContract } from '../control_contracts/web_resources.ts';
 import {
+  expirePollContract,
+  retractAccountPollAnswerContract,
+  retractSupergroupAccountPollAnswerContract,
+} from '../control_contracts/polls.ts';
+import {
   expireInlineAnswerCacheContract,
   getInlineQueryContract,
   sendInlineQueryContract,
@@ -107,6 +112,9 @@ const CONTROL_OPERATION_CONTRACTS: readonly ControlOperationContract[] = [
   releaseWebhookRetryContract,
   expireWebhookAttemptContract,
   registerWebResourceContract,
+  expirePollContract,
+  retractAccountPollAnswerContract,
+  retractSupergroupAccountPollAnswerContract,
   sendInlineQueryContract,
   getInlineQueryContract,
   expireInlineAnswerCacheContract,

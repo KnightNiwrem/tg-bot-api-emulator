@@ -42,6 +42,15 @@ export const botProfileSchema = z.strictObject({
   supports_join_request_queries: z.boolean(),
 });
 
+/** A bot as a message sender, without the capabilities that only `getMe` reports. */
+export const messageSenderBotSchema = z.strictObject({
+  id: telegramUserIdSchema,
+  is_bot: z.literal(true),
+  first_name: z.string(),
+  last_name: z.string().optional(),
+  username: z.string(),
+});
+
 /** A bot's profile and the settings its owner would choose with BotFather, each off by default. */
 const createBotRequestSchema = z.strictObject({
   first_name: z.string().min(1),

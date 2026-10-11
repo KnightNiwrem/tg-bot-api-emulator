@@ -1,8 +1,10 @@
 import { z } from 'zod';
 
 import { accountProfileSchema } from '../../control_contracts/accounts.ts';
-import { botProfileSchema } from '../../control_contracts/bots.ts';
+import { botProfileSchema, messageSenderBotSchema } from '../../control_contracts/bots.ts';
 import { controlValidationErrorSchema } from '../../control_contracts/control_errors.ts';
+import { messageEntitySchema } from '../../control_contracts/message_entities.ts';
+import { pollSchema } from '../../control_contracts/polls.ts';
 import {
   MAX_SUPERGROUP_OR_CHANNEL_ID,
   MAX_TELEGRAM_USER_ID,
@@ -14,11 +16,7 @@ import type {
   CallbackQuery,
   ControlErrorBody,
   InlineKeyboardMarkup,
-  MessageEntity,
   MessageReactions,
-  MessageSenderBot,
-  PlainMessageEntityType,
-  Poll,
   PollAnswer,
   PrivateMessage,
   ReactionTypeEmoji,
@@ -46,14 +44,6 @@ export const getMeResponseSchema = z.strictObject({
   result: botProfileSchema,
 });
 
-const messageSenderBotSchema: z.ZodType<MessageSenderBot> = z.strictObject({
-  id: telegramUserIdSchema,
-  is_bot: z.literal(true),
-  first_name: z.string(),
-  last_name: z.string().optional(),
-  username: z.string(),
-});
-
 const privateChatSchema = z.strictObject({
   id: telegramUserIdSchema,
   type: z.literal('private'),
@@ -68,58 +58,6 @@ const supergroupChatSchema = z.strictObject({
   username: z.string().min(1).optional(),
   type: z.literal('supergroup'),
 });
-
-const messageEntitySpanShape = {
-  offset: z.number().int().nonnegative(),
-  length: z.number().int().positive(),
-};
-
-const messageEntitySchema: z.ZodType<MessageEntity> = z.union([
-  z.strictObject({
-    type: z.enum(
-      [
-        'mention',
-        'hashtag',
-        'cashtag',
-        'bot_command',
-        'url',
-        'email',
-        'bank_card_number',
-        'bold',
-        'italic',
-        'underline',
-        'strikethrough',
-        'spoiler',
-        'code',
-        'blockquote',
-        'expandable_blockquote',
-      ] satisfies PlainMessageEntityType[],
-    ),
-    ...messageEntitySpanShape,
-  }),
-  z.strictObject({
-    type: z.literal('pre'),
-    ...messageEntitySpanShape,
-    language: z.string().min(1).optional(),
-  }),
-  z.strictObject({ type: z.literal('text_link'), ...messageEntitySpanShape, url: z.string() }),
-  z.strictObject({
-    type: z.literal('text_mention'),
-    ...messageEntitySpanShape,
-    user: z.union([accountProfileSchema, messageSenderBotSchema]),
-  }),
-  z.strictObject({
-    type: z.literal('custom_emoji'),
-    ...messageEntitySpanShape,
-    custom_emoji_id: z.string().regex(/^-?\d+$/),
-  }),
-  z.strictObject({
-    type: z.literal('date_time'),
-    ...messageEntitySpanShape,
-    unix_time: z.int().positive(),
-    date_time_format: z.string().regex(/^(r|w?[dD]?[tT]?)$/),
-  }),
-]);
 
 const keyboardButtonFaceShape = {
   text: z.string().min(1),
@@ -478,33 +416,6 @@ const locationSchema = z.strictObject({
   longitude: z.number().min(-180).max(180),
   horizontal_accuracy: z.int().min(1).max(1500).optional(),
 });
-
-const pollSchema: z.ZodType<Poll> = z.strictObject({
-  id: z.string().regex(/^[1-9]\d*$/),
-  question: z.string().min(1),
-  question_entities: z.array(messageEntitySchema).min(1).optional(),
-  options: z.array(z.strictObject({
-    persistent_id: z.string().min(1),
-    text: z.string().min(1),
-    text_entities: z.array(messageEntitySchema).min(1).optional(),
-    voter_count: z.number().int().nonnegative(),
-  })).min(1),
-  total_voter_count: z.number().int().nonnegative(),
-  open_period: z.number().int().positive().optional(),
-  close_date: z.number().int().positive().optional(),
-  is_closed: z.boolean(),
-  is_anonymous: z.boolean(),
-  allows_multiple_answers: z.boolean(),
-  allows_revoting: z.boolean(),
-  members_only: z.literal(false),
-  type: z.enum(['regular', 'quiz']),
-  correct_option_id: z.number().int().nonnegative().optional(),
-  correct_option_ids: z.array(z.number().int().nonnegative()).min(1).optional(),
-  explanation: z.string().min(1).optional(),
-  explanation_entities: z.array(messageEntitySchema).optional(),
-});
-
-export const expiredPollResponseSchema = z.strictObject({ poll: pollSchema });
 
 const externalReplyShape = {
   origin: messageOriginSchema,

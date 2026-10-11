@@ -8,6 +8,7 @@ import type {
   ChatJoinRequest,
   EmulationSession,
   InlineQuery,
+  Poll,
   RateLimitResponses,
   SupergroupInviteLink,
   UpdateDeliveredEntry,
@@ -24,6 +25,7 @@ export function mutateSnapshots(
   call: BotApiCallEntry,
   delivery: UpdateDeliveredEntry,
   failure: WebhookAttemptFailedEntry,
+  poll: Poll,
   rateLimits: RateLimitResponses,
   attempt: WebhookAttempt,
   retry: WebhookRetry,
@@ -51,6 +53,8 @@ export function mutateSnapshots(
   delivery.update.update_id = 0;
   // @ts-expect-error A nested union's fields are readonly.
   failure.failure.reason = 'timed_out';
+  // @ts-expect-error A list in a list of objects cannot grow.
+  poll.options[0].text_entities?.push(poll.options[0].text_entities[0]);
   // @ts-expect-error A snapshot's own field is readonly.
   rateLimits.remaining_count = 0;
   // @ts-expect-error A union's own field is readonly.
