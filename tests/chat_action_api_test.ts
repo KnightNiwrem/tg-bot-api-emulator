@@ -18,7 +18,8 @@ import {
 } from './support/emulation_api.ts';
 
 Deno.test('a test expires the chat action an account sees, which the bot can show again', async () => {
-  const { session, bot, ada, privateChat, callBot } = await createChatActionFixture();
+  await using fixture = await createChatActionFixture();
+  const { session, bot, ada, privateChat, callBot } = fixture;
   try {
     const shown = () => ada.getChatActions({ chat: privateChat });
     const activity = session.botActivity({ bot_id: bot.id });
@@ -74,7 +75,8 @@ Deno.test('a test expires the chat action an account sees, which the bot can sho
 });
 
 Deno.test('a chat action stays until the bot ends it or a test expires it', async () => {
-  const { session, ada, bot, privateChat, callBot } = await createChatActionFixture();
+  await using fixture = await createChatActionFixture();
+  const { session, ada, bot, privateChat, callBot } = fixture;
   try {
     const shown = () => ada.getChatActions({ chat: privateChat });
     const typing = [shownAction(bot.id, 'typing')];
@@ -124,7 +126,8 @@ Deno.test('a chat action stays until the bot ends it or a test expires it', asyn
 });
 
 Deno.test("a test expires one bot's chat action in a supergroup and leaves the others", async () => {
-  const { session, fetch, bot, ada, callBot } = await createChatActionFixture();
+  await using fixture = await createChatActionFixture();
+  const { session, fetch, bot, ada, callBot } = fixture;
   try {
     const { bot: otherBot, token: otherBotToken } = await session.createBot({
       first_name: 'Other Bot',
@@ -181,8 +184,9 @@ Deno.test("a test expires one bot's chat action in a supergroup and leaves the o
 
 Deno.test('chat action expiry stays within its own chat, account and session', async () => {
   await using api = createTestInProcessEmulator();
-  const { session, bot, ada, privateChat, callBot } = await createChatActionFixture(api);
-  const other = await createChatActionFixture(api);
+  await using fixture = await createChatActionFixture(api);
+  const { session, bot, ada, privateChat, callBot } = fixture;
+  await using other = await createChatActionFixture(api);
   try {
     const { account: grace } = await session.createAccount({ first_name: 'Grace' });
     await grace.sendMessage({ to: privateChat, text: '/start' });
@@ -223,7 +227,8 @@ Deno.test('chat action expiry stays within its own chat, account and session', a
 });
 
 Deno.test('the TypeScript client expires chat actions by the chat its input names', async () => {
-  const { session, bot, ada, privateChat, callBot } = await createChatActionFixture();
+  await using fixture = await createChatActionFixture();
+  const { session, bot, ada, privateChat, callBot } = fixture;
   try {
     const created = await ada.createSupergroup({ title: 'Study group' });
     const supergroup: SupergroupMessageTarget = { type: 'supergroup', chatId: created.id };
@@ -263,7 +268,8 @@ Deno.test('the TypeScript client expires chat actions by the chat its input name
 // Follows "Notifications and chat actions" in docs/clients/typescript/messages.md, with grammY's
 // runner in place of the guide's fixture.
 Deno.test('a grammY bot types while a test inspects and expires the action', async () => {
-  const { session, fetch, bot, ada, privateChat } = await createChatActionFixture();
+  await using fixture = await createChatActionFixture();
+  const { session, fetch, bot, ada, privateChat } = fixture;
   const grammyBot = new Bot(bot.token, { client: { apiRoot: session.botApiRoot, fetch } });
   const reportFinished = Promise.withResolvers<void>();
   grammyBot.command('report', async (context) => {
@@ -323,7 +329,7 @@ interface BotApiCallResult {
   readonly body: unknown;
 }
 
-interface ChatActionFixture {
+interface ChatActionFixture extends AsyncDisposable {
   readonly session: EmulationSessionClient;
   readonly fetch: typeof globalThis.fetch;
   readonly bot: { readonly id: number; readonly token: string };
@@ -332,16 +338,22 @@ interface ChatActionFixture {
   readonly callBot: BotApiCaller;
 }
 
-/** A session in which Ada started a chat with the bot, which answers Bot API calls. */
+/**
+ * A session in which Ada started a chat with the bot, which answers Bot API calls, on `sharedApi`
+ * or else on an emulator of its own, which disposing of the fixture disposes of.
+ */
 async function createChatActionFixture(
-  api: TestInProcessEmulator = createTestInProcessEmulator(),
+  sharedApi?: TestInProcessEmulator,
 ): Promise<ChatActionFixture> {
+  await using disposalOnFailure = new AsyncDisposableStack();
+  const api = sharedApi ?? disposalOnFailure.use(createTestInProcessEmulator());
   const { fetch } = api;
   const session = await api.client.createSession();
   const createdBot = await session.createBot({ first_name: 'Answer Bot', username: 'answer_bot' });
   const { account: ada } = await session.createAccount({ first_name: 'Ada' });
   const privateChat: PrivateMessageTarget = { type: 'private', botId: createdBot.bot.id };
   await ada.sendMessage({ to: privateChat, text: '/start' });
+  const emulatorDisposal = disposalOnFailure.move();
   return {
     session,
     fetch,
@@ -349,6 +361,7 @@ async function createChatActionFixture(
     ada,
     privateChat,
     callBot: callBotWith(fetch, session, createdBot.token),
+    [Symbol.asyncDispose]: () => emulatorDisposal.disposeAsync(),
   };
 }
 

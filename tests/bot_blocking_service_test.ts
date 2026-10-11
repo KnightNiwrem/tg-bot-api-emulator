@@ -1,3 +1,4 @@
+import { assertEquals } from '@std/assert';
 import { AccountRepository } from '../src/repositories/account.ts';
 import { BlockedUserRepository } from '../src/repositories/blocked_user.ts';
 import { BotRepository } from '../src/repositories/bot.ts';
@@ -5,6 +6,7 @@ import { TelegramIdentityRepository } from '../src/repositories/telegram_identit
 import { BotBlockingService } from '../src/services/bot_blocking.ts';
 import { VirtualUserService } from '../src/services/virtual_user.ts';
 import type { ChatDomainEvent } from '../src/types/chat_domain_event.ts';
+import { createVirtualAccount, createVirtualBot } from './support/virtual_users.ts';
 
 Deno.test('BotBlockingService publishes only changes of a block', () => {
   const { virtualUsers, blockedUsers, publishedEvents, botBlocking, advanceClockSeconds } =
@@ -23,14 +25,14 @@ Deno.test('BotBlockingService publishes only changes of a block', () => {
   if (results.some((result) => !result.applied)) {
     throw new Error(`Expected every change to apply, received ${JSON.stringify(results)}`);
   }
-  if (
-    JSON.stringify(publishedEvents) !== JSON.stringify([
+  assertEquals(
+    publishedEvents,
+    [
       { type: 'bot_block_changed', ...key, isBlocked: true, changedAtUnixSeconds: 1_700_000_000 },
       { type: 'bot_block_changed', ...key, isBlocked: false, changedAtUnixSeconds: 1_700_000_009 },
-    ])
-  ) {
-    throw new Error(`Expected one event per change, received ${JSON.stringify(publishedEvents)}`);
-  }
+    ],
+    'Expected one event per change',
+  );
 });
 
 Deno.test('BotBlockingService blocks only bots, for known accounts', () => {
@@ -87,17 +89,9 @@ function createBotBlockingFixture() {
 }
 
 function createAccount(virtualUsers: VirtualUserService) {
-  const result = virtualUsers.createAccount({ first_name: 'Ada' });
-  if (!result.created) {
-    throw new Error(`Expected account creation to succeed, received ${result.reason}`);
-  }
-  return result.account;
+  return createVirtualAccount(virtualUsers, { first_name: 'Ada' });
 }
 
 function createBot(virtualUsers: VirtualUserService) {
-  const result = virtualUsers.createBot({ first_name: 'Test Bot', username: 'test_bot' });
-  if (!result.created) {
-    throw new Error(`Expected bot creation to succeed, received ${result.reason}`);
-  }
-  return result.bot;
+  return createVirtualBot(virtualUsers, { first_name: 'Test Bot', username: 'test_bot' });
 }

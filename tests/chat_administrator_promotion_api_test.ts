@@ -49,8 +49,9 @@ const SUPERGROUP_ADMINISTRATOR_RIGHTS = [
  * `existingApi` when given, or on an API of its own.
  */
 async function createPromotionFixture(existingApi?: TestInProcessEmulator) {
+  await using disposalOnFailure = new AsyncDisposableStack();
   const { api, sessionPath } = existingApi === undefined
-    ? await createTestSession()
+    ? disposalOnFailure.use(await createTestSession())
     : { api: existingApi, sessionPath: await createSession(existingApi) };
   const ada = await createAccount(api, sessionPath, 'Ada');
   const grace = await createAccount(api, sessionPath, 'Grace');
@@ -100,6 +101,7 @@ async function createPromotionFixture(existingApi?: TestInProcessEmulator) {
       `${supergroupPath(accountId)}/administrators`,
     );
 
+  const emulatorDisposal = disposalOnFailure.move();
   return {
     api,
     sessionPath,
@@ -117,6 +119,7 @@ async function createPromotionFixture(existingApi?: TestInProcessEmulator) {
     getChatMember,
     getAdministratorsAsAccount,
     createBot,
+    [Symbol.asyncDispose]: () => emulatorDisposal.disposeAsync(),
   };
 }
 
@@ -176,8 +179,9 @@ async function expectStatus(
 /** Compares JSON values by content: object keys in any order, array items in order. */
 
 Deno.test('bots see the administrators the owner promoted as ones they may not edit', async () => {
+  await using fixture = await createPromotionFixture();
   const { ada, grace, delegatingBot, otherBot, supergroup, callBot, getChatMember, readUpdates } =
-    await createPromotionFixture();
+    fixture;
   const delegatingBotUser = botUser(delegatingBot, 'delegating_bot');
 
   // The bot's last update is its promotion, after the one for its joining.
@@ -217,6 +221,7 @@ Deno.test('bots see the administrators the owner promoted as ones they may not e
 });
 
 Deno.test('members inspect who promoted each administrator and whom they may edit', async () => {
+  await using fixture = await createPromotionFixture();
   const {
     api,
     sessionPath,
@@ -227,7 +232,7 @@ Deno.test('members inspect who promoted each administrator and whom they may edi
     delegatingBot,
     supergroup,
     getAdministratorsAsAccount,
-  } = await createPromotionFixture();
+  } = fixture;
   await expectStatus(
     api.request(
       `${sessionPath}/accounts/${ada.id}/conversations/supergroup/${supergroup.id}/administrators/${ada.id}/custom-title`,
@@ -305,6 +310,7 @@ function describeMembershipUpdates(updates: ReadonlyArray<Record<string, unknown
 }
 
 Deno.test('a bot promotes a member, changes its rights and demotes it, as observers see', async () => {
+  await using fixture = await createPromotionFixture();
   const {
     ada,
     grace,
@@ -317,7 +323,7 @@ Deno.test('a bot promotes a member, changes its rights and demotes it, as observ
     getChatMember,
     getAdministratorsAsAccount,
     readUpdates,
-  } = await createPromotionFixture();
+  } = fixture;
   // The other bot administers the supergroup, so it observes other members' changes.
   await promoteAsOwner(otherBot.bot.id, { can_restrict_members: true });
   await promoteAsOwner(delegatingBot.bot.id, {
@@ -405,8 +411,9 @@ Deno.test('a bot promotes a member, changes its rights and demotes it, as observ
 });
 
 Deno.test('a delegated chain of bots edits only its descendants, within its own rights', async () => {
+  await using fixture = await createPromotionFixture();
   const { ada, grace, hopper, delegatingBot, otherBot, supergroup, callBot, getChatMember } =
-    await createPromotionFixture();
+    fixture;
   const promote = (actor: FixtureBot, userId: number, rights: Record<string, boolean>) =>
     callBot(actor, 'promoteChatMember', { chat_id: supergroup.id, user_id: userId, ...rights })
       .then(({ body }) => body.ok ? body.result : body.description);
@@ -459,8 +466,9 @@ Deno.test('a delegated chain of bots edits only its descendants, within its own 
 });
 
 Deno.test('a broken chain leaves the appointee to the owner', async () => {
+  await using fixture = await createPromotionFixture();
   const { ada, hopper, delegatingBot, otherBot, supergroup, callBot, getAdministratorsAsAccount } =
-    await createPromotionFixture();
+    fixture;
   const promote = (actor: FixtureBot, userId: number, rights: Record<string, boolean>) =>
     callBot(actor, 'promoteChatMember', { chat_id: supergroup.id, user_id: userId, ...rights })
       .then(({ body }) => body.ok ? body.result : body.description);
@@ -487,8 +495,8 @@ Deno.test('a broken chain leaves the appointee to the owner', async () => {
 });
 
 Deno.test('a demoted promoter loses its privileges, and bots act on administrators they promoted', async () => {
-  const { grace, hopper, delegatingBot, otherBot, supergroup, promoteAsOwner, callBot } =
-    await createPromotionFixture();
+  await using fixture = await createPromotionFixture();
+  const { grace, hopper, delegatingBot, otherBot, supergroup, promoteAsOwner, callBot } = fixture;
   await promoteAsOwner(delegatingBot.bot.id, {
     can_promote_members: true,
     can_restrict_members: true,
@@ -543,6 +551,7 @@ Deno.test('a demoted promoter loses its privileges, and bots act on administrato
 });
 
 Deno.test('promoteChatMember refuses what Telegram refuses, without changing anything', async () => {
+  await using fixture = await createPromotionFixture();
   const {
     api,
     ada,
@@ -557,7 +566,7 @@ Deno.test('promoteChatMember refuses what Telegram refuses, without changing any
     callBot,
     readUpdates,
     getAdministratorsAsAccount,
-  } = await createPromotionFixture();
+  } = fixture;
   // Hopper is banned once the owner removes her, and Grace, no longer an administrator, is
   // restricted.
   await expectStatus(
@@ -673,6 +682,7 @@ function describeAttributedUpdates(updates: ReadonlyArray<Record<string, unknown
 }
 
 Deno.test('an administrator account promotes and demotes within its rights, as bots observe', async () => {
+  await using fixture = await createPromotionFixture();
   const {
     api,
     ada,
@@ -686,7 +696,7 @@ Deno.test('an administrator account promotes and demotes within its rights, as b
     readUpdates,
     getChatMember,
     getAdministratorsAsAccount,
-  } = await createPromotionFixture();
+  } = fixture;
   await promoteAsOwner(grace.id, { can_promote_members: true, can_delete_messages: true });
   for (const bot of [delegatingBot, otherBot]) {
     await readUpdates(bot);
@@ -784,6 +794,7 @@ Deno.test('an administrator account promotes and demotes within its rights, as b
 });
 
 Deno.test('accounts and bots edit administrators along one chain of promotions', async () => {
+  await using fixture = await createPromotionFixture();
   const {
     api,
     ada,
@@ -795,7 +806,7 @@ Deno.test('accounts and bots edit administrators along one chain of promotions',
     promoteAsOwner,
     callBot,
     getAdministratorsAsAccount,
-  } = await createPromotionFixture();
+  } = fixture;
   const accountChange = async (
     actorId: number,
     userId: number,
@@ -863,8 +874,8 @@ Deno.test('accounts and bots edit administrators along one chain of promotions',
 });
 
 Deno.test('administrator accounts act only within their own session', async () => {
-  const first = await createPromotionFixture();
-  const second = await createPromotionFixture(first.api);
+  await using first = await createPromotionFixture();
+  await using second = await createPromotionFixture(first.api);
   for (const bot of [second.delegatingBot, second.otherBot]) {
     await second.readUpdates(bot);
   }
@@ -895,8 +906,8 @@ Deno.test('administrator accounts act only within their own session', async () =
 });
 
 Deno.test('a grammY bot promotes a member through its webhook, as the activity log shows', async () => {
-  const { api, sessionPath, ada, hopper, delegatingBot, supergroup, promoteAsOwner } =
-    await createPromotionFixture();
+  await using fixture = await createPromotionFixture();
+  const { api, sessionPath, ada, hopper, delegatingBot, supergroup, promoteAsOwner } = fixture;
   await promoteAsOwner(delegatingBot.bot.id, {
     can_promote_members: true,
     can_pin_messages: true,
@@ -974,6 +985,7 @@ Deno.test('a grammY bot promotes a member through its webhook, as the activity l
 });
 
 Deno.test('a bot titles an administrator it promoted, which every read shows, without updates', async () => {
+  await using fixture = await createPromotionFixture();
   const {
     api,
     ada,
@@ -987,7 +999,7 @@ Deno.test('a bot titles an administrator it promoted, which every read shows, wi
     getChatMember,
     getAdministratorsAsAccount,
     readUpdates,
-  } = await createPromotionFixture();
+  } = fixture;
   await promoteAsOwner(otherBot.bot.id, { can_restrict_members: true });
   await promoteAsOwner(delegatingBot.bot.id, {
     can_promote_members: true,
@@ -1069,6 +1081,7 @@ Deno.test('a bot titles an administrator it promoted, which every read shows, wi
 });
 
 Deno.test('setChatAdministratorCustomTitle refuses what Telegram refuses, without changing anything', async () => {
+  await using fixture = await createPromotionFixture();
   const {
     ada,
     grace,
@@ -1079,7 +1092,7 @@ Deno.test('setChatAdministratorCustomTitle refuses what Telegram refuses, withou
     supergroup,
     callBot,
     getChatMember,
-  } = await createPromotionFixture();
+  } = fixture;
   const setTitle = async (actor: FixtureBot, parameters: Record<string, unknown>) => {
     const { status, body } = await callBot(actor, 'setChatAdministratorCustomTitle', parameters);
     return [status, body.ok ? body.result : body.description];
@@ -1145,8 +1158,8 @@ Deno.test('setChatAdministratorCustomTitle refuses what Telegram refuses, withou
 });
 
 Deno.test('custom titles keep the symbols Telegram Desktop keeps and lose its emoji', async () => {
-  const { hopper, delegatingBot, supergroup, callBot, getChatMember } =
-    await createPromotionFixture();
+  await using fixture = await createPromotionFixture();
+  const { hopper, delegatingBot, supergroup, callBot, getChatMember } = fixture;
   const promotion = await callBot(delegatingBot, 'promoteChatMember', {
     chat_id: supergroup.id,
     user_id: hopper.id,
@@ -1220,7 +1233,8 @@ Deno.test('custom titles keep the symbols Telegram Desktop keeps and lose its em
  * With an observer, an administrator bot subscribed to membership updates watches every change.
  */
 async function runDemotedPromoterRepromotion({ withObserver }: { withObserver: boolean }) {
-  const fixture = await createPromotionFixture();
+  await using disposalOnFailure = new AsyncDisposableStack();
+  const fixture = disposalOnFailure.use(await createPromotionFixture());
   const { ada, delegatingBot, otherBot, supergroup, supergroupPath, api, callBot, readUpdates } =
     fixture;
   const observerBot = withObserver ? await fixture.createBot('observer_bot') : undefined;
@@ -1247,7 +1261,14 @@ async function runDemotedPromoterRepromotion({ withObserver }: { withObserver: b
     await promote(delegatingBot, delegatingBot.bot.id, {}),
     await promote(otherBot, delegatingBot.bot.id, { can_promote_members: true }),
   ];
-  return { ...fixture, observerBot, promote, steps };
+  const emulatorDisposal = disposalOnFailure.move();
+  return {
+    ...fixture,
+    observerBot,
+    promote,
+    steps,
+    [Symbol.asyncDispose]: () => emulatorDisposal.disposeAsync(),
+  };
 }
 
 /** The `can_be_edited` of the given administrators, keyed by user ID, as a bot sees it. */
@@ -1280,6 +1301,7 @@ for (const withObserver of [false, true]) {
       withObserver ? ', while another administrator bot observes' : ''
     }`,
     async () => {
+      await using fixture = await runDemotedPromoterRepromotion({ withObserver });
       const {
         ada,
         delegatingBot,
@@ -1291,7 +1313,7 @@ for (const withObserver of [false, true]) {
         callBot,
         readUpdates,
         getAdministratorsAsAccount,
-      } = await runDemotedPromoterRepromotion({ withObserver });
+      } = fixture;
       const delegatingBotId = delegatingBot.bot.id;
       const otherBotId = otherBot.bot.id;
       const bots = [delegatingBotId, otherBotId];

@@ -1,3 +1,4 @@
+import { assertEquals } from '@std/assert';
 import { AccountRepository } from '../src/repositories/account.ts';
 import { BotRepository } from '../src/repositories/bot.ts';
 import { ChatActionRepository } from '../src/repositories/chat_action.ts';
@@ -11,6 +12,7 @@ import {
 import { VirtualUserService } from '../src/services/virtual_user.ts';
 import { ALL_CHAT_PERMISSIONS } from '../src/types/chat_permissions.ts';
 import type { ChatKey } from '../src/types/virtual_chat.ts';
+import { createVirtualAccount, createVirtualBot } from './support/virtual_users.ts';
 
 const SUPERGROUP_ID = -1_000_000_000_001;
 
@@ -58,9 +60,7 @@ Deno.test('ChatActionService shows a private chat action until it is canceled or
     'account_not_found',
     'bot_not_found',
   ];
-  if (JSON.stringify(received) !== JSON.stringify(expected)) {
-    throw new Error(`Expected the action to show until canceled or expired, received ${received}`);
-  }
+  assertEquals(received, expected, 'Expected the action to show until canceled or expired');
 });
 
 Deno.test('ChatActionService shows members each bot latest action until its message or expiry', () => {
@@ -117,17 +117,15 @@ Deno.test('ChatActionService shows members each bot latest action until its mess
     expiryBy(stranger.account.profile.id, SUPERGROUP_ID, otherBot.id),
     expiryBy(account.profile.id, -1_000_000_000_999, otherBot.id),
   ];
+  assertEquals(
+    failedExpiries,
+    ['chat_action_not_found', 'bot_not_found', 'not_a_member', 'chat_not_found'],
+    'Expected expiry to be refused where no action of the bot is shown',
+  );
   if (
     bothActions !== `${otherBot.id}:find_location,${bot.id}:choose_sticker` ||
     afterMessage !== `${bot.id}:choose_sticker` ||
     expiry !== 'expired' || afterExpiry !== `${otherBot.id}:typing` ||
-    JSON.stringify(failedExpiries) !==
-      JSON.stringify([
-        'chat_action_not_found',
-        'bot_not_found',
-        'not_a_member',
-        'chat_not_found',
-      ]) ||
     seenBy(account.profile.id) !== `${otherBot.id}:typing` ||
     strangerResult.found || strangerResult.reason !== 'not_a_member' ||
     missingResult.found || missingResult.reason !== 'chat_not_found'
@@ -167,23 +165,15 @@ function createChatActionFixture() {
     sharedChats,
     chatActions: new ChatActionRepository(),
   });
-  const accountResult = virtualUsers.createAccount({ first_name: 'Ada' });
-  if (!accountResult.created) {
-    throw new Error(`Expected account creation to succeed, received ${accountResult.reason}`);
-  }
   return {
     chatActions,
     sharedChats,
     virtualUsers,
-    account: accountResult.account,
+    account: createVirtualAccount(virtualUsers, { first_name: 'Ada' }),
     bot: createBot(virtualUsers, 'test_bot'),
   };
 }
 
 function createBot(virtualUsers: VirtualUserService, username: string) {
-  const result = virtualUsers.createBot({ first_name: 'Bot', username });
-  if (!result.created) {
-    throw new Error(`Expected bot creation to succeed, received ${result.reason}`);
-  }
-  return result.bot.profile;
+  return createVirtualBot(virtualUsers, { first_name: 'Bot', username }).profile;
 }

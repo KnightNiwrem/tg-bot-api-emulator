@@ -14,7 +14,7 @@ import {
 const FAILED_VIEW_MESSAGE = 'The view failed';
 
 Deno.test("a bot's ban whose projection fails after one bot commits nothing", async () => {
-  const fixture = await createAdministrationFixture();
+  using fixture = await createAdministrationFixture();
   const stateBefore = fixture.readState();
   // Alpha's `chat_member` update is staged before Beta's view fails.
   const restoreViews = fixture.failMemberChangeViewsFor(fixture.beta.id);
@@ -34,7 +34,7 @@ Deno.test("a bot's ban whose projection fails after one bot commits nothing", as
 });
 
 Deno.test("an owner's removal outside any command commits nothing when a projection fails", async () => {
-  const fixture = await createAdministrationFixture();
+  using fixture = await createAdministrationFixture();
   const stateBefore = fixture.readState();
   const restoreViews = fixture.failMemberChangeViewsFor(fixture.beta.id);
 
@@ -54,7 +54,7 @@ Deno.test("an owner's removal outside any command commits nothing when a project
 });
 
 Deno.test('a promotion, restriction or chat change whose record fails commits nothing', async () => {
-  const fixture = await createAdministrationFixture();
+  using fixture = await createAdministrationFixture();
   const changes = [
     ['promoteChatMember', { user_id: String(fixture.graceId), can_change_info: 'true' }],
     ['restrictChatMember', {
@@ -91,7 +91,7 @@ Deno.test('a promotion, restriction or chat change whose record fails commits no
 });
 
 Deno.test('a ban prepared before the bot lost its right is not committed', async () => {
-  const fixture = await createAdministrationFixture();
+  using fixture = await createAdministrationFixture();
   const reply = fixture.holdWebhookReply(fixture.alpha, {
     method: 'banChatMember',
     chat_id: String(fixture.chatId),
@@ -115,7 +115,7 @@ Deno.test('a ban prepared before the bot lost its right is not committed', async
 });
 
 Deno.test('a change prepared before its session ended commits nothing', async () => {
-  const fixture = await createAdministrationFixture();
+  using fixture = await createAdministrationFixture();
   const replies = [
     fixture.holdWebhookReply(fixture.alpha, {
       method: 'banChatMember',

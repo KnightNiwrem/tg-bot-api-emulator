@@ -13,6 +13,7 @@ import { VirtualUserService } from '../src/services/virtual_user.ts';
 import type { ChatDomainEvent } from '../src/types/chat_domain_event.ts';
 import type { MessageDraft, WrittenMessageDraft } from '../src/types/message_draft.ts';
 import type { PrivateConversationKey } from '../src/types/virtual_chat.ts';
+import { createVirtualAccount, createVirtualBot } from './support/virtual_users.ts';
 
 Deno.test('MessageDraftService changes a draft by its ID and replaces it with another ID', () => {
   const { messageDrafts, conversation } = createMessageDraftFixture();
@@ -279,17 +280,9 @@ function createMessageDraftFixture() {
 }
 
 function createAccount(virtualUsers: VirtualUserService, firstName: string): number {
-  const result = virtualUsers.createAccount({ first_name: firstName });
-  if (!result.created) {
-    throw new Error(`Expected account creation to succeed, received ${result.reason}`);
-  }
-  return result.account.profile.id;
+  return createVirtualAccount(virtualUsers, { first_name: firstName }).profile.id;
 }
 
 function createBot(virtualUsers: VirtualUserService, username: string): number {
-  const result = virtualUsers.createBot({ first_name: 'Bot', username });
-  if (!result.created) {
-    throw new Error(`Expected bot creation to succeed, received ${result.reason}`);
-  }
-  return result.bot.profile.id;
+  return createVirtualBot(virtualUsers, { first_name: 'Bot', username }).profile.id;
 }

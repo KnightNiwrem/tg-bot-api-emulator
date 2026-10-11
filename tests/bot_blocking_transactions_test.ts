@@ -5,7 +5,7 @@ import { createBotApiCommandSession } from './support/bot_api_command_session.ts
 const FAILED_VIEW_MESSAGE = 'The view failed';
 
 Deno.test('a block or an unblock whose projection fails changes nothing', async () => {
-  const fixture = createBlockingFixture();
+  using fixture = createBlockingFixture();
   const { session } = fixture;
   const key = { accountId: fixture.adaId, botId: fixture.alpha.id };
 
