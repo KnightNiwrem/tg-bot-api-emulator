@@ -23,6 +23,13 @@ export const uriReferenceSchema = z.stringFormat(
   (text) => URL.canParse(text, 'http://base.invalid/'),
 );
 
+/**
+ * Bytes written as base64 text, as `Uint8Array.fromBase64` reads it: padding may be left out and
+ * ASCII whitespace is ignored. The server refuses other text as an `invalid_value` issue, since
+ * JSON Schema's `contentEncoding` annotates rather than checks.
+ */
+export const base64TextSchema = z.string().meta({ contentEncoding: 'base64' });
+
 /** The relative URL of the resource a request created, in its `Location` header. */
 export const createdResourceHeadersSchema = z.object({ Location: uriReferenceSchema });
 

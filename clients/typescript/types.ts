@@ -43,6 +43,7 @@ import type {
   webhookAttemptFailureSchema,
   webhookAttemptSchema,
 } from '../../control_contracts/webhook_attempts.ts';
+import type { registerWebResourceContract } from '../../control_contracts/web_resources.ts';
 import type { ControlRefusalReason } from './control_refusal_reasons.ts';
 
 /**
@@ -108,31 +109,19 @@ export type ServerErrorResponses = ReadonlySnapshot<
  * What a URL of the session's emulated web serves. Telegram downloads the files bots send by URL;
  * the emulator downloads them from these resources and never from the network.
  */
-export interface RegisterWebResourceInput {
-  /** An HTTP or HTTPS URL, matched as Telegram reads the URL a bot sends. */
-  readonly url: string;
-  /** The HTTP status, from 200 to 599. Defaults to 200. */
-  readonly status?: number;
-  /**
-   * The `Content-Type` header. Telegram sends a URL photo served as an image, and a URL document
-   * served as `application/pdf` or `application/zip`.
-   */
-  readonly content_type?: string;
-  /** The `Location` header of a redirect, relative to `url` or absolute. */
-  readonly location?: string;
-  /** The response body. Defaults to none. */
-  readonly content?: Uint8Array;
-}
+export type RegisterWebResourceInput =
+  & Readonly<
+    Omit<ControlOperationRequest<typeof registerWebResourceContract>['body'], 'content_base64'>
+  >
+  & {
+    /** The response body. Defaults to none. */
+    readonly content?: Uint8Array;
+  };
 
 /** A registered web resource, without the content the test supplied. */
-export interface WebResource {
-  /** The URL in the canonical form Telegram reads it in. */
-  readonly url: string;
-  readonly status: number;
-  readonly content_type?: string;
-  readonly location?: string;
-  readonly content_length: number;
-}
+export type WebResource = ReadonlySnapshot<
+  ControlOperationResult<typeof registerWebResourceContract>
+>;
 
 /** The bot whose next calls receive the answers, and the answers to queue. */
 export type QueueRateLimitResponsesInput =
