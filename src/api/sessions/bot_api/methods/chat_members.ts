@@ -5,21 +5,16 @@ import {
   SUPERGROUP_ADMINISTRATOR_RIGHTS,
   type SupergroupAdministratorRights,
 } from '../../../../types/chat_membership.ts';
-import { botChatAccessFailureAnswer, CHAT_ID_EMPTY_DESCRIPTION } from '../chat_access.ts';
-import {
-  chatMemberFailureAnswer,
-  readChatMemberTarget,
-  USER_ID_INVALID_DESCRIPTION,
-} from '../chat_member_requests.ts';
+import { CHAT_ID_EMPTY_DESCRIPTION } from '../chat_access.ts';
+import { readChatMemberTarget, USER_ID_INVALID_DESCRIPTION } from '../chat_member_requests.ts';
 import { readChatPermissionsParameter } from '../chat_permissions_parameter.ts';
+import { presentChatMemberFailure } from '../errors/chat_member_failure_presenter.ts';
 import {
-  badRequestDescription,
   botApiError,
   type BotApiMethod,
   type BotApiMethodAnswer,
   type BotApiMethodContext,
   botApiResult,
-  STRINGS_NOT_UTF8_DESCRIPTION,
 } from '../method_call.ts';
 import {
   booleanParameter,
@@ -44,27 +39,7 @@ export const CHAT_MEMBER_METHODS: readonly BotApiMethod[] = [
   { name: 'unbanChatMember', recordsActivity: true, handler: handleUnbanChatMember },
 ];
 
-/** Telegram's descriptions for rejected requests about chat members. */
-const METHOD_UNAVAILABLE_OUTSIDE_GROUPS_DESCRIPTION =
-  'Bad Request: method is available only in groups and supergroups';
-const OWNER_CUSTOM_TITLE_DESCRIPTION = 'Bad Request: only the owner can edit their custom title';
-const MEMBER_IS_NOT_ADMINISTRATOR_DESCRIPTION = 'Bad Request: user is not an administrator';
-const CUSTOM_TITLE_NOT_EDITABLE_DESCRIPTION =
-  'Bad Request: not enough rights to change custom title of the user';
-/**
- * Telegram's servers refuse titles as `RANK_INVALID` and `RANK_EMOJI_NOT_ALLOWED`, which the
- * official server reports under these names.
- */
-const CUSTOM_TITLE_INVALID_DESCRIPTION = 'Bad Request: CUSTOM_TITLE_INVALID';
-const CUSTOM_TITLE_EMOJI_NOT_ALLOWED_DESCRIPTION = 'Bad Request: CUSTOM_TITLE_EMOJI_NOT_ALLOWED';
-
-/** Telegram's description for a bot that tries to promote itself. */
-const CANNOT_PROMOTE_SELF_DESCRIPTION = "Bad Request: can't promote self";
-/** Telegram's servers' errors for promotions, which the official server passes on. */
-const MEMBER_NOT_IN_CHAT_DESCRIPTION = 'Bad Request: USER_NOT_MUTUAL_CONTACT';
-const MEMBER_KICKED_DESCRIPTION = 'Bad Request: USER_KICKED';
-const RIGHTS_NOT_HELD_DESCRIPTION = 'Bad Request: RIGHT_FORBIDDEN';
-const BOTS_CANNOT_ADD_MEMBERS_DESCRIPTION = "Bad Request: bots can't add new chat members";
+/** The emulator's description for a promotion to an anonymous administrator, which it lacks. */
 const ANONYMOUS_ADMINISTRATORS_UNSUPPORTED_DESCRIPTION =
   'Bad Request: anonymous administrators are not supported';
 
@@ -162,21 +137,7 @@ function handleLeaveChat(
     context.bot,
     { chatId },
   );
-  if (result.left) {
-    return botApiResult(true);
-  }
-  switch (result.reason) {
-    case 'chat_not_found':
-    case 'bot_not_a_member':
-    case 'bot_kicked':
-      return botChatAccessFailureAnswer(result.reason);
-    case 'private_chat_not_leavable':
-      return botApiError(400, badRequestDescription("Can't leave private chats"));
-    default: {
-      const unhandledReason: never = result.reason;
-      throw new Error(`Unhandled leaveChat failure: ${unhandledReason}`);
-    }
-  }
+  return result.left ? botApiResult(true) : presentChatMemberFailure('chat_leave', result);
 }
 
 function handleGetChatMember(
@@ -196,7 +157,9 @@ function handleGetChatMember(
     context.bot,
     targetReading.target,
   );
-  return result.found ? botApiResult(result.member) : chatMemberFailureAnswer(result.reason);
+  return result.found
+    ? botApiResult(result.member)
+    : presentChatMemberFailure('member_lookup', result);
 }
 
 function handleGetChatAdministrators(
@@ -218,7 +181,7 @@ function handleGetChatAdministrators(
   );
   return result.found
     ? botApiResult(result.administrators)
-    : chatMemberFailureAnswer(result.reason);
+    : presentChatMemberFailure('member_lookup', result);
 }
 
 function handleGetChatMemberCount(
@@ -238,7 +201,9 @@ function handleGetChatMemberCount(
     context.bot,
     { chatId },
   );
-  return result.found ? botApiResult(result.memberCount) : chatMemberFailureAnswer(result.reason);
+  return result.found
+    ? botApiResult(result.memberCount)
+    : presentChatMemberFailure('member_lookup', result);
 }
 
 function handleBanChatMember(
@@ -258,7 +223,7 @@ function handleBanChatMember(
     context.bot,
     { ...targetReading.target, untilUnixSeconds: parsedParameters.data.until_date },
   );
-  return result.banned ? botApiResult(true) : chatMemberFailureAnswer(result.reason);
+  return result.banned ? botApiResult(true) : presentChatMemberFailure('member_moderation', result);
 }
 
 function handleRestrictChatMember(
@@ -292,7 +257,9 @@ function handleRestrictChatMember(
     permissions: permissionsReading.permissions,
     untilUnixSeconds: data.until_date,
   });
-  return result.restricted ? botApiResult(true) : chatMemberFailureAnswer(result.reason);
+  return result.restricted
+    ? botApiResult(true)
+    : presentChatMemberFailure('member_moderation', result);
 }
 
 /**
@@ -322,23 +289,9 @@ function handlePromoteChatMember(
     ...targetReading.target,
     rights: readPromotedSupergroupRights(data),
   });
-  if (result.promoted) {
-    return botApiResult(true);
-  }
-  switch (result.reason) {
-    case 'cannot_promote_self':
-      return botApiError(400, CANNOT_PROMOTE_SELF_DESCRIPTION);
-    case 'member_not_in_chat':
-      return botApiError(400, MEMBER_NOT_IN_CHAT_DESCRIPTION);
-    case 'member_kicked':
-      return botApiError(400, MEMBER_KICKED_DESCRIPTION);
-    case 'rights_not_held':
-      return botApiError(400, RIGHTS_NOT_HELD_DESCRIPTION);
-    case 'bots_cannot_add_members':
-      return botApiError(400, BOTS_CANNOT_ADD_MEMBERS_DESCRIPTION);
-    default:
-      return chatMemberFailureAnswer(result.reason);
-  }
+  return result.promoted
+    ? botApiResult(true)
+    : presentChatMemberFailure('member_promotion', result);
 }
 
 /**
@@ -374,7 +327,9 @@ function handleUnbanChatMember(
     context.bot,
     { ...targetReading.target, onlyIfBanned: parsedParameters.data.only_if_banned },
   );
-  return result.unbanned ? botApiResult(true) : chatMemberFailureAnswer(result.reason);
+  return result.unbanned
+    ? botApiResult(true)
+    : presentChatMemberFailure('member_moderation', result);
 }
 
 /**
@@ -398,25 +353,5 @@ function handleSetChatAdministratorCustomTitle(
     ...targetReading.target,
     customTitle: parsedParameters.data.custom_title ?? '',
   });
-  if (result.set) {
-    return botApiResult(true);
-  }
-  switch (result.reason) {
-    case 'method_unavailable_outside_groups':
-      return botApiError(400, METHOD_UNAVAILABLE_OUTSIDE_GROUPS_DESCRIPTION);
-    case 'member_is_owner':
-      return botApiError(400, OWNER_CUSTOM_TITLE_DESCRIPTION);
-    case 'member_is_not_administrator':
-      return botApiError(400, MEMBER_IS_NOT_ADMINISTRATOR_DESCRIPTION);
-    case 'custom_title_not_editable':
-      return botApiError(400, CUSTOM_TITLE_NOT_EDITABLE_DESCRIPTION);
-    case 'text_encoding_invalid':
-      return botApiError(400, STRINGS_NOT_UTF8_DESCRIPTION);
-    case 'custom_title_too_long':
-      return botApiError(400, CUSTOM_TITLE_INVALID_DESCRIPTION);
-    case 'custom_title_contains_emoji':
-      return botApiError(400, CUSTOM_TITLE_EMOJI_NOT_ALLOWED_DESCRIPTION);
-    default:
-      return chatMemberFailureAnswer(result.reason);
-  }
+  return result.set ? botApiResult(true) : presentChatMemberFailure('custom_title_change', result);
 }
