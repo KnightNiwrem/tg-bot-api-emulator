@@ -184,6 +184,29 @@ Deno.test('Bytes outside the media type range their contract declares are refuse
   assertEquals(accepted, 'Note', 'Expected text with parameters, in any letter case, accepted');
 });
 
+Deno.test('Bytes of the wrong media type are refused however cancelling their body ends', async () => {
+  const unsettledCancel = () => new Promise<void>(() => {});
+  const rejectedCancel = () => Promise.reject(new Error('The transport failed to cancel'));
+  for (const cancel of [unsettledCancel, rejectedCancel]) {
+    const transport: ControlOperationTransport = {
+      serverRoot: new URL('http://notes.example/'),
+      fetch: () =>
+        Promise.resolve(
+          new Response(new ReadableStream({ cancel }), {
+            status: 200,
+            headers: { 'Content-Type': 'image/png' },
+          }),
+        ),
+    };
+
+    await assertRejects(
+      () => callBytesOperation(transport, downloadNoteContract, { params: { noteId: '1' } }),
+      EmulationClientError,
+      'not text/*',
+    );
+  }
+});
+
 Deno.test('A route answering bytes outside its media type range is a server fault', async () => {
   const routes = new Hono();
   registerControlOperation(routes, '', downloadNoteContract, () => ({

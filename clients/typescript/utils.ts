@@ -83,7 +83,8 @@ export async function requestBytes(
   }
   const contentType = response.headers.get('Content-Type');
   if (contentType === null || !isMediaTypeInRange(contentType, request.mediaTypeRange)) {
-    await response.body?.cancel();
+    // The body is left unread; cancelling it releases the transport, however the cancel settles.
+    response.body?.cancel().catch(() => {});
     throw new EmulationClientError(
       `${formatRequest(request)} returned content of ${
         contentType === null ? 'no media type' : `the media type ${contentType}`
