@@ -100,8 +100,9 @@ Deno.test('the upstream-revision manifest names the grammY types version deno.js
 // Each form of citation, written with an unlisted, mismatched or abbreviated commit, is reported;
 // the same form with a listed commit is not.
 
-Deno.test('a link into a repository at a commit is checked in every form the web uses', () => {
-  const links = [
+/** A link into `tdlib/td` at the commit, in each form the matcher reads. */
+function linksIntoTdlibAt(commit: string): string[] {
+  return [
     `https://github.com/tdlib/td/blob/${TDLIB_COMMIT}/td/telegram/MessageEntity.cpp#L1`,
     `https://github.com/tdlib/td/tree/${TDLIB_COMMIT}/td`,
     `https://github.com/tdlib/td/commit/${TDLIB_COMMIT}`,
@@ -110,9 +111,16 @@ Deno.test('a link into a repository at a commit is checked in every form the web
     `https://github.com/tdlib/td/blame/${TDLIB_COMMIT}/README.md`,
     `https://raw.githubusercontent.com/tdlib/td/${TDLIB_COMMIT}/README.md`,
     `https://cdn.jsdelivr.net/gh/tdlib/td@${TDLIB_COMMIT}/README.md`,
-  ];
+  ].map((link) => link.replace(TDLIB_COMMIT, commit));
+}
 
-  for (const link of links) {
+/** The hash with every other letter in upper case. */
+function inMixedCase(commit: string): string {
+  return [...commit].map((digit, index) => index % 2 === 0 ? digit.toUpperCase() : digit).join('');
+}
+
+Deno.test('a link into a repository at a commit is checked in every form the web uses', () => {
+  for (const link of linksIntoTdlibAt(TDLIB_COMMIT)) {
     assertEquals(describeProblems(link), [], `Expected ${link} to cite a listed commit`);
     assertEquals(
       describeProblems(link.replace(TDLIB_COMMIT, UNLISTED_COMMIT)),
@@ -126,6 +134,17 @@ Deno.test('a link into a repository at a commit is checked in every form the web
       describeProblems(link.replace(TDLIB_COMMIT, ABBREVIATED_COMMIT)),
       [`tdlib/td ${ABBREVIATED_COMMIT}: abbreviated commit hash`],
     );
+  }
+});
+
+Deno.test('a link names the same commit in either letter case', () => {
+  for (const link of linksIntoTdlibAt(inMixedCase(TDLIB_COMMIT))) {
+    assertEquals(describeProblems(link), [], `Expected ${link} to cite a listed commit`);
+  }
+  for (const link of linksIntoTdlibAt(UNLISTED_COMMIT.toUpperCase())) {
+    assertEquals(describeProblems(link), [
+      `tdlib/td ${UNLISTED_COMMIT}: commit not listed for this repository`,
+    ]);
   }
 });
 
@@ -144,6 +163,13 @@ Deno.test('a full hash written on its own is checked against every listed commit
   );
   assertEquals(describeProblems(`at [\`${SERVER_COMMIT}\`][revision]`), []);
   assertEquals(describeProblems(`TDLib's tests at\n// ${UNLISTED_COMMIT}`), [
+    `${UNLISTED_COMMIT}: commit not listed`,
+  ]);
+});
+
+Deno.test('a full hash written on its own names the same commit in either letter case', () => {
+  assertEquals(describeProblems(`at commit ${inMixedCase(SERVER_COMMIT)}`), []);
+  assertEquals(describeProblems(`at commit ${UNLISTED_COMMIT.toUpperCase()}`), [
     `${UNLISTED_COMMIT}: commit not listed`,
   ]);
 });
@@ -176,6 +202,10 @@ Deno.test("a manifest's declarations are its commit links, with their link text"
     .map(({ reference }) => reference);
 
   assertEquals(readDeclaredRevisions(manifest), [LISTED_REVISIONS[0]]);
+  assertEquals(
+    readDeclaredRevisions(`https://github.com/tdlib/td/commit/${TDLIB_COMMIT.toUpperCase()}`),
+    [LISTED_REVISIONS[0]],
+  );
   assertEquals(citationsOutsideDeclarations, [SERVER_COMMIT]);
 });
 

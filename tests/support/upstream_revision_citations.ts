@@ -1,5 +1,11 @@
 // Reads the upstream commits a text cites, and the commits the upstream-revision manifest lists,
 // so that `upstream_revision_manifest_test.ts` can compare them.
+//
+// Scope: this catches drift in the ways the repository cites upstream commits, so that a re-review
+// after an upstream release finds every citation through the manifest. It reads the link forms
+// below and hashes written on their own, in either letter case. It is not meant to find a citation
+// written to evade it, such as a hash split across lines or a link through a redirect; when the
+// repository adopts a new form of citation, that form belongs here.
 
 /** An upstream commit, as the manifest lists it. */
 export interface UpstreamRevision {
@@ -16,6 +22,7 @@ export interface UpstreamRevision {
 export interface RevisionCitation {
   readonly path: string;
   readonly repository?: string;
+  /** The cited hash, in lower case. */
   readonly reference: string;
   /** Where the citation starts in the text, in UTF-16 code units. */
   readonly offset: number;
@@ -27,7 +34,8 @@ export type CitationProblem =
   | 'commit not listed for this repository'
   | 'commit not listed';
 
-const HASH = '[0-9a-f]{7,40}';
+/** A commit hash, full or abbreviated, in either letter case, both of which name the same commit. */
+const HASH = '[0-9a-fA-F]{7,40}';
 const REPOSITORY = '([A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+)';
 const HASH_END = '(?![0-9A-Za-z])';
 
@@ -49,8 +57,11 @@ const REPOSITORY_LINK_PATTERNS: readonly RegExp[] = [
   new RegExp(`https?://cdn\\.jsdelivr\\.net/gh/${REPOSITORY}@(${HASH})${HASH_END}`, 'g'),
 ];
 
-/** A full commit hash on its own, outside a link: a run of exactly 40 hexadecimal digits. */
-const STANDALONE_FULL_HASH_PATTERN = /(?<![0-9A-Za-z])[0-9a-f]{40}(?![0-9A-Za-z])/g;
+/**
+ * A full commit hash on its own, outside a link: a run of exactly 40 hexadecimal digits, in either
+ * letter case.
+ */
+const STANDALONE_FULL_HASH_PATTERN = /(?<![0-9A-Za-z])[0-9a-fA-F]{40}(?![0-9A-Za-z])/g;
 
 /**
  * An abbreviated hash written after the word "commit" or "revision"; what lies between them, such
@@ -63,7 +74,7 @@ const PROSE_ABBREVIATED_HASH_PATTERN = new RegExp(
 
 /** A commit link of the manifest, which declares the commit for its repository. */
 const MANIFEST_DECLARATION_PATTERN = new RegExp(
-  `https://github\\.com/${REPOSITORY}/commit/([0-9a-f]{40})${HASH_END}`,
+  `https://github\\.com/${REPOSITORY}/commit/([0-9a-fA-F]{40})${HASH_END}`,
   'g',
 );
 
@@ -71,7 +82,7 @@ const MANIFEST_DECLARATION_PATTERN = new RegExp(
 export function readDeclaredRevisions(manifest: string): UpstreamRevision[] {
   return [...manifest.matchAll(MANIFEST_DECLARATION_PATTERN)].map(([, repository, commit]) => ({
     repository,
-    commit,
+    commit: commit.toLowerCase(),
   }));
 }
 
@@ -99,7 +110,12 @@ export function findRevisionCitations(path: string, text: string): RevisionCitat
       const [whole, repository, ...references] = match;
       linkSpans.push([match.index, match.index + whole.length]);
       for (const reference of references) {
-        citations.push({ path, repository, reference, offset: match.index });
+        citations.push({
+          path,
+          repository,
+          reference: reference.toLowerCase(),
+          offset: match.index,
+        });
       }
     }
   }
@@ -107,7 +123,7 @@ export function findRevisionCitations(path: string, text: string): RevisionCitat
     linkSpans.some(([start, end]) => start <= offset && offset < end);
   for (const match of text.matchAll(STANDALONE_FULL_HASH_PATTERN)) {
     if (!isInLink(match.index)) {
-      citations.push({ path, reference: match[0], offset: match.index });
+      citations.push({ path, reference: match[0].toLowerCase(), offset: match.index });
     }
   }
   for (const match of text.matchAll(PROSE_ABBREVIATED_HASH_PATTERN)) {
