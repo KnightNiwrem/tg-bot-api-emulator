@@ -1,12 +1,14 @@
-import { createEmulationSession } from '../src/composition/emulation_session.ts';
 import type { WallClock } from '../src/timing/session_timing.ts';
 import type { EmulationSession } from '../src/types/emulation_session.ts';
 import type { VirtualBotProfile } from '../src/types/virtual_bot.ts';
 import { ControlledScheduler } from './support/scheduler.ts';
+import { buildSessionServices } from './support/session_services.ts';
+import { createVirtualAccount, createVirtualBot } from './support/virtual_users.ts';
 
 Deno.test('A session dates Telegram messages by its own wall clock', async () => {
   const wallClock = new JumpingWallClock(1_234_567_890, 0);
-  const { session, accountId, bot } = createTimedSession(wallClock, new ControlledScheduler());
+  using session = buildSessionServices({ wallClock, scheduler: new ControlledScheduler() });
+  const { accountId, bot } = createAccountAndBot(session);
 
   session.privateMessaging.sendAccountMessage({
     fromAccountId: accountId,
@@ -27,7 +29,8 @@ Deno.test('A session times long polls and activity reads by its scheduler alone'
   // Calendar time jumps back an hour each time it is read, which must not move any deadline.
   const wallClock = new JumpingWallClock(1_700_000_000, -3_600);
   const scheduler = new ControlledScheduler();
-  const { session, accountId, bot } = createTimedSession(wallClock, scheduler);
+  using session = buildSessionServices({ wallClock, scheduler });
+  const { accountId, bot } = createAccountAndBot(session);
   session.privateMessaging.sendAccountMessage({
     fromAccountId: accountId,
     to: { type: 'private', botId: bot.id },
@@ -94,19 +97,14 @@ class JumpingWallClock implements WallClock {
   }
 }
 
-function createTimedSession(wallClock: WallClock, scheduler: ControlledScheduler): {
-  readonly session: EmulationSession;
+/** Creates Ada and a bot that Ada can write to. */
+function createAccountAndBot(session: EmulationSession): {
   readonly accountId: number;
   readonly bot: VirtualBotProfile;
 } {
-  const session = createEmulationSession('timed', { uploadProfile: 'cloud' }, {
-    wallClock,
-    scheduler,
-  });
-  const account = session.virtualUsers.createAccount({ first_name: 'Ada' });
-  const bot = session.virtualUsers.createBot({ first_name: 'Test Bot', username: 'test_bot' });
-  if (!account.created || !bot.created) {
-    throw new Error('Expected the account and the bot to be created');
-  }
-  return { session, accountId: account.account.profile.id, bot: bot.bot.profile };
+  return {
+    accountId: createVirtualAccount(session.virtualUsers, { first_name: 'Ada' }).profile.id,
+    bot: createVirtualBot(session.virtualUsers, { first_name: 'Test Bot', username: 'test_bot' })
+      .profile,
+  };
 }

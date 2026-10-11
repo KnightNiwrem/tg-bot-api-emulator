@@ -1,13 +1,9 @@
-import { AccountRepository } from '../src/repositories/account.ts';
-import { BotRepository } from '../src/repositories/bot.ts';
-import { TelegramIdentityRepository } from '../src/repositories/telegram_identity.ts';
-import { VirtualUserService } from '../src/services/virtual_user.ts';
-import {
-  WEBHOOK_ATTEMPT_TIMEOUT_MILLISECONDS,
-  WebhookAttemptScheduler,
-} from '../src/services/webhook_attempt_scheduler.ts';
+import { assertEquals } from '@std/assert';
+import { WEBHOOK_ATTEMPT_TIMEOUT_MILLISECONDS } from '../src/services/webhook_attempt_scheduler.ts';
 import type { WebhookAttemptFailure } from '../src/types/bot_webhook.ts';
 import { ControlledScheduler } from './support/scheduler.ts';
+import { buildSessionServices } from './support/session_services.ts';
+import { createVirtualBot } from './support/virtual_users.ts';
 import { createPrivateMessage } from './support/webhook_delivery.ts';
 
 const HTTP_FAILURE: WebhookAttemptFailure = {
@@ -17,7 +13,12 @@ const HTTP_FAILURE: WebhookAttemptFailure = {
 };
 
 Deno.test("Only an automatic bot's attempts are timed by the session's scheduler", async () => {
-  const { scheduler, webhookAttempts, automaticBotId, manualBotId } = createTimingFixture();
+  const scheduler = new ControlledScheduler();
+  using session = buildSessionServices({ scheduler });
+  const { webhookAttempts } = session;
+  const [automaticBotId, manualBotId] = ['automatic_bot', 'manual_bot'].map((username) =>
+    createVirtualBot(session.virtualUsers, { first_name: 'Webhook Bot', username }).profile.id
+  );
   webhookAttempts.setScheduling(manualBotId, 'manual');
   const delivery = new AbortController();
 
@@ -52,16 +53,11 @@ Deno.test("Only an automatic bot's attempts are timed by the session's scheduler
     const manualRetry = manualAttempt.failAndAwaitRetry(HTTP_FAILURE, 2).finally(() => {
       manualRetryReleased = true;
     });
-    if (
-      !automaticDeadline.lifetime.aborted ||
-      JSON.stringify(scheduler.sleepDelaysMilliseconds) !== JSON.stringify([2_000])
-    ) {
-      throw new Error(
-        `Expected the settled attempt's deadline released and one automatic retry sleep, saw ${
-          JSON.stringify(scheduler.sleepDelaysMilliseconds)
-        }`,
-      );
-    }
+    assertEquals(
+      [automaticDeadline.lifetime.aborted, scheduler.sleepDelaysMilliseconds],
+      [true, [2_000]],
+      "Expected the settled attempt's deadline released and one automatic retry sleep",
+    );
     await Promise.resolve();
     if (manualRetryReleased) {
       throw new Error('Expected the manual retry to wait for the test');
@@ -78,32 +74,3 @@ Deno.test("Only an automatic bot's attempts are timed by the session's scheduler
     delivery.abort();
   }
 });
-
-function createTimingFixture() {
-  const bots = new BotRepository();
-  const virtualUsers = new VirtualUserService({
-    identities: new TelegramIdentityRepository(),
-    accounts: new AccountRepository(),
-    bots,
-  });
-  const scheduler = new ControlledScheduler();
-  const webhookAttempts = new WebhookAttemptScheduler({
-    bots,
-    attemptTimeoutMilliseconds: WEBHOOK_ATTEMPT_TIMEOUT_MILLISECONDS,
-    scheduler,
-  });
-  return {
-    scheduler,
-    webhookAttempts,
-    automaticBotId: createBot(virtualUsers, 'automatic_bot'),
-    manualBotId: createBot(virtualUsers, 'manual_bot'),
-  };
-}
-
-function createBot(virtualUsers: VirtualUserService, username: string): number {
-  const result = virtualUsers.createBot({ first_name: 'Webhook Bot', username });
-  if (!result.created) {
-    throw new Error(`Expected bot creation to succeed, received ${result.reason}`);
-  }
-  return result.bot.profile.id;
-}

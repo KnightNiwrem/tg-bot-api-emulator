@@ -3,8 +3,8 @@ import type { BotApiCallContext } from '../src/api/sessions/bot_api/method_call.
 import { findBotApiMethod } from '../src/api/sessions/bot_api/method_catalogue.ts';
 import { callBotApiMethod } from '../src/api/sessions/bot_api/method_invocation.ts';
 import { runWebhookReply } from '../src/api/sessions/bot_api/webhook_reply.ts';
-import { createEmulationSession } from '../src/composition/emulation_session.ts';
-import { createSystemSessionTiming } from '../src/timing/system_timing.ts';
+import { buildSessionServices } from './support/session_services.ts';
+import { createVirtualBot } from './support/virtual_users.ts';
 
 const WEBHOOK_URL = 'http://127.0.0.1:9/webhook';
 
@@ -94,80 +94,69 @@ interface WebhookBotFixture {
   readonly readWebhookUrl: () => Promise<unknown>;
 }
 
-/** Runs `test` against a fresh session holding a bot with a webhook, and ends the session. */
+/** Runs `test` against a fresh session holding a bot with a webhook, and then ends the session. */
 async function withWebhookBot(test: (fixture: WebhookBotFixture) => Promise<void>): Promise<void> {
-  const session = createEmulationSession(
-    'webhook-reply-eligibility',
-    { uploadProfile: 'cloud' },
-    createSystemSessionTiming(),
-  );
-  try {
-    const creation = session.virtualUsers.createBot({
-      first_name: 'Test Bot',
-      username: 'test_bot',
-    });
-    if (!creation.created) {
-      throw new Error(`Expected the bot to be created: ${creation.reason}`);
+  using session = buildSessionServices({ id: 'webhook-reply-eligibility' });
+  const bot = createVirtualBot(session.virtualUsers, {
+    first_name: 'Test Bot',
+    username: 'test_bot',
+  });
+  const replyContext: BotApiCallContext = {
+    session,
+    bot: bot.profile,
+    signal: new AbortController().signal,
+    via: 'webhook_reply',
+  };
+  const callOverHttp = async (methodName: string, parameters: Record<string, string>) => {
+    const method = findBotApiMethod(methodName);
+    if (method === undefined) {
+      throw new Error(`Expected ${methodName} to be implemented`);
     }
-    const replyContext: BotApiCallContext = {
-      session,
-      bot: creation.bot.profile,
-      signal: new AbortController().signal,
-      via: 'webhook_reply',
-    };
-    const callOverHttp = async (methodName: string, parameters: Record<string, string>) => {
-      const method = findBotApiMethod(methodName);
-      if (method === undefined) {
-        throw new Error(`Expected ${methodName} to be implemented`);
-      }
-      const outcome = await callBotApiMethod({ ...replyContext, via: 'http' }, {
-        method,
-        requestedMethodName: methodName,
-        parameters,
-        uploadedFiles: new Map(),
-      });
-      if (!outcome.answered) {
-        throw new Error(`Expected ${methodName} to be answered: ${outcome.reason}`);
-      }
-      const { body } = outcome.answer;
-      if (!body.ok) {
-        throw new Error(`Expected ${methodName} to succeed: ${body.description}`);
-      }
-      return body.result;
-    };
-    await callOverHttp('setWebhook', { url: WEBHOOK_URL });
-
-    await test({
-      runReplies: async (replies) => {
-        const start = session.botActivity.getHeadPosition();
-        for (const reply of replies) {
-          await runWebhookReply(replyContext, reply);
-        }
-        const read = await session.botActivity.readEntries({
-          after: start,
-          filter: {},
-          limit: 100,
-          waitMilliseconds: 0,
-        });
-        if (!read.read) {
-          throw new Error(`Expected the bot activity to be read: ${read.reason}`);
-        }
-        return read.entries.map((entry) => {
-          if (entry.kind !== 'bot_api_call' || entry.via !== 'webhook_reply') {
-            throw new Error(`Expected only webhook reply calls, found ${JSON.stringify(entry)}`);
-          }
-          const { method, requestedMethod, answer } = entry;
-          return [method, requestedMethod, answer.ok ? 200 : answer.error_code];
-        });
-      },
-      readWebhookUrl: async () => {
-        const webhookInfo = await callOverHttp('getWebhookInfo', {});
-        return typeof webhookInfo === 'object' && webhookInfo !== null && 'url' in webhookInfo
-          ? webhookInfo.url
-          : webhookInfo;
-      },
+    const outcome = await callBotApiMethod({ ...replyContext, via: 'http' }, {
+      method,
+      requestedMethodName: methodName,
+      parameters,
+      uploadedFiles: new Map(),
     });
-  } finally {
-    session.end();
-  }
+    if (!outcome.answered) {
+      throw new Error(`Expected ${methodName} to be answered: ${outcome.reason}`);
+    }
+    const { body } = outcome.answer;
+    if (!body.ok) {
+      throw new Error(`Expected ${methodName} to succeed: ${body.description}`);
+    }
+    return body.result;
+  };
+  await callOverHttp('setWebhook', { url: WEBHOOK_URL });
+
+  await test({
+    runReplies: async (replies) => {
+      const start = session.botActivity.getHeadPosition();
+      for (const reply of replies) {
+        await runWebhookReply(replyContext, reply);
+      }
+      const read = await session.botActivity.readEntries({
+        after: start,
+        filter: {},
+        limit: 100,
+        waitMilliseconds: 0,
+      });
+      if (!read.read) {
+        throw new Error(`Expected the bot activity to be read: ${read.reason}`);
+      }
+      return read.entries.map((entry) => {
+        if (entry.kind !== 'bot_api_call' || entry.via !== 'webhook_reply') {
+          throw new Error(`Expected only webhook reply calls, found ${JSON.stringify(entry)}`);
+        }
+        const { method, requestedMethod, answer } = entry;
+        return [method, requestedMethod, answer.ok ? 200 : answer.error_code];
+      });
+    },
+    readWebhookUrl: async () => {
+      const webhookInfo = await callOverHttp('getWebhookInfo', {});
+      return typeof webhookInfo === 'object' && webhookInfo !== null && 'url' in webhookInfo
+        ? webhookInfo.url
+        : webhookInfo;
+    },
+  });
 }

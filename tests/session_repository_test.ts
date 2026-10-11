@@ -1,19 +1,10 @@
-import { createEmulationSession } from '../src/composition/emulation_session.ts';
-import { createSystemSessionTiming } from '../src/timing/system_timing.ts';
 import { SessionRepository } from '../src/repositories/session.ts';
+import { buildSessionServices } from './support/session_services.ts';
 
 Deno.test('SessionRepository stores and retrieves a session without overwriting its ID', () => {
   const sessions = new SessionRepository();
-  const originalSession = createEmulationSession(
-    'test-session',
-    { uploadProfile: 'cloud' },
-    createSystemSessionTiming(),
-  );
-  const replacementSession = createEmulationSession(
-    'test-session',
-    { uploadProfile: 'cloud' },
-    createSystemSessionTiming(),
-  );
+  using originalSession = buildSessionServices({ id: 'test-session' });
+  using replacementSession = buildSessionServices({ id: 'test-session' });
 
   if (!sessions.add(originalSession)) {
     throw new Error('Expected the session to be added');

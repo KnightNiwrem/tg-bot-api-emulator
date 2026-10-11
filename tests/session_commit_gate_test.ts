@@ -7,17 +7,17 @@ import {
   rejectUndecodableBotApiCall,
 } from '../src/api/sessions/bot_api/method_invocation.ts';
 import { runWebhookReply } from '../src/api/sessions/bot_api/webhook_reply.ts';
-import { createEmulationSession } from '../src/composition/emulation_session.ts';
 import { FileRepository } from '../src/repositories/file.ts';
 import {
   MediaFileService,
   type WebFileDownloadRequest,
   type WebFileDownloadResult,
 } from '../src/services/media_file.ts';
-import { createSystemSessionTiming } from '../src/timing/system_timing.ts';
 import type { EmulationSession } from '../src/types/emulation_session.ts';
 import { createTestSession } from './support/emulation_api.ts';
 import { createBot } from './support/http_fixtures.ts';
+import { buildSessionServices } from './support/session_services.ts';
+import { createVirtualAccount, createVirtualBot } from './support/virtual_users.ts';
 
 const DOCUMENT_URL = 'https://files.example/report.pdf';
 const OTHER_DOCUMENT_URL = 'https://files.example/appendix.pdf';
@@ -25,7 +25,7 @@ const VOICE_NOTE_URL = 'https://files.example/memo.ogg';
 const OTHER_VOICE_NOTE_URL = 'https://files.example/reply.ogg';
 
 Deno.test('a webhook reply held in preparation commits nothing once its session ends', async () => {
-  const fixture = createGateFixture();
+  using fixture = createGateFixture();
   const reply = () =>
     Response.json({ method: 'sendDocument', chat_id: fixture.adaId, document: DOCUMENT_URL });
 
@@ -132,7 +132,7 @@ for (const call of DOWNLOADING_CALLS) {
   const { method, endingDownload, downloadHonorsSignal } = call;
   const downloadBehavior = downloadHonorsSignal ? 'stops' : 'ignores the end';
   Deno.test(`${method} is refused when its session ends during download ${endingDownload}, which ${downloadBehavior}`, async () => {
-    const fixture = createGateFixture();
+    using fixture = createGateFixture();
     const parameters = await call.parameters(fixture);
     const stateBefore = fixture.readState();
     fixture.downloads.honorsSignal = downloadHonorsSignal;
@@ -160,13 +160,13 @@ for (const call of DOWNLOADING_CALLS) {
 }
 
 Deno.test('getUpdates is answered with no updates at each of its waits the session end interrupts', async () => {
-  const held = createGateFixture();
+  using held = createGateFixture();
   // The offset confirms Ada's greeting as the poll arrives; the poll is then held.
   const heldPoll = held.call('getUpdates', { offset: '2', timeout: '50' });
   const stateWhileHeld = held.readState();
   held.session.end();
 
-  const undecodable = createGateFixture();
+  using undecodable = createGateFixture();
   undecodable.session.end();
   const getUpdates = findBotApiMethod('getUpdates');
   if (getUpdates === undefined) {
@@ -188,7 +188,7 @@ Deno.test('getUpdates is answered with no updates at each of its waits the sessi
 });
 
 Deno.test('a Bot API call that starts after its session ended changes nothing', async () => {
-  const fixture = createGateFixture();
+  using fixture = createGateFixture();
   const method = findBotApiMethod('setMyDescription');
   if (method === undefined) {
     throw new Error('Expected setMyDescription to be implemented');
@@ -216,7 +216,7 @@ Deno.test('a Bot API call that starts after its session ended changes nothing', 
 });
 
 Deno.test('a long poll that starts after its session ended finds no updates and confirms none', async () => {
-  const fixture = createGateFixture();
+  using fixture = createGateFixture();
   const method = findBotApiMethod('getUpdates');
   if (method === undefined) {
     throw new Error('Expected getUpdates to be implemented');
@@ -239,7 +239,8 @@ Deno.test('a long poll that starts after its session ended finds no updates and 
 });
 
 Deno.test('an HTTP Bot API request whose body arrives after its session ended is answered as for an unknown session', async () => {
-  const { api, sessionPath } = await createTestSession();
+  await using testSession = await createTestSession();
+  const { api, sessionPath } = testSession;
   const createdBot = await createBot(api, sessionPath, 'test_bot');
   const body = new TransformStream<Uint8Array, Uint8Array>();
   const bodyWriter = body.writable.getWriter();
@@ -266,7 +267,8 @@ Deno.test('an HTTP Bot API request whose body arrives after its session ended is
 });
 
 Deno.test('ending a session answers its held long poll with no updates, and a later poll as an unknown session', async () => {
-  const { api, sessionPath } = await createTestSession();
+  await using testSession = await createTestSession();
+  const { api, sessionPath } = testSession;
   const { botApiPath } = await createBot(api, sessionPath, 'test_bot');
   const heldPoll = api.request(`${botApiPath}/getUpdates?timeout=50`);
   // The poll is decoded and held well within this wait, which its 50-second timeout outlasts.
@@ -342,18 +344,13 @@ class HeldWebFileDownloads extends MediaFileService {
  * file downloads wait for the test, and a PDF document the bot can send by URL.
  */
 function createGateFixture() {
-  const session = createEmulationSession(
-    'commit-gate',
-    { uploadProfile: 'cloud' },
-    createSystemSessionTiming(),
-  );
-  const account = session.virtualUsers.createAccount({ first_name: 'Ada' });
-  const bot = session.virtualUsers.createBot({ first_name: 'Test Bot', username: 'test_bot' });
-  if (!account.created || !bot.created) {
-    throw new Error('Expected the account and the bot to be created');
-  }
-  const adaId = account.account.profile.id;
-  const botId = bot.bot.profile.id;
+  const session = buildSessionServices({ id: 'commit-gate' });
+  const adaId = createVirtualAccount(session.virtualUsers, { first_name: 'Ada' }).profile.id;
+  const bot = createVirtualBot(session.virtualUsers, {
+    first_name: 'Test Bot',
+    username: 'test_bot',
+  });
+  const botId = bot.profile.id;
   const greeting = session.privateMessaging.sendAccountMessage({
     fromAccountId: adaId,
     to: { type: 'private', botId },
@@ -376,7 +373,7 @@ function createGateFixture() {
   const downloads = new HeldWebFileDownloads(session.mediaFiles);
   const replyContext: BotApiCallContext = {
     session: { ...session, mediaFiles: downloads },
-    bot: bot.bot.profile,
+    bot: bot.profile,
     signal: session.lifetime.endSignal,
     via: 'webhook_reply',
   };
@@ -414,7 +411,7 @@ function createGateFixture() {
   return {
     session,
     adaId,
-    bot: bot.bot.profile,
+    bot: bot.profile,
     downloads,
     replyContext,
     call,
@@ -422,6 +419,7 @@ function createGateFixture() {
     sendLiveDocument: () => sendLive('sendDocument', documentParameters()),
     sendLiveText: () => sendLive('sendMessage', { chat_id: String(adaId), text: 'Draft' }),
     readState: () => readSessionState(session, adaId, botId),
+    [Symbol.dispose]: () => session[Symbol.dispose](),
   };
 }
 
