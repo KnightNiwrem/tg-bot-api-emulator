@@ -471,7 +471,7 @@ Deno.test('PrivateMessagingService stores replies only to messages of the same c
     throw new Error('Expected replies to messages outside the chat to fail without a message');
   }
 
-  messageDeletion.deletePrivateChatMessages({
+  messageDeletion.deleteChatMessages({
     fromBotId: bot.profile.id,
     chat: { type: 'private', peerId: account.profile.id },
     messageIds: [questionId],
@@ -566,7 +566,7 @@ Deno.test('PrivateMessagingService shows the reply interface the latest bot mess
   }
 
   const replacedKeyboardMessage = sendWithReplyInterfaceMarkup(COLOR_KEYBOARD);
-  messageDeletion.deletePrivateChatMessages({
+  messageDeletion.deleteChatMessages({
     fromBotId: bot.profile.id,
     chat: { type: 'private', peerId: account.profile.id },
     messageIds: [expectBotMessageId(messageBoxes, bot, replacedKeyboardMessage.id)],
@@ -648,7 +648,7 @@ Deno.test('PrivateMessagingService edits the text and keyboard of a bot message'
   const botMessageId = expectBotMessageId(messageBoxes, bot, botMessage.id);
   advanceClockSeconds(5);
 
-  const textEdit = messageEditing.editPrivateChatMessageText({
+  const textEdit = messageEditing.editChatMessageText({
     fromBotId: bot.profile.id,
     chat: { type: 'private', peerId: account.profile.id },
     messageId: botMessageId,
@@ -673,7 +673,7 @@ Deno.test('PrivateMessagingService edits the text and keyboard of a bot message'
   }], 'Expected a dated text edit that recomputes entities and drops the keyboard');
   advanceClockSeconds(5);
 
-  const keyboardEdit = messageEditing.editPrivateChatMessageKeyboard({
+  const keyboardEdit = messageEditing.editChatMessageKeyboard({
     fromBotId: bot.profile.id,
     chat: { type: 'private', peerId: account.profile.id },
     messageId: botMessageId,
@@ -694,7 +694,7 @@ Deno.test('PrivateMessagingService edits the text and keyboard of a bot message'
     'Expected a keyboard edit to keep the text and its edit date',
   );
 
-  const sameTextEdit = messageEditing.editPrivateChatMessageText({
+  const sameTextEdit = messageEditing.editChatMessageText({
     fromBotId: bot.profile.id,
     chat: { type: 'private', peerId: account.profile.id },
     messageId: botMessageId,
@@ -739,7 +739,7 @@ Deno.test('PrivateMessagingService validates bot message edits in Telegram order
     text: string;
     inlineKeyboard?: InlineKeyboard;
     expectedReason: Extract<
-      ReturnType<MessageEditingService['editPrivateChatMessageText']>,
+      ReturnType<MessageEditingService['editChatMessageText']>,
       { readonly edited: false }
     >['reason'];
   }[] = [
@@ -821,7 +821,7 @@ Deno.test('PrivateMessagingService validates bot message edits in Telegram order
   for (
     const { fromBotId, accountId, botMessageId, text, inlineKeyboard, expectedReason } of cases
   ) {
-    const result = messageEditing.editPrivateChatMessageText({
+    const result = messageEditing.editChatMessageText({
       fromBotId,
       chat: { type: 'private', peerId: accountId },
       messageId: botMessageId,
@@ -832,7 +832,7 @@ Deno.test('PrivateMessagingService validates bot message edits in Telegram order
       throw new Error(`Expected the edit to fail with ${expectedReason}`);
     }
   }
-  const keyboardEdit = messageEditing.editPrivateChatMessageKeyboard({
+  const keyboardEdit = messageEditing.editChatMessageKeyboard({
     fromBotId: bot.profile.id,
     chat: { type: 'private', peerId: account.profile.id },
     messageId: botMessageId,
@@ -881,20 +881,20 @@ Deno.test('PrivateMessagingService refuses edits of messages with reply markup o
       },
     });
   const editEveryWay = (botMessageId: number) => [
-    messageEditing.editPrivateChatMessageText({
+    messageEditing.editChatMessageText({
       fromBotId: bot.profile.id,
       chat,
       messageId: botMessageId,
       content: { kind: 'text', text: 'Chosen' },
     }),
-    messageEditing.editPrivateChatMessageCaption({
+    messageEditing.editChatMessageCaption({
       fromBotId: bot.profile.id,
       chat,
       messageId: botMessageId,
       caption: 'Chosen',
       showsCaptionAboveMedia: false,
     }),
-    messageEditing.editPrivateChatMessageKeyboard({
+    messageEditing.editChatMessageKeyboard({
       fromBotId: bot.profile.id,
       chat,
       messageId: botMessageId,
@@ -986,7 +986,7 @@ Deno.test('PrivateMessagingService lets a bot delete messages of its private cha
   const otherChatMessageId = expectBotMessageId(messageBoxes, bot, otherChatMessage.id);
   const publishedEventCount = publishedEvents.length;
 
-  const deletion = messageDeletion.deletePrivateChatMessages({
+  const deletion = messageDeletion.deleteChatMessages({
     fromBotId: bot.profile.id,
     chat: { type: 'private', peerId: account.profile.id },
     messageIds: [accountMessageId, botMessageId, botMessageId, otherChatMessageId, 999],
@@ -1013,7 +1013,7 @@ Deno.test('PrivateMessagingService lets a bot delete messages of its private cha
     throw new Error('Expected deletions not to publish chat events');
   }
 
-  const repeatedDeletion = messageDeletion.deletePrivateChatMessages({
+  const repeatedDeletion = messageDeletion.deleteChatMessages({
     fromBotId: bot.profile.id,
     chat: { type: 'private', peerId: account.profile.id },
     messageIds: [botMessageId],
@@ -1021,7 +1021,7 @@ Deno.test('PrivateMessagingService lets a bot delete messages of its private cha
   if (!repeatedDeletion.deleted || repeatedDeletion.deletedMessageCount !== 0) {
     throw new Error('Expected an already deleted message to be skipped');
   }
-  const editOfDeletedMessage = messageEditing.editPrivateChatMessageText({
+  const editOfDeletedMessage = messageEditing.editChatMessageText({
     fromBotId: bot.profile.id,
     chat: { type: 'private', peerId: account.profile.id },
     messageId: botMessageId,
@@ -1051,7 +1051,7 @@ Deno.test('PrivateMessagingService validates message deletions before changing s
     fromBotId: number;
     accountId: number;
     expectedReason: Extract<
-      ReturnType<MessageDeletionService['deletePrivateChatMessages']>,
+      ReturnType<MessageDeletionService['deleteChatMessages']>,
       { readonly deleted: false }
     >['reason'];
   }[] = [
@@ -1065,7 +1065,7 @@ Deno.test('PrivateMessagingService validates message deletions before changing s
   ];
 
   for (const { fromBotId, accountId, expectedReason } of cases) {
-    const result = messageDeletion.deletePrivateChatMessages({
+    const result = messageDeletion.deleteChatMessages({
       fromBotId,
       chat: { type: 'private', peerId: accountId },
       messageIds: [botMessageId],
@@ -1245,7 +1245,7 @@ Deno.test('PrivateMessagingService limits text by its characters, not its UTF-16
     length: emojiText.length,
   }], 'Expected formatted text to be limited after it is trimmed');
 
-  const edited = messageEditing.editPrivateChatMessageText({
+  const edited = messageEditing.editChatMessageText({
     fromBotId: bot.profile.id,
     chat: { type: 'private', peerId: account.profile.id },
     messageId: 2,
@@ -1299,7 +1299,7 @@ Deno.test('PrivateMessagingService treats changed entities as an edit of the tex
   const botMessage = sendBotMessage(messageSending, account.profile.id, bot);
   const botMessageId = expectBotMessageId(messageBoxes, bot, botMessage.id);
   const editText = (entities: readonly TextEntity[]) =>
-    messageEditing.editPrivateChatMessageText({
+    messageEditing.editChatMessageText({
       fromBotId: bot.profile.id,
       chat: { type: 'private', peerId: account.profile.id },
       messageId: botMessageId,
@@ -1707,7 +1707,7 @@ Deno.test('PrivateMessagingService stores the uploads of rich messages only once
   }
   const botMessageId = 2;
 
-  const refusedEdit = messageEditing.editPrivateChatMessageText({
+  const refusedEdit = messageEditing.editChatMessageText({
     fromBotId: bot.profile.id,
     chat,
     messageId: botMessageId,
@@ -1715,7 +1715,7 @@ Deno.test('PrivateMessagingService stores the uploads of rich messages only once
     inlineKeyboard: [[{ kind: 'callback', text: 'Go', callbackData: 'x'.repeat(65) }]],
   });
   advanceClockSeconds(5);
-  const edit = messageEditing.editPrivateChatMessageText({
+  const edit = messageEditing.editChatMessageText({
     fromBotId: bot.profile.id,
     chat,
     messageId: botMessageId,
@@ -1765,7 +1765,7 @@ Deno.test('PrivateMessagingService edits captions and refuses edits of the other
   const chat = { type: 'private', accountId: account.profile.id } as const;
   const photoId = expectBotMessageId(messageBoxes, bot, photo.message.id);
   const editCaption = (caption: string, showsCaptionAboveMedia: boolean, botMessageId = photoId) =>
-    messageEditing.editPrivateChatMessageCaption({
+    messageEditing.editChatMessageCaption({
       fromBotId: bot.profile.id,
       chat: { type: 'private', peerId: chat.accountId },
       messageId: botMessageId,
@@ -1774,7 +1774,7 @@ Deno.test('PrivateMessagingService edits captions and refuses edits of the other
     });
   advanceClockSeconds(5);
 
-  const textEdit = messageEditing.editPrivateChatMessageText({
+  const textEdit = messageEditing.editChatMessageText({
     fromBotId: bot.profile.id,
     chat: { type: 'private', peerId: chat.accountId },
     messageId: photoId,
@@ -2040,7 +2040,7 @@ Deno.test('PrivateMessagingService refuses writing either way while the account 
     throw new Error('Expected refused messages not to be stored or published');
   }
 
-  const botEdit = messageEditing.editPrivateChatMessageText({
+  const botEdit = messageEditing.editChatMessageText({
     fromBotId: bot.profile.id,
     chat: { type: 'private', peerId: account.profile.id },
     messageId: expectBotMessageId(messageBoxes, bot, botMessage.id),
@@ -2198,13 +2198,13 @@ Deno.test('PrivateMessagingService lets a join request contact grant send messag
     throw new Error('Expected the prompt to be sent');
   }
   const promptId = expectBotMessageId(messageBoxes, bot, prompt.message.id);
-  const edit = messageEditing.editPrivateChatMessageText({
+  const edit = messageEditing.editChatMessageText({
     fromBotId: bot.profile.id,
     chat: { type: 'private', peerId: to.accountId },
     messageId: promptId,
     content: { kind: 'text', text: 'Solved' },
   });
-  const deletion = messageDeletion.deletePrivateChatMessages({
+  const deletion = messageDeletion.deleteChatMessages({
     fromBotId: bot.profile.id,
     chat: { type: 'private', peerId: to.accountId },
     messageIds: [promptId],

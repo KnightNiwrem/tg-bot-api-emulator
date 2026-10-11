@@ -1,32 +1,53 @@
 /**
- * Compile-time checks that each entry point of the shared deletion service reports exactly the
- * failures its sender and chat type can produce: a private chat refuses no message it finds, and
- * only a supergroup turns away former members. The expected sets are written out here,
- * independently of the service's types.
+ * Compile-time checks that the shared deletion service reports exactly the failures each sender
+ * and chat type can produce: a private chat refuses no message it finds, and only a supergroup
+ * turns away former members. Each chat type's bot results pin its own set; a bot's entry point,
+ * whose address selects the chat type, reports the two chat types' sets together. The expected
+ * sets are written out here, independently of the service's types.
  */
-import type { MessageDeletionService } from '../src/services/domain/message_deletion.ts';
+import type {
+  BotDeletionResult,
+  BotPrivateChatDeletionTypes,
+  BotSupergroupDeletionTypes,
+  MessageDeletionService,
+} from '../src/services/domain/message_deletion.ts';
 import type { ExpectTrue, IsExactly } from './support/type_conformance.ts';
 
-type DeletionFailureReason<Method extends keyof MessageDeletionService> =
-  ReturnType<MessageDeletionService[Method]> extends infer Result
-    ? Result extends { readonly deleted: false; readonly reason: infer Reason } ? Reason : never
-    : never;
+type FailureReason<Result> = Result extends
+  { readonly deleted: false; readonly reason: infer Reason } ? Reason : never;
+
+type DeletionFailureReason<Method extends keyof MessageDeletionService> = FailureReason<
+  ReturnType<MessageDeletionService[Method]>
+>;
+
+type BotPrivateChatDeletionReason =
+  | 'bot_not_found'
+  | 'account_not_found'
+  | 'conversation_not_started';
+type BotSupergroupDeletionReason =
+  | 'bot_not_found'
+  | 'chat_not_found'
+  | 'bot_not_a_member'
+  | 'bot_kicked'
+  | 'message_not_deletable';
 
 type _BotDeletions = [
   ExpectTrue<
     IsExactly<
-      DeletionFailureReason<'deletePrivateChatMessages'>,
-      'bot_not_found' | 'account_not_found' | 'conversation_not_started'
+      FailureReason<BotDeletionResult<BotPrivateChatDeletionTypes>>,
+      BotPrivateChatDeletionReason
     >
   >,
   ExpectTrue<
     IsExactly<
-      DeletionFailureReason<'deleteSupergroupMessages'>,
-      | 'bot_not_found'
-      | 'chat_not_found'
-      | 'bot_not_a_member'
-      | 'bot_kicked'
-      | 'message_not_deletable'
+      FailureReason<BotDeletionResult<BotSupergroupDeletionTypes>>,
+      BotSupergroupDeletionReason
+    >
+  >,
+  ExpectTrue<
+    IsExactly<
+      DeletionFailureReason<'deleteChatMessages'>,
+      BotPrivateChatDeletionReason | BotSupergroupDeletionReason
     >
   >,
 ];

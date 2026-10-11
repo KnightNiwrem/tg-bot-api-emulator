@@ -10,8 +10,6 @@ import type {
   BotApiDownloadableFile,
   BotApiMenuButton,
   BotApiMessage,
-  BotApiPrivateMessage,
-  BotApiSupergroupMessage,
   BotApiWebhookInfo,
 } from '../../types/bot_api.ts';
 import type { BotApiPoll } from '../../types/bot_api_poll.ts';
@@ -96,8 +94,6 @@ import {
   type FormattedText,
   type InlineMessageId,
   type LocationMessageContent,
-  type PrivateMessage,
-  type SupergroupMessage,
   type TextEntity,
 } from '../../types/virtual_message.ts';
 import type {
@@ -167,12 +163,7 @@ import type {
   TextMessageReplacement,
 } from '../domain/message_content.ts';
 import type { MessageDeletionService } from '../domain/message_deletion.ts';
-import type {
-  BotCaptionEdit,
-  BotPrivateChatMessageTarget,
-  BotSupergroupMessageTarget,
-  MessageEditingService,
-} from '../domain/message_editing.ts';
+import type { BotChatMessageTarget, MessageEditingService } from '../domain/message_editing.ts';
 import type { MessagePinningService } from '../domain/message_pinning.ts';
 import type {
   ReactionChoiceFailureReason,
@@ -1570,33 +1561,25 @@ interface SupergroupBotMessaging {
     };
 }
 
-/** The message deletion that `deleteMessage` and `deleteMessages` carry out, by chat type. */
-type BotMessageDeletion = Pick<
-  MessageDeletionService,
-  'deletePrivateChatMessages' | 'deleteSupergroupMessages'
->;
+/** The message deletion that `deleteMessage` and `deleteMessages` carry out, by the chat's address. */
+type BotMessageDeletion = Pick<MessageDeletionService, 'deleteChatMessages'>;
 
 /**
  * The message editing that the edit methods and `stopPoll` carry out, by the target each addresses:
- * a message of a private chat or a supergroup, or an inline message.
+ * a message of one of the bot's chats, by the chat's address, or an inline message.
  */
 type BotMessageEditing = Pick<
   MessageEditingService,
   | 'findBotInlineMessage'
-  | 'editPrivateChatMessageText'
-  | 'editSupergroupMessageText'
+  | 'editChatMessageText'
   | 'editInlineMessageText'
-  | 'editPrivateChatMessageCaption'
-  | 'editSupergroupMessageCaption'
+  | 'editChatMessageCaption'
   | 'editInlineMessageCaption'
-  | 'editPrivateChatMessageMedia'
-  | 'editSupergroupMessageMedia'
+  | 'editChatMessageMedia'
   | 'editInlineMessageMedia'
-  | 'editPrivateChatMessageKeyboard'
-  | 'editSupergroupMessageKeyboard'
+  | 'editChatMessageKeyboard'
   | 'editInlineMessageKeyboard'
-  | 'stopPrivateChatPoll'
-  | 'stopSupergroupPoll'
+  | 'stopPoll'
 >;
 
 interface ChatMemberships {
@@ -1888,8 +1871,7 @@ interface BotDraftTextNormalizer {
 
 interface BotMessageViews {
   viewPollForCreator(poll: Poll): BotApiPoll;
-  viewPrivateMessageForBot(message: PrivateMessage): BotApiPrivateMessage;
-  viewSupergroupMessage(message: SupergroupMessage, observerId: number): BotApiSupergroupMessage;
+  viewMessageForBot(message: ChatMessage, botId: number): BotApiMessage;
   viewChatMember(input: {
     readonly chatId: number;
     readonly userId: number;
@@ -3427,19 +3409,14 @@ export class BotApiService {
     if (!replacement.resolved) {
       return { edited: false, ...replacement.failure };
     }
-    const edit = { content: replacement.content, inlineKeyboard };
-    const result = isUserId(chatId)
-      ? this.#presentPrivateEdit(this.#messageEditing.editPrivateChatMessageText({
-        ...this.#privateChatMessageTarget(authenticatedBot, chatId, messageId),
-        ...edit,
-      }))
-      : this.#presentSupergroupEdit(
-        authenticatedBot,
-        this.#messageEditing.editSupergroupMessageText({
-          ...this.#supergroupMessageTarget(authenticatedBot, chatId, messageId),
-          ...edit,
-        }),
-      );
+    const result = this.#presentChatMessageEdit(
+      authenticatedBot,
+      this.#messageEditing.editChatMessageText({
+        ...this.#chatMessageTarget(authenticatedBot, chatId, messageId),
+        content: replacement.content,
+        inlineKeyboard,
+      }),
+    );
     if (result.edited) {
       return result;
     }
@@ -3462,24 +3439,16 @@ export class BotApiService {
     { chatId, messageId, caption, showsCaptionAboveMedia, inlineKeyboard }:
       EditMessageCaptionRequest,
   ): EditMessageCaptionResult {
-    const captionEdit: BotCaptionEdit = {
-      caption: caption.text,
-      captionEntities: caption.entities,
-      showsCaptionAboveMedia,
-      inlineKeyboard,
-    };
-    const result = isUserId(chatId)
-      ? this.#presentPrivateEdit(this.#messageEditing.editPrivateChatMessageCaption({
-        ...this.#privateChatMessageTarget(authenticatedBot, chatId, messageId),
-        ...captionEdit,
-      }))
-      : this.#presentSupergroupEdit(
-        authenticatedBot,
-        this.#messageEditing.editSupergroupMessageCaption({
-          ...this.#supergroupMessageTarget(authenticatedBot, chatId, messageId),
-          ...captionEdit,
-        }),
-      );
+    const result = this.#presentChatMessageEdit(
+      authenticatedBot,
+      this.#messageEditing.editChatMessageCaption({
+        ...this.#chatMessageTarget(authenticatedBot, chatId, messageId),
+        caption: caption.text,
+        captionEntities: caption.entities,
+        showsCaptionAboveMedia,
+        inlineKeyboard,
+      }),
+    );
     if (result.edited) {
       return result;
     }
@@ -3506,19 +3475,14 @@ export class BotApiService {
     if (!mediaResolution.resolved) {
       return { edited: false, ...mediaResolution.failure };
     }
-    const edit = { media: mediaResolution.file, inlineKeyboard };
-    const result = isUserId(chatId)
-      ? this.#presentPrivateEdit(this.#messageEditing.editPrivateChatMessageMedia({
-        ...this.#privateChatMessageTarget(authenticatedBot, chatId, messageId),
-        ...edit,
-      }))
-      : this.#presentSupergroupEdit(
-        authenticatedBot,
-        this.#messageEditing.editSupergroupMessageMedia({
-          ...this.#supergroupMessageTarget(authenticatedBot, chatId, messageId),
-          ...edit,
-        }),
-      );
+    const result = this.#presentChatMessageEdit(
+      authenticatedBot,
+      this.#messageEditing.editChatMessageMedia({
+        ...this.#chatMessageTarget(authenticatedBot, chatId, messageId),
+        media: mediaResolution.file,
+        inlineKeyboard,
+      }),
+    );
     if (result.edited) {
       return result;
     }
@@ -3537,18 +3501,13 @@ export class BotApiService {
     authenticatedBot: VirtualBotProfile,
     { chatId, messageId, inlineKeyboard }: EditMessageReplyMarkupRequest,
   ): EditMessageResult<EditMessageReplyMarkupFailureReason> {
-    const result = isUserId(chatId)
-      ? this.#presentPrivateEdit(this.#messageEditing.editPrivateChatMessageKeyboard({
-        ...this.#privateChatMessageTarget(authenticatedBot, chatId, messageId),
+    const result = this.#presentChatMessageEdit(
+      authenticatedBot,
+      this.#messageEditing.editChatMessageKeyboard({
+        ...this.#chatMessageTarget(authenticatedBot, chatId, messageId),
         inlineKeyboard,
-      }))
-      : this.#presentSupergroupEdit(
-        authenticatedBot,
-        this.#messageEditing.editSupergroupMessageKeyboard({
-          ...this.#supergroupMessageTarget(authenticatedBot, chatId, messageId),
-          inlineKeyboard,
-        }),
-      );
+      }),
+    );
     if (result.edited) {
       return result;
     }
@@ -3565,15 +3524,10 @@ export class BotApiService {
     authenticatedBot: VirtualBotProfile,
     { chatId, messageId, inlineKeyboard }: StopPollRequest,
   ): StopPollResult {
-    const result = isUserId(chatId)
-      ? this.#messageEditing.stopPrivateChatPoll({
-        ...this.#privateChatMessageTarget(authenticatedBot, chatId, messageId),
-        inlineKeyboard,
-      })
-      : this.#messageEditing.stopSupergroupPoll({
-        ...this.#supergroupMessageTarget(authenticatedBot, chatId, messageId),
-        inlineKeyboard,
-      });
+    const result = this.#messageEditing.stopPoll({
+      ...this.#chatMessageTarget(authenticatedBot, chatId, messageId),
+      inlineKeyboard,
+    });
     if (result.stopped) {
       return { stopped: true, poll: this.#botMessageViews.viewPollForCreator(result.poll) };
     }
@@ -4307,22 +4261,16 @@ export class BotApiService {
       undefined;
   }
 
-  /** The message of the bot's private chat with a user that a chat message edit addresses. */
-  #privateChatMessageTarget(
+  /**
+   * The message of one of the bot's chats that a chat message edit addresses, by the chat its
+   * `chat_id` names and the ID by which that chat's messages are addressed.
+   */
+  #chatMessageTarget(
     authenticatedBot: VirtualBotProfile,
     chatId: number,
     messageId: number,
-  ): BotPrivateChatMessageTarget {
-    return { fromBotId: authenticatedBot.id, chat: { type: 'private', peerId: chatId }, messageId };
-  }
-
-  /** The supergroup message that a chat message edit addresses. */
-  #supergroupMessageTarget(
-    authenticatedBot: VirtualBotProfile,
-    chatId: number,
-    messageId: number,
-  ): BotSupergroupMessageTarget {
-    return { fromBotId: authenticatedBot.id, chat: { type: 'supergroup', chatId }, messageId };
+  ): BotChatMessageTarget {
+    return { fromBotId: authenticatedBot.id, chat: getBotApiChatAddress(chatId), messageId };
   }
 
   #deleteChatMessages(
@@ -4332,17 +4280,11 @@ export class BotApiService {
   ):
     | { readonly deleted: true; readonly deletedMessageCount: number }
     | { readonly deleted: false; readonly reason: MessageDeletionFailureReason } {
-    const result = isUserId(chatId)
-      ? this.#messageDeletion.deletePrivateChatMessages({
-        fromBotId: authenticatedBot.id,
-        chat: { type: 'private', peerId: chatId },
-        messageIds,
-      })
-      : this.#messageDeletion.deleteSupergroupMessages({
-        fromBotId: authenticatedBot.id,
-        chat: { type: 'supergroup', chatId },
-        messageIds,
-      });
+    const result = this.#messageDeletion.deleteChatMessages({
+      fromBotId: authenticatedBot.id,
+      chat: getBotApiChatAddress(chatId),
+      messageIds,
+    });
     if (result.deleted) {
       return result;
     }
@@ -4358,10 +4300,8 @@ export class BotApiService {
       case 'bot_not_found':
         throw new Error(`Authenticated bot ${authenticatedBot.id} does not exist`);
       default: {
-        const unhandledFailure: never = result;
-        throw new Error(
-          `Unhandled bot message deletion failure: ${JSON.stringify(unhandledFailure)}`,
-        );
+        const unhandledReason: never = result.reason;
+        throw new Error(`Unhandled bot message deletion failure: ${unhandledReason}`);
       }
     }
   }
@@ -4398,25 +4338,15 @@ export class BotApiService {
     return member;
   }
 
-  #presentPrivateEdit<Failure extends { readonly edited: false }>(
-    result: { readonly edited: true; readonly message: PrivateMessage } | Failure,
-  ): { readonly edited: true; readonly message: BotApiMessage } | Failure {
-    return result.edited
-      ? {
-        edited: true,
-        message: this.#botMessageViews.viewPrivateMessageForBot(result.message),
-      }
-      : result;
-  }
-
-  #presentSupergroupEdit<Failure extends { readonly edited: false }>(
+  /** Shows the bot the message its edit of a chat message left, as the bot sees its chat. */
+  #presentChatMessageEdit<Failure extends { readonly edited: false }>(
     authenticatedBot: VirtualBotProfile,
-    result: { readonly edited: true; readonly message: SupergroupMessage } | Failure,
+    result: { readonly edited: true; readonly message: ChatMessage } | Failure,
   ): { readonly edited: true; readonly message: BotApiMessage } | Failure {
     return result.edited
       ? {
         edited: true,
-        message: this.#botMessageViews.viewSupergroupMessage(result.message, authenticatedBot.id),
+        message: this.#botMessageViews.viewMessageForBot(result.message, authenticatedBot.id),
       }
       : result;
   }

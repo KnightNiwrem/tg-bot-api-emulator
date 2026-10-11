@@ -334,25 +334,25 @@ Deno.test("SupergroupMessagingService edits and deletes only the author's own me
   }));
 
   const editFailures = [
-    messageEditing.editSupergroupMessageText({
+    messageEditing.editChatMessageText({
       fromBotId: bot.profile.id,
       chat: { type: 'supergroup', chatId: supergroup.id },
       messageId: 3,
       content: { kind: 'text', text: 'Changed' },
     }),
-    messageEditing.editSupergroupMessageText({
+    messageEditing.editChatMessageText({
       fromBotId: otherBot.profile.id,
       chat: { type: 'supergroup', chatId: supergroup.id },
       messageId: 4,
       content: { kind: 'text', text: 'Changed' },
     }),
-    messageEditing.editSupergroupMessageText({
+    messageEditing.editChatMessageText({
       fromBotId: bot.profile.id,
       chat: { type: 'supergroup', chatId: supergroup.id },
       messageId: 99,
       content: { kind: 'text', text: 'Changed' },
     }),
-    messageEditing.editSupergroupMessageKeyboard({
+    messageEditing.editChatMessageKeyboard({
       fromBotId: bot.profile.id,
       chat: { type: 'supergroup', chatId: supergroup.id },
       messageId: 4,
@@ -377,12 +377,12 @@ Deno.test("SupergroupMessagingService edits and deletes only the author's own me
     }),
   ].map((result) => result.edited ? 'edited' : result.reason);
   const deletionFailures = [
-    messageDeletion.deleteSupergroupMessages({
+    messageDeletion.deleteChatMessages({
       fromBotId: bot.profile.id,
       chat: { type: 'supergroup', chatId: supergroup.id },
       messageIds: [4, 3],
     }),
-    messageDeletion.deleteSupergroupMessages({
+    messageDeletion.deleteChatMessages({
       fromBotId: otherBot.profile.id,
       chat: { type: 'supergroup', chatId: supergroup.id },
       messageIds: [4],
@@ -409,7 +409,7 @@ Deno.test("SupergroupMessagingService edits and deletes only the author's own me
     messageId: 3,
     edit: { kind: 'text', text: 'Hello /help' },
   });
-  const deletion = messageDeletion.deleteSupergroupMessages({
+  const deletion = messageDeletion.deleteChatMessages({
     fromBotId: bot.profile.id,
     chat: { type: 'supergroup', chatId: supergroup.id },
     messageIds: [4, 4, 99],
@@ -474,7 +474,7 @@ Deno.test('SupergroupMessagingService lets the inline bot edit a message sent th
     return { message, messageId, inlineMessageId: message.viaBot.inlineMessageId };
   };
   const editText = (fromBotId: number, messageId: number, text: string) =>
-    messageEditing.editSupergroupMessageText({
+    messageEditing.editChatMessageText({
       fromBotId,
       chat: { type: 'supergroup', chatId: supergroup.id },
       messageId,
@@ -483,14 +483,15 @@ Deno.test('SupergroupMessagingService lets the inline bot edit a message sent th
 
   const inlineMessage = sendThrough(bot.profile.id);
   const textEdit = editText(bot.profile.id, inlineMessage.messageId, 'Dogs');
-  const keyboardEdit = messageEditing.editSupergroupMessageKeyboard({
+  const keyboardEdit = messageEditing.editChatMessageKeyboard({
     fromBotId: bot.profile.id,
     chat: { type: 'supergroup', chatId: supergroup.id },
     messageId: inlineMessage.messageId,
     inlineKeyboard: [[{ kind: 'callback', text: 'More', callbackData: 'more' }]],
   });
   if (
-    !textEdit.edited || getContentText(textEdit.message.content).text !== 'Dogs' ||
+    !textEdit.edited || textEdit.message.kind !== 'supergroup_message' ||
+    getContentText(textEdit.message.content).text !== 'Dogs' ||
     textEdit.message.sender.kind !== 'account' || !keyboardEdit.edited
   ) {
     throw new Error(
@@ -540,7 +541,7 @@ Deno.test('SupergroupMessagingService lets bots with the right delete any messag
     content: { kind: 'text', text: 'Spam' },
   }));
   const deleteAccountMessages = () => {
-    const result = messageDeletion.deleteSupergroupMessages({
+    const result = messageDeletion.deleteChatMessages({
       fromBotId: bot.profile.id,
       chat: { type: 'supergroup', chatId: supergroup.id },
       // The bot's join message, then the account's message.
@@ -617,12 +618,12 @@ Deno.test('SupergroupMessagingService turns away bots that left or were removed'
         content: { kind: 'text', text: 'Hi' },
       }),
       supergroupMessaging.checkBotChatActionAccess({ fromBotId, chatId: supergroup.id }),
-      messageEditing.editSupergroupMessageKeyboard({
+      messageEditing.editChatMessageKeyboard({
         fromBotId,
         chat: { type: 'supergroup', chatId: supergroup.id },
         messageId: 3,
       }),
-      messageDeletion.deleteSupergroupMessages({
+      messageDeletion.deleteChatMessages({
         fromBotId,
         chat: { type: 'supergroup', chatId: supergroup.id },
         messageIds: [3],

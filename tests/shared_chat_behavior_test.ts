@@ -127,14 +127,14 @@ function createSharedChatSubject(chatType: ChatType): SharedChatSubject {
           content: { kind: 'text', text },
         }),
       editBotText: (messageId, input) =>
-        messageEditing.editPrivateChatMessageText({
+        messageEditing.editChatMessageText({
           fromBotId: botId,
           chat: botChat,
           messageId,
           ...input,
         }),
       editBotKeyboard: (messageId, inlineKeyboard) =>
-        messageEditing.editPrivateChatMessageKeyboard({
+        messageEditing.editChatMessageKeyboard({
           fromBotId: botId,
           chat: botChat,
           messageId,
@@ -196,9 +196,9 @@ function createSharedChatSubject(chatType: ChatType): SharedChatSubject {
         content: { kind: 'text', text },
       }),
     editBotText: (messageId, input) =>
-      messageEditing.editSupergroupMessageText({ fromBotId: botId, chat, messageId, ...input }),
+      messageEditing.editChatMessageText({ fromBotId: botId, chat, messageId, ...input }),
     editBotKeyboard: (messageId, inlineKeyboard) =>
-      messageEditing.editSupergroupMessageKeyboard({
+      messageEditing.editChatMessageKeyboard({
         fromBotId: botId,
         chat,
         messageId,

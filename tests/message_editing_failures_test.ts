@@ -1,16 +1,37 @@
 /**
- * Compile-time checks that each entry point of the shared editing service reports exactly the
- * failures its sender and chat type can produce: none of another chat type's, and, for an inline
- * message, none about a chat. The expected sets are written out here, independently of the
- * service's types.
+ * Compile-time checks that the shared editing service reports exactly the failures each sender and
+ * chat type can produce: none of another chat type's, and, for an inline message, none about a
+ * chat. Each chat type's results pin its own set; a bot's entry point for chat messages, whose
+ * address selects the chat type, reports the two chat types' sets together. The expected sets are
+ * written out here, independently of the service's types.
  */
-import type { MessageEditingService } from '../src/services/domain/message_editing.ts';
+import type {
+  BotCaptionEditResult,
+  BotKeyboardEditResult,
+  BotMediaEditResult,
+  BotPollStopResult,
+  BotPrivateChatEditTypes,
+  BotSupergroupEditTypes,
+  BotTextEditResult,
+  MessageEditingService,
+} from '../src/services/domain/message_editing.ts';
 import type { PrivateMessage, SupergroupMessage } from '../src/types/virtual_message.ts';
 import type { ExpectTrue, IsExactly } from './support/type_conformance.ts';
 
 type Results = {
   [Method in keyof MessageEditingService]: ReturnType<MessageEditingService[Method]>;
 };
+
+/** A bot's results for an edit of a chat message, as one chat type's targeting reports them. */
+interface ChatTypeResults<Types extends BotPrivateChatEditTypes | BotSupergroupEditTypes> {
+  readonly keyboard: BotKeyboardEditResult<Types>;
+  readonly text: BotTextEditResult<Types>;
+  readonly caption: BotCaptionEditResult<Types>;
+  readonly media: BotMediaEditResult<Types>;
+  readonly pollStop: BotPollStopResult<Types>;
+}
+type PrivateChatResults = ChatTypeResults<BotPrivateChatEditTypes>;
+type SupergroupResults = ChatTypeResults<BotSupergroupEditTypes>;
 
 type EditFailureReason<Result> = Result extends
   { readonly edited: false; readonly reason: infer Reason } ? Reason
@@ -46,92 +67,126 @@ type CaptionReason = 'message_has_no_caption' | 'caption_too_long';
 type MediaReason = 'message_media_not_editable' | 'caption_too_long' | 'album_media_kind_changed';
 type PollReason = 'message_has_no_poll' | 'poll_not_stoppable' | 'poll_already_closed';
 
+type PrivateChatKeyboardEditReason = PrivateChatTargetReason | PrivateChatEditedMessageReason;
+type PrivateChatTextEditReason =
+  | PrivateChatTargetReason
+  | TextReason
+  | PrivateChatEditedMessageReason
+  | 'text_invalid';
+type PrivateChatCaptionEditReason =
+  | PrivateChatTargetReason
+  | CaptionReason
+  | PrivateChatEditedMessageReason
+  | 'text_invalid';
+type PrivateChatMediaEditReason =
+  | PrivateChatTargetReason
+  | MediaReason
+  | PrivateChatEditedMessageReason
+  | 'text_invalid';
+type PrivateChatPollStopReason =
+  | 'bot_not_found'
+  | 'account_not_found'
+  | 'conversation_not_started'
+  | 'message_not_found'
+  | PollReason
+  | 'callback_data_invalid';
+
 type _PrivateChatEdits = [
   ExpectTrue<
-    IsExactly<
-      EditFailureReason<Results['editPrivateChatMessageKeyboard']>,
-      PrivateChatTargetReason | PrivateChatEditedMessageReason
-    >
+    IsExactly<EditFailureReason<PrivateChatResults['keyboard']>, PrivateChatKeyboardEditReason>
+  >,
+  ExpectTrue<IsExactly<EditFailureReason<PrivateChatResults['text']>, PrivateChatTextEditReason>>,
+  ExpectTrue<
+    IsExactly<EditFailureReason<PrivateChatResults['caption']>, PrivateChatCaptionEditReason>
   >,
   ExpectTrue<
-    IsExactly<
-      EditFailureReason<Results['editPrivateChatMessageText']>,
-      PrivateChatTargetReason | TextReason | PrivateChatEditedMessageReason | 'text_invalid'
-    >
+    IsExactly<EditFailureReason<PrivateChatResults['media']>, PrivateChatMediaEditReason>
   >,
   ExpectTrue<
-    IsExactly<
-      EditFailureReason<Results['editPrivateChatMessageCaption']>,
-      PrivateChatTargetReason | CaptionReason | PrivateChatEditedMessageReason | 'text_invalid'
-    >
+    IsExactly<PollStopFailureReason<PrivateChatResults['pollStop']>, PrivateChatPollStopReason>
   >,
-  ExpectTrue<
-    IsExactly<
-      EditFailureReason<Results['editPrivateChatMessageMedia']>,
-      PrivateChatTargetReason | MediaReason | PrivateChatEditedMessageReason | 'text_invalid'
-    >
-  >,
-  ExpectTrue<
-    IsExactly<
-      PollStopFailureReason<Results['stopPrivateChatPoll']>,
-      | 'bot_not_found'
-      | 'account_not_found'
-      | 'conversation_not_started'
-      | 'message_not_found'
-      | PollReason
-      | 'callback_data_invalid'
-    >
-  >,
-  ExpectTrue<IsExactly<EditedMessage<Results['editPrivateChatMessageText']>, PrivateMessage>>,
+  ExpectTrue<IsExactly<EditedMessage<PrivateChatResults['text']>, PrivateMessage>>,
 ];
+
+type SupergroupKeyboardEditReason = SupergroupTargetReason | ButtonRefusingEditedMessageReason;
+type SupergroupTextEditReason =
+  | SupergroupTargetReason
+  | TextReason
+  | ButtonRefusingEditedMessageReason
+  | 'text_invalid'
+  | 'send_permission_missing';
+type SupergroupCaptionEditReason =
+  | SupergroupTargetReason
+  | CaptionReason
+  | ButtonRefusingEditedMessageReason
+  | 'text_invalid';
+type SupergroupMediaEditReason =
+  | SupergroupTargetReason
+  | MediaReason
+  | ButtonRefusingEditedMessageReason
+  | 'text_invalid'
+  | 'send_permission_missing';
+type SupergroupPollStopReason =
+  | 'bot_not_found'
+  | 'chat_not_found'
+  | 'bot_not_a_member'
+  | 'bot_kicked'
+  | 'message_not_found'
+  | PollReason
+  | 'button_type_invalid'
+  | 'callback_data_invalid';
 
 type _SupergroupEdits = [
   ExpectTrue<
+    IsExactly<EditFailureReason<SupergroupResults['keyboard']>, SupergroupKeyboardEditReason>
+  >,
+  ExpectTrue<IsExactly<EditFailureReason<SupergroupResults['text']>, SupergroupTextEditReason>>,
+  ExpectTrue<
+    IsExactly<EditFailureReason<SupergroupResults['caption']>, SupergroupCaptionEditReason>
+  >,
+  ExpectTrue<IsExactly<EditFailureReason<SupergroupResults['media']>, SupergroupMediaEditReason>>,
+  ExpectTrue<
+    IsExactly<PollStopFailureReason<SupergroupResults['pollStop']>, SupergroupPollStopReason>
+  >,
+  ExpectTrue<IsExactly<EditedMessage<SupergroupResults['text']>, SupergroupMessage>>,
+];
+
+// A bot addresses a chat message by its chat's address, so its entry points report what either
+// chat type reports, and nothing else.
+type _BotChatMessageEdits = [
+  ExpectTrue<
     IsExactly<
-      EditFailureReason<Results['editSupergroupMessageKeyboard']>,
-      SupergroupTargetReason | ButtonRefusingEditedMessageReason
+      EditFailureReason<Results['editChatMessageKeyboard']>,
+      PrivateChatKeyboardEditReason | SupergroupKeyboardEditReason
     >
   >,
   ExpectTrue<
     IsExactly<
-      EditFailureReason<Results['editSupergroupMessageText']>,
-      | SupergroupTargetReason
-      | TextReason
-      | ButtonRefusingEditedMessageReason
-      | 'text_invalid'
-      | 'send_permission_missing'
+      EditFailureReason<Results['editChatMessageText']>,
+      PrivateChatTextEditReason | SupergroupTextEditReason
     >
   >,
   ExpectTrue<
     IsExactly<
-      EditFailureReason<Results['editSupergroupMessageCaption']>,
-      SupergroupTargetReason | CaptionReason | ButtonRefusingEditedMessageReason | 'text_invalid'
+      EditFailureReason<Results['editChatMessageCaption']>,
+      PrivateChatCaptionEditReason | SupergroupCaptionEditReason
     >
   >,
   ExpectTrue<
     IsExactly<
-      EditFailureReason<Results['editSupergroupMessageMedia']>,
-      | SupergroupTargetReason
-      | MediaReason
-      | ButtonRefusingEditedMessageReason
-      | 'text_invalid'
-      | 'send_permission_missing'
+      EditFailureReason<Results['editChatMessageMedia']>,
+      PrivateChatMediaEditReason | SupergroupMediaEditReason
     >
   >,
   ExpectTrue<
     IsExactly<
-      PollStopFailureReason<Results['stopSupergroupPoll']>,
-      | 'bot_not_found'
-      | 'chat_not_found'
-      | 'bot_not_a_member'
-      | 'bot_kicked'
-      | 'message_not_found'
-      | PollReason
-      | 'button_type_invalid'
-      | 'callback_data_invalid'
+      PollStopFailureReason<Results['stopPoll']>,
+      PrivateChatPollStopReason | SupergroupPollStopReason
     >
   >,
-  ExpectTrue<IsExactly<EditedMessage<Results['editSupergroupMessageText']>, SupergroupMessage>>,
+  ExpectTrue<
+    IsExactly<EditedMessage<Results['editChatMessageText']>, PrivateMessage | SupergroupMessage>
+  >,
 ];
 
 // An inline message is reached by its identifier alone, so no failure names its chat, and TDLib
