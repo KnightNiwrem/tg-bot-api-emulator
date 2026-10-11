@@ -29,8 +29,18 @@ import type {
 import type { webhookAttemptFailureSchema } from '../../control_contracts/webhook_attempts.ts';
 import type { ControlRefusalReason } from './control_refusal_reasons.ts';
 
+/**
+ * A value as the client returns it from a response: readonly all the way down, so that no nested
+ * object or list of a snapshot can be changed through its type.
+ */
+type ReadonlySnapshot<Value> = Value extends object
+  ? { readonly [Member in keyof Value]: ReadonlySnapshot<Value[Member]> }
+  : Value;
+
 /** The server-assigned identity, Bot API location, and settings of an emulation session. */
-export type EmulationSession = Readonly<ControlOperationResult<typeof createSessionContract>>;
+export type EmulationSession = ReadonlySnapshot<
+  ControlOperationResult<typeof createSessionContract>
+>;
 
 /**
  * The deployment of the official Bot API server whose upload limits a session's bots meet:
@@ -51,10 +61,10 @@ export type CreateVirtualBotInput = Readonly<
 >;
 
 /** A bot's profile, as `getMe` returns it. */
-export type VirtualBotProfile = Readonly<z.output<typeof botProfileSchema>>;
+export type VirtualBotProfile = ReadonlySnapshot<z.output<typeof botProfileSchema>>;
 
 /** A created bot: the token that authenticates its Bot API calls, and its profile. */
-export type CreatedVirtualBot = Readonly<ControlOperationResult<typeof createBotContract>>;
+export type CreatedVirtualBot = ReadonlySnapshot<ControlOperationResult<typeof createBotContract>>;
 
 /**
  * `429 Too Many Requests` answers queued for a bot's next Bot API calls, which receive them
@@ -159,7 +169,7 @@ export interface SetWebhookDeliveryInput extends WebhookDelivery {
  * Why an attempt to deliver an update to a webhook failed. `error_message` is the description
  * `getWebhookInfo` reports as `last_error_message`; Telegram describes no `response_interrupted`.
  */
-export type WebhookAttemptFailure = Readonly<z.output<typeof webhookAttemptFailureSchema>>;
+export type WebhookAttemptFailure = ReadonlySnapshot<z.output<typeof webhookAttemptFailureSchema>>;
 
 /** The wait that a failed attempt schedules before its update is sent again. */
 export interface WebhookRetry {
@@ -210,7 +220,7 @@ export type CreateVirtualAccountInput = Readonly<
 >;
 
 /** An account's profile, as bots see the account as a user. */
-export type VirtualAccountProfile = Readonly<z.output<typeof accountProfileSchema>>;
+export type VirtualAccountProfile = ReadonlySnapshot<z.output<typeof accountProfileSchema>>;
 
 export interface PrivateMessageTarget {
   readonly type: 'private';
@@ -470,7 +480,7 @@ export type CreateSupergroupInput = Readonly<
 >;
 
 /** A supergroup as its creator sees it once created. */
-export type Supergroup = Readonly<
+export type Supergroup = ReadonlySnapshot<
   ControlOperationResult<typeof createSupergroupContract>['supergroup']
 >;
 
@@ -504,7 +514,9 @@ export interface JoinChatByInviteLinkInput {
 }
 
 /** What an account's use of an invite link did. */
-export type ChatJoin = Readonly<ControlOperationResult<typeof joinChatByInviteLinkContract>>;
+export type ChatJoin = ReadonlySnapshot<
+  ControlOperationResult<typeof joinChatByInviteLinkContract>
+>;
 
 export interface AccountChatJoinRequestsInput {
   readonly chat: SupergroupMessageTarget;
@@ -518,7 +530,7 @@ export interface AccountChatJoinRequestDecisionInput {
 }
 
 /** A pending request to join a supergroup, as its owner inspects it. */
-export type ChatJoinRequest = Readonly<
+export type ChatJoinRequest = ReadonlySnapshot<
   ControlOperationResult<typeof getSupergroupJoinRequestsContract>['join_requests'][number]
 >;
 
@@ -526,7 +538,7 @@ export type ChatJoinRequest = Readonly<
  * The temporary permission to write to a join request's user that the Bot API documents for
  * `user_chat_id`, which `session.expireJoinRequesterContact` ends.
  */
-export type JoinRequesterContact = Readonly<ChatJoinRequest['requester_contact']>;
+export type JoinRequesterContact = ReadonlySnapshot<ChatJoinRequest['requester_contact']>;
 
 export interface ExpireJoinRequesterContactInput {
   /** The supergroup's chat ID. */
@@ -540,7 +552,7 @@ export interface AccountChatInviteLinksInput {
 }
 
 /** An invite link of a supergroup, as its owner inspects it. */
-export type SupergroupInviteLink = Readonly<
+export type SupergroupInviteLink = ReadonlySnapshot<
   ControlOperationResult<typeof getSupergroupInviteLinksContract>['invite_links'][number]
 >;
 
@@ -2649,34 +2661,36 @@ export type BotActivityKind = BotActivityEntry['kind'];
  * A bot's call of a Bot API method, whether it ran, failed, or is not implemented. `getUpdates`
  * calls are not recorded; the updates they deliver and confirm are.
  */
-export type BotApiCallEntry = Readonly<z.output<typeof botApiCallEntrySchema>>;
+export type BotApiCallEntry = ReadonlySnapshot<z.output<typeof botApiCallEntrySchema>>;
 
 /** A file a call uploaded, described without its content. */
-export type UploadedFileDescription = Readonly<BotApiCallEntry['uploaded_files'][number]>;
+export type UploadedFileDescription = ReadonlySnapshot<BotApiCallEntry['uploaded_files'][number]>;
 
 /** The Bot API answer a bot received to a call. */
-export type BotApiCallAnswer = Readonly<BotApiCallEntry['answer']>;
+export type BotApiCallAnswer = ReadonlySnapshot<BotApiCallEntry['answer']>;
 
 /**
  * An update handed to a bot, in a `getUpdates` answer or in a request to its webhook; an update
  * handed over again is recorded each time.
  */
-export type UpdateDeliveredEntry = Readonly<z.output<typeof updateDeliveredEntrySchema>>;
+export type UpdateDeliveredEntry = ReadonlySnapshot<z.output<typeof updateDeliveredEntrySchema>>;
 
 /** A Bot API update, such as grammY's `Update` describes. */
-export type BotApiUpdate = Readonly<UpdateDeliveredEntry['update']>;
+export type BotApiUpdate = ReadonlySnapshot<UpdateDeliveredEntry['update']>;
 
 /**
  * An update the bot confirmed: by a `getUpdates` offset beyond it, or by its webhook's successful
  * answer to it, after any method the answer names has run.
  */
-export type UpdateConfirmedEntry = Readonly<z.output<typeof updateConfirmedEntrySchema>>;
+export type UpdateConfirmedEntry = ReadonlySnapshot<z.output<typeof updateConfirmedEntrySchema>>;
 
 /**
  * A failed attempt to deliver an update to a webhook, which leaves the update pending until the
  * attempt's retry is released.
  */
-export type WebhookAttemptFailedEntry = Readonly<z.output<typeof webhookAttemptFailedEntrySchema>>;
+export type WebhookAttemptFailedEntry = ReadonlySnapshot<
+  z.output<typeof webhookAttemptFailedEntrySchema>
+>;
 
 /**
  * An entry of a session's bot activity log. Entries are positioned in the order the emulator
