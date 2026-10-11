@@ -9,6 +9,7 @@ import {
   controlErrorResponse,
   invalidControlRequestResponse,
 } from '../../control_error_response.ts';
+import { answerWithActionReceipt } from '../action_receipt.ts';
 import { base64ContentSchema } from '../base64_content.ts';
 import { readPathParameters } from '../control_request_input.ts';
 import { readJsonRequestBody } from '../json_request_body.ts';
@@ -211,72 +212,76 @@ export function createMessageRoutes(): Hono<SessionRouteContextTypes> {
     }
     const requestBody = requestBodyReading.value;
 
-    const {
-      privateMessaging,
-      supergroupMessaging,
-      messageForwarding,
-      botMessageViews,
-      mediaFiles,
-    } = context.get('emulationSession');
-    if ('forward' in requestBody) {
-      const { to, forward } = requestBody;
-      const result = messageForwarding.forwardAccountMessage({
-        fromAccountId: accountId,
-        fromChat: forward.chat,
-        messageId: forward.message_id,
-        toChat: to,
-      });
-      if (!result.forwarded) {
-        return controlErrorResponse(context, forwardFailureStatus(result.reason), result.reason);
-      }
-      return context.json(
-        { message: viewChatMessageForAccount(botMessageViews, result.message, accountId) },
-        201,
-      );
-    }
-    const contentReading = readAccountMessageContent(requestBody, mediaFiles);
-    if (!contentReading.read) {
-      return controlErrorResponse(context, 400, contentReading.reason);
-    }
-    const { content } = contentReading;
-    const { to, reply_to_message_id: replyToMessageId } = requestBody;
-    if (to.type === 'supergroup') {
-      const result = supergroupMessaging.sendAccountMessage({
-        fromAccountId: accountId,
-        chatId: to.chatId,
-        content,
-        replyToMessageId,
-      });
-      if (!result.sent) {
-        return controlErrorResponse(
-          context,
-          supergroupMemberFailureStatus(result.reason),
-          result.reason,
+    return answerWithActionReceipt(
+      context,
+      (
+        { privateMessaging, supergroupMessaging, messageForwarding, botMessageViews, mediaFiles },
+      ) => {
+        if ('forward' in requestBody) {
+          const { to, forward } = requestBody;
+          const result = messageForwarding.forwardAccountMessage({
+            fromAccountId: accountId,
+            fromChat: forward.chat,
+            messageId: forward.message_id,
+            toChat: to,
+          });
+          if (!result.forwarded) {
+            return controlErrorResponse(
+              context,
+              forwardFailureStatus(result.reason),
+              result.reason,
+            );
+          }
+          return context.json(
+            { message: viewChatMessageForAccount(botMessageViews, result.message, accountId) },
+            201,
+          );
+        }
+        const contentReading = readAccountMessageContent(requestBody, mediaFiles);
+        if (!contentReading.read) {
+          return controlErrorResponse(context, 400, contentReading.reason);
+        }
+        const { content } = contentReading;
+        const { to, reply_to_message_id: replyToMessageId } = requestBody;
+        if (to.type === 'supergroup') {
+          const result = supergroupMessaging.sendAccountMessage({
+            fromAccountId: accountId,
+            chatId: to.chatId,
+            content,
+            replyToMessageId,
+          });
+          if (!result.sent) {
+            return controlErrorResponse(
+              context,
+              supergroupMemberFailureStatus(result.reason),
+              result.reason,
+            );
+          }
+          return context.json(
+            { message: botMessageViews.viewSupergroupMessage(result.message, accountId) },
+            201,
+          );
+        }
+
+        const result = privateMessaging.sendAccountMessage({
+          fromAccountId: accountId,
+          to,
+          content,
+          replyToBotMessageId: replyToMessageId,
+        });
+        if (!result.sent) {
+          return controlErrorResponse(
+            context,
+            accountMessageFailureStatus(result.reason),
+            result.reason,
+          );
+        }
+
+        return context.json(
+          { message: botMessageViews.viewPrivateMessageForBot(result.message) },
+          201,
         );
-      }
-      return context.json(
-        { message: botMessageViews.viewSupergroupMessage(result.message, accountId) },
-        201,
-      );
-    }
-
-    const result = privateMessaging.sendAccountMessage({
-      fromAccountId: accountId,
-      to,
-      content,
-      replyToBotMessageId: replyToMessageId,
-    });
-    if (!result.sent) {
-      return controlErrorResponse(
-        context,
-        accountMessageFailureStatus(result.reason),
-        result.reason,
-      );
-    }
-
-    return context.json(
-      { message: botMessageViews.viewPrivateMessageForBot(result.message) },
-      201,
+      },
     );
   });
 
@@ -293,62 +298,64 @@ export function createMessageRoutes(): Hono<SessionRouteContextTypes> {
     }
     const requestBody = requestBodyReading.value;
 
-    const { privateMessaging, supergroupMessaging, botMessageViews, mediaFiles } = context.get(
-      'emulationSession',
-    );
-    const contents: AccountAlbumMediaContent[] = [];
-    for (const media of requestBody.media) {
-      const contentReading = readAccountMediaContent(media, mediaFiles);
-      if (!contentReading.read) {
-        return controlErrorResponse(context, 400, contentReading.reason);
-      }
-      contents.push(contentReading.content);
-    }
-    const { to, reply_to_message_id: replyToMessageId } = requestBody;
-    if (to.type === 'supergroup') {
-      const result = supergroupMessaging.sendAccountAlbum({
-        fromAccountId: accountId,
-        chatId: to.chatId,
-        contents,
-        replyToMessageId,
-      });
-      if (!result.sent) {
-        return controlErrorResponse(
-          context,
-          supergroupMemberFailureStatus(result.reason),
-          result.reason,
-        );
-      }
-      return context.json(
-        {
-          messages: result.messages.map((message) =>
-            botMessageViews.viewSupergroupMessage(message, accountId)
-          ),
-        },
-        201,
-      );
-    }
+    return answerWithActionReceipt(
+      context,
+      ({ privateMessaging, supergroupMessaging, botMessageViews, mediaFiles }) => {
+        const contents: AccountAlbumMediaContent[] = [];
+        for (const media of requestBody.media) {
+          const contentReading = readAccountMediaContent(media, mediaFiles);
+          if (!contentReading.read) {
+            return controlErrorResponse(context, 400, contentReading.reason);
+          }
+          contents.push(contentReading.content);
+        }
+        const { to, reply_to_message_id: replyToMessageId } = requestBody;
+        if (to.type === 'supergroup') {
+          const result = supergroupMessaging.sendAccountAlbum({
+            fromAccountId: accountId,
+            chatId: to.chatId,
+            contents,
+            replyToMessageId,
+          });
+          if (!result.sent) {
+            return controlErrorResponse(
+              context,
+              supergroupMemberFailureStatus(result.reason),
+              result.reason,
+            );
+          }
+          return context.json(
+            {
+              messages: result.messages.map((message) =>
+                botMessageViews.viewSupergroupMessage(message, accountId)
+              ),
+            },
+            201,
+          );
+        }
 
-    const result = privateMessaging.sendAccountAlbum({
-      fromAccountId: accountId,
-      to,
-      contents,
-      replyToBotMessageId: replyToMessageId,
-    });
-    if (!result.sent) {
-      return controlErrorResponse(
-        context,
-        accountMessageFailureStatus(result.reason),
-        result.reason,
-      );
-    }
-    return context.json(
-      {
-        messages: result.messages.map((message) =>
-          botMessageViews.viewPrivateMessageForBot(message)
-        ),
+        const result = privateMessaging.sendAccountAlbum({
+          fromAccountId: accountId,
+          to,
+          contents,
+          replyToBotMessageId: replyToMessageId,
+        });
+        if (!result.sent) {
+          return controlErrorResponse(
+            context,
+            accountMessageFailureStatus(result.reason),
+            result.reason,
+          );
+        }
+        return context.json(
+          {
+            messages: result.messages.map((message) =>
+              botMessageViews.viewPrivateMessageForBot(message)
+            ),
+          },
+          201,
+        );
       },
-      201,
     );
   });
 
@@ -365,22 +372,23 @@ export function createMessageRoutes(): Hono<SessionRouteContextTypes> {
     }
     const requestBody = requestBodyReading.value;
 
-    const { messageEditing, botMessageViews } = context.get('emulationSession');
-    const result = messageEditing.editAccountSupergroupMessage({
-      fromAccountId: accountId,
-      chat: { type: 'supergroup', chatId },
-      messageId,
-      edit: readAccountMessageEdit(requestBody),
-    });
-    if (!result.edited) {
-      return controlErrorResponse(
-        context,
-        supergroupMemberFailureStatus(result.reason),
-        result.reason,
-      );
-    }
-    return context.json({
-      message: botMessageViews.viewSupergroupMessage(result.message, accountId),
+    return answerWithActionReceipt(context, ({ messageEditing, botMessageViews }) => {
+      const result = messageEditing.editAccountSupergroupMessage({
+        fromAccountId: accountId,
+        chat: { type: 'supergroup', chatId },
+        messageId,
+        edit: readAccountMessageEdit(requestBody),
+      });
+      if (!result.edited) {
+        return controlErrorResponse(
+          context,
+          supergroupMemberFailureStatus(result.reason),
+          result.reason,
+        );
+      }
+      return context.json({
+        message: botMessageViews.viewSupergroupMessage(result.message, accountId),
+      });
     });
   });
 
@@ -392,21 +400,23 @@ export function createMessageRoutes(): Hono<SessionRouteContextTypes> {
     }
     const { accountId, chatId, messageId } = messagePath.value;
 
-    const result = context.get('emulationSession').messageDeletion.deleteAccountSupergroupMessage({
-      fromAccountId: accountId,
-      chat: { type: 'supergroup', chatId },
-      messageId,
+    return answerWithActionReceipt(context, ({ messageDeletion }) => {
+      const result = messageDeletion.deleteAccountSupergroupMessage({
+        fromAccountId: accountId,
+        chat: { type: 'supergroup', chatId },
+        messageId,
+      });
+      if (result.deleted) {
+        return context.body(null, 204);
+      }
+      return controlErrorResponse(
+        context,
+        result.reason === 'message_not_deletable'
+          ? 403
+          : supergroupMemberFailureStatus(result.reason),
+        result.reason,
+      );
     });
-    if (result.deleted) {
-      return context.body(null, 204);
-    }
-    return controlErrorResponse(
-      context,
-      result.reason === 'message_not_deletable'
-        ? 403
-        : supergroupMemberFailureStatus(result.reason),
-      result.reason,
-    );
   });
 
   accountRoutes.patch(PRIVATE_MESSAGE_PATH, async (context) => {
@@ -422,21 +432,22 @@ export function createMessageRoutes(): Hono<SessionRouteContextTypes> {
     }
     const requestBody = requestBodyReading.value;
 
-    const { messageEditing, botMessageViews } = context.get('emulationSession');
-    const result = messageEditing.editAccountPrivateChatMessage({
-      fromAccountId: accountId,
-      chat: { type: 'private', peerId: botId },
-      messageId,
-      edit: readAccountMessageEdit(requestBody),
+    return answerWithActionReceipt(context, ({ messageEditing, botMessageViews }) => {
+      const result = messageEditing.editAccountPrivateChatMessage({
+        fromAccountId: accountId,
+        chat: { type: 'private', peerId: botId },
+        messageId,
+        edit: readAccountMessageEdit(requestBody),
+      });
+      if (!result.edited) {
+        return controlErrorResponse(
+          context,
+          privateMessageEditFailureStatus(result.reason),
+          result.reason,
+        );
+      }
+      return context.json({ message: botMessageViews.viewPrivateMessageForBot(result.message) });
     });
-    if (!result.edited) {
-      return controlErrorResponse(
-        context,
-        privateMessageEditFailureStatus(result.reason),
-        result.reason,
-      );
-    }
-    return context.json({ message: botMessageViews.viewPrivateMessageForBot(result.message) });
   });
 
   // The account deletes the message for both participants, as Telegram's clients can.
@@ -447,14 +458,16 @@ export function createMessageRoutes(): Hono<SessionRouteContextTypes> {
     }
     const { accountId, botId, messageId } = messagePath.value;
 
-    const result = context.get('emulationSession').messageDeletion.deleteAccountPrivateChatMessage({
-      fromAccountId: accountId,
-      chat: { type: 'private', peerId: botId },
-      messageId,
+    return answerWithActionReceipt(context, ({ messageDeletion }) => {
+      const result = messageDeletion.deleteAccountPrivateChatMessage({
+        fromAccountId: accountId,
+        chat: { type: 'private', peerId: botId },
+        messageId,
+      });
+      return result.deleted
+        ? context.body(null, 204)
+        : controlErrorResponse(context, 404, result.reason);
     });
-    return result.deleted
-      ? context.body(null, 204)
-      : controlErrorResponse(context, 404, result.reason);
   });
 
   return accountRoutes;

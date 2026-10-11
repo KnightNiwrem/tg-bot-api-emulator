@@ -9,6 +9,8 @@
 import { parse as parseYaml } from '@std/yaml';
 import { z } from 'zod';
 
+import { normalizeHeaderName } from '../../../control_contracts/operation_contract.ts';
+
 /** The HTTP methods an OpenAPI path item can describe operations for, as the document spells them. */
 export const DOCUMENTED_HTTP_METHODS = ['get', 'put', 'post', 'delete', 'patch'] as const;
 export type DocumentedHttpMethod = typeof DOCUMENTED_HTTP_METHODS[number];
@@ -283,7 +285,12 @@ function readResponse(
   for (const [headerName, headerNode] of Object.entries(response.headers ?? {})) {
     const located = reader.dereference({ value: headerNode, fileUrl: responseNode.fileUrl });
     const header = parseAt(headerSchema, located.value, `${location} header ${headerName}`);
-    headers.set(headerName.toLowerCase(), {
+    // HTTP compares header names without regard to letter case, so two spellings name one header.
+    const normalizedName = normalizeHeaderName(headerName);
+    if (headers.has(normalizedName)) {
+      throw new Error(`Unexpected OpenAPI shape at ${location}: the ${headerName} header twice`);
+    }
+    headers.set(normalizedName, {
       required: header.required ?? false,
       schema: reader.readSchema(header.schema, located.fileUrl, `${location} header ${headerName}`),
     });

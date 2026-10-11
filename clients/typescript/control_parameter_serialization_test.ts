@@ -8,6 +8,7 @@ import { z } from 'zod';
 
 import { defineControlOperation } from '../../control_contracts/operation_contract.ts';
 import { registerControlOperation } from '../../src/api/control_operation_route.ts';
+import type { SessionRouteContextTypes } from '../../src/api/sessions/session_route_context_types.ts';
 import { callJsonOperation, type ControlOperationTransport } from './control_operation_caller.ts';
 
 const searchItemsContract = defineControlOperation({
@@ -31,7 +32,7 @@ const searchItemsContract = defineControlOperation({
 
 /** A server of items whose route records each decoded request and each URL it was sent to. */
 function createItemServer() {
-  const routes = new Hono();
+  const routes = new Hono<SessionRouteContextTypes>();
   const decodedRequests: unknown[] = [];
   const requestedUrls: URL[] = [];
   registerControlOperation(routes, '', searchItemsContract, (request) => {

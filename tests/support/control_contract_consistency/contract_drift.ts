@@ -5,9 +5,11 @@
  */
 import type { z } from 'zod';
 
-import type {
-  ControlOperationContract,
-  QueryParameterSerialization,
+import {
+  type ControlOperationContract,
+  normalizeHeaderName,
+  type QueryParameterSerialization,
+  readSuccessHeadersSchema,
 } from '../../../control_contracts/operation_contract.ts';
 import type {
   DocumentedHeader,
@@ -191,7 +193,14 @@ function findResponseDrift(
   const success = operation.responses.get(String(contract.success.status));
   if (success !== undefined) {
     const label = `response ${contract.success.status}`;
-    drift.push(...findHeaderDrift(label, contract.success.headers, success.headers, compare));
+    drift.push(
+      ...findHeaderDrift(
+        label,
+        readSuccessHeadersSchema(contract.success),
+        success.headers,
+        compare,
+      ),
+    );
     const body = contract.success.body;
     switch (body.kind) {
       case 'json':
@@ -234,17 +243,21 @@ function findHeaderDrift(
   compare: SchemaComparison,
 ): string[] {
   const shape = contractHeaders?.shape ?? {};
+  // HTTP compares header names without regard to letter case, as the document's reading does.
   const requiredNames = new Set(
     contractHeaders === undefined
       ? []
-      : readRequiredNames(readWireJsonSchema(contractHeaders, 'output')).map((name) =>
-        name.toLowerCase()
-      ),
-  );
-  const contractNames = new Map(
-    Object.entries(shape).map(([name, schema]) => [name.toLowerCase(), schema]),
+      : readRequiredNames(readWireJsonSchema(contractHeaders, 'output')).map(normalizeHeaderName),
   );
   const drift: string[] = [];
+  const contractNames = new Map<string, z.ZodType>();
+  for (const [name, schema] of Object.entries(shape)) {
+    const normalizedName = normalizeHeaderName(name);
+    if (contractNames.has(normalizedName)) {
+      drift.push(`${label} header ${normalizedName}: the contract declares it twice`);
+    }
+    contractNames.set(normalizedName, schema);
+  }
   for (const name of documentedHeaders.keys()) {
     if (!contractNames.has(name)) drift.push(`${label} header ${name}: only the document has it`);
   }

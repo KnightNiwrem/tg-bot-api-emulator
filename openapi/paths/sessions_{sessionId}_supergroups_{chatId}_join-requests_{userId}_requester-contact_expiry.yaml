@@ -16,6 +16,11 @@ post:
   responses:
     '200':
       description: The contact window ended; the request is shown as the supergroup's owner sees it.
+      headers:
+        Action-Receipt-Session-Id:
+          $ref: ../components/headers/ActionReceiptSessionId.yaml
+        Action-Receipt-Activity-Position:
+          $ref: ../components/headers/ActionReceiptActivityPosition.yaml
       content:
         application/json:
           schema:

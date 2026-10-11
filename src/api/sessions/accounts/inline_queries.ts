@@ -23,6 +23,7 @@ import {
   invalidControlRequestResponse,
 } from '../../control_error_response.ts';
 import { registerControlOperation } from '../../control_operation_route.ts';
+import { answerWithActionReceipt } from '../action_receipt.ts';
 import { readPathParameters } from '../control_request_input.ts';
 import { readJsonRequestBody } from '../json_request_body.ts';
 import type { SessionRouteContextTypes } from '../session_route_context_types.ts';
@@ -106,24 +107,25 @@ export function createInlineQueryRoutes(): Hono<SessionRouteContextTypes> {
     }
     const requestBody = requestBodyReading.value;
 
-    const { inlineQueries, botMessageViews } = context.get('emulationSession');
-    const result = await inlineQueries.chooseInlineQueryResult({
-      accountId,
-      inlineQueryId: context.req.param(INLINE_QUERY_ID_PARAMETER),
-      resultId: requestBody.result_id,
-      signal: context.req.raw.signal,
-    });
-    if (!result.chosen) {
-      return controlErrorResponse(
-        context,
-        chosenInlineResultFailureStatus(result.reason),
-        result.reason,
+    return answerWithActionReceipt(context, async ({ inlineQueries, botMessageViews }) => {
+      const result = await inlineQueries.chooseInlineQueryResult({
+        accountId,
+        inlineQueryId: context.req.param(INLINE_QUERY_ID_PARAMETER),
+        resultId: requestBody.result_id,
+        signal: context.req.raw.signal,
+      });
+      if (!result.chosen) {
+        return controlErrorResponse(
+          context,
+          chosenInlineResultFailureStatus(result.reason),
+          result.reason,
+        );
+      }
+      return context.json(
+        { message: viewChatMessageForAccount(botMessageViews, result.message, accountId) },
+        201,
       );
-    }
-    return context.json(
-      { message: viewChatMessageForAccount(botMessageViews, result.message, accountId) },
-      201,
-    );
+    });
   });
 
   return accountRoutes;

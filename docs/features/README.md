@@ -24,7 +24,7 @@ thresholds, which tests replace with
 | Feature                                               | Coverage                                                                    |
 | ----------------------------------------------------- | --------------------------------------------------------------------------- |
 | [Sessions and requests](sessions-and-requests.md)     | Test isolation, virtual identities, request formats, validation and errors  |
-| [Bot activity](bot-activity.md)                       | Recorded calls and updates, waiting for them and asserting their order      |
+| [Bot activity](bot-activity.md)                       | Recorded calls and updates, action receipts, waiting and asserting order    |
 | [Updates and polling](updates.md)                     | Generated update types, subscriptions, offsets, long polling and retention  |
 | [Webhooks](webhooks.md)                               | Delivery, replies, retry behavior, delivery controls and connection limits  |
 | [Messages](messages.md)                               | Sending, drafts, replies, edits, deletion, blocking, forwarding and copying |

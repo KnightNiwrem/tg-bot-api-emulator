@@ -34,6 +34,11 @@ post:
       description: >-
         The result was sent. A private message is shown as the conversation's bot sees it, and
         a supergroup message as the account sees it.
+      headers:
+        Action-Receipt-Session-Id:
+          $ref: ../components/headers/ActionReceiptSessionId.yaml
+        Action-Receipt-Activity-Position:
+          $ref: ../components/headers/ActionReceiptActivityPosition.yaml
       content:
         application/json:
           schema:

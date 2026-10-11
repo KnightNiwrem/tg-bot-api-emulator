@@ -35,6 +35,11 @@ put:
   responses:
     '204':
       description: The member is an administrator with the given rights.
+      headers:
+        Action-Receipt-Session-Id:
+          $ref: ../components/headers/ActionReceiptSessionId.yaml
+        Action-Receipt-Activity-Position:
+          $ref: ../components/headers/ActionReceiptActivityPosition.yaml
     '400':
       description: A path identifier or the body is invalid, or the body grants no right.
       content:
@@ -103,6 +108,11 @@ delete:
   responses:
     '204':
       description: The user is a member of the supergroup without administrator rights.
+      headers:
+        Action-Receipt-Session-Id:
+          $ref: ../components/headers/ActionReceiptSessionId.yaml
+        Action-Receipt-Activity-Position:
+          $ref: ../components/headers/ActionReceiptActivityPosition.yaml
     '400':
       description: A path identifier is invalid.
       content:

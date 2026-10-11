@@ -184,7 +184,7 @@ Deno.test('A status, reason or header only one side declares is drift', () => {
   const documented = findOperation('createBot');
   const contract = defineControlOperation({
     ...createBotContract,
-    success: { status: 201, body: createBotContract.success.body },
+    success: { ...createBotContract.success, headers: undefined },
     refusals: {
       400: createBotContract.refusals[400],
       404: createBotContract.refusals[404],
@@ -202,6 +202,47 @@ Deno.test('A status, reason or header only one side declares is drift', () => {
     'response 409 /properties/reason/const: the contract has nothing, the document has "username_taken"',
     'response 409 /properties/reason/enum: the contract has ["username_reserved","username_taken"], the document has nothing',
   ]);
+});
+
+Deno.test('An action receipt only one side declares is drift', () => {
+  const contractWithoutReceipt = defineControlOperation({
+    ...createBotContract,
+    success: { ...createBotContract.success, actionReceipt: undefined },
+  });
+  const contractWithReceipt = defineControlOperation({
+    ...deleteSessionContract,
+    success: { ...deleteSessionContract.success, actionReceipt: 'before_action' },
+  });
+
+  const drift = [
+    ...findContractDrift(contractWithoutReceipt, [findOperation('createBot')], canonicalizer),
+    ...findContractDrift(contractWithReceipt, [findOperation('deleteSession')], canonicalizer),
+  ];
+
+  assertDrift(drift, [
+    'response 201 header action-receipt-session-id: only the document has it',
+    'response 201 header action-receipt-activity-position: only the document has it',
+    'response 204 header action-receipt-session-id: only the contract has it',
+    'response 204 header action-receipt-activity-position: only the contract has it',
+  ]);
+});
+
+Deno.test('A header the contract declares in two letter cases is drift', () => {
+  const documented = findOperation('createBot');
+  // A contract that `defineControlOperation` would refuse, compared as it stands.
+  const contract: ControlOperationContract = {
+    ...createBotContract,
+    success: {
+      ...createBotContract.success,
+      headers: z.object({ Location: z.string(), location: z.string() }),
+    },
+  };
+
+  const drift = findContractDrift(contract, [documented], canonicalizer);
+
+  if (!drift.includes('response 201 header location: the contract declares it twice')) {
+    throw new Error(`Expected the repeated header as drift, found:\n${drift.join('\n')}`);
+  }
 });
 
 Deno.test('A wire schema whose JSON Schema would leave out a check is refused', () => {

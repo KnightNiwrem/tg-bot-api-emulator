@@ -66,7 +66,11 @@ export const registerWebResourceContract = defineControlOperation({
   path: '/sessions/{sessionId}/web-resources',
   params: z.strictObject({ sessionId: sessionIdParameterSchema }),
   body: { required: true, schema: registerWebResourceRequestSchema },
-  success: { status: 201, body: { kind: 'json', schema: webResourceSchema } },
+  success: {
+    status: 201,
+    body: { kind: 'json', schema: webResourceSchema },
+    actionReceipt: 'before_action',
+  },
   refusals: {
     // A resource the schema accepts can still break a rule the server checks.
     400: z.union([

@@ -41,6 +41,17 @@ info:
     without a body.
 
 
+    Every control operation that acts, rather than reads, answers its success with an action
+    receipt, in the `Action-Receipt-Session-Id` and `Action-Receipt-Activity-Position` headers,
+    whatever its body: the session it acted in and a position of that session's bot activity log
+    captured where the action executed, before it changed anything. Reading the log `after` that
+    position finds every entry the action caused, such as a bot's reply recorded before the
+    response was sent, without first reading the log's head. The position is a lower bound:
+    entries the action did not cause, such as another bot's concurrent calls, may follow it too.
+    Creating a session answers with the new session and position 0. A refusal carries no receipt,
+    nor does ending a session.
+
+
     The server is meant to run inside a test environment, such as CI, rather than as a public
     service, so admin routes require no credentials; each test session isolates its own state. Bot
     API routes authenticate the bot token in their path, as Telegram does, and answer a token that

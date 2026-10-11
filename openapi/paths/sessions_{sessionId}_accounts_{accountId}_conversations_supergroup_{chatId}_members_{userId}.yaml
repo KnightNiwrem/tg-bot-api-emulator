@@ -26,6 +26,11 @@ put:
   responses:
     '204':
       description: The user is a member of the supergroup.
+      headers:
+        Action-Receipt-Session-Id:
+          $ref: ../components/headers/ActionReceiptSessionId.yaml
+        Action-Receipt-Activity-Position:
+          $ref: ../components/headers/ActionReceiptActivityPosition.yaml
     '400':
       description: A path identifier is invalid.
       content:
@@ -78,6 +83,11 @@ delete:
   responses:
     '204':
       description: The user is not a member of the supergroup.
+      headers:
+        Action-Receipt-Session-Id:
+          $ref: ../components/headers/ActionReceiptSessionId.yaml
+        Action-Receipt-Activity-Position:
+          $ref: ../components/headers/ActionReceiptActivityPosition.yaml
     '400':
       description: A path identifier is invalid.
       content:

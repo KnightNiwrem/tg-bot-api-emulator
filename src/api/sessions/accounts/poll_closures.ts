@@ -5,6 +5,7 @@ import {
   controlErrorResponse,
   invalidControlRequestResponse,
 } from '../../control_error_response.ts';
+import { answerWithActionReceipt } from '../action_receipt.ts';
 import type { SessionRouteContextTypes } from '../session_route_context_types.ts';
 import { PRIVATE_MESSAGE_PATH, SUPERGROUP_MESSAGE_PATH } from './account_paths.ts';
 import { viewChatMessageForAccount } from './chat_message_view.ts';
@@ -33,17 +34,22 @@ export function createPollClosureRoutes(): Hono<SessionRouteContextTypes> {
         return invalidControlRequestResponse(context, pollMessageReading.issues);
       }
       const pollMessage = pollMessageReading.value;
-      const { polls, botMessageViews } = context.get('emulationSession');
-      const result = polls.stopAccountPoll(pollMessage);
-      if (!result.stopped) {
-        return controlErrorResponse(
-          context,
-          pollClosureFailureStatus(result.reason),
-          result.reason,
-        );
-      }
-      return context.json({
-        message: viewChatMessageForAccount(botMessageViews, result.message, pollMessage.accountId),
+      return answerWithActionReceipt(context, ({ polls, botMessageViews }) => {
+        const result = polls.stopAccountPoll(pollMessage);
+        if (!result.stopped) {
+          return controlErrorResponse(
+            context,
+            pollClosureFailureStatus(result.reason),
+            result.reason,
+          );
+        }
+        return context.json({
+          message: viewChatMessageForAccount(
+            botMessageViews,
+            result.message,
+            pollMessage.accountId,
+          ),
+        });
       });
     });
   }

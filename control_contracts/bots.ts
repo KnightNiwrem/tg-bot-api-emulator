@@ -95,6 +95,7 @@ export const createBotContract = defineControlOperation({
     status: 201,
     headers: createdResourceHeadersSchema,
     body: { kind: 'json', schema: createdBotSchema },
+    actionReceipt: 'before_action',
   },
   refusals: {
     400: controlValidationErrorSchema,

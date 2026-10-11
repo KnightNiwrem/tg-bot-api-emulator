@@ -7,6 +7,7 @@ import { Hono } from 'hono';
 import { z } from 'zod';
 
 import { registerControlOperation } from '../../src/api/control_operation_route.ts';
+import type { SessionRouteContextTypes } from '../../src/api/sessions/session_route_context_types.ts';
 import { controlRefusalSchema } from '../../control_contracts/control_errors.ts';
 import { isContentTypeInRange } from '../../http_grammar/media_type.ts';
 import { defineControlOperation } from '../../control_contracts/operation_contract.ts';
@@ -55,7 +56,7 @@ const writeNoteContract = defineControlOperation({
 
 /** A server of notes whose routes record what each decoded request held. */
 function createNoteServer(): { transport: ControlOperationTransport; writes: unknown[] } {
-  const routes = new Hono();
+  const routes = new Hono<SessionRouteContextTypes>();
   const writes: unknown[] = [];
   registerControlOperation(
     routes,
@@ -213,7 +214,7 @@ Deno.test('A wildcard Content-Type is no media type within a range', async () =>
         new Response('Note', { status: 200, headers: { 'Content-Type': 'text/*' } }),
       ),
   };
-  const routes = new Hono();
+  const routes = new Hono<SessionRouteContextTypes>();
   registerControlOperation(routes, '', downloadNoteContract, () => ({
     status: 200,
     body: new Uint8Array([1]),
@@ -254,7 +255,7 @@ Deno.test('A bytes contract declares a media range of RFC 9110 form', () => {
 });
 
 Deno.test('A route answering bytes outside its media type range is a server fault', async () => {
-  const routes = new Hono();
+  const routes = new Hono<SessionRouteContextTypes>();
   registerControlOperation(routes, '', downloadNoteContract, () => ({
     status: 200,
     body: new Uint8Array([1]),
@@ -371,7 +372,7 @@ const echoBytesContract = defineControlOperation({
 });
 
 Deno.test('Every kind of call sends its path parameters, query and body', async () => {
-  const routes = new Hono();
+  const routes = new Hono<SessionRouteContextTypes>();
   const describeRequest = (
     { params, query, body }: {
       params: { echoId: string };

@@ -137,6 +137,14 @@ relaxing it. The [OpenAPI description](../../openapi/openapi.yaml) lists the rea
 each operation can carry, and the TypeScript client throws them as an `EmulationControlError`; see
 [Troubleshooting](../clients/typescript/troubleshooting.md#the-emulator-refuses-a-request).
 
+### Action receipts
+
+Every control route that acts answers its success with an action receipt, in the
+`Action-Receipt-Session-Id` and `Action-Receipt-Activity-Position` headers: the session it acted in,
+and the position of that session's bot activity log before the action. Reading the log after that
+position finds everything the action caused. A refusal carries no receipt, nor does ending a
+session. [Bot activity](bot-activity.md#action-receipts) describes them.
+
 ### Rate limit answers
 
 Tests make a bot's next calls fail with `429 Too Many Requests` by queuing answers with

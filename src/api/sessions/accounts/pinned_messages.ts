@@ -5,6 +5,7 @@ import {
   controlErrorResponse,
   invalidControlRequestResponse,
 } from '../../control_error_response.ts';
+import { answerWithActionReceipt } from '../action_receipt.ts';
 import { readPathParameters } from '../control_request_input.ts';
 import type { SessionRouteContextTypes } from '../session_route_context_types.ts';
 import {
@@ -145,20 +146,21 @@ function answerPinChange(
     readonly chat: PinningChat;
     readonly messageId: number;
   },
-): Response {
-  const { messagePinning } = context.get('emulationSession');
-  const input = { fromAccountId: accountId, chat, messageId };
-  if (change === 'pin') {
-    // Accounts pin as Telegram's clients do by default, notifying the members of a supergroup.
-    const result = messagePinning.pinMessageByAccount({ ...input, isSilent: false });
-    return result.pinned
+): Promise<Response> {
+  return answerWithActionReceipt(context, ({ messagePinning }) => {
+    const input = { fromAccountId: accountId, chat, messageId };
+    if (change === 'pin') {
+      // Accounts pin as Telegram's clients do by default, notifying the members of a supergroup.
+      const result = messagePinning.pinMessageByAccount({ ...input, isSilent: false });
+      return result.pinned
+        ? context.body(null, 204)
+        : controlErrorResponse(context, pinChangeFailureStatus(result.reason), result.reason);
+    }
+    const result = messagePinning.unpinMessageByAccount(input);
+    return result.unpinned
       ? context.body(null, 204)
       : controlErrorResponse(context, pinChangeFailureStatus(result.reason), result.reason);
-  }
-  const result = messagePinning.unpinMessageByAccount(input);
-  return result.unpinned
-    ? context.body(null, 204)
-    : controlErrorResponse(context, pinChangeFailureStatus(result.reason), result.reason);
+  });
 }
 
 /**

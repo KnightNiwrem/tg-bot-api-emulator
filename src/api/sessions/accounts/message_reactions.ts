@@ -6,6 +6,7 @@ import {
   controlErrorResponse,
   invalidControlRequestResponse,
 } from '../../control_error_response.ts';
+import { answerWithActionReceipt } from '../action_receipt.ts';
 import { type ControlRequestInputReading, readPathParameters } from '../control_request_input.ts';
 import { readJsonRequestBody } from '../json_request_body.ts';
 import type { SessionRouteContextTypes } from '../session_route_context_types.ts';
@@ -67,19 +68,20 @@ export function createMessageReactionRoutes(): Hono<SessionRouteContextTypes> {
       return invalidControlRequestResponse(context, requestBodyReading.issues);
     }
     const requestBody = requestBodyReading.value;
-    const { messageReactions, botMessageViews } = context.get('emulationSession');
-    const result = messageReactions.setAccountMessageReaction({
-      ...messageKey,
-      emojis: requestBody.reaction.map(({ emoji }) => emoji),
+    return answerWithActionReceipt(context, ({ messageReactions, botMessageViews }) => {
+      const result = messageReactions.setAccountMessageReaction({
+        ...messageKey,
+        emojis: requestBody.reaction.map(({ emoji }) => emoji),
+      });
+      if (!result.set) {
+        return controlErrorResponse(
+          context,
+          messageReactionFailureStatus(result.reason),
+          result.reason,
+        );
+      }
+      return context.json(presentMessageReactions(botMessageViews, result, messageKey));
     });
-    if (!result.set) {
-      return controlErrorResponse(
-        context,
-        messageReactionFailureStatus(result.reason),
-        result.reason,
-      );
-    }
-    return context.json(presentMessageReactions(botMessageViews, result, messageKey));
   });
 
   accountRoutes.delete(SUPERGROUP_MESSAGE_REACTIONS_PATH, (context) => {
@@ -88,13 +90,15 @@ export function createMessageReactionRoutes(): Hono<SessionRouteContextTypes> {
       return invalidControlRequestResponse(context, messageKeyReading.issues);
     }
     const messageKey = messageKeyReading.value;
-    const result = context.get('emulationSession').messageReactions.setAccountMessageReaction({
-      ...messageKey,
-      emojis: [],
+    return answerWithActionReceipt(context, ({ messageReactions }) => {
+      const result = messageReactions.setAccountMessageReaction({
+        ...messageKey,
+        emojis: [],
+      });
+      return result.set
+        ? context.body(null, 204)
+        : controlErrorResponse(context, messageReactionFailureStatus(result.reason), result.reason);
     });
-    return result.set
-      ? context.body(null, 204)
-      : controlErrorResponse(context, messageReactionFailureStatus(result.reason), result.reason);
   });
 
   return accountRoutes;
