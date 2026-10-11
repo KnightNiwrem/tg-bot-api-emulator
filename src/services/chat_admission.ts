@@ -390,8 +390,13 @@ interface ChatAdmissionStore extends SupergroupMembershipLookup {
   countJoinRequestsByInviteLink(chatId: number, inviteLinkUrl: string): number;
 }
 
-/** Takes each event into the transaction of the command that caused it. */
-interface ChatDomainEventSink {
+/**
+ * The session's transactions: each command of chat admission runs in one, and emits its events
+ * into it.
+ */
+interface ChatAdmissionTransactions {
+  /** Runs a command in the transaction of the command executing, or in one of its own. */
+  withinTransaction<Result>(command: () => Result): Result;
   emit(event: ChatDomainEvent): void;
 }
 
@@ -424,8 +429,11 @@ interface ChatAdmissionServiceDependencies {
   readonly inviteLinks: ChatInviteLinkStore;
   /** Adds the accounts that may join, publishing and recording each join. */
   readonly memberships: AccountAdmission;
-  /** Receives each join request an account sends. */
-  readonly events: ChatDomainEventSink;
+  /**
+   * Runs each command that changes the session as one transaction, which receives each join
+   * request an account sends.
+   */
+  readonly transactions: ChatAdmissionTransactions;
   /** The time links are created and requests sent at, which an expiry date must lie after. */
   readonly currentUnixTimeSeconds: () => number;
 }
@@ -441,6 +449,12 @@ interface ChatAdmissionServiceDependencies {
  * uses, never the requests already sent through it.
  * A link's expiry date, like the end of a request's contact window, arrives only when a test makes
  * it arrive, so tests decide when a link stops working.
+ *
+ * Each command that changes the session runs as one transaction: the links and requests it stores,
+ * the member it admits with the service message recording the join, and the updates their events
+ * become are published together, or, should any step fail, not at all. Every condition a command
+ * depends on is checked in that transaction, so a decision prepared earlier is never committed
+ * against changed state.
  */
 export class ChatAdmissionService {
   readonly #accounts: AccountLookup;
@@ -448,11 +462,11 @@ export class ChatAdmissionService {
   readonly #sharedChats: ChatAdmissionStore;
   readonly #inviteLinks: ChatInviteLinkStore;
   readonly #memberships: AccountAdmission;
-  readonly #events: ChatDomainEventSink;
+  readonly #transactions: ChatAdmissionTransactions;
   readonly #currentUnixTimeSeconds: () => number;
 
   constructor(
-    { accounts, bots, sharedChats, inviteLinks, memberships, events, currentUnixTimeSeconds }:
+    { accounts, bots, sharedChats, inviteLinks, memberships, transactions, currentUnixTimeSeconds }:
       ChatAdmissionServiceDependencies,
   ) {
     this.#accounts = accounts;
@@ -460,7 +474,7 @@ export class ChatAdmissionService {
     this.#sharedChats = sharedChats;
     this.#inviteLinks = inviteLinks;
     this.#memberships = memberships;
-    this.#events = events;
+    this.#transactions = transactions;
     this.#currentUnixTimeSeconds = currentUnixTimeSeconds;
   }
 
@@ -473,33 +487,35 @@ export class ChatAdmissionService {
    * refuse an expiry date that is not in the future and a member limit above 99999.
    */
   createInviteLinkAsBot(input: CreateInviteLinkAsBotInput): CreateInviteLinkAsBotResult {
-    const manager = this.#resolveInviteLinkManager(input.creatorBotId, input.chatId);
-    if (!manager.resolved) {
-      return { created: false, reason: manager.reason };
-    }
-    const cleanedName = cleanInputString(input.name);
-    if (cleanedName === undefined) {
-      return { created: false, reason: 'text_encoding_invalid' };
-    }
-    if (input.createsJoinRequest && input.memberLimit !== undefined) {
-      return { created: false, reason: 'member_limit_with_join_request' };
-    }
-    if (!holdsSupergroupAdministratorRight(manager.membership, 'can_invite_users')) {
-      return { created: false, reason: 'not_enough_rights' };
-    }
-    const createdAtUnixSeconds = this.#currentUnixTimeSeconds();
-    const settings = this.#resolveInviteLinkSettings(input, cleanedName, createdAtUnixSeconds);
-    if (!settings.resolved) {
-      return { created: false, reason: settings.reason };
-    }
+    return this.#transactions.withinTransaction(() => {
+      const manager = this.#resolveInviteLinkManager(input.creatorBotId, input.chatId);
+      if (!manager.resolved) {
+        return { created: false, reason: manager.reason };
+      }
+      const cleanedName = cleanInputString(input.name);
+      if (cleanedName === undefined) {
+        return { created: false, reason: 'text_encoding_invalid' };
+      }
+      if (input.createsJoinRequest && input.memberLimit !== undefined) {
+        return { created: false, reason: 'member_limit_with_join_request' };
+      }
+      if (!holdsSupergroupAdministratorRight(manager.membership, 'can_invite_users')) {
+        return { created: false, reason: 'not_enough_rights' };
+      }
+      const createdAtUnixSeconds = this.#currentUnixTimeSeconds();
+      const settings = this.#resolveInviteLinkSettings(input, cleanedName, createdAtUnixSeconds);
+      if (!settings.resolved) {
+        return { created: false, reason: settings.reason };
+      }
 
-    const link = this.#inviteLinks.createInviteLink({
-      chatId: input.chatId,
-      creatorId: input.creatorBotId,
-      createdAtUnixSeconds,
-      ...settings.settings,
+      const link = this.#inviteLinks.createInviteLink({
+        chatId: input.chatId,
+        creatorId: input.creatorBotId,
+        createdAtUnixSeconds,
+        ...settings.settings,
+      });
+      return { created: true, link };
     });
-    return { created: true, link };
   }
 
   /**
@@ -512,20 +528,22 @@ export class ChatAdmissionService {
   exportPrimaryInviteLinkAsBot(
     { exporterBotId, chatId }: ExportPrimaryInviteLinkAsBotInput,
   ): ExportPrimaryInviteLinkAsBotResult {
-    const manager = this.#resolveInviteLinkManager(exporterBotId, chatId);
-    if (!manager.resolved) {
-      return { exported: false, reason: manager.reason };
-    }
-    if (!holdsSupergroupAdministratorRight(manager.membership, 'can_invite_users')) {
-      return { exported: false, reason: 'not_enough_rights' };
-    }
+    return this.#transactions.withinTransaction(() => {
+      const manager = this.#resolveInviteLinkManager(exporterBotId, chatId);
+      if (!manager.resolved) {
+        return { exported: false, reason: manager.reason };
+      }
+      if (!holdsSupergroupAdministratorRight(manager.membership, 'can_invite_users')) {
+        return { exported: false, reason: 'not_enough_rights' };
+      }
 
-    const { primaryLink } = this.#inviteLinks.replacePrimaryInviteLink({
-      chatId,
-      creatorId: exporterBotId,
-      createdAtUnixSeconds: this.#currentUnixTimeSeconds(),
+      const { primaryLink } = this.#inviteLinks.replacePrimaryInviteLink({
+        chatId,
+        creatorId: exporterBotId,
+        createdAtUnixSeconds: this.#currentUnixTimeSeconds(),
+      });
+      return { exported: true, link: primaryLink };
     });
-    return { exported: true, link: primaryLink };
   }
 
   /**
@@ -559,45 +577,47 @@ export class ChatAdmissionService {
    * has not arrived, or none, so a link whose expiry date a test made arrive works again.
    */
   editInviteLinkAsBot(input: EditInviteLinkAsBotInput): EditInviteLinkAsBotResult {
-    const manager = this.#resolveInviteLinkManager(input.editorBotId, input.chatId);
-    if (!manager.resolved) {
-      return { edited: false, reason: manager.reason };
-    }
-    const cleanedName = cleanInputString(input.name);
-    const cleanedInviteLinkUrl = cleanInputString(input.inviteLinkUrl);
-    if (cleanedName === undefined || cleanedInviteLinkUrl === undefined) {
-      return { edited: false, reason: 'text_encoding_invalid' };
-    }
-    if (!holdsSupergroupAdministratorRight(manager.membership, 'can_invite_users')) {
-      return { edited: false, reason: 'not_enough_rights' };
-    }
-    if (input.createsJoinRequest && input.memberLimit !== undefined) {
-      return { edited: false, reason: 'member_limit_with_join_request' };
-    }
-    const managedLink = this.#findManagedInviteLink(
-      input.editorBotId,
-      input.chatId,
-      cleanedInviteLinkUrl,
-    );
-    if (!managedLink.found) {
-      return { edited: false, reason: managedLink.reason };
-    }
-    if (managedLink.link.isPrimary) {
-      return { edited: false, reason: 'primary_invite_link_not_editable' };
-    }
-    const settings = this.#resolveInviteLinkSettings(
-      input,
-      cleanedName,
-      this.#currentUnixTimeSeconds(),
-    );
-    if (!settings.resolved) {
-      return { edited: false, reason: settings.reason };
-    }
+    return this.#transactions.withinTransaction(() => {
+      const manager = this.#resolveInviteLinkManager(input.editorBotId, input.chatId);
+      if (!manager.resolved) {
+        return { edited: false, reason: manager.reason };
+      }
+      const cleanedName = cleanInputString(input.name);
+      const cleanedInviteLinkUrl = cleanInputString(input.inviteLinkUrl);
+      if (cleanedName === undefined || cleanedInviteLinkUrl === undefined) {
+        return { edited: false, reason: 'text_encoding_invalid' };
+      }
+      if (!holdsSupergroupAdministratorRight(manager.membership, 'can_invite_users')) {
+        return { edited: false, reason: 'not_enough_rights' };
+      }
+      if (input.createsJoinRequest && input.memberLimit !== undefined) {
+        return { edited: false, reason: 'member_limit_with_join_request' };
+      }
+      const managedLink = this.#findManagedInviteLink(
+        input.editorBotId,
+        input.chatId,
+        cleanedInviteLinkUrl,
+      );
+      if (!managedLink.found) {
+        return { edited: false, reason: managedLink.reason };
+      }
+      if (managedLink.link.isPrimary) {
+        return { edited: false, reason: 'primary_invite_link_not_editable' };
+      }
+      const settings = this.#resolveInviteLinkSettings(
+        input,
+        cleanedName,
+        this.#currentUnixTimeSeconds(),
+      );
+      if (!settings.resolved) {
+        return { edited: false, reason: settings.reason };
+      }
 
-    return {
-      edited: true,
-      link: this.#inviteLinks.replaceInviteLinkSettings(managedLink.link.url, settings.settings),
-    };
+      return {
+        edited: true,
+        link: this.#inviteLinks.replaceInviteLinkSettings(managedLink.link.url, settings.settings),
+      };
+    });
   }
 
   /**
@@ -612,39 +632,41 @@ export class ChatAdmissionService {
   revokeInviteLinkAsBot(
     { revokerBotId, chatId, inviteLinkUrl }: RevokeInviteLinkAsBotInput,
   ): RevokeInviteLinkAsBotResult {
-    const manager = this.#resolveInviteLinkManager(revokerBotId, chatId);
-    if (!manager.resolved) {
-      return { revoked: false, reason: manager.reason };
-    }
-    const cleanedInviteLinkUrl = cleanInputString(inviteLinkUrl);
-    if (cleanedInviteLinkUrl === undefined) {
-      return { revoked: false, reason: 'text_encoding_invalid' };
-    }
-    if (!holdsSupergroupAdministratorRight(manager.membership, 'can_invite_users')) {
-      return { revoked: false, reason: 'not_enough_rights' };
-    }
-    const managedLink = this.#findManagedInviteLink(revokerBotId, chatId, cleanedInviteLinkUrl);
-    if (!managedLink.found) {
-      return { revoked: false, reason: managedLink.reason };
-    }
-    if (!managedLink.link.isPrimary) {
-      return {
-        revoked: true,
-        link: this.#inviteLinks.markInviteLinkRevoked(managedLink.link.url),
-      };
-    }
+    return this.#transactions.withinTransaction(() => {
+      const manager = this.#resolveInviteLinkManager(revokerBotId, chatId);
+      if (!manager.resolved) {
+        return { revoked: false, reason: manager.reason };
+      }
+      const cleanedInviteLinkUrl = cleanInputString(inviteLinkUrl);
+      if (cleanedInviteLinkUrl === undefined) {
+        return { revoked: false, reason: 'text_encoding_invalid' };
+      }
+      if (!holdsSupergroupAdministratorRight(manager.membership, 'can_invite_users')) {
+        return { revoked: false, reason: 'not_enough_rights' };
+      }
+      const managedLink = this.#findManagedInviteLink(revokerBotId, chatId, cleanedInviteLinkUrl);
+      if (!managedLink.found) {
+        return { revoked: false, reason: managedLink.reason };
+      }
+      if (!managedLink.link.isPrimary) {
+        return {
+          revoked: true,
+          link: this.#inviteLinks.markInviteLinkRevoked(managedLink.link.url),
+        };
+      }
 
-    const { revokedLink } = this.#inviteLinks.replacePrimaryInviteLink({
-      chatId,
-      creatorId: revokerBotId,
-      createdAtUnixSeconds: this.#currentUnixTimeSeconds(),
+      const { revokedLink } = this.#inviteLinks.replacePrimaryInviteLink({
+        chatId,
+        creatorId: revokerBotId,
+        createdAtUnixSeconds: this.#currentUnixTimeSeconds(),
+      });
+      if (revokedLink?.url !== managedLink.link.url) {
+        throw new Error(
+          `Bot ${revokerBotId} revoked primary link ${managedLink.link.url}, which was not current`,
+        );
+      }
+      return { revoked: true, link: revokedLink };
     });
-    if (revokedLink?.url !== managedLink.link.url) {
-      throw new Error(
-        `Bot ${revokerBotId} revoked primary link ${managedLink.link.url}, which was not current`,
-      );
-    }
-    return { revoked: true, link: revokedLink };
   }
 
   /**
@@ -663,35 +685,37 @@ export class ChatAdmissionService {
   joinChatByInviteLink(
     { accountId, inviteLinkUrl }: JoinChatByInviteLinkInput,
   ): JoinChatByInviteLinkResult {
-    if (this.#accounts.getById(accountId) === undefined) {
-      return { used: false, reason: 'account_not_found' };
-    }
-    const link = this.#inviteLinks.findInviteLink(inviteLinkUrl);
-    if (link === undefined) {
-      return { used: false, reason: 'invite_link_not_found' };
-    }
-    if (link.isRevoked) {
-      return { used: false, reason: 'invite_link_revoked' };
-    }
-    if (link.hasExpired) {
-      return { used: false, reason: 'invite_link_expired' };
-    }
-    if (
-      link.memberLimit !== undefined &&
-      this.#sharedChats.countMembersJoinedByInviteLink(link.chatId, link.url) >= link.memberLimit
-    ) {
-      return { used: false, reason: 'invite_link_member_limit_reached' };
-    }
-    const standingFailure = this.#findSelfJoinStandingFailure(link.chatId, accountId);
-    if (standingFailure !== undefined) {
-      return { used: false, reason: standingFailure };
-    }
-    if (link.createsJoinRequest) {
-      return this.#sendJoinRequest(accountId, link);
-    }
+    return this.#transactions.withinTransaction(() => {
+      if (this.#accounts.getById(accountId) === undefined) {
+        return { used: false, reason: 'account_not_found' };
+      }
+      const link = this.#inviteLinks.findInviteLink(inviteLinkUrl);
+      if (link === undefined) {
+        return { used: false, reason: 'invite_link_not_found' };
+      }
+      if (link.isRevoked) {
+        return { used: false, reason: 'invite_link_revoked' };
+      }
+      if (link.hasExpired) {
+        return { used: false, reason: 'invite_link_expired' };
+      }
+      if (
+        link.memberLimit !== undefined &&
+        this.#sharedChats.countMembersJoinedByInviteLink(link.chatId, link.url) >= link.memberLimit
+      ) {
+        return { used: false, reason: 'invite_link_member_limit_reached' };
+      }
+      const standingFailure = this.#findSelfJoinStandingFailure(link.chatId, accountId);
+      if (standingFailure !== undefined) {
+        return { used: false, reason: standingFailure };
+      }
+      if (link.createsJoinRequest) {
+        return this.#sendJoinRequest(accountId, link);
+      }
 
-    this.#memberships.admitAccount({ accountId, chatId: link.chatId, inviteLink: link });
-    return { used: true, chatId: link.chatId, outcome: 'joined' };
+      this.#memberships.admitAccount({ accountId, chatId: link.chatId, inviteLink: link });
+      return { used: true, chatId: link.chatId, outcome: 'joined' };
+    });
   }
 
   /**
@@ -702,23 +726,25 @@ export class ChatAdmissionService {
   joinPublicSupergroup(
     { accountId, chatId }: JoinPublicSupergroupInput,
   ): JoinPublicSupergroupResult {
-    if (this.#accounts.getById(accountId) === undefined) {
-      return { joined: false, reason: 'account_not_found' };
-    }
-    const supergroup = this.#sharedChats.getSharedChat(chatId);
-    if (supergroup?.kind !== 'supergroup') {
-      return { joined: false, reason: 'chat_not_found' };
-    }
-    const standingFailure = this.#findSelfJoinStandingFailure(chatId, accountId);
-    if (standingFailure !== undefined) {
-      return { joined: false, reason: standingFailure };
-    }
-    if (supergroup.username === undefined) {
-      return { joined: false, reason: 'chat_not_public' };
-    }
+    return this.#transactions.withinTransaction(() => {
+      if (this.#accounts.getById(accountId) === undefined) {
+        return { joined: false, reason: 'account_not_found' };
+      }
+      const supergroup = this.#sharedChats.getSharedChat(chatId);
+      if (supergroup?.kind !== 'supergroup') {
+        return { joined: false, reason: 'chat_not_found' };
+      }
+      const standingFailure = this.#findSelfJoinStandingFailure(chatId, accountId);
+      if (standingFailure !== undefined) {
+        return { joined: false, reason: standingFailure };
+      }
+      if (supergroup.username === undefined) {
+        return { joined: false, reason: 'chat_not_public' };
+      }
 
-    this.#memberships.admitAccount({ accountId, chatId });
-    return { joined: true };
+      this.#memberships.admitAccount({ accountId, chatId });
+      return { joined: true };
+    });
   }
 
   /**
@@ -822,20 +848,22 @@ export class ChatAdmissionService {
    * may claim becomes the bot's alone. Call it only once the bot's message passed its checks.
    */
   claimJoinRequesterContact(botId: number, userId: number): void {
-    const claimableRequests = this.#sharedChats.listJoinRequestsOfUser(userId).filter((request) =>
-      this.#listContactBotIds(request).includes(botId)
-    );
-    if (claimableRequests.length === 0) {
-      throw new Error(`Bot ${botId} may not contact join requester ${userId}`);
-    }
-    for (const request of claimableRequests) {
-      if (request.requesterContact.status === 'open') {
-        this.#sharedChats.setJoinRequesterContact(request.chatId, userId, {
-          status: 'claimed',
-          claimantBotId: botId,
-        });
+    this.#transactions.withinTransaction(() => {
+      const claimableRequests = this.#sharedChats.listJoinRequestsOfUser(userId).filter((request) =>
+        this.#listContactBotIds(request).includes(botId)
+      );
+      if (claimableRequests.length === 0) {
+        throw new Error(`Bot ${botId} may not contact join requester ${userId}`);
       }
-    }
+      for (const request of claimableRequests) {
+        if (request.requesterContact.status === 'open') {
+          this.#sharedChats.setJoinRequesterContact(request.chatId, userId, {
+            status: 'claimed',
+            claimantBotId: botId,
+          });
+        }
+      }
+    });
   }
 
   /**
@@ -846,22 +874,24 @@ export class ChatAdmissionService {
   expireJoinRequesterContact(
     { chatId, userId }: ExpireJoinRequesterContactInput,
   ): ExpireJoinRequesterContactResult {
-    if (this.#sharedChats.getSharedChat(chatId)?.kind !== 'supergroup') {
-      return { expired: false, reason: 'chat_not_found' };
-    }
-    const request = this.#sharedChats.getJoinRequest(chatId, userId);
-    if (request === undefined) {
-      return { expired: false, reason: 'join_request_not_found' };
-    }
-    if (request.requesterContact.status === 'expired') {
-      return { expired: false, reason: 'requester_contact_already_expired' };
-    }
-    return {
-      expired: true,
-      request: this.#describePendingRequest(
-        this.#sharedChats.setJoinRequesterContact(chatId, userId, { status: 'expired' }),
-      ),
-    };
+    return this.#transactions.withinTransaction(() => {
+      if (this.#sharedChats.getSharedChat(chatId)?.kind !== 'supergroup') {
+        return { expired: false, reason: 'chat_not_found' };
+      }
+      const request = this.#sharedChats.getJoinRequest(chatId, userId);
+      if (request === undefined) {
+        return { expired: false, reason: 'join_request_not_found' };
+      }
+      if (request.requesterContact.status === 'expired') {
+        return { expired: false, reason: 'requester_contact_already_expired' };
+      }
+      return {
+        expired: true,
+        request: this.#describePendingRequest(
+          this.#sharedChats.setJoinRequesterContact(chatId, userId, { status: 'expired' }),
+        ),
+      };
+    });
   }
 
   /**
@@ -871,20 +901,22 @@ export class ChatAdmissionService {
    * as time passes for it too.
    */
   expireInviteLink({ chatId, inviteLinkUrl }: ExpireInviteLinkInput): ExpireInviteLinkResult {
-    if (this.#sharedChats.getSharedChat(chatId)?.kind !== 'supergroup') {
-      return { expired: false, reason: 'chat_not_found' };
-    }
-    const link = this.#inviteLinks.findInviteLink(inviteLinkUrl);
-    if (link?.chatId !== chatId) {
-      return { expired: false, reason: 'invite_link_not_found' };
-    }
-    if (link.expiresAtUnixSeconds === undefined || link.hasExpired) {
-      return { expired: false, reason: 'invite_link_not_expirable' };
-    }
-    return {
-      expired: true,
-      link: this.#describeUsage(this.#inviteLinks.markInviteLinkExpired(link.url)),
-    };
+    return this.#transactions.withinTransaction(() => {
+      if (this.#sharedChats.getSharedChat(chatId)?.kind !== 'supergroup') {
+        return { expired: false, reason: 'chat_not_found' };
+      }
+      const link = this.#inviteLinks.findInviteLink(inviteLinkUrl);
+      if (link?.chatId !== chatId) {
+        return { expired: false, reason: 'invite_link_not_found' };
+      }
+      if (link.expiresAtUnixSeconds === undefined || link.hasExpired) {
+        return { expired: false, reason: 'invite_link_not_expirable' };
+      }
+      return {
+        expired: true,
+        link: this.#describeUsage(this.#inviteLinks.markInviteLinkExpired(link.url)),
+      };
+    });
   }
 
   /**
@@ -1059,37 +1091,39 @@ export class ChatAdmissionService {
       readonly decided: false;
       readonly reason: AuthorizationFailureReason | JoinRequestTargetFailureReason;
     } {
-    if (authorizationFailure !== undefined) {
-      return { decided: false, reason: authorizationFailure };
-    }
-    if (this.#sharedChats.getChatMembership(chatId, userId) !== undefined) {
-      return { decided: false, reason: 'already_a_member' };
-    }
-    const request = this.#sharedChats.getJoinRequest(chatId, userId);
-    if (request === undefined) {
-      return { decided: false, reason: 'join_request_missing' };
-    }
-
-    switch (decision) {
-      case 'approve':
-        this.#memberships.admitAccount({
-          accountId: userId,
-          chatId,
-          inviteLink: this.#findRequestInviteLink(request),
-          approverId: deciderId,
-        });
-        break;
-      case 'decline':
-        if (!this.#sharedChats.removeJoinRequest(chatId, userId)) {
-          throw new Error(`Join request of user ${userId} to chat ${chatId} vanished`);
-        }
-        break;
-      default: {
-        const unhandledDecision: never = decision;
-        throw new Error(`Unhandled join request decision: ${unhandledDecision}`);
+    return this.#transactions.withinTransaction(() => {
+      if (authorizationFailure !== undefined) {
+        return { decided: false, reason: authorizationFailure };
       }
-    }
-    return { decided: true };
+      if (this.#sharedChats.getChatMembership(chatId, userId) !== undefined) {
+        return { decided: false, reason: 'already_a_member' };
+      }
+      const request = this.#sharedChats.getJoinRequest(chatId, userId);
+      if (request === undefined) {
+        return { decided: false, reason: 'join_request_missing' };
+      }
+
+      switch (decision) {
+        case 'approve':
+          this.#memberships.admitAccount({
+            accountId: userId,
+            chatId,
+            inviteLink: this.#findRequestInviteLink(request),
+            approverId: deciderId,
+          });
+          break;
+        case 'decline':
+          if (!this.#sharedChats.removeJoinRequest(chatId, userId)) {
+            throw new Error(`Join request of user ${userId} to chat ${chatId} vanished`);
+          }
+          break;
+        default: {
+          const unhandledDecision: never = decision;
+          throw new Error(`Unhandled join request decision: ${unhandledDecision}`);
+        }
+      }
+      return { decided: true };
+    });
   }
 
   /**
@@ -1135,7 +1169,7 @@ export class ChatAdmissionService {
       requesterContact: { status: 'open' },
     };
     this.#sharedChats.addJoinRequest(request);
-    this.#events.emit({ type: 'chat_join_requested', chat, request, inviteLink: link });
+    this.#transactions.emit({ type: 'chat_join_requested', chat, request, inviteLink: link });
     return { used: true, chatId: link.chatId, outcome: 'join_request_sent' };
   }
 

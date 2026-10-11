@@ -104,7 +104,7 @@ export function createEmulationSession(
     const account = accounts.getById(userId);
     return account === undefined ? undefined : getPrivateForwardName(account);
   };
-  const sharedChats = new SharedChatRepository();
+  const sharedChats = new SharedChatRepository(journal);
   const messages = new MessageRepository(journal);
   const files = new FileRepository(journal);
   const polls = new PollRepository(journal);
@@ -159,9 +159,9 @@ export function createEmulationSession(
     accounts,
     bots,
     sharedChats,
-    inviteLinks: new ChatInviteLinkRepository(),
+    inviteLinks: new ChatInviteLinkRepository(journal),
     memberships: sharedChatAdministration,
-    events: transactions,
+    transactions,
     currentUnixTimeSeconds,
   });
   const privateConversations = new PrivateConversationRepository();

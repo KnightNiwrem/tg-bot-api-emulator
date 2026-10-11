@@ -1,3 +1,5 @@
+import { type ChangeStaging, UNSTAGED_CHANGES } from '../transactions/change_staging.ts';
+import { TransactionalMap } from '../transactions/transactional_collections.ts';
 import type {
   AdministratorTenureId,
   ChatMembership,
@@ -97,20 +99,36 @@ export type FormerMemberStatusUpdateResult =
  * when the user joins, whichever way, or is banned.
  */
 export class SharedChatRepository {
-  readonly #sharedChatsById = new Map<number, SharedChat>();
-  readonly #sharedChatMembershipsByChatId = new Map<number, Map<number, ChatMembership>>();
-  readonly #formerMemberStatusesByChatId = new Map<number, Map<number, FormerChatMemberStatus>>();
+  readonly #staging: ChangeStaging;
+  readonly #sharedChatsById: TransactionalMap<number, SharedChat>;
+  readonly #sharedChatMembershipsByChatId: ChatUserIndex<ChatMembership>;
+  readonly #formerMemberStatusesByChatId: ChatUserIndex<FormerChatMemberStatus>;
   /** Keyed by chat ID, then by the ID of a member that joined through an invite link. */
-  readonly #joiningInviteLinkUrlsByChatId = new Map<number, Map<number, string>>();
+  readonly #joiningInviteLinkUrlsByChatId: ChatUserIndex<string>;
   /** Keyed by chat ID, then by the requester's ID, in the order the requests were sent. */
-  readonly #pendingJoinRequestsByChatId = new Map<number, Map<number, ChatJoinRequest>>();
+  readonly #pendingJoinRequestsByChatId: ChatUserIndex<ChatJoinRequest>;
   /** Keyed by chat ID, then by the ID of the account whose client shows the reply interface. */
-  readonly #replyInterfaceMessageIdsByChatId = new Map<number, Map<number, CanonicalMessageId>>();
+  readonly #replyInterfaceMessageIdsByChatId: ChatUserIndex<CanonicalMessageId>;
   #lastAdministratorTenureId: AdministratorTenureId = 0;
+
+  /** `staging` decides how the repository's writes take part in its session's transactions. */
+  constructor(staging: ChangeStaging = UNSTAGED_CHANGES) {
+    this.#staging = staging;
+    this.#sharedChatsById = new TransactionalMap(staging);
+    this.#sharedChatMembershipsByChatId = new TransactionalMap(staging);
+    this.#formerMemberStatusesByChatId = new TransactionalMap(staging);
+    this.#joiningInviteLinkUrlsByChatId = new TransactionalMap(staging);
+    this.#pendingJoinRequestsByChatId = new TransactionalMap(staging);
+    this.#replyInterfaceMessageIdsByChatId = new TransactionalMap(staging);
+  }
 
   /** Issues the identifier of an administrator tenure that starts, greater than every earlier one. */
   issueAdministratorTenureId(): AdministratorTenureId {
-    this.#lastAdministratorTenureId += 1;
+    const previousTenureId = this.#lastAdministratorTenureId;
+    this.#lastAdministratorTenureId = previousTenureId + 1;
+    this.#staging.recordRevert(() => {
+      this.#lastAdministratorTenureId = previousTenureId;
+    });
     return this.#lastAdministratorTenureId;
   }
 
@@ -173,8 +191,11 @@ export class SharedChatRepository {
     membershipsByIdentityId: Map<number, ChatMembership>,
   ): void {
     this.#sharedChatsById.set(chat.id, chat);
-    this.#sharedChatMembershipsByChatId.set(chat.id, membershipsByIdentityId);
-    this.#formerMemberStatusesByChatId.set(chat.id, new Map());
+    this.#sharedChatMembershipsByChatId.set(
+      chat.id,
+      new TransactionalMap(this.#staging, membershipsByIdentityId),
+    );
+    this.#formerMemberStatusesByChatId.set(chat.id, new TransactionalMap(this.#staging));
   }
 
   getSharedChat(id: number): SharedChat | undefined {
@@ -222,7 +243,7 @@ export class SharedChatRepository {
     this.#pendingJoinRequestsByChatId.get(chatId)?.delete(memberId);
     if (joiningInviteLinkUrl !== undefined) {
       const linkUrlsByMemberId = this.#joiningInviteLinkUrlsByChatId.get(chatId) ??
-        new Map<number, string>();
+        new TransactionalMap<number, string>(this.#staging);
       linkUrlsByMemberId.set(memberId, joiningInviteLinkUrl);
       this.#joiningInviteLinkUrlsByChatId.set(chatId, linkUrlsByMemberId);
     }
@@ -245,7 +266,7 @@ export class SharedChatRepository {
       throw new Error(`User ${userId} of chat ${chatId} cannot request to join it`);
     }
     const requestsByUserId = this.#pendingJoinRequestsByChatId.get(chatId) ??
-      new Map<number, ChatJoinRequest>();
+      new TransactionalMap<number, ChatJoinRequest>(this.#staging);
     if (requestsByUserId.has(userId)) {
       throw new Error(`User ${userId} already requested to join chat ${chatId}`);
     }
@@ -416,7 +437,7 @@ export class SharedChatRepository {
       throw new Error(`Chat ${chatId} does not exist`);
     }
     const messageIdsByAccountId = this.#replyInterfaceMessageIdsByChatId.get(chatId) ??
-      new Map<number, CanonicalMessageId>();
+      new TransactionalMap<number, CanonicalMessageId>(this.#staging);
     if (messageId === undefined) {
       messageIdsByAccountId.delete(accountId);
     } else {
@@ -472,6 +493,12 @@ export class SharedChatRepository {
     return { updated: true };
   }
 }
+
+/** Values of a chat's users, keyed by chat ID, then by user ID. */
+type ChatUserIndex<Value extends NonNullable<unknown>> = TransactionalMap<
+  number,
+  TransactionalMap<number, Value>
+>;
 
 /**
  * Refuses to store a restriction that keeps every permission, which TDLib's

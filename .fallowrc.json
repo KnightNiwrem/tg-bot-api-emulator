@@ -460,13 +460,15 @@
       {
         "from": "shared-chat-repository",
         "allow": [
-          "domain"
+          "domain",
+          "change-staging"
         ]
       },
       {
         "from": "chat-invite-link-repository",
         "allow": [
-          "domain"
+          "domain",
+          "change-staging"
         ]
       },
       {

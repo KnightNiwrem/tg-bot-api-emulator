@@ -50,12 +50,53 @@ export const SESSION_ENDED: unique symbol = Symbol('session ended');
 /** How a method ends: with its answer, or refused by its ended session. */
 export type BotApiMethodOutcome = BotApiMethodAnswer | typeof SESSION_ENDED;
 
-/** Runs a method with a call's parameters and uploaded files, and answers the call. */
+/**
+ * Runs a method with a call's parameters and uploaded files, and answers the call, committing the
+ * method's changes as it makes them.
+ */
 export type BotApiMethodHandler = (
   context: BotApiMethodContext,
   parameters: BotApiRequestParameters,
   uploadedFiles: BotApiUploadedFiles,
 ) => BotApiMethodOutcome | Promise<BotApiMethodOutcome>;
+
+/**
+ * What preparing a call produced: the command that the call's transaction executes at its commit
+ * boundary, or the call's answer, when preparation already decided it, as for parameters that
+ * cannot be read.
+ */
+export type BotApiCallPreparation =
+  | {
+    readonly kind: 'command';
+    /**
+     * Checks every condition that depends on the session's state, since preparation may have
+     * outlasted it, then changes the session and answers the call. It runs synchronously, in the
+     * call's transaction, which a failure aborts.
+     */
+    readonly execute: () => BotApiMethodAnswer;
+  }
+  | { readonly kind: 'answered'; readonly answer: BotApiMethodAnswer };
+
+/** The preparation of a call that preparing already answered, as one whose parameters are invalid. */
+export function answeredPreparation(answer: BotApiMethodAnswer): BotApiCallPreparation {
+  return { kind: 'answered', answer };
+}
+
+/**
+ * Prepares a call of a method that executes as a command: it reads the call's parameters and
+ * waits for what they name, such as downloads, producing plain values without changing the
+ * session. Read-only checks of the session's state that the method's error precedence puts first
+ * stay here, in their order. A preparation that waits returns `SESSION_ENDED` once the session
+ * ended during the wait.
+ */
+export type BotApiCommandPreparer = (
+  context: BotApiMethodContext,
+  parameters: BotApiRequestParameters,
+  uploadedFiles: BotApiUploadedFiles,
+) =>
+  | BotApiCallPreparation
+  | typeof SESSION_ENDED
+  | Promise<BotApiCallPreparation | typeof SESSION_ENDED>;
 
 /**
  * How a call ends, however it arrived: answered, or refused because its session had ended before
@@ -65,15 +106,13 @@ export type BotApiCallOutcome =
   | { readonly answered: true; readonly answer: BotApiMethodAnswer }
   | { readonly answered: false; readonly reason: 'session_ended' };
 
-/** A Bot API method the emulator implements, under its current name. */
-export interface BotApiMethod {
+interface BotApiMethodRecord {
   readonly name: string;
   /**
    * Whether the session's bot activity records the method's calls, however they arrived and
    * whatever they were answered: `getUpdates` calls are not, since the updates they deliver are.
    */
   readonly recordsActivity: boolean;
-  readonly handler: BotApiMethodHandler;
   /**
    * The answer a call receives instead of running when its session has ended before the call
    * could change anything, for a method whose callers wait on it: a long poll finds no updates.
@@ -81,6 +120,26 @@ export interface BotApiMethod {
    */
   readonly answerOnceSessionEnded?: BotApiMethodAnswer;
 }
+
+/**
+ * A method whose handler answers each call and commits its own changes; only the call's activity
+ * record is committed in the call's transaction. Methods move from handlers to commands family by
+ * family.
+ */
+interface BotApiHandledMethod extends BotApiMethodRecord {
+  readonly handler: BotApiMethodHandler;
+}
+
+/**
+ * A method whose calls are prepared first, then executed as a command in the call's transaction,
+ * together with their activity record, so a call commits all of its changes or none.
+ */
+interface BotApiCommandMethod extends BotApiMethodRecord {
+  readonly prepare: BotApiCommandPreparer;
+}
+
+/** A Bot API method the emulator implements, under its current name. */
+export type BotApiMethod = BotApiHandledMethod | BotApiCommandMethod;
 
 /** Telegram's JSON answer to a Bot API method, with the HTTP status that carries it. */
 export type BotApiMethodAnswer =
