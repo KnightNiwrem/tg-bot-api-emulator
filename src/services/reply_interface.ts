@@ -43,11 +43,12 @@ import type {
   SupergroupMessage,
 } from '../types/virtual_message.ts';
 import type {
-  AccountServiceContentResolution,
-  SendAccountMessageInput,
-  SendAccountMessageResult,
-  SendAccountServiceMessageResult,
-} from './private_messaging.ts';
+  AccountMessageSendResult,
+  AccountPrivateChatSendingTypes,
+  AccountPrivateChatServiceMessageSendResult,
+  AccountSupergroupSendingTypes,
+  MessageSendingService,
+} from './message_sending.ts';
 import {
   resolveSharedChat,
   resolveSharedUsers,
@@ -55,10 +56,6 @@ import {
   type SharedPeerLookups,
   type SharedUsersFailureReason,
 } from './requested_peer_sharing.ts';
-import type {
-  SendSupergroupAccountMessageInput,
-  SendSupergroupAccountMessageResult,
-} from './supergroup_messaging.ts';
 
 /** The message whose reply interface an account's client shows, with that interface. */
 export interface ShownReplyInterface<Message extends ChatMessage = ChatMessage> {
@@ -167,7 +164,7 @@ export interface SupergroupReplyInterfaceTypes {
   readonly message: SupergroupMessage;
   readonly accessFailureReason: 'chat_not_found' | 'not_a_member';
   readonly answer: never;
-  readonly pressResult: SendSupergroupAccountMessageResult;
+  readonly pressResult: AccountMessageSendResult<AccountSupergroupSendingTypes>;
 }
 
 export type GetReplyInterfaceResult<Types extends ReplyInterfaceTargetingTypes> =
@@ -183,12 +180,12 @@ export type GetReplyInterfaceResult<Types extends ReplyInterfaceTargetingTypes> 
 
 /**
  * What a press of a private chat's button results in: the message it sends, as
- * `PrivateMessagingService` sends an account's message or service message, or why the press's
+ * `MessageSendingService` sends an account's message or service message, or why the press's
  * button or answer is refused.
  */
 export type PrivateChatReplyKeyboardPressResult =
-  | SendAccountMessageResult
-  | SendAccountServiceMessageResult
+  | AccountMessageSendResult<AccountPrivateChatSendingTypes>
+  | AccountPrivateChatServiceMessageSendResult
   | {
     readonly sent: false;
     readonly reason:
@@ -233,19 +230,13 @@ interface SupergroupReplyInterfaceLookup {
   getReplyInterfaceMessageId(chatId: number, accountId: number): CanonicalMessageId | undefined;
 }
 
-/** How a private chat sends what an account's press sends. */
-interface PrivateChatPressSending {
-  sendAccountMessage(input: SendAccountMessageInput): SendAccountMessageResult;
-  sendAccountServiceMessage(
-    sender: { readonly fromAccountId: number; readonly botId: number },
-    resolveContent: (conversation: PrivateConversationKey) => AccountServiceContentResolution,
-  ): SendAccountServiceMessageResult;
-}
-
-/** How a supergroup sends what an account's press sends. */
-interface SupergroupPressSending {
-  sendAccountMessage(input: SendSupergroupAccountMessageInput): SendSupergroupAccountMessageResult;
-}
+/** How a press sends what it sends, by the type of its chat. */
+type PressSending = Pick<
+  MessageSendingService,
+  | 'sendAccountPrivateChatMessage'
+  | 'sendAccountPrivateChatServiceMessage'
+  | 'sendAccountSupergroupMessage'
+>;
 
 /** The private chat policy's rules that reply interfaces ask for. */
 type PrivateChatReplyInterfacePolicy = Pick<PrivateChatIdentityPolicy, 'identifyChatForAccount'>;
@@ -263,8 +254,7 @@ interface ReplyInterfaceServiceDependencies {
   readonly messageBoxes: MessageBoxLookup;
   readonly privateReplyInterfaces: PrivateReplyInterfaceLookup;
   readonly supergroupReplyInterfaces: SupergroupReplyInterfaceLookup;
-  readonly privateMessages: PrivateChatPressSending;
-  readonly supergroupMessages: SupergroupPressSending;
+  readonly messageSending: PressSending;
   /** The users and supergroups an account's answer to a `request_users` or `request_chat` names. */
   readonly sharedPeers: SharedPeerLookups;
 }
@@ -294,8 +284,7 @@ export class ReplyInterfaceService {
       messageBoxes,
       privateReplyInterfaces,
       supergroupReplyInterfaces,
-      privateMessages,
-      supergroupMessages,
+      messageSending,
       sharedPeers,
     }: ReplyInterfaceServiceDependencies,
   ) {
@@ -325,7 +314,7 @@ export class ReplyInterfaceService {
       },
       sendPress: ({ key }, press) =>
         sendPrivateChatPress(key.conversation, press, {
-          privateMessages,
+          messageSending,
           sharedPeers,
           getBotMessageId: (message) => {
             const botMessageId = messageBoxes.getMessageId(key.conversation.botId, message.id);
@@ -374,9 +363,9 @@ export class ReplyInterfaceService {
       // message replies to the keyboard's message, so that the bot that sent it receives it even
       // in privacy mode.
       sendPress: ({ key }, { fromAccountId, text, keyboardMessage }) =>
-        supergroupMessages.sendAccountMessage({
+        messageSending.sendAccountSupergroupMessage({
           fromAccountId,
-          chatId: key.chatId,
+          chat: { type: 'supergroup', chatId: key.chatId },
           content: { kind: 'text', text },
           replyToMessageId: messageBoxes.getMessageId(key.chatId, keyboardMessage.id),
         }),
@@ -402,7 +391,7 @@ export class ReplyInterfaceService {
    * as on Telegram, sends the button's text to the bot as the account's message.
    *
    * A button that requests the user's contact instead shares the account's own contact, as
-   * `sendAccountMessage` sends it, in reply to the keyboard's message, as Telegram Desktop's
+   * an account's message sends it, in reply to the keyboard's message, as Telegram Desktop's
    * `ActivateBotCommand` and Telegram for Android's `shareMyContact` do once the user confirms.
    * A button that requests the user's location likewise shares the location the press answers
    * with, as Telegram for Android's `sendLocation` replies with the device's location. The bot
@@ -411,7 +400,7 @@ export class ReplyInterfaceService {
    * A button that requests users or a chat shares those the press answers with, as
    * `resolveSharedUsers` and `resolveSharedChat` accept them, in a service message of the account
    * that carries the request's ID and replies to nothing, as TDLib shows it. A button that requests
-   * a poll sends the poll the press answers with, as `sendAccountMessage` sends one, if it is of
+   * a poll sends the poll the press answers with, as an account's message sends one, if it is of
    * the requested type; it replies to nothing, as Telegram Desktop's `ActivateBotCommand` opens
    * poll creation without a reply.
    *
@@ -507,56 +496,57 @@ function sendPrivateChatPress(
     readonly keyboardMessage: PrivateMessage;
     readonly answer?: ReplyKeyboardRequestAnswer;
   },
-  { privateMessages, sharedPeers, getBotMessageId }: {
-    readonly privateMessages: PrivateChatPressSending;
+  { messageSending, sharedPeers, getBotMessageId }: {
+    readonly messageSending: PressSending;
     readonly sharedPeers: SharedPeerLookups;
     readonly getBotMessageId: (message: PrivateMessage) => number;
   },
 ): PrivateChatReplyKeyboardPressResult {
-  const to = { type: 'private', botId: conversation.botId } as const;
-  const sender = { fromAccountId, botId: conversation.botId };
+  const chat = { type: 'private', peerId: conversation.botId } as const;
   const { request } = button;
   switch (request?.kind) {
     case undefined:
-      return privateMessages.sendAccountMessage({
+      return messageSending.sendAccountPrivateChatMessage({
         fromAccountId,
-        to,
+        chat,
         content: { kind: 'text', text },
       });
     case 'contact':
-      return privateMessages.sendAccountMessage({
+      return messageSending.sendAccountPrivateChatMessage({
         fromAccountId,
-        to,
+        chat,
         content: { kind: 'own_contact' },
-        replyToBotMessageId: getBotMessageId(keyboardMessage),
+        replyToMessageId: getBotMessageId(keyboardMessage),
       });
     case 'location':
       if (answer?.kind !== 'location') {
         return { sent: false, reason: 'reply_keyboard_button_answer_missing' };
       }
-      return privateMessages.sendAccountMessage({
+      return messageSending.sendAccountPrivateChatMessage({
         fromAccountId,
-        to,
+        chat,
         content: { kind: 'location', location: answer.location },
-        replyToBotMessageId: getBotMessageId(keyboardMessage),
+        replyToMessageId: getBotMessageId(keyboardMessage),
       });
     case 'users':
       if (answer?.kind !== 'users') {
         return { sent: false, reason: 'reply_keyboard_button_answer_missing' };
       }
-      return privateMessages.sendAccountServiceMessage(
-        sender,
-        () => resolveSharedUsers(request, answer.userIds, sharedPeers),
-      );
+      return messageSending.sendAccountPrivateChatServiceMessage({
+        fromAccountId,
+        chat,
+        resolveContent: () => resolveSharedUsers(request, answer.userIds, sharedPeers),
+      });
     case 'chat':
       if (answer?.kind !== 'chat') {
         return { sent: false, reason: 'reply_keyboard_button_answer_missing' };
       }
-      return privateMessages.sendAccountServiceMessage(
-        sender,
-        (sharingConversation) =>
+      return messageSending.sendAccountPrivateChatServiceMessage({
+        fromAccountId,
+        chat,
+        resolveContent: (sharingConversation) =>
           resolveSharedChat(request, answer.chatId, sharingConversation, sharedPeers),
-      );
+      });
     case 'poll':
       if (answer?.kind !== 'poll') {
         return { sent: false, reason: 'reply_keyboard_button_answer_missing' };
@@ -564,19 +554,23 @@ function sendPrivateChatPress(
       if (!isRequestedPollType(request, answer.poll)) {
         return { sent: false, reason: 'requested_poll_type_mismatch' };
       }
-      return privateMessages.sendAccountMessage({
+      return messageSending.sendAccountPrivateChatMessage({
         fromAccountId,
-        to,
+        chat,
         content: { kind: 'poll', poll: answer.poll },
       });
     case 'web_app':
       if (answer?.kind !== 'web_app') {
         return { sent: false, reason: 'reply_keyboard_button_answer_missing' };
       }
-      return privateMessages.sendAccountServiceMessage(sender, () => ({
-        resolved: true,
-        content: { kind: 'web_app_data', buttonText: button.text, data: answer.data },
-      }));
+      return messageSending.sendAccountPrivateChatServiceMessage({
+        fromAccountId,
+        chat,
+        resolveContent: () => ({
+          resolved: true,
+          content: { kind: 'web_app_data', buttonText: button.text, data: answer.data },
+        }),
+      });
     default: {
       const unhandledRequest: never = request;
       throw new Error(`Unhandled reply keyboard request: ${JSON.stringify(unhandledRequest)}`);

@@ -351,9 +351,9 @@ function createGateFixture() {
     username: 'test_bot',
   });
   const botId = bot.profile.id;
-  const greeting = session.privateMessaging.sendAccountMessage({
+  const greeting = session.messageSending.sendAccountPrivateChatMessage({
     fromAccountId: adaId,
-    to: { type: 'private', botId },
+    chat: { type: 'private', peerId: botId },
     content: { kind: 'text', text: 'Hello' },
   });
   const registrations = [

@@ -215,7 +215,7 @@ export function createMessageRoutes(): Hono<SessionRouteContextTypes> {
     return answerWithActionReceipt(
       context,
       (
-        { privateMessaging, supergroupMessaging, messageForwarding, botMessageViews, mediaFiles },
+        { messageSending, messageForwarding, botMessageViews, mediaFiles },
       ) => {
         if ('forward' in requestBody) {
           const { to, forward } = requestBody;
@@ -244,9 +244,9 @@ export function createMessageRoutes(): Hono<SessionRouteContextTypes> {
         const { content } = contentReading;
         const { to, reply_to_message_id: replyToMessageId } = requestBody;
         if (to.type === 'supergroup') {
-          const result = supergroupMessaging.sendAccountMessage({
+          const result = messageSending.sendAccountSupergroupMessage({
             fromAccountId: accountId,
-            chatId: to.chatId,
+            chat: to,
             content,
             replyToMessageId,
           });
@@ -263,11 +263,11 @@ export function createMessageRoutes(): Hono<SessionRouteContextTypes> {
           );
         }
 
-        const result = privateMessaging.sendAccountMessage({
+        const result = messageSending.sendAccountPrivateChatMessage({
           fromAccountId: accountId,
-          to,
+          chat: { type: 'private', peerId: to.botId },
           content,
-          replyToBotMessageId: replyToMessageId,
+          replyToMessageId,
         });
         if (!result.sent) {
           return controlErrorResponse(
@@ -300,7 +300,7 @@ export function createMessageRoutes(): Hono<SessionRouteContextTypes> {
 
     return answerWithActionReceipt(
       context,
-      ({ privateMessaging, supergroupMessaging, botMessageViews, mediaFiles }) => {
+      ({ messageSending, botMessageViews, mediaFiles }) => {
         const contents: AccountAlbumMediaContent[] = [];
         for (const media of requestBody.media) {
           const contentReading = readAccountMediaContent(media, mediaFiles);
@@ -311,9 +311,9 @@ export function createMessageRoutes(): Hono<SessionRouteContextTypes> {
         }
         const { to, reply_to_message_id: replyToMessageId } = requestBody;
         if (to.type === 'supergroup') {
-          const result = supergroupMessaging.sendAccountAlbum({
+          const result = messageSending.sendAccountSupergroupAlbum({
             fromAccountId: accountId,
-            chatId: to.chatId,
+            chat: to,
             contents,
             replyToMessageId,
           });
@@ -334,11 +334,11 @@ export function createMessageRoutes(): Hono<SessionRouteContextTypes> {
           );
         }
 
-        const result = privateMessaging.sendAccountAlbum({
+        const result = messageSending.sendAccountPrivateChatAlbum({
           fromAccountId: accountId,
-          to,
+          chat: { type: 'private', peerId: to.botId },
           contents,
-          replyToBotMessageId: replyToMessageId,
+          replyToMessageId,
         });
         if (!result.sent) {
           return controlErrorResponse(
@@ -474,11 +474,11 @@ export function createMessageRoutes(): Hono<SessionRouteContextTypes> {
 }
 
 type AccountMessageContent = Parameters<
-  EmulationSession['privateMessaging']['sendAccountMessage']
+  EmulationSession['messageSending']['sendAccountPrivateChatMessage']
 >[0]['content'];
 
 type AccountAlbumMediaContent = Parameters<
-  EmulationSession['privateMessaging']['sendAccountAlbum']
+  EmulationSession['messageSending']['sendAccountPrivateChatAlbum']
 >[0]['contents'][number];
 
 /** Why Telegram refuses a file an account uploads. */

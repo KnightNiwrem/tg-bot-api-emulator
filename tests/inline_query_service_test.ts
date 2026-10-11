@@ -17,9 +17,12 @@ import {
   type SpecifiedInlineQueryResult,
 } from '../src/services/inline_query.ts';
 import { MediaFileService } from '../src/services/media_file.ts';
+import { PrivateChatPolicy } from '../src/services/private_chat_policy.ts';
 import { PrivateMessagingService } from '../src/services/private_messaging.ts';
+import { SupergroupChatPolicy } from '../src/services/supergroup_chat_policy.ts';
 import { SupergroupMessagingService } from '../src/services/supergroup_messaging.ts';
 import { VirtualUserService } from '../src/services/virtual_user.ts';
+import { createMessageSendingServices } from './support/message_sending_services.ts';
 import type { WebFileDownload } from '../src/services/web_file_download.ts';
 import type { ChatDomainEvent } from '../src/types/chat_domain_event.ts';
 import { ALL_CHAT_PERMISSIONS } from '../src/types/chat_permissions.ts';
@@ -811,7 +814,7 @@ function createInlineQueryFixture() {
   const blockedUsers = new BlockedUserRepository();
   const publishedEvents: ChatDomainEvent[] = [];
   const events = { emit: (event: ChatDomainEvent) => publishedEvents.push(event) };
-  // The uploads the messaging services store with their messages, in order.
+  // The uploads the sent messages store, in order.
   const storedUploads: FileUpload[] = [];
   const messageFiles = {
     addFile: (upload: FileUpload) => {
@@ -819,29 +822,35 @@ function createInlineQueryFixture() {
       return files.addFile(upload);
     },
   };
+  const privateConversations = new PrivateConversationRepository();
   const privateMessaging = new PrivateMessagingService({
     accounts,
     bots,
-    privateConversations: new PrivateConversationRepository(),
+    privateConversations,
     messages,
-    files: messageFiles,
-    polls,
     messageBoxes,
     blockedUsers,
-    joinRequesterContacts: {
-      mayContactJoinRequester: () => false,
-      claimJoinRequesterContact: () => {
-        throw new Error('Unexpected join requester contact');
-      },
-    },
-    events,
-    // No draft is shown in these chats; a bot's message has none to remove.
-    messageDrafts: { clearBotDraft: () => {} },
-    currentUnixTimeSeconds: () => 1_700_000_000,
   });
   const supergroupMessaging = new SupergroupMessagingService({
     accounts,
     bots,
+    sharedChats,
+    messages,
+    messageBoxes,
+  });
+  const { messageSending } = createMessageSendingServices({
+    accounts,
+    bots,
+    privateChats: new PrivateChatPolicy({
+      accounts,
+      bots,
+      privateConversations,
+      blockedUsers,
+      joinRequesterContacts: { mayContactJoinRequester: () => false },
+      privateMessages: privateMessaging,
+    }),
+    supergroups: new SupergroupChatPolicy({ sharedChats, supergroupMessages: supergroupMessaging }),
+    privateConversations,
     sharedChats,
     messages,
     files: messageFiles,
@@ -869,8 +878,7 @@ function createInlineQueryFixture() {
     accounts,
     bots,
     sharedChats,
-    privateMessages: privateMessaging,
-    supergroupMessages: supergroupMessaging,
+    messageSending,
     inlineQueries: new InlineQueryRepository(),
     webMediaFiles: mediaFiles,
     transactions: { ...events, withinTransaction: (command) => command() },

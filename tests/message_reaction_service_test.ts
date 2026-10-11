@@ -19,6 +19,7 @@ import { SharedChatAdministrationService } from '../src/services/shared_chat_adm
 import { SupergroupChatPolicy } from '../src/services/supergroup_chat_policy.ts';
 import { SupergroupMessagingService } from '../src/services/supergroup_messaging.ts';
 import { VirtualUserService } from '../src/services/virtual_user.ts';
+import { createMessageSendingServices } from './support/message_sending_services.ts';
 import type { ChatDomainEvent } from '../src/types/chat_domain_event.ts';
 import { grantSupergroupAdministratorRights } from '../src/types/chat_membership.ts';
 import type { ChatPermission } from '../src/types/chat_permissions.ts';
@@ -359,6 +360,30 @@ function createReactionFixture() {
     bots,
     sharedChats,
     messages,
+    messageBoxes,
+  });
+  const privateConversations = new PrivateConversationRepository();
+  // These tests send no private messages, so none is found.
+  const privateChats = new PrivateChatPolicy({
+    accounts,
+    bots,
+    privateConversations,
+    blockedUsers: new BlockedUserRepository(),
+    joinRequesterContacts: { mayContactJoinRequester: () => false },
+    privateMessages: { getPrivateMessageByBotMessageId: () => undefined },
+  });
+  const supergroups = new SupergroupChatPolicy({
+    sharedChats,
+    supergroupMessages: supergroupMessaging,
+  });
+  const { messageCommitter, messageSending } = createMessageSendingServices({
+    accounts,
+    bots,
+    privateChats,
+    supergroups,
+    privateConversations,
+    sharedChats,
+    messages,
     files: new FileRepository(),
     polls: new PollRepository(),
     messageBoxes,
@@ -370,24 +395,15 @@ function createReactionFixture() {
     accounts,
     bots,
     sharedChats,
-    supergroupMessages: supergroupMessaging,
+    serviceMessages: messageCommitter,
     transactions: { ...events, withinTransaction: (command) => command() },
     currentUnixTimeSeconds,
   });
-  const privateConversations = new PrivateConversationRepository();
   const messageDeletion = new MessageDeletionService({
     accounts,
     bots,
-    // These tests send no private messages, so none is found.
-    privateChats: new PrivateChatPolicy({
-      accounts,
-      bots,
-      privateConversations,
-      blockedUsers: new BlockedUserRepository(),
-      joinRequesterContacts: { mayContactJoinRequester: () => false },
-      privateMessages: { getPrivateMessageByBotMessageId: () => undefined },
-    }),
-    supergroups: new SupergroupChatPolicy({ sharedChats, supergroupMessages: supergroupMessaging }),
+    privateChats,
+    supergroups,
     messages,
     privateReplyInterfaces: privateConversations,
     transactions: { withinTransaction: (command) => command() },
@@ -438,9 +454,9 @@ function createReactionFixture() {
 
   /** Sends a text message from an account and returns it with its ID in the supergroup. */
   const sendText = (accountId: number, text: string) => {
-    const result = supergroupMessaging.sendAccountMessage({
+    const result = messageSending.sendAccountSupergroupMessage({
       fromAccountId: accountId,
-      chatId: supergroup.id,
+      chat: { type: 'supergroup', chatId: supergroup.id },
       content: { kind: 'text', text },
     });
     if (!result.sent) {

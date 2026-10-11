@@ -10,7 +10,7 @@ type AccountMessageFailureReason =
     { readonly sent: false }
   >['reason']
   | Extract<
-    ReturnType<EmulationSession['privateMessaging']['sendAccountAlbum']>,
+    ReturnType<EmulationSession['messageSending']['sendAccountPrivateChatAlbum']>,
     { readonly sent: false }
   >['reason'];
 
@@ -39,11 +39,12 @@ export function accountMessageFailureStatus(
 }
 
 type SupergroupMessaging = EmulationSession['supergroupMessaging'];
+type MessageSending = EmulationSession['messageSending'];
 
 /** Why an account's message, album, edit, or history request in a supergroup failed. */
 type SupergroupAccountFailureReason =
-  | Extract<ReturnType<SupergroupMessaging['sendAccountMessage']>, { sent: false }>['reason']
-  | Extract<ReturnType<SupergroupMessaging['sendAccountAlbum']>, { sent: false }>['reason']
+  | Extract<ReturnType<MessageSending['sendAccountSupergroupMessage']>, { sent: false }>['reason']
+  | Extract<ReturnType<MessageSending['sendAccountSupergroupAlbum']>, { sent: false }>['reason']
   | Extract<
     ReturnType<EmulationSession['replyInterfaces']['pressSupergroupReplyKeyboardButton']>,
     { sent: false }

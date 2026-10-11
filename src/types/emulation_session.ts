@@ -17,6 +17,7 @@ import type { MessageEditingService } from '../services/message_editing.ts';
 import type { MessageForwardingService } from '../services/message_forwarding.ts';
 import type { MessagePinningService } from '../services/message_pinning.ts';
 import type { MessageReactionService } from '../services/message_reaction.ts';
+import type { MessageSendingService } from '../services/message_sending.ts';
 import type { PollService } from '../services/poll.ts';
 import type { PrivateMessagingService } from '../services/private_messaging.ts';
 import type { ReplyInterfaceService } from '../services/reply_interface.ts';
@@ -46,6 +47,7 @@ export interface EmulationSession extends EmulationSessionOptions {
   readonly chatAdmission: ChatAdmissionService;
   readonly privateMessaging: PrivateMessagingService;
   readonly supergroupMessaging: SupergroupMessagingService;
+  readonly messageSending: MessageSendingService;
   readonly messageEditing: MessageEditingService;
   readonly messageDeletion: MessageDeletionService;
   readonly messageForwarding: MessageForwardingService;

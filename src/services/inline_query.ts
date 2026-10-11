@@ -34,17 +34,8 @@ import type {
 } from '../types/stored_file.ts';
 import type { VirtualAccount } from '../types/virtual_account.ts';
 import type { VirtualBot } from '../types/virtual_bot.ts';
-import type {
-  AccountChatAddress,
-  AccountPrivateChatAddress,
-  SharedChat,
-} from '../types/virtual_chat.ts';
-import type {
-  ChatMessage,
-  FormattedText,
-  PrivateMessage,
-  SupergroupMessage,
-} from '../types/virtual_message.ts';
+import type { AccountChatAddress, SharedChat } from '../types/virtual_chat.ts';
+import type { ChatMessage, FormattedText } from '../types/virtual_message.ts';
 import type { FormattedTextFixingContext } from '../text_entities/formatted_text.ts';
 import type {
   AudioUploadPreparation,
@@ -66,6 +57,7 @@ import {
   type SpecifiedCaption,
   toContentOfStoredFile,
 } from './message_content.ts';
+import type { MessageSendingService } from './message_sending.ts';
 import { createSessionUserMentionContext } from './session_user_mention.ts';
 
 export interface SendInlineQueryInput {
@@ -319,39 +311,11 @@ interface SupergroupLookup {
  */
 type InlineResultSendingContent = Exclude<NormalizedOutgoingContent, { readonly kind: 'poll' }>;
 
-/** Sends an account's chosen result as its message sent through the inline bot. */
-interface InlineResultSending {
-  readonly content: InlineResultSendingContent;
-  readonly inlineKeyboard?: InlineKeyboard;
-  readonly viaBotId: number;
-  readonly fromAccountId: number;
-}
-
-interface PrivateInlineResultMessaging {
-  sendAccountInlineResult(
-    input: InlineResultSending & {
-      readonly to: AccountPrivateChatAddress;
-    },
-  ):
-    | { readonly sent: true; readonly message: PrivateMessage }
-    | {
-      readonly sent: false;
-      readonly reason: 'account_not_found' | 'bot_not_found' | 'bot_blocked';
-    };
-}
-
-interface SupergroupInlineResultMessaging {
-  sendAccountInlineResult(input: InlineResultSending & { readonly chatId: number }):
-    | { readonly sent: true; readonly message: SupergroupMessage }
-    | {
-      readonly sent: false;
-      readonly reason:
-        | 'account_not_found'
-        | 'chat_not_found'
-        | 'not_a_member'
-        | InlineResultPermissionFailureReason;
-    };
-}
+/** Sends an account's chosen result as its message sent through the inline bot, by chat type. */
+type InlineResultSending = Pick<
+  MessageSendingService,
+  'sendAccountPrivateChatInlineResult' | 'sendAccountSupergroupInlineResult'
+>;
 
 interface InlineQueryStore {
   addInlineQuery(input: {
@@ -394,8 +358,7 @@ interface InlineQueryServiceDependencies {
   readonly accounts: AccountLookup;
   readonly bots: BotLookup;
   readonly sharedChats: SupergroupLookup;
-  readonly privateMessages: PrivateInlineResultMessaging;
-  readonly supergroupMessages: SupergroupInlineResultMessaging;
+  readonly messageSending: InlineResultSending;
   readonly inlineQueries: InlineQueryStore;
   readonly webMediaFiles: InlineResultWebMediaFiles;
   /** Runs each command that changes the session as one transaction, which receives its event. */
@@ -425,8 +388,7 @@ export class InlineQueryService {
   readonly #bots: BotLookup;
   readonly #textFixingContext: FormattedTextFixingContext;
   readonly #sharedChats: SupergroupLookup;
-  readonly #privateMessages: PrivateInlineResultMessaging;
-  readonly #supergroupMessages: SupergroupInlineResultMessaging;
+  readonly #messageSending: InlineResultSending;
   readonly #inlineQueries: InlineQueryStore;
   readonly #webMediaFiles: InlineResultWebMediaFiles;
   readonly #transactions: InlineQueryTransactions;
@@ -436,8 +398,7 @@ export class InlineQueryService {
       accounts,
       bots,
       sharedChats,
-      privateMessages,
-      supergroupMessages,
+      messageSending,
       inlineQueries,
       webMediaFiles,
       transactions,
@@ -447,8 +408,7 @@ export class InlineQueryService {
     this.#bots = bots;
     this.#textFixingContext = createSessionUserMentionContext({ accounts, bots });
     this.#sharedChats = sharedChats;
-    this.#privateMessages = privateMessages;
-    this.#supergroupMessages = supergroupMessages;
+    this.#messageSending = messageSending;
     this.#inlineQueries = inlineQueries;
     this.#webMediaFiles = webMediaFiles;
     this.#transactions = transactions;
@@ -811,7 +771,7 @@ export class InlineQueryService {
       readonly sent: false;
       readonly reason: 'not_a_member' | 'bot_blocked' | InlineResultPermissionFailureReason;
     } {
-    const sending: InlineResultSending = {
+    const sending = {
       fromAccountId: inlineQuery.accountId,
       viaBotId: inlineQuery.botId,
       content,
@@ -819,8 +779,11 @@ export class InlineQueryService {
     };
     const { chat } = inlineQuery;
     const sendingResult = chat.type === 'private'
-      ? this.#privateMessages.sendAccountInlineResult({ ...sending, to: chat })
-      : this.#supergroupMessages.sendAccountInlineResult({ ...sending, chatId: chat.chatId });
+      ? this.#messageSending.sendAccountPrivateChatInlineResult({
+        ...sending,
+        chat: { type: 'private', peerId: chat.botId },
+      })
+      : this.#messageSending.sendAccountSupergroupInlineResult({ ...sending, chat });
     if (sendingResult.sent) {
       return sendingResult;
     }

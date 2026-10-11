@@ -221,9 +221,9 @@ function createEditingFixture() {
   };
   promoteAlpha(['can_delete_messages']);
   const sendAdaText = (text: string): SupergroupMessage => {
-    const sending = session.supergroupMessaging.sendAccountMessage({
+    const sending = session.messageSending.sendAccountSupergroupMessage({
       fromAccountId: adaId,
-      chatId,
+      chat: { type: 'supergroup', chatId },
       content: { kind: 'text', text },
     });
     if (!sending.sent) {
@@ -232,17 +232,17 @@ function createEditingFixture() {
     return sending.message;
   };
   const adaMessage = sendAdaText('Hello');
-  const alphaSending = session.supergroupMessaging.sendBotMessage({
+  const alphaSending = session.messageSending.sendSupergroupMessage({
     fromBotId: alpha.id,
-    chatId,
+    chat: { type: 'supergroup', chatId },
     content: { kind: 'text', text: 'Hi' },
   });
   if (!alphaSending.sent) {
     throw new Error(`Expected Alpha's message to be sent: ${JSON.stringify(alphaSending)}`);
   }
-  const privateStart = session.privateMessaging.sendAccountMessage({
+  const privateStart = session.messageSending.sendAccountPrivateChatMessage({
     fromAccountId: adaId,
-    to: { type: 'private', botId: alpha.id },
+    chat: { type: 'private', peerId: alpha.id },
     content: { kind: 'text', text: '/start' },
   });
   if (!privateStart.sent) {

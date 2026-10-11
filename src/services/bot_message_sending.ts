@@ -23,39 +23,30 @@ import type {
   SendResult,
 } from './bot_api.ts';
 import type { MediaContent, OutgoingMessageContent, SpecifiedQuote } from './message_content.ts';
-import type {
-  GetMessageForBotInput,
-  GetMessageForBotResult,
-  SendBotAlbumInput,
-  SendBotAlbumResult,
-  SendBotMessageInput,
-  SendBotMessageResult,
-} from './private_messaging.ts';
+import type { MessageSendingService } from './message_sending.ts';
+import type { GetMessageForBotInput, GetMessageForBotResult } from './private_messaging.ts';
 import type {
   GetSupergroupMessageForBotInput,
   GetSupergroupMessageForBotResult,
-  SendSupergroupBotAlbumInput,
-  SendSupergroupBotAlbumResult,
-  SendSupergroupBotMessageInput,
-  SendSupergroupBotMessageResult,
 } from './supergroup_messaging.ts';
 
-interface PrivateBotMessaging {
+interface PrivateChatMessageReading {
   getMessageForBot(input: GetMessageForBotInput): GetMessageForBotResult;
-  sendBotMessage(input: SendBotMessageInput): SendBotMessageResult;
-  sendBotAlbum(input: SendBotAlbumInput): SendBotAlbumResult;
 }
 
-interface SupergroupBotMessaging {
+interface SupergroupMessageReading {
   getMessageForBot(input: GetSupergroupMessageForBotInput): GetSupergroupMessageForBotResult;
-  sendBotMessage(input: SendSupergroupBotMessageInput): SendSupergroupBotMessageResult;
-  sendBotAlbum(input: SendSupergroupBotAlbumInput): SendSupergroupBotAlbumResult;
-  lacksBotSendPermission(input: {
-    readonly botId: number;
-    readonly chatId: number;
-    readonly content: OutgoingMessageContent;
-  }): boolean;
 }
+
+/** The sending that a bot's messages and albums go through, by chat type. */
+type BotMessageSending = Pick<
+  MessageSendingService,
+  | 'sendPrivateChatMessage'
+  | 'sendSupergroupMessage'
+  | 'sendPrivateChatAlbum'
+  | 'sendSupergroupAlbum'
+  | 'lacksSupergroupSendPermission'
+>;
 
 interface BotMessageViews {
   viewPrivateMessageForBot(message: PrivateMessage): BotApiPrivateMessage;
@@ -67,8 +58,11 @@ interface ChatActionEnding {
 }
 
 interface BotMessageSenderDependencies {
-  readonly botMessages: PrivateBotMessaging;
-  readonly supergroupBotMessages: SupergroupBotMessaging;
+  /** Finds the messages of the bot's private chats, which the bot repeats or replies to. */
+  readonly privateChatMessages: PrivateChatMessageReading;
+  /** Finds the messages of the bot's supergroups, which the bot repeats or replies to. */
+  readonly supergroupMessages: SupergroupMessageReading;
+  readonly messageSending: BotMessageSending;
   /** Shows the bot the messages it sent, as the Bot API answers with them. */
   readonly botMessageViews: BotMessageViews;
   /** Ends the chat action that a bot's message ends. */
@@ -109,9 +103,9 @@ export type BotChatMessageLookup =
   | { readonly found: false; readonly reason: BotChatMessageLookupFailureReason };
 
 /**
- * What a message being sent replies to: a message of its own chat, which the chat's messaging
- * service looks up, or a resolved message of another chat; neither for a message that replies to
- * none. The messaging service finds the chosen quote in the replied message.
+ * What a message being sent replies to: a message of its own chat, which sending looks up, or a
+ * resolved message of another chat; neither for a message that replies to none. Sending finds the
+ * chosen quote in the replied message.
  */
 type OutgoingReply =
   & (
@@ -125,30 +119,34 @@ type OutgoingReply =
 
 /**
  * Sends a bot's messages and albums to its private chats and supergroups, each through the
- * messaging service of its chat, and shows the bot what it sent, as the Bot API answers with it.
+ * sending entry point of its chat type, and shows the bot what it sent, as the Bot API answers
+ * with it.
  *
  * Every Bot API method that sends a message goes through here, so what a message replies to in
  * another chat is resolved alike for all of them, by the same lookup that finds the messages of
  * the bot's chats that forwards and copies repeat.
  */
 export class BotMessageSender {
-  readonly #botMessages: PrivateBotMessaging;
-  readonly #supergroupBotMessages: SupergroupBotMessaging;
+  readonly #privateChatMessages: PrivateChatMessageReading;
+  readonly #supergroupMessages: SupergroupMessageReading;
+  readonly #messageSending: BotMessageSending;
   readonly #botMessageViews: BotMessageViews;
   readonly #chatActions: ChatActionEnding;
   readonly #getPrivateForwardName: PrivateForwardNameLookup;
 
   constructor(
     {
-      botMessages,
-      supergroupBotMessages,
+      privateChatMessages,
+      supergroupMessages,
+      messageSending,
       botMessageViews,
       chatActions,
       getPrivateForwardName,
     }: BotMessageSenderDependencies,
   ) {
-    this.#botMessages = botMessages;
-    this.#supergroupBotMessages = supergroupBotMessages;
+    this.#privateChatMessages = privateChatMessages;
+    this.#supergroupMessages = supergroupMessages;
+    this.#messageSending = messageSending;
     this.#botMessageViews = botMessageViews;
     this.#chatActions = chatActions;
     this.#getPrivateForwardName = getPrivateForwardName;
@@ -216,8 +214,12 @@ export class BotMessageSender {
   /** Finds a message of one of the bot's chats, which the bot may repeat or reply to from another chat. */
   findBotChatMessage(botId: number, { chatId, messageId }: MessageTarget): BotChatMessageLookup {
     const lookup = isUserId(chatId)
-      ? this.#botMessages.getMessageForBot({ botId, accountId: chatId, botMessageId: messageId })
-      : this.#supergroupBotMessages.getMessageForBot({ botId, chatId, messageId });
+      ? this.#privateChatMessages.getMessageForBot({
+        botId,
+        accountId: chatId,
+        botMessageId: messageId,
+      })
+      : this.#supergroupMessages.getMessageForBot({ botId, chatId, messageId });
     if (lookup.found) {
       return {
         found: true,
@@ -231,17 +233,20 @@ export class BotMessageSender {
 
   /**
    * Whether the bot lacks a permission it needs to send content to a supergroup it is a member of,
-   * as `SupergroupMessagingService.lacksBotSendPermission` decides; a private chat restricts no
+   * as `MessageSendingService.lacksSupergroupSendPermission` decides; a private chat restricts no
    * content.
    */
   lacksSendPermission(botId: number, chatId: number, content: OutgoingMessageContent): boolean {
     return !isUserId(chatId) &&
-      this.#supergroupBotMessages.lacksBotSendPermission({ botId, chatId, content });
+      this.#messageSending.lacksSupergroupSendPermission({
+        botId,
+        chat: { type: 'supergroup', chatId },
+        content,
+      });
   }
 
   /**
-   * Resolves what a message being sent replies to. The chat's messaging service looks up a message
-   * of the chat itself. A message of another chat is resolved here, as the official Bot API
+   * Resolves what a message being sent replies to. Sending looks up a message of the chat itself. A message of another chat is resolved here, as the official Bot API
    * server's `check_reply_parameters` does: the bot must be able to read that chat, and a message it
    * does not find fails the send unless the bot allowed sending without a reply. As TDLib's
    * `create_message_input_reply_to` does, a message that cannot be forwarded, such as protected
@@ -296,15 +301,12 @@ export class BotMessageSender {
     { replyTo, externalReply, quote }: OutgoingReply,
     { forwardInfo, mediaGroupId }: RepetitionDetails,
   ): SendResult {
-    const result = this.#botMessages.sendBotMessage({
+    const result = this.#messageSending.sendPrivateChatMessage({
       ...replyMarkup,
       fromBotId: botId,
-      to: { type: 'private', accountId: chatId },
+      chat: { type: 'private', peerId: chatId },
       content,
-      replyTo: replyTo === undefined ? undefined : {
-        botMessageId: replyTo.messageId,
-        allowSendingWithoutReply: replyTo.allowSendingWithoutReply,
-      },
+      replyTo,
       externalReply,
       quote,
       isContentProtected,
@@ -333,10 +335,10 @@ export class BotMessageSender {
     { replyTo, externalReply, quote }: OutgoingReply,
     { forwardInfo, mediaGroupId }: RepetitionDetails,
   ): SendResult {
-    const result = this.#supergroupBotMessages.sendBotMessage({
+    const result = this.#messageSending.sendSupergroupMessage({
       ...replyMarkup,
       fromBotId: botId,
-      chatId,
+      chat: { type: 'supergroup', chatId },
       content,
       replyTo,
       externalReply,
@@ -365,14 +367,11 @@ export class BotMessageSender {
     { chatId, isContentProtected, isSilent, messageEffectId }: SendDeliveryOptions,
     { replyTo, externalReply, quote }: OutgoingReply,
   ): SendMediaGroupResult {
-    const result = this.#botMessages.sendBotAlbum({
+    const result = this.#messageSending.sendPrivateChatAlbum({
       fromBotId: botId,
-      to: { type: 'private', accountId: chatId },
+      chat: { type: 'private', peerId: chatId },
       contents,
-      replyTo: replyTo === undefined ? undefined : {
-        botMessageId: replyTo.messageId,
-        allowSendingWithoutReply: replyTo.allowSendingWithoutReply,
-      },
+      replyTo,
       externalReply,
       quote,
       isContentProtected,
@@ -399,9 +398,9 @@ export class BotMessageSender {
     { chatId, isContentProtected, isSilent, messageEffectId }: SendDeliveryOptions,
     { replyTo, externalReply, quote }: OutgoingReply,
   ): SendMediaGroupResult {
-    const result = this.#supergroupBotMessages.sendBotAlbum({
+    const result = this.#messageSending.sendSupergroupAlbum({
       fromBotId: botId,
-      chatId,
+      chat: { type: 'supergroup', chatId },
       contents,
       replyTo,
       externalReply,
@@ -427,7 +426,7 @@ export class BotMessageSender {
 
 /**
  * Leaves out the failure a sending bot never meets: the bot the Bot API authenticated exists. A
- * bot's other failures stay as the messaging services report them, for the Bot API to present.
+ * bot's other failures stay as sending reports them, for the Bot API to present.
  */
 function excludeMissingSenderFailure<Reason extends string>(
   botId: number,

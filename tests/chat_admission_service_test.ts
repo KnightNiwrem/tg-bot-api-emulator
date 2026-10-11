@@ -40,7 +40,7 @@ function createAdmissionFixture() {
     accounts,
     bots,
     sharedChats,
-    supergroupMessages: { recordServiceMessage: () => {} },
+    serviceMessages: { recordSupergroupServiceMessage: () => {} },
     // The repositories are not staged, so each command runs as it is called.
     transactions: {
       withinTransaction: (command) => command(),

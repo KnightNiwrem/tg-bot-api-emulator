@@ -144,14 +144,14 @@ async function createReactionFixture() {
       allowed_updates: JSON.stringify(['message', 'message_reaction']),
     });
   }
-  const adaSending = session.supergroupMessaging.sendAccountMessage({
+  const adaSending = session.messageSending.sendAccountSupergroupMessage({
     fromAccountId: adaId,
-    chatId,
+    chat: { type: 'supergroup', chatId },
     content: { kind: 'text', text: 'Hello' },
   });
-  const alphaSending = session.supergroupMessaging.sendBotMessage({
+  const alphaSending = session.messageSending.sendSupergroupMessage({
     fromBotId: alpha.id,
-    chatId,
+    chat: { type: 'supergroup', chatId },
     content: { kind: 'text', text: 'Hi' },
   });
   if (!adaSending.sent || !alphaSending.sent) {

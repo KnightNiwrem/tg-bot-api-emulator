@@ -20,6 +20,7 @@ import { PrivateMessagingService } from '../src/services/private_messaging.ts';
 import { SupergroupChatPolicy } from '../src/services/supergroup_chat_policy.ts';
 import { SupergroupMessagingService } from '../src/services/supergroup_messaging.ts';
 import { VirtualUserService } from '../src/services/virtual_user.ts';
+import { createMessageSendingServices } from './support/message_sending_services.ts';
 import type { ChatDomainEvent } from '../src/types/chat_domain_event.ts';
 import { ALL_CHAT_PERMISSIONS } from '../src/types/chat_permissions.ts';
 import { createVirtualAccount, createVirtualBot } from './support/virtual_users.ts';
@@ -63,7 +64,7 @@ Deno.test('CallbackQueryService publishes a callback query for a pressed button'
 });
 
 Deno.test('CallbackQueryService presses buttons on bot messages in a supergroup for members', () => {
-  const { virtualUsers, sharedChats, supergroupMessaging, callbackQueries, chat } =
+  const { virtualUsers, sharedChats, callbackQueries, chat, messageSending } =
     createCallbackQueryFixture();
   const stranger = createAccount(virtualUsers, 'Grace');
   const supergroup = {
@@ -76,14 +77,14 @@ Deno.test('CallbackQueryService presses buttons on bot messages in a supergroup 
   } as const;
   sharedChats.registerSupergroup(supergroup, chat.account.profile.id);
   sharedChats.addChatMember(supergroup.id, chat.bot.profile.id);
-  const accountMessage = supergroupMessaging.sendAccountMessage({
+  const accountMessage = messageSending.sendAccountSupergroupMessage({
     fromAccountId: chat.account.profile.id,
-    chatId: supergroup.id,
+    chat: { type: 'supergroup', chatId: supergroup.id },
     content: { kind: 'text', text: 'Hello' },
   });
-  const botMessage = supergroupMessaging.sendBotMessage({
+  const botMessage = messageSending.sendSupergroupMessage({
     fromBotId: chat.bot.profile.id,
-    chatId: supergroup.id,
+    chat: { type: 'supergroup', chatId: supergroup.id },
     inlineKeyboard: [[{ kind: 'callback', text: 'Yes', callbackData: 'yes' }]],
     content: { kind: 'text', text: 'Vote' },
   });
@@ -378,12 +379,12 @@ Deno.test('CallbackQueryService delivers a query created expired that cannot be 
 });
 
 Deno.test('CallbackQueryService sends a press on an inline message to its inline bot', () => {
-  const { virtualUsers, privateMessaging, messageBoxes, callbackQueries, chat } =
+  const { virtualUsers, messageBoxes, callbackQueries, chat, messageSending } =
     createCallbackQueryFixture();
   const inlineBot = createBot(virtualUsers, 'inline_bot');
-  const sending = privateMessaging.sendAccountInlineResult({
+  const sending = messageSending.sendAccountPrivateChatInlineResult({
     fromAccountId: chat.account.profile.id,
-    to: { type: 'private', botId: chat.bot.profile.id },
+    chat: { type: 'private', peerId: chat.bot.profile.id },
     viaBotId: inlineBot.profile.id,
     content: { kind: 'text', text: 'Cats', entities: [] },
     inlineKeyboard: [[{ kind: 'callback', text: 'Like', callbackData: 'like' }]],
@@ -446,43 +447,45 @@ function createCallbackQueryFixture() {
     bots,
     privateConversations,
     messages,
-    files,
-    polls,
     messageBoxes,
     blockedUsers,
-    joinRequesterContacts,
-    events,
-    // No draft is shown in these chats; a bot's message has none to remove.
-    messageDrafts: { clearBotDraft: () => {} },
-    currentUnixTimeSeconds: () => 1_700_000_000,
   });
   const supergroupMessaging = new SupergroupMessagingService({
     accounts,
     bots,
     sharedChats,
     messages,
+    messageBoxes,
+  });
+  const privateChats = new PrivateChatPolicy({
+    accounts,
+    bots,
+    privateConversations,
+    blockedUsers,
+    joinRequesterContacts,
+    privateMessages: privateMessaging,
+  });
+  const supergroups = new SupergroupChatPolicy({
+    sharedChats,
+    supergroupMessages: supergroupMessaging,
+  });
+  const { messageSending } = createMessageSendingServices({
+    accounts,
+    bots,
+    privateChats,
+    supergroups,
+    privateConversations,
+    sharedChats,
+    messages,
     files,
     polls,
     messageBoxes,
     events,
+    joinRequesterContacts,
     currentUnixTimeSeconds: () => 1_700_000_000,
   });
   const callbackQueries = new CallbackQueryService({
-    accountChatMessages: createAccountChatMessageReader({
-      accounts,
-      privateChats: new PrivateChatPolicy({
-        accounts,
-        bots,
-        privateConversations,
-        blockedUsers,
-        joinRequesterContacts,
-        privateMessages: privateMessaging,
-      }),
-      supergroups: new SupergroupChatPolicy({
-        sharedChats,
-        supergroupMessages: supergroupMessaging,
-      }),
-    }),
+    accountChatMessages: createAccountChatMessageReader({ accounts, privateChats, supergroups }),
     bots,
     callbackQueries: new CallbackQueryRepository(),
     transactions: { ...events, withinTransaction: (command) => command() },
@@ -490,14 +493,14 @@ function createCallbackQueryFixture() {
 
   const account = createAccount(virtualUsers, 'Ada');
   const bot = createBot(virtualUsers, 'test_bot');
-  const accountMessage = privateMessaging.sendAccountMessage({
+  const accountMessage = messageSending.sendAccountPrivateChatMessage({
     fromAccountId: account.profile.id,
-    to: { type: 'private', botId: bot.profile.id },
+    chat: { type: 'private', peerId: bot.profile.id },
     content: { kind: 'text', text: '/start' },
   });
-  const botMessage = privateMessaging.sendBotMessage({
+  const botMessage = messageSending.sendPrivateChatMessage({
     fromBotId: bot.profile.id,
-    to: { type: 'private', accountId: account.profile.id },
+    chat: { type: 'private', peerId: account.profile.id },
     inlineKeyboard: [[
       { kind: 'callback', text: 'Yes', callbackData: 'yes' },
       { kind: 'callback', text: 'No', callbackData: 'no' },
@@ -520,6 +523,7 @@ function createCallbackQueryFixture() {
     sharedChats,
     privateMessaging,
     supergroupMessaging,
+    messageSending,
     messageBoxes,
     publishedEvents,
     callbackQueries,

@@ -50,12 +50,14 @@ import { ChatAdmissionService } from '../services/chat_admission.ts';
 import { InlineQueryService } from '../services/inline_query.ts';
 import { MediaFileService } from '../services/media_file.ts';
 import { normalizeBotDraftText, normalizeCaption } from '../services/message_content.ts';
+import { MessageCommitter } from '../services/message_commit.ts';
 import { MessageDeletionService } from '../services/message_deletion.ts';
 import { MessageDraftService } from '../services/message_draft.ts';
 import { MessageEditingService } from '../services/message_editing.ts';
 import { MessageForwardingService } from '../services/message_forwarding.ts';
 import { MessagePinningService } from '../services/message_pinning.ts';
 import { MessageReactionService } from '../services/message_reaction.ts';
+import { MessageSendingService } from '../services/message_sending.ts';
 import { PollService } from '../services/poll.ts';
 import { PrivateChatPolicy } from '../services/private_chat_policy.ts';
 import { PrivateMessagingService } from '../services/private_messaging.ts';
@@ -142,10 +144,25 @@ export function createEmulationSession(
     bots,
     sharedChats,
     messages,
-    files,
-    polls,
     messageBoxes,
+  });
+  const privateConversations = new PrivateConversationRepository(journal);
+  const blockedUsers = new BlockedUserRepository(journal);
+  const messageDrafts = new MessageDraftService({
+    accounts,
+    bots,
+    drafts: new MessageDraftRepository(journal),
+    transactions,
+  });
+  const messageCommitter = new MessageCommitter({
+    accounts,
+    bots,
+    messages,
+    messageBoxes,
+    privateReplyInterfaces: privateConversations,
+    supergroupMembers: sharedChats,
     events: transactions,
+    messageDrafts,
     currentUnixTimeSeconds,
   });
   const sharedChatAdministration = new SharedChatAdministrationService({
@@ -153,7 +170,7 @@ export function createEmulationSession(
     accounts,
     bots,
     sharedChats,
-    supergroupMessages: supergroupMessaging,
+    serviceMessages: messageCommitter,
     transactions,
     currentUnixTimeSeconds,
   });
@@ -166,27 +183,13 @@ export function createEmulationSession(
     transactions,
     currentUnixTimeSeconds,
   });
-  const privateConversations = new PrivateConversationRepository(journal);
-  const blockedUsers = new BlockedUserRepository(journal);
-  const messageDrafts = new MessageDraftService({
-    accounts,
-    bots,
-    drafts: new MessageDraftRepository(journal),
-    transactions,
-  });
   const privateMessaging = new PrivateMessagingService({
     accounts,
     bots,
     privateConversations,
     messages,
-    files,
-    polls,
     messageBoxes,
     blockedUsers,
-    joinRequesterContacts: chatAdmission,
-    events: transactions,
-    messageDrafts,
-    currentUnixTimeSeconds,
   });
   const messageReactions = new MessageReactionService({
     accounts,
@@ -209,13 +212,25 @@ export function createEmulationSession(
     sharedChats,
     supergroupMessages: supergroupMessaging,
   });
+  const messageSending = new MessageSendingService({
+    accounts,
+    bots,
+    privateChats,
+    supergroups,
+    privateConversations,
+    joinRequesterContacts: chatAdmission,
+    mediaGroups: messages,
+    files,
+    polls,
+    commits: messageCommitter,
+    currentUnixTimeSeconds,
+  });
   const messagePinning = new MessagePinningService({
     accounts,
     bots,
     privateChats,
     supergroups,
-    privateMessages: privateMessaging,
-    supergroupMessages: supergroupMessaging,
+    serviceMessages: messageCommitter,
     messages,
     currentUnixTimeSeconds,
   });
@@ -247,8 +262,7 @@ export function createEmulationSession(
     messageBoxes,
     privateReplyInterfaces: privateConversations,
     supergroupReplyInterfaces: sharedChats,
-    privateMessages: privateMessaging,
-    supergroupMessages: supergroupMessaging,
+    messageSending,
     sharedPeers: { accounts, bots, sharedChats },
   });
   const accountChatMessages = createAccountChatMessageReader({
@@ -258,8 +272,7 @@ export function createEmulationSession(
   });
   const messageForwarding = new MessageForwardingService({
     accountChatMessages,
-    privateMessages: privateMessaging,
-    supergroupMessages: supergroupMessaging,
+    messageSending,
     getPrivateForwardName: getAccountPrivateForwardName,
   });
   const webResources = new WebResourceService({ webResources: new WebResourceRepository() });
@@ -295,8 +308,7 @@ export function createEmulationSession(
     accounts,
     bots,
     sharedChats,
-    privateMessages: privateMessaging,
-    supergroupMessages: supergroupMessaging,
+    messageSending,
     inlineQueries: new InlineQueryRepository(journal),
     webMediaFiles: mediaFiles,
     transactions,
@@ -392,8 +404,9 @@ export function createEmulationSession(
   });
   const sessionTextFixingContext = createSessionUserMentionContext({ accounts, bots });
   const botMessageSender = new BotMessageSender({
-    botMessages: privateMessaging,
-    supergroupBotMessages: supergroupMessaging,
+    privateChatMessages: privateMessaging,
+    supergroupMessages: supergroupMessaging,
+    messageSending,
     botMessageViews,
     chatActions,
     getPrivateForwardName: getAccountPrivateForwardName,
@@ -449,6 +462,7 @@ export function createEmulationSession(
     messageEditing,
     messageDeletion,
     messageForwarding,
+    messageSending,
     messagePinning,
     messageReactions,
     replyInterfaces,

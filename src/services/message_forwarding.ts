@@ -1,15 +1,15 @@
 import {
   createMessageForward,
   isForwardable,
-  type MessageForward,
   type PrivateForwardNameLookup,
 } from '../types/message_forward.ts';
-import type { AccountChatAddress, AccountPrivateChatAddress } from '../types/virtual_chat.ts';
-import type { ChatMessage, PrivateMessage, SupergroupMessage } from '../types/virtual_message.ts';
+import type { AccountChatAddress } from '../types/virtual_chat.ts';
+import type { ChatMessage } from '../types/virtual_message.ts';
 import type {
   AccountChatMessageLookupFailureReason,
   AccountChatMessageReader,
 } from './account_chat_message.ts';
+import type { MessageSendingService } from './message_sending.ts';
 
 export interface ForwardAccountMessageInput {
   readonly fromAccountId: number;
@@ -34,36 +34,15 @@ export type ForwardAccountMessageResult =
   | { readonly forwarded: true; readonly message: ChatMessage }
   | { readonly forwarded: false; readonly reason: ForwardAccountMessageFailureReason };
 
-type AccountForwardSendingResult<Message extends ChatMessage, FailureReason extends string> =
-  | { readonly sent: true; readonly message: Message }
-  | { readonly sent: false; readonly reason: FailureReason };
-
-interface PrivateForwardMessaging {
-  sendAccountForward(input: {
-    readonly fromAccountId: number;
-    readonly to: AccountPrivateChatAddress;
-    readonly forward: MessageForward;
-  }): AccountForwardSendingResult<
-    PrivateMessage,
-    'account_not_found' | 'bot_not_found' | 'bot_blocked'
-  >;
-}
-
-interface SupergroupForwardMessaging {
-  sendAccountForward(input: {
-    readonly fromAccountId: number;
-    readonly chatId: number;
-    readonly forward: MessageForward;
-  }): AccountForwardSendingResult<
-    SupergroupMessage,
-    'account_not_found' | 'chat_not_found' | 'not_a_member' | 'send_permission_missing'
-  >;
-}
+/** Sends an account's forward as its message, by the type of the chat it goes to. */
+type AccountForwardSending = Pick<
+  MessageSendingService,
+  'sendAccountPrivateChatForward' | 'sendAccountSupergroupForward'
+>;
 
 interface MessageForwardingServiceDependencies {
   readonly accountChatMessages: AccountChatMessageReader;
-  readonly privateMessages: PrivateForwardMessaging;
-  readonly supergroupMessages: SupergroupForwardMessaging;
+  readonly messageSending: AccountForwardSending;
   /** Hides the accounts whose privacy settings keep forwards from linking to them. */
   readonly getPrivateForwardName: PrivateForwardNameLookup;
 }
@@ -77,17 +56,15 @@ interface MessageForwardingServiceDependencies {
  */
 export class MessageForwardingService {
   readonly #accountChatMessages: AccountChatMessageReader;
-  readonly #privateMessages: PrivateForwardMessaging;
-  readonly #supergroupMessages: SupergroupForwardMessaging;
+  readonly #messageSending: AccountForwardSending;
   readonly #getPrivateForwardName: PrivateForwardNameLookup;
 
   constructor(
-    { accountChatMessages, privateMessages, supergroupMessages, getPrivateForwardName }:
+    { accountChatMessages, messageSending, getPrivateForwardName }:
       MessageForwardingServiceDependencies,
   ) {
     this.#accountChatMessages = accountChatMessages;
-    this.#privateMessages = privateMessages;
-    this.#supergroupMessages = supergroupMessages;
+    this.#messageSending = messageSending;
     this.#getPrivateForwardName = getPrivateForwardName;
   }
 
@@ -114,12 +91,12 @@ export class MessageForwardingService {
     const forward = createMessageForward(lookup.message, this.#getPrivateForwardName);
     const { fromAccountId, toChat } = input;
     const sending = toChat.type === 'private'
-      ? this.#privateMessages.sendAccountForward({ fromAccountId, to: toChat, forward })
-      : this.#supergroupMessages.sendAccountForward({
+      ? this.#messageSending.sendAccountPrivateChatForward({
         fromAccountId,
-        chatId: toChat.chatId,
+        chat: { type: 'private', peerId: toChat.botId },
         forward,
-      });
+      })
+      : this.#messageSending.sendAccountSupergroupForward({ fromAccountId, chat: toChat, forward });
     return sending.sent
       ? { forwarded: true, message: sending.message }
       : { forwarded: false, reason: sending.reason };

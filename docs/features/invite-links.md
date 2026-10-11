@@ -459,7 +459,7 @@ in part:
 [projection](../../src/projections/bot_api_chat_invite_link.ts),
 [account routes](../../src/api/sessions/accounts/mod.ts),
 [expiry routes](../../src/api/sessions/supergroups/mod.ts),
-[private messaging](../../src/services/private_messaging.ts),
+[message sending](../../src/services/message_sending.ts),
 [service tests](../../tests/chat_admission_service_test.ts),
 [link HTTP tests](../../tests/chat_invite_link_api_test.ts),
 [grammY primary link test](../../tests/grammy_primary_invite_link_test.ts) and
