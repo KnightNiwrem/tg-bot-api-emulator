@@ -231,7 +231,7 @@ Deno.test('TypeScript client manages all currently implemented session resources
   if (answeredCallbackQuery.status !== 'answered') {
     throw new Error("Expected the client to return the bot's answer");
   }
-  assertEquals(
+  assertEqualsInFieldOrder(
     answeredCallbackQuery.answer,
     { text: 'Saved', show_alert: false, cache_time: 0 },
     "Expected the client to return the bot's answer",
@@ -275,7 +275,7 @@ Deno.test('TypeScript client manages all currently implemented session resources
   const menuButton = await createdAccount.account.getMenuButton({
     chat: { type: 'private', botId: createdBot.bot.id },
   });
-  assertEquals(
+  assertEqualsInFieldOrder(
     menuButton,
     { type: 'commands' },
     "Expected the client to return the bot's menu button",
@@ -309,7 +309,7 @@ Deno.test('TypeScript client manages all currently implemented session resources
   ) {
     throw new Error('Expected the client to read and press the reply keyboard');
   }
-  assertEquals(replyInterface, {
+  assertEqualsInFieldOrder(replyInterface, {
     type: 'keyboard',
     message_id: keyboardMessageId,
     keyboard: [[{ text: 'Red' }, {
@@ -447,12 +447,12 @@ Deno.test('TypeScript client runs supergroups with members, messages, and button
   if (chatActionResponse.status !== 200) {
     throw new Error(`Expected the client to see the bot typing, received ${chatActions}`);
   }
-  assertEquals(
+  assertEqualsInFieldOrder(
     chatActions,
     [{ bot_id: bot.id, action: 'typing' }],
     'Expected the client to see the bot typing',
   );
-  assertEquals(
+  assertEqualsInFieldOrder(
     notifications.at(-1),
     { message_id: 4, is_silent: false },
     'Expected the client to see the bot typing',
@@ -837,7 +837,7 @@ Deno.test('TypeScript client joins supergroups through invite links and by usern
     [[true, 2, 1]],
     [hopper.id],
   ];
-  assertEquals(outcomes, expected, 'Expected the joins to follow the links');
+  assertEqualsInFieldOrder(outcomes, expected, 'Expected the joins to follow the links');
   await session.end();
 });
 
@@ -1089,7 +1089,7 @@ Deno.test('TypeScript client shows and expires the contact of a pending join req
     400,
     409,
   ];
-  assertEquals(outcomes, expected, 'Expected the contact to end on expiry');
+  assertEqualsInFieldOrder(outcomes, expected, 'Expected the contact to end on expiry');
   await session.end();
 });
 
@@ -2009,7 +2009,7 @@ Deno.test('TypeScript client queues rate limit answers for a bot', async () => {
   ) {
     throw new Error('Expected the queued answer to limit the next getMe call');
   }
-  assertEquals(
+  assertEqualsInFieldOrder(
     queued,
     { method: 'getMe', retry_after: 2, remaining_count: 1 },
     'Expected the queued answer to limit the next getMe call',
@@ -2213,7 +2213,7 @@ Deno.test('TypeScript client registers web resources that bots send files from',
     content_type: 'application/zip',
     content,
   });
-  assertEquals(resource, {
+  assertEqualsInFieldOrder(resource, {
     url: 'https://files.example.com/Archive.zip',
     status: 200,
     content_type: 'application/zip',

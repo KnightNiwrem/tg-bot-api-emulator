@@ -4,6 +4,7 @@
  */
 import { assertEquals } from '@std/assert';
 import { createTestSession, type EmulationApi, requestJson } from './support/emulation_api.ts';
+import { assertEqualsInFieldOrder } from './support/field_order_assertion.ts';
 import { createAccount, createBot } from './support/http_fixtures.ts';
 
 interface BotActivityReadBody {
@@ -396,7 +397,7 @@ async function assertIssues(
     ? body.issues.map(({ source, path, code }) => [source, path, code])
     : status;
   const expectedIssues = expected.map(([issuePath, code]) => ['query', issuePath, code]);
-  assertEquals(
+  assertEqualsInFieldOrder(
     issues,
     expectedIssues,
     `Expected GET ${path} to report ${JSON.stringify(expectedIssues)}`,
