@@ -42,10 +42,15 @@ export interface BytesResponseBodyContract {
 /** A type and a subtype, each an HTTP token, in lowercase, as RFC 9110 writes a media type. */
 const MEDIA_TYPE_PATTERN = /^([!#$%&'*+.^_`|~0-9a-z-]+)\/([!#$%&'*+.^_`|~0-9a-z-]+)$/;
 
+/** The wildcard that a media range writes for any type or subtype. */
+const MEDIA_RANGE_WILDCARD = '*';
+
 /**
  * Whether a `Content-Type`'s media type, without its parameters such as `charset`, is within a
- * media type range: equal to it, of its type when it is `type/*`, or any when it is every type's.
- * Media types are compared without regard to letter case.
+ * media range, as RFC 9110 §12.5.1 matches them: equal to it, of its type when it is `type/*`, or
+ * any when it is every type's. The media type must be concrete, without a wildcard, which only a
+ * range may hold; a range's subtype may be a wildcard only with its type. Media types are compared
+ * without regard to letter case.
  */
 export function isMediaTypeInRange(contentType: string, mediaTypeRange: string): boolean {
   const [mediaTypeText = ''] = contentType.split(';');
@@ -54,8 +59,9 @@ export function isMediaTypeInRange(contentType: string, mediaTypeRange: string):
   if (mediaType === null || range === null) return false;
   const [, type, subtype] = mediaType;
   const [, rangeType, rangeSubtype] = range;
-  return (rangeType === '*' && rangeSubtype === '*') ||
-    (rangeType === type && (rangeSubtype === '*' || rangeSubtype === subtype));
+  if (type === MEDIA_RANGE_WILDCARD || subtype === MEDIA_RANGE_WILDCARD) return false;
+  if (rangeType === MEDIA_RANGE_WILDCARD) return rangeSubtype === MEDIA_RANGE_WILDCARD;
+  return rangeType === type && (rangeSubtype === MEDIA_RANGE_WILDCARD || rangeSubtype === subtype);
 }
 
 export type ResponseBodyContract =

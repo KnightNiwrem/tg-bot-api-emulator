@@ -207,6 +207,31 @@ Deno.test('Bytes of the wrong media type are refused however cancelling their bo
   }
 });
 
+Deno.test('A wildcard Content-Type is no media type within a range', async () => {
+  const transport: ControlOperationTransport = {
+    serverRoot: new URL('http://notes.example/'),
+    fetch: () =>
+      Promise.resolve(
+        new Response('Note', { status: 200, headers: { 'Content-Type': 'text/*' } }),
+      ),
+  };
+  const routes = new Hono();
+  registerControlOperation(routes, '', downloadNoteContract, () => ({
+    status: 200,
+    body: new Uint8Array([1]),
+    mediaType: 'text/*',
+  }));
+  const app = new Hono().route('/', routes);
+
+  await assertRejects(
+    () => callBytesOperation(transport, downloadNoteContract, { params: { noteId: '1' } }),
+    EmulationClientError,
+    'not text/*',
+  );
+  const response = await app.request('http://notes.example/notes/1/content');
+  assertEquals(response.status, 500, 'Expected the route to fail rather than answer a range');
+});
+
 Deno.test('A route answering bytes outside its media type range is a server fault', async () => {
   const routes = new Hono();
   registerControlOperation(routes, '', downloadNoteContract, () => ({
@@ -221,7 +246,7 @@ Deno.test('A route answering bytes outside its media type range is a server faul
   assertEquals(response.status, 500, 'Expected the route to fail rather than answer an image');
 });
 
-Deno.test('A media type is within a range of its type, its exact value, or every type', () => {
+Deno.test('A concrete media type is within a range of its type, its exact value, or every type', () => {
   const cases: readonly (readonly [contentType: string, range: string, within: boolean])[] = [
     ['image/png', '*/*', true],
     ['image/png', 'image/*', true],
@@ -232,6 +257,10 @@ Deno.test('A media type is within a range of its type, its exact value, or every
     ['image', '*/*', false],
     ['image/png/x', '*/*', false],
     ['', '*/*', false],
+    ['text/*', 'text/*', false],
+    ['*/*', '*/*', false],
+    ['*/plain', '*/*', false],
+    ['text/plain', '*/plain', false],
   ];
   assertEquals(
     cases.map(([contentType, range]) => isMediaTypeInRange(contentType, range)),
