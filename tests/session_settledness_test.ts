@@ -108,11 +108,12 @@ Deno.test('an automatic retry is work the emulator will do by itself', async () 
       updateId: 1,
       webhookAttemptId: 1,
       scheduling: 'automatic',
+      delaySeconds: 0,
     }]],
   );
 });
 
-Deno.test('an update is due to its webhook until sent, then waits for the webhook', async () => {
+Deno.test('an update is due to its webhook until sent, then its automatic attempt runs under its deadline', async () => {
   using fixture = createWebhookFixture(respondOnlyByAborting);
   const { session, bot, adaId } = fixture;
   fixture.sendAccountMessage(adaId);
@@ -120,6 +121,7 @@ Deno.test('an update is due to its webhook until sent, then waits for the webhoo
   const beforeSending = session.settledness.readSettledness();
   await fixture.waitForEntry({ kind: 'update_delivered' });
 
+  // The attempt's deadline would fail it by itself, so the session is not settled.
   assertEquals(
     [
       { settled: beforeSending.settled, blockers: beforeSending.blockers },
@@ -131,18 +133,67 @@ Deno.test('an update is due to its webhook until sent, then waits for the webhoo
         blockers: [{ kind: 'webhook_delivery_due', runnable: true, botId: bot.id, updateId: 1 }],
       },
       {
-        settled: true,
+        settled: false,
         blockers: [{
           kind: 'webhook_attempt',
-          runnable: false,
+          runnable: true,
           botId: bot.id,
           updateId: 1,
           webhookAttemptId: 1,
           scheduling: 'automatic',
+          timeoutSeconds: 60,
         }],
       },
     ],
   );
+});
+
+Deno.test('a manual attempt waits passively for the webhook or the test', async () => {
+  using fixture = createWebhookFixture(respondOnlyByAborting);
+  const { session, bot, adaId, webhookAttempts } = fixture;
+  webhookAttempts.setScheduling(bot.id, 'manual');
+  fixture.sendAccountMessage(adaId);
+  fixture.setWebhook();
+  await fixture.waitForEntry({ kind: 'update_delivered' });
+
+  assertEquals(
+    [session.settledness.readSettledness().settled, fixture.readBlockers()],
+    [true, [{
+      kind: 'webhook_attempt',
+      runnable: false,
+      botId: bot.id,
+      updateId: 1,
+      webhookAttemptId: 1,
+      scheduling: 'manual',
+    }]],
+  );
+});
+
+Deno.test("a webhook reply's call names its method once its body is read, until it is answered", async () => {
+  const replyDownload = Promise.withResolvers<void>();
+  using fixture = createWebhookFixture(() =>
+    Response.json({ method: 'sendDocument', chat_id: fixture.adaId, document: DOCUMENT_URL })
+  );
+  const { bot, adaId } = fixture;
+  fixture.registerHeldDocument(replyDownload.promise);
+  fixture.sendAccountMessage(adaId, '/start');
+  fixture.setWebhook();
+  await fixture.waitForEntry({ kind: 'update_confirmed' });
+  // The reply's method waits for its document's download.
+  await waitUntil(() => fixture.downloadRequestCount() === 1);
+  const whileDownloading = fixture.readBlockers();
+  replyDownload.resolve();
+  await fixture.waitForEntry({ kind: 'bot_api_call', method: 'sendDocument' });
+
+  assertEquals(whileDownloading, [{
+    kind: 'bot_api_call',
+    runnable: true,
+    botId: bot.id,
+    via: 'webhook_reply',
+    method: 'sendDocument',
+  }]);
+  // Once answered, the reply's call is no longer in progress.
+  await waitUntil(() => fixture.readBlockers().length === 0);
 });
 
 Deno.test("an accepted update's reply is in progress whenever its confirmation can be read", async () => {
@@ -206,6 +257,8 @@ Deno.test('a bot that confirms an update while its own work goes on is reported 
   );
 });
 
+const DOCUMENT_URL = 'https://files.example/report.pdf';
+
 function mailbox(botId: number, pendingUpdateCount: number) {
   return {
     bot_id: botId,
@@ -218,6 +271,7 @@ function mailbox(botId: number, pendingUpdateCount: number) {
 function createWebhookFixture(respond: WebhookResponder) {
   const webhookSession = createWebhookSession(respond, { id: 'session-settledness' });
   const { session, bot } = webhookSession;
+  let downloadRequestCount = 0;
   const readEntries = async (filter: BotActivityFilter): Promise<readonly BotActivityEntry[]> => {
     const reading = await session.botActivity.readEntries({
       after: 0,
@@ -246,5 +300,26 @@ function createWebhookFixture(respond: WebhookResponder) {
       return entry;
     },
     readBlockers: () => session.settledness.readSettledness().blockers,
+    /** Serves a PDF at `DOCUMENT_URL`, whose downloads wait for `release`. */
+    registerHeldDocument: (release: Promise<void>) => {
+      const registration = session.webResources.registerWebResource({
+        url: DOCUMENT_URL,
+        status: 200,
+        contentType: 'application/pdf',
+        content: new TextEncoder().encode('%PDF-1.7'),
+      });
+      if (!registration.registered) {
+        throw new Error('Expected the document to be served');
+      }
+      const webResources = session.webResources;
+      const fetchWebResource = webResources.fetchWebResource.bind(webResources);
+      webResources.fetchWebResource = async (request) => {
+        downloadRequestCount++;
+        await release;
+        return await fetchWebResource(request);
+      };
+    },
+    /** How many downloads from the session's web have started. */
+    downloadRequestCount: () => downloadRequestCount,
   };
 }

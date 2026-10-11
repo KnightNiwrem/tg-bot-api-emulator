@@ -509,6 +509,7 @@ export function createEmulationSession(
       webhooks,
       webhookAttempts,
       activityLog,
+      attemptTimeoutMilliseconds: WEBHOOK_ATTEMPT_TIMEOUT_MILLISECONDS,
     }),
     end: () => {
       // The commit gate closes first, so that nothing the rest of the teardown wakes can commit.

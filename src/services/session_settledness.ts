@@ -15,7 +15,6 @@ import {
   type BotWebhook,
   getWebhookUpdateQueueKey,
   type WebhookAttempt,
-  type WebhookScheduling,
 } from '../types/bot_webhook.ts';
 import type { VirtualBot } from '../types/virtual_bot.ts';
 import type { BotApiCallWork } from './session_work.ts';
@@ -34,7 +33,11 @@ export type SettlednessBlocker =
     /** Omitted for a webhook reply whose body has not named its method yet. */
     readonly method?: string;
   }
-  /** A `getUpdates` call held until an update arrives, its timeout passes, or another ends it. */
+  /**
+   * A `getUpdates` call held until an update arrives, its timeout passes, or another ends it. Its
+   * timeout answers the call with no updates and changes nothing in the session, which confirmed
+   * and recorded everything when the call arrived, so it waits passively.
+   */
   | { readonly kind: 'held_long_poll'; readonly runnable: false; readonly botId: number }
   /** An update waiting for its polling bot to read it. */
   | {
@@ -50,30 +53,44 @@ export type SettlednessBlocker =
     readonly botId: number;
     readonly updateId: number;
   }
-  /** An update sent to the bot's webhook, waiting for the webhook's complete response. */
-  | {
-    readonly kind: 'webhook_attempt';
-    readonly runnable: false;
-    readonly botId: number;
-    readonly updateId: number;
-    readonly webhookAttemptId: number;
-    readonly scheduling: WebhookScheduling;
-  }
   /**
-   * A failed update waiting to be sent again: on its timer under automatic scheduling, which the
-   * emulator runs by itself, or until the test releases it under manual scheduling.
+   * An update sent to the bot's webhook, waiting for the webhook's complete response. Under
+   * automatic scheduling the attempt's deadline fails it by itself once `timeoutSeconds` pass after
+   * it began, and schedules its retry, so it is runnable; under manual scheduling only the test
+   * expires it, so it waits passively.
    */
-  | {
-    readonly kind: 'webhook_retry';
-    readonly runnable: boolean;
-    readonly botId: number;
-    readonly updateId: number;
-    readonly webhookAttemptId: number;
-    readonly scheduling: WebhookScheduling;
-  }
+  | WebhookAttemptIdentity
+    & (
+      | {
+        readonly kind: 'webhook_attempt';
+        readonly runnable: true;
+        readonly scheduling: 'automatic';
+        readonly timeoutSeconds: number;
+      }
+      | {
+        readonly kind: 'webhook_attempt';
+        readonly runnable: false;
+        readonly scheduling: 'manual';
+      }
+    )
   /**
-   * An update of the bot's webhook whose queue, or whose webhook's connections, are taken by
-   * updates that wait passively, so it waits for them.
+   * A failed update waiting to be sent again: under automatic scheduling once its retry's
+   * `delaySeconds` pass, which the emulator does by itself, so it is runnable; under manual
+   * scheduling once the test releases it, so it waits passively.
+   */
+  | WebhookAttemptIdentity
+    & (
+      | {
+        readonly kind: 'webhook_retry';
+        readonly runnable: true;
+        readonly scheduling: 'automatic';
+        readonly delaySeconds: number;
+      }
+      | { readonly kind: 'webhook_retry'; readonly runnable: false; readonly scheduling: 'manual' }
+    )
+  /**
+   * An update of the bot's webhook whose queue, or whose webhook's connections, are taken by other
+   * updates, so it waits for them.
    */
   | {
     readonly kind: 'queued_webhook_update';
@@ -88,6 +105,13 @@ export type SettlednessBlocker =
     readonly botId: number;
     readonly updateId: number;
   };
+
+/** The webhook attempt of a pending update that a blocker waits on. */
+interface WebhookAttemptIdentity {
+  readonly botId: number;
+  readonly updateId: number;
+  readonly webhookAttemptId: number;
+}
 
 /** Whether a bot's mailbox holds no pending update. */
 export interface BotMailboxSettledness {
@@ -154,6 +178,8 @@ interface SessionSettlednessServiceDependencies {
   readonly webhooks: WebhookRegistrations;
   readonly webhookAttempts: WebhookAttempts;
   readonly activityLog: ActivityLog;
+  /** How long an automatic webhook attempt waits for its complete response before it fails. */
+  readonly attemptTimeoutMilliseconds: number;
 }
 
 /** The `getUpdates` method's name, whose held calls wait passively. */
@@ -173,10 +199,19 @@ export class SessionSettlednessService {
   readonly #webhooks: WebhookRegistrations;
   readonly #webhookAttempts: WebhookAttempts;
   readonly #activityLog: ActivityLog;
+  readonly #attemptTimeoutMilliseconds: number;
 
   constructor(
-    { bots, work, heldLongPolls, pendingUpdates, webhooks, webhookAttempts, activityLog }:
-      SessionSettlednessServiceDependencies,
+    {
+      bots,
+      work,
+      heldLongPolls,
+      pendingUpdates,
+      webhooks,
+      webhookAttempts,
+      activityLog,
+      attemptTimeoutMilliseconds,
+    }: SessionSettlednessServiceDependencies,
   ) {
     this.#bots = bots;
     this.#work = work;
@@ -185,6 +220,7 @@ export class SessionSettlednessService {
     this.#webhooks = webhooks;
     this.#webhookAttempts = webhookAttempts;
     this.#activityLog = activityLog;
+    this.#attemptTimeoutMilliseconds = attemptTimeoutMilliseconds;
   }
 
   readSettledness(): SessionSettledness {
@@ -290,24 +326,32 @@ export class SessionSettlednessService {
       if (attempt?.status === 'in_flight') {
         busyQueueKeys.add(getWebhookUpdateQueueKey(update));
         connectionsInUse++;
-        blockers.push({
-          kind: 'webhook_attempt',
-          runnable: false,
-          botId,
-          updateId,
-          webhookAttemptId: attempt.id,
-          scheduling: attempt.scheduling,
-        });
+        const identity = { botId, updateId, webhookAttemptId: attempt.id };
+        blockers.push(
+          attempt.scheduling === 'automatic'
+            ? {
+              ...identity,
+              kind: 'webhook_attempt',
+              runnable: true,
+              scheduling: 'automatic',
+              timeoutSeconds: this.#attemptTimeoutMilliseconds / 1_000,
+            }
+            : { ...identity, kind: 'webhook_attempt', runnable: false, scheduling: 'manual' },
+        );
       } else if (attempt?.status === 'failed' && attempt.retry.status === 'waiting') {
         busyQueueKeys.add(getWebhookUpdateQueueKey(update));
-        blockers.push({
-          kind: 'webhook_retry',
-          runnable: attempt.scheduling === 'automatic',
-          botId,
-          updateId,
-          webhookAttemptId: attempt.id,
-          scheduling: attempt.scheduling,
-        });
+        const identity = { botId, updateId, webhookAttemptId: attempt.id };
+        blockers.push(
+          attempt.scheduling === 'automatic'
+            ? {
+              ...identity,
+              kind: 'webhook_retry',
+              runnable: true,
+              scheduling: 'automatic',
+              delaySeconds: attempt.retry.delaySeconds,
+            }
+            : { ...identity, kind: 'webhook_retry', runnable: false, scheduling: 'manual' },
+        );
       } else {
         dueUpdates.push(update);
       }

@@ -1,3 +1,4 @@
+import type { EmulationSession } from '../../../types/emulation_session.ts';
 import type { BotApiCallContext } from './method_call.ts';
 import { findBotApiMethod } from './method_catalogue.ts';
 import { callBotApiMethod, rejectUnknownBotApiMethod } from './method_invocation.ts';
@@ -49,19 +50,23 @@ export async function runWebhookReply(
 ): Promise<void> {
   // The reply is in progress from the moment it starts, before its body is read, until its method
   // is answered.
-  const endReply = context.session.work.begin({
+  const replyWork = context.session.work.begin({
     kind: 'bot_api_call',
     botId: context.bot.id,
     via: 'webhook_reply',
   });
   try {
-    await runReplyMethod(context, reply);
+    await runReplyMethod(context, reply, replyWork);
   } finally {
-    endReply();
+    replyWork.end();
   }
 }
 
-async function runReplyMethod(context: BotApiCallContext, reply: Response): Promise<void> {
+async function runReplyMethod(
+  context: BotApiCallContext,
+  reply: Response,
+  replyWork: ReturnType<EmulationSession['work']['begin']>,
+): Promise<void> {
   const decoding = await decodeBotApiBodyParameters(reply);
   if (!decoding.decoded) {
     return;
@@ -71,6 +76,8 @@ async function runReplyMethod(context: BotApiCallContext, reply: Response): Prom
     return;
   }
   const method = findBotApiMethod(methodName);
+  // The reply is the call of the method its body names, from now until it is answered.
+  replyWork.nameMethod(method?.name ?? methodName);
   if (method === undefined) {
     rejectUnknownBotApiMethod(context, methodName, parameters, decoding.uploadedFiles);
     return;

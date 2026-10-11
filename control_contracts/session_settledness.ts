@@ -56,20 +56,28 @@ const settlednessBlockerSchema = z.discriminatedUnion('kind', [
     runnable: z.literal(false),
     ...pendingUpdateShape,
   }),
-  /** An update sent to the bot's webhook, waiting for the webhook's complete response. */
+  /**
+   * An update sent to the bot's webhook, waiting for the webhook's complete response. Under
+   * `automatic` scheduling the attempt's deadline fails it by itself `timeout_seconds` after it
+   * began, so it is runnable; under `manual` scheduling only the test expires it, so it is not, and
+   * `timeout_seconds` is omitted.
+   */
   z.strictObject({
     kind: z.literal('webhook_attempt'),
-    runnable: z.literal(false),
+    runnable: z.boolean(),
     ...webhookAttemptShape,
+    timeout_seconds: z.int().min(1).optional(),
   }),
   /**
-   * A failed update waiting to be sent again: on its timer under `automatic` scheduling, which is
-   * runnable, or until the test releases it under `manual` scheduling, which is not.
+   * A failed update waiting to be sent again: under `automatic` scheduling once its `delay_seconds`
+   * pass, by itself, so it is runnable; under `manual` scheduling once the test releases it, so it
+   * is not, and `delay_seconds` is omitted.
    */
   z.strictObject({
     kind: z.literal('webhook_retry'),
     runnable: z.boolean(),
     ...webhookAttemptShape,
+    delay_seconds: z.int().min(0).optional(),
   }),
   /** An update of the bot's webhook waiting behind its queue's or its webhook's busy connections. */
   z.strictObject({

@@ -13,9 +13,17 @@ export interface BotApiCallWork {
   readonly via: BotApiCallTransport;
   /**
    * The method's current name, once known: an HTTP call names it in its path, while a webhook
-   * reply names it only in its body, which may still be arriving.
+   * reply names it only in its body, until which it is omitted.
    */
   readonly method?: string;
+}
+
+/** A call registered as in progress, which names its method once known and ends once answered. */
+export interface BotApiCallWorkRegistration {
+  /** Records the method the call names, as its webhook reply's body names it. */
+  nameMethod(method: string): void;
+  /** Ends the call's work; ending it again does nothing. */
+  end(): void;
 }
 
 /**
@@ -25,17 +33,19 @@ export interface BotApiCallWork {
  */
 export class SessionWorkRegistry {
   /** Each registration, by its own identity, so equal work registered twice is counted twice. */
-  readonly #inProgress = new Set<{ readonly work: BotApiCallWork }>();
+  readonly #inProgress = new Set<{ work: BotApiCallWork }>();
 
-  /**
-   * Registers `work` as in progress, and returns the function that ends it. Ending it again does
-   * nothing.
-   */
-  begin(work: BotApiCallWork): () => void {
+  /** Registers `work` as in progress. */
+  begin(work: BotApiCallWork): BotApiCallWorkRegistration {
     const registration = { work };
     this.#inProgress.add(registration);
-    return () => {
-      this.#inProgress.delete(registration);
+    return {
+      nameMethod: (method) => {
+        registration.work = { ...registration.work, method };
+      },
+      end: () => {
+        this.#inProgress.delete(registration);
+      },
     };
   }
 

@@ -314,21 +314,33 @@ work to do in the session. It answers with:
 - `bots`, each bot's mailbox with its `pending_update_count`, `drained` when none is pending;
 - `blockers`, everything the session waits on, each marked `runnable` or not.
 
+`settled` promises that the emulator will not change the session by itself. So every timer that can
+change the session by itself is runnable, and its blocker says how long the timer lasts. A timer
+that only the test ends, under `manual` scheduling, is passive.
+
 These blockers are runnable, because the emulator will act on them by itself:
 
 - a Bot API call from its admission until it is answered (`bot_api_call`). That includes the method
-  a webhook's answer names, which is in progress from the moment its update is confirmed;
-- an automatic retry waiting on its timer (`webhook_retry` under `automatic` scheduling);
+  a webhook's answer names, which is in progress from the moment its update is confirmed, and which
+  names its `method` once the answer's body is read;
+- an update sent to a webhook under `automatic` scheduling that has not answered
+  (`webhook_attempt`). Its deadline fails the attempt by itself `timeout_seconds` after it began,
+  and schedules a retry;
+- an automatic retry waiting `delay_seconds` on its timer (`webhook_retry`);
 - an update about to be sent to the bot's webhook (`webhook_delivery_due`).
 
 These blockers are passive. They wait for a bot or the test:
 
-- a held `getUpdates` call (`held_long_poll`);
+- a held `getUpdates` call (`held_long_poll`). Its timeout answers the call with no updates and
+  changes nothing in the session, since the call already confirmed and recorded everything when it
+  arrived;
 - an update no poll has read yet (`undelivered_update`);
 - an update a poll delivered whose confirmation is still to come (`unconfirmed_delivery`);
-- an update sent to a webhook that has not answered (`webhook_attempt`);
-- a manual retry waiting for the test (`webhook_retry` under `manual` scheduling);
-- an update queued behind one of those (`queued_webhook_update`).
+- an update sent to a webhook under `manual` scheduling that has not answered (`webhook_attempt`),
+  which only the test expires;
+- a manual retry waiting for the test to release it (`webhook_retry`);
+- an update queued behind another update of its queue, or behind the webhook's busy connections
+  (`queued_webhook_update`).
 
 A test can read the settledness instead of sleeping to show that the emulator does nothing more on
 its own. For example, a manual retry is not sent while the session is settled. The read describes

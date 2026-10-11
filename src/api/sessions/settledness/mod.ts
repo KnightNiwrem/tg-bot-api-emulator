@@ -72,9 +72,19 @@ function presentBlocker(blocker: SettlednessBlocker): PresentedBlocker {
     case 'webhook_delivery_due':
       return { ...presentPendingUpdate(blocker), kind: blocker.kind, runnable: blocker.runnable };
     case 'webhook_attempt':
-      return { ...presentWebhookAttempt(blocker), kind: blocker.kind, runnable: blocker.runnable };
+      return {
+        ...presentWebhookAttempt(blocker),
+        kind: blocker.kind,
+        runnable: blocker.runnable,
+        ...(blocker.scheduling === 'automatic' ? { timeout_seconds: blocker.timeoutSeconds } : {}),
+      };
     case 'webhook_retry':
-      return { ...presentWebhookAttempt(blocker), kind: blocker.kind, runnable: blocker.runnable };
+      return {
+        ...presentWebhookAttempt(blocker),
+        kind: blocker.kind,
+        runnable: blocker.runnable,
+        ...(blocker.scheduling === 'automatic' ? { delay_seconds: blocker.delaySeconds } : {}),
+      };
     default: {
       const unhandledBlocker: never = blocker;
       throw new Error(`Unhandled settledness blocker: ${JSON.stringify(unhandledBlocker)}`);

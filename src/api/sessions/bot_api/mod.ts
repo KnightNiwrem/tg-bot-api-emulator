@@ -84,7 +84,7 @@ export function createBotApiRoutes(): Hono<BotApiRouteContextTypes> {
     const session = context.get('emulationSession');
     // The call is in progress from its admission, before its parameters arrive, until it is
     // answered.
-    const endCall = session.work.begin({
+    const callWork = session.work.begin({
       kind: 'bot_api_call',
       botId: context.get('authenticatedBot').id,
       via: 'http',
@@ -93,7 +93,7 @@ export function createBotApiRoutes(): Hono<BotApiRouteContextTypes> {
     try {
       return await answerBotApiCall(context, requestedMethodName, method);
     } finally {
-      endCall();
+      callWork.end();
     }
   });
 

@@ -92,8 +92,10 @@ oneOf:
   - type: object
     additionalProperties: false
     description: >-
-      An update sent to the bot's webhook, waiting for the webhook's complete response, under
-      either scheduling.
+      An update sent to the bot's webhook, waiting for the webhook's complete response. Under
+      `automatic` scheduling the attempt's deadline fails it by itself `timeout_seconds` after it
+      began, and schedules its retry, so it is runnable. Under `manual` scheduling only the test
+      expires it, so it is not runnable, and `timeout_seconds` is omitted.
     required:
       - kind
       - runnable
@@ -107,7 +109,6 @@ oneOf:
         const: webhook_attempt
       runnable:
         type: boolean
-        const: false
       bot_id:
         type: integer
       update_id:
@@ -120,11 +121,18 @@ oneOf:
         enum:
           - automatic
           - manual
+      timeout_seconds:
+        type: integer
+        minimum: 1
+        description: >-
+          How long after it began the attempt fails by itself; present exactly under `automatic`
+          scheduling.
   - type: object
     additionalProperties: false
     description: >-
-      A failed update waiting to be sent again: on its timer under `automatic` scheduling, which is
-      runnable, or until the test releases it under `manual` scheduling, which is not.
+      A failed update waiting to be sent again. Under `automatic` scheduling it is sent by itself
+      once `delay_seconds` pass, so it is runnable. Under `manual` scheduling it waits for the test
+      to release it, so it is not runnable, and `delay_seconds` is omitted.
     required:
       - kind
       - runnable
@@ -150,11 +158,17 @@ oneOf:
         enum:
           - automatic
           - manual
+      delay_seconds:
+        type: integer
+        minimum: 0
+        description: >-
+          How long after the failure the update is sent again by itself; present exactly under
+          `automatic` scheduling.
   - type: object
     additionalProperties: false
     description: >-
       An update of the bot's webhook that waits behind an earlier update of its queue, or for one
-      of the webhook's connections, which updates waiting passively hold.
+      of the webhook's connections, which other updates hold.
     required:
       - kind
       - runnable

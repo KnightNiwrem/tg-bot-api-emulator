@@ -268,8 +268,14 @@ Deno.test('Webhook delivery sends at most max_connections updates at once, one p
   sendAccountMessage(adaId);
   setWebhook({ maxConnections: 2 });
   await webhookSession.waitForRequestCount(2);
-  // Both connections are taken by updates waiting for the webhook, so nothing else is sent.
-  assertEquals(webhookSession.session.settledness.readSettledness().settled, true);
+  // Both connections are taken by attempts waiting for the webhook, so nothing else is sent.
+  assertEquals(
+    webhookSession.session.settledness.readSettledness().blockers.flatMap((blocker) =>
+      blocker.runnable ? [blocker.kind] : []
+    ),
+    ['webhook_attempt', 'webhook_attempt'],
+    'Expected only the two attempts in flight, under their deadlines, to be runnable',
+  );
   const inFlightAtFirst = receivedRequests.map(({ updateId }) => updateId);
 
   // Ada's first update frees a connection for Linus, and Ada's next update waits its turn.
