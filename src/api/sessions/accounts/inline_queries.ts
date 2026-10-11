@@ -2,45 +2,41 @@ import { Hono } from 'hono';
 import { basePath } from 'hono/route';
 import { z } from 'zod';
 
+import {
+  getInlineQueryContract,
+  sendInlineQueryContract,
+} from '../../../../control_contracts/inline_queries.ts';
+import type {
+  ControlOperationRefusal,
+  DecodedControlRequest,
+} from '../../../../control_contracts/operation_contract.ts';
 import { toBotApiLocation } from '../../../types/bot_api.ts';
 import type { EmulationSession } from '../../../types/emulation_session.ts';
-import {
-  type InlineQuery,
-  type InlineQueryResult,
-  type InlineQueryResultsButton,
-  MAX_INLINE_QUERY_LENGTH,
+import { createGeoLocation, type GeoLocation } from '../../../types/geo_location.ts';
+import type {
+  InlineQuery,
+  InlineQueryResult,
+  InlineQueryResultsButton,
 } from '../../../types/inline_query.ts';
 import {
   controlErrorResponse,
   invalidControlRequestResponse,
 } from '../../control_error_response.ts';
+import { registerControlOperation } from '../../control_operation_route.ts';
 import { readPathParameters } from '../control_request_input.ts';
 import { readJsonRequestBody } from '../json_request_body.ts';
 import type { SessionRouteContextTypes } from '../session_route_context_types.ts';
 import { ACCOUNT_ID_PARAMETER, accountPathSchema } from './account_paths.ts';
 import { viewChatMessageForAccount } from './chat_message_view.ts';
-import { accountLocationSchema, chatSchema, telegramUserIdSchema } from './request_fields.ts';
+
+type SendInlineQueryBody = DecodedControlRequest<typeof sendInlineQueryContract>['body'];
 
 const INLINE_QUERY_ID_PARAMETER = 'inlineQueryId';
-const INLINE_QUERY_COLLECTION_PATH = `/:${ACCOUNT_ID_PARAMETER}/inline-queries` as const;
-const INLINE_QUERY_PATH = `${INLINE_QUERY_COLLECTION_PATH}/:${INLINE_QUERY_ID_PARAMETER}` as const;
-const CHOSEN_INLINE_RESULT_COLLECTION_PATH = `${INLINE_QUERY_PATH}/chosen-results` as const;
+const CHOSEN_INLINE_RESULT_COLLECTION_PATH =
+  `/:${ACCOUNT_ID_PARAMETER}/inline-queries/:${INLINE_QUERY_ID_PARAMETER}/chosen-results` as const;
 
-/**
- * An inline query typed in a chat, for the inline bot whose username precedes it. The query holds
- * up to 256 characters, counted by code point.
- */
-const sendInlineQueryRequestSchema = z.strictObject({
-  bot_id: telegramUserIdSchema,
-  chat: chatSchema,
-  query: z.string().default('').refine((query) => [...query].length <= MAX_INLINE_QUERY_LENGTH, {
-    message: `A query must have at most ${MAX_INLINE_QUERY_LENGTH} characters`,
-  }),
-  /** The `next_offset` of an earlier answer, requesting more results; empty for the first. */
-  offset: z.string().default(''),
-  /** Where the account is, shared with a bot that requests it. */
-  location: accountLocationSchema.optional(),
-});
+/** Where the account routes are mounted within the server, as a contract path template. */
+const ACCOUNT_COLLECTION_MOUNT_PATH = '/sessions/{sessionId}/accounts';
 
 const chooseInlineQueryResultRequestSchema = z.strictObject({
   result_id: z.string().min(1),
@@ -53,61 +49,46 @@ const chooseInlineQueryResultRequestSchema = z.strictObject({
 export function createInlineQueryRoutes(): Hono<SessionRouteContextTypes> {
   const accountRoutes = new Hono<SessionRouteContextTypes>();
 
-  accountRoutes.post(INLINE_QUERY_COLLECTION_PATH, async (context) => {
-    const accountPath = readPathParameters(accountPathSchema, context.req.param());
-    if (!accountPath.valid) {
-      return invalidControlRequestResponse(context, accountPath.issues);
-    }
-    const { accountId } = accountPath.value;
+  registerControlOperation(
+    accountRoutes,
+    ACCOUNT_COLLECTION_MOUNT_PATH,
+    sendInlineQueryContract,
+    ({ params: { accountId }, body }, context) => {
+      const result = context.get('emulationSession').inlineQueries.sendInlineQuery({
+        fromAccountId: accountId,
+        botId: body.bot_id,
+        chat: body.chat,
+        query: body.query,
+        offset: body.offset,
+        ...(body.location === undefined ? {} : { userLocation: toGeoLocation(body.location) }),
+      });
+      if (!result.sent) {
+        return refuseInlineQuerySending(result.reason);
+      }
+      return {
+        status: 201,
+        headers: {
+          Location: `${basePath(context)}/${accountId}/inline-queries/${result.inlineQuery.id}`,
+        },
+        body: { inline_query: presentInlineQueryForAccount(result.inlineQuery) },
+      };
+    },
+  );
 
-    const requestBodyReading = await readJsonRequestBody(context.req, sendInlineQueryRequestSchema);
-    if (!requestBodyReading.valid) {
-      return invalidControlRequestResponse(context, requestBodyReading.issues);
-    }
-    const requestBody = requestBodyReading.value;
-
-    const result = context.get('emulationSession').inlineQueries.sendInlineQuery({
-      fromAccountId: accountId,
-      botId: requestBody.bot_id,
-      chat: requestBody.chat,
-      query: requestBody.query,
-      offset: requestBody.offset,
-      ...(requestBody.location === undefined ? {} : { userLocation: requestBody.location }),
-    });
-    if (!result.sent) {
-      return controlErrorResponse(
-        context,
-        inlineQuerySendFailureStatus(result.reason),
-        result.reason,
-      );
-    }
-
-    const inlineQueryPath = `${
-      basePath(context)
-    }/${accountId}/inline-queries/${result.inlineQuery.id}`;
-    return context.json(
-      { inline_query: presentInlineQueryForAccount(result.inlineQuery) },
-      201,
-      { Location: inlineQueryPath },
-    );
-  });
-
-  accountRoutes.get(INLINE_QUERY_PATH, (context) => {
-    const accountPath = readPathParameters(accountPathSchema, context.req.param());
-    if (!accountPath.valid) {
-      return invalidControlRequestResponse(context, accountPath.issues);
-    }
-    const { accountId } = accountPath.value;
-
-    const inlineQuery = context.get('emulationSession').inlineQueries.getAccountInlineQuery({
-      accountId,
-      inlineQueryId: context.req.param(INLINE_QUERY_ID_PARAMETER),
-    });
-    if (inlineQuery === undefined) {
-      return controlErrorResponse(context, 404, 'inline_query_not_found');
-    }
-    return context.json({ inline_query: presentInlineQueryForAccount(inlineQuery) });
-  });
+  registerControlOperation(
+    accountRoutes,
+    ACCOUNT_COLLECTION_MOUNT_PATH,
+    getInlineQueryContract,
+    ({ params: { accountId, inlineQueryId } }, context) => {
+      const inlineQuery = context.get('emulationSession').inlineQueries.getAccountInlineQuery({
+        accountId,
+        inlineQueryId,
+      });
+      return inlineQuery === undefined
+        ? { status: 404, body: { reason: 'inline_query_not_found' } }
+        : { status: 200, body: { inline_query: presentInlineQueryForAccount(inlineQuery) } };
+    },
+  );
 
   accountRoutes.post(CHOSEN_INLINE_RESULT_COLLECTION_PATH, async (context) => {
     const accountPath = readPathParameters(accountPathSchema, context.req.param());
@@ -149,26 +130,36 @@ export function createInlineQueryRoutes(): Hono<SessionRouteContextTypes> {
 }
 
 /**
+ * The location an account shares, from the coordinates and accuracy its client reports; an
+ * accuracy left out is unknown.
+ */
+function toGeoLocation(
+  { latitude, longitude, horizontal_accuracy }: NonNullable<SendInlineQueryBody['location']>,
+): GeoLocation {
+  return createGeoLocation(latitude, longitude, horizontal_accuracy ?? 0);
+}
+
+/**
  * A supergroup the account is not a member of is forbidden; a bot without inline mode, or one
  * that does not ask for the account's location while the request shares it, conflicts with the
  * query; a missing account, bot, or chat is not found.
  */
-function inlineQuerySendFailureStatus(
+function refuseInlineQuerySending(
   reason: Extract<
     ReturnType<EmulationSession['inlineQueries']['sendInlineQuery']>,
     { readonly sent: false }
   >['reason'],
-): 403 | 404 | 409 {
+): ControlOperationRefusal<typeof sendInlineQueryContract> {
   switch (reason) {
     case 'not_a_member':
-      return 403;
+      return { status: 403, body: { reason } };
     case 'inline_mode_disabled':
     case 'inline_location_not_requested':
-      return 409;
+      return { status: 409, body: { reason } };
     case 'account_not_found':
     case 'bot_not_found':
     case 'chat_not_found':
-      return 404;
+      return { status: 404, body: { reason } };
     default: {
       const unhandledReason: never = reason;
       throw new Error(`Unhandled inline query send failure: ${unhandledReason}`);

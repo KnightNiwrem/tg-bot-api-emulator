@@ -26,6 +26,12 @@ const ACCOUNT_PHONE_NUMBER_PATTERN = /^[1-9][0-9]{0,14}$/;
  */
 const accountNameSchema = z.string().min(1).max(MAX_ACCOUNT_NAME_LENGTH);
 
+/** The path parameters of the account a route acts as. */
+export const accountPathSchema = z.strictObject({
+  sessionId: sessionIdParameterSchema,
+  accountId: telegramUserIdSchema,
+});
+
 /** An account's profile, as bots see the account as a user. */
 export const accountProfileSchema = z.strictObject({
   id: telegramUserIdSchema,

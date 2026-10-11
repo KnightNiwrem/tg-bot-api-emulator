@@ -6,6 +6,7 @@
 import { assertEquals } from '@std/assert';
 import { BOT_ACTIVITY_KINDS as CONTRACT_BOT_ACTIVITY_KINDS } from '../control_contracts/bot_activity.ts';
 import { QUEUEABLE_SERVER_ERROR_CODES as CONTRACT_QUEUEABLE_SERVER_ERROR_CODES } from '../control_contracts/queued_bot_api_answers.ts';
+import { MAX_INLINE_QUERY_LENGTH as CONTRACT_MAX_INLINE_QUERY_LENGTH } from '../control_contracts/inline_queries.ts';
 import { uploadProfileSchema } from '../control_contracts/sessions.ts';
 import {
   CHAT_PERMISSIONS as CONTRACT_CHAT_PERMISSIONS,
@@ -15,7 +16,11 @@ import {
 } from '../control_contracts/supergroup_administration.ts';
 import { expireChatInviteLinkContract } from '../control_contracts/supergroups.ts';
 import { WEBHOOK_SCHEDULINGS as CONTRACT_WEBHOOK_SCHEDULINGS } from '../control_contracts/webhook_attempts.ts';
-import { supergroupChatIdSchema, telegramUserIdSchema } from '../control_contracts/wire_fields.ts';
+import {
+  MAX_HORIZONTAL_ACCURACY_METERS as CONTRACT_MAX_HORIZONTAL_ACCURACY_METERS,
+  supergroupChatIdSchema,
+  telegramUserIdSchema,
+} from '../control_contracts/wire_fields.ts';
 import { BOT_ACTIVITY_KINDS } from '../src/types/bot_activity_kind.ts';
 import { QUEUEABLE_SERVER_ERROR_CODES } from '../src/types/bot_server_error.ts';
 import { WEBHOOK_SCHEDULINGS } from '../src/types/bot_webhook.ts';
@@ -31,6 +36,8 @@ import {
   MIN_SUPERGROUP_OR_CHANNEL_ID,
   MIN_TELEGRAM_USER_ID,
 } from '../src/types/telegram_identity.ts';
+import { MAX_HORIZONTAL_ACCURACY_METERS } from '../src/types/geo_location.ts';
+import { MAX_INLINE_QUERY_LENGTH } from '../src/types/inline_query.ts';
 import { UPLOAD_PROFILES } from '../src/types/upload_profile.ts';
 
 Deno.test('The contracts name exactly the bot activity kinds the emulator records', () => {
@@ -142,5 +149,13 @@ Deno.test('The contracts show custom titles of at most the length the emulator a
     setSupergroupCustomTitleContract.body.schema.safeParse({ custom_title: '' }).success,
     true,
     'Expected an empty title, which removes it, accepted',
+  );
+});
+
+Deno.test('The contracts limit inline queries and location accuracy as the emulator does', () => {
+  assertEquals(
+    [CONTRACT_MAX_INLINE_QUERY_LENGTH, CONTRACT_MAX_HORIZONTAL_ACCURACY_METERS],
+    [MAX_INLINE_QUERY_LENGTH, MAX_HORIZONTAL_ACCURACY_METERS],
+    'Expected the same query length and accuracy limits',
   );
 });
