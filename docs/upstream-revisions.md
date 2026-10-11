@@ -6,9 +6,13 @@ upstream moves on, a re-review starts here: compare the cited files between the 
 the new one, re-check the listed areas, and update the links that cite the commit.
 
 [`tests/upstream_revision_manifest_test.ts`](../tests/upstream_revision_manifest_test.ts) keeps this
-list complete. Every GitHub permalink in the repository, and every full commit hash written after
-the word "commit", must name a commit listed here, for the same repository; every commit listed here
-must be cited.
+list complete, in every file of the repository including this one:
+
+- a link into a repository at a commit, on GitHub, its raw files or jsDelivr, must name a commit
+  listed here for the same repository;
+- a full commit hash written on its own must be listed here;
+- a commit hash must be written in full, also after the word "commit" or "revision";
+- every commit listed here must be cited outside the commit link that lists it.
 
 ## Official Bot API server
 
