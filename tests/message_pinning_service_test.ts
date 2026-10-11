@@ -1,3 +1,4 @@
+import { assertEquals } from '@std/assert';
 import { createEmulationSession } from '../src/composition/emulation_session.ts';
 import { createSystemSessionTiming } from '../src/timing/system_timing.ts';
 import type { SupergroupAdministratorRight } from '../src/types/chat_membership.ts';
@@ -46,7 +47,7 @@ function createPinningFixture() {
   }
   const chatId = creation.supergroup.id;
   for (const memberId of [grace, pinningBot, memberBot, removedBot]) {
-    expectEqual(
+    assertEquals(
       session.sharedChatAdministration.addChatMember({ actorAccountId: ada, chatId, memberId })
         .added,
       true,
@@ -112,7 +113,7 @@ function promote(
     memberId,
     rights: new Set(rights),
   });
-  expectEqual(result.promoted, true, `member ${memberId} is promoted`);
+  assertEquals(result.promoted, true, `member ${memberId} is promoted`);
 }
 
 /** The ID by which an owner of a message box, a bot or a supergroup, numbers a message. */
@@ -135,6 +136,11 @@ function pinnedTexts(session: EmulationSession, accountId: number, chat: Pinning
 
 type PinningChat = Parameters<EmulationSession['messagePinning']['pinMessage']>[0]['chat'];
 type MessagePinner = Parameters<EmulationSession['messagePinning']['pinMessage']>[0]['pinner'];
+/** Why `unpinAllMessages` refused. */
+type UnpinAllRefusalReason = Extract<
+  ReturnType<EmulationSession['messagePinning']['unpinAllMessages']>,
+  { unpinned: false }
+>['reason'];
 
 Deno.test('a chat pins several messages, lists them newest first, and unpins the newest by default', () => {
   const { session, ada, pinningBot, sendToPinningBot } = createPinningFixture();
@@ -146,14 +152,14 @@ Deno.test('a chat pins several messages, lists them newest first, and unpins the
   const pinner = { kind: 'bot', botId: pinningBot } as const;
 
   for (const messageId of [thirdId, firstId]) {
-    expectEqual(
+    assertEquals(
       session.messagePinning.pinMessage({ isSilent: false, pinner, chat: botChat, messageId })
         .pinned,
       true,
       `message ${messageId} is pinned`,
     );
   }
-  expectEqual(
+  assertEquals(
     session.messagePinning.pinMessage({
       isSilent: false,
       pinner: { kind: 'account', accountId: ada },
@@ -163,25 +169,25 @@ Deno.test('a chat pins several messages, lists them newest first, and unpins the
     true,
     'the account pins with the same pinned messages',
   );
-  expectEqual(
+  assertEquals(
     pinnedTexts(session, ada, accountChat),
     ['third', 'second', 'first'],
     'pinned messages are listed by sending order, not pinning order',
   );
 
   const unpin = session.messagePinning.unpinMessage({ pinner, chat: botChat });
-  expectEqual(unpin.unpinned, true, 'an unpin without a target succeeds');
-  expectEqual(
+  assertEquals(unpin.unpinned, true, 'an unpin without a target succeeds');
+  assertEquals(
     pinnedTexts(session, ada, accountChat),
     ['second', 'first'],
     'the newest is unpinned',
   );
-  expectEqual(
+  assertEquals(
     session.messagePinning.unpinMessage({ pinner, chat: botChat, messageId: firstId }).unpinned,
     true,
     'an explicit unpin succeeds',
   );
-  expectEqual(pinnedTexts(session, ada, accountChat), ['second'], 'the target is unpinned');
+  assertEquals(pinnedTexts(session, ada, accountChat), ['second'], 'the target is unpinned');
 });
 
 Deno.test('a repeated pin or an unpin of an unpinned message is refused without effect', () => {
@@ -190,23 +196,23 @@ Deno.test('a repeated pin or an unpin of an unpinned message is refused without 
   const pinner = { kind: 'bot', botId: pinningBot } as const;
   const chat: PinningChat = { type: 'private', peerId: ada };
 
-  expectEqual(
+  assertEquals(
     session.messagePinning.unpinMessage({ pinner, chat, messageId }),
     { unpinned: false, reason: 'message_not_pinned' },
     'an unpinned message cannot be unpinned',
   );
-  expectEqual(
+  assertEquals(
     session.messagePinning.unpinMessage({ pinner, chat }),
     { unpinned: false, reason: 'message_not_found' },
     'without a pinned message, an unpin without a target finds none',
   );
   session.messagePinning.pinMessage({ isSilent: false, pinner, chat, messageId });
-  expectEqual(
+  assertEquals(
     session.messagePinning.pinMessage({ isSilent: false, pinner, chat, messageId }),
     { pinned: false, reason: 'message_already_pinned' },
     'a pinned message cannot be pinned again',
   );
-  expectEqual(
+  assertEquals(
     pinnedTexts(session, ada, { type: 'private', peerId: pinningBot }),
     ['hello'],
     'the message stays pinned once',
@@ -228,7 +234,7 @@ Deno.test('a bot reaches only private chats an account started and supergroups i
   sendToPinningBot('hi');
   const messageId = sendToSupergroup(grace, 'hello');
 
-  expectEqual(
+  assertEquals(
     session.messagePinning.pinMessage({
       isSilent: false,
       pinner: { kind: 'bot', botId: pinningBot },
@@ -238,7 +244,7 @@ Deno.test('a bot reaches only private chats an account started and supergroups i
     { pinned: false, reason: 'chat_not_found' },
     'a private chat the account never started is unknown',
   );
-  expectEqual(
+  assertEquals(
     session.messagePinning.pinMessage({
       isSilent: false,
       pinner: { kind: 'bot', botId: removedBot },
@@ -248,7 +254,7 @@ Deno.test('a bot reaches only private chats an account started and supergroups i
     { pinned: false, reason: 'bot_kicked' },
     'a removed bot is turned away',
   );
-  expectEqual(
+  assertEquals(
     session.messagePinning.pinMessage({
       isSilent: false,
       pinner: { kind: 'account', accountId: outsider },
@@ -258,7 +264,7 @@ Deno.test('a bot reaches only private chats an account started and supergroups i
     { pinned: false, reason: 'not_a_member' },
     'an account that is no member is refused',
   );
-  expectEqual(
+  assertEquals(
     session.messagePinning.pinMessage({
       isSilent: false,
       pinner: { kind: 'bot', botId: pinningBot },
@@ -268,7 +274,7 @@ Deno.test('a bot reaches only private chats an account started and supergroups i
     { pinned: false, reason: 'message_not_found' },
     'an unknown message is not found',
   );
-  expectEqual(
+  assertEquals(
     session.messagePinning.pinMessage({
       isSilent: false,
       pinner: { kind: 'bot', botId: pinningBot },
@@ -290,13 +296,13 @@ Deno.test('supergroup pins need can_pin_messages, which bots get only as an admi
   const unpin = (pinner: Parameters<typeof session.messagePinning.unpinMessage>[0]['pinner']) =>
     session.messagePinning.unpinMessage({ pinner, chat, messageId });
 
-  expectEqual(
+  assertEquals(
     pin({ kind: 'bot', botId: memberBot }),
     { pinned: false, reason: 'not_enough_rights' },
     'default permissions grant a bot no pin right',
   );
-  expectEqual(pin({ kind: 'account', accountId: grace }).pinned, true, 'defaults let members pin');
-  expectEqual(
+  assertEquals(pin({ kind: 'account', accountId: grace }).pinned, true, 'defaults let members pin');
+  assertEquals(
     unpin({ kind: 'bot', botId: pinningBot }).unpinned,
     true,
     'the right lets a bot unpin',
@@ -310,13 +316,13 @@ Deno.test('supergroup pins need can_pin_messages, which bots get only as an admi
     chatId,
     permissions: withholdsPins,
   });
-  expectEqual(
+  assertEquals(
     pin({ kind: 'account', accountId: grace }),
     { pinned: false, reason: 'not_enough_rights' },
     'defaults that withhold pins refuse members',
   );
-  expectEqual(pin({ kind: 'account', accountId: ada }).pinned, true, 'the owner always pins');
-  expectEqual(
+  assertEquals(pin({ kind: 'account', accountId: ada }).pinned, true, 'the owner always pins');
+  assertEquals(
     unpin({ kind: 'account', accountId: grace }),
     { unpinned: false, reason: 'not_enough_rights' },
     'unpinning needs the same permission',
@@ -356,20 +362,20 @@ Deno.test('a public supergroup ignores its default permissions for pins', () => 
       messageId,
     });
 
-  expectEqual(
+  assertEquals(
     pin(grace),
     { pinned: false, reason: 'not_enough_rights' },
     'a member gets no pin right from the defaults, which grant every permission',
   );
   promote(session, { ownerId: ada, chatId, memberId: grace, rights: ['can_delete_messages'] });
-  expectEqual(
+  assertEquals(
     pin(grace),
     { pinned: false, reason: 'not_enough_rights' },
     'nor does an administrator without the right',
   );
   promote(session, { ownerId: ada, chatId, memberId: grace, rights: ['can_pin_messages'] });
-  expectEqual(pin(grace).pinned, true, 'the right lets the administrator pin');
-  expectEqual(
+  assertEquals(pin(grace).pinned, true, 'the right lets the administrator pin');
+  assertEquals(
     session.messagePinning.pinMessage({
       isSilent: false,
       pinner: { kind: 'account', accountId: grace },
@@ -390,7 +396,7 @@ Deno.test('a service message cannot be pinned or unpinned, after the right to pi
   const joinMessageId = messageIdIn(session, chatId, serviceMessage.messages[0]);
   const chat: PinningChat = { type: 'supergroup', chatId };
 
-  expectEqual(
+  assertEquals(
     session.messagePinning.pinMessage({
       isSilent: false,
       pinner: { kind: 'bot', botId: memberBot },
@@ -400,7 +406,7 @@ Deno.test('a service message cannot be pinned or unpinned, after the right to pi
     { pinned: false, reason: 'not_enough_rights' },
     'the right to pin is checked first',
   );
-  expectEqual(
+  assertEquals(
     session.messagePinning.pinMessage({
       isSilent: false,
       pinner: { kind: 'bot', botId: pinningBot },
@@ -410,7 +416,7 @@ Deno.test('a service message cannot be pinned or unpinned, after the right to pi
     { pinned: false, reason: 'service_message_not_pinnable' },
     'a service message is refused',
   );
-  expectEqual(
+  assertEquals(
     session.messagePinning.unpinMessage({
       pinner: { kind: 'bot', botId: pinningBot },
       chat,
@@ -432,12 +438,12 @@ Deno.test('findNewestPinnedMessage returns the pinned message sent last', () => 
     return message?.content.kind === 'text' ? message.content.text : message;
   };
 
-  expectEqual(newestText(), undefined, 'a chat without pins has none');
+  assertEquals(newestText(), undefined, 'a chat without pins has none');
   session.messagePinning.pinMessage({ isSilent: false, pinner, chat, messageId: newerId });
   session.messagePinning.pinMessage({ isSilent: false, pinner, chat, messageId: olderId });
-  expectEqual(newestText(), 'newer', 'pinning an older message keeps the newest');
+  assertEquals(newestText(), 'newer', 'pinning an older message keeps the newest');
   session.messagePinning.unpinMessage({ pinner, chat, messageId: newerId });
-  expectEqual(newestText(), 'older', 'unpinning the newest shows the next');
+  assertEquals(newestText(), 'older', 'unpinning the newest shows the next');
 });
 
 Deno.test('unpinning all clears every pin of one chat, whoever wrote or pinned it, and keeps its messages', () => {
@@ -448,7 +454,7 @@ Deno.test('unpinning all clears every pin of one chat, whoever wrote or pinned i
   const botPinner = { kind: 'bot', botId: pinningBot } as const;
   const adaPinner = { kind: 'account', accountId: ada } as const;
   const pin = (pinner: MessagePinner, chat: PinningChat, messageId: number) =>
-    expectEqual(
+    assertEquals(
       session.messagePinning.pinMessage({ isSilent: false, pinner, chat, messageId }).pinned,
       true,
       `message ${messageId} is pinned`,
@@ -465,7 +471,7 @@ Deno.test('unpinning all clears every pin of one chat, whoever wrote or pinned i
   pin({ kind: 'account', accountId: grace }, supergroup, sendToSupergroup(grace, "grace's"));
   pin(adaPinner, supergroup, sendToSupergroup(ada, "ada's"));
   pin(botPinner, supergroup, sendToSupergroup(grace, "grace's, pinned by the bot"));
-  expectEqual(
+  assertEquals(
     pinnedTexts(session, ada, supergroup),
     ["grace's, pinned by the bot", "ada's", "grace's", 'bot notice'],
     'messages by the bot and by accounts are pinned in the supergroup',
@@ -499,40 +505,40 @@ Deno.test('unpinning all clears every pin of one chat, whoever wrote or pinned i
   };
   const historyLengthBefore = supergroupHistoryLength();
 
-  expectEqual(
+  assertEquals(
     session.messagePinning.unpinAllMessages({ pinner: botPinner, chat: supergroup }),
     { unpinned: true },
     'the administrator unpins four pins',
   );
-  expectEqual(pinnedTexts(session, ada, supergroup), [], 'the supergroup pins nothing');
-  expectEqual(
+  assertEquals(pinnedTexts(session, ada, supergroup), [], 'the supergroup pins nothing');
+  assertEquals(
     session.messagePinning.findNewestPinnedMessage({ type: 'supergroup', chatId }),
     undefined,
     'no newest pin is left',
   );
-  expectEqual(supergroupHistoryLength(), historyLengthBefore, 'no message is removed or recorded');
-  expectEqual(
+  assertEquals(supergroupHistoryLength(), historyLengthBefore, 'no message is removed or recorded');
+  assertEquals(
     pinnedTexts(session, ada, { type: 'private', peerId: pinningBot }),
     ['bot reply', "ada's"],
     "the bot's private chat keeps its pins",
   );
 
-  expectEqual(
+  assertEquals(
     session.messagePinning.unpinAllMessages({ pinner: botPinner, chat: pinningBotChat }),
     { unpinned: true },
     "the bot unpins the account's message and its own in their private chat",
   );
-  expectEqual(
+  assertEquals(
     pinnedTexts(session, ada, { type: 'private', peerId: pinningBot }),
     [],
     'the private chat pins nothing',
   );
-  expectEqual(
+  assertEquals(
     pinnedTexts(session, ada, { type: 'private', peerId: memberBot }),
     ['other bot'],
     "another bot's private chat with the account keeps its pin",
   );
-  expectEqual(
+  assertEquals(
     session.messagePinning.unpinAllMessages({ pinner: botPinner, chat: pinningBotChat }),
     { unpinned: true },
     'a chat that pins nothing is unpinned again without error',
@@ -557,14 +563,14 @@ Deno.test('unpinning all checks access and the right to pin first, even when not
   const unpinAll = (pinner: MessagePinner, chat: PinningChat) =>
     session.messagePinning.unpinAllMessages({ pinner, chat });
   const expectRefusals = (pinsState: string) => {
-    const refusals: Array<[MessagePinner, PinningChat, string]> = [
+    const refusals: Array<[MessagePinner, PinningChat, UnpinAllRefusalReason]> = [
       [{ kind: 'bot', botId: memberBot }, supergroup, 'not_enough_rights'],
       [{ kind: 'bot', botId: removedBot }, supergroup, 'bot_kicked'],
       [{ kind: 'account', accountId: outsider }, supergroup, 'not_a_member'],
       [{ kind: 'bot', botId: pinningBot }, { type: 'private', peerId: grace }, 'chat_not_found'],
     ];
     for (const [pinner, chat, reason] of refusals) {
-      expectEqual(
+      assertEquals(
         unpinAll(pinner, chat),
         { unpinned: false, reason },
         `${JSON.stringify(pinner)} is refused with ${pinsState}`,
@@ -589,7 +595,7 @@ Deno.test('unpinning all checks access and the right to pin first, even when not
   });
   expectRefusals('a pin');
 
-  expectEqual(
+  assertEquals(
     session.sharedChatAdministration.demoteChatMember({
       actorAccountId: ada,
       chatId,
@@ -598,33 +604,25 @@ Deno.test('unpinning all checks access and the right to pin first, even when not
     true,
     'the pinning bot is demoted',
   );
-  expectEqual(
+  assertEquals(
     unpinAll({ kind: 'bot', botId: pinningBot }, supergroup),
     { unpinned: false, reason: 'not_enough_rights' },
     'a demoted bot lost the right',
   );
   session.botBlocking.blockBot({ accountId: ada, botId: pinningBot });
-  expectEqual(
+  assertEquals(
     unpinAll({ kind: 'bot', botId: pinningBot }, pinningBotChat),
     { unpinned: false, reason: 'bot_blocked' },
     'a blocked bot cannot unpin in the private chat',
   );
-  expectEqual(
+  assertEquals(
     pinnedTexts(session, ada, supergroup),
     ['rules'],
     'refusals keep the supergroup pin',
   );
-  expectEqual(
+  assertEquals(
     pinnedTexts(session, ada, { type: 'private', peerId: pinningBot }),
     ['pinned'],
     'refusals keep the private pin',
   );
 });
-
-function expectEqual(actual: unknown, expected: unknown, message: string): void {
-  if (JSON.stringify(actual) !== JSON.stringify(expected)) {
-    throw new Error(
-      `${message}: expected ${JSON.stringify(expected)}, received ${JSON.stringify(actual)}`,
-    );
-  }
-}

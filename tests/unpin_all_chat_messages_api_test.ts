@@ -1,3 +1,5 @@
+import { assertEquals } from '@std/assert';
+import { assertEqualsInFieldOrder } from './support/field_order_assertion.ts';
 import { Bot } from 'https://cdn.jsdelivr.net/gh/grammyjs/grammY@^1.46.0/src/bot.ts';
 import { run } from '@grammyjs/runner/runner.ts';
 
@@ -143,7 +145,7 @@ Deno.test('a grammY bot clears every pin on /reset, then pins a fresh notice', a
   });
   await ada.pinMessage({ chat: team, message_id: rules.message_id });
   await grace.pinMessage({ chat: team, message_id: agenda.message_id });
-  expectEqual(
+  assertEquals(
     await callBot(resetBot, 'pinChatMessage', {
       chat_id: team.chatId,
       message_id: reply.message_id,
@@ -155,12 +157,12 @@ Deno.test('a grammY bot clears every pin on /reset, then pins a fresh notice', a
     chat_id: team.chatId,
     text: 'Earlier notice',
   });
-  expectEqual(
+  assertEquals(
     await callBot(resetBot, 'pinChatMessage', { chat_id: team.chatId, message_id: earlierNotice }),
     [200, true],
     'the bot pins its own earlier notice',
   );
-  expectEqual(
+  assertEquals(
     await pinnedTexts(ada, team),
     ['Earlier notice', 'noted', 'agenda', 'rules'],
     'Expected messages by the bot and by accounts to be pinned before the reset',
@@ -200,12 +202,12 @@ Deno.test('a grammY bot clears every pin on /reset, then pins a fresh notice', a
       { after: notice },
     );
 
-    expectEqual(
+    assertEquals(
       [pinsAfterClearing, 'pinned_message' in chatAfterClearing],
       [[], false],
       'Expected no pin, and getChat to omit pinned_message, between clearing and repinning',
     );
-    expectEqual(
+    assertEquals(
       [
         await pinnedTexts(ada, team),
         (await getChatAsBot(resetBot, team.chatId)).pinned_message?.text,
@@ -214,12 +216,12 @@ Deno.test('a grammY bot clears every pin on /reset, then pins a fresh notice', a
       'Expected the fresh notice to be the only pin',
     );
     const history = await ada.getMessages({ chat: team });
-    expectEqual(
+    assertEqualsInFieldOrder(
       history.slice(0, historyBeforeReset.length),
       historyBeforeReset,
       'Expected earlier messages, replies and pin service messages to be kept',
     );
-    expectEqual(
+    assertEquals(
       history.slice(historyBeforeReset.length).map((message) => {
         const shown = message as ShownMessage;
         return shown.text ?? `pinned ${shown.pinned_message?.text}`;
@@ -248,7 +250,7 @@ async function pinInEveryChat(
     text: 'answer',
     reply_parameters: { message_id: question.message_id },
   });
-  expectEqual(
+  assertEquals(
     await callBot(resetBot, 'pinChatMessage', { chat_id: ada.id, message_id: question.message_id }),
     [200, true],
     "the bot pins Ada's question in its private chat",
@@ -279,18 +281,18 @@ Deno.test('unpinAllChatMessages clears a private chat alone and keeps its histor
     await pinInEveryChat(otherSession);
     const historyBefore = await ada.getMessages({ chat: resetBotChat });
     await takeUpdates(resetBot);
-    expectEqual(
+    assertEquals(
       (await getChatAsBot(resetBot, ada.id)).pinned_message?.text,
       'answer',
       "getChat shows the bot's pinned reply before the unpin",
     );
 
-    expectEqual(
+    assertEquals(
       await callBot(resetBot, 'unpinAllChatMessages', { chat_id: ada.id }),
       [200, true],
       "the bot unpins Ada's question and its own reply in its private chat",
     );
-    expectEqual(
+    assertEquals(
       [
         await pinnedTexts(ada, resetBotChat),
         'pinned_message' in await getChatAsBot(resetBot, ada.id),
@@ -298,23 +300,23 @@ Deno.test('unpinAllChatMessages clears a private chat alone and keeps its histor
       [[], false],
       'the private chat pins nothing, and getChat omits pinned_message',
     );
-    expectEqual(
+    assertEqualsInFieldOrder(
       await ada.getMessages({ chat: resetBotChat }),
       historyBefore,
       'messages, the reply and pin service messages are kept',
     );
-    expectEqual(await takeUpdates(resetBot), [], 'no update records the unpin');
-    expectEqual(
+    assertEquals(await takeUpdates(resetBot), [], 'no update records the unpin');
+    assertEquals(
       [await pinnedTexts(ada, memberBotChat), await pinnedTexts(ada, team)],
       [['other bot'], ['team']],
       "another bot's private chat and the supergroup keep their pins",
     );
-    expectEqual(
+    assertEquals(
       await otherSession.pinnedTexts(otherSession.ada, otherSession.resetBotChat),
       ['answer', 'question'],
       'another session keeps its pins',
     );
-    expectEqual(
+    assertEquals(
       await callBot(resetBot, 'unpinAllChatMessages', { chat_id: ada.id }),
       [200, true],
       'a chat that pins nothing is unpinned again without error',
@@ -326,7 +328,7 @@ Deno.test('unpinAllChatMessages clears a private chat alone and keeps its histor
     if (question === undefined) {
       throw new Error('Expected the question in the history');
     }
-    expectEqual(
+    assertEquals(
       await callBot(resetBot, 'pinChatMessage', {
         chat_id: ada.id,
         message_id: question.message_id,
@@ -334,12 +336,12 @@ Deno.test('unpinAllChatMessages clears a private chat alone and keeps its histor
       [200, true],
       'a message is pinned again',
     );
-    expectEqual(
+    assertEquals(
       (await takeUpdates(resetBot)).length,
       1,
       'the new pin is delivered as a service message',
     );
-    expectEqual(await pinnedTexts(ada, resetBotChat), ['question'], 'the new pin is listed');
+    assertEquals(await pinnedTexts(ada, resetBotChat), ['question'], 'the new pin is listed');
   } finally {
     await fixture.session.end();
     await otherSession.session.end();
@@ -377,7 +379,7 @@ Deno.test('unpinAllChatMessages refuses before changing any pin, even when nothi
         [memberBot, { chat_id: team.chatId }, notEnoughRights],
       ];
       for (const [bot, parameters, expected] of cases) {
-        expectEqual(
+        assertEquals(
           await callBot(bot, 'unpinAllChatMessages', parameters),
           expected,
           `${JSON.stringify(parameters)} by bot ${bot.id} with ${pinsState}`,
@@ -393,24 +395,24 @@ Deno.test('unpinAllChatMessages refuses before changing any pin, even when nothi
     await expectRefusals('pins');
 
     await ada.demoteChatMember({ chat: team, userId: resetBot.id });
-    expectEqual(
+    assertEquals(
       await callBot(resetBot, 'unpinAllChatMessages', { chat_id: team.chatId }),
       notEnoughRights,
       'a demoted bot lost the right',
     );
     await ada.removeChatMember({ chat: team, userId: resetBot.id });
-    expectEqual(
+    assertEquals(
       await callBot(resetBot, 'unpinAllChatMessages', { chat_id: team.chatId }),
       [403, 'Forbidden: bot was kicked from the supergroup chat'],
       'a removed bot is turned away',
     );
     await ada.blockBot({ botId: resetBot.id });
-    expectEqual(
+    assertEquals(
       await callBot(resetBot, 'unpinAllChatMessages', { chat_id: ada.id }),
       [403, 'Forbidden: bot was blocked by the user'],
       'a blocked bot cannot unpin in the private chat',
     );
-    expectEqual(
+    assertEquals(
       [await pinnedTexts(ada, team), await pinnedTexts(ada, resetBotChat)],
       [['rules'], ['hello']],
       'refused calls keep every pin',
@@ -419,11 +421,3 @@ Deno.test('unpinAllChatMessages refuses before changing any pin, even when nothi
     await session.end();
   }
 });
-
-function expectEqual(actual: unknown, expected: unknown, message: string): void {
-  if (JSON.stringify(actual) !== JSON.stringify(expected)) {
-    throw new Error(
-      `${message}: expected ${JSON.stringify(expected)}, received ${JSON.stringify(actual)}`,
-    );
-  }
-}
