@@ -10,7 +10,7 @@
     "architecture:check": "deno run -A fallow dead-code --boundary-violations",
     "openapi:lint": "npx --yes @redocly/cli@2.54.2 lint openapi/openapi.yaml",
     "openapi:coverage": "rm -f .openapi-conformance-records.jsonl && OPENAPI_CONFORMANCE_RECORD_FILE=.openapi-conformance-records.jsonl deno test --allow-net=127.0.0.1 --allow-read=. --allow-write=.openapi-conformance-records.jsonl --allow-env=OPENAPI_CONFORMANCE_RECORD_FILE --allow-import=cdn.jsdelivr.net,cdn.skypack.dev,jsr.io && deno run --allow-read=. tests/support/openapi_conformance/coverage_report.ts .openapi-conformance-records.jsonl",
-    "test": "deno test --allow-net=127.0.0.1 --allow-read=. --allow-import=cdn.jsdelivr.net,cdn.skypack.dev,jsr.io"
+    "test": "deno test --parallel --allow-net=127.0.0.1 --allow-read=. --allow-import=cdn.jsdelivr.net,cdn.skypack.dev,jsr.io"
   },
   "imports": {
     "@grammyjs/auto-retry/": "https://cdn.jsdelivr.net/gh/grammyjs/auto-retry@^2.0.2/src/",
