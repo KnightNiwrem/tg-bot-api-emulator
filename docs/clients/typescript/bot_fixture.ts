@@ -57,14 +57,17 @@ export async function withBotFixture(
   options: BotFixtureOptions,
   test: (fixture: BotFixture) => Promise<void>,
 ): Promise<void> {
-  const session = await new TelegramEmulationClient(EMULATOR_URL).createSession();
+  const { result: session } = await new TelegramEmulationClient(EMULATOR_URL).createSession();
   try {
-    const { token, bot: botProfile } = await session.createBot({
+    const { result: { token, bot: botProfile } } = await session.createBot({
       first_name: 'Test Bot',
       username: 'test_bot',
       ...options.bot,
     });
-    const { account } = await session.createAccount({ first_name: 'Ada', ...options.account });
+    const { result: { account } } = await session.createAccount({
+      first_name: 'Ada',
+      ...options.account,
+    });
     const bot = new Bot(token, { client: { apiRoot: session.botApiRoot } });
     options.handlers(bot);
     const pollingStarted = Promise.withResolvers<void>();

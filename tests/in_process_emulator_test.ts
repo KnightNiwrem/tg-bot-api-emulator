@@ -29,12 +29,17 @@ const EMULATOR_ADAPTERS: readonly { name: string; start: () => RunningEmulator }
 for (const { name, start } of EMULATOR_ADAPTERS) {
   Deno.test(`An emulator ${name} answers a grammY bot that greets an account`, async () => {
     await using emulator = start();
-    const session = await emulator.client.createSession();
-    const { token, bot: botProfile } = await session.createBot({
+    const { result: session, receipt: sessionReceipt } = await emulator.client.createSession();
+    assertEqual(
+      JSON.stringify(sessionReceipt),
+      JSON.stringify({ sessionId: session.id, activityPosition: 0 }),
+      'Expected the new session at position 0',
+    );
+    const { result: { token, bot: botProfile } } = await session.createBot({
       first_name: 'Greeter',
       username: 'greeter_bot',
     });
-    const { account } = await session.createAccount({ first_name: 'Ada' });
+    const { result: { account } } = await session.createAccount({ first_name: 'Ada' });
     const bot = new Bot(token, { client: { apiRoot: session.botApiRoot, fetch: emulator.fetch } });
     bot.command('start', (ctx) =>
       ctx.reply(`Welcome, ${ctx.from?.first_name}!`, {
@@ -46,8 +51,7 @@ for (const { name, start } of EMULATOR_ADAPTERS) {
     try {
       const activity = session.botActivity({ bot_id: botProfile.id });
       const chat = { type: 'private', botId: botProfile.id } as const;
-      const beforeStart = await activity.position();
-      const command = await account.sendMessage({ to: chat, text: '/start' });
+      const { result: command, receipt } = await account.sendMessage({ to: chat, text: '/start' });
 
       await activity.waitFor(
         {
@@ -55,7 +59,7 @@ for (const { name, start } of EMULATOR_ADAPTERS) {
           ok: true,
           parameters: { reply_parameters: JSON.stringify({ message_id: command.message_id }) },
         },
-        { after: beforeStart },
+        { after: receipt },
       );
       const greeting = (await account.getMessages({ chat })).find(({ reply_to_message }) =>
         reply_to_message?.message_id === command.message_id
@@ -69,12 +73,12 @@ for (const { name, start } of EMULATOR_ADAPTERS) {
 
   Deno.test(`An emulator ${name} receives the files a grammY bot uploads`, async () => {
     await using emulator = start();
-    const session = await emulator.client.createSession();
-    const { token, bot: botProfile } = await session.createBot({
+    const { result: session } = await emulator.client.createSession();
+    const { result: { token, bot: botProfile } } = await session.createBot({
       first_name: 'Notes',
       username: 'notes_bot',
     });
-    const { account } = await session.createAccount({ first_name: 'Ada' });
+    const { result: { account } } = await session.createAccount({ first_name: 'Ada' });
     const bot = new Bot(token, { client: { apiRoot: session.botApiRoot, fetch: emulator.fetch } });
     const chat = { type: 'private', botId: botProfile.id } as const;
     await account.sendMessage({ to: chat, text: '/start' });
@@ -95,7 +99,7 @@ for (const { name, start } of EMULATOR_ADAPTERS) {
 
   Deno.test(`An emulator ${name} refuses control requests with their reasons`, async () => {
     await using emulator = start();
-    const session = await emulator.client.createSession();
+    const { result: session } = await emulator.client.createSession();
     await session.createBot({ first_name: 'Shop', username: 'shop_bot' });
 
     const refusal = await rejectionOf(
@@ -115,8 +119,11 @@ for (const { name, start } of EMULATOR_ADAPTERS) {
 
 Deno.test('Disposing of an in-process emulator ends its sessions and answers held requests', async () => {
   const emulator = createInProcessEmulator();
-  const session = await emulator.client.createSession();
-  const { token } = await session.createBot({ first_name: 'Shop', username: 'shop_bot' });
+  const { result: session } = await emulator.client.createSession();
+  const { result: { token } } = await session.createBot({
+    first_name: 'Shop',
+    username: 'shop_bot',
+  });
   const heldPoll = emulator.fetch(`${session.botApiRoot}/bot${token}/getUpdates?timeout=30`);
 
   await emulator[Symbol.asyncDispose]();
@@ -151,7 +158,7 @@ Deno.test('Disposing of an in-process emulator ends a session created while it w
   allowAnswering();
   await disposing;
 
-  const session = await creating;
+  const { result: session } = await creating;
   if (sessionLifecycle?.getSessionById(session.id) !== undefined) {
     throw new Error('Expected the session created while disposing to have ended');
   }
@@ -168,9 +175,12 @@ Deno.test('An in-process emulator composed with session timing dates messages by
       }),
     },
   );
-  const session = await emulator.client.createSession();
-  const { bot } = await session.createBot({ first_name: 'Clock', username: 'clock_bot' });
-  const { account } = await session.createAccount({ first_name: 'Ada' });
+  const { result: session } = await emulator.client.createSession();
+  const { result: { bot } } = await session.createBot({
+    first_name: 'Clock',
+    username: 'clock_bot',
+  });
+  const { result: { account } } = await session.createAccount({ first_name: 'Ada' });
   const chat = { type: 'private', botId: bot.id } as const;
   await account.sendMessage({ to: chat, text: '/start' });
 
@@ -180,8 +190,11 @@ Deno.test('An in-process emulator composed with session timing dates messages by
 
 Deno.test('An in-process request rejects with its signal reason once it aborts', async () => {
   await using emulator = createInProcessEmulator();
-  const session = await emulator.client.createSession();
-  const { token } = await session.createBot({ first_name: 'Shop', username: 'shop_bot' });
+  const { result: session } = await emulator.client.createSession();
+  const { result: { token } } = await session.createBot({
+    first_name: 'Shop',
+    username: 'shop_bot',
+  });
   const abortController = new AbortController();
   const abortReason = new Error('The bot stopped');
 
@@ -202,8 +215,11 @@ Deno.test('An in-process request rejects with its signal reason once it aborts',
 
 Deno.test('An in-process request aborts with a signal that only resembles an AbortSignal', async () => {
   await using emulator = createInProcessEmulator();
-  const session = await emulator.client.createSession();
-  const { token } = await session.createBot({ first_name: 'Shop', username: 'shop_bot' });
+  const { result: session } = await emulator.client.createSession();
+  const { result: { token } } = await session.createBot({
+    first_name: 'Shop',
+    username: 'shop_bot',
+  });
   // As the AbortController polyfill of Bot API clients built for Node.js gives.
   const polyfilledSignal = Object.assign(new EventTarget(), { aborted: false });
 
@@ -221,8 +237,11 @@ Deno.test('An in-process request aborts with a signal that only resembles an Abo
 
 Deno.test('In-process requests let go of a reused polyfilled signal once they settle', async () => {
   await using emulator = createInProcessEmulator();
-  const session = await emulator.client.createSession();
-  const { token } = await session.createBot({ first_name: 'Shop', username: 'shop_bot' });
+  const { result: session } = await emulator.client.createSession();
+  const { result: { token } } = await session.createBot({
+    first_name: 'Shop',
+    username: 'shop_bot',
+  });
   const reusedSignal = new ListenerTrackingSignal();
 
   const responses = await Promise.all(
@@ -245,8 +264,8 @@ Deno.test('An in-process emulator names its public origin in the URLs it returns
   await using defaultEmulator = createInProcessEmulator();
   await using namedEmulator = createInProcessEmulator({ publicOrigin: 'https://bots.example/' });
 
-  const defaultSession = await defaultEmulator.client.createSession();
-  const namedSession = await namedEmulator.client.createSession();
+  const { result: defaultSession } = await defaultEmulator.client.createSession();
+  const { result: namedSession } = await namedEmulator.client.createSession();
 
   assertEqual(
     new URL(defaultSession.botApiRoot).origin,

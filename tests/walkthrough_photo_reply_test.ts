@@ -50,7 +50,11 @@ Deno.test('the walkthrough photo step reads the delayed bot reply, not the uploa
 
   try {
     const beforePhoto = await activity.position();
-    const photo = await ada.sendPhoto({ to: chat, photo: RECEIPT_IMAGE, caption: 'My receipt' });
+    const { result: photo } = await ada.sendPhoto({
+      to: chat,
+      photo: RECEIPT_IMAGE,
+      caption: 'My receipt',
+    });
     const latestBeforeHandling = (await ada.getMessages({ chat })).at(-1);
     photoHandling.resolve();
 
@@ -110,12 +114,12 @@ Deno.test('the walkthrough photo step reads the delayed bot reply, not the uploa
 });
 
 async function createFixture({ client }: TestInProcessEmulator) {
-  const session = await client.createSession();
-  const createdBot = await session.createBot({
+  const { result: session } = await client.createSession();
+  const { result: createdBot } = await session.createBot({
     first_name: 'Receipt Bot',
     username: 'receipt_bot',
   });
-  const { account: ada } = await session.createAccount({ first_name: 'Ada' });
-  const { account: grace } = await session.createAccount({ first_name: 'Grace' });
+  const { result: { account: ada } } = await session.createAccount({ first_name: 'Ada' });
+  const { result: { account: grace } } = await session.createAccount({ first_name: 'Grace' });
   return { session, createdBot, ada, grace };
 }

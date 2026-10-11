@@ -41,16 +41,16 @@ interface ShownChat {
 async function createUnpinAllFixture() {
   const api = createTestInProcessEmulator();
   const { fetch } = api;
-  const session = await api.client.createSession();
-  const { account: ada } = await session.createAccount({ first_name: 'Ada' });
-  const { account: grace } = await session.createAccount({ first_name: 'Grace' });
+  const { result: session } = await api.client.createSession();
+  const { result: { account: ada } } = await session.createAccount({ first_name: 'Ada' });
+  const { result: { account: grace } } = await session.createAccount({ first_name: 'Grace' });
   const createBot = async (username: string): Promise<FixtureBot> => {
-    const created = await session.createBot({ first_name: 'Test Bot', username });
+    const { result: created } = await session.createBot({ first_name: 'Test Bot', username });
     return { id: created.bot.id, token: created.token };
   };
   const resetBot = await createBot('reset_bot');
   const memberBot = await createBot('member_bot');
-  const supergroup = await ada.createSupergroup({ title: 'Team' });
+  const { result: supergroup } = await ada.createSupergroup({ title: 'Team' });
   const team: SupergroupMessageTarget = { type: 'supergroup', chatId: supergroup.id };
   for (const userId of [grace.id, resetBot.id, memberBot.id]) {
     await ada.addChatMember({ chat: team, userId });
@@ -136,9 +136,9 @@ Deno.test('a grammY bot clears every pin on /reset, then pins a fresh notice', a
     getChatAsBot,
     sendAsBot,
   } = fixture;
-  const rules = await ada.sendMessage({ to: team, text: 'rules' });
-  const agenda = await grace.sendMessage({ to: team, text: 'agenda' });
-  const reply = await grace.sendMessage({
+  const { result: rules } = await ada.sendMessage({ to: team, text: 'rules' });
+  const { result: agenda } = await grace.sendMessage({ to: team, text: 'agenda' });
+  const { result: reply } = await grace.sendMessage({
     to: team,
     text: 'noted',
     reply_to_message_id: rules.message_id,
@@ -244,7 +244,7 @@ Deno.test('a grammY bot clears every pin on /reset, then pins a fresh notice', a
 async function pinInEveryChat(
   { ada, resetBot, team, resetBotChat, memberBotChat, callBot, sendAsBot }: UnpinAllFixture,
 ): Promise<void> {
-  const question = await ada.sendMessage({ to: resetBotChat, text: 'question' });
+  const { result: question } = await ada.sendMessage({ to: resetBotChat, text: 'question' });
   const answerId = await sendAsBot(resetBot, {
     chat_id: ada.id,
     text: 'answer',
@@ -256,9 +256,9 @@ async function pinInEveryChat(
     "the bot pins Ada's question in its private chat",
   );
   await ada.pinMessage({ chat: resetBotChat, message_id: answerId });
-  const other = await ada.sendMessage({ to: memberBotChat, text: 'other bot' });
+  const { result: other } = await ada.sendMessage({ to: memberBotChat, text: 'other bot' });
   await ada.pinMessage({ chat: memberBotChat, message_id: other.message_id });
-  const teamMessage = await ada.sendMessage({ to: team, text: 'team' });
+  const { result: teamMessage } = await ada.sendMessage({ to: team, text: 'team' });
   await ada.pinMessage({ chat: team, message_id: teamMessage.message_id });
 }
 
@@ -352,7 +352,7 @@ Deno.test('unpinAllChatMessages refuses before changing any pin, even when nothi
   const { session, ada, grace, resetBot, memberBot, team, resetBotChat, callBot, pinnedTexts } =
     await createUnpinAllFixture();
   try {
-    const outsiderBot = await session.createBot({
+    const { result: outsiderBot } = await session.createBot({
       first_name: 'Outsider',
       username: 'outsider_bot',
     });
@@ -388,9 +388,9 @@ Deno.test('unpinAllChatMessages refuses before changing any pin, even when nothi
     };
 
     await expectRefusals('nothing pinned');
-    const rules = await ada.sendMessage({ to: team, text: 'rules' });
+    const { result: rules } = await ada.sendMessage({ to: team, text: 'rules' });
     await ada.pinMessage({ chat: team, message_id: rules.message_id });
-    const hello = await ada.sendMessage({ to: resetBotChat, text: 'hello' });
+    const { result: hello } = await ada.sendMessage({ to: resetBotChat, text: 'hello' });
     await ada.pinMessage({ chat: resetBotChat, message_id: hello.message_id });
     await expectRefusals('pins');
 

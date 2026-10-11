@@ -49,7 +49,7 @@ Deno.test('a grammY bot inspects and answers the poll an account sends to its pr
   const runner = run(grammyBot);
 
   try {
-    const quizMessage = await ada.sendPoll({ to: privateChat, poll: CAPITAL_QUIZ });
+    const { result: quizMessage } = await ada.sendPoll({ to: privateChat, poll: CAPITAL_QUIZ });
     assertEquals(
       [quizMessage.from.id, quizMessage.poll?.type, quizMessage.poll?.correct_option_ids],
       [ada.id, 'quiz', [1]],
@@ -81,7 +81,7 @@ Deno.test('a grammY bot inspects and answers the poll an account sends to its pr
 
     // The owner votes in its own poll, which sends no bot a vote or a poll state.
     const beforeVote = await activity.position();
-    const voted = await ada.answerPoll({
+    const { result: voted } = await ada.answerPoll({
       chat: privateChat,
       message_id: quizMessage.message_id,
       option_ids: [0],
@@ -91,7 +91,10 @@ Deno.test('a grammY bot inspects and answers the poll an account sends to its pr
       [1, 0],
       'Expected the vote to count',
     );
-    const stopped = await ada.stopPoll({ chat: privateChat, message_id: quizMessage.message_id });
+    const { result: stopped } = await ada.stopPoll({
+      chat: privateChat,
+      message_id: quizMessage.message_id,
+    });
     assertEquals(stopped.poll?.is_closed, true, 'Expected the owner to stop its poll');
     await ada.sendMessage({ to: privateChat, text: 'done' });
     const echo = await activity.waitFor({
@@ -128,7 +131,7 @@ Deno.test('supergroup members vote in an account poll and forward it with the sa
   const runner = run(grammyBot);
 
   try {
-    const pollMessage = await ada.sendPoll({ to: group, poll: LUNCH_POLL });
+    const { result: pollMessage } = await ada.sendPoll({ to: group, poll: LUNCH_POLL });
     const pollId = pollMessage.poll?.id;
     await activity.waitFor({
       method: 'sendMessage',
@@ -140,7 +143,7 @@ Deno.test('supergroup members vote in an account poll and forward it with the sa
     await grace.answerPoll({ chat: group, message_id: pollMessage.message_id, option_ids: [1] });
     await ada.answerPoll({ chat: group, message_id: pollMessage.message_id, option_ids: [0] });
 
-    const forward = await grace.forwardMessage({
+    const { result: forward } = await grace.forwardMessage({
       from: group,
       message_id: pollMessage.message_id,
       to: { type: 'private', botId: bot.id },
@@ -157,7 +160,7 @@ Deno.test('supergroup members vote in an account poll and forward it with the sa
     }, { after: beforeVotes });
 
     // A vote through the forward counts once in the same poll.
-    const changed = await grace.answerPoll({
+    const { result: changed } = await grace.answerPoll({
       chat: { type: 'private', botId: bot.id },
       message_id: forward.message_id,
       option_ids: [2],
@@ -200,9 +203,9 @@ Deno.test('supergroup members vote in an account poll and forward it with the sa
 Deno.test('only the account that sent a poll stops it, through its own message', async () => {
   const { session, fetch, bot, ada, grace, privateChat, group } = await createAccountPollFixture();
   const callBotApi = createBotApiCaller({ session, fetch, bot });
-  const pollMessage = await ada.sendPoll({ to: group, poll: LUNCH_POLL });
+  const { result: pollMessage } = await ada.sendPoll({ to: group, poll: LUNCH_POLL });
   await grace.answerPoll({ chat: group, message_id: pollMessage.message_id, option_ids: [2] });
-  const forward = await ada.forwardMessage({
+  const { result: forward } = await ada.forwardMessage({
     from: group,
     message_id: pollMessage.message_id,
     to: privateChat,
@@ -234,7 +237,10 @@ Deno.test('only the account that sent a poll stops it, through its own message',
     'Expected refused stops to leave the poll open with its votes',
   );
 
-  const stopped = await ada.stopPoll({ chat: group, message_id: pollMessage.message_id });
+  const { result: stopped } = await ada.stopPoll({
+    chat: group,
+    message_id: pollMessage.message_id,
+  });
   assertEquals(
     [stopped.poll?.is_closed, stopped.poll?.options.map(({ voter_count }) => voter_count)],
     [true, [0, 0, 1]],
@@ -275,7 +281,7 @@ Deno.test('only the account that sent a poll stops it, through its own message',
   });
   assertEquals(botStopped.ok, true, 'Expected the bot to stop its own poll');
 
-  const textMessage = await ada.sendMessage({ to: group, text: 'not a poll' });
+  const { result: textMessage } = await ada.sendMessage({ to: group, text: 'not a poll' });
   await expectRefused(
     ada.stopPoll({ chat: group, message_id: textMessage.message_id }),
     404,
@@ -354,7 +360,7 @@ Deno.test('account polls are checked as Telegram checks them and refused ones ch
   );
 
   // The owner keeps every permission, and a 255-character question fits an account's limit.
-  const owned = await ada.sendPoll({
+  const { result: owned } = await ada.sendPoll({
     to: group,
     poll: { ...LUNCH_POLL, question: 'q'.repeat(255) },
   });
@@ -430,7 +436,7 @@ Deno.test('a grammY bot receives the poll an account creates through a request_p
       'Expected refused presses to send nothing',
     );
 
-    const quiz = await press('Quiz', { poll: CAPITAL_QUIZ });
+    const { result: quiz } = await press('Quiz', { poll: CAPITAL_QUIZ });
     assertEquals(
       [quiz.from.id, quiz.poll?.type, quiz.reply_to_message, quiz.text],
       [ada.id, 'quiz', undefined, undefined],
@@ -441,8 +447,8 @@ Deno.test('a grammY bot receives the poll an account creates through a request_p
       chat_id: ada.id,
       parameters: { text: 'Got quiz: Capital of France?' },
     }, { after: start });
-    const regular = await press('Regular', { poll: LUNCH_POLL });
-    const either = await press('Any poll', { poll: CAPITAL_QUIZ });
+    const { result: regular } = await press('Regular', { poll: LUNCH_POLL });
+    const { result: either } = await press('Any poll', { poll: CAPITAL_QUIZ });
     assertEquals(
       [regular.poll?.type, either.poll?.type],
       ['regular', 'quiz'],
@@ -476,8 +482,8 @@ Deno.test('a grammY bot receives the poll an account creates through a request_p
 Deno.test('a bot copies an account quiz only where it sees its solution', async () => {
   const { session, fetch, bot, ada, privateChat, group } = await createAccountPollFixture();
   const callBotApi = createBotApiCaller({ session, fetch, bot });
-  const privateQuiz = await ada.sendPoll({ to: privateChat, poll: CAPITAL_QUIZ });
-  const groupQuiz = await ada.sendPoll({ to: group, poll: CAPITAL_QUIZ });
+  const { result: privateQuiz } = await ada.sendPoll({ to: privateChat, poll: CAPITAL_QUIZ });
+  const { result: groupQuiz } = await ada.sendPoll({ to: group, poll: CAPITAL_QUIZ });
   const groupView = (await callBotApi('forwardMessage', {
     chat_id: ada.id,
     from_chat_id: group.chatId,
@@ -522,8 +528,11 @@ Deno.test('account polls stay within their session', async () => {
   await using api = createTestInProcessEmulator();
   const first = await createAccountPollFixture(api);
   const second = await createAccountPollFixture(api);
-  const pollMessage = await first.ada.sendPoll({ to: first.privateChat, poll: LUNCH_POLL });
-  const groupPoll = await first.ada.sendPoll({ to: first.group, poll: LUNCH_POLL });
+  const { result: pollMessage } = await first.ada.sendPoll({
+    to: first.privateChat,
+    poll: LUNCH_POLL,
+  });
+  const { result: groupPoll } = await first.ada.sendPoll({ to: first.group, poll: LUNCH_POLL });
 
   await expectRefused(
     second.ada.stopPoll({ chat: first.privateChat, message_id: pollMessage.message_id }),
@@ -563,18 +572,18 @@ async function createAccountPollFixture(
   api: TestInProcessEmulator = createTestInProcessEmulator(),
 ) {
   const { fetch } = api;
-  const session = await api.client.createSession();
-  const createdBot = await session.createBot({
+  const { result: session } = await api.client.createSession();
+  const { result: createdBot } = await session.createBot({
     first_name: 'Survey Bot',
     username: 'survey_bot',
     can_read_all_group_messages: true,
   });
-  const { account: ada } = await session.createAccount({ first_name: 'Ada' });
-  const { account: grace } = await session.createAccount({ first_name: 'Grace' });
-  const { account: linus } = await session.createAccount({ first_name: 'Linus' });
+  const { result: { account: ada } } = await session.createAccount({ first_name: 'Ada' });
+  const { result: { account: grace } } = await session.createAccount({ first_name: 'Grace' });
+  const { result: { account: linus } } = await session.createAccount({ first_name: 'Linus' });
   const privateChat: PrivateMessageTarget = { type: 'private', botId: createdBot.bot.id };
   await ada.sendMessage({ to: privateChat, text: '/start' });
-  const supergroup = await ada.createSupergroup({ title: 'Lunch club' });
+  const { result: supergroup } = await ada.createSupergroup({ title: 'Lunch club' });
   const group: SupergroupMessageTarget = { type: 'supergroup', chatId: supergroup.id };
   await ada.addChatMember({ chat: group, userId: grace.id });
   await ada.addChatMember({ chat: group, userId: createdBot.bot.id });

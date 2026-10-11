@@ -12,20 +12,20 @@ for (
   Deno.test(`grammY bots complete a supergroup command-and-reply exchange when ${optedIn} opts in`, async () => {
     await using emulator = createTestInProcessEmulator();
     const { fetch } = emulator;
-    const session = await emulator.client.createSession();
+    const { result: session } = await emulator.client.createSession();
     try {
-      const coordinator = await session.createBot({
+      const { result: coordinator } = await session.createBot({
         first_name: 'Coordinator',
         username: 'coordinator_bot',
         enables_bot_to_bot_communication: coordinatorEnables,
       });
-      const translator = await session.createBot({
+      const { result: translator } = await session.createBot({
         first_name: 'Translator',
         username: 'translator_bot',
         enables_bot_to_bot_communication: translatorEnables,
       });
-      const { account } = await session.createAccount({ first_name: 'Ada' });
-      const supergroup = await account.createSupergroup({ title: 'Team' });
+      const { result: { account } } = await session.createAccount({ first_name: 'Ada' });
+      const { result: supergroup } = await account.createSupergroup({ title: 'Team' });
       const chat = { type: 'supergroup', chatId: supergroup.id } as const;
       for (const { bot } of [coordinator, translator]) {
         await account.addChatMember({ chat, userId: bot.id });

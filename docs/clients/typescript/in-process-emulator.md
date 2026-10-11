@@ -22,12 +22,12 @@ import { createInProcessEmulator } from '../../../in_process/mod.ts';
 Deno.test('the bot greets an account that sends /start', async () => {
   // Ends every session on the emulator when the test finishes, even when an assertion fails.
   await using emulator = createInProcessEmulator();
-  const session = await emulator.client.createSession();
-  const { token, bot: botProfile } = await session.createBot({
+  const { result: session } = await emulator.client.createSession();
+  const { result: { token, bot: botProfile } } = await session.createBot({
     first_name: 'Greeter',
     username: 'greeter_bot',
   });
-  const { account } = await session.createAccount({ first_name: 'Ada' });
+  const { result: { account } } = await session.createAccount({ first_name: 'Ada' });
 
   // The bot under test reaches the emulator through the emulator's `fetch`.
   const bot = new Bot(token, {
@@ -46,7 +46,7 @@ Deno.test('the bot greets an account that sends /start', async () => {
     const chat = { type: 'private', botId: botProfile.id } as const;
 
     const beforeStart = await activity.position();
-    const command = await account.sendMessage({ to: chat, text: '/start' });
+    const { result: command } = await account.sendMessage({ to: chat, text: '/start' });
 
     await activity.waitFor(
       {

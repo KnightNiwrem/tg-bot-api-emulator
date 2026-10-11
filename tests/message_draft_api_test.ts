@@ -126,13 +126,13 @@ Deno.test('sendMessageDraft refuses what Telegram refuses and leaves the chat as
   await using fixture = await createDraftFixture();
   const { session, bot, ada, privateChat, callBot } = fixture;
   try {
-    const { account: grace } = await session.createAccount({ first_name: 'Grace' });
-    const memberSupergroup = await ada.createSupergroup({ title: 'Study group' });
+    const { result: { account: grace } } = await session.createAccount({ first_name: 'Grace' });
+    const { result: memberSupergroup } = await ada.createSupergroup({ title: 'Study group' });
     await ada.addChatMember({
       chat: { type: 'supergroup', chatId: memberSupergroup.id },
       userId: bot.id,
     });
-    const otherSupergroup = await ada.createSupergroup({ title: 'Book club' });
+    const { result: otherSupergroup } = await ada.createSupergroup({ title: 'Book club' });
     await callBot('sendMessageDraft', { chat_id: ada.id, draft_id: 1, text: 'Kept' });
     const historyBefore = await ada.getMessages({ chat: privateChat });
     const pendingUpdatesBefore = await countPendingUpdates(callBot);
@@ -346,9 +346,9 @@ Deno.test('drafts stay within their own chat, bot and session', async () => {
   const { session, bot, ada, privateChat, callBot } = fixture;
   await using other = await createDraftFixture(api);
   try {
-    const { account: grace } = await session.createAccount({ first_name: 'Grace' });
+    const { result: { account: grace } } = await session.createAccount({ first_name: 'Grace' });
     await grace.sendMessage({ to: privateChat, text: '/start' });
-    const { bot: otherBot, token: otherBotToken } = await session.createBot({
+    const { result: { bot: otherBot, token: otherBotToken } } = await session.createBot({
       first_name: 'Other Bot',
       username: 'other_bot',
     });
@@ -397,15 +397,15 @@ Deno.test("only the bot's messages that reach the chat remove its draft", async 
   await using fixture = await createDraftFixture();
   const { api, session, bot, ada, privateChat, callBot } = fixture;
   try {
-    const { account: grace } = await session.createAccount({ first_name: 'Grace' });
+    const { result: { account: grace } } = await session.createAccount({ first_name: 'Grace' });
     await grace.sendMessage({ to: privateChat, text: '/start' });
-    const supergroup = await ada.createSupergroup({ title: 'Study group' });
+    const { result: supergroup } = await ada.createSupergroup({ title: 'Study group' });
     await ada.addChatMember({
       chat: { type: 'supergroup', chatId: supergroup.id },
       userId: bot.id,
     });
-    const adaMessage = await ada.sendMessage({ to: privateChat, text: 'Question' });
-    const followUp = await ada.sendMessage({ to: privateChat, text: 'Follow-up' });
+    const { result: adaMessage } = await ada.sendMessage({ to: privateChat, text: 'Question' });
+    const { result: followUp } = await ada.sendMessage({ to: privateChat, text: 'Follow-up' });
     await callBot('sendMessageDraft', { chat_id: ada.id, draft_id: 1, text: 'Thinking' });
 
     const keptAfter = async (action: () => Promise<unknown>) => {
@@ -558,9 +558,9 @@ Deno.test('an account stops a draft and its bot alone receives the stop', async 
   await using fixture = await createDraftFixture();
   const { api, session, bot, ada, privateChat, callBot } = fixture;
   try {
-    const { account: grace } = await session.createAccount({ first_name: 'Grace' });
+    const { result: { account: grace } } = await session.createAccount({ first_name: 'Grace' });
     await grace.sendMessage({ to: privateChat, text: '/start' });
-    const { bot: otherBot, token: otherBotToken } = await session.createBot({
+    const { result: { bot: otherBot, token: otherBotToken } } = await session.createBot({
       first_name: 'Other Bot',
       username: 'other_bot',
     });
@@ -685,9 +685,9 @@ Deno.test('refused stops leave the draft shown and tell the bot nothing', async 
   const { session, bot, ada, privateChat, callBot } = fixture;
   await using other = await createDraftFixture(api);
   try {
-    const { account: grace } = await session.createAccount({ first_name: 'Grace' });
+    const { result: { account: grace } } = await session.createAccount({ first_name: 'Grace' });
     await grace.sendMessage({ to: privateChat, text: '/start' });
-    const { bot: otherBot } = await session.createBot({
+    const { result: { bot: otherBot } } = await session.createBot({
       first_name: 'Other Bot',
       username: 'other_bot',
     });
@@ -965,9 +965,12 @@ async function createDraftFixture(sharedApi?: TestInProcessEmulator): Promise<Dr
   await using disposalOnFailure = new AsyncDisposableStack();
   const api = sharedApi ?? disposalOnFailure.use(createTestInProcessEmulator());
   const { fetch } = api;
-  const session = await api.client.createSession();
-  const createdBot = await session.createBot({ first_name: 'Answer Bot', username: 'answer_bot' });
-  const { account: ada } = await session.createAccount({ first_name: 'Ada' });
+  const { result: session } = await api.client.createSession();
+  const { result: createdBot } = await session.createBot({
+    first_name: 'Answer Bot',
+    username: 'answer_bot',
+  });
+  const { result: { account: ada } } = await session.createAccount({ first_name: 'Ada' });
   const privateChat: PrivateMessageTarget = { type: 'private', botId: createdBot.bot.id };
   await ada.sendMessage({ to: privateChat, text: '/start' });
   const emulatorDisposal = disposalOnFailure.move();
@@ -1022,7 +1025,7 @@ async function pendingStops(callBot: BotApiCaller): Promise<ReceivedStop[]> {
 }
 
 /** `'done'` for an account action that succeeded, or the HTTP status it failed with. */
-async function draftActionOutcome(action: Promise<void>): Promise<'done' | number | undefined> {
+async function draftActionOutcome(action: Promise<unknown>): Promise<'done' | number | undefined> {
   try {
     await action;
     return 'done';

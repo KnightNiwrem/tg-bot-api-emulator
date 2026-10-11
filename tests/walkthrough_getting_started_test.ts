@@ -7,13 +7,13 @@ import { createTestInProcessEmulator } from './support/emulation_api.ts';
 Deno.test('the getting-started test: the bot greets an account that sends /start', async () => {
   await using emulator = createTestInProcessEmulator();
   const { fetch } = emulator;
-  const session = await emulator.client.createSession();
+  const { result: session } = await emulator.client.createSession();
   try {
-    const { token, bot: botProfile } = await session.createBot({
+    const { result: { token, bot: botProfile } } = await session.createBot({
       first_name: 'Greeter',
       username: 'greeter_bot',
     });
-    const { account } = await session.createAccount({ first_name: 'Ada' });
+    const { result: { account } } = await session.createAccount({ first_name: 'Ada' });
 
     const bot = new Bot(token, { client: { apiRoot: session.botApiRoot, fetch } });
     bot.command('start', (ctx) =>
@@ -28,8 +28,7 @@ Deno.test('the getting-started test: the bot greets an account that sends /start
       const activity = session.botActivity({ bot_id: botProfile.id });
       const chat = { type: 'private', botId: botProfile.id } as const;
 
-      const beforeStart = await activity.position();
-      const command = await account.sendMessage({ to: chat, text: '/start' });
+      const { result: command, receipt } = await account.sendMessage({ to: chat, text: '/start' });
 
       await activity.waitFor(
         {
@@ -38,7 +37,7 @@ Deno.test('the getting-started test: the bot greets an account that sends /start
           ok: true,
           parameters: { reply_parameters: JSON.stringify({ message_id: command.message_id }) },
         },
-        { after: beforeStart },
+        { after: receipt },
       );
       const greeting = (await account.getMessages({ chat })).find(({ from, reply_to_message }) =>
         from.id === botProfile.id && reply_to_message?.message_id === command.message_id

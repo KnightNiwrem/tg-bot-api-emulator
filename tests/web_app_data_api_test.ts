@@ -54,7 +54,7 @@ Deno.test('a grammY bot answers the dates its keyboard Web App sends', async () 
 
     const beforeSubmission = await activity.position();
     const data = '{"from":"2026-12-24","nights":3}';
-    const submitted = await ada.pressReplyKeyboardButton({
+    const { result: submitted } = await ada.pressReplyKeyboardButton({
       chat: privateChat,
       text: 'Choose dates',
       web_app_data: data,
@@ -216,7 +216,7 @@ Deno.test('Web App data reaches the bot exactly as sent, up to 4096 UTF-8 bytes'
 Deno.test('refused Web App submissions change nothing', async () => {
   await using fixture = await createWebAppFixture();
   const { api, session, bot, ada, privateChat, callBot } = fixture;
-  const team = await ada.createSupergroup({ title: 'Team' });
+  const { result: team } = await ada.createSupergroup({ title: 'Team' });
   await ada.addChatMember({ chat: { type: 'supergroup', chatId: team.id }, userId: bot.id });
   await callBot('sendMessage', {
     chat_id: team.id,
@@ -376,7 +376,7 @@ Deno.test('a submission answers the keyboard shown when it is sent', async () =>
     400,
     'a button of a replaced keyboard',
   );
-  const room = await ada.pressReplyKeyboardButton({
+  const { result: room } = await ada.pressReplyKeyboardButton({
     chat: privateChat,
     text: 'Choose a room',
     web_app_data: 'second',
@@ -428,7 +428,7 @@ Deno.test('a submission selects the Web App button among buttons that share its 
     const historyLength = (await ada.getMessages({ chat: privateChat })).length;
     const replyInterface = await ada.getReplyInterface({ chat: privateChat });
 
-    const submitted = await ada.pressReplyKeyboardButton({
+    const { result: submitted } = await ada.pressReplyKeyboardButton({
       chat: privateChat,
       text: 'Duplicate',
       web_app_data: 'payload',
@@ -451,7 +451,10 @@ Deno.test('a submission selects the Web App button among buttons that share its 
       `Expected one message and one update, with the keyboard still shown, with ${arrangement}`,
     );
 
-    const pressed = await ada.pressReplyKeyboardButton({ chat: privateChat, text: 'Duplicate' });
+    const { result: pressed } = await ada.pressReplyKeyboardButton({
+      chat: privateChat,
+      text: 'Duplicate',
+    });
     assertEquals(
       [pressed.text, pressed.web_app_data],
       ['Duplicate', undefined],
@@ -468,7 +471,7 @@ Deno.test('a submission is stored but not delivered when the bot excludes messag
   const offset = await readUpdatesOffset(callBot);
   await callBot('getUpdates', { offset, allowed_updates: ['callback_query'] });
 
-  const submitted = await ada.pressReplyKeyboardButton({
+  const { result: submitted } = await ada.pressReplyKeyboardButton({
     chat: privateChat,
     text: 'Choose dates',
     web_app_data: 'today',
@@ -540,9 +543,12 @@ async function createWebAppFixture(sharedApi?: TestInProcessEmulator): Promise<W
   await using disposalOnFailure = new AsyncDisposableStack();
   const api = sharedApi ?? disposalOnFailure.use(createTestInProcessEmulator());
   const { fetch } = api;
-  const session = await api.client.createSession();
-  const createdBot = await session.createBot({ first_name: 'Hotel Bot', username: 'hotel_bot' });
-  const { account: ada } = await session.createAccount({ first_name: 'Ada' });
+  const { result: session } = await api.client.createSession();
+  const { result: createdBot } = await session.createBot({
+    first_name: 'Hotel Bot',
+    username: 'hotel_bot',
+  });
+  const { result: { account: ada } } = await session.createAccount({ first_name: 'Ada' });
   const privateChat: PrivateMessageTarget = { type: 'private', botId: createdBot.bot.id };
   await ada.sendMessage({ to: privateChat, text: '/start' });
   const callBot: BotApiCaller = async (method, parameters) => {

@@ -21,6 +21,7 @@ export function createHttpBotActivityPageReader(
   sessionId: string,
 ): BotActivityPageReader {
   return {
+    sessionId,
     async readPage(request, signal) {
       const { entries, head_position } = await callJsonOperation(
         transport,

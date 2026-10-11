@@ -68,7 +68,9 @@ import { createBotActivityLog } from './bot_activity_log.ts';
 import { HTTP_STATUS_CREATED, HTTP_STATUS_NO_CONTENT, HTTP_STATUS_OK } from './constants.ts';
 import {
   callBytesOperation,
+  callEmptyAction,
   callEmptyOperation,
+  callJsonAction,
   callJsonOperation,
   type ControlOperationTransport,
 } from './control_operation_caller.ts';
@@ -126,6 +128,8 @@ import type {
   AccountSendVoiceInput,
   AccountShareOwnContactInput,
   AccountSupergroupBotCommandsInput,
+  ActionOutcome,
+  ActionReceipt,
   AddChatMemberInput,
   AnswerPollInput,
   BotActivityCriteria,
@@ -199,20 +203,27 @@ import type {
   WebhookDelivery,
   WebResource,
 } from './types.ts';
-import { normalizeUrlRoot, requestEmptyResponse, requestJson } from './utils.ts';
+import { normalizeUrlRoot, requestEmptyAction, requestJson, requestJsonAction } from './utils.ts';
 
+/**
+ * A session's client. Each action resolves to its result, which its description says it returns,
+ * with the action's receipt; an action without a result resolves to its receipt. Reads, and ending
+ * the session, which answers with no receipt, resolve to what they read or to nothing.
+ */
 export interface EmulationSessionClient extends EmulationSession {
   /** Ends the session and discards all state owned by it. */
   end(): Promise<void>;
-  createBot(input: CreateVirtualBotInput): Promise<CreatedVirtualBot>;
-  createAccount(input: CreateVirtualAccountInput): Promise<CreatedVirtualAccount>;
+  createBot(input: CreateVirtualBotInput): Promise<ActionOutcome<CreatedVirtualBot>>;
+  createAccount(input: CreateVirtualAccountInput): Promise<ActionOutcome<CreatedVirtualAccount>>;
   /** Calls the emulated Bot API getMe method with a virtual bot token. */
   getMe(botToken: string): Promise<VirtualBotProfile>;
   /**
    * Makes a bot's next calls of a method, or of every method, fail with `429 Too Many Requests`,
    * for testing how the bot handles Telegram's rate limits.
    */
-  queueRateLimitResponses(input: QueueRateLimitResponsesInput): Promise<RateLimitResponses>;
+  queueRateLimitResponses(
+    input: QueueRateLimitResponsesInput,
+  ): Promise<ActionOutcome<RateLimitResponses>>;
   /** Lists the rate limit answers still queued for a bot, earliest first. */
   getRateLimitResponses(botId: number): Promise<readonly RateLimitResponses[]>;
   /**
@@ -220,7 +231,9 @@ export interface EmulationSessionClient extends EmulationSession {
    * Error` or `503 Service Unavailable` before they run, for testing how the bot retries or falls
    * back. Queued rate limit answers apply first.
    */
-  queueServerErrorResponses(input: QueueServerErrorResponsesInput): Promise<ServerErrorResponses>;
+  queueServerErrorResponses(
+    input: QueueServerErrorResponsesInput,
+  ): Promise<ActionOutcome<ServerErrorResponses>>;
   /** Lists the server error answers still queued for a bot, earliest first. */
   getServerErrorResponses(botId: number): Promise<readonly ServerErrorResponses[]>;
   /**
@@ -229,7 +242,7 @@ export interface EmulationSessionClient extends EmulationSession {
    * `expireWebhookAttempt` and `releaseWebhookRetry`. These are emulator controls, not Telegram's
    * timing.
    */
-  setWebhookDelivery(input: SetWebhookDeliveryInput): Promise<WebhookDelivery>;
+  setWebhookDelivery(input: SetWebhookDeliveryInput): Promise<ActionOutcome<WebhookDelivery>>;
   getWebhookDelivery(botId: number): Promise<WebhookDelivery>;
   /** Lists every attempt to deliver an update to a bot's webhook, earliest first. */
   getWebhookAttempts(botId: number): Promise<readonly WebhookAttempt[]>;
@@ -237,13 +250,13 @@ export interface EmulationSessionClient extends EmulationSession {
    * Sends a failed attempt's update again without waiting for its retry delay, and returns the
    * attempt. Fails with status `409` when the retry is not waiting.
    */
-  releaseWebhookRetry(input: WebhookAttemptControlInput): Promise<WebhookAttempt>;
+  releaseWebhookRetry(input: WebhookAttemptControlInput): Promise<ActionOutcome<WebhookAttempt>>;
   /**
    * Makes the deadline of an attempt in flight arrive, as its timeout passing does, and returns
    * the attempt once its outcome is decided. Fails with status `409` when the attempt is no longer
    * in flight.
    */
-  expireWebhookAttempt(input: WebhookAttemptControlInput): Promise<WebhookAttempt>;
+  expireWebhookAttempt(input: WebhookAttemptControlInput): Promise<ActionOutcome<WebhookAttempt>>;
   /**
    * Returns the content of a file of the session's messages, such as a photo, by its
    * `file_unique_id`, which, unlike `file_id`, is the same for every user.
@@ -254,33 +267,39 @@ export interface EmulationSessionClient extends EmulationSession {
    * Telegram downloads the files bots send by URL; the emulator downloads them from these
    * resources, and a URL without one is unreachable.
    */
-  registerWebResource(input: RegisterWebResourceInput): Promise<WebResource>;
+  registerWebResource(input: RegisterWebResourceInput): Promise<ActionOutcome<WebResource>>;
   /**
    * Closes a poll as its `close_date` arriving does, and returns it as the bot that sent it sees
    * it. The emulator does not close polls as time passes, so tests choose when a poll sent with
    * `open_period` or `close_date` closes; the bot receives a `poll` update with the closed poll.
    */
-  expirePoll(pollId: string): Promise<Poll>;
+  expirePoll(pollId: string): Promise<ActionOutcome<Poll>>;
   /**
    * Ends a user's temporary restriction in a supergroup as its `until_date` arriving does, and
    * returns the user's standing after it: `member`, or `left` for a user that is not a member. The
    * emulator does not lift restrictions as time passes, so tests choose when one ends; no bot
    * receives an update for it.
    */
-  expireChatMemberRestriction(input: ExpireChatMemberRestrictionInput): Promise<'member' | 'left'>;
+  expireChatMemberRestriction(
+    input: ExpireChatMemberRestrictionInput,
+  ): Promise<ActionOutcome<'member' | 'left'>>;
   /**
    * Makes an invite link's `expire_date` arrive, and returns the link as the supergroup's owner
    * sees it. The emulator does not let time pass by itself, so tests choose when a link created
    * with `expire_date` stops admitting users; the members that joined through it stay.
    */
-  expireChatInviteLink(input: ExpireChatInviteLinkInput): Promise<SupergroupInviteLink>;
+  expireChatInviteLink(
+    input: ExpireChatInviteLinkInput,
+  ): Promise<ActionOutcome<SupergroupInviteLink>>;
   /**
    * Ends a pending join request's contact window as its five minutes passing does, and returns the
    * request as the supergroup's owner sees it. The emulator does not let time pass by itself, so
    * tests choose when the bots that received the request stop being able to write to a user that
    * never started them; bots the user started keep writing to it, and the request stays pending.
    */
-  expireJoinRequesterContact(input: ExpireJoinRequesterContactInput): Promise<ChatJoinRequest>;
+  expireJoinRequesterContact(
+    input: ExpireJoinRequesterContactInput,
+  ): Promise<ActionOutcome<ChatJoinRequest>>;
   /**
    * Expires the answers the inline answer cache holds for the request of the inline query with
    * this ID, as their `cache_time` passing does, so the next such query reaches the bot. The
@@ -288,7 +307,7 @@ export interface EmulationSessionClient extends EmulationSession {
    * expire for every account, and each query keeps its answer; the bot is not told. Fails with
    * status `409` when the cache holds no answer for the request.
    */
-  expireInlineAnswerCache(inlineQueryId: string): Promise<void>;
+  expireInlineAnswerCache(inlineQueryId: string): Promise<ActionReceipt>;
   /**
    * A view of the session's bot activity log: the Bot API calls its bots make, with their answers,
    * and the updates delivered to and confirmed by them. `filter` applies to every read of the
@@ -337,26 +356,28 @@ class HttpEmulationSessionClient implements EmulationSessionClient {
     });
   }
 
-  createBot(input: CreateVirtualBotInput): Promise<CreatedVirtualBot> {
-    return callJsonOperation(this.#transport, createBotContract, {
+  createBot(input: CreateVirtualBotInput): Promise<ActionOutcome<CreatedVirtualBot>> {
+    return callJsonAction(this.#transport, createBotContract, {
       params: { sessionId: this.id },
       body: input,
     });
   }
 
-  async createAccount(input: CreateVirtualAccountInput): Promise<CreatedVirtualAccount> {
-    const response = await callJsonOperation(this.#transport, createAccountContract, {
+  async createAccount(
+    input: CreateVirtualAccountInput,
+  ): Promise<ActionOutcome<CreatedVirtualAccount>> {
+    const creation = await callJsonAction(this.#transport, createAccountContract, {
       params: { sessionId: this.id },
       body: input,
     });
-    return {
+    return selectResult(creation, ({ account }) => ({
       account: createVirtualAccountClient(
-        response.account,
+        account,
         { transport: this.#transport, sessionId: this.id },
-        `${this.#sessionUrl}/accounts/${response.account.id}`,
+        `${this.#sessionUrl}/accounts/${account.id}`,
         this.#fetch,
       ),
-    };
+    }));
   }
 
   async getMe(botToken: string): Promise<VirtualBotProfile> {
@@ -373,8 +394,8 @@ class HttpEmulationSessionClient implements EmulationSessionClient {
 
   queueRateLimitResponses(
     { bot_id: botId, ...body }: QueueRateLimitResponsesInput,
-  ): Promise<RateLimitResponses> {
-    return callJsonOperation(this.#transport, queueRateLimitResponsesContract, {
+  ): Promise<ActionOutcome<RateLimitResponses>> {
+    return callJsonAction(this.#transport, queueRateLimitResponsesContract, {
       params: { sessionId: this.id, botId },
       body,
     });
@@ -389,8 +410,8 @@ class HttpEmulationSessionClient implements EmulationSessionClient {
 
   queueServerErrorResponses(
     { bot_id: botId, ...body }: QueueServerErrorResponsesInput,
-  ): Promise<ServerErrorResponses> {
-    return callJsonOperation(this.#transport, queueServerErrorResponsesContract, {
+  ): Promise<ActionOutcome<ServerErrorResponses>> {
+    return callJsonAction(this.#transport, queueServerErrorResponsesContract, {
       params: { sessionId: this.id, botId },
       body,
     });
@@ -405,8 +426,8 @@ class HttpEmulationSessionClient implements EmulationSessionClient {
 
   setWebhookDelivery(
     { bot_id: botId, ...body }: SetWebhookDeliveryInput,
-  ): Promise<WebhookDelivery> {
-    return callJsonOperation(this.#transport, setWebhookDeliveryContract, {
+  ): Promise<ActionOutcome<WebhookDelivery>> {
+    return callJsonAction(this.#transport, setWebhookDeliveryContract, {
       params: { sessionId: this.id, botId },
       body,
     });
@@ -425,14 +446,18 @@ class HttpEmulationSessionClient implements EmulationSessionClient {
     return response.webhook_attempts;
   }
 
-  releaseWebhookRetry({ botId, attemptId }: WebhookAttemptControlInput): Promise<WebhookAttempt> {
-    return callJsonOperation(this.#transport, releaseWebhookRetryContract, {
+  releaseWebhookRetry(
+    { botId, attemptId }: WebhookAttemptControlInput,
+  ): Promise<ActionOutcome<WebhookAttempt>> {
+    return callJsonAction(this.#transport, releaseWebhookRetryContract, {
       params: { sessionId: this.id, botId, webhookAttemptId: attemptId },
     });
   }
 
-  expireWebhookAttempt({ botId, attemptId }: WebhookAttemptControlInput): Promise<WebhookAttempt> {
-    return callJsonOperation(this.#transport, expireWebhookAttemptContract, {
+  expireWebhookAttempt(
+    { botId, attemptId }: WebhookAttemptControlInput,
+  ): Promise<ActionOutcome<WebhookAttempt>> {
+    return callJsonAction(this.#transport, expireWebhookAttemptContract, {
       params: { sessionId: this.id, botId, webhookAttemptId: attemptId },
     });
   }
@@ -443,50 +468,52 @@ class HttpEmulationSessionClient implements EmulationSessionClient {
     });
   }
 
-  async expirePoll(pollId: string): Promise<Poll> {
-    const response = await callJsonOperation(this.#transport, expirePollContract, {
+  async expirePoll(pollId: string): Promise<ActionOutcome<Poll>> {
+    const expiry = await callJsonAction(this.#transport, expirePollContract, {
       params: { sessionId: this.id, pollId },
     });
-    return response.poll;
+    return selectResult(expiry, ({ poll }) => poll);
   }
 
   async expireChatMemberRestriction(
     { chatId, userId }: ExpireChatMemberRestrictionInput,
-  ): Promise<'member' | 'left'> {
-    const response = await callJsonOperation(
+  ): Promise<ActionOutcome<'member' | 'left'>> {
+    const expiry = await callJsonAction(
       this.#transport,
       expireSupergroupMemberRestrictionContract,
       { params: { sessionId: this.id, chatId, userId } },
     );
-    return response.chat_member.status;
+    return selectResult(expiry, ({ chat_member }) => chat_member.status);
   }
 
   async expireChatInviteLink(
     { chatId, inviteLink }: ExpireChatInviteLinkInput,
-  ): Promise<SupergroupInviteLink> {
-    const response = await callJsonOperation(this.#transport, expireChatInviteLinkContract, {
+  ): Promise<ActionOutcome<SupergroupInviteLink>> {
+    const expiry = await callJsonAction(this.#transport, expireChatInviteLinkContract, {
       params: { sessionId: this.id, chatId, inviteLinkHash: getInviteLinkHash(inviteLink) },
     });
-    return response.invite_link;
+    return selectResult(expiry, ({ invite_link }) => invite_link);
   }
 
   async expireJoinRequesterContact(
     { chatId, userId }: ExpireJoinRequesterContactInput,
-  ): Promise<ChatJoinRequest> {
-    const response = await callJsonOperation(this.#transport, expireJoinRequesterContactContract, {
+  ): Promise<ActionOutcome<ChatJoinRequest>> {
+    const expiry = await callJsonAction(this.#transport, expireJoinRequesterContactContract, {
       params: { sessionId: this.id, chatId, userId },
     });
-    return response.join_request;
+    return selectResult(expiry, ({ join_request }) => join_request);
   }
 
-  expireInlineAnswerCache(inlineQueryId: string): Promise<void> {
-    return callEmptyOperation(this.#transport, expireInlineAnswerCacheContract, {
+  expireInlineAnswerCache(inlineQueryId: string): Promise<ActionReceipt> {
+    return callEmptyAction(this.#transport, expireInlineAnswerCacheContract, {
       params: { sessionId: this.id, inlineQueryId },
     });
   }
 
-  registerWebResource({ content, ...input }: RegisterWebResourceInput): Promise<WebResource> {
-    return callJsonOperation(this.#transport, registerWebResourceContract, {
+  registerWebResource(
+    { content, ...input }: RegisterWebResourceInput,
+  ): Promise<ActionOutcome<WebResource>> {
+    return callJsonAction(this.#transport, registerWebResourceContract, {
       params: { sessionId: this.id },
       body: { ...input, ...(content === undefined ? {} : { content_base64: content.toBase64() }) },
     });
@@ -527,32 +554,34 @@ function createVirtualAccountClient(
     return response.messages;
   }
 
-  async function pressCallbackButton(input: PressCallbackButtonInput): Promise<CallbackQuery> {
-    const response = await callJsonOperation(transport, pressCallbackButtonContract, {
+  async function pressCallbackButton(
+    input: PressCallbackButtonInput,
+  ): Promise<ActionOutcome<CallbackQuery>> {
+    const press = await callJsonAction(transport, pressCallbackButtonContract, {
       params: accountParams,
       body: input,
     });
-    return response.callback_query;
+    return selectResult(press, ({ callback_query }) => callback_query);
   }
 
   return Object.freeze({
     ...profile,
     async sendMessage<Target extends MessageTarget>(
       input: AccountSendMessageInput<Target>,
-    ): Promise<MessageIn<Target>> {
-      const response = await requestJson(fetchImplementation, {
+    ): Promise<ActionOutcome<MessageIn<Target>>> {
+      const sending = await requestJsonAction(fetchImplementation, {
         method: 'POST',
         url: `${accountUrl}/messages`,
         expectedStatus: HTTP_STATUS_CREATED,
         responseSchema: messageResponseSchemasFor(input.to).sent,
         body: input,
       });
-      return response.message;
+      return selectResult(sending, ({ message }) => message);
     },
     async sendPhoto<Target extends MessageTarget>(
       { to, photo, caption, caption_entities, reply_to_message_id }: AccountSendPhotoInput<Target>,
-    ): Promise<MessageIn<Target>> {
-      const response = await requestJson(fetchImplementation, {
+    ): Promise<ActionOutcome<MessageIn<Target>>> {
+      const sending = await requestJsonAction(fetchImplementation, {
         method: 'POST',
         url: `${accountUrl}/messages`,
         expectedStatus: HTTP_STATUS_CREATED,
@@ -565,7 +594,7 @@ function createVirtualAccountClient(
           reply_to_message_id,
         },
       });
-      return response.message;
+      return selectResult(sending, ({ message }) => message);
     },
     async sendDocument<Target extends MessageTarget>(
       {
@@ -576,8 +605,8 @@ function createVirtualAccountClient(
         caption_entities,
         reply_to_message_id,
       }: AccountSendDocumentInput<Target>,
-    ): Promise<MessageIn<Target>> {
-      const response = await requestJson(fetchImplementation, {
+    ): Promise<ActionOutcome<MessageIn<Target>>> {
+      const sending = await requestJsonAction(fetchImplementation, {
         method: 'POST',
         url: `${accountUrl}/messages`,
         expectedStatus: HTTP_STATUS_CREATED,
@@ -590,7 +619,7 @@ function createVirtualAccountClient(
           reply_to_message_id,
         },
       });
-      return response.message;
+      return selectResult(sending, ({ message }) => message);
     },
     async sendVideo<Target extends MessageTarget>(
       {
@@ -604,8 +633,8 @@ function createVirtualAccountClient(
         caption_entities,
         reply_to_message_id,
       }: AccountSendVideoInput<Target>,
-    ): Promise<MessageIn<Target>> {
-      const response = await requestJson(fetchImplementation, {
+    ): Promise<ActionOutcome<MessageIn<Target>>> {
+      const sending = await requestJsonAction(fetchImplementation, {
         method: 'POST',
         url: `${accountUrl}/messages`,
         expectedStatus: HTTP_STATUS_CREATED,
@@ -618,15 +647,15 @@ function createVirtualAccountClient(
           reply_to_message_id,
         },
       });
-      return response.message;
+      return selectResult(sending, ({ message }) => message);
     },
     async sendVoice<Target extends MessageTarget>(
       { to, voice, duration, caption, caption_entities, reply_to_message_id }:
         AccountSendVoiceInput<
           Target
         >,
-    ): Promise<MessageIn<Target>> {
-      const response = await requestJson(fetchImplementation, {
+    ): Promise<ActionOutcome<MessageIn<Target>>> {
+      const sending = await requestJsonAction(fetchImplementation, {
         method: 'POST',
         url: `${accountUrl}/messages`,
         expectedStatus: HTTP_STATUS_CREATED,
@@ -639,7 +668,7 @@ function createVirtualAccountClient(
           reply_to_message_id,
         },
       });
-      return response.message;
+      return selectResult(sending, ({ message }) => message);
     },
     async sendAudio<Target extends MessageTarget>(
       {
@@ -653,8 +682,8 @@ function createVirtualAccountClient(
         caption_entities,
         reply_to_message_id,
       }: AccountSendAudioInput<Target>,
-    ): Promise<MessageIn<Target>> {
-      const response = await requestJson(fetchImplementation, {
+    ): Promise<ActionOutcome<MessageIn<Target>>> {
+      const sending = await requestJsonAction(fetchImplementation, {
         method: 'POST',
         url: `${accountUrl}/messages`,
         expectedStatus: HTTP_STATUS_CREATED,
@@ -667,60 +696,60 @@ function createVirtualAccountClient(
           reply_to_message_id,
         },
       });
-      return response.message;
+      return selectResult(sending, ({ message }) => message);
     },
     async sendContact<Target extends MessageTarget>(
       input: AccountSendContactInput<Target>,
-    ): Promise<MessageIn<Target>> {
-      const response = await requestJson(fetchImplementation, {
+    ): Promise<ActionOutcome<MessageIn<Target>>> {
+      const sending = await requestJsonAction(fetchImplementation, {
         method: 'POST',
         url: `${accountUrl}/messages`,
         expectedStatus: HTTP_STATUS_CREATED,
         responseSchema: messageResponseSchemasFor(input.to).sent,
         body: input,
       });
-      return response.message;
+      return selectResult(sending, ({ message }) => message);
     },
     async shareOwnContact<Target extends MessageTarget>(
       { to, reply_to_message_id }: AccountShareOwnContactInput<Target>,
-    ): Promise<MessageIn<Target>> {
-      const response = await requestJson(fetchImplementation, {
+    ): Promise<ActionOutcome<MessageIn<Target>>> {
+      const sending = await requestJsonAction(fetchImplementation, {
         method: 'POST',
         url: `${accountUrl}/messages`,
         expectedStatus: HTTP_STATUS_CREATED,
         responseSchema: messageResponseSchemasFor(to).sent,
         body: { to, own_contact: true, reply_to_message_id },
       });
-      return response.message;
+      return selectResult(sending, ({ message }) => message);
     },
     async sendLocation<Target extends MessageTarget>(
       input: AccountSendLocationInput<Target>,
-    ): Promise<MessageIn<Target>> {
-      const response = await requestJson(fetchImplementation, {
+    ): Promise<ActionOutcome<MessageIn<Target>>> {
+      const sending = await requestJsonAction(fetchImplementation, {
         method: 'POST',
         url: `${accountUrl}/messages`,
         expectedStatus: HTTP_STATUS_CREATED,
         responseSchema: messageResponseSchemasFor(input.to).sent,
         body: input,
       });
-      return response.message;
+      return selectResult(sending, ({ message }) => message);
     },
     async sendPoll<Target extends MessageTarget>(
       input: AccountSendPollInput<Target>,
-    ): Promise<MessageIn<Target>> {
-      const response = await requestJson(fetchImplementation, {
+    ): Promise<ActionOutcome<MessageIn<Target>>> {
+      const sending = await requestJsonAction(fetchImplementation, {
         method: 'POST',
         url: `${accountUrl}/messages`,
         expectedStatus: HTTP_STATUS_CREATED,
         responseSchema: messageResponseSchemasFor(input.to).sent,
         body: input,
       });
-      return response.message;
+      return selectResult(sending, ({ message }) => message);
     },
     async sendMediaGroup<Target extends MessageTarget>(
       { to, media, reply_to_message_id }: AccountSendMediaGroupInput<Target>,
-    ): Promise<readonly MessageIn<Target>[]> {
-      const response = await requestJson(fetchImplementation, {
+    ): Promise<ActionOutcome<readonly MessageIn<Target>[]>> {
+      const sending = await requestJsonAction(fetchImplementation, {
         method: 'POST',
         url: `${accountUrl}/media-groups`,
         expectedStatus: HTTP_STATUS_CREATED,
@@ -735,83 +764,83 @@ function createVirtualAccountClient(
           reply_to_message_id,
         },
       });
-      return response.messages;
+      return selectResult(sending, ({ messages }) => messages);
     },
     async forwardMessage<Target extends MessageTarget>(
       { from, message_id, to }: AccountForwardMessageInput<Target>,
-    ): Promise<MessageIn<Target>> {
-      const response = await requestJson(fetchImplementation, {
+    ): Promise<ActionOutcome<MessageIn<Target>>> {
+      const sending = await requestJsonAction(fetchImplementation, {
         method: 'POST',
         url: `${accountUrl}/messages`,
         expectedStatus: HTTP_STATUS_CREATED,
         responseSchema: messageResponseSchemasFor(to).sent,
         body: { to, forward: { chat: from, message_id } },
       });
-      return response.message;
+      return selectResult(sending, ({ message }) => message);
     },
     async editMessage<Target extends MessageTarget>(
       input: AccountEditMessageInput<Target>,
-    ): Promise<MessageIn<Target>> {
+    ): Promise<ActionOutcome<MessageIn<Target>>> {
       const messageId = encodeURIComponent(input.message_id);
-      const response = await requestJson(fetchImplementation, {
+      const edit = await requestJsonAction(fetchImplementation, {
         method: 'PATCH',
         url: `${conversationUrl(accountUrl, input.chat)}/messages/${messageId}`,
         expectedStatus: HTTP_STATUS_OK,
         responseSchema: messageResponseSchemasFor(input.chat).sent,
         body: { text: input.text, entities: input.entities },
       });
-      return response.message;
+      return selectResult(edit, ({ message }) => message);
     },
     async editMessageCaption<Target extends MessageTarget>(
       input: AccountEditMessageCaptionInput<Target>,
-    ): Promise<MessageIn<Target>> {
+    ): Promise<ActionOutcome<MessageIn<Target>>> {
       const messageId = encodeURIComponent(input.message_id);
-      const response = await requestJson(fetchImplementation, {
+      const edit = await requestJsonAction(fetchImplementation, {
         method: 'PATCH',
         url: `${conversationUrl(accountUrl, input.chat)}/messages/${messageId}`,
         expectedStatus: HTTP_STATUS_OK,
         responseSchema: messageResponseSchemasFor(input.chat).sent,
         body: { caption: input.caption, caption_entities: input.caption_entities },
       });
-      return response.message;
+      return selectResult(edit, ({ message }) => message);
     },
-    async deleteMessage(input: AccountDeleteMessageInput): Promise<void> {
+    deleteMessage(input: AccountDeleteMessageInput): Promise<ActionReceipt> {
       const messageId = encodeURIComponent(input.message_id);
-      await requestEmptyResponse(fetchImplementation, {
+      return requestEmptyAction(fetchImplementation, {
         method: 'DELETE',
         url: `${conversationUrl(accountUrl, input.chat)}/messages/${messageId}`,
         expectedStatus: HTTP_STATUS_NO_CONTENT,
       });
     },
-    async createSupergroup(input: CreateSupergroupInput): Promise<Supergroup> {
-      const response = await callJsonOperation(transport, createSupergroupContract, {
+    async createSupergroup(input: CreateSupergroupInput): Promise<ActionOutcome<Supergroup>> {
+      const creation = await callJsonAction(transport, createSupergroupContract, {
         params: accountParams,
         body: input,
       });
-      return response.supergroup;
+      return selectResult(creation, ({ supergroup }) => supergroup);
     },
-    addChatMember(input: AddChatMemberInput): Promise<void> {
-      return callEmptyOperation(transport, addSupergroupMemberContract, {
+    addChatMember(input: AddChatMemberInput): Promise<ActionReceipt> {
+      return callEmptyAction(transport, addSupergroupMemberContract, {
         params: { ...supergroupParams(input.chat), userId: input.userId },
       });
     },
-    removeChatMember(input: RemoveChatMemberInput): Promise<void> {
-      return callEmptyOperation(transport, removeSupergroupMemberContract, {
+    removeChatMember(input: RemoveChatMemberInput): Promise<ActionReceipt> {
+      return callEmptyAction(transport, removeSupergroupMemberContract, {
         params: { ...supergroupParams(input.chat), userId: input.userId },
       });
     },
-    leaveChat(input: LeaveChatInput): Promise<void> {
-      return callEmptyOperation(transport, removeSupergroupMemberContract, {
+    leaveChat(input: LeaveChatInput): Promise<ActionReceipt> {
+      return callEmptyAction(transport, removeSupergroupMemberContract, {
         params: { ...supergroupParams(input.chat), userId: profile.id },
       });
     },
-    joinChat(input: JoinChatInput): Promise<void> {
-      return callEmptyOperation(transport, addSupergroupMemberContract, {
+    joinChat(input: JoinChatInput): Promise<ActionReceipt> {
+      return callEmptyAction(transport, addSupergroupMemberContract, {
         params: { ...supergroupParams(input.chat), userId: profile.id },
       });
     },
-    joinChatByInviteLink(input: JoinChatByInviteLinkInput): Promise<ChatJoin> {
-      return callJsonOperation(transport, joinChatByInviteLinkContract, {
+    joinChatByInviteLink(input: JoinChatByInviteLinkInput): Promise<ActionOutcome<ChatJoin>> {
+      return callJsonAction(transport, joinChatByInviteLinkContract, {
         params: accountParams,
         body: { invite_link: input.inviteLink },
       });
@@ -832,20 +861,20 @@ function createVirtualAccountClient(
       });
       return response.join_requests;
     },
-    approveChatJoinRequest(input: AccountChatJoinRequestDecisionInput): Promise<void> {
-      return callEmptyOperation(transport, decideSupergroupJoinRequestContract, {
+    approveChatJoinRequest(input: AccountChatJoinRequestDecisionInput): Promise<ActionReceipt> {
+      return callEmptyAction(transport, decideSupergroupJoinRequestContract, {
         params: { ...supergroupParams(input.chat), userId: input.userId },
         body: { decision: 'approve' },
       });
     },
-    declineChatJoinRequest(input: AccountChatJoinRequestDecisionInput): Promise<void> {
-      return callEmptyOperation(transport, decideSupergroupJoinRequestContract, {
+    declineChatJoinRequest(input: AccountChatJoinRequestDecisionInput): Promise<ActionReceipt> {
+      return callEmptyAction(transport, decideSupergroupJoinRequestContract, {
         params: { ...supergroupParams(input.chat), userId: input.userId },
         body: { decision: 'decline' },
       });
     },
-    promoteChatMember(input: PromoteChatMemberInput): Promise<void> {
-      return callEmptyOperation(transport, promoteSupergroupMemberContract, {
+    promoteChatMember(input: PromoteChatMemberInput): Promise<ActionReceipt> {
+      return callEmptyAction(transport, promoteSupergroupMemberContract, {
         params: { ...supergroupParams(input.chat), userId: input.userId },
         body: input.rights,
       });
@@ -858,13 +887,13 @@ function createVirtualAccountClient(
       });
       return response.administrators;
     },
-    demoteChatMember(input: DemoteChatMemberInput): Promise<void> {
-      return callEmptyOperation(transport, demoteSupergroupMemberContract, {
+    demoteChatMember(input: DemoteChatMemberInput): Promise<ActionReceipt> {
+      return callEmptyAction(transport, demoteSupergroupMemberContract, {
         params: { ...supergroupParams(input.chat), userId: input.userId },
       });
     },
-    restrictChatMember(input: RestrictChatMemberInput): Promise<void> {
-      return callEmptyOperation(transport, restrictSupergroupMemberContract, {
+    restrictChatMember(input: RestrictChatMemberInput): Promise<ActionReceipt> {
+      return callEmptyAction(transport, restrictSupergroupMemberContract, {
         params: { ...supergroupParams(input.chat), userId: input.userId },
         body: {
           permissions: input.permissions,
@@ -872,25 +901,25 @@ function createVirtualAccountClient(
         },
       });
     },
-    liftChatMemberRestriction(input: LiftChatMemberRestrictionInput): Promise<void> {
-      return callEmptyOperation(transport, liftSupergroupMemberRestrictionContract, {
+    liftChatMemberRestriction(input: LiftChatMemberRestrictionInput): Promise<ActionReceipt> {
+      return callEmptyAction(transport, liftSupergroupMemberRestrictionContract, {
         params: { ...supergroupParams(input.chat), userId: input.userId },
       });
     },
-    setChatPermissions(input: SetChatPermissionsInput): Promise<void> {
-      return callEmptyOperation(transport, setSupergroupDefaultPermissionsContract, {
+    setChatPermissions(input: SetChatPermissionsInput): Promise<ActionReceipt> {
+      return callEmptyAction(transport, setSupergroupDefaultPermissionsContract, {
         params: supergroupParams(input.chat),
         body: { permissions: input.permissions },
       });
     },
-    setCustomTitle(input: SetCustomTitleInput): Promise<void> {
-      return callEmptyOperation(transport, setSupergroupCustomTitleContract, {
+    setCustomTitle(input: SetCustomTitleInput): Promise<ActionReceipt> {
+      return callEmptyAction(transport, setSupergroupCustomTitleContract, {
         params: { ...supergroupParams(input.chat), userId: input.userId },
         body: { custom_title: input.customTitle },
       });
     },
-    setContentProtection(input: SetContentProtectionInput): Promise<void> {
-      return callEmptyOperation(
+    setContentProtection(input: SetContentProtectionInput): Promise<ActionReceipt> {
+      return callEmptyAction(
         transport,
         input.hasProtectedContent
           ? protectSupergroupContentContract
@@ -898,38 +927,38 @@ function createVirtualAccountClient(
         { params: supergroupParams(input.chat) },
       );
     },
-    changeSupergroupTitle(input: ChangeSupergroupTitleInput): Promise<void> {
-      return callEmptyOperation(transport, changeSupergroupTitleContract, {
+    changeSupergroupTitle(input: ChangeSupergroupTitleInput): Promise<ActionReceipt> {
+      return callEmptyAction(transport, changeSupergroupTitleContract, {
         params: supergroupParams(input.chat),
         body: { title: input.title },
       });
     },
-    changeSupergroupDescription(input: ChangeSupergroupDescriptionInput): Promise<void> {
-      return callEmptyOperation(transport, changeSupergroupDescriptionContract, {
+    changeSupergroupDescription(input: ChangeSupergroupDescriptionInput): Promise<ActionReceipt> {
+      return callEmptyAction(transport, changeSupergroupDescriptionContract, {
         params: supergroupParams(input.chat),
         body: { description: input.description },
       });
     },
-    blockBot({ botId }: BotBlockInput): Promise<void> {
-      return callEmptyOperation(transport, blockBotContract, {
+    blockBot({ botId }: BotBlockInput): Promise<ActionReceipt> {
+      return callEmptyAction(transport, blockBotContract, {
         params: { ...accountParams, botId },
       });
     },
-    unblockBot({ botId }: BotBlockInput): Promise<void> {
-      return callEmptyOperation(transport, unblockBotContract, {
+    unblockBot({ botId }: BotBlockInput): Promise<ActionReceipt> {
+      return callEmptyAction(transport, unblockBotContract, {
         params: { ...accountParams, botId },
       });
     },
     getMessages,
-    async pinMessage(input: AccountPinMessageInput): Promise<void> {
-      await requestEmptyResponse(fetchImplementation, {
+    pinMessage(input: AccountPinMessageInput): Promise<ActionReceipt> {
+      return requestEmptyAction(fetchImplementation, {
         method: 'PUT',
         url: pinnedMessageUrl(accountUrl, input),
         expectedStatus: HTTP_STATUS_NO_CONTENT,
       });
     },
-    async unpinMessage(input: AccountPinMessageInput): Promise<void> {
-      await requestEmptyResponse(fetchImplementation, {
+    unpinMessage(input: AccountPinMessageInput): Promise<ActionReceipt> {
+      return requestEmptyAction(fetchImplementation, {
         method: 'DELETE',
         url: pinnedMessageUrl(accountUrl, input),
         expectedStatus: HTTP_STATUS_NO_CONTENT,
@@ -955,8 +984,8 @@ function createVirtualAccountClient(
       });
       return response.chat_actions;
     },
-    async expireChatAction(input: ExpireChatActionInput): Promise<void> {
-      await requestEmptyResponse(fetchImplementation, {
+    expireChatAction(input: ExpireChatActionInput): Promise<ActionReceipt> {
+      return requestEmptyAction(fetchImplementation, {
         method: 'POST',
         url: chatActionExpiryUrl(accountUrl, input),
         expectedStatus: HTTP_STATUS_NO_CONTENT,
@@ -968,14 +997,14 @@ function createVirtualAccountClient(
       });
       return response.message_draft;
     },
-    expireMessageDraft({ chat, ...body }: ShownMessageDraftInput): Promise<void> {
-      return callEmptyOperation(transport, expirePrivateMessageDraftContract, {
+    expireMessageDraft({ chat, ...body }: ShownMessageDraftInput): Promise<ActionReceipt> {
+      return callEmptyAction(transport, expirePrivateMessageDraftContract, {
         params: { ...accountParams, botId: chat.botId },
         body,
       });
     },
-    stopMessageDraft({ chat, ...body }: ShownMessageDraftInput): Promise<void> {
-      return callEmptyOperation(transport, stopPrivateMessageDraftContract, {
+    stopMessageDraft({ chat, ...body }: ShownMessageDraftInput): Promise<ActionReceipt> {
+      return callEmptyAction(transport, stopPrivateMessageDraftContract, {
         params: { ...accountParams, botId: chat.botId },
         body,
       });
@@ -992,7 +1021,7 @@ function createVirtualAccountClient(
     pressCallbackButton,
     async pressButton(
       { chat, message_id, button, expired }: PressButtonInput,
-    ): Promise<CallbackQuery> {
+    ): Promise<ActionOutcome<CallbackQuery>> {
       const message = (await getMessages({ chat })).find((shown) =>
         shown.message_id === message_id
       );
@@ -1026,8 +1055,8 @@ function createVirtualAccountClient(
     },
     answerPoll<Target extends MessageTarget>(
       { chat, message_id, option_ids }: AnswerPollInput<Target>,
-    ): Promise<AccountPollAnswer<Target>> {
-      return requestJson(fetchImplementation, {
+    ): Promise<ActionOutcome<AccountPollAnswer<Target>>> {
+      return requestJsonAction(fetchImplementation, {
         method: 'PUT',
         url: pollAnswerUrl(accountUrl, { chat, message_id }),
         expectedStatus: HTTP_STATUS_OK,
@@ -1045,30 +1074,32 @@ function createVirtualAccountClient(
         responseSchema: messageResponseSchemasFor(input.chat).pollAnswer,
       });
     },
-    retractPollAnswer({ chat, message_id: messageId }: AccountPollMessageInput): Promise<void> {
+    retractPollAnswer(
+      { chat, message_id: messageId }: AccountPollMessageInput,
+    ): Promise<ActionReceipt> {
       return chat.type === 'private'
-        ? callEmptyOperation(transport, retractAccountPollAnswerContract, {
+        ? callEmptyAction(transport, retractAccountPollAnswerContract, {
           params: { ...accountParams, botId: chat.botId, messageId },
         })
-        : callEmptyOperation(transport, retractSupergroupAccountPollAnswerContract, {
+        : callEmptyAction(transport, retractSupergroupAccountPollAnswerContract, {
           params: { ...supergroupParams(chat), messageId },
         });
     },
     async stopPoll<Target extends MessageTarget>(
       input: AccountPollMessageInput<Target>,
-    ): Promise<MessageIn<Target>> {
-      const response = await requestJson(fetchImplementation, {
+    ): Promise<ActionOutcome<MessageIn<Target>>> {
+      const closure = await requestJsonAction(fetchImplementation, {
         method: 'POST',
         url: `${pollMessageUrl(accountUrl, input)}/poll-closure`,
         expectedStatus: HTTP_STATUS_OK,
         responseSchema: messageResponseSchemasFor(input.chat).sent,
       });
-      return response.message;
+      return selectResult(closure, ({ message }) => message);
     },
     setMessageReaction(
       { chat, message_id, reaction }: SetMessageReactionInput,
-    ): Promise<MessageReactions> {
-      return requestJson(fetchImplementation, {
+    ): Promise<ActionOutcome<MessageReactions>> {
+      return requestJsonAction(fetchImplementation, {
         method: 'PUT',
         url: messageReactionsUrl(accountUrl, { chat, message_id }),
         expectedStatus: HTTP_STATUS_OK,
@@ -1084,19 +1115,19 @@ function createVirtualAccountClient(
         responseSchema: messageReactionsResponseSchema,
       });
     },
-    async removeMessageReaction(input: AccountReactionMessageInput): Promise<void> {
-      await requestEmptyResponse(fetchImplementation, {
+    removeMessageReaction(input: AccountReactionMessageInput): Promise<ActionReceipt> {
+      return requestEmptyAction(fetchImplementation, {
         method: 'DELETE',
         url: messageReactionsUrl(accountUrl, input),
         expectedStatus: HTTP_STATUS_NO_CONTENT,
       });
     },
-    async sendInlineQuery(input: SendInlineQueryInput): Promise<InlineQuery> {
-      const response = await callJsonOperation(transport, sendInlineQueryContract, {
+    async sendInlineQuery(input: SendInlineQueryInput): Promise<ActionOutcome<InlineQuery>> {
+      const sending = await callJsonAction(transport, sendInlineQueryContract, {
         params: accountParams,
         body: input,
       });
-      return response.inline_query;
+      return selectResult(sending, ({ inline_query }) => inline_query);
     },
     async getInlineQuery(inlineQueryId: string): Promise<InlineQuery> {
       const response = await callJsonOperation(transport, getInlineQueryContract, {
@@ -1106,16 +1137,16 @@ function createVirtualAccountClient(
     },
     async chooseInlineQueryResult(
       input: ChooseInlineQueryResultInput,
-    ): Promise<PrivateMessage | SupergroupMessage> {
+    ): Promise<ActionOutcome<PrivateMessage | SupergroupMessage>> {
       const inlineQueryId = encodeURIComponent(input.inline_query_id);
-      const response = await requestJson(fetchImplementation, {
+      const choice = await requestJsonAction(fetchImplementation, {
         method: 'POST',
         url: `${accountUrl}/inline-queries/${inlineQueryId}/chosen-results`,
         expectedStatus: HTTP_STATUS_CREATED,
         responseSchema: chosenInlineResultResponseSchema,
         body: { result_id: input.result_id },
       });
-      return response.message;
+      return selectResult(choice, ({ message }) => message);
     },
     async getBotCommands(input: AccountBotCommandsInput): Promise<readonly BotCommand[]> {
       const botId = encodeURIComponent(input.chat.botId);
@@ -1160,17 +1191,25 @@ function createVirtualAccountClient(
     },
     async pressReplyKeyboardButton<Target extends MessageTarget>(
       input: PressReplyKeyboardButtonInput<Target>,
-    ): Promise<MessageIn<Target>> {
-      const response = await requestJson(fetchImplementation, {
+    ): Promise<ActionOutcome<MessageIn<Target>>> {
+      const press = await requestJsonAction(fetchImplementation, {
         method: 'POST',
         url: `${accountUrl}/reply-keyboard-presses`,
         expectedStatus: HTTP_STATUS_CREATED,
         responseSchema: messageResponseSchemasFor(input.chat).sent,
         body: input,
       });
-      return response.message;
+      return selectResult(press, ({ message }) => message);
     },
   });
+}
+
+/** An action's outcome with its result replaced by what `select` takes from it. */
+function selectResult<Body, Result>(
+  { result, receipt }: ActionOutcome<Body>,
+  select: (body: Body) => Result,
+): ActionOutcome<Result> {
+  return { result: select(result), receipt };
 }
 
 /** A video an account uploads, as the emulation API reads it. */

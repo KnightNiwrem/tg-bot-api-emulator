@@ -37,8 +37,8 @@ Deno.test('a grammY bot answers an account reaction with a reaction of its own',
   const runner = run(grammyBot, { runner: { fetch: { allowed_updates: allowedUpdates } } });
 
   try {
-    const proposal = await owner.sendMessage({ to: team, text: 'Ship the release?' });
-    const reacted = await ada.setMessageReaction({
+    const { result: proposal } = await owner.sendMessage({ to: team, text: 'Ship the release?' });
+    const { result: reacted } = await ada.setMessageReaction({
       chat: team,
       message_id: proposal.message_id,
       reaction: [{ type: 'emoji', emoji: '👍' }],
@@ -83,7 +83,7 @@ Deno.test('message_reaction updates reach only subscribed administrator bots, on
       await readUpdates(fixture, bot, ['message_reaction']);
     }
     await readUpdates(fixture, unsubscribedBot, []);
-    const message = await owner.sendMessage({ to: team, text: 'Standup at ten' });
+    const { result: message } = await owner.sendMessage({ to: team, text: 'Standup at ten' });
     const key = { chat: team, message_id: message.message_id };
 
     await ada.setMessageReaction({ ...key, reaction: [{ type: 'emoji', emoji: '👍' }] });
@@ -147,8 +147,10 @@ Deno.test('rejected reactions leave reactions and updates unchanged', async () =
   const fixture = await createReactionFixture();
   const { session, owner, ada, adminBot, team } = fixture;
   try {
-    const { account: outsider } = await session.createAccount({ first_name: 'Outsider' });
-    const message = await owner.sendMessage({ to: team, text: 'Keep it civil' });
+    const { result: { account: outsider } } = await session.createAccount({
+      first_name: 'Outsider',
+    });
+    const { result: message } = await owner.sendMessage({ to: team, text: 'Keep it civil' });
     const serviceMessage = (await owner.getMessages({ chat: team })).find((candidate) =>
       candidate.new_chat_members !== undefined
     );
@@ -356,13 +358,13 @@ Deno.test('album reactions go to the first message that is not deleted', async (
   const { session, owner, ada, adminBot, team } = fixture;
   try {
     await readUpdates(fixture, adminBot, ['message_reaction']);
-    const album = await ada.sendMediaGroup({
+    const { result: album } = await ada.sendMediaGroup({
       to: team,
       media: [{ photo: IMAGE, caption: 'Front' }, { photo: IMAGE }, { photo: IMAGE }],
     });
     const [first, second, third] = album.map((message) => message.message_id);
 
-    const throughThird = await owner.setMessageReaction({
+    const { result: throughThird } = await owner.setMessageReaction({
       chat: team,
       message_id: third,
       reaction: [{ type: 'emoji', emoji: '😍' }],
@@ -423,7 +425,7 @@ Deno.test("an account's poll takes reactions, which stopping the poll keeps", as
   const { session, owner, ada, adminBot, team } = fixture;
   try {
     await readUpdates(fixture, adminBot, ['message_reaction']);
-    const pollMessage = await ada.sendPoll({
+    const { result: pollMessage } = await ada.sendPoll({
       to: team,
       poll: { question: 'Lunch?', options: [{ text: 'Pizza' }, { text: 'Soup' }] },
     });
@@ -439,7 +441,7 @@ Deno.test("an account's poll takes reactions, which stopping the poll keeps", as
       { ok: true, result: true },
       "Expected the bot to react to the account's poll",
     );
-    const stopped = await ada.stopPoll(key);
+    const { result: stopped } = await ada.stopPoll(key);
     const afterStop = await owner.getMessageReactions(key);
 
     assertEqualsInFieldOrder(
@@ -466,8 +468,11 @@ Deno.test('reactions stay inside their session', async () => {
   const second = await createReactionFixture(api);
   try {
     // Sessions number their chats and messages alike, so both have the same IDs.
-    const firstMessage = await first.owner.sendMessage({ to: first.team, text: 'First session' });
-    const secondMessage = await second.owner.sendMessage({
+    const { result: firstMessage } = await first.owner.sendMessage({
+      to: first.team,
+      text: 'First session',
+    });
+    const { result: secondMessage } = await second.owner.sendMessage({
       to: second.team,
       text: 'Second session',
     });
@@ -476,10 +481,15 @@ Deno.test('reactions stay inside their session', async () => {
       [first.team.chatId, firstMessage.message_id],
       'Expected both sessions to number the supergroup and message alike',
     );
-    const onlyFirst = await first.owner.createSupergroup({ title: 'Only in the first session' });
+    const { result: onlyFirst } = await first.owner.createSupergroup({
+      title: 'Only in the first session',
+    });
     const onlyFirstChat = { type: 'supergroup', chatId: onlyFirst.id } as const;
     await first.owner.addChatMember({ chat: onlyFirstChat, userId: first.adminBot.id });
-    const onlyFirstMessage = await first.owner.sendMessage({ to: onlyFirstChat, text: 'Hidden' });
+    const { result: onlyFirstMessage } = await first.owner.sendMessage({
+      to: onlyFirstChat,
+      text: 'Hidden',
+    });
     await readUpdates(second, second.adminBot, ['message_reaction']);
 
     for (
@@ -562,10 +572,10 @@ async function createReactionFixture(
   api: TestInProcessEmulator = createTestInProcessEmulator(),
 ): Promise<ReactionFixture> {
   const { fetch } = api;
-  const session = await api.client.createSession();
-  const { account: owner } = await session.createAccount({ first_name: 'Owner' });
-  const { account: ada } = await session.createAccount({ first_name: 'Ada' });
-  const supergroup = await owner.createSupergroup({ title: 'Team' });
+  const { result: session } = await api.client.createSession();
+  const { result: { account: owner } } = await session.createAccount({ first_name: 'Owner' });
+  const { result: { account: ada } } = await session.createAccount({ first_name: 'Ada' });
+  const { result: supergroup } = await owner.createSupergroup({ title: 'Team' });
   const team: SupergroupMessageTarget = { type: 'supergroup', chatId: supergroup.id };
   await owner.addChatMember({ chat: team, userId: ada.id });
   const fixture = { session, fetch, owner, ada, team };
@@ -579,7 +589,7 @@ async function addBot(
   username: string,
   { promote }: { readonly promote: boolean },
 ): Promise<FixtureBot> {
-  const created = await session.createBot({ first_name: 'Reaction Bot', username });
+  const { result: created } = await session.createBot({ first_name: 'Reaction Bot', username });
   await owner.addChatMember({ chat: team, userId: created.bot.id });
   if (promote) {
     await owner.promoteChatMember({

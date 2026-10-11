@@ -40,10 +40,10 @@ Deno.test('the moderator bot deletes a banned word and bans its sender', () =>
       });
     },
   }, async ({ session, botProfile, account, activity }) => {
-    const supergroup = await account.createSupergroup({ title: 'Team' });
+    const { result: supergroup } = await account.createSupergroup({ title: 'Team' });
     const groupChat = { type: 'supergroup', chatId: supergroup.id } as const;
     await account.addChatMember({ chat: groupChat, userId: botProfile.id });
-    const { account: mallory } = await session.createAccount({ first_name: 'Mallory' });
+    const { result: { account: mallory } } = await session.createAccount({ first_name: 'Mallory' });
     await account.addChatMember({ chat: groupChat, userId: mallory.id });
     await account.promoteChatMember({
       chat: groupChat,
@@ -52,8 +52,11 @@ Deno.test('the moderator bot deletes a banned word and bans its sender', () =>
     });
 
     const beforeSpam = await activity.position();
-    const greeting = await mallory.sendMessage({ to: groupChat, text: 'Hi all!' });
-    const spam = await mallory.sendMessage({ to: groupChat, text: 'Win big at the casino' });
+    const { result: greeting } = await mallory.sendMessage({ to: groupChat, text: 'Hi all!' });
+    const { result: spam } = await mallory.sendMessage({
+      to: groupChat,
+      text: 'Win big at the casino',
+    });
 
     const deletion = await activity.waitFor({
       method: 'deleteMessage',
@@ -110,7 +113,7 @@ import { withBotFixture } from './bot_fixture.ts';
 
 Deno.test('the owner promotes, titles and demotes the bot', () =>
   withBotFixture({ handlers: () => {} }, async ({ botProfile, account, activity }) => {
-    const supergroup = await account.createSupergroup({ title: 'Team' });
+    const { result: supergroup } = await account.createSupergroup({ title: 'Team' });
     const groupChat = { type: 'supergroup', chatId: supergroup.id } as const;
     await account.addChatMember({ chat: groupChat, userId: botProfile.id });
     const botStatusAfter = (position: number, status: string) =>
@@ -180,10 +183,10 @@ Deno.test('an administrator account promotes the bot within her own rights', () 
       });
     },
   }, async ({ session, botProfile, account, activity }) => {
-    const supergroup = await account.createSupergroup({ title: 'Team' });
+    const { result: supergroup } = await account.createSupergroup({ title: 'Team' });
     const groupChat = { type: 'supergroup', chatId: supergroup.id } as const;
     await account.addChatMember({ chat: groupChat, userId: botProfile.id });
-    const { account: grace } = await session.createAccount({ first_name: 'Grace' });
+    const { result: { account: grace } } = await session.createAccount({ first_name: 'Grace' });
     await account.addChatMember({ chat: groupChat, userId: grace.id });
     await account.promoteChatMember({
       chat: groupChat,
@@ -265,7 +268,7 @@ Deno.test('a bot restricted to text is refused photos until the restriction ends
       });
     },
   }, async ({ session, botProfile, account, activity }) => {
-    const supergroup = await account.createSupergroup({ title: 'Team' });
+    const { result: supergroup } = await account.createSupergroup({ title: 'Team' });
     const groupChat = { type: 'supergroup', chatId: supergroup.id } as const;
     await account.addChatMember({ chat: groupChat, userId: botProfile.id });
     const oneHourFromNow = Math.floor(Date.now() / 1_000) + 3_600;
@@ -277,7 +280,10 @@ Deno.test('a bot restricted to text is refused photos until the restriction ends
     });
 
     const beforeRestrictedRequest = await activity.position();
-    const restrictedRequest = await account.sendMessage({ to: groupChat, text: '/cat@test_bot' });
+    const { result: restrictedRequest } = await account.sendMessage({
+      to: groupChat,
+      text: '/cat@test_bot',
+    });
     const repliesToRequest = { reply_parameters: { message_id: restrictedRequest.message_id } };
     const refusedPhoto = await activity.waitFor({
       method: 'sendPhoto',
@@ -297,14 +303,14 @@ Deno.test('a bot restricted to text is refused photos until the restriction ends
       parameters_json: repliesToRequest,
     }, { after: refusedPhoto });
 
-    const standing = await session.expireChatMemberRestriction({
+    const { result: standing } = await session.expireChatMemberRestriction({
       chatId: supergroup.id,
       userId: botProfile.id,
     });
     assertEquals(standing, 'member');
 
     const beforeRequest = await activity.position();
-    const request = await account.sendMessage({ to: groupChat, text: '/cat@test_bot' });
+    const { result: request } = await account.sendMessage({ to: groupChat, text: '/cat@test_bot' });
     await activity.waitFor({
       method: 'sendPhoto',
       chat_id: supergroup.id,
@@ -338,10 +344,10 @@ Deno.test('a muted member is heard again once the owner lifts the restriction', 
         }));
     },
   }, async ({ session, botProfile, account, activity }) => {
-    const supergroup = await account.createSupergroup({ title: 'Team' });
+    const { result: supergroup } = await account.createSupergroup({ title: 'Team' });
     const groupChat = { type: 'supergroup', chatId: supergroup.id } as const;
     await account.addChatMember({ chat: groupChat, userId: botProfile.id });
-    const { account: grace } = await session.createAccount({ first_name: 'Grace' });
+    const { result: { account: grace } } = await session.createAccount({ first_name: 'Grace' });
     await account.addChatMember({ chat: groupChat, userId: grace.id });
 
     await account.restrictChatMember({ chat: groupChat, userId: grace.id, permissions: {} });
@@ -353,7 +359,10 @@ Deno.test('a muted member is heard again once the owner lifts the restriction', 
 
     await account.liftChatMemberRestriction({ chat: groupChat, userId: grace.id });
     const beforeSending = await activity.position();
-    const message = await grace.sendMessage({ to: groupChat, text: 'Can anyone hear me now?' });
+    const { result: message } = await grace.sendMessage({
+      to: groupChat,
+      text: 'Can anyone hear me now?',
+    });
     const reply = await activity.waitFor({
       method: 'sendMessage',
       chat_id: supergroup.id,
@@ -392,10 +401,10 @@ Deno.test('text-only defaults bind members but not the owner or administrators',
       });
     },
   }, async ({ session, botProfile, account, activity }) => {
-    const supergroup = await account.createSupergroup({ title: 'Team' });
+    const { result: supergroup } = await account.createSupergroup({ title: 'Team' });
     const groupChat = { type: 'supergroup', chatId: supergroup.id } as const;
     await account.addChatMember({ chat: groupChat, userId: botProfile.id });
-    const { account: grace } = await session.createAccount({ first_name: 'Grace' });
+    const { result: { account: grace } } = await session.createAccount({ first_name: 'Grace' });
     await account.addChatMember({ chat: groupChat, userId: grace.id });
 
     await account.setChatPermissions({
@@ -404,7 +413,10 @@ Deno.test('text-only defaults bind members but not the owner or administrators',
     });
 
     const beforeAsking = await activity.position();
-    const question = await grace.sendMessage({ to: groupChat, text: '/rules@test_bot' });
+    const { result: question } = await grace.sendMessage({
+      to: groupChat,
+      text: '/rules@test_bot',
+    });
     const answer = await activity.waitFor({
       method: 'sendMessage',
       chat_id: supergroup.id,
@@ -425,7 +437,7 @@ Deno.test('text-only defaults bind members but not the owner or administrators',
       userId: grace.id,
       rights: { can_pin_messages: true },
     });
-    const adminPhoto = await grace.sendPhoto({ to: groupChat, photo: PICTURE });
+    const { result: adminPhoto } = await grace.sendPhoto({ to: groupChat, photo: PICTURE });
     assertEquals(adminPhoto.from.id, grace.id);
   }));
 ```

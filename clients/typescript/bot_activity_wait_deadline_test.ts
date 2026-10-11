@@ -633,6 +633,9 @@ interface ScriptedPageReader extends BotActivityPageReader {
   untilReadsSent(count: number): Promise<void>;
 }
 
+/** The session whose log a scripted page reader stands for. */
+const SCRIPTED_SESSION_ID = '9d2f6a1e-3b4c-4d5e-8f60-718293a4b5c6';
+
 /** A page reader that answers each read with the next scripted answer and records the reads. */
 function createScriptedPageReader(...answers: ScriptedAnswer[]): ScriptedPageReader {
   const reads: ScriptedRead[] = [];
@@ -657,7 +660,7 @@ function createScriptedPageReader(...answers: ScriptedAnswer[]): ScriptedPageRea
     readCountWaiters.push({ count, resolve });
     return promise;
   };
-  return { readPage, reads, untilReadsSent };
+  return { sessionId: SCRIPTED_SESSION_ID, readPage, reads, untilReadsSent };
 }
 
 function createActivityLog(

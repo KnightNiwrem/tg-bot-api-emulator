@@ -30,7 +30,7 @@ Deno.test('a written contact names no user', async () => {
     },
   }, async ({ botProfile, account, privateChat, activity }) => {
     const beforeContact = await activity.position();
-    const contact = await account.sendContact({
+    const { result: contact } = await account.sendContact({
       to: privateChat,
       contact: { phone_number: '+1 555 0199', first_name: 'Grace', last_name: 'Hopper' },
     });
@@ -79,7 +79,7 @@ Deno.test('the bot verifies an account that shares its own contact', async () =>
     },
   }, async ({ botProfile, account, privateChat, activity }) => {
     const beforeContact = await activity.position();
-    const contact = await account.shareOwnContact({ to: privateChat });
+    const { result: contact } = await account.shareOwnContact({ to: privateChat });
     assertEquals(contact.contact?.user_id, account.id);
 
     await activity.waitFor(
@@ -124,7 +124,7 @@ Deno.test('the bot receives a static location', async () => {
     },
   }, async ({ botProfile, account, privateChat, activity }) => {
     const beforeLocation = await activity.position();
-    const location = await account.sendLocation({
+    const { result: location } = await account.sendLocation({
       to: privateChat,
       location: { latitude: 51.5007, longitude: -0.1246, horizontal_accuracy: 12.2 },
     });
@@ -214,11 +214,11 @@ Deno.test('request buttons share the contact and location the bot asks for', asy
     };
 
     const beforeStart = await activity.position();
-    const start = await account.sendMessage({ to: privateChat, text: '/start' });
+    const { result: start } = await account.sendMessage({ to: privateChat, text: '/start' });
     const keyboardMessage = await botReplyTo(start.message_id, beforeStart);
 
     const beforeContact = await activity.position();
-    const contact = await account.pressReplyKeyboardButton({
+    const { result: contact } = await account.pressReplyKeyboardButton({
       chat: privateChat,
       text: 'Share phone number',
     });
@@ -227,7 +227,7 @@ Deno.test('request buttons share the contact and location the bot asks for', asy
     assertEquals((await botReplyTo(contact.message_id, beforeContact)).text, 'Phone: 15550100');
 
     const beforeLocation = await activity.position();
-    const location = await account.pressReplyKeyboardButton({
+    const { result: location } = await account.pressReplyKeyboardButton({
       chat: privateChat,
       text: 'Share location',
       location: { latitude: 51.5007, longitude: -0.1246 },

@@ -39,15 +39,16 @@ import { assertEquals } from 'jsr:@std/assert@^1';
 import { TelegramEmulationClient } from '../../../clients/typescript/mod.ts';
 
 Deno.test('each account sees only its own conversation with the bot', async () => {
-  const session = await new TelegramEmulationClient('http://localhost:8081').createSession();
+  const { result: session } = await new TelegramEmulationClient('http://localhost:8081')
+    .createSession();
   try {
-    const { token, bot: botProfile } = await session.createBot({
+    const { result: { token, bot: botProfile } } = await session.createBot({
       first_name: 'Echo Bot',
       username: 'echo_bot',
     });
     assertEquals((await session.getMe(token)).username, 'echo_bot');
-    const { account: ada } = await session.createAccount({ first_name: 'Ada' });
-    const { account: grace } = await session.createAccount({ first_name: 'Grace' });
+    const { result: { account: ada } } = await session.createAccount({ first_name: 'Ada' });
+    const { result: { account: grace } } = await session.createAccount({ first_name: 'Grace' });
 
     const bot = new Bot(token, { client: { apiRoot: session.botApiRoot } });
     bot.on('message:text', (ctx) => ctx.reply(`${ctx.from.first_name} said: ${ctx.msg.text}`));
@@ -157,14 +158,17 @@ export async function withBotFixture(
   options: BotFixtureOptions,
   test: (fixture: BotFixture) => Promise<void>,
 ): Promise<void> {
-  const session = await new TelegramEmulationClient(EMULATOR_URL).createSession();
+  const { result: session } = await new TelegramEmulationClient(EMULATOR_URL).createSession();
   try {
-    const { token, bot: botProfile } = await session.createBot({
+    const { result: { token, bot: botProfile } } = await session.createBot({
       first_name: 'Test Bot',
       username: 'test_bot',
       ...options.bot,
     });
-    const { account } = await session.createAccount({ first_name: 'Ada', ...options.account });
+    const { result: { account } } = await session.createAccount({
+      first_name: 'Ada',
+      ...options.account,
+    });
     const bot = new Bot(token, { client: { apiRoot: session.botApiRoot } });
     options.handlers(bot);
     const pollingStarted = Promise.withResolvers<void>();
@@ -217,14 +221,14 @@ Deno.test('the bot answers in the language of each account', () =>
           reply_parameters: { message_id: ctx.msg.message_id },
         })),
   }, async ({ session, botProfile, account, privateChat, activity }) => {
-    const { account: grete } = await session.createAccount({
+    const { result: { account: grete } } = await session.createAccount({
       first_name: 'Grete',
       language_code: 'de',
     });
 
     for (const [speaker, expectedGreeting] of [[account, 'Hello!'], [grete, 'Hallo!']] as const) {
       const beforeCommand = await activity.position();
-      const command = await speaker.sendMessage({ to: privateChat, text: '/hello' });
+      const { result: command } = await speaker.sendMessage({ to: privateChat, text: '/hello' });
       await activity.waitFor(
         {
           method: 'sendMessage',

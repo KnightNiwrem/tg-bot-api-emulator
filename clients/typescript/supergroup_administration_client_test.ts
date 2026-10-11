@@ -8,8 +8,13 @@ import {
   expireSupergroupMemberRestrictionContract,
   getSupergroupAdministratorsContract,
 } from '../../control_contracts/supergroup_administration.ts';
-import { callJsonOperation, type ControlOperationTransport } from './control_operation_caller.ts';
+import {
+  callJsonAction,
+  callJsonOperation,
+  type ControlOperationTransport,
+} from './control_operation_caller.ts';
 import { EmulationClientError } from './emulation_client_error.ts';
+import { TEST_ACTION_RECEIPT_HEADERS } from './test_support/action_receipt_headers.ts';
 
 const ADMINISTRATORS_PARAMS = {
   sessionId: 'session',
@@ -20,7 +25,7 @@ const ADMINISTRATORS_PARAMS = {
 function transportAnswering(body: unknown): ControlOperationTransport {
   return {
     serverRoot: new URL('http://emulator.example/'),
-    fetch: () => Promise.resolve(Response.json(body)),
+    fetch: () => Promise.resolve(Response.json(body, { headers: TEST_ACTION_RECEIPT_HEADERS })),
   };
 }
 
@@ -96,7 +101,7 @@ Deno.test('An expired restriction whose user ID is no Telegram user ID is refuse
 
   await assertRejects(
     () =>
-      callJsonOperation(
+      callJsonAction(
         transportAnswering(chatMember(0)),
         expireSupergroupMemberRestrictionContract,
         { params },
@@ -104,7 +109,7 @@ Deno.test('An expired restriction whose user ID is no Telegram user ID is refuse
     EmulationClientError,
     'does not match its contract',
   );
-  const { chat_member } = await callJsonOperation(
+  const { result: { chat_member } } = await callJsonAction(
     transportAnswering(chatMember(1)),
     expireSupergroupMemberRestrictionContract,
     { params },

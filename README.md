@@ -27,14 +27,14 @@ The default address is `http://localhost:8081`. Tests can use the bundled
 import { TelegramEmulationClient } from './clients/typescript/mod.ts';
 
 const emulator = new TelegramEmulationClient('http://localhost:8081');
-const session = await emulator.createSession();
+const { result: session } = await emulator.createSession();
 
 try {
-  const { token, bot } = await session.createBot({
+  const { result: { token, bot } } = await session.createBot({
     first_name: 'Test Bot',
     username: 'test_bot',
   });
-  const { account } = await session.createAccount({ first_name: 'Ada' });
+  const { result: { account } } = await session.createAccount({ first_name: 'Ada' });
   await account.sendMessage({
     to: { type: 'private', botId: bot.id },
     text: '/start',

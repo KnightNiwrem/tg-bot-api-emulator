@@ -49,6 +49,8 @@ export type {
   AccountSendVoiceInput,
   AccountShareOwnContactInput,
   AccountSupergroupBotCommandsInput,
+  ActionOutcome,
+  ActionReceipt,
   AddChatMemberInput,
   AnswerPollInput,
   Audio,

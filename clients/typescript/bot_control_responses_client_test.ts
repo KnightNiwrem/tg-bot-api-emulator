@@ -10,29 +10,35 @@ import {
   queueServerErrorResponsesContract,
 } from '../../control_contracts/queued_bot_api_answers.ts';
 import { listWebhookAttemptsContract } from '../../control_contracts/webhook_attempts.ts';
-import { callJsonOperation, type ControlOperationTransport } from './control_operation_caller.ts';
+import {
+  callJsonAction,
+  callJsonOperation,
+  type ControlOperationTransport,
+} from './control_operation_caller.ts';
 import { EmulationClientError } from './emulation_client_error.ts';
+import { TEST_ACTION_RECEIPT_HEADERS } from './test_support/action_receipt_headers.ts';
 
 function transportAnswering(status: number, body: unknown): ControlOperationTransport {
   return {
     serverRoot: new URL('http://emulator.example/'),
-    fetch: () => Promise.resolve(Response.json(body, { status })),
+    fetch: () =>
+      Promise.resolve(Response.json(body, { status, headers: TEST_ACTION_RECEIPT_HEADERS })),
   };
 }
 
 const botPath = { sessionId: 'session', botId: 1 };
 
 Deno.test('Queued answers that name an empty method are refused', async () => {
-  const queueRateLimits = (body: unknown) =>
-    callJsonOperation(transportAnswering(201, body), queueRateLimitResponsesContract, {
+  const queueRateLimits = async (body: unknown) =>
+    (await callJsonAction(transportAnswering(201, body), queueRateLimitResponsesContract, {
       params: botPath,
       body: { retry_after: 1 },
-    });
-  const queueServerErrors = (body: unknown) =>
-    callJsonOperation(transportAnswering(201, body), queueServerErrorResponsesContract, {
+    })).result;
+  const queueServerErrors = async (body: unknown) =>
+    (await callJsonAction(transportAnswering(201, body), queueServerErrorResponsesContract, {
       params: botPath,
       body: { error_code: 500 },
-    });
+    })).result;
 
   await assertRejects(
     () => queueRateLimits({ method: '', retry_after: 1, remaining_count: 1 }),

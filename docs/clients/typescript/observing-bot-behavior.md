@@ -21,9 +21,12 @@ the entry that shows the bot has done what the test is about, and only then read
 
 ## Positions and waits
 
-Every entry has a position: 1 for the first, one more for each later entry. A test takes the log's
-current position _before_ it acts, then waits for a matching entry _after_ that position, so an
-entry from earlier in the test can never satisfy the wait:
+Every entry has a position: 1 for the first, one more for each later entry. A test waits for a
+matching entry _after_ a position from before it acted, so an entry from earlier in the test can
+never satisfy the wait. Every action of the client gives that position as an action receipt: an
+action resolves to `{ result, receipt }`, and an action without a result, such as `deleteMessage`,
+to the receipt alone. The receipt holds the log's position where the action executed, before it
+changed anything, and a wait takes it as `after`:
 
 ```ts
 import { assertEquals } from 'jsr:@std/assert@^1';
@@ -37,8 +40,10 @@ Deno.test('the bot confirms an order with its total', () =>
         await ctx.reply(`Order of ${ctx.match} confirmed. Total: 12.50`);
       }),
   }, async ({ botProfile, account, privateChat, activity }) => {
-    const beforeOrder = await activity.position();
-    await account.sendMessage({ to: privateChat, text: '/order tea' });
+    const { receipt: beforeOrder } = await account.sendMessage({
+      to: privateChat,
+      text: '/order tea',
+    });
 
     const confirmation = await activity.waitFor(
       {
@@ -63,10 +68,13 @@ files it uploaded and the `answer` it received; an update's entry holds the upda
 awaited its first reply before sending the second, the entry for the second shows that both are in
 the chat by the time the test reads it.
 
-Over HTTP, the emulator also answers every control action with an
-[action receipt](../../features/bot-activity.md#action-receipts): the log's position before the
-action, in the response's headers. This client does not read receipts, so a test takes the position
-itself before it acts, as above.
+A wait after a receipt finds everything the action caused, even a reply the bot sent before the
+action's response reached the test. The receipt is only a lower bound, though: activity the action
+did not cause, such as the late reply to an earlier action or another bot's calls, may follow it
+too, so the wait's criteria still identify the entry the test is about, as the next section shows. A
+receipt names its session, and a view of another session's log refuses it with a `TypeError`.
+`activity.position()` reads the log's latest position at any moment, for a wait that does not start
+at an action. [Bot activity](../../features/bot-activity.md#action-receipts) describes receipts.
 
 The `activity` view of the fixture is already filtered to the fixture's bot; `session.botActivity()`
 without a filter sees every bot of the session.
@@ -111,8 +119,10 @@ Deno.test('the bot offers a choice of sizes', () =>
           },
         })),
   }, async ({ botProfile, account, privateChat, activity }) => {
-    const beforeCommand = await activity.position();
-    await account.sendMessage({ to: privateChat, text: '/size' });
+    const { receipt: beforeCommand } = await account.sendMessage({
+      to: privateChat,
+      text: '/size',
+    });
 
     await activity.waitFor(
       {
@@ -163,10 +173,9 @@ Deno.test('the bot receives the edit of a message', () =>
   withBotFixture({
     handlers: () => {},
   }, async ({ account, privateChat, activity }) => {
-    const message = await account.sendMessage({ to: privateChat, text: 'Meet at 5' });
+    const { result: message } = await account.sendMessage({ to: privateChat, text: 'Meet at 5' });
 
-    const beforeEdit = await activity.position();
-    await account.editMessage({
+    const { receipt: beforeEdit } = await account.editMessage({
       chat: privateChat,
       message_id: message.message_id,
       text: 'Meet at 6',
@@ -210,8 +219,10 @@ Deno.test('the bot shows typing before it answers, and answers in order', () =>
         await ctx.reply('Anything else?');
       }),
   }, async ({ account, privateChat, activity }) => {
-    const beforeCommand = await activity.position();
-    await account.sendMessage({ to: privateChat, text: '/report' });
+    const { receipt: beforeCommand } = await account.sendMessage({
+      to: privateChat,
+      text: '/report',
+    });
 
     const steps = activity.cursor({ after: beforeCommand });
     await steps.next({ method: 'sendChatAction', chat_id: account.id, ok: true });
@@ -249,8 +260,10 @@ Deno.test('the bot ignores chatter and answers commands', () =>
   withBotFixture({
     handlers: (bot) => bot.command('ping', (ctx) => ctx.reply('pong')),
   }, async ({ account, privateChat, activity }) => {
-    const beforeChatter = await activity.position();
-    await account.sendMessage({ to: privateChat, text: 'just saying hello' });
+    const { receipt: beforeChatter } = await account.sendMessage({
+      to: privateChat,
+      text: 'just saying hello',
+    });
     await account.sendMessage({ to: privateChat, text: '/ping' });
 
     const pong = await activity.waitFor(

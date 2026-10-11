@@ -34,20 +34,20 @@ Deno.test('TypeScript client manages all currently implemented session resources
   await using emulator = createTestInProcessEmulator();
   const { client } = emulator;
 
-  const session = await client.createSession();
+  const { result: session } = await client.createSession();
   if (session.botApiRoot !== `${TEST_PUBLIC_ORIGIN}/sessions/${session.id}/bot-api`) {
     throw new Error('Expected the session client to expose its Bot API root');
   }
   if (session.uploadProfile !== 'cloud') {
     throw new Error('Expected a session created without settings to use the cloud upload profile');
   }
-  const localSession = await client.createSession({ upload_profile: 'local' });
+  const { result: localSession } = await client.createSession({ upload_profile: 'local' });
   if (localSession.uploadProfile !== 'local') {
     throw new Error('Expected the session client to expose the upload profile it chose');
   }
   await localSession.end();
 
-  const createdBot = await session.createBot({
+  const { result: createdBot } = await session.createBot({
     first_name: 'Test Bot',
     username: 'test_bot',
   });
@@ -55,7 +55,7 @@ Deno.test('TypeScript client manages all currently implemented session resources
     throw new Error('Expected the client to return the created bot');
   }
 
-  const createdAccount = await session.createAccount({
+  const { result: createdAccount } = await session.createAccount({
     first_name: 'Ada',
     last_name: 'Lovelace',
     username: 'ada',
@@ -73,7 +73,7 @@ Deno.test('TypeScript client manages all currently implemented session resources
     throw new Error('Expected getMe to return the created bot profile');
   }
 
-  const sentMessage = await createdAccount.account.sendMessage({
+  const { result: sentMessage } = await createdAccount.account.sendMessage({
     to: { type: 'private', botId: createdBot.bot.id },
     text: 'Hello from the client',
   });
@@ -84,7 +84,7 @@ Deno.test('TypeScript client manages all currently implemented session resources
   ) {
     throw new Error('Expected the account-bound client to send a private message');
   }
-  const sentCommand = await createdAccount.account.sendMessage({
+  const { result: sentCommand } = await createdAccount.account.sendMessage({
     to: { type: 'private', botId: createdBot.bot.id },
     text: '/start',
   });
@@ -141,7 +141,7 @@ Deno.test('TypeScript client manages all currently implemented session resources
   ) {
     throw new Error('Expected the client to return the formatting of a bot message');
   }
-  const accountReply = await createdAccount.account.sendMessage({
+  const { result: accountReply } = await createdAccount.account.sendMessage({
     to: { type: 'private', botId: createdBot.bot.id },
     text: 'Thanks',
     reply_to_message_id: history[2].message_id,
@@ -206,7 +206,7 @@ Deno.test('TypeScript client manages all currently implemented session resources
     throw new Error('Expected the client to return the inline keyboard of a bot message');
   }
 
-  const callbackQuery = await createdAccount.account.pressCallbackButton({
+  const { result: callbackQuery } = await createdAccount.account.pressCallbackButton({
     chat: { type: 'private', botId: createdBot.bot.id },
     message_id: menu.message_id,
     callback_data: 'yes',
@@ -234,7 +234,7 @@ Deno.test('TypeScript client manages all currently implemented session resources
     throw new Error("Expected the client to return the bot's answer");
   }
 
-  const expiredOnCreation = await createdAccount.account.pressCallbackButton({
+  const { result: expiredOnCreation } = await createdAccount.account.pressCallbackButton({
     chat: { type: 'private', botId: createdBot.bot.id },
     message_id: menu.message_id,
     callback_data: 'yes',
@@ -299,7 +299,7 @@ Deno.test('TypeScript client manages all currently implemented session resources
   });
   const keyboardMessageId = (await keyboardResponse.json()).result.message_id;
   const replyInterface = await createdAccount.account.getReplyInterface({ chat });
-  const pressedButtonMessage = await createdAccount.account.pressReplyKeyboardButton({
+  const { result: pressedButtonMessage } = await createdAccount.account.pressReplyKeyboardButton({
     chat,
     text: 'Green',
   });
@@ -321,7 +321,7 @@ Deno.test('TypeScript client manages all currently implemented session resources
     throw new Error('Expected the client to read and press the reply keyboard');
   }
 
-  const editedMessage = await createdAccount.account.editMessage({
+  const { result: editedMessage } = await createdAccount.account.editMessage({
     chat,
     message_id: pressedButtonMessage.message_id,
     text: 'Blue',
@@ -355,19 +355,19 @@ Deno.test('TypeScript client manages all currently implemented session resources
 Deno.test('TypeScript client runs supergroups with members, messages, and buttons', async () => {
   await using emulator = createTestInProcessEmulator();
   const { client } = emulator;
-  const session = await client.createSession();
-  const { token, bot } = await session.createBot({
+  const { result: session } = await client.createSession();
+  const { result: { token, bot } } = await session.createBot({
     first_name: 'Test Bot',
     username: 'test_bot',
     can_read_all_group_messages: true,
   });
-  const { account: owner } = await session.createAccount({ first_name: 'Ada' });
-  const { account: member } = await session.createAccount({
+  const { result: { account: owner } } = await session.createAccount({ first_name: 'Ada' });
+  const { result: { account: member } } = await session.createAccount({
     first_name: 'Grace',
     has_private_forwards: true,
   });
 
-  const supergroup = await owner.createSupergroup({
+  const { result: supergroup } = await owner.createSupergroup({
     title: 'Team',
     username: 'our_team',
     description: 'Our team',
@@ -376,7 +376,7 @@ Deno.test('TypeScript client runs supergroups with members, messages, and button
   await owner.addChatMember({ chat, userId: member.id });
   await owner.addChatMember({ chat, userId: bot.id });
   await owner.addChatMember({ chat, userId: bot.id });
-  const greeting = await member.sendMessage({ to: chat, text: 'Hello team' });
+  const { result: greeting } = await member.sendMessage({ to: chat, text: 'Hello team' });
   if (
     !bot.can_read_all_group_messages || supergroup.type !== 'supergroup' ||
     supergroup.title !== 'Team' || supergroup.username !== 'our_team' ||
@@ -408,14 +408,14 @@ Deno.test('TypeScript client runs supergroups with members, messages, and button
   if (menuResponse.status !== 200) {
     throw new Error(`Expected the bot to write to the supergroup, received ${menuResponse.status}`);
   }
-  const edited = await member.editMessage({
+  const { result: edited } = await member.editMessage({
     chat,
     message_id: greeting.message_id,
     text: 'Hello everyone',
   });
   const history = await owner.getMessages({ chat });
   const menu = history[3];
-  const callbackQuery = await owner.pressCallbackButton({
+  const { result: callbackQuery } = await owner.pressCallbackButton({
     chat,
     message_id: menu.message_id,
     callback_data: 'yes',
@@ -472,7 +472,7 @@ Deno.test('TypeScript client runs supergroups with members, messages, and button
     );
   }
 
-  const forward = await owner.forwardMessage({
+  const { result: forward } = await owner.forwardMessage({
     from: chat,
     message_id: greeting.message_id,
     to: { type: 'private', botId: bot.id },
@@ -579,7 +579,7 @@ Deno.test('TypeScript client runs supergroups with members, messages, and button
     }),
   });
   const shownKeyboard = await member.getReplyInterface({ chat });
-  const keyboardPress = await member.pressReplyKeyboardButton({ chat, text: 'Yes' });
+  const { result: keyboardPress } = await member.pressReplyKeyboardButton({ chat, text: 'Yes' });
   if (
     keyboardResponse.status !== 200 || shownKeyboard?.type !== 'keyboard' ||
     keyboardPress.chat.id !== supergroup.id ||
@@ -607,7 +607,7 @@ Deno.test('TypeScript client runs supergroups with members, messages, and button
     );
   }
 
-  const { account: stranger } = await session.createAccount({ first_name: 'Linus' });
+  const { result: { account: stranger } } = await session.createAccount({ first_name: 'Linus' });
   try {
     await stranger.getMessages({ chat });
   } catch (error) {
@@ -623,10 +623,10 @@ Deno.test('TypeScript client runs supergroups with members, messages, and button
 Deno.test('TypeScript client restricts members and changes what members may do by default', async () => {
   await using emulator = createTestInProcessEmulator();
   const { client } = emulator;
-  const session = await client.createSession();
-  const { account: owner } = await session.createAccount({ first_name: 'Ada' });
-  const { account: member } = await session.createAccount({ first_name: 'Grace' });
-  const supergroup = await owner.createSupergroup({ title: 'Team' });
+  const { result: session } = await client.createSession();
+  const { result: { account: owner } } = await session.createAccount({ first_name: 'Ada' });
+  const { result: { account: member } } = await session.createAccount({ first_name: 'Grace' });
+  const { result: supergroup } = await owner.createSupergroup({ title: 'Team' });
   const chat = { type: 'supergroup', chatId: supergroup.id } as const;
   await owner.addChatMember({ chat, userId: member.id });
   const sendText = async () => {
@@ -657,7 +657,7 @@ Deno.test('TypeScript client restricts members and changes what members may do b
     untilDate: Math.floor(Date.now() / 1_000) + 3_600,
   });
   const whileMuted = await sendText();
-  const statusAfterExpiry = await session.expireChatMemberRestriction({
+  const { result: statusAfterExpiry } = await session.expireChatMemberRestriction({
     chatId: supergroup.id,
     userId: member.id,
   });
@@ -683,12 +683,12 @@ Deno.test('TypeScript client restricts members and changes what members may do b
 Deno.test('TypeScript client lets administrator accounts promote and restrict within their rights', async () => {
   await using emulator = createTestInProcessEmulator();
   const { client } = emulator;
-  const session = await client.createSession();
-  const { account: owner } = await session.createAccount({ first_name: 'Ada' });
-  const { account: grace } = await session.createAccount({ first_name: 'Grace' });
-  const { account: hopper } = await session.createAccount({ first_name: 'Hopper' });
-  const { account: linus } = await session.createAccount({ first_name: 'Linus' });
-  const supergroup = await owner.createSupergroup({ title: 'Team' });
+  const { result: session } = await client.createSession();
+  const { result: { account: owner } } = await session.createAccount({ first_name: 'Ada' });
+  const { result: { account: grace } } = await session.createAccount({ first_name: 'Grace' });
+  const { result: { account: hopper } } = await session.createAccount({ first_name: 'Hopper' });
+  const { result: { account: linus } } = await session.createAccount({ first_name: 'Linus' });
+  const { result: supergroup } = await owner.createSupergroup({ title: 'Team' });
   const chat = { type: 'supergroup', chatId: supergroup.id } as const;
   for (const userId of [grace.id, hopper.id, linus.id]) {
     await owner.addChatMember({ chat, userId });
@@ -698,7 +698,7 @@ Deno.test('TypeScript client lets administrator accounts promote and restrict wi
     userId: grace.id,
     rights: { can_promote_members: true, can_restrict_members: true },
   });
-  const statusOf = async (attempt: () => Promise<void>) => {
+  const statusOf = async (attempt: () => Promise<unknown>) => {
     try {
       await attempt();
       return 204;
@@ -756,16 +756,19 @@ Deno.test('TypeScript client lets administrator accounts promote and restrict wi
 Deno.test('TypeScript client joins supergroups through invite links and by username', async () => {
   await using emulator = createTestInProcessEmulator();
   const { client } = emulator;
-  const session = await client.createSession();
-  const { bot, token } = await session.createBot({
+  const { result: session } = await client.createSession();
+  const { result: { bot, token } } = await session.createBot({
     first_name: 'Inviter',
     username: 'inviter_bot',
   });
-  const { account: owner } = await session.createAccount({ first_name: 'Ada' });
-  const { account: grace } = await session.createAccount({ first_name: 'Grace' });
-  const { account: hopper } = await session.createAccount({ first_name: 'Hopper' });
-  const supergroup = await owner.createSupergroup({ title: 'Team' });
-  const commons = await owner.createSupergroup({ title: 'Commons', username: 'commons' });
+  const { result: { account: owner } } = await session.createAccount({ first_name: 'Ada' });
+  const { result: { account: grace } } = await session.createAccount({ first_name: 'Grace' });
+  const { result: { account: hopper } } = await session.createAccount({ first_name: 'Hopper' });
+  const { result: supergroup } = await owner.createSupergroup({ title: 'Team' });
+  const { result: commons } = await owner.createSupergroup({
+    title: 'Commons',
+    username: 'commons',
+  });
   const chat = { type: 'supergroup', chatId: supergroup.id } as const;
   await owner.addChatMember({ chat, userId: bot.id });
   await owner.promoteChatMember({ chat, userId: bot.id, rights: { can_invite_users: true } });
@@ -785,8 +788,11 @@ Deno.test('TypeScript client joins supergroups through invite links and by usern
     result: { invite_link: string };
   };
 
-  const joining = await grace.joinChatByInviteLink({ inviteLink });
-  const expiredLink = await session.expireChatInviteLink({ chatId: supergroup.id, inviteLink });
+  const { result: joining } = await grace.joinChatByInviteLink({ inviteLink });
+  const { result: expiredLink } = await session.expireChatInviteLink({
+    chatId: supergroup.id,
+    inviteLink,
+  });
   let refusal: unknown;
   try {
     await hopper.joinChatByInviteLink({ inviteLink });
@@ -826,14 +832,14 @@ Deno.test('TypeScript client joins supergroups through invite links and by usern
 Deno.test('TypeScript client requests to join through a link and lists pending requests', async () => {
   await using emulator = createTestInProcessEmulator();
   const { client } = emulator;
-  const session = await client.createSession();
-  const { bot, token } = await session.createBot({
+  const { result: session } = await client.createSession();
+  const { result: { bot, token } } = await session.createBot({
     first_name: 'Inviter',
     username: 'inviter_bot',
   });
-  const { account: owner } = await session.createAccount({ first_name: 'Ada' });
-  const { account: grace } = await session.createAccount({ first_name: 'Grace' });
-  const supergroup = await owner.createSupergroup({ title: 'Team' });
+  const { result: { account: owner } } = await session.createAccount({ first_name: 'Ada' });
+  const { result: { account: grace } } = await session.createAccount({ first_name: 'Grace' });
+  const { result: supergroup } = await owner.createSupergroup({ title: 'Team' });
   const chat = { type: 'supergroup', chatId: supergroup.id } as const;
   await owner.addChatMember({ chat, userId: bot.id });
   await owner.promoteChatMember({ chat, userId: bot.id, rights: { can_invite_users: true } });
@@ -849,7 +855,7 @@ Deno.test('TypeScript client requests to join through a link and lists pending r
     result: { invite_link: string };
   };
 
-  const request = await grace.joinChatByInviteLink({ inviteLink });
+  const { result: request } = await grace.joinChatByInviteLink({ inviteLink });
   const pendingRequests = await owner.getChatJoinRequests({ chat });
   const [link] = await owner.getChatInviteLinks({ chat });
 
@@ -869,16 +875,16 @@ Deno.test('TypeScript client requests to join through a link and lists pending r
 Deno.test('TypeScript client approves and declines join requests as an administrator account', async () => {
   await using emulator = createTestInProcessEmulator();
   const { client } = emulator;
-  const session = await client.createSession();
-  const { bot, token } = await session.createBot({
+  const { result: session } = await client.createSession();
+  const { result: { bot, token } } = await session.createBot({
     first_name: 'Inviter',
     username: 'inviter_bot',
   });
-  const { account: owner } = await session.createAccount({ first_name: 'Ada' });
-  const { account: kay } = await session.createAccount({ first_name: 'Kay' });
-  const { account: grace } = await session.createAccount({ first_name: 'Grace' });
-  const { account: hopper } = await session.createAccount({ first_name: 'Hopper' });
-  const supergroup = await owner.createSupergroup({ title: 'Team' });
+  const { result: { account: owner } } = await session.createAccount({ first_name: 'Ada' });
+  const { result: { account: kay } } = await session.createAccount({ first_name: 'Kay' });
+  const { result: { account: grace } } = await session.createAccount({ first_name: 'Grace' });
+  const { result: { account: hopper } } = await session.createAccount({ first_name: 'Hopper' });
+  const { result: supergroup } = await owner.createSupergroup({ title: 'Team' });
   const chat = { type: 'supergroup', chatId: supergroup.id } as const;
   await owner.addChatMember({ chat, userId: bot.id });
   await owner.promoteChatMember({ chat, userId: bot.id, rights: { can_invite_users: true } });
@@ -897,7 +903,7 @@ Deno.test('TypeScript client approves and declines join requests as an administr
   };
   await grace.joinChatByInviteLink({ inviteLink });
   await hopper.joinChatByInviteLink({ inviteLink });
-  const refusalStatus = async (decision: Promise<void>) => {
+  const refusalStatus = async (decision: Promise<unknown>) => {
     try {
       await decision;
       return 'decided';
@@ -928,16 +934,16 @@ Deno.test('TypeScript client approves and declines join requests as an administr
 Deno.test('TypeScript client follows an invite link through its edits and revocation', async () => {
   await using emulator = createTestInProcessEmulator();
   const { client } = emulator;
-  const session = await client.createSession();
-  const { bot, token } = await session.createBot({
+  const { result: session } = await client.createSession();
+  const { result: { bot, token } } = await session.createBot({
     first_name: 'Inviter',
     username: 'inviter_bot',
   });
-  const { account: owner } = await session.createAccount({ first_name: 'Ada' });
-  const { account: grace } = await session.createAccount({ first_name: 'Grace' });
-  const { account: hopper } = await session.createAccount({ first_name: 'Hopper' });
-  const { account: linus } = await session.createAccount({ first_name: 'Linus' });
-  const supergroup = await owner.createSupergroup({ title: 'Team' });
+  const { result: { account: owner } } = await session.createAccount({ first_name: 'Ada' });
+  const { result: { account: grace } } = await session.createAccount({ first_name: 'Grace' });
+  const { result: { account: hopper } } = await session.createAccount({ first_name: 'Hopper' });
+  const { result: { account: linus } } = await session.createAccount({ first_name: 'Linus' });
+  const { result: supergroup } = await owner.createSupergroup({ title: 'Team' });
   const chat = { type: 'supergroup', chatId: supergroup.id } as const;
   await owner.addChatMember({ chat, userId: bot.id });
   await owner.promoteChatMember({ chat, userId: bot.id, rights: { can_invite_users: true } });
@@ -949,7 +955,7 @@ Deno.test('TypeScript client follows an invite link through its edits and revoca
     })).json() as { ok: boolean; result?: { invite_link: string; is_revoked: boolean } };
   const joinStatus = async (account: typeof grace, inviteLink: string) => {
     try {
-      return (await account.joinChatByInviteLink({ inviteLink })).outcome;
+      return (await account.joinChatByInviteLink({ inviteLink })).result.outcome;
     } catch (error) {
       return error instanceof EmulationClientError ? error.status : error;
     }
@@ -1018,14 +1024,14 @@ Deno.test('TypeScript client follows an invite link through its edits and revoca
 Deno.test('TypeScript client shows and expires the contact of a pending join request', async () => {
   await using emulator = createTestInProcessEmulator();
   const { client } = emulator;
-  const session = await client.createSession();
-  const { bot, token } = await session.createBot({
+  const { result: session } = await client.createSession();
+  const { result: { bot, token } } = await session.createBot({
     first_name: 'Gatekeeper',
     username: 'gatekeeper_bot',
   });
-  const { account: owner } = await session.createAccount({ first_name: 'Ada' });
-  const { account: grace } = await session.createAccount({ first_name: 'Grace' });
-  const supergroup = await owner.createSupergroup({ title: 'Team' });
+  const { result: { account: owner } } = await session.createAccount({ first_name: 'Ada' });
+  const { result: { account: grace } } = await session.createAccount({ first_name: 'Grace' });
+  const { result: supergroup } = await owner.createSupergroup({ title: 'Team' });
   const chat = { type: 'supergroup', chatId: supergroup.id } as const;
   await owner.addChatMember({ chat, userId: bot.id });
   await owner.promoteChatMember({ chat, userId: bot.id, rights: { can_invite_users: true } });
@@ -1051,7 +1057,7 @@ Deno.test('TypeScript client shows and expires the contact of a pending join req
   const promptStatus = await callBot('sendMessage', { chat_id: grace.id, text: 'Solve 2 + 2' });
   const [claimedRequest] = await owner.getChatJoinRequests({ chat });
   const prompts = await grace.getMessages({ chat: { type: 'private', botId: bot.id } });
-  const expiredRequest = await session.expireJoinRequesterContact({
+  const { result: expiredRequest } = await session.expireJoinRequesterContact({
     chatId: supergroup.id,
     userId: grace.id,
   });
@@ -1088,9 +1094,9 @@ Deno.test('TypeScript client shows and expires the contact of a pending join req
 Deno.test('TypeScript client changes a supergroup title and reads its service message', async () => {
   await using emulator = createTestInProcessEmulator();
   const { client } = emulator;
-  const session = await client.createSession();
-  const { account: owner } = await session.createAccount({ first_name: 'Ada' });
-  const supergroup = await owner.createSupergroup({ title: 'Team' });
+  const { result: session } = await client.createSession();
+  const { result: { account: owner } } = await session.createAccount({ first_name: 'Ada' });
+  const { result: supergroup } = await owner.createSupergroup({ title: 'Team' });
   const chat = { type: 'supergroup', chatId: supergroup.id } as const;
 
   await owner.changeSupergroupTitle({ chat, title: '  Team\n news ' });
@@ -1113,12 +1119,15 @@ Deno.test('TypeScript client changes a supergroup title and reads its service me
 Deno.test('TypeScript client pins and unpins messages and reads the pinned ones', async () => {
   await using emulator = createTestInProcessEmulator();
   const { client } = emulator;
-  const session = await client.createSession();
-  const { bot } = await session.createBot({ first_name: 'Test Bot', username: 'test_bot' });
-  const { account } = await session.createAccount({ first_name: 'Ada' });
+  const { result: session } = await client.createSession();
+  const { result: { bot } } = await session.createBot({
+    first_name: 'Test Bot',
+    username: 'test_bot',
+  });
+  const { result: { account } } = await session.createAccount({ first_name: 'Ada' });
   const chat = { type: 'private', botId: bot.id } as const;
-  const first = await account.sendMessage({ to: chat, text: 'first' });
-  const second = await account.sendMessage({ to: chat, text: 'second' });
+  const { result: first } = await account.sendMessage({ to: chat, text: 'first' });
+  const { result: second } = await account.sendMessage({ to: chat, text: 'second' });
 
   await account.pinMessage({ chat, message_id: second.message_id });
   await account.pinMessage({ chat, message_id: first.message_id });
@@ -1148,7 +1157,7 @@ Deno.test('TypeScript client pins and unpins messages and reads the pinned ones'
   }
   // A reply to the pin's service message shows the pin nested, and nothing once it is deleted,
   // which the client still reads, as it reads the service message's inaccessible pin.
-  const reply = await account.sendMessage({
+  const { result: reply } = await account.sendMessage({
     to: chat,
     text: 'about that pin',
     reply_to_message_id: pinServiceMessage.message_id,
@@ -1183,13 +1192,16 @@ Deno.test('TypeScript client pins and unpins messages and reads the pinned ones'
 Deno.test('TypeScript client sends, edits, and downloads photos and documents', async () => {
   await using emulator = createTestInProcessEmulator();
   const { client } = emulator;
-  const session = await client.createSession();
-  const { token, bot } = await session.createBot({ first_name: 'Test Bot', username: 'test_bot' });
-  const { account } = await session.createAccount({ first_name: 'Ada' });
+  const { result: session } = await client.createSession();
+  const { result: { token, bot } } = await session.createBot({
+    first_name: 'Test Bot',
+    username: 'test_bot',
+  });
+  const { result: { account } } = await session.createAccount({ first_name: 'Ada' });
   const to = { type: 'private', botId: bot.id } as const;
   const image = new Uint8Array([0x47, 0x49, 0x46, 0x38, 0x39, 0x61, 2, 0, 1, 0, 0, 0, 0]);
 
-  const formattedMessage = await account.sendMessage({
+  const { result: formattedMessage } = await account.sendMessage({
     to,
     text: 'Hi me',
     entities: [
@@ -1197,7 +1209,7 @@ Deno.test('TypeScript client sends, edits, and downloads photos and documents', 
       { type: 'text_mention', offset: 3, length: 2, user: { id: account.id } },
     ],
   });
-  const editedFormattedMessage = await account.editMessage({
+  const { result: editedFormattedMessage } = await account.editMessage({
     chat: to,
     message_id: formattedMessage.message_id,
     text: 'Hi you',
@@ -1213,19 +1225,19 @@ Deno.test('TypeScript client sends, edits, and downloads photos and documents', 
     throw new Error('Expected the client to send and edit formatted text');
   }
 
-  const photo = await account.sendPhoto({
+  const { result: photo } = await account.sendPhoto({
     to,
     photo: image,
     caption: 'Receipt',
     caption_entities: [{ type: 'bold', offset: 0, length: 7 }],
   });
-  const document = await account.sendDocument({
+  const { result: document } = await account.sendDocument({
     to,
     document: new TextEncoder().encode('notes'),
     file_name: 'notes.txt',
     reply_to_message_id: photo.message_id,
   });
-  const editedDocument = await account.editMessageCaption({
+  const { result: editedDocument } = await account.editMessageCaption({
     chat: to,
     message_id: document.message_id,
     caption: 'My notes',
@@ -1279,13 +1291,16 @@ Deno.test('TypeScript client sends, edits, and downloads photos and documents', 
 Deno.test('TypeScript client sends videos and voice notes that bots receive and send back', async () => {
   await using emulator = createTestInProcessEmulator();
   const { client } = emulator;
-  const session = await client.createSession();
-  const { token, bot } = await session.createBot({ first_name: 'Test Bot', username: 'test_bot' });
-  const { account } = await session.createAccount({ first_name: 'Ada' });
+  const { result: session } = await client.createSession();
+  const { result: { token, bot } } = await session.createBot({
+    first_name: 'Test Bot',
+    username: 'test_bot',
+  });
+  const { result: { account } } = await session.createAccount({ first_name: 'Ada' });
   const to = { type: 'private', botId: bot.id } as const;
   const content = new TextEncoder().encode('clip');
 
-  const video = await account.sendVideo({
+  const { result: video } = await account.sendVideo({
     to,
     video: content,
     file_name: 'clip.webm',
@@ -1294,12 +1309,12 @@ Deno.test('TypeScript client sends videos and voice notes that bots receive and 
     height: 360,
     caption: 'Clip',
   });
-  const supergroup = await account.createSupergroup({ title: 'Team' });
-  const unnamedVideo = await account.sendVideo({
+  const { result: supergroup } = await account.createSupergroup({ title: 'Team' });
+  const { result: unnamedVideo } = await account.sendVideo({
     to: { type: 'supergroup', chatId: supergroup.id },
     video: content,
   });
-  const editedVideo = await account.editMessageCaption({
+  const { result: editedVideo } = await account.editMessageCaption({
     chat: to,
     message_id: video.message_id,
     caption: 'My clip',
@@ -1343,7 +1358,7 @@ Deno.test('TypeScript client sends videos and voice notes that bots receive and 
     throw new Error(`Expected the bot to send the video back, received ${JSON.stringify(reply)}`);
   }
 
-  const voice = await account.sendVoice({
+  const { result: voice } = await account.sendVoice({
     to,
     voice: new TextEncoder().encode('recording'),
     duration: 5,
@@ -1395,17 +1410,17 @@ Deno.test('TypeScript client sends videos and voice notes that bots receive and 
 Deno.test("TypeScript client sends audio files and albums, and reads the bot's audio and results", async () => {
   await using emulator = createTestInProcessEmulator();
   const { client } = emulator;
-  const session = await client.createSession();
-  const { token, bot } = await session.createBot({
+  const { result: session } = await client.createSession();
+  const { result: { token, bot } } = await session.createBot({
     first_name: 'Music Bot',
     username: 'music_bot',
     supports_inline_queries: true,
   });
-  const { account } = await session.createAccount({ first_name: 'Ada' });
+  const { result: { account } } = await session.createAccount({ first_name: 'Ada' });
   const to = { type: 'private', botId: bot.id } as const;
   const track = new TextEncoder().encode('ID3 track');
 
-  const sent = await account.sendAudio({
+  const { result: sent } = await account.sendAudio({
     to,
     audio: track,
     file_name: 'engines.m4a',
@@ -1414,7 +1429,7 @@ Deno.test("TypeScript client sends audio files and albums, and reads the bot's a
     title: 'Engines',
     caption: 'Listen',
   });
-  const album = await account.sendMediaGroup({
+  const { result: album } = await account.sendMediaGroup({
     to,
     media: [
       { audio: track, title: 'One', caption: 'Side A' },
@@ -1471,7 +1486,11 @@ Deno.test("TypeScript client sends audio files and albums, and reads the bot's a
   }
 
   // An inline audio result lists its title and performer.
-  const inlineQuery = await account.sendInlineQuery({ bot_id: bot.id, chat: to, query: 'music' });
+  const { result: inlineQuery } = await account.sendInlineQuery({
+    bot_id: bot.id,
+    chat: to,
+    query: 'music',
+  });
   await emulator.request(`/sessions/${session.id}/bot-api/bot${token}/answerInlineQuery`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
@@ -1487,7 +1506,7 @@ Deno.test("TypeScript client sends audio files and albums, and reads the bot's a
     }),
   });
   const answeredQuery = await account.getInlineQuery(inlineQuery.id);
-  const chosen = await account.chooseInlineQueryResult({
+  const { result: chosen } = await account.chooseInlineQueryResult({
     inline_query_id: inlineQuery.id,
     result_id: 'again',
   });
@@ -1514,16 +1533,19 @@ function gifHeader(width: number, height: number): Uint8Array<ArrayBuffer> {
 Deno.test('TypeScript client sends albums to private chats and supergroups', async () => {
   await using emulator = createTestInProcessEmulator();
   const { client } = emulator;
-  const session = await client.createSession();
-  const { bot } = await session.createBot({ first_name: 'Test Bot', username: 'test_bot' });
-  const { account } = await session.createAccount({ first_name: 'Ada' });
+  const { result: session } = await client.createSession();
+  const { result: { bot } } = await session.createBot({
+    first_name: 'Test Bot',
+    username: 'test_bot',
+  });
+  const { result: { account } } = await session.createAccount({ first_name: 'Ada' });
   const image = new Uint8Array([0x47, 0x49, 0x46, 0x38, 0x39, 0x61, 2, 0, 1, 0, 0, 0, 0]);
 
-  const greeting = await account.sendMessage({
+  const { result: greeting } = await account.sendMessage({
     to: { type: 'private', botId: bot.id },
     text: 'Hi',
   });
-  const privateAlbum = await account.sendMediaGroup({
+  const { result: privateAlbum } = await account.sendMediaGroup({
     to: { type: 'private', botId: bot.id },
     media: [
       {
@@ -1547,8 +1569,8 @@ Deno.test('TypeScript client sends albums to private chats and supergroups', asy
     throw new Error(`Expected the private album, received ${JSON.stringify(privateAlbum)}`);
   }
 
-  const supergroup = await account.createSupergroup({ title: 'Team' });
-  const mixedAlbum = await account.sendMediaGroup({
+  const { result: supergroup } = await account.createSupergroup({ title: 'Team' });
+  const { result: mixedAlbum } = await account.sendMediaGroup({
     to: { type: 'supergroup', chatId: supergroup.id },
     media: [
       { photo: image },
@@ -1563,7 +1585,7 @@ Deno.test('TypeScript client sends albums to private chats and supergroups', asy
   ) {
     throw new Error(`Expected a photo and video album, received ${JSON.stringify(mixedAlbum)}`);
   }
-  const supergroupAlbum = await account.sendMediaGroup({
+  const { result: supergroupAlbum } = await account.sendMediaGroup({
     to: { type: 'supergroup', chatId: supergroup.id },
     media: [
       { document: new TextEncoder().encode('plan'), file_name: 'plan.txt' },
@@ -1591,9 +1613,12 @@ Deno.test('TypeScript client sends albums to private chats and supergroups', asy
 Deno.test('TypeScript client reads video and voice note blocks of rich messages', async () => {
   await using emulator = createTestInProcessEmulator();
   const { client } = emulator;
-  const session = await client.createSession();
-  const { token, bot } = await session.createBot({ first_name: 'Clip Bot', username: 'clip_bot' });
-  const { account } = await session.createAccount({ first_name: 'Ada' });
+  const { result: session } = await client.createSession();
+  const { result: { token, bot } } = await session.createBot({
+    first_name: 'Clip Bot',
+    username: 'clip_bot',
+  });
+  const { result: { account } } = await session.createAccount({ first_name: 'Ada' });
   const to = { type: 'private', botId: bot.id } as const;
   await account.sendMessage({ to, text: 'Hello' });
 
@@ -1647,9 +1672,12 @@ Deno.test('TypeScript client reads video and voice note blocks of rich messages'
 Deno.test('TypeScript client reads rich messages and presses their buttons', async () => {
   await using emulator = createTestInProcessEmulator();
   const { client } = emulator;
-  const session = await client.createSession();
-  const { token, bot } = await session.createBot({ first_name: 'Test Bot', username: 'test_bot' });
-  const { account } = await session.createAccount({ first_name: 'Ada' });
+  const { result: session } = await client.createSession();
+  const { result: { token, bot } } = await session.createBot({
+    first_name: 'Test Bot',
+    username: 'test_bot',
+  });
+  const { result: { account } } = await session.createAccount({ first_name: 'Ada' });
   const to = { type: 'private', botId: bot.id } as const;
   await account.sendMessage({ to, text: 'Hello' });
 
@@ -1715,7 +1743,7 @@ Deno.test('TypeScript client reads rich messages and presses their buttons', asy
     throw new Error('Expected the client to read the rich message the bot sent');
   }
 
-  const callbackQuery = await account.pressCallbackButton({
+  const { result: callbackQuery } = await account.pressCallbackButton({
     chat: to,
     message_id: sentMessage.message_id,
     callback_data: 'book',
@@ -1724,7 +1752,7 @@ Deno.test('TypeScript client reads rich messages and presses their buttons', asy
     throw new Error('Expected the client to press the rich message button');
   }
 
-  const pressedByLabel = await account.pressButton({
+  const { result: pressedByLabel } = await account.pressButton({
     chat: to,
     message_id: sentMessage.message_id,
     button: { label: 'Book', within: 'Share ✈' },
@@ -1755,12 +1783,15 @@ Deno.test('TypeScript client reads rich messages and presses their buttons', asy
 Deno.test('TypeScript client votes in polls of private chats and supergroups', async () => {
   await using emulator = createTestInProcessEmulator();
   const { client } = emulator;
-  const session = await client.createSession();
-  const { token, bot } = await session.createBot({ first_name: 'Test Bot', username: 'test_bot' });
-  const { account } = await session.createAccount({ first_name: 'Ada' });
+  const { result: session } = await client.createSession();
+  const { result: { token, bot } } = await session.createBot({
+    first_name: 'Test Bot',
+    username: 'test_bot',
+  });
+  const { result: { account } } = await session.createAccount({ first_name: 'Ada' });
   const privateChat = { type: 'private', botId: bot.id } as const;
   await account.sendMessage({ to: privateChat, text: 'Hello' });
-  const supergroup = await account.createSupergroup({ title: 'Team' });
+  const { result: supergroup } = await account.createSupergroup({ title: 'Team' });
   const groupChat = { type: 'supergroup', chatId: supergroup.id } as const;
   await account.addChatMember({ chat: groupChat, userId: bot.id });
   const sendPoll = async (chatId: number, parameters: Record<string, unknown> = {}) => {
@@ -1776,7 +1807,7 @@ Deno.test('TypeScript client votes in polls of private chats and supergroups', a
   };
 
   const privatePollId = await sendPoll(account.id, { options: ['Pizza', 'Pasta'] });
-  const vote = await account.answerPoll({
+  const { result: vote } = await account.answerPoll({
     chat: privateChat,
     message_id: privatePollId,
     option_ids: [1],
@@ -1802,7 +1833,7 @@ Deno.test('TypeScript client votes in polls of private chats and supergroups', a
     options: ['Pizza', 'Pasta'],
     allows_revoting: false,
   });
-  const groupVote = await account.answerPoll({
+  const { result: groupVote } = await account.answerPoll({
     chat: groupChat,
     message_id: groupPollId,
     option_ids: [0],
@@ -1833,7 +1864,7 @@ Deno.test('TypeScript client votes in polls of private chats and supergroups', a
   if (pollId === undefined) {
     throw new Error('Expected the quiz message to show the poll');
   }
-  const expired = await session.expirePoll(pollId);
+  const { result: expired } = await session.expirePoll(pollId);
   if (
     quizMessage?.poll?.open_period !== 60 || quizMessage.poll.correct_option_id !== 0 ||
     !expired.is_closed || expired.explanation !== 'Round' || expired.open_period !== undefined
@@ -1846,18 +1877,18 @@ Deno.test('TypeScript client votes in polls of private chats and supergroups', a
 Deno.test('TypeScript client sends inline queries and results through an inline bot', async () => {
   await using emulator = createTestInProcessEmulator();
   const { client } = emulator;
-  const session = await client.createSession();
-  const { token, bot } = await session.createBot({
+  const { result: session } = await client.createSession();
+  const { result: { token, bot } } = await session.createBot({
     first_name: 'Cats Bot',
     username: 'cats_bot',
     supports_inline_queries: true,
     receives_chosen_inline_results: true,
     requests_inline_location: true,
   });
-  const { account } = await session.createAccount({ first_name: 'Ada' });
-  const supergroup = await account.createSupergroup({ title: 'Team' });
+  const { result: { account } } = await session.createAccount({ first_name: 'Ada' });
+  const { result: supergroup } = await account.createSupergroup({ title: 'Team' });
 
-  const inlineQuery = await account.sendInlineQuery({
+  const { result: inlineQuery } = await account.sendInlineQuery({
     bot_id: bot.id,
     chat: { type: 'supergroup', chatId: supergroup.id },
     query: 'cats',
@@ -1881,7 +1912,7 @@ Deno.test('TypeScript client sends inline queries and results through an inline 
     },
   );
   const answeredQuery = await account.getInlineQuery(inlineQuery.id);
-  const message = await account.chooseInlineQueryResult({
+  const { result: message } = await account.chooseInlineQueryResult({
     inline_query_id: inlineQuery.id,
     result_id: 'fact',
   });
@@ -1902,10 +1933,13 @@ Deno.test('TypeScript client sends inline queries and results through an inline 
 Deno.test('TypeScript client queues rate limit answers for a bot', async () => {
   await using emulator = createTestInProcessEmulator();
   const { client } = emulator;
-  const session = await client.createSession();
-  const createdBot = await session.createBot({ first_name: 'Test Bot', username: 'test_bot' });
+  const { result: session } = await client.createSession();
+  const { result: createdBot } = await session.createBot({
+    first_name: 'Test Bot',
+    username: 'test_bot',
+  });
 
-  const queued = await session.queueRateLimitResponses({
+  const { result: queued } = await session.queueRateLimitResponses({
     bot_id: createdBot.bot.id,
     method: 'getme',
     retry_after: 2,
@@ -1927,7 +1961,7 @@ Deno.test('TypeScript client queues rate limit answers for a bot', async () => {
 Deno.test('TypeScript client reports HTTP failures with request details', async () => {
   await using emulator = createTestInProcessEmulator();
   const { client } = emulator;
-  const session = await client.createSession();
+  const { result: session } = await client.createSession();
   await session.end();
 
   try {
@@ -1971,17 +2005,26 @@ Deno.test('TypeScript client rejects a successful response that violates the con
 Deno.test('TypeScript client shares contacts and locations and answers their requests', async () => {
   await using emulator = createTestInProcessEmulator();
   const { client } = emulator;
-  const session = await client.createSession();
-  const { token, bot } = await session.createBot({ first_name: 'Test Bot', username: 'test_bot' });
-  const { account } = await session.createAccount({ first_name: 'Ada', phone_number: '15550100' });
-  const { account: stranger } = await session.createAccount({ first_name: 'Linus' });
+  const { result: session } = await client.createSession();
+  const { result: { token, bot } } = await session.createBot({
+    first_name: 'Test Bot',
+    username: 'test_bot',
+  });
+  const { result: { account } } = await session.createAccount({
+    first_name: 'Ada',
+    phone_number: '15550100',
+  });
+  const { result: { account: stranger } } = await session.createAccount({ first_name: 'Linus' });
   const to = { type: 'private', botId: bot.id } as const;
 
-  const written = await account.sendContact({
+  const { result: written } = await account.sendContact({
     to,
     contact: { phone_number: '+1 555 0199', first_name: 'Grace', vcard: 'BEGIN:VCARD\nEND:VCARD' },
   });
-  const own = await account.shareOwnContact({ to, reply_to_message_id: written.message_id });
+  const { result: own } = await account.shareOwnContact({
+    to,
+    reply_to_message_id: written.message_id,
+  });
   if (
     JSON.stringify(written.contact) !== JSON.stringify({
         phone_number: '+1 555 0199',
@@ -2015,7 +2058,7 @@ Deno.test('TypeScript client shares contacts and locations and answers their req
   const keyboardMessageId =
     (await keyboard.json() as { result: { message_id: number } }).result.message_id;
   const replyInterface = await account.getReplyInterface({ chat: to });
-  const shared = await account.pressReplyKeyboardButton({ chat: to, text: 'Share' });
+  const { result: shared } = await account.pressReplyKeyboardButton({ chat: to, text: 'Share' });
   if (
     JSON.stringify(replyInterface?.type === 'keyboard' ? replyInterface.keyboard : null) !==
       JSON.stringify([[{ text: 'Share', request_contact: true }]]) ||
@@ -2031,7 +2074,7 @@ Deno.test('TypeScript client shares contacts and locations and answers their req
     throw new Error('Expected the history to end with the shared contact');
   }
 
-  const location = await account.sendLocation({
+  const { result: location } = await account.sendLocation({
     to,
     location: { latitude: 51.5007, longitude: -0.1246, horizontal_accuracy: 7.5 },
   });
@@ -2044,7 +2087,7 @@ Deno.test('TypeScript client shares contacts and locations and answers their req
       reply_markup: { keyboard: [[{ text: 'Here', request_location: true }]] },
     }),
   });
-  const pressedLocation = await account.pressReplyKeyboardButton({
+  const { result: pressedLocation } = await account.pressReplyKeyboardButton({
     chat: to,
     text: 'Here',
     location: { latitude: 48.8584, longitude: 2.2945 },
@@ -2062,7 +2105,7 @@ Deno.test('TypeScript client shares contacts and locations and answers their req
     );
   }
 
-  const supergroup = await account.createSupergroup({ title: 'Team' });
+  const { result: supergroup } = await account.createSupergroup({ title: 'Team' });
   const groupChat = { type: 'supergroup', chatId: supergroup.id } as const;
   await account.addChatMember({ chat: groupChat, userId: bot.id });
   for (const repliedMessageId of [own.message_id, location.message_id]) {
@@ -2104,13 +2147,16 @@ Deno.test('TypeScript client shares contacts and locations and answers their req
 Deno.test('TypeScript client registers web resources that bots send files from', async () => {
   await using emulator = createTestInProcessEmulator();
   const { client, fetch } = emulator;
-  const session = await client.createSession();
-  const { token, bot } = await session.createBot({ first_name: 'Files', username: 'files_bot' });
-  const { account } = await session.createAccount({ first_name: 'Ada' });
+  const { result: session } = await client.createSession();
+  const { result: { token, bot } } = await session.createBot({
+    first_name: 'Files',
+    username: 'files_bot',
+  });
+  const { result: { account } } = await session.createAccount({ first_name: 'Ada' });
   await account.sendMessage({ to: { type: 'private', botId: bot.id }, text: '/start' });
   const content = new TextEncoder().encode('PK\u0003\u0004');
 
-  const resource = await session.registerWebResource({
+  const { result: resource } = await session.registerWebResource({
     url: 'https://files.example.com/Archive.zip',
     content_type: 'application/zip',
     content,

@@ -13,7 +13,7 @@ Deno.test('waitFor, cursors and assertNone match a parameter by its JSON structu
   const { session, bot, account, callBotWithJson, callBotWithForm } = await createFixture();
   const activity = session.botActivity();
   const start = await activity.position();
-  const command = await account.sendMessage({
+  const { result: command } = await account.sendMessage({
     to: { type: 'private', botId: bot.id },
     text: '/help',
   });
@@ -210,9 +210,12 @@ async function assertTypeError(action: () => Promise<unknown>, message: string):
 async function createFixture() {
   const emulator = createTestInProcessEmulator();
   const { fetch } = emulator;
-  const session = await emulator.client.createSession();
-  const { token, bot } = await session.createBot({ first_name: 'Test Bot', username: 'test_bot' });
-  const { account } = await session.createAccount({ first_name: 'Ada' });
+  const { result: session } = await emulator.client.createSession();
+  const { result: { token, bot } } = await session.createBot({
+    first_name: 'Test Bot',
+    username: 'test_bot',
+  });
+  const { result: { account } } = await session.createAccount({ first_name: 'Ada' });
   const methodUrl = (method: string) => `${session.botApiRoot}/bot${token}/${method}`;
 
   /** Calls a Bot API method as the bot, in the account's private chat, with a JSON body. */

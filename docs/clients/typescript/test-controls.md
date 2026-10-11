@@ -48,7 +48,7 @@ Deno.test('the bot retries a reply that Telegram rate-limited', async () => {
       });
     },
   }, async ({ session, botProfile, account, privateChat, activity }) => {
-    const queued = await session.queueRateLimitResponses({
+    const { result: queued } = await session.queueRateLimitResponses({
       bot_id: botProfile.id,
       method: 'sendMessage',
       retry_after: 1,
@@ -56,7 +56,7 @@ Deno.test('the bot retries a reply that Telegram rate-limited', async () => {
     assertEquals(queued, { method: 'sendMessage', retry_after: 1, remaining_count: 1 });
 
     const beforeStart = await activity.position();
-    const trigger = await account.sendMessage({ to: privateChat, text: '/start' });
+    const { result: trigger } = await account.sendMessage({ to: privateChat, text: '/start' });
     const reply = {
       method: 'sendMessage',
       chat_id: account.id,
@@ -164,13 +164,13 @@ import { TelegramEmulationClient } from '../../../clients/typescript/mod.ts';
 import { EMULATOR_URL } from './bot_fixture.ts';
 
 Deno.test('the bot answers a command its webhook failed the first time', async () => {
-  const session = await new TelegramEmulationClient(EMULATOR_URL).createSession();
+  const { result: session } = await new TelegramEmulationClient(EMULATOR_URL).createSession();
   try {
-    const { token, bot: botProfile } = await session.createBot({
+    const { result: { token, bot: botProfile } } = await session.createBot({
       first_name: 'Hook Bot',
       username: 'hook_bot',
     });
-    const { account } = await session.createAccount({ first_name: 'Ada' });
+    const { result: { account } } = await session.createAccount({ first_name: 'Ada' });
     const activity = session.botActivity({ bot_id: botProfile.id });
 
     const bot = new Bot(token, { client: { apiRoot: session.botApiRoot } });
@@ -296,7 +296,7 @@ Deno.test('the bot sends a photo by URL from the emulated web', async () => {
     });
 
     const beforeCommand = await activity.position();
-    const trigger = await account.sendMessage({ to: privateChat, text: '/logo' });
+    const { result: trigger } = await account.sendMessage({ to: privateChat, text: '/logo' });
     await activity.waitFor(
       {
         method: 'sendPhoto',
@@ -344,7 +344,7 @@ Deno.test('a URL without a registered resource is unreachable', async () => {
     },
   }, async ({ account, privateChat, activity }) => {
     const beforeCommand = await activity.position();
-    const trigger = await account.sendMessage({ to: privateChat, text: '/logo' });
+    const { result: trigger } = await account.sendMessage({ to: privateChat, text: '/logo' });
     const repliesToTrigger = { reply_parameters: { message_id: trigger.message_id } };
 
     const failed = await activity.waitFor(
@@ -399,17 +399,17 @@ const CLOUD_UPLOAD_LIMIT_BYTES = 50 * 1024 * 1024;
 const REPORT_SIZE_BYTES = CLOUD_UPLOAD_LIMIT_BYTES + 1;
 
 Deno.test('a bot of a local session uploads a file larger than the cloud allows', async () => {
-  const session = await new TelegramEmulationClient(EMULATOR_URL).createSession({
+  const { result: session } = await new TelegramEmulationClient(EMULATOR_URL).createSession({
     upload_profile: 'local',
   });
   try {
     assertEquals(session.uploadProfile, 'local');
-    const { token, bot: botProfile } = await session.createBot({
+    const { result: { token, bot: botProfile } } = await session.createBot({
       first_name: 'Report Bot',
       username: 'report_bot',
     });
     assertEquals((await session.getMe(token)).id, botProfile.id);
-    const { account } = await session.createAccount({ first_name: 'Ada' });
+    const { result: { account } } = await session.createAccount({ first_name: 'Ada' });
     const privateChat = { type: 'private', botId: botProfile.id } as const;
     const activity = session.botActivity({ bot_id: botProfile.id });
 
@@ -426,7 +426,7 @@ Deno.test('a bot of a local session uploads a file larger than the cloud allows'
     polling.catch(() => {});
     try {
       const beforeCommand = await activity.position();
-      const trigger = await account.sendMessage({ to: privateChat, text: '/report' });
+      const { result: trigger } = await account.sendMessage({ to: privateChat, text: '/report' });
       await activity.waitFor(
         {
           method: 'sendDocument',

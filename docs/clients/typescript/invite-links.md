@@ -40,7 +40,7 @@ Deno.test('the bot creates an invite link that another account joins through', a
       });
     },
   }, async ({ session, botProfile, account, activity }) => {
-    const supergroup = await account.createSupergroup({ title: 'Book club' });
+    const { result: supergroup } = await account.createSupergroup({ title: 'Book club' });
     const groupChat = { type: 'supergroup', chatId: supergroup.id } as const;
     await account.addChatMember({ chat: groupChat, userId: botProfile.id });
 
@@ -69,9 +69,11 @@ Deno.test('the bot creates an invite link that another account joins through', a
     assertEquals(ownerView.invite_link, createdLink.invite_link);
     assertEquals(ownerView.name, 'Friends');
 
-    const { account: friend } = await session.createAccount({ first_name: 'Grace' });
+    const { result: { account: friend } } = await session.createAccount({ first_name: 'Grace' });
     const beforeJoin = await activity.position();
-    const join = await friend.joinChatByInviteLink({ inviteLink: createdLink.invite_link });
+    const { result: join } = await friend.joinChatByInviteLink({
+      inviteLink: createdLink.invite_link,
+    });
     assertEquals(join, { chat_id: supergroup.id, outcome: 'joined' });
 
     // The bot receives Grace's join as her own message with new_chat_members.
@@ -113,7 +115,7 @@ Deno.test('an account that uses a request link waits outside the supergroup', as
       });
     },
   }, async ({ session, botProfile, account, activity }) => {
-    const supergroup = await account.createSupergroup({ title: 'Book club' });
+    const { result: supergroup } = await account.createSupergroup({ title: 'Book club' });
     const groupChat = { type: 'supergroup', chatId: supergroup.id } as const;
     await account.addChatMember({ chat: groupChat, userId: botProfile.id });
     const beforePromotion = await activity.position();
@@ -129,9 +131,9 @@ Deno.test('an account that uses a request link waits outside the supergroup', as
     assert(created.answer.ok);
     const { invite_link: inviteLink } = created.answer.result as ChatInviteLink;
 
-    const { account: friend } = await session.createAccount({ first_name: 'Grace' });
+    const { result: { account: friend } } = await session.createAccount({ first_name: 'Grace' });
     const beforeRequest = await activity.position();
-    const { outcome } = await friend.joinChatByInviteLink({ inviteLink });
+    const { result: { outcome } } = await friend.joinChatByInviteLink({ inviteLink });
     assertEquals(outcome, 'join_request_sent');
 
     const delivered = await activity.waitFor(
@@ -181,7 +183,7 @@ Deno.test('the bot approves requesters with a username and declines the others',
       });
     },
   }, async ({ session, botProfile, account, activity }) => {
-    const supergroup = await account.createSupergroup({ title: 'Book club' });
+    const { result: supergroup } = await account.createSupergroup({ title: 'Book club' });
     const groupChat = { type: 'supergroup', chatId: supergroup.id } as const;
     await account.addChatMember({ chat: groupChat, userId: botProfile.id });
     const beforePromotion = await activity.position();
@@ -197,11 +199,11 @@ Deno.test('the bot approves requesters with a username and declines the others',
     assert(created.answer.ok);
     const { invite_link: inviteLink } = created.answer.result as ChatInviteLink;
 
-    const { account: grace } = await session.createAccount({
+    const { result: { account: grace } } = await session.createAccount({
       first_name: 'Grace',
       username: 'grace',
     });
-    const { account: mallory } = await session.createAccount({ first_name: 'Mallory' });
+    const { result: { account: mallory } } = await session.createAccount({ first_name: 'Mallory' });
 
     const beforeRequests = await activity.position();
     await grace.joinChatByInviteLink({ inviteLink });
@@ -273,7 +275,7 @@ Deno.test('the bot asks a requester to prove it is human before approving it', a
       });
     },
   }, async ({ session, botProfile, account, activity }) => {
-    const supergroup = await account.createSupergroup({ title: 'Book club' });
+    const { result: supergroup } = await account.createSupergroup({ title: 'Book club' });
     const groupChat = { type: 'supergroup', chatId: supergroup.id } as const;
     await account.addChatMember({ chat: groupChat, userId: botProfile.id });
     const beforePromotion = await activity.position();
@@ -289,7 +291,7 @@ Deno.test('the bot asks a requester to prove it is human before approving it', a
     assert(created.answer.ok);
     const { invite_link: inviteLink } = created.answer.result as ChatInviteLink;
 
-    const { account: grace } = await session.createAccount({ first_name: 'Grace' });
+    const { result: { account: grace } } = await session.createAccount({ first_name: 'Grace' });
     const beforeRequest = await activity.position();
     await grace.joinChatByInviteLink({ inviteLink });
     await activity.waitFor(
@@ -365,7 +367,7 @@ Deno.test('the owner approves a requester before the bot does', async () => {
       });
     },
   }, async ({ session, botProfile, account, activity }) => {
-    const supergroup = await account.createSupergroup({ title: 'Book club' });
+    const { result: supergroup } = await account.createSupergroup({ title: 'Book club' });
     const groupChat = { type: 'supergroup', chatId: supergroup.id } as const;
     await account.addChatMember({ chat: groupChat, userId: botProfile.id });
     const beforePromotion = await activity.position();
@@ -381,7 +383,7 @@ Deno.test('the owner approves a requester before the bot does', async () => {
     assert(created.answer.ok);
     const { invite_link: inviteLink } = created.answer.result as ChatInviteLink;
 
-    const { account: grace } = await session.createAccount({ first_name: 'Grace' });
+    const { result: { account: grace } } = await session.createAccount({ first_name: 'Grace' });
     const beforeRequest = await activity.position();
     await grace.joinChatByInviteLink({ inviteLink });
     await activity.waitFor(
@@ -436,7 +438,7 @@ Deno.test('a link with a member limit admits one member at a time', async () => 
       });
     },
   }, async ({ session, botProfile, account, activity }) => {
-    const supergroup = await account.createSupergroup({ title: 'Book club' });
+    const { result: supergroup } = await account.createSupergroup({ title: 'Book club' });
     const groupChat = { type: 'supergroup', chatId: supergroup.id } as const;
     await account.addChatMember({ chat: groupChat, userId: botProfile.id });
     const beforePromotion = await activity.position();
@@ -452,8 +454,8 @@ Deno.test('a link with a member limit admits one member at a time', async () => 
     assert(created.answer.ok);
     const { invite_link: inviteLink } = created.answer.result as ChatInviteLink;
 
-    const { account: grace } = await session.createAccount({ first_name: 'Grace' });
-    const { account: heidi } = await session.createAccount({ first_name: 'Heidi' });
+    const { result: { account: grace } } = await session.createAccount({ first_name: 'Grace' });
+    const { result: { account: heidi } } = await session.createAccount({ first_name: 'Heidi' });
     await grace.joinChatByInviteLink({ inviteLink });
 
     // Grace holds the link's only place, so it refuses Heidi.
@@ -464,7 +466,7 @@ Deno.test('a link with a member limit admits one member at a time', async () => 
     assertEquals(refusal.status, 410);
 
     await grace.leaveChat({ chat: groupChat });
-    const { outcome } = await heidi.joinChatByInviteLink({ inviteLink });
+    const { result: { outcome } } = await heidi.joinChatByInviteLink({ inviteLink });
     assertEquals(outcome, 'joined');
   });
 });
@@ -497,7 +499,7 @@ Deno.test('a link stops admitting users once the test makes its expiry date arri
       });
     },
   }, async ({ session, botProfile, account, activity }) => {
-    const supergroup = await account.createSupergroup({ title: 'Book club' });
+    const { result: supergroup } = await account.createSupergroup({ title: 'Book club' });
     const groupChat = { type: 'supergroup', chatId: supergroup.id } as const;
     await account.addChatMember({ chat: groupChat, userId: botProfile.id });
     const beforePromotion = await activity.position();
@@ -513,14 +515,17 @@ Deno.test('a link stops admitting users once the test makes its expiry date arri
     assert(created.answer.ok);
     const { invite_link: inviteLink } = created.answer.result as ChatInviteLink;
 
-    const { account: grace } = await session.createAccount({ first_name: 'Grace' });
+    const { result: { account: grace } } = await session.createAccount({ first_name: 'Grace' });
     await grace.joinChatByInviteLink({ inviteLink });
 
-    const expired = await session.expireChatInviteLink({ chatId: supergroup.id, inviteLink });
+    const { result: expired } = await session.expireChatInviteLink({
+      chatId: supergroup.id,
+      inviteLink,
+    });
     assertEquals(expired.is_expired, true);
     assertEquals(expired.member_count, 1);
 
-    const { account: heidi } = await session.createAccount({ first_name: 'Heidi' });
+    const { result: { account: heidi } } = await session.createAccount({ first_name: 'Heidi' });
     const refusal = await assertRejects(
       () => heidi.joinChatByInviteLink({ inviteLink }),
       EmulationClientError,
@@ -572,7 +577,7 @@ Deno.test('the bot switches its link to approval, then revokes it', async () => 
       });
     },
   }, async ({ session, botProfile, account, activity }) => {
-    const supergroup = await account.createSupergroup({ title: 'Book club' });
+    const { result: supergroup } = await account.createSupergroup({ title: 'Book club' });
     const groupChat = { type: 'supergroup', chatId: supergroup.id } as const;
     await account.addChatMember({ chat: groupChat, userId: botProfile.id });
     const beforePromotion = await activity.position();
@@ -588,8 +593,8 @@ Deno.test('the bot switches its link to approval, then revokes it', async () => 
     assert(created.answer.ok);
     const link = (created.answer.result as ChatInviteLink).invite_link;
 
-    const { account: grace } = await session.createAccount({ first_name: 'Grace' });
-    assertEquals((await grace.joinChatByInviteLink({ inviteLink: link })).outcome, 'joined');
+    const { result: { account: grace } } = await session.createAccount({ first_name: 'Grace' });
+    assertEquals((await grace.joinChatByInviteLink({ inviteLink: link })).result.outcome, 'joined');
 
     const beforeEdit = await activity.position();
     await account.sendMessage({ to: groupChat, text: '/approval@test_bot' });
@@ -597,8 +602,8 @@ Deno.test('the bot switches its link to approval, then revokes it', async () => 
       { method: 'editChatInviteLink', chat_id: supergroup.id, ok: true },
       { after: beforeEdit },
     );
-    const { account: heidi } = await session.createAccount({ first_name: 'Heidi' });
-    const request = await heidi.joinChatByInviteLink({ inviteLink: link });
+    const { result: { account: heidi } } = await session.createAccount({ first_name: 'Heidi' });
+    const { result: request } = await heidi.joinChatByInviteLink({ inviteLink: link });
     assertEquals(request.outcome, 'join_request_sent');
 
     const beforeRevocation = await activity.position();
@@ -610,7 +615,7 @@ Deno.test('the bot switches its link to approval, then revokes it', async () => 
     assert(revocation.answer.ok);
     assertEquals((revocation.answer.result as ChatInviteLink).is_revoked, true);
 
-    const { account: ivan } = await session.createAccount({ first_name: 'Ivan' });
+    const { result: { account: ivan } } = await session.createAccount({ first_name: 'Ivan' });
     const refusal = await assertRejects(
       () => ivan.joinChatByInviteLink({ inviteLink: link }),
       EmulationClientError,
@@ -663,7 +668,7 @@ Deno.test('the bot publishes its primary link, then replaces it', async () => {
       });
     },
   }, async ({ session, botProfile, account, activity }) => {
-    const supergroup = await account.createSupergroup({ title: 'Book club' });
+    const { result: supergroup } = await account.createSupergroup({ title: 'Book club' });
     const groupChat = { type: 'supergroup', chatId: supergroup.id } as const;
     await account.addChatMember({ chat: groupChat, userId: botProfile.id });
     await account.promoteChatMember({
@@ -683,18 +688,21 @@ Deno.test('the bot publishes its primary link, then replaces it', async () => {
     };
 
     const firstLink = await askBot('link');
-    const { account: grace } = await session.createAccount({ first_name: 'Grace' });
+    const { result: { account: grace } } = await session.createAccount({ first_name: 'Grace' });
     await grace.joinChatByInviteLink({ inviteLink: firstLink });
 
     const secondLink = await askBot('newlink');
     assertNotEquals(secondLink, firstLink);
-    const { account: heidi } = await session.createAccount({ first_name: 'Heidi' });
+    const { result: { account: heidi } } = await session.createAccount({ first_name: 'Heidi' });
     const refusal = await assertRejects(
       () => heidi.joinChatByInviteLink({ inviteLink: firstLink }),
       EmulationClientError,
     );
     assertEquals(refusal.status, 410);
-    assertEquals((await heidi.joinChatByInviteLink({ inviteLink: secondLink })).outcome, 'joined');
+    assertEquals(
+      (await heidi.joinChatByInviteLink({ inviteLink: secondLink })).result.outcome,
+      'joined',
+    );
 
     // Grace stays a member of the replaced link, which the owner sees revoked.
     const ownerView = await account.getChatInviteLinks({ chat: groupChat });

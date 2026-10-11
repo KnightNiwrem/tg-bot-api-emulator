@@ -10,6 +10,12 @@ exact contract. The inputs and results of an operation declared in
 [`control_contracts/`](../../../control_contracts/) are inferred from its contract, whose field
 comments document them.
 
+Every action resolves to `{ result, receipt }`: what the tables and guide pages say it returns is
+its `result`, and its `receipt` is the
+[action receipt](observing-bot-behavior.md#positions-and-waits) that a wait can start after. An
+action without a result, such as `deleteMessage` or `addChatMember`, resolves to its receipt alone.
+Reads, such as `getMessages`, resolve to what they read, and ending a session resolves to nothing.
+
 ## Client and session
 
 | Operation                                        | Purpose                                                           | Guide                                                       |
@@ -44,7 +50,7 @@ comments document them.
 | Operation                                           | Purpose                                             | Guide                                               |
 | --------------------------------------------------- | --------------------------------------------------- | --------------------------------------------------- |
 | `session.botActivity(filter?, options?)`            | A view of the log of bot calls and updates          | [Observing bot behavior](observing-bot-behavior.md) |
-| `activity.position()`                               | The latest position, taken before acting            | [Observing bot behavior](observing-bot-behavior.md) |
+| `activity.position()`                               | The latest position, at any moment                  | [Observing bot behavior](observing-bot-behavior.md) |
 | `activity.waitFor(filter, { after })`               | Waits for the first matching entry after a position | [Observing bot behavior](observing-bot-behavior.md) |
 | `activity.assertNone(filter, { after, before })`    | Checks that a recorded range has no matching entry  | [Observing bot behavior](observing-bot-behavior.md) |
 | `activity.cursor({ after })`, `cursor.next(filter)` | Waits for a sequence of entries in order            | [Observing bot behavior](observing-bot-behavior.md) |

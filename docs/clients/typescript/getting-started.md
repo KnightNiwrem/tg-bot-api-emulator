@@ -31,13 +31,13 @@ import { TelegramEmulationClient } from '../../../clients/typescript/mod.ts';
 
 Deno.test('the bot greets an account that sends /start', async () => {
   const emulator = new TelegramEmulationClient('http://localhost:8081');
-  const session = await emulator.createSession();
+  const { result: session } = await emulator.createSession();
   try {
-    const { token, bot: botProfile } = await session.createBot({
+    const { result: { token, bot: botProfile } } = await session.createBot({
       first_name: 'Greeter',
       username: 'greeter_bot',
     });
-    const { account } = await session.createAccount({ first_name: 'Ada' });
+    const { result: { account } } = await session.createAccount({ first_name: 'Ada' });
 
     // The bot under test: ordinary grammY code, pointed at the session's Bot API root.
     const bot = new Bot(token, { client: { apiRoot: session.botApiRoot } });
@@ -53,8 +53,7 @@ Deno.test('the bot greets an account that sends /start', async () => {
       const activity = session.botActivity({ bot_id: botProfile.id });
       const chat = { type: 'private', botId: botProfile.id } as const;
 
-      const beforeStart = await activity.position();
-      const command = await account.sendMessage({ to: chat, text: '/start' });
+      const { result: command, receipt } = await account.sendMessage({ to: chat, text: '/start' });
 
       await activity.waitFor(
         {
@@ -63,7 +62,7 @@ Deno.test('the bot greets an account that sends /start', async () => {
           ok: true,
           parameters_json: { reply_parameters: { message_id: command.message_id } },
         },
-        { after: beforeStart },
+        { after: receipt },
       );
       const greeting = (await account.getMessages({ chat })).find(({ from, reply_to_message }) =>
         from.id === botProfile.id && reply_to_message?.message_id === command.message_id
@@ -94,21 +93,21 @@ variables when it loads, so it also needs `--allow-env`.
 
 1. **Creates a session.** A session is an isolated Telegram: its bots, accounts, chats and messages
    exist only inside it, and `session.end()` discards them. Every test gets its own.
-2. **Registers a bot and an account.** `createBot` returns the bot's token and its profile;
-   `createAccount` returns a client that acts as a Telegram user.
+2. **Registers a bot and an account.** Every action of the client resolves to its `result` and its
+   `receipt`. `createBot`'s result is the bot's token and its profile; `createAccount`'s is a client
+   that acts as a Telegram user.
 3. **Runs the bot under test.** The bot is ordinary grammY code. Only its API root changes, to
    `session.botApiRoot`, so it long-polls the emulator instead of Telegram.
-4. **Takes a position in the bot activity log** before acting. The log records the Bot API calls the
-   bot makes, other than its `getUpdates` polling, in order, so the test can wait for calls that
-   come after its action.
-5. **Acts as the account.** `sendMessage` returns once the bot can receive the message, not once the
-   bot has handled it.
-6. **Waits for the bot's reply.** `waitFor` resolves with the first successful `sendMessage` to the
+4. **Acts as the account.** `sendMessage` returns once the bot can receive the message, not once the
+   bot has handled it. Its result is the account's message. Its receipt marks where the bot activity
+   log stood before the action: the log records the Bot API calls the bot makes, other than its
+   `getUpdates` polling, in order, so the test can wait for calls that come after its action.
+5. **Waits for the bot's reply.** `waitFor` resolves with the first successful `sendMessage` to the
    account's chat that replies to the command. Matching only on the method would also accept any
    other message the bot happened to send.
-7. **Selects the reply and asserts on it.** The account's history holds both messages; the test
+6. **Selects the reply and asserts on it.** The account's history holds both messages; the test
    picks the bot's reply to its command rather than the latest message.
-8. **Cleans up.** The `finally` blocks stop the bot and end the session even when an assertion
+7. **Cleans up.** The `finally` blocks stop the bot and end the session even when an assertion
    fails, so a failing test leaves nothing running. If a handler throws, grammY stops the bot and
    `polling` rejects; handling that rejection at once keeps Deno from cancelling the test before its
    cleanup, and `await polling` then fails the test with the handler's error.

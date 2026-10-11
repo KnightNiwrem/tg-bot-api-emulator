@@ -42,7 +42,7 @@ Deno.test('the bot replies to a photo with a document', async () => {
     },
   }, async ({ session, botProfile, account, privateChat, activity }) => {
     const beforePhoto = await activity.position();
-    const photo = await account.sendPhoto({
+    const { result: photo } = await account.sendPhoto({
       to: privateChat,
       photo: RECEIPT_IMAGE,
       caption: 'My receipt',
@@ -97,7 +97,7 @@ Deno.test('the bot sees the name and type of a document', async () => {
     },
   }, async ({ botProfile, account, privateChat, activity }) => {
     const beforeDocument = await activity.position();
-    const notes = await account.sendDocument({
+    const { result: notes } = await account.sendDocument({
       to: privateChat,
       document: new TextEncoder().encode('Remember the milk'),
       file_name: 'notes.txt',
@@ -172,7 +172,7 @@ Deno.test('the bot sees the duration and dimensions the account gives', async ()
     };
 
     const beforeVideo = await activity.position();
-    const clip = await account.sendVideo({
+    const { result: clip } = await account.sendVideo({
       to: privateChat,
       video: PLACEHOLDER_MEDIA,
       file_name: 'clip.mp4',
@@ -184,7 +184,7 @@ Deno.test('the bot sees the duration and dimensions the account gives', async ()
     assertEquals(await replyTo(clip.message_id, beforeVideo), 'Video: 12s at 1280×720');
 
     const beforeVoice = await activity.position();
-    const memo = await account.sendVoice({
+    const { result: memo } = await account.sendVoice({
       to: privateChat,
       voice: PLACEHOLDER_MEDIA,
       duration: 3,
@@ -221,7 +221,7 @@ Deno.test('the bot sends a track back with the metadata the account gave it', as
     },
   }, async ({ botProfile, account, privateChat, activity }) => {
     const beforeTrack = await activity.position();
-    const track = await account.sendAudio({
+    const { result: track } = await account.sendAudio({
       to: privateChat,
       audio: PLACEHOLDER_TRACK,
       file_name: 'engines.mp3',
@@ -279,7 +279,7 @@ Deno.test('the bot receives each album item as an update in the same media group
     },
   }, async ({ botProfile, account, privateChat, activity }) => {
     const beforeAlbum = await activity.position();
-    const album = await account.sendMediaGroup({
+    const { result: album } = await account.sendMediaGroup({
       to: privateChat,
       media: [{ photo: RECEIPT_IMAGE, caption: 'Both copies' }, { photo: RECEIPT_IMAGE }],
     });
@@ -330,14 +330,14 @@ Deno.test('the bot sees an edited caption', async () => {
       });
     },
   }, async ({ account, privateChat, activity }) => {
-    const photo = await account.sendPhoto({
+    const { result: photo } = await account.sendPhoto({
       to: privateChat,
       photo: RECEIPT_IMAGE,
       caption: 'My receipt',
     });
 
     const beforeEdit = await activity.position();
-    const edited = await account.editMessageCaption({
+    const { result: edited } = await account.editMessageCaption({
       chat: privateChat,
       message_id: photo.message_id,
       caption: 'My corrected receipt',
@@ -389,7 +389,7 @@ Deno.test('the bot sends a photo by URL', async () => {
     });
 
     const beforeCommand = await activity.position();
-    const command = await account.sendMessage({ to: privateChat, text: '/receipt' });
+    const { result: command } = await account.sendMessage({ to: privateChat, text: '/receipt' });
     await activity.waitFor(
       {
         method: 'sendPhoto',

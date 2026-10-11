@@ -378,9 +378,12 @@ async function assertRejects(
 }
 
 async function createFixture({ client, fetch }: TestInProcessEmulator) {
-  const session = await client.createSession();
-  const { token, bot } = await session.createBot({ first_name: 'Test Bot', username: 'test_bot' });
-  const { account } = await session.createAccount({ first_name: 'Ada' });
+  const { result: session } = await client.createSession();
+  const { result: { token, bot } } = await session.createBot({
+    first_name: 'Test Bot',
+    username: 'test_bot',
+  });
+  const { result: { account } } = await session.createAccount({ first_name: 'Ada' });
   await account.sendMessage({ to: { type: 'private', botId: bot.id }, text: '/start' });
 
   /** Calls a Bot API method as the bot, in the account's private chat. */

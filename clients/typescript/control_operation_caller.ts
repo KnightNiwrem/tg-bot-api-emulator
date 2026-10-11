@@ -1,10 +1,12 @@
 /**
  * Calls control API operations as their contracts declare them: the method, the path with its
  * parameters, the query and the JSON body come from the contract, and the success response is read
- * by its kind, as JSON the contract's schema checks, as no content, or as bytes.
+ * by its kind, as JSON the contract's schema checks, as no content, or as bytes. An operation whose
+ * contract declares an action receipt is called as an action, which returns the receipt as well.
  */
 import type { z } from 'zod';
 
+import type { ActionReceiptSource } from '../../control_contracts/action_receipts.ts';
 import {
   type BytesSuccessContract,
   type ControlOperationContract,
@@ -13,7 +15,14 @@ import {
   type JsonSuccessContract,
   readPathPlaceholders,
 } from '../../control_contracts/operation_contract.ts';
-import { requestBytes, requestEmptyResponse, requestJson } from './utils.ts';
+import type { ActionOutcome, ActionReceipt } from './types.ts';
+import {
+  requestBytes,
+  requestEmptyAction,
+  requestEmptyResponse,
+  requestJson,
+  requestJsonAction,
+} from './utils.ts';
 
 /** Where and how a client sends control requests. */
 export interface ControlOperationTransport {
@@ -21,6 +30,19 @@ export interface ControlOperationTransport {
   readonly serverRoot: URL;
   readonly fetch: typeof globalThis.fetch;
 }
+
+/** A contract of an operation that acts, whose success answers with an action receipt. */
+type ActingContract = ControlOperationContract & {
+  readonly success: { readonly actionReceipt: ActionReceiptSource };
+};
+
+/**
+ * A contract of an operation whose success answers with no action receipt, such as a read or
+ * ending a session.
+ */
+type NonActingContract = ControlOperationContract & {
+  readonly success: { readonly actionReceipt?: undefined };
+};
 
 /** How a call of an operation whose success response is JSON is made. */
 export interface JsonOperationCallOptions {
@@ -31,8 +53,11 @@ export interface JsonOperationCallOptions {
   readonly signal?: AbortSignal;
 }
 
-/** Calls an operation whose success response is JSON, and returns it as the contract reads it. */
-export function callJsonOperation<Contract extends JsonSuccessContract>(
+/**
+ * Calls an operation without an action receipt whose success response is JSON, and returns it as
+ * the contract reads it.
+ */
+export function callJsonOperation<Contract extends JsonSuccessContract & NonActingContract>(
   transport: ControlOperationTransport,
   contract: Contract,
   request: ControlOperationRequest<Contract>,
@@ -48,8 +73,26 @@ export function callJsonOperation<Contract extends JsonSuccessContract>(
   });
 }
 
-/** Calls an operation whose success response has no content. */
-export function callEmptyOperation<Contract extends EmptySuccessContract>(
+/**
+ * Calls an action whose success response is JSON, and returns the JSON as the contract reads it,
+ * with the action's receipt.
+ */
+export function callJsonAction<Contract extends JsonSuccessContract & ActingContract>(
+  transport: ControlOperationTransport,
+  contract: Contract,
+  request: ControlOperationRequest<Contract>,
+): Promise<ActionOutcome<z.output<Contract['success']['body']['schema']>>> {
+  return requestJsonAction<Contract['success']['body']['schema']>(transport.fetch, {
+    method: contract.method,
+    url: buildOperationUrl(transport.serverRoot, contract, request),
+    expectedStatus: contract.success.status,
+    responseSchema: contract.success.body.schema,
+    body: request.body,
+  });
+}
+
+/** Calls an operation without an action receipt whose success response has no content. */
+export function callEmptyOperation<Contract extends EmptySuccessContract & NonActingContract>(
   transport: ControlOperationTransport,
   contract: Contract,
   request: ControlOperationRequest<Contract>,
@@ -62,11 +105,25 @@ export function callEmptyOperation<Contract extends EmptySuccessContract>(
   });
 }
 
+/** Calls an action whose success response has no content, and returns the action's receipt. */
+export function callEmptyAction<Contract extends EmptySuccessContract & ActingContract>(
+  transport: ControlOperationTransport,
+  contract: Contract,
+  request: ControlOperationRequest<Contract>,
+): Promise<ActionReceipt> {
+  return requestEmptyAction(transport.fetch, {
+    method: contract.method,
+    url: buildOperationUrl(transport.serverRoot, contract, request),
+    expectedStatus: contract.success.status,
+    body: request.body,
+  });
+}
+
 /**
  * Calls an operation whose success response is bytes, and returns them once their media type is
  * within the contract's range.
  */
-export function callBytesOperation<Contract extends BytesSuccessContract>(
+export function callBytesOperation<Contract extends BytesSuccessContract & NonActingContract>(
   transport: ControlOperationTransport,
   contract: Contract,
   request: ControlOperationRequest<Contract>,

@@ -7,17 +7,17 @@ import { createTestInProcessEmulator } from './support/emulation_api.ts';
 Deno.test('a grammY bot publishes, rotates and revokes its primary invite link', async () => {
   await using emulator = createTestInProcessEmulator();
   const { fetch } = emulator;
-  const session = await emulator.client.createSession();
+  const { result: session } = await emulator.client.createSession();
   try {
-    const gatekeeper = await session.createBot({
+    const { result: gatekeeper } = await session.createBot({
       first_name: 'Gatekeeper',
       username: 'gatekeeper_bot',
     });
-    const { account: ada } = await session.createAccount({ first_name: 'Ada' });
-    const { account: grace } = await session.createAccount({ first_name: 'Grace' });
-    const { account: hopper } = await session.createAccount({ first_name: 'Hopper' });
-    const { account: linus } = await session.createAccount({ first_name: 'Linus' });
-    const supergroup = await ada.createSupergroup({ title: 'Team' });
+    const { result: { account: ada } } = await session.createAccount({ first_name: 'Ada' });
+    const { result: { account: grace } } = await session.createAccount({ first_name: 'Grace' });
+    const { result: { account: hopper } } = await session.createAccount({ first_name: 'Hopper' });
+    const { result: { account: linus } } = await session.createAccount({ first_name: 'Linus' });
+    const { result: supergroup } = await ada.createSupergroup({ title: 'Team' });
     const chat = { type: 'supergroup', chatId: supergroup.id } as const;
     await ada.addChatMember({ chat, userId: gatekeeper.bot.id });
     await ada.promoteChatMember({
@@ -55,7 +55,7 @@ Deno.test('a grammY bot publishes, rotates and revokes its primary invite link',
       };
       const join = async (account: typeof grace, inviteLink: string) => {
         try {
-          return (await account.joinChatByInviteLink({ inviteLink })).outcome;
+          return (await account.joinChatByInviteLink({ inviteLink })).result.outcome;
         } catch (error) {
           return error instanceof EmulationClientError ? error.status : error;
         }

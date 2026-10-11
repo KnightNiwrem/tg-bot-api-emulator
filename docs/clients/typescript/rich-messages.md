@@ -53,7 +53,7 @@ Deno.test('an account reads the rich message a bot sends', async () => {
     },
   }, async ({ account, activity, botProfile, privateChat }) => {
     const beforeCommand = await activity.position();
-    const command = await account.sendMessage({ to: privateChat, text: '/recipe' });
+    const { result: command } = await account.sendMessage({ to: privateChat, text: '/recipe' });
     await activity.waitFor({
       method: 'sendRichMessage',
       chat_id: account.id,
@@ -141,7 +141,7 @@ Deno.test('an account presses a button in a table row of a rich message', async 
     },
   }, async ({ account, activity, botProfile, privateChat }) => {
     const beforeCommand = await activity.position();
-    const command = await account.sendMessage({ to: privateChat, text: '/prices' });
+    const { result: command } = await account.sendMessage({ to: privateChat, text: '/prices' });
     await activity.waitFor({
       method: 'sendRichMessage',
       chat_id: account.id,
@@ -162,7 +162,7 @@ Deno.test('an account presses a button in a table row of a rich message', async 
 
     // `within` narrows to the table row that mentions Elixir rather than the whole table.
     const beforePress = await activity.position();
-    const query = await account.pressButton({
+    const { result: query } = await account.pressButton({
       chat: privateChat,
       message_id: prices.message_id,
       button: { label: 'Buy', within: 'Elixir' },

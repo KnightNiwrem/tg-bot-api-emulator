@@ -1,10 +1,6 @@
 import { assertEquals } from '@std/assert';
 import { assertEqualsInFieldOrder } from './support/field_order_assertion.ts';
 import {
-  type EmulationSessionClient,
-  type VirtualAccountClient,
-} from '../clients/typescript/mod.ts';
-import {
   createTestInProcessEmulator,
   createTestSession,
   requestJson,
@@ -175,7 +171,7 @@ Deno.test('a bot message reaches only the one member bot it addresses', async ()
     }, ['c']);
 
     // A reply to an account's message addresses no bot, even when that message was meant for one.
-    const accountCommand = await fixture.owner.sendMessage({
+    const { result: accountCommand } = await fixture.owner.sendMessage({
       to: fixture.chat,
       text: '/ask@b_bot from the owner',
     });
@@ -194,7 +190,9 @@ Deno.test('a bot message reaches only the one member bot it addresses', async ()
     assertEquals(await fixture.readUpdates(botB), [], 'Expected B to receive no edit of A');
 
     // Messages addressed in another chat or session stay there.
-    const otherSupergroup = await fixture.owner.createSupergroup({ title: 'Elsewhere' });
+    const { result: otherSupergroup } = await fixture.owner.createSupergroup({
+      title: 'Elsewhere',
+    });
     const otherChat = { type: 'supergroup', chatId: otherSupergroup.id } as const;
     await fixture.owner.addChatMember({ chat: otherChat, userId: botA.id });
     await fixture.callBotApi(botA, 'sendMessage', {
@@ -308,11 +306,9 @@ async function createFixture() {
   await using disposalOnFailure = new AsyncDisposableStack();
   const api = disposalOnFailure.use(createTestInProcessEmulator());
   const { fetch } = api;
-  const session: EmulationSessionClient = await api.client.createSession();
-  const { account: owner }: { account: VirtualAccountClient } = await session.createAccount({
-    first_name: 'Ada',
-  });
-  const supergroup = await owner.createSupergroup({ title: 'Team' });
+  const { result: session } = await api.client.createSession();
+  const { result: { account: owner } } = await session.createAccount({ first_name: 'Ada' });
+  const { result: supergroup } = await owner.createSupergroup({ title: 'Team' });
   const chat = { type: 'supergroup', chatId: supergroup.id } as const;
   const nextOffsets = new Map<number, number>();
 
@@ -336,7 +332,7 @@ async function createFixture() {
     username: string,
     enablesBotToBotCommunication: boolean | undefined,
   ): Promise<CreatedTestBot> => {
-    const { token, bot } = await session.createBot({
+    const { result: { token, bot } } = await session.createBot({
       first_name: username,
       username,
       ...(enablesBotToBotCommunication === undefined

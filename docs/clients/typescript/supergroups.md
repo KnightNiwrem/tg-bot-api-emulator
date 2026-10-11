@@ -37,7 +37,7 @@ Deno.test('the bot greets the supergroup that adds it', () =>
       });
     },
   }, async ({ botProfile, account, activity }) => {
-    const supergroup = await account.createSupergroup({ title: 'Team' });
+    const { result: supergroup } = await account.createSupergroup({ title: 'Team' });
     const groupChat = { type: 'supergroup', chatId: supergroup.id } as const;
 
     const beforeAdding = await activity.position();
@@ -102,13 +102,19 @@ Deno.test('a bot in privacy mode receives commands but not chatter', () =>
         ctx.reply('I read everything.', { reply_parameters: { message_id: ctx.msg.message_id } }));
     },
   }, async ({ botProfile, account, activity }) => {
-    const supergroup = await account.createSupergroup({ title: 'Team' });
+    const { result: supergroup } = await account.createSupergroup({ title: 'Team' });
     const groupChat = { type: 'supergroup', chatId: supergroup.id } as const;
     await account.addChatMember({ chat: groupChat, userId: botProfile.id });
 
     const beforeSending = await activity.position();
-    const chatter = await account.sendMessage({ to: groupChat, text: 'Lunch at noon?' });
-    const command = await account.sendMessage({ to: groupChat, text: '/start@test_bot' });
+    const { result: chatter } = await account.sendMessage({
+      to: groupChat,
+      text: 'Lunch at noon?',
+    });
+    const { result: command } = await account.sendMessage({
+      to: groupChat,
+      text: '/start@test_bot',
+    });
 
     const commandReply = await activity.waitFor({
       method: 'sendMessage',
@@ -154,12 +160,15 @@ Deno.test('a bot without privacy mode receives every message', () =>
         ctx.reply('Noted.', { reply_parameters: { message_id: ctx.msg.message_id } }));
     },
   }, async ({ botProfile, account, activity }) => {
-    const supergroup = await account.createSupergroup({ title: 'Team' });
+    const { result: supergroup } = await account.createSupergroup({ title: 'Team' });
     const groupChat = { type: 'supergroup', chatId: supergroup.id } as const;
     await account.addChatMember({ chat: groupChat, userId: botProfile.id });
 
     const beforeSending = await activity.position();
-    const chatter = await account.sendMessage({ to: groupChat, text: 'Lunch at noon?' });
+    const { result: chatter } = await account.sendMessage({
+      to: groupChat,
+      text: 'Lunch at noon?',
+    });
     await activity.waitFor({
       method: 'sendMessage',
       chat_id: supergroup.id,
@@ -204,11 +213,11 @@ Deno.test('the bot asks the translator bot and posts its answer', () =>
       );
     },
   }, async ({ session, botProfile, account, activity }) => {
-    const translator = await session.createBot({
+    const { result: translator } = await session.createBot({
       first_name: 'Translator',
       username: 'translator_bot',
     });
-    const supergroup = await account.createSupergroup({ title: 'Team' });
+    const { result: supergroup } = await account.createSupergroup({ title: 'Team' });
     const groupChat = { type: 'supergroup', chatId: supergroup.id } as const;
     for (const userId of [botProfile.id, translator.bot.id]) {
       await account.addChatMember({ chat: groupChat, userId });
@@ -278,13 +287,13 @@ Deno.test('the bot welcomes members who join and says goodbye to those who leave
       );
     },
   }, async ({ session, botProfile, account, activity }) => {
-    const supergroup = await account.createSupergroup({
+    const { result: supergroup } = await account.createSupergroup({
       title: 'Open Team',
       username: 'open_team',
     });
     const groupChat = { type: 'supergroup', chatId: supergroup.id } as const;
     await account.addChatMember({ chat: groupChat, userId: botProfile.id });
-    const { account: grace } = await session.createAccount({ first_name: 'Grace' });
+    const { result: { account: grace } } = await session.createAccount({ first_name: 'Grace' });
 
     const beforeJoining = await activity.position();
     await grace.joinChat({ chat: groupChat });
@@ -315,11 +324,14 @@ Deno.test('the bot welcomes members who join and says goodbye to those who leave
     assertEquals(goodbye.parameters.text, 'Goodbye, Grace.');
 
     // A private supergroup admits only the accounts its owner adds or its invite links admit.
-    const coreTeam = await account.createSupergroup({ title: 'Core Team' });
+    const { result: coreTeam } = await account.createSupergroup({ title: 'Core Team' });
     const coreTeamChat = { type: 'supergroup', chatId: coreTeam.id } as const;
     await assertRejects(() => grace.joinChat({ chat: coreTeamChat }), EmulationClientError);
     await account.addChatMember({ chat: coreTeamChat, userId: grace.id });
-    const thanks = await grace.sendMessage({ to: coreTeamChat, text: 'Thanks for adding me' });
+    const { result: thanks } = await grace.sendMessage({
+      to: coreTeamChat,
+      text: 'Thanks for adding me',
+    });
     assertEquals(thanks.from.id, grace.id);
   }));
 ```
@@ -358,7 +370,7 @@ Deno.test('a removed bot is kicked and can no longer post to the supergroup', ()
       });
     },
   }, async ({ botProfile, account, privateChat, activity }) => {
-    const supergroup = await account.createSupergroup({ title: 'Team' });
+    const { result: supergroup } = await account.createSupergroup({ title: 'Team' });
     const groupChat = { type: 'supergroup', chatId: supergroup.id } as const;
     await account.addChatMember({ chat: groupChat, userId: botProfile.id });
 
@@ -430,7 +442,7 @@ Deno.test('the bot sees the title and description members set', () =>
       });
     },
   }, async ({ botProfile, account, activity }) => {
-    const supergroup = await account.createSupergroup({ title: 'Team' });
+    const { result: supergroup } = await account.createSupergroup({ title: 'Team' });
     const groupChat = { type: 'supergroup', chatId: supergroup.id } as const;
     await account.addChatMember({ chat: groupChat, userId: botProfile.id });
 
@@ -453,7 +465,10 @@ Deno.test('the bot sees the title and description members set', () =>
       description: 'Release coordination',
     });
     const beforeAsking = await activity.position();
-    const question = await account.sendMessage({ to: groupChat, text: '/about@test_bot' });
+    const { result: question } = await account.sendMessage({
+      to: groupChat,
+      text: '/about@test_bot',
+    });
     const answer = await activity.waitFor({
       method: 'sendMessage',
       chat_id: supergroup.id,
@@ -487,15 +502,21 @@ Deno.test('content protection covers every message of the supergroup', () =>
         }));
     },
   }, async ({ botProfile, account, privateChat, activity }) => {
-    const supergroup = await account.createSupergroup({ title: 'Team' });
+    const { result: supergroup } = await account.createSupergroup({ title: 'Team' });
     const groupChat = { type: 'supergroup', chatId: supergroup.id } as const;
     await account.addChatMember({ chat: groupChat, userId: botProfile.id });
-    const draft = await account.sendMessage({ to: groupChat, text: 'Q3 roadmap draft' });
+    const { result: draft } = await account.sendMessage({
+      to: groupChat,
+      text: 'Q3 roadmap draft',
+    });
 
     await account.setContentProtection({ chat: groupChat, hasProtectedContent: true });
 
     const beforeAsking = await activity.position();
-    const question = await account.sendMessage({ to: groupChat, text: '/status@test_bot' });
+    const { result: question } = await account.sendMessage({
+      to: groupChat,
+      text: '/status@test_bot',
+    });
     const answer = await activity.waitFor({
       method: 'sendMessage',
       chat_id: supergroup.id,
