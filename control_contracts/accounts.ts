@@ -32,6 +32,11 @@ export const accountPathSchema = z.strictObject({
   accountId: telegramUserIdSchema,
 });
 
+/** The path parameters of an account's private chat with a bot, or of the bot as it addresses it. */
+export const accountPrivateChatPathSchema = accountPathSchema.extend({
+  botId: telegramUserIdSchema,
+});
+
 /** An account's profile, as bots see the account as a user. */
 export const accountProfileSchema = z.strictObject({
   id: telegramUserIdSchema,

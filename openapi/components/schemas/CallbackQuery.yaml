@@ -8,6 +8,7 @@ required:
 properties:
   id:
     type: string
+    minLength: 1
     description: Identifier the bot receives in its callback_query update.
   callback_data:
     type: string
@@ -38,6 +39,7 @@ properties:
             type: boolean
           url:
             type: string
+            minLength: 1
             description: >-
               The link that starts the bot, which the account's client opens; omitted when
               the answer has none.

@@ -64,6 +64,16 @@ import {
   getInlineQueryContract,
   sendInlineQueryContract,
 } from '../control_contracts/inline_queries.ts';
+import { blockBotContract, unblockBotContract } from '../control_contracts/blocked_bots.ts';
+import {
+  getCallbackQueryContract,
+  pressCallbackButtonContract,
+} from '../control_contracts/callback_queries.ts';
+import {
+  expirePrivateMessageDraftContract,
+  getPrivateMessageDraftContract,
+  stopPrivateMessageDraftContract,
+} from '../control_contracts/message_drafts.ts';
 import { findContractDrift } from './support/control_contract_consistency/contract_drift.ts';
 import { JsonSchemaCanonicalizer } from './support/control_contract_consistency/json_schema_canonical_form.ts';
 import { readWireJsonSchema } from './support/control_contract_consistency/wire_json_schema.ts';
@@ -118,6 +128,13 @@ const CONTROL_OPERATION_CONTRACTS: readonly ControlOperationContract[] = [
   sendInlineQueryContract,
   getInlineQueryContract,
   expireInlineAnswerCacheContract,
+  blockBotContract,
+  unblockBotContract,
+  pressCallbackButtonContract,
+  getCallbackQueryContract,
+  getPrivateMessageDraftContract,
+  expirePrivateMessageDraftContract,
+  stopPrivateMessageDraftContract,
 ];
 
 const document = readOpenApiDocument();

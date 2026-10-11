@@ -13,7 +13,6 @@ import {
 } from './constants.ts';
 import { CONTROL_REFUSAL_REASONS } from './control_refusal_reasons.ts';
 import type {
-  CallbackQuery,
   ControlErrorBody,
   InlineKeyboardMarkup,
   MessageReactions,
@@ -713,18 +712,6 @@ export const messageReactionsResponseSchema: z.ZodType<MessageReactions> = z.str
   reactions: z.array(userReactionSchema),
 });
 
-const callbackQuerySchema: z.ZodType<CallbackQuery> = z.strictObject({
-  id: z.string().min(1),
-  callback_data: z.string(),
-  status: z.enum(['awaiting_answer', 'answered', 'expired']),
-  answer: z.strictObject({
-    text: z.string().optional(),
-    show_alert: z.boolean(),
-    url: z.string().min(1).optional(),
-    cache_time: z.number().int().nonnegative(),
-  }).nullable(),
-});
-
 const botCommandSchema = z.strictObject({
   command: z.string().min(1),
   description: z.string().min(1),
@@ -752,17 +739,6 @@ export const notificationsResponseSchema = z.strictObject({
     message_id: z.number().int().positive(),
     is_silent: z.boolean(),
   })),
-});
-
-export const messageDraftResponseSchema = z.strictObject({
-  message_draft: z.strictObject({
-    draft_id: z.string().regex(/^-?[1-9][0-9]*$/),
-    text: z.string(),
-    entities: z.array(messageEntitySchema).min(1).optional(),
-    can_stop: z.boolean(),
-    keep_on_stop: z.boolean(),
-    is_stopped: z.boolean(),
-  }).nullable(),
 });
 
 export const chatActionsResponseSchema = z.strictObject({
@@ -852,10 +828,6 @@ const replyInterfaceSchema: z.ZodType<ReplyInterface> = z.discriminatedUnion('ty
 
 export const replyInterfaceResponseSchema = z.strictObject({
   reply_interface: replyInterfaceSchema.nullable(),
-});
-
-export const callbackQueryResponseSchema = z.strictObject({
-  callback_query: callbackQuerySchema,
 });
 
 /** A message sent from an inline query's answer, to the private chat or supergroup of the query. */

@@ -4,12 +4,12 @@
  */
 import { z } from 'zod';
 
-import { accountPathSchema } from './accounts.ts';
+import { accountPrivateChatPathSchema } from './accounts.ts';
 import { controlRefusalSchema, controlValidationErrorSchema } from './control_errors.ts';
 import { customEmojiEntitySchema, messageEntitySchema } from './message_entities.ts';
 import { defineControlOperation } from './operation_contract.ts';
 import { accountSupergroupPathSchema } from './supergroups.ts';
-import { sessionIdParameterSchema, telegramUserIdSchema } from './wire_fields.ts';
+import { sessionIdParameterSchema } from './wire_fields.ts';
 
 /** The most options a poll has. */
 export const MAX_POLL_OPTION_COUNT = 12;
@@ -98,8 +98,7 @@ export const expirePollContract = defineControlOperation({
 const messageIdParameterSchema = z.int().min(1);
 
 /** The path parameters of a message of an account's private chat with a bot. */
-const accountPrivateMessagePathSchema = accountPathSchema.extend({
-  botId: telegramUserIdSchema,
+const accountPrivateMessagePathSchema = accountPrivateChatPathSchema.extend({
   messageId: messageIdParameterSchema,
 });
 

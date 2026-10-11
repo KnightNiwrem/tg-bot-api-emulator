@@ -11,7 +11,7 @@ import {
   type PrivateMessageTarget,
   type VirtualAccountClient,
 } from '../clients/typescript/mod.ts';
-import { messageDraftResponseSchema } from '../clients/typescript/schemas.ts';
+import { getPrivateMessageDraftContract } from '../control_contracts/message_drafts.ts';
 import {
   createTestInProcessEmulator,
   type EmulationApi,
@@ -908,7 +908,7 @@ Deno.test('a grammY bot aborts its generator when the account stops its draft', 
   }
 });
 
-Deno.test('the TypeScript client decodes message drafts strictly', () => {
+Deno.test('the message draft contract decodes drafts strictly', () => {
   const decoded = [
     { message_draft: null },
     { message_draft: shownDraft('-5', '', { is_stopped: true }) },
@@ -917,7 +917,7 @@ Deno.test('the TypeScript client decodes message drafts strictly', () => {
     { message_draft: shownDraft('5', 'x', { entities: [] }) },
     { message_draft: { draft_id: '5', text: 'x', can_stop: false, keep_on_stop: false } },
     { message_draft: { ...shownDraft('5', 'x'), stopped_at: 0 } },
-  ].map((body) => messageDraftResponseSchema.safeParse(body).success);
+  ].map((body) => getPrivateMessageDraftContract.success.body.schema.safeParse(body).success);
   assertEquals(
     decoded,
     [true, true, false, false, false, false, false],

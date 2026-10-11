@@ -1,7 +1,12 @@
 import type { z } from 'zod';
 
 import { createAccountContract } from '../../control_contracts/accounts.ts';
+import { blockBotContract, unblockBotContract } from '../../control_contracts/blocked_bots.ts';
 import { createBotContract } from '../../control_contracts/bots.ts';
+import {
+  getCallbackQueryContract,
+  pressCallbackButtonContract,
+} from '../../control_contracts/callback_queries.ts';
 import { downloadFileContract } from '../../control_contracts/files.ts';
 import {
   expireInlineAnswerCacheContract,
@@ -14,6 +19,11 @@ import {
   queueRateLimitResponsesContract,
   queueServerErrorResponsesContract,
 } from '../../control_contracts/queued_bot_api_answers.ts';
+import {
+  expirePrivateMessageDraftContract,
+  getPrivateMessageDraftContract,
+  stopPrivateMessageDraftContract,
+} from '../../control_contracts/message_drafts.ts';
 import {
   expirePollContract,
   retractAccountPollAnswerContract,
@@ -65,12 +75,10 @@ import {
 import { ButtonSelectionError, findButton } from './message_buttons.ts';
 import {
   botCommandsResponseSchema,
-  callbackQueryResponseSchema,
   chatActionsResponseSchema,
   chosenInlineResultResponseSchema,
   getMeResponseSchema,
   menuButtonResponseSchema,
-  messageDraftResponseSchema,
   messageHistoryResponseSchema,
   messageReactionsResponseSchema,
   notificationsResponseSchema,
@@ -520,11 +528,8 @@ function createVirtualAccountClient(
   }
 
   async function pressCallbackButton(input: PressCallbackButtonInput): Promise<CallbackQuery> {
-    const response = await requestJson(fetchImplementation, {
-      method: 'POST',
-      url: `${accountUrl}/callback-queries`,
-      expectedStatus: HTTP_STATUS_CREATED,
-      responseSchema: callbackQueryResponseSchema,
+    const response = await callJsonOperation(transport, pressCallbackButtonContract, {
+      params: accountParams,
       body: input,
     });
     return response.callback_query;
@@ -905,18 +910,14 @@ function createVirtualAccountClient(
         body: { description: input.description },
       });
     },
-    async blockBot(input: BotBlockInput): Promise<void> {
-      await requestEmptyResponse(fetchImplementation, {
-        method: 'PUT',
-        url: `${accountUrl}/blocked-bots/${encodeURIComponent(input.botId)}`,
-        expectedStatus: HTTP_STATUS_NO_CONTENT,
+    blockBot({ botId }: BotBlockInput): Promise<void> {
+      return callEmptyOperation(transport, blockBotContract, {
+        params: { ...accountParams, botId },
       });
     },
-    async unblockBot(input: BotBlockInput): Promise<void> {
-      await requestEmptyResponse(fetchImplementation, {
-        method: 'DELETE',
-        url: `${accountUrl}/blocked-bots/${encodeURIComponent(input.botId)}`,
-        expectedStatus: HTTP_STATUS_NO_CONTENT,
+    unblockBot({ botId }: BotBlockInput): Promise<void> {
+      return callEmptyOperation(transport, unblockBotContract, {
+        params: { ...accountParams, botId },
       });
     },
     getMessages,
@@ -961,20 +962,23 @@ function createVirtualAccountClient(
         expectedStatus: HTTP_STATUS_NO_CONTENT,
       });
     },
-    async getMessageDraft(input: AccountMessageDraftInput): Promise<MessageDraft | null> {
-      const response = await requestJson(fetchImplementation, {
-        method: 'GET',
-        url: `${conversationUrl(accountUrl, input.chat)}/message-draft`,
-        expectedStatus: HTTP_STATUS_OK,
-        responseSchema: messageDraftResponseSchema,
+    async getMessageDraft({ chat }: AccountMessageDraftInput): Promise<MessageDraft | null> {
+      const response = await callJsonOperation(transport, getPrivateMessageDraftContract, {
+        params: { ...accountParams, botId: chat.botId },
       });
       return response.message_draft;
     },
-    async expireMessageDraft(input: ShownMessageDraftInput): Promise<void> {
-      await requestShownMessageDraftAction(fetchImplementation, accountUrl, 'expiration', input);
+    expireMessageDraft({ chat, ...body }: ShownMessageDraftInput): Promise<void> {
+      return callEmptyOperation(transport, expirePrivateMessageDraftContract, {
+        params: { ...accountParams, botId: chat.botId },
+        body,
+      });
     },
-    async stopMessageDraft(input: ShownMessageDraftInput): Promise<void> {
-      await requestShownMessageDraftAction(fetchImplementation, accountUrl, 'stop', input);
+    stopMessageDraft({ chat, ...body }: ShownMessageDraftInput): Promise<void> {
+      return callEmptyOperation(transport, stopPrivateMessageDraftContract, {
+        params: { ...accountParams, botId: chat.botId },
+        body,
+      });
     },
     async getNotifications(input: AccountNotificationsInput): Promise<readonly Notification[]> {
       const response = await requestJson(fetchImplementation, {
@@ -1015,11 +1019,8 @@ function createVirtualAccountClient(
       });
     },
     async getCallbackQuery(callbackQueryId: string): Promise<CallbackQuery> {
-      const response = await requestJson(fetchImplementation, {
-        method: 'GET',
-        url: `${accountUrl}/callback-queries/${encodeURIComponent(callbackQueryId)}`,
-        expectedStatus: HTTP_STATUS_OK,
-        responseSchema: callbackQueryResponseSchema,
+      const response = await callJsonOperation(transport, getCallbackQueryContract, {
+        params: { ...accountParams, callbackQueryId },
       });
       return response.callback_query;
     },
@@ -1231,21 +1232,6 @@ function chatActionExpiryUrl(accountUrl: string, input: ExpireChatActionInput): 
     throw new TypeError('expireChatAction needs the botId whose supergroup chat action expires');
   }
   return `${chatActionsUrl}/${encodeURIComponent(input.botId)}/expiry`;
-}
-
-/** Asks the emulator to act on the draft an account's private chat shows, as the test expects it. */
-async function requestShownMessageDraftAction(
-  fetchImplementation: typeof globalThis.fetch,
-  accountUrl: string,
-  action: 'expiration' | 'stop',
-  { chat, draft_id }: ShownMessageDraftInput,
-): Promise<void> {
-  await requestEmptyResponse(fetchImplementation, {
-    method: 'POST',
-    url: `${conversationUrl(accountUrl, chat)}/message-draft/${action}`,
-    expectedStatus: HTTP_STATUS_NO_CONTENT,
-    body: draft_id === undefined ? {} : { draft_id },
-  });
 }
 
 /** The URL by which an account pins or unpins a message of its chat. */
