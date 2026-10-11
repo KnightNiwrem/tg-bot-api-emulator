@@ -9,7 +9,7 @@
  */
 import type { z } from 'zod';
 
-import { isMediaRange } from './media_type.ts';
+import { isMediaRange } from '../http_grammar/media_type.ts';
 
 export type ControlHttpMethod = 'DELETE' | 'GET' | 'PATCH' | 'POST' | 'PUT';
 

@@ -264,8 +264,11 @@ takes them over with [webhook delivery controls](#webhook-delivery-controls). A 
 Telegram downloads the files bots send by URL. The emulator never reaches the network: it downloads
 them from the session's emulated web, where `session.registerWebResource` sets what a URL serves,
 with its `content`, `content_type`, `status`, or a redirect `location`. A URL without a resource is
-unreachable. A registered photo is downloaded and stored as an upload would be, so the account's
-message shows it and `session.downloadFile` returns the registered bytes.
+unreachable. A `content_type` must be a well-formed `Content-Type` naming one media type, with any
+parameters in RFC 9110's form, such as `text/plain; charset=utf-8`; anything else, such as
+`application/pdf garbage`, is refused as `content_type_invalid`. A registered photo is downloaded
+and stored as an upload would be, so the account's message shows it and `session.downloadFile`
+returns the registered bytes.
 [Files sent by URL](../../features/media-and-files.md#files-sent-by-url) lists the media types each
 method accepts and the errors of failed downloads.
 

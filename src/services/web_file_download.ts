@@ -1,3 +1,4 @@
+import { readContentTypeMediaType } from '../../http_grammar/media_type.ts';
 import type { Scheduler } from '../timing/session_timing.ts';
 
 /**
@@ -241,8 +242,10 @@ function cancelUnawaited(cancellation: Promise<void>): void {
   cancellation.catch(() => {});
 }
 
-/** Reads the lowercase media type of a `Content-Type` header, without its parameters. */
+/**
+ * Reads the lowercase media type of a `Content-Type` header, without its parameters; `undefined`
+ * for none, or for a malformed one, which no registered resource serves.
+ */
 function readMediaType(contentType: string | null): string | undefined {
-  const mediaType = contentType?.split(';', 1)[0].trim().toLowerCase();
-  return mediaType === undefined || mediaType.length === 0 ? undefined : mediaType;
+  return contentType === null ? undefined : readContentTypeMediaType(contentType);
 }

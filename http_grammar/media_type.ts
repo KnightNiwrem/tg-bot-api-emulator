@@ -62,6 +62,16 @@ function readMediaRange(text: string): MediaTypeName | undefined {
     : [type, subtype];
 }
 
+/**
+ * The media type a `Content-Type` field value names, as `type/subtype` in lowercase, without its
+ * parameters; `undefined` for a field that is malformed or names a media range rather than one
+ * media type.
+ */
+export function readContentTypeMediaType(fieldValue: string): string | undefined {
+  const mediaType = readContentType(fieldValue);
+  return mediaType === undefined ? undefined : `${mediaType[0]}/${mediaType[1]}`;
+}
+
 /** Whether text is a media range a contract may declare for bytes, such as `image/*`. */
 export function isMediaRange(text: string): boolean {
   return readMediaRange(text) !== undefined;

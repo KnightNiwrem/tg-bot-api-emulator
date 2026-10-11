@@ -8,7 +8,7 @@ import { z } from 'zod';
 
 import { registerControlOperation } from '../../src/api/control_operation_route.ts';
 import { controlRefusalSchema } from '../../control_contracts/control_errors.ts';
-import { isContentTypeInRange } from '../../control_contracts/media_type.ts';
+import { isContentTypeInRange } from '../../http_grammar/media_type.ts';
 import { defineControlOperation } from '../../control_contracts/operation_contract.ts';
 import {
   callBytesOperation,

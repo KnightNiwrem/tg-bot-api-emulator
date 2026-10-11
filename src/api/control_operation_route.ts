@@ -11,7 +11,7 @@ import {
   type DecodedControlRequest,
   readPathPlaceholders,
 } from '../../control_contracts/operation_contract.ts';
-import { isContentTypeInRange } from '../../control_contracts/media_type.ts';
+import { isContentTypeInRange } from '../../http_grammar/media_type.ts';
 import { invalidControlRequestResponse } from './control_error_response.ts';
 import {
   createPathParameterReader,
