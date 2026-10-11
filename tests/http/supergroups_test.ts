@@ -1,3 +1,4 @@
+import { assertEquals } from '@std/assert';
 import { Bot } from 'https://cdn.jsdelivr.net/gh/grammyjs/grammY@^1.46.0/src/bot.ts';
 import {
   InlineKeyboard,
@@ -5,6 +6,7 @@ import {
 import { GrammyError } from 'https://cdn.jsdelivr.net/gh/grammyjs/grammY@^1.46.0/src/core/error.ts';
 
 import { createTestSession, jsonRequest, TEST_PUBLIC_ORIGIN } from '../support/emulation_api.ts';
+import { assertEqualsInFieldOrder } from '../support/field_order_assertion.ts';
 import { isBadRequestResponse } from '../support/http_response_guards.ts';
 import { botApiResult, callBotApi, createUpdateReader } from '../support/bot_api_requests.ts';
 import {
@@ -47,12 +49,14 @@ Deno.test('an account creates a supergroup and adds a bot, which receives my_cha
   };
   const myChatMember = updates[0]?.my_chat_member as Record<string, unknown> | undefined;
   const { date, ...myChatMemberWithoutDate } = myChatMember ?? {};
-  if (
-    typeof date !== 'number' ||
-    JSON.stringify(myChatMemberWithoutDate) !== JSON.stringify(expectedChatMemberUpdate)
-  ) {
+  if (typeof date !== 'number') {
     throw new Error(`Expected a my_chat_member update first, received ${JSON.stringify(updates)}`);
   }
+  assertEqualsInFieldOrder(
+    myChatMemberWithoutDate,
+    expectedChatMemberUpdate,
+    'Expected a my_chat_member update first',
+  );
   // The bot then sees the service messages of its own addition and of the next bot's, but not of
   // the account's addition before it joined.
   const joinMessages = updates.slice(1).map((update) => update.message as Record<string, unknown>);
@@ -66,11 +70,11 @@ Deno.test('an account creates a supergroup and adds a bot, which receives my_cha
     new_chat_member: user,
     new_chat_members: [user],
   }));
-  if (JSON.stringify(joinMessages) !== JSON.stringify(expectedJoinMessages)) {
-    throw new Error(
-      `Expected new_chat_members service messages, received ${JSON.stringify(updates)}`,
-    );
-  }
+  assertEqualsInFieldOrder(
+    joinMessages,
+    expectedJoinMessages,
+    'Expected new_chat_members service messages',
+  );
 
   const membersPath =
     `${sessionPath}/accounts/${owner.id}/conversations/supergroup/${supergroup.id}/members`;
@@ -90,9 +94,7 @@ Deno.test('an account creates a supergroup and adds a bot, which receives my_cha
       { method: 'PUT' },
     ),
   ]).then((responses) => responses.map((response) => response.status));
-  if (JSON.stringify(additionStatuses) !== JSON.stringify([204, 403, 404, 404, 400])) {
-    throw new Error(`Expected membership checks, received ${additionStatuses.join()}`);
-  }
+  assertEquals(additionStatuses, [204, 403, 404, 404, 400], 'Expected membership checks');
   const repeatedAddition = await callBotApi(api, `${bot.botApiPath}/getUpdates`, {
     offset: (updates.at(-1)?.update_id as number) + 1,
   });
@@ -108,9 +110,7 @@ Deno.test('an account creates a supergroup and adds a bot, which receives my_cha
       jsonRequest('POST', { title: '' }),
     ),
   ]).then((responses) => responses.map((response) => response.status));
-  if (JSON.stringify(creationFailures) !== JSON.stringify([404, 400, 400])) {
-    throw new Error(`Expected supergroup creation checks, received ${creationFailures.join()}`);
-  }
+  assertEquals(creationFailures, [404, 400, 400], 'Expected supergroup creation checks');
 
   const readerUpdates = await callBotApi(api, `${readerBot.botApiPath}/getUpdates`, {});
   const readerUpdate = (readerUpdates.body as { result: Array<Record<string, unknown>> }).result;
@@ -175,17 +175,17 @@ Deno.test('bots in privacy mode receive only supergroup messages addressed to th
     'Ask @test_bot about it',
     'Me!',
   ];
-  if (JSON.stringify(privacyModeTexts) !== JSON.stringify(expectedPrivacyModeTexts)) {
-    throw new Error(
-      `Expected only addressed messages, received ${JSON.stringify(privacyModeTexts)}`,
-    );
-  }
+  assertEqualsInFieldOrder(
+    privacyModeTexts,
+    expectedPrivacyModeTexts,
+    'Expected only addressed messages',
+  );
   const expectedReaderTexts = [...texts.map(([, text]) => text), 'Me!', 'Replying to Ada'];
-  if (JSON.stringify(readerTexts) !== JSON.stringify(expectedReaderTexts)) {
-    throw new Error(
-      `Expected every account message and no bot message, received ${JSON.stringify(readerTexts)}`,
-    );
-  }
+  assertEqualsInFieldOrder(
+    readerTexts,
+    expectedReaderTexts,
+    'Expected every account message and no bot message',
+  );
 });
 
 Deno.test('supergroup members see the same message IDs and replies', async () => {
@@ -204,44 +204,43 @@ Deno.test('supergroup members see the same message IDs and replies', async () =>
   const expectedChat = { id: supergroup.id, title: 'Team', type: 'supergroup' };
   // The service messages of the fixture's three additions are messages 1 to 3.
   if (
-    question.message_id !== 4 || answerMessage?.message_id !== 5 || reply.message_id !== 6 ||
-    JSON.stringify(answerMessage.chat) !== JSON.stringify(expectedChat) ||
-    JSON.stringify((answerMessage.reply_to_message as Record<string, unknown>)?.text) !==
-      JSON.stringify('/poll') ||
-    JSON.stringify(
-        (reply as unknown as Record<string, Record<string, unknown>>)
-          .reply_to_message?.from,
-      ) !==
-      JSON.stringify({
-        id: bot.bot.id,
-        is_bot: true,
-        first_name: bot.bot.first_name,
-        username: bot.bot.username,
-      })
+    question.message_id !== 4 ||
+    answerMessage?.message_id !== 5 ||
+    reply.message_id !== 6
   ) {
     throw new Error(`Expected one numbering and replies, received ${JSON.stringify(reply)}`);
   }
+  assertEqualsInFieldOrder(answerMessage.chat, expectedChat, 'Expected one numbering and replies');
+  assertEquals(
+    (answerMessage.reply_to_message as Record<string, unknown>)?.text,
+    '/poll',
+    'Expected one numbering and replies',
+  );
+  assertEqualsInFieldOrder(
+    (reply as unknown as Record<string, Record<string, unknown>>)
+      .reply_to_message?.from,
+    {
+      id: bot.bot.id,
+      is_bot: true,
+      first_name: bot.bot.first_name,
+      username: bot.bot.username,
+    },
+    'Expected one numbering and replies',
+  );
 
   const histories = await Promise.all([owner.id, member.id].map(async (accountId) => {
     const response = await api.request(`${supergroupPath(accountId)}/messages`);
     return await response.json() as { messages: Array<{ message_id: number; text?: string }> };
   }));
-  if (
-    JSON.stringify(histories[0]) !== JSON.stringify(histories[1]) ||
-    JSON.stringify(histories[0].messages.map(({ message_id, text }) => [message_id, text])) !==
-      JSON.stringify([
-        [1, undefined],
-        [2, undefined],
-        [3, undefined],
-        [4, '/poll'],
-        [5, 'Which day?'],
-        [6, 'Friday'],
-      ])
-  ) {
-    throw new Error(
-      `Expected both members to see one history, received ${JSON.stringify(histories)}`,
-    );
-  }
+  assertEqualsInFieldOrder(histories[0], histories[1], 'Expected both members to see one history');
+  assertEquals(histories[0].messages.map(({ message_id, text }) => [message_id, text]), [
+    [1, undefined],
+    [2, undefined],
+    [3, undefined],
+    [4, '/poll'],
+    [5, 'Which day?'],
+    [6, 'Friday'],
+  ], 'Expected both members to see one history');
 
   const stranger = await createAccount(api, sessionPath, 'Grace');
   const strangerStatuses = await Promise.all([
@@ -263,9 +262,7 @@ Deno.test('supergroup members see the same message IDs and replies', async () =>
       }),
     ),
   ]).then((responses) => responses.map((response) => response.status));
-  if (JSON.stringify(strangerStatuses) !== JSON.stringify([403, 403, 404, 400])) {
-    throw new Error(`Expected member checks, received ${strangerStatuses.join()}`);
-  }
+  assertEquals(strangerStatuses, [403, 403, 404, 400], 'Expected member checks');
 });
 
 Deno.test('Bot API methods follow Telegram checks in supergroups', async () => {
@@ -340,15 +337,19 @@ Deno.test('Bot API methods follow Telegram checks in supergroups', async () => {
   });
   const editedMessage = botApiResult(edited.body);
   if (
-    editedMessage?.message_id !== botMessageId || typeof editedMessage.edit_date !== 'number' ||
-    editedMessage.reply_markup !== undefined ||
-    JSON.stringify(editedMessage.entities) !==
-      JSON.stringify([{ type: 'bold', offset: 0, length: 4 }])
+    editedMessage?.message_id !== botMessageId ||
+    typeof editedMessage.edit_date !== 'number' ||
+    editedMessage.reply_markup !== undefined
   ) {
     throw new Error(
       `Expected the bot's own message to be edited, received ${JSON.stringify(edited)}`,
     );
   }
+  assertEqualsInFieldOrder(
+    editedMessage.entities,
+    [{ type: 'bold', offset: 0, length: 4 }],
+    "Expected the bot's own message to be edited",
+  );
   const chatAction = await callBotApi(api, `${bot.botApiPath}/sendChatAction`, {
     chat_id: supergroup.id,
     action: 'typing',
@@ -367,11 +368,7 @@ Deno.test('Bot API methods follow Telegram checks in supergroups', async () => {
     messages: Array<{ text?: string }>;
   };
   const texts = history.messages.flatMap(({ text }) => text === undefined ? [] : [text]);
-  if (JSON.stringify(texts) !== JSON.stringify(['Hello'])) {
-    throw new Error(
-      `Expected only the account message to remain, received ${JSON.stringify(history)}`,
-    );
-  }
+  assertEquals(texts, ['Hello'], 'Expected only the account message to remain');
 });
 
 Deno.test('a grammY bot runs a vote with an inline keyboard in a supergroup', async () => {
@@ -448,25 +445,28 @@ Deno.test('a grammY bot runs a vote with an inline keyboard in a supergroup', as
   const answered = await (await api.request(
     `${sessionPath}/accounts/${owner.id}/callback-queries/${pressedQuery?.id}`,
   )).json() as { callback_query: { answer: unknown } };
-  if (
-    JSON.stringify(answered.callback_query.answer) !==
-      JSON.stringify({ text: 'Voted yes', show_alert: false, cache_time: 0 })
-  ) {
-    throw new Error(`Expected the voter to see the answer, received ${JSON.stringify(answered)}`);
-  }
+  assertEqualsInFieldOrder(answered.callback_query.answer, {
+    text: 'Voted yes',
+    show_alert: false,
+    cache_time: 0,
+  }, 'Expected the voter to see the answer');
   const history = await (await api.request(`${supergroupPath(member.id)}/messages`)).json() as {
     messages: Array<{ text?: string; reply_markup?: unknown }>;
   };
   const textMessages = history.messages.filter(({ text }) => text !== undefined);
-  if (
-    JSON.stringify(textMessages.map(({ text }) => text)) !==
-      JSON.stringify(['/vote@test_bot Pasta', 'Votes: 1']) ||
-    textMessages[1].reply_markup !== undefined ||
-    JSON.stringify(chatTypes) !==
-      JSON.stringify(['supergroup', 'supergroup', 'edited /vote@test_bot Pasta'])
-  ) {
+  if (textMessages[1].reply_markup !== undefined) {
     throw new Error(`Expected the vote to run in the group, received ${JSON.stringify(history)}`);
   }
+  assertEquals(
+    textMessages.map(({ text }) => text),
+    ['/vote@test_bot Pasta', 'Votes: 1'],
+    'Expected the vote to run in the group',
+  );
+  assertEquals(
+    chatTypes,
+    ['supergroup', 'supergroup', 'edited /vote@test_bot Pasta'],
+    'Expected the vote to run in the group',
+  );
 });
 
 Deno.test('members leave or are removed from supergroups, which bots see as service messages', async () => {
@@ -511,16 +511,22 @@ Deno.test('members leave or are removed from supergroups, which bots see as serv
     api.request(`${supergroupPath(member.id)}/messages`),
     api.request(`${supergroupPath(member.id)}/members/${member.id}`, { method: 'DELETE' }),
   ]).then((responses) => responses.map((response) => response.status));
-  if (
-    leaving.status !== 204 ||
-    JSON.stringify(botUpdatesAfterLeaving) !== JSON.stringify([{ message: memberLeftMessage }]) ||
-    JSON.stringify(readerUpdatesAfterLeaving) !== JSON.stringify(botUpdatesAfterLeaving) ||
-    JSON.stringify(formerMemberStatuses) !== JSON.stringify([403, 204])
-  ) {
+  if (leaving.status !== 204) {
     throw new Error(
       `Expected the member to leave, received ${JSON.stringify(botUpdatesAfterLeaving)}`,
     );
   }
+  assertEqualsInFieldOrder(
+    botUpdatesAfterLeaving,
+    [{ message: memberLeftMessage }],
+    'Expected the member to leave',
+  );
+  assertEqualsInFieldOrder(
+    readerUpdatesAfterLeaving,
+    botUpdatesAfterLeaving,
+    'Expected the member to leave',
+  );
+  assertEquals(formerMemberStatuses, [403, 204], 'Expected the member to leave');
 
   // A bot the owner removes is banned: it learns so, and Telegram turns it away from then on.
   const removal = await api.request(`${membersPath}/${bot.bot.id}`, { method: 'DELETE' });
@@ -544,17 +550,23 @@ Deno.test('members leave or are removed from supergroups, which bots see as serv
   ];
   const removedBotUpdates = withoutDates(await readNewUpdates(bot.botApiPath));
   const readerUpdatesAfterRemoval = withoutDates(await readNewUpdates(readerBot.botApiPath));
-  if (
-    removal.status !== 204 ||
-    JSON.stringify(removedBotUpdates) !== JSON.stringify(expectedRemovalUpdates) ||
-    JSON.stringify(readerUpdatesAfterRemoval) !== JSON.stringify([{ message: botLeftMessage }])
-  ) {
+  if (removal.status !== 204) {
     throw new Error(
       `Expected the bot to learn it was removed, received ${
         JSON.stringify([removedBotUpdates, readerUpdatesAfterRemoval])
       }`,
     );
   }
+  assertEqualsInFieldOrder(
+    removedBotUpdates,
+    expectedRemovalUpdates,
+    'Expected the bot to learn it was removed',
+  );
+  assertEqualsInFieldOrder(
+    readerUpdatesAfterRemoval,
+    [{ message: botLeftMessage }],
+    'Expected the bot to learn it was removed',
+  );
   const kickedDescription = 'Forbidden: bot was kicked from the supergroup chat';
   const removedBotResponses = await Promise.all([
     callBotApi(api, `${bot.botApiPath}/sendMessage`, { chat_id: supergroup.id, text: 'Hi' }),
@@ -564,29 +576,27 @@ Deno.test('members leave or are removed from supergroups, which bots see as serv
     }),
     callBotApi(api, `${bot.botApiPath}/leaveChat`, { chat_id: supergroup.id }),
   ]);
-  if (
-    !removedBotResponses.every(({ status, body }) =>
-      status === 403 &&
-      JSON.stringify(body) ===
-        JSON.stringify({ ok: false, error_code: 403, description: kickedDescription })
-    )
-  ) {
-    throw new Error(
-      `Expected a removed bot to be turned away, received ${JSON.stringify(removedBotResponses)}`,
-    );
-  }
+  assertEqualsInFieldOrder(
+    removedBotResponses.map(({ status, body }) => ({ status, body })),
+    Array(3).fill({
+      status: 403,
+      body: { ok: false, error_code: 403, description: kickedDescription },
+    }),
+    'Expected a removed bot to be turned away',
+  );
 
   // Adding the bot again lifts its ban.
   await api.request(`${membersPath}/${bot.bot.id}`, { method: 'PUT' });
   const readditionUpdates = withoutDates(await readNewUpdates(bot.botApiPath));
   const readdedChatMember = readditionUpdates[0]?.my_chat_member as Record<string, unknown>;
-  if (
-    JSON.stringify(readdedChatMember?.old_chat_member) !==
-      JSON.stringify({ user: botUser(bot), status: 'kicked', until_date: 0 }) ||
-    readditionUpdates.length !== 2
-  ) {
+  if (readditionUpdates.length !== 2) {
     throw new Error(`Expected the bot to rejoin, received ${JSON.stringify(readditionUpdates)}`);
   }
+  assertEqualsInFieldOrder(readdedChatMember?.old_chat_member, {
+    user: botUser(bot),
+    status: 'kicked',
+    until_date: 0,
+  }, 'Expected the bot to rejoin');
   await readNewUpdates(readerBot.botApiPath);
 
   // A bot that leaves learns of its own departure. As a service message, it reaches other bots too.
@@ -613,17 +623,21 @@ Deno.test('members leave or are removed from supergroups, which bots see as serv
   ];
   const readerLeavingUpdates = withoutDates(await readNewUpdates(readerBot.botApiPath));
   const botUpdatesAfterReaderLeft = withoutDates(await readNewUpdates(bot.botApiPath));
-  if (
-    JSON.stringify(readerLeaving.body) !== JSON.stringify({ ok: true, result: true }) ||
-    JSON.stringify(readerLeavingUpdates) !== JSON.stringify(expectedLeavingUpdates) ||
-    JSON.stringify(botUpdatesAfterReaderLeft) !== JSON.stringify([{ message: readerLeftMessage }])
-  ) {
-    throw new Error(
-      `Expected the reader bot to leave, received ${
-        JSON.stringify([readerLeaving, readerLeavingUpdates, botUpdatesAfterReaderLeft])
-      }`,
-    );
-  }
+  assertEqualsInFieldOrder(
+    readerLeaving.body,
+    { ok: true, result: true },
+    'Expected the reader bot to leave',
+  );
+  assertEqualsInFieldOrder(
+    readerLeavingUpdates,
+    expectedLeavingUpdates,
+    'Expected the reader bot to leave',
+  );
+  assertEqualsInFieldOrder(
+    botUpdatesAfterReaderLeft,
+    [{ message: readerLeftMessage }],
+    'Expected the reader bot to leave',
+  );
   const notMemberDescription = 'Forbidden: bot is not a member of the supergroup chat';
   const leftBotResponses = await Promise.all([
     callBotApi(api, `${readerBot.botApiPath}/sendMessage`, {
@@ -648,12 +662,11 @@ Deno.test('members leave or are removed from supergroups, which bots see as serv
   const leftMemberIds = history.messages.flatMap((message) =>
     'left_chat_member' in message ? [(message.left_chat_member as { id: number }).id] : []
   );
-  if (
-    JSON.stringify(leftMemberIds) !==
-      JSON.stringify([member.id, bot.bot.id, readerBot.bot.id])
-  ) {
-    throw new Error(`Expected the departures in the history, received ${JSON.stringify(history)}`);
-  }
+  assertEqualsInFieldOrder(
+    leftMemberIds,
+    [member.id, bot.bot.id, readerBot.bot.id],
+    'Expected the departures in the history',
+  );
 
   const outsider = await createAccount(api, sessionPath, 'Linus');
   const memberRouteStatuses = await Promise.all([
@@ -669,9 +682,7 @@ Deno.test('members leave or are removed from supergroups, which bots see as serv
       method: 'DELETE',
     }),
   ]).then((responses) => responses.map((response) => response.status));
-  if (JSON.stringify(memberRouteStatuses) !== JSON.stringify([409, 403, 204, 404, 404, 400])) {
-    throw new Error(`Expected membership checks, received ${memberRouteStatuses.join()}`);
-  }
+  assertEquals(memberRouteStatuses, [409, 403, 204, 404, 404, 400], 'Expected membership checks');
 });
 
 Deno.test('leaveChat follows Telegram checks outside supergroups', async () => {
@@ -693,12 +704,10 @@ Deno.test('leaveChat follows Telegram checks outside supergroups', async () => {
     'Bad Request: chat not found',
     'Bad Request: chat_id is empty',
   ];
-  if (
-    JSON.stringify(descriptions) !== JSON.stringify(expectedDescriptions) ||
-    !responses.every(({ status }) => status === 400)
-  ) {
+  if (!responses.every(({ status }) => status === 400)) {
     throw new Error(`Expected leaveChat checks, received ${JSON.stringify(responses)}`);
   }
+  assertEqualsInFieldOrder(descriptions, expectedDescriptions, 'Expected leaveChat checks');
 });
 
 Deno.test('a grammY bot welcomes new members and learns it was removed', async () => {
@@ -764,12 +773,11 @@ Deno.test('a grammY bot welcomes new members and learns it was removed', async (
   const replies = history.messages.flatMap(({ text, reply_to_message }) =>
     text === undefined ? [] : [[text, reply_to_message?.message_id]]
   );
-  if (
-    JSON.stringify(replies) !==
-      JSON.stringify([['Welcome, Linus!', 4], ['Goodbye, Linus.', undefined]])
-  ) {
-    throw new Error(`Expected a welcome and a farewell, received ${JSON.stringify(history)}`);
-  }
+  assertEquals(
+    replies,
+    [['Welcome, Linus!', 4], ['Goodbye, Linus.', undefined]],
+    'Expected a welcome and a farewell',
+  );
   if (
     !(removalError instanceof GrammyError) || removalError.error_code !== 403 ||
     removalError.description !== 'Forbidden: bot was kicked from the supergroup chat'
@@ -810,21 +818,19 @@ Deno.test('the owner promotes administrators, whom bots find with getChatMember 
     'can_restrict_members',
   ]);
   const promotion = promotionUpdates[0]?.my_chat_member as Record<string, unknown> | undefined;
-  if (
-    JSON.stringify(promotionStatuses) !== JSON.stringify([204, 204]) ||
-    promotionUpdates.length !== 1 ||
-    JSON.stringify({ ...promotion, date: 0 }) !== JSON.stringify({
-        chat,
-        from: owner,
-        date: 0,
-        old_chat_member: { user: botUser(bot), status: 'member' },
-        new_chat_member: promotedBot,
-      })
-  ) {
+  if (promotionUpdates.length !== 1) {
     throw new Error(
       `Expected the bot to learn of its promotion, received ${JSON.stringify(promotionUpdates)}`,
     );
   }
+  assertEquals(promotionStatuses, [204, 204], 'Expected the bot to learn of its promotion');
+  assertEqualsInFieldOrder({ ...promotion, date: 0 }, {
+    chat,
+    from: owner,
+    date: 0,
+    old_chat_member: { user: botUser(bot), status: 'member' },
+    new_chat_member: promotedBot,
+  }, 'Expected the bot to learn of its promotion');
 
   const getChatMember = (userId: number) =>
     callBotApi(api, `${bot.botApiPath}/getChatMember`, { chat_id: supergroup.id, user_id: userId })
@@ -838,9 +844,7 @@ Deno.test('the owner promotes administrators, whom bots find with getChatMember 
     promotedBot,
     { user: outsider, status: 'left' },
   ];
-  if (JSON.stringify(members) !== JSON.stringify(expectedMembers)) {
-    throw new Error(`Expected each user's standing, received ${JSON.stringify(members)}`);
-  }
+  assertEqualsInFieldOrder(members, expectedMembers, "Expected each user's standing");
 
   // As on Telegram, administrators that are other bots are listed only when requested.
   const [administrators, administratorsWithBots, memberCount] = await Promise.all([
@@ -856,18 +860,23 @@ Deno.test('the owner promotes administrators, whom bots find with getChatMember 
     'can_manage_chat',
     'can_pin_messages',
   ]);
-  if (
-    JSON.stringify(administrators) !== JSON.stringify([owningMember, promotedBot]) ||
-    JSON.stringify(administratorsWithBots) !==
-      JSON.stringify([owningMember, promotedBot, promotedReader]) ||
-    memberCount !== 4
-  ) {
+  if (memberCount !== 4) {
     throw new Error(
       `Expected the administrators and member count, received ${
         JSON.stringify([administrators, administratorsWithBots, memberCount])
       }`,
     );
   }
+  assertEqualsInFieldOrder(
+    administrators,
+    [owningMember, promotedBot],
+    'Expected the administrators and member count',
+  );
+  assertEqualsInFieldOrder(
+    administratorsWithBots,
+    [owningMember, promotedBot, promotedReader],
+    'Expected the administrators and member count',
+  );
 
   const failures = await Promise.all([
     callBotApi(api, `${bot.botApiPath}/getChatMember`, { chat_id: supergroup.id }),
@@ -882,17 +891,13 @@ Deno.test('the owner promotes administrators, whom bots find with getChatMember 
   const failureDescriptions = failures.map(({ body }) =>
     (body as { description?: string }).description
   );
-  if (
-    JSON.stringify(failureDescriptions) !== JSON.stringify([
-      'Bad Request: invalid user_id specified',
-      'Bad Request: chat_id is empty',
-      'Bad Request: member not found',
-      'Bad Request: chat not found',
-      'Bad Request: chat_id is empty',
-    ])
-  ) {
-    throw new Error(`Expected Telegram's checks, received ${JSON.stringify(failures)}`);
-  }
+  assertEquals(failureDescriptions, [
+    'Bad Request: invalid user_id specified',
+    'Bad Request: chat_id is empty',
+    'Bad Request: member not found',
+    'Bad Request: chat not found',
+    'Bad Request: chat_id is empty',
+  ], "Expected Telegram's checks");
 
   // Only the owner changes roles, only of other members, and a promotion grants some right.
   const routeStatuses = await Promise.all([
@@ -916,9 +921,11 @@ Deno.test('the owner promotes administrators, whom bots find with getChatMember 
     ),
     api.request(`${administratorsPath}/${member.id}`, jsonRequest('PUT', { can_fly: true })),
   ]).then((responses) => responses.map((response) => response.status));
-  if (JSON.stringify(routeStatuses) !== JSON.stringify([403, 409, 409, 404, 400, 400, 400])) {
-    throw new Error(`Expected administrator route checks, received ${routeStatuses.join()}`);
-  }
+  assertEquals(
+    routeStatuses,
+    [403, 409, 409, 404, 400, 400, 400],
+    'Expected administrator route checks',
+  );
 
   const demotionStatuses = await Promise.all([
     api.request(`${administratorsPath}/${bot.bot.id}`, { method: 'DELETE' }),
@@ -926,16 +933,16 @@ Deno.test('the owner promotes administrators, whom bots find with getChatMember 
   ]).then((responses) => responses.map((response) => response.status));
   const demotionUpdates = await readNewUpdates(bot.botApiPath);
   const demotion = demotionUpdates[0]?.my_chat_member as Record<string, unknown> | undefined;
-  if (
-    JSON.stringify(demotionStatuses) !== JSON.stringify([204, 204]) ||
-    demotionUpdates.length !== 1 ||
-    JSON.stringify([demotion?.old_chat_member, demotion?.new_chat_member]) !==
-      JSON.stringify([promotedBot, { user: botUser(bot), status: 'member' }])
-  ) {
+  if (demotionUpdates.length !== 1) {
     throw new Error(
       `Expected the bot to be demoted once, received ${JSON.stringify(demotionUpdates)}`,
     );
   }
+  assertEquals(demotionStatuses, [204, 204], 'Expected the bot to be demoted once');
+  assertEqualsInFieldOrder([demotion?.old_chat_member, demotion?.new_chat_member], [promotedBot, {
+    user: botUser(bot),
+    status: 'member',
+  }], 'Expected the bot to be demoted once');
 });
 
 Deno.test('getChat shows private chats and supergroups as the official server does', async () => {
@@ -1051,9 +1058,7 @@ Deno.test('getChat shows private chats and supergroups as the official server do
       (await getChat(chatId)).body.result
     ),
   );
-  if (JSON.stringify(chats) !== JSON.stringify(expectedChats)) {
-    throw new Error(`Expected full chat information, received ${JSON.stringify(chats)}`);
-  }
+  assertEqualsInFieldOrder(chats, expectedChats, 'Expected full chat information');
 
   // A bot that left a private supergroup is turned away, and a removed bot even from a public one.
   await callBotApi(api, `${readerBot.botApiPath}/leaveChat`, { chat_id: supergroup.id });
@@ -1084,9 +1089,7 @@ Deno.test('getChat shows private chats and supergroups as the official server do
     [400, 'Bad Request: chat_id is empty'],
   ];
   const receivedFailures = failures.map(({ status, body }) => [status, body.description]);
-  if (JSON.stringify(receivedFailures) !== JSON.stringify(expectedFailures)) {
-    throw new Error(`Expected Telegram's access checks, received ${JSON.stringify(failures)}`);
-  }
+  assertEqualsInFieldOrder(receivedFailures, expectedFailures, "Expected Telegram's access checks");
 });
 
 Deno.test('the owner sets custom titles, which bots see but cannot change', async () => {
@@ -1128,21 +1131,23 @@ Deno.test('the owner sets custom titles, which bots see but cannot change', asyn
     custom_title: 'Pin keeper',
   };
   const titleChange = titleUpdate?.my_chat_member as Record<string, unknown> | undefined;
-  if (
-    JSON.stringify(titleStatuses) !== JSON.stringify([204, 204]) ||
-    JSON.stringify(await getChatMember(owner.id)) !== JSON.stringify({
-        user: owner,
-        status: 'creator',
-        custom_title: 'Founder',
-        is_anonymous: false,
-      }) ||
-    JSON.stringify(await getChatMember(readerBot.bot.id)) !== JSON.stringify(titledAdministrator) ||
-    JSON.stringify(titleChange?.new_chat_member) !== JSON.stringify(titledAdministrator)
-  ) {
-    throw new Error(
-      `Expected bots to see the custom titles, received ${JSON.stringify(titleUpdate)}`,
-    );
-  }
+  assertEquals(titleStatuses, [204, 204], 'Expected bots to see the custom titles');
+  assertEqualsInFieldOrder(await getChatMember(owner.id), {
+    user: owner,
+    status: 'creator',
+    custom_title: 'Founder',
+    is_anonymous: false,
+  }, 'Expected bots to see the custom titles');
+  assertEqualsInFieldOrder(
+    await getChatMember(readerBot.bot.id),
+    titledAdministrator,
+    'Expected bots to see the custom titles',
+  );
+  assertEqualsInFieldOrder(
+    titleChange?.new_chat_member,
+    titledAdministrator,
+    'Expected bots to see the custom titles',
+  );
 
   // New rights keep the title, while demotion and an empty title drop it.
   await api.request(
@@ -1178,9 +1183,7 @@ Deno.test('the owner sets custom titles, which bots see but cannot change', asyn
     await setCustomTitle(member.id, 'Guest'),
     await setCustomTitle(readerBot.bot.id, 'Mine', member.id),
   ];
-  if (JSON.stringify(failedStatuses) !== JSON.stringify([400, 400, 400, 409, 403])) {
-    throw new Error(`Expected invalid titles to be refused, received ${failedStatuses}`);
-  }
+  assertEquals(failedStatuses, [400, 400, 400, 409, 403], 'Expected invalid titles to be refused');
 
   const setByBot = async (chatId: number, userId: number) => {
     const { body } = await callBotApi(
@@ -1208,9 +1211,11 @@ Deno.test('the owner sets custom titles, which bots see but cannot change', asyn
     'Bad Request: not enough rights to change custom title of the user',
     'Bad Request: method is available only in groups and supergroups',
   ];
-  if (JSON.stringify(botFailures) !== JSON.stringify(expectedFailures)) {
-    throw new Error(`Expected Telegram's custom title errors, received ${botFailures}`);
-  }
+  assertEqualsInFieldOrder(
+    botFailures,
+    expectedFailures,
+    "Expected Telegram's custom title errors",
+  );
 });
 
 Deno.test('bots with can_change_info change a supergroup title and description', async () => {
@@ -1249,35 +1254,38 @@ Deno.test('bots with can_change_info change a supergroup title and description',
     (await callBotApi(api, `${bot.botApiPath}/getChat`, { chat_id: supergroup.id })).body,
   );
   if (
-    JSON.stringify(refusedBeforePromotion.map(describe)) !== JSON.stringify([
-        'Bad Request: not enough rights to change chat title',
-        'Bad Request: not enough rights to set chat description',
-      ]) ||
     promotion.status !== 204 ||
-    JSON.stringify([titleChange.body, unchangedTitle.body, descriptionChange.body]) !==
-      JSON.stringify(Array(3).fill({ ok: true, result: true })) ||
     describe(emptyTitle) !== 'Bad Request: title must be non-empty' ||
     describe(unchangedDescription) !== 'Bad Request: chat description is not modified' ||
-    chat?.title !== 'New Team' || chat.description !== 'About us' ||
-    descriptionRemoval.status !== 200 || chatWithoutDescription === undefined ||
+    chat?.title !== 'New Team' ||
+    chat.description !== 'About us' ||
+    descriptionRemoval.status !== 200 ||
+    chatWithoutDescription === undefined ||
     'description' in chatWithoutDescription
   ) {
-    throw new Error(
-      `Expected Telegram's title and description changes, received ${
-        JSON.stringify([
-          refusedBeforePromotion,
-          promotion.status,
-          titleChange,
-          unchangedTitle,
-          emptyTitle,
-          descriptionChange,
-          unchangedDescription,
-          chat,
-          chatWithoutDescription,
-        ])
-      }`,
-    );
+    throw new Error(`Expected Telegram's title and description changes, received ${
+      JSON.stringify([
+        refusedBeforePromotion,
+        promotion.status,
+        titleChange,
+        unchangedTitle,
+        emptyTitle,
+        descriptionChange,
+        unchangedDescription,
+        chat,
+        chatWithoutDescription,
+      ])
+    }`);
   }
+  assertEquals(refusedBeforePromotion.map(describe), [
+    'Bad Request: not enough rights to change chat title',
+    'Bad Request: not enough rights to set chat description',
+  ], "Expected Telegram's title and description changes");
+  assertEqualsInFieldOrder(
+    [titleChange.body, unchangedTitle.body, descriptionChange.body],
+    Array(3).fill({ ok: true, result: true }),
+    "Expected Telegram's title and description changes",
+  );
 
   const serviceMessages = async (botApiPath: string) =>
     (await readUpdates(botApiPath)).flatMap(({ message }) => {
@@ -1291,15 +1299,19 @@ Deno.test('bots with can_change_info change a supergroup title and description',
   const history = await (await api.request(`${supergroupPath(owner.id)}/messages`)).json() as {
     messages: Array<{ new_chat_title?: string }>;
   };
-  if (
-    JSON.stringify(await serviceMessages(bot.botApiPath)) !==
-      JSON.stringify(expectedServiceMessages) ||
-    JSON.stringify(await serviceMessages(readerBot.botApiPath)) !==
-      JSON.stringify(expectedServiceMessages) ||
-    history.messages.filter((message) => message.new_chat_title !== undefined).length !== 1
-  ) {
+  if (history.messages.filter((message) => message.new_chat_title !== undefined).length !== 1) {
     throw new Error('Expected one service message for the changed title, seen by every bot');
   }
+  assertEqualsInFieldOrder(
+    await serviceMessages(bot.botApiPath),
+    expectedServiceMessages,
+    'Expected one service message for the changed title, seen by every bot',
+  );
+  assertEqualsInFieldOrder(
+    await serviceMessages(readerBot.botApiPath),
+    expectedServiceMessages,
+    'Expected one service message for the changed title, seen by every bot',
+  );
 
   await using privateChat = await createPrivateConversationFixture(undefined, FIXED_CLOCK_EMULATOR);
   await privateChat.sendText('/start');
@@ -1351,17 +1363,16 @@ Deno.test('accounts change a supergroup title that bots see as a service message
     } ?? {};
     return newChatTitle === undefined ? [] : [{ newChatTitle, fromId: from?.id }];
   });
-  if (
-    JSON.stringify(statuses) !== JSON.stringify([204, 400, 403, 204, 409, 400]) ||
-    JSON.stringify(titleUpdates) !==
-      JSON.stringify([{ newChatTitle: 'Grace and friends', fromId: member.id }])
-  ) {
-    throw new Error(
-      `Expected a member's title change to reach the bot, received ${
-        JSON.stringify([statuses, titleUpdates])
-      }`,
-    );
-  }
+  assertEquals(
+    statuses,
+    [204, 400, 403, 204, 409, 400],
+    "Expected a member's title change to reach the bot",
+  );
+  assertEqualsInFieldOrder(
+    titleUpdates,
+    [{ newChatTitle: 'Grace and friends', fromId: member.id }],
+    "Expected a member's title change to reach the bot",
+  );
 });
 
 Deno.test('the owner protects all supergroup content from forwarding and saving', async () => {
@@ -1391,7 +1402,6 @@ Deno.test('the owner protects all supergroup content from forwarding and saving'
     })).body,
   );
   if (
-    JSON.stringify(protectionStatuses) !== JSON.stringify([403, 204]) ||
     (update?.message as Record<string, unknown> | undefined)?.has_protected_content !== true ||
     botMessage?.has_protected_content !== true
   ) {
@@ -1401,6 +1411,7 @@ Deno.test('the owner protects all supergroup content from forwarding and saving'
       }`,
     );
   }
+  assertEquals(protectionStatuses, [403, 204], 'Expected the owner alone to protect every message');
 
   // Protection covers earlier messages too; bots may still copy them, as TDLib lets bots.
   const repeat = (method: string, parameters: Record<string, unknown>) =>
@@ -1491,8 +1502,8 @@ Deno.test('bots address public supergroups by their usernames', async () => {
     jsonRequest('POST', { to: { type: 'private', botId: bot.bot.id }, text: '/start' }),
   );
   if (
-    createResponse.status !== 201 || supergroup.username !== 'team_chat' ||
-    JSON.stringify(duplicateStatuses) !== JSON.stringify([409, 409])
+    createResponse.status !== 201 ||
+    supergroup.username !== 'team_chat'
   ) {
     throw new Error(
       `Expected a public supergroup with a unique username, received ${
@@ -1500,6 +1511,11 @@ Deno.test('bots address public supergroups by their usernames', async () => {
       }`,
     );
   }
+  assertEquals(
+    duplicateStatuses,
+    [409, 409],
+    'Expected a public supergroup with a unique username',
+  );
 
   const callBot = (method: string, parameters: Record<string, unknown>) =>
     callBotApi(api, `${bot.botApiPath}/${method}`, parameters).then(({ body }) => body);
@@ -1535,13 +1551,9 @@ Deno.test('bots address public supergroups by their usernames', async () => {
     type: 'supergroup',
   };
   if (
-    JSON.stringify(sent?.chat) !== JSON.stringify(expectedChat) ||
     forward?.text !== 'Hi' ||
     (externalReply?.external_reply as { chat?: unknown } | undefined)?.chat === undefined ||
-    member?.status !== 'creator' ||
-    JSON.stringify(commandsSet) !== JSON.stringify({ ok: true, result: true }) ||
-    JSON.stringify(commands) !==
-      JSON.stringify([{ command: 'plan', description: 'Plan the week' }])
+    member?.status !== 'creator'
   ) {
     throw new Error(
       `Expected the username to name the supergroup, received ${
@@ -1549,6 +1561,21 @@ Deno.test('bots address public supergroups by their usernames', async () => {
       }`,
     );
   }
+  assertEqualsInFieldOrder(
+    sent?.chat,
+    expectedChat,
+    'Expected the username to name the supergroup',
+  );
+  assertEqualsInFieldOrder(
+    commandsSet,
+    { ok: true, result: true },
+    'Expected the username to name the supergroup',
+  );
+  assertEqualsInFieldOrder(
+    commands,
+    [{ command: 'plan', description: 'Plan the week' }],
+    'Expected the username to name the supergroup',
+  );
 
   // As Telegram's check_chat does, only public supergroups and bots are found by username, and
   // text after `@` that is no valid username names no chat.
@@ -1608,18 +1635,8 @@ Deno.test('administrator bots that request chat_member updates observe members j
   ]);
   const chatMember = administratorUpdates[0]?.chat_member as Record<string, unknown> | undefined;
   if (
-    promotion.status !== 204 || addition.status !== 204 ||
-    JSON.stringify(administratorUpdates.map((update) => Object.keys(update)[1])) !==
-      JSON.stringify(['chat_member', 'message']) ||
-    JSON.stringify({ ...chatMember, date: 0 }) !== JSON.stringify({
-        chat: { id: supergroup.id, title: 'Team', type: 'supergroup' },
-        from: owner,
-        date: 0,
-        old_chat_member: { user: outsider, status: 'left' },
-        new_chat_member: { user: outsider, status: 'member' },
-      }) ||
-    JSON.stringify(readerUpdates.map((update) => Object.keys(update)[1])) !==
-      JSON.stringify(['message'])
+    promotion.status !== 204 ||
+    addition.status !== 204
   ) {
     throw new Error(
       `Expected only the administrator bot to observe the join, received ${
@@ -1627,6 +1644,22 @@ Deno.test('administrator bots that request chat_member updates observe members j
       }`,
     );
   }
+  assertEquals(administratorUpdates.map((update) => Object.keys(update)[1]), [
+    'chat_member',
+    'message',
+  ], 'Expected only the administrator bot to observe the join');
+  assertEqualsInFieldOrder({ ...chatMember, date: 0 }, {
+    chat: { id: supergroup.id, title: 'Team', type: 'supergroup' },
+    from: owner,
+    date: 0,
+    old_chat_member: { user: outsider, status: 'left' },
+    new_chat_member: { user: outsider, status: 'member' },
+  }, 'Expected only the administrator bot to observe the join');
+  assertEquals(
+    readerUpdates.map((update) => Object.keys(update)[1]),
+    ['message'],
+    'Expected only the administrator bot to observe the join',
+  );
 });
 
 Deno.test('banChatMember, unbanChatMember, and deleteMessage follow Telegram checks for administrators', async () => {
@@ -1666,17 +1699,13 @@ Deno.test('banChatMember, unbanChatMember, and deleteMessage follow Telegram che
     ]),
   );
   const notEnoughRights = 'Bad Request: not enough rights to restrict/unrestrict chat member';
-  if (
-    JSON.stringify(refusals) !== JSON.stringify([
-      [400, notEnoughRights],
-      [400, notEnoughRights],
-      [400, "Bad Request: can't remove chat owner"],
-      [400, "Bad Request: can't restrict self"],
-      [400, 'Bad Request: invalid user_id specified'],
-    ])
-  ) {
-    throw new Error(`Expected refusals without rights, received ${JSON.stringify(refusals)}`);
-  }
+  assertEqualsInFieldOrder(refusals, [
+    [400, notEnoughRights],
+    [400, notEnoughRights],
+    [400, "Bad Request: can't remove chat owner"],
+    [400, "Bad Request: can't restrict self"],
+    [400, 'Bad Request: invalid user_id specified'],
+  ], 'Expected refusals without rights');
 
   const administratorsPath = `${supergroupPath(owner.id)}/administrators`;
   await api.request(
@@ -1709,25 +1738,29 @@ Deno.test('banChatMember, unbanChatMember, and deleteMessage follow Telegram che
   const botUpdates = await readNewUpdates(bot.botApiPath);
   const readerUpdates = await readNewUpdates(readerBot.botApiPath);
   const bannedMemberHistory = await api.request(`${supergroupPath(member.id)}/messages`);
-  if (
-    JSON.stringify(moderation) !== JSON.stringify([
-        [200, true],
-        [200, true],
-        [400, 'Bad Request: user is an administrator of the chat'],
-        [200, true],
-      ]) ||
-    JSON.stringify(bannedMember) !==
-      JSON.stringify({ user: member, status: 'kicked', until_date: untilDate }) ||
-    JSON.stringify(preBannedOutsider) !==
-      JSON.stringify({ user: outsider, status: 'kicked', until_date: 0 }) ||
-    bannedMemberHistory.status !== 403
-  ) {
+  if (bannedMemberHistory.status !== 403) {
     throw new Error(
       `Expected the bot to delete the spam and ban its sender, received ${
         JSON.stringify([moderation, bannedMember, preBannedOutsider])
       }`,
     );
   }
+  assertEquals(moderation, [
+    [200, true],
+    [200, true],
+    [400, 'Bad Request: user is an administrator of the chat'],
+    [200, true],
+  ], 'Expected the bot to delete the spam and ban its sender');
+  assertEqualsInFieldOrder(
+    bannedMember,
+    { user: member, status: 'kicked', until_date: untilDate },
+    'Expected the bot to delete the spam and ban its sender',
+  );
+  assertEqualsInFieldOrder(
+    preBannedOutsider,
+    { user: outsider, status: 'kicked', until_date: 0 },
+    'Expected the bot to delete the spam and ban its sender',
+  );
   const describeUpdates = (updates: Array<Record<string, unknown>>) =>
     updates.map(({ message }) => {
       const { text, from, left_chat_member } = message as {
@@ -1739,16 +1772,16 @@ Deno.test('banChatMember, unbanChatMember, and deleteMessage follow Telegram che
     });
   // As a service message, the ban's reaches the reader bot, though another bot made it.
   const expectedUpdates = [[member.id, 'Buy now!'], [bot.bot.id, `left_chat_member ${member.id}`]];
-  if (
-    JSON.stringify(describeUpdates(botUpdates)) !== JSON.stringify(expectedUpdates) ||
-    JSON.stringify(describeUpdates(readerUpdates)) !== JSON.stringify(expectedUpdates)
-  ) {
-    throw new Error(
-      `Expected the spam and the ban's service message, received ${
-        JSON.stringify([botUpdates, readerUpdates])
-      }`,
-    );
-  }
+  assertEqualsInFieldOrder(
+    describeUpdates(botUpdates),
+    expectedUpdates,
+    "Expected the spam and the ban's service message",
+  );
+  assertEqualsInFieldOrder(
+    describeUpdates(readerUpdates),
+    expectedUpdates,
+    "Expected the spam and the ban's service message",
+  );
 
   // Lifting only a ban leaves the user free to be added again. Otherwise, as on Telegram,
   // unbanning a member removes it.
@@ -1763,19 +1796,22 @@ Deno.test('banChatMember, unbanChatMember, and deleteMessage follow Telegram che
   });
   const removal = describe([await callBot('unbanChatMember', target(member.id))]);
   const removedMember = await callBot('getChatMember', target(member.id));
-  if (
-    JSON.stringify([...unbanning, ...removal]) !==
-      JSON.stringify([[200, true], [200, true], [200, true]]) ||
-    readdition.status !== 204 ||
-    JSON.stringify((removedMember.body as { result: unknown }).result) !==
-      JSON.stringify({ user: member, status: 'left' })
-  ) {
+  if (readdition.status !== 204) {
     throw new Error(
       `Expected unbanning to lift the ban and then remove the member, received ${
         JSON.stringify([unbanning, removal, removedMember])
       }`,
     );
   }
+  assertEquals(
+    [...unbanning, ...removal],
+    [[200, true], [200, true], [200, true]],
+    'Expected unbanning to lift the ban and then remove the member',
+  );
+  assertEqualsInFieldOrder((removedMember.body as { result: unknown }).result, {
+    user: member,
+    status: 'left',
+  }, 'Expected unbanning to lift the ban and then remove the member');
 
   // A private chat has two members and no administrators, and its members cannot be banned.
   await api.request(
@@ -1793,18 +1829,14 @@ Deno.test('banChatMember, unbanChatMember, and deleteMessage follow Telegram che
       callBot('banChatMember', { chat_id: outsider.id, user_id: outsider.id }),
     ]),
   );
-  if (
-    JSON.stringify(privateResponses) !== JSON.stringify([
-      [200, { user: owner, status: 'member' }],
-      [200, 2],
-      [400, 'Bad Request: there are no administrators in the private chat'],
-      [400, "Bad Request: can't ban members in private chats"],
-      [400, 'Bad Request: method is available only in supergroup and channel chats'],
-      [400, 'Bad Request: chat not found'],
-    ])
-  ) {
-    throw new Error(`Expected private chat checks, received ${JSON.stringify(privateResponses)}`);
-  }
+  assertEqualsInFieldOrder(privateResponses, [
+    [200, { user: owner, status: 'member' }],
+    [200, 2],
+    [400, 'Bad Request: there are no administrators in the private chat'],
+    [400, "Bad Request: can't ban members in private chats"],
+    [400, 'Bad Request: method is available only in supergroup and channel chats'],
+    [400, 'Bad Request: chat not found'],
+  ], 'Expected private chat checks');
 });
 
 Deno.test('a grammY bot bans a spammer for an administrator and deletes the spam', async () => {
@@ -1856,17 +1888,11 @@ Deno.test('a grammY bot bans a spammer for an administrator and deletes the spam
     from.id,
     text ?? `left_chat_member ${left_chat_member?.id}`,
   ]);
-  if (
-    JSON.stringify(shownMessages) !== JSON.stringify([
-      [member.id, '/ban'],
-      [bot.bot.id, 'Only administrators can ban.'],
-      [bot.bot.id, `left_chat_member ${member.id}`],
-    ])
-  ) {
-    throw new Error(
-      `Expected the spam and command to be deleted, received ${JSON.stringify(history)}`,
-    );
-  }
+  assertEqualsInFieldOrder(shownMessages, [
+    [member.id, '/ban'],
+    [bot.bot.id, 'Only administrators can ban.'],
+    [bot.bot.id, `left_chat_member ${member.id}`],
+  ], 'Expected the spam and command to be deleted');
 });
 
 /**

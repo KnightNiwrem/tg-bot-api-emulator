@@ -1,3 +1,4 @@
+import { assertEquals } from '@std/assert';
 import { Bot } from 'https://cdn.jsdelivr.net/gh/grammyjs/grammY@^1.46.0/src/bot.ts';
 import {
   InlineKeyboard,
@@ -5,6 +6,7 @@ import {
 import { InputFile } from 'https://cdn.jsdelivr.net/gh/grammyjs/grammY@^1.46.0/src/types.ts';
 
 import { createTestSession, jsonRequest, TEST_PUBLIC_ORIGIN } from '../support/emulation_api.ts';
+import { assertEqualsInFieldOrder } from '../support/field_order_assertion.ts';
 import { expectSettlementWithin } from '../support/settlement.ts';
 import { isBadRequestResponse } from '../support/http_response_guards.ts';
 import {
@@ -49,33 +51,30 @@ Deno.test('an account sends an inline query, a bot answers, and the account send
   const queryBody = await queryResponse.json() as { inline_query: { id: string } };
   const inlineQueryPath = `${accountPath}/inline-queries/${queryBody.inline_query.id}`;
   if (
-    queryResponse.status !== 201 || queryResponse.headers.get('Location') !== inlineQueryPath ||
-    JSON.stringify(queryBody) !== JSON.stringify({
-        inline_query: {
-          id: queryBody.inline_query.id,
-          bot_id: inlineBot.bot.id,
-          chat: { type: 'private', botId: inlineBot.bot.id },
-          query: 'cats',
-          offset: '',
-          status: 'awaiting_answer',
-          answer: null,
-        },
-      })
+    queryResponse.status !== 201 ||
+    queryResponse.headers.get('Location') !== inlineQueryPath
   ) {
     throw new Error(`Expected an unanswered inline query, received ${JSON.stringify(queryBody)}`);
   }
-  const [queryUpdate] = await readUpdates(inlineBot.botApiPath);
-  if (
-    JSON.stringify(queryUpdate?.inline_query) !== JSON.stringify({
+  assertEqualsInFieldOrder(queryBody, {
+    inline_query: {
       id: queryBody.inline_query.id,
-      from: account,
-      chat_type: 'sender',
+      bot_id: inlineBot.bot.id,
+      chat: { type: 'private', botId: inlineBot.bot.id },
       query: 'cats',
       offset: '',
-    })
-  ) {
-    throw new Error(`Expected an inline_query update, received ${JSON.stringify(queryUpdate)}`);
-  }
+      status: 'awaiting_answer',
+      answer: null,
+    },
+  }, 'Expected an unanswered inline query');
+  const [queryUpdate] = await readUpdates(inlineBot.botApiPath);
+  assertEqualsInFieldOrder(queryUpdate?.inline_query, {
+    id: queryBody.inline_query.id,
+    from: account,
+    chat_type: 'sender',
+    query: 'cats',
+    offset: '',
+  }, 'Expected an inline_query update');
 
   const answerResponse = await callBotApi(api, `${inlineBot.botApiPath}/answerInlineQuery`, {
     inline_query_id: queryBody.inline_query.id,
@@ -89,28 +88,28 @@ Deno.test('an account sends an inline query, a bot answers, and the account send
     }],
     button: { text: 'Sign in', start_parameter: 'sign-in' },
   });
-  if (JSON.stringify(answerResponse.body) !== JSON.stringify({ ok: true, result: true })) {
-    throw new Error(`Expected the answer to be accepted, received ${answerResponse.status}`);
-  }
+  assertEqualsInFieldOrder(
+    answerResponse.body,
+    { ok: true, result: true },
+    'Expected the answer to be accepted',
+  );
   const answeredBody = await (await api.request(inlineQueryPath)).json() as {
     inline_query: { status: string; answer: unknown };
   };
-  if (
-    answeredBody.inline_query.status !== 'answered' ||
-    JSON.stringify(answeredBody.inline_query.answer) !== JSON.stringify({
-        results: [
-          { type: 'article', id: 'fact-1', title: 'Cat fact', description: 'Cats sleep a lot' },
-        ],
-        cache_time: 300,
-        is_personal: false,
-        next_offset: '',
-        button: { text: 'Sign in', start_parameter: 'sign-in' },
-      })
-  ) {
+  if (answeredBody.inline_query.status !== 'answered') {
     throw new Error(
       `Expected the account to see the answer, received ${JSON.stringify(answeredBody)}`,
     );
   }
+  assertEqualsInFieldOrder(answeredBody.inline_query.answer, {
+    results: [
+      { type: 'article', id: 'fact-1', title: 'Cat fact', description: 'Cats sleep a lot' },
+    ],
+    cache_time: 300,
+    is_personal: false,
+    next_offset: '',
+    button: { text: 'Sign in', start_parameter: 'sign-in' },
+  }, 'Expected the account to see the answer');
 
   const chooseResponse = await api.request(
     `${inlineQueryPath}/chosen-results`,
@@ -118,36 +117,47 @@ Deno.test('an account sends an inline query, a bot answers, and the account send
   );
   const { message } = await chooseResponse.json() as { message: Record<string, unknown> };
   if (
-    chooseResponse.status !== 201 || JSON.stringify(message.from) !== JSON.stringify(account) ||
-    message.text !== 'Cats sleep a lot' ||
-    JSON.stringify(message.entities) !== JSON.stringify([{ type: 'bold', offset: 0, length: 4 }]) ||
-    JSON.stringify(message.via_bot) !== JSON.stringify({
-        id: inlineBot.bot.id,
-        is_bot: true,
-        first_name: 'Test Bot',
-        username: 'cats_bot',
-      }) ||
-    JSON.stringify(Object.keys(message).slice(-2)) !== JSON.stringify(['reply_markup', 'via_bot'])
+    chooseResponse.status !== 201 ||
+    message.text !== 'Cats sleep a lot'
   ) {
     throw new Error(
       `Expected the account's message through the bot, received ${JSON.stringify(message)}`,
     );
   }
+  assertEqualsInFieldOrder(message.from, account, "Expected the account's message through the bot");
+  assertEqualsInFieldOrder(
+    message.entities,
+    [{ type: 'bold', offset: 0, length: 4 }],
+    "Expected the account's message through the bot",
+  );
+  assertEqualsInFieldOrder(message.via_bot, {
+    id: inlineBot.bot.id,
+    is_bot: true,
+    first_name: 'Test Bot',
+    username: 'cats_bot',
+  }, "Expected the account's message through the bot");
+  assertEquals(
+    Object.keys(message).slice(-2),
+    ['reply_markup', 'via_bot'],
+    "Expected the account's message through the bot",
+  );
   const [messageUpdate, chosenResultUpdate] = await readUpdates(inlineBot.botApiPath);
   const chosenResult = chosenResultUpdate?.chosen_inline_result as Record<string, unknown>;
   const inlineMessageId = chosenResult?.inline_message_id;
-  if (
-    JSON.stringify(messageUpdate?.message) !== JSON.stringify(message) ||
-    typeof inlineMessageId !== 'string' ||
-    JSON.stringify(chosenResult) !== JSON.stringify({
-        from: account,
-        inline_message_id: inlineMessageId,
-        query: 'cats',
-        result_id: 'fact-1',
-      })
-  ) {
+  if (typeof inlineMessageId !== 'string') {
     throw new Error('Expected the message and then the chosen result');
   }
+  assertEqualsInFieldOrder(
+    messageUpdate?.message,
+    message,
+    'Expected the message and then the chosen result',
+  );
+  assertEqualsInFieldOrder(chosenResult, {
+    from: account,
+    inline_message_id: inlineMessageId,
+    query: 'cats',
+    result_id: 'fact-1',
+  }, 'Expected the message and then the chosen result');
 
   const accountEditResponse = await api.request(
     `${accountPath}/conversations/private/${inlineBot.bot.id}/messages/${message.message_id}`,
@@ -169,20 +179,27 @@ Deno.test('an account sends an inline query, a bot answers, and the account send
   const callbackQuery = callbackQueryUpdate?.callback_query as Record<string, unknown>;
   if (
     pressResponse.status !== 201 ||
-    JSON.stringify(Object.keys(callbackQuery ?? {})) !==
-      JSON.stringify(['id', 'from', 'inline_message_id', 'chat_instance', 'data']) ||
     callbackQuery.inline_message_id !== inlineMessageId
   ) {
     throw new Error(`Expected an inline callback query, received ${JSON.stringify(callbackQuery)}`);
   }
+  assertEquals(Object.keys(callbackQuery ?? {}), [
+    'id',
+    'from',
+    'inline_message_id',
+    'chat_instance',
+    'data',
+  ], 'Expected an inline callback query');
 
   const editResponse = await callBotApi(api, `${inlineBot.botApiPath}/editMessageText`, {
     inline_message_id: inlineMessageId,
     text: 'Cats also purr',
   });
-  if (JSON.stringify(editResponse.body) !== JSON.stringify({ ok: true, result: true })) {
-    throw new Error(`Expected the inline edit to answer true, received ${editResponse.status}`);
-  }
+  assertEqualsInFieldOrder(
+    editResponse.body,
+    { ok: true, result: true },
+    'Expected the inline edit to answer true',
+  );
   const [editUpdate] = await readUpdates(inlineBot.botApiPath);
   const editedMessage = editUpdate?.edited_message as Record<string, unknown> | undefined;
   if (
@@ -215,17 +232,13 @@ Deno.test('an account sends an inline query, a bot answers, and the account send
   const failureDescriptions = failures.map(({ body }) =>
     isBadRequestResponse(body) ? body.description : JSON.stringify(body)
   );
-  if (
-    JSON.stringify(failureDescriptions) !== JSON.stringify([
-      'Bad Request: message is not modified: specified new message content and reply markup are exactly the same as a current content and reply markup of the message',
-      'Bad Request: MESSAGE_ID_INVALID',
-      'Bad Request: MESSAGE_ID_INVALID',
-      'Bad Request: there is no caption in the message to edit',
-      'Bad Request: message identifier is not specified',
-    ])
-  ) {
-    throw new Error(`Expected Telegram's inline edit errors, received ${failureDescriptions}`);
-  }
+  assertEquals(failureDescriptions, [
+    'Bad Request: message is not modified: specified new message content and reply markup are exactly the same as a current content and reply markup of the message',
+    'Bad Request: MESSAGE_ID_INVALID',
+    'Bad Request: MESSAGE_ID_INVALID',
+    'Bad Request: there is no caption in the message to edit',
+    'Bad Request: message identifier is not specified',
+  ], "Expected Telegram's inline edit errors");
 
   // As in TDLib, the inline bot also edits the message by its chat, which answers the message.
   const chatEditResponse = await callBotApi(api, `${inlineBot.botApiPath}/editMessageText`, {
@@ -235,11 +248,10 @@ Deno.test('an account sends an inline query, a bot answers, and the account send
   });
   const chatEditResult = botApiResult(chatEditResponse.body);
   if (
-    chatEditResponse.status !== 200 || chatEditResult === undefined ||
+    chatEditResponse.status !== 200 ||
+    chatEditResult === undefined ||
     chatEditResult.message_id !== message.message_id ||
-    chatEditResult.text !== 'Cats' ||
-    JSON.stringify(chatEditResult.from) !== JSON.stringify(message.from) ||
-    JSON.stringify(chatEditResult.via_bot) !== JSON.stringify(message.via_bot)
+    chatEditResult.text !== 'Cats'
   ) {
     throw new Error(
       `Expected the inline bot to edit the message by its chat, received ${
@@ -247,6 +259,16 @@ Deno.test('an account sends an inline query, a bot answers, and the account send
       }`,
     );
   }
+  assertEqualsInFieldOrder(
+    chatEditResult.from,
+    message.from,
+    'Expected the inline bot to edit the message by its chat',
+  );
+  assertEqualsInFieldOrder(
+    chatEditResult.via_bot,
+    message.via_bot,
+    'Expected the inline bot to edit the message by its chat',
+  );
 });
 
 Deno.test('repeated inline queries reuse the answer within its cache time', async () => {
@@ -288,17 +310,19 @@ Deno.test('repeated inline queries reuse the answer within its cache time', asyn
   const graceQuery = await sendQuery(grace.id);
   const updates = await readUpdates(inlineBot.botApiPath);
   if (
-    adaRepeat.status !== 'answered' || adaRepeat.answer?.results.length !== 1 ||
-    graceQuery.status !== 'awaiting_answer' ||
-    JSON.stringify(
-        updates.map((update) => (update.inline_query as { from: { id: number } }).from.id),
-      ) !==
-      JSON.stringify([ada.id, grace.id])
+    adaRepeat.status !== 'answered' ||
+    adaRepeat.answer?.results.length !== 1 ||
+    graceQuery.status !== 'awaiting_answer'
   ) {
     throw new Error(
       `Expected the personal answer to be reused only for Ada, received ${JSON.stringify(updates)}`,
     );
   }
+  assertEqualsInFieldOrder(
+    updates.map((update) => (update.inline_query as { from: { id: number } }).from.id),
+    [ada.id, grace.id],
+    'Expected the personal answer to be reused only for Ada',
+  );
 
   await answer(graceQuery.id, false);
   const reusedForAda = await sendQuery(ada.id);
@@ -348,22 +372,24 @@ Deno.test('accounts share their location with inline bots that request it', asyn
   };
   const expectedLocation = { latitude: 51.50073, longitude: -0.12463, horizontal_accuracy: 13 };
   const [queryUpdate] = await readUpdates(nearbyBot.botApiPath);
-  if (
-    queryResponse.status !== 201 ||
-    JSON.stringify(inlineQuery.location) !== JSON.stringify(expectedLocation) ||
-    JSON.stringify(queryUpdate?.inline_query) !== JSON.stringify({
-        id: inlineQuery.id,
-        from: account,
-        location: expectedLocation,
-        chat_type: 'sender',
-        query: 'cafes',
-        offset: '',
-      })
-  ) {
+  if (queryResponse.status !== 201) {
     throw new Error(
       `Expected the bot to receive the account's location, received ${JSON.stringify(queryUpdate)}`,
     );
   }
+  assertEqualsInFieldOrder(
+    inlineQuery.location,
+    expectedLocation,
+    "Expected the bot to receive the account's location",
+  );
+  assertEqualsInFieldOrder(queryUpdate?.inline_query, {
+    id: inlineQuery.id,
+    from: account,
+    location: expectedLocation,
+    chat_type: 'sender',
+    query: 'cafes',
+    offset: '',
+  }, "Expected the bot to receive the account's location");
 
   await callBotApi(api, `${nearbyBot.botApiPath}/answerInlineQuery`, {
     inline_query_id: inlineQuery.id,
@@ -379,20 +405,12 @@ Deno.test('accounts share their location with inline bots that request it', asyn
     jsonRequest('POST', { result_id: 'cafe-1' }),
   );
   const [, chosenResultUpdate] = await readUpdates(nearbyBot.botApiPath);
-  if (
-    JSON.stringify(chosenResultUpdate?.chosen_inline_result) !== JSON.stringify({
-      from: account,
-      location: expectedLocation,
-      query: 'cafes',
-      result_id: 'cafe-1',
-    })
-  ) {
-    throw new Error(
-      `Expected the chosen result to carry the location, received ${
-        JSON.stringify(chosenResultUpdate)
-      }`,
-    );
-  }
+  assertEqualsInFieldOrder(chosenResultUpdate?.chosen_inline_result, {
+    from: account,
+    location: expectedLocation,
+    query: 'cafes',
+    result_id: 'cafe-1',
+  }, 'Expected the chosen result to carry the location');
 
   // As TDLib keys a query's place in ten-thousandths of a degree, a nearby query reuses the
   // answer, while one from elsewhere or without a location reaches the bot.
@@ -410,13 +428,14 @@ Deno.test('accounts share their location with inline bots that request it', asyn
         .status,
     );
   }
-  if (
-    JSON.stringify(statuses) !==
-      JSON.stringify(['answered', 'awaiting_answer', 'awaiting_answer']) ||
-    (await readUpdates(nearbyBot.botApiPath)).length !== 2
-  ) {
+  if ((await readUpdates(nearbyBot.botApiPath)).length !== 2) {
     throw new Error(`Expected the answer reused only at the same place, received ${statuses}`);
   }
+  assertEquals(
+    statuses,
+    ['answered', 'awaiting_answer', 'awaiting_answer'],
+    'Expected the answer reused only at the same place',
+  );
 
   const unrequestedLocation = await sendQuery(plainBot.bot.id, { latitude: 0, longitude: 0 });
   const invalidLocations: unknown[] = [
@@ -469,16 +488,11 @@ Deno.test('answerInlineQuery and the inline query routes follow Telegram checks'
       }),
     ),
   ]);
-  if (
-    JSON.stringify(queryFailures.map((response) => response.status)) !==
-      JSON.stringify([409, 404, 404, 400, 404])
-  ) {
-    throw new Error(
-      `Expected inline queries to be refused, received ${
-        queryFailures.map((response) => response.status)
-      }`,
-    );
-  }
+  assertEquals(
+    queryFailures.map((response) => response.status),
+    [409, 404, 404, 400, 404],
+    'Expected inline queries to be refused',
+  );
 
   const queryResponse = await sendQuery({ bot_id: inlineBot.bot.id, chat: privateChat, query: '' });
   const inlineQueryId = (await queryResponse.json() as { inline_query: { id: string } })
@@ -545,28 +559,24 @@ Deno.test('answerInlineQuery and the inline query routes follow Telegram checks'
     await answer({ results: 'not JSON' }),
     await answer({ inline_query_id: '999', results: [article('1')] }),
   ];
-  if (
-    JSON.stringify(answerFailures) !== JSON.stringify([
-      'Bad Request: RESULT_ID_DUPLICATE',
-      'Bad Request: too many inline query results specified',
-      'Bad Request: inline query results of type "gif" are not supported',
-      `Bad Request: can't parse InlineQueryResult: type "poll" is unsupported for the inline query result`,
-      "Bad Request: can't parse InlineQueryResult: Input message content is not specified",
-      'Bad Request: inline query results sending a venue or invoice are not supported',
-      "Bad Request: can't parse InlineQueryResult: Can't parse entities: Character '.' is reserved and must be escaped with the preceding '\\'",
-      'Bad Request: unallowed document MIME type',
-      "Bad Request: wrong remote file identifier specified: can't unserialize it",
-      "Bad Request: wrong remote file identifier specified: can't unserialize it",
-      'Bad Request: unallowed characters in start_parameter are used',
-      'Bad Request: NEXT_OFFSET_INVALID',
-      'Bad Request: RESULT_ID_EMPTY',
-      "Bad Request: inline keyboard button URL 'go' is invalid: Wrong HTTP URL",
-      'Bad Request: invalid answerInlineQuery parameters: results',
-      'Bad Request: query is too old and response timeout expired or query ID is invalid',
-    ])
-  ) {
-    throw new Error(`Expected Telegram's answerInlineQuery errors, received ${answerFailures}`);
-  }
+  assertEqualsInFieldOrder(answerFailures, [
+    'Bad Request: RESULT_ID_DUPLICATE',
+    'Bad Request: too many inline query results specified',
+    'Bad Request: inline query results of type "gif" are not supported',
+    `Bad Request: can't parse InlineQueryResult: type "poll" is unsupported for the inline query result`,
+    "Bad Request: can't parse InlineQueryResult: Input message content is not specified",
+    'Bad Request: inline query results sending a venue or invoice are not supported',
+    "Bad Request: can't parse InlineQueryResult: Can't parse entities: Character '.' is reserved and must be escaped with the preceding '\\'",
+    'Bad Request: unallowed document MIME type',
+    "Bad Request: wrong remote file identifier specified: can't unserialize it",
+    "Bad Request: wrong remote file identifier specified: can't unserialize it",
+    'Bad Request: unallowed characters in start_parameter are used',
+    'Bad Request: NEXT_OFFSET_INVALID',
+    'Bad Request: RESULT_ID_EMPTY',
+    "Bad Request: inline keyboard button URL 'go' is invalid: Wrong HTTP URL",
+    'Bad Request: invalid answerInlineQuery parameters: results',
+    'Bad Request: query is too old and response timeout expired or query ID is invalid',
+  ], "Expected Telegram's answerInlineQuery errors");
 
   if (
     (await answer({ results: [article('1')], cache_time: 100_000, is_personal: true })) !==
@@ -602,12 +612,10 @@ Deno.test('answerInlineQuery and the inline query routes follow Telegram checks'
     ))
       .status,
   ];
-  if (
-    blockResponse.status !== 204 ||
-    JSON.stringify(chooseFailures) !== JSON.stringify([400, 409, 404, 404])
-  ) {
+  if (blockResponse.status !== 204) {
     throw new Error(`Expected results to be refused, received ${chooseFailures}`);
   }
+  assertEquals(chooseFailures, [400, 409, 404, 404], 'Expected results to be refused');
 });
 
 Deno.test('inline query results send rich messages that reuse files', async () => {
@@ -669,10 +677,11 @@ Deno.test('inline query results send rich messages that reuse files', async () =
   const callbackQuery = pressedUpdates.result.find((update) => update.callback_query)
     ?.callback_query;
   if (
-    JSON.stringify(answered.body) !== JSON.stringify({ ok: true, result: true }) ||
-    message.rich_message?.blocks.length !== 3 || message.via_bot === undefined ||
+    message.rich_message?.blocks.length !== 3 ||
+    message.via_bot === undefined ||
     !JSON.stringify(message.rich_message).includes('"type":"url"') ||
-    press.status !== 201 || callbackQuery?.inline_message_id === undefined ||
+    press.status !== 201 ||
+    callbackQuery?.inline_message_id === undefined ||
     callbackQuery.data !== 'more'
   ) {
     throw new Error(
@@ -681,6 +690,11 @@ Deno.test('inline query results send rich messages that reuse files', async () =
       }`,
     );
   }
+  assertEqualsInFieldOrder(
+    answered.body,
+    { ok: true, result: true },
+    'Expected the chosen rich message and its callback',
+  );
 
   const refusals = [
     await answer(
@@ -710,17 +724,13 @@ Deno.test('inline query results send rich messages that reuse files', async () =
       }],
     }),
   ].map(({ body }) => isBadRequestResponse(body) ? body.description : JSON.stringify(body));
-  if (
-    JSON.stringify(refusals) !== JSON.stringify([
-      'Bad Request: invalid inline message content specified',
-      'Bad Request: BUTTON_DATA_INVALID',
-      "Bad Request: wrong remote file identifier specified: can't unserialize it",
-      'Bad Request: invalid inline message content specified',
-      'Bad Request: invalid answerInlineQuery parameters',
-    ])
-  ) {
-    throw new Error(`Expected Telegram's errors, received ${JSON.stringify(refusals)}`);
-  }
+  assertEquals(refusals, [
+    'Bad Request: invalid inline message content specified',
+    'Bad Request: BUTTON_DATA_INVALID',
+    "Bad Request: wrong remote file identifier specified: can't unserialize it",
+    'Bad Request: invalid inline message content specified',
+    'Bad Request: invalid answerInlineQuery parameters',
+  ], "Expected Telegram's errors");
 });
 
 Deno.test('a grammY bot answers inline queries and edits the message it sent to a group', async () => {
@@ -805,9 +815,7 @@ Deno.test('a grammY bot answers inline queries and edits the message it sent to 
       5_000,
       'Expected the bot to answer the inline query',
     );
-    if (JSON.stringify(answer.results.map(({ id }) => id)) !== JSON.stringify(['fact', 'photo'])) {
-      throw new Error(`Expected both results, received ${JSON.stringify(answer)}`);
-    }
+    assertEquals(answer.results.map(({ id }) => id), ['fact', 'photo'], 'Expected both results');
 
     const chooseResult = async (resultId: string) => {
       const response = await api.request(

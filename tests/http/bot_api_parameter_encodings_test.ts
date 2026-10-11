@@ -5,6 +5,7 @@
  */
 import { type EmulationApi, requestJson } from '../support/emulation_api.ts';
 import { botApiResult } from '../support/bot_api_requests.ts';
+import { assertEqualsInFieldOrder } from '../support/field_order_assertion.ts';
 import { createPrivateConversationFixture } from '../support/http_fixtures.ts';
 
 /** A parameter as the bot spells it: JSON source text, or plain text such as a message's text. */
@@ -62,15 +63,19 @@ Deno.test('sendMessage reads reply_parameters and reply_markup alike in every en
     const repliedMessage = sentMessage?.reply_to_message as Record<string, unknown> | undefined;
     if (
       status !== 200 ||
-      repliedMessage?.message_id !== questionId ||
-      JSON.stringify(sentMessage?.reply_markup) !==
-        JSON.stringify({ inline_keyboard: inlineKeyboard })
+      repliedMessage?.message_id !== questionId
     ) {
       throw new Error(
         `Expected a reply with the keyboard from ${encoding}, received ${status} ` +
           JSON.stringify(body),
       );
     }
+    assertEqualsInFieldOrder(
+      sentMessage?.reply_markup,
+      { inline_keyboard: inlineKeyboard },
+      `Expected a reply with the keyboard from ${encoding}, received ${status} ` +
+        JSON.stringify(body),
+    );
   }
 
   const recordedReplies = (await readCallEntries(api, sessionPath, 'sendMessage')).slice(1);
@@ -111,14 +116,11 @@ Deno.test('A nested number too large to be finite fails alike in every encoding'
   const recordedParameters = (await readCallEntries(api, sessionPath, 'sendMessage')).map((
     { parameters },
   ) => parameters.reply_parameters);
-  if (
-    JSON.stringify(recordedParameters) !==
-      JSON.stringify(REQUEST_ENCODINGS.map(() => replyParameters))
-  ) {
-    throw new Error(
-      `Expected 1e500 recorded as sent, received ${JSON.stringify(recordedParameters)}`,
-    );
-  }
+  assertEqualsInFieldOrder(
+    recordedParameters,
+    REQUEST_ENCODINGS.map(() => replyParameters),
+    'Expected 1e500 recorded as sent',
+  );
 });
 
 Deno.test('Bot activity finds nested numbers a JSON body sent by their exact value', async () => {
@@ -148,9 +150,11 @@ Deno.test('Bot activity finds nested numbers a JSON body sent by their exact val
       `${activityPath}?kind=bot_api_call&${query}`,
     );
     const positions = status === 200 ? body.entries.map(({ position }) => position) : status;
-    if (JSON.stringify(positions) !== JSON.stringify(expected)) {
-      throw new Error(`Expected ${query} to find ${expected}, found ${JSON.stringify(positions)}`);
-    }
+    assertEqualsInFieldOrder(
+      positions,
+      expected,
+      `Expected ${query} to find ${expected}, found ${JSON.stringify(positions)}`,
+    );
   }
 });
 

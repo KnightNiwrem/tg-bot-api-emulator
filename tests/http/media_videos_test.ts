@@ -1,3 +1,4 @@
+import { assertEquals } from '@std/assert';
 import { Bot } from 'https://cdn.jsdelivr.net/gh/grammyjs/grammY@^1.46.0/src/bot.ts';
 import { InputFile } from 'https://cdn.jsdelivr.net/gh/grammyjs/grammY@^1.46.0/src/types.ts';
 import {
@@ -5,6 +6,7 @@ import {
 } from 'https://cdn.jsdelivr.net/gh/grammyjs/grammY@^1.46.0/src/convenience/webhook.ts';
 
 import { jsonRequest, TEST_PUBLIC_ORIGIN } from '../support/emulation_api.ts';
+import { assertEqualsInFieldOrder } from '../support/field_order_assertion.ts';
 import { expectSettlementWithin } from '../support/settlement.ts';
 import { isBadRequestResponse } from '../support/http_response_guards.ts';
 import {
@@ -69,21 +71,27 @@ Deno.test('editMessageMedia puts videos in messages and albums, keeping their pl
   const editedAnswer = botApiResult(textToVideo.body);
   const editedVideo = editedAnswer?.video as Record<string, unknown> | undefined;
   if (
-    textToVideo.status !== 200 || editedAnswer === undefined ||
-    editedAnswer.message_id !== answer?.message_id || 'text' in editedAnswer ||
+    textToVideo.status !== 200 ||
+    editedAnswer === undefined ||
+    editedAnswer.message_id !== answer?.message_id ||
+    'text' in editedAnswer ||
     (editedAnswer.reply_to_message as Record<string, unknown> | undefined)?.message_id !==
       question.message_id ||
-    editedVideo?.duration !== 4 || editedVideo.start_timestamp !== 1 ||
+    editedVideo?.duration !== 4 ||
+    editedVideo.start_timestamp !== 1 ||
     (editedVideo.thumbnail as Record<string, unknown> | undefined)?.height !== 18 ||
-    editedAnswer.has_media_spoiler !== true || editedAnswer.show_caption_above_media !== true ||
-    editedAnswer.caption !== 'The replay' || typeof editedAnswer.edit_date !== 'number' ||
-    JSON.stringify(editedAnswer.reply_markup) !==
-      JSON.stringify({ inline_keyboard: [[{ text: 'Replay', callback_data: 'replay' }]] })
+    editedAnswer.has_media_spoiler !== true ||
+    editedAnswer.show_caption_above_media !== true ||
+    editedAnswer.caption !== 'The replay' ||
+    typeof editedAnswer.edit_date !== 'number'
   ) {
     throw new Error(
       `Expected the reply to become a video, received ${JSON.stringify(editedAnswer)}`,
     );
   }
+  assertEqualsInFieldOrder(editedAnswer.reply_markup, {
+    inline_keyboard: [[{ text: 'Replay', callback_data: 'replay' }]],
+  }, 'Expected the reply to become a video');
 
   // In an album, a photo and a video replace each other, while a document stays apart.
   const album = await callBotApiWithFiles(api, `${bot.botApiPath}/sendMediaGroup`, {
@@ -250,10 +258,9 @@ Deno.test('an inline message takes a video by file_id or URL but not by upload',
     !isBadRequestResponse(upload.body) ||
     upload.body.description !== 'Bad Request: invalid message content specified' ||
     afterUpload?.text !== 'Clips' ||
-    JSON.stringify(byFileId.body) !== JSON.stringify({ ok: true, result: true }) ||
     (afterFileId?.video as Record<string, unknown> | undefined)?.start_timestamp !== 3 ||
-    JSON.stringify(byUrl.body) !== JSON.stringify({ ok: true, result: true }) ||
-    afterUrlVideo?.file_name !== 'clip.mp4' || afterUrlVideo.file_size !== 6
+    afterUrlVideo?.file_name !== 'clip.mp4' ||
+    afterUrlVideo.file_size !== 6
   ) {
     throw new Error(
       `Expected an inline message's video by file_id or URL only, received ${
@@ -261,6 +268,16 @@ Deno.test('an inline message takes a video by file_id or URL but not by upload',
       }`,
     );
   }
+  assertEqualsInFieldOrder(
+    byFileId.body,
+    { ok: true, result: true },
+    "Expected an inline message's video by file_id or URL only",
+  );
+  assertEqualsInFieldOrder(
+    byUrl.body,
+    { ok: true, result: true },
+    "Expected an inline message's video by file_id or URL only",
+  );
 });
 
 Deno.test('an account and a bot exchange a video, which the bot downloads and sends again', async () => {
@@ -291,30 +308,33 @@ Deno.test('an account and a bot exchange a video, which the bot downloads and se
   const receivedVideo = received?.video as Record<string, unknown> | undefined;
   if (
     sentResponse.status !== 201 ||
-    JSON.stringify(Object.keys(receivedVideo ?? {})) !== JSON.stringify([
-        'duration',
-        'width',
-        'height',
-        'file_name',
-        'mime_type',
-        'file_id',
-        'file_unique_id',
-        'file_size',
-      ]) ||
-    receivedVideo?.duration !== 42 || receivedVideo.width !== 1280 ||
-    receivedVideo.height !== 720 || receivedVideo.file_name !== 'holiday.mov' ||
+    receivedVideo?.duration !== 42 ||
+    receivedVideo.width !== 1280 ||
+    receivedVideo.height !== 720 ||
+    receivedVideo.file_name !== 'holiday.mov' ||
     receivedVideo.mime_type !== 'video/quicktime' ||
     receivedVideo.file_size !== videoContent.length ||
-    JSON.stringify(sentMessage?.video) !== JSON.stringify(receivedVideo) ||
     received.caption !== 'Watch /start' ||
-    JSON.stringify(received.caption_entities) !== JSON.stringify([
-        { type: 'italic', offset: 0, length: 5 },
-        { type: 'bot_command', offset: 6, length: 6 },
-      ]) ||
-    'show_caption_above_media' in received || 'has_media_spoiler' in received
+    'show_caption_above_media' in received ||
+    'has_media_spoiler' in received
   ) {
     throw new Error(`Expected the account's video, received ${JSON.stringify(updates.body)}`);
   }
+  assertEquals(Object.keys(receivedVideo ?? {}), [
+    'duration',
+    'width',
+    'height',
+    'file_name',
+    'mime_type',
+    'file_id',
+    'file_unique_id',
+    'file_size',
+  ], "Expected the account's video");
+  assertEqualsInFieldOrder(sentMessage?.video, receivedVideo, "Expected the account's video");
+  assertEqualsInFieldOrder(received.caption_entities, [
+    { type: 'italic', offset: 0, length: 5 },
+    { type: 'bot_command', offset: 6, length: 6 },
+  ], "Expected the account's video");
 
   const fileResponse = await callBotApi(api, `${botApiPath}/getFile`, {
     file_id: receivedVideo.file_id,
@@ -359,14 +379,16 @@ Deno.test('an account and a bot exchange a video, which the bot downloads and se
     file_size: videoContent.length,
   };
   if (
-    reply.status !== 200 || JSON.stringify(replyVideo) !== JSON.stringify(expectedReplyVideo) ||
-    replyMessage?.caption !== 'Again' || replyMessage.show_caption_above_media !== true ||
+    reply.status !== 200 ||
+    replyMessage?.caption !== 'Again' ||
+    replyMessage.show_caption_above_media !== true ||
     replyMessage.has_media_spoiler !== true ||
     (replyMessage.reply_to_message as Record<string, unknown> | undefined)?.message_id !==
       received.message_id
   ) {
     throw new Error(`Expected the video to be sent again, received ${JSON.stringify(reply.body)}`);
   }
+  assertEqualsInFieldOrder(replyVideo, expectedReplyVideo, 'Expected the video to be sent again');
 
   const history = await (await api.request(historyPath)).json() as {
     messages: Array<Record<string, unknown>>;
@@ -378,8 +400,6 @@ Deno.test('an account and a bot exchange a video, which the bot downloads and se
     `${sessionPath}/bot-activity?kind=bot_api_call&bot_id=${createdBot.bot.id}`,
   )).json() as { entries: Array<{ method: string; answer: { ok: boolean } }> };
   if (
-    JSON.stringify(history.messages.map((message) => message.video)) !==
-      JSON.stringify([receivedVideo, expectedReplyVideo]) ||
     sessionDownload.status !== 200 ||
     new Uint8Array(await sessionDownload.arrayBuffer()).toBase64() !==
       videoContent.toBase64() ||
@@ -389,6 +409,10 @@ Deno.test('an account and a bot exchange a video, which the bot downloads and se
       `Expected the history to show both videos, received ${JSON.stringify(history)}`,
     );
   }
+  assertEqualsInFieldOrder(history.messages.map((message) => message.video), [
+    receivedVideo,
+    expectedReplyVideo,
+  ], 'Expected the history to show both videos');
 });
 
 Deno.test('sendVideo keeps the attributes bots define and follows Telegram checks', async () => {
@@ -427,26 +451,29 @@ Deno.test('sendVideo keeps the attributes bots define and follows Telegram check
   });
   const thumbnail = uploaded.video.thumbnail as Record<string, unknown> | undefined;
   if (
-    JSON.stringify(Object.keys(uploaded.video)) !== JSON.stringify([
-        'duration',
-        'width',
-        'height',
-        'file_name',
-        'mime_type',
-        'thumbnail',
-        'thumb',
-        'file_id',
-        'file_unique_id',
-        'file_size',
-      ]) ||
-    uploaded.video.duration !== 86_400 || uploaded.video.width !== 0 ||
-    uploaded.video.height !== 720 || uploaded.video.file_name !== 'clip.mp4' ||
+    uploaded.video.duration !== 86_400 ||
+    uploaded.video.width !== 0 ||
+    uploaded.video.height !== 720 ||
+    uploaded.video.file_name !== 'clip.mp4' ||
     uploaded.video.mime_type !== 'video/mp4' ||
-    JSON.stringify(uploaded.video.thumb) !== JSON.stringify(thumbnail) ||
-    thumbnail?.width !== 90 || uploaded.message.caption !== 'Clip'
+    thumbnail?.width !== 90 ||
+    uploaded.message.caption !== 'Clip'
   ) {
     throw new Error(`Expected the uploaded video, received ${JSON.stringify(uploaded.message)}`);
   }
+  assertEquals(Object.keys(uploaded.video), [
+    'duration',
+    'width',
+    'height',
+    'file_name',
+    'mime_type',
+    'thumbnail',
+    'thumb',
+    'file_id',
+    'file_unique_id',
+    'file_size',
+  ], 'Expected the uploaded video');
+  assertEqualsInFieldOrder(uploaded.video.thumb, thumbnail, 'Expected the uploaded video');
   const thumbnailFile = await callBotApi(api, `${botApiPath}/getFile`, {
     file_id: thumbnail.file_id,
   });
@@ -480,18 +507,10 @@ Deno.test('sendVideo keeps the attributes bots define and follows Telegram check
   );
   const unnamed = await sendVideo({ video: 'https://cdn.example.com/media/' }, {});
   if (
-    misnamed.video.mime_type !== 'video/mp4' || misnamed.video.file_name !== 'notes.txt' ||
-    'file_name' in unnamed.video || unnamed.video.mime_type !== 'video/mp4' ||
-    JSON.stringify(downloaded.video) !== JSON.stringify({
-        duration: 5,
-        width: 0,
-        height: 0,
-        file_name: 'intro.mp4',
-        mime_type: 'video/mp4',
-        file_id: downloaded.video.file_id,
-        file_unique_id: downloaded.video.file_unique_id,
-        file_size: 5,
-      })
+    misnamed.video.mime_type !== 'video/mp4' ||
+    misnamed.video.file_name !== 'notes.txt' ||
+    'file_name' in unnamed.video ||
+    unnamed.video.mime_type !== 'video/mp4'
   ) {
     throw new Error(
       `Expected an MPEG-4 upload, a URL video without a thumbnail and one without a name, received ${
@@ -499,6 +518,16 @@ Deno.test('sendVideo keeps the attributes bots define and follows Telegram check
       }`,
     );
   }
+  assertEqualsInFieldOrder(downloaded.video, {
+    duration: 5,
+    width: 0,
+    height: 0,
+    file_name: 'intro.mp4',
+    mime_type: 'video/mp4',
+    file_id: downloaded.video.file_id,
+    file_unique_id: downloaded.video.file_unique_id,
+    file_size: 5,
+  }, 'Expected an MPEG-4 upload, a URL video without a thumbnail and one without a name');
 
   const document = botApiResult(
     (await callBotApiWithFiles(api, `${botApiPath}/sendDocument`, { chat_id: chatId }, {
@@ -594,16 +623,18 @@ Deno.test('sendVideo keeps the attributes bots define and follows Telegram check
     'Bad Request: invalid sendVideo parameters: duration',
     'Bad Request: chat_id is empty',
   ];
-  if (
-    JSON.stringify(descriptions) !== JSON.stringify(expectedDescriptions) ||
-    (await (await api.request(historyPath)).text()) !== historyBefore
-  ) {
+  if ((await (await api.request(historyPath)).text()) !== historyBefore) {
     throw new Error(
       `Expected Telegram's errors and no new message, received ${
         JSON.stringify(descriptions, null, 2)
       }`,
     );
   }
+  assertEqualsInFieldOrder(
+    descriptions,
+    expectedDescriptions,
+    "Expected Telegram's errors and no new message",
+  );
 });
 
 Deno.test('bots reuse only video file IDs they know, in their own session', async () => {
@@ -722,19 +753,11 @@ Deno.test('supergroup bots receive videos as they would other messages, each by 
   const readerUpdates = await receivedUpdates(readerBot.botApiPath, readerOffset);
   const commandVideo = command.video as { file_unique_id: string };
   if (
-    edit.status !== 200 || botCopy.status !== 200 ||
-    JSON.stringify(botUpdates.map(({ kind, caption }) => [kind, caption])) !==
-      JSON.stringify([['message', '/start']]) ||
-    JSON.stringify(readerUpdates.map(({ kind, caption }) => [kind, caption])) !==
-      JSON.stringify([
-        ['message', '/start'],
-        ['message', 'Just a clip'],
-        ['edited_message', '/help'],
-      ]) ||
+    edit.status !== 200 ||
+    botCopy.status !== 200 ||
     botUpdates[0].video?.file_unique_id !== commandVideo.file_unique_id ||
     readerUpdates[0].video?.file_unique_id !== commandVideo.file_unique_id ||
-    botUpdates[0].video?.file_id === readerUpdates[0].video?.file_id ||
-    JSON.stringify(readerUpdates[2].video) !== JSON.stringify(readerUpdates[0].video)
+    botUpdates[0].video?.file_id === readerUpdates[0].video?.file_id
   ) {
     throw new Error(
       `Expected addressed videos and the edit for subscribed bots, received ${
@@ -742,6 +765,21 @@ Deno.test('supergroup bots receive videos as they would other messages, each by 
       }`,
     );
   }
+  assertEquals(
+    botUpdates.map(({ kind, caption }) => [kind, caption]),
+    [['message', '/start']],
+    'Expected addressed videos and the edit for subscribed bots',
+  );
+  assertEquals(readerUpdates.map(({ kind, caption }) => [kind, caption]), [
+    ['message', '/start'],
+    ['message', 'Just a clip'],
+    ['edited_message', '/help'],
+  ], 'Expected addressed videos and the edit for subscribed bots');
+  assertEqualsInFieldOrder(
+    readerUpdates[2].video,
+    readerUpdates[0].video,
+    'Expected addressed videos and the edit for subscribed bots',
+  );
 });
 
 Deno.test('forwards, copies and replies from other chats show videos with their start', async () => {
@@ -831,22 +869,26 @@ Deno.test('forwards, copies and replies from other chats show videos with their 
   });
   const externalReply = botApiResult(reply.body)?.external_reply as Record<string, unknown>;
   if (
-    JSON.stringify(shown) !== JSON.stringify([
-        ['Trailer', 12, true],
-        ['Trailer', 0, true],
-        ['Plain', null, false],
-        ['Copy', 4, true],
-        [null, 3, true],
-        ['From the private chat', 3, true],
-      ]) ||
     (forwarded?.forward_origin as Record<string, unknown> | undefined)?.type !== 'user' ||
-    forwardedFromStart?.video === undefined || forwardedText?.text !== 'Plain' ||
-    'caption' in externalReply ||
-    JSON.stringify(botApiResult(reply.body)?.quote) !==
-      JSON.stringify({ text: 'Trailer', position: 0 })
+    forwardedFromStart?.video === undefined ||
+    forwardedText?.text !== 'Plain' ||
+    'caption' in externalReply
   ) {
     throw new Error(`Expected each video with its start, received ${JSON.stringify(shown)}`);
   }
+  assertEquals(shown, [
+    ['Trailer', 12, true],
+    ['Trailer', 0, true],
+    ['Plain', null, false],
+    ['Copy', 4, true],
+    [null, 3, true],
+    ['From the private chat', 3, true],
+  ], 'Expected each video with its start');
+  assertEqualsInFieldOrder(
+    botApiResult(reply.body)?.quote,
+    { text: 'Trailer', position: 0 },
+    'Expected each video with its start',
+  );
 });
 
 Deno.test('bots and accounts edit the captions and media of video messages', async () => {
@@ -876,16 +918,22 @@ Deno.test('bots and accounts edit the captions and media of video messages', asy
   });
   const editedMessage = botApiResult(captionEdit.body);
   if (
-    captionEdit.status !== 200 || editedMessage?.caption !== 'Final' ||
+    captionEdit.status !== 200 ||
+    editedMessage?.caption !== 'Final' ||
     editedMessage.show_caption_above_media !== true ||
-    JSON.stringify(editedMessage.video) !== JSON.stringify(sentMessage?.video) ||
-    unchangedEdit.status !== 400 || !isBadRequestResponse(unchangedEdit.body) ||
+    unchangedEdit.status !== 400 ||
+    !isBadRequestResponse(unchangedEdit.body) ||
     !unchangedEdit.body.description.startsWith('Bad Request: message is not modified')
   ) {
     throw new Error(
       `Expected a caption edit of the video, received ${JSON.stringify(captionEdit)}`,
     );
   }
+  assertEqualsInFieldOrder(
+    editedMessage.video,
+    sentMessage?.video,
+    'Expected a caption edit of the video',
+  );
 
   // A video message's media is replaced as a photo's or document's is.
   const mediaEdit = await callBotApiWithFiles(api, `${botApiPath}/editMessageMedia`, {
@@ -920,11 +968,16 @@ Deno.test('bots and accounts edit the captions and media of video messages', asy
     (await callBotApi(api, `${botApiPath}/getUpdates`, {})).body,
   ).at(-1);
   if (
-    accountEdit.status !== 200 || editUpdate?.caption !== 'Mine, edited' ||
-    JSON.stringify(editUpdate.video) !== JSON.stringify(accountMessage.video)
+    accountEdit.status !== 200 ||
+    editUpdate?.caption !== 'Mine, edited'
   ) {
     throw new Error(`Expected the account's caption edit, received ${JSON.stringify(editUpdate)}`);
   }
+  assertEqualsInFieldOrder(
+    editUpdate.video,
+    accountMessage.video,
+    "Expected the account's caption edit",
+  );
 });
 
 Deno.test('a grammY bot receives a video through its webhook and answers with one', async () => {
@@ -987,14 +1040,16 @@ Deno.test('a grammY bot receives a video through its webhook and answers with on
     const answer = history[1];
     const answerVideo = answer.video as Record<string, unknown> | undefined;
     if (
-      sent.status !== 201 || JSON.stringify(receivedDurations) !== JSON.stringify([9]) ||
-      answer.caption !== 'Got clip.mp4' || answerVideo?.duration !== 2 ||
+      sent.status !== 201 ||
+      answer.caption !== 'Got clip.mp4' ||
+      answerVideo?.duration !== 2 ||
       answerVideo.width !== 320 ||
       (answerVideo.thumbnail as Record<string, unknown> | undefined)?.height !== 24 ||
       (answer.reply_to_message as Record<string, unknown>).message_id !== history[0].message_id
     ) {
       throw new Error(`Expected the bot's video answer, received ${JSON.stringify(history)}`);
     }
+    assertEquals(receivedDurations, [9], "Expected the bot's video answer");
   } finally {
     await api.request(sessionPath, { method: 'DELETE' });
     await webhookServer.shutdown();

@@ -1,9 +1,11 @@
+import { assertEquals } from '@std/assert';
 import { Bot } from 'https://cdn.jsdelivr.net/gh/grammyjs/grammY@^1.46.0/src/bot.ts';
 import {
   webhookCallback,
 } from 'https://cdn.jsdelivr.net/gh/grammyjs/grammY@^1.46.0/src/convenience/webhook.ts';
 
 import { TEST_PUBLIC_ORIGIN } from '../support/emulation_api.ts';
+import { assertEqualsInFieldOrder } from '../support/field_order_assertion.ts';
 import { expectSettlementWithin } from '../support/settlement.ts';
 import {
   isBadRequestResponse,
@@ -36,22 +38,32 @@ Deno.test('deleteWebhook answers as Telegram does for a bot without a webhook', 
 
   await sendText('kept');
   const keepingAnswer = await deleteWebhook({});
-  if (
-    keepingAnswer.status !== 200 ||
-    JSON.stringify(keepingAnswer.body) !== JSON.stringify(expectedAnswer) ||
-    JSON.stringify(await getPendingTexts()) !== JSON.stringify(['kept'])
-  ) {
+  if (keepingAnswer.status !== 200) {
     throw new Error('Expected deleteWebhook to succeed without discarding pending updates');
   }
+  assertEqualsInFieldOrder(
+    keepingAnswer.body,
+    expectedAnswer,
+    'Expected deleteWebhook to succeed without discarding pending updates',
+  );
+  assertEquals(
+    await getPendingTexts(),
+    ['kept'],
+    'Expected deleteWebhook to succeed without discarding pending updates',
+  );
 
   const droppingAnswer = await deleteWebhook({ drop_pending_updates: true });
   if (
     droppingAnswer.status !== 200 ||
-    JSON.stringify(droppingAnswer.body) !== JSON.stringify(expectedAnswer) ||
     (await getPendingTexts()).length !== 0
   ) {
     throw new Error('Expected drop_pending_updates to discard pending updates');
   }
+  assertEqualsInFieldOrder(
+    droppingAnswer.body,
+    expectedAnswer,
+    'Expected drop_pending_updates to discard pending updates',
+  );
 
   const malformedAnswer = await deleteWebhook({ drop_pending_updates: 'maybe' });
   if (malformedAnswer.status !== 400 || !isBadRequestResponse(malformedAnswer.body)) {
@@ -68,9 +80,7 @@ Deno.test('setWebhook, getWebhookInfo, and deleteWebhook follow Telegram checks'
     expected: { status: number; body: unknown },
     failureMessage: string,
   ) => {
-    if (JSON.stringify(answer) !== JSON.stringify(expected)) {
-      throw new Error(`${failureMessage}, received ${JSON.stringify(answer)}`);
-    }
+    assertEqualsInFieldOrder(answer, expected, `${failureMessage}`);
   };
   const success = (description: string) => ({
     status: 200,
@@ -222,13 +232,14 @@ Deno.test('a grammY bot receives updates through its webhook and replies', async
     const historyBody: unknown = await (await api.request(
       `${sessionPath}/accounts/${createdAccount.account.id}/conversations/private/${createdBot.bot.id}/messages`,
     )).json();
-    if (
-      !isMessageHistoryResponse(historyBody) ||
-      JSON.stringify(historyBody.messages.map(({ text }) => text)) !==
-        JSON.stringify(['/start', 'Hello, Ada!'])
-    ) {
+    if (!isMessageHistoryResponse(historyBody)) {
       throw new Error('Expected history to hold the command and the bot reply');
     }
+    assertEquals(
+      historyBody.messages.map(({ text }) => text),
+      ['/start', 'Hello, Ada!'],
+      'Expected history to hold the command and the bot reply',
+    );
 
     // The bot rejects updates without its secret token, which the test reads from getWebhookInfo.
     await grammyBot.api.setWebhook(webhookUrl, { secret_token: 'other_secret' });
@@ -310,9 +321,8 @@ Deno.test('a webhook runs a Bot API method by naming it in its response', async 
     const history = await readHistory();
     const { result: webhookInfo } = await readWebhookInfo();
     if (
-      JSON.stringify(history) !==
-        JSON.stringify(['one', 'JSON reply', 'two', 'three', 'Form reply', 'four', 'five']) ||
-      webhookInfo.url.length === 0 || webhookInfo.last_error_message !== undefined
+      webhookInfo.url.length === 0 ||
+      webhookInfo.last_error_message !== undefined
     ) {
       throw new Error(
         `Expected the webhook's replies to run, received ${
@@ -320,6 +330,11 @@ Deno.test('a webhook runs a Bot API method by naming it in its response', async 
         }`,
       );
     }
+    assertEquals(
+      history,
+      ['one', 'JSON reply', 'two', 'three', 'Form reply', 'four', 'five'],
+      "Expected the webhook's replies to run",
+    );
   } finally {
     await api.request(sessionPath, { method: 'DELETE' });
     await webhookServer.shutdown();
@@ -363,11 +378,11 @@ Deno.test('a grammY bot replies through its webhook response', async () => {
       5_000,
       'Expected the bot to reply in its webhook response',
     );
-    if (
-      JSON.stringify(history) !== JSON.stringify(['/start', 'Hello through the webhook reply!'])
-    ) {
-      throw new Error(`Expected the reply in history, received ${JSON.stringify(history)}`);
-    }
+    assertEquals(
+      history,
+      ['/start', 'Hello through the webhook reply!'],
+      'Expected the reply in history',
+    );
   } finally {
     await api.request(sessionPath, { method: 'DELETE' });
     await webhookServer.shutdown();
