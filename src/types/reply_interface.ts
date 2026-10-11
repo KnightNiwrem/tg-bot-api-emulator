@@ -287,29 +287,6 @@ function isSameRequestFieldValue(first: unknown, second: unknown): boolean {
 }
 
 /**
- * TDLib's description of a reply keyboard button request that a chat other than a private chat
- * cannot show, as its `KeyboardButton::get_keyboard_button` describes it.
- */
-const GROUP_REPLY_KEYBOARD_REQUEST_ERRORS: {
-  readonly [Kind in ReplyKeyboardButtonRequest['kind']]: string;
-} = {
-  contact: 'Phone number can be requested in private chats only',
-  location: 'Location can be requested in private chats only',
-  poll: 'Poll can be requested in private chats only',
-  web_app: 'Web App buttons can be used in private chats only',
-  users: 'Users can be requested in private chats only',
-  chat: 'Chats can be requested in private chats only',
-};
-
-/**
- * TDLib's description of a request that a chat other than a private chat cannot show on a reply
- * keyboard button.
- */
-export function getGroupReplyKeyboardRequestError(request: ReplyKeyboardButtonRequest): string {
-  return GROUP_REPLY_KEYBOARD_REQUEST_ERRORS[request.kind];
-}
-
-/**
  * Whether a group message's reply interface markup applies to a member, as TDLib's
  * `get_reply_markup` decides for received markup: markup that is not selective applies to every
  * member, and selective markup only to a member whom the message mentions or whose message it

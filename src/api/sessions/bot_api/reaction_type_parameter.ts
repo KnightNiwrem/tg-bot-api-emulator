@@ -1,4 +1,13 @@
-import { parseBotApiJsonParameter } from './request_parameters.ts';
+import { BOT_API_ERRORS } from './errors/error_catalogue.ts';
+import { type JsonObjectFieldError, parseBotApiJsonParameter } from './request_parameters.ts';
+
+/**
+ * Why the official Bot API server's `get_reaction_type` cannot read a reaction: it is not an
+ * object, a field is missing, or it has a type the server does not know.
+ */
+export type ReactionTypeError =
+  | { readonly reason: 'reaction_type_not_object' | 'reaction_type_invalid' }
+  | Extract<JsonObjectFieldError, { readonly reason: 'field_missing' }>;
 
 /**
  * The reactions a `reaction` parameter names: ordinary emoji, or a custom emoji, which the
@@ -39,19 +48,21 @@ export function readReactionTypesParameter(
   }
   const parsedParameter = parseBotApiJsonParameter(text);
   if (parsedParameter === undefined) {
-    return { read: false, description: "Bad Request: can't parse reaction types JSON object" };
+    return { read: false, description: BOT_API_ERRORS.reactionTypesJsonInvalid.description() };
   }
   const { value } = parsedParameter;
   if (value === null) {
     return { read: true, emojis: [], hasCustomEmoji: false };
   }
   if (!Array.isArray(value)) {
-    return { read: false, description: 'Bad Request: expected an Array of ReactionType' };
+    return { read: false, description: BOT_API_ERRORS.reactionTypesNotArray.description() };
   }
-  const reactionTypeError = (error: string): ReactionTypesParameterReading => ({
+  const reactionTypeError = (error: ReactionTypeError): ReactionTypesParameterReading => ({
     read: false,
-    description: `Bad Request: can't parse ReactionType: ${error}`,
+    description: BOT_API_ERRORS.reactionTypeInvalid.description(error),
   });
+  const fieldMissing = (fieldName: string): ReactionTypesParameterReading =>
+    reactionTypeError({ reason: 'field_missing', fieldName });
   const malformedReactionType: ReactionTypesParameterReading = {
     read: false,
     description: invalidParametersDescription,
@@ -61,29 +72,29 @@ export function readReactionTypesParameter(
   let hasCustomEmoji = false;
   for (const element of value) {
     if (typeof element !== 'object' || element === null || Array.isArray(element)) {
-      return reactionTypeError('expected an Object');
+      return reactionTypeError({ reason: 'reaction_type_not_object' });
     }
     if (!('type' in element)) {
-      return reactionTypeError('Can\'t find field "type"');
+      return fieldMissing('type');
     }
     switch (element.type) {
       case 'emoji': {
         if (!('emoji' in element)) {
-          return reactionTypeError('Can\'t find field "emoji"');
+          return fieldMissing('emoji');
         }
         const { emoji } = element;
         if (typeof emoji !== 'string' || !hasOnlyFields(element, ['type', 'emoji'])) {
           return malformedReactionType;
         }
         if (isEmptyReactionEmoji(emoji)) {
-          return { read: false, description: 'Bad Request: invalid reaction type specified' };
+          return { read: false, description: BOT_API_ERRORS.reactionEmojiEmpty.description() };
         }
         emojis.push(emoji);
         break;
       }
       case 'custom_emoji': {
         if (!('custom_emoji_id' in element)) {
-          return reactionTypeError('Can\'t find field "custom_emoji_id"');
+          return fieldMissing('custom_emoji_id');
         }
         const { custom_emoji_id: customEmojiId } = element;
         if (
@@ -97,7 +108,7 @@ export function readReactionTypesParameter(
       }
       default:
         return typeof element.type === 'string'
-          ? reactionTypeError('invalid reaction type specified')
+          ? reactionTypeError({ reason: 'reaction_type_invalid' })
           : malformedReactionType;
     }
   }

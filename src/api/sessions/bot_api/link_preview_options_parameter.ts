@@ -1,5 +1,6 @@
 import { z } from 'zod';
 
+import { BOT_API_ERRORS } from './errors/error_catalogue.ts';
 import { jsonParameter } from './request_parameters.ts';
 
 /**
@@ -24,7 +25,7 @@ export const linkPreviewOptionsSchema = z.strictObject({
  */
 export function linkPreviewOptionsParameter() {
   return jsonParameter(linkPreviewOptionsSchema.optional(), {
-    unparsableJsonDescription: "Bad Request: can't parse link preview options JSON object",
+    unparsableJsonDescription: BOT_API_ERRORS.linkPreviewOptionsJsonInvalid.description(),
     emptyText: { readAs: undefined },
   });
 }

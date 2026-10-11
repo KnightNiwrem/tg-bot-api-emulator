@@ -21,8 +21,11 @@ import {
 import { readChatMemberTargetStep, requireValidUserId } from '../chat_member_requests.ts';
 import { readChatPermissionsParameter } from '../chat_permissions_parameter.ts';
 import { presentChatMemberFailure } from '../errors/chat_member_failure_presenter.ts';
+import { BOT_API_ERRORS } from '../errors/error_catalogue.ts';
+import { presentFixedBotApiError } from '../errors/error_template.ts';
 import { type BotApiFamilyContext, type BotApiMethod, botApiResult } from '../method_call.ts';
 import {
+  answerWith,
   answerWithBadRequest,
   type BotApiStepResult,
   commandMethodOfSteps,
@@ -31,10 +34,6 @@ import {
   startSteps,
 } from '../method_steps.ts';
 import { booleanParameter, integerParameter } from '../request_parameters.ts';
-
-/** The emulator's description for a promotion to an anonymous administrator, which it lacks. */
-const ANONYMOUS_ADMINISTRATORS_UNSUPPORTED_DESCRIPTION =
-  'Bad Request: anonymous administrators are not supported';
 
 const leaveChatParametersSchema = z.strictObject({
   chat_id: integerParameter(z.int()).optional(),
@@ -518,7 +517,7 @@ function refuseAnonymousAdministrator(
   promotion: PromoteChatMemberParameters,
 ): BotApiStepResult<PromoteChatMemberParameters> {
   return promotion.is_anonymous === true
-    ? answerWithBadRequest(ANONYMOUS_ADMINISTRATORS_UNSUPPORTED_DESCRIPTION)
+    ? answerWith(presentFixedBotApiError(BOT_API_ERRORS.anonymousAdministratorsUnsupported))
     : proceedWith(promotion);
 }
 

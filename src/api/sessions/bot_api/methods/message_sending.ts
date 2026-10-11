@@ -32,14 +32,14 @@ import {
   type RequestedInputFile,
 } from '../input_file_parameter.ts';
 import {
+  describeInputMediaCaptionError,
   getRequestedMediaFile,
-  INPUT_MEDIA_ERROR_PREFIX,
   readInputMediaGroupParameter,
   toMediaReplacementRequest,
   type UnreadMediaReplacement,
 } from '../input_media_parameter.ts';
 import {
-  describeInputPollOptionTextError,
+  describePollOptionTextError,
   readInputPollOptionsParameter,
 } from '../input_poll_option_parameter.ts';
 import { messageEntitiesParameter } from '../message_entities_parameter.ts';
@@ -85,7 +85,6 @@ import {
   numberParameter,
   optionalInt64Identifier,
 } from '../request_parameters.ts';
-import { LOCATION_INVALID_DESCRIPTION } from '../rich_message_parameter.ts';
 import { sendMethodAnswer } from '../send_answer.ts';
 import {
   readSendOptions,
@@ -663,7 +662,7 @@ function readSentLocation<
       ...send,
       location: createGeoLocation(latitude, longitude, horizontalAccuracy ?? 0),
     })
-    : answerWithBadRequest(LOCATION_INVALID_DESCRIPTION);
+    : answerWith(presentFixedBotApiError(BOT_API_ERRORS.locationInvalid));
 }
 
 /**
@@ -751,7 +750,7 @@ function readAlbumMedia<Parameters extends z.output<typeof sendMediaGroupParamet
     const captionReading = readEmbeddedFormattedText(
       caption,
       invalidParametersDescription,
-      INPUT_MEDIA_ERROR_PREFIX,
+      describeInputMediaCaptionError,
     );
     if (!captionReading.read) {
       return answerWithBadRequest(captionReading.description);
@@ -834,17 +833,13 @@ function readPollOptions<Poll extends { readonly parameters: SendPollParameters 
   }
   const pollOptions: SpecifiedFormattedText[] = [];
   for (const option of optionsReading.options) {
-    const optionReading = readFormattedTextParameters({
-      text: option.text,
-      parseMode: option.parseMode,
-      entities: option.entities,
-    }, invalidParametersDescription);
+    const optionReading = readEmbeddedFormattedText(
+      option,
+      invalidParametersDescription,
+      describePollOptionTextError,
+    );
     if (!optionReading.read) {
-      return answerWithBadRequest(
-        optionReading.description === invalidParametersDescription
-          ? invalidParametersDescription
-          : describeInputPollOptionTextError(optionReading.description),
-      );
+      return answerWithBadRequest(optionReading.description);
     }
     pollOptions.push(optionReading.formattedText);
   }

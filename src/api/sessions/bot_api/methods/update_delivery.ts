@@ -1,5 +1,7 @@
 import { z } from 'zod';
 
+import { BOT_API_ERRORS } from '../errors/error_catalogue.ts';
+import { presentFixedBotApiError } from '../errors/error_template.ts';
 import { presentUpdateDeliveryFailure } from '../errors/update_delivery_failure_presenter.ts';
 import {
   type BotApiFamilyContext,
@@ -8,7 +10,7 @@ import {
   SESSION_ENDED,
 } from '../method_call.ts';
 import {
-  answerWithBadRequest,
+  answerWith,
   type BotApiStepResult,
   commandMethodOfSteps,
   handledMethodOfSteps,
@@ -30,15 +32,6 @@ const SET_WEBHOOK_OUTCOME_DESCRIPTIONS = {
   webhook_deleted: 'Webhook was deleted',
   webhook_already_deleted: 'Webhook is already deleted',
 } as const;
-
-/**
- * The emulator's descriptions for webhook options it does not support: Telegram connects to a
- * webhook at a given IP address, or trusts its self-signed certificate.
- */
-const WEBHOOK_IP_ADDRESS_UNSUPPORTED_DESCRIPTION =
-  'Bad Request: webhook IP addresses are not supported';
-const WEBHOOK_CERTIFICATE_UNSUPPORTED_DESCRIPTION =
-  'Bad Request: custom webhook certificates are not supported';
 
 /** Telegram's default and range for `max_connections`, to which it clamps other values. */
 const DEFAULT_WEBHOOK_MAX_CONNECTIONS = 40;
@@ -168,7 +161,7 @@ function refuseWebhookIpAddress(
   parameters: SetWebhookParameters,
 ): BotApiStepResult<SetWebhookParameters> {
   return parameters.ip_address.length > 0
-    ? answerWithBadRequest(WEBHOOK_IP_ADDRESS_UNSUPPORTED_DESCRIPTION)
+    ? answerWith(presentFixedBotApiError(BOT_API_ERRORS.webhookIpAddressUnsupported))
     : proceedWith(parameters);
 }
 
@@ -184,6 +177,6 @@ function refuseWebhookCertificate(
     (parameters.certificate !== undefined && parameters.certificate.length > 0) ||
     uploadedFiles.has('certificate');
   return specifiesCertificate
-    ? answerWithBadRequest(WEBHOOK_CERTIFICATE_UNSUPPORTED_DESCRIPTION)
+    ? answerWith(presentFixedBotApiError(BOT_API_ERRORS.webhookCertificateUnsupported))
     : proceedWith(parameters);
 }

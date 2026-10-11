@@ -7,6 +7,7 @@ import {
 } from '../formatted_text_reading.ts';
 import {
   checkInlineQueryResultFileType,
+  describeInlineQueryResultTextError,
   type InlineQueryResultParameter,
   inlineQueryResultsButtonParameter,
   readInlineQueryResultParameter,
@@ -20,9 +21,9 @@ import {
   resolveInlineQueryResults,
 } from '../inline_query_result_resolution.ts';
 import { BOT_API_ERRORS } from '../errors/error_catalogue.ts';
+import { presentFixedBotApiError } from '../errors/error_template.ts';
 import { presentQueryAnswerFailure } from '../errors/query_answer_failure_presenter.ts';
 import {
-  badRequestDescription,
   type BotApiFamilyContext,
   type BotApiMethod,
   type BotApiMethodContext,
@@ -44,15 +45,9 @@ import {
   integerParameter,
   jsonParameter,
 } from '../request_parameters.ts';
-import {
-  LOCATION_INVALID_DESCRIPTION,
-  readRichMessageParameter,
-} from '../rich_message_parameter.ts';
+import { readRichMessageParameter } from '../rich_message_parameter.ts';
 import type { SpecifiedRichMessage } from '../specified_rich_message.ts';
 import { excludeRichMessageWebFiles } from '../web_file_parameter.ts';
-
-/** How the Bot API server reports that it cannot read an inline query result. */
-const INLINE_QUERY_RESULT_ERROR_PREFIX = "can't parse InlineQueryResult: ";
 
 /** Telegram's default and range for how long clients may cache an inline query's answer. */
 const DEFAULT_INLINE_QUERY_CACHE_TIME_SECONDS = 300;
@@ -266,7 +261,7 @@ function parseInlineQueryResult(
   const captionReading = readEmbeddedFormattedText(
     fields.caption,
     invalidParametersDescription,
-    INLINE_QUERY_RESULT_ERROR_PREFIX,
+    describeInlineQueryResultTextError,
   );
   return captionReading.read
     ? proceedWith({ ...parsedResult, caption: captionReading.formattedText })
@@ -293,7 +288,7 @@ function parseInlineResultMessageContent(
       const textReading = readEmbeddedFormattedText(
         content.text,
         invalidParametersDescription,
-        INLINE_QUERY_RESULT_ERROR_PREFIX,
+        describeInlineQueryResultTextError,
       );
       return textReading.read
         ? { read: true, content: { kind: 'text', text: textReading.formattedText } }
@@ -401,7 +396,7 @@ function checkInlineQueryResult(
   if (result.kind === 'location') {
     const location = readUnreadLocation(result.location);
     return location === undefined
-      ? answerWithBadRequest(LOCATION_INVALID_DESCRIPTION)
+      ? answerWith(presentFixedBotApiError(BOT_API_ERRORS.locationInvalid))
       : proceedWith({
         ...shared,
         ...optionalMessageContent,
@@ -486,13 +481,16 @@ function checkInlineResultMessageContent(
     case 'location': {
       const location = readUnreadLocation(content.location);
       return location === undefined
-        ? { read: false, description: LOCATION_INVALID_DESCRIPTION }
+        ? { read: false, description: BOT_API_ERRORS.locationInvalid.description() }
         : { read: true, content: { kind: 'location', location } };
     }
     case 'rich_message': {
       const buttonReading = readRichMessageButtons(context, content.richMessage);
       if (!buttonReading.read) {
-        return { read: false, description: badRequestDescription(buttonReading.keyboardError) };
+        return {
+          read: false,
+          description: BOT_API_ERRORS.buttonInvalid.description(buttonReading.buttonFailure),
+        };
       }
       const richMessage = excludeRichMessageWebFiles(buttonReading.richMessage);
       return richMessage === undefined

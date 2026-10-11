@@ -14,8 +14,8 @@ import {
   type SpecifiedFormattedText,
 } from '../formatted_text_reading.ts';
 import {
+  describeInputMediaCaptionError,
   getRequestedMediaFile,
-  INPUT_MEDIA_ERROR_PREFIX,
   readInputMediaParameter,
   toMediaReplacementRequest,
   type UnreadMediaReplacement,
@@ -378,7 +378,7 @@ function readMediaReplacement<Parameters extends EditParameters>(
   const captionReading = readEmbeddedFormattedText(
     mediaReading.media.caption,
     invalidParametersDescription,
-    INPUT_MEDIA_ERROR_PREFIX,
+    describeInputMediaCaptionError,
   );
   return captionReading.read
     ? proceedWith({ parameters, media: mediaReading.media, caption: captionReading.formattedText })

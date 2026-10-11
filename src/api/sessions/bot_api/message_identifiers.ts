@@ -32,7 +32,7 @@ export function messageIdOrNone(messageId: number | undefined): number {
  */
 export function messageIdentifiersParameter() {
   return jsonParameter(z.array(z.int()).optional(), {
-    unparsableJsonDescription: "Bad Request: can't parse message_ids JSON object",
+    unparsableJsonDescription: BOT_API_ERRORS.messageIdentifiersJsonInvalid.description(),
     emptyText: { readAs: undefined },
   });
 }

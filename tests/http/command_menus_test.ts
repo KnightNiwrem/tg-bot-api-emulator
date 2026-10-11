@@ -98,6 +98,11 @@ Deno.test('setMyCommands, getMyCommands, and deleteMyCommands follow Telegram ch
   );
   await expectBadRequest(
     'getMyCommands',
+    { scope: [] },
+    "Bad Request: can't parse BotCommandScope: BotCommandScope must be an Object",
+  );
+  await expectBadRequest(
+    'getMyCommands',
     { scope: { type: 'chat_member', chat_id: accountId, user_id: 0 } },
     "Bad Request: can't parse BotCommandScope: Invalid user_id specified",
   );
@@ -446,8 +451,18 @@ Deno.test('bots choose the menu button accounts see in their private chats', asy
     ],
     [
       'setChatMenuButton',
+      { menu_button: { type: 'web_app', web_app: { url: 'https://shop.example' } } },
+      'Bad Request: can\'t parse menu button: Can\'t find field "text"',
+    ],
+    [
+      'setChatMenuButton',
       { menu_button: { type: 'web_app', text: 'Shop' } },
       'Bad Request: can\'t parse menu button: Can\'t find field "web_app"',
+    ],
+    [
+      'setChatMenuButton',
+      { menu_button: { type: 'web_app', text: 'Shop', web_app: {} } },
+      'Bad Request: can\'t parse menu button: Can\'t find field "url"',
     ],
     ['setChatMenuButton', {
       menu_button: { type: 'web_app', text: 'Shop', web_app: 'https://shop.example' },

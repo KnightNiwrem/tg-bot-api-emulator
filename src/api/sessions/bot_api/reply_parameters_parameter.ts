@@ -1,5 +1,6 @@
 import { z } from 'zod';
 
+import { BOT_API_ERRORS } from './errors/error_catalogue.ts';
 import { type ChatIdentifier, chatIdentifierSchema, jsonParameter } from './request_parameters.ts';
 
 /** A quote as a bot specified it in `reply_parameters`, before its formatting is read. */
@@ -57,7 +58,7 @@ export function replyParametersParameter() {
       quote_position: z.int().default(0),
     }),
     {
-      unparsableJsonDescription: "Bad Request: can't parse reply parameters JSON object",
+      unparsableJsonDescription: BOT_API_ERRORS.replyParametersJsonInvalid.description(),
       emptyText: { readAs: {} },
     },
   ).transform((parameters): ReplyParameters => {

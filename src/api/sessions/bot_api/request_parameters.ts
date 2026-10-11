@@ -1,5 +1,7 @@
 import { z } from 'zod';
 
+import { BOT_API_ERRORS } from './errors/error_catalogue.ts';
+
 /**
  * Bot API method parameters by name. Telegram transmits every parameter as text, whichever
  * encoding carries it, so method schemas parse values from strings.
@@ -119,7 +121,10 @@ async function decodeBodyParameterEntries(
     try {
       formData = await message.formData();
     } catch {
-      return { decoded: false, description: 'Bad Request: invalid multipart/form-data body' };
+      return {
+        decoded: false,
+        description: BOT_API_ERRORS.requestBodyMultipartInvalid.description(),
+      };
     }
     const parameterEntries: Array<readonly [string, string]> = [];
     const uploadedFiles = new Map<string, BotApiUploadedFile>();
@@ -152,8 +157,11 @@ async function decodeBodyParameterEntries(
   }
   return {
     decoded: false,
-    description:
-      `Bad Request: unsupported Content-Type; use ${JSON_MEDIA_TYPE}, ${URL_ENCODED_FORM_MEDIA_TYPE}, or ${MULTIPART_FORM_MEDIA_TYPE}`,
+    description: BOT_API_ERRORS.requestBodyContentTypeUnsupported.description({
+      jsonMediaType: JSON_MEDIA_TYPE,
+      urlEncodedFormMediaType: URL_ENCODED_FORM_MEDIA_TYPE,
+      multipartFormMediaType: MULTIPART_FORM_MEDIA_TYPE,
+    }),
   };
 }
 
@@ -170,17 +178,17 @@ function decodeJsonObjectParameterEntries(body: string): BodyParameterEntriesDec
   try {
     parsedBody = JSON.parse(body);
   } catch {
-    return { decoded: false, description: 'Bad Request: invalid JSON body' };
+    return { decoded: false, description: BOT_API_ERRORS.requestBodyJsonInvalid.description() };
   }
   if (typeof parsedBody !== 'object' || parsedBody === null || Array.isArray(parsedBody)) {
-    return { decoded: false, description: 'Bad Request: JSON object expected' };
+    return {
+      decoded: false,
+      description: BOT_API_ERRORS.requestBodyNotJsonObject.description(),
+    };
   }
   const parameterEntries = readJsonObjectMemberTexts(body);
   if (parameterEntries === undefined) {
-    return {
-      decoded: false,
-      description: "Bad Request: can't parse parameter value: Too big object depth",
-    };
+    return { decoded: false, description: BOT_API_ERRORS.requestBodyJsonTooDeep.description() };
   }
   return { decoded: true, parameterEntries, uploadedFiles: NO_UPLOADED_FILES };
 }
@@ -454,6 +462,19 @@ export function findTelegramIssueDescription(issue: z.core.$ZodIssue): string | 
     : undefined;
   return typeof telegramDescription === 'string' ? telegramDescription : undefined;
 }
+
+/**
+ * An error of TDLib's `JsonObject` field getters about a field of an object that a parameter holds,
+ * which the official Bot API server passes on in its description of the object: a required field
+ * that is missing, or a field of another JSON type than the getter reads.
+ */
+export type JsonObjectFieldError =
+  | { readonly reason: 'field_missing'; readonly fieldName: string }
+  | {
+    readonly reason: 'field_type_invalid';
+    readonly fieldName: string;
+    readonly expectedType: 'Boolean' | 'Object';
+  };
 
 /** The prefix that marks a chat named by its public username rather than its ID. */
 export const CHAT_USERNAME_PREFIX = '@';

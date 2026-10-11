@@ -4,11 +4,11 @@ import {
   type InlineKeyboard,
   type InlineKeyboardButton,
 } from '../../../types/inline_keyboard.ts';
-import {
-  type BotMessageReplyMarkup,
-  getGroupReplyKeyboardRequestError,
-  type ReplyInterfaceMarkup,
-  type ReplyKeyboardButton,
+import type {
+  BotMessageReplyMarkup,
+  ReplyInterfaceMarkup,
+  ReplyKeyboardButton,
+  ReplyKeyboardButtonRequest,
 } from '../../../types/reply_interface.ts';
 import {
   mapRichMessageButtons,
@@ -18,18 +18,52 @@ import {
 } from '../../../types/rich_message.ts';
 import { isUserId } from '../../../types/telegram_identity.ts';
 import { getBotApiChatAddress } from '../../../types/virtual_chat.ts';
-import {
-  badRequestDescription,
-  botApiError,
-  type BotApiFamilyContext,
-  type BotApiMethodAnswer,
-} from './method_call.ts';
+import { BOT_API_ERRORS } from './errors/error_catalogue.ts';
+import { presentBotApiError } from './errors/error_template.ts';
+import type { BotApiFamilyContext, BotApiMethodAnswer } from './method_call.ts';
 
 /**
  * What reading buttons uses: the public chats, which name the bot a login button's username
  * names.
  */
 type ButtonReadingContext = BotApiFamilyContext<'sharedChatAdministration'>;
+
+/** A button that opens a link, as TDLib names it in its errors about the link. */
+export type LinkButton = 'inline_url' | 'inline_login' | 'inline_web_app' | 'keyboard_web_app';
+
+/**
+ * Why Telegram cannot read a button being sent:
+ * - `request_outside_private_chat`: a reply keyboard button with a request, outside a private
+ *   chat, as TDLib's `KeyboardButton::get_keyboard_button` refuses it;
+ * - `login_bot_username_in_rich_message`, `login_bot_username_invalid` and `login_bot_not_found`:
+ *   the bot that a login button names, as the official Bot API server reads it;
+ * - `inline_query_chat_types_empty`: a switch-inline button for a chosen chat that allows no kind
+ *   of chat;
+ * - `button_url_invalid`: a link that TDLib's `check_link` refuses, with its error;
+ * - `user_link_not_allowed`: a link to a user's profile on a button that needs an HTTPS link.
+ */
+export type ButtonFailure =
+  | {
+    readonly reason: 'request_outside_private_chat';
+    readonly requestKind: ReplyKeyboardButtonRequest['kind'];
+  }
+  | {
+    readonly reason:
+      | 'login_bot_username_in_rich_message'
+      | 'login_bot_username_invalid'
+      | 'inline_query_chat_types_empty';
+  }
+  | { readonly reason: 'login_bot_not_found'; readonly botUsername: string }
+  | {
+    readonly reason: 'button_url_invalid';
+    readonly button: LinkButton;
+    /** TDLib's description of the link, as `checkLink` gives it. */
+    readonly linkError: string;
+  }
+  | { readonly reason: 'user_link_not_allowed'; readonly button: HttpsLinkButton };
+
+/** A button whose link must be an HTTPS link, which cannot open a user's profile. */
+type HttpsLinkButton = Exclude<LinkButton, 'inline_url'>;
 
 /**
  * Reads the reply markup of a message being sent to a chat: an inline keyboard, as
@@ -52,7 +86,7 @@ export function readMessageReplyMarkupParameter(
       ? { read: true, replyMarkup: { replyInterfaceMarkup: reading.replyInterfaceMarkup } }
       : {
         read: false,
-        errorAnswer: botApiError(400, badRequestDescription(reading.keyboardError)),
+        errorAnswer: presentBotApiError(BOT_API_ERRORS.buttonInvalid, reading.buttonFailure),
       };
   }
   const keyboardReading = readInlineKeyboardParameter(context, replyMarkup.inlineKeyboard);
@@ -83,14 +117,14 @@ export function readInlineKeyboardParameter(
   const reading = readInlineKeyboard(context, inlineKeyboard);
   return reading.read ? reading : {
     read: false,
-    errorAnswer: botApiError(400, badRequestDescription(reading.keyboardError)),
+    errorAnswer: presentBotApiError(BOT_API_ERRORS.buttonInvalid, reading.buttonFailure),
   };
 }
 
-/** What reading buttons found, or TDLib's description of the button it cannot read. */
+/** What reading buttons found, or why Telegram cannot read the first button it refuses. */
 type ButtonReading<Read> =
   | ({ readonly read: true } & Read)
-  | { readonly read: false; readonly keyboardError: string };
+  | { readonly read: false; readonly buttonFailure: ButtonFailure };
 
 /**
  * Reads an inline keyboard as TDLib's `get_inline_keyboard_button` does for a keyboard being sent,
@@ -139,13 +173,16 @@ function readReplyInterfaceMarkup(
     for (const button of row) {
       const { request } = button;
       if (request !== undefined && !allowsRequestButtons) {
-        return { read: false, keyboardError: getGroupReplyKeyboardRequestError(request) };
+        return {
+          read: false,
+          buttonFailure: { reason: 'request_outside_private_chat', requestKind: request.kind },
+        };
       }
       if (request?.kind !== 'web_app') {
         readRow.push(button);
         continue;
       }
-      const urlReading = readHttpsButtonUrl(request.url, 'Keyboard button Web App');
+      const urlReading = readHttpsButtonUrl(request.url, 'keyboard_web_app');
       if (!urlReading.read) {
         return urlReading;
       }
@@ -165,24 +202,24 @@ export function readRichMessageButtons<Files extends RichMessageFileTypes>(
   context: ButtonReadingContext,
   richMessage: RichMessage<Files>,
 ): ButtonReading<{ readonly richMessage: RichMessage<Files> }> {
-  let keyboardError: string | undefined;
+  let buttonFailure: ButtonFailure | undefined;
   const readRichMessage = mapRichMessageButtons(richMessage, (button) => {
     const { action } = button;
-    if (keyboardError !== undefined) {
+    if (buttonFailure !== undefined) {
       return button;
     }
     const actionReading = readButtonAction(context, action, 'rich_message');
     if (!actionReading.read) {
-      keyboardError = actionReading.keyboardError;
+      buttonFailure = actionReading.buttonFailure;
       return button;
     }
     return actionReading.url === undefined || !hasButtonLink(action)
       ? button
       : { ...button, action: { ...action, url: actionReading.url } };
   });
-  return keyboardError === undefined
+  return buttonFailure === undefined
     ? { read: true, richMessage: readRichMessage }
-    : { read: false, keyboardError };
+    : { read: false, buttonFailure };
 }
 
 /**
@@ -209,29 +246,29 @@ function readButtonAction(
       const { authorizingBotUsername } = action;
       if (authorizingBotUsername !== undefined) {
         if (buttonLocation === 'rich_message') {
-          return {
-            read: false,
-            keyboardError: 'Bot username must be empty for login_url buttons in rich messages',
-          };
+          return { read: false, buttonFailure: { reason: 'login_bot_username_in_rich_message' } };
         }
         if (!/^[A-Za-z0-9_]+$/.test(authorizingBotUsername)) {
-          return { read: false, keyboardError: 'LoginUrl bot username is invalid' };
+          return { read: false, buttonFailure: { reason: 'login_bot_username_invalid' } };
         }
         const botId = context.session.sharedChatAdministration.findPublicChatId(
           authorizingBotUsername,
         );
         if (botId === undefined || !isUserId(botId)) {
-          return { read: false, keyboardError: `bot "${authorizingBotUsername}" not found` };
+          return {
+            read: false,
+            buttonFailure: { reason: 'login_bot_not_found', botUsername: authorizingBotUsername },
+          };
         }
       }
-      return readHttpsButtonUrl(action.url, 'Inline keyboard button login');
+      return readHttpsButtonUrl(action.url, 'inline_login');
     }
     case 'web_app':
-      return readHttpsButtonUrl(action.url, 'Inline keyboard button Web App');
+      return readHttpsButtonUrl(action.url, 'inline_web_app');
     case 'switch_inline_query':
       return action.target.kind === 'chosen_chat' &&
           !allowsSomeInlineQueryChat(action.target.chatTypes)
-        ? { read: false, keyboardError: 'At least one chat type must be allowed' }
+        ? { read: false, buttonFailure: { reason: 'inline_query_chat_types_empty' } }
         : { read: true };
     case 'callback':
     case 'copy_text':
@@ -262,31 +299,30 @@ function readInlineButtonUrl(url: string): ButtonReading<{ readonly url?: string
     return { read: true, url: `tg://user?id=${userId}` };
   }
   const linkCheck = checkLink(url);
-  return linkCheck.valid
-    ? { read: true, url: linkCheck.url }
-    : { read: false, keyboardError: `Inline keyboard button ${linkCheck.error}` };
+  return linkCheck.valid ? { read: true, url: linkCheck.url } : {
+    read: false,
+    buttonFailure: {
+      reason: 'button_url_invalid',
+      button: 'inline_url',
+      linkError: linkCheck.error,
+    },
+  };
 }
 
 /**
  * Reads the link of a login or Web App button, as TDLib does: an HTTPS link, as `check_link`
- * normalizes it, which cannot open a user's profile. TDLib names the button in its errors, as
- * `Inline keyboard button login` or `Keyboard button Web App`.
+ * normalizes it, which cannot open a user's profile.
  */
 function readHttpsButtonUrl(
   url: string,
-  buttonDescription:
-    | 'Inline keyboard button login'
-    | 'Inline keyboard button Web App'
-    | 'Keyboard button Web App',
+  button: HttpsLinkButton,
 ): ButtonReading<{ readonly url: string }> {
   if (getLinkUserId(url) !== undefined) {
-    const buttonKind = buttonDescription === 'Inline keyboard button login'
-      ? 'login URL'
-      : 'Web App URL';
-    return { read: false, keyboardError: `Link to a user can't be used in ${buttonKind} buttons` };
+    return { read: false, buttonFailure: { reason: 'user_link_not_allowed', button } };
   }
   const linkCheck = checkLink(url, { httpsOnly: true });
-  return linkCheck.valid
-    ? { read: true, url: linkCheck.url }
-    : { read: false, keyboardError: `${buttonDescription} ${linkCheck.error}` };
+  return linkCheck.valid ? { read: true, url: linkCheck.url } : {
+    read: false,
+    buttonFailure: { reason: 'button_url_invalid', button, linkError: linkCheck.error },
+  };
 }

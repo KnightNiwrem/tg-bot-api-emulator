@@ -1,11 +1,8 @@
 import type { EmulationSession } from '../../../session/emulation_session.ts';
 import { listRichMessageFiles, type RichMessage } from '../../../types/rich_message.ts';
-import {
-  badRequestDescription,
-  botApiError,
-  type BotApiMethodAnswer,
-  type BotApiMethodContext,
-} from './method_call.ts';
+import { BOT_API_ERRORS } from './errors/error_catalogue.ts';
+import { presentBotApiError } from './errors/error_template.ts';
+import { botApiError, type BotApiMethodAnswer, type BotApiMethodContext } from './method_call.ts';
 import type { BotApiUploadedFiles } from './request_parameters.ts';
 import { readRichMessageButtons } from './reply_markup_reading.ts';
 import { readRichMessageParameter } from './rich_message_parameter.ts';
@@ -75,7 +72,7 @@ export function readSpecifiedRichMessage(
   if (!buttonReading.read) {
     return {
       read: false,
-      errorAnswer: botApiError(400, badRequestDescription(buttonReading.keyboardError)),
+      errorAnswer: presentBotApiError(BOT_API_ERRORS.buttonInvalid, buttonReading.buttonFailure),
     };
   }
   return {

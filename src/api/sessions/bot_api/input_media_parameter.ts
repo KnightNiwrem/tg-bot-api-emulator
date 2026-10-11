@@ -2,6 +2,8 @@ import { z } from 'zod';
 
 import type { EmulationSession } from '../../../session/emulation_session.ts';
 import { MAX_MEDIA_DURATION_SECONDS, MAX_VIDEO_SIDE_LENGTH } from '../../../types/stored_file.ts';
+import { BOT_API_ERRORS } from './errors/error_catalogue.ts';
+import type { FormattedTextError } from './formatted_text_reading.ts';
 import type { UnreadFormattedText } from './inline_query_answer_parameters.ts';
 import {
   type BotApiInputFile,
@@ -9,8 +11,11 @@ import {
   readThumbnailParameter,
   type RequestedInputFile,
 } from './input_file_parameter.ts';
-import { BAD_REQUEST_PREFIX } from './method_call.ts';
-import { type BotApiUploadedFiles, parseBotApiJsonParameter } from './request_parameters.ts';
+import {
+  type BotApiUploadedFiles,
+  type JsonObjectFieldError,
+  parseBotApiJsonParameter,
+} from './request_parameters.ts';
 
 type MediaReplacementRequest = Parameters<
   EmulationSession['botMediaResolver']['resolveMediaContent']
@@ -47,15 +52,32 @@ export type InputMediaGroupParameterReading =
   | { readonly read: true; readonly media: readonly UnreadMediaReplacement[] }
   | { readonly read: false; readonly description: string };
 
+/**
+ * Why the official Bot API server's `get_input_media` cannot read media: it is not an object, it
+ * has no `type`, a type it does not take here, no file it can find, or a caption Telegram cannot
+ * read with its formatting.
+ */
+export type InputMediaError =
+  | { readonly reason: 'media_not_object' | 'animation_in_album' | 'media_file_not_found' }
+  | Extract<JsonObjectFieldError, { readonly reason: 'field_missing' }>
+  | {
+    readonly reason: 'media_type_not_allowed' | 'media_type_unsupported';
+    readonly mediaType: string;
+  }
+  | { readonly reason: 'caption_invalid'; readonly textError: FormattedTextError };
+
 /** How the official Bot API server describes a request without media. */
-const MEDIA_REQUIRED_DESCRIPTION = 'Bad Request: parameter "media" is required';
+const MEDIA_REQUIRED_DESCRIPTION = BOT_API_ERRORS.requiredParameterMissing.description({
+  parameterName: 'media',
+});
 
 /**
- * How the official Bot API server prefixes its description of `InputMedia` it cannot read, after
- * the prefix of every bad request.
+ * Describes a caption of media that Telegram cannot read with its formatting, as the official Bot
+ * API server does: as media it cannot parse.
  */
-export const INPUT_MEDIA_ERROR_PREFIX = "can't parse InputMedia: ";
-const INPUT_MEDIA_BAD_REQUEST_PREFIX = `${BAD_REQUEST_PREFIX}${INPUT_MEDIA_ERROR_PREFIX}`;
+export function describeInputMediaCaptionError(textError: FormattedTextError): string {
+  return BOT_API_ERRORS.inputMediaInvalid.description({ reason: 'caption_invalid', textError });
+}
 
 /**
  * Media types the official server reads but the emulator lacks. In albums, Telegram sends live
@@ -162,7 +184,7 @@ export function readInputMediaParameter(
   }
   const parsedParameter = parseBotApiJsonParameter(text);
   if (parsedParameter === undefined) {
-    return { read: false, description: "Bad Request: can't parse input media JSON object" };
+    return { read: false, description: BOT_API_ERRORS.inputMediaJsonInvalid.description() };
   }
   const { value } = parsedParameter;
   return readInputMedia(value, 'replacement', uploadedFiles, invalidParametersDescription);
@@ -185,14 +207,14 @@ export function readInputMediaGroupParameter(
   }
   const parsedParameter = parseBotApiJsonParameter(text);
   if (parsedParameter === undefined) {
-    return { read: false, description: "Bad Request: can't parse media JSON object" };
+    return { read: false, description: BOT_API_ERRORS.mediaGroupJsonInvalid.description() };
   }
   const { value } = parsedParameter;
   if (value === null) {
     return { read: true, media: [] };
   }
   if (!Array.isArray(value)) {
-    return { read: false, description: 'Bad Request: expected an Array of InputMedia' };
+    return { read: false, description: BOT_API_ERRORS.mediaGroupNotArray.description() };
   }
   const media: UnreadMediaReplacement[] = [];
   for (const memberValue of value) {
@@ -234,11 +256,13 @@ function readInputMedia(
     read: false,
     description,
   });
+  const mediaFailure = (error: InputMediaError): InputMediaParameterReading =>
+    failure(BOT_API_ERRORS.inputMediaInvalid.description(error));
   if (typeof value !== 'object' || value === null || Array.isArray(value)) {
-    return failure(`${INPUT_MEDIA_BAD_REQUEST_PREFIX}expected an Object`);
+    return mediaFailure({ reason: 'media_not_object' });
   }
   if (!('type' in value)) {
-    return failure(`${INPUT_MEDIA_BAD_REQUEST_PREFIX}Can't find field "type"`);
+    return mediaFailure({ reason: 'field_missing', fieldName: 'type' });
   }
   const typedValue = mediaTypeSchema.safeParse(value);
   if (!typedValue.success) {
@@ -246,19 +270,16 @@ function readInputMedia(
   }
   const { type } = typedValue.data;
   if (use === 'album' && type === 'animation') {
-    return failure(
-      `${INPUT_MEDIA_BAD_REQUEST_PREFIX}type "${type}" can't be used in sendMediaGroup`,
-    );
+    return mediaFailure({ reason: 'animation_in_album' });
   }
   if (UNSUPPORTED_MEDIA_TYPES.has(type)) {
-    return failure(`Bad Request: InputMedia of type "${type}" is not supported`);
+    return failure(BOT_API_ERRORS.inputMediaTypeUnsupported.description({ mediaType: type }));
   }
   if (!isReadMediaType(type)) {
-    return failure(
-      `${INPUT_MEDIA_BAD_REQUEST_PREFIX}type "${type}" is ${
-        type === 'voice_note' ? 'not allowed' : 'unsupported'
-      }`,
-    );
+    return mediaFailure({
+      reason: type === 'voice_note' ? 'media_type_not_allowed' : 'media_type_unsupported',
+      mediaType: type,
+    });
   }
 
   const inputMedia = INPUT_MEDIA_SCHEMAS[type].safeParse(value);
@@ -270,7 +291,7 @@ function readInputMedia(
   // names no uploaded part.
   const fileReading = readInputFileParameter('', data.media, uploadedFiles);
   if (!fileReading.read) {
-    return failure(`${INPUT_MEDIA_BAD_REQUEST_PREFIX}media not found`);
+    return mediaFailure({ reason: 'media_file_not_found' });
   }
   const caption: UnreadFormattedText = {
     text: data.caption,

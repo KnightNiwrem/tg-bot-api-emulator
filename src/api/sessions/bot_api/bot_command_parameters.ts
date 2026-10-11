@@ -22,7 +22,7 @@ const botCommandParameterSchema = z.strictObject({
  */
 export function botCommandsParameter() {
   return jsonParameter(z.array(botCommandParameterSchema), {
-    unparsableJsonDescription: "Bad Request: can't parse commands JSON object",
+    unparsableJsonDescription: BOT_API_ERRORS.botCommandsJsonInvalid.description(),
     emptyText: { readAs: [] },
   });
 }
@@ -34,7 +34,7 @@ export function botCommandsParameter() {
  */
 export function botCommandScopeParameter() {
   return jsonParameter(z.unknown(), {
-    unparsableJsonDescription: "Bad Request: can't parse BotCommandScope JSON object",
+    unparsableJsonDescription: BOT_API_ERRORS.botCommandScopeJsonInvalid.description(),
     emptyText: { readAs: undefined },
   });
 }
@@ -42,6 +42,15 @@ export function botCommandScopeParameter() {
 export type BotCommandScopeParameterReading =
   | { readonly read: true; readonly scope: BotCommandScope }
   | { readonly read: false; readonly description: string };
+
+/**
+ * Why the official Bot API server's `get_bot_command_scope` cannot read a scope: it is not an
+ * object, it has a type the server does not know, or it names a user by an identifier that is not
+ * positive.
+ */
+export type BotCommandScopeError = {
+  readonly reason: 'scope_not_object' | 'scope_type_unsupported' | 'scope_user_id_invalid';
+};
 
 const scopeTypeSchema = z.looseObject({ type: z.string() });
 const chatlessScopeSchema = z.strictObject({
@@ -74,9 +83,11 @@ export function readBotCommandScopeParameter(
   invalidParametersDescription: string,
   findChatId: (chatIdentifier: ChatIdentifier) => number | undefined,
 ): BotCommandScopeParameterReading {
-  const scopeError = (error: string): BotCommandScopeParameterReading => ({
+  const scopeError = (
+    reason: BotCommandScopeError['reason'],
+  ): BotCommandScopeParameterReading => ({
     read: false,
-    description: `Bad Request: can't parse BotCommandScope: ${error}`,
+    description: BOT_API_ERRORS.botCommandScopeInvalid.description({ reason }),
   });
   const malformedScope: BotCommandScopeParameterReading = {
     read: false,
@@ -86,7 +97,7 @@ export function readBotCommandScopeParameter(
     return { read: true, scope: { type: 'default' } };
   }
   if (typeof value !== 'object' || value === null || Array.isArray(value)) {
-    return scopeError('BotCommandScope must be an Object');
+    return scopeError('scope_not_object');
   }
   const scopeType = scopeTypeSchema.safeParse(value);
   if (!scopeType.success) {
@@ -119,7 +130,7 @@ export function readBotCommandScopeParameter(
       }
       const { chat_id: chatIdentifier, user_id: userId } = scope.data;
       if (userId <= 0) {
-        return scopeError('Invalid user_id specified');
+        return scopeError('scope_user_id_invalid');
       }
       const chatId = findChatId(chatIdentifier);
       return chatId === undefined
@@ -127,6 +138,6 @@ export function readBotCommandScopeParameter(
         : { read: true, scope: { type: 'chat_member', chatId, userId } };
     }
     default:
-      return scopeError('Unsupported type specified');
+      return scopeError('scope_type_unsupported');
   }
 }

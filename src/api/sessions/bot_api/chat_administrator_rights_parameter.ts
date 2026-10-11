@@ -2,11 +2,20 @@ import {
   CHAT_ADMINISTRATOR_RIGHT_NAMES,
   type ChatAdministratorRightName,
 } from '../../../types/bot_default_administrator_rights.ts';
-import { parseBotApiJsonParameter } from './request_parameters.ts';
+import { BOT_API_ERRORS } from './errors/error_catalogue.ts';
+import { type JsonObjectFieldError, parseBotApiJsonParameter } from './request_parameters.ts';
 
 export type ChatAdministratorRightsParameterReading =
   | { readonly read: true; readonly requestedRights: readonly ChatAdministratorRightName[] }
   | { readonly read: false; readonly description: string };
+
+/**
+ * Why the official Bot API server's `get_chat_administrator_rights` cannot read rights: they are
+ * not an object, or a right is not a boolean.
+ */
+export type ChatAdministratorRightsError =
+  | { readonly reason: 'rights_not_object' }
+  | Extract<JsonObjectFieldError, { readonly reason: 'field_type_invalid' }>;
 
 const KNOWN_RIGHT_NAMES: ReadonlySet<string> = new Set(CHAT_ADMINISTRATOR_RIGHT_NAMES);
 
@@ -30,16 +39,18 @@ export function readChatAdministratorRightsParameter(
   if (parsedParameter === undefined) {
     return {
       read: false,
-      description: "Bad Request: can't parse ChatAdministratorRights JSON object",
+      description: BOT_API_ERRORS.chatAdministratorRightsJsonInvalid.description(),
     };
   }
   const { value } = parsedParameter;
-  const rightsError = (error: string): ChatAdministratorRightsParameterReading => ({
+  const rightsError = (
+    error: ChatAdministratorRightsError,
+  ): ChatAdministratorRightsParameterReading => ({
     read: false,
-    description: `Bad Request: can't parse ChatAdministratorRights: ${error}`,
+    description: BOT_API_ERRORS.chatAdministratorRightsInvalid.description(error),
   });
   if (typeof value !== 'object' || value === null || Array.isArray(value)) {
-    return rightsError('ChatAdministratorRights must be an Object');
+    return rightsError({ reason: 'rights_not_object' });
   }
 
   const fields = new Map(Object.entries(value));
@@ -50,7 +61,11 @@ export function readChatAdministratorRightsParameter(
       continue;
     }
     if (typeof field !== 'boolean') {
-      return rightsError(`Field "${right}" must be of type Boolean`);
+      return rightsError({
+        reason: 'field_type_invalid',
+        fieldName: right,
+        expectedType: 'Boolean',
+      });
     }
     if (field) {
       requestedRights.push(right);

@@ -241,37 +241,3 @@ export function botApiRetryAfterError(retryAfterSeconds: number): BotApiMethodAn
     },
   };
 }
-
-/**
- * Telegram's answer to an album whose message Telegram's servers refused once the album was sent,
- * as the official Bot API server's `on_message_send_failed` writes it: the first such message's
- * position in the album, counted from 1, and the error Telegram's servers gave, which, unlike the
- * error of a single message, the server does not reword.
- */
-export function albumMessageNotSentError(
-  memberPosition: number,
-  telegramError: string,
-): BotApiMethodAnswer {
-  return botApiError(400, describeAlbumMessageNotSent(memberPosition, telegramError));
-}
-
-/** The description of `albumMessageNotSentError`. */
-export function describeAlbumMessageNotSent(memberPosition: number, telegramError: string): string {
-  return `Bad Request: failed to send message #${memberPosition} with the error message "${telegramError}"`;
-}
-
-/** The prefix of Telegram's descriptions of bad requests. */
-export const BAD_REQUEST_PREFIX = 'Bad Request: ';
-
-/**
- * Words a TDLib error message as the Bot API server's `fail_query_with_error` does for a bad
- * request: prefixed, with its first letter lowercased unless it begins an error code or acronym.
- */
-export function badRequestDescription(tdlibErrorMessage: string): string {
-  const secondCharacter = tdlibErrorMessage[1] ?? '';
-  const keepsCase = secondCharacter === '_' || /[A-Z]/.test(secondCharacter);
-  const message = keepsCase
-    ? tdlibErrorMessage
-    : tdlibErrorMessage.charAt(0).toLowerCase() + tdlibErrorMessage.slice(1);
-  return `${BAD_REQUEST_PREFIX}${message}`;
-}

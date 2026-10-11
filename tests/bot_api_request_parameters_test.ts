@@ -124,31 +124,49 @@ Deno.test('decodeBotApiRequestParameters keeps the first multipart file of each 
 });
 
 Deno.test('decodeBotApiRequestParameters rejects bodies it cannot decode', async () => {
-  const undecodableRequests = [
-    new Request(METHOD_URL, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: '{not json',
-    }),
-    new Request(METHOD_URL, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: '[2]',
-    }),
-    new Request(METHOD_URL, {
-      method: 'POST',
-      headers: { 'Content-Type': 'text/plain' },
-      body: 'offset=2',
-    }),
+  const undecodableRequests: ReadonlyArray<readonly [Request, string]> = [
+    [
+      new Request(METHOD_URL, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: '{not json',
+      }),
+      'Bad Request: invalid JSON body',
+    ],
+    [
+      new Request(METHOD_URL, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: '[2]',
+      }),
+      'Bad Request: JSON object expected',
+    ],
+    [
+      new Request(METHOD_URL, {
+        method: 'POST',
+        headers: { 'Content-Type': 'text/plain' },
+        body: 'offset=2',
+      }),
+      'Bad Request: unsupported Content-Type; use application/json, ' +
+      'application/x-www-form-urlencoded, or multipart/form-data',
+    ],
+    [
+      new Request(METHOD_URL, {
+        method: 'POST',
+        headers: { 'Content-Type': 'multipart/form-data; boundary=parts' },
+        body: 'not a multipart body',
+      }),
+      'Bad Request: invalid multipart/form-data body',
+    ],
   ];
 
-  for (const request of undecodableRequests) {
+  for (const [request, expectedDescription] of undecodableRequests) {
     const decoding = await decodeBotApiRequestParameters(request);
-    if (decoding.decoded || !decoding.description.startsWith('Bad Request: ')) {
-      throw new Error(
-        `Expected a ${request.headers.get('Content-Type')} body to be rejected as a bad request`,
-      );
-    }
+    assertEquals(
+      decoding.decoded ? 'decoded' : decoding.description,
+      expectedDescription,
+      `Expected a ${request.headers.get('Content-Type')} body to be rejected as a bad request`,
+    );
   }
 });
 
