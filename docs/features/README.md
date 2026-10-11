@@ -123,8 +123,10 @@ The implementation comparison was reviewed on **2026-09-25** against:
   [submodule revision used by that Bot API server][tdlib-submodule].
 
 Upstream implementation links on these pages use these immutable revisions and name the relevant
-functions. Local implementation and test links point into this repository. Telegram's public API
-reference and FAQ supplement the code where they describe server-side behavior.
+functions. The [upstream-revision manifest](../upstream-revisions.md) lists the upstream revisions
+the repository cites and the areas that depend on each, as a starting point for a re-review. Local
+implementation and test links point into this repository. Telegram's public API reference and FAQ
+supplement the code where they describe server-side behavior.
 
 This is a source comparison, not a claim of complete conformance or a live differential test against
 Telegram. The open-source Bot API server delegates work to TDLib, which in turn calls Telegram's
