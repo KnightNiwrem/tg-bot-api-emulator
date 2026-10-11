@@ -42,6 +42,7 @@ import {
   releaseWebhookRetryContract,
   setWebhookDeliveryContract,
 } from '../../control_contracts/webhook_attempts.ts';
+import { registerWebResourceContract } from '../../control_contracts/web_resources.ts';
 import { createHttpBotActivityPageReader } from './bot_activity_http_page_reader.ts';
 import { createBotActivityLog } from './bot_activity_log.ts';
 import { HTTP_STATUS_CREATED, HTTP_STATUS_NO_CONTENT, HTTP_STATUS_OK } from './constants.ts';
@@ -74,7 +75,6 @@ import {
   supergroupBotCommandsResponseSchema,
   supergroupMessageHistoryResponseSchema,
   supergroupPollAnswerResponseSchema,
-  webResourceSchema,
 } from './schemas.ts';
 import type {
   AccountBotCommandsInput,
@@ -477,11 +477,8 @@ class HttpEmulationSessionClient implements EmulationSessionClient {
   }
 
   registerWebResource({ content, ...input }: RegisterWebResourceInput): Promise<WebResource> {
-    return requestJson(this.#fetch, {
-      method: 'POST',
-      url: `${this.#sessionUrl}/web-resources`,
-      expectedStatus: HTTP_STATUS_CREATED,
-      responseSchema: webResourceSchema,
+    return callJsonOperation(this.#transport, registerWebResourceContract, {
+      params: { sessionId: this.id },
       body: { ...input, ...(content === undefined ? {} : { content_base64: content.toBase64() }) },
     });
   }

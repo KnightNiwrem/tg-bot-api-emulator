@@ -53,6 +53,7 @@ import {
   releaseWebhookRetryContract,
   setWebhookDeliveryContract,
 } from '../control_contracts/webhook_attempts.ts';
+import { registerWebResourceContract } from '../control_contracts/web_resources.ts';
 import { findContractDrift } from './support/control_contract_consistency/contract_drift.ts';
 import { JsonSchemaCanonicalizer } from './support/control_contract_consistency/json_schema_canonical_form.ts';
 import { readWireJsonSchema } from './support/control_contract_consistency/wire_json_schema.ts';
@@ -100,6 +101,7 @@ const CONTROL_OPERATION_CONTRACTS: readonly ControlOperationContract[] = [
   listWebhookAttemptsContract,
   releaseWebhookRetryContract,
   expireWebhookAttemptContract,
+  registerWebResourceContract,
 ];
 
 const document = readOpenApiDocument();

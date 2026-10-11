@@ -32,7 +32,6 @@ import type {
   RichTextObject,
   SupergroupMessage,
   UserReaction,
-  WebResource,
 } from './types.ts';
 
 const telegramUserIdSchema = z.number().int()
@@ -42,14 +41,6 @@ const telegramUserIdSchema = z.number().int()
 const supergroupIdSchema = z.number().int()
   .min(MIN_SUPERGROUP_OR_CHANNEL_ID)
   .max(MAX_SUPERGROUP_OR_CHANNEL_ID);
-
-export const webResourceSchema: z.ZodType<WebResource> = z.strictObject({
-  url: z.url({ protocol: /^https?$/ }),
-  status: z.int().min(200).max(599),
-  content_type: z.string().min(1).optional(),
-  location: z.string().min(1).optional(),
-  content_length: z.int().nonnegative(),
-});
 
 export const getMeResponseSchema = z.strictObject({
   ok: z.literal(true),
