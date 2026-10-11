@@ -6,6 +6,7 @@ required:
 properties:
   method:
     type: string
+    minLength: 1
     description: >-
       The Bot API method whose calls receive the answers, by its current name, such as
       `banChatMember` for `kickChatMember`; omitted for calls of every method.
