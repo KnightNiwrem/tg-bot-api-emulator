@@ -56,10 +56,16 @@ result count and message content before query state and result metadata, produci
 `RESULT_ID_DUPLICATE` and the query-too-old error. As the official server's
 [`process_answer_inline_query_query`][answer-inline-query] does, the button is read before the
 results. Empty `button` text is no button, and a `button` that is not JSON the server can read is
-refused with `Bad Request: can't parse inline query results button JSON object`. As the server's
-[`get_inline_query_results`][inline-query-results] reads them, results are read one at a time: a
-result's fields, inline keyboard and content are all read before the next result, so a bad keyboard
-or content in an earlier result is reported ahead of malformed fields in a later one.
+refused with `Bad Request: can't parse inline query results button JSON object`. Results are read in
+two passes, as upstream reads them. First, as the server's
+[`get_inline_query_results`][inline-query-results] does, each result in turn is parsed in full: its
+fields, then the text or rich message it sends, then its caption, with their formatting. Only then,
+as TDLib's [`answer_inline_query`][answer] does, is each result in turn checked: the MIME type of a
+file named by URL, then its inline keyboard's buttons, then what it sends, such as a location's
+coordinates or a rich message's buttons and files. So a later result that cannot be parsed is
+reported ahead of an earlier result's keyboard or location error. The emulator checks a login
+button's bot username with the other buttons, in the second pass, although the server checks it
+while parsing.
 
 With `receives_chosen_inline_results: true`, a choice also generates `chosen_inline_result` for the
 inline bot. If the result has an inline keyboard, that update supplies `inline_message_id`. Callback

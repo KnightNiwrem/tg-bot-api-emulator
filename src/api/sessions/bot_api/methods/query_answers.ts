@@ -2,13 +2,16 @@ import { z } from 'zod';
 
 import { MAX_CALLBACK_QUERY_ANSWER_TEXT_LENGTH } from '../../../../types/callback_query.ts';
 import type { EmulationSession } from '../../../../types/emulation_session.ts';
-import { readEmbeddedFormattedText } from '../formatted_text_reading.ts';
 import {
+  readEmbeddedFormattedText,
+  type SpecifiedFormattedText,
+} from '../formatted_text_reading.ts';
+import {
+  checkInlineQueryResultFileType,
   type InlineQueryResultParameter,
   inlineQueryResultsButtonParameter,
   readInlineQueryResultParameter,
   readUnreadLocation,
-  type UnreadFormattedText,
   type UnreadInputMessageContent,
 } from '../inline_query_answer_parameters.ts';
 import { BOT_API_ERRORS } from '../errors/error_catalogue.ts';
@@ -39,6 +42,7 @@ import {
   LOCATION_INVALID_DESCRIPTION,
   readRichMessageParameter,
 } from '../rich_message_parameter.ts';
+import type { SpecifiedRichMessage } from '../specified_rich_message.ts';
 import { excludeRichMessageWebFiles } from '../web_file_parameter.ts';
 
 /** How the Bot API server reports that it cannot read an inline query result. */
@@ -112,7 +116,7 @@ export const QUERY_ANSWER_METHODS: readonly BotApiMethod[] = [
     },
   }),
   // As the official server's `process_answer_inline_query_query` reads them, the button comes
-  // before the results.
+  // before the results, which it parses in full before TDLib checks any of them.
   commandMethodOfSteps({
     name: 'answerInlineQuery',
     recordsActivity: true,
@@ -120,7 +124,8 @@ export const QUERY_ANSWER_METHODS: readonly BotApiMethod[] = [
     steps: (call) =>
       startSteps(call.parameters)
         .andThen(readInlineQueryAnswerButton)
-        .andThen((answer) => readInlineQueryAnswerResults(call, answer)),
+        .andThen((answer) => parseInlineQueryAnswerResults(call, answer))
+        .andThen((answer) => checkInlineQueryAnswerResults(call.context, answer)),
     execute: (context, request) => {
       const result = context.session.botApi.answerInlineQuery(context.bot, request);
       return result.answered ? botApiResult(true) : presentQueryAnswerFailure(result);
@@ -156,182 +161,287 @@ function readInlineQueryAnswerButton(
 }
 
 /**
- * The step that reads an inline query's results until one cannot be read. Each result is read
- * fully, its fields, then its inline keyboard, then what it sends and shows, before the next, as
- * the official server's `get_inline_query_results` reads them one at a time.
+ * What an inline query result's `input_message_content` sends once the official server has parsed
+ * it: text read with its parse mode or entities, a rich message read as `sendRichMessage` reads
+ * one, a contact, or a static location, whose coordinates TDLib checks later.
  */
-function readInlineQueryAnswerResults(
-  { context, uploadedFiles, invalidParametersDescription }: BotApiStepCall<unknown>,
+type ParsedInlineResultMessageContent =
+  | { readonly kind: 'text'; readonly text: SpecifiedFormattedText }
+  | ({ readonly kind: 'rich_message' } & SpecifiedRichMessage)
+  | Extract<UnreadInputMessageContent, { readonly kind: 'contact' | 'location' }>;
+
+/**
+ * An inline query result as the official server's `get_inline_query_result` parses it: its
+ * fields, what its `input_message_content` sends, and a media result's caption, read with its
+ * formatting. TDLib checks it only once every result is parsed.
+ */
+interface ParsedInlineQueryResult {
+  readonly fields: InlineQueryResultParameter;
+  /** Omitted for a result without `input_message_content`. */
+  readonly messageContent?: ParsedInlineResultMessageContent;
+  /** Omitted for a result that has no caption, as only media results have one. */
+  readonly caption?: SpecifiedFormattedText;
+}
+
+/** An inline query's answer once the official server has parsed every result. */
+interface InlineQueryAnswerWithParsedResults {
+  readonly answer: Omit<InlineQueryAnswerRequest, 'results'>;
+  readonly parsedResults: readonly ParsedInlineQueryResult[];
+}
+
+/**
+ * The step that parses an inline query's results one after another until one cannot be parsed, as
+ * the official server's `get_inline_query_results` does. It finds what the server reports as it
+ * parses a result; what TDLib checks waits for `checkInlineQueryAnswerResults`, since the server
+ * passes the results to TDLib only once all of them are parsed.
+ */
+function parseInlineQueryAnswerResults(
+  call: BotApiStepCall<unknown>,
   { resultValues, ...answer }: InlineQueryAnswerWithoutResults,
-): BotApiStepResult<InlineQueryAnswerRequest> {
-  const results: InlineQueryResultRequest[] = [];
+): BotApiStepResult<InlineQueryAnswerWithParsedResults> {
+  const parsedResults: ParsedInlineQueryResult[] = [];
   for (const resultValue of resultValues) {
-    const fieldsReading = readInlineQueryResultParameter(resultValue, invalidParametersDescription);
-    if (!fieldsReading.read) {
-      return answerWithBadRequest(fieldsReading.description);
+    const parsing = parseInlineQueryResult(call, resultValue);
+    if (!parsing.proceeds) {
+      return parsing;
     }
-    const keyboardReading = readInlineKeyboardParameter(
+    parsedResults.push(parsing.value);
+  }
+  return proceedWith({ answer, parsedResults });
+}
+
+/**
+ * Parses one result as `get_inline_query_result` does: its fields, then the text or rich message
+ * of its `input_message_content`, then a media result's caption. The server reports a problem with
+ * any of them as an inline query result it cannot parse.
+ */
+function parseInlineQueryResult(
+  { context, uploadedFiles, invalidParametersDescription }: BotApiStepCall<unknown>,
+  resultValue: unknown,
+): BotApiStepResult<ParsedInlineQueryResult> {
+  const fieldsReading = readInlineQueryResultParameter(resultValue, invalidParametersDescription);
+  if (!fieldsReading.read) {
+    return answerWithBadRequest(fieldsReading.description);
+  }
+  const fields = fieldsReading.result;
+  const messageContentParsing = fields.messageContent === undefined
+    ? undefined
+    : parseInlineResultMessageContent(
       context,
-      fieldsReading.result.inlineKeyboard,
-    );
-    if (!keyboardReading.read) {
-      return answerWith(keyboardReading.errorAnswer);
-    }
-    const resultReading = readInlineQueryResultContent(
-      context,
-      { ...fieldsReading.result, inlineKeyboard: keyboardReading.inlineKeyboard },
+      fields.messageContent,
       uploadedFiles,
       invalidParametersDescription,
     );
-    if (!resultReading.read) {
-      return answerWithBadRequest(resultReading.description);
+  if (messageContentParsing?.read === false) {
+    return answerWithBadRequest(messageContentParsing.description);
+  }
+  const parsedResult: ParsedInlineQueryResult = {
+    fields,
+    ...(messageContentParsing === undefined
+      ? {}
+      : { messageContent: messageContentParsing.content }),
+  };
+  if (!('caption' in fields)) {
+    return proceedWith(parsedResult);
+  }
+  const captionReading = readEmbeddedFormattedText(
+    context,
+    fields.caption,
+    invalidParametersDescription,
+    INLINE_QUERY_RESULT_ERROR_PREFIX,
+  );
+  return captionReading.read
+    ? proceedWith({ ...parsedResult, caption: captionReading.formattedText })
+    : answerWithBadRequest(captionReading.description);
+}
+
+/**
+ * Parses what a result's `input_message_content` sends, as the official server's
+ * `get_input_message_content` does: text with its parse mode or entities, or a rich message, read
+ * as `readSpecifiedRichMessage` reads the `rich_message` of `sendRichMessage`, with its uploads,
+ * so that TDLib's check can refuse them. The server prefixes its own descriptions of a rich
+ * message it cannot read with `can't parse InlineQueryResult: `, which the emulator words as for
+ * `sendRichMessage`. A contact and a location need no parsing.
+ */
+function parseInlineResultMessageContent(
+  context: BotApiMethodContext,
+  content: UnreadInputMessageContent,
+  uploadedFiles: BotApiUploadedFiles,
+  invalidParametersDescription: string,
+):
+  | { readonly read: true; readonly content: ParsedInlineResultMessageContent }
+  | { readonly read: false; readonly description: string } {
+  switch (content.kind) {
+    case 'text': {
+      const textReading = readEmbeddedFormattedText(
+        context,
+        content.text,
+        invalidParametersDescription,
+        INLINE_QUERY_RESULT_ERROR_PREFIX,
+      );
+      return textReading.read
+        ? { read: true, content: { kind: 'text', text: textReading.formattedText } }
+        : textReading;
     }
-    results.push(resultReading.result);
+    case 'rich_message': {
+      const richMessageReading = readRichMessageParameter(
+        JSON.stringify(content.richMessage),
+        uploadedFiles,
+        invalidParametersDescription,
+      );
+      return richMessageReading.read
+        ? {
+          read: true,
+          content: {
+            kind: 'rich_message',
+            richMessage: richMessageReading.richMessage,
+            detectsEntities: richMessageReading.detectsEntities,
+          },
+        }
+        : richMessageReading;
+    }
+    case 'contact':
+    case 'location':
+      return { read: true, content };
+    default: {
+      const unhandledContent: never = content;
+      throw new Error(`Unhandled inline result content: ${JSON.stringify(unhandledContent)}`);
+    }
+  }
+}
+
+/**
+ * The step that checks every parsed result, one after another until one fails, as TDLib's
+ * `answer_inline_query` checks each with `get_input_bot_inline_result`.
+ */
+function checkInlineQueryAnswerResults(
+  context: BotApiMethodContext,
+  { answer, parsedResults }: InlineQueryAnswerWithParsedResults,
+): BotApiStepResult<InlineQueryAnswerRequest> {
+  const results: InlineQueryResultRequest[] = [];
+  for (const parsedResult of parsedResults) {
+    const checking = checkInlineQueryResult(context, parsedResult);
+    if (!checking.proceeds) {
+      return checking;
+    }
+    results.push(checking.value);
   }
   return proceedWith({ ...answer, results });
 }
 
 /**
- * Reads what an inline query result sends and shows: its `input_message_content`, whose text is
- * read with its parse mode or entities and whose rich message is read as `sendRichMessage` reads
- * one, and its caption.
+ * Checks a parsed result as TDLib's `get_input_bot_inline_result` does: the MIME type of a file it
+ * names by URL, then, in `get_inline_message`, its inline keyboard's buttons, then what it sends,
+ * such as a location's coordinates or a rich message's buttons and files.
  */
-function readInlineQueryResultContent(
+function checkInlineQueryResult(
   context: BotApiMethodContext,
-  result: InlineQueryResultParameter,
-  uploadedFiles: BotApiUploadedFiles,
-  invalidParametersDescription: string,
-):
-  | { readonly read: true; readonly result: InlineQueryResultRequest }
-  | { readonly read: false; readonly description: string } {
-  const readText = (text: UnreadFormattedText) =>
-    readEmbeddedFormattedText(
-      context,
-      text,
-      invalidParametersDescription,
-      INLINE_QUERY_RESULT_ERROR_PREFIX,
-    );
+  { fields, messageContent: parsedMessageContent, caption }: ParsedInlineQueryResult,
+): BotApiStepResult<InlineQueryResultRequest> {
+  const fileTypeChecking = checkInlineQueryResultFileType(fields);
+  if (!fileTypeChecking.read) {
+    return answerWithBadRequest(fileTypeChecking.description);
+  }
+  const result = fileTypeChecking.result;
+  const keyboardReading = readInlineKeyboardParameter(context, result.inlineKeyboard);
+  if (!keyboardReading.read) {
+    return answerWith(keyboardReading.errorAnswer);
+  }
+  const messageContentChecking = parsedMessageContent === undefined
+    ? undefined
+    : checkInlineResultMessageContent(context, parsedMessageContent);
+  if (messageContentChecking?.read === false) {
+    return answerWithBadRequest(messageContentChecking.description);
+  }
+  const messageContent = messageContentChecking?.content;
   const shared = {
     id: result.id,
-    ...(result.inlineKeyboard === undefined ? {} : { inlineKeyboard: result.inlineKeyboard }),
+    ...(keyboardReading.inlineKeyboard === undefined
+      ? {}
+      : { inlineKeyboard: keyboardReading.inlineKeyboard }),
   };
-  const messageContentReading = result.messageContent === undefined
-    ? undefined
-    : readInlineResultMessageContent(
-      context,
-      result.messageContent,
-      uploadedFiles,
-      invalidParametersDescription,
-    );
-  if (messageContentReading?.read === false) {
-    return messageContentReading;
-  }
-  const messageContent = messageContentReading?.content;
   if (result.kind === 'article') {
     if (messageContent === undefined) {
       throw new Error('Expected an article result to send its input message content');
     }
-    return {
-      read: true,
-      result: {
-        ...shared,
-        kind: 'article',
-        description: result.description,
-        title: result.title,
-        url: result.url,
-        messageContent,
-      },
-    };
+    return proceedWith({
+      ...shared,
+      kind: 'article',
+      description: result.description,
+      title: result.title,
+      url: result.url,
+      messageContent,
+    });
   }
   const optionalMessageContent = messageContent === undefined ? {} : { messageContent };
   if (result.kind === 'contact') {
-    return {
-      read: true,
-      result: { ...shared, ...optionalMessageContent, kind: 'contact', contact: result.contact },
-    };
+    return proceedWith({
+      ...shared,
+      ...optionalMessageContent,
+      kind: 'contact',
+      contact: result.contact,
+    });
   }
   if (result.kind === 'location') {
     const location = readUnreadLocation(result.location);
-    return location === undefined ? { read: false, description: LOCATION_INVALID_DESCRIPTION } : {
-      read: true,
-      result: {
+    return location === undefined
+      ? answerWithBadRequest(LOCATION_INVALID_DESCRIPTION)
+      : proceedWith({
         ...shared,
         ...optionalMessageContent,
         kind: 'location',
         title: result.title,
         location,
-      },
-    };
+      });
   }
 
-  const captionReading = readText(result.caption);
-  if (!captionReading.read) {
-    return captionReading;
+  if (caption === undefined) {
+    throw new Error('Expected a media result to have its caption read');
   }
-  const media = {
-    ...shared,
-    ...optionalMessageContent,
-    title: result.title,
-    caption: captionReading.formattedText,
-  };
+  const media = { ...shared, ...optionalMessageContent, title: result.title, caption };
   switch (result.kind) {
     case 'photo':
-      return {
-        read: true,
-        result: {
-          ...media,
-          kind: 'photo',
-          description: result.description,
-          photo: result.photo,
-          thumbnailUrl: result.thumbnailUrl,
-          showsCaptionAboveMedia: result.showsCaptionAboveMedia,
-        },
-      };
+      return proceedWith({
+        ...media,
+        kind: 'photo',
+        description: result.description,
+        photo: result.photo,
+        thumbnailUrl: result.thumbnailUrl,
+        showsCaptionAboveMedia: result.showsCaptionAboveMedia,
+      });
     case 'document':
-      return {
-        read: true,
-        result: {
-          ...media,
-          kind: 'document',
-          description: result.description,
-          document: result.document,
-          thumbnailUrl: result.thumbnailUrl,
-        },
-      };
+      return proceedWith({
+        ...media,
+        kind: 'document',
+        description: result.description,
+        document: result.document,
+        thumbnailUrl: result.thumbnailUrl,
+      });
     case 'video':
-      return {
-        read: true,
-        result: {
-          ...media,
-          kind: 'video',
-          description: result.description,
-          video: result.video,
-          thumbnailUrl: result.thumbnailUrl,
-          showsCaptionAboveMedia: result.showsCaptionAboveMedia,
-          attributes: result.attributes,
-        },
-      };
+      return proceedWith({
+        ...media,
+        kind: 'video',
+        description: result.description,
+        video: result.video,
+        thumbnailUrl: result.thumbnailUrl,
+        showsCaptionAboveMedia: result.showsCaptionAboveMedia,
+        attributes: result.attributes,
+      });
     case 'voice':
-      return {
-        read: true,
-        result: {
-          ...media,
-          kind: 'voice',
-          voice: result.voice,
-          durationSeconds: result.durationSeconds,
-        },
-      };
+      return proceedWith({
+        ...media,
+        kind: 'voice',
+        voice: result.voice,
+        durationSeconds: result.durationSeconds,
+      });
     case 'audio':
-      return {
-        read: true,
-        result: {
-          ...media,
-          kind: 'audio',
-          audio: result.audio,
-          performer: result.performer,
-          durationSeconds: result.durationSeconds,
-        },
-      };
+      return proceedWith({
+        ...media,
+        kind: 'audio',
+        audio: result.audio,
+        performer: result.performer,
+        durationSeconds: result.durationSeconds,
+      });
     default: {
       const unhandledResult: never = result;
       throw new Error(`Unhandled inline query result: ${JSON.stringify(unhandledResult)}`);
@@ -340,69 +450,48 @@ function readInlineQueryResultContent(
 }
 
 /**
- * Reads what a result's `input_message_content` sends: text with its parse mode or entities; a
- * rich message, read as `readSpecifiedRichMessage` reads the `rich_message` of `sendRichMessage`;
- * a contact, which the service cleans as `sendContact` does; or a static location, whose
- * coordinates must name a point on Earth, as TDLib's `process_input_message_location` requires.
- * A rich message's uploads are read so that answering can refuse them, as TDLib refuses an inline
- * message's uploads. The official server prefixes its own descriptions of a rich message it cannot
- * read with `can't parse InlineQueryResult: `, which the emulator words as for `sendRichMessage`.
+ * Checks what a result's `input_message_content` sends, as TDLib's `get_inline_message` does: a
+ * static location's coordinates must name a point on Earth, as `process_input_message_location`
+ * requires, and a rich message's buttons are checked as in any inline message. A rich message must
+ * reuse its files by `file_id`, since `get_inline_message` refuses an inline message's uploads and
+ * files named by URL. Text and a contact need no check here; the service cleans a contact as
+ * `sendContact` does.
  */
-function readInlineResultMessageContent(
+function checkInlineResultMessageContent(
   context: BotApiMethodContext,
-  content: UnreadInputMessageContent,
-  uploadedFiles: BotApiUploadedFiles,
-  invalidParametersDescription: string,
+  content: ParsedInlineResultMessageContent,
 ):
   | { readonly read: true; readonly content: InlineResultMessageContentRequest }
   | { readonly read: false; readonly description: string } {
-  if (content.kind === 'text') {
-    const textReading = readEmbeddedFormattedText(
-      context,
-      content.text,
-      invalidParametersDescription,
-      INLINE_QUERY_RESULT_ERROR_PREFIX,
-    );
-    return textReading.read
-      ? { read: true, content: { kind: 'text', text: textReading.formattedText } }
-      : textReading;
-  }
-  if (content.kind === 'contact') {
-    return { read: true, content };
-  }
-  if (content.kind === 'location') {
-    const location = readUnreadLocation(content.location);
-    return location === undefined
-      ? { read: false, description: LOCATION_INVALID_DESCRIPTION }
-      : { read: true, content: { kind: 'location', location } };
-  }
-  const richMessageReading = readRichMessageParameter(
-    JSON.stringify(content.richMessage),
-    uploadedFiles,
-    invalidParametersDescription,
-  );
-  if (!richMessageReading.read) {
-    return richMessageReading;
-  }
-  const buttonReading = context.session.botApi.readRichMessageButtons(
-    richMessageReading.richMessage,
-  );
-  if (!buttonReading.read) {
-    return { read: false, description: badRequestDescription(buttonReading.keyboardError) };
-  }
-  // An inline query result's rich message must reuse files by `file_id`, as for uploads.
-  const richMessage = excludeRichMessageWebFiles(buttonReading.richMessage);
-  return richMessage === undefined
-    ? {
-      read: false,
-      description: BOT_API_ERRORS.inlineQueryResultContentInvalid.description(),
+  switch (content.kind) {
+    case 'text':
+    case 'contact':
+      return { read: true, content };
+    case 'location': {
+      const location = readUnreadLocation(content.location);
+      return location === undefined
+        ? { read: false, description: LOCATION_INVALID_DESCRIPTION }
+        : { read: true, content: { kind: 'location', location } };
     }
-    : {
-      read: true,
-      content: {
-        kind: 'rich_message',
-        richMessage,
-        detectsEntities: richMessageReading.detectsEntities,
-      },
-    };
+    case 'rich_message': {
+      const buttonReading = context.session.botApi.readRichMessageButtons(content.richMessage);
+      if (!buttonReading.read) {
+        return { read: false, description: badRequestDescription(buttonReading.keyboardError) };
+      }
+      const richMessage = excludeRichMessageWebFiles(buttonReading.richMessage);
+      return richMessage === undefined
+        ? {
+          read: false,
+          description: BOT_API_ERRORS.inlineQueryResultContentInvalid.description(),
+        }
+        : {
+          read: true,
+          content: { kind: 'rich_message', richMessage, detectsEntities: content.detectsEntities },
+        };
+    }
+    default: {
+      const unhandledContent: never = content;
+      throw new Error(`Unhandled inline result content: ${JSON.stringify(unhandledContent)}`);
+    }
+  }
 }
