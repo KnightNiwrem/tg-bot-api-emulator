@@ -48,6 +48,6 @@ export function presentChatJoinRequest(
     user_id: userId,
     invite_link: inviteLinkUrl,
     date: requestedAtUnixSeconds,
-    requester_contact: { status: requesterContact.status, bot_ids: contactBotIds },
+    requester_contact: { status: requesterContact.status, bot_ids: [...contactBotIds] },
   };
 }

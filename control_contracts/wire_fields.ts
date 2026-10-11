@@ -32,6 +32,18 @@ export const sessionIdParameterSchema = z.string();
 export const telegramUserIdSchema = z.int().min(MIN_TELEGRAM_USER_ID).max(MAX_TELEGRAM_USER_ID);
 
 /**
+ * The Bot API chat IDs of supergroups, which carry Telegram's `-100` prefix: from
+ * -1997852516352 to -1000000000001.
+ */
+const MIN_SUPERGROUP_CHAT_ID = -1_997_852_516_352;
+const MAX_SUPERGROUP_CHAT_ID = -1_000_000_000_001;
+
+/** The Bot API chat ID of a supergroup. */
+export const supergroupChatIdSchema = z.int().min(MIN_SUPERGROUP_CHAT_ID).max(
+  MAX_SUPERGROUP_CHAT_ID,
+);
+
+/**
  * A Telegram username, without `@`, of the syntax TDLib's `is_valid_username` admits: from 1 to 32
  * ASCII letters, digits, and underscores, beginning with a letter, without a trailing or doubled
  * underscore.

@@ -37,7 +37,6 @@ import type {
   RichText,
   RichTextObject,
   ServerErrorResponses,
-  Supergroup,
   SupergroupMessage,
   UserReaction,
   WebhookAttempt,
@@ -881,18 +880,6 @@ export const messageReactionsResponseSchema: z.ZodType<MessageReactions> = z.str
   reactions: z.array(userReactionSchema),
 });
 
-const supergroupSchema: z.ZodType<Supergroup> = z.strictObject({
-  id: supergroupIdSchema,
-  type: z.literal('supergroup'),
-  title: z.string().min(1),
-  username: z.string().min(1).optional(),
-  description: z.string().min(1).optional(),
-});
-
-export const createdSupergroupResponseSchema = z.strictObject({
-  supergroup: supergroupSchema,
-});
-
 const callbackQuerySchema: z.ZodType<CallbackQuery> = z.strictObject({
   id: z.string().min(1),
   callback_data: z.string(),
@@ -938,51 +925,6 @@ export const notificationsResponseSchema = z.strictObject({
 const customTitleSchema = z.string().min(1).refine((title) =>
   [...title].length <= MAX_CUSTOM_TITLE_LENGTH
 );
-
-export const chatJoinResponseSchema = z.strictObject({
-  chat_id: z.number().int().negative(),
-  outcome: z.enum(['joined', 'join_request_sent']),
-});
-
-const supergroupInviteLinkSchema = z.strictObject({
-  invite_link: z.string().startsWith('https://t.me/+'),
-  name: z.string().min(1).optional(),
-  creator_user_id: z.number().int().positive(),
-  expire_date: z.number().int().positive().optional(),
-  member_limit: z.number().int().positive().optional(),
-  member_count: z.number().int().nonnegative(),
-  pending_join_request_count: z.number().int().nonnegative(),
-  creates_join_request: z.boolean(),
-  is_primary: z.boolean(),
-  is_expired: z.boolean(),
-  is_revoked: z.boolean(),
-});
-
-export const supergroupInviteLinksResponseSchema = z.strictObject({
-  invite_links: z.array(supergroupInviteLinkSchema),
-});
-
-const chatJoinRequestSchema = z.strictObject({
-  user_id: z.number().int().positive(),
-  invite_link: z.string().startsWith('https://t.me/+'),
-  date: z.number().int().positive(),
-  requester_contact: z.strictObject({
-    status: z.enum(['open', 'claimed', 'expired']),
-    bot_ids: z.array(z.number().int().positive()),
-  }),
-});
-
-export const chatJoinRequestsResponseSchema = z.strictObject({
-  join_requests: z.array(chatJoinRequestSchema),
-});
-
-export const expiredRequesterContactResponseSchema = z.strictObject({
-  join_request: chatJoinRequestSchema,
-});
-
-export const expiredInviteLinkResponseSchema = z.strictObject({
-  invite_link: supergroupInviteLinkSchema,
-});
 
 export const chatAdministratorsResponseSchema = z.strictObject({
   administrators: z.array(z.discriminatedUnion('status', [

@@ -14,6 +14,17 @@ import {
   defineControlOperation,
 } from '../control_contracts/operation_contract.ts';
 import { createSessionContract, deleteSessionContract } from '../control_contracts/sessions.ts';
+import {
+  addSupergroupMemberContract,
+  createSupergroupContract,
+  decideSupergroupJoinRequestContract,
+  expireChatInviteLinkContract,
+  expireJoinRequesterContactContract,
+  getSupergroupInviteLinksContract,
+  getSupergroupJoinRequestsContract,
+  joinChatByInviteLinkContract,
+  removeSupergroupMemberContract,
+} from '../control_contracts/supergroups.ts';
 import { findContractDrift } from './support/control_contract_consistency/contract_drift.ts';
 import { JsonSchemaCanonicalizer } from './support/control_contract_consistency/json_schema_canonical_form.ts';
 import { readWireJsonSchema } from './support/control_contract_consistency/wire_json_schema.ts';
@@ -30,6 +41,15 @@ const CONTROL_OPERATION_CONTRACTS: readonly ControlOperationContract[] = [
   createBotContract,
   createAccountContract,
   readBotActivityContract,
+  createSupergroupContract,
+  addSupergroupMemberContract,
+  removeSupergroupMemberContract,
+  joinChatByInviteLinkContract,
+  getSupergroupInviteLinksContract,
+  getSupergroupJoinRequestsContract,
+  decideSupergroupJoinRequestContract,
+  expireChatInviteLinkContract,
+  expireJoinRequesterContactContract,
 ];
 
 const document = readOpenApiDocument();

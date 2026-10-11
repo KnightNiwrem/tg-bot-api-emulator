@@ -3,6 +3,17 @@ import type { z } from 'zod';
 import { createAccountContract } from '../../control_contracts/accounts.ts';
 import { createBotContract } from '../../control_contracts/bots.ts';
 import { deleteSessionContract } from '../../control_contracts/sessions.ts';
+import {
+  addSupergroupMemberContract,
+  createSupergroupContract,
+  decideSupergroupJoinRequestContract,
+  expireChatInviteLinkContract,
+  expireJoinRequesterContactContract,
+  getSupergroupInviteLinksContract,
+  getSupergroupJoinRequestsContract,
+  joinChatByInviteLinkContract,
+  removeSupergroupMemberContract,
+} from '../../control_contracts/supergroups.ts';
 import { createHttpBotActivityPageReader } from './bot_activity_http_page_reader.ts';
 import { createBotActivityLog } from './bot_activity_log.ts';
 import { HTTP_STATUS_CREATED, HTTP_STATUS_NO_CONTENT, HTTP_STATUS_OK } from './constants.ts';
@@ -17,13 +28,8 @@ import {
   callbackQueryResponseSchema,
   chatActionsResponseSchema,
   chatAdministratorsResponseSchema,
-  chatJoinRequestsResponseSchema,
-  chatJoinResponseSchema,
   chosenInlineResultResponseSchema,
-  createdSupergroupResponseSchema,
-  expiredInviteLinkResponseSchema,
   expiredPollResponseSchema,
-  expiredRequesterContactResponseSchema,
   expiredRestrictionResponseSchema,
   getMeResponseSchema,
   inlineQueryResponseSchema,
@@ -43,7 +49,6 @@ import {
   serverErrorResponsesListSchema,
   serverErrorResponsesSchema,
   supergroupBotCommandsResponseSchema,
-  supergroupInviteLinksResponseSchema,
   supergroupMessageHistoryResponseSchema,
   supergroupPollAnswerResponseSchema,
   webhookAttemptListSchema,
@@ -148,6 +153,7 @@ import type {
   SupergroupBotCommands,
   SupergroupInviteLink,
   SupergroupMessage,
+  SupergroupMessageTarget,
   UploadProfile,
   VirtualAccountClient,
   VirtualAccountProfile,
@@ -310,6 +316,7 @@ class HttpEmulationSessionClient implements EmulationSessionClient {
     return {
       account: createVirtualAccountClient(
         response.account,
+        { transport: this.#transport, sessionId: this.id },
         `${this.#sessionUrl}/accounts/${response.account.id}`,
         this.#fetch,
       ),
@@ -456,13 +463,8 @@ class HttpEmulationSessionClient implements EmulationSessionClient {
   async expireChatInviteLink(
     { chatId, inviteLink }: ExpireChatInviteLinkInput,
   ): Promise<SupergroupInviteLink> {
-    const response = await requestJson(this.#fetch, {
-      method: 'POST',
-      url: `${this.#sessionUrl}/supergroups/${encodeURIComponent(chatId)}/invite-links/${
-        encodeURIComponent(getInviteLinkHash(inviteLink))
-      }/expiry`,
-      expectedStatus: HTTP_STATUS_OK,
-      responseSchema: expiredInviteLinkResponseSchema,
+    const response = await callJsonOperation(this.#transport, expireChatInviteLinkContract, {
+      params: { sessionId: this.id, chatId, inviteLinkHash: getInviteLinkHash(inviteLink) },
     });
     return response.invite_link;
   }
@@ -470,13 +472,8 @@ class HttpEmulationSessionClient implements EmulationSessionClient {
   async expireJoinRequesterContact(
     { chatId, userId }: ExpireJoinRequesterContactInput,
   ): Promise<ChatJoinRequest> {
-    const response = await requestJson(this.#fetch, {
-      method: 'POST',
-      url: `${this.#sessionUrl}/supergroups/${encodeURIComponent(chatId)}/join-requests/${
-        encodeURIComponent(userId)
-      }/requester-contact/expiry`,
-      expectedStatus: HTTP_STATUS_OK,
-      responseSchema: expiredRequesterContactResponseSchema,
+    const response = await callJsonOperation(this.#transport, expireJoinRequesterContactContract, {
+      params: { sessionId: this.id, chatId, userId },
     });
     return response.join_request;
   }
@@ -510,11 +507,20 @@ class HttpEmulationSessionClient implements EmulationSessionClient {
   }
 }
 
+/** Where an account client sends the requests that contracts describe: its session's operations. */
+interface AccountOperationTarget {
+  readonly transport: ControlOperationTransport;
+  readonly sessionId: string;
+}
+
 function createVirtualAccountClient(
   profile: VirtualAccountProfile,
+  { transport, sessionId }: AccountOperationTarget,
   accountUrl: string,
   fetchImplementation: typeof globalThis.fetch,
 ): VirtualAccountClient {
+  const accountParams = { sessionId, accountId: profile.id };
+  const supergroupParams = ({ chatId }: SupergroupMessageTarget) => ({ ...accountParams, chatId });
   async function getMessages<Target extends MessageTarget>(
     input: AccountMessageHistoryInput<Target>,
   ): Promise<readonly MessageIn<Target>[]> {
@@ -787,91 +793,63 @@ function createVirtualAccountClient(
       });
     },
     async createSupergroup(input: CreateSupergroupInput): Promise<Supergroup> {
-      const response = await requestJson(fetchImplementation, {
-        method: 'POST',
-        url: `${accountUrl}/supergroups`,
-        expectedStatus: HTTP_STATUS_CREATED,
-        responseSchema: createdSupergroupResponseSchema,
+      const response = await callJsonOperation(transport, createSupergroupContract, {
+        params: accountParams,
         body: input,
       });
       return response.supergroup;
     },
-    async addChatMember(input: AddChatMemberInput): Promise<void> {
-      await requestEmptyResponse(fetchImplementation, {
-        method: 'PUT',
-        url: `${conversationUrl(accountUrl, input.chat)}/members/${
-          encodeURIComponent(input.userId)
-        }`,
-        expectedStatus: HTTP_STATUS_NO_CONTENT,
+    addChatMember(input: AddChatMemberInput): Promise<void> {
+      return callEmptyOperation(transport, addSupergroupMemberContract, {
+        params: { ...supergroupParams(input.chat), userId: input.userId },
       });
     },
-    async removeChatMember(input: RemoveChatMemberInput): Promise<void> {
-      await requestEmptyResponse(fetchImplementation, {
-        method: 'DELETE',
-        url: `${conversationUrl(accountUrl, input.chat)}/members/${
-          encodeURIComponent(input.userId)
-        }`,
-        expectedStatus: HTTP_STATUS_NO_CONTENT,
+    removeChatMember(input: RemoveChatMemberInput): Promise<void> {
+      return callEmptyOperation(transport, removeSupergroupMemberContract, {
+        params: { ...supergroupParams(input.chat), userId: input.userId },
       });
     },
-    async leaveChat(input: LeaveChatInput): Promise<void> {
-      await requestEmptyResponse(fetchImplementation, {
-        method: 'DELETE',
-        url: `${conversationUrl(accountUrl, input.chat)}/members/${encodeURIComponent(profile.id)}`,
-        expectedStatus: HTTP_STATUS_NO_CONTENT,
+    leaveChat(input: LeaveChatInput): Promise<void> {
+      return callEmptyOperation(transport, removeSupergroupMemberContract, {
+        params: { ...supergroupParams(input.chat), userId: profile.id },
       });
     },
-    async joinChat(input: JoinChatInput): Promise<void> {
-      await requestEmptyResponse(fetchImplementation, {
-        method: 'PUT',
-        url: `${conversationUrl(accountUrl, input.chat)}/members/${encodeURIComponent(profile.id)}`,
-        expectedStatus: HTTP_STATUS_NO_CONTENT,
+    joinChat(input: JoinChatInput): Promise<void> {
+      return callEmptyOperation(transport, addSupergroupMemberContract, {
+        params: { ...supergroupParams(input.chat), userId: profile.id },
       });
     },
     joinChatByInviteLink(input: JoinChatByInviteLinkInput): Promise<ChatJoin> {
-      return requestJson(fetchImplementation, {
-        method: 'POST',
-        url: `${accountUrl}/chat-joins`,
-        expectedStatus: HTTP_STATUS_OK,
-        responseSchema: chatJoinResponseSchema,
+      return callJsonOperation(transport, joinChatByInviteLinkContract, {
+        params: accountParams,
         body: { invite_link: input.inviteLink },
       });
     },
     async getChatInviteLinks(
       input: AccountChatInviteLinksInput,
     ): Promise<readonly SupergroupInviteLink[]> {
-      const response = await requestJson(fetchImplementation, {
-        method: 'GET',
-        url: `${conversationUrl(accountUrl, input.chat)}/invite-links`,
-        expectedStatus: HTTP_STATUS_OK,
-        responseSchema: supergroupInviteLinksResponseSchema,
+      const response = await callJsonOperation(transport, getSupergroupInviteLinksContract, {
+        params: supergroupParams(input.chat),
       });
       return response.invite_links;
     },
     async getChatJoinRequests(
       input: AccountChatJoinRequestsInput,
     ): Promise<readonly ChatJoinRequest[]> {
-      const response = await requestJson(fetchImplementation, {
-        method: 'GET',
-        url: `${conversationUrl(accountUrl, input.chat)}/join-requests`,
-        expectedStatus: HTTP_STATUS_OK,
-        responseSchema: chatJoinRequestsResponseSchema,
+      const response = await callJsonOperation(transport, getSupergroupJoinRequestsContract, {
+        params: supergroupParams(input.chat),
       });
       return response.join_requests;
     },
-    async approveChatJoinRequest(input: AccountChatJoinRequestDecisionInput): Promise<void> {
-      await requestEmptyResponse(fetchImplementation, {
-        method: 'POST',
-        url: joinRequestDecisionUrl(accountUrl, input),
-        expectedStatus: HTTP_STATUS_NO_CONTENT,
+    approveChatJoinRequest(input: AccountChatJoinRequestDecisionInput): Promise<void> {
+      return callEmptyOperation(transport, decideSupergroupJoinRequestContract, {
+        params: { ...supergroupParams(input.chat), userId: input.userId },
         body: { decision: 'approve' },
       });
     },
-    async declineChatJoinRequest(input: AccountChatJoinRequestDecisionInput): Promise<void> {
-      await requestEmptyResponse(fetchImplementation, {
-        method: 'POST',
-        url: joinRequestDecisionUrl(accountUrl, input),
-        expectedStatus: HTTP_STATUS_NO_CONTENT,
+    declineChatJoinRequest(input: AccountChatJoinRequestDecisionInput): Promise<void> {
+      return callEmptyOperation(transport, decideSupergroupJoinRequestContract, {
+        params: { ...supergroupParams(input.chat), userId: input.userId },
         body: { decision: 'decline' },
       });
     },
@@ -1321,16 +1299,6 @@ function pinnedMessageUrl(
   { chat, message_id }: AccountPinMessageInput,
 ): string {
   return `${conversationUrl(accountUrl, chat)}/pinned-messages/${encodeURIComponent(message_id)}`;
-}
-
-/** The URL by which an account approves or declines a pending request to join its supergroup. */
-function joinRequestDecisionUrl(
-  accountUrl: string,
-  { chat, userId }: AccountChatJoinRequestDecisionInput,
-): string {
-  return `${conversationUrl(accountUrl, chat)}/join-requests/${
-    encodeURIComponent(userId)
-  }/decision`;
 }
 
 /** The URL of a message of an account's chat that shows a poll. */

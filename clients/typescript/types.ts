@@ -20,6 +20,12 @@ import type {
   ControlOperationResult,
 } from '../../control_contracts/operation_contract.ts';
 import type { createSessionContract } from '../../control_contracts/sessions.ts';
+import type {
+  createSupergroupContract,
+  getSupergroupInviteLinksContract,
+  getSupergroupJoinRequestsContract,
+  joinChatByInviteLinkContract,
+} from '../../control_contracts/supergroups.ts';
 import type { webhookAttemptFailureSchema } from '../../control_contracts/webhook_attempts.ts';
 import type { ControlRefusalReason } from './control_refusal_reasons.ts';
 
@@ -458,27 +464,15 @@ export interface AccountForwardMessageInput<Target extends MessageTarget = Messa
   readonly to: Target;
 }
 
-export interface CreateSupergroupInput {
-  readonly title: string;
-  /**
-   * Makes the supergroup public under this username, unique among the session's usernames, so
-   * that bots can address it as `@username`; omitted for a private supergroup. It has the syntax
-   * of a bot's or account's username.
-   */
-  readonly username?: string;
-  readonly description?: string;
-}
+/** A supergroup's title, public username, and description. */
+export type CreateSupergroupInput = Readonly<
+  ControlOperationRequest<typeof createSupergroupContract>['body']
+>;
 
 /** A supergroup as its creator sees it once created. */
-export interface Supergroup {
-  /** The Bot API `chat_id` of the supergroup, a negative number. */
-  readonly id: number;
-  readonly type: 'supergroup';
-  readonly title: string;
-  /** Omitted for a private supergroup. */
-  readonly username?: string;
-  readonly description?: string;
-}
+export type Supergroup = Readonly<
+  ControlOperationResult<typeof createSupergroupContract>['supergroup']
+>;
 
 export interface AddChatMemberInput {
   readonly chat: SupergroupMessageTarget;
@@ -510,15 +504,7 @@ export interface JoinChatByInviteLinkInput {
 }
 
 /** What an account's use of an invite link did. */
-export interface ChatJoin {
-  /** The Bot API `chat_id` of the supergroup the link leads to. */
-  readonly chat_id: number;
-  /**
-   * `joined` when the account joined the supergroup; `join_request_sent` when the link creates
-   * join requests, which leaves the account outside until an administrator decides.
-   */
-  readonly outcome: 'joined' | 'join_request_sent';
-}
+export type ChatJoin = Readonly<ControlOperationResult<typeof joinChatByInviteLinkContract>>;
 
 export interface AccountChatJoinRequestsInput {
   readonly chat: SupergroupMessageTarget;
@@ -532,34 +518,15 @@ export interface AccountChatJoinRequestDecisionInput {
 }
 
 /** A pending request to join a supergroup, as its owner inspects it. */
-export interface ChatJoinRequest {
-  /** The account that wants to join. */
-  readonly user_id: number;
-  /** The whole invite link the request was sent through. */
-  readonly invite_link: string;
-  /** When the request was sent, as a Unix time in seconds. */
-  readonly date: number;
-  /** Which bots may write to the user before it starts a private chat with them. */
-  readonly requester_contact: JoinRequesterContact;
-}
+export type ChatJoinRequest = Readonly<
+  ControlOperationResult<typeof getSupergroupJoinRequestsContract>['join_requests'][number]
+>;
 
 /**
  * The temporary permission to write to a join request's user that the Bot API documents for
- * `user_chat_id`. It ends with the request; the emulator never lets its five minutes pass by
- * themselves, so `session.expireJoinRequesterContact` ends it.
+ * `user_chat_id`, which `session.expireJoinRequesterContact` ends.
  */
-export interface JoinRequesterContact {
-  /**
-   * `open` while every bot that received the request may write; `claimed` once one of them wrote,
-   * after which only that bot may; `expired` once `session.expireJoinRequesterContact` ended it.
-   */
-  readonly status: 'open' | 'claimed' | 'expired';
-  /**
-   * The bots that may write to the user now: while open, the bots that received the request, and
-   * once claimed, the bot that claimed it, as long as they hold `can_invite_users`.
-   */
-  readonly bot_ids: readonly number[];
-}
+export type JoinRequesterContact = Readonly<ChatJoinRequest['requester_contact']>;
 
 export interface ExpireJoinRequesterContactInput {
   /** The supergroup's chat ID. */
@@ -573,39 +540,9 @@ export interface AccountChatInviteLinksInput {
 }
 
 /** An invite link of a supergroup, as its owner inspects it. */
-export interface SupergroupInviteLink {
-  /** The whole link, `https://t.me/+` and its hash. */
-  readonly invite_link: string;
-  /** Omitted for none. */
-  readonly name?: string;
-  /** The administrator bot that created the link. */
-  readonly creator_user_id: number;
-  /** When the link stops working, as a Unix time in seconds; omitted for no expiry date. */
-  readonly expire_date?: number;
-  /** How many users that joined through the link may be members at once; omitted for no limit. */
-  readonly member_limit?: number;
-  /** How many members joined through the link and still are, which its member limit counts. */
-  readonly member_count: number;
-  /** How many pending join requests were sent through the link. */
-  readonly pending_join_request_count: number;
-  /** Whether users who use the link send a join request instead of joining. */
-  readonly creates_join_request: boolean;
-  /**
-   * Whether the link is its creator's primary link, from `exportChatInviteLink` or the
-   * replacement that revoking the previous one created, rather than an additional link.
-   */
-  readonly is_primary: boolean;
-  /**
-   * Whether `session.expireChatInviteLink` made the link's current expiry date arrive; an edit
-   * that gives the link another expiry date, or none, makes it false again.
-   */
-  readonly is_expired: boolean;
-  /**
-   * Whether the bot that created the link revoked it, for good: with `revokeChatInviteLink`, or,
-   * for a primary link, by exporting a new one with `exportChatInviteLink`.
-   */
-  readonly is_revoked: boolean;
-}
+export type SupergroupInviteLink = Readonly<
+  ControlOperationResult<typeof getSupergroupInviteLinksContract>['invite_links'][number]
+>;
 
 export interface ExpireChatInviteLinkInput {
   /** The supergroup's chat ID. */
