@@ -634,8 +634,9 @@ interface BlockedUserLookup {
   isBlocked(accountId: number, userId: number): boolean;
 }
 
+/** Takes each event into the transaction of the command that caused it. */
 interface ChatDomainEventSink {
-  publish(event: ChatDomainEvent): void;
+  emit(event: ChatDomainEvent): void;
 }
 
 interface MessageDraftClearing {
@@ -1143,7 +1144,7 @@ export class PrivateMessagingService {
       inlineKeyboard: input.inlineKeyboard,
       contentEditedAtUnixSeconds: pollMessage.contentEditedAtUnixSeconds,
     });
-    this.#events.publish({ type: 'poll_closed', poll: stoppedPoll });
+    this.#events.emit({ type: 'poll_closed', poll: stoppedPoll });
     return { stopped: true, message, poll: stoppedPoll };
   }
 
@@ -1193,7 +1194,7 @@ export class PrivateMessagingService {
       inlineKeyboard: message.inlineKeyboard,
       contentEditedAtUnixSeconds: this.#currentUnixTimeSeconds(),
     });
-    this.#events.publish({ type: 'message_edited', message: editedMessage });
+    this.#events.emit({ type: 'message_edited', message: editedMessage });
     return { edited: true, message: editedMessage };
   }
 
@@ -1776,7 +1777,7 @@ export class PrivateMessagingService {
       ...edit,
       content: storeOutgoingContent(content, this.#files, this.#polls),
     });
-    this.#events.publish({ type: 'message_edited', message: editedMessage });
+    this.#events.emit({ type: 'message_edited', message: editedMessage });
     return { edited: true, message: editedMessage };
   }
 
@@ -1890,7 +1891,7 @@ export class PrivateMessagingService {
     if (storedMessage.sender === 'bot') {
       this.#messageDrafts.clearBotDraft(conversation);
     }
-    this.#events.publish({ type: 'message_created', message: storedMessage });
+    this.#events.emit({ type: 'message_created', message: storedMessage });
 
     return storedMessage;
   }

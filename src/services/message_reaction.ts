@@ -134,8 +134,9 @@ interface SupergroupMessageReactionStore {
   ): SupergroupMessage;
 }
 
+/** Takes each event into the transaction of the command that caused it. */
 interface ChatDomainEventSink {
-  publish(event: ChatDomainEvent): void;
+  emit(event: ChatDomainEvent): void;
 }
 
 interface MessageReactionServiceDependencies {
@@ -240,7 +241,7 @@ export class MessageReactionService {
       return { set: false, reason: choice.reason };
     }
     if (!isSameReactionEmojis(choice.oldEmojis, choice.newEmojis)) {
-      this.#events.publish({
+      this.#events.emit({
         type: 'message_reaction_changed',
         message: choice.message,
         accountId: input.accountId,

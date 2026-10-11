@@ -48,13 +48,13 @@ function endedSessionCallOutcome({ answerOnceSessionEnded }: BotApiMethod): BotA
  * Runs a bot's call of a method, however the call arrived, unless a test queued a rate limit or
  * server error answer for it, which the call receives instead, before the method reads its
  * parameters or changes anything. The call and its answer are recorded as bot activity if the
- * method's calls are.
+ * method's calls are, in a transaction of the session.
  *
  * Once the session has ended, a call changes and records nothing, and gets its method's
  * ended-session outcome, whatever it would otherwise have been answered: a refusal, or, for a
  * method that declares one, such as `getUpdates`, its answer for that case. The session is checked
- * when the call starts and once its method has answered; a method that waits checks it itself
- * after each wait, before it changes anything.
+ * when the call starts and by the transaction that records its answer; a method that waits checks
+ * it itself after each wait, before it changes anything.
  */
 export async function callBotApiMethod(
   context: BotApiCallContext,
@@ -64,16 +64,18 @@ export async function callBotApiMethod(
     return endedSessionCallOutcome(method);
   }
   const outcome = await answerBotApiMethodCall(context, method, parameters, uploadedFiles);
-  if (outcome === SESSION_ENDED || !context.session.lifetime.admitsCommits) {
+  if (outcome === SESSION_ENDED) {
     return endedSessionCallOutcome(method);
   }
-  recordImplementedMethodCall(context, method, {
-    requestedMethodName,
-    parameters,
-    uploadedFiles,
-    chatId: findNamedChatId(context, parameters),
-  }, outcome);
-  return { answered: true, answer: outcome };
+  const recording = context.session.transactions.execute(() =>
+    recordImplementedMethodCall(context, method, {
+      requestedMethodName,
+      parameters,
+      uploadedFiles,
+      chatId: findNamedChatId(context, parameters),
+    }, outcome)
+  );
+  return recording.executed ? { answered: true, answer: outcome } : endedSessionCallOutcome(method);
 }
 
 /**
@@ -86,18 +88,17 @@ export function rejectUnknownBotApiMethod(
   parameters: BotApiRequestParameters,
   uploadedFiles: BotApiUploadedFiles,
 ): BotApiCallOutcome {
-  if (!context.session.lifetime.admitsCommits) {
-    return SESSION_ENDED_CALL_OUTCOME;
-  }
   const answer = botApiError(404, 'Not Found: method not found');
-  recordBotApiCall(context, {
-    methodName: requestedMethodName,
-    requestedMethodName,
-    parameters,
-    uploadedFiles,
-    chatId: findNamedChatId(context, parameters),
-  }, answer);
-  return { answered: true, answer };
+  const recording = context.session.transactions.execute(() =>
+    recordBotApiCall(context, {
+      methodName: requestedMethodName,
+      requestedMethodName,
+      parameters,
+      uploadedFiles,
+      chatId: findNamedChatId(context, parameters),
+    }, answer)
+  );
+  return recording.executed ? { answered: true, answer } : SESSION_ENDED_CALL_OUTCOME;
 }
 
 /**
@@ -111,17 +112,16 @@ export function rejectUndecodableBotApiCall(
   requestedMethodName: string,
   description: string,
 ): BotApiCallOutcome {
-  if (!context.session.lifetime.admitsCommits) {
-    return endedSessionCallOutcome(method);
-  }
   const answer = botApiError(400, description);
-  recordImplementedMethodCall(context, method, {
-    requestedMethodName,
-    parameters: {},
-    uploadedFiles: new Map(),
-    chatId: undefined,
-  }, answer);
-  return { answered: true, answer };
+  const recording = context.session.transactions.execute(() =>
+    recordImplementedMethodCall(context, method, {
+      requestedMethodName,
+      parameters: {},
+      uploadedFiles: new Map(),
+      chatId: undefined,
+    }, answer)
+  );
+  return recording.executed ? { answered: true, answer } : endedSessionCallOutcome(method);
 }
 
 /**

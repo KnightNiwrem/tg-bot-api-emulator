@@ -39,7 +39,7 @@ Deno.test('BotUpdateDeliveryService delivers a private message to its conversati
   messageBoxes.assignMessageId(targetBot.profile.id, 'unrelated-message');
   messageBoxes.assignMessageId(targetBot.profile.id, message.id);
 
-  botUpdateDelivery.publish({ type: 'message_created', message });
+  botUpdateDelivery.project({ type: 'message_created', message });
 
   const targetBotUpdates = botUpdates.confirmAndReadPendingUpdates(targetBot.profile.id, {
     limit: 100,
@@ -80,7 +80,7 @@ Deno.test('BotUpdateDeliveryService does not deliver a bot its own message', () 
   });
   messageBoxes.assignMessageId(bot.profile.id, message.id);
 
-  botUpdateDelivery.publish({ type: 'message_created', message });
+  botUpdateDelivery.project({ type: 'message_created', message });
 
   if (botUpdates.confirmAndReadPendingUpdates(bot.profile.id, { limit: 100 }).length !== 0) {
     throw new Error('Expected a bot-authored message not to become an update for its bot');
@@ -104,7 +104,7 @@ Deno.test('BotUpdateDeliveryService delivers a callback query to the bot whose b
   });
   messageBoxes.assignMessageId(bot.profile.id, message.id);
 
-  botUpdateDelivery.publish({
+  botUpdateDelivery.project({
     type: 'callback_query_created',
     callbackQuery: {
       id: '7',
@@ -169,9 +169,9 @@ Deno.test('BotUpdateDeliveryService skips update types excluded by the bot subsc
   messageBoxes.assignMessageId(bot.profile.id, accountMessage.id);
 
   updateSubscriptions.setAllowedUpdateTypes(bot.profile.id, new Set(['callback_query']));
-  botUpdateDelivery.publish({ type: 'message_created', message: accountMessage });
-  botUpdateDelivery.publish({ type: 'message_edited', message: accountMessage });
-  botUpdateDelivery.publish({
+  botUpdateDelivery.project({ type: 'message_created', message: accountMessage });
+  botUpdateDelivery.project({ type: 'message_edited', message: accountMessage });
+  botUpdateDelivery.project({
     type: 'bot_block_changed',
     accountId: account.profile.id,
     botId: bot.profile.id,
@@ -179,7 +179,7 @@ Deno.test('BotUpdateDeliveryService skips update types excluded by the bot subsc
     changedAtUnixSeconds: 1_700_000_002,
   });
   updateSubscriptions.setAllowedUpdateTypes(bot.profile.id, new Set(['message']));
-  botUpdateDelivery.publish({
+  botUpdateDelivery.project({
     type: 'callback_query_created',
     callbackQuery: {
       id: '7',
@@ -223,14 +223,14 @@ Deno.test('BotUpdateDeliveryService delivers an account edit, but not its own, t
     contentEditedAtUnixSeconds: 1_700_000_005,
   };
 
-  botUpdateDelivery.publish({
+  botUpdateDelivery.project({
     type: 'message_edited',
     message: messages.editMessage(botMessage.chat, botMessage.id, {
       ...edit,
       content: { kind: 'text', text: 'Hi there', entities: [] },
     }),
   });
-  botUpdateDelivery.publish({
+  botUpdateDelivery.project({
     type: 'message_edited',
     message: messages.editMessage(accountMessage.chat, accountMessage.id, {
       ...edit,
@@ -265,13 +265,13 @@ Deno.test('BotUpdateDeliveryService reports a block and unblock as changes of th
   const otherBot = createBot(virtualUsers, 'other_bot');
   const blockChange = { accountId: account.profile.id, botId: bot.profile.id };
 
-  botUpdateDelivery.publish({
+  botUpdateDelivery.project({
     type: 'bot_block_changed',
     ...blockChange,
     isBlocked: true,
     changedAtUnixSeconds: 1_700_000_000,
   });
-  botUpdateDelivery.publish({
+  botUpdateDelivery.project({
     type: 'bot_block_changed',
     ...blockChange,
     isBlocked: false,
@@ -354,7 +354,7 @@ Deno.test('BotUpdateDeliveryService delivers supergroup additions and edits to t
   updateSubscriptions.setAllowedUpdateTypes(privacyModeBot.profile.id, new Set(['message']));
   for (const memberId of [privacyModeBot.profile.id, readerBot.profile.id, 999]) {
     sharedChats.addChatMember(supergroup.id, memberId);
-    botUpdateDelivery.publish({
+    botUpdateDelivery.project({
       type: 'chat_member_status_changed',
       chat: supergroup,
       actorId: owner.profile.id,
@@ -376,7 +376,7 @@ Deno.test('BotUpdateDeliveryService delivers supergroup additions and edits to t
     contentEditedAtUnixSeconds: 1_700_000_002,
     content: { kind: 'text', text: 'Hello again', entities: [] },
   });
-  botUpdateDelivery.publish({ type: 'message_edited', message: editedMessage });
+  botUpdateDelivery.project({ type: 'message_edited', message: editedMessage });
 
   const readerUpdates = botUpdates.confirmAndReadPendingUpdates(readerBot.profile.id, {
     limit: 100,
@@ -428,7 +428,7 @@ Deno.test('BotUpdateDeliveryService delivers a promotion and every message to an
     administratorBot.profile.id,
     administratorStatus,
   );
-  botUpdateDelivery.publish({
+  botUpdateDelivery.project({
     type: 'chat_member_status_changed',
     chat: supergroup,
     actorId: owner.profile.id,
@@ -444,7 +444,7 @@ Deno.test('BotUpdateDeliveryService delivers a promotion and every message to an
     content: { kind: 'text', text: 'Not addressed to any bot', entities: [] },
   });
   messageBoxes.assignMessageId(supergroup.id, message.id);
-  botUpdateDelivery.publish({ type: 'message_created', message });
+  botUpdateDelivery.project({ type: 'message_created', message });
 
   const updates = botUpdates.confirmAndReadPendingUpdates(administratorBot.profile.id, {
     limit: 100,
@@ -541,7 +541,7 @@ Deno.test("BotUpdateDeliveryService delivers bots' membership service messages t
       content: { kind: 'member_left', memberId },
     });
     messageBoxes.assignMessageId(supergroup.id, message.id);
-    botUpdateDelivery.publish({ type: 'message_created', message });
+    botUpdateDelivery.project({ type: 'message_created', message });
   };
   const departuresSeenBy = (botId: number) =>
     botUpdates.confirmAndReadPendingUpdates(botId, { limit: 100 }).map((update) => {
@@ -632,7 +632,7 @@ Deno.test('BotUpdateDeliveryService addresses supergroup media by caption and pe
       },
     });
     messageBoxes.assignMessageId(supergroup.id, message.id);
-    botUpdateDelivery.publish({ type: 'message_created', message });
+    botUpdateDelivery.project({ type: 'message_created', message });
   };
 
   publishDocument('Meeting notes');
@@ -677,7 +677,7 @@ Deno.test('BotUpdateDeliveryService delivers inline queries, and chosen results 
     offset: '',
     state: { status: 'awaiting_answer' },
   } as const;
-  botUpdateDelivery.publish({ type: 'inline_query_created', inlineQuery });
+  botUpdateDelivery.project({ type: 'inline_query_created', inlineQuery });
   const message = messages.addMessage({
     chat: {
       type: 'private',
@@ -690,14 +690,14 @@ Deno.test('BotUpdateDeliveryService delivers inline queries, and chosen results 
     viaBotId: feedbackBot.profile.id,
   });
   messageBoxes.assignMessageId(feedbackBot.profile.id, message.id);
-  botUpdateDelivery.publish({ type: 'message_created', message });
-  botUpdateDelivery.publish({
+  botUpdateDelivery.project({ type: 'message_created', message });
+  botUpdateDelivery.project({
     type: 'inline_query_result_chosen',
     inlineQuery,
     resultId: 'cats-1',
     message,
   });
-  botUpdateDelivery.publish({
+  botUpdateDelivery.project({
     type: 'inline_query_result_chosen',
     inlineQuery: { ...inlineQuery, botId: quietBot.profile.id },
     resultId: 'cats-1',
@@ -769,7 +769,7 @@ Deno.test('BotUpdateDeliveryService delivers supergroup messages sent through a 
       viaBotId,
     });
     messageBoxes.assignMessageId(supergroup.id, message.id);
-    botUpdateDelivery.publish({ type: 'message_created', message });
+    botUpdateDelivery.project({ type: 'message_created', message });
   }
 
   const updates = botUpdates.confirmAndReadPendingUpdates(inlineBot.profile.id, { limit: 100 });
@@ -832,7 +832,7 @@ Deno.test('BotUpdateDeliveryService lets a message reach only the privacy-mode b
       ...options,
     });
     messageBoxes.assignMessageId(supergroup.id, message.id);
-    botUpdateDelivery.publish({ type: 'message_created', message });
+    botUpdateDelivery.project({ type: 'message_created', message });
     return message;
   };
   const byAccount = { kind: 'account', accountId: owner.profile.id } as const;
@@ -958,7 +958,7 @@ Deno.test('BotUpdateDeliveryService sends general commands to the bot that last 
       viaBotId,
     });
     messageBoxes.assignMessageId(supergroup.id, message.id);
-    botUpdateDelivery.publish({ type: 'message_created', message });
+    botUpdateDelivery.project({ type: 'message_created', message });
     return message;
   };
   const byAccount = { kind: 'account', accountId: owner.profile.id } as const;
@@ -1003,7 +1003,7 @@ Deno.test('BotUpdateDeliveryService sends general commands to the bot that last 
 
   send({ kind: 'bot', botId: botB.profile.id }, 'B speaks');
   // A bot's edit of its earlier message does not make it the last bot to write to the group.
-  botUpdateDelivery.publish({ type: 'message_edited', message: messageOfA });
+  botUpdateDelivery.project({ type: 'message_edited', message: messageOfA });
   expectLastMessageSendingBot(botB.profile.id);
   send(byAccount, '/start after B');
   expectRecipients('/start after B', ['b', 'admin']);
@@ -1061,7 +1061,7 @@ Deno.test('BotUpdateDeliveryService delivers chat_member updates to subscribed a
   }
 
   sharedChats.addChatMember(supergroup.id, newcomer.profile.id);
-  botUpdateDelivery.publish({
+  botUpdateDelivery.project({
     type: 'chat_member_status_changed',
     chat: supergroup,
     actorId: owner.profile.id,
@@ -1074,7 +1074,7 @@ Deno.test('BotUpdateDeliveryService delivers chat_member updates to subscribed a
     status: 'kicked',
     bannedUntilUnixSeconds: undefined,
   });
-  botUpdateDelivery.publish({
+  botUpdateDelivery.project({
     type: 'chat_member_status_changed',
     chat: supergroup,
     actorId: subscribedAdministratorBot.profile.id,
@@ -1087,7 +1087,7 @@ Deno.test('BotUpdateDeliveryService delivers chat_member updates to subscribed a
   sharedChats.updateChatMemberStatus(supergroup.id, subscribedAdministratorBot.profile.id, {
     status: 'member',
   });
-  botUpdateDelivery.publish({
+  botUpdateDelivery.project({
     type: 'chat_member_status_changed',
     chat: supergroup,
     actorId: owner.profile.id,
@@ -1190,7 +1190,7 @@ Deno.test('BotUpdateDeliveryService addresses a bot message only by its own repl
       ...options,
     });
     messageBoxes.assignMessageId(chatId, message.id);
-    botUpdateDelivery.publish({ type: 'message_created', message });
+    botUpdateDelivery.project({ type: 'message_created', message });
     return message;
   };
   let firstUnreadUpdateId: number | undefined;

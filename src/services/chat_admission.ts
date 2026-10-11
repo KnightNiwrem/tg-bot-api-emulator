@@ -390,8 +390,9 @@ interface ChatAdmissionStore extends SupergroupMembershipLookup {
   countJoinRequestsByInviteLink(chatId: number, inviteLinkUrl: string): number;
 }
 
+/** Takes each event into the transaction of the command that caused it. */
 interface ChatDomainEventSink {
-  publish(event: ChatDomainEvent): void;
+  emit(event: ChatDomainEvent): void;
 }
 
 interface ChatInviteLinkStore {
@@ -1134,7 +1135,7 @@ export class ChatAdmissionService {
       requesterContact: { status: 'open' },
     };
     this.#sharedChats.addJoinRequest(request);
-    this.#events.publish({ type: 'chat_join_requested', chat, request, inviteLink: link });
+    this.#events.emit({ type: 'chat_join_requested', chat, request, inviteLink: link });
     return { used: true, chatId: link.chatId, outcome: 'join_request_sent' };
   }
 

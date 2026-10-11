@@ -149,6 +149,10 @@ type PrivacyModeAddressee =
  * never receives it, as Telegram drops such updates when they are created; the underlying chat
  * state is unaffected. Delivering a bot's new supergroup content message also records that bot as
  * the supergroup's last message-sending bot, which routes later commands without a username.
+ *
+ * The session's transactions project each event as it is emitted, against the state its command
+ * has staged so far, and stage what projecting writes, such as mailbox entries with their update
+ * IDs, observers' file IDs and the routing, in the same transaction.
  */
 export class BotUpdateDeliveryService {
   readonly #botMessageViews: BotMessageViews;
@@ -179,7 +183,7 @@ export class BotUpdateDeliveryService {
     this.#lastMessageSendingBots = lastMessageSendingBots;
   }
 
-  publish(event: ChatDomainEvent): void {
+  project(event: ChatDomainEvent): void {
     switch (event.type) {
       case 'message_created':
         this.#deliverMessage(event.message, 'message');

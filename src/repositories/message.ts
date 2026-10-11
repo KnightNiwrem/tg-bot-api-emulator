@@ -1,3 +1,5 @@
+import { type ChangeStaging, UNSTAGED_CHANGES } from '../transactions/change_staging.ts';
+import { TransactionalMap, TransactionalSet } from '../transactions/transactional_collections.ts';
 import type { InlineKeyboard } from '../types/inline_keyboard.ts';
 import type { UserReaction } from '../types/message_reaction.ts';
 import type { ReplyInterfaceMarkup } from '../types/reply_interface.ts';
@@ -98,11 +100,21 @@ const messageEditors: {
  * of another chat's message finds nothing.
  */
 export class MessageRepository {
-  readonly #messagesById = new Map<CanonicalMessageId, ChatMessage>();
+  readonly #staging: ChangeStaging;
+  readonly #messagesById: TransactionalMap<CanonicalMessageId, ChatMessage>;
   /** Each chat's log: the IDs of the chat's messages, in the order they were stored. */
-  readonly #messageIdsByChatLogKey = new Map<string, Set<CanonicalMessageId>>();
-  readonly #messageIdsByInlineMessageId = new Map<InlineMessageId, CanonicalMessageId>();
-  readonly #issuedMediaGroupIds = new Set<MediaGroupId>();
+  readonly #messageIdsByChatLogKey: TransactionalMap<string, TransactionalSet<CanonicalMessageId>>;
+  readonly #messageIdsByInlineMessageId: TransactionalMap<InlineMessageId, CanonicalMessageId>;
+  readonly #issuedMediaGroupIds: TransactionalSet<MediaGroupId>;
+
+  /** `staging` decides how the repository's writes take part in its session's transactions. */
+  constructor(staging: ChangeStaging = UNSTAGED_CHANGES) {
+    this.#staging = staging;
+    this.#messagesById = new TransactionalMap(staging);
+    this.#messageIdsByChatLogKey = new TransactionalMap(staging);
+    this.#messageIdsByInlineMessageId = new TransactionalMap(staging);
+    this.#issuedMediaGroupIds = new TransactionalSet(staging);
+  }
 
   /**
    * Issues a new album identifier, which no album of the session had before, for the messages of
@@ -135,7 +147,8 @@ export class MessageRepository {
     this.#indexInlineMessage(storedMessage);
 
     const chatLogKey = getChatLogKey(storedMessage.chat);
-    const chatMessageIds = this.#messageIdsByChatLogKey.get(chatLogKey) ?? new Set();
+    const chatMessageIds = this.#messageIdsByChatLogKey.get(chatLogKey) ??
+      new TransactionalSet(this.#staging);
     chatMessageIds.add(storedMessage.id);
     this.#messageIdsByChatLogKey.set(chatLogKey, chatMessageIds);
     return storedMessage;

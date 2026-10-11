@@ -88,8 +88,9 @@ interface PollStore {
   closePoll(pollId: PollId): Poll;
 }
 
+/** Takes each event into the transaction of the command that caused it. */
 interface ChatDomainEventSink {
-  publish(event: ChatDomainEvent): void;
+  emit(event: ChatDomainEvent): void;
 }
 
 interface PollServiceDependencies {
@@ -164,7 +165,7 @@ export class PollService {
       input.accountId,
       chosenOptionPositions,
     );
-    this.#events.publish({
+    this.#events.emit({
       type: 'poll_answer_changed',
       poll: answeredPoll,
       voterId: input.accountId,
@@ -193,7 +194,7 @@ export class PollService {
       return { stopped: false, reason: 'poll_already_closed' };
     }
     const closedPoll = this.#polls.closePoll(poll.id);
-    this.#events.publish({ type: 'poll_closed', poll: closedPoll });
+    this.#events.emit({ type: 'poll_closed', poll: closedPoll });
     return { stopped: true, poll: closedPoll, message };
   }
 
@@ -214,7 +215,7 @@ export class PollService {
       return { expired: false, reason: 'poll_without_closing_time' };
     }
     const closedPoll = this.#polls.closePoll(pollId);
-    this.#events.publish({ type: 'poll_closed', poll: closedPoll });
+    this.#events.emit({ type: 'poll_closed', poll: closedPoll });
     return { expired: true, poll: closedPoll };
   }
 

@@ -371,8 +371,9 @@ interface InlineQueryStore {
   removeCachedAnswers(inlineQueryIds: readonly InlineQueryId[]): void;
 }
 
+/** Takes each event into the transaction of the command that caused it. */
 interface ChatDomainEventSink {
-  publish(event: ChatDomainEvent): void;
+  emit(event: ChatDomainEvent): void;
 }
 
 /** Downloads the media that results name by URL, and prepares it as media of the result's kind. */
@@ -493,7 +494,7 @@ export class InlineQueryService {
         }),
       };
     }
-    this.#events.publish({ type: 'inline_query_created', inlineQuery });
+    this.#events.emit({ type: 'inline_query_created', inlineQuery });
     return { sent: true, inlineQuery };
   }
 
@@ -617,7 +618,7 @@ export class InlineQueryService {
     if (!sending.sent) {
       return { chosen: false, reason: sending.reason };
     }
-    this.#events.publish({
+    this.#events.emit({
       type: 'inline_query_result_chosen',
       inlineQuery,
       resultId: result.id,

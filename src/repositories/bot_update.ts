@@ -17,6 +17,8 @@ import {
   waitForNotification,
 } from '../timing/notification_wait.ts';
 import type { Deadline } from '../timing/session_timing.ts';
+import { type ChangeStaging, UNSTAGED_CHANGES } from '../transactions/change_staging.ts';
+import { TransactionalMap } from '../transactions/transactional_collections.ts';
 
 /**
  * How far beyond the ID of the next update an offset can be before Telegram ignores it. From the
@@ -50,10 +52,21 @@ interface BotUpdateMailbox {
   readonly updates: BotApiUpdate[];
 }
 
-/** Owns each bot's independently sequenced pending Bot API updates. */
+/**
+ * Owns each bot's independently sequenced pending Bot API updates. Enqueueing an update in a
+ * transaction allocates its ID there, and the bot's waits learn of it once the transaction is
+ * published.
+ */
 export class BotUpdateRepository {
-  readonly #mailboxesByBotId = new Map<number, BotUpdateMailbox>();
+  readonly #staging: ChangeStaging;
+  readonly #mailboxesByBotId: TransactionalMap<number, BotUpdateMailbox>;
   readonly #waitersByBotId = new Map<number, Set<() => void>>();
+
+  /** `staging` decides how the repository's writes take part in its session's transactions. */
+  constructor(staging: ChangeStaging = UNSTAGED_CHANGES) {
+    this.#staging = staging;
+    this.#mailboxesByBotId = new TransactionalMap(staging);
+  }
 
   enqueueMessageUpdate(botId: number, message: BotApiMessage): BotApiUpdate {
     return this.#enqueueUpdate(botId, (update_id) => ({ update_id, message }));
@@ -179,10 +192,12 @@ export class BotUpdateRepository {
     const firstUnconfirmedUpdateIndex = mailbox.updates.findIndex((update) =>
       update.update_id >= firstUnconfirmedUpdateId
     );
-    return mailbox.updates.splice(
+    const confirmedUpdates = mailbox.updates.splice(
       0,
       firstUnconfirmedUpdateIndex === -1 ? mailbox.updates.length : firstUnconfirmedUpdateIndex,
     );
+    this.#staging.recordRevert(() => mailbox.updates.unshift(...confirmedUpdates));
+    return confirmedUpdates;
   }
 
   /** Returns the bot's pending updates, oldest first, without confirming any. */
@@ -198,7 +213,8 @@ export class BotUpdateRepository {
     const { updates } = this.#getOrCreateMailbox(botId);
     const updateIndex = updates.findIndex((update) => update.update_id === updateId);
     if (updateIndex !== -1) {
-      updates.splice(updateIndex, 1);
+      const [confirmedUpdate] = updates.splice(updateIndex, 1);
+      this.#staging.recordRevert(() => updates.splice(updateIndex, 0, confirmedUpdate));
     }
   }
 
@@ -208,7 +224,9 @@ export class BotUpdateRepository {
 
   /** Forgets every pending update; later updates continue the bot's update ID sequence. */
   discardPendingUpdates(botId: number): void {
-    this.#getOrCreateMailbox(botId).updates.splice(0);
+    const { updates } = this.#getOrCreateMailbox(botId);
+    const discardedUpdates = updates.splice(0);
+    this.#staging.recordRevert(() => updates.push(...discardedUpdates));
   }
 
   /** The ID the bot's next update will receive, which grows with each update enqueued for it. */
@@ -236,7 +254,12 @@ export class BotUpdateRepository {
     const mailbox = this.#getOrCreateMailbox(botId);
     const update = createUpdate(mailbox.nextUpdateId++);
     mailbox.updates.push(update);
-    this.#notifyWaiters(botId);
+    // Every later write of the transaction is reverted first, so the update is the newest again.
+    this.#staging.recordRevert(() => {
+      mailbox.updates.pop();
+      mailbox.nextUpdateId -= 1;
+    });
+    this.#staging.notifyAfterPublication(() => this.#notifyWaiters(botId));
     return update;
   }
 

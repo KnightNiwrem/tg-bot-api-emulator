@@ -20,8 +20,9 @@ interface BlockList {
   unblock(accountId: number, userId: number): boolean;
 }
 
+/** Takes each event into the transaction of the command that caused it. */
 interface ChatDomainEventSink {
-  publish(event: ChatDomainEvent): void;
+  emit(event: ChatDomainEvent): void;
 }
 
 interface BotBlockingServiceDependencies {
@@ -80,7 +81,7 @@ export class BotBlockingService {
       ? this.#blockedUsers.block(accountId, botId)
       : this.#blockedUsers.unblock(accountId, botId);
     if (changed) {
-      this.#events.publish({
+      this.#events.emit({
         type: 'bot_block_changed',
         accountId,
         botId,

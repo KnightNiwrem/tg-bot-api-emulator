@@ -817,7 +817,7 @@ function createSupergroupMessagingFixture() {
   const sharedChats = new SharedChatRepository();
   const messageBoxes = new MessageBoxRepository();
   const publishedEvents: ChatDomainEvent[] = [];
-  const events = { publish: (event: ChatDomainEvent) => publishedEvents.push(event) };
+  const events = { emit: (event: ChatDomainEvent) => publishedEvents.push(event) };
   const currentUnixTimeSeconds = () => 1_700_000_000;
   const supergroupMessaging = new SupergroupMessagingService({
     accounts,

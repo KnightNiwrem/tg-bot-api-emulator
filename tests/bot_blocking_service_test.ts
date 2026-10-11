@@ -68,7 +68,7 @@ function createBotBlockingFixture() {
     accounts,
     bots,
     blockedUsers,
-    events: { publish: (event) => publishedEvents.push(event) },
+    events: { emit: (event) => publishedEvents.push(event) },
     currentUnixTimeSeconds: () => currentUnixTimeSeconds,
   });
   return {

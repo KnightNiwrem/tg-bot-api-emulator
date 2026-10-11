@@ -39,7 +39,7 @@ function createAdmissionFixture() {
     bots,
     sharedChats,
     supergroupMessages: { recordServiceMessage: () => {} },
-    events: { publish: (event) => publishedEvents.push(event) },
+    events: { emit: (event) => publishedEvents.push(event) },
     currentUnixTimeSeconds,
   });
   const chatAdmission = new ChatAdmissionService({
@@ -48,7 +48,7 @@ function createAdmissionFixture() {
     sharedChats,
     inviteLinks: new ChatInviteLinkRepository(),
     memberships: sharedChatAdministration,
-    events: { publish: (event) => publishedEvents.push(event) },
+    events: { emit: (event) => publishedEvents.push(event) },
     currentUnixTimeSeconds,
   });
 

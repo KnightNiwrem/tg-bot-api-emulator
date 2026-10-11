@@ -75,6 +75,8 @@ import {
 import { WebResourceService } from '../services/web_resource.ts';
 import { WebhookDeliveryService } from '../services/webhook_delivery.ts';
 import type { SessionTiming } from '../timing/session_timing.ts';
+import { SessionChangeJournal } from '../transactions/change_staging.ts';
+import { SessionTransactions } from '../transactions/session_transactions.ts';
 
 /**
  * Composes one isolated session. Its services read calendar time and measure deadlines only
@@ -87,6 +89,12 @@ export function createEmulationSession(
 ): EmulationSession {
   const sessionEnd = new AbortController();
   const lifetime = new SessionLifetime(sessionEnd.signal);
+  // The repositories given the journal stage their writes in the session's transactions; the
+  // others' writes are final at once.
+  const journal = new SessionChangeJournal({
+    reportNotificationFailure: (error) =>
+      console.error('A consumer failed on being notified of a published change', error),
+  });
   const identities = new TelegramIdentityRepository();
   const accounts = new AccountRepository();
   const bots = new BotRepository();
@@ -96,11 +104,11 @@ export function createEmulationSession(
     return account === undefined ? undefined : getPrivateForwardName(account);
   };
   const sharedChats = new SharedChatRepository();
-  const messages = new MessageRepository();
-  const files = new FileRepository();
-  const polls = new PollRepository();
-  const messageBoxes = new MessageBoxRepository();
-  const botUpdates = new BotUpdateRepository();
+  const messages = new MessageRepository(journal);
+  const files = new FileRepository(journal);
+  const polls = new PollRepository(journal);
+  const messageBoxes = new MessageBoxRepository(journal);
+  const botUpdates = new BotUpdateRepository(journal);
   const updateSubscriptions = new BotUpdateSubscriptionRepository();
   const botMessageViews = new BotMessageViewService({
     accounts,
@@ -118,7 +126,12 @@ export function createEmulationSession(
     bots,
     sharedChats,
     messages,
-    lastMessageSendingBots: new LastMessageSendingBotRepository(),
+    lastMessageSendingBots: new LastMessageSendingBotRepository(journal),
+  });
+  const transactions = new SessionTransactions({
+    journal,
+    lifetime,
+    projector: botUpdateDelivery,
   });
   const currentUnixTimeSeconds = () => wallClock.currentUnixTimeSeconds();
   const supergroupMessaging = new SupergroupMessagingService({
@@ -129,7 +142,7 @@ export function createEmulationSession(
     files,
     polls,
     messageBoxes,
-    events: botUpdateDelivery,
+    events: transactions,
     currentUnixTimeSeconds,
   });
   const sharedChatAdministration = new SharedChatAdministrationService({
@@ -138,7 +151,7 @@ export function createEmulationSession(
     bots,
     sharedChats,
     supergroupMessages: supergroupMessaging,
-    events: botUpdateDelivery,
+    events: transactions,
     currentUnixTimeSeconds,
   });
   const chatAdmission = new ChatAdmissionService({
@@ -147,7 +160,7 @@ export function createEmulationSession(
     sharedChats,
     inviteLinks: new ChatInviteLinkRepository(),
     memberships: sharedChatAdministration,
-    events: botUpdateDelivery,
+    events: transactions,
     currentUnixTimeSeconds,
   });
   const privateConversations = new PrivateConversationRepository();
@@ -156,7 +169,7 @@ export function createEmulationSession(
     accounts,
     bots,
     drafts: new MessageDraftRepository(),
-    events: botUpdateDelivery,
+    events: transactions,
   });
   const privateMessaging = new PrivateMessagingService({
     accounts,
@@ -169,7 +182,7 @@ export function createEmulationSession(
     messageBoxes,
     blockedUsers,
     joinRequesterContacts: chatAdmission,
-    events: botUpdateDelivery,
+    events: transactions,
     messageDrafts,
     currentUnixTimeSeconds,
   });
@@ -190,7 +203,7 @@ export function createEmulationSession(
     sharedChats,
     supergroupMessages: supergroupMessaging,
     messages,
-    events: botUpdateDelivery,
+    events: transactions,
     currentUnixTimeSeconds,
   });
   const accountChatMessages = createAccountChatMessageReader({
@@ -226,19 +239,19 @@ export function createEmulationSession(
     accounts,
     bots,
     blockedUsers,
-    events: botUpdateDelivery,
+    events: transactions,
     currentUnixTimeSeconds,
   });
   const callbackQueries = new CallbackQueryService({
     accountChatMessages,
     bots,
     callbackQueries: new CallbackQueryRepository(),
-    events: botUpdateDelivery,
+    events: transactions,
   });
   const pollService = new PollService({
     accountChatMessages,
     polls,
-    events: botUpdateDelivery,
+    events: transactions,
   });
   const inlineQueries = new InlineQueryService({
     accounts,
@@ -248,7 +261,7 @@ export function createEmulationSession(
     supergroupMessages: supergroupMessaging,
     inlineQueries: new InlineQueryRepository(),
     webMediaFiles: mediaFiles,
-    events: botUpdateDelivery,
+    events: transactions,
   });
 
   const chatActions = new ChatActionService({
@@ -292,7 +305,10 @@ export function createEmulationSession(
     serverErrorResponses: new QueuedBotApiAnswerRepository(),
   });
 
-  const botActivity = new BotActivityService({ log: new BotActivityLogRepository(), scheduler });
+  const botActivity = new BotActivityService({
+    log: new BotActivityLogRepository(journal),
+    scheduler,
+  });
   const botUpdatePolling = new BotUpdatePollingService({
     botUpdates,
     updateActivity: botActivity,
@@ -411,6 +427,7 @@ export function createEmulationSession(
     botActivity,
     webhookAttempts,
     lifetime,
+    transactions,
     end: () => {
       // The commit gate closes first, so that nothing the rest of the teardown wakes can commit.
       // Long polls and webhook deliveries follow the session's end themselves.

@@ -230,6 +230,19 @@
         ]
       },
       {
+        "name": "change-staging",
+        "patterns": [
+          "src/transactions/change_staging.ts",
+          "src/transactions/transactional_collections.ts"
+        ]
+      },
+      {
+        "name": "session-transactions",
+        "patterns": [
+          "src/transactions/session_transactions.ts"
+        ]
+      },
+      {
         "name": "session-lifetime",
         "patterns": [
           "src/services/session_lifetime.ts"
@@ -458,26 +471,30 @@
       {
         "from": "message-repository",
         "allow": [
-          "domain"
+          "domain",
+          "change-staging"
         ]
       },
       {
         "from": "file-repository",
         "allow": [
-          "domain"
+          "domain",
+          "change-staging"
         ]
       },
       {
         "from": "message-box-repository",
         "allow": [
-          "domain"
+          "domain",
+          "change-staging"
         ]
       },
       {
         "from": "bot-update-repository",
         "allow": [
           "domain",
-          "session-timing"
+          "session-timing",
+          "change-staging"
         ]
       },
       {
@@ -507,7 +524,8 @@
       {
         "from": "last-message-sending-bot-repository",
         "allow": [
-          "domain"
+          "domain",
+          "change-staging"
         ]
       },
       {
@@ -544,7 +562,8 @@
         "from": "bot-activity-log-repository",
         "allow": [
           "domain",
-          "session-timing"
+          "session-timing",
+          "change-staging"
         ]
       },
       {
@@ -580,6 +599,18 @@
       {
         "from": "poll-repository",
         "allow": [
+          "domain",
+          "change-staging"
+        ]
+      },
+      {
+        "from": "change-staging",
+        "allow": []
+      },
+      {
+        "from": "session-transactions",
+        "allow": [],
+        "allowTypeOnly": [
           "domain"
         ]
       },
@@ -592,6 +623,7 @@
         "allow": [],
         "allowTypeOnly": [
           "session-lifetime",
+          "session-transactions",
           "domain",
           "domain-services",
           "bot-api-service",
@@ -749,6 +781,8 @@
           "session-timing",
           "system-timing",
           "session-lifetime",
+          "change-staging",
+          "session-transactions",
           "account-repository",
           "bot-repository",
           "private-conversation-repository",

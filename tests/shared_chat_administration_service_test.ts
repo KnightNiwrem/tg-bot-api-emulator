@@ -1582,7 +1582,7 @@ function createSharedChatAdministrationFixture() {
     supergroupMessages: {
       recordServiceMessage: (change) => recordedServiceMessages.push(change),
     },
-    events: { publish: (event) => publishedEvents.push(event) },
+    events: { emit: (event) => publishedEvents.push(event) },
     currentUnixTimeSeconds: () => 1_700_000_000,
   });
   return {
