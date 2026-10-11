@@ -295,7 +295,8 @@ does neither, as for a bot's stop.
 [normalization](../../src/services/domain/poll_normalization.ts),
 [voting and stopping](../../src/services/domain/poll.ts),
 [storage](../../src/repositories/poll/poll.ts),
-[account poll requests](../../src/api/sessions/accounts/request_fields.ts) and
+[account poll requests](../../src/api/contracts/message_sending.ts), their
+[reading](../../src/api/sessions/accounts/account_message_input.ts) and
 [closure routes](../../src/api/sessions/accounts/poll_closures.ts),
 [update delivery](../../src/services/update_delivery/bot_update_delivery.ts),
 [projection](../../src/projections/bot_api_message.ts), [unit tests](../../tests/poll_test.ts),

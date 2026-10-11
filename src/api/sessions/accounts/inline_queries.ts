@@ -1,8 +1,11 @@
 import { Hono } from 'hono';
 import { basePath } from 'hono/route';
-import { z } from 'zod';
 
-import { getInlineQueryContract, sendInlineQueryContract } from '../../contracts/inline_queries.ts';
+import {
+  chooseInlineQueryResultContract,
+  getInlineQueryContract,
+  sendInlineQueryContract,
+} from '../../contracts/inline_queries.ts';
 import type {
   ControlOperationRefusal,
   DecodedControlRequest,
@@ -15,31 +18,14 @@ import type {
   InlineQueryResult,
   InlineQueryResultsButton,
 } from '../../../types/inline_query.ts';
-import {
-  controlErrorResponse,
-  invalidControlRequestResponse,
-  sessionNotFoundResponse,
-} from '../../control_error_response.ts';
+import { SESSION_NOT_FOUND_REASON } from '../../control_error_response.ts';
 import { registerControlOperation } from '../../control_operation_route.ts';
-import { answerWithActionReceipt } from '../action_receipt.ts';
-import { readPathParameters } from '../control_request_input.ts';
-import { readJsonRequestBody } from '../json_request_body.ts';
 import type { SessionRouteContextTypes } from '../session_route_context_types.ts';
-import { ACCOUNT_ID_PARAMETER, accountPathSchema } from './account_paths.ts';
-import { viewChatMessageForAccount } from './chat_message_view.ts';
 
 type SendInlineQueryBody = DecodedControlRequest<typeof sendInlineQueryContract>['body'];
 
-const INLINE_QUERY_ID_PARAMETER = 'inlineQueryId';
-const CHOSEN_INLINE_RESULT_COLLECTION_PATH =
-  `/:${ACCOUNT_ID_PARAMETER}/inline-queries/:${INLINE_QUERY_ID_PARAMETER}/chosen-results` as const;
-
 /** Where the account routes are mounted within the server, as a contract path template. */
 const ACCOUNT_COLLECTION_MOUNT_PATH = '/sessions/{sessionId}/accounts';
-
-const chooseInlineQueryResultRequestSchema = z.strictObject({
-  result_id: z.string().min(1),
-});
 
 /**
  * Routes through which an account sends inline queries to inline bots, reads them with the bot's
@@ -89,42 +75,30 @@ export function createInlineQueryRoutes(): Hono<SessionRouteContextTypes> {
     },
   );
 
-  accountRoutes.post(CHOSEN_INLINE_RESULT_COLLECTION_PATH, async (context) => {
-    const accountPath = readPathParameters(accountPathSchema, context.req.param());
-    if (!accountPath.valid) {
-      return invalidControlRequestResponse(context, accountPath.issues);
-    }
-    const { accountId } = accountPath.value;
-
-    const requestBodyReading = await readJsonRequestBody(
-      context.req,
-      chooseInlineQueryResultRequestSchema,
-    );
-    if (!requestBodyReading.valid) {
-      return invalidControlRequestResponse(context, requestBodyReading.issues);
-    }
-    const requestBody = requestBodyReading.value;
-
-    return answerWithActionReceipt(context, async ({ inlineQueries, botMessageViews }) => {
+  registerControlOperation(
+    accountRoutes,
+    ACCOUNT_COLLECTION_MOUNT_PATH,
+    chooseInlineQueryResultContract,
+    async ({ params: { accountId, inlineQueryId }, body: { result_id } }, context) => {
+      const { inlineQueries, botMessageViews } = context.get('emulationSession');
       const result = await inlineQueries.chooseInlineQueryResult({
         accountId,
-        inlineQueryId: context.req.param(INLINE_QUERY_ID_PARAMETER),
-        resultId: requestBody.result_id,
+        inlineQueryId,
+        resultId: result_id,
         signal: context.req.raw.signal,
       });
       if (!result.chosen) {
-        const { reason } = result;
-        // A session that ended during the download answers as one that does not exist.
-        return reason === 'session_ended'
-          ? sessionNotFoundResponse(context)
-          : controlErrorResponse(context, chosenInlineResultFailureStatus(reason), reason);
+        return refuseInlineQueryResultChoice(result.reason);
       }
-      return context.json(
-        { message: viewChatMessageForAccount(botMessageViews, result.message, accountId) },
-        201,
-      );
-    });
-  });
+      const { message } = result;
+      return message.kind === 'private_message'
+        ? { status: 201, body: { message: botMessageViews.viewPrivateMessageForBot(message) } }
+        : {
+          status: 201,
+          body: { message: botMessageViews.viewSupergroupMessage(message, accountId) },
+        };
+    },
+  );
 
   return accountRoutes;
 }
@@ -172,33 +146,33 @@ function refuseInlineQuerySending(
  * no longer a member of the supergroup, or one that may not use inline bots or send the result's
  * content there, is forbidden; a query without an answer, or a bot the account blocks, conflicts
  * with sending it; and media the result names by URL that the emulated web does not serve fails as
- * a bad gateway, while media it serves that is not of the result's kind cannot be processed.
+ * a bad gateway, while media it serves that is not of the result's kind cannot be processed. A
+ * session that ended during the download answers as one that does not exist.
  */
-function chosenInlineResultFailureStatus(
-  reason: Exclude<
-    Extract<
-      Awaited<ReturnType<EmulationSession['inlineQueries']['chooseInlineQueryResult']>>,
-      { readonly chosen: false }
-    >['reason'],
-    'session_ended'
-  >,
-): 400 | 403 | 404 | 409 | 422 | 502 {
+function refuseInlineQueryResultChoice(
+  reason: Extract<
+    Awaited<ReturnType<EmulationSession['inlineQueries']['chooseInlineQueryResult']>>,
+    { readonly chosen: false }
+  >['reason'],
+): ControlOperationRefusal<typeof chooseInlineQueryResultContract> {
   switch (reason) {
+    case 'session_ended':
+      return { status: 404, body: { reason: SESSION_NOT_FOUND_REASON } };
     case 'inline_query_not_found':
-      return 404;
+      return { status: 404, body: { reason } };
     case 'result_not_found':
-      return 400;
+      return { status: 400, body: { reason } };
     case 'not_a_member':
     case 'inline_bots_not_permitted':
     case 'send_permission_missing':
-      return 403;
+      return { status: 403, body: { reason } };
     case 'inline_query_not_answered':
     case 'bot_blocked':
-      return 409;
+      return { status: 409, body: { reason } };
     case 'web_media_invalid':
-      return 422;
+      return { status: 422, body: { reason } };
     case 'web_media_unavailable':
-      return 502;
+      return { status: 502, body: { reason } };
     default: {
       const unhandledReason: never = reason;
       throw new Error(`Unhandled inline query result choice failure: ${unhandledReason}`);

@@ -14,14 +14,6 @@ export type ControlRequestInputReading<Value> =
 type ZodIssue = z.core.$ZodIssue;
 type IssuePath = readonly (string | number)[];
 
-/** Reads a route's path parameters, such as `{ accountId: '42' }`, as `schema` describes them. */
-export function readPathParameters<Schema extends z.ZodType>(
-  schema: Schema,
-  pathParameters: Readonly<Record<string, string>>,
-): ControlRequestInputReading<z.output<Schema>> {
-  return readControlRequestInput(schema, pathParameters, 'path');
-}
-
 /** Reads one part of a control request as `schema` describes it, normalizing what it rejects. */
 export function readControlRequestInput<Schema extends z.core.$ZodType>(
   schema: Schema,

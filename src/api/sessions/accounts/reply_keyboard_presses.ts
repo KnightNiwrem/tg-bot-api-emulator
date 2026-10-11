@@ -1,115 +1,66 @@
 import { Hono } from 'hono';
-import { z } from 'zod';
 
+import { INVALID_REQUEST_REASON } from '../../contracts/control_errors.ts';
+import type {
+  ControlOperationRefusal,
+  DecodedControlRequest,
+} from '../../contracts/operation_contract.ts';
+import { pressReplyKeyboardButtonContract } from '../../contracts/reply_keyboard_presses.ts';
+import type { EmulationSession } from '../../../session/emulation_session.ts';
 import {
   isSendableWebAppData,
   type ReplyKeyboardRequestAnswer,
 } from '../../../types/reply_interface.ts';
-import {
-  controlErrorResponse,
-  invalidControlRequestResponse,
-} from '../../control_error_response.ts';
-import { answerWithActionReceipt } from '../action_receipt.ts';
-import { readPathParameters } from '../control_request_input.ts';
-import { readJsonRequestBody } from '../json_request_body.ts';
+import { registerControlOperation } from '../../control_operation_route.ts';
 import type { SessionRouteContextTypes } from '../session_route_context_types.ts';
-import { ACCOUNT_ID_PARAMETER, accountPathSchema } from './account_paths.ts';
 import {
-  accountMessageFailureStatus,
-  supergroupMemberFailureStatus,
-} from './messaging_failure_statuses.ts';
-import {
-  accountLocationSchema,
-  accountPollSchema,
-  chatSchema,
-  supergroupChatIdSchema,
-  telegramUserIdSchema,
-} from './request_fields.ts';
+  type AccountInputReading,
+  readAccountLocation,
+  readAccountPoll,
+} from './account_message_input.ts';
 
-const REPLY_KEYBOARD_PRESS_COLLECTION_PATH =
-  `/:${ACCOUNT_ID_PARAMETER}/reply-keyboard-presses` as const;
+/** Where the account routes are mounted within the server, as a contract path template. */
+const ACCOUNT_COLLECTION_MOUNT_PATH = '/sessions/{sessionId}/accounts';
 
-/**
- * A press of a reply keyboard button, by its text, with at most one answer to the button's
- * request: the location the account's client reports for a `request_location` button, the users
- * the account chose for a `request_users` button, the supergroup it chose for a `request_chat`
- * button, the poll it created for a `request_poll` button, or the data the Web App of a `web_app`
- * button sends. Only a button with that request takes the answer.
- */
-const pressReplyKeyboardButtonRequestSchema = z.strictObject({
-  chat: chatSchema,
-  text: z.string().min(1),
-  location: accountLocationSchema.optional(),
-  shared_user_ids: z.array(telegramUserIdSchema).min(1).optional(),
-  shared_chat_id: supergroupChatIdSchema.optional(),
-  poll: accountPollSchema.optional(),
-  web_app_data: z.string().refine(isSendableWebAppData, {
-    message: 'Web App data must be nonempty and fit in the bytes Telegram allows',
-  }).optional(),
-}).transform((
-  { chat, text, location, shared_user_ids, shared_chat_id, poll, web_app_data },
-  context,
-) => {
-  const answers: ReplyKeyboardRequestAnswer[] = [
-    ...(location === undefined ? [] : [{ kind: 'location' as const, location }]),
-    ...(shared_user_ids === undefined
-      ? []
-      : [{ kind: 'users' as const, userIds: shared_user_ids }]),
-    ...(shared_chat_id === undefined ? [] : [{ kind: 'chat' as const, chatId: shared_chat_id }]),
-    ...(poll === undefined ? [] : [{ kind: 'poll' as const, poll }]),
-    ...(web_app_data === undefined ? [] : [{ kind: 'web_app' as const, data: web_app_data }]),
-  ];
-  if (answers.length > 1) {
-    context.addIssue({ code: 'custom', message: 'A press answers at most one request' });
-    return z.NEVER;
-  }
-  const [answer] = answers;
-  return { chat, text, ...(answer === undefined ? {} : { answer }) };
-});
+type ReplyInterfaces = EmulationSession['replyInterfaces'];
+type PressRequest = DecodedControlRequest<typeof pressReplyKeyboardButtonContract>['body'];
+type PressRefusal = ControlOperationRefusal<typeof pressReplyKeyboardButtonContract>;
 
 /** Routes through which an account presses the buttons of the reply keyboard a bot shows it. */
 export function createReplyKeyboardPressRoutes(): Hono<SessionRouteContextTypes> {
   const accountRoutes = new Hono<SessionRouteContextTypes>();
 
-  accountRoutes.post(REPLY_KEYBOARD_PRESS_COLLECTION_PATH, async (context) => {
-    const accountPath = readPathParameters(accountPathSchema, context.req.param());
-    if (!accountPath.valid) {
-      return invalidControlRequestResponse(context, accountPath.issues);
-    }
-    const { accountId } = accountPath.value;
-
-    const requestBodyReading = await readJsonRequestBody(
-      context.req,
-      pressReplyKeyboardButtonRequestSchema,
-    );
-    if (!requestBodyReading.valid) {
-      return invalidControlRequestResponse(context, requestBodyReading.issues);
-    }
-    const requestBody = requestBodyReading.value;
-
-    return answerWithActionReceipt(context, ({ replyInterfaces, botMessageViews }) => {
-      const { chat, text, answer } = requestBody;
+  registerControlOperation(
+    accountRoutes,
+    ACCOUNT_COLLECTION_MOUNT_PATH,
+    pressReplyKeyboardButtonContract,
+    ({ params: { accountId }, body }, context) => {
+      const answerReading = readPressAnswer(body);
+      if (!answerReading.read) {
+        return {
+          status: 400,
+          body: { reason: INVALID_REQUEST_REASON, issues: answerReading.issues },
+        };
+      }
+      const answer = answerReading.value;
+      const { chat, text } = body;
+      const { replyInterfaces, botMessageViews } = context.get('emulationSession');
       if (chat.type === 'supergroup') {
         // Only private chats show buttons with a request, so no supergroup button takes an answer.
         if (answer !== undefined) {
-          return controlErrorResponse(context, 400, 'reply_keyboard_button_answer_not_requested');
+          return { status: 400, body: { reason: 'reply_keyboard_button_answer_not_requested' } };
         }
         const result = replyInterfaces.pressSupergroupReplyKeyboardButton({
           fromAccountId: accountId,
           chat,
           text,
         });
-        if (!result.sent) {
-          return controlErrorResponse(
-            context,
-            supergroupMemberFailureStatus(result.reason),
-            result.reason,
-          );
-        }
-        return context.json(
-          { message: botMessageViews.viewSupergroupMessage(result.message, accountId) },
-          201,
-        );
+        return result.sent
+          ? {
+            status: 201,
+            body: { message: botMessageViews.viewSupergroupMessage(result.message, accountId) },
+          }
+          : refuseSupergroupPress(result.reason);
       }
       const result = replyInterfaces.pressPrivateChatReplyKeyboardButton({
         fromAccountId: accountId,
@@ -117,19 +68,112 @@ export function createReplyKeyboardPressRoutes(): Hono<SessionRouteContextTypes>
         text,
         ...(answer === undefined ? {} : { answer }),
       });
-      if (!result.sent) {
-        return controlErrorResponse(
-          context,
-          accountMessageFailureStatus(result.reason),
-          result.reason,
-        );
-      }
-      return context.json(
-        { message: botMessageViews.viewPrivateMessageForBot(result.message) },
-        201,
-      );
-    });
-  });
+      return result.sent
+        ? {
+          status: 201,
+          body: { message: botMessageViews.viewPrivateMessageForBot(result.message) },
+        }
+        : refusePrivatePress(result.reason);
+    },
+  );
 
   return accountRoutes;
+}
+
+/**
+ * Reads the answer a press gives to the button's request: the location the account's client
+ * reports, the users or supergroup the account chose, the poll it created, or the data the Web App
+ * sends, which must fit in the bytes Telegram allows; `undefined` for none. A press answers at
+ * most one request.
+ */
+function readPressAnswer(
+  { location, shared_user_ids, shared_chat_id, poll, web_app_data }: PressRequest,
+): AccountInputReading<ReplyKeyboardRequestAnswer | undefined> {
+  if (web_app_data !== undefined && !isSendableWebAppData(web_app_data)) {
+    return refuseAnswer(
+      ['web_app_data'],
+      'Web App data must be nonempty and fit in the bytes Telegram allows',
+    );
+  }
+  const pollReading = poll === undefined ? undefined : readAccountPoll(poll, ['poll']);
+  if (pollReading !== undefined && !pollReading.read) {
+    return pollReading;
+  }
+  const answers: ReplyKeyboardRequestAnswer[] = [
+    ...(location === undefined
+      ? []
+      : [{ kind: 'location' as const, location: readAccountLocation(location) }]),
+    ...(shared_user_ids === undefined
+      ? []
+      : [{ kind: 'users' as const, userIds: shared_user_ids }]),
+    ...(shared_chat_id === undefined ? [] : [{ kind: 'chat' as const, chatId: shared_chat_id }]),
+    ...(pollReading === undefined ? [] : [{ kind: 'poll' as const, poll: pollReading.value }]),
+    ...(web_app_data === undefined ? [] : [{ kind: 'web_app' as const, data: web_app_data }]),
+  ];
+  if (answers.length > 1) {
+    return refuseAnswer([], 'A press answers at most one request');
+  }
+  const [answer] = answers;
+  return { read: true, value: answer };
+}
+
+/** The refusal of a press whose answer breaks a rule at the body field at `path`. */
+function refuseAnswer(
+  path: (string | number)[],
+  message: string,
+): AccountInputReading<never> {
+  return { read: false, issues: [{ source: 'body', path, code: 'invalid_value', message }] };
+}
+
+/**
+ * A missing participant, or a missing user or supergroup to share, is not found; a supergroup the
+ * account is not a member of is forbidden to share; a block conflicts with writing to the bot, and
+ * an account without a phone number conflicts with sharing its own contact; any other failure
+ * rejects the press.
+ */
+function refusePrivatePress(
+  reason: Extract<
+    ReturnType<ReplyInterfaces['pressPrivateChatReplyKeyboardButton']>,
+    { readonly sent: false }
+  >['reason'],
+): PressRefusal {
+  switch (reason) {
+    case 'account_not_found':
+    case 'bot_not_found':
+    case 'shared_user_not_found':
+    case 'shared_chat_not_found':
+      return { status: 404, body: { reason } };
+    case 'shared_chat_not_joined':
+      return { status: 403, body: { reason } };
+    case 'bot_blocked':
+    case 'account_phone_number_missing':
+      return { status: 409, body: { reason } };
+    default:
+      return { status: 400, body: { reason } };
+  }
+}
+
+/**
+ * A missing account or supergroup is not found, and an account that is not a member of the
+ * supergroup, or may not send the content, is forbidden from it; an account without a phone number
+ * conflicts with sharing its own contact; any other failure rejects the press.
+ */
+function refuseSupergroupPress(
+  reason: Extract<
+    ReturnType<ReplyInterfaces['pressSupergroupReplyKeyboardButton']>,
+    { readonly sent: false }
+  >['reason'],
+): PressRefusal {
+  switch (reason) {
+    case 'account_not_found':
+    case 'chat_not_found':
+      return { status: 404, body: { reason } };
+    case 'not_a_member':
+    case 'send_permission_missing':
+      return { status: 403, body: { reason } };
+    case 'account_phone_number_missing':
+      return { status: 409, body: { reason } };
+    default:
+      return { status: 400, body: { reason } };
+  }
 }

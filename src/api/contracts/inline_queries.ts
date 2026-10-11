@@ -1,11 +1,13 @@
 /**
  * The contracts of the inline queries accounts type for inline bots: sending one, reading it with
- * the bot's answer, and the test control that makes a cached answer's `cache_time` pass.
+ * the bot's answer, sending a result of the answer, and the test control that makes a cached
+ * answer's `cache_time` pass.
  */
 import { z } from 'zod';
 
 import { accountPathSchema } from './accounts.ts';
 import { controlRefusalSchema, controlValidationErrorSchema } from './control_errors.ts';
+import { sentChatMessageResponseSchema } from './message_sending.ts';
 import { defineControlOperation } from './operation_contract.ts';
 import {
   accountLocationInputSchema,
@@ -166,6 +168,37 @@ export const getInlineQueryContract = defineControlOperation({
   refusals: {
     400: controlValidationErrorSchema,
     404: controlRefusalSchema(['inline_query_not_found', 'session_not_found']),
+  },
+});
+
+/**
+ * Sends the result the account chose from the bot's answer to an inline query it sent, to the
+ * chat of the query, as the account's message through the bot, and returns the message as the
+ * chat's message history shows it.
+ */
+export const chooseInlineQueryResultContract = defineControlOperation({
+  operationId: 'chooseInlineQueryResult',
+  method: 'POST',
+  path: '/sessions/{sessionId}/accounts/{accountId}/inline-queries/{inlineQueryId}/chosen-results',
+  params: accountInlineQueryPathSchema,
+  body: { required: true, schema: z.strictObject({ result_id: z.string().min(1) }) },
+  success: {
+    status: 201,
+    body: { kind: 'json', schema: sentChatMessageResponseSchema },
+    actionReceipt: 'before_action',
+  },
+  refusals: {
+    // A result the answer does not hold is input the schema accepts but the server refuses.
+    400: z.union([controlValidationErrorSchema, controlRefusalSchema(['result_not_found'])]),
+    403: controlRefusalSchema([
+      'inline_bots_not_permitted',
+      'not_a_member',
+      'send_permission_missing',
+    ]),
+    404: controlRefusalSchema(['inline_query_not_found', 'session_not_found']),
+    409: controlRefusalSchema(['bot_blocked', 'inline_query_not_answered']),
+    422: controlRefusalSchema(['web_media_invalid']),
+    502: controlRefusalSchema(['web_media_unavailable']),
   },
 });
 

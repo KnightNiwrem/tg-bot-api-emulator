@@ -1,5 +1,3 @@
-import type { z } from 'zod';
-
 import {
   deleteAccountMessageContract,
   deleteSupergroupAccountMessageContract,
@@ -32,6 +30,7 @@ import {
 } from '../../src/api/contracts/conversation_reads.ts';
 import { downloadFileContract } from '../../src/api/contracts/files.ts';
 import {
+  chooseInlineQueryResultContract,
   expireInlineAnswerCacheContract,
   getInlineQueryContract,
   sendInlineQueryContract,
@@ -52,6 +51,10 @@ import {
   removeSupergroupAccountMessageReactionContract,
   setSupergroupAccountMessageReactionContract,
 } from '../../src/api/contracts/message_reactions.ts';
+import {
+  sendAccountMediaGroupContract,
+  sendAccountMessageContract,
+} from '../../src/api/contracts/message_sending.ts';
 import type { ControlOperationRequest } from '../../src/api/contracts/operation_contract.ts';
 import {
   getPrivatePinnedMessagesContract,
@@ -105,10 +108,11 @@ import {
   releaseWebhookRetryContract,
   setWebhookDeliveryContract,
 } from '../../src/api/contracts/webhook_attempts.ts';
+import { pressReplyKeyboardButtonContract } from '../../src/api/contracts/reply_keyboard_presses.ts';
 import { registerWebResourceContract } from '../../src/api/contracts/web_resources.ts';
 import { createHttpBotActivityPageReader } from './bot_activity_http_page_reader.ts';
 import { createBotActivityLog } from './bot_activity_log.ts';
-import { HTTP_STATUS_CREATED, HTTP_STATUS_OK } from './constants.ts';
+import { HTTP_STATUS_OK } from './constants.ts';
 import {
   callBytesOperation,
   callEmptyAction,
@@ -116,16 +120,11 @@ import {
   callJsonAction,
   callJsonOperation,
   type ControlOperationTransport,
+  describeOperationCall,
 } from './control_operation_caller.ts';
 import { ButtonSelectionError, findButton } from './message_buttons.ts';
-import {
-  chosenInlineResultResponseSchema,
-  getMeResponseSchema,
-  sentMediaGroupResponseSchema,
-  sentMessageResponseSchema,
-  sentSupergroupMediaGroupResponseSchema,
-  sentSupergroupMessageResponseSchema,
-} from './schemas.ts';
+import { EmulationClientError } from './emulation_client_error.ts';
+import { getMeResponseSchema } from './schemas.ts';
 import type {
   AccountBotCommandsInput,
   AccountChatActionsInput,
@@ -195,7 +194,6 @@ import type {
   LiftChatMemberRestrictionInput,
   MenuButton,
   MessageDraft,
-  MessageEntityInput,
   MessageIn,
   MessageReactions,
   MessageTarget,
@@ -213,6 +211,7 @@ import type {
   RegisterWebResourceInput,
   RemoveChatMemberInput,
   ReplyInterface,
+  RequestDetails,
   RestrictChatMemberInput,
   SendInlineQueryInput,
   ServerErrorResponses,
@@ -237,7 +236,7 @@ import type {
   WebhookDelivery,
   WebResource,
 } from './types.ts';
-import { normalizeUrlRoot, requestJson, requestJsonAction } from './utils.ts';
+import { normalizeUrlRoot, requestJson } from './utils.ts';
 
 /**
  * A session's client. Each action resolves to its result, which its description says it returns,
@@ -365,7 +364,6 @@ class HttpEmulationSessionClient implements EmulationSessionClient {
   readonly id: string;
   readonly botApiRoot: string;
   readonly uploadProfile: UploadProfile;
-  readonly #sessionUrl: string;
   readonly #botApiRoot: URL;
   readonly #fetch: typeof globalThis.fetch;
   readonly #transport: ControlOperationTransport;
@@ -378,7 +376,6 @@ class HttpEmulationSessionClient implements EmulationSessionClient {
     this.id = session.id;
     this.botApiRoot = session.botApiRoot;
     this.uploadProfile = session.uploadProfile;
-    this.#sessionUrl = new URL(`sessions/${encodeURIComponent(session.id)}`, serverRoot).href;
     this.#botApiRoot = normalizeUrlRoot(session.botApiRoot, 'botApiRoot');
     this.#fetch = fetchImplementation;
     this.#transport = { serverRoot, fetch: fetchImplementation };
@@ -405,12 +402,10 @@ class HttpEmulationSessionClient implements EmulationSessionClient {
       body: input,
     });
     return selectResult(creation, ({ account }) => ({
-      account: createVirtualAccountClient(
-        account,
-        { transport: this.#transport, sessionId: this.id },
-        `${this.#sessionUrl}/accounts/${account.id}`,
-        this.#fetch,
-      ),
+      account: createVirtualAccountClient(account, {
+        transport: this.#transport,
+        sessionId: this.id,
+      }),
     }));
   }
 
@@ -571,8 +566,6 @@ interface AccountOperationTarget {
 function createVirtualAccountClient(
   profile: VirtualAccountProfile,
   { transport, sessionId }: AccountOperationTarget,
-  accountUrl: string,
-  fetchImplementation: typeof globalThis.fetch,
 ): VirtualAccountClient {
   const accountParams = { sessionId, accountId: profile.id };
   const privateChatParams = ({ botId }: PrivateMessageTarget) => ({ ...accountParams, botId });
@@ -607,10 +600,10 @@ function createVirtualAccountClient(
           params: { ...params, messageId },
         });
       },
-      answerPoll(messageId, optionIds) {
+      answerPoll(messageId, body) {
         return callJsonAction(transport, answerAccountPollContract, {
           params: { ...params, messageId },
-          body: { option_ids: [...optionIds] },
+          body,
         });
       },
       async stopPoll(messageId) {
@@ -651,10 +644,10 @@ function createVirtualAccountClient(
           params: { ...params, messageId },
         });
       },
-      answerPoll(messageId, optionIds) {
+      answerPoll(messageId, body) {
         return callJsonAction(transport, answerSupergroupAccountPollContract, {
           params: { ...params, messageId },
-          body: { option_ids: [...optionIds] },
+          body,
         });
       },
       async stopPoll(messageId) {
@@ -680,6 +673,25 @@ function createVirtualAccountClient(
     return operations as ChatMessageOperations<Target>;
   }
 
+  /** Sends a message as the account to `to`, which the message shows as its chat. */
+  // The calls whose uploads a façade converts, which an upload it cannot convert names.
+  const sendCall = describeOperationCall(transport, sendAccountMessageContract, {
+    params: accountParams,
+  });
+  const albumCall = describeOperationCall(transport, sendAccountMediaGroupContract, {
+    params: accountParams,
+  });
+
+  async function sendMessageTo<Target extends MessageTarget>(
+    to: Target,
+    body: SendAccountMessageBody,
+  ): Promise<ActionOutcome<MessageIn<Target>>> {
+    const request = { params: accountParams, body };
+    const sending = await callJsonAction(transport, sendAccountMessageContract, request);
+    const call = describeOperationCall(transport, sendAccountMessageContract, request);
+    return selectResult(sending, ({ message }) => messageInChat(to, message, call));
+  }
+
   function getMessages<Target extends MessageTarget>(
     input: AccountMessageHistoryInput<Target>,
   ): Promise<readonly MessageIn<Target>[]> {
@@ -698,233 +710,116 @@ function createVirtualAccountClient(
 
   return Object.freeze({
     ...profile,
-    async sendMessage<Target extends MessageTarget>(
+    sendMessage<Target extends MessageTarget>(
       input: AccountSendMessageInput<Target>,
     ): Promise<ActionOutcome<MessageIn<Target>>> {
-      const sending = await requestJsonAction(fetchImplementation, {
-        method: 'POST',
-        url: `${accountUrl}/messages`,
-        expectedStatus: HTTP_STATUS_CREATED,
-        responseSchema: messageResponseSchemasFor(input.to).sent,
-        body: input,
-      });
-      return selectResult(sending, ({ message }) => message);
+      return sendMessageTo(input.to, input);
     },
     async sendPhoto<Target extends MessageTarget>(
-      { to, photo, caption, caption_entities, reply_to_message_id }: AccountSendPhotoInput<Target>,
+      { photo, ...message }: AccountSendPhotoInput<Target>,
     ): Promise<ActionOutcome<MessageIn<Target>>> {
-      const sending = await requestJsonAction(fetchImplementation, {
-        method: 'POST',
-        url: `${accountUrl}/messages`,
-        expectedStatus: HTTP_STATUS_CREATED,
-        responseSchema: messageResponseSchemasFor(to).sent,
-        body: {
-          to,
-          photo: { content_base64: photo.toBase64() },
-          caption,
-          caption_entities,
-          reply_to_message_id,
-        },
+      // Awaited, so that an upload the façade cannot convert rejects the returned promise.
+      return await sendMessageTo(message.to, {
+        ...message,
+        photo: { content_base64: toBase64Content(photo, 'photo', sendCall) },
       });
-      return selectResult(sending, ({ message }) => message);
     },
     async sendDocument<Target extends MessageTarget>(
-      {
-        to,
-        document,
-        file_name,
-        caption,
-        caption_entities,
-        reply_to_message_id,
-      }: AccountSendDocumentInput<Target>,
+      { document, file_name, ...message }: AccountSendDocumentInput<Target>,
     ): Promise<ActionOutcome<MessageIn<Target>>> {
-      const sending = await requestJsonAction(fetchImplementation, {
-        method: 'POST',
-        url: `${accountUrl}/messages`,
-        expectedStatus: HTTP_STATUS_CREATED,
-        responseSchema: messageResponseSchemasFor(to).sent,
-        body: {
-          to,
-          document: { content_base64: document.toBase64(), file_name },
-          caption,
-          caption_entities,
-          reply_to_message_id,
-        },
+      // Awaited, so that an upload the façade cannot convert rejects the returned promise.
+      return await sendMessageTo(message.to, {
+        ...message,
+        document: { content_base64: toBase64Content(document, 'document', sendCall), file_name },
       });
-      return selectResult(sending, ({ message }) => message);
     },
     async sendVideo<Target extends MessageTarget>(
-      {
-        to,
-        video,
-        file_name,
-        duration,
-        width,
-        height,
-        caption,
-        caption_entities,
-        reply_to_message_id,
-      }: AccountSendVideoInput<Target>,
+      { video, file_name, duration, width, height, ...message }: AccountSendVideoInput<Target>,
     ): Promise<ActionOutcome<MessageIn<Target>>> {
-      const sending = await requestJsonAction(fetchImplementation, {
-        method: 'POST',
-        url: `${accountUrl}/messages`,
-        expectedStatus: HTTP_STATUS_CREATED,
-        responseSchema: messageResponseSchemasFor(to).sent,
-        body: {
-          to,
-          video: toAccountVideoUpload({ video, file_name, duration, width, height }),
-          caption,
-          caption_entities,
-          reply_to_message_id,
-        },
+      // Awaited, so that an upload the façade cannot convert rejects the returned promise.
+      return await sendMessageTo(message.to, {
+        ...message,
+        video: toAccountVideoUpload(
+          { video, file_name, duration, width, height },
+          'video',
+          sendCall,
+        ),
       });
-      return selectResult(sending, ({ message }) => message);
     },
     async sendVoice<Target extends MessageTarget>(
-      { to, voice, duration, caption, caption_entities, reply_to_message_id }:
-        AccountSendVoiceInput<
-          Target
-        >,
+      { voice, duration, ...message }: AccountSendVoiceInput<Target>,
     ): Promise<ActionOutcome<MessageIn<Target>>> {
-      const sending = await requestJsonAction(fetchImplementation, {
-        method: 'POST',
-        url: `${accountUrl}/messages`,
-        expectedStatus: HTTP_STATUS_CREATED,
-        responseSchema: messageResponseSchemasFor(to).sent,
-        body: {
-          to,
-          voice: { content_base64: voice.toBase64(), duration },
-          caption,
-          caption_entities,
-          reply_to_message_id,
-        },
+      // Awaited, so that an upload the façade cannot convert rejects the returned promise.
+      return await sendMessageTo(message.to, {
+        ...message,
+        voice: { content_base64: toBase64Content(voice, 'voice', sendCall), duration },
       });
-      return selectResult(sending, ({ message }) => message);
     },
     async sendAudio<Target extends MessageTarget>(
-      {
-        to,
-        audio,
-        file_name,
-        duration,
-        performer,
-        title,
-        caption,
-        caption_entities,
-        reply_to_message_id,
-      }: AccountSendAudioInput<Target>,
+      { audio, file_name, duration, performer, title, ...message }: AccountSendAudioInput<Target>,
     ): Promise<ActionOutcome<MessageIn<Target>>> {
-      const sending = await requestJsonAction(fetchImplementation, {
-        method: 'POST',
-        url: `${accountUrl}/messages`,
-        expectedStatus: HTTP_STATUS_CREATED,
-        responseSchema: messageResponseSchemasFor(to).sent,
-        body: {
-          to,
-          audio: toAccountAudioUpload({ audio, file_name, duration, performer, title }),
-          caption,
-          caption_entities,
-          reply_to_message_id,
-        },
+      // Awaited, so that an upload the façade cannot convert rejects the returned promise.
+      return await sendMessageTo(message.to, {
+        ...message,
+        audio: toAccountAudioUpload(
+          { audio, file_name, duration, performer, title },
+          'audio',
+          sendCall,
+        ),
       });
-      return selectResult(sending, ({ message }) => message);
     },
-    async sendContact<Target extends MessageTarget>(
+    sendContact<Target extends MessageTarget>(
       input: AccountSendContactInput<Target>,
     ): Promise<ActionOutcome<MessageIn<Target>>> {
-      const sending = await requestJsonAction(fetchImplementation, {
-        method: 'POST',
-        url: `${accountUrl}/messages`,
-        expectedStatus: HTTP_STATUS_CREATED,
-        responseSchema: messageResponseSchemasFor(input.to).sent,
-        body: input,
-      });
-      return selectResult(sending, ({ message }) => message);
+      return sendMessageTo(input.to, input);
     },
-    async shareOwnContact<Target extends MessageTarget>(
-      { to, reply_to_message_id }: AccountShareOwnContactInput<Target>,
+    shareOwnContact<Target extends MessageTarget>(
+      input: AccountShareOwnContactInput<Target>,
     ): Promise<ActionOutcome<MessageIn<Target>>> {
-      const sending = await requestJsonAction(fetchImplementation, {
-        method: 'POST',
-        url: `${accountUrl}/messages`,
-        expectedStatus: HTTP_STATUS_CREATED,
-        responseSchema: messageResponseSchemasFor(to).sent,
-        body: { to, own_contact: true, reply_to_message_id },
-      });
-      return selectResult(sending, ({ message }) => message);
+      return sendMessageTo(input.to, { ...input, own_contact: true });
     },
-    async sendLocation<Target extends MessageTarget>(
+    sendLocation<Target extends MessageTarget>(
       input: AccountSendLocationInput<Target>,
     ): Promise<ActionOutcome<MessageIn<Target>>> {
-      const sending = await requestJsonAction(fetchImplementation, {
-        method: 'POST',
-        url: `${accountUrl}/messages`,
-        expectedStatus: HTTP_STATUS_CREATED,
-        responseSchema: messageResponseSchemasFor(input.to).sent,
-        body: input,
-      });
-      return selectResult(sending, ({ message }) => message);
+      return sendMessageTo(input.to, input);
     },
-    async sendPoll<Target extends MessageTarget>(
+    sendPoll<Target extends MessageTarget>(
       input: AccountSendPollInput<Target>,
     ): Promise<ActionOutcome<MessageIn<Target>>> {
-      const sending = await requestJsonAction(fetchImplementation, {
-        method: 'POST',
-        url: `${accountUrl}/messages`,
-        expectedStatus: HTTP_STATUS_CREATED,
-        responseSchema: messageResponseSchemasFor(input.to).sent,
-        body: input,
-      });
-      return selectResult(sending, ({ message }) => message);
+      return sendMessageTo(input.to, input);
     },
     async sendMediaGroup<Target extends MessageTarget>(
-      { to, media, reply_to_message_id }: AccountSendMediaGroupInput<Target>,
+      { media, ...album }: AccountSendMediaGroupInput<Target>,
     ): Promise<ActionOutcome<readonly MessageIn<Target>[]>> {
-      const sending = await requestJsonAction(fetchImplementation, {
-        method: 'POST',
-        url: `${accountUrl}/media-groups`,
-        expectedStatus: HTTP_STATUS_CREATED,
-        responseSchema: messageResponseSchemasFor(to).sentAlbum,
+      const { to } = album;
+      const request = {
+        params: accountParams,
         body: {
-          to,
-          media: media.map((item) => ({
-            ...toAccountMediaGroupFile(item),
-            caption: item.caption,
-            caption_entities: item.caption_entities,
-          })),
-          reply_to_message_id,
+          ...album,
+          media: toAccountMediaGroupBody(media, albumCall),
         },
-      });
-      return selectResult(sending, ({ messages }) => messages);
+      };
+      const sending = await callJsonAction(transport, sendAccountMediaGroupContract, request);
+      const call = describeOperationCall(transport, sendAccountMediaGroupContract, request);
+      return selectResult(
+        sending,
+        ({ messages }) => messages.map((message) => messageInChat(to, message, call)),
+      );
     },
-    async forwardMessage<Target extends MessageTarget>(
-      { from, message_id, to }: AccountForwardMessageInput<Target>,
+    forwardMessage<Target extends MessageTarget>(
+      { from, message_id, ...message }: AccountForwardMessageInput<Target>,
     ): Promise<ActionOutcome<MessageIn<Target>>> {
-      const sending = await requestJsonAction(fetchImplementation, {
-        method: 'POST',
-        url: `${accountUrl}/messages`,
-        expectedStatus: HTTP_STATUS_CREATED,
-        responseSchema: messageResponseSchemasFor(to).sent,
-        body: { to, forward: { chat: from, message_id } },
-      });
-      return selectResult(sending, ({ message }) => message);
+      return sendMessageTo(message.to, { ...message, forward: { chat: from, message_id } });
     },
     editMessage<Target extends MessageTarget>(
-      input: AccountEditMessageInput<Target>,
+      { chat, message_id, ...edit }: AccountEditMessageInput<Target>,
     ): Promise<ActionOutcome<MessageIn<Target>>> {
-      return chatMessageOperationsFor(input.chat).editMessage(input.message_id, {
-        text: input.text,
-        entities: copyEntities(input.entities),
-      });
+      return chatMessageOperationsFor(chat).editMessage(message_id, edit);
     },
     editMessageCaption<Target extends MessageTarget>(
-      input: AccountEditMessageCaptionInput<Target>,
+      { chat, message_id, ...edit }: AccountEditMessageCaptionInput<Target>,
     ): Promise<ActionOutcome<MessageIn<Target>>> {
-      return chatMessageOperationsFor(input.chat).editMessage(input.message_id, {
-        caption: input.caption,
-        caption_entities: copyEntities(input.caption_entities),
-      });
+      return chatMessageOperationsFor(chat).editMessage(message_id, edit);
     },
     deleteMessage(
       { chat, message_id: messageId }: AccountDeleteMessageInput,
@@ -1195,9 +1090,9 @@ function createVirtualAccountClient(
       return response.callback_query;
     },
     answerPoll<Target extends MessageTarget>(
-      { chat, message_id, option_ids }: AnswerPollInput<Target>,
+      { chat, message_id, ...answer }: AnswerPollInput<Target>,
     ): Promise<ActionOutcome<AccountPollAnswer<Target>>> {
-      return chatMessageOperationsFor(chat).answerPoll(message_id, option_ids);
+      return chatMessageOperationsFor(chat).answerPoll(message_id, answer);
     },
     getPollAnswer<Target extends MessageTarget>(
       input: AccountPollMessageInput<Target>,
@@ -1221,11 +1116,11 @@ function createVirtualAccountClient(
       return chatMessageOperationsFor(input.chat).stopPoll(input.message_id);
     },
     setMessageReaction(
-      { chat, message_id: messageId, reaction }: SetMessageReactionInput,
+      { chat, message_id: messageId, ...choice }: SetMessageReactionInput,
     ): Promise<ActionOutcome<MessageReactions>> {
       return callJsonAction(transport, setSupergroupAccountMessageReactionContract, {
         params: { ...supergroupParams(chat), messageId },
-        body: { reaction: [...reaction] },
+        body: choice,
       });
     },
     getMessageReactions(
@@ -1256,17 +1151,13 @@ function createVirtualAccountClient(
       return response.inline_query;
     },
     async chooseInlineQueryResult(
-      input: ChooseInlineQueryResultInput,
+      { inline_query_id: inlineQueryId, ...choice }: ChooseInlineQueryResultInput,
     ): Promise<ActionOutcome<PrivateMessage | SupergroupMessage>> {
-      const inlineQueryId = encodeURIComponent(input.inline_query_id);
-      const choice = await requestJsonAction(fetchImplementation, {
-        method: 'POST',
-        url: `${accountUrl}/inline-queries/${inlineQueryId}/chosen-results`,
-        expectedStatus: HTTP_STATUS_CREATED,
-        responseSchema: chosenInlineResultResponseSchema,
-        body: { result_id: input.result_id },
+      const sending = await callJsonAction(transport, chooseInlineQueryResultContract, {
+        params: { ...accountParams, inlineQueryId },
+        body: choice,
       });
-      return selectResult(choice, ({ message }) => message);
+      return selectResult(sending, ({ message }) => message);
     },
     async getBotCommands({ chat }: AccountBotCommandsInput): Promise<readonly BotCommand[]> {
       const response = await callJsonOperation(transport, getPrivateChatBotCommandsContract, {
@@ -1301,17 +1192,19 @@ function createVirtualAccountClient(
     async pressReplyKeyboardButton<Target extends MessageTarget>(
       input: PressReplyKeyboardButtonInput<Target>,
     ): Promise<ActionOutcome<MessageIn<Target>>> {
-      const press = await requestJsonAction(fetchImplementation, {
-        method: 'POST',
-        url: `${accountUrl}/reply-keyboard-presses`,
-        expectedStatus: HTTP_STATUS_CREATED,
-        responseSchema: messageResponseSchemasFor(input.chat).sent,
-        body: input,
-      });
-      return selectResult(press, ({ message }) => message);
+      const request = { params: accountParams, body: input };
+      const press = await callJsonAction(transport, pressReplyKeyboardButtonContract, request);
+      const call = describeOperationCall(transport, pressReplyKeyboardButtonContract, request);
+      return selectResult(press, ({ message }) => messageInChat(input.chat, message, call));
     },
   });
 }
+
+/** The body of a message an account sends. */
+type SendAccountMessageBody = ControlOperationRequest<typeof sendAccountMessageContract>['body'];
+
+/** The body of an account's answer to a poll: the options it chooses. */
+type AnswerPollBody = ControlOperationRequest<typeof answerAccountPollContract>['body'];
 
 /** The body of an edit of an account's message: new text, or a new caption. */
 type AccountMessageEditBody = ControlOperationRequest<typeof editAccountMessageContract>['body'];
@@ -1330,16 +1223,9 @@ interface ChatMessageOperations<Target extends MessageTarget> {
   readPollAnswer(messageId: number): Promise<AccountPollAnswer<Target>>;
   answerPoll(
     messageId: number,
-    optionIds: readonly number[],
+    body: AnswerPollBody,
   ): Promise<ActionOutcome<AccountPollAnswer<Target>>>;
   stopPoll(messageId: number): Promise<ActionOutcome<MessageIn<Target>>>;
-}
-
-/** Entities as a request body takes them: a list of its own, or none. */
-function copyEntities(
-  entities: readonly MessageEntityInput[] | undefined,
-): MessageEntityInput[] | undefined {
-  return entities === undefined ? undefined : [...entities];
 }
 
 /** An action's outcome with its result replaced by what `select` takes from it. */
@@ -1350,60 +1236,145 @@ function selectResult<Body, Result>(
   return { result: select(result), receipt };
 }
 
-/** A video an account uploads, as the emulation API reads it. */
+/** A video an account uploads at the input field `field`, as the emulation API reads it. */
 function toAccountVideoUpload(
   { video, file_name, duration, width, height }: Pick<
     AccountSendVideoInput,
     'video' | 'file_name' | 'duration' | 'width' | 'height'
   >,
+  field: string,
+  call: RequestDetails,
 ) {
-  return { content_base64: video.toBase64(), file_name, duration, width, height };
+  return {
+    content_base64: toBase64Content(video, field, call),
+    file_name,
+    duration,
+    width,
+    height,
+  };
 }
 
-/** An audio file an account uploads, as the emulation API reads it. */
+/** An audio file an account uploads at the input field `field`, as the emulation API reads it. */
 function toAccountAudioUpload(
   { audio, file_name, duration, performer, title }: Pick<
     AccountSendAudioInput,
     'audio' | 'file_name' | 'duration' | 'performer' | 'title'
   >,
+  field: string,
+  call: RequestDetails,
 ) {
-  return { content_base64: audio.toBase64(), file_name, duration, performer, title };
-}
-
-/** The file of an album's photo, document, video, or audio file, as the emulation API reads it. */
-function toAccountMediaGroupFile(item: AccountMediaGroupItem) {
-  if (item.photo !== undefined) {
-    return { photo: { content_base64: item.photo.toBase64() } };
-  }
-  if (item.document !== undefined) {
-    return { document: { content_base64: item.document.toBase64(), file_name: item.file_name } };
-  }
-  if (item.audio !== undefined) {
-    return { audio: toAccountAudioUpload(item) };
-  }
-  return { video: toAccountVideoUpload(item) };
-}
-
-interface MessageResponseSchemas<Target extends MessageTarget> {
-  readonly sent: z.ZodType<{ readonly message: MessageIn<Target> }>;
-  readonly sentAlbum: z.ZodType<{ readonly messages: readonly MessageIn<Target>[] }>;
+  return {
+    content_base64: toBase64Content(audio, field, call),
+    file_name,
+    duration,
+    performer,
+    title,
+  };
 }
 
 /**
- * Selects the response schemas for a chat's messages. TypeScript cannot relate the checked chat
- * type to the generic target, so the result is asserted; each schema validates the response at
- * run time as the messages of exactly that chat type.
+ * The bytes of a file an account uploads at the input field `field`, as the base64 text the
+ * emulation API reads.
+ *
+ * The façades follow one rule for their inputs. A value a façade converts, which today is only an
+ * upload's bytes, is checked by the façade, since a converted value of the wrong type could read
+ * as valid on the wire: text such as `YQ==` is itself base64. Every other value is sent as given,
+ * for the emulator to accept or refuse.
+ *
+ * @throws {EmulationClientError} when the value is not a `Uint8Array`, before anything is sent.
  */
-function messageResponseSchemasFor<Target extends MessageTarget>(
-  target: Target,
-): MessageResponseSchemas<Target> {
-  const schemas: MessageResponseSchemas<MessageTarget> = target.type === 'supergroup'
-    ? {
-      sent: sentSupergroupMessageResponseSchema,
-      sentAlbum: sentSupergroupMediaGroupResponseSchema,
+function toBase64Content(content: Uint8Array, field: string, call: RequestDetails): string {
+  if (!(content instanceof Uint8Array)) {
+    throw new EmulationClientError(
+      `${call.method} ${call.url} was not sent: ${field} must be the file's bytes as a Uint8Array`,
+      call,
+    );
+  }
+  return content.toBase64();
+}
+
+/**
+ * The photos, videos, documents, or audio files of an album, as the emulation API reads them, each
+ * with every field its input gives. A value that is no list, or an item that is no object, is sent
+ * as it is, for the emulator to refuse.
+ *
+ * @throws {EmulationClientError} when an item's upload is not a `Uint8Array`, before anything is
+ * sent.
+ */
+function toAccountMediaGroupBody(media: readonly AccountMediaGroupItem[], call: RequestDetails) {
+  if (!isList(media)) {
+    return media;
+  }
+  return media.map((item, index) => {
+    if (typeof item !== 'object' || item === null) {
+      return item;
     }
-    : { sent: sentMessageResponseSchema, sentAlbum: sentMediaGroupResponseSchema };
-  return schemas as MessageResponseSchemas<Target>;
+    // The upload's own fields go into the upload the item names; its others stay the item's.
+    const {
+      photo: _photo,
+      document: _document,
+      video: _video,
+      audio: _audio,
+      file_name: _fileName,
+      duration: _duration,
+      width: _width,
+      height: _height,
+      performer: _performer,
+      title: _title,
+      ...fields
+    } = item;
+    return { ...fields, ...toAccountMediaGroupFile(item, `media[${index}]`, call) };
+  });
+}
+
+/** Whether a value is a list, readonly or not. */
+function isList(value: unknown): value is readonly unknown[] {
+  return Array.isArray(value);
+}
+
+/**
+ * The file of an album's photo, document, video, or audio file at the input field `field`, as the
+ * emulation API reads it. An item that names no other upload is read as a video.
+ */
+function toAccountMediaGroupFile(item: AccountMediaGroupItem, field: string, call: RequestDetails) {
+  if (item.photo !== undefined) {
+    return { photo: { content_base64: toBase64Content(item.photo, `${field}.photo`, call) } };
+  }
+  if (item.document !== undefined) {
+    return {
+      document: {
+        content_base64: toBase64Content(item.document, `${field}.document`, call),
+        file_name: item.file_name,
+      },
+    };
+  }
+  if (item.audio !== undefined) {
+    return { audio: toAccountAudioUpload(item, `${field}.audio`, call) };
+  }
+  return { video: toAccountVideoUpload(item, `${field}.video`, call) };
+}
+
+/**
+ * A message an action sent to `chat`, as a message of the chat's type. The action's contract
+ * answers with a private or a supergroup message; one of the other chat's type breaks what the
+ * action promises, so the client refuses it, as it refuses a response that breaks its contract.
+ *
+ * @throws {EmulationClientError} when the message is not of the chat's type.
+ */
+function messageInChat<Target extends MessageTarget>(
+  chat: Target,
+  message: PrivateMessage | SupergroupMessage,
+  call: RequestDetails,
+): MessageIn<Target> {
+  if (message.chat.type !== chat.type) {
+    throw new EmulationClientError(
+      `${call.method} ${call.url} returned a message of a ${message.chat.type} chat for a ${chat.type} chat`,
+      call,
+    );
+  }
+  // The check above tells that the message is of the chat's type, which TypeScript cannot relate
+  // to the generic target.
+  return message as MessageIn<Target>;
 }
 
 /** The prefix of every invite link, after which its hash follows. */
