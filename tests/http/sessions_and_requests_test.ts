@@ -78,7 +78,8 @@ Deno.test('POST /sessions rejects unknown or invalid session settings', async ()
 });
 
 Deno.test('DELETE /sessions/:sessionId ends the session and answers its held long polls', async () => {
-  const { api, sessionPath, botApiPath } = await createPrivateConversationFixture();
+  await using fixture = await createPrivateConversationFixture();
+  const { api, sessionPath, botApiPath } = fixture;
   const heldPoll = api.request(`${botApiPath}/getUpdates`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
@@ -111,7 +112,8 @@ Deno.test('DELETE /sessions/:sessionId ends the session and answers its held lon
 });
 
 Deno.test('POST bots and accounts create virtual users in one ID namespace', async () => {
-  const { api, sessionPath } = await createTestSession();
+  await using testSession = await createTestSession();
+  const { api, sessionPath } = testSession;
 
   const botResponse = await api.request(`${sessionPath}/bots`, {
     method: 'POST',
@@ -161,7 +163,8 @@ Deno.test('POST bots and accounts create virtual users in one ID namespace', asy
 });
 
 Deno.test('POST bots, accounts, and supergroups accept only Telegram-valid usernames', async () => {
-  const { api, sessionPath } = await createTestSession();
+  await using testSession = await createTestSession();
+  const { api, sessionPath } = testSession;
   const owner = await createAccount(api, sessionPath, 'Ada');
   const creationRoutes = [
     { path: `${sessionPath}/bots`, body: { first_name: 'Test Bot' } },
@@ -197,7 +200,8 @@ Deno.test('POST bots, accounts, and supergroups accept only Telegram-valid usern
 });
 
 Deno.test('emulator routes reject request bodies that are not JSON or not as specified', async () => {
-  const { api, sessionPath, createdBot, createdAccount } = await createPrivateConversationFixture();
+  await using fixture = await createPrivateConversationFixture();
+  const { api, sessionPath, createdBot, createdAccount } = fixture;
   const accountMessagesPath = `${sessionPath}/accounts/${createdAccount.account.id}/messages`;
   const requests = [
     { path: accountMessagesPath, body: '{"to":' },
@@ -227,7 +231,8 @@ Deno.test('emulator routes reject request bodies that are not JSON or not as spe
 });
 
 Deno.test('Bot API rejects unknown tokens before resolving methods or parameters', async () => {
-  const { api, sessionPath } = await createTestSession();
+  await using testSession = await createTestSession();
+  const { api, sessionPath } = testSession;
   const botApiPath = `${sessionPath}/bot-api/bot123:unknown`;
 
   const responses = [
@@ -249,7 +254,8 @@ Deno.test('Bot API rejects unknown tokens before resolving methods or parameters
 });
 
 Deno.test('Bot API resolves method names case-insensitively over GET and POST', async () => {
-  const { api, botApiPath, createdBot } = await createPrivateConversationFixture();
+  await using fixture = await createPrivateConversationFixture();
+  const { api, botApiPath, createdBot } = fixture;
 
   const responses = [
     await api.request(`${botApiPath}/getMe`),
@@ -269,7 +275,8 @@ Deno.test('Bot API resolves method names case-insensitively over GET and POST', 
 });
 
 Deno.test("Bot API answers unknown methods and paths with Telegram's not-found errors", async () => {
-  const { api, sessionPath, botApiPath } = await createPrivateConversationFixture();
+  await using fixture = await createPrivateConversationFixture();
+  const { api, sessionPath, botApiPath } = fixture;
   const botApiRootPath = `${sessionPath}/bot-api`;
   const expectNotFound = async (response: Response, expectedDescription: string) => {
     const body: unknown = await response.json();
@@ -309,8 +316,8 @@ Deno.test("Bot API answers unknown methods and paths with Telegram's not-found e
 });
 
 Deno.test('tests queue rate limit answers for the next Bot API calls of a bot', async () => {
-  const { api, sessionPath, botApiPath, createdBot, createdAccount, sendText } =
-    await createPrivateConversationFixture();
+  await using fixture = await createPrivateConversationFixture();
+  const { api, sessionPath, botApiPath, createdBot, createdAccount, sendText } = fixture;
   await sendText('/start');
   const rateLimitsPath = `${sessionPath}/bots/${createdBot.bot.id}/rate-limit-responses`;
   const queueResponses = (body: unknown) => api.request(rateLimitsPath, jsonRequest('POST', body));

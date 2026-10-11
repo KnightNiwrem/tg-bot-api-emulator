@@ -14,7 +14,8 @@ import { botApiResult, callBotApi, callBotApiWithFiles } from '../support/bot_ap
 import { createPrivateConversationFixture } from '../support/http_fixtures.ts';
 
 Deno.test('deleteWebhook answers as Telegram does for a bot without a webhook', async () => {
-  const { api, botApiPath, sendText } = await createPrivateConversationFixture();
+  await using fixture = await createPrivateConversationFixture();
+  const { api, botApiPath, sendText } = fixture;
   const deleteWebhook = async (parameters: Record<string, unknown>) => {
     const response = await api.request(`${botApiPath}/deleteWebhook`, {
       method: 'POST',
@@ -59,7 +60,8 @@ Deno.test('deleteWebhook answers as Telegram does for a bot without a webhook', 
 });
 
 Deno.test('setWebhook, getWebhookInfo, and deleteWebhook follow Telegram checks', async () => {
-  const { api, sessionPath, botApiPath } = await createPrivateConversationFixture();
+  await using fixture = await createPrivateConversationFixture();
+  const { api, sessionPath, botApiPath } = fixture;
   const webhookUrl = 'https://bot.example/webhook';
   const expectAnswer = (
     answer: { status: number; body: unknown },
@@ -183,8 +185,8 @@ Deno.test('setWebhook, getWebhookInfo, and deleteWebhook follow Telegram checks'
 });
 
 Deno.test('a grammY bot receives updates through its webhook and replies', async () => {
-  const { api, sessionPath, createdBot, createdAccount, sendText } =
-    await createPrivateConversationFixture();
+  await using fixture = await createPrivateConversationFixture();
+  const { api, sessionPath, createdBot, createdAccount, sendText } = fixture;
   const grammyBot = new Bot(createdBot.token, {
     client: {
       apiRoot: `${TEST_PUBLIC_ORIGIN}${sessionPath}/bot-api`,
@@ -251,8 +253,8 @@ Deno.test('a grammY bot receives updates through its webhook and replies', async
 });
 
 Deno.test('a webhook runs a Bot API method by naming it in its response', async () => {
-  const { api, sessionPath, botApiPath, createdBot, createdAccount, sendText } =
-    await createPrivateConversationFixture();
+  await using fixture = await createPrivateConversationFixture();
+  const { api, sessionPath, botApiPath, createdBot, createdAccount, sendText } = fixture;
   const accountId = createdAccount.account.id;
   const replies = [
     Response.json({ method: 'sendMessage', chat_id: accountId, text: 'JSON reply' }),
@@ -322,8 +324,8 @@ Deno.test('a webhook runs a Bot API method by naming it in its response', async 
 });
 
 Deno.test('a grammY bot replies through its webhook response', async () => {
-  const { api, sessionPath, createdBot, createdAccount, sendText } =
-    await createPrivateConversationFixture();
+  await using fixture = await createPrivateConversationFixture();
+  const { api, sessionPath, createdBot, createdAccount, sendText } = fixture;
   const grammyBot = new Bot(createdBot.token, {
     client: {
       apiRoot: `${TEST_PUBLIC_ORIGIN}${sessionPath}/bot-api`,
