@@ -1515,9 +1515,15 @@ export interface AnswerCallbackQueryRequest {
   readonly url?: string;
 }
 
+/**
+ * Why a callback query was not answered: no query the bot may answer has the ID, as for an
+ * unknown, expired or already answered query, or the answer's link is not one Telegram allows.
+ */
+type CallbackQueryAnswerFailureReason = 'callback_query_not_answerable' | 'url_invalid';
+
 export type AnswerCallbackQueryResult =
   | { readonly answered: true }
-  | { readonly answered: false; readonly reason: 'query_id_invalid' | 'url_invalid' };
+  | { readonly answered: false; readonly reason: CallbackQueryAnswerFailureReason };
 
 interface BotCredentialLookup {
   getByToken(token: string): VirtualBot | undefined;
@@ -1886,12 +1892,7 @@ interface CallbackQueryAnswering {
     readonly showAlert: boolean;
     readonly cacheTimeSeconds: number;
     readonly url?: string;
-  }):
-    | { readonly answered: true }
-    | {
-      readonly answered: false;
-      readonly reason: 'callback_query_not_answerable' | 'url_invalid';
-    };
+  }): AnswerCallbackQueryResult;
 }
 
 interface InlineQueryAnswering {
@@ -3727,13 +3728,7 @@ export class BotApiService {
       cacheTimeSeconds,
       url,
     });
-    if (result.answered) {
-      return { answered: true };
-    }
-    return {
-      answered: false,
-      reason: result.reason === 'url_invalid' ? 'url_invalid' : 'query_id_invalid',
-    };
+    return result.answered ? { answered: true } : result;
   }
 
   /**

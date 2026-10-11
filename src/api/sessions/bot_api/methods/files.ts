@@ -1,5 +1,6 @@
 import { z } from 'zod';
 
+import { presentFilePreparationFailure } from '../errors/file_failure_presenter.ts';
 import {
   botApiError,
   type BotApiMethod,
@@ -14,10 +15,8 @@ export const FILE_METHODS: readonly BotApiMethod[] = [
   { name: 'getFile', recordsActivity: true, handler: handleGetFile },
 ];
 
-/** Telegram's descriptions for rejected getFile requests. */
+/** Telegram's description for a getFile request that names no file. */
 const FILE_ID_NOT_SPECIFIED_DESCRIPTION = 'Bad Request: file_id not specified';
-const GET_FILE_ID_INVALID_DESCRIPTION = 'Bad Request: invalid file_id';
-const FILE_TOO_BIG_DESCRIPTION = 'Bad Request: file is too big';
 
 const getFileParametersSchema = z.strictObject({
   file_id: z.string().default(''),
@@ -40,17 +39,5 @@ function handleGetFile(
     context.bot,
     fileId,
   );
-  if (result.found) {
-    return botApiResult(result.file);
-  }
-  switch (result.reason) {
-    case 'file_id_invalid':
-      return botApiError(400, GET_FILE_ID_INVALID_DESCRIPTION);
-    case 'file_too_big':
-      return botApiError(400, FILE_TOO_BIG_DESCRIPTION);
-    default: {
-      const unhandledReason: never = result.reason;
-      throw new Error(`Unhandled getFile failure: ${unhandledReason}`);
-    }
-  }
+  return result.found ? botApiResult(result.file) : presentFilePreparationFailure(result);
 }
