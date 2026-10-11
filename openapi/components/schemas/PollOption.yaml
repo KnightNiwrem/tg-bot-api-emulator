@@ -26,13 +26,7 @@ properties:
       The custom emoji of the text, the only entities Telegram keeps in options; omitted when
       there are none.
     items:
-      allOf:
-        - $ref: ./MessageEntity.yaml
-        - properties:
-            type:
-              const: custom_emoji
-          required:
-            - custom_emoji_id
+      $ref: ./CustomEmojiMessageEntity.yaml
   voter_count:
     type: integer
     minimum: 0
