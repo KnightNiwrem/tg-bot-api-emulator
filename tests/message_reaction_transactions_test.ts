@@ -12,7 +12,7 @@ const FAILED_VIEW_MESSAGE = 'The view failed';
 const THUMBS_UP = JSON.stringify([{ type: 'emoji', emoji: '👍' }]);
 
 Deno.test("an account's reaction whose projection fails commits nothing", async () => {
-  const fixture = await createReactionFixture();
+  using fixture = await createReactionFixture();
   const { session } = fixture;
   const stateBefore = fixture.readState();
   const views = session.botMessageViews;
@@ -42,7 +42,7 @@ Deno.test("an account's reaction whose projection fails commits nothing", async 
 });
 
 Deno.test("a bot's reaction whose record fails commits nothing", async () => {
-  const fixture = await createReactionFixture();
+  using fixture = await createReactionFixture();
   const stateBefore = fixture.readState();
   const restoreRecording = fixture.failCallRecording();
 
@@ -62,7 +62,7 @@ Deno.test("a bot's reaction whose record fails commits nothing", async () => {
 });
 
 Deno.test('a reaction prepared before its message was deleted is not committed', async () => {
-  const fixture = await createReactionFixture();
+  using fixture = await createReactionFixture();
   const reply = fixture.holdWebhookReply(fixture.alpha, {
     method: 'setMessageReaction',
     chat_id: String(fixture.chatId),
@@ -92,7 +92,7 @@ Deno.test('a reaction prepared before its message was deleted is not committed',
 });
 
 Deno.test('a reaction prepared before its session ended changes nothing', async () => {
-  const fixture = await createReactionFixture();
+  using fixture = await createReactionFixture();
   const reply = fixture.holdWebhookReply(fixture.alpha, {
     method: 'setMessageReaction',
     chat_id: String(fixture.chatId),

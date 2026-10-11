@@ -22,7 +22,8 @@ import {
 import { gifImage } from '../support/media_samples.ts';
 
 Deno.test('sendPhoto and sendDocument upload files, reuse file IDs, and follow Telegram checks', async () => {
-  const { api, botApiPath, createdAccount, sendText } = await createPrivateConversationFixture();
+  await using fixture = await createPrivateConversationFixture();
+  const { api, botApiPath, createdAccount, sendText } = fixture;
   await sendText('/start');
   const chatId = createdAccount.account.id;
 
@@ -167,8 +168,8 @@ Deno.test('sendPhoto and sendDocument upload files, reuse file IDs, and follow T
 });
 
 Deno.test('a cloud session answers bot uploads over 50 MB with 413 and keeps no trace', async () => {
-  const { api, sessionPath, botApiPath, createdBot, createdAccount, sendText } =
-    await createPrivateConversationFixture();
+  await using fixture = await createPrivateConversationFixture();
+  const { api, sessionPath, botApiPath, createdBot, createdAccount, sendText } = fixture;
   await sendText('/start');
   const chatId = String(createdAccount.account.id);
   const maxUploadBytes = 50 * 1024 * 1024;
@@ -254,9 +255,10 @@ Deno.test('a cloud session answers bot uploads over 50 MB with 413 and keeps no 
 });
 
 Deno.test('a local session lets bots upload documents, videos and voice notes over 50 MB that getFile cannot serve', async () => {
-  const { api, botApiPath, createdAccount, sendText } = await createPrivateConversationFixture({
+  await using fixture = await createPrivateConversationFixture({
     upload_profile: 'local',
   });
+  const { api, botApiPath, createdAccount, sendText } = fixture;
   await sendText('/start');
   const fileSizeBytes = 50 * 1024 * 1024 + 1;
   const largeFile = new File([new Uint8Array(fileSizeBytes)], 'large.mp4');
@@ -287,8 +289,8 @@ Deno.test('a local session lets bots upload documents, videos and voice notes ov
 });
 
 Deno.test('bots send files by URL, which Telegram downloads from registered web resources', async () => {
-  const { api, sessionPath, botApiPath, createdBot, createdAccount, sendText } =
-    await createPrivateConversationFixture();
+  await using fixture = await createPrivateConversationFixture();
+  const { api, sessionPath, botApiPath, createdBot, createdAccount, sendText } = fixture;
   await sendText('/start');
   const chatId = createdAccount.account.id;
   const pdfContent = new TextEncoder().encode('%PDF-1.7 quarterly report');
@@ -444,7 +446,8 @@ Deno.test('bots send files by URL, which Telegram downloads from registered web 
 });
 
 Deno.test('sendDocument keeps every upload a document, whatever its content type detection', async () => {
-  const { api, botApiPath, createdAccount, sendText } = await createPrivateConversationFixture();
+  await using fixture = await createPrivateConversationFixture();
+  const { api, botApiPath, createdAccount, sendText } = fixture;
   await sendText('/start');
   // A complete 1x1 GIF image, and an MP4 file's leading `ftyp` box naming the ISO base media
   // format, which content type detection would recognize as an animation and a video.
@@ -489,8 +492,8 @@ Deno.test('sendDocument keeps every upload a document, whatever its content type
 });
 
 Deno.test('sendDocument keeps an uploaded thumbnail that bots and accounts see and download', async () => {
-  const { api, sessionPath, botApiPath, createdBot, createdAccount, sendText } =
-    await createPrivateConversationFixture();
+  await using fixture = await createPrivateConversationFixture();
+  const { api, sessionPath, botApiPath, createdBot, createdAccount, sendText } = fixture;
   await sendText('/start');
   const chatId = String(createdAccount.account.id);
   const sendDocument = async (parameters: Record<string, string>, files: Record<string, File>) => {
@@ -598,8 +601,8 @@ Deno.test('sendDocument keeps an uploaded thumbnail that bots and accounts see a
 });
 
 Deno.test('a bot downloads the files it knows with getFile, and tests read any by unique ID', async () => {
-  const { api, sessionPath, botApiPath, createdBot, createdAccount } =
-    await createPrivateConversationFixture();
+  await using fixture = await createPrivateConversationFixture();
+  const { api, sessionPath, botApiPath, createdBot, createdAccount } = fixture;
   const image = gifImage(32, 16);
   const sentResponse = await api.request(
     `${sessionPath}/accounts/${createdAccount.account.id}/messages`,
@@ -678,7 +681,8 @@ Deno.test('a bot downloads the files it knows with getFile, and tests read any b
 });
 
 Deno.test('editMessageCaption follows Telegram checks', async () => {
-  const { api, botApiPath, createdAccount, sendText } = await createPrivateConversationFixture();
+  await using fixture = await createPrivateConversationFixture();
+  const { api, botApiPath, createdAccount, sendText } = fixture;
   await sendText('/start');
   const chatId = createdAccount.account.id;
   const sentPhoto = await callBotApiWithFiles(api, `${botApiPath}/sendPhoto`, {
@@ -747,8 +751,8 @@ Deno.test('editMessageCaption follows Telegram checks', async () => {
 });
 
 Deno.test('editMessageMedia replaces the media of a message', async () => {
-  const { api, sessionPath, botApiPath, createdBot, createdAccount, sendText } =
-    await createPrivateConversationFixture();
+  await using fixture = await createPrivateConversationFixture();
+  const { api, sessionPath, botApiPath, createdBot, createdAccount, sendText } = fixture;
   await sendText('/start');
   const chatId = createdAccount.account.id;
   const sentPhoto = await callBotApiWithFiles(api, `${botApiPath}/sendPhoto`, {
@@ -962,7 +966,8 @@ Deno.test('editMessageMedia replaces the media of a message', async () => {
 });
 
 Deno.test('editMessageMedia replaces the media of a supergroup message', async () => {
-  const { api, owner, bot, supergroup, supergroupPath } = await createSupergroupFixture();
+  await using fixture = await createSupergroupFixture();
+  const { api, owner, bot, supergroup, supergroupPath } = fixture;
   const sent = await callBotApiWithFiles(api, `${bot.botApiPath}/sendDocument`, {
     chat_id: String(supergroup.id),
   }, { document: new File(['draft'], 'draft.txt') });
@@ -986,8 +991,8 @@ Deno.test('editMessageMedia replaces the media of a supergroup message', async (
 });
 
 Deno.test('account message routes send and edit photos and documents', async () => {
-  const { api, sessionPath, botApiPath, createdBot, createdAccount } =
-    await createPrivateConversationFixture();
+  await using fixture = await createPrivateConversationFixture();
+  const { api, sessionPath, botApiPath, createdBot, createdAccount } = fixture;
   const accountPath = `${sessionPath}/accounts/${createdAccount.account.id}`;
   const to = { type: 'private', botId: createdBot.bot.id };
   const sendAccountMessage = async (body: unknown) => {
@@ -1039,7 +1044,8 @@ Deno.test('account message routes send and edit photos and documents', async () 
 });
 
 Deno.test('a grammY bot downloads a document from an account and replies with a photo', async () => {
-  const { api, sessionPath, createdBot, createdAccount } = await createPrivateConversationFixture();
+  await using fixture = await createPrivateConversationFixture();
+  const { api, sessionPath, createdBot, createdAccount } = fixture;
   const csv = 'item,price\ncoffee,3\n';
   const sentResponse = await api.request(
     `${sessionPath}/accounts/${createdAccount.account.id}/messages`,

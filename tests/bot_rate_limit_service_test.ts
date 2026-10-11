@@ -1,12 +1,11 @@
-import { AccountRepository } from '../src/repositories/account.ts';
-import { BotRepository } from '../src/repositories/bot.ts';
-import { QueuedBotApiAnswerRepository } from '../src/repositories/queued_bot_api_answer.ts';
-import { TelegramIdentityRepository } from '../src/repositories/telegram_identity.ts';
-import { BotRateLimitService } from '../src/services/bot_rate_limit.ts';
-import { VirtualUserService } from '../src/services/virtual_user.ts';
+import { assertEquals } from '@std/assert';
+import type { VirtualUserService } from '../src/services/virtual_user.ts';
+import { buildSessionServices } from './support/session_services.ts';
+import { createVirtualBot } from './support/virtual_users.ts';
 
 Deno.test('BotRateLimitService answers the next matching calls in queue order', () => {
-  const { virtualUsers, botRateLimits } = createBotRateLimitFixture();
+  using session = buildSessionServices();
+  const { virtualUsers, botRateLimits } = session;
   const botId = createBot(virtualUsers, 'first_bot');
   const otherBotId = createBot(virtualUsers, 'second_bot');
 
@@ -24,21 +23,16 @@ Deno.test('BotRateLimitService answers the next matching calls in queue order', 
     botRateLimits.takeRateLimitResponse(botId, 'getMe'),
     botRateLimits.takeRateLimitResponse(botId, 'sendMessage'),
   ];
-  const remaining = botRateLimits.listRateLimitResponses(botId);
-  if (
-    JSON.stringify(retryAfterSeconds) !== JSON.stringify([undefined, 3, 7, undefined, 3]) ||
-    !remaining.found || remaining.responses.length !== 0
-  ) {
-    throw new Error(
-      `Expected each call to take the earliest matching answer, received ${
-        JSON.stringify(retryAfterSeconds)
-      } and ${JSON.stringify(remaining)}`,
-    );
-  }
+  assertEquals(
+    [retryAfterSeconds, botRateLimits.listRateLimitResponses(botId)],
+    [[undefined, 3, 7, undefined, 3], { found: true, responses: [] }],
+    'Expected each call to take the earliest matching answer, and none once all were taken',
+  );
 });
 
 Deno.test('BotRateLimitService lists remaining answers and refuses unknown bots', () => {
-  const { virtualUsers, botRateLimits } = createBotRateLimitFixture();
+  using session = buildSessionServices();
+  const { virtualUsers, botRateLimits } = session;
   const botId = createBot(virtualUsers, 'test_bot');
   botRateLimits.queueRateLimitResponses(botId, {
     methodName: 'sendPhoto',
@@ -47,40 +41,28 @@ Deno.test('BotRateLimitService lists remaining answers and refuses unknown bots'
   });
   botRateLimits.takeRateLimitResponse(botId, 'sendPhoto');
 
-  const listing = botRateLimits.listRateLimitResponses(botId);
   const unknownBotQueueing = botRateLimits.queueRateLimitResponses(999, {
     retryAfterSeconds: 1,
     remainingCount: 1,
   });
-  if (
-    !listing.found ||
-    JSON.stringify(listing.responses) !==
-      JSON.stringify([{ methodName: 'sendPhoto', retryAfterSeconds: 2, remainingCount: 2 }]) ||
-    unknownBotQueueing.queued || botRateLimits.listRateLimitResponses(999).found
-  ) {
-    throw new Error(`Expected the remaining answers, received ${JSON.stringify(listing)}`);
-  }
+  assertEquals(
+    [
+      botRateLimits.listRateLimitResponses(botId),
+      unknownBotQueueing,
+      botRateLimits.listRateLimitResponses(999),
+    ],
+    [
+      {
+        found: true,
+        responses: [{ methodName: 'sendPhoto', retryAfterSeconds: 2, remainingCount: 2 }],
+      },
+      { queued: false, reason: 'bot_not_found' },
+      { found: false, reason: 'bot_not_found' },
+    ],
+    'Expected the remaining answers, and unknown bots refused',
+  );
 });
 
-function createBotRateLimitFixture() {
-  const bots = new BotRepository();
-  return {
-    virtualUsers: new VirtualUserService({
-      identities: new TelegramIdentityRepository(),
-      accounts: new AccountRepository(),
-      bots,
-    }),
-    botRateLimits: new BotRateLimitService({
-      bots,
-      rateLimitResponses: new QueuedBotApiAnswerRepository(),
-    }),
-  };
-}
-
 function createBot(virtualUsers: VirtualUserService, username: string): number {
-  const result = virtualUsers.createBot({ first_name: 'Test Bot', username });
-  if (!result.created) {
-    throw new Error(`Expected bot creation to succeed, received ${result.reason}`);
-  }
-  return result.bot.profile.id;
+  return createVirtualBot(virtualUsers, { first_name: 'Test Bot', username }).profile.id;
 }

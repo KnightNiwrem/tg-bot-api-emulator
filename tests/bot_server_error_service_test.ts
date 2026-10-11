@@ -1,13 +1,11 @@
 import { assertEquals } from '@std/assert';
-import { AccountRepository } from '../src/repositories/account.ts';
-import { BotRepository } from '../src/repositories/bot.ts';
-import { QueuedBotApiAnswerRepository } from '../src/repositories/queued_bot_api_answer.ts';
-import { TelegramIdentityRepository } from '../src/repositories/telegram_identity.ts';
-import { BotServerErrorService } from '../src/services/bot_server_error.ts';
-import { VirtualUserService } from '../src/services/virtual_user.ts';
+import type { VirtualUserService } from '../src/services/virtual_user.ts';
+import { buildSessionServices } from './support/session_services.ts';
+import { createVirtualBot } from './support/virtual_users.ts';
 
 Deno.test('BotServerErrorService answers the next matching calls in queue order', () => {
-  const { virtualUsers, botServerErrors } = createBotServerErrorFixture();
+  using session = buildSessionServices();
+  const { virtualUsers, botServerErrors } = session;
   const botId = createBot(virtualUsers, 'first_bot');
   const otherBotId = createBot(virtualUsers, 'second_bot');
 
@@ -35,7 +33,8 @@ Deno.test('BotServerErrorService answers the next matching calls in queue order'
 });
 
 Deno.test('BotServerErrorService lists remaining answers and refuses unknown bots', () => {
-  const { virtualUsers, botServerErrors } = createBotServerErrorFixture();
+  using session = buildSessionServices();
+  const { virtualUsers, botServerErrors } = session;
   const botId = createBot(virtualUsers, 'test_bot');
   botServerErrors.queueServerErrorResponses(botId, {
     methodName: 'sendPhoto',
@@ -64,7 +63,8 @@ Deno.test('BotServerErrorService lists remaining answers and refuses unknown bot
 });
 
 Deno.test('BotServerErrorService hands each queued answer to exactly one call', () => {
-  const { virtualUsers, botServerErrors } = createBotServerErrorFixture();
+  using session = buildSessionServices();
+  const { virtualUsers, botServerErrors } = session;
   const botId = createBot(virtualUsers, 'test_bot');
   botServerErrors.queueServerErrorResponses(botId, { errorCode: 500, remainingCount: 3 });
   botServerErrors.queueServerErrorResponses(botId, {
@@ -87,25 +87,6 @@ Deno.test('BotServerErrorService hands each queued answer to exactly one call', 
   );
 });
 
-function createBotServerErrorFixture() {
-  const bots = new BotRepository();
-  return {
-    virtualUsers: new VirtualUserService({
-      identities: new TelegramIdentityRepository(),
-      accounts: new AccountRepository(),
-      bots,
-    }),
-    botServerErrors: new BotServerErrorService({
-      bots,
-      serverErrorResponses: new QueuedBotApiAnswerRepository(),
-    }),
-  };
-}
-
 function createBot(virtualUsers: VirtualUserService, username: string): number {
-  const result = virtualUsers.createBot({ first_name: 'Test Bot', username });
-  if (!result.created) {
-    throw new Error(`Expected bot creation to succeed, received ${result.reason}`);
-  }
-  return result.bot.profile.id;
+  return createVirtualBot(virtualUsers, { first_name: 'Test Bot', username }).profile.id;
 }

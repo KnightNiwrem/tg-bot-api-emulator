@@ -13,6 +13,7 @@ import {
 import type { BotActivityEntry, BotActivityFilter } from '../src/types/bot_activity.ts';
 import type { WebhookAttempt } from '../src/types/bot_webhook.ts';
 import { createRealTimeScheduler, createRetryScheduler } from './support/scheduler.ts';
+import { createVirtualBot } from './support/virtual_users.ts';
 import {
   ADA_ID,
   createPrivateMessage,
@@ -531,11 +532,7 @@ function createSchedulerFixture(
 }
 
 function createBot(virtualUsers: VirtualUserService, username: string): number {
-  const result = virtualUsers.createBot({ first_name: 'Webhook Bot', username });
-  if (!result.created) {
-    throw new Error(`Expected bot creation to succeed, received ${result.reason}`);
-  }
-  return result.bot.profile.id;
+  return createVirtualBot(virtualUsers, { first_name: 'Webhook Bot', username }).profile.id;
 }
 
 function listAttempts(

@@ -1,3 +1,4 @@
+import { assertEquals } from '@std/assert';
 import { readImageDimensions } from '../src/media/image_dimensions.ts';
 
 Deno.test('readImageDimensions reads the header of every supported image format', () => {
@@ -22,9 +23,7 @@ Deno.test('readImageDimensions reads the header of every supported image format'
     const actual = dimensions === undefined
       ? undefined
       : [dimensions.imageFormat, dimensions.width, dimensions.height];
-    if (JSON.stringify(actual) !== JSON.stringify(expected)) {
-      throw new Error(`Expected ${name} dimensions ${expected}, received ${actual}`);
-    }
+    assertEquals(actual, expected, `Expected the ${name} dimensions`);
   }
 });
 

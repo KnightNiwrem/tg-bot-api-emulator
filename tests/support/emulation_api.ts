@@ -74,12 +74,25 @@ export async function createSession(
   return sessionPath;
 }
 
-/** Creates an in-process test emulator holding one session, created with `sessionSettings`. */
-export async function createTestSession(
-  sessionSettings?: SessionSettings,
-): Promise<{ api: TestInProcessEmulator; sessionPath: string }> {
-  const api = createTestInProcessEmulator();
-  return { api, sessionPath: await createSession(api, sessionSettings) };
+/**
+ * An in-process test emulator holding one session. Disposing of it, as `await using` does,
+ * disposes of the emulator, which ends the session.
+ */
+export interface TestSession extends AsyncDisposable {
+  readonly api: TestInProcessEmulator;
+  readonly sessionPath: string;
+}
+
+/**
+ * Creates an in-process test emulator holding one session, created with `sessionSettings`. The
+ * emulator is disposed of again if the session cannot be created.
+ */
+export async function createTestSession(sessionSettings?: SessionSettings): Promise<TestSession> {
+  await using disposalOnFailure = new AsyncDisposableStack();
+  const api = disposalOnFailure.use(createTestInProcessEmulator());
+  const sessionPath = await createSession(api, sessionSettings);
+  const emulatorDisposal = disposalOnFailure.move();
+  return { api, sessionPath, [Symbol.asyncDispose]: () => emulatorDisposal.disposeAsync() };
 }
 
 /**

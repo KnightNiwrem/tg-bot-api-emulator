@@ -1,9 +1,8 @@
+import { assertEquals } from '@std/assert';
 import type { BotApiCallContext } from '../src/api/sessions/bot_api/method_call.ts';
 import { findBotApiMethod } from '../src/api/sessions/bot_api/method_catalogue.ts';
 import { callBotApiMethod } from '../src/api/sessions/bot_api/method_invocation.ts';
 import { runWebhookReply } from '../src/api/sessions/bot_api/webhook_reply.ts';
-import { createEmulationSession } from '../src/composition/emulation_session.ts';
-import { createSystemSessionTiming } from '../src/timing/system_timing.ts';
 import type { BotApiUpdateType } from '../src/types/bot_api.ts';
 import {
   grantSupergroupAdministratorRights,
@@ -12,7 +11,10 @@ import {
 import type { ChatMemberStatusChangedEvent } from '../src/types/chat_domain_event.ts';
 import type { VirtualBotProfile } from '../src/types/virtual_bot.ts';
 import { HeldWebhookReply } from './support/bot_api_command_session.ts';
+import { assertEqualsInFieldOrder } from './support/field_order_assertion.ts';
+import { buildSessionServices } from './support/session_services.ts';
 import { createStagedSessionFixture, FAILED_VIEW_MESSAGE } from './support/staged_session.ts';
+import { createVirtualAccount, createVirtualBot } from './support/virtual_users.ts';
 
 const SUBSCRIBED_UPDATE_TYPES: ReadonlySet<BotApiUpdateType> = new Set([
   'message',
@@ -40,7 +42,7 @@ Deno.test('an approval whose projection fails after one administrator bot commit
   const approval = approve();
   const alphaUpdates = fixture.botUpdates.readPendingUpdates(fixture.alpha);
 
-  assertJson(
+  assertEquals(
     {
       failedApproval,
       stateAfterFailure,
@@ -82,7 +84,7 @@ Deno.test('an account approval outside any command commits nothing when a projec
     })
   );
 
-  assertJson(
+  assertEquals(
     { failedApproval, state: fixture.readState() },
     { failedApproval: FAILED_VIEW_MESSAGE, state: stateBefore },
     'Expected the approval to run as a transaction of its own and to be reverted whole',
@@ -107,7 +109,7 @@ Deno.test('a consumer that fails once an approval is published undoes nothing', 
     });
   });
 
-  assertJson(
+  assertEquals(
     {
       approval,
       failures: fixture.notificationFailures,
@@ -127,7 +129,7 @@ Deno.test('a consumer that fails once an approval is published undoes nothing', 
 });
 
 Deno.test('approveChatJoinRequest records nothing when its projection fails', async () => {
-  const fixture = await createSessionFixture();
+  using fixture = await createSessionFixture();
   const { session } = fixture;
   const stateBefore = fixture.readState();
   // The session's own views fail for Beta, as a projector that breaks an invariant would.
@@ -145,7 +147,7 @@ Deno.test('approveChatJoinRequest records nothing when its projection fails', as
     .then(() => 'no error', (error: Error) => error.message);
   views.viewChatMemberChange = viewChatMemberChange;
 
-  assertJson(
+  assertEquals(
     { failedCall, state: fixture.readState() },
     { failedCall: FAILED_VIEW_MESSAGE, state: stateBefore },
     'Expected neither the join, its updates nor the call to be committed or recorded',
@@ -153,7 +155,7 @@ Deno.test('approveChatJoinRequest records nothing when its projection fails', as
 });
 
 Deno.test('a decision prepared before the bot lost its right is not committed', async () => {
-  const fixture = await createSessionFixture();
+  using fixture = await createSessionFixture();
   const reply = new HeldWebhookReply(fixture.approvalParameters('approveChatJoinRequest'));
   const replying = runWebhookReply(fixture.replyContext(fixture.alpha), reply.response);
 
@@ -163,7 +165,7 @@ Deno.test('a decision prepared before the bot lost its right is not committed', 
   reply.release();
   await replying;
 
-  assertJson(
+  assertEqualsInFieldOrder(
     {
       state: fixture.readState(),
       answer: await fixture.lastRecordedAnswer(),
@@ -181,7 +183,7 @@ Deno.test('a decision prepared before the bot lost its right is not committed', 
 });
 
 Deno.test('a decision prepared before the request was decided is not committed again', async () => {
-  const fixture = await createSessionFixture();
+  using fixture = await createSessionFixture();
   const reply = new HeldWebhookReply(fixture.approvalParameters('approveChatJoinRequest'));
   const replying = runWebhookReply(fixture.replyContext(fixture.alpha), reply.response);
 
@@ -196,7 +198,7 @@ Deno.test('a decision prepared before the request was decided is not committed a
   reply.release();
   await replying;
 
-  assertJson(
+  assertEqualsInFieldOrder(
     { state: fixture.readState(), answer: await fixture.lastRecordedAnswer() },
     {
       state: { ...stateBeforeRelease, activityHead: stateBeforeRelease.activityHead + 1 },
@@ -207,7 +209,7 @@ Deno.test('a decision prepared before the request was decided is not committed a
 });
 
 Deno.test('a decision prepared before its session ended changes and records nothing', async () => {
-  const fixture = await createSessionFixture();
+  using fixture = await createSessionFixture();
   const reply = new HeldWebhookReply(fixture.approvalParameters('approveChatJoinRequest'));
   const replying = runWebhookReply(fixture.replyContext(fixture.alpha), reply.response);
   const stateBefore = fixture.readState();
@@ -216,7 +218,7 @@ Deno.test('a decision prepared before its session ended changes and records noth
   reply.release();
   await replying;
 
-  assertJson(
+  assertEquals(
     fixture.readState(),
     stateBefore,
     'Expected the reply to commit nothing into the ended session',
@@ -265,29 +267,16 @@ function createJoinRequestFixture() {
  * set up through the session's services and Bot API.
  */
 async function createSessionFixture() {
-  const session = createEmulationSession(
-    'chat-admission-transactions',
-    { uploadProfile: 'cloud' },
-    createSystemSessionTiming(),
+  using disposalOnFailure = new DisposableStack();
+  const session = disposalOnFailure.use(
+    buildSessionServices({ id: 'chat-admission-transactions' }),
   );
-  const createAccount = (firstName: string) => {
-    const creation = session.virtualUsers.createAccount({ first_name: firstName });
-    if (!creation.created) {
-      throw new Error(`Expected ${firstName} to be created: ${creation.reason}`);
-    }
-    return creation.account.profile.id;
-  };
-  const createBot = (username: string) => {
-    const creation = session.virtualUsers.createBot({ first_name: username, username });
-    if (!creation.created) {
-      throw new Error(`Expected ${username} to be created: ${creation.reason}`);
-    }
-    return creation.bot.profile;
-  };
-  const adaId = createAccount('Ada');
-  const graceId = createAccount('Grace');
-  const alpha = createBot('alpha_bot');
-  const beta = createBot('beta_bot');
+  const [adaId, graceId] = ['Ada', 'Grace'].map((firstName) =>
+    createVirtualAccount(session.virtualUsers, { first_name: firstName }).profile.id
+  );
+  const [alpha, beta] = ['alpha_bot', 'beta_bot'].map((username) =>
+    createVirtualBot(session.virtualUsers, { first_name: username, username }).profile
+  );
   const supergroup = session.sharedChatAdministration.createSupergroup({
     title: 'Team',
     creatorAccountId: adaId,
@@ -361,6 +350,7 @@ async function createSessionFixture() {
     throw new Error(`Expected Grace's request to be sent: ${request.reason}`);
   }
 
+  const sessionDisposal = disposalOnFailure.move();
   return {
     session,
     adaId,
@@ -409,6 +399,7 @@ async function createSessionFixture() {
         activityHead: session.botActivity.getHeadPosition(),
       };
     },
+    [Symbol.dispose]: () => sessionDisposal.dispose(),
   };
 }
 
@@ -419,12 +410,4 @@ function captureError(run: () => unknown): string {
     return error instanceof Error ? error.message : String(error);
   }
   return 'no error';
-}
-
-function assertJson(actual: unknown, expected: unknown, message: string): void {
-  const actualJson = JSON.stringify(actual);
-  const expectedJson = JSON.stringify(expected);
-  if (actualJson !== expectedJson) {
-    throw new Error(`${message}\nExpected: ${expectedJson}\nReceived: ${actualJson}`);
-  }
 }

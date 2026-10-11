@@ -1,7 +1,8 @@
 /**
  * Builders of the sessions, bots, accounts and supergroups that HTTP tests start from. Each one
  * sets up its state through the control API of a fresh in-process emulation API, so that every
- * test exercises the same routes a client would.
+ * test exercises the same routes a client would. A fixture that creates an emulator owns it:
+ * disposing of the fixture, as `await using` does, disposes of the emulator.
  */
 import {
   createTestSession,
@@ -17,7 +18,8 @@ import {
 
 /** Creates a session holding a bot and an account that can message it. */
 export async function createPrivateConversationFixture(sessionSettings?: SessionSettings) {
-  const { api, sessionPath } = await createTestSession(sessionSettings);
+  await using disposalOnFailure = new AsyncDisposableStack();
+  const { api, sessionPath } = disposalOnFailure.use(await createTestSession(sessionSettings));
   const { botApiPath, ...createdBot } = await createBot(api, sessionPath, 'test_bot');
   const createdAccount = { account: await createAccount(api, sessionPath, 'Ada') };
 
@@ -31,6 +33,7 @@ export async function createPrivateConversationFixture(sessionSettings?: Session
     }
   };
 
+  const emulatorDisposal = disposalOnFailure.move();
   return {
     api,
     sessionPath,
@@ -38,6 +41,7 @@ export async function createPrivateConversationFixture(sessionSettings?: Session
     createdBot,
     createdAccount,
     sendText,
+    [Symbol.asyncDispose]: () => emulatorDisposal.disposeAsync(),
   };
 }
 
@@ -46,7 +50,8 @@ export async function createPrivateConversationFixture(sessionSettings?: Session
  * a bot in privacy mode, and a bot that reads all group messages.
  */
 export async function createSupergroupFixture() {
-  const { api, sessionPath } = await createTestSession();
+  await using disposalOnFailure = new AsyncDisposableStack();
+  const { api, sessionPath } = disposalOnFailure.use(await createTestSession());
   const owner = await createAccount(api, sessionPath, 'Ada');
   const member = await createAccount(api, sessionPath, 'Grace');
   const bot = await createBot(api, sessionPath, 'test_bot');
@@ -91,6 +96,7 @@ export async function createSupergroupFixture() {
     return body.message;
   };
 
+  const emulatorDisposal = disposalOnFailure.move();
   return {
     api,
     sessionPath,
@@ -101,6 +107,7 @@ export async function createSupergroupFixture() {
     supergroup,
     supergroupPath,
     sendSupergroupText,
+    [Symbol.asyncDispose]: () => emulatorDisposal.disposeAsync(),
   };
 }
 

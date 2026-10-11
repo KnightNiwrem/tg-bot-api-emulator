@@ -1,23 +1,22 @@
-import { createEmulationSession } from '../src/composition/emulation_session.ts';
-import { createSystemSessionTiming } from '../src/timing/system_timing.ts';
+import { assertEquals } from '@std/assert';
 import { SessionRepository } from '../src/repositories/session.ts';
 import { SessionLifecycleService } from '../src/services/session_lifecycle.ts';
 import type { EmulationSessionOptions } from '../src/types/emulation_session.ts';
+import { buildSessionServices } from './support/session_services.ts';
 
 const CLOUD_SESSION_OPTIONS: EmulationSessionOptions = { uploadProfile: 'cloud' };
 
 Deno.test('SessionLifecycleService creates, retrieves, and ends an active session', () => {
   const sessionRepository = new SessionRepository();
-  sessionRepository.add(
-    createEmulationSession('existing-session', CLOUD_SESSION_OPTIONS, createSystemSessionTiming()),
-  );
+  using existingSession = buildSessionServices({ id: 'existing-session' });
+  sessionRepository.add(existingSession);
   const generatedSessionIds = ['existing-session', 'new-session'];
   const createdSessionIds: string[] = [];
   const sessionLifecycle = new SessionLifecycleService({
     sessionRepository,
     createEmulationSession: (sessionId, options) => {
       createdSessionIds.push(sessionId);
-      return createEmulationSession(sessionId, options, createSystemSessionTiming());
+      return buildSessionServices({ id: sessionId, ...options });
     },
     generateSessionId: () => {
       const sessionId = generatedSessionIds.shift();
@@ -53,12 +52,16 @@ Deno.test('SessionLifecycleService ends a session once, after it can no longer b
   const sessionIdsFoundWhileEnding: (string | undefined)[] = [];
   const sessionLifecycle: SessionLifecycleService = new SessionLifecycleService({
     sessionRepository: new SessionRepository(),
-    createEmulationSession: (sessionId) => ({
-      ...createEmulationSession(sessionId, CLOUD_SESSION_OPTIONS, createSystemSessionTiming()),
-      end: () => {
-        sessionIdsFoundWhileEnding.push(sessionLifecycle.getSessionById(sessionId)?.id);
-      },
-    }),
+    createEmulationSession: (sessionId) => {
+      const session = buildSessionServices({ id: sessionId, ...CLOUD_SESSION_OPTIONS });
+      return {
+        ...session,
+        end: () => {
+          sessionIdsFoundWhileEnding.push(sessionLifecycle.getSessionById(sessionId)?.id);
+          session.end();
+        },
+      };
+    },
     generateSessionId: () => 'ending-session',
   });
   const session = sessionLifecycle.createSession(CLOUD_SESSION_OPTIONS);
@@ -79,12 +82,16 @@ Deno.test('SessionLifecycleService ends every open session once when ending them
   const generatedSessionIds = ['first-session', 'second-session', 'third-session'];
   const sessionLifecycle = new SessionLifecycleService({
     sessionRepository: new SessionRepository(),
-    createEmulationSession: (sessionId) => ({
-      ...createEmulationSession(sessionId, CLOUD_SESSION_OPTIONS, createSystemSessionTiming()),
-      end: () => {
-        endedSessionIds.push(sessionId);
-      },
-    }),
+    createEmulationSession: (sessionId) => {
+      const session = buildSessionServices({ id: sessionId, ...CLOUD_SESSION_OPTIONS });
+      return {
+        ...session,
+        end: () => {
+          endedSessionIds.push(sessionId);
+          session.end();
+        },
+      };
+    },
     generateSessionId: () => {
       const sessionId = generatedSessionIds.shift();
       if (sessionId === undefined) {
@@ -99,10 +106,11 @@ Deno.test('SessionLifecycleService ends every open session once when ending them
   sessionLifecycle.endAllSessions();
   sessionLifecycle.endAllSessions();
 
-  const expectedEndOrder = ['second-session', 'first-session', 'third-session'];
-  if (JSON.stringify(endedSessionIds) !== JSON.stringify(expectedEndOrder)) {
-    throw new Error(`Expected each session to end once, ended ${JSON.stringify(endedSessionIds)}`);
-  }
+  assertEquals(
+    endedSessionIds,
+    ['second-session', 'first-session', 'third-session'],
+    'Expected each session to end once',
+  );
   if (sessionIds.some((sessionId) => sessionLifecycle.getSessionById(sessionId) !== undefined)) {
     throw new Error('Expected no ended session to be retrievable');
   }
@@ -112,11 +120,7 @@ Deno.test('SessionLifecycleService rejects a factory result with the wrong ID', 
   const sessionLifecycle = new SessionLifecycleService({
     sessionRepository: new SessionRepository(),
     createEmulationSession: () =>
-      createEmulationSession(
-        'unexpected-session',
-        CLOUD_SESSION_OPTIONS,
-        createSystemSessionTiming(),
-      ),
+      buildSessionServices({ id: 'unexpected-session', ...CLOUD_SESSION_OPTIONS }),
     generateSessionId: () => 'requested-session',
   });
 
@@ -138,9 +142,8 @@ Deno.test('SessionLifecycleService rejects a factory result with the wrong ID', 
 
 Deno.test('SessionLifecycleService limits retries for duplicate generated IDs', () => {
   const sessionRepository = new SessionRepository();
-  sessionRepository.add(
-    createEmulationSession('existing-session', CLOUD_SESSION_OPTIONS, createSystemSessionTiming()),
-  );
+  using existingSession = buildSessionServices({ id: 'existing-session' });
+  sessionRepository.add(existingSession);
   let generationAttempts = 0;
   const sessionLifecycle = new SessionLifecycleService({
     sessionRepository,

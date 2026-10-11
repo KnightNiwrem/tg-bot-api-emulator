@@ -1,3 +1,4 @@
+import { assertEquals } from '@std/assert';
 import { findBotCommandEntities } from '../src/text_entities/bot_command.ts';
 import type { TextEntity } from '../src/types/virtual_message.ts';
 
@@ -41,12 +42,9 @@ function assertBotCommands(
     offset,
     length,
   }));
-  const actual = findBotCommandEntities(text);
-  if (JSON.stringify(actual) !== JSON.stringify(expected)) {
-    throw new Error(
-      `Expected ${JSON.stringify(text)} to have ${JSON.stringify(expected)}, received ${
-        JSON.stringify(actual)
-      }`,
-    );
-  }
+  assertEquals(
+    findBotCommandEntities(text),
+    expected,
+    `Expected the bot commands of ${JSON.stringify(text)}`,
+  );
 }

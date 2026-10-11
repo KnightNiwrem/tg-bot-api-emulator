@@ -20,6 +20,7 @@ import type { BotApiUpdate } from '../src/types/bot_api.ts';
 import type { BotActivityEntry, BotActivityFilter } from '../src/types/bot_activity.ts';
 import type { WebhookAttempt } from '../src/types/bot_webhook.ts';
 import { createRealTimeScheduler } from './support/scheduler.ts';
+import { createVirtualBot } from './support/virtual_users.ts';
 import {
   createPrivateMessage,
   createUpdateConsumers,
@@ -465,11 +466,9 @@ function createAcceptanceFixture(
     accounts: new AccountRepository(),
     bots,
   });
-  const creation = virtualUsers.createBot({ first_name: 'Webhook Bot', username: 'webhook_bot' });
-  if (!creation.created) {
-    throw new Error(`Expected bot creation to succeed, received ${creation.reason}`);
-  }
-  const botId = creation.bot.profile.id;
+  const botId =
+    createVirtualBot(virtualUsers, { first_name: 'Webhook Bot', username: 'webhook_bot' })
+      .profile.id;
   const botUpdates = new BotUpdateRepository();
   const botActivity = new BotActivityService({
     log: new BotActivityLogRepository(),

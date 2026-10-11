@@ -10,7 +10,8 @@ import {
 import { createPrivateConversationFixture } from '../support/http_fixtures.ts';
 
 Deno.test('private account messages are stored and delivered through getUpdates', async () => {
-  const { api, sessionPath, createdBot, createdAccount } = await createPrivateConversationFixture();
+  await using fixture = await createPrivateConversationFixture();
+  const { api, sessionPath, createdBot, createdAccount } = fixture;
 
   const sendResponse = await api.request(
     `${sessionPath}/accounts/${createdAccount.account.id}/messages`,
@@ -95,8 +96,8 @@ Deno.test('private account messages are stored and delivered through getUpdates'
 });
 
 Deno.test('getUpdates allowed_updates filters only updates created afterward', async () => {
-  const { api, sessionPath, botApiPath, createdBot, createdAccount, sendText } =
-    await createPrivateConversationFixture();
+  await using fixture = await createPrivateConversationFixture();
+  const { api, sessionPath, botApiPath, createdBot, createdAccount, sendText } = fixture;
   const getUpdatedTexts = async (parameters: Record<string, unknown>) => {
     const response = await api.request(`${botApiPath}/getUpdates`, {
       method: 'POST',
@@ -144,7 +145,8 @@ Deno.test('getUpdates allowed_updates filters only updates created afterward', a
 });
 
 Deno.test('getUpdates answers a displaced long poll with a Telegram conflict', async () => {
-  const { api, botApiPath, sendText } = await createPrivateConversationFixture();
+  await using fixture = await createPrivateConversationFixture();
+  const { api, botApiPath, sendText } = fixture;
   const holdLongPoll = () =>
     api.request(`${botApiPath}/getUpdates`, {
       method: 'POST',
@@ -179,7 +181,8 @@ Deno.test('getUpdates answers a displaced long poll with a Telegram conflict', a
 });
 
 Deno.test('getUpdates applies parameters from every supported request encoding', async () => {
-  const { api, botApiPath, sendText } = await createPrivateConversationFixture();
+  await using fixture = await createPrivateConversationFixture();
+  const { api, botApiPath, sendText } = fixture;
   const multipartBody = (parameters: Record<string, string>) => {
     const formData = new FormData();
     for (const [name, value] of Object.entries(parameters)) {
@@ -242,7 +245,8 @@ Deno.test('getUpdates applies parameters from every supported request encoding',
 });
 
 Deno.test('getUpdates rejects malformed parameters with a Bot API error', async () => {
-  const { api, botApiPath } = await createPrivateConversationFixture();
+  await using fixture = await createPrivateConversationFixture();
+  const { api, botApiPath } = fixture;
 
   const responses = [
     await api.request(`${botApiPath}/getUpdates?offset=two`),
@@ -268,8 +272,8 @@ Deno.test('getUpdates rejects malformed parameters with a Bot API error', async 
 });
 
 Deno.test('a grammY bot starts polling, replies to a command, and resumes after a restart', async () => {
-  const { api, sessionPath, createdBot, createdAccount, sendText } =
-    await createPrivateConversationFixture();
+  await using fixture = await createPrivateConversationFixture();
+  const { api, sessionPath, createdBot, createdAccount, sendText } = fixture;
   const startGrammyBot = () => {
     const grammyBot = new Bot(createdBot.token, {
       client: {

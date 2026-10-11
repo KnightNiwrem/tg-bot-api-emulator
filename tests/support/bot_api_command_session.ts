@@ -1,16 +1,17 @@
 /**
- * A session composed as the server composes it, with the seams that tests of Bot API commands
- * need: calling a method as a bot does, a webhook reply whose body arrives only when released, a
- * recorder that fails after a command has staged its changes, and reads that record nothing.
+ * A session composed as the server composes it, through `buildSessionServices()`, with the seams
+ * that tests of Bot API commands need: calling a method as a bot does, a webhook reply whose body
+ * arrives only when released, a recorder that fails after a command has staged its changes, and
+ * reads that record nothing.
  */
 import type { BotApiCallContext } from '../../src/api/sessions/bot_api/method_call.ts';
 import { findBotApiMethod } from '../../src/api/sessions/bot_api/method_catalogue.ts';
 import { callBotApiMethod } from '../../src/api/sessions/bot_api/method_invocation.ts';
 import { runWebhookReply } from '../../src/api/sessions/bot_api/webhook_reply.ts';
-import { createEmulationSession } from '../../src/composition/emulation_session.ts';
-import { createSystemSessionTiming } from '../../src/timing/system_timing.ts';
 import type { BotApiCallAnswer } from '../../src/types/bot_activity.ts';
 import type { VirtualBotProfile } from '../../src/types/virtual_bot.ts';
+import { buildSessionServices } from './session_services.ts';
+import { createVirtualAccount, createVirtualBot } from './virtual_users.ts';
 
 /** The error a failing recorder throws. */
 export const FAILED_RECORDING_MESSAGE = 'The recording failed';
@@ -37,13 +38,12 @@ export class HeldWebhookReply {
   }
 }
 
-/** A fresh session, named for the test that uses it, with helpers to drive and read it. */
+/**
+ * A fresh session, named for the test that uses it, with helpers to drive and read it. Disposing
+ * of it, as `using` does, ends the session.
+ */
 export function createBotApiCommandSession(id: string) {
-  const session = createEmulationSession(
-    id,
-    { uploadProfile: 'cloud' },
-    createSystemSessionTiming(),
-  );
+  const session = buildSessionServices({ id });
   const callContext = (bot: VirtualBotProfile): BotApiCallContext => ({
     session,
     bot,
@@ -71,25 +71,15 @@ export function createBotApiCommandSession(id: string) {
 
   return {
     session,
-    createAccount: (firstName: string) => {
-      const creation = session.virtualUsers.createAccount({ first_name: firstName });
-      if (!creation.created) {
-        throw new Error(`Expected ${firstName} to be created: ${creation.reason}`);
-      }
-      return creation.account.profile.id;
-    },
+    createAccount: (firstName: string) =>
+      createVirtualAccount(session.virtualUsers, { first_name: firstName }).profile.id,
     /** Creates a bot that reads every message of its supergroups. */
-    createBot: (username: string) => {
-      const creation = session.virtualUsers.createBot({
+    createBot: (username: string) =>
+      createVirtualBot(session.virtualUsers, {
         first_name: username,
         username,
         can_read_all_group_messages: true,
-      });
-      if (!creation.created) {
-        throw new Error(`Expected ${username} to be created: ${creation.reason}`);
-      }
-      return creation.bot.profile;
-    },
+      }).profile,
     callMethod,
     /** Calls a method that must succeed, and returns its result. */
     callMethodExpectingResult: async (
@@ -149,6 +139,7 @@ export function createBotApiCommandSession(id: string) {
     /** How many updates wait for each bot, as `getWebhookInfo` reports them. */
     countPendingUpdates: (bots: readonly VirtualBotProfile[]) =>
       bots.map((bot) => session.botApi.getWebhookInfo(bot).pending_update_count),
+    [Symbol.dispose]: () => session[Symbol.dispose](),
   };
 }
 

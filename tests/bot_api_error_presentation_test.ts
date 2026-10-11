@@ -1,3 +1,4 @@
+import { assertEquals } from '@std/assert';
 import { BOT_API_ERRORS } from '../src/api/sessions/bot_api/errors/error_catalogue.ts';
 import type { BotApiErrorProvenance } from '../src/api/sessions/bot_api/errors/error_template.ts';
 import { presentMessageEditingFailure } from '../src/api/sessions/bot_api/errors/message_editing_failure_presenter.ts';
@@ -519,9 +520,11 @@ Deno.test('an upload limit is answered as Telegram answers it under each server'
     BOT_API_ERRORS.botUploadTooBig.provenance(uploadTooBig('cloud')).basis,
     BOT_API_ERRORS.botUploadTooBig.provenance(uploadTooBig('local')).basis,
   ];
-  if (JSON.stringify(provenances) !== '["observed_behavior","emulator_inference"]') {
-    throw new Error(`Expected the provenance to vary with the server, received ${provenances}`);
-  }
+  assertEquals(
+    provenances,
+    ['observed_behavior', 'emulator_inference'],
+    'Expected the provenance to vary with the server',
+  );
 });
 
 function uploadTooBig<UploadProfile extends 'cloud' | 'local'>(uploadProfile: UploadProfile) {
@@ -583,12 +586,9 @@ function expectAnswer(
   [status, description]: readonly [number, string],
   label: string,
 ): void {
-  const actual = [answer.status, answer.body.ok, answer.body.description];
-  const expected = [status, false, description];
-  if (JSON.stringify(actual) !== JSON.stringify(expected)) {
-    throw new Error(
-      `Expected ${label} to be answered ${JSON.stringify(expected)}, ` +
-        `received ${JSON.stringify(actual)}`,
-    );
-  }
+  assertEquals(
+    [answer.status, answer.body.ok, answer.body.description],
+    [status, false, description],
+    `Expected ${label} to be answered with its status and description`,
+  );
 }
