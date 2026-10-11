@@ -1,5 +1,5 @@
 import { assertEquals } from '@std/assert';
-import { resolveReplyQuote, type SpecifiedQuote } from '../src/services/message_content.ts';
+import { resolveReplyQuote, type SpecifiedQuote } from '../src/services/domain/message_content.ts';
 import { createAutomaticQuote, createExternalReply } from '../src/types/message_reply.ts';
 import type {
   FormattedText,

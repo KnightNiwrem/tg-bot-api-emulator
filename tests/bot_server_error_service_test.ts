@@ -1,5 +1,5 @@
 import { assertEquals } from '@std/assert';
-import type { VirtualUserService } from '../src/services/virtual_user.ts';
+import type { VirtualUserService } from '../src/services/domain/virtual_user.ts';
 import { buildSessionServices } from './support/session_services.ts';
 import { createVirtualBot } from './support/virtual_users.ts';
 

@@ -1,4 +1,4 @@
-import type { EmulationSession } from '../../../types/emulation_session.ts';
+import type { EmulationSession } from '../../../session/emulation_session.ts';
 import type { BotApiUploadedFiles } from './request_parameters.ts';
 
 export type BotApiInputFile = Parameters<EmulationSession['botApi']['sendPhoto']>[1]['photo'];

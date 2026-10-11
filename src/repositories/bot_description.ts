@@ -1,5 +1,5 @@
-import { type ChangeStaging, UNSTAGED_CHANGES } from '../transactions/change_staging.ts';
-import { TransactionalMap } from '../transactions/transactional_collections.ts';
+import { type ChangeStaging, UNSTAGED_CHANGES } from '../transactions/staging/change_staging.ts';
+import { TransactionalMap } from '../transactions/staging/transactional_collections.ts';
 import type { BotDescriptionKind } from '../types/bot_description.ts';
 import type { BotLanguageCode } from '../types/bot_language_code.ts';
 

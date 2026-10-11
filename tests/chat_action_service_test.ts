@@ -8,8 +8,8 @@ import {
   ChatActionService,
   type ExpireChatActionResult,
   type GetChatActionsResult,
-} from '../src/services/chat_action.ts';
-import { VirtualUserService } from '../src/services/virtual_user.ts';
+} from '../src/services/domain/chat_action.ts';
+import { VirtualUserService } from '../src/services/domain/virtual_user.ts';
 import { ALL_CHAT_PERMISSIONS } from '../src/types/chat_permissions.ts';
 import type { ChatKey } from '../src/types/virtual_chat.ts';
 import { createVirtualAccount, createVirtualBot } from './support/virtual_users.ts';

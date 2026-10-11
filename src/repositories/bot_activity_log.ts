@@ -1,6 +1,9 @@
-import { type NotificationWaitEnd, waitForNotification } from '../timing/notification_wait.ts';
-import type { Deadline } from '../timing/session_timing.ts';
-import { type ChangeStaging, UNSTAGED_CHANGES } from '../transactions/change_staging.ts';
+import {
+  type NotificationWaitEnd,
+  waitForNotification,
+} from '../timing/session/notification_wait.ts';
+import type { Deadline } from '../timing/session/session_timing.ts';
+import { type ChangeStaging, UNSTAGED_CHANGES } from '../transactions/staging/change_staging.ts';
 import type { BotActivityEntry, UnpositionedBotActivityEntry } from '../types/bot_activity.ts';
 
 interface FindEntriesInput {

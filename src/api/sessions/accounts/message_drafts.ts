@@ -7,7 +7,7 @@ import {
   stopPrivateMessageDraftContract,
 } from '../../contracts/message_drafts.ts';
 import type { ControlOperationRefusal } from '../../contracts/operation_contract.ts';
-import type { EmulationSession } from '../../../types/emulation_session.ts';
+import type { EmulationSession } from '../../../session/emulation_session.ts';
 import { isInt64DecimalText } from '../../../types/telegram_int64.ts';
 import { registerControlOperation } from '../../control_operation_route.ts';
 import type { SessionRouteContextTypes } from '../session_route_context_types.ts';

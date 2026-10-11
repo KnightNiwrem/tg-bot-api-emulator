@@ -1,7 +1,7 @@
 import { assertEquals } from '@std/assert';
 import { SessionRepository } from '../src/repositories/session.ts';
-import { SessionLifecycleService } from '../src/services/session_lifecycle.ts';
-import type { EmulationSessionOptions } from '../src/types/emulation_session.ts';
+import { SessionLifecycleService } from '../src/services/application/session_lifecycle.ts';
+import type { EmulationSessionOptions } from '../src/session/emulation_session.ts';
 import { buildSessionServices } from './support/session_services.ts';
 
 const CLOUD_SESSION_OPTIONS: EmulationSessionOptions = { uploadProfile: 'cloud' };

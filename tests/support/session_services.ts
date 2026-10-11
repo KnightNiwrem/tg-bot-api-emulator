@@ -8,9 +8,9 @@
  * directly instead.
  */
 import { createEmulationSession } from '../../src/composition/emulation_session.ts';
-import type { WebhookTransport } from '../../src/services/webhook_delivery.ts';
-import type { Scheduler, WallClock } from '../../src/timing/session_timing.ts';
-import type { EmulationSession } from '../../src/types/emulation_session.ts';
+import type { WebhookTransport } from '../../src/services/webhook_delivery/webhook_delivery.ts';
+import type { Scheduler, WallClock } from '../../src/timing/session/session_timing.ts';
+import type { EmulationSession } from '../../src/session/emulation_session.ts';
 import type { UploadProfile } from '../../src/types/upload_profile.ts';
 import { FIXED_WALL_CLOCK } from './fixed_wall_clock.ts';
 import { createRealTimeScheduler } from './scheduler.ts';

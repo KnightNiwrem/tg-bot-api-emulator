@@ -9,9 +9,9 @@ import {
   type EditInviteLinkAsBotInput,
   type JoinRequestDecision,
   type RequestedInviteLinkSettings,
-} from '../src/services/chat_admission.ts';
-import { SharedChatAdministrationService } from '../src/services/shared_chat_administration.ts';
-import { VirtualUserService } from '../src/services/virtual_user.ts';
+} from '../src/services/domain/chat_admission.ts';
+import { SharedChatAdministrationService } from '../src/services/domain/shared_chat_administration.ts';
+import { VirtualUserService } from '../src/services/domain/virtual_user.ts';
 import type { ChatDomainEvent } from '../src/types/chat_domain_event.ts';
 import {
   grantSupergroupAdministratorRights,

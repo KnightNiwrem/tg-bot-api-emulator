@@ -1,5 +1,5 @@
 import { assertEquals } from '@std/assert';
-import type { WebhookAttemptScheduler } from '../src/services/webhook_attempt_scheduler.ts';
+import type { WebhookAttemptScheduler } from '../src/services/webhook_delivery/webhook_attempt_scheduler.ts';
 import type { BotActivityEntry, BotActivityFilter } from '../src/types/bot_activity.ts';
 import type { WebhookAttempt } from '../src/types/bot_webhook.ts';
 import { createRetryScheduler } from './support/scheduler.ts';

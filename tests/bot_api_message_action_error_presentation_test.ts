@@ -2,7 +2,7 @@ import { presentMessageDeletionFailure } from '../src/api/sessions/bot_api/error
 import { presentMessagePinningFailure } from '../src/api/sessions/bot_api/errors/message_pinning_failure_presenter.ts';
 import { presentMessageReactionFailure } from '../src/api/sessions/bot_api/errors/message_reaction_failure_presenter.ts';
 import { presentMessageRepetitionFailure } from '../src/api/sessions/bot_api/errors/message_repetition_failure_presenter.ts';
-import type { EmulationSession } from '../src/types/emulation_session.ts';
+import type { EmulationSession } from '../src/session/emulation_session.ts';
 import {
   BOT_BLOCKED,
   type CasesByReason,

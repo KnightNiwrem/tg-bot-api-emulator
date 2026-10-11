@@ -307,7 +307,7 @@ does a method a webhook's answer names, which runs after the confirmation.
 ## Local evidence
 
 [Log entries](../../src/types/bot_activity.ts),
-[recording and reading](../../src/services/bot_activity.ts),
+[recording and reading](../../src/services/bot_activity/bot_activity.ts),
 [call recording](../../src/api/sessions/bot_api/call_recording.ts),
 [HTTP reads](../../src/api/sessions/bot_activity/mod.ts),
 [action receipts](../../src/api/sessions/action_receipt.ts),

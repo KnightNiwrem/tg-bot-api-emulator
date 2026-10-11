@@ -1,5 +1,8 @@
-import { type ChangeStaging, UNSTAGED_CHANGES } from '../transactions/change_staging.ts';
-import { TransactionalMap, TransactionalSet } from '../transactions/transactional_collections.ts';
+import { type ChangeStaging, UNSTAGED_CHANGES } from '../transactions/staging/change_staging.ts';
+import {
+  TransactionalMap,
+  TransactionalSet,
+} from '../transactions/staging/transactional_collections.ts';
 
 /** Each account's block list: the users, such as bots, whose messages it refuses. */
 export class BlockedUserRepository {

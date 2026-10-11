@@ -1,4 +1,4 @@
-import type { EmulationSession } from '../../../types/emulation_session.ts';
+import type { EmulationSession } from '../../../session/emulation_session.ts';
 import { presentMessageSendingFailure } from './errors/message_sending_failure_presenter.ts';
 import { type BotApiMethodAnswer, botApiResult } from './method_call.ts';
 

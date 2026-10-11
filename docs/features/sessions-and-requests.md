@@ -318,8 +318,8 @@ managing individual profiles is missing.
 
 ## Local evidence
 
-[Session lifecycle](../../src/services/session_lifecycle.ts),
-[session clocks and scheduler](../../src/timing/session_timing.ts),
+[Session lifecycle](../../src/services/application/session_lifecycle.ts),
+[session clocks and scheduler](../../src/timing/session/session_timing.ts),
 [request decoding](../../src/api/sessions/bot_api/request_parameters.ts),
 [method invocation](../../src/api/sessions/bot_api/method_invocation.ts),
 [method steps](../../src/api/sessions/bot_api/method_steps.ts) with
@@ -329,8 +329,8 @@ managing individual profiles is missing.
 where each description comes from, and its
 [presentation tests](../../tests/bot_api_error_presentation_test.ts) and
 [parameter path tests](../../tests/bot_api_invalid_parameters_test.ts),
-[rate limit answers](../../src/services/bot_rate_limit.ts),
-[server error answers](../../src/services/bot_server_error.ts) and
+[rate limit answers](../../src/services/domain/bot_rate_limit.ts),
+[server error answers](../../src/services/domain/bot_server_error.ts) and
 [their dispatch](../../src/api/sessions/bot_api/queued_answer.ts),
 [session timing tests](../../tests/session_timing_test.ts),
 [request decoding tests](../../tests/bot_api_request_parameters_test.ts),

@@ -1,5 +1,5 @@
-import { type ChangeStaging, UNSTAGED_CHANGES } from '../transactions/change_staging.ts';
-import { TransactionalMap } from '../transactions/transactional_collections.ts';
+import { type ChangeStaging, UNSTAGED_CHANGES } from '../transactions/staging/change_staging.ts';
+import { TransactionalMap } from '../transactions/staging/transactional_collections.ts';
 import type { ChatKey, VisibleChatAction } from '../types/virtual_chat.ts';
 
 /** Stores the chat actions bots show in each chat, one per bot, in the order the bots sent them. */

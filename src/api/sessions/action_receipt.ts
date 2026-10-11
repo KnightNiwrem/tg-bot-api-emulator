@@ -8,7 +8,7 @@ import {
   ACTION_RECEIPT_ACTIVITY_POSITION_HEADER,
   ACTION_RECEIPT_SESSION_ID_HEADER,
 } from '../contracts/action_receipts.ts';
-import type { EmulationSession } from '../../types/emulation_session.ts';
+import type { EmulationSession } from '../../session/emulation_session.ts';
 import { sessionNotFoundResponse } from '../control_error_response.ts';
 import type { SessionRouteContextTypes } from './session_route_context_types.ts';
 

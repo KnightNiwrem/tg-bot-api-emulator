@@ -1,5 +1,5 @@
-import type { WallClock } from '../src/timing/session_timing.ts';
-import type { EmulationSession } from '../src/types/emulation_session.ts';
+import type { WallClock } from '../src/timing/session/session_timing.ts';
+import type { EmulationSession } from '../src/session/emulation_session.ts';
 import type { VirtualBotProfile } from '../src/types/virtual_bot.ts';
 import { ControlledScheduler } from './support/scheduler.ts';
 import { buildSessionServices } from './support/session_services.ts';

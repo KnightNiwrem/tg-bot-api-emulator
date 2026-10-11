@@ -1,5 +1,5 @@
 import { assertEquals } from '@std/assert';
-import { WEBHOOK_ATTEMPT_TIMEOUT_MILLISECONDS } from '../src/services/webhook_attempt_scheduler.ts';
+import { WEBHOOK_ATTEMPT_TIMEOUT_MILLISECONDS } from '../src/services/webhook_delivery/webhook_attempt_scheduler.ts';
 import type { WebhookAttemptFailure } from '../src/types/bot_webhook.ts';
 import { ControlledScheduler } from './support/scheduler.ts';
 import { buildSessionServices } from './support/session_services.ts';

@@ -1,5 +1,5 @@
 import { assertEquals } from '@std/assert';
-import type { MediaContent } from '../src/services/message_content.ts';
+import type { MediaContent } from '../src/services/domain/message_content.ts';
 import { grantSupergroupAdministratorRights } from '../src/types/chat_membership.ts';
 import { createMessageForward } from '../src/types/message_forward.ts';
 import type { PhotoUpload } from '../src/types/stored_file.ts';

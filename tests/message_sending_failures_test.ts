@@ -9,8 +9,8 @@
 import type {
   ContentNormalizationFailure,
   ContentTextNormalizationFailure,
-} from '../src/services/message_content.ts';
-import type { MessageSendingService } from '../src/services/message_sending.ts';
+} from '../src/services/domain/message_content.ts';
+import type { MessageSendingService } from '../src/services/domain/message_sending.ts';
 import type { AlbumCompositionFailureReason } from '../src/types/media_album.ts';
 import type { PrivateMessage, SupergroupMessage } from '../src/types/virtual_message.ts';
 import type { ExpectTrue, IsExactly } from './support/type_conformance.ts';

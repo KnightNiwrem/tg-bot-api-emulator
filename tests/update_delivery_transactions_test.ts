@@ -1,9 +1,9 @@
 import { assertEquals, assertRejects, assertThrows } from '@std/assert';
 
 import { QueuedBotApiAnswerRepository } from '../src/repositories/queued_bot_api_answer.ts';
-import { SessionLifetime } from '../src/services/session_lifetime.ts';
-import { SessionChangeJournal } from '../src/transactions/change_staging.ts';
-import type { WebhookTransport } from '../src/services/webhook_delivery.ts';
+import { SessionLifetime } from '../src/services/session_lifetime/session_lifetime.ts';
+import { SessionChangeJournal } from '../src/transactions/staging/change_staging.ts';
+import type { WebhookTransport } from '../src/services/webhook_delivery/webhook_delivery.ts';
 import type { BotActivityEntry, BotActivityFilter } from '../src/types/bot_activity.ts';
 import type { QueuedRateLimitResponses } from '../src/types/bot_rate_limit.ts';
 import {

@@ -170,7 +170,7 @@ dimensions it fills in, which the emulator does not.
 
 [Parameter reading](../../src/api/sessions/bot_api/rich_message_parameter.ts),
 [domain model](../../src/types/rich_message.ts),
-[normalization](../../src/services/rich_message_normalization.ts),
+[normalization](../../src/services/domain/rich_message_normalization.ts),
 [projection](../../src/projections/bot_api_rich_message.ts),
 [URL downloads](../../src/api/sessions/bot_api/web_file_parameter.ts),
 [unit tests](../../tests/rich_message_test.ts),

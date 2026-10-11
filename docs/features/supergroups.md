@@ -541,7 +541,7 @@ not show. The emulator chooses where they are not visible:
 
 ## Local evidence
 
-[Administration service](../../src/services/shared_chat_administration.ts),
+[Administration service](../../src/services/domain/shared_chat_administration.ts),
 [permission evaluator and administrator delegation](../../src/types/chat_membership.ts),
 [permissions parameter](../../src/api/sessions/bot_api/chat_permissions_parameter.ts),
 [restriction tests](../../tests/chat_member_restriction_api_test.ts),
@@ -549,7 +549,7 @@ not show. The emulator chooses where they are not visible:
 [promotion tests](../../tests/chat_administrator_promotion_api_test.ts),
 [default permission tests](../../tests/chat_default_permissions_api_test.ts),
 [permission tests](../../tests/chat_permissions_test.ts),
-[privacy filtering](../../src/services/bot_update_delivery.ts),
+[privacy filtering](../../src/services/update_delivery/bot_update_delivery.ts),
 [last message-sending bot](../../src/repositories/last_message_sending_bot.ts),
 [administration tests](../../tests/shared_chat_administration_service_test.ts),
 [delivery tests](../../tests/bot_update_delivery_service_test.ts),

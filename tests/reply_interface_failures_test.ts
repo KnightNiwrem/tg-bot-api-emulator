@@ -5,12 +5,12 @@
  * The expected sets are written out here, independently of the service's types; the content and
  * peer-sharing rules a press applies keep their own failure types.
  */
-import type { ContentNormalizationFailure } from '../src/services/message_content.ts';
-import type { ReplyInterfaceService } from '../src/services/reply_interface.ts';
+import type { ContentNormalizationFailure } from '../src/services/domain/message_content.ts';
+import type { ReplyInterfaceService } from '../src/services/domain/reply_interface.ts';
 import type {
   SharedChatFailureReason,
   SharedUsersFailureReason,
-} from '../src/services/requested_peer_sharing.ts';
+} from '../src/services/domain/requested_peer_sharing.ts';
 import type { ExpectTrue, IsExactly } from './support/type_conformance.ts';
 
 type FailureReason<Method extends keyof ReplyInterfaceService> =

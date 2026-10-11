@@ -109,15 +109,15 @@ Changing supported BotFather-style settings after bot creation is also a
 
 ## Local evidence
 
-[Command service](../../src/services/bot_command.ts),
+[Command service](../../src/services/domain/bot_command.ts),
 [scope/command parsing](../../src/api/sessions/bot_api/bot_command_parameters.ts),
 [command repository](../../src/repositories/bot_command.ts),
 [command tests](../../tests/bot_command_service_test.ts),
-[description service](../../src/services/bot_description.ts),
+[description service](../../src/services/domain/bot_description.ts),
 [description tests](../../tests/bot_description_service_test.ts),
-[default administrator rights service](../../src/services/bot_default_administrator_rights.ts),
+[default administrator rights service](../../src/services/domain/bot_default_administrator_rights.ts),
 [their tests](../../tests/bot_default_administrator_rights_service_test.ts),
-[menu button service](../../src/services/bot_menu_button.ts) and
+[menu button service](../../src/services/domain/bot_menu_button.ts) and
 [menu button tests](../../tests/bot_menu_button_service_test.ts).
 
 [bot-command]: https://github.com/tdlib/td/blob/bc9c263e2bfee06aaab41e82db51a103376030bc/td/telegram/BotCommand.cpp

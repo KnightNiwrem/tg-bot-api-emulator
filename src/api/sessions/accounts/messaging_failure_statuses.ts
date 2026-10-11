@@ -1,4 +1,4 @@
-import type { EmulationSession } from '../../../types/emulation_session.ts';
+import type { EmulationSession } from '../../../session/emulation_session.ts';
 
 /**
  * Why an account's message, sent directly or by pressing a reply keyboard button, or its album

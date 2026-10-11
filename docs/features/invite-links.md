@@ -450,16 +450,16 @@ in part:
 ## Local evidence
 
 [Domain model](../../src/types/chat_invite_link.ts),
-[admission service](../../src/services/chat_admission.ts),
+[admission service](../../src/services/domain/chat_admission.ts),
 [storage](../../src/repositories/chat_invite_link.ts),
 [membership and request storage](../../src/repositories/shared_chat.ts),
-[update delivery](../../src/services/bot_update_delivery.ts),
+[update delivery](../../src/services/update_delivery/bot_update_delivery.ts),
 [invite link handlers](../../src/api/sessions/bot_api/methods/chat_invite_links.ts),
 [join request handlers](../../src/api/sessions/bot_api/methods/chat_join_requests.ts),
 [projection](../../src/projections/bot_api_chat_invite_link.ts),
 [account routes](../../src/api/sessions/accounts/mod.ts),
 [expiry routes](../../src/api/sessions/supergroups/mod.ts),
-[message sending](../../src/services/message_sending.ts),
+[message sending](../../src/services/domain/message_sending.ts),
 [service tests](../../tests/chat_admission_service_test.ts),
 [link HTTP tests](../../tests/chat_invite_link_api_test.ts),
 [grammY primary link test](../../tests/grammy_primary_invite_link_test.ts) and

@@ -5,7 +5,7 @@ import {
   type SharedChatFailureReason,
   type SharedPeerLookups,
   type SharedUsersFailureReason,
-} from '../src/services/requested_peer_sharing.ts';
+} from '../src/services/domain/requested_peer_sharing.ts';
 import {
   type ChatAdministratorRightName,
   normalizeDefaultAdministratorRights,

@@ -1,4 +1,4 @@
-import type { EmulationSession } from '../../../types/emulation_session.ts';
+import type { EmulationSession } from '../../../session/emulation_session.ts';
 import type { ChatMessage } from '../../../types/virtual_message.ts';
 
 /**

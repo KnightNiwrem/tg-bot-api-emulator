@@ -2,8 +2,8 @@ import { assertEquals } from '@std/assert';
 import type {
   AccountChatMessageLookupFailureReason,
   AccountChatMessageLookupResult,
-} from '../src/services/account_chat_message.ts';
-import { type AccountPollMessageKey, PollService } from '../src/services/poll.ts';
+} from '../src/services/domain/account_chat_message.ts';
+import { type AccountPollMessageKey, PollService } from '../src/services/domain/poll.ts';
 import type { PrivateConversation } from '../src/types/virtual_chat.ts';
 import type { PrivateContentMessage } from '../src/types/virtual_message.ts';
 

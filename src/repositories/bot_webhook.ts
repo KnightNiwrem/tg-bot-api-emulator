@@ -1,5 +1,5 @@
-import { type ChangeStaging, UNSTAGED_CHANGES } from '../transactions/change_staging.ts';
-import { TransactionalMap } from '../transactions/transactional_collections.ts';
+import { type ChangeStaging, UNSTAGED_CHANGES } from '../transactions/staging/change_staging.ts';
+import { TransactionalMap } from '../transactions/staging/transactional_collections.ts';
 import type { BotWebhook, WebhookDeliveryError } from '../types/bot_webhook.ts';
 
 /** A bot's webhook and the latest failure to deliver to it, which setting a webhook forgets. */

@@ -9,8 +9,8 @@ import {
   BotCommandService,
   type SetBotCommandsResult,
   type SpecifiedBotCommand,
-} from '../src/services/bot_command.ts';
-import { VirtualUserService } from '../src/services/virtual_user.ts';
+} from '../src/services/domain/bot_command.ts';
+import { VirtualUserService } from '../src/services/domain/virtual_user.ts';
 import type { BotCommand, BotCommandScope } from '../src/types/bot_command.ts';
 import { ALL_CHAT_PERMISSIONS } from '../src/types/chat_permissions.ts';
 import { createVirtualAccount, createVirtualBot } from './support/virtual_users.ts';

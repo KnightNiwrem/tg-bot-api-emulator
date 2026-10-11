@@ -12,8 +12,8 @@ import {
   MediaFileService,
   type WebFileDownloadRequest,
   type WebFileDownloadResult,
-} from '../src/services/media_file.ts';
-import type { EmulationSession } from '../src/types/emulation_session.ts';
+} from '../src/services/domain/media_file.ts';
+import type { EmulationSession } from '../src/session/emulation_session.ts';
 import { createTestSession } from './support/emulation_api.ts';
 import { createBot } from './support/http_fixtures.ts';
 import { buildSessionServices } from './support/session_services.ts';

@@ -2,8 +2,8 @@ import { assertEquals } from '@std/assert';
 import {
   MAX_DISTINCT_REACTIONS_PER_MESSAGE,
   MessageReactionService,
-} from '../src/services/message_reaction.ts';
-import { SharedChatAdministrationService } from '../src/services/shared_chat_administration.ts';
+} from '../src/services/domain/message_reaction.ts';
+import { SharedChatAdministrationService } from '../src/services/domain/shared_chat_administration.ts';
 import { createChatMessagingServices } from './support/chat_messaging_services.ts';
 import { TEST_UNIX_TIME_SECONDS } from './support/fixed_wall_clock.ts';
 import { createVirtualAccount, createVirtualBot } from './support/virtual_users.ts';

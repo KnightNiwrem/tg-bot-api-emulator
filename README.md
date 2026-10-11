@@ -76,10 +76,10 @@ The server registers those routes from their contracts and decodes requests with
 TypeScript client infers its types for them and calls them through one typed caller. The OpenAPI
 description stays hand-written; `tests/control_contract_openapi_consistency_test.ts` compares each
 contract with the description's entry for the same operation, in both directions, so that a change
-to either one alone fails. The contracts import nothing but zod and the HTTP grammar beside them in
-`src/api/`, so the client imports them without depending on the rest of the emulator's source;
-`tests/control_contract_definitions_test.ts` checks the facts they share with the emulator's domain,
-such as the user ID range.
+to either one alone fails. The contracts import nothing but zod and the HTTP grammar in
+`src/http_grammar/`, so the client imports them without depending on the rest of the emulator's
+source; `tests/control_contract_definitions_test.ts` checks the facts they share with the emulator's
+domain, such as the user ID range.
 
 ## Commands
 

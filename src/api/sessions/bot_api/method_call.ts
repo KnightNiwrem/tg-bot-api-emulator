@@ -1,7 +1,7 @@
 import type { ContentfulStatusCode } from 'hono/utils/http-status';
 
 import type { BotApiCallTransport } from '../../../types/bot_activity.ts';
-import type { EmulationSession } from '../../../types/emulation_session.ts';
+import type { EmulationSession } from '../../../session/emulation_session.ts';
 import type { VirtualBotProfile } from '../../../types/virtual_bot.ts';
 import type { BotApiRequestParameters, BotApiUploadedFiles } from './request_parameters.ts';
 

@@ -1,7 +1,7 @@
 import { z } from 'zod';
 
 import { MAX_CALLBACK_QUERY_ANSWER_TEXT_LENGTH } from '../../../../types/callback_query.ts';
-import type { EmulationSession } from '../../../../types/emulation_session.ts';
+import type { EmulationSession } from '../../../../session/emulation_session.ts';
 import {
   readEmbeddedFormattedText,
   type SpecifiedFormattedText,

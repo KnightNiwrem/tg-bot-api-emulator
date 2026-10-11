@@ -1,4 +1,4 @@
-import type { EmulationSession } from '../../../types/emulation_session.ts';
+import type { EmulationSession } from '../../../session/emulation_session.ts';
 import { type ControlRequestInputReading, readPathParameters } from '../control_request_input.ts';
 import { privateMessagePathSchema, supergroupMessagePathSchema } from './account_paths.ts';
 

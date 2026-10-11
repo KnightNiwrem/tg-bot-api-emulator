@@ -7,7 +7,7 @@ import {
 } from '../../contracts/callback_queries.ts';
 import type { ControlOperationRefusal } from '../../contracts/operation_contract.ts';
 import type { CallbackQuery } from '../../../types/callback_query.ts';
-import type { EmulationSession } from '../../../types/emulation_session.ts';
+import type { EmulationSession } from '../../../session/emulation_session.ts';
 import { registerControlOperation } from '../../control_operation_route.ts';
 import type { SessionRouteContextTypes } from '../session_route_context_types.ts';
 

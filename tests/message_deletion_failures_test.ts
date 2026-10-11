@@ -4,7 +4,7 @@
  * only a supergroup turns away former members. The expected sets are written out here,
  * independently of the service's types.
  */
-import type { MessageDeletionService } from '../src/services/message_deletion.ts';
+import type { MessageDeletionService } from '../src/services/domain/message_deletion.ts';
 import type { ExpectTrue, IsExactly } from './support/type_conformance.ts';
 
 type DeletionFailureReason<Method extends keyof MessageDeletionService> =

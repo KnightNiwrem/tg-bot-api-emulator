@@ -1,5 +1,5 @@
-import { type ChangeStaging, UNSTAGED_CHANGES } from '../transactions/change_staging.ts';
-import { TransactionalMap } from '../transactions/transactional_collections.ts';
+import { type ChangeStaging, UNSTAGED_CHANGES } from '../transactions/staging/change_staging.ts';
+import { TransactionalMap } from '../transactions/staging/transactional_collections.ts';
 import type { MessageDraft } from '../types/message_draft.ts';
 import type { PrivateConversationKey } from '../types/virtual_chat.ts';
 

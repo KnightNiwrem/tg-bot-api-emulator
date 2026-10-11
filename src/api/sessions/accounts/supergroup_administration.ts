@@ -22,7 +22,7 @@ import {
   SUPERGROUP_ADMINISTRATOR_RIGHTS,
 } from '../../../types/chat_membership.ts';
 import { CHAT_PERMISSIONS, type ChatPermission } from '../../../types/chat_permissions.ts';
-import type { EmulationSession } from '../../../types/emulation_session.ts';
+import type { EmulationSession } from '../../../session/emulation_session.ts';
 import { registerControlOperation } from '../../control_operation_route.ts';
 import type { SessionRouteContextTypes } from '../session_route_context_types.ts';
 

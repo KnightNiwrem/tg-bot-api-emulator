@@ -1,6 +1,6 @@
 import { z } from 'zod';
 
-import type { EmulationSession } from '../../../types/emulation_session.ts';
+import type { EmulationSession } from '../../../session/emulation_session.ts';
 import { MAX_MEDIA_DURATION_SECONDS, MAX_VIDEO_SIDE_LENGTH } from '../../../types/stored_file.ts';
 import type { UnreadFormattedText } from './inline_query_answer_parameters.ts';
 import {

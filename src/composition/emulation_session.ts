@@ -1,5 +1,5 @@
 import { runWebhookReply } from '../api/sessions/bot_api/webhook_reply.ts';
-import type { EmulationSession, EmulationSessionOptions } from '../types/emulation_session.ts';
+import type { EmulationSession, EmulationSessionOptions } from '../session/emulation_session.ts';
 import { getPrivateForwardName } from '../types/virtual_account.ts';
 import { AccountRepository } from '../repositories/account.ts';
 import { BlockedUserRepository } from '../repositories/blocked_user.ts';
@@ -27,61 +27,64 @@ import { SharedChatRepository } from '../repositories/shared_chat.ts';
 import { TelegramIdentityRepository } from '../repositories/telegram_identity.ts';
 import { WebResourceRepository } from '../repositories/web_resource.ts';
 import { MessageBoxRepository } from '../repositories/message_box.ts';
-import { createAccountChatMessageReader } from '../services/account_chat_message.ts';
-import { BotActivityService } from '../services/bot_activity.ts';
-import { BotApiService } from '../services/bot_api.ts';
-import { BotBlockingService } from '../services/bot_blocking.ts';
-import { BotCommandService } from '../services/bot_command.ts';
-import { BotDefaultAdministratorRightsService } from '../services/bot_default_administrator_rights.ts';
-import { BotDescriptionService } from '../services/bot_description.ts';
-import { BotMediaResolver } from '../services/bot_media_resolution.ts';
-import { BotMenuButtonService } from '../services/bot_menu_button.ts';
-import { BotMessageRepeater } from '../services/bot_message_repetition.ts';
-import { BotMessageSender } from '../services/bot_message_sending.ts';
-import { BotMessageViewService } from '../services/bot_message_view.ts';
-import { BotRateLimitService } from '../services/bot_rate_limit.ts';
-import { BotServerErrorService } from '../services/bot_server_error.ts';
-import { BotUpdateDeliveryService } from '../services/bot_update_delivery.ts';
-import { BotUpdateConsumerService } from '../services/bot_update_consumer.ts';
-import { BotUpdatePollingService } from '../services/bot_update_polling.ts';
-import { CallbackQueryService } from '../services/callback_query.ts';
-import { ChatActionService } from '../services/chat_action.ts';
-import { ChatAdmissionService } from '../services/chat_admission.ts';
-import { InlineQueryService } from '../services/inline_query.ts';
-import { MediaFileService } from '../services/media_file.ts';
-import { normalizeBotDraftText, normalizeCaption } from '../services/message_content.ts';
-import { MessageCommitter } from '../services/message_commit.ts';
-import { MessageDeletionService } from '../services/message_deletion.ts';
-import { MessageDraftService } from '../services/message_draft.ts';
-import { MessageEditingService } from '../services/message_editing.ts';
-import { MessageForwardingService } from '../services/message_forwarding.ts';
-import { MessagePinningService } from '../services/message_pinning.ts';
-import { MessageReactionService } from '../services/message_reaction.ts';
-import { MessageSendingService } from '../services/message_sending.ts';
-import { PollService } from '../services/poll.ts';
-import { PrivateChatPolicy } from '../services/private_chat_policy.ts';
-import { PrivateMessagingService } from '../services/private_messaging.ts';
-import { ReplyInterfaceService } from '../services/reply_interface.ts';
-import { SessionLifetime } from '../services/session_lifetime.ts';
-import { createSessionUserMentionContext } from '../services/session_user_mention.ts';
-import { SharedChatAdministrationService } from '../services/shared_chat_administration.ts';
-import { SupergroupChatPolicy } from '../services/supergroup_chat_policy.ts';
-import { SupergroupMessagingService } from '../services/supergroup_messaging.ts';
-import { VirtualUserService } from '../services/virtual_user.ts';
+import { createAccountChatMessageReader } from '../services/domain/account_chat_message.ts';
+import { BotActivityService } from '../services/bot_activity/bot_activity.ts';
+import { BotApiService } from '../services/bot_api/bot_api.ts';
+import { BotBlockingService } from '../services/domain/bot_blocking.ts';
+import { BotCommandService } from '../services/domain/bot_command.ts';
+import { BotDefaultAdministratorRightsService } from '../services/domain/bot_default_administrator_rights.ts';
+import { BotDescriptionService } from '../services/domain/bot_description.ts';
+import { BotMediaResolver } from '../services/bot_media_resolution/bot_media_resolution.ts';
+import { BotMenuButtonService } from '../services/domain/bot_menu_button.ts';
+import { BotMessageRepeater } from '../services/bot_message_repetition/bot_message_repetition.ts';
+import { BotMessageSender } from '../services/bot_message_sending/bot_message_sending.ts';
+import { BotMessageViewService } from '../services/bot_message_view/bot_message_view.ts';
+import { BotRateLimitService } from '../services/domain/bot_rate_limit.ts';
+import { BotServerErrorService } from '../services/domain/bot_server_error.ts';
+import { BotUpdateDeliveryService } from '../services/update_delivery/bot_update_delivery.ts';
+import { BotUpdateConsumerService } from '../services/update_consumers/bot_update_consumer.ts';
+import { BotUpdatePollingService } from '../services/update_polling/bot_update_polling.ts';
+import { CallbackQueryService } from '../services/domain/callback_query.ts';
+import { ChatActionService } from '../services/domain/chat_action.ts';
+import { ChatAdmissionService } from '../services/domain/chat_admission.ts';
+import { InlineQueryService } from '../services/domain/inline_query.ts';
+import { MediaFileService } from '../services/domain/media_file.ts';
+import { normalizeBotDraftText, normalizeCaption } from '../services/domain/message_content.ts';
+import { MessageCommitter } from '../services/domain/message_commit.ts';
+import { MessageDeletionService } from '../services/domain/message_deletion.ts';
+import { MessageDraftService } from '../services/domain/message_draft.ts';
+import { MessageEditingService } from '../services/domain/message_editing.ts';
+import { MessageForwardingService } from '../services/domain/message_forwarding.ts';
+import { MessagePinningService } from '../services/domain/message_pinning.ts';
+import { MessageReactionService } from '../services/domain/message_reaction.ts';
+import { MessageSendingService } from '../services/domain/message_sending.ts';
+import { PollService } from '../services/domain/poll.ts';
+import { PrivateChatPolicy } from '../services/domain/private_chat_policy.ts';
+import { PrivateMessagingService } from '../services/domain/private_messaging.ts';
+import { ReplyInterfaceService } from '../services/domain/reply_interface.ts';
+import { SessionLifetime } from '../services/session_lifetime/session_lifetime.ts';
+import { createSessionUserMentionContext } from '../services/domain/session_user_mention.ts';
+import { SharedChatAdministrationService } from '../services/domain/shared_chat_administration.ts';
+import { SupergroupChatPolicy } from '../services/domain/supergroup_chat_policy.ts';
+import { SupergroupMessagingService } from '../services/domain/supergroup_messaging.ts';
+import { VirtualUserService } from '../services/domain/virtual_user.ts';
 import {
   WEBHOOK_ATTEMPT_TIMEOUT_MILLISECONDS,
   WebhookAttemptScheduler,
-} from '../services/webhook_attempt_scheduler.ts';
+} from '../services/webhook_delivery/webhook_attempt_scheduler.ts';
 import {
   MAX_WEB_FILE_REDIRECTS,
   WEB_FILE_DOWNLOAD_TIMEOUT_MILLISECONDS,
   WebFileDownloader,
-} from '../services/web_file_download.ts';
-import { WebResourceService } from '../services/web_resource.ts';
-import { WebhookDeliveryService, type WebhookTransport } from '../services/webhook_delivery.ts';
-import type { SessionTiming } from '../timing/session_timing.ts';
-import { SessionChangeJournal } from '../transactions/change_staging.ts';
-import { SessionTransactions } from '../transactions/session_transactions.ts';
+} from '../services/domain/web_file_download.ts';
+import { WebResourceService } from '../services/domain/web_resource.ts';
+import {
+  WebhookDeliveryService,
+  type WebhookTransport,
+} from '../services/webhook_delivery/webhook_delivery.ts';
+import type { SessionTiming } from '../timing/session/session_timing.ts';
+import { SessionChangeJournal } from '../transactions/staging/change_staging.ts';
+import { SessionTransactions } from '../transactions/session/session_transactions.ts';
 
 /**
  * Composes one isolated session. Its services read calendar time and measure deadlines only

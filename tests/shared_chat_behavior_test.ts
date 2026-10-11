@@ -11,7 +11,7 @@
  * permissions, message numbering and which messages a bot sees, stays in their own tests.
  */
 import { assertEquals } from '@std/assert';
-import type { MediaContent } from '../src/services/message_content.ts';
+import type { MediaContent } from '../src/services/domain/message_content.ts';
 import type { InlineKeyboard } from '../src/types/inline_keyboard.ts';
 import type { PhotoUpload } from '../src/types/stored_file.ts';
 import type { ChatAddress } from '../src/types/virtual_chat.ts';

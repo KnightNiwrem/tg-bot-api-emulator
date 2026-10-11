@@ -2,7 +2,7 @@ import { presentBotProfileFailure } from '../src/api/sessions/bot_api/errors/bot
 import { presentFilePreparationFailure } from '../src/api/sessions/bot_api/errors/file_failure_presenter.ts';
 import { presentQueryAnswerFailure } from '../src/api/sessions/bot_api/errors/query_answer_failure_presenter.ts';
 import { presentUpdateDeliveryFailure } from '../src/api/sessions/bot_api/errors/update_delivery_failure_presenter.ts';
-import type { EmulationSession } from '../src/types/emulation_session.ts';
+import type { EmulationSession } from '../src/session/emulation_session.ts';
 import {
   type CasesByReason,
   expectPresentations,

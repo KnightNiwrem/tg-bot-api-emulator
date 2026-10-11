@@ -12,16 +12,16 @@ import { BotUpdateRepository } from '../src/repositories/bot_update.ts';
 import { BotUpdateSubscriptionRepository } from '../src/repositories/bot_update_subscription.ts';
 import { BotWebhookRepository } from '../src/repositories/bot_webhook.ts';
 import { TelegramIdentityRepository } from '../src/repositories/telegram_identity.ts';
-import { BotActivityService } from '../src/services/bot_activity.ts';
-import { BotUpdateConsumerService } from '../src/services/bot_update_consumer.ts';
-import { BotUpdatePollingService } from '../src/services/bot_update_polling.ts';
-import { SessionLifetime } from '../src/services/session_lifetime.ts';
-import { VirtualUserService } from '../src/services/virtual_user.ts';
+import { BotActivityService } from '../src/services/bot_activity/bot_activity.ts';
+import { BotUpdateConsumerService } from '../src/services/update_consumers/bot_update_consumer.ts';
+import { BotUpdatePollingService } from '../src/services/update_polling/bot_update_polling.ts';
+import { SessionLifetime } from '../src/services/session_lifetime/session_lifetime.ts';
+import { VirtualUserService } from '../src/services/domain/virtual_user.ts';
 import {
   WEBHOOK_ATTEMPT_TIMEOUT_MILLISECONDS,
   WebhookAttemptScheduler,
-} from '../src/services/webhook_attempt_scheduler.ts';
-import { WebhookDeliveryService } from '../src/services/webhook_delivery.ts';
+} from '../src/services/webhook_delivery/webhook_attempt_scheduler.ts';
+import { WebhookDeliveryService } from '../src/services/webhook_delivery/webhook_delivery.ts';
 import type { BotApiUpdate } from '../src/types/bot_api.ts';
 import type { BotActivityEntry, BotActivityFilter } from '../src/types/bot_activity.ts';
 import type { WebhookAttempt } from '../src/types/bot_webhook.ts';

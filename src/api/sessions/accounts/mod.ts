@@ -3,7 +3,7 @@ import { basePath } from 'hono/route';
 
 import { createAccountContract } from '../../contracts/accounts.ts';
 import type { ControlOperationResponse } from '../../contracts/operation_contract.ts';
-import type { EmulationSession } from '../../../types/emulation_session.ts';
+import type { EmulationSession } from '../../../session/emulation_session.ts';
 import type { VirtualAccountProfile } from '../../../types/virtual_account.ts';
 import { registerControlOperation } from '../../control_operation_route.ts';
 import type { SessionRouteContextTypes } from '../session_route_context_types.ts';

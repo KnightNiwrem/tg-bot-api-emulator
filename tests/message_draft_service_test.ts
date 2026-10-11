@@ -8,8 +8,8 @@ import {
   type GetMessageDraftResult,
   MessageDraftService,
   type StopMessageDraftResult,
-} from '../src/services/message_draft.ts';
-import { VirtualUserService } from '../src/services/virtual_user.ts';
+} from '../src/services/domain/message_draft.ts';
+import { VirtualUserService } from '../src/services/domain/virtual_user.ts';
 import type { ChatDomainEvent } from '../src/types/chat_domain_event.ts';
 import type { MessageDraft, WrittenMessageDraft } from '../src/types/message_draft.ts';
 import type { PrivateConversationKey } from '../src/types/virtual_chat.ts';

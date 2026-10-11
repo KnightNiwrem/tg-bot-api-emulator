@@ -1,7 +1,7 @@
-import { parseServerConfiguration } from './config.ts';
+import { parseServerConfiguration } from './api/config.ts';
 import { createSessionLifecycleService } from './composition/session_lifecycle.ts';
 import { createEmulationApi } from './api/mod.ts';
-import { TelegramEmulationServer } from './server.ts';
+import { TelegramEmulationServer } from './api/server.ts';
 
 if (import.meta.main) {
   const configuration = parseServerConfiguration({

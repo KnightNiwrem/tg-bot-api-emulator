@@ -1,4 +1,7 @@
-import { type NotificationWaitEnd, waitForNotification } from '../src/timing/notification_wait.ts';
+import {
+  type NotificationWaitEnd,
+  waitForNotification,
+} from '../src/timing/session/notification_wait.ts';
 import { ControlledDeadline } from './support/scheduler.ts';
 
 Deno.test('waitForNotification ends when its wake source fires, and unsubscribes', async () => {

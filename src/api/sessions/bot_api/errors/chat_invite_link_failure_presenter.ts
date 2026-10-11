@@ -1,4 +1,4 @@
-import type { EmulationSession } from '../../../../types/emulation_session.ts';
+import type { EmulationSession } from '../../../../session/emulation_session.ts';
 import { BOT_CHAT_ACCESS_ERRORS } from '../chat_access.ts';
 import type { BotApiMethodAnswer } from '../method_call.ts';
 import { BOT_API_ERRORS } from './error_catalogue.ts';

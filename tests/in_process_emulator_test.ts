@@ -11,8 +11,8 @@ import {
 import { createEmulationApi } from '../src/api/mod.ts';
 import type { SessionLifecycle } from '../src/api/sessions/mod.ts';
 import { createSessionLifecycleService } from '../src/composition/session_lifecycle.ts';
-import { type HttpRequestHandler, TelegramEmulationServer } from '../src/server.ts';
-import { SYSTEM_MONOTONIC_CLOCK, TimerScheduler } from '../src/timing/system_timing.ts';
+import { type HttpRequestHandler, TelegramEmulationServer } from '../src/api/server.ts';
+import { SYSTEM_MONOTONIC_CLOCK, TimerScheduler } from '../src/timing/system/system_timing.ts';
 
 /** An emulator a test reaches through `client`, and whose bot reaches it through `fetch`. */
 interface RunningEmulator extends AsyncDisposable {

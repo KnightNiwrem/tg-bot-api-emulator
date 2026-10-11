@@ -1,5 +1,8 @@
-import { type ChangeStaging, UNSTAGED_CHANGES } from '../transactions/change_staging.ts';
-import { TransactionalMap, TransactionalSet } from '../transactions/transactional_collections.ts';
+import { type ChangeStaging, UNSTAGED_CHANGES } from '../transactions/staging/change_staging.ts';
+import {
+  TransactionalMap,
+  TransactionalSet,
+} from '../transactions/staging/transactional_collections.ts';
 import type { GeoLocation } from '../types/geo_location.ts';
 import type { InlineQuery, InlineQueryAnswer, InlineQueryId } from '../types/inline_query.ts';
 import type { AccountChatAddress } from '../types/virtual_chat.ts';

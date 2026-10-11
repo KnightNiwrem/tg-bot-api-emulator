@@ -5,11 +5,11 @@ import {
   InlineQueryService,
   type SendInlineQueryInput,
   type SpecifiedInlineQueryResult,
-} from '../src/services/inline_query.ts';
-import { MediaFileService } from '../src/services/media_file.ts';
-import { VirtualUserService } from '../src/services/virtual_user.ts';
+} from '../src/services/domain/inline_query.ts';
+import { MediaFileService } from '../src/services/domain/media_file.ts';
+import { VirtualUserService } from '../src/services/domain/virtual_user.ts';
 import { createChatMessagingServices } from './support/chat_messaging_services.ts';
-import type { WebFileDownload } from '../src/services/web_file_download.ts';
+import type { WebFileDownload } from '../src/services/domain/web_file_download.ts';
 import { ALL_CHAT_PERMISSIONS } from '../src/types/chat_permissions.ts';
 import type { AccountChatAddress } from '../src/types/virtual_chat.ts';
 import { createVirtualAccount, createVirtualBot } from './support/virtual_users.ts';

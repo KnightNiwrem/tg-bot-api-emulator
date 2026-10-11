@@ -314,11 +314,11 @@ server behavior.
 ## Local evidence
 
 [Markup schemas](../../src/api/sessions/bot_api/reply_markup_parameter.ts),
-[callback service](../../src/services/callback_query.ts),
+[callback service](../../src/services/domain/callback_query.ts),
 [start link parsing](../../src/text_entities/telegram_link.ts),
-[reply interface handling](../../src/services/reply_interface.ts),
+[reply interface handling](../../src/services/domain/reply_interface.ts),
 [reply keyboard button selection](../../src/types/reply_interface.ts),
-[user and chat sharing](../../src/services/requested_peer_sharing.ts),
+[user and chat sharing](../../src/services/domain/requested_peer_sharing.ts),
 [callback tests](../../tests/callback_query_service_test.ts) and
 [private message tests](../../tests/private_messaging_service_test.ts),
 [reply interface tests per chat type](../../tests/http/reply_interfaces_test.ts),

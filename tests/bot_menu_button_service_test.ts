@@ -2,7 +2,7 @@ import {
   BotMenuButtonService,
   type GetBotMenuButtonResult,
   type SetBotMenuButtonResult,
-} from '../src/services/bot_menu_button.ts';
+} from '../src/services/domain/bot_menu_button.ts';
 import type { BotMenuButton } from '../src/types/bot_menu_button.ts';
 import { buildSessionServices } from './support/session_services.ts';
 import { createVirtualAccount, createVirtualBot } from './support/virtual_users.ts';

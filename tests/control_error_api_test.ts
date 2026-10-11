@@ -8,8 +8,8 @@ import { createSessionLifecycleService } from '../src/composition/session_lifecy
 import { AccountRepository } from '../src/repositories/account.ts';
 import { BotRepository } from '../src/repositories/bot.ts';
 import { SessionRepository } from '../src/repositories/session.ts';
-import { SessionLifecycleService } from '../src/services/session_lifecycle.ts';
-import { VirtualUserService } from '../src/services/virtual_user.ts';
+import { SessionLifecycleService } from '../src/services/application/session_lifecycle.ts';
+import { VirtualUserService } from '../src/services/domain/virtual_user.ts';
 import {
   createSession,
   createTestSession,
