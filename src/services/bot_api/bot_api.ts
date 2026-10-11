@@ -957,7 +957,6 @@ export type DeleteMessagesResult =
   | { readonly deleted: true }
   | { readonly deleted: false; readonly reason: MessageDeletionFailureReason };
 
-/** Why a bot cannot address a chat whose members it asks about or moderates. */
 interface BotCredentialLookup {
   getByToken(token: string): VirtualBot | undefined;
 }
