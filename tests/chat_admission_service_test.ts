@@ -17,6 +17,7 @@ import {
   grantSupergroupAdministratorRights,
   type SupergroupAdministratorRight,
 } from '../src/types/chat_membership.ts';
+import { createVirtualAccount, createVirtualBot } from './support/virtual_users.ts';
 
 /** The session clock, which stands still unless a test moves it. */
 const CREATION_TIME_UNIX_SECONDS = 1_700_000_000;
@@ -61,28 +62,25 @@ function createAdmissionFixture() {
     currentUnixTimeSeconds,
   });
 
-  const ada = virtualUsers.createAccount({ first_name: 'Ada' });
-  const grace = virtualUsers.createAccount({ first_name: 'Grace' });
-  const bot = virtualUsers.createBot({ first_name: 'Inviter', username: 'inviter_bot' });
-  if (!ada.created || !grace.created || !bot.created) {
-    throw new Error('Expected the users to be created');
-  }
+  const adaId = createVirtualAccount(virtualUsers, { first_name: 'Ada' }).profile.id;
+  const graceId = createVirtualAccount(virtualUsers, { first_name: 'Grace' }).profile.id;
+  const botId = createVirtualBot(virtualUsers, { first_name: 'Inviter', username: 'inviter_bot' })
+    .profile.id;
   const creation = sharedChatAdministration.createSupergroup({
     title: 'Team',
-    creatorAccountId: ada.account.profile.id,
+    creatorAccountId: adaId,
   });
   if (!creation.created) {
     throw new Error('Expected the supergroup to be created');
   }
   const chatId = creation.supergroup.id;
-  const botId = bot.bot.profile.id;
   sharedChatAdministration.addChatMember({
-    actorAccountId: ada.account.profile.id,
+    actorAccountId: adaId,
     chatId,
     memberId: botId,
   });
   sharedChatAdministration.promoteChatMember({
-    actorAccountId: ada.account.profile.id,
+    actorAccountId: adaId,
     chatId,
     memberId: botId,
     rights: grantSupergroupAdministratorRights(['can_invite_users']),
@@ -97,8 +95,8 @@ function createAdmissionFixture() {
     publishedEvents,
     chatId,
     botId,
-    adaId: ada.account.profile.id,
-    graceId: grace.account.profile.id,
+    adaId,
+    graceId,
   };
 }
 
@@ -110,13 +108,8 @@ function createAdmissionFixture() {
 function createRequesterContactFixture() {
   const fixture = createAdmissionFixture();
   const { virtualUsers, sharedChatAdministration, chatAdmission, chatId, botId, adaId } = fixture;
-  const createBot = (username: string) => {
-    const creation = virtualUsers.createBot({ first_name: username, username });
-    if (!creation.created) {
-      throw new Error(`Expected bot ${username} to be created`);
-    }
-    return creation.bot.profile.id;
-  };
+  const createBot = (username: string) =>
+    createVirtualBot(virtualUsers, { first_name: username, username }).profile.id;
   const promote = (memberId: number, right: SupergroupAdministratorRight) =>
     sharedChatAdministration.promoteChatMember({
       actorAccountId: adaId,
@@ -131,10 +124,7 @@ function createRequesterContactFixture() {
   }
   promote(coInviterBotId, 'can_invite_users');
   promote(observerBotId, 'can_delete_messages');
-  const hopper = virtualUsers.createAccount({ first_name: 'Hopper' });
-  if (!hopper.created) {
-    throw new Error('Expected Hopper to be created');
-  }
+  const hopperId = createVirtualAccount(virtualUsers, { first_name: 'Hopper' }).profile.id;
   const linkCreation = chatAdmission.createInviteLinkAsBot({
     creatorBotId: botId,
     chatId,
@@ -163,7 +153,7 @@ function createRequesterContactFixture() {
     ...fixture,
     coInviterBotId,
     observerBotId,
-    hopperId: hopper.account.profile.id,
+    hopperId,
     inviteLinkUrl: linkCreation.link.url,
     promote,
     requestToJoin,
@@ -340,12 +330,12 @@ Deno.test('ChatAdmissionService claims every request whose contact the bot may c
     title: 'Lab',
     creatorAccountId: adaId,
   });
-  const labBot = virtualUsers.createBot({ first_name: 'Lab', username: 'lab_bot' });
-  if (!labCreation.created || !labBot.created) {
-    throw new Error('Expected Lab and its bot to be created');
+  const labBotId = createVirtualBot(virtualUsers, { first_name: 'Lab', username: 'lab_bot' })
+    .profile.id;
+  if (!labCreation.created) {
+    throw new Error('Expected Lab to be created');
   }
   const labChatId = labCreation.supergroup.id;
-  const labBotId = labBot.bot.profile.id;
   for (const memberId of [botId, labBotId]) {
     sharedChatAdministration.addChatMember({ actorAccountId: adaId, chatId: labChatId, memberId });
     sharedChatAdministration.promoteChatMember({
@@ -481,13 +471,8 @@ function createAccountDecisionFixture() {
     hopperId,
     requestToJoin,
   } = fixture;
-  const createAccount = (firstName: string) => {
-    const creation = virtualUsers.createAccount({ first_name: firstName });
-    if (!creation.created) {
-      throw new Error(`Expected ${firstName} to be created`);
-    }
-    return creation.account.profile.id;
-  };
+  const createAccount = (firstName: string) =>
+    createVirtualAccount(virtualUsers, { first_name: firstName }).profile.id;
   const createMember = (firstName: string) => {
     const memberId = createAccount(firstName);
     sharedChatAdministration.addChatMember({ actorAccountId: adaId, chatId, memberId });
@@ -794,10 +779,7 @@ Deno.test('ChatAdmissionService decides each request once among accounts and bot
 function createInviteLinkLifecycleFixture() {
   const fixture = createRequesterContactFixture();
   const { virtualUsers, chatAdmission, chatId, botId, adaId } = fixture;
-  const linus = virtualUsers.createAccount({ first_name: 'Linus' });
-  if (!linus.created) {
-    throw new Error('Expected Linus to be created');
-  }
+  const linusId = createVirtualAccount(virtualUsers, { first_name: 'Linus' }).profile.id;
   const createLink = (
     settings: Partial<RequestedInviteLinkSettings> = {},
     creatorBotId = botId,
@@ -857,7 +839,7 @@ function createInviteLinkLifecycleFixture() {
 
   return {
     ...fixture,
-    linusId: linus.account.profile.id,
+    linusId,
     createLink,
     edit,
     revoke,
@@ -939,9 +921,12 @@ Deno.test('ChatAdmissionService refuses an invalid edit or revocation without ch
   const coInviterLinkUrl = createLink({ name: 'Theirs' }, coInviterBotId);
   // A second supergroup, Lab, where the inviter bot also creates a link.
   const lab = sharedChatAdministration.createSupergroup({ title: 'Lab', creatorAccountId: adaId });
-  const outsider = virtualUsers.createBot({ first_name: 'Outsider', username: 'outsider_bot' });
-  if (!lab.created || !outsider.created) {
-    throw new Error('Expected Lab and the outsider bot to be created');
+  const outsiderBotId = createVirtualBot(virtualUsers, {
+    first_name: 'Outsider',
+    username: 'outsider_bot',
+  }).profile.id;
+  if (!lab.created) {
+    throw new Error('Expected Lab to be created');
   }
   const labChatId = lab.supergroup.id;
   sharedChatAdministration.addChatMember({
@@ -968,9 +953,9 @@ Deno.test('ChatAdmissionService refuses an invalid edit or revocation without ch
   sharedChatAdministration.addChatMember({
     actorAccountId: adaId,
     chatId,
-    memberId: outsider.bot.profile.id,
+    memberId: outsiderBotId,
   });
-  sharedChatAdministration.leaveChat({ memberId: outsider.bot.profile.id, chatId });
+  sharedChatAdministration.leaveChat({ memberId: outsiderBotId, chatId });
   requestToJoin(graceId);
   const describeLinks = () =>
     toCanonicalJson([inspectLink(inviteLinkUrl), inspectLink(coInviterLinkUrl)]);
@@ -978,7 +963,7 @@ Deno.test('ChatAdmissionService refuses an invalid edit or revocation without ch
   const contactsBefore = toCanonicalJson(describeContacts());
 
   const editRefusals = [
-    edit({ inviteLinkUrl, editorBotId: outsider.bot.profile.id }),
+    edit({ inviteLinkUrl, editorBotId: outsiderBotId }),
     edit({ inviteLinkUrl, chatId: -1_009_999_999_999 }),
     edit({ inviteLinkUrl, name: 'Broken \ud800' }),
     edit({ inviteLinkUrl: `${inviteLinkUrl}\udc00` }),
@@ -991,7 +976,7 @@ Deno.test('ChatAdmissionService refuses an invalid edit or revocation without ch
     edit({ inviteLinkUrl, memberLimit: 100_000 }),
   ];
   const revocationRefusals = [
-    revoke(inviteLinkUrl, outsider.bot.profile.id),
+    revoke(inviteLinkUrl, outsiderBotId),
     revoke(`${inviteLinkUrl}\udc00`),
     revoke(''),
     revoke(labLink.link.url),

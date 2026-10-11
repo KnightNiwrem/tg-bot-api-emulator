@@ -8,6 +8,8 @@ import { TelegramIdentityRepository } from '../src/repositories/telegram_identit
 import { MessageBoxRepository } from '../src/repositories/message_box.ts';
 import { BotMessageViewService } from '../src/services/bot_message_view.ts';
 import { VirtualUserService } from '../src/services/virtual_user.ts';
+import { assertEqualsInFieldOrder } from './support/field_order_assertion.ts';
+import { createVirtualAccount, createVirtualBot } from './support/virtual_users.ts';
 
 Deno.test('BotMessageViewService shows an account message in its bot private chat', () => {
   const { virtualUsers, messages, messageBoxes, botMessageViews } = createViewFixture();
@@ -40,9 +42,7 @@ Deno.test('BotMessageViewService shows an account message in its bot private cha
     text: '/start',
     entities: [{ type: 'bot_command', offset: 0, length: 6 }],
   };
-  if (JSON.stringify(view) !== JSON.stringify(expectedView)) {
-    throw new Error(`Expected the bot's view of the message, received ${JSON.stringify(view)}`);
-  }
+  assertEqualsInFieldOrder(view, expectedView, "Expected the bot's view of the message");
 });
 
 Deno.test('BotMessageViewService shows a bot message, then its edit date and keyboard, in Telegram order', () => {
@@ -66,19 +66,13 @@ Deno.test('BotMessageViewService shows a bot message, then its edit date and key
     username: 'test_bot',
   };
   const sentView = botMessageViews.viewPrivateMessageForBot(sentMessage);
-  if (
-    JSON.stringify(sentView) !== JSON.stringify({
-      message_id: 1,
-      from: botSender,
-      chat: { id: account.profile.id, type: 'private', first_name: 'Ada' },
-      date: 1_700_000_000,
-      text: 'Continue?',
-    })
-  ) {
-    throw new Error(
-      `Expected the bot as sender, without entities, received ${JSON.stringify(sentView)}`,
-    );
-  }
+  assertEqualsInFieldOrder(sentView, {
+    message_id: 1,
+    from: botSender,
+    chat: { id: account.profile.id, type: 'private', first_name: 'Ada' },
+    date: 1_700_000_000,
+    text: 'Continue?',
+  }, 'Expected the bot as sender, without entities');
 
   const message = messages.editMessage(sentMessage.chat, sentMessage.id, {
     inlineKeyboard: [[
@@ -110,11 +104,7 @@ Deno.test('BotMessageViewService shows a bot message, then its edit date and key
       ]],
     },
   };
-  if (JSON.stringify(view) !== JSON.stringify(expectedView)) {
-    throw new Error(
-      `Expected the edited message with its keyboard, received ${JSON.stringify(view)}`,
-    );
-  }
+  assertEqualsInFieldOrder(view, expectedView, 'Expected the edited message with its keyboard');
 });
 
 Deno.test('BotMessageViewService shows the current replied message until it is deleted', () => {
@@ -177,11 +167,11 @@ Deno.test('BotMessageViewService shows the current replied message until it is d
     },
     text: 'Ada',
   };
-  if (JSON.stringify(answerView) !== JSON.stringify(expectedAnswerView)) {
-    throw new Error(
-      `Expected the reply to show the edited question, received ${JSON.stringify(answerView)}`,
-    );
-  }
+  assertEqualsInFieldOrder(
+    answerView,
+    expectedAnswerView,
+    'Expected the reply to show the edited question',
+  );
   const expectedConfirmationView = {
     message_id: 3,
     from: botSender,
@@ -197,13 +187,11 @@ Deno.test('BotMessageViewService shows the current replied message until it is d
     text: 'Saved',
     has_protected_content: true,
   };
-  if (JSON.stringify(confirmationView) !== JSON.stringify(expectedConfirmationView)) {
-    throw new Error(
-      `Expected a protected reply without a nested reply, received ${
-        JSON.stringify(confirmationView)
-      }`,
-    );
-  }
+  assertEqualsInFieldOrder(
+    confirmationView,
+    expectedConfirmationView,
+    'Expected a protected reply without a nested reply',
+  );
 
   messages.deleteMessage(question.id);
   const answerViewAfterDeletion = botMessageViews.viewPrivateMessageForBot(answer);
@@ -244,11 +232,7 @@ Deno.test('BotMessageViewService shows a callback query with its message as the 
     chat_instance: '-42',
     data: 'yes',
   };
-  if (JSON.stringify(view) !== JSON.stringify(expectedView)) {
-    throw new Error(
-      `Expected the bot's view of the callback query, received ${JSON.stringify(view)}`,
-    );
-  }
+  assertEqualsInFieldOrder(view, expectedView, "Expected the bot's view of the callback query");
 });
 
 Deno.test('BotMessageViewService shows photos and documents in Telegram order with observer file IDs', () => {
@@ -331,9 +315,7 @@ Deno.test('BotMessageViewService shows photos and documents in Telegram order wi
     has_media_spoiler: true,
     has_protected_content: true,
   };
-  if (JSON.stringify(view) !== JSON.stringify(expectedView)) {
-    throw new Error(`Expected the bot's view of the photo, received ${JSON.stringify(view)}`);
-  }
+  assertEqualsInFieldOrder(view, expectedView, "Expected the bot's view of the photo");
   if (
     files.getOrAssignObserverFileId(account.profile.id, photo.id) === expectedView.photo[0].file_id
   ) {
@@ -389,17 +371,9 @@ function createViewFixture() {
 }
 
 function createAccount(virtualUsers: VirtualUserService) {
-  const result = virtualUsers.createAccount({ first_name: 'Ada' });
-  if (!result.created) {
-    throw new Error(`Expected account creation to succeed, received ${result.reason}`);
-  }
-  return result.account;
+  return createVirtualAccount(virtualUsers, { first_name: 'Ada' });
 }
 
 function createBot(virtualUsers: VirtualUserService) {
-  const result = virtualUsers.createBot({ first_name: 'Test Bot', username: 'test_bot' });
-  if (!result.created) {
-    throw new Error(`Expected bot creation to succeed, received ${result.reason}`);
-  }
-  return result.bot;
+  return createVirtualBot(virtualUsers, { first_name: 'Test Bot', username: 'test_bot' });
 }
