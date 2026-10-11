@@ -1,37 +1,23 @@
-import { type Context, Hono } from 'hono';
-import { z } from 'zod';
+import { Hono } from 'hono';
 
 import {
   answerAccountPollContract,
+  answerSupergroupAccountPollContract,
   getAccountPollAnswerContract,
+  getSupergroupAccountPollAnswerContract,
   retractAccountPollAnswerContract,
   retractSupergroupAccountPollAnswerContract,
 } from '../../contracts/poll_answers.ts';
 import type { EmulationSession } from '../../../session/emulation_session.ts';
-import {
-  controlErrorResponse,
-  invalidControlRequestResponse,
-} from '../../control_error_response.ts';
 import { registerControlOperation } from '../../control_operation_route.ts';
-import { answerWithActionReceipt } from '../action_receipt.ts';
-import { readJsonRequestBody } from '../json_request_body.ts';
 import type { SessionRouteContextTypes } from '../session_route_context_types.ts';
-import { SUPERGROUP_MESSAGE_PATH } from './account_paths.ts';
-import { viewChatMessageForAccount, viewPrivateChatMessageForBot } from './chat_message_view.ts';
-import { readSupergroupPollMessageKey } from './poll_message_key.ts';
-
-const SUPERGROUP_MESSAGE_POLL_ANSWER_PATH = `${SUPERGROUP_MESSAGE_PATH}/poll-answer` as const;
+import {
+  viewPrivateChatMessageForBot,
+  viewSupergroupChatMessageForAccount,
+} from './chat_message_view.ts';
 
 /** Where the account routes are mounted within the server, as a contract path template. */
 const ACCOUNT_COLLECTION_MOUNT_PATH = '/sessions/{sessionId}/accounts';
-
-/**
- * The options an account chooses in a poll, by their positions counted from 0, as the Bot API's
- * `option_ids` numbers them; a repeated position counts once. Retracting an answer chooses none.
- */
-const setPollAnswerRequestSchema = z.strictObject({
-  option_ids: z.array(z.int().nonnegative()).min(1),
-});
 
 type Polls = EmulationSession['polls'];
 
@@ -95,48 +81,56 @@ export function createPollAnswerRoutes(): Hono<SessionRouteContextTypes> {
     },
   );
 
-  accountRoutes.get(SUPERGROUP_MESSAGE_POLL_ANSWER_PATH, (context) => {
-    const pollMessageReading = readSupergroupPollMessageKey(context.req.param());
-    if (!pollMessageReading.valid) {
-      return invalidControlRequestResponse(context, pollMessageReading.issues);
-    }
-    const pollMessage = pollMessageReading.value;
-    const { polls, botMessageViews } = context.get('emulationSession');
-    const result = polls.getAccountPollAnswer(pollMessage);
-    if (!result.found) {
-      return pollAnswerRefusalResponse(context, result.reason);
-    }
-    return context.json({
-      poll_answer: presentPollAnswer(result),
-      message: viewChatMessageForAccount(botMessageViews, result.message, pollMessage.accountId),
-    });
-  });
+  registerControlOperation(
+    accountRoutes,
+    ACCOUNT_COLLECTION_MOUNT_PATH,
+    getSupergroupAccountPollAnswerContract,
+    ({ params: { accountId, chatId, messageId } }, context) => {
+      const { polls, botMessageViews } = context.get('emulationSession');
+      const result = polls.getAccountPollAnswer({
+        accountId,
+        chat: { type: 'supergroup', chatId },
+        messageId,
+      });
+      if (!result.found) {
+        return result.reason === 'not_a_member'
+          ? { status: 403, body: { reason: result.reason } }
+          : { status: 404, body: { reason: result.reason } };
+      }
+      return {
+        status: 200,
+        body: {
+          poll_answer: presentPollAnswer(result),
+          message: viewSupergroupChatMessageForAccount(botMessageViews, result.message, accountId),
+        },
+      };
+    },
+  );
 
-  accountRoutes.put(SUPERGROUP_MESSAGE_POLL_ANSWER_PATH, async (context) => {
-    const pollMessageReading = readSupergroupPollMessageKey(context.req.param());
-    if (!pollMessageReading.valid) {
-      return invalidControlRequestResponse(context, pollMessageReading.issues);
-    }
-    const pollMessage = pollMessageReading.value;
-    const requestBodyReading = await readJsonRequestBody(context.req, setPollAnswerRequestSchema);
-    if (!requestBodyReading.valid) {
-      return invalidControlRequestResponse(context, requestBodyReading.issues);
-    }
-    const requestBody = requestBodyReading.value;
-    return answerWithActionReceipt(context, ({ polls, botMessageViews }) => {
+  registerControlOperation(
+    accountRoutes,
+    ACCOUNT_COLLECTION_MOUNT_PATH,
+    answerSupergroupAccountPollContract,
+    ({ params: { accountId, chatId, messageId }, body: { option_ids } }, context) => {
+      const { polls, botMessageViews } = context.get('emulationSession');
       const result = polls.setAccountPollAnswer({
-        ...pollMessage,
-        optionPositions: requestBody.option_ids,
+        accountId,
+        chat: { type: 'supergroup', chatId },
+        messageId,
+        optionPositions: option_ids,
       });
       if (!result.answered) {
-        return pollAnswerRefusalResponse(context, result.reason);
+        return refusePollAnswer(result.reason);
       }
-      return context.json({
-        poll_answer: presentPollAnswer(result),
-        message: viewChatMessageForAccount(botMessageViews, result.message, pollMessage.accountId),
-      });
-    });
-  });
+      return {
+        status: 200,
+        body: {
+          poll_answer: presentPollAnswer(result),
+          message: viewSupergroupChatMessageForAccount(botMessageViews, result.message, accountId),
+        },
+      };
+    },
+  );
 
   // Retracting chooses no options, as TDLib's `setPollAnswer` does with none.
   registerControlOperation(
@@ -273,10 +267,4 @@ function refusePrivatePollAnswer(
     throw new Error(`A private chat refused a poll answer as ${refusal.body.reason}`);
   }
   return refusal;
-}
-
-/** Answers a refused poll answer of a route that is not registered from a contract. */
-function pollAnswerRefusalResponse(context: Context, reason: PollAnswerFailureReason): Response {
-  const { status, body } = refusePollAnswer(reason);
-  return controlErrorResponse(context, status, body.reason);
 }

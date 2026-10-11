@@ -11,4 +11,18 @@ properties:
       `reaction` lists them. An account without Premium chooses one; more are rejected. Removing
       the account's reactions is a `DELETE` of the same path.
     items:
-      $ref: ./ReactionTypeEmoji.yaml
+      type: object
+      additionalProperties: false
+      description: An ordinary emoji reaction, as the Bot API's `ReactionTypeEmoji` writes it.
+      required:
+        - type
+        - emoji
+      properties:
+        type:
+          type: string
+          const: emoji
+        emoji:
+          type: string
+          description: >-
+            One of the emoji `ReactionTypeEmoji` lists, written exactly as listed there; any other
+            text is refused as `reaction_emoji_unsupported`.

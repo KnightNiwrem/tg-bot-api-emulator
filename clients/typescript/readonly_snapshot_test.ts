@@ -17,8 +17,10 @@ import type {
   PollAnswer,
   RateLimitResponses,
   ReplyInterface,
+  SupergroupBotCommands,
   SupergroupInviteLink,
   UpdateDeliveredEntry,
+  UserReaction,
   WebhookAttempt,
   WebhookAttemptFailedEntry,
   WebhookRetry,
@@ -44,6 +46,8 @@ export function mutateSnapshots(
   menuButton: MenuButton,
   replyInterface: ReplyInterface,
   pollAnswer: PollAnswer,
+  userReaction: UserReaction,
+  botCommands: SupergroupBotCommands,
 ): void {
   // @ts-expect-error A snapshot's own field is readonly.
   session.uploadProfile = 'local';
@@ -91,6 +95,10 @@ export function mutateSnapshots(
   replyInterface.message_id = 1;
   // @ts-expect-error A list of a snapshot cannot grow.
   pollAnswer.option_ids.push(0);
+  // @ts-expect-error A nested list cannot grow.
+  userReaction.reaction.push(userReaction.reaction[0]);
+  // @ts-expect-error An object in a list is readonly.
+  botCommands.commands[0].is_ephemeral = true;
 }
 
 Deno.test('Response snapshots are readonly all the way down', () => {

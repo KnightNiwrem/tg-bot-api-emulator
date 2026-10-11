@@ -1,19 +1,16 @@
 import { Hono } from 'hono';
 
-import { stopAccountPollContract } from '../../contracts/poll_answers.ts';
-import type { EmulationSession } from '../../../session/emulation_session.ts';
 import {
-  controlErrorResponse,
-  invalidControlRequestResponse,
-} from '../../control_error_response.ts';
+  stopAccountPollContract,
+  stopSupergroupAccountPollContract,
+} from '../../contracts/poll_answers.ts';
+import type { EmulationSession } from '../../../session/emulation_session.ts';
 import { registerControlOperation } from '../../control_operation_route.ts';
-import { answerWithActionReceipt } from '../action_receipt.ts';
 import type { SessionRouteContextTypes } from '../session_route_context_types.ts';
-import { SUPERGROUP_MESSAGE_PATH } from './account_paths.ts';
-import { viewChatMessageForAccount, viewPrivateChatMessageForBot } from './chat_message_view.ts';
-import { readSupergroupPollMessageKey } from './poll_message_key.ts';
-
-const SUPERGROUP_MESSAGE_POLL_CLOSURE_PATH = `${SUPERGROUP_MESSAGE_PATH}/poll-closure` as const;
+import {
+  viewPrivateChatMessageForBot,
+  viewSupergroupChatMessageForAccount,
+} from './chat_message_view.ts';
 
 /** Where the account routes are mounted within the server, as a contract path template. */
 const ACCOUNT_COLLECTION_MOUNT_PATH = '/sessions/{sessionId}/accounts';
@@ -47,27 +44,28 @@ export function createPollClosureRoutes(): Hono<SessionRouteContextTypes> {
     },
   );
 
-  accountRoutes.post(SUPERGROUP_MESSAGE_POLL_CLOSURE_PATH, (context) => {
-    const pollMessageReading = readSupergroupPollMessageKey(context.req.param());
-    if (!pollMessageReading.valid) {
-      return invalidControlRequestResponse(context, pollMessageReading.issues);
-    }
-    const pollMessage = pollMessageReading.value;
-    return answerWithActionReceipt(context, ({ polls, botMessageViews }) => {
-      const result = polls.stopAccountPoll(pollMessage);
-      if (!result.stopped) {
-        const { status, body } = refusePollClosure(result.reason);
-        return controlErrorResponse(context, status, body.reason);
-      }
-      return context.json({
-        message: viewChatMessageForAccount(
-          botMessageViews,
-          result.message,
-          pollMessage.accountId,
-        ),
+  registerControlOperation(
+    accountRoutes,
+    ACCOUNT_COLLECTION_MOUNT_PATH,
+    stopSupergroupAccountPollContract,
+    ({ params: { accountId, chatId, messageId } }, context) => {
+      const { polls, botMessageViews } = context.get('emulationSession');
+      const result = polls.stopAccountPoll({
+        accountId,
+        chat: { type: 'supergroup', chatId },
+        messageId,
       });
-    });
-  });
+      if (!result.stopped) {
+        return refusePollClosure(result.reason);
+      }
+      return {
+        status: 200,
+        body: {
+          message: viewSupergroupChatMessageForAccount(botMessageViews, result.message, accountId),
+        },
+      };
+    },
+  );
 
   return accountRoutes;
 }

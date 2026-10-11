@@ -2,8 +2,11 @@ import type { z } from 'zod';
 
 import {
   deleteAccountMessageContract,
+  deleteSupergroupAccountMessageContract,
   editAccountMessageContract,
+  editSupergroupAccountMessageContract,
   getPrivateMessageHistoryContract,
+  getSupergroupMessageHistoryContract,
 } from '../../src/api/contracts/account_messages.ts';
 import { createAccountContract } from '../../src/api/contracts/accounts.ts';
 import { blockBotContract, unblockBotContract } from '../../src/api/contracts/blocked_bots.ts';
@@ -13,17 +16,19 @@ import {
   pressCallbackButtonContract,
 } from '../../src/api/contracts/callback_queries.ts';
 import {
-  chatActionsResponseSchema,
   expirePrivateChatActionContract,
+  expireSupergroupChatActionContract,
   getPrivateChatActionsContract,
+  getSupergroupChatActionsContract,
 } from '../../src/api/contracts/chat_actions.ts';
 import {
   getPrivateChatBotCommandsContract,
   getPrivateChatMenuButtonContract,
   getPrivateChatNotificationsContract,
   getPrivateChatReplyInterfaceContract,
-  notificationsResponseSchema,
-  replyInterfaceResponseSchema,
+  getSupergroupBotCommandsContract,
+  getSupergroupNotificationsContract,
+  getSupergroupReplyInterfaceContract,
 } from '../../src/api/contracts/conversation_reads.ts';
 import { downloadFileContract } from '../../src/api/contracts/files.ts';
 import {
@@ -42,18 +47,29 @@ import {
   getPrivateMessageDraftContract,
   stopPrivateMessageDraftContract,
 } from '../../src/api/contracts/message_drafts.ts';
+import {
+  getSupergroupMessageReactionsContract,
+  removeSupergroupAccountMessageReactionContract,
+  setSupergroupAccountMessageReactionContract,
+} from '../../src/api/contracts/message_reactions.ts';
 import type { ControlOperationRequest } from '../../src/api/contracts/operation_contract.ts';
 import {
   getPrivatePinnedMessagesContract,
+  getSupergroupPinnedMessagesContract,
   pinPrivateMessageContract,
+  pinSupergroupMessageContract,
   unpinPrivateMessageContract,
+  unpinSupergroupMessageContract,
 } from '../../src/api/contracts/pinned_messages.ts';
 import {
   answerAccountPollContract,
+  answerSupergroupAccountPollContract,
   getAccountPollAnswerContract,
+  getSupergroupAccountPollAnswerContract,
   retractAccountPollAnswerContract,
   retractSupergroupAccountPollAnswerContract,
   stopAccountPollContract,
+  stopSupergroupAccountPollContract,
 } from '../../src/api/contracts/poll_answers.ts';
 import { expirePollContract } from '../../src/api/contracts/polls.ts';
 import { deleteSessionContract } from '../../src/api/contracts/sessions.ts';
@@ -92,7 +108,7 @@ import {
 import { registerWebResourceContract } from '../../src/api/contracts/web_resources.ts';
 import { createHttpBotActivityPageReader } from './bot_activity_http_page_reader.ts';
 import { createBotActivityLog } from './bot_activity_log.ts';
-import { HTTP_STATUS_CREATED, HTTP_STATUS_NO_CONTENT, HTTP_STATUS_OK } from './constants.ts';
+import { HTTP_STATUS_CREATED, HTTP_STATUS_OK } from './constants.ts';
 import {
   callBytesOperation,
   callEmptyAction,
@@ -105,14 +121,10 @@ import { ButtonSelectionError, findButton } from './message_buttons.ts';
 import {
   chosenInlineResultResponseSchema,
   getMeResponseSchema,
-  messageReactionsResponseSchema,
   sentMediaGroupResponseSchema,
   sentMessageResponseSchema,
   sentSupergroupMediaGroupResponseSchema,
   sentSupergroupMessageResponseSchema,
-  supergroupBotCommandsResponseSchema,
-  supergroupMessageHistoryResponseSchema,
-  supergroupPollAnswerResponseSchema,
 } from './schemas.ts';
 import type {
   AccountBotCommandsInput,
@@ -225,7 +237,7 @@ import type {
   WebhookDelivery,
   WebResource,
 } from './types.ts';
-import { normalizeUrlRoot, requestEmptyAction, requestJson, requestJsonAction } from './utils.ts';
+import { normalizeUrlRoot, requestJson, requestJsonAction } from './utils.ts';
 
 /**
  * A session's client. Each action resolves to its result, which its description says it returns,
@@ -613,61 +625,41 @@ function createVirtualAccountClient(
   function supergroupMessageOperations(
     chat: SupergroupMessageTarget,
   ): ChatMessageOperations<SupergroupMessageTarget> {
-    const chatUrl = conversationUrl(accountUrl, chat);
-    const messageUrl = (messageId: number) =>
-      `${chatUrl}/messages/${encodeURIComponent(messageId)}`;
+    const params = supergroupParams(chat);
     return {
       async readMessages() {
-        const response = await requestJson(fetchImplementation, {
-          method: 'GET',
-          url: `${chatUrl}/messages`,
-          expectedStatus: HTTP_STATUS_OK,
-          responseSchema: supergroupMessageHistoryResponseSchema,
+        const response = await callJsonOperation(transport, getSupergroupMessageHistoryContract, {
+          params,
         });
         return response.messages;
       },
       async readPinnedMessages() {
-        const response = await requestJson(fetchImplementation, {
-          method: 'GET',
-          url: `${chatUrl}/pinned-messages`,
-          expectedStatus: HTTP_STATUS_OK,
-          responseSchema: supergroupMessageHistoryResponseSchema,
+        const response = await callJsonOperation(transport, getSupergroupPinnedMessagesContract, {
+          params,
         });
         return response.messages;
       },
       async editMessage(messageId, body) {
-        const edit = await requestJsonAction(fetchImplementation, {
-          method: 'PATCH',
-          url: messageUrl(messageId),
-          expectedStatus: HTTP_STATUS_OK,
-          responseSchema: sentSupergroupMessageResponseSchema,
+        const edit = await callJsonAction(transport, editSupergroupAccountMessageContract, {
+          params: { ...params, messageId },
           body,
         });
         return selectResult(edit, ({ message }) => message);
       },
       readPollAnswer(messageId) {
-        return requestJson(fetchImplementation, {
-          method: 'GET',
-          url: `${messageUrl(messageId)}/poll-answer`,
-          expectedStatus: HTTP_STATUS_OK,
-          responseSchema: supergroupPollAnswerResponseSchema,
+        return callJsonOperation(transport, getSupergroupAccountPollAnswerContract, {
+          params: { ...params, messageId },
         });
       },
       answerPoll(messageId, optionIds) {
-        return requestJsonAction(fetchImplementation, {
-          method: 'PUT',
-          url: `${messageUrl(messageId)}/poll-answer`,
-          expectedStatus: HTTP_STATUS_OK,
-          responseSchema: supergroupPollAnswerResponseSchema,
-          body: { option_ids: optionIds },
+        return callJsonAction(transport, answerSupergroupAccountPollContract, {
+          params: { ...params, messageId },
+          body: { option_ids: [...optionIds] },
         });
       },
       async stopPoll(messageId) {
-        const closure = await requestJsonAction(fetchImplementation, {
-          method: 'POST',
-          url: `${messageUrl(messageId)}/poll-closure`,
-          expectedStatus: HTTP_STATUS_OK,
-          responseSchema: sentSupergroupMessageResponseSchema,
+        const closure = await callJsonAction(transport, stopSupergroupAccountPollContract, {
+          params: { ...params, messageId },
         });
         return selectResult(closure, ({ message }) => message);
       },
@@ -942,10 +934,8 @@ function createVirtualAccountClient(
           params: { ...privateChatParams(chat), messageId },
         });
       }
-      return requestEmptyAction(fetchImplementation, {
-        method: 'DELETE',
-        url: `${conversationUrl(accountUrl, chat)}/messages/${encodeURIComponent(messageId)}`,
-        expectedStatus: HTTP_STATUS_NO_CONTENT,
+      return callEmptyAction(transport, deleteSupergroupAccountMessageContract, {
+        params: { ...supergroupParams(chat), messageId },
       });
     },
     async createSupergroup(input: CreateSupergroupInput): Promise<ActionOutcome<Supergroup>> {
@@ -1092,10 +1082,8 @@ function createVirtualAccountClient(
           params: { ...privateChatParams(chat), messageId },
         });
       }
-      return requestEmptyAction(fetchImplementation, {
-        method: 'PUT',
-        url: pinnedMessageUrl(accountUrl, chat, messageId),
-        expectedStatus: HTTP_STATUS_NO_CONTENT,
+      return callEmptyAction(transport, pinSupergroupMessageContract, {
+        params: { ...supergroupParams(chat), messageId },
       });
     },
     unpinMessage({ chat, message_id: messageId }: AccountPinMessageInput): Promise<ActionReceipt> {
@@ -1104,10 +1092,8 @@ function createVirtualAccountClient(
           params: { ...privateChatParams(chat), messageId },
         });
       }
-      return requestEmptyAction(fetchImplementation, {
-        method: 'DELETE',
-        url: pinnedMessageUrl(accountUrl, chat, messageId),
-        expectedStatus: HTTP_STATUS_NO_CONTENT,
+      return callEmptyAction(transport, unpinSupergroupMessageContract, {
+        params: { ...supergroupParams(chat), messageId },
       });
     },
     getPinnedMessages<Target extends MessageTarget>(
@@ -1120,11 +1106,8 @@ function createVirtualAccountClient(
         ? await callJsonOperation(transport, getPrivateChatActionsContract, {
           params: privateChatParams(chat),
         })
-        : await requestJson(fetchImplementation, {
-          method: 'GET',
-          url: `${conversationUrl(accountUrl, chat)}/chat-actions`,
-          expectedStatus: HTTP_STATUS_OK,
-          responseSchema: chatActionsResponseSchema,
+        : await callJsonOperation(transport, getSupergroupChatActionsContract, {
+          params: supergroupParams(chat),
         });
       return response.chat_actions;
     },
@@ -1144,12 +1127,8 @@ function createVirtualAccountClient(
           'expireChatAction needs the botId whose supergroup chat action expires',
         );
       }
-      return requestEmptyAction(fetchImplementation, {
-        method: 'POST',
-        url: `${conversationUrl(accountUrl, input.chat)}/chat-actions/${
-          encodeURIComponent(input.botId)
-        }/expiry`,
-        expectedStatus: HTTP_STATUS_NO_CONTENT,
+      return callEmptyAction(transport, expireSupergroupChatActionContract, {
+        params: { ...supergroupParams(input.chat), botId: input.botId },
       });
     },
     async getMessageDraft({ chat }: AccountMessageDraftInput): Promise<MessageDraft | null> {
@@ -1175,11 +1154,8 @@ function createVirtualAccountClient(
         ? await callJsonOperation(transport, getPrivateChatNotificationsContract, {
           params: privateChatParams(chat),
         })
-        : await requestJson(fetchImplementation, {
-          method: 'GET',
-          url: `${conversationUrl(accountUrl, chat)}/notifications`,
-          expectedStatus: HTTP_STATUS_OK,
-          responseSchema: notificationsResponseSchema,
+        : await callJsonOperation(transport, getSupergroupNotificationsContract, {
+          params: supergroupParams(chat),
         });
       return response.notifications;
     },
@@ -1245,29 +1221,25 @@ function createVirtualAccountClient(
       return chatMessageOperationsFor(input.chat).stopPoll(input.message_id);
     },
     setMessageReaction(
-      { chat, message_id, reaction }: SetMessageReactionInput,
+      { chat, message_id: messageId, reaction }: SetMessageReactionInput,
     ): Promise<ActionOutcome<MessageReactions>> {
-      return requestJsonAction(fetchImplementation, {
-        method: 'PUT',
-        url: messageReactionsUrl(accountUrl, { chat, message_id }),
-        expectedStatus: HTTP_STATUS_OK,
-        responseSchema: messageReactionsResponseSchema,
-        body: { reaction },
+      return callJsonAction(transport, setSupergroupAccountMessageReactionContract, {
+        params: { ...supergroupParams(chat), messageId },
+        body: { reaction: [...reaction] },
       });
     },
-    getMessageReactions(input: AccountReactionMessageInput): Promise<MessageReactions> {
-      return requestJson(fetchImplementation, {
-        method: 'GET',
-        url: messageReactionsUrl(accountUrl, input),
-        expectedStatus: HTTP_STATUS_OK,
-        responseSchema: messageReactionsResponseSchema,
+    getMessageReactions(
+      { chat, message_id: messageId }: AccountReactionMessageInput,
+    ): Promise<MessageReactions> {
+      return callJsonOperation(transport, getSupergroupMessageReactionsContract, {
+        params: { ...supergroupParams(chat), messageId },
       });
     },
-    removeMessageReaction(input: AccountReactionMessageInput): Promise<ActionReceipt> {
-      return requestEmptyAction(fetchImplementation, {
-        method: 'DELETE',
-        url: messageReactionsUrl(accountUrl, input),
-        expectedStatus: HTTP_STATUS_NO_CONTENT,
+    removeMessageReaction(
+      { chat, message_id: messageId }: AccountReactionMessageInput,
+    ): Promise<ActionReceipt> {
+      return callEmptyAction(transport, removeSupergroupAccountMessageReactionContract, {
+        params: { ...supergroupParams(chat), messageId },
       });
     },
     async sendInlineQuery(input: SendInlineQueryInput): Promise<ActionOutcome<InlineQuery>> {
@@ -1309,14 +1281,10 @@ function createVirtualAccountClient(
       return response.menu_button;
     },
     async getSupergroupBotCommands(
-      input: AccountSupergroupBotCommandsInput,
+      { chat }: AccountSupergroupBotCommandsInput,
     ): Promise<readonly SupergroupBotCommands[]> {
-      const chatId = encodeURIComponent(input.chat.chatId);
-      const response = await requestJson(fetchImplementation, {
-        method: 'GET',
-        url: `${accountUrl}/conversations/supergroup/${chatId}/commands`,
-        expectedStatus: HTTP_STATUS_OK,
-        responseSchema: supergroupBotCommandsResponseSchema,
+      const response = await callJsonOperation(transport, getSupergroupBotCommandsContract, {
+        params: supergroupParams(chat),
       });
       return response.bot_commands;
     },
@@ -1325,11 +1293,8 @@ function createVirtualAccountClient(
         ? await callJsonOperation(transport, getPrivateChatReplyInterfaceContract, {
           params: privateChatParams(chat),
         })
-        : await requestJson(fetchImplementation, {
-          method: 'GET',
-          url: `${conversationUrl(accountUrl, chat)}/reply-interface`,
-          expectedStatus: HTTP_STATUS_OK,
-          responseSchema: replyInterfaceResponseSchema,
+        : await callJsonOperation(transport, getSupergroupReplyInterfaceContract, {
+          params: supergroupParams(chat),
         });
       return response.reply_interface;
     },
@@ -1417,32 +1382,6 @@ function toAccountMediaGroupFile(item: AccountMediaGroupItem) {
     return { audio: toAccountAudioUpload(item) };
   }
   return { video: toAccountVideoUpload(item) };
-}
-
-/** The account's view of a chat, under which its messages and members are addressed. */
-function conversationUrl(accountUrl: string, chat: MessageTarget): string {
-  return chat.type === 'private'
-    ? `${accountUrl}/conversations/private/${encodeURIComponent(chat.botId)}`
-    : `${accountUrl}/conversations/supergroup/${encodeURIComponent(chat.chatId)}`;
-}
-
-/** The URL by which an account pins or unpins a message of a supergroup it is a member of. */
-function pinnedMessageUrl(
-  accountUrl: string,
-  chat: SupergroupMessageTarget,
-  messageId: number,
-): string {
-  return `${conversationUrl(accountUrl, chat)}/pinned-messages/${encodeURIComponent(messageId)}`;
-}
-
-/** The URL of the reactions to a message of a supergroup the account is a member of. */
-function messageReactionsUrl(
-  accountUrl: string,
-  { chat, message_id }: AccountReactionMessageInput,
-): string {
-  return `${conversationUrl(accountUrl, chat)}/messages/${
-    encodeURIComponent(message_id)
-  }/reactions`;
 }
 
 interface MessageResponseSchemas<Target extends MessageTarget> {

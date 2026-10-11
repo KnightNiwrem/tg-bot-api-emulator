@@ -1,13 +1,15 @@
 /**
- * The contracts of the messages of an account's private chat with a bot: reading them as the bot
- * sees them, and editing and deleting them as the account.
+ * The contracts of the messages of an account's chats: reading the messages of its private chat
+ * with a bot, as the bot sees them, or of a supergroup it is a member of, as it sees them, and
+ * editing and deleting them as the account.
  */
 import { z } from 'zod';
 
 import { accountPrivateChatPathSchema, accountPrivateMessagePathSchema } from './accounts.ts';
-import { privateMessageSchema } from './chat_messages.ts';
+import { privateMessageSchema, supergroupMessageSchema } from './chat_messages.ts';
 import { controlRefusalSchema, controlValidationErrorSchema } from './control_errors.ts';
 import { defineControlOperation } from './operation_contract.ts';
+import { accountSupergroupMessagePathSchema, accountSupergroupPathSchema } from './supergroups.ts';
 
 /** The most characters of a text message, counted by code point, as Telegram limits them. */
 export const MAX_MESSAGE_TEXT_LENGTH = 4096;
@@ -44,6 +46,29 @@ const editAccountMessageRequestSchema = z.union([
     caption: z.string(),
     caption_entities: z.array(messageEntityInputSchema).optional(),
   }),
+]);
+
+/** Text Telegram's normalization refuses, or an edit the message does not take. */
+const messageEditRejectionSchema = z.union([
+  controlValidationErrorSchema,
+  controlRefusalSchema([
+    'caption_too_long',
+    'message_has_no_caption',
+    'message_has_no_text',
+    'message_not_editable',
+    'message_not_modified',
+    'message_text_empty',
+    'message_text_too_long',
+    'text_invalid',
+  ]),
+]);
+
+/** A missing session, account, supergroup, or message of the supergroup. */
+const supergroupMessageNotFoundSchema = controlRefusalSchema([
+  'account_not_found',
+  'chat_not_found',
+  'message_not_found',
+  'session_not_found',
 ]);
 
 /** A missing session, account, bot, or message of their private chat. */
@@ -92,19 +117,7 @@ export const editAccountMessageContract = defineControlOperation({
   refusals: {
     // Text Telegram's normalization refuses, or an edit the message does not take, is input the
     // schema accepts but the server refuses.
-    400: z.union([
-      controlValidationErrorSchema,
-      controlRefusalSchema([
-        'caption_too_long',
-        'message_has_no_caption',
-        'message_has_no_text',
-        'message_not_editable',
-        'message_not_modified',
-        'message_text_empty',
-        'message_text_too_long',
-        'text_invalid',
-      ]),
-    ]),
+    400: messageEditRejectionSchema,
     404: privateMessageNotFoundSchema,
   },
 });
@@ -118,4 +131,59 @@ export const deleteAccountMessageContract = defineControlOperation({
   params: accountPrivateMessagePathSchema,
   success: { status: 204, body: { kind: 'empty' }, actionReceipt: 'before_action' },
   refusals: { 400: controlValidationErrorSchema, 404: privateMessageNotFoundSchema },
+});
+
+/** Returns the supergroup's messages, oldest first, as the account, a member, sees them. */
+export const getSupergroupMessageHistoryContract = defineControlOperation({
+  operationId: 'getSupergroupMessageHistory',
+  method: 'GET',
+  path: '/sessions/{sessionId}/accounts/{accountId}/conversations/supergroup/{chatId}/messages',
+  params: accountSupergroupPathSchema,
+  success: {
+    status: 200,
+    body: { kind: 'json', schema: z.strictObject({ messages: z.array(supergroupMessageSchema) }) },
+  },
+  refusals: {
+    400: controlValidationErrorSchema,
+    403: controlRefusalSchema(['not_a_member']),
+    404: controlRefusalSchema(['account_not_found', 'chat_not_found', 'session_not_found']),
+  },
+});
+
+/**
+ * Replaces the text of the account's text message, or the caption of its captioned media, of a
+ * supergroup it is a member of, and returns the edited message as the account sees it.
+ */
+export const editSupergroupAccountMessageContract = defineControlOperation({
+  operationId: 'editSupergroupAccountMessage',
+  method: 'PATCH',
+  path:
+    '/sessions/{sessionId}/accounts/{accountId}/conversations/supergroup/{chatId}/messages/{messageId}',
+  params: accountSupergroupMessagePathSchema,
+  body: { required: true, schema: editAccountMessageRequestSchema },
+  success: {
+    status: 200,
+    body: { kind: 'json', schema: z.strictObject({ message: supergroupMessageSchema }) },
+    actionReceipt: 'before_action',
+  },
+  refusals: {
+    400: messageEditRejectionSchema,
+    403: controlRefusalSchema(['not_a_member']),
+    404: supergroupMessageNotFoundSchema,
+  },
+});
+
+/** Deletes a message of a supergroup the account is a member of, for every member. */
+export const deleteSupergroupAccountMessageContract = defineControlOperation({
+  operationId: 'deleteSupergroupAccountMessage',
+  method: 'DELETE',
+  path:
+    '/sessions/{sessionId}/accounts/{accountId}/conversations/supergroup/{chatId}/messages/{messageId}',
+  params: accountSupergroupMessagePathSchema,
+  success: { status: 204, body: { kind: 'empty' }, actionReceipt: 'before_action' },
+  refusals: {
+    400: controlValidationErrorSchema,
+    403: controlRefusalSchema(['message_not_deletable', 'not_a_member']),
+    404: supergroupMessageNotFoundSchema,
+  },
 });

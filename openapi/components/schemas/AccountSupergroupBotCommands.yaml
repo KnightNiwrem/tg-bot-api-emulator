@@ -13,7 +13,7 @@ properties:
         - commands
       properties:
         bot_id:
-          type: integer
+          $ref: ./TelegramUserId.yaml
         commands:
           type: array
           items:

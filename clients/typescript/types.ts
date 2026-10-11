@@ -96,8 +96,9 @@ import type {
   WebAppDataContent,
 } from '../../src/api/contracts/chat_messages.ts';
 import type {
-  accountBotCommandSchema,
+  getPrivateChatBotCommandsContract,
   getPrivateChatMenuButtonContract,
+  getSupergroupBotCommandsContract,
   notificationsResponseSchema,
   replyInterfaceResponseSchema,
 } from '../../src/api/contracts/conversation_reads.ts';
@@ -126,7 +127,11 @@ import type {
   Video,
   Voice,
 } from '../../src/api/contracts/message_media.ts';
-import type { pollAnswerSchema } from '../../src/api/contracts/poll_answers.ts';
+import type {
+  getSupergroupMessageReactionsContract,
+  setSupergroupAccountMessageReactionContract,
+} from '../../src/api/contracts/message_reactions.ts';
+import type { getAccountPollAnswerContract } from '../../src/api/contracts/poll_answers.ts';
 import type { ReadonlySnapshot } from '../../src/api/contracts/readonly_snapshot.ts';
 import type {
   HorizontalAlignment,
@@ -831,7 +836,9 @@ export interface AnswerPollInput<Target extends MessageTarget = MessageTarget>
 }
 
 /** The options an account chose in a poll; both lists are empty while it has no answer. */
-export type PollAnswer = ReadonlySnapshot<z.output<typeof pollAnswerSchema>>;
+export type PollAnswer = ReadonlySnapshot<
+  ControlOperationResult<typeof getAccountPollAnswerContract>['poll_answer']
+>;
 
 /** An account's answer to a poll, with the message showing the poll as the chat's history does. */
 export interface AccountPollAnswer<Target extends MessageTarget = MessageTarget> {
@@ -840,14 +847,15 @@ export interface AccountPollAnswer<Target extends MessageTarget = MessageTarget>
 }
 
 /**
- * An ordinary emoji reaction, as the Bot API's `ReactionTypeEmoji` shows it. The emoji must be one
+ * An ordinary emoji reaction, as the Bot API's `ReactionTypeEmoji` writes it. The emoji must be one
  * the Bot API lists for it, written exactly as listed: for example `❤` without the variation
  * selector U+FE0F.
  */
-export interface ReactionTypeEmoji {
-  readonly type: 'emoji';
-  readonly emoji: string;
-}
+export type ReactionTypeEmoji = ReadonlySnapshot<
+  ControlOperationRequest<typeof setSupergroupAccountMessageReactionContract>['body']['reaction'][
+    number
+  ]
+>;
 
 /** A message of a supergroup this account is a member of. */
 export interface AccountReactionMessageInput {
@@ -862,13 +870,14 @@ export interface SetMessageReactionInput extends AccountReactionMessageInput {
 }
 
 /** The reactions one member, an account or a bot, chose for a message. */
-export interface UserReaction {
-  readonly user_id: number;
-  /** The member's reactions; one, as members choose one reaction per message. */
-  readonly reaction: readonly ReactionTypeEmoji[];
-}
+export type UserReaction = ReadonlySnapshot<
+  ControlOperationResult<typeof getSupergroupMessageReactionsContract>['reactions'][number]
+>;
 
-/** The reactions to a supergroup message, with the message that holds them. */
+/**
+ * The reactions to a supergroup message, with the message that holds them. The message type is
+ * the contract's, readonly already.
+ */
 export interface MessageReactions {
   /**
    * The message that holds the reactions, as message history shows it: for a message of an album,
@@ -1032,7 +1041,9 @@ export interface AccountReplyInterfaceInput {
 }
 
 /** A bot command as an account's client lists it. */
-export type BotCommand = ReadonlySnapshot<z.output<typeof accountBotCommandSchema>>;
+export type BotCommand = ReadonlySnapshot<
+  ControlOperationResult<typeof getPrivateChatBotCommandsContract>['commands'][number]
+>;
 
 /**
  * The button an account's client shows next to the message field of a private chat with a bot:
@@ -1058,10 +1069,9 @@ export type MessageDraft = NonNullable<
 >;
 
 /** The commands one bot of a supergroup suggests to an account. */
-export interface SupergroupBotCommands {
-  readonly bot_id: number;
-  readonly commands: readonly BotCommand[];
-}
+export type SupergroupBotCommands = ReadonlySnapshot<
+  ControlOperationResult<typeof getSupergroupBotCommandsContract>['bot_commands'][number]
+>;
 
 /** A callback button press by an account, with the bot's answer once it has answered. */
 export type CallbackQuery = ReadonlySnapshot<

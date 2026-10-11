@@ -9,33 +9,24 @@ import type {
   ReplyKeyboardButtonRequest,
 } from '../../../types/reply_interface.ts';
 import { type ChatMessage, getMessageNotification } from '../../../types/virtual_message.ts';
-import { getPrivateMessageHistoryContract } from '../../contracts/account_messages.ts';
+import {
+  getPrivateMessageHistoryContract,
+  getSupergroupMessageHistoryContract,
+} from '../../contracts/account_messages.ts';
 import {
   getPrivateChatBotCommandsContract,
   getPrivateChatMenuButtonContract,
   getPrivateChatNotificationsContract,
   getPrivateChatReplyInterfaceContract,
+  getSupergroupBotCommandsContract,
+  getSupergroupNotificationsContract,
+  getSupergroupReplyInterfaceContract,
 } from '../../contracts/conversation_reads.ts';
-import {
-  controlErrorResponse,
-  invalidControlRequestResponse,
-} from '../../control_error_response.ts';
 import { registerControlOperation } from '../../control_operation_route.ts';
-import { readPathParameters } from '../control_request_input.ts';
 import type { SessionRouteContextTypes } from '../session_route_context_types.ts';
-import {
-  SUPERGROUP_CONVERSATION_PATH,
-  SUPERGROUP_MESSAGE_HISTORY_PATH,
-  supergroupConversationPathSchema,
-} from './account_paths.ts';
-import { supergroupMemberFailureStatus } from './messaging_failure_statuses.ts';
 
 /** Where the account routes are mounted within the server, as a contract path template. */
 const ACCOUNT_COLLECTION_MOUNT_PATH = '/sessions/{sessionId}/accounts';
-
-const SUPERGROUP_COMMANDS_PATH = `${SUPERGROUP_CONVERSATION_PATH}/commands` as const;
-const SUPERGROUP_NOTIFICATIONS_PATH = `${SUPERGROUP_CONVERSATION_PATH}/notifications` as const;
-const SUPERGROUP_REPLY_INTERFACE_PATH = `${SUPERGROUP_CONVERSATION_PATH}/reply-interface` as const;
 
 /**
  * Routes through which an account reads what its client shows of a private chat or supergroup: the
@@ -45,126 +36,110 @@ const SUPERGROUP_REPLY_INTERFACE_PATH = `${SUPERGROUP_CONVERSATION_PATH}/reply-i
 export function createConversationReadRoutes(): Hono<SessionRouteContextTypes> {
   const accountRoutes = new Hono<SessionRouteContextTypes>();
 
-  accountRoutes.get(SUPERGROUP_MESSAGE_HISTORY_PATH, (context) => {
-    const conversationPath = readPathParameters(
-      supergroupConversationPathSchema,
-      context.req.param(),
-    );
-    if (!conversationPath.valid) {
-      return invalidControlRequestResponse(context, conversationPath.issues);
-    }
-    const { accountId, chatId } = conversationPath.value;
+  registerControlOperation(
+    accountRoutes,
+    ACCOUNT_COLLECTION_MOUNT_PATH,
+    getSupergroupMessageHistoryContract,
+    ({ params: { accountId, chatId } }, context) => {
+      const { supergroupMessaging, botMessageViews } = context.get('emulationSession');
+      const result = supergroupMessaging.getMessageHistory({ accountId, chatId });
+      if (!result.found) {
+        return result.reason === 'not_a_member'
+          ? { status: 403, body: { reason: result.reason } }
+          : { status: 404, body: { reason: result.reason } };
+      }
+      return {
+        status: 200,
+        body: {
+          messages: result.messages.map((message) =>
+            botMessageViews.viewSupergroupMessage(message, accountId)
+          ),
+        },
+      };
+    },
+  );
 
-    const { supergroupMessaging, botMessageViews } = context.get('emulationSession');
-    const result = supergroupMessaging.getMessageHistory({
-      accountId,
-      chatId,
-    });
-    if (!result.found) {
-      return controlErrorResponse(
-        context,
-        supergroupMemberFailureStatus(result.reason),
-        result.reason,
-      );
-    }
-    return context.json({
-      messages: result.messages.map((message) =>
-        botMessageViews.viewSupergroupMessage(message, accountId)
-      ),
-    });
-  });
-
-  accountRoutes.get(SUPERGROUP_COMMANDS_PATH, (context) => {
-    const conversationPath = readPathParameters(
-      supergroupConversationPathSchema,
-      context.req.param(),
-    );
-    if (!conversationPath.valid) {
-      return invalidControlRequestResponse(context, conversationPath.issues);
-    }
-    const { accountId, chatId } = conversationPath.value;
-
-    const result = context.get('emulationSession').botCommands.getSupergroupCommands({
-      accountId,
-      chatId,
-    });
-    if (!result.found) {
-      return controlErrorResponse(
-        context,
-        supergroupMemberFailureStatus(result.reason),
-        result.reason,
-      );
-    }
-    return context.json({
-      bot_commands: result.botCommands.map(({ botId, commands }) => ({
-        bot_id: botId,
-        commands: commands.map(presentBotCommandForAccount),
-      })),
-    });
-  });
-
-  accountRoutes.get(SUPERGROUP_NOTIFICATIONS_PATH, (context) => {
-    const conversationPath = readPathParameters(
-      supergroupConversationPathSchema,
-      context.req.param(),
-    );
-    if (!conversationPath.valid) {
-      return invalidControlRequestResponse(context, conversationPath.issues);
-    }
-    const { accountId, chatId } = conversationPath.value;
-
-    const { supergroupMessaging, botMessageViews } = context.get('emulationSession');
-    const result = supergroupMessaging.getMessageHistory({
-      accountId,
-      chatId,
-    });
-    if (!result.found) {
-      return controlErrorResponse(
-        context,
-        supergroupMemberFailureStatus(result.reason),
-        result.reason,
-      );
-    }
-    return context.json({
-      notifications: presentNotificationsForAccount(
-        result.messages,
+  registerControlOperation(
+    accountRoutes,
+    ACCOUNT_COLLECTION_MOUNT_PATH,
+    getSupergroupBotCommandsContract,
+    ({ params: { accountId, chatId } }, context) => {
+      const result = context.get('emulationSession').botCommands.getSupergroupCommands({
         accountId,
-        (message) => botMessageViews.viewSupergroupMessage(message, accountId).message_id,
-      ),
-    });
-  });
+        chatId,
+      });
+      if (!result.found) {
+        return result.reason === 'not_a_member'
+          ? { status: 403, body: { reason: result.reason } }
+          : { status: 404, body: { reason: result.reason } };
+      }
+      return {
+        status: 200,
+        body: {
+          bot_commands: result.botCommands.map(({ botId, commands }) => ({
+            bot_id: botId,
+            commands: commands.map(presentBotCommandForAccount),
+          })),
+        },
+      };
+    },
+  );
 
-  accountRoutes.get(SUPERGROUP_REPLY_INTERFACE_PATH, (context) => {
-    const conversationPath = readPathParameters(
-      supergroupConversationPathSchema,
-      context.req.param(),
-    );
-    if (!conversationPath.valid) {
-      return invalidControlRequestResponse(context, conversationPath.issues);
-    }
-    const { accountId, chatId } = conversationPath.value;
+  registerControlOperation(
+    accountRoutes,
+    ACCOUNT_COLLECTION_MOUNT_PATH,
+    getSupergroupNotificationsContract,
+    ({ params: { accountId, chatId } }, context) => {
+      const { supergroupMessaging, botMessageViews } = context.get('emulationSession');
+      const result = supergroupMessaging.getMessageHistory({ accountId, chatId });
+      if (!result.found) {
+        return result.reason === 'not_a_member'
+          ? { status: 403, body: { reason: result.reason } }
+          : { status: 404, body: { reason: result.reason } };
+      }
+      return {
+        status: 200,
+        body: {
+          notifications: presentNotificationsForAccount(
+            result.messages,
+            accountId,
+            (message) => botMessageViews.viewSupergroupMessage(message, accountId).message_id,
+          ),
+        },
+      };
+    },
+  );
 
-    const { replyInterfaces, botMessageViews } = context.get('emulationSession');
-    const result = replyInterfaces.getSupergroupReplyInterface({
-      accountId,
-      chat: { type: 'supergroup', chatId },
-    });
-    if (!result.found) {
-      return controlErrorResponse(
-        context,
-        supergroupMemberFailureStatus(result.reason),
-        result.reason,
-      );
-    }
-    const { shownReplyInterface } = result;
-    return context.json({
-      reply_interface: shownReplyInterface === undefined ? null : presentReplyInterfaceForAccount(
-        botMessageViews.viewSupergroupMessage(shownReplyInterface.message, accountId)
-          .message_id,
-        shownReplyInterface.replyInterface,
-      ),
-    });
-  });
+  registerControlOperation(
+    accountRoutes,
+    ACCOUNT_COLLECTION_MOUNT_PATH,
+    getSupergroupReplyInterfaceContract,
+    ({ params: { accountId, chatId } }, context) => {
+      const { replyInterfaces, botMessageViews } = context.get('emulationSession');
+      const result = replyInterfaces.getSupergroupReplyInterface({
+        accountId,
+        chat: { type: 'supergroup', chatId },
+      });
+      if (!result.found) {
+        return result.reason === 'not_a_member'
+          ? { status: 403, body: { reason: result.reason } }
+          : { status: 404, body: { reason: result.reason } };
+      }
+      const { shownReplyInterface } = result;
+      return {
+        status: 200,
+        body: {
+          reply_interface: shownReplyInterface === undefined
+            ? null
+            : presentReplyInterfaceForAccount(
+              botMessageViews.viewSupergroupMessage(shownReplyInterface.message, accountId)
+                .message_id,
+              shownReplyInterface.replyInterface,
+            ),
+        },
+      };
+    },
+  );
 
   registerControlOperation(
     accountRoutes,

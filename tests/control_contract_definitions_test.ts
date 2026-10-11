@@ -9,6 +9,7 @@ import {
   MAX_MESSAGE_TEXT_LENGTH,
 } from '../src/api/contracts/account_messages.ts';
 import { SHOWN_CHAT_ACTIONS } from '../src/api/contracts/chat_actions.ts';
+import { REACTION_EMOJIS as CONTRACT_REACTION_EMOJIS } from '../src/api/contracts/message_reactions.ts';
 import { BOT_ACTIVITY_KINDS as CONTRACT_BOT_ACTIVITY_KINDS } from '../src/api/contracts/bot_activity.ts';
 import { QUEUEABLE_SERVER_ERROR_CODES as CONTRACT_QUEUEABLE_SERVER_ERROR_CODES } from '../src/api/contracts/queued_bot_api_answers.ts';
 import { PLAIN_MESSAGE_ENTITY_TYPES } from '../src/api/contracts/message_entities.ts';
@@ -56,6 +57,7 @@ import {
 } from '../src/types/poll.ts';
 import { MAX_HORIZONTAL_ACCURACY_METERS } from '../src/types/geo_location.ts';
 import { MAX_INLINE_QUERY_LENGTH } from '../src/types/inline_query.ts';
+import { REACTION_EMOJIS } from '../src/types/message_reaction.ts';
 import { UPLOAD_PROFILES } from '../src/types/upload_profile.ts';
 import type { ShownChatActionType } from '../src/types/virtual_chat.ts';
 import { MAX_TEXT_MESSAGE_LENGTH, type PlainTextEntityType } from '../src/types/virtual_message.ts';
@@ -243,5 +245,13 @@ Deno.test('The contracts take message text of at most the length the emulator al
     ],
     [true, false, false],
     'Expected the limit counted by code point, and empty text refused',
+  );
+});
+
+Deno.test('The contracts show exactly the reaction emoji the emulator accepts', () => {
+  assertEquals(
+    [...CONTRACT_REACTION_EMOJIS],
+    [...REACTION_EMOJIS],
+    'Expected the same emoji, in order',
   );
 });
