@@ -1,7 +1,11 @@
 import { Hono } from 'hono';
 import { z } from 'zod';
 
-import { INVITE_LINK_PREFIX, isInviteLinkHash } from '../../../types/chat_invite_link.ts';
+import {
+  expireChatInviteLinkContract,
+  expireJoinRequesterContactContract,
+} from '../../../../control_contracts/supergroups.ts';
+import { INVITE_LINK_PREFIX } from '../../../types/chat_invite_link.ts';
 import {
   MAX_SUPERGROUP_OR_CHANNEL_ID,
   MAX_TELEGRAM_USER_ID,
@@ -12,19 +16,18 @@ import {
   controlErrorResponse,
   invalidControlRequestResponse,
 } from '../../control_error_response.ts';
+import { registerControlOperation } from '../../control_operation_route.ts';
 import { readPathParameters } from '../control_request_input.ts';
 import { presentChatInviteLinkUsage, presentChatJoinRequest } from '../invite_link_presentation.ts';
 import type { SessionRouteContextTypes } from '../session_route_context_types.ts';
 
 const CHAT_ID_PARAMETER = 'chatId';
 const USER_ID_PARAMETER = 'userId';
-const INVITE_LINK_HASH_PARAMETER = 'inviteLinkHash';
 const RESTRICTION_EXPIRY_PATH =
   `/:${CHAT_ID_PARAMETER}/restrictions/:${USER_ID_PARAMETER}/expiry` as const;
-const INVITE_LINK_EXPIRY_PATH =
-  `/:${CHAT_ID_PARAMETER}/invite-links/:${INVITE_LINK_HASH_PARAMETER}/expiry` as const;
-const REQUESTER_CONTACT_EXPIRY_PATH =
-  `/:${CHAT_ID_PARAMETER}/join-requests/:${USER_ID_PARAMETER}/requester-contact/expiry` as const;
+
+/** Where the supergroup routes are mounted within the server, as a contract path template. */
+const SUPERGROUP_COLLECTION_MOUNT_PATH = '/sessions/{sessionId}/supergroups';
 
 const supergroupChatIdPathParameterSchema = z.coerce.number().pipe(
   z.int().min(MIN_SUPERGROUP_OR_CHANNEL_ID).max(MAX_SUPERGROUP_OR_CHANNEL_ID),
@@ -36,14 +39,6 @@ const supergroupUserPathSchema = z.object({
   [USER_ID_PARAMETER]: z.coerce.number().pipe(
     z.int().min(MIN_TELEGRAM_USER_ID).max(MAX_TELEGRAM_USER_ID),
   ),
-});
-
-/** The path parameters of a supergroup's invite link, named by its hash. */
-const inviteLinkPathSchema = z.object({
-  [CHAT_ID_PARAMETER]: supergroupChatIdPathParameterSchema,
-  [INVITE_LINK_HASH_PARAMETER]: z.string().refine(isInviteLinkHash, {
-    message: 'Expected the hash of an invite link',
-  }),
 });
 
 /**
@@ -77,45 +72,41 @@ export function createSupergroupRoutes(): Hono<SessionRouteContextTypes> {
     return context.json({ chat_member: chatMember });
   });
 
-  supergroupRoutes.post(INVITE_LINK_EXPIRY_PATH, (context) => {
-    const inviteLinkPath = readPathParameters(inviteLinkPathSchema, context.req.param());
-    if (!inviteLinkPath.valid) {
-      return invalidControlRequestResponse(context, inviteLinkPath.issues);
-    }
-    const { chatId, inviteLinkHash } = inviteLinkPath.value;
+  registerControlOperation(
+    supergroupRoutes,
+    SUPERGROUP_COLLECTION_MOUNT_PATH,
+    expireChatInviteLinkContract,
+    ({ params: { chatId, inviteLinkHash } }, context) => {
+      const result = context.get('emulationSession').chatAdmission.expireInviteLink({
+        chatId,
+        inviteLinkUrl: `${INVITE_LINK_PREFIX}${inviteLinkHash}`,
+      });
+      if (result.expired) {
+        return { status: 200, body: { invite_link: presentChatInviteLinkUsage(result.link) } };
+      }
+      return result.reason === 'invite_link_not_expirable'
+        ? { status: 409, body: { reason: result.reason } }
+        : { status: 404, body: { reason: result.reason } };
+    },
+  );
 
-    const result = context.get('emulationSession').chatAdmission.expireInviteLink({
-      chatId,
-      inviteLinkUrl: `${INVITE_LINK_PREFIX}${inviteLinkHash}`,
-    });
-    if (!result.expired) {
-      return controlErrorResponse(
-        context,
-        result.reason === 'invite_link_not_expirable' ? 409 : 404,
-        result.reason,
-      );
-    }
-    return context.json({ invite_link: presentChatInviteLinkUsage(result.link) });
-  });
-
-  supergroupRoutes.post(REQUESTER_CONTACT_EXPIRY_PATH, (context) => {
-    const joinRequestPath = readPathParameters(supergroupUserPathSchema, context.req.param());
-    if (!joinRequestPath.valid) {
-      return invalidControlRequestResponse(context, joinRequestPath.issues);
-    }
-
-    const result = context.get('emulationSession').chatAdmission.expireJoinRequesterContact(
-      joinRequestPath.value,
-    );
-    if (!result.expired) {
-      return controlErrorResponse(
-        context,
-        result.reason === 'requester_contact_already_expired' ? 409 : 404,
-        result.reason,
-      );
-    }
-    return context.json({ join_request: presentChatJoinRequest(result.request) });
-  });
+  registerControlOperation(
+    supergroupRoutes,
+    SUPERGROUP_COLLECTION_MOUNT_PATH,
+    expireJoinRequesterContactContract,
+    ({ params: { chatId, userId } }, context) => {
+      const result = context.get('emulationSession').chatAdmission.expireJoinRequesterContact({
+        chatId,
+        userId,
+      });
+      if (result.expired) {
+        return { status: 200, body: { join_request: presentChatJoinRequest(result.request) } };
+      }
+      return result.reason === 'requester_contact_already_expired'
+        ? { status: 409, body: { reason: result.reason } }
+        : { status: 404, body: { reason: result.reason } };
+    },
+  );
 
   return supergroupRoutes;
 }
