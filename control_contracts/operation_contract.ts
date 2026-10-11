@@ -46,21 +46,39 @@ const MEDIA_TYPE_PATTERN = /^([!#$%&'*+.^_`|~0-9a-z-]+)\/([!#$%&'*+.^_`|~0-9a-z-
 const MEDIA_RANGE_WILDCARD = '*';
 
 /**
+ * The type and subtype of a media range, lowercased, as RFC 9110 §12.5.1 writes one: `type/subtype`,
+ * `type/*`, or the range of every media type, whose type is a wildcard only with its subtype;
+ * `undefined` for text that is no media range.
+ */
+function readMediaRange(text: string): readonly [type: string, subtype: string] | undefined {
+  const match = MEDIA_TYPE_PATTERN.exec(text.toLowerCase());
+  if (match === null) return undefined;
+  const [, type, subtype] = match;
+  return type === MEDIA_RANGE_WILDCARD && subtype !== MEDIA_RANGE_WILDCARD
+    ? undefined
+    : [type, subtype];
+}
+
+/** Whether text is a media range a bytes body may declare, such as `image/png` or `image/*`. */
+function isMediaTypeRange(text: string): boolean {
+  return readMediaRange(text) !== undefined;
+}
+
+/**
  * Whether a `Content-Type`'s media type, without its parameters such as `charset`, is within a
  * media range, as RFC 9110 §12.5.1 matches them: equal to it, of its type when it is `type/*`, or
  * any when it is every type's. The media type must be concrete, without a wildcard, which only a
- * range may hold; a range's subtype may be a wildcard only with its type. Media types are compared
- * without regard to letter case.
+ * range may hold. Media types are compared without regard to letter case.
  */
 export function isMediaTypeInRange(contentType: string, mediaTypeRange: string): boolean {
   const [mediaTypeText = ''] = contentType.split(';');
   const mediaType = MEDIA_TYPE_PATTERN.exec(mediaTypeText.trim().toLowerCase());
-  const range = MEDIA_TYPE_PATTERN.exec(mediaTypeRange.toLowerCase());
-  if (mediaType === null || range === null) return false;
+  const range = readMediaRange(mediaTypeRange);
+  if (mediaType === null || range === undefined) return false;
   const [, type, subtype] = mediaType;
-  const [, rangeType, rangeSubtype] = range;
+  const [rangeType, rangeSubtype] = range;
   if (type === MEDIA_RANGE_WILDCARD || subtype === MEDIA_RANGE_WILDCARD) return false;
-  if (rangeType === MEDIA_RANGE_WILDCARD) return rangeSubtype === MEDIA_RANGE_WILDCARD;
+  if (rangeType === MEDIA_RANGE_WILDCARD) return true;
   return rangeType === type && (rangeSubtype === MEDIA_RANGE_WILDCARD || rangeSubtype === subtype);
 }
 
@@ -121,8 +139,8 @@ const PATH_PLACEHOLDER_PATTERN = /\{([^{}]+)\}/g;
  * from.
  *
  * @throws {Error} when `params` does not name exactly the placeholders of `path`,
- * `querySerialization` names a parameter that `query` does not, or a refusal status is not an
- * error status.
+ * `querySerialization` names a parameter that `query` does not, a bytes success declares text that
+ * is no media range, or a refusal status is not an error status.
  */
 export function defineControlOperation<const Contract extends ControlOperationContract>(
   contract: Contract,
@@ -142,6 +160,12 @@ export function defineControlOperation<const Contract extends ControlOperationCo
     if (!queryParameterNames.includes(name)) {
       throw new Error(`${contract.operationId} serializes ${name}, which is no query parameter`);
     }
+  }
+  const successBody = contract.success.body;
+  if (successBody.kind === 'bytes' && !isMediaTypeRange(successBody.mediaTypeRange)) {
+    throw new Error(
+      `${contract.operationId} declares ${successBody.mediaTypeRange}, which is no media range`,
+    );
   }
   for (const status of Object.keys(contract.refusals).map(Number)) {
     if (!Number.isInteger(status) || status < 400 || status > 599) {

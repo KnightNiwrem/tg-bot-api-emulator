@@ -2,7 +2,7 @@
  * The contract-driven route registration and typed caller, exercised together on contracts of
  * operations that no control route has yet: a query, bytes, an empty success, and an optional body.
  */
-import { assertEquals, assertRejects } from '@std/assert';
+import { assertEquals, assertRejects, assertThrows } from '@std/assert';
 import { Hono } from 'hono';
 import { z } from 'zod';
 
@@ -230,6 +230,29 @@ Deno.test('A wildcard Content-Type is no media type within a range', async () =>
   );
   const response = await app.request('http://notes.example/notes/1/content');
   assertEquals(response.status, 500, 'Expected the route to fail rather than answer a range');
+});
+
+Deno.test('A bytes contract declares a media range of RFC 9110 form', () => {
+  for (
+    const mediaTypeRange of ['text', '*/plain', 'text/', '/plain', 'text/plain/x', '', 'te xt/*']
+  ) {
+    assertThrows(
+      () =>
+        defineControlOperation({
+          ...downloadNoteContract,
+          success: { status: 200, body: { kind: 'bytes', mediaTypeRange } },
+        }),
+      Error,
+      'no media range',
+      `Expected ${JSON.stringify(mediaTypeRange)} refused`,
+    );
+  }
+  for (const mediaTypeRange of ['text/plain', 'text/*', '*/*', 'Image/PNG']) {
+    defineControlOperation({
+      ...downloadNoteContract,
+      success: { status: 200, body: { kind: 'bytes', mediaTypeRange } },
+    });
+  }
 });
 
 Deno.test('A route answering bytes outside its media type range is a server fault', async () => {
