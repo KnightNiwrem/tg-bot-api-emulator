@@ -1,8 +1,8 @@
 import { z } from 'zod';
 
 import type { EmulationSession } from '../../../../types/emulation_session.ts';
-import { botChatAccessFailureAnswer } from '../chat_access.ts';
 import { readChatMemberTarget } from '../chat_member_requests.ts';
+import { presentChatJoinRequestFailure } from '../errors/chat_join_request_failure_presenter.ts';
 import {
   botApiError,
   type BotApiMethod,
@@ -17,15 +17,6 @@ export const CHAT_JOIN_REQUEST_METHODS: readonly BotApiMethod[] = [
   { name: 'approveChatJoinRequest', recordsActivity: true, handler: handleApproveChatJoinRequest },
   { name: 'declineChatJoinRequest', recordsActivity: true, handler: handleDeclineChatJoinRequest },
 ];
-
-/** Telegram's descriptions for rejected join request decisions. */
-const PRIVATE_CHAT_HAS_NO_JOIN_REQUESTS_DESCRIPTION =
-  "Bad Request: the chat can't have join requests";
-const NOT_ENOUGH_RIGHTS_TO_MANAGE_JOIN_REQUESTS_DESCRIPTION =
-  'Bad Request: not enough rights to manage chat join requests';
-/** Telegram's servers' errors for join requests, which the official server passes on. */
-const USER_ALREADY_PARTICIPANT_DESCRIPTION = 'Bad Request: USER_ALREADY_PARTICIPANT';
-const JOIN_REQUEST_MISSING_DESCRIPTION = 'Bad Request: HIDE_REQUESTER_MISSING';
 
 /** Parameters of approveChatJoinRequest and declineChatJoinRequest, which name one request. */
 const chatJoinRequestDecisionParametersSchema = z.strictObject({
@@ -77,25 +68,5 @@ function answerChatJoinRequestDecision(
   }
 
   const result = decide(targetReading.target);
-  if (result.decided) {
-    return botApiResult(true);
-  }
-  switch (result.reason) {
-    case 'chat_not_found':
-    case 'bot_not_a_member':
-    case 'bot_kicked':
-      return botChatAccessFailureAnswer(result.reason);
-    case 'private_chat_has_no_join_requests':
-      return botApiError(400, PRIVATE_CHAT_HAS_NO_JOIN_REQUESTS_DESCRIPTION);
-    case 'not_enough_rights':
-      return botApiError(400, NOT_ENOUGH_RIGHTS_TO_MANAGE_JOIN_REQUESTS_DESCRIPTION);
-    case 'already_a_member':
-      return botApiError(400, USER_ALREADY_PARTICIPANT_DESCRIPTION);
-    case 'join_request_missing':
-      return botApiError(400, JOIN_REQUEST_MISSING_DESCRIPTION);
-    default: {
-      const unhandledReason: never = result.reason;
-      throw new Error(`Unhandled ${methodName} failure: ${unhandledReason}`);
-    }
-  }
+  return result.decided ? botApiResult(true) : presentChatJoinRequestFailure(result);
 }

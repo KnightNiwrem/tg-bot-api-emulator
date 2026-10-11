@@ -75,6 +75,16 @@ const CHECK_MESSAGE = botApiServerSource('telegram-bot-api/Client.cpp#L9084-L910
 /** TDLib's `forward_message`, which refuses a forward or copy that its checks skipped. */
 const FORWARDED_MESSAGE_SKIPPED = tdlibSource('td/telegram/MessagesManager.cpp#L24490-L24493');
 
+/** TDLib's `can_manage_dialog_invite_links`, which every change of an invite link checks. */
+const INVITE_LINK_MANAGEMENT_CHECK = tdlibSource(
+  'td/telegram/DialogInviteLinkManager.cpp#L918-L945',
+);
+
+/** TDLib's `can_manage_dialog_join_requests`, which every decision on a join request checks. */
+const JOIN_REQUEST_MANAGEMENT_CHECK = tdlibSource(
+  'td/telegram/DialogParticipantManager.cpp#L1257-L1280',
+);
+
 /**
  * The errors with which the Bot API answers a refused call, as templates over each failure's
  * details, with where each description comes from. Presenters map an operation's domain failures
@@ -534,6 +544,258 @@ export const BOT_API_ERRORS = {
     400,
     'Bad Request: reactions in private chats are not supported',
     emulatorInference('The emulator supports reactions in supergroups only'),
+  ),
+
+  // Text that is not well-formed Unicode, which TDLib rejects before any other check.
+  stringsNotUtf8: fixedBotApiError(
+    400,
+    'Bad Request: strings must be encoded in UTF-8',
+    tdlibSource('td/telegram/Requests.cpp#L1989-L1992'),
+  ),
+
+  // Titles, descriptions and default permissions of chats.
+  chatTitleEmpty: fixedBotApiError(
+    400,
+    'Bad Request: title must be non-empty',
+    tdlibSource('td/telegram/DialogManager.cpp#L2346-L2349'),
+  ),
+  privateChatTitleUnchangeable: fixedBotApiError(
+    400,
+    "Bad Request: can't change private chat title",
+    tdlibSource('td/telegram/DialogManager.cpp#L2352-L2353'),
+  ),
+  notEnoughRightsToChangeChatTitle: fixedBotApiError(
+    400,
+    'Bad Request: not enough rights to change chat title',
+    tdlibSource('td/telegram/DialogManager.cpp#L2364-L2368'),
+  ),
+  privateChatDescriptionUnchangeable: fixedBotApiError(
+    400,
+    "Bad Request: can't change private chat description",
+    tdlibSource('td/telegram/DialogManager.cpp#L2768-L2769'),
+  ),
+  notEnoughRightsToSetChatDescription: fixedBotApiError(
+    400,
+    'Bad Request: not enough rights to set chat description',
+    tdlibSource('td/telegram/ChatManager.cpp#L3683-L3685'),
+  ),
+  /** The official server's wording of Telegram's `CHAT_ABOUT_NOT_MODIFIED`. */
+  chatDescriptionNotModified: fixedBotApiError(
+    400,
+    'Bad Request: chat description is not modified',
+    botApiServerSource('telegram-bot-api/Client.cpp#L136-L138'),
+  ),
+  privateChatPermissionsUnchangeable: fixedBotApiError(
+    400,
+    "Bad Request: can't change private chat permissions",
+    tdlibSource('td/telegram/DialogManager.cpp#L2659-L2660'),
+  ),
+  notEnoughRightsToChangeChatPermissions: fixedBotApiError(
+    400,
+    'Bad Request: not enough rights to change chat permissions',
+    tdlibSource('td/telegram/DialogManager.cpp#L2671-L2676'),
+  ),
+
+  // Chat members, as the bot reads, moderates or promotes them, or leaves their chat.
+  memberNotFound: fixedBotApiError(
+    400,
+    'Bad Request: member not found',
+    tdlibSource('td/telegram/DialogParticipantManager.cpp#L1815-L1826'),
+  ),
+  privateChatHasNoAdministrators: fixedBotApiError(
+    400,
+    'Bad Request: there are no administrators in the private chat',
+    botApiServerSource('telegram-bot-api/Client.cpp#L16345-L16346'),
+  ),
+  privateChatNotLeavable: fixedBotApiError(
+    400,
+    "Bad Request: can't leave private chats",
+    tdlibSource('td/telegram/DialogParticipantManager.cpp#L2420-L2421'),
+  ),
+  privateChatMembersNotBannable: fixedBotApiError(
+    400,
+    "Bad Request: can't ban members in private chats",
+    tdlibSource('td/telegram/DialogParticipantManager.cpp#L2393-L2394'),
+  ),
+  /** A promotion or an unban in a private chat, which the official server refuses so. */
+  methodUnavailableInPrivateChats: fixedBotApiError(
+    400,
+    'Bad Request: method is available only in supergroup and channel chats',
+    botApiServerSource('telegram-bot-api/Client.cpp#L16571-L16573'),
+  ),
+  /** A restriction in a private chat, which the official server refuses so. */
+  methodUnavailableOutsideSupergroups: fixedBotApiError(
+    400,
+    'Bad Request: method is available only in supergroups',
+    botApiServerSource('telegram-bot-api/Client.cpp#L16533-L16535'),
+  ),
+  /** A custom title in a private chat, which the official server refuses so. */
+  methodUnavailableOutsideGroups: fixedBotApiError(
+    400,
+    'Bad Request: method is available only in groups and supergroups',
+    botApiServerSource('telegram-bot-api/Client.cpp#L16456-L16459'),
+  ),
+  cannotRestrictSelf: fixedBotApiError(
+    400,
+    "Bad Request: can't restrict self",
+    tdlibSource('td/telegram/DialogParticipantManager.cpp#L2994-L3000'),
+  ),
+  cannotUnrestrictSelf: fixedBotApiError(
+    400,
+    "Bad Request: can't unrestrict self",
+    tdlibSource('td/telegram/DialogParticipantManager.cpp#L2994-L3000'),
+  ),
+  chatOwnerNotRemovable: fixedBotApiError(
+    400,
+    "Bad Request: can't remove chat owner",
+    tdlibSource('td/telegram/DialogParticipantManager.cpp#L2867-L2869'),
+  ),
+  notEnoughRightsToRestrictMembers: fixedBotApiError(
+    400,
+    'Bad Request: not enough rights to restrict/unrestrict chat member',
+    tdlibSource('td/telegram/DialogParticipantManager.cpp#L3031-L3033'),
+  ),
+  /** The official server's wording of Telegram's `USER_ADMIN_INVALID`. */
+  memberIsAdministrator: fixedBotApiError(
+    400,
+    'Bad Request: user is an administrator of the chat',
+    botApiServerSource('telegram-bot-api/Client.cpp#L130-L132'),
+  ),
+  /** A change of an administrator's standing that needs `can_promote_members`. */
+  notEnoughRightsToPromoteMembers: fixedBotApiError(
+    400,
+    'Bad Request: not enough rights',
+    tdlibSource('td/telegram/DialogParticipantManager.cpp#L2951-L2954'),
+  ),
+  cannotPromoteSelf: fixedBotApiError(
+    400,
+    "Bad Request: can't promote self",
+    tdlibSource('td/telegram/DialogParticipantManager.cpp#L2945-L2948'),
+  ),
+  /** A promotion of a user who is not a member, which Telegram's servers would have to add. */
+  memberNotInChat: fixedBotApiError(
+    400,
+    'Bad Request: USER_NOT_MUTUAL_CONTACT',
+    telegramApiDocumentation('channels.editAdmin'),
+  ),
+  memberKicked: fixedBotApiError(
+    400,
+    'Bad Request: USER_KICKED',
+    telegramApiDocumentation('channels.editAdmin'),
+  ),
+  /** A right granted that the promoting administrator does not hold. */
+  rightsNotHeld: fixedBotApiError(
+    400,
+    'Bad Request: RIGHT_FORBIDDEN',
+    telegramApiDocumentation('channels.editAdmin'),
+  ),
+  botsCannotAddMembers: fixedBotApiError(
+    400,
+    "Bad Request: bots can't add new chat members",
+    tdlibSource('td/telegram/DialogParticipantManager.cpp#L2674-L2676'),
+  ),
+  ownerCustomTitleNotEditable: fixedBotApiError(
+    400,
+    'Bad Request: only the owner can edit their custom title',
+    botApiServerSource('telegram-bot-api/Client.cpp#L16463-L16466'),
+  ),
+  memberIsNotAdministrator: fixedBotApiError(
+    400,
+    'Bad Request: user is not an administrator',
+    botApiServerSource('telegram-bot-api/Client.cpp#L16467-L16469'),
+  ),
+  customTitleNotEditable: fixedBotApiError(
+    400,
+    'Bad Request: not enough rights to change custom title of the user',
+    botApiServerSource('telegram-bot-api/Client.cpp#L16471-L16474'),
+  ),
+  /** The official server renames Telegram's `RANK_INVALID` for a custom title. */
+  customTitleInvalid: fixedBotApiError(
+    400,
+    'Bad Request: CUSTOM_TITLE_INVALID',
+    botApiServerSource('telegram-bot-api/Client.cpp#L154-L163'),
+  ),
+  /** The official server renames Telegram's `RANK_EMOJI_NOT_ALLOWED` for a custom title. */
+  customTitleEmojiNotAllowed: fixedBotApiError(
+    400,
+    'Bad Request: CUSTOM_TITLE_EMOJI_NOT_ALLOWED',
+    botApiServerSource('telegram-bot-api/Client.cpp#L154-L163'),
+  ),
+
+  // Invite links.
+  privateChatHasNoInviteLinks: fixedBotApiError(
+    400,
+    "Bad Request: can't invite members to a private chat",
+    INVITE_LINK_MANAGEMENT_CHECK,
+  ),
+  notEnoughRightsToManageInviteLinks: fixedBotApiError(
+    400,
+    'Bad Request: not enough rights to manage chat invite link',
+    INVITE_LINK_MANAGEMENT_CHECK,
+  ),
+  inviteLinkMemberLimitWithJoinRequest: fixedBotApiError(
+    400,
+    "Bad Request: member limit can't be specified for links requiring administrator approval",
+    tdlibSource('td/telegram/DialogInviteLinkManager.cpp#L1017-L1019'),
+  ),
+  inviteLinkEmpty: fixedBotApiError(
+    400,
+    'Bad Request: invite link must be non-empty',
+    tdlibSource('td/telegram/DialogInviteLinkManager.cpp#L1021-L1023'),
+  ),
+  inviteLinkExpiryDateInvalid: fixedBotApiError(
+    400,
+    'Bad Request: EXPIRE_DATE_INVALID',
+    telegramApiDocumentation('messages.exportChatInvite'),
+  ),
+  inviteLinkMemberLimitInvalid: fixedBotApiError(
+    400,
+    'Bad Request: USAGE_LIMIT_INVALID',
+    telegramApiDocumentation('messages.exportChatInvite'),
+  ),
+  /** A link that no longer works, which the emulator also answers for a link unknown to the chat. */
+  inviteLinkUnavailable: fixedBotApiError(
+    400,
+    'Bad Request: INVITE_HASH_EXPIRED',
+    telegramApiDocumentation('messages.editExportedChatInvite'),
+  ),
+  /** A link another administrator created, which only the chat's owner could manage. */
+  inviteLinkOfAnotherAdministrator: fixedBotApiError(
+    400,
+    'Bad Request: CHAT_ADMIN_REQUIRED',
+    telegramApiDocumentation('messages.editExportedChatInvite'),
+  ),
+  /**
+   * A change to a primary link, which Telegram's servers refuse as a change to a permanent link.
+   * The emulator answers it for every edit of a primary link, which the Bot API documents
+   * `editChatInviteLink` not to edit.
+   */
+  primaryInviteLinkNotEditable: fixedBotApiError(
+    400,
+    'Bad Request: CHAT_INVITE_PERMANENT',
+    telegramApiDocumentation('messages.editExportedChatInvite'),
+  ),
+
+  // Join requests.
+  privateChatHasNoJoinRequests: fixedBotApiError(
+    400,
+    "Bad Request: the chat can't have join requests",
+    JOIN_REQUEST_MANAGEMENT_CHECK,
+  ),
+  notEnoughRightsToManageJoinRequests: fixedBotApiError(
+    400,
+    'Bad Request: not enough rights to manage chat join requests',
+    JOIN_REQUEST_MANAGEMENT_CHECK,
+  ),
+  joinRequesterAlreadyMember: fixedBotApiError(
+    400,
+    'Bad Request: USER_ALREADY_PARTICIPANT',
+    telegramApiDocumentation('messages.hideChatJoinRequest'),
+  ),
+  joinRequestMissing: fixedBotApiError(
+    400,
+    'Bad Request: HIDE_REQUESTER_MISSING',
+    telegramApiDocumentation('messages.hideChatJoinRequest'),
   ),
 
   // Parameters the emulator cannot read.

@@ -1,16 +1,14 @@
 import { z } from 'zod';
 
-import type { SupergroupBotAccessFailureReason } from '../../../../types/chat_membership.ts';
 import { botChatAccessFailureAnswer, CHAT_ID_EMPTY_DESCRIPTION } from '../chat_access.ts';
-import { chatMemberFailureAnswer } from '../chat_member_requests.ts';
 import { readChatPermissionsParameter } from '../chat_permissions_parameter.ts';
+import { presentChatInfoChangeFailure } from '../errors/chat_info_failure_presenter.ts';
 import {
   botApiError,
   type BotApiMethod,
   type BotApiMethodAnswer,
   type BotApiMethodContext,
   botApiResult,
-  STRINGS_NOT_UTF8_DESCRIPTION,
 } from '../method_call.ts';
 import {
   booleanParameter,
@@ -48,22 +46,6 @@ const getChatParametersSchema = z.strictObject({
   chat_id: integerParameter(z.int()).optional(),
 });
 
-/** TDLib's descriptions for a chat whose title or description a bot cannot change. */
-const CHAT_TITLE_EMPTY_DESCRIPTION = 'Bad Request: title must be non-empty';
-const NOT_ENOUGH_RIGHTS_TO_CHANGE_TITLE_DESCRIPTION =
-  'Bad Request: not enough rights to change chat title';
-const NOT_ENOUGH_RIGHTS_TO_SET_DESCRIPTION_DESCRIPTION =
-  'Bad Request: not enough rights to set chat description';
-const PRIVATE_CHAT_TITLE_UNCHANGEABLE_DESCRIPTION = "Bad Request: can't change private chat title";
-const PRIVATE_CHAT_DESCRIPTION_UNCHANGEABLE_DESCRIPTION =
-  "Bad Request: can't change private chat description";
-const NOT_ENOUGH_RIGHTS_TO_CHANGE_PERMISSIONS_DESCRIPTION =
-  'Bad Request: not enough rights to change chat permissions';
-const PRIVATE_CHAT_PERMISSIONS_UNCHANGEABLE_DESCRIPTION =
-  "Bad Request: can't change private chat permissions";
-/** The official server's description of Telegram's refusal of an unchanged description. */
-const CHAT_DESCRIPTION_NOT_MODIFIED_DESCRIPTION = 'Bad Request: chat description is not modified';
-
 function handleSetChatTitle(
   context: BotApiMethodContext,
   parameters: BotApiRequestParameters,
@@ -77,19 +59,9 @@ function handleSetChatTitle(
     return botApiError(400, CHAT_ID_EMPTY_DESCRIPTION);
   }
   const result = context.session.botApi.setChatTitle(context.bot, { chatId, title });
-  if (result.set) {
-    return botApiResult(true);
-  }
-  switch (result.reason) {
-    case 'title_empty':
-      return botApiError(400, CHAT_TITLE_EMPTY_DESCRIPTION);
-    case 'not_enough_rights':
-      return botApiError(400, NOT_ENOUGH_RIGHTS_TO_CHANGE_TITLE_DESCRIPTION);
-    case 'private_chat_info_unchangeable':
-      return botApiError(400, PRIVATE_CHAT_TITLE_UNCHANGEABLE_DESCRIPTION);
-    default:
-      return chatInfoChangeFailureAnswer(result.reason);
-  }
+  return result.set
+    ? botApiResult(true)
+    : presentChatInfoChangeFailure('chat_title_change', result);
 }
 
 function handleSetChatDescription(
@@ -105,19 +77,9 @@ function handleSetChatDescription(
     return botApiError(400, CHAT_ID_EMPTY_DESCRIPTION);
   }
   const result = context.session.botApi.setChatDescription(context.bot, { chatId, description });
-  if (result.set) {
-    return botApiResult(true);
-  }
-  switch (result.reason) {
-    case 'description_not_modified':
-      return botApiError(400, CHAT_DESCRIPTION_NOT_MODIFIED_DESCRIPTION);
-    case 'not_enough_rights':
-      return botApiError(400, NOT_ENOUGH_RIGHTS_TO_SET_DESCRIPTION_DESCRIPTION);
-    case 'private_chat_info_unchangeable':
-      return botApiError(400, PRIVATE_CHAT_DESCRIPTION_UNCHANGEABLE_DESCRIPTION);
-    default:
-      return chatInfoChangeFailureAnswer(result.reason);
-  }
+  return result.set
+    ? botApiResult(true)
+    : presentChatInfoChangeFailure('chat_description_change', result);
 }
 
 function handleSetChatPermissions(
@@ -145,35 +107,9 @@ function handleSetChatPermissions(
     chatId: data.chat_id,
     permissions: permissionsReading.permissions,
   });
-  if (result.set) {
-    return botApiResult(true);
-  }
-  switch (result.reason) {
-    case 'not_enough_rights':
-      return botApiError(400, NOT_ENOUGH_RIGHTS_TO_CHANGE_PERMISSIONS_DESCRIPTION);
-    case 'private_chat_permissions_unchangeable':
-      return botApiError(400, PRIVATE_CHAT_PERMISSIONS_UNCHANGEABLE_DESCRIPTION);
-    default:
-      return chatInfoChangeFailureAnswer(result.reason);
-  }
-}
-
-/** Telegram's error for a chat whose information a bot cannot reach, or text it cannot read. */
-function chatInfoChangeFailureAnswer(
-  reason: SupergroupBotAccessFailureReason | 'text_encoding_invalid',
-): BotApiMethodAnswer {
-  switch (reason) {
-    case 'chat_not_found':
-    case 'bot_not_a_member':
-    case 'bot_kicked':
-      return botChatAccessFailureAnswer(reason);
-    case 'text_encoding_invalid':
-      return botApiError(400, STRINGS_NOT_UTF8_DESCRIPTION);
-    default: {
-      const unhandledReason: never = reason;
-      throw new Error(`Unhandled chat information failure: ${unhandledReason}`);
-    }
-  }
+  return result.set
+    ? botApiResult(true)
+    : presentChatInfoChangeFailure('chat_permissions_change', result);
 }
 
 function handleGetChat(
@@ -190,5 +126,5 @@ function handleGetChat(
   }
 
   const result = context.session.botApi.getChat(context.bot, { chatId });
-  return result.found ? botApiResult(result.chat) : chatMemberFailureAnswer(result.reason);
+  return result.found ? botApiResult(result.chat) : botChatAccessFailureAnswer(result.reason);
 }
