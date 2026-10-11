@@ -43,7 +43,8 @@ properties:
       type: string
     description: >-
       The parameters as the bot sent them, as text, as the Bot API reads them: `chat_id: 1` and
-      `chat_id: "1"` are both recorded as `"1"`. Empty when the request could not be decoded.
+      `chat_id: "1"` are both recorded as `"1"`, and a JSON body's object or array as the source
+      text the bot wrote, as form text holding it is. Empty when the request could not be decoded.
   uploaded_files:
     type: array
     description: The files the call uploaded, described without their content.

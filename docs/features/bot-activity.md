@@ -80,7 +80,11 @@ numbers its updates independently, so an `update_id` names one update only toget
 ### Matching parameters
 
 A call's parameters are recorded as the text the bot sent, as Telegram reads every parameter as
-text. A JSON body's string is recorded as it is, and any other JSON value as its JSON text.
+text. A JSON body's string member is recorded as its content, and any other member as its source
+text, exactly as the bot wrote it. So JSON the bot writes the same way is recorded as the same text
+whether it arrives as a JSON body's member, as a string or form field holding that JSON, or in the
+query string: whitespace, member order and each number's spelling are kept, so `1.0`, `1e500` and
+`9007199254740993` stay as they are, nested or not.
 
 `parameters[name]=text` compares that text exactly, as in `parameters[callback_query_id]=123`. Text
 that happens to be JSON is still compared as text, so
@@ -108,11 +112,9 @@ text is JSON nested at most 100 levels, and that JSON matches the pattern:
 
 So `{"reply_markup":{"inline_keyboard":[[{"text":"Yes"},{"text":"No"}]]}}` finds a keyboard of one
 row with those two buttons, whatever their callback data. A parameter sent as a JSON body's object
-matches just as one sent as form text holding the same JSON. The emulator records such an object as
-it writes it again after reading it, so a number in it that JavaScript cannot hold exactly is
-recorded as JavaScript holds it: `9007199254740993` as `9007199254740992`, and `1e500` as `null`.
-Form text, and a JSON body's string, are recorded exactly. Only the parameters `parameters_json`
-names are read as JSON, and both filters can be given together.
+matches just as one sent as form text holding the same JSON, as both are recorded as the bot wrote
+them. Only the parameters `parameters_json` names are read as JSON, and both filters can be given
+together.
 
 A `parameters_json` value that is not JSON is an `invalid_json` issue, one that nests objects and
 arrays more than 100 levels deep, its own object included, is a `too_big` issue, one that is not an

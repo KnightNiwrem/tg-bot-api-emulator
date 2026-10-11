@@ -104,11 +104,10 @@ get:
         matching value, whatever other members it has and in any order, so no pattern requires a
         member to be missing; an array matches an array of the same length whose elements match
         the pattern's in order. A parameter a bot sent as a JSON body's object or array is
-        recorded, and matched, as the emulator writes that value again after reading it, so its
-        numbers are as JavaScript holds them. The value is rejected
-        when it is not JSON, nests objects and arrays more than 100 levels deep, its own object
-        included, is not an object, has a member that is not an object or an array, or has an
-        object that names a member more than once.
+        recorded, and matched, as the source text the bot wrote, as form text is. The value is
+        rejected when it is not JSON, nests objects and arrays more than 100 levels deep, its own
+        object included, is not an object, has a member that is not an object or an array, or has
+        an object that names a member more than once.
       content:
         application/json:
           schema:

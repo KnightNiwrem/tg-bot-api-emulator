@@ -2754,7 +2754,8 @@ export interface BotApiCallEntry {
   readonly via: 'http' | 'webhook_reply';
   /**
    * The parameters as the bot sent them, as text: `chat_id: 1` is recorded as `"1"`, and structured
-   * parameters such as `reply_markup` as JSON text. Empty when the request could not be decoded.
+   * parameters such as `reply_markup` as the JSON text the bot wrote, in whichever encoding. Empty
+   * when the request could not be decoded.
    */
   readonly parameters: Readonly<Record<string, string>>;
   readonly uploaded_files: readonly UploadedFileDescription[];
