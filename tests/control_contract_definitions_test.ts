@@ -4,6 +4,11 @@
  * check each copy against the domain's value.
  */
 import { assertEquals } from '@std/assert';
+import {
+  editAccountMessageContract,
+  MAX_MESSAGE_TEXT_LENGTH,
+} from '../src/api/contracts/account_messages.ts';
+import { SHOWN_CHAT_ACTIONS } from '../src/api/contracts/chat_actions.ts';
 import { BOT_ACTIVITY_KINDS as CONTRACT_BOT_ACTIVITY_KINDS } from '../src/api/contracts/bot_activity.ts';
 import { QUEUEABLE_SERVER_ERROR_CODES as CONTRACT_QUEUEABLE_SERVER_ERROR_CODES } from '../src/api/contracts/queued_bot_api_answers.ts';
 import { PLAIN_MESSAGE_ENTITY_TYPES } from '../src/api/contracts/message_entities.ts';
@@ -52,7 +57,8 @@ import {
 import { MAX_HORIZONTAL_ACCURACY_METERS } from '../src/types/geo_location.ts';
 import { MAX_INLINE_QUERY_LENGTH } from '../src/types/inline_query.ts';
 import { UPLOAD_PROFILES } from '../src/types/upload_profile.ts';
-import type { PlainTextEntityType } from '../src/types/virtual_message.ts';
+import type { ShownChatActionType } from '../src/types/virtual_chat.ts';
+import { MAX_TEXT_MESSAGE_LENGTH, type PlainTextEntityType } from '../src/types/virtual_message.ts';
 
 Deno.test('The contracts name exactly the bot activity kinds the emulator records', () => {
   assertEquals(
@@ -207,5 +213,35 @@ Deno.test('The contracts limit inline queries and location accuracy as the emula
     [CONTRACT_MAX_INLINE_QUERY_LENGTH, CONTRACT_MAX_HORIZONTAL_ACCURACY_METERS],
     [MAX_INLINE_QUERY_LENGTH, MAX_HORIZONTAL_ACCURACY_METERS],
     'Expected the same query length and accuracy limits',
+  );
+});
+
+Deno.test('The contracts name exactly the chat actions the emulator shows', () => {
+  // The emulator keeps these actions as a type alone, so the check is that this type-checks.
+  const namesTheSameActions: HaveSameMembers<
+    typeof SHOWN_CHAT_ACTIONS[number],
+    ShownChatActionType
+  > = true;
+  assertEquals(namesTheSameActions, true);
+  assertEquals(
+    new Set(SHOWN_CHAT_ACTIONS).size,
+    SHOWN_CHAT_ACTIONS.length,
+    'Expected each action named once',
+  );
+});
+
+Deno.test('The contracts take message text of at most the length the emulator allows', () => {
+  const editRequest = editAccountMessageContract.body.schema;
+  const takesText = (text: string) => editRequest.safeParse({ text }).success;
+
+  assertEquals(MAX_MESSAGE_TEXT_LENGTH, MAX_TEXT_MESSAGE_LENGTH, 'Expected the same limit');
+  assertEquals(
+    [
+      takesText('😀'.repeat(MAX_TEXT_MESSAGE_LENGTH)),
+      takesText('😀'.repeat(MAX_TEXT_MESSAGE_LENGTH + 1)),
+      takesText(''),
+    ],
+    [true, false, false],
+    'Expected the limit counted by code point, and empty text refused',
   );
 });

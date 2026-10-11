@@ -1,9 +1,15 @@
 /**
  * Converts a contract's wire schema to JSON Schema, refusing any schema whose conversion would
  * not say everything the schema checks.
+ *
+ * A Telegram object, which a schema annotates with its Telegram type's name, is the document's to
+ * describe, so it converts to that annotation alone, as the canonical form compares it; its own
+ * schema, which may nest without bound, as a rich message's blocks do, is neither checked nor
+ * converted.
  */
 import { z } from 'zod';
 
+import { TELEGRAM_TYPE_ANNOTATION } from '../../../src/api/contracts/wire_fields.ts';
 import type { JsonSchema } from '../openapi_conformance/openapi_document.ts';
 
 /**
@@ -38,24 +44,45 @@ const REPRESENTABLE_SCHEMA_TYPES = new Set([
  * Describes a wire schema as JSON Schema 2020-12, as a request reads it or a response is written.
  *
  * @throws {Error} when the schema has a refinement, which conversion would silently drop, or a
- * kind of schema that is not a wire fact, such as a transform; or when zod cannot represent part
- * of it.
+ * kind of schema that is not a wire fact, such as a transform; when zod cannot represent part of
+ * it; or when it refers to itself outside a Telegram object.
  */
 export function readWireJsonSchema(schema: z.ZodType, semantics: WireSchemaSemantics): JsonSchema {
   assertRepresentable(schema, '');
-  const jsonSchema: { readonly [keyword: string]: unknown } = {
+  const jsonSchema: { [keyword: string]: unknown } = {
     ...z.toJSONSchema(schema, {
       io: semantics,
       target: 'draft-2020-12',
       unrepresentable: 'throw',
-      cycles: 'throw',
+      cycles: 'ref',
       reused: 'inline',
     }),
   };
-  return jsonSchema;
+  // Zod defines each schema that refers to itself once, and refers to the definition. Naming a
+  // Telegram object leaves out every reference within it, so any reference left is a schema that
+  // refers to itself outside one.
+  delete jsonSchema.$defs;
+  const wireJsonSchema = nameTelegramObjects(jsonSchema);
+  if (JSON.stringify(wireJsonSchema).includes('"$ref"')) {
+    throw new Error('The wire schema refers to itself outside a Telegram object');
+  }
+  return wireJsonSchema;
+}
+
+/** The schema with each Telegram object it holds converted to the name of its Telegram type. */
+function nameTelegramObjects(schema: JsonSchema): JsonSchema {
+  return JSON.parse(JSON.stringify(schema), (_key, value: unknown) => {
+    if (value === null || typeof value !== 'object' || !(TELEGRAM_TYPE_ANNOTATION in value)) {
+      return value;
+    }
+    return { [TELEGRAM_TYPE_ANNOTATION]: value[TELEGRAM_TYPE_ANNOTATION] };
+  });
 }
 
 function assertRepresentable(schema: z.core.$ZodType, location: string): void {
+  if (z.globalRegistry.get(schema)?.[TELEGRAM_TYPE_ANNOTATION] !== undefined) {
+    return;
+  }
   const definition: z.core.$ZodTypeDef = schema._zod.def;
   if (!REPRESENTABLE_SCHEMA_TYPES.has(definition.type)) {
     throw new Error(`The wire schema at ${location || '/'} is a ${definition.type}`);

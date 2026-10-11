@@ -9,26 +9,30 @@ import type {
   ReplyKeyboardButtonRequest,
 } from '../../../types/reply_interface.ts';
 import { type ChatMessage, getMessageNotification } from '../../../types/virtual_message.ts';
+import { getPrivateMessageHistoryContract } from '../../contracts/account_messages.ts';
+import {
+  getPrivateChatBotCommandsContract,
+  getPrivateChatMenuButtonContract,
+  getPrivateChatNotificationsContract,
+  getPrivateChatReplyInterfaceContract,
+} from '../../contracts/conversation_reads.ts';
 import {
   controlErrorResponse,
   invalidControlRequestResponse,
 } from '../../control_error_response.ts';
+import { registerControlOperation } from '../../control_operation_route.ts';
 import { readPathParameters } from '../control_request_input.ts';
 import type { SessionRouteContextTypes } from '../session_route_context_types.ts';
 import {
-  PRIVATE_CONVERSATION_PATH,
-  PRIVATE_MESSAGE_HISTORY_PATH,
-  privateConversationPathSchema,
   SUPERGROUP_CONVERSATION_PATH,
   SUPERGROUP_MESSAGE_HISTORY_PATH,
   supergroupConversationPathSchema,
 } from './account_paths.ts';
 import { supergroupMemberFailureStatus } from './messaging_failure_statuses.ts';
 
-const PRIVATE_CHAT_COMMANDS_PATH = `${PRIVATE_CONVERSATION_PATH}/commands` as const;
-const PRIVATE_CHAT_MENU_BUTTON_PATH = `${PRIVATE_CONVERSATION_PATH}/menu-button` as const;
-const PRIVATE_CHAT_REPLY_INTERFACE_PATH = `${PRIVATE_CONVERSATION_PATH}/reply-interface` as const;
-const PRIVATE_CHAT_NOTIFICATIONS_PATH = `${PRIVATE_CONVERSATION_PATH}/notifications` as const;
+/** Where the account routes are mounted within the server, as a contract path template. */
+const ACCOUNT_COLLECTION_MOUNT_PATH = '/sessions/{sessionId}/accounts';
+
 const SUPERGROUP_COMMANDS_PATH = `${SUPERGROUP_CONVERSATION_PATH}/commands` as const;
 const SUPERGROUP_NOTIFICATIONS_PATH = `${SUPERGROUP_CONVERSATION_PATH}/notifications` as const;
 const SUPERGROUP_REPLY_INTERFACE_PATH = `${SUPERGROUP_CONVERSATION_PATH}/reply-interface` as const;
@@ -162,108 +166,109 @@ export function createConversationReadRoutes(): Hono<SessionRouteContextTypes> {
     });
   });
 
-  accountRoutes.get(PRIVATE_MESSAGE_HISTORY_PATH, (context) => {
-    const conversationPath = readPathParameters(privateConversationPathSchema, context.req.param());
-    if (!conversationPath.valid) {
-      return invalidControlRequestResponse(context, conversationPath.issues);
-    }
-    const { accountId, botId } = conversationPath.value;
+  registerControlOperation(
+    accountRoutes,
+    ACCOUNT_COLLECTION_MOUNT_PATH,
+    getPrivateMessageHistoryContract,
+    ({ params: { accountId, botId } }, context) => {
+      const { privateMessaging, botMessageViews } = context.get('emulationSession');
+      const result = privateMessaging.getPrivateMessageHistory({ accountId, botId });
+      if (!result.found) {
+        return { status: 404, body: { reason: result.reason } };
+      }
+      return {
+        status: 200,
+        body: {
+          messages: result.messages.map((message) =>
+            botMessageViews.viewPrivateMessageForBot(message)
+          ),
+        },
+      };
+    },
+  );
 
-    const { privateMessaging, botMessageViews } = context.get('emulationSession');
-    const result = privateMessaging.getPrivateMessageHistory({
-      accountId,
-      botId,
-    });
-    if (!result.found) {
-      return controlErrorResponse(context, 404, result.reason);
-    }
-
-    return context.json({
-      messages: result.messages.map((message) => botMessageViews.viewPrivateMessageForBot(message)),
-    });
-  });
-
-  accountRoutes.get(PRIVATE_CHAT_COMMANDS_PATH, (context) => {
-    const conversationPath = readPathParameters(privateConversationPathSchema, context.req.param());
-    if (!conversationPath.valid) {
-      return invalidControlRequestResponse(context, conversationPath.issues);
-    }
-    const { accountId, botId } = conversationPath.value;
-
-    const result = context.get('emulationSession').botCommands.getPrivateChatCommands({
-      accountId,
-      botId,
-    });
-    if (!result.found) {
-      return controlErrorResponse(context, 404, result.reason);
-    }
-    return context.json({ commands: result.commands.map(presentBotCommandForAccount) });
-  });
-
-  accountRoutes.get(PRIVATE_CHAT_MENU_BUTTON_PATH, (context) => {
-    const conversationPath = readPathParameters(privateConversationPathSchema, context.req.param());
-    if (!conversationPath.valid) {
-      return invalidControlRequestResponse(context, conversationPath.issues);
-    }
-    const { accountId, botId } = conversationPath.value;
-
-    const result = context.get('emulationSession').botMenuButtons.getPrivateChatMenuButton({
-      accountId,
-      botId,
-    });
-    if (!result.found) {
-      return controlErrorResponse(context, 404, result.reason);
-    }
-    return context.json({ menu_button: toBotApiMenuButton(result.menuButton) });
-  });
-
-  accountRoutes.get(PRIVATE_CHAT_NOTIFICATIONS_PATH, (context) => {
-    const conversationPath = readPathParameters(privateConversationPathSchema, context.req.param());
-    if (!conversationPath.valid) {
-      return invalidControlRequestResponse(context, conversationPath.issues);
-    }
-    const { accountId, botId } = conversationPath.value;
-
-    const { privateMessaging, botMessageViews } = context.get('emulationSession');
-    const result = privateMessaging.getPrivateMessageHistory({
-      accountId,
-      botId,
-    });
-    if (!result.found) {
-      return controlErrorResponse(context, 404, result.reason);
-    }
-    return context.json({
-      notifications: presentNotificationsForAccount(
-        result.messages,
+  registerControlOperation(
+    accountRoutes,
+    ACCOUNT_COLLECTION_MOUNT_PATH,
+    getPrivateChatBotCommandsContract,
+    ({ params: { accountId, botId } }, context) => {
+      const result = context.get('emulationSession').botCommands.getPrivateChatCommands({
         accountId,
-        (message) => botMessageViews.viewPrivateMessageForBot(message).message_id,
-      ),
-    });
-  });
+        botId,
+      });
+      if (!result.found) {
+        return { status: 404, body: { reason: result.reason } };
+      }
+      return { status: 200, body: { commands: result.commands.map(presentBotCommandForAccount) } };
+    },
+  );
 
-  accountRoutes.get(PRIVATE_CHAT_REPLY_INTERFACE_PATH, (context) => {
-    const conversationPath = readPathParameters(privateConversationPathSchema, context.req.param());
-    if (!conversationPath.valid) {
-      return invalidControlRequestResponse(context, conversationPath.issues);
-    }
-    const { accountId, botId } = conversationPath.value;
+  registerControlOperation(
+    accountRoutes,
+    ACCOUNT_COLLECTION_MOUNT_PATH,
+    getPrivateChatMenuButtonContract,
+    ({ params: { accountId, botId } }, context) => {
+      const result = context.get('emulationSession').botMenuButtons.getPrivateChatMenuButton({
+        accountId,
+        botId,
+      });
+      if (!result.found) {
+        return { status: 404, body: { reason: result.reason } };
+      }
+      return { status: 200, body: { menu_button: toBotApiMenuButton(result.menuButton) } };
+    },
+  );
 
-    const { replyInterfaces, botMessageViews } = context.get('emulationSession');
-    const result = replyInterfaces.getPrivateChatReplyInterface({
-      accountId,
-      chat: { type: 'private', peerId: botId },
-    });
-    if (!result.found) {
-      return controlErrorResponse(context, 404, result.reason);
-    }
-    const { shownReplyInterface } = result;
-    return context.json({
-      reply_interface: shownReplyInterface === undefined ? null : presentReplyInterfaceForAccount(
-        botMessageViews.viewPrivateMessageForBot(shownReplyInterface.message).message_id,
-        shownReplyInterface.replyInterface,
-      ),
-    });
-  });
+  registerControlOperation(
+    accountRoutes,
+    ACCOUNT_COLLECTION_MOUNT_PATH,
+    getPrivateChatNotificationsContract,
+    ({ params: { accountId, botId } }, context) => {
+      const { privateMessaging, botMessageViews } = context.get('emulationSession');
+      const result = privateMessaging.getPrivateMessageHistory({ accountId, botId });
+      if (!result.found) {
+        return { status: 404, body: { reason: result.reason } };
+      }
+      return {
+        status: 200,
+        body: {
+          notifications: presentNotificationsForAccount(
+            result.messages,
+            accountId,
+            (message) => botMessageViews.viewPrivateMessageForBot(message).message_id,
+          ),
+        },
+      };
+    },
+  );
+
+  registerControlOperation(
+    accountRoutes,
+    ACCOUNT_COLLECTION_MOUNT_PATH,
+    getPrivateChatReplyInterfaceContract,
+    ({ params: { accountId, botId } }, context) => {
+      const { replyInterfaces, botMessageViews } = context.get('emulationSession');
+      const result = replyInterfaces.getPrivateChatReplyInterface({
+        accountId,
+        chat: { type: 'private', peerId: botId },
+      });
+      if (!result.found) {
+        return { status: 404, body: { reason: result.reason } };
+      }
+      const { shownReplyInterface } = result;
+      return {
+        status: 200,
+        body: {
+          reply_interface: shownReplyInterface === undefined
+            ? null
+            : presentReplyInterfaceForAccount(
+              botMessageViews.viewPrivateMessageForBot(shownReplyInterface.message).message_id,
+              shownReplyInterface.replyInterface,
+            ),
+        },
+      };
+    },
+  );
 
   return accountRoutes;
 }

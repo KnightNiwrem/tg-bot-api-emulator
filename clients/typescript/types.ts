@@ -65,15 +65,140 @@ import type {
   webhookAttemptSchema,
 } from '../../src/api/contracts/webhook_attempts.ts';
 import type { registerWebResourceContract } from '../../src/api/contracts/web_resources.ts';
+import type { chatActionsResponseSchema } from '../../src/api/contracts/chat_actions.ts';
+import type { ExclusiveAlternatives } from '../../src/api/contracts/exclusive_alternatives.ts';
+import type {
+  ChatSharedContent,
+  ExternalReplyInfo,
+  InaccessibleMessage,
+  MembershipChangeContent,
+  MessageContent,
+  MessageOrigin,
+  MessageOriginHiddenUser,
+  MessageOriginUser,
+  PinContent,
+  PinnedPrivateMessage,
+  PinnedSupergroupMessage,
+  PrivateChat,
+  PrivateMessage,
+  PrivateMessageContent,
+  RepliedPinContent,
+  RepliedPrivateMessage,
+  RepliedPrivateMessageContent,
+  RepliedSupergroupMessage,
+  SharedUser,
+  SupergroupChat,
+  SupergroupMessage,
+  SupergroupMessageContent,
+  TextQuote,
+  TitleChangeContent,
+  UsersSharedContent,
+  WebAppDataContent,
+} from '../../src/api/contracts/chat_messages.ts';
+import type {
+  accountBotCommandSchema,
+  getPrivateChatMenuButtonContract,
+  notificationsResponseSchema,
+  replyInterfaceResponseSchema,
+} from '../../src/api/contracts/conversation_reads.ts';
+import type {
+  CallbackInlineKeyboardButton,
+  CopyTextInlineKeyboardButton,
+  DisabledInlineKeyboardButton,
+  InlineKeyboardButton,
+  InlineKeyboardMarkup,
+  KeyboardButtonFace,
+  ReplyKeyboardButton,
+  ReplyKeyboardButtonRequest,
+  RequiredChatAdministratorRights,
+  SwitchInlineQueryChosenChatInlineKeyboardButton,
+  SwitchInlineQueryCurrentChatInlineKeyboardButton,
+  SwitchInlineQueryInlineKeyboardButton,
+  UrlInlineKeyboardButton,
+  WebAppInlineKeyboardButton,
+} from '../../src/api/contracts/keyboard_buttons.ts';
+import type {
+  Audio,
+  Contact,
+  Document,
+  Location,
+  PhotoSize,
+  Video,
+  Voice,
+} from '../../src/api/contracts/message_media.ts';
+import type { pollAnswerSchema } from '../../src/api/contracts/poll_answers.ts';
+import type { ReadonlySnapshot } from '../../src/api/contracts/readonly_snapshot.ts';
+import type {
+  HorizontalAlignment,
+  RichBlock,
+  RichBlockCaption,
+  RichBlockListItem,
+  RichBlockTableCell,
+  RichMessage,
+  RichMessageButton,
+  RichText,
+  RichTextObject,
+} from '../../src/api/contracts/rich_messages.ts';
 import type { ControlRefusalReason } from './control_refusal_reasons.ts';
 
-/**
- * A value as the client returns it from a response: readonly all the way down, so that no nested
- * object or list of a snapshot can be changed through its type.
- */
-type ReadonlySnapshot<Value> = Value extends object
-  ? { readonly [Member in keyof Value]: ReadonlySnapshot<Value[Member]> }
-  : Value;
+export type {
+  Audio,
+  CallbackInlineKeyboardButton,
+  ChatSharedContent,
+  Contact,
+  CopyTextInlineKeyboardButton,
+  DisabledInlineKeyboardButton,
+  Document,
+  ExternalReplyInfo,
+  HorizontalAlignment,
+  InaccessibleMessage,
+  InlineKeyboardButton,
+  InlineKeyboardMarkup,
+  KeyboardButtonFace,
+  Location,
+  MembershipChangeContent,
+  MessageContent,
+  MessageOrigin,
+  MessageOriginHiddenUser,
+  MessageOriginUser,
+  PhotoSize,
+  PinContent,
+  PinnedPrivateMessage,
+  PinnedSupergroupMessage,
+  PrivateChat,
+  PrivateMessage,
+  PrivateMessageContent,
+  RepliedPinContent,
+  RepliedPrivateMessage,
+  RepliedPrivateMessageContent,
+  RepliedSupergroupMessage,
+  ReplyKeyboardButton,
+  ReplyKeyboardButtonRequest,
+  RequiredChatAdministratorRights,
+  RichBlock,
+  RichBlockCaption,
+  RichBlockListItem,
+  RichBlockTableCell,
+  RichMessage,
+  RichMessageButton,
+  RichText,
+  RichTextObject,
+  SharedUser,
+  SupergroupChat,
+  SupergroupMessage,
+  SupergroupMessageContent,
+  SwitchInlineQueryChosenChatInlineKeyboardButton,
+  SwitchInlineQueryCurrentChatInlineKeyboardButton,
+  SwitchInlineQueryInlineKeyboardButton,
+  TextQuote,
+  TitleChangeContent,
+  UrlInlineKeyboardButton,
+  UsersSharedContent,
+  Video,
+  Voice,
+  WebAppDataContent,
+  WebAppInlineKeyboardButton,
+};
 
 /** The server-assigned identity, Bot API location, and settings of an emulation session. */
 export type EmulationSession = ReadonlySnapshot<
@@ -706,13 +831,7 @@ export interface AnswerPollInput<Target extends MessageTarget = MessageTarget>
 }
 
 /** The options an account chose in a poll; both lists are empty while it has no answer. */
-export interface PollAnswer {
-  readonly poll_id: string;
-  /** The chosen options' positions, counted from 0, in increasing order. */
-  readonly option_ids: readonly number[];
-  /** The chosen options' `persistent_id`, in the same order. */
-  readonly option_persistent_ids: readonly string[];
-}
+export type PollAnswer = ReadonlySnapshot<z.output<typeof pollAnswerSchema>>;
 
 /** An account's answer to a poll, with the message showing the poll as the chat's history does. */
 export interface AccountPollAnswer<Target extends MessageTarget = MessageTarget> {
@@ -827,22 +946,6 @@ export interface ButtonLabelSelector {
 /** A label selector, or a predicate that inspects each button's label, path, and containers. */
 export type ButtonSelector = ButtonLabelSelector | ((button: MessageButton) => boolean);
 
-export interface PrivateChat {
-  readonly id: number;
-  readonly type: 'private';
-  readonly first_name: string;
-  readonly last_name?: string;
-  readonly username?: string;
-}
-
-export interface SupergroupChat {
-  readonly id: number;
-  readonly title: string;
-  /** Omitted for a private supergroup. */
-  readonly username?: string;
-  readonly type: 'supergroup';
-}
-
 /** Offsets and lengths count UTF-16 code units. */
 interface MessageEntitySpan {
   readonly offset: number;
@@ -869,901 +972,22 @@ export type MessageEntityInput =
 /** A bot as a message sender, without the capabilities that only getMe reports. */
 export type MessageSenderBot = ReadonlySnapshot<z.output<typeof messageSenderBotSchema>>;
 
-/** A button's text and how Telegram clients draw it. */
-export interface KeyboardButtonFace {
-  readonly text: string;
-  /** The custom emoji shown before the text; omitted for none. */
-  readonly icon_custom_emoji_id?: string;
-  /** Omitted for the client's default style. */
-  readonly style?: 'primary' | 'danger' | 'success';
-}
-
-export interface CallbackInlineKeyboardButton extends KeyboardButtonFace {
-  readonly callback_data: string;
-}
-
-/** A button that opens a link, including a login button, which the emulator shows by its URL. */
-export interface UrlInlineKeyboardButton extends KeyboardButtonFace {
-  readonly url: string;
-}
-
-/** A button that copies text to the clipboard. */
-export interface CopyTextInlineKeyboardButton extends KeyboardButtonFace {
-  readonly copy_text: { readonly text: string };
-}
-
-/**
- * A button that puts the bot's username and a query into the input field of a chat the user
- * chooses; tests send the inline query itself.
- */
-export interface SwitchInlineQueryInlineKeyboardButton extends KeyboardButtonFace {
-  readonly switch_inline_query: string;
-}
-
-/** A button that puts the bot's username and a query into the message's own chat. */
-export interface SwitchInlineQueryCurrentChatInlineKeyboardButton extends KeyboardButtonFace {
-  readonly switch_inline_query_current_chat: string;
-}
-
-/** A switch-inline button that lets the user choose only some kinds of chats. */
-export interface SwitchInlineQueryChosenChatInlineKeyboardButton extends KeyboardButtonFace {
-  readonly switch_inline_query_chosen_chat: {
-    readonly query: string;
-    readonly allow_user_chats: boolean;
-    readonly allow_bot_chats: boolean;
-    readonly allow_group_chats: boolean;
-    readonly allow_channel_chats: boolean;
-  };
-}
-
-/** A button that opens a Web App of the message's bot. */
-export interface WebAppInlineKeyboardButton extends KeyboardButtonFace {
-  readonly web_app: { readonly url: string };
-}
-
-/** A button that does nothing. */
-export interface DisabledInlineKeyboardButton extends KeyboardButtonFace {
-  readonly disabled: Record<string, never>;
-}
-
-export type InlineKeyboardButton =
-  | CallbackInlineKeyboardButton
-  | UrlInlineKeyboardButton
-  | CopyTextInlineKeyboardButton
-  | SwitchInlineQueryInlineKeyboardButton
-  | SwitchInlineQueryCurrentChatInlineKeyboardButton
-  | SwitchInlineQueryChosenChatInlineKeyboardButton
-  | WebAppInlineKeyboardButton
-  | DisabledInlineKeyboardButton;
-
-export interface InlineKeyboardMarkup {
-  readonly inline_keyboard: readonly (readonly InlineKeyboardButton[])[];
-}
-
-/** A file of a message: a photo size, a document, a video, a voice note, or an audio file. */
-interface MessageFile {
-  /**
-   * The identifier by which the message's observer knows the file. As on Telegram, each user
-   * knows a file by a `file_id` of its own.
-   */
-  readonly file_id: string;
-  /** The same for every user; `downloadFile` reads the file by it. */
-  readonly file_unique_id: string;
-  readonly file_size: number;
-}
-
-/** A photo in one size. The emulator keeps a photo in the one size it was sent in. */
-export interface PhotoSize extends MessageFile {
-  readonly width: number;
-  readonly height: number;
-}
-
-export interface Document extends MessageFile {
-  readonly file_name: string;
-  readonly mime_type: string;
-  /** The preview image the sender uploaded with the document; omitted for none. */
-  readonly thumbnail?: PhotoSize;
-  /** Legacy copy of `thumbnail`, which the Bot API still shows. */
-  readonly thumb?: PhotoSize;
-}
-
-/** A video, whose duration and dimensions are those its sender defined. */
-export interface Video extends MessageFile {
-  /** In seconds. */
-  readonly duration: number;
-  readonly width: number;
-  readonly height: number;
-  /** Omitted for a video sent without a file name. */
-  readonly file_name?: string;
-  readonly mime_type: string;
-  /** The second from which clients play the video in its message; omitted for its beginning. */
-  readonly start_timestamp?: number;
-  /** The preview image the sender uploaded with the video; omitted for none. */
-  readonly thumbnail?: PhotoSize;
-  /** Legacy copy of `thumbnail`, which the Bot API still shows. */
-  readonly thumb?: PhotoSize;
-}
-
-/** A phone contact, as its sender wrote it. */
-export interface Contact {
-  readonly phone_number: string;
-  readonly first_name: string;
-  /** Omitted for a contact without a last name. */
-  readonly last_name?: string;
-  /** Omitted for a contact without a vCard. */
-  readonly vcard?: string;
-  /** The contact's Telegram user, known only when an account shares its own contact. */
-  readonly user_id?: number;
-}
-
-/** A voice note, whose duration is the one its sender defined. */
-export interface Voice extends MessageFile {
-  /** In seconds. */
-  readonly duration: number;
-  /** `audio/ogg`, `audio/mpeg`, or `audio/mp4`. */
-  readonly mime_type: string;
-}
-
-/**
- * An audio file, such as a music track, whose duration, performer and title are those its sender
- * defined.
- */
-export interface Audio extends MessageFile {
-  /** In seconds. */
-  readonly duration: number;
-  /** Omitted for an audio file sent without a file name. */
-  readonly file_name?: string;
-  /** Always an `audio/` type. */
-  readonly mime_type: string;
-  /** Omitted for an audio file without a title. */
-  readonly title?: string;
-  /** Omitted for an audio file without a performer. */
-  readonly performer?: string;
-  /**
-   * The preview image the sender uploaded with the audio file, such as its album's cover; omitted
-   * for none.
-   */
-  readonly thumbnail?: PhotoSize;
-  /** Legacy copy of `thumbnail`, which the Bot API still shows. */
-  readonly thumb?: PhotoSize;
-}
-
-/**
- * Text of a rich message: plain text as a string, texts one after another as an array, or an
- * object of a type.
- */
-export type RichText = string | readonly RichText[] | RichTextObject;
-
-/** Rich text of a type, as the Bot API's `RichText` shows it. */
-export type RichTextObject =
-  | {
-    readonly type:
-      | 'bold'
-      | 'italic'
-      | 'underline'
-      | 'strikethrough'
-      | 'spoiler'
-      | 'subscript'
-      | 'superscript'
-      | 'marked'
-      | 'code';
-    readonly text: RichText;
-  }
-  | {
-    readonly type: 'date_time';
-    readonly text: RichText;
-    readonly unix_time: number;
-    /** As a `date_time` entity's `date_time_format`. */
-    readonly date_time_format: string;
-  }
-  /** Entities Telegram detects in the text, each showing the text it covers. */
-  | { readonly type: 'mention'; readonly text: RichText; readonly username: string }
-  | { readonly type: 'hashtag'; readonly text: RichText; readonly hashtag: string }
-  | { readonly type: 'cashtag'; readonly text: RichText; readonly cashtag: string }
-  | { readonly type: 'bot_command'; readonly text: RichText; readonly bot_command: string }
-  | {
-    readonly type: 'bank_card_number';
-    readonly text: RichText;
-    readonly bank_card_number: string;
-  }
-  | {
-    readonly type: 'text_mention';
-    readonly text: RichText;
-    readonly user: VirtualAccountProfile | MessageSenderBot;
-  }
-  | { readonly type: 'url'; readonly text: RichText; readonly url: string }
-  | { readonly type: 'email_address'; readonly text: RichText; readonly email_address: string }
-  | { readonly type: 'phone_number'; readonly text: RichText; readonly phone_number: string }
-  | {
-    readonly type: 'custom_emoji';
-    readonly custom_emoji_id: string;
-    readonly alternative_text: string;
-  }
-  | { readonly type: 'mathematical_expression'; readonly expression: string }
-  | { readonly type: 'reference'; readonly text: RichText; readonly name: string }
-  | { readonly type: 'reference_link'; readonly text: RichText; readonly reference_name: string }
-  | { readonly type: 'anchor'; readonly name: string }
-  /** A link to an anchor of the message; an empty name links to its top. */
-  | { readonly type: 'anchor_link'; readonly text: RichText; readonly anchor_name: string }
-  | { readonly type: 'button'; readonly button: RichMessageButton };
-
-/** Removes properties from each member of a union, which keeps the union's alternatives apart. */
-type OmitFromEach<Type, Key extends PropertyKey> = Type extends unknown ? Omit<Type, Key> : never;
-
-/**
- * A button of a rich message, which acts as an inline keyboard button of the same kind. An
- * account presses a callback button by its callback data.
- */
-export type RichMessageButton =
-  & {
-    readonly text: RichText;
-    /** Omitted for the client's default style; `link` shows the button as a link. */
-    readonly style?: 'primary' | 'danger' | 'success' | 'link';
-  }
-  & OmitFromEach<InlineKeyboardButton, keyof KeyboardButtonFace>;
-
-export type HorizontalAlignment = 'left' | 'center' | 'right';
-
-/** The caption of a block with media or a map. */
-export interface RichBlockCaption {
-  readonly text: RichText;
-  readonly credit?: RichText;
-}
-
-export interface RichBlockListItem {
-  /** `•` for an item of an unordered list, otherwise its number as its type shows it. */
-  readonly label: string;
-  readonly blocks: readonly RichBlock[];
-  readonly has_checkbox?: true;
-  readonly is_checked?: true;
-  /** Present for an item of an ordered list: letters, Roman numerals, or decimal numbers. */
-  readonly type?: 'a' | 'A' | 'i' | 'I' | '1';
-  readonly value?: number;
-}
-
-export interface RichBlockTableCell {
-  /** Omitted for an invisible cell. */
-  readonly text?: RichText;
-  readonly is_header?: true;
-  /** Omitted for a cell that spans one column. */
-  readonly colspan?: number;
-  /** Omitted for a cell that spans one row. */
-  readonly rowspan?: number;
-  readonly align: HorizontalAlignment;
-  readonly valign: 'top' | 'middle' | 'bottom';
-}
-
-/** A block of a rich message, as the Bot API's `RichBlock` shows it. */
-export type RichBlock =
-  | { readonly type: 'paragraph' | 'footer'; readonly text: RichText }
-  | { readonly type: 'heading'; readonly text: RichText; readonly size: number }
-  | { readonly type: 'pre'; readonly text: RichText; readonly language?: string }
-  | { readonly type: 'divider' }
-  | { readonly type: 'mathematical_expression'; readonly expression: string }
-  | { readonly type: 'anchor'; readonly name: string }
-  | { readonly type: 'list'; readonly items: readonly RichBlockListItem[] }
-  | {
-    readonly type: 'blockquote';
-    readonly blocks: readonly RichBlock[];
-    readonly credit?: RichText;
-  }
-  | {
-    readonly type: 'expandable_blockquote' | 'pullquote';
-    readonly text: RichText;
-    readonly credit?: RichText;
-  }
-  | {
-    readonly type: 'collage' | 'slideshow';
-    readonly blocks: readonly RichBlock[];
-    readonly caption?: RichBlockCaption;
-  }
-  | {
-    readonly type: 'table';
-    readonly cells: readonly (readonly RichBlockTableCell[])[];
-    readonly caption?: RichText;
-    readonly is_bordered?: true;
-    readonly is_striped?: true;
-    readonly is_compact?: true;
-  }
-  | {
-    readonly type: 'details';
-    readonly summary: RichText;
-    readonly blocks: readonly RichBlock[];
-    readonly is_open?: true;
-  }
-  | {
-    readonly type: 'map';
-    readonly location: Location;
-    readonly zoom: number;
-    /** 0, as is the height, when the bot chose no dimensions. */
-    readonly width: number;
-    readonly height: number;
-    readonly caption?: RichBlockCaption;
-  }
-  | {
-    readonly type: 'buttons';
-    readonly buttons: readonly RichMessageButton[];
-    readonly align?: HorizontalAlignment;
-  }
-  | {
-    readonly type: 'photo';
-    readonly photo: readonly PhotoSize[];
-    readonly caption?: RichBlockCaption;
-    readonly has_spoiler?: true;
-  }
-  | { readonly type: 'document'; readonly document: Document; readonly caption?: RichBlockCaption }
-  | {
-    readonly type: 'video';
-    /** The video; a block keeps no start, so it never shows a `start_timestamp`. */
-    readonly video: Omit<Video, 'start_timestamp'>;
-    readonly caption?: RichBlockCaption;
-    readonly has_spoiler?: true;
-  }
-  | {
-    readonly type: 'voice_note';
-    readonly voice_note: Voice;
-    readonly caption?: RichBlockCaption;
-  };
-
-/** A message a bot laid out in blocks. */
-export interface RichMessage {
-  readonly blocks: readonly RichBlock[];
-  /** Present when clients show the message right-to-left. */
-  readonly is_rtl?: true;
-}
-
 /** A regular poll or a quiz a bot or an account sent, with its votes as they are now. */
 export type Poll = ReadonlySnapshot<z.output<typeof pollSchema>>;
 
 /** An answer option of a poll, with how many accounts chose it. */
 export type PollOption = Poll['options'][number];
 
-/**
- * Declares fields absent, so that reading them from a value that cannot have them is typed as
- * `undefined`.
- */
-type AbsentFields<FieldName extends PropertyKey> = { readonly [Name in FieldName]?: never };
-
-/** The name of every field of every kind of a map from kinds to their fields. */
-type FieldNameOfAnyKind<FieldsByKind> = {
-  [Kind in keyof FieldsByKind]: keyof FieldsByKind[Kind];
-}[keyof FieldsByKind];
-
-/**
- * One alternative for each kind of a map from kinds to their fields, which declares the fields
- * of the other kinds absent, so that any of them can be read from a value of unknown kind.
- */
-type ExclusiveAlternatives<FieldsByKind> = {
-  [Kind in keyof FieldsByKind]:
-    & FieldsByKind[Kind]
-    & AbsentFields<Exclude<FieldNameOfAnyKind<FieldsByKind>, keyof FieldsByKind[Kind]>>;
-}[keyof FieldsByKind];
-
-/** The fields that show each kind of message content. */
-interface MessageContentFields {
-  readonly text: {
-    readonly text: string;
-    readonly entities?: readonly MessageEntity[];
-  };
-  readonly photo: {
-    /** The photo's sizes, smallest first. */
-    readonly photo: readonly PhotoSize[];
-    /** Omitted for a photo without a caption. */
-    readonly caption?: string;
-    readonly caption_entities?: readonly MessageEntity[];
-    /** Present when clients show the caption above the photo. */
-    readonly show_caption_above_media?: true;
-    /** Present when clients cover the photo until the user reveals it. */
-    readonly has_media_spoiler?: true;
-  };
-  readonly document: {
-    readonly document: Document;
-    /** Omitted for a document without a caption. */
-    readonly caption?: string;
-    readonly caption_entities?: readonly MessageEntity[];
-  };
-  readonly video: {
-    readonly video: Video;
-    /** Omitted for a video without a caption. */
-    readonly caption?: string;
-    readonly caption_entities?: readonly MessageEntity[];
-    /** Present when clients show the caption above the video. */
-    readonly show_caption_above_media?: true;
-    /** Present when clients cover the video until the user reveals it. */
-    readonly has_media_spoiler?: true;
-  };
-  readonly voice: {
-    readonly voice: Voice;
-    /** Omitted for a voice note without a caption. */
-    readonly caption?: string;
-    readonly caption_entities?: readonly MessageEntity[];
-  };
-  readonly audio: {
-    readonly audio: Audio;
-    /** Omitted for an audio file without a caption. */
-    readonly caption?: string;
-    readonly caption_entities?: readonly MessageEntity[];
-  };
-  readonly rich_message: {
-    /** A message a bot laid out in blocks, which only bots send. */
-    readonly rich_message: RichMessage;
-  };
-  readonly poll: {
-    /** A poll a bot or an account sent, with its votes as they are now. */
-    readonly poll: Poll;
-  };
-  readonly contact: { readonly contact: Contact };
-  readonly location: {
-    /** A static location, whose accuracy Telegram keeps in whole meters. */
-    readonly location: Location;
-  };
-}
-
-/**
- * The fields that show what a message is: text, a photo, a document, a video, a voice note, an audio
- * file, a rich message, a poll, a contact, or a location. Each kind declares the others' fields absent, so that
- * any of them can be read from a message of unknown kind.
- */
-export type MessageContent = ExclusiveAlternatives<MessageContentFields>;
-
-/** The fields of a service message's change of its chat, which content never has. */
-interface NoServiceChange {
-  readonly new_chat_participant?: never;
-  readonly new_chat_member?: never;
-  readonly new_chat_members?: never;
-  readonly left_chat_participant?: never;
-  readonly left_chat_member?: never;
-  readonly new_chat_title?: never;
-  readonly pinned_message?: never;
-}
-
-/** The fields of content, which a service message never has. */
-type NoContent = AbsentFields<FieldNameOfAnyKind<MessageContentFields>>;
-
-/**
- * The fields of a service message about members joining or leaving a supergroup, which take the
- * place of content. As Telegram does, each change also carries its legacy fields.
- */
-export type MembershipChangeContent =
-  | (NoContent & {
-    readonly new_chat_title?: never;
-    readonly pinned_message?: never;
-    /** Legacy alias of `new_chat_member`. */
-    readonly new_chat_participant: VirtualAccountProfile | MessageSenderBot;
-    /** Legacy: the requesting account if it joined, otherwise the first new member. */
-    readonly new_chat_member: VirtualAccountProfile | MessageSenderBot;
-    readonly new_chat_members: readonly (VirtualAccountProfile | MessageSenderBot)[];
-    readonly left_chat_participant?: never;
-    readonly left_chat_member?: never;
-  })
-  | (NoContent & {
-    readonly new_chat_title?: never;
-    readonly pinned_message?: never;
-    readonly new_chat_participant?: never;
-    readonly new_chat_member?: never;
-    readonly new_chat_members?: never;
-    /** Legacy alias of `left_chat_member`. */
-    readonly left_chat_participant: VirtualAccountProfile | MessageSenderBot;
-    /** The member that left or was removed. */
-    readonly left_chat_member: VirtualAccountProfile | MessageSenderBot;
-  });
-
-/** The field of a service message about a supergroup's new title. */
-export type TitleChangeContent =
-  & NoContent
-  & Omit<NoServiceChange, 'new_chat_title'>
-  & { readonly new_chat_title: string };
-
-/** A deleted message, which a pin's service message shows in place of the pinned message. */
-export interface InaccessibleMessage<Chat> {
-  readonly message_id: number;
-  readonly chat: Chat;
-  /** Always 0, which tells an inaccessible message apart from a message. */
-  readonly date: 0;
-}
-
-/**
- * The field of a service message about a pin, which takes the place of content: the pinned
- * message as a reply shows it, or, once deleted, inaccessible.
- */
-export type PinContent<Chat, PinnedMessage> =
-  & NoContent
-  & Omit<NoServiceChange, 'pinned_message'>
-  & { readonly pinned_message: PinnedMessage | InaccessibleMessage<Chat> };
-
-/**
- * The field of a service message about a pin as a replied message shows it, which leaves out a
- * deleted pinned message rather than show it inaccessible.
- */
-export type RepliedPinContent<PinnedMessage> =
-  & NoContent
-  & Omit<NoServiceChange, 'pinned_message'>
-  & { readonly pinned_message?: PinnedMessage };
-
-/**
- * The fields of a service message about what an account sent a bot from its client, the users or
- * chat it shared or the data a Web App sent, which other private messages never have.
- */
-interface NoAccountServiceContent {
-  readonly user_shared?: never;
-  readonly users_shared?: never;
-  readonly chat_shared?: never;
-  readonly web_app_data?: never;
-}
-
-/**
- * A user an account shared with a bot: the details the bot's request asked for, as they were when
- * the account shared it, each omitted when the user lacks it.
- */
-export interface SharedUser {
-  readonly user_id: number;
-  readonly first_name?: string;
-  readonly last_name?: string;
-  readonly username?: string;
-}
-
-/**
- * The fields of a service message about users an account shared in answer to a `request_users`
- * button, which take the place of content. As Telegram does, a single shared user also shows as
- * the legacy `user_shared`, and `users_shared` keeps the legacy `user_ids`.
- */
-export type UsersSharedContent =
-  & NoContent
-  & NoServiceChange
-  & {
-    /** Legacy form of a single shared user; omitted when several were shared. */
-    readonly user_shared?: { readonly user_id: number; readonly request_id: number };
-    readonly users_shared: {
-      /** Legacy: the IDs of `users`. */
-      readonly user_ids: readonly number[];
-      /** The shared users, in the order the account chose them. */
-      readonly users: readonly SharedUser[];
-      /** The `request_id` of the button's request. */
-      readonly request_id: number;
-    };
-    readonly chat_shared?: never;
-    readonly web_app_data?: never;
-  };
-
-/**
- * The field of a service message about a supergroup an account shared in answer to a
- * `request_chat` button, which takes the place of content: the details the request asked for, as
- * they were when the account shared it, each omitted when the chat lacks it.
- */
-export type ChatSharedContent =
-  & NoContent
-  & NoServiceChange
-  & {
-    readonly user_shared?: never;
-    readonly users_shared?: never;
-    readonly chat_shared: {
-      readonly chat_id: number;
-      readonly title?: string;
-      readonly username?: string;
-      /** The `request_id` of the button's request. */
-      readonly request_id: number;
-    };
-    readonly web_app_data?: never;
-  };
-
-/**
- * The field of a service message about data that the Web App of a `web_app` reply keyboard button
- * sent the bot, which takes the place of content. Telegram does not vouch for either value: a
- * client may send any data with any button text.
- */
-export type WebAppDataContent =
-  & NoContent
-  & NoServiceChange
-  & {
-    readonly user_shared?: never;
-    readonly users_shared?: never;
-    readonly chat_shared?: never;
-    readonly web_app_data: {
-      /** The text of the button that opened the Web App. */
-      readonly button_text: string;
-      /** The data the Web App sent, as it sent it. */
-      readonly data: string;
-    };
-  };
-
-/**
- * What a private message shows: content, a pin, the users or chat an account shared, or the data
- * a Web App sent.
- */
-export type PrivateMessageContent =
-  | (MessageContent & NoServiceChange & NoAccountServiceContent)
-  | (PinContent<PrivateChat, PinnedPrivateMessage> & NoAccountServiceContent)
-  | UsersSharedContent
-  | ChatSharedContent
-  | WebAppDataContent;
-
-/**
- * What a private message shows as a replied message, as `RepliedPinContent` shows a pin, or the
- * users or chat an account shared, or the data a Web App sent.
- */
-export type RepliedPrivateMessageContent =
-  | (MessageContent & NoServiceChange & NoAccountServiceContent)
-  | (RepliedPinContent<PinnedPrivateMessage> & NoAccountServiceContent)
-  | UsersSharedContent
-  | ChatSharedContent
-  | WebAppDataContent;
-
-/**
- * What a supergroup message shows: content, or a change of the supergroup's members or title, or
- * a pin.
- */
-export type SupergroupMessageContent =
-  | (MessageContent & NoServiceChange)
-  | MembershipChangeContent
-  | TitleChangeContent
-  | PinContent<SupergroupChat, PinnedSupergroupMessage>;
-
-/** What a supergroup message shows as a replied message, as `RepliedPinContent` shows a pin. */
-export type RepliedSupergroupMessageContent =
-  | (MessageContent & NoServiceChange)
-  | MembershipChangeContent
-  | TitleChangeContent
-  | RepliedPinContent<PinnedSupergroupMessage>;
-
-/** Who first sent a forwarded message, and when. */
-export interface MessageOriginUser {
-  readonly type: 'user';
-  readonly sender_user: VirtualAccountProfile | MessageSenderBot;
-  readonly date: number;
-}
-
-/** The name of an account with private forwards that first sent a forwarded message, and when. */
-export interface MessageOriginHiddenUser {
-  readonly type: 'hidden_user';
-  readonly sender_user_name: string;
-  readonly date: number;
-}
-
-/** Where a forwarded message, or the message of another chat a reply shows, first appeared. */
-export type MessageOrigin = MessageOriginUser | MessageOriginHiddenUser;
-
-/**
- * The fields that show each kind of media of a message of another chat that a message replies to.
- */
-interface ExternalReplyMediaFields {
-  readonly poll: { readonly poll: Poll };
-  readonly photo: {
-    readonly photo: readonly PhotoSize[];
-    /** Present when clients cover the photo until the user reveals it. */
-    readonly has_media_spoiler?: true;
-  };
-  readonly document: { readonly document: Document };
-  readonly video: {
-    readonly video: Video;
-    /** Present when clients cover the video until the user reveals it. */
-    readonly has_media_spoiler?: true;
-  };
-  readonly voice: { readonly voice: Voice };
-  readonly audio: { readonly audio: Audio };
-  readonly contact: { readonly contact: Contact };
-  readonly location: { readonly location: Location };
-}
-
-/**
- * A message of another chat that a message replies to: who first wrote it and when, the
- * supergroup message it is, and its media, if any, whose caption the reply's quote shows instead,
- * its poll as it is now, or its contact or location.
- */
-export type ExternalReplyInfo =
-  & {
-    readonly origin: MessageOrigin;
-    /** The replied message's supergroup; absent for a message of a private chat. */
-    readonly chat?: SupergroupChat;
-    /** The replied message's ID in its supergroup; absent for a message of a private chat. */
-    readonly message_id?: number;
-  }
-  & (
-    | AbsentFields<FieldNameOfAnyKind<ExternalReplyMediaFields>>
-    | ExclusiveAlternatives<ExternalReplyMediaFields>
-  );
-
-/** The quoted part of the text or caption of a replied message. */
-export interface TextQuote {
-  readonly text: string;
-  readonly entities?: readonly MessageEntity[];
-  /** Where the quote starts in the replied text, in UTF-16 code units. */
-  readonly position: number;
-  /** Present when the sender chose the quote, rather than Telegram quoting the message. */
-  readonly is_manual?: true;
-}
-
-/** How a message replies to a message of another chat, and what it quotes of a replied message. */
-interface MessageReplyInfo {
-  /** Present for a reply to a message of another chat. */
-  readonly external_reply?: ExternalReplyInfo;
-  /** Present for a reply that quotes the replied message. */
-  readonly quote?: TextQuote;
-}
-
-/** The album a message belongs to, which follows its reply and precedes its content. */
-interface MessageAlbumInfo {
-  /** The identifier the messages of an album share; present only for a message of an album. */
-  readonly media_group_id?: string;
-}
-
-/** The fields that precede a message's reply and content. */
-interface MessageHeader<Chat> {
-  readonly message_id: number;
-  readonly from: VirtualAccountProfile | MessageSenderBot;
-  readonly chat: Chat;
-  readonly date: number;
-  /** Present once the message's author has edited its text or caption. */
-  readonly edit_date?: number;
-  /** Present for a forward. */
-  readonly forward_origin?: MessageOrigin;
-  /** Telegram's legacy form of the origin's sender, present for a forward of a user's message. */
-  readonly forward_from?: VirtualAccountProfile | MessageSenderBot;
-  /** Telegram's legacy form of the origin's name, present for a forward of a hidden user. */
-  readonly forward_sender_name?: string;
-  /** Telegram's legacy form of the origin's date, present for a forward. */
-  readonly forward_date?: number;
-}
-
-/** The fields that follow a message's content. */
-interface MessageTrailer {
-  /** The inline keyboard a bot attached to its message, or to a message sent through it. */
-  readonly reply_markup?: InlineKeyboardMarkup;
-  /** The bot through whose inline mode an account sent the message. */
-  readonly via_bot?: MessageSenderBot;
-  /** Present when the bot protected its message from forwarding and saving. */
-  readonly has_protected_content?: true;
-  /** The message effect a bot sent a private message with. */
-  readonly effect_id?: string;
-}
-
-/** A pinned message, which is never a service message, as a reply shows a message. */
-export type PinnedPrivateMessage =
-  & MessageHeader<PrivateChat>
-  & MessageReplyInfo
-  & MessageAlbumInfo
-  & MessageContent
-  & NoServiceChange
-  & MessageTrailer;
-
-/** A message as a reply shows it, without its own reply. */
-export type RepliedPrivateMessage =
-  & MessageHeader<PrivateChat>
-  & MessageReplyInfo
-  & MessageAlbumInfo
-  & RepliedPrivateMessageContent
-  & MessageTrailer;
-
-/**
- * A private-chat message as the conversation's bot sees it: numbered in the bot's message box,
- * with the account as its chat, whichever participant wrote it, or a service message about a pin,
- * from the participant who pinned.
- */
-export type PrivateMessage =
-  & MessageHeader<PrivateChat>
-  & {
-    /** The message this one replies to, unless it was deleted; it never shows its own reply. */
-    readonly reply_to_message?: RepliedPrivateMessage;
-  }
-  & MessageReplyInfo
-  & MessageAlbumInfo
-  & PrivateMessageContent
-  & MessageTrailer;
-
-/** A pinned supergroup message, which is never a service message, as a reply shows a message. */
-export type PinnedSupergroupMessage =
-  & MessageHeader<SupergroupChat>
-  & MessageReplyInfo
-  & MessageAlbumInfo
-  & MessageContent
-  & NoServiceChange
-  & MessageTrailer;
-
-/** A message as a reply shows it, without its own reply. */
-export type RepliedSupergroupMessage =
-  & MessageHeader<SupergroupChat>
-  & MessageReplyInfo
-  & MessageAlbumInfo
-  & RepliedSupergroupMessageContent
-  & MessageTrailer;
-
-/**
- * A supergroup message as the requesting account sees it: numbered once by the supergroup, and
- * written by an account or a bot, or a service message about members joining or leaving, a new
- * title, or a pin, from the member who made the change. Members see the same message, apart from
- * the `file_id` of its file, whether a quiz shows its solution, and the legacy `new_chat_member`
- * of a service message.
- */
-export type SupergroupMessage =
-  & MessageHeader<SupergroupChat>
-  & {
-    /** The message this one replies to, unless it was deleted; it never shows its own reply. */
-    readonly reply_to_message?: RepliedSupergroupMessage;
-  }
-  & MessageReplyInfo
-  & MessageAlbumInfo
-  & SupergroupMessageContent
-  & MessageTrailer;
-
-/**
- * Administrator rights that a chat request requires: every right that applies to the requested
- * kind of chat, by its Bot API name, required or not.
- */
-export type RequiredChatAdministratorRights = Readonly<Record<string, boolean>>;
-
-/**
- * What a reply keyboard button asks the client to share instead of sending its text, in the
- * fields of a Bot API `KeyboardButton`. Pressing a `request_contact` button shares the account's
- * own contact, pressing a `request_location` button shares the location the press reports,
- * pressing a `request_users` or `request_chat` button shares the users or supergroup the press
- * chooses, pressing a `request_poll` button sends the poll the press creates, and pressing a
- * `web_app` button sends the data the press gives.
- */
-export type ReplyKeyboardButtonRequest =
-  | { readonly request_contact: true }
-  | { readonly request_location: true }
-  | { readonly request_poll: { readonly type?: 'quiz' | 'regular' } }
-  | { readonly web_app: { readonly url: string } }
-  | {
-    readonly request_users: {
-      readonly request_id: number;
-      readonly user_is_bot?: boolean;
-      readonly user_is_premium?: boolean;
-      readonly max_quantity: number;
-      readonly request_name: boolean;
-      readonly request_username: boolean;
-      readonly request_photo: boolean;
-    };
-  }
-  | {
-    readonly request_chat: {
-      readonly request_id: number;
-      readonly chat_is_channel: boolean;
-      readonly chat_is_forum?: boolean;
-      readonly chat_has_username?: boolean;
-      readonly chat_is_created: boolean;
-      readonly user_administrator_rights?: RequiredChatAdministratorRights;
-      readonly bot_administrator_rights?: RequiredChatAdministratorRights;
-      readonly bot_is_member: boolean;
-      readonly request_title: boolean;
-      readonly request_username: boolean;
-      readonly request_photo: boolean;
-    };
-  };
-
-/**
- * A reply keyboard button, which sends its text to the chat when pressed, or asks the client to
- * share what its request describes.
- */
-export type ReplyKeyboardButton =
-  | KeyboardButtonFace
-  | (KeyboardButtonFace & ReplyKeyboardButtonRequest);
+/** What the account's client shows in place of its usual input in a chat with a bot. */
+export type ReplyInterface = NonNullable<
+  ReadonlySnapshot<z.output<typeof replyInterfaceResponseSchema>['reply_interface']>
+>;
 
 /** A custom keyboard the account's client shows in place of its letter keyboard. */
-export interface ReplyKeyboardInterface {
-  readonly type: 'keyboard';
-  /** The ID of the bot message that sent the keyboard, as message history shows it. */
-  readonly message_id: number;
-  readonly keyboard: readonly (readonly ReplyKeyboardButton[])[];
-  readonly is_persistent: boolean;
-  readonly resize_keyboard: boolean;
-  /**
-   * Whether clients hide the keyboard once it is used; the keyboard stays available, so its
-   * buttons can still be pressed.
-   */
-  readonly one_time_keyboard: boolean;
-  readonly input_field_placeholder?: string;
-}
+export type ReplyKeyboardInterface = Extract<ReplyInterface, { readonly type: 'keyboard' }>;
 
 /** A reply interface to a bot message, which the account's client shows as if replying to it. */
-export interface ForceReplyInterface {
-  readonly type: 'force_reply';
-  /** The ID of the bot message to reply to, as message history shows it. */
-  readonly message_id: number;
-  readonly input_field_placeholder?: string;
-}
-
-/** What the account's client shows in place of its usual input in a chat with a bot. */
-export type ReplyInterface = ReplyKeyboardInterface | ForceReplyInterface;
+export type ForceReplyInterface = Extract<ReplyInterface, { readonly type: 'force_reply' }>;
 
 export interface PressReplyKeyboardButtonInput<Target extends MessageTarget = MessageTarget> {
   readonly chat: Target;
@@ -1808,46 +1032,25 @@ export interface AccountReplyInterfaceInput {
 }
 
 /** A bot command as an account's client lists it. */
-export interface BotCommand {
-  /** The command without its leading slash. */
-  readonly command: string;
-  readonly description: string;
-  readonly is_ephemeral: boolean;
-}
+export type BotCommand = ReadonlySnapshot<z.output<typeof accountBotCommandSchema>>;
 
 /**
  * The button an account's client shows next to the message field of a private chat with a bot:
  * the bot's commands, a Web App, or `default` when the bot chose no specific button.
  */
-export type MenuButton =
-  | { readonly type: 'commands' }
-  | { readonly type: 'web_app'; readonly text: string; readonly web_app: { readonly url: string } }
-  | { readonly type: 'default' };
+export type MenuButton = ReadonlySnapshot<
+  ControlOperationResult<typeof getPrivateChatMenuButtonContract>['menu_button']
+>;
 
 /** The notification an account's client shows for another participant's message. */
-export interface Notification {
-  /** The notifying message's ID, as the chat's bots see it. */
-  readonly message_id: number;
-  /** Whether the sender asked for the notification to play no sound, as `disable_notification`. */
-  readonly is_silent: boolean;
-}
+export type Notification = ReadonlySnapshot<
+  z.output<typeof notificationsResponseSchema>['notifications'][number]
+>;
 
 /** What a bot shows it is doing in a chat, by the Bot API's lowercase action name. */
-export interface ChatAction {
-  readonly bot_id: number;
-  readonly action:
-    | 'typing'
-    | 'record_video'
-    | 'upload_video'
-    | 'record_voice'
-    | 'upload_voice'
-    | 'upload_photo'
-    | 'upload_document'
-    | 'choose_sticker'
-    | 'find_location'
-    | 'record_video_note'
-    | 'upload_video_note';
-}
+export type ChatAction = ReadonlySnapshot<
+  z.output<typeof chatActionsResponseSchema>['chat_actions'][number]
+>;
 
 /** The draft of a message a bot is generating, as the account's client shows it. */
 export type MessageDraft = NonNullable<
@@ -1883,14 +1086,6 @@ export interface LocationInput {
   /** From -180 to 180 degrees. */
   readonly longitude: number;
   /** The radius of uncertainty, from 0 to 1500 meters; omitted or 0 when unknown. */
-  readonly horizontal_accuracy?: number;
-}
-
-/** A point on Earth, as Telegram shows it. */
-export interface Location {
-  readonly latitude: number;
-  readonly longitude: number;
-  /** The radius of uncertainty in whole meters; omitted when unknown. */
   readonly horizontal_accuracy?: number;
 }
 

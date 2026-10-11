@@ -6,12 +6,17 @@
 import type {
   BotApiCallEntry,
   CallbackQuery,
+  ChatAction,
   ChatJoinRequest,
   EmulationSession,
   InlineQuery,
+  MenuButton,
   MessageDraft,
+  Notification,
   Poll,
+  PollAnswer,
   RateLimitResponses,
+  ReplyInterface,
   SupergroupInviteLink,
   UpdateDeliveredEntry,
   WebhookAttempt,
@@ -34,6 +39,11 @@ export function mutateSnapshots(
   inlineQuery: InlineQuery,
   callbackQuery: CallbackQuery,
   draft: MessageDraft,
+  chatAction: ChatAction,
+  notification: Notification,
+  menuButton: MenuButton,
+  replyInterface: ReplyInterface,
+  pollAnswer: PollAnswer,
 ): void {
   // @ts-expect-error A snapshot's own field is readonly.
   session.uploadProfile = 'local';
@@ -71,6 +81,16 @@ export function mutateSnapshots(
   callbackQuery.status = 'expired';
   // @ts-expect-error A list of a snapshot cannot grow.
   draft.entities?.push(draft.entities[0]);
+  // @ts-expect-error A snapshot's own field is readonly.
+  chatAction.action = 'typing';
+  // @ts-expect-error A snapshot's own field is readonly.
+  notification.is_silent = true;
+  // @ts-expect-error A union's own field is readonly.
+  menuButton.type = 'default';
+  // @ts-expect-error A union's own field is readonly.
+  replyInterface.message_id = 1;
+  // @ts-expect-error A list of a snapshot cannot grow.
+  pollAnswer.option_ids.push(0);
 }
 
 Deno.test('Response snapshots are readonly all the way down', () => {
