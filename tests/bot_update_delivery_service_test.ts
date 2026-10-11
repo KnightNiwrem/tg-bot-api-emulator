@@ -1,3 +1,4 @@
+import { assertEquals } from '@std/assert';
 import { AccountRepository } from '../src/repositories/account.ts';
 import { BotRepository } from '../src/repositories/bot.ts';
 import { BotUpdateRepository } from '../src/repositories/bot_update.ts';
@@ -16,6 +17,8 @@ import { findDetectedEntities } from '../src/text_entities/detected_entities.ts'
 import type { BotApiMessage, BotApiUpdate } from '../src/types/bot_api.ts';
 import { grantSupergroupAdministratorRights } from '../src/types/chat_membership.ts';
 import { ALL_CHAT_PERMISSIONS } from '../src/types/chat_permissions.ts';
+import { assertEqualsInFieldOrder } from './support/field_order_assertion.ts';
+import { createVirtualAccount, createVirtualBot } from './support/virtual_users.ts';
 
 Deno.test('BotUpdateDeliveryService delivers a private message to its conversation bot', () => {
   const { virtualUsers, messages, messageBoxes, botUpdates, botUpdateDelivery } =
@@ -50,12 +53,15 @@ Deno.test('BotUpdateDeliveryService delivers a private message to its conversati
     messageFromUpdate(targetBotUpdates[0])?.chat.id !== account.profile.id ||
     messageFromUpdate(targetBotUpdates[0])?.from.id !== account.profile.id ||
     messageFromUpdate(targetBotUpdates[0])?.date !== 1_700_000_000 ||
-    textContentOf(messageFromUpdate(targetBotUpdates[0]))?.text !== '/start' ||
-    JSON.stringify(textContentOf(messageFromUpdate(targetBotUpdates[0]))?.entities) !==
-      JSON.stringify([{ type: 'bot_command', offset: 0, length: 6 }])
+    textContentOf(messageFromUpdate(targetBotUpdates[0]))?.text !== '/start'
   ) {
     throw new Error("Expected one update projected with the bot's own message ID");
   }
+  assertEqualsInFieldOrder(
+    textContentOf(messageFromUpdate(targetBotUpdates[0]))?.entities,
+    [{ type: 'bot_command', offset: 0, length: 6 }],
+    'Expected the command entity of the projected message',
+  );
   const otherBotUpdates = botUpdates.confirmAndReadPendingUpdates(otherBot.profile.id, {
     limit: 100,
   });
@@ -130,12 +136,15 @@ Deno.test('BotUpdateDeliveryService delivers a callback query to the bot whose b
     callbackQuery.data !== 'yes' ||
     !('message' in callbackQuery) ||
     callbackQuery.message.message_id !== 1 ||
-    callbackQuery.message.from.id !== bot.profile.id ||
-    JSON.stringify(callbackQuery.message.reply_markup) !==
-      JSON.stringify({ inline_keyboard: [[{ text: 'Yes', callback_data: 'yes' }]] })
+    callbackQuery.message.from.id !== bot.profile.id
   ) {
     throw new Error('Expected the callback query projected with its message as the bot sees it');
   }
+  assertEqualsInFieldOrder(
+    callbackQuery.message.reply_markup,
+    { inline_keyboard: [[{ text: 'Yes', callback_data: 'yes' }]] },
+    "Expected the callback query's message with its keyboard",
+  );
 });
 
 Deno.test('BotUpdateDeliveryService skips update types excluded by the bot subscription', () => {
@@ -239,23 +248,17 @@ Deno.test('BotUpdateDeliveryService delivers an account edit, but not its own, t
   });
 
   const updates = botUpdates.confirmAndReadPendingUpdates(bot.profile.id, { limit: 100 });
-  if (
-    JSON.stringify(updates) !== JSON.stringify([{
-      update_id: 1,
-      edited_message: {
-        message_id: 1,
-        from: account.profile,
-        chat: { id: account.profile.id, type: 'private', first_name: 'Ada' },
-        date: 1_700_000_000,
-        edit_date: 1_700_000_005,
-        text: 'Hello!',
-      },
-    }])
-  ) {
-    throw new Error(
-      `Expected only the account edit as an update, received ${JSON.stringify(updates)}`,
-    );
-  }
+  assertEqualsInFieldOrder(updates, [{
+    update_id: 1,
+    edited_message: {
+      message_id: 1,
+      from: account.profile,
+      chat: { id: account.profile.id, type: 'private', first_name: 'Ada' },
+      date: 1_700_000_000,
+      edit_date: 1_700_000_005,
+      text: 'Hello!',
+    },
+  }], 'Expected only the account edit as an update');
 });
 
 Deno.test('BotUpdateDeliveryService reports a block and unblock as changes of the bot membership', () => {
@@ -288,34 +291,28 @@ Deno.test('BotUpdateDeliveryService reports a block and unblock as changes of th
   const member = { user: botUser, status: 'member' };
   const kicked = { user: botUser, status: 'kicked', until_date: 0 };
   const updates = botUpdates.confirmAndReadPendingUpdates(bot.profile.id, { limit: 100 });
-  if (
-    JSON.stringify(updates) !== JSON.stringify([
-      {
-        update_id: 1,
-        my_chat_member: {
-          chat,
-          from: account.profile,
-          date: 1_700_000_000,
-          old_chat_member: member,
-          new_chat_member: kicked,
-        },
+  assertEqualsInFieldOrder(updates, [
+    {
+      update_id: 1,
+      my_chat_member: {
+        chat,
+        from: account.profile,
+        date: 1_700_000_000,
+        old_chat_member: member,
+        new_chat_member: kicked,
       },
-      {
-        update_id: 2,
-        my_chat_member: {
-          chat,
-          from: account.profile,
-          date: 1_700_000_009,
-          old_chat_member: kicked,
-          new_chat_member: member,
-        },
+    },
+    {
+      update_id: 2,
+      my_chat_member: {
+        chat,
+        from: account.profile,
+        date: 1_700_000_009,
+        old_chat_member: kicked,
+        new_chat_member: member,
       },
-    ])
-  ) {
-    throw new Error(
-      `Expected my_chat_member updates in Telegram form, received ${JSON.stringify(updates)}`,
-    );
-  }
+    },
+  ], 'Expected my_chat_member updates in Telegram form');
   if (botUpdates.confirmAndReadPendingUpdates(otherBot.profile.id, { limit: 100 }).length !== 0) {
     throw new Error('Expected a block to reach only the blocked bot');
   }
@@ -383,8 +380,12 @@ Deno.test('BotUpdateDeliveryService delivers supergroup additions and edits to t
   });
   const readerUpdateKinds = readerUpdates.map((update) => Object.keys(update)[1]);
   const editedUpdate = readerUpdates[1];
+  assertEquals(
+    readerUpdateKinds,
+    ['my_chat_member', 'edited_message'],
+    'Expected the reader bot to join and see the edit',
+  );
   if (
-    JSON.stringify(readerUpdateKinds) !== JSON.stringify(['my_chat_member', 'edited_message']) ||
     !('edited_message' in editedUpdate) || editedUpdate.edited_message.message_id !== 1 ||
     editedUpdate.edited_message.edit_date !== 1_700_000_002
   ) {
@@ -483,10 +484,13 @@ Deno.test('BotUpdateDeliveryService delivers a promotion and every message to an
     },
   };
   const [promotionUpdate, messageUpdate] = updates;
+  assertEqualsInFieldOrder(
+    'my_chat_member' in promotionUpdate ? promotionUpdate.my_chat_member : promotionUpdate,
+    expectedPromotion,
+    'Expected the administrator bot to learn of its promotion',
+  );
   if (
-    updates.length !== 2 || !('my_chat_member' in promotionUpdate) ||
-    JSON.stringify(promotionUpdate.my_chat_member) !== JSON.stringify(expectedPromotion) ||
-    !('message' in messageUpdate) || messageUpdate.message.message_id !== 1
+    updates.length !== 2 || !('message' in messageUpdate) || messageUpdate.message.message_id !== 1
   ) {
     throw new Error(
       `Expected the administrator bot to learn of its promotion and read every message, received ${
@@ -566,14 +570,11 @@ Deno.test("BotUpdateDeliveryService delivers bots' membership service messages t
     [leavingBot, [spammerRemoval, botRemoval, leaving]],
   ]);
   for (const [bot, expected] of expectedDepartures) {
-    const received = departuresSeenBy(bot.profile.id);
-    if (JSON.stringify(received) !== JSON.stringify(expected)) {
-      throw new Error(
-        `Expected ${bot.profile.username} to see ${JSON.stringify(expected)}, received ${
-          JSON.stringify(received)
-        }`,
-      );
-    }
+    assertEquals(
+      departuresSeenBy(bot.profile.id),
+      expected,
+      `Expected the departures ${bot.profile.username} sees`,
+    );
   }
 });
 
@@ -706,39 +707,44 @@ Deno.test('BotUpdateDeliveryService delivers inline queries, and chosen results 
 
   const [inlineQueryUpdate, messageUpdate, chosenResultUpdate, ...unexpectedUpdates] = botUpdates
     .confirmAndReadPendingUpdates(feedbackBot.profile.id, { limit: 100 });
-  if (
-    inlineQueryUpdate === undefined || !('inline_query' in inlineQueryUpdate) ||
-    JSON.stringify(inlineQueryUpdate.inline_query) !== JSON.stringify({
-        id: '1',
-        from: account.profile,
-        chat_type: 'sender',
-        query: 'cats',
-        offset: '',
-      })
-  ) {
-    throw new Error(`Expected the inline query in Telegram's shape`);
-  }
+  assertEqualsInFieldOrder(
+    inlineQueryUpdate !== undefined && 'inline_query' in inlineQueryUpdate
+      ? inlineQueryUpdate.inline_query
+      : inlineQueryUpdate,
+    { id: '1', from: account.profile, chat_type: 'sender', query: 'cats', offset: '' },
+    "Expected the inline query in Telegram's shape",
+  );
   const sentMessage = messageFromUpdate(messageUpdate);
-  if (
-    sentMessage === undefined ||
-    JSON.stringify(Object.keys(sentMessage).slice(-3)) !==
-      JSON.stringify(['text', 'reply_markup', 'via_bot']) ||
-    sentMessage.via_bot?.id !== feedbackBot.profile.id
-  ) {
-    throw new Error(`Expected the message with via_bot after its keyboard`);
+  assertEquals(
+    [
+      sentMessage === undefined ? [] : Object.keys(sentMessage).slice(-3),
+      sentMessage?.via_bot?.id,
+    ],
+    [['text', 'reply_markup', 'via_bot'], feedbackBot.profile.id],
+    'Expected the message with via_bot after its keyboard',
+  );
+  const inlineMessageId = message.viaBot?.inlineMessageId;
+  if (inlineMessageId === undefined) {
+    throw new Error('Expected the message sent through the bot to have an inline message ID');
   }
-  if (
-    chosenResultUpdate === undefined || !('chosen_inline_result' in chosenResultUpdate) ||
-    JSON.stringify(chosenResultUpdate.chosen_inline_result) !== JSON.stringify({
+  assertEqualsInFieldOrder(
+    [
+      chosenResultUpdate !== undefined && 'chosen_inline_result' in chosenResultUpdate
+        ? chosenResultUpdate.chosen_inline_result
+        : chosenResultUpdate,
+      unexpectedUpdates,
+    ],
+    [
+      {
         from: account.profile,
-        inline_message_id: message.viaBot?.inlineMessageId,
+        inline_message_id: inlineMessageId,
         query: 'cats',
         result_id: 'cats-1',
-      }) ||
-    unexpectedUpdates.length !== 0
-  ) {
-    throw new Error("Expected the chosen result in Telegram's shape");
-  }
+      },
+      [],
+    ],
+    "Expected the chosen result in Telegram's shape, and no other update",
+  );
   if (botUpdates.countPendingUpdates(quietBot.profile.id) !== 0) {
     throw new Error('Expected a bot without inline feedback to learn of no chosen result');
   }
@@ -846,13 +852,7 @@ Deno.test('BotUpdateDeliveryService lets a message reach only the privacy-mode b
     );
   const expectRecipients = (text: string, expected: readonly string[]) => {
     const received = recipientsOf(text);
-    if (JSON.stringify(received) !== JSON.stringify(expected)) {
-      throw new Error(
-        `Expected ${JSON.stringify(text)} to reach ${JSON.stringify(expected)}, received ${
-          JSON.stringify(received)
-        }`,
-      );
-    }
+    assertEquals(received, expected, `Expected the bots ${JSON.stringify(text)} reaches`);
   };
 
   const questionOfA = send({ kind: 'bot', botId: botA.profile.id }, 'Question of A');
@@ -970,13 +970,7 @@ Deno.test('BotUpdateDeliveryService sends general commands to the bot that last 
         ? [name]
         : []
     );
-    if (JSON.stringify(received) !== JSON.stringify(expected)) {
-      throw new Error(
-        `Expected ${JSON.stringify(text)} to reach ${JSON.stringify(expected)}, received ${
-          JSON.stringify(received)
-        }`,
-      );
-    }
+    assertEquals(received, expected, `Expected the bots ${JSON.stringify(text)} reaches`);
   };
 
   const expectLastMessageSendingBot = (expectedBotId: number | undefined) => {
@@ -1123,21 +1117,16 @@ Deno.test('BotUpdateDeliveryService delivers chat_member updates to subscribed a
       new_chat_member: { user: newcomer.profile, status: 'kicked', until_date: 0 },
     },
   ];
-  if (
-    JSON.stringify(administratorUpdates.map((update) => Object.keys(update)[1])) !==
-      JSON.stringify(['chat_member', 'chat_member', 'my_chat_member']) ||
-    JSON.stringify(
-        administratorUpdates.flatMap((update) =>
-          'chat_member' in update ? [update.chat_member] : []
-        ),
-      ) !== JSON.stringify(expectedChatMemberUpdates)
-  ) {
-    throw new Error(
-      `Expected the subscribed administrator to observe other members' changes, received ${
-        JSON.stringify(administratorUpdates)
-      }`,
-    );
-  }
+  assertEquals(
+    administratorUpdates.map((update) => Object.keys(update)[1]),
+    ['chat_member', 'chat_member', 'my_chat_member'],
+    "Expected the subscribed administrator to observe other members' changes",
+  );
+  assertEqualsInFieldOrder(
+    administratorUpdates.flatMap((update) => 'chat_member' in update ? [update.chat_member] : []),
+    expectedChatMemberUpdates,
+    "Expected the subscribed administrator to observe other members' changes",
+  );
   for (const bot of [unsubscribedAdministratorBot, subscribedMemberBot]) {
     const updates = botUpdates.confirmAndReadPendingUpdates(bot.profile.id, { limit: 100 });
     if (updates.some((update) => 'chat_member' in update)) {
@@ -1206,13 +1195,7 @@ Deno.test('BotUpdateDeliveryService addresses a bot message only by its own repl
     const receivedTexts = updates.flatMap((update) =>
       textContentOf(messageFromUpdate(update))?.text ?? []
     );
-    if (JSON.stringify(receivedTexts) !== JSON.stringify(expectedTexts)) {
-      throw new Error(
-        `Expected the inline bot to receive ${JSON.stringify(expectedTexts)}, received ${
-          JSON.stringify(receivedTexts)
-        }`,
-      );
-    }
+    assertEquals(receivedTexts, expectedTexts, 'Expected the texts the inline bot receives');
   };
   const senderBotId = senderBot.bot.profile.id;
 
@@ -1282,19 +1265,11 @@ function createDeliveryFixture() {
 }
 
 function createAccount(virtualUsers: VirtualUserService) {
-  const result = virtualUsers.createAccount({ first_name: 'Ada' });
-  if (!result.created) {
-    throw new Error(`Expected account creation to succeed, received ${result.reason}`);
-  }
-  return result.account;
+  return createVirtualAccount(virtualUsers, { first_name: 'Ada' });
 }
 
 function createBot(virtualUsers: VirtualUserService, username: string) {
-  const result = virtualUsers.createBot({ first_name: 'Test Bot', username });
-  if (!result.created) {
-    throw new Error(`Expected bot creation to succeed, received ${result.reason}`);
-  }
-  return result.bot;
+  return createVirtualBot(virtualUsers, { first_name: 'Test Bot', username });
 }
 
 function createInlineBot(
@@ -1302,16 +1277,12 @@ function createInlineBot(
   username: string,
   receivesChosenInlineResults: boolean,
 ) {
-  const result = virtualUsers.createBot({
+  return createVirtualBot(virtualUsers, {
     first_name: 'Inline Bot',
     username,
     supports_inline_queries: true,
     receives_chosen_inline_results: receivesChosenInlineResults,
   });
-  if (!result.created) {
-    throw new Error(`Expected bot creation to succeed, received ${result.reason}`);
-  }
-  return result.bot;
 }
 
 function messageFromUpdate(update: BotApiUpdate | undefined): BotApiMessage | undefined {

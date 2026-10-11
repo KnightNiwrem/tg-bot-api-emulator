@@ -4,23 +4,24 @@
  */
 import { assertEquals } from '@std/assert';
 import { createEmulationApi } from '../src/api/mod.ts';
-import { createEmulationSession } from '../src/composition/emulation_session.ts';
 import { createSessionLifecycleService } from '../src/composition/session_lifecycle.ts';
 import { AccountRepository } from '../src/repositories/account.ts';
 import { BotRepository } from '../src/repositories/bot.ts';
 import { SessionRepository } from '../src/repositories/session.ts';
 import { SessionLifecycleService } from '../src/services/session_lifecycle.ts';
 import { VirtualUserService } from '../src/services/virtual_user.ts';
-import { createSystemSessionTiming } from '../src/timing/system_timing.ts';
 import {
   createSession,
   createTestSession,
+  type EmulationApi,
   requestJson,
   TEST_PUBLIC_ORIGIN,
 } from './support/emulation_api.ts';
+import { buildSessionServices } from './support/session_services.ts';
 
 Deno.test('A body that is not JSON is an invalid_json issue of the whole body', async () => {
-  const { api, sessionPath } = await createTestSession();
+  await using testSession = await createTestSession();
+  const { api, sessionPath } = testSession;
 
   const response = await api.request(`${sessionPath}/accounts`, {
     method: 'POST',
@@ -40,7 +41,8 @@ Deno.test('A body that is not JSON is an invalid_json issue of the whole body', 
 });
 
 Deno.test('A required body without content is not JSON either', async () => {
-  const { api, sessionPath } = await createTestSession();
+  await using testSession = await createTestSession();
+  const { api, sessionPath } = testSession;
 
   const response = await api.request(`${sessionPath}/bots`, { method: 'POST' });
 
@@ -53,7 +55,8 @@ Deno.test('A required body without content is not JSON either', async () => {
 });
 
 Deno.test('Each field a body schema rejects is an issue at its path', async () => {
-  const { api, sessionPath } = await createTestSession();
+  await using testSession = await createTestSession();
+  const { api, sessionPath } = testSession;
 
   const { status, body } = await requestJson<ControlErrorBody>(
     api,
@@ -80,7 +83,8 @@ Deno.test('Each field a body schema rejects is an issue at its path', async () =
 });
 
 Deno.test('Issues name list positions and never repeat an input value', async () => {
-  const { api, sessionPath } = await createTestSession();
+  await using testSession = await createTestSession();
+  const { api, sessionPath } = testSession;
   const secretUsername = 'not a username 7f3a9c';
 
   const response = await api.request(`${sessionPath}/bots`, {
@@ -117,7 +121,8 @@ Deno.test('Issues name list positions and never repeat an input value', async ()
 });
 
 Deno.test('A value meant as one form of a union reports that form’s issues', async () => {
-  const { api, sessionPath } = await createTestSession();
+  await using testSession = await createTestSession();
+  const { api, sessionPath } = testSession;
   const messagesPath = `${sessionPath}/accounts/1/messages`;
   const to = { type: 'private', botId: 1 };
 
@@ -155,7 +160,8 @@ Deno.test('A value meant as one form of a union reports that form’s issues', a
 });
 
 Deno.test('A malformed path parameter is an issue of the path', async () => {
-  const { api, sessionPath } = await createTestSession();
+  await using testSession = await createTestSession();
+  const { api, sessionPath } = testSession;
 
   const { status, body } = await requestJson<ControlErrorBody>(
     api,
@@ -175,7 +181,8 @@ Deno.test('A malformed path parameter is an issue of the path', async () => {
 });
 
 Deno.test('Query keys named like object properties are read as any other key', async () => {
-  const { api, sessionPath } = await createTestSession();
+  await using testSession = await createTestSession();
+  const { api, sessionPath } = testSession;
   const activityPath = `${sessionPath}/bot-activity`;
 
   const cases: readonly (readonly [query: string, issues: readonly unknown[]])[] = [
@@ -208,7 +215,8 @@ Deno.test('Query keys named like object properties are read as any other key', a
 });
 
 Deno.test('A parameter filter named __proto__ filters by that parameter', async () => {
-  const { api, sessionPath } = await createTestSession();
+  await using testSession = await createTestSession();
+  const { api, sessionPath } = testSession;
   const { body: { token } } = await requestJson<{ token: string }>(
     api,
     'POST',
@@ -235,7 +243,8 @@ Deno.test('A parameter filter named __proto__ filters by that parameter', async 
 });
 
 Deno.test('Unknown and repeated query parameters are issues of the query', async () => {
-  const { api, sessionPath } = await createTestSession();
+  await using testSession = await createTestSession();
+  const { api, sessionPath } = testSession;
 
   const { status, body } = await requestJson<ControlErrorBody>(
     api,
@@ -257,7 +266,8 @@ Deno.test('Unknown and repeated query parameters are issues of the query', async
 });
 
 Deno.test('A read range that cannot be read names the parameter that breaks it', async () => {
-  const { api, sessionPath } = await createTestSession();
+  await using testSession = await createTestSession();
+  const { api, sessionPath } = testSession;
 
   const reversed = await requestJson<ControlErrorBody>(
     api,
@@ -296,7 +306,8 @@ Deno.test('A read range that cannot be read names the parameter that breaks it',
 });
 
 Deno.test('Missing resources are refused with the reason that names them', async () => {
-  const { api, sessionPath } = await createTestSession();
+  await using testSession = await createTestSession();
+  const { api, sessionPath } = testSession;
   const { body: { account } } = await requestJson<{ account: { id: number } }>(
     api,
     'POST',
@@ -327,7 +338,7 @@ Deno.test('Missing resources are refused with the reason that names them', async
 Deno.test('A path or method no route serves is refused as route_not_found', async () => {
   // The OpenAPI document cannot describe a route it does not list, so the API is not checked
   // against it here.
-  const api = createUncheckedTestApi();
+  using api = createUncheckedTestApi();
   const liveSessionPath = await createSession(api);
   const endedSessionPath = await createSession(api);
   await api.request(endedSessionPath, { method: 'DELETE' });
@@ -356,7 +367,7 @@ Deno.test('A path or method no route serves is refused as route_not_found', asyn
 });
 
 Deno.test('A route that serves a request of an ended session refuses it as session_not_found', async () => {
-  const api = createUncheckedTestApi();
+  using api = createUncheckedTestApi();
   const sessionPath = await createSession(api);
   await api.request(sessionPath, { method: 'DELETE' });
 
@@ -379,7 +390,8 @@ Deno.test('A route that serves a request of an ended session refuses it as sessi
 });
 
 Deno.test('A conflict with the session state is refused by its reason', async () => {
-  const { api, sessionPath } = await createTestSession();
+  await using testSession = await createTestSession();
+  const { api, sessionPath } = testSession;
   await requestJson(api, 'POST', `${sessionPath}/bots`, {
     first_name: 'Helper',
     username: 'helper_bot',
@@ -397,10 +409,7 @@ Deno.test('A conflict with the session state is refused by its reason', async ()
 });
 
 Deno.test('A failure outside the 4xx range carries its reason too', async () => {
-  const api = createEmulationApi({
-    sessionLifecycle: createExhaustedIdentityLifecycle(),
-    publicOrigin: TEST_PUBLIC_ORIGIN,
-  });
+  using api = createUncheckedTestApi(createExhaustedIdentityLifecycle());
   const sessionPath = await createSession(api);
 
   const { status, body } = await requestJson<ControlErrorBody>(
@@ -421,7 +430,7 @@ Deno.test('A failure outside the 4xx range carries its reason too', async () => 
 Deno.test('Bot API answers for an unknown session keep their empty 404', async () => {
   // The document describes the file download's 404 as a Bot API error, but a session that does
   // not exist is answered before any Bot API route, so the API is not checked against it here.
-  const api = createUncheckedTestApi();
+  using api = createUncheckedTestApi();
 
   for (
     const path of [
@@ -440,7 +449,8 @@ Deno.test('Bot API answers for an unknown session keep their empty 404', async (
 });
 
 Deno.test('Bot API errors of a known session keep Telegram’s bytes', async () => {
-  const { api, sessionPath } = await createTestSession();
+  await using testSession = await createTestSession();
+  const { api, sessionPath } = testSession;
 
   const unauthorized = await api.request(`${sessionPath}/bot-api/bot1:token/getMe`);
   const withoutMethod = await api.request(`${sessionPath}/bot-api/bot1:token`);
@@ -471,12 +481,18 @@ interface ControlErrorBody {
   readonly issues?: readonly ControlRequestIssue[];
 }
 
-/** An emulation API whose responses are not checked against the OpenAPI document. */
-function createUncheckedTestApi() {
-  return createEmulationApi({
-    sessionLifecycle: createSessionLifecycleService(),
-    publicOrigin: TEST_PUBLIC_ORIGIN,
-  });
+/**
+ * An emulation API over `sessionLifecycle` whose responses are not checked against the OpenAPI
+ * document. Disposing of it ends every session created on it.
+ */
+function createUncheckedTestApi(
+  sessionLifecycle: SessionLifecycleService = createSessionLifecycleService(),
+): EmulationApi & Disposable {
+  const api = createEmulationApi({ sessionLifecycle, publicOrigin: TEST_PUBLIC_ORIGIN });
+  return {
+    request: (path, init) => api.request(path, init),
+    [Symbol.dispose]: () => sessionLifecycle.endAllSessions(),
+  };
 }
 
 /** Sessions whose accounts can never get a user ID, as if every ID were taken. */
@@ -484,7 +500,7 @@ function createExhaustedIdentityLifecycle(): SessionLifecycleService {
   return new SessionLifecycleService({
     sessionRepository: new SessionRepository(),
     createEmulationSession: (id, options) => ({
-      ...createEmulationSession(id, options, createSystemSessionTiming()),
+      ...buildSessionServices({ id, ...options }),
       virtualUsers: new VirtualUserService({
         identities: {
           reserveIdentity: () => ({ reserved: false, reason: 'identity_limit_reached' }),
