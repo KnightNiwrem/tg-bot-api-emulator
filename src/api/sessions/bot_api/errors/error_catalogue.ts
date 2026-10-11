@@ -1,3 +1,7 @@
+import {
+  MAX_BOT_COMMAND_DESCRIPTION_LENGTH,
+  MAX_BOT_COMMAND_LENGTH,
+} from '../../../../types/bot_command.ts';
 import type { PermissionGovernedContent } from '../../../../types/chat_permissions.ts';
 import {
   MAX_POLL_OPEN_PERIOD_SECONDS,
@@ -84,6 +88,29 @@ const INVITE_LINK_MANAGEMENT_CHECK = tdlibSource(
 const JOIN_REQUEST_MANAGEMENT_CHECK = tdlibSource(
   'td/telegram/DialogParticipantManager.cpp#L1257-L1280',
 );
+
+/** TDLib's `set_commands`, which checks each command of a list in order. */
+const BOT_COMMAND_CHECKS = tdlibSource('td/telegram/BotCommand.cpp#L173-L207');
+
+/** TDLib's `set_menu_button`, which checks a menu button's text and Web App URL. */
+const MENU_BUTTON_CHECKS = tdlibSource('td/telegram/BotMenuButton.cpp#L133-L150');
+
+/** TDLib's `answer_inline_query`, which checks the button above the results. */
+const INLINE_QUERY_BUTTON_CHECKS = tdlibSource('td/telegram/InlineQueriesManager.cpp#L711-L722');
+
+/** TDLib's `get_input_bot_inline_result`, which checks a contact result. */
+const INLINE_CONTACT_RESULT_CHECKS = tdlibSource(
+  'td/telegram/InlineQueriesManager.cpp#L976-L984',
+);
+
+/** Telegram's servers' errors for an inline query's answer, which TDLib passes on. */
+const SET_INLINE_BOT_RESULTS_ERRORS = telegramApiDocumentation('messages.setInlineBotResults');
+
+/** The official server's `abort_long_poll`, which ends a long poll that another call replaced. */
+const LONG_POLL_ABORT = botApiServerSource('telegram-bot-api/Client.cpp#L17493-L17500');
+
+/** The official server's `process_set_webhook_query`, which checks the webhook's settings. */
+const WEBHOOK_SETTINGS_CHECKS = botApiServerSource('telegram-bot-api/Client.cpp#L17239-L17250');
 
 /**
  * The errors with which the Bot API answers a refused call, as templates over each failure's
@@ -796,6 +823,260 @@ export const BOT_API_ERRORS = {
     400,
     'Bad Request: HIDE_REQUESTER_MISSING',
     telegramApiDocumentation('messages.hideChatJoinRequest'),
+  ),
+
+  // Command lists of the bot.
+  botCommandScopeNotAllowedInPrivateChats: fixedBotApiError(
+    400,
+    "Bad Request: can't use specified scope in private chats",
+    tdlibSource('td/telegram/BotCommandScope.cpp#L68-L72'),
+  ),
+  /** A language code other than empty or two lowercase letters, for any of the bot's settings. */
+  languageCodeInvalid: fixedBotApiError(
+    400,
+    'Bad Request: invalid language code specified',
+    tdlibSource('td/telegram/misc.cpp#L395-L404'),
+  ),
+  botCommandNotUtf8: fixedBotApiError(
+    400,
+    'Bad Request: command must be encoded in UTF-8',
+    BOT_COMMAND_CHECKS,
+  ),
+  botCommandDescriptionNotUtf8: fixedBotApiError(
+    400,
+    'Bad Request: command description must be encoded in UTF-8',
+    BOT_COMMAND_CHECKS,
+  ),
+  botCommandEmpty: fixedBotApiError(
+    400,
+    'Bad Request: command must be non-empty',
+    BOT_COMMAND_CHECKS,
+  ),
+  botCommandTooLong: fixedBotApiError(
+    400,
+    `Bad Request: command length must not exceed ${MAX_BOT_COMMAND_LENGTH}`,
+    BOT_COMMAND_CHECKS,
+  ),
+  botCommandDescriptionEmpty: fixedBotApiError(
+    400,
+    'Bad Request: command description must be non-empty',
+    BOT_COMMAND_CHECKS,
+  ),
+  botCommandDescriptionTooLong: fixedBotApiError(
+    400,
+    `Bad Request: command description length must not exceed ${MAX_BOT_COMMAND_DESCRIPTION_LENGTH}`,
+    BOT_COMMAND_CHECKS,
+  ),
+  tooManyBotCommands: fixedBotApiError(
+    400,
+    'Bad Request: BOT_COMMANDS_TOO_MUCH',
+    emulatorInference(
+      "Telegram's servers limit a command list to 100 commands; neither the open-source code nor " +
+        'the documentation of bots.setBotCommands lists the error, which the emulator names as ' +
+        "Telegram's servers name their other limits",
+    ),
+  ),
+  /** A command with characters other than lowercase English letters, digits and underscores. */
+  botCommandInvalid: fixedBotApiError(
+    400,
+    'Bad Request: BOT_COMMAND_INVALID',
+    telegramApiDocumentation('bots.setBotCommands'),
+  ),
+
+  // Menu buttons of the bot.
+  /** A user the bot cannot address, as the official server's `check_user` refuses one. */
+  userNotFound: fixedBotApiError(
+    400,
+    'Bad Request: user not found',
+    botApiServerSource('telegram-bot-api/Client.cpp#L7192-L7195'),
+  ),
+  menuButtonTextEmpty: fixedBotApiError(
+    400,
+    'Bad Request: menu button text must be non-empty',
+    MENU_BUTTON_CHECKS,
+  ),
+  menuButtonTextNotUtf8: fixedBotApiError(
+    400,
+    'Bad Request: menu button text must be encoded in UTF-8',
+    MENU_BUTTON_CHECKS,
+  ),
+  menuButtonUrlNotUtf8: fixedBotApiError(
+    400,
+    'Bad Request: menu button URL must be encoded in UTF-8',
+    MENU_BUTTON_CHECKS,
+  ),
+  /** A Web App URL TDLib's `check_link` refuses, with its description of the URL. */
+  menuButtonWebAppUrlInvalid: {
+    status: () => 400,
+    description: ({ urlError }: { readonly urlError: string }) =>
+      `Bad Request: menu button Web App ${urlError}`,
+    provenance: () => MENU_BUTTON_CHECKS,
+  },
+
+  // Answers to callback queries.
+  /** An unknown, expired or already answered query; the server rewords `QUERY_ID_INVALID`. */
+  queryIdInvalid: fixedBotApiError(
+    400,
+    'Bad Request: query is too old and response timeout expired or query ID is invalid',
+    botApiServerSource('telegram-bot-api/Client.cpp#L148-L150'),
+  ),
+  /** A callback query answer's link that Telegram's servers refuse. */
+  callbackQueryAnswerUrlInvalid: fixedBotApiError(
+    400,
+    'Bad Request: URL_INVALID',
+    telegramApiDocumentation('messages.setBotCallbackAnswer'),
+  ),
+
+  // Answers to inline queries.
+  inlineQueryStartParameterEmpty: fixedBotApiError(
+    400,
+    "Bad Request: can't use empty start_parameter",
+    INLINE_QUERY_BUTTON_CHECKS,
+  ),
+  inlineQueryStartParameterTooLong: fixedBotApiError(
+    400,
+    'Bad Request: too long start_parameter specified',
+    INLINE_QUERY_BUTTON_CHECKS,
+  ),
+  inlineQueryStartParameterInvalid: fixedBotApiError(
+    400,
+    'Bad Request: unallowed characters in start_parameter are used',
+    INLINE_QUERY_BUTTON_CHECKS,
+  ),
+  tooManyInlineQueryResults: fixedBotApiError(
+    400,
+    'Bad Request: too many inline query results specified',
+    tdlibSource('td/telegram/InlineQueriesManager.cpp#L744-L746'),
+  ),
+  inlineQueryNextOffsetInvalid: fixedBotApiError(
+    400,
+    'Bad Request: NEXT_OFFSET_INVALID',
+    SET_INLINE_BOT_RESULTS_ERRORS,
+  ),
+  inlineQueryResultIdEmpty: fixedBotApiError(
+    400,
+    'Bad Request: RESULT_ID_EMPTY',
+    emulatorInference(
+      "Telegram's servers refuse a result without an identifier; neither the open-source code nor " +
+        'the documentation of messages.setInlineBotResults lists the error, which the emulator ' +
+        "names as Telegram's servers name the other result identifier errors",
+    ),
+  ),
+  inlineQueryResultIdInvalid: fixedBotApiError(
+    400,
+    'Bad Request: RESULT_ID_INVALID',
+    SET_INLINE_BOT_RESULTS_ERRORS,
+  ),
+  inlineQueryResultIdDuplicate: fixedBotApiError(
+    400,
+    'Bad Request: RESULT_ID_DUPLICATE',
+    SET_INLINE_BOT_RESULTS_ERRORS,
+  ),
+  inlineQueryArticleTitleEmpty: fixedBotApiError(
+    400,
+    'Bad Request: ARTICLE_TITLE_EMPTY',
+    SET_INLINE_BOT_RESULTS_ERRORS,
+  ),
+  inlineQueryDocumentTitleEmpty: fixedBotApiError(
+    400,
+    'Bad Request: FILE_TITLE_EMPTY',
+    SET_INLINE_BOT_RESULTS_ERRORS,
+  ),
+  inlineQueryVideoTitleEmpty: fixedBotApiError(
+    400,
+    'Bad Request: VIDEO_TITLE_EMPTY',
+    SET_INLINE_BOT_RESULTS_ERRORS,
+  ),
+  inlineQueryWebDocumentUrlInvalid: fixedBotApiError(
+    400,
+    'Bad Request: WEBDOCUMENT_URL_INVALID',
+    SET_INLINE_BOT_RESULTS_ERRORS,
+  ),
+  inlineQueryPhotoThumbnailUrlEmpty: fixedBotApiError(
+    400,
+    'Bad Request: PHOTO_THUMB_URL_EMPTY',
+    SET_INLINE_BOT_RESULTS_ERRORS,
+  ),
+  /** Text an inline result sends that is longer than a message, as Telegram's servers check it. */
+  inlineQueryMessageTooLong: fixedBotApiError(
+    400,
+    'Bad Request: MESSAGE_TOO_LONG',
+    SET_INLINE_BOT_RESULTS_ERRORS,
+  ),
+  inlineQueryCaptionTooLong: fixedBotApiError(
+    400,
+    'Bad Request: MEDIA_CAPTION_TOO_LONG',
+    SET_INLINE_BOT_RESULTS_ERRORS,
+  ),
+  /** A `file_id` of an inline result that names no file the bot knows. */
+  inlineQueryFileIdInvalid: fixedBotApiError(
+    400,
+    "Bad Request: wrong remote file identifier specified: can't unserialize it",
+    tdlibSource('td/telegram/files/FileManager.cpp#L4030-L4034'),
+  ),
+  /** Content of an inline result that uploads a file, which an inline message cannot take. */
+  inlineQueryResultContentInvalid: fixedBotApiError(
+    400,
+    'Bad Request: invalid inline message content specified',
+    tdlibSource('td/telegram/InlineQueriesManager.cpp#L590-L593'),
+  ),
+  inlineQueryContactPhoneNumberEmpty: fixedBotApiError(
+    400,
+    'Bad Request: field "phone_number" must contain a valid phone number',
+    INLINE_CONTACT_RESULT_CHECKS,
+  ),
+  inlineQueryContactFirstNameEmpty: fixedBotApiError(
+    400,
+    'Bad Request: field "first_name" must be non-empty',
+    INLINE_CONTACT_RESULT_CHECKS,
+  ),
+
+  // Files the bot downloads.
+  /** A `file_id` of no file the bot knows, as the official server's `TdOnGetFileCallback` words it. */
+  getFileIdInvalid: fixedBotApiError(
+    400,
+    'Bad Request: invalid file_id',
+    botApiServerSource('telegram-bot-api/Client.cpp#L7525-L7528'),
+  ),
+  /** A file larger than Telegram's own server lets bots download. */
+  downloadedFileTooBig: fixedBotApiError(
+    400,
+    'Bad Request: file is too big',
+    botApiServerSource('telegram-bot-api/Client.cpp#L17040-L17044'),
+  ),
+
+  // Update delivery by polling or a webhook.
+  /** A long poll that a newer `getUpdates` call ended. */
+  updatesPollTerminatedByOtherPoll: fixedBotApiError(
+    409,
+    'Conflict: terminated by other getUpdates request; make sure that only one bot instance is running',
+    LONG_POLL_ABORT,
+  ),
+  /** A long poll that a `setWebhook` call ended. */
+  updatesPollTerminatedByWebhook: fixedBotApiError(
+    409,
+    'Conflict: terminated by setWebhook request',
+    LONG_POLL_ABORT,
+  ),
+  updatesPollWhileWebhookActive: fixedBotApiError(
+    409,
+    "Conflict: can't use getUpdates method while webhook is active; use deleteWebhook to delete the webhook first",
+    botApiServerSource('telegram-bot-api/Client.cpp#L16926-L16931'),
+  ),
+  webhookUrlInvalid: fixedBotApiError(
+    400,
+    'Bad Request: invalid webhook URL specified',
+    WEBHOOK_SETTINGS_CHECKS,
+  ),
+  webhookSecretTokenTooLong: fixedBotApiError(
+    400,
+    'Bad Request: secret token is too long',
+    WEBHOOK_SETTINGS_CHECKS,
+  ),
+  webhookSecretTokenInvalid: fixedBotApiError(
+    400,
+    'Bad Request: secret token contains illegal characters',
+    WEBHOOK_SETTINGS_CHECKS,
   ),
 
   // Parameters the emulator cannot read.

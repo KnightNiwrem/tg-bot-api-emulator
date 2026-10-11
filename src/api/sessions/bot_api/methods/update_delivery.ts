@@ -1,5 +1,6 @@
 import { z } from 'zod';
 
+import { presentUpdateDeliveryFailure } from '../errors/update_delivery_failure_presenter.ts';
 import {
   botApiError,
   type BotApiMethod,
@@ -33,26 +34,12 @@ export const UPDATE_DELIVERY_METHODS: readonly BotApiMethod[] = [
   { name: 'setWebhook', recordsActivity: true, handler: handleSetWebhook },
 ];
 
-/** Telegram's wording, from `abort_long_poll` in the official Bot API server. */
-const TERMINATED_BY_OTHER_LONG_POLL_DESCRIPTION =
-  'Conflict: terminated by other getUpdates request; make sure that only one bot instance is running';
-const TERMINATED_BY_WEBHOOK_DESCRIPTION = 'Conflict: terminated by setWebhook request';
-const WEBHOOK_ACTIVE_DESCRIPTION =
-  "Conflict: can't use getUpdates method while webhook is active; use deleteWebhook to delete the webhook first";
-
 /** Telegram's answers to setWebhook and deleteWebhook, by what the request did. */
 const SET_WEBHOOK_OUTCOME_DESCRIPTIONS = {
   webhook_set: 'Webhook was set',
   webhook_already_set: 'Webhook is already set',
   webhook_deleted: 'Webhook was deleted',
   webhook_already_deleted: 'Webhook is already deleted',
-} as const;
-
-/** Telegram's descriptions for rejected setWebhook requests. */
-const SET_WEBHOOK_REJECTION_DESCRIPTIONS = {
-  url_invalid: 'Bad Request: invalid webhook URL specified',
-  secret_token_too_long: 'Bad Request: secret token is too long',
-  secret_token_invalid: 'Bad Request: secret token contains illegal characters',
 } as const;
 
 /**
@@ -117,26 +104,14 @@ async function handleGetUpdates(
       signal: context.signal,
     },
   );
-  if (!result.retrieved) {
-    // Telegram delays a conflict by 3 seconds when another occurred within the previous 3
-    // seconds; the emulator answers immediately to keep tests fast.
-    const { reason } = result;
-    switch (reason) {
-      case 'terminated_by_other_long_poll':
-        return botApiError(409, TERMINATED_BY_OTHER_LONG_POLL_DESCRIPTION);
-      case 'terminated_by_webhook':
-        return botApiError(409, TERMINATED_BY_WEBHOOK_DESCRIPTION);
-      case 'webhook_active':
-        return botApiError(409, WEBHOOK_ACTIVE_DESCRIPTION);
-      case 'session_ended':
-        return SESSION_ENDED;
-      default: {
-        const unhandledReason: never = reason;
-        throw new Error(`Unhandled getUpdates failure: ${unhandledReason}`);
-      }
-    }
+  if (result.retrieved) {
+    return botApiResult(result.updates);
   }
-  return botApiResult(result.updates);
+  // A poll whose session ended is refused without an answer.
+  const { reason } = result;
+  return reason === 'session_ended'
+    ? SESSION_ENDED
+    : presentUpdateDeliveryFailure({ retrieved: false, reason });
 }
 
 function handleSetWebhook(
@@ -170,7 +145,7 @@ function handleSetWebhook(
     },
   );
   if (!result.accepted) {
-    return botApiError(400, SET_WEBHOOK_REJECTION_DESCRIPTIONS[result.reason]);
+    return presentUpdateDeliveryFailure(result);
   }
   return botApiResult(true, SET_WEBHOOK_OUTCOME_DESCRIPTIONS[result.outcome]);
 }

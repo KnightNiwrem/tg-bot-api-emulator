@@ -12,7 +12,7 @@ import {
   type UnreadInputMessageContent,
 } from '../inline_query_answer_parameters.ts';
 import { BOT_API_ERRORS } from '../errors/error_catalogue.ts';
-import { presentBotApiError } from '../errors/error_template.ts';
+import { presentQueryAnswerFailure } from '../errors/query_answer_failure_presenter.ts';
 import {
   badRequestDescription,
   botApiError,
@@ -40,38 +40,6 @@ export const QUERY_ANSWER_METHODS: readonly BotApiMethod[] = [
   { name: 'answerCallbackQuery', recordsActivity: true, handler: handleAnswerCallbackQuery },
   { name: 'answerInlineQuery', recordsActivity: true, handler: handleAnswerInlineQuery },
 ];
-
-/** Telegram's description for a callback query answer whose URL its servers refuse. */
-const URL_INVALID_DESCRIPTION = 'Bad Request: URL_INVALID';
-
-/** Telegram's description for an unknown, expired, or already answered callback query. */
-const QUERY_ID_INVALID_DESCRIPTION =
-  'Bad Request: query is too old and response timeout expired or query ID is invalid';
-
-/** Telegram's descriptions for rejected answerInlineQuery requests, by the failure's reason. */
-const ANSWER_INLINE_QUERY_FAILURE_DESCRIPTIONS = {
-  start_parameter_empty: "Bad Request: can't use empty start_parameter",
-  start_parameter_too_long: 'Bad Request: too long start_parameter specified',
-  start_parameter_invalid: 'Bad Request: unallowed characters in start_parameter are used',
-  too_many_results: 'Bad Request: too many inline query results specified',
-  query_id_invalid: QUERY_ID_INVALID_DESCRIPTION,
-  next_offset_invalid: 'Bad Request: NEXT_OFFSET_INVALID',
-  result_id_empty: 'Bad Request: RESULT_ID_EMPTY',
-  result_id_invalid: 'Bad Request: RESULT_ID_INVALID',
-  result_id_duplicate: 'Bad Request: RESULT_ID_DUPLICATE',
-  article_title_empty: 'Bad Request: ARTICLE_TITLE_EMPTY',
-  document_title_empty: 'Bad Request: FILE_TITLE_EMPTY',
-  video_title_empty: 'Bad Request: VIDEO_TITLE_EMPTY',
-  web_document_url_invalid: 'Bad Request: WEBDOCUMENT_URL_INVALID',
-  photo_thumbnail_url_empty: 'Bad Request: PHOTO_THUMB_URL_EMPTY',
-  callback_data_invalid: BOT_API_ERRORS.buttonDataInvalid.description(),
-  message_text_too_long: 'Bad Request: MESSAGE_TOO_LONG',
-  caption_too_long: 'Bad Request: MEDIA_CAPTION_TOO_LONG',
-  file_id_invalid: "Bad Request: wrong remote file identifier specified: can't unserialize it",
-  inline_message_content_invalid: 'Bad Request: invalid inline message content specified',
-  contact_phone_number_empty: 'Bad Request: field "phone_number" must contain a valid phone number',
-  contact_first_name_empty: 'Bad Request: field "first_name" must be non-empty',
-} as const;
 
 /** How the Bot API server reports that it cannot read an inline query result. */
 const INLINE_QUERY_RESULT_ERROR_PREFIX = "can't parse InlineQueryResult: ";
@@ -137,19 +105,7 @@ function handleAnswerCallbackQuery(
       url: parsedParameters.data.url,
     },
   );
-  if (result.answered) {
-    return botApiResult(true);
-  }
-  switch (result.reason) {
-    case 'query_id_invalid':
-      return botApiError(400, QUERY_ID_INVALID_DESCRIPTION);
-    case 'url_invalid':
-      return botApiError(400, URL_INVALID_DESCRIPTION);
-    default: {
-      const unhandledReason: never = result.reason;
-      throw new Error(`Unhandled answerCallbackQuery failure: ${unhandledReason}`);
-    }
-  }
+  return result.answered ? botApiResult(true) : presentQueryAnswerFailure(result);
 }
 
 function handleAnswerInlineQuery(
@@ -204,17 +160,7 @@ function handleAnswerInlineQuery(
       button,
     },
   );
-  if (result.answered) {
-    return botApiResult(true);
-  }
-  switch (result.reason) {
-    case 'text_invalid':
-      return botApiError(400, badRequestDescription(result.textError));
-    case 'file_type_mismatch':
-      return presentBotApiError(BOT_API_ERRORS.fileTypeMismatch, result);
-    default:
-      return botApiError(400, ANSWER_INLINE_QUERY_FAILURE_DESCRIPTIONS[result.reason]);
-  }
+  return result.answered ? botApiResult(true) : presentQueryAnswerFailure(result);
 }
 
 /**
@@ -421,7 +367,7 @@ function readInlineResultMessageContent(
   return richMessage === undefined
     ? {
       read: false,
-      description: ANSWER_INLINE_QUERY_FAILURE_DESCRIPTIONS.inline_message_content_invalid,
+      description: BOT_API_ERRORS.inlineQueryResultContentInvalid.description(),
     }
     : {
       read: true,

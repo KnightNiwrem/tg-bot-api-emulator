@@ -1,26 +1,21 @@
 import { z } from 'zod';
 
-import {
-  MAX_BOT_COMMAND_DESCRIPTION_LENGTH,
-  MAX_BOT_COMMAND_LENGTH,
-} from '../../../../types/bot_command.ts';
 import type { EmulationSession } from '../../../../types/emulation_session.ts';
 import {
   botCommandScopeParameter,
   botCommandsParameter,
   readBotCommandScopeParameter,
 } from '../bot_command_parameters.ts';
-import { botChatAccessFailureAnswer, resolveChatIdentifier } from '../chat_access.ts';
+import { resolveChatIdentifier } from '../chat_access.ts';
 import { readChatAdministratorRightsParameter } from '../chat_administrator_rights_parameter.ts';
+import { presentBotProfileFailure } from '../errors/bot_profile_failure_presenter.ts';
 import { readMenuButtonParameter } from '../menu_button_parameter.ts';
 import {
-  BAD_REQUEST_PREFIX,
   botApiError,
   type BotApiMethod,
   type BotApiMethodAnswer,
   type BotApiMethodContext,
   botApiResult,
-  STRINGS_NOT_UTF8_DESCRIPTION,
 } from '../method_call.ts';
 import {
   booleanParameter,
@@ -52,31 +47,8 @@ export const BOT_PROFILE_METHODS: readonly BotApiMethod[] = [
   { name: 'setMyShortDescription', recordsActivity: true, handler: handleSetMyShortDescription },
 ];
 
-/** Telegram's descriptions for rejected command list changes. */
-const SCOPE_NOT_ALLOWED_IN_PRIVATE_CHATS_DESCRIPTION =
-  "Bad Request: can't use specified scope in private chats";
-const LANGUAGE_CODE_INVALID_DESCRIPTION = 'Bad Request: invalid language code specified';
-const BOT_COMMAND_FAILURE_DESCRIPTIONS = {
-  command_not_utf8: 'Bad Request: command must be encoded in UTF-8',
-  command_description_not_utf8: 'Bad Request: command description must be encoded in UTF-8',
-  command_empty: 'Bad Request: command must be non-empty',
-  command_too_long: `Bad Request: command length must not exceed ${MAX_BOT_COMMAND_LENGTH}`,
-  command_description_empty: 'Bad Request: command description must be non-empty',
-  command_description_too_long:
-    `Bad Request: command description length must not exceed ${MAX_BOT_COMMAND_DESCRIPTION_LENGTH}`,
-  too_many_commands: 'Bad Request: BOT_COMMANDS_TOO_MUCH',
-  command_invalid: 'Bad Request: BOT_COMMAND_INVALID',
-} as const;
-
-/** Telegram's descriptions for rejected menu buttons and the users they are for. */
+/** Telegram's description for a menu button `chat_id` that names no user. */
 const CHAT_ID_INVALID_DESCRIPTION = 'Bad Request: invalid chat_id specified';
-const USER_NOT_FOUND_DESCRIPTION = 'Bad Request: user not found';
-const MENU_BUTTON_FAILURE_DESCRIPTIONS = {
-  user_not_found: USER_NOT_FOUND_DESCRIPTION,
-  menu_button_text_empty: 'Bad Request: menu button text must be non-empty',
-  menu_button_text_not_utf8: 'Bad Request: menu button text must be encoded in UTF-8',
-  menu_button_url_not_utf8: 'Bad Request: menu button URL must be encoded in UTF-8',
-} as const;
 
 const getMeParametersSchema = z.strictObject({});
 
@@ -131,11 +103,6 @@ const getChatMenuButtonParametersSchema = z.strictObject({
 
 type MyCommandsTarget = Parameters<EmulationSession['botApi']['getMyCommands']>[1];
 
-type MyCommandsTargetFailureReason = Extract<
-  ReturnType<EmulationSession['botApi']['getMyCommands']>,
-  { readonly found: false }
->['reason'];
-
 function handleGetMe(
   context: BotApiMethodContext,
   parameters: BotApiRequestParameters,
@@ -169,19 +136,7 @@ function handleSetMyCommands(
     context.bot,
     { commands, ...targetReading.target },
   );
-  if (result.set) {
-    return botApiResult(true);
-  }
-  switch (result.reason) {
-    case 'chat_not_found':
-    case 'bot_not_a_member':
-    case 'bot_kicked':
-    case 'scope_not_allowed_in_private_chats':
-    case 'language_code_invalid':
-      return myCommandsTargetError(result.reason);
-    default:
-      return botApiError(400, BOT_COMMAND_FAILURE_DESCRIPTIONS[result.reason]);
-  }
+  return result.set ? botApiResult(true) : presentBotProfileFailure(result);
 }
 
 function handleGetMyCommands(
@@ -205,7 +160,7 @@ function handleGetMyCommands(
     context.bot,
     targetReading.target,
   );
-  return result.found ? botApiResult(result.commands) : myCommandsTargetError(result.reason);
+  return result.found ? botApiResult(result.commands) : presentBotProfileFailure(result);
 }
 
 function handleDeleteMyCommands(
@@ -229,7 +184,7 @@ function handleDeleteMyCommands(
     context.bot,
     targetReading.target,
   );
-  return result.deleted ? botApiResult(true) : myCommandsTargetError(result.reason);
+  return result.deleted ? botApiResult(true) : presentBotProfileFailure(result);
 }
 
 /** Reads the scope and language that address one of the bot's command lists. */
@@ -249,23 +204,6 @@ function readMyCommandsTarget(
     return { read: false, errorAnswer: botApiError(400, scopeReading.description) };
   }
   return { read: true, target: { scope: scopeReading.scope, languageCode } };
-}
-
-function myCommandsTargetError(reason: MyCommandsTargetFailureReason): BotApiMethodAnswer {
-  switch (reason) {
-    case 'chat_not_found':
-    case 'bot_not_a_member':
-    case 'bot_kicked':
-      return botChatAccessFailureAnswer(reason);
-    case 'scope_not_allowed_in_private_chats':
-      return botApiError(400, SCOPE_NOT_ALLOWED_IN_PRIVATE_CHATS_DESCRIPTION);
-    case 'language_code_invalid':
-      return botApiError(400, LANGUAGE_CODE_INVALID_DESCRIPTION);
-    default: {
-      const unhandledReason: never = reason;
-      throw new Error(`Unhandled command list failure: ${unhandledReason}`);
-    }
-  }
 }
 
 function handleSetMyDefaultAdministratorRights(
@@ -338,12 +276,7 @@ function handleSetChatMenuButton(
     userId,
     menuButton: menuButtonReading.menuButton,
   });
-  if (result.set) {
-    return botApiResult(true);
-  }
-  return result.reason === 'web_app_url_invalid'
-    ? botApiError(400, `${BAD_REQUEST_PREFIX}menu button Web App ${result.urlError}`)
-    : botApiError(400, MENU_BUTTON_FAILURE_DESCRIPTIONS[result.reason]);
+  return result.set ? botApiResult(true) : presentBotProfileFailure(result);
 }
 
 function handleGetChatMenuButton(
@@ -359,9 +292,7 @@ function handleGetChatMenuButton(
     return botApiError(400, CHAT_ID_INVALID_DESCRIPTION);
   }
   const result = context.session.botApi.getChatMenuButton(context.bot, userId);
-  return result.found
-    ? botApiResult(result.menuButton)
-    : botApiError(400, USER_NOT_FOUND_DESCRIPTION);
+  return result.found ? botApiResult(result.menuButton) : presentBotProfileFailure(result);
 }
 
 function handleSetMyDescription(
@@ -399,19 +330,7 @@ function setMyDescription(
   request: Parameters<EmulationSession['botApi']['setMyDescription']>[1],
 ): BotApiMethodAnswer {
   const result = context.session.botApi.setMyDescription(context.bot, request);
-  if (result.set) {
-    return botApiResult(true);
-  }
-  switch (result.reason) {
-    case 'text_not_utf8':
-      return botApiError(400, STRINGS_NOT_UTF8_DESCRIPTION);
-    case 'language_code_invalid':
-      return botApiError(400, LANGUAGE_CODE_INVALID_DESCRIPTION);
-    default: {
-      const unhandledReason: never = result.reason;
-      throw new Error(`Unhandled description failure: ${unhandledReason}`);
-    }
-  }
+  return result.set ? botApiResult(true) : presentBotProfileFailure(result);
 }
 
 function handleGetMyDescription(
@@ -428,7 +347,7 @@ function handleGetMyDescription(
   });
   return result.found
     ? botApiResult({ description: result.text })
-    : botApiError(400, LANGUAGE_CODE_INVALID_DESCRIPTION);
+    : presentBotProfileFailure(result);
 }
 
 function handleGetMyShortDescription(
@@ -445,5 +364,5 @@ function handleGetMyShortDescription(
   });
   return result.found
     ? botApiResult({ short_description: result.text })
-    : botApiError(400, LANGUAGE_CODE_INVALID_DESCRIPTION);
+    : presentBotProfileFailure(result);
 }

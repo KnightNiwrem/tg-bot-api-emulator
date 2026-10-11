@@ -156,9 +156,6 @@ export function describeAlbumMessageNotSent(memberPosition: number, telegramErro
 /** The prefix of Telegram's descriptions of bad requests. */
 export const BAD_REQUEST_PREFIX = 'Bad Request: ';
 
-/** TDLib's description of text that is not well-formed Unicode, which it rejects first. */
-export const STRINGS_NOT_UTF8_DESCRIPTION = 'Bad Request: strings must be encoded in UTF-8';
-
 /**
  * Words a TDLib error message as the Bot API server's `fail_query_with_error` does for a bad
  * request: prefixed, with its first letter lowercased unless it begins an error code or acronym.
