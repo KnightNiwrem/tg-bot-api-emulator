@@ -4,6 +4,7 @@
  * the delivery; and how replacing or deleting the webhook, or expiring the attempt, ends an
  * attempt at each stage of the webhook's answer.
  */
+import { assertEquals } from '@std/assert';
 import { AccountRepository } from '../src/repositories/account.ts';
 import { BotRepository } from '../src/repositories/bot.ts';
 import { BotActivityLogRepository } from '../src/repositories/bot_activity_log.ts';
@@ -53,7 +54,7 @@ Deno.test('the next update of a queue is delivered while the previous reply is s
     heldReplies.releaseAll();
     await heldReplies.waitForFinishedCount(2);
 
-    assertJson(
+    assertEquals(
       [
         deliveredBeforeRelease,
         heldReplies.finishedReplyBodies,
@@ -85,7 +86,7 @@ Deno.test("an accepted update's reply is started before its confirmation is reco
     botUpdates.enqueueMessageUpdate(botId, createPrivateMessage(1));
     updateConsumers.setWebhook(botId, webhookRequest());
     await fixture.waitForEntry({ kind: 'update_confirmed' });
-    assertJson(
+    assertEquals(
       publications,
       ['reply_started', 'update_confirmed'],
       'Expected the reply to be under way before anyone could read the confirmation',
@@ -180,7 +181,7 @@ for (const stage of Object.keys(EXPECTED_OUTCOMES) as AnswerStage[]) {
         }
 
         const [firstAttempt] = listAttempts(webhookAttempts, botId);
-        assertJson(
+        assertEquals(
           [
             describeAttemptState(firstAttempt),
             fixture.receivedRequests.some(({ url }) => url === REPLACEMENT_WEBHOOK_URL),
@@ -191,7 +192,7 @@ for (const stage of Object.keys(EXPECTED_OUTCOMES) as AnswerStage[]) {
           `Expected ${control} at ${stage} to end the first attempt once`,
         );
         if (stage === 'reply_execution') {
-          assertJson(
+          assertEquals(
             heldReplies.finishedReplyBodies,
             [REPLY_BODY],
             "Expected the accepted reply's method to run to its end",
@@ -231,7 +232,7 @@ Deno.test('a replacement right after the complete response arrives does not send
     await waitUntil(() => listAttempts(webhookAttempts, botId)[0].status !== 'in_flight');
     await new Promise((resolve) => setTimeout(resolve, 0));
 
-    assertJson(
+    assertEquals(
       [
         listAttempts(webhookAttempts, botId).map(describeAttemptState),
         fixture.receivedRequests.map(({ url }) => url === REPLACEMENT_WEBHOOK_URL),
@@ -277,7 +278,7 @@ Deno.test("a failure decided just before a replacement is not the replacement we
     await new Promise((resolve) => setTimeout(resolve, 0));
 
     const webhookInfo = updateConsumers.getWebhookInfo(botId);
-    assertJson(
+    assertEquals(
       [
         listAttempts(webhookAttempts, botId).map(describeAttemptState),
         webhookInfo.url,
@@ -312,7 +313,7 @@ Deno.test('a response that arrives after its attempt was cancelled is disposed o
       new Response(new ReadableStream({ cancel: () => bodyCancellation.resolve() })),
     );
     await bodyCancellation.promise;
-    assertJson(
+    assertEquals(
       listAttempts(webhookAttempts, botId).map(describeAttemptState),
       ['cancelled', 'accepted'],
       'Expected the late response to change nothing and to have its body cancelled',
@@ -338,7 +339,7 @@ Deno.test('a sender that fails after its attempt was cancelled changes nothing',
     lateFailure.reject(new Error('The connection broke after the attempt ended'));
     await new Promise((resolve) => setTimeout(resolve, 0));
 
-    assertJson(
+    assertEquals(
       [
         listAttempts(webhookAttempts, botId).map(describeAttemptState),
         updateConsumers.getWebhookInfo(botId).last_error_message,
@@ -559,12 +560,4 @@ function listAttempts(
 /** The attempt's status, followed by its retry's for a failed attempt. */
 function describeAttemptState(attempt: WebhookAttempt): string {
   return attempt.status === 'failed' ? `failed: ${attempt.retry.status}` : attempt.status;
-}
-
-function assertJson(actual: unknown, expected: unknown, message: string): void {
-  const actualJson = JSON.stringify(actual);
-  const expectedJson = JSON.stringify(expected);
-  if (actualJson !== expectedJson) {
-    throw new Error(`${message}\nExpected: ${expectedJson}\nReceived: ${actualJson}`);
-  }
 }

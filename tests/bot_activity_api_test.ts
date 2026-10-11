@@ -1,3 +1,4 @@
+import { assertEquals } from '@std/assert';
 import { Bot } from 'https://cdn.jsdelivr.net/gh/grammyjs/grammY@^1.46.0/src/bot.ts';
 import { webhookCallback } from 'https://cdn.jsdelivr.net/gh/grammyjs/grammY@^1.46.0/src/convenience/webhook.ts';
 import {
@@ -39,7 +40,7 @@ Deno.test('GET bot-activity records calls with their answers, apart from getUpda
     entry.chat_id,
     (entry.answer as { ok: boolean; error_code?: number }).error_code ?? 200,
   ]);
-  assertJson(summary, [
+  assertEquals(summary, [
     [
       bot.id,
       'sendMessage',
@@ -109,7 +110,7 @@ Deno.test('GET bot-activity records deliveries and confirmations of polled updat
   await callBotApi(api, `${botApiPath}/getUpdates`, { offset: updateId + 1 });
 
   const { entries } = await readActivity(api, activityPath);
-  assertJson(
+  assertEquals(
     entries.map(({ position, kind, bot_id, via, chat_id, user_id }) => [
       position,
       kind,
@@ -156,7 +157,7 @@ Deno.test('GET bot-activity filters entries by query parameters', async () => {
   ];
   for (const { query, expected } of cases) {
     const { entries, head_position } = await readActivity(api, `${activityPath}?${query}`);
-    assertJson(
+    assertEquals(
       entries.map(({ position }) => position),
       expected,
       `Expected ${query} to find ${JSON.stringify(expected)}`,
@@ -181,7 +182,7 @@ Deno.test('GET bot-activity filters by a parameter whose name has a line break',
   });
 
   const { entries } = await readActivity(api, `${activityPath}?parameters[x%0Ay]=match`);
-  assertJson(
+  assertEquals(
     entries.map(({ position }) => position),
     [1],
     'Expected a percent-encoded line break to name the recorded parameter',
@@ -303,7 +304,7 @@ Deno.test('GET bot-activity records a webhook reply after the confirmation of it
     );
 
     const { entries } = await readActivity(api, `${activityPath}?after=${start}`);
-    assertJson(
+    assertEquals(
       entries.map(({ kind, via, method, chat_id }) => [kind, via, method, chat_id]),
       [
         ['update_delivered', 'webhook', undefined, account.id],
@@ -388,12 +389,6 @@ async function readActivity(api: EmulationApi, path: string): Promise<BotActivit
     throw new Error(`Expected GET ${path} to succeed, received ${response.status}`);
   }
   return await response.json() as BotActivityReadBody;
-}
-
-function assertJson(actual: unknown, expected: unknown, message: string): void {
-  if (JSON.stringify(actual) !== JSON.stringify(expected)) {
-    throw new Error(`${message}: received ${JSON.stringify(actual)}`);
-  }
 }
 
 async function expectSettlementWithin<T>(

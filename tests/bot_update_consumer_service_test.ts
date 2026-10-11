@@ -1,3 +1,4 @@
+import { assertEquals } from '@std/assert';
 import { BotActivityLogRepository } from '../src/repositories/bot_activity_log.ts';
 import { BotRepository } from '../src/repositories/bot.ts';
 import { BotUpdateRepository } from '../src/repositories/bot_update.ts';
@@ -41,7 +42,7 @@ Deno.test('BotUpdateConsumerService lets a bot poll or use its webhook, never bo
     updateConsumers.deleteWebhook(BOT_ID, { dropPendingUpdates: false });
     botUpdates.enqueueMessageUpdate(BOT_ID, createPrivateMessage(1));
 
-    assertJson(
+    assertEquals(
       [
         await heldBeforeWebhook,
         pollWithWebhook,
@@ -73,7 +74,7 @@ Deno.test('BotUpdateConsumerService stops every webhook generation when the sess
   botUpdates.enqueueMessageUpdate(BOT_ID, createPrivateMessage(2));
   updateConsumers.setWebhook(BOT_ID, { ...webhookRequest(), url: 'https://bot.example/later' });
   await new Promise((resolve) => setTimeout(resolve, 20));
-  assertJson(
+  assertEquals(
     [receivedRequests.count, updateConsumers.getWebhookInfo(BOT_ID).pending_update_count],
     [1, 1],
     'Expected only the update sent before the end to have been delivered',
@@ -105,12 +106,4 @@ function createConsumerFixture() {
     }),
   });
   return { botUpdates, updateConsumers, updateSubscriptions, receivedRequests, endSession };
-}
-
-function assertJson(actual: unknown, expected: unknown, message: string): void {
-  const actualJson = JSON.stringify(actual);
-  const expectedJson = JSON.stringify(expected);
-  if (actualJson !== expectedJson) {
-    throw new Error(`${message}\nExpected: ${expectedJson}\nReceived: ${actualJson}`);
-  }
 }

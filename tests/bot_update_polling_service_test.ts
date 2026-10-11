@@ -1,3 +1,4 @@
+import { assertEquals } from '@std/assert';
 import { BotActivityLogRepository } from '../src/repositories/bot_activity_log.ts';
 import { BotUpdateRepository } from '../src/repositories/bot_update.ts';
 import { BotUpdateSubscriptionRepository } from '../src/repositories/bot_update_subscription.ts';
@@ -192,7 +193,7 @@ Deno.test('BotUpdatePollingService ends held long polls and changes nothing once
     timeoutSeconds: 50,
     allowedUpdates: ['callback_query'],
   });
-  assertJsonEqual(
+  assertEquals(
     [
       results,
       laterResult,
@@ -234,7 +235,7 @@ Deno.test('BotUpdatePollingService answers a terminated long poll the session en
   });
   endSession();
 
-  assertJsonEqual(
+  assertEquals(
     await Promise.all([pollTerminatedByWebhook, pollTerminatedByOtherPoll, terminatingPoll]),
     [
       { retrieved: false, reason: 'session_ended' },
@@ -385,10 +386,4 @@ function assertAllowedUpdateTypes(
 
 function messageFromUpdate(update: BotApiUpdate | undefined): BotApiMessage | undefined {
   return update !== undefined && 'message' in update ? update.message : undefined;
-}
-
-function assertJsonEqual(actual: unknown, expected: unknown, message: string): void {
-  if (JSON.stringify(actual) !== JSON.stringify(expected)) {
-    throw new Error(`${message}: received ${JSON.stringify(actual)}`);
-  }
 }

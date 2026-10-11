@@ -1,3 +1,4 @@
+import { assertEquals } from '@std/assert';
 import type { BotApiCallContext } from '../src/api/sessions/bot_api/method_call.ts';
 import { findBotApiMethod } from '../src/api/sessions/bot_api/method_catalogue.ts';
 import { callBotApiMethod } from '../src/api/sessions/bot_api/method_invocation.ts';
@@ -21,7 +22,7 @@ Deno.test('a webhook reply naming a get method runs nothing and is not recorded'
       Response.json({ method: 'GETBUSINESSCONNECTION', business_connection_id: 'b' }),
       Response.json({ method: 'get' }),
     ]);
-    assertJson(recordedCalls, [], 'Expected no get method to run from a webhook reply');
+    assertEquals(recordedCalls, [], 'Expected no get method to run from a webhook reply');
   });
 });
 
@@ -38,7 +39,7 @@ Deno.test('a webhook reply cannot change the webhook or end the bot session', as
       Response.json({ method: 'logOut' }),
       Response.json({ method: 'logout' }),
     ]);
-    assertJson(
+    assertEquals(
       [recordedCalls, await readWebhookUrl()],
       [[], WEBHOOK_URL],
       'Expected the webhook to stay set and no reply to be recorded',
@@ -57,7 +58,7 @@ Deno.test('a webhook reply runs other methods and records unknown ones', async (
       Response.json({ method: 'setWebhooks' }),
       Response.json({ method: 'notAMethod' }),
     ]);
-    assertJson(
+    assertEquals(
       recordedCalls,
       [
         ['deleteMyCommands', 'DELETEMYCOMMANDS', 200],
@@ -79,7 +80,7 @@ Deno.test('a webhook reply that names no method or cannot be decoded is not reco
       Response.json({ method: '' }),
       new Response('{', { headers: { 'Content-Type': 'application/json' } }),
     ]);
-    assertJson(recordedCalls, [], 'Expected no reply to be recorded');
+    assertEquals(recordedCalls, [], 'Expected no reply to be recorded');
   });
 });
 
@@ -168,11 +169,5 @@ async function withWebhookBot(test: (fixture: WebhookBotFixture) => Promise<void
     });
   } finally {
     session.end();
-  }
-}
-
-function assertJson(actual: unknown, expected: unknown, message: string): void {
-  if (JSON.stringify(actual) !== JSON.stringify(expected)) {
-    throw new Error(`${message}: received ${JSON.stringify(actual)}`);
   }
 }

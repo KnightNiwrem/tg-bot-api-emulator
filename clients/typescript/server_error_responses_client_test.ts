@@ -1,3 +1,5 @@
+import { assertEquals } from '@std/assert';
+import { assertEqualsInFieldOrder } from '../../tests/support/field_order_assertion.ts';
 import { Bot } from 'https://cdn.jsdelivr.net/gh/grammyjs/grammY@^1.46.0/src/bot.ts';
 import { GrammyError } from 'https://cdn.jsdelivr.net/gh/grammyjs/grammY@^1.46.0/src/core/error.ts';
 import { autoRetry } from '@grammyjs/auto-retry/mod.ts';
@@ -39,7 +41,7 @@ Deno.test('A grammY bot with auto-retry recovers from a queued server error', as
       after: failed,
       timeoutMs: AUTO_RETRY_WAIT_TIMEOUT_MILLISECONDS,
     });
-    assertJson(
+    assertEqualsInFieldOrder(
       [
         queued,
         failed.answer,
@@ -79,7 +81,7 @@ Deno.test('A caller that does not retry sees each queued server error once', asy
       await callOutcome(grammyBot.api.sendMessage(account.id, 'Hello')),
       await callOutcome(grammyBot.api.sendMessage(account.id, 'Hello')),
     ];
-    assertJson(
+    assertEquals(
       [outcomes, await session.getServerErrorResponses(bot.id)],
       [[[503, 'Service Unavailable'], [503, 'Service Unavailable'], 'ok'], []],
       'Expected two failed calls of any method, then a call that runs',
@@ -120,7 +122,7 @@ Deno.test('Server error queue controls reject what they cannot apply to', async 
       ),
       await failedStatus(session.getServerErrorResponses(account.id)),
     ];
-    assertJson(
+    assertEquals(
       [
         statuses,
         await session.getServerErrorResponses(bot.id),
@@ -131,7 +133,7 @@ Deno.test('Server error queue controls reject what they cannot apply to', async 
     );
 
     await session.end();
-    assertJson(
+    assertEquals(
       await failedStatus(session.getServerErrorResponses(bot.id)),
       404,
       'Expected the queued answers to end with their session',
@@ -165,12 +167,4 @@ async function failedStatus(call: Promise<unknown>): Promise<number | undefined>
     throw error;
   }
   throw new Error('Expected the client call to fail');
-}
-
-function assertJson(actual: unknown, expected: unknown, message: string): void {
-  const actualJson = JSON.stringify(actual);
-  const expectedJson = JSON.stringify(expected);
-  if (actualJson !== expectedJson) {
-    throw new Error(`${message}\nExpected: ${expectedJson}\nReceived: ${actualJson}`);
-  }
 }

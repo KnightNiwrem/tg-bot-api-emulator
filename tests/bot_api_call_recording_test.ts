@@ -1,3 +1,4 @@
+import { assertEquals } from '@std/assert';
 import { createTestSession, type EmulationApi, requestJson } from './support/emulation_api.ts';
 
 interface BotApiCallActivityEntry {
@@ -25,7 +26,7 @@ Deno.test('getUpdates calls are not recorded, whatever they are answered', async
     await postBotApi(api, `${botApiPath}/getWebhookInfo`, '{}'),
     await postBotApi(api, `${botApiPath}/getUpdate`, '{}'),
   ];
-  assertJson(
+  assertEquals(
     [statuses, await readRecordedCalls(api, sessionPath)],
     [
       [500, 200, 400, 400, 200, 404],
@@ -54,7 +55,7 @@ Deno.test('Bot API HTTP admission answers and records rejected calls in its orde
     await postBotApiForAnswer(api, `${botApiPath}/SendMessage`, '{'),
     await postBotApiForAnswer(api, `${botApiPath}/kickChatMember`, '{'),
   ];
-  assertJson(
+  assertEquals(
     answers.map(({ status, error_code, description }) => [
       status,
       error_code,
@@ -70,7 +71,7 @@ Deno.test('Bot API HTTP admission answers and records rejected calls in its orde
     ],
     'Expected each call to be rejected by the first check it fails',
   );
-  assertJson(
+  assertEquals(
     await readRecordedCalls(api, sessionPath),
     [
       ['notAMethod', 'notAMethod', 'http', {}, 404],
@@ -133,10 +134,4 @@ async function readRecordedCalls(api: EmulationApi, sessionPath: string): Promis
     parameters,
     answer.ok ? 200 : answer.error_code,
   ]);
-}
-
-function assertJson(actual: unknown, expected: unknown, message: string): void {
-  if (JSON.stringify(actual) !== JSON.stringify(expected)) {
-    throw new Error(`${message}: received ${JSON.stringify(actual)}`);
-  }
 }

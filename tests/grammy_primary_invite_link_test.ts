@@ -1,3 +1,4 @@
+import { assertEquals } from '@std/assert';
 import { Bot } from 'https://cdn.jsdelivr.net/gh/grammyjs/grammY@^1.46.0/src/bot.ts';
 
 import { EmulationClientError } from '../clients/typescript/mod.ts';
@@ -67,7 +68,7 @@ Deno.test('a grammY bot publishes, rotates and revokes its primary invite link',
       const thirdLink = await askBot('revoke');
       const linusJoins = [await join(linus, secondLink), await join(linus, thirdLink)];
 
-      assertJson(
+      assertEquals(
         [
           graceJoin,
           hopperJoins,
@@ -101,11 +102,3 @@ Deno.test('a grammY bot publishes, rotates and revokes its primary invite link',
     await session.end();
   }
 });
-
-function assertJson(actual: unknown, expected: unknown, message: string): void {
-  if (JSON.stringify(actual) !== JSON.stringify(expected)) {
-    throw new Error(
-      `${message}: expected ${JSON.stringify(expected)}, received ${JSON.stringify(actual)}`,
-    );
-  }
-}

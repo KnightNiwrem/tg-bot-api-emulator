@@ -2,6 +2,7 @@
  * The control API's error bodies: every refusal names a stable `reason`, input that breaks an
  * operation's contract lists its issues, and Bot API responses stay Telegram's.
  */
+import { assertEquals } from '@std/assert';
 import { createEmulationApi } from '../src/api/mod.ts';
 import { createEmulationSession } from '../src/composition/emulation_session.ts';
 import { createSessionLifecycleService } from '../src/composition/session_lifecycle.ts';
@@ -44,7 +45,7 @@ Deno.test('A required body without content is not JSON either', async () => {
   const response = await api.request(`${sessionPath}/bots`, { method: 'POST' });
 
   const body = await readErrorBody(response, 400);
-  assertJson(
+  assertEquals(
     body.issues?.map(({ source, path, code }) => ({ source, path, code })),
     [{ source: 'body', path: [], code: 'invalid_json' }],
     'Expected a missing body to be an invalid_json issue',
@@ -62,7 +63,7 @@ Deno.test('Each field a body schema rejects is an issue at its path', async () =
   );
 
   assertStatus(status, 400);
-  assertJson(
+  assertEquals(
     body.issues?.map(({ source, path, code }) => ({ source, path, code })),
     [
       { source: 'body', path: ['first_name'], code: 'invalid_type' },
@@ -102,13 +103,13 @@ Deno.test('Issues name list positions and never repeat an input value', async ()
   if (text.includes(secretUsername) || text.includes('7f3a9c')) {
     throw new Error(`Expected the error body not to repeat the input: ${text}`);
   }
-  assertJson(
+  assertEquals(
     JSON.parse(text).issues.map(({ path, code }: ControlRequestIssue) => ({ path, code })),
     [{ path: ['username'], code: 'invalid_format' }],
     'Expected the username refused for its form',
   );
   assertStatus(media.status, 400);
-  assertJson(
+  assertEquals(
     media.body.issues?.map(({ path, code }) => ({ path, code })),
     [{ path: ['media', 1, 'photo', 'content_base64'], code: 'invalid_type' }],
     'Expected the issue at the list index of the media it is in',
@@ -136,17 +137,17 @@ Deno.test('A value meant as one form of a union reports that form’s issues', a
   for (const { status } of [wrongText, unknownChatType, unknownContent]) {
     assertStatus(status, 400);
   }
-  assertJson(
+  assertEquals(
     wrongText.body.issues?.map(({ path, code }) => ({ path, code })),
     [{ path: ['text'], code: 'invalid_type' }],
     'Expected a text message with a number as its text to report its text',
   );
-  assertJson(
+  assertEquals(
     unknownChatType.body.issues?.map(({ path, code }) => ({ path, code })),
     [{ path: ['to', 'type'], code: 'invalid_value' }],
     'Expected an unknown chat type to be reported at the field that chooses the form',
   );
-  assertJson(
+  assertEquals(
     unknownContent.body.issues?.map(({ path, code }) => ({ path, code })),
     [{ path: [], code: 'no_matching_variant' }],
     'Expected content of no known form to match no variant',
@@ -163,7 +164,7 @@ Deno.test('A malformed path parameter is an issue of the path', async () => {
   );
 
   assertStatus(status, 400);
-  assertJson(
+  assertEquals(
     body.issues?.map(({ source, path, code }) => ({ source, path, code })),
     [
       { source: 'path', path: ['accountId'], code: 'invalid_type' },
@@ -198,7 +199,7 @@ Deno.test('Query keys named like object properties are read as any other key', a
       `${activityPath}?${query}`,
     );
     assertStatus(status, 400, query);
-    assertJson(
+    assertEquals(
       body.issues?.map(({ path, code }) => ({ path, code })),
       issues,
       `Expected the issues of ${query}`,
@@ -226,7 +227,7 @@ Deno.test('A parameter filter named __proto__ filters by that parameter', async 
 
   assertStatus(matching.status, 200);
   assertStatus(other.status, 200);
-  assertJson(
+  assertEquals(
     [matching.body.entries.length, other.body.entries.length],
     [1, 0],
     'Expected the filter to match only the call that sent __proto__ as x',
@@ -243,7 +244,7 @@ Deno.test('Unknown and repeated query parameters are issues of the query', async
   );
 
   assertStatus(status, 400);
-  assertJson(
+  assertEquals(
     body.issues?.map(({ source, path, code }) => ({ source, path, code })),
     [
       { source: 'query', path: ['after'], code: 'duplicate_field' },
@@ -270,13 +271,13 @@ Deno.test('A read range that cannot be read names the parameter that breaks it',
   );
 
   assertStatus(reversed.status, 400);
-  assertJson(
+  assertEquals(
     reversed.body.issues?.map(({ path, code }) => ({ path, code })),
     [{ path: ['before'], code: 'invalid_value' }],
     'Expected a range that ends before it starts to be an issue of its end',
   );
   assertStatus(beyondHead.status, 400);
-  assertJson(
+  assertEquals(
     beyondHead.body,
     { reason: 'after_beyond_head' },
     'Expected a position beyond the head to be refused by reason, without issues',
@@ -309,7 +310,7 @@ Deno.test('Missing resources are refused with the reason that names them', async
   for (const [method, path, reason] of cases) {
     const { status, body } = await requestJson<ControlErrorBody>(api, method, path);
     assertStatus(status, 404, `${method} ${path}`);
-    assertJson(body, { reason }, `Expected ${method} ${path} to be refused as ${reason}`);
+    assertEquals(body, { reason }, `Expected ${method} ${path} to be refused as ${reason}`);
   }
 });
 
@@ -336,7 +337,11 @@ Deno.test('A path or method no route serves is refused as route_not_found', asyn
   for (const [method, path] of cases) {
     const { status, body } = await requestJson<ControlErrorBody>(api, method, path);
     assertStatus(status, 404, `${method} ${path}`);
-    assertJson(body, { reason: 'route_not_found' }, `Expected ${method} ${path} to name no route`);
+    assertEquals(
+      body,
+      { reason: 'route_not_found' },
+      `Expected ${method} ${path} to name no route`,
+    );
   }
 });
 
@@ -355,7 +360,7 @@ Deno.test('A route that serves a request of an ended session refuses it as sessi
     const requestBody = method === 'POST' ? { first_name: 'Ada' } : undefined;
     const { status, body } = await requestJson<ControlErrorBody>(api, method, path, requestBody);
     assertStatus(status, 404, `${method} ${path}`);
-    assertJson(
+    assertEquals(
       body,
       { reason: 'session_not_found' },
       `Expected ${method} ${path} to name the session`,
@@ -378,7 +383,7 @@ Deno.test('A conflict with the session state is refused by its reason', async ()
   );
 
   assertStatus(status, 409);
-  assertJson(body, { reason: 'username_taken' }, 'Expected a taken username to conflict');
+  assertEquals(body, { reason: 'username_taken' }, 'Expected a taken username to conflict');
 });
 
 Deno.test('A failure outside the 4xx range carries its reason too', async () => {
@@ -396,7 +401,7 @@ Deno.test('A failure outside the 4xx range carries its reason too', async () => 
   );
 
   assertStatus(status, 507);
-  assertJson(
+  assertEquals(
     body,
     { reason: 'identity_limit_reached' },
     'Expected a session without user IDs left to refuse the account by reason',
@@ -495,18 +500,12 @@ async function assertErrorBody(
   status: number,
   expected: ControlErrorBody,
 ): Promise<void> {
-  assertJson(await readErrorBody(response, status), expected, 'Expected the error body');
+  assertEquals(await readErrorBody(response, status), expected, 'Expected the error body');
 }
 
 function assertStatus(actual: number, expected: number, context = 'the request'): void {
   if (actual !== expected) {
     throw new Error(`Expected ${context} to answer ${expected}, received ${actual}`);
-  }
-}
-
-function assertJson(actual: unknown, expected: unknown, message: string): void {
-  if (JSON.stringify(actual) !== JSON.stringify(expected)) {
-    throw new Error(`${message}: received ${JSON.stringify(actual)}`);
   }
 }
 

@@ -1,3 +1,4 @@
+import { assertEquals } from '@std/assert';
 import { AccountRepository } from '../src/repositories/account.ts';
 import { BlockedUserRepository } from '../src/repositories/blocked_user.ts';
 import { BotRepository } from '../src/repositories/bot.ts';
@@ -541,10 +542,4 @@ function createBotId(virtualUsers: VirtualUserService, username: string): number
     throw new Error(`Expected bot creation to succeed, received ${result.reason}`);
   }
   return result.bot.profile.id;
-}
-
-function assertEquals(actual: unknown, expected: unknown): void {
-  if (JSON.stringify(actual) !== JSON.stringify(expected)) {
-    throw new Error(`Expected ${JSON.stringify(expected)}, received ${JSON.stringify(actual)}`);
-  }
 }
