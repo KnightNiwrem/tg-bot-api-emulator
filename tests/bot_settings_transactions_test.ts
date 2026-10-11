@@ -68,20 +68,24 @@ function createSettingsFixture() {
     alpha,
     readState: () => ({
       settings: {
-        commands: session.botApi.getMyCommands(alpha, {
+        commands: session.botCommands.getBotCommands({
+          botId: alpha.id,
           scope: { type: 'default' },
           languageCode: '',
         }),
-        description: session.botApi.getMyDescription(alpha, {
+        description: session.botDescriptions.getBotDescription({
+          botId: alpha.id,
           kind: 'description',
           languageCode: '',
         }),
-        shortDescription: session.botApi.getMyDescription(alpha, {
+        shortDescription: session.botDescriptions.getBotDescription({
+          botId: alpha.id,
           kind: 'short_description',
           languageCode: '',
         }),
-        defaultAdministratorRights: session.botApi.getMyDefaultAdministratorRights(alpha, 'group'),
-        menuButton: session.botApi.getChatMenuButton(alpha, undefined),
+        defaultAdministratorRights: session.botDefaultAdministratorRights
+          .getDefaultAdministratorRights({ botId: alpha.id, kind: 'group' }),
+        menuButton: session.botMenuButtons.getBotMenuButton({ botId: alpha.id }),
       },
       activityHead: session.botActivity.getHeadPosition(),
     }),

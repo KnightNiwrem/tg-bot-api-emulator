@@ -2,6 +2,8 @@ import type { BotActivityService } from '../services/bot_activity/bot_activity.t
 import type { BotApiService } from '../services/bot_api/bot_api.ts';
 import type { BotBlockingService } from '../services/domain/bot_blocking.ts';
 import type { BotCommandService } from '../services/domain/bot_command.ts';
+import type { BotDefaultAdministratorRightsService } from '../services/domain/bot_default_administrator_rights.ts';
+import type { BotDescriptionService } from '../services/domain/bot_description.ts';
 import type { BotMenuButtonService } from '../services/domain/bot_menu_button.ts';
 import type { BotMessageViewService } from '../services/bot_message_view/bot_message_view.ts';
 import type { BotRateLimitService } from '../services/domain/bot_rate_limit.ts';
@@ -60,6 +62,8 @@ export interface EmulationSession extends EmulationSessionOptions {
   readonly polls: PollService;
   readonly inlineQueries: InlineQueryService;
   readonly botCommands: BotCommandService;
+  readonly botDescriptions: BotDescriptionService;
+  readonly botDefaultAdministratorRights: BotDefaultAdministratorRightsService;
   readonly botMenuButtons: BotMenuButtonService;
   readonly chatActions: ChatActionService;
   readonly messageDrafts: MessageDraftService;

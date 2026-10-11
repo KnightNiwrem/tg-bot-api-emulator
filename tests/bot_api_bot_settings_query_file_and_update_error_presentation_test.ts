@@ -1,3 +1,4 @@
+import type { AuthenticatedBotFailure } from '../src/api/sessions/bot_api/authenticated_bot_failures.ts';
 import { presentBotProfileFailure } from '../src/api/sessions/bot_api/errors/bot_profile_failure_presenter.ts';
 import { presentFilePreparationFailure } from '../src/api/sessions/bot_api/errors/file_failure_presenter.ts';
 import { presentQueryAnswerFailure } from '../src/api/sessions/bot_api/errors/query_answer_failure_presenter.ts';
@@ -14,33 +15,30 @@ import {
 
 type BotApi = EmulationSession['botApi'];
 
-type CommandListChangeFailure = Extract<
-  ReturnType<BotApi['setMyCommands']>,
-  { readonly set: false }
+type BotCommands = EmulationSession['botCommands'];
+type BotDescriptions = EmulationSession['botDescriptions'];
+type BotMenuButtons = EmulationSession['botMenuButtons'];
+
+type CommandListChangeFailure = AuthenticatedBotFailure<
+  Extract<ReturnType<BotCommands['setBotCommands']>, { readonly set: false }>
 >;
-type CommandListReadFailure = Extract<
-  ReturnType<BotApi['getMyCommands']>,
-  { readonly found: false }
+type CommandListReadFailure = AuthenticatedBotFailure<
+  Extract<ReturnType<BotCommands['getBotCommands']>, { readonly found: false }>
 >;
-type CommandListDeletionFailure = Extract<
-  ReturnType<BotApi['deleteMyCommands']>,
-  { readonly deleted: false }
+type CommandListDeletionFailure = AuthenticatedBotFailure<
+  Extract<ReturnType<BotCommands['deleteBotCommands']>, { readonly deleted: false }>
 >;
-type DescriptionChangeFailure = Extract<
-  ReturnType<BotApi['setMyDescription']>,
-  { readonly set: false }
+type DescriptionChangeFailure = AuthenticatedBotFailure<
+  Extract<ReturnType<BotDescriptions['setBotDescription']>, { readonly set: false }>
 >;
-type DescriptionReadFailure = Extract<
-  ReturnType<BotApi['getMyDescription']>,
-  { readonly found: false }
+type DescriptionReadFailure = AuthenticatedBotFailure<
+  Extract<ReturnType<BotDescriptions['getBotDescription']>, { readonly found: false }>
 >;
-type MenuButtonChangeFailure = Extract<
-  ReturnType<BotApi['setChatMenuButton']>,
-  { readonly set: false }
+type MenuButtonChangeFailure = AuthenticatedBotFailure<
+  Extract<ReturnType<BotMenuButtons['setBotMenuButton']>, { readonly set: false }>
 >;
-type MenuButtonReadFailure = Extract<
-  ReturnType<BotApi['getChatMenuButton']>,
-  { readonly found: false }
+type MenuButtonReadFailure = AuthenticatedBotFailure<
+  Extract<ReturnType<BotMenuButtons['getBotMenuButton']>, { readonly found: false }>
 >;
 type CallbackQueryAnswerFailure = Extract<
   ReturnType<BotApi['answerCallbackQuery']>,
