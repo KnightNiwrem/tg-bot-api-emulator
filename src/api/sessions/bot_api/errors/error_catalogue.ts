@@ -118,6 +118,18 @@ const WEBHOOK_SETTINGS_CHECKS = botApiServerSource('telegram-bot-api/Client.cpp#
  * to these entries; tests compare the answers with literal descriptions, never with this catalogue.
  */
 export const BOT_API_ERRORS = {
+  // What a call names, which the official server reads before anything else of the call.
+  chatIdEmpty: fixedBotApiError(
+    400,
+    'Bad Request: chat_id is empty',
+    botApiServerSource('telegram-bot-api/Client.cpp#L8868-L8873'),
+  ),
+  userIdInvalid: fixedBotApiError(
+    400,
+    'Bad Request: invalid user_id specified',
+    botApiServerSource('telegram-bot-api/Client.cpp#L13548-L13554'),
+  ),
+
   // Chats the bot cannot address.
   chatNotFound: fixedBotApiError(
     400,

@@ -2,10 +2,29 @@ import type { SupergroupBotAccessFailureReason } from '../../../types/chat_membe
 import { BOT_API_ERRORS } from './errors/error_catalogue.ts';
 import { type FixedBotApiError, presentFixedBotApiError } from './errors/error_template.ts';
 import type { BotApiMethodAnswer, BotApiMethodContext } from './method_call.ts';
+import { answerWith, type BotApiStepResult, proceedWith } from './method_steps.ts';
 import { CHAT_USERNAME_PREFIX, type ChatIdentifier } from './request_parameters.ts';
 
 /** Telegram's error for a call that names no chat at all. */
-export const CHAT_ID_EMPTY_DESCRIPTION = 'Bad Request: chat_id is empty';
+export const CHAT_ID_EMPTY_DESCRIPTION = BOT_API_ERRORS.chatIdEmpty.description();
+
+/** A call's parameters once a step has found the chat they name by `chat_id`. */
+export type WithSpecifiedChatId<Parameters extends { readonly chat_id?: number }> =
+  & Omit<Parameters, 'chat_id'>
+  & { readonly chat_id: number };
+
+/**
+ * The step that finds the chat a call names by `chat_id`, refusing a call that names none, as the
+ * official server's `check_chat` does before it looks the chat up.
+ */
+export function requireSpecifiedChatId<Parameters extends { readonly chat_id?: number }>(
+  parameters: Parameters,
+): BotApiStepResult<WithSpecifiedChatId<Parameters>> {
+  const { chat_id: chatId } = parameters;
+  return chatId === undefined
+    ? answerWith(presentFixedBotApiError(BOT_API_ERRORS.chatIdEmpty))
+    : proceedWith({ ...parameters, chat_id: chatId });
+}
 
 /**
  * Why a bot cannot address a chat: a supergroup it cannot reach as a member, or, in a private

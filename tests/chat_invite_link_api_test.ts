@@ -377,7 +377,10 @@ Deno.test('createChatInviteLink refuses invalid settings and bots without the ri
     return [status, body.description];
   };
   const inChat = (parameters: object = {}) => ({ chat_id: supergroup.id, ...parameters });
-  const invalidParameters = [400, 'Bad Request: invalid createChatInviteLink parameters'];
+  const invalidParameters = (parameterPath: string) => [
+    400,
+    `Bad Request: invalid createChatInviteLink parameters: ${parameterPath}`,
+  ];
 
   assertEquals(
     [
@@ -400,11 +403,11 @@ Deno.test('createChatInviteLink refuses invalid settings and bots without the ri
     ],
     [
       [400, 'Bad Request: chat_id is empty'],
-      invalidParameters,
-      invalidParameters,
-      invalidParameters,
-      invalidParameters,
-      invalidParameters,
+      invalidParameters('member_limit'),
+      invalidParameters('expire_date'),
+      invalidParameters('expire_date'),
+      invalidParameters('creates_join_request'),
+      invalidParameters('subscription_period'),
       [400, 'Bad Request: chat not found'],
       [400, 'Bad Request: chat not found'],
       [400, "Bad Request: can't invite members to a private chat"],
@@ -1157,8 +1160,14 @@ Deno.test('editChatInviteLink and revokeChatInviteLink refuse invalid calls with
     invite_link: link.invite_link,
     ...parameters,
   });
-  const invalidEdit = [400, 'Bad Request: invalid editChatInviteLink parameters'];
-  const invalidRevocation = [400, 'Bad Request: invalid revokeChatInviteLink parameters'];
+  const invalidEdit = (parameterPath: string) => [
+    400,
+    `Bad Request: invalid editChatInviteLink parameters: ${parameterPath}`,
+  ];
+  const invalidRevocation = (parameterPath: string) => [
+    400,
+    `Bad Request: invalid revokeChatInviteLink parameters: ${parameterPath}`,
+  ];
   const noRights = [400, 'Bad Request: not enough rights to manage chat invite link'];
   const unavailable = [400, 'Bad Request: INVITE_HASH_EXPIRED'];
   const othersLink = [400, 'Bad Request: CHAT_ADMIN_REQUIRED'];
@@ -1187,9 +1196,9 @@ Deno.test('editChatInviteLink and revokeChatInviteLink refuse invalid calls with
     ],
     [
       [400, 'Bad Request: chat_id is empty'],
-      invalidEdit,
-      invalidEdit,
-      invalidEdit,
+      invalidEdit('member_limit'),
+      invalidEdit('expire_date'),
+      invalidEdit('is_revoked'),
       [400, 'Bad Request: chat not found'],
       [400, "Bad Request: can't invite members to a private chat"],
       [400, 'Bad Request: strings must be encoded in UTF-8'],
@@ -1223,7 +1232,7 @@ Deno.test('editChatInviteLink and revokeChatInviteLink refuse invalid calls with
     ],
     [
       [400, 'Bad Request: chat_id is empty'],
-      invalidRevocation,
+      invalidRevocation('name'),
       [400, "Bad Request: can't invite members to a private chat"],
       noRights,
       [400, 'Bad Request: invite link must be non-empty'],
@@ -1567,7 +1576,7 @@ Deno.test('exportChatInviteLink and primary link edits refuse invalid calls with
     ],
     [
       [400, 'Bad Request: chat_id is empty'],
-      [400, 'Bad Request: invalid exportChatInviteLink parameters'],
+      [400, 'Bad Request: invalid exportChatInviteLink parameters: name'],
       [400, 'Bad Request: chat not found'],
       [400, "Bad Request: can't invite members to a private chat"],
       noRights,
