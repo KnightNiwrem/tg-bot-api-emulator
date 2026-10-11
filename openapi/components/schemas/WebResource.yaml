@@ -9,16 +9,18 @@ properties:
     type: string
     format: iri
     description: >-
-      The URL in the canonical form TDLib reads it in, which keeps non-ASCII characters as they
-      were given.
+      The HTTP or HTTPS URL in the canonical form TDLib reads it in, which keeps non-ASCII
+      characters as they were given.
   status:
     type: integer
     minimum: 200
     maximum: 599
   content_type:
     type: string
+    minLength: 1
   location:
     type: string
+    minLength: 1
   content_length:
     type: integer
     minimum: 0
