@@ -1,5 +1,10 @@
 import { assertEquals } from '@std/assert';
 import { assertEqualsInFieldOrder } from './support/field_order_assertion.ts';
+import {
+  createAccount as createSessionAccount,
+  createBot as createSessionBot,
+} from './support/http_fixtures.ts';
+import { createUpdateReader, withoutUpdateIds } from './support/bot_api_requests.ts';
 import { Bot } from 'https://cdn.jsdelivr.net/gh/grammyjs/grammY@^1.46.0/src/bot.ts';
 import { InputFile } from 'https://cdn.jsdelivr.net/gh/grammyjs/grammY@^1.46.0/src/types.ts';
 import {
@@ -66,29 +71,16 @@ const OGG_URL = 'https://cdn.example.com/songs/drive.ogg';
  */
 async function createAudioFixture() {
   const { api, sessionPath } = await createTestSession();
-  const createAccount = async (firstName: string) =>
-    (await requestJson<{ account: { id: number } }>(api, 'POST', `${sessionPath}/accounts`, {
-      first_name: firstName,
-    })).body.account;
+  const createAccount = (firstName: string) => createSessionAccount(api, sessionPath, firstName);
   const ada = await createAccount('Ada');
   const grace = await createAccount('Grace');
   const createBot = async (username: string) => {
-    const { body } = await requestJson<{ token: string; bot: { id: number } }>(
-      api,
-      'POST',
-      `${sessionPath}/bots`,
-      {
-        first_name: 'Music Bot',
-        username,
-        supports_inline_queries: true,
-        receives_chosen_inline_results: true,
-      },
-    );
-    return {
-      ...body.bot,
-      token: body.token,
-      botApiPath: `${sessionPath}/bot-api/bot${body.token}`,
-    };
+    const { bot, token, botApiPath } = await createSessionBot(api, sessionPath, username, {
+      first_name: 'Music Bot',
+      supports_inline_queries: true,
+      receives_chosen_inline_results: true,
+    });
+    return { ...bot, token, botApiPath };
   };
   const bot = await createBot('music_bot');
   const otherBot = await createBot('other_music_bot');
@@ -145,7 +137,8 @@ async function createAudioFixture() {
         ? `${accountPath(accountId)}/conversations/private/${chat.botId}/messages`
         : `${supergroupPath(accountId)}/messages`,
     )).body.messages;
-  const readUpdates = createUpdateReader(api, bot.botApiPath);
+  const readBotUpdates = createUpdateReader(api);
+  const readUpdates = async () => withoutUpdateIds(await readBotUpdates(bot.botApiPath));
   await readUpdates();
 
   return {
@@ -164,24 +157,6 @@ async function createAudioFixture() {
     callBot,
     getHistory,
     readUpdates,
-  };
-}
-
-/** Returns a reader of the bot's messages since the reader last read its updates. */
-function createUpdateReader(api: EmulationApi, botApiPath: string) {
-  let nextOffset = 0;
-  return async (): Promise<Array<Record<string, unknown>>> => {
-    const { body } = await requestJson<{ result: Array<Record<string, unknown>> }>(
-      api,
-      'POST',
-      `${botApiPath}/getUpdates`,
-      { offset: nextOffset },
-    );
-    const lastUpdateId = body.result.at(-1)?.update_id;
-    if (typeof lastUpdateId === 'number') {
-      nextOffset = lastUpdateId + 1;
-    }
-    return body.result.map(({ update_id: _updateId, ...update }) => update);
   };
 }
 

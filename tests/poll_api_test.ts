@@ -1,13 +1,13 @@
 import { assertEquals } from '@std/assert';
 import { assertEqualsInFieldOrder } from './support/field_order_assertion.ts';
+import { createUpdateReader, withoutUpdateIds } from './support/bot_api_requests.ts';
+import {
+  createAccount as createSessionAccount,
+  createBot as createSessionBot,
+} from './support/http_fixtures.ts';
 import { Bot } from 'https://cdn.jsdelivr.net/gh/grammyjs/grammY@^1.46.0/src/bot.ts';
 import { webhookCallback } from 'https://cdn.jsdelivr.net/gh/grammyjs/grammY@^1.46.0/src/convenience/webhook.ts';
-import {
-  createTestSession,
-  type EmulationApi,
-  requestJson,
-  TEST_PUBLIC_ORIGIN,
-} from './support/emulation_api.ts';
+import { createTestSession, requestJson, TEST_PUBLIC_ORIGIN } from './support/emulation_api.ts';
 
 interface TestPollOption {
   readonly persistent_id: string;
@@ -52,25 +52,12 @@ interface PollAnswerResponse {
  */
 async function createPollFixture() {
   const { api, sessionPath } = await createTestSession();
-  const createAccount = async (firstName: string) =>
-    (await requestJson<{ account: { id: number } }>(
-      api,
-      'POST',
-      `${sessionPath}/accounts`,
-      { first_name: firstName },
-    )).body.account;
+  const createAccount = (firstName: string) => createSessionAccount(api, sessionPath, firstName);
   const ada = await createAccount('Ada');
   const grace = await createAccount('Grace');
   const linus = await createAccount('Linus');
-  const createBot = async (username: string, settings: Record<string, unknown> = {}) => {
-    const { body } = await requestJson<{ token: string; bot: { id: number } }>(
-      api,
-      'POST',
-      `${sessionPath}/bots`,
-      { first_name: 'Poll Bot', username, ...settings },
-    );
-    return { ...body, botApiPath: `${sessionPath}/bot-api/bot${body.token}` };
-  };
+  const createBot = (username: string, settings: { can_read_all_group_messages?: boolean } = {}) =>
+    createSessionBot(api, sessionPath, username, { first_name: 'Poll Bot', ...settings });
   const createdBot = await createBot('poll_bot');
   const otherBot = await createBot('other_bot', { can_read_all_group_messages: true });
   const botApiPath = createdBot.botApiPath;
@@ -148,6 +135,7 @@ async function createPollFixture() {
         : `${sessionPath}/accounts/${accountId}/conversations/supergroup/${chat.chatId}/messages`,
     )).body.messages;
 
+  const readBotUpdates = createUpdateReader(api);
   return {
     api,
     sessionPath,
@@ -168,25 +156,7 @@ async function createPollFixture() {
     pollAnswerPath,
     answerPoll,
     getHistory,
-    readUpdates: createUpdateReader(api),
-  };
-}
-
-/** Returns a reader of each bot's updates since the reader last read that bot's updates. */
-function createUpdateReader(api: EmulationApi) {
-  const nextOffsetsByBotApiPath = new Map<string, number>();
-  return async (botApiPath: string): Promise<Array<Record<string, unknown>>> => {
-    const { body } = await requestJson<{ result: Array<Record<string, unknown>> }>(
-      api,
-      'POST',
-      `${botApiPath}/getUpdates`,
-      { offset: nextOffsetsByBotApiPath.get(botApiPath) ?? 0 },
-    );
-    const lastUpdateId = body.result.at(-1)?.update_id;
-    if (typeof lastUpdateId === 'number') {
-      nextOffsetsByBotApiPath.set(botApiPath, lastUpdateId + 1);
-    }
-    return body.result.map(({ update_id: _updateId, ...update }) => update);
+    readUpdates: async (botApiPath: string) => withoutUpdateIds(await readBotUpdates(botApiPath)),
   };
 }
 

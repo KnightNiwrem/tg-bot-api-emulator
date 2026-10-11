@@ -1,5 +1,6 @@
 import { assertEquals } from '@std/assert';
 import { assertEqualsInFieldOrder } from './support/field_order_assertion.ts';
+import { createAccount, createBot } from './support/http_fixtures.ts';
 import { Bot } from 'https://cdn.jsdelivr.net/gh/grammyjs/grammY@^1.46.0/src/bot.ts';
 import { Keyboard } from 'https://cdn.jsdelivr.net/gh/grammyjs/grammY@^1.46.0/src/convenience/keyboard.ts';
 import { webhookCallback } from 'https://cdn.jsdelivr.net/gh/grammyjs/grammY@^1.46.0/src/convenience/webhook.ts';
@@ -44,22 +45,10 @@ interface TestMessage {
  */
 async function createReuseFixture() {
   const { api, sessionPath } = await createTestSession();
-  const createAccount = async (profile: Record<string, unknown>) =>
-    (await requestJson<{ account: { id: number } }>(
-      api,
-      'POST',
-      `${sessionPath}/accounts`,
-      profile,
-    )).body.account;
-  const ada = await createAccount({ first_name: 'Ada', phone_number: '15550100' });
-  const grace = await createAccount({ first_name: 'Grace' });
-  const { body: createdBot } = await requestJson<{ token: string; bot: { id: number } }>(
-    api,
-    'POST',
-    `${sessionPath}/bots`,
-    { first_name: 'Reuse Bot', username: 'reuse_bot' },
-  );
-  const botApiPath = `${sessionPath}/bot-api/bot${createdBot.token}`;
+  const ada = await createAccount(api, sessionPath, 'Ada', { phone_number: '15550100' });
+  const grace = await createAccount(api, sessionPath, 'Grace');
+  const createdBot = await createBot(api, sessionPath, 'reuse_bot', { first_name: 'Reuse Bot' });
+  const { botApiPath } = createdBot;
   const privateChat = { type: 'private', botId: createdBot.bot.id } as const;
   const accountPath = (accountId: number) => `${sessionPath}/accounts/${accountId}`;
   const sendAccountMessage = async (accountId: number, body: Record<string, unknown>) => {

@@ -1,6 +1,8 @@
 import { assertEquals } from '@std/assert';
 import { assertEqualsInFieldOrder } from './support/field_order_assertion.ts';
-import { createTestSession, type EmulationApi, requestJson } from './support/emulation_api.ts';
+import { createAccount, createBot } from './support/http_fixtures.ts';
+import { createUpdateReader, withoutUpdateIds } from './support/bot_api_requests.ts';
+import { createTestSession, requestJson } from './support/emulation_api.ts';
 
 interface TestContact {
   readonly phone_number: string;
@@ -25,26 +27,15 @@ interface TestMessage {
  */
 async function createContactFixture() {
   const { api, sessionPath } = await createTestSession();
-  const createAccount = async (profile: Record<string, unknown>) =>
-    (await requestJson<{ account: { id: number } }>(
-      api,
-      'POST',
-      `${sessionPath}/accounts`,
-      profile,
-    )).body.account;
-  const ada = await createAccount({
-    first_name: 'Ada',
+  const ada = await createAccount(api, sessionPath, 'Ada', {
     last_name: 'Lovelace',
     phone_number: '15550100',
   });
-  const grace = await createAccount({ first_name: 'Grace' });
-  const { body: createdBot } = await requestJson<{ token: string; bot: { id: number } }>(
-    api,
-    'POST',
-    `${sessionPath}/bots`,
-    { first_name: 'Contact Bot', username: 'contact_bot' },
-  );
-  const botApiPath = `${sessionPath}/bot-api/bot${createdBot.token}`;
+  const grace = await createAccount(api, sessionPath, 'Grace');
+  const createdBot = await createBot(api, sessionPath, 'contact_bot', {
+    first_name: 'Contact Bot',
+  });
+  const { botApiPath } = createdBot;
   const privateChat = { type: 'private', botId: createdBot.bot.id } as const;
   const accountPath = (accountId: number) => `${sessionPath}/accounts/${accountId}`;
   const sendAccountMessage = (accountId: number, body: Record<string, unknown>) =>
@@ -84,7 +75,8 @@ async function createContactFixture() {
         ? `${accountPath(accountId)}/conversations/private/${chat.botId}/messages`
         : `${supergroupPath(accountId)}/messages`,
     )).body.messages;
-  const readUpdates = createUpdateReader(api, botApiPath);
+  const readBotUpdates = createUpdateReader(api);
+  const readUpdates = async () => withoutUpdateIds(await readBotUpdates(botApiPath));
   await readUpdates();
 
   return {
@@ -100,24 +92,6 @@ async function createContactFixture() {
     callBot,
     getHistory,
     readUpdates,
-  };
-}
-
-/** Returns a reader of the bot's updates since the reader last read them. */
-function createUpdateReader(api: EmulationApi, botApiPath: string) {
-  let nextOffset = 0;
-  return async (): Promise<Array<Record<string, unknown>>> => {
-    const { body } = await requestJson<{ result: Array<Record<string, unknown>> }>(
-      api,
-      'POST',
-      `${botApiPath}/getUpdates`,
-      { offset: nextOffset },
-    );
-    const lastUpdateId = body.result.at(-1)?.update_id;
-    if (typeof lastUpdateId === 'number') {
-      nextOffset = lastUpdateId + 1;
-    }
-    return body.result.map(({ update_id: _updateId, ...update }) => update);
   };
 }
 

@@ -1,5 +1,10 @@
 import { assertEquals } from '@std/assert';
 import { assertEqualsInFieldOrder } from './support/field_order_assertion.ts';
+import {
+  createAccount as createSessionAccount,
+  createBot as createSessionBot,
+} from './support/http_fixtures.ts';
+import { createUpdateReader, withoutUpdateIds } from './support/bot_api_requests.ts';
 import { createTestSession, type EmulationApi, requestJson } from './support/emulation_api.ts';
 
 type TestRichBlock = Readonly<Record<string, unknown>> & {
@@ -53,25 +58,16 @@ const LONG_MEMO_BYTES = 1024 * 1024 + 1;
  */
 async function createRichMediaFixture() {
   const { api, sessionPath } = await createTestSession();
-  const createAccount = async (firstName: string) =>
-    (await requestJson<{ account: { id: number } }>(api, 'POST', `${sessionPath}/accounts`, {
-      first_name: firstName,
-    })).body.account;
+  const createAccount = (firstName: string) => createSessionAccount(api, sessionPath, firstName);
   const ada = await createAccount('Ada');
   const grace = await createAccount('Grace');
   const createBot = async (username: string) => {
-    const { body } = await requestJson<{ token: string; bot: { id: number } }>(
-      api,
-      'POST',
-      `${sessionPath}/bots`,
-      {
-        first_name: 'Clip Bot',
-        username,
-        supports_inline_queries: true,
-        receives_chosen_inline_results: true,
-      },
-    );
-    return { ...body.bot, botApiPath: `${sessionPath}/bot-api/bot${body.token}` };
+    const { bot, botApiPath } = await createSessionBot(api, sessionPath, username, {
+      first_name: 'Clip Bot',
+      supports_inline_queries: true,
+      receives_chosen_inline_results: true,
+    });
+    return { ...bot, botApiPath };
   };
   const bot = await createBot('clip_bot');
   const otherBot = await createBot('other_clip_bot');
@@ -126,8 +122,10 @@ async function createRichMediaFixture() {
         ? `${accountPath(accountId)}/conversations/private/${chat.botId}/messages`
         : `${supergroupPath(accountId)}/messages`,
     )).body.messages;
-  const readUpdates = createUpdateReader(api, bot.botApiPath);
-  const readOtherBotUpdates = createUpdateReader(api, otherBot.botApiPath);
+  const readBotUpdates = createUpdateReader(api);
+  const readUpdates = async () => withoutUpdateIds(await readBotUpdates(bot.botApiPath));
+  const readOtherBotUpdates = async () =>
+    withoutUpdateIds(await readBotUpdates(otherBot.botApiPath));
   await readUpdates();
   await readOtherBotUpdates();
 
@@ -168,24 +166,6 @@ async function createRichMediaFixture() {
     readUpdates,
     readOtherBotUpdates,
     uploadAccountMedia,
-  };
-}
-
-/** Returns a reader of a bot's updates since the reader last read them. */
-function createUpdateReader(api: EmulationApi, botApiPath: string) {
-  let nextOffset = 0;
-  return async (): Promise<Array<Record<string, unknown>>> => {
-    const { body } = await requestJson<{ result: Array<Record<string, unknown>> }>(
-      api,
-      'POST',
-      `${botApiPath}/getUpdates`,
-      { offset: nextOffset },
-    );
-    const lastUpdateId = body.result.at(-1)?.update_id;
-    if (typeof lastUpdateId === 'number') {
-      nextOffset = lastUpdateId + 1;
-    }
-    return body.result.map(({ update_id: _updateId, ...update }) => update);
   };
 }
 

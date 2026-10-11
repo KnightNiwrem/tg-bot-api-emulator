@@ -1,4 +1,6 @@
 import { assertEqualsInFieldOrder } from './support/field_order_assertion.ts';
+import { createAccount, createBot } from './support/http_fixtures.ts';
+import { createUpdateReader } from './support/bot_api_requests.ts';
 import { createTestSession, type EmulationApi, requestJson } from './support/emulation_api.ts';
 
 // A bot can change only the keyboard of a message an account sent through its inline mode, which
@@ -9,12 +11,12 @@ import { createTestSession, type EmulationApi, requestJson } from './support/emu
 
 type ReceivedMessage = Readonly<Record<string, unknown>>;
 
-interface ReceivedUpdate {
-  readonly update_id: number;
+/** An update as `getUpdates` returns it, with the fields these tests read. */
+type ReceivedUpdate = Readonly<Record<string, unknown>> & {
   readonly message?: ReceivedMessage;
   readonly edited_message?: ReceivedMessage;
   readonly chosen_inline_result?: { readonly inline_message_id?: string };
-}
+};
 
 type InlineQueryChat =
   | { readonly type: 'private'; readonly botId: number }
@@ -31,27 +33,16 @@ const REPLACEMENT_KEYBOARD = { inline_keyboard: [[{ text: 'Less', callback_data:
  */
 async function sendInlineArticleWithKeyboard(chatType: InlineQueryChat['type']) {
   const { api, sessionPath } = await createTestSession();
-  const { body: { account: ada } } = await requestJson<{ account: { id: number } }>(
-    api,
-    'POST',
-    `${sessionPath}/accounts`,
-    { first_name: 'Ada' },
-  );
-  const { body: { token, bot } } = await requestJson<{ token: string; bot: { id: number } }>(
-    api,
-    'POST',
-    `${sessionPath}/bots`,
-    {
-      first_name: 'Cats Bot',
-      username: 'cats_bot',
-      supports_inline_queries: true,
-      receives_chosen_inline_results: true,
-    },
-  );
+  const ada = await createAccount(api, sessionPath, 'Ada');
+  const { bot, botApiPath } = await createBot(api, sessionPath, 'cats_bot', {
+    first_name: 'Cats Bot',
+    supports_inline_queries: true,
+    receives_chosen_inline_results: true,
+  });
   const accountPath = `${sessionPath}/accounts/${ada.id}`;
-  const botApiPath = `${sessionPath}/bot-api/bot${token}`;
   const chat = await openInlineQueryChat(api, accountPath, bot.id, chatType);
-  const readUpdates = createUpdateReader(api, botApiPath);
+  const readBotUpdates = createUpdateReader(api);
+  const readUpdates = async () => await readBotUpdates(botApiPath) as ReceivedUpdate[];
   await readUpdates();
 
   const { body: { inline_query: inlineQuery } } = await requestJson<
@@ -112,23 +103,6 @@ async function openInlineQueryChat(
     throw new Error(`Expected the bot to join the supergroup, received ${membership.status}`);
   }
   return { type: 'supergroup', chatId: supergroup.id };
-}
-
-function createUpdateReader(api: EmulationApi, botApiPath: string) {
-  let nextOffset = 0;
-  return async (): Promise<readonly ReceivedUpdate[]> => {
-    const { body } = await requestJson<{ result: ReceivedUpdate[] }>(
-      api,
-      'POST',
-      `${botApiPath}/getUpdates`,
-      { offset: nextOffset },
-    );
-    const lastUpdateId = body.result.at(-1)?.update_id;
-    if (lastUpdateId !== undefined) {
-      nextOffset = lastUpdateId + 1;
-    }
-    return body.result;
-  };
 }
 
 async function expectBotApiResult(

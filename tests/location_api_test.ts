@@ -1,6 +1,8 @@
 import { assertEquals } from '@std/assert';
 import { assertEqualsInFieldOrder } from './support/field_order_assertion.ts';
-import { createTestSession, type EmulationApi, requestJson } from './support/emulation_api.ts';
+import { createAccount as createSessionAccount, createBot } from './support/http_fixtures.ts';
+import { createUpdateReader, withoutUpdateIds } from './support/bot_api_requests.ts';
+import { createTestSession, requestJson } from './support/emulation_api.ts';
 
 interface TestLocation {
   readonly latitude: number;
@@ -21,22 +23,13 @@ interface TestMessage {
  */
 async function createLocationFixture() {
   const { api, sessionPath } = await createTestSession();
-  const createAccount = async (firstName: string) =>
-    (await requestJson<{ account: { id: number } }>(
-      api,
-      'POST',
-      `${sessionPath}/accounts`,
-      { first_name: firstName },
-    )).body.account;
+  const createAccount = (firstName: string) => createSessionAccount(api, sessionPath, firstName);
   const ada = await createAccount('Ada');
   const grace = await createAccount('Grace');
-  const { body: createdBot } = await requestJson<{ token: string; bot: { id: number } }>(
-    api,
-    'POST',
-    `${sessionPath}/bots`,
-    { first_name: 'Location Bot', username: 'location_bot' },
-  );
-  const botApiPath = `${sessionPath}/bot-api/bot${createdBot.token}`;
+  const createdBot = await createBot(api, sessionPath, 'location_bot', {
+    first_name: 'Location Bot',
+  });
+  const { botApiPath } = createdBot;
   const privateChat = { type: 'private', botId: createdBot.bot.id } as const;
   const accountPath = (accountId: number) => `${sessionPath}/accounts/${accountId}`;
   const sendAccountMessage = (accountId: number, body: Record<string, unknown>) =>
@@ -83,7 +76,8 @@ async function createLocationFixture() {
         ? `${accountPath(accountId)}/conversations/private/${chat.botId}/messages`
         : `${supergroupPath(accountId)}/messages`,
     )).body.messages;
-  const readUpdates = createUpdateReader(api, botApiPath);
+  const readBotUpdates = createUpdateReader(api);
+  const readUpdates = async () => withoutUpdateIds(await readBotUpdates(botApiPath));
   await readUpdates();
 
   return {
@@ -98,24 +92,6 @@ async function createLocationFixture() {
     pressButton,
     getHistory,
     readUpdates,
-  };
-}
-
-/** Returns a reader of the bot's updates since the reader last read them. */
-function createUpdateReader(api: EmulationApi, botApiPath: string) {
-  let nextOffset = 0;
-  return async (): Promise<Array<Record<string, unknown>>> => {
-    const { body } = await requestJson<{ result: Array<Record<string, unknown>> }>(
-      api,
-      'POST',
-      `${botApiPath}/getUpdates`,
-      { offset: nextOffset },
-    );
-    const lastUpdateId = body.result.at(-1)?.update_id;
-    if (typeof lastUpdateId === 'number') {
-      nextOffset = lastUpdateId + 1;
-    }
-    return body.result.map(({ update_id: _updateId, ...update }) => update);
   };
 }
 

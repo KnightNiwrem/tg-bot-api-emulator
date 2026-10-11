@@ -1,11 +1,12 @@
 import { assertEquals } from '@std/assert';
 import { assertEqualsInFieldOrder } from './support/field_order_assertion.ts';
+import { createAccount as createSessionAccount, createBot } from './support/http_fixtures.ts';
+import { createUpdateReader, withoutUpdateIds } from './support/bot_api_requests.ts';
 import { Bot } from 'https://cdn.jsdelivr.net/gh/grammyjs/grammY@^1.46.0/src/bot.ts';
 import { webhookCallback } from 'https://cdn.jsdelivr.net/gh/grammyjs/grammY@^1.46.0/src/convenience/webhook.ts';
 import {
   createSession,
   createTestSession,
-  type EmulationApi,
   requestJson,
   TEST_PUBLIC_ORIGIN,
 } from './support/emulation_api.ts';
@@ -30,25 +31,16 @@ interface TestInlineQuery {
  */
 async function createInlineContentFixture() {
   const { api, sessionPath } = await createTestSession();
-  const createAccount = async (firstName: string) =>
-    (await requestJson<{ account: { id: number } }>(api, 'POST', `${sessionPath}/accounts`, {
-      first_name: firstName,
-    })).body.account;
+  const createAccount = (firstName: string) => createSessionAccount(api, sessionPath, firstName);
   const ada = await createAccount('Ada');
   const grace = await createAccount('Grace');
-  const { body: createdBot } = await requestJson<{ token: string; bot: { id: number } }>(
-    api,
-    'POST',
-    `${sessionPath}/bots`,
-    {
-      first_name: 'Places Bot',
-      username: 'places_bot',
-      supports_inline_queries: true,
-      receives_chosen_inline_results: true,
-    },
-  );
+  const createdBot = await createBot(api, sessionPath, 'places_bot', {
+    first_name: 'Places Bot',
+    supports_inline_queries: true,
+    receives_chosen_inline_results: true,
+  });
   const bot = createdBot.bot;
-  const botApiPath = `${sessionPath}/bot-api/bot${createdBot.token}`;
+  const { botApiPath } = createdBot;
   const accountPath = (accountId: number) => `${sessionPath}/accounts/${accountId}`;
   const privateChat = { type: 'private', botId: bot.id } as const;
   await requestJson(api, 'POST', `${accountPath(ada.id)}/messages`, {
@@ -99,7 +91,8 @@ async function createInlineContentFixture() {
       `${accountPath(accountId)}/inline-queries/${inlineQueryId}/chosen-results`,
       { result_id: resultId },
     );
-  const readUpdates = createUpdateReader(api, botApiPath);
+  const readBotUpdates = createUpdateReader(api);
+  const readUpdates = async () => withoutUpdateIds(await readBotUpdates(botApiPath));
   await readUpdates();
 
   return {
@@ -118,24 +111,6 @@ async function createInlineContentFixture() {
     answer,
     choose,
     readUpdates,
-  };
-}
-
-/** Returns a reader of the bot's updates since the reader last read them. */
-function createUpdateReader(api: EmulationApi, botApiPath: string) {
-  let nextOffset = 0;
-  return async (): Promise<Array<Record<string, unknown>>> => {
-    const { body } = await requestJson<{ result: Array<Record<string, unknown>> }>(
-      api,
-      'POST',
-      `${botApiPath}/getUpdates`,
-      { offset: nextOffset },
-    );
-    const lastUpdateId = body.result.at(-1)?.update_id;
-    if (typeof lastUpdateId === 'number') {
-      nextOffset = lastUpdateId + 1;
-    }
-    return body.result.map(({ update_id: _updateId, ...update }) => update);
   };
 }
 
