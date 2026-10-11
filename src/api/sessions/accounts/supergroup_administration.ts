@@ -3,7 +3,7 @@ import { Hono } from 'hono';
 import type {
   ControlOperationResponse,
   ControlOperationResult,
-} from '../../../../control_contracts/operation_contract.ts';
+} from '../../contracts/operation_contract.ts';
 import {
   changeSupergroupDescriptionContract,
   changeSupergroupTitleContract,
@@ -16,7 +16,7 @@ import {
   setSupergroupCustomTitleContract,
   setSupergroupDefaultPermissionsContract,
   unprotectSupergroupContentContract,
-} from '../../../../control_contracts/supergroup_administration.ts';
+} from '../../contracts/supergroup_administration.ts';
 import {
   grantSupergroupAdministratorRights,
   SUPERGROUP_ADMINISTRATOR_RIGHTS,

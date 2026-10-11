@@ -11,7 +11,7 @@ import {
   type PrivateMessageTarget,
   type VirtualAccountClient,
 } from '../clients/typescript/mod.ts';
-import { getPrivateMessageDraftContract } from '../control_contracts/message_drafts.ts';
+import { getPrivateMessageDraftContract } from '../src/api/contracts/message_drafts.ts';
 import {
   createTestInProcessEmulator,
   type EmulationApi,

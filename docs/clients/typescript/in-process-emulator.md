@@ -5,9 +5,11 @@
 When the bot under test runs in the test's own process, the emulator can run there too. There is no
 `deno task start` to run first and no port to share, and each test gets an emulator of its own.
 
-The in-process emulator lives in [`in_process/mod.ts`](../../../in_process/mod.ts), next to the
-client rather than inside it: it composes the emulator's server code with the client, while the
-client itself stays independent of the server.
+The in-process emulator is the TypeScript client's in-process mode, in
+[`clients/typescript/in_process/mod.ts`](../../../clients/typescript/in_process/mod.ts). It composes
+the emulator's server code with the client, so it is an entry point of its own: the client's
+[`mod.ts`](../../../clients/typescript/mod.ts) imports nothing from the server but its control
+contracts and their HTTP grammar.
 
 ## The getting-started test, in process
 
@@ -17,7 +19,7 @@ This is the [getting-started](getting-started.md) test with the emulator in proc
 ```ts
 import { Bot } from 'npm:grammy@^1.46.0';
 import { assertEquals } from 'jsr:@std/assert@^1';
-import { createInProcessEmulator } from '../../../in_process/mod.ts';
+import { createInProcessEmulator } from '../../../clients/typescript/in_process/mod.ts';
 
 Deno.test('the bot greets an account that sends /start', async () => {
   // Ends every session on the emulator when the test finishes, even when an assertion fails.

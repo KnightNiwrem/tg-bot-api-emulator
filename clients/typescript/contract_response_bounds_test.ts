@@ -4,11 +4,11 @@
  */
 import { assertEquals, assertRejects } from '@std/assert';
 
-import { readBotActivityContract } from '../../control_contracts/bot_activity.ts';
+import { readBotActivityContract } from '../../src/api/contracts/bot_activity.ts';
 import {
   createSupergroupContract,
   getSupergroupInviteLinksContract,
-} from '../../control_contracts/supergroups.ts';
+} from '../../src/api/contracts/supergroups.ts';
 import {
   callJsonAction,
   callJsonOperation,

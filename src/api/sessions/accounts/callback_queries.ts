@@ -4,8 +4,8 @@ import { basePath } from 'hono/route';
 import {
   getCallbackQueryContract,
   pressCallbackButtonContract,
-} from '../../../../control_contracts/callback_queries.ts';
-import type { ControlOperationRefusal } from '../../../../control_contracts/operation_contract.ts';
+} from '../../contracts/callback_queries.ts';
+import type { ControlOperationRefusal } from '../../contracts/operation_contract.ts';
 import type { CallbackQuery } from '../../../types/callback_query.ts';
 import type { EmulationSession } from '../../../types/emulation_session.ts';
 import { registerControlOperation } from '../../control_operation_route.ts';

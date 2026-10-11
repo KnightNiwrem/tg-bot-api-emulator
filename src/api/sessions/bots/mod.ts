@@ -1,12 +1,12 @@
 import { Hono } from 'hono';
 import { basePath } from 'hono/route';
 
-import { createBotContract } from '../../../../control_contracts/bots.ts';
-import { INVALID_REQUEST_REASON } from '../../../../control_contracts/control_errors.ts';
+import { createBotContract } from '../../contracts/bots.ts';
+import { INVALID_REQUEST_REASON } from '../../contracts/control_errors.ts';
 import {
   listRateLimitResponsesContract,
   queueRateLimitResponsesContract,
-} from '../../../../control_contracts/queued_bot_api_answers.ts';
+} from '../../contracts/queued_bot_api_answers.ts';
 import type { QueuedRateLimitResponses } from '../../../types/bot_rate_limit.ts';
 import type { VirtualBotProfile } from '../../../types/virtual_bot.ts';
 import { registerControlOperation } from '../../control_operation_route.ts';

@@ -7,7 +7,7 @@ it in use. Each operation's documentation comment in
 [`clients/typescript/types.ts`](../../../clients/typescript/types.ts) and
 [`emulation_session_client.ts`](../../../clients/typescript/emulation_session_client.ts) states its
 exact contract. The inputs and results of an operation declared in
-[`control_contracts/`](../../../control_contracts/) are inferred from its contract, whose field
+[`src/api/contracts/`](../../../src/api/contracts/) are inferred from its contract, whose field
 comments document them.
 
 Every action resolves to `{ result, receipt }`: what the tables and guide pages say it returns is

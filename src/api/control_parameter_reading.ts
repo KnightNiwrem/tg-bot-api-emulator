@@ -9,7 +9,7 @@ import { z } from 'zod';
 import type {
   ControlOperationContract,
   QueryParameterSerialization,
-} from '../../control_contracts/operation_contract.ts';
+} from './contracts/operation_contract.ts';
 import type { ControlRequestIssue } from './control_error_response.ts';
 import { readJsonQueryParameter } from './json_query_parameter.ts';
 import {

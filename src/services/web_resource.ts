@@ -1,4 +1,4 @@
-import { readContentTypeMediaType } from '../../http_grammar/media_type.ts';
+import { readContentTypeMediaType } from '../api/http_grammar/media_type.ts';
 import { formatHttpUrl, parseHttpUrl } from '../types/http_url.ts';
 import type { WebResource } from '../types/web_resource.ts';
 

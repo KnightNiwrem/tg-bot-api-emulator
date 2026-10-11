@@ -1,7 +1,7 @@
 import { Hono } from 'hono';
 
-import { INVALID_REQUEST_REASON } from '../../../../control_contracts/control_errors.ts';
-import { expirePollContract } from '../../../../control_contracts/polls.ts';
+import { INVALID_REQUEST_REASON } from '../../contracts/control_errors.ts';
+import { expirePollContract } from '../../contracts/polls.ts';
 import { isInt64DecimalText } from '../../../types/telegram_int64.ts';
 import { registerControlOperation } from '../../control_operation_route.ts';
 import { presentPoll } from '../poll_presentation.ts';

@@ -4,7 +4,7 @@
  */
 import { assertEquals, assertRejects } from '@std/assert';
 
-import { registerWebResourceContract } from '../../control_contracts/web_resources.ts';
+import { registerWebResourceContract } from '../../src/api/contracts/web_resources.ts';
 import { createTestInProcessEmulator } from '../../tests/support/emulation_api.ts';
 import { callJsonAction, type ControlOperationTransport } from './control_operation_caller.ts';
 import { EmulationClientError } from './emulation_client_error.ts';

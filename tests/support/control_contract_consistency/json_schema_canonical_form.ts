@@ -10,7 +10,7 @@
  */
 import { z } from 'zod';
 
-import { TELEGRAM_TYPE_ANNOTATION } from '../../../control_contracts/wire_fields.ts';
+import { TELEGRAM_TYPE_ANNOTATION } from '../../../src/api/contracts/wire_fields.ts';
 import type { JsonSchemaValidator } from '../openapi_conformance/json_schema_validator.ts';
 import type { JsonSchema } from '../openapi_conformance/openapi_document.ts';
 

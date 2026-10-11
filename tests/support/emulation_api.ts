@@ -8,7 +8,7 @@ import type { UploadProfile } from '../../src/types/upload_profile.ts';
 import {
   createInProcessEmulatorWithHandler,
   type InProcessEmulator,
-} from '../../in_process/in_process_emulator.ts';
+} from '../../clients/typescript/in_process/in_process_emulator.ts';
 import { withOpenApiConformanceCheck } from './openapi_conformance/conformance_middleware.ts';
 import { createRealTimeScheduler } from './scheduler.ts';
 

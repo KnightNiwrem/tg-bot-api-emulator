@@ -1,15 +1,15 @@
 import { Hono } from 'hono';
 import type { z } from 'zod';
 
-import { readBotActivityContract } from '../../../../control_contracts/bot_activity.ts';
+import { readBotActivityContract } from '../../contracts/bot_activity.ts';
 import {
   type controlRequestIssueSchema,
   INVALID_REQUEST_REASON,
-} from '../../../../control_contracts/control_errors.ts';
+} from '../../contracts/control_errors.ts';
 import type {
   ControlOperationResponse,
   DecodedControlRequest,
-} from '../../../../control_contracts/operation_contract.ts';
+} from '../../contracts/operation_contract.ts';
 import type { BotActivityEntry, BotActivityFilter } from '../../../types/bot_activity.ts';
 import { toCurrentBotApiMethodName } from '../../../types/bot_api_method_name.ts';
 import type { JsonStructure } from '../../../types/json_pattern.ts';

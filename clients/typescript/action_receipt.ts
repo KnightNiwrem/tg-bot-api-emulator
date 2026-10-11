@@ -1,6 +1,6 @@
 /**
  * Reads the action receipt a successful control action answers with, from the headers that
- * `control_contracts/action_receipts.ts` describes.
+ * `src/api/contracts/action_receipts.ts` describes.
  */
 import { z } from 'zod';
 
@@ -8,7 +8,7 @@ import {
   ACTION_RECEIPT_ACTIVITY_POSITION_HEADER,
   ACTION_RECEIPT_SESSION_ID_HEADER,
   actionReceiptHeadersSchema,
-} from '../../control_contracts/action_receipts.ts';
+} from '../../src/api/contracts/action_receipts.ts';
 import type { ActionReceipt } from './types.ts';
 
 /** A position as its header writes it: decimal digits, without a sign or a leading zero. */

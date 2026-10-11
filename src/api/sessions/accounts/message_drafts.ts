@@ -1,12 +1,12 @@
 import { Hono } from 'hono';
 
-import { INVALID_REQUEST_REASON } from '../../../../control_contracts/control_errors.ts';
+import { INVALID_REQUEST_REASON } from '../../contracts/control_errors.ts';
 import {
   expirePrivateMessageDraftContract,
   getPrivateMessageDraftContract,
   stopPrivateMessageDraftContract,
-} from '../../../../control_contracts/message_drafts.ts';
-import type { ControlOperationRefusal } from '../../../../control_contracts/operation_contract.ts';
+} from '../../contracts/message_drafts.ts';
+import type { ControlOperationRefusal } from '../../contracts/operation_contract.ts';
 import type { EmulationSession } from '../../../types/emulation_session.ts';
 import { isInt64DecimalText } from '../../../types/telegram_int64.ts';
 import { registerControlOperation } from '../../control_operation_route.ts';

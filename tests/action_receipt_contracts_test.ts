@@ -9,8 +9,8 @@ import { assertEquals, assertThrows } from '@std/assert';
 import { Hono } from 'hono';
 import { z } from 'zod';
 
-import { ACTION_RECEIPT_SESSION_ID_HEADER } from '../control_contracts/action_receipts.ts';
-import { defineControlOperation } from '../control_contracts/operation_contract.ts';
+import { ACTION_RECEIPT_SESSION_ID_HEADER } from '../src/api/contracts/action_receipts.ts';
+import { defineControlOperation } from '../src/api/contracts/operation_contract.ts';
 import { registerControlOperation } from '../src/api/control_operation_route.ts';
 import { answerWithActionReceipt } from '../src/api/sessions/action_receipt.ts';
 import type { SessionRouteContextTypes } from '../src/api/sessions/session_route_context_types.ts';

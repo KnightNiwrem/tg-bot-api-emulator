@@ -1,10 +1,7 @@
 import { type Context, Hono, type MiddlewareHandler } from 'hono';
 import { basePath, matchedRoutes } from 'hono/route';
 
-import {
-  createSessionContract,
-  deleteSessionContract,
-} from '../../../control_contracts/sessions.ts';
+import { createSessionContract, deleteSessionContract } from '../contracts/sessions.ts';
 import type { EmulationSession, EmulationSessionOptions } from '../../types/emulation_session.ts';
 import { SESSION_NOT_FOUND_REASON, sessionNotFoundResponse } from '../control_error_response.ts';
 import { registerControlOperation } from '../control_operation_route.ts';

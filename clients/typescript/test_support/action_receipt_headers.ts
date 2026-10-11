@@ -5,7 +5,7 @@
 import {
   ACTION_RECEIPT_ACTIVITY_POSITION_HEADER,
   ACTION_RECEIPT_SESSION_ID_HEADER,
-} from '../../../control_contracts/action_receipts.ts';
+} from '../../../src/api/contracts/action_receipts.ts';
 import type { ActionReceipt } from '../types.ts';
 
 /** The receipt {@link TEST_ACTION_RECEIPT_HEADERS} carries. */

@@ -4,7 +4,7 @@
  */
 import { assertEquals, assertRejects } from '@std/assert';
 
-import { getInlineQueryContract } from '../../control_contracts/inline_queries.ts';
+import { getInlineQueryContract } from '../../src/api/contracts/inline_queries.ts';
 import { callJsonOperation, type ControlOperationTransport } from './control_operation_caller.ts';
 import { EmulationClientError } from './emulation_client_error.ts';
 

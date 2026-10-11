@@ -1,10 +1,10 @@
 import { z } from 'zod';
 
-import { accountProfileSchema } from '../../control_contracts/accounts.ts';
-import { botProfileSchema, messageSenderBotSchema } from '../../control_contracts/bots.ts';
-import { controlValidationErrorSchema } from '../../control_contracts/control_errors.ts';
-import { messageEntitySchema } from '../../control_contracts/message_entities.ts';
-import { pollSchema } from '../../control_contracts/polls.ts';
+import { accountProfileSchema } from '../../src/api/contracts/accounts.ts';
+import { botProfileSchema, messageSenderBotSchema } from '../../src/api/contracts/bots.ts';
+import { controlValidationErrorSchema } from '../../src/api/contracts/control_errors.ts';
+import { messageEntitySchema } from '../../src/api/contracts/message_entities.ts';
+import { pollSchema } from '../../src/api/contracts/polls.ts';
 import {
   MAX_SUPERGROUP_OR_CHANNEL_ID,
   MAX_TELEGRAM_USER_ID,

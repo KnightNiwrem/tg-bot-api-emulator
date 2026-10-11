@@ -5,13 +5,13 @@
  * This module depends on both the server and the client, so that the client itself stays
  * independent of the server's source.
  */
-import { createEmulationApi, type EmulationApiDependencies } from '../src/api/mod.ts';
+import { createEmulationApi, type EmulationApiDependencies } from '../../../src/api/mod.ts';
 import {
   createSessionLifecycleService,
   type SessionTimingSource,
-} from '../src/composition/session_lifecycle.ts';
-import type { HttpRequestHandler } from '../src/server.ts';
-import { TelegramEmulationClient } from '../clients/typescript/mod.ts';
+} from '../../../src/composition/session_lifecycle.ts';
+import type { HttpRequestHandler } from '../../../src/server.ts';
+import { TelegramEmulationClient } from '../mod.ts';
 
 /** The origin an in-process emulator names in the URLs it returns, unless told otherwise. */
 const DEFAULT_IN_PROCESS_PUBLIC_ORIGIN = 'http://emulator.invalid';

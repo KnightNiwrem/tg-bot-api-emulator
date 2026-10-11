@@ -6,7 +6,7 @@ import { assertEquals } from '@std/assert';
 import { Hono } from 'hono';
 import { z } from 'zod';
 
-import { defineControlOperation } from '../../control_contracts/operation_contract.ts';
+import { defineControlOperation } from '../../src/api/contracts/operation_contract.ts';
 import { registerControlOperation } from '../../src/api/control_operation_route.ts';
 import type { SessionRouteContextTypes } from '../../src/api/sessions/session_route_context_types.ts';
 import { callJsonOperation, type ControlOperationTransport } from './control_operation_caller.ts';

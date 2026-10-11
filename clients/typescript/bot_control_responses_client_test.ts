@@ -8,8 +8,8 @@ import { assertEquals, assertRejects } from '@std/assert';
 import {
   queueRateLimitResponsesContract,
   queueServerErrorResponsesContract,
-} from '../../control_contracts/queued_bot_api_answers.ts';
-import { listWebhookAttemptsContract } from '../../control_contracts/webhook_attempts.ts';
+} from '../../src/api/contracts/queued_bot_api_answers.ts';
+import { listWebhookAttemptsContract } from '../../src/api/contracts/webhook_attempts.ts';
 import {
   callJsonAction,
   callJsonOperation,

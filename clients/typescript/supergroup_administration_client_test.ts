@@ -7,7 +7,7 @@ import { assertEquals, assertRejects } from '@std/assert';
 import {
   expireSupergroupMemberRestrictionContract,
   getSupergroupAdministratorsContract,
-} from '../../control_contracts/supergroup_administration.ts';
+} from '../../src/api/contracts/supergroup_administration.ts';
 import {
   callJsonAction,
   callJsonOperation,

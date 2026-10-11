@@ -4,7 +4,7 @@
  */
 import { assertEquals, assertRejects } from '@std/assert';
 
-import { expirePollContract } from '../../control_contracts/polls.ts';
+import { expirePollContract } from '../../src/api/contracts/polls.ts';
 import { callJsonAction, type ControlOperationTransport } from './control_operation_caller.ts';
 import { EmulationClientError } from './emulation_client_error.ts';
 import { TEST_ACTION_RECEIPT_HEADERS } from './test_support/action_receipt_headers.ts';

@@ -1,6 +1,6 @@
 import { z } from 'zod';
 
-import { isContentTypeInRange } from '../../http_grammar/media_type.ts';
+import { isContentTypeInRange } from '../../src/api/http_grammar/media_type.ts';
 import { readActionReceipt } from './action_receipt.ts';
 import { EmulationClientError, EmulationControlError } from './emulation_client_error.ts';
 import { controlErrorBodySchema } from './schemas.ts';

@@ -1,6 +1,6 @@
 import type { z } from 'zod';
 
-import type { controlRequestIssueSchema } from '../../../../control_contracts/control_errors.ts';
+import type { controlRequestIssueSchema } from '../../contracts/control_errors.ts';
 import { findBotApiMethod } from '../bot_api/method_catalogue.ts';
 
 /** The `method` of a request that queues answers, as the answers record it, or why it is refused. */
