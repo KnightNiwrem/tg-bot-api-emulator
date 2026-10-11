@@ -37,7 +37,8 @@ error names the filter and the position the wait started after. The usual causes
   `parameters_json`, which ignores members its patterns do not name. Loosen the criteria to the
   method and chat, and inspect the entry the wait then finds.
 - **The position was taken too late.** A position taken after the account acted can already be past
-  the bot's call. Take it immediately before the action that triggers the call.
+  the bot's call. Wait after the receipt of the action that triggers the call, or take the position
+  immediately before that action.
 - **The bot is slow.** A bot that legitimately needs more than 5 seconds needs a longer `timeoutMs`,
   on the wait or on the activity view.
 

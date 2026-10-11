@@ -5,7 +5,7 @@ import { EmulationClientError } from './mod.ts';
 Deno.test('A local webhook that fails twice recovers through the webhook delivery controls', async () => {
   await using api = createTestInProcessEmulator();
   const { client } = api;
-  const session = await client.createSession();
+  const { result: session } = await client.createSession();
   // The webhook asks for an hour's wait after its first failure, and never answers its second
   // request, so the update is delivered in time only through the controls.
   const webhook = startLocalWebhook((requestIndex) =>
@@ -21,8 +21,11 @@ Deno.test('A local webhook that fails twice recovers through the webhook deliver
   );
 
   try {
-    const { token, bot } = await session.createBot({ first_name: 'Hook', username: 'hook_bot' });
-    const { account } = await session.createAccount({ first_name: 'Ada' });
+    const { result: { token, bot } } = await session.createBot({
+      first_name: 'Hook',
+      username: 'hook_bot',
+    });
+    const { result: { account } } = await session.createAccount({ first_name: 'Ada' });
     const activity = session.botActivity({ bot_id: bot.id });
     const callBotApi = async (method: string, parameters: Record<string, unknown> = {}) =>
       await (await api.request(`/sessions/${session.id}/bot-api/bot${token}/${method}`, {
@@ -34,7 +37,7 @@ Deno.test('A local webhook that fails twice recovers through the webhook deliver
     assertEquals(
       [
         await session.getWebhookDelivery(bot.id),
-        await session.setWebhookDelivery({ bot_id: bot.id, scheduling: 'manual' }),
+        (await session.setWebhookDelivery({ bot_id: bot.id, scheduling: 'manual' })).result,
       ],
       [{ scheduling: 'automatic' }, { scheduling: 'manual' }],
       'Expected automatic scheduling by default, and manual scheduling once chosen',
@@ -55,7 +58,7 @@ Deno.test('A local webhook that fails twice recovers through the webhook deliver
       }, 3600],
       'Expected the failed response and the wait it asked for',
     );
-    const released = await session.releaseWebhookRetry({
+    const { result: released } = await session.releaseWebhookRetry({
       botId: bot.id,
       attemptId: firstFailure.webhook_attempt_id,
     });
@@ -65,7 +68,7 @@ Deno.test('A local webhook that fails twice recovers through the webhook deliver
     });
     await webhook.waitForRequestCount(2);
     const secondAttemptId = secondDelivery.webhook_attempt_id ?? 0;
-    const expired = await session.expireWebhookAttempt({
+    const { result: expired } = await session.expireWebhookAttempt({
       botId: bot.id,
       attemptId: secondAttemptId,
     });
@@ -117,21 +120,24 @@ Deno.test('A local webhook that fails twice recovers through the webhook deliver
 Deno.test('Webhook delivery controls reject what they cannot apply to', async () => {
   await using api = createTestInProcessEmulator();
   const { client } = api;
-  const session = await client.createSession();
-  const otherSession = await client.createSession();
+  const { result: session } = await client.createSession();
+  const { result: otherSession } = await client.createSession();
   const webhook = startLocalWebhook(() => new Response(null, { status: 500 }));
 
   try {
-    const { token, bot } = await session.createBot({ first_name: 'Hook', username: 'hook_bot' });
-    const { bot: otherBot } = await session.createBot({
-      first_name: 'Other',
-      username: 'other_bot',
-    });
-    const { bot: otherSessionBot } = await otherSession.createBot({
+    const { result: { token, bot } } = await session.createBot({
       first_name: 'Hook',
       username: 'hook_bot',
     });
-    const { account } = await session.createAccount({ first_name: 'Ada' });
+    const { result: { bot: otherBot } } = await session.createBot({
+      first_name: 'Other',
+      username: 'other_bot',
+    });
+    const { result: { bot: otherSessionBot } } = await otherSession.createBot({
+      first_name: 'Hook',
+      username: 'hook_bot',
+    });
+    const { result: { account } } = await session.createAccount({ first_name: 'Ada' });
     const activity = session.botActivity({ bot_id: bot.id });
     await session.setWebhookDelivery({ bot_id: bot.id, scheduling: 'manual' });
     await api.request(
@@ -195,12 +201,15 @@ Deno.test('Webhook delivery controls reject what they cannot apply to', async ()
 Deno.test('Ending a session cancels its manual webhook attempts and retries', async () => {
   await using api = createTestInProcessEmulator();
   const { client } = api;
-  const session = await client.createSession();
+  const { result: session } = await client.createSession();
   const webhook = startLocalWebhook(() => 'hang');
 
   try {
-    const { token, bot } = await session.createBot({ first_name: 'Hook', username: 'hook_bot' });
-    const { account } = await session.createAccount({ first_name: 'Ada' });
+    const { result: { token, bot } } = await session.createBot({
+      first_name: 'Hook',
+      username: 'hook_bot',
+    });
+    const { result: { account } } = await session.createAccount({ first_name: 'Ada' });
     await session.setWebhookDelivery({ bot_id: bot.id, scheduling: 'manual' });
     await api.request(
       `/sessions/${session.id}/bot-api/bot${token}/setWebhook?url=${

@@ -36,7 +36,7 @@ Deno.test('the account votes in the poll the bot sends and retracts its vote', (
     },
   }, async ({ account, activity, botProfile, privateChat }) => {
     const beforeCommand = await activity.position();
-    const command = await account.sendMessage({ to: privateChat, text: '/poll' });
+    const { result: command } = await account.sendMessage({ to: privateChat, text: '/poll' });
     await activity.waitFor(
       {
         method: 'sendPoll',
@@ -52,7 +52,7 @@ Deno.test('the account votes in the poll the bot sends and retracts its vote', (
     );
     assertExists(pollMessage?.poll);
 
-    const { poll_answer, message } = await account.answerPoll({
+    const { result: { poll_answer, message } } = await account.answerPoll({
       chat: privateChat,
       message_id: pollMessage.message_id,
       option_ids: [1],
@@ -107,7 +107,7 @@ Deno.test('the bot receives the vote and the poll counts', () =>
     },
   }, async ({ account, activity, botProfile, privateChat }) => {
     const beforeCommand = await activity.position();
-    const command = await account.sendMessage({ to: privateChat, text: '/poll' });
+    const { result: command } = await account.sendMessage({ to: privateChat, text: '/poll' });
     await activity.waitFor(
       {
         method: 'sendPoll',
@@ -188,7 +188,7 @@ Deno.test('the bot stops its poll, which then refuses votes', () =>
     },
   }, async ({ account, activity, botProfile, privateChat }) => {
     const beforeCommand = await activity.position();
-    const command = await account.sendMessage({ to: privateChat, text: '/poll' });
+    const { result: command } = await account.sendMessage({ to: privateChat, text: '/poll' });
     await activity.waitFor(
       {
         method: 'sendPoll',
@@ -270,7 +270,7 @@ Deno.test('the poll closes when the test makes its closing time arrive', () =>
     },
   }, async ({ session, account, activity, botProfile, privateChat }) => {
     const beforeCommand = await activity.position();
-    const command = await account.sendMessage({ to: privateChat, text: '/poll' });
+    const { result: command } = await account.sendMessage({ to: privateChat, text: '/poll' });
     await activity.waitFor(
       {
         method: 'sendPoll',
@@ -290,7 +290,7 @@ Deno.test('the poll closes when the test makes its closing time arrive', () =>
     const pollId = pollMessage.poll.id;
 
     const beforeExpiry = await activity.position();
-    const closedPoll = await session.expirePoll(pollId);
+    const { result: closedPoll } = await session.expirePoll(pollId);
     assertEquals(closedPoll.is_closed, true);
     assertEquals(closedPoll.open_period, undefined);
 
@@ -331,7 +331,7 @@ Deno.test('the bot reads the quiz an account sends, and the account stops it', (
     },
   }, async ({ account, activity, privateChat }) => {
     const beforeQuiz = await activity.position();
-    const quiz = await account.sendPoll({
+    const { result: quiz } = await account.sendPoll({
       to: privateChat,
       poll: {
         question: 'Capital of France?',
@@ -351,7 +351,10 @@ Deno.test('the bot reads the quiz an account sends, and the account stops it', (
     );
 
     await account.answerPoll({ chat: privateChat, message_id: quiz.message_id, option_ids: [1] });
-    const stopped = await account.stopPoll({ chat: privateChat, message_id: quiz.message_id });
+    const { result: stopped } = await account.stopPoll({
+      chat: privateChat,
+      message_id: quiz.message_id,
+    });
     assertEquals(stopped.poll?.is_closed, true);
     assertEquals(stopped.poll?.total_voter_count, 1);
   }));
@@ -406,7 +409,7 @@ Deno.test('the account answers a quiz request with a quiz', () =>
     assertEquals(refusal.status, 400);
 
     const beforeQuiz = await activity.position();
-    const quiz = await account.pressReplyKeyboardButton({
+    const { result: quiz } = await account.pressReplyKeyboardButton({
       chat: privateChat,
       text: 'Create quiz',
       poll: { question: 'Is it a quiz?', options, type: 'quiz', correct_option_ids: [0] },

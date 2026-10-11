@@ -15,7 +15,7 @@ const PUBLIC_ORIGIN = 'http://emulator.example:9000';
 Deno.test('A refusal rejects with an EmulationControlError naming its reason', async () => {
   await using emulator = createTestInProcessEmulator();
   const { client } = emulator;
-  const session = await client.createSession();
+  const { result: session } = await client.createSession();
   await session.createBot({ first_name: 'Shop', username: 'shop_bot' });
 
   const refusal = await rejectionOf(
@@ -52,8 +52,8 @@ Deno.test('A refusal rejects with an EmulationControlError naming its reason', a
 Deno.test('Input the emulator rejects lists each issue on the control error', async () => {
   await using emulator = createTestInProcessEmulator();
   const { client } = emulator;
-  const session = await client.createSession();
-  const { bot } = await session.createBot({ first_name: 'Shop', username: 'shop_bot' });
+  const { result: session } = await client.createSession();
+  const { result: { bot } } = await session.createBot({ first_name: 'Shop', username: 'shop_bot' });
 
   const refusal = await rejectionOf(
     session.queueServerErrorResponses({ bot_id: bot.id, method: 'sendTelepathy', error_code: 500 }),
@@ -85,7 +85,7 @@ Deno.test('Input the emulator rejects lists each issue on the control error', as
 Deno.test('An ended session refuses its operations as session_not_found', async () => {
   await using emulator = createTestInProcessEmulator();
   const { client } = emulator;
-  const session = await client.createSession();
+  const { result: session } = await client.createSession();
   await session.end();
 
   const refusal = await rejectionOf(session.createAccount({ first_name: 'Ada' }));

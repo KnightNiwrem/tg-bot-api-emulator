@@ -106,10 +106,13 @@ Deno.test('a grammY runner without sequentialize keeps the order each handler aw
 });
 
 async function createFixture({ client }: TestInProcessEmulator) {
-  const session = await client.createSession();
-  const createdBot = await session.createBot({ first_name: 'Shop Bot', username: 'shop_bot' });
-  const { account: ada } = await session.createAccount({ first_name: 'Ada' });
-  const { account: grace } = await session.createAccount({ first_name: 'Grace' });
+  const { result: session } = await client.createSession();
+  const { result: createdBot } = await session.createBot({
+    first_name: 'Shop Bot',
+    username: 'shop_bot',
+  });
+  const { result: { account: ada } } = await session.createAccount({ first_name: 'Ada' });
+  const { result: { account: grace } } = await session.createAccount({ first_name: 'Grace' });
   return { session, createdBot, ada, grace };
 }
 

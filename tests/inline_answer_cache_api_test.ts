@@ -21,8 +21,8 @@ Deno.test('a test expires a cached inline answer, and the next query reaches the
   await using fixture = await createInlineCacheFixture();
   const { session, ada, grace, bot, privateChat, callBot, takeInlineQueryUpdates } = fixture;
   try {
-    const sendQuery = (account: VirtualAccountClient, query = 'cats') =>
-      account.sendInlineQuery({ bot_id: bot.id, chat: privateChat, query });
+    const sendQuery = async (account: VirtualAccountClient, query = 'cats') =>
+      (await account.sendInlineQuery({ bot_id: bot.id, chat: privateChat, query })).result;
     const original = await sendQuery(ada);
     const delivered = await takeInlineQueryUpdates();
     const answer = await callBot('answerInlineQuery', {
@@ -51,7 +51,7 @@ Deno.test('a test expires a cached inline answer, and the next query reaches the
     });
     const fresh = await sendQuery(ada);
     const deliveredAfterExpiry = await takeInlineQueryUpdates();
-    const sent = await grace.chooseInlineQueryResult({
+    const { result: sent } = await grace.chooseInlineQueryResult({
       inline_query_id: otherCopy.id,
       result_id: 'cats',
     });
@@ -101,18 +101,18 @@ Deno.test('answer cache expiry follows the request, not the chat, and stays in i
     const supergroups = await Promise.all(
       ['Team', 'Club'].map((title) => first.ada.createSupergroup({ title })),
     );
-    const [teamChat, clubChat] = supergroups.map(({ id }) =>
+    const [teamChat, clubChat] = supergroups.map(({ result: { id } }) =>
       ({ type: 'supergroup', chatId: id }) as const
     );
     const near = (latitude: number): LocationInput => ({ latitude, longitude: 0.5 });
-    const sendQuery = (fixture: InlineCacheFixture, input: Partial<SendInlineQueryInput>) =>
-      fixture.ada.sendInlineQuery({
+    const sendQuery = async (fixture: InlineCacheFixture, input: Partial<SendInlineQueryInput>) =>
+      (await fixture.ada.sendInlineQuery({
         bot_id: fixture.bot.id,
         chat: fixture.privateChat,
         query: 'cafés',
         location: near(51.50071),
         ...input,
-      });
+      })).result;
     const answerQuery = async (fixture: InlineCacheFixture, inlineQuery: InlineQuery) => {
       await fixture.callBot('answerInlineQuery', {
         inline_query_id: inlineQuery.id,
@@ -166,8 +166,8 @@ Deno.test('answer cache expiry is refused, changing nothing, when there is no an
   await using fixture = await createInlineCacheFixture(api);
   const { session, ada, bot, privateChat, callBot, takeInlineQueryUpdates } = fixture;
   try {
-    const sendQuery = (query: string) =>
-      ada.sendInlineQuery({ bot_id: bot.id, chat: privateChat, query });
+    const sendQuery = async (query: string) =>
+      (await ada.sendInlineQuery({ bot_id: bot.id, chat: privateChat, query })).result;
     const answerQuery = (inlineQuery: InlineQuery, cacheTimeSeconds?: number) =>
       callBot('answerInlineQuery', {
         inline_query_id: inlineQuery.id,
@@ -223,8 +223,8 @@ Deno.test("a bot's answer after an expiry fills the cache again", async () => {
   const activity = session.botActivity({ bot_id: bot.id });
   const runner = run(grammyBot);
   try {
-    const sendQuery = () =>
-      ada.sendInlineQuery({ bot_id: bot.id, chat: privateChat, query: 'cats' });
+    const sendQuery = async () =>
+      (await ada.sendInlineQuery({ bot_id: bot.id, chat: privateChat, query: 'cats' })).result;
     const waitForAnswer = async (inlineQuery: InlineQuery, after: number) => {
       await activity.waitFor(
         { method: 'answerInlineQuery', ok: true, parameters: { inline_query_id: inlineQuery.id } },
@@ -300,15 +300,15 @@ async function createInlineCacheFixture(
   await using disposalOnFailure = new AsyncDisposableStack();
   const api = sharedApi ?? disposalOnFailure.use(createTestInProcessEmulator());
   const { fetch } = api;
-  const session = await api.client.createSession();
-  const createdBot = await session.createBot({
+  const { result: session } = await api.client.createSession();
+  const { result: createdBot } = await session.createBot({
     first_name: 'Inline Bot',
     username: 'inline_bot',
     supports_inline_queries: true,
     requests_inline_location: true,
   });
-  const { account: ada } = await session.createAccount({ first_name: 'Ada' });
-  const { account: grace } = await session.createAccount({ first_name: 'Grace' });
+  const { result: { account: ada } } = await session.createAccount({ first_name: 'Ada' });
+  const { result: { account: grace } } = await session.createAccount({ first_name: 'Grace' });
   const callBot = callBotWith(fetch, session, createdBot.token);
   let nextUpdateOffset = 0;
   const emulatorDisposal = disposalOnFailure.move();

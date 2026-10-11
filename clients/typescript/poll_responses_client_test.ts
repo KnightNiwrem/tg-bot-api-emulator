@@ -5,13 +5,15 @@
 import { assertEquals, assertRejects } from '@std/assert';
 
 import { expirePollContract } from '../../control_contracts/polls.ts';
-import { callJsonOperation, type ControlOperationTransport } from './control_operation_caller.ts';
+import { callJsonAction, type ControlOperationTransport } from './control_operation_caller.ts';
 import { EmulationClientError } from './emulation_client_error.ts';
+import { TEST_ACTION_RECEIPT_HEADERS } from './test_support/action_receipt_headers.ts';
 
 function transportAnswering(status: number, body: unknown): ControlOperationTransport {
   return {
     serverRoot: new URL('http://emulator.example/'),
-    fetch: () => Promise.resolve(Response.json(body, { status })),
+    fetch: () =>
+      Promise.resolve(Response.json(body, { status, headers: TEST_ACTION_RECEIPT_HEADERS })),
   };
 }
 
@@ -37,10 +39,10 @@ const customEmoji = {
   custom_emoji_id: '5368324170671202286',
 };
 
-const expirePoll = (expiredPoll: Record<string, unknown>) =>
-  callJsonOperation(transportAnswering(200, { poll: expiredPoll }), expirePollContract, {
+const expirePoll = async (expiredPoll: Record<string, unknown>) =>
+  (await callJsonAction(transportAnswering(200, { poll: expiredPoll }), expirePollContract, {
     params: { sessionId: 'session', pollId: '1' },
-  });
+  })).result;
 
 Deno.test('A poll that breaks its contract is refused', async () => {
   const quiz = { ...poll, type: 'quiz', correct_option_ids: [0], explanation: 'Because' };

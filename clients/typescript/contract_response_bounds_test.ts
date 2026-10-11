@@ -9,13 +9,19 @@ import {
   createSupergroupContract,
   getSupergroupInviteLinksContract,
 } from '../../control_contracts/supergroups.ts';
-import { callJsonOperation, type ControlOperationTransport } from './control_operation_caller.ts';
+import {
+  callJsonAction,
+  callJsonOperation,
+  type ControlOperationTransport,
+} from './control_operation_caller.ts';
 import { EmulationClientError } from './emulation_client_error.ts';
+import { TEST_ACTION_RECEIPT_HEADERS } from './test_support/action_receipt_headers.ts';
 
 function transportAnswering(status: number, body: unknown): ControlOperationTransport {
   return {
     serverRoot: new URL('http://emulator.example/'),
-    fetch: () => Promise.resolve(Response.json(body, { status })),
+    fetch: () =>
+      Promise.resolve(Response.json(body, { status, headers: TEST_ACTION_RECEIPT_HEADERS })),
   };
 }
 
@@ -82,11 +88,11 @@ Deno.test('Bot activity entries with an empty method or error message are refuse
 });
 
 Deno.test('A supergroup with an empty title, username or description is refused', async () => {
-  const createSupergroup = (supergroup: Record<string, unknown>) =>
-    callJsonOperation(transportAnswering(201, { supergroup }), createSupergroupContract, {
+  const createSupergroup = async (supergroup: Record<string, unknown>) =>
+    (await callJsonAction(transportAnswering(201, { supergroup }), createSupergroupContract, {
       params: { sessionId: 'session', accountId: 1 },
       body: { title: 'Team' },
-    });
+    })).result;
   const supergroup = { id: -1_000_000_000_001, type: 'supergroup', title: 'Team' };
 
   for (

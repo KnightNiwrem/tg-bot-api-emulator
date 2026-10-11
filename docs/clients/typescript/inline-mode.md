@@ -38,7 +38,7 @@ Deno.test('the bot answers an inline query typed in its private chat', () =>
     },
   }, async ({ account, activity, botProfile, privateChat }) => {
     const beforeQuery = await activity.position();
-    const inlineQuery = await account.sendInlineQuery({
+    const { result: inlineQuery } = await account.sendInlineQuery({
       bot_id: botProfile.id,
       chat: privateChat,
       query: 'two',
@@ -83,11 +83,11 @@ Deno.test('the account sends an inline result to a supergroup', () =>
         }]));
     },
   }, async ({ account, activity, botProfile }) => {
-    const supergroup = await account.createSupergroup({ title: 'Team' });
+    const { result: supergroup } = await account.createSupergroup({ title: 'Team' });
     const groupChat = { type: 'supergroup', chatId: supergroup.id } as const;
 
     const beforeQuery = await activity.position();
-    const inlineQuery = await account.sendInlineQuery({
+    const { result: inlineQuery } = await account.sendInlineQuery({
       bot_id: botProfile.id,
       chat: groupChat,
       query: 'cats',
@@ -100,7 +100,7 @@ Deno.test('the account sends an inline result to a supergroup', () =>
     const firstResult = answeredQuery.answer?.results[0];
     assertExists(firstResult);
 
-    const sent = await account.chooseInlineQueryResult({
+    const { result: sent } = await account.chooseInlineQueryResult({
       inline_query_id: inlineQuery.id,
       result_id: firstResult.id,
     });
@@ -153,7 +153,7 @@ Deno.test('the inline bot edits the message its result sent when a button is pre
     },
   }, async ({ account, activity, botProfile, privateChat }) => {
     const beforeQuery = await activity.position();
-    const inlineQuery = await account.sendInlineQuery({
+    const { result: inlineQuery } = await account.sendInlineQuery({
       bot_id: botProfile.id,
       chat: privateChat,
       query: 'tea',
@@ -164,7 +164,7 @@ Deno.test('the inline bot edits the message its result sent when a button is pre
     );
 
     const beforeChoice = await activity.position();
-    const sent = await account.chooseInlineQueryResult({
+    const { result: sent } = await account.chooseInlineQueryResult({
       inline_query_id: inlineQuery.id,
       result_id: 'tea',
     });
@@ -242,7 +242,7 @@ Deno.test('the bot answers with the location the account shares', () =>
     },
   }, async ({ account, activity, botProfile, privateChat }) => {
     const beforeQuery = await activity.position();
-    const inlineQuery = await account.sendInlineQuery({
+    const { result: inlineQuery } = await account.sendInlineQuery({
       bot_id: botProfile.id,
       chat: privateChat,
       query: 'cafés',
@@ -291,8 +291,9 @@ Deno.test('the bot answers again once its cached answer expires', () => {
         }]));
     },
   }, async ({ session, account, activity, botProfile, privateChat }) => {
-    const askForCakes = () =>
-      account.sendInlineQuery({ bot_id: botProfile.id, chat: privateChat, query: 'cakes' });
+    const askForCakes = async () =>
+      (await account.sendInlineQuery({ bot_id: botProfile.id, chat: privateChat, query: 'cakes' }))
+        .result;
     const waitForAnswer = async (inlineQueryId: string, after: number) => {
       await activity.waitFor(
         { method: 'answerInlineQuery', ok: true, parameters: { inline_query_id: inlineQueryId } },

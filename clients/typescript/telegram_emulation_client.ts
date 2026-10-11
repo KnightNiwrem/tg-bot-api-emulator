@@ -1,10 +1,10 @@
 import { createSessionContract } from '../../control_contracts/sessions.ts';
-import { callJsonOperation } from './control_operation_caller.ts';
+import { callJsonAction } from './control_operation_caller.ts';
 import {
   createEmulationSessionClient,
   type EmulationSessionClient,
 } from './emulation_session_client.ts';
-import type { CreateSessionInput } from './types.ts';
+import type { ActionOutcome, CreateSessionInput } from './types.ts';
 import { normalizeUrlRoot } from './utils.ts';
 
 export interface TelegramEmulationClientOptions {
@@ -26,13 +26,22 @@ export class TelegramEmulationClient {
     }
   }
 
-  async createSession(input: CreateSessionInput = {}): Promise<EmulationSessionClient> {
-    const session = await callJsonOperation(
+  /**
+   * Creates a session, whose receipt is the new session's at position 0, before every entry of its
+   * bot activity log.
+   */
+  async createSession(
+    input: CreateSessionInput = {},
+  ): Promise<ActionOutcome<EmulationSessionClient>> {
+    const { result: session, receipt } = await callJsonAction(
       { serverRoot: this.#serverRoot, fetch: this.#fetch },
       createSessionContract,
       { body: input },
     );
 
-    return createEmulationSessionClient(this.#serverRoot, session, this.#fetch);
+    return {
+      result: createEmulationSessionClient(this.#serverRoot, session, this.#fetch),
+      receipt,
+    };
   }
 }

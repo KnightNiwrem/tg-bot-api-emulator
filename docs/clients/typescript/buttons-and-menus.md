@@ -52,7 +52,7 @@ Deno.test('an account presses a Details button by its label and reads the answer
     },
   }, async ({ account, activity, botProfile, privateChat }) => {
     const beforeCommand = await activity.position();
-    const command = await account.sendMessage({ to: privateChat, text: '/shop' });
+    const { result: command } = await account.sendMessage({ to: privateChat, text: '/shop' });
     await activity.waitFor({
       method: 'sendMessage',
       chat_id: account.id,
@@ -67,7 +67,7 @@ Deno.test('an account presses a Details button by its label and reads the answer
 
     // Two buttons are labelled Details; `within` picks the one in the row that mentions Potion.
     const beforePress = await activity.position();
-    const query = await account.pressButton({
+    const { result: query } = await account.pressButton({
       chat: privateChat,
       message_id: shop.message_id,
       button: { label: 'Details', within: 'Potion' },
@@ -133,7 +133,7 @@ Deno.test('selectors pick exactly one button or list the candidates', async () =
     },
   }, async ({ account, activity, botProfile, privateChat }) => {
     const beforeCommand = await activity.position();
-    const command = await account.sendMessage({ to: privateChat, text: '/shop' });
+    const { result: command } = await account.sendMessage({ to: privateChat, text: '/shop' });
     await activity.waitFor({
       method: 'sendMessage',
       chat_id: account.id,
@@ -220,7 +220,7 @@ Deno.test('the bot edits its message when an account presses a button', async ()
     },
   }, async ({ account, activity, botProfile, privateChat }) => {
     const beforeCommand = await activity.position();
-    const command = await account.sendMessage({ to: privateChat, text: '/shop' });
+    const { result: command } = await account.sendMessage({ to: privateChat, text: '/shop' });
     await activity.waitFor({
       method: 'sendMessage',
       chat_id: account.id,
@@ -234,7 +234,7 @@ Deno.test('the bot edits its message when an account presses a button', async ()
     assertExists(shop);
 
     const beforePress = await activity.position();
-    const query = await account.pressCallbackButton({
+    const { result: query } = await account.pressCallbackButton({
       chat: privateChat,
       message_id: shop.message_id,
       callback_data: 'buy:elixir',
@@ -300,7 +300,7 @@ Deno.test('an account answers a reply keyboard by pressing one of its buttons', 
     assertEquals(await account.getReplyInterface({ chat: privateChat }), null);
 
     const beforeCommand = await activity.position();
-    const command = await account.sendMessage({ to: privateChat, text: '/size' });
+    const { result: command } = await account.sendMessage({ to: privateChat, text: '/size' });
     await activity.waitFor({
       method: 'sendMessage',
       chat_id: account.id,
@@ -319,7 +319,10 @@ Deno.test('an account answers a reply keyboard by pressing one of its buttons', 
     assertEquals(question?.reply_to_message?.message_id, command.message_id);
 
     const beforePress = await activity.position();
-    const press = await account.pressReplyKeyboardButton({ chat: privateChat, text: 'Large' });
+    const { result: press } = await account.pressReplyKeyboardButton({
+      chat: privateChat,
+      text: 'Large',
+    });
     assertEquals(press.text, 'Large');
     await activity.waitFor({
       method: 'sendMessage',
@@ -366,7 +369,7 @@ Deno.test('an account answers a forced reply', async () => {
     },
   }, async ({ account, activity, botProfile, privateChat }) => {
     const beforeCommand = await activity.position();
-    const command = await account.sendMessage({ to: privateChat, text: '/rename' });
+    const { result: command } = await account.sendMessage({ to: privateChat, text: '/rename' });
     await activity.waitFor({
       method: 'sendMessage',
       chat_id: account.id,
@@ -379,7 +382,7 @@ Deno.test('an account answers a forced reply', async () => {
     assertEquals(shown.input_field_placeholder, 'Your name');
 
     const beforeAnswer = await activity.position();
-    const answer = await account.sendMessage({
+    const { result: answer } = await account.sendMessage({
       to: privateChat,
       text: 'Grace',
       reply_to_message_id: shown.message_id,
@@ -449,7 +452,7 @@ Deno.test('an account shares a teammate with the bot that asked for one', async 
       });
     },
   }, async ({ session, account, activity, privateChat }) => {
-    const { account: grace } = await session.createAccount({ first_name: 'Grace' });
+    const { result: { account: grace } } = await session.createAccount({ first_name: 'Grace' });
 
     const beforeCommand = await activity.position();
     await account.sendMessage({ to: privateChat, text: '/invite' });
@@ -460,7 +463,7 @@ Deno.test('an account shares a teammate with the bot that asked for one', async 
     }, { after: beforeCommand });
 
     const beforeShare = await activity.position();
-    const shared = await account.pressReplyKeyboardButton({
+    const { result: shared } = await account.pressReplyKeyboardButton({
       chat: privateChat,
       text: 'Choose a teammate',
       shared_user_ids: [grace.id],
@@ -516,7 +519,7 @@ Deno.test('an account books the dates its Web App chose', async () => {
     }, { after: beforeCommand });
 
     const beforeSubmission = await activity.position();
-    const submitted = await account.pressReplyKeyboardButton({
+    const { result: submitted } = await account.pressReplyKeyboardButton({
       chat: privateChat,
       text: 'Choose dates',
       web_app_data: JSON.stringify({ from: '2026-12-24', nights: 3 }),
@@ -606,7 +609,7 @@ Deno.test('a supergroup member sees the commands a bot sets for the supergroup',
       });
     },
   }, async ({ account, activity, botProfile }) => {
-    const supergroup = await account.createSupergroup({ title: 'Team' });
+    const { result: supergroup } = await account.createSupergroup({ title: 'Team' });
     const teamChat = { type: 'supergroup', chatId: supergroup.id } as const;
 
     const beforeAdding = await activity.position();

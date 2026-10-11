@@ -68,7 +68,7 @@ Deno.test('a grammY bot receives the users an account shares through a request_u
       parameters: { text: 'Who joins the team?' },
     }, { after: start });
 
-    const shared = await ada.pressReplyKeyboardButton({
+    const { result: shared } = await ada.pressReplyKeyboardButton({
       chat: privateChat,
       text: 'Choose teammates',
       shared_user_ids: [linus.id, grace.id],
@@ -93,7 +93,7 @@ Deno.test('a grammY bot receives the users an account shares through a request_u
       parameters: { text: 'Request 41: linus, Grace' },
     }, { after: start });
 
-    const alone = await ada.pressReplyKeyboardButton({
+    const { result: alone } = await ada.pressReplyKeyboardButton({
       chat: privateChat,
       text: 'Choose teammates',
       shared_user_ids: [grace.id],
@@ -134,7 +134,7 @@ Deno.test('a grammY bot receives the users an account shares through a request_u
 Deno.test('a grammY bot receives a supergroup that meets its request_chat criteria', async () => {
   await using fixture = await createSharingFixture();
   const { session, fetch, bot, ada, privateChat } = fixture;
-  const team = await ada.createSupergroup({ title: 'Team', username: 'team_chat' });
+  const { result: team } = await ada.createSupergroup({ title: 'Team', username: 'team_chat' });
   const teamChat = { type: 'supergroup', chatId: team.id } as const;
   await ada.addChatMember({ chat: teamChat, userId: bot.id });
   await ada.promoteChatMember({
@@ -177,7 +177,7 @@ Deno.test('a grammY bot receives a supergroup that meets its request_chat criter
       parameters: { text: 'Which group should I manage?' },
     }, { after: start });
 
-    const shared = await ada.pressReplyKeyboardButton({
+    const { result: shared } = await ada.pressReplyKeyboardButton({
       chat: privateChat,
       text: 'Choose a group',
       shared_chat_id: team.id,
@@ -204,7 +204,7 @@ Deno.test('shared users and chats answer their own buttons among buttons that sh
   await using fixture = await createSharingFixture();
   const { session, bot, ada, grace, privateChat } = fixture;
   const callBot = createBotApiCaller(fixture);
-  const team = await ada.createSupergroup({ title: 'Team' });
+  const { result: team } = await ada.createSupergroup({ title: 'Team' });
   await ada.addChatMember({ chat: { type: 'supergroup', chatId: team.id }, userId: bot.id });
   const shown = await callBot('sendMessage', {
     chat_id: ada.id,
@@ -242,17 +242,17 @@ Deno.test('shared users and chats answer their own buttons among buttons that sh
     'Expected an ambiguous press to send nothing',
   );
 
-  const chat = await ada.pressReplyKeyboardButton({
+  const { result: chat } = await ada.pressReplyKeyboardButton({
     chat: privateChat,
     text: 'Share',
     shared_chat_id: team.id,
   });
-  const users = await ada.pressReplyKeyboardButton({
+  const { result: users } = await ada.pressReplyKeyboardButton({
     chat: privateChat,
     text: 'Share',
     shared_user_ids: [grace.id],
   });
-  const text = await ada.pressReplyKeyboardButton({ chat: privateChat, text: 'Share' });
+  const { result: text } = await ada.pressReplyKeyboardButton({ chat: privateChat, text: 'Share' });
   assertEqualsInFieldOrder(
     [chat.chat_shared, users.users_shared?.request_id, text.text],
     [{ chat_id: team.id, request_id: 8 }, 7, 'Share'],
@@ -265,12 +265,12 @@ Deno.test('refused selections create no message or update and leave the request 
   await using fixture = await createSharingFixture();
   const { session, bot, ada, grace, privateChat } = fixture;
   const callBot = createBotApiCaller(fixture);
-  const team = await ada.createSupergroup({ title: 'Team' });
+  const { result: team } = await ada.createSupergroup({ title: 'Team' });
   const teamChat = { type: 'supergroup', chatId: team.id } as const;
   await ada.addChatMember({ chat: teamChat, userId: grace.id });
   await ada.addChatMember({ chat: teamChat, userId: bot.id });
-  const otherGroup = await ada.createSupergroup({ title: 'Other' });
-  const strangersGroup = await grace.createSupergroup({ title: 'Strangers' });
+  const { result: otherGroup } = await ada.createSupergroup({ title: 'Other' });
+  const { result: strangersGroup } = await grace.createSupergroup({ title: 'Strangers' });
   await grace.sendMessage({ to: privateChat, text: '/start' });
   const keyboard = [
     [{
@@ -402,7 +402,7 @@ Deno.test('refused selections create no message or update and leave the request 
     'a replaced keyboard',
   );
   // Grace still has her own keyboard, which Ada's refused presses did not consume.
-  const graceShare = await grace.pressReplyKeyboardButton({
+  const { result: graceShare } = await grace.pressReplyKeyboardButton({
     chat: privateChat,
     text: 'People',
     shared_user_ids: [ada.id],
@@ -424,7 +424,7 @@ Deno.test('refused selections create no message or update and leave the request 
     userId: bot.id,
     rights: { can_pin_messages: true },
   });
-  const administratorShare = await grace.pressReplyKeyboardButton({
+  const { result: administratorShare } = await grace.pressReplyKeyboardButton({
     chat: privateChat,
     text: 'Pinning group',
     shared_chat_id: team.id,
@@ -441,7 +441,7 @@ Deno.test('sharing users or a chat grants the bot no access, membership, or righ
   await using fixture = await createSharingFixture();
   const { session, bot, ada, grace, privateChat } = fixture;
   const callBot = createBotApiCaller(fixture);
-  const team = await ada.createSupergroup({ title: 'Team' });
+  const { result: team } = await ada.createSupergroup({ title: 'Team' });
   await callBot('sendMessage', {
     chat_id: ada.id,
     text: 'Share',
@@ -484,9 +484,11 @@ Deno.test('selections stay within their session', async () => {
   await using first = await createSharingFixture(api);
   await using second = await createSharingFixture(api);
   // Only the second session has a fourth account and a supergroup with this ID.
-  const { account: extra } = await second.session.createAccount({ first_name: 'Extra' });
+  const { result: { account: extra } } = await second.session.createAccount({
+    first_name: 'Extra',
+  });
   await second.ada.createSupergroup({ title: 'Elsewhere' });
-  const elsewhere = await second.ada.createSupergroup({ title: 'Elsewhere too' });
+  const { result: elsewhere } = await second.ada.createSupergroup({ title: 'Elsewhere too' });
   await createBotApiCaller(first)('sendMessage', {
     chat_id: first.ada.id,
     text: 'Share',
@@ -550,11 +552,14 @@ async function createSharingFixture(sharedApi?: TestInProcessEmulator) {
   await using disposalOnFailure = new AsyncDisposableStack();
   const api = sharedApi ?? disposalOnFailure.use(createTestInProcessEmulator());
   const { fetch } = api;
-  const session = await api.client.createSession();
-  const createdBot = await session.createBot({ first_name: 'Team Bot', username: 'team_bot' });
-  const { account: ada } = await session.createAccount({ first_name: 'Ada' });
-  const { account: grace } = await session.createAccount({ first_name: 'Grace' });
-  const { account: linus } = await session.createAccount({
+  const { result: session } = await api.client.createSession();
+  const { result: createdBot } = await session.createBot({
+    first_name: 'Team Bot',
+    username: 'team_bot',
+  });
+  const { result: { account: ada } } = await session.createAccount({ first_name: 'Ada' });
+  const { result: { account: grace } } = await session.createAccount({ first_name: 'Grace' });
+  const { result: { account: linus } } = await session.createAccount({
     first_name: 'Linus',
     last_name: 'Torvalds',
     username: 'linus',

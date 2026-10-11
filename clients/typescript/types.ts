@@ -1917,6 +1917,11 @@ export interface ChooseInlineQueryResultInput {
   readonly result_id: string;
 }
 
+/**
+ * A virtual Telegram account's client. Each action resolves to its result, which its description
+ * says it returns, with the action's receipt; an action without a result resolves to its receipt.
+ * Reads resolve to what they read.
+ */
 export interface VirtualAccountClient extends VirtualAccountProfile {
   /**
    * Sends a message as this virtual Telegram account, to a bot or to a supergroup this account is
@@ -1925,32 +1930,32 @@ export interface VirtualAccountClient extends VirtualAccountProfile {
    */
   sendMessage<Target extends MessageTarget>(
     input: AccountSendMessageInput<Target>,
-  ): Promise<MessageIn<Target>>;
+  ): Promise<ActionOutcome<MessageIn<Target>>>;
   /**
    * Sends a photo, with an optional caption, as this account, as `sendMessage` sends text. The
    * emulator reads the image's dimensions and rejects content that is not an image.
    */
   sendPhoto<Target extends MessageTarget>(
     input: AccountSendPhotoInput<Target>,
-  ): Promise<MessageIn<Target>>;
+  ): Promise<ActionOutcome<MessageIn<Target>>>;
   /** Sends a file as a document, with an optional caption, as `sendMessage` sends text. */
   sendDocument<Target extends MessageTarget>(
     input: AccountSendDocumentInput<Target>,
-  ): Promise<MessageIn<Target>>;
+  ): Promise<ActionOutcome<MessageIn<Target>>>;
   /**
    * Sends a video, with an optional caption, as `sendMessage` sends text. Its duration and
    * dimensions are those the input defines; the emulator never reads the content.
    */
   sendVideo<Target extends MessageTarget>(
     input: AccountSendVideoInput<Target>,
-  ): Promise<MessageIn<Target>>;
+  ): Promise<ActionOutcome<MessageIn<Target>>>;
   /**
    * Sends a voice note, with an optional caption, as `sendMessage` sends text. Its duration is
    * the one the input defines; the emulator never reads the content.
    */
   sendVoice<Target extends MessageTarget>(
     input: AccountSendVoiceInput<Target>,
-  ): Promise<MessageIn<Target>>;
+  ): Promise<ActionOutcome<MessageIn<Target>>>;
   /**
    * Sends an audio file, such as a music track, with an optional caption, as `sendMessage` sends
    * text. Its duration, performer and title are those the input defines; the emulator never reads
@@ -1958,14 +1963,14 @@ export interface VirtualAccountClient extends VirtualAccountProfile {
    */
   sendAudio<Target extends MessageTarget>(
     input: AccountSendAudioInput<Target>,
-  ): Promise<MessageIn<Target>>;
+  ): Promise<ActionOutcome<MessageIn<Target>>>;
   /**
    * Sends a contact the account writes, as `sendMessage` sends text. Telegram cleans its texts,
    * as it cleans names, and shows no user for it.
    */
   sendContact<Target extends MessageTarget>(
     input: AccountSendContactInput<Target>,
-  ): Promise<MessageIn<Target>>;
+  ): Promise<ActionOutcome<MessageIn<Target>>>;
   /**
    * Shares the account's own contact, as `sendMessage` sends text: its phone number and profile
    * name, with the account as the contact's user. Fails for an account created without a phone
@@ -1973,14 +1978,14 @@ export interface VirtualAccountClient extends VirtualAccountProfile {
    */
   shareOwnContact<Target extends MessageTarget>(
     input: AccountShareOwnContactInput<Target>,
-  ): Promise<MessageIn<Target>>;
+  ): Promise<ActionOutcome<MessageIn<Target>>>;
   /**
    * Shares a static location, as `sendMessage` sends text. Telegram keeps its accuracy in whole
    * meters, rounded up.
    */
   sendLocation<Target extends MessageTarget>(
     input: AccountSendLocationInput<Target>,
-  ): Promise<MessageIn<Target>>;
+  ): Promise<ActionOutcome<MessageIn<Target>>>;
   /**
    * Creates a poll that this account owns, as `sendMessage` sends text; a supergroup needs the
    * `can_send_polls` permission. Its question and options are checked as Telegram checks them.
@@ -1989,7 +1994,7 @@ export interface VirtualAccountClient extends VirtualAccountProfile {
    */
   sendPoll<Target extends MessageTarget>(
     input: AccountSendPollInput<Target>,
-  ): Promise<MessageIn<Target>>;
+  ): Promise<ActionOutcome<MessageIn<Target>>>;
   /**
    * Sends photos and videos, documents, or audio files, as an album, as `sendPhoto`, `sendVideo`,
    * `sendDocument` and `sendAudio` send one, and returns the album's messages in order, which share a
@@ -1998,7 +2003,7 @@ export interface VirtualAccountClient extends VirtualAccountProfile {
    */
   sendMediaGroup<Target extends MessageTarget>(
     input: AccountSendMediaGroupInput<Target>,
-  ): Promise<readonly MessageIn<Target>[]>;
+  ): Promise<ActionOutcome<readonly MessageIn<Target>[]>>;
   /**
    * Forwards a message of one of this account's chats to a chat it can write to, as the account's
    * message, which shows who first sent it. The chat's bots receive it as `sendMessage` describes.
@@ -2006,36 +2011,36 @@ export interface VirtualAccountClient extends VirtualAccountProfile {
    */
   forwardMessage<Target extends MessageTarget>(
     input: AccountForwardMessageInput<Target>,
-  ): Promise<MessageIn<Target>>;
+  ): Promise<ActionOutcome<MessageIn<Target>>>;
   /**
    * Edits the text of a message this account sent, which sends the chat's bots an
    * `edited_message` update as they received the message. Returns the edited message.
    */
   editMessage<Target extends MessageTarget>(
     input: AccountEditMessageInput<Target>,
-  ): Promise<MessageIn<Target>>;
+  ): Promise<ActionOutcome<MessageIn<Target>>>;
   /**
    * Edits the caption of a photo, document, video, voice note, or audio file this account sent, as
    * `editMessage` edits text.
    */
   editMessageCaption<Target extends MessageTarget>(
     input: AccountEditMessageCaptionInput<Target>,
-  ): Promise<MessageIn<Target>>;
+  ): Promise<ActionOutcome<MessageIn<Target>>>;
   /**
    * Deletes a message for every participant of the chat, as Telegram's clients do; the chat's
    * bots receive no update for it. In a private chat, the account deletes either participant's
    * messages. In a supergroup, it deletes its own messages, and any message as the owner or as an
    * administrator with the `can_delete_messages` right.
    */
-  deleteMessage(input: AccountDeleteMessageInput): Promise<void>;
+  deleteMessage(input: AccountDeleteMessageInput): Promise<ActionReceipt>;
   /** Creates a supergroup that this account owns. */
-  createSupergroup(input: CreateSupergroupInput): Promise<Supergroup>;
+  createSupergroup(input: CreateSupergroupInput): Promise<ActionOutcome<Supergroup>>;
   /**
    * Adds an account or a bot to a supergroup this account owns, which a `new_chat_members`
    * service message records. An added bot first receives a `my_chat_member` update. Adding a
    * removed member lifts its ban; adding a member again has no effect.
    */
-  addChatMember(input: AddChatMemberInput): Promise<void>;
+  addChatMember(input: AddChatMemberInput): Promise<ActionReceipt>;
   /**
    * Removes an account or a bot from a supergroup this account owns, which bans it until it is
    * added again, and which a `left_chat_member` service message records. A removed bot receives a
@@ -2043,12 +2048,12 @@ export interface VirtualAccountClient extends VirtualAccountProfile {
    * requests there fail with `403 Forbidden: bot was kicked from the supergroup chat`. Removing a
    * non-member has no effect.
    */
-  removeChatMember(input: RemoveChatMemberInput): Promise<void>;
+  removeChatMember(input: RemoveChatMemberInput): Promise<ActionReceipt>;
   /**
    * Leaves a supergroup, which a `left_chat_member` service message records. The owner cannot
    * leave. Leaving a supergroup this account is not a member of has no effect.
    */
-  leaveChat(input: LeaveChatInput): Promise<void>;
+  leaveChat(input: LeaveChatInput): Promise<ActionReceipt>;
   /**
    * Joins a public supergroup by itself, addressed by its chat ID, as Telegram's clients join one
    * they find by its username, which a `new_chat_members` service message from this account
@@ -2056,7 +2061,7 @@ export interface VirtualAccountClient extends VirtualAccountProfile {
    * Administrator bots receive a `chat_member` update. A private supergroup, or one that banned
    * this account, refuses it; joining a supergroup this account is a member of has no effect.
    */
-  joinChat(input: JoinChatInput): Promise<void>;
+  joinChat(input: JoinChatInput): Promise<ActionReceipt>;
   /**
    * Joins the supergroup an invite link leads to, which a `new_chat_members` service message from
    * this account records. Administrator bots receive a `chat_member` update with the link, whole
@@ -2066,7 +2071,7 @@ export interface VirtualAccountClient extends VirtualAccountProfile {
    * `can_invite_users` receive as a `chat_join_request` update; this account stays outside until
    * one of them approves the request, and using such a link again while it is pending fails.
    */
-  joinChatByInviteLink(input: JoinChatByInviteLinkInput): Promise<ChatJoin>;
+  joinChatByInviteLink(input: JoinChatByInviteLinkInput): Promise<ActionOutcome<ChatJoin>>;
   /**
    * Returns the invite links of a supergroup this account owns, in the order bots created them,
    * with how many members joined through each and still are.
@@ -2089,12 +2094,12 @@ export interface VirtualAccountClient extends VirtualAccountProfile {
    * with an `EmulationClientError` whose `status` is `409` once the requester is a member, or
    * `404` once it has no pending request.
    */
-  approveChatJoinRequest(input: AccountChatJoinRequestDecisionInput): Promise<void>;
+  approveChatJoinRequest(input: AccountChatJoinRequestDecisionInput): Promise<ActionReceipt>;
   /**
    * Declines a pending request to join a supergroup, as `approveChatJoinRequest` decides it: the
    * requester stays outside, which no update reports, and may request again.
    */
-  declineChatJoinRequest(input: AccountChatJoinRequestDecisionInput): Promise<void>;
+  declineChatJoinRequest(input: AccountChatJoinRequestDecisionInput): Promise<ActionReceipt>;
   /**
    * Promotes a member of a supergroup to administrator with the given rights, which must include
    * at least one, or replaces an administrator's rights. This account must own the supergroup, or
@@ -2105,7 +2110,7 @@ export interface VirtualAccountClient extends VirtualAccountProfile {
    * `can_delete_messages` lets it delete any message there, and `can_restrict_members` lets it
    * ban, unban, and restrict members. A refused promotion changes nothing.
    */
-  promoteChatMember(input: PromoteChatMemberInput): Promise<void>;
+  promoteChatMember(input: PromoteChatMemberInput): Promise<ActionReceipt>;
   /**
    * Returns the owner, then the administrators in the order they joined, of a supergroup this
    * account is a member of, with who promoted each administrator and whether this account may edit
@@ -2119,7 +2124,7 @@ export interface VirtualAccountClient extends VirtualAccountProfile {
    * `can_be_edited` shows. A demoted bot receives a `my_chat_member` update from this account
    * showing it as `member`. Demoting a member that is no administrator has no effect.
    */
-  demoteChatMember(input: DemoteChatMemberInput): Promise<void>;
+  demoteChatMember(input: DemoteChatMemberInput): Promise<ActionReceipt>;
   /**
    * Restricts what an account or a bot may do in a supergroup, member or not, as
    * `restrictChatMember` does for an administrator bot. This account must own the supergroup or
@@ -2132,56 +2137,56 @@ export interface VirtualAccountClient extends VirtualAccountProfile {
    * withhold fail with Telegram's errors, such as `Bad Request: not enough rights to send photos
    * to the chat`.
    */
-  restrictChatMember(input: RestrictChatMemberInput): Promise<void>;
+  restrictChatMember(input: RestrictChatMemberInput): Promise<ActionReceipt>;
   /**
    * Lifts the restriction of a user of a supergroup, which leaves a member a plain member; this
    * account must own the supergroup or hold `can_restrict_members`. Lifting no restriction has no
    * effect.
    */
-  liftChatMemberRestriction(input: LiftChatMemberRestrictionInput): Promise<void>;
+  liftChatMemberRestriction(input: LiftChatMemberRestrictionInput): Promise<ActionReceipt>;
   /**
    * Changes what the members of a supergroup may do by default, as `setChatPermissions` does for
    * an administrator bot; this account must own the supergroup or hold `can_restrict_members`.
    * Members, bots included, are then refused what the defaults withhold, while the owner and
    * administrators are exempt. Bots see the defaults as `permissions` in `getChat`.
    */
-  setChatPermissions(input: SetChatPermissionsInput): Promise<void>;
+  setChatPermissions(input: SetChatPermissionsInput): Promise<ActionReceipt>;
   /**
    * Sets this account's own custom title in a supergroup it owns, or an administrator's, which
    * bots see as `custom_title` in its chat member. An administrator keeps its title when its
    * rights change, and loses it when demoted.
    */
-  setCustomTitle(input: SetCustomTitleInput): Promise<void>;
+  setCustomTitle(input: SetCustomTitleInput): Promise<ActionReceipt>;
   /**
    * Protects all content of a supergroup this account owns from forwarding and saving, as
    * Telegram's "Restrict saving content" setting does, or lifts that protection with
    * `hasProtectedContent: false`. Every message of the supergroup then shows
    * `has_protected_content`, and only bots can copy them.
    */
-  setContentProtection(input: SetContentProtectionInput): Promise<void>;
+  setContentProtection(input: SetContentProtectionInput): Promise<ActionReceipt>;
   /**
    * Changes the title of a supergroup this account is a member of, which Telegram cleans. Bots of
    * the supergroup receive a service message with `new_chat_title`; a title the supergroup has
    * changes nothing.
    */
-  changeSupergroupTitle(input: ChangeSupergroupTitleInput): Promise<void>;
+  changeSupergroupTitle(input: ChangeSupergroupTitleInput): Promise<ActionReceipt>;
   /**
    * Changes the description of a supergroup this account is a member of, which Telegram cleans;
    * no service message records it. Telegram refuses the description the supergroup has.
    */
-  changeSupergroupDescription(input: ChangeSupergroupDescriptionInput): Promise<void>;
+  changeSupergroupDescription(input: ChangeSupergroupDescriptionInput): Promise<ActionReceipt>;
   /**
    * Blocks a bot, which Telegram calls stopping it. The bot receives a `my_chat_member` update
    * showing it as `kicked`, its messages to this account fail with `403 Forbidden: bot was
    * blocked by the user`, and this account cannot write to it until it unblocks the bot. Blocking
    * a blocked bot has no effect.
    */
-  blockBot(input: BotBlockInput): Promise<void>;
+  blockBot(input: BotBlockInput): Promise<ActionReceipt>;
   /**
    * Unblocks a bot, which receives a `my_chat_member` update showing it as a `member` again.
    * Unblocking a bot that is not blocked has no effect.
    */
-  unblockBot(input: BotBlockInput): Promise<void>;
+  unblockBot(input: BotBlockInput): Promise<ActionReceipt>;
   /**
    * Returns the messages of a private conversation or of a supergroup this account is a member
    * of, whoever wrote them, oldest first.
@@ -2199,12 +2204,12 @@ export interface VirtualAccountClient extends VirtualAccountProfile {
    * pinned message fails, as Telegram refuses it. The pin is recorded as this account's service
    * message with `pinned_message`, which the chat's bots receive.
    */
-  pinMessage(input: AccountPinMessageInput): Promise<void>;
+  pinMessage(input: AccountPinMessageInput): Promise<ActionReceipt>;
   /**
    * Unpins a pinned message, with the permission `pinMessage` needs; no service message records
    * it. Unpinning a message that is not pinned fails, as Telegram refuses it.
    */
-  unpinMessage(input: AccountPinMessageInput): Promise<void>;
+  unpinMessage(input: AccountPinMessageInput): Promise<ActionReceipt>;
   /**
    * Returns the pinned messages of a private conversation or of a supergroup this account is a
    * member of, newest first by sending date. Deleting a message unpins it.
@@ -2226,7 +2231,7 @@ export interface VirtualAccountClient extends VirtualAccountProfile {
    * on every member's client, and other bots' actions stay. The bot is not told, and its next
    * action shows again. Fails when the bot shows no action.
    */
-  expireChatAction(input: ExpireChatActionInput): Promise<void>;
+  expireChatAction(input: ExpireChatActionInput): Promise<ActionReceipt>;
   /**
    * Returns the draft of a message the bot is generating, which this account's client shows in
    * its private chat with the bot, or `null` for none. A `sendMessageDraft` with the shown draft's
@@ -2241,7 +2246,7 @@ export interface VirtualAccountClient extends VirtualAccountProfile {
    * `keep_on_stop` after a short time. The bot is not told, and a later write shows a draft again.
    * With `draft_id`, fails unless the client shows that draft; fails when it shows none.
    */
-  expireMessageDraft(input: ShownMessageDraftInput): Promise<void>;
+  expireMessageDraft(input: ShownMessageDraftInput): Promise<ActionReceipt>;
   /**
    * Presses the Stop button of the draft this account's client shows in its private chat with a
    * bot, which sends the bot a `stopped_message_generation` update naming the draft. The draft
@@ -2250,7 +2255,7 @@ export interface VirtualAccountClient extends VirtualAccountProfile {
    * write shows a draft again. With `draft_id`, fails unless the client shows that draft; fails
    * when it shows none, shows no Stop button, or was already stopped.
    */
-  stopMessageDraft(input: ShownMessageDraftInput): Promise<void>;
+  stopMessageDraft(input: ShownMessageDraftInput): Promise<ActionReceipt>;
   /**
    * Returns the notifications this account's client shows for the messages other participants
    * sent to its private chat with a bot or to a supergroup it is a member of, oldest first. A
@@ -2262,13 +2267,13 @@ export interface VirtualAccountClient extends VirtualAccountProfile {
    * the bot a callback query. The bot answers asynchronously; read the answer with
    * `getCallbackQuery`.
    */
-  pressCallbackButton(input: PressCallbackButtonInput): Promise<CallbackQuery>;
+  pressCallbackButton(input: PressCallbackButtonInput): Promise<ActionOutcome<CallbackQuery>>;
   /**
    * Presses the callback button a selector picks on a message as the account's history shows it
    * now, as `pressCallbackButton` presses it by its callback data. Throws a `ButtonSelectionError`
    * listing the candidates unless exactly one button matches and it is a callback button.
    */
-  pressButton(input: PressButtonInput): Promise<CallbackQuery>;
+  pressButton(input: PressButtonInput): Promise<ActionOutcome<CallbackQuery>>;
   /** Returns a callback query this account created, with the bot's answer once given. */
   getCallbackQuery(callbackQueryId: string): Promise<CallbackQuery>;
   /**
@@ -2279,7 +2284,7 @@ export interface VirtualAccountClient extends VirtualAccountProfile {
    */
   answerPoll<Target extends MessageTarget>(
     input: AnswerPollInput<Target>,
-  ): Promise<AccountPollAnswer<Target>>;
+  ): Promise<ActionOutcome<AccountPollAnswer<Target>>>;
   /** Returns this account's answer to the poll a message shows, with the message. */
   getPollAnswer<Target extends MessageTarget>(
     input: AccountPollMessageInput<Target>,
@@ -2288,7 +2293,7 @@ export interface VirtualAccountClient extends VirtualAccountProfile {
    * Retracts this account's answer to the poll a message shows, which only a poll that allows
    * revoting accepts. Retracting without an answer changes nothing.
    */
-  retractPollAnswer(input: AccountPollMessageInput): Promise<void>;
+  retractPollAnswer(input: AccountPollMessageInput): Promise<ActionReceipt>;
   /**
    * Stops the poll this account sent in a message, which then keeps its votes and accepts no more
    * answers, and returns the message. Fails for a poll another account or bot sent, for a forward
@@ -2296,7 +2301,7 @@ export interface VirtualAccountClient extends VirtualAccountProfile {
    */
   stopPoll<Target extends MessageTarget>(
     input: AccountPollMessageInput<Target>,
-  ): Promise<MessageIn<Target>>;
+  ): Promise<ActionOutcome<MessageIn<Target>>>;
   /**
    * Reacts to a content message of a supergroup, or changes this account's reaction, with one
    * ordinary emoji. The supergroup's administrator bots whose `allowed_updates` include
@@ -2304,7 +2309,7 @@ export interface VirtualAccountClient extends VirtualAccountProfile {
    * Choosing the reaction already chosen changes nothing. A message of an album takes the reaction
    * on the album's first message that is not deleted.
    */
-  setMessageReaction(input: SetMessageReactionInput): Promise<MessageReactions>;
+  setMessageReaction(input: SetMessageReactionInput): Promise<ActionOutcome<MessageReactions>>;
   /** Returns the reactions to a supergroup message, the bots' included. */
   getMessageReactions(input: AccountReactionMessageInput): Promise<MessageReactions>;
   /**
@@ -2312,13 +2317,13 @@ export interface VirtualAccountClient extends VirtualAccountProfile {
    * subscribe to `message_reaction` observe as for a change. Removing without a reaction changes
    * nothing.
    */
-  removeMessageReaction(input: AccountReactionMessageInput): Promise<void>;
+  removeMessageReaction(input: AccountReactionMessageInput): Promise<ActionReceipt>;
   /**
    * Types an inline query for a bot with inline mode turned on, in a chat this account can write
    * to, which sends the bot an `inline_query` update. The bot answers asynchronously; read the
    * answer with `getInlineQuery`.
    */
-  sendInlineQuery(input: SendInlineQueryInput): Promise<InlineQuery>;
+  sendInlineQuery(input: SendInlineQueryInput): Promise<ActionOutcome<InlineQuery>>;
   /** Returns an inline query this account sent, with the bot's answer once given. */
   getInlineQuery(inlineQueryId: string): Promise<InlineQuery>;
   /**
@@ -2333,7 +2338,7 @@ export interface VirtualAccountClient extends VirtualAccountProfile {
    */
   chooseInlineQueryResult(
     input: ChooseInlineQueryResultInput,
-  ): Promise<PrivateMessage | SupergroupMessage>;
+  ): Promise<ActionOutcome<PrivateMessage | SupergroupMessage>>;
   /**
    * Returns the commands this account's client suggests in its private chat with a bot: the
    * bot's list for the chat, for all private chats, or by default, in the account's language if
@@ -2381,7 +2386,7 @@ export interface VirtualAccountClient extends VirtualAccountProfile {
    */
   pressReplyKeyboardButton<Target extends MessageTarget>(
     input: PressReplyKeyboardButtonInput<Target>,
-  ): Promise<MessageIn<Target>>;
+  ): Promise<ActionOutcome<MessageIn<Target>>>;
 }
 
 export interface AccountChatActionsInput {
@@ -2471,6 +2476,25 @@ export type BotActivityEntry =
 
 /** A position in the bot activity log, or an entry, which stands at its position. */
 export type BotActivityPosition = number | { readonly position: number };
+
+/**
+ * The observation watermark a successful control action answers with: the session the action
+ * acted in, and the position of that session's bot activity log where the action executed, before
+ * it changed anything. A wait `after` a receipt never misses an entry the action caused. The
+ * receipt is only a lower bound: activity the action did not cause, such as another bot's calls,
+ * may follow it too.
+ */
+export interface ActionReceipt {
+  readonly sessionId: string;
+  /** The head of the session's log before the action; 0 for a session it created. */
+  readonly activityPosition: number;
+}
+
+/** What an action that answers with a value resolves to: the value, and the action's receipt. */
+export interface ActionOutcome<Result> {
+  readonly result: Result;
+  readonly receipt: ActionReceipt;
+}
 
 /**
  * Which entries to look for, which the server applies; an entry must satisfy every criterion
@@ -2570,8 +2594,11 @@ export interface BotActivityLogOptions {
 }
 
 export interface WaitForBotActivityOptions {
-  /** Only entries after this position match. */
-  readonly after: BotActivityPosition;
+  /**
+   * Only entries after this position match. A receipt stands for its position, and must be of the
+   * log's session.
+   */
+  readonly after: BotActivityPosition | ActionReceipt;
   /** How long to wait for a matching entry; defaults to the log's timeout. */
   readonly timeoutMs?: number;
   /**
@@ -2582,8 +2609,11 @@ export interface WaitForBotActivityOptions {
 }
 
 export interface BotActivityRange {
-  /** Only entries after this position are checked. */
-  readonly after: BotActivityPosition;
+  /**
+   * Only entries after this position are checked. A receipt stands for its position, and must be
+   * of the log's session.
+   */
+  readonly after: BotActivityPosition | ActionReceipt;
   /** Only entries before this position are checked; it must already be recorded. */
   readonly before: BotActivityPosition;
 }
@@ -2623,8 +2653,11 @@ export interface BotActivityLog {
     filter: BotActivityFilterFor<Criteria>,
     range: BotActivityRange,
   ): Promise<void>;
-  /** A cursor that starts after `after` and moves past each entry it finds. */
-  cursor(options: { readonly after: BotActivityPosition }): BotActivityCursor;
+  /**
+   * A cursor that starts after `after` and moves past each entry it finds. A receipt stands for
+   * its position, and must be of the log's session.
+   */
+  cursor(options: { readonly after: BotActivityPosition | ActionReceipt }): BotActivityCursor;
 }
 
 /** A position that moves forward past each entry it finds; other cursors are unaffected. */

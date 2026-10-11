@@ -190,6 +190,11 @@ match: a `BotApiCallEntry` when they name a `method`, an `UpdateDeliveredEntry` 
 TypeScript infers the narrowed type from a single filter only.
 
 - `position()` returns the head position.
+- Every action of the client resolves to `{ result, receipt }`, and one without a result, such as
+  deleting a message or adding a member, to its receipt alone. The client reads the receipt from
+  [its headers](#action-receipts) as an `ActionReceipt`, `{ sessionId, activityPosition }`, and
+  fails with `EmulationClientError` for a success whose headers carry no well-formed receipt. Reads
+  carry none.
 - `waitFor(filter, { after })` returns the first matching entry after a position. It holds one
   request until an entry is recorded, and sends another only when `where` rejects an entry. It fails
   with `BotActivityTimeoutError` after 5 seconds by default. The view's `timeoutMs` option and each
@@ -222,14 +227,19 @@ abandons its read, checks no further entry, and rejects with the signal's reason
 and a cursor stays where it was. Other failed requests, and answers that break the read contract,
 still reject with `EmulationClientError`.
 
-Every `after` and `before` takes a position or an entry. `latest(...)` picks the latest of several.
-Positions are values, so independent waits can start from the same position. The waits below assert
-that B and C both follow A, in whichever order they come, and that D follows both:
+Every `after` and `before` takes a position or an entry, and every `after` also takes a receipt,
+which stands for its position. A receipt names its session: `waitFor`, `assertNone` and `cursor`
+refuse with a `TypeError`, before reading, a receipt of a session other than the view's.
+`latest(...)` picks the latest of several positions or entries. Positions are values, so independent
+waits can start from the same position. The waits below assert that B and C both follow A, in
+whichever order they come, and that D follows both:
 
 ```ts
 const activity = session.botActivity({ bot_id: bot.id });
-const start = await activity.position();
-await account.sendMessage({ to: { type: 'private', botId: bot.id }, text: '/pair' });
+const { receipt: start } = await account.sendMessage({
+  to: { type: 'private', botId: bot.id },
+  text: '/pair',
+});
 
 const reply = (text: string) =>
   ({ method: 'sendMessage', chat_id: account.id, parameters: { text } }) as const;
@@ -245,9 +255,9 @@ A filter that names a `kind`, or criteria only calls or only updates have, retur
 narrowed entry type, so `reply('A')` finds a `BotApiCallEntry` whose `answer` can be read directly.
 
 An account's action returns before the bot handles it, so the chat's latest message may still be the
-account's own. A test that reads the bot's reply takes the position before acting, waits for the
-reply's successful call with criteria that only that reply meets, and then selects the message by
-what identifies it, such as the message it replies to. The
+account's own. A test that reads the bot's reply waits after its action's receipt for the reply's
+successful call with criteria that only that reply meets, and then selects the message by what
+identifies it, such as the message it replies to. The
 [client guide](../clients/typescript/media-and-files.md#replying-to-a-photo-with-a-document) does
 this for a photo and the document the bot replies with.
 

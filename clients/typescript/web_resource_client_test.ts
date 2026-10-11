@@ -6,27 +6,29 @@ import { assertEquals, assertRejects } from '@std/assert';
 
 import { registerWebResourceContract } from '../../control_contracts/web_resources.ts';
 import { createTestInProcessEmulator } from '../../tests/support/emulation_api.ts';
-import { callJsonOperation, type ControlOperationTransport } from './control_operation_caller.ts';
+import { callJsonAction, type ControlOperationTransport } from './control_operation_caller.ts';
 import { EmulationClientError } from './emulation_client_error.ts';
+import { TEST_ACTION_RECEIPT_HEADERS } from './test_support/action_receipt_headers.ts';
 
 function transportAnswering(status: number, body: unknown): ControlOperationTransport {
   return {
     serverRoot: new URL('http://emulator.example/'),
-    fetch: () => Promise.resolve(Response.json(body, { status })),
+    fetch: () =>
+      Promise.resolve(Response.json(body, { status, headers: TEST_ACTION_RECEIPT_HEADERS })),
   };
 }
 
 Deno.test('The client sends a web resource content as base64 and reads the resource', async () => {
   await using emulator = createTestInProcessEmulator();
-  const session = await emulator.client.createSession();
+  const { result: session } = await emulator.client.createSession();
 
   const resources = [
-    await session.registerWebResource({
+    (await session.registerWebResource({
       url: 'https://CDN.example.com/a.txt',
       content_type: 'text/plain',
       content: new TextEncoder().encode('notes'),
-    }),
-    await session.registerWebResource({ url: 'cdn.example.com/b', status: 404 }),
+    })).result,
+    (await session.registerWebResource({ url: 'cdn.example.com/b', status: 404 })).result,
   ];
 
   assertEquals(
@@ -45,11 +47,11 @@ Deno.test('The client sends a web resource content as base64 and reads the resou
 });
 
 Deno.test('A web resource that breaks its contract is refused', async () => {
-  const register = (resource: Record<string, unknown>) =>
-    callJsonOperation(transportAnswering(201, resource), registerWebResourceContract, {
+  const register = async (resource: Record<string, unknown>) =>
+    (await callJsonAction(transportAnswering(201, resource), registerWebResourceContract, {
       params: { sessionId: 'session' },
       body: { url: 'https://cdn.example.com/a.txt' },
-    });
+    })).result;
   const resource = { url: 'https://cdn.example.com/a.txt', status: 200, content_length: 0 };
 
   for (

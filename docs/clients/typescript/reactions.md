@@ -30,7 +30,7 @@ Deno.test('the bot acknowledges a thumbs-up with an OK hand', () =>
       bot.reaction('👍', (ctx) => ctx.react('👌'));
     },
   }, async ({ botProfile, account, activity }) => {
-    const supergroup = await account.createSupergroup({ title: 'Team' });
+    const { result: supergroup } = await account.createSupergroup({ title: 'Team' });
     const groupChat = { type: 'supergroup', chatId: supergroup.id } as const;
     await account.addChatMember({ chat: groupChat, userId: botProfile.id });
     await account.promoteChatMember({
@@ -38,7 +38,7 @@ Deno.test('the bot acknowledges a thumbs-up with an OK hand', () =>
       userId: botProfile.id,
       rights: { can_delete_messages: true },
     });
-    const proposal = await account.sendMessage({ to: groupChat, text: 'Ship it?' });
+    const { result: proposal } = await account.sendMessage({ to: groupChat, text: 'Ship it?' });
 
     const beforeReaction = await activity.position();
     await account.setMessageReaction({
@@ -83,7 +83,7 @@ Deno.test('the bot observes a reaction being changed and removed', () =>
     allowedUpdates: ['message', 'message_reaction'],
     handlers: () => {},
   }, async ({ botProfile, account, activity }) => {
-    const supergroup = await account.createSupergroup({ title: 'Team' });
+    const { result: supergroup } = await account.createSupergroup({ title: 'Team' });
     const groupChat = { type: 'supergroup', chatId: supergroup.id } as const;
     await account.addChatMember({ chat: groupChat, userId: botProfile.id });
     await account.promoteChatMember({
@@ -91,7 +91,7 @@ Deno.test('the bot observes a reaction being changed and removed', () =>
       userId: botProfile.id,
       rights: { can_delete_messages: true },
     });
-    const message = await account.sendMessage({ to: groupChat, text: 'Lunch at noon' });
+    const { result: message } = await account.sendMessage({ to: groupChat, text: 'Lunch at noon' });
     const target = { chat: groupChat, message_id: message.message_id };
 
     const beforeReactions = await activity.position();

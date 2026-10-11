@@ -41,7 +41,7 @@ Deno.test('the bot greets the name the account gives in reply to its question', 
     },
   }, async ({ account, botProfile, privateChat, activity }) => {
     const beforeStart = await activity.position();
-    const start = await account.sendMessage({ to: privateChat, text: '/start' });
+    const { result: start } = await account.sendMessage({ to: privateChat, text: '/start' });
     await activity.waitFor({
       method: 'sendMessage',
       chat_id: account.id,
@@ -55,7 +55,7 @@ Deno.test('the bot greets the name the account gives in reply to its question', 
     assertEquals(question.text, 'What is your name?');
 
     const beforeAnswer = await activity.position();
-    const answer = await account.sendMessage({
+    const { result: answer } = await account.sendMessage({
       to: privateChat,
       text: 'Ada',
       reply_to_message_id: question.message_id,
@@ -102,7 +102,7 @@ Deno.test('the bot repeats the bold part of a message in bold', () =>
     },
   }, async ({ account, botProfile, privateChat, activity }) => {
     const beforeSend = await activity.position();
-    const request = await account.sendMessage({
+    const { result: request } = await account.sendMessage({
       to: privateChat,
       text: 'Buy milk and eggs',
       entities: [{ type: 'bold', offset: 4, length: 4 }],
@@ -146,10 +146,10 @@ Deno.test('the bot notices when the account edits its message', () =>
       });
     },
   }, async ({ account, botProfile, privateChat, activity }) => {
-    const original = await account.sendMessage({ to: privateChat, text: 'Hello' });
+    const { result: original } = await account.sendMessage({ to: privateChat, text: 'Hello' });
 
     const beforeEdit = await activity.position();
-    const edited = await account.editMessage({
+    const { result: edited } = await account.editMessage({
       chat: privateChat,
       message_id: original.message_id,
       text: 'Hello again!',
@@ -194,10 +194,14 @@ Deno.test('the bot notices when the account edits a caption', () =>
         }));
     },
   }, async ({ account, privateChat, activity }) => {
-    const photo = await account.sendPhoto({ to: privateChat, photo: TINY_GIF, caption: 'Draft' });
+    const { result: photo } = await account.sendPhoto({
+      to: privateChat,
+      photo: TINY_GIF,
+      caption: 'Draft',
+    });
 
     const beforeEdit = await activity.position();
-    const edited = await account.editMessageCaption({
+    const { result: edited } = await account.editMessageCaption({
       chat: privateChat,
       message_id: photo.message_id,
       caption: 'Final',
@@ -237,7 +241,7 @@ Deno.test('deleting a message sends the bot no update', () =>
     },
   }, async ({ account, privateChat, activity }) => {
     const beforeTypo = await activity.position();
-    const typo = await account.sendMessage({ to: privateChat, text: 'Helo' });
+    const { result: typo } = await account.sendMessage({ to: privateChat, text: 'Helo' });
     const typoReply = await activity.waitFor({
       method: 'sendMessage',
       chat_id: account.id,
@@ -249,7 +253,7 @@ Deno.test('deleting a message sends the bot no update', () =>
     const history = await account.getMessages({ chat: privateChat });
     assertEquals(history.some(({ message_id }) => message_id === typo.message_id), false);
 
-    const correction = await account.sendMessage({ to: privateChat, text: 'Hello' });
+    const { result: correction } = await account.sendMessage({ to: privateChat, text: 'Hello' });
     const correctionDelivery = await activity.waitFor({
       kind: 'update_delivered',
       chat_id: account.id,
@@ -288,7 +292,7 @@ Deno.test('the bot reports progress by editing its status message', () =>
     },
   }, async ({ account, privateChat, activity }) => {
     const beforeCommand = await activity.position();
-    const command = await account.sendMessage({ to: privateChat, text: '/work' });
+    const { result: command } = await account.sendMessage({ to: privateChat, text: '/work' });
     const statusCall = await activity.waitFor({
       method: 'sendMessage',
       chat_id: account.id,
@@ -352,7 +356,7 @@ Deno.test('the bot names the origin of forwarded messages', () =>
     },
   }, async ({ account, botProfile, privateChat, activity }) => {
     const beforeTip = await activity.position();
-    const command = await account.sendMessage({ to: privateChat, text: '/tip' });
+    const { result: command } = await account.sendMessage({ to: privateChat, text: '/tip' });
     await activity.waitFor({
       method: 'sendMessage',
       chat_id: account.id,
@@ -367,14 +371,14 @@ Deno.test('the bot names the origin of forwarded messages', () =>
     assertEquals(tip.text, 'Drink water.');
 
     const beforeForwards = await activity.position();
-    const forwardedTip = await account.forwardMessage({
+    const { result: forwardedTip } = await account.forwardMessage({
       from: privateChat,
       message_id: tip.message_id,
       to: privateChat,
     });
     assertEquals(forwardedTip.forward_origin?.type, 'user');
-    const note = await account.sendMessage({ to: privateChat, text: 'Meet at noon' });
-    const forwardedNote = await account.forwardMessage({
+    const { result: note } = await account.sendMessage({ to: privateChat, text: 'Meet at noon' });
+    const { result: forwardedNote } = await account.forwardMessage({
       from: privateChat,
       message_id: note.message_id,
       to: privateChat,
@@ -426,7 +430,7 @@ Deno.test('the bot acknowledges a pinned message', () =>
       });
     },
   }, async ({ account, privateChat, activity }) => {
-    const reminder = await account.sendMessage({ to: privateChat, text: 'Buy milk' });
+    const { result: reminder } = await account.sendMessage({ to: privateChat, text: 'Buy milk' });
 
     const beforePin = await activity.position();
     await account.pinMessage({ chat: privateChat, message_id: reminder.message_id });
@@ -465,10 +469,10 @@ Deno.test('the bot acknowledges a pin in a supergroup', () =>
       bot.on('message:pinned_message', (ctx) => ctx.reply('Pin noted'));
     },
   }, async ({ account, botProfile, activity }) => {
-    const supergroup = await account.createSupergroup({ title: 'Team' });
+    const { result: supergroup } = await account.createSupergroup({ title: 'Team' });
     const teamChat = { type: 'supergroup', chatId: supergroup.id } as const;
     await account.addChatMember({ chat: teamChat, userId: botProfile.id });
-    const agenda = await account.sendMessage({ to: teamChat, text: 'Agenda: release' });
+    const { result: agenda } = await account.sendMessage({ to: teamChat, text: 'Agenda: release' });
 
     const beforePin = await activity.position();
     await account.pinMessage({ chat: teamChat, message_id: agenda.message_id });
@@ -517,7 +521,7 @@ Deno.test('a blocked bot cannot message the account until it is unblocked', () =
       }) as const;
 
     const beforeStart = await activity.position();
-    const start = await account.sendMessage({ to: privateChat, text: '/start' });
+    const { result: start } = await account.sendMessage({ to: privateChat, text: '/start' });
     await activity.waitFor({
       method: 'sendMessage',
       chat_id: account.id,
@@ -578,7 +582,7 @@ Deno.test('the bot sends its footnote silently', () =>
     },
   }, async ({ account, botProfile, privateChat, activity }) => {
     const beforeCommand = await activity.position();
-    const command = await account.sendMessage({ to: privateChat, text: '/news' });
+    const { result: command } = await account.sendMessage({ to: privateChat, text: '/news' });
     await activity.waitFor({
       method: 'sendMessage',
       chat_id: account.id,
@@ -629,7 +633,7 @@ Deno.test('the account sees the bot typing until the action expires', async () =
   }, async ({ account, botProfile, privateChat, activity }) => {
     try {
       const beforeCommand = await activity.position();
-      const command = await account.sendMessage({ to: privateChat, text: '/report' });
+      const { result: command } = await account.sendMessage({ to: privateChat, text: '/report' });
       const typing = await activity.waitFor({
         method: 'sendChatAction',
         chat_id: account.id,

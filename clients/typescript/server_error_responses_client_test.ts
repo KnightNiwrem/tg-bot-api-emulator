@@ -13,9 +13,12 @@ const AUTO_RETRY_WAIT_TIMEOUT_MILLISECONDS = 10_000;
 Deno.test('A grammY bot with auto-retry recovers from a queued server error', async () => {
   await using emulator = createTestInProcessEmulator();
   const { client, fetch } = emulator;
-  const session = await client.createSession();
-  const { token, bot } = await session.createBot({ first_name: 'Shop', username: 'shop_bot' });
-  const { account } = await session.createAccount({ first_name: 'Ada' });
+  const { result: session } = await client.createSession();
+  const { result: { token, bot } } = await session.createBot({
+    first_name: 'Shop',
+    username: 'shop_bot',
+  });
+  const { result: { account } } = await session.createAccount({ first_name: 'Ada' });
   const grammyBot = new Bot(token, { client: { apiRoot: session.botApiRoot, fetch } });
   grammyBot.api.config.use(autoRetry({ maxRetryAttempts: 2 }));
   grammyBot.command('start', (context) => context.reply('Welcome!'));
@@ -25,7 +28,7 @@ Deno.test('A grammY bot with auto-retry recovers from a queued server error', as
 
   try {
     await Promise.race([pollingStarted.promise, polling]);
-    const queued = await session.queueServerErrorResponses({
+    const { result: queued } = await session.queueServerErrorResponses({
       bot_id: bot.id,
       method: 'sendMessage',
       error_code: 500,
@@ -68,9 +71,12 @@ Deno.test('A grammY bot with auto-retry recovers from a queued server error', as
 Deno.test('A caller that does not retry sees each queued server error once', async () => {
   await using emulator = createTestInProcessEmulator();
   const { client, fetch } = emulator;
-  const session = await client.createSession();
-  const { token, bot } = await session.createBot({ first_name: 'Shop', username: 'shop_bot' });
-  const { account } = await session.createAccount({ first_name: 'Ada' });
+  const { result: session } = await client.createSession();
+  const { result: { token, bot } } = await session.createBot({
+    first_name: 'Shop',
+    username: 'shop_bot',
+  });
+  const { result: { account } } = await session.createAccount({ first_name: 'Ada' });
   await account.sendMessage({ to: { type: 'private', botId: bot.id }, text: '/start' });
   const grammyBot = new Bot(token, { client: { apiRoot: session.botApiRoot, fetch } });
 
@@ -94,17 +100,17 @@ Deno.test('A caller that does not retry sees each queued server error once', asy
 Deno.test('Server error queue controls reject what they cannot apply to', async () => {
   await using emulator = createTestInProcessEmulator();
   const { client } = emulator;
-  const session = await client.createSession();
-  const otherSession = await client.createSession();
-  const { bot } = await session.createBot({ first_name: 'Shop', username: 'shop_bot' });
-  const { account } = await session.createAccount({ first_name: 'Ada' });
-  const { bot: otherSessionBot } = await otherSession.createBot({
+  const { result: session } = await client.createSession();
+  const { result: otherSession } = await client.createSession();
+  const { result: { bot } } = await session.createBot({ first_name: 'Shop', username: 'shop_bot' });
+  const { result: { account } } = await session.createAccount({ first_name: 'Ada' });
+  const { result: { bot: otherSessionBot } } = await otherSession.createBot({
     first_name: 'Shop',
     username: 'shop_bot',
   });
 
   try {
-    const queued = await session.queueServerErrorResponses({
+    const { result: queued } = await session.queueServerErrorResponses({
       bot_id: bot.id,
       method: 'getMe',
       error_code: 503,

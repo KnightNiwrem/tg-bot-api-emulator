@@ -1,9 +1,16 @@
 import { z } from 'zod';
 
 import { isContentTypeInRange } from '../../http_grammar/media_type.ts';
+import { readActionReceipt } from './action_receipt.ts';
 import { EmulationClientError, EmulationControlError } from './emulation_client_error.ts';
 import { controlErrorBodySchema } from './schemas.ts';
-import type { ControlErrorBody, ControlRequestIssue, RequestDetails } from './types.ts';
+import type {
+  ActionOutcome,
+  ActionReceipt,
+  ControlErrorBody,
+  ControlRequestIssue,
+  RequestDetails,
+} from './types.ts';
 
 /**
  * A request that is abandoned once its signal aborts: unsent if it has already aborted, and
@@ -36,10 +43,40 @@ interface EmptyResponseRequest extends SerializableRequest {
   readonly expectedStatus: number;
 }
 
+/** Requests JSON, such as a read's, and returns the response's body once its contract accepts it. */
 export async function requestJson<Schema extends z.ZodType>(
   fetchImplementation: typeof globalThis.fetch,
   request: JsonRequest<Schema>,
 ): Promise<z.output<Schema>> {
+  const { body } = await receiveJson(fetchImplementation, request);
+  return body;
+}
+
+/**
+ * Requests an action whose success response is JSON, and returns the response's body as the
+ * action's result, with the action receipt its headers carry.
+ */
+export async function requestJsonAction<Schema extends z.ZodType>(
+  fetchImplementation: typeof globalThis.fetch,
+  request: JsonRequest<Schema>,
+): Promise<ActionOutcome<z.output<Schema>>> {
+  const { body, headers } = await receiveJson(fetchImplementation, request);
+  return { result: body, receipt: readResponseActionReceipt(headers, request) };
+}
+
+/** Requests an action whose success response has no content, and returns its action receipt. */
+export async function requestEmptyAction(
+  fetchImplementation: typeof globalThis.fetch,
+  request: EmptyResponseRequest,
+): Promise<ActionReceipt> {
+  const headers = await receiveEmptyResponse(fetchImplementation, request);
+  return readResponseActionReceipt(headers, request);
+}
+
+async function receiveJson<Schema extends z.ZodType>(
+  fetchImplementation: typeof globalThis.fetch,
+  request: JsonRequest<Schema>,
+): Promise<{ readonly body: z.output<Schema>; readonly headers: Headers }> {
   const response = await sendRequest(fetchImplementation, request);
   const responseBody = await readResponseBody(response, request);
   assertResponseStatus(response, responseBody, request);
@@ -65,7 +102,23 @@ export async function requestJson<Schema extends z.ZodType>(
     );
   }
 
-  return parsedResponse.data;
+  return { body: parsedResponse.data, headers: response.headers };
+}
+
+/**
+ * The action receipt of a successful action's response.
+ *
+ * @throws {EmulationClientError} when the response's headers carry no well-formed receipt.
+ */
+function readResponseActionReceipt(headers: Headers, request: RequestDetails): ActionReceipt {
+  const reading = readActionReceipt(headers);
+  if (!reading.found) {
+    throw new EmulationClientError(
+      `${formatRequest(request)} succeeded with ${reading.problem}`,
+      request,
+    );
+  }
+  return reading.receipt;
 }
 
 /**
@@ -103,17 +156,25 @@ export async function requestBytes(
   }
 }
 
+/** Requests something whose success response has no content, such as ending a session. */
 export async function requestEmptyResponse(
   fetchImplementation: typeof globalThis.fetch,
   request: EmptyResponseRequest,
 ): Promise<void> {
-  const response = await sendRequest(fetchImplementation, request);
-  if (response.status === request.expectedStatus) {
-    return;
-  }
+  await receiveEmptyResponse(fetchImplementation, request);
+}
 
-  const responseBody = await readResponseBody(response, request);
-  assertResponseStatus(response, responseBody, request);
+/** Sends a request whose success response has no content, and returns the response's headers. */
+async function receiveEmptyResponse(
+  fetchImplementation: typeof globalThis.fetch,
+  request: EmptyResponseRequest,
+): Promise<Headers> {
+  const response = await sendRequest(fetchImplementation, request);
+  if (response.status !== request.expectedStatus) {
+    const responseBody = await readResponseBody(response, request);
+    assertResponseStatus(response, responseBody, request);
+  }
+  return response.headers;
 }
 
 export function normalizeUrlRoot(value: string | URL, parameterName: string): URL {

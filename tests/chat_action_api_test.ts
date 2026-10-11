@@ -129,18 +129,18 @@ Deno.test("a test expires one bot's chat action in a supergroup and leaves the o
   await using fixture = await createChatActionFixture();
   const { session, fetch, bot, ada, callBot } = fixture;
   try {
-    const { bot: otherBot, token: otherBotToken } = await session.createBot({
+    const { result: { bot: otherBot, token: otherBotToken } } = await session.createBot({
       first_name: 'Other Bot',
       username: 'other_bot',
     });
     const callOtherBot = callBotWith(fetch, session, otherBotToken);
-    const created = await ada.createSupergroup({ title: 'Study group' });
+    const { result: created } = await ada.createSupergroup({ title: 'Study group' });
     const chat: SupergroupMessageTarget = { type: 'supergroup', chatId: created.id };
     await ada.addChatMember({ chat, userId: bot.id });
     await ada.addChatMember({ chat, userId: otherBot.id });
-    const { account: linus } = await session.createAccount({ first_name: 'Linus' });
+    const { result: { account: linus } } = await session.createAccount({ first_name: 'Linus' });
     await ada.addChatMember({ chat, userId: linus.id });
-    const { account: grace } = await session.createAccount({ first_name: 'Grace' });
+    const { result: { account: grace } } = await session.createAccount({ first_name: 'Grace' });
     const shown = () => ada.getChatActions({ chat });
 
     await callBot('sendChatAction', { chat_id: chat.chatId, action: 'typing' });
@@ -188,9 +188,9 @@ Deno.test('chat action expiry stays within its own chat, account and session', a
   const { session, bot, ada, privateChat, callBot } = fixture;
   await using other = await createChatActionFixture(api);
   try {
-    const { account: grace } = await session.createAccount({ first_name: 'Grace' });
+    const { result: { account: grace } } = await session.createAccount({ first_name: 'Grace' });
     await grace.sendMessage({ to: privateChat, text: '/start' });
-    const { bot: otherBot } = await session.createBot({
+    const { result: { bot: otherBot } } = await session.createBot({
       first_name: 'Other Bot',
       username: 'other_bot',
     });
@@ -230,7 +230,7 @@ Deno.test('the TypeScript client expires chat actions by the chat its input name
   await using fixture = await createChatActionFixture();
   const { session, bot, ada, privateChat, callBot } = fixture;
   try {
-    const created = await ada.createSupergroup({ title: 'Study group' });
+    const { result: created } = await ada.createSupergroup({ title: 'Study group' });
     const supergroup: SupergroupMessageTarget = { type: 'supergroup', chatId: created.id };
     await ada.addChatMember({ chat: supergroup, userId: bot.id });
     await callBot('sendChatAction', { chat_id: ada.id, action: 'typing' });
@@ -348,9 +348,12 @@ async function createChatActionFixture(
   await using disposalOnFailure = new AsyncDisposableStack();
   const api = sharedApi ?? disposalOnFailure.use(createTestInProcessEmulator());
   const { fetch } = api;
-  const session = await api.client.createSession();
-  const createdBot = await session.createBot({ first_name: 'Answer Bot', username: 'answer_bot' });
-  const { account: ada } = await session.createAccount({ first_name: 'Ada' });
+  const { result: session } = await api.client.createSession();
+  const { result: createdBot } = await session.createBot({
+    first_name: 'Answer Bot',
+    username: 'answer_bot',
+  });
+  const { result: { account: ada } } = await session.createAccount({ first_name: 'Ada' });
   const privateChat: PrivateMessageTarget = { type: 'private', botId: createdBot.bot.id };
   await ada.sendMessage({ to: privateChat, text: '/start' });
   const emulatorDisposal = disposalOnFailure.move();

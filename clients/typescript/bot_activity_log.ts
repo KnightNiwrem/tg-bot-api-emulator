@@ -3,6 +3,7 @@ import { BOT_ACTIVITY_KINDS } from './constants.ts';
 import { EmulationClientError } from './emulation_client_error.ts';
 import { type CheckedJsonPattern, checkJsonPattern } from './json_pattern.ts';
 import type {
+  ActionReceipt,
   BotActivityCriteria,
   BotActivityCursor,
   BotActivityEntry,
@@ -143,6 +144,8 @@ export interface BotActivityPage {
  * unread, rejects with one whose `cause` is the signal's reason.
  */
 export interface BotActivityPageReader {
+  /** The session whose log the reader reads, which the action receipts a log takes must name. */
+  readonly sessionId: string;
   readPage(request: BotActivityPageRequest, signal?: AbortSignal): Promise<BotActivityPage>;
 }
 
@@ -220,7 +223,7 @@ class PagedBotActivityLog implements BotActivityLog {
     validateTimeout(timeoutMs);
     const readFilter = acceptingAnyEntry(filter);
     const combinedFilter = combineFilters(this.#baseFilter, readFilter);
-    const afterPosition = toPositionNumber(after);
+    const afterPosition = this.#toAfterPosition(after);
     // A wait the caller has already cancelled reads nothing.
     signal?.throwIfAborted();
     const waitTime = new BotActivityWaitTime(timeoutMs, signal, this.#waitClock);
@@ -360,7 +363,7 @@ class PagedBotActivityLog implements BotActivityLog {
     { after, before }: BotActivityRange,
   ): Promise<void> {
     const combinedFilter = combineFilters(this.#baseFilter, acceptingAnyEntry(filter));
-    const afterPosition = toPositionNumber(after);
+    const afterPosition = this.#toAfterPosition(after);
     const beforePosition = toPositionNumber(before);
     const matchingEntries: BotActivityEntry[] = [];
     const range = {
@@ -382,8 +385,8 @@ class PagedBotActivityLog implements BotActivityLog {
     }
   }
 
-  cursor({ after }: { readonly after: BotActivityPosition }): BotActivityCursor {
-    let position = toPositionNumber(after);
+  cursor({ after }: { readonly after: BotActivityPosition | ActionReceipt }): BotActivityCursor {
+    let position = this.#toAfterPosition(after);
     const waitFor = this.waitFor.bind(this);
     return {
       get position() {
@@ -398,6 +401,26 @@ class PagedBotActivityLog implements BotActivityLog {
         return entry;
       },
     };
+  }
+
+  /**
+   * The position a search starts after: a position's own, or the position of a receipt of this
+   * log's session.
+   *
+   * @throws {TypeError} when the position is not a nonnegative integer, or the receipt is of
+   * another session, whose positions say nothing about this log.
+   */
+  #toAfterPosition(after: BotActivityPosition | ActionReceipt): number {
+    if (typeof after === 'number' || !('activityPosition' in after)) {
+      return toPositionNumber(after);
+    }
+    if (after.sessionId !== this.#pageReader.sessionId) {
+      throw new TypeError(
+        `The action receipt is of session ${after.sessionId}, ` +
+          `not of this bot activity log's session ${this.#pageReader.sessionId}`,
+      );
+    }
+    return toPositionNumber(after.activityPosition);
   }
 
   /** Reads the entries in a range that is already recorded, a page at a time, with `readPage`. */
