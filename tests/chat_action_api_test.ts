@@ -1,3 +1,5 @@
+import { assertEquals } from '@std/assert';
+import { assertEqualsInFieldOrder } from './support/field_order_assertion.ts';
 import { Bot } from 'https://cdn.jsdelivr.net/gh/grammyjs/grammY@^1.46.0/src/bot.ts';
 import { run } from '@grammyjs/runner/runner.ts';
 
@@ -41,7 +43,7 @@ Deno.test('a test expires the chat action an account sees, which the bot can sho
       recordedActions.push([entry.parameters.action, entry.answer.ok]);
     }
 
-    expectEqual(
+    assertEqualsInFieldOrder(
       [
         withoutAction,
         responses,
@@ -100,7 +102,7 @@ Deno.test('a chat action stays until the bot ends it or a test expires it', asyn
     const lateAction = await shown();
     const expiry = await expiryOutcome(ada, { chat: privateChat });
 
-    expectEqual(
+    assertEqualsInFieldOrder(
       [
         afterFailedSend,
         afterCancel,
@@ -158,7 +160,7 @@ Deno.test("a test expires one bot's chat action in a supergroup and leaves the o
     const repeated = await expiryOutcome(ada, { chat, botId: bot.id });
     await callBot('sendChatAction', { chat_id: chat.chatId, action: 'typing' });
 
-    expectEqual(
+    assertEquals(
       [bothActions, refused, afterRefusals, expiry, afterExpiry, repeated, await shown()],
       [
         [shownAction(otherBot.id, 'find_location'), shownAction(bot.id, 'choose_sticker')],
@@ -209,7 +211,7 @@ Deno.test('chat action expiry stays within its own chat, account and session', a
       )).status,
     ];
 
-    expectEqual(
+    assertEquals(
       [refused, malformed, await ada.getChatActions({ chat: privateChat })],
       [[404, 404, 404], [400, 400, 400, 404], [shownAction(bot.id, 'typing')]],
       "Expected expiry to reach only the account's own chat with the bot, in its session",
@@ -243,7 +245,7 @@ Deno.test('the TypeScript client expires chat actions by the chat its input name
     // @ts-expect-error A supergroup's expiry names the bot whose action expires.
     const supergroupWithoutBotId: ExpireChatActionInput = { chat: supergroup };
 
-    expectEqual(
+    assertEquals(
       [
         await rejection(privateWithBotId),
         await rejection(supergroupWithoutBotId),
@@ -289,7 +291,7 @@ Deno.test('a grammY bot types while a test inspects and expires the action', asy
       { after: typing },
     );
 
-    expectEqual(
+    assertEquals(
       [
         whileThinking,
         afterExpiry,
@@ -389,12 +391,4 @@ async function countPendingUpdates(callBot: BotApiCaller): Promise<number> {
 
 function shownAction(bot_id: number, action: ChatAction['action']): ChatAction {
   return { bot_id, action };
-}
-
-function expectEqual(actual: unknown, expected: unknown, message: string): void {
-  if (JSON.stringify(actual) !== JSON.stringify(expected)) {
-    throw new Error(
-      `${message}: expected ${JSON.stringify(expected)}, received ${JSON.stringify(actual)}`,
-    );
-  }
 }

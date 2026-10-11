@@ -1,3 +1,5 @@
+import { assertEquals } from '@std/assert';
+import { assertEqualsInFieldOrder } from './support/field_order_assertion.ts';
 import { Bot } from 'https://cdn.jsdelivr.net/gh/grammyjs/grammY@^1.46.0/src/bot.ts';
 import { Keyboard } from 'https://cdn.jsdelivr.net/gh/grammyjs/grammY@^1.46.0/src/convenience/keyboard.ts';
 import { webhookCallback } from 'https://cdn.jsdelivr.net/gh/grammyjs/grammY@^1.46.0/src/convenience/webhook.ts';
@@ -56,7 +58,7 @@ Deno.test('a grammY bot answers the dates its keyboard Web App sends', async () 
       text: 'Choose dates',
       web_app_data: data,
     });
-    expectEqual(
+    assertEqualsInFieldOrder(
       [submitted.web_app_data, submitted.from.id, submitted.chat.id],
       [{ button_text: 'Choose dates', data }, ada.id, ada.id],
       "Expected a service message of Ada's in her chat with the bot",
@@ -75,12 +77,12 @@ Deno.test('a grammY bot answers the dates its keyboard Web App sends', async () 
       user_id: ada.id,
       where: (entry) => entry.position < reply.position,
     }, { after: beforeSubmission });
-    expectEqual(
+    assertEquals(
       Object.keys(delivered.update).sort(),
       ['message', 'update_id'],
       'Expected the bot to receive the Web App data as a message update',
     );
-    expectEqual(
+    assertEqualsInFieldOrder(
       (delivered.update.message as PrivateMessage).web_app_data,
       { button_text: 'Choose dates', data },
       'Expected the delivered update to carry the Web App data',
@@ -95,12 +97,12 @@ Deno.test('a grammY bot answers the dates its keyboard Web App sends', async () 
 
     const history = await ada.getMessages({ chat: privateChat });
     const [submission, answer] = history.slice(-2);
-    expectEqual(
+    assertEqualsInFieldOrder(
       [submission?.message_id, submission?.web_app_data, answer?.from.id],
       [submitted.message_id, submitted.web_app_data, bot.id],
       'Expected the history to end with the submission and the reply',
     );
-    expectEqual(
+    assertEqualsInFieldOrder(
       answer?.reply_to_message?.web_app_data,
       submitted.web_app_data,
       'Expected the reply to show the service message it replies to',
@@ -144,7 +146,7 @@ Deno.test('a grammY bot receives Web App data through its webhook', async () => 
       chat_id: ada.id,
       parameters: { text: 'Dates saved' },
     }, { after: beforeSubmission });
-    expectEqual(await received.promise, 'tomorrow', 'Expected the webhook to receive the data');
+    assertEquals(await received.promise, 'tomorrow', 'Expected the webhook to receive the data');
     await activity.waitFor(
       { kind: 'update_delivered', user_id: ada.id, where: (entry) => entry.via === 'webhook' },
       { after: beforeSubmission },
@@ -191,14 +193,14 @@ Deno.test('Web App data reaches the bot exactly as sent, up to 4096 UTF-8 bytes'
   }
 
   const updates = await callBot('getUpdates', { offset });
-  expectEqual(
+  assertEquals(
     (updates.result as Array<{ message?: PrivateMessage }>).map(({ message }) =>
       message?.web_app_data?.data
     ),
     sendableData,
     'Expected one update for each sendable data, carrying it unchanged',
   );
-  expectEqual(
+  assertEquals(
     (await ada.getMessages({ chat: privateChat }))
       .filter((message) => message.web_app_data !== undefined)
       .map((message) => message.web_app_data?.data),
@@ -314,18 +316,18 @@ Deno.test('refused Web App submissions change nothing', async () => {
   );
   await ada.unblockBot({ botId: bot.id });
 
-  expectEqual(
+  assertEqualsInFieldOrder(
     await ada.getMessages({ chat: privateChat }),
     historyBefore,
     'Expected refused submissions to leave the history unchanged',
   );
-  expectEqual(
+  assertEqualsInFieldOrder(
     await ada.getReplyInterface({ chat: privateChat }),
     replyInterfaceBefore,
     'Expected refused submissions to leave the keyboard shown',
   );
   // Blocking and unblocking the bot enqueue its my_chat_member updates, but no message.
-  expectEqual(
+  assertEquals(
     ((await callBot('getUpdates', { offset })).result as Array<Record<string, unknown>>)
       .map((update) => Object.keys(update).filter((key) => key !== 'update_id')),
     [['my_chat_member'], ['my_chat_member']],
@@ -350,7 +352,7 @@ Deno.test('a submission answers the keyboard shown when it is sent', async () =>
     text: 'Choose dates',
     web_app_data: 'first',
   });
-  expectEqual(
+  assertEqualsInFieldOrder(
     await ada.getReplyInterface({ chat: privateChat }),
     datesKeyboard,
     'Expected a one-time keyboard to stay available, as after any press',
@@ -375,7 +377,7 @@ Deno.test('a submission answers the keyboard shown when it is sent', async () =>
     text: 'Choose a room',
     web_app_data: 'second',
   });
-  expectEqual(
+  assertEqualsInFieldOrder(
     room.web_app_data,
     { button_text: 'Choose a room', data: 'second' },
     'Expected the current button to name the submission',
@@ -426,7 +428,7 @@ Deno.test('a submission selects the Web App button among buttons that share its 
       text: 'Duplicate',
       web_app_data: 'payload',
     });
-    expectEqual(
+    assertEqualsInFieldOrder(
       [submitted.web_app_data, submitted.text],
       [{ button_text: 'Duplicate', data: 'payload' }, undefined],
       `Expected the Web App data with ${arrangement}`,
@@ -434,7 +436,7 @@ Deno.test('a submission selects the Web App button among buttons that share its 
     const submissionUpdates = (await callBot('getUpdates', { offset })).result as Array<
       { update_id: number; message?: PrivateMessage }
     >;
-    expectEqual(
+    assertEqualsInFieldOrder(
       [
         submissionUpdates.map(({ message }) => message?.web_app_data),
         (await ada.getMessages({ chat: privateChat })).length,
@@ -445,7 +447,7 @@ Deno.test('a submission selects the Web App button among buttons that share its 
     );
 
     const pressed = await ada.pressReplyKeyboardButton({ chat: privateChat, text: 'Duplicate' });
-    expectEqual(
+    assertEquals(
       [pressed.text, pressed.web_app_data],
       ['Duplicate', undefined],
       `Expected a press without data to send the plain button's text with ${arrangement}`,
@@ -465,7 +467,7 @@ Deno.test('a submission is stored but not delivered when the bot excludes messag
     text: 'Choose dates',
     web_app_data: 'today',
   });
-  expectEqual(
+  assertEquals(
     [
       (await callBot('getUpdates', { offset })).result,
       (await ada.getMessages({
@@ -498,7 +500,7 @@ Deno.test('Web App submissions stay within their session', async () => {
     text: 'Choose dates',
     web_app_data: 'today',
   });
-  expectEqual(
+  assertEquals(
     (await second.ada.getMessages({ chat: second.privateChat })).filter((message) =>
       message.web_app_data !== undefined
     ),
@@ -587,12 +589,4 @@ async function expectRefused(
     });
   }
   throw new Error(`Expected ${description} to be refused with ${expectedStatus}`);
-}
-
-function expectEqual(actual: unknown, expected: unknown, message: string): void {
-  if (JSON.stringify(actual) !== JSON.stringify(expected)) {
-    throw new Error(
-      `${message}: expected ${JSON.stringify(expected)}, received ${JSON.stringify(actual)}`,
-    );
-  }
 }

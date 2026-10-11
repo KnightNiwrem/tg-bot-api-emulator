@@ -1,3 +1,5 @@
+import { assertEquals } from '@std/assert';
+import { assertEqualsInFieldOrder } from './support/field_order_assertion.ts';
 import { Bot } from 'https://cdn.jsdelivr.net/gh/grammyjs/grammY@^1.46.0/src/bot.ts';
 import { Keyboard } from 'https://cdn.jsdelivr.net/gh/grammyjs/grammY@^1.46.0/src/convenience/keyboard.ts';
 import { webhookCallback } from 'https://cdn.jsdelivr.net/gh/grammyjs/grammY@^1.46.0/src/convenience/webhook.ts';
@@ -132,14 +134,6 @@ async function createReuseFixture() {
   };
 }
 
-function expectEqual(actual: unknown, expected: unknown, message: string): void {
-  if (JSON.stringify(actual) !== JSON.stringify(expected)) {
-    throw new Error(
-      `${message}: expected ${JSON.stringify(expected)}, received ${JSON.stringify(actual)}`,
-    );
-  }
-}
-
 const OWN_CONTACT = { phone_number: '15550100', first_name: 'Ada' } as const;
 const SHARED_LOCATION = { latitude: 51.5007, longitude: -0.1246, horizontal_accuracy: 3 } as const;
 
@@ -168,7 +162,7 @@ Deno.test("forwards and copies repeat contacts and locations, an own contact's u
     message_ids: [ownContact.message_id, location.message_id],
   });
   const forwardedMessage = forwarded.body.result as TestMessage;
-  expectEqual(
+  assertEqualsInFieldOrder(
     [
       forwardedMessage.contact,
       forwardedMessage.forward_origin?.sender_user?.id,
@@ -180,7 +174,7 @@ Deno.test("forwards and copies repeat contacts and locations, an own contact's u
     'Expected the forward to keep the own contact and its origin, and every repetition to succeed',
   );
   const supergroupHistory = (await getHistory(ada.id, supergroupChat)).slice(-4);
-  expectEqual(
+  assertEqualsInFieldOrder(
     supergroupHistory.map(({ from, contact, location, caption, forward_origin }) => ({
       from: from?.id,
       contact,
@@ -189,15 +183,39 @@ Deno.test("forwards and copies repeat contacts and locations, an own contact's u
       forwarded: forward_origin !== undefined,
     })),
     [
-      { from: bot.id, contact: { ...OWN_CONTACT, user_id: ada.id }, forwarded: true },
-      { from: bot.id, location: SHARED_LOCATION, forwarded: false },
-      { from: bot.id, contact: { ...OWN_CONTACT, user_id: ada.id }, forwarded: true },
-      { from: bot.id, location: SHARED_LOCATION, forwarded: true },
+      {
+        from: bot.id,
+        contact: { ...OWN_CONTACT, user_id: ada.id },
+        location: undefined,
+        caption: undefined,
+        forwarded: true,
+      },
+      {
+        from: bot.id,
+        contact: undefined,
+        location: SHARED_LOCATION,
+        caption: undefined,
+        forwarded: false,
+      },
+      {
+        from: bot.id,
+        contact: { ...OWN_CONTACT, user_id: ada.id },
+        location: undefined,
+        caption: undefined,
+        forwarded: true,
+      },
+      {
+        from: bot.id,
+        contact: undefined,
+        location: SHARED_LOCATION,
+        caption: undefined,
+        forwarded: true,
+      },
     ],
     'Expected the supergroup to show the forwards and the uncaptioned copy unchanged',
   );
   const privateCopies = (await getHistory(ada.id, { type: 'private', botId: bot.id })).slice(-2);
-  expectEqual(
+  assertEqualsInFieldOrder(
     privateCopies.map(({ from, contact, location }) => [from?.id, contact, location]),
     [[bot.id, { ...OWN_CONTACT, user_id: ada.id }, undefined], [
       bot.id,
@@ -227,7 +245,7 @@ Deno.test('accounts forward contacts and locations between their chats', async (
     to: privateChat,
     forward: { chat: supergroupChat, message_id: groupLocation.message_id },
   });
-  expectEqual(
+  assertEqualsInFieldOrder(
     [
       forwardedContact.contact,
       forwardedLocation.location,
@@ -256,7 +274,7 @@ Deno.test('replies from another chat show the replied contact or location withou
   const [contactReplyMessage, locationReplyMessage] = [contactReply, locationReply].map((
     { body },
   ) => body.result as TestMessage);
-  expectEqual(
+  assertEquals(
     [contactReplyMessage, locationReplyMessage].map(({ external_reply }) => [
       external_reply?.origin.type,
       external_reply?.origin.sender_user?.id,
@@ -264,7 +282,7 @@ Deno.test('replies from another chat show the replied contact or location withou
     [['user', ada.id], ['user', ada.id]],
     'Expected each reply to show that Ada first sent the replied message',
   );
-  expectEqual(
+  assertEqualsInFieldOrder(
     [
       contactReplyMessage.external_reply?.contact,
       contactReplyMessage.external_reply?.location,
@@ -285,7 +303,7 @@ Deno.test('replies from another chat show the replied contact or location withou
     ],
     'Expected each reply to show the replied content in external_reply',
   );
-  expectEqual(
+  assertEqualsInFieldOrder(
     (await getHistory(ada.id, supergroupChat)).slice(-2).map((message) => message.external_reply),
     [contactReplyMessage.external_reply, locationReplyMessage.external_reply],
     'Expected members to see the same external replies',
@@ -298,7 +316,7 @@ Deno.test('forwards and copies of contacts and locations need the permission to 
   const restriction = await requestJson(api, 'PUT', `${supergroupPath(ada.id)}/permissions`, {
     permissions: { can_send_photos: true },
   });
-  expectEqual(restriction.status, 204, 'Expected the owner to withhold sending messages');
+  assertEquals(restriction.status, 204, 'Expected the owner to withhold sending messages');
   const historyLength = (await getHistory(ada.id, supergroupChat)).length;
   const repeated = { chat_id: supergroupChat.chatId, from_chat_id: ada.id };
   const forward = await callBot('forwardMessage', {
@@ -310,7 +328,7 @@ Deno.test('forwards and copies of contacts and locations need the permission to 
     ...repeated,
     message_ids: [ownContact.message_id, location.message_id],
   });
-  expectEqual(
+  assertEquals(
     [forward.body.description, copy.body.description, batch.body.description],
     [
       "Bad Request: the message can't be forwarded",
@@ -319,7 +337,7 @@ Deno.test('forwards and copies of contacts and locations need the permission to 
     ],
     'Expected contacts and locations the bot may not send to be refused',
   );
-  expectEqual(
+  assertEquals(
     (await getHistory(ada.id, supergroupChat)).length,
     historyLength,
     'Expected the refusals to repeat nothing',
@@ -342,7 +360,7 @@ Deno.test('contact and location updates follow allowed_updates, and bots get non
   };
   await readUpdates(['callback_query']);
   await sendAccountMessage(ada.id, { to: privateChat, own_contact: true });
-  expectEqual(await readUpdates(), [], 'Expected the excluded message update to be dropped');
+  assertEquals(await readUpdates(), [], 'Expected the excluded message update to be dropped');
 
   await readUpdates(['message']);
   await callBot('sendContact', { chat_id: ada.id, phone_number: '1', first_name: 'Bot' });
@@ -352,7 +370,7 @@ Deno.test('contact and location updates follow allowed_updates, and bots get non
     location: { latitude: 3, longitude: 4 },
   });
   const updates = await readUpdates();
-  expectEqual(
+  assertEqualsInFieldOrder(
     updates.map((message) => [message?.message_id, message?.location]),
     [[shared.message_id, { latitude: 3, longitude: 4 }]],
     "Expected only the account's location to reach the bot",
@@ -367,7 +385,7 @@ Deno.test("sessions keep their accounts' own contacts apart", async () => {
     own_contact: true,
   });
   const firstUpdates = await first.callBot('getUpdates', {});
-  expectEqual(
+  assertEquals(
     [
       secondContact.contact?.user_id,
       (firstUpdates.body.result as Array<{ message?: TestMessage }>).some(({ message }) =>
@@ -468,7 +486,7 @@ Deno.test('a grammY bot asks for a contact and a location through its webhook an
 
     const history = await getHistory(ada.id, privateChat);
     const lastMessages = history.slice(-4);
-    expectEqual(
+    assertEqualsInFieldOrder(
       lastMessages.map(({ from, text, contact, location }) => [from?.id, text, contact, location]),
       [
         [ada.id, undefined, { ...OWN_CONTACT, user_id: ada.id }, undefined],
@@ -478,7 +496,7 @@ Deno.test('a grammY bot asks for a contact and a location through its webhook an
       ],
       'Expected the bot to verify the own contact and answer the location',
     );
-    expectEqual(
+    assertEquals(
       [contactPress.status, locationPress.status],
       [201, 201],
       'Expected both presses to be sent',
@@ -488,7 +506,7 @@ Deno.test('a grammY bot asks for a contact and a location through its webhook an
       'GET',
       `${sessionPath}/bot-activity?bot_id=${bot.id}&kind=update_delivered`,
     );
-    expectEqual(
+    assertEquals(
       activity.body.entries
         .map(({ update }) => update.message as TestMessage | undefined)
         .filter((message) => message?.contact !== undefined || message?.location !== undefined)

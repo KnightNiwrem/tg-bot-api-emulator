@@ -1,3 +1,5 @@
+import { assertEquals } from '@std/assert';
+import { assertEqualsInFieldOrder } from './support/field_order_assertion.ts';
 import { createTestSession, type EmulationApi, requestJson } from './support/emulation_api.ts';
 
 type TestRichBlock = Readonly<Record<string, unknown>> & {
@@ -215,14 +217,6 @@ function gifImage(width: number, height: number): Uint8Array<ArrayBuffer> {
   return image;
 }
 
-function expectEqual(actual: unknown, expected: unknown, message: string): void {
-  if (JSON.stringify(actual) !== JSON.stringify(expected)) {
-    throw new Error(
-      `${message}: expected ${JSON.stringify(expected)}, received ${JSON.stringify(actual)}`,
-    );
-  }
-}
-
 function mediaOf(file: TestMediaFile | undefined): TestMediaFile {
   if (file === undefined) {
     throw new Error('Expected a media file');
@@ -330,7 +324,7 @@ Deno.test('a bot sends nested video and voice note blocks that accounts see and 
   const fileKeys = ['file_id', 'file_unique_id', 'file_size'];
   // The official server's `JsonRichBlock`, `JsonVideo` and `JsonVoiceNote` write their fields in
   // these orders.
-  expectEqual(
+  assertEqualsInFieldOrder(
     [
       sent.status,
       Object.keys(uploadedVideoBlock ?? {}),
@@ -391,7 +385,11 @@ Deno.test('a bot sends nested video and voice note blocks that accounts see and 
 
   // The account's history shows the private message as the bot sees it.
   const shown = (await getHistory(ada.id, privateChat)).at(-1);
-  expectEqual(shown?.rich_message, message?.rich_message, 'Expected the account to see the blocks');
+  assertEqualsInFieldOrder(
+    shown?.rich_message,
+    message?.rich_message,
+    'Expected the account to see the blocks',
+  );
 
   const memo = mediaOf(memoBlock?.voice_note);
   const filePaths = await Promise.all(
@@ -425,7 +423,7 @@ Deno.test('a bot sends nested video and voice note blocks that accounts see and 
       ],
     },
   });
-  expectEqual(
+  assertEqualsInFieldOrder(
     [
       filePaths.map((path) => path?.replace(/\/.*\./, '/*.')),
       reusedVideo.body.result?.video?.file_unique_id,
@@ -529,12 +527,12 @@ Deno.test('a rich message whose video or voice note fails is sent or edited not 
     }, { clip: new File([CLIP_BYTES], 'clip.mp4') });
     refusals.push(body.description);
   }
-  expectEqual(
+  assertEqualsInFieldOrder(
     [refusals, await getHistory(ada.id, privateChat), await readUpdates()],
     [cases.map(([, description]) => description), historyBefore, []],
     'Expected each refused rich message to leave the chat as it was',
   );
-  expectEqual(
+  assertEquals(
     (await otherSession.getHistory(otherSession.ada.id, otherSession.privateChat)).length,
     3,
     'Expected the other session to keep only its own messages',
@@ -566,7 +564,7 @@ Deno.test('a rich message whose video or voice note fails is sent or edited not 
   const failedEditOfRichMessage = await editTo([
     voiceNote({ type: 'voice_note', media: 'https://cdn.example.com/voice/missing.ogg' }),
   ]);
-  expectEqual(
+  assertEqualsInFieldOrder(
     [
       failedEdits.map(({ body }) => body.description),
       afterFailedEdits?.text,
@@ -661,7 +659,7 @@ Deno.test('video and voice note blocks keep observer-specific files through chat
   const ids = (files: readonly TestMediaFile[]) => files.map(({ file_id }) => file_id);
   const uniqueIds = (files: readonly TestMediaFile[]) =>
     files.map(({ file_unique_id }) => file_unique_id);
-  expectEqual(
+  assertEquals(
     [
       sent.body.ok,
       new Set([...ids(botFiles), ...ids(adaFiles), ...ids(graceFiles), ...ids(otherBotFiles)])
@@ -751,7 +749,7 @@ Deno.test('video and voice note blocks need the permissions of their media', asy
     to: supergroupChat,
     forward: { chat: supergroupChat, message_id: voiceNoteOnly.body.result?.message_id },
   });
-  expectEqual(
+  assertEqualsInFieldOrder(
     [
       withoutVideos,
       historyWithoutVideos,
@@ -891,7 +889,7 @@ Deno.test('inline results send video and voice note blocks the bot knows, but no
   const invalidContent = 'Bad Request: invalid inline message content specified';
   const fileTypes = (message: TestMessage | undefined) =>
     listBlockFiles(message).map(({ type, file }) => [type, file.file_unique_id]);
-  expectEqual(
+  assertEquals(
     [
       refusedAnswers,
       unanswered.answer,

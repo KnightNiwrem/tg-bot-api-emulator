@@ -1,3 +1,4 @@
+import { assertEqualsInFieldOrder } from './support/field_order_assertion.ts';
 import { createTestSession, type EmulationApi, requestJson } from './support/emulation_api.ts';
 
 // A bot can change only the keyboard of a message an account sent through its inline mode, which
@@ -79,7 +80,7 @@ async function sendInlineArticleWithKeyboard(chatType: InlineQueryChat['type']) 
   if (sentMessage === undefined || inlineMessageId === undefined) {
     throw new Error(`Expected a message and a chosen result, received ${JSON.stringify(updates)}`);
   }
-  expectEqual(
+  assertEqualsInFieldOrder(
     [sentMessage.text, sentMessage.reply_markup, Object.hasOwn(sentMessage, 'edit_date')],
     ['Cats sleep a lot', SENT_KEYBOARD, false],
     'Expected the bot to receive the unedited article',
@@ -137,15 +138,7 @@ async function expectBotApiResult(
   parameters: Record<string, unknown>,
 ): Promise<void> {
   const { body } = await requestJson<unknown>(api, 'POST', `${botApiPath}/${method}`, parameters);
-  expectEqual(body, { ok: true, result: true }, `Expected ${method} to succeed`);
-}
-
-function expectEqual(actual: unknown, expected: unknown, message: string): void {
-  if (JSON.stringify(actual) !== JSON.stringify(expected)) {
-    throw new Error(
-      `${message}: expected ${JSON.stringify(expected)}, received ${JSON.stringify(actual)}`,
-    );
-  }
+  assertEqualsInFieldOrder(body, { ok: true, result: true }, `Expected ${method} to succeed`);
 }
 
 for (const chatType of ['private', 'supergroup'] as const) {
@@ -159,7 +152,7 @@ for (const chatType of ['private', 'supergroup'] as const) {
     });
 
     // The serialized message differs from the one sent only in its keyboard: no `edit_date`.
-    expectEqual(
+    assertEqualsInFieldOrder(
       (await readUpdates()).map(({ update_id: _updateId, ...update }) => update),
       [{ edited_message: { ...sentMessage, reply_markup: REPLACEMENT_KEYBOARD } }],
       'Expected the bot to receive the keyboard-only edit',

@@ -1,3 +1,5 @@
+import { assertEquals } from '@std/assert';
+import { assertEqualsInFieldOrder } from './support/field_order_assertion.ts';
 import { Bot } from 'https://cdn.jsdelivr.net/gh/grammyjs/grammY@^1.46.0/src/bot.ts';
 import { run } from '@grammyjs/runner/runner.ts';
 
@@ -70,7 +72,7 @@ Deno.test('a grammY bot receives the users an account shares through a request_u
       text: 'Choose teammates',
       shared_user_ids: [linus.id, grace.id],
     });
-    expectEqual(shared.users_shared, {
+    assertEqualsInFieldOrder(shared.users_shared, {
       user_ids: [linus.id, grace.id],
       users: [
         { user_id: linus.id, first_name: 'Linus', last_name: 'Torvalds', username: 'linus' },
@@ -95,7 +97,7 @@ Deno.test('a grammY bot receives the users an account shares through a request_u
       text: 'Choose teammates',
       shared_user_ids: [grace.id],
     });
-    expectEqual(
+    assertEqualsInFieldOrder(
       [alone.user_shared, alone.users_shared?.user_ids],
       [{ user_id: grace.id, request_id: 41 }, [grace.id]],
       'Expected a single shared user to also show as the legacy user_shared',
@@ -107,7 +109,7 @@ Deno.test('a grammY bot receives the users an account shares through a request_u
     }, { after: start });
 
     const history = await ada.getMessages({ chat: privateChat });
-    expectEqual(
+    assertEquals(
       history.filter((message) => message.users_shared !== undefined).map((message) =>
         message.message_id
       ),
@@ -117,7 +119,7 @@ Deno.test('a grammY bot receives the users an account shares through a request_u
     const answer = history.find((message) =>
       message.from.id === bot.id && message.reply_to_message?.message_id === shared.message_id
     );
-    expectEqual(
+    assertEqualsInFieldOrder(
       answer?.reply_to_message?.users_shared,
       shared.users_shared,
       'Expected the bot to reply to the service message, which the reply shows',
@@ -179,7 +181,7 @@ Deno.test('a grammY bot receives a supergroup that meets its request_chat criter
       shared_chat_id: team.id,
     });
     // The request asked for the title but not the username, which stays omitted.
-    expectEqual(
+    assertEqualsInFieldOrder(
       shared.chat_shared,
       { chat_id: team.id, title: 'Team', request_id: 5 },
       'Expected the shared supergroup with its title only',
@@ -232,7 +234,7 @@ Deno.test('shared users and chats answer their own buttons among buttons that sh
     400,
     'users requests with different IDs under one label',
   );
-  expectEqual(
+  assertEqualsInFieldOrder(
     await ada.getMessages({ chat: privateChat }),
     historyBeforeRefusal,
     'Expected an ambiguous press to send nothing',
@@ -249,7 +251,7 @@ Deno.test('shared users and chats answer their own buttons among buttons that sh
     shared_user_ids: [grace.id],
   });
   const text = await ada.pressReplyKeyboardButton({ chat: privateChat, text: 'Share' });
-  expectEqual(
+  assertEqualsInFieldOrder(
     [chat.chat_shared, users.users_shared?.request_id, text.text],
     [{ chat_id: team.id, request_id: 8 }, 7, 'Share'],
     'Expected each answer to reach its own button, and no answer the text button',
@@ -370,13 +372,13 @@ Deno.test('refused selections create no message or update and leave the request 
     'missing account rights',
   );
 
-  expectEqual(
+  assertEqualsInFieldOrder(
     [await ada.getMessages({ chat: privateChat }), await grace.getMessages({ chat: privateChat })],
     [adaHistoryBefore, graceHistoryBefore],
     'Expected refused selections to leave the histories unchanged',
   );
   const updates = await callBot('getUpdates', { offset: unreadOffset });
-  expectEqual(updates.result, [], 'Expected refused selections to enqueue no update');
+  assertEquals(updates.result, [], 'Expected refused selections to enqueue no update');
   // An account that blocks the bot cannot write to it, as for any message.
   await ada.blockBot({ botId: bot.id });
   await expectRefused(
@@ -403,7 +405,7 @@ Deno.test('refused selections create no message or update and leave the request 
     text: 'People',
     shared_user_ids: [ada.id],
   });
-  expectEqual(
+  assertEqualsInFieldOrder(
     graceShare.users_shared,
     { user_ids: [ada.id], users: [{ user_id: ada.id }], request_id: 1 },
     'Expected another account to answer its own request',
@@ -425,7 +427,7 @@ Deno.test('refused selections create no message or update and leave the request 
     text: 'Pinning group',
     shared_chat_id: team.id,
   });
-  expectEqual(
+  assertEqualsInFieldOrder(
     administratorShare.chat_shared,
     { chat_id: team.id, request_id: 4 },
     "Expected an administrator's supergroup to meet the rights criteria",
@@ -458,7 +460,7 @@ Deno.test('sharing users or a chat grants the bot no access, membership, or righ
 
   // The bot still knows neither Grace's private chat nor the team it is not a member of.
   const chatNotFound = { ok: false, error_code: 400, description: 'Bad Request: chat not found' };
-  expectEqual(
+  assertEqualsInFieldOrder(
     [
       await callBot('sendMessage', { chat_id: grace.id, text: 'Hello' }),
       await callBot('getChatMember', { chat_id: team.id, user_id: bot.id }),
@@ -467,7 +469,7 @@ Deno.test('sharing users or a chat grants the bot no access, membership, or righ
     [chatNotFound, chatNotFound, chatNotFound],
     'Expected the bot to gain no access through what was shared',
   );
-  expectEqual(
+  assertEquals(
     await grace.getMessages({ chat: privateChat }),
     [],
     'Expected the shared account to have no chat with the bot',
@@ -526,7 +528,7 @@ Deno.test('selections stay within their session', async () => {
     text: 'Person',
     shared_user_ids: [first.grace.id],
   });
-  expectEqual(
+  assertEquals(
     (await second.ada.getMessages({ chat: second.privateChat })).filter((message) =>
       message.users_shared !== undefined
     ),
@@ -601,12 +603,4 @@ async function expectRefused(
     });
   }
   throw new Error(`Expected ${description} to be refused with ${expectedStatus}`);
-}
-
-function expectEqual(actual: unknown, expected: unknown, message: string): void {
-  if (JSON.stringify(actual) !== JSON.stringify(expected)) {
-    throw new Error(
-      `${message}: expected ${JSON.stringify(expected)}, received ${JSON.stringify(actual)}`,
-    );
-  }
 }

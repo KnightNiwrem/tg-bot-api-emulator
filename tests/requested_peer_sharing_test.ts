@@ -1,7 +1,10 @@
+import { assertEquals } from '@std/assert';
 import {
   resolveSharedChat,
   resolveSharedUsers,
+  type SharedChatFailureReason,
   type SharedPeerLookups,
+  type SharedUsersFailureReason,
 } from '../src/services/requested_peer_sharing.ts';
 import {
   type ChatAdministratorRightName,
@@ -59,7 +62,7 @@ const CONVERSATION = { accountId: GRACE_ID, botId: BOT_ID };
 Deno.test('shared users carry only the details the request asks for, as they are now', () => {
   const lookups = createLookups();
   const idsOnly = resolveSharedUsers(USERS_REQUEST, [ADA_ID, BOT_ID], lookups);
-  expectEqual(idsOnly, {
+  assertEquals(idsOnly, {
     resolved: true,
     content: {
       kind: 'users_shared',
@@ -73,7 +76,7 @@ Deno.test('shared users carry only the details the request asks for, as they are
     [GRACE_ID, ADA_ID],
     lookups,
   );
-  expectEqual(named, {
+  assertEquals(named, {
     resolved: true,
     content: {
       kind: 'users_shared',
@@ -90,7 +93,7 @@ Deno.test('shared users carry only the details the request asks for, as they are
     [GRACE_ID, LINUS_ID],
     lookups,
   );
-  expectEqual(withUsernames, {
+  assertEquals(withUsernames, {
     resolved: true,
     content: {
       kind: 'users_shared',
@@ -102,7 +105,7 @@ Deno.test('shared users carry only the details the request asks for, as they are
 
 Deno.test('shared users are refused as TDLib checks them, and repeats as the emulator does', () => {
   const lookups = createLookups();
-  const cases: Array<[ReplyKeyboardUsersRequest, number[], string]> = [
+  const cases: Array<[ReplyKeyboardUsersRequest, number[], SharedUsersFailureReason]> = [
     [USERS_REQUEST, [], 'shared_users_too_few'],
     [USERS_REQUEST, [ADA_ID, GRACE_ID, LINUS_ID], 'shared_users_too_many'],
     [USERS_REQUEST, [ADA_ID, ADA_ID], 'shared_users_duplicated'],
@@ -117,7 +120,7 @@ Deno.test('shared users are refused as TDLib checks them, and repeats as the emu
   ];
   for (const [request, userIds, expectedReason] of cases) {
     const resolution = resolveSharedUsers(request, userIds, lookups);
-    expectEqual(
+    assertEquals(
       resolution,
       { resolved: false, reason: expectedReason },
       `Expected ${JSON.stringify(userIds)} to be refused`,
@@ -138,12 +141,12 @@ Deno.test('a shared chat carries only the details the request asks for', () => {
   const lookups = createLookups({
     memberships: [[PUBLIC_GROUP_ID, GRACE_ID, { status: 'member' }]],
   });
-  expectEqual(
+  assertEquals(
     resolveSharedChat(CHAT_REQUEST, PUBLIC_GROUP_ID, CONVERSATION, lookups),
     { resolved: true, content: { kind: 'chat_shared', requestId: 8, chatId: PUBLIC_GROUP_ID } },
     'Expected unrequested details to stay omitted',
   );
-  expectEqual(
+  assertEquals(
     resolveSharedChat(
       { ...CHAT_REQUEST, requestsTitle: true, requestsUsername: true, requestsPhoto: true },
       PUBLIC_GROUP_ID,
@@ -168,7 +171,7 @@ Deno.test('a shared chat carries only the details the request asks for', () => {
     { accountId: ADA_ID, botId: BOT_ID },
     lookups,
   );
-  expectEqual(
+  assertEquals(
     privateGroup,
     { resolved: true, content: { kind: 'chat_shared', requestId: 8, chatId: PRIVATE_GROUP_ID } },
     'Expected a private supergroup to share no username',
@@ -183,7 +186,7 @@ Deno.test('a shared chat must meet the criteria TDLib checks for a supergroup', 
       [PRIVATE_GROUP_ID, GRACE_ID, restrictedMember()],
     ],
   });
-  const cases: Array<[ReplyKeyboardChatRequest, number, string]> = [
+  const cases: Array<[ReplyKeyboardChatRequest, number, SharedChatFailureReason]> = [
     [CHAT_REQUEST, -1_000_000_000_099, 'shared_chat_not_found'],
     [CHAT_REQUEST, CHANNEL_ID, 'shared_chat_not_found'],
     [{ ...CHAT_REQUEST, chatHasUsername: false }, PUBLIC_GROUP_ID, 'shared_chat_username_mismatch'],
@@ -207,7 +210,7 @@ Deno.test('a shared chat must meet the criteria TDLib checks for a supergroup', 
     ],
   ];
   for (const [request, chatId, expectedReason] of cases) {
-    expectEqual(
+    assertEquals(
       resolveSharedChat(request, chatId, CONVERSATION, lookups),
       { resolved: false, reason: expectedReason },
       `Expected supergroup ${chatId} to be refused for ${JSON.stringify(request)}`,
@@ -275,7 +278,7 @@ Deno.test('chat requests for what the emulator does not model are refused as uns
     { ...CHAT_REQUEST, chatIsCreated: true, botAdministratorRights: rights('is_anonymous') },
   ];
   for (const request of unsupportedRequests) {
-    expectEqual(
+    assertEquals(
       resolveSharedChat(request, PRIVATE_GROUP_ID, ownerConversation, lookups),
       { resolved: false, reason: 'reply_keyboard_button_request_unsupported' },
       `Expected ${JSON.stringify(request)} to be unsupported`,
@@ -361,12 +364,4 @@ function restrictedMember(): ChatMembership {
 
 function rights(...requestedRights: ChatAdministratorRightName[]) {
   return normalizeDefaultAdministratorRights('group', requestedRights);
-}
-
-function expectEqual(actual: unknown, expected: unknown, message: string): void {
-  if (JSON.stringify(actual) !== JSON.stringify(expected)) {
-    throw new Error(
-      `${message}: expected ${JSON.stringify(expected)}, received ${JSON.stringify(actual)}`,
-    );
-  }
 }
