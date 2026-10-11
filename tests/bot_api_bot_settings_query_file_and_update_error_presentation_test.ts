@@ -51,13 +51,16 @@ type InlineQueryAnswerFailure = Extract<
   { readonly answered: false }
 >;
 /** A poll that its session ended is refused without an answer, so the presenter never sees it. */
-type FilePreparationFailure = Extract<ReturnType<BotApi['getFile']>, { readonly found: false }>;
+type FilePreparationFailure = Extract<
+  ReturnType<EmulationSession['mediaFiles']['getBotFile']>,
+  { readonly found: false }
+>;
 type UpdatesPollFailure = Extract<
   Parameters<typeof presentUpdateDeliveryFailure>[0],
   { readonly retrieved: false }
 >;
 type WebhookSettingFailure = Extract<
-  ReturnType<BotApi['setWebhook']>,
+  ReturnType<EmulationSession['botUpdateConsumers']['setWebhook']>,
   { readonly accepted: false }
 >;
 

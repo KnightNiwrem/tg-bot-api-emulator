@@ -44,13 +44,13 @@ export function createBotApiRoutes(): Hono<BotApiRouteContextTypes> {
   // Telegram answers a download with an unknown token or path as not found.
   botApiRoutes.get(BOT_FILE_DOWNLOAD_PATH, (context) => {
     const botTokenPathSegment = context.req.param(BOT_TOKEN_PATH_PARAMETER);
-    const { botApi } = context.get('emulationSession');
+    const { botApi, mediaFiles } = context.get('emulationSession');
     const authenticatedBot = botApi.authenticate(
       botTokenPathSegment.slice(BOT_TOKEN_PATH_PREFIX.length),
     );
     const file = authenticatedBot === undefined
       ? undefined
-      : botApi.downloadFile(authenticatedBot, context.req.param(FILE_PATH_PARAMETER));
+      : mediaFiles.findBotFileByPath(authenticatedBot.id, context.req.param(FILE_PATH_PARAMETER));
     return file === undefined
       ? botApiResponse(context, botApiError(404, 'Not Found'))
       : fileDownloadResponse(context, file);

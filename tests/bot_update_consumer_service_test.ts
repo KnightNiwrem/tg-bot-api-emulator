@@ -9,19 +9,25 @@ Deno.test('BotUpdateConsumerService lets a bot poll or use its webhook, never bo
   using webhookSession = createWebhookSession(() => new Response(null));
   const { session, bot, adaId, sendAccountMessage, setWebhook } = webhookSession;
 
-  const heldBeforeWebhook = session.botApi.getUpdates(bot, { limit: 100, timeoutSeconds: 50 });
+  const heldBeforeWebhook = session.botUpdateConsumers.getUpdates(bot.id, {
+    limit: 100,
+    timeoutSeconds: 50,
+  });
   setWebhook();
-  const pollWithWebhook = await session.botApi.getUpdates(bot, {
+  const pollWithWebhook = await session.botUpdateConsumers.getUpdates(bot.id, {
     limit: 100,
     timeoutSeconds: 0,
     allowedUpdates: ['callback_query'],
   });
 
-  session.botApi.deleteWebhook(bot, { dropPendingUpdates: false });
-  const heldAfterDeletion = session.botApi.getUpdates(bot, { limit: 100, timeoutSeconds: 50 });
+  session.botUpdateConsumers.deleteWebhook(bot.id, { dropPendingUpdates: false });
+  const heldAfterDeletion = session.botUpdateConsumers.getUpdates(bot.id, {
+    limit: 100,
+    timeoutSeconds: 50,
+  });
   // Deleting the webhook again leaves the held poll waiting. Ada's message then answers it, which
   // it reaches only because the refused poll left the bot subscribed to messages.
-  session.botApi.deleteWebhook(bot, { dropPendingUpdates: false });
+  session.botUpdateConsumers.deleteWebhook(bot.id, { dropPendingUpdates: false });
   sendAccountMessage(adaId);
   const afterDeletion = await heldAfterDeletion;
 

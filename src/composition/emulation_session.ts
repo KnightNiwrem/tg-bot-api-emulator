@@ -408,7 +408,7 @@ export function createEmulationSession(
       ),
     currentUnixTimeSeconds,
   });
-  const updateConsumers = new BotUpdateConsumerService({
+  const botUpdateConsumers = new BotUpdateConsumerService({
     webhooks,
     pendingUpdates: botUpdates,
     updateSubscriptions,
@@ -428,7 +428,6 @@ export function createEmulationSession(
   });
   const botApi = new BotApiService({
     bots,
-    updateConsumers,
     botMessages: privateMessaging,
     supergroupBotMessages: supergroupMessaging,
     messageEditing,
@@ -447,7 +446,6 @@ export function createEmulationSession(
     messagePinning,
     messageReactions,
     botMedia: new BotMediaResolver({ mediaFiles }),
-    mediaFiles,
     callbackQueries,
     inlineQueries,
     botCaptions: {
@@ -495,6 +493,7 @@ export function createEmulationSession(
     botRateLimits,
     botServerErrors,
     botApi,
+    botUpdateConsumers,
     botActivity,
     webhookAttempts,
     lifetime,

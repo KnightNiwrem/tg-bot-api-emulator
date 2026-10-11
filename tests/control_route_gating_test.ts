@@ -104,7 +104,7 @@ Deno.test("a route's action whose answer fails to be viewed commits nothing", as
     return history.found ? history.messages.length : history.reason;
   };
   const historyLengthBefore = readHistoryLength();
-  const alphaWebhookInfoBefore = session.botApi.getWebhookInfo(fixture.alpha);
+  const alphaWebhookInfoBefore = session.botUpdateConsumers.getWebhookInfo(fixture.alpha.id);
   const views = session.botMessageViews;
   const viewSupergroupMessage = views.viewSupergroupMessage.bind(views);
   // The message and Alpha's update are staged before the route's view of the message for Ada,
@@ -124,7 +124,11 @@ Deno.test("a route's action whose answer fails to be viewed commits nothing", as
   views.viewSupergroupMessage = viewSupergroupMessage;
 
   assertEquals(
-    [response.status, readHistoryLength(), session.botApi.getWebhookInfo(fixture.alpha)],
+    [
+      response.status,
+      readHistoryLength(),
+      session.botUpdateConsumers.getWebhookInfo(fixture.alpha.id),
+    ],
     [500, historyLengthBefore, alphaWebhookInfoBefore],
   );
 });

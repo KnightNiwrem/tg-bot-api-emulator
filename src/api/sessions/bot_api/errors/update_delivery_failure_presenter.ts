@@ -3,7 +3,7 @@ import type { BotApiMethodAnswer } from '../method_call.ts';
 import { BOT_API_ERRORS } from './error_catalogue.ts';
 import { type FixedBotApiError, presentFixedBotApiError } from './error_template.ts';
 
-type BotApi = EmulationSession['botApi'];
+type BotUpdateConsumers = EmulationSession['botUpdateConsumers'];
 
 /**
  * Why `getUpdates` retrieved nothing, other than its session ending, which no answer reports.
@@ -13,14 +13,17 @@ type BotApi = EmulationSession['botApi'];
 type UpdatesPollFailure = {
   readonly retrieved: false;
   readonly reason: Exclude<
-    Extract<Awaited<ReturnType<BotApi['getUpdates']>>, { readonly retrieved: false }>['reason'],
+    Extract<
+      Awaited<ReturnType<BotUpdateConsumers['getUpdates']>>,
+      { readonly retrieved: false }
+    >['reason'],
     'session_ended'
   >;
 };
 
 /** Why `setWebhook` set no webhook. */
 type WebhookSettingFailure = Extract<
-  ReturnType<BotApi['setWebhook']>,
+  ReturnType<BotUpdateConsumers['setWebhook']>,
   { readonly accepted: false }
 >;
 

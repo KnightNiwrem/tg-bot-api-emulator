@@ -15,10 +15,13 @@ import type { BotApiRequestParameters, BotApiUploadedFiles } from './request_par
  */
 export interface BotApiMethodContext {
   /**
-   * The Bot API itself, the files that methods download from the web, and the session's lifetime,
-   * whose commit gate closes when the session ends.
+   * The feature services and workflows that methods call, the files that methods download from the
+   * web, and the session's lifetime, whose commit gate closes when the session ends.
    */
-  readonly session: Pick<EmulationSession, 'botApi' | 'mediaFiles' | 'lifetime'>;
+  readonly session: Pick<
+    EmulationSession,
+    'botApi' | 'mediaFiles' | 'botUpdateConsumers' | 'lifetime'
+  >;
   /** The bot whose token authenticated the call. */
   readonly bot: VirtualBotProfile;
   /**
@@ -26,6 +29,19 @@ export interface BotApiMethodContext {
    * the session ends.
    */
   readonly signal: AbortSignal;
+}
+
+/**
+ * The part of a method's context that one family of methods uses: the calling bot and the call's
+ * signal, and of the session only the services the family names. A family's `execute` functions
+ * take it, so each family states the services it depends on and reaches no others.
+ */
+export interface BotApiFamilyContext<
+  SessionService extends keyof BotApiMethodContext['session'],
+> {
+  readonly session: Pick<BotApiMethodContext['session'], SessionService>;
+  readonly bot: BotApiMethodContext['bot'];
+  readonly signal: BotApiMethodContext['signal'];
 }
 
 /**

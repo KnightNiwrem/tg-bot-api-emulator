@@ -7,10 +7,8 @@ import type {
   BotApiChatInviteLink,
   BotApiChatMember,
   BotApiDefaultAdministratorRights,
-  BotApiDownloadableFile,
   BotApiMenuButton,
   BotApiMessage,
-  BotApiWebhookInfo,
 } from '../../types/bot_api.ts';
 import type { BotApiPoll } from '../../types/bot_api_poll.ts';
 import type { BotCommand, BotCommandScope } from '../../types/bot_command.ts';
@@ -101,14 +99,6 @@ import {
   type SupergroupMessage,
   type TextEntity,
 } from '../../types/virtual_message.ts';
-import type {
-  DeleteWebhookOutcome,
-  DeleteWebhookRequest,
-  GetUpdatesRequest,
-  GetUpdatesResult,
-  SetWebhookRequest,
-  SetWebhookResult,
-} from '../update_consumers/bot_update_consumer.ts';
 import type {
   CreateInviteLinkAsBotFailureReason,
   CreateInviteLinkAsBotInput,
@@ -1032,10 +1022,6 @@ export type BotApiAnswerInlineQueryResult =
     )
   );
 
-export type GetFileResult =
-  | { readonly found: true; readonly file: BotApiDownloadableFile }
-  | { readonly found: false; readonly reason: 'file_id_invalid' | 'file_too_big' };
-
 export interface SendChatActionRequest {
   /** The Bot API `chat_id`, as `SendRequestOptions` describes it. */
   readonly chatId: number;
@@ -1522,14 +1508,6 @@ interface BotCredentialLookup {
   getByToken(token: string): VirtualBot | undefined;
 }
 
-/** How each bot receives its updates: by polling, or through its webhook. */
-interface BotUpdateConsumers {
-  getUpdates(botId: number, request: GetUpdatesRequest): Promise<GetUpdatesResult>;
-  setWebhook(botId: number, request: SetWebhookRequest): SetWebhookResult;
-  deleteWebhook(botId: number, request: DeleteWebhookRequest): DeleteWebhookOutcome;
-  getWebhookInfo(botId: number): BotApiWebhookInfo;
-}
-
 interface BotMessaging {
   isPrivateConversationStarted(
     key: { readonly accountId: number; readonly botId: number },
@@ -1677,20 +1655,6 @@ interface BotMediaResolution {
     file: InlineResultFileRequest,
     expectedFileType: Type,
   ): InlineResultFileResolution<Extract<StoredFile, { readonly type: Type }>>;
-}
-
-interface MediaFiles {
-  getBotFile(botId: number, fileId: string):
-    | {
-      readonly found: true;
-      readonly downloadableFile: {
-        readonly file: StoredFile;
-        readonly fileId: string;
-        readonly filePath: string;
-      };
-    }
-    | { readonly found: false; readonly reason: 'file_id_invalid' | 'file_too_big' };
-  findBotFileByPath(botId: number, filePath: string): StoredFile | undefined;
 }
 
 /** A command list of the bot, addressed as the command methods address it. */
@@ -1927,7 +1891,6 @@ interface MessageDrafts {
 
 interface BotApiServiceDependencies {
   readonly bots: BotCredentialLookup;
-  readonly updateConsumers: BotUpdateConsumers;
   readonly botMessages: BotMessaging;
   readonly supergroupBotMessages: SupergroupBotMessaging;
   /**
@@ -1959,8 +1922,6 @@ interface BotApiServiceDependencies {
    * messages they send, without storing any.
    */
   readonly botMedia: BotMediaResolution;
-  /** Lets the bot download the files it knows, as `getFile` prepares them. */
-  readonly mediaFiles: MediaFiles;
   readonly callbackQueries: CallbackQueryAnswering;
   readonly inlineQueries: InlineQueryAnswering;
   /**
@@ -1987,16 +1948,15 @@ interface PublicChatDirectory {
 }
 
 /**
- * The application boundary for Bot API methods.
+ * The application boundary between Bot API methods and the feature services they use, for the
+ * method families that have no `BotApiFamilyContext` of their own, through which a family calls its
+ * services directly.
  *
  * Transport authenticates each call with `authenticate` before invoking a method, so that an
- * invalid token is rejected before request parameters are validated, as Telegram does. Invariants
- * that span a bot's configuration and update delivery, such as polling and webhook delivery being
- * mutually exclusive, belong here rather than in route handlers.
+ * invalid token is rejected before request parameters are validated, as Telegram does.
  */
 export class BotApiService {
   readonly #bots: BotCredentialLookup;
-  readonly #updateConsumers: BotUpdateConsumers;
   readonly #botMessages: BotMessaging;
   readonly #supergroupBotMessages: SupergroupBotMessaging;
   readonly #messageEditing: BotMessageEditing;
@@ -2009,7 +1969,6 @@ export class BotApiService {
   readonly #messagePinning: MessagePinning;
   readonly #messageReactions: MessageReactions;
   readonly #botMedia: BotMediaResolution;
-  readonly #mediaFiles: MediaFiles;
   readonly #callbackQueries: CallbackQueryAnswering;
   readonly #inlineQueries: InlineQueryAnswering;
   readonly #botCaptions: BotCaptionNormalizer;
@@ -2026,7 +1985,6 @@ export class BotApiService {
   constructor(
     {
       bots,
-      updateConsumers,
       botMessages,
       supergroupBotMessages,
       messageEditing,
@@ -2039,7 +1997,6 @@ export class BotApiService {
       messagePinning,
       messageReactions,
       botMedia,
-      mediaFiles,
       callbackQueries,
       inlineQueries,
       botCaptions,
@@ -2055,7 +2012,6 @@ export class BotApiService {
     }: BotApiServiceDependencies,
   ) {
     this.#bots = bots;
-    this.#updateConsumers = updateConsumers;
     this.#botMessages = botMessages;
     this.#supergroupBotMessages = supergroupBotMessages;
     this.#messageEditing = messageEditing;
@@ -2068,7 +2024,6 @@ export class BotApiService {
     this.#messagePinning = messagePinning;
     this.#messageReactions = messageReactions;
     this.#botMedia = botMedia;
-    this.#mediaFiles = mediaFiles;
     this.#callbackQueries = callbackQueries;
     this.#inlineQueries = inlineQueries;
     this.#botCaptions = botCaptions;
@@ -2095,30 +2050,6 @@ export class BotApiService {
   /** Returns the profile of the bot that owns `token`, or `undefined` if no bot does. */
   authenticate(token: string): VirtualBotProfile | undefined {
     return this.#bots.getByToken(token)?.profile;
-  }
-
-  /** Polls the authenticated bot's pending updates, as `BotUpdateConsumerService` decides. */
-  async getUpdates(
-    authenticatedBot: VirtualBotProfile,
-    request: GetUpdatesRequest,
-  ): Promise<GetUpdatesResult> {
-    return await this.#updateConsumers.getUpdates(authenticatedBot.id, request);
-  }
-
-  /** Sets the authenticated bot's webhook, or deletes it for an empty URL. */
-  setWebhook(authenticatedBot: VirtualBotProfile, request: SetWebhookRequest): SetWebhookResult {
-    return this.#updateConsumers.setWebhook(authenticatedBot.id, request);
-  }
-
-  deleteWebhook(
-    authenticatedBot: VirtualBotProfile,
-    request: DeleteWebhookRequest,
-  ): DeleteWebhookOutcome {
-    return this.#updateConsumers.deleteWebhook(authenticatedBot.id, request);
-  }
-
-  getWebhookInfo(authenticatedBot: VirtualBotProfile): BotApiWebhookInfo {
-    return this.#updateConsumers.getWebhookInfo(authenticatedBot.id);
   }
 
   /**
@@ -2658,29 +2589,6 @@ export class BotApiService {
     request: CopyMessagesRequest,
   ): RepeatMessagesResult {
     return this.#messageRepeater.copyMessages(authenticatedBot.id, request);
-  }
-
-  /** Returns a file the bot knows by its `file_id`, with the `file_path` to download it from. */
-  getFile(authenticatedBot: VirtualBotProfile, fileId: string): GetFileResult {
-    const result = this.#mediaFiles.getBotFile(authenticatedBot.id, fileId);
-    if (!result.found) {
-      return result;
-    }
-    const { file, filePath } = result.downloadableFile;
-    return {
-      found: true,
-      file: {
-        file_id: result.downloadableFile.fileId,
-        file_unique_id: file.uniqueId,
-        file_size: file.content.length,
-        file_path: filePath,
-      },
-    };
-  }
-
-  /** Returns the file at a `file_path` that `getFile` gave the bot, for download. */
-  downloadFile(authenticatedBot: VirtualBotProfile, filePath: string): StoredFile | undefined {
-    return this.#mediaFiles.findBotFileByPath(authenticatedBot.id, filePath);
   }
 
   /**

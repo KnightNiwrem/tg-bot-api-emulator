@@ -236,7 +236,7 @@ Deno.test('Replacing or deleting a webhook and ending delivery cancel its attemp
     "Expected the replaced webhook's attempt to be cancelled and unable to time out",
   );
 
-  session.botApi.deleteWebhook(bot, { dropPendingUpdates: false });
+  session.botUpdateConsumers.deleteWebhook(bot.id, { dropPendingUpdates: false });
   assertEquals(
     [
       webhookAttempts.releaseRetry(botId, 2),

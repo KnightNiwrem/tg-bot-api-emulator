@@ -394,7 +394,7 @@ async function createSessionFixture() {
         pendingRequests: requests.found ? requests.requests.length : requests.reason,
         messageCount: history.found ? history.messages.length : history.reason,
         pendingUpdates: [alpha, beta].map((bot) =>
-          session.botApi.getWebhookInfo(bot).pending_update_count
+          session.botUpdateConsumers.getWebhookInfo(bot.id).pending_update_count
         ),
         activityHead: session.botActivity.getHeadPosition(),
       };
