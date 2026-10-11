@@ -1,3 +1,5 @@
+import { type ChangeStaging, UNSTAGED_CHANGES } from '../transactions/change_staging.ts';
+import { TransactionalMap } from '../transactions/transactional_collections.ts';
 import type {
   DefaultAdministratorRights,
   DefaultAdministratorRightsChatKind,
@@ -14,7 +16,12 @@ export interface BotDefaultAdministratorRightsKey {
  * while there are some, as Telegram treats no rights as none set.
  */
 export class BotDefaultAdministratorRightsRepository {
-  readonly #rightsByKey = new Map<string, DefaultAdministratorRights>();
+  readonly #rightsByKey: TransactionalMap<string, DefaultAdministratorRights>;
+
+  /** `staging` decides how the repository's writes take part in its session's transactions. */
+  constructor(staging: ChangeStaging = UNSTAGED_CHANGES) {
+    this.#rightsByKey = new TransactionalMap(staging);
+  }
 
   /** Replaces the rights; no rights removes them. */
   setRights(key: BotDefaultAdministratorRightsKey, rights: DefaultAdministratorRights): void {

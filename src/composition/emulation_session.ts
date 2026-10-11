@@ -302,23 +302,23 @@ export function createEmulationSession(
     bots,
     privateConversations,
     supergroupMembers: sharedChats,
-    botCommands: new BotCommandRepository(),
+    botCommands: new BotCommandRepository(journal),
   });
 
   const botDescriptions = new BotDescriptionService({
     bots,
-    botDescriptions: new BotDescriptionRepository(),
+    botDescriptions: new BotDescriptionRepository(journal),
   });
 
   const defaultAdministratorRights = new BotDefaultAdministratorRightsService({
     bots,
-    defaultAdministratorRights: new BotDefaultAdministratorRightsRepository(),
+    defaultAdministratorRights: new BotDefaultAdministratorRightsRepository(journal),
   });
 
   const botMenuButtons = new BotMenuButtonService({
     accounts,
     bots,
-    menuButtons: new BotMenuButtonRepository(),
+    menuButtons: new BotMenuButtonRepository(journal),
   });
 
   const botRateLimits = new BotRateLimitService({

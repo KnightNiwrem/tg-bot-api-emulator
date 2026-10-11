@@ -1,3 +1,5 @@
+import { type ChangeStaging, UNSTAGED_CHANGES } from '../transactions/change_staging.ts';
+import { TransactionalMap } from '../transactions/transactional_collections.ts';
 import type { BotMenuButton } from '../types/bot_menu_button.ts';
 
 /**
@@ -15,7 +17,12 @@ export interface BotMenuButtonKey {
  * as choosing the default button removes the choice.
  */
 export class BotMenuButtonRepository {
-  readonly #menuButtonsByKey = new Map<string, BotMenuButton>();
+  readonly #menuButtonsByKey: TransactionalMap<string, BotMenuButton>;
+
+  /** `staging` decides how the repository's writes take part in its session's transactions. */
+  constructor(staging: ChangeStaging = UNSTAGED_CHANGES) {
+    this.#menuButtonsByKey = new TransactionalMap(staging);
+  }
 
   /** Replaces a menu button; the default button removes the choice. */
   setMenuButton(key: BotMenuButtonKey, menuButton: BotMenuButton): void {

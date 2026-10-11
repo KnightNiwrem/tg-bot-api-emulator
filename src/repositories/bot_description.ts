@@ -1,3 +1,5 @@
+import { type ChangeStaging, UNSTAGED_CHANGES } from '../transactions/change_staging.ts';
+import { TransactionalMap } from '../transactions/transactional_collections.ts';
 import type { BotDescriptionKind } from '../types/bot_description.ts';
 import type { BotLanguageCode } from '../types/bot_language_code.ts';
 
@@ -13,7 +15,12 @@ export interface BotDescriptionKey {
  * it is nonempty, as Telegram treats setting an empty text as removing it.
  */
 export class BotDescriptionRepository {
-  readonly #textsByKey = new Map<string, string>();
+  readonly #textsByKey: TransactionalMap<string, string>;
+
+  /** `staging` decides how the repository's writes take part in its session's transactions. */
+  constructor(staging: ChangeStaging = UNSTAGED_CHANGES) {
+    this.#textsByKey = new TransactionalMap(staging);
+  }
 
   /** Replaces a text; an empty text removes it. */
   setText(key: BotDescriptionKey, text: string): void {
