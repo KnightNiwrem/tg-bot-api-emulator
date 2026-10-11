@@ -24,7 +24,9 @@ post:
           schema:
             $ref: ../components/schemas/ExpiredPollResponse.yaml
     '400':
-      description: The poll path identifier is not the decimal text of a positive 64-bit integer.
+      description: >-
+        The poll path identifier is not the decimal text of a positive signed 64-bit integer, at
+        most 9223372036854775807.
       content:
         application/json:
           schema:

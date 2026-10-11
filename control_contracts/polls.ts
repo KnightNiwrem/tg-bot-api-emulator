@@ -21,7 +21,11 @@ export const MAX_POLL_OPEN_PERIOD_SECONDS = 2_628_000;
 /** The most characters of a quiz's explanation, counted by code point. */
 export const MAX_QUIZ_EXPLANATION_LENGTH = 200;
 
-/** The identifier of a poll: the decimal text of a positive 64-bit integer. */
+/**
+ * The identifier of a poll: the decimal text of a positive signed 64-bit integer, at most
+ * 9223372036854775807. JSON Schema states its form and length; a poll path's server also checks
+ * its range, reporting a larger ID as an `invalid_value` issue.
+ */
 export const pollIdSchema = z.string().regex(/^[1-9]\d*$/).max(19);
 
 /** An answer option of a poll, as the official Bot API server's `JsonPollOption` shows it. */

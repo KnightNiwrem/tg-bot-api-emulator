@@ -47,6 +47,7 @@
           "src/types/poll.ts",
           "src/types/bot_api_poll.ts",
           "src/types/telegram_identity.ts",
+          "src/types/telegram_int64.ts",
           "src/types/bot_command.ts",
           "src/types/bot_language_code.ts",
           "src/types/bot_description.ts",
